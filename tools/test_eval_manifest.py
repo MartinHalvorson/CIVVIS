@@ -23,10 +23,19 @@ class EvalManifestTests(unittest.TestCase):
         `docs/EVAL_STATUS.md` publishes the never-named list as the work
         roadmap objective 3 asks the fleet to do, and the arm name was derived
         as `live_without_{tag with underscores}`. There is no such rule, and
-        both obvious ones are wrong somewhere: `ranged-line-of-sight`'s arm is
-        `live_without_ranged_needs_line_of_sight`, after the flag, while
+        both obvious ones are wrong somewhere: `live-trader-route`'s arm is
+        `live_without_live_trader_route_adapter`, after the flag, while
         `army-target-weighs-enemy` sets `army_target_weighs_the_enemy` and its
         arm is `live_without_army_target_weighs_enemy`, after the tag.
+
+        ⚠ The non-vacuity check reads the WHOLE bridge table, not just the
+        withholdable half. It used to name `ranged-line-of-sight` (arm
+        `live_without_ranged_needs_line_of_sight`) and scope itself to the
+        screenable tags; that gene left the code on 2026-08-21 with the
+        ranking's bottom ten, and every remaining screenable tag happens to
+        spell its arm naively — so scoped that way the check would silently
+        stop testing anything. The two Firaxis-only rows still differ, and
+        they carry registered arms like any other row.
 
         So the arm is looked up in `EVAL_ONLY_AIS` rather than guessed, and a
         treatment with no arm raises. That found one immediately:
@@ -48,10 +57,16 @@ class EvalManifestTests(unittest.TestCase):
         for tag, arm in arms.items():
             self.assertIn(arm, known, f"{tag} resolves to {arm}, which is not a registered arm")
         # Non-vacuous: at least one tag's arm is not the naive transformation,
-        # so the lookup is doing work a derivation could not.
-        naive = {tag: f"live_without_{tag.replace('-', '_')}" for tag in arms}
+        # so the lookup is doing work a derivation could not. Read over every
+        # bridge row, for the reason in the docstring.
+        every = eval_manifest.withholding_arms(
+            REPO,
+            registry["EVAL_ONLY_AIS"]["items"],
+            set(registry["LIVE_BRIDGE_TREATMENTS"]["items"]),
+        )
+        naive = {tag: f"live_without_{tag.replace('-', '_')}" for tag in every}
         self.assertTrue(
-            any(arms[tag] != naive[tag] for tag in arms),
+            any(every[tag] != naive[tag] for tag in every),
             "every arm matches the naive spelling; this test would pass on the "
             "derivation it exists to replace",
         )
@@ -236,3 +251,115 @@ class BundleCoverageTests(unittest.TestCase):
         self.assertIn("## Bundle coverage", page)
         self.assertIn(f"Never named in any round: {self.coverage['never_named']}",
                       page)
+
+
+class StolenTurnsTest(unittest.TestCase):
+    """The turn a stolen lane lands on, not only how often it is stolen."""
+
+    def attempt(self, victory, turns, **kw):
+        row = {"configured": True, "won": False, "victory": victory, "turns": turns}
+        row.update(kw)
+        return row
+
+    def test_a_stolen_lane_reports_the_window_it_landed_in(self):
+        """★★★★★ THE COUNT SAYS WHICH LANE, THE TURN SAYS WHETHER OURS BEHAVES.
+
+        A rival's diplomatic victory has never landed before turn 202 on this
+        ladder and lands at a median of 234 — a photo finish against the
+        250-turn limit. Four iterations of work on CIVVIS' own diplomatic lane
+        were aimed at a count with no window beside it, and 'our native lane
+        produces almost none' cannot be read against 'theirs lands at 239'
+        without knowing the second number.
+        """
+        rows = [
+            self.attempt(6, 202),
+            self.attempt(6, 234),
+            self.attempt(6, 247),
+            self.attempt(3, 145),
+        ]
+        summary = eval_manifest.ladder_endings(rows)
+        windows = summary["stolen_turns"]
+        self.assertEqual(
+            windows["diplomatic"], {"earliest": 202, "median": 234, "latest": 247}
+        )
+        self.assertEqual(
+            windows["culture"], {"earliest": 145, "median": 145, "latest": 145}
+        )
+
+    def test_a_lane_that_ran_the_clock_out_is_not_stolen(self):
+        """A game that reaches the limit ends on score by construction, so it
+        has not been stolen and must not widen anyone's window."""
+        rows = [self.attempt(6, 250), self.attempt(6, 210)]
+        summary = eval_manifest.ladder_endings(rows)
+        self.assertEqual(
+            summary["stolen_turns"]["diplomatic"],
+            {"earliest": 210, "median": 210, "latest": 210},
+        )
+class GenomeCoverageTests(unittest.TestCase):
+    """The count of what the genome instrument cannot see.
+
+    ⚠⚠ THE FIRST VERSION OF THIS COUNT INVENTED DEBT, and the trap is the one
+    `withholding_arms` already records from the other side: a treatment row's
+    FIELD string and its toggle's NAME are not the same word. The row for
+    `army-target-weighs-enemy` reads
+    `("army_target_weighs_enemy", …, disable_army_target_weighs_the_enemy)` —
+    note the "the" — so matching the toggle set against the field string alone
+    reported a gene the ledger has measured as unreachable by any screen. A
+    published debt list that names a measured gene is worse than no list.
+    """
+
+    def setUp(self):
+        self.coverage = eval_manifest.genome_coverage(REPO)
+
+    def test_the_counts_are_consistent(self):
+        c = self.coverage
+        self.assertGreaterEqual(c["capability_toggles"],
+                                c["unreachable_by_any_screen"])
+        self.assertGreaterEqual(c["reachable_as_a_gene"],
+                                c["measured_by_a_screen"])
+        self.assertGreaterEqual(c["measured_by_a_screen"],
+                                c["resolved_by_a_screen"])
+        self.assertEqual(len(c["unreachable_toggles"]),
+                         c["unreachable_by_any_screen"])
+
+    def test_a_toggle_named_differently_from_its_row_is_still_reachable(self):
+        """The real fixture, not a synthetic one: this exact flag is the
+        mismatch that broke the first draft."""
+        self.assertNotIn("army_target_weighs_the_enemy",
+                         self.coverage["unreachable_toggles"],
+                         "a gene the ledger has measured cannot be unreachable; "
+                         "the field/function spelling join is broken again")
+
+    def test_a_measured_gene_is_reachable_or_is_a_recorded_removal(self):
+        """A screen measured it, so a screen can reach it — with the one
+        exception the repository documents: a native leg deliberately removed,
+        leaving a host-only gene whose ledger row is history.
+
+        The bound is what matters, not the number. If this starts failing,
+        something has quietly stopped being screenable while its row still
+        steers `ledger_default_on`.
+        """
+        ledger = json.loads(
+            (REPO / "docs" / "gene_ledger.json").read_text(encoding="utf-8"))
+        measured = len(ledger["genes"])
+        stranded = measured - self.coverage["measured_by_a_screen"]
+        self.assertLessEqual(
+            stranded, 1,
+            f"{stranded} measured genes are no longer reachable by any screen; "
+            "each one is a ledger row governing a deployment default that no "
+            "future screen can revisit")
+
+    def test_the_scrape_fails_loudly_rather_than_reporting_zero_debt(self):
+        """An empty answer is the dangerous one: it reads as "no debt"."""
+        import tempfile
+        with tempfile.TemporaryDirectory() as empty:
+            with self.assertRaises((ValueError, OSError, IndexError)):
+                eval_manifest.genome_coverage(Path(empty))
+
+    def test_the_section_reaches_the_status_page(self):
+        """AGENTS.md: a guard you add runs in the same change that adds it. A
+        count nobody publishes is a count nobody acts on."""
+        page = (REPO / "docs" / "EVAL_STATUS.md").read_text(encoding="utf-8")
+        self.assertIn("## Genome coverage", page)
+        self.assertIn(f"Unreachable by any screen: "
+                      f"{self.coverage['unreachable_by_any_screen']}", page)

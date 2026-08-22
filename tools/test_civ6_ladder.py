@@ -189,6 +189,35 @@ class LiveArmAttributionTests(unittest.TestCase):
         self.assertIsNone(entry["mod_arms"])
         full = civ6_ladder.entry_from({"tag": "new", "last_turn": 250, "withheld": []})
         self.assertEqual(full["withheld"], [])
+class AnAbandonedRowIsALossTheLadderChoseNotToPlayOut(unittest.TestCase):
+    """`civ6_play.py --abandon-below-win-rate` stops a game whose measured
+    expected win rate has sat under the operator's floor; the row must say so
+    (reason `abandoned`, carrying the verdict) and the legend must explain it,
+    or the ledger reads the stop as a wedge."""
+
+    def test_the_verdict_rides_the_entry_and_the_outcome_column_names_it(self) -> None:
+        verdict = {"turn": 124, "score": 300, "rival_best": 500,
+                   "expected_win_rate": 0.0278, "floor": 0.05,
+                   "consecutive_turns": 5}
+        entry = civ6_ladder.entry_from({
+            "tag": "civvis-ab", "difficulty": "DIFFICULTY_CHIEFTAIN",
+            "configured": True, "last_turn": 124, "last_score": 300,
+            "reason": "abandoned", "abandoned": verdict,
+        })
+        self.assertEqual(entry["abandoned"], verdict)
+        self.assertEqual(entry["reason"], "abandoned")
+        self.assertFalse(entry["won"])
+        self.assertFalse(entry["defeat"])
+        state = {"attempts": [entry], "wins": {}}
+        text = civ6_ladder.markdown_for(state)
+        self.assertIn("| abandoned |", text)
+        self.assertIn("`abandoned` means the harness stopped a game", text)
+
+    def test_an_ordinary_row_carries_no_verdict(self) -> None:
+        entry = civ6_ladder.entry_from({"tag": "old", "last_turn": 250})
+        self.assertIsNone(entry["abandoned"])
+
+
 class OpeningTempoTests(unittest.TestCase):
     """The ladder's strongest measured correlate, watched instead of
     reconstructed: cities at t60 (r=+0.69 with final lead) and the second
@@ -936,6 +965,37 @@ class LatestCodeGuarantee(LedgerCase):
         self.assertEqual(civ6_ladder.decider_revisions(updates),
                          ["aaa", "bbb", "ddd"])
         self.assertIsNone(civ6_ladder.decider_revisions(self.runs / "absent"))
+
+    def test_decider_genome_reads_the_deciders_own_first_record(self):
+        why = self.runs / "why.log"
+        why.write_text(
+            "[genome] no strategy 'WildCard9' in /x/data/league\n"
+            '{"civ":null,"kind":"genome","lane":null,"parallel_settlers":true,'
+            '"per_civ":null,"revision":null,"source":"AdvancedAi::new",'
+            '"strategy":"stock","strength_bound":null,"treatments":["a","b"]}\n'
+            "[why] t1 Strategy/Strategy Grand strategy: expansion | ...\n")
+        self.assertEqual(
+            civ6_ladder.decider_genome(why),
+            {"strategy": "stock", "source": "AdvancedAi::new", "lane": None,
+             "civ": None, "strength_bound": None})
+        resolved = self.runs / "why2.log"
+        resolved.write_text(
+            '{"civ":"Rome","kind":"genome","lane":null,"source":"data/league",'
+            '"strategy":"g56-48","strength_bound":0.51}\n')
+        self.assertEqual(civ6_ladder.decider_genome(resolved)["strategy"], "g56-48")
+        self.assertIsNone(civ6_ladder.decider_genome(self.runs / "absent.log"))
+        # A why.log without the record (an older decider) is not "stock".
+        (self.runs / "why3.log").write_text("[why] t1 nothing\n")
+        self.assertIsNone(civ6_ladder.decider_genome(self.runs / "why3.log"))
+
+    def test_the_genome_played_and_the_name_asked_for_are_recorded_on_the_attempt(self):
+        civ6_ladder.record_summary(write_run(
+            self.runs, summary("genomed",
+                               genome={"strategy": "stock", "source": "AdvancedAi::new"},
+                               strategy_requested="WildCard9")))
+        row = self.state()["attempts"][0]
+        self.assertEqual(row["genome"]["strategy"], "stock")
+        self.assertEqual(row["strategy_requested"], "WildCard9")
 
     def test_the_revision_history_is_recorded_on_the_attempt(self):
         civ6_ladder.record_summary(write_run(

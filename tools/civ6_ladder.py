@@ -309,6 +309,51 @@ def decider_revisions(updates_path: Path) -> list[str] | None:
     return revisions or None
 
 
+def decider_genome(why_log: Path) -> dict | None:
+    """The genome the decider actually played, from its own first record.
+
+    ★★★★ WHAT WAS ASKED FOR IS NOT WHAT WAS PLAYED. Before the live-selector
+    compatibility repair, `civvis_orders --strategy NAME` accepted only the
+    league snapshot's internal name (`g56-48`), while the supervisor passed
+    its display name (`WildCard9`). The resolver printed "[genome] no strategy
+    'WildCard9'", fell back to stock, and thirty-five ladder rows carried
+    `strategy=WildCard9` while every one played `AdvancedAi::new`. New deciders
+    accept a unique display label but still report the immutable internal name.
+    The decider writes that machine-readable `{"kind":"genome", ...}` line at
+    the top of `why.log`; this reads it so the ledger says which genome played,
+    not merely which selector was typed. None when the run has no `why.log` or
+    the record is missing (an older decider): absence stays distinct from
+    "stock".
+    """
+    if not why_log.is_file():
+        return None
+    try:
+        with why_log.open() as handle:
+            for _ in range(20):
+                line = handle.readline()
+                if not line:
+                    break
+                line = line.strip()
+                if not line.startswith("{"):
+                    continue
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if record.get("kind") != "genome":
+                    continue
+                return {
+                    "strategy": record.get("strategy"),
+                    "source": record.get("source"),
+                    "lane": record.get("lane"),
+                    "civ": record.get("civ"),
+                    "strength_bound": record.get("strength_bound"),
+                }
+    except OSError:
+        return None
+    return None
+
+
 def runtime_heartbeat_problem(heartbeat: Path, max_minutes: float,
                               now: datetime | None = None) -> str | None:
     """Why the origin/main watcher is not provably alive, or None.
@@ -482,8 +527,20 @@ def entry_from(summary: dict) -> dict:
         "map_size": summary.get("map_size"),
         "speed": summary.get("speed"),
         "reason": summary.get("reason"),
+        # The harness's own verdict when it abandoned the game
+        # (`civ6_play.ABANDON_CELLS`): turn, standing, estimate and floor. A
+        # row with `reason: "abandoned"` is a loss the ladder chose not to play
+        # out, and the verdict is kept so the choice can be audited against
+        # what the rule would have cost.
+        "abandoned": summary.get("abandoned"),
         "applied_pct": applied_pct(summary),
         "revisions": summary.get("decider_revisions"),
+        # Which genome the decider actually played (see `decider_genome`) and
+        # the name the launcher asked for. `genome.strategy == "stock"` beside a
+        # `strategy_requested` that names a league entrant is the resolver's
+        # silent fallback, and it is on the row so it can be seen.
+        "genome": summary.get("genome"),
+        "strategy_requested": summary.get("strategy_requested"),
         # Which arm played this row: the live treatments withheld from the
         # decider, or [] for the full shipped bundle. Rows recorded before the
         # launchers could withhold anything carry None — unknown, which is not
@@ -1109,7 +1166,11 @@ def markdown_for(state: dict) -> str:
             "",
             "`outcome` is what the game did, not what the harness saw last.",
             "`defeat` means this controller was eliminated and the game said so;",
-            "`stopped`, `stalled` and `timeout` mean nobody won and nobody lost.",
+            "`stopped`, `stalled` and `timeout` mean nobody won and nobody lost;",
+            "`abandoned` means the harness stopped a game whose measured expected",
+            "win rate had sat under the operator's floor for five turns",
+            "(`civ6_play.py --abandon-below-win-rate`), a loss it chose not to",
+            "play out.",
             "A ledger that cannot tell defeat from a wedge cannot be used to",
             "compare anything, and until `defeat` existed here the two were the",
             "same row.",

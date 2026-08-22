@@ -1,0 +1,221 @@
+-- Offline regression for automatic World Games membership.
+--
+-- Firaxis grants the 50-score Train Athletes project only to members of the
+-- target-free World Games. CIVVIS already models that score race, so exercise
+-- the actual emergency callback before the contest begins.
+--
+-- Run: lua5.1 tools/civ6_control/mod/world_games_join_test.lua
+
+local here = arg[0]:match("(.*)/[^/]*$") or "."
+
+local function stub()
+	return setmetatable({}, {
+		__index = function() return stub() end,
+		__call = function() return stub() end,
+		__newindex = function() end,
+	})
+end
+
+setmetatable(_G, { __index = function(_, key)
+	if key == "CivvisOnAidEmergencyAvailable" then return rawget(_G, key) end
+	return stub()
+end })
+
+local registrations, logs = {}, {}
+Events = setmetatable({}, { __index = function(_, name)
+	return { Add = function(handler) registrations[name] = handler end }
+end })
+Automation = { Log = function(line) logs[#logs + 1] = line end }
+UI = { DataError = function() end }
+CivvisControlConfig = {
+	Play = true, AutoJoinAidRequests = true, AutoJoinClimateAccords = true,
+	AutoJoinWorldsFair = true, AutoJoinWorldGames = true,
+}
+
+local chunk, err = loadfile(here .. "/CivvisControlAgent.lua")
+assert(chunk, "could not load agent: " .. tostring(err))
+local ran, runtimeErr = pcall(chunk)
+assert(ran, "CivvisControlAgent.lua raised at chunk load: " .. tostring(runtimeErr))
+
+local handler = rawget(_G, "CivvisOnAidEmergencyAvailable")
+assert(type(handler) == "function",
+	"CivvisControlAgent.lua did not export the emergency callback")
+assert(registrations.EmergencyAvailable == handler,
+	"CivvisControlAgent.lua did not register its callback on EmergencyAvailable")
+
+local failures = 0
+local function check(name, got, want)
+	if got ~= want then
+		failures = failures + 1
+		print(string.format("FAIL %s: got %s want %s", name, tostring(got), tostring(want)))
+	else
+		print(string.format("ok   %s = %s", name, tostring(got)))
+	end
+end
+
+local PID, TYPE = 7, 97
+local nextTurn = 500
+
+local function lastJoin()
+	for i = #logs, 1, -1 do
+		if logs[i]:find('"kind":"world_games_join"', 1, true) then
+			return logs[i]
+		end
+	end
+	return nil
+end
+
+local function reason()
+	local line = lastJoin()
+	return line and line:match('"reason":"([^"]*)"') or nil
+end
+
+local function submitted()
+	local line = lastJoin()
+	return line ~= nil and line:find('"submitted":true', 1, true) ~= nil
+end
+
+local function fixture(opts)
+	opts = opts or {}
+	nextTurn = nextTurn + 1
+	logs = {}
+	local state = {
+		requests = {}, trackerReads = 0, turn = opts.turn or nextTurn,
+		throws = opts.throws or false,
+	}
+	local crisis = opts.crisis
+	if crisis == nil and opts.tracker ~= false then
+		crisis = {
+			EmergencyType = opts.eventType or TYPE,
+			TargetID = opts.target == nil and -1 or opts.target,
+			HasBegun = opts.begun or false,
+			MemberIDs = opts.members or {},
+		}
+	end
+
+	CivvisControlConfig.Play = opts.play ~= false
+	CivvisControlConfig.AutoJoinAidRequests = opts.aidEnabled ~= false
+	CivvisControlConfig.AutoJoinClimateAccords = opts.climateEnabled ~= false
+	CivvisControlConfig.AutoJoinWorldsFair = opts.fairEnabled ~= false
+	if opts.defaultEnabled then
+		CivvisControlConfig.AutoJoinWorldGames = nil
+	else
+		CivvisControlConfig.AutoJoinWorldGames = opts.enabled ~= false
+	end
+	GameInfo = { EmergencyAlliances = {} }
+	if not opts.noDefinition then
+		GameInfo.EmergencyAlliances[opts.eventType or TYPE] = {
+			EmergencyType = opts.kind or "EMERGENCY_WORLD_GAMES",
+		}
+	end
+	Game = {
+		GetLocalPlayer = function() return PID end,
+		GetCurrentGameTurn = function() return state.turn end,
+		GetEmergencyManager = function()
+			return {
+				GetEmergencyInfoTable = function(_, requested)
+					state.trackerReads = state.trackerReads + 1
+					state.trackerPlayer = requested
+					return crisis and { crisis } or {}
+				end,
+			}
+		end,
+	}
+	-- World Games is target-free. It must not inspect Players[-1] or diplomacy.
+	Players = {}
+	PlayerOperations = {
+		PARAM_OTHER_PLAYER = "other",
+		PARAM_EMERGENCY_TYPE = "emergency",
+		ACCEPT_EMERGENCY = "accept",
+	}
+	if opts.noApi then PlayerOperations.PARAM_EMERGENCY_TYPE = nil end
+	UI.RequestPlayerOperation = function(pid, operation, parameters)
+		state.requests[#state.requests + 1] = {
+			pid = pid, operation = operation, other = parameters.other,
+			emergency = parameters.emergency,
+		}
+		if opts.reenter then handler(opts.target == nil and -1 or opts.target,
+			opts.eventType or TYPE) end
+		if state.throws then error("host refused Lua call") end
+	end
+	return state
+end
+
+-- The native popup uses the same accept operation and no-target sentinel.
+-- A synchronous re-publish cannot submit a second request in the same turn.
+local good = fixture({ reenter = true })
+registrations.EmergencyAvailable(-1, TYPE)
+check("World Games submits once", #good.requests, 1)
+check("World Games uses local player", good.requests[1].pid, PID)
+check("World Games uses accept operation", good.requests[1].operation, "accept")
+check("World Games keeps no-target sentinel", good.requests[1].other, -1)
+check("World Games keeps emergency type", good.requests[1].emergency, TYPE)
+check("World Games checked exact tracker player", good.trackerPlayer, PID)
+check("World Games reports submission, not membership", submitted(), true)
+check("World Games submission reason", reason(), "submitted")
+
+-- The new setting defaults on and is independent of the earlier competition
+-- switches, so an existing opt-out cannot strand this athlete score race.
+local defaultOn = fixture({
+	aidEnabled = false, climateEnabled = false, fairEnabled = false,
+	defaultEnabled = true,
+})
+registrations.EmergencyAvailable(-1, TYPE)
+check("World Games defaults on independently", #defaultOn.requests, 1)
+check("World Games default-on reports submitted", submitted(), true)
+
+-- An availability event alone is never authority. The current tracker row
+-- must match, still require input, and not already contain our membership.
+for _, blocked in ipairs({
+	{ name = "missing tracker emergency", opts = { tracker = false }, why = "missing_emergency" },
+	{ name = "begun emergency", opts = { begun = true }, why = "already_begun" },
+	{ name = "existing member", opts = { members = { PID } }, why = "already_member" },
+	{ name = "mismatched tracker row", opts = { crisis = {
+		EmergencyType = TYPE + 1, TargetID = -1, HasBegun = false, MemberIDs = {},
+	} }, why = "missing_emergency" },
+	{ name = "player target", opts = { target = 11 }, why = "unexpected_target" },
+	{ name = "missing host API", opts = { noApi = true }, why = "api_unavailable" },
+}) do
+	local state = fixture(blocked.opts)
+	registrations.EmergencyAvailable(blocked.opts.target == nil and -1 or blocked.opts.target,
+		TYPE)
+	check(blocked.name .. " does not submit", #state.requests, 0)
+	check(blocked.name .. " is named", reason(), blocked.why)
+end
+
+-- An explicit opt-out and observer mode do not mutate the host. A thrown host
+-- request clears the turn guard so the next valid notification can retry.
+local disabled = fixture({ enabled = false })
+registrations.EmergencyAvailable(-1, TYPE)
+check("disabled controller does not submit", #disabled.requests, 0)
+check("disabled controller does not emit an action", lastJoin(), nil)
+
+local observer = fixture({ play = false })
+registrations.EmergencyAvailable(-1, TYPE)
+check("observer controller does not submit", #observer.requests, 0)
+
+local failed = fixture({ throws = true, turn = 999 })
+registrations.EmergencyAvailable(-1, TYPE)
+check("throwing host call is not submitted", submitted(), false)
+check("throwing host call is named", reason(), "throw")
+failed.throws = false
+registrations.EmergencyAvailable(-1, TYPE)
+check("throwing host call can retry", #failed.requests, 2)
+check("retry after throw submits", submitted(), true)
+
+local other = fixture({ kind = "EMERGENCY_CONTROL_TEST_UNSUPPORTED" })
+registrations.EmergencyAvailable(-1, TYPE)
+check("other competition never submits", #other.requests, 0)
+check("other competition does not touch tracker", other.trackerReads, 0)
+
+local src = assert(io.open(here .. "/CivvisControlAgent.lua")):read("*a")
+check("handler recognizes World Games", src:find(
+	'kind == "EMERGENCY_WORLD_GAMES"', 1, true) ~= nil, true)
+check("handler retains Firaxis accept operation", src:find(
+	"PlayerOperations.ACCEPT_EMERGENCY", 1, true) ~= nil, true)
+
+if failures > 0 then
+	print(string.format("\n%d check(s) failed", failures))
+	os.exit(1)
+end
+print("all World Games join checks passed")

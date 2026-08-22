@@ -58,6 +58,94 @@ fn casus_belli_profiles_cover_every_published_grievance_multiplier() {
     }
 }
 
+/// Military Aid targets a civilization a rival it held 200 grievances against
+/// declared war on; its members race the same 200-point Send Aid project.
+#[test]
+fn native_military_aid_request_requires_prewar_grievance_threshold() {
+    let attacker = 0;
+    let target = 1;
+    let member = 2;
+    let second_attacker = 3;
+    let aid = Item::Project {
+        project: crate::name!("send_aid"),
+    };
+
+    let mut under_threshold = game_with_contacts(3, 91_108);
+    under_threshold.native_competitions = true;
+    under_threshold.add_grievances(target, attacker, MILITARY_AID_REQUEST_GRIEVANCES_MIN - 1.0);
+    under_threshold
+        .do_declare_war(attacker, target)
+        .expect("a surprise war adds declaration grievances after this check");
+    assert!(
+        under_threshold.competition.is_none(),
+        "the declaration's own grievances cannot satisfy Military Aid's pre-war 200-point minimum"
+    );
+
+    let mut game = game_with_contacts(4, 91_109);
+    game.native_competitions = true;
+    let target_city = game.player_city_ids(target)[0];
+    let member_city = game.player_city_ids(member)[0];
+    game.add_grievances(target, attacker, MILITARY_AID_REQUEST_GRIEVANCES_MIN);
+
+    game.do_declare_war(attacker, target)
+        .expect("a met major can declare on a target already holding 200 grievances");
+    assert!(
+        game.players[target]
+            .grievances
+            .get(&attacker)
+            .is_some_and(|grievances| *grievances >= MILITARY_AID_REQUEST_GRIEVANCES_MIN),
+        "the target retains the qualifying grievance ledger after the declaration"
+    );
+    let running = game
+        .competition
+        .as_ref()
+        .expect("a qualifying grievance war seats the shipped Military Aid request");
+    assert_eq!(running.kind, "EMERGENCY_SEND_MILITARY_AID");
+    assert_eq!(running.target, Some(target));
+    assert_eq!(running.ends, game.turn + game.standard_duration(30));
+
+    assert!(
+        game.host_competition(member, "EMERGENCY_SEND_MILITARY_AID")
+            .is_some(),
+        "another major can join the targeted request"
+    );
+    assert!(
+        game.host_competition(target, "EMERGENCY_SEND_MILITARY_AID")
+            .is_none(),
+        "the civilization receiving aid cannot score it"
+    );
+    assert!(game.can_produce(member, member_city, &aid));
+    assert!(!game.can_produce(target, target_city, &aid));
+
+    assert!(game.complete_item(member, member_city, &aid));
+    assert_eq!(
+        game.competition.as_ref().unwrap().scores[&member],
+        game.rules.projects["send_aid"].competition_score,
+        "the request uses Gathering Storm's 200-point Send Aid project"
+    );
+    let before = game.players[member].dvp;
+    game.turn = game.competition.as_ref().unwrap().ends;
+    game.close_native_competition();
+    assert_eq!(
+        game.players[member].dvp - before,
+        2,
+        "Military Aid pays its first-place member two Diplomatic Victory Points"
+    );
+    assert_eq!(
+        game.competition_lockout_until["EMERGENCY_SEND_MILITARY_AID"],
+        game.turn + game.standard_duration(30),
+        "Military Aid carries its own 30-turn lockout"
+    );
+
+    game.add_grievances(target, second_attacker, MILITARY_AID_REQUEST_GRIEVANCES_MIN);
+    game.do_declare_war(second_attacker, target)
+        .expect("a second grievance war may occur during the request lockout");
+    assert!(
+        game.competition.is_none(),
+        "a second war cannot bypass Military Aid's own lockout"
+    );
+}
+
 #[test]
 fn delegations_and_embassies_are_paid_directional_and_non_stacking() {
     let mut game = game_with_contacts(2, 91_101);

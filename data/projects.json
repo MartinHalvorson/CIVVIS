@@ -96,6 +96,28 @@
       "completion_loyalty": 20
     }
   },
+  "send_aid": {
+    "cost": 200,
+    "host_competitions": [
+      "EMERGENCY_SEND_AID",
+      "EMERGENCY_SEND_MILITARY_AID"
+    ],
+    "competition_score": 200,
+    "repeatable": true
+  },
+  "train_athletes": {
+    "cost": 200,
+    "host_competition": "EMERGENCY_WORLD_GAMES",
+    "competition_score": 50,
+    "repeatable": true
+  },
+  "train_astronauts": {
+    "cost": 200,
+    "district": "spaceport",
+    "host_competition": "EMERGENCY_SPACE_STATION",
+    "competition_score": 30,
+    "repeatable": true
+  },
   "repair_outer_defenses": {
     "cost": 1,
     "repeatable": true
@@ -216,6 +238,36 @@
     "effects": {
       "reactor_age_reset": 1
     }
+  },
+  "decommission_coal_power_plant": {
+    "cost": 400,
+    "district": "industrial_zone",
+    "host_competition": "EMERGENCY_CLIMATE_ACCORDS",
+    "competition_score": 100,
+    "consumes_buildings": [
+      "coal_power_plant"
+    ],
+    "repeatable": true
+  },
+  "decommission_oil_power_plant": {
+    "cost": 400,
+    "district": "industrial_zone",
+    "host_competition": "EMERGENCY_CLIMATE_ACCORDS",
+    "competition_score": 100,
+    "consumes_buildings": [
+      "oil_power_plant"
+    ],
+    "repeatable": true
+  },
+  "decommission_nuclear_power_plant": {
+    "cost": 400,
+    "district": "industrial_zone",
+    "host_competition": "EMERGENCY_CLIMATE_ACCORDS",
+    "competition_score": 100,
+    "consumes_buildings": [
+      "nuclear_power_plant"
+    ],
+    "repeatable": true
   },
   "operation_ivy": {
     "cost": 1000,

@@ -1447,3 +1447,99 @@ five anchor profiles.
 definitions of the same thing disagreed and one of them was reachable only by
 accident — a defect repair, not a demonstrated gain. Rows before and after v15
 are not comparable in any game where an improvement was pillaged.
+
+---
+
+## v16 (2026-08-18) — a scout's report raises its own finite raid
+
+Barbarian Scouts now report only cities they can actually see. The reported
+camp then raises one finite, difficulty-shaped raiding party; idle and
+unrelated camps cannot consume that party's slots. Each raider retains the
+camp that raised it, and the report expires after the party has formed.
+
+This is a native-world rule, not an Advanced-AI controller treatment: every
+participant can face the party it creates. The v15 anchor was 18,586 decisions
+and `0x2076_c0d8_5213_9238`; with this correction it is **17,494 decisions**
+and `0x6cf9_b1fa_a854_dcd6` across the five anchor profiles.
+
+Rows before and after v16 are not comparable. This is a rules correction, not
+a compatibility re-pin.
+
+---
+
+## v17 (2026-08-19) — the Great Person roster reaches the Information era
+
+The shipped roster held **29 of Gathering Storm's 213 Great People** and
+stopped at the Atomic era. Every class ran out mid-game, and
+`Game::unused_great_person_faith` — which correctly models Civilization VI's
+`GetFaithFromUnusedGreatPeoplePoints` — then paid the whole Campus, Theatre
+Square and Harbour output out as Faith instead of Great People. The engine was
+right; the content it was reading from was not there.
+
+Measured over eight 6-player 200-turn games, 48 empire-games, paired on the
+same seeds: **26.6% of all non-prophet Great Person points were converted to
+Faith**, and seven of the eight non-prophet classes ran dry — writer by median
+turn 106, artist 139, scientist 159, admiral 160. With 36 individuals added the
+same measurement reports **5.4%**, three classes running dry and none before
+turn 172, and **229 Great People recruited against 125**.
+
+Every addition takes its class, era, cost and charges from the shipped
+`GreatPersonIndividuals` and `Eras` tables, so `tools/civ6_fidelity.py` still
+reports zero divergent fields; the roster row goes from 29/0/0/184 to
+65/0/0/148. Effects use only keys the engine already prices —
+`tools/civvis_inert.py` still reports zero effect keys with no consumer — and
+are class-typical rather than a per-individual translation of each Firaxis
+ability, which would need new engine keys.
+
+This is a shared native-world rule with no controller gate: the recruitment
+market is the same one every participant draws from. The v16 anchor was 17,494
+decisions and `0x6cf9_b1fa_a854_dcd6`; with this correction it is **17,482
+decisions** and `0x8162_c919_b83c_40df` across the five anchor profiles.
+
+Rows before and after v17 are not comparable. This is a rules correction, not a
+compatibility re-pin.
+
+---
+
+## v18 (2026-08-21) — a Barbarian Scout reports the walkers it sees
+
+`Game::barbarian_phase` gates every raid behind a Scout's report, and v16 gave
+each reported outpost a finite, difficulty-shaped party. The report itself
+still accepted **a city alone**, so a camp's whole raid throughput was one
+Scout's round trip to a settlement — and an empire's Settlers, which is what a
+Civilization VI barbarian actually takes, could not start a raid at all. A
+Settler walking past a camp was not a sighting.
+
+MEASURED before the change, `ai_eval live live_without_camp_reach`, 12 pairs /
+72 seat-games an arm at 6p/150t/online on identical seeds: **0.22 civilians
+lost to barbarians per game**. The live Civilization VI seat on the same shape
+(run `civvis-20260821T130446Z`) lost **4 of the 8 Settlers that ever walked,
+in 104 turns**, at a matching city count — 2 cities at t60 against the
+simulation's 2.53. Not an exposure difference; the opponent.
+
+⚠ **CORRECTED 2026-08-21.** This entry first read "8 of 12". The host emits
+`unit_lost` when a Settler **founds a city** — the operation consumes the unit,
+so `CivvisLedger.onUnitRemoved` reports a founding exactly like a capture, and
+counting those events naively doubles the loss. Always subtract the `unit_lost`
+events whose `unit` id also carries a `found` event. Across 89 live runs the
+real settler-loss rate to turn 100 is **23 %**, not the 56 % a naive count
+gives. The conclusion this version rests on is unchanged — the simulation was
+an order of magnitude gentler than the host — but the figure was wrong and is
+corrected here rather than left to propagate.
+
+With the sighting extended, and with the raider pursuit of #2227 that this
+version follows, the same measurement reads **0.61**.
+
+Like v16 this is a **shared native-world rule with no controller gate**: the
+Scout phase runs in the engine and every participant faces the same camps, so
+`AdvancedAi::legacy()` cannot hold it away from the anchor the way
+`barbarian_tactics = false` holds #2227's raider pursuit away. The anchor moves
+from v17's 17,482 decisions and `0x8162_c919_b83c_40df` to **18,596 and
+`0xf78a_2b10_c0e3_5945`** across its five profiles.
+
+⚠ Rows from v17 and earlier are not comparable with v18 — and that includes
+every settler-safety and barbarian-response verdict in `docs/gene_ledger.json`,
+each priced at 13,446 pairs against a barbarian that did not hunt civilians.
+That family needs re-pricing under v18: `home-defense`, `camp-reach`,
+`camp-party`, `civilian-rescue`, `settler-guard-holds`, `stacked-escort`,
+`escort-unstick`, `stranded-settler-discount`.

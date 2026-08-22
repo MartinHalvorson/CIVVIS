@@ -327,6 +327,64 @@ class Civ6BrainTest(unittest.TestCase):
             self.assertEqual(civ6_brain.completed_turns(conn, "missing"), set())
             conn.close()
 
+    def test_a_combat_frame_is_written_beside_the_opening_board_not_over_it(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            conn = civ6_brain.connect(Path(temporary) / "orders.sqlite")
+            civ6_brain.write_turn(conn, "live", 9, [
+                ("unit", 5, "MOVE_TO", 3, 2), ("unit", 5, "RANGE_ATTACK", 4, 2)])
+            civ6_brain.write_turn(conn, "live", 9, [("unit", 6, "FORTIFY", None, None)], frame=1)
+
+            rows = conn.execute(
+                "SELECT frame, seq, verb FROM orders WHERE run = 'live' AND turn = 9 ORDER BY seq"
+            ).fetchall()
+            self.assertEqual(rows, [
+                (0, 0, "MOVE_TO"), (0, 1, "RANGE_ATTACK"),
+                (1, civ6_brain.FRAME_SEQ_STRIDE, "FORTIFY"),
+            ], "the frame's rows sit beside the opening board's, in their own seq band")
+            ready = conn.execute(
+                "SELECT frame, count FROM ready WHERE run = 'live' AND turn = 9").fetchall()
+            self.assertEqual(ready, [(1, 1)], "one ready row per turn names the newest frame")
+            # The turn is still a completed turn for a resuming brain.
+            self.assertEqual(civ6_brain.completed_turns(conn, "live"), {9})
+            # Rewriting the opening board leaves the frame alone and vice versa.
+            civ6_brain.write_turn(conn, "live", 9, [("unit", 7, "FORTIFY", None, None)])
+            rows = conn.execute(
+                "SELECT frame, seq FROM orders WHERE run = 'live' AND turn = 9 ORDER BY seq"
+            ).fetchall()
+            self.assertEqual(rows, [(0, 0), (1, civ6_brain.FRAME_SEQ_STRIDE)])
+            conn.close()
+
+    def test_a_database_from_before_combat_frames_gains_the_column(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "orders.sqlite"
+            old = civ6_brain.sqlite3.connect(str(path))
+            old.executescript("""
+                CREATE TABLE orders (run TEXT NOT NULL, turn INTEGER NOT NULL, seq INTEGER NOT NULL,
+                    kind TEXT NOT NULL, subject INTEGER, verb TEXT, x INTEGER, y INTEGER,
+                    PRIMARY KEY (run, turn, seq));
+                CREATE TABLE ready (run TEXT NOT NULL, turn INTEGER NOT NULL, count INTEGER NOT NULL,
+                    PRIMARY KEY (run, turn));
+                INSERT INTO orders VALUES ('live', 2, 0, 'unit', 5, 'FORTIFY', NULL, NULL);
+                INSERT INTO ready VALUES ('live', 2, 1);
+            """)
+            old.commit()
+            old.close()
+
+            conn = civ6_brain.connect(path)
+            columns = {row[1] for row in conn.execute("PRAGMA table_info(orders)")}
+            self.assertIn("frame", columns)
+            columns = {row[1] for row in conn.execute("PRAGMA table_info(ready)")}
+            self.assertIn("frame", columns)
+            self.assertEqual(
+                conn.execute("SELECT frame FROM orders WHERE turn = 2").fetchall(), [(0,)],
+                "rows from before the column read as the opening board")
+            # And a frame can now be written on top of the migrated schema.
+            civ6_brain.write_turn(conn, "live", 2, [("unit", 5, "RANGE_ATTACK", 4, 2)], frame=1)
+            self.assertEqual(
+                conn.execute("SELECT frame, seq FROM orders WHERE turn = 2 ORDER BY seq").fetchall(),
+                [(0, 0), (1, civ6_brain.FRAME_SEQ_STRIDE)])
+            conn.close()
+
     def test_completed_game_turns_recovers_only_finished_turns_for_the_run(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             events = Path(temporary) / "events.jsonl"
@@ -353,7 +411,8 @@ class Civ6BrainTest(unittest.TestCase):
 
     def test_decider_passes_the_selected_strategy_and_reported_civilization(self) -> None:
         decider = civ6_brain.Decider(
-            Path("/tmp/civvis-orders"), Path("/tmp/live-run"), "civvis", strategy="auto"
+            Path("/tmp/civvis-orders"), Path("/tmp/live-run"), "civvis",
+            strategy="auto", with_=["stacked-escort"],
         )
         decider.set_civ("CIVILIZATION_ROME")
 
@@ -363,6 +422,21 @@ class Civ6BrainTest(unittest.TestCase):
         self.assertIn("--fresh-board", command)
         self.assertEqual(command[command.index("--strategy") + 1], "auto")
         self.assertEqual(command[command.index("--civ") + 1], "CIVILIZATION_ROME")
+        self.assertEqual(command[command.index("--with") + 1], "stacked-escort")
+
+    def test_per_turn_decider_forwards_the_exact_force_on_arm(self) -> None:
+        response = SimpleNamespace(returncode=0, stdout='{"orders":[]}', stderr="")
+        with mock.patch.object(civ6_brain.subprocess, "run", return_value=response) as run:
+            rows = civ6_brain.civvis_orders(
+                Path("/tmp/civvis-orders"), Path("/tmp/live-run"), 17, "science",
+                without=["peacetime-deterrence"], with_=["stacked-escort"],
+            )
+        self.assertEqual(rows, [])
+        command = run.call_args.args[0]
+        self.assertEqual(command[command.index("--with") + 1], "stacked-escort")
+        self.assertEqual(
+            command[command.index("--without") + 1], "peacetime-deterrence"
+        )
 
     def test_default_decider_keeps_stock_weights(self) -> None:
         decider = civ6_brain.Decider(
@@ -379,6 +453,7 @@ class Civ6BrainTest(unittest.TestCase):
         self.assertEqual(command[command.index("--victory") + 1],
                          civ6_brain.DEFAULT_VICTORY)
         self.assertNotIn("--strategy", command)
+        self.assertNotIn("--with", command)
 
 
 class SeatCivTest(unittest.TestCase):

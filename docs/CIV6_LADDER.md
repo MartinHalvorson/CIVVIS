@@ -17,7 +17,7 @@ before that export carries the index alone and reads `—` here.
 | rung | difficulty | beaten (UTC) | victory | type | turns | run |
 |---|---|---|---|---|---|---|
 | 1 | Settler | 2026-08-16T06:49:58Z | 0 | — | 250 | `civvis-20260816T054344Z` |
-| 2 | Chieftain | — | | | | |
+| 2 | Chieftain | 2026-08-18T18:46:46Z | 3 | VICTORY_CULTURE | 250 | `civvis-20260818T175125Z` |
 | 3 | Warlord | — | | | | |
 | 4 | Prince | — | | | | |
 | 5 | King | — | | | | |
@@ -25,7 +25,7 @@ before that export carries the index alone and reads `—` here.
 | 7 | Immortal | — | | | | |
 | 8 | Deity | — | | | | |
 
-Attempts recorded: 317.
+Attempts recorded: 349.
 
 
 Every row above is one game's settings as the game itself reported them, not as the command line asked for them. Rulesets recorded: RULESET_EXPANSION_2. 316 row(s) carry no ruleset readback — the run predates it, or the game could not report one — and are unverified rather than agreed. Unverified is not a mismatch: those games were played and their endings stand. ⚠ 3 of those row(s) were nevertheless recorded as `wrong_ruleset` and non-comparable, back when an unreadable readback and a differing one were the same answer. They were played to the end; rows are never rewritten, so the misfiling stands in the record and this line is how it is known.
@@ -43,10 +43,10 @@ install offers and nobody has won still appears, empty.
 
 | victory | type | Settler | Chieftain | Warlord | Prince | King | Emperor | Immortal | Deity |
 |---|---|---|---|---|---|---|---|---|---|
-| 0 | VICTORY_SCORE | 2026-08-16T06:49:58Z | — | — | — | — | — | — | — |
+| 0 | VICTORY_SCORE | 2026-08-16T06:49:58Z | 2026-08-19T11:21:36Z | — | — | — | — | — | — |
 | 1 | VICTORY_DEFAULT | — | — | — | — | — | — | — | — |
 | 2 | VICTORY_CONQUEST | — | — | — | — | — | — | — | — |
-| 3 | VICTORY_CULTURE | — | — | — | — | — | — | — | — |
+| 3 | VICTORY_CULTURE | — | 2026-08-18T18:46:46Z | — | — | — | — | — | — |
 | 4 | VICTORY_RELIGIOUS | — | — | — | — | — | — | — | — |
 | 5 | VICTORY_TECHNOLOGY | — | — | — | — | — | — | — | — |
 | 6 | VICTORY_DIPLOMATIC | — | — | — | — | — | — | — | — |
@@ -61,58 +61,30 @@ absent from this table have never been completed by anyone here.
 
 | victory | type | games | of ended |
 |---|---|---|---|
-| 0 | VICTORY_SCORE | 129 | 62% |
-| 6 | VICTORY_DIPLOMATIC | 43 | 21% |
-| 3 | VICTORY_CULTURE | 28 | 13% |
+| 0 | VICTORY_SCORE | 142 | 61% |
+| 6 | VICTORY_DIPLOMATIC | 49 | 21% |
+| 3 | VICTORY_CULTURE | 32 | 14% |
 | 4 | — | 5 | 2% |
 | 5 | — | 3 | 1% |
 | 2 | — | 1 | 0% |
 
-209 of 317 attempts reached a terminal victory event; the rest stalled, exited, or were stopped before one.
+232 of 349 attempts reached a terminal victory event; the rest stalled, exited, or were stopped before one.
 
 ## Every attempt
 
 `outcome` is what the game did, not what the harness saw last.
 `defeat` means this controller was eliminated and the game said so;
-`stopped`, `stalled` and `timeout` mean nobody won and nobody lost.
+`stopped`, `stalled` and `timeout` mean nobody won and nobody lost;
+`abandoned` means the harness stopped a game whose measured expected
+win rate had sat under the operator's floor for five turns
+(`civ6_play.py --abandon-below-win-rate`), a loss it chose not to
+play out.
 A ledger that cannot tell defeat from a wedge cannot be used to
 compare anything, and until `defeat` existed here the two were the
 same row.
 
 | run | difficulty | playing for | configured | outcome | turns | score | ended |
 |---|---|---|---|---|---|---|---|
-| `civvis-20260815T073627Z` | Settler | — | yes | stopped | 250 | 506 | 2026-08-15T08:20:27Z |
-| `civvis-20260815T082408Z` | Settler | — | yes | stopped | 250 | 427 | 2026-08-15T09:06:25Z |
-| `civvis-20260815T103152Z` | Settler | — | yes | stopped | 250 | 446 | 2026-08-15T11:18:58Z |
-| `civvis-20260815T112230Z` | Settler | — | yes | stopped | 222 | 388 | 2026-08-15T12:00:36Z |
-| `civvis-20260815T152011Z` | Settler | — | yes | stopped | 250 | 565 | 2026-08-15T15:59:51Z |
-| `civvis-20260815T160346Z` | Settler | — | yes | stopped | 233 | 272 | 2026-08-15T16:45:20Z |
-| `civvis-20260815T164852Z` | Settler | — | yes | stopped | 250 | 651 | 2026-08-15T17:32:38Z |
-| `civvis-20260815T173621Z` | Settler | — | yes | stopped | 250 | 547 | 2026-08-15T18:20:20Z |
-| `civvis-20260815T182350Z` | Settler | — | yes | stopped | 250 | 498 | 2026-08-15T19:05:26Z |
-| `civvis-20260815T190904Z` | Settler | — | yes | stopped | 241 | 809 | 2026-08-15T19:55:43Z |
-| `civvis-20260815T195951Z` | Settler | — | yes | stopped | 102 | 153 | 2026-08-15T20:22:21Z |
-| `civvis-20260815T202611Z` | Settler | — | yes | stopped | 219 | 326 | 2026-08-15T21:04:53Z |
-| `civvis-20260815T210845Z` | Settler | — | yes | stopped | 225 | 313 | 2026-08-15T22:04:16Z |
-| `civvis-20260815T220819Z` | Settler | — | yes | stopped | 224 | 775 | 2026-08-15T22:56:29Z |
-| `civvis-20260815T230003Z` | Settler | — | yes | game exited | 95 | 219 | 2026-08-15T23:18:28Z |
-| `civvis-20260815T233405Z` | Settler | — | yes | stopped | 250 | 637 | 2026-08-16T00:26:14Z |
-| `civvis-20260816T003229Z` | Settler | — | yes | stopped | 204 | 639 | 2026-08-16T01:10:38Z |
-| `civvis-20260816T011314Z` | Settler | — | yes | stopped | 250 | 737 | 2026-08-16T02:10:37Z |
-| `civvis-20260816T021044Z` | Settler | — | yes | stopped | 242 | 531 | 2026-08-16T03:01:42Z |
-| `civvis-20260816T030249Z` | Settler | — | yes | stopped | 250 | 940 | 2026-08-16T04:05:35Z |
-| `civvis-20260816T040537Z` | Settler | — | yes | stopped | 222 | 270 | 2026-08-16T04:53:15Z |
-| `civvis-20260816T045316Z` | Settler | — | yes | stopped | 233 | 655 | 2026-08-16T05:42:30Z |
-| `civvis-20260816T054344Z` | Settler | — | yes | win | 250 | 1021 | 2026-08-16T06:49:58Z |
-| `civvis-20260816T075807Z` | Settler | — | yes | stopped | 250 | 550 | 2026-08-16T08:42:04Z |
-| `civvis-20260816T084206Z` | Settler | — | yes | stopped | 250 | 486 | 2026-08-16T09:29:10Z |
-| `civvis-20260816T093036Z` | Settler | — | yes | stopped | 250 | 868 | 2026-08-16T10:15:20Z |
-| `civvis-20260816T101521Z` | Settler | — | yes | stopped | 250 | 786 | 2026-08-16T11:05:53Z |
-| `civvis-20260816T110555Z` | Settler | — | yes | stopped | 250 | 619 | 2026-08-16T11:50:26Z |
-| `civvis-20260816T123936Z` | Settler | — | yes | stopped | 239 | 828 | 2026-08-16T13:22:46Z |
-| `civvis-20260816T132247Z` | Settler | — | yes | stopped | 250 | 696 | 2026-08-16T14:28:01Z |
-| `civvis-20260817T214710Z` | Settler | science | yes | stopped | 219 | 643 | 2026-08-17T22:28:43Z |
-| `civvis-20260817T223247Z` | Settler | science | yes | stopped | 222 | 958 | 2026-08-17T23:08:57Z |
 | `civvis-20260817T231318Z` | Settler | science | yes | stopped | 243 | 1406 | 2026-08-17T23:52:45Z |
 | `civvis-20260818T003523Z` | Settler | science | yes | win | 250 | 1191 | 2026-08-18T01:17:01Z |
 | `civvis-20260818T012048Z` | Settler | science | yes | stopped | 230 | 871 | 2026-08-18T02:03:46Z |
@@ -121,3 +93,35 @@ same row.
 | `civvis-20260818T040903Z` | Settler | diplomatic | NO | wrong_ruleset | 250 | 1138 | 2026-08-18T04:49:44Z |
 | `civvis-20260818T045332Z` | Settler | diplomatic | NO | wrong_ruleset | 250 | 683 | 2026-08-18T05:31:37Z |
 | `civvis-20260818T053908Z` | Settler | diplomatic | yes | stopped | 241 | 634 | 2026-08-18T06:17:27Z |
+| `civvis-20260818T062112Z` | Settler | diplomatic | yes | stopped | 220 | 210 | 2026-08-18T06:57:08Z |
+| `civvis-20260818T070037Z` | Settler | diplomatic | yes | stopped | 250 | 948 | 2026-08-18T07:43:38Z |
+| `civvis-20260818T074345Z` | Settler | diplomatic | yes | win | 250 | 1323 | 2026-08-18T08:28:03Z |
+| `civvis-20260818T083142Z` | Chieftain | diplomatic | yes | stopped | 250 | 754 | 2026-08-18T09:11:51Z |
+| `civvis-20260818T091159Z` | Chieftain | diplomatic | yes | stopped | 242 | 1042 | 2026-08-18T09:57:48Z |
+| `civvis-20260818T095800Z` | Chieftain | diplomatic | yes | stopped | 250 | 713 | 2026-08-18T10:41:07Z |
+| `civvis-20260818T104654Z` | Chieftain | diplomatic | yes | stopped | 250 | 997 | 2026-08-18T11:31:14Z |
+| `civvis-20260818T123445Z` | Chieftain | diplomatic | yes | stopped | 235 | 998 | 2026-08-18T13:14:45Z |
+| `civvis-20260818T131902Z` | Chieftain | diplomatic | yes | stopped | 228 | 855 | 2026-08-18T14:12:02Z |
+| `civvis-20260818T141212Z` | Chieftain | diplomatic | yes | stopped | 250 | 868 | 2026-08-18T14:54:06Z |
+| `civvis-20260818T161918Z` | Chieftain | diplomatic | yes | stopped | 242 | 935 | 2026-08-18T17:05:36Z |
+| `civvis-20260818T170543Z` | Chieftain | diplomatic | yes | stopped | 242 | 527 | 2026-08-18T17:47:41Z |
+| `civvis-20260818T175125Z` | Chieftain | diplomatic | yes | win | 250 | 1588 | 2026-08-18T18:46:46Z |
+| `civvis-20260818T185029Z` | Chieftain | diplomatic | yes | stopped | 242 | 827 | 2026-08-18T19:32:00Z |
+| `civvis-20260818T193211Z` | Chieftain | diplomatic | yes | game exited | 44 | 86 | 2026-08-18T19:40:49Z |
+| `civvis-20260818T221403Z` | Settler | diplomatic | yes | game exited | 83 | 192 | 2026-08-18T22:38:32Z |
+| `civvis-20260818T224305Z` | Settler | diplomatic | yes | game exited | 72 | 122 | 2026-08-18T22:57:08Z |
+| `civvis-20260818T225716Z` | Settler | diplomatic | yes | stopped | 241 | 956 | 2026-08-18T23:57:35Z |
+| `civvis-20260818T235746Z` | Settler | diplomatic | yes | game exited | 18 | 22 | 2026-08-19T00:04:17Z |
+| `civvis-20260819T000800Z` | Settler | diplomatic | yes | stopped | 250 | 739 | 2026-08-19T00:59:50Z |
+| `civvis-20260819T010637Z` | Settler | diplomatic | yes | game exited | 152 | 439 | 2026-08-19T01:38:39Z |
+| `civvis-20260819T013850Z` | Settler | diplomatic | yes | win | 250 | 1363 | 2026-08-19T02:46:19Z |
+| `civvis-20260819T025840Z` | Warlord | diplomatic | yes | game exited | 155 | 194 | 2026-08-19T03:26:45Z |
+| `civvis-20260819T032703Z` | Warlord | diplomatic | yes | game exited | 88 | 125 | 2026-08-19T03:47:10Z |
+| `civvis-20260819T034718Z` | Warlord | diplomatic | yes | game exited | 36 | 60 | 2026-08-19T03:54:48Z |
+| `civvis-20260819T041034Z` | Chieftain | diplomatic | yes | timeout | 148 | 457 | 2026-08-19T05:45:31Z |
+| `civvis-20260819T054901Z` | Chieftain | diplomatic | yes | stopped | 222 | 766 | 2026-08-19T06:39:24Z |
+| `civvis-20260819T063933Z` | Chieftain | diplomatic | yes | stopped | 250 | 940 | 2026-08-19T07:35:57Z |
+| `civvis-20260819T074452Z` | Chieftain | diplomatic | yes | stopped | 250 | 729 | 2026-08-19T08:46:55Z |
+| `civvis-20260819T084703Z` | Chieftain | diplomatic | yes | stopped | 250 | 434 | 2026-08-19T09:25:22Z |
+| `civvis-20260819T092530Z` | Chieftain | diplomatic | yes | stopped | 250 | 675 | 2026-08-19T10:17:27Z |
+| `civvis-20260819T102134Z` | Chieftain | diplomatic | yes | win | 250 | 1278 | 2026-08-19T11:21:36Z |

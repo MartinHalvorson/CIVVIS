@@ -877,6 +877,27 @@ pub struct ProjectSpec {
     pub requires: Vec<Name>,
     #[serde(default)]
     pub requires_buildings: Vec<String>,
+    /// Building families this project consumes on completion. Firaxis uses
+    /// this for Climate Accords: every decommissioning project spends the
+    /// matching power plant rather than becoming an infinite score source.
+    #[serde(default)]
+    pub consumes_buildings: Vec<String>,
+    /// A host-tracked competition that must currently be active before this
+    /// project is legal. These projects use Firaxis's `UnlocksFromEffect`
+    /// rather than a normal tech or civic gate, so they must never appear in a
+    /// native CIVVIS production menu.
+    #[serde(default)]
+    pub host_competition: Option<String>,
+    /// Additional host competitions that can grant this same project. Firaxis
+    /// uses one Send Aid project for both ordinary and military Aid Requests.
+    #[serde(default)]
+    pub host_competitions: Vec<String>,
+    /// Competition points the host awards when this project completes.  Kept
+    /// in the rules row beside the exact project cost, rather than in an AI
+    /// name switch, so another host-unlocked competition can use the same
+    /// legal-production and valuation path.
+    #[serde(default)]
+    pub competition_score: f64,
     #[serde(default)]
     pub repeatable: bool,
     /// Per-turn yield conversion percentages while this project is active.
@@ -890,6 +911,22 @@ pub struct ProjectSpec {
     pub full_power_while_active: bool,
     #[serde(default)]
     pub effects: BTreeMap<String, f64>,
+}
+
+impl ProjectSpec {
+    /// Every authoritative host competition that can make this project legal.
+    /// `host_competition` remains the compact, backwards-compatible form for
+    /// the common one-host case.
+    pub fn host_competition_kinds(&self) -> impl Iterator<Item = &str> {
+        self.host_competition
+            .as_deref()
+            .into_iter()
+            .chain(self.host_competitions.iter().map(String::as_str))
+    }
+
+    pub fn requires_host_competition(&self) -> bool {
+        self.host_competition.is_some() || !self.host_competitions.is_empty()
+    }
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -3331,9 +3368,36 @@ mod tests {
         // `Expansion2_RemoveData.xml` checked for every id, not from the
         // compiled cache. Two of the five are cases where the cache on a
         // base-game machine states the opposite of the shipped rule.
+        //
+        // Moved again by the real Gathering Storm World Games project.
+        // `PROJECT_TRAIN_ATHLETES` costs 200 Production, grants 50 competition
+        // score, and is unlocked by the host's World Congress effect rather
+        // than a tree node. Native CIVVIS games do not surface it; live
+        // mirrors do only while the authoritative tracker names World Games.
+        // Moved again by the real Gathering Storm International Space Station
+        // project. `PROJECT_TRAIN_ASTRONAUTS` costs 200 Production in a
+        // Spaceport, grants 30 competition score, and follows the same
+        // host-only availability rule while the authoritative tracker names
+        // the Space Station competition.
+        // Moved again by Gathering Storm's Aid Request project.
+        // `PROJECT_SEND_AID` costs 200 Production, grants 200 competition
+        // score, and is available through either the ordinary or military Aid
+        // Request effect instead of any tech or civic gate.
+        // Moved again by the Climate Accords decommissioning projects. Each
+        // costs 400 Production in an Industrial Zone, grants 100 score while
+        // the host tracks Climate Accords, and consumes its coal, oil, or
+        // nuclear power plant rather than being repeatable in one city.
+        // Moved again by 36 Gathering Storm Great People. The roster held 29
+        // of the game's 213 and stopped at the Atomic era, so from the midgame
+        // every class ran out and `unused_great_person_faith` paid the whole
+        // Campus, Theatre Square and Harbour yield out as Faith instead --
+        // 26.6% of all non-prophet Great Person points, measured over eight
+        // 6-player 200-turn games. Each addition takes its class, era, cost
+        // and charges from `GreatPersonIndividuals` and `Eras`, so the
+        // fidelity audit still reports zero divergent fields.
         assert_eq!(
             Rules::shipped().source_fingerprint(),
-            "fnv1a64:9539e12040db0e7d"
+            "fnv1a64:95f0f5b6c8117d55"
         );
     }
 
@@ -3978,7 +4042,67 @@ mod tests {
         assert_eq!(rules.wonders.len(), 53);
         assert_eq!(rules.improvements.len(), 76);
         assert_eq!(rules.resources.len(), 52);
-        assert_eq!(rules.projects.len(), 25);
+        assert_eq!(rules.projects.len(), 31);
+        let aid = rules
+            .projects
+            .get(&crate::name!("send_aid"))
+            .expect("the Gathering Storm Aid Request project is modeled");
+        assert_eq!(aid.cost, 200.0);
+        assert_eq!(
+            aid.host_competition_kinds().collect::<Vec<_>>(),
+            ["EMERGENCY_SEND_AID", "EMERGENCY_SEND_MILITARY_AID"]
+        );
+        assert_eq!(aid.competition_score, 200.0);
+        assert!(aid.repeatable);
+        for (project, power_plant) in [
+            ("decommission_coal_power_plant", "coal_power_plant"),
+            ("decommission_oil_power_plant", "oil_power_plant"),
+            ("decommission_nuclear_power_plant", "nuclear_power_plant"),
+        ] {
+            let decommission = rules
+                .projects
+                .get(project)
+                .expect("the Gathering Storm Climate Accords project is modeled");
+            assert_eq!(decommission.cost, 400.0, "{project} costs 400 Production");
+            assert_eq!(decommission.district.as_deref(), Some("industrial_zone"));
+            assert_eq!(
+                decommission.host_competition.as_deref(),
+                Some("EMERGENCY_CLIMATE_ACCORDS")
+            );
+            assert_eq!(
+                decommission
+                    .consumes_buildings
+                    .iter()
+                    .map(String::as_str)
+                    .collect::<Vec<_>>(),
+                [power_plant]
+            );
+            assert_eq!(decommission.competition_score, 100.0);
+            assert!(decommission.repeatable);
+        }
+        let athletes = rules
+            .projects
+            .get(&crate::name!("train_athletes"))
+            .expect("the Gathering Storm World Games project is modeled");
+        assert_eq!(athletes.cost, 200.0);
+        assert_eq!(
+            athletes.host_competition.as_deref(),
+            Some("EMERGENCY_WORLD_GAMES")
+        );
+        assert_eq!(athletes.competition_score, 50.0);
+        assert!(athletes.repeatable);
+        let astronauts = rules
+            .projects
+            .get(&crate::name!("train_astronauts"))
+            .expect("the Gathering Storm International Space Station project is modeled");
+        assert_eq!(astronauts.cost, 200.0);
+        assert_eq!(astronauts.district.as_deref(), Some("spaceport"));
+        assert_eq!(
+            astronauts.host_competition.as_deref(),
+            Some("EMERGENCY_SPACE_STATION")
+        );
+        assert_eq!(astronauts.competition_score, 30.0);
+        assert!(astronauts.repeatable);
         // 118 civic-unlocked cards plus the eleven Dark Age cards
         // (`Policies_XP1` RequiresDarkAge = 1), which no civic unlocks — a
         // Dark Age is what puts them on offer.
@@ -4114,7 +4238,11 @@ mod tests {
                     "{id} requires missing project {prerequisite}"
                 );
             }
-            for building in &spec.requires_buildings {
+            for building in spec
+                .requires_buildings
+                .iter()
+                .chain(&spec.consumes_buildings)
+            {
                 assert!(
                     rules.buildings.contains_key(building),
                     "{id} requires missing building {building}"

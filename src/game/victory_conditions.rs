@@ -3478,3 +3478,396 @@ fn religions_convert_all_owned_holy_sites_and_temples_require_shrines() {
     assert_eq!(g.cities[&first].pressure[&religion], 1_000.0);
     assert_eq!(g.cities[&second].pressure[&religion], 1_000.0);
 }
+
+/// Every Gathering Storm source of a Diplomatic Victory Point, and nothing
+/// else.
+///
+/// ★★★★★ THE LANE WE LOSE TO IS THE LANE WE BARELY MODEL. Of the 74 live games
+/// stolen by a rival's victory, **41 are diplomatic** — and CIVVIS's own
+/// diplomacy lane almost never completes: the contested screen produced 2
+/// diplomatic victories in 120 games and 3 in 60
+/// (`docs/eval/2026-08-18-the-promotion-matrix-can-see-the-lanes-the-front-line-loses-.md`).
+///
+/// ⚠ **CORRECTION.** This comment first said the shipped database names
+/// *six* modifiers adjusting `DIPLOMATIC_VICTORY_POINTS`. It names **ten**.
+/// The search that found six matched `MODIFIER_PLAYER_ADJUST_DIPLOMATIC_VICTORY_POINTS`
+/// and missed `MODIFIER_EMERGENCY_PLAYERS_ADJUST_DIPLOMATIC_VICTORY_POINTS`,
+/// which is how a scored competition pays its winner. Searching for one
+/// spelling of a thing and concluding the list is complete is the mistake, and
+/// it is the second time in two days that a "complete" claim about this lane
+/// has been wrong.
+///
+/// The threshold is 20 (`GlobalParameters.DIPLOMATIC_VICTORY_POINTS_REQUIRED`).
+/// The seven **content** sources are below; the three competition sources are
+/// in `a_native_competition_pays_its_winner_a_diplomatic_victory_point`,
+/// because they are engine, not data.
+///
+/// | source | amount |
+/// |---|---|
+/// | `WC_RES_DIPLOVICTORY`, injected into every congress from the Modern era | ±2 |
+/// | `BUILDING_MAHABODHI_TEMPLE` | 2 |
+/// | `BUILDING_POTALA_PALACE` | 1 |
+/// | `BUILDING_STATUE_LIBERTY` | 4 |
+/// | `CIVIC_GLOBAL_WARMING_MITIGATION` | 1 |
+/// | `TECH_SEASTEADS` | 1 |
+///
+/// ⚠⚠ ALL SIX ARE MODELLED, AND THIS TEST EXISTS BECAUSE THAT WAS NOT OBVIOUS.
+/// The tech and the civic are not in `techs.json` or `civics.json` — they are
+/// in `tree_effects.json`, the overlay `Rules::load` folds in with
+/// `add_effects`. Looking only at the first two files makes them appear
+/// missing, and *adding* them there does not replace the overlay, it **sums**
+/// with it: an attempt to "fix" this shipped 2 points where Gathering Storm
+/// grants 1, on both nodes, and this assertion is what caught it.
+///
+/// ⚠ Nothing else would have. `civ6_fidelity.py` reports zero divergent fields
+/// with the doubled values in place, because it does not audit tree-node
+/// effects; `civvis_inert.py` reports zero unconsumed keys, because the key was
+/// consumed either way. The amounts below are read from the shipped
+/// `ModifierArguments` and are the only check on them.
+///
+/// So the diplomatic lane is not starved of *sources*. It is starved of
+/// *reach*: the same evidence file records **31 of 32** diplomatic games
+/// finishing no qualifying wonder at all — Mahabodhi needs a founded religion,
+/// a Holy Site and a Temple beside a forest tile; the Statue of Liberty needs a
+/// Harbor and Civil Engineering — and the tech and civic that need no such
+/// chain are Future-era, worth one point each.
+#[test]
+fn every_shipped_source_of_a_diplomatic_victory_point_is_modelled() {
+    let rules = crate::rules::Rules::shipped();
+    let from_wonders: Vec<(&str, f64)> = rules
+        .wonders
+        .iter()
+        .filter_map(|(name, spec)| {
+            spec.effects
+                .get("diplomatic_victory_points")
+                .map(|amount| (name.as_str(), *amount))
+        })
+        .collect();
+    let from_tree: Vec<(&str, f64)> = rules
+        .techs
+        .iter()
+        .map(|(name, spec)| (name, &spec.effects))
+        .chain(
+            rules
+                .civics
+                .iter()
+                .map(|(name, spec)| (name, &spec.effects)),
+        )
+        .filter_map(|(name, effects)| {
+            effects
+                .get("diplomatic_victory_points")
+                .map(|amount| (name.as_str(), *amount))
+        })
+        .collect();
+
+    let mut all: Vec<(&str, f64)> = from_wonders.into_iter().chain(from_tree).collect();
+    all.sort_by(|left, right| left.0.cmp(right.0));
+    assert_eq!(
+        all,
+        vec![
+            ("global_warming_mitigation", 1.0),
+            ("mahabodhi_temple", 2.0),
+            ("potala_palace", 1.0),
+            ("seasteads", 1.0),
+            ("statue_of_liberty", 4.0),
+        ],
+        "the shipped database names six modifiers adjusting DIPLOMATIC_VICTORY_POINTS; \
+         five are content and the sixth is the World Congress resolution. A source \
+         added or dropped here is a change to how a Diplomatic victory is won"
+    );
+    // And the congress half, which is not content: the resolution is injected
+    // into every session from the Modern era, worth ±2 to its target.
+    assert_eq!(DIPLOMATIC_VICTORY_POINTS, 20);
+}
+
+/// A native competition seats itself, scores, and pays its winner.
+///
+/// ★★★★★ THE LANE'S MISSING ENGINE. Gathering Storm pays a Diplomatic Victory
+/// Point to the first-place finisher of a scored competition, and CIVVIS had no
+/// way to run one until now; #2167 recorded the gap and this closes it. Off by default,
+/// because turning it on changes what every participant faces.
+#[test]
+fn a_native_competition_pays_its_winner_a_diplomatic_victory_point() {
+    let mut game = game_with_capitals(3, 61_000, 400);
+    game.native_competitions = true;
+    game.world_era = 8;
+    // The Space Station competition needs someone holding a Spaceport, which is
+    // what makes it offerable at all.
+    let city = *game.cities.keys().next().expect("the fixture has a city");
+    let pos = game.cities[&city].pos;
+    game.cities
+        .get_mut(&city)
+        .unwrap()
+        .districts
+        .insert(crate::name!("spaceport"), pos);
+
+    assert!(game.competition.is_none(), "nothing is running yet");
+    game.open_native_competition();
+    let running = game
+        .competition
+        .as_ref()
+        .expect("a Spaceport makes the Space Station competition offerable");
+    assert_eq!(running.kind, "EMERGENCY_SPACE_STATION");
+    let ends = running.ends;
+    assert!(ends > game.turn, "a competition runs for a while");
+
+    // It presents exactly as a mirrored one does, for every seat — which is why
+    // the production catalog and the AI's valuation needed no change.
+    let owner = game.cities[&city].owner;
+    let standing = game
+        .host_competition(owner, "EMERGENCY_SPACE_STATION")
+        .expect("a native competition answers for any seat");
+    assert_eq!(standing.ours, 0.0);
+    assert_eq!(standing.ends, ends);
+
+    // Completing the scoring project is what scores.
+    game.complete_item(
+        owner,
+        city,
+        &Item::Project {
+            project: crate::name!("train_astronauts"),
+        },
+    );
+    let scored = game.competition.as_ref().unwrap().scores[&owner];
+    assert_eq!(
+        scored, game.rules.projects["train_astronauts"].competition_score,
+        "the score the project declares is the score it pays"
+    );
+
+    // ⚠ And a Great Person scores nothing here. The Space Station counts a
+    // project; only the World's Fair counts people, and a scorer that ignored
+    // which competition was running would pay the wrong race.
+    let project_only = game.competition.as_ref().unwrap().scores[&owner];
+    game.score_great_person_competition(owner);
+    assert_eq!(
+        game.competition.as_ref().unwrap().scores[&owner],
+        project_only,
+        "recruiting a Great Person must not score a project-scored competition"
+    );
+
+    // And the clock running out pays first place.
+    let before = game.players[owner].dvp;
+    game.turn = ends;
+    game.close_native_competition();
+    assert!(
+        game.competition.is_none(),
+        "a finished competition is cleared"
+    );
+    assert_eq!(
+        game.players[owner].dvp - before,
+        1,
+        "Gathering Storm pays the Space Station's winner one Diplomatic Victory Point"
+    );
+    assert!(
+        game.competition_lockout_until["EMERGENCY_SPACE_STATION"] > game.turn,
+        "a finished competition locks its own kind out"
+    );
+    assert!(
+        !game
+            .competition_lockout_until
+            .contains_key("EMERGENCY_CLIMATE_ACCORDS"),
+        "and locks out only its own kind: the shipped `LockoutTime` is a column \
+         on the emergency row, not a global clock, and one competition blocking \
+         every other seated two in a 250-turn game"
+    );
+}
+
+/// And none of it happens unless the game asked for it.
+#[test]
+fn native_competitions_are_off_unless_a_game_turns_them_on() {
+    let mut game = game_with_capitals(3, 61_001, 400);
+    assert!(!game.native_competitions, "off by default");
+    game.world_era = 8;
+    let city = *game.cities.keys().next().expect("the fixture has a city");
+    let pos = game.cities[&city].pos;
+    game.cities
+        .get_mut(&city)
+        .unwrap()
+        .districts
+        .insert(crate::name!("spaceport"), pos);
+    game.open_native_competition();
+    assert!(
+        game.competition.is_none(),
+        "a seat that did not ask for native competitions must face the same \
+         board it always did, or the frozen rating anchor moves without a \
+         protocol bump"
+    );
+}
+
+/// A competition nobody can score in is not offered.
+///
+/// ★★★★★ THE FIRST TRACE SPENT A LOCKOUT ON NOTHING. Seating Climate Accords
+/// needs more than an Industrial Zone: its projects *decommission a power
+/// plant*, and an empire holding none cannot score a single point. The first
+/// run of the mechanism seated it on turn 100, closed it on 119 with an empty
+/// score table, and spent the sixty-turn lockout — while the whole 250-turn
+/// game seated two competitions and paid one point.
+///
+/// So eligibility asks for everything the scoring project consumes, not only
+/// the district it sits in.
+#[test]
+fn a_competition_is_offered_only_where_its_project_could_be_built() {
+    let mut game = game_with_capitals(3, 62_000, 400);
+    game.native_competitions = true;
+    game.world_era = 7;
+    let city = *game.cities.keys().next().expect("the fixture has a city");
+    let pos = game.cities[&city].pos;
+    let owner = game.cities[&city].owner;
+    game.cities
+        .get_mut(&city)
+        .unwrap()
+        .districts
+        .insert(crate::name!("industrial_zone"), pos);
+
+    assert!(
+        !game.can_score_competition(owner, "EMERGENCY_CLIMATE_ACCORDS"),
+        "an Industrial Zone with no power plant in it cannot decommission one"
+    );
+    game.open_native_competition();
+    assert_ne!(
+        game.competition.as_ref().map(|c| c.kind.as_str()),
+        Some("EMERGENCY_CLIMATE_ACCORDS"),
+        "a competition nobody can score in must not be seated: it pays no one          and spends the lockout"
+    );
+    // World Games is seatable here: its athletes project needs no district.
+    // Clear it so the check below is about Climate Accords becoming offerable,
+    // not about which competition came first.
+    game.competition = None;
+
+    // Give it something to decommission and it becomes offerable.
+    game.cities
+        .get_mut(&city)
+        .unwrap()
+        .buildings
+        .push(crate::name!("coal_power_plant"));
+    assert!(game.can_score_competition(owner, "EMERGENCY_CLIMATE_ACCORDS"));
+    game.open_native_competition();
+    assert_eq!(
+        game.competition.as_ref().map(|c| c.kind.as_str()),
+        Some("EMERGENCY_CLIMATE_ACCORDS")
+    );
+}
+
+/// The World's Fair counts Great People, and it is the one an empire can
+/// always enter.
+#[test]
+fn the_worlds_fair_scores_every_great_person_an_empire_recruits() {
+    let mut game = game_with_capitals(3, 63_000, 400);
+    game.native_competitions = true;
+    game.world_era = 5;
+
+    // No Spaceport and no power plant anywhere, so the other three are not
+    // offerable — and the lane still gets a competition.
+    game.open_native_competition();
+    assert_eq!(
+        game.competition.as_ref().map(|c| c.kind.as_str()),
+        Some("EMERGENCY_WORLDS_FAIR"),
+        "the World's Fair needs no ground to hold, which is why it is the one \
+         that can recur from the first congress"
+    );
+
+    let owner = game.cities.values().next().unwrap().owner;
+    let running = game.competition.as_ref().unwrap();
+    let before = running.scores.get(&owner).copied();
+    assert_eq!(before, None, "nobody has scored yet");
+
+    // Recruiting one scores one, whatever the class: the shipped
+    // `EmergencyScoreSources` rows give every class `ScoreAmount="1"`.
+    game.score_great_person_competition(owner);
+    game.score_great_person_competition(owner);
+    assert_eq!(game.competition.as_ref().unwrap().scores[&owner], 2.0);
+
+    let dvp = game.players[owner].dvp;
+    game.turn = game.competition.as_ref().unwrap().ends;
+    game.close_native_competition();
+    assert_eq!(
+        game.players[owner].dvp - dvp,
+        1,
+        "Gathering Storm pays the World's Fair winner one Diplomatic Victory Point"
+    );
+}
+
+/// Competition eras come from Gathering Storm's emergency requirements, not
+/// from whether a scoring project happens to have a district prerequisite.
+#[test]
+fn native_competitions_honor_era_windows_and_world_games_pays_its_winner() {
+    let mut game = game_with_capitals(3, 63_001, 400);
+    game.native_competitions = true;
+    let city_id = *game.cities.keys().next().expect("the fixture has a city");
+    let owner = game.cities[&city_id].owner;
+    let pos = game.cities[&city_id].pos;
+    let city = game.cities.get_mut(&city_id).unwrap();
+    city.districts.insert(crate::name!("spaceport"), pos);
+    city.districts.insert(crate::name!("industrial_zone"), pos);
+    city.buildings.push(crate::name!("coal_power_plant"));
+
+    game.world_era = 4;
+    game.open_native_competition();
+    assert!(
+        game.competition.is_none(),
+        "none of the modelled congress competitions is available before Modern"
+    );
+
+    game.world_era = 5;
+    game.open_native_competition();
+    assert_eq!(
+        game.competition
+            .as_ref()
+            .map(|competition| competition.kind.as_str()),
+        Some("EMERGENCY_WORLDS_FAIR"),
+        "World's Fair is Modern only"
+    );
+    game.competition = None;
+
+    game.world_era = 6;
+    game.open_native_competition();
+    assert_eq!(
+        game.competition
+            .as_ref()
+            .map(|competition| competition.kind.as_str()),
+        Some("EMERGENCY_WORLD_GAMES"),
+        "World Games begins in Atomic"
+    );
+    let declared_score = game.rules.projects["train_athletes"].competition_score;
+    game.complete_item(
+        owner,
+        city_id,
+        &Item::Project {
+            project: crate::name!("train_athletes"),
+        },
+    );
+    assert_eq!(
+        game.competition.as_ref().unwrap().scores[&owner],
+        declared_score,
+        "World Games uses the shipped athletes-project score"
+    );
+    let before = game.players[owner].dvp;
+    game.turn = game.competition.as_ref().unwrap().ends;
+    game.close_native_competition();
+    assert_eq!(
+        game.players[owner].dvp - before,
+        1,
+        "World Games pays its first-place finisher one Diplomatic Victory Point"
+    );
+
+    game.world_era = 7;
+    game.open_native_competition();
+    assert_eq!(
+        game.competition
+            .as_ref()
+            .map(|competition| competition.kind.as_str()),
+        Some("EMERGENCY_CLIMATE_ACCORDS"),
+        "Climate Accords begins in Information"
+    );
+    game.competition = None;
+
+    game.world_era = 8;
+    game.open_native_competition();
+    assert_eq!(
+        game.competition
+            .as_ref()
+            .map(|competition| competition.kind.as_str()),
+        Some("EMERGENCY_SPACE_STATION"),
+        "International Space Station begins in Future"
+    );
+}

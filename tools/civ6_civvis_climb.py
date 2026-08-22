@@ -313,9 +313,39 @@ def teardown(expected_tag: str | None = None) -> bool:
 RUNNING_GAME_PATTERN = r"MacOS/Civ6_Exe|/civ6_play\.py|/civ6_brain\.py"
 
 
+def _is_really_the_game(pid: str) -> bool:
+    """Is this pid the game or the harness, or just a shell that names one?
+
+    `pgrep -f` matches the whole command line, so ANY process that merely
+    mentions `civ6_play.py` counts — including a diagnostic shell, an editor, a
+    `grep`, or another agent session's command. That is not hypothetical: on
+    2026-08-19 the lane lost two separate windows to it. A leftover Claude shell
+    carrying `civ6_play|civ6_brain` in a `grep` pattern sat for nine minutes and
+    every attempt died with "something already holds the game; refusing to stop
+    an unowned run" — while the lock file was empty, no harness ran and Civ 6
+    was down. It happened again an hour later from a DIFFERENT agent session's
+    shell, which this process had no business killing.
+
+    `civvis-game-supervisor.sh` already solved this for its own scan: `ps -o
+    comm` is truncated on macOS, so it reads lsof's first `txt` mapping, which
+    is the real executable. Same test here. A pid we cannot resolve is treated
+    as real — refusing to touch an unproven game is the safe direction, and it
+    is what the caller's "refusing to stop an unowned run" already does.
+    """
+    executable = run(["lsof", "-a", "-p", pid, "-d", "txt", "-Fn"])
+    for line in executable.splitlines():
+        if not line.startswith("n"):
+            continue
+        path = line[1:]
+        # The game itself, or a Python interpreter running the harness.
+        return "Civ6" in path or Path(path).name.lower().startswith("python")
+    return True
+
+
 def busy() -> str | None:
     out = run(["pgrep", "-f", RUNNING_GAME_PATTERN])
-    return out.strip() or None
+    real = [pid for pid in out.split() if _is_really_the_game(pid)]
+    return " ".join(real) or None
 
 
 def _detach(cmd: list[str], log_path: Path, what: str) -> None:
@@ -790,13 +820,26 @@ def outcome_of(tag: str) -> dict:
     whatever only the other one holds; take both.
     """
     merged: dict = {}
-    summary = RUN_ROOT / tag / "summary.json"
+    run_dir = RUN_ROOT / tag
+    summary = run_dir / "summary.json"
     if summary.exists():
         try:
             merged = json.loads(summary.read_text())
         except ValueError:
             merged = {}
-    events = RUN_ROOT / tag / "events.jsonl"
+    # A child can exit after exporting turns but before `civ6_play` reaches its
+    # summary writer. The outer climb records that distinct failure in a
+    # sidecar, so a later ledger backfill does not turn the row back into an
+    # unexplained ordinary exit.
+    child_exit = run_dir / "exit.json"
+    if child_exit.exists():
+        try:
+            detail = json.loads(child_exit.read_text())
+        except ValueError:
+            detail = None
+        if isinstance(detail, dict):
+            merged["child_exit"] = detail
+    events = run_dir / "events.jsonl"
     last_turn, seat, victory, ended_on_screen = None, None, None, None
     if events.exists():
         for line in events.read_text(errors="replace").splitlines():
@@ -879,6 +922,38 @@ def outcome_of(tag: str) -> dict:
         if value is not None or key not in merged:
             merged[key] = value
     return merged
+
+
+def record_unexplained_child_exit(tag: str, watcher_reason: str | None,
+                                  returncode: int | None, outcome: dict) -> dict | None:
+    """Persist a child exit which bypassed ``civ6_play``'s summary writer.
+
+    The outer watcher sees a completed child as ``exited`` whether the game
+    finished cleanly or the process disappeared mid-turn. A real summary is
+    authoritative for the former. For the latter, preserve the actual child
+    status and the event stream's last observed state beside the run and in the
+    ledger row instead of calling it an undifferentiated attempt exit.
+    """
+    if watcher_reason != "exited":
+        return None
+    run_dir = RUN_ROOT / tag
+    if (run_dir / "summary.json").exists():
+        return None
+    detail = {
+        "watcher_reason": watcher_reason,
+        "returncode": returncode,
+        "last_observed": {
+            key: outcome.get(key)
+            for key in ("last_turn", "last_score", "rival_best", "cities", "army")
+        },
+    }
+    try:
+        run_dir.mkdir(parents=True, exist_ok=True)
+        (run_dir / "exit.json").write_text(json.dumps(detail, sort_keys=True) + "\n")
+    except OSError:
+        # Reporting must not turn an already-ended game into a lost ledger row.
+        pass
+    return detail
 
 
 def won(record: dict) -> bool:
@@ -1208,13 +1283,22 @@ def play_command(args, tag: str, orders_db: Path, orders_bin: Path,
          "--civvis-strategy", args.strategy]
         + (["--civvis-refresh-seconds", str(args.refresh_seconds)]
            if args.refresh_seconds is not None else [])
+        + (["--abandon-below-win-rate", str(args.abandon_below_win_rate)]
+           if getattr(args, "abandon_below_win_rate", None) is not None else [])
         + (["--no-peace-deterrence"] if args.no_peace_deterrence else [])
         + (["--no-counter-resolutions"] if args.no_counter_resolutions else [])
+        + [flag for treatment in args.with_
+           for flag in ("--civvis-with", treatment)]
         + [flag for treatment in args.without
            for flag in ("--civvis-without", treatment)]
         + (["--civvis-war-from-plan"] if args.war_from_plan else [])
+        + (["--settler-escort-cap-sync"] if args.settler_escort_cap_sync else [])
         + [
          "--tile-export-every", str(args.tile_export_every),
+         # The mid-turn frames (docs/LIVE_TACTICS.md §8, §11). The combat
+         # frame was never forwarded here, so no ladder run has played it.
+         "--combat-frames", str(args.combat_frames),
+         "--replan-frames", str(args.replan_frames),
          "--window-side", "right",
          "--window-frac", "0.5", "--window-vfrac", "0.5"]
     )
@@ -1268,6 +1352,11 @@ def main() -> int:
                          "this batch — the control half of a live A/B. Pair "
                          "with --attempts N on a pinned revision, then run the "
                          "same N without this flag for the treatment half")
+    ap.add_argument("--with", dest="with_", action="append", default=[],
+                    metavar="TREATMENT",
+                    help="restore one ledger-held live treatment for every attempt "
+                         "in this labeled verification arm; repeatable and validated "
+                         "by civvis_orders")
     ap.add_argument("--refresh-seconds", type=float, default=None,
                     help="forwarded to civ6_play as --civvis-refresh-seconds; "
                          "defaults to 0 for a pinned batch of more than one "
@@ -1314,6 +1403,12 @@ def main() -> int:
     ap.add_argument("--map-size", default="MAPSIZE_SMALL")
     ap.add_argument("--speed", default="GAMESPEED_ONLINE")
     ap.add_argument("--max-turns", type=int, default=250)
+    # Forwarded to civ6_play.py untouched; absent, the harness's own default
+    # (play every game out) holds. See `civ6_play.ABANDON_CELLS`.
+    ap.add_argument("--abandon-below-win-rate", type=float, default=None,
+                    help="stop an attempt once its measured expected win rate "
+                         "has sat under this floor for five turns (forwarded "
+                         "to civ6_play.py; operator request 2026-08-19: 0.05)")
     # ⚠⚠⚠ THE SEAT WAS RANDOM FOR 190 RUNS, AND NOTHING SAID SO.
     #
     # `civ6_play.py` has taken `--leader` (and verifies the pick off the rendered
@@ -1506,6 +1601,14 @@ def main() -> int:
                          "measuring something else")
     ap.add_argument("--tile-export-every", type=int, default=4,
                     help="turns between map exports; the operator watches this against the game")
+    ap.add_argument("--combat-frames", type=int, default=0,
+                    help="forwarded to civ6_play.py: strike-opened mid-turn frames per turn")
+    ap.add_argument("--replan-frames", type=int, default=2,
+                    help="forwarded to civ6_play.py: mid-turn replan frames per turn "
+                         "(revealed ground or a strike re-exports the board; 0 = off)")
+    ap.add_argument("--settler-escort-cap-sync", action="store_true", default=False,
+                    help="forward the default-off capped-settler escort reconciliation "
+                         "experiment to civ6_play.py")
     ap.add_argument("--orders-bin", default=str(HERE.parent / "target" / "release" / "civvis_orders"))
     ap.add_argument("--no-build", dest="build", action="store_false", default=True,
                     help="do not rebuild the checkout's release decider before attempts")
@@ -1762,6 +1865,15 @@ def main() -> int:
             # run dirs.
             record["resumed_from"] = tag
             record["resumes"] = resumes
+        # `civ6_play` normally writes the terminal summary that says why it
+        # stopped. When it instead disappears after a real turn, retain the
+        # process return code and last exported state. This is reporting only:
+        # it changes neither the attempt's reason nor how it is scored.
+        if record.get("reason") is None:
+            child_exit = record_unexplained_child_exit(
+                run_tag, why, getattr(play, "returncode", None), record)
+            if child_exit is not None:
+                record["child_exit"] = child_exit
         # ★★★★★ A KILLED ATTEMPT MUST SAY SO IN THE LEDGER.
         #
         # `outcome_of` reads what `civ6_play` wrote on its way out. A run this
@@ -1782,6 +1894,10 @@ def main() -> int:
         record["victory_target"] = args.victory
         record["difficulty_asked"] = args.difficulty
         record["leader_asked"] = args.leader or None
+        # Stamp the requested ledger override here too, rather than relying
+        # solely on a graceful child summary: a crashed force-on arm is still
+        # an arm, not an unexplained deployment row.
+        record["forced"] = sorted(args.with_)
         record["code_rev"] = code_rev
 
         # ★★★★★ A ROW THAT WAS DEALT SOMETHING ELSE MUST SAY SO, WIN OR NOT.

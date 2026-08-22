@@ -1,0 +1,2528 @@
+{
+  "kind": "gene_ledger",
+  "screen": {
+    "players": 6,
+    "map": "continents",
+    "width": 74,
+    "height": 46,
+    "city_states": 9,
+    "speed": "online",
+    "turns": 250,
+    "victories": "science,culture,religious,diplomatic,domination,score",
+    "all_seats": true,
+    "randomize_civs": true,
+    "design": "foldover",
+    "baseline": "best",
+    "field": "advanced"
+  },
+  "rules": {
+    "z_bar": 2.0,
+    "helps": "win z >= 2 with share z > -2, or share z >= 2 with win z > -2",
+    "hurts": "the mirror image",
+    "shape": "one screen: a source whose profile is not `screen` above is marked legacy and kept as history; new ones are refused",
+    "win_column": "wins added per 10,000 games at the gene's measured on-rate in one screen, (win_on - 1/players) * 10000; last and prior are the two most recent screens that priced the gene",
+    "default_on": "both win columns positive, or their average above +15 with neither below -10; with exactly one populated column, on when it is above +20; unmeasured is off"
+  },
+  "sources": [
+    {
+      "path": "docs/gene_screens/2026-08-20-p4-native-6p-allseats-13446-pairs.json",
+      "shape": "legacy",
+      "complete_pairs": 13446,
+      "family_wise_z": 3.359,
+      "profile": {
+        "players": 6,
+        "map": "pangaea",
+        "width": 60,
+        "height": 38,
+        "city_states": 6,
+        "speed": "online",
+        "turns": 250,
+        "victories": "science,culture,religious,diplomatic,domination,score",
+        "all_seats": true,
+        "randomize_civs": true,
+        "design": "foldover",
+        "baseline": "repairs",
+        "field": "advanced",
+        "start_seed": 46000000
+      }
+    },
+    {
+      "path": "docs/gene_screens/2026-08-20-s2-step-and-reassess-native-4p-1000-pairs.json",
+      "shape": "legacy",
+      "complete_pairs": 1000,
+      "family_wise_z": 1.96,
+      "profile": {
+        "players": 4,
+        "map": "pangaea",
+        "width": 60,
+        "height": 38,
+        "city_states": 6,
+        "speed": "online",
+        "turns": 250,
+        "victories": "science,culture,religious,diplomatic,domination,score",
+        "all_seats": false,
+        "randomize_civs": true,
+        "design": "foldover",
+        "baseline": "repairs",
+        "field": "advanced",
+        "start_seed": 50000000
+      }
+    },
+    {
+      "path": "docs/gene_screens/2026-08-21-s6-religion-genes-native-6p-allseats-6000-pairs.json",
+      "shape": "legacy",
+      "complete_pairs": 6000,
+      "family_wise_z": 2.498,
+      "profile": {
+        "players": 6,
+        "map": "pangaea",
+        "width": 60,
+        "height": 38,
+        "city_states": 6,
+        "speed": "online",
+        "turns": 250,
+        "victories": "science,culture,religious,diplomatic,domination,score",
+        "all_seats": true,
+        "randomize_civs": true,
+        "design": "foldover",
+        "baseline": "best",
+        "field": "advanced",
+        "start_seed": 54000000
+      }
+    },
+    {
+      "path": "docs/gene_screens/2026-08-21-s7-idle-faith-patronage-native-6p-allseats-6000-pairs.json",
+      "shape": "legacy",
+      "complete_pairs": 6000,
+      "family_wise_z": 1.96,
+      "profile": {
+        "players": 6,
+        "map": "pangaea",
+        "width": 60,
+        "height": 38,
+        "city_states": 6,
+        "speed": "online",
+        "turns": 250,
+        "victories": "science,culture,religious,diplomatic,domination,score",
+        "all_seats": true,
+        "randomize_civs": true,
+        "design": "foldover",
+        "baseline": "best",
+        "field": "advanced",
+        "start_seed": 55000000
+      }
+    },
+    {
+      "path": "docs/gene_screens/2026-08-21-p7-native-6p-allseats-15000-pairs.json",
+      "shape": "legacy",
+      "complete_pairs": 15000,
+      "family_wise_z": 3.364,
+      "profile": {
+        "players": 6,
+        "map": "pangaea",
+        "width": 60,
+        "height": 38,
+        "city_states": 6,
+        "speed": "online",
+        "turns": 250,
+        "victories": "science,culture,religious,diplomatic,domination,score",
+        "all_seats": true,
+        "randomize_civs": true,
+        "design": "foldover",
+        "baseline": "best",
+        "field": "advanced",
+        "start_seed": 52000000
+      }
+    },
+    {
+      "path": "docs/gene_screens/2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
+      "shape": "legacy",
+      "complete_pairs": 17574,
+      "family_wise_z": 3.403,
+      "profile": {
+        "players": 6,
+        "map": "pangaea",
+        "width": 60,
+        "height": 38,
+        "city_states": 6,
+        "speed": "online",
+        "turns": 250,
+        "victories": "science,culture,religious,diplomatic,domination,score",
+        "all_seats": true,
+        "randomize_civs": true,
+        "design": "foldover",
+        "baseline": "best",
+        "field": "advanced",
+        "start_seed": 100000000
+      }
+    }
+  ],
+  "counts": {
+    "helps": 18,
+    "hurts": 4,
+    "unresolved": 44,
+    "default_on": 33
+  },
+  "genes": [
+    {
+      "tag": "amenity-district-path",
+      "verdict": "unresolved",
+      "default_on": true,
+      "wins_last_10k": 12,
+      "wins_prior_10k": 18,
+      "family_wise": false,
+      "conflict": false,
+      "screen": {
+        "pairs": 17574,
+        "n_on": 17574,
+        "n_off": 17574,
+        "win_delta_pp": 0.239,
+        "win_z": 0.654,
+        "share_delta_pp": -0.078,
+        "share_z": -1.182,
+        "read": "~",
+        "source": "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
+        "win_tranches": [
+          {
+            "position": "latest",
+            "pairs": 10002,
+            "win_delta_pp": 0.02,
+            "win_z": 0.042,
+            "win_se_pp": 0.481
+          },
+          {
+            "position": "previous",
+            "pairs": 7572,
+            "win_delta_pp": 0.528,
+            "win_z": 0.941,
+            "win_se_pp": 0.562
+          }
+        ]
+      }
+    },
+    {
+      "tag": "amenity-project-preemption",
+      "verdict": "unresolved",
+      "default_on": false,
+      "wins_last_10k": -14,
+      "wins_prior_10k": -4,
+      "family_wise": false,
+      "conflict": false,
+      "screen": {
+        "pairs": 17574,
+        "n_on": 17574,
+        "n_off": 17574,
+        "win_delta_pp": -0.285,
+        "win_z": -0.782,
+        "share_delta_pp": -0.034,
+        "share_z": -0.533,
+        "read": "~",
+        "source": "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
+        "win_tranches": [
+          {
+            "position": "latest",
+            "pairs": 10002,
+            "win_delta_pp": -0.54,
+            "win_z": -1.12,
+            "win_se_pp": 0.482
+          },
+          {
+            "position": "previous",
+            "pairs": 7572,
+            "win_delta_pp": 0.053,
+            "win_z": 0.095,
+            "win_se_pp": 0.554
+          }
+        ]
+      }
+    },
+    {
+      "tag": "apostle-promotion-by-role",
+      "verdict": "unresolved",
+      "default_on": true,
+      "wins_last_10k": 14,
+      "wins_prior_10k": 12,
+      "family_wise": false,
+      "conflict": false,
+      "screen": {
+        "pairs": 17574,
+        "n_on": 17574,
+        "n_off": 17574,
+        "win_delta_pp": 0.273,
+        "win_z": 0.746,
+        "share_delta_pp": 0.049,
+        "share_z": 0.746,
+        "read": "~",
+        "source": "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
+        "win_tranches": [
+          {
+            "position": "latest",
+            "pairs": 10002,
+            "win_delta_pp": 0.02,
+            "win_z": 0.042,
+            "win_se_pp": 0.48
+          },
+          {
+            "position": "previous",
+            "pairs": 7572,
+            "win_delta_pp": 0.608,
+            "win_z": 1.074,
+            "win_se_pp": 0.566
+          }
+        ]
+      }
+    },
+    {
+      "tag": "army-target-weighs-enemy",
+      "verdict": "helps",
+      "default_on": false,
+      "wins_last_10k": 30,
+      "wins_prior_10k": -4,
+      "family_wise": false,
+      "conflict": false,
+      "screen": {
+        "pairs": 17574,
+        "n_on": 17574,
+        "n_off": 17574,
+        "win_delta_pp": 0.603,
+        "win_z": 1.651,
+        "share_delta_pp": 0.149,
+        "share_z": 2.346,
+        "read": "share helps *",
+        "source": "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
+        "win_tranches": [
+          {
+            "position": "latest",
+            "pairs": 10002,
+            "win_delta_pp": 0.8,
+            "win_z": 1.623,
+            "win_se_pp": 0.493
+          },
+          {
+            "position": "previous",
+            "pairs": 7572,
+            "win_delta_pp": 0.343,
+            "win_z": 0.632,
+            "win_se_pp": 0.543
+          }
+        ]
+      }
+    },
+    {
+      "tag": "barbarian-bargain",
+      "verdict": "unresolved",
+      "default_on": false,
+      "wins_last_10k": 5,
+      "wins_prior_10k": null,
+      "family_wise": false,
+      "conflict": false,
+      "screen": {
+        "pairs": 17574,
+        "n_on": 17574,
+        "n_off": 17574,
+        "win_delta_pp": 0.091,
+        "win_z": 0.244,
+        "share_delta_pp": 0.061,
+        "share_z": 0.925,
+        "read": "~",
+        "source": "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
+        "win_tranches": [
+          {
+            "position": "latest",
+            "pairs": 10002,
+            "win_delta_pp": 0.06,
+            "win_z": 0.124,
+            "win_se_pp": 0.483
+          },
+          {
+            "position": "previous",
+            "pairs": 7572,
+            "win_delta_pp": 0.132,
+            "win_z": 0.226,
+            "win_se_pp": 0.585
+          }
+        ]
+      }
+    },
+    {
+      "tag": "barbarian-hunt",
+      "verdict": "hurts",
+      "default_on": false,
+      "wins_last_10k": -86,
+      "wins_prior_10k": null,
+      "family_wise": true,
+      "conflict": false,
+      "screen": {
+        "pairs": 17574,
+        "n_on": 17574,
+        "n_off": 17574,
+        "win_delta_pp": -1.73,
+        "win_z": -4.646,
+        "share_delta_pp": -0.504,
+        "share_z": -7.54,
+        "read": "HURTS ** \u00b7 share HURTS **",
+        "source": "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
+        "win_tranches": [
+          {
+            "position": "latest",
+            "pairs": 10002,
+            "win_delta_pp": -2.08,
+            "win_z": -4.211,
+            "win_se_pp": 0.494
+          },
+          {
+            "position": "previous",
+            "pairs": 7572,
+            "win_delta_pp": -1.268,
+            "win_z": -2.237,
+            "win_se_pp": 0.567
+          }
+        ]
+      }
+    },
+    {
+      "tag": "barbarian-ranged-answer",
+      "verdict": "unresolved",
+      "default_on": false,
+      "wins_last_10k": 14,
+      "wins_prior_10k": null,
+      "family_wise": false,
+      "conflict": false,
+      "screen": {
+        "pairs": 17574,
+        "n_on": 17574,
+        "n_off": 17574,
+        "win_delta_pp": 0.285,
+        "win_z": 0.77,
+        "share_delta_pp": 0.092,
+        "share_z": 1.415,
+        "read": "~",
+        "source": "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
+        "win_tranches": [
+          {
+            "position": "latest",
+            "pairs": 10002,
+            "win_delta_pp": 0.32,
+            "win_z": 0.66,
+            "win_se_pp": 0.485
+          },
+          {
+            "position": "previous",
+            "pairs": 7572,
+            "win_delta_pp": 0.238,
+            "win_z": 0.417,
+            "win_se_pp": 0.57
+          }
+        ]
+      }
+    },
+    {
+      "tag": "barbarian-scouts-are-scouts",
+      "verdict": "unresolved",
+      "default_on": true,
+      "wins_last_10k": 23,
+      "wins_prior_10k": 61,
+      "family_wise": false,
+      "conflict": false,
+      "screen": {
+        "pairs": 17574,
+        "n_on": 17574,
+        "n_off": 17574,
+        "win_delta_pp": 0.467,
+        "win_z": 1.282,
+        "share_delta_pp": 0.056,
+        "share_z": 0.884,
+        "read": "~",
+        "source": "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
+        "win_tranches": [
+          {
+            "position": "latest",
+            "pairs": 10002,
+            "win_delta_pp": -0.04,
+            "win_z": -0.083,
+            "win_se_pp": 0.48
+          },
+          {
+            "position": "previous",
+            "pairs": 7572,
+            "win_delta_pp": 1.136,
+            "win_z": 2.036,
+            "win_se_pp": 0.558
+          }
+        ]
+      }
+    },
+    {
+      "tag": "blind-objective-strength",
+      "verdict": "unresolved",
+      "default_on": true,
+      "wins_last_10k": 30,
+      "wins_prior_10k": 17,
+      "family_wise": false,
+      "conflict": false,
+      "screen": {
+        "pairs": 17574,
+        "n_on": 17574,
+        "n_off": 17574,
+        "win_delta_pp": 0.603,
+        "win_z": 1.642,
+        "share_delta_pp": 0.065,
+        "share_z": 1.026,
+        "read": "~",
+        "source": "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
+        "win_tranches": [
+          {
+            "position": "latest",
+            "pairs": 10002,
+            "win_delta_pp": 0.52,
+            "win_z": 1.087,
+            "win_se_pp": 0.478
+          },
+          {
+            "position": "previous",
+            "pairs": 7572,
+            "win_delta_pp": 0.713,
+            "win_z": 1.244,
+            "win_se_pp": 0.573
+          }
+        ]
+      }
+    },
+    {
+      "tag": "blind-objective-units",
+      "verdict": "unresolved",
+      "default_on": false,
+      "wins_last_10k": -7,
+      "wins_prior_10k": 4,
+      "family_wise": false,
+      "conflict": false,
+      "screen": {
+        "pairs": 17574,
+        "n_on": 17574,
+        "n_off": 17574,
+        "win_delta_pp": -0.137,
+        "win_z": -0.382,
+        "share_delta_pp": 0.053,
+        "share_z": 0.839,
+        "read": "~",
+        "source": "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
+        "win_tranches": [
+          {
+            "position": "latest",
+            "pairs": 10002,
+            "win_delta_pp": -0.32,
+            "win_z": -0.683,
+            "win_se_pp": 0.468
+          },
+          {
+            "position": "previous",
+            "pairs": 7572,
+            "win_delta_pp": 0.106,
+            "win_z": 0.191,
+            "win_se_pp": 0.554
+          }
+        ]
+      }
+    },
+    {
+      "tag": "bounded-recovery",
+      "verdict": "helps",
+      "default_on": true,
+      "wins_last_10k": 19,
+      "wins_prior_10k": 39,
+      "family_wise": false,
+      "conflict": false,
+      "screen": {
+        "pairs": 17574,
+        "n_on": 17574,
+        "n_off": 17574,
+        "win_delta_pp": 0.376,
+        "win_z": 1.045,
+        "share_delta_pp": 0.201,
+        "share_z": 3.099,
+        "read": "share helps *",
+        "source": "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
+        "win_tranches": [
+          {
+            "position": "latest",
+            "pairs": 10002,
+            "win_delta_pp": 0.7,
+            "win_z": 1.489,
+            "win_se_pp": 0.47
+          },
+          {
+            "position": "previous",
+            "pairs": 7572,
+            "win_delta_pp": -0.053,
+            "win_z": -0.095,
+            "win_se_pp": 0.557
+          }
+        ]
+      }
+    },
+    {
+      "tag": "builder-barbarian-safety",
+      "verdict": "unresolved",
+      "default_on": false,
+      "wins_last_10k": 13,
+      "wins_prior_10k": null,
+      "family_wise": false,
+      "conflict": false,
+      "screen": {
+        "pairs": 17574,
+        "n_on": 17574,
+        "n_off": 17574,
+        "win_delta_pp": 0.25,
+        "win_z": 0.685,
+        "share_delta_pp": -0.005,
+        "share_z": -0.081,
+        "read": "~",
+        "source": "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
+        "win_tranches": [
+          {
+            "position": "latest",
+            "pairs": 10002,
+            "win_delta_pp": 0.4,
+            "win_z": 0.823,
+            "win_se_pp": 0.486
+          },
+          {
+            "position": "previous",
+            "pairs": 7572,
+            "win_delta_pp": 0.053,
+            "win_z": 0.095,
+            "win_se_pp": 0.554
+          }
+        ]
+      }
+    },
+    {
+      "tag": "builder-worked-tile-priority",
+      "verdict": "unresolved",
+      "default_on": true,
+      "wins_last_10k": 24,
+      "wins_prior_10k": null,
+      "family_wise": false,
+      "conflict": false,
+      "screen": {
+        "pairs": 17574,
+        "n_on": 17574,
+        "n_off": 17574,
+        "win_delta_pp": 0.489,
+        "win_z": 1.362,
+        "share_delta_pp": 0.009,
+        "share_z": 0.136,
+        "read": "~",
+        "source": "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
+        "win_tranches": [
+          {
+            "position": "latest",
+            "pairs": 10002,
+            "win_delta_pp": 0.26,
+            "win_z": 0.553,
+            "win_se_pp": 0.47
+          },
+          {
+            "position": "previous",
+            "pairs": 7572,
+            "win_delta_pp": 0.792,
+            "win_z": 1.424,
+            "win_se_pp": 0.556
+          }
+        ]
+      }
+    },
+    {
+      "tag": "buildings-before-projects",
+      "verdict": "helps",
+      "default_on": false,
+      "wins_last_10k": -2,
+      "wins_prior_10k": 26,
+      "family_wise": false,
+      "conflict": false,
+      "screen": {
+        "pairs": 17574,
+        "n_on": 17574,
+        "n_off": 17574,
+        "win_delta_pp": -0.046,
+        "win_z": -0.125,
+        "share_delta_pp": 0.161,
+        "share_z": 2.521,
+        "read": "share helps *",
+        "source": "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
+        "win_tranches": [
+          {
+            "position": "latest",
+            "pairs": 10002,
+            "win_delta_pp": -0.14,
+            "win_z": -0.297,
+            "win_se_pp": 0.472
+          },
+          {
+            "position": "previous",
+            "pairs": 7572,
+            "win_delta_pp": 0.079,
+            "win_z": 0.14,
+            "win_se_pp": 0.566
+          }
+        ]
+      }
+    },
+    {
+      "tag": "camp-party",
+      "verdict": "unresolved",
+      "default_on": true,
+      "wins_last_10k": 13,
+      "wins_prior_10k": 53,
+      "family_wise": false,
+      "conflict": false,
+      "screen": {
+        "pairs": 17574,
+        "n_on": 17574,
+        "n_off": 17574,
+        "win_delta_pp": 0.25,
+        "win_z": 0.681,
+        "share_delta_pp": -0.038,
+        "share_z": -0.591,
+        "read": "~",
+        "source": "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
+        "win_tranches": [
+          {
+            "position": "latest",
+            "pairs": 10002,
+            "win_delta_pp": 0.02,
+            "win_z": 0.042,
+            "win_se_pp": 0.48
+          },
+          {
+            "position": "previous",
+            "pairs": 7572,
+            "win_delta_pp": 0.555,
+            "win_z": 0.974,
+            "win_se_pp": 0.57
+          }
+        ]
+      }
+    },
+    {
+      "tag": "civilian-rescue",
+      "verdict": "helps",
+      "default_on": false,
+      "wins_last_10k": -6,
+      "wins_prior_10k": -4,
+      "family_wise": false,
+      "conflict": false,
+      "screen": {
+        "pairs": 17574,
+        "n_on": 17574,
+        "n_off": 17574,
+        "win_delta_pp": -0.125,
+        "win_z": -0.344,
+        "share_delta_pp": 0.167,
+        "share_z": 2.565,
+        "read": "share helps *",
+        "source": "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
+        "win_tranches": [
+          {
+            "position": "latest",
+            "pairs": 10002,
+            "win_delta_pp": -0.3,
+            "win_z": -0.625,
+            "win_se_pp": 0.48
+          },
+          {
+            "position": "previous",
+            "pairs": 7572,
+            "win_delta_pp": 0.106,
+            "win_z": 0.189,
+            "win_se_pp": 0.559
+          }
+        ]
+      }
+    },
+    {
+      "tag": "come-ashore",
+      "verdict": "unresolved",
+      "default_on": true,
+      "wins_last_10k": 11,
+      "wins_prior_10k": 36,
+      "family_wise": false,
+      "conflict": false,
+      "screen": {
+        "pairs": 17574,
+        "n_on": 17574,
+        "n_off": 17574,
+        "win_delta_pp": 0.228,
+        "win_z": 0.612,
+        "share_delta_pp": 0.109,
+        "share_z": 1.673,
+        "read": "~",
+        "source": "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
+        "win_tranches": [
+          {
+            "position": "latest",
+            "pairs": 10002,
+            "win_delta_pp": 0.94,
+            "win_z": 1.881,
+            "win_se_pp": 0.5
+          },
+          {
+            "position": "previous",
+            "pairs": 7572,
+            "win_delta_pp": -0.713,
+            "win_z": -1.283,
+            "win_se_pp": 0.556
+          }
+        ]
+      }
+    },
+    {
+      "tag": "district-coverage",
+      "verdict": "unresolved",
+      "default_on": false,
+      "wins_last_10k": 32,
+      "wins_prior_10k": -9,
+      "family_wise": false,
+      "conflict": false,
+      "screen": {
+        "pairs": 17574,
+        "n_on": 17574,
+        "n_off": 17574,
+        "win_delta_pp": 0.649,
+        "win_z": 1.747,
+        "share_delta_pp": 0.096,
+        "share_z": 1.492,
+        "read": "~",
+        "source": "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
+        "win_tranches": [
+          {
+            "position": "latest",
+            "pairs": 10002,
+            "win_delta_pp": 0.76,
+            "win_z": 1.549,
+            "win_se_pp": 0.49
+          },
+          {
+            "position": "previous",
+            "pairs": 7572,
+            "win_delta_pp": 0.502,
+            "win_z": 0.883,
+            "win_se_pp": 0.568
+          }
+        ]
+      }
+    },
+    {
+      "tag": "district-lookahead-settle",
+      "verdict": "unresolved",
+      "default_on": false,
+      "wins_last_10k": -22,
+      "wins_prior_10k": null,
+      "family_wise": false,
+      "conflict": false,
+      "screen": {
+        "pairs": 17574,
+        "n_on": 17574,
+        "n_off": 17574,
+        "win_delta_pp": -0.432,
+        "win_z": -1.198,
+        "share_delta_pp": -0.016,
+        "share_z": -0.249,
+        "read": "~",
+        "source": "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
+        "win_tranches": [
+          {
+            "position": "latest",
+            "pairs": 10002,
+            "win_delta_pp": -0.62,
+            "win_z": -1.304,
+            "win_se_pp": 0.475
+          },
+          {
+            "position": "previous",
+            "pairs": 7572,
+            "win_delta_pp": -0.185,
+            "win_z": -0.333,
+            "win_se_pp": 0.555
+          }
+        ]
+      }
+    },
+    {
+      "tag": "endgame-war-runway",
+      "verdict": "unresolved",
+      "default_on": false,
+      "wins_last_10k": -5,
+      "wins_prior_10k": -11,
+      "family_wise": false,
+      "conflict": false,
+      "screen": {
+        "pairs": 17574,
+        "n_on": 17574,
+        "n_off": 17574,
+        "win_delta_pp": -0.102,
+        "win_z": -0.28,
+        "share_delta_pp": 0.054,
+        "share_z": 0.831,
+        "read": "~",
+        "source": "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
+        "win_tranches": [
+          {
+            "position": "latest",
+            "pairs": 10002,
+            "win_delta_pp": -0.04,
+            "win_z": -0.082,
+            "win_se_pp": 0.487
+          },
+          {
+            "position": "previous",
+            "pairs": 7572,
+            "win_delta_pp": -0.185,
+            "win_z": -0.335,
+            "win_se_pp": 0.552
+          }
+        ]
+      }
+    },
+    {
+      "tag": "escort-unstick",
+      "verdict": "helps",
+      "default_on": true,
+      "wins_last_10k": 72,
+      "wins_prior_10k": 7,
+      "family_wise": true,
+      "conflict": false,
+      "screen": {
+        "pairs": 17574,
+        "n_on": 17574,
+        "n_off": 17574,
+        "win_delta_pp": 1.445,
+        "win_z": 4.02,
+        "share_delta_pp": 0.146,
+        "share_z": 2.221,
+        "read": "HELPS ** \u00b7 share helps *",
+        "source": "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
+        "win_tranches": [
+          {
+            "position": "latest",
+            "pairs": 10002,
+            "win_delta_pp": 1.1,
+            "win_z": 2.351,
+            "win_se_pp": 0.468
+          },
+          {
+            "position": "previous",
+            "pairs": 7572,
+            "win_delta_pp": 1.902,
+            "win_z": 3.393,
+            "win_se_pp": 0.56
+          }
+        ]
+      }
+    },
+    {
+      "tag": "founder-temple",
+      "verdict": "unresolved",
+      "default_on": true,
+      "wins_last_10k": 14,
+      "wins_prior_10k": 48,
+      "family_wise": false,
+      "conflict": false,
+      "screen": {
+        "pairs": 17574,
+        "n_on": 17574,
+        "n_off": 17574,
+        "win_delta_pp": 0.285,
+        "win_z": 0.765,
+        "share_delta_pp": -0.038,
+        "share_z": -0.59,
+        "read": "~",
+        "source": "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
+        "win_tranches": [
+          {
+            "position": "latest",
+            "pairs": 10002,
+            "win_delta_pp": 0.08,
+            "win_z": 0.165,
+            "win_se_pp": 0.486
+          },
+          {
+            "position": "previous",
+            "pairs": 7572,
+            "win_delta_pp": 0.555,
+            "win_z": 0.959,
+            "win_se_pp": 0.578
+          }
+        ]
+      }
+    },
+    {
+      "tag": "garrison-under-fire",
+      "verdict": "unresolved",
+      "default_on": false,
+      "wins_last_10k": -5,
+      "wins_prior_10k": 17,
+      "family_wise": false,
+      "conflict": false,
+      "screen": {
+        "pairs": 17574,
+        "n_on": 17574,
+        "n_off": 17574,
+        "win_delta_pp": -0.102,
+        "win_z": -0.279,
+        "share_delta_pp": 0.11,
+        "share_z": 1.689,
+        "read": "~",
+        "source": "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
+        "win_tranches": [
+          {
+            "position": "latest",
+            "pairs": 10002,
+            "win_delta_pp": -0.34,
+            "win_z": -0.702,
+            "win_se_pp": 0.485
+          },
+          {
+            "position": "previous",
+            "pairs": 7572,
+            "win_delta_pp": 0.211,
+            "win_z": 0.377,
+            "win_se_pp": 0.56
+          }
+        ]
+      }
+    },
+    {
+      "tag": "governor-every-lane",
+      "verdict": "hurts",
+      "default_on": false,
+      "wins_last_10k": 13,
+      "wins_prior_10k": -8,
+      "family_wise": true,
+      "conflict": false,
+      "screen": {
+        "pairs": 17574,
+        "n_on": 17574,
+        "n_off": 17574,
+        "win_delta_pp": 0.262,
+        "win_z": 0.707,
+        "share_delta_pp": -1.102,
+        "share_z": -16.933,
+        "read": "share HURTS **",
+        "source": "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
+        "win_tranches": [
+          {
+            "position": "latest",
+            "pairs": 10002,
+            "win_delta_pp": 0.44,
+            "win_z": 0.897,
+            "win_se_pp": 0.491
+          },
+          {
+            "position": "previous",
+            "pairs": 7572,
+            "win_delta_pp": 0.026,
+            "win_z": 0.047,
+            "win_se_pp": 0.564
+          }
+        ]
+      }
+    },
+    {
+      "tag": "governor-expansion-lane",
+      "verdict": "unresolved",
+      "default_on": false,
+      "wins_last_10k": -30,
+      "wins_prior_10k": null,
+      "family_wise": false,
+      "conflict": false,
+      "screen": {
+        "pairs": 17574,
+        "n_on": 17574,
+        "n_off": 17574,
+        "win_delta_pp": -0.603,
+        "win_z": -1.628,
+        "share_delta_pp": -0.023,
+        "share_z": -0.356,
+        "read": "~",
+        "source": "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
+        "win_tranches": [
+          {
+            "position": "latest",
+            "pairs": 10002,
+            "win_delta_pp": -0.58,
+            "win_z": -1.181,
+            "win_se_pp": 0.491
+          },
+          {
+            "position": "previous",
+            "pairs": 7572,
+            "win_delta_pp": -0.634,
+            "win_z": -1.122,
+            "win_se_pp": 0.565
+          }
+        ]
+      }
+    },
+    {
+      "tag": "governor-victory-lanes",
+      "verdict": "unresolved",
+      "default_on": true,
+      "wins_last_10k": 46,
+      "wins_prior_10k": null,
+      "family_wise": false,
+      "conflict": true,
+      "screen": {
+        "pairs": 17574,
+        "n_on": 17574,
+        "n_off": 17574,
+        "win_delta_pp": 0.91,
+        "win_z": 2.464,
+        "share_delta_pp": -1.024,
+        "share_z": -15.918,
+        "read": "helps * \u00b7 share HURTS **",
+        "source": "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
+        "win_tranches": [
+          {
+            "position": "latest",
+            "pairs": 10002,
+            "win_delta_pp": 1.14,
+            "win_z": 2.313,
+            "win_se_pp": 0.493
+          },
+          {
+            "position": "previous",
+            "pairs": 7572,
+            "win_delta_pp": 0.608,
+            "win_z": 1.088,
+            "win_se_pp": 0.558
+          }
+        ]
+      }
+    },
+    {
+      "tag": "great-person-housing",
+      "verdict": "helps",
+      "default_on": true,
+      "wins_last_10k": 78,
+      "wins_prior_10k": null,
+      "family_wise": true,
+      "conflict": false,
+      "screen": {
+        "pairs": 17574,
+        "n_on": 17574,
+        "n_off": 17574,
+        "win_delta_pp": 1.559,
+        "win_z": 4.198,
+        "share_delta_pp": 0.599,
+        "share_z": 9.268,
+        "read": "HELPS ** \u00b7 share HELPS **",
+        "source": "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
+        "win_tranches": [
+          {
+            "position": "latest",
+            "pairs": 10002,
+            "win_delta_pp": 1.52,
+            "win_z": 3.116,
+            "win_se_pp": 0.488
+          },
+          {
+            "position": "previous",
+            "pairs": 7572,
+            "win_delta_pp": 1.611,
+            "win_z": 2.812,
+            "win_se_pp": 0.573
+          }
+        ]
+      }
+    },
+    {
+      "tag": "holy-lane-parity",
+      "verdict": "helps",
+      "default_on": false,
+      "wins_last_10k": 63,
+      "wins_prior_10k": -27,
+      "family_wise": true,
+      "conflict": false,
+      "screen": {
+        "pairs": 17574,
+        "n_on": 17574,
+        "n_off": 17574,
+        "win_delta_pp": 1.263,
+        "win_z": 3.48,
+        "share_delta_pp": -0.016,
+        "share_z": -0.245,
+        "read": "HELPS **",
+        "source": "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
+        "win_tranches": [
+          {
+            "position": "latest",
+            "pairs": 10002,
+            "win_delta_pp": 1.62,
+            "win_z": 3.456,
+            "win_se_pp": 0.469
+          },
+          {
+            "position": "previous",
+            "pairs": 7572,
+            "win_delta_pp": 0.792,
+            "win_z": 1.387,
+            "win_se_pp": 0.571
+          }
+        ]
+      }
+    },
+    {
+      "tag": "home-defense",
+      "verdict": "unresolved",
+      "default_on": false,
+      "wins_last_10k": -15,
+      "wins_prior_10k": 4,
+      "family_wise": false,
+      "conflict": false,
+      "screen": {
+        "pairs": 17574,
+        "n_on": 17574,
+        "n_off": 17574,
+        "win_delta_pp": -0.296,
+        "win_z": -0.81,
+        "share_delta_pp": -0.063,
+        "share_z": -0.966,
+        "read": "~",
+        "source": "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
+        "win_tranches": [
+          {
+            "position": "latest",
+            "pairs": 10002,
+            "win_delta_pp": -0.22,
+            "win_z": -0.46,
+            "win_se_pp": 0.478
+          },
+          {
+            "position": "previous",
+            "pairs": 7572,
+            "win_delta_pp": -0.396,
+            "win_z": -0.7,
+            "win_se_pp": 0.566
+          }
+        ]
+      }
+    },
+    {
+      "tag": "housing-districts",
+      "verdict": "unresolved",
+      "default_on": false,
+      "wins_last_10k": 5,
+      "wins_prior_10k": -9,
+      "family_wise": false,
+      "conflict": false,
+      "screen": {
+        "pairs": 17574,
+        "n_on": 17574,
+        "n_off": 17574,
+        "win_delta_pp": 0.091,
+        "win_z": 0.247,
+        "share_delta_pp": 0.008,
+        "share_z": 0.126,
+        "read": "~",
+        "source": "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
+        "win_tranches": [
+          {
+            "position": "latest",
+            "pairs": 10002,
+            "win_delta_pp": 0.14,
+            "win_z": 0.288,
+            "win_se_pp": 0.485
+          },
+          {
+            "position": "previous",
+            "pairs": 7572,
+            "win_delta_pp": 0.026,
+            "win_z": 0.047,
+            "win_se_pp": 0.567
+          }
+        ]
+      }
+    },
+    {
+      "tag": "housing-research",
+      "verdict": "unresolved",
+      "default_on": true,
+      "wins_last_10k": 13,
+      "wins_prior_10k": 39,
+      "family_wise": false,
+      "conflict": false,
+      "screen": {
+        "pairs": 17574,
+        "n_on": 17574,
+        "n_off": 17574,
+        "win_delta_pp": 0.262,
+        "win_z": 0.71,
+        "share_delta_pp": 0.001,
+        "share_z": 0.019,
+        "read": "~",
+        "source": "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
+        "win_tranches": [
+          {
+            "position": "latest",
+            "pairs": 10002,
+            "win_delta_pp": 0.4,
+            "win_z": 0.814,
+            "win_se_pp": 0.491
+          },
+          {
+            "position": "previous",
+            "pairs": 7572,
+            "win_delta_pp": 0.079,
+            "win_z": 0.142,
+            "win_se_pp": 0.557
+          }
+        ]
+      }
+    },
+    {
+      "tag": "idle-faith-patronage",
+      "verdict": "unresolved",
+      "default_on": true,
+      "wins_last_10k": 36,
+      "wins_prior_10k": 23,
+      "family_wise": false,
+      "conflict": false,
+      "screen": {
+        "pairs": 17574,
+        "n_on": 17574,
+        "n_off": 17574,
+        "win_delta_pp": 0.717,
+        "win_z": 1.928,
+        "share_delta_pp": -0.031,
+        "share_z": -0.473,
+        "read": "~",
+        "source": "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
+        "win_tranches": [
+          {
+            "position": "latest",
+            "pairs": 10002,
+            "win_delta_pp": 0.38,
+            "win_z": 0.775,
+            "win_se_pp": 0.49
+          },
+          {
+            "position": "previous",
+            "pairs": 7572,
+            "win_delta_pp": 1.162,
+            "win_z": 2.036,
+            "win_se_pp": 0.571
+          }
+        ]
+      }
+    },
+    {
+      "tag": "inquisition-on-threat",
+      "verdict": "unresolved",
+      "default_on": true,
+      "wins_last_10k": 2,
+      "wins_prior_10k": 35,
+      "family_wise": false,
+      "conflict": false,
+      "screen": {
+        "pairs": 17574,
+        "n_on": 17574,
+        "n_off": 17574,
+        "win_delta_pp": 0.046,
+        "win_z": 0.125,
+        "share_delta_pp": 0.051,
+        "share_z": 0.808,
+        "read": "~",
+        "source": "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
+        "win_tranches": [
+          {
+            "position": "latest",
+            "pairs": 10002,
+            "win_delta_pp": 0.14,
+            "win_z": 0.292,
+            "win_se_pp": 0.479
+          },
+          {
+            "position": "previous",
+            "pairs": 7572,
+            "win_delta_pp": -0.079,
+            "win_z": -0.142,
+            "win_se_pp": 0.557
+          }
+        ]
+      }
+    },
+    {
+      "tag": "joint-tactics",
+      "verdict": "helps",
+      "default_on": false,
+      "wins_last_10k": 3,
+      "wins_prior_10k": -4,
+      "family_wise": true,
+      "conflict": false,
+      "screen": {
+        "pairs": 17574,
+        "n_on": 17574,
+        "n_off": 17574,
+        "win_delta_pp": 0.068,
+        "win_z": 0.186,
+        "share_delta_pp": 0.248,
+        "share_z": 3.838,
+        "read": "share HELPS **",
+        "source": "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
+        "win_tranches": [
+          {
+            "position": "latest",
+            "pairs": 10002,
+            "win_delta_pp": 0.2,
+            "win_z": 0.412,
+            "win_se_pp": 0.485
+          },
+          {
+            "position": "previous",
+            "pairs": 7572,
+            "win_delta_pp": -0.106,
+            "win_z": -0.188,
+            "win_se_pp": 0.563
+          }
+        ]
+      }
+    },
+    {
+      "tag": "loyalty-rate-alarm",
+      "verdict": "helps",
+      "default_on": true,
+      "wins_last_10k": 40,
+      "wins_prior_10k": 73,
+      "family_wise": true,
+      "conflict": false,
+      "screen": {
+        "pairs": 17574,
+        "n_on": 17574,
+        "n_off": 17574,
+        "win_delta_pp": 0.808,
+        "win_z": 2.241,
+        "share_delta_pp": 0.621,
+        "share_z": 9.721,
+        "read": "helps * \u00b7 share HELPS **",
+        "source": "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
+        "win_tranches": [
+          {
+            "position": "latest",
+            "pairs": 10002,
+            "win_delta_pp": 0.92,
+            "win_z": 1.912,
+            "win_se_pp": 0.481
+          },
+          {
+            "position": "previous",
+            "pairs": 7572,
+            "win_delta_pp": 0.66,
+            "win_z": 1.213,
+            "win_se_pp": 0.544
+          }
+        ]
+      }
+    },
+    {
+      "tag": "naval-recon",
+      "verdict": "unresolved",
+      "default_on": false,
+      "wins_last_10k": 16,
+      "wins_prior_10k": -11,
+      "family_wise": false,
+      "conflict": false,
+      "screen": {
+        "pairs": 17574,
+        "n_on": 17574,
+        "n_off": 17574,
+        "win_delta_pp": 0.319,
+        "win_z": 0.876,
+        "share_delta_pp": 0.006,
+        "share_z": 0.1,
+        "read": "~",
+        "source": "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
+        "win_tranches": [
+          {
+            "position": "latest",
+            "pairs": 10002,
+            "win_delta_pp": 0.06,
+            "win_z": 0.127,
+            "win_se_pp": 0.472
+          },
+          {
+            "position": "previous",
+            "pairs": 7572,
+            "win_delta_pp": 0.66,
+            "win_z": 1.16,
+            "win_se_pp": 0.569
+          }
+        ]
+      }
+    },
+    {
+      "tag": "one-launch-pad",
+      "verdict": "unresolved",
+      "default_on": true,
+      "wins_last_10k": 15,
+      "wins_prior_10k": 24,
+      "family_wise": false,
+      "conflict": false,
+      "screen": {
+        "pairs": 17574,
+        "n_on": 17574,
+        "n_off": 17574,
+        "win_delta_pp": 0.307,
+        "win_z": 0.854,
+        "share_delta_pp": 0.06,
+        "share_z": 0.937,
+        "read": "~",
+        "source": "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
+        "win_tranches": [
+          {
+            "position": "latest",
+            "pairs": 10002,
+            "win_delta_pp": 0.1,
+            "win_z": 0.212,
+            "win_se_pp": 0.471
+          },
+          {
+            "position": "previous",
+            "pairs": 7572,
+            "win_delta_pp": 0.581,
+            "win_z": 1.044,
+            "win_se_pp": 0.557
+          }
+        ]
+      }
+    },
+    {
+      "tag": "opportunistic-war",
+      "verdict": "helps",
+      "default_on": true,
+      "wins_last_10k": 23,
+      "wins_prior_10k": null,
+      "family_wise": true,
+      "conflict": false,
+      "screen": {
+        "pairs": 17574,
+        "n_on": 17574,
+        "n_off": 17574,
+        "win_delta_pp": 0.455,
+        "win_z": 1.223,
+        "share_delta_pp": 0.259,
+        "share_z": 4.029,
+        "read": "share HELPS **",
+        "source": "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
+        "win_tranches": [
+          {
+            "position": "latest",
+            "pairs": 10002,
+            "win_delta_pp": 0.86,
+            "win_z": 1.746,
+            "win_se_pp": 0.492
+          },
+          {
+            "position": "previous",
+            "pairs": 7572,
+            "win_delta_pp": -0.079,
+            "win_z": -0.139,
+            "win_se_pp": 0.569
+          }
+        ]
+      }
+    },
+    {
+      "tag": "peacetime-deterrence",
+      "verdict": "unresolved",
+      "default_on": true,
+      "wins_last_10k": 1,
+      "wins_prior_10k": 39,
+      "family_wise": false,
+      "conflict": false,
+      "screen": {
+        "pairs": 17574,
+        "n_on": 17574,
+        "n_off": 17574,
+        "win_delta_pp": 0.023,
+        "win_z": 0.061,
+        "share_delta_pp": 0.1,
+        "share_z": 1.527,
+        "read": "~",
+        "source": "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
+        "win_tranches": [
+          {
+            "position": "latest",
+            "pairs": 10002,
+            "win_delta_pp": -0.54,
+            "win_z": -1.111,
+            "win_se_pp": 0.486
+          },
+          {
+            "position": "previous",
+            "pairs": 7572,
+            "win_delta_pp": 0.766,
+            "win_z": 1.304,
+            "win_se_pp": 0.587
+          }
+        ]
+      }
+    },
+    {
+      "tag": "priced-tile-purchase",
+      "verdict": "unresolved",
+      "default_on": false,
+      "wins_last_10k": -31,
+      "wins_prior_10k": null,
+      "family_wise": false,
+      "conflict": false,
+      "screen": {
+        "pairs": 17574,
+        "n_on": 17574,
+        "n_off": 17574,
+        "win_delta_pp": -0.615,
+        "win_z": -1.708,
+        "share_delta_pp": -0.081,
+        "share_z": -1.245,
+        "read": "~",
+        "source": "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
+        "win_tranches": [
+          {
+            "position": "latest",
+            "pairs": 10002,
+            "win_delta_pp": -0.58,
+            "win_z": -1.195,
+            "win_se_pp": 0.485
+          },
+          {
+            "position": "previous",
+            "pairs": 7572,
+            "win_delta_pp": -0.66,
+            "win_z": -1.233,
+            "win_se_pp": 0.535
+          }
+        ]
+      }
+    },
+    {
+      "tag": "raid-pillage-prizes",
+      "verdict": "helps",
+      "default_on": true,
+      "wins_last_10k": 30,
+      "wins_prior_10k": null,
+      "family_wise": false,
+      "conflict": false,
+      "screen": {
+        "pairs": 17574,
+        "n_on": 17574,
+        "n_off": 17574,
+        "win_delta_pp": 0.592,
+        "win_z": 1.642,
+        "share_delta_pp": 0.138,
+        "share_z": 2.124,
+        "read": "share helps *",
+        "source": "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
+        "win_tranches": [
+          {
+            "position": "latest",
+            "pairs": 10002,
+            "win_delta_pp": 0.66,
+            "win_z": 1.389,
+            "win_se_pp": 0.475
+          },
+          {
+            "position": "previous",
+            "pairs": 7572,
+            "win_delta_pp": 0.502,
+            "win_z": 0.907,
+            "win_se_pp": 0.553
+          }
+        ]
+      }
+    },
+    {
+      "tag": "recon-replacement",
+      "verdict": "helps",
+      "default_on": true,
+      "wins_last_10k": 48,
+      "wins_prior_10k": 81,
+      "family_wise": false,
+      "conflict": false,
+      "screen": {
+        "pairs": 17574,
+        "n_on": 17574,
+        "n_off": 17574,
+        "win_delta_pp": 0.967,
+        "win_z": 2.695,
+        "share_delta_pp": 0.046,
+        "share_z": 0.72,
+        "read": "helps *",
+        "source": "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
+        "win_tranches": [
+          {
+            "position": "latest",
+            "pairs": 10002,
+            "win_delta_pp": 0.74,
+            "win_z": 1.571,
+            "win_se_pp": 0.471
+          },
+          {
+            "position": "previous",
+            "pairs": 7572,
+            "win_delta_pp": 1.268,
+            "win_z": 2.287,
+            "win_se_pp": 0.554
+          }
+        ]
+      }
+    },
+    {
+      "tag": "recorded-tactical-step",
+      "verdict": "unresolved",
+      "default_on": false,
+      "wins_last_10k": 30,
+      "wins_prior_10k": -2,
+      "family_wise": false,
+      "conflict": false,
+      "screen": {
+        "pairs": 17574,
+        "n_on": 17574,
+        "n_off": 17574,
+        "win_delta_pp": 0.592,
+        "win_z": 1.604,
+        "share_delta_pp": -0.039,
+        "share_z": -0.598,
+        "read": "~",
+        "source": "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
+        "win_tranches": [
+          {
+            "position": "latest",
+            "pairs": 10002,
+            "win_delta_pp": 0.74,
+            "win_z": 1.51,
+            "win_se_pp": 0.49
+          },
+          {
+            "position": "previous",
+            "pairs": 7572,
+            "win_delta_pp": 0.396,
+            "win_z": 0.706,
+            "win_se_pp": 0.561
+          }
+        ]
+      }
+    },
+    {
+      "tag": "relief-targets-the-siege",
+      "verdict": "unresolved",
+      "default_on": true,
+      "wins_last_10k": 14,
+      "wins_prior_10k": 6,
+      "family_wise": false,
+      "conflict": false,
+      "screen": {
+        "pairs": 17574,
+        "n_on": 17574,
+        "n_off": 17574,
+        "win_delta_pp": 0.285,
+        "win_z": 0.773,
+        "share_delta_pp": -0.059,
+        "share_z": -0.926,
+        "read": "~",
+        "source": "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
+        "win_tranches": [
+          {
+            "position": "latest",
+            "pairs": 10002,
+            "win_delta_pp": 0.14,
+            "win_z": 0.29,
+            "win_se_pp": 0.483
+          },
+          {
+            "position": "previous",
+            "pairs": 7572,
+            "win_delta_pp": 0.475,
+            "win_z": 0.837,
+            "win_se_pp": 0.568
+          }
+        ]
+      }
+    },
+    {
+      "tag": "religion-sues-peace",
+      "verdict": "unresolved",
+      "default_on": true,
+      "wins_last_10k": 6,
+      "wins_prior_10k": 29,
+      "family_wise": false,
+      "conflict": false,
+      "screen": {
+        "pairs": 17574,
+        "n_on": 17574,
+        "n_off": 17574,
+        "win_delta_pp": 0.114,
+        "win_z": 0.32,
+        "share_delta_pp": 0.042,
+        "share_z": 0.654,
+        "read": "~",
+        "source": "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
+        "win_tranches": [
+          {
+            "position": "latest",
+            "pairs": 10002,
+            "win_delta_pp": 0.22,
+            "win_z": 0.466,
+            "win_se_pp": 0.472
+          },
+          {
+            "position": "previous",
+            "pairs": 7572,
+            "win_delta_pp": -0.026,
+            "win_z": -0.049,
+            "win_se_pp": 0.542
+          }
+        ]
+      }
+    },
+    {
+      "tag": "score-horizon",
+      "verdict": "helps",
+      "default_on": false,
+      "wins_last_10k": 24,
+      "wins_prior_10k": -3,
+      "family_wise": false,
+      "conflict": false,
+      "screen": {
+        "pairs": 17574,
+        "n_on": 17574,
+        "n_off": 17574,
+        "win_delta_pp": 0.489,
+        "win_z": 1.343,
+        "share_delta_pp": 0.206,
+        "share_z": 3.144,
+        "read": "share helps *",
+        "source": "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
+        "win_tranches": [
+          {
+            "position": "latest",
+            "pairs": 10002,
+            "win_delta_pp": 0.04,
+            "win_z": 0.083,
+            "win_se_pp": 0.482
+          },
+          {
+            "position": "previous",
+            "pairs": 7572,
+            "win_delta_pp": 1.083,
+            "win_z": 1.946,
+            "win_se_pp": 0.557
+          }
+        ]
+      }
+    },
+    {
+      "tag": "settle-sooner",
+      "verdict": "helps",
+      "default_on": true,
+      "wins_last_10k": 41,
+      "wins_prior_10k": null,
+      "family_wise": false,
+      "conflict": false,
+      "screen": {
+        "pairs": 17574,
+        "n_on": 17574,
+        "n_off": 17574,
+        "win_delta_pp": 0.819,
+        "win_z": 2.263,
+        "share_delta_pp": 0.172,
+        "share_z": 2.683,
+        "read": "helps * \u00b7 share helps *",
+        "source": "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
+        "win_tranches": [
+          {
+            "position": "latest",
+            "pairs": 10002,
+            "win_delta_pp": 0.66,
+            "win_z": 1.381,
+            "win_se_pp": 0.478
+          },
+          {
+            "position": "previous",
+            "pairs": 7572,
+            "win_delta_pp": 1.03,
+            "win_z": 1.855,
+            "win_se_pp": 0.555
+          }
+        ]
+      }
+    },
+    {
+      "tag": "settler-guard-holds",
+      "verdict": "unresolved",
+      "default_on": false,
+      "wins_last_10k": -3,
+      "wins_prior_10k": 13,
+      "family_wise": false,
+      "conflict": false,
+      "screen": {
+        "pairs": 17574,
+        "n_on": 17574,
+        "n_off": 17574,
+        "win_delta_pp": -0.057,
+        "win_z": -0.156,
+        "share_delta_pp": -0.062,
+        "share_z": -0.962,
+        "read": "~",
+        "source": "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
+        "win_tranches": [
+          {
+            "position": "latest",
+            "pairs": 10002,
+            "win_delta_pp": -0.12,
+            "win_z": -0.248,
+            "win_se_pp": 0.483
+          },
+          {
+            "position": "previous",
+            "pairs": 7572,
+            "win_delta_pp": 0.026,
+            "win_z": 0.047,
+            "win_se_pp": 0.559
+          }
+        ]
+      }
+    },
+    {
+      "tag": "settler-site-agreement",
+      "verdict": "unresolved",
+      "default_on": true,
+      "wins_last_10k": 24,
+      "wins_prior_10k": 23,
+      "family_wise": false,
+      "conflict": false,
+      "screen": {
+        "pairs": 17574,
+        "n_on": 17574,
+        "n_off": 17574,
+        "win_delta_pp": 0.489,
+        "win_z": 1.338,
+        "share_delta_pp": 0.058,
+        "share_z": 0.892,
+        "read": "~",
+        "source": "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
+        "win_tranches": [
+          {
+            "position": "latest",
+            "pairs": 10002,
+            "win_delta_pp": 0.12,
+            "win_z": 0.256,
+            "win_se_pp": 0.468
+          },
+          {
+            "position": "previous",
+            "pairs": 7572,
+            "win_delta_pp": 0.977,
+            "win_z": 1.681,
+            "win_se_pp": 0.581
+          }
+        ]
+      }
+    },
+    {
+      "tag": "settler-target-hysteresis",
+      "verdict": "helps",
+      "default_on": true,
+      "wins_last_10k": 15,
+      "wins_prior_10k": 1,
+      "family_wise": false,
+      "conflict": false,
+      "screen": {
+        "pairs": 17574,
+        "n_on": 17574,
+        "n_off": 17574,
+        "win_delta_pp": 0.296,
+        "win_z": 0.826,
+        "share_delta_pp": 0.157,
+        "share_z": 2.484,
+        "read": "share helps *",
+        "source": "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
+        "win_tranches": [
+          {
+            "position": "latest",
+            "pairs": 10002,
+            "win_delta_pp": -0.06,
+            "win_z": -0.126,
+            "win_se_pp": 0.475
+          },
+          {
+            "position": "previous",
+            "pairs": 7572,
+            "win_delta_pp": 0.766,
+            "win_z": 1.404,
+            "win_se_pp": 0.546
+          }
+        ]
+      }
+    },
+    {
+      "tag": "settler-threat-detour",
+      "verdict": "helps",
+      "default_on": true,
+      "wins_last_10k": 50,
+      "wins_prior_10k": null,
+      "family_wise": false,
+      "conflict": false,
+      "screen": {
+        "pairs": 17574,
+        "n_on": 17574,
+        "n_off": 17574,
+        "win_delta_pp": 1.001,
+        "win_z": 2.701,
+        "share_delta_pp": 0.038,
+        "share_z": 0.561,
+        "read": "helps *",
+        "source": "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
+        "win_tranches": [
+          {
+            "position": "latest",
+            "pairs": 10002,
+            "win_delta_pp": 0.58,
+            "win_z": 1.173,
+            "win_se_pp": 0.494
+          },
+          {
+            "position": "previous",
+            "pairs": 7572,
+            "win_delta_pp": 1.558,
+            "win_z": 2.779,
+            "win_se_pp": 0.561
+          }
+        ]
+      }
+    },
+    {
+      "tag": "siege-commitment",
+      "verdict": "unresolved",
+      "default_on": true,
+      "wins_last_10k": 1,
+      "wins_prior_10k": 3,
+      "family_wise": false,
+      "conflict": false,
+      "screen": {
+        "pairs": 17574,
+        "n_on": 17574,
+        "n_off": 17574,
+        "win_delta_pp": 0.011,
+        "win_z": 0.031,
+        "share_delta_pp": 0.048,
+        "share_z": 0.732,
+        "read": "~",
+        "source": "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
+        "win_tranches": [
+          {
+            "position": "latest",
+            "pairs": 10002,
+            "win_delta_pp": 0.52,
+            "win_z": 1.051,
+            "win_se_pp": 0.495
+          },
+          {
+            "position": "previous",
+            "pairs": 7572,
+            "win_delta_pp": -0.66,
+            "win_z": -1.177,
+            "win_se_pp": 0.561
+          }
+        ]
+      }
+    },
+    {
+      "tag": "siege-is-progress",
+      "verdict": "unresolved",
+      "default_on": false,
+      "wins_last_10k": -16,
+      "wins_prior_10k": 14,
+      "family_wise": false,
+      "conflict": false,
+      "screen": {
+        "pairs": 17574,
+        "n_on": 17574,
+        "n_off": 17574,
+        "win_delta_pp": -0.319,
+        "win_z": -0.881,
+        "share_delta_pp": 0.022,
+        "share_z": 0.337,
+        "read": "~",
+        "source": "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
+        "win_tranches": [
+          {
+            "position": "latest",
+            "pairs": 10002,
+            "win_delta_pp": -0.56,
+            "win_z": -1.183,
+            "win_se_pp": 0.473
+          },
+          {
+            "position": "previous",
+            "pairs": 7572,
+            "win_delta_pp": -0.0,
+            "win_z": -0.0,
+            "win_se_pp": 0.561
+          }
+        ]
+      }
+    },
+    {
+      "tag": "siege-tracks-wall",
+      "verdict": "unresolved",
+      "default_on": false,
+      "wins_last_10k": -3,
+      "wins_prior_10k": 21,
+      "family_wise": false,
+      "conflict": false,
+      "screen": {
+        "pairs": 17574,
+        "n_on": 17574,
+        "n_off": 17574,
+        "win_delta_pp": -0.068,
+        "win_z": -0.185,
+        "share_delta_pp": 0.022,
+        "share_z": 0.342,
+        "read": "~",
+        "source": "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
+        "win_tranches": [
+          {
+            "position": "latest",
+            "pairs": 10002,
+            "win_delta_pp": -0.32,
+            "win_z": -0.66,
+            "win_se_pp": 0.485
+          },
+          {
+            "position": "previous",
+            "pairs": 7572,
+            "win_delta_pp": 0.264,
+            "win_z": 0.464,
+            "win_se_pp": 0.569
+          }
+        ]
+      }
+    },
+    {
+      "tag": "slot-kind-tiebreak",
+      "verdict": "unresolved",
+      "default_on": false,
+      "wins_last_10k": -12,
+      "wins_prior_10k": 20,
+      "family_wise": false,
+      "conflict": false,
+      "screen": {
+        "pairs": 17574,
+        "n_on": 17574,
+        "n_off": 17574,
+        "win_delta_pp": -0.239,
+        "win_z": -0.659,
+        "share_delta_pp": -0.008,
+        "share_z": -0.12,
+        "read": "~",
+        "source": "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
+        "win_tranches": [
+          {
+            "position": "latest",
+            "pairs": 10002,
+            "win_delta_pp": 0.2,
+            "win_z": 0.418,
+            "win_se_pp": 0.478
+          },
+          {
+            "position": "previous",
+            "pairs": 7572,
+            "win_delta_pp": -0.819,
+            "win_z": -1.474,
+            "win_se_pp": 0.556
+          }
+        ]
+      }
+    },
+    {
+      "tag": "step-and-reassess",
+      "verdict": "hurts",
+      "default_on": false,
+      "wins_last_10k": -27,
+      "wins_prior_10k": -860,
+      "family_wise": false,
+      "conflict": false,
+      "screen": {
+        "pairs": 15000,
+        "n_on": 15000,
+        "n_off": 15000,
+        "win_delta_pp": -0.533,
+        "win_z": -1.352,
+        "share_delta_pp": -0.15,
+        "share_z": -2.315,
+        "read": "share hurts *",
+        "source": "2026-08-21-p7-native-6p-allseats-15000-pairs.json"
+      }
+    },
+    {
+      "tag": "stranded-settler-discount",
+      "verdict": "unresolved",
+      "default_on": true,
+      "wins_last_10k": 13,
+      "wins_prior_10k": 21,
+      "family_wise": false,
+      "conflict": false,
+      "screen": {
+        "pairs": 17574,
+        "n_on": 17574,
+        "n_off": 17574,
+        "win_delta_pp": 0.262,
+        "win_z": 0.713,
+        "share_delta_pp": 0.018,
+        "share_z": 0.282,
+        "read": "~",
+        "source": "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
+        "win_tranches": [
+          {
+            "position": "latest",
+            "pairs": 10002,
+            "win_delta_pp": -0.26,
+            "win_z": -0.543,
+            "win_se_pp": 0.479
+          },
+          {
+            "position": "previous",
+            "pairs": 7572,
+            "win_delta_pp": 0.951,
+            "win_z": 1.665,
+            "win_se_pp": 0.571
+          }
+        ]
+      }
+    },
+    {
+      "tag": "strategic-wonders",
+      "verdict": "unresolved",
+      "default_on": false,
+      "wins_last_10k": -5,
+      "wins_prior_10k": 21,
+      "family_wise": false,
+      "conflict": false,
+      "screen": {
+        "pairs": 17574,
+        "n_on": 17574,
+        "n_off": 17574,
+        "win_delta_pp": -0.102,
+        "win_z": -0.281,
+        "share_delta_pp": -0.006,
+        "share_z": -0.095,
+        "read": "~",
+        "source": "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
+        "win_tranches": [
+          {
+            "position": "latest",
+            "pairs": 10002,
+            "win_delta_pp": 0.12,
+            "win_z": 0.249,
+            "win_se_pp": 0.483
+          },
+          {
+            "position": "previous",
+            "pairs": 7572,
+            "win_delta_pp": -0.396,
+            "win_z": -0.713,
+            "win_se_pp": 0.556
+          }
+        ]
+      }
+    },
+    {
+      "tag": "strike-opening",
+      "verdict": "unresolved",
+      "default_on": true,
+      "wins_last_10k": 17,
+      "wins_prior_10k": 21,
+      "family_wise": false,
+      "conflict": false,
+      "screen": {
+        "pairs": 17574,
+        "n_on": 17574,
+        "n_off": 17574,
+        "win_delta_pp": 0.33,
+        "win_z": 0.914,
+        "share_delta_pp": 0.107,
+        "share_z": 1.645,
+        "read": "~",
+        "source": "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
+        "win_tranches": [
+          {
+            "position": "latest",
+            "pairs": 10002,
+            "win_delta_pp": 0.54,
+            "win_z": 1.142,
+            "win_se_pp": 0.473
+          },
+          {
+            "position": "previous",
+            "pairs": 7572,
+            "win_delta_pp": 0.053,
+            "win_z": 0.094,
+            "win_se_pp": 0.559
+          }
+        ]
+      }
+    },
+    {
+      "tag": "theology-for-founders",
+      "verdict": "unresolved",
+      "default_on": false,
+      "wins_last_10k": -16,
+      "wins_prior_10k": -5,
+      "family_wise": false,
+      "conflict": false,
+      "screen": {
+        "pairs": 17574,
+        "n_on": 17574,
+        "n_off": 17574,
+        "win_delta_pp": -0.319,
+        "win_z": -0.879,
+        "share_delta_pp": -0.072,
+        "share_z": -1.08,
+        "read": "~",
+        "source": "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
+        "win_tranches": [
+          {
+            "position": "latest",
+            "pairs": 10002,
+            "win_delta_pp": 0.02,
+            "win_z": 0.042,
+            "win_se_pp": 0.475
+          },
+          {
+            "position": "previous",
+            "pairs": 7572,
+            "win_delta_pp": -0.766,
+            "win_z": -1.366,
+            "win_se_pp": 0.561
+          }
+        ]
+      }
+    },
+    {
+      "tag": "war-economy",
+      "verdict": "helps",
+      "default_on": true,
+      "wins_last_10k": 38,
+      "wins_prior_10k": 8,
+      "family_wise": true,
+      "conflict": false,
+      "screen": {
+        "pairs": 17574,
+        "n_on": 17574,
+        "n_off": 17574,
+        "win_delta_pp": 0.751,
+        "win_z": 2.088,
+        "share_delta_pp": 0.701,
+        "share_z": 10.639,
+        "read": "helps * \u00b7 share HELPS **",
+        "source": "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
+        "win_tranches": [
+          {
+            "position": "latest",
+            "pairs": 10002,
+            "win_delta_pp": 0.9,
+            "win_z": 1.881,
+            "win_se_pp": 0.478
+          },
+          {
+            "position": "previous",
+            "pairs": 7572,
+            "win_delta_pp": 0.555,
+            "win_z": 1.016,
+            "win_se_pp": 0.546
+          }
+        ]
+      }
+    },
+    {
+      "tag": "war-patience",
+      "verdict": "hurts",
+      "default_on": false,
+      "wins_last_10k": -19,
+      "wins_prior_10k": 20,
+      "family_wise": false,
+      "conflict": false,
+      "screen": {
+        "pairs": 17574,
+        "n_on": 17574,
+        "n_off": 17574,
+        "win_delta_pp": -0.387,
+        "win_z": -1.047,
+        "share_delta_pp": -0.16,
+        "share_z": -2.496,
+        "read": "share hurts *",
+        "source": "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
+        "win_tranches": [
+          {
+            "position": "latest",
+            "pairs": 10002,
+            "win_delta_pp": -0.4,
+            "win_z": -0.829,
+            "win_se_pp": 0.482
+          },
+          {
+            "position": "previous",
+            "pairs": 7572,
+            "win_delta_pp": -0.37,
+            "win_z": -0.644,
+            "win_se_pp": 0.574
+          }
+        ]
+      }
+    },
+    {
+      "tag": "war-reinforcement",
+      "verdict": "unresolved",
+      "default_on": false,
+      "wins_last_10k": 3,
+      "wins_prior_10k": -5,
+      "family_wise": false,
+      "conflict": false,
+      "screen": {
+        "pairs": 17574,
+        "n_on": 17574,
+        "n_off": 17574,
+        "win_delta_pp": 0.057,
+        "win_z": 0.156,
+        "share_delta_pp": 0.012,
+        "share_z": 0.176,
+        "read": "~",
+        "source": "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
+        "win_tranches": [
+          {
+            "position": "latest",
+            "pairs": 10002,
+            "win_delta_pp": 0.08,
+            "win_z": 0.166,
+            "win_se_pp": 0.482
+          },
+          {
+            "position": "previous",
+            "pairs": 7572,
+            "win_delta_pp": 0.026,
+            "win_z": 0.047,
+            "win_se_pp": 0.562
+          }
+        ]
+      }
+    },
+    {
+      "tag": "whole-turn-backtrack-guard",
+      "verdict": "unresolved",
+      "default_on": true,
+      "wins_last_10k": 18,
+      "wins_prior_10k": 23,
+      "family_wise": false,
+      "conflict": false,
+      "screen": {
+        "pairs": 17574,
+        "n_on": 17574,
+        "n_off": 17574,
+        "win_delta_pp": 0.353,
+        "win_z": 0.974,
+        "share_delta_pp": 0.02,
+        "share_z": 0.301,
+        "read": "~",
+        "source": "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
+        "win_tranches": [
+          {
+            "position": "latest",
+            "pairs": 10002,
+            "win_delta_pp": -0.02,
+            "win_z": -0.041,
+            "win_se_pp": 0.486
+          },
+          {
+            "position": "previous",
+            "pairs": 7572,
+            "win_delta_pp": 0.845,
+            "win_z": 1.559,
+            "win_se_pp": 0.542
+          }
+        ]
+      }
+    },
+    {
+      "tag": "wide-map-capacity",
+      "verdict": "helps",
+      "default_on": true,
+      "wins_last_10k": 35,
+      "wins_prior_10k": 29,
+      "family_wise": true,
+      "conflict": false,
+      "screen": {
+        "pairs": 17574,
+        "n_on": 17574,
+        "n_off": 17574,
+        "win_delta_pp": 0.706,
+        "win_z": 1.946,
+        "share_delta_pp": 0.395,
+        "share_z": 6.054,
+        "read": "share HELPS **",
+        "source": "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
+        "win_tranches": [
+          {
+            "position": "latest",
+            "pairs": 10002,
+            "win_delta_pp": 1.12,
+            "win_z": 2.332,
+            "win_se_pp": 0.48
+          },
+          {
+            "position": "previous",
+            "pairs": 7572,
+            "win_delta_pp": 0.158,
+            "win_z": 0.287,
+            "win_se_pp": 0.553
+          }
+        ]
+      }
+    },
+    {
+      "tag": "wonder-ring-settle-value",
+      "verdict": "unresolved",
+      "default_on": false,
+      "wins_last_10k": 7,
+      "wins_prior_10k": -7,
+      "family_wise": false,
+      "conflict": false,
+      "screen": {
+        "pairs": 17574,
+        "n_on": 17574,
+        "n_off": 17574,
+        "win_delta_pp": 0.137,
+        "win_z": 0.379,
+        "share_delta_pp": -0.076,
+        "share_z": -1.183,
+        "read": "~",
+        "source": "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
+        "win_tranches": [
+          {
+            "position": "latest",
+            "pairs": 10002,
+            "win_delta_pp": 0.72,
+            "win_z": 1.547,
+            "win_se_pp": 0.465
+          },
+          {
+            "position": "previous",
+            "pairs": 7572,
+            "win_delta_pp": -0.634,
+            "win_z": -1.117,
+            "win_se_pp": 0.568
+          }
+        ]
+      }
+    }
+  ]
+}

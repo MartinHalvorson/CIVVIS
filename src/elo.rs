@@ -72,27 +72,20 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "live_without_fog_land_capacity",
     "live_without_home_defense",
     "live_without_joint_tactics",
-    "live_without_loyalty_policy_defence",
+    "live_without_joint_reach_lines",
     "live_without_solvent_faith_army",
-    "live_without_siege_muster",
     "live_without_district_coverage",
     "live_without_slot_kind_tiebreak",
     "live_without_bounded_recovery",
     "live_without_army_target_weighs_enemy",
     "live_without_peacetime_deterrence",
     "live_without_siege_tracks_wall",
-    "live_without_siege_role",
     "live_without_come_ashore",
-    "live_without_suzerain_cards",
     "live_without_blind_objective_strength",
-    "live_without_muster_at_command_radius",
     "live_without_relief_targets_the_siege",
     "live_without_blind_objective_units",
     "live_without_loyalty_rate_alarm",
     "live_without_housing_districts",
-    "live_without_housing_buildings",
-    "live_without_campus_every_city",
-    "live_without_housing_cards",
     "live_without_housing_research",
     "live_without_war_economy",
     "live_without_war_reinforcement",
@@ -101,15 +94,14 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "live_without_stock_denial_lead_time",
     "live_without_projected_stock_denial",
     "live_without_endgame_war_runway",
-    "live_without_stacked_escort",
+    "live_without_live_formationless_settler_shadow",
+    "live_without_live_motion_turn_accounting",
     "live_without_counter_in_lane",
     "live_without_era_paced_expansion",
     "live_without_escort_unstick",
     "live_without_frontier_loyalty",
     "live_without_garrison_under_fire",
-    "live_without_garrison_walls",
     "live_without_naval_recon",
-    "live_without_recon_flight",
     "live_without_recon_replacement",
     "live_without_religion_sues_peace",
     "live_without_score_horizon",
@@ -121,16 +113,18 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "live_without_live_trader_route_adapter",
     "live_without_live_religious_purchase_guard",
     "live_without_recorded_tactical_step",
+    "live_without_whole_turn_backtrack_guard",
+    "live_without_step_and_reassess",
     "live_without_strike_opening",
-    "live_without_ranged_needs_line_of_sight",
     "live_without_one_launch_pad",
     "live_without_culture_building_debt",
     "live_without_culture_coverage",
     "live_without_settler_target_hysteresis",
     "live_without_tally_great_people",
     "live_without_barbarian_scouts_are_scouts",
-    "live_without_camp_reach",
-    "live_without_settler_stack_discipline",
+    "live_without_barbarian_hunt",
+    "live_without_barbarian_bargain",
+    "live_without_barbarian_ranged_answer",
     "live_without_camp_party",
     "live_without_buildings_before_projects",
     "live_without_parallel_settlers",
@@ -144,6 +138,10 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "live_without_settler_site_agreement",
     "live_without_civilian_rescue",
     "live_without_district_building_chain",
+    "live_without_settler_guard_holds",
+    "live_without_expansion_pantheon",
+    "live_without_expansion_hall",
+    "live_without_opening_settler_waits",
     "basic_evolved",
     "advanced_policy_live_control",
     "advanced_policy_envoy_priority",
@@ -154,6 +152,7 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "advanced_congress_counter",
     "advanced_congress_votes",
     "advanced_congress_counter_hard",
+    "advanced_congress_banks_decided",
     "advanced_pantheon_board",
     "advanced_banking_dedication",
     "advanced_blind_to_leaders",
@@ -238,6 +237,7 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "advanced_camp_bounty",
     "advanced_without_barbarian_scouts_are_scouts",
     "advanced_without_civilian_rescue",
+    "advanced_envelope_own_moves",
     "advanced_without_adjacent_camp_clear",
     "advanced_engine_faith_price",
     "advanced_maintenance_deck",
@@ -257,11 +257,6 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "advanced_every_lane",
     "advanced_builder_survey",
     "advanced_unit_efficiency",
-    // A wonder's missing prerequisite buildings/districts are credited with a
-    // share of the wonder's own production score, so valued wonders become
-    // reachable instead of never offered. Reserved matrix seed 32000000; one
-    // pre-registered run.
-    "advanced_wonder_reach",
     "advanced_without_unpriced_economy",
     "advanced_without_unpriced_war",
     "advanced_without_city_defence",
@@ -287,9 +282,11 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "advanced_without_village_seeking",
     "advanced_without_legal_candidates",
     "advanced_price_suzerainty",
+    "advanced_diplomacy_lane",
     "advanced_without_unit_tactics",
     "advanced_league_top",
     "advanced_joint_tactics",
+    "advanced_joint_tactics_geometric",
     "advanced_coordinated_finish",
     "advanced_single_finisher_volley",
     "strategic_cheap",
@@ -335,12 +332,14 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
 /// A/B exactly which repairs were live in the arm it measured.
 pub const LIVE_BRIDGE_TREATMENTS: &[&str] = &[
     "joint-tactics",
+    "joint-reach-lines",
     "live-trader-route",
     "live-religious-purchase",
-    "siege-muster",
     "home-defense",
-    "loyalty-policy-defence",
     "recorded-tactical-step",
+    "live-motion-turn-accounting",
+    "whole-turn-backtrack-guard",
+    "step-and-reassess",
     "strike-opening",
     "bounded-recovery",
     "army-target-weighs-enemy",
@@ -349,18 +348,12 @@ pub const LIVE_BRIDGE_TREATMENTS: &[&str] = &[
     "blind-objective-strength",
     "solvent-faith-army",
     "loyalty-rate-alarm",
-    "ranged-line-of-sight",
     "district-coverage",
     "slot-kind-tiebreak",
-    "siege-role",
     "come-ashore",
     "relief-targets-the-siege",
     "blind-objective-units",
-    "suzerain-cards",
-    "muster-at-command-radius",
     "housing-districts",
-    "campus-every-city",
-    "housing-cards",
     "housing-research",
     "war-economy",
     "war-reinforcement",
@@ -369,14 +362,12 @@ pub const LIVE_BRIDGE_TREATMENTS: &[&str] = &[
     "wide-map-capacity",
     "garrison-under-fire",
     "escort-unstick",
-    "stacked-escort",
+    "live-formationless-settler-shadow",
     "religion-sues-peace",
     "recon-replacement",
     "stranded-settler-discount",
     "siege-commitment",
     "wonder-ring-settle-value",
-    "garrison-walls",
-    "housing-buildings",
     "amenity-project-preemption",
     "amenity-district-path",
     "governor-every-lane",
@@ -384,7 +375,6 @@ pub const LIVE_BRIDGE_TREATMENTS: &[&str] = &[
     "expansion-before-prophet",
     "no-elective-war",
     "fog-land-capacity",
-    "recon-flight",
     "score-horizon",
     "one-launch-pad",
     "naval-recon",
@@ -397,8 +387,9 @@ pub const LIVE_BRIDGE_TREATMENTS: &[&str] = &[
     "settler-target-hysteresis",
     "tally-great-people",
     "barbarian-scouts-are-scouts",
-    "camp-reach",
-    "settler-stack-discipline",
+    "barbarian-hunt",
+    "barbarian-bargain",
+    "barbarian-ranged-answer",
     "camp-party",
     "buildings-before-projects",
     "deny-while-targeted",
@@ -415,6 +406,10 @@ pub const LIVE_BRIDGE_TREATMENTS: &[&str] = &[
     "settler-site-agreement",
     "civilian-rescue",
     "district-building-chain",
+    "settler-guard-holds",
+    "expansion-pantheon",
+    "expansion-hall",
+    "opening-settler-waits",
 ];
 
 /// Every explicit `civvis_orders --victory` configuration which is both
@@ -511,6 +506,11 @@ fn live_without(withheld: &'static str) -> &'static [&'static str] {
 /// `AdvancedAi::enable_engine_repairs`.
 pub const FIRAXIS_ONLY_TREATMENTS: &[&str] = &[
     "joint-tactics",
+    "joint-reach-lines",
+    // The brain's half of the mid-turn replan frame: a walk cut at its first
+    // unrevealed hex because the host executes one coalesced walk per unit.
+    // No native meaning; its native stand-in measured harmful and is gone.
+    "step-and-reassess",
     "live-trader-route",
     "live-religious-purchase",
     "solvent-faith-army",
@@ -537,12 +537,6 @@ pub const FIRAXIS_ONLY_TREATMENTS: &[&str] = &[
     // Prices the Settler seat's tally (three a civic, two a tech); the native
     // lanes keep their bred yield weights.
     "tally-culture",
-    // Pays the Settler seat's tally for the Theater Square's own chain; the
-    // native lanes keep their bred building debts.
-    "culture-building-debt",
-    // Pays the Settler seat's tally for the Theater Square the empire has not
-    // got; the native lanes keep their bred district coverage.
-    "culture-coverage",
     // Reads the live mirror's fog around a settle site; the native forecast
     // sees every rival city.
     "frontier-loyalty",
@@ -566,7 +560,13 @@ pub const FIRAXIS_ONLY_TREATMENTS: &[&str] = &[
     "parallel-settlers",
     "host-settler-pop",
     "explore-dead-targets",
+    // The host invokes the bridge again after some accepted orders. That is a
+    // replan frame, not a second game turn for persistent unit motion.
+    "live-motion-turn-accounting",
     "bank-envoys",
+    // Replaces the host's broken Settler formation channel with ordinary
+    // unit movement; native CIVVIS formations have no corresponding defect.
+    "live-formationless-settler-shadow",
     // Production Advanced already carries committed exploration. It remains
     // a live treatment so the deployment bundle and its ablation registry are
     // complete, not because `advanced_synergy` needs to turn it on again.
@@ -579,19 +579,25 @@ pub const FIRAXIS_ONLY_TREATMENTS: &[&str] = &[
     // native `do_spy_mission` sets `spy.mission` and legality already
     // debounces, so the repair cannot fire there.
     "spy-mission-patience",
-    // Prices the Settler seat's tally for the buildings inside the districts
-    // it already stands, against Firaxis rivals who fill every one; the
-    // native lanes keep their bred building debts.
-    "district-building-chain",
+    // Prices the Settler seat's pantheon against a host that grants a Settler
+    // for it, bought with the one Faith card the live capital has; the
+    // native lanes keep the shipped prefix and the bred policy weights.
+    "expansion-pantheon",
+    // Prices the Settler seat's plaza building for the land grab; the native
+    // lanes keep their bred building prices.
+    "expansion-hall",
+    // Holds the opening book's Settler for the host's population floor; the
+    // native book keeps its bred slot.
+    "opening-settler-waits",
 ];
 
 /// The military half of the native repair bundle: force assembly, marching,
 /// siege, threat reading, and the war/peace decision.
 pub const ENGINE_REPAIR_WAR_TREATMENTS: &[&str] = &[
-    "muster-at-command-radius",
     "war-reinforcement",
     "come-ashore",
     "recorded-tactical-step",
+    "whole-turn-backtrack-guard",
     "blind-objective-strength",
     "blind-objective-units",
     "relief-targets-the-siege",
@@ -599,8 +605,6 @@ pub const ENGINE_REPAIR_WAR_TREATMENTS: &[&str] = &[
     "peacetime-deterrence",
     "war-economy",
     "bounded-recovery",
-    "siege-muster",
-    "siege-role",
     "siege-tracks-wall",
     "siege-commitment",
     "war-patience",
@@ -608,15 +612,14 @@ pub const ENGINE_REPAIR_WAR_TREATMENTS: &[&str] = &[
     "endgame-war-runway",
     "home-defense",
     "garrison-under-fire",
-    "garrison-walls",
     "strike-opening",
-    "ranged-line-of-sight",
     "recon-replacement",
-    "recon-flight",
     "barbarian-scouts-are-scouts",
+    "barbarian-hunt",
+    "barbarian-bargain",
+    "barbarian-ranged-answer",
     "civilian-rescue",
     "naval-recon",
-    "camp-reach",
     "camp-party",
     "religion-sues-peace",
 ];
@@ -624,29 +627,49 @@ pub const ENGINE_REPAIR_WAR_TREATMENTS: &[&str] = &[
 /// The economic half: settlement, growth, districts, and the policy deck.
 pub const ENGINE_REPAIR_ECONOMY_TREATMENTS: &[&str] = &[
     "escort-unstick",
-    "stacked-escort",
-    "settler-stack-discipline",
     "buildings-before-projects",
     "wonder-ring-settle-value",
     "settler-site-agreement",
+    "settler-guard-holds",
     "stranded-settler-discount",
     "wide-map-capacity",
     "housing-districts",
-    "housing-buildings",
     "amenity-project-preemption",
     "amenity-district-path",
     "governor-every-lane",
-    "housing-cards",
     "housing-research",
-    "campus-every-city",
     "district-coverage",
     "slot-kind-tiebreak",
-    "loyalty-policy-defence",
     "loyalty-rate-alarm",
-    "suzerain-cards",
     "score-horizon",
     "one-launch-pad",
     "settler-target-hysteresis",
+    // ★★★★ THE RESEARCH ECONOMY SHIPS NATIVELY AND THE CULTURE ECONOMY DOES
+    // NOT, AND THE BOARD SHOWS IT. `research_economy` is set in
+    // `promoted_policy_envoy`, so every native seat already pays
+    // `RESEARCH_CAMPUS_COVERAGE` for a city with no Campus and
+    // `RESEARCH_BUILDING_DEBT` for a Campus with no Library. Its two
+    // counterparts on the other tree were classed host-only on the reasoning
+    // that "the native lanes keep their bred district coverage" — an
+    // assumption about the bred `Weights`, never a measurement.
+    //
+    // A six-seat census of the deployed genome at the deployment shape
+    // (74x46, nine city-states, 250 turns Online, seeds 90001000..4) puts the
+    // two trees side by side and the asymmetry is the live seat's, exactly:
+    // Campus in 82% of cities, Library 81%, University 74%; Theater Square
+    // **37%**, Amphitheater **35%**, Museum 29%. End-of-game culture ran
+    // 128.8 a turn against 153.7 of science, and civics 36.8 against 48.5
+    // techs. `culture_coverage`'s own writeup measured 82/27 and 72/21 on the
+    // live seat and named a game lost at t197 to a rival's tourism; the
+    // native seats lose the same way.
+    //
+    // These three are the instrument for that question, so they belong where
+    // a screen can price them. Screenable means OFF at deployment until a
+    // screen says otherwise (`apply_gene_ledger`), so this changes what can
+    // be measured and not what ships.
+    "culture-building-debt",
+    "culture-coverage",
+    "district-building-chain",
 ];
 
 /// Every live-bridge repair that fixes a CIVVIS engine defect, as evaluator
@@ -654,10 +677,10 @@ pub const ENGINE_REPAIR_ECONOMY_TREATMENTS: &[&str] = &[
 /// union of the two halves above. `engine_repair_tags_partition_the_bridge`
 /// fails if any of those three relationships stops holding.
 pub const ENGINE_REPAIR_TREATMENTS: &[&str] = &[
-    "muster-at-command-radius",
     "war-reinforcement",
     "come-ashore",
     "recorded-tactical-step",
+    "whole-turn-backtrack-guard",
     "blind-objective-strength",
     "blind-objective-units",
     "relief-targets-the-siege",
@@ -665,8 +688,6 @@ pub const ENGINE_REPAIR_TREATMENTS: &[&str] = &[
     "peacetime-deterrence",
     "war-economy",
     "bounded-recovery",
-    "siege-muster",
-    "siege-role",
     "siege-tracks-wall",
     "siege-commitment",
     "war-patience",
@@ -674,41 +695,39 @@ pub const ENGINE_REPAIR_TREATMENTS: &[&str] = &[
     "endgame-war-runway",
     "home-defense",
     "garrison-under-fire",
-    "garrison-walls",
     "strike-opening",
-    "ranged-line-of-sight",
     "recon-replacement",
-    "recon-flight",
     "barbarian-scouts-are-scouts",
+    "barbarian-hunt",
+    "barbarian-bargain",
+    "barbarian-ranged-answer",
     "civilian-rescue",
     "naval-recon",
-    "camp-reach",
     "camp-party",
     "religion-sues-peace",
     "escort-unstick",
-    "stacked-escort",
-    "settler-stack-discipline",
     "buildings-before-projects",
     "wonder-ring-settle-value",
     "settler-site-agreement",
+    "settler-guard-holds",
     "stranded-settler-discount",
     "wide-map-capacity",
     "housing-districts",
-    "housing-buildings",
     "amenity-project-preemption",
     "amenity-district-path",
     "governor-every-lane",
-    "housing-cards",
     "housing-research",
-    "campus-every-city",
     "district-coverage",
     "slot-kind-tiebreak",
-    "loyalty-policy-defence",
     "loyalty-rate-alarm",
-    "suzerain-cards",
     "score-horizon",
     "one-launch-pad",
     "settler-target-hysteresis",
+    // The culture economy's two coverage terms and the chain that fills
+    // every specialty district: see the census in the economy half above.
+    "culture-building-debt",
+    "culture-coverage",
+    "district-building-chain",
 ];
 
 /// Register a selectable arm once, under a typed identity.  The factory,
@@ -758,27 +777,20 @@ define_arm_kinds! {
     LiveWithoutFogLandCapacity => "live_without_fog_land_capacity",
     LiveWithoutHomeDefense => "live_without_home_defense",
     LiveWithoutJointTactics => "live_without_joint_tactics",
-    LiveWithoutLoyaltyPolicyDefence => "live_without_loyalty_policy_defence",
+    LiveWithoutJointReachLines => "live_without_joint_reach_lines",
     LiveWithoutSolventFaithArmy => "live_without_solvent_faith_army",
-    LiveWithoutSiegeMuster => "live_without_siege_muster",
     LiveWithoutDistrictCoverage => "live_without_district_coverage",
     LiveWithoutSlotKindTiebreak => "live_without_slot_kind_tiebreak",
     LiveWithoutBoundedRecovery => "live_without_bounded_recovery",
     LiveWithoutArmyTargetWeighsEnemy => "live_without_army_target_weighs_enemy",
     LiveWithoutPeacetimeDeterrence => "live_without_peacetime_deterrence",
     LiveWithoutSiegeTracksWall => "live_without_siege_tracks_wall",
-    LiveWithoutSiegeRole => "live_without_siege_role",
     LiveWithoutComeAshore => "live_without_come_ashore",
-    LiveWithoutSuzerainCards => "live_without_suzerain_cards",
     LiveWithoutBlindObjectiveStrength => "live_without_blind_objective_strength",
-    LiveWithoutMusterAtCommandRadius => "live_without_muster_at_command_radius",
     LiveWithoutReliefTargetsTheSiege => "live_without_relief_targets_the_siege",
     LiveWithoutBlindObjectiveUnits => "live_without_blind_objective_units",
     LiveWithoutLoyaltyRateAlarm => "live_without_loyalty_rate_alarm",
     LiveWithoutHousingDistricts => "live_without_housing_districts",
-    LiveWithoutHousingBuildings => "live_without_housing_buildings",
-    LiveWithoutCampusEveryCity => "live_without_campus_every_city",
-    LiveWithoutHousingCards => "live_without_housing_cards",
     LiveWithoutHousingResearch => "live_without_housing_research",
     LiveWithoutWarEconomy => "live_without_war_economy",
     LiveWithoutWarReinforcement => "live_without_war_reinforcement",
@@ -792,9 +804,7 @@ define_arm_kinds! {
     LiveWithoutEscortUnstick => "live_without_escort_unstick",
     LiveWithoutFrontierLoyalty => "live_without_frontier_loyalty",
     LiveWithoutGarrisonUnderFire => "live_without_garrison_under_fire",
-    LiveWithoutGarrisonWalls => "live_without_garrison_walls",
     LiveWithoutNavalRecon => "live_without_naval_recon",
-    LiveWithoutReconFlight => "live_without_recon_flight",
     LiveWithoutReconReplacement => "live_without_recon_replacement",
     LiveWithoutReligionSuesPeace => "live_without_religion_sues_peace",
     LiveWithoutScoreHorizon => "live_without_score_horizon",
@@ -803,20 +813,23 @@ define_arm_kinds! {
     LiveWithoutTallyCulture => "live_without_tally_culture",
     LiveWithoutWideMapCapacity => "live_without_wide_map_capacity",
     LiveWithoutWonderRingSettleValue => "live_without_wonder_ring_settle_value",
-    LiveWithoutStackedEscort => "live_without_stacked_escort",
+    LiveWithoutLiveFormationlessSettlerShadow => "live_without_live_formationless_settler_shadow",
+    LiveWithoutLiveMotionTurnAccounting => "live_without_live_motion_turn_accounting",
     LiveWithoutLiveTraderRouteAdapter => "live_without_live_trader_route_adapter",
     LiveWithoutLiveReligiousPurchaseGuard => "live_without_live_religious_purchase_guard",
     LiveWithoutRecordedTacticalStep => "live_without_recorded_tactical_step",
+    LiveWithoutWholeTurnBacktrackGuard => "live_without_whole_turn_backtrack_guard",
+    LiveWithoutStepAndReassess => "live_without_step_and_reassess",
     LiveWithoutStrikeOpening => "live_without_strike_opening",
-    LiveWithoutRangedNeedsLineOfSight => "live_without_ranged_needs_line_of_sight",
     LiveWithoutOneLaunchPad => "live_without_one_launch_pad",
     LiveWithoutCultureBuildingDebt => "live_without_culture_building_debt",
     LiveWithoutCultureCoverage => "live_without_culture_coverage",
     LiveWithoutSettlerTargetHysteresis => "live_without_settler_target_hysteresis",
     LiveWithoutTallyGreatPeople => "live_without_tally_great_people",
     LiveWithoutBarbarianScoutsAreScouts => "live_without_barbarian_scouts_are_scouts",
-    LiveWithoutCampReach => "live_without_camp_reach",
-    LiveWithoutSettlerStackDiscipline => "live_without_settler_stack_discipline",
+    LiveWithoutBarbarianHunt => "live_without_barbarian_hunt",
+    LiveWithoutBarbarianBargain => "live_without_barbarian_bargain",
+    LiveWithoutBarbarianRangedAnswer => "live_without_barbarian_ranged_answer",
     LiveWithoutCampParty => "live_without_camp_party",
     LiveWithoutBuildingsBeforeProjects => "live_without_buildings_before_projects",
     LiveWithoutParallelSettlers => "live_without_parallel_settlers",
@@ -830,6 +843,10 @@ define_arm_kinds! {
     LiveWithoutSettlerSiteAgreement => "live_without_settler_site_agreement",
     LiveWithoutCivilianRescue => "live_without_civilian_rescue",
     LiveWithoutDistrictBuildingChain => "live_without_district_building_chain",
+    LiveWithoutSettlerGuardHolds => "live_without_settler_guard_holds",
+    LiveWithoutExpansionPantheon => "live_without_expansion_pantheon",
+    LiveWithoutExpansionHall => "live_without_expansion_hall",
+    LiveWithoutOpeningSettlerWaits => "live_without_opening_settler_waits",
     Advanced => "advanced",
     FogHonest => "fog_honest",
     AdvancedBankingDedication => "advanced_banking_dedication",
@@ -852,6 +869,7 @@ define_arm_kinds! {
     AdvancedCongressCounter => "advanced_congress_counter",
     AdvancedCongressCounterHard => "advanced_congress_counter_hard",
     AdvancedCongressVotes => "advanced_congress_votes",
+    AdvancedCongressBanksDecided => "advanced_congress_banks_decided",
     AdvancedPantheonBoard => "advanced_pantheon_board",
     AdvancedCounterInLane => "advanced_counter_in_lane",
     AdvancedCounterStandDown => "advanced_counter_stand_down",
@@ -868,6 +886,7 @@ define_arm_kinds! {
     AdvancedExpansionPayback => "advanced_expansion_payback",
     AdvancedCoupledExpansion => "advanced_coupled_expansion",
     AdvancedJointTactics => "advanced_joint_tactics",
+    AdvancedJointTacticsGeometric => "advanced_joint_tactics_geometric",
     AdvancedCoordinatedFinish => "advanced_coordinated_finish",
     AdvancedSingleFinisherVolley => "advanced_single_finisher_volley",
     AdvancedLateExpansion => "advanced_late_expansion",
@@ -909,6 +928,7 @@ define_arm_kinds! {
     AdvancedCampBounty => "advanced_camp_bounty",
     AdvancedWithoutBarbarianScoutExemption => "advanced_without_barbarian_scouts_are_scouts",
     AdvancedWithoutCivilianRescue => "advanced_without_civilian_rescue",
+    AdvancedEnvelopeOwnMoves => "advanced_envelope_own_moves",
     AdvancedWithoutAdjacentCampClear => "advanced_without_adjacent_camp_clear",
     AdvancedEngineFaithPrice => "advanced_engine_faith_price",
     AdvancedMaintenanceDeck => "advanced_maintenance_deck",
@@ -917,7 +937,6 @@ define_arm_kinds! {
     AdvancedEveryLane => "advanced_every_lane",
     AdvancedBuilderSurvey => "advanced_builder_survey",
     AdvancedUnitEfficiency => "advanced_unit_efficiency",
-    AdvancedWonderReach => "advanced_wonder_reach",
     AdvancedWithoutUnpricedEconomy => "advanced_without_unpriced_economy",
     AdvancedWithoutUnpricedWar => "advanced_without_unpriced_war",
     AdvancedWithoutCityDefence => "advanced_without_city_defence",
@@ -933,6 +952,7 @@ define_arm_kinds! {
     AdvancedWithoutVillageSeeking => "advanced_without_village_seeking",
     AdvancedWithoutLegalCandidates => "advanced_without_legal_candidates",
     AdvancedPriceSuzerainty => "advanced_price_suzerainty",
+    AdvancedDiplomacyLane => "advanced_diplomacy_lane",
     AdvancedWithoutUnitTactics => "advanced_without_unit_tactics",
     AdvancedTargetDomination => "advanced_target_domination",
     AdvancedTargetScore => "advanced_target_score",
@@ -1154,7 +1174,65 @@ pub const ELO_SCHEMA_VERSION: u32 = 3;
 /// measured — the justification is that two definitions of the same thing
 /// disagreed, not a demonstrated gain. Rows before and after v15 are not
 /// comparable in any game where an improvement was pillaged.
-pub const ELO_PROTOCOL_VERSION: u32 = 15;
+///
+/// **v16 (2026-08-18) — Barbarian Scouts now report a sighted city, and each
+/// reported outpost raises one finite, difficulty-shaped raiding party.** The
+/// old phase let unreported camps add globally capped, unassigned units, so a
+/// distant camp could consume the force a successful Scout had earned. The
+/// corrected world rule keeps the Scout home while its report is active,
+/// retains each raider's source camp, and ends the alert after the party has
+/// formed.
+///
+/// This is a shared native-world rule with no controller gate: it changes what
+/// every participant faces before and during their turns. The frozen anchor
+/// therefore moved from v15's 18,586 decisions and `0x2076_c0d8_5213_9238` to
+/// v16's 17,494 and `0x6cf9_b1fa_a854_dcd6` across its five profiles.
+///
+/// **v17 (2026-08-19) — the Great Person roster reaches the Information era.**
+/// It fills the roster out to the Information era. It held 29 of
+/// Gathering Storm's 213 individuals and stopped at the Atomic era, so from the
+/// midgame every class ran out and `Game::unused_great_person_faith` paid the
+/// whole Campus, Theatre Square and Harbour yield out as Faith --
+/// **26.6% of all non-prophet Great Person points**, measured over eight
+/// 6-player 200-turn games. This too is a shared world rule with no controller
+/// gate: the market every participant recruits from is the same one. The
+/// anchor moves again, to **17,482 decisions and `0x8162_c919_b83c_40df`**.
+///
+/// **v18 (2026-08-21) — a Barbarian Scout reports the WALKERS it sees, not
+/// only cities.** v16 gave each reported outpost a finite raiding party, but
+/// the report itself still accepted a city alone — so a camp's whole raid
+/// throughput was one Scout's round trip to a settlement, and an empire's
+/// Settlers, which is what a Civilization VI barbarian actually takes, could
+/// not start a raid at all.
+///
+/// MEASURED, `ai_eval live live_without_camp_reach`, 12 pairs / 72 seat-games
+/// an arm at 6p/150t/online on identical seeds: **0.22 civilians lost to
+/// barbarians per game**, against the live Civilization VI seat losing **4 of
+/// the 8 Settlers that ever walked, in 104 turns** (run
+/// civvis-20260821T130446Z) at a matching city count.
+///
+/// ⚠ CORRECTED 2026-08-21: an earlier reading of this run said 8 of 12. The
+/// host emits `unit_lost` when a Settler FOUNDS a city — the operation consumes
+/// the unit, so `CivvisLedger.onUnitRemoved` reports it exactly like a capture.
+/// Counting those events naively doubles the loss. Subtract every `unit_lost`
+/// whose `unit` id also has a `found` event. The gap this version answers is
+/// smaller than first stated and still an order of magnitude. Not an exposure
+/// difference — the opponent. Every arm this project has priced on settler
+/// safety was measured against a barbarian that did not hunt settlers, which
+/// is why the whole family reads neutral-to-harmful in `docs/gene_ledger.json`
+/// at 13,446 pairs apiece and ships off.
+///
+/// With the sighting extended, and with the raider pursuit of #2227 that this
+/// version follows, the same measurement reads **0.61**.
+///
+/// Like v16 this is a shared native-world rule with no controller gate — the
+/// Scout phase runs in `Game::barbarian_phase` and every participant faces the
+/// same camps. The anchor therefore moves again, to **18,596 decisions and
+/// `0xf78a_2b10_c0e3_5945`**.
+///
+/// Each of these is a rules correction, not a compatibility re-pin: rows from
+/// v15, v16, v17 and v18 are not comparable.
+pub const ELO_PROTOCOL_VERSION: u32 = 18;
 pub const ELO_BASE_RATING: f64 = 1500.0;
 pub const DEFAULT_RATINGS_PATH: &str = "data/elo_ratings.json";
 /// The Tactics ladder. Pure unit tactics is a different skill from the grand
@@ -2693,6 +2771,18 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             ai.congress_counter_votes = true;
             Box::new(ai)
         }
+        // The free Diplomatic Victory Point on a resolution that is already
+        // settled. `advanced` answers one with the same opposition it would
+        // cast against a live vote, backed by the treasury when the plan is
+        // Diplomacy -- a ballot that cannot change the result, forfeits the
+        // point the host pays for predicting it, and is not refunded on the
+        // occasions it happens to win. This arm takes the point and stakes
+        // only the free first vote.
+        "advanced_congress_banks_decided" => {
+            let mut ai = AdvancedAi::new();
+            ai.congress_banks_a_decided_vote = true;
+            Box::new(ai)
+        }
         // The pantheon read from the land instead of from a fixed order. The
         // shipped choice is a constant: a pantheon is exclusive and the
         // deployment profile seats six majors against a roster of eleven, so
@@ -3247,6 +3337,45 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             ai.enable_price_the_suzerainty();
             Box::new(ai)
         }
+        // ★★★ THE DIPLOMATIC LANE NEEDS A REASON AND ITS FUEL, AND EVERY ARM
+        // BEFORE THIS ONE SUPPLIED EXACTLY ONE OF THEM.
+        //
+        // `victory_focus` scores Diplomacy `dvp * 5 + suzerain * 6` and every
+        // other lane prospectively — Science floors at 25, Religion at 46 once
+        // an opening is viable. Diplomacy alone is scored on what the seat has
+        // already banked, so its argmax input is a self-fulfilling zero and the
+        // lane takes 0.2% of observed player-turns.
+        //
+        // `diplomatic_opening` answers that with Religion's own opening figure,
+        // and its screen read 42.5% — the entry's own reading is that the dose
+        // "buys a dose too small to help and possibly large enough to hurt, by
+        // pulling seats out of Expansion into a lane whose resource — envoys —
+        // the census measures at 0.00 unspent".
+        //
+        // `price_the_suzerainty` answers the other half. It doubles held
+        // suzerainties, 0.3 to 0.7, and measured +22 then +3 on disjoint seeds.
+        // Re-run 2026-08-19 with all six victories enabled — both recorded runs
+        // had diplomatic victory switched off — it produced the lane's first
+        // self-play completions, 2 against the control's 0 in 240 games, while
+        // the lane's occupancy stayed at 0.2%. Fuel, and still no reason to
+        // enter.
+        //
+        // Neither closes the loop alone. The opening puts the seat in the lane
+        // through the final `victory.strategy` branch of `assess`; the prize
+        // converts its envoys into suzerainties; the suzerainties raise the
+        // retrospective score toward the `progress >= 65` gate that keeps the
+        // seat there. This arm exists to measure that loop, not either half.
+        //
+        // ⚠ Minor-dependent, like both of its halves: with no city-state
+        // seated it is byte-identical to `advanced`. It belongs in
+        // `MINOR_DEPENDENT_ARMS` in `src/bin/ai_eval.rs`, which #2183 is
+        // editing; whichever of the two merges second adds the row.
+        "advanced_diplomacy_lane" => {
+            let mut ai = AdvancedAi::new();
+            ai.diplomatic_opening = true;
+            ai.enable_price_the_suzerainty();
+            Box::new(ai)
+        }
         "advanced_settlement_gap_target" => {
             let mut ai = AdvancedAi::new();
             ai.enable_settlement_gap_target();
@@ -3314,9 +3443,12 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         // measured +32/+34 on seeds 10800000/11000000 and +38 (CI +10..+66)
         // on the corrected-gate matrix at seed stream 18000000; this arm asks
         // the inverse question if anyone re-opens the axis.
+        // ⚠ `siege_muster` was removed from the code on 2026-08-21 (ranking
+        // row −36/10k, inside the noise band, removed by operator directive
+        // with the bottom of the table); this historical re-addition arm
+        // carries the surviving three of its four flags.
         "advanced_war_half" => {
             let mut ai = AdvancedAi::new();
-            ai.enable_siege_muster();
             ai.enable_home_defense();
             ai.enable_tactical_strategy();
             ai.enable_unit_objective_memory();
@@ -3348,15 +3480,6 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         "advanced_fortify_idle_units" => {
             let mut ai = AdvancedAi::new();
             ai.enable_fortify_idle_units();
-            Box::new(ai)
-        }
-        // A wonder blocked only by missing buildings/districts prices those
-        // prerequisites with a share of its own wonder-arm score, so the
-        // build order can walk toward wonders it values instead of waiting
-        // to qualify by accident. Reserved matrix seed 32000000.
-        "advanced_wonder_reach" => {
-            let mut ai = AdvancedAi::new();
-            ai.enable_wonder_prereq_reach();
             Box::new(ai)
         }
         // Price the promoted open-water rule by taking it back out. The
@@ -3419,6 +3542,14 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             ai.disable_civilian_rescue();
             Box::new(ai)
         }
+        // The hostile-envelope table kept across the seat's own unit moves —
+        // the 2× the exact cache of #2103 cannot buy. Priced against stock
+        // `advanced` before it is promoted, because its reports differ.
+        "advanced_envelope_own_moves" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_envelope_cache_across_own_moves();
+            Box::new(ai)
+        }
         // Withhold the adjacent camp clear so its promotion is priced: the
         // current controller ships it ON, and only the frozen anchor lacks it.
         "advanced_without_adjacent_camp_clear" => {
@@ -3451,7 +3582,6 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         "advanced_without_recon_fleet" => {
             let mut ai = AdvancedAi::new();
             ai.disable_recon_replacement();
-            ai.disable_recon_flight();
             ai.disable_naval_recon();
             ai.disable_come_ashore();
             Box::new(ai)
@@ -3477,7 +3607,6 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             ai.adjacency_site_planning = false;
             ai.research_economy = false;
             ai.disable_amenity_districts();
-            ai.disable_siege_muster();
             ai.disable_home_defense();
             ai.disable_tactical_strategy();
             ai.disable_unit_objective_memory();
@@ -3499,9 +3628,13 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             Box::new(ai)
         }
         "advanced_holy_lane_v0" => {
-            let mut w = Weights::default();
-            w.d_holy = PRE_2026_08_10_D_HOLY;
-            let mut ai = AdvancedAi::with_weights(w);
+            // Struct-update rather than the sibling arms' assign-after-default:
+            // `rust-quality` is line-scoped, so re-adding these lines makes them
+            // this change's to answer for. Same weights either way.
+            let mut ai = AdvancedAi::with_weights(Weights {
+                d_holy: PRE_2026_08_10_D_HOLY,
+                ..Default::default()
+            });
             ai.holy_lane_parity = true;
             Box::new(ai)
         }
@@ -3562,6 +3695,16 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         "advanced_joint_tactics" => {
             let mut ai = AdvancedAi::new();
             ai.joint_tactics = true;
+            Box::new(ai)
+        }
+        // The same joint search with the approach lines of `docs/TACTICS.md`
+        // §17 withheld: one-step and handoff lines only, no reach flood.
+        // Paired against `advanced_joint_tactics` on `battle_bench` or the
+        // arena this prices the reach lines and nothing else.
+        "advanced_joint_tactics_geometric" => {
+            let mut ai = AdvancedAi::new();
+            ai.joint_tactics = true;
+            ai.disable_joint_reach_lines();
             Box::new(ai)
         }
         // The friendly-volley extension on the production controller without
@@ -4337,31 +4480,29 @@ impl ArmKind {
             }
             Self::LiveWithoutNoElectiveWar => live_without("no-elective-war"),
             Self::LiveWithoutFogLandCapacity => live_without("fog-land-capacity"),
-            Self::LiveWithoutStackedEscort => live_without("stacked-escort"),
+            Self::LiveWithoutLiveFormationlessSettlerShadow => {
+                live_without("live-formationless-settler-shadow")
+            }
+            Self::LiveWithoutLiveMotionTurnAccounting => {
+                live_without("live-motion-turn-accounting")
+            }
             Self::LiveWithoutJointTactics => live_without("joint-tactics"),
+            Self::LiveWithoutJointReachLines => live_without("joint-reach-lines"),
             Self::LiveWithoutHomeDefense => live_without("home-defense"),
             Self::LiveWithoutSolventFaithArmy => live_without("solvent-faith-army"),
-            Self::LiveWithoutSiegeMuster => live_without("siege-muster"),
             Self::LiveWithoutDistrictCoverage => live_without("district-coverage"),
             Self::LiveWithoutLoyaltyRateAlarm => live_without("loyalty-rate-alarm"),
             Self::LiveWithoutBoundedRecovery => live_without("bounded-recovery"),
             Self::LiveWithoutArmyTargetWeighsEnemy => live_without("army-target-weighs-enemy"),
             Self::LiveWithoutSiegeTracksWall => live_without("siege-tracks-wall"),
             Self::LiveWithoutBlindObjectiveStrength => live_without("blind-objective-strength"),
-            Self::LiveWithoutSiegeRole => live_without("siege-role"),
             Self::LiveWithoutComeAshore => live_without("come-ashore"),
-            Self::LiveWithoutSuzerainCards => live_without("suzerain-cards"),
             Self::LiveWithoutReliefTargetsTheSiege => live_without("relief-targets-the-siege"),
             Self::LiveWithoutBlindObjectiveUnits => live_without("blind-objective-units"),
-            Self::LiveWithoutMusterAtCommandRadius => live_without("muster-at-command-radius"),
             Self::LiveWithoutSlotKindTiebreak => live_without("slot-kind-tiebreak"),
             Self::LiveWithoutHousingDistricts => live_without("housing-districts"),
-            Self::LiveWithoutCampusEveryCity => live_without("campus-every-city"),
-            Self::LiveWithoutHousingCards => live_without("housing-cards"),
             Self::LiveWithoutHousingResearch => live_without("housing-research"),
-            Self::LiveWithoutHousingBuildings => live_without("housing-buildings"),
             Self::LiveWithoutPeacetimeDeterrence => live_without("peacetime-deterrence"),
-            Self::LiveWithoutLoyaltyPolicyDefence => live_without("loyalty-policy-defence"),
             Self::LiveWithoutWarEconomy => live_without("war-economy"),
             Self::LiveWithoutWarReinforcement => live_without("war-reinforcement"),
             Self::LiveWithoutWarPatience => live_without("war-patience"),
@@ -4374,9 +4515,7 @@ impl ArmKind {
             Self::LiveWithoutEscortUnstick => live_without("escort-unstick"),
             Self::LiveWithoutFrontierLoyalty => live_without("frontier-loyalty"),
             Self::LiveWithoutGarrisonUnderFire => live_without("garrison-under-fire"),
-            Self::LiveWithoutGarrisonWalls => live_without("garrison-walls"),
             Self::LiveWithoutNavalRecon => live_without("naval-recon"),
-            Self::LiveWithoutReconFlight => live_without("recon-flight"),
             Self::LiveWithoutReconReplacement => live_without("recon-replacement"),
             Self::LiveWithoutReligionSuesPeace => live_without("religion-sues-peace"),
             Self::LiveWithoutScoreHorizon => live_without("score-horizon"),
@@ -4388,16 +4527,20 @@ impl ArmKind {
             Self::LiveWithoutLiveTraderRouteAdapter => live_without("live-trader-route"),
             Self::LiveWithoutLiveReligiousPurchaseGuard => live_without("live-religious-purchase"),
             Self::LiveWithoutRecordedTacticalStep => live_without("recorded-tactical-step"),
+            Self::LiveWithoutWholeTurnBacktrackGuard => live_without("whole-turn-backtrack-guard"),
+            Self::LiveWithoutStepAndReassess => live_without("step-and-reassess"),
             Self::LiveWithoutStrikeOpening => live_without("strike-opening"),
-            Self::LiveWithoutRangedNeedsLineOfSight => live_without("ranged-line-of-sight"),
             Self::LiveWithoutOneLaunchPad => live_without("one-launch-pad"),
             Self::LiveWithoutCultureBuildingDebt => live_without("culture-building-debt"),
             Self::LiveWithoutCultureCoverage => live_without("culture-coverage"),
             Self::LiveWithoutSettlerTargetHysteresis => live_without("settler-target-hysteresis"),
             Self::LiveWithoutTallyGreatPeople => live_without("tally-great-people"),
-            Self::LiveWithoutBarbarianScoutsAreScouts => live_without("barbarian-scouts-are-scouts"),
-            Self::LiveWithoutCampReach => live_without("camp-reach"),
-            Self::LiveWithoutSettlerStackDiscipline => live_without("settler-stack-discipline"),
+            Self::LiveWithoutBarbarianScoutsAreScouts => {
+                live_without("barbarian-scouts-are-scouts")
+            }
+            Self::LiveWithoutBarbarianHunt => live_without("barbarian-hunt"),
+            Self::LiveWithoutBarbarianBargain => live_without("barbarian-bargain"),
+            Self::LiveWithoutBarbarianRangedAnswer => live_without("barbarian-ranged-answer"),
             Self::LiveWithoutCampParty => live_without("camp-party"),
             Self::LiveWithoutBuildingsBeforeProjects => live_without("buildings-before-projects"),
             Self::LiveWithoutParallelSettlers => live_without("parallel-settlers"),
@@ -4411,6 +4554,10 @@ impl ArmKind {
             Self::LiveWithoutSettlerSiteAgreement => live_without("settler-site-agreement"),
             Self::LiveWithoutCivilianRescue => live_without("civilian-rescue"),
             Self::LiveWithoutDistrictBuildingChain => live_without("district-building-chain"),
+            Self::LiveWithoutSettlerGuardHolds => live_without("settler-guard-holds"),
+            Self::LiveWithoutExpansionPantheon => live_without("expansion-pantheon"),
+            Self::LiveWithoutExpansionHall => live_without("expansion-hall"),
+            Self::LiveWithoutOpeningSettlerWaits => live_without("opening-settler-waits"),
             // The native repair bundle is a COMPOSITE for the same reason
             // `live` is, and is tagged the same way: against `advanced` the
             // differing axes name all 38 repairs, and against `live` they name
@@ -4476,6 +4623,7 @@ impl ArmKind {
             Self::AdvancedEarlyScoreAlarm => &["early-score-alarm"],
             Self::AdvancedCongressCounter => &["congress-counter-target"],
             Self::AdvancedCongressVotes => &["congress-counter-votes"],
+            Self::AdvancedCongressBanksDecided => &["congress-banks-a-decided-vote"],
             Self::AdvancedPantheonBoard => &["pantheon-reads-the-board"],
             Self::AdvancedCongressCounterHard => {
                 &["congress-counter-target", "congress-counter-votes"]
@@ -4497,7 +4645,8 @@ impl ArmKind {
             Self::AdvancedCityStrategyPressureOnly => &["city-directives", "city-pressure-only"],
             Self::AdvancedExpansionPayback => &["expansion-payback"],
             Self::AdvancedCoupledExpansion => &["coupled-expansion"],
-            Self::AdvancedJointTactics => &["joint-tactics"],
+            Self::AdvancedJointTactics => &["joint-tactics", "joint-reach-lines"],
+            Self::AdvancedJointTacticsGeometric => &["joint-tactics"],
             Self::AdvancedCoordinatedFinish => &["coordinated-finish"],
             Self::AdvancedSingleFinisherVolley => &["coordinated-finish", "single-finisher-volley"],
             Self::AdvancedLateExpansion => &["late-expansion"],
@@ -4534,20 +4683,15 @@ impl ArmKind {
             Self::AdvancedCampBounty => &["camp-bounty-errand"],
             Self::AdvancedWithoutBarbarianScoutExemption => &["barbarian-scout-exemption-withheld"],
             Self::AdvancedWithoutCivilianRescue => &["civilian-rescue-withheld"],
+            Self::AdvancedEnvelopeOwnMoves => &["envelope-cache-across-own-moves"],
             Self::AdvancedWithoutAdjacentCampClear => &["adjacent-camp-clear-withheld"],
             Self::AdvancedEngineFaithPrice => &["engine-faith-price"],
             Self::AdvancedMaintenanceDeck => &["maintenance-aware-deck"],
-            Self::AdvancedReconFleet => &[
-                "recon-replacement",
-                "recon-flight",
-                "naval-recon",
-                "come-ashore",
-            ],
+            Self::AdvancedReconFleet => &["recon-replacement", "naval-recon", "come-ashore"],
             Self::AdvancedWithoutReconFleet => &["recon-fleet-withheld"],
             Self::AdvancedEveryLane => &["governor-under-every-lane"],
             Self::AdvancedBuilderSurvey => &["builder-priced-by-survey"],
             Self::AdvancedUnitEfficiency => &["unit-strength-per-cost"],
-            Self::AdvancedWonderReach => &["wonder-prereq-reach"],
             Self::AdvancedWithoutUnpricedEconomy => &["unpriced-economy-half-withheld"],
             Self::AdvancedWithoutUnpricedWar => &["unpriced-war-half-withheld"],
             Self::AdvancedWithoutCityDefence => &["city-defence-quarter-withheld"],
@@ -4563,6 +4707,14 @@ impl ArmKind {
             Self::AdvancedWithoutVillageSeeking => &["village-seeking-withheld"],
             Self::AdvancedWithoutLegalCandidates => &["legal-candidate-screen-withheld"],
             Self::AdvancedPriceSuzerainty => &["suzerainty-priced-into-envoy-placement"],
+            // Both axes, deliberately. `docs/eval/README.md` records the rule
+            // this has to satisfy — a composite gate licenses the composite and
+            // never its parts — and declaring both is what makes a promotion
+            // here unable to be read as a promotion of either half.
+            Self::AdvancedDiplomacyLane => &[
+                "diplomatic-lane-prospective",
+                "suzerainty-priced-into-envoy-placement",
+            ],
             Self::AdvancedWithoutUnitTactics => &["unit-tactics-quarter-withheld"],
             Self::AdvancedMeasuredDedication => &["dedication-measured"],
             Self::StrategicCheap => &["search-cheap"],
@@ -5050,6 +5202,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
             (Vec::new(), "advanced_without_barbarian_scouts_are_scouts")
         }
         "advanced_without_civilian_rescue" => (Vec::new(), "advanced_without_civilian_rescue"),
+        "advanced_envelope_own_moves" => (Vec::new(), "advanced_envelope_own_moves"),
         "advanced_without_adjacent_camp_clear" => {
             (Vec::new(), "advanced_without_adjacent_camp_clear")
         }
@@ -5060,7 +5213,6 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_every_lane" => (Vec::new(), "advanced_every_lane"),
         "advanced_builder_survey" => (Vec::new(), "advanced_builder_survey"),
         "advanced_unit_efficiency" => (Vec::new(), "advanced_unit_efficiency"),
-        "advanced_wonder_reach" => (Vec::new(), "advanced_wonder_reach"),
         "advanced_without_unpriced_economy" => (Vec::new(), "advanced_without_unpriced_economy"),
         // Aliases since the 2026-08-14 war-half removal: the flags these
         // withheld no longer ship, so the arms construct the control.
@@ -5078,9 +5230,11 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_without_village_seeking" => (Vec::new(), "advanced_without_village_seeking"),
         "advanced_without_settler_deadline" => (Vec::new(), "advanced_without_settler_deadline"),
         "advanced_price_suzerainty" => (Vec::new(), "advanced_price_suzerainty"),
+        "advanced_diplomacy_lane" => (Vec::new(), "advanced_diplomacy_lane"),
         "advanced_without_unit_tactics" => (Vec::new(), "advanced"),
         "advanced_war_half" => (Vec::new(), "advanced_war_half"),
         "advanced_joint_tactics" => (Vec::new(), "advanced_joint_tactics"),
+        "advanced_joint_tactics_geometric" => (Vec::new(), "advanced_joint_tactics_geometric"),
         "advanced_coordinated_finish" => (Vec::new(), "advanced_coordinated_finish"),
         "advanced_single_finisher_volley" => (Vec::new(), "advanced_single_finisher_volley"),
         "advanced_league_top" => (Vec::new(), "advanced_league_top"),
@@ -5090,6 +5244,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_congress_counter" => (Vec::new(), "advanced_congress_counter"),
         "advanced_congress_votes" => (Vec::new(), "advanced_congress_votes"),
         "advanced_congress_counter_hard" => (Vec::new(), "advanced_congress_counter_hard"),
+        "advanced_congress_banks_decided" => (Vec::new(), "advanced_congress_banks_decided"),
         "advanced_pantheon_board" => (Vec::new(), "advanced_pantheon_board"),
         "advanced_counter_stand_down" => (Vec::new(), "advanced_counter_stand_down"),
         "advanced_early_score_alarm" => (Vec::new(), "advanced_early_score_alarm"),
@@ -6506,6 +6661,7 @@ mod tests {
                 "advanced_synergy_war",
                 "advanced_synergy_economy",
                 "advanced_joint_tactics",
+                "advanced_joint_tactics_geometric",
                 "advanced_coordinated_finish",
                 "advanced_single_finisher_volley",
                 "advanced",
@@ -6526,6 +6682,7 @@ mod tests {
                 "advanced_congress_counter",
                 "advanced_congress_votes",
                 "advanced_congress_counter_hard",
+                "advanced_congress_banks_decided",
                 "advanced_pantheon_board",
                 "advanced_counter_in_lane",
                 "advanced_counter_stand_down",
@@ -6578,6 +6735,7 @@ mod tests {
                 "advanced_camp_bounty",
                 "advanced_without_barbarian_scouts_are_scouts",
                 "advanced_without_civilian_rescue",
+                "advanced_envelope_own_moves",
                 "advanced_without_adjacent_camp_clear",
                 "advanced_engine_faith_price",
                 "advanced_maintenance_deck",
@@ -6586,7 +6744,6 @@ mod tests {
                 "advanced_every_lane",
                 "advanced_builder_survey",
                 "advanced_unit_efficiency",
-                "advanced_wonder_reach",
                 "advanced_without_unpriced_economy",
                 "advanced_without_unpriced_war",
                 "advanced_without_city_defence",
@@ -6602,6 +6759,7 @@ mod tests {
                 "advanced_without_explore_commit",
                 "advanced_without_village_seeking",
                 "advanced_price_suzerainty",
+                "advanced_diplomacy_lane",
                 "advanced_without_unit_tactics",
                 // Built from code, not from a weights artifact: these six differ
                 // from `advanced` only in the victory lane they are handed.
@@ -6730,10 +6888,10 @@ mod tests {
             include_str!("ai/advanced/treatment_flags.rs")
         );
         let body = source
-            .split("pub fn enable_live_bridge(&mut self) {")
+            .split("pub fn enable_live_bridge_universe(&mut self) {")
             .nth(1)
             .and_then(|tail| tail.split("\n    }\n").next())
-            .expect("enable_live_bridge body");
+            .expect("enable_live_bridge_universe body");
         let enabled = body.matches("self.enable_").count();
         assert_eq!(
             enabled,
@@ -6850,10 +7008,15 @@ mod tests {
         /// deployment-profile run split every map at +0 Elo for 2.5x the
         /// rollout branches.
         const EXCLUDED: &[&str] = &[
+            // The brain's half of the mid-turn replan frame (a bridge fact).
+            "step_and_reassess",
             "live_trader_route_adapter",
             "live_religious_purchase_guard",
             "solvent_faith_army",
             "joint_tactics",
+            // A sub-feature of the joint search: it has no effect where the
+            // search does not run, and the search is excluded above.
+            "joint_reach_lines",
             // Prices a Firaxis-specific opportunity: an uncontested wonder
             // catalogue on the Settler seat and a score tally at the host's
             // turn limit. CIVVIS-vs-CIVVIS wonders are the contested race the
@@ -6873,11 +7036,15 @@ mod tests {
             "era_paced_expansion",
             // The Settler seat's tally weights; the native lanes stay bred.
             "tally_culture",
-            // The Settler seat's tally price of that chain's buildings.
-            "culture_building_debt",
-            // The Settler seat's tally price of the coverage those weights
-            // never bought.
-            "culture_coverage",
+            // `culture_building_debt`, `culture_coverage` and
+            // `district_building_chain` left this list on 2026-08-21 (PR
+            // #2245). `tally_culture` above really is the host's score rule;
+            // those three are ordinary district-coverage and building-debt
+            // terms with no host semantics in them, and the native board
+            // shows the gap they were written for — Campus in 79-82% of
+            // cities against Theater Square in 33-37%. They are native
+            // repairs now, and the ledger withholds them until a screen
+            // prices them.
             // Reads the live mirror's fog around a settle site.
             "frontier_loyalty",
             // The Settler seat's tally price of a Great Person.
@@ -6898,6 +7065,12 @@ mod tests {
             "explore_dead_targets",
             "explore_commit",
             "bank_envoys",
+            // Replaces only the host formation channel with the ordinary
+            // movement shadow; native formations have no corresponding bug.
+            "live_formationless_settler_shadow",
+            // Firaxis can ask the bridge for same-turn replans after an order;
+            // native turns have no duplicate motion snapshots to coalesce.
+            "live_motion_turn_accounting",
             // The Settler seat's land, at the Settler seat's pace; the league
             // cadence stays bred.
             "land_grab",
@@ -6905,10 +7078,16 @@ mod tests {
             // operation; native `do_spy_mission` sets `spy.mission` and
             // legality already debounces, so the repair cannot fire there.
             "spy_mission_patience",
-            // The Settler seat's tally for the buildings inside its
-            // districts, against Firaxis rivals who fill every one; the
-            // native lanes keep their bred building debts.
-            "district_building_chain",
+            // The Settler seat's pantheon, and the Faith card that buys it,
+            // against a host that grants a Settler for it; the native lanes
+            // keep the shipped prefix and the bred policy weights.
+            "expansion_pantheon",
+            // The Settler seat's plaza building for the land grab; the
+            // native lanes keep their bred building prices.
+            "expansion_hall",
+            // The host's Settler floor is what the book slot trips over; the
+            // native book keeps its bred behaviour.
+            "opening_settler_waits",
         ];
         // The bundle bodies moved to `ai/advanced/treatment_flags.rs`; the
         // scrape reads the controller's whole text so a further split cannot
@@ -6933,17 +7112,28 @@ mod tests {
 
         // The parent must actually delegate, or the halves could agree with
         // the bridge while `advanced_synergy` carried neither of them.
-        let parent = calls("enable_engine_repairs");
+        let parent = calls("enable_engine_repairs_universe");
         assert_eq!(
             parent,
             BTreeSet::from([
                 "engine_repairs_economy".to_string(),
                 "engine_repairs_war".to_string(),
             ]),
-            "enable_engine_repairs must be exactly its two halves"
+            "enable_engine_repairs_universe must be exactly its two halves"
         );
+        // And the deployment helpers are each their universe plus the ledger.
+        for (deployed, universe) in [
+            ("enable_engine_repairs", "engine_repairs_universe"),
+            ("enable_live_bridge", "live_bridge_universe"),
+        ] {
+            assert_eq!(
+                calls(deployed),
+                BTreeSet::from([universe.to_string()]),
+                "{deployed} must be its universe and the ledger, nothing else"
+            );
+        }
 
-        let bridge = calls("enable_live_bridge");
+        let bridge = calls("enable_live_bridge_universe");
         let war = calls("enable_engine_repairs_war");
         let economy = calls("enable_engine_repairs_economy");
         let overlap: Vec<&String> = war.intersection(&economy).collect();

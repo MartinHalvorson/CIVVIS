@@ -188,8 +188,20 @@ local function resolveActions()
 		"UNITOPERATION_SKIP_TURN", "UNITOPERATION_SLEEP",
 		"UNITOPERATION_HEAL", "UNITOPERATION_AUTOMATE_EXPLORE",
 		"UNITOPERATION_BUILD_IMPROVEMENT", "UNITOPERATION_REPAIR", "UNITOPERATION_RANGE_ATTACK",
+		-- Pillage was never resolved, so `Action::Pillage` had no host verb and
+		-- light cavalry's pillage-before-combat could not happen on the live
+		-- seat. Parameterless, like FORTIFY: the unit pillages the tile it is on.
+		"UNITOPERATION_PILLAGE",
 		"UNITOPERATION_HARVEST_RESOURCE", "UNITOPERATION_REST_REPAIR",
 		"UNITOPERATION_MAKE_TRADE_ROUTE", "UNITOPERATION_SPREAD_RELIGION",
+		-- This begins the Apostle's native belief-selection prompt. The order
+		-- handler keeps CIVVIS's selected belief and completes that prompt with
+		-- the same ADD_BELIEF player operation the shipped ReligionScreen uses.
+		"UNITOPERATION_EVANGELIZE_BELIEF",
+		-- These entries have no InterfaceMode in Firaxis' UnitOperations table,
+		-- so UnitPanel requests each directly with no parameters, like spreading.
+		"UNITOPERATION_LAUNCH_INQUISITION", "UNITOPERATION_REMOVE_HERESY",
+		"UNITOPERATION_RELIGIOUS_HEAL", "UNITOPERATION_CONVERT_BARBARIANS",
 		-- ★★★ ESPIONAGE, WHICH THE ENGINE MODELS IN FULL AND THE BRIDGE COULD
 		-- NOT SEND. `Game::spies` -- the only structure `advanced_spies` and
 		-- `BasicAi::spies` iterate -- is empty for an entire live game, so a
@@ -222,6 +234,8 @@ local function resolveActions()
 		-- of those sightings already have one of our military units within two
 		-- tiles, against 12,708 rival religious-unit sightings to our 590.
 		"UNITCOMMAND_CONDEMN_HERETIC",
+		-- Cancels a unit's queued path; see CivvisBoard.cancelQueuedPaths.
+		"UNITCOMMAND_CANCEL",
 	}) do
 		CMD[name] = cmdHash(name);
 	end
@@ -458,6 +472,33 @@ local function survey()
 		-- ones this run asked for.
 		setup = try(function() return GameConfiguration.GetValue("CIVVIS_SETUP"); end)
 			or "(absent)",
+		-- ★★★★ WHAT THIS MOD CAN ACTUATE, read back by the brain. `civvis_orders`
+		-- sends a unit's whole planned sequence (walk, strike, fortify) only
+		-- when the mod that will apply it says it sequences per-unit orders
+		-- (`CivvisQueue`); against an older mod it defers the follow-ups exactly
+		-- as before. A capability the sender assumes and the receiver lacks is
+		-- how an accepted order becomes a silent no-op.
+		order_queue = cfg.OrderQueue ~= false,
+		-- Every MOVE_TO capped to this turn's leg and combat units' queued
+		-- paths cancelled at turn start, so `moves` at export means movement
+		-- available this turn and the mirror may trust it. See CivvisBoard.
+		moves_at_turn_start = cfg.CapMovesToReach ~= false,
+		-- Mid-turn replan frames: after the opening orders settle, a board
+		-- with newly revealed ground and movement left to spend on it (or a
+		-- strike) is exported again and the same turn re-planned, up to
+		-- `ReplanFrames` times. The brain cuts a walk at its first unrevealed
+		-- hex (`step_and_reassess`) only when this is true: against a mod
+		-- without frames that cut would strand the rest of the movement.
+		replan_frames = (tonumber(cfg.ReplanFrames) or 0) > 0,
+		-- ...and how many such frames a turn may open, so the brain can tell
+		-- the last frame it will be asked on: a walk cut at the edge of the
+		-- known on that frame would strand the rest of the unit's movement,
+		-- because nobody re-plans what the cut uncovered. On the last frame
+		-- the brain sends the whole walk instead.
+		replan_frames_max = tonumber(cfg.ReplanFrames) or 0,
+		-- Newly revealed plots cross every turn and every frame as `tiles`
+		-- deltas, not only with the periodic sweep. See CivvisTiles.
+		tile_delta = cfg.TileDelta ~= false,
 	});
 
 	if cfg.SurveyEnums then
@@ -3916,12 +3957,11 @@ local GOVERNOR_ORDER = {
 	"GOVERNOR_THE_CARDINAL",
 };
 
--- The last founding this agent asked the host for, kept until the host either
--- confirms it or is caught not doing it. `UI.RequestPlayerOperation` is
--- asynchronous, so nothing on the requesting frame can tell success from a
--- silent no-op -- and a silent no-op here costs the Great Prophet AND the
--- religion. See the `kind == "religion"` handler.
-local pendingReligionFounding = nil;
+-- The last founding or Apostle enhancement this agent asked the host for,
+-- kept until the next export confirms it or catches its failure. Both paths
+-- cross asynchronous player operations, so a `pcall` verdict only means that
+-- the request did not throw; it cannot prove the host applied the choice.
+local pendingReligionChoice = nil;
 
 -- Which city each appointed governor was posted to, kept across turns. The engine
 -- has query methods for this but their names differ between builds, and guessing
@@ -4709,6 +4749,10 @@ local CIVVIS_OWNED_BLOCKERS = {
 	--
 	ENDTURN_BLOCKING_PANTHEON = true,
 	ENDTURN_BLOCKING_FILL_CIVIC_SLOT = true,
+	-- An Apostle's EVANGELIZE_BELIEF operation raises this prompt. The pending
+	-- order stores the exact CIVVIS choice, and `answerBlocker` supplies it
+	-- instead of allowing a generic chooser to race the operation.
+	ENDTURN_BLOCKING_BELIEF = true,
 	-- ★★★ IT APPEARED. The note that stood here said this name was deliberately
 	-- left out "though CIVVIS issues `government` orders too: it did not appear
 	-- in this run, so adding it would be reasoning rather than measurement" —
@@ -4753,6 +4797,7 @@ CivvisAnswersPrompt = {
 	ENDTURN_BLOCKING_PRODUCTION = "produce",
 	ENDTURN_BLOCKING_PANTHEON = "pantheon",
 	ENDTURN_BLOCKING_FILL_CIVIC_SLOT = "policy_deck",
+	ENDTURN_BLOCKING_BELIEF = "unit",
 	ENDTURN_BLOCKING_CONSIDER_GOVERNMENT_CHANGE = "government",
 };
 
@@ -4788,6 +4833,23 @@ end
 
 local function answerBlocker(player, pid, blocker, turn, residual_ok)
 	local name = blockerName(blocker);
+	-- Firaxis's UnitPanel starts the Apostle operation, then ReligionScreen
+	-- confirms the selected belief with ADD_BELIEF. Keep those two asynchronous
+	-- steps together through a pending record so the exact CIVVIS choice reaches
+	-- the prompt and a non-throwing request is still verified by exportState.
+	if name == "ENDTURN_BLOCKING_BELIEF"
+			and pendingReligionChoice ~= nil
+			and pendingReligionChoice.mode == "evangelize" then
+		if pendingReligionChoice.add_requested then return "civvis_complete"; end
+		local params = {};
+		params[PlayerOperations.PARAM_BELIEF_TYPE] = pendingReligionChoice.belief_hash;
+		params[PlayerOperations.PARAM_INSERT_MODE] = PlayerOperations.VALUE_EXCLUSIVE;
+		local ok = pcall(function()
+			UI.RequestPlayerOperation(pid, PlayerOperations.ADD_BELIEF, params);
+		end);
+		if ok then pendingReligionChoice.add_requested = true; end
+		return ok and "evangelize_belief" or nil;
+	end
 	-- A CIVVIS pass is a complete decision for the mirrored state it received.
 	-- Firaxis can finish production or research later in the same turn and raise
 	-- another prompt, but answering that prompt with the hand-written ladder
@@ -5213,7 +5275,7 @@ end
 -- minutes once already. This runs from `playTurn`, which is once per turn, and
 -- only when `cfg.ExportState` asks for it. Tiles are emitted in chunks so no
 -- single log line is unbounded.
-local function exportState(player, pid, turn)
+local function exportState(player, pid, turn, frame)
 	-- The six yields of one plot as the owner sees them, or nil when the read
 	-- fails. Nested here rather than at file scope: the main chunk sits one
 	-- local below Lua's 200-slot ceiling (see AgentChunkLocalLimitTest), and a
@@ -6133,6 +6195,7 @@ local function exportState(player, pid, turn)
 			};
 		end
 		local progress = unitProgress(unit);
+		CivvisLedger.kinds[tostring(try(function() return unit:GetID(); end, -1))] = name;
 		units[#units + 1] = {
 			id = try(function() return unit:GetID(); end, -1),
 			kind = name,
@@ -6173,6 +6236,19 @@ local function exportState(player, pid, turn)
 			formation_count = try(function()
 				return unit:GetFormationUnitCount();
 			end, 1),
+			-- Where a queued host path will carry the unit at its next turn
+			-- start (nil when none), and whether it is embarked. See CivvisBoard.
+			queued_dest = try(function()
+				local index = UnitManager.GetQueuedDestination(unit);
+				if index == nil then return nil; end
+				local plot = Map.GetPlotByIndex(index);
+				return plot and { plot:GetX(), plot:GetY() } or nil;
+			end, nil),
+			embarked = try(function() return unit:IsEmbarked(); end, nil),
+			-- Attacks left this turn (`GetAttacksRemaining`, the shipped
+			-- SelectedUnit read). The mirror plans a frame's second strike only
+			-- for units that still have one.
+			attacks_remaining = try(function() return unit:GetAttacksRemaining(); end, nil),
 			great_person = greatPerson,
 		};
 	end);
@@ -6266,6 +6342,7 @@ local function exportState(player, pid, turn)
 							local row = GameInfo.Units[name];
 							local progress = unitProgress(unit);
 							theirUnits[#theirUnits + 1] = {
+								id = try(function() return unit:GetID(); end, nil),
 								x = ux, y = uy, kind = name,
 								base = unitBaseType(name),
 								class = unitClass(name),
@@ -6506,6 +6583,7 @@ local function exportState(player, pid, turn)
 							local row = GameInfo.Units[name];
 							local progress = unitProgress(unit);
 							theirUnits[#theirUnits + 1] = {
+								id = try(function() return unit:GetID(); end, nil),
 								x = ux, y = uy, kind = name,
 								hp = 100 - (try(function() return unit:GetDamage(); end, 0) or 0),
 								moves = try(function() return unit:GetMovesRemaining(); end, -1),
@@ -6716,6 +6794,9 @@ local function exportState(player, pid, turn)
 				local ux, uy = unit:GetX(), unit:GetY();
 				if plotRevealed(pid, ux, uy) then
 					hostiles[#hostiles + 1] = {
+						-- The host's own unit id, so a combat event and a
+						-- next-frame sighting name the same unit. See CivvisLedger.
+						id = try(function() return unit:GetID(); end, nil),
 						x = ux, y = uy, player = bid,
 						type = try(function()
 							return GameInfo.Units[unit:GetUnitType()].UnitType;
@@ -6750,6 +6831,7 @@ local function exportState(player, pid, turn)
 							local row = GameInfo.Units[name];
 							local progress = unitProgress(unit);
 							hostiles[#hostiles + 1] = {
+								id = try(function() return unit:GetID(); end, nil),
 								x = ux, y = uy, player = bid,
 								type = name,
 								hp = 100 - (try(function() return unit:GetDamage(); end, 0) or 0),
@@ -6837,35 +6919,72 @@ local function exportState(player, pid, turn)
 		try(function() return playerReligion:GetReligionTypeCreated(); end, -1) or -1;
 	local prophet_pending = religionCreated < 0 and playerReligion ~= nil and
 		try(function() return playerReligion:HasReligiousFoundingUnit(); end, false) or false;
-	-- ★ SAY SO WHEN THE FOUNDING DID NOT TAKE. The request reports `applied`
-	-- because nothing threw; only the turn AFTER can read whether a religion
-	-- exists. Across 24 live runs the answer was always "no religion, and the
-	-- Prophet is gone too", and nothing in the log said so.
-	if pendingReligionFounding ~= nil then
+	-- ★ SAY SO WHEN A RELIGIOUS CHOICE DID NOT TAKE. The request reports
+	-- `applied` because nothing threw; only the turn AFTER can read whether the
+	-- player's own religion carries the selected belief or exists at all.
+	if pendingReligionChoice ~= nil then
 		local now = try(function() return Game.GetCurrentGameTurn(); end, 0) or 0;
-		if religionCreated >= 0 then
+		if pendingReligionChoice.mode == "evangelize" then
+			local enhanced = false;
+			for _, religion in ipairs(try(function()
+				return Game.GetReligion():GetReligions();
+			end, {}) or {}) do
+				if religion.Founder == pid then
+					for _, beliefIndex in ipairs(religion.Beliefs or {}) do
+						if beliefIndex == pendingReligionChoice.belief_index then
+							enhanced = true;
+							break;
+						end
+					end
+				end
+				if enhanced then break; end
+			end
+			if enhanced then
+				emit("religion_enhanced", {
+					player = pid,
+					turn = now,
+					requested_turn = pendingReligionChoice.turn,
+					unit = pendingReligionChoice.unit,
+					belief = pendingReligionChoice.belief,
+				});
+				pendingReligionChoice = nil;
+			elseif now > pendingReligionChoice.turn then
+				emit("religion_enhancement_failed", {
+					player = pid,
+					turn = now,
+					requested_turn = pendingReligionChoice.turn,
+					unit = pendingReligionChoice.unit,
+					belief = pendingReligionChoice.belief,
+					belief_taken = try(function()
+						return Game.GetReligion():IsInSomeReligion(
+							pendingReligionChoice.belief_index);
+					end, false),
+				});
+				pendingReligionChoice = nil;
+			end
+		elseif religionCreated >= 0 then
 			emit("religion_founded", {
 				player = pid,
 				turn = now,
-				requested_turn = pendingReligionFounding.turn,
-				religion = pendingReligionFounding.religion,
-				follower = pendingReligionFounding.follower,
-				founder = pendingReligionFounding.founder,
+				requested_turn = pendingReligionChoice.turn,
+				religion = pendingReligionChoice.religion,
+				follower = pendingReligionChoice.follower,
+				founder = pendingReligionChoice.founder,
 			});
-			pendingReligionFounding = nil;
-		elseif now > pendingReligionFounding.turn then
+			pendingReligionChoice = nil;
+		elseif now > pendingReligionChoice.turn then
 			emit("religion_founding_failed", {
 				player = pid,
 				turn = now,
-				requested_turn = pendingReligionFounding.turn,
-				religion = pendingReligionFounding.religion,
+				requested_turn = pendingReligionChoice.turn,
+				religion = pendingReligionChoice.religion,
 				-- The two facts that separate the failure modes: whether the
 				-- Prophet survived, and whether the slot is still open.
 				founding_unit_left = prophet_pending,
 				religions_founded = #(try(function()
 					return Game.GetReligion():GetReligions(); end, {}) or {}),
 			});
-			pendingReligionFounding = nil;
+			pendingReligionChoice = nil;
 		end
 	end
 	local founded_religion = nil;
@@ -7002,6 +7121,9 @@ local function exportState(player, pid, turn)
 	end
 	emit("state", {
 		turn = turn,
+		-- 0 for the turn's opening board; N for the Nth mid-turn combat frame
+		-- (see CivvisFrames). The brain re-plans the same turn on a frame.
+		frame = frame or 0,
 		techs = techs,
 		-- Completed one-time nuclear and space milestones. This stays separate
 		-- from the city's current production because completion is player-wide.
@@ -7659,7 +7781,21 @@ local function visibleResourceName(player, plot)
 	end);
 end
 
-local function exportTiles(player, pid, turn)
+-- ★★★★ THE MAP CROSSED EVERY 25 TURNS, AND A SCOUT LEARNS SOMETHING EVERY
+-- STEP. Between two sweeps, everything a unit uncovered — coast, a rival's
+-- border, a barbarian camp, the pass through the hills — was known to the
+-- host and unknown to the brain, which kept planning on the board as it was
+-- at the last sweep. `CivvisTiles.known` remembers which plots have crossed
+-- (and under which owner); `sweep` sends only what is new or changed hands
+-- since, as a `tiles` chunk stamped `delta = true`, every turn and on every
+-- mid-turn frame. The Rust side merges chunks cumulatively already; the
+-- stamp only keeps a delta from being mistaken for a fresh sweep. The full
+-- sweep keeps its cadence (resources, improvements and pillage refresh there)
+-- and re-primes `known`. `TileDelta = false` withholds the deltas.
+-- One bare global table (200-local ceiling).
+CivvisTiles = { known = {} };
+
+local function exportTiles(player, pid, turn, frame, deltaOnly)
 	if cfg.ExportState ~= true then return; end
 	local every = cfg.TileExportEvery or 25;
 	-- ⚠ TURN 1 MUST EXPORT, whatever the cadence. `turn % 25` is false for turns
@@ -7667,24 +7803,30 @@ local function exportTiles(player, pid, turn)
 	-- smoke-20260730T105241Z answered "no revealed terrain yet" every turn to turn 9
 	-- and would have to turn 24. The opening is where settling and the first army
 	-- are decided, so that is precisely the window that cannot be handed to a
-	-- fallback. Export on the first turn, then on the cadence.
-	if turn > 1 and turn % every ~= 0 then return; end
+	-- fallback. Export on the first turn, then on the cadence; between sweeps
+	-- (and on a frame) send the delta — see `CivvisTiles`.
+	local full = not deltaOnly and (turn <= 1 or turn % every == 0);
+	if not full and cfg.TileDelta == false then return 0; end
 	local width = try(function() return Map.GetGridSize(); end, 0) or 0;
 	local height = 0;
 	pcall(function() width, height = Map.GetGridSize(); end);
 	if width <= 0 or height <= 0 then return; end
 
-	local chunk, chunks, index = {}, 0, 0;
+	local chunk, chunks, index, fresh = {}, 0, 0, 0;
 	local function flush()
 		if #chunk == 0 then return; end
 		chunks = chunks + 1;
 		emit("tiles", {
 			turn = turn, width = width, height = height,
 			chunk = chunks, plots = chunk,
+			-- nil (absent) on a full sweep, so an older reader sees no change.
+			delta = (not full) and true or nil,
+			frame = (not full) and (frame or 0) or nil,
 		});
 		chunk = {};
 	end
 
+	local known = CivvisTiles.known;
 	for y = 0, height - 1 do
 		for x = 0, width - 1 do
 			local plot = try(function() return Map.GetPlot(x, y); end);
@@ -7693,7 +7835,12 @@ local function exportTiles(player, pid, turn)
 				-- Unrevealed ground is deliberately sent as a hole rather than
 				-- as its true terrain: the mirror must not know more than the
 				-- seat does, or the simulator would plan on stolen information.
-				if revealed then
+				local owner = revealed and (try(function() return plot:GetOwner(); end, -1) or -1) or nil;
+				local key = y * width + x;
+				local changed = revealed and (full or known[key] == nil or known[key] ~= owner);
+				if changed then
+					known[key] = owner;
+					if not full then fresh = fresh + 1; end
 					index = index + 1;
 					chunk[index] = {
 						x = x, y = y,
@@ -7766,6 +7913,15 @@ local function exportTiles(player, pid, turn)
 						cl = try(function()
 							return TerrainManager.GetCoastalLowlandType(plot);
 						end, -1),
+						-- ★★★★ THE ROAD. Never exported; the mirror wrote `road = 0`
+						-- everywhere and priced every march across roadless ground.
+						-- Sent by name (`GameInfo.Routes`), nil where none stands.
+						rt = try(function()
+							local route = plot:GetRouteType();
+							if route == nil or route < 0 then return nil; end
+							return typeName("Routes", "RouteType", route);
+						end, nil),
+						rp = try(function() return plot:IsRoutePillaged() and true or nil; end, nil),
 						-- ★★★★ WHAT STANDS ON THE OTHER CIVILIZATIONS' GROUND. A rival
 						-- city record is name, size, health, walls and capital; its
 						-- districts and wonders were never exported, so a rival's
@@ -7817,8 +7973,21 @@ local function exportTiles(player, pid, turn)
 		end
 	end
 	flush();
-	emit("tiles_done", { turn = turn, chunks = chunks, width = width, height = height });
+	if full then
+		emit("tiles_done", { turn = turn, chunks = chunks, width = width, height = height });
+		return nil;
+	end
+	if fresh > 0 then
+		emit("tiles_delta", { turn = turn, frame = frame or 0, plots = fresh, chunks = chunks });
+	end
+	return fresh;
 end
+
+-- The delta alone, whatever the cadence: what this seat revealed (or saw
+-- change hands) since the last board went out. Returns the plot count.
+CivvisTiles.sweep = function(player, pid, turn, frame)
+	return exportTiles(player, pid, turn, frame, true);
+end;
 
 -- ★★★★★ CHANNEL PROBE — is there ANY way for a decision to reach a running game?
 --
@@ -8211,26 +8380,36 @@ end
 
 -- Has the brain finished writing this turn? `ready` is written last, so a
 -- partially written turn is never actuated.
-local function ordersReady(turn)
+-- `frame` selects a mid-turn combat frame's answer (CivvisFrames); 0 or nil
+-- is the turn's opening board. `SELECT *` on purpose: a brain that predates
+-- the `frame` column answers with rows that have none, which reads as frame
+-- 0, instead of a query naming a column the table lacks and failing inside
+-- the pcall forever.
+local function ordersReady(turn, frame)
 	if not attachOrders() then return nil; end
+	frame = frame or 0;
 	local count = nil;
 	pcall(function()
 		local rows = DB.Query(string.format(
-			"SELECT count AS n FROM civvis.ready WHERE run = '%s' AND turn = %d LIMIT 1",
+			"SELECT * FROM civvis.ready WHERE run = '%s' AND turn = %d LIMIT 1",
 			sqlSafe(cfg.RunTag), turn));
-		for _, row in ipairs(rows) do count = row.n; end
+		for _, row in ipairs(rows) do
+			if (tonumber(row.frame) or 0) == frame then count = row.count; end
+		end
 	end);
 	return count;
 end
 
-local function fetchOrders(turn)
+local function fetchOrders(turn, frame)
+	frame = frame or 0;
 	local out = {};
 	pcall(function()
 		local rows = DB.Query(string.format(
-			"SELECT seq, kind, subject, verb, x, y FROM civvis.orders "
-			.. "WHERE run = '%s' AND turn = %d ORDER BY seq",
+			"SELECT * FROM civvis.orders WHERE run = '%s' AND turn = %d ORDER BY seq",
 			sqlSafe(cfg.RunTag), turn));
-		for _, row in ipairs(rows) do out[#out + 1] = row; end
+		for _, row in ipairs(rows) do
+			if (tonumber(row.frame) or 0) == frame then out[#out + 1] = row; end
+		end
 	end);
 	return out;
 end
@@ -8549,6 +8728,288 @@ CivvisOnIncomingDeal = function(fromPlayer, toPlayer, action)
 	});
 end
 
+-- ------------------------------------------------------------ tactical ledger
+--
+-- ★★★★★ NOTHING IN A LIVE RUN'S RECORD SAID WHO KILLED WHOM. Kills, losses,
+-- damage dealt and taken, captures — every reading of the live army so far was
+-- a reconstruction from units vanishing between two `state` exports, or the
+-- host's Hall of Fame opened by hand: twelve finished games, 343 of ours lost,
+-- 61 of theirs killed, 0 cities taken. This block writes the combat record the
+-- host already knows into the run's own event stream, so
+-- `tools/civ6_tactics_ledger.py` reads a ledger and not a guess.
+--
+-- Two sources, recorded side by side because neither is verified in-game yet:
+--   * `Events.CombatVisBegin/End(kVisData)` — the host's own combat
+--     visualisation, fired for every combat this seat can see, carrying the
+--     attacker/defender component ids (`playerID`, `componentID`,
+--     `componentType`, the shape MapPinManager.lua reads). Hit points are read
+--     back at Begin and at End; a defender that no longer resolves at End was
+--     killed.
+--   * `Events.UnitDamageChanged(player, unitId, damage)` — the core's own
+--     per-unit damage change, collected while a combat is open.
+--   The ledger tool prefers the damage events and falls back to the readback.
+--
+-- And the host's own STRIKE PREVIEW: `CombatManager.SimulateAttackInto` is what
+-- the shipped UnitPanel calls to draw the combat preview, and it answers the
+-- same numbers for our order before it is issued. Recorded as `strike`, and
+-- joined onto the `combat` that follows, so predicted-versus-actual per strike
+-- is one field apart.
+--
+-- ⚠ Handles are never cached across events (see the SIGSEGV note on
+-- `applyOrder`); every read re-resolves through `UnitManager.GetUnit`.
+-- One bare global table: the chunk is at Lua 5.1's 200-local ceiling.
+CivvisLedger = { open = {}, damage = {}, pending = {}, kinds = {} };
+
+CivvisLedger.componentKey = function(id)
+	if id == nil then return nil; end
+	local player = try(function() return id.playerID; end, nil);
+	local comp = try(function() return id.componentID; end, nil);
+	if player == nil or comp == nil then return nil; end
+	return tostring(player) .. ":" .. tostring(comp);
+end;
+
+-- What a combat participant is right now: hp for a unit, garrison/wall damage
+-- for a city or district; `gone` when it no longer resolves.
+CivvisLedger.describe = function(id)
+	if id == nil then return nil; end
+	local player = tonumber(try(function() return id.playerID; end, nil));
+	local comp = tonumber(try(function() return id.componentID; end, nil));
+	if player == nil or comp == nil then return nil; end
+	local isUnit = try(function() return id.componentType == ComponentType.UNIT; end, true);
+	if isUnit ~= false then
+		local unit = try(function() return UnitManager.GetUnit(player, comp); end);
+		if unit == nil then return { player = player, id = comp, type = "unit", gone = true }; end
+		return {
+			player = player, id = comp, type = "unit",
+			kind = try(function() return GameInfo.Units[unit:GetUnitType()].UnitType; end, "?"),
+			x = tonumber(try(function() return unit:GetX(); end, -1)) or -1,
+			y = tonumber(try(function() return unit:GetY(); end, -1)) or -1,
+			hp = 100 - (tonumber(try(function() return unit:GetDamage(); end, 0)) or 0),
+		};
+	end
+	-- A city or district defends with its garrison and its walls.
+	local district = try(function() return CityManager.GetDistrict(player, comp); end);
+	if district == nil then return { player = player, id = comp, type = "district", gone = true }; end
+	return {
+		player = player, id = comp, type = "district",
+		x = tonumber(try(function() return district:GetX(); end, -1)) or -1,
+		y = tonumber(try(function() return district:GetY(); end, -1)) or -1,
+		hp = tonumber(try(function()
+			return district:GetMaxDamage(DefenseTypes.DISTRICT_GARRISON)
+				- district:GetDamage(DefenseTypes.DISTRICT_GARRISON);
+		end, nil)),
+		wall_hp = tonumber(try(function()
+			return district:GetMaxDamage(DefenseTypes.DISTRICT_OUTER)
+				- district:GetDamage(DefenseTypes.DISTRICT_OUTER);
+		end, nil)),
+	};
+end;
+
+-- The host's own preview of the strike about to be requested. nil when the
+-- host is busy or the API is absent — an honest blank, not a zero.
+CivvisLedger.preview = function(unit, verb, x, y)
+	if try(function() return UI.IsGameCoreBusy(); end, false) == true then return nil; end
+	local combatType = nil;
+	if verb == "RANGE_ATTACK" then
+		combatType = try(function()
+			local ranged = unit:GetRangedCombat() or 0;
+			local bombard = unit:GetBombardCombat() or 0;
+			if bombard > ranged then return CombatTypes.BOMBARD; end
+			return CombatTypes.RANGED;
+		end, nil);
+	end
+	local results = try(function()
+		return CombatManager.SimulateAttackInto(unit:GetComponentID(), combatType, x, y);
+	end, nil);
+	if results == nil then return nil; end
+	local function read(side, key)
+		return tonumber(try(function()
+			return results[CombatResultParameters[side]][CombatResultParameters[key]];
+		end, nil));
+	end
+	local out = {
+		damage_to_defender = read("DEFENDER", "DAMAGE_TO"),
+		damage_to_attacker = read("ATTACKER", "DAMAGE_TO"),
+		defender_wall_damage = read("DEFENDER", "DEFENSE_DAMAGE_TO"),
+		attacker_strength = read("ATTACKER", "COMBAT_STRENGTH"),
+		defender_strength = read("DEFENDER", "COMBAT_STRENGTH"),
+	};
+	if out.damage_to_defender == nil and out.damage_to_attacker == nil then return nil; end
+	return out;
+end;
+
+-- ★★★★★ A MELEE ATTACK IS A MOVE_TO **WITH THE ATTACK MODIFIER**, AND
+-- WITHOUT IT NOTHING EVER ATTACKS.
+--
+-- Measured across every control run this machine holds: 8,828 melee ATTACK
+-- orders were issued and 89 combats came back — a 1.0% landing rate — while
+-- RANGE_ATTACK, which needs no modifier, landed 520 of 841 (61.8%). On run
+-- civvis-20260821T130446Z the seat ordered 208 melee attacks in 104 turns and
+-- fought exactly ZERO of them: a barbarian Slinger (combat strength 5, our
+-- preview promising 63 damage) sat on the same plot at (65,25) from t36 to
+-- t40 being "attacked" every single turn and walked away untouched, and the
+-- empire lost EIGHT Settlers, two Builders, two Warriors, a Slinger, a Scout
+-- and an Archer to raiders it could not hit back.
+--
+-- The reason is one parameter. Firaxis's own `Civ6Common.lua:RequestMoveOperation`
+-- — the shipped path behind every melee attack a human ever makes — sets
+--
+--   tParameters[UnitOperationTypes.PARAM_MODIFIERS] =
+--       UnitOperationMoveModifiers.ATTACK
+--       + UnitOperationMoveModifiers.MOVE_IGNORE_UNEXPLORED_DESTINATION;
+--   UnitManager.RequestOperation( kUnit, UnitOperationTypes.MOVE_TO, tParameters );
+--
+-- before requesting MOVE_TO. Without `ATTACK` the engine reads a plain move,
+-- the pathfinder will not enter a plot an enemy is standing on, and the
+-- request resolves to "walk next to it and stop". `CanStartOperation` still
+-- answers TRUE — the unit genuinely can start moving that way — so `operate`
+-- reported every one of those 8,828 orders as given. This is the same trap
+-- `canOperate` was written for, one level deeper: the parameters were passed,
+-- but not all of them.
+--
+-- ⚠ Resolved defensively and ONCE. `UnitOperationMoveModifiers` is a UI-context
+-- global; if a build does not expose it, `nil` is returned and the caller sends
+-- the parameter table unchanged — the historical behaviour — rather than
+-- throwing on every attack in the game.
+-- ⚠ Hung on `CivvisLedger`, not declared as a main-chunk local: this file sits
+-- ONE slot under Lua's 199-local ceiling for the main chunk and
+-- `test_main_chunk_locals_stay_under_the_limit` fails the build at 199. The
+-- resolution is cached in an upvalue so the enum is read once per game.
+CivvisLedger.attackModifiers = nil;
+do
+	local resolved = false;
+	local cached = nil;
+	CivvisLedger.attackModifiers = function()
+		if resolved then return cached; end
+		resolved = true;
+		cached = try(function()
+			local attack = UnitOperationMoveModifiers.ATTACK;
+			if attack == nil then return nil; end
+			local ignore = UnitOperationMoveModifiers.MOVE_IGNORE_UNEXPLORED_DESTINATION;
+			if ignore == nil then return attack; end
+			return attack + ignore;
+		end, nil);
+		return cached;
+	end
+end
+
+-- Called from `applyOrder` before a strike is requested: emit the preview and
+-- remember it, so the combat this strike produces can carry it.
+CivvisLedger.strike = function(unit, subject, verb, x, y, turn)
+	if CivvisFrames ~= nil then CivvisFrames.noteStrike(); end
+	-- `StrikePreview = false` keeps the host's combat simulation out of the
+	-- turn entirely; the strike is still recorded, without a prediction.
+	local preview = nil;
+	if cfg.StrikePreview ~= false then preview = CivvisLedger.preview(unit, verb, x, y); end
+	local kind = try(function() return GameInfo.Units[unit:GetUnitType()].UnitType; end, "?");
+	local hp = 100 - (tonumber(try(function() return unit:GetDamage(); end, 0)) or 0);
+	CivvisLedger.pending[tostring(subject)] = {
+		turn = turn, verb = verb, x = x, y = y, preview = preview, hp = hp, kind = kind,
+	};
+	emit("strike", { turn = turn, unit = subject, unit_kind = kind, verb = verb,
+	                 x = x, y = y, hp = hp, preview = preview });
+end;
+
+CivvisLedger.onCombatVisBegin = function(kVisData)
+	local attacker = try(function() return kVisData[CombatVisType.ATTACKER]; end);
+	local defender = try(function() return kVisData[CombatVisType.DEFENDER]; end);
+	local key = CivvisLedger.componentKey(attacker);
+	if key == nil then return; end
+	CivvisLedger.open[key] = {
+		turn = tonumber(try(function() return Game.GetCurrentGameTurn(); end, -1)) or -1,
+		attacker = CivvisLedger.describe(attacker),
+		defender = CivvisLedger.describe(defender),
+		attacker_id = attacker, defender_id = defender,
+		damage_events = {},
+	};
+end;
+
+CivvisLedger.onUnitDamageChanged = function(player, unitId, damage)
+	local who = tostring(player) .. ":" .. tostring(unitId);
+	local previous = CivvisLedger.damage[who];
+	CivvisLedger.damage[who] = tonumber(damage);
+	if previous == nil or tonumber(damage) == nil then return; end
+	local delta = tonumber(damage) - previous;
+	for _, combat in pairs(CivvisLedger.open) do
+		if CivvisLedger.componentKey(combat.attacker_id) == who
+				or CivvisLedger.componentKey(combat.defender_id) == who then
+			combat.damage_events[#combat.damage_events + 1] = { who = who, delta = delta };
+		end
+	end
+end;
+
+CivvisLedger.onCombatVisEnd = function(kVisData)
+	local attacker = try(function() return kVisData[CombatVisType.ATTACKER]; end);
+	local key = CivvisLedger.componentKey(attacker);
+	if key == nil then return; end
+	local combat = CivvisLedger.open[key];
+	CivvisLedger.open[key] = nil;
+	if combat == nil then return; end
+	local attackerNow = CivvisLedger.describe(combat.attacker_id);
+	local defenderNow = CivvisLedger.describe(combat.defender_id);
+	local pid = tonumber(try(function() return Game.GetLocalPlayer(); end, -1)) or -1;
+	local preview = nil;
+	if combat.attacker ~= nil and combat.attacker.player == pid then
+		local pending = CivvisLedger.pending[tostring(combat.attacker.id)];
+		if pending ~= nil and pending.turn == combat.turn then
+			preview = pending.preview;
+			CivvisLedger.pending[tostring(combat.attacker.id)] = nil;
+		end
+	end
+	local function hpOf(desc) return desc ~= nil and desc.hp or nil; end
+	local function wallOf(desc) return desc ~= nil and desc.wall_hp or nil; end
+	local defenderKilled = defenderNow ~= nil and defenderNow.gone == true;
+	local attackerKilled = attackerNow ~= nil and attackerNow.gone == true;
+	local damageToDefender, damageToAttacker = nil, nil;
+	if hpOf(combat.defender) ~= nil then
+		if defenderKilled then damageToDefender = hpOf(combat.defender);
+		elseif hpOf(defenderNow) ~= nil then damageToDefender = hpOf(combat.defender) - hpOf(defenderNow); end
+	end
+	if hpOf(combat.attacker) ~= nil then
+		if attackerKilled then damageToAttacker = hpOf(combat.attacker);
+		elseif hpOf(attackerNow) ~= nil then damageToAttacker = hpOf(combat.attacker) - hpOf(attackerNow); end
+	end
+	emit("combat", {
+		turn = combat.turn,
+		attacker = combat.attacker, defender = combat.defender,
+		attacker_hp_end = hpOf(attackerNow), defender_hp_end = hpOf(defenderNow),
+		defender_wall_hp_end = wallOf(defenderNow),
+		damage_to_defender = damageToDefender, damage_to_attacker = damageToAttacker,
+		defender_killed = defenderKilled, attacker_killed = attackerKilled,
+		damage_events = combat.damage_events,
+		ours = combat.attacker ~= nil and combat.attacker.player == pid,
+		against_us = combat.defender ~= nil and combat.defender.player == pid,
+		preview = preview,
+	});
+end;
+
+-- One of OUR units left the map — combat, disband, capture, deletion. Named
+-- with the kind the last export knew, and with the treasury, so a bankruptcy
+-- disband and a battlefield loss are one field apart.
+CivvisLedger.onUnitRemoved = function(player, unitId)
+	local pid = tonumber(try(function() return Game.GetLocalPlayer(); end, -1)) or -1;
+	if tonumber(player) ~= pid then return; end
+	emit("unit_lost", {
+		turn = tonumber(try(function() return Game.GetCurrentGameTurn(); end, -1)) or -1,
+		unit = tonumber(unitId), unit_kind = CivvisLedger.kinds[tostring(unitId)],
+		gold = tonumber(try(function()
+			return math.floor(Players[pid]:GetTreasury():GetGoldBalance());
+		end, nil)),
+	});
+end;
+
+CivvisLedger.onCityOccupationChanged = function(player, cityId)
+	local pid = tonumber(try(function() return Game.GetLocalPlayer(); end, -1)) or -1;
+	local city = try(function() return CityManager.GetCity(player, cityId); end);
+	emit("city_occupation", {
+		turn = tonumber(try(function() return Game.GetCurrentGameTurn(); end, -1)) or -1,
+		player = tonumber(player), city = tonumber(cityId),
+		name = try(function() return city:GetName(); end, nil),
+		original_owner = try(function() return city:GetOriginalOwner(); end, nil),
+		ours_now = tonumber(player) == pid,
+	});
+end;
+
 local function applyOrder(player, pid, row, turn)
 	-- Build and submit a major-civilization peace proposal without opening a
 	-- diplomacy session.  A session displays `DiplomacyDealView`, whose only safe
@@ -8614,6 +9075,49 @@ local function applyOrder(player, pid, row, turn)
 		-- anti-stall closer that must refuse every on-screen deal.
 		DealManager.SendWorkingDeal(DealProposalAction.PROPOSED, pid, subject);
 		return true, concession, "submitted";
+	end
+
+	-- Send the exact Gold amount a final-turn Aid Request needs through the
+	-- ordinary deal surface.  Expansion2's emergency manager listens to normal
+	-- deal Gold items for `EMERGENCY_SEND_AID` and
+	-- `EMERGENCY_SEND_MILITARY_AID`; this is intentionally a one-way gift, not
+	-- an EQUALIZE ask or a deal-screen session.  A partial gift is worse than no
+	-- gift here: Rust asked for the smallest amount that takes first place, so
+	-- if the host's current treasury or item limit cannot meet it we submit
+	-- nothing and leave the competition score unchanged.
+	local function submitAidGift(subject, asked)
+		if DealManager.HasPendingDeal(pid, subject) then
+			return false, 0, "pending";
+		end
+		local amount = math.max(0, math.floor(asked or 0));
+		if amount <= 0 then return false, 0, "no_amount"; end
+		local balance = try(function()
+			return player:GetTreasury():GetGoldBalance();
+		end, 0) or 0;
+		if balance < amount then return false, 0, "unaffordable"; end
+		DealManager.ClearWorkingDeal(DealDirection.OUTGOING, pid, subject);
+		local deal = DealManager.GetWorkingDeal(DealDirection.OUTGOING, pid, subject);
+		if deal == nil then return false, 0, "no_working_deal"; end
+		local gift = deal:AddItemOfType(DealItemTypes.GOLD, pid);
+		if gift == nil then return false, 0, "no_gold_item"; end
+		gift:SetDuration(0);
+		local maximum = tonumber(try(function() return gift:GetMaxAmount(); end, 0)) or 0;
+		if maximum < amount then
+			pcall(function() deal:RemoveItemByID(gift:GetID()); end);
+			return false, 0, "gold_limit";
+		end
+		gift:SetAmount(amount);
+		if not try(function() return gift:IsValid(); end, false) then
+			pcall(function() deal:RemoveItemByID(gift:GetID()); end);
+			return false, 0, "gold_invalid";
+		end
+		deal:Validate();
+		if not deal:IsValid() then return false, 0, "invalid_deal"; end
+		-- The same direct normal-offer call as Firaxis's deal UI and the peace
+		-- submitter above.  The recipient's acceptance and the score change are
+		-- observed in later host exports; this return value says only submitted.
+		DealManager.SendWorkingDeal(DealProposalAction.PROPOSED, pid, subject);
+		return true, amount, "submitted";
 	end
 
 	-- A city that is already taking fire cannot wait for the strategic planner to
@@ -9114,6 +9618,61 @@ local function applyOrder(player, pid, row, turn)
 		end);
 		if ok then peaceAsked[key] = turn; end
 		return ok, ok and "delegation_asked" or "throw";
+	end
+
+	-- ★★★★★ AID REQUEST FINISHER. Firaxis exposes two score routes for Aid
+	-- Requests: a completed `PROJECT_SEND_AID` gives 200, and every Gold gift
+	-- to the emergency target gives one. The Rust side sends this arm only when
+	-- the latter is the exact bounded amount that would take the lead before
+	-- the event closes. We still prove every diplomacy precondition against the
+	-- host: a stale mirrored target, a war, a city-state, or another working
+	-- trade may never become an unguarded deal.
+	--
+	-- Unlike `sell` and `buy`, this must use `PROPOSED`, not `EQUALIZE`: there
+	-- is no price to negotiate and a foreign counter-offer would not be the
+	-- specific one-way gift the emergency listener scores. `aid_gift_request`
+	-- records a submission, never an imagined acceptance or victory point.
+	if kind == "aid_gift" then
+		if verb ~= "EMERGENCY_SEND_AID" and verb ~= "EMERGENCY_SEND_MILITARY_AID" then
+			return false, "aid_gift_unknown_emergency";
+		end
+		if subject < 0 or subject == pid then return false, "aid_gift_target_unmapped"; end
+		local amount = math.max(0, math.floor(x or 0));
+		if amount <= 0 then return false, "aid_gift_no_amount"; end
+		local diplomacy = try(function() return player:GetDiplomacy(); end);
+		if diplomacy == nil then return false, "no_diplomacy"; end
+		if not try(function() return diplomacy:HasMet(subject); end, false) then
+			return false, "aid_gift_not_met";
+		end
+		if try(function() return diplomacy:IsAtWarWith(subject); end, false) then
+			return false, "aid_gift_at_war";
+		end
+		if not try(function() return Players[subject]:IsMajor(); end, false) then
+			return false, "aid_gift_not_major";
+		end
+		local trade = CivvisTrade;
+		if trade.pending[subject] ~= nil then
+			return false, "aid_gift_trade_pending";
+		end
+		local key = "aid_gift:" .. verb .. ":" .. subject;
+		local asked = peaceAsked[key];
+		if asked ~= nil and (turn - asked) < (cfg.AidGiftRetryTurns or 2) then
+			return false, "aid_gift_cooldown";
+		end
+		local ran, submitted, paid, reason = pcall(submitAidGift, subject, amount);
+		if not ran then
+			submitted, paid, reason = false, 0, "throw";
+		end
+		-- A pending normal offer is already in the host. Keep it from being
+		-- rebuilt on the next frame; a declined one can retry while the small
+		-- finish window still exists.
+		if submitted or reason == "pending" then peaceAsked[key] = turn; end
+		emit("aid_gift_request", {
+			turn = turn, target = subject, emergency = verb, amount = amount,
+			paid = paid, submitted = submitted and true or false,
+			reason = reason, threw = reason == "throw",
+		});
+		return submitted, submitted and "aid_gift_submitted" or reason;
 	end
 
 	-- ★★★★★ SURPLUS SOLD FOR GOLD, AT THE RIVAL'S OWN PRICE. `verb` is what
@@ -9875,7 +10434,8 @@ local function applyOrder(player, pid, row, turn)
 		end);
 		local ok = okFound and okFollower and okFounder and okOperation;
 		if ok then
-			pendingReligionFounding = {
+			pendingReligionChoice = {
+				mode = "found",
 				turn = Game.GetCurrentGameTurn(),
 				religion = religion.ReligionType,
 				follower = followerName,
@@ -10388,11 +10948,28 @@ local function applyOrder(player, pid, row, turn)
 		-- that is not a workaround: it is how Civilization VI resolves it.
 		if verb == "FOUND_CITY" then
 			-- ⚠ READ THE PLOT BEFORE FOUNDING. A settler founds where it STANDS, so
-			-- the order carries no x/y, and the unit is consumed by the operation —
+			-- the operation takes no x/y, and the unit is consumed by it —
 			-- afterwards there is nothing left to ask. The refusal path below can
 			-- still call `unit:GetX()` precisely because it did not found.
 			local atX = try(function() return unit:GetX(); end);
 			local atY = try(function() return unit:GetY(); end);
+			-- ★★★★★ FOUND ONLY ON THE SITE THE BRAIN CHOSE. The row now carries
+			-- the site (the hex the planned walk ends on). `applyOrders` runs
+			-- every FOUND_CITY row BEFORE the settler's own MOVE_TO and re-queues
+			-- a refused one behind the walk, which was right while the host
+			-- refused an off-site found — but Civilization VI refuses a found
+			-- only where founding is ILLEGAL, and the hex one step short of a
+			-- chosen site is legal far more often than not (`CITY_MIN_RANGE` 3).
+			-- So a planned "step, then settle" founded on the hex BEFORE the
+			-- step, and a walk the host capped short founded on the capped hex
+			-- once the settler arrived there with movement to spare. A row
+			-- without a site (an older brain) keeps the old behaviour. The
+			-- miss is named, not blocked: `found_refused` feeds the brain's
+			-- permanent `blocked_city_sites`, and standing one hex off is not
+			-- a verdict on the ground.
+			if x ~= nil and y ~= nil and (atX ~= x or atY ~= y) then
+				return false, "found_off_site";
+			end
 			local placed = operate(unit, OP["UNITOPERATION_FOUND_CITY"], {});
 			-- ★★★★★ ASK THE ENGINE WHY, DO NOT INFER IT.
 			--
@@ -10483,9 +11060,36 @@ local function applyOrder(player, pid, row, turn)
 		end
 		if verb == "MOVE_TO" or verb == "ATTACK" then
 			if x == nil or y == nil then return false, "no_dest"; end
+			-- ★★★★★ SEND THIS TURN'S LEG, NOT A PATH THE HOST WALKS NEXT TURN.
+			-- A melee ATTACK is a MOVE_TO onto the defender and is never capped.
+			-- The row's own x/y are rewritten so the queue expects the capped
+			-- plot; the original destination rides in `move_capped`.
+			if verb == "MOVE_TO" and cfg.CapMovesToReach ~= false then
+				local capped, why = CivvisBoard.capToTurn(unit, x, y);
+				if capped == false then
+					CivvisBoard.stats.no_reach = CivvisBoard.stats.no_reach + 1;
+					return false, "move_" .. tostring(why);
+				elseif capped ~= nil then
+					CivvisBoard.stats.capped = CivvisBoard.stats.capped + 1;
+					emit("move_capped", { turn = turn, unit = subject,
+					                      want = { x, y }, sent = { capped.x, capped.y },
+					                      turns = capped.turns });
+					x, y = capped.x, capped.y;
+					row.x, row.y = x, y;
+				end
+			end
 			local params = {};
 			params[UnitOperationTypes.PARAM_X] = x;
 			params[UnitOperationTypes.PARAM_Y] = y;
+			if verb == "ATTACK" then
+				-- See `attackModifiers`: MOVE_TO without this flag is a walk, not
+				-- a strike, and the whole army has been swinging at air.
+				local modifiers = CivvisLedger.attackModifiers();
+				if modifiers ~= nil then
+					params[UnitOperationTypes.PARAM_MODIFIERS] = modifiers;
+				end
+				CivvisLedger.strike(unit, subject, verb, x, y, turn);
+			end
 			local moved = operate(unit, OP["UNITOPERATION_MOVE_TO"], params);
 			if not moved then
 				-- ★★★★ NAME THE UNIT AND WHERE IT WOULD NOT GO. `refusals` is
@@ -10573,6 +11177,7 @@ local function applyOrder(player, pid, row, turn)
 			local params = {};
 			params[UnitOperationTypes.PARAM_X] = x;
 			params[UnitOperationTypes.PARAM_Y] = y;
+			CivvisLedger.strike(unit, subject, verb, x, y, turn);
 			return operate(unit, OP["UNITOPERATION_RANGE_ATTACK"], params), verb;
 		end
 		-- ★★★★★ IMPROVE — the order whose absence made CIVVIS build builders forever.
@@ -11021,6 +11626,36 @@ local function applyOrder(player, pid, row, turn)
 			end);
 			return ok, ok and verb or "throw";
 		end
+		local beliefName = string.match(tostring(verb), "^EVANGELIZE_BELIEF:(.+)$");
+		if beliefName ~= nil then
+			if pendingReligionChoice ~= nil then return false, "religion_choice_pending"; end
+			local belief, resolved = resolveType(GameInfo.Beliefs, beliefName);
+			if belief == nil then return false, "unknown_belief_" .. beliefName; end
+			local playerReligion = try(function() return player:GetReligion(); end);
+			if playerReligion == nil then return false, "no_religion_api"; end
+			if try(function() return playerReligion:GetReligionTypeCreated(); end, -1) < 0 then
+				return false, "religion_not_founded";
+			end
+			local gameReligion = try(function() return Game.GetReligion(); end);
+			if gameReligion == nil then return false, "no_game_religion"; end
+			if try(function() return gameReligion:IsInSomeReligion(belief.Index); end, true) then
+				return false, "taken_" .. resolved;
+			end
+			-- The operation itself opens the selection prompt; the blocker handler
+			-- above supplies the selected belief only after that native state exists.
+			local started = operate(unit, OP["UNITOPERATION_EVANGELIZE_BELIEF"], {});
+			if not started then return false, "cannot_evangelize_" .. resolved; end
+			pendingReligionChoice = {
+				mode = "evangelize",
+				turn = turn,
+				unit = subject,
+				belief = resolved,
+				belief_index = belief.Index,
+				belief_hash = belief.Hash,
+				add_requested = false,
+			};
+			return true, "EVANGELIZE_BELIEF:" .. resolved;
+		end
 		-- A spy mission is an operation aimed at a CITY PLOT, exactly as
 		-- Firaxis' own EspionagePopup issues it: PARAM_X/PARAM_Y then
 		-- `RequestOperation`. Travelling to a new city uses the same shape,
@@ -11068,6 +11703,11 @@ end
 -- Civilization VI UI sandbox has no `_G` table.  Reusing the existing local
 -- handler avoids consuming another main-chunk register.
 CivvisApplyOrder = applyOrder;
+CivvisResolveActions = resolveActions;
+CivvisOrdersReady = ordersReady;
+CivvisFetchOrders = fetchOrders;
+CivvisExportState = exportState;
+CivvisExportTiles = exportTiles;
 
 -- Pick the major civilization that is closest to a diplomatic victory.  The
 -- World Congress vote needs this independently of the rest of the turn loop,
@@ -11132,6 +11772,48 @@ CivvisSelectCongressLeader = function(candidates)
 		end
 	end
 	return leader, leaderPoints, leaderScore;
+end
+
+-- ★★★★ THE ASK IS PRICED AGAINST BOTH TABLES THE HOST MIGHT CHARGE.
+--
+-- Every multi-vote ballot this seat ever sent saturated the bank the host's
+-- own `GetVotesandFavorCost` table said it could afford — 14/16/18/20 votes
+-- across civvis-20260819T004405Z, 13 at t162 of T175125Z — and all 17 were
+-- refused whole while all 95 one-vote ballots registered. That table is the
+-- ONLINE curve: the k-th extra vote costs 4k, cumulative `2n(n-1)`. The
+-- Standard curve the game was written against charges 10k, cumulative
+-- `5n(n-1)` — the same 780-for-13-votes this file's own #2039 comment quotes
+-- from the shipped ladder. A core that CHARGES Standard while the accessor
+-- REPORTS Online refuses every ask this seat has ever made as unaffordable,
+-- and none of the 112 verdict rows can tell, because no ballot ever asked a
+-- count small enough to fit both tables. So cap the ask by both: when the
+-- theory is wrong this asks fewer votes than the bank affords on a ballot
+-- that today registers ONE, which cannot lose a vote we are getting; when it
+-- is right, the first session past the cap finally registers a bank. The
+-- verdict's `budget` field carries both walks so the session that decides it
+-- is attributable.
+--
+-- Exposed for the offline Lua regression. Must remain a bare global -- another
+-- file-scope `local` would exceed Civ 6's 200-register chunk ceiling.
+CivvisCongressVoteBudget = function(favor, costs, maxVotes)
+	local bank = tonumber(favor) or 0;
+	local cap = tonumber(maxVotes) or 1;
+	if cap < 1 then cap = 1; end
+	-- `costs[k]` is the host's cumulative price of k+1 votes; the first vote
+	-- (`costs[0]`) is free on every observed table.
+	local host = 1;
+	while host + 1 <= cap and type(costs) == "table"
+	      and tonumber(costs[host]) ~= nil
+	      and tonumber(costs[host]) <= bank do
+		host = host + 1;
+	end
+	-- Standard-speed cumulative price of n votes: 5n(n-1).
+	local standard = 1;
+	while standard + 1 <= cap and 5 * (standard + 1) * standard <= bank do
+		standard = standard + 1;
+	end
+	local votes = (host < standard) and host or standard;
+	return votes, host, standard;
 end
 
 -- ★★★★ GREAT PEOPLE MUST BE SPENT, NOT PARKED.
@@ -11326,9 +12008,627 @@ end
 -- caught by a count and would have passed a boolean "is it wired up" check. An
 -- `orders` event that says only "CIVVIS decided" reads identical whether every
 -- order landed or every one was refused.
+-- ------------------------------------------------------ per-unit order queue
+--
+-- ★★★★★ ONE ORDER PER UNIT PER TURN WAS THE PRICE OF ASYNCHRONOUS ACTUATION.
+--
+-- `UnitManager.RequestOperation` returns before the unit has moved, so a list
+-- like `MOVE_TO a; RANGE_ATTACK t` applied in one callback aims the shot from
+-- where the unit STOOD, not from `a`. `civvis_orders::coalesce_unit_paths`
+-- answered that by sending a unit's walk and deferring every later order to the
+-- next frame — correct causally, and it deferred every strike that follows a
+-- step. The joint tactical search's lines are literally `[Move, Attack]`
+-- (`src/ai/tactics.rs`), so on this bridge they executed as a step: the unit
+-- walked into contact and stood there, unstruck, for the enemy's whole turn.
+-- Measured on run civvis-20260803T005930Z: 7 melee ATTACK orders against 1546
+-- MOVE_TO in 188 turns of war; 622 of 1787 military unit-turns hovering 2-4
+-- hexes from a target. Twelve finished live games in the host's Hall of Fame:
+-- 343 units lost, 61 killed.
+--
+-- This queue keeps the whole per-unit sequence and runs it IN ORDER, each
+-- order once the one before it has done what it meant to do: the unit stands
+-- where the move was aimed, or has no movement left, or the host says its
+-- operation is over (`UnitMoveComplete` / `UnitOperationDeactivated`), or a
+-- grace period ran out. Every order still passes `canOperate` inside
+-- `applyOrder`, so a step the host cut short refuses the strike by name
+-- rather than firing it from the wrong tile.
+--
+-- ⚠⚠⚠ THE UNIT HANDLE IS RE-RESOLVED ON EVERY DRAIN, NEVER CACHED — see the
+-- SIGSEGV note on `applyOrder`. A queued unit that died in its own strike is a
+-- named refusal (`unit_gone:<id>`), not a freed pointer.
+--
+-- ⚠ THE FLOOR: `settleTurn` holds the turn open while a queue is pending, but
+-- only for `OrderQueueMaxTicks`. Past that the rest is refused as
+-- `queue_stalled` and the turn ends. A wedged operation costs decision
+-- quality, never progress.
+--
+-- One bare global table: the main chunk sits two slots under Lua 5.1's
+-- 200-local ceiling (see the CI headroom check), so nothing here is a `local`.
+CivvisQueue = {
+	pending = {},   -- host unit id -> { rows, next, expect, ready, wait }
+	order = {},     -- unit ids in the order they were first queued
+	count = 0,
+	-- Units whose OPENING walk is still in flight and have nothing queued
+	-- behind it: a rows-less entry that only holds the turn until the walk
+	-- has landed. See `CivvisQueue.watch`.
+	watching = 0,
+	turn = -1,
+	ticks = 0,
+	stats = { applied = 0, refused = 0, refusals = {}, strikes_landed = 0,
+	          strikes_planned = 0, queued = 0 },
+};
+
+CivvisQueue.reset = function(turn)
+	local q = CivvisQueue;
+	if q.count > 0 then
+		-- Leftovers from a turn that ended under us: name them, once.
+		local left = 0;
+		for _, entry in pairs(q.pending) do left = left + (#entry.rows - entry.next + 1); end
+		q.stats.refused = q.stats.refused + left;
+		q.stats.refusals.queue_turn_over = (q.stats.refusals.queue_turn_over or 0) + left;
+		CivvisQueue.report(q.turn, "turn_over");
+	end
+	q.pending = {}; q.order = {}; q.count = 0; q.watching = 0; q.turn = turn; q.ticks = 0;
+	q.stats = { applied = 0, refused = 0, refusals = {}, strikes_landed = 0,
+	            strikes_planned = 0, queued = 0 };
+end;
+
+-- The position an order should leave its unit at, when the next order must
+-- be issued from there. A melee ATTACK ends on the target only if the
+-- defender dies, so it carries no expectation and relies on the host's
+-- deactivation event or the grace period.
+CivvisQueue.expectFor = function(row)
+	local verb = tostring(row.verb or "");
+	local x, y = tonumber(row.x), tonumber(row.y);
+	if verb == "MOVE_TO" and x ~= nil and y ~= nil then return { x = x, y = y }; end
+	return nil;
+end;
+
+CivvisQueue.isStrike = function(row)
+	local verb = tostring(row.verb or "");
+	return verb == "ATTACK" or verb == "RANGE_ATTACK";
+end;
+
+CivvisQueue.push = function(subject, row, expect)
+	local q = CivvisQueue;
+	local entry = q.pending[subject];
+	if entry == nil then
+		entry = { rows = {}, next = 1, expect = expect, ready = false, wait = 0 };
+		q.pending[subject] = entry;
+		q.order[#q.order + 1] = subject;
+	elseif #entry.rows == 0 then
+		-- A watch on the opening walk becomes a real queue entry.
+		q.watching = q.watching - 1;
+	end
+	entry.rows[#entry.rows + 1] = row;
+	q.count = q.count + 1;
+	q.stats.queued = q.stats.queued + 1;
+	if CivvisQueue.isStrike(row) then q.stats.strikes_planned = q.stats.strikes_planned + 1; end
+end;
+
+CivvisQueue.pendingCount = function() return CivvisQueue.count + CivvisQueue.watching; end;
+
+-- ★★★★ HOLD THE TURN UNTIL THE OPENING WALK HAS LANDED, EVEN WITH NOTHING
+-- QUEUED BEHIND IT. `settleTurn` decides whether to open a replan frame the
+-- first time the queue is empty — and a unit whose whole order was one
+-- MOVE_TO never entered the queue, so that decision was taken while the
+-- unit was still walking: nothing revealed yet, no frame, the turn latched
+-- settled, and the movement the brain had deliberately left for the frame
+-- (`step_and_reassess` cuts the walk at the edge of the known) was never
+-- spent. A watch is a rows-less entry: it settles like any queued order
+-- (arrival, no movement left, the host's own event, or the grace period)
+-- and is dropped; it never issues anything and names no refusal.
+CivvisQueue.watch = function(subject, expect)
+	local q = CivvisQueue;
+	if q.pending[subject] ~= nil then return; end
+	q.pending[subject] = { rows = {}, next = 1, expect = expect, ready = false, wait = 0 };
+	q.order[#q.order + 1] = subject;
+	q.watching = q.watching + 1;
+end;
+
+CivvisQueue.dropWatch = function(subject, entry)
+	local q = CivvisQueue;
+	if #entry.rows > 0 then return false; end
+	q.pending[subject] = nil;
+	q.watching = q.watching - 1;
+	return true;
+end;
+
+CivvisQueue.refuseRest = function(subject, entry, why)
+	local q = CivvisQueue;
+	if CivvisQueue.dropWatch(subject, entry) then return; end
+	local left = #entry.rows - entry.next + 1;
+	if left > 0 then
+		q.stats.refused = q.stats.refused + left;
+		q.stats.refusals[why] = (q.stats.refusals[why] or 0) + left;
+	end
+	q.count = q.count - left;
+	q.pending[subject] = nil;
+end;
+
+-- A host event for one of our units: the move finished or the operation
+-- deactivated. Mark it ready; the drain on the next tick issues its next order.
+CivvisQueue.noteUnitEvent = function(pid, player, unitId)
+	local q = CivvisQueue;
+	if q.count <= 0 or player ~= pid then return false; end
+	local entry = q.pending[tonumber(unitId) or -1];
+	if entry == nil then return false; end
+	entry.ready = true;
+	return true;
+end;
+
+CivvisQueue.report = function(turn, why)
+	local q = CivvisQueue;
+	emit("orders_queue", {
+		turn = turn, why = why, applied = q.stats.applied, refused = q.stats.refused,
+		refusals = q.stats.refusals, queued = q.stats.queued,
+		strikes_planned = q.stats.strikes_planned,
+		strikes_landed = q.stats.strikes_landed, waited = q.ticks,
+	});
+end;
+
+-- Issue at most one queued order per unit whose previous order has settled.
+-- Returns how many orders ran on this call.
+CivvisQueue.drain = function(player, pid, turn)
+	local q = CivvisQueue;
+	if q.count + q.watching <= 0 then return 0; end
+	-- The host's own `UnitMoveComplete` / `UnitOperationDeactivated` mark a
+	-- unit ready the moment its order settles; the grace period is only the
+	-- fallback for a host that never says so, and it is deliberately long —
+	-- an early strike is refused out of range, a late one merely waits.
+	local grace = tonumber(cfg.OrderQueueGraceTicks) or 30;
+	local ran = 0;
+	for _, subject in ipairs(q.order) do
+		local entry = q.pending[subject];
+		if entry ~= nil then
+			local unit = liveUnit(pid, subject);
+			if unit == nil then
+				CivvisQueue.refuseRest(subject, entry, "unit_gone:" .. tostring(subject));
+			else
+				entry.wait = entry.wait + 1;
+				local ux = tonumber(try(function() return unit:GetX(); end, -1)) or -1;
+				local uy = tonumber(try(function() return unit:GetY(); end, -1)) or -1;
+				local moves = tonumber(try(function() return unit:GetMovesRemaining(); end, nil));
+				local arrived = entry.expect == nil
+					or (ux == entry.expect.x and uy == entry.expect.y);
+				local spent = moves ~= nil and moves <= 0;
+				local ready = entry.ready or arrived or spent or entry.wait >= grace;
+				if ready and CivvisQueue.dropWatch(subject, entry) then
+					-- The opening walk has landed; nothing follows it.
+				elseif ready then
+					local row = entry.rows[entry.next];
+					local verb = tostring(row.verb or "");
+					if spent and (verb == "MOVE_TO" or CivvisQueue.isStrike(row)) then
+						-- Nothing that needs movement can run; say why, don't ask.
+						CivvisQueue.refuseRest(subject, entry, "queue_no_moves");
+					else
+						local ok, why = false, "throw";
+						local safe, res1, res2 = pcall(function()
+							return applyOrder(player, pid, row, turn);
+						end);
+						if safe then ok, why = res1, res2; end
+						ran = ran + 1;
+						q.count = q.count - 1;
+						if ok then
+							q.stats.applied = q.stats.applied + 1;
+							if CivvisQueue.isStrike(row) then
+								q.stats.strikes_landed = q.stats.strikes_landed + 1;
+							end
+						else
+							q.stats.refused = q.stats.refused + 1;
+							local key = tostring(why);
+							q.stats.refusals[key] = (q.stats.refusals[key] or 0) + 1;
+						end
+						entry.next = entry.next + 1;
+						if entry.next > #entry.rows then
+							q.pending[subject] = nil;
+						else
+							entry.expect = ok and CivvisQueue.expectFor(row) or nil;
+							entry.ready = false;
+							entry.wait = 0;
+						end
+					end
+				end
+			end
+		end
+	end
+	if q.count + q.watching <= 0 then
+		q.pending = {}; q.order = {};
+		-- A turn that only watched walks land has nothing to report.
+		if q.stats.queued > 0 then CivvisQueue.report(turn, "drained"); end
+	end
+	return ran;
+end;
+
+-- Past the cap the queue is abandoned by name and the turn may end.
+CivvisQueue.giveUp = function(turn)
+	local q = CivvisQueue;
+	for subject, entry in pairs(q.pending) do
+		CivvisQueue.refuseRest(subject, entry, "queue_stalled");
+	end
+	q.pending = {}; q.order = {}; q.count = 0; q.watching = 0;
+	CivvisQueue.report(turn, "stalled");
+end;
+
+-- ★★★★ A HELD SOLDIER IS NOT AN IDLE ONE. `applyOrders` hands every combat
+-- unit CIVVIS did not mention to `UNITOPERATION_AUTOMATE_EXPLORE`, which was
+-- right for a peacetime army parked in its capital and wrong for the one
+-- CIVVIS meant to hold in contact — a hold produces no order, and the host's
+-- automation then walked the unit wherever it liked. Visible hostile combat
+-- units and at-war cities within `ExploreGuardRadius` tiles keep the unit
+-- where CIVVIS left it. Computed once per turn, only when the hand-off asks.
+CivvisQueue.contactPlots = function(pid, turn)
+	local q = CivvisQueue;
+	if q.contactTurn == turn and q.contacts ~= nil then return q.contacts; end
+	local plots = {};
+	local diplomacy = try(function() return Players[pid]:GetDiplomacy(); end);
+	local visible = function(x, y)
+		return try(function() return PlayersVisibility[pid]:IsVisible(x, y); end, false) == true;
+	end
+	local combatUnit = function(unit)
+		return try(function()
+			local row = GameInfo.Units[unit:GetUnitType()];
+			return row ~= nil and ((row.Combat or 0) > 0 or (row.RangedCombat or 0) > 0);
+		end, false) == true;
+	end
+	local addUnits = function(other)
+		pcall(function()
+			for _, unit in other:GetUnits():Members() do
+				local ux, uy = unit:GetX(), unit:GetY();
+				if visible(ux, uy) and combatUnit(unit) then
+					plots[#plots + 1] = { x = ux, y = uy };
+				end
+			end
+		end);
+	end
+	pcall(function()
+		for _, oid in ipairs(PlayerManager.GetAliveIDs() or {}) do
+			if oid ~= pid then
+				local other = Players[oid];
+				local barbarian = try(function() return other:IsBarbarian(); end, false) == true;
+				local free = try(function()
+					return other.IsFreeCities ~= nil and other:IsFreeCities() == true;
+				end, false) == true;
+				local atWar = diplomacy ~= nil
+					and try(function() return diplomacy:IsAtWarWith(oid); end, false) == true;
+				if other ~= nil and (barbarian or free or atWar) then
+					addUnits(other);
+					if atWar then
+						pcall(function()
+							for _, city in other:GetCities():Members() do
+								local cx, cy = city:GetX(), city:GetY();
+								if visible(cx, cy) then plots[#plots + 1] = { x = cx, y = cy }; end
+							end
+						end);
+					end
+				end
+			end
+		end
+	end);
+	q.contacts = plots;
+	q.contactTurn = turn;
+	return plots;
+end;
+
+CivvisQueue.inContact = function(pid, unit, turn)
+	local radius = tonumber(cfg.ExploreGuardRadius) or 4;
+	local ux = tonumber(try(function() return unit:GetX(); end, -1)) or -1;
+	local uy = tonumber(try(function() return unit:GetY(); end, -1)) or -1;
+	if ux < 0 then return false; end
+	for _, plot in ipairs(CivvisQueue.contactPlots(pid, turn)) do
+		local d = tonumber(try(function() return Map.GetPlotDistance(ux, uy, plot.x, plot.y); end, -1)) or -1;
+		if d >= 0 and d <= radius then return true; end
+	end
+	return false;
+end;
+
+-- --------------------------------------------------------- host-grounded board
+--
+-- ★★★★★ THE BOARD PLANNED MOVEMENT THE UNIT DID NOT HAVE. `mirror_unit_moves`
+-- handed every mirrored unit its full allowance every turn, because the
+-- export's `moves` had misled twice — and it misled because the host had
+-- already spent the movement before the brain could act: a `MOVE_TO` whose
+-- host path ran longer than CIVVIS priced was QUEUED, and the host walked the
+-- unit along it at the start of the next turn, before `beginTurn` exports.
+-- Turn 31 of run civvis-20260730T120107Z: 7 of 8 units at `moves: 0` at the
+-- start of the turn. Measured across the recorded runs: 12.5 % of MOVE_TOs
+-- did not move at all, most of them with movement showing at export.
+--
+-- Two rules make `moves` mean "movement available this turn", and the `seat`
+-- event says so (`moves_at_turn_start`) so the mirror may trust it:
+--   * every MOVE_TO is CAPPED to the furthest plot on the host's own path that
+--     the unit reaches THIS turn (`UnitManager.GetMoveToPathEx(unit, dest)`
+--     gives `plots` and `turns`; the shipped WorldInput draws the same path);
+--     a walk that would take two turns is sent as its first turn's leg, and
+--     the brain re-plans the rest from the real position next turn — no path
+--     is left queued to walk the unit somewhere stale;
+--   * combat units that enter the turn with a queued destination anyway (an
+--     older order, the fallback ladder, explore automation) get
+--     `UNITCOMMAND_CANCEL` at turn start, so the brain owns them from the next
+--     turn on. Civilians keep theirs: a settler's long walk is exactly what a
+--     queued path is for.
+-- Both are counted (`move_capped`, `queued_paths`) so a run says how often the
+-- host and the board disagreed. One bare global table (200-local ceiling).
+CivvisBoard = { stats = { capped = 0, no_reach = 0, escort_cap_synced = 0,
+	                         escort_cap_unresolved = 0 } };
+
+CivvisBoard.reset = function()
+	CivvisBoard.stats = { capped = 0, no_reach = 0, escort_cap_synced = 0,
+	                     escort_cap_unresolved = 0 };
+end;
+
+-- The furthest plot on the host's path to (x, y) that `unit` reaches this
+-- turn. Returns nil when the whole path lands this turn (no cap), false and a
+-- reason when the unit cannot take even the first step, or the capped plot.
+CivvisBoard.capToTurn = function(unit, x, y)
+	local path = try(function()
+		return UnitManager.GetMoveToPathEx(unit, Map.GetPlotIndex(x, y));
+	end, nil);
+	if path == nil or path.plots == nil or path.turns == nil then return nil; end
+	local n = 0;
+	for _ in pairs(path.plots) do n = n + 1; end
+	if n <= 1 then return nil; end
+	local last = tonumber(path.turns[n]);
+	if last == nil or last <= 1 then return nil; end
+	local reach = nil;
+	for i = 2, n do
+		local t = tonumber(path.turns[i]);
+		if t ~= nil and t <= 1 then reach = path.plots[i]; end
+	end
+	if reach == nil then return false, "no_moves_this_turn"; end
+	local plot = try(function() return Map.GetPlotByIndex(reach); end, nil);
+	if plot == nil then return nil; end
+	local cx = tonumber(try(function() return plot:GetX(); end, nil));
+	local cy = tonumber(try(function() return plot:GetY(); end, nil));
+	if cx == nil or cy == nil then return nil; end
+	return { x = cx, y = cy, turns = last };
+end;
+
+-- A setter and its guard can be co-located and ordered to the same distant
+-- tile, yet take different host legs: the setter's row is capped while the
+-- guard's faster path reaches the original destination.  This is a narrow,
+-- experimental bridge repair, never a new escort policy: it applies only to
+-- the first MOVE_TO for an already-matching pair, and only when the guard can
+-- reach the setter's capped tile this turn.  Anything ambiguous remains on
+-- today's path and is named for the experiment's ledger.
+CivvisBoard.syncCappedSettlerEscorts = function(pid, turn, rows)
+	if cfg.SettlerEscortCapSync ~= true or cfg.CapMovesToReach == false then return; end
+	local first, settling = {}, {};
+	for index, row in ipairs(rows) do
+		if tostring(row.kind or "") == "unit" then
+			local subject = tonumber(row.subject);
+			if subject ~= nil then
+				if first[subject] == nil then first[subject] = index; end
+				if tostring(row.verb or "") == "FOUND_CITY" then settling[subject] = true; end
+			end
+		end
+	end
+	for index, row in ipairs(rows) do
+		local setterId = tonumber(row.subject);
+		local wantX, wantY = tonumber(row.x), tonumber(row.y);
+		if tostring(row.kind or "") == "unit" and tostring(row.verb or "") == "MOVE_TO"
+				and setterId ~= nil and wantX ~= nil and wantY ~= nil
+				and first[setterId] == index and not settling[setterId] then
+			local setter = liveUnit(pid, setterId);
+			if setter ~= nil and unitTypeName(setter) == "UNIT_SETTLER" then
+				local capped = CivvisBoard.capToTurn(setter, wantX, wantY);
+				if type(capped) == "table" then
+					local guardRow, guard, guardId, candidates = nil, nil, nil, 0;
+					local sx = tonumber(try(function() return setter:GetX(); end, nil));
+					local sy = tonumber(try(function() return setter:GetY(); end, nil));
+					for guardIndex, candidate in ipairs(rows) do
+						local candidateId = tonumber(candidate.subject);
+						local cx, cy = tonumber(candidate.x), tonumber(candidate.y);
+						if guardIndex ~= index and tostring(candidate.kind or "") == "unit"
+								and tostring(candidate.verb or "") == "MOVE_TO"
+								and candidateId ~= nil and first[candidateId] == guardIndex
+								and cx == wantX and cy == wantY then
+							local candidateUnit = liveUnit(pid, candidateId);
+							local gx = tonumber(try(function() return candidateUnit:GetX(); end, nil));
+							local gy = tonumber(try(function() return candidateUnit:GetY(); end, nil));
+							local combat = try(function()
+								local definition = GameInfo.Units[candidateUnit:GetUnitType()];
+								return definition ~= nil
+									and ((tonumber(definition.Combat) or 0) > 0
+										or (tonumber(definition.RangedCombat) or 0) > 0);
+							end, false) == true;
+							if candidateUnit ~= nil and sx ~= nil and sy ~= nil
+									and gx ~= nil and gy ~= nil and gx == sx and gy == sy and combat then
+								guardRow, guard, guardId = candidate, candidateUnit, candidateId;
+								candidates = candidates + 1;
+							end
+						end
+					end
+					if candidates == 1 then
+						local guardLeg = CivvisBoard.capToTurn(guard, capped.x, capped.y);
+						if guardLeg == nil then
+							guardRow.x, guardRow.y = capped.x, capped.y;
+							CivvisBoard.stats.escort_cap_synced = CivvisBoard.stats.escort_cap_synced + 1;
+							emit("escort_cap_synced", {
+								turn = turn, settler = setterId, guard = guardId,
+								want = { wantX, wantY }, sent = { capped.x, capped.y },
+							});
+						else
+							CivvisBoard.stats.escort_cap_unresolved = CivvisBoard.stats.escort_cap_unresolved + 1;
+							emit("escort_cap_unresolved", {
+								turn = turn, settler = setterId, guard = guardId,
+								reason = guardLeg == false and "guard_no_reach" or "guard_still_capped",
+								want = { wantX, wantY }, sent = { capped.x, capped.y },
+							});
+						end
+					elseif candidates > 1 then
+						CivvisBoard.stats.escort_cap_unresolved = CivvisBoard.stats.escort_cap_unresolved + 1;
+						emit("escort_cap_unresolved", {
+							turn = turn, settler = setterId, reason = "ambiguous_guards",
+							candidates = candidates, want = { wantX, wantY },
+							sent = { capped.x, capped.y },
+						});
+					end
+				end
+			end
+		end
+	end
+end;
+
+-- Cancel queued paths on combat units at the start of our turn, and report
+-- how many units entered the turn with one at all.
+CivvisBoard.cancelQueuedPaths = function(player, pid, turn)
+	local found, cancelled = 0, 0;
+	eachUnit(player, function(unit)
+		local queued = try(function() return UnitManager.GetQueuedDestination(unit); end, nil);
+		if queued == nil then return; end
+		found = found + 1;
+		local combat = try(function()
+			local row = GameInfo.Units[unit:GetUnitType()];
+			return row ~= nil and ((row.Combat or 0) > 0 or (row.RangedCombat or 0) > 0);
+		end, false) == true;
+		if not combat then return; end
+		local hash = CMD["UNITCOMMAND_CANCEL"];
+		if hash == nil then return; end
+		local ok = try(function()
+			return UnitManager.CanStartCommand(unit, hash, false, true) == true;
+		end, false);
+		if ok and pcall(function() UnitManager.RequestCommand(unit, hash); end) then
+			cancelled = cancelled + 1;
+		end
+	end);
+	if found > 0 then
+		emit("queued_paths", { turn = turn, found = found, cancelled = cancelled });
+	end
+end;
+
+-- ------------------------------------------------ mid-turn frames (combat + replan)
+--
+-- ★★★★ THE PLAN IS COMPUTED ONCE, BEFORE THE HOST HAS ROLLED A SINGLE DIE.
+-- Every strike of the turn is planned against the opening board with the
+-- engine's own rolls; the host's roll differs (it has left "sure" kills alive
+-- at 1, 3, 6, 8, 16 and 20 HP), and the next export is next turn. A combat
+-- frame closes that gap: after the opening orders and their per-unit queue
+-- have settled, if any strike was issued, the board is exported again with
+-- `frame = N`, the brain re-plans the SAME turn on it (units that acted show
+-- the movement and attacks they have left, targets show the damage they
+-- took), and the answer is applied like the opening one.
+--
+-- ★★★★ AND THE BOARD WAS COMPUTED ONCE, BEFORE ANY UNIT HAD LOOKED. The same
+-- shape holds for ground: a scout ordered three hexes into the fog reveals the
+-- coast, the rival border or the barbarian camp on its first step and walks
+-- the other two regardless, and the map it uncovered reached the brain only
+-- with the next `tiles` sweep — every `TileExportEvery` turns. A REPLAN frame
+-- (`ReplanFrames = N`, the cap per turn) opens whenever the settled board has
+-- something new to say and somebody left to say it to: plots were revealed
+-- since the board went out (`CivvisTiles.sweep`, which also sends them as a
+-- `tiles` delta so the re-plan SEES them) and at least one unit still has
+-- movement, or a strike went out. The brain's half is `step_and_reassess`:
+-- it cuts a walk at its first unrevealed hex when the seat advertises
+-- `replan_frames`, so the unit steps to the edge of the known, the frame
+-- shows what it found, and the remaining movement is spent on that.
+--
+-- ⚠ `CombatFrames` keeps its old meaning (strike-opened frames only, default
+-- 0). `ReplanFrames` opens on strikes OR revealed ground. Each frame waits
+-- with its own short budget (`CombatFramePolls`) and no fallback ladder:
+-- past it the turn's remaining frames are abandoned by name and the turn
+-- ends as it always did. Every frame re-arms the per-unit queue's tick
+-- budget, so a turn with N frames may hold up to (N+1) x OrderQueueMaxTicks.
+-- One bare global table (200-local ceiling).
+CivvisFrames = { current = 0, strikes = 0, revealed = 0, movers = 0, reason = nil, settled = false };
+
+CivvisFrames.reset = function()
+	CivvisFrames.current = 0;
+	CivvisFrames.strikes = 0;
+	CivvisFrames.revealed = 0;
+	CivvisFrames.movers = 0;
+	CivvisFrames.reason = nil;
+	-- True once the turn declined its next frame: `settleTurn` is called
+	-- again on every later tick of the turn (blockers, end-turn retries),
+	-- and the sweep must not run on each of them.
+	CivvisFrames.settled = false;
+end;
+
+-- Called from CivvisLedger.strike for every strike issued, opening or queued.
+CivvisFrames.noteStrike = function()
+	CivvisFrames.strikes = CivvisFrames.strikes + 1;
+end;
+
+CivvisFrames.combatMax = function()
+	return tonumber(cfg.CombatFrames) or 0;
+end;
+
+CivvisFrames.replanMax = function()
+	return tonumber(cfg.ReplanFrames) or 0;
+end;
+
+CivvisFrames.max = function()
+	return math.max(CivvisFrames.combatMax(), CivvisFrames.replanMax());
+end;
+
+-- Look at the settled board once, before asking `wanted`: how many plots this
+-- seat revealed since the last board went out (sent as a `tiles` delta in the
+-- same breath, so the frame's re-plan has them), and how many units could
+-- still act on them. Pure bookkeeping when frames are off.
+CivvisFrames.observe = function(player, pid, turn)
+	if CivvisFrames.replanMax() <= 0 then return; end
+	CivvisFrames.revealed = CivvisTiles.sweep(player, pid, turn, CivvisFrames.current + 1) or 0;
+	local movers = 0;
+	eachUnit(player, function(unit)
+		local moves = try(function() return unit:GetMovesRemaining(); end, 0) or 0;
+		if moves > 0 then movers = movers + 1; end
+	end);
+	CivvisFrames.movers = movers;
+end;
+
+-- Why another frame should open now, or nil: frames are enabled, the cap is
+-- not reached, and either a strike was issued since the last board went out
+-- (combat or replan frames) or ground was revealed with movement left to
+-- spend on it (replan frames only).
+CivvisFrames.why = function()
+	local current = CivvisFrames.current;
+	if CivvisFrames.strikes > 0 and current < CivvisFrames.max() then
+		return "strike";
+	end
+	if current < CivvisFrames.replanMax()
+			and CivvisFrames.revealed > 0 and CivvisFrames.movers > 0 then
+		return "revealed";
+	end
+	return nil;
+end;
+
+CivvisFrames.wanted = function()
+	return CivvisFrames.why() ~= nil;
+end;
+
+-- Open the next frame: export the board again, stamped, and re-arm the
+-- handshake so `settleTurn` waits for this frame's answer.
+CivvisFrames.begin = function(player, pid, turn)
+	local reason = CivvisFrames.why() or "strike";
+	CivvisFrames.current = CivvisFrames.current + 1;
+	CivvisFrames.reason = reason;
+	CivvisFrames.settled = false;
+	local strikes, revealed = CivvisFrames.strikes, CivvisFrames.revealed;
+	CivvisFrames.strikes = 0;
+	CivvisFrames.revealed = 0;
+	awaiting.frame = CivvisFrames.current;
+	awaiting.done = false;
+	awaiting.polls = 0;
+	awaiting.ticks = 0;
+	awaiting.source = "pending";
+	-- Each frame's follow-ups get their own queue budget; see the header.
+	CivvisQueue.ticks = 0;
+	-- `combat_frame` keeps its name for the readers that count it; a frame
+	-- opened by revealed ground is a `replan_frame`. Both carry the reason.
+	emit(reason == "strike" and "combat_frame" or "replan_frame", {
+		turn = turn, frame = CivvisFrames.current, reason = reason,
+		strikes = strikes, revealed = revealed, movers = CivvisFrames.movers,
+	});
+	pcall(function() exportState(player, pid, turn, CivvisFrames.current); end);
+end;
+
 local function applyOrders(player, pid, turn, rows)
 	local applied, refused, deferred = 0, 0, 0;
 	local byKind, whyNot = {}, {};
+	-- Match the guard to the host-capped settler leg before either row is applied.
+	-- The gate is default-off; with it absent every row remains byte-for-byte on
+	-- the pre-existing path through this function.
+	CivvisBoard.syncCappedSettlerEscorts(pid, turn, rows);
 
 	-- ★★★★★ FOUND A CITY BEFORE MOVING, ALWAYS. This is an actuation rule of
 	-- Civilization VI, not a decision, which is why it belongs here and not in CIVVIS.
@@ -11434,11 +12734,19 @@ local function applyOrders(player, pid, turn, rows)
 			whyNot[tostring(why)] = (whyNot[tostring(why)] or 0) + 1;
 		end
 		ordered[index] = true;
+		return ok, why;
 	end
 
+	-- A found refused here because the settler is not on its site yet is
+	-- queued again behind that settler's walk (see the queue below), so a
+	-- settler with movement to spare after arriving founds THIS turn instead
+	-- of standing a full enemy turn on the frontier with 0 moves left.
+	local foundRetry = {};
 	for index, row in ipairs(rows) do
 		if tostring(row.kind or "") == "unit" and tostring(row.verb or "") == "FOUND_CITY" then
-			runOrder(index, row);
+			local ok = runOrder(index, row);
+			local subject = tonumber(row.subject);
+			if not ok and subject ~= nil then foundRetry[subject] = row; end
 		end
 	end
 	-- ★★★★★ CHANGE GOVERNMENT BEFORE SLOTTING THE DECK THAT FITS IT. Like
@@ -11469,8 +12777,45 @@ local function applyOrders(player, pid, turn, rows)
 			runOrder(index, row);
 		end
 	end
+	-- ★★★★★ THE FIRST ORDER PER UNIT RUNS NOW; EVERY LATER ONE IS QUEUED behind
+	-- it and issued once the earlier order has done what it meant to do — see
+	-- `CivvisQueue`. Before this, `civvis_orders` deferred those follow-ups to
+	-- the next turn, which is how a planned move-then-strike became a move.
+	-- A unit whose first order the host refused gets no follow-up: the rest of
+	-- its sequence was planned from a tile it never reached, and is refused by
+	-- name rather than fired from the wrong one.
+	local queueOn = cfg.OrderQueue ~= false;
+	local firstRun, firstRefused = {}, {};
 	for index, row in ipairs(rows) do
-		if not ordered[index] then runOrder(index, row); end
+		if not ordered[index] then
+			local subject = tonumber(row.subject);
+			local isUnit = tostring(row.kind or "") == "unit" and subject ~= nil;
+			if queueOn and isUnit and firstRun[subject] then
+				ordered[index] = true;
+				if firstRefused[subject] then
+					refused = refused + 1;
+					whyNot.queue_prior_refused = (whyNot.queue_prior_refused or 0) + 1;
+				else
+					CivvisQueue.push(subject, row, firstRun[subject].expect);
+				end
+			else
+				local ok = runOrder(index, row);
+				if isUnit then
+					firstRun[subject] = { expect = ok and CivvisQueue.expectFor(row) or nil };
+					if not ok then firstRefused[subject] = true; end
+					-- Hold the turn until this walk lands (see CivvisQueue.watch);
+					-- a queued follow-up for the unit replaces the watch.
+					if queueOn and ok and firstRun[subject].expect ~= nil then
+						CivvisQueue.watch(subject, firstRun[subject].expect);
+					end
+					if queueOn and ok and foundRetry[subject] ~= nil
+							and tostring(row.verb or "") == "MOVE_TO" then
+						CivvisQueue.push(subject, foundRetry[subject], firstRun[subject].expect);
+						foundRetry[subject] = nil;
+					end
+				end
+			end
+		end
 	end
 
 	-- Great People go first, before the explore handoff: they cannot explore,
@@ -11506,8 +12851,10 @@ local function applyOrders(player, pid, turn, rows)
 	-- that an idle unit should be doing something. Every unit CIVVIS actually assigns is
 	-- untouched, and the count is reported separately as `explored` so a run's telemetry
 	-- never presents this as CIVVIS's work.
-	local explored = 0;
-	if cfg.ExploreUnassigned ~= false then
+	local explored, guarded = 0, 0;
+	-- ⚠ NEVER on a combat frame: every unit not named by the frame's answer
+	-- was ordered by the opening board and is exactly where CIVVIS left it.
+	if cfg.ExploreUnassigned ~= false and (awaiting.frame or 0) == 0 then
 		local mentioned = {};
 		for _, row in ipairs(rows) do
 			if tostring(row.kind or "") == "unit" then
@@ -11526,6 +12873,11 @@ local function applyOrders(player, pid, turn, rows)
 					or (gp ~= nil and try(function() return gp:IsGreatPerson(); end, false)) then
 				return;
 			end
+			-- A held soldier stays held: see `CivvisQueue.contactPlots`.
+			if cfg.ExploreGuard ~= false and CivvisQueue.inContact(pid, unit, turn) then
+				guarded = guarded + 1;
+				return;
+			end
 			if operate(unit, OP["UNITOPERATION_AUTOMATE_EXPLORE"], {}) then
 				explored = explored + 1;
 			end
@@ -11533,11 +12885,26 @@ local function applyOrders(player, pid, turn, rows)
 	end
 
 	emit("orders", {
-		turn = turn, source = "civvis", seen = #rows - deferred,
+		turn = turn, frame = awaiting.frame or 0, source = "civvis", seen = #rows - deferred,
 		applied = applied, refused = refused, by = byKind, refusals = whyNot,
 		deferred = deferred,
 		-- Not part of `applied`: these are units CIVVIS said nothing about.
 		explored = explored,
+		-- Unmentioned combat units kept off the explore automation because a
+		-- hostile stood within `ExploreGuardRadius`; see `CivvisQueue.inContact`.
+		explore_guarded = guarded,
+		-- MOVE_TOs sent as this turn's leg of a longer host path, and moves
+		-- refused because the unit could not take even the first step this
+		-- turn. See CivvisBoard.
+		move_capped = CivvisBoard.stats.capped,
+		move_no_reach = CivvisBoard.stats.no_reach,
+		-- Experimental reconciliation of a co-located guard with a capped
+		-- settler.  Unresolved candidates deliberately retain their old order.
+		escort_cap_synced = CivvisBoard.stats.escort_cap_synced,
+		escort_cap_unresolved = CivvisBoard.stats.escort_cap_unresolved,
+		-- Follow-up orders waiting in the per-unit queue; their outcome lands
+		-- in this turn's `orders_queue` event, not in `applied` above.
+		queued = CivvisQueue.pendingCount(),
 		-- Also not part of `applied`: Great People driven to their own use —
 		-- an actuation formality, not a CIVVIS decision. See `orderGreatPerson`.
 		gp_activated = gpActivated,
@@ -11571,6 +12938,9 @@ local function applyOrders(player, pid, turn, rows)
 	--
 	-- Leaner than the heuristic path's record on purpose: the fields it omits
 	-- (`war_blocked`) describe built-ins that did not run.
+	-- One turn record per turn: a combat frame's answer is part of the same
+	-- turn, and the harness reads `turn` records as its clock.
+	if (awaiting.frame or 0) > 0 then return applied; end
 	local counts = countUnits(player);
 	local rivalTop, metCount = rivalBest(player, pid);
 	local ourScore = try(function() return player:GetScore(); end, -1);
@@ -11597,6 +12967,8 @@ local function applyOrders(player, pid, turn, rows)
 	});
 	return applied;
 end
+-- Exposed for the offline order-queue regression (order_queue_test.lua).
+CivvisApplyOrders = applyOrders;
 
 -- Publish the board and open the window in which CIVVIS answers.
 --
@@ -11787,6 +13159,8 @@ local function beginTurn(player, pid, turn)
 	-- Refreshed here rather than in the fallback so that the export, CIVVIS and the
 	-- built-ins all describe the same war picture.
 	warTarget = findWarTarget(player, pid);
+	CivvisBoard.reset();
+	if cfg.CancelQueuedPaths ~= false then CivvisBoard.cancelQueuedPaths(player, pid, turn); end
 	exportState(player, pid, turn);
 	exportTiles(player, pid, turn);
 	-- ★★★★ WHAT THE LAST WORLD CONGRESS SESSION DECIDED, AND WHO GAINED FROM IT.
@@ -11929,6 +13303,11 @@ local function beginTurn(player, pid, turn)
 						costs = envoyTally.ballot_costs,
 						votes_sent = (type(envoyTally.ballot_sent) == "table")
 							and envoyTally.ballot_sent[r.type] or nil,
+						-- Both affordability walks behind the ask (host table
+						-- and Standard-priced), so the session that finally
+						-- registers a bank says which table the core charges.
+						budget = (type(envoyTally.ballot_budget) == "table")
+							and envoyTally.ballot_budget or nil,
 					});
 				end
 			end
@@ -12011,6 +13390,12 @@ local function beginTurn(player, pid, turn)
 	awaiting.polls = 0;
 	awaiting.done = false;
 	awaiting.source = "pending";
+	awaiting.frame = 0;
+	CivvisFrames.reset();
+	-- Per turn, like everything else in this handshake: a queue that outlived
+	-- its turn is reported and dropped, never carried into a board CIVVIS has
+	-- not seen.
+	CivvisQueue.reset(turn);
 	-- Per turn, or the tally becomes cumulative and unreadable.
 	residualAnswers = {};
 	-- The same table carries direct choices and deferred `city:next` leases.
@@ -12019,11 +13404,39 @@ local function beginTurn(player, pid, turn)
 	civvisBuild = {};
 end
 
+-- Exposed for the offline step-turn-actions regression (see CivvisSettleTurn).
+CivvisBeginTurn = beginTurn;
+
 -- Poll for CIVVIS's answer. Returns true once the turn's decisions are settled,
 -- by CIVVIS or by the fallback; the caller must not end the turn before then.
 local function settleTurn(player, pid, turn, playFallback)
 	if awaiting.turn ~= turn then return true; end
-	if awaiting.done then return true; end
+	if awaiting.done then
+		-- The decisions are in; the per-unit follow-ups may still be
+		-- draining. Hold the turn for them, bounded — see `CivvisQueue`.
+		if CivvisQueue.pendingCount() > 0 then
+			CivvisQueue.ticks = CivvisQueue.ticks + 1;
+			if CivvisQueue.ticks > (tonumber(cfg.OrderQueueMaxTicks) or 240) then
+				CivvisQueue.giveUp(turn);
+				return true;
+			end
+			CivvisQueue.drain(player, pid, turn);
+			if CivvisQueue.pendingCount() > 0 then return false; end
+		end
+		-- Everything issued has settled. If a strike went out this frame, or
+		-- ground was revealed that somebody can still act on, and frames are
+		-- enabled, open the next one: the brain re-plans the same turn on the
+		-- board as it now stands. See CivvisFrames.
+		if not CivvisFrames.settled then
+			CivvisFrames.observe(player, pid, turn);
+			if CivvisFrames.wanted() then
+				CivvisFrames.begin(player, pid, turn);
+				return false;
+			end
+			CivvisFrames.settled = true;
+		end
+		return true;
+	end
 	awaiting.ticks = awaiting.ticks + 1;
 
 	-- ⚠⚠ DO NOT QUERY ON EVERY TICK. This is the bug that deadlocked run
@@ -12059,9 +13472,10 @@ local function settleTurn(player, pid, turn, playFallback)
 	-- on the first poll. `polls` doubles as the wait's own telemetry.
 	emit("await", { turn = turn, polls = awaiting.polls });
 
-	local ready = ordersReady(turn);
+	local frame = awaiting.frame or 0;
+	local ready = ordersReady(turn, frame);
 	if ready ~= nil and ready >= 0 then
-		local rows = fetchOrders(turn);
+		local rows = fetchOrders(turn, frame);
 		-- `ready.count` is the transaction boundary, including for an empty
 		-- decision. Requiring a positive row count wedged every turn where CIVVIS
 		-- correctly chose no action: the brain had durably written count=0, but the
@@ -12076,8 +13490,42 @@ local function settleTurn(player, pid, turn, playFallback)
 			awaiting.source = "civvis";
 			awaiting.done = true;
 			applyOrders(player, pid, turn, rows);
+			-- ★★★★★ NOT `return true` — THAT ENDED THE TURN ON THE TICK THE
+			-- OPENING ORDERS WENT OUT. The caller requests `ACTION_ENDTURN` the
+			-- moment this returns true, and on this tick every unit has just
+			-- been handed its FIRST order: the walk is in flight, the strike,
+			-- the found and the second step are still on the per-unit queue,
+			-- and no replan frame has been considered. Whenever the host took
+			-- that request at once (nothing blocking: every unit busy walking),
+			-- the turn ended under the queue — its leftovers refused as
+			-- `queue_turn_over` — and the frame never opened: a unit stepped,
+			-- stood, and kept the rest of its movement. The `awaiting.done`
+			-- branch above is the one written to drain the queue, open the
+			-- frame and only then release the turn; it just never got a tick.
+			-- One more tick is all this costs. The same holds for a frame's
+			-- answer, which arrives through this branch too.
+			return false;
+		end
+	end
+
+	-- A combat frame has its own short budget and no fallback: past it the
+	-- frame is abandoned by name and the turn ends as it always did. The
+	-- opening board's stale-answer and built-in ladders below never apply
+	-- to a frame — a stale answer is the very board this frame replaces.
+	if frame > 0 then
+		if awaiting.polls >= (tonumber(cfg.CombatFramePolls) or 20) then
+			awaiting.done = true;
+			awaiting.source = "civvis";
+			-- Every trigger, and the cap: a brain that could not answer this
+			-- frame in time is not asked again this turn.
+			CivvisFrames.strikes = 0;
+			CivvisFrames.revealed = 0;
+			CivvisFrames.current = CivvisFrames.max();
+			emit("combat_frame_timeout", { turn = turn, frame = frame, polls = awaiting.polls,
+			                               reason = CivvisFrames.reason });
 			return true;
 		end
+		return false;
 	end
 
 	-- Past the wait, prefer CIVVIS's most recent answer over the built-ins.
@@ -12092,7 +13540,8 @@ local function settleTurn(player, pid, turn, playFallback)
 				applyOrders(player, pid, turn, rows);
 				emit("orders_stale", { turn = turn, used = stale,
 				                       behind = turn - stale, polls = awaiting.polls });
-				return true;
+				-- As above: the queue drains on the next tick, then the turn ends.
+				return false;
 			end
 		end
 	end
@@ -12116,6 +13565,11 @@ local function settleTurn(player, pid, turn, playFallback)
 	end
 	return false;
 end
+
+-- Exposed for the offline step-turn-actions regression
+-- (step_turn_actions_test.lua), with `beginTurn` below it.
+CivvisSettleTurn = settleTurn;
+CivvisSurvey = survey;
 
 local function playTurn(player, pid, turn)
 	local research, civic;
@@ -12333,6 +13787,7 @@ local function tick()
 			envoyTally.ballot_favor_now = favorNow;
 			envoyTally.ballot_favor_entering = favorEntering;
 			envoyTally.ballot_ask = {};
+			envoyTally.ballot_budget = nil;
 			-- ★★★★★ AND WHAT THE VOTES WERE PRICED AGAINST, BECAUSE THE FIRST
 			-- READBACK RULED OUT THE REASON IT WAS BUILT TO TEST.
 			--
@@ -12478,13 +13933,37 @@ local function tick()
 						-- nothing is spent; from there every session spends the bank.
 						local floor = cfg.DiploVictoryVoteFloor or 12;
 						local maxVotes = tonumber(costs.MaxVotes) or 1;
+						-- Both walks live in `CivvisCongressVoteBudget` (see its
+						-- comment): the host-table bank and the Standard-priced
+						-- bank a mispricing core would charge. The ask takes the
+						-- smaller; the verdict records both.
+						local budget, budgetHost, budgetStandard =
+							CivvisCongressVoteBudget(favor, costs, maxVotes);
+						envoyTally.ballot_budget =
+							{ host = budgetHost, standard = budgetStandard };
 						local n = 1;
 						if (tonumber(leaderPoints) or 0) >= floor then
-							while n + 1 <= maxVotes and costs[n] ~= nil and costs[n] <= favor do
-								n = n + 1;
-							end
+							n = budget;
+							mode = (n > 1) and "deny" or "free";
+						elseif cfg.CongressVoteProbe ~= false and budget > 1 then
+							-- ★★ A THREE-VOTE PROBE AT EVERY SESSION BELOW THE FLOOR.
+							--
+							-- The floor banks Favor until a leader is within reach,
+							-- which also postpones the first multi-vote ballot to
+							-- t160+ — one or two sessions before a diplomatic loss,
+							-- far too late to learn whether the purchase registers
+							-- at all. Three votes cost 12 Favor on the Online table
+							-- (30 if the core charges Standard) out of a bank that
+							-- ends games in the hundreds: every session now reports
+							-- a verdict on the purchase path, and lands two extra
+							-- votes against the leader when it works. Its own mode
+							-- string keeps a 12-Favor probe from reading like a
+							-- bank-scale deny in the ledger.
+							n = (budget < 3) and budget or 3;
+							mode = "probe";
+						else
+							mode = "free";
 						end
-						mode = (n > 1) and "deny" or "free";
 						-- ★★★★ WHEN THE BANK OUTVOTES EVERY RIVAL'S BLOCK, CLAIM THE +2.
 						--
 						-- The resolution's winner is the option with more votes, and
@@ -12506,15 +13985,10 @@ local function tick()
 						for idx, t in pairs(targets) do
 							if tonumber(t) == pid then ourIdx = idx; end
 						end
-						local affordable = 1;
-						while affordable + 1 <= maxVotes and costs[affordable] ~= nil
-						      and costs[affordable] <= favor do
-							affordable = affordable + 1;
-						end
-						if ourIdx ~= nil and affordable >= claim then
+						if ourIdx ~= nil and budget >= claim then
 							option = 1;
 							selection = ourIdx;
-							n = affordable;
+							n = budget;
 							mode = "claim";
 						end
 						votes = n;
@@ -12591,27 +14065,23 @@ local function tick()
 					-- itself: `PARAM_WORLD_CONGRESS_VOTES > 1` is never honoured
 					-- through this path.
 					--
-					-- So stop sending it. One vote per operation, repeated: if
-					-- the core accumulates them the seat can finally buy votes,
-					-- and if it does not, the host records one -- which is what
-					-- it records today, so this cannot cost a vote the seat is
-					-- already not getting. `votes_sent` and the verdict's
-					-- `recorded` say which happened, on the first session past
-					-- the floor.
-					local sent, submitted = false, 0;
-					for _ = 1, math.max(1, votes) do
-						local one = {};
-						for key, value in pairs(params) do one[key] = value; end
-						one[PlayerOperations.PARAM_WORLD_CONGRESS_VOTES] = 1;
-						local ok = pcall(function()
-							UI.RequestPlayerOperation(pid,
-								PlayerOperations.WORLD_CONGRESS_RESOLUTION_VOTE, one);
-						end);
-						if ok then submitted = submitted + 1; sent = true; end
-					end
+					-- #2045 tried one vote per operation, repeated, on the theory
+					-- that the core might accumulate them. The experiment came
+					-- back on run civvis-20260819T004405Z: `votes_sent 20,
+					-- recorded 1` on every multi-vote session — the operation
+					-- SETS the seat's ballot rather than adding to it, so a
+					-- repeat leaves the LAST write's single vote standing. Back
+					-- to one operation carrying the whole count, exactly as the
+					-- shipped `OnAccept` sends it; what changed instead is the
+					-- count itself, now priced by `CivvisCongressVoteBudget`
+					-- against both tables the host might charge.
+					local sent = pcall(function()
+						UI.RequestPlayerOperation(pid,
+							PlayerOperations.WORLD_CONGRESS_RESOLUTION_VOTE, params);
+					end);
 					if sent then cast = cast + 1; end
 					envoyTally.ballot_sent = envoyTally.ballot_sent or {};
-					envoyTally.ballot_sent[rtype] = submitted;
+					envoyTally.ballot_sent[rtype] = sent and 1 or 0;
 					-- What this ballot ASKED for, per resolution, so the next
 					-- review can be compared with it rather than trusted. `pcall`
 					-- reports only that the call did not raise; the host's own
@@ -12667,6 +14137,19 @@ local function tick()
 				local r = Game.GetWorldCongress():GetResolutions(ballotPid);
 				return r and r.Stage or nil;
 			end, nil);
+			-- `GetResolutions().Stage` has read INT_MAX on every recorded cast,
+			-- from both triggers, so it does not say whether the cast landed
+			-- inside the congress turn segment — the window the shipped popup
+			-- votes in (`CheckShouldOpen` gates on `Game.GetCurrentTurnSegment`).
+			-- Read the segment itself, so the moment theory finally has a
+			-- measurement instead of a sentinel.
+			local segment = try(function() return Game.GetCurrentTurnSegment(); end, nil);
+			local inCongressSegment = try(function()
+				if segment == nil then return nil; end
+				return segment == DB.MakeHash("TURNSEG_WORLDCONGRESS_1")
+					or segment == DB.MakeHash("TURNSEG_WORLDCONGRESS_2")
+					or segment == DB.MakeHash("TURNSEG_WORLDCONGRESS_RESOLUTION");
+			end, nil);
 			local before = tonumber(try(function() return ballotPlayer:GetFavor(); end, -1)) or -1;
 			local cast, spent, why, leader, leaderPoints, leaderScore, mode = voteWorldCongress(ballotPid);
 			if (cast or 0) > 0 then envoyTally.ballot_turn = ballotTurn; end
@@ -12674,7 +14157,9 @@ local function tick()
 			                  why = why, leader = leader,
 			                  leader_points = leaderPoints,
 			                  leader_score = leaderScore, source = trigger,
-			                  stage = stage, favor_before = before, mode = mode });
+			                  stage = stage, favor_before = before, mode = mode,
+			                  segment = segment,
+			                  in_congress_segment = inCongressSegment });
 		end
 		if not envoyTally.ballot_hooked then
 			envoyTally.ballot_hooked = true;
@@ -13083,6 +14568,19 @@ local function onEndTurnBlockingChanged()
 	tick();
 end
 
+-- The host says one of our units finished moving or its operation ended.
+-- If that unit has queued follow-ups, this is the moment to issue the next
+-- one — undivided, like `EndTurnBlockingChanged`, because a board whose only
+-- remaining work is a queued strike publishes almost nothing on its own.
+CivvisQueue.onUnitSettled = function(player, unitId)
+	if CivvisQueue.count <= 0 then return; end
+	local pid = try(function() return Game.GetLocalPlayer(); end, -1);
+	if CivvisQueue.noteUnitEvent(pid, player, unitId) then
+		ensureStarted();
+		tick();
+	end
+end;
+
 local function onTeamVictory(team, victoryType, eventID)
 	local pid = try(function() return Game.GetLocalPlayer(); end, -1);
 	local ourTeam = try(function()
@@ -13111,20 +14609,195 @@ local function onPlayerDefeat(player, defeat, eventID)
 	});
 end
 
+-- ★★★★★ JOIN A SCORABLE WORLD CRISIS BEFORE TRYING TO WIN IT.
+--
+-- The bridge already knows how to take an Aid Request's first-place score,
+-- Climate Accords' power-plant decommission score, and World's Fair's Great
+-- Person point score. World Games' 50-point athlete project is likewise
+-- already priced. International Space Station's 30-point astronaut project is
+-- too. Nobel Literature and Physics score the matching Great Person points,
+-- while Nobel Peace scores generated Favor. All paths require membership,
+-- while the prior controller merely let the World Crisis prompt wait for a
+-- person. Firaxis's own WorldCrisisPopup handles
+-- `Events.EmergencyAvailable` by issuing this exact ACCEPT_EMERGENCY operation
+-- with PARAM_OTHER_PLAYER and PARAM_EMERGENCY_TYPE. Take that same operation,
+-- but only for competitions with a priced path that this controller has
+-- explicitly approved. Other emergencies can create wars or commit production
+-- that this event has not priced, so they remain untouched.
+--
+-- This is a bare global for the offline regression and because the main chunk
+-- is at its local-register ceiling. `peaceAsked` is the existing turn-scoped
+-- submission ledger; a string key prevents a synchronous repeat of this event
+-- from submitting a second accept before the host updates MemberIDs.
+CivvisOnAidEmergencyAvailable = function(targetPlayerID, emergencyType)
+	if finished or cfg.Play == false then return; end
+	local pid = try(function() return Game.GetLocalPlayer(); end, -1);
+	local target = tonumber(targetPlayerID);
+	local emergency = tonumber(emergencyType);
+	local definition = emergency ~= nil and try(function()
+		return GameInfo.EmergencyAlliances[emergency];
+	end, nil) or nil;
+	local kind = definition and tostring(definition.EmergencyType or "") or "";
+	local aid = kind == "EMERGENCY_SEND_AID" or kind == "EMERGENCY_SEND_MILITARY_AID";
+	local climate = kind == "EMERGENCY_CLIMATE_ACCORDS";
+	local worldsFair = kind == "EMERGENCY_WORLDS_FAIR";
+	local worldGames = kind == "EMERGENCY_WORLD_GAMES";
+	local spaceStation = kind == "EMERGENCY_SPACE_STATION";
+	local nobel = kind == "EMERGENCY_NOBEL_PRIZE_LITERATURE"
+		or kind == "EMERGENCY_NOBEL_PRIZE_PEACE"
+		or kind == "EMERGENCY_NOBEL_PRIZE_PHYSICS";
+	local targetFree = climate or worldsFair or worldGames or spaceStation or nobel;
+	if not targetFree and cfg.AutoJoinAidRequests == false then return; end
+	if climate and cfg.AutoJoinClimateAccords == false then return; end
+	if worldsFair and cfg.AutoJoinWorldsFair == false then return; end
+	if worldGames and cfg.AutoJoinWorldGames == false then return; end
+	if spaceStation and cfg.AutoJoinSpaceStation == false then return; end
+	if nobel and cfg.AutoJoinNobelPrizes == false then return; end
+	local turn = try(function() return Game.GetCurrentGameTurn(); end, -1);
+	local function report(reason, submitted)
+		emit(climate and "climate_accords_join"
+			or worldsFair and "worlds_fair_join"
+			or worldGames and "world_games_join"
+			or spaceStation and "space_station_join"
+			or nobel and "nobel_prize_join" or "aid_emergency_join", {
+			turn = turn, target = target or -1,
+			emergency = kind ~= "" and kind or tostring(emergencyType or ""),
+			submitted = submitted and true or false, reason = reason,
+		});
+	end
+	if pid == nil or pid < 0 or target == nil or emergency == nil then
+		report("invalid_event", false);
+		return;
+	end
+	if not aid and not targetFree then
+		report("not_aid_request", false);
+		return;
+	end
+	if targetFree then
+		-- Climate Accords, World's Fair, World Games, International Space Station,
+		-- and all Nobel Prize competitions have NoTarget=true. The shipped popup
+		-- sends -1 through
+		-- PARAM_OTHER_PLAYER; a real player ID is mismatched.
+		if target ~= -1 then
+			report("unexpected_target", false);
+			return;
+		end
+	else
+		if target < 0 then
+			report("invalid_event", false);
+			return;
+		end
+		if target == pid then
+			report("target_is_local", false);
+			return;
+		end
+	end
+
+	-- Match the shipped popup's tracker lookup before issuing anything. An old
+	-- availability notification is not authority to join a different emergency.
+	local crises = try(function()
+		return Game.GetEmergencyManager():GetEmergencyInfoTable(pid);
+	end, nil);
+	local live = nil;
+	if type(crises) == "table" then
+		for _, crisis in ipairs(crises) do
+			if crisis.EmergencyType == emergency and tonumber(crisis.TargetID) == target then
+				live = crisis;
+				break;
+			end
+		end
+	end
+	if live == nil then
+		report("missing_emergency", false);
+		return;
+	end
+	if live.HasBegun == true then
+		report("already_begun", false);
+		return;
+	end
+	for _, member in ipairs(live.MemberIDs or {}) do
+		if tonumber(member) == pid then
+			report("already_member", false);
+			return;
+		end
+	end
+
+	if aid then
+		-- Firaxis gives both Aid Request types an empty member-requirement set: the
+		-- project route can score even when we have not met the recipient, or when
+		-- it is not a major civilization. Do not accidentally impose the direct-Gold
+		-- deal's stricter contact/major gates here. War is different: the shipped
+		-- score sources deduct 30 (ordinary Aid) or 200 (military Aid) while at war,
+		-- so decline that actively losing membership.
+		local player = try(function() return Players[pid]; end, nil);
+		local diplomacy = player and try(function() return player:GetDiplomacy(); end, nil);
+		if diplomacy == nil then
+			report("no_diplomacy", false);
+			return;
+		end
+		if try(function() return diplomacy:IsAtWarWith(target); end, false) then
+			report("at_war", false);
+			return;
+		end
+	end
+
+	local otherParam = try(function() return PlayerOperations.PARAM_OTHER_PLAYER; end);
+	local typeParam = try(function() return PlayerOperations.PARAM_EMERGENCY_TYPE; end);
+	local accept = try(function() return PlayerOperations.ACCEPT_EMERGENCY; end);
+	if otherParam == nil or typeParam == nil or accept == nil then
+		report("api_unavailable", false);
+		return;
+	end
+	local key = climate and ("climate_join:" .. kind)
+		or worldsFair and ("worlds_fair_join:" .. kind)
+		or worldGames and ("world_games_join:" .. kind)
+		or spaceStation and ("space_station_join:" .. kind)
+		or nobel and ("nobel_prize_join:" .. kind)
+		or ("aid_join:" .. kind .. ":" .. target);
+	if turn >= 0 and peaceAsked[key] == turn then
+		report("duplicate", false);
+		return;
+	end
+	local parameters = {};
+	parameters[otherParam] = target;
+	parameters[typeParam] = emergency;
+	-- Set the one-turn guard before the engine call: RequestPlayerOperation can
+	-- publish synchronously. A Lua exception clears it so a later valid event
+	-- can still retry; a normal return is only a submitted operation, not a
+	-- claimed membership or score change.
+	if turn >= 0 then peaceAsked[key] = turn; end
+	local submitted = pcall(function()
+		UI.RequestPlayerOperation(pid, accept, parameters);
+	end);
+	if not submitted and turn >= 0 and peaceAsked[key] == turn then
+		peaceAsked[key] = nil;
+	end
+	report(submitted and "submitted" or "throw", submitted);
+end;
+
 function Initialize()
 	emit("loaded", { version = 2, play = cfg.Play ~= false });
 	for name, handler in pairs({
 		LocalPlayerTurnBegin = onLocalPlayerTurnBegin,
 		GameCoreEventPublishComplete = onGameCoreTick,
 		EndTurnBlockingChanged = onEndTurnBlockingChanged,
+		UnitMoveComplete = function(player, unitId) CivvisQueue.onUnitSettled(player, unitId); end,
+		UnitOperationDeactivated = function(player, unitId) CivvisQueue.onUnitSettled(player, unitId); end,
 		CityAddedToMap = onGameCoreTick,
 		UnitAddedToMap = onGameCoreTick,
 		CityProductionCompleted = onGameCoreTick,
 		GovernorAppointed = onGovernorAppointed,
 		DiplomacyIncomingDeal = CivvisOnIncomingDeal,
+		EmergencyAvailable = CivvisOnAidEmergencyAvailable,
 		LoadGameViewStateDone = ensureStarted,
 		TeamVictory = onTeamVictory,
 		PlayerDefeat = onPlayerDefeat,
+		-- The tactical ledger: see CivvisLedger.
+		CombatVisBegin = CivvisLedger.onCombatVisBegin,
+		CombatVisEnd = CivvisLedger.onCombatVisEnd,
+		UnitDamageChanged = CivvisLedger.onUnitDamageChanged,
+		UnitRemovedFromMap = CivvisLedger.onUnitRemoved,
+		CityOccupationChanged = CivvisLedger.onCityOccupationChanged,
 	}) do
 		pcall(function() Events[name].Add(handler); end);
 	end

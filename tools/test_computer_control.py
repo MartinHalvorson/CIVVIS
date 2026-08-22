@@ -80,6 +80,46 @@ class DismissalPolicyTest(unittest.TestCase):
                  "buttons": ["Use Password…", "Cancel"]}
         self.assertEqual(cc.choose_dismissal(modal), "Cancel")
 
+    def test_the_local_network_prompt_that_covered_a_recorded_game_is_denied(self) -> None:
+        """Measured 2026-08-19: this sheet sat over a recorded verification game.
+
+        Its buttons are Allow / Don't Allow, so none of OK, Cancel or Close was
+        present and the keeper left it up until a human cleared it.
+        """
+        modal = {"owner": "UserNotificationCenter",
+                 "text": "Allow \u201cGoogle Chrome\u201d to find devices on local "
+                         "networks?, This will allow you to select from available "
+                         "devices and display content on them.",
+                 "buttons": ["Don\u2019t Allow", "Allow"]}
+        self.assertEqual(cc.choose_dismissal(modal), "Don\u2019t Allow")
+
+    def test_a_straight_apostrophe_deny_button_is_matched_too(self) -> None:
+        """macOS renders the curly form, but the accessibility name is not guaranteed."""
+        modal = {"owner": "UserNotificationCenter",
+                 "text": "Allow \u201cSteam\u201d to find devices on local networks?",
+                 "buttons": ["Don't Allow", "Allow"]}
+        self.assertEqual(cc.choose_dismissal(modal), "Don't Allow")
+
+    def test_a_permission_prompt_is_never_granted(self) -> None:
+        """Granting a permission is never this tool's to do -- only declining is."""
+        modal = {"owner": "UserNotificationCenter",
+                 "text": "Allow \u201cGoogle Chrome\u201d to find devices on local networks?",
+                 "buttons": ["Allow"]}
+        self.assertIsNone(cc.choose_dismissal(modal))
+
+    def test_a_file_access_prompt_is_reported_rather_than_silently_denied(self) -> None:
+        """The reason denial is text-gated instead of blanket.
+
+        Auto-denying this one would cut the lane off from its own run artifacts,
+        and the sheet gives no hint that it was answered.  Report it and let a
+        human decide.
+        """
+        modal = {"owner": "UserNotificationCenter",
+                 "text": "\u201cTerminal\u201d would like to access files in your "
+                         "Documents folder.",
+                 "buttons": ["Don\u2019t Allow", "Allow"]}
+        self.assertIsNone(cc.choose_dismissal(modal))
+
 
 class EnsureSingleGameTest(unittest.TestCase):
     def test_the_oldest_child_is_kept_and_newer_ones_are_culled(self) -> None:
@@ -291,6 +331,21 @@ class AppleScriptStringTest(unittest.TestCase):
     def test_the_two_characters_that_end_a_literal_are_escaped(self) -> None:
         self.assertEqual(cc._as('a"b'), '"a\\"b"')
         self.assertEqual(cc._as("a\\b"), '"a\\\\b"')
+
+
+class ProcessWindowSelectionTest(unittest.TestCase):
+    def test_process_specs_choose_by_requested_frame_not_window_order(self) -> None:
+        with mock.patch.object(
+            cc, "_osascript",
+            return_value=subprocess.CompletedProcess([], 0, "", ""),
+        ) as run:
+            self.assertIsNone(cc.place_window((0, 558, 864, 559), process="Terminal"))
+
+        script = run.call_args.args[0]
+        self.assertIn("repeat with i from 1 to (count of windows)", script)
+        self.assertIn("candidateScore", script)
+        self.assertIn("set position to {0, 558}", script)
+        self.assertNotIn("to tell window 1", script)
 
 
 if __name__ == "__main__":

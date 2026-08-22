@@ -238,6 +238,92 @@ every decision it is waiting on and publishes it through
    again.
 3. When nothing is blocking, `UI.RequestAction(ActionTypes.ACTION_ENDTURN)`.
 
+### Unit orders are sequenced per unit (2026-08-19)
+
+`UnitManager.RequestOperation` returns before the unit has moved, so a list
+like `MOVE_TO a; RANGE_ATTACK t` applied in one callback aims the shot from
+where the unit *stood*. The bridge answered that for two weeks by sending a
+unit's walk and deferring every later order to the next turn — which turned
+every planned move-then-strike into a move (7 melee attacks against 1,546
+`MOVE_TO` in 188 turns of war on run `civvis-20260803T005930Z`).
+
+The mod now keeps a **per-unit order queue** (`CivvisQueue`). `applyOrders`
+issues the first order for each unit at once and queues the rest; a queued
+order is issued once the earlier one has settled — the unit stands where the
+move was aimed, or has no movement left, or the host's own `UnitMoveComplete`
+/ `UnitOperationDeactivated` fired for it, or a grace period ran out — and
+every one still passes `CanStartOperation`. Refusals are named:
+`queue_no_moves`, `queue_stalled`, `queue_prior_refused`, `unit_gone:<id>`,
+`queue_turn_over`. `settleTurn` holds the turn while a queue is pending,
+bounded by `OrderQueueMaxTicks`; a wedged operation costs decision quality,
+never progress. ⚠ Until 2026-08-21 it did not hold the turn on the tick the
+opening orders went out — that tick returned true and the caller requested
+`ACTION_ENDTURN` at once, so the queue (and any replan frame) lived only
+while the host refused the request; the apply tick now returns false and the
+next tick drains, frames, and releases (`step_turn_actions_test.lua`). The
+queue also *watches* each unit's opening walk (`CivvisQueue.watch`, a
+rows-less entry that settles like any queued order and issues nothing), so
+the frame decision waits for the walk to land. A
+settler's refused `FOUND_CITY` is retried behind its walk, and a `FOUND_CITY`
+row now carries its site: the mod founds only with the settler standing on
+it, and names a miss `found_off_site` (a found on the hex one step short of
+the site is legal far more often than not, and that is where the settler
+stands when the found runs first).
+The `seat` event advertises `order_queue`, and `civvis_orders` sends a unit's
+whole sequence only when it does. `orders` gains `queued` and
+`explore_guarded`; a per-turn `orders_queue` event carries `applied`,
+`refused`, `refusals`, `strikes_planned`, `strikes_landed` and `waited`.
+`--no-order-queue` restores the one-order-per-unit rule for an A/B.
+
+Two related rules: an unmentioned combat unit within `ExploreGuardRadius` of
+a visible hostile combat unit or an at-war city is held rather than handed to
+`UNITOPERATION_AUTOMATE_EXPLORE`, and `UNITOPERATION_PILLAGE` is resolved so
+`Action::Pillage` crosses. See `docs/LIVE_TACTICS.md`.
+
+### A move is this turn's leg (2026-08-19)
+
+`UNITOPERATION_MOVE_TO` takes a destination and the host paths to it across
+as many turns as it needs — and walks the unit along the rest at the start of
+the next turn, before `beginTurn` exports. The board then planned movement
+the unit no longer had. The mod (`CivvisBoard`) now sends every `MOVE_TO` as
+the furthest plot on the host's own path (`GetMoveToPathEx`) that the unit
+reaches this turn, refuses by name a move whose first step is already next
+turn (`move_no_moves_this_turn`), never caps a melee ATTACK, and cancels
+combat units' queued paths at turn start (`UNITCOMMAND_CANCEL`;
+`queued_paths` reports the count). Units export `queued_dest` and
+`embarked`; tiles export `rt` (route type) and `rp` (pillaged). The `seat`
+event advertises `moves_at_turn_start`, and only then does the mirror trust
+the export's `moves`. `--no-cap-moves-to-reach` / `--no-cancel-queued-paths`
+restore the old rules for an A/B. See `docs/LIVE_TACTICS.md` §6.
+
+### A mid-turn combat frame, off by default (2026-08-19)
+
+With `CombatFrames ≥ 1` (`--combat-frames`), once the opening orders and
+their per-unit queue have settled on a turn that issued a strike, the mod
+exports the board again stamped `frame: 1` and waits for the brain to answer
+the same turn on it — its own short poll budget (`CombatFramePolls`), no
+stale answer, no fallback: past the budget `combat_frame_timeout` and the
+turn ends as before. The order channel gained a `frame` column (rows of frame
+N sit at seq 10000·N; one `ready` row per turn names the newest frame; a
+database from before the column is migrated in place); the mod's readers
+select by frame and read a column-less channel as frame 0. On a frame no
+unit is handed to explore automation and no `turn` record is written. Units
+export `attacks_remaining`. Default **off** until one live run has been read
+(`docs/LIVE_TACTICS.md` §8).
+
+### The tactical ledger (2026-08-19)
+
+The mod writes the combat record the host already knows (`CivvisLedger`):
+`strike` before every ATTACK / RANGE_ATTACK with the host's own preview
+(`CombatManager.SimulateAttackInto`, the shipped UnitPanel's combat preview);
+`combat` at `CombatVisEnd` with attacker, defender, hit points read back at
+Begin and End, damage both ways, kills, the `UnitDamageChanged` deltas seen
+while the combat was open, and the strike's preview joined on; `unit_lost`
+for our units leaving the map (last known kind, treasury); `city_occupation`
+when a city changes hands. Hostile and rival units carry the host's unit id.
+`tools/civ6_tactics_ledger.py <run-dir>` turns a run into the arrival,
+combat, roster and hover ledger; see `docs/LIVE_TACTICS.md` §5.
+
 ### Production and envoy handoffs are host-timed
 
 The Rust bridge still sends ordinary `produce` orders immediately. When the
@@ -518,6 +604,31 @@ a status tool somebody has to think to run; it sat at 79.9% once for days
 that way.
 
 See `docs/CIV6_LADDER.md` for the current standing.
+
+### A lost game is stopped, not played out (2026-08-19)
+
+The ladder loses its games early and then plays them to turn 250 anyway: of
+the 48 live games that had reached a terminal result by 2026-08-19 (7 wins),
+34 sat under three quarters of the best rival's score for five consecutive
+turns at or after turn 120, and none of those 34 won — 3,700 game-turns, about
+nine host-hours per batch of twelve, spent on results already written. The
+wins' own low-water marks after turn 120 were 0.87 and 0.88 of the rival's
+score, so the line sits a tenth under the worst comeback the seat has staged.
+
+`civ6_play.py --abandon-below-win-rate 0.05` stops a run once the **measured
+expected win rate** — the Laplace rate `(wins+1)/(games+2)` of the
+best-evidenced matching cell in `civ6_play.ABANDON_CELLS` (`(100, 0.60)`
+0/25, `(120, 0.75)` 0/34) — has sat under the floor for `ABANDON_PATIENCE`
+(5) consecutive agent turns. A readable standing back over the floor resets
+the count; a turn without a standing neither counts nor resets. Off by
+default; `civ6_civvis_climb.py` forwards the same flag and the supervisor
+reads `CIVVIS_ABANDON_BELOW_WIN_RATE` from the login shell (the operator's
+request on 2026-08-19 was "ok to abandon games early if expected win rate
+<5%"). An abandoned run is filed with `reason: "abandoned"` and the verdict
+(turn, standing, estimate, floor) in its summary and ledger row — its own
+ending, never a stall, a wedge or a defeat. The table is measured, not
+chosen: re-fit it when the ladder climbs (the fit is written out in
+`tools/test_civ6_play.py`).
 
 ### The run always tests the latest code
 

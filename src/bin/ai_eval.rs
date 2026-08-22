@@ -16,13 +16,25 @@ use std::process::Command;
 ///
 /// Listed so `--city-states 0`, which is the default, cannot silently turn one
 /// of them into a null. Add an arm here when its axis needs a minor to exist.
-const MINOR_DEPENDENT_ARMS: [&str; 6] = [
+const MINOR_DEPENDENT_ARMS: [&str; 8] = [
     "advanced_diplomatic_opening",
     "advanced_envoy_policy",
     "advanced_envoy_infrastructure",
     "advanced_envoy_priority",
     "advanced_envoy_economy",
     "advanced_policy_envoy_priority",
+    // Added 2026-08-19. `SUZERAIN_PRIZE` is scored only inside the envoy
+    // placement loop, over `g.can_send_envoy(pid, minor.id)`, so with no minor
+    // seated the arm is byte-identical to its control: 12 pairs at the stock
+    // 4p profile returned 0 favored / 12 neutral / 0 against on wins *and* on
+    // terminal score. Both 400-pair runs that decided this flag ships off were
+    // hand-rolled `ai_eval` lines, which is the path that defaults to zero.
+    "advanced_price_suzerainty",
+    // Added with the arm itself (#2185). It turns on `diplomatic_opening` and
+    // `price_the_suzerainty` together, and both halves reach the board only
+    // through a minor: the opening requires a met, unclaimed city-state and
+    // the prize is scored inside the envoy placement loop.
+    "advanced_diplomacy_lane",
 ];
 
 /// Arms measured to complete so rarely at the deployment profile that a margin
@@ -58,6 +70,23 @@ const DEGENERATE_CONTROLS: [(&str, &str); 1] = [(
 use civvis::rng::Rng;
 
 const PROMOTION_MIN_MAPS: usize = 20;
+/// Opt-in early stopping. After every scheduling chunk the paired inference is
+/// re-read, and the run ends as soon as the promotion gate is decisive —
+/// `PASS` or `RETAIN` — instead of playing every preregistered pair.
+///
+/// This is statistically clean for the gate itself: its verdict rests on the
+/// anytime-valid betting evidence and the betting interval, both of which hold
+/// under optional stopping by construction (that is what "anytime-valid"
+/// means), so a verdict read at map k is the same verdict the full run would
+/// have been entitled to at map k. It is NOT clean for the two legacy readings
+/// printed beside it — the exact sign test and the retired Wilson interval
+/// assume a fixed sample — so a stopped run says so on its own report and
+/// those lines are not confirmatory there.
+///
+/// Off by default, so every preregistered fixed-N run is exactly what it was.
+/// The recorded crossings say what it buys: map 42, 46, 51, 57 and 134 on runs
+/// of 120–400 pairs (`docs/EVAL.md`), i.e. 0–70% of an evaluation's wall.
+const STOP_WHEN_DECISIVE: &str = "--stop-when-decisive";
 const Z_95: f64 = 1.959_963_984_540_054;
 /// Split a 5% two-sided error budget equally between promotion and retention.
 const ANYTIME_TAIL_ALPHA: f64 = 0.025;
@@ -437,6 +466,16 @@ fn anytime_evidence(scores: &[f64]) -> AnytimeEvidence {
     }
 }
 
+/// Whether `STOP_WHEN_DECISIVE` may end the run here: the gate has read a
+/// `PASS` or a `RETAIN` on the pairs played so far. `Insufficient` and
+/// `Inconclusive` keep playing.
+fn early_stop_is_warranted(scores: &[f64]) -> bool {
+    matches!(
+        paired_inference(scores).verdict,
+        PromotionVerdict::Promote | PromotionVerdict::Retain
+    )
+}
+
 /// Paired-map inference: the score, both intervals, and the promotion verdict.
 ///
 /// Pair scores can be fractional because a split scores 0.5 and a game without
@@ -609,6 +648,54 @@ fn resolvable_edge(maps: usize, break_rate: f64, seed: u64) -> Option<f64> {
 }
 
 /// One line telling the reader which of the two `INCONCLUSIVE`s this is.
+/// Enabled victory conditions this run produced but cannot resolve a change to.
+///
+/// Only the map-pairs holding a game the lane decided can turn on that lane, so
+/// it can move the paired score by at most `decided / pairs`. When that ceiling
+/// falls below the interval the run already reports, no treatment acting
+/// through the lane can be seen here — however large its true effect is.
+///
+/// Returns `(lane, games it decided, its ceiling in points)`, most bounded
+/// first. Lanes the profile never produced are left to the caller's separate
+/// "never produced" line, which is a different and stronger statement.
+fn unresolvable_lanes(
+    enabled: &str,
+    decided_by: &BTreeMap<String, usize>,
+    won_by_entrants: &BTreeMap<String, usize>,
+    pairs: usize,
+    half_width_points: f64,
+) -> Vec<(String, usize, f64)> {
+    if pairs == 0 {
+        return Vec::new();
+    }
+    let mut bounded: Vec<(String, usize, f64)> = enabled
+        .split(',')
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .filter_map(|name| {
+            let decided = decided_by.get(name).copied().unwrap_or(0);
+            if decided == 0 {
+                return None;
+            }
+            // Only a game an entrant WON can move the paired score. On a field
+            // profile a game the field takes is a draw for the pair, so a lane
+            // the entrants never win has a ceiling of zero however often the
+            // board produces it — which is the case this function existed to
+            // catch and originally got wrong.
+            let movable = won_by_entrants.get(name).copied().unwrap_or(0);
+            let ceiling = 100.0 * movable as f64 / pairs as f64;
+            (ceiling < half_width_points).then(|| (name.to_string(), decided, ceiling))
+        })
+        .collect();
+    bounded.sort_by(|left, right| {
+        left.2
+            .partial_cmp(&right.2)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then(left.0.cmp(&right.0))
+    });
+    bounded
+}
+
 fn resolution_note(maps: usize, resolved: usize, seed: u64) -> String {
     if maps == 0 {
         return String::new();
@@ -1480,6 +1567,25 @@ fn number(args: &[String], flag: &str, default: i64) -> i64 {
         .unwrap_or(default)
 }
 
+fn native_competitions_requested(args: &[String]) -> bool {
+    args.iter()
+        .any(|argument| argument == "--native-competitions")
+}
+
+/// Apply the world rules that the evaluator is explicitly pricing.
+///
+/// Native competitions remain opt-in so historical evaluator records keep
+/// their ruleset. A run that asks for them must set the flag on every seat of
+/// every paired game, rather than merely report the requested command line.
+fn configure_evaluation_game(
+    game: &mut Game,
+    victory_conditions: VictoryConditions,
+    native_competitions: bool,
+) {
+    game.victory_conditions = victory_conditions;
+    game.native_competitions = native_competitions;
+}
+
 #[derive(Clone, Copy)]
 struct MatrixProfile {
     name: &'static str,
@@ -1614,6 +1720,36 @@ const PROMOTION_PROFILES: [MatrixProfile; 3] = [
 /// This must not depend on `--pairs`: increasing a preregistered sample must
 /// extend each profile's existing seed prefix, not silently select a new one.
 const MATRIX_PROFILE_SEED_STRIDE: u64 = 1_000_000;
+
+/// World axes fixed by the recorded promotion profiles.
+///
+/// The matrix deliberately has no pass-through for these: accepting an axis
+/// it does not supply to its children would silently report a different world
+/// than the one the promotion gate names.
+const MATRIX_PROFILE_FLAGS: [&str; 13] = [
+    "--players",
+    "--width",
+    "--height",
+    "--city-states",
+    "--turns",
+    "--speed",
+    "--map",
+    "--shape",
+    "--poles",
+    "--victories",
+    "--randomize-civs",
+    // Native scored competitions add a global Diplomatic Victory ruleset.
+    "--native-competitions",
+    // Who else is on the board decides which victory conditions are reachable.
+    "--field",
+];
+
+fn matrix_profile_flag(args: &[String]) -> Option<&'static str> {
+    MATRIX_PROFILE_FLAGS
+        .iter()
+        .copied()
+        .find(|flag| args.iter().any(|argument| argument == flag))
+}
 
 fn matrix_profile_seed(seed: u64, profile_index: usize) -> u64 {
     seed + profile_index as u64 * MATRIX_PROFILE_SEED_STRIDE
@@ -1805,28 +1941,7 @@ fn matrix_job_budgets(total_jobs: usize) -> Vec<usize> {
 }
 
 fn run_profile_matrix(args: &[String], challenger: &str, incumbent: &str) -> ! {
-    const PROFILE_FLAGS: [&str; 12] = [
-        "--players",
-        "--width",
-        "--height",
-        "--city-states",
-        "--turns",
-        "--speed",
-        "--map",
-        "--shape",
-        "--poles",
-        "--victories",
-        "--randomize-civs",
-        // Who else is on the board is a profile axis, and the strongest one:
-        // it decides which victory conditions the run can produce at all. The
-        // matrix's two recorded profiles are fieldless and every promotion
-        // number in `docs/EVAL.md` was taken that way.
-        "--field",
-    ];
-    if let Some(flag) = PROFILE_FLAGS
-        .into_iter()
-        .find(|flag| args.iter().any(|argument| argument == flag))
-    {
+    if let Some(flag) = matrix_profile_flag(args) {
         eprintln!("--matrix owns the promotion profiles; remove conflicting profile flag {flag}");
         std::process::exit(2);
     }
@@ -1865,6 +1980,9 @@ fn run_profile_matrix(args: &[String], challenger: &str, incumbent: &str) -> ! {
     let require_artifacts = args
         .iter()
         .any(|argument| argument == "--require-artifacts");
+    // Each profile child stops on its own decisive verdict; the parent still
+    // reads every child's gate line exactly as before.
+    let stop_when_decisive = args.iter().any(|argument| argument == STOP_WHEN_DECISIVE);
     let executable = std::env::current_exe().expect("resolve ai_eval executable");
 
     let outputs = if total_jobs < PROMOTION_PROFILES.len() {
@@ -1875,7 +1993,7 @@ fn run_profile_matrix(args: &[String], challenger: &str, incumbent: &str) -> ! {
                 let profile_seed = matrix_profile_seed(seed, index);
                 let profile_confirm_seed =
                     confirm_base_seed.map(|prior| matrix_profile_seed(prior, index));
-                let child_args = matrix_child_args(MatrixChildRequest {
+                let mut child_args = matrix_child_args(MatrixChildRequest {
                     challenger,
                     incumbent,
                     pairs,
@@ -1886,6 +2004,9 @@ fn run_profile_matrix(args: &[String], challenger: &str, incumbent: &str) -> ! {
                     require_artifacts,
                     confirm_seed: profile_confirm_seed,
                 });
+                if stop_when_decisive {
+                    child_args.push(STOP_WHEN_DECISIVE.to_string());
+                }
                 let output = Command::new(&executable)
                     .args(child_args)
                     .output()
@@ -1906,7 +2027,7 @@ fn run_profile_matrix(args: &[String], challenger: &str, incumbent: &str) -> ! {
                         let profile_seed = matrix_profile_seed(seed, index);
                         let profile_confirm_seed =
                             confirm_base_seed.map(|prior| matrix_profile_seed(prior, index));
-                        let child_args = matrix_child_args(MatrixChildRequest {
+                        let mut child_args = matrix_child_args(MatrixChildRequest {
                             challenger,
                             incumbent,
                             pairs,
@@ -1917,6 +2038,9 @@ fn run_profile_matrix(args: &[String], challenger: &str, incumbent: &str) -> ! {
                             require_artifacts,
                             confirm_seed: profile_confirm_seed,
                         });
+                        if stop_when_decisive {
+                            child_args.push(STOP_WHEN_DECISIVE.to_string());
+                        }
                         let output = Command::new(executable)
                             .args(child_args)
                             .output()
@@ -2233,6 +2357,7 @@ here and any null is uninformative"
         std::process::exit(2);
     });
     let randomize_civs = args.iter().any(|arg| arg == "--randomize-civs");
+    let native_competitions = native_competitions_requested(&args);
     // The difficulty ladder as an external yardstick: the challenger plays
     // the human side of the handicap and its opponents play the AI side, so
     // "beats Emperor" means what a Civ player would expect it to mean.
@@ -2256,7 +2381,7 @@ here and any null is uninformative"
         .collect::<Vec<_>>()
         .join(",");
     println!(
-        "profile: speed {speed}, map {}, shape {}, poles {}, civilizations {}, victories {enabled_victories}",
+        "profile: speed {speed}, map {}, shape {}, poles {}, civilizations {}, victories {enabled_victories}, native competitions {}",
         map_script.id(),
         map_topology.id(),
         map_poles.id(),
@@ -2264,6 +2389,11 @@ here and any null is uninformative"
             "randomized"
         } else {
             "fixed"
+        },
+        if native_competitions {
+            "enabled"
+        } else {
+            "disabled (default)"
         },
     );
     // A result is never filed without saying who was in the game. Printed
@@ -2341,6 +2471,8 @@ here and any null is uninformative"
     // turn-limit cost variance; the former two-game window repeatedly left
     // half the workers idle on each chunk's long tail.
     let chunk_pairs = jobs.max(1).saturating_mul(2);
+    let stop_when_decisive = args.iter().any(|arg| arg == STOP_WHEN_DECISIVE);
+    let mut stopped_early_at: Option<usize> = None;
     let mut pair = 0usize;
     while pair < pairs {
         let chunk = chunk_pairs.min(pairs - pair);
@@ -2359,7 +2491,7 @@ here and any null is uninformative"
                 randomize_civs,
                 ..GameOptions::new(players, width, height, game_seed, turns, city_states)
             });
-            game.victory_conditions = victory_conditions;
+            configure_evaluation_game(&mut game, victory_conditions, native_competitions);
             let mut ais: Vec<Box<dyn Ai>> = game
                 .players
                 .iter()
@@ -2477,6 +2609,19 @@ here and any null is uninformative"
         }
         pair += chunk;
         eprintln!("progress: {pair}/{pairs} map pairs complete");
+        if stop_when_decisive && pair < pairs {
+            // The pair scores are still game+swap sums here; the halving
+            // below the loop is what `paired_inference` expects.
+            let halved: Vec<f64> = pair_scores.iter().map(|score| score / 2.0).collect();
+            if early_stop_is_warranted(&halved) {
+                eprintln!(
+                    "decisive after {pair} of {pairs} map pairs ({:?}); stopping early under {STOP_WHEN_DECISIVE}",
+                    paired_inference(&halved).verdict
+                );
+                stopped_early_at = Some(pair);
+                break;
+            }
+        }
     }
     for score in pair_scores.iter_mut() {
         *score /= 2.0;
@@ -2521,6 +2666,13 @@ here and any null is uninformative"
         );
     }
     println!();
+    if let Some(played) = stopped_early_at {
+        println!(
+            "stopped early: {played} of {pairs} preregistered map pairs played — the promotion gate's \
+             anytime-valid verdict was decisive and {STOP_WHEN_DECISIVE} was given; the sign test and \
+             Wilson lines below are read at a data-dependent sample and are not confirmatory here"
+        );
+    }
     let inference = paired_inference(&pair_scores);
     let outcomes = pair_outcomes(&pair_scores);
     let directions = directional_outcomes(&pair_scores);
@@ -2670,6 +2822,51 @@ here and any null is uninformative"
                 "⚠ enabled but never produced here: {}. A treatment aimed at one of those cannot \
                  be measured on this profile — an inert reading would say nothing about it",
                 silent.join(", ")
+            );
+        }
+        // ★★★ PRODUCED IS NOT THE SAME AS MEASURABLE, AND THE LINE ABOVE ONLY
+        // CATCHES EXACTLY ZERO.
+        //
+        // A lane that decides two games in two hundred and forty passes the
+        // silence check and still cannot carry a win-rate read. Only the pairs
+        // holding one of those games can turn on the lane, so it can move the
+        // paired score by at most `decided / pairs` — and when that ceiling is
+        // below the interval this run already reports, the run cannot resolve
+        // a change to it however large the change is.
+        //
+        // This is arithmetic, not a tuned bar: the ceiling and the interval are
+        // both numbers the run has already computed. Measured on the 2026-08-19
+        // suzerainty round, where `diplomatic` decided 2 of 240 games with a
+        // half-width of ~5 points.
+        let half_width = (inference.high - inference.low) / 2.0 * 100.0;
+        let mut won_by_entrants: BTreeMap<String, usize> = BTreeMap::new();
+        for name in [a, b] {
+            for (lane, count) in &totals[name].victories {
+                *won_by_entrants.entry(lane.clone()).or_default() += count;
+            }
+        }
+        let unresolvable: Vec<String> = unresolvable_lanes(
+            &enabled_victories,
+            &game_victories,
+            &won_by_entrants,
+            pairs,
+            half_width,
+        )
+        .into_iter()
+        .map(|(name, decided, ceiling)| {
+            let won = won_by_entrants.get(&name).copied().unwrap_or(0);
+            format!(
+                "{name} decided {decided} of {total} games but an entrant won {won} of them, \
+                 so it can move the paired score by at most {ceiling:.1} points"
+            )
+        })
+        .collect();
+        if !unresolvable.is_empty() {
+            println!(
+                "⚠ produced but not resolvable here (interval half-width {half_width:.1} points): \
+                 {}. A treatment acting through one of those is bounded below this run's own \
+                 resolution, so neither a null nor a gain from it means anything",
+                unresolvable.join("; ")
             );
         }
     }
@@ -3116,6 +3313,127 @@ mod tests {
     use super::*;
     use civvis::rng::Rng;
 
+    /// A lane the profile produced twice in two hundred and forty games passes
+    /// the "never produced" check and still cannot carry a win-rate read. The
+    /// bound is arithmetic: only pairs holding a game the lane decided can turn
+    /// on it.
+    #[test]
+    fn a_lane_too_rare_to_move_the_score_is_named() {
+        let mut decided = BTreeMap::new();
+        decided.insert("diplomatic".to_string(), 2);
+        decided.insert("religious".to_string(), 54);
+        let enabled = "science,culture,religious,diplomatic,domination,score";
+
+        // 120 pairs, interval half-width 5 points. Diplomacy tops out at
+        // 2/120 = 1.7 points and cannot be seen; religion tops out at 45.
+        let won = decided.clone();
+        let bounded = unresolvable_lanes(enabled, &decided, &won, 120, 5.0);
+        assert_eq!(bounded.len(), 1, "{bounded:?}");
+        assert_eq!(bounded[0].0, "diplomatic");
+        assert_eq!(bounded[0].1, 2);
+        assert!(
+            (bounded[0].2 - 5.0 / 3.0).abs() < 1e-9,
+            "{:?}",
+            bounded[0].2
+        );
+
+        // A lane nobody produced belongs to the separate, stronger line.
+        assert!(
+            !unresolvable_lanes(enabled, &decided, &won, 120, 5.0)
+                .iter()
+                .any(|(name, ..)| name == "science"),
+            "never-produced lanes are reported by the silence check, not this one"
+        );
+
+        // Tighten the run and the same lane becomes resolvable.
+        assert!(unresolvable_lanes(enabled, &decided, &won, 120, 1.0).is_empty());
+        // A run with no pairs has no resolution to compare against.
+        assert!(unresolvable_lanes(enabled, &decided, &won, 0, 5.0).is_empty());
+    }
+
+    /// The contested board is the case that corrected this. It produced
+    /// `diplomatic` 29 times in 240 games — comfortably resolvable if you count
+    /// the games — while **neither entrant won one of them**: every single one
+    /// went to a scripted field seat, and a game the field wins is a draw for
+    /// the pair. The ceiling is therefore zero, not 24 points, and a diplomacy
+    /// treatment cannot be screened there by win rate however often the board
+    /// produces the lane.
+    #[test]
+    fn a_lane_only_the_field_ever_wins_cannot_move_the_score() {
+        let mut decided = BTreeMap::new();
+        decided.insert("diplomatic".to_string(), 29);
+        decided.insert("religious".to_string(), 108);
+        let mut won = BTreeMap::new();
+        won.insert("religious".to_string(), 108);
+        let enabled = "science,culture,religious,diplomatic,domination,score";
+
+        let bounded = unresolvable_lanes(enabled, &decided, &won, 120, 3.7);
+        assert_eq!(bounded.len(), 1, "{bounded:?}");
+        assert_eq!(bounded[0].0, "diplomatic");
+        assert_eq!(bounded[0].1, 29, "the games it decided are still reported");
+        assert_eq!(bounded[0].2, 0.0, "but none of them can move the pair");
+    }
+
+    /// The city-state guard is a list of strings, and lists of strings rot.
+    ///
+    /// Every name in it must still resolve to a real arm: a rename that left
+    /// the old spelling here would silently stop the warning for exactly the
+    /// class of arm the list exists to protect, and the failure mode is a
+    /// clean, meaningless null rather than an error.
+    #[test]
+    fn every_minor_dependent_arm_is_still_a_real_arm() {
+        for arm in MINOR_DEPENDENT_ARMS {
+            assert!(
+                builtin_arm(arm).is_some(),
+                "{arm} is listed as minor-dependent but is no longer a buildable arm"
+            );
+        }
+    }
+
+    /// `advanced_price_suzerainty` belongs on that list, and the reason is
+    /// mechanical: `SUZERAIN_PRIZE` is only ever scored inside the envoy
+    /// placement loop, which iterates city-states. Both 400-pair runs that
+    /// decided the flag ships off were hand-rolled `ai_eval` lines, and that
+    /// path defaults `--city-states` to zero.
+    #[test]
+    fn the_suzerainty_prize_is_guarded_as_minor_dependent() {
+        assert!(MINOR_DEPENDENT_ARMS.contains(&"advanced_price_suzerainty"));
+    }
+
+    /// `--stop-when-decisive` ends a run only on a decisive gate: never under
+    /// `PROMOTION_MIN_MAPS`, never on parity, and on either side once the
+    /// anytime-valid evidence and the betting interval agree.
+    #[test]
+    fn early_stopping_waits_for_a_decisive_gate() {
+        assert!(!early_stop_is_warranted(&[]));
+        assert!(
+            !early_stop_is_warranted(&[1.0; PROMOTION_MIN_MAPS - 1]),
+            "insufficient maps never stop, however lopsided"
+        );
+        assert!(
+            !early_stop_is_warranted(&[0.5; 200]),
+            "parity never stops: the run plays out to its preregistered size"
+        );
+        assert!(
+            early_stop_is_warranted(&[1.0; 40]),
+            "a challenger sweep stops on PASS"
+        );
+        assert!(
+            early_stop_is_warranted(&[0.0; 40]),
+            "an incumbent sweep stops on RETAIN"
+        );
+        let mixed: Vec<f64> = (0..60)
+            .map(|i| if i % 3 == 0 { 0.5 } else { 1.0 })
+            .collect();
+        assert!(early_stop_is_warranted(&mixed));
+        // The verdict the stop reads is the gate's own verdict, not a new rule.
+        assert_eq!(paired_inference(&mixed).verdict, PromotionVerdict::Promote);
+        assert_eq!(
+            paired_inference(&[0.5; 200]).verdict,
+            PromotionVerdict::Inconclusive
+        );
+    }
+
     #[test]
     fn a_gate_passing_size_is_labelled_the_discovery_estimate_it_is() {
         let line = effect_size_line(207.0, PromotionVerdict::Promote, 4000, None);
@@ -3214,48 +3532,42 @@ mod tests {
         }
     }
 
-    /// The promotion matrix cannot be handed a different board.
+    /// The promotion matrix cannot be handed a different world.
     ///
-    /// Who else is in the game decides which victory conditions are reachable
-    /// at all, which makes it the strongest profile axis there is. The matrix's
-    /// recorded profiles are fieldless, so `--field` has to be refused there
-    /// with the rest of them.
+    /// World rules decide which victories are reachable. The recorded matrix
+    /// pins those rules, including its fieldless roster and the default-off
+    /// native competition system, so a direct evaluator experiment cannot
+    /// silently alter an existing promotion profile.
     #[test]
-    fn the_promotion_matrix_refuses_a_field() {
-        // Mirrors `run_profile_matrix`'s own list, which cannot be reached from
-        // a test because it diverges. Pinning the membership is the part that
-        // would silently regress.
-        let flags = [
-            "--players",
-            "--width",
-            "--height",
-            "--city-states",
-            "--turns",
-            "--speed",
-            "--map",
-            "--shape",
-            "--poles",
-            "--victories",
-            "--randomize-civs",
-            "--field",
-        ];
-        let source = include_str!("ai_eval.rs");
-        let declared = source
-            .split("const PROFILE_FLAGS: [&str; ")
-            .nth(1)
-            .and_then(|tail| tail.split("];").next())
-            .expect("the matrix profile-flag list is where this test can read it");
-        assert!(
-            declared.starts_with(&format!("{}]", flags.len())),
-            "PROFILE_FLAGS is no longer {} long; update this list with it: {declared}",
-            flags.len()
-        );
-        for flag in flags {
-            assert!(
-                declared.contains(&format!("\"{flag}\"")),
-                "{flag} is not refused by --matrix"
+    fn the_promotion_matrix_owns_every_world_profile_axis() {
+        for flag in MATRIX_PROFILE_FLAGS {
+            let args = vec![flag.to_string()];
+            assert_eq!(
+                matrix_profile_flag(&args),
+                Some(flag),
+                "{flag} must be refused by --matrix"
             );
         }
+        assert!(MATRIX_PROFILE_FLAGS.contains(&"--native-competitions"));
+        assert_eq!(matrix_profile_flag(&["--pairs".to_string()]), None);
+    }
+
+    #[test]
+    fn evaluator_applies_native_competitions_to_each_configured_game() {
+        let victories = VictoryConditions::parse("diplomatic,score")
+            .expect("the fixture names supported victory conditions");
+        let mut game = Game::new(2, 20, 14, 52_200, 40, 0);
+
+        assert!(!native_competitions_requested(&[]));
+        configure_evaluation_game(&mut game, victories, false);
+        assert_eq!(game.victory_conditions, victories);
+        assert!(!game.native_competitions);
+
+        let requested = vec!["--native-competitions".to_string()];
+        assert!(native_competitions_requested(&requested));
+        configure_evaluation_game(&mut game, victories, true);
+        assert_eq!(game.victory_conditions, victories);
+        assert!(game.native_competitions);
     }
 
     #[test]

@@ -1496,7 +1496,7 @@ fn barbarian_camps_open_with_fortified_guards_and_recon() {
 }
 
 #[test]
-fn naval_barbarian_camps_reconnoiter_and_produce_ships() {
+fn alerted_naval_barbarian_camps_reconnoiter_and_produce_ships() {
     let mut game = Game::new_full(1, 44, 30, 88_101, 100, 0, true);
     let barbarian = game.barb_pid.unwrap();
 
@@ -1552,6 +1552,18 @@ fn naval_barbarian_camps_reconnoiter_and_produce_ships() {
     assert_eq!(game.units[&recon_id].kind, "galley");
     assert!(game.rules.is_water(&game.map.tiles[&game.units[&recon_id].pos]));
 
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .expect("the target civilization still has its opening Settler");
+    let target = game.units[&settler].pos;
+    game.found_city_for(0, target, None);
+    game.barb_camp_targets.insert(camp, target);
+    game.barb_alerted_until
+        .insert(camp, game.turn + BARBARIAN_SCOUT_ALERT_TURNS);
+    game.barb_camps.insert(camp, game.turn);
+
     let naval_before = game
         .player_unit_ids(barbarian)
         .into_iter()
@@ -1603,6 +1615,255 @@ fn barbarian_scout_reports_a_city_and_alerts_its_home_camp() {
     assert_eq!(game.barb_camp_targets.get(&home), Some(&city_position));
     assert!(game.barb_alerted_until[&home] > game.turn);
     assert!(game.barb_camps[&home] <= game.turn + 1);
+}
+
+/// ★★★★★ A SETTLER WALKING PAST THE CAMP WAS NOT A SIGHTING.
+///
+/// The report accepted only a CITY, so a camp's whole raid throughput was one
+/// Scout's round trip to a settlement — and the empire's WALKERS, which is
+/// what a Civilization VI barbarian actually takes, could not start a raid at
+/// all. MEASURED at 0.47 civilians lost to barbarians per game (`ai_eval`, 72
+/// seat-games, 6p/150t/online) against **8 Settlers in 104 turns** on the live
+/// Civilization VI seat. A tuning value inside the alert window cannot close
+/// a seventeen-fold gap when the window mostly never opens.
+///
+/// The Scout still has to walk home before anything happens, so this is a
+/// report and not a chase; the position it carries is where our people were
+/// standing when it saw them.
+#[test]
+fn a_barbarian_scout_reports_the_settler_it_sees_with_no_city_anywhere() {
+    let mut game = Game::new_full(2, 26, 16, 88_101, 100, 0, true);
+    let barbarian = game.barb_pid.unwrap();
+    let home = *game.barb_camps.keys().next().unwrap();
+    game.barb_scout_homes.clear();
+    game.barb_scout_targets.clear();
+    // No city on the board at all: every opening Settler is removed, so the
+    // only thing left to report is a walker.
+    for unit in game
+        .units
+        .values()
+        .filter(|unit| !game.players[unit.owner].is_barbarian)
+        .map(|unit| unit.id)
+        .collect::<Vec<_>>()
+    {
+        game.remove_unit(unit);
+    }
+    assert!(
+        game.cities.is_empty(),
+        "the fixture must have no settlement"
+    );
+
+    let road =
+        game.map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|position| {
+                game.wdist(*position, home) > 2
+                    && game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+                    && game.units_at(*position).is_empty()
+            })
+            .min()
+            .expect("open ground away from the camp");
+    let settler = game.spawn_unit("settler", 0, road);
+    let scout_position = game
+        .nbrs(road)
+        .into_iter()
+        .find(|position| {
+            game.map
+                .get(*position)
+                .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
+                && game.units_at(*position).is_empty()
+        })
+        .expect("open ground beside the Settler");
+    let scout = game.spawn_unit("scout", barbarian, scout_position);
+    game.barb_scout_homes.insert(scout, home);
+
+    game.barbarian_scout_phase(barbarian);
+    assert_eq!(
+        game.barb_scout_targets.get(&scout),
+        Some(&road),
+        "a Scout standing next to an undefended Settler has seen something worth raiding"
+    );
+
+    // And the report still has to be carried home before the camp raises anybody.
+    assert!(
+        !game.barb_alerted_until.contains_key(&home),
+        "a sighting alone must not alert the camp — the Scout walks back first"
+    );
+    let doorstep = game
+        .nbrs(home)
+        .into_iter()
+        .find(|position| game.map.tiles.contains_key(position))
+        .unwrap();
+    game.relocate(scout, doorstep);
+    game.barbarian_scout_phase(barbarian);
+    assert_eq!(game.barb_camp_targets.get(&home), Some(&road));
+    assert!(game.barb_alerted_until[&home] > game.turn);
+    let _ = settler;
+}
+
+#[test]
+fn barbarian_scouts_report_only_cities_they_can_really_see() {
+    let mut game = Game::new_full(1, 26, 16, 88_102, 100, 0, true);
+    let barbarian = game.barb_pid.expect("barbarian-enabled fixture");
+    let home = *game.barb_camps.keys().next().expect("opening camp");
+    game.barb_scout_homes.clear();
+    game.barb_scout_targets.clear();
+
+    // Discover a two-hex ray of open land, then put Woods in every legal
+    // corridor between its endpoints. A distance-only check incorrectly
+    // reports the city through cover; the Scout's actual vision does not.
+    let (origin, target, blockers) = game
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .find_map(|origin| {
+            game.nbrs(origin).into_iter().find_map(|first| {
+                game.nbrs(first).into_iter().find_map(|target| {
+                    if game.wdist(origin, target) != 2 {
+                        return None;
+                    }
+                    let blockers: Vec<Pos> = game
+                        .nbrs(origin)
+                        .into_iter()
+                        .filter(|middle| game.nbrs(*middle).contains(&target))
+                        .collect();
+                    let land = |position: Pos| {
+                        game.map.get(position).is_some_and(|tile| {
+                            game.rules.is_passable(tile)
+                                && !game.rules.is_water(tile)
+                                && tile.owner_city.is_none()
+                                && game.city_at(position).is_none()
+                                && game.units_at(position).is_empty()
+                        })
+                    };
+                    (land(origin)
+                        && land(target)
+                        && !blockers.is_empty()
+                        && blockers.iter().copied().all(land))
+                    .then_some((origin, target, blockers))
+                })
+            })
+        })
+        .expect("fixture needs an unobstructed two-hex land ray");
+    for position in blockers.iter().copied().chain([origin, target]) {
+        let tile = game.map.tiles.get_mut(&position).unwrap();
+        tile.terrain = crate::name!("plains");
+        tile.feature = None;
+        tile.hills = false;
+    }
+    for blocker in &blockers {
+        game.map.tiles.get_mut(blocker).unwrap().feature = Some(crate::name!("forest"));
+    }
+    game.found_city_for(0, target, Some("Hidden City".to_string()));
+    let scout = game.spawn_unit("scout", barbarian, origin);
+    game.barb_scout_homes.insert(scout, home);
+
+    assert!(
+        !game.unit_visible_tiles(scout).contains(&target),
+        "the Woods block the Scout's direct view of the City Center"
+    );
+    game.barbarian_scout_phase(barbarian);
+    assert!(
+        !game.barb_scout_targets.contains_key(&scout),
+        "a city behind terrain cover cannot start a report"
+    );
+
+    for blocker in blockers {
+        game.map.tiles.get_mut(&blocker).unwrap().feature = None;
+    }
+    assert!(game.unit_visible_tiles(scout).contains(&target));
+    game.barbarian_scout_phase(barbarian);
+    assert_eq!(game.barb_scout_targets.get(&scout), Some(&target));
+}
+
+#[test]
+fn a_scout_report_raises_one_finite_home_bound_raiding_party() {
+    let mut game = Game::new_full(2, 44, 30, 88_103, 100, 0, true);
+    let home = *game.barb_camps.keys().next().expect("opening camp");
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .expect("opening Settler");
+    let target = game.units[&settler].pos;
+    game.found_city_for(0, target, Some("Raid Target".to_string()));
+
+    // No other camp matters to the expected party. The report is the only
+    // source of this camp's raiders, and the standing Scout is removed so it
+    // cannot begin a second report after this test's alert expires.
+    for scout in game
+        .barb_scout_homes
+        .iter()
+        .filter_map(|(unit, camp)| (*camp == home).then_some(*unit))
+        .collect::<Vec<_>>()
+    {
+        game.remove_unit(scout);
+    }
+    game.barb_camp_targets.insert(home, target);
+    game.barb_alerted_until
+        .insert(home, game.turn + BARBARIAN_SCOUT_ALERT_TURNS);
+    game.barb_camps.insert(home, game.turn);
+
+    let wanted = game.barbarian_raid_force_size();
+    for _ in 0..20 {
+        game.barbarian_phase();
+        let raised = game
+            .barb_raider_homes
+            .values()
+            .filter(|camp| **camp == home)
+            .count();
+        if raised == wanted {
+            break;
+        }
+        game.turn += 1;
+    }
+    let party: Vec<u32> = game
+        .barb_raider_homes
+        .iter()
+        .filter_map(|(unit, camp)| (*camp == home).then_some(*unit))
+        .collect();
+    assert_eq!(party.len(), wanted, "one report raises exactly one party");
+    let ranged = party
+        .iter()
+        .filter(|unit| game.rules.units[game.units[unit].kind].has_ranged_attack())
+        .count();
+    assert_eq!(ranged, game.barbarian_raid_ranged_size());
+    assert!(
+        party
+            .iter()
+            .all(|unit| game.barbarian_unit_home(*unit) == Some(home)),
+        "each raider remains assigned to the outpost that raised it"
+    );
+
+    let restored: Game = serde_json::from_value(serde_json::to_value(&game).unwrap()).unwrap();
+    assert_eq!(restored.barb_raider_homes, game.barb_raider_homes);
+
+    let alert_end = game.barb_alerted_until[&home];
+    game.turn = alert_end;
+    game.barbarian_phase();
+    assert!(!game.barb_alerted_until.contains_key(&home));
+    assert!(
+        !game.barb_camp_targets.contains_key(&home),
+        "the reported target ends with the raid window"
+    );
+    let raised = party.len();
+    for _ in 0..8 {
+        game.turn += 1;
+        game.barbarian_phase();
+    }
+    assert_eq!(
+        game.barb_raider_homes
+            .values()
+            .filter(|camp| **camp == home)
+            .count(),
+        raised,
+        "an unalerted camp does not turn one report into an endless army"
+    );
 }
 
 /// Camp placement reads its clearance off a disk around each city and

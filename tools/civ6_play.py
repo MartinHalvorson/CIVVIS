@@ -18,10 +18,12 @@ from __future__ import annotations
 
 import argparse
 import atexit
+import signal
 import json
 import os
 import subprocess
 import textwrap
+import shutil
 import sys
 import tempfile
 import time
@@ -79,6 +81,102 @@ DEFAULT_CIVVIS_VICTORY = "diplomatic"
 # The turn the opening is scored at. Sixty is where the measured split is
 # sharpest and is still early enough that a treatment has somewhere to act.
 OPENING_TEMPO_TURN = 60
+
+# ★★★ WHEN A GAME IS LOST, SAY SO AND STOP PLAYING IT. Operator request
+# 2026-08-19: "ok to abandon games early if expected win rate <5%". The ladder
+# plays 250-turn Online games at about 1.5 h each, and the games it loses it
+# loses EARLY and then plays out: of the 48 live games that reached a terminal
+# result by 2026-08-19 (7 wins), 34 were under three quarters of the best
+# rival's score for five consecutive turns at or after turn 120, and NONE of
+# those 34 won — 3,700 game-turns, nine hours of host time per batch of
+# twelve, spent on results that were already written. The wins' own low-water
+# marks after turn 120 were 0.87 and 0.88 of the rival's score (both Chieftain
+# wins of 08-18/08-19), so the 0.75 line is a tenth below the worst comeback
+# the ladder has ever staged.
+#
+# The expected win rate is read from a table of such cells, each carrying the
+# wins and games it was measured on, as the Laplace estimate (wins+1)/(games+2)
+# — a finite-sample rate that cannot claim zero from zero wins and grows toward
+# 1/2 as the evidence thins, so a cell too thin to trust never clears a 5 %
+# floor by itself. A cell is (turn floor, score-ratio ceiling, wins, games):
+# the rule matches a turn at or after the floor whose own score is under the
+# ceiling times the best rival's. Where several match, the thinnest estimate
+# (the best-evidenced zero) decides.
+#
+# ⚠ This table is MEASURED, not chosen, and it is only as good as the games it
+# was fitted on (Settler and Chieftain, diplomatic and untargeted lanes).
+# Re-fit it when the ladder climbs or the seat's comeback shape changes; the
+# script is in the test file beside it. Abandoning is the harness's decision
+# and is recorded as one (`reason: "abandoned"` with the estimate that fired),
+# never as a stall, a wedge or a defeat.
+ABANDON_CELLS: tuple[tuple[int, float, int, int], ...] = (
+    # turn floor, ratio ceiling, wins, games — fitted 2026-08-19 on the 48
+    # terminal live games (7 wins); five consecutive turns under the ceiling
+    (100, 0.60, 0, 25),
+    (120, 0.75, 0, 34),
+)
+# Consecutive agent turns under the floor before the run is abandoned: a
+# single-turn dip (a city lost and retaken, a score swing on a rival's wonder)
+# must not end a game that the next five turns would have carried.
+ABANDON_PATIENCE = 5
+
+
+def expected_win_rate(turn: int, score: int | None,
+                      rival_best: int | None) -> float | None:
+    """The ladder's own estimate of this game still being won, or None.
+
+    None when the standing is unreadable or no measured cell matches: a game
+    that is level, ahead, or early is not predicted here at all — the table
+    only speaks where it has counted games, and it has counted no comebacks.
+    """
+    if score is None or rival_best is None or rival_best <= 0 or turn is None:
+        return None
+    ratio = score / rival_best
+    estimates = [
+        (wins + 1) / (games + 2)
+        for floor, ceiling, wins, games in ABANDON_CELLS
+        if turn >= floor and ratio < ceiling
+    ]
+    return min(estimates) if estimates else None
+
+
+def abandon_reading(state: dict, event: dict, floor: float) -> dict | None:
+    """Fold one agent turn into the abandonment count; the verdict when it fires.
+
+    Counts consecutive agent turns whose expected win rate sits under `floor`
+    (a distinct turn counted once; an agent may report a turn twice) and
+    returns the record to carry in the summary once `ABANDON_PATIENCE` such
+    turns have passed. A readable turn back over the floor — or outside every
+    measured cell — resets the count; a turn without a standing neither counts
+    nor resets, and is not the turn of record — silence is not recovery.
+    """
+    if floor <= 0 or event.get("ctx") != "agent":
+        return None
+    turn = event.get("turn")
+    if turn is None or turn == state.get("abandon_last_turn"):
+        return None
+    score, rival_best = event.get("score"), event.get("rival_best")
+    if score is None or rival_best is None or rival_best <= 0:
+        return None
+    state["abandon_last_turn"] = turn
+    estimate = expected_win_rate(turn, score, rival_best)
+    if estimate is None or estimate >= floor:
+        # Readable and outside every hopeless cell, or inside one the floor
+        # does not reach: a recovery, whichever way it happened.
+        state["abandon_streak"] = 0
+        return None
+    state["abandon_streak"] = state.get("abandon_streak", 0) + 1
+    if state["abandon_streak"] < ABANDON_PATIENCE:
+        return None
+    return {
+        "turn": turn,
+        "score": event.get("score"),
+        "rival_best": event.get("rival_best"),
+        "expected_win_rate": round(estimate, 4),
+        "floor": floor,
+        "consecutive_turns": state["abandon_streak"],
+    }
+
 DEFAULT_CIVVIS_STRATEGY = ""
 
 # Every objective `civvis_orders --victory` accepts, in the spelling its enum
@@ -308,6 +406,8 @@ def supervised_brain_command(args: argparse.Namespace, run_dir: Path,
         command.append("--war-from-plan")
     if args.civvis_refresh_seconds is not None:
         command += ["--github-refresh-seconds", str(args.civvis_refresh_seconds)]
+    for treatment in args.civvis_with:
+        command += ["--with", treatment]
     for treatment in args.civvis_without:
         command += ["--without", treatment]
     return command
@@ -494,6 +594,61 @@ def build_config(args: argparse.Namespace) -> dict:
         "OrdersWaitPolls": args.orders_wait_polls,
         "OrdersFallbackPolls": args.orders_fallback_polls,
         "OrdersMaxStale": args.orders_max_stale,
+        # ★★★★★ ONE ORDER PER UNIT PER TURN WAS THE PRICE OF ASYNCHRONOUS
+        # ACTUATION, and it is what turned every planned move-then-strike into a
+        # move (7 melee attacks in 188 turns of war). With the queue on, the mod
+        # keeps a unit's later orders and issues each once the earlier one has
+        # settled; the brain sends the whole sequence only when the mod's `seat`
+        # event says it can (`order_queue`), so an old mod keeps the old rule.
+        # `OrderQueueMaxTicks` is the floor: past it the rest is refused as
+        # `queue_stalled` and the turn ends. `ExploreGuardRadius` keeps an
+        # unordered soldier off the host's explore automation while a hostile
+        # stands that close — a held unit stays held. See docs/LIVE_TACTICS.md.
+        "OrderQueue": args.order_queue,
+        "OrderQueueMaxTicks": args.order_queue_max_ticks,
+        "ExploreGuard": args.explore_guard,
+        "ExploreGuardRadius": args.explore_guard_radius,
+        # The ledger's per-strike host preview (`CombatManager.SimulateAttackInto`)
+        # is one host call per strike; this switch exists so a run can be played
+        # without it if the call ever proves unsafe, and so the ledger can say
+        # whether it ran.
+        "StrikePreview": args.strike_preview,
+        # ★★★★★ THE BOARD PLANNED MOVEMENT THE UNIT DID NOT HAVE. A MOVE_TO whose
+        # host path outran the turn was queued, and the host walked the unit
+        # along it at the start of the next turn before the brain could act. Now
+        # every MOVE_TO is sent as this turn's leg of the host's own path, and
+        # combat units that enter the turn with a queued path anyway are
+        # cancelled at turn start; the seat then advertises `moves_at_turn_start`
+        # and the mirror trusts the export's movement. See docs/LIVE_TACTICS.md.
+        "CapMovesToReach": args.cap_moves_to_reach,
+        # A default-off host experiment: when a capped setter and exactly one
+        # co-located combat row share a MOVE_TO goal, make the guard follow the
+        # setter's actual leg only if it can reach that leg this turn.  This is
+        # bridge reconciliation, not a change to the Rust escort heuristic.
+        "SettlerEscortCapSync": args.settler_escort_cap_sync,
+        "CancelQueuedPaths": args.cancel_queued_paths,
+        # ★★★★ THE PLAN IS COMPUTED ONCE, BEFORE THE HOST HAS ROLLED A DIE. With
+        # `CombatFrames` ≥ 1 the mod re-exports the board once the opening
+        # orders and their queue have settled on a turn that issued a strike, and
+        # the brain re-plans the SAME turn on it (`frame` on the state event; a
+        # unit that struck shows `attacks_remaining` 0). Default OFF until a live
+        # run has been read: it is a second round trip per contact turn, with its
+        # own short poll budget and no fallback. See docs/LIVE_TACTICS.md §8.
+        "CombatFrames": args.combat_frames,
+        "CombatFramePolls": args.combat_frame_polls,
+        # ★★★★ AND THE BOARD WAS COMPUTED ONCE, BEFORE ANY UNIT HAD LOOKED. A
+        # replan frame (`ReplanFrames` ≥ 1, default 2) opens after the
+        # opening orders settle whenever the seat revealed ground since the
+        # board went out and a unit still has movement to spend on it (or a
+        # strike went out): the revealed plots cross as a `tiles` delta, the
+        # board is exported again, and CIVVIS re-plans the same turn. The
+        # brain's half (`step_and_reassess`) cuts a walk at its first
+        # unrevealed hex so the unit steps to the edge of the known and the
+        # frame spends the rest on what it saw. `TileDelta` sends newly
+        # revealed plots every turn and frame instead of every
+        # `TileExportEvery` turns. See docs/LIVE_TACTICS.md §11.
+        "ReplanFrames": args.replan_frames,
+        "TileDelta": args.tile_delta,
         # How often the map crosses. 25 turns is fine for an after-the-fact mirror
         # and far too slow for a decision loop: newly explored ground is exactly
         # what changes where the army and the next city should go.
@@ -758,9 +913,10 @@ def place_game(side: str = "left", fraction: float = 0.5,
     the operator asked for the real game in the upper right with a terminal
     beneath it.
 
-    Re-applied on every focus pass rather than once at launch: each ladder
-    attempt relaunches Civ 6, and a fresh process comes up wherever the game
-    last remembered rather than where it was put.
+    The live loop checks the current frame before calling this function.  An
+    unchanged frame is left alone: repeating identical ``set size`` and
+    ``set position`` operations still creates WindowServer geometry traffic,
+    which can make unrelated Terminal windows reflow.
     """
     if side == "none":
         return
@@ -780,6 +936,9 @@ def place_game(side: str = "left", fraction: float = 0.5,
         x, y = screen_w - width, screen_h - height
     else:
         x, y = (0 if side == "left" else screen_w - width), menu
+    desired = (x, y, width, height)
+    if game_window() == desired:
+        return
     script = (
         'tell application "System Events" to tell '
         '(first process whose name contains "Civ6") to tell window 1\n'
@@ -848,6 +1007,12 @@ def click_menu(item: str, bounds: tuple[int, int, int, int]) -> None:
     click_at(int(x + w * fx), int(y + h * fy))
 
 
+#: Waits between the setup screenshot's attempts. Escalating, because the
+#: failure it covers is a load spike: the flat 1.0 s retry it replaces sampled
+#: the same spike twice and lost two ladder attempts on 2026-08-19.
+SHOT_BACKOFF_SECONDS = (0.5, 1.5, 3.0)
+
+
 def screenshot(path: Path) -> bool:
     """Keep a picture of the screen. A misclick is a visual failure and the
     log cannot describe it; the shot is what says which row was hit.
@@ -861,19 +1026,33 @@ def screenshot(path: Path) -> bool:
     source, so every caller inherits the cover; a shot that still fails is
     reported loudly and the caller's own "not readable this attempt" retry
     handles it as an ordinary unreadable poll.
+
+    ⚠ One retry was NOT enough. On 2026-08-19 the launches
+    `civvis-20260819T054539Z` and `civvis-20260819T054713Z` both died on that
+    same `OCRUnavailable`, inside the window where a 2252-test
+    `cargo test --lib` run saturated this host; `...T054901Z`, started after
+    the load fell away, set up normally. Two captures a second apart sample
+    one spike twice. The backoff below spreads four captures over five
+    seconds instead of losing a ninety-minute attempt to a load transient,
+    and says so in the log when it needs more than one — a lane that reports
+    "the host is loaded" is a lane whose NO GAME can be read without guessing.
     """
-    for attempt in (1, 2):
+    for attempt in range(1, len(SHOT_BACKOFF_SECONDS) + 2):
         subprocess.run(["screencapture", "-x", "-t", "png", str(path)],
                        capture_output=True)
         try:
             if path.stat().st_size > 0:
+                if attempt > 1:
+                    print(f"[shot] screencapture needed {attempt} attempts for "
+                          f"{path.name}; the host is loaded", flush=True)
                 return True
         except OSError:
             pass
-        if attempt == 1:
-            time.sleep(1.0)
-    print(f"[shot] screencapture wrote nothing for {path.name} after a retry; "
-          "treating this poll as unreadable", flush=True)
+        if attempt <= len(SHOT_BACKOFF_SECONDS):
+            time.sleep(SHOT_BACKOFF_SECONDS[attempt - 1])
+    print(f"[shot] screencapture wrote nothing for {path.name} after "
+          f"{len(SHOT_BACKOFF_SECONDS) + 1} attempts; treating this poll as "
+          "unreadable", flush=True)
     return False
 
 
@@ -2054,6 +2233,52 @@ def latest_autosave(directory: Path = AUTOSAVE_DIR,
     return max(candidates, key=lambda path: path.stat().st_mtime)
 
 
+# The staged-resume stem. One fixed name: at most one staged file ever exists,
+# the Load Game row label is a constant the reader has already proven on, and
+# nothing accumulates in the save folder across resumes.
+RESUME_STAGED_STEM = "civvis-resume"
+
+
+def stage_resume_save(load_save: Path,
+                      single_dir: Path | None = None) -> Path:
+    """An autosave copied where the Load Game list shows it unfiltered.
+
+    ★★★★ THE AUTOSAVES FILTER IS A GAMBLE THE RESUME KEPT LOSING. Firaxis's
+    Load Game list opens on the manual saves in ``Saves/Single`` and shows the
+    ``Single/auto`` rotation only while its "Autosaves" checkbox is ticked —
+    and that checkbox is a tiny top-right label the screen reader misses at
+    the operator layout's scale. Both freeze-resumes of 2026-08-19 died
+    exactly there ("Load Game is not visible yet", then ``AutoSave_0062`` "is
+    not visible; refusing to select a row", 0 turns each) — the second one
+    costing a live t139 game at 75 % of the leader and climbing. The manual
+    recovery of 2026-08-16 already proved the alternative: a save COPIED into
+    ``Saves/Single`` (``resume-autosave-0189.Civ6Save``) sits in the default
+    list with no filter to tick.
+
+    So stage the save instead of driving the filter: copy it beside the
+    manual saves under the constant stem ``civvis-resume`` and select that
+    row. A save that already lives outside the autosave rotation is returned
+    untouched — a caller naming a manual save meant that exact row. A copy
+    that fails falls back to the original path, which leaves the old
+    filter-ticking path in force rather than trading a weak resume for none.
+    """
+    destination_dir = single_dir if single_dir is not None else AUTOSAVE_DIR.parent
+    try:
+        if load_save.parent.resolve() != (destination_dir / "auto").resolve():
+            return load_save
+    except OSError:
+        return load_save
+    staged = destination_dir / f"{RESUME_STAGED_STEM}{load_save.suffix}"
+    try:
+        shutil.copy2(load_save, staged)
+    except OSError as error:
+        print(f"could not stage {load_save.name} as {staged.name}: {error}; "
+              "falling back to the Autosaves filter", file=sys.stderr)
+        return load_save
+    print(f"staged {load_save.name} as {staged.name} in the manual save list")
+    return staged
+
+
 def bootstrap_saved_game(tail: watch.LogTail, on_event, run_dir: Path,
                          args: argparse.Namespace, verify_s: float = 120.0) -> bool:
     """Load a named save after proving each rendered menu target.
@@ -2068,7 +2293,10 @@ def bootstrap_saved_game(tail: watch.LogTail, on_event, run_dir: Path,
                                     still_loading=still_loading)
 
     patience = {"left": verify_s * LOADING_PATIENCE, "spent": 0.0}
-    save_label = Path(args.load_save).stem
+    # See `stage_resume_save`: an autosave is copied into the manual list so
+    # no filter stands between the reader and its row.
+    save_path = stage_resume_save(Path(args.load_save))
+    save_label = save_path.stem
     for attempt in range(1, BOOTSTRAP_ATTEMPTS + 1):
         focus_game(GAME_SIDE, GAME_FRACTION)
         time.sleep(2.0)
@@ -2451,6 +2679,12 @@ def summary_reason(state: dict, reason: str) -> str:
         return "wrong_game_modes"
     if state.get("seat") and not state.get("configured"):
         return "wrong_game_configuration"
+    # The harness's own decision to stop is an ending too, and it must be
+    # legible as one: an abandoned game filed as `stopped` is a wedge in the
+    # ledger's eyes. Only the loop's own stop is overwritten — a game that
+    # exited or stalled in the same poll keeps that reason.
+    if state.get("abandoned") and reason == "stopped":
+        return "abandoned"
     return reason
 
 
@@ -2507,6 +2741,7 @@ def _play(args: argparse.Namespace) -> int:
               f"victory={args.civvis_victory} "
               f"war_from_plan={args.civvis_war_from_plan} "
               f"refresh_seconds={refresh} "
+              f"forced={args.civvis_with or 'none'} "
               f"withheld={args.civvis_without or 'none'} bin={binary}")
 
     def stop_brain() -> None:
@@ -2525,6 +2760,26 @@ def _play(args: argparse.Namespace) -> int:
     # Covers KeyboardInterrupt and unexpected exceptions between the explicit
     # cleanup sites below. Calling it again after a normal run is harmless.
     atexit.register(stop_brain)
+
+    # ⚠ atexit does NOT run on SIGTERM. CPython's default SIGTERM disposition
+    # terminates the process outright, so `stop_brain` above never fires and the
+    # brain outlives the harness — and an orphaned brain is not harmless. The
+    # climb's `busy()` counts any live `civ6_brain.py` as a running game, so the
+    # NEXT attempt dies on "something already holds the game; refusing to stop an
+    # unowned run" while the lock file is empty and Civilization VI is down.
+    # Measured 2026-08-19: a brain from run civvis-20260819T162342Z was still
+    # alive 29 minutes after its game had gone, and every launch in that window
+    # failed that way until it was killed by hand.
+    #
+    # TERM is the ordinary way this process is stopped — the supervisor's own
+    # teardown sends it ("requesting clean stop"), so this is the common path,
+    # not an edge case. Raising SystemExit hands control back to the normal
+    # shutdown, which runs the atexit handler above; 143 is the conventional
+    # 128+SIGTERM status.
+    def _terminate(signum, _frame):  # noqa: ANN001 - signal handler signature
+        raise SystemExit(128 + signum)
+
+    signal.signal(signal.SIGTERM, _terminate)
 
     launcher.clear_run_logs()
     launcher.launch(stdout=run_dir / "stdout.log")
@@ -2728,6 +2983,19 @@ def _play(args: argparse.Namespace) -> int:
             return True
         if kind == "defeat":
             return bool(event.get("ours"))
+        # And OUR decision that the game is lost, once the operator has set a
+        # floor under the expected win rate. See `ABANDON_CELLS`.
+        if kind == "turn":
+            verdict = abandon_reading(state, event, args.abandon_below_win_rate)
+            if verdict is not None:
+                state["abandoned"] = verdict
+                print(f"[abandon] turn {verdict['turn']}: score "
+                      f"{verdict['score']} against the best rival's "
+                      f"{verdict['rival_best']} for {verdict['consecutive_turns']} "
+                      f"turns — expected win rate {verdict['expected_win_rate']:.1%} "
+                      f"is under the {verdict['floor']:.0%} floor; stopping the "
+                      "game rather than playing it out", flush=True)
+                return True
         # A game with an optional mode on is not the game CIVVIS is compared
         # against, and 250 turns of it is 250 turns of nothing. Stop at the
         # seat event rather than at the end.
@@ -2918,6 +3186,9 @@ def _play(args: argparse.Namespace) -> int:
         # run with the wrong modes is: it never played the game being measured.
         # An UNREADABLE ruleset is neither -- see `summary_reason`.
         "reason": summary_reason(state, reason),
+        # The verdict that ended an abandoned run: the turn, the standing, the
+        # estimate and the floor it fell under. None for every other ending.
+        "abandoned": state.get("abandoned"),
         # Whether the game actually played was the one this run asked for.
         # A summary that reports the requested difficulty without this is a
         # claim about the command line, not about the game.
@@ -2964,6 +3235,11 @@ def _play(args: argparse.Namespace) -> int:
         # batches would have been unattributable even once they were run.
         # Empty list means the full shipped bundle played.
         "withheld": sorted(args.civvis_without) if args.civvis_decides else None,
+        # `--civvis-with` is deliberately narrower than a general opt-in: it
+        # can restore only a live treatment the ledger otherwise withholds.
+        # Keep the exact named arm with the summary even if no binary event was
+        # retained, so a force-on run never resembles deployment afterwards.
+        "forced": sorted(args.civvis_with) if args.civvis_decides else None,
         # And the MOD side of the same question. The fallback ladder decides a
         # real share of production, so an arm is only fully described when both
         # halves are recorded. Add a switch here when it becomes A/B-able —
@@ -2978,6 +3254,18 @@ def _play(args: argparse.Namespace) -> int:
             "EnvoyConsider": args.envoy_consider,
             "ProbeCitizens": args.probe_citizens,
             "CampusSpecialist": args.campus_specialist,
+            # The live-tactics program's mod-side switches (docs/LIVE_TACTICS.md
+            # §9). Each is an A/B axis: a row that does not say which were on
+            # cannot be compared with one that does.
+            "OrderQueue": args.order_queue,
+            "ExploreGuard": args.explore_guard,
+            "CapMovesToReach": args.cap_moves_to_reach,
+            "SettlerEscortCapSync": args.settler_escort_cap_sync,
+            "CancelQueuedPaths": args.cancel_queued_paths,
+            "CombatFrames": args.combat_frames,
+            "StrikePreview": args.strike_preview,
+            "ReplanFrames": args.replan_frames,
+            "TileDelta": args.tile_delta,
         },
         # See `state["founds"]`: the opening tempo, recorded per run so the
         # ladder's strongest correlate is watched instead of reconstructed.
@@ -3009,6 +3297,23 @@ def _play(args: argparse.Namespace) -> int:
             run_dir / "runtime_updates.jsonl")
         if revisions:
             summary["decider_revisions"] = revisions
+        # And which GENOME decided it. `--civvis-strategy` is forwarded to
+        # `civvis_orders --strategy` by name. New deciders accept an unambiguous
+        # league display label as well as the immutable internal name, but old
+        # ones treated the supervisor's `WildCard9` label as unknown and fell
+        # back to stock. Both halves go on the record so asked and played can
+        # be compared on the ledger instead of in a log excavation.
+        genome = civ6_ladder.decider_genome(run_dir / "why.log")
+        if genome is not None:
+            summary["genome"] = genome
+            requested = (args.civvis_strategy or "").strip()
+            summary["strategy_requested"] = requested or None
+            if (requested and requested.lower() not in ("", "auto", "stock", "none")
+                    and genome.get("strategy") == "stock"):
+                print(f"⚠ --civvis-strategy {requested!r} did not resolve in the "
+                      f"decider's league snapshot; this run played the STOCK "
+                      f"genome ({genome.get('source')}). The ledger row records "
+                      f"both.", file=sys.stderr)
     except Exception as exc:  # noqa: BLE001 — health must not fail the run
         print(f"bridge-health totals unavailable: {exc}", file=sys.stderr)
     (run_dir / "summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True))
@@ -3096,6 +3401,12 @@ def main(argv: list[str] | None = None) -> int:
                     help="write requested map/game seeds for civ6_seed_check; does not "
                          "make the real-Civ6 world reproducible")
     ap.add_argument("--max-turns", type=int, default=150)
+    ap.add_argument("--abandon-below-win-rate", type=float, default=0.0,
+                    help="stop a run once the ladder's measured expected win "
+                         "rate (see ABANDON_CELLS) has sat under this floor "
+                         "for ABANDON_PATIENCE consecutive turns; 0 (the "
+                         "default) plays every game out. Operator request "
+                         "2026-08-19: 0.05")
     ap.add_argument("--city-target", type=int, default=6)
     ap.add_argument("--leader", help="exact Firaxis leader type to select and verify")
     # The game must stay frontmost to get frames, which makes it unwatchable if
@@ -3254,6 +3565,11 @@ def main(argv: list[str] | None = None) -> int:
                     metavar="TREATMENT",
                     help="withhold one live treatment from the decision worker, "
                          "repeatable — the control arm of a live A/B")
+    ap.add_argument("--civvis-with", action="append", default=[],
+                    metavar="TREATMENT",
+                    help="restore one ledger-held live treatment for a labeled "
+                         "verification arm, repeatable; the decision worker "
+                         "validates the name and keeps deployment unchanged by default")
     ap.add_argument("--civvis-refresh-seconds", type=float, default=None,
                     help="forwarded to the decision worker as "
                          "--github-refresh-seconds; 0 freezes the decider on its "
@@ -3271,6 +3587,52 @@ def main(argv: list[str] | None = None) -> int:
                     help="polls before giving up on CIVVIS and running the built-ins")
     ap.add_argument("--orders-max-stale", type=int, default=4,
                     help="how many turns behind a reusable CIVVIS answer may be")
+    ap.add_argument("--no-order-queue", dest="order_queue",
+                    action="store_false", default=True,
+                    help="apply one order per unit per turn (the pre-queue rule): "
+                         "a unit's later orders wait for the next frame")
+    ap.add_argument("--order-queue-max-ticks", type=int, default=240,
+                    help="ticks the turn is held for queued unit orders before the "
+                         "rest are refused as queue_stalled")
+    ap.add_argument("--no-explore-guard", dest="explore_guard",
+                    action="store_false", default=True,
+                    help="hand every unordered combat unit to explore automation, "
+                         "even one standing beside a hostile (the pre-guard rule)")
+    ap.add_argument("--explore-guard-radius", type=int, default=4,
+                    help="an unordered combat unit this close to a visible hostile "
+                         "or an at-war city is held, not handed to explore automation")
+    ap.add_argument("--no-strike-preview", dest="strike_preview",
+                    action="store_false", default=True,
+                    help="do not ask the host for its combat preview before a strike "
+                         "(the ledger's `strike` events then carry no prediction)")
+    ap.add_argument("--no-cap-moves-to-reach", dest="cap_moves_to_reach",
+                    action="store_false", default=True,
+                    help="send a MOVE_TO's whole destination even when the host's path "
+                         "outruns the turn (the pre-board rule: the host queues the rest "
+                         "and walks it before the next frame)")
+    ap.add_argument("--settler-escort-cap-sync", action="store_true", default=False,
+                    help="experimentally keep a co-located combat escort on a capped "
+                         "settler's actual host leg (off by default)")
+    ap.add_argument("--no-cancel-queued-paths", dest="cancel_queued_paths",
+                    action="store_false", default=True,
+                    help="leave combat units' queued host paths in place at turn start")
+    ap.add_argument("--combat-frames", type=int, default=0,
+                    help="mid-turn combat frames per turn: after the opening orders "
+                         "settle on a turn that issued a strike, re-export the board "
+                         "and let CIVVIS re-plan the same turn (0 = off)")
+    ap.add_argument("--combat-frame-polls", type=int, default=20,
+                    help="polls to wait for a combat frame's answer before the frame "
+                         "is abandoned by name and the turn ends")
+    ap.add_argument("--replan-frames", type=int, default=2,
+                    help="mid-turn replan frames per turn: after the opening orders "
+                         "settle, if the seat revealed ground since the board went "
+                         "out and a unit can still move (or a strike went out), "
+                         "re-export the board and let CIVVIS re-plan the same turn "
+                         "(0 = off; each frame waits --combat-frame-polls)")
+    ap.add_argument("--no-tile-delta", dest="tile_delta",
+                    action="store_false", default=True,
+                    help="send newly revealed plots only with the periodic sweep "
+                         "(--tile-export-every) instead of every turn and frame")
     ap.add_argument("--window-vfrac", type=float, default=1.0,
                     help="share of screen height for the game window; 0.5 puts "
                          "it in a quadrant so CIVVIS can own the other half")

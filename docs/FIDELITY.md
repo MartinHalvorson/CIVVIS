@@ -23,6 +23,238 @@ plain read-only SQLite database with the whole ruleset in it — `LoyaltyLevels`
 `Happinesses`, `GlobalParameters`, `Units`, and 400-odd more tables. Query it
 directly before changing any number.
 
+## Diplomatic Victory Points
+
+The lane that steals most of our live games is the one whose sources are
+smallest and least visible. **41 of the 74 live losses to a rival's victory are
+diplomatic**, and CIVVIS's own diplomacy lane almost never completes — 2
+diplomatic victories in 120 contested games, 3 in 60.
+
+⚠ **This section first said six.** It is **ten**. The search that found six
+matched `MODIFIER_PLAYER_ADJUST_DIPLOMATIC_VICTORY_POINTS` and missed
+`MODIFIER_EMERGENCY_PLAYERS_ADJUST_DIPLOMATIC_VICTORY_POINTS`, which is how a
+scored competition pays its winner. Searching one spelling and calling the list
+complete is the mistake.
+
+Seven **content** sources, against a threshold of 20
+(`GlobalParameters.DIPLOMATIC_VICTORY_POINTS_REQUIRED`):
+
+| source | amount | where CIVVIS keeps it |
+|---|---:|---|
+| `WC_RES_DIPLOVICTORY`, injected into every congress from the Modern era | ±2 | `resolve_congress`, gated on `world_era >= 5` |
+| `BUILDING_MAHABODHI_TEMPLE` | 2 | `wonders.json` |
+| `BUILDING_POTALA_PALACE` | 1 | `wonders.json` |
+| `BUILDING_STATUE_LIBERTY` | 4 | `wonders.json` |
+| `CIVIC_GLOBAL_WARMING_MITIGATION` | 1 | **`tree_effects.json`** |
+| `TECH_SEASTEADS` | 1 | **`tree_effects.json`** |
+
+All six are modelled, and the congress injection matches the shipped
+`InjectionOnly="true" EarliestEra="ERA_MODERN"`.
+
+⚠ **The last two are not in `techs.json` or `civics.json`.** They are in
+`tree_effects.json`, the overlay `Rules::load` folds in with `add_effects`.
+Looking only at the first two files makes them appear missing, and *adding*
+them there does not replace the overlay — it **sums** with it. That is not
+hypothetical: an attempt to add them shipped 2 points where Gathering Storm
+grants 1, on both nodes.
+
+⚠⚠ **Nothing in the toolchain would have caught that.**
+`tools/civ6_fidelity.py` reports zero divergent fields with the doubled values
+in place, because it does not audit tree-node effects at all;
+`tools/civvis_inert.py` reports zero unconsumed keys, because the key is
+consumed either way. `every_shipped_source_of_a_diplomatic_victory_point_is_modelled`
+is the only check on these amounts, and it exists because it caught that
+mistake. **Tree-node effects are an unaudited surface** — the audit's zero
+divergences say nothing about them.
+
+### And three competition sources, which CIVVIS does not have natively
+
+| award | amount | competitions |
+|---|---:|---|
+| `NON_EMERGENCY_FIRST_PLACE_VICTORY_POINT` | 1 | Nobel Peace, World's Fair, Space Station, World Games |
+| `AID_REQUEST_FIRST_PLACE_VICTORY_POINT` | 2 | Send Aid, Send Military Aid |
+| `CLIMATE_ACCORDS_FIRST_PLACE_VICTORY_POINT` | 2 | Climate Accords |
+
+Gathering Storm pays these to the *first-place* finisher, and they recur for
+the whole second half of a game. **A native CIVVIS game has none of them**: a
+competition exists only while a live host names one
+(`Game::replace_host_competitions`, and every competition project in
+`projects.json` is gated on `host_competition`).
+
+The live bridge is unaffected — it mirrors the host's own `dvp`. But every
+*evaluation* runs natively, and there the arithmetic does not close:
+
+| native source | points |
+|---|---:|
+| congress resolution, ±2 from the Modern era | ~8 across the congresses a 250-turn game reaches |
+| three wonders | 7, and **31 of 32** diplomatic games finish none |
+| one civic, one technology | 1 each, Future era |
+
+**41 of 209 terminal live games end in a rival's diplomatic victory — 19.6%.
+The contested screen produces 2 in 120 — 1.7%.** That twelvefold gap is
+structural, not tactical: a native empire has no route to 20 and no treatment
+can give it one, so every native measurement of a diplomatic-denial treatment
+has been measuring a lane that cannot complete.
+
+### The mechanism, off by default
+
+`Game::native_competitions` runs them. A congress seats one
+(`EMERGENCY_TRIGGER_WORLD_CONGRESS`, not a clock of its own), a completed
+scoring project adds the `competition_score` it declares, and the clock running
+out pays first place its Diplomatic Victory Point and 25 Favor. A native
+competition presents through the same accessor a mirrored one does, so the
+production catalog and the AI's valuation needed no change at all.
+
+⚠ **Two of the seven, and the two are not a preference.** A competition is
+offered only where our own data says an empire could score in it, and the
+scoring project is what says so — Space Station needs a Spaceport, Climate
+Accords an Industrial Zone. World Games' project declares *no* prerequisite, so
+nothing in the data says when it may start and choosing an era would be
+inventing one; World's Fair and the Nobel prizes score from Great People rather
+than a project; the two aid requests trigger on a random event and on a war,
+not on the congress.
+
+⚠ **Ties pay nobody.** A tie has no first place and inventing a tiebreak would
+be inventing a rule.
+
+⚠ **Nothing is paid on the mirrored path** — a host has already counted its own.
+
+### What it does, measured
+
+`civvis simulate --native-competitions`, seed 41000, 6 players, 250 turns:
+
+| | competitions seated | scored | Diplomatic Victory Points paid |
+|---|---:|---:|---:|
+| first cut | 2 | 1 of 2 | 1 |
+| after the two repairs below | 2 | **2 of 2** | **3** |
+
+The first cut had two defects that only a trace showed. **Eligibility asked for
+the district and not what the project consumes**, so Climate Accords was seated
+on turn 100 for an empire with an Industrial Zone and no power plant, closed on
+119 with an empty score table, and spent its lockout for nothing. And **the
+lockout was global**, so that empty competition blocked every other kind for
+sixty turns — but the shipped `LockoutTime` is a column on the emergency row,
+so it is per kind.
+
+### The one that recurs
+
+The World's Fair scores **one point per Great Person an empire recruits** — the
+shipped `EmergencyScoreSources` rows give every class `ScoreAmount="1"` — so it
+needs no ground to hold and every empire can enter it from the first congress.
+On seed 41000 it closes at turn 99 (scores `{0:1, 4:1, 5:2}`) and again at 159
+(`{0:2, 1:1, 3:1, 4:1}`), paying a point each time. That midgame recurrence is
+what the other two cannot give, and it is why this one matters more than its
+single point suggests.
+
+⚠ A competition can still close empty: the same trace has Climate Accords
+closing at 199 with no score at all. Eligibility asks whether an empire *could*
+score — it held an Industrial Zone and a power plant when the competition was
+seated — not whether it will build the project. That is the right bar and it
+pays nobody, but the lockout is spent.
+
+⚠ **Favor is not modelled and the Nobel Peace prize therefore is not.** It
+scores `FromFavor="true"`, and favor accrues at seven sites in this engine
+including congress *refunds*; deciding which of those count as favor "earned" is
+a rule the shipped data does not state, and inventing one is the #2049 mistake.
+It is also the only Nobel that pays a point at all — Literature and Physics are
+commented out of `EmergencyRewards`.
+
+### The target, with the number that was missing
+
+The ladder's stolen-lane census now reports the turn each lane landed on, and
+that changes what "close the diplomatic lane" means:
+
+| stolen lane | n | earliest | median | latest |
+|---|---:|---:|---:|---:|
+| **diplomatic** | **49** | **202** | **234** | 247 |
+| culture | 27 | 145 | 221 | 245 |
+| religious | 5 | 75 | 170 | 233 |
+
+⚠ **A rival's diplomatic victory has never landed before turn 202.** It is a
+photo finish against the 250-turn limit, so the lane's whole budget is roughly
+the Modern era to turn 240 — and a native game producing no diplomatic victory
+*before* turn 200 is not evidence of anything. Only games that run to the limit
+can show it, which is also why a small sample cannot: this measurement needs
+games near 250 turns, not more games of any length.
+
+⚠ The count in earlier notes was **41**; it is 49 as the ladder has grown. A
+count with no window beside it is what four iterations of work on this lane were
+aimed at.
+
+⚠ **Three to five points a game is not twenty.** The two project-scored competitions need
+late prerequisites — a Spaceport, a power plant to decommission — so they land
+around turn 180 and 200 and the lane still does not complete. The recurrence
+that would make it complete is in the five types not modelled: World's Fair and
+the three Nobel prizes score from Great People rather than a project, and the
+two aid requests trigger on a random event and on a war. **That is the next
+work, and it is what the single protocol bump should wait for.**
+
+**It is off by default and that is the point.** Turning it on changes what every
+participant faces, which moves the frozen rating anchor; with the flag off the
+anchor is unchanged at 17,482 decisions. Promoting it is a protocol event and
+should happen **once**, with the remaining five competitions in place, rather
+than twice. What that needs next: a `--native-competitions` switch on
+`simulate`, and an evaluator arm, so the rule can be priced before it is
+promoted. Until then only an embedder that sets the field can reach it.
+
+### The content sources are not the problem
+
+It is starved of *reach*. `docs/eval/2026-08-18-the-wonders-the-chosen-victory-actually-needs.md`
+records **31 of 32** diplomatic games finishing no qualifying wonder: Mahabodhi
+needs a founded religion, a Holy Site and a Temple beside a forest tile; the
+Statue of Liberty needs a Harbor and Civil Engineering. The two sources that
+need no such chain are Future-era and worth one point each. That leaves the
+congress, at ±2 from the Modern era, as very nearly the whole of a 20-point
+victory — which is why the lane completes about twice in a hundred games.
+
+## Where the install is
+
+`python3 tools/civ6_fidelity.py` takes no arguments: `tools/civ6_env.py` is the
+one place that knows where Civilization VI lives, and every Civ VI tool asks
+it. Override with `--civ6`, `$CIV6_INSTALL` or `$CIV6_DIR`, naming either the
+install root or the assets directory inside the macOS app bundle.
+
+⚠ Until 2026-08-19 this audit carried its own list of four candidate installs
+and every one of them began `C:\` or `D:\`. This fleet runs on macOS, where
+the gameplay database is not at the install root at all — it is inside the
+signed bundle at `Civ6.app/Contents/Assets`. So the audit that checks we are
+modelling Gathering Storm rather than some other ruleset answered "install not
+found" on every machine that could have run it, and `tools/civ6_modifiers.py`,
+which imports the same resolver, answered the same. Neither was broken; neither
+had ever been asked a question it could answer. `civ6_env.ASSETS_SUBPATH` was
+already documented as "the path the fidelity audit wants" and nothing had wired
+it up.
+
+That gap has a cost on the record: #2049 read the compiled cache directly to
+get around this, bypassing the ruleset refusal, and shipped Vanilla belief
+values as Gathering Storm. #2050 retracted them the next day.
+
+## The Great Person roster
+
+`data/great_people.json` holds 65 of Gathering Storm's 213 individuals. That is
+a deliberate subset, but the shape of the subset matters more than its size:
+until 2026-08-19 it held 29 and **stopped at the Atomic era**, with 26
+(class, era) slots empty that the shipped game fills. Because
+`Game::unused_great_person_faith` correctly models
+`GetFaithFromUnusedGreatPeoplePoints`, a class with nobody left to recruit pays
+its points out as Faith — so an empty late-game slot did not read as missing
+content, it read as an empire that had chosen Faith. Measured over eight
+6-player 200-turn games, **26.6% of all non-prophet Great Person points** were
+being converted that way, seven of eight classes running dry, writers by median
+turn 106.
+
+`every_great_person_class_is_recruitable_to_the_information_era` now pins the
+invariant: no class may have a hole between its first era and the Information
+era. Prophet is exempt, and is the one class that must be — Civilization VI
+stops offering Prophets once the map's religions are claimed.
+
+⚠ Class, era, cost and charges come from `GreatPersonIndividuals` and `Eras` and
+are audited. **Effects are not audited and are not a translation of each
+Firaxis ability** — they use only keys the engine already prices, in magnitudes
+matching the same class's existing entries. Translating each individual's real
+ability would mean new engine keys per person; adding a person to keep the
+class alive does not.
+
 ## Running the audit without an install
 
 `tools/civ6_fidelity.py --cache` reads the compiled gameplay database directly

@@ -444,10 +444,9 @@ const EMBEDDED_APP_SETUP_JS: &str = include_str!("../web/assets/app_setup.js");
 const EMBEDDED_FEATURE_ATLAS: &[u8] = include_bytes!("../web/assets/feature-atlas.png");
 const EMBEDDED_ENVIRONMENT_FEATURE_ATLAS: &[u8] =
     include_bytes!("../web/assets/environment-feature-atlas.png");
-const EMBEDDED_HIDDEN_MAP_MONSTERS: &[u8] =
-    include_bytes!("../web/assets/hidden-map-monsters.png");
-const EMBEDDED_CIV6_UNIT_FLAGS: &[u8] =
-    include_bytes!("../web/assets/civ6-unit-flags.png");
+const EMBEDDED_HIDDEN_MAP_MONSTERS: &[u8] = include_bytes!("../web/assets/hidden-map-monsters.png");
+const EMBEDDED_CIV6_UNIT_FLAGS: &[u8] = include_bytes!("../web/assets/civ6-unit-flags.png");
+const EMBEDDED_CIV6_YIELD_ICONS: &[u8] = include_bytes!("../web/assets/civ6-yield-icons.png");
 
 /// The agents that exist in every build, whether or not a league snapshot is
 /// on disk, with the handle the leaderboards give them. `make_send_ai`
@@ -3470,6 +3469,11 @@ fn civ6_unit_flags() -> Vec<u8> {
         .unwrap_or_else(|_| EMBEDDED_CIV6_UNIT_FLAGS.to_vec())
 }
 
+fn civ6_yield_icons() -> Vec<u8> {
+    std::fs::read("web/assets/civ6-yield-icons.png")
+        .unwrap_or_else(|_| EMBEDDED_CIV6_YIELD_ICONS.to_vec())
+}
+
 /// Where a single-player game keeps its own saves, relative to the process's
 /// working directory. Files are named `*.save.json`, which `.gitignore`
 /// already covers, so a game played inside a checkout leaves the tree clean.
@@ -4656,6 +4660,9 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
         ("GET", "/assets/civ6-unit-flags.png") => {
             respond(stream, "200 OK", "image/png", &civ6_unit_flags());
         }
+        ("GET", "/assets/civ6-yield-icons.png") => {
+            respond(stream, "200 OK", "image/png", &civ6_yield_icons());
+        }
         // A lock-free identity probe for supervised process handoffs. The
         // browser used to fetch the multi-megabyte `/state` document here and
         // could queue behind an AI step for its entire three-second timeout.
@@ -5276,8 +5283,8 @@ mod tests {
         tile_mark, valid_between_game_countdown_ms, viewer_path, ChronicleSnapshot, ChronicleState,
         FrameDelivery, Params, Session, Shared, SpectatorFrame, BETWEEN_GAME_COUNTDOWN_OPTIONS_MS,
         DEFAULT_BETWEEN_GAME_COUNTDOWN_MS, EMBEDDED_APP_JS, EMBEDDED_APP_SETUP_JS,
-        EMBEDDED_CIV6_UNIT_FLAGS, EMBEDDED_HIDDEN_MAP_MONSTERS, EMBEDDED_INDEX,
-        MAX_EXACT_JAVASCRIPT_INTEGER, SAVE_DIR, STATE_LONG_POLL, VIEWER_ACTIVE,
+        EMBEDDED_CIV6_UNIT_FLAGS, EMBEDDED_CIV6_YIELD_ICONS, EMBEDDED_HIDDEN_MAP_MONSTERS,
+        EMBEDDED_INDEX, MAX_EXACT_JAVASCRIPT_INTEGER, SAVE_DIR, STATE_LONG_POLL, VIEWER_ACTIVE,
     };
     use crate::game::{Action, Game, LeaderPool, PlayOnMode, VictoryConditions, CIV6_LEADER_POOL};
     use crate::server::{
@@ -12817,13 +12824,52 @@ mod tests {
     #[test]
     fn browser_key_bindings_match_the_requested_set() {
         for (action, key) in [
-            ("NextAction", "1"),
-            ("SettlerLens", "2"),
-            ("PlaceTack", "3"),
+            // Civilization VI's own defaults, read out of that game's
+            // `InputSettings.json`. The names on the left are Civ 6's action
+            // names, so a row that drifts is a row that stopped matching the
+            // game this client exists to be playable by.
+            ("EndTurn", "1"),
+            ("FoundCity", "b"),
             ("Fortify", "f"),
-            ("Alert", "a"),
+            ("FortifyUntilHeal", "h"),
+            ("SkipTurn", " "),
+            ("Sleep", "z"),
+            ("Alert", "v"),
+            ("AutoExplore", "e"),
+            ("NextUnit", "."),
+            ("PrevUnit", ","),
+            ("NextCity", "]"),
+            ("PrevCity", "["),
+            ("ToggleTechTree", "t"),
+            ("ToggleCivicsTree", "c"),
+            ("ToggleReligion", "l"),
+            ("ToggleGreatPeople", "o"),
+            ("OpenQDPopup", "d"),
+            ("ToggleGovernment", "F7"),
+            ("ToggleGovernors", "F10"),
+            ("ToggleCityStates", "F2"),
+            ("ToggleEspionage", "F3"),
+            ("ToggleTradeRoutes", "F4"),
+            ("ToggleReports", "F8"),
+            ("ToggleRankings", "F1"),
+            ("OpenCivilopedia", "F9"),
+            ("ToggleYield", "y"),
+            ("ToggleGrid", "g"),
+            ("ToggleResources", "q"),
+            ("ToggleFSMap", "End"),
+            ("LensContinent", "2"),
+            ("LensAppeal", "3"),
+            ("LensSettler", "4"),
+            ("LensGovernment", "5"),
+            ("LensPolitical", "6"),
+            ("LensTourism", "7"),
+            ("LensLoyalty", "8"),
+            ("LensEmpire", "9"),
+            ("LensPower", "0"),
+            // This client's own, where Civ 6 has nothing to copy.
+            ("NextAction", "n"),
             ("PreviousCity", "ArrowLeft"),
-            ("NextCity", "ArrowRight"),
+            ("NextCityArrow", "ArrowRight"),
         ] {
             let row = format!("{{id: \"{action}\", key: \"{key}\"");
             assert!(
@@ -12831,23 +12877,70 @@ mod tests {
                 "required {action} is missing from the {key} shortcut"
             );
         }
+        // The two chords that game puts Shift on, and nothing else may.
+        assert!(EMBEDDED_INDEX.contains("{id: \"EndTurnAnyway\", key: \"1\", shift: true"));
+        assert!(EMBEDDED_INDEX.contains("{id: \"AddMapTack\", key: \"a\", shift: true"));
+        // `A` is Attack in Civ 6 and this client attacks by pointing, so it
+        // carries no order of its own — it was Alert here until this table
+        // was reconciled with the game's, and must not quietly become one
+        // again.
+        assert!(!EMBEDDED_INDEX.contains("{id: \"Alert\", key: \"a\""));
+        // Tab is how somebody navigating by keyboard reaches every control on
+        // the page. The board does not take it.
+        assert!(!EMBEDDED_INDEX.contains("key: \"Tab\""));
+        // Neither do the four the browser owns.
+        for taken in ["\"F5\"", "\"F6\"", "\"F11\"", "\"F12\""] {
+            assert!(
+                !EMBEDDED_INDEX.contains(&format!("key: {taken}")),
+                "the browser owns {taken}"
+            );
+        }
         let shortcuts = EMBEDDED_INDEX
             .split_once("const CIVVIS_SHORTCUTS = [")
             .and_then(|(_, tail)| {
-                tail.split_once("];\n// One lookup per key.")
+                tail.split_once("];\n// One lookup per key")
                     .map(|(rows, _)| rows)
             })
             .expect("the closed shortcut table");
-        assert_eq!(shortcuts.matches("{id: \"").count(), 7);
+        assert_eq!(shortcuts.matches("{id: \"").count(), 44);
         assert!(!EMBEDDED_INDEX.contains("const CIV6_BINDINGS = ["));
         assert!(!EMBEDDED_INDEX.contains("let altTap"));
+        // Everything that needs a seat is withheld from a spectator, and
+        // everything that only describes the picture is not.
+        for (action, spectator) in [
+            ("EndTurn", false),
+            ("Fortify", false),
+            ("SkipTurn", false),
+            ("ToggleTechTree", false),
+            ("ToggleGovernment", false),
+            ("ToggleYield", true),
+            ("LensSettler", true),
+            ("ToggleFSMap", true),
+            ("ToggleRankings", true),
+            ("OpenCivilopedia", true),
+        ] {
+            let row = shortcuts
+                .split_once(&format!("{{id: \"{action}\","))
+                .expect("the row")
+                .1
+                .split_once("},")
+                .expect("the row's end")
+                .0;
+            assert_eq!(
+                row.contains("spectator: true"),
+                spectator,
+                "{action} is on the wrong side of the seat"
+            );
+        }
+        // The legend in the deck is the same map, one row per binding.
         let legend = EMBEDDED_INDEX
             .split_once("<summary>Keyboard shortcuts</summary>")
             .and_then(|(_, tail)| tail.split_once("</details>").map(|(panel, _)| panel))
             .expect("the keyboard shortcut legend");
-        assert_eq!(legend.matches("<kbd>").count(), 7);
-        assert_eq!(EMBEDDED_INDEX.matches("<kbd>").count(), 7);
-        assert!(legend.contains("<span><kbd>3</kbd>Add a map tack</span>"));
+        assert_eq!(legend.matches("<kbd>").count(), 47);
+        assert_eq!(EMBEDDED_INDEX.matches("<kbd>").count(), 47);
+        assert!(legend.contains("<span><kbd>Shift</kbd><kbd>A</kbd>Add a map tack</span>"));
+        assert!(legend.contains("<span><kbd>1</kbd>End turn · next blocker</span>"));
         assert!(EMBEDDED_INDEX.contains(
             "return myCities().slice().sort((left, right) => Number(left.id) - Number(right.id));"
         ));
@@ -12885,11 +12978,21 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("else if (ev.button === 1) {"));
         // macOS Control-click is a platform secondary click; Command belongs to
         // the browser, and never becomes a map binding.
+        assert!(EMBEDDED_INDEX.contains("(MAC_POINTER_PLATFORM && ev.button === 0 && ev.ctrlKey)"));
+        // Command, Control and Option belong to the browser and never become
+        // map bindings. Shift does, for the two chords Civ 6 puts it on, so
+        // it is matched from its own table rather than refused outright.
+        assert!(
+            EMBEDDED_INDEX.contains("if (ev.metaKey || ev.ctrlKey || ev.altKey) return undefined;")
+        );
+        assert!(
+            EMBEDDED_INDEX.contains("const table = ev.shiftKey ? SHIFT_KEY_ACTIONS : KEY_ACTIONS;")
+        );
+        assert_eq!(EMBEDDED_INDEX.matches("shift: true").count(), 2);
+        // Space and Enter belong to whichever control has focus, so a person
+        // navigating by keyboard never skips a unit by pressing a button.
         assert!(EMBEDDED_INDEX.contains(
-            "(MAC_POINTER_PLATFORM && ev.button === 0 && ev.ctrlKey)"
-        ));
-        assert!(EMBEDDED_INDEX.contains(
-            "if (ev.metaKey || ev.ctrlKey || ev.altKey || ev.shiftKey) return undefined;"
+            "if ((ev.key === \" \" || ev.key === \"Enter\") && (tag === \"BUTTON\" || tag === \"A\" ||"
         ));
     }
 
@@ -12921,12 +13024,124 @@ mod tests {
             .expect("strategic unit pictogram renderer");
         assert!(renderer.contains("const official = civ6UnitIconSprite(type, color)"));
         assert!(renderer.contains("cx.drawImage(official"));
-        assert!(EMBEDDED_INDEX.contains("const COMMAND_UNIT_ICON_K = () => 1 + .32"));
-        assert!(EMBEDDED_INDEX.contains("drawUnitPictogram(u.type, x, y,"));
-        assert!(EMBEDDED_INDEX.contains("drawUnitPictogram(unit.type, ux, uy,"));
-        assert!(EMBEDDED_INDEX.contains("drawUnitPictogram(d.type, d.x, d.y,"));
         assert!(!EMBEDDED_INDEX.contains("embarked ? \"galley\""));
-        assert!(EMBEDDED_INDEX.contains("rr * 1.45 * COMMAND_UNIT_ICON_K(), tokenInk"));
+
+        // The cells carry a per-icon margin -- 38 to 64 px of silhouette in the
+        // same 64 px cell -- so drawing whole cells at one box size drew the
+        // roster at 1.7x apart. Every icon is measured and then drawn from its
+        // own silhouette rectangle, which is what makes one requested size mean
+        // one size.
+        assert!(EMBEDDED_INDEX.contains("function measureCiv6UnitIconBoxes() {"));
+        assert!(EMBEDDED_INDEX.contains("function civ6UnitIconBox(type) {"));
+        assert!(renderer.contains("const box = civ6UnitIconBox(type)"));
+        assert!(renderer.contains("const k = size / Math.max(box.w, box.h)"));
+        assert!(renderer.contains("cx.drawImage(official, box.x, box.y, box.w, box.h,"));
+        assert!(renderer.contains("x - w / 2, y - h / 2, w, h);"));
+
+        // And one size means one size everywhere: no surface may reintroduce
+        // its own multiplier, and none may make the icon grow with the camera
+        // the way the retired COMMAND_UNIT_ICON_K did. Every surface asks the
+        // one seat routine, which is also what keeps a counter that is not a
+        // circle from being a second, separately chosen size.
+        assert!(!EMBEDDED_INDEX.contains("COMMAND_UNIT_ICON_K"));
+        assert!(EMBEDDED_INDEX.contains("const COMMAND_UNIT_ICON_SHARE = .66;"));
+        assert_eq!(
+            EMBEDDED_INDEX.matches("COMMAND_UNIT_ICON_SHARE").count(),
+            3,
+            "the one share is declared once and spent only by the seat routine"
+        );
+        assert_eq!(
+            EMBEDDED_INDEX.matches("strategicUnitGlyphSeat(").count(),
+            5,
+            "the flat map, the globe, the casualty and the production medallion \
+             all seat their unit glyph through the one routine"
+        );
+        assert!(EMBEDDED_INDEX
+            .contains("drawUnitPictogram(u.type, seat.x, seat.y, seat.size, tokenInk)"));
+        assert!(EMBEDDED_INDEX
+            .contains("drawUnitPictogram(unit.type, seat.x, seat.y, seat.size, tokenInk)"));
+        assert!(EMBEDDED_INDEX
+            .contains("drawUnitPictogram(d.type, seat.x, seat.y, seat.size, tokenInk)"));
+        assert!(EMBEDDED_INDEX
+            .contains("drawUnitPictogram(it.unit, seat.x, seat.y, seat.size, \"#f0ead8\")"));
+
+        // Religious units are ordinary units of the map: each has its own
+        // Civilization VI cell and rides the same token as everything else.
+        for religious in [
+            "missionary",
+            "apostle",
+            "guru",
+            "inquisitor",
+            "warrior_monk",
+        ] {
+            assert!(
+                rules.units.contains_key(religious),
+                "{religious} must be a real unit of the ruleset"
+            );
+            assert!(
+                ids.contains(&format!("\"{religious}\"")),
+                "{religious} has no Civilization VI icon cell"
+            );
+        }
+    }
+
+    /// Two counter shapes, and they are the base game's two: a circle for a
+    /// unit that can fight and Civilization VI's rounded triangle, point down,
+    /// for one that cannot. The retired civilian capsule was a shape of the
+    /// viewer's own invention, which is why it read as a second marker set
+    /// instead of as the same set saying "this one is not an army".
+    #[test]
+    fn a_civilian_counter_is_the_base_games_rounded_triangle() {
+        assert!(!EMBEDDED_INDEX.contains("cx.roundRect(x - r, y - h / 2, r * 2, h, h / 2)"));
+        assert!(EMBEDDED_INDEX.contains("const CIVILIAN_TOKEN_CORNER = .30;"));
+        assert!(EMBEDDED_INDEX.contains("const CIVILIAN_TOKEN_VERTEX = 1 - CIVILIAN_TOKEN_CORNER;"));
+        let token = EMBEDDED_INDEX
+            .split("function strategicUnitTokenPath(x, y, r, civilian = false) {")
+            .nth(1)
+            .and_then(|tail| tail.split("function strategicUnitCounterHalfWidth").next())
+            .expect("strategic unit counter outline");
+        assert!(token.contains("if (!civilian) { cx.arc(x, y, r, 0, 7); return; }"));
+        // The corners are three discs and `cx.arc` draws the side into each,
+        // which is how the three-count yield plate already makes the base
+        // game's rounded triangle. The first vertex points straight down.
+        assert!(token.contains("const out = Math.PI / 2 + at * 2 * Math.PI / 3;"));
+        assert!(token.contains(
+            "cx.arc(x + Math.cos(out) * vertex, y + Math.sin(out) * vertex, corner,\n           out - Math.PI / 3, out + Math.PI / 3);"
+        ));
+
+        // The triangle stands inside the circle its seat was measured for, so
+        // a civilian can no more crowd its hex than a soldier can.
+        assert!(EMBEDDED_INDEX.contains("strategicUnitTokenPath(ux, uy, r, civilian);"));
+        assert!(EMBEDDED_INDEX.contains("strategicUnitTokenPath(x, y, rr, civilian);"));
+        assert!(EMBEDDED_INDEX.contains("strategicUnitTokenPath(d.x, d.y, r, civilian);"));
+        // And the selection ring is the counter's own outline, not a circle
+        // drawn over a triangle.
+        assert!(EMBEDDED_INDEX
+            .contains("strategicUnitTokenPath(x, y, Math.max(0, rr - 1.2), civilian);"));
+        assert_eq!(
+            EMBEDDED_INDEX.matches("strategicUnitTokenPath(").count(),
+            6,
+            "the flat map fill, outline and selection ring, the globe and the \
+             casualty all take the one token path"
+        );
+
+        // Which unit gets which counter is the viewer's one answer to "can
+        // this fight", not a second list kept beside it.
+        assert!(EMBEDDED_INDEX.contains("const civilian = CIVILIAN_UNITS.has(u.type);"));
+        assert!(EMBEDDED_INDEX.contains("const civilian = CIVILIAN_UNITS.has(unit.type);"));
+        assert!(EMBEDDED_INDEX.contains("const civilian = CIVILIAN_UNITS.has(d.type);"));
+
+        // A health bar is only ever as wide as the counter is where it sits,
+        // so a plundered Trader's bar tightens into the point instead of
+        // hanging out over the tile.
+        assert!(
+            EMBEDDED_INDEX.contains("function strategicUnitCounterHalfWidth(r, dy, civilian) {")
+        );
+        assert!(EMBEDDED_INDEX.contains(
+            "const room = strategicUnitCounterHalfWidth(r, by + bh + frame - y, civilian);"
+        ));
+        assert!(EMBEDDED_INDEX
+            .contains("const bw = Math.min(r * 1.28, Math.max(0, room - frame) * 2);"));
     }
 
     #[test]
@@ -12934,7 +13149,7 @@ mod tests {
         let renderer = EMBEDDED_INDEX
             .split("function drawStrategicUnitHealth")
             .nth(1)
-            .and_then(|tail| tail.split("// The Civ VI atlas cells").next())
+            .and_then(|tail| tail.split("// Civ 6 hangs a small flag").next())
             .expect("strategic unit health renderer");
         assert!(EMBEDDED_INDEX.contains(
             "const CAPTURE_ONLY_CIVILIAN_UNITS = new Set([\"settler\", \"builder\"]);"
@@ -12945,9 +13160,12 @@ mod tests {
         assert!(renderer.contains("health >= 100"));
         assert!(renderer.contains("cx.strokeText(String(health), x, by + bh / 2)"));
         assert!(renderer.contains("cx.fillText(String(health), x, by + bh / 2)"));
-        assert!(EMBEDDED_INDEX.contains(
-            "const status = unitHasHealth(u) ? `hp ${u.hp}` : \"capturable\";"
-        ));
+        // The selected-unit plaque asks the same question the map does: a unit
+        // with health gets a bar and a number, and one that is taken rather
+        // than killed says so instead of reading as a unit on full health.
+        assert!(EMBEDDED_INDEX.contains("const health = unitHasHealth(u)"));
+        assert!(EMBEDDED_INDEX.contains("<span class=\"ubar-health\""));
+        assert!(EMBEDDED_INDEX.contains("⚑<b>capturable</b>"));
         assert!(EMBEDDED_INDEX.contains(
             "const unitStatus = unitHasHealth(unit) ? `${fmtYield(unit.hp)} HP` : \"capturable\";"
         ));
@@ -12997,7 +13215,7 @@ mod tests {
     fn undiscovered_ground_is_an_illustrated_fog_safe_chart() {
         assert!(EMBEDDED_HIDDEN_MAP_MONSTERS.starts_with(b"\x89PNG\r\n\x1a\n"));
         assert!(EMBEDDED_HIDDEN_MAP_MONSTERS.len() > 500_000);
-        assert!(EMBEDDED_HIDDEN_MAP_MONSTERS.len() < 1_000_000);
+        assert!(EMBEDDED_HIDDEN_MAP_MONSTERS.len() < 2_000_000);
         assert_eq!(
             u32::from_be_bytes(EMBEDDED_HIDDEN_MAP_MONSTERS[16..20].try_into().unwrap()),
             1536
@@ -13035,15 +13253,35 @@ mod tests {
         assert!(monsters.contains("HIDDEN_MAP_TALE_SIZE_MIN"));
         assert!(monsters.contains("HIDDEN_MAP_TALE_SIZE_RANGE"));
         assert!(monsters.contains("HIDDEN_MAP_MONSTER_VARIANTS"));
-        assert!(monsters.contains(".26"));
+        assert!(monsters.contains(".21"));
+        assert!(EMBEDDED_INDEX.contains("HIDDEN_MAP_TALE_SCALE = 1.7"));
+        assert!(EMBEDDED_INDEX.contains("HIDDEN_MAP_TALE_SPACING_SCALE = .8"));
+        assert!(EMBEDDED_INDEX.contains("HIDDEN_MAP_TALE_SIZE_MIN = 10.6 * HIDDEN_MAP_TALE_SCALE"));
+        assert!(EMBEDDED_INDEX.contains("HIDDEN_MAP_TALE_SIZE_RANGE = 2.1 * HIDDEN_MAP_TALE_SCALE"));
+        assert!(EMBEDDED_INDEX.contains("HIDDEN_MAP_TALE_REACH = S * 9 * HIDDEN_MAP_TALE_SCALE"));
+
+        let seating_radius = EMBEDDED_INDEX
+            .split("function hiddenMapMonsterSeatRadius(q, r, seedA, seedB)")
+            .nth(1)
+            .and_then(|tail| {
+                tail.split("function hiddenMapMonsterSeat(q, r, seedA, seedB)")
+                    .next()
+            })
+            .expect("scaled hidden-map monster seating radius");
+        assert!(seating_radius.contains("HIDDEN_MAP_TALE_SPACING_SCALE *"));
 
         let seating = EMBEDDED_INDEX
-            .split("function hiddenMapMonsterSeat")
+            .split("function hiddenMapMonsterSeat(q, r, seedA, seedB)")
             .nth(1)
             .and_then(|tail| tail.split("function drawHiddenMapMonster").next())
             .expect("minimum-distance hidden-map monster seating");
-        assert!(seating.contains("radius = 8"));
-        assert!(seating.contains("priority >= .04"));
+        assert!(seating.contains("HIDDEN_MAP_TALE_CANDIDATE_RATE"));
+        assert!(seating.contains("hiddenMapMonsterSeatRadius"));
+        assert!(seating.contains("Math.ceil(HIDDEN_MAP_TALE_SPACING_SCALE *"));
+        assert!(seating.contains("HIDDEN_MAP_TALE_MIN_SEPARATION"));
+        assert!(seating.contains("HIDDEN_MAP_TALE_SEPARATION_RANGE"));
+        assert!(EMBEDDED_INDEX.contains("HIDDEN_MAP_TALE_MIN_SEPARATION = 17"));
+        assert!(EMBEDDED_INDEX.contains("HIDDEN_MAP_TALE_SEPARATION_RANGE = 10"));
         assert!(seating.contains("hiddenMapMonsterPriority"));
         assert!(seating.contains("other < priority"));
         let viewport = EMBEDDED_INDEX
@@ -13059,7 +13297,7 @@ mod tests {
             .and_then(|tail| tail.split("function drawPlanetMap").next())
             .expect("pre-globe chart marginalia");
         assert!(planet_tales.contains("candidates.slice(0, 1)"));
-        assert!(planet_tales.contains("const size = 3 *"));
+        assert!(planet_tales.contains("const size = 1.85 * HIDDEN_MAP_TALE_SCALE *"));
         assert!(EMBEDDED_INDEX.contains("drawHiddenMapParchment(hiddenMap);\n  drawHiddenMapMonsters(hiddenMap);"));
         assert!(EMBEDDED_INDEX.contains("drawHiddenMapFrontier(tiles);"));
         assert!(EMBEDDED_INDEX.contains("if (camera.chart && !spectator)"));
@@ -13978,23 +14216,170 @@ mod tests {
     }
 
     #[test]
-    fn browser_tile_yields_are_numbered_in_centered_semantic_rows() {
+    fn browser_tile_yields_are_compact_electric_and_centered_at_sixty_percent() {
         assert!(EMBEDDED_INDEX.contains(
-            "[\"science\", \"culture\", \"faith\"],\n  [\"food\", \"production\", \"gold\"],"
+            "const YPIP = { food:\"#69e64f\", production:\"#ff8b3d\", gold:\"#ffda3b\",\n               science:\"#36cfff\", culture:\"#ca74ff\", faith:\"#f6e5a8\" };"
         ));
+        assert!(EMBEDDED_INDEX.contains("const STRATEGIC_YIELD_CENTER_FRACTION = .60;"));
+        assert!(EMBEDDED_INDEX.contains(
+            "[\"food\", \"production\", \"gold\"],\n  [\"science\", \"culture\", \"faith\"],"
+        ));
+        let parts = EMBEDDED_INDEX
+            .split("function yieldPipParts")
+            .nth(1)
+            .and_then(|tail| tail.split("function tileYieldMarkers").next())
+            .expect("tile-yield pip expansion");
+        assert!(parts.contains("pips.push({kind, portion:1});"));
+        assert!(parts.contains("pips.push({kind, portion:remainder});"));
+        assert!(parts.contains("Math.round(raw * 10) / 10"));
+
+        let formations = EMBEDDED_INDEX
+            .split("function yieldPipOffsets")
+            .nth(1)
+            .and_then(|tail| tail.split("function yieldPipCluster").next())
+            .expect("tile-yield pip formations");
+        assert!(formations.contains("if (count === 2) return [[0, -step / 2], [0, step / 2]];"));
+        assert!(formations.contains("if (count === 3)"));
+        assert!(formations.contains("Math.sqrt(3)"));
+        assert!(formations.contains("if (count === 4) return ["));
+        assert!(formations.contains("const gap = .92 * r / 4.4;"));
+        assert!(formations.contains("const step = r * 2 + gap;"));
+
+        let cluster = EMBEDDED_INDEX
+            .split("function yieldPipCluster")
+            .nth(1)
+            .and_then(|tail| tail.split("function yieldPipRow").next())
+            .expect("tile-yield pip cluster");
+        assert!(cluster.contains("const summary = pips.length >= 5;"));
+        assert!(cluster.contains("const iconR = summary ? r * 1.7 : r;"));
+        assert!(cluster.contains("const label = summary ? fmtYield(Number(amount)) : \"\";"));
+        assert!(cluster.contains("const edge = sign => sign.r * (1 + YIELD_PLATE_PAD);"));
 
         let renderer = EMBEDDED_INDEX
             .split("function drawTileYields")
             .nth(1)
             .and_then(|tail| tail.split("function tri(").next())
             .expect("tile-yield renderer");
-        assert!(renderer.contains(".filter(([, amount]) => amount >= 1)"));
-        assert!(renderer.contains("(i - (entries.length - 1) / 2) * step"));
-        assert!(renderer.contains("cx.fillStyle = YPIP[kind]"));
-        assert!(renderer.contains("cx.fillText(label, px, py + .5)"));
-        assert!(renderer.contains("const label = fmtYield(amount)"));
-        assert!(!renderer.contains("YICON[kind]"));
-        assert!(!renderer.contains("yieldGlyph"));
+        assert!(renderer.contains("const rows = yieldPipLayout(full, r);"));
+        // The plate is painted once per cluster, under that cluster's signs.
+        assert!(renderer.contains("drawYieldPlate(cluster.signs, clusterX, cy, worked);"));
+        assert!(renderer.contains("const visualRows = rows.slice().reverse();"));
+        assert!(renderer.contains(
+            "drawYieldPip(sign.kind, clusterX + sign.x, cy + sign.y,\n          sign.r, sign.portion, sign.label);"
+        ));
+        assert!(renderer.contains("const totalHeight = visualRows.reduce"));
+        assert!(renderer.contains("let top = strategicYieldCenterY(y) - totalHeight / 2;"));
+        assert!(EMBEDDED_INDEX.contains("function drawYieldPipGlyph(kind, x, y, r)"));
+        let placement = EMBEDDED_INDEX
+            .split("function strategicYieldCenterY")
+            .nth(1)
+            .and_then(|tail| tail.split("// The tiny signs borrow").next())
+            .expect("strategic tile-yield vertical placement");
+        assert!(placement.contains("const tileTop = y - S * YS;"));
+        assert!(placement.contains("const tileHeight = S * YS * 2;"));
+        assert!(
+            placement.contains("return tileTop + tileHeight * STRATEGIC_YIELD_CENTER_FRACTION;")
+        );
+        let pip = EMBEDDED_INDEX
+            .split("function drawYieldPip(kind, x, y, r, portion, label = \"\")")
+            .nth(1)
+            .and_then(|tail| tail.split("function drawTileYields").next())
+            .expect("numbered tile-yield pip renderer");
+        assert!(pip.contains("cx.strokeText(label, x, y + r * .04);"));
+        assert!(pip.contains("cx.fillText(label, x, y + r * .04);"));
+        assert!(pip.contains("label.length === 1 ? 1.25"));
+        // A sign on the plate carries no rim, no shadow and no keyline of its
+        // own — every one of those was a per-sign repeat of what the cluster's
+        // plate now says once.
+        assert!(!pip.contains("cx.shadowColor"));
+        assert!(!pip.contains("cx.arc(x, y, r + "));
+        assert!(!EMBEDDED_INDEX.contains("YIELD_PIP_RIM"));
+        assert!(!EMBEDDED_INDEX.contains("function yieldPipLines"));
+        assert!(!EMBEDDED_INDEX.contains("function yieldPipRuns"));
+        assert!(EMBEDDED_INDEX.contains("class=\"tip-yield-group\""));
+        assert!(EMBEDDED_INDEX.contains("--tip-yield-portion:${Math.round(portion * 100)}%"));
+    }
+
+    /// The signs on the plate are Civilization VI's own, cut from the very
+    /// texture the plate geometry was measured against. Each is one finished
+    /// circular icon, so nothing paints a disc under one -- the disc and the
+    /// pictograph are what the viewer drew while it had no sheet to draw.
+    #[test]
+    fn browser_tile_yield_signs_are_the_base_games_own_icons() {
+        assert!(EMBEDDED_CIV6_YIELD_ICONS.starts_with(b"\x89PNG\r\n\x1a\n"));
+        assert!(EMBEDDED_CIV6_YIELD_ICONS.len() > 8_000);
+        assert!(
+            EMBEDDED_INDEX.contains("CIV6_YIELD_ICON_ATLAS.src = \"/assets/civ6-yield-icons.png\"")
+        );
+        assert!(EMBEDDED_INDEX.contains(
+            "const CIV6_YIELD_ICON_KINDS = [\"food\", \"production\", \"gold\",\n                               \"science\", \"culture\", \"faith\"];"
+        ));
+        assert!(EMBEDDED_INDEX.contains("const CIV6_YIELD_ICON_CELL = 80;"));
+
+        let sign = EMBEDDED_INDEX
+            .split("function drawYieldSign(kind, x, y, r, fraction) {")
+            .nth(1)
+            .and_then(|tail| tail.split("function drawYieldPip").next())
+            .expect("tile-yield sign renderer");
+        assert!(sign.contains("if (civ6YieldIconReady(kind)) {"));
+        assert!(EMBEDDED_INDEX
+            .contains("return CIV6_YIELD_ICON_ATLAS_READY && CIV6_YIELD_ICON_INDEX.has(kind);"));
+        assert!(sign.contains("if (fraction >= 1) { drawCiv6YieldIcon(kind, x, y, r); return; }"));
+        // A fractional sign is that same icon twice: a dimmed ghost of all of
+        // it, then the earned part over the top. Never a second kind of mark.
+        assert!(sign.contains("cx.globalAlpha *= .26;"));
+        assert!(sign.contains("cx.rect(x - r, y + r - r * 2 * fraction, r * 2, r * 2 * fraction);"));
+        // And the drawn disc is still there underneath the branch, for the
+        // first frame and for a sheet the browser could not fetch.
+        assert!(sign.contains("cx.fillStyle = YPIP[kind] || \"#cccccc\";"));
+        assert!(sign.contains("drawYieldPipGlyph(kind, x, y, r);"));
+
+        // The tooltip counts with the same six signs off the same sheet, so a
+        // hover is never a second, private vocabulary for the same yield.
+        assert!(EMBEDDED_INDEX.contains("--tip-yield-cell:${cell};"));
+        assert!(EMBEDDED_INDEX.contains(
+            "url(\"/assets/civ6-yield-icons.png\") calc(var(--tip-yield-cell) * 20%) 0 / 600% 100% no-repeat,"
+        ));
+    }
+
+    #[test]
+    fn browser_tile_yield_clusters_stand_on_one_shaded_plate() {
+        // Measured off the base game's own map overlay atlas rather than
+        // guessed: rgb(8,12,16) at 92%, a 43px sign cell around a 38px icon.
+        assert!(EMBEDDED_INDEX.contains("const YIELD_PLATE_FILL = \"rgba(8,12,16,.92)\";"));
+        assert!(EMBEDDED_INDEX.contains("const YIELD_PLATE_PAD = .13;"));
+        assert!(EMBEDDED_INDEX.contains("const YIELD_PLATE_SOLO_CORNER = .84;"));
+        let hull = EMBEDDED_INDEX
+            .split("function yieldPlateHull")
+            .nth(1)
+            .and_then(|tail| tail.split("function traceYieldPlate").next())
+            .expect("tile-yield plate hull");
+        // The hull is what makes a capsule, a rounded triangle and a rounded
+        // square fall out of one routine instead of three special cases.
+        assert!(hull.contains("if (points.length < 3) return points;"));
+        assert!(hull.contains("(a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x)"));
+        let trace = EMBEDDED_INDEX
+            .split("function traceYieldPlate")
+            .nth(1)
+            .and_then(|tail| tail.split("function drawYieldPlate").next())
+            .expect("tile-yield plate outline");
+        assert!(trace
+            .contains("cx.roundRect(x - r, y - r, r * 2, r * 2, r * YIELD_PLATE_SOLO_CORNER);"));
+        assert!(trace
+            .contains("if (sign.label) { cx.moveTo(x + r, y); cx.arc(x, y, r, 0, 7); return; }"));
+        assert!(trace.contains("Math.atan2(-(next.x - point.x), next.y - point.y)"));
+        assert!(trace.contains("outward[(index + hull.length - 1) % hull.length], outward[index]"));
+        let plate = EMBEDDED_INDEX
+            .split("function drawYieldPlate")
+            .nth(1)
+            .and_then(|tail| tail.split("function drawYieldPip").next())
+            .expect("tile-yield plate renderer");
+        assert!(plate.contains("traceYieldPlate(signs, dx, dy);"));
+        assert!(plate.contains("cx.fillStyle = YIELD_PLATE_FILL;"));
+        assert!(plate.contains("cx.shadowColor = YIELD_PLATE_SHADOW;"));
+        // One keyline around the worked cluster, where there used to be one
+        // around every sign in it.
+        assert!(plate.contains("cx.strokeStyle = YIELD_PLATE_WORKED_EDGE;"));
     }
 
     #[test]
@@ -14038,7 +14423,7 @@ mod tests {
             .nth(1)
             .and_then(|tail| tail.split("function drawFeatureEffects").next())
             .expect("minimal strategic mountain icon renderer");
-        assert!(icon.contains("drawMinimalVolcanoCaldera(x, y, STRATEGIC_MOUNTAIN_ICON_SCALE * size)"));
+        assert!(icon.contains("drawMinimalVolcanoCaldera(x, y, STRATEGIC_MOUNTAIN_ICON_SCALE * size,\n                              false, null, true)"));
         assert!(icon.contains("drawMinimalMountainGlyph(x, y, STRATEGIC_MOUNTAIN_ICON_SCALE * size)"));
         assert!(!icon.contains("Atlas"));
         let mountain = EMBEDDED_INDEX
@@ -14049,17 +14434,43 @@ mod tests {
         assert!(mountain.contains("const silhouette = () =>"));
         assert!(mountain.contains("cx.fillStyle = \"#8c9991\""));
         assert!(mountain.contains("cx.strokeStyle = \"#263a36\""));
-        assert!(EMBEDDED_INDEX.contains("const STRATEGIC_MOUNTAIN_ICON_WIDTH_SCALE = 1.2;"));
-        assert!(EMBEDDED_INDEX.contains("const STRATEGIC_MOUNTAIN_ICON_HEIGHT_SCALE = 1.5;"));
+        // The mountain owns nearly the whole usable face: its feet are derived
+        // from the lower corners and its peak from the upper point, with room
+        // for the outline instead of relying on the flat-map clip.
+        assert!(EMBEDDED_INDEX.contains("const STRATEGIC_MOUNTAIN_TILE_EDGE_INSET = 1.75;"));
+        assert!(EMBEDDED_INDEX.contains("S * SQ3 / 2 - STRATEGIC_MOUNTAIN_TILE_EDGE_INSET"));
+        assert!(EMBEDDED_INDEX.contains("S * YS / 2 - STRATEGIC_MOUNTAIN_TILE_EDGE_INSET"));
+        assert!(EMBEDDED_INDEX.contains("-S * YS + STRATEGIC_MOUNTAIN_TILE_EDGE_INSET"));
+        assert!(EMBEDDED_INDEX
+            .contains("STRATEGIC_MOUNTAIN_FOOT_TARGET_X /\n  (STRATEGIC_MOUNTAIN_ICON_SCALE *"));
+        assert!(EMBEDDED_INDEX
+            .contains("(STRATEGIC_MOUNTAIN_FOOT_TARGET_Y - STRATEGIC_MOUNTAIN_PEAK_TARGET_Y) /"));
         assert!(mountain.contains("cx.scale(k * STRATEGIC_MOUNTAIN_ICON_WIDTH_SCALE,"));
         assert!(mountain.contains("k * STRATEGIC_MOUNTAIN_ICON_HEIGHT_SCALE);"));
+        assert!(mountain.contains("cx.translate(0, STRATEGIC_MOUNTAIN_GLYPH_Y_OFFSET);"));
+        assert!(mountain.contains("STRATEGIC_MOUNTAIN_SHADOW_Y * iconSize"));
+
+        // The volcano uses the matching lower-left/lower-right vertices (the
+        // 8 and 4 o'clock corners) and stops its glowing summit at 90% of the
+        // tile's upper half-height. Its shadow stays in raw tile coordinates
+        // so the taller cone does not rely on clipping to appear contained.
+        assert!(EMBEDDED_INDEX.contains("const STRATEGIC_VOLCANO_FOOT_TARGET_X = S * SQ3 / 2;"));
+        assert!(EMBEDDED_INDEX.contains("const STRATEGIC_VOLCANO_FOOT_TARGET_Y = S * YS / 2;"));
+        assert!(EMBEDDED_INDEX.contains("const STRATEGIC_VOLCANO_TOP_TARGET_Y = -S * YS * .90;"));
         let volcano = EMBEDDED_INDEX
             .split("function drawMinimalVolcanoCaldera")
             .nth(1)
             .and_then(|tail| tail.split("function drawStrategicMountainIcon").next())
             .expect("minimal volcano caldera renderer");
         assert!(volcano.contains("const silhouette = () =>"));
-        assert!(volcano.contains("cx.ellipse(0, -6.2, 5.3, 1.8"));
+        assert!(volcano.contains("cx.scale(k * STRATEGIC_VOLCANO_ICON_WIDTH_SCALE,"));
+        assert!(volcano.contains("k * STRATEGIC_VOLCANO_ICON_HEIGHT_SCALE);"));
+        assert!(volcano.contains("cx.translate(0, STRATEGIC_VOLCANO_GLYPH_Y_OFFSET);"));
+        assert!(volcano.contains("STRATEGIC_VOLCANO_SHADOW_Y * iconSize"));
+        assert!(EMBEDDED_INDEX.contains("const STRATEGIC_VOLCANO_GLYPH_TOP_Y = -73 / 9;"));
+        assert!(EMBEDDED_INDEX.contains("const STRATEGIC_VOLCANO_CALDERA_Y ="));
+        assert!(volcano.contains("const craterY = strategic ? STRATEGIC_VOLCANO_CALDERA_Y : -6.2;"));
+        assert!(volcano.contains("strategic ? \"#ff8a32\" : \"#ed6b35\""));
         assert!(volcano.contains("cx.strokeStyle = \"#e75e31\";"));
         assert!(!volcano.contains("cx.ellipse(0, 1, 9.5, 5.2"));
         assert!(volcano.contains("if (!ice)"));
@@ -16338,6 +16749,237 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("function wakeSleepers()"));
     }
 
+    /// The played game wears Civilization VI's own arrangement, so that a
+    /// person who has played that game can drive this one without being told
+    /// where anything is. The geometry below is read off the installed game's
+    /// interface definitions (`Base/Assets/UI`), not remembered:
+    /// `TopPanel.xml` for the yield strip, `LaunchBar.xml` for the two ringed
+    /// tree hooks that lead the bar, `WorldTracker.xml` for the research and
+    /// civic panels under it, `MinimapPanel.xml` (`Anchor="L,B"`) for the
+    /// chart, and `ActionPanel.xml` / `NotificationPanel.xml` (`Anchor="R,B"`)
+    /// for the corner End Turn owns and the rail that climbs out of it.
+    #[test]
+    fn browser_seats_a_person_in_the_civ_six_arrangement() {
+        for piece in [
+            "id=\"civtop\"",
+            "id=\"worldtracker\"",
+            "id=\"actionpanel\"",
+            "id=\"rankingsbtn\"",
+            "function playingSolo() { return !!state && !SPEC; }",
+            "function drawSoloHud()",
+            "function drawCivTop()",
+            "function drawWorldTracker()",
+            "function launchTreeHook(kind)",
+            "document.body.classList.toggle(\"playing-solo\", solo);",
+        ] {
+            assert!(
+                EMBEDDED_INDEX.contains(piece),
+                "the single-player arrangement is missing {piece}"
+            );
+        }
+        // The arrangement is settled before the panels that live in it are
+        // drawn; otherwise the first frame of a played game paints the
+        // spectator's masthead and then throws it away.
+        let solo = EMBEDDED_INDEX
+            .find("  drawSoloHud();")
+            .expect("the arrangement must be part of the render pass");
+        let frame = EMBEDDED_INDEX
+            .find("draw(); drawSide(newWorld); drawMini(); drawPlayerHud(); drawUbar();")
+            .expect("the complete frame");
+        assert!(solo < frame);
+
+        // TopPanel.lua's `RefreshYields` runs Science, Culture, Faith, Gold,
+        // Tourism, in that order, and only Faith and Gold carry a balance
+        // beside their rate (`YieldButton_DoubleLabel`).
+        let strip = EMBEDDED_INDEX
+            .split_once("  const yields = !empire ? \"\" :\n")
+            .expect("the yield strip")
+            .1
+            .split_once("  const meters = !empire")
+            .expect("end of the yield strip")
+            .0;
+        let mut previous = 0;
+        for yield_key in [
+            "key:\"science\"",
+            "key:\"culture\"",
+            "key:\"faith\"",
+            "key:\"gold\"",
+            "key:\"tourism\"",
+        ] {
+            let at = strip
+                .find(yield_key)
+                .unwrap_or_else(|| panic!("the top panel is missing {yield_key}"));
+            assert!(
+                at > previous,
+                "the top panel must read in Civ 6's order; {yield_key} is out of place"
+            );
+            previous = at;
+        }
+        assert!(strip.contains("key:\"faith\", icon:\"☼\", stock:"));
+        assert!(strip.contains("key:\"gold\", icon:\"⛁\", stock:"));
+        assert!(!strip.contains("key:\"science\", icon:\"⌬\", stock:"));
+
+        // LaunchBar.xml opens with the tech tree and the civics tree, each
+        // ringed by the meter of what it is studying, and then runs
+        // Government, Religion, Great People.
+        assert!(EMBEDDED_INDEX.contains(
+            "(empireWorld ? launchTreeHook(\"science\") + launchTreeHook(\"culture\") : \"\") +"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "const LAUNCH_BAR_ORDER = [\"government\", \"religion\", \"people\", \"cities\","
+        ));
+        assert!(EMBEDDED_INDEX.contains("style=\"--ring:${pct}%\""));
+
+        // The corners. End Turn owns the lower right, the notification rail
+        // climbs out of it, the selected unit sits inboard of it, and the
+        // chart takes the lower left the standings masthead used to make
+        // unusable.
+        assert!(EMBEDDED_INDEX.contains(
+            "body.playing-solo #actionpanel {\n    position: absolute; z-index: 9; \
+             right: var(--panel-edge); bottom: var(--panel-edge);"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "top: auto; right: var(--panel-edge); bottom: var(--solo-corner-clearance);"
+        ));
+        assert!(EMBEDDED_INDEX.contains("flex-direction: column-reverse;"));
+        assert!(EMBEDDED_INDEX.contains("body.playing-solo .minimap-frame {"));
+        assert!(EMBEDDED_INDEX.contains("left: var(--panel-edge); right: auto;"));
+
+        // A played game does not carry the laboratory's Elo table across its
+        // sky; Civ 6 keeps the standings behind a report and so does this.
+        assert!(EMBEDDED_INDEX.contains(
+            "body.playing-solo:not(.solo-rankings) #playerhud,\n  \
+             body.playing-solo:not(.solo-rankings) #victoryhud { display: none; }"
+        ));
+        assert!(EMBEDDED_INDEX.contains("function toggleSoloRankings(open)"));
+
+        // The button says what is blocking it in that game's own words —
+        // `LOC_ACTION_PANEL_*` from `Base/Assets/Text/en_US/InGameText.xml`.
+        for (blocker, phrase) in [
+            ("research", "Choose research"),
+            ("civic", "Choose civic"),
+            ("produce", "Choose production"),
+            ("units", "Unit needs orders"),
+            ("capture", "Keep city?"),
+        ] {
+            assert!(
+                EMBEDDED_INDEX.contains(&format!("button: \"{phrase}\"")),
+                "the {blocker} blocker must read as Civ 6's own button does: {phrase}"
+            );
+        }
+        assert!(EMBEDDED_INDEX.contains(": \"Next turn\";"));
+
+        // The custom properties the arrangement composes are declared where
+        // `--panel-edge` is, or every `calc()` naming both is invalid at
+        // computed-value time and the panel silently falls back to `auto`.
+        let vars = EMBEDDED_INDEX
+            .find("  body.playing-solo #maparea {")
+            .expect("the arrangement's own custom properties");
+        let edge = EMBEDDED_INDEX
+            .find("--panel-edge: clamp(")
+            .expect("the shared edge gutter");
+        assert!(
+            EMBEDDED_INDEX[vars..].contains("--solo-corner-clearance: calc(var(--panel-edge)"),
+            "the corner clearance must be composed on #maparea"
+        );
+        assert!(edge < vars);
+
+        // A battlefield has no empire behind it, so the strip keeps the turn
+        // and the era and drops the rest, and neither the world tracker nor
+        // the two tree hooks are painted at all.
+        assert!(EMBEDDED_INDEX.contains("const empire = worldStandingsInPlay();"));
+        assert!(EMBEDDED_INDEX.contains("const yields = !empire ? \"\" :"));
+        assert!(EMBEDDED_INDEX.contains("const meters = !empire ? \"\" :"));
+        assert!(
+            EMBEDDED_INDEX.contains("if (!playingSolo() || !RULES || !worldStandingsInPlay()) {")
+        );
+
+        // Civ 6 prints the eureka on every tree node, and the inspiration on
+        // the civic panel. Showing the bolt only once the boost has landed
+        // says it at the one moment it is worthless.
+        assert!(EMBEDDED_INDEX.contains("function boostRequirement(spec) {"));
+        assert!(EMBEDDED_INDEX.contains("const BOOST_PHRASES = {"));
+        assert!(EMBEDDED_INDEX.contains("const BOOST_FAMILIES = ["));
+        assert!(EMBEDDED_INDEX.contains(
+            "const wants = !completed && !boosted.includes(n) ? boostRequirement(s) : \"\";"
+        ));
+        assert!(EMBEDDED_INDEX.contains("const wants = isBoosted ? \"\" : boostRequirement(spec);"));
+        // Every boost the ruleset ships gets a sentence; the generic fallback
+        // exists for a trigger added tomorrow, not for the ones shipped now.
+        {
+            let rules = crate::rules::Rules::embedded();
+            let phrases = EMBEDDED_INDEX
+                .split_once("const BOOST_PHRASES = {")
+                .expect("the bare triggers")
+                .1
+                .split_once("\n};")
+                .expect("the bare trigger table's end")
+                .0;
+            let families = EMBEDDED_INDEX
+                .split_once("const BOOST_FAMILIES = [")
+                .expect("the prefixed triggers")
+                .1
+                .split_once("\n];")
+                .expect("the prefixed trigger table's end")
+                .0;
+            let mut unlabelled: Vec<String> = Vec::new();
+            for (name, boost) in rules
+                .techs
+                .iter()
+                .filter_map(|(name, spec)| spec.boost.as_ref().map(|b| (name, b)))
+                .chain(
+                    rules
+                        .civics
+                        .iter()
+                        .filter_map(|(name, spec)| spec.boost.as_ref().map(|b| (name, b))),
+                )
+            {
+                let trigger = &boost.trigger;
+                let bare = phrases.contains(&format!("\n  {trigger}:"));
+                let prefixed = trigger.split_once(':').is_some_and(|(head, _)| {
+                    families.contains(&format!("[\"{head}:\"")) || head == "unit_and_improve"
+                });
+                if !bare && !prefixed {
+                    unlabelled.push(format!("{name} ({trigger})"));
+                }
+            }
+            assert!(
+                unlabelled.is_empty(),
+                "these boosts would print their raw trigger: {}",
+                unlabelled.join(", ")
+            );
+        }
+
+        // Civilization VI opens a city on what it can build. The plot market
+        // is a fold at the foot of that column, never ahead of it.
+        let build = EMBEDDED_INDEX
+            .split_once("  let build = \"\";")
+            .expect("the city build column")
+            .1
+            .split_once("document.getElementById(\"cityscreen-build\").innerHTML = build;")
+            .expect("end of the city build column")
+            .0;
+        let producing = build
+            .find("city-group-head\">Producing")
+            .expect("the producing group");
+        let categories = build
+            .find("const order = [\"Districts\", \"Buildings\", \"Units\", \"Wonders\", \"Projects\"];")
+            .or_else(|| build.find("for (const category of order) {"))
+            .expect("the production categories");
+        let plots = build
+            .find("city-group-head\">Buy plots")
+            .expect("the plot market");
+        assert!(
+            producing < categories,
+            "a city opens on what it is producing"
+        );
+        assert!(
+            categories < plots,
+            "the plot market comes after the production list"
+        );
+        assert!(build.contains("<details class=\"city-group city-plots\""));
+    }
+
     #[test]
     fn browser_next_action_prefers_nearby_unvisited_units_before_revisiting() {
         let start = EMBEDDED_INDEX
@@ -16379,12 +17021,20 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains(
             "function nextAction() {\n  if (!state || SPEC) return;\n  advanceToNextActionUnit(true);"
         ));
-        // The requested fixed action map invokes the new selector from key 1;
-        // unit roster cycling is no longer a global keyboard shortcut.
+        // Two different passes, two different keys. `.` and `,` are Civ 6's
+        // NextUnit and PrevUnit — a reversible walk of the roster — and `N` is
+        // the nearby-action pass this client has and that game does not. `1`
+        // is EndTurn there, so it can no longer be either of them.
         assert!(EMBEDDED_INDEX.contains("if (step > 0) { advanceToNextUnit(true); return; }"));
-        assert!(EMBEDDED_INDEX.contains(
-            "{id: \"NextAction\", key: \"1\", run: () => nextAction()},"
-        ));
+        assert!(
+            EMBEDDED_INDEX.contains("{id: \"NextAction\", key: \"n\", run: () => nextAction()},")
+        );
+        assert!(EMBEDDED_INDEX.contains("{id: \"NextUnit\", key: \".\", run: () => cycleUnit(1)},"));
+        assert!(
+            EMBEDDED_INDEX.contains("{id: \"PrevUnit\", key: \",\", run: () => cycleUnit(-1)},")
+        );
+        assert!(EMBEDDED_INDEX
+            .contains("{id: \"EndTurn\", key: \"1\", run: () => advanceTurn(false)},"));
         assert!(!EMBEDDED_INDEX.contains("id: \"NextUnitTab\""));
     }
 
@@ -16421,8 +17071,10 @@ mod tests {
             "function tileYieldMarkers(yields)",
             "function tileDetailYieldWords(yields, sign = false)",
             "const TILE_TIP_YIELD_ORDER = [\"food\", \"production\", \"gold\", \"science\", \"culture\", \"faith\"];",
+            "class=\"tip-yield-group\"",
             "class=\"tip-yield-marker\"",
-            "style=\"--tip-yield-fill:${YPIP[kind]};--tip-yield-ink:${YINK[kind]}\"",
+            "--tip-yield-fill:${YPIP[kind]};--tip-yield-cell:${cell};",
+            "--tip-yield-portion:${Math.round(portion * 100)}%",
             "function tileBuiltTipLines(t, city)",
             "function districtTipLines(t)",
             "Base district yields:",
@@ -17400,11 +18052,13 @@ mod tests {
         // Every place a panel or an overlay moves refits a fitted area.
         assert_eq!(
             EMBEDDED_INDEX.matches("refitMapAreaToChrome();").count(),
-            6,
+            8,
             "a fitted map area follows the standings, the overlay switches, \
-             both HUD layout paths, and a HUD section fold — six call sites; \
-             a seventh means a new one belongs in this count, a fifth means \
-             one was dropped"
+             both HUD layout paths, a HUD section fold, and — the two the \
+             Civ 6 arrangement adds — taking that arrangement up or putting \
+             it down, and opening or closing the rankings report behind it: \
+             eight call sites; a ninth means a new one belongs in this count, \
+             a seventh means one was dropped"
         );
     }
 

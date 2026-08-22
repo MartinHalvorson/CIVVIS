@@ -6,6 +6,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+import time
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -1240,12 +1241,52 @@ class RecoveryTests(unittest.TestCase):
         idle = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
         spinning = subprocess.Popen([sys.executable, "-c", "while True: pass"])
         try:
-            self.assertGreater(supervisor.process_cpu_percent(spinning.pid), 1.0)
+            # Let interpreter startup finish first. The supervisor measures a
+            # server that has been up and serving, never a process 250ms old,
+            # and startup burn landing inside the sample window is not the
+            # compute this is looking for. Reading it as compute is what made
+            # this test fail on CI with "1.0 not less than 1.0".
+            time.sleep(0.5)
+            self.assertGreater(supervisor.process_cpu_percent(spinning.pid), 50.0)
             self.assertLess(supervisor.process_cpu_percent(idle.pid), 1.0)
         finally:
             for process in (idle, spinning):
                 process.kill()
                 process.wait()
+
+    def test_a_process_that_stopped_computing_stops_reading_as_busy(self):
+        """The reading `process_busy` gates hang recovery on must decay.
+
+        `unavailable_recovery_due` never replaces a busy process unless an
+        operator set `--busy-timeout`, so a measurement that stays high after
+        the work stops leaves a hung game running forever. This is the case
+        the old `ps -o %cpu=` branch got wrong on Linux, where that column is
+        CPU time over the process's whole life.
+        """
+        worked = subprocess.Popen(
+            [sys.executable, "-c",
+             "import time\nend = time.time() + 1.5\n"
+             "while time.time() < end: pass\ntime.sleep(60)"]
+        )
+        try:
+            self.assertGreater(supervisor.process_cpu_percent(worked.pid), 50.0)
+            time.sleep(1.5)
+            self.assertLess(supervisor.process_cpu_percent(worked.pid), 1.0)
+            self.assertFalse(supervisor.process_busy(worked, None))
+        finally:
+            worked.kill()
+            worked.wait()
+
+    def test_cumulative_cpu_column_is_parsed_in_every_shape_ps_prints(self):
+        self.assertAlmostEqual(supervisor.parse_cpu_time("0:00.01"), 0.01)
+        self.assertAlmostEqual(supervisor.parse_cpu_time("  1:30  "), 90.0)
+        self.assertAlmostEqual(supervisor.parse_cpu_time("1:02:03"), 3_723.0)
+        self.assertAlmostEqual(supervisor.parse_cpu_time("2-03:04:05"), 183_845.0)
+        for junk in ("", "   ", "not a time", "1:2:3:4", "-"):
+            self.assertIsNone(supervisor.parse_cpu_time(junk), junk)
+
+    def test_a_zero_window_cannot_yield_a_rate(self):
+        self.assertIsNone(supervisor.process_cpu_percent(os.getpid(), window=0.0))
 
     def test_liveness_probe_reports_truth_without_killing_the_process(self):
         process = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
