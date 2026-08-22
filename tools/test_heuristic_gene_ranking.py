@@ -14,7 +14,7 @@ import heuristic_gene_ranking as ranking  # noqa: E402
 class TheTableIsDerived(unittest.TestCase):
     EXPECTED_COLUMNS = (
         "| Rank | Gene | Description | Default | ± Wins Last 10k | ± Wins 10k Prior | "
-        "Total (on) Win rate | Total (off) Win rate | Total Games (on+off) | "
+        "Total (on) Win rate | Total (off) Win rate | Diff | "
         "cost (compute) | cost (time) |"
     )
 
@@ -28,10 +28,10 @@ class TheTableIsDerived(unittest.TestCase):
 
     def test_every_screenable_gene_is_visible(self):
         ledger = json.loads(ranking.LEDGER_JSON.read_text())
-        native, _ = ranking.load_sources(ledger)
+        measured, _ = ranking.load_sources(ledger)
         text = ranking.RANKING_MD.read_text()
         for tag in ranking.screenable_tags():
-            if tag in native:
+            if tag in measured:
                 self.assertIn(f"`{tag}`", text, tag)
             else:
                 self.assertIn("## Awaiting measurement", text)
@@ -50,6 +50,58 @@ class TheTableIsDerived(unittest.TestCase):
             if line.startswith("| Rank |")
         )
         self.assertEqual(header, self.EXPECTED_COLUMNS)
+
+    def _ranked_rows(self):
+        """Every ranked row of the main table, split into its cells."""
+        lines = ranking.RANKING_MD.read_text().splitlines()
+        start = lines.index(self.EXPECTED_COLUMNS) + 2
+        rows = []
+        for line in lines[start:]:
+            if not line.startswith("| "):
+                break
+            rows.append([c.strip() for c in line.strip().strip("|").split(" | ")])
+        return rows
+
+    def test_diff_is_the_on_rate_minus_the_off_rate(self):
+        """The column that replaced the pooled game count (operator, 2026-08-22).
+
+        It is the WHOLE on−off difference, so it sits at roughly twice the
+        scale of the win columns beside it and must be judged against a
+        screen's difference band, not the halved column band the table prints.
+        """
+        ledger = json.loads(ranking.LEDGER_JSON.read_text())
+        measured, _ = ranking.load_sources(ledger)
+        rows = self._ranked_rows()
+        self.assertGreater(len(rows), 50)
+        for cells in rows:
+            history = measured[cells[1].strip("`")]
+            on_games = sum(m["n_on"] for m in history)
+            off_games = sum(m["n_off"] for m in history)
+            on = sum(m["win_on"] * m["n_on"] for m in history) / on_games
+            off = sum(m["win_off"] * m["n_off"] for m in history) / off_games
+            self.assertEqual(cells[8], f"{100 * (on - off):+.2f}pp", cells[1])
+            # Taken off the unrounded rates, so it can land a hundredth away
+            # from subtracting the two printed cells by eye — 0.01pp against a
+            # band of half a point. Never further: that would be a real slip.
+            shown = float(cells[6].split("%")[0]) - float(cells[7].split("%")[0])
+            self.assertAlmostEqual(100 * (on - off), shown, delta=0.011, msg=cells[1])
+        self.assertNotIn("Total Games (on+off)", ranking.RANKING_MD.read_text())
+
+    def test_each_win_rate_cell_carries_its_own_sample_size(self):
+        """`n` is per arm, not one pooled figure: the arms are equal only while
+        every screen that measured a gene split them evenly, and the row reads
+        them from `n_on`/`n_off` separately so an uneven screen shows up."""
+        for cells in self._ranked_rows():
+            for cell in (cells[6], cells[7]):
+                self.assertRegex(cell, r"^\d+\.\d\d% \(n=[\d,]+\)$", cells[1])
+
+    def test_descriptions_print_whole(self):
+        """The Description column was widened 160 → 480 characters, which is
+        past the longest first sentence in the registry — so nothing clips."""
+        longest = max(len(d) for d in ranking.descriptions().values())
+        self.assertLess(longest, ranking.DESCRIPTION_CHARS)
+        for cells in self._ranked_rows():
+            self.assertNotIn("\u2026", cells[2], cells[1])
 
     def test_cost_uses_the_newest_real_measurement_and_never_invents_zero(self):
         history = [
