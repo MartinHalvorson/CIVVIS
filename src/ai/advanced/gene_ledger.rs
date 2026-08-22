@@ -491,8 +491,8 @@ mod tests {
         let applied = ai.apply_gene_ledger_with_forced_live(&forced);
         assert!(ai.governor_victory_lanes, "the named live treatment stands");
         assert!(
-            !ai.war_economy,
-            "neighbouring ledger-held treatments stay off unless named too"
+            !ai.war_patience,
+            "another ledger-held treatment stays off unless named too"
         );
         assert_eq!(applied.forced, vec!["governor-every-lane"]);
         assert!(

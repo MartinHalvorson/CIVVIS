@@ -5843,8 +5843,8 @@ mod tests {
             "the requested gene is restored in the arm's genome"
         );
         assert!(
-            !ai.war_economy,
-            "a neighbouring held gene stays off until the experiment names it"
+            !ai.war_patience,
+            "another held gene stays off until the experiment names it"
         );
 
         let host_only = super::forced_live_treatments(&["parallel-settlers".to_string()])
