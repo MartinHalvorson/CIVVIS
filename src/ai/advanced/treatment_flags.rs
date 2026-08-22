@@ -165,6 +165,18 @@ impl AdvancedAi {
         self.idle_faith_patronage = false;
     }
 
+    /// Buy the second and third Scout while the world's borders are still
+    /// open — after Early Empire a city-state cannot be met by land at all.
+    /// See [`AdvancedAi::early_contact_window`].
+    pub fn enable_early_contact_window(&mut self) {
+        self.early_contact_window = true;
+    }
+
+    /// The twin of `enable_early_contact_window`.
+    pub fn disable_early_contact_window(&mut self) {
+        self.early_contact_window = false;
+    }
+
     /// A class earned and blocked reserves a city for the slot building,
     /// district, wonder or soldier that lifts the block, and a due cultural
     /// person sells duplicate works to make room. See
@@ -1483,6 +1495,26 @@ impl AdvancedAi {
         // Keeping it loyal, and not slotting cards that multiply zero.
         self.enable_loyalty_rate_alarm();
         self.enable_suzerain_cards_need_a_suzerainty();
+        // ★★★★ A TAG IN `ENGINE_REPAIR_TREATMENTS` WHOSE ENABLE IS MISSING
+        // HERE SCREENS AS EXACTLY INERT, AND SAYS SO IN A WAY THAT IS EASY TO
+        // READ AS A RESULT. `gene_screen` builds its treated seat from
+        // `enable_engine_repairs_universe` and then flips only the genes whose
+        // drawn bit differs from `Gene::after_setup_on` — which the table
+        // asserts is `true` for every engine repair. A repair this bundle
+        // never turns on is therefore off in BOTH arms of every pair, the two
+        // arms play byte-identical games, and the screen reports `Δ +0.0
+        // [+0.0, +0.0] z +0.00` for the gene. That is the signature: a
+        // zero-width confidence interval is not a null, it is a gene that was
+        // never varied. Three tags reached the tables before this line and
+        // burned 30 games saying nothing.
+        //
+        // The research economy's two counterparts on the culture tree, and the
+        // chain that fills every specialty district. `enable_engine_repairs`
+        // applies the ledger after this, so an unmeasured one is still off at
+        // deployment.
+        self.enable_culture_building_debt();
+        self.enable_culture_coverage();
+        self.enable_district_building_chain();
     }
 
     /// Plan each engagement's attacks as one joint problem instead of one
@@ -1601,7 +1633,6 @@ impl AdvancedAi {
     pub fn disable_builder_barbarian_safety(&mut self) {
         self.builder_barbarian_safety = false;
     }
-
     /// Credit a wonder's missing prerequisite buildings/districts with a
     /// share of the wonder's own production score. Evaluator arm
     /// `advanced_wonder_reach`; off in production.

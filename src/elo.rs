@@ -560,12 +560,6 @@ pub const FIRAXIS_ONLY_TREATMENTS: &[&str] = &[
     // Prices the Settler seat's tally (three a civic, two a tech); the native
     // lanes keep their bred yield weights.
     "tally-culture",
-    // Pays the Settler seat's tally for the Theater Square's own chain; the
-    // native lanes keep their bred building debts.
-    "culture-building-debt",
-    // Pays the Settler seat's tally for the Theater Square the empire has not
-    // got; the native lanes keep their bred district coverage.
-    "culture-coverage",
     // Reads the live mirror's fog around a settle site; the native forecast
     // sees every rival city.
     "frontier-loyalty",
@@ -608,10 +602,6 @@ pub const FIRAXIS_ONLY_TREATMENTS: &[&str] = &[
     // native `do_spy_mission` sets `spy.mission` and legality already
     // debounces, so the repair cannot fire there.
     "spy-mission-patience",
-    // Prices the Settler seat's tally for the buildings inside the districts
-    // it already stands, against Firaxis rivals who fill every one; the
-    // native lanes keep their bred building debts.
-    "district-building-chain",
     // Prices the Settler seat's pantheon against a host that grants a Settler
     // for it, bought with the one Faith card the live capital has; the
     // native lanes keep the shipped prefix and the bred policy weights.
@@ -686,6 +676,32 @@ pub const ENGINE_REPAIR_ECONOMY_TREATMENTS: &[&str] = &[
     "score-horizon",
     "one-launch-pad",
     "settler-target-hysteresis",
+    // ★★★★ THE RESEARCH ECONOMY SHIPS NATIVELY AND THE CULTURE ECONOMY DOES
+    // NOT, AND THE BOARD SHOWS IT. `research_economy` is set in
+    // `promoted_policy_envoy`, so every native seat already pays
+    // `RESEARCH_CAMPUS_COVERAGE` for a city with no Campus and
+    // `RESEARCH_BUILDING_DEBT` for a Campus with no Library. Its two
+    // counterparts on the other tree were classed host-only on the reasoning
+    // that "the native lanes keep their bred district coverage" — an
+    // assumption about the bred `Weights`, never a measurement.
+    //
+    // A six-seat census of the deployed genome at the deployment shape
+    // (74x46, nine city-states, 250 turns Online, seeds 90001000..4) puts the
+    // two trees side by side and the asymmetry is the live seat's, exactly:
+    // Campus in 82% of cities, Library 81%, University 74%; Theater Square
+    // **37%**, Amphitheater **35%**, Museum 29%. End-of-game culture ran
+    // 128.8 a turn against 153.7 of science, and civics 36.8 against 48.5
+    // techs. `culture_coverage`'s own writeup measured 82/27 and 72/21 on the
+    // live seat and named a game lost at t197 to a rival's tourism; the
+    // native seats lose the same way.
+    //
+    // These three are the instrument for that question, so they belong where
+    // a screen can price them. Screenable means OFF at deployment until a
+    // screen says otherwise (`apply_gene_ledger`), so this changes what can
+    // be measured and not what ships.
+    "culture-building-debt",
+    "culture-coverage",
+    "district-building-chain",
 ];
 
 /// Every live-bridge repair that fixes a CIVVIS engine defect, as evaluator
@@ -748,6 +764,11 @@ pub const ENGINE_REPAIR_TREATMENTS: &[&str] = &[
     "score-horizon",
     "one-launch-pad",
     "settler-target-hysteresis",
+    // The culture economy's two coverage terms and the chain that fills
+    // every specialty district: see the census in the economy half above.
+    "culture-building-debt",
+    "culture-coverage",
+    "district-building-chain",
 ];
 
 /// Register a selectable arm once, under a typed identity.  The factory,
@@ -7091,11 +7112,15 @@ mod tests {
             "era_paced_expansion",
             // The Settler seat's tally weights; the native lanes stay bred.
             "tally_culture",
-            // The Settler seat's tally price of that chain's buildings.
-            "culture_building_debt",
-            // The Settler seat's tally price of the coverage those weights
-            // never bought.
-            "culture_coverage",
+            // `culture_building_debt`, `culture_coverage` and
+            // `district_building_chain` left this list on 2026-08-21 (PR
+            // #2245). `tally_culture` above really is the host's score rule;
+            // those three are ordinary district-coverage and building-debt
+            // terms with no host semantics in them, and the native board
+            // shows the gap they were written for — Campus in 79-82% of
+            // cities against Theater Square in 33-37%. They are native
+            // repairs now, and the ledger withholds them until a screen
+            // prices them.
             // Reads the live mirror's fog around a settle site.
             "frontier_loyalty",
             // The Settler seat's tally price of a Great Person.
@@ -7129,10 +7154,6 @@ mod tests {
             // operation; native `do_spy_mission` sets `spy.mission` and
             // legality already debounces, so the repair cannot fire there.
             "spy_mission_patience",
-            // The Settler seat's tally for the buildings inside its
-            // districts, against Firaxis rivals who fill every one; the
-            // native lanes keep their bred building debts.
-            "district_building_chain",
             // The Settler seat's pantheon, and the Faith card that buys it,
             // against a host that grants a Settler for it; the native lanes
             // keep the shipped prefix and the bred policy weights.

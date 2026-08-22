@@ -12583,15 +12583,20 @@ fn a_theater_square_owes_its_buildings_the_way_a_campus_does() {
         building: crate::name!("amphitheater"),
     };
 
+    // ⚠ `_universe()`, not `enable_live_bridge()`: the tag became a screenable
+    // native repair on 2026-08-21 (PR #2245), so the ledger now withholds it
+    // from every bundle until a screen prices it. The mechanism is what this
+    // test pins, so it seats the gene explicitly — the same repair the eleven
+    // genes the first ledger withheld took.
     let mut live = AdvancedAi::new();
-    live.enable_live_bridge();
+    live.enable_live_bridge_universe();
     assert!(
         live.culture_building_debt,
-        "the live seat carries the treatment"
+        "the universe carries the treatment"
     );
     live.refresh_research_weight(&game);
     let mut withheld = AdvancedAi::new();
-    withheld.enable_live_bridge();
+    withheld.enable_live_bridge_universe();
     withheld.disable_culture_building_debt();
     withheld.refresh_research_weight(&game);
 
@@ -12713,15 +12718,17 @@ fn a_standing_district_owes_its_own_buildings_whatever_the_lane() {
 
     // The seat that plays the ladder: an explicit Diplomacy target with the
     // live bundle, and the same seat with only this treatment withheld.
+    // ⚠ `_universe()` — see the note in
+    // `a_theater_square_owes_its_buildings_the_way_a_campus_does`.
     let mut live = AdvancedAi::targeting(VictoryTarget::Diplomacy);
-    live.enable_live_bridge();
+    live.enable_live_bridge_universe();
     assert!(
         live.district_building_chain,
-        "the live seat carries the treatment"
+        "the universe carries the treatment"
     );
     live.refresh_research_weight(&game);
     let mut withheld = AdvancedAi::targeting(VictoryTarget::Diplomacy);
-    withheld.enable_live_bridge();
+    withheld.enable_live_bridge_universe();
     withheld.disable_district_building_chain();
     withheld.refresh_research_weight(&game);
 
@@ -13071,8 +13078,12 @@ fn a_regional_amenity_building_counts_the_cities_it_reaches() {
     let counts = EmpireCounts::default();
     let ordinary = AdvancedAi::new();
     let stock = ordinary.production_value(&game, 0, capital, &zoo, &plan, &counts);
+    // ⚠ `_universe()`: `amenity_district_path` is a ledger-withheld gene and
+    // `district_building_chain` became one on 2026-08-21 (PR #2245), so the
+    // deployed bundle prices the Zoo exactly as stock does and the arms are
+    // equal. The reach term is the mechanism this test pins, so it seats it.
     let mut live = AdvancedAi::new();
-    live.enable_live_bridge();
+    live.enable_live_bridge_universe();
     let priced = live.production_value(&game, 0, capital, &zoo, &plan, &counts);
     assert!(
         priced > stock,
@@ -15886,6 +15897,61 @@ fn idle_faith_buys_a_great_person_outright_only_for_a_seat_with_no_religion() {
     assert_eq!(claimed(&rich), 0, "gold does not buy a 40% race");
 }
 
+/// ★★★★ A ZERO-WIDTH CONFIDENCE INTERVAL IS NOT A NULL. `gene_screen` builds
+/// its treated seat from `enable_engine_repairs_universe` and flips only the
+/// genes whose drawn bit differs from `Gene::after_setup_on`, which the gene
+/// table asserts is `true` for every `ENGINE_REPAIR_TREATMENTS` tag. A repair
+/// the universe never turns on is off in BOTH arms, the arms play identical
+/// games, and the screen prints `Δ +0.0 [+0.0, +0.0] z +0.00` — which reads
+/// like a measured null and is not one. The culture economy's three tags
+/// reached the tables before their enables did and burned 30 games saying
+/// nothing.
+///
+/// This pins the two halves of the contract for them: the universe carries
+/// them, so the screen can vary them, and the ledger withholds them, so
+/// nothing ships unmeasured.
+#[test]
+fn the_culture_economy_is_in_the_native_universe_and_out_of_the_deployment() {
+    let mut universe = AdvancedAi::new();
+    universe.enable_engine_repairs_universe();
+    assert!(
+        universe.culture_coverage
+            && universe.culture_building_debt
+            && universe.district_building_chain,
+        "the native repair universe must carry every ENGINE_REPAIR_TREATMENTS tag, \
+         or the screen varies nothing"
+    );
+
+    let mut deployed = AdvancedAi::new();
+    deployed.enable_engine_repairs();
+    assert!(
+        !deployed.culture_coverage
+            && !deployed.culture_building_debt
+            && !deployed.district_building_chain,
+        "unmeasured means off at deployment; `apply_gene_ledger` withholds them"
+    );
+
+    for tag in [
+        "culture-coverage",
+        "culture-building-debt",
+        "district-building-chain",
+    ] {
+        assert!(
+            crate::elo::ENGINE_REPAIR_TREATMENTS.contains(&tag),
+            "{tag} is a native repair"
+        );
+        assert!(
+            !crate::elo::FIRAXIS_ONLY_TREATMENTS.contains(&tag),
+            "{tag} left the host-only list"
+        );
+        assert_eq!(
+            crate::ai::ledger_default_on(tag),
+            Some(false),
+            "{tag}: screenable and unmeasured, so off"
+        );
+    }
+}
+
 /// The gene is an opt-in: off in every bundle, flippable by name, in
 /// `PRODUCTION_OPT_INS`.
 #[test]
@@ -15901,6 +15967,71 @@ fn idle_faith_patronage_is_a_native_opt_in() {
     assert!(ai.idle_faith_patronage);
     ai.disable_idle_faith_patronage();
     assert!(!ai.idle_faith_patronage);
+}
+
+/// `early-contact-window` is separately screenable and never changes a stock,
+/// live, or deployed seat unless the evaluator explicitly selects it.
+#[test]
+fn early_contact_window_is_an_off_by_default_native_opt_in() {
+    let mut ai = AdvancedAi::new();
+    ai.enable_live_bridge_universe();
+    assert!(!ai.early_contact_window);
+    let (_, _, enable) = PRODUCTION_OPT_INS
+        .iter()
+        .find(|(_, tag, _)| *tag == "early-contact-window")
+        .expect("an opt-in row");
+    enable(&mut ai);
+    assert!(ai.early_contact_window);
+    ai.disable_early_contact_window();
+    assert!(!ai.early_contact_window);
+}
+
+/// The extra Scout is valuable only inside the one window the gene names:
+/// there must be a living unmet city-state, the seat must not have reached
+/// Early Empire, and the three-eye ceiling must still have room.
+#[test]
+fn early_contact_value_closes_at_the_civic_contact_and_scout_gates() {
+    let mut game = Game::new(2, 24, 16, 90_007_001, 80, 1);
+    let city_state = game
+        .players
+        .iter()
+        .find(|player| player.is_minor && !player.is_barbarian)
+        .map(|player| player.id)
+        .expect("one city-state");
+    game.players[0].met.remove(&city_state);
+    game.players[city_state].met.remove(&0);
+
+    let mut ai = AdvancedAi::new();
+    let one_eye = EmpireCounts {
+        scouts: 1,
+        ..EmpireCounts::default()
+    };
+    assert_eq!(ai.early_contact_value(&game, 0, &one_eye), 0.0);
+
+    ai.enable_early_contact_window();
+    assert_eq!(
+        ai.early_contact_value(&game, 0, &one_eye),
+        EARLY_CONTACT_UNMET_VALUE / 2.0
+    );
+
+    let three_eyes = EmpireCounts {
+        scouts: EARLY_CONTACT_SCOUT_MAX,
+        ..EmpireCounts::default()
+    };
+    assert_eq!(ai.early_contact_value(&game, 0, &three_eyes), 0.0);
+
+    game.players[0].civics.insert(crate::name!("early_empire"));
+    assert_eq!(ai.early_contact_value(&game, 0, &one_eye), 0.0);
+    game.players[0].civics.remove(&crate::name!("early_empire"));
+
+    game.players[0].met.insert(city_state);
+    game.players[city_state].met.insert(0);
+    assert_eq!(ai.early_contact_value(&game, 0, &one_eye), 0.0);
+
+    game.players[0].met.remove(&city_state);
+    game.players[city_state].met.remove(&0);
+    game.players[city_state].alive = false;
+    assert_eq!(ai.early_contact_value(&game, 0, &one_eye), 0.0);
 }
 
 #[test]

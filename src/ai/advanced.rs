@@ -3732,6 +3732,56 @@ pub struct AdvancedAi {
     /// Engineer or Merchant is worth something. Gold purchases keep their
     /// gate. Off everywhere by default; opt-in gene `idle-faith-patronage`.
     pub idle_faith_patronage: bool,
+    /// Buy the second and third Scout while the world's borders are still
+    /// open, because after that a city-state cannot be met by land at all.
+    ///
+    /// ★★★★ THE CONTACT WINDOW CLOSES ONCE, AT TURN 23-30, AND NEVER REOPENS.
+    /// `early_empire` grants its holder `open_borders: 1`, which
+    /// `Game::has_open_borders` reads as that seat's borders having CLOSED —
+    /// and a city-state adopts it like anyone else. A Scout's `sight` is the
+    /// ruleset default of **2**, while a developed city-state owns out to
+    /// radius 2-3, so seeing the seat means standing ON its tiles, which a
+    /// non-suzerain may no longer do. `record_contact` is vision-based
+    /// (`observe_contacts` looks for a city or unit the seat can SEE), so the
+    /// land route to first contact simply ends.
+    ///
+    /// A six-seat census of the deployed genome at the deployment shape
+    /// (74x46, nine city-states, 250-turn Online, seeds 90007000..) measures
+    /// the shutter closing. Every major adopted Early Empire on **turns 23,
+    /// 28, 30, 28, 30, 30**, and a land flood-fill from the capital over tiles
+    /// the closed-border rule still admits reaches:
+    ///
+    /// | turn | walkable land | city-states it can stand beside |
+    /// |---|---|---|
+    /// | 10 | 1380 of 1383 | **9 of 9** |
+    /// | 25 | 1367 of 1383 | **9 of 9** |
+    /// | 40 | 1209 of 1383 | **0.17 of 9** |
+    /// | 80 | 1125 of 1383 | 0.33 of 9 |
+    ///
+    /// Eighty-seven percent of the land is still walkable at t40 and not one
+    /// city-state can be reached, because what closed is not the map but the
+    /// last two tiles of every approach. The seat had met 1.67 of nine by t25
+    /// and 2.50 by t40; the rest arrive over the next two hundred turns
+    /// through wars, border growth and coastal sight, and each one arrives
+    /// with two hundred turns of Envoy income already spent.
+    ///
+    /// This is why an earlier cut of this idea measured inert: it priced a
+    /// Scout by `research_horizon`, which is nearly flat early, so the extra
+    /// eyes arrived at t80-120 — after the shutter. The window, not the
+    /// horizon, is the gate.
+    ///
+    /// With this on, both vetoes in the unit arm stand down — the Scout line
+    /// and the army-composition ceiling that files a Scout under land
+    /// military — while the seat has not yet adopted Early Empire itself, holds
+    /// fewer than `EARLY_CONTACT_SCOUT_MAX` Scouts, and has a living
+    /// city-state it has never met. The seat's own civic is the signal: it is
+    /// information the seat plainly has, and on this board every seat crosses
+    /// that line within seven turns of the others. Once it crosses, the
+    /// historical veto returns unchanged and nothing later in the game is
+    /// touched.
+    ///
+    /// Off everywhere by default; opt-in gene `early-contact-window`.
+    pub early_contact_window: bool,
 
     /// ★★★★ A GREAT PERSON THE EMPIRE HAS EARNED AND CANNOT USE IS A RACE
     /// LOST FOR NOTHING. With this on, a class whose points are at (or within
@@ -4159,6 +4209,21 @@ const EXPANSION_HALL_FULL_SHORTFALL: f64 = 6.0;
 /// one's debt by this factor: the University is owed less than the Library,
 /// the Research Lab less again.
 const DISTRICT_BUILDING_CHAIN_TIER_DECAY: f64 = 0.7;
+/// The most Scouts `early_contact_window` will let an empire hold at once.
+const EARLY_CONTACT_SCOUT_MAX: usize = 3;
+/// What one unmet city-state is worth to a Scout bought while the world's
+/// borders are still open, before the per-eye discount.
+///
+/// Priced against what the contact actually buys and what it competes with.
+/// First contact hands the discovering major an Envoy standing at the
+/// city-state (`Game::record_contact`), which is the 1-Envoy type tier
+/// outright — measured at +5.5 Science a turn on a scientific seat, or about
+/// two and three quarter Libraries. Against that, a Scout is 30 production and
+/// the arm it has to outbid early is a Warrior or a Builder, not a Settler:
+/// with seven city-states still unmet and one Scout already out this pays
+/// 7 x 110 / 2 = 385, which sits above the ordinary military line and below
+/// the Settler's ~1500.
+const EARLY_CONTACT_UNMET_VALUE: f64 = 110.0;
 /// The most a repeatable district project is worth, before the (7 + turns)
 /// normalisation, while its city can still build a Library, University,
 /// Research Lab or Workshop it lacks. See `buildings_before_projects`. Low
@@ -4915,6 +4980,7 @@ impl AdvancedAi {
             science_payback_horizon: false,
             science_multiplier_payoff: false,
             idle_faith_patronage: false,
+            early_contact_window: false,
             great_person_housing: false,
             opportunistic_war: false,
             raid_pillage_prizes: false,
@@ -9297,6 +9363,46 @@ impl AdvancedAi {
         let budget = g.max_turns.max(1) as f64;
         let window = (budget * RESEARCH_CAMPUS_PAYBACK).max(1.0);
         ((budget - g.turn as f64) / window).clamp(0.0, 1.0)
+    }
+
+    /// What a Scout is worth while the world's borders are still open. Zero —
+    /// and both historical vetoes stand — when the flag is off, when the arm
+    /// is already at `EARLY_CONTACT_SCOUT_MAX`, when this seat has adopted the
+    /// civic that closes borders, or when every living city-state is already
+    /// on its contact ledger.
+    ///
+    /// Reads only this seat's own civics and its own contact ledger; which
+    /// city-states a rival has reached is not something it is entitled to
+    /// know.
+    fn early_contact_value(&self, g: &Game, pid: usize, counts: &EmpireCounts) -> f64 {
+        if !self.early_contact_window || counts.scouts >= EARLY_CONTACT_SCOUT_MAX {
+            return 0.0;
+        }
+        // `early_empire` is the node that grants `open_borders`, and
+        // `Game::has_open_borders` reads that as the holder's borders having
+        // closed. This seat's own adoption is the honest proxy for the
+        // world's: the census puts all six inside seven turns of each other.
+        if g.tree_effect(pid, "open_borders") > 0.0 {
+            return 0.0;
+        }
+        let unmet = g
+            .players
+            .iter()
+            .filter(|minor| {
+                minor.alive
+                    && minor.is_minor
+                    && !minor.is_barbarian
+                    && !minor.is_free_city
+                    && !g.has_met(pid, minor.id)
+            })
+            .count();
+        if unmet == 0 {
+            return 0.0;
+        }
+        // Each eye already out discounts the next: the second Scout opens
+        // ground the first would have reached inside the window anyway, the
+        // third less again.
+        EARLY_CONTACT_UNMET_VALUE * unmet as f64 / (counts.scouts + 1) as f64
     }
 
     /// Set this turn's science floor. Called once per decision, before any
@@ -19482,14 +19588,29 @@ impl AdvancedAi {
                     } else {
                         land_military
                     };
+                    // See `early_contact_window`. TWO vetoes stand between the
+                    // empire and its second Scout inside the contact window,
+                    // and both have to move: the army ceiling below files a
+                    // Scout under land military, so a seat holding its opening
+                    // Scout and two Warriors is already saturated, and the
+                    // Scout line after it prices the second at -2000 outright.
+                    // An eye is not a defender, and a composition ceiling is
+                    // not the question a seat with seven unmet city-states and
+                    // five turns of open borders left is asking.
+                    let early_contact = if unit == "scout" {
+                        self.early_contact_value(g, pid, counts)
+                    } else {
+                        0.0
+                    };
                     if self.victory_planning
                         && domain_saturated
                         && domain_count >= domain_ceiling
                         && !threatened
+                        && early_contact <= 0.0
                     {
                         return -2_000.0;
                     }
-                    if unit == "scout" && counts.scouts >= 1 {
+                    if unit == "scout" && counts.scouts >= 1 && early_contact <= 0.0 {
                         return -2_000.0;
                     }
                     let power = spec.strength.max(spec.ranged_attack_strength());
@@ -19631,6 +19752,7 @@ impl AdvancedAi {
                         }
                         + efficiency
                         + unique_window
+                        + early_contact
                 } else if spec.class == "support" {
                     self.support_unit_value(g, pid, cid, unit, plan, counts)
                 } else {

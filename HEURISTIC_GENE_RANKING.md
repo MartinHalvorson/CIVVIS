@@ -81,7 +81,11 @@ These screenable genes have no native on/off result, so they receive no rank or 
 | `barbarian-ranged-answer` | off (unmeasured) | Answer a ring of shooters with a shooter. |
 | `builder-barbarian-safety` | off (unmeasured) | Keep Builders from entering a visible Barbarian-capture envelope. |
 | `builder-worked-tile-priority` | off (unmeasured) | Prefer existing Builder work that pays on a tile a citizen currently works, while preserving luxury and strategic connections. |
+| `culture-building-debt` | off (unmeasured) | Make the Theater Square owe its buildings. |
+| `culture-coverage` | off (unmeasured) | Pay for the Theater Square the empire has not got. |
+| `district-building-chain` | off (unmeasured) | Make every specialty district owe its own buildings, whatever the lane. |
 | `district-lookahead-settle` | off (unmeasured) | A settler scores a site by the districts the plan would build there, each on its own plot. |
+| `early-contact-window` | off (unmeasured) | Buy the second and third Scout while the world's borders are still open — after Early Empire a city-state cannot be met by land at all. |
 | `governor-expansion-lane` | off (unmeasured) | The other half: the governor under Expansion only. |
 | `governor-victory-lanes` | off (unmeasured) | Half the composite: the governor under the four victory lanes only. |
 | `great-person-housing` | off (unmeasured) | A class earned and blocked reserves a city for the slot building, district, wonder or soldier that lifts the block, and a due cultural person sells duplicate… |
