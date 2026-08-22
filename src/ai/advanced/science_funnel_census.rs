@@ -133,35 +133,26 @@ fn report(label: &str, arms: &[(&str, Chain)]) {
 #[test]
 #[ignore = "census, not an assertion; run explicitly with --nocapture"]
 fn the_research_chain_treated_against_control() {
-    let seeds: Vec<u64> = (0..12).map(|i| 91_000_000 + i).collect();
-    // ⚠ ROUND EIGHT: the SAME question with the gate repaired. Round seven
-    // measured `research-grants-first` at Research Labs 40 against 55 —
-    // because its "finished" test asked `can_produce`, which is false while
-    // Chemistry is still out, so cities took the premium and spent the turns
-    // before Chemistry on Grants. The gate now asks for the DEEPEST rung held.
-    // Fresh seeds so the repaired gate is priced on games the broken one never
-    // touched.
-    //
-    // ⚠ ROUND SEVEN: what a FINISHED research city does with its last hundred
-    // turns. Rounds three to six settled the building-half genes and returned
-    // five nulls and one harm, and the variance probe showed Science is
-    // downstream of expansion. What none of them asked is what the cities that
-    // DID finish their chain build afterwards — and the answer was
-    // `campus_research_grants` **zero times in 1,113 city-turns**, priced
-    // second by about a hundred points.
+    let seeds: Vec<u64> = (0..12).map(|i| 92_000_000 + i).collect();
+    // ⚠ ROUND NINE: the first empire-wide science multiplier in this campaign.
+    // Every lever priced so far was per-city. `great-person-effect-reach` fixes
+    // a patronage ranking that sums a per-building RATE with a one-off LUMP —
+    // Einstein's `research_labs_science: 4` scores five against Wernher von
+    // Braun's fourteen hundred — and the probe confirms the seat really does
+    // recruit one to three Great Scientists a game, so the decision arises.
     let arms: Vec<Arm> = vec![
         ("control (universe)", |_ai| {}),
-        ("research-grants-first", |ai| {
-            ai.enable_research_grants_first()
+        ("great-person-effect-reach", |ai| {
+            ai.enable_great_person_effect_reach()
         }),
         ("premium + payoff", |ai| {
             ai.enable_research_tier_premium();
             ai.enable_science_multiplier_payoff();
         }),
-        ("premium + payoff + grants", |ai| {
+        ("premium + payoff + reach", |ai| {
             ai.enable_research_tier_premium();
             ai.enable_science_multiplier_payoff();
-            ai.enable_research_grants_first();
+            ai.enable_great_person_effect_reach();
         }),
     ];
     let mut totals: Vec<(String, Chain)> = Vec::new();
