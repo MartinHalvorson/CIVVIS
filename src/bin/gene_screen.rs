@@ -58,18 +58,25 @@
 //! moves an outcome at all. The genes here are the boolean treatment flags.
 //!
 //! Usage:
-//!   gene_screen [--pairs N] [--start-seed N] [--players N] [--turns N]
-//!               [--width N] [--height N] [--city-states N] [--speed ID]
-//!               [--map ID] [--jobs N] [--genes tag,tag,...]
+//!   gene_screen [--pairs N] [--start-seed N] [--jobs N] [--out PATH]
+//!               [--genes tag,tag,...] [--anchor-pairs N] [--append] [--quiet]
+//!               PROBE ONLY, and a batch using any of them is not a ledger
+//!               source: [--players N] [--turns N] [--width N] [--height N]
+//!               [--city-states N] [--speed ID] [--map ID] [--victories a,b]
 //!               [--baseline repairs|stock] [--field advanced|repairs]
-//!               [--anchor-pairs N] [--randomize-civs] [--out PATH] [--append]
-//!               [--quiet]
+//!               [--single-seat] [--stock-civs]
 //!   gene_screen --analyze PATH [PATH ...] [--interactions] [--top N]
 //!   gene_screen --list
 //!
-//! Defaults play 4 majors on 60x38 Pangaea at Online speed to its own 250-turn
-//! clock. `--players 6 --width 74 --height 46 --city-states 9` is the
-//! deployment shape (`docs/EVAL.md`); quote no number without its profile.
+//! ⭐ ONE SCREEN, and the bare defaults are it: six majors on 74x46 Continents
+//! with nine city-states, Online speed to its own 250-turn clock, all six
+//! victory lanes, every seat carrying its own drawn genome against the
+//! best-genome baseline (`SCREEN_PLAYERS` and friends below). That is
+//! Civilization VI's own six-player map row and the deployment shape
+//! `docs/EVAL.md` quotes, so the ledger is read from the games the agent
+//! actually plays. `gene_screen --pairs N --out rows.jsonl` is a screen;
+//! anything that moves a leg of the profile is a probe, and
+//! `tools/gene_ledger.py` refuses it as a source rather than mixing shapes.
 use civvis::ai::{run_game, AdvancedAi, LiveTreatment};
 use civvis::game::{Game, GameOptions};
 use civvis::rng::Rng;
@@ -78,6 +85,38 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::io::{BufRead, Write};
 use std::time::Instant;
+
+/// ⭐ THE SCREEN. One shape, so two batches are comparable without an argument
+/// about which regime read which gene (operator, 2026-08-22). Six majors on
+/// Civilization VI's own six-player map row — `CIV6_MAP_SIZES` "small", 74x46
+/// with nine city-states and three continents — at Online speed to its own
+/// 250-turn clock, every victory lane live, every seat carrying its own drawn
+/// genome against the best-genome baseline.
+///
+/// Continents rather than Pangaea because Pangaea's religion wins were 48% of
+/// all endings and drowned everything else; the same seeds on continents read
+/// 28% religious, 18% culture and 52% at the clock, for +11.9% wall per game
+/// (`docs/GENE_SCREEN.md`, "Why continents"). A batch that changes any leg of
+/// this is a probe: `tools/gene_ledger.py` refuses it as a ledger source.
+const SCREEN_PLAYERS: usize = 6;
+const SCREEN_WIDTH: i32 = 74;
+const SCREEN_HEIGHT: i32 = 46;
+const SCREEN_CITY_STATES: usize = 9;
+const SCREEN_MAP: MapScript = MapScript::Continents;
+
+/// Genes the screen holds at their baseline unless `--genes` asks for them by
+/// name. This is a COST list, not a verdict: `joint-tactics` costs +27.3%
+/// compute per enabled major seat (P10, 17,574 seat pairs) against ±1.6% for
+/// every other gene, and screening it multiplies the whole batch by 2.52x —
+/// a 10,000-game screen goes from 8.8 hours to 22.2.
+///
+/// ⚠ Do not read this as "it does nothing". Its win columns are +3/-4, inside
+/// any band this instrument has printed, but P10 reads `share HELPS **` at
+/// share z +3.84 — past that screen's family-wise bar. The deployment rule
+/// reads the WIN axis only, so the gene cannot turn on through that share
+/// reading however often it is re-screened; what it is owed is a deliberate
+/// arm (`--genes joint-tactics`), not a seat on every batch at 2.5x the bill.
+const HELD_UNLESS_ASKED: &[&str] = &["joint-tactics"];
 
 /// One boolean treatment flag read as a gene.
 ///
@@ -1482,13 +1521,10 @@ fn write_json_summary(path: &str, header: &Header, rows: &[Row]) {
     let summary = serde_json::json!({
         "kind": "gene_screen_analysis",
         "profile": header,
-        "regime": if header.victories.is_empty()
-            || header.victories.split(',').count() == civvis::game::VictoryConditions::NAMES.len()
-        {
-            "native".to_string()
-        } else {
-            header.victories.clone()
-        },
+        // ⭐ `standard` is THE screen; anything else is a probe, and
+        // `tools/gene_ledger.py` refuses it as a source. This replaced the
+        // `regime` field, which named which of two worlds a batch played.
+        "shape": shape_of(header),
         "complete_pairs": pairs,
         "overall_win": overall_win,
         "overall_share": overall_share,
@@ -2340,13 +2376,43 @@ fn read_rows(paths: &[String]) -> (Header, Vec<Row>) {
     (header, rows)
 }
 
+/// Whether an analysis was played at the screen or is a probe. Every leg is
+/// checked, because any one of them changes what a column means: the lanes
+/// decide which genes can act, the map decides how the game ends, and the
+/// player count decides the chance base the column is measured against.
+fn shape_of(header: &Header) -> &'static str {
+    let all_lanes = header.victories.is_empty()
+        || header.victories.split(',').count() == civvis::game::VictoryConditions::NAMES.len();
+    let standard = header.players == SCREEN_PLAYERS
+        && header.width == SCREEN_WIDTH
+        && header.height == SCREEN_HEIGHT
+        && header.city_states == SCREEN_CITY_STATES
+        && header.map == SCREEN_MAP.id()
+        && header.speed == GameSpeed::Online.id()
+        && header.turns == GameSpeed::Online.turn_limit()
+        && all_lanes
+        && header.all_seats
+        && header.randomize_civs
+        && header.design == "foldover"
+        && header.baseline == "best"
+        && header.field == "advanced";
+    if standard {
+        "standard"
+    } else {
+        "legacy"
+    }
+}
+
 fn usage() -> ! {
     eprintln!(
-        "usage: gene_screen [--pairs N] [--start-seed N] [--players N] [--turns N] \
-         [--width N] [--height N] [--city-states N] [--speed ID] [--map ID] [--jobs N] \
-         [--genes tag,tag,...] [--baseline best|repairs|stock] [--field advanced|repairs] \
-         [--design foldover|prior] [--p-helps 0.9] [--p-hurts 0.1] [--p-unresolved 0.5] \
-         [--anchor-pairs N] [--randomize-civs] [--all-seats] [--out PATH] [--append] [--quiet]\n       \
+        "the screen: gene_screen [--pairs N] [--start-seed N] [--jobs N] [--genes tag,tag,...] \
+         [--anchor-pairs N] [--out PATH] [--append] [--quiet]\n       \
+         (6 majors, 74x46 continents, 9 city-states, online/250, all six lanes, all seats, \
+         shuffled civs, baseline best — the one shape the ledger accepts)\n       \
+         probe only, NOT a ledger source: [--players N] [--turns N] [--width N] [--height N] \
+         [--city-states N] [--speed ID] [--map ID] [--victories a,b,...] [--single-seat] \
+         [--stock-civs] [--baseline best|repairs|stock] [--field advanced|repairs] \
+         [--design foldover|prior] [--p-helps 0.9] [--p-hurts 0.1] [--p-unresolved 0.5]\n       \
          gene_screen --analyze PATH [PATH ...] [--json OUT] [--interactions] [--top N] [--by-civ TAG]\n       \
          gene_screen --list"
     );
@@ -2368,7 +2434,8 @@ fn main() {
         };
         println!(
             "{} genes (bit order) · default = the deployment genome (docs/gene_ledger.json) · \
-             prior = on-probability under --design prior",
+             prior = on-probability under --design prior · HELD = out of the default \
+             screened set on cost, ask for it by name",
             genes.len()
         );
         for (i, gene) in genes.iter().enumerate() {
@@ -2376,14 +2443,19 @@ fn main() {
                 .map(|row| row.verdict.as_str())
                 .unwrap_or("unmeasured");
             println!(
-                "{i:>3}  {:<28} {:<32} universe:{} stock:{} default:{} ledger:{:<10} prior:{:.1}",
+                "{i:>3}  {:<28} {:<32} universe:{} stock:{} default:{} ledger:{:<10} prior:{:.1}{}",
                 gene.tag,
                 gene.field,
                 if gene.after_setup_on { "on " } else { "off" },
                 if gene.stock_on { "on " } else { "off" },
                 if gene.default_on { "on " } else { "off" },
                 verdict,
-                weights.for_tag(gene.tag)
+                weights.for_tag(gene.tag),
+                if HELD_UNLESS_ASKED.contains(&gene.tag) {
+                    "  HELD"
+                } else {
+                    ""
+                }
             );
         }
         return;
@@ -2434,10 +2506,16 @@ fn main() {
     let pairs = number(&args, "--pairs", 100).max(1) as usize;
     let anchor_pairs = number(&args, "--anchor-pairs", 0).max(0) as usize;
     let start_seed = number(&args, "--start-seed", 26_081_900) as u64;
-    let players = number(&args, "--players", 4).max(2) as usize;
-    let width = number(&args, "--width", 60) as i32;
-    let height = number(&args, "--height", 38) as i32;
-    let city_states = number(&args, "--city-states", 6).max(0) as usize;
+    // ⚠ THE SCREEN IS ONE SHAPE (operator, 2026-08-22). Every default below
+    // is a leg of it, and a batch that changes one is a probe, not the screen:
+    // `tools/gene_ledger.py` refuses a source that does not match. The shape is
+    // Civilization VI's own six-player row (`CIV6_MAP_SIZES`, "small": 74x46,
+    // nine city-states, three continents) so the games the ledger is read from
+    // are the games the deployment shape plays, not a cheaper stand-in.
+    let players = number(&args, "--players", SCREEN_PLAYERS as i64).max(2) as usize;
+    let width = number(&args, "--width", SCREEN_WIDTH as i64) as i32;
+    let height = number(&args, "--height", SCREEN_HEIGHT as i64) as i32;
+    let city_states = number(&args, "--city-states", SCREEN_CITY_STATES as i64).max(0) as usize;
     let jobs = number(&args, "--jobs", civvis::parallel::default_jobs() as i64).max(1) as usize;
     let quiet = present(&args, "--quiet");
     // ⚠ Stock seating is a FIXED civ per seat (Rome, Egypt, Greece, China…),
@@ -2445,7 +2523,8 @@ fn main() {
     // whoever sat there. The foldover cancels that for every per-gene contrast
     // — both arms share the seat — but the field is always the same three
     // civs unless this is on.
-    let randomize_civs = present(&args, "--randomize-civs");
+    // A leg of the screen; `--stock-civs` is the probe escape.
+    let randomize_civs = !present(&args, "--stock-civs");
     // Every major seat carries its own drawn genome; arm 1 complements all of
     // them, so each gene is still on in exactly one arm of every seat's pair
     // and each game yields `players` observations instead of one. Outcomes
@@ -2454,15 +2533,17 @@ fn main() {
     // win axis. The field is the other treated majors: effects are averaged
     // over random opposing genomes, not measured against a fixed production
     // field, so `--field` only shapes the anchors in this mode.
-    let all_seats = present(&args, "--all-seats");
-    // ⚠ THE REGIME DECIDES WHICH GENES CAN EVEN ACT. The first run's own
-    // census: 66% of native 4-player games ended by RELIGIOUS conversion at a
-    // median of turn 149, a third of them before turn 150 — so the thirty-one
-    // war and siege genes were being asked what they contribute to a game that
-    // was over before a siege could matter, and duly measured ~0. Restricting
-    // the lanes is how a war repair gets a regime that lets a war happen
-    // (`--victories domination,score`), and it is the same flag `civvis` itself
-    // takes, parsed by the same function, so the two agree by construction.
+    // A leg of the screen; `--single-seat` is the probe escape.
+    let all_seats = !present(&args, "--single-seat");
+    // ⚠ THE LANES DECIDE WHICH GENES CAN EVEN ACT, so the screen leaves all six
+    // live and the ledger reads one world. Restricting them (`--victories
+    // domination,score`) once gave the war and siege genes a game that did not
+    // end by conversion at turn 149; that was a second regime, its columns were
+    // never comparable with the six-lane ones, and it is now a probe rather
+    // than a ledger source. The flag stays — it is the same one `civvis` takes,
+    // parsed by the same function — but a batch that uses it does not enter the
+    // ledger. Continents is what de-biases the religion lane now: 48% of
+    // Pangaea endings were conversions against 28% here.
     let victories = match text(&args, "--victories") {
         None => civvis::game::VictoryConditions::default(),
         Some(list) => civvis::game::VictoryConditions::parse(&list).unwrap_or_else(|why| {
@@ -2486,7 +2567,7 @@ fn main() {
         speed.turn_limit()
     };
     let map = match text(&args, "--map") {
-        None => MapScript::Pangaea,
+        None => SCREEN_MAP,
         Some(id) => MapScript::from_id(&id).unwrap_or_else(|| {
             eprintln!("unknown --map {id:?}");
             std::process::exit(2);
@@ -2539,7 +2620,11 @@ fn main() {
         }
     };
     let screened: Vec<bool> = match text(&args, "--genes") {
-        None => vec![true; genes.len()],
+        // Everything but the cost list, which `--genes` can still ask for.
+        None => genes
+            .iter()
+            .map(|gene| !HELD_UNLESS_ASKED.contains(&gene.tag))
+            .collect(),
         Some(list) => {
             let wanted: Vec<&str> = list
                 .split(',')

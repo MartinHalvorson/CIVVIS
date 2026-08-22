@@ -39,7 +39,7 @@
     "capability_toggles": 165,
     "measured_by_a_screen": 65,
     "reachable_as_a_gene": 100,
-    "resolved_by_a_screen": 28,
+    "resolved_by_a_screen": 21,
     "unreachable_by_any_screen": 65,
     "unreachable_toggles": [
       "adjacent_camp_clear",

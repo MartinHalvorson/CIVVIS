@@ -1,19 +1,25 @@
 #!/usr/bin/env python3
-"""Build the gene ledger — what the screens say about every gene, and the
+"""Build the gene ledger — what the screen says about every gene, and the
 deployment genome that follows — from `gene_screen --analyze --json` outputs.
 
-Operator directive 2026-08-22: the defaults follow the ranking's two win
-columns. A gene may default on when **both** its last and prior native
-readings are positive, or when their average clears +15 with neither below
--10. A gene with exactly one native reading may provisionally default on when
-that reading is above +20; every other gene defaults off. The verdicts below
-still record what the screens proved; they no longer decide what ships.
-This tool is the one place that decision is made, and it is made from data:
+Operator directive 2026-08-22: **one screen**. Six majors on 74x46 continents
+with nine city-states, Online speed to its own 250-turn clock, all six victory
+lanes, every seat carrying its own drawn genome against the best-genome
+baseline. There is no second regime to reconcile: a batch played at another
+shape is a probe, and this tool refuses it as a source rather than pooling two
+worlds into one column.
+
+The defaults follow the ranking's two win columns. A gene may default on when
+**both** its last and prior readings are positive, or when their average clears
++15 with neither below -10. A gene with exactly one reading may provisionally
+default on when that reading is above +20; every other gene defaults off. The
+verdicts below still record what the screen proved; they no longer decide what
+ships. This tool is the one place that decision is made, and it is made from
+data:
 
     python3 tools/gene_ledger.py --write \\
-        --source docs/gene_screens/<native>.json --regime native \\
-        --source docs/gene_screens/<war>.json --regime war \\
-        --source docs/gene_screens/<war-repaired>.json --regime war
+        --source docs/gene_screens/<screen>.json \\
+        --source docs/gene_screens/<newer-screen>.json
 
 writes `docs/gene_ledger.json` and the generated Rust table
 `src/ai/advanced/gene_ledger_table.rs`, which `AdvancedAi::apply_gene_ledger`
@@ -27,34 +33,38 @@ Default rule (repeated in src/ai/advanced/gene_ledger.rs, and the columns it
 reads are the ones `HEURISTIC_GENE_RANKING.md` prints):
 
 - The win column is wins added per 10,000 games at the gene's measured on-rate
-  in one native screen — `(win_on - 1/players) * 10,000`, against the 1-in-
-  `players` a seat wins by chance. `wins_last_10k` is the latest native screen
-  that priced the gene, `wins_prior_10k` the screen before that.
+  in one screen — `(win_on - 1/players) * 10,000`, against the 1-in-`players` a
+  seat wins by chance. `wins_last_10k` is the latest screen that priced the
+  gene, `wins_prior_10k` the screen before that.
 - **on** when both columns are positive, or when their average is above +15
   and neither column is below -10.
 - **on** with exactly one populated column when that reading is above +20.
 - **off** otherwise, including an unmeasured gene.
-- The war regime does not enter the default. It is recorded beside the native
-  numbers, as before.
+
+⚠ The columns recorded before 2026-08-22 were read on 60x38 Pangaea, under a
+four-player `domination,score` regime for some genes. The Pangaea readings are
+kept as HISTORY — they are what the deployment genome stands on until the
+standard screen re-prices each gene — and are marked `"shape": "legacy"` in
+`sources`. The war-regime readings are gone: they never entered a default, and
+their four-player 1-in-4 chance base made their columns incomparable with the
+six-player ones printed beside them.
 
 Verdict rules (repeated in src/ai/advanced/gene_ledger.rs). These record what
 the screens proved and drive the ledger's counts and the screen's own reading;
 since 2026-08-22 they no longer decide the default:
 
-- helps      in a regime: win z >= 2 and share z > -2, or share z >= 2 and
-             win z > -2 — the screen's own `*` flag. Past the run's
-             family-wise bar is recorded as `family_wise`, not required:
-             with sixty-odd genes the family-wise bar would leave three on.
+- helps      win z >= 2 and share z > -2, or share z >= 2 and win z > -2 —
+             the screen's own `*` flag. Past the run's family-wise bar is
+             recorded as `family_wise`, not required: with sixty-odd genes
+             the family-wise bar would leave three on.
 - hurts      the mirror image.
 - unresolved otherwise — including a gene whose two axes disagree past
              |z| >= 2 (recorded as `conflict`) and a gene no screen measured.
 
-The native (all six lanes) regime governs the verdict when it resolves; a
-gene unresolved natively takes the war regime's verdict if that resolves (a
-regime where it provably helps and none where it provably hurts — or the
-reverse); otherwise it is unresolved. Later `--source` arguments override
-earlier ones per gene and regime, so a repaired gene's re-screen replaces its
-pre-repair number while the rest of the pre-repair screen stands.
+The verdict is read off the newest screen that priced the gene. Later
+`--source` arguments override earlier ones per gene, so a repaired gene's
+re-screen replaces its pre-repair number while the rest of the pre-repair
+screen stands.
 """
 from __future__ import annotations
 
@@ -68,7 +78,27 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 LEDGER_JSON = ROOT / "docs" / "gene_ledger.json"
 LEDGER_RS = ROOT / "src" / "ai" / "advanced" / "gene_ledger_table.rs"
-REGIMES = ("native", "war")
+#: ⭐ THE SCREEN, leg by leg — the profile a `gene_screen` header must carry to
+#: enter this ledger. `src/bin/gene_screen.rs` plays exactly this on its bare
+#: defaults (`SCREEN_PLAYERS` and friends); the two are held together by
+#: `tools/test_gene_ledger.py`, so neither can drift alone.
+SCREEN = {
+    "players": 6,
+    "map": "continents",
+    "width": 74,
+    "height": 46,
+    "city_states": 9,
+    "speed": "online",
+    "turns": 250,
+    "victories": "science,culture,religious,diplomatic,domination,score",
+    "all_seats": True,
+    "randomize_civs": True,
+    "design": "foldover",
+    "baseline": "best",
+    "field": "advanced",
+}
+#: The profile keys recorded for every source, whether or not they match.
+PROFILE_KEYS = tuple(SCREEN) + ("start_seed",)
 Z_BAR = 2.0
 # The win column's scale, then the deployment rule's bars: the threshold for
 # one provisional column, the average two columns must clear, and the floor
@@ -80,7 +110,7 @@ COLUMN_FLOOR = -10
 
 
 def axis_verdict(win_z: float, share_z: float) -> str:
-    """One regime's verdict from its two z scores."""
+    """One screen's verdict from its two z scores."""
     helps = (win_z >= Z_BAR and share_z > -Z_BAR) or (share_z >= Z_BAR and win_z > -Z_BAR)
     hurts = (win_z <= -Z_BAR and share_z < Z_BAR) or (share_z <= -Z_BAR and win_z < Z_BAR)
     if helps and not hurts:
@@ -122,6 +152,43 @@ def default_from_win_columns(last: int | None, prior: int | None) -> bool:
 
 TREATMENTS_RS = ROOT / "src" / "ai" / "advanced" / "treatments.rs"
 ROW = re.compile(r'\(\s*"([a-z0-9_]+)"\s*,\s*"([a-z0-9-]+)"\s*,\s*AdvancedAi::')
+
+
+def profile_of(data: dict) -> dict:
+    """The recorded profile of one analysis file, every key the screen names.
+
+    Older analyses predate a flag and simply omit it; the header's own defaults
+    are what that absence meant, so they are filled in here rather than read as
+    a mismatch that never happened."""
+    raw = data.get("profile", {})
+    profile = {key: raw.get(key) for key in PROFILE_KEYS}
+    if profile["victories"] in (None, ""):
+        profile["victories"] = SCREEN["victories"]
+    if profile["design"] is None:
+        profile["design"] = "foldover"
+    for key in ("all_seats", "randomize_civs"):
+        if profile[key] is None:
+            profile[key] = False
+    return profile
+
+
+def shape_of(profile: dict) -> str:
+    """`standard` when every leg of the screen matches, else `legacy`.
+
+    A legacy source is history, not a second regime: the Pangaea screens that
+    the deployment genome currently stands on. New ones are refused at the
+    write path (`--legacy-shape` to record one deliberately), so the ledger
+    cannot quietly acquire a second shape."""
+    return "standard" if all(profile.get(k) == v for k, v in SCREEN.items()) else "legacy"
+
+
+def shape_gap(profile: dict) -> str:
+    """The legs that differ from the screen, for the refusal message."""
+    return ", ".join(
+        f"{key}={profile.get(key)!r} (screen: {value!r})"
+        for key, value in SCREEN.items()
+        if profile.get(key) != value
+    )
 
 
 def known_tags() -> set[str]:
@@ -176,78 +243,60 @@ def measure_from(gene: dict, source_name: str) -> dict:
     return measure
 
 
-def build_ledger(sources: list[tuple[Path, str]], filter_known: bool = True) -> dict:
+def build_ledger(sources: list[Path], filter_known: bool = True) -> dict:
     """Merge the sources into one ledger object (the JSON file's content).
-    `filter_known=False` keeps every tag (synthetic tests)."""
-    measures: dict[str, dict[str, dict]] = {}
-    # Every native win column a gene has, oldest first: the last two are the
-    # ranking's `± Wins Last 10k` and `± Wins 10k Prior`, and the deployment
-    # default is read off them.
+    Sources are recorded oldest-first, and a later one overrides an earlier one
+    per gene. `filter_known=False` keeps every tag (synthetic tests)."""
+    measures: dict[str, dict] = {}
+    # Every win column a gene has, oldest first: the last two are the ranking's
+    # `± Wins Last 10k` and `± Wins 10k Prior`, and the deployment default is
+    # read off them.
     columns: dict[str, list[int]] = {}
     family: dict[str, float] = {}
     recorded = []
     known = known_tags() if filter_known else set()
     dropped: set[str] = set()
-    for path, regime in sources:
-        if regime not in REGIMES:
-            raise SystemExit(f"--regime {regime!r} is not one of {REGIMES}")
+    for path in sources:
         data = load_source(path)
-        declared = data.get("regime", "native")
-        if (regime == "native") != (declared == "native"):
-            raise SystemExit(
-                f"{path.name} was played in the {declared!r} regime but is being "
-                f"recorded as {regime!r}; the lanes decide which genes can act"
-            )
         name = path.name
-        players = int(data.get("profile", {}).get("players", 0) or 0)
+        profile = profile_of(data)
+        players = int(profile.get("players") or 0)
         family[name] = float(data.get("family_wise_z", 0.0))
         recorded.append({
             "path": str(path.relative_to(ROOT)) if path.is_relative_to(ROOT) else str(path),
-            "regime": regime,
+            "shape": shape_of(profile),
             "complete_pairs": int(data.get("complete_pairs", 0)),
             "family_wise_z": round(family[name], 3),
-            "profile": {
-                key: data.get("profile", {}).get(key)
-                for key in ("players", "width", "height", "speed", "victories",
-                            "all_seats", "baseline", "field", "design", "start_seed")
-            },
+            "profile": profile,
         })
         for gene in data.get("genes", []):
             if known and gene["tag"] not in known:
                 dropped.add(gene["tag"])
                 continue
-            measures.setdefault(gene["tag"], {})[regime] = measure_from(gene, name)
-            if regime == "native":
-                if "win_on" not in gene:
-                    raise SystemExit(
-                        f"{name}: {gene['tag']} has no `win_on`; a native screen without "
-                        "win rates cannot supply the win column the defaults are read from"
-                    )
-                columns.setdefault(gene["tag"], []).append(
-                    wins_per_10k(float(gene["win_on"]), players)
+            measures[gene["tag"]] = measure_from(gene, name)
+            if "win_on" not in gene:
+                raise SystemExit(
+                    f"{name}: {gene['tag']} has no `win_on`; a screen without win "
+                    "rates cannot supply the win column the defaults are read from"
                 )
+            columns.setdefault(gene["tag"], []).append(
+                wins_per_10k(float(gene["win_on"]), players)
+            )
     if dropped:
         print("gene ledger: dropped rows for genes the repository no longer registers: "
               + ", ".join(sorted(dropped)), file=sys.stderr)
 
     genes = []
     for tag in sorted(measures):
-        by_regime = measures[tag]
-        per = {regime: axis_verdict(m["win_z"], m["share_z"]) for regime, m in by_regime.items()}
-        deciding = None
-        for regime in REGIMES:
-            if per.get(regime, "unresolved") != "unresolved":
-                deciding = regime
-                break
-        verdict = per[deciding] if deciding else "unresolved"
-        conflict = any(
-            axes_conflict(m["win_z"], m["share_z"]) for m in by_regime.values()
-        ) or (len({v for v in per.values() if v != "unresolved"}) > 1)
-        family_wise = False
-        if deciding:
-            m = by_regime[deciding]
-            bar = family[m["source"]]
-            family_wise = bar > 0 and max(abs(m["win_z"]), abs(m["share_z"])) >= bar
+        measure = measures[tag]
+        verdict = axis_verdict(measure["win_z"], measure["share_z"])
+        conflict = axes_conflict(measure["win_z"], measure["share_z"])
+        bar = family[measure["source"]]
+        family_wise = (
+            verdict != "unresolved"
+            and bar > 0
+            and max(abs(measure["win_z"]), abs(measure["share_z"])) >= bar
+        )
         history = columns.get(tag, [])
         last = history[-1] if history else None
         prior = history[-2] if len(history) > 1 else None
@@ -257,11 +306,9 @@ def build_ledger(sources: list[tuple[Path, str]], filter_known: bool = True) -> 
             "default_on": default_from_win_columns(last, prior),
             "wins_last_10k": last,
             "wins_prior_10k": prior,
-            "deciding_regime": deciding,
             "family_wise": family_wise,
             "conflict": conflict,
-            "native": by_regime.get("native"),
-            "war": by_regime.get("war"),
+            "screen": measure,
         })
     counts = {
         "helps": sum(g["verdict"] == "helps" for g in genes),
@@ -271,14 +318,16 @@ def build_ledger(sources: list[tuple[Path, str]], filter_known: bool = True) -> 
     }
     return {
         "kind": "gene_ledger",
+        "screen": dict(SCREEN),
         "rules": {
             "z_bar": Z_BAR,
-            "helps": "win z >= 2 with share z > -2, or share z >= 2 with win z > -2, in the deciding regime",
+            "helps": "win z >= 2 with share z > -2, or share z >= 2 with win z > -2",
             "hurts": "the mirror image",
-            "deciding_regime": "native when it resolves, else war when it resolves, else unresolved",
+            "shape": "one screen: a source whose profile is not `screen` above is "
+                     "marked legacy and kept as history; new ones are refused",
             "win_column": "wins added per 10,000 games at the gene's measured on-rate in one "
-                          "native screen, (win_on - 1/players) * 10000; last and prior are the "
-                          "two most recent native screens that priced the gene",
+                          "screen, (win_on - 1/players) * 10000; last and prior are the "
+                          "two most recent screens that priced the gene",
             "default_on": f"both win columns positive, or their average above +{AVERAGE_BAR:.0f} "
                           f"with neither below {COLUMN_FLOOR}; with exactly one populated "
                           f"column, on when it is above +{SINGLE_COLUMN_BAR}; unmeasured is off",
@@ -339,8 +388,7 @@ def render_rust(ledger: dict) -> str:
         lines.append(f"        wins_last_10k: {rust_opt_i32(gene['wins_last_10k'])},")
         lines.append(f"        wins_prior_10k: {rust_opt_i32(gene['wins_prior_10k'])},")
         lines.append(f"        family_wise: {'true' if gene['family_wise'] else 'false'},")
-        lines.append(f"        native: {rust_measure(gene['native'])},")
-        lines.append(f"        war: {rust_measure(gene['war'])},")
+        lines.append(f"        screen: {rust_measure(gene['screen'])},")
         lines.append("    },")
     lines.append("];")
     lines.append("")
@@ -357,10 +405,10 @@ def print_table(ledger: dict) -> None:
           f"unresolved {ledger['counts']['unresolved']} · "
           f"default on {ledger['counts']['default_on']}")
     for src in ledger["sources"]:
-        print(f"  source {src['regime']:<6} {src['path']}  ({src['complete_pairs']} pairs, "
+        print(f"  source {src['shape']:<8} {src['path']}  ({src['complete_pairs']} pairs, "
               f"family-wise |z|≥{src['family_wise_z']})")
     print(f"{'gene':<30} {'verdict':<10} {'default':<7} {'last':>6} {'prior':>6} "
-          f"{'by':<6} {'native win/share z':<20} war win/share z")
+          f"{'win/share z':<20} source")
     # Best default first, then the deciding column, so the rule reads down the page.
     for gene in sorted(ledger["genes"],
                        key=lambda g: (not g["default_on"],
@@ -371,28 +419,46 @@ def print_table(ledger: dict) -> None:
         def col(v):
             return "–" if v is None else f"{v:+d}"
         flag = "**" if gene["family_wise"] else ("!" if gene["conflict"] else "")
+        source = gene["screen"]["source"] if gene["screen"] else "-"
         print(f"{gene['tag']:<30} {gene['verdict']:<10} {'on' if gene['default_on'] else 'off':<7} "
               f"{col(gene['wins_last_10k']):>6} {col(gene['wins_prior_10k']):>6} "
-              f"{(gene['deciding_regime'] or '-'):<6} {z(gene['native']):<20} {z(gene['war'])} {flag}")
+              f"{z(gene['screen']):<20} {source} {flag}")
 
 
-def sources_from_args(args) -> list[tuple[Path, str]]:
-    if len(args.source) != len(args.regime):
-        raise SystemExit("give one --regime per --source, in the same order")
-    return [(Path(p).resolve(), r) for p, r in zip(args.source, args.regime)]
+def sources_from_args(args) -> list[Path]:
+    """The `--source` files, oldest first, each held to the screen's shape.
+
+    ⚠ This is the whole enforcement of "one screen": a probe played at another
+    profile answers a different question, and pooling its column with the
+    screen's would report the difference between two worlds as a gene's
+    effect. `--legacy-shape` records one anyway, which is how the Pangaea
+    history already in the ledger stays there."""
+    paths = [Path(p).resolve() for p in args.source]
+    if args.legacy_shape:
+        return paths
+    for path in paths:
+        profile = profile_of(load_source(path))
+        if shape_of(profile) != "standard":
+            raise SystemExit(
+                f"{path.name} was not played at the screen's shape: {shape_gap(profile)}."
+                "\nRun it at the screen (`gene_screen --pairs N --out rows.jsonl`, no"
+                " profile flags), or pass --legacy-shape to record it as history."
+            )
+    return paths
 
 
-def sources_from_ledger(ledger: dict) -> list[tuple[Path, str]]:
-    return [((ROOT / s["path"]).resolve(), s["regime"]) for s in ledger["sources"]]
+def sources_from_ledger(ledger: dict) -> list[Path]:
+    return [(ROOT / s["path"]).resolve() for s in ledger["sources"]]
 
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--source", action="append", default=[],
-                    help="a `gene_screen --analyze --json` file (repeatable; later wins per gene+regime)")
-    ap.add_argument("--regime", action="append", default=[], choices=REGIMES,
-                    help="the regime the matching --source was played in")
+                    help="a `gene_screen --analyze --json` file (repeatable, oldest first; "
+                         "later wins per gene)")
+    ap.add_argument("--legacy-shape", action="store_true",
+                    help="record a source that was not played at the screen's shape, as history")
     ap.add_argument("--write", action="store_true",
                     help="write docs/gene_ledger.json and src/ai/advanced/gene_ledger_table.rs")
     ap.add_argument("--check", action="store_true",
