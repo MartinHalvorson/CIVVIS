@@ -740,20 +740,6 @@ fn standings(g: &Game) {
     if !minors.is_empty() {
         println!("  City-states: {}", minors.join(", "));
     }
-    // ⚠ DIAGNOSTIC ONLY, behind `CIVVIS_VISION_STATS`.
-    if std::env::var_os("CIVVIS_VISION_STATS").is_some() {
-        use std::sync::atomic::Ordering::Relaxed;
-        let calls = civvis::game::VISION_CALLS.load(Relaxed);
-        let hits = civvis::game::VISION_HITS.load(Relaxed);
-        let units = civvis::game::VISION_UNITS_WALKED.load(Relaxed);
-        let tiles = civvis::game::VISION_TILES_WALKED.load(Relaxed);
-        let world = civvis::game::VISION_UNITS_TOTAL.load(Relaxed);
-        println!(
-            "  vision-cache: calls={calls} hits={hits} ({:.1}%) units_walked={units} \
-world_units_scanned={world} city_tiles_hashed={tiles}",
-            if calls == 0 { 0.0 } else { 100.0 * hits as f64 / calls as f64 },
-        );
-    }
 }
 
 /// Available batch workers default to one per core. An explicit `--jobs`

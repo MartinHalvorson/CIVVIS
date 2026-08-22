@@ -1248,9 +1248,10 @@ The top named CIVVIS symbol is no longer anything in the envelope family:
 
 ### What one headless game spends on sight
 
-`CIVVIS_VISION_STATS=1` counts the asks and what each one walks. It stays in the
-tree behind a `OnceLock`, for the reason `CIVVIS_ENVELOPE_AUDIT` does. Seed
-7311001, 6p 60x38 pangaea online, all six victories, decided turn 232:
+A one-off instrumented build counted the asks and what each one walks. The
+measurement code was removed before submission so it adds no branch to this
+hot path. Seed 7311001, 6p 60x38 pangaea online, all six victories, decided
+turn 232:
 
 | | per game |
 | --- | ---: |

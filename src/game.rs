@@ -1083,17 +1083,6 @@ impl HeightField {
     }
 }
 
-/// ⚠ DIAGNOSTIC ONLY. Populated when `CIVVIS_VISION_STATS` is set; read by the
-/// simulate report so one headless game prints its own sight-cache behaviour.
-pub static VISION_CALLS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-pub static VISION_HITS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-pub static VISION_UNITS_WALKED: std::sync::atomic::AtomicU64 =
-    std::sync::atomic::AtomicU64::new(0);
-pub static VISION_TILES_WALKED: std::sync::atomic::AtomicU64 =
-    std::sync::atomic::AtomicU64::new(0);
-pub static VISION_UNITS_TOTAL: std::sync::atomic::AtomicU64 =
-    std::sync::atomic::AtomicU64::new(0);
-
 /// Mix a few numbers into one, for cache keys that must change whenever any
 /// of their parts does.
 fn vision_key(parts: &[u64]) -> u64 {
@@ -21911,40 +21900,14 @@ impl Game {
     /// stamped inputs still match.  The returned `Arc` keeps the hot callers
     /// (action legality, AI perception, and refresh publication) from cloning
     /// the map-sized bit vector merely to borrow it for a membership check.
-    /// ⚠ DIAGNOSTIC ONLY (`CIVVIS_VISION_STATS=1`). Read once through a
-    /// `OnceLock`: this sits in the hottest path in the simulator, and an
-    /// environment lookup per ask would be measuring the instrument.
-    fn vision_stats_enabled() -> bool {
-        static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-        *ENABLED.get_or_init(|| std::env::var_os("CIVVIS_VISION_STATS").is_some())
-    }
-
     fn vision_frame(&self, pid: usize, heights: &mut HeightField) -> Arc<TileBits> {
         self.with_suzerain_read_memo(|| {
             let suzerains = self.suzerain_input_map();
             let input_stamp = self.vision_input_stamp_with_suzerains(pid, &suzerains, None);
-            if Game::vision_stats_enabled() {
-                use std::sync::atomic::Ordering::Relaxed;
-                VISION_CALLS.fetch_add(1, Relaxed);
-                let mut units = 0u64;
-                let mut tiles = 0u64;
-                for viewer in self.visibility_viewers(pid) {
-                    units += self.units.values().filter(|u| u.owner == viewer).count() as u64;
-                    for city in self.cities.values().filter(|c| c.owner == viewer) {
-                        tiles += 1 + city.owned_tiles.len() as u64;
-                    }
-                }
-                VISION_UNITS_WALKED.fetch_add(units, Relaxed);
-                VISION_TILES_WALKED.fetch_add(tiles, Relaxed);
-                VISION_UNITS_TOTAL.fetch_add(self.units.len() as u64, Relaxed);
-            }
             {
                 let frames = self.vision_frames.frames.borrow();
                 if let Some(Some(frame)) = frames.get(pid) {
                     if frame.input_stamp == input_stamp {
-                        if Game::vision_stats_enabled() {
-                            VISION_HITS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                        }
                         return Arc::clone(&frame.visible);
                     }
                 }
