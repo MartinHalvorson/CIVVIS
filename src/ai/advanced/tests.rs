@@ -30468,3 +30468,730 @@ fn contact_posture_is_a_registered_reversible_opt_in() {
     ai.disable_contact_posture();
     assert!(!ai.contact_posture);
 }
+
+
+// ---------------------------------------------------------------------------
+// The air surge. See `advanced/air_surge.rs`.
+// ---------------------------------------------------------------------------
+
+/// Every ancestor of Advanced Flight except the two that make the beeline a
+/// beeline. Read from the ruleset rather than listed, so a tech-tree edit
+/// moves the fixture with it instead of silently leaving it three techs out
+/// of a chain that is now four long.
+fn air_surge_prerequisites(game: &Game) -> Vec<Name> {
+    game.rules
+        .tech_ancestors
+        .get(air_surge::AIR_SURGE_GOAL_TECH)
+        .expect("the ruleset must reach Advanced Flight")
+        .iter()
+        .filter(|tech| tech.as_str() != "flight" && tech.as_str() != "radio")
+        .map(|tech| Name::new(tech))
+        .collect()
+}
+
+/// A two-city empire exactly three technologies short of the Bomber: the
+/// chain still to walk is `flight -> radio -> advanced_flight`.
+///
+/// The returned objective is a rival city founded 4-10 tiles from our capital,
+/// so the wing's reach is a property of the fixture rather than of the seed's
+/// map: `timed_war_fixture` puts the two capitals wherever the generator does,
+/// which on some seeds is past a Bomber's range 10 and appoints no surge at
+/// all.
+fn air_surge_fixture(seed: u64) -> (Game, u32, u32) {
+    let (mut game, second, _) = timed_war_fixture(seed);
+    for tech in air_surge_prerequisites(&game) {
+        game.players[0].techs.insert(tech);
+    }
+    let capital = game.cities[&game.player_city_ids(0)[0]].pos;
+    let objective = found_nearby_test_city(&mut game, 1, capital);
+    // Grow the empire out of the founding turn. `air_surge_affordable` divides
+    // the chain by the science the cities actually make, and two pop-1 cities
+    // make 2.95 a turn — which prices `flight -> radio -> advanced_flight` at
+    // 1,390 turns and refuses every appointment. An empire holding twenty-two
+    // of Advanced Flight's twenty-four ancestors is not a pair of new
+    // foundings, and the fixture should not pretend it is.
+    for cid in game.player_city_ids(0) {
+        game.cities.get_mut(&cid).expect("own city").pop = 12;
+    }
+    (game, second, objective)
+}
+
+fn air_surge_ai() -> AdvancedAi {
+    let mut ai = AdvancedAi::new();
+    ai.enable_air_surge();
+    ai
+}
+
+/// Grant the breakthrough and the metal, so the wing is only a question of
+/// production.
+fn air_surge_arm(game: &mut Game) {
+    game.players[0]
+        .techs
+        .insert(Name::new(air_surge::AIR_SURGE_GOAL_TECH));
+    game.players[0].techs.insert(crate::name!("flight"));
+    game.players[0].techs.insert(crate::name!("radio"));
+    game.players[0]
+        .strategic_resources
+        .insert(crate::name!("aluminum"), 400.0);
+}
+
+/// The gene is off in production, and an inactive surge must be invisible:
+/// no appointment, no research goal, and no change to a single production
+/// score. This is the property every opt-in row claims and the one a screen
+/// cannot recover if it is false.
+#[test]
+fn an_unopted_air_surge_appoints_nothing_and_prices_nothing() {
+    let (mut game, _, _) = air_surge_fixture(941_100);
+    let mut ai = AdvancedAi::new();
+    assert!(!ai.air_surge, "the gene ships off");
+
+    ai.maintain_air_surge(&game, 0);
+    assert!(ai.air_surge_plan.is_none());
+    assert!(!ai.air_surge_active());
+    assert!(ai.air_surge_research_goal(&game, 0).is_none());
+    assert_eq!(
+        ai.air_surge_production_value(
+            &game,
+            0,
+            &Item::Unit {
+                unit: crate::name!("bomber"),
+            },
+            1.0,
+        ),
+        None
+    );
+    assert!(!ai.air_surge_production(&mut game, 0));
+
+    // And the twin puts an opted-in seat back exactly.
+    let mut opted = air_surge_ai();
+    assert!(opted.air_surge);
+    opted.disable_air_surge();
+    assert!(!opted.air_surge);
+}
+
+/// The window has two edges. The horizon refuses a beeline so deep it is the
+/// empire's whole research policy; the clock (its own test below) refuses one
+/// that cannot finish. Inside both, the surge appoints — including with the
+/// Bomber already in hand, where the buildout is all that is left.
+#[test]
+fn the_surge_window_is_bounded_by_the_horizon_and_the_clock() {
+    let (mut game, _, _) = air_surge_fixture(941_101);
+    let ai = air_surge_ai();
+
+    assert_eq!(AdvancedAi::air_surge_missing_techs(&game, 0), 3);
+    assert!(ai.air_surge_open(&game, 0));
+
+    // Past the horizon the window is shut however affordable the chain is.
+    let mut distant = game.clone();
+    for tech in air_surge_prerequisites(&distant)
+        .into_iter()
+        .take(air_surge::AIR_SURGE_TECH_HORIZON)
+    {
+        distant.players[0].techs.remove(&tech);
+    }
+    assert!(
+        AdvancedAi::air_surge_missing_techs(&distant, 0) > air_surge::AIR_SURGE_TECH_HORIZON
+    );
+    assert!(!ai.air_surge_open(&distant, 0));
+
+    // And with the Bomber already in hand there is nothing left to beeline,
+    // but the surge still opens — the buildout is the rest of the plan.
+    air_surge_arm(&mut game);
+    assert_eq!(AdvancedAi::air_surge_missing_techs(&game, 0), 0);
+    assert!(ai.air_surge_open(&game, 0));
+}
+
+/// ★★★★ The gate that matters. The seat reaches its closest approach to
+/// Advanced Flight at turn 258 of 300 with 79 turns of research still to pay
+/// (`air_surge_census_at_deployment_scale`, seed 941200). A gate on the
+/// technology count alone would appoint that: a beeline that spends the last
+/// forty turns researching a unit it can never build.
+#[test]
+fn a_chain_that_cannot_finish_in_time_is_never_appointed() {
+    let (mut game, _, _) = air_surge_fixture(941_114);
+    let ai = air_surge_ai();
+    assert!(ai.air_surge_affordable(&game, 0));
+    assert!(ai.air_surge_open(&game, 0));
+
+    let (research, production) = ai.air_surge_launch_estimate(&game, 0);
+    assert!(research > 0 && production > 0, "both halves are priced");
+
+    // Move the end of the game inside the estimate and the appointment goes
+    // away, while every other condition is untouched.
+    game.max_turns = game.turn + research + production;
+    assert!(!ai.air_surge_affordable(&game, 0));
+    assert!(!ai.air_surge_open(&game, 0));
+    assert!(
+        AdvancedAi::air_surge_missing_techs(&game, 0) <= air_surge::AIR_SURGE_TECH_HORIZON,
+        "the technology gate still says yes; only the clock says no"
+    );
+
+    // A richer empire researches and builds the same chain sooner, so the same
+    // clock admits it.
+    game.max_turns = game.turn + research + production + game.standard_duration(60);
+    assert!(ai.air_surge_affordable(&game, 0));
+}
+
+/// The appointment names a target, a city, and the body that will take it —
+/// and it refuses a city the wing cannot reach, which is the one condition
+/// the melee package has no analogue for.
+#[test]
+fn the_appointment_names_a_city_the_wing_can_reach() {
+    let (game, _, objective) = air_surge_fixture(941_102);
+    let ai = air_surge_ai();
+
+    let plan = ai
+        .choose_air_surge(&game, 0)
+        .expect("a reachable rival city is an appointable surge");
+    assert_eq!(plan.target_player, 1);
+    assert_eq!(plan.objective_city, objective);
+    assert_eq!(plan.phase, air_surge::AirSurgePhase::Beeline);
+    assert_eq!(
+        game.cities[&plan.objective_city].owner, 1,
+        "the objective belongs to the appointed target"
+    );
+    let objective = game.cities[&plan.objective_city].pos;
+    let range = game.rules.units[crate::name!("bomber")].range;
+    assert!(
+        game.player_city_ids(0)
+            .into_iter()
+            .any(|cid| game.wdist(game.cities[&cid].pos, objective) <= range),
+        "the objective must sit under one of our airfields"
+    );
+
+    // Move the whole empire out of the wing's reach and there is no surge to
+    // appoint, however valuable the city is.
+    let mut distant = game.clone();
+    for cid in distant.player_city_ids(0) {
+        let city = distant.cities.get_mut(&cid).expect("own city");
+        city.pos = (0, 0);
+    }
+    assert!(
+        ai.choose_air_surge(&distant, 0).is_none(),
+        "a city no bomber can strike is not an air surge"
+    );
+}
+
+/// A Bomber cannot take a city; it can only empty one. The capture body is a
+/// cavalry line by preference, and the surge says so when the empire can
+/// field none.
+#[test]
+fn the_capture_body_is_cavalry_when_the_empire_can_field_one() {
+    let (mut game, _, _) = air_surge_fixture(941_103);
+    let (body, is_cavalry) =
+        AdvancedAi::air_surge_body(&game, 0).expect("some land body is always buildable");
+    assert!(is_cavalry, "{body} was chosen over the cavalry lines");
+    assert!(matches!(
+        game.rules.units[body].promotion_class.as_str(),
+        "light_cavalry" | "heavy_cavalry"
+    ));
+
+    // Strip every cavalry technology and the surge falls back to melee rather
+    // than refusing to attack at all.
+    for tech in ["horseback_riding", "stirrups", "military_tactics"] {
+        game.players[0].techs.remove(&Name::new(tech));
+    }
+    let (fallback, is_cavalry) =
+        AdvancedAi::air_surge_body(&game, 0).expect("melee is always available");
+    assert!(!is_cavalry, "{fallback} is still a cavalry line");
+    assert!(game.rules.units[fallback].is_melee_capable());
+}
+
+/// The beeline is the point of the appointment: while it runs, research is
+/// forced onto the cheapest legal step toward Advanced Flight instead of the
+/// argmax the lane would otherwise take.
+#[test]
+fn the_beeline_forces_research_along_the_chain() {
+    let (mut game, _, _) = air_surge_fixture(941_104);
+    let mut ai = air_surge_ai();
+    ai.maintain_air_surge(&game, 0);
+    assert_eq!(
+        ai.air_surge_research_goal(&game, 0),
+        Some(air_surge::AIR_SURGE_GOAL_TECH)
+    );
+
+    game.players[0].research = None;
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Science,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 4,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    ai.advanced_research(&mut game, 0, &plan);
+    assert_eq!(
+        game.players[0].research.as_deref(),
+        Some("flight"),
+        "the first step of `flight -> radio -> advanced_flight` is the only \
+         available one"
+    );
+
+    // The goal retires the moment the breakthrough lands, so the appointment
+    // never holds the research slot past its own purpose.
+    air_surge_arm(&mut game);
+    ai.maintain_air_surge(&game, 0);
+    assert!(ai.air_surge_research_goal(&game, 0).is_none());
+}
+
+/// The airfield is claimed before anything else in the package: no Bomber can
+/// be trained anywhere else, so a wing ordered first is a wing ordered nowhere.
+#[test]
+fn the_airfield_is_claimed_before_the_wing() {
+    let (mut game, _, _) = air_surge_fixture(941_105);
+    air_surge_arm(&mut game);
+    let mut ai = air_surge_ai();
+    ai.maintain_air_surge(&game, 0);
+    assert!(ai.air_surge_active());
+    for cid in game.player_city_ids(0) {
+        game.cities.get_mut(&cid).expect("own city").queue.clear();
+    }
+
+    assert!(
+        ai.air_surge_production(&mut game, 0),
+        "an idle empire with no airfield claims one"
+    );
+    let claimed = game
+        .player_city_ids(0)
+        .into_iter()
+        .filter_map(|cid| game.cities[&cid].queue.first().cloned())
+        .next()
+        .expect("the claim writes a queue");
+    assert!(
+        matches!(claimed, Item::District { district, .. }
+                 if game.district_family(district) == crate::name!("aerodrome")),
+        "claimed {claimed:?} instead of the airfield"
+    );
+
+    // A second call does not start a duplicate: the queue already counts.
+    let before: Vec<_> = game
+        .player_city_ids(0)
+        .into_iter()
+        .map(|cid| game.cities[&cid].queue.clone())
+        .collect();
+    ai.air_surge_production(&mut game, 0);
+    let after: Vec<_> = game
+        .player_city_ids(0)
+        .into_iter()
+        .map(|cid| game.cities[&cid].queue.clone())
+        .collect();
+    assert!(
+        after
+            .iter()
+            .flatten()
+            .filter(|item| matches!(item, Item::District { district, .. }
+                                    if game.district_family(*district)
+                                        == crate::name!("aerodrome")))
+            .count()
+            <= 1,
+        "before {before:?} after {after:?}"
+    );
+}
+
+/// With the airfield standing the wing is the next claim, and the package is
+/// priced above every ordinary candidate wherever the strategic scorer runs.
+#[test]
+fn the_wing_follows_the_airfield_and_outbids_the_ordinary_ranking() {
+    let (mut game, _, _) = air_surge_fixture(941_106);
+    air_surge_arm(&mut game);
+    let mut ai = air_surge_ai();
+    ai.maintain_air_surge(&game, 0);
+    let plan = ai.air_surge_plan.clone().expect("an appointed surge");
+
+    let bomber = Item::Unit {
+        unit: crate::name!("bomber"),
+    };
+    let body = Item::Unit { unit: plan.body_unit };
+    let bystander = Item::Unit {
+        unit: crate::name!("builder"),
+    };
+
+    let bomber_value = ai
+        .air_surge_production_value(&game, 0, &bomber, 1.0)
+        .expect("the wing is part of the package");
+    let body_value = ai
+        .air_surge_production_value(&game, 0, &body, 1.0)
+        .expect("the escort is part of the package");
+    assert_eq!(
+        ai.air_surge_production_value(&game, 0, &bystander, 1.0),
+        None,
+        "a Builder is not part of the package"
+    );
+    assert!(
+        bomber_value > body_value,
+        "the wing is the scarce half: {bomber_value} vs {body_value}"
+    );
+    assert!(
+        body_value > 7_000.0,
+        "the package must outbid the ordinary ranking, not join it"
+    );
+
+    // Once the wing is complete it stops being priced, so the surge cannot
+    // spend the rest of the game building bombers it does not need.
+    let home = game.cities[&game.player_city_ids(0)[0]].pos;
+    for _ in 0..air_surge::AIR_SURGE_BOMBERS {
+        game.spawn_test_unit("bomber", 0, home);
+    }
+    ai.maintain_air_surge(&game, 0);
+    assert_eq!(
+        ai.air_surge_production_value(&game, 0, &bomber, 1.0),
+        None,
+        "a complete wing asks for nothing further"
+    );
+}
+
+/// The metal is revealed one technology before the Bomber, so the appointment
+/// cannot price it up front. It waits a bounded number of turns and then gives
+/// the wing up rather than holding the empire's research and queues forever.
+#[test]
+fn the_surge_stands_down_when_no_aluminium_arrives() {
+    let (mut game, _, _) = air_surge_fixture(941_107);
+    game.players[0]
+        .techs
+        .insert(Name::new(air_surge::AIR_SURGE_GOAL_TECH));
+    game.players[0].techs.insert(crate::name!("flight"));
+    game.players[0].techs.insert(crate::name!("radio"));
+    let mut ai = air_surge_ai();
+    ai.maintain_air_surge(&game, 0);
+    assert!(ai.air_surge_active(), "the surge appoints without the metal");
+
+    // Inside the grace period it holds: a Builder is still walking to the
+    // deposit `radio` revealed.
+    let breakthrough = game.turn;
+    ai.air_surge_plan.as_mut().expect("live surge").tech_turn = Some(breakthrough);
+    game.turn = breakthrough + game.standard_duration(air_surge::AIR_SURGE_ALUMINUM_GRACE) - 1;
+    ai.maintain_air_surge(&game, 0);
+    assert!(ai.air_surge_active());
+
+    game.turn = breakthrough + game.standard_duration(air_surge::AIR_SURGE_ALUMINUM_GRACE);
+    ai.maintain_air_surge(&game, 0);
+    assert!(!ai.air_surge_active(), "a wing with no metal is not a surge");
+    assert_eq!(
+        ai.air_surge_census.aborts.get("no Aluminum for the wing"),
+        Some(&1)
+    );
+
+    // ⚠ And it stays down. The lifecycle ends by appointing whenever none is
+    // live, so without the cooldown this stand-down is undone by the call that
+    // recorded it and re-recorded every turn afterwards.
+    ai.maintain_air_surge(&game, 0);
+    assert!(!ai.air_surge_active());
+    assert_eq!(
+        ai.air_surge_census.aborts.get("no Aluminum for the wing"),
+        Some(&1),
+        "one situation is one stand-down"
+    );
+    game.turn += game.standard_duration(air_surge::AIR_SURGE_ABORT_COOLDOWN);
+    game.players[0]
+        .strategic_resources
+        .insert(crate::name!("aluminum"), 400.0);
+    ai.maintain_air_surge(&game, 0);
+    assert!(
+        ai.air_surge_active(),
+        "the cooldown expires and the metal has arrived"
+    );
+}
+
+/// The declaration waits for the whole package. Half a surge is a war opened
+/// with the escort the wing was supposed to clear the way for.
+#[test]
+fn the_declaration_waits_for_the_wing_and_the_escort() {
+    let (mut game, _, _) = air_surge_fixture(941_108);
+    air_surge_arm(&mut game);
+    let mut ai = air_surge_ai();
+    ai.maintain_air_surge(&game, 0);
+    let plan = ai.air_surge_plan.clone().expect("an appointed surge");
+    let home = game.cities[&game.player_city_ids(0)[0]].pos;
+    // The formal route to war, as `preferred_war_opening` walks it: the surge
+    // denounces while the wing is being built and declares once the clock has
+    // run. Seeding it here keeps this test about the package, not about the
+    // diplomacy timer.
+    game.players[0].denounced_until.insert(1, game.turn + 25);
+    game.players[0].denounced_since.insert(1, game.turn - 5);
+
+    // One bomber and no escort: the surge owns the war-opening decision and
+    // deliberately spends it on nothing.
+    game.spawn_test_unit("bomber", 0, home);
+    ai.maintain_air_surge(&game, 0);
+    assert_eq!(
+        ai.air_surge_plan.as_ref().map(|plan| plan.phase),
+        Some(air_surge::AirSurgePhase::Arm)
+    );
+    assert!(ai.air_surge_opening(&mut game, 0, 1));
+    assert!(!game.is_at_war(0, 1), "an incomplete package must not declare");
+
+    for _ in 1..air_surge::AIR_SURGE_BOMBERS {
+        game.spawn_test_unit("bomber", 0, home);
+    }
+    for _ in 0..air_surge::AIR_SURGE_BODIES {
+        game.spawn_test_unit(plan.body_unit.as_str(), 0, home);
+    }
+    ai.maintain_air_surge(&game, 0);
+    assert_eq!(
+        ai.air_surge_plan.as_ref().map(|plan| plan.phase),
+        Some(air_surge::AirSurgePhase::Strike),
+        "a complete package is owed a declaration"
+    );
+
+    assert!(ai.air_surge_opening(&mut game, 0, 1));
+    assert!(game.is_at_war(0, 1), "the complete package opens the war");
+    assert_eq!(ai.air_surge_census.declarations, 1);
+    assert_eq!(
+        ai.air_surge_plan.as_ref().map(|plan| plan.phase),
+        Some(air_surge::AirSurgePhase::Exploit)
+    );
+    assert_eq!(
+        ai.air_surge_plan.as_ref().and_then(|plan| plan.declared_turn),
+        Some(game.turn)
+    );
+}
+
+/// From Strike onward the surge owns the grand strategy, exactly as an
+/// appointed timed war does — and deliberately not before, because three
+/// technologies of Conquest posture would pay for the wing with the economy
+/// that has to build it.
+#[test]
+fn the_surge_takes_the_strategy_only_once_it_is_ready_to_launch() {
+    let (mut game, _, _) = air_surge_fixture(941_109);
+    air_surge_arm(&mut game);
+    let mut ai = air_surge_ai();
+    ai.maintain_air_surge(&game, 0);
+    let surge = ai.air_surge_plan.clone().expect("an appointed surge");
+
+    let mut plan = StrategicPlan {
+        strategy: GrandStrategy::Science,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 4,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    ai.apply_air_surge_to_strategy(&mut plan);
+    assert_eq!(
+        plan.strategy,
+        GrandStrategy::Science,
+        "the buildout leaves the economy its own plan"
+    );
+
+    ai.air_surge_plan.as_mut().expect("live surge").phase = air_surge::AirSurgePhase::Strike;
+    ai.apply_air_surge_to_strategy(&mut plan);
+    assert_eq!(plan.strategy, GrandStrategy::Conquest);
+    assert_eq!(plan.target_player, Some(surge.target_player));
+    assert_eq!(plan.target_city, Some(surge.objective_city));
+
+    // A home emergency still outranks the appointment.
+    let mut recovering = StrategicPlan {
+        strategy: GrandStrategy::Recovery,
+        ..plan.clone()
+    };
+    recovering.target_player = None;
+    ai.apply_air_surge_to_strategy(&mut recovering);
+    assert_eq!(recovering.strategy, GrandStrategy::Recovery);
+    assert_eq!(recovering.target_player, None);
+}
+
+/// One appointed package at a time. Two would bid for the same idle queues and
+/// the same declaration, and the cross-gate has to hold in both directions.
+#[test]
+fn the_two_appointed_packages_never_run_together() {
+    let (mut game, _, objective) = air_surge_fixture(941_110);
+    let mut ai = air_surge_ai();
+    ai.timed_war = true;
+
+    ai.war_plan = Some(timed_plan(
+        &game,
+        objective,
+        crate::name!("stirrups"),
+        crate::name!("knight"),
+        None,
+        None,
+        WarPhase::Mobilize,
+    ));
+    assert!(
+        !ai.air_surge_open(&game, 0),
+        "a live melee appointment keeps the queues"
+    );
+
+    ai.war_plan = None;
+    ai.maintain_air_surge(&game, 0);
+    assert!(ai.air_surge_active());
+    assert!(
+        !ai.may_form_war_plan(&game, 0),
+        "a live surge keeps the queues"
+    );
+
+    // And with the gene off the cross-gate is an exact no-op: `timed_war`
+    // sees the board it always saw.
+    let mut melee = AdvancedAi::new();
+    melee.timed_war = true;
+    let mut treated = AdvancedAi::new();
+    treated.timed_war = true;
+    treated.disable_air_surge();
+    assert_eq!(
+        melee.may_form_war_plan(&game, 0),
+        treated.may_form_war_plan(&game, 0)
+    );
+    let _ = &mut game;
+}
+
+/// A census, not an assertion: play a full game with the gene on, sample the
+/// distance to the Bomber every turn, and report what the surge actually did.
+///
+/// ★★★★ THIS INSTRUMENT IS WHY [`air_surge::AIR_SURGE_TECH_HORIZON`] IS NOT
+/// THREE AND WHY [`AdvancedAi::air_surge_affordable`] EXISTS. At the 300-turn
+/// deployment shape the seat's closest approach to Advanced Flight was six to
+/// fifteen technologies, reached between turns 147 and 285, with 79 to 278
+/// turns of research still to pay for. Run it before believing either that the
+/// lane helps or that it hurts: a screen cannot tell "the gene lost" from "the
+/// gene never fired", and this can.
+///
+/// `--turns` is the axis worth varying. 300 says whether the shipped shape can
+/// reach the air at all; 600 says whether the machinery works when it can.
+#[test]
+#[ignore = "census, not an assertion; run explicitly with --nocapture"]
+fn air_surge_census_at_deployment_scale() {
+    let turns: u32 = std::env::var("CIVVIS_AIR_SURGE_TURNS")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(300);
+    for seed in 941_200..941_204u64 {
+        let mut game = Game::new(6, 74, 46, seed, turns, 9);
+        let mut me = air_surge_ai();
+        let mut others = AdvancedAi::fleet(&game);
+        let mut closest = usize::MAX;
+        let mut closest_turn = 0;
+        let mut first_affordable = None;
+        while game.winner.is_none() && game.turn <= game.max_turns {
+            let pid = game.current;
+            if pid == 0 {
+                let missing = AdvancedAi::air_surge_missing_techs(&game, 0);
+                if missing < closest {
+                    closest = missing;
+                    closest_turn = game.turn;
+                }
+                if first_affordable.is_none() && me.air_surge_affordable(&game, 0) {
+                    let (research, production) = me.air_surge_launch_estimate(&game, 0);
+                    first_affordable = Some((game.turn, missing, research, production));
+                }
+                me.take_turn(&mut game, pid);
+            } else {
+                others[pid].take_turn(&mut game, pid);
+            }
+            if game.winner.is_none() && game.current == pid {
+                let _ = game.apply(pid, &Action::EndTurn);
+            }
+        }
+        let bombers = game
+            .player_unit_ids(0)
+            .into_iter()
+            .filter(|uid| game.units[uid].kind == "bomber")
+            .count();
+        println!(
+            "seed {seed} ({turns}t): appointments {} breakthroughs {} declarations {} \
+             captures {} aborts {:?}",
+            me.air_surge_census.appointments,
+            me.air_surge_census.breakthroughs,
+            me.air_surge_census.declarations,
+            me.air_surge_census.objectives_captured,
+            me.air_surge_census.aborts,
+        );
+        println!(
+            "  closest {closest} at turn {closest_turn} | first affordable \
+             {first_affordable:?} | techs {} bombers {bombers} cities {} score {}",
+            game.players[0].techs.len(),
+            game.player_city_ids(0).len(),
+            game.score(0),
+        );
+    }
+}
+
+/// The counter. A Bomber is as useful against a civilization attacking us as
+/// against one we chose, and the empire that most needs a wing is the one
+/// already being invaded — so a surge appointed into a running war arms
+/// without a declaration, and keeps its beeline while it does.
+#[test]
+fn a_surge_appointed_into_a_running_war_arms_without_declaring() {
+    let (mut game, _, objective) = air_surge_fixture(941_111);
+    game.at_war.insert((0, 1));
+    game.at_war.insert((1, 0));
+    let mut ai = air_surge_ai();
+    ai.maintain_air_surge(&game, 0);
+
+    let plan = ai
+        .air_surge_plan
+        .clone()
+        .expect("a running war is a counter, not a refusal");
+    assert!(plan.opened_at_war);
+    assert_eq!(plan.target_player, 1, "the counter arms against the invader");
+    assert_eq!(plan.objective_city, objective);
+    assert_eq!(
+        plan.phase,
+        air_surge::AirSurgePhase::Exploit,
+        "there is nothing left to declare"
+    );
+
+    // ⚠ The beeline is keyed off the technology, not the phase: a counter is
+    // in `Exploit` from its first turn and is exactly the appointment that
+    // most needs the three techs.
+    assert_eq!(
+        ai.air_surge_research_goal(&game, 0),
+        Some(air_surge::AIR_SURGE_GOAL_TECH)
+    );
+    assert!(
+        !ai.air_surge_opening(&mut game, 0, 1),
+        "a counter never consumes the war-opening decision"
+    );
+
+    // Peace closes it, exactly as a declaration of our own would have been.
+    game.at_war.remove(&(0, 1));
+    game.at_war.remove(&(1, 0));
+    ai.maintain_air_surge(&game, 0);
+    assert!(!ai.air_surge_active());
+    assert_eq!(ai.air_surge_census.aborts.get("peace closed the war"), Some(&1));
+}
+
+/// Two fronts is a war the empire is losing, and a three-technology beeline is
+/// not the answer to it.
+#[test]
+fn a_second_front_closes_the_surge_window() {
+    let (mut game, _, _) = air_surge_fixture(941_112);
+    let ai = air_surge_ai();
+    assert!(ai.air_surge_open(&game, 0), "peace appoints the elective attack");
+
+    game.at_war.insert((0, 1));
+    game.at_war.insert((1, 0));
+    assert!(ai.air_surge_open(&game, 0), "one front is the counter");
+
+    // A three-major board with two of them fighting us.
+    let mut crowded = Game::new_full(3, 32, 20, 941_113, 1_000, 0, false);
+    for pid in 0..3 {
+        let settler = crowded
+            .player_unit_ids(pid)
+            .into_iter()
+            .find(|unit| crowded.units[unit].kind == "settler")
+            .expect("each major starts with a settler");
+        let position = crowded.units[&settler].pos;
+        crowded.found_city_for(pid, position, None);
+        crowded.remove_unit(settler);
+    }
+    let capital = crowded.cities[&crowded.player_city_ids(0)[0]].pos;
+    found_nearby_test_city(&mut crowded, 0, capital);
+    for tech in air_surge_prerequisites(&crowded) {
+        crowded.players[0].techs.insert(tech);
+    }
+    crowded.turn = 60;
+    crowded.current = 0;
+    for other in 1..3 {
+        crowded.players[0].met.insert(other);
+        crowded.players[other].met.insert(0);
+        crowded.at_war.insert((0, other));
+        crowded.at_war.insert((other, 0));
+    }
+    assert!(
+        !ai.air_surge_open(&crowded, 0),
+        "two fronts shut the window"
+    );
+}
+
