@@ -140,6 +140,32 @@ impl AdvancedAi {
         self.idle_faith_patronage = false;
     }
 
+    /// Open a surprise war on a neighbour whose unescorted Settlers, Builders
+    /// or unpillaged tiles lie within a short march of our soldiers, take
+    /// them, and sue for peace. See [`AdvancedAi::opportunistic_war`].
+    /// Opt-in gene.
+    pub fn enable_opportunistic_war(&mut self) {
+        self.opportunistic_war = true;
+    }
+
+    /// The twin of `enable_opportunistic_war`.
+    pub fn disable_opportunistic_war(&mut self) {
+        self.opportunistic_war = false;
+        self.raid_war = None;
+    }
+
+    /// Count a neighbour's unpillaged tiles within reach as raid prizes and
+    /// send raiding soldiers to them. See [`AdvancedAi::raid_pillage_prizes`].
+    /// Opt-in gene; inert unless `opportunistic_war` is on.
+    pub fn enable_raid_pillage_prizes(&mut self) {
+        self.raid_pillage_prizes = true;
+    }
+
+    /// The twin of `enable_raid_pillage_prizes`.
+    pub fn disable_raid_pillage_prizes(&mut self) {
+        self.raid_pillage_prizes = false;
+    }
+
     /// The Religion lane pays for its Holy Site what the Culture lane pays
     /// for its Theater Square. See [`AdvancedAi::holy_lane_parity`]; the
     /// evaluator arm `advanced_holy_lane` sets the field directly, this pair
