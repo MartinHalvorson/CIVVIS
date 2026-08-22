@@ -321,4 +321,9 @@ pub const PRODUCTION_OPT_INS: &[LiveTreatment] = &[
     // screen keeps its positional genome. See
     // `AdvancedAi::chain_tech_lookahead`.
     ("chain_tech_lookahead", "chain-tech-lookahead", AdvancedAi::enable_chain_tech_lookahead),
+    // Priced second over 1,113 finished-city turns and run zero times, while
+    // the nuclear projects took 14% of them. Appended at the END so a running
+    // screen keeps its positional genome. See
+    // `AdvancedAi::research_grants_first`.
+    ("research_grants_first", "research-grants-first", AdvancedAi::enable_research_grants_first),
 ];

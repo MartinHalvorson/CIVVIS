@@ -133,25 +133,35 @@ fn report(label: &str, arms: &[(&str, Chain)]) {
 #[test]
 #[ignore = "census, not an assertion; run explicitly with --nocapture"]
 fn the_research_chain_treated_against_control() {
-    let seeds: Vec<u64> = (0..12).map(|i| 89_000_000 + i).collect();
-    // ⚠ ROUND SIX: the clock, not the price. Rounds three to five settled the
-    // building-half genes (merged) and returned four nulls, and the chain-tech
-    // probe then found the constraint had moved: where Chemistry lands by
-    // ~t147 every University gets its Lab, and where it lands at t205 there
-    // are none. This prices the goal that decides when Chemistry lands.
+    let seeds: Vec<u64> = (0..12).map(|i| 91_000_000 + i).collect();
+    // ⚠ ROUND EIGHT: the SAME question with the gate repaired. Round seven
+    // measured `research-grants-first` at Research Labs 40 against 55 —
+    // because its "finished" test asked `can_produce`, which is false while
+    // Chemistry is still out, so cities took the premium and spent the turns
+    // before Chemistry on Grants. The gate now asks for the DEEPEST rung held.
+    // Fresh seeds so the repaired gate is priced on games the broken one never
+    // touched.
+    //
+    // ⚠ ROUND SEVEN: what a FINISHED research city does with its last hundred
+    // turns. Rounds three to six settled the building-half genes and returned
+    // five nulls and one harm, and the variance probe showed Science is
+    // downstream of expansion. What none of them asked is what the cities that
+    // DID finish their chain build afterwards — and the answer was
+    // `campus_research_grants` **zero times in 1,113 city-turns**, priced
+    // second by about a hundred points.
     let arms: Vec<Arm> = vec![
         ("control (universe)", |_ai| {}),
-        ("chain-tech-lookahead", |ai| {
-            ai.enable_chain_tech_lookahead()
+        ("research-grants-first", |ai| {
+            ai.enable_research_grants_first()
         }),
         ("premium + payoff", |ai| {
             ai.enable_research_tier_premium();
             ai.enable_science_multiplier_payoff();
         }),
-        ("premium + payoff + lookahead", |ai| {
+        ("premium + payoff + grants", |ai| {
             ai.enable_research_tier_premium();
             ai.enable_science_multiplier_payoff();
-            ai.enable_chain_tech_lookahead();
+            ai.enable_research_grants_first();
         }),
     ];
     let mut totals: Vec<(String, Chain)> = Vec::new();
@@ -816,6 +826,376 @@ mod chain_tech_probe {
                 holding("university"),
                 holding("research_lab"),
             );
+        }
+    }
+}
+
+#[cfg(test)]
+mod variance_probe {
+    use super::*;
+
+    /// What separates a good science game from a bad one?
+    ///
+    /// ★★ THE CONTROL'S OWN SPREAD IS LARGER THAN ANY GENE IN THIS BUNDLE.
+    /// Across four census rounds the untreated seat finished with **40, 46, 60
+    /// and 65 Research Labs** and **2370, 2591, 3512 and 3483 Science** — and
+    /// the two genes that help move Labs by a fifth *where there is a gap*.
+    /// Explaining the spread is worth more than another marginal price.
+    ///
+    /// One game in the seed-88 round is the extreme: Writing at t30 and the
+    /// first Library standing at **t120**, nine cities, four Libraries, ZERO
+    /// Research Labs. Another on the same profile had twelve cities and eight
+    /// Labs. Whatever separates those two is the real science lever.
+    ///
+    /// This reports one line per seed so the driver can be read off rather
+    /// than guessed at: when the first Campus stood, when the first Library
+    /// stood, and what the empire finished with.
+    ///
+    /// ★★★★★ ANSWERED, AND IT REDIRECTS THE WHOLE LANE. Twelve seeds, the
+    /// untreated seat:
+    ///
+    /// ```text
+    ///     seed campus1 library1  chem  cities campus lib lab  science  score
+    /// 89000008      54       63   137      17     16  16   8    460.1   1384
+    /// 89000003      78       86   146      13     12  11   8    413.8   1032
+    /// 89000001      50       54   148      16     14  14   8    350.7   1058
+    /// 89000000      84       84   141       9      8   8   6    356.2    894
+    /// 89000010      58       65   123      10      8   8   8    296.6   1066
+    /// 89000009     145      149   211       9      7   7   2    145.5    548
+    /// 89000002      53      125  never      9      6   6   0    100.5    495
+    /// ```
+    ///
+    ///     corr(first Campus turn, Science)  = -0.30
+    ///     corr(first Library turn, Science) = -0.64
+    ///     corr(cities,             Science) = +0.68
+    ///
+    /// **Cities predict Science better than anything this bundle prices**, and
+    /// the first Library's turn is nearly as strong the other way. The two
+    /// worst games are the two late ones: seed 9 did not stand a Campus until
+    /// **t145**, and seed 2 never researched Chemistry at all — nought Labs,
+    /// a hundred Science, half the score of the median game.
+    ///
+    /// ⇒ **Late-game science in this engine is downstream of expansion and of
+    /// the chain's EARLY timing.** It is not a late-game quantity at all. That
+    /// is why nine genes aimed at the late game produced two conditional wins
+    /// and five nulls, and why the one that tried to force the tech order was
+    /// the worst of them — it bought Chemistry with the expansion Science is
+    /// made of (`chain_tech_lookahead`: -17% Labs and SEVENTEEN fewer cities).
+    ///
+    /// The operator's premise is right — the same table shows Science and
+    /// score moving together, 460/1384 at the top and 100/495 at the bottom.
+    /// The lever is just not where the pricing lives: it is `land_grab`,
+    /// `wide-map-capacity` and whatever gets the first Campus standing before
+    /// turn 60.
+    #[test]
+    #[ignore = "census, not an assertion; run explicitly with --nocapture"]
+    fn what_separates_a_good_science_game_from_a_bad_one() {
+        let campus = crate::name!("campus");
+        println!(
+            "{:>10}{:>8}{:>9}{:>9}{:>8}{:>8}{:>7}{:>7}{:>10}{:>8}",
+            "seed",
+            "campus1",
+            "library1",
+            "chem",
+            "cities",
+            "campus",
+            "lib",
+            "lab",
+            "science",
+            "score"
+        );
+        let mut rows = Vec::new();
+        for seed in 0..12u64 {
+            let mut g = Game::new(6, 60, 38, 89_000_000 + seed, 250, 6);
+            g.game_speed = GameSpeed::Online;
+            g.victory_conditions =
+                crate::game::VictoryConditions::parse("science,culture,domination,score").unwrap();
+            let mut me = AdvancedAi::new();
+            me.enable_engine_repairs_universe();
+            let mut others = AdvancedAi::fleet(&g);
+            let (mut campus1, mut library1, mut chem) = (0u32, 0u32, 0u32);
+            while g.winner.is_none() && g.turn <= 250 {
+                let pid = g.current;
+                if pid == 0 {
+                    me.take_turn(&mut g, pid);
+                    let cities = g.player_city_ids(0);
+                    if campus1 == 0
+                        && cities
+                            .iter()
+                            .any(|c| g.city_has_district_family(&g.cities[c], campus))
+                    {
+                        campus1 = g.turn;
+                    }
+                    if library1 == 0
+                        && cities
+                            .iter()
+                            .any(|c| g.cities[c].buildings.contains(&crate::name!("library")))
+                    {
+                        library1 = g.turn;
+                    }
+                    if chem == 0 && g.players[0].techs.contains(&crate::name!("chemistry")) {
+                        chem = g.turn;
+                    }
+                } else {
+                    others[pid].take_turn(&mut g, pid);
+                }
+                if g.winner.is_none() && g.current == pid {
+                    let _ = g.apply(pid, &Action::EndTurn);
+                }
+            }
+            let cities = g.player_city_ids(0);
+            let holding = |name: &str| {
+                cities
+                    .iter()
+                    .filter(|c| g.cities[c].buildings.contains(&Name::new(name)))
+                    .count()
+            };
+            let science: f64 = cities.iter().map(|c| g.city_yields(*c).science).sum();
+            let campuses = cities
+                .iter()
+                .filter(|c| g.city_has_district_family(&g.cities[c], campus))
+                .count();
+            let labs = holding("research_lab");
+            println!(
+                "{:>10}{:>8}{:>9}{:>9}{:>8}{:>8}{:>7}{:>7}{:>10.1}{:>8}",
+                89_000_000 + seed,
+                campus1,
+                library1,
+                chem,
+                cities.len(),
+                campuses,
+                holding("library"),
+                labs,
+                science,
+                g.score(0)
+            );
+            rows.push((
+                campus1 as f64,
+                library1 as f64,
+                cities.len() as f64,
+                science,
+            ));
+        }
+        // The correlation the table is for, stated rather than eyeballed.
+        let corr = |pick: fn(&(f64, f64, f64, f64)) -> f64| {
+            let n = rows.len() as f64;
+            let (mx, my) = (
+                rows.iter().map(pick).sum::<f64>() / n,
+                rows.iter().map(|r| r.3).sum::<f64>() / n,
+            );
+            let cov: f64 = rows.iter().map(|r| (pick(r) - mx) * (r.3 - my)).sum();
+            let vx: f64 = rows.iter().map(|r| (pick(r) - mx).powi(2)).sum();
+            let vy: f64 = rows.iter().map(|r| (r.3 - my).powi(2)).sum();
+            if vx <= 0.0 || vy <= 0.0 {
+                0.0
+            } else {
+                cov / (vx * vy).sqrt()
+            }
+        };
+        println!(
+            "VARIANCE corr(first Campus turn, Science) = {:+.2} · \
+             corr(first Library turn, Science) = {:+.2} · \
+             corr(cities, Science) = {:+.2}",
+            corr(|r| r.0),
+            corr(|r| r.1),
+            corr(|r| r.2)
+        );
+    }
+}
+
+#[cfg(test)]
+mod finished_city_probe {
+    use super::*;
+
+    /// What does a city with a FINISHED research chain build for the rest of
+    /// the game?
+    ///
+    /// The variance probe showed Science is downstream of expansion and early
+    /// timing — but it did not ask what the cities that DID finish their chain
+    /// do afterwards. From about turn 150 a Campus city holding its Library,
+    /// University and Research Lab has nothing left in the chain to build, and
+    /// whatever it picks instead is the empire's remaining late-game science
+    /// decision. If those turns go to repeatable projects with no beaker in
+    /// them, or to units, that is a late-game science lever that no pricing on
+    /// the CHAIN can reach.
+    ///
+    /// Counts what finished Campus cities actually queue over the last
+    /// hundred turns, by item family.
+    #[test]
+    #[ignore = "census, not an assertion; run explicitly with --nocapture"]
+    fn what_does_a_finished_research_city_do_with_its_last_hundred_turns() {
+        let campus = crate::name!("campus");
+        let chain = ["library", "university", "research_lab"];
+        let mut tally: std::collections::BTreeMap<String, usize> = Default::default();
+        let mut finished_city_turns = 0usize;
+        let mut idle_city_turns = 0usize;
+        for seed in 0..4u64 {
+            let mut g = Game::new(6, 60, 38, 89_000_000 + seed, 250, 6);
+            g.game_speed = GameSpeed::Online;
+            g.victory_conditions =
+                crate::game::VictoryConditions::parse("science,culture,domination,score").unwrap();
+            let mut me = AdvancedAi::new();
+            me.enable_engine_repairs_universe();
+            me.enable_research_tier_premium();
+            me.enable_science_multiplier_payoff();
+            let mut others = AdvancedAi::fleet(&g);
+            while g.winner.is_none() && g.turn <= 250 {
+                let pid = g.current;
+                if pid == 0 {
+                    me.take_turn(&mut g, pid);
+                    if g.turn > 150 {
+                        for cid in g.player_city_ids(0) {
+                            let city = &g.cities[&cid];
+                            if !g.city_has_district_family(city, campus) {
+                                continue;
+                            }
+                            // "Finished" = every rung it can produce, it has.
+                            let done = chain.iter().all(|rung| {
+                                let name = Name::new(rung);
+                                city.buildings.contains(&name)
+                                    || !g.can_produce(
+                                        0,
+                                        cid,
+                                        &crate::game::Item::Building { building: name },
+                                    )
+                            });
+                            if !done {
+                                continue;
+                            }
+                            finished_city_turns += 1;
+                            match city.queue.first() {
+                                None => idle_city_turns += 1,
+                                Some(item) => {
+                                    let family = match item {
+                                        crate::game::Item::Unit { unit } => {
+                                            format!("unit:{unit}")
+                                        }
+                                        crate::game::Item::Formation { unit, .. } => {
+                                            format!("unit:{unit}")
+                                        }
+                                        crate::game::Item::Building { building } => {
+                                            format!("building:{building}")
+                                        }
+                                        crate::game::Item::District { district, .. } => {
+                                            format!("district:{district}")
+                                        }
+                                        crate::game::Item::Wonder { wonder, .. } => {
+                                            format!("wonder:{wonder}")
+                                        }
+                                        crate::game::Item::Project { project } => {
+                                            format!("project:{project}")
+                                        }
+                                        other => format!("{other:?}")
+                                            .split_whitespace()
+                                            .next()
+                                            .unwrap_or("other")
+                                            .to_ascii_lowercase(),
+                                    };
+                                    *tally.entry(family).or_default() += 1;
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    others[pid].take_turn(&mut g, pid);
+                }
+                if g.winner.is_none() && g.current == pid {
+                    let _ = g.apply(pid, &Action::EndTurn);
+                }
+            }
+        }
+        let mut ranked: Vec<(&String, &usize)> = tally.iter().collect();
+        ranked.sort_by(|a, b| b.1.cmp(a.1));
+        println!(
+            "FINISHED finished_city_turns={finished_city_turns} idle={idle_city_turns} \
+             ({:.1}% idle)",
+            100.0 * idle_city_turns as f64 / finished_city_turns.max(1) as f64
+        );
+        for (family, count) in ranked.iter().take(14) {
+            println!(
+                "FINISHED   {:<40}{count:>6}  {:>5.1}%",
+                family,
+                100.0 * **count as f64 / finished_city_turns.max(1) as f64
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod finished_city_ranking_probe {
+    use super::*;
+
+    /// Why does a finished research city never run `campus_research_grants`?
+    ///
+    /// The seven district projects are symmetric in the ruleset — cost 25,
+    /// repeatable, 15% ongoing yield (Commercial Hub 30%), 10 Great Person
+    /// points — yet over 1,113 finished-Campus city-turns past t150 the
+    /// Theater and Commercial projects ran 4.5% and 3.6% of the time and the
+    /// **Campus project ran ZERO**. Symmetric inputs and asymmetric output
+    /// means the answer is in the valuation, so print it.
+    #[test]
+    #[ignore = "census, not an assertion; run explicitly with --nocapture"]
+    fn what_does_a_finished_city_actually_rank_its_options() {
+        let campus = crate::name!("campus");
+        let mut g = Game::new(6, 60, 38, 89_000_008, 250, 6);
+        g.game_speed = GameSpeed::Online;
+        g.victory_conditions =
+            crate::game::VictoryConditions::parse("science,culture,domination,score").unwrap();
+        let mut me = AdvancedAi::new();
+        me.enable_engine_repairs_universe();
+        me.enable_research_tier_premium();
+        me.enable_science_multiplier_payoff();
+        let mut others = AdvancedAi::fleet(&g);
+        let mut reported = false;
+        while g.winner.is_none() && g.turn <= 250 {
+            let pid = g.current;
+            if pid == 0 {
+                me.take_turn(&mut g, pid);
+                if !reported && g.turn >= 200 {
+                    let finished: Vec<u32> = g
+                        .player_city_ids(0)
+                        .into_iter()
+                        .filter(|cid| {
+                            let city = &g.cities[cid];
+                            g.city_has_district_family(city, campus)
+                                && city.buildings.contains(&crate::name!("research_lab"))
+                        })
+                        .collect();
+                    if let Some(cid) = finished.first().copied() {
+                        reported = true;
+                        // The seven district projects, priced by the same
+                        // function, in the same city, on the same turn.
+                        let plan = me.assess(&g, 0);
+                        println!(
+                            "RANK city {cid} at t{} · production {:.0} · lane {:?}",
+                            g.turn,
+                            g.city_yields(cid).production,
+                            plan.strategy
+                        );
+                        for project in [
+                            "campus_research_grants",
+                            "theater_square_festival",
+                            "commercial_hub_investment",
+                            "holy_site_prayers",
+                            "industrial_zone_logistics",
+                        ] {
+                            let has_district = g.rules.projects[project]
+                                .district
+                                .map(|d| g.city_has_district_family(&g.cities[&cid], d))
+                                .unwrap_or(true);
+                            let value = me.district_project_value(&g, 0, cid, project, &plan);
+                            println!(
+                                "RANK   {value:>10.1}  {project:<28} district_here={has_district}"
+                            );
+                        }
+                    }
+                }
+            } else {
+                others[pid].take_turn(&mut g, pid);
+            }
+            if g.winner.is_none() && g.current == pid {
+                let _ = g.apply(pid, &Action::EndTurn);
+            }
         }
     }
 }
