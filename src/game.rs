@@ -16168,8 +16168,7 @@ impl Game {
             .unwrap_or(0);
         let mut table = vec![false; span];
         for (name, spec) in self.rules.improvements.iter() {
-            table[name.id() as usize] =
-                spec.effects.get("passage").copied().unwrap_or(0.0) > 0.0;
+            table[name.id() as usize] = spec.effects.get("passage").copied().unwrap_or(0.0) > 0.0;
         }
         let table = Arc::new(table);
         if self.query_memo.yields.borrow().is_some() {
