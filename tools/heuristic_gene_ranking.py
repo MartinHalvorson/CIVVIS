@@ -30,14 +30,16 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
+sys.path.insert(0, str(HERE))
+# The ledger tool owns the win column: it decides each gene's default from the
+# same two numbers this table prints, so both must be one arithmetic.
+from gene_ledger import wins_per_10k as wins_per  # noqa: E402
 LEDGER_JSON = ROOT / "docs" / "gene_ledger.json"
 RANKING_MD = ROOT / "HEURISTIC_GENE_RANKING.md"
 NOTES_MD = ROOT / "docs" / "gene_ranking_notes.md"
 TREATMENTS_RS = ROOT / "src" / "ai" / "advanced" / "treatments.rs"
 FLAGS_RS = ROOT / "src" / "ai" / "advanced" / "treatment_flags.rs"
 ELO_RS = ROOT / "src" / "elo.rs"
-CHANCE = 1.0 / 6.0
-PER = 10_000
 
 ROW = re.compile(r'\(\s*"([a-z0-9_]+)"\s*,\s*"([a-z0-9-]+)"\s*,\s*AdvancedAi::(?:enable|disable)_([a-z0-9_]+)')
 
@@ -136,11 +138,6 @@ def load_sources(
     return native, war, native_src, war_src
 
 
-def wins_per(rate: float, players: int) -> int:
-    chance = 1.0 / players if players else CHANCE
-    return round((rate - chance) * PER)
-
-
 def fmt_int(n: float) -> str:
     return f"{int(round(n)):,}"
 
@@ -175,7 +172,11 @@ def render(ledger: dict) -> str:
         "gene's measured on-rate in its **latest** native screen. *± Wins 10k Prior* is the "
         "same figure from the screen before that (\u2013 when the gene has only one native "
         "reading); movement between the two columns is the gene's trend across cycles. "
-        "*Default* is the deployment ledger's call (`docs/gene_ledger.json`). The *Total* "
+        "*Default* is the deployment ledger's call (`docs/gene_ledger.json`), and since "
+        "2026-08-22 that call is read off these two win columns: a gene defaults **on** "
+        "when both are positive, or when their average clears +15 with neither below "
+        "\u221210, and **off** otherwise \u2014 including every gene with only one native "
+        "reading, which has no prior column to agree with it. The *Total* "
         "columns pool every native screen that measured the gene, weighted by games. Every "
         "screen is a foldover against the best-genome baseline with shuffled civs and every "
         "major seat carrying its own genome (errors clustered by game pair), so a gene's "

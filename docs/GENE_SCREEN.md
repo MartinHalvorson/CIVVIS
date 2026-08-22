@@ -306,17 +306,32 @@ that change how the tool is read:
 ## The gene ledger: the defaults are the best genome, and the best genome is data
 
 Operator directive 2026-08-20: *let the defaults for the genes reflect our best
-genome — only genes that provably help; unhelpful genes can default off — so
-our verification games use our best genome. When we test, still test and try
-to improve the less helpful genes.*
+genome — unhelpful genes can default off — so our verification games use our
+best genome. When we test, still test and try to improve the less helpful
+genes.*
+
+Operator directive 2026-08-22, which is now the rule: *genes can default on if
+both the last 10k and 10k prior columns are positive, or if the average of the
+two columns is >15 and neither is less than −10; otherwise they default off.*
+Those are the two columns `HEURISTIC_GENE_RANKING.md` prints — wins added per
+10,000 games at the gene's measured on-rate, `(win_on − 1/players) × 10,000` —
+from the latest two native screens that priced the gene. A gene with only one
+native reading has no prior column to agree with it, so it is off: one screen
+is never a result. The verdicts below still record what the screens *proved*,
+and the screen still prints them; they no longer decide what ships, so a gene
+can be `helps` and off (its prior reading was against it) or `hurts` and on
+(two positive win columns since). The war regime never enters the default —
+the verification games are the all-six regime.
 
 Until then "on by default" meant somebody had written `self.enable_x()` into
 the bundle, and the phase-1 anchors had measured that all-on bundle at **7.5%
 wins against 27% for all-off** (4p classic, 200 anchor pairs). Now:
 
 - **`docs/gene_ledger.json`** records, per gene, what the screens measured in
-  each regime (`native` = all six lanes, `war` = `domination,score`) and the
-  verdict that follows; **`src/ai/advanced/gene_ledger_table.rs`** is the same
+  each regime (`native` = all six lanes, `war` = `domination,score`), the
+  verdict that follows, the two native win columns (`wins_last_10k`,
+  `wins_prior_10k`) and the `default_on` they decide;
+  **`src/ai/advanced/gene_ledger_table.rs`** is the same
   table generated into Rust. `tools/gene_ledger.py --write --source <analysis>
   --regime <native|war> …` builds both from `gene_screen --analyze --json`
   outputs (the analyses themselves are tracked under `docs/gene_screens/`);
@@ -332,12 +347,19 @@ wins against 27% for all-off** (4p classic, 200 anchor pairs). Now:
   recorded as `family_wise`, not required: with sixty-odd genes that bar would
   leave three on. The **native** regime governs when it resolves; a gene
   unresolved natively takes the **war** verdict when that resolves.
+- **The deployment rule** (`default_from_win_columns` in
+  `tools/gene_ledger.py`, mirrored as `win_columns_default_on` in
+  `src/ai/advanced/gene_ledger.rs`, and re-derived from the generated table by
+  `the_default_follows_the_win_columns`): **on** when both native win columns
+  are positive, or when their average is above +15 with neither below −10;
+  **off** otherwise. Only native screens supply a column, and only the latest
+  two count — an older bad screen is history, not a veto.
 - **The deployment genome.** `AdvancedAi::enable_live_bridge` and
   `enable_engine_repairs` now end with `apply_gene_ledger`: every live or
-  production treatment whose verdict is not `helps` is withheld, every opt-in
-  whose verdict is `helps` is enabled, and a flag no native screen can price
+  production treatment the ledger does not default on is withheld, every
+  opt-in it defaults on is enabled, and a flag no native screen can price
   (the Firaxis-only flags) is left as the bundle set it. A **screenable gene
-  nobody has screened yet is not proven either, and ships off.** The
+  nobody has screened yet, or has screened only once, ships off.** The
   `_universe` twins (`enable_live_bridge_universe`, `enable_engine_repairs_universe`)
   set every flag and skip the ledger — they are what this screen starts from
   (it then sets each gene to its drawn state) and what the membership tests
@@ -370,6 +392,20 @@ wins against 27% for all-off** (4p classic, 200 anchor pairs). Now:
   an older build can carry a gene whose code has since been removed; the
   tool now drops those rows and says so, because the Rust table refuses a tag
   the registry does not know.
+
+- **The default rule replaced the verdict (2026-08-22).** No screen was re-run
+  and no measurement moved; the ledger simply re-decided every default from
+  the two native win columns. **22 genes on, was 20.** On: `religion-sues-peace`
+  (+29/+25), `one-launch-pad` (+24/+23), `whole-turn-backtrack-guard` (+23/+39),
+  `siege-tracks-wall` (+21/+51), `strategic-wonders` (+21/+21), `strike-opening`
+  (+21/+20), `war-patience` (+20/+3), `blind-objective-units` (+4/+6) and
+  `war-reinforcement` (−5/+49, average +22). Off: `founder-temple` (+48/–) and
+  `idle-faith-patronage` (+23/–), each one native screen short of a prior
+  column; `siege-is-progress` (+14/−64), `war-economy` (+8/−192),
+  `amenity-project-preemption` (−4/+33), `army-target-weighs-enemy` (−4/−33)
+  and `joint-tactics` (−4/−18). Note `war-patience`: it ships with a `hurts`
+  verdict, family-wise on the **share** axis at native share z −3.43, because
+  the rule reads the win axis only.
 
 - **Ten more genes left the code (2026-08-21).** A second application of the
   directive behind the #2235 cull — the bottom of `HEURISTIC_GENE_RANKING.md`
@@ -416,7 +452,7 @@ wins against 27% for all-off** (4p classic, 200 anchor pairs). Now:
 ledger already holds off is identical to `live` — the screen is that gene's
 instrument now. And a treatment PR no longer ships its flag on: it ships it
 into the universe, screens it (a few hundred pairs resolve ±3 pp), and the
-ledger turns it on if it helps.
+ledger turns it on when two native screens agree it pays.
 
 ## Prior-weighted screens: the helpful genes play most of the time, and are still priced
 

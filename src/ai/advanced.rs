@@ -3519,6 +3519,94 @@ pub struct AdvancedAi {
     /// Engineer or Merchant is worth something. Gold purchases keep their
     /// gate. Off everywhere by default; opt-in gene `idle-faith-patronage`.
     pub idle_faith_patronage: bool,
+
+    /// ★★★ THE CORPS THAT CANNOT ANSWER MORE THAN TWO CITIES. Outside an
+    /// offensive posture `religious_spending_with_reserve` sizes the
+    /// Missionary corps `(1 + defensive_targets.div_ceil(2)).min(2)`, which
+    /// is the same answer to three cities slipping as to one — and the screen
+    /// `inquisition_on_threat` was built from measured 46% of founders ending
+    /// with three or more cities under a rival faith, winning 3.0% against a
+    /// founder that held its cities at 52.5%. With this on the defensive corps
+    /// is one spreader per city actually under pressure, bounded at four so it
+    /// cannot eat the bank the Apostle needs. Off everywhere by default;
+    /// opt-in gene `religious-defence-scales`. See `advanced/religion.rs`.
+    pub religious_defence_scales: bool,
+
+    /// ★★★ THE ONLY FIELD HEAL A CORPS HAS, AND ONLY THE ATTACKER MAY BUY IT.
+    /// `guru_cap` is `offensive && apostles > 0`, so a founder whose whole
+    /// religious effort is defending its own cities can never buy the one unit
+    /// that heals religious units (+40 hit points to every adjacent unit of
+    /// its faith). It matters because `Game::do_spread` scales the pressure a
+    /// charge adds by `hp/100`: a damaged corps is a proportionally weaker
+    /// one, and without a Guru its only recovery is standing in its own Holy
+    /// Site's ring. With this on a founder under conversion pressure that
+    /// already fields a damaged religious unit may hold one Guru. Off
+    /// everywhere by default; opt-in gene `guru-heals-the-corps`.
+    pub guru_heals_the_corps: bool,
+
+    /// ★★★ A WOUNDED SPREADER SPENDS A WHOLE CHARGE FOR A FRACTION OF ONE.
+    /// `do_spread` adds `spread × hp/100` pressure and `end_turn` heals a unit
+    /// only when `!acted`, while `do_move` sets `acted` on every step and
+    /// `do_fortify` refuses a civilian — so a religious unit recovers only on
+    /// a turn its controller gives it nothing to do, and
+    /// `advanced_religious_step`'s last leg always walks it somewhere. The
+    /// corps therefore decays from its first theological exchange to its last
+    /// charge. With this on a spreader below 70 hit points that is standing in
+    /// its own Holy Site's heal ring, and is not needed in a city it could
+    /// convert this turn, holds instead. Off everywhere by default; opt-in
+    /// gene `religious-units-heal-first`.
+    pub religious_units_heal_first: bool,
+
+    /// ★★ THE CONGRESS LICENCE NOTHING HAS EVER USED. `do_condemn_heretic`
+    /// accepts a military unit's blow against an enemy religious unit when
+    /// `is_at_war(pid, target.owner)` **or** the World Congress has condemned
+    /// the target's religion (`world_religion`, option B) — and `condemn_step`
+    /// asks only the first, so a resolution this seat may itself have voted
+    /// for removes nothing. Interdiction is the cheap half of the counter:
+    /// measured 08-17 over 39 live games we field 590 religious units against
+    /// rivals' 12,708, and 41% of rival sightings already have one of our
+    /// military units within two tiles. Off everywhere by default; opt-in gene
+    /// `condemn-under-congress`.
+    pub condemn_under_congress: bool,
+
+    /// ★★★ THE CAMPAIGN CANNOT SURVIVE ITS OWN LAST CHARGE.
+    /// `religious_offensive_posture` asks `active_campaign || faith >=
+    /// 2_000×speed`, and `active_campaign` means holding a spreader with a
+    /// charge left *this instant* — while `do_spread` removes a Missionary on
+    /// its last charge. So the turn a wave finishes, the posture drops:
+    /// `missionary_cap` six to two, `apostle_cap` two to zero, and a campaign
+    /// that was converting cities stops until the bank climbs back to two
+    /// thousand. With this on a seat that has already converted a foreign city
+    /// stays on the offensive while an unconverted foreign target remains; the
+    /// caller's reserve still decides what it can afford. Off everywhere by
+    /// default; opt-in gene `spread-campaign-persists`.
+    pub spread_campaign_persists: bool,
+
+    /// ★★★ THE DEFENCE CANNOT BE BOUGHT WHERE IT IS NEEDED. A religious unit
+    /// is purchasable only in a city that itself holds a Holy Site, so a
+    /// founder whose only Holy Site is its Holy City answers a city flipping
+    /// across the empire by buying at home and walking — and the walk is also
+    /// the turns that unit neither heals nor spreads. `founder_temple` fills
+    /// in the Shrine and Temple, but only where the district already stands.
+    /// With this on, a city under conversion pressure with no Holy Site claims
+    /// one. Narrower than the `d_holy` re-ranking #1491 reverted: it changes
+    /// no standing rank, only what a slipping city does about it. Off
+    /// everywhere by default; opt-in gene `holy-site-where-the-threat-is`.
+    pub holy_site_where_the_threat_is: bool,
+
+    /// ★★★ THE BELIEFS THAT MULTIPLY A CHARGE ARE SCORED AS "ANYTHING ELSE".
+    /// `advanced_religious_step`'s `EvangelizeBelief` table scores by victory
+    /// lane and gives everything it does not name 100 — the same number for
+    /// `scripture` (+25% to the pressure every charge adds) as for a worship
+    /// building the empire has no use for, so the tie falls to the name. The
+    /// five enhancers that multiply a corps (`holy_order`, `scripture`,
+    /// `itinerant_preachers`, `missionary_zeal`, `defender_of_the_faith`) are
+    /// never chosen *as* corps multipliers. With this on they outrank the lane
+    /// pick while the corps has a job — a city under pressure, or a campaign
+    /// in the field — and are inert otherwise. Same shape as the shipped
+    /// `apostle_promotion_by_role`. Off everywhere by default; opt-in gene
+    /// `enhancer-for-the-corps`.
+    pub enhancer_for_the_corps: bool,
     /// Buy the second and third Scout while the world's borders are still
     /// open, because after that a city-state cannot be met by land at all.
     ///
@@ -3630,6 +3718,25 @@ pub struct AdvancedAi {
     pub raid_pillage_prizes: bool,
     /// The raid `opportunistic_war` opened and has not yet closed.
     raid_war: Option<opportunistic_war::RaidWar>,
+
+    /// Beeline Advanced Flight from three technologies out, raise an
+    /// Aerodrome and a bomber wing, and take the appointed city with the
+    /// cavalry behind it. The controller has no other route into the air
+    /// layer at all: `choose_war_plan` builds only melee packages and ranks
+    /// its unlocks by cheapest remaining research, so it can appoint the next
+    /// technology and never a chain. Off everywhere by default; opt-in gene
+    /// `air-surge`. See `advanced/air_surge.rs`.
+    pub air_surge: bool,
+    /// The one surge appointed and not yet finished.
+    air_surge_plan: Option<AirSurge>,
+    /// The package as of the last lifecycle pass, so production, diplomacy
+    /// and the journal all read one census rather than three.
+    air_surge_status: AirSurgeStatus,
+    /// What the surge did this game.
+    air_surge_census: AirSurgeCensus,
+    /// No surge is appointed before this turn. Set whenever one stands down;
+    /// see `AIR_SURGE_ABORT_COOLDOWN`.
+    air_surge_cooldown_until: u32,
 
     /// `inquisition_on_threat`'s civic: the Temple needs Theology, which only
     /// the Religion lane asks for — outside it Theology arrived at turn
@@ -4077,9 +4184,20 @@ mod opportunistic_war;
 /// on a shooter, or leaving its envelope. See `advanced/contact_posture.rs`.
 mod contact_posture;
 
+/// The air surge: a three-tech beeline to Advanced Flight, an Aerodrome, a
+/// bomber wing, and the cavalry that takes the city the wing empties. See
+/// `advanced/air_surge.rs`.
+mod air_surge;
+use air_surge::{AirSurge, AirSurgeCensus, AirSurgeStatus};
+
 /// The district look-ahead at settlement and the priced tile purchase: two
 /// opt-in territory genes, one file. See `advanced/site_lookahead.rs`.
 mod site_lookahead;
+
+/// The religious corps: the four opt-in genes for what a founder buys with
+/// Faith once its cities start slipping, and what it does with the units
+/// afterwards. See `advanced/religion.rs`.
+mod religion;
 use site_lookahead::{PlotOffer, PlotPurchaseCache};
 
 /// Victory lanes are target contracts: their beelines and campaign objectives
@@ -4706,12 +4824,24 @@ impl AdvancedAi {
             district_lookahead_settle: false,
             priced_tile_purchase: false,
             idle_faith_patronage: false,
+            religious_defence_scales: false,
+            guru_heals_the_corps: false,
+            religious_units_heal_first: false,
+            condemn_under_congress: false,
+            spread_campaign_persists: false,
+            holy_site_where_the_threat_is: false,
+            enhancer_for_the_corps: false,
             early_contact_window: false,
             great_person_housing: false,
             opportunistic_war: false,
             contact_posture: false,
             raid_pillage_prizes: false,
             raid_war: None,
+            air_surge: false,
+            air_surge_plan: None,
+            air_surge_status: AirSurgeStatus::default(),
+            air_surge_census: AirSurgeCensus::default(),
+            air_surge_cooldown_until: 0,
             diplomatic_opening: false,
             envoy_priority: false,
             joint_tactics: false,
@@ -5935,6 +6065,11 @@ impl AdvancedAi {
     fn may_form_war_plan(&self, g: &Game, pid: usize) -> bool {
         if !self.timed_war
             || self.war_plan.is_some()
+            // Two appointed packages would bid for the same idle queues and
+            // the same declaration. Whichever was appointed first keeps the
+            // empire. `air_surge_active` is false whenever that gene is off,
+            // so the measured timed-war lane is untouched.
+            || self.air_surge_active()
             || (self.selective_timed_war
                 && self.selective_timed_war_target().is_none())
             || g.turn < g.standard_duration(RUSH_WINDOW_CLOSES)
@@ -9552,6 +9687,16 @@ impl AdvancedAi {
                     && !g.players[pid].techs.contains(&crate::name!("astrology")) =>
                 {
                     Some("astrology")
+                }
+                // The air surge's beeline. Behind the appointed timed war's
+                // breakthrough (that package is already half-built when it
+                // holds the research slot) and behind the Taxis religion
+                // opening, ahead of everything else: three technologies is
+                // the whole appointment, and a lane goal that displaces one
+                // of them turns the surge into a research plan that never
+                // launches. See `advanced/air_surge.rs`.
+                _ if self.air_surge_research_goal(g, pid).is_some() => {
+                    self.air_surge_research_goal(g, pid)
                 }
                 // An ancient rush rides. `rush_census` measures **0% of
                 // empires holding `horseback_riding` at turn 50**, so the
@@ -13411,6 +13556,12 @@ impl AdvancedAi {
         if self.timed_war_opening(g, pid, target) {
             return;
         }
+        // The air surge owns the declaration for its own objective. Like the
+        // timed war it consumes the turn's one war-opening decision even when
+        // it deliberately holds for the wing.
+        if self.air_surge_opening(g, pid, target) {
+            return;
+        }
         // Timed attacks already refuse an appointment that cannot finish
         // before this same scaled reserve. The direct victory-denial fallback
         // used to bypass it and could declare in the final turns with no
@@ -14887,7 +15038,11 @@ impl AdvancedAi {
                 && unit.charges > 0
                 && g.rules.units[unit.kind].religious_spread > 0.0
         });
-        active_campaign || g.players[pid].faith >= g.game_speed.scale(2_000.0)
+        // `spread_campaign_persists`: a campaign that has already converted a
+        // foreign city is not over because this turn's last charge was spent.
+        active_campaign
+            || self.spread_campaign_persists(g, pid, religion)
+            || g.players[pid].faith >= g.game_speed.scale(2_000.0)
     }
 
     fn religious_spending(&mut self, g: &mut Game, pid: usize, offensive: bool) {
@@ -14948,7 +15103,12 @@ impl AdvancedAi {
         } else if offensive {
             (2 + spread_targets.div_ceil(4)).min(6)
         } else {
-            (1 + defensive_targets.div_ceil(2)).min(2)
+            // `religious_defence_scales` reads the shipped constant and, when
+            // it is on, answers one spreader per threatened city instead.
+            self.defensive_missionary_cap(
+                defensive_targets,
+                (1 + defensive_targets.div_ceil(2)).min(2),
+            )
         };
         // See `inquisition_on_threat`: the one Apostle that unlocks the
         // Inquisitors, bought once the Missionary corps stands and the bank
@@ -14963,19 +15123,32 @@ impl AdvancedAi {
         } else {
             0
         };
-        let guru_cap = usize::from(offensive && apostles > 0);
+        // `guru_heals_the_corps`: the defence has damaged units and no heal.
+        let guru_defends = self.guru_defends_the_corps(g, pid, home_under_pressure);
+        let guru_cap = usize::from((offensive && apostles > 0) || guru_defends);
         let inquisitor_cap = if home_under_pressure && inquisition_launched {
             2
         } else {
             0
         };
+        // A cap nothing asks for is not a cap. The two defensive orders never
+        // named the Guru, so `guru_cap` alone could not buy one; with the gene
+        // on they name it last, behind the spread and the Inquisition.
         let priorities: &[&str] = if home_under_pressure && inquisition_launched && inquisitors < 2
         {
             &["inquisitor", "apostle", "missionary", "guru"]
         } else if defend_with_inquisition && apostles == 0 {
-            &["missionary", "apostle", "inquisitor"]
+            if guru_defends {
+                &["missionary", "apostle", "inquisitor", "guru"]
+            } else {
+                &["missionary", "apostle", "inquisitor"]
+            }
         } else if !offensive {
-            &["missionary", "inquisitor"]
+            if guru_defends {
+                &["missionary", "inquisitor", "guru"]
+            } else {
+                &["missionary", "inquisitor"]
+            }
         } else if apostles < 2 {
             &["apostle", "missionary", "guru"]
         } else if gurus < 1 {
@@ -18722,6 +18895,15 @@ impl AdvancedAi {
                         - turns * 8.0;
                 }
             }
+        }
+        // The air surge prices its own package the same way, and after the
+        // melee appointment so a live timed war keeps first claim on a shared
+        // queue. `air_surge_production_value` is `None` for every item that is
+        // not the airfield, a Bomber, or a capture body, and for every item
+        // the package already holds — so an inactive surge cannot change a
+        // single score. See `advanced/air_surge.rs`.
+        if let Some(value) = self.air_surge_production_value(g, pid, item, turns) {
+            return value;
         }
         let raw = match item {
             Item::Unit { unit } if unit == "settler" && threatened_recovery_holds_settlers => {
@@ -24333,6 +24515,13 @@ impl AdvancedAi {
         // adopted majority faith to repel a competing conversion. That unit
         // has no player-owned religion to read, so its own faith is the
         // authority for both its defensive target and its Spread action.
+        // `religious_units_heal_first`: a charge spent at 40 hit points buys
+        // 40% of a charge's pressure. Standing in an own Holy Site's ring is
+        // the only recovery a Missionary has, and taking no action is the only
+        // way to collect it.
+        if self.religious_unit_holds_to_heal(g, pid, uid) {
+            return false;
+        }
         let Some(religion) = g.units[&uid]
             .religion
             .clone()
@@ -24435,7 +24624,7 @@ impl AdvancedAi {
                 .iter()
                 .filter_map(|action| match action {
                     Action::EvangelizeBelief { unit, belief } if *unit == uid => {
-                        let score = match (objective, belief.as_str()) {
+                        let lane = match (objective, belief.as_str()) {
                             (GrandStrategy::Science, "wat")
                             | (GrandStrategy::Culture, "cathedral")
                             | (GrandStrategy::Diplomacy, "pagoda")
@@ -24448,6 +24637,11 @@ impl AdvancedAi {
                             (_, "holy_order" | "mosque" | "wat" | "pagoda") => 180,
                             _ => 100,
                         };
+                        // `enhancer_for_the_corps` answers first when the corps
+                        // has work; `None` leaves the lane table untouched.
+                        let score = self
+                            .corps_enhancer_score(g, pid, belief.as_str())
+                            .unwrap_or(lane);
                         Some((score, std::cmp::Reverse(*belief), action.clone()))
                     }
                     _ => None,
@@ -24501,6 +24695,13 @@ impl AdvancedAi {
             if unit.hp >= 55 || score >= 45 {
                 return g.apply(pid, &action).is_ok();
             }
+        }
+
+        // The same hold, after the fight rather than before it: a unit already
+        // in a theological exchange resolves it, and only the spread and the
+        // hunt below wait for the wound to close.
+        if self.religious_unit_holds_to_heal(g, pid, uid) {
+            return false;
         }
 
         if g.rules.units[unit.kind].religious_spread > 0.0 && unit.charges > 0 {
@@ -27091,14 +27292,10 @@ impl AdvancedAi {
     /// the counter was effectively dead. Now a military unit will step onto
     /// an adjacent one and condemn it.
     fn condemn_step(&mut self, g: &mut Game, pid: usize, uid: u32) -> bool {
-        let condemnable = |game: &Game, at: Pos| -> Option<u32> {
-            game.units_at(at).into_iter().find(|target| {
-                let target = &game.units[target];
-                target.owner != pid
-                    && game.is_at_war(pid, target.owner)
-                    && game.rules.units[target.kind].class == "religious"
-            })
-        };
+        // `condemn_under_congress` owns this predicate now: war alone with the
+        // gene off, war or a World Congress condemnation with it on.
+        let condemnable =
+            |game: &Game, at: Pos| -> Option<u32> { self.condemnable_heretic(game, pid, at) };
         let here = g.units[&uid].pos;
         if let Some(target_unit) = condemnable(g, here) {
             if g.apply(pid, &Action::CondemnHeretic { unit: uid, target_unit }).is_ok() {
@@ -30012,12 +30209,19 @@ impl AdvancedAi {
         // urgency this turn. See `projected_stock_denial`.
         self.record_stock_pressures(g, pid);
         self.maintain_war_plan(g, pid);
+        // The air surge's own lifecycle, after the melee appointment so the
+        // two can never both own the grand strategy in the same turn: the
+        // surge overlay below runs second and only from its Strike phase.
+        // Exact no-op while `air_surge` is off. See `advanced/air_surge.rs`.
+        self.maintain_air_surge(g, pid);
         if rush_routes_frozen || self.plan_stale(g, pid) {
             let mut next = self.assess(g, pid);
             self.apply_war_plan_to_strategy(&mut next);
+            self.apply_air_surge_to_strategy(&mut next);
             self.plan = Some(next);
         } else if let Some(mut current) = self.plan.take() {
             self.apply_war_plan_to_strategy(&mut current);
+            self.apply_air_surge_to_strategy(&mut current);
             self.plan = Some(current);
         }
         let plan = self.plan.clone().unwrap();
@@ -30144,6 +30348,12 @@ impl AdvancedAi {
             // those queues so the envoy-infrastructure treatment can actually
             // reach play. The helper is an exact no-op while its flag is off.
             self.prioritize_envoy_infrastructure(g, pid, &plan);
+            // And the air surge's package, for the same reason: the adaptive
+            // controller hands empty cities to `BasicAi::cities`, which never
+            // consults `production_value`, so without this claim the surge
+            // would price an Aerodrome nobody ever asked it about. One idle,
+            // unthreatened queue per turn; exact no-op while the gene is off.
+            self.air_surge_production(g, pid);
             // Explicit victory-target runs use strategic production directly;
             // otherwise the baseline governor remains the stronger general
             // policy in paired evaluation.
@@ -30154,6 +30364,10 @@ impl AdvancedAi {
                 // or its Apostles and Inquisitors exist only on paper. See
                 // `founder_temple` (exact no-op while that flag is off).
                 self.founder_temple(g, pid);
+                // …and the district those buildings need, in the city that is
+                // actually slipping rather than the one that founded. Also an
+                // exact no-op while its own flag is off.
+                self.holy_site_where_the_threat_is(g, pid);
             }
             if self.victory_planning
                 && g.victory_conditions.religious
@@ -30295,6 +30509,7 @@ impl AdvancedAi {
         // rather than leaving its floors and treasury reserve live until the
         // ordinary five-turn strategic cadence.
         self.maintain_war_plan(g, pid);
+        self.maintain_air_surge(g, pid);
         // A settler can found a city during the unit pass. Refresh the map so
         // the durable directive state covers that new city as well as the
         // cities that received production guidance earlier in the turn.
