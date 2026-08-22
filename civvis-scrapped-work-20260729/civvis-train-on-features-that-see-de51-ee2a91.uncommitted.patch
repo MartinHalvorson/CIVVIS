@@ -1,0 +1,61 @@
+diff --git a/src/elo.rs b/src/elo.rs
+index b553f69..4801cc3 100644
+--- a/src/elo.rs
++++ b/src/elo.rs
+@@ -434,7 +434,7 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
+         ),
+         "neural" => {
+             let w = crate::evolve::load_champion("evolved").unwrap_or_default();
+-            match crate::valuenet::ValueNet::load("evolved") {
++            match crate::valuenet::ValueNet::load_width("evolved", crate::evolve::FEATURE_WIDTH) {
+                 Some(n) => Box::new(crate::neural::NeuralAi::new(w, n)),
+                 None => Box::new(BasicAi::with_weights(w)),
+             }
+@@ -658,7 +658,7 @@ impl AgentProvenance {
+ /// so reporting it as present would restate the bug it is meant to catch.
+ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
+     let champion = crate::evolve::load_champion(dir).is_some();
+-    let net = crate::valuenet::ValueNet::load(dir).is_some();
++    let net = crate::valuenet::ValueNet::load_width(dir, crate::evolve::FEATURE_WIDTH).is_some();
+     let genome = ArtifactStatus {
+         file: CHAMPION_FILE,
+         found: champion,
+diff --git a/src/policy.rs b/src/policy.rs
+index 09cb4f8..97687d9 100644
+--- a/src/policy.rs
++++ b/src/policy.rs
+@@ -76,7 +76,7 @@ impl PolicyAi {
+     pub fn with_weights(weights: Weights) -> PolicyAi {
+         PolicyAi {
+             fallback: AdvancedAi::with_weights(weights),
+-            net: ValueNet::load("evolved"),
++            net: ValueNet::load_width("evolved", crate::evolve::FEATURE_WIDTH),
+             width: 48,
+             depth: 10,
+             margin: 1e-4,
+diff --git a/src/production.rs b/src/production.rs
+index 2873c14..3addecd 100644
+--- a/src/production.rs
++++ b/src/production.rs
+@@ -131,7 +131,7 @@ impl ProductionSearchAi {
+     /// Judge rollout endpoints with the trained value net instead of score
+     /// share. Falls back to score share when no net is on disk.
+     pub fn with_value_net(mut self) -> ProductionSearchAi {
+-        self.net = ValueNet::load("evolved");
++        self.net = ValueNet::load_width("evolved", crate::evolve::FEATURE_WIDTH);
+         self
+     }
+ 
+diff --git a/src/strategic.rs b/src/strategic.rs
+index 5d67a78..3321d0e 100644
+--- a/src/strategic.rs
++++ b/src/strategic.rs
+@@ -234,7 +234,7 @@ impl StrategicAi {
+     }
+ 
+     pub fn with_weights(weights: Weights) -> StrategicAi {
+-        let net = ValueNet::load("evolved");
++        let net = ValueNet::load_width("evolved", crate::evolve::FEATURE_WIDTH);
+         Self::configured(weights, net)
+     }
+ 

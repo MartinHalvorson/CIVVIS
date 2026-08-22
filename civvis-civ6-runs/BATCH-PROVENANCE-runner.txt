@@ -1,0 +1,132 @@
+batch started 2026-08-02T06:08Z from /Users/martin/civvis-batch-runner @ 9058fae (DETACHED)
+
+⚠ THIS TREE EXISTS SO THE BATCH IS NEVER PULLED OUT FROM UNDER ITSELF.
+On 2026-08-02 a batch pinned to f992d08 was ended by its own guard after one
+attempt — "THE BUILD CHANGED MID-BATCH" — because code work ran `git pull` in
+/Users/martin/CIVVIS, which was the tree the batch was running from. Seven
+attempts were lost.
+
+Do code work in /Users/martin/CIVVIS. Run batches from HERE, detached, and only
+move this tree BETWEEN batches.
+
+RESTARTED 2026-08-02T06:13Z with --victory score, not domination.
+Another session (#859) showed the climb's domination default targets a victory
+that cannot be reached inside the 250-turn cap. Every batch I ran before this
+passed --victory domination EXPLICITLY, so those rows measured a plan that could
+not complete — a confound in all of them.
+
+RESTARTED 2026-08-02T06:41Z @ 47f815d = main + PR #861.
+#856 (mine) passed a HASH where the engine wanted row.Index and segfaulted Civ 6
+four times in seventeen minutes, one per attempt. #861 fixes it. Running ahead of
+its merge because every attempt crashes without it.
+
+RESTARTED 2026-08-02T08:07Z @ 457f9ed.
+Carries #868 (Free Cities visible in the threat list) — the fix for the 5-cities-to-1
+collapse — plus #731 (the big mirror-control hardening PR, now merged) and #864.
+WATCH: hostiles should now carry player 62 entries once a Free City exists;
+before this every one of 1454 entries was player 63.
+
+RESTARTED 2026-08-02T08:37Z @ 1000a13 (#868 Free Cities), deliberately
+BEFORE #731. On 457f9ed (which includes #731) the harness could not configure a
+game: Create Game read Prince/Standard instead of Settler/Online and every attempt
+ended "NO GAME", events.jsonl empty. 47f815d (pre-#731) configured correctly.
+
+RESTARTED 2026-08-02T09:42Z @ ddce060 = current main.
+Reason: main FIXES the 4-major roster defect. Same events, same turn, two binaries:
+  1000a13      players=[...3:major,4:minor,5:minor]   <- what the live batch ran
+  current main players=[...3:major,4:major,5:major]   <- correct, 6 majors
+Also carries #874 (Problem Reporter modal), the likely cause of the earlier
+"NO GAME" run of failures. If games fail to start again, revert to 1000a13.
+
+REVERTED 2026-08-02T10:02Z to 1000a13. Current main (ddce060) still cannot
+start a game: stuck at the MAIN MENU, submenu never opens, 9 attempts then "NO GAME".
+#874 (Problem Reporter) was NOT the cause. Accepting the 4-major roster defect in
+exchange for a batch that actually runs.
+
+AUTO-ADVANCED 2026-08-02T14:00:31Z by ~/civvis-batch-loop.sh (com.civvis.batchloop).
+  tree      /Users/martin/civvis-batch-runner (DETACHED)
+  sha       76e98b31dffdb9b4c571522e15952ead5bd72cc1  = origin/main tip
+  subject   The map-size read-back is reading the game-speed row (#900)
+  strategy  {"civ":null,"kind":"genome","lane":"religious","per_civ":false,"source":"/Users/martin/civvis-batch-runner/data/league","strategy":"adv-religious","strength_bound":0.39334490336329886,"victory":"civvis"}
+  batch     --attempts 8 --victory civvis --strategy auto
+  log       /Users/martin/civvis-civ6-runs/batch-loop-20260802T140031Z.log
+
+AUTO-ADVANCED 2026-08-02T14:03:45Z by ~/civvis-batch-loop.sh (com.civvis.batchloop).
+  tree      /Users/martin/civvis-batch-runner (DETACHED)
+  sha       76e98b31dffdb9b4c571522e15952ead5bd72cc1  = origin/main tip
+  subject   The map-size read-back is reading the game-speed row (#900)
+  strategy  {"civ":null,"kind":"genome","lane":"religious","per_civ":false,"source":"/Users/martin/civvis-batch-runner/data/league","strategy":"adv-religious","strength_bound":0.39334490336329886,"victory":"civvis"}
+  batch     --attempts 8 --victory civvis --strategy auto
+  log       /Users/martin/civvis-civ6-runs/batch-loop-20260802T140345Z.log
+
+AUTO-ADVANCED 2026-08-02T18:32:58Z by ~/civvis-batch-loop.sh (com.civvis.batchloop).
+  tree      /Users/martin/civvis-batch-runner (DETACHED)
+  sha       268a5f902b384d2792f3d2f6963754385cc1df9f  = origin/main tip
+  subject   Repair damaged live districts (#914)
+  strategy  {"civ":null,"kind":"genome","lane":"religious","per_civ":false,"source":"/Users/martin/civvis-batch-runner/data/league","strategy":"adv-religious","strength_bound":0.3646542761066355,"victory":"civvis"}
+  batch     --attempts 8 --victory civvis --strategy auto
+  log       /Users/martin/civvis-civ6-runs/batch-loop-20260802T183258Z.log
+
+AUTO-ADVANCED 2026-08-02T20:47:09Z by ~/civvis-batch-loop.sh (com.civvis.batchloop).
+  tree      /Users/martin/civvis-batch-runner (DETACHED)
+  sha       77df956f650697abcb86ab5cf0f06ab172122705  = origin/main tip
+  subject   Match Firaxis standard-unit purchase checks (#928)
+  strategy  {"civ":null,"kind":"genome","lane":"religious","per_civ":false,"source":"/Users/martin/civvis-batch-runner/data/league","strategy":"adv-religious","strength_bound":0.3646542761066355,"victory":"civvis"}
+  batch     --attempts 8 --victory civvis --strategy auto
+  log       /Users/martin/civvis-civ6-runs/batch-loop-20260802T204709Z.log
+
+AUTO-ADVANCED 2026-08-02T20:59:04Z by ~/civvis-batch-loop.sh (com.civvis.batchloop).
+  tree      /Users/martin/civvis-batch-runner (DETACHED)
+  sha       23f57764c2be8bcfedf54e9664227427c1bf2f2e  = origin/main tip
+  subject   Keep automatic successor seeds exact in browsers (#922)
+  strategy  {"civ":null,"kind":"genome","lane":"religious","per_civ":false,"source":"/Users/martin/civvis-batch-runner/data/league","strategy":"adv-religious","strength_bound":0.3646542761066355,"victory":"civvis"}
+  batch     --attempts 8 --victory civvis --strategy auto
+  log       /Users/martin/civvis-civ6-runs/batch-loop-20260802T205904Z.log
+
+AUTO-ADVANCED 2026-08-03T01:41:27Z by ~/civvis-batch-loop.sh (com.civvis.batchloop).
+  tree      /Users/martin/civvis-batch-runner (DETACHED)
+  sha       aa7548ed64ad94403a9d312b3f5a231bd27f280b  = origin/main tip
+  subject   Enlarge and stabilize hidden-map tales (#953)
+  strategy  {"civ":null,"kind":"genome","lane":"religious","per_civ":false,"source":"/Users/martin/civvis-batch-runner/data/league","strategy":"adv-religious","strength_bound":0.3646542761066355,"victory":"civvis"}
+  batch     --attempts 8 --victory civvis --strategy auto
+  log       /Users/martin/civvis-civ6-runs/batch-loop-20260803T014127Z.log
+
+AUTO-ADVANCED 2026-08-03T06:58:41Z by ~/civvis-batch-loop.sh (com.civvis.batchloop).
+  tree      /Users/martin/civvis-batch-runner (DETACHED)
+  sha       d0fdcfb5438b9d04b6524d8749dd6d0dd906142d  = origin/main tip
+  subject   Movement credits the shot it opens (#984)
+  strategy  {"civ":null,"kind":"genome","lane":"religious","per_civ":false,"source":"/Users/martin/civvis-batch-runner/data/league","strategy":"adv-religious","strength_bound":0.3646542761066355,"victory":"civvis"}
+  batch     --attempts 8 --victory civvis --strategy auto
+  log       /Users/martin/civvis-civ6-runs/batch-loop-20260803T065841Z.log
+
+AUTO-ADVANCED 2026-08-03T08:28:48Z by ~/civvis-batch-loop.sh (com.civvis.batchloop).
+  tree      /Users/martin/civvis-batch-runner (DETACHED)
+  sha       47ebcb006ec6a5fcac48e75ffe767e6cd7b860ef  = origin/main tip
+  subject   URGENT: an empty Great Person table encodes as [] and rejects every state (#996)
+  strategy  {"civ":null,"kind":"genome","lane":"religious","per_civ":false,"source":"/Users/martin/civvis-batch-runner/data/league","strategy":"adv-religious","strength_bound":0.3646542761066355,"victory":"civvis"}
+  batch     --attempts 8 --victory civvis --strategy auto
+  log       /Users/martin/civvis-civ6-runs/batch-loop-20260803T082848Z.log
+
+AUTO-ADVANCED 2026-08-03T13:48:14Z by ~/civvis-batch-loop.sh (com.civvis.batchloop).
+  tree      /Users/martin/civvis-batch-runner (DETACHED)
+  sha       7ebca51baa785cee1110f8630593e00a01ac9b92  = origin/main tip
+  subject   live_without_district_coverage has no provenance row (#1008)
+  strategy  {"civ":null,"kind":"genome","lane":"religious","per_civ":false,"source":"/Users/martin/civvis-batch-runner/data/league","strategy":"adv-religious","strength_bound":0.3646542761066355,"victory":"civvis"}
+  batch     --attempts 8 --victory civvis --strategy auto
+  log       /Users/martin/civvis-civ6-runs/batch-loop-20260803T134814Z.log
+
+AUTO-ADVANCED 2026-08-03T17:15:30Z by ~/civvis-batch-loop.sh (com.civvis.batchloop).
+  tree      /Users/martin/civvis-batch-runner (DETACHED)
+  sha       a4dea5098647e8f18ad3c9c9223a984fe56534de  = origin/main tip
+  subject   Probe the silent purchase refusal (#1035)
+  strategy  {"civ":null,"kind":"genome","lane":"religious","per_civ":false,"source":"/Users/martin/civvis-batch-runner/data/league","strategy":"adv-religious","strength_bound":0.3646542761066355,"victory":"civvis"}
+  batch     --attempts 8 --victory civvis --strategy auto
+  log       /Users/martin/civvis-civ6-runs/batch-loop-20260803T171530Z.log
+
+AUTO-ADVANCED 2026-08-03T17:19:16Z by ~/civvis-batch-loop.sh (com.civvis.batchloop).
+  tree      /Users/martin/civvis-batch-runner (DETACHED)
+  sha       a4dea5098647e8f18ad3c9c9223a984fe56534de  = origin/main tip
+  subject   Probe the silent purchase refusal (#1035)
+  strategy  {"civ":null,"kind":"genome","lane":"religious","per_civ":false,"source":"/Users/martin/civvis-batch-runner/data/league","strategy":"adv-religious","strength_bound":0.3646542761066355,"victory":"civvis"}
+  batch     --attempts 8 --victory civvis --strategy auto
+  log       /Users/martin/civvis-civ6-runs/batch-loop-20260803T171916Z.log

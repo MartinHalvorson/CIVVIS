@@ -1,0 +1,14 @@
+2026-08-02T13:24Z  runner tree: /Users/martin/civvis-runner-opus5 @ 1000a13
+
+⚠ WHY A SECOND RUNNER TREE. /Users/martin/civvis-batch-runner was created so a batch
+could never be pulled out from under itself, but a second agent is now moving it too
+(it went from 1000a13 to df475b9 without me). That protection only works with one
+owner. This tree is mine; the other stays where they put it.
+
+Pinned to 1000a13 because current main CANNOT START A GAME: on df475b9 three run
+directories were created in five minutes, every one stuck at turn 0. Bisect:
+  47f815d yes | 1000a13 yes | 457f9ed no | ddce060 no | df475b9 no
+Seven hypotheses ruled out and posted to PR #731.
+
+Cost of the pin: 1000a13 lacks the 6-major roster fix, so two major rivals are
+classified minor and dropped from major_rivals.

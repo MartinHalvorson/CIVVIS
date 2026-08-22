@@ -1,0 +1,10 @@
+{
+  "run": "civvis-20260805T200853Z",
+  "turn": 74,
+  "cities": 2,
+  "units": 9,
+  "port": 8610,
+  "publishes": 192,
+  "run_idle": false,
+  "written": "2026-08-05T20:21:00Z"
+}

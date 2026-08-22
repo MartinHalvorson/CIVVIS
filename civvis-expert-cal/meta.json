@@ -1,0 +1,50 @@
+{
+  "config": {
+    "ai": "advanced",
+    "city_states": 6,
+    "counterfactual": false,
+    "counterfactual_roots": 0,
+    "every": 15,
+    "height": 38,
+    "max_turns": 150,
+    "players": 4,
+    "scalar_only": true,
+    "seed": 55000,
+    "width": 60
+  },
+  "counterfactual_roots": 0,
+  "counterfactual_samples_by_lane": {},
+  "decisive_games": 8,
+  "dtype": "<f4",
+  "games": 8,
+  "global_names": [],
+  "globals_shape": [
+    320,
+    0
+  ],
+  "labels": [
+    "won",
+    "turn_fraction",
+    "game"
+  ],
+  "labels_shape": [
+    320,
+    3
+  ],
+  "plane_names": [],
+  "planes_shape": [
+    320,
+    0,
+    38,
+    60
+  ],
+  "samples": 320,
+  "victory_targets": [
+    "science",
+    "culture",
+    "religious",
+    "diplomatic",
+    "domination",
+    "score"
+  ]
+}

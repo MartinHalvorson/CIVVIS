@@ -1,0 +1,104 @@
+diff --git a/src/ai/advanced.rs b/src/ai/advanced.rs
+index b7e1a13..f5f7f55 100644
+--- a/src/ai/advanced.rs
++++ b/src/ai/advanced.rs
+@@ -9,6 +9,10 @@ use crate::rules::Yields;
+ use crate::Pos;
+ use std::collections::{BTreeMap, BTreeSet, HashSet};
+ 
++/// The shipped ceiling on an empire's city target. See
++/// [`AdvancedAi::city_ceiling`].
++const DEFAULT_CITY_CEILING: usize = 6;
++
+ #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+ pub enum GrandStrategy {
+     Expansion,
+@@ -369,6 +373,23 @@ pub struct AdvancedAi {
+     forced_target_player: Option<usize>,
+     force_groups: Vec<ForceGroup>,
+     force_groups_dirty: bool,
++    /// Hard ceiling on the empire's city target, applied on top of what the
++    /// map can carry.
++    ///
++    /// `map_capacity` already scales the target to the land available and
++    /// reaches 9 on a standard map; this ceiling then cuts it to 6, and it is
++    /// the one that binds. Measured over 48 six-player games the agent
++    /// finished with 6.4 cities per empire — sitting on the ceiling, not on
++    /// the map.
++    ///
++    /// It is a field rather than a literal because it is worth an experiment.
++    /// Oracle ablation put the leverage in the economy and nowhere near the
++    /// army: a free top-of-chain army, a taker beside every enemy city and an
++    /// army that never accumulates damage each measured null over 100 matched
++    /// cells, while 200 Gold and 100 Faith a turn took the same seat from 26%
++    /// to 88% at 62 to 0. City count is the largest single multiplier on an
++    /// empire's economy, and this caps it below what the map allows.
++    pub city_ceiling: usize,
+ }
+ 
+ impl Default for AdvancedAi {
+@@ -412,6 +433,7 @@ impl AdvancedAi {
+             forced_target_player: None,
+             force_groups: Vec::new(),
+             force_groups_dirty: false,
++            city_ceiling: DEFAULT_CITY_CEILING,
+         }
+     }
+ 
+@@ -1290,7 +1312,7 @@ impl AdvancedAi {
+         let city_cadence = g.standard_duration(90).max(1) as usize;
+         let desired_cities = (3 + g.turn as usize / city_cadence)
+             .min(map_capacity)
+-            .min(6);
++            .min(self.city_ceiling);
+         let mut expansion_origins: Vec<Pos> = cities.iter().map(|cid| g.cities[cid].pos).collect();
+         if expansion_origins.is_empty() {
+             expansion_origins.extend(
+diff --git a/src/elo.rs b/src/elo.rs
+index 6c2fd6a..4e28fce 100644
+--- a/src/elo.rs
++++ b/src/elo.rs
+@@ -38,7 +38,8 @@ pub const BUILTIN_AIS: [&str; 10] = [
+ /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
+ /// factory from being pooled into the same player/leader rating key as
+ /// its treatment.
+-pub const EVAL_ONLY_AIS: [&str; 14] = [
++pub const EVAL_ONLY_AIS: [&str; 15] = [
++    "advanced_wide",
+     "strategic_score",
+     "strategic_doctrine",
+     "strategic_r20",
+@@ -422,6 +423,15 @@ impl EloPool {
+ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
+     match name {
+         "advanced" => Box::new(AdvancedAi::new()),
++        // Treatment for the expansion-ceiling axis: identical to `advanced`
++        // except that the empire's city target is limited by what the map can
++        // carry rather than by a fixed six. Paired against `advanced` this
++        // isolates the ceiling and nothing else.
++        "advanced_wide" => {
++            let mut ai = AdvancedAi::new();
++            ai.city_ceiling = usize::MAX;
++            Box::new(ai)
++        }
+         "advanced_evolved" => Box::new(
+             crate::evolve::load_champion("evolved")
+                 .map(AdvancedAi::with_weights)
+@@ -785,6 +795,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
+         ),
+         "advanced" => (Vec::new(), "advanced"),
+         "advanced_v1" => (Vec::new(), "advanced_v1"),
++        "advanced_wide" => (Vec::new(), "advanced_wide"),
+         "random" => (Vec::new(), "random"),
+         // `builtin_ai` answers every other name with the lightweight agent.
+         "basic" => (Vec::new(), "basic"),
+@@ -1269,7 +1280,8 @@ mod tests {
+             // Anything else reaching that state fell through to the
+             // catch-all and is claiming to need nothing while quietly
+             // needing a net.
+-            const SCRIPTED: [&str; 4] = ["advanced", "advanced_v1", "basic", "random"];
++            const SCRIPTED: [&str; 5] =
++                ["advanced", "advanced_v1", "advanced_wide", "basic", "random"];
+             assert!(
+                 !resolved.artifacts.is_empty() || SCRIPTED.contains(name),
+                 "{name} has no provenance row and inherited the catch-all"
