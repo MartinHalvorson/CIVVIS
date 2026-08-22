@@ -2308,10 +2308,13 @@ impl AdvancedAi {
     /// Stake the Favor behind a World Congress ballot for the victory the
     /// empire is actually racing. The other half of what
     /// `lane-congress-ballot` used to be, split from it after the lane's own
-    /// regime flagged the composite at −0.61 pp of score share (z −2.33):
-    /// naming the right outcome is free, buying it empties a treasury a
-    /// winning ballot does not refund. See `advanced/victory_lane.rs`. Off
-    /// everywhere by default; opt-in gene `lane-congress-favor`.
+    /// regime flagged the composite at −0.61 pp of score share (z −2.33).
+    ///
+    /// ★★★ And priced apart it is the **better** half, not the worse one the
+    /// split predicted: +1.4 pp at 570 pairs against the naming half's
+    /// −1.8, positive in all four windows. See `advanced/victory_lane.rs` and
+    /// `docs/VICTORY_GENES.md` §8.5. Off everywhere by default; opt-in gene
+    /// `lane-congress-favor`.
     pub fn enable_lane_congress_favor(&mut self) {
         self.lane_congress_favor = true;
     }

@@ -203,6 +203,17 @@ Buildings off the bottom of the screen, so the one thing a person opens a city
 to do was the one thing they had to scroll for. It is a fold at the foot of
 the column now, which is where Civ 6 keeps buying land.
 
+**Every node says what would boost it.** The ruleset carries
+`boost: {trigger, count}` on every tech and civic, and the client had been
+showing the bolt only *after* the boost landed — the one moment the
+information is worthless. Both trees and the world tracker now print the
+requirement in Civ 6's own register: "Kill 3 barbarians", "Build a University
+next to a mountain", "Meet another continent". The 108 triggers the ruleset
+ships are a handful of prefixed families over a short list of bare ones; a
+trigger added to the engine tomorrow falls through to its own name and its
+count rather than disappearing, and a test fails if any shipped boost lands
+there.
+
 A battlefield keeps none of this. An arena has no empire behind it — the
 economy is a fixed grant, nothing is built or worshipped — so the strip keeps
 the turn and the era, which a battle does have, and drops the rest rather than

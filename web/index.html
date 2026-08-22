@@ -4290,6 +4290,17 @@
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   .wt-boost { color: var(--gold-bright); font-style: normal; }
+  /* What would boost this study, while it can still be boosted. */
+  /* On a tree node the boost line sits above the prerequisites and must not
+     read as one of them: it is the only line on the card describing something
+     the player can go and do. */
+  .tnode .tboost { color: var(--gold); }
+  /* This one wraps where the name above it clips: a truncated tech is still
+     recognisable from its first word, and a truncated instruction is not. */
+  .wt-boostwant {
+    color: var(--gold); font-size: var(--type-label); font-weight: 750;
+    letter-spacing: .03em; line-height: 1.3;
+  }
   .wt-bar { display: block; height: 4px; border-radius: 999px; background: #ffffff16; overflow: hidden; }
   .wt-bar i { display: block; height: 100%; background: var(--wt-color); }
   .wt-sub {

@@ -324,12 +324,20 @@ a property of the rules rather than of the gene — see the section above.
 
 ## 8. First readings — under-powered, and recorded as such
 
-Three runs, three regimes, and the honest summary first: **one gene is flagged
-as helping, one as hurting, one as a measured null, and the rest are
-unresolved.** Every reading below is a screening flag at |z| ≥ 2, never a
-promotion; nothing here changes a default.
+Five runs now, and the honest summary first: **the only gene to reach a screen
+flag is `lane-great-people`, on disjoint seeds; the largest negative of the
+first window did not replicate; and one gene is a measured null.** Every
+reading below is a screening flag at |z| ≥ 2, never a promotion; nothing here
+changes a default.
 
-### The regime production plays — all six victory conditions
+⚠ **Read §8.6 first, then the rest as history.** Three claims made earlier in
+this section were overturned by more of their own data — §8.1's
+`lane-culture-spending` negative, §8.2's mechanism for splitting the ballot
+gene, and §8.4's `lane-great-people` flag. Each is left in place, unedited,
+because what was believed and why is evidence. **None of the three is a
+current conclusion.** The one durable reading is in §8.6.
+
+### 8.1 The regime production plays — all six victory conditions
 
 `docs/gene_screens/2026-08-22-v1-victory-lane-genes-native-6p-allseats-486-pairs.json`.
 Command, so it can be extended with `--append` and a disjoint `--start-seed`:
@@ -358,15 +366,18 @@ starting point, not a verdict.
 | `lane-great-people` | 15.8% | 17.5% | −1.6 | −1.16 | +0.06 | +0.56 |
 | `lane-culture-spending` | 15.4% | 17.9% | −2.5 | −1.75 | −0.20 | −1.19 |
 
-The one row worth a sentence is the bottom one. `lane-culture-spending` is the
-largest reading in the table and it is **negative**, in a regime whose own
-census reads religious 58% — an empire that spends Faith on a Naturalist and a
-touring Rock Band in a world decided by conversion has spent it on the wrong
-thing. That is a hypothesis at z −1.75, not a finding; it is also exactly the
-kind of interaction the all-lanes screen exists to catch, and the reason the
-`--victories culture,score` run is a separate question rather than the same one.
+The one row that looked worth a sentence was the bottom one:
+`lane-culture-spending` is the largest reading in the table and it is
+**negative**, in a regime whose own census reads religious 58% — the reading
+that suggests an empire spending Faith on a Naturalist and a touring Rock Band
+in a world decided by conversion has spent it on the wrong thing.
 
-### The lane's own regime — `--victories diplomatic,score`
+⚠ **That sentence did not survive its replication.** On a disjoint seed window
+the same gene reads **+1.7 pp** — the sign flipped. See §8.4. The paragraph is
+left here as written because the point of the replication is that this is what
+a z −1.75 reading is worth, and editing the evidence away would hide it.
+
+### 8.2 The lane's own regime — `--victories diplomatic,score`
 
 `docs/gene_screens/2026-08-22-v2-victory-lane-diplomacy-regime-6p-allseats-120-pairs.json`,
 seed 64000000. **174 pairs, resolving ±7.1 pp at 80% power**, so the flag
@@ -414,7 +425,7 @@ victory conditions does not make the Diplomacy lane reachable, which is the
 same finding §1 records at 1/8 and is the reason the near miss is worth
 chasing at all.
 
-### `lane-space-race` at 600 turns
+### 8.3 `lane-space-race` at 600 turns
 
 `docs/gene_screens/2026-08-22-v3-lane-space-race-600-turns-6p-allseats.json`,
 seed 63000000. **312 pairs, resolving ±1.8 pp — and the answer is +0.0 pp
@@ -431,6 +442,127 @@ where the science lane is lost.*
 ⚠ Nothing in this file promotes anything. Every gene remains `default:off`, and
 `docs/GENE_SCREEN.md`'s rule stands: the screen ranks and directs, `ai_eval` is
 the ship decision.
+
+### 8.4 The same seven genes on a disjoint seed window
+
+`docs/gene_screens/2026-08-22-v5-victory-lane-genes-native-disjoint-seeds-6p-allseats.json`,
+seed **66000000** — the same command as §8.1 with a disjoint seed window, so
+the genomes drawn are disjoint too. **480 pairs, resolving ±3.2 pp.**
+
+| gene | §8.1 (seed 62000000, 486 pairs) | §8.4 (seed 66000000, 480 pairs) | agree? |
+|---|---:|---:|---|
+| `lane-great-people` | −1.6 (z −1.16) | **+3.3 (z +2.04) `helps *`** | **no — sign flipped** |
+| `lane-culture-spending` | **−2.5 (z −1.75)** | +1.7 (z +0.94) | **no — sign flipped** |
+| `congress-banks-decided` | −0.4 (z −0.26) | +2.1 (z +1.30) | no |
+| `congress-counter-votes` | +0.4 (z +0.26) | +2.9 (z +1.47) | yes, both positive |
+| `lane-policy-deck` | +0.4 (z +0.26) | +1.2 (z +0.62) | yes |
+| `envoy-infrastructure` | +0.8 (z +0.50) | −0.4 (z −0.24) | no |
+| `lane-congress-ballot` | +0.8 (z +0.50) | −0.4 (z −0.26) | no |
+
+**Five of seven genes changed sign between two windows of the same experiment.**
+Neither window resolves anything (±4.5 pp and ±3.2 pp against readings of 0.4
+to 3.3), so this is not a contradiction — it is what unresolved means, shown
+rather than asserted. `docs/GENE_SCREEN.md` says a pooled flag is a screening
+result and consistent direction across chronological windows is the extra
+evidence to demand; **this file now has a worked example of why.**
+
+Two specific corrections follow, and both are corrections to things stated
+earlier in this same document:
+
+1. **The `lane-culture-spending` sentence in §8.1 is withdrawn.** Its
+   motivating reading did not replicate.
+2. **`lane-great-people` is the only gene here to reach `helps *`**, at +3.3 pp
+   (z +2.04) — and it is the gene that was inert at its first scope, nearly
+   dropped, and only kept because the fires-check forced it to the war posture
+   (§7). It is the first candidate for a dedicated `ai_eval` arm. One flag in
+   one window is not a promotion.
+
+⚠ **A process trap this run found.** `--append` onto an existing rows file is
+only valid while the **genome order** is unchanged. `lane-congress-favor` was
+added between §8.1 and this run, which shifted every gene's bit position, and
+`--analyze` correctly refused to merge the two sections rather than silently
+mixing two experiments. Split the file at its second `kind: header` line and
+analyse the sections separately — or re-run both halves against one build.
+
+### 8.5 The two ballot halves, priced apart
+
+`docs/gene_screens/2026-08-22-v4-ballot-halves-diplomacy-regime-6p-allseats.json`,
+`--victories diplomatic,score`, seed 65000000. **570 pairs, resolving ±2.8 pp**
+— the best-powered run in this file, and still nothing clears |z| ≥ 2.
+
+| gene | on% | off% | win Δpp | z | share Δpp | z |
+|---|---:|---:|---:|---:|---:|---:|
+| `lane-congress-favor` (the stake) | 17.4% | 16.0% | **+1.4** | +1.42 | −0.10 | −0.72 |
+| `congress-banks-decided` | 17.2% | 16.1% | +1.1 | +1.14 | +0.10 | +0.81 |
+| `lane-congress-ballot` (the naming) | 15.8% | 17.5% | **−1.8** | −1.30 | −0.16 | −1.23 |
+
+**The halves separate, and they separate the wrong way round from the reason
+given for splitting them.** §8.2 argued the harm was on the staking side —
+that `congress_affordable_votes` empties a treasury a winning ballot does not
+refund. Priced apart, the stake is the **positive** half in all four windows
+(+3.7 at 108 pairs, +4.2 at 144, +2.0 at 498, +1.4 at 570) and **naming** the
+ballot for the raced lane is the half carrying the negative (−1.9, +0.0, −2.0,
+−1.8).
+
+So the mechanism in that paragraph, and in `congress_lane`'s doc comment, was
+a plausible story that the split itself refuted. What the ordering suggests
+instead — and it is a suggestion, at z −1.30 — is that scoring a ballot for
+the lane the empire is *racing* rather than the posture it is *in* names the
+wrong outcome: a seat still settling has different interests in a resolution
+than the diplomat it intends to become, and voting as the diplomat costs it
+the Favor refund a losing ballot would have paid. **The splitting was right;
+the reason given for it was not.**
+
+### 8.6 ★★★★ Every reading regressed toward zero as the sample grew — except one
+
+Both §8.4 and §8.5 were written from runs still in flight, and both were
+re-read at roughly 2.4× the pairs. The summaries in
+`docs/gene_screens/2026-08-22-v4-*.json` and `-v5-*.json` are the larger reads;
+the tables in §8.4 and §8.5 are the smaller ones, kept as written.
+
+**The native disjoint window (§8.4), 480 → 1,158 pairs:**
+
+| gene | at 480 | at 1,158 |
+|---|---:|---:|
+| `lane-great-people` | **+3.3 (z +2.04) `helps *`** | **+0.3 (z +0.35)** |
+| `congress-banks-decided` | +2.1 (z +1.30) | +1.9 (z +1.87) |
+| `congress-counter-votes` | +2.9 (z +1.47) | −0.2 (z −0.15) |
+| `lane-culture-spending` | +1.7 (z +0.94) | −0.5 (z −0.52) |
+| `lane-policy-deck` | +1.2 (z +0.62) | +1.2 (z +1.04) |
+| `envoy-infrastructure` | −0.4 | −0.0 |
+| `lane-congress-ballot` | −0.4 (z −0.26) | **−1.0, share −0.20 (z −2.31) `share hurts *`** |
+
+**The ballot halves (§8.5), 570 → 984 pairs:** `lane-congress-favor` +1.4 →
++1.0, `congress-banks-decided` +1.1 → +1.0, `lane-congress-ballot` −1.8 → −1.0.
+
+⚠ **§8.4's headline is withdrawn in its turn.** "`lane-great-people` is the
+only gene here to reach `helps *`" was true of 480 pairs and is not true of
+1,158: +3.3 pp became +0.3 pp. That is the third claim in this document
+overturned by more of its own data, after §8.1's `lane-culture-spending` and
+§8.2's mechanism for the ballot split. **The pattern is the finding**: at these
+effect sizes, a reading at a few hundred pairs is a draw from noise, and the
+honest summary of every positive row in this file is *unresolved*.
+
+**One reading did not regress, and it is the one nobody wanted.**
+`lane-congress-ballot` — a gene invented in #2274 to serve the Diplomacy lane —
+is negative in **every window of both regimes**: −0.4 and −1.0 native,
+−1.9 / +0.0 / −2.0 / −1.8 / −1.0 in `--victories diplomatic,score`, and it now
+reads `share hurts *` at z −2.31 on the largest native window. It is the only
+gene in this file whose sign has never flipped.
+
+That does not make it a confirmed loss — nothing here clears the family-wise
+bar, and §8's whole lesson is that a `*` is a place to point a batch. It does
+make it the **first candidate for a dedicated `ai_eval` arm**, ahead of
+anything positive, because a consistently-signed reading is worth more than a
+loud one. If that arm confirms it, the gene should leave the code by the same
+rule that culled the bottom of the ranking — and it will have cost nothing,
+because it never shipped on.
+
+⚠ The four rows files are megabytes and live outside the repository at
+`~/civvis-gene-screens/` with a `README.md` naming each command; every one was
+stopped short of its `--pairs` target because the box is shared. Continue any
+of them with `--append` and a disjoint `--start-seed`, **against a build whose
+genome order matches the file's header** (§8.4).
 
 ## 9. What the genome instrument cannot see
 
