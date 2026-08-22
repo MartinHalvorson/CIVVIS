@@ -30,9 +30,10 @@ arms played the same game:**
 | 7311001..7311008 | 269.78s | 245.01s | **−9.18%** (air patrols only) |
 | 7311001..7311008 | 263.85s | 237.16s | −10.11% (both) |
 | 7311020..7311027 | 332.28s | 298.98s | −10.02% (both, quiet host) |
-| **7311040..7311047** | **255.64s** | **224.53s** | **−12.17%** (both, against merged `main`) |
+| 7311040..7311047 | 255.64s | 224.53s | −12.17% (both, against merged `main`) |
+| **7311060..7311067** | **326.39s** | **285.51s** | **−12.52%** (both arms rebuilt at `5f2699fd`, after #2308) |
 
-*same game on every seed* in all four. The air-patrol hoist is ~9 points of
+*same game on every seed* in all five. The air-patrol hoist is ~9 points of
 the 10; the passage table is the last one.
 
 ⚠ This is an optimization, not a feature, so whole-game wall clock is the right
