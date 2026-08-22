@@ -3979,9 +3979,23 @@ pub struct AdvancedAi {
     ///     pop >= 15:  3 of 9      adjacency >= 4:  0 of 9      both:  0
     ///
     /// **Not one Campus in the empire clears the adjacency half**, so a policy
-    /// slot is spent on a card returning a fraction of its rating. And the
-    /// choice was there: the same probe finds **4 of the 10 cities still
-    /// holding a free plot worth exactly 4.0**.
+    /// slot is spent on a card returning a fraction of its rating.
+    ///
+    /// ⚠⚠ AND THE GENE DOES NOT FIX IT — MEASURED, 0 of 9 BEFORE AND AFTER.
+    /// The first reading of the opportunity was taken at the WRONG INSTANT and
+    /// overstated it. Surveying free plots at turn 250 found "4 of 10 cities
+    /// holding a plot worth 4.0" — but district adjacency counts NEIGHBOURING
+    /// DISTRICTS, so those plots were made good by the empire's own later
+    /// building. Surveying each city on the turn its Campus actually appeared
+    /// gives the choice the chooser really had: `[5.0, 4.0, 3.0, 2.0, 2.0,
+    /// 1.0, 1.0, 1.0, -1, -1]` — **a plot at the gate existed for 2 of 10, not
+    /// 4**, and even those two were not taken. Something upstream of this term
+    /// is placing the Campus; `producible_items` offers only the best two
+    /// sites by total yield, and there is more than one path that builds an
+    /// `Item::District`. Not yet found.
+    ///
+    /// ⭐ The same trap as the settle-value inversion and the builder-refusal
+    /// census: **a survey of the end state is not a survey of the choice.**
     ///
     /// The cause is a threshold the pricing cannot see. `producible_items`
     /// ranks a district's sites by `district_yields(...).total()` and offers
@@ -3989,6 +4003,10 @@ pub struct AdvancedAi {
     /// linear yield — so adjacency 3 and adjacency 4 differ by one beaker in
     /// the price and by *half of Rationalism applied to every Campus building
     /// in that city, for the rest of the game* in fact.
+    ///
+    /// Kept, off, because the pricing gap it closes is real and the term is
+    /// correct where it is read — but **do not promote it without first
+    /// finding the chooser that actually sites the Campus.**
     ///
     /// With this on, a Campus plot whose RAW Science adjacency reaches the
     /// threshold is credited the beakers the half would pay on the Campus

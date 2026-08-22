@@ -126,28 +126,24 @@ fn report(label: &str, arms: &[(&str, Chain)]) {
 #[test]
 #[ignore = "census, not an assertion; run explicitly with --nocapture"]
 fn the_research_chain_treated_against_control() {
-    let seeds: Vec<u64> = (0..12).map(|i| 86_000_000 + i).collect();
-    // ⚠ TRIMMED TO THE QUESTION, ROUND THREE. Twelve seeds settled the two
-    // building-half genes: `science-multiplier-payoff` +25% Research Labs and
-    // +11.9% Science, `research-tier-premium` +20% and +13.5%, both together
-    // +30% and +13.1%. What is unmeasured is `power-the-laboratory`, which
-    // aims at the same rung from the other side — the Lab's `powered_science`
-    // 5 is switched off until something generates power, and nothing in the
-    // controller bought the switch. So: does it help alone, and does it add to
-    // the stack that already works?
+    let seeds: Vec<u64> = (0..12).map(|i| 87_000_000 + i).collect();
+    // ⚠ ROUND FOUR: the gate, not the price. The two building-half genes are
+    // settled (+25%/+20% Labs, +12–13.5% Science) and `power-the-laboratory`
+    // is a measured null. What is open is the multiplier half NO Campus in the
+    // empire clears — 0 of 9, with four cities holding a free adjacency-4 plot.
     let arms: Vec<Arm> = vec![
         ("control (universe)", |_ai| {}),
-        ("power-the-laboratory", |ai| {
-            ai.enable_power_the_laboratory()
+        ("campus-adjacency-threshold", |ai| {
+            ai.enable_campus_adjacency_threshold()
         }),
         ("premium + payoff", |ai| {
             ai.enable_research_tier_premium();
             ai.enable_science_multiplier_payoff();
         }),
-        ("premium + payoff + power", |ai| {
+        ("premium + payoff + threshold", |ai| {
             ai.enable_research_tier_premium();
             ai.enable_science_multiplier_payoff();
-            ai.enable_power_the_laboratory();
+            ai.enable_campus_adjacency_threshold();
         }),
     ];
     let mut totals: Vec<(String, Chain)> = Vec::new();
@@ -303,10 +299,57 @@ mod science_gates_probe {
         me.enable_engine_repairs_universe();
         me.enable_research_tier_premium();
         me.enable_science_multiplier_payoff();
+        // Toggle to read the gate with and without the gene that prices it.
+        if std::env::var("CIVVIS_PROBE_THRESHOLD").is_ok() {
+            me.enable_campus_adjacency_threshold();
+        }
+        let campus = crate::name!("campus");
+        // ⚠⚠ THE SITE SURVEY HAS TO BE TAKEN WHEN THE CAMPUS IS SITED, NOT AT
+        // THE END. District adjacency counts NEIGHBOURING DISTRICTS, so a plot
+        // that reads 4.0 at turn 250 may have been worth 1 when the Campus was
+        // placed — the empire's own later districts made it good. Reading the
+        // end state and calling it an available choice is the same mistake as
+        // matching a per-turn snapshot to an event by turn number.
+        let survey = |g: &Game, cid: u32| -> f64 {
+            let city = &g.cities[&cid];
+            let mut best = 0.0_f64;
+            for position in city.owned_tiles.iter().copied() {
+                if g.map.tiles[&position].district.is_some() || position == city.pos {
+                    continue;
+                }
+                let mut yields = Yields::default();
+                for source in g.district_adjacency_sources(campus, position) {
+                    if source.source != "adjacency_bonus" {
+                        yields.add(source.yields);
+                    }
+                }
+                best = best.max(yields.science);
+            }
+            best
+        };
+        let mut best_at_siting: Vec<f64> = Vec::new();
+        let mut sited: std::collections::BTreeSet<u32> = Default::default();
+        let mut carried: std::collections::BTreeMap<u32, f64> = Default::default();
         let mut others = AdvancedAi::fleet(&g);
         while g.winner.is_none() && g.turn <= 250 {
             let pid = g.current;
             if pid == 0 {
+                // ⚠ A district completes during END-TURN processing, not
+                // inside `take_turn`. A first draft checked immediately after
+                // the seat's turn and recorded NOTHING — an empty list, which
+                // is the tell. Carry each city's survey forward instead and
+                // read it back on the turn the Campus actually appears.
+                for cid in g.player_city_ids(0) {
+                    if sited.contains(&cid) {
+                        continue;
+                    }
+                    if g.city_has_district_family(&g.cities[&cid], campus) {
+                        sited.insert(cid);
+                        best_at_siting.push(carried.get(&cid).copied().unwrap_or(-1.0));
+                    } else {
+                        carried.insert(cid, survey(&g, cid));
+                    }
+                }
                 me.take_turn(&mut g, pid);
             } else {
                 others[pid].take_turn(&mut g, pid);
@@ -315,7 +358,17 @@ mod science_gates_probe {
                 let _ = g.apply(pid, &Action::EndTurn);
             }
         }
-        let campus = crate::name!("campus");
+        best_at_siting.sort_by(|a, b| b.partial_cmp(a).unwrap());
+        println!(
+            "AT-SITING best free Campus adjacency the chooser actually had, per Campus: {:?} \
+             (>=4 available on {} of {})",
+            best_at_siting
+                .iter()
+                .map(|v| (v * 10.0).round() / 10.0)
+                .collect::<Vec<_>>(),
+            best_at_siting.iter().filter(|v| **v >= 4.0).count(),
+            best_at_siting.len()
+        );
         let cities = g.player_city_ids(0);
         let (mut with_campus, mut pop15, mut adj4, mut both) = (0, 0, 0, 0);
         let mut pops: Vec<i32> = Vec::new();
