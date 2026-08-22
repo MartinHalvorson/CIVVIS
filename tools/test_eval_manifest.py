@@ -295,3 +295,71 @@ class StolenTurnsTest(unittest.TestCase):
             summary["stolen_turns"]["diplomatic"],
             {"earliest": 210, "median": 210, "latest": 210},
         )
+class GenomeCoverageTests(unittest.TestCase):
+    """The count of what the genome instrument cannot see.
+
+    ⚠⚠ THE FIRST VERSION OF THIS COUNT INVENTED DEBT, and the trap is the one
+    `withholding_arms` already records from the other side: a treatment row's
+    FIELD string and its toggle's NAME are not the same word. The row for
+    `army-target-weighs-enemy` reads
+    `("army_target_weighs_enemy", …, disable_army_target_weighs_the_enemy)` —
+    note the "the" — so matching the toggle set against the field string alone
+    reported a gene the ledger has measured as unreachable by any screen. A
+    published debt list that names a measured gene is worse than no list.
+    """
+
+    def setUp(self):
+        self.coverage = eval_manifest.genome_coverage(REPO)
+
+    def test_the_counts_are_consistent(self):
+        c = self.coverage
+        self.assertGreaterEqual(c["capability_toggles"],
+                                c["unreachable_by_any_screen"])
+        self.assertGreaterEqual(c["reachable_as_a_gene"],
+                                c["measured_by_a_screen"])
+        self.assertGreaterEqual(c["measured_by_a_screen"],
+                                c["resolved_by_a_screen"])
+        self.assertEqual(len(c["unreachable_toggles"]),
+                         c["unreachable_by_any_screen"])
+
+    def test_a_toggle_named_differently_from_its_row_is_still_reachable(self):
+        """The real fixture, not a synthetic one: this exact flag is the
+        mismatch that broke the first draft."""
+        self.assertNotIn("army_target_weighs_the_enemy",
+                         self.coverage["unreachable_toggles"],
+                         "a gene the ledger has measured cannot be unreachable; "
+                         "the field/function spelling join is broken again")
+
+    def test_a_measured_gene_is_reachable_or_is_a_recorded_removal(self):
+        """A screen measured it, so a screen can reach it — with the one
+        exception the repository documents: a native leg deliberately removed,
+        leaving a host-only gene whose ledger row is history.
+
+        The bound is what matters, not the number. If this starts failing,
+        something has quietly stopped being screenable while its row still
+        steers `ledger_default_on`.
+        """
+        ledger = json.loads(
+            (REPO / "docs" / "gene_ledger.json").read_text(encoding="utf-8"))
+        measured = len(ledger["genes"])
+        stranded = measured - self.coverage["measured_by_a_screen"]
+        self.assertLessEqual(
+            stranded, 1,
+            f"{stranded} measured genes are no longer reachable by any screen; "
+            "each one is a ledger row governing a deployment default that no "
+            "future screen can revisit")
+
+    def test_the_scrape_fails_loudly_rather_than_reporting_zero_debt(self):
+        """An empty answer is the dangerous one: it reads as "no debt"."""
+        import tempfile
+        with tempfile.TemporaryDirectory() as empty:
+            with self.assertRaises((ValueError, OSError, IndexError)):
+                eval_manifest.genome_coverage(Path(empty))
+
+    def test_the_section_reaches_the_status_page(self):
+        """AGENTS.md: a guard you add runs in the same change that adds it. A
+        count nobody publishes is a count nobody acts on."""
+        page = (REPO / "docs" / "EVAL_STATUS.md").read_text(encoding="utf-8")
+        self.assertIn("## Genome coverage", page)
+        self.assertIn(f"Unreachable by any screen: "
+                      f"{self.coverage['unreachable_by_any_screen']}", page)
