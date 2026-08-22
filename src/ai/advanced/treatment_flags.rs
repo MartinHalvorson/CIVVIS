@@ -2205,6 +2205,155 @@ impl AdvancedAi {
         self.base.pantheon_reads_the_board = true;
     }
 
+    /// Score the World Congress ballot — which outcome and target this seat
+    /// names — for the victory the empire is actually racing rather than for
+    /// an expansion posture that has no lane. See `advanced/victory_lane.rs`.
+    /// The Favor stake behind the ballot is `lane-congress-favor`, a separate
+    /// gene. Off everywhere by default; opt-in gene `lane-congress-ballot`.
+    pub fn enable_lane_congress_ballot(&mut self) {
+        self.lane_congress_ballot = true;
+    }
+
+    /// The twin of `enable_lane_congress_ballot`.
+    pub fn disable_lane_congress_ballot(&mut self) {
+        self.lane_congress_ballot = false;
+    }
+
+    /// Stake the Favor behind a World Congress ballot for the victory the
+    /// empire is actually racing. The other half of what
+    /// `lane-congress-ballot` used to be, split from it after the lane's own
+    /// regime flagged the composite at −0.61 pp of score share (z −2.33):
+    /// naming the right outcome is free, buying it empties a treasury a
+    /// winning ballot does not refund. See `advanced/victory_lane.rs`. Off
+    /// everywhere by default; opt-in gene `lane-congress-favor`.
+    pub fn enable_lane_congress_favor(&mut self) {
+        self.lane_congress_favor = true;
+    }
+
+    /// The twin of `enable_lane_congress_favor`.
+    pub fn disable_lane_congress_favor(&mut self) {
+        self.lane_congress_favor = false;
+    }
+
+    /// Rank Great Person classes, and the Great Person points a project earns,
+    /// by the victory the empire is actually racing rather than by a war it is
+    /// fighting. See `advanced/victory_lane.rs` — this is the one gene there
+    /// that overrides a Conquest plan, and the fires-check that chose that
+    /// scope is in `docs/VICTORY_GENES.md` §7. `Recovery` still keeps its own
+    /// strategy. Off everywhere by default; opt-in gene `lane-great-people`.
+    pub fn enable_lane_great_people(&mut self) {
+        self.lane_great_people = true;
+    }
+
+    /// The twin of `enable_lane_great_people`.
+    pub fn disable_lane_great_people(&mut self) {
+        self.lane_great_people = false;
+    }
+
+    /// Choose the policy cards for the victory the empire is actually racing
+    /// while its plan is still Expansion. See `advanced/victory_lane.rs`. Off everywhere by
+    /// default; opt-in gene `lane-policy-deck`.
+    pub fn enable_lane_policy_deck(&mut self) {
+        self.lane_policy_deck = true;
+    }
+
+    /// The twin of `enable_lane_policy_deck`.
+    pub fn disable_lane_policy_deck(&mut self) {
+        self.lane_policy_deck = false;
+    }
+
+    /// Run the Culture lane's Faith pass — the Naturalist that founds a
+    /// National Park, the touring Rock Bands — and size its reserve, for an
+    /// empire racing Culture whose plan has not named the lane. See
+    /// `advanced/victory_lane.rs`; `Recovery` still refuses. Off everywhere by
+    /// default; opt-in gene `lane-culture-spending`.
+    pub fn enable_lane_culture_spending(&mut self) {
+        self.lane_culture_spending = true;
+    }
+
+    /// The twin of `enable_lane_culture_spending`.
+    pub fn disable_lane_culture_spending(&mut self) {
+        self.lane_culture_spending = false;
+    }
+
+    /// Treat an empire racing Science as a Science seat throughout the space
+    /// race: the pad count, the city a launch project may claim and the city a
+    /// pad may be sited in all read the race rather than an explicitly
+    /// assigned target, and the pass opens at all. `score_horizon` still
+    /// refuses a race that cannot finish. See `advanced/victory_lane.rs`. Off
+    /// everywhere by default; opt-in gene `lane-space-race`.
+    pub fn enable_lane_space_race(&mut self) {
+        self.lane_space_race = true;
+    }
+
+    /// The twin of `enable_lane_space_race`.
+    pub fn disable_lane_space_race(&mut self) {
+        self.lane_space_race = false;
+    }
+
+    /// Price a scored competition's first place by the Diplomatic Victory
+    /// Points it pays, at the rate `strategic_wonder_value` already pays a
+    /// wonder's. See `advanced/victory_lane.rs`. Off everywhere by
+    /// default; opt-in gene `competition-victory-points`.
+    pub fn enable_competition_victory_points(&mut self) {
+        self.competition_victory_points = true;
+    }
+
+    /// The twin of `enable_competition_victory_points`.
+    pub fn disable_competition_victory_points(&mut self) {
+        self.competition_victory_points = false;
+    }
+
+    /// Answer a World Congress resolution that is already decided with the one
+    /// free vote on its settled winner, taking the Diplomatic Victory Point
+    /// for an exact prediction and staking nothing.
+    ///
+    /// Its own field doc records the measurement and it has sat unused: **26
+    /// of 192 ballot decisions already settled, ~1.4 free points a seat a game
+    /// against the twenty a diplomatic victory needs**. Reachable as
+    /// `advanced_congress_banks_decided`; now also as a gene.
+    ///
+    /// ★★★ THIS AND THE TWO BELOW ARE NOT NEW BEHAVIOUR. They already existed,
+    /// off in production and reachable only as named `elo.rs` arms — which
+    /// means `gene_screen` could not see them and the genome instrument has
+    /// never priced any of them. `docs/VICTORY_GENES.md` §9 counts these
+    /// behaviours; these are the three the Diplomacy lane needs, and a toggle
+    /// pair plus a `PRODUCTION_OPT_INS` row is the whole of making one
+    /// screenable.
+    pub fn enable_congress_banks_a_decided_vote(&mut self) {
+        self.congress_banks_a_decided_vote = true;
+    }
+
+    /// The twin of `enable_congress_banks_a_decided_vote`.
+    pub fn disable_congress_banks_a_decided_vote(&mut self) {
+        self.congress_banks_a_decided_vote = false;
+    }
+
+    /// Back a ballot aimed at the empire closest to a victory with everything
+    /// the treasury can spare — a losing vote is refunded in full, so an
+    /// opposition that fails costs no Favor. Gene `congress-counter-votes`.
+    pub fn enable_congress_counter_votes(&mut self) {
+        self.congress_counter_votes = true;
+    }
+
+    /// The twin of `enable_congress_counter_votes`.
+    pub fn disable_congress_counter_votes(&mut self) {
+        self.congress_counter_votes = false;
+    }
+
+    /// Value the infrastructure that produces city-state influence: the
+    /// Consulate and Chancery's per-turn influence becomes the envoys it can
+    /// produce before the turn limit, and a first Diplomatic Quarter sees
+    /// part of the Consulate stream it unlocks. Gene `envoy-infrastructure`.
+    pub fn enable_envoy_infrastructure(&mut self) {
+        self.envoy_infrastructure = true;
+    }
+
+    /// The twin of `enable_envoy_infrastructure`.
+    pub fn disable_envoy_infrastructure(&mut self) {
+        self.envoy_infrastructure = false;
+    }
+
     /// Beeline Advanced Flight from three technologies out, raise an
     /// Aerodrome and a bomber wing, and take the appointed city with the
     /// cavalry behind it. See [`AdvancedAi::maintain_air_surge`] and

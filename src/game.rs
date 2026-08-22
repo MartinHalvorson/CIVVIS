@@ -31246,6 +31246,16 @@ impl Game {
             .find(|competition| competition.kind == kind)
     }
 
+    /// The Diplomatic Victory Points this competition's first place pays, or
+    /// zero for a competition CIVVIS does not seat itself.
+    ///
+    /// The table above is the authority on what a competition is worth to the
+    /// diplomatic race; a planner that wants to price those points must not
+    /// carry its own copy of it. See `AdvancedAi::competition_victory_point_value`.
+    pub fn competition_victory_points(kind: &str) -> i64 {
+        Self::native_competition(kind).map_or(0, |spec| spec.diplomatic_victory_points)
+    }
+
     /// Seat a competition if one may run and an empire could score in it.
     fn open_native_competition(&mut self) {
         if !self.native_competitions || self.competition.is_some() {
