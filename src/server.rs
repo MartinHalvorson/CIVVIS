@@ -16794,6 +16794,62 @@ mod tests {
             EMBEDDED_INDEX.contains("if (!playingSolo() || !RULES || !worldStandingsInPlay()) {")
         );
 
+        // Civ 6 prints the eureka on every tree node, and the inspiration on
+        // the civic panel. Showing the bolt only once the boost has landed
+        // says it at the one moment it is worthless.
+        assert!(EMBEDDED_INDEX.contains("function boostRequirement(spec) {"));
+        assert!(EMBEDDED_INDEX.contains("const BOOST_PHRASES = {"));
+        assert!(EMBEDDED_INDEX.contains("const BOOST_FAMILIES = ["));
+        assert!(EMBEDDED_INDEX.contains(
+            "const wants = !completed && !boosted.includes(n) ? boostRequirement(s) : \"\";"
+        ));
+        assert!(EMBEDDED_INDEX.contains("const wants = isBoosted ? \"\" : boostRequirement(spec);"));
+        // Every boost the ruleset ships gets a sentence; the generic fallback
+        // exists for a trigger added tomorrow, not for the ones shipped now.
+        {
+            let rules = crate::rules::Rules::embedded();
+            let phrases = EMBEDDED_INDEX
+                .split_once("const BOOST_PHRASES = {")
+                .expect("the bare triggers")
+                .1
+                .split_once("\n};")
+                .expect("the bare trigger table's end")
+                .0;
+            let families = EMBEDDED_INDEX
+                .split_once("const BOOST_FAMILIES = [")
+                .expect("the prefixed triggers")
+                .1
+                .split_once("\n];")
+                .expect("the prefixed trigger table's end")
+                .0;
+            let mut unlabelled: Vec<String> = Vec::new();
+            for (name, boost) in rules
+                .techs
+                .iter()
+                .filter_map(|(name, spec)| spec.boost.as_ref().map(|b| (name, b)))
+                .chain(
+                    rules
+                        .civics
+                        .iter()
+                        .filter_map(|(name, spec)| spec.boost.as_ref().map(|b| (name, b))),
+                )
+            {
+                let trigger = &boost.trigger;
+                let bare = phrases.contains(&format!("\n  {trigger}:"));
+                let prefixed = trigger.split_once(':').is_some_and(|(head, _)| {
+                    families.contains(&format!("[\"{head}:\"")) || head == "unit_and_improve"
+                });
+                if !bare && !prefixed {
+                    unlabelled.push(format!("{name} ({trigger})"));
+                }
+            }
+            assert!(
+                unlabelled.is_empty(),
+                "these boosts would print their raw trigger: {}",
+                unlabelled.join(", ")
+            );
+        }
+
         // Civilization VI opens a city on what it can build. The plot market
         // is a fold at the foot of that column, never ahead of it.
         let build = EMBEDDED_INDEX
