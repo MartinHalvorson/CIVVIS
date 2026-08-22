@@ -1006,10 +1006,11 @@ struct VisionFrame {
     visible: Arc<TileBits>,
 }
 
-/// Runtime-only per-seat visibility frames.  A cloned game starts with no
-/// frames: a search branch is allowed to move its sources before its first
-/// read, and copying a parent's bitsets would retain work that belongs to the
-/// parent position.  The cache is deliberately separate from [`VisionCache`],
+/// Runtime-only per-seat visibility frames.  A cloned game inherits its
+/// parent's, because each frame carries the stamp of every input the
+/// derivation reads: a branch that moves its sight sources before its first
+/// read restamps and recomputes, and one that does not would have derived the
+/// same bitset.  The cache is deliberately separate from [`VisionCache`],
 /// whose entries are per-unit ray answers and are merged from worker worlds.
 #[derive(Default)]
 struct VisionFrameCache {
@@ -1022,8 +1023,28 @@ struct VisionFrameCache {
 }
 
 impl Clone for VisionFrameCache {
+    /// A branch inherits its parent's sight frames rather than starting cold.
+    ///
+    /// This is exact by construction, and the reason is the stamp: a frame is
+    /// reused only when `vision_input_stamp_with_suzerains` still matches, and
+    /// that stamp folds every input `player_vision` reads — map geometry, the
+    /// viewer set, and each viewer's units, cities, suzerained city-states and
+    /// spies. A branch that moves a sight source restamps and recomputes; one
+    /// that does not would have derived the bitset it inherited. The fields
+    /// `speculative_clone` changes — `track_fog_memory`, `track_war_ledger`,
+    /// `visibility_suppressed`, `visibility_batch` — are read by neither the
+    /// stamp nor the derivation.
+    ///
+    /// ⚠ Returning `Self::default()` here, as this did, made every speculative
+    /// clone pay a cold cache. The tactical picker scores a candidate by
+    /// cloning and applying, and `do_ranged`/`do_attack`/`do_city_strike` each
+    /// ask `combat_target_visible` — so one full ray-cast per candidate, on a
+    /// world discarded immediately afterwards.
     fn clone(&self) -> Self {
-        Self::default()
+        Self {
+            frames: std::cell::RefCell::new(self.frames.borrow().clone()),
+            map_geometry: std::cell::RefCell::new(*self.map_geometry.borrow()),
+        }
     }
 }
 
@@ -1061,6 +1082,17 @@ impl HeightField {
         Some(cache)
     }
 }
+
+/// ⚠ DIAGNOSTIC ONLY. Populated when `CIVVIS_VISION_STATS` is set; read by the
+/// simulate report so one headless game prints its own sight-cache behaviour.
+pub static VISION_CALLS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+pub static VISION_HITS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+pub static VISION_UNITS_WALKED: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+pub static VISION_TILES_WALKED: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+pub static VISION_UNITS_TOTAL: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
 
 /// Mix a few numbers into one, for cache keys that must change whenever any
 /// of their parts does.
@@ -21879,14 +21911,40 @@ impl Game {
     /// stamped inputs still match.  The returned `Arc` keeps the hot callers
     /// (action legality, AI perception, and refresh publication) from cloning
     /// the map-sized bit vector merely to borrow it for a membership check.
+    /// ⚠ DIAGNOSTIC ONLY (`CIVVIS_VISION_STATS=1`). Read once through a
+    /// `OnceLock`: this sits in the hottest path in the simulator, and an
+    /// environment lookup per ask would be measuring the instrument.
+    fn vision_stats_enabled() -> bool {
+        static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        *ENABLED.get_or_init(|| std::env::var_os("CIVVIS_VISION_STATS").is_some())
+    }
+
     fn vision_frame(&self, pid: usize, heights: &mut HeightField) -> Arc<TileBits> {
         self.with_suzerain_read_memo(|| {
             let suzerains = self.suzerain_input_map();
             let input_stamp = self.vision_input_stamp_with_suzerains(pid, &suzerains, None);
+            if Game::vision_stats_enabled() {
+                use std::sync::atomic::Ordering::Relaxed;
+                VISION_CALLS.fetch_add(1, Relaxed);
+                let mut units = 0u64;
+                let mut tiles = 0u64;
+                for viewer in self.visibility_viewers(pid) {
+                    units += self.units.values().filter(|u| u.owner == viewer).count() as u64;
+                    for city in self.cities.values().filter(|c| c.owner == viewer) {
+                        tiles += 1 + city.owned_tiles.len() as u64;
+                    }
+                }
+                VISION_UNITS_WALKED.fetch_add(units, Relaxed);
+                VISION_TILES_WALKED.fetch_add(tiles, Relaxed);
+                VISION_UNITS_TOTAL.fetch_add(self.units.len() as u64, Relaxed);
+            }
             {
                 let frames = self.vision_frames.frames.borrow();
                 if let Some(Some(frame)) = frames.get(pid) {
                     if frame.input_stamp == input_stamp {
+                        if Game::vision_stats_enabled() {
+                            VISION_HITS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        }
                         return Arc::clone(&frame.visible);
                     }
                 }

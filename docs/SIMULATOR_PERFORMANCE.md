@@ -1224,3 +1224,118 @@ the two leaks it found were genuine holes in shipped code — but that **a cache
 whose invariant spans a large surface should ship with a way to check itself.**
 `CIVVIS_ENVELOPE_AUDIT` stays for that reason, read once through a `OnceLock`
 so it costs nothing when unset.
+
+## 2026-08-21 (fifth) — the sight frame: who asks, and what the asking costs
+
+Re-profiled at HEAD `0f1b04e0`, as the rule at the top requires — the fourth
+profile predates ten landed PRs. The reading was taken by sampling a **live p7
+`gene_screen`** for 40 s rather than a purpose-built run: that is the workload
+that actually burns the core-hours, and sampling a process already running
+costs the host nothing.
+
+The top named CIVVIS symbol is no longer anything in the envelope family:
+
+| symbol | self-samples |
+| --- | ---: |
+| `vision_input_stamp_with_suzerains` | **8,784** |
+| `tile_has_visibility_line` | 3,425 |
+| `hex::disk` | 1,662 |
+| `can_enter_past` | 1,609 |
+| `BasicAi::enemy_attack_envelopes` | 504 |
+
+`enemy_attack_envelopes` — 74.9% of the main thread two profiles ago — is now
+504 samples. That work is finished. Sight replaced it.
+
+### What one headless game spends on sight
+
+`CIVVIS_VISION_STATS=1` counts the asks and what each one walks. It stays in the
+tree behind a `OnceLock`, for the reason `CIVVIS_ENVELOPE_AUDIT` does. Seed
+7311001, 6p 60x38 pangaea online, all six victories, decided turn 232:
+
+| | per game |
+| --- | ---: |
+| `vision_frame` asks | 128,826 |
+| …answered from cache | 76,641 (**59.5%**) |
+| world units scanned by the stamp | **25,221,623** |
+| units the scan kept (owner match) | 2,881,751 — **89% discarded** |
+| city owned-tile positions hashed | **8,592,020** |
+
+⚠ **The stamp is computed on every one of the 128,826 asks, hit or miss.** It is
+a content hash by design, and that design is right: hashing only the fields
+`base_player_visibility` reads is what stops a hit-point change from evicting a
+map-sized bitset. The defect is not that it hashes; it is that hashing costs a
+walk of the whole world. `self.units.values().filter(|u| u.owner == viewer)`
+visits every unit on the board to keep roughly one in nine.
+
+### Who asks 128,826 times
+
+Attributed from the sample call tree, by samples in stack:
+
+| caller | share |
+| --- | ---: |
+| `combat_target_visible` | **22,575 (92%)** |
+| `player_can_see` | 1,337 |
+| `refresh_player_visibility_via` | 373 |
+| `player_vision_now` | 190 |
+
+⚠ **This is a trap this document already named and only half-fixed.** The
+2026-08-18 entry records that `combat_target_visible(pid, pos)` recomputes both
+frames per call, and that the fix is `combat_target_visible_at(pid, pos,
+&visible, &viewers)` with the frames hoisted. The tactical picker was converted.
+**The engine's own five call sites never were** — `game.rs` 35375, 37362, 37492,
+39170, 39264, inside `do_ranged`, `do_attack` and `do_city_strike`. Every shot
+the engine applies still asks the unhoisted wrapper.
+
+### Why that is so expensive: the branch started cold
+
+`impl Clone for VisionFrameCache` returned `Self::default()`. Every `Game` clone
+therefore began with **no sight frames at all**. The tactical picker scores a
+candidate by cloning the world and applying the order, and applying a shot calls
+`combat_target_visible` — so each candidate paid a full ray-cast derivation on a
+world discarded microseconds later.
+
+The comment defending it said a branch "is allowed to move its sources before
+its first read, and copying a parent's bitsets would retain work that belongs to
+the parent position." The stamp already refutes that: a frame is reused only
+when `vision_input_stamp_with_suzerains` still matches, and that stamp folds
+every input the derivation reads. A branch that moves a sight source restamps
+and recomputes; a branch that does not would have derived the bitset it
+inherited. The four fields `speculative_clone` changes — `track_fog_memory`,
+`track_war_ledger`, `visibility_suppressed`, `visibility_batch` — are read by
+neither the stamp nor the derivation.
+
+A clone now inherits the frames (an `Arc` bump per seat).
+
+| workload | baseline | candidate | |
+| --- | ---: | ---: | ---: |
+| 6p 74x46 150t online, 6 seeds | 165.32 s | 163.55 s | **−1.07%** |
+| 6p 60x38 250t online, 4 seeds | 183.57 s | 180.17 s | **−1.85%** |
+
+Reports agree on every paired seed. Cache hit rate 59.5% → 63.9%.
+
+⚠ **Read that number as small on purpose.** It converts misses into hits, and a
+hit still pays the stamp. The 25.2 M-visit scan is untouched, which is why a
+change that removed a full ray-cast from most speculative clones is worth under
+two percent. Wall-clock on the shared host said −21% for the same change; the
+paired harness said −1.85%. That gap is the whole reason the harness exists.
+
+### Next, and it is most of the win
+
+Two independent targets remain, in order of expected value:
+
+1. **The 25.2 M-visit unit scan.** `unit_vision_input_stamps()` already walks
+   the units once and stamps *every* player, and `base_vision_input_stamp`
+   already accepts the result as `unit_stamps`. `vision_frame` passes `None`.
+   Memoize the vector on the game behind a units-mutation epoch: `Units::get_mut`
+   and `values_mut` already insert into a branch write-set, so the choke point
+   for the bump exists. ⚠ Over-invalidation is **safe here** in a way it was not
+   for the envelopes — a stale epoch only recomputes the *stamp*, while frame
+   validity still rests on the content hash. Worst case is one pass where there
+   is one pass today; it cannot regress correctness.
+2. **The 8.6 M owned-tile hashes.** Every ask hashes every owned tile of every
+   city of every viewer. Borders move rarely; a per-city tiles counter bumped on
+   mutation would replace the inner loop with one number.
+
+And separately, convert the five engine call sites to `combat_target_visible_at`
+with the frames hoisted once per order, which is what the 2026-08-18 entry
+already told the next reader to do.
