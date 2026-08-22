@@ -58,17 +58,7 @@ Regenerate with `python3 tools/heuristic_gene_ranking.py --write` after every sc
 | 48 | -9 | -19 | `housing-districts` | Let the baseline governor raise the housing ceiling. | off | 16.53% | 16.81% | 56,892 |
 | 49 | -11 | +4 | `endgame-war-runway` | Keep a fresh direct declaration out of the final campaign reserve. | off | 16.63% | 16.71% | 56,892 |
 | 50 | -11 | -13 | `naval-recon` | Buy one ship for an empire that has none while unexplored water lies off its coast, and send it exploring. | off | 16.55% | 16.79% | 56,892 |
-| 51 | -11 | +30 | `siege-role` | Let the siege train be sized by the wall it has to breach. | off | 16.75% | 16.59% | 56,892 |
-| 52 | -11 | +14 | `suzerain-cards` | Suzerain policy cards are valued only while a suzerainty actually exists. | off | 16.67% | 16.66% | 56,892 |
-| 53 | -13 | -6 | `barbarian-walls-one-tier` | Barbarian pressure buys ancient walls and nothing above them. | off | 16.57% | 16.77% | 56,892 |
-| 54 | -13 | -19 | `idle-walkers-close-the-pipeline` | An idle walker closes the settler pipeline, and a site the walker cannot reach stays retired. | off | 16.51% | 16.82% | 56,892 |
-| 55 | -14 | -14 | `housing-buildings` | Let a housing-short city prefer a building that raises its ceiling. | off | 16.53% | 16.81% | 56,892 |
-| 56 | -14 | -33 | `muster-at-command-radius` | Judge force readiness at the radius the group was assembled at. | off | 16.43% | 16.90% | 56,892 |
-| 57 | -16 | -7 | `ranged-line-of-sight` | Let a ranged unit prefer tiles it can actually shoot from. | off | 16.55% | 16.79% | 56,892 |
-| 58 | -26 | -19 | `camp-reach` | Count a barbarian camp within nine tiles of a city as home ground the guard clears. | off | 16.44% | 16.90% | 56,892 |
-| 59 | -26 | +1 | `recon-flight` | Let a recon unit step out of a visible hostile's reach before it explores. | off | 16.54% | 16.80% | 56,892 |
-| 60 | -26 | -45 | `wonder-prereq-reach` | Credit a wonder's missing prerequisite buildings/districts with a share of the wonder's own production score. | off | 16.32% | 17.02% | 56,892 |
-| 61 | -27 | – | `holy-lane-parity` | The Religion lane pays for its Holy Site what the Culture lane pays for its Theater Square. | off | 16.40% | 16.93% | 12,000 |
+| 51 | -26 | +1 | `recon-flight` | Let a recon unit step out of a visible hostile's reach before it explores. | off | 16.54% | 16.80% | 56,892 |
 
 ## Awaiting native measurement
 
@@ -102,7 +92,17 @@ Genes whose code has left the repository (operator directive: the bottom of the 
 | Gene | Wins ±10k (last tracked measurement) | Regime | Win rate (on) | Win rate (off) | Source |
 |---|---:|---|---:|---:|---|
 | `siege-muster` | +5 | war | 25.05% | 24.95% | `2026-08-21-s8-war-rerank-vs-best-4p-allseats.json` |
+| `siege-role` | -11 | native | 16.55% | 16.78% | `2026-08-21-p7-native-6p-allseats-15000-pairs.json` |
+| `suzerain-cards` | -11 | native | 16.55% | 16.78% | `2026-08-21-p7-native-6p-allseats-15000-pairs.json` |
 | `loyalty-policy-defence` | -12 | war | 24.88% | 25.12% | `2026-08-21-s8-war-rerank-vs-best-4p-allseats.json` |
+| `barbarian-walls-one-tier` | -13 | native | 16.53% | 16.80% | `2026-08-21-p7-native-6p-allseats-15000-pairs.json` |
+| `idle-walkers-close-the-pipeline` | -13 | native | 16.54% | 16.79% | `2026-08-21-p7-native-6p-allseats-15000-pairs.json` |
+| `housing-buildings` | -14 | native | 16.53% | 16.81% | `2026-08-21-p7-native-6p-allseats-15000-pairs.json` |
+| `muster-at-command-radius` | -14 | native | 16.53% | 16.81% | `2026-08-21-p7-native-6p-allseats-15000-pairs.json` |
+| `ranged-line-of-sight` | -16 | native | 16.51% | 16.83% | `2026-08-21-p7-native-6p-allseats-15000-pairs.json` |
+| `camp-reach` | -26 | native | 16.41% | 16.93% | `2026-08-21-p7-native-6p-allseats-15000-pairs.json` |
+| `wonder-prereq-reach` | -26 | native | 16.41% | 16.93% | `2026-08-21-p7-native-6p-allseats-15000-pairs.json` |
+| `holy-lane-parity` | -27 | native | 16.40% | 16.93% | `2026-08-21-s6-religion-genes-native-6p-allseats-6000-pairs.json` |
 | `stacked-escort` | -36 | war | 24.64% | 25.36% | `2026-08-21-s8-war-rerank-vs-best-4p-allseats.json` |
 | `settler-stack-discipline` | -58 | war | 24.42% | 25.58% | `2026-08-21-s8-war-rerank-vs-best-4p-allseats.json` |
 | `housing-cards` | -62 | war | 24.38% | 25.62% | `2026-08-21-s8-war-rerank-vs-best-4p-allseats.json` |

@@ -5337,22 +5337,12 @@ mod tests {
             })
             .expect("some wonder must be sitable in both cities for this to prove anything");
 
-        assert_eq!(
-            game.wonder_missing_prerequisites(first_city, wonder.as_str()),
-            Some(Vec::new()),
-            "the selected wonder is otherwise reachable before the host fact arrives"
-        );
         game.host_unavailable_wonders.insert(wonder);
 
         for city in [first_city, second_city] {
             assert!(
                 game.wonder_sites(city, wonder.as_str()).is_empty(),
                 "the host's zero-target response must block {wonder:?} in city {city}"
-            );
-            assert_eq!(
-                game.wonder_missing_prerequisites(city, wonder.as_str()),
-                None,
-                "a claimed world wonder must not pay prerequisite credit in city {city}"
             );
         }
     }
