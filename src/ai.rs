@@ -19073,8 +19073,14 @@ mod tests {
         let envelopes = probe.enemy_attack_envelopes(&game, 0);
         let pool = BasicAi::evacuation_incoming_damage(&game, 0, ours, front, &envelopes);
         let blow = BasicAi::killing_blow(&game, 0, ours, front, &envelopes);
-        assert!(pool < 50.0, "the expected pool is {pool:.1}: a survivable tile");
-        assert!(blow >= 50.0, "the top of that same roll is {blow:.1}: a dead Warrior");
+        assert!(
+            pool < 50.0,
+            "the expected pool is {pool:.1}: a survivable tile"
+        );
+        assert!(
+            blow >= 50.0,
+            "the top of that same roll is {blow:.1}: a dead Warrior"
+        );
 
         // Untreated, no part of the controller has anything to say about it.
         let mut control = game.clone();
@@ -19122,7 +19128,10 @@ mod tests {
         let probe = BasicAi::new();
         let envelopes = probe.enemy_attack_envelopes(&game, 0);
         let pool = BasicAi::evacuation_incoming_damage(&game, 0, ours, front, &envelopes);
-        assert!(pool > 0.0 && pool < 60.0, "a threatened but survivable tile: {pool:.1}");
+        assert!(
+            pool > 0.0 && pool < 60.0,
+            "a threatened but survivable tile: {pool:.1}"
+        );
         assert!(
             BasicAi::killing_blow(&game, 0, ours, front, &envelopes) < 60.0,
             "and not one blow from death either: this half stands on its own"
