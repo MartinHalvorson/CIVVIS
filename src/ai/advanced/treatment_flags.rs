@@ -191,19 +191,6 @@ impl AdvancedAi {
         self.raid_pillage_prizes = false;
     }
 
-    /// The Religion lane pays for its Holy Site what the Culture lane pays
-    /// for its Theater Square. See [`AdvancedAi::holy_lane_parity`]; the
-    /// evaluator arm `advanced_holy_lane` sets the field directly, this pair
-    /// makes it a native opt-in gene (`PRODUCTION_OPT_INS`).
-    pub fn enable_holy_lane_parity(&mut self) {
-        self.holy_lane_parity = true;
-    }
-
-    /// The twin of `enable_holy_lane_parity`.
-    pub fn disable_holy_lane_parity(&mut self) {
-        self.holy_lane_parity = false;
-    }
-
     /// Enforce Firaxis's city-majority rule for live religious purchases.
     /// Native tournament games leave this disabled.
     pub fn enable_live_religious_purchase_guard(&mut self) {
@@ -385,15 +372,6 @@ impl AdvancedAi {
     pub fn disable_garrison_under_fire(&mut self) {
         self.base.garrison_under_fire = false;
     }
-    /// See `BasicAi::barbarian_walls_one_tier`.
-    pub fn enable_barbarian_walls_one_tier(&mut self) {
-        self.base.barbarian_walls_one_tier = true;
-    }
-
-    pub fn disable_barbarian_walls_one_tier(&mut self) {
-        self.base.barbarian_walls_one_tier = false;
-    }
-
     /// Release an escort that is not walking its settler. See `escort_unstick`.
     pub fn enable_escort_unstick(&mut self) {
         self.escort_unstick = true;
@@ -502,19 +480,6 @@ impl AdvancedAi {
         self.strike_opening = false;
     }
 
-    /// Let a ranged unit prefer tiles it can actually shoot from. Native
-    /// tournament games leave this disabled so their recorded ladders stay
-    /// comparable.
-    pub fn enable_ranged_needs_line_of_sight(&mut self) {
-        self.ranged_needs_line_of_sight = true;
-    }
-
-    /// Withholding twin for `enable_ranged_needs_line_of_sight`, so the live bundle can be
-    /// priced by taking this one treatment out of it. See `LIVE_TREATMENTS`.
-    pub fn disable_ranged_needs_line_of_sight(&mut self) {
-        self.ranged_needs_line_of_sight = false;
-    }
-
     /// ★★★★★ THE FAITH PRICE THE AI READS IS THE STANDARD-SPEED ONE.
     ///
     /// `spec.cost * 2.0` is the Faith rate at Standard speed, and `item_cost`
@@ -554,21 +519,6 @@ impl AdvancedAi {
         self.price_the_suzerainty = true;
     }
 
-    /// Suzerain policy cards are valued only while a suzerainty actually
-    /// exists.
-    pub fn enable_suzerain_cards_need_a_suzerainty(&mut self) {
-        self.suzerain_cards_need_a_suzerainty = true;
-    }
-
-    /// Let the siege train be sized by the wall it has to breach. Native
-    /// tournament games leave this disabled so their recorded ladders stay
-    /// comparable.
-    /// Let the unit chooser ask for siege as a role. Native tournament games
-    /// leave this disabled.
-    pub fn enable_siege_role(&mut self) {
-        self.base.siege_role = true;
-    }
-
     /// Rebuild the recon arm when it is gone and there is ground left to chart.
     /// Native tournament games leave this disabled so their recorded ladders
     /// stay comparable.
@@ -591,16 +541,6 @@ impl AdvancedAi {
         self.base.naval_recon = false;
     }
 
-    /// Count a barbarian camp within nine tiles of a city as home ground the
-    /// guard clears. See `BasicAi::camp_reach`.
-    pub fn enable_camp_reach(&mut self) {
-        self.base.enable_camp_reach();
-    }
-
-    pub fn disable_camp_reach(&mut self) {
-        self.base.disable_camp_reach();
-    }
-
     /// Price a revealed natural wonder's ring into the settle scorer. Native
     /// tournament games leave this disabled so their recorded ladders stay
     /// comparable.
@@ -610,10 +550,6 @@ impl AdvancedAi {
 
     pub fn disable_wonder_ring_settle_value(&mut self) {
         self.base.wonder_ring_settle_value = false;
-    }
-
-    pub fn disable_siege_role(&mut self) {
-        self.base.siege_role = false;
     }
 
     /// Keep the land army out of the water. Native tournament games leave this
@@ -636,13 +572,6 @@ impl AdvancedAi {
     /// games leave this disabled so their recorded ladders stay comparable.
     pub fn enable_blind_objective_strength(&mut self) {
         self.blind_objective_strength = true;
-    }
-
-    /// Judge force readiness at the radius the group was assembled at. Native
-    /// tournament games leave this disabled so their recorded ladders stay
-    /// comparable.
-    pub fn enable_muster_at_command_radius(&mut self) {
-        self.muster_at_command_radius = true;
     }
 
     /// Send an adaptive Conquest plan through the war production path. Native
@@ -880,11 +809,6 @@ impl AdvancedAi {
         // NEVER ORDERED WALLS — max_wall_damage 0 at t115 with production on
         // the culture lane and the fog hiding every attacker until adjacency.
         // See BasicAi::garrison_walls_item.
-        // And a raider ring buys ancient walls only: 40 medieval and
-        // renaissance walls "for nearby barbarian pressure" across 23 live
-        // games, against an enemy that cannot take a city. See
-        // `BasicAi::barbarian_walls_one_tier`.
-        self.enable_barbarian_walls_one_tier();
         // Settler conversion is the score frontier the first seven live games
         // isolated; see escort_unstick.
         self.enable_escort_unstick();
@@ -901,28 +825,6 @@ impl AdvancedAi {
         // The religion lane was structurally blocked by its own wars; see
         // religion_sues_peace.
         self.enable_religion_sues_peace();
-        // Raj, Wisselbanken, Collective Activism and the International Space
-        // Agency all scale off SUZERAIN city-states and pay nothing at zero.
-        // Live run `civvis-20260803T220954Z` held Raj AND Wisselbanken slotted
-        // at turn 208 with 0 suzerainties and 41 unspent envoys — two of six
-        // slots returning zero for the whole game.
-        self.enable_suzerain_cards_need_a_suzerainty();
-        // ⚠ The siege appetite was one unit for any target city at all, walled
-        // or not. The engine halves a non-siege unit's wall damage
-        // (`mult = if spec.siege { 1.0 } else { 0.5 }`) and docks a non-siege
-        // ranged unit a flat 17 attack for shooting a city, so an army without a
-        // siege train pays twice. Measured on run `civvis-20260803T005930Z`: four
-        // siege units across 251 turns against a Korea holding five walled cities;
-        // 27 turns in contact with Jinju and Jeonju removed 12 and 9 points of a
-        // 400-point wall, while Korea stripped Kwango's 400 in six.
-        // ⚠ And the appetite is useless if the chooser cannot offer a siege
-        // unit at all. `best_military` split the world into melee and ranged;
-        // every siege unit has a ranged attack, so it competed on raw strength
-        // and lost to a Field Cannon. Measured on run `civvis-20260803T082856Z`
-        // — a game CIVVIS was WINNING — 151 turns at war at 10:1, ZERO cities
-        // taken, zero siege units built in 251 turns with every siege tech in
-        // hand. The tournament controller stays frozen.
-        self.enable_siege_role();
         // ⚠ The empire goes blind and the build order never notices. Recon is
         // not among the counts `pick_item` receives, and `OPENING_MENU` is the
         // only place a scout is named, so once the openers die nothing replaces
@@ -944,9 +846,6 @@ impl AdvancedAi {
         self.enable_one_launch_pad();
         // And the sea gets one eye of its own. See `BasicAi::naval_recon`.
         self.enable_naval_recon();
-        // And a camp within nine tiles of a city is home ground the guard clears.
-        // See `BasicAi::camp_reach`.
-        self.enable_camp_reach();
         // And in peacetime the whole field army clears it. See
         // `BasicAi::camp_party`.
         self.enable_camp_party();
@@ -995,16 +894,7 @@ impl AdvancedAi {
         // tournament controller stays frozen so its recorded ladders remain
         // comparable.
         self.enable_strike_opening();
-        // ⚠ And the largest single reason the army does not shoot. Of 87
-        // declined attacks on a replay of run `civvis-20260803T005930Z`, 45
-        // were the forward model refusing outright and **line of sight blocked
-        // was 25 of those** — 27 of the 45 a Field Cannon. Movement picks a
-        // ranged unit's tile by distance and preferred depth and never asks
-        // whether the target is visible from it, so the unit marches exactly
-        // into range and cannot fire.
-        self.enable_ranged_needs_line_of_sight();
         self.enable_blind_objective_strength();
-        self.enable_muster_at_command_radius();
         self.enable_relief_targets_the_siege();
         self.enable_blind_objective_units();
         // ⚠ THE EXPANSION GATE ASKS `settlers == 0`, so a settler that never
@@ -1112,13 +1002,6 @@ impl AdvancedAi {
         // as #999 and #1003: a repair the governor making most of the builds
         // could not reach.
         self.enable_housing_districts();
-        // ⚠ AND THE SAME REPAIR ON THE PRODUCTION PATH. `housing_districts`
-        // fixes the two DISTRICTS that raise the ceiling; the buildings that do
-        // it — Sewer, Water Mill, Granary — were ranked by price alone, because
-        // the baseline governor's building sort has no housing term at all.
-        // 44% of our cities end housing-STOPPED against a median food surplus of
-        // +6.5 a turn. See the sort in `BasicAi::pick_item`.
-        self.enable_housing_buildings();
         // ⚠⚠ AND THE EMPIRE STOPS BUILDING CAMPUSES AT HALF ITS CITIES.
         // `balanced_core` pays a Campus +130 only while `district_count * 2 <
         // city_count`, so the term switches off at half coverage — and measured
@@ -1165,10 +1048,6 @@ impl AdvancedAi {
         // it by t150 and stops settling at t116 under an assigned lane. See
         // `land_grab`.
         self.enable_land_grab();
-        // And the pipeline stops paying for walkers while one already out
-        // has nowhere to go — nineteen Settlers for nine cities on run
-        // civvis-20260819T000800Z. See `idle_walkers_close_the_pipeline`.
-        self.enable_idle_walkers_close_the_pipeline();
         // And the pantheon is the one that founds a city, bought with the
         // Faith card the portfolio used to throw away at the first civic
         // swap: Divine Spark 40 of 40 times at median t22 (t108 at worst)
@@ -1346,11 +1225,7 @@ impl AdvancedAi {
     /// economy halves do separately, the repairs compound; if it does not, the
     /// bundle is a sum and should be argued for one term at a time.
     pub fn enable_engine_repairs_war(&mut self) {
-        // Force assembly and movement. `muster_at_command_radius` is the
-        // keystone: with the shipped radius a real army clears its readiness
-        // gate on 6% of turns, so every repair downstream of "the army
-        // actually advances" is dead code until it lands.
-        self.enable_muster_at_command_radius();
+        // Force assembly and movement.
         self.enable_war_reinforcement();
         self.enable_come_ashore();
         self.enable_recorded_tactical_step();
@@ -1370,7 +1245,6 @@ impl AdvancedAi {
         self.enable_war_economy();
         self.enable_bounded_recovery();
         // Taking a city, and finishing the one already broken open.
-        self.enable_siege_role();
         self.enable_siege_tracks_the_wall();
         self.enable_siege_commitment();
         self.enable_war_patience();
@@ -1383,12 +1257,8 @@ impl AdvancedAi {
         // everything a major loses.
         self.enable_home_defense();
         self.enable_garrison_under_fire();
-        // And no wall tier above ancient against raiders that cannot capture.
-        // See `BasicAi::barbarian_walls_one_tier`.
-        self.enable_barbarian_walls_one_tier();
         // Tactical quality on the tile the unit actually stands on.
         self.enable_strike_opening();
-        self.enable_ranged_needs_line_of_sight();
         self.enable_recon_replacement();
         // And the recon it rebuilds must stop walking into barbarians. See
         // `recon_flight`.
@@ -1422,9 +1292,6 @@ impl AdvancedAi {
         // their attacks ranged to our 22 %, and our ranged attacks have never
         // lost the attacker. See `BasicAi::barbarian_ranged_answer`.
         self.enable_barbarian_ranged_answer();
-        // And a camp within nine tiles of a city is home ground the guard clears.
-        // See `BasicAi::camp_reach`.
-        self.enable_camp_reach();
         // And in peacetime the whole field army clears it. See
         // `BasicAi::camp_party`.
         self.enable_camp_party();
@@ -1445,9 +1312,6 @@ impl AdvancedAi {
         // And never paying for a Settler the march will refuse to land. See
         // `settler_site_agreement`.
         self.enable_settler_site_agreement();
-        // And not paying for another while one out has nowhere to go. See
-        // `idle_walkers_close_the_pipeline`.
-        self.enable_idle_walkers_close_the_pipeline();
         // And a stacked guard holds, and only one that can hold counts. See
         // `settler_guard_holds`.
         self.enable_settler_guard_holds();
@@ -1460,16 +1324,14 @@ impl AdvancedAi {
         // never aims at, so the district, the buildings, the cards and the
         // research order have to move together or none of them binds.
         self.enable_housing_districts();
-        self.enable_housing_buildings();
         self.enable_housing_research();
         self.enable_amenity_project_preemption();
         self.enable_amenity_district_path();
         self.enable_governor_every_lane();
         self.enable_district_coverage();
         self.enable_slot_kind_tiebreak();
-        // Keeping it loyal, and not slotting cards that multiply zero.
+        // Keeping it loyal.
         self.enable_loyalty_rate_alarm();
-        self.enable_suzerain_cards_need_a_suzerainty();
         // ★★★★ A TAG IN `ENGINE_REPAIR_TREATMENTS` WHOSE ENABLE IS MISSING
         // HERE SCREENS AS EXACTLY INERT, AND SAYS SO IN A WAY THAT IS EASY TO
         // READ AS A RESULT. `gene_screen` builds its treated seat from
@@ -1608,18 +1470,6 @@ impl AdvancedAi {
     pub fn disable_builder_barbarian_safety(&mut self) {
         self.builder_barbarian_safety = false;
     }
-    /// Credit a wonder's missing prerequisite buildings/districts with a
-    /// share of the wonder's own production score. Evaluator arm
-    /// `advanced_wonder_reach`; off in production.
-    pub fn enable_wonder_prereq_reach(&mut self) {
-        self.wonder_prereq_reach = true;
-    }
-
-    /// Withhold the wonder-prerequisite credit. Evaluator-only.
-    pub fn disable_wonder_prereq_reach(&mut self) {
-        self.wonder_prereq_reach = false;
-    }
-
     /// Credit strength-per-production and the civ's own unique unit in the
     /// military production arm. Evaluator arm `advanced_unit_efficiency`;
     /// off in production.
@@ -1804,16 +1654,6 @@ impl AdvancedAi {
         self.base.housing_districts = true;
     }
 
-    /// Let a housing-short city prefer a building that raises its ceiling.
-    pub fn enable_housing_buildings(&mut self) {
-        self.base.housing_buildings = true;
-    }
-
-    /// Hold the housing-building preference off, for the controlled arm.
-    pub fn disable_housing_buildings(&mut self) {
-        self.base.housing_buildings = false;
-    }
-
     pub fn disable_housing_districts(&mut self) {
         self.base.housing_districts = false;
     }
@@ -1948,15 +1788,6 @@ impl AdvancedAi {
     pub fn disable_land_grab(&mut self) {
         self.land_grab = false;
         self.base.land_grab = false;
-    }
-
-    /// See [`Self::idle_walkers_close_the_pipeline`].
-    pub fn enable_idle_walkers_close_the_pipeline(&mut self) {
-        self.idle_walkers_close_the_pipeline = true;
-    }
-
-    pub fn disable_idle_walkers_close_the_pipeline(&mut self) {
-        self.idle_walkers_close_the_pipeline = false;
     }
 
     /// Take the pantheon that founds a city and keep the Faith card that buys
@@ -2221,20 +2052,12 @@ impl AdvancedAi {
         self.peacetime_deterrence = false;
     }
 
-    pub fn disable_suzerain_cards_need_a_suzerainty(&mut self) {
-        self.suzerain_cards_need_a_suzerainty = false;
-    }
-
     pub fn disable_siege_tracks_the_wall(&mut self) {
         self.siege_tracks_the_wall = false;
     }
 
     pub fn disable_blind_objective_strength(&mut self) {
         self.blind_objective_strength = false;
-    }
-
-    pub fn disable_muster_at_command_radius(&mut self) {
-        self.muster_at_command_radius = false;
     }
 
     pub fn disable_war_economy(&mut self) {

@@ -170,8 +170,8 @@ tables**, never listed by hand:
   bundle in the host regime is a different instrument (`tools/civ6_treatment_census.py`, the ladder).
 - `civvis::ai::PRODUCTION_TREATMENTS` — what production itself turns on
   (`strategic-wonders`); on in both baselines.
-- `civvis::ai::PRODUCTION_OPT_INS` — off-by-default arms (`wonder-prereq-reach`,
-  `apostle-promotion-by-role`, `joint-tactics`, `arrival-waves`); the gene *on*
+- `civvis::ai::PRODUCTION_OPT_INS` — off-by-default arms
+  (`apostle-promotion-by-role`, `joint-tactics`, …); the gene *on*
   means enabling it. `joint-tactics` is the one `FIRAXIS_ONLY` tag that is not
   host-only at all — `advanced_joint_tactics` is production plus that flag, and
   `docs/TACTICS.md` §6 left its whole-game effect inconclusive — so it is
@@ -370,6 +370,24 @@ wins against 27% for all-off** (4p classic, 200 anchor pairs). Now:
   an older build can carry a gene whose code has since been removed; the
   tool now drops those rows and says so, because the Rust table refuses a tag
   the registry does not know.
+
+- **Ten more genes left the code (2026-08-21).** A second application of the
+  directive behind the #2235 cull — the bottom of `HEURISTIC_GENE_RANKING.md`
+  leaves the repository — removed `holy-lane-parity`, `camp-reach`,
+  `wonder-prereq-reach`, `ranged-line-of-sight`, `housing-buildings`,
+  `muster-at-command-radius`, `barbarian-walls-one-tier`,
+  `idle-walkers-close-the-pipeline`, `suzerain-cards` and `siege-role`, with
+  their `live_without_*` arms and the `advanced_holy_lane`,
+  `advanced_holy_lane_v0` and `advanced_wonder_reach` arms that set their
+  fields. **Every one was already held off by the ledger**, so the deployment
+  genome is unchanged and every screen's "off" arm is what now ships; what is
+  gone is the ability to turn them on. `holy-lane-parity` and `siege-role`
+  are measured `hurts` at war; the other eight sit inside the ±110/10k noise
+  band on wins and are recorded as directive removals, not measured harms.
+  ⚠ `recon-flight` is the ranking's new tail (−26/10k) and did **not** go
+  with them: `promoted_policy_envoy` turns it on, so removing it would move
+  the production incumbent every recorded Elo result is filed against. That
+  is a promotion-gate question (`ai_eval --matrix`), not a cull.
 
 - **The operator's view of the same games** is `HEURISTIC_GENE_RANKING.md`
   at the repository root — every screenable gene ranked by wins added per

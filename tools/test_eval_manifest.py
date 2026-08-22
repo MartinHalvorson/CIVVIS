@@ -23,10 +23,19 @@ class EvalManifestTests(unittest.TestCase):
         `docs/EVAL_STATUS.md` publishes the never-named list as the work
         roadmap objective 3 asks the fleet to do, and the arm name was derived
         as `live_without_{tag with underscores}`. There is no such rule, and
-        both obvious ones are wrong somewhere: `ranged-line-of-sight`'s arm is
-        `live_without_ranged_needs_line_of_sight`, after the flag, while
+        both obvious ones are wrong somewhere: `live-trader-route`'s arm is
+        `live_without_live_trader_route_adapter`, after the flag, while
         `army-target-weighs-enemy` sets `army_target_weighs_the_enemy` and its
         arm is `live_without_army_target_weighs_enemy`, after the tag.
+
+        ⚠ The non-vacuity check reads the WHOLE bridge table, not just the
+        withholdable half. It used to name `ranged-line-of-sight` (arm
+        `live_without_ranged_needs_line_of_sight`) and scope itself to the
+        screenable tags; that gene left the code on 2026-08-21 with the
+        ranking's bottom ten, and every remaining screenable tag happens to
+        spell its arm naively — so scoped that way the check would silently
+        stop testing anything. The two Firaxis-only rows still differ, and
+        they carry registered arms like any other row.
 
         So the arm is looked up in `EVAL_ONLY_AIS` rather than guessed, and a
         treatment with no arm raises. That found one immediately:
@@ -48,10 +57,16 @@ class EvalManifestTests(unittest.TestCase):
         for tag, arm in arms.items():
             self.assertIn(arm, known, f"{tag} resolves to {arm}, which is not a registered arm")
         # Non-vacuous: at least one tag's arm is not the naive transformation,
-        # so the lookup is doing work a derivation could not.
-        naive = {tag: f"live_without_{tag.replace('-', '_')}" for tag in arms}
+        # so the lookup is doing work a derivation could not. Read over every
+        # bridge row, for the reason in the docstring.
+        every = eval_manifest.withholding_arms(
+            REPO,
+            registry["EVAL_ONLY_AIS"]["items"],
+            set(registry["LIVE_BRIDGE_TREATMENTS"]["items"]),
+        )
+        naive = {tag: f"live_without_{tag.replace('-', '_')}" for tag in every}
         self.assertTrue(
-            any(arms[tag] != naive[tag] for tag in arms),
+            any(every[tag] != naive[tag] for tag in every),
             "every arm matches the naive spelling; this test would pass on the "
             "derivation it exists to replace",
         )
