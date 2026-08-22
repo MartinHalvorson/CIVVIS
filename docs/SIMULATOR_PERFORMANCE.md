@@ -4,8 +4,11 @@ This note records the July 2026 simulator profile, the changes kept from that
 work, the production-catalog follow-up, and the next optimization targets.
 
 ⚠ **Read the last section first.** Each profile here superseded the one above
-it, and the most recent — 2026-08-18 — supersedes the "the profile is now flat"
-conclusion directly above it after a single day.
+it, and the most recent — 2026-08-21 — supersedes **two** of the tables below:
+the "the profile is now flat" conclusion from 2026-08-17, and the "Largest
+remaining opportunities" table under it, whose top row is now 1.1% of the run.
+(This line itself said "2026-08-18" while four 2026-08-19 sections sat under
+it. A pointer to the newest section is only worth having if it moves.)
 Percentages below are diagnostic signals, not an additive decomposition:
 library routines such as `memcmp` and `memmove` are costs incurred by several
 higher-level systems.
@@ -511,6 +514,12 @@ the next reader does not re-derive them:
   per candidate site, is likewise 0.12%.
 
 ### Largest remaining opportunities, superseding the July table
+
+⚠⚠ **SUPERSEDED 2026-08-21 — see the re-profile at the end of this file.** The
+first two rows below are the ones this table exists for, and they are now
+**1.1%** and **0.6%** of the run. Read them as history: what they record about
+*why* a scan is expensive is still true, and what they say about *where the
+time is* has not been true since the envelope work landed.
 
 | opportunity | current signal | main constraint |
 | --- | --- | --- |
@@ -1340,3 +1349,129 @@ Two independent targets remain, in order of expected value:
 And separately, convert the five engine call sites to `combat_target_visible_at`
 with the frames hoisted once per order, which is what the 2026-08-18 entry
 already told the next reader to do.
+
+
+## 2026-08-21 (re-profile) — the settlement scan is 1.1%, and half the run is threat
+
+The rule at the top of this file says re-profile after every landed win. Four
+landed (#2148, #2151, #2155, #2163) and the last section said the re-profile
+"is the next step here, not a claim this one makes". This is that step, taken
+after 133 further merges, and it moves the target.
+
+`/usr/bin/sample` at 1 ms, `ci` profile, head `cefe73b8`, this file's own
+reference workload — `civvis simulate --seed 7311001 --jobs 1 --players 6
+--turns 150 --width 74 --height 46 --city-states 9 --speed online` — 14,141
+main-thread samples. Inclusive shares, summed over every call site, with a
+symbol never counted inside itself.
+
+| subsystem | % of main thread |
+| --- | ---: |
+| `AdvancedAi::take_turn` — all deliberation | 100% |
+| `BasicAi::military_step` | **50.6%** |
+| ├ `healing_step` | 41.0% |
+| ├ `retreat_step` | 35.9% |
+| ├ `enemy_attack_envelopes` | 29.0% |
+| ├ `attack_reach` | 23.4% |
+| ├ `flow_past` | 21.0% |
+| └ `can_enter_past` | 15.3% |
+| `advanced_units` → `plan_general_unit_turn` | 38.3% → 36.4% |
+| `advance_unit_serial` | 16.9% |
+| `forcing_reply_*` | 11.0% |
+| `explorer_turn` / `explore_step` | 6.1% / 5.7% |
+| `city_yields` | 4.9% |
+| `legal_purchase_actions` | 4.3% |
+| `research_with_government` | 3.3% |
+| **`Game::do_end_turn` — the engine's own turn** | **3.2%** |
+| `policy_card_score` | 2.9% |
+| `refresh_all_visibility` | 2.5% |
+| `production_value` | 1.7% |
+| **`advanced_settler_step`** | **1.1%** |
+| └ `settlement_atlas_values` | 0.5% |
+
+### The table this supersedes
+
+"Largest remaining opportunities, superseding the July table" (2026-08-17)
+ranks *narrow the settlement candidate set* first, on the strength of the
+settler search being **20% of the run**, and *memoize district adjacency per
+plot* second at ~7%. Those two rows are now **1.1%** and **0.6%**. The work
+that moved them is in this file — the four skipped questions (2026-08-17) and
+`settle_site_exists` (#1911) — plus the fact that everything around them got
+more expensive. Neither is worth doing for speed any more, and the
+cost-versus-value paragraph under that table, which asked whether the
+settlement search is worth its breadth, is now a question about **1%**.
+
+⚠ That paragraph is still worth reading for its argument, which was never
+about the percentage: *the single most expensive subsystem in the simulator is
+the one whose decision treatments have most consistently failed to demonstrate
+strength.* It was written about expansion. It is now true of the threat
+machinery, which is why the next section exists.
+
+### The regression is paid off, and the shape changed underneath it
+
+The same command that measured **16.7 s** on `d3f624da` (the commit before
+#2059) and **119.1 s** at the 2026-08-19 head now measures **21.4 s**
+(`real 21.40 / user 20.82`, host load 3.4 before and 2.8 after). Four exact
+caches took a 6x event down to about 1.3x. ⚠ The 16.7 s reading carries no
+recorded host load, so the residual 1.3x is a comparison across days and is
+worth re-taking paired before anyone spends a week on it.
+
+But the profile is not the shape it was before #2059 either. `military_step`
+now holds **half the main thread**, and the engine's own rules — everything
+`do_end_turn` does to advance a turn — hold **3.2%**. The rules are not the
+cost and have not been since July; what changed is which part of the
+controller is.
+
+## 2026-08-21 — the most expensive default in the simulator had never been priced
+
+`precise_evacuation` (#2059) is `true` in `BasicAi::new()` and
+`BasicAi::with_weights()` — every major, every city-state, every barbarian.
+Only `AdvancedAi::legacy()` withholds it, behind the frozen `advanced_v1`
+anchor. `retreat_step` returns `None` immediately when it is false, so one
+flag gates the whole block that owns half the profile above.
+
+`tools/speed_ab.py`, four paired games per row:
+
+| shape | on (head) | off | |
+| --- | ---: | ---: | ---: |
+| 6p 74x46 150t online | 78.22 s | 46.19 s | **-41.0%** |
+| 6p 60x38 6CS 250t online (the `gene_screen` native shape) | 156.13 s | 80.03 s | **-48.7%** |
+
+It costs *more* at 250 turns than at 150, because envelope work scales with
+unit count. The harness prints ARMS DISAGREE on every seed, which is correct
+and is the point: this is a behaviour flag, so the number is what the feature
+**costs**, not overhead. The profile agrees independently — `healing_step`
+41.0%, `retreat_step` 35.9% — which is the two-independent-computations check
+`docs/EVAL.md` and the measurement-discipline notes ask for.
+
+**What it was worth: nobody knew.** As shipped it had no `LIVE_TREATMENTS` row,
+no `elo.rs` arm, no row in `docs/gene_ledger.json`, and no mention in
+`docs/EVAL.md` or `docs/AI_GAPS.md` — `grep -n 'evacuation|retreat_step|safe_healing'`
+over `src/elo.rs`, `src/bin/ai_eval.rs`, `src/bin/gene_screen.rs`,
+`src/bin/civvis_orders.rs` and `src/ai/advanced/treatment_flags.rs` returned
+nothing. #2059's Validation section lists `cargo test` and a twelve-game crash
+soak. So the single largest consumer of every evaluation batch in the fleet was
+also the one behaviour neither gate could address: not unpriced by oversight,
+**unpriceable**, because a flag that is not an arm is invisible to both
+instruments.
+
+### What was done about it
+
+- A `PRODUCTION_TREATMENTS` row and an `enable_/disable_` pair make it a
+  screenable gene, so `gene_screen` and `ai_eval --without` can both reach it.
+- ⚠ Adding that row also makes `gene_ledger::ledger_default_on` answer
+  `Some(false)` for it — "unmeasured means off at deployment" — so the row and
+  its measurement have to land together or the wiring change silently
+  withholds a shipped behaviour. That is why it is one change and not two.
+- `.github/workflows/speed.yml` runs `tools/speed_ab.py --budget` on every
+  pull request. The standing rule above has now fired twice with nothing in CI
+  watching; four minutes of paired timing per PR is what it costs to stop
+  writing it down again.
+
+### The standing rule, third statement
+
+**A promoted feature is a performance event.** It was written after #2059 and
+the sentence was already there before that. What was missing every time is not
+the sentence: it is that no gate ran it. Prose in this file has now failed to
+prevent the same class of event twice, so the next reader should treat a
+change to this section as a change to `speed.yml` first and a paragraph
+second.
