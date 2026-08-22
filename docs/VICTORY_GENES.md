@@ -259,6 +259,22 @@ The screen ranks and directs; `ai_eval` remains the ship decision for any
 promotion (`docs/GENE_SCREEN.md`). A `*` here is a candidate for a dedicated
 arm, never a promotion.
 
+⚠ **The all-lanes screen cannot price the Diplomacy genes, and its own header
+says why.** Its census of how the games ended reads *religious 58%, score 25%,
+culture 17%* — **no diplomatic victory at all**, and none expected: the native
+regime is the one `docs/GENE_SCREEN.md` records as decided two thirds of the
+time by conversion. A gene whose whole purpose is to win the Congress can only
+show up there as score share. That is what `--victories` is for, and it is the
+same correction the war genes needed (`--victories domination,score` gave "the
+31 war and siege genes a game that does not end by conversion at turn 149").
+So the lane genes are priced twice: once in the native regime, for the average
+marginal effect on the games production actually plays, and once in
+`--victories diplomatic,score` and `--victories culture,score`, for the
+question the gene was written to answer.
+
+`lane-space-race` gets a third: `--turns 600`, because its lane does not
+finish in 250 (§1, §7).
+
 ## 7. The fires-check ledger
 
 Before any of these is worth screen games, it has to change a game at all.
