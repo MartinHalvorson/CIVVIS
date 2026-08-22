@@ -140,6 +140,19 @@ impl AdvancedAi {
         self.idle_faith_patronage = false;
     }
 
+    /// A class earned and blocked reserves a city for the slot building,
+    /// district, wonder or soldier that lifts the block, and a due cultural
+    /// person sells duplicate works to make room. See
+    /// [`AdvancedAi::great_person_housing`]. Opt-in gene.
+    pub fn enable_great_person_housing(&mut self) {
+        self.great_person_housing = true;
+    }
+
+    /// The twin of `enable_great_person_housing`.
+    pub fn disable_great_person_housing(&mut self) {
+        self.great_person_housing = false;
+    }
+
     /// Open a surprise war on a neighbour whose unescorted Settlers, Builders
     /// or unpillaged tiles lie within a short march of our soldiers, take
     /// them, and sue for peace. See [`AdvancedAi::opportunistic_war`].

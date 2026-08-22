@@ -3733,6 +3733,16 @@ pub struct AdvancedAi {
     /// gate. Off everywhere by default; opt-in gene `idle-faith-patronage`.
     pub idle_faith_patronage: bool,
 
+    /// ★★★★ A GREAT PERSON THE EMPIRE HAS EARNED AND CANNOT USE IS A RACE
+    /// LOST FOR NOTHING. With this on, a class whose points are at (or within
+    /// fifteen turns of) the price while the claim is blocked reserves one
+    /// city for whatever lifts the block — the typed slot building for a
+    /// Writer, Artist or Musician, the district, wonder or soldier the other
+    /// classes wait on — and a due cultural person no city can house sells
+    /// duplicate works to make room and recruits the same turn. See
+    /// `great_person_housing.rs`. Off everywhere by default; opt-in gene
+    /// `great-person-housing`.
+    pub great_person_housing: bool,
     /// Open a surprise war when the board offers a prize — an unescorted
     /// enemy Settler or Builder, or a cluster of unpillaged tiles — within a
     /// short march of our soldiers, take it, and sue for peace.
@@ -4186,6 +4196,10 @@ pub use treatments::{LiveTreatment, LIVE_TREATMENTS, PRODUCTION_OPT_INS, PRODUCT
 /// guards that they stay out of this file.
 mod treatment_flags;
 
+/// Great People never pile up: the `great-person-housing` gene's ladder of
+/// remedies for a class earned and blocked. See
+/// `advanced/great_person_housing.rs`.
+mod great_person_housing;
 /// The opportunistic war: a surprise war priced on what the board exposes —
 /// unescorted Settlers and Builders, unpillaged tiles — taken by movement
 /// and closed by peace. See `advanced/opportunistic_war.rs`.
@@ -4824,6 +4838,7 @@ impl AdvancedAi {
             district_lookahead_settle: false,
             priced_tile_purchase: false,
             idle_faith_patronage: false,
+            great_person_housing: false,
             opportunistic_war: false,
             raid_pillage_prizes: false,
             raid_war: None,
@@ -30577,6 +30592,11 @@ impl AdvancedAi {
         // see. Reserve the fastest idle city for their missing prerequisite
         // before strategic production fills every queue with another project.
         self.base.prioritize_live_great_person_activation(g, pid);
+        // Native boards have no host need list, but the same blockers: a
+        // Writer's points at the price with no open Writing slot pile up
+        // forever while a non-Culture lane vetoes every slot building. See
+        // `great_person_housing.rs`.
+        self.great_person_housing(g, pid, &plan);
 
         // A broad wartime Amenity loss must be inspected before either the
         // baseline opening or the Conquest production governor fills its one
