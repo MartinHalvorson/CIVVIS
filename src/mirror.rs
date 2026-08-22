@@ -13292,8 +13292,7 @@ fn refused_trade_routes_through(
     path: &std::path::Path,
     turn: Option<u32>,
 ) -> std::collections::BTreeSet<(crate::Pos, crate::Pos)> {
-    let mut seen: std::collections::BTreeMap<(crate::Pos, crate::Pos), usize> =
-        Default::default();
+    let mut seen: std::collections::BTreeMap<(crate::Pos, crate::Pos), usize> = Default::default();
     let Ok(raw) = std::fs::read_to_string(path) else {
         return Default::default();
     };
