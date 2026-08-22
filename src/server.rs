@@ -16596,10 +16596,10 @@ mod tests {
         // Tourism, in that order, and only Faith and Gold carry a balance
         // beside their rate (`YieldButton_DoubleLabel`).
         let strip = EMBEDDED_INDEX
-            .split_once("  const yields =\n")
+            .split_once("  const yields = !empire ? \"\" :\n")
             .expect("the yield strip")
             .1
-            .split_once("  const meters =")
+            .split_once("  const meters = !empire")
             .expect("end of the yield strip")
             .0;
         let mut previous = 0;
@@ -16622,7 +16622,7 @@ mod tests {
         // ringed by the meter of what it is studying, and then runs
         // Government, Religion, Great People.
         assert!(EMBEDDED_INDEX.contains(
-            "launchTreeHook(\"science\") + launchTreeHook(\"culture\") +"
+            "(empireWorld ? launchTreeHook(\"science\") + launchTreeHook(\"culture\") : \"\") +"
         ));
         assert!(EMBEDDED_INDEX.contains(
             "const LAUNCH_BAR_ORDER = [\"government\", \"religion\", \"people\", \"cities\","
@@ -16691,9 +16691,6 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("const meters = !empire ? \"\" :"));
         assert!(EMBEDDED_INDEX.contains(
             "if (!playingSolo() || !RULES || !worldStandingsInPlay()) {"
-        ));
-        assert!(EMBEDDED_INDEX.contains(
-            "(empireWorld ? launchTreeHook(\"science\") + launchTreeHook(\"culture\") : \"\") +"
         ));
 
         // Civilization VI opens a city on what it can build. The plot market
