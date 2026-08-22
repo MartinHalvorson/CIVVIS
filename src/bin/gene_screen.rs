@@ -2434,7 +2434,8 @@ fn main() {
         };
         println!(
             "{} genes (bit order) · default = the deployment genome (docs/gene_ledger.json) · \
-             prior = on-probability under --design prior",
+             prior = on-probability under --design prior · HELD = out of the default \
+             screened set on cost, ask for it by name",
             genes.len()
         );
         for (i, gene) in genes.iter().enumerate() {
@@ -2442,14 +2443,19 @@ fn main() {
                 .map(|row| row.verdict.as_str())
                 .unwrap_or("unmeasured");
             println!(
-                "{i:>3}  {:<28} {:<32} universe:{} stock:{} default:{} ledger:{:<10} prior:{:.1}",
+                "{i:>3}  {:<28} {:<32} universe:{} stock:{} default:{} ledger:{:<10} prior:{:.1}{}",
                 gene.tag,
                 gene.field,
                 if gene.after_setup_on { "on " } else { "off" },
                 if gene.stock_on { "on " } else { "off" },
                 if gene.default_on { "on " } else { "off" },
                 verdict,
-                weights.for_tag(gene.tag)
+                weights.for_tag(gene.tag),
+                if HELD_UNLESS_ASKED.contains(&gene.tag) {
+                    "  HELD"
+                } else {
+                    ""
+                }
             );
         }
         return;
