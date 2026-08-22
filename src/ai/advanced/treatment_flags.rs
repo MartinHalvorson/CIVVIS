@@ -2022,6 +2022,20 @@ impl AdvancedAi {
         self.base.land_grab = false;
     }
 
+    /// Run the screenable native expansion curve: rapid safe settlement first,
+    /// then a conquest posture only after the practical frontier is exhausted.
+    /// See [`AdvancedAi::rapid_city_expansion`].
+    pub fn enable_rapid_city_expansion(&mut self) {
+        self.rapid_city_expansion = true;
+        self.base.enable_rapid_city_expansion();
+    }
+
+    /// The twin of [`AdvancedAi::enable_rapid_city_expansion`].
+    pub fn disable_rapid_city_expansion(&mut self) {
+        self.rapid_city_expansion = false;
+        self.base.disable_rapid_city_expansion();
+    }
+
     /// Take the pantheon that founds a city and keep the Faith card that buys
     /// it (see `expansion_pantheon`). Sets both halves: the strategic
     /// portfolio's God-King want, and `BasicAi`'s pantheon prefix.

@@ -323,4 +323,9 @@ pub const PRODUCTION_OPT_INS: &[LiveTreatment] = &[
     // screen keeps its positional genome. See
     // `AdvancedAi::research_grants_first`.
     ("research_grants_first", "research-grants-first", AdvancedAi::enable_research_grants_first),
+    // A bounded fast-expansion policy: Settler-first at the legal population
+    // floor, a shared multi-Settler pipeline, safe nearby sites before any
+    // war, then Conquest only when that practical frontier is full. Appended
+    // so existing positional gene screens remain interpretable.
+    ("rapid_city_expansion", "rapid-city-expansion", AdvancedAi::enable_rapid_city_expansion),
 ];
