@@ -2129,6 +2129,82 @@ impl AdvancedAi {
     pub fn enable_pantheon_board(&mut self) {
         self.base.pantheon_reads_the_board = true;
     }
+
+    /// Score the World Congress ballot, and stake Favor behind it, for the
+    /// victory the empire is actually racing rather than for an expansion
+    /// posture that has no lane. See `advanced/victory_lane.rs`. Off everywhere by
+    /// default; opt-in gene `lane-congress-ballot`.
+    pub fn enable_lane_congress_ballot(&mut self) {
+        self.lane_congress_ballot = true;
+    }
+
+    /// The twin of `enable_lane_congress_ballot`.
+    pub fn disable_lane_congress_ballot(&mut self) {
+        self.lane_congress_ballot = false;
+    }
+
+    /// Rank Great Person classes by the victory the empire is actually racing
+    /// while its plan is still Expansion. See `advanced/victory_lane.rs`. Off everywhere by
+    /// default; opt-in gene `lane-great-people`.
+    pub fn enable_lane_great_people(&mut self) {
+        self.lane_great_people = true;
+    }
+
+    /// The twin of `enable_lane_great_people`.
+    pub fn disable_lane_great_people(&mut self) {
+        self.lane_great_people = false;
+    }
+
+    /// Choose the policy cards for the victory the empire is actually racing
+    /// while its plan is still Expansion. See `advanced/victory_lane.rs`. Off everywhere by
+    /// default; opt-in gene `lane-policy-deck`.
+    pub fn enable_lane_policy_deck(&mut self) {
+        self.lane_policy_deck = true;
+    }
+
+    /// The twin of `enable_lane_policy_deck`.
+    pub fn disable_lane_policy_deck(&mut self) {
+        self.lane_policy_deck = false;
+    }
+
+    /// Run the Culture lane's Faith pass — the Naturalist, the touring Rock
+    /// Bands — and reserve for it, for an empire racing Culture that is still
+    /// settling. See `advanced/victory_lane.rs`. Off everywhere by
+    /// default; opt-in gene `lane-culture-spending`.
+    pub fn enable_lane_culture_spending(&mut self) {
+        self.lane_culture_spending = true;
+    }
+
+    /// The twin of `enable_lane_culture_spending`.
+    pub fn disable_lane_culture_spending(&mut self) {
+        self.lane_culture_spending = false;
+    }
+
+    /// Open the Spaceport and launch pass for an empire racing Science that is
+    /// still settling. `score_horizon` still refuses a race that cannot
+    /// finish. See `advanced/victory_lane.rs`. Off everywhere by
+    /// default; opt-in gene `lane-space-race`.
+    pub fn enable_lane_space_race(&mut self) {
+        self.lane_space_race = true;
+    }
+
+    /// The twin of `enable_lane_space_race`.
+    pub fn disable_lane_space_race(&mut self) {
+        self.lane_space_race = false;
+    }
+
+    /// Price a scored competition's first place by the Diplomatic Victory
+    /// Points it pays, at the rate `strategic_wonder_value` already pays a
+    /// wonder's. See `advanced/victory_lane.rs`. Off everywhere by
+    /// default; opt-in gene `competition-victory-points`.
+    pub fn enable_competition_victory_points(&mut self) {
+        self.competition_victory_points = true;
+    }
+
+    /// The twin of `enable_competition_victory_points`.
+    pub fn disable_competition_victory_points(&mut self) {
+        self.competition_victory_points = false;
+    }
 }
 
 #[cfg(test)]

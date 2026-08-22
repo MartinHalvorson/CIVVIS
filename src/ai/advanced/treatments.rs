@@ -235,4 +235,17 @@ pub const PRODUCTION_OPT_INS: &[LiveTreatment] = &[
     // hit points say, and healing ground that comes under a shooter's reach
     // is left. See `BasicAi::one_shot_recovery`.
     ("one_shot_recovery", "one-shot-recovery", AdvancedAi::enable_one_shot_recovery),
+    // The six victory-lane genes (`advanced/victory_lane.rs`,
+    // `docs/VICTORY_GENES.md`). A targeted seat spends about a fifth of the
+    // game — and an adaptive one 15% — with `Expansion` in its plan, and
+    // `take_turn_inner` hands that to every lane-shaped decider. Each of the
+    // first five substitutes the victory the empire is actually racing at ONE
+    // of them; the sixth prices the Diplomatic Victory Points a scored
+    // competition pays, which nothing priced.
+    ("lane_congress_ballot", "lane-congress-ballot", AdvancedAi::enable_lane_congress_ballot),
+    ("lane_great_people", "lane-great-people", AdvancedAi::enable_lane_great_people),
+    ("lane_policy_deck", "lane-policy-deck", AdvancedAi::enable_lane_policy_deck),
+    ("lane_culture_spending", "lane-culture-spending", AdvancedAi::enable_lane_culture_spending),
+    ("lane_space_race", "lane-space-race", AdvancedAi::enable_lane_space_race),
+    ("competition_victory_points", "competition-victory-points", AdvancedAi::enable_competition_victory_points),
 ];
