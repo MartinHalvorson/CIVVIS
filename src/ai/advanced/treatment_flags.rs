@@ -724,14 +724,16 @@ impl AdvancedAi {
     /// shape of `civvis-the-runner-tree-was-the-broken-link`.
     ///
     /// ★★★★ AND WHAT SHIPS IS THE UNIVERSE MINUS WHAT THE LEDGER HOLDS OFF.
-    /// Operator directive 2026-08-20: the defaults reflect the best genome —
-    /// only genes that provably help are on. `apply_gene_ledger`
-    /// (`advanced/gene_ledger.rs`) ends this helper: a treatment the screens
-    /// have measured and not found helpful is withheld, an opt-in they found
-    /// helpful is enabled, a flag no native screen can price (Firaxis-only)
-    /// stays as the universe set it. A new treatment therefore ships OFF
-    /// until a screen says otherwise; `gene_screen --list` shows each gene's
-    /// verdict and default.
+    /// Operator directive 2026-08-20: the defaults reflect the best genome.
+    /// Since the directive of 2026-08-22 the ledger reads that off the
+    /// ranking's two win columns — a gene is on when both its last and prior
+    /// native screens are positive, or when their average clears +15 with
+    /// neither below −10. `apply_gene_ledger` (`advanced/gene_ledger.rs`)
+    /// ends this helper: a treatment the ledger does not default on is
+    /// withheld, an opt-in it defaults on is enabled, a flag no native screen
+    /// can price (Firaxis-only) stays as the universe set it. A new treatment
+    /// therefore ships OFF until two screens agree; `gene_screen --list` shows
+    /// each gene's verdict and default.
     pub fn enable_live_bridge(&mut self) {
         self.enable_live_bridge_universe();
         self.apply_gene_ledger();

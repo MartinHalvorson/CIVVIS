@@ -2,8 +2,12 @@
 """Build the gene ledger — what the screens say about every gene, and the
 deployment genome that follows — from `gene_screen --analyze --json` outputs.
 
-Operator directive 2026-08-20: the defaults for the genes reflect our best
-genome; only genes that provably help are on, unhelpful genes default off.
+Operator directive 2026-08-22: the defaults follow the ranking's two win
+columns. A gene may default on when **both** its last and prior native
+readings are positive, or when their average clears +15 with neither below
+-10; every other gene — including one the screens have read only once, which
+has no prior column to agree with — defaults off. The verdicts below still
+record what the screens proved; they no longer decide what ships.
 This tool is the one place that decision is made, and it is made from data:
 
     python3 tools/gene_ledger.py --write \\
@@ -13,13 +17,29 @@ This tool is the one place that decision is made, and it is made from data:
 
 writes `docs/gene_ledger.json` and the generated Rust table
 `src/ai/advanced/gene_ledger_table.rs`, which `AdvancedAi::apply_gene_ledger`
-reads to withhold every treatment the ledger does not find helpful and to
+reads to withhold every treatment the ledger does not default on and to
 enable every opt-in it does. `--check` re-derives both from the sources the
 JSON ledger recorded and fails if either file has drifted; the same check is
 `tools/test_gene_ledger.py`'s `GeneratedFiles`, which the `collaboration-policy`
 workflow's `unittest discover` runs on every PR.
 
-Verdict rules (repeated in src/ai/advanced/gene_ledger.rs):
+Default rule (repeated in src/ai/advanced/gene_ledger.rs, and the columns it
+reads are the ones `HEURISTIC_GENE_RANKING.md` prints):
+
+- The win column is wins added per 10,000 games at the gene's measured on-rate
+  in one native screen — `(win_on - 1/players) * 10,000`, against the 1-in-
+  `players` a seat wins by chance. `wins_last_10k` is the latest native screen
+  that priced the gene, `wins_prior_10k` the screen before that.
+- **on** when both columns are positive, or when their average is above +15
+  and neither column is below -10.
+- **off** otherwise, and off whenever the gene has fewer than two native
+  readings: one screen has nothing to agree with it.
+- The war regime does not enter the default. It is recorded beside the native
+  numbers, as before.
+
+Verdict rules (repeated in src/ai/advanced/gene_ledger.rs). These record what
+the screens proved and drive the ledger's counts and the screen's own reading;
+since 2026-08-22 they no longer decide the default:
 
 - helps      in a regime: win z >= 2 and share z > -2, or share z >= 2 and
              win z > -2 — the screen's own `*` flag. Past the run's
@@ -50,6 +70,10 @@ LEDGER_JSON = ROOT / "docs" / "gene_ledger.json"
 LEDGER_RS = ROOT / "src" / "ai" / "advanced" / "gene_ledger_table.rs"
 REGIMES = ("native", "war")
 Z_BAR = 2.0
+# The deployment rule's three numbers, in wins per ten thousand games.
+PER = 10_000
+AVERAGE_BAR = 15.0
+COLUMN_FLOOR = -10
 
 
 def axis_verdict(win_z: float, share_z: float) -> str:
@@ -65,6 +89,28 @@ def axis_verdict(win_z: float, share_z: float) -> str:
 
 def axes_conflict(win_z: float, share_z: float) -> bool:
     return (win_z >= Z_BAR and share_z <= -Z_BAR) or (share_z >= Z_BAR and win_z <= -Z_BAR)
+
+
+def wins_per_10k(win_rate: float, players: int) -> int:
+    """One screen's win column: wins added per 10,000 games at this measured
+    on-rate. A seat wins 1-in-`players` by chance (1-in-6 when a fixture does
+    not say), so the column is how far above or below that the gene's on arm
+    landed. `tools/heuristic_gene_ranking.py` imports this, so the table's
+    printed column and the ledger's decision are one arithmetic."""
+    chance = 1.0 / players if players else 1.0 / 6.0
+    return round((win_rate - chance) * PER)
+
+
+def default_from_win_columns(last: int | None, prior: int | None) -> bool:
+    """The deployment call (operator directive 2026-08-22): a gene may default
+    on when both native win columns are positive, or when their average clears
+    +15 with neither column below -10. A gene the screens have read fewer than
+    twice has no second column to agree with it, so it stays off."""
+    if last is None or prior is None:
+        return False
+    if last > 0 and prior > 0:
+        return True
+    return (last + prior) / 2 > AVERAGE_BAR and last >= COLUMN_FLOOR and prior >= COLUMN_FLOOR
 
 
 TREATMENTS_RS = ROOT / "src" / "ai" / "advanced" / "treatments.rs"
@@ -127,6 +173,10 @@ def build_ledger(sources: list[tuple[Path, str]], filter_known: bool = True) -> 
     """Merge the sources into one ledger object (the JSON file's content).
     `filter_known=False` keeps every tag (synthetic tests)."""
     measures: dict[str, dict[str, dict]] = {}
+    # Every native win column a gene has, oldest first: the last two are the
+    # ranking's `± Wins Last 10k` and `± Wins 10k Prior`, and the deployment
+    # default is read off them.
+    columns: dict[str, list[int]] = {}
     family: dict[str, float] = {}
     recorded = []
     known = known_tags() if filter_known else set()
@@ -142,6 +192,7 @@ def build_ledger(sources: list[tuple[Path, str]], filter_known: bool = True) -> 
                 f"recorded as {regime!r}; the lanes decide which genes can act"
             )
         name = path.name
+        players = int(data.get("profile", {}).get("players", 0) or 0)
         family[name] = float(data.get("family_wise_z", 0.0))
         recorded.append({
             "path": str(path.relative_to(ROOT)) if path.is_relative_to(ROOT) else str(path),
@@ -159,6 +210,15 @@ def build_ledger(sources: list[tuple[Path, str]], filter_known: bool = True) -> 
                 dropped.add(gene["tag"])
                 continue
             measures.setdefault(gene["tag"], {})[regime] = measure_from(gene, name)
+            if regime == "native":
+                if "win_on" not in gene:
+                    raise SystemExit(
+                        f"{name}: {gene['tag']} has no `win_on`; a native screen without "
+                        "win rates cannot supply the win column the defaults are read from"
+                    )
+                columns.setdefault(gene["tag"], []).append(
+                    wins_per_10k(float(gene["win_on"]), players)
+                )
     if dropped:
         print("gene ledger: dropped rows for genes the repository no longer registers: "
               + ", ".join(sorted(dropped)), file=sys.stderr)
@@ -181,10 +241,15 @@ def build_ledger(sources: list[tuple[Path, str]], filter_known: bool = True) -> 
             m = by_regime[deciding]
             bar = family[m["source"]]
             family_wise = bar > 0 and max(abs(m["win_z"]), abs(m["share_z"])) >= bar
+        history = columns.get(tag, [])
+        last = history[-1] if history else None
+        prior = history[-2] if len(history) > 1 else None
         genes.append({
             "tag": tag,
             "verdict": verdict,
-            "default_on": verdict == "helps",
+            "default_on": default_from_win_columns(last, prior),
+            "wins_last_10k": last,
+            "wins_prior_10k": prior,
             "deciding_regime": deciding,
             "family_wise": family_wise,
             "conflict": conflict,
@@ -195,6 +260,7 @@ def build_ledger(sources: list[tuple[Path, str]], filter_known: bool = True) -> 
         "helps": sum(g["verdict"] == "helps" for g in genes),
         "hurts": sum(g["verdict"] == "hurts" for g in genes),
         "unresolved": sum(g["verdict"] == "unresolved" for g in genes),
+        "default_on": sum(g["default_on"] for g in genes),
     }
     return {
         "kind": "gene_ledger",
@@ -203,7 +269,12 @@ def build_ledger(sources: list[tuple[Path, str]], filter_known: bool = True) -> 
             "helps": "win z >= 2 with share z > -2, or share z >= 2 with win z > -2, in the deciding regime",
             "hurts": "the mirror image",
             "deciding_regime": "native when it resolves, else war when it resolves, else unresolved",
-            "default_on": "verdict == helps",
+            "win_column": "wins added per 10,000 games at the gene's measured on-rate in one "
+                          "native screen, (win_on - 1/players) * 10000; last and prior are the "
+                          "two most recent native screens that priced the gene",
+            "default_on": f"both win columns positive, or their average above +{AVERAGE_BAR:.0f} "
+                          f"with neither below {COLUMN_FLOOR}; off for a gene with fewer than "
+                          "two native readings",
         },
         "sources": recorded,
         "counts": counts,
@@ -218,6 +289,10 @@ def rust_f(value: float) -> str:
     if "." not in text:
         text += ".0"
     return text
+
+
+def rust_opt_i32(value: int | None) -> str:
+    return "None" if value is None else f"Some({value})"
 
 
 def rust_measure(m: dict | None) -> str:
@@ -253,6 +328,9 @@ def render_rust(ledger: dict) -> str:
         lines.append("    GeneVerdict {")
         lines.append(f"        tag: {json.dumps(gene['tag'])},")
         lines.append(f"        verdict: {verdict},")
+        lines.append(f"        default_on: {'true' if gene['default_on'] else 'false'},")
+        lines.append(f"        wins_last_10k: {rust_opt_i32(gene['wins_last_10k'])},")
+        lines.append(f"        wins_prior_10k: {rust_opt_i32(gene['wins_prior_10k'])},")
         lines.append(f"        family_wise: {'true' if gene['family_wise'] else 'false'},")
         lines.append(f"        native: {rust_measure(gene['native'])},")
         lines.append(f"        war: {rust_measure(gene['war'])},")
@@ -269,17 +347,25 @@ def render_json(ledger: dict) -> str:
 def print_table(ledger: dict) -> None:
     print(f"gene ledger · {len(ledger['genes'])} genes · "
           f"helps {ledger['counts']['helps']} · hurts {ledger['counts']['hurts']} · "
-          f"unresolved {ledger['counts']['unresolved']}")
+          f"unresolved {ledger['counts']['unresolved']} · "
+          f"default on {ledger['counts']['default_on']}")
     for src in ledger["sources"]:
         print(f"  source {src['regime']:<6} {src['path']}  ({src['complete_pairs']} pairs, "
               f"family-wise |z|≥{src['family_wise_z']})")
-    print(f"{'gene':<30} {'verdict':<10} {'default':<7} {'by':<6} {'native win/share z':<20} war win/share z")
-    order = {"helps": 0, "unresolved": 1, "hurts": 2}
-    for gene in sorted(ledger["genes"], key=lambda g: (order[g["verdict"]], g["tag"])):
+    print(f"{'gene':<30} {'verdict':<10} {'default':<7} {'last':>6} {'prior':>6} "
+          f"{'by':<6} {'native win/share z':<20} war win/share z")
+    # Best default first, then the deciding column, so the rule reads down the page.
+    for gene in sorted(ledger["genes"],
+                       key=lambda g: (not g["default_on"],
+                                      -(g["wins_last_10k"] if g["wins_last_10k"] is not None else -10**6),
+                                      g["tag"])):
         def z(m):
             return "-" if m is None else f"{m['win_z']:+.2f}/{m['share_z']:+.2f}"
+        def col(v):
+            return "–" if v is None else f"{v:+d}"
         flag = "**" if gene["family_wise"] else ("!" if gene["conflict"] else "")
         print(f"{gene['tag']:<30} {gene['verdict']:<10} {'on' if gene['default_on'] else 'off':<7} "
+              f"{col(gene['wins_last_10k']):>6} {col(gene['wins_prior_10k']):>6} "
               f"{(gene['deciding_regime'] or '-'):<6} {z(gene['native']):<20} {z(gene['war'])} {flag}")
 
 

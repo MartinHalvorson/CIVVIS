@@ -5844,7 +5844,7 @@ mod tests {
             "the requested gene is restored in the arm's genome"
         );
         assert!(
-            !ai.war_patience,
+            !ai.war_economy,
             "a neighbouring held gene stays off until the experiment names it"
         );
 
