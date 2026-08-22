@@ -1,217 +1,188 @@
 {
   "kind": "gene_ledger",
+  "screen": {
+    "players": 6,
+    "map": "continents",
+    "width": 74,
+    "height": 46,
+    "city_states": 9,
+    "speed": "online",
+    "turns": 250,
+    "victories": "science,culture,religious,diplomatic,domination,score",
+    "all_seats": true,
+    "randomize_civs": true,
+    "design": "foldover",
+    "baseline": "best",
+    "field": "advanced"
+  },
   "rules": {
     "z_bar": 2.0,
-    "helps": "win z >= 2 with share z > -2, or share z >= 2 with win z > -2, in the deciding regime",
+    "helps": "win z >= 2 with share z > -2, or share z >= 2 with win z > -2",
     "hurts": "the mirror image",
-    "deciding_regime": "native when it resolves, else war when it resolves, else unresolved",
-    "win_column": "wins added per 10,000 games at the gene's measured on-rate in one native screen, (win_on - 1/players) * 10000; last and prior are the two most recent native screens that priced the gene",
+    "shape": "one screen: a source whose profile is not `screen` above is marked legacy and kept as history; new ones are refused",
+    "win_column": "wins added per 10,000 games at the gene's measured on-rate in one screen, (win_on - 1/players) * 10000; last and prior are the two most recent screens that priced the gene",
     "default_on": "both win columns positive, or their average above +15 with neither below -10; with exactly one populated column, on when it is above +20; unmeasured is off"
   },
   "sources": [
     {
       "path": "docs/gene_screens/2026-08-20-p4-native-6p-allseats-13446-pairs.json",
-      "regime": "native",
+      "shape": "legacy",
       "complete_pairs": 13446,
       "family_wise_z": 3.359,
       "profile": {
         "players": 6,
+        "map": "pangaea",
         "width": 60,
         "height": 38,
+        "city_states": 6,
         "speed": "online",
+        "turns": 250,
         "victories": "science,culture,religious,diplomatic,domination,score",
         "all_seats": true,
+        "randomize_civs": true,
+        "design": "foldover",
         "baseline": "repairs",
         "field": "advanced",
-        "design": null,
         "start_seed": 46000000
       }
     },
     {
-      "path": "docs/gene_screens/2026-08-19-p2-war-4p-allseats-3300-pairs.json",
-      "regime": "war",
-      "complete_pairs": 3300,
-      "family_wise_z": 3.359,
-      "profile": {
-        "players": 4,
-        "width": 60,
-        "height": 38,
-        "speed": "online",
-        "victories": "domination,score",
-        "all_seats": true,
-        "baseline": "repairs",
-        "field": "advanced",
-        "design": null,
-        "start_seed": 41000000
-      }
-    },
-    {
-      "path": "docs/gene_screens/2026-08-20-p3b-war-repaired-4p-allseats-1064-pairs.json",
-      "regime": "war",
-      "complete_pairs": 1064,
-      "family_wise_z": 2.638,
-      "profile": {
-        "players": 4,
-        "width": 60,
-        "height": 38,
-        "speed": "online",
-        "victories": "domination,score",
-        "all_seats": true,
-        "baseline": "repairs",
-        "field": "advanced",
-        "design": null,
-        "start_seed": 44000000
-      }
-    },
-    {
       "path": "docs/gene_screens/2026-08-20-s2-step-and-reassess-native-4p-1000-pairs.json",
-      "regime": "native",
+      "shape": "legacy",
       "complete_pairs": 1000,
       "family_wise_z": 1.96,
       "profile": {
         "players": 4,
+        "map": "pangaea",
         "width": 60,
         "height": 38,
+        "city_states": 6,
         "speed": "online",
+        "turns": 250,
         "victories": "science,culture,religious,diplomatic,domination,score",
         "all_seats": false,
+        "randomize_civs": true,
+        "design": "foldover",
         "baseline": "repairs",
         "field": "advanced",
-        "design": "foldover",
         "start_seed": 50000000
       }
     },
     {
-      "path": "docs/gene_screens/2026-08-20-s3-step-and-reassess-war-4p-800-pairs.json",
-      "regime": "war",
-      "complete_pairs": 800,
-      "family_wise_z": 1.96,
-      "profile": {
-        "players": 4,
-        "width": 60,
-        "height": 38,
-        "speed": "online",
-        "victories": "domination,score",
-        "all_seats": false,
-        "baseline": "repairs",
-        "field": "advanced",
-        "design": "foldover",
-        "start_seed": 51000000
-      }
-    },
-    {
       "path": "docs/gene_screens/2026-08-21-s6-religion-genes-native-6p-allseats-6000-pairs.json",
-      "regime": "native",
+      "shape": "legacy",
       "complete_pairs": 6000,
       "family_wise_z": 2.498,
       "profile": {
         "players": 6,
+        "map": "pangaea",
         "width": 60,
         "height": 38,
+        "city_states": 6,
         "speed": "online",
+        "turns": 250,
         "victories": "science,culture,religious,diplomatic,domination,score",
         "all_seats": true,
+        "randomize_civs": true,
+        "design": "foldover",
         "baseline": "best",
         "field": "advanced",
-        "design": "foldover",
         "start_seed": 54000000
       }
     },
     {
       "path": "docs/gene_screens/2026-08-21-s7-idle-faith-patronage-native-6p-allseats-6000-pairs.json",
-      "regime": "native",
+      "shape": "legacy",
       "complete_pairs": 6000,
       "family_wise_z": 1.96,
       "profile": {
         "players": 6,
+        "map": "pangaea",
         "width": 60,
         "height": 38,
+        "city_states": 6,
         "speed": "online",
+        "turns": 250,
         "victories": "science,culture,religious,diplomatic,domination,score",
         "all_seats": true,
+        "randomize_civs": true,
+        "design": "foldover",
         "baseline": "best",
         "field": "advanced",
-        "design": "foldover",
         "start_seed": 55000000
       }
     },
     {
       "path": "docs/gene_screens/2026-08-21-p7-native-6p-allseats-15000-pairs.json",
-      "regime": "native",
+      "shape": "legacy",
       "complete_pairs": 15000,
       "family_wise_z": 3.364,
       "profile": {
         "players": 6,
+        "map": "pangaea",
         "width": 60,
         "height": 38,
+        "city_states": 6,
         "speed": "online",
+        "turns": 250,
         "victories": "science,culture,religious,diplomatic,domination,score",
         "all_seats": true,
+        "randomize_civs": true,
+        "design": "foldover",
         "baseline": "best",
         "field": "advanced",
-        "design": "foldover",
         "start_seed": 52000000
       }
     },
     {
-      "path": "docs/gene_screens/2026-08-21-s8-war-rerank-vs-best-4p-allseats.json",
-      "regime": "war",
-      "complete_pairs": 5844,
-      "family_wise_z": 3.384,
-      "profile": {
-        "players": 4,
-        "width": 60,
-        "height": 38,
-        "speed": "online",
-        "victories": "domination,score",
-        "all_seats": true,
-        "baseline": "best",
-        "field": "advanced",
-        "design": "foldover",
-        "start_seed": 56000000
-      }
-    },
-    {
       "path": "docs/gene_screens/2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
-      "regime": "native",
+      "shape": "legacy",
       "complete_pairs": 17574,
       "family_wise_z": 3.403,
       "profile": {
         "players": 6,
+        "map": "pangaea",
         "width": 60,
         "height": 38,
+        "city_states": 6,
         "speed": "online",
+        "turns": 250,
         "victories": "science,culture,religious,diplomatic,domination,score",
         "all_seats": true,
+        "randomize_civs": true,
+        "design": "foldover",
         "baseline": "best",
         "field": "advanced",
-        "design": "foldover",
         "start_seed": 100000000
       }
     },
     {
       "path": "docs/gene_screens/2026-08-22-h1-holy-lane-parity-direct-6p-allseats-1200-pairs.json",
-      "regime": "native",
+      "shape": "legacy",
       "complete_pairs": 7200,
       "family_wise_z": 1.96,
       "profile": {
         "players": 6,
+        "map": "pangaea",
         "width": 60,
         "height": 38,
+        "city_states": 6,
         "speed": "online",
+        "turns": 250,
         "victories": "science,culture,religious,diplomatic,domination,score",
         "all_seats": true,
+        "randomize_civs": true,
+        "design": "foldover",
         "baseline": "best",
         "field": "advanced",
-        "design": "foldover",
         "start_seed": 110000000
       }
     }
   ],
   "counts": {
-    "helps": 21,
-    "hurts": 8,
-    "unresolved": 37,
+    "helps": 18,
+    "hurts": 4,
+    "unresolved": 44,
     "default_on": 34
   },
   "genes": [
@@ -221,10 +192,9 @@
       "default_on": true,
       "wins_last_10k": 12,
       "wins_prior_10k": 18,
-      "deciding_regime": null,
       "family_wise": false,
       "conflict": false,
-      "native": {
+      "screen": {
         "pairs": 17574,
         "n_on": 17574,
         "n_off": 17574,
@@ -250,17 +220,6 @@
             "win_se_pp": 0.562
           }
         ]
-      },
-      "war": {
-        "pairs": 5844,
-        "n_on": 5844,
-        "n_off": 5844,
-        "win_delta_pp": -0.479,
-        "win_z": -0.69,
-        "share_delta_pp": -0.017,
-        "share_z": -0.098,
-        "read": "~",
-        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -269,10 +228,9 @@
       "default_on": false,
       "wins_last_10k": -14,
       "wins_prior_10k": -4,
-      "deciding_regime": null,
       "family_wise": false,
       "conflict": false,
-      "native": {
+      "screen": {
         "pairs": 17574,
         "n_on": 17574,
         "n_off": 17574,
@@ -298,17 +256,6 @@
             "win_se_pp": 0.554
           }
         ]
-      },
-      "war": {
-        "pairs": 5844,
-        "n_on": 5844,
-        "n_off": 5844,
-        "win_delta_pp": 0.171,
-        "win_z": 0.244,
-        "share_delta_pp": -0.054,
-        "share_z": -0.308,
-        "read": "~",
-        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -317,10 +264,9 @@
       "default_on": true,
       "wins_last_10k": 14,
       "wins_prior_10k": 12,
-      "deciding_regime": null,
       "family_wise": false,
       "conflict": false,
-      "native": {
+      "screen": {
         "pairs": 17574,
         "n_on": 17574,
         "n_off": 17574,
@@ -346,17 +292,6 @@
             "win_se_pp": 0.566
           }
         ]
-      },
-      "war": {
-        "pairs": 5844,
-        "n_on": 5844,
-        "n_off": 5844,
-        "win_delta_pp": -0.856,
-        "win_z": -1.17,
-        "share_delta_pp": -0.056,
-        "share_z": -0.313,
-        "read": "~",
-        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -365,10 +300,9 @@
       "default_on": false,
       "wins_last_10k": 30,
       "wins_prior_10k": -4,
-      "deciding_regime": "native",
       "family_wise": false,
       "conflict": false,
-      "native": {
+      "screen": {
         "pairs": 17574,
         "n_on": 17574,
         "n_off": 17574,
@@ -394,17 +328,6 @@
             "win_se_pp": 0.543
           }
         ]
-      },
-      "war": {
-        "pairs": 5844,
-        "n_on": 5844,
-        "n_off": 5844,
-        "win_delta_pp": -0.068,
-        "win_z": -0.096,
-        "share_delta_pp": 0.132,
-        "share_z": 0.753,
-        "read": "~",
-        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -413,10 +336,9 @@
       "default_on": false,
       "wins_last_10k": 5,
       "wins_prior_10k": null,
-      "deciding_regime": null,
       "family_wise": false,
       "conflict": false,
-      "native": {
+      "screen": {
         "pairs": 17574,
         "n_on": 17574,
         "n_off": 17574,
@@ -442,8 +364,7 @@
             "win_se_pp": 0.585
           }
         ]
-      },
-      "war": null
+      }
     },
     {
       "tag": "barbarian-hunt",
@@ -451,10 +372,9 @@
       "default_on": false,
       "wins_last_10k": -86,
       "wins_prior_10k": null,
-      "deciding_regime": "native",
       "family_wise": true,
       "conflict": false,
-      "native": {
+      "screen": {
         "pairs": 17574,
         "n_on": 17574,
         "n_off": 17574,
@@ -480,8 +400,7 @@
             "win_se_pp": 0.567
           }
         ]
-      },
-      "war": null
+      }
     },
     {
       "tag": "barbarian-ranged-answer",
@@ -489,10 +408,9 @@
       "default_on": false,
       "wins_last_10k": 14,
       "wins_prior_10k": null,
-      "deciding_regime": null,
       "family_wise": false,
       "conflict": false,
-      "native": {
+      "screen": {
         "pairs": 17574,
         "n_on": 17574,
         "n_off": 17574,
@@ -518,19 +436,17 @@
             "win_se_pp": 0.57
           }
         ]
-      },
-      "war": null
+      }
     },
     {
       "tag": "barbarian-scouts-are-scouts",
-      "verdict": "helps",
+      "verdict": "unresolved",
       "default_on": true,
       "wins_last_10k": 23,
       "wins_prior_10k": 61,
-      "deciding_regime": "war",
       "family_wise": false,
       "conflict": false,
-      "native": {
+      "screen": {
         "pairs": 17574,
         "n_on": 17574,
         "n_off": 17574,
@@ -556,29 +472,17 @@
             "win_se_pp": 0.558
           }
         ]
-      },
-      "war": {
-        "pairs": 5844,
-        "n_on": 5844,
-        "n_off": 5844,
-        "win_delta_pp": 1.916,
-        "win_z": 2.639,
-        "share_delta_pp": 0.383,
-        "share_z": 2.12,
-        "read": "helps * \u00b7 share helps *",
-        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
       "tag": "blind-objective-strength",
-      "verdict": "helps",
+      "verdict": "unresolved",
       "default_on": true,
       "wins_last_10k": 30,
       "wins_prior_10k": 17,
-      "deciding_regime": "war",
       "family_wise": false,
       "conflict": false,
-      "native": {
+      "screen": {
         "pairs": 17574,
         "n_on": 17574,
         "n_off": 17574,
@@ -604,17 +508,6 @@
             "win_se_pp": 0.573
           }
         ]
-      },
-      "war": {
-        "pairs": 5844,
-        "n_on": 5844,
-        "n_off": 5844,
-        "win_delta_pp": 1.506,
-        "win_z": 2.134,
-        "share_delta_pp": 0.137,
-        "share_z": 0.781,
-        "read": "helps *",
-        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -623,10 +516,9 @@
       "default_on": false,
       "wins_last_10k": -7,
       "wins_prior_10k": 4,
-      "deciding_regime": null,
       "family_wise": false,
       "conflict": false,
-      "native": {
+      "screen": {
         "pairs": 17574,
         "n_on": 17574,
         "n_off": 17574,
@@ -652,17 +544,6 @@
             "win_se_pp": 0.554
           }
         ]
-      },
-      "war": {
-        "pairs": 5844,
-        "n_on": 5844,
-        "n_off": 5844,
-        "win_delta_pp": -0.89,
-        "win_z": -1.281,
-        "share_delta_pp": -0.221,
-        "share_z": -1.253,
-        "read": "~",
-        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -671,10 +552,9 @@
       "default_on": true,
       "wins_last_10k": 19,
       "wins_prior_10k": 39,
-      "deciding_regime": "native",
       "family_wise": false,
       "conflict": false,
-      "native": {
+      "screen": {
         "pairs": 17574,
         "n_on": 17574,
         "n_off": 17574,
@@ -700,17 +580,6 @@
             "win_se_pp": 0.557
           }
         ]
-      },
-      "war": {
-        "pairs": 5844,
-        "n_on": 5844,
-        "n_off": 5844,
-        "win_delta_pp": -0.103,
-        "win_z": -0.141,
-        "share_delta_pp": -0.021,
-        "share_z": -0.12,
-        "read": "~",
-        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -719,10 +588,9 @@
       "default_on": false,
       "wins_last_10k": 13,
       "wins_prior_10k": null,
-      "deciding_regime": null,
       "family_wise": false,
       "conflict": false,
-      "native": {
+      "screen": {
         "pairs": 17574,
         "n_on": 17574,
         "n_off": 17574,
@@ -748,8 +616,7 @@
             "win_se_pp": 0.554
           }
         ]
-      },
-      "war": null
+      }
     },
     {
       "tag": "builder-worked-tile-priority",
@@ -757,10 +624,9 @@
       "default_on": true,
       "wins_last_10k": 24,
       "wins_prior_10k": null,
-      "deciding_regime": null,
       "family_wise": false,
       "conflict": false,
-      "native": {
+      "screen": {
         "pairs": 17574,
         "n_on": 17574,
         "n_off": 17574,
@@ -786,8 +652,7 @@
             "win_se_pp": 0.556
           }
         ]
-      },
-      "war": null
+      }
     },
     {
       "tag": "buildings-before-projects",
@@ -795,10 +660,9 @@
       "default_on": false,
       "wins_last_10k": -2,
       "wins_prior_10k": 26,
-      "deciding_regime": "native",
       "family_wise": false,
       "conflict": false,
-      "native": {
+      "screen": {
         "pairs": 17574,
         "n_on": 17574,
         "n_off": 17574,
@@ -824,17 +688,6 @@
             "win_se_pp": 0.566
           }
         ]
-      },
-      "war": {
-        "pairs": 5844,
-        "n_on": 5844,
-        "n_off": 5844,
-        "win_delta_pp": -0.411,
-        "win_z": -0.585,
-        "share_delta_pp": 0.052,
-        "share_z": 0.294,
-        "read": "~",
-        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -843,10 +696,9 @@
       "default_on": true,
       "wins_last_10k": 13,
       "wins_prior_10k": 53,
-      "deciding_regime": null,
       "family_wise": false,
       "conflict": false,
-      "native": {
+      "screen": {
         "pairs": 17574,
         "n_on": 17574,
         "n_off": 17574,
@@ -872,17 +724,6 @@
             "win_se_pp": 0.57
           }
         ]
-      },
-      "war": {
-        "pairs": 5844,
-        "n_on": 5844,
-        "n_off": 5844,
-        "win_delta_pp": 0.205,
-        "win_z": 0.291,
-        "share_delta_pp": 0.023,
-        "share_z": 0.132,
-        "read": "~",
-        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -891,10 +732,9 @@
       "default_on": false,
       "wins_last_10k": -6,
       "wins_prior_10k": -4,
-      "deciding_regime": "native",
       "family_wise": false,
       "conflict": false,
-      "native": {
+      "screen": {
         "pairs": 17574,
         "n_on": 17574,
         "n_off": 17574,
@@ -920,17 +760,6 @@
             "win_se_pp": 0.559
           }
         ]
-      },
-      "war": {
-        "pairs": 5844,
-        "n_on": 5844,
-        "n_off": 5844,
-        "win_delta_pp": 0.548,
-        "win_z": 0.79,
-        "share_delta_pp": 0.127,
-        "share_z": 0.751,
-        "read": "~",
-        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -939,10 +768,9 @@
       "default_on": true,
       "wins_last_10k": 11,
       "wins_prior_10k": 36,
-      "deciding_regime": null,
       "family_wise": false,
       "conflict": false,
-      "native": {
+      "screen": {
         "pairs": 17574,
         "n_on": 17574,
         "n_off": 17574,
@@ -968,17 +796,6 @@
             "win_se_pp": 0.556
           }
         ]
-      },
-      "war": {
-        "pairs": 5844,
-        "n_on": 5844,
-        "n_off": 5844,
-        "win_delta_pp": 0.548,
-        "win_z": 0.777,
-        "share_delta_pp": 0.069,
-        "share_z": 0.398,
-        "read": "~",
-        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -987,10 +804,9 @@
       "default_on": false,
       "wins_last_10k": 32,
       "wins_prior_10k": -9,
-      "deciding_regime": null,
       "family_wise": false,
       "conflict": false,
-      "native": {
+      "screen": {
         "pairs": 17574,
         "n_on": 17574,
         "n_off": 17574,
@@ -1016,17 +832,6 @@
             "win_se_pp": 0.568
           }
         ]
-      },
-      "war": {
-        "pairs": 5844,
-        "n_on": 5844,
-        "n_off": 5844,
-        "win_delta_pp": 0.274,
-        "win_z": 0.378,
-        "share_delta_pp": -0.002,
-        "share_z": -0.013,
-        "read": "~",
-        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -1035,10 +840,9 @@
       "default_on": false,
       "wins_last_10k": -22,
       "wins_prior_10k": null,
-      "deciding_regime": null,
       "family_wise": false,
       "conflict": false,
-      "native": {
+      "screen": {
         "pairs": 17574,
         "n_on": 17574,
         "n_off": 17574,
@@ -1064,8 +868,7 @@
             "win_se_pp": 0.555
           }
         ]
-      },
-      "war": null
+      }
     },
     {
       "tag": "endgame-war-runway",
@@ -1073,10 +876,9 @@
       "default_on": false,
       "wins_last_10k": -5,
       "wins_prior_10k": -11,
-      "deciding_regime": null,
       "family_wise": false,
       "conflict": false,
-      "native": {
+      "screen": {
         "pairs": 17574,
         "n_on": 17574,
         "n_off": 17574,
@@ -1102,17 +904,6 @@
             "win_se_pp": 0.552
           }
         ]
-      },
-      "war": {
-        "pairs": 5844,
-        "n_on": 5844,
-        "n_off": 5844,
-        "win_delta_pp": -1.3,
-        "win_z": -1.883,
-        "share_delta_pp": -0.076,
-        "share_z": -0.439,
-        "read": "~",
-        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -1121,10 +912,9 @@
       "default_on": true,
       "wins_last_10k": 72,
       "wins_prior_10k": 7,
-      "deciding_regime": "native",
       "family_wise": true,
       "conflict": false,
-      "native": {
+      "screen": {
         "pairs": 17574,
         "n_on": 17574,
         "n_off": 17574,
@@ -1150,17 +940,6 @@
             "win_se_pp": 0.56
           }
         ]
-      },
-      "war": {
-        "pairs": 5844,
-        "n_on": 5844,
-        "n_off": 5844,
-        "win_delta_pp": -0.719,
-        "win_z": -1.026,
-        "share_delta_pp": -0.054,
-        "share_z": -0.306,
-        "read": "~",
-        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -1169,10 +948,9 @@
       "default_on": true,
       "wins_last_10k": 14,
       "wins_prior_10k": 48,
-      "deciding_regime": null,
       "family_wise": false,
       "conflict": false,
-      "native": {
+      "screen": {
         "pairs": 17574,
         "n_on": 17574,
         "n_off": 17574,
@@ -1198,17 +976,6 @@
             "win_se_pp": 0.578
           }
         ]
-      },
-      "war": {
-        "pairs": 5844,
-        "n_on": 5844,
-        "n_off": 5844,
-        "win_delta_pp": -0.548,
-        "win_z": -0.792,
-        "share_delta_pp": -0.209,
-        "share_z": -1.208,
-        "read": "~",
-        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -1217,10 +984,9 @@
       "default_on": false,
       "wins_last_10k": -5,
       "wins_prior_10k": 17,
-      "deciding_regime": null,
       "family_wise": false,
       "conflict": false,
-      "native": {
+      "screen": {
         "pairs": 17574,
         "n_on": 17574,
         "n_off": 17574,
@@ -1246,17 +1012,6 @@
             "win_se_pp": 0.56
           }
         ]
-      },
-      "war": {
-        "pairs": 5844,
-        "n_on": 5844,
-        "n_off": 5844,
-        "win_delta_pp": 0.513,
-        "win_z": 0.721,
-        "share_delta_pp": 0.299,
-        "share_z": 1.688,
-        "read": "~",
-        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -1265,10 +1020,9 @@
       "default_on": false,
       "wins_last_10k": 13,
       "wins_prior_10k": -8,
-      "deciding_regime": "native",
       "family_wise": true,
       "conflict": false,
-      "native": {
+      "screen": {
         "pairs": 17574,
         "n_on": 17574,
         "n_off": 17574,
@@ -1294,17 +1048,6 @@
             "win_se_pp": 0.564
           }
         ]
-      },
-      "war": {
-        "pairs": 5844,
-        "n_on": 5844,
-        "n_off": 5844,
-        "win_delta_pp": -5.236,
-        "win_z": -7.385,
-        "share_delta_pp": -1.701,
-        "share_z": -9.423,
-        "read": "HURTS ** \u00b7 share HURTS **",
-        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -1313,10 +1056,9 @@
       "default_on": false,
       "wins_last_10k": -30,
       "wins_prior_10k": null,
-      "deciding_regime": null,
       "family_wise": false,
       "conflict": false,
-      "native": {
+      "screen": {
         "pairs": 17574,
         "n_on": 17574,
         "n_off": 17574,
@@ -1342,8 +1084,7 @@
             "win_se_pp": 0.565
           }
         ]
-      },
-      "war": null
+      }
     },
     {
       "tag": "governor-victory-lanes",
@@ -1351,10 +1092,9 @@
       "default_on": true,
       "wins_last_10k": 46,
       "wins_prior_10k": null,
-      "deciding_regime": null,
       "family_wise": false,
       "conflict": true,
-      "native": {
+      "screen": {
         "pairs": 17574,
         "n_on": 17574,
         "n_off": 17574,
@@ -1380,8 +1120,7 @@
             "win_se_pp": 0.558
           }
         ]
-      },
-      "war": null
+      }
     },
     {
       "tag": "great-person-housing",
@@ -1389,10 +1128,9 @@
       "default_on": true,
       "wins_last_10k": 78,
       "wins_prior_10k": null,
-      "deciding_regime": "native",
       "family_wise": true,
       "conflict": false,
-      "native": {
+      "screen": {
         "pairs": 17574,
         "n_on": 17574,
         "n_off": 17574,
@@ -1418,8 +1156,7 @@
             "win_se_pp": 0.573
           }
         ]
-      },
-      "war": null
+      }
     },
     {
       "tag": "holy-lane-parity",
@@ -1427,10 +1164,9 @@
       "default_on": true,
       "wins_last_10k": 99,
       "wins_prior_10k": 63,
-      "deciding_regime": "native",
       "family_wise": true,
-      "conflict": true,
-      "native": {
+      "conflict": false,
+      "screen": {
         "pairs": 7200,
         "n_on": 7200,
         "n_off": 7200,
@@ -1449,17 +1185,6 @@
             "win_se_pp": 0.487
           }
         ]
-      },
-      "war": {
-        "pairs": 5844,
-        "n_on": 5844,
-        "n_off": 5844,
-        "win_delta_pp": 0.103,
-        "win_z": 0.143,
-        "share_delta_pp": -0.402,
-        "share_z": -2.257,
-        "read": "share hurts *",
-        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -1468,10 +1193,9 @@
       "default_on": false,
       "wins_last_10k": -15,
       "wins_prior_10k": 4,
-      "deciding_regime": null,
       "family_wise": false,
       "conflict": false,
-      "native": {
+      "screen": {
         "pairs": 17574,
         "n_on": 17574,
         "n_off": 17574,
@@ -1497,29 +1221,17 @@
             "win_se_pp": 0.566
           }
         ]
-      },
-      "war": {
-        "pairs": 5844,
-        "n_on": 5844,
-        "n_off": 5844,
-        "win_delta_pp": 0.787,
-        "win_z": 1.135,
-        "share_delta_pp": 0.025,
-        "share_z": 0.141,
-        "read": "~",
-        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
       "tag": "housing-districts",
-      "verdict": "hurts",
+      "verdict": "unresolved",
       "default_on": false,
       "wins_last_10k": 5,
       "wins_prior_10k": -9,
-      "deciding_regime": "war",
       "family_wise": false,
       "conflict": false,
-      "native": {
+      "screen": {
         "pairs": 17574,
         "n_on": 17574,
         "n_off": 17574,
@@ -1545,29 +1257,17 @@
             "win_se_pp": 0.567
           }
         ]
-      },
-      "war": {
-        "pairs": 5844,
-        "n_on": 5844,
-        "n_off": 5844,
-        "win_delta_pp": -2.156,
-        "win_z": -3.05,
-        "share_delta_pp": -0.516,
-        "share_z": -2.931,
-        "read": "hurts * \u00b7 share hurts *",
-        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
       "tag": "housing-research",
-      "verdict": "hurts",
+      "verdict": "unresolved",
       "default_on": true,
       "wins_last_10k": 13,
       "wins_prior_10k": 39,
-      "deciding_regime": "war",
       "family_wise": false,
       "conflict": false,
-      "native": {
+      "screen": {
         "pairs": 17574,
         "n_on": 17574,
         "n_off": 17574,
@@ -1593,17 +1293,6 @@
             "win_se_pp": 0.557
           }
         ]
-      },
-      "war": {
-        "pairs": 5844,
-        "n_on": 5844,
-        "n_off": 5844,
-        "win_delta_pp": -1.369,
-        "win_z": -1.922,
-        "share_delta_pp": -0.373,
-        "share_z": -2.014,
-        "read": "share hurts *",
-        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -1612,10 +1301,9 @@
       "default_on": true,
       "wins_last_10k": 36,
       "wins_prior_10k": 23,
-      "deciding_regime": null,
       "family_wise": false,
       "conflict": false,
-      "native": {
+      "screen": {
         "pairs": 17574,
         "n_on": 17574,
         "n_off": 17574,
@@ -1641,29 +1329,17 @@
             "win_se_pp": 0.571
           }
         ]
-      },
-      "war": {
-        "pairs": 5844,
-        "n_on": 5844,
-        "n_off": 5844,
-        "win_delta_pp": 0.548,
-        "win_z": 0.771,
-        "share_delta_pp": 0.31,
-        "share_z": 1.757,
-        "read": "~",
-        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
       "tag": "inquisition-on-threat",
-      "verdict": "hurts",
+      "verdict": "unresolved",
       "default_on": true,
       "wins_last_10k": 2,
       "wins_prior_10k": 35,
-      "deciding_regime": "war",
       "family_wise": false,
       "conflict": false,
-      "native": {
+      "screen": {
         "pairs": 17574,
         "n_on": 17574,
         "n_off": 17574,
@@ -1689,17 +1365,6 @@
             "win_se_pp": 0.557
           }
         ]
-      },
-      "war": {
-        "pairs": 5844,
-        "n_on": 5844,
-        "n_off": 5844,
-        "win_delta_pp": -1.095,
-        "win_z": -1.585,
-        "share_delta_pp": -0.411,
-        "share_z": -2.335,
-        "read": "share hurts *",
-        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -1708,10 +1373,9 @@
       "default_on": false,
       "wins_last_10k": 3,
       "wins_prior_10k": -4,
-      "deciding_regime": "native",
       "family_wise": true,
       "conflict": false,
-      "native": {
+      "screen": {
         "pairs": 17574,
         "n_on": 17574,
         "n_off": 17574,
@@ -1737,17 +1401,6 @@
             "win_se_pp": 0.563
           }
         ]
-      },
-      "war": {
-        "pairs": 5844,
-        "n_on": 5844,
-        "n_off": 5844,
-        "win_delta_pp": 0.513,
-        "win_z": 0.706,
-        "share_delta_pp": 0.462,
-        "share_z": 2.632,
-        "read": "share helps *",
-        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -1756,10 +1409,9 @@
       "default_on": true,
       "wins_last_10k": 40,
       "wins_prior_10k": 73,
-      "deciding_regime": "native",
       "family_wise": true,
       "conflict": false,
-      "native": {
+      "screen": {
         "pairs": 17574,
         "n_on": 17574,
         "n_off": 17574,
@@ -1785,17 +1437,6 @@
             "win_se_pp": 0.544
           }
         ]
-      },
-      "war": {
-        "pairs": 5844,
-        "n_on": 5844,
-        "n_off": 5844,
-        "win_delta_pp": 2.225,
-        "win_z": 3.185,
-        "share_delta_pp": 0.932,
-        "share_z": 5.301,
-        "read": "helps * \u00b7 share HELPS **",
-        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -1804,10 +1445,9 @@
       "default_on": false,
       "wins_last_10k": 16,
       "wins_prior_10k": -11,
-      "deciding_regime": null,
       "family_wise": false,
       "conflict": false,
-      "native": {
+      "screen": {
         "pairs": 17574,
         "n_on": 17574,
         "n_off": 17574,
@@ -1833,17 +1473,6 @@
             "win_se_pp": 0.569
           }
         ]
-      },
-      "war": {
-        "pairs": 5844,
-        "n_on": 5844,
-        "n_off": 5844,
-        "win_delta_pp": 0.821,
-        "win_z": 1.117,
-        "share_delta_pp": -0.052,
-        "share_z": -0.288,
-        "read": "~",
-        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -1852,10 +1481,9 @@
       "default_on": true,
       "wins_last_10k": 15,
       "wins_prior_10k": 24,
-      "deciding_regime": null,
       "family_wise": false,
       "conflict": false,
-      "native": {
+      "screen": {
         "pairs": 17574,
         "n_on": 17574,
         "n_off": 17574,
@@ -1881,17 +1509,6 @@
             "win_se_pp": 0.557
           }
         ]
-      },
-      "war": {
-        "pairs": 5844,
-        "n_on": 5844,
-        "n_off": 5844,
-        "win_delta_pp": -0.274,
-        "win_z": -0.389,
-        "share_delta_pp": -0.038,
-        "share_z": -0.218,
-        "read": "~",
-        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -1900,10 +1517,9 @@
       "default_on": true,
       "wins_last_10k": 23,
       "wins_prior_10k": null,
-      "deciding_regime": "native",
       "family_wise": true,
       "conflict": false,
-      "native": {
+      "screen": {
         "pairs": 17574,
         "n_on": 17574,
         "n_off": 17574,
@@ -1929,19 +1545,17 @@
             "win_se_pp": 0.569
           }
         ]
-      },
-      "war": null
+      }
     },
     {
       "tag": "peacetime-deterrence",
-      "verdict": "helps",
+      "verdict": "unresolved",
       "default_on": true,
       "wins_last_10k": 1,
       "wins_prior_10k": 39,
-      "deciding_regime": "war",
       "family_wise": false,
       "conflict": false,
-      "native": {
+      "screen": {
         "pairs": 17574,
         "n_on": 17574,
         "n_off": 17574,
@@ -1967,17 +1581,6 @@
             "win_se_pp": 0.587
           }
         ]
-      },
-      "war": {
-        "pairs": 5844,
-        "n_on": 5844,
-        "n_off": 5844,
-        "win_delta_pp": 1.677,
-        "win_z": 2.392,
-        "share_delta_pp": 0.425,
-        "share_z": 2.377,
-        "read": "helps * \u00b7 share helps *",
-        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -1986,10 +1589,9 @@
       "default_on": false,
       "wins_last_10k": -31,
       "wins_prior_10k": null,
-      "deciding_regime": null,
       "family_wise": false,
       "conflict": false,
-      "native": {
+      "screen": {
         "pairs": 17574,
         "n_on": 17574,
         "n_off": 17574,
@@ -2015,8 +1617,7 @@
             "win_se_pp": 0.535
           }
         ]
-      },
-      "war": null
+      }
     },
     {
       "tag": "raid-pillage-prizes",
@@ -2024,10 +1625,9 @@
       "default_on": true,
       "wins_last_10k": 30,
       "wins_prior_10k": null,
-      "deciding_regime": "native",
       "family_wise": false,
       "conflict": false,
-      "native": {
+      "screen": {
         "pairs": 17574,
         "n_on": 17574,
         "n_off": 17574,
@@ -2053,8 +1653,7 @@
             "win_se_pp": 0.553
           }
         ]
-      },
-      "war": null
+      }
     },
     {
       "tag": "recon-replacement",
@@ -2062,10 +1661,9 @@
       "default_on": true,
       "wins_last_10k": 48,
       "wins_prior_10k": 81,
-      "deciding_regime": "native",
       "family_wise": false,
       "conflict": false,
-      "native": {
+      "screen": {
         "pairs": 17574,
         "n_on": 17574,
         "n_off": 17574,
@@ -2091,17 +1689,6 @@
             "win_se_pp": 0.554
           }
         ]
-      },
-      "war": {
-        "pairs": 5844,
-        "n_on": 5844,
-        "n_off": 5844,
-        "win_delta_pp": 1.437,
-        "win_z": 1.995,
-        "share_delta_pp": 0.319,
-        "share_z": 1.788,
-        "read": "~",
-        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -2110,10 +1697,9 @@
       "default_on": false,
       "wins_last_10k": 30,
       "wins_prior_10k": -2,
-      "deciding_regime": null,
       "family_wise": false,
       "conflict": false,
-      "native": {
+      "screen": {
         "pairs": 17574,
         "n_on": 17574,
         "n_off": 17574,
@@ -2139,17 +1725,6 @@
             "win_se_pp": 0.561
           }
         ]
-      },
-      "war": {
-        "pairs": 5844,
-        "n_on": 5844,
-        "n_off": 5844,
-        "win_delta_pp": -0.171,
-        "win_z": -0.237,
-        "share_delta_pp": 0.213,
-        "share_z": 1.194,
-        "read": "~",
-        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -2158,10 +1733,9 @@
       "default_on": true,
       "wins_last_10k": 14,
       "wins_prior_10k": 6,
-      "deciding_regime": null,
       "family_wise": false,
       "conflict": false,
-      "native": {
+      "screen": {
         "pairs": 17574,
         "n_on": 17574,
         "n_off": 17574,
@@ -2187,17 +1761,6 @@
             "win_se_pp": 0.568
           }
         ]
-      },
-      "war": {
-        "pairs": 5844,
-        "n_on": 5844,
-        "n_off": 5844,
-        "win_delta_pp": 0.034,
-        "win_z": 0.049,
-        "share_delta_pp": 0.091,
-        "share_z": 0.514,
-        "read": "~",
-        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -2206,10 +1769,9 @@
       "default_on": true,
       "wins_last_10k": 6,
       "wins_prior_10k": 29,
-      "deciding_regime": null,
       "family_wise": false,
       "conflict": false,
-      "native": {
+      "screen": {
         "pairs": 17574,
         "n_on": 17574,
         "n_off": 17574,
@@ -2235,17 +1797,6 @@
             "win_se_pp": 0.542
           }
         ]
-      },
-      "war": {
-        "pairs": 5844,
-        "n_on": 5844,
-        "n_off": 5844,
-        "win_delta_pp": 0.274,
-        "win_z": 0.393,
-        "share_delta_pp": 0.007,
-        "share_z": 0.041,
-        "read": "~",
-        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -2254,10 +1805,9 @@
       "default_on": false,
       "wins_last_10k": 24,
       "wins_prior_10k": -3,
-      "deciding_regime": "native",
       "family_wise": false,
       "conflict": false,
-      "native": {
+      "screen": {
         "pairs": 17574,
         "n_on": 17574,
         "n_off": 17574,
@@ -2283,17 +1833,6 @@
             "win_se_pp": 0.557
           }
         ]
-      },
-      "war": {
-        "pairs": 5844,
-        "n_on": 5844,
-        "n_off": 5844,
-        "win_delta_pp": 1.882,
-        "win_z": 2.732,
-        "share_delta_pp": 0.303,
-        "share_z": 1.722,
-        "read": "helps *",
-        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -2302,10 +1841,9 @@
       "default_on": true,
       "wins_last_10k": 41,
       "wins_prior_10k": null,
-      "deciding_regime": "native",
       "family_wise": false,
       "conflict": false,
-      "native": {
+      "screen": {
         "pairs": 17574,
         "n_on": 17574,
         "n_off": 17574,
@@ -2331,8 +1869,7 @@
             "win_se_pp": 0.555
           }
         ]
-      },
-      "war": null
+      }
     },
     {
       "tag": "settler-guard-holds",
@@ -2340,10 +1877,9 @@
       "default_on": false,
       "wins_last_10k": -3,
       "wins_prior_10k": 13,
-      "deciding_regime": null,
       "family_wise": false,
       "conflict": false,
-      "native": {
+      "screen": {
         "pairs": 17574,
         "n_on": 17574,
         "n_off": 17574,
@@ -2369,29 +1905,17 @@
             "win_se_pp": 0.559
           }
         ]
-      },
-      "war": {
-        "pairs": 5844,
-        "n_on": 5844,
-        "n_off": 5844,
-        "win_delta_pp": -0.342,
-        "win_z": -0.487,
-        "share_delta_pp": 0.051,
-        "share_z": 0.289,
-        "read": "~",
-        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
       "tag": "settler-site-agreement",
-      "verdict": "hurts",
+      "verdict": "unresolved",
       "default_on": true,
       "wins_last_10k": 24,
       "wins_prior_10k": 23,
-      "deciding_regime": "war",
       "family_wise": false,
       "conflict": false,
-      "native": {
+      "screen": {
         "pairs": 17574,
         "n_on": 17574,
         "n_off": 17574,
@@ -2417,17 +1941,6 @@
             "win_se_pp": 0.581
           }
         ]
-      },
-      "war": {
-        "pairs": 5844,
-        "n_on": 5844,
-        "n_off": 5844,
-        "win_delta_pp": -0.992,
-        "win_z": -1.394,
-        "share_delta_pp": -0.381,
-        "share_z": -2.151,
-        "read": "share hurts *",
-        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -2436,10 +1949,9 @@
       "default_on": true,
       "wins_last_10k": 15,
       "wins_prior_10k": 1,
-      "deciding_regime": "native",
       "family_wise": false,
       "conflict": false,
-      "native": {
+      "screen": {
         "pairs": 17574,
         "n_on": 17574,
         "n_off": 17574,
@@ -2465,17 +1977,6 @@
             "win_se_pp": 0.546
           }
         ]
-      },
-      "war": {
-        "pairs": 5844,
-        "n_on": 5844,
-        "n_off": 5844,
-        "win_delta_pp": -0.103,
-        "win_z": -0.142,
-        "share_delta_pp": 0.158,
-        "share_z": 0.893,
-        "read": "~",
-        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -2484,10 +1985,9 @@
       "default_on": true,
       "wins_last_10k": 50,
       "wins_prior_10k": null,
-      "deciding_regime": "native",
       "family_wise": false,
       "conflict": false,
-      "native": {
+      "screen": {
         "pairs": 17574,
         "n_on": 17574,
         "n_off": 17574,
@@ -2513,8 +2013,7 @@
             "win_se_pp": 0.561
           }
         ]
-      },
-      "war": null
+      }
     },
     {
       "tag": "siege-commitment",
@@ -2522,10 +2021,9 @@
       "default_on": true,
       "wins_last_10k": 1,
       "wins_prior_10k": 3,
-      "deciding_regime": null,
       "family_wise": false,
       "conflict": false,
-      "native": {
+      "screen": {
         "pairs": 17574,
         "n_on": 17574,
         "n_off": 17574,
@@ -2551,17 +2049,6 @@
             "win_se_pp": 0.561
           }
         ]
-      },
-      "war": {
-        "pairs": 5844,
-        "n_on": 5844,
-        "n_off": 5844,
-        "win_delta_pp": -0.034,
-        "win_z": -0.048,
-        "share_delta_pp": -0.011,
-        "share_z": -0.065,
-        "read": "~",
-        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -2570,10 +2057,9 @@
       "default_on": false,
       "wins_last_10k": -16,
       "wins_prior_10k": 14,
-      "deciding_regime": null,
       "family_wise": false,
       "conflict": false,
-      "native": {
+      "screen": {
         "pairs": 17574,
         "n_on": 17574,
         "n_off": 17574,
@@ -2599,17 +2085,6 @@
             "win_se_pp": 0.561
           }
         ]
-      },
-      "war": {
-        "pairs": 5844,
-        "n_on": 5844,
-        "n_off": 5844,
-        "win_delta_pp": -0.856,
-        "win_z": -1.202,
-        "share_delta_pp": -0.06,
-        "share_z": -0.337,
-        "read": "~",
-        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -2618,10 +2093,9 @@
       "default_on": false,
       "wins_last_10k": -3,
       "wins_prior_10k": 21,
-      "deciding_regime": null,
       "family_wise": false,
       "conflict": false,
-      "native": {
+      "screen": {
         "pairs": 17574,
         "n_on": 17574,
         "n_off": 17574,
@@ -2647,17 +2121,6 @@
             "win_se_pp": 0.569
           }
         ]
-      },
-      "war": {
-        "pairs": 5844,
-        "n_on": 5844,
-        "n_off": 5844,
-        "win_delta_pp": -0.684,
-        "win_z": -0.983,
-        "share_delta_pp": -0.168,
-        "share_z": -0.951,
-        "read": "~",
-        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -2666,10 +2129,9 @@
       "default_on": false,
       "wins_last_10k": -12,
       "wins_prior_10k": 20,
-      "deciding_regime": null,
       "family_wise": false,
       "conflict": false,
-      "native": {
+      "screen": {
         "pairs": 17574,
         "n_on": 17574,
         "n_off": 17574,
@@ -2695,17 +2157,6 @@
             "win_se_pp": 0.556
           }
         ]
-      },
-      "war": {
-        "pairs": 5844,
-        "n_on": 5844,
-        "n_off": 5844,
-        "win_delta_pp": -0.24,
-        "win_z": -0.33,
-        "share_delta_pp": 0.055,
-        "share_z": 0.311,
-        "read": "~",
-        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -2714,10 +2165,9 @@
       "default_on": false,
       "wins_last_10k": -27,
       "wins_prior_10k": -860,
-      "deciding_regime": "native",
       "family_wise": false,
       "conflict": false,
-      "native": {
+      "screen": {
         "pairs": 15000,
         "n_on": 15000,
         "n_off": 15000,
@@ -2727,17 +2177,6 @@
         "share_z": -2.315,
         "read": "share hurts *",
         "source": "2026-08-21-p7-native-6p-allseats-15000-pairs.json"
-      },
-      "war": {
-        "pairs": 5844,
-        "n_on": 5844,
-        "n_off": 5844,
-        "win_delta_pp": -0.171,
-        "win_z": -0.235,
-        "share_delta_pp": 0.157,
-        "share_z": 0.874,
-        "read": "~",
-        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -2746,10 +2185,9 @@
       "default_on": true,
       "wins_last_10k": 13,
       "wins_prior_10k": 21,
-      "deciding_regime": null,
       "family_wise": false,
       "conflict": false,
-      "native": {
+      "screen": {
         "pairs": 17574,
         "n_on": 17574,
         "n_off": 17574,
@@ -2775,17 +2213,6 @@
             "win_se_pp": 0.571
           }
         ]
-      },
-      "war": {
-        "pairs": 5844,
-        "n_on": 5844,
-        "n_off": 5844,
-        "win_delta_pp": 0.513,
-        "win_z": 0.713,
-        "share_delta_pp": 0.169,
-        "share_z": 0.956,
-        "read": "~",
-        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -2794,10 +2221,9 @@
       "default_on": false,
       "wins_last_10k": -5,
       "wins_prior_10k": 21,
-      "deciding_regime": null,
       "family_wise": false,
       "conflict": false,
-      "native": {
+      "screen": {
         "pairs": 17574,
         "n_on": 17574,
         "n_off": 17574,
@@ -2823,17 +2249,6 @@
             "win_se_pp": 0.556
           }
         ]
-      },
-      "war": {
-        "pairs": 5844,
-        "n_on": 5844,
-        "n_off": 5844,
-        "win_delta_pp": -0.24,
-        "win_z": -0.344,
-        "share_delta_pp": -0.197,
-        "share_z": -1.117,
-        "read": "~",
-        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -2842,10 +2257,9 @@
       "default_on": true,
       "wins_last_10k": 17,
       "wins_prior_10k": 21,
-      "deciding_regime": null,
       "family_wise": false,
       "conflict": false,
-      "native": {
+      "screen": {
         "pairs": 17574,
         "n_on": 17574,
         "n_off": 17574,
@@ -2871,17 +2285,6 @@
             "win_se_pp": 0.559
           }
         ]
-      },
-      "war": {
-        "pairs": 5844,
-        "n_on": 5844,
-        "n_off": 5844,
-        "win_delta_pp": -0.205,
-        "win_z": -0.281,
-        "share_delta_pp": 0.244,
-        "share_z": 1.354,
-        "read": "~",
-        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -2890,10 +2293,9 @@
       "default_on": false,
       "wins_last_10k": -16,
       "wins_prior_10k": -5,
-      "deciding_regime": null,
       "family_wise": false,
       "conflict": false,
-      "native": {
+      "screen": {
         "pairs": 17574,
         "n_on": 17574,
         "n_off": 17574,
@@ -2919,17 +2321,6 @@
             "win_se_pp": 0.561
           }
         ]
-      },
-      "war": {
-        "pairs": 5844,
-        "n_on": 5844,
-        "n_off": 5844,
-        "win_delta_pp": -0.958,
-        "win_z": -1.373,
-        "share_delta_pp": -0.125,
-        "share_z": -0.705,
-        "read": "~",
-        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -2938,10 +2329,9 @@
       "default_on": true,
       "wins_last_10k": 38,
       "wins_prior_10k": 8,
-      "deciding_regime": "native",
       "family_wise": true,
       "conflict": false,
-      "native": {
+      "screen": {
         "pairs": 17574,
         "n_on": 17574,
         "n_off": 17574,
@@ -2967,17 +2357,6 @@
             "win_se_pp": 0.546
           }
         ]
-      },
-      "war": {
-        "pairs": 5844,
-        "n_on": 5844,
-        "n_off": 5844,
-        "win_delta_pp": 2.122,
-        "win_z": 2.943,
-        "share_delta_pp": 1.33,
-        "share_z": 7.778,
-        "read": "helps * \u00b7 share HELPS **",
-        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -2986,10 +2365,9 @@
       "default_on": false,
       "wins_last_10k": -19,
       "wins_prior_10k": 20,
-      "deciding_regime": "native",
       "family_wise": false,
       "conflict": false,
-      "native": {
+      "screen": {
         "pairs": 17574,
         "n_on": 17574,
         "n_off": 17574,
@@ -3015,17 +2393,6 @@
             "win_se_pp": 0.574
           }
         ]
-      },
-      "war": {
-        "pairs": 5844,
-        "n_on": 5844,
-        "n_off": 5844,
-        "win_delta_pp": 0.445,
-        "win_z": 0.628,
-        "share_delta_pp": 0.098,
-        "share_z": 0.545,
-        "read": "~",
-        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -3034,10 +2401,9 @@
       "default_on": false,
       "wins_last_10k": 3,
       "wins_prior_10k": -5,
-      "deciding_regime": null,
       "family_wise": false,
       "conflict": false,
-      "native": {
+      "screen": {
         "pairs": 17574,
         "n_on": 17574,
         "n_off": 17574,
@@ -3063,17 +2429,6 @@
             "win_se_pp": 0.562
           }
         ]
-      },
-      "war": {
-        "pairs": 5844,
-        "n_on": 5844,
-        "n_off": 5844,
-        "win_delta_pp": -1.129,
-        "win_z": -1.572,
-        "share_delta_pp": 0.069,
-        "share_z": 0.398,
-        "read": "~",
-        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -3082,10 +2437,9 @@
       "default_on": true,
       "wins_last_10k": 18,
       "wins_prior_10k": 23,
-      "deciding_regime": null,
       "family_wise": false,
       "conflict": false,
-      "native": {
+      "screen": {
         "pairs": 17574,
         "n_on": 17574,
         "n_off": 17574,
@@ -3111,17 +2465,6 @@
             "win_se_pp": 0.542
           }
         ]
-      },
-      "war": {
-        "pairs": 5844,
-        "n_on": 5844,
-        "n_off": 5844,
-        "win_delta_pp": 0.856,
-        "win_z": 1.196,
-        "share_delta_pp": 0.161,
-        "share_z": 0.916,
-        "read": "~",
-        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -3130,10 +2473,9 @@
       "default_on": true,
       "wins_last_10k": 35,
       "wins_prior_10k": 29,
-      "deciding_regime": "native",
       "family_wise": true,
       "conflict": false,
-      "native": {
+      "screen": {
         "pairs": 17574,
         "n_on": 17574,
         "n_off": 17574,
@@ -3159,17 +2501,6 @@
             "win_se_pp": 0.553
           }
         ]
-      },
-      "war": {
-        "pairs": 5844,
-        "n_on": 5844,
-        "n_off": 5844,
-        "win_delta_pp": 15.606,
-        "win_z": 23.033,
-        "share_delta_pp": 5.799,
-        "share_z": 35.576,
-        "read": "HELPS ** \u00b7 share HELPS **",
-        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     },
     {
@@ -3178,10 +2509,9 @@
       "default_on": false,
       "wins_last_10k": 7,
       "wins_prior_10k": -7,
-      "deciding_regime": null,
       "family_wise": false,
       "conflict": false,
-      "native": {
+      "screen": {
         "pairs": 17574,
         "n_on": 17574,
         "n_off": 17574,
@@ -3207,17 +2537,6 @@
             "win_se_pp": 0.568
           }
         ]
-      },
-      "war": {
-        "pairs": 5844,
-        "n_on": 5844,
-        "n_off": 5844,
-        "win_delta_pp": 0.137,
-        "win_z": 0.192,
-        "share_delta_pp": -0.015,
-        "share_z": -0.086,
-        "read": "~",
-        "source": "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json"
       }
     }
   ]

@@ -1,5 +1,14 @@
-//! The gene ledger: what the screens have measured about every gene, and the
+//! The gene ledger: what the screen has measured about every gene, and the
 //! deployment genome that follows from it.
+//!
+//! ⭐ ONE SCREEN. Operator directive 2026-08-22: every row here comes from the
+//! same shape — six majors on 74x46 continents with nine city-states, Online
+//! speed to its own 250-turn clock, all six victory lanes, every seat carrying
+//! its own drawn genome against the best-genome baseline. There is no second
+//! regime to reconcile, and `tools/gene_ledger.py` refuses a source played at
+//! any other profile. The columns carried over from the pre-2026-08-22 Pangaea
+//! screens are marked `legacy` in `docs/gene_ledger.json`: history the
+//! deployment genome stands on until the screen re-prices each gene.
 //!
 //! ★★★★ THE DEFAULTS ARE THE BEST GENOME, AND THE BEST GENOME IS DATA.
 //! Operator directive 2026-08-20: the defaults for the genes reflect our best
@@ -12,18 +21,17 @@
 //!
 //! ★★★★ THE DEFAULT IS READ OFF THE RANKING'S TWO WIN COLUMNS.
 //! Operator directive 2026-08-22: a gene may default on when **both** its
-//! last and prior native win columns are positive, or when their average
+//! last and prior win columns are positive, or when their average
 //! clears +15 with neither column below −10. With exactly one populated
 //! column, it may provisionally default on when that reading is above +20;
 //! every other gene defaults off.
 //! A win column is wins added per 10,000 games at the gene's measured on-rate
-//! in one native screen — `(win_on − 1/players) × 10,000`, against the 1-in-
+//! in one screen — `(win_on − 1/players) × 10,000`, against the 1-in-
 //! `players` a seat wins by chance — and it is the same number
-//! `HEURISTIC_GENE_RANKING.md` prints. The war regime does not enter the
-//! default.
+//! `HEURISTIC_GENE_RANKING.md` prints.
 //!
 //! What that replaced: the default used to be `verdict == helps`, one
-//! screen's significance test on the deciding regime. The verdicts are still
+//! screen's significance test. The verdicts are still
 //! recorded and still say what the screens proved; they no longer decide what
 //! ships. A gene can now be `helps` and off (its prior reading was against
 //! it) or `hurts` and on (two positive win columns since).
@@ -35,7 +43,7 @@
 //! columns beside it. The verdict rules live in the tool and are repeated
 //! here so the reader of either side finds them:
 //!
-//! - `helps`: in a regime of record, win z ≥ 2 with share z > −2, or share
+//! - `helps`: win z ≥ 2 with share z > −2, or share
 //!   z ≥ 2 with win z > −2 (the screen's own `*` flag; `**` past the
 //!   family-wise bar is recorded as strength, not required — with sixty-odd
 //!   genes the family-wise bar would leave three on).
@@ -43,17 +51,14 @@
 //! - `unresolved`: everything else, including a gene whose two axes
 //!   disagree past |z| ≥ 2 and a gene the screens have not measured.
 //!
-//! The **native** (all six lanes) regime governs the verdict; the **war**
-//! regime (`domination,score`) is recorded beside it, and a gene unresolved
-//! natively takes the war regime's verdict when that resolves. Neither the
-//! war regime nor the verdict reaches the default, which is native-only by
-//! construction: the verification games are the all-six regime.
+//! The verdict is read off the newest screen that priced the gene, and it does
+//! not reach the default: the win columns decide that.
 //!
 //! `apply_gene_ledger` is what `enable_live_bridge` and
 //! `enable_engine_repairs` end with: every live treatment and production
 //! treatment the ledger does not default on is withheld, every opt-in it
 //! defaults on is enabled, and a gene with no ledger row (the
-//! Firaxis-only flags, which no native screen can price) is left exactly as
+//! Firaxis-only flags, which the screen cannot price) is left exactly as
 //! the bundle set it. The `_universe` twins of those two helpers set every
 //! flag and skip the ledger: they are the genome's universe, for
 //! `gene_screen` (which sets each gene to its drawn state explicitly) and for
@@ -78,7 +83,7 @@ impl Verdict {
     }
 }
 
-/// One regime's measurement of one gene, as the screen printed it.
+/// The screen's measurement of one gene, as it printed it.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Measure {
     /// Complete pairs (seat pairs in an all-seats file) the estimate rests on.
@@ -100,16 +105,16 @@ pub struct GeneVerdict {
     /// here against the two columns below by `the_default_follows_the_win_columns`.
     pub default_on: bool,
     /// ± wins per 10,000 games at the gene's measured on-rate in the latest
-    /// native screen that priced it: `HEURISTIC_GENE_RANKING.md`'s
-    /// *± Wins Last 10k*. `None` when no native screen has priced it.
+    /// screen that priced it: `HEURISTIC_GENE_RANKING.md`'s
+    /// *± Wins Last 10k*. `None` when no screen has priced it.
     pub wins_last_10k: Option<i32>,
-    /// The same figure from the native screen before that — *± Wins 10k
-    /// Prior*. `None` when the gene has only one native reading.
+    /// The same figure from the screen before that — *± Wins 10k Prior*.
+    /// `None` when the gene has only one reading.
     pub wins_prior_10k: Option<i32>,
-    /// Past the family-wise bar in the regime that decided the verdict.
+    /// Past the family-wise bar of the screen that supplied the verdict.
     pub family_wise: bool,
-    pub native: Option<Measure>,
-    pub war: Option<Measure>,
+    /// The newest screen's paired contrast for this gene.
+    pub screen: Option<Measure>,
 }
 
 /// A gene's win columns clear the deployment rule: one populated column above
@@ -148,7 +153,7 @@ pub fn ledger_verdict(tag: &str) -> Option<&'static GeneVerdict> {
     table::ROWS.iter().find(|row| row.tag == tag)
 }
 
-/// Whether a native screen can price a tag at all: the engine repairs, the
+/// Whether the screen can price a tag at all: the engine repairs, the
 /// production treatments and the opt-ins — `gene_screen`'s own universe. A
 /// Firaxis-only flag is not here, and the ledger has nothing to say about it.
 pub fn screenable(tag: &str) -> bool {
@@ -163,10 +168,10 @@ pub fn screenable(tag: &str) -> bool {
 /// `default_on`, which is the win-column rule in the module header — so a
 /// screenable gene no screen has measured is off; one measured once follows
 /// the provisional single-column bar.
-/// `None` for a gene no native screen can price (the Firaxis-only flags),
+/// `None` for a gene the screen cannot price (the Firaxis-only flags),
 /// which the bundle leaves as it set it.
 pub fn ledger_default_on(tag: &str) -> Option<bool> {
-    // A host-only flag is never governed by a native row — even when one
+    // A host-only flag is never governed by a screen row — even when one
     // exists: such a row measured a native stand-in that no longer runs
     // (`step-and-reassess`, 2026-08-21) and must not govern the bridge.
     if !screenable(tag) {
@@ -377,7 +382,7 @@ mod tests {
     }
 
     /// A screenable gene the screens have not measured is not proven, so it
-    /// is off; a Firaxis-only flag has no native instrument and is left alone.
+    /// is off; a Firaxis-only flag has no instrument and is left alone.
     #[test]
     fn unmeasured_genes_are_off_only_when_a_screen_could_have_priced_them() {
         assert_eq!(
@@ -391,7 +396,7 @@ mod tests {
         assert_eq!(
             ledger_default_on("step-and-reassess"),
             None,
-            "a host-only flag is never governed by a native row"
+            "a host-only flag is never governed by a screen row"
         );
         for repair in crate::elo::ENGINE_REPAIR_TREATMENTS {
             assert!(screenable(repair));

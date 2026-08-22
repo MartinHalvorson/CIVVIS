@@ -230,6 +230,19 @@ def notify(title: str, message: str, runner=None) -> None:
         pass
 
 
+def stand_down(args: argparse.Namespace, problem: str, standing: str) -> int:
+    """Name the cause and touch nothing.
+
+    This does NOT clear the hold. A halt anything can override is not a halt;
+    the keeper's job is to name the cause and stand down, so the silence is a
+    reported decision rather than an outage nobody attributed.
+    """
+    log(args.log, f"HELD {problem} — {standing}. A restart cannot play "
+                  f"against a held game; not starting or stopping "
+                  f"anything. Release the hold to resume.")
+    return 2
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--stale-hours", type=float, default=3.0,
@@ -274,6 +287,19 @@ def main(argv: list[str] | None = None) -> int:
             # Fresh ledger, no loop: the last game finished and the supervisor
             # then died. Start one — waiting for the ledger to go stale would
             # throw away the hours between now and the staleness limit.
+            #
+            # ⚠⚠ ASK THE HOLD HERE TOO. A halt lands on a FRESH ledger, so for
+            # the first `--stale-hours` after one it is this arm that runs, not
+            # the stale arm below that owns the guard. Unasked, the keeper
+            # opened a Terminal host every `--start-cooldown-minutes` that read
+            # the halt and exited before playing a turn: nine of them on
+            # 2026-08-19 (12:23Z–15:03Z, halt at 12:10:49Z) and two more on
+            # 2026-08-20 (13:23Z, 13:43Z, halt at 13:14:12Z), each a window
+            # that opened and died on the operator's desktop. The guard belongs
+            # to every start, not only to the one that follows a stale ledger.
+            standing = gamelock.standing_hold()
+            if standing is not None:
+                return stand_down(args, "no supervisor is running", standing)
             return start_the_loop(args, now, "no supervisor is running")
         return 0
 
@@ -286,16 +312,9 @@ def main(argv: list[str] | None = None) -> int:
     # refused at the lock, and the log fills with restarts that could not have
     # worked. Observed on this host: a halt taken 2026-08-02 was still in force
     # fifteen days later.
-    #
-    # This does NOT clear the hold. A halt anything can override is not a halt;
-    # the keeper's job here is to name the cause and stand down, so the silence
-    # is a reported decision rather than an outage nobody attributed.
     standing = gamelock.standing_hold()
     if standing is not None:
-        log(args.log, f"HELD {problem} — {standing}. A restart cannot play "
-                      f"against a held game; not starting or stopping "
-                      f"anything. Release the hold to resume.")
-        return 2
+        return stand_down(args, problem, standing)
 
     if alive is None:
         return start_the_loop(args, now, problem)
