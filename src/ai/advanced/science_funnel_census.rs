@@ -126,25 +126,25 @@ fn report(label: &str, arms: &[(&str, Chain)]) {
 #[test]
 #[ignore = "census, not an assertion; run explicitly with --nocapture"]
 fn the_research_chain_treated_against_control() {
-    let seeds: Vec<u64> = (0..12).map(|i| 88_000_000 + i).collect();
-    // ⚠ ROUND FIVE: the one gate this empire can reach. Rounds three and four
-    // settled the building-half genes (+25%/+20%/+21.7% Research Labs across
-    // disjoint seeds, now merged) and killed two nulls. The gate census then
-    // found Rationalism slotted with BOTH halves unearned, and the map probe
-    // showed the adjacency half is unreachable — under 1% of land. This prices
-    // the population half, where five Campus cities were still growing and
-    // five citizens short.
+    let seeds: Vec<u64> = (0..12).map(|i| 89_000_000 + i).collect();
+    // ⚠ ROUND SIX: the clock, not the price. Rounds three to five settled the
+    // building-half genes (merged) and returned four nulls, and the chain-tech
+    // probe then found the constraint had moved: where Chemistry lands by
+    // ~t147 every University gets its Lab, and where it lands at t205 there
+    // are none. This prices the goal that decides when Chemistry lands.
     let arms: Vec<Arm> = vec![
         ("control (universe)", |_ai| {}),
-        ("fifteenth-citizen", |ai| ai.enable_fifteenth_citizen()),
+        ("chain-tech-lookahead", |ai| {
+            ai.enable_chain_tech_lookahead()
+        }),
         ("premium + payoff", |ai| {
             ai.enable_research_tier_premium();
             ai.enable_science_multiplier_payoff();
         }),
-        ("premium + payoff + fifteenth", |ai| {
+        ("premium + payoff + lookahead", |ai| {
             ai.enable_research_tier_premium();
             ai.enable_science_multiplier_payoff();
-            ai.enable_fifteenth_citizen();
+            ai.enable_chain_tech_lookahead();
         }),
     ];
     let mut totals: Vec<(String, Chain)> = Vec::new();
