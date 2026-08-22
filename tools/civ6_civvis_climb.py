@@ -1285,6 +1285,8 @@ def play_command(args, tag: str, orders_db: Path, orders_bin: Path,
            if args.refresh_seconds is not None else [])
         + (["--abandon-below-win-rate", str(args.abandon_below_win_rate)]
            if getattr(args, "abandon_below_win_rate", None) is not None else [])
+        + (["--restart-below-leader-ratio", str(args.restart_below_leader_ratio)]
+           if getattr(args, "restart_below_leader_ratio", None) is not None else [])
         + (["--no-peace-deterrence"] if args.no_peace_deterrence else [])
         + (["--no-counter-resolutions"] if args.no_counter_resolutions else [])
         + [flag for treatment in args.with_
@@ -1409,6 +1411,11 @@ def main() -> int:
                     help="stop an attempt once its measured expected win rate "
                          "has sat under this floor for five turns (forwarded "
                          "to civ6_play.py; operator request 2026-08-19: 0.05)")
+    ap.add_argument("--restart-below-leader-ratio", type=float, default=None,
+                    help="restart only after five post-turn-100 readings below "
+                         "this score ratio AND behind in visible science and "
+                         "culture (forwarded to civ6_play.py; operator request "
+                         "2026-08-22: 0.70)")
     # ⚠⚠⚠ THE SEAT WAS RANDOM FOR 190 RUNS, AND NOTHING SAID SO.
     #
     # `civ6_play.py` has taken `--leader` (and verifies the pick off the rendered

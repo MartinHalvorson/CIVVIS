@@ -20,6 +20,7 @@ import argparse
 import atexit
 import signal
 import json
+import math
 import os
 import subprocess
 import textwrap
@@ -120,6 +121,16 @@ ABANDON_CELLS: tuple[tuple[int, float, int, int], ...] = (
 # must not end a game that the next five turns would have carried.
 ABANDON_PATIENCE = 5
 
+# A separate operator policy for an obviously losing strategic position. This
+# is deliberately not folded into ABANDON_CELLS: it is not an empirically
+# fitted win-rate estimate, and score alone is never enough to stop a game.
+# The state export carries our science/culture and those of every met rival;
+# only five current, post-opening readings that lose on all three measures can
+# end a run. A missing or stale state reading is silence, not evidence of a
+# loss or a recovery.
+BEHIND_ALL_METRICS_MIN_TURN = 100
+BEHIND_ALL_METRICS_PATIENCE = 5
+
 
 def expected_win_rate(turn: int, score: int | None,
                       rival_best: int | None) -> float | None:
@@ -175,6 +186,100 @@ def abandon_reading(state: dict, event: dict, floor: float) -> dict | None:
         "expected_win_rate": round(estimate, 4),
         "floor": floor,
         "consecutive_turns": state["abandon_streak"],
+    }
+
+
+def _nonnegative_metric(value: object) -> float | int | None:
+    """A finite, readable game metric, or None for a bridge sentinel."""
+    if (isinstance(value, (int, float)) and not isinstance(value, bool)
+            and math.isfinite(value) and value >= 0):
+        return value
+    return None
+
+
+def behind_all_metrics_reading(
+    state: dict, event: dict, score_ratio_ceiling: float
+) -> dict | None:
+    """Record a three-signal restart reading, returning its verdict on fire.
+
+    The score comparison is against the best met rival, matching the existing
+    turn record. Science and culture each compare against their visible met
+    leader, which can be different civilizations. The state sample must be
+    from the same turn as the score record: carrying yesterday's yields into a
+    new score position would make a restart look more certain than it is.
+    """
+    if (not isinstance(score_ratio_ceiling, (int, float))
+            or isinstance(score_ratio_ceiling, bool)
+            or not 0 < score_ratio_ceiling <= 1):
+        return None
+
+    if event.get("kind") == "state":
+        if event.get("ctx") == "agent":
+            state["behind_all_metrics_state"] = event
+        return None
+    if event.get("kind") != "turn" or event.get("ctx") != "agent":
+        return None
+
+    turn = event.get("turn")
+    if (not isinstance(turn, int) or isinstance(turn, bool)
+            or turn < BEHIND_ALL_METRICS_MIN_TURN
+            or turn == state.get("behind_all_metrics_last_turn")):
+        return None
+    standing = state.get("behind_all_metrics_state")
+    if not isinstance(standing, dict) or standing.get("turn") != turn:
+        return None
+
+    score = _nonnegative_metric(event.get("score"))
+    rival_best = _nonnegative_metric(event.get("rival_best"))
+    our_science = _nonnegative_metric(standing.get("science"))
+    our_culture = _nonnegative_metric(standing.get("culture"))
+    rivals = standing.get("rivals")
+    if (score is None or rival_best is None or rival_best <= 0
+            or our_science is None or our_culture is None
+            or not isinstance(rivals, list)):
+        return None
+
+    rival_sciences, rival_cultures = [], []
+    for rival in rivals:
+        if not isinstance(rival, dict):
+            continue
+        science = _nonnegative_metric(rival.get("science"))
+        culture = _nonnegative_metric(rival.get("culture"))
+        if science is not None:
+            rival_sciences.append(science)
+        if culture is not None:
+            rival_cultures.append(culture)
+    if not rival_sciences or not rival_cultures:
+        return None
+
+    state["behind_all_metrics_last_turn"] = turn
+    score_ratio = score / rival_best
+    rival_best_science = max(rival_sciences)
+    rival_best_culture = max(rival_cultures)
+    if (score_ratio >= score_ratio_ceiling
+            or our_science >= rival_best_science
+            or our_culture >= rival_best_culture):
+        # A complete comparison that is not bad on every axis is a recovery.
+        state["behind_all_metrics_streak"] = 0
+        return None
+
+    state["behind_all_metrics_streak"] = (
+        state.get("behind_all_metrics_streak", 0) + 1
+    )
+    if state["behind_all_metrics_streak"] < BEHIND_ALL_METRICS_PATIENCE:
+        return None
+    return {
+        "rule": "score_science_culture_deficit",
+        "turn": turn,
+        "score": score,
+        "rival_best": rival_best,
+        "score_ratio": round(score_ratio, 4),
+        "score_ratio_ceiling": score_ratio_ceiling,
+        "science": our_science,
+        "rival_best_science": rival_best_science,
+        "culture": our_culture,
+        "rival_best_culture": rival_best_culture,
+        "consecutive_turns": state["behind_all_metrics_streak"],
     }
 
 DEFAULT_CIVVIS_STRATEGY = ""
@@ -2983,6 +3088,21 @@ def _play(args: argparse.Namespace) -> int:
             return True
         if kind == "defeat":
             return bool(event.get("ours"))
+        restart_verdict = behind_all_metrics_reading(
+            state, event, args.restart_below_leader_ratio
+        )
+        if restart_verdict is not None:
+            state["abandoned"] = restart_verdict
+            print(f"[restart] turn {restart_verdict['turn']}: score "
+                  f"{restart_verdict['score']} is "
+                  f"{restart_verdict['score_ratio']:.1%} of the best rival; "
+                  f"science {restart_verdict['science']} vs "
+                  f"{restart_verdict['rival_best_science']} and culture "
+                  f"{restart_verdict['culture']} vs "
+                  f"{restart_verdict['rival_best_culture']} for "
+                  f"{restart_verdict['consecutive_turns']} turns — restarting "
+                  "rather than playing the lost position out", flush=True)
+            return True
         # And OUR decision that the game is lost, once the operator has set a
         # floor under the expected win rate. See `ABANDON_CELLS`.
         if kind == "turn":
@@ -3407,6 +3527,12 @@ def main(argv: list[str] | None = None) -> int:
                          "for ABANDON_PATIENCE consecutive turns; 0 (the "
                          "default) plays every game out. Operator request "
                          "2026-08-19: 0.05")
+    ap.add_argument("--restart-below-leader-ratio", type=float, default=0.0,
+                    help="restart only after BEHIND_ALL_METRICS_PATIENCE "
+                         "post-turn-100 readings below this score ratio AND "
+                         "behind the visible science and culture leaders; 0 "
+                         "(the default) disables the policy. Operator request "
+                         "2026-08-22: 0.70")
     ap.add_argument("--city-target", type=int, default=6)
     ap.add_argument("--leader", help="exact Firaxis leader type to select and verify")
     # The game must stay frontmost to get frames, which makes it unwatchable if

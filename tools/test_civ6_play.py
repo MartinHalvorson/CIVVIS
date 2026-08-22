@@ -1884,9 +1884,83 @@ class AnAbandonedGameIsOneTheLadderChoseNotToPlayOut(unittest.TestCase):
         source = (Path(__file__).resolve().parent / "civ6_play.py").read_text(
             encoding="utf-8")
         self.assertIn('"--abandon-below-win-rate"', source)
+        self.assertIn('"--restart-below-leader-ratio"', source)
         self.assertIn('"abandoned": state.get("abandoned"),', source)
         self.assertIn("abandon_reading(state, event, args.abandon_below_win_rate)",
                       source)
+        self.assertIn("behind_all_metrics_reading(", source)
+
+
+class AThreeSignalRestartDoesNotTreatScoreAsEnough(unittest.TestCase):
+    """The operator's 70 % rule must lose on every named axis, consecutively."""
+
+    @staticmethod
+    def _state(turn, science, culture, rivals, ctx="agent"):
+        return {"kind": "state", "ctx": ctx, "turn": turn,
+                "science": science, "culture": culture, "rivals": rivals}
+
+    @staticmethod
+    def _turn(turn, score, rival_best, ctx="agent"):
+        return {"kind": "turn", "ctx": ctx, "turn": turn,
+                "score": score, "rival_best": rival_best}
+
+    def _reading(self, state, turn, score=69, rival_best=100,
+                 science=9, culture=8, rivals=None):
+        if rivals is None:
+            rivals = [{"science": 10, "culture": 10}]
+        self.assertIsNone(civ6_play.behind_all_metrics_reading(
+            state, self._state(turn, science, culture, rivals), 0.70))
+        return civ6_play.behind_all_metrics_reading(
+            state, self._turn(turn, score, rival_best), 0.70)
+
+    def test_score_science_and_culture_must_all_be_deficits(self):
+        for label, values in (
+            ("score at ceiling", {"score": 70}),
+            ("science tied", {"science": 10}),
+            ("culture tied", {"culture": 10}),
+        ):
+            with self.subTest(label=label):
+                state = {}
+                self.assertIsNone(self._reading(state, 100, **values))
+                self.assertEqual(state["behind_all_metrics_streak"], 0)
+
+    def test_five_current_readings_fire_and_a_recovery_resets(self):
+        state = {}
+        rivals = [{"science": 8, "culture": 10},
+                  {"science": 10, "culture": 8}]
+        for turn in range(100, 104):
+            self.assertIsNone(self._reading(state, turn, rivals=rivals))
+        verdict = self._reading(state, 104, rivals=rivals)
+        self.assertEqual(verdict["rule"], "score_science_culture_deficit")
+        self.assertEqual(verdict["consecutive_turns"], 5)
+        self.assertAlmostEqual(verdict["score_ratio"], 0.69)
+        self.assertEqual((verdict["rival_best_science"],
+                          verdict["rival_best_culture"]), (10, 10))
+        # A current state sample that is no longer behind on culture resets it.
+        self.assertIsNone(self._reading(state, 105, culture=10, rivals=rivals))
+        self.assertEqual(state["behind_all_metrics_streak"], 0)
+        self.assertIsNone(self._reading(state, 106, rivals=rivals))
+        self.assertEqual(state["behind_all_metrics_streak"], 1)
+
+    def test_stale_or_unreadable_standings_never_count(self):
+        state = {}
+        self.assertIsNone(civ6_play.behind_all_metrics_reading(
+            state, self._state(99, 9, 8, [{"science": 10, "culture": 10}]), 0.70))
+        self.assertIsNone(civ6_play.behind_all_metrics_reading(
+            state, self._turn(100, 69, 100), 0.70))
+        self.assertNotIn("behind_all_metrics_streak", state)
+        self.assertIsNone(self._reading(
+            state, 101, rivals=[{"science": -1, "culture": -1}]))
+        self.assertNotIn("behind_all_metrics_streak", state)
+        self.assertIsNone(self._reading(state, 102))
+        self.assertEqual(state["behind_all_metrics_streak"], 1)
+        # Disabled remains a complete no-op, including on a fully bad reading.
+        disabled = {}
+        self.assertIsNone(civ6_play.behind_all_metrics_reading(
+            disabled, self._state(102, 9, 8, [{"science": 10, "culture": 10}]), 0.0))
+        self.assertIsNone(civ6_play.behind_all_metrics_reading(
+            disabled, self._turn(102, 69, 100), 0.0))
+        self.assertNotIn("behind_all_metrics_streak", disabled)
 
 
 class AResumeStagesTheAutosaveWhereTheListShowsIt(unittest.TestCase):

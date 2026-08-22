@@ -160,6 +160,12 @@ VICTORY=${CIVVIS_VICTORY:-}
 # CIVVIS_DIFFICULTY), and an abandoned game is filed as `abandoned`, never as
 # a stall or a defeat.
 ABANDON_BELOW=${CIVVIS_ABANDON_BELOW_WIN_RATE:-}
+# A stricter restart rule for a position that is bad on all three strategic
+# standings, not merely on score: below this share of the score leader AND
+# behind the visible science and culture leaders for five turns after turn 100.
+# Unset keeps the policy off. The operator's requested 70 % lives in the
+# inherited login shell as CIVVIS_RESTART_BELOW_LEADER_RATIO=0.70.
+RESTART_BELOW_LEADER_RATIO=${CIVVIS_RESTART_BELOW_LEADER_RATIO:-}
 # Optional live-host wall-clock budget. The climb's defaults remain the source
 # of truth when these are absent; the operator can raise them for a GUI host
 # whose healthy 250-turn games take longer. Run civvis-20260822T020434Z was
@@ -506,6 +512,7 @@ while true; do
       "${TIMEOUT_ARGS[@]}" \
       ${VICTORY:+--victory} ${VICTORY:+"$VICTORY"} \
       ${ABANDON_BELOW:+--abandon-below-win-rate} ${ABANDON_BELOW:+"$ABANDON_BELOW"} \
+      ${RESTART_BELOW_LEADER_RATIO:+--restart-below-leader-ratio} ${RESTART_BELOW_LEADER_RATIO:+"$RESTART_BELOW_LEADER_RATIO"} \
       --logs "$LOGS" > "$LOGS/climb-$TAG.log" 2>&1
 
   # "Played a turn" is the only honest success test: a run can reach the map,

@@ -527,11 +527,11 @@ def entry_from(summary: dict) -> dict:
         "map_size": summary.get("map_size"),
         "speed": summary.get("speed"),
         "reason": summary.get("reason"),
-        # The harness's own verdict when it abandoned the game
-        # (`civ6_play.ABANDON_CELLS`): turn, standing, estimate and floor. A
-        # row with `reason: "abandoned"` is a loss the ladder chose not to play
-        # out, and the verdict is kept so the choice can be audited against
-        # what the rule would have cost.
+        # The harness's own early-stop verdict: either the measured expected
+        # win-rate floor (`civ6_play.ABANDON_CELLS`) or the explicit
+        # score/science/culture restart policy. A row with `reason:
+        # "abandoned"` is a loss the ladder chose not to play out, and the
+        # record preserves the exact rule and standing that made that choice.
         "abandoned": summary.get("abandoned"),
         "applied_pct": applied_pct(summary),
         "revisions": summary.get("decider_revisions"),
@@ -1167,10 +1167,11 @@ def markdown_for(state: dict) -> str:
             "`outcome` is what the game did, not what the harness saw last.",
             "`defeat` means this controller was eliminated and the game said so;",
             "`stopped`, `stalled` and `timeout` mean nobody won and nobody lost;",
-            "`abandoned` means the harness stopped a game whose measured expected",
-            "win rate had sat under the operator's floor for five turns",
-            "(`civ6_play.py --abandon-below-win-rate`), a loss it chose not to",
-            "play out.",
+            "`abandoned` means the harness stopped under a recorded early-stop",
+            "policy: either five turns below a measured expected-win floor, or",
+            "five post-turn-100 turns below the configured leader score ratio",
+            "while trailing visible science and culture leaders — a loss it chose",
+            "not to play out.",
             "A ledger that cannot tell defeat from a wedge cannot be used to",
             "compare anything, and until `defeat` existed here the two were the",
             "same row.",

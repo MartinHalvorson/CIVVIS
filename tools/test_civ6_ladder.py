@@ -190,10 +190,12 @@ class LiveArmAttributionTests(unittest.TestCase):
         full = civ6_ladder.entry_from({"tag": "new", "last_turn": 250, "withheld": []})
         self.assertEqual(full["withheld"], [])
 class AnAbandonedRowIsALossTheLadderChoseNotToPlayOut(unittest.TestCase):
-    """`civ6_play.py --abandon-below-win-rate` stops a game whose measured
-    expected win rate has sat under the operator's floor; the row must say so
-    (reason `abandoned`, carrying the verdict) and the legend must explain it,
-    or the ledger reads the stop as a wedge."""
+    """An early-stop policy is a loss the ladder chose not to play out.
+
+    The verdict must retain whether it was the measured expected-win rule or
+    the operator's all-three-standings restart rule, or the ledger reads a
+    deliberately stopped game as a wedge.
+    """
 
     def test_the_verdict_rides_the_entry_and_the_outcome_column_names_it(self) -> None:
         verdict = {"turn": 124, "score": 300, "rival_best": 500,
@@ -211,7 +213,20 @@ class AnAbandonedRowIsALossTheLadderChoseNotToPlayOut(unittest.TestCase):
         state = {"attempts": [entry], "wins": {}}
         text = civ6_ladder.markdown_for(state)
         self.assertIn("| abandoned |", text)
-        self.assertIn("`abandoned` means the harness stopped a game", text)
+        self.assertIn("`abandoned` means the harness stopped under a recorded early-stop", text)
+        self.assertIn("science and culture leaders", text)
+
+    def test_a_three_signal_restart_verdict_is_kept_verbatim(self) -> None:
+        verdict = {"rule": "score_science_culture_deficit", "turn": 104,
+                   "score": 69, "rival_best": 100, "score_ratio": 0.69,
+                   "score_ratio_ceiling": 0.70, "science": 9,
+                   "rival_best_science": 10, "culture": 8,
+                   "rival_best_culture": 10, "consecutive_turns": 5}
+        entry = civ6_ladder.entry_from({
+            "tag": "civvis-restart", "configured": True, "last_turn": 104,
+            "last_score": 69, "reason": "abandoned", "abandoned": verdict,
+        })
+        self.assertEqual(entry["abandoned"], verdict)
 
     def test_an_ordinary_row_carries_no_verdict(self) -> None:
         entry = civ6_ladder.entry_from({"tag": "old", "last_turn": 250})
