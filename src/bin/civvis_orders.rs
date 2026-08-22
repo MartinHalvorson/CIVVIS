@@ -3055,12 +3055,6 @@ fn decide(
         std::collections::BTreeMap::new();
     let mut skipped_examples: Vec<String> = Vec::new();
     let mut note_bits: Vec<String> = Vec::new();
-    {
-        let blind = civvis::ai::AdvancedAi::blind_tiles_charged();
-        if blind > 0 {
-            note_bits.push(format!("blind_ranged_tiles_charged={blind}"));
-        }
-    }
     // ⚠ Which rule is refusing the army its attacks. 45 of 87 declined attacks
     // on a replay of run `civvis-20260803T005930Z` were the forward model
     // rejecting the action outright rather than judging it bad, 27 of them a
@@ -5763,11 +5757,6 @@ mod tests {
             !ai.barbarian_scouts_are_scouts,
             "the named barbarian-scout control must hold it off"
         );
-
-        assert!(ai.camp_reach());
-        withhold_live_treatment(&mut ai, "camp-reach")
-            .expect("the camp-reach control arm is registered");
-        assert!(!ai.camp_reach(), "the named camp-reach control must hold it off");
 
         assert!(ai.camp_party());
         withhold_live_treatment(&mut ai, "camp-party")

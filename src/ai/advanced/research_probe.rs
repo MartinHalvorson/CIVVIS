@@ -97,23 +97,6 @@ fn only_the_live_bridge_raises_the_housing_ceiling() {
         "and the control arm holds it off"
     );
 }
-/// Off by default, set only by the live bridge, and holdable off on its own.
-#[test]
-fn only_the_live_bridge_lets_a_capped_city_buy_its_ceiling() {
-    assert!(
-        !AdvancedAi::new().base.housing_buildings,
-        "the frozen tournament controller must keep its recorded ladders"
-    );
-    let mut live = AdvancedAi::new();
-    live.enable_live_bridge_universe();
-    assert!(live.base.housing_buildings, "the deployment turns it on");
-    live.disable_housing_buildings();
-    assert!(
-        !live.base.housing_buildings,
-        "and the control arm holds it off"
-    );
-}
-
 /// Off by default, set only by the live bridge, and holdable off on its own
 /// so the arm is a controlled comparison — which is what makes the repair
 /// measurable rather than merely deployed.

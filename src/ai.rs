@@ -98,6 +98,16 @@ const UNIT_DANGER_MEMORY_TURNS: u32 = 3;
 /// this is a pause to survive rather than a silent abandonment of the campaign.
 const UNIT_RETREAT_TURNS: u32 = 2;
 
+/// `game::damage` rolls every blow at `uniform(0.8, 1.2)` around the centre
+/// this controller prices with, so the average is not the number a survival
+/// question wants: a unit that lives through the mean still dies on the good
+/// rolls. `one_shot_recovery` reads the top of the roll instead.
+const COMBAT_ROLL_MAX: f64 = 1.2;
+
+/// The engine's own ceiling on one blow (`game::damage` clamps to it), so a
+/// roll scaled to its top cannot claim more damage than the game can deal.
+const MAX_SINGLE_BLOW: f64 = 100.0;
+
 /// Unlevied city-state forces defend the state and its immediate approaches;
 /// ownership transfers to the Suzerain while levied, so those units naturally
 /// use the major civilization's unrestricted tactical doctrine instead.
@@ -188,15 +198,6 @@ pub(crate) const GARRISON_ALERT_RADIUS: i32 = 3;
 const GARRISON_HOLD_UNITS: usize = 2;
 /// How close to the centre a unit must stand to count toward that garrison.
 const GARRISON_HOLD_RADIUS: i32 = 1;
-
-/// How many wall-breaking units the empire will ask for before it stops. Two
-/// is a siege train, not a doctrine; past this the ordinary melee/ranged
-/// alternation resumes so this cannot become an endless military appetite.
-const SIEGE_ARM_MAX: usize = 2;
-
-/// How far a walled enemy city can be and still be this empire's problem.
-/// Beyond it the siege train would spend its life walking.
-const SIEGE_TARGET_REACH: i32 = 20;
 
 /// How many recon units [`BasicAi::recon_is_the_missing_arm`] will rebuild
 /// toward after the empire has expanded. Two independent scouts are a bounded
@@ -1803,6 +1804,44 @@ pub struct UnitDangerMemory {
     pub expires_turn: u32,
 }
 
+/// What a tile invites from everything that can strike it next turn, read two
+/// ways from one pass.
+///
+/// ★★★ THE SUM AND THE LARGEST BLOW ANSWER DIFFERENT QUESTIONS, and the sum
+/// answers the survival one wrongly in both directions. Three shooters that
+/// each take a third of a unit's hit points make a tile lethal without any of
+/// them being able to kill it, and one Bombard that kills outright reads the
+/// same as three Archers that between them merely wound. Route safety wants
+/// `total`; whether a unit is one blow from death wants `worst`.
+#[derive(Clone, Copy, Default)]
+struct IncomingDamage {
+    /// Every covering source's expected damage, added up.
+    total: f64,
+    /// The largest single one of them.
+    worst: f64,
+}
+
+impl IncomingDamage {
+    /// Nothing survives this: the unit is already gone from the board.
+    const LETHAL: Self = Self {
+        total: f64::INFINITY,
+        worst: f64::INFINITY,
+    };
+
+    fn with(mut self, damage: f64) -> Self {
+        self.total += damage;
+        self.worst = self.worst.max(damage);
+        self
+    }
+
+    fn merge(self, other: Self) -> Self {
+        Self {
+            total: self.total + other.total,
+            worst: self.worst.max(other.worst),
+        }
+    }
+}
+
 /// A legal resting place scored for an endangered unit. Safety is deliberately
 /// recorded separately from the healing rate: a City Center is excellent
 /// recovery ground only when the enemy's next turn cannot harm its garrison.
@@ -2023,24 +2062,6 @@ pub struct BasicAi {
     /// proof of siege that fog cannot suppress, and it self-clears because
     /// Civ 6 city health regenerates once the siege lifts.
     pub(crate) garrison_under_fire: bool,
-    /// Barbarian pressure buys ancient walls and nothing above them.
-    ///
-    /// ★★★★ `barbarian_defense_item` walked `walls → medieval_walls →
-    /// renaissance_walls` and ordered the first tier the city could still
-    /// produce, every time the local alarm fired with no unit gap — so a
-    /// walled city under a raider ring bought Medieval Walls (110), then
-    /// Renaissance Walls (150), against an enemy that cannot take a city at
-    /// all: barbarians never capture in Civilization VI, and `do_attack` leaves
-    /// a depleted city at 1 hit point for them here too. Measured over the 23
-    /// live games of 2026-08-18/19: 65 ancient walls, **26 medieval and 14
-    /// renaissance walls "for nearby barbarian pressure"** — roughly five
-    /// thousand production spent on tiers that change nothing a raider can
-    /// do, in cities that were building no Library. Ancient walls are the
-    /// tier that gives the city its ranged strike, which is the one thing
-    /// walls do to a raider; with this on they are the only tier the arm
-    /// orders. Live bundle and native repair (war half). Off for ordinary and
-    /// frozen controllers.
-    pub(crate) barbarian_walls_one_tier: bool,
     /// Scale each district family by how much of the empire still lacks it.
     pub(crate) district_coverage: bool,
     /// Break a production COST TIE by which great-work slots can actually be filled.
@@ -2169,9 +2190,6 @@ pub struct BasicAi {
     /// purchase city's majority. Off for the frozen native controllers and
     /// enabled explicitly by the Civilization VI bridge.
     live_religious_purchase_guard: bool,
-    /// Let the unit chooser ask for SIEGE as a role. Off for the frozen native
-    /// controllers. See `best_military_role` and `siege_is_the_missing_arm`.
-    siege_role: bool,
     /// Rebuild the recon arm when it is gone and there is still ground to
     /// chart. Off for the frozen native controllers. See
     /// `recon_is_the_missing_arm`.
@@ -2192,29 +2210,6 @@ pub struct BasicAi {
     /// controllers; on for the live bridge and the native repair bundle. See
     /// `naval_recon_is_the_missing_arm` and `AdvancedAi::naval_explorer`.
     pub(crate) naval_recon: bool,
-    /// Count a barbarian camp within `HOME_CAMP_RADIUS` of a city as home
-    /// ground the guard clears, not only one within the raider radius.
-    ///
-    /// ★★★★ TWO CAMPS SEVEN TILES FROM ROME STOOD FOR A WHOLE GAME. Run
-    /// civvis-20260816T155856Z: with the camps finally on the board (#1786),
-    /// the home guard's local-threat scan still asks whether a camp lies
-    /// within `HOME_THREAT_RADIUS` — six tiles, the raider radius — and both
-    /// camps sat at seven; from there they raised warriors, then archers,
-    /// men-at-arms, swordsmen and musketmen for two hundred turns, took eight
-    /// of fourteen Settlers within sight of the capital, and drew 121 attacks
-    /// on the raiders and none on themselves. A camp is not a raider: it does
-    /// not fight back, it keeps producing what does, and Civilization VI's
-    /// camps raise their raids toward cities well past six tiles.
-    ///
-    /// With this on, camps count as home ground within `HOME_CAMP_RADIUS`
-    /// (nine) in `barbarian_presence_at_home` (so the barbarian seat is an
-    /// enemy at home while such a camp stands), in the home guard's threat
-    /// list (ranked below any raider inside the raider radius) and in the
-    /// nearest-enemy scan that walks a unit onto it. Raiders keep the six-tile
-    /// radius. Off for the frozen native controllers; on for the live bridge
-    /// and the native repair bundle (a native camp seven tiles out raids the
-    /// same way).
-    camp_reach: bool,
     /// In peacetime the whole field army answers home threats, and a camp
     /// inside the camp reach ranks above raiders in the countryside.
     ///
@@ -2365,6 +2360,20 @@ pub struct BasicAi {
     /// frozen `advanced_v1` replay explicitly withholds it so its historical
     /// decision stream remains a stable control.
     precise_evacuation: bool,
+    /// A unit one enemy blow from death withdraws to safe healing ground, and
+    /// leaves that ground again the moment an enemy can strike it.
+    ///
+    /// `withdraw_hp` is a constant, and a constant cannot know how hard the
+    /// thing across the river hits. This reads the board instead: the largest
+    /// single blow anything visible could land on this unit where it stands,
+    /// at the top of the engine's damage roll, is the hit point total at which
+    /// it must be somewhere else. It rides on the same envelopes
+    /// `precise_evacuation` already computes, and pairs with it — with that
+    /// protection off, the fetch below is a fresh flow field per unit.
+    ///
+    /// Off by default and listed in `PRODUCTION_OPT_INS`, so it is measurable
+    /// natively before any promotion question is asked.
+    one_shot_recovery: bool,
     w: Weights,
     book_pos: usize, // opening-book progress (capital builds played so far)
     /// The opening book's Settler slot, held back because the capital was
@@ -2683,9 +2692,6 @@ pub struct BasicAi {
     /// needs four. Without this floor the rush plans a war it never builds
     /// the army for, which is the failure the census caught.
     pub(crate) rush_military_floor: usize,
-    /// Let a housing-short city reach for a building that adds housing before a
-    /// cheaper one that adds none. See the sort in `pick_item`.
-    pub(crate) housing_buildings: bool,
     /// Discount motionless Settlers from the expansion gate's in-flight test.
     /// The Civilization VI bridge turns this on; native tournament games leave
     /// it off so their recorded ladders and the frozen `advanced_v1` rating
@@ -4270,7 +4276,6 @@ impl BasicAi {
             amenity_districts: false,
             housing_districts: false,
             garrison_under_fire: false,
-            barbarian_walls_one_tier: false,
             district_coverage: false,
             slot_kind_tiebreak: false,
             pursue_religion: true,
@@ -4279,10 +4284,8 @@ impl BasicAi {
             plot_purchase_delegated: false,
             bank_envoys: false,
             live_religious_purchase_guard: false,
-            siege_role: false,
             recon_replacement: false,
             naval_recon: false,
-            camp_reach: false,
             camp_party: false,
             wonder_ring_settle_value: false,
             come_ashore: false,
@@ -4296,6 +4299,7 @@ impl BasicAi {
             tactical_strategy: false,
             unit_objective_memory: false,
             precise_evacuation: true,
+            one_shot_recovery: false,
             w: Weights::default(),
             book_pos: 0,
             book_settler_pending: false,
@@ -4329,7 +4333,6 @@ impl BasicAi {
             explore_goal: RefCell::new(HashMap::new()),
             unit_motion: BTreeMap::new(),
             rush_military_floor: 0,
-            housing_buildings: false,
             settler_strand_discount: false,
             parallel_settlers: false,
             host_settler_pop: false,
@@ -4429,15 +4432,6 @@ impl BasicAi {
     }
 
     /// Count a barbarian camp within nine tiles of a city as home ground.
-    /// See `camp_reach`.
-    pub fn enable_camp_reach(&mut self) {
-        self.camp_reach = true;
-    }
-
-    pub fn disable_camp_reach(&mut self) {
-        self.camp_reach = false;
-    }
-
     /// Answer a ring of shooters with a shooter. See `barbarian_ranged_answer`.
     pub fn enable_barbarian_ranged_answer(&mut self) {
         self.barbarian_ranged_answer = true;
@@ -4479,16 +4473,6 @@ impl BasicAi {
     /// Whether the peacetime camp party is on. See `camp_party`.
     pub fn camp_party(&self) -> bool {
         self.camp_party
-    }
-
-    /// The radius inside which a barbarian camp counts as home ground:
-    /// `HOME_CAMP_RADIUS` under `camp_reach`, the raider radius otherwise.
-    pub(crate) fn camp_radius(&self) -> i32 {
-        if self.camp_reach {
-            HOME_CAMP_RADIUS
-        } else {
-            HOME_THREAT_RADIUS
-        }
     }
 
     /// The camp errand's target for this unit: the nearest standing
@@ -4534,7 +4518,7 @@ impl BasicAi {
         if my_cities.is_empty() {
             return None;
         }
-        let camp_radius = self.camp_radius();
+        let camp_radius = HOME_THREAT_RADIUS;
         let turn = g.turn;
         self.camp_bounty_claims
             .retain(|_, (claimed_turn, _)| *claimed_turn == turn);
@@ -4623,7 +4607,6 @@ impl BasicAi {
             amenity_districts: false,
             housing_districts: false,
             garrison_under_fire: false,
-            barbarian_walls_one_tier: false,
             district_coverage: false,
             slot_kind_tiebreak: false,
             pursue_religion: true,
@@ -4632,10 +4615,8 @@ impl BasicAi {
             plot_purchase_delegated: false,
             bank_envoys: false,
             live_religious_purchase_guard: false,
-            siege_role: false,
             recon_replacement: false,
             naval_recon: false,
-            camp_reach: false,
             camp_party: false,
             wonder_ring_settle_value: false,
             come_ashore: false,
@@ -4649,6 +4630,7 @@ impl BasicAi {
             tactical_strategy: false,
             unit_objective_memory: false,
             precise_evacuation: true,
+            one_shot_recovery: false,
             w,
             book_pos: 0,
             book_settler_pending: false,
@@ -4682,7 +4664,6 @@ impl BasicAi {
             explore_goal: RefCell::new(HashMap::new()),
             unit_motion: BTreeMap::new(),
             rush_military_floor: 0,
-            housing_buildings: false,
             settler_strand_discount: false,
             parallel_settlers: false,
             host_settler_pop: false,
@@ -5309,10 +5290,8 @@ impl BasicAi {
         out
     }
 
-    /// Conservative expected damage from the hostile units whose precise
-    /// next-turn envelopes cover `position`. The engine still rolls combat;
-    /// this intentionally uses its unrandomized centre so a route decision is
-    /// stable and does not consume the game RNG.
+    /// The total of `incoming_damage`, which is what every route and refuge
+    /// decision has always read.
     fn evacuation_incoming_damage(
         g: &Game,
         pid: usize,
@@ -5320,8 +5299,23 @@ impl BasicAi {
         position: Pos,
         envelopes: &[(u32, std::sync::Arc<BTreeSet<Pos>>)],
     ) -> f64 {
+        Self::incoming_damage(g, pid, uid, position, envelopes).total
+    }
+
+    /// Conservative expected damage from the hostile units whose precise
+    /// next-turn envelopes cover `position`, as a total and as the largest
+    /// single blow among the same sources. The engine still rolls combat;
+    /// this intentionally uses its unrandomized centre so a route decision is
+    /// stable and does not consume the game RNG.
+    fn incoming_damage(
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        position: Pos,
+        envelopes: &[(u32, std::sync::Arc<BTreeSet<Pos>>)],
+    ) -> IncomingDamage {
         let Some(unit) = g.units.get(&uid) else {
-            return f64::INFINITY;
+            return IncomingDamage::LETHAL;
         };
         let mut defender = unit.clone();
         defender.pos = position;
@@ -5334,8 +5328,8 @@ impl BasicAi {
         // it. That makes a friendly city a genuine safe refuge even while the
         // enemy can still bombard its walls.
         let garrisoned = g.city_at(position).is_some() || g.encampment_at(position).is_some();
-        let unit_damage: f64 = if garrisoned {
-            0.0
+        let unit_damage: IncomingDamage = if garrisoned {
+            IncomingDamage::default()
         } else {
             envelopes
                 .iter()
@@ -5354,14 +5348,14 @@ impl BasicAi {
                         * ((effective_strength(attack, enemy.hp) - defender_strength) / 25.0).exp())
                     .clamp(1.0, 100.0)
                 })
-                .sum()
+                .fold(IncomingDamage::default(), IncomingDamage::with)
         };
 
         // A walled hostile City Center can strike on its next turn even when
         // it already spent this turn's strike. A garrison on a City Center or
         // Encampment is protected by that district rather than directly hit.
-        let city_damage: f64 = if garrisoned {
-            0.0
+        let city_damage: IncomingDamage = if garrisoned {
+            IncomingDamage::default()
         } else {
             g.cities
                 .values()
@@ -5376,13 +5370,13 @@ impl BasicAi {
                     (30.0 * ((g.city_ranged_strength(city.id) - defense) / 25.0).exp())
                         .clamp(1.0, 100.0)
                 })
-                .sum()
+                .fold(IncomingDamage::default(), IncomingDamage::with)
         };
         // Encampments carry an independent strike. As above, a strike spent
         // today is available again by the enemy's next turn, so only the
         // durable wall, health, and pillage state constrain this envelope.
-        let encampment_damage: f64 = if garrisoned {
-            0.0
+        let encampment_damage: IncomingDamage = if garrisoned {
+            IncomingDamage::default()
         } else {
             g.cities
                 .values()
@@ -5405,9 +5399,24 @@ impl BasicAi {
                     (30.0 * ((g.city_ranged_strength(city.id) - defense) / 25.0).exp())
                         .clamp(1.0, 100.0)
                 })
-                .sum()
+                .fold(IncomingDamage::default(), IncomingDamage::with)
         };
-        unit_damage + city_damage + encampment_damage
+        unit_damage.merge(city_damage).merge(encampment_damage)
+    }
+
+    /// The largest single blow anything the controller can see would land on
+    /// `uid` at `position` next turn, at the top of the engine's damage roll
+    /// and under the engine's own ceiling on one blow. A unit whose hit points
+    /// do not exceed this is one attack from being removed from the board.
+    fn killing_blow(
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        position: Pos,
+        envelopes: &[(u32, std::sync::Arc<BTreeSet<Pos>>)],
+    ) -> f64 {
+        (Self::incoming_damage(g, pid, uid, position, envelopes).worst * COMBAT_ROLL_MAX)
+            .min(MAX_SINGLE_BLOW)
     }
 
     fn evacuation_tile(
@@ -8238,17 +8247,6 @@ impl BasicAi {
         cid: u32,
         want_ranged: Option<bool>,
     ) -> Option<String> {
-        self.best_military_role(g, pid, cid, want_ranged, false)
-    }
-
-    fn best_military_role(
-        &self,
-        g: &Game,
-        pid: usize,
-        cid: u32,
-        want_ranged: Option<bool>,
-        want_siege: bool,
-    ) -> Option<String> {
         let mut best: Option<(f64, String)> = None;
         for (name, spec) in &g.rules.units {
             if spec.class != "military" || spec.domain.as_deref() == Some("sea") {
@@ -8259,32 +8257,6 @@ impl BasicAi {
                 Some(false) => spec.is_melee_capable(),
                 None => spec.has_ranged_attack() || spec.is_melee_capable(),
             };
-            // ★★★★★ SIEGE IS NOT A ROLE THIS CHOOSER HAD, so it never chose one.
-            // Every siege unit carries a ranged attack, so it competed in the
-            // RANGED bucket and lost on raw `strength.max(ranged)` to a Field
-            // Cannon — while the one property that makes it siege, FULL damage
-            // to walls where every other unit does half, is absent from that
-            // comparison entirely.
-            //
-            // Measured on run `civvis-20260803T082856Z`, a game CIVVIS was
-            // WINNING (turn 226, 7 cities, score 645, ~3x the corpus mean):
-            // 151 turns at war with England at **594 military against 56**, a
-            // ten to one advantage, and **zero cities taken**. All seven cities
-            // came from `found` events; not one was captured. England's cities
-            // sat at 400 wall and full health the whole time. CIVVIS held
-            // engineering, military_engineering, metal_casting AND steel, so
-            // catapult through artillery were all buildable — and it built
-            // **zero siege units in 251 turns**, 8 Field Cannons instead.
-            //
-            // ⚠ THE APPETITE WAS NEVER THE PROBLEM. `siege_units_wanted` and
-            // its `+95` production bonus both sit behind `if spec.siege`, i.e.
-            // they are consulted only for a unit this function has ALREADY
-            // returned. Instrumented over 251 turns, `siege_units_wanted` was
-            // entered ONCE. That is why #963 measured parity: it tuned an
-            // appetite that is read once a game.
-            if self.siege_role && want_siege && !spec.siege {
-                continue;
-            }
             if !matches_role {
                 continue;
             }
@@ -8454,50 +8426,6 @@ impl BasicAi {
         let want_ranged = melee > ranged;
         self.best_military(g, pid, cid, Some(want_ranged))
             .or_else(|| self.best_military(g, pid, cid, None))
-    }
-
-    /// Whether this empire is trying to crack a wall with nothing that can.
-    ///
-    /// Deliberately built from the BOARD, not from the strategic plan: this
-    /// lives in `BasicAi`, the plan does not reach here, and the two facts that
-    /// matter — is there a walled enemy city we could actually reach, and do we
-    /// own anything that breaks walls — are both on the board already.
-    ///
-    /// ⚠ Bounded by `SIEGE_ARM_MAX`, and it stops asking as soon as the arm
-    /// exists. Without that this becomes "build siege forever", which is the
-    /// `all-army-no-economy` failure, and every mechanism that spent more on
-    /// the military has measured null.
-    fn siege_is_the_missing_arm(&self, g: &Game, pid: usize) -> bool {
-        if self.minor || self.barb {
-            return false;
-        }
-        let owned_siege = g
-            .units
-            .values()
-            .filter(|unit| unit.owner == pid && g.rules.units[unit.kind].siege)
-            .count();
-        if owned_siege >= SIEGE_ARM_MAX {
-            return false;
-        }
-        let home: Vec<Pos> = g
-            .cities
-            .values()
-            .filter(|city| city.owner == pid)
-            .map(|city| city.pos)
-            .collect();
-        if home.is_empty() {
-            return false;
-        }
-        g.cities.values().any(|city| {
-            city.owner != pid
-                && g.is_at_war(pid, city.owner)
-                && !g.players[city.owner].is_barbarian
-                && g.city_max_wall_hp(city) > 0
-                && city.wall_hp > 0
-                && home
-                    .iter()
-                    .any(|mine| g.wdist(*mine, city.pos) <= SIEGE_TARGET_REACH)
-        })
     }
 
     /// Whether this empire has stopped being able to find anything.
@@ -9542,14 +9470,7 @@ impl BasicAi {
                 unit: Name::new(&unit),
             });
         }
-        // See `barbarian_walls_one_tier`: a raider cannot take a city, so
-        // the tiers above ancient walls buy it nothing.
-        let tiers: &[&str] = if self.barbarian_walls_one_tier {
-            &["walls"]
-        } else {
-            &["walls", "medieval_walls", "renaissance_walls"]
-        };
-        for building in tiers {
+        for building in ["walls", "medieval_walls", "renaissance_walls"] {
             let wall = Item::Building {
                 building: Name::new(building),
             };
@@ -9955,7 +9876,6 @@ impl BasicAi {
         // So the floor itself has to know an arm is missing. It stays a
         // headcount for everything else; this only adds "and we own nothing
         // that breaks a wall we are actually besieging".
-        let missing_siege_arm = self.siege_role && self.siege_is_the_missing_arm(g, pid);
         // ★★★★★ AND THE SAME HEADCOUNT CANNOT SEE THAT THE EMPIRE HAS GONE
         // BLIND. See [`BasicAi::recon_is_the_missing_arm`]: a floor of bodies
         // reads a 22-unit army as finished while not one of them explores, and
@@ -9967,7 +9887,6 @@ impl BasicAi {
         let missing_naval_recon_arm = self.naval_recon_is_the_missing_arm(g, pid);
         if can_add_military
             && ((military as f64) < military_floor
-                || missing_siege_arm
                 || missing_recon_arm
                 || missing_naval_recon_arm)
         {
@@ -9978,9 +9897,6 @@ impl BasicAi {
             // defender while the wall-breaker remained impossible. Try the
             // concrete gaps in order, then use ordinary force production only
             // while the actual headcount is below its floor.
-            let siege_pick = missing_siege_arm
-                .then(|| self.best_military_role(g, pid, cid, None, true))
-                .flatten();
             let recon_pick = missing_recon_arm
                 .then(|| self.best_recon(g, pid, cid))
                 .flatten();
@@ -9997,7 +9913,7 @@ impl BasicAi {
             } else {
                 None
             };
-            let picked = siege_pick.or(recon_pick).or(naval_recon_pick).or(force_pick);
+            let picked = recon_pick.or(naval_recon_pick).or(force_pick);
             if let Some(m) = picked {
                 // ⚠ THE BRANCH THAT WINS MUST SAY SO.
                 //
@@ -10008,8 +9924,7 @@ impl BasicAi {
                 // the two disagreed with no way to tell which was wrong.
                 think!(self.journal, Cities, Detail,
                        "Military floor takes the build";
-                       "holding {military} against a floor of {military_floor:.1}{}{}{}",
-                       if missing_siege_arm { ", and the siege arm is missing" } else { "" },
+                       "holding {military} against a floor of {military_floor:.1}{}{}",
                        if missing_recon_arm { ", and the empire has no eyes" } else { "" },
                        if missing_naval_recon_arm { ", and no ship to chart the sea" } else { "" });
                 return Some(Item::Unit { unit: Name::new(&m) });
@@ -10480,49 +10395,6 @@ impl BasicAi {
             // — that argument belongs elsewhere — and a building with no slots keeps
             // its exact position. What it stops is the alphabet deciding a real
             // question.
-            // ★★★★★ CHEAPEST-FIRST IS BLIND TO THE ONE THING STOPPING THIS CITY.
-            //
-            // The comment below says "cheapest-first is untouched as a policy —
-            // that argument belongs elsewhere". This is that argument, made as
-            // narrowly as it can be made: a city that has run out of HOUSING
-            // reaches for a building that adds some before a cheaper one that
-            // adds none. Every other pair keeps its exact order.
-            //
-            // The district block ~150 lines above already does this for
-            // `aqueduct` and `neighborhood`, and `buy_gold_infrastructure`
-            // already weights `spec.housing` by the same need on the gold path.
-            // The production path — which is where the baseline governor makes
-            // most of an empire's builds — ranked by price alone, so a Sewer was
-            // worth exactly its cost to a city that could not grow another
-            // citizen.
-            //
-            // Measured at the final turn of the 24 completed live runs of
-            // 2026-08-07/08, over all 116 cities: **44% are housing-STOPPED**
-            // (pop >= housing, growth halted) and another 9% are throttled at
-            // headroom 1, against a median food surplus of +6.5 a turn — the
-            // food is there and the housing is not. Coverage of the buildings
-            // that would fix it: Sewer 0.42 per city, Water Mill 0.47.
-            //
-            // Population is what district slots are made of (one per three), and
-            // a score fit over the same 24 games prices a district at +9.34 —
-            // the largest single term. The settler repair raised cities 5 -> 8
-            // and districts stayed flat at 30 -> 31, because the new cities
-            // could not grow into their slots. This is that ceiling.
-            //
-            // ⚠ Capped by the shortfall exactly as the district block is, so a
-            // city one short does not outrank its whole queue to over-build by
-            // three.
-            let housing_short = if self.housing_buildings && !self.minor {
-                (HOUSING_HEADROOM_TARGET - g.city_housing_headroom(&g.cities[&cid])).max(0.0)
-            } else {
-                0.0
-            };
-            let housing_lift = |building: &Name| -> f64 {
-                if housing_short <= 0.0 {
-                    return 0.0;
-                }
-                housing_short.min(g.rules.buildings[building].housing.max(0.0))
-            };
             let tiebreak = self.slot_kind_tiebreak;
             let slot_worth = |b: &Name| -> f64 {
                 if !tiebreak {
@@ -10538,10 +10410,7 @@ impl BasicAi {
                     .sum()
             };
             buildable.sort_by(|a, b| {
-                housing_lift(&b.1)
-                    .partial_cmp(&housing_lift(&a.1))
-                    .unwrap_or(std::cmp::Ordering::Equal)
-                    .then_with(|| a.0.cmp(&b.0))
+                a.0.cmp(&b.0)
                     .then_with(|| {
                         // ⚠⚠ ONLY WHEN BOTH CANDIDATES HAVE SLOTS. My first version
                         // compared slot worth across every cost tie, which is a far
@@ -12838,7 +12707,7 @@ impl BasicAi {
                 let camp_radius = if barbarian_response {
                     HOME_CAMP_RADIUS
                 } else {
-                    self.camp_radius()
+                    HOME_THREAT_RADIUS
                 };
                 for camp in g.barb_camps.keys() {
                     let distance = home_distance(*camp);
@@ -13147,9 +13016,9 @@ impl BasicAi {
         if !self.barb {
             if let Some(bp) = g.barb_pid {
                 if enemy_ids.contains(&bp) {
-                    // See `camp_reach`: a camp counts as home ground out to
-                    // `camp_radius`, a raider only to the six-tile ring.
-                    let camp_radius = self.camp_radius();
+                    // A camp counts as home ground out to the same six-tile
+                    // ring a raider does.
+                    let camp_radius = HOME_THREAT_RADIUS;
                     let camp_near_home = |tpos: Pos| -> bool {
                         my_cities.is_empty()
                             || my_cities.iter().map(|c| g.wdist(tpos, *c)).min().unwrap()
@@ -13947,6 +13816,100 @@ impl BasicAi {
         false
     }
 
+    /// The largest single blow the observed enemy could land on this unit
+    /// where it stands, at the top of the engine's damage roll. Zero when the
+    /// gene is off, so a caller can compare against it unconditionally.
+    ///
+    /// ⚠ COSTS NOTHING EXTRA WHERE IT IS CALLED, AND THE FILTER IS WHY. The
+    /// envelope table is the most expensive thing this controller computes —
+    /// one movement flow field per visible enemy, and #2059 turned a per-unit
+    /// recompute of it into a six-fold slowdown of every simulation on the
+    /// fleet. The set of units answered below is exactly `retreat_step`'s,
+    /// which `healing_step` has already run on this board, so the fetch is a
+    /// hit on that cache under the same key rather than a fresh table. The
+    /// price of that discipline is that a support unit — a Battering Ram, a
+    /// Siege Tower — keeps the constant withdrawal floor it has always had.
+    ///
+    /// A garrison is answered before the fetch: an attack on a City Center or
+    /// an Encampment damages the district, not the formation standing in it.
+    /// See `one_shot_recovery`.
+    fn one_shot_killing_blow(&self, g: &Game, pid: usize, uid: u32) -> f64 {
+        if !self.one_shot_recovery {
+            return 0.0;
+        }
+        let Some(unit) = g.units.get(&uid) else {
+            return 0.0;
+        };
+        let spec = &g.rules.units[unit.kind];
+        // Air units are not on the board between missions; they rebase.
+        if unit.owner != pid
+            || unit.moves_left <= 0.0
+            || spec.class != "military"
+            || spec.domain.as_deref() == Some("air")
+            || (!spec.is_melee_capable() && !spec.has_ranged_attack())
+        {
+            return 0.0;
+        }
+        let here = unit.pos;
+        if g.city_at(here).is_some() || g.encampment_at(here).is_some() {
+            return 0.0;
+        }
+        let envelopes = self.enemy_attack_envelopes(g, pid);
+        Self::killing_blow(g, pid, uid, here, &envelopes)
+    }
+
+    /// Recovery ground an enemy can strike next turn is not recovery ground.
+    /// Score every tile this unit can reach the way an evacuation does and
+    /// take the best of them, so a unit healing under a shooter that has just
+    /// arrived steps out of its reach instead of fortifying beneath it.
+    ///
+    /// ★★ THE ROUTE STEP CANNOT OFFER THIS MOVE. `safe_healing_step` returns
+    /// the first hop of a route to distant healing ground, so the one step
+    /// sideways that leaves the envelope is invisible to it, and so is every
+    /// tile that is merely less exposed than this one. When it finds nothing,
+    /// the caller fortifies where it stands and heals under the axe.
+    /// See `one_shot_recovery`.
+    fn step_out_of_reach_to_heal(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+        envelopes: &[(u32, std::sync::Arc<BTreeSet<Pos>>)],
+    ) -> bool {
+        let Some(unit) = g.units.get(&uid) else {
+            return false;
+        };
+        if unit.moves_left <= 0.0 {
+            return false;
+        }
+        let here = unit.pos;
+        let Some(holding) = Self::evacuation_tile(g, pid, uid, here, None, envelopes) else {
+            return false;
+        };
+        // Nothing can reach this tile next turn, so healing on it is right.
+        if holding.incoming <= 1e-9 {
+            return false;
+        }
+        let mut candidates: Vec<EvacuationTile> = g
+            .reachable(uid)
+            .into_iter()
+            .filter_map(|position| Self::evacuation_tile(g, pid, uid, position, None, envelopes))
+            .collect();
+        if let Some(step) = self.safe_healing_step(g, pid, uid, envelopes) {
+            candidates.extend(Self::evacuation_tile(g, pid, uid, step, None, envelopes));
+        }
+        // ⚠ NO DANGER ANCHOR, ON PURPOSE. With one, `evacuation_tile_cmp`
+        // depends on where the unit is standing, and a unit stepping to the
+        // best tile from A can find A the best tile again from B. Without one
+        // the order is fixed over tiles, this only ever moves to a strictly
+        // better tile, and a turn cannot be spent walking in a circle.
+        let Some(next) = candidates.into_iter().max_by(Self::evacuation_tile_cmp) else {
+            return false;
+        };
+        Self::evacuation_tile_is_better(next, holding)
+            && self.move_to_evacuation_tile(g, pid, uid, next.position)
+    }
+
     fn healing_step(&mut self, g: &mut Game, pid: usize, uid: u32) -> Option<bool> {
         // There is no recovery on a Tactics arena, because nothing heals
         // there. A unit that dropped below the withdrawal line would be put
@@ -13977,11 +13940,21 @@ impl BasicAi {
         let return_at_hp = self.w.rejoin_hp.max(self.w.withdraw_hp + 5.0).round() as i32;
 
         let hp = g.units[&uid].hp;
-        if hp >= return_at_hp {
+        // ★★★ `one_shot_recovery`: THE WITHDRAWAL LINE IS THE ENEMY'S TO SET.
+        // A constant cannot know that the thing across the river hits for 70,
+        // so a unit on 60 reads healthy right up to the turn it is removed
+        // from the board. This asks what one blow would do to this unit here,
+        // treats a unit that would not survive one as already in recovery
+        // whatever its hit points say, and keeps it there while the offer
+        // stands — rejoining at the static line walks it back under the same
+        // gun on the same hit points.
+        let killing_blow = self.one_shot_killing_blow(g, pid, uid);
+        let one_blow_from_death = f64::from(hp) <= killing_blow;
+        if hp >= return_at_hp && !one_blow_from_death {
             self.recovering_units.remove(&uid);
             return None;
         }
-        if hp <= withdraw_at_hp {
+        if hp <= withdraw_at_hp || one_blow_from_death {
             self.recovering_units.insert(uid);
         }
         if !self.recovering_units.contains(&uid) {
@@ -13998,6 +13971,17 @@ impl BasicAi {
             // an enemy envelope is not a place to wait merely because it heals.
             if g.unit_heal_rate(uid) >= 15 && holding.is_some_and(|tile| tile.incoming <= 1e-9) {
                 return Some(self.fortify_or_stop(g, pid, uid));
+            }
+            // ★★★ `one_shot_recovery`, the other half: GROUND UNDER AN ENEMY'S
+            // NEXT TURN IS NOT RECOVERY GROUND, whatever it heals at. The hold
+            // above has just refused this tile, and the route hop below can
+            // only offer the first step toward distant healing ground — one
+            // tile, chosen without asking whether it is still under the same
+            // shooter. This scores every tile the unit can actually reach,
+            // which is what puts a wounded unit inside the City Center two
+            // steps away instead of one tile nearer to it.
+            if self.one_shot_recovery && self.step_out_of_reach_to_heal(g, pid, uid, &envelopes) {
+                return Some(true);
             }
             if let (Some(holding), Some(next)) =
                 (holding, self.safe_healing_step(g, pid, uid, &envelopes))
@@ -18806,6 +18790,211 @@ mod tests {
         assert!(!ai.recovering_units.contains(&warrior));
     }
 
+    /// A flat, empty two-player board at war, holding exactly three things:
+    /// our City Center, a Warrior of ours standing two steps outside it, and
+    /// one enemy Archer two steps beyond that Warrior on the far side.
+    ///
+    /// The Archer is the whole point. Its shot at a Warrior on 50 hit points
+    /// is worth about 45 on the average — survivable, and so not a lethal
+    /// pool — while `game::damage` rolls it at `uniform(0.8, 1.2)`, which
+    /// kills outright. Returns `(game, our Warrior, its tile, the city)`.
+    fn a_warrior_under_one_archer() -> (Game, u32, Pos, Pos) {
+        let mut game = Game::new_full(2, 20, 14, 91_484, 80, 0, false);
+        for unit in game.units.keys().copied().collect::<Vec<_>>() {
+            game.remove_unit(unit);
+        }
+        game.map.clear_rivers();
+        for tile in game.map.tiles.values_mut() {
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+            tile.resource = None;
+            tile.improvement = None;
+            tile.district = None;
+            tile.district_foundation = None;
+            tile.wonder = None;
+            tile.owner_city = None;
+            tile.hills = false;
+            tile.road = 0;
+        }
+        game.at_war.insert((0, 1));
+        game.current = 0;
+
+        let front = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .find(|position| game.wdisk(*position, 4).len() == 61)
+            .expect("fixture needs an interior tile with four clear rings");
+        let home = game
+            .wdisk(front, 2)
+            .into_iter()
+            .find(|position| game.wdist(*position, front) == 2)
+            .expect("fixture needs a tile two steps from the front");
+        game.found_city_for(0, home, Some("Refuge".to_string()));
+        let shooter = game
+            .wdisk(front, 2)
+            .into_iter()
+            .filter(|position| game.wdist(*position, front) == 2)
+            .max_by_key(|position| game.wdist(*position, home))
+            .expect("fixture needs a firing position on the far side");
+
+        let ours = game.spawn_test_unit("warrior", 0, front);
+        let archer = game.spawn_test_unit("archer", 1, shooter);
+        assert!(
+            game.attack_reach(archer).contains(&front),
+            "the fixture's whole subject is a shot the Archer can take next turn"
+        );
+        assert!(
+            game.reachable(ours).contains(&home),
+            "and a City Center the Warrior can reach this turn"
+        );
+        (game, ours, front, home)
+    }
+
+    /// ★★★ THE CASE BOTH EXISTING TESTS ABOVE MISS. `withdraw_hp` is 45 and
+    /// the pool this tile invites is 45, so a Warrior on 50 is healthy by the
+    /// floor and safe by the lethal-pool test — and dies to the next shot
+    /// whenever the engine rolls above its average, which is half the time.
+    /// See `one_shot_recovery`.
+    #[test]
+    fn a_unit_one_blow_from_death_withdraws_though_the_static_floor_calls_it_healthy() {
+        let (mut game, ours, front, home) = a_warrior_under_one_archer();
+        game.units.get_mut(&ours).unwrap().hp = 50;
+
+        let probe = BasicAi::new();
+        let envelopes = probe.enemy_attack_envelopes(&game, 0);
+        let pool = BasicAi::evacuation_incoming_damage(&game, 0, ours, front, &envelopes);
+        let blow = BasicAi::killing_blow(&game, 0, ours, front, &envelopes);
+        assert!(
+            pool < 50.0,
+            "the expected pool is {pool:.1}: a survivable tile"
+        );
+        assert!(
+            blow >= 50.0,
+            "the top of that same roll is {blow:.1}: a dead Warrior"
+        );
+
+        // Untreated, no part of the controller has anything to say about it.
+        let mut control = game.clone();
+        let mut untreated = BasicAi::new();
+        assert_eq!(
+            untreated.healing_step(&mut control, 0, ours),
+            None,
+            "50 is above the withdrawal floor and the pool is not lethal"
+        );
+        assert_eq!(control.units[&ours].pos, front);
+        assert!(!untreated.recovering_units.contains(&ours));
+
+        let mut ai = BasicAi::new();
+        ai.one_shot_recovery = true;
+        assert_eq!(ai.healing_step(&mut game, 0, ours), Some(true));
+        assert!(ai.recovering_units.contains(&ours));
+        assert_eq!(
+            game.units[&ours].pos, home,
+            "the Warrior spends the turn getting inside the City Center"
+        );
+        let envelopes = ai.enemy_attack_envelopes(&game, 0);
+        assert_eq!(
+            BasicAi::killing_blow(&game, 0, ours, home, &envelopes),
+            0.0,
+            "a garrison is not a target: the district takes the shot"
+        );
+    }
+
+    /// The other half: a unit part-way through recovery, on ground an Archer
+    /// has since come within reach of.
+    ///
+    /// Nothing above answers this. The pool is not lethal, so no retreat is
+    /// created; the tile is threatened, so the stationary hold refuses it; and
+    /// the route hop is one tile toward distant healing ground, chosen without
+    /// asking whether the same shooter still covers where it lands. What is
+    /// left is the fortify-and-heal fallback, under the Archer.
+    /// See `one_shot_recovery`.
+    #[test]
+    fn a_healing_unit_leaves_ground_the_enemy_can_still_reach() {
+        let (mut game, ours, front, home) = a_warrior_under_one_archer();
+        // Withdrawn at 45 several turns ago and healing since: still in
+        // recovery, and now well clear of one Archer shot.
+        game.units.get_mut(&ours).unwrap().hp = 60;
+
+        let probe = BasicAi::new();
+        let envelopes = probe.enemy_attack_envelopes(&game, 0);
+        let pool = BasicAi::evacuation_incoming_damage(&game, 0, ours, front, &envelopes);
+        assert!(
+            pool > 0.0 && pool < 60.0,
+            "a threatened but survivable tile: {pool:.1}"
+        );
+        assert!(
+            BasicAi::killing_blow(&game, 0, ours, front, &envelopes) < 60.0,
+            "and not one blow from death either: this half stands on its own"
+        );
+
+        let mut control = game.clone();
+        let mut untreated = BasicAi::new();
+        untreated.recovering_units.insert(ours);
+        assert_eq!(untreated.healing_step(&mut control, 0, ours), Some(true));
+        let control_envelopes = untreated.enemy_attack_envelopes(&control, 0);
+        let rested = control.units[&ours].pos;
+        assert!(
+            BasicAi::killing_blow(&control, 0, ours, rested, &control_envelopes) > 0.0,
+            "untreated, the Warrior heals on where the Archer can still shoot it"
+        );
+
+        let mut ai = BasicAi::new();
+        ai.one_shot_recovery = true;
+        ai.recovering_units.insert(ours);
+        assert_eq!(ai.healing_step(&mut game, 0, ours), Some(true));
+        assert_eq!(
+            game.units[&ours].pos, home,
+            "treated, it finishes healing on ground the Archer cannot reach"
+        );
+        assert!(
+            ai.recovering_units.contains(&ours),
+            "and it is still recovering: leaving the tile is not rejoining the line"
+        );
+    }
+
+    /// The pool and the largest blow are different questions, and the pool
+    /// answers the survival one wrongly in both directions: three Warriors
+    /// that cannot kill anything add up to a lethal tile, while the single
+    /// Archer that can kill outright is a fraction of their sum.
+    #[test]
+    fn the_incoming_pool_and_the_killing_blow_are_different_readings() {
+        let (mut game, ours, front, _home) = a_warrior_under_one_archer();
+        game.units.get_mut(&ours).unwrap().hp = 60;
+        for position in game.nbrs(front) {
+            if game.units_at(position).is_empty() && game.city_at(position).is_none() {
+                game.spawn_test_unit("warrior", 1, position);
+            }
+        }
+
+        let envelopes = BasicAi::new().enemy_attack_envelopes(&game, 0);
+        let pool = BasicAi::evacuation_incoming_damage(&game, 0, ours, front, &envelopes);
+        let blow = BasicAi::killing_blow(&game, 0, ours, front, &envelopes);
+        assert!(
+            pool > blow,
+            "a pool of {pool:.1} is not one blow of {blow:.1}"
+        );
+        assert!(
+            blow <= MAX_SINGLE_BLOW,
+            "no single blow exceeds what the engine can deal: {blow:.1}"
+        );
+    }
+
+    /// The gene ships off, and it is registered where a native screen can
+    /// price it. `production_opt_in_rows_are_real` guards the row itself.
+    #[test]
+    fn one_shot_recovery_is_an_off_by_default_native_gene() {
+        assert!(!BasicAi::new().one_shot_recovery);
+        let (field, tag, _) = *PRODUCTION_OPT_INS
+            .iter()
+            .find(|(field, _, _)| *field == "one_shot_recovery")
+            .expect("the gene is registered as a native opt-in");
+        assert_eq!(field, "one_shot_recovery");
+        assert_eq!(tag, "one-shot-recovery");
+    }
+
     /// One major with a capital, plus a fabricated barbarian warrior on an
     /// open tile adjacent to the major's warrior. Returns (game, warrior,
     /// barb warrior).
@@ -18872,90 +19061,6 @@ mod tests {
         let g: Game = serde_json::from_value(snapshot).unwrap();
         (g, city, bid)
     }
-
-    /// ★★★★ Barbarians never capture a city — `do_attack` leaves a depleted
-    /// city at 1 hit point for them — yet `barbarian_defense_item` walked the
-    /// wall tiers and bought Medieval and Renaissance Walls "for nearby
-    /// barbarian pressure" 40 times across 23 live games. See
-    /// `barbarian_walls_one_tier`: under a raider ring with the local garrison
-    /// already standing, ancient walls are ordered once, and a city that has
-    /// them is asked for nothing above them.
-    #[test]
-    fn barbarian_pressure_buys_ancient_walls_and_no_tier_above_them() {
-        let (mut g, city, _raider) = barbarian_at_the_gates_game(88_301);
-        g.players[0].techs.insert(crate::name!("masonry"));
-        g.players[0].techs.insert(crate::name!("castles"));
-        g.players[0].techs.insert(crate::name!("siege_tactics"));
-        // The city already holds its local defender: the arm's unit branch is
-        // satisfied and only the wall branch answers.
-        let cpos = g.cities[&city].pos;
-        for _ in 0..2 {
-            g.spawn_test_unit("warrior", 0, cpos);
-        }
-        assert!(
-            BasicAi::barbarian_local_alarm(&g, 0, city),
-            "precondition: the raider ring is in reach"
-        );
-        assert_eq!(
-            BasicAi::barbarian_defense_gap(&g, 0, city),
-            0,
-            "precondition: no defender is owed, so the wall branch decides"
-        );
-        let mut one_tier = BasicAi::new();
-        one_tier.barbarian_walls_one_tier = true;
-        let all_tiers = BasicAi::new();
-        let walls = Item::Building {
-            building: crate::name!("walls"),
-        };
-        // No walls yet: both arms order ancient walls.
-        assert_eq!(
-            all_tiers.barbarian_defense_item(&g, 0, city),
-            Some(walls.clone())
-        );
-        assert_eq!(
-            one_tier.barbarian_defense_item(&g, 0, city),
-            Some(walls.clone())
-        );
-        // Ancient walls standing: the old arm escalates, the repaired one is done.
-        g.cities
-            .get_mut(&city)
-            .unwrap()
-            .buildings
-            .push(crate::name!("walls"));
-        let max_wall = g.city_max_wall_hp(&g.cities[&city]);
-        g.cities.get_mut(&city).unwrap().wall_hp = max_wall;
-        let medieval = Item::Building {
-            building: crate::name!("medieval_walls"),
-        };
-        assert!(
-            g.can_produce(0, city, &medieval),
-            "precondition: the fixture can produce medieval walls"
-        );
-        let escalated = all_tiers.barbarian_defense_item(&g, 0, city);
-        assert!(
-            matches!(&escalated, Some(Item::Building { building }) if building.as_str() == "medieval_walls"),
-            "precondition: the shipped arm walks up a tier ({escalated:?})"
-        );
-        assert_eq!(
-            one_tier.barbarian_defense_item(&g, 0, city),
-            None,
-            "a raider cannot take the city; nothing above ancient walls is owed to it"
-        );
-        // Stock controllers never carry it (the live bundle and the native
-        // repair bundle turn it on; `live_bundle_and_registry_agree` pins the
-        // wiring).
-        assert!(!BasicAi::new().barbarian_walls_one_tier);
-    }
-
-
-
-
-
-
-
-
-
-
 
     #[test]
     fn barbarian_alert_suppresses_an_available_trader() {
@@ -21277,95 +21382,6 @@ mod tests {
 
         let melee = ai.combined_arms_unit(&g, 0, cid, 2, 2).unwrap();
         assert!(!g.rules.units[melee].has_ranged_attack());
-    }
-
-    /// A missing arm only owns production when this city can supply it.  The
-    /// t208--241 live Rome loss had no Oil, so neither Artillery nor Rocket
-    /// Artillery was legal; the old siege-first fallback ignored the available
-    /// Spec Ops recon arm and built Machine Guns/AT Crews until the empire had
-    /// 30 unrelated defenders and still no city-taking capability.
-    #[test]
-    fn an_unfillable_siege_gap_yields_to_a_buildable_recon_gap() {
-        let (mut g, home, enemy) = walled_war_game(90_079);
-        g.cities.get_mut(&enemy).unwrap().wall_hp = 100;
-        g.players[0].techs.extend([
-            crate::name!("military_engineering"),
-            crate::name!("metal_casting"),
-            crate::name!("steel"),
-            crate::name!("chemistry"),
-            crate::name!("advanced_ballistics"),
-            crate::name!("plastics"),
-        ]);
-        // Artillery needs Oil and Bombards need Niter.  The strongest generic
-        // fallback (Machine Gun) needs neither, which is exactly why the old
-        // branch could inflate the army forever without repairing its role.
-        g.players[0]
-            .strategic_resources
-            .insert(crate::name!("oil"), 0.0);
-        g.players[0]
-            .strategic_resources
-            .insert(crate::name!("niter"), 0.0);
-        let mut ai = BasicAi::new();
-        ai.siege_role = true;
-        ai.recon_replacement = true;
-
-        assert!(ai.siege_is_the_missing_arm(&g, 0));
-        assert!(ai.recon_is_the_missing_arm(&g, 0));
-        assert_eq!(
-            ai.best_military_role(&g, 0, home, None, true),
-            None,
-            "the wall-breaking arm is genuinely unavailable without Oil/Niter"
-        );
-        assert_eq!(
-            ai.best_recon(&g, 0, home).as_deref(),
-            Some("spec_ops"),
-            "a legal recon unit remains available to repair the other live gap"
-        );
-
-        let item = ai
-            .pick_item(&g, 0, home, 1, 0, 0, 0, 1, 24, 6, 0)
-            .expect("the capability gap should still choose the concrete recon unit");
-        assert_eq!(
-            item,
-            Item::Unit {
-                unit: crate::name!("spec_ops")
-            },
-            "an unfillable siege request must not hide the buildable recon arm behind a generic Machine Gun"
-        );
-    }
-
-    #[test]
-    fn an_unfillable_role_gap_above_the_force_floor_keeps_the_ordinary_queue() {
-        let (mut g, home, enemy) = walled_war_game(90_080);
-        g.cities.get_mut(&enemy).unwrap().wall_hp = 100;
-        g.players[0].techs.extend([
-            crate::name!("military_engineering"),
-            crate::name!("metal_casting"),
-            crate::name!("steel"),
-            crate::name!("advanced_ballistics"),
-        ]);
-        g.players[0]
-            .strategic_resources
-            .insert(crate::name!("oil"), 0.0);
-        g.players[0]
-            .strategic_resources
-            .insert(crate::name!("niter"), 0.0);
-        let mut live = BasicAi::new();
-        live.siege_role = true;
-        let frozen = BasicAi::new();
-
-        assert!(live.siege_is_the_missing_arm(&g, 0));
-        assert_eq!(live.best_military_role(&g, 0, home, None, true), None);
-        let ordinary = frozen
-            .pick_item(&g, 0, home, 1, 0, 0, 0, 1, 24, 6, 0)
-            .expect("the ordinary queue has a legal production choice");
-        let treated = live
-            .pick_item(&g, 0, home, 1, 0, 0, 0, 1, 24, 6, 0)
-            .expect("the unavailable live role must fall through to the ordinary queue");
-        assert_eq!(
-            treated, ordinary,
-            "once the force floor is met, an unavailable role gap must not manufacture a generic military unit"
-        );
     }
 
     #[test]

@@ -2925,7 +2925,6 @@ mod tests {
             ("advanced", civvis::ai::AdvancedAi::new()),
         ] {
             for (flag, on) in [
-                ("muster_at_command_radius", ai.muster_at_command_radius),
                 ("war_economy", ai.war_economy),
                 ("war_reinforcement", ai.war_reinforcement),
                 ("war_patience", ai.war_patience),
@@ -2940,7 +2939,6 @@ mod tests {
                 ("army_target_weighs_the_enemy", ai.army_target_weighs_the_enemy),
                 ("peacetime_deterrence", ai.peacetime_deterrence),
                 ("strike_opening", ai.strike_opening),
-                ("ranged_needs_line_of_sight", ai.ranged_needs_line_of_sight),
                 // Evaluator-only like the rest of this list: the stalled-settler
                 // fallback must reach neither the anchor nor production until it
                 // has a number.
@@ -2949,10 +2947,6 @@ mod tests {
                     ai.settler_founds_when_stalled,
                 ),
                 ("fortify_idle_units", ai.fortify_idle_units()),
-                (
-                    "suzerain_cards_need_a_suzerainty",
-                    ai.suzerain_cards_need_a_suzerainty,
-                ),
                 ("amenity_project_preemption", ai.amenity_project_preemption),
             ] {
                 assert!(
