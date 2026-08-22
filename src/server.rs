@@ -12871,10 +12871,8 @@ mod tests {
             );
         }
         // The two chords that game puts Shift on, and nothing else may.
-        assert!(EMBEDDED_INDEX
-            .contains("{id: \"EndTurnAnyway\", key: \"1\", shift: true"));
-        assert!(EMBEDDED_INDEX
-            .contains("{id: \"AddMapTack\", key: \"a\", shift: true"));
+        assert!(EMBEDDED_INDEX.contains("{id: \"EndTurnAnyway\", key: \"1\", shift: true"));
+        assert!(EMBEDDED_INDEX.contains("{id: \"AddMapTack\", key: \"a\", shift: true"));
         // `A` is Attack in Civ 6 and this client attacks by pointing, so it
         // carries no order of its own — it was Alert here until this table
         // was reconciled with the game's, and must not quietly become one
@@ -12903,10 +12901,16 @@ mod tests {
         // Everything that needs a seat is withheld from a spectator, and
         // everything that only describes the picture is not.
         for (action, spectator) in [
-            ("EndTurn", false), ("Fortify", false), ("SkipTurn", false),
-            ("ToggleTechTree", false), ("ToggleGovernment", false),
-            ("ToggleYield", true), ("LensSettler", true), ("ToggleFSMap", true),
-            ("ToggleRankings", true), ("OpenCivilopedia", true),
+            ("EndTurn", false),
+            ("Fortify", false),
+            ("SkipTurn", false),
+            ("ToggleTechTree", false),
+            ("ToggleGovernment", false),
+            ("ToggleYield", true),
+            ("LensSettler", true),
+            ("ToggleFSMap", true),
+            ("ToggleRankings", true),
+            ("OpenCivilopedia", true),
         ] {
             let row = shortcuts
                 .split_once(&format!("{{id: \"{action}\","))
@@ -12967,18 +12971,16 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("else if (ev.button === 1) {"));
         // macOS Control-click is a platform secondary click; Command belongs to
         // the browser, and never becomes a map binding.
-        assert!(EMBEDDED_INDEX.contains(
-            "(MAC_POINTER_PLATFORM && ev.button === 0 && ev.ctrlKey)"
-        ));
+        assert!(EMBEDDED_INDEX.contains("(MAC_POINTER_PLATFORM && ev.button === 0 && ev.ctrlKey)"));
         // Command, Control and Option belong to the browser and never become
         // map bindings. Shift does, for the two chords Civ 6 puts it on, so
         // it is matched from its own table rather than refused outright.
-        assert!(EMBEDDED_INDEX.contains(
-            "if (ev.metaKey || ev.ctrlKey || ev.altKey) return undefined;"
-        ));
-        assert!(EMBEDDED_INDEX.contains(
-            "const table = ev.shiftKey ? SHIFT_KEY_ACTIONS : KEY_ACTIONS;"
-        ));
+        assert!(
+            EMBEDDED_INDEX.contains("if (ev.metaKey || ev.ctrlKey || ev.altKey) return undefined;")
+        );
+        assert!(
+            EMBEDDED_INDEX.contains("const table = ev.shiftKey ? SHIFT_KEY_ACTIONS : KEY_ACTIONS;")
+        );
         assert_eq!(EMBEDDED_INDEX.matches("shift: true").count(), 2);
         // Space and Enter belong to whichever control has focus, so a person
         // navigating by keyboard never skips a unit by pressing a button.
@@ -16697,8 +16699,13 @@ mod tests {
             .expect("end of the yield strip")
             .0;
         let mut previous = 0;
-        for yield_key in ["key:\"science\"", "key:\"culture\"", "key:\"faith\"", "key:\"gold\"",
-                          "key:\"tourism\""] {
+        for yield_key in [
+            "key:\"science\"",
+            "key:\"culture\"",
+            "key:\"faith\"",
+            "key:\"gold\"",
+            "key:\"tourism\"",
+        ] {
             let at = strip
                 .find(yield_key)
                 .unwrap_or_else(|| panic!("the top panel is missing {yield_key}"));
@@ -16783,9 +16790,9 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("const empire = worldStandingsInPlay();"));
         assert!(EMBEDDED_INDEX.contains("const yields = !empire ? \"\" :"));
         assert!(EMBEDDED_INDEX.contains("const meters = !empire ? \"\" :"));
-        assert!(EMBEDDED_INDEX.contains(
-            "if (!playingSolo() || !RULES || !worldStandingsInPlay()) {"
-        ));
+        assert!(
+            EMBEDDED_INDEX.contains("if (!playingSolo() || !RULES || !worldStandingsInPlay()) {")
+        );
 
         // Civilization VI opens a city on what it can build. The plot market
         // is a fold at the foot of that column, never ahead of it.
@@ -16796,14 +16803,24 @@ mod tests {
             .split_once("document.getElementById(\"cityscreen-build\").innerHTML = build;")
             .expect("end of the city build column")
             .0;
-        let producing = build.find("city-group-head\">Producing").expect("the producing group");
+        let producing = build
+            .find("city-group-head\">Producing")
+            .expect("the producing group");
         let categories = build
             .find("const order = [\"Districts\", \"Buildings\", \"Units\", \"Wonders\", \"Projects\"];")
             .or_else(|| build.find("for (const category of order) {"))
             .expect("the production categories");
-        let plots = build.find("city-group-head\">Buy plots").expect("the plot market");
-        assert!(producing < categories, "a city opens on what it is producing");
-        assert!(categories < plots, "the plot market comes after the production list");
+        let plots = build
+            .find("city-group-head\">Buy plots")
+            .expect("the plot market");
+        assert!(
+            producing < categories,
+            "a city opens on what it is producing"
+        );
+        assert!(
+            categories < plots,
+            "the plot market comes after the production list"
+        );
         assert!(build.contains("<details class=\"city-group city-plots\""));
     }
 
@@ -16853,12 +16870,15 @@ mod tests {
         // the nearby-action pass this client has and that game does not. `1`
         // is EndTurn there, so it can no longer be either of them.
         assert!(EMBEDDED_INDEX.contains("if (step > 0) { advanceToNextUnit(true); return; }"));
-        assert!(EMBEDDED_INDEX.contains(
-            "{id: \"NextAction\", key: \"n\", run: () => nextAction()},"
-        ));
+        assert!(
+            EMBEDDED_INDEX.contains("{id: \"NextAction\", key: \"n\", run: () => nextAction()},")
+        );
         assert!(EMBEDDED_INDEX.contains("{id: \"NextUnit\", key: \".\", run: () => cycleUnit(1)},"));
-        assert!(EMBEDDED_INDEX.contains("{id: \"PrevUnit\", key: \",\", run: () => cycleUnit(-1)},"));
-        assert!(EMBEDDED_INDEX.contains("{id: \"EndTurn\", key: \"1\", run: () => advanceTurn(false)},"));
+        assert!(
+            EMBEDDED_INDEX.contains("{id: \"PrevUnit\", key: \",\", run: () => cycleUnit(-1)},")
+        );
+        assert!(EMBEDDED_INDEX
+            .contains("{id: \"EndTurn\", key: \"1\", run: () => advanceTurn(false)},"));
         assert!(!EMBEDDED_INDEX.contains("id: \"NextUnitTab\""));
     }
 
