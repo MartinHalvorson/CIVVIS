@@ -819,3 +819,176 @@ mod chain_tech_probe {
         }
     }
 }
+
+#[cfg(test)]
+mod variance_probe {
+    use super::*;
+
+    /// What separates a good science game from a bad one?
+    ///
+    /// ★★ THE CONTROL'S OWN SPREAD IS LARGER THAN ANY GENE IN THIS BUNDLE.
+    /// Across four census rounds the untreated seat finished with **40, 46, 60
+    /// and 65 Research Labs** and **2370, 2591, 3512 and 3483 Science** — and
+    /// the two genes that help move Labs by a fifth *where there is a gap*.
+    /// Explaining the spread is worth more than another marginal price.
+    ///
+    /// One game in the seed-88 round is the extreme: Writing at t30 and the
+    /// first Library standing at **t120**, nine cities, four Libraries, ZERO
+    /// Research Labs. Another on the same profile had twelve cities and eight
+    /// Labs. Whatever separates those two is the real science lever.
+    ///
+    /// This reports one line per seed so the driver can be read off rather
+    /// than guessed at: when the first Campus stood, when the first Library
+    /// stood, and what the empire finished with.
+    ///
+    /// ★★★★★ ANSWERED, AND IT REDIRECTS THE WHOLE LANE. Twelve seeds, the
+    /// untreated seat:
+    ///
+    /// ```text
+    ///     seed campus1 library1  chem  cities campus lib lab  science  score
+    /// 89000008      54       63   137      17     16  16   8    460.1   1384
+    /// 89000003      78       86   146      13     12  11   8    413.8   1032
+    /// 89000001      50       54   148      16     14  14   8    350.7   1058
+    /// 89000000      84       84   141       9      8   8   6    356.2    894
+    /// 89000010      58       65   123      10      8   8   8    296.6   1066
+    /// 89000009     145      149   211       9      7   7   2    145.5    548
+    /// 89000002      53      125  never      9      6   6   0    100.5    495
+    /// ```
+    ///
+    ///     corr(first Campus turn, Science)  = -0.30
+    ///     corr(first Library turn, Science) = -0.64
+    ///     corr(cities,             Science) = +0.68
+    ///
+    /// **Cities predict Science better than anything this bundle prices**, and
+    /// the first Library's turn is nearly as strong the other way. The two
+    /// worst games are the two late ones: seed 9 did not stand a Campus until
+    /// **t145**, and seed 2 never researched Chemistry at all — nought Labs,
+    /// a hundred Science, half the score of the median game.
+    ///
+    /// ⇒ **Late-game science in this engine is downstream of expansion and of
+    /// the chain's EARLY timing.** It is not a late-game quantity at all. That
+    /// is why nine genes aimed at the late game produced two conditional wins
+    /// and five nulls, and why the one that tried to force the tech order was
+    /// the worst of them — it bought Chemistry with the expansion Science is
+    /// made of (`chain_tech_lookahead`: -17% Labs and SEVENTEEN fewer cities).
+    ///
+    /// The operator's premise is right — the same table shows Science and
+    /// score moving together, 460/1384 at the top and 100/495 at the bottom.
+    /// The lever is just not where the pricing lives: it is `land_grab`,
+    /// `wide-map-capacity` and whatever gets the first Campus standing before
+    /// turn 60.
+    #[test]
+    #[ignore = "census, not an assertion; run explicitly with --nocapture"]
+    fn what_separates_a_good_science_game_from_a_bad_one() {
+        let campus = crate::name!("campus");
+        println!(
+            "{:>10}{:>8}{:>9}{:>9}{:>8}{:>8}{:>7}{:>7}{:>10}{:>8}",
+            "seed",
+            "campus1",
+            "library1",
+            "chem",
+            "cities",
+            "campus",
+            "lib",
+            "lab",
+            "science",
+            "score"
+        );
+        let mut rows = Vec::new();
+        for seed in 0..12u64 {
+            let mut g = Game::new(6, 60, 38, 89_000_000 + seed, 250, 6);
+            g.game_speed = GameSpeed::Online;
+            g.victory_conditions =
+                crate::game::VictoryConditions::parse("science,culture,domination,score").unwrap();
+            let mut me = AdvancedAi::new();
+            me.enable_engine_repairs_universe();
+            let mut others = AdvancedAi::fleet(&g);
+            let (mut campus1, mut library1, mut chem) = (0u32, 0u32, 0u32);
+            while g.winner.is_none() && g.turn <= 250 {
+                let pid = g.current;
+                if pid == 0 {
+                    me.take_turn(&mut g, pid);
+                    let cities = g.player_city_ids(0);
+                    if campus1 == 0
+                        && cities
+                            .iter()
+                            .any(|c| g.city_has_district_family(&g.cities[c], campus))
+                    {
+                        campus1 = g.turn;
+                    }
+                    if library1 == 0
+                        && cities
+                            .iter()
+                            .any(|c| g.cities[c].buildings.contains(&crate::name!("library")))
+                    {
+                        library1 = g.turn;
+                    }
+                    if chem == 0 && g.players[0].techs.contains(&crate::name!("chemistry")) {
+                        chem = g.turn;
+                    }
+                } else {
+                    others[pid].take_turn(&mut g, pid);
+                }
+                if g.winner.is_none() && g.current == pid {
+                    let _ = g.apply(pid, &Action::EndTurn);
+                }
+            }
+            let cities = g.player_city_ids(0);
+            let holding = |name: &str| {
+                cities
+                    .iter()
+                    .filter(|c| g.cities[c].buildings.contains(&Name::new(name)))
+                    .count()
+            };
+            let science: f64 = cities.iter().map(|c| g.city_yields(*c).science).sum();
+            let campuses = cities
+                .iter()
+                .filter(|c| g.city_has_district_family(&g.cities[c], campus))
+                .count();
+            let labs = holding("research_lab");
+            println!(
+                "{:>10}{:>8}{:>9}{:>9}{:>8}{:>8}{:>7}{:>7}{:>10.1}{:>8}",
+                89_000_000 + seed,
+                campus1,
+                library1,
+                chem,
+                cities.len(),
+                campuses,
+                holding("library"),
+                labs,
+                science,
+                g.score(0)
+            );
+            rows.push((
+                campus1 as f64,
+                library1 as f64,
+                cities.len() as f64,
+                science,
+            ));
+        }
+        // The correlation the table is for, stated rather than eyeballed.
+        let corr = |pick: fn(&(f64, f64, f64, f64)) -> f64| {
+            let n = rows.len() as f64;
+            let (mx, my) = (
+                rows.iter().map(pick).sum::<f64>() / n,
+                rows.iter().map(|r| r.3).sum::<f64>() / n,
+            );
+            let cov: f64 = rows.iter().map(|r| (pick(r) - mx) * (r.3 - my)).sum();
+            let vx: f64 = rows.iter().map(|r| (pick(r) - mx).powi(2)).sum();
+            let vy: f64 = rows.iter().map(|r| (r.3 - my).powi(2)).sum();
+            if vx <= 0.0 || vy <= 0.0 {
+                0.0
+            } else {
+                cov / (vx * vy).sqrt()
+            }
+        };
+        println!(
+            "VARIANCE corr(first Campus turn, Science) = {:+.2} · \
+             corr(first Library turn, Science) = {:+.2} · \
+             corr(cities, Science) = {:+.2}",
+            corr(|r| r.0),
+            corr(|r| r.1),
+            corr(|r| r.2)
+        );
+    }
+}
