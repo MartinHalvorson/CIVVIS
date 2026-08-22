@@ -1184,7 +1184,7 @@ pub struct QueryCache {
     /// inside a `&self` query, so it is computed once per memo scope. Almost
     /// always empty: a patrol needs a fighter, and Flight is deep enough
     /// that most games never see one.
-    air_patrols: std::cell::RefCell<Option<Arc<Vec<(usize, Pos)>>>>,
+    air_patrols: std::cell::RefCell<Option<AirPatrols>>,
     /// Which improvements let a unit pass, indexed by [`Name::id`].
     ///
     /// ★★★★ A RULESET FACT ASKED PER TILE, BY STRING. `class_can_traverse`
@@ -1193,7 +1193,7 @@ pub struct QueryCache {
     /// movement flood. The rules do not change inside a game, let alone
     /// inside a query, so the answer is a table built once per memo scope
     /// and read with one array index.
-    passage_improvements: std::cell::RefCell<Option<Arc<Vec<bool>>>>,
+    passage_improvements: std::cell::RefCell<Option<PassageTable>>,
     amenities: std::cell::RefCell<Option<BTreeMap<u32, i64>>>,
     // Ownership-filtered ids are requested throughout AI evaluation. A
     // 100-seat game otherwise rescans every world entity for each request,
@@ -1263,6 +1263,12 @@ impl Clone for QueryCache {
 /// Scope over which `Game::city_yields`, `Game::traversal_class`, and the
 /// empire-wide read aggregates answer from a cache. Dropping the outermost
 /// guard clears it.
+/// Every unit flying a patrol, as `(owner, tile)` — see `Game::air_patrols`.
+type AirPatrols = Arc<Vec<(usize, Pos)>>;
+/// `true` at `Name::id` for improvements that grant passage — see
+/// `Game::passage_improvements`.
+type PassageTable = Arc<Vec<bool>>;
+
 pub struct QueryMemo<'a> {
     game: &'a Game,
     outermost: bool,
@@ -16126,11 +16132,11 @@ impl Game {
     /// rebuilt per call — exactly the work the open-coded scan did, never
     /// more. `query_memo.yields` is the discriminator for "a scope is live",
     /// the same one `query_memo()` itself uses.
-    fn air_patrols(&self) -> Arc<Vec<(usize, Pos)>> {
+    fn air_patrols(&self) -> AirPatrols {
         if let Some(cached) = self.query_memo.air_patrols.borrow().as_ref() {
             return Arc::clone(cached);
         }
-        let patrols: Arc<Vec<(usize, Pos)>> = Arc::new(
+        let patrols: AirPatrols = Arc::new(
             self.units
                 .values()
                 .filter(|unit| unit.air_patrol)
@@ -16149,7 +16155,7 @@ impl Game {
     /// Sized to the largest improvement id, so an id past the end simply names
     /// something that is not an improvement and reads `false`, which is what
     /// the `BTreeMap` miss it replaces returned.
-    fn passage_improvements(&self) -> Arc<Vec<bool>> {
+    fn passage_improvements(&self) -> PassageTable {
         if let Some(cached) = self.query_memo.passage_improvements.borrow().as_ref() {
             return Arc::clone(cached);
         }
@@ -23757,12 +23763,9 @@ impl Game {
         // whole-board scan to once per memo scope, and the list is empty in
         // every game that never fields a fighter.
         let patrols = self.air_patrols();
-        if !patrols.is_empty()
-            && patrols
-                .iter()
-                .any(|&(owner, patrol)| {
-                    patrol == pos && owner != u.owner && self.is_at_war(u.owner, owner)
-                })
+        if patrols
+            .iter()
+            .any(|&(owner, at)| at == pos && owner != u.owner && self.is_at_war(u.owner, owner))
         {
             return false;
         }
