@@ -1645,7 +1645,7 @@ class BatchRefreshSecondsTests(unittest.TestCase):
             strategy="auto", war_from_plan=False, tile_export_every=25,
             refresh_seconds=None, no_peace_deterrence=False, with_=[], without=[],
             no_counter_resolutions=False, combat_frames=0, replan_frames=2,
-            settler_escort_cap_sync=False,
+            settler_escort_cap_sync=False, restart_below_leader_ratio=None,
         )
         values.update(changes)
         return SimpleNamespace(**values)
@@ -1661,6 +1661,17 @@ class BatchRefreshSecondsTests(unittest.TestCase):
         self.assertEqual(cmd[cmd.index("--abandon-below-win-rate") + 1], "0.05")
         self.assertNotIn(
             "--abandon-below-win-rate",
+            climb.play_command(self._play_args(), "t",
+                               Path("orders.sqlite"), Path("civvis_orders")))
+
+    def test_the_three_signal_restart_ratio_reaches_the_play_command(self):
+        cmd = climb.play_command(
+            self._play_args(restart_below_leader_ratio=0.70), "t",
+            Path("orders.sqlite"), Path("civvis_orders"))
+        self.assertIn("--restart-below-leader-ratio", cmd)
+        self.assertEqual(cmd[cmd.index("--restart-below-leader-ratio") + 1], "0.7")
+        self.assertNotIn(
+            "--restart-below-leader-ratio",
             climb.play_command(self._play_args(), "t",
                                Path("orders.sqlite"), Path("civvis_orders")))
 
