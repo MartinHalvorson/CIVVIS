@@ -67,6 +67,7 @@ These screenable genes have no native on/off result, so they receive no rank or 
 
 | Gene | Default | Description |
 |---|---|---|
+| `air-surge` | off (unmeasured) | Beeline Advanced Flight from three technologies out, raise an Aerodrome and a bomber wing, and take the appointed city with the cavalry behind it. |
 | `barbarian-bargain` | off (unmeasured) | Price a raider's life below a major's. |
 | `barbarian-hunt` | off (unmeasured) | Walk onto a visible, undefended barbarian camp one legal step away — the clear IS the move, so no attack scan ever offers it, and without this a unit ends it… |
 | `barbarian-ranged-answer` | off (unmeasured) | Answer a ring of shooters with a shooter. |
