@@ -39,6 +39,16 @@ fn play(seed: u64, arm: impl Fn(&mut AdvancedAi)) -> Chain {
     // there: six players, 60x38, Online, 250 turns.
     let mut g = Game::new(6, 60, 38, seed, 250, 6);
     g.game_speed = GameSpeed::Online;
+    // ⚠ THE SAME CONDITIONING THE SCREEN NEEDED, FOR THE SAME REASON. Left at
+    // the default six lanes, a native six-player game ends by RELIGIOUS
+    // conversion 76% of the time at a median turn 147 of 250 — so the late
+    // game these genes exist to price does not happen in three games out of
+    // four, and a census of where the research chain stops would be a census
+    // of where it stops at turn 147. The first run of this census returned 32
+    // technologies a game against the screen's 62 for exactly that reason.
+    g.victory_conditions =
+        crate::game::VictoryConditions::parse("science,culture,domination,score")
+            .expect("the screen's own lanes");
     let mut me = AdvancedAi::new();
     // `gene_screen::treated_seat` starts here, then sets each gene.
     me.enable_engine_repairs_universe();
