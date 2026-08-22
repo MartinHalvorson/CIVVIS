@@ -21,7 +21,8 @@
     "hurts": "the mirror image",
     "shape": "one screen: a source whose profile is not `screen` above is marked legacy and kept as history; new ones are refused",
     "win_column": "wins added per 10,000 games at the gene's measured on-rate in one screen, (win_on - 1/players) * 10000; last and prior are the two most recent screens that priced the gene",
-    "default_on": "both win columns positive, or their average above +15 with neither below -10; with exactly one populated column, on when it is above +20; unmeasured is off"
+    "win_diff": "the pooled on rate minus the pooled off rate in percentage points, over every screen that priced the gene, each weighted by its games - the ranking's `Diff`, the whole on-off difference",
+    "default_on": "both win columns positive, or their average above +15 with neither below -10; with exactly one populated column, on when it is above +20; unmeasured is off; and off whatever the columns say when win_diff_pp is below 0"
   },
   "sources": [
     {
@@ -161,7 +162,7 @@
     "helps": 18,
     "hurts": 4,
     "unresolved": 44,
-    "default_on": 33
+    "default_on": 30
   },
   "genes": [
     {
@@ -170,6 +171,7 @@
       "default_on": true,
       "wins_last_10k": 12,
       "wins_prior_10k": 18,
+      "win_diff_pp": 0.13907,
       "family_wise": false,
       "conflict": false,
       "screen": {
@@ -206,6 +208,7 @@
       "default_on": false,
       "wins_last_10k": -14,
       "wins_prior_10k": -4,
+      "win_diff_pp": 0.060843,
       "family_wise": false,
       "conflict": false,
       "screen": {
@@ -239,9 +242,10 @@
     {
       "tag": "apostle-promotion-by-role",
       "verdict": "unresolved",
-      "default_on": true,
+      "default_on": false,
       "wins_last_10k": 14,
       "wins_prior_10k": 12,
+      "win_diff_pp": -0.060843,
       "family_wise": false,
       "conflict": false,
       "screen": {
@@ -278,6 +282,7 @@
       "default_on": false,
       "wins_last_10k": 30,
       "wins_prior_10k": -4,
+      "win_diff_pp": 0.008692,
       "family_wise": false,
       "conflict": false,
       "screen": {
@@ -314,6 +319,7 @@
       "default_on": false,
       "wins_last_10k": 5,
       "wins_prior_10k": null,
+      "win_diff_pp": 0.091044,
       "family_wise": false,
       "conflict": false,
       "screen": {
@@ -350,6 +356,7 @@
       "default_on": false,
       "wins_last_10k": -86,
       "wins_prior_10k": null,
+      "win_diff_pp": -1.729828,
       "family_wise": true,
       "conflict": false,
       "screen": {
@@ -386,6 +393,7 @@
       "default_on": false,
       "wins_last_10k": 14,
       "wins_prior_10k": null,
+      "win_diff_pp": 0.284511,
       "family_wise": false,
       "conflict": false,
       "screen": {
@@ -422,6 +430,7 @@
       "default_on": true,
       "wins_last_10k": 23,
       "wins_prior_10k": 61,
+      "win_diff_pp": 0.895263,
       "family_wise": false,
       "conflict": false,
       "screen": {
@@ -458,6 +467,7 @@
       "default_on": true,
       "wins_last_10k": 30,
       "wins_prior_10k": 17,
+      "win_diff_pp": 0.551934,
       "family_wise": false,
       "conflict": false,
       "screen": {
@@ -494,6 +504,7 @@
       "default_on": false,
       "wins_last_10k": -7,
       "wins_prior_10k": 4,
+      "win_diff_pp": 0.008692,
       "family_wise": false,
       "conflict": false,
       "screen": {
@@ -530,6 +541,7 @@
       "default_on": true,
       "wins_last_10k": 19,
       "wins_prior_10k": 39,
+      "win_diff_pp": 0.569318,
       "family_wise": false,
       "conflict": false,
       "screen": {
@@ -566,6 +578,7 @@
       "default_on": false,
       "wins_last_10k": 13,
       "wins_prior_10k": null,
+      "win_diff_pp": 0.25037,
       "family_wise": false,
       "conflict": false,
       "screen": {
@@ -602,6 +615,7 @@
       "default_on": true,
       "wins_last_10k": 24,
       "wins_prior_10k": null,
+      "win_diff_pp": 0.489359,
       "family_wise": false,
       "conflict": false,
       "screen": {
@@ -638,6 +652,7 @@
       "default_on": false,
       "wins_last_10k": -2,
       "wins_prior_10k": 26,
+      "win_diff_pp": 0.286832,
       "family_wise": false,
       "conflict": false,
       "screen": {
@@ -674,6 +689,7 @@
       "default_on": true,
       "wins_last_10k": 13,
       "wins_prior_10k": 53,
+      "win_diff_pp": 0.691004,
       "family_wise": false,
       "conflict": false,
       "screen": {
@@ -710,6 +726,7 @@
       "default_on": false,
       "wins_last_10k": -6,
       "wins_prior_10k": -4,
+      "win_diff_pp": -0.108648,
       "family_wise": false,
       "conflict": false,
       "screen": {
@@ -746,6 +763,7 @@
       "default_on": true,
       "wins_last_10k": 11,
       "wins_prior_10k": 36,
+      "win_diff_pp": 0.221643,
       "family_wise": false,
       "conflict": false,
       "screen": {
@@ -782,6 +800,7 @@
       "default_on": false,
       "wins_last_10k": 32,
       "wins_prior_10k": -9,
+      "win_diff_pp": 0.126032,
       "family_wise": false,
       "conflict": false,
       "screen": {
@@ -818,6 +837,7 @@
       "default_on": false,
       "wins_last_10k": -22,
       "wins_prior_10k": null,
+      "win_diff_pp": -0.432457,
       "family_wise": false,
       "conflict": false,
       "screen": {
@@ -854,6 +874,7 @@
       "default_on": false,
       "wins_last_10k": -5,
       "wins_prior_10k": -11,
+      "win_diff_pp": -0.086919,
       "family_wise": false,
       "conflict": false,
       "screen": {
@@ -890,6 +911,7 @@
       "default_on": true,
       "wins_last_10k": 72,
       "wins_prior_10k": 7,
+      "win_diff_pp": 0.595393,
       "family_wise": true,
       "conflict": false,
       "screen": {
@@ -926,6 +948,7 @@
       "default_on": true,
       "wins_last_10k": 14,
       "wins_prior_10k": 48,
+      "win_diff_pp": 0.458132,
       "family_wise": false,
       "conflict": false,
       "screen": {
@@ -962,6 +985,7 @@
       "default_on": false,
       "wins_last_10k": -5,
       "wins_prior_10k": 17,
+      "win_diff_pp": 0.473707,
       "family_wise": false,
       "conflict": false,
       "screen": {
@@ -998,6 +1022,7 @@
       "default_on": false,
       "wins_last_10k": 13,
       "wins_prior_10k": -8,
+      "win_diff_pp": -0.27814,
       "family_wise": true,
       "conflict": false,
       "screen": {
@@ -1034,6 +1059,7 @@
       "default_on": false,
       "wins_last_10k": -30,
       "wins_prior_10k": null,
+      "win_diff_pp": -0.603164,
       "family_wise": false,
       "conflict": false,
       "screen": {
@@ -1070,6 +1096,7 @@
       "default_on": true,
       "wins_last_10k": 46,
       "wins_prior_10k": null,
+      "win_diff_pp": 0.910436,
       "family_wise": false,
       "conflict": true,
       "screen": {
@@ -1106,6 +1133,7 @@
       "default_on": true,
       "wins_last_10k": 78,
       "wins_prior_10k": null,
+      "win_diff_pp": 1.559121,
       "family_wise": true,
       "conflict": false,
       "screen": {
@@ -1142,6 +1170,7 @@
       "default_on": false,
       "wins_last_10k": 63,
       "wins_prior_10k": -27,
+      "win_diff_pp": 0.805973,
       "family_wise": true,
       "conflict": false,
       "screen": {
@@ -1178,6 +1207,7 @@
       "default_on": false,
       "wins_last_10k": -15,
       "wins_prior_10k": 4,
+      "win_diff_pp": -0.260756,
       "family_wise": false,
       "conflict": false,
       "screen": {
@@ -1214,6 +1244,7 @@
       "default_on": false,
       "wins_last_10k": 5,
       "wins_prior_10k": -9,
+      "win_diff_pp": -0.13907,
       "family_wise": false,
       "conflict": false,
       "screen": {
@@ -1250,6 +1281,7 @@
       "default_on": true,
       "wins_last_10k": 13,
       "wins_prior_10k": 39,
+      "win_diff_pp": 0.204259,
       "family_wise": false,
       "conflict": false,
       "screen": {
@@ -1286,6 +1318,7 @@
       "default_on": true,
       "wins_last_10k": 36,
       "wins_prior_10k": 23,
+      "win_diff_pp": 0.653262,
       "family_wise": false,
       "conflict": false,
       "screen": {
@@ -1322,6 +1355,7 @@
       "default_on": true,
       "wins_last_10k": 2,
       "wins_prior_10k": 35,
+      "win_diff_pp": 0.212098,
       "family_wise": false,
       "conflict": false,
       "screen": {
@@ -1358,6 +1392,7 @@
       "default_on": false,
       "wins_last_10k": 3,
       "wins_prior_10k": -4,
+      "win_diff_pp": -0.104302,
       "family_wise": true,
       "conflict": false,
       "screen": {
@@ -1394,6 +1429,7 @@
       "default_on": true,
       "wins_last_10k": 40,
       "wins_prior_10k": 73,
+      "win_diff_pp": 0.977836,
       "family_wise": true,
       "conflict": false,
       "screen": {
@@ -1430,6 +1466,7 @@
       "default_on": false,
       "wins_last_10k": 16,
       "wins_prior_10k": -11,
+      "win_diff_pp": -0.026076,
       "family_wise": false,
       "conflict": false,
       "screen": {
@@ -1466,6 +1503,7 @@
       "default_on": true,
       "wins_last_10k": 15,
       "wins_prior_10k": 24,
+      "win_diff_pp": 0.408518,
       "family_wise": false,
       "conflict": false,
       "screen": {
@@ -1502,6 +1540,7 @@
       "default_on": true,
       "wins_last_10k": 23,
       "wins_prior_10k": null,
+      "win_diff_pp": 0.455218,
       "family_wise": true,
       "conflict": false,
       "screen": {
@@ -1538,6 +1577,7 @@
       "default_on": true,
       "wins_last_10k": 1,
       "wins_prior_10k": 39,
+      "win_diff_pp": 0.260756,
       "family_wise": false,
       "conflict": false,
       "screen": {
@@ -1574,6 +1614,7 @@
       "default_on": false,
       "wins_last_10k": -31,
       "wins_prior_10k": null,
+      "win_diff_pp": -0.614544,
       "family_wise": false,
       "conflict": false,
       "screen": {
@@ -1610,6 +1651,7 @@
       "default_on": true,
       "wins_last_10k": 30,
       "wins_prior_10k": null,
+      "win_diff_pp": 0.591783,
       "family_wise": false,
       "conflict": false,
       "screen": {
@@ -1646,6 +1688,7 @@
       "default_on": true,
       "wins_last_10k": 48,
       "wins_prior_10k": 81,
+      "win_diff_pp": 1.0691,
       "family_wise": false,
       "conflict": false,
       "screen": {
@@ -1682,6 +1725,7 @@
       "default_on": false,
       "wins_last_10k": 30,
       "wins_prior_10k": -2,
+      "win_diff_pp": 0.291178,
       "family_wise": false,
       "conflict": false,
       "screen": {
@@ -1718,6 +1762,7 @@
       "default_on": true,
       "wins_last_10k": 14,
       "wins_prior_10k": 6,
+      "win_diff_pp": 0.082573,
       "family_wise": false,
       "conflict": false,
       "screen": {
@@ -1754,6 +1799,7 @@
       "default_on": true,
       "wins_last_10k": 6,
       "wins_prior_10k": 29,
+      "win_diff_pp": 0.378096,
       "family_wise": false,
       "conflict": false,
       "screen": {
@@ -1790,6 +1836,7 @@
       "default_on": false,
       "wins_last_10k": 24,
       "wins_prior_10k": -3,
+      "win_diff_pp": 0.369405,
       "family_wise": false,
       "conflict": false,
       "screen": {
@@ -1826,6 +1873,7 @@
       "default_on": true,
       "wins_last_10k": 41,
       "wins_prior_10k": null,
+      "win_diff_pp": 0.819392,
       "family_wise": false,
       "conflict": false,
       "screen": {
@@ -1862,6 +1910,7 @@
       "default_on": false,
       "wins_last_10k": -3,
       "wins_prior_10k": 13,
+      "win_diff_pp": 0.034767,
       "family_wise": false,
       "conflict": false,
       "screen": {
@@ -1898,6 +1947,7 @@
       "default_on": true,
       "wins_last_10k": 24,
       "wins_prior_10k": 23,
+      "win_diff_pp": 0.212951,
       "family_wise": false,
       "conflict": false,
       "screen": {
@@ -1934,6 +1984,7 @@
       "default_on": true,
       "wins_last_10k": 15,
       "wins_prior_10k": 1,
+      "win_diff_pp": 0.069535,
       "family_wise": false,
       "conflict": false,
       "screen": {
@@ -1970,6 +2021,7 @@
       "default_on": true,
       "wins_last_10k": 50,
       "wins_prior_10k": null,
+      "win_diff_pp": 1.001479,
       "family_wise": false,
       "conflict": false,
       "screen": {
@@ -2003,9 +2055,10 @@
     {
       "tag": "siege-commitment",
       "verdict": "unresolved",
-      "default_on": true,
+      "default_on": false,
       "wins_last_10k": 1,
       "wins_prior_10k": 3,
+      "win_diff_pp": -0.212951,
       "family_wise": false,
       "conflict": false,
       "screen": {
@@ -2042,6 +2095,7 @@
       "default_on": false,
       "wins_last_10k": -16,
       "wins_prior_10k": 14,
+      "win_diff_pp": -0.404172,
       "family_wise": false,
       "conflict": false,
       "screen": {
@@ -2078,6 +2132,7 @@
       "default_on": false,
       "wins_last_10k": -3,
       "wins_prior_10k": 21,
+      "win_diff_pp": 0.404172,
       "family_wise": false,
       "conflict": false,
       "screen": {
@@ -2114,6 +2169,7 @@
       "default_on": false,
       "wins_last_10k": -12,
       "wins_prior_10k": 20,
+      "win_diff_pp": 0.191221,
       "family_wise": false,
       "conflict": false,
       "screen": {
@@ -2150,6 +2206,7 @@
       "default_on": false,
       "wins_last_10k": -27,
       "wins_prior_10k": -860,
+      "win_diff_pp": -0.4875,
       "family_wise": false,
       "conflict": false,
       "screen": {
@@ -2170,6 +2227,7 @@
       "default_on": true,
       "wins_last_10k": 13,
       "wins_prior_10k": 21,
+      "win_diff_pp": 0.265102,
       "family_wise": false,
       "conflict": false,
       "screen": {
@@ -2206,6 +2264,7 @@
       "default_on": false,
       "wins_last_10k": -5,
       "wins_prior_10k": 21,
+      "win_diff_pp": 0.217297,
       "family_wise": false,
       "conflict": false,
       "screen": {
@@ -2242,6 +2301,7 @@
       "default_on": true,
       "wins_last_10k": 17,
       "wins_prior_10k": 21,
+      "win_diff_pp": 0.378096,
       "family_wise": false,
       "conflict": false,
       "screen": {
@@ -2278,6 +2338,7 @@
       "default_on": false,
       "wins_last_10k": -16,
       "wins_prior_10k": -5,
+      "win_diff_pp": -0.263002,
       "family_wise": false,
       "conflict": false,
       "screen": {
@@ -2311,9 +2372,10 @@
     {
       "tag": "war-economy",
       "verdict": "helps",
-      "default_on": true,
+      "default_on": false,
       "wins_last_10k": 38,
       "wins_prior_10k": 8,
+      "win_diff_pp": -0.782269,
       "family_wise": true,
       "conflict": false,
       "screen": {
@@ -2350,6 +2412,7 @@
       "default_on": false,
       "wins_last_10k": -19,
       "wins_prior_10k": 20,
+      "win_diff_pp": 0.0,
       "family_wise": false,
       "conflict": false,
       "screen": {
@@ -2386,6 +2449,7 @@
       "default_on": false,
       "wins_last_10k": 3,
       "wins_prior_10k": -5,
+      "win_diff_pp": 0.273794,
       "family_wise": false,
       "conflict": false,
       "screen": {
@@ -2422,6 +2486,7 @@
       "default_on": true,
       "wins_last_10k": 18,
       "wins_prior_10k": 23,
+      "win_diff_pp": 0.508475,
       "family_wise": false,
       "conflict": false,
       "screen": {
@@ -2458,6 +2523,7 @@
       "default_on": true,
       "wins_last_10k": 35,
       "wins_prior_10k": 29,
+      "win_diff_pp": 0.664928,
       "family_wise": true,
       "conflict": false,
       "screen": {
@@ -2494,6 +2560,7 @@
       "default_on": false,
       "wins_last_10k": 7,
       "wins_prior_10k": -7,
+      "win_diff_pp": 0.099957,
       "family_wise": false,
       "conflict": false,
       "screen": {
