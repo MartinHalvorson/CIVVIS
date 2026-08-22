@@ -108,6 +108,7 @@ These screenable genes have no native on/off result, so they receive no rank or 
 | `religious-defence-scales` | off (unmeasured) | Size the defensive Missionary corps by the number of cities actually under conversion pressure instead of the shipped constant 2. |
 | `religious-units-heal-first` | off (unmeasured) | Let a wounded spreader standing in its own Holy Site's heal ring hold instead of spending a charge at a fraction of its strength. |
 | `research-floor-holds` | off (unmeasured) | The citizen tilt and the beaker floor hold while the research can still pay. |
+| `research-grants-first` | off (unmeasured) | A finished research city pays more for its own district's project. |
 | `research-tier-premium` | off (unmeasured) | A Campus building's debt is scaled by its own Science against the chain's first rung. |
 | `science-multiplier-payoff` | off (unmeasured) | Credit a Campus building the beakers its city's multipliers will actually pay it. |
 | `science-payback-horizon` | off (unmeasured) | Price the science economy on whether it can still repay rather than on how much of the game is left. |
