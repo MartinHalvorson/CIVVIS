@@ -31322,31 +31322,108 @@ async function quickLoad() {
   if (quick) await loadSave(quick.name);
 }
 
-// The operator requested this deliberately small, fixed keyboard map. Buttons,
-// pointer controls, and ordinary browser navigation stay available elsewhere.
+// Civilization VI's own key map, for the seat a person is holding.
+//
+// The operator asked for a deliberately small fixed map, and that is what a
+// *spectator* still gets: the lenses, the map tack, the overlays and the
+// fullscreen chart, marked `spectator` below. Watching a simulation there is
+// nothing to fortify and no turn to end, so a long map there would be a list
+// of keys that do nothing.
+//
+// A played game is the other case, and it is the one this map is for. The
+// bindings are not chosen; they are Civilization VI's own defaults, read out
+// of that game's `InputSettings.json` on the machine it is installed on —
+// EndTurn is `1`, SkipTurn is Space, Sleep is `Z`, Alert is `V`, AutoExplore
+// is `E`, FoundCity is `B`, FortifyUntilHeal is `H`, NextUnit and PrevUnit are
+// `.` and `,`, NextCity and PrevCity are `]` and `[`, CapitalCity is `\`, the
+// trees are `T` and `C`, Religion is `L`, Great People is `O`, Quick Deals is
+// `D`, the yield, grid and resource overlays are `Y`, `G` and `Q`, the lenses
+// run `2` through `0`, the map tack is Shift+A, and the screens Civ 6 keeps on
+// function keys keep them. `docs/CIV6_KEYBINDINGS.md` is the whole table.
+//
+// Three notes on the places this map cannot be Civ 6's exactly:
+//
+//   * `A` is Attack there and CIVVIS attacks by pointing at a tile, so `A` is
+//     left unbound rather than given a second meaning. Alert moved to `V`,
+//     which is where that game has always had it.
+//   * F5, F6, F11 and F12 belong to the browser — reload, address bar,
+//     fullscreen, developer tools — so Civ 6's quick save and quick load are
+//     not taken. Their controls are in the deck.
+//   * Next action — the nearby-unit pass this client has and that game does
+//     not — is `N`, which Civ 6 leaves unbound. It is deliberately not Tab:
+//     Tab is how somebody navigating by keyboard reaches every control on the
+//     page, and a board that takes it away takes that away.
+//
+// Shift is a real modifier here, for the two chords that game uses.
 const CIVVIS_SHORTCUTS = [
-  {id: "NextAction", key: "1", run: () => nextAction()},
-  {id: "SettlerLens", key: "2", spectator: true, run: () => setMapLens("settler")},
-  {id: "PlaceTack", key: "3", spectator: true, run: () => {
+  // ---- the turn --------------------------------------------------------
+  {id: "EndTurn", key: "1", run: () => advanceTurn(false)},
+  {id: "EndTurnAnyway", key: "1", shift: true, run: () => advanceTurn(true)},
+  // ---- unit orders -----------------------------------------------------
+  {id: "FoundCity", key: "b", run: () => foundCityHere()},
+  {id: "Fortify", key: "f", run: () => orderUnit("fortify")},
+  {id: "FortifyUntilHeal", key: "h", run: () => healHere()},
+  {id: "SkipTurn", key: " ", run: () => orderUnit("skip")},
+  {id: "Sleep", key: "z", run: () => orderUnit("sleep")},
+  {id: "Alert", key: "v", run: () => orderUnit("alert")},
+  {id: "AutoExplore", key: "e", run: () => exploreHere()},
+  {id: "NextUnit", key: ".", run: () => cycleUnit(1)},
+  {id: "PrevUnit", key: ",", run: () => cycleUnit(-1)},
+  {id: "NextAction", key: "n", run: () => nextAction()},
+  // ---- cities ----------------------------------------------------------
+  {id: "NextCity", key: "]", run: () => cycleCity(1)},
+  {id: "PrevCity", key: "[", run: () => cycleCity(-1)},
+  {id: "CapitalCity", key: "\\", run: () => goToCapital()},
+  // The arrows were this client's city pair before the rest of the map
+  // arrived, and `docs/CIV6_KEYBINDINGS.md` has published them for months.
+  // They stay beside the bracket pair rather than being taken away.
+  {id: "PreviousCity", key: "ArrowLeft", run: () => cycleCity(-1)},
+  {id: "NextCityArrow", key: "ArrowRight", run: () => cycleCity(1)},
+  // ---- the screens behind the launch bar --------------------------------
+  {id: "ToggleTechTree", key: "t", run: () => openTree("techs")},
+  {id: "ToggleCivicsTree", key: "c", run: () => openTree("civics")},
+  {id: "ToggleReligion", key: "l", run: () => openEmpire("religion")},
+  {id: "ToggleGreatPeople", key: "o", run: () => openEmpire("people")},
+  {id: "OpenQDPopup", key: "d", run: () => openTrade()},
+  {id: "ToggleGovernment", key: "F7", run: () => openEmpire("government")},
+  {id: "ToggleGovernors", key: "F10", run: () => openEmpire("governors")},
+  {id: "ToggleCityStates", key: "F2", run: () => openEmpire("states")},
+  {id: "ToggleEspionage", key: "F3", run: () => openEmpire("spies")},
+  {id: "ToggleTradeRoutes", key: "F4", run: () => openEmpire("trade")},
+  {id: "ToggleReports", key: "F8", run: () => openEmpire("cities")},
+  {id: "ToggleRankings", key: "F1", spectator: true, run: () => toggleSoloRankings()},
+  {id: "OpenCivilopedia", key: "F9", spectator: true, run: () => openPedia()},
+  // ---- what is drawn over the board ------------------------------------
+  {id: "ToggleYield", key: "y", spectator: true, run: () => setShowYields(!SHOW_YIELDS)},
+  {id: "ToggleGrid", key: "g", spectator: true, run: () => setShowGrid(!SHOW_GRID)},
+  {id: "ToggleResources", key: "q", spectator: true, run: () => setShowResources(!SHOW_RESOURCES)},
+  {id: "ToggleFSMap", key: "End", spectator: true, run: () => toggleFullscreenMap()},
+  {id: "LensContinent", key: "2", spectator: true, run: () => setMapLens("continent")},
+  {id: "LensAppeal", key: "3", spectator: true, run: () => setMapLens("appeal")},
+  {id: "LensSettler", key: "4", spectator: true, run: () => setMapLens("settler")},
+  {id: "LensGovernment", key: "5", spectator: true, run: () => setMapLens("government")},
+  {id: "LensPolitical", key: "6", spectator: true, run: () => setMapLens("political")},
+  {id: "LensTourism", key: "7", spectator: true, run: () => setMapLens("tourism")},
+  {id: "LensLoyalty", key: "8", spectator: true, run: () => setMapLens("loyalty")},
+  {id: "LensEmpire", key: "9", spectator: true, run: () => setMapLens("empire")},
+  {id: "LensPower", key: "0", spectator: true, run: () => setMapLens("power")},
+  {id: "AddMapTack", key: "a", shift: true, spectator: true, run: () => {
     tackMode = !tackMode; mapLens = null; syncMapLensControls(); modeline(); draw();
   }},
-  {id: "Fortify", key: "f", run: () => orderUnit("fortify")},
-  {id: "Alert", key: "a", run: () => orderUnit("alert")},
-  {id: "PreviousCity", key: "ArrowLeft", run: () => cycleCity(-1)},
-  {id: "NextCity", key: "ArrowRight", run: () => cycleCity(1)},
 ];
-// One lookup per key. The table deliberately has no modifier chords.
+// One lookup per key, and one more for the two chords Civ 6 puts Shift on.
 const KEY_ACTIONS = new Map();
+const SHIFT_KEY_ACTIONS = new Map();
 for (const binding of CIVVIS_SHORTCUTS) {
   const name = binding.key.length === 1 ? binding.key.toLowerCase() : binding.key;
-  KEY_ACTIONS.set(name, binding);
+  (binding.shift ? SHIFT_KEY_ACTIONS : KEY_ACTIONS).set(name, binding);
 }
 function bindingFor(ev) {
-  // Do not turn browser or system shortcuts into board actions.
-  if (ev.metaKey || ev.ctrlKey || ev.altKey || ev.shiftKey) return undefined;
-  const literal = KEY_ACTIONS.get(ev.key);
-  if (literal) return literal;
-  return KEY_ACTIONS.get(ev.key.toLowerCase());
+  // Do not turn browser or system shortcuts into board actions. Shift is the
+  // exception, and only for the two keys that carry a chord.
+  if (ev.metaKey || ev.ctrlKey || ev.altKey) return undefined;
+  const table = ev.shiftKey ? SHIFT_KEY_ACTIONS : KEY_ACTIONS;
+  return table.get(ev.key) || table.get(ev.key.toLowerCase());
 }
 document.addEventListener("keydown", ev => {
   const tag = (document.activeElement || {}).tagName;
@@ -31356,6 +31433,11 @@ document.addEventListener("keydown", ev => {
   if (ev.key === "Escape" && (tag === "INPUT" || tag === "TEXTAREA")) {
     document.activeElement.blur();
   } else if (tag === "SELECT" || tag === "INPUT" || tag === "TEXTAREA") return;
+  // Space and Enter activate the control that has focus. Skipping a unit at
+  // the same moment as pressing End Turn is one keystroke doing two things,
+  // and the one the person meant is the one they had just tabbed to.
+  if ((ev.key === " " || ev.key === "Enter") && (tag === "BUTTON" || tag === "A" ||
+      (document.activeElement || {}).getAttribute?.("role") === "button")) return;
   // A modal screen owns the keyboard while it is up. Escape closes the
   // topmost one before any global action is considered.
   if (ev.key === "Escape" && closeTopmostScreen()) { ev.preventDefault(); return; }
