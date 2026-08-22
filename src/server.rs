@@ -12921,12 +12921,73 @@ mod tests {
             .expect("strategic unit pictogram renderer");
         assert!(renderer.contains("const official = civ6UnitIconSprite(type, color)"));
         assert!(renderer.contains("cx.drawImage(official"));
-        assert!(EMBEDDED_INDEX.contains("const COMMAND_UNIT_ICON_K = () => 1 + .32"));
         assert!(EMBEDDED_INDEX.contains("drawUnitPictogram(u.type, x, y,"));
         assert!(EMBEDDED_INDEX.contains("drawUnitPictogram(unit.type, ux, uy,"));
         assert!(EMBEDDED_INDEX.contains("drawUnitPictogram(d.type, d.x, d.y,"));
         assert!(!EMBEDDED_INDEX.contains("embarked ? \"galley\""));
-        assert!(EMBEDDED_INDEX.contains("rr * 1.45 * COMMAND_UNIT_ICON_K(), tokenInk"));
+
+        // The cells carry a per-icon margin -- 38 to 64 px of silhouette in the
+        // same 64 px cell -- so drawing whole cells at one box size drew the
+        // roster at 1.7x apart. Every icon is measured and then drawn from its
+        // own silhouette rectangle, which is what makes one requested size mean
+        // one size.
+        assert!(EMBEDDED_INDEX.contains("function measureCiv6UnitIconBoxes() {"));
+        assert!(EMBEDDED_INDEX.contains("function civ6UnitIconBox(type) {"));
+        assert!(renderer.contains("const box = civ6UnitIconBox(type)"));
+        assert!(renderer.contains("const k = size / Math.max(box.w, box.h)"));
+        assert!(renderer.contains("cx.drawImage(official, box.x, box.y, box.w, box.h,"));
+        assert!(renderer.contains("x - w / 2, y - h / 2, w, h);"));
+
+        // And one size means one size everywhere: no surface may reintroduce
+        // its own multiplier, and none may make the icon grow with the camera
+        // the way the retired COMMAND_UNIT_ICON_K did.
+        assert!(!EMBEDDED_INDEX.contains("COMMAND_UNIT_ICON_K"));
+        assert!(EMBEDDED_INDEX.contains("const COMMAND_UNIT_ICON_SHARE = .66;"));
+        assert_eq!(
+            EMBEDDED_INDEX.matches("COMMAND_UNIT_ICON_SHARE").count(),
+            5,
+            "the flat map, the globe, the casualty and the production medallion \
+             all draw their unit glyph at the one shared size"
+        );
+        assert!(EMBEDDED_INDEX.contains("rr * 2 * COMMAND_UNIT_ICON_SHARE, tokenInk"));
+        assert!(EMBEDDED_INDEX.contains("r * 2 * COMMAND_UNIT_ICON_SHARE, tokenInk"));
+        assert!(EMBEDDED_INDEX.contains("mr * 2 * COMMAND_UNIT_ICON_SHARE, \"#f0ead8\""));
+
+        // Religious units are ordinary units of the map: each has its own
+        // Civilization VI cell and rides the same token as everything else.
+        for religious in [
+            "missionary",
+            "apostle",
+            "guru",
+            "inquisitor",
+            "warrior_monk",
+        ] {
+            assert!(
+                rules.units.contains_key(religious),
+                "{religious} must be a real unit of the ruleset"
+            );
+            assert!(
+                ids.contains(&format!("\"{religious}\"")),
+                "{religious} has no Civilization VI icon cell"
+            );
+        }
+    }
+
+    /// One counter shape for every unit. The civilian capsule was a second
+    /// silhouette sitting among the military circles, and it read as a second
+    /// class of marker rather than as "this one cannot fight".
+    #[test]
+    fn every_command_token_is_the_same_circle() {
+        assert!(EMBEDDED_INDEX.contains(
+            "function strategicUnitTokenPath(x, y, r) {\n  cx.beginPath();\n  cx.arc(x, y, r, 0, 7);\n}"
+        ));
+        assert!(!EMBEDDED_INDEX.contains("cx.roundRect(x - r, y - h / 2, r * 2, h, h / 2)"));
+        assert_eq!(
+            EMBEDDED_INDEX.matches("strategicUnitTokenPath(").count(),
+            5,
+            "the flat map fill and outline, the globe and the casualty all take \
+             the one token path"
+        );
     }
 
     #[test]
@@ -12934,7 +12995,7 @@ mod tests {
         let renderer = EMBEDDED_INDEX
             .split("function drawStrategicUnitHealth")
             .nth(1)
-            .and_then(|tail| tail.split("// The Civ VI atlas cells").next())
+            .and_then(|tail| tail.split("// One silhouette size for every unit").next())
             .expect("strategic unit health renderer");
         assert!(EMBEDDED_INDEX.contains(
             "const CAPTURE_ONLY_CIVILIAN_UNITS = new Set([\"settler\", \"builder\"]);"
