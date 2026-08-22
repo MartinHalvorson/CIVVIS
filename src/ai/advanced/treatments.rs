@@ -149,6 +149,10 @@ pub const LIVE_TREATMENTS: &[LiveTreatment] = &[
 #[rustfmt::skip]
 pub const PRODUCTION_TREATMENTS: &[LiveTreatment] = &[
     ("strategic_wonders", "strategic-wonders", AdvancedAi::disable_strategic_wonders),
+    // Shipped ON for every seat since #2059 and never priced by either gate.
+    // It is the simulator's single largest cost — withholding it is -48.7%
+    // wall clock at the gene-screen shape. See the toggle's own doc comment.
+    ("precise_evacuation", "precise-evacuation", AdvancedAi::disable_precise_evacuation),
 ];
 
 /// Opt-in treatments production ships OFF: the complement of
