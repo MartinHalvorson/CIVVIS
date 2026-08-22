@@ -133,7 +133,15 @@ fn report(label: &str, arms: &[(&str, Chain)]) {
 #[test]
 #[ignore = "census, not an assertion; run explicitly with --nocapture"]
 fn the_research_chain_treated_against_control() {
-    let seeds: Vec<u64> = (0..12).map(|i| 90_000_000 + i).collect();
+    let seeds: Vec<u64> = (0..12).map(|i| 91_000_000 + i).collect();
+    // ⚠ ROUND EIGHT: the SAME question with the gate repaired. Round seven
+    // measured `research-grants-first` at Research Labs 40 against 55 —
+    // because its "finished" test asked `can_produce`, which is false while
+    // Chemistry is still out, so cities took the premium and spent the turns
+    // before Chemistry on Grants. The gate now asks for the DEEPEST rung held.
+    // Fresh seeds so the repaired gate is priced on games the broken one never
+    // touched.
+    //
     // ⚠ ROUND SEVEN: what a FINISHED research city does with its last hundred
     // turns. Rounds three to six settled the building-half genes and returned
     // five nulls and one harm, and the variance probe showed Science is
