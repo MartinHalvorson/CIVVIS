@@ -16848,12 +16848,17 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains(
             "function nextAction() {\n  if (!state || SPEC) return;\n  advanceToNextActionUnit(true);"
         ));
-        // The requested fixed action map invokes the new selector from key 1;
-        // unit roster cycling is no longer a global keyboard shortcut.
+        // Two different passes, two different keys. `.` and `,` are Civ 6's
+        // NextUnit and PrevUnit — a reversible walk of the roster — and `N` is
+        // the nearby-action pass this client has and that game does not. `1`
+        // is EndTurn there, so it can no longer be either of them.
         assert!(EMBEDDED_INDEX.contains("if (step > 0) { advanceToNextUnit(true); return; }"));
         assert!(EMBEDDED_INDEX.contains(
-            "{id: \"NextAction\", key: \"1\", run: () => nextAction()},"
+            "{id: \"NextAction\", key: \"n\", run: () => nextAction()},"
         ));
+        assert!(EMBEDDED_INDEX.contains("{id: \"NextUnit\", key: \".\", run: () => cycleUnit(1)},"));
+        assert!(EMBEDDED_INDEX.contains("{id: \"PrevUnit\", key: \",\", run: () => cycleUnit(-1)},"));
+        assert!(EMBEDDED_INDEX.contains("{id: \"EndTurn\", key: \"1\", run: () => advanceTurn(false)},"));
         assert!(!EMBEDDED_INDEX.contains("id: \"NextUnitTab\""));
     }
 
