@@ -1020,6 +1020,10 @@ struct VisionFrameCache {
     /// once per map epoch so those unrelated writes do not evict every seat's
     /// frame.
     map_geometry: std::cell::RefCell<Option<(u64, u64)>>,
+    /// One full roster walk yields every viewer's unit-source stamp.  Frame
+    /// lookups are far more frequent than unit writes, so retain that fan-out
+    /// until a mutable unit access can have changed one of its inputs.
+    unit_stamps: std::cell::RefCell<Option<(u64, Vec<u64>)>>,
 }
 
 impl Clone for VisionFrameCache {
@@ -1044,6 +1048,7 @@ impl Clone for VisionFrameCache {
         Self {
             frames: std::cell::RefCell::new(self.frames.borrow().clone()),
             map_geometry: std::cell::RefCell::new(*self.map_geometry.borrow()),
+            unit_stamps: std::cell::RefCell::new(self.unit_stamps.borrow().clone()),
         }
     }
 }
@@ -1814,17 +1819,30 @@ pub struct Unit {
 /// with the extra per-unit indirection making combat lookahead proportional to
 /// the units it actually touches rather than to the whole army.
 #[derive(Default)]
-pub struct Units(Arc<BTreeMap<u32, Arc<Unit>>>, BTreeSet<u32>);
+pub struct Units(Arc<BTreeMap<u32, Arc<Unit>>>, BTreeSet<u32>, u64);
 
 impl Clone for Units {
     fn clone(&self) -> Self {
         // A game clone starts a new branch. The immutable map is shared, but
         // its write set belongs only to that branch and therefore starts empty.
-        Self(Arc::clone(&self.0), BTreeSet::new())
+        Self(Arc::clone(&self.0), BTreeSet::new(), self.2)
     }
 }
 
 impl Units {
+    /// Bump the cache epoch before exposing a mutable unit.  The vision stamp
+    /// itself still folds only sight-relevant fields, so a combat-only write
+    /// recomputes the small stamp but keeps an otherwise matching frame.
+    #[inline]
+    fn mark_mutated(&mut self) {
+        self.2 = self.2.wrapping_add(1);
+    }
+
+    #[inline]
+    fn vision_epoch(&self) -> u64 {
+        self.2
+    }
+
     /// Borrow one unit from the immutable snapshot.
     #[inline]
     pub fn get(&self, id: &u32) -> Option<&Unit> {
@@ -1838,6 +1856,7 @@ impl Units {
     pub fn get_mut(&mut self, id: &u32) -> Option<&mut Unit> {
         if self.0.contains_key(id) {
             self.1.insert(*id);
+            self.mark_mutated();
         }
         Arc::make_mut(&mut self.0)
             .get_mut(id)
@@ -1880,6 +1899,7 @@ impl Units {
     /// deliberately explicit rather than making ordinary reads pay for it.
     pub fn values_mut(&mut self) -> impl DoubleEndedIterator<Item = &mut Unit> + ExactSizeIterator {
         self.1.extend(self.0.keys().copied());
+        self.mark_mutated();
         Arc::make_mut(&mut self.0)
             .values_mut()
             .map(Arc::make_mut)
@@ -1889,6 +1909,7 @@ impl Units {
         &mut self,
     ) -> impl DoubleEndedIterator<Item = (&u32, &mut Unit)> + ExactSizeIterator {
         self.1.extend(self.0.keys().copied());
+        self.mark_mutated();
         Arc::make_mut(&mut self.0)
             .iter_mut()
             .map(|(id, unit)| (id, Arc::make_mut(unit)))
@@ -1897,6 +1918,7 @@ impl Units {
     /// Insert a unit, returning the previous value just like `BTreeMap`.
     pub fn insert(&mut self, id: u32, unit: Unit) -> Option<Unit> {
         self.1.insert(id);
+        self.mark_mutated();
         Arc::make_mut(&mut self.0)
             .insert(id, Arc::new(unit))
             .map(arc_into_unit)
@@ -1905,6 +1927,7 @@ impl Units {
     /// Remove a unit, returning the owned value just like `BTreeMap`.
     pub fn remove(&mut self, id: &u32) -> Option<Unit> {
         self.1.insert(*id);
+        self.mark_mutated();
         Arc::make_mut(&mut self.0)
             .remove(id)
             .map(arc_into_unit)
@@ -1912,6 +1935,7 @@ impl Units {
 
     pub fn clear(&mut self) {
         self.1.extend(self.0.keys().copied());
+        self.mark_mutated();
         Arc::make_mut(&mut self.0).clear();
     }
 
@@ -1922,6 +1946,7 @@ impl Units {
         F: FnMut(&u32, &Unit) -> bool,
     {
         self.1.extend(self.0.keys().copied());
+        self.mark_mutated();
         Arc::make_mut(&mut self.0).retain(|id, unit| keep(id, unit));
     }
 
@@ -2020,6 +2045,7 @@ impl<'a> IntoIterator for &'a mut Units {
     >;
 
     fn into_iter(self) -> Self::IntoIter {
+        self.mark_mutated();
         self.1.extend(self.0.keys().copied());
         Arc::make_mut(&mut self.0)
             .iter_mut()
@@ -2048,12 +2074,16 @@ impl IntoIterator for Units {
 
 impl FromIterator<(u32, Unit)> for Units {
     fn from_iter<I: IntoIterator<Item = (u32, Unit)>>(items: I) -> Self {
-        Self(Arc::new(
-            items
-                .into_iter()
-                .map(|(id, unit)| (id, Arc::new(unit)))
-                .collect(),
-        ), BTreeSet::new())
+        Self(
+            Arc::new(
+                items
+                    .into_iter()
+                    .map(|(id, unit)| (id, Arc::new(unit)))
+                    .collect(),
+            ),
+            BTreeSet::new(),
+            0,
+        )
     }
 }
 
@@ -21719,34 +21749,12 @@ impl Game {
         &self,
         viewer: usize,
         suzerains: &BTreeMap<usize, Option<usize>>,
-        unit_stamps: Option<&[u64]>,
+        unit_stamps: &[u64],
     ) -> u64 {
         let mut stamp = unit_stamps
-            .and_then(|stamps| stamps.get(viewer).copied())
-            .unwrap_or_else(|| {
-                let mut stamp = vision_key(&[viewer as u64]);
-                for unit in self.units.values().filter(|unit| unit.owner == viewer) {
-                    stamp = vision_key(&[
-                        stamp,
-                        1,
-                        unit.id as u64,
-                        unit.kind.id() as u64,
-                        unit.pos.0 as i64 as u64,
-                        unit.pos.1 as i64 as u64,
-                        unit.air_patrol_pos.is_some() as u64,
-                        unit.air_patrol_pos
-                            .map(|pos| pos.0 as i64 as u64)
-                            .unwrap_or_default(),
-                        unit.air_patrol_pos
-                            .map(|pos| pos.1 as i64 as u64)
-                            .unwrap_or_default(),
-                    ]);
-                    for promotion in &unit.promotions {
-                        stamp = vision_key(&[stamp, 2, promotion.id() as u64]);
-                    }
-                }
-                stamp
-            });
+            .get(viewer)
+            .copied()
+            .unwrap_or_else(|| vision_key(&[viewer as u64]));
         for city in self.cities.values().filter(|city| city.owner == viewer) {
             stamp = vision_key(&[
                 stamp,
@@ -21808,7 +21816,7 @@ impl Game {
         stamp
     }
 
-    fn unit_vision_input_stamps(&self) -> Vec<u64> {
+    fn collect_unit_vision_input_stamps(&self) -> Vec<u64> {
         let mut stamps: Vec<u64> = (0..self.players.len())
             .map(|viewer| vision_key(&[viewer as u64]))
             .collect();
@@ -21838,6 +21846,31 @@ impl Game {
         stamps
     }
 
+    /// Reuse the all-viewer unit stamp fan-out until any unit has been
+    /// exposed mutably.  The epoch intentionally over-invalidates: a hitpoint
+    /// write does not alter sight, but it is always safer to recompute the
+    /// small signature than to miss a moved, promoted, transferred, or
+    /// patrolling unit.  The signature still keeps the existing frame when
+    /// the actual sight inputs are unchanged.
+    fn with_unit_vision_input_stamps<R>(&self, read: impl FnOnce(&[u64]) -> R) -> R {
+        let epoch = self.units.vision_epoch();
+        let stale = match self.vision_frames.unit_stamps.borrow().as_ref() {
+            Some((cached_epoch, stamps)) => {
+                *cached_epoch != epoch || stamps.len() != self.players.len()
+            }
+            None => true,
+        };
+        if stale {
+            let stamps = self.collect_unit_vision_input_stamps();
+            *self.vision_frames.unit_stamps.borrow_mut() = Some((epoch, stamps));
+        }
+        let cache = self.vision_frames.unit_stamps.borrow();
+        let (_, stamps) = cache
+            .as_ref()
+            .expect("unit vision stamps are installed before use");
+        read(stamps)
+    }
+
     /// Stamp every input to one player's current sight.  The result is small
     /// enough to carry beside a cached [`TileBits`] frame, while the fields it
     /// folds are the exact source identities and positions the visibility
@@ -21856,7 +21889,7 @@ impl Game {
         &self,
         pid: usize,
         suzerains: &BTreeMap<usize, Option<usize>>,
-        unit_stamps: Option<&[u64]>,
+        unit_stamps: &[u64],
     ) -> u64 {
         let mut stamp = vision_key(&[
             self.vision_geometry_stamp(),
@@ -21892,7 +21925,9 @@ impl Game {
     fn vision_input_stamp(&self, pid: usize) -> u64 {
         self.with_suzerain_read_memo(|| {
             let suzerains = self.suzerain_input_map();
-            self.vision_input_stamp_with_suzerains(pid, &suzerains, None)
+            self.with_unit_vision_input_stamps(|unit_stamps| {
+                self.vision_input_stamp_with_suzerains(pid, &suzerains, unit_stamps)
+            })
         })
     }
 
@@ -21903,25 +21938,17 @@ impl Game {
     fn vision_frame(&self, pid: usize, heights: &mut HeightField) -> Arc<TileBits> {
         self.with_suzerain_read_memo(|| {
             let suzerains = self.suzerain_input_map();
-            let input_stamp = self.vision_input_stamp_with_suzerains(pid, &suzerains, None);
-            {
-                let frames = self.vision_frames.frames.borrow();
-                if let Some(Some(frame)) = frames.get(pid) {
-                    if frame.input_stamp == input_stamp {
-                        return Arc::clone(&frame.visible);
-                    }
+            self.with_unit_vision_input_stamps(|unit_stamps| {
+                let input_stamp =
+                    self.vision_input_stamp_with_suzerains(pid, &suzerains, unit_stamps);
+                if let Some(visible) = self.matching_vision_frame(pid, input_stamp) {
+                    visible
+                } else {
+                    let visible = Arc::new(self.player_vision(heights, pid));
+                    self.store_vision_frame(pid, input_stamp, Arc::clone(&visible));
+                    visible
                 }
-            }
-            let visible = Arc::new(self.player_vision(heights, pid));
-            let mut frames = self.vision_frames.frames.borrow_mut();
-            if frames.len() <= pid {
-                frames.resize_with(pid + 1, || None);
-            }
-            frames[pid] = Some(VisionFrame {
-                input_stamp,
-                visible: Arc::clone(&visible),
-            });
-            visible
+            })
         })
     }
 
@@ -23052,18 +23079,16 @@ impl Game {
         let mut pending = Vec::<(usize, u64)>::new();
         self.with_suzerain_read_memo(|| {
             let suzerains = self.suzerain_input_map();
-            let unit_stamps = self.unit_vision_input_stamps();
-            for pid in &players {
-                let input_stamp = self.vision_input_stamp_with_suzerains(
-                    *pid,
-                    &suzerains,
-                    Some(&unit_stamps),
-                );
-                match self.matching_vision_frame(*pid, input_stamp) {
-                    Some(visible) => cached.push((*pid, input_stamp, visible)),
-                    None => pending.push((*pid, input_stamp)),
+            self.with_unit_vision_input_stamps(|unit_stamps| {
+                for pid in &players {
+                    let input_stamp =
+                        self.vision_input_stamp_with_suzerains(*pid, &suzerains, unit_stamps);
+                    match self.matching_vision_frame(*pid, input_stamp) {
+                        Some(visible) => cached.push((*pid, input_stamp, visible)),
+                        None => pending.push((*pid, input_stamp)),
+                    }
                 }
-            }
+            });
         });
 
         let count = pending.len();
@@ -33862,7 +33887,7 @@ impl Game {
     /// frames the caller already holds. `do_ranged`, `do_attack` and
     /// `do_city_strike` each apply exactly this before a shot, so a controller
     /// that proposes a target without asking is proposing an order the engine
-    /// will refuse. Hoist `player_vision_now` and `visibility_viewers` once per
+    /// will refuse. Hoist `player_vision_frame` and `visibility_viewers` once per
     /// unit and pass them in; the frames cannot move while no action is applied.
     pub(crate) fn combat_target_visible_at(
         &self,
@@ -33891,17 +33916,6 @@ impl Game {
                         .iter()
                         .any(|viewer| self.unit_visible_to(unit.id, *viewer))
             })
-    }
-
-    /// ⚠ Recomputes both frames on every call, and `player_vision_now` clones
-    /// a whole `TileBits` to do it. Fine once per action; a caller testing a
-    /// disk of candidate tiles must hoist the two frames and use
-    /// [`Game::combat_target_visible_at`] instead. Measured: doing this per
-    /// candidate tile cost +6.4% of simulator CPU.
-    fn combat_target_visible(&self, pid: usize, pos: Pos) -> bool {
-        let visible = self.player_vision_now(pid);
-        let viewers = self.visibility_viewers(pid);
-        self.combat_target_visible_at(pid, pos, &visible, &viewers)
     }
 
     fn unit_currently_visible_to(&self, uid: u32, pid: usize) -> bool {
@@ -35370,7 +35384,9 @@ impl Game {
         if self.wdist(u.pos, target) > range {
             return Err("out of range".into());
         }
-        if !self.combat_target_visible(pid, target) {
+        let visible = self.player_vision_frame(pid);
+        let viewers = self.visibility_viewers(pid);
+        if !self.combat_target_visible_at(pid, target, visible.as_ref(), &viewers) {
             return Err("target is not visible".into());
         }
         if !self.unit_has_line_of_sight(uid, target) {
@@ -37357,8 +37373,12 @@ impl Game {
             || attacker.attacks_left <= 0
             || self.wdist(self.air_operation_origin(uid), target) > self.unit_attack_range(uid)
             || !self.enemy_air_strike_target_at(pid, target)
-            || !self.combat_target_visible(pid, target)
         {
+            return Err("invalid air strike".into());
+        }
+        let visible = self.player_vision_frame(pid);
+        let viewers = self.visibility_viewers(pid);
+        if !self.combat_target_visible_at(pid, target, visible.as_ref(), &viewers) {
             return Err("invalid air strike".into());
         }
         let (destroyed, fighter_engaged) = self.resolve_air_interceptions(uid, target);
@@ -37487,8 +37507,12 @@ impl Game {
                 target,
             ) > self.unit_attack_range(uid)
             || (!air && !self.unit_has_line_of_sight(uid, target))
-            || !self.combat_target_visible(pid, target)
         {
+            return Err("unit cannot priority target there".into());
+        }
+        let visible = self.player_vision_frame(pid);
+        let viewers = self.visibility_viewers(pid);
+        if !self.combat_target_visible_at(pid, target, visible.as_ref(), &viewers) {
             return Err("unit cannot priority target there".into());
         }
         let Some(defender_id) = self.priority_support_target_at(pid, target) else {
@@ -39165,7 +39189,9 @@ impl Game {
         if self.city_at(target).is_some() || self.encampment_at(target).is_some() {
             return Err("cities cannot strike defensible districts".into());
         }
-        if !self.combat_target_visible(pid, target) {
+        let visible = self.player_vision_frame(pid);
+        let viewers = self.visibility_viewers(pid);
+        if !self.combat_target_visible_at(pid, target, visible.as_ref(), &viewers) {
             return Err("target is not visible".into());
         }
         if !self.has_line_of_sight(self.cities[&cid].pos, target, true) {
@@ -39259,7 +39285,9 @@ impl Game {
         if self.wdist(position, target) > 2 || !self.has_line_of_sight(position, target, true) {
             return Err("target out of range or sight".into());
         }
-        if !self.combat_target_visible(pid, target) {
+        let visible = self.player_vision_frame(pid);
+        let viewers = self.visibility_viewers(pid);
+        if !self.combat_target_visible_at(pid, target, visible.as_ref(), &viewers) {
             return Err("target is not visible".into());
         }
         if self.city_at(target).is_some() || self.encampment_at(target).is_some() {
