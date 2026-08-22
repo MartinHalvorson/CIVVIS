@@ -335,7 +335,10 @@ mod tests {
     #[test]
     fn the_win_column_rule_reads_both_columns() {
         assert!(win_columns_default_on(Some(1), Some(1)), "both positive");
-        assert!(!win_columns_default_on(Some(1), Some(0)), "zero is not positive");
+        assert!(
+            !win_columns_default_on(Some(1), Some(0)),
+            "zero is not positive"
+        );
         assert!(
             !win_columns_default_on(Some(39), Some(-26)),
             "one strong reading does not carry an average of 6.5"

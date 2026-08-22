@@ -393,6 +393,20 @@ wins against 27% for all-off** (4p classic, 200 anchor pairs). Now:
   tool now drops those rows and says so, because the Rust table refuses a tag
   the registry does not know.
 
+- **The default rule replaced the verdict (2026-08-22).** No screen was re-run
+  and no measurement moved; the ledger simply re-decided every default from
+  the two native win columns. **22 genes on, was 20.** On: `religion-sues-peace`
+  (+29/+25), `one-launch-pad` (+24/+23), `whole-turn-backtrack-guard` (+23/+39),
+  `siege-tracks-wall` (+21/+51), `strategic-wonders` (+21/+21), `strike-opening`
+  (+21/+20), `war-patience` (+20/+3), `blind-objective-units` (+4/+6) and
+  `war-reinforcement` (−5/+49, average +22). Off: `founder-temple` (+48/–) and
+  `idle-faith-patronage` (+23/–), each one native screen short of a prior
+  column; `siege-is-progress` (+14/−64), `war-economy` (+8/−192),
+  `amenity-project-preemption` (−4/+33), `army-target-weighs-enemy` (−4/−33)
+  and `joint-tactics` (−4/−18). Note `war-patience`: it ships with a `hurts`
+  verdict, family-wise on the **share** axis at native share z −3.43, because
+  the rule reads the win axis only.
+
 - **Ten more genes left the code (2026-08-21).** A second application of the
   directive behind the #2235 cull — the bottom of `HEURISTIC_GENE_RANKING.md`
   leaves the repository — removed `holy-lane-parity`, `camp-reach`,
@@ -438,7 +452,7 @@ wins against 27% for all-off** (4p classic, 200 anchor pairs). Now:
 ledger already holds off is identical to `live` — the screen is that gene's
 instrument now. And a treatment PR no longer ships its flag on: it ships it
 into the universe, screens it (a few hundred pairs resolve ±3 pp), and the
-ledger turns it on if it helps.
+ledger turns it on when two native screens agree it pays.
 
 ## Prior-weighted screens: the helpful genes play most of the time, and are still priced
 

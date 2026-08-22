@@ -70,7 +70,8 @@ LEDGER_JSON = ROOT / "docs" / "gene_ledger.json"
 LEDGER_RS = ROOT / "src" / "ai" / "advanced" / "gene_ledger_table.rs"
 REGIMES = ("native", "war")
 Z_BAR = 2.0
-# The deployment rule's three numbers, in wins per ten thousand games.
+# The win column's scale, then the deployment rule's two bars — an average a
+# gene must clear, and a floor no single column may sit below.
 PER = 10_000
 AVERAGE_BAR = 15.0
 COLUMN_FLOOR = -10
