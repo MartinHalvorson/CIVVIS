@@ -9668,12 +9668,10 @@ impl AdvancedAi {
             .unwrap_or(plan.strategy);
         if g.players[pid].research.is_none() {
             let available = g.available_techs(pid);
-            let science_commitment = objective == GrandStrategy::Science
-                || self.diplomatic_science_backup(g, pid, plan);
-            let science_victory_goal =
-                Self::science_victory_tech_goal(g, pid, objective);
-            let great_person_goal =
-                BasicAi::live_great_person_tech_goal(g, pid);
+            let science_commitment =
+                objective == GrandStrategy::Science || self.diplomatic_science_backup(g, pid, plan);
+            let science_victory_goal = Self::science_victory_tech_goal(g, pid, objective);
+            let great_person_goal = BasicAi::live_great_person_tech_goal(g, pid);
             let forced_goal = match objective {
                 _ if self.war_plan.as_ref().is_some_and(|plan| {
                     !g.players[pid].techs.contains(&plan.breakthrough_tech)
