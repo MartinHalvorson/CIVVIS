@@ -1276,6 +1276,24 @@ const SETTLER_THREAT_DETOUR_TURNS: u32 = 6;
 /// only when a visible blocker has already stopped the preferred route.
 const SETTLER_THREAT_DETOUR_RETRIES: usize = 12;
 
+/// `settle_sooner`: what one turn of a Settler's walk costs, on top of the
+/// per-tile discount `settle_sites` already applies and the route's movement
+/// points. The existing terms come to roughly 2.5–3.4 points a turn against
+/// sites worth ~100–150, which is about what a 40-turn forecast loses to one
+/// turn of delay — so they buy nothing EXTRA for founding sooner. This is the
+/// extra: a site one more turn away must be this much better to be chosen.
+/// The price is linear in turns, so a really good site still wins a long
+/// walk; it simply has to be good enough to pay for every turn of it.
+const SETTLE_SOONER_TURN_PRICE: f64 = 2.0;
+/// `settle_sooner`: standard turns of walking after which the per-turn price
+/// has doubled. A Settler that keeps re-picking — its route blocked, its
+/// site retired, a threat flickering at the edge of sight — has been out of
+/// its city for a while, and every re-pick leans harder toward the nearest
+/// sound site the longer that has gone on. Six turns is the expansion
+/// window's own scale: `SETTLER_TARGET_HYSTERESIS_TURNS` and
+/// `SETTLER_THREAT_DETOUR_TURNS` both set the same clock.
+const SETTLE_SOONER_PATIENCE: u32 = 6;
+
 /// Route-scoring is exact for the valuable prefix, then falls back to the
 /// existing reachability scan if that prefix is disconnected. This bounds the
 /// cost of asking the pathfinder about every site on a large map while keeping
@@ -2035,6 +2053,10 @@ pub struct AdvancedAi {
     /// See `advanced_settler_step`: a target the settler keeps retreating from
     /// is retired the way a site it cannot found is.
     settler_retreats: BTreeMap<u32, (Pos, u32)>,
+    /// The turn each Settler's walk began — the first turn its step ran — so
+    /// `settle_sooner` can price how long it has already been out of a city
+    /// when it picks (or re-picks) a site. See `best_reachable_settle_site_except_cached`.
+    settler_walk_started: BTreeMap<u32, u32>,
     /// The turn each recon unit last stepped out of a hostile's reach, so the
     /// same turn's explore step does not walk it straight back in. Same-turn
     /// only; stale entries are inert. See `recon_flight`.
@@ -3371,6 +3393,23 @@ pub struct AdvancedAi {
     /// native, off-by-default gene; `gene_screen` prices it through
     /// `PRODUCTION_OPT_INS` before any promotion decision.
     pub settler_threat_detour: bool,
+    /// Price a Settler's walk in TURNS, and price each turn higher the longer
+    /// the Settler has already been walking.
+    ///
+    /// The site ranking discounts the walk per tile (`SETTLE_DISTANCE_PENALTY`)
+    /// and per movement point of the route, which together come to about what
+    /// the 40-turn forecast loses to a turn of delay — the ranking is
+    /// indifferent between founding now and founding the same value later.
+    /// `settler_walk_census` measured the deployment genome walking a mean of
+    /// 7.3 turns per founding on the screen's 6-player map, with the long tail
+    /// re-picking its site several times. Under this gene every turn of the
+    /// route costs `SETTLE_SOONER_TURN_PRICE` more, and that price adds another
+    /// base price for every `SETTLE_SOONER_PATIENCE` standard turns the Settler
+    /// has already spent walking, so a Settler that keeps re-picking converges
+    /// on the nearest sound site instead of wandering. A really good site still wins
+    /// a long walk: the price is linear in turns, never a cap. Native,
+    /// off-by-default gene priced through `PRODUCTION_OPT_INS`.
+    pub settle_sooner: bool,
     /// On the tally seat, banked Faith (or gold) patronizes any Great Person
     /// it can pay for, not only one the empire is already close to earning.
     ///
@@ -4507,6 +4546,7 @@ impl AdvancedAi {
         self.settler_dead_sites.clear();
         self.stock_pressure_history.clear();
         self.settler_retreats.clear();
+        self.settler_walk_started.clear();
         self.settler_closest.clear();
         self.builder_targets.clear();
         self.force_groups.clear();
@@ -4578,6 +4618,11 @@ impl AdvancedAi {
             .settler_retreats
             .iter()
             .filter_map(|(uid, retreat)| map.get(uid).map(|new| (*new, *retreat)))
+            .collect();
+        self.settler_walk_started = self
+            .settler_walk_started
+            .iter()
+            .filter_map(|(uid, started)| map.get(uid).map(|new| (*new, *started)))
             .collect();
         // Rebuilt from the board every turn regardless, so there is nothing to carry.
         self.force_groups.clear();
@@ -4685,6 +4730,7 @@ impl AdvancedAi {
             settler_threat_deferrals: BTreeMap::new(),
             settler_dead_sites: BTreeMap::new(),
             settler_retreats: BTreeMap::new(),
+            settler_walk_started: BTreeMap::new(),
             recon_fled: BTreeMap::new(),
             settler_closest: BTreeMap::new(),
             linked_settler_progress: false,
@@ -4759,6 +4805,7 @@ impl AdvancedAi {
             frontier_loyalty: false,
             settler_target_hysteresis: false,
             settler_threat_detour: false,
+            settle_sooner: false,
             tally_great_people: false,
             buildings_before_projects: false,
             barbarian_scouts_are_scouts: false,
@@ -22147,7 +22194,7 @@ impl AdvancedAi {
         score_cache: &mut BTreeMap<Pos, f64>,
     ) -> Option<(Pos, f64)> {
         let from = g.units[&uid].pos;
-        let candidates = self
+        let mut candidates = self
             .settle_sites_with_limit_cached(
                 g,
                 pid,
@@ -22165,10 +22212,31 @@ impl AdvancedAi {
                         || !self.settler_threat_deferrals.contains_key(position))
             })
             .collect::<Vec<_>>();
+        // See `settle_sooner`: the walk is priced in TURNS as well as tiles,
+        // each turn dearer the longer this Settler has already been out, and
+        // the price is applied to the ranking itself — `path_to` below is a
+        // one-turn flood, so only this ordering reaches a site more than a
+        // turn away (`first_reachable_settle_site` takes the first reachable
+        // candidate in ranked order). Ground the walk cannot reach within the
+        // radius is priced by hex distance at one point a step.
+        let turn_price = self.settle_sooner_walk_price(g, uid);
+        if let Some((_, moves)) = turn_price {
+            let costs = Self::settle_sooner_walk_costs(g, uid, radius);
+            for (position, value) in candidates.iter_mut() {
+                let movement_cost = costs
+                    .get(position)
+                    .copied()
+                    .unwrap_or_else(|| g.wdist(from, *position) as f64 * moves.max(1.0) / 2.0);
+                *value -= Self::settle_sooner_walk_cost(turn_price, movement_cost);
+            }
+            candidates.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap().then(a.0.cmp(&b.0)));
+        }
         if !self.settlement_safety {
             return BasicAi::first_reachable_settle_site(g, uid, &candidates);
         }
         let visible = self.battlefront_visibility(g, pid);
+        // The one-turn routed branch: the candidate value already carries
+        // the gene's walk price, so it is not charged again here.
         let mut routed = candidates
             .iter()
             .take(SETTLEMENT_ROUTE_CANDIDATE_LIMIT)
@@ -22188,6 +22256,80 @@ impl AdvancedAi {
         }
         routed.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap().then(a.0.cmp(&b.0)));
         routed.into_iter().next()
+    }
+
+    /// The price of one turn of this Settler's walk and the Settler's own
+    /// pace, under `settle_sooner`; `None` when the gene is off. The price
+    /// begins at `SETTLE_SOONER_TURN_PRICE` and adds that base price for every
+    /// `SETTLE_SOONER_PATIENCE` standard turns the Settler has already been
+    /// walking (`settler_walk_started`, stamped by `advanced_settler_step`).
+    fn settle_sooner_walk_price(&self, g: &Game, uid: u32) -> Option<(f64, f64)> {
+        if !self.settle_sooner {
+            return None;
+        }
+        let waited = self
+            .settler_walk_started
+            .get(&uid)
+            .map_or(0, |started| g.turn.saturating_sub(*started));
+        let patience = g.standard_duration(SETTLE_SOONER_PATIENCE).max(1) as f64;
+        let moves = g.unit_max_moves(uid).max(1.0);
+        Some((
+            SETTLE_SOONER_TURN_PRICE * (1.0 + waited as f64 / patience),
+            moves,
+        ))
+    }
+
+    /// What a route of `movement_cost` movement points costs under
+    /// `settle_sooner`: the turns it takes at the Settler's pace, each at
+    /// the price `settle_sooner_walk_price` set. Zero when the gene is off.
+    fn settle_sooner_walk_cost(turn_price: Option<(f64, f64)>, movement_cost: f64) -> f64 {
+        turn_price.map_or(0.0, |(price, moves)| (movement_cost / moves).ceil() * price)
+    }
+
+    /// Movement points from the Settler's tile to every tile it can walk to
+    /// within `radius` hexes of it — a bounded Dijkstra over
+    /// `Game::step_cost` across the ground `unit_can_traverse` admits.
+    ///
+    /// ⚠ `Game::path_to` is a ONE-TURN flood: it stops where the unit's
+    /// movement runs out, so the route-priced branch of
+    /// `best_reachable_settle_site_except_cached` only ever sees sites the
+    /// Settler reaches this turn, and every farther site is ranked by the
+    /// per-tile discount alone. That is why the walk was under-priced
+    /// (`settler_walk_census`: a mean 7.3 turns a founding) and why this
+    /// gene needs its own multi-turn cost. The long-range router
+    /// (`route_distance`) counts hex steps at cost one each, which is the
+    /// route the Settler will actually walk; terrain is what turns steps
+    /// into turns, and this reads it. A tile the walk cannot reach is
+    /// absent, and the caller prices it by hex distance instead.
+    fn settle_sooner_walk_costs(g: &Game, uid: u32, radius: i32) -> BTreeMap<Pos, f64> {
+        let Some(unit) = g.units.get(&uid) else {
+            return BTreeMap::new();
+        };
+        let start = unit.pos;
+        let mut best: BTreeMap<Pos, f64> = BTreeMap::new();
+        best.insert(start, 0.0);
+        // (cost, pos) min-heap keyed on the cost in thousandths so it orders;
+        // `Pos` breaks ties deterministically.
+        let key = |cost: f64| (cost * 1000.0).round() as i64;
+        let mut frontier = std::collections::BinaryHeap::new();
+        frontier.push(std::cmp::Reverse((key(0.0), start)));
+        while let Some(std::cmp::Reverse((cost_key, cur))) = frontier.pop() {
+            let cost = best[&cur];
+            if key(cost) < cost_key {
+                continue;
+            }
+            for next in g.nbrs(cur) {
+                if g.wdist(start, next) > radius || !g.unit_can_traverse(uid, next) {
+                    continue;
+                }
+                let total = cost + g.step_cost(cur, next);
+                if best.get(&next).is_none_or(|known| total < *known) {
+                    best.insert(next, total);
+                    frontier.push(std::cmp::Reverse((key(total), next)));
+                }
+            }
+        }
+        best
     }
 
     fn best_settler_target(
@@ -22666,6 +22808,11 @@ impl AdvancedAi {
 
     fn advanced_settler_step(&mut self, g: &mut Game, pid: usize, uid: u32) -> bool {
         let current = g.units[&uid].pos;
+        if self.settle_sooner {
+            // The walk clock starts the first turn the Settler is stepped,
+            // whichever branch below steps it. See `settle_sooner`.
+            self.settler_walk_started.entry(uid).or_insert(g.turn);
+        }
         if let Some(sites) = self.settler_dead_sites.get_mut(&uid) {
             sites.retain(|_, until| *until > g.turn);
         }
@@ -29701,6 +29848,8 @@ impl AdvancedAi {
         self.settler_avoid
             .retain(|uid, _| g.units.contains_key(uid));
         self.settler_closest
+            .retain(|uid, _| g.units.contains_key(uid));
+        self.settler_walk_started
             .retain(|uid, _| g.units.contains_key(uid));
         self.builder_targets
             .retain(|uid, _| g.units.contains_key(uid));
