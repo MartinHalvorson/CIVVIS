@@ -3628,9 +3628,13 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             Box::new(ai)
         }
         "advanced_holy_lane_v0" => {
-            let mut w = Weights::default();
-            w.d_holy = PRE_2026_08_10_D_HOLY;
-            let mut ai = AdvancedAi::with_weights(w);
+            // Struct-update rather than the sibling arms' assign-after-default:
+            // `rust-quality` is line-scoped, so re-adding these lines makes them
+            // this change's to answer for. Same weights either way.
+            let mut ai = AdvancedAi::with_weights(Weights {
+                d_holy: PRE_2026_08_10_D_HOLY,
+                ..Default::default()
+            });
             ai.holy_lane_parity = true;
             Box::new(ai)
         }

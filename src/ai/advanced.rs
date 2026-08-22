@@ -4523,7 +4523,6 @@ pub struct AdvancedAi {
 /// own-lane value in `strategic_family`. See `AdvancedAi::holy_lane_parity`.
 const HOLY_LANE_PARITY: f64 = 850.0;
 
-
 /// What an open Diplomacy lane is worth before it has produced anything.
 ///
 /// Religion's own opening figure, copied rather than chosen: see
