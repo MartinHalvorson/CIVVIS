@@ -9351,9 +9351,23 @@ const YPIP = { food:"#69e64f", production:"#ff8b3d", gold:"#ffda3b",
                science:"#36cfff", culture:"#ca74ff", faith:"#f6e5a8" };
 const YINK = { food:"#f3fbef", production:"#fff4e6", gold:"#553a08",
                science:"#f1fbff", culture:"#fbf3ff", faith:"#463f2e" };
-// The charcoal rim ties a same-yield stack together without making it read
-// like a row of separate black tokens.
-const YIELD_PIP_RIM = .58;
+// Firaxis does not rim each sign. It lays one shaded plate under the whole
+// same-yield cluster, and that plate is what makes a rich tile read as three
+// marks rather than a dozen tokens. The numbers are measured off the base
+// game's own map overlay atlas (Base/Platforms/…/TEXTURE_YieldOverlayAtlas):
+// a 43px sign cell carrying a 38px icon, so 2.5px of plate shows around each
+// sign and 4px between neighbours, all over a near-black rgb(8,12,16) at 92%
+// with a soft 6px shadow under it.
+const YIELD_PLATE_FILL = "rgba(8,12,16,.92)";
+const YIELD_PLATE_SHADOW = "rgba(5,8,6,.55)";
+// Plate edge beyond a sign, as a fraction of that sign's radius.
+const YIELD_PLATE_PAD = .13;
+// A lone sign sits on a squircle, not on a ring of plate: the base game's
+// one-count plate is a rounded square whose corner is .84 of its half-side,
+// which reads as a marker laid on the map rather than an outline on the sign.
+const YIELD_PLATE_SOLO_CORNER = .84;
+// A worked tile keeps its warm keyline — now one line around the cluster.
+const YIELD_PLATE_WORKED_EDGE = "rgba(244,206,122,.95)";
 // Place the visual centre below the tile's midpoint, measured from its top
 // point to bottom point. This preserves the same seat on flat and globe maps.
 const STRATEGIC_YIELD_CENTER_FRACTION = .60;
@@ -9410,10 +9424,11 @@ function tileDetailYieldWords(yields, sign = false) {
 }
 
 // One to four pips form the small, instantly-recognisable Civ-style stacks.
-// Base-game stacks are nearly nested: a narrow coloured gap keeps each sign
-// countable while the thin charcoal rim binds them into one compact mark.
+// The gap is the base game's own: 4px between two 38px signs, so a thin line
+// of plate separates neighbours and keeps them countable while the plate
+// under them binds the stack into one mark.
 function yieldPipOffsets(count, r) {
-  const gap = .55 * r / 4.4;
+  const gap = .92 * r / 4.4;
   const step = r * 2 + gap;
   if (count === 2) return [[0, -step / 2], [0, step / 2]];
   if (count === 3) {
@@ -9441,7 +9456,7 @@ function yieldPipCluster(kind, amount, r) {
       portion:summary ? 1 : pips[index].portion,
       label,
     }));
-  const edge = sign => sign.r + YIELD_PIP_RIM;
+  const edge = sign => sign.r * (1 + YIELD_PLATE_PAD);
   const minX = Math.min(...signs.map(sign => sign.x - edge(sign)));
   const maxX = Math.max(...signs.map(sign => sign.x + edge(sign)));
   const minY = Math.min(...signs.map(sign => sign.y - edge(sign)));
@@ -9567,24 +9582,103 @@ function drawYieldPipGlyph(kind, x, y, r) {
   cx.restore();
 }
 
-function drawYieldPip(kind, x, y, r, portion, worked, label = "") {
+// ------------------------------------------------------------- yield plates
+//
+// The plate under a cluster is the union of that cluster's signs grown by one
+// padding — which is exactly the hull of the sign centres offset by that
+// radius. So a single routine reproduces the base game's whole plate
+// vocabulary without enumerating it: a capsule under a stacked pair, a
+// rounded triangle under a trio, a rounded square under a quartet, each one
+// hugging its formation instead of boxing it.
+function yieldPlateHull(points) {
+  if (points.length < 3) return points;
+  const sorted = points.slice().sort((a, b) => a.x - b.x || a.y - b.y);
+  const cross = (o, a, b) =>
+    (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+  const chain = list => {
+    const out = [];
+    for (const point of list) {
+      while (out.length >= 2 &&
+             cross(out[out.length - 2], out[out.length - 1], point) <= 0) out.pop();
+      out.push(point);
+    }
+    out.pop();
+    return out;
+  };
+  const hull = chain(sorted).concat(chain(sorted.slice().reverse()));
+  return hull.length >= 2 ? hull : points;
+}
+
+// Walk the hull's outward normals: every edge contributes a straight side of
+// the plate and every corner the arc that rounds it. `arc` draws the side for
+// us as the line into each arc's start, and the normal angle only ever
+// increases around the walk, so the sides and corners join without a seam.
+function traceYieldPlate(signs, dx, dy) {
+  const grow = sign => sign.r * (1 + YIELD_PLATE_PAD);
+  if (signs.length === 1) {
+    const [sign] = signs, r = grow(sign);
+    const x = dx + sign.x, y = dy + sign.y;
+    // Five-or-more is a numbered badge, and the base game seats that one on a
+    // disc. Every other lone sign gets the rounded square.
+    if (sign.label) { cx.moveTo(x + r, y); cx.arc(x, y, r, 0, 7); return; }
+    cx.roundRect(x - r, y - r, r * 2, r * 2, r * YIELD_PLATE_SOLO_CORNER);
+    return;
+  }
+  const hull = yieldPlateHull(signs.map(sign =>
+    ({x:dx + sign.x, y:dy + sign.y, r:grow(sign)})));
+  const outward = hull.map((point, index) => {
+    const next = hull[(index + 1) % hull.length];
+    return Math.atan2(-(next.x - point.x), next.y - point.y);
+  });
+  for (let index = 0; index < hull.length; index++) {
+    const point = hull[index];
+    cx.arc(point.x, point.y, point.r,
+      outward[(index + hull.length - 1) % hull.length], outward[index]);
+  }
+  cx.closePath();
+}
+
+function drawYieldPlate(signs, dx, dy, worked) {
+  const r = Math.max(...signs.map(sign => sign.r));
+  cx.save();
+  cx.beginPath();
+  traceYieldPlate(signs, dx, dy);
+  cx.shadowColor = YIELD_PLATE_SHADOW;
+  cx.shadowBlur = Math.max(1.1, r * .3);
+  cx.shadowOffsetY = Math.max(.35, r * .12);
+  cx.fillStyle = YIELD_PLATE_FILL;
+  cx.fill();
+  cx.shadowBlur = 0; cx.shadowOffsetY = 0;
+  // One keyline around the cluster, where there used to be one around every
+  // sign in it.
+  if (worked) {
+    cx.strokeStyle = YIELD_PLATE_WORKED_EDGE;
+    cx.lineWidth = Math.max(.55, r * .11);
+    cx.stroke();
+  }
+  cx.restore();
+}
+
+// A sign standing on the plate needs no rim and no shadow of its own — the
+// plate is the separation. What is left is the coloured disc and the glyph
+// that names its kind.
+function drawYieldPip(kind, x, y, r, portion, label = "") {
   const fill = YPIP[kind] || "#cccccc";
   const fraction = Math.max(.05, Math.min(1, portion));
   const isSummary = !!label;
   cx.save();
-  cx.shadowColor = "rgba(7,10,7,.42)";
-  cx.shadowBlur = 1.45; cx.shadowOffsetY = .65;
-  cx.fillStyle = "rgba(7,12,9,.82)";
-  cx.beginPath(); cx.arc(x, y, r + YIELD_PIP_RIM, 0, 7); cx.fill();
-  cx.shadowBlur = 0; cx.shadowOffsetY = 0;
+  // The disc itself, clipped so a fractional sign fills from the bottom up.
   cx.save();
   cx.beginPath(); cx.arc(x, y, r, 0, 7); cx.clip();
+  // The unearned part of a fractional sign stays a dimmed disc, so half a
+  // point still reads as one sign rather than as half a mark on the plate.
+  if (fraction < 1) {
+    cx.fillStyle = "rgba(228,242,234,.13)";
+    cx.fillRect(x - r, y - r, r * 2, r * 2);
+  }
   cx.fillStyle = fill;
   cx.fillRect(x - r, y + r - r * 2 * fraction, r * 2, r * 2 * fraction);
   cx.restore();
-  cx.strokeStyle = worked ? "rgba(244,206,122,.95)" : "rgba(12,16,12,.82)";
-  cx.lineWidth = worked ? .95 : (isSummary ? .78 : .58);
-  cx.beginPath(); cx.arc(x, y, r, 0, 7); cx.stroke();
   if (isSummary) {
     // The count is painted over the larger sign, with a dark keyline so it
     // remains readable on every yield colour and over a bright terrain tile.
@@ -9630,9 +9724,10 @@ function drawTileYields(t, x, y, worked) {
     for (let index = 0; index < row.clusters.length; index++) {
       const cluster = row.clusters[index];
       const clusterX = px + cluster.width / 2;
+      drawYieldPlate(cluster.signs, clusterX, cy, worked);
       for (const sign of cluster.signs) {
         drawYieldPip(sign.kind, clusterX + sign.x, cy + sign.y,
-          sign.r, sign.portion, worked, sign.label);
+          sign.r, sign.portion, sign.label);
       }
       px += cluster.width + (index + 1 < row.clusters.length ? row.gap : 0);
     }
