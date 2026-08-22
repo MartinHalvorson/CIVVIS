@@ -180,8 +180,12 @@ class TheDefaultRule(unittest.TestCase):
         self.assertFalse(self.on(-26, 39), "housing-research: average 6.5")
         self.assertFalse(self.on(-192, 8), "war-economy: a helps verdict does not save it")
 
-    def test_one_native_reading_is_never_enough(self):
-        self.assertFalse(self.on(48), "no prior column to agree with it")
+    def test_one_native_reading_must_clear_twenty(self):
+        self.assertTrue(self.on(21), "a single reading above +20 is provisionally on")
+        self.assertFalse(self.on(20), "exactly +20 does not clear the strict bar")
+        self.assertFalse(self.on(-21))
+        self.assertTrue(gene_ledger.default_from_win_columns(None, 21))
+        self.assertFalse(gene_ledger.default_from_win_columns(None, 20))
         # A gene no screen has measured has no row at all; the rule still
         # answers for it, and `ledger_default_on` gives the same `false`.
         self.assertFalse(gene_ledger.default_from_win_columns(None, None))
@@ -193,7 +197,7 @@ class TheDefaultRule(unittest.TestCase):
     def test_the_war_regime_does_not_supply_a_column(self):
         with tempfile.TemporaryDirectory() as tmp:
             native = Path(tmp) / "n.json"
-            native.write_text(json.dumps(analysis("native", [{"tag": "g", "wins": 40}])))
+            native.write_text(json.dumps(analysis("native", [{"tag": "g", "wins": 20}])))
             war = Path(tmp) / "w.json"
             war.write_text(json.dumps(
                 analysis("domination,score", [{"tag": "g", "wins": 40, "wz": 3.0}])))
@@ -202,7 +206,7 @@ class TheDefaultRule(unittest.TestCase):
         gene = ledger["genes"][0]
         self.assertEqual(gene["verdict"], "helps")
         self.assertIsNone(gene["wins_prior_10k"], "the war screen is not a native reading")
-        self.assertFalse(gene["default_on"])
+        self.assertFalse(gene["default_on"], "the war +40 must not help native +20 clear its bar")
 
 
 class KnownTags(unittest.TestCase):

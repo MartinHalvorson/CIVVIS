@@ -37,9 +37,9 @@
   },
   "genome_coverage": {
     "capability_toggles": 163,
-    "measured_by_a_screen": 50,
+    "measured_by_a_screen": 64,
     "reachable_as_a_gene": 98,
-    "resolved_by_a_screen": 26,
+    "resolved_by_a_screen": 27,
     "unreachable_by_any_screen": 65,
     "unreachable_toggles": [
       "adjacent_camp_clear",
