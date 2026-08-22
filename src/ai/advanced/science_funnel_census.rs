@@ -1287,3 +1287,79 @@ mod great_scientist_probe {
         }
     }
 }
+
+#[cfg(test)]
+mod patronage_reach_probe {
+    use super::*;
+
+    /// Does the PATRONAGE path — the one `great-person-effect-reach` reprices
+    /// — ever actually decide anything?
+    ///
+    /// ⚠⚠ THE CHECK I SKIPPED HALF OF. `great_scientist_probe` established
+    /// that the seat recruits one to three Great Scientists a game and that
+    /// their counters pay 20–32 Science a turn, and I priced the patronage
+    /// ranking on that. But a Great Person arriving on POINTS never passes
+    /// through `advanced_great_people`'s candidate list at all, and the gene
+    /// came back **byte-identical to control over twelve seeds**. The rule
+    /// this bundle already carries is to ask whether the decision arises —
+    /// and "the mechanism is used" is not the same question as "the code path
+    /// I changed is used".
+    ///
+    /// This counts patronage actions, by currency, against the Great People
+    /// that arrive without one.
+    #[test]
+    #[ignore = "census, not an assertion; run explicitly with --nocapture"]
+    fn is_a_great_person_ever_bought_rather_than_earned() {
+        for seed in 0..3u64 {
+            let mut g = Game::new(6, 60, 38, 92_000_000 + seed, 250, 6);
+            g.game_speed = GameSpeed::Online;
+            g.victory_conditions =
+                crate::game::VictoryConditions::parse("science,culture,domination,score").unwrap();
+            let mut me = AdvancedAi::new();
+            me.enable_engine_repairs_universe();
+            let mut others = AdvancedAi::fleet(&g);
+            let mut held = 0usize;
+            let mut arrivals: Vec<(u32, String)> = Vec::new();
+            let mut gold_spent_on_people = 0.0_f64;
+            let mut faith_spent_on_people = 0.0_f64;
+            while g.winner.is_none() && g.turn <= 250 {
+                let pid = g.current;
+                if pid == 0 {
+                    let (gold_before, faith_before) = (g.players[0].gold, g.players[0].faith);
+                    let before = g.players[0].great_people.len();
+                    me.take_turn(&mut g, pid);
+                    if g.players[0].great_people.len() > before {
+                        for person in g.players[0].great_people.iter().skip(before) {
+                            arrivals.push((g.turn, person.to_string()));
+                        }
+                        // A person that arrived on the same turn the treasury
+                        // fell was bought; one that arrived with the treasury
+                        // flat or rising was earned on points.
+                        if g.players[0].gold < gold_before {
+                            gold_spent_on_people += gold_before - g.players[0].gold;
+                        }
+                        if g.players[0].faith < faith_before {
+                            faith_spent_on_people += faith_before - g.players[0].faith;
+                        }
+                    }
+                    held = g.players[0].great_people.len();
+                } else {
+                    others[pid].take_turn(&mut g, pid);
+                }
+                if g.winner.is_none() && g.current == pid {
+                    let _ = g.apply(pid, &Action::EndTurn);
+                }
+            }
+            println!(
+                "PATRONAGE seed {} great_people_held={held} arrivals={} \
+                 gold_dropped_on_arrival={gold_spent_on_people:.0} \
+                 faith_dropped_on_arrival={faith_spent_on_people:.0} \
+                 · end gold={:.0} faith={:.0}",
+                92_000_000 + seed,
+                arrivals.len(),
+                g.players[0].gold,
+                g.players[0].faith,
+            );
+        }
+    }
+}

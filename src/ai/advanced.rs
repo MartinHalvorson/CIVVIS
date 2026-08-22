@@ -4250,6 +4250,38 @@ pub struct AdvancedAi {
     /// gene in this bundle that actually converts: the price used the printed
     /// number instead of what the thing will earn.
     ///
+    /// ⚠⚠⚠ MEASURED: BYTE-IDENTICAL TO CONTROL OVER TWELVE SEEDS. The
+    /// mispricing above is real and the repricing does not reach it, because
+    /// **`effect_value` is not what decides a patronage.** The candidate loop
+    /// filters first and scores second:
+    ///
+    /// ```text
+    /// limit = 0.40 for the lane's own class, else 0.15   (1.0 with tally_great_people)
+    /// if close_fraction > limit { continue }             ← the filter
+    /// score = (affinity + effect_value) * (1 - opportunity)   ← only then
+    /// ```
+    ///
+    /// `close_fraction` is how far the empire still is from earning the
+    /// person, and `affinity` is a flat lane table — 500 for the lane's own
+    /// class, 100 otherwise. Neither reads an effect. So the score ranks only
+    /// the candidates that already survived a filter this gene cannot move,
+    /// and on these games that set is small enough that the ordering rarely
+    /// decides anything at all.
+    ///
+    /// ⚠ AND THE PROBE THAT WOULD HAVE CAUGHT IT WAS HALF-RUN. This bundle's
+    /// own first rule is to ask whether the decision arises.
+    /// `great_scientist_probe` established that Great Scientists ARE recruited
+    /// (one to three a game, Einstein among them) and that their counters DO
+    /// pay 20–32 Science a turn — and I priced the patronage ranking on that.
+    /// "The mechanism is used" is not the same question as "the code path I
+    /// changed decides anything". `patronage_reach_probe` asks the second one:
+    /// the path is busy (4,420 Faith spent on arrivals in one game), and the
+    /// ranking inside it still never flips.
+    ///
+    /// Kept, off, with the number on it. The lever the diagnosis points at is
+    /// the FILTER, not the score — and `tally_great_people` is already the
+    /// gene that lifts it.
+    ///
     /// With this on, a per-building science effect is multiplied by the
     /// buildings the empire HOLDS and by a bounded horizon
     /// (`GREAT_PERSON_RATE_HORIZON`), and every other effect keeps its face
@@ -14982,7 +15014,7 @@ impl AdvancedAi {
             }
         }
         let remaining = g.max_turns.saturating_sub(g.turn) as f64;
-        let horizon = remaining.min(GREAT_PERSON_RATE_HORIZON).max(0.0);
+        let horizon = remaining.clamp(0.0, GREAT_PERSON_RATE_HORIZON);
         (lump + per_turn * horizon) * 12.0
     }
 
