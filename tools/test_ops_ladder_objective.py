@@ -333,10 +333,6 @@ class NoOperationalScriptHoldsALaneOfItsOwn(unittest.TestCase):
                         sync.index('"$HEAD_SHA" != "$ORIGIN_MAIN_SHA"'))
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class EveryLadderLoopCanAskForTheRungAndTheLane(unittest.TestCase):
     """`docs/CIV6_LADDER.md` records wins per (victory type, difficulty), so a
     loop that cannot vary those two cannot move the ladder at all.
@@ -418,3 +414,7 @@ class EveryLadderLoopCanAskForTheRungAndTheLane(unittest.TestCase):
         self.assertEqual(offenders, [], "\n".join(
             ["an ops script pins the rung by hand; take it from the ladder "
              "policy or from CIVVIS_DIFFICULTY:"] + offenders))
+
+
+if __name__ == "__main__":
+    unittest.main()
