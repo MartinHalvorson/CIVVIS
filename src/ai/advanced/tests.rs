@@ -20130,9 +20130,15 @@ fn a_settler_threat_detour_uses_a_safe_runner_up_then_reopens_the_site() {
 }
 
 #[test]
-fn settler_threat_detour_is_an_off_by_default_native_gene() {
+fn settler_threat_detour_is_a_native_opt_in_deployed_by_the_ledger() {
     assert!(!AdvancedAi::new().settler_threat_detour);
     assert!(!AdvancedAi::legacy().settler_threat_detour);
+    let mut deployed = AdvancedAi::new();
+    deployed.enable_engine_repairs();
+    assert!(
+        deployed.settler_threat_detour,
+        "its sole +50 win column clears the provisional deployment bar"
+    );
     let (_, _, enable) = PRODUCTION_OPT_INS
         .iter()
         .find(|(_, tag, _)| *tag == "settler-threat-detour")
@@ -20162,16 +20168,19 @@ fn one_shot_recovery_is_an_off_by_default_native_gene() {
     assert!(!ai.base.one_shot_recovery);
 }
 
-/// `settle_sooner` is a native, off-by-default gene: off in both default
-/// controllers and in the deployment genome (it ships unmeasured, so the
-/// ledger holds it off), flippable by name through `PRODUCTION_OPT_INS`.
+/// `settle_sooner` is a native opt-in: off in both bare controllers, enabled
+/// in the deployment genome by its sole +41 win column, and flippable by name
+/// through `PRODUCTION_OPT_INS`.
 #[test]
-fn settle_sooner_is_an_off_by_default_native_gene() {
+fn settle_sooner_is_a_native_opt_in_deployed_by_the_ledger() {
     assert!(!AdvancedAi::new().settle_sooner);
     assert!(!AdvancedAi::legacy().settle_sooner);
     let mut deployed = AdvancedAi::new();
     deployed.enable_engine_repairs();
-    assert!(!deployed.settle_sooner, "an unmeasured gene ships off");
+    assert!(
+        deployed.settle_sooner,
+        "its sole +41 win column clears the provisional deployment bar"
+    );
     let (_, _, enable) = PRODUCTION_OPT_INS
         .iter()
         .find(|(_, tag, _)| *tag == "settle-sooner")

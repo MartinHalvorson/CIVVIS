@@ -6,7 +6,7 @@
     "hurts": "the mirror image",
     "deciding_regime": "native when it resolves, else war when it resolves, else unresolved",
     "win_column": "wins added per 10,000 games at the gene's measured on-rate in one native screen, (win_on - 1/players) * 10000; last and prior are the two most recent native screens that priced the gene",
-    "default_on": "both win columns positive, or their average above +15 with neither below -10; off for a gene with fewer than two native readings"
+    "default_on": "both win columns positive, or their average above +15 with neither below -10; with exactly one populated column, on when it is above +20; unmeasured is off"
   },
   "sources": [
     {
@@ -194,7 +194,7 @@
     "helps": 20,
     "hurts": 8,
     "unresolved": 37,
-    "default_on": 26
+    "default_on": 33
   },
   "genes": [
     {
@@ -736,7 +736,7 @@
     {
       "tag": "builder-worked-tile-priority",
       "verdict": "unresolved",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 24,
       "wins_prior_10k": null,
       "deciding_regime": null,
@@ -1330,7 +1330,7 @@
     {
       "tag": "governor-victory-lanes",
       "verdict": "unresolved",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 46,
       "wins_prior_10k": null,
       "deciding_regime": null,
@@ -1368,7 +1368,7 @@
     {
       "tag": "great-person-housing",
       "verdict": "helps",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 78,
       "wins_prior_10k": null,
       "deciding_regime": "native",
@@ -1838,7 +1838,7 @@
     {
       "tag": "opportunistic-war",
       "verdict": "helps",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 23,
       "wins_prior_10k": null,
       "deciding_regime": "native",
@@ -1962,7 +1962,7 @@
     {
       "tag": "raid-pillage-prizes",
       "verdict": "helps",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 30,
       "wins_prior_10k": null,
       "deciding_regime": "native",
@@ -2240,7 +2240,7 @@
     {
       "tag": "settle-sooner",
       "verdict": "helps",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 41,
       "wins_prior_10k": null,
       "deciding_regime": "native",
@@ -2422,7 +2422,7 @@
     {
       "tag": "settler-threat-detour",
       "verdict": "helps",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 50,
       "wins_prior_10k": null,
       "deciding_regime": "native",
