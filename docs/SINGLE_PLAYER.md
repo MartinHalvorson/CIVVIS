@@ -510,24 +510,28 @@ no viewer, and waits for nothing.
 
 ## Keys
 
-Chosen to match Civ 6 where Civ 6 has an opinion, and to leave the existing
-camera and spectator keys alone.
+The map is Civilization VI's own, read out of that game's `InputSettings.json`
+rather than chosen: `1` ends the turn, `Space` skips a unit, `Z` sleeps it, `V`
+puts it on alert, `F` fortifies it, `B` founds a city, `E` sends it exploring,
+`.` and `,` walk the units that still want orders, `]` and `[` walk the cities,
+`T` and `C` open the trees, `D` opens Quick Deals, and the screens Civ 6 keeps
+on function keys keep them. The lenses run `2` through `0` exactly as they do
+there. [CIV6_KEYBINDINGS.md](CIV6_KEYBINDINGS.md) is the whole table, including
+the four places the map cannot be that game's — `A` is Attack there and
+CIVVIS attacks by pointing, and F5, F6, F11 and F12 belong to the browser.
 
-| Key | Action |
-|-----|--------|
-| `Enter` | Resolve the next blocker, or end the turn |
-| `Shift`+`Enter` | End the turn regardless of blockers |
-| `Space` | Skip the selected unit's turn (or end the turn with nothing selected) |
-| `Z` | Sleep the selected unit |
-| `F` | Fortify the selected unit — with nothing selected, toggle the command deck |
-| `Tab` | Select the next unit needing orders |
-| `Escape` | Clear the selection |
-| Secondary-click a far tile | Travel there over as many turns as it takes |
-| `P` | Civilopedia |
-| `D` | Quick Deals |
-| `A` | Auto-play the selected agent for the selected turns — again to stop |
-| `Y` | Tile yields |
-| `1` `2` `3` | Next unit · appeal lens · tack a marker |
+Two rules the table does not show:
+
+- `1` resolves the next blocker rather than ending the turn, in the priority
+  order above. `Shift`+`1` ends it regardless, because a rule that cannot be
+  overridden becomes a trap the first time a player disagrees with it.
+- Secondary-clicking a tile outside this turn's movement is an order to travel
+  there over as many turns as it takes.
+
+This table used to promise `Enter`, `Tab`, `P`, `L`, and an `A` that meant
+auto-play. None of those keys were bound to anything: the client's map had
+five entries, and the ones a player would actually reach for were not among
+them. They are now, and both documents describe the same map.
 
 ## Notifications
 

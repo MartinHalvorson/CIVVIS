@@ -12817,13 +12817,52 @@ mod tests {
     #[test]
     fn browser_key_bindings_match_the_requested_set() {
         for (action, key) in [
-            ("NextAction", "1"),
-            ("SettlerLens", "2"),
-            ("PlaceTack", "3"),
+            // Civilization VI's own defaults, read out of that game's
+            // `InputSettings.json`. The names on the left are Civ 6's action
+            // names, so a row that drifts is a row that stopped matching the
+            // game this client exists to be playable by.
+            ("EndTurn", "1"),
+            ("FoundCity", "b"),
             ("Fortify", "f"),
-            ("Alert", "a"),
+            ("FortifyUntilHeal", "h"),
+            ("SkipTurn", " "),
+            ("Sleep", "z"),
+            ("Alert", "v"),
+            ("AutoExplore", "e"),
+            ("NextUnit", "."),
+            ("PrevUnit", ","),
+            ("NextCity", "]"),
+            ("PrevCity", "["),
+            ("ToggleTechTree", "t"),
+            ("ToggleCivicsTree", "c"),
+            ("ToggleReligion", "l"),
+            ("ToggleGreatPeople", "o"),
+            ("OpenQDPopup", "d"),
+            ("ToggleGovernment", "F7"),
+            ("ToggleGovernors", "F10"),
+            ("ToggleCityStates", "F2"),
+            ("ToggleEspionage", "F3"),
+            ("ToggleTradeRoutes", "F4"),
+            ("ToggleReports", "F8"),
+            ("ToggleRankings", "F1"),
+            ("OpenCivilopedia", "F9"),
+            ("ToggleYield", "y"),
+            ("ToggleGrid", "g"),
+            ("ToggleResources", "q"),
+            ("ToggleFSMap", "End"),
+            ("LensContinent", "2"),
+            ("LensAppeal", "3"),
+            ("LensSettler", "4"),
+            ("LensGovernment", "5"),
+            ("LensPolitical", "6"),
+            ("LensTourism", "7"),
+            ("LensLoyalty", "8"),
+            ("LensEmpire", "9"),
+            ("LensPower", "0"),
+            // This client's own, where Civ 6 has nothing to copy.
+            ("NextAction", "n"),
             ("PreviousCity", "ArrowLeft"),
-            ("NextCity", "ArrowRight"),
+            ("NextCityArrow", "ArrowRight"),
         ] {
             let row = format!("{{id: \"{action}\", key: \"{key}\"");
             assert!(
@@ -12831,23 +12870,66 @@ mod tests {
                 "required {action} is missing from the {key} shortcut"
             );
         }
+        // The two chords that game puts Shift on, and nothing else may.
+        assert!(EMBEDDED_INDEX
+            .contains("{id: \"EndTurnAnyway\", key: \"1\", shift: true"));
+        assert!(EMBEDDED_INDEX
+            .contains("{id: \"AddMapTack\", key: \"a\", shift: true"));
+        // `A` is Attack in Civ 6 and this client attacks by pointing, so it
+        // carries no order of its own — it was Alert here until this table
+        // was reconciled with the game's, and must not quietly become one
+        // again.
+        assert!(!EMBEDDED_INDEX.contains("{id: \"Alert\", key: \"a\""));
+        // Tab is how somebody navigating by keyboard reaches every control on
+        // the page. The board does not take it.
+        assert!(!EMBEDDED_INDEX.contains("key: \"Tab\""));
+        // Neither do the four the browser owns.
+        for taken in ["\"F5\"", "\"F6\"", "\"F11\"", "\"F12\""] {
+            assert!(
+                !EMBEDDED_INDEX.contains(&format!("key: {taken}")),
+                "the browser owns {taken}"
+            );
+        }
         let shortcuts = EMBEDDED_INDEX
             .split_once("const CIVVIS_SHORTCUTS = [")
             .and_then(|(_, tail)| {
-                tail.split_once("];\n// One lookup per key.")
+                tail.split_once("];\n// One lookup per key")
                     .map(|(rows, _)| rows)
             })
             .expect("the closed shortcut table");
-        assert_eq!(shortcuts.matches("{id: \"").count(), 7);
+        assert_eq!(shortcuts.matches("{id: \"").count(), 44);
         assert!(!EMBEDDED_INDEX.contains("const CIV6_BINDINGS = ["));
         assert!(!EMBEDDED_INDEX.contains("let altTap"));
+        // Everything that needs a seat is withheld from a spectator, and
+        // everything that only describes the picture is not.
+        for (action, spectator) in [
+            ("EndTurn", false), ("Fortify", false), ("SkipTurn", false),
+            ("ToggleTechTree", false), ("ToggleGovernment", false),
+            ("ToggleYield", true), ("LensSettler", true), ("ToggleFSMap", true),
+            ("ToggleRankings", true), ("OpenCivilopedia", true),
+        ] {
+            let row = shortcuts
+                .split_once(&format!("{{id: \"{action}\","))
+                .expect("the row")
+                .1
+                .split_once("},")
+                .expect("the row's end")
+                .0;
+            assert_eq!(
+                row.contains("spectator: true"),
+                spectator,
+                "{action} is on the wrong side of the seat"
+            );
+        }
+        // The legend in the deck is the same map, one row per binding.
         let legend = EMBEDDED_INDEX
             .split_once("<summary>Keyboard shortcuts</summary>")
             .and_then(|(_, tail)| tail.split_once("</details>").map(|(panel, _)| panel))
             .expect("the keyboard shortcut legend");
-        assert_eq!(legend.matches("<kbd>").count(), 7);
-        assert_eq!(EMBEDDED_INDEX.matches("<kbd>").count(), 7);
-        assert!(legend.contains("<span><kbd>3</kbd>Add a map tack</span>"));
+        assert_eq!(legend.matches("<kbd>").count(), 47);
+        assert_eq!(EMBEDDED_INDEX.matches("<kbd>").count(), 47);
+        assert!(legend.contains("<span><kbd>Shift</kbd><kbd>A</kbd>Add a map tack</span>"));
+        assert!(legend.contains("<span><kbd>1</kbd>End turn · next blocker</span>"));
         assert!(EMBEDDED_INDEX.contains(
             "return myCities().slice().sort((left, right) => Number(left.id) - Number(right.id));"
         ));
@@ -12888,8 +12970,20 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains(
             "(MAC_POINTER_PLATFORM && ev.button === 0 && ev.ctrlKey)"
         ));
+        // Command, Control and Option belong to the browser and never become
+        // map bindings. Shift does, for the two chords Civ 6 puts it on, so
+        // it is matched from its own table rather than refused outright.
         assert!(EMBEDDED_INDEX.contains(
-            "if (ev.metaKey || ev.ctrlKey || ev.altKey || ev.shiftKey) return undefined;"
+            "if (ev.metaKey || ev.ctrlKey || ev.altKey) return undefined;"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "const table = ev.shiftKey ? SHIFT_KEY_ACTIONS : KEY_ACTIONS;"
+        ));
+        assert_eq!(EMBEDDED_INDEX.matches("shift: true").count(), 2);
+        // Space and Enter belong to whichever control has focus, so a person
+        // navigating by keyboard never skips a unit by pressing a button.
+        assert!(EMBEDDED_INDEX.contains(
+            "if ((ev.key === \" \" || ev.key === \"Enter\") && (tag === \"BUTTON\" || tag === \"A\" ||"
         ));
     }
 
