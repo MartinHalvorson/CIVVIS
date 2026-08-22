@@ -3795,6 +3795,81 @@ pub struct AdvancedAi {
     /// Off everywhere by default; opt-in gene `priced-tile-purchase`.
     pub priced_tile_purchase: bool,
 
+    /// Price the science economy on whether it can still REPAY, not on how
+    /// much of the game is left.
+    ///
+    /// ★★★★ EVERY SCIENCE TERM IN THIS CONTROLLER TAPERS TO ZERO, AND ITS
+    /// RIVALS DO NOT. `research_horizon` is `(max_turns - turn) / max_turns`,
+    /// so at turn 150 of 250 a Campus is priced at 0.40 and a missing Library
+    /// at 0.40 of its debt — with a hundred turns of compounding still to
+    /// come — while `(Culture, theater_square)` **850**, `government_plaza`
+    /// `first_copy` **420**, `(Diplomacy, diplomatic_quarter)` **360** and the
+    /// Monument's **+240** are flat constants that never decay at all. The
+    /// empire therefore cares about beakers exactly in the half of the game
+    /// where beakers matter least, and stops caring in the half where a tech
+    /// tier is the difference between Field Cannon and Spearmen.
+    ///
+    /// The shape the repair needs already exists and is already used by this
+    /// building's neighbours: `campus_payback_horizon` holds FULL value while
+    /// more than `RESEARCH_CAMPUS_PAYBACK` of the budget remains and ramps to
+    /// zero only inside that window, so a Campus begun at turn 245 still does
+    /// not outbid a defender. `DISTRICT_BUILDING_CHAIN_DEBT` and
+    /// `CULTURE_THEATER_COVERAGE` are both already scaled by it.
+    ///
+    /// ⚠ The Campus coverage term's own comment has said "**A PAYBACK
+    /// horizon, not a game-fraction one**" since #1095 — but the branch that
+    /// made it true was `campus_every_city`, and #2235 removed that gene with
+    /// the bottom of the ranking, which silently reverted the line under the
+    /// comment to `research_horizon`. `campus-every-city` was culled on a
+    /// **war-regime** screen (`--victories domination,score`, 4p, 299 of 300
+    /// games ending on the score tally at the clock), which is the one regime
+    /// a science treatment cannot be priced in. This gene is the repair
+    /// measured on its own, in the native six-player regime, under its own
+    /// name — not a resurrection of the culled composite, whose other half
+    /// (a Campus in *every* city regardless of coverage) is deliberately left
+    /// out.
+    ///
+    /// With this on, `RESEARCH_CAMPUS_COVERAGE` and `RESEARCH_BUILDING_DEBT`
+    /// use `campus_payback_horizon`. Nothing else moves: the citizen tilt, the
+    /// research-weight floor, the Culture twin and every rival term are
+    /// untouched, so the screen prices one sentence. Off everywhere by
+    /// default; opt-in gene `science-payback-horizon`.
+    pub science_payback_horizon: bool,
+
+    /// Price a Campus building at the science it will ACTUALLY earn, so the
+    /// research economy scales up as the multipliers arrive instead of down.
+    ///
+    /// ★★★★ THE ONE CARD THAT DOUBLES A LIBRARY IS INVISIBLE TO THE PRICE OF
+    /// A LIBRARY. `rationalism` is `campus_building_science_pct: 100` and
+    /// `natural_philosophy` doubles the Campus's adjacency; `strategic_policies`
+    /// already inserts both the moment the empire owns a Campus. But a
+    /// building's whole worth here is `yield_value(spec.yields) * 42` off the
+    /// **raw** spec — Library 2, University 4, Research Lab 3 — so the second
+    /// Library after Rationalism is bought at the same price as the first
+    /// before it, and the Research Lab's `powered_science` **5** (larger than
+    /// its own printed yield) is never counted at all.
+    ///
+    /// That is the whole late-game compounding loop, unpriced. And the model
+    /// pays the card in halves that arrive LATE and SEPARATELY: half where the
+    /// city has 15 Population, half where the Campus already earns 4 from its
+    /// own adjacency (`Game::city_yields`, matching Gathering Storm's
+    /// REQUIREMENT_CITY_HAS_HIGH_ADJACENCY_DISTRICT Amount=4) — so the true
+    /// price of a Campus building RISES through the game exactly where
+    /// `research_horizon` sends it to zero. The measured funnel is the shape
+    /// this predicts: 50% Campus, 39% Library, **20% University, 3% Research
+    /// Lab**, thinning at precisely the tiers whose multiplied yield is
+    /// largest.
+    ///
+    /// With this on, a non-wonder Campus-family building is credited the extra
+    /// beakers it will earn in THIS city — the qualifying halves of
+    /// `campus_building_science_pct` applied to its own science, plus
+    /// `powered_science` where the city is powered — valued through
+    /// `yield_value` at the same 42 a point as its printed yield. A city that
+    /// qualifies for neither half and has no power is priced exactly as
+    /// before. Off everywhere by default; opt-in gene
+    /// `science-multiplier-payoff`.
+    pub science_multiplier_payoff: bool,
+
     /// Let the Diplomacy lane be entered before it has already succeeded.
     ///
     /// Off by default; evaluator arm `advanced_diplomatic_opening`. See
@@ -4837,6 +4912,8 @@ impl AdvancedAi {
             theology_for_founders: false,
             district_lookahead_settle: false,
             priced_tile_purchase: false,
+            science_payback_horizon: false,
+            science_multiplier_payoff: false,
             idle_faith_patronage: false,
             great_person_housing: false,
             opportunistic_war: false,
@@ -9156,6 +9233,66 @@ impl AdvancedAi {
     /// `RESEARCH_CAMPUS_PAYBACK` of the budget remains, ramping to zero inside
     /// that window. See the constant for why a game-fraction horizon was the
     /// wrong shape for a district that repays in a few dozen turns.
+    /// The beakers a Campus-family building will earn in this city ON TOP of
+    /// its printed yield. See `science_multiplier_payoff`.
+    ///
+    /// Mirrors `Game::city_yields` rather than approximating it: the Campus
+    /// multiplier is paid in HALVES — half at 15 Population, half where the
+    /// Campus already earns 4 Science from its own adjacency, read before the
+    /// card doubles it — and `powered_science` is a flat addition a powered
+    /// city makes whatever the cards say. A city qualifying for neither half
+    /// with no power returns 0.0, which is the pre-gene price exactly.
+    fn campus_multiplier_science(
+        g: &Game,
+        city: &crate::game::City,
+        spec: &crate::rules::BuildingSpec,
+    ) -> f64 {
+        let campus = crate::name!("campus");
+        if spec.district.map(|d| g.district_family(d)) != Some(campus) {
+            return 0.0;
+        }
+        let half = g.policy_effect(city.owner, "campus_building_science_pct") / 2.0;
+        let mut pct = 0.0;
+        if city.pop >= 15 {
+            pct += half;
+        }
+        let campus_adjacency_science = g
+            .city_district_family_position(city, campus)
+            .map(|position| {
+                let placed = g.map.tiles[&position].district.unwrap_or(campus);
+                let mut adjacency = Yields::default();
+                for source in g.district_adjacency_sources(placed, position) {
+                    if source.source != "adjacency_bonus" {
+                        adjacency.add(source.yields);
+                    }
+                }
+                adjacency.science
+            })
+            .unwrap_or(0.0);
+        if campus_adjacency_science >= 4.0 {
+            pct += half;
+        }
+        let powered = if g.city_is_powered(city) {
+            spec.effects.get("powered_science").copied().unwrap_or(0.0)
+        } else {
+            0.0
+        };
+        spec.yields.science * pct / 100.0 + powered
+    }
+
+    /// Which horizon the science economy is priced on. See
+    /// `science_payback_horizon`: `research_horizon` is a fraction of the
+    /// WHOLE GAME and reaches zero at the turn limit; `campus_payback_horizon`
+    /// asks the question the investment actually poses — is there still time
+    /// to repay — and is what the Culture twin and the chain debt already use.
+    fn research_payback(&self, g: &Game) -> f64 {
+        if self.science_payback_horizon {
+            Self::campus_payback_horizon(g)
+        } else {
+            Self::research_horizon(g)
+        }
+    }
+
     fn campus_payback_horizon(g: &Game) -> f64 {
         let budget = g.max_turns.max(1) as f64;
         let window = (budget * RESEARCH_CAMPUS_PAYBACK).max(1.0);
@@ -19675,7 +19812,7 @@ impl AdvancedAi {
                             .keys()
                             .any(|built| g.district_family(*built) == crate::name!("campus"))
                     {
-                        RESEARCH_BUILDING_DEBT * Self::research_horizon(g)
+                        RESEARCH_BUILDING_DEBT * self.research_payback(g)
                     } else {
                         0.0
                     };
@@ -19756,7 +19893,24 @@ impl AdvancedAi {
                     } else {
                         0.0
                     };
+                    // See `science_multiplier_payoff`: the printed yield is
+                    // not what this building will earn. Valued at the same 42 a
+                    // point as `spec.yields` above, through the lane's own
+                    // price of a beaker.
+                    let multiplied_science = if self.science_multiplier_payoff && !spec.wonder {
+                        let extra = Self::campus_multiplier_science(g, city, spec);
+                        self.yield_value(
+                            Yields {
+                                science: extra,
+                                ..Yields::default()
+                            },
+                            plan.strategy,
+                        ) * 42.0
+                    } else {
+                        0.0
+                    };
                     self.yield_value(spec.yields, plan.strategy) * 42.0
+                        + multiplied_science
                         + chain_debt
                         + culture_debt
                         + research_debt
@@ -20097,7 +20251,7 @@ impl AdvancedAi {
                     // `RESEARCH_CAMPUS_PAYBACK`: the old scaling priced this at
                     // 0.40 with a hundred turns of compounding left, while every
                     // rival term is a flat constant that never decays.
-                    RESEARCH_CAMPUS_COVERAGE * Self::research_horizon(g)
+                    RESEARCH_CAMPUS_COVERAGE * self.research_payback(g)
                 } else {
                     0.0
                 };
@@ -30825,6 +30979,8 @@ mod live_bundle_tests {
 
 #[cfg(test)]
 mod tests;
+
+mod science_scaling;
 
 #[cfg(test)]
 mod research_probe;

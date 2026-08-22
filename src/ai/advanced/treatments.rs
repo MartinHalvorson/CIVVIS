@@ -223,6 +223,14 @@ pub const PRODUCTION_OPT_INS: &[LiveTreatment] = &[
     // `advanced/site_lookahead.rs`.
     ("district_lookahead_settle", "district-lookahead-settle", AdvancedAi::enable_district_lookahead_settle),
     ("priced_tile_purchase", "priced-tile-purchase", AdvancedAi::enable_priced_tile_purchase),
+    // Every science term in the controller tapers to zero while the flat
+    // constants it competes with never do; this asks whether the investment
+    // can still repay instead. See `AdvancedAi::science_payback_horizon`.
+    ("science_payback_horizon", "science-payback-horizon", AdvancedAi::enable_science_payback_horizon),
+    // A Library bought after Rationalism earns twice a Library bought before
+    // it, and the price never noticed. See
+    // `AdvancedAi::science_multiplier_payoff`.
+    ("science_multiplier_payoff", "science-multiplier-payoff", AdvancedAi::enable_science_multiplier_payoff),
     // `governor-every-lane` is a losing composite: the deployment screen's
     // score-share drag is large enough that the two pre-existing halves need
     // their own randomised comparisons before either can be retained. The

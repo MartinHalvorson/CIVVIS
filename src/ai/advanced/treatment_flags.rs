@@ -128,6 +128,31 @@ impl AdvancedAi {
         self.base.plot_purchase_delegated = false;
     }
 
+    /// Price the science economy on whether it can still repay rather than on
+    /// how much of the game is left. See
+    /// [`AdvancedAi::science_payback_horizon`]. Opt-in gene
+    /// `science-payback-horizon`.
+    pub fn enable_science_payback_horizon(&mut self) {
+        self.science_payback_horizon = true;
+    }
+
+    /// The twin of `enable_science_payback_horizon`.
+    pub fn disable_science_payback_horizon(&mut self) {
+        self.science_payback_horizon = false;
+    }
+
+    /// Credit a Campus building the beakers its city's multipliers will
+    /// actually pay it. See [`AdvancedAi::science_multiplier_payoff`]. Opt-in
+    /// gene `science-multiplier-payoff`.
+    pub fn enable_science_multiplier_payoff(&mut self) {
+        self.science_multiplier_payoff = true;
+    }
+
+    /// The twin of `enable_science_multiplier_payoff`.
+    pub fn disable_science_multiplier_payoff(&mut self) {
+        self.science_multiplier_payoff = false;
+    }
+
     /// A seat with no religion and 600+ Faith patronizes Great People with it
     /// whatever the shortfall. See [`AdvancedAi::idle_faith_patronage`].
     /// Opt-in gene.
