@@ -20472,6 +20472,187 @@ fn settler_threat_detour_is_an_off_by_default_native_gene() {
     assert!(!ai.settler_threat_detour);
 }
 
+/// `settle_sooner` is a native, off-by-default gene: off in both default
+/// controllers and in the deployment genome (it ships unmeasured, so the
+/// ledger holds it off), flippable by name through `PRODUCTION_OPT_INS`.
+#[test]
+fn settle_sooner_is_an_off_by_default_native_gene() {
+    assert!(!AdvancedAi::new().settle_sooner);
+    assert!(!AdvancedAi::legacy().settle_sooner);
+    let mut deployed = AdvancedAi::new();
+    deployed.enable_engine_repairs();
+    assert!(!deployed.settle_sooner, "an unmeasured gene ships off");
+    let (_, _, enable) = PRODUCTION_OPT_INS
+        .iter()
+        .find(|(_, tag, _)| *tag == "settle-sooner")
+        .expect("the gene is published for gene_screen and evaluator arms");
+    let mut ai = AdvancedAi::new();
+    enable(&mut ai);
+    assert!(ai.settle_sooner);
+    ai.disable_settle_sooner();
+    assert!(!ai.settle_sooner);
+}
+
+/// The walk price: nothing when the gene is off; `SETTLE_SOONER_TURN_PRICE`
+/// a turn for a Settler that has just started; doubled once it has been
+/// walking `SETTLE_SOONER_PATIENCE` standard turns; and a route is charged
+/// by the turns it takes at the Settler's own pace, rounded up.
+#[test]
+fn settle_sooner_prices_each_turn_of_the_walk_dearer_the_longer_it_has_lasted() {
+    let (mut game, home) = camp_bounty_board(93_101);
+    let settler = game.spawn_test_unit("settler", 0, home);
+    let moves = game.unit_max_moves(settler);
+    assert!(moves >= 2.0, "a Settler moves two a turn");
+    let mut ai = AdvancedAi::new();
+    assert_eq!(ai.settle_sooner_walk_price(&game, settler), None);
+    assert_eq!(AdvancedAi::settle_sooner_walk_cost(None, 7.0), 0.0);
+    ai.enable_settle_sooner();
+    let fresh = ai.settle_sooner_walk_price(&game, settler).expect("priced");
+    assert_eq!(fresh, (SETTLE_SOONER_TURN_PRICE, moves));
+    // Three movement points at two a turn is two turns, not one and a half.
+    assert_eq!(
+        AdvancedAi::settle_sooner_walk_cost(Some(fresh), 3.0),
+        2.0 * SETTLE_SOONER_TURN_PRICE
+    );
+    assert_eq!(AdvancedAi::settle_sooner_walk_cost(Some(fresh), 0.0), 0.0);
+    // The first stepped turn stamps the clock; the price then climbs.
+    ai.advanced_settler_step(&mut game, 0, settler);
+    assert_eq!(ai.settler_walk_started.get(&settler), Some(&game.turn));
+    let started = game.turn;
+    game.turn = started + game.standard_duration(SETTLE_SOONER_PATIENCE);
+    let patient = ai.settle_sooner_walk_price(&game, settler).expect("priced");
+    assert!(
+        (patient.0 - 2.0 * SETTLE_SOONER_TURN_PRICE).abs() < 1e-9,
+        "one patience window doubles the price: {patient:?}"
+    );
+    game.turn = started + 2 * game.standard_duration(SETTLE_SOONER_PATIENCE);
+    let impatient = ai.settle_sooner_walk_price(&game, settler).expect("priced");
+    assert!(
+        (impatient.0 - 3.0 * SETTLE_SOONER_TURN_PRICE).abs() < 1e-9,
+        "two windows triple it: {impatient:?}"
+    );
+    // The clock is settler memory: it follows the unit through a live-bridge
+    // id remap and is forgotten with the unit.
+    let mut map = BTreeMap::new();
+    map.insert(settler, settler + 1000);
+    ai.remap_unit_memory(&map);
+    assert_eq!(
+        ai.settler_walk_started.get(&(settler + 1000)),
+        Some(&started)
+    );
+    assert!(!ai.settler_walk_started.contains_key(&settler));
+    ai.forget_unit_memory();
+    assert!(ai.settler_walk_started.is_empty());
+}
+
+/// The property the gene is built on: adding a cost that rises with the
+/// walk can only move the pick NEARER. On every board the treated Settler's
+/// site is no longer a walk (movement points by the gene's own cost map)
+/// than the baseline's, and on at least one of these boards it is a
+/// strictly shorter one — the gene changes a real decision, it is not
+/// inert. A longer wait leans the same way: the pick after a patience
+/// window is no farther than the fresh pick.
+///
+/// ⚠ The property is exact for the multi-turn fallback the picks almost
+/// always take; the one-turn routed branch adds a risk term the walk price
+/// does not touch, so a pick within one turn is compared on the same cost
+/// map and still cannot move farther (the gene's term is monotone in it).
+/// The gene's cost map is a real multi-turn walk: it reaches ground
+/// `path_to` (a one-turn flood) cannot, charges hills and forest what the
+/// engine charges, and stops at the radius.
+#[test]
+fn settle_sooner_walk_costs_read_terrain_beyond_the_first_turn() {
+    let (mut game, home) = camp_bounty_board(93_301);
+    let settler = game.spawn_test_unit("settler", 0, home);
+    let costs = AdvancedAi::settle_sooner_walk_costs(&game, settler, 8);
+    assert_eq!(costs.get(&home), Some(&0.0));
+    let far: Vec<(Pos, f64)> = costs
+        .iter()
+        .filter(|(pos, _)| game.wdist(home, **pos) >= 5)
+        .map(|(pos, cost)| (*pos, *cost))
+        .collect();
+    assert!(!far.is_empty(), "open ground five tiles out is priced");
+    for (pos, cost) in &far {
+        assert!(
+            game.path_to(settler, *pos).is_none(),
+            "{pos:?} is beyond one turn, which path_to cannot route"
+        );
+        assert!(
+            *cost >= game.wdist(home, *pos) as f64,
+            "{pos:?}: every hex step costs at least one movement point ({cost})"
+        );
+    }
+    assert!(
+        costs.keys().all(|pos| game.wdist(home, *pos) <= 8),
+        "the map stops at the radius"
+    );
+    // Hills on the way cost what the engine charges for them.
+    let neighbour = game
+        .nbrs(home)
+        .into_iter()
+        .find(|pos| costs.contains_key(pos))
+        .expect("a walkable neighbour");
+    let expected = game.step_cost(home, neighbour);
+    assert_eq!(costs[&neighbour], expected);
+}
+
+#[test]
+fn settle_sooner_never_picks_a_farther_site_and_sometimes_a_nearer_one() {
+    let mut nearer = 0;
+    let mut boards = 0;
+    for seed in [
+        93_201u64, 93_202, 93_203, 93_204, 93_205, 93_206, 93_207, 93_208,
+    ] {
+        let (mut game, home) = camp_bounty_board(seed);
+        game.set_fog_memory(false);
+        let settler = game.spawn_test_unit("settler", 0, home);
+        let walk_to = |g: &Game, site: Pos| -> f64 {
+            AdvancedAi::settle_sooner_walk_costs(g, settler, 8)
+                .get(&site)
+                .copied()
+                .unwrap_or_else(|| g.wdist(g.units[&settler].pos, site) as f64)
+        };
+        let plain = AdvancedAi::new();
+        let Some((base_site, _)) =
+            plain.best_reachable_settle_site_except(&game, 0, settler, 8, None)
+        else {
+            continue;
+        };
+        let mut treated = AdvancedAi::new();
+        treated.enable_settle_sooner();
+        let (gene_site, _) = treated
+            .best_reachable_settle_site_except(&game, 0, settler, 8, None)
+            .expect("the same candidates exist under the gene");
+        let base_walk = walk_to(&game, base_site);
+        let gene_walk = walk_to(&game, gene_site);
+        assert!(
+            gene_walk <= base_walk + 1e-9,
+            "seed {seed}: the gene picked a farther site ({gene_site:?} at {gene_walk} MP) \
+             than the baseline ({base_site:?} at {base_walk} MP)"
+        );
+        if gene_walk < base_walk - 1e-9 {
+            nearer += 1;
+        }
+        // A Settler that has already walked a patience window leans nearer
+        // still, never farther.
+        treated.settler_walk_started.insert(settler, game.turn);
+        game.turn += game.standard_duration(SETTLE_SOONER_PATIENCE);
+        let (late_site, _) = treated
+            .best_reachable_settle_site_except(&game, 0, settler, 8, None)
+            .expect("the same candidates exist later");
+        assert!(
+            walk_to(&game, late_site) <= gene_walk + 1e-9,
+            "seed {seed}: waiting moved the pick farther ({late_site:?} after {gene_site:?})"
+        );
+        boards += 1;
+    }
+    assert!(boards >= 6, "the fixture boards offer sites: {boards}");
+    assert!(
+        nearer >= 1,
+        "the gene changed no decision on {boards} boards — it would screen as inert"
+    );
+}
+
 #[test]
 fn a_settler_on_quiet_ground_marches_with_its_guard_one_step_behind() {
     let (mut game, source, target) = stacked_escort_fixture();
@@ -29251,6 +29432,868 @@ fn religion_genes_fires_check() {
             game.turn, game.victory_type, census.inquisition_apostles
         );
     }
+}
+
+use super::great_person_housing::{GreatPersonRemedy, StuckGreatPerson};
+
+/// A two-seat world with contact made, player 0 holding a capital with a
+/// Theater Square and the civic that makes an Amphitheater buildable.
+fn great_person_housing_fixture(seed: u64) -> (Game, u32) {
+    let mut game = Game::new_full(2, 28, 18, seed, 300, 0, false);
+    game.record_contact(0, 1);
+    for pid in 0..2 {
+        let settler = game
+            .player_unit_ids(pid)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.found_city_for(pid, game.units[&settler].pos, None);
+        game.remove_unit(settler);
+        game.players[pid]
+            .civics
+            .insert(crate::name!("drama_poetry"));
+        game.players[pid].techs.insert(crate::name!("writing"));
+        game.players[pid].gold = 1_000.0;
+    }
+    game.turn = 60;
+    game.current = 0;
+    let capital = game.player_city_ids(0)[0];
+    install_ai_test_district(&mut game, capital, "theater_square");
+    (game, capital)
+}
+
+fn writing_works(game: &Game, pid: usize) -> i64 {
+    game.players[pid]
+        .counters
+        .get("great_work:writing")
+        .copied()
+        .unwrap_or(0)
+}
+
+fn great_person_housing_plan(game: &Game, strategy: GrandStrategy) -> StrategicPlan {
+    StrategicPlan {
+        strategy,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: game.turn,
+        rush: false,
+    }
+}
+
+/// ★★★★ A GREAT PERSON THE EMPIRE HAS EARNED AND CANNOT USE IS A RACE LOST
+/// FOR NOTHING. A Science seat's Theater Square has earned a full Writer and
+/// owns no Writing slot but the Palace's one: the claim is blocked, the
+/// shipped agent leaves the queue empty (its production chooser vetoes the
+/// Amphitheater at −10,000 off the Culture lane), and the points sit. With
+/// `great_person_housing` the square's city starts the Amphitheater.
+#[test]
+fn a_writer_at_the_price_with_no_slot_starts_an_amphitheater_whatever_the_lane() {
+    let (mut game, capital) = great_person_housing_fixture(71_301);
+    let cost = game.gp_cost(0, "writer");
+    game.players[0].gpp.insert("writer".to_string(), cost);
+    assert!(
+        !game.can_activate_current_great_person(0, "writer"),
+        "two Writing slots are needed and only the Palace's universal slot exists"
+    );
+    let plan = great_person_housing_plan(&game, GrandStrategy::Science);
+    let amphitheater = Item::Building {
+        building: crate::name!("amphitheater"),
+    };
+    assert!(game.can_produce(0, capital, &amphitheater));
+
+    let stock = AdvancedAi::new();
+    assert_eq!(
+        stock.stuck_great_people(&game, 0),
+        vec![StuckGreatPerson {
+            kind: "writer".to_string(),
+            remedy: GreatPersonRemedy::Slots("writing", 2),
+            due: true,
+            turns_to_due: 0.0,
+        }],
+        "the Writer is the one stuck class"
+    );
+    let mut untouched = game.clone();
+    assert!(!stock.great_person_housing(&mut untouched, 0, &plan));
+    assert!(
+        untouched.cities[&capital].queue.is_empty(),
+        "off: nothing is reserved"
+    );
+
+    let mut ai = AdvancedAi::new();
+    ai.enable_great_person_housing();
+    let mut housed = game.clone();
+    assert!(ai.great_person_housing(&mut housed, 0, &plan));
+    assert_eq!(
+        housed.cities[&capital].queue.first(),
+        Some(&amphitheater),
+        "on: the square's city starts the slot building"
+    );
+    // One reservation per class: the next turn sees the Amphitheater queued
+    // and does not touch another city or re-issue the order.
+    assert!(!ai.great_person_housing(&mut housed, 0, &plan));
+}
+
+/// The building starts ahead of the person — within the lead — and not for
+/// points that are still forty turns out.
+#[test]
+fn the_slot_building_starts_within_the_lead_and_not_before() {
+    let (game, capital) = great_person_housing_fixture(71_302);
+    let rate = game.great_person_points_per_turn(0)["writer"];
+    assert!(rate > 0.0, "a Theater Square earns Writer points");
+    let cost = game.gp_cost(0, "writer");
+    let plan = great_person_housing_plan(&game, GrandStrategy::Expansion);
+    let mut ai = AdvancedAi::new();
+    ai.enable_great_person_housing();
+
+    let mut soon = game.clone();
+    soon.players[0]
+        .gpp
+        .insert("writer".to_string(), cost - rate * 10.0);
+    let stuck = ai.stuck_great_people(&soon, 0);
+    assert_eq!(stuck.len(), 1);
+    assert!(!stuck[0].due);
+    assert!((stuck[0].turns_to_due - 10.0).abs() < 1e-6);
+    assert!(ai.great_person_housing(&mut soon, 0, &plan));
+    assert!(matches!(
+        soon.cities[&capital].queue.first(),
+        Some(Item::Building { building }) if *building == crate::name!("amphitheater")
+    ));
+
+    let mut far = game.clone();
+    far.players[0]
+        .gpp
+        .insert("writer".to_string(), cost - rate * 40.0);
+    assert!(ai.stuck_great_people(&far, 0).is_empty());
+    assert!(!ai.great_person_housing(&mut far, 0, &plan));
+    assert!(far.cities[&capital].queue.is_empty());
+}
+
+/// A due person may pause an ordinary building (its progress is kept); a
+/// person still ten turns out may not, and a unit is never paused.
+#[test]
+fn a_due_person_pauses_a_building_but_never_a_unit() {
+    let (mut game, capital) = great_person_housing_fixture(71_303);
+    let cost = game.gp_cost(0, "writer");
+    let rate = game.great_person_points_per_turn(0)["writer"];
+    let plan = great_person_housing_plan(&game, GrandStrategy::Science);
+    let mut ai = AdvancedAi::new();
+    ai.enable_great_person_housing();
+    let granary = Item::Building {
+        building: crate::name!("granary"),
+    };
+    game.players[0].techs.insert(crate::name!("pottery"));
+    let warrior = Item::Unit {
+        unit: crate::name!("warrior"),
+    };
+    assert!(game.can_produce(0, capital, &granary));
+    assert!(game.can_produce(0, capital, &warrior));
+
+    let mut due = game.clone();
+    due.players[0].gpp.insert("writer".to_string(), cost);
+    due.cities.get_mut(&capital).unwrap().queue = vec![granary.clone()];
+    assert!(ai.great_person_housing(&mut due, 0, &plan));
+    assert!(matches!(
+        due.cities[&capital].queue.first(),
+        Some(Item::Building { building }) if *building == crate::name!("amphitheater")
+    ));
+
+    let mut soon = game.clone();
+    soon.players[0]
+        .gpp
+        .insert("writer".to_string(), cost - rate * 10.0);
+    soon.cities.get_mut(&capital).unwrap().queue = vec![granary.clone()];
+    assert!(!ai.great_person_housing(&mut soon, 0, &plan));
+    assert_eq!(soon.cities[&capital].queue.first(), Some(&granary));
+
+    let mut armed = game.clone();
+    armed.players[0].gpp.insert("writer".to_string(), cost);
+    armed.cities.get_mut(&capital).unwrap().queue = vec![warrior.clone()];
+    assert!(!ai.great_person_housing(&mut armed, 0, &plan));
+    assert_eq!(armed.cities[&capital].queue.first(), Some(&warrior));
+}
+
+/// ★★★★ SELL TO MAKE ROOM. Both Writing slots of the only Amphitheater are
+/// full, the Writer is due, and nothing with a Writing slot can be started
+/// anywhere: the gene sells one duplicate work to a rival with an open slot,
+/// which frees the slot the Palace's universal one completes, and recruits
+/// the Writer the same turn — two new works for one sold, plus the Gold.
+/// Off, the works stay, the Writer stays on the market, and the points sit.
+/// The plan's target is never sold a work.
+#[test]
+fn a_due_writer_no_city_can_house_sells_a_duplicate_and_recruits() {
+    let (mut game, capital) = great_person_housing_fixture(71_304);
+    game.cities
+        .get_mut(&capital)
+        .unwrap()
+        .buildings
+        .push(crate::name!("amphitheater"));
+    game.players[0]
+        .counters
+        .insert("great_work:writing".to_string(), 2);
+    let rival = game.player_city_ids(1)[0];
+    install_ai_test_district(&mut game, rival, "theater_square");
+    game.cities
+        .get_mut(&rival)
+        .unwrap()
+        .buildings
+        .push(crate::name!("amphitheater"));
+    let cost = game.gp_cost(0, "writer");
+    game.players[0].gpp.insert("writer".to_string(), cost);
+    assert!(!game.can_house_great_works(0, "writing", 2));
+    assert!(!game.can_activate_current_great_person(0, "writer"));
+    assert!(
+        game.quick_deals(0)
+            .iter()
+            .any(|deal| deal.category == "great_work"
+                && deal.direction == "sell"
+                && deal.item == "writing"),
+        "the market quotes the duplicate"
+    );
+    let plan = great_person_housing_plan(&game, GrandStrategy::Science);
+    let claimed = |game: &Game| {
+        game.players[0]
+            .gp_claimed
+            .get("writer")
+            .copied()
+            .unwrap_or(0)
+    };
+
+    let mut kept = game.clone();
+    assert!(!AdvancedAi::new().great_person_housing(&mut kept, 0, &plan));
+    assert_eq!(writing_works(&kept, 0), 2);
+    assert_eq!(claimed(&kept), 0);
+
+    let mut ai = AdvancedAi::new();
+    ai.enable_great_person_housing();
+    let mut sold = game.clone();
+    assert!(ai.great_person_housing(&mut sold, 0, &plan));
+    assert_eq!(claimed(&sold), 1, "the Writer is recruited the same turn");
+    assert_eq!(writing_works(&sold, 0), 3, "one work sold, two written");
+    assert_eq!(writing_works(&sold, 1), 1);
+    assert!(sold.players[0].gold > 1_000.0, "the sale is paid");
+    assert!(
+        sold.cities[&capital].queue.is_empty(),
+        "no building was reserved"
+    );
+
+    let mut targeted = game.clone();
+    let mut hostile = great_person_housing_plan(&targeted, GrandStrategy::Conquest);
+    hostile.target_player = Some(1);
+    assert!(!ai.great_person_housing(&mut targeted, 0, &hostile));
+    assert_eq!(writing_works(&targeted, 0), 2);
+    assert_eq!(
+        claimed(&targeted),
+        0,
+        "the campaign target is never sold a work"
+    );
+}
+
+/// ★★★★ THE LAST RUNG. Every slot full, nothing with a slot buildable, and
+/// the only other civilization at war (no market): a due Writer opens a
+/// Theater Square in the city that has none. With a buyer the sale comes
+/// first and no district is started.
+#[test]
+fn a_due_writer_with_no_buyer_opens_a_new_theater_square() {
+    let (mut game, capital) = great_person_housing_fixture(71_308);
+    game.cities
+        .get_mut(&capital)
+        .unwrap()
+        .buildings
+        .push(crate::name!("amphitheater"));
+    game.players[0]
+        .counters
+        .insert("great_work:writing".to_string(), 2);
+    let home = game.cities[&capital].pos;
+    let second = found_nearby_test_city(&mut game, 0, home);
+    game.cities.get_mut(&second).unwrap().pop = 4;
+    let cost = game.gp_cost(0, "writer");
+    game.players[0].gpp.insert("writer".to_string(), cost);
+    game.at_war.insert((0, 1));
+    game.at_war.insert((1, 0));
+    assert!(game.quick_deals(0).is_empty(), "a war closes the market");
+    let plan = great_person_housing_plan(&game, GrandStrategy::Science);
+    let mut ai = AdvancedAi::new();
+    ai.enable_great_person_housing();
+    assert!(ai.great_person_housing(&mut game, 0, &plan));
+    assert!(
+        matches!(
+            game.cities[&second].queue.first(),
+            Some(Item::District { district, .. }) if game.district_family(*district) == "theater_square"
+        ),
+        "the city without a square starts one"
+    );
+    assert_eq!(writing_works(&game, 0), 2, "nothing to sell");
+    assert!(
+        !ai.great_person_housing(&mut game, 0, &plan),
+        "one square at a time"
+    );
+}
+
+/// A slot building outranks a sale: with the Amphitheater full but a second
+/// city able to build one, the gene reserves that city and sells nothing.
+#[test]
+fn a_buildable_slot_outranks_a_sale() {
+    let (mut game, capital) = great_person_housing_fixture(71_305);
+    game.cities
+        .get_mut(&capital)
+        .unwrap()
+        .buildings
+        .push(crate::name!("amphitheater"));
+    game.players[0]
+        .counters
+        .insert("great_work:writing".to_string(), 2);
+    let home = game.cities[&capital].pos;
+    let second = found_nearby_test_city(&mut game, 0, home);
+    install_ai_test_district(&mut game, second, "theater_square");
+    let rival = game.player_city_ids(1)[0];
+    install_ai_test_district(&mut game, rival, "theater_square");
+    game.cities
+        .get_mut(&rival)
+        .unwrap()
+        .buildings
+        .push(crate::name!("amphitheater"));
+    let cost = game.gp_cost(0, "writer");
+    game.players[0].gpp.insert("writer".to_string(), cost);
+    let plan = great_person_housing_plan(&game, GrandStrategy::Science);
+    let mut ai = AdvancedAi::new();
+    ai.enable_great_person_housing();
+    assert!(ai.great_person_housing(&mut game, 0, &plan));
+    assert!(matches!(
+        game.cities[&second].queue.first(),
+        Some(Item::Building { building }) if *building == crate::name!("amphitheater")
+    ));
+    assert_eq!(writing_works(&game, 0), 2, "nothing sold");
+}
+
+/// The other classes: a due Scientist with no Campus reserves the Campus; a
+/// Scientist still on the way does not start a district on speculation; the
+/// Musician's chain walks museum before Broadcast Center.
+#[test]
+fn districts_are_reserved_only_for_a_due_person_and_the_music_chain_walks_its_prerequisites() {
+    let (mut game, capital) = great_person_housing_fixture(71_306);
+    // Room for a second district beside the Theater Square.
+    game.cities.get_mut(&capital).unwrap().pop = 7;
+    let mut ai = AdvancedAi::new();
+    ai.enable_great_person_housing();
+    let scientist = |due: bool| StuckGreatPerson {
+        kind: "scientist".to_string(),
+        remedy: GreatPersonRemedy::District("campus"),
+        due,
+        turns_to_due: if due { 0.0 } else { 8.0 },
+    };
+    assert!(
+        ai.great_person_housing_item(&game, 0, capital, &scientist(false))
+            .is_none(),
+        "a district is a bet for points still eight turns out"
+    );
+    assert!(
+        matches!(
+            ai.great_person_housing_item(&game, 0, capital, &scientist(true)),
+            Some(Item::District { district, .. }) if game.district_family(district) == "campus"
+        ),
+        "a due Scientist reserves the Campus"
+    );
+
+    let musician = StuckGreatPerson {
+        kind: "musician".to_string(),
+        remedy: GreatPersonRemedy::Slots("music", 2),
+        due: false,
+        turns_to_due: 5.0,
+    };
+    assert!(
+        ai.great_person_housing_item(&game, 0, capital, &musician)
+            .is_none(),
+        "without Radio no museum brings a Broadcast Center nearer"
+    );
+    game.players[0].techs.insert(crate::name!("radio"));
+    assert!(
+        matches!(
+            ai.great_person_housing_item(&game, 0, capital, &musician),
+            Some(Item::Building { building }) if building == crate::name!("amphitheater")
+        ),
+        "Radio known and no museum yet: the chain starts at the Amphitheater"
+    );
+}
+
+/// The gene is an opt-in: off in every bundle, flippable by name, in
+/// `PRODUCTION_OPT_INS`.
+#[test]
+fn great_person_housing_is_a_native_opt_in() {
+    let mut ai = AdvancedAi::new();
+    ai.enable_live_bridge_universe();
+    assert!(!ai.great_person_housing);
+    let (_, _, enable) = PRODUCTION_OPT_INS
+        .iter()
+        .find(|(_, tag, _)| *tag == "great-person-housing")
+        .expect("an opt-in row");
+    enable(&mut ai);
+    assert!(ai.great_person_housing);
+    ai.disable_great_person_housing();
+    assert!(!ai.great_person_housing);
+}
+
+/// ★★★★ FIVE OF THIRTY-SIX SEATS ENDED THE PROBE GAMES WITH ENGINEER POINTS
+/// AT FOURTEEN TIMES THE PRICE. Every second Engineer (Imhotep, Eiffel,
+/// Tesla, Roebling, von Braun) spends charges on a wonder under construction
+/// — 2 × 175 production doubled for an ancient wonder, up to 1,400 — and is
+/// refused until one is queued; off the Culture lane the chooser never
+/// queues one, so the points pile up for the rest of the game (198 blocked
+/// seat-turns in six games, the most of any class). With the gene a due
+/// wonder Engineer starts the cheapest available wonder, which the charges
+/// then all but complete. An Engineer still ten turns out starts nothing.
+#[test]
+fn a_due_wonder_engineer_starts_the_cheapest_wonder_for_its_charges() {
+    let (mut game, capital) = great_person_housing_fixture(71_307);
+    game.players[0].techs.insert(crate::name!("irrigation"));
+    game.cities.get_mut(&capital).unwrap().pop = 7;
+    // A river edge on a flat owned tile: the Hanging Gardens become legal.
+    let center = game.cities[&capital].pos;
+    let bank = game.cities[&capital]
+        .owned_tiles
+        .iter()
+        .copied()
+        .find(|position| {
+            *position != center
+                && game.map.tiles[position].district.is_none()
+                && game.map.tiles[position].improvement.is_none()
+                && game.rules.is_passable(&game.map.tiles[position])
+                && game.map.tiles[position].feature.is_none()
+                && game.map.tiles[position].terrain != crate::name!("coast")
+                && game.map.tiles[position].terrain != crate::name!("ocean")
+        })
+        .expect("a flat owned tile");
+    game.map.tiles.get_mut(&bank).unwrap().river_edges[0] = true;
+    let (_, imhotep) = game.current_great_person("engineer").unwrap();
+    assert!(
+        imhotep.effects.contains_key("wonder_production"),
+        "the first Engineer offered is the wonder builder"
+    );
+    let cheapest = BasicAi::cheapest_available_wonder(&game, 0, capital)
+        .expect("the capital can start some ancient wonder");
+    let cost = game.gp_cost(0, "engineer");
+    let plan = great_person_housing_plan(&game, GrandStrategy::Science);
+    let mut ai = AdvancedAi::new();
+    ai.enable_great_person_housing();
+
+    let mut due = game.clone();
+    due.players[0].gpp.insert("engineer".to_string(), cost);
+    assert!(!due.can_activate_current_great_person(0, "engineer"));
+    assert_eq!(
+        ai.stuck_great_people(&due, 0),
+        vec![StuckGreatPerson {
+            kind: "engineer".to_string(),
+            remedy: GreatPersonRemedy::Wonder,
+            due: true,
+            turns_to_due: 0.0,
+        }]
+    );
+    assert!(ai.great_person_housing(&mut due, 0, &plan));
+    assert_eq!(due.cities[&capital].queue.first(), Some(&cheapest));
+    assert!(
+        due.can_activate_current_great_person(0, "engineer"),
+        "the queued wonder lifts the block; the turn's end claims the Engineer"
+    );
+
+    let mut soon = game.clone();
+    soon.players[0]
+        .gpp
+        .insert("engineer".to_string(), cost - 1.0);
+    // A Theater Square earns no Engineer points: the class is not on its way.
+    assert!(ai.stuck_great_people(&soon, 0).is_empty());
+    install_ai_test_district(&mut soon, capital, "industrial_zone");
+    let rate = soon.great_person_points_per_turn(0)["engineer"];
+    assert!(rate > 0.0);
+    soon.players[0]
+        .gpp
+        .insert("engineer".to_string(), cost - rate * 10.0);
+    let stuck = ai.stuck_great_people(&soon, 0);
+    assert_eq!(stuck.len(), 1, "ten turns out is inside the lead");
+    assert!(!stuck[0].due);
+    assert!(!ai.great_person_housing(&mut soon, 0, &plan));
+    assert!(
+        soon.cities[&capital].queue.is_empty(),
+        "a wonder is not started on speculation"
+    );
+}
+
+/// An Admiral who leads a formation waits on a military sea unit (75 blocked
+/// seat-turns in the probe), not on a Harbor: the remedy is read from the
+/// person's effects, and a coastal city builds the ship.
+#[test]
+fn a_due_formation_admiral_is_answered_with_a_ship_not_a_harbor() {
+    let effects: std::collections::BTreeMap<String, f64> =
+        [("naval_unit_formation".to_string(), 1.0)]
+            .into_iter()
+            .collect();
+    assert_eq!(
+        AdvancedAi::great_person_remedy("admiral", &effects),
+        Some(GreatPersonRemedy::SeaUnit)
+    );
+    let trade: std::collections::BTreeMap<String, f64> =
+        [("free_lighthouse".to_string(), 1.0)].into_iter().collect();
+    assert_eq!(
+        AdvancedAi::great_person_remedy("admiral", &trade),
+        Some(GreatPersonRemedy::District("harbor"))
+    );
+    let promotion: std::collections::BTreeMap<String, f64> =
+        [("land_unit_promotion_level".to_string(), 1.0)]
+            .into_iter()
+            .collect();
+    assert_eq!(
+        AdvancedAi::great_person_remedy("general", &promotion),
+        Some(GreatPersonRemedy::LandUnit)
+    );
+    let imhotep: std::collections::BTreeMap<String, f64> =
+        [("wonder_production".to_string(), 175.0)]
+            .into_iter()
+            .collect();
+    assert_eq!(
+        AdvancedAi::great_person_remedy("engineer", &imhotep),
+        Some(GreatPersonRemedy::Wonder)
+    );
+    let leonardo: std::collections::BTreeMap<String, f64> =
+        [("modern_tech_boosts".to_string(), 1.0)]
+            .into_iter()
+            .collect();
+    assert_eq!(
+        AdvancedAi::great_person_remedy("engineer", &leonardo),
+        Some(GreatPersonRemedy::District("industrial_zone"))
+    );
+}
+
+/// Census, not an assertion: how long does a Settler walk before it founds?
+///
+/// `settle_siting_census` shows the chosen site is almost always the best
+/// one on offer under the agent's own objective, `settle_value - 0.9/tile`.
+/// That objective prices the WALK in tiles, not in turns, and a city founded
+/// ten turns later is ten turns of yields the empire never sees. Nothing
+/// measured the walk itself: turns from the Settler standing in its home
+/// city to the city standing, how far it went, how often it changed its
+/// mind, and what the extra walk bought against the nearest site it could
+/// have taken. This does.
+///
+/// The seats play the deployment genome (`enable_engine_repairs`, which
+/// ends in the gene ledger), on the gene screen's 6-player 60×38 Online
+/// profile, so the turns reported are the turns the screen plays.
+/// `CIVVIS_CENSUS_OPT_INS=tag,tag` switches the named `PRODUCTION_OPT_INS`
+/// genes on for every major seat, so a settling gene can be read against
+/// the same maps; `CIVVIS_CENSUS_MAPS` sets the map count (default 8).
+///
+/// First reading (2026-08-21, deployment genome): 249 foundings and 60
+/// Settlers lost over 8 maps; mean 7.3 turns from build to founding,
+/// median 5, p90 16, max 93; 18% walked more than ten turns; Settlers
+/// walked 1.57× their straight-line distance and one in five changed
+/// target at least once. That is what `settle_sooner` exists to move.
+///
+/// Run with `cargo test --release settler_walk_census -- --ignored --nocapture`.
+#[test]
+#[ignore = "census, not an assertion; run explicitly with --nocapture"]
+fn settler_walk_census() {
+    struct Walk {
+        owner: usize,
+        born: u32,
+        origin: Pos,
+        last: Pos,
+        tiles: i32,
+        targets: BTreeSet<Pos>,
+        /// Raw `settle_value` of the best LEGAL site (four tiles from every
+        /// city) within six tiles of the origin, read the turn the Settler
+        /// appeared — the near site it could have taken instead.
+        near_value: f64,
+        near_site: Option<Pos>,
+    }
+    let opt_ins: Vec<String> = std::env::var("CIVVIS_CENSUS_OPT_INS")
+        .ok()
+        .map(|text| {
+            text.split(',')
+                .filter(|t| !t.is_empty())
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default();
+    let maps = std::env::var("CIVVIS_CENSUS_MAPS")
+        .ok()
+        .and_then(|text| text.parse::<u64>().ok())
+        .unwrap_or(8);
+    let mut walks: BTreeMap<(u64, u32), Walk> = BTreeMap::new();
+    // (turns, straight-line tiles, tiles walked, targets, chosen value,
+    //  near value, born turn)
+    let mut founded: Vec<(u32, i32, i32, usize, f64, f64, u32)> = Vec::new();
+    let mut lost: Vec<(u32, i32)> = Vec::new();
+    for map in 0..maps {
+        let seed = 97_000_000 + map;
+        let mut game = Game::new_with(GameOptions {
+            speed: "online".to_string(),
+            randomize_civs: true,
+            ..GameOptions::new(6, 60, 38, seed, 250, 6)
+        });
+        game.set_fog_memory(false);
+        game.set_war_ledger(false);
+        let mut ais: Vec<AdvancedAi> = (0..game.players.len())
+            .map(|pid| {
+                let mut ai = AdvancedAi::new();
+                if !game.players[pid].is_minor && !game.players[pid].is_barbarian {
+                    ai.enable_engine_repairs();
+                    for tag in &opt_ins {
+                        let (_, _, enable) = PRODUCTION_OPT_INS
+                            .iter()
+                            .find(|(_, t, _)| t == tag)
+                            .unwrap_or_else(|| panic!("{tag} is not a PRODUCTION_OPT_INS tag"));
+                        enable(&mut ai);
+                    }
+                }
+                ai
+            })
+            .collect();
+        let mut known_cities: BTreeSet<u32> = game.cities.keys().copied().collect();
+        while game.winner.is_none() && game.turn <= game.max_turns {
+            let pid = game.current;
+            let major = !game.players[pid].is_minor && !game.players[pid].is_barbarian;
+            let mut pre: BTreeMap<u32, f64> = BTreeMap::new();
+            if major {
+                for uid in game.player_unit_ids(pid) {
+                    let unit = &game.units[&uid];
+                    if unit.kind != "settler" {
+                        continue;
+                    }
+                    pre.insert(uid, ais[pid].settle_value(&game, pid, unit.pos));
+                    if walks.contains_key(&(seed, uid)) {
+                        continue;
+                    }
+                    let origin = unit.pos;
+                    let mut near_value = f64::NEG_INFINITY;
+                    let mut near_site = None;
+                    for pos in game.wdisk(origin, 6) {
+                        let Some(tile) = game.map.get(pos) else {
+                            continue;
+                        };
+                        if game.rules.is_water(tile)
+                            || !game.rules.is_passable(tile)
+                            || game.tile_is_natural_wonder(tile)
+                            || game
+                                .cities
+                                .values()
+                                .any(|city| game.wdist(city.pos, pos) < 4)
+                            || tile
+                                .owner_city
+                                .is_some_and(|cid| game.cities[&cid].owner != pid)
+                        {
+                            continue;
+                        }
+                        let value = ais[pid].settle_value(&game, pid, pos);
+                        if value > near_value {
+                            near_value = value;
+                            near_site = Some(pos);
+                        }
+                    }
+                    walks.insert(
+                        (seed, uid),
+                        Walk {
+                            owner: pid,
+                            born: game.turn,
+                            origin,
+                            last: origin,
+                            tiles: 0,
+                            targets: BTreeSet::new(),
+                            near_value,
+                            near_site,
+                        },
+                    );
+                }
+            }
+            ais[pid].take_turn(&mut game, pid);
+            if game.winner.is_none() && game.current == pid {
+                let _ = game.apply(pid, &Action::EndTurn);
+            }
+            if !major {
+                continue;
+            }
+            let new_cities: Vec<(u32, Pos)> = game
+                .cities
+                .iter()
+                .filter(|(cid, city)| {
+                    city.owner == pid && city.captured_from.is_none() && !known_cities.contains(cid)
+                })
+                .map(|(cid, city)| (*cid, city.pos))
+                .collect();
+            for (cid, _) in &new_cities {
+                known_cities.insert(*cid);
+            }
+            let tracked: Vec<(u64, u32)> =
+                walks.keys().filter(|(s, _)| *s == seed).copied().collect();
+            for key in tracked {
+                let uid = key.1;
+                let Some(walk) = walks.get_mut(&key) else {
+                    continue;
+                };
+                if walk.owner != pid {
+                    continue;
+                }
+                match game.units.get(&uid) {
+                    Some(unit) if unit.owner == pid => {
+                        walk.tiles += game.wdist(walk.last, unit.pos);
+                        walk.last = unit.pos;
+                        if let Some(target) = ais[pid].settler_targets.get(&uid) {
+                            walk.targets.insert(*target);
+                        }
+                    }
+                    _ => {
+                        let walk = walks.remove(&key).expect("just read");
+                        let turns = game.turn.saturating_sub(walk.born);
+                        let city = new_cities
+                            .iter()
+                            .find(|(_, pos)| game.wdist(*pos, walk.last) <= 1)
+                            .map(|(_, pos)| *pos);
+                        match city {
+                            Some(pos) => {
+                                let chosen = pre.get(&uid).copied().unwrap_or(f64::NAN);
+                                founded.push((
+                                    turns,
+                                    game.wdist(walk.origin, pos),
+                                    walk.tiles,
+                                    walk.targets.len(),
+                                    chosen,
+                                    if walk.near_site.is_some() {
+                                        walk.near_value
+                                    } else {
+                                        f64::NAN
+                                    },
+                                    walk.born,
+                                ));
+                            }
+                            None => lost.push((turns, walk.tiles)),
+                        }
+                    }
+                }
+            }
+        }
+        // Settlers still walking when the game ended never founded.
+        let stranded: Vec<(u64, u32)> = walks.keys().filter(|(s, _)| *s == seed).copied().collect();
+        for key in stranded {
+            let walk = walks.remove(&key).expect("just read");
+            lost.push((game.turn.saturating_sub(walk.born), walk.tiles));
+        }
+    }
+
+    let percentile = |sorted: &[u32], p: f64| -> u32 {
+        if sorted.is_empty() {
+            return 0;
+        }
+        sorted[((sorted.len() - 1) as f64 * p).round() as usize]
+    };
+    let mut turns: Vec<u32> = founded.iter().map(|row| row.0).collect();
+    turns.sort_unstable();
+    let mean =
+        |values: &[u32]| values.iter().map(|&v| v as f64).sum::<f64>() / values.len().max(1) as f64;
+    println!(
+        "\n=== settler walk census: {} settlers founded, {} lost, over {maps} maps (6p 60x38 online, deployment genome{}) ===",
+        founded.len(),
+        lost.len(),
+        if opt_ins.is_empty() { String::new() } else { format!(" + {}", opt_ins.join(",")) }
+    );
+    println!(
+        "  turns from build to founding: mean {:.1}   p10 {}   median {}   p90 {}   max {}",
+        mean(&turns),
+        percentile(&turns, 0.1),
+        percentile(&turns, 0.5),
+        percentile(&turns, 0.9),
+        turns.last().copied().unwrap_or(0)
+    );
+    for bound in [3u32, 6, 10, 15, 20] {
+        let over = turns.iter().filter(|&&t| t > bound).count();
+        println!(
+            "    walked more than {bound:>2} turns: {over:>4} ({:.1}%)",
+            over as f64 / turns.len().max(1) as f64 * 100.0
+        );
+    }
+    let straight: Vec<u32> = founded.iter().map(|row| row.1.max(0) as u32).collect();
+    let walked: Vec<u32> = founded.iter().map(|row| row.2.max(0) as u32).collect();
+    let mut straight_sorted = straight.clone();
+    straight_sorted.sort_unstable();
+    println!(
+        "  tiles from the home city, straight line: mean {:.1}   median {}   p90 {}",
+        mean(&straight),
+        percentile(&straight_sorted, 0.5),
+        percentile(&straight_sorted, 0.9)
+    );
+    println!(
+        "  tiles actually walked: mean {:.1}   (walked/straight {:.2})",
+        mean(&walked),
+        mean(&walked) / mean(&straight).max(1e-9)
+    );
+    let retargeted = founded.iter().filter(|row| row.3 > 1).count();
+    let many = founded.iter().filter(|row| row.3 > 2).count();
+    println!(
+        "  settlers that changed target at least once: {retargeted} ({:.1}%); twice or more: {many} ({:.1}%)",
+        retargeted as f64 / founded.len().max(1) as f64 * 100.0,
+        many as f64 / founded.len().max(1) as f64 * 100.0
+    );
+    // What did the walk buy? For every expansion Settler (the opening
+    // Settlers found where they stand or a step away), compare the chosen
+    // site's raw value with the best legal site within six tiles of where
+    // it was built, read on the day it was built.
+    let mut bought: Vec<(u32, f64, f64)> = founded
+        .iter()
+        .filter(|row| row.6 > 1 && row.4.is_finite() && row.5.is_finite())
+        .map(|row| (row.0, row.4 - row.5, row.4))
+        .collect();
+    bought.sort_by_key(|a| a.0);
+    if !bought.is_empty() {
+        let mean_value = bought.iter().map(|row| row.2).sum::<f64>() / bought.len() as f64;
+        println!(
+            "  expansion foundings with a legal site within six tiles of home at birth: {} (mean chosen raw value {mean_value:.1})",
+            bought.len()
+        );
+        for (lo, hi) in [(0u32, 3u32), (4, 6), (7, 10), (11, 15), (16, 1000)] {
+            let rows: Vec<f64> = bought
+                .iter()
+                .filter(|(t, _, _)| *t >= lo && *t <= hi)
+                .map(|(_, delta, _)| *delta)
+                .collect();
+            if rows.is_empty() {
+                continue;
+            }
+            let m = rows.iter().sum::<f64>() / rows.len() as f64;
+            let worse = rows.iter().filter(|d| **d < 0.0).count();
+            println!(
+                "    walks of {lo:>2}-{hi:<4} turns: {:>4} foundings, chosen minus best-legal-within-6-of-home = {m:+.1} raw value ({worse} founded a WORSE site than one within six tiles of home)",
+                rows.len()
+            );
+        }
+    }
+    let mut by_era = [(0u32, 0.0f64); 4];
+    for row in &founded {
+        let slot = match row.6 {
+            0..=49 => 0,
+            50..=99 => 1,
+            100..=149 => 2,
+            _ => 3,
+        };
+        by_era[slot].0 += 1;
+        by_era[slot].1 += row.0 as f64;
+    }
+    for (slot, label) in ["t0-49", "t50-99", "t100-149", "t150+"].iter().enumerate() {
+        if by_era[slot].0 > 0 {
+            println!(
+                "    settlers built {label:>8}: {:>4}, mean walk {:.1} turns",
+                by_era[slot].0,
+                by_era[slot].1 / by_era[slot].0 as f64
+            );
+        }
+    }
+    if !lost.is_empty() {
+        let mut lost_turns: Vec<u32> = lost.iter().map(|row| row.0).collect();
+        lost_turns.sort_unstable();
+        println!(
+            "  lost without founding: {} — they had walked a median {} turns (p90 {})",
+            lost.len(),
+            percentile(&lost_turns, 0.5),
+            percentile(&lost_turns, 0.9)
+        );
+    }
+    println!();
 }
 
 // ---------------------------------------------------------------- opportunistic war
