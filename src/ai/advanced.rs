@@ -9686,8 +9686,9 @@ impl AdvancedAi {
         if held <= 0.0 {
             return None;
         }
-        let closeness = (POPULATION_GATE_REACH - gap + 1.0) / POPULATION_GATE_REACH;
-        Some((held * self.campus_multiplier_half / 100.0, closeness.clamp(0.0, 1.0)))
+        let beakers = held * self.campus_multiplier_half / 100.0;
+        let near = (POPULATION_GATE_REACH - gap + 1.0) / POPULATION_GATE_REACH;
+        Some((beakers, near.clamp(0.0, 1.0)))
     }
 
     /// The extra beakers a Campus plot at or above the multiplier's adjacency
@@ -20326,8 +20327,7 @@ impl AdvancedAi {
                     let population_gate = match self.population_gate_prize(g, city) {
                         Some((prize, closeness)) if !spec.wonder => {
                             let growth = spec.yields.food + spec.housing * 0.5;
-                            let share =
-                                (growth / POPULATION_GATE_GROWTH_SPAN).clamp(0.0, 1.0);
+                            let share = (growth / POPULATION_GATE_GROWTH_SPAN).clamp(0.0, 1.0);
                             self.yield_value(
                                 Yields {
                                     science: prize,

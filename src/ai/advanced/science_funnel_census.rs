@@ -126,24 +126,25 @@ fn report(label: &str, arms: &[(&str, Chain)]) {
 #[test]
 #[ignore = "census, not an assertion; run explicitly with --nocapture"]
 fn the_research_chain_treated_against_control() {
-    let seeds: Vec<u64> = (0..12).map(|i| 87_000_000 + i).collect();
-    // ⚠ ROUND FOUR: the gate, not the price. The two building-half genes are
-    // settled (+25%/+20% Labs, +12–13.5% Science) and `power-the-laboratory`
-    // is a measured null. What is open is the multiplier half NO Campus in the
-    // empire clears — 0 of 9, with four cities holding a free adjacency-4 plot.
+    let seeds: Vec<u64> = (0..12).map(|i| 88_000_000 + i).collect();
+    // ⚠ ROUND FIVE: the one gate this empire can reach. Rounds three and four
+    // settled the building-half genes (+25%/+20%/+21.7% Research Labs across
+    // disjoint seeds, now merged) and killed two nulls. The gate census then
+    // found Rationalism slotted with BOTH halves unearned, and the map probe
+    // showed the adjacency half is unreachable — under 1% of land. This prices
+    // the population half, where five Campus cities were still growing and
+    // five citizens short.
     let arms: Vec<Arm> = vec![
         ("control (universe)", |_ai| {}),
-        ("campus-adjacency-threshold", |ai| {
-            ai.enable_campus_adjacency_threshold()
-        }),
+        ("fifteenth-citizen", |ai| ai.enable_fifteenth_citizen()),
         ("premium + payoff", |ai| {
             ai.enable_research_tier_premium();
             ai.enable_science_multiplier_payoff();
         }),
-        ("premium + payoff + threshold", |ai| {
+        ("premium + payoff + fifteenth", |ai| {
             ai.enable_research_tier_premium();
             ai.enable_science_multiplier_payoff();
-            ai.enable_campus_adjacency_threshold();
+            ai.enable_fifteenth_citizen();
         }),
     ];
     let mut totals: Vec<(String, Chain)> = Vec::new();
