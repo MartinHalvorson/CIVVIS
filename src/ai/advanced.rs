@@ -3460,6 +3460,28 @@ pub struct AdvancedAi {
     pub envoy_infrastructure: bool,
 
 
+    /// Price the Religion lane's own district on the same scale the Culture
+    /// lane prices its own.
+    ///
+    /// `strategic_family` pays `(Culture, theater_square)` **850** and
+    /// `(Religion, holy_site)` **210** — a quarter — even though religious
+    /// victory is the route this engine actually converts: in the 2026-08-10
+    /// district-priority batch the winning arm took 267 of its 323 wins by
+    /// religion and 15 by culture. Neither number has ever been measured.
+    /// `grep strategic_family docs/EVAL.md` is empty, and `210.0` entered in
+    /// `0f6bd85e`, a bulk progression-and-command commit, not an evaluation.
+    ///
+    /// This is an **upper bound, not a proposal**, in the same sense as
+    /// `settler_price` under `advanced_settler_first`: it takes the largest
+    /// own-lane figure in the table rather than a tuned one, so a null result
+    /// retires the axis instead of leaving "maybe a smaller number would have
+    /// worked". Everything else about the lane is untouched, so a gain here is
+    /// the Religion empire building its own district sooner and nothing else.
+    ///
+    /// Off by default; evaluator arm `advanced_holy_lane`, and the native
+    /// gene `holy-lane-parity` (`PRODUCTION_OPT_INS`) since 2026-08-21.
+    pub holy_lane_parity: bool,
+
     /// ★★★★ THE FOUNDER THAT NEVER LAUNCHED ITS INQUISITION. The 6p 60k
     /// screen (13,446 seat-pairs, 2026-08-20): a seat that founded a religion
     /// and kept its cities won 52.5% of games; one that founded and ended
@@ -4495,6 +4517,13 @@ pub struct AdvancedAi {
 /// 1.7 and deliberately *below* Science's own 4.2: a lane still outbids the
 /// floor for its own currency, and this only stops the other lanes pricing
 /// research below their least valuable ordinary yield.
+/// What `holy_lane_parity` pays a Religion empire for its own Holy Site.
+///
+/// Not tuned: it is `(Culture, theater_square)`'s own figure, the largest
+/// own-lane value in `strategic_family`. See `AdvancedAi::holy_lane_parity`.
+const HOLY_LANE_PARITY: f64 = 850.0;
+
+
 /// What an open Diplomacy lane is worth before it has produced anything.
 ///
 /// Religion's own opening figure, copied rather than chosen: see
@@ -4963,11 +4992,14 @@ impl AdvancedAi {
         // on the lanes that win. Third instance of the largest gains coming
         // from removing work (`city_target_floor` −41, this bundle).
         //
-        // The live bridge still enables `siege-muster` and `home-defense` as
-        // registered treatments for real-game play; the live delta from this
-        // removal is the unit-tactics pair, which measured null on its own
-        // (+11, p=0.3185, seed 11500000). `advanced_war_half` in `src/elo.rs`
-        // re-adds all four as a treatment so the axis stays measurable.
+        // The live bridge still enables `home-defense` as a registered
+        // treatment for real-game play; the live delta from this removal is
+        // the unit-tactics pair, which measured null on its own (+11,
+        // p=0.3185, seed 11500000). `advanced_war_half` in `src/elo.rs`
+        // re-adds the survivors as a treatment so the axis stays measurable.
+        // ⚠ `siege-muster` stood here too until #2235 removed it from the
+        // code; `advanced_war_half` no longer carries it and neither does the
+        // bridge, so the war half is now three flags, not four.
         //
         // The tribal-village pickup shipped inside `tactical_strategy` (#1386)
         // and left production with the war-half withhold — collateral, not
@@ -5396,6 +5428,7 @@ impl AdvancedAi {
             congress_counter_votes: false,
             congress_banks_a_decided_vote: false,
             envoy_infrastructure: false,
+            holy_lane_parity: false,
             inquisition_on_threat: false,
             founder_temple: false,
             theology_for_founders: false,
@@ -20863,7 +20896,13 @@ impl AdvancedAi {
                     // See `tally_culture`: the civic tree pays three a rung.
                     (GrandStrategy::Science, "theater_square") if self.tally_culture => 170.0,
                     (GrandStrategy::Science, "industrial_zone") => 150.0,
-                    (GrandStrategy::Religion, "holy_site") => 210.0,
+                    (GrandStrategy::Religion, "holy_site") => {
+                        if self.holy_lane_parity {
+                            HOLY_LANE_PARITY
+                        } else {
+                            210.0
+                        }
+                    }
                     (GrandStrategy::Culture, "theater_square") => 850.0,
                     (GrandStrategy::Culture, "preserve") => 210.0,
                     (GrandStrategy::Diplomacy, "diplomatic_quarter") => 360.0,

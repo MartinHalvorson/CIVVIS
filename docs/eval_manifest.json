@@ -29,16 +29,16 @@
     "withholdable": 49
   },
   "derived": {
-    "eval_only_count": 226,
+    "eval_only_count": 228,
     "firaxis_only_count": 30,
     "live_bridge_count": 79,
     "native_engine_repair_count": 49,
     "withholdable_live_count": 49
   },
   "genome_coverage": {
-    "capability_toggles": 163,
+    "capability_toggles": 164,
     "measured_by_a_screen": 64,
-    "reachable_as_a_gene": 98,
+    "reachable_as_a_gene": 99,
     "resolved_by_a_screen": 27,
     "unreachable_by_any_screen": 65,
     "unreachable_toggles": [
@@ -287,7 +287,7 @@
       ]
     },
     "EVAL_ONLY_AIS": {
-      "declared_count": 226,
+      "declared_count": 228,
       "items": [
         "fog_honest",
         "advanced_build_first",
@@ -436,8 +436,10 @@
         "advanced_garrison_loyalty",
         "advanced_settler_first",
         "advanced_holy_priority",
+        "advanced_holy_lane",
         "advanced_holy_v0",
         "advanced_settle_food",
+        "advanced_holy_lane_v0",
         "advanced_roster_live",
         "advanced_roster_live_keep_districts",
         "advanced_diplomatic_opening",

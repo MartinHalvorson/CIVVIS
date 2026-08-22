@@ -11,7 +11,7 @@ page is the current inventory and live-bridge snapshot.
 | inventory | count |
 |---|---:|
 | Built-in agents | 8 |
-| Evaluator-only agents | 226 |
+| Evaluator-only agents | 228 |
 | Live-bridge treatments | 79 |
 | Firaxis-only treatments | 30 |
 | Native engine-repair treatments | 49 |
@@ -48,8 +48,8 @@ How much of the controller the genome instrument can vary at all.
 `docs/GENE_SCREEN.md` names the growth direction as "hundreds of
 genes"; this is the denominator that direction is measured against.
 
-- Capability toggles on the controller: **163**
-- Reachable as a gene `gene_screen` can vary: **98**
+- Capability toggles on the controller: **164**
+- Reachable as a gene `gene_screen` can vary: **99**
 - Measured by at least one screen: **64**
 - Resolved by the ledger (helps or hurts): **27**
 - **Unreachable by any screen: 65**

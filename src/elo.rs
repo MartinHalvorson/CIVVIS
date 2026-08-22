@@ -213,8 +213,10 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "advanced_garrison_loyalty",
     "advanced_settler_first",
     "advanced_holy_priority",
+    "advanced_holy_lane",
     "advanced_holy_v0",
     "advanced_settle_food",
+    "advanced_holy_lane_v0",
     "advanced_roster_live",
     "advanced_roster_live_keep_districts",
     "advanced_diplomatic_opening",
@@ -902,8 +904,10 @@ define_arm_kinds! {
     AdvancedSettlerCommit => "advanced_settler_commit",
     AdvancedSettlerFirst => "advanced_settler_first",
     AdvancedHolyPriority => "advanced_holy_priority",
+    AdvancedHolyLane => "advanced_holy_lane",
     AdvancedHolyV0 => "advanced_holy_v0",
     AdvancedSettleFood => "advanced_settle_food",
+    AdvancedHolyLaneV0 => "advanced_holy_lane_v0",
     AdvancedRosterLive => "advanced_roster_live",
     AdvancedRosterLiveKeepDistricts => "advanced_roster_live_keep_districts",
     AdvancedDiplomaticOpening => "advanced_diplomatic_opening",
@@ -3017,6 +3021,16 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             w.settle_food = LEAGUE_WINNER_SETTLE_FOOD;
             Box::new(AdvancedAi::with_weights(w))
         }
+        // The second cell of the 2x2 that reads the lane-table null.
+        //
+        // `advanced_holy_lane` against `advanced` left 399 of 400 maps
+        // untouched, but both arms already pay `d_holy` 5.6, so a ceiling
+        // ("BasicAi builds the Holy Site anyway, the lane term is redundant")
+        // and an inert path ("the lane term decides nothing") predict the same
+        // flat result. This arm carries the lane change on the PRE-shipment
+        // weights, so measured against `advanced_holy_v0` it separates them: a
+        // gain here means redundancy, another null means the path itself does
+        // not bind.
         // Everything the roster's winners agree on, restricted to coordinates
         // that can actually reach a decision.
         //
@@ -3611,6 +3625,22 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         "advanced_diplomatic_opening" => {
             let mut ai = AdvancedAi::new();
             ai.diplomatic_opening = true;
+            Box::new(ai)
+        }
+        "advanced_holy_lane_v0" => {
+            let mut w = Weights::default();
+            w.d_holy = PRE_2026_08_10_D_HOLY;
+            let mut ai = AdvancedAi::with_weights(w);
+            ai.holy_lane_parity = true;
+            Box::new(ai)
+        }
+        // Upper bound for the lane-district axis: a Religion empire prices its
+        // own Holy Site the way a Culture empire prices its own Theater Square.
+        // See `AdvancedAi::holy_lane_parity` for why this is a bound and not a
+        // proposal, and why the table it edits has never been measured.
+        "advanced_holy_lane" => {
+            let mut ai = AdvancedAi::new();
+            ai.holy_lane_parity = true;
             Box::new(ai)
         }
         // A high-rated league genome against the genome the repository evolved.
@@ -4623,8 +4653,10 @@ impl ArmKind {
             Self::AdvancedPlanCityTarget => &["plan-city-target"],
             Self::AdvancedSettlerFirst => &["settler-oracle"],
             Self::AdvancedHolyPriority => &["district-holy-priority"],
+            Self::AdvancedHolyLane => &["lane-holy-parity"],
             Self::AdvancedHolyV0 => &["district-holy-pre-2026-08-10"],
             Self::AdvancedSettleFood => &["settle-site-food-weight"],
+            Self::AdvancedHolyLaneV0 => &["lane-holy-parity", "district-holy-pre-2026-08-10"],
             Self::AdvancedRosterLive => &["roster-winner-live-genes"],
             Self::AdvancedRosterLiveKeepDistricts => &["roster-winner-live-genes-except-districts"],
             Self::AdvancedDiplomaticOpening => &["diplomatic-lane-prospective"],
@@ -5134,8 +5166,10 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_measured_dedication" => (vec![genome], "advanced_measured_dedication"),
         "advanced_settler_first" => (Vec::new(), "advanced_settler_first"),
         "advanced_holy_priority" => (Vec::new(), "advanced_holy_priority"),
+        "advanced_holy_lane" => (Vec::new(), "advanced_holy_lane"),
         "advanced_holy_v0" => (Vec::new(), "advanced"),
         "advanced_settle_food" => (Vec::new(), "advanced_settle_food"),
+        "advanced_holy_lane_v0" => (Vec::new(), "advanced_holy_lane_v0"),
         "advanced_roster_live" => (Vec::new(), "advanced_roster_live"),
         "advanced_roster_live_keep_districts" => (Vec::new(), "advanced_roster_live_keep_districts"),
         "advanced_diplomatic_opening" => (Vec::new(), "advanced_diplomatic_opening"),
@@ -6673,8 +6707,10 @@ mod tests {
                 "advanced_war_half",
                 "advanced_settler_first",
                 "advanced_holy_priority",
+                "advanced_holy_lane",
                 "advanced_holy_v0",
                 "advanced_settle_food",
+                "advanced_holy_lane_v0",
                 "advanced_roster_live",
                 "advanced_roster_live_keep_districts",
                 "advanced_diplomatic_opening",
