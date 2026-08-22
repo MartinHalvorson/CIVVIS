@@ -42,7 +42,8 @@ clicking it goes there.
 ### Blocker priority
 
 The order the client resolves blockers in, highest first. It is the order the
-End Turn button announces them, and the order `Enter` walks them.
+End Turn button announces them, and the order `1` — Civ 6's own EndTurn
+key — walks them.
 
 | # | Blocker | Resolved by |
 |---|---------|-------------|
@@ -59,7 +60,7 @@ End Turn button announces them, and the order `Enter` walks them.
 
 Blockers 1–4 and 7–10 are engine-legal actions the client can already resolve;
 5 and 6 arrive with the panels that resolve them, and a blocker is never shown
-before the UI that answers it exists. A blocker is skippable — `Shift`+`Enter`,
+before the UI that answers it exists. A blocker is skippable — `Shift`+`1`,
 or shift-clicking the button, ends the turn regardless — because a rule that
 cannot be overridden becomes a trap the first time a player disagrees with it.
 
@@ -92,8 +93,8 @@ Fortify (`F`) is an engine action and outlives both. The client never invents
 engine state: a skipped unit is simply one the client stops asking about.
 
 Turn start selects the first unit that needs orders and centres the camera on
-it. Spending a unit's last movement point advances to the next one. `Tab`
-cycles manually.
+it. Spending a unit's last movement point advances to the next one. `.` and
+`,` cycle the roster manually, and `N` takes the nearest one still waiting.
 
 ## What the client covers
 
@@ -516,9 +517,11 @@ puts it on alert, `F` fortifies it, `B` founds a city, `E` sends it exploring,
 `.` and `,` walk the units that still want orders, `]` and `[` walk the cities,
 `T` and `C` open the trees, `D` opens Quick Deals, and the screens Civ 6 keeps
 on function keys keep them. The lenses run `2` through `0` exactly as they do
-there. [CIV6_KEYBINDINGS.md](CIV6_KEYBINDINGS.md) is the whole table, including
-the four places the map cannot be that game's — `A` is Attack there and
-CIVVIS attacks by pointing, and F5, F6, F11 and F12 belong to the browser.
+there. [CIV6_KEYBINDINGS.md](CIV6_KEYBINDINGS.md) is the whole table, and the places
+the map cannot be that game's: `A` is Attack there and CIVVIS attacks by
+pointing, so Alert sits on `V` where that game has it; F5, F6, F11 and F12
+belong to the browser; and Tab is how somebody navigating by keyboard reaches
+every control on the page, so the board does not take it.
 
 Two rules the table does not show:
 
@@ -528,10 +531,12 @@ Two rules the table does not show:
 - Secondary-clicking a tile outside this turn's movement is an order to travel
   there over as many turns as it takes.
 
-This table used to promise `Enter`, `Tab`, `P`, `L`, and an `A` that meant
-auto-play. None of those keys were bound to anything: the client's map had
-five entries, and the ones a player would actually reach for were not among
-them. They are now, and both documents describe the same map.
+This section used to promise `Enter`, `Space`, `Z`, `Tab`, `P`, `D`, `L` and
+`Y`, and an `A` that meant auto-play. **None of those keys were bound to
+anything**: the client's map had five entries and the ones a player would
+actually reach for were not among them, though every handler behind them
+already existed. They are bound now, and this document and
+`CIV6_KEYBINDINGS.md` describe the same map.
 
 ## Notifications
 
