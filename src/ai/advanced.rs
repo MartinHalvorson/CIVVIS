@@ -3954,6 +3954,45 @@ pub struct AdvancedAi {
     /// opt-in gene `research-tier-premium`.
     pub research_tier_premium: bool,
 
+    /// Finish the research cities the empire has before it buys another.
+    ///
+    /// ★★★★★ MEASURED, AND THE OPPOSITE OF WHAT THE COVERAGE TERM ASSUMES.
+    /// A six-arm census over the screen's own profile, conditioned to reach
+    /// the clock (`advanced/science_funnel_census.rs`), counted the whole
+    /// chain at the end of three games an arm. The control held **17 Campuses
+    /// and 14 Research Labs**. `science-payback-horizon`, which holds
+    /// `RESEARCH_CAMPUS_COVERAGE` at full price late instead of tapering it,
+    /// held **19 Campuses and 11 Labs**; all four science genes together held
+    /// **21 Campuses and 9 Labs**. Three points, one gradient — every extra
+    /// Campus district bought late came out of a Research Lab that then never
+    /// got built, and terminal Science ran 567.9, 429.6, 523.0 while the
+    /// district count climbed.
+    ///
+    /// The mechanism is production, not pricing. A Campus is a district whose
+    /// cost escalates with the era; a Research Lab is **440** and carries
+    /// `powered_science` **5**, the largest yield on the Campus. A city that
+    /// starts another Campus at turn 190 spends the turns that would have
+    /// finished the ones already standing, and a Campus with no Lab is the
+    /// expensive half of a research city bought over again.
+    ///
+    /// The coverage term cannot see this. It asks only whether THIS city has a
+    /// Campus, never whether the Campuses already standing are finished — so
+    /// the harder the empire is told to want research late, which is what
+    /// every other gene here does, the more unfinished research cities it
+    /// buys. That is why this gene exists beside them rather than instead of
+    /// them, and why the census will price the combinations and not only the
+    /// singles.
+    ///
+    /// With this on, `RESEARCH_CAMPUS_COVERAGE` is scaled by
+    /// `research_chain_completion` — the share of Campus buildings the
+    /// standing Campuses could produce now and do have. An empire with no
+    /// Campus, or with every Campus finished, is affected in no way at all;
+    /// one whose Campuses stand half-empty pays half, floored at
+    /// `RESEARCH_COVERAGE_UNFINISHED_FLOOR` so a genuine research hole can
+    /// still be filled. Off everywhere by default; opt-in gene
+    /// `campus-finishes-first`.
+    pub campus_finishes_first: bool,
+
     /// The citizen half of the taper: an empire that has built the research
     /// economy should still be WORKING it in the half of the game the tech
     /// tree decides.
@@ -4169,6 +4208,11 @@ pub struct AdvancedAi {
     /// nothing and reproduces the pre-`research_economy` ordering exactly, so a
     /// direct unit-test call to `yield_value` is unaffected.
     research_weight: f64,
+    /// How complete the empire's standing Campuses are, refreshed once per
+    /// decision beside `research_weight`. 1.0 with no Campus and 1.0 with
+    /// every Campus finished, so `campus_finishes_first` is a strict no-op in
+    /// both. See that flag.
+    research_chain_completion: f64,
 }
 
 /// Science weight floor at the start of a game, and at its very end.
@@ -4246,6 +4290,10 @@ const RESEARCH_BUILDING_DEBT: f64 = 240.0;
 /// per candidate per city per turn and `docs/` measures this loop work-bound;
 /// `research_tier_premium_is_priced_against_the_shipped_library` pins it to
 /// `Rules::embedded()` so a ruleset change cannot leave it stale.
+/// The least `campus_finishes_first` will scale the Campus coverage term to,
+/// however empty the standing Campuses are. A city with no Campus at all is a
+/// real research hole and the gene is a brake on spreading, not a ban on it.
+const RESEARCH_COVERAGE_UNFINISHED_FLOOR: f64 = 0.25;
 const RESEARCH_CHAIN_FIRST_RUNG_SCIENCE: f64 = 2.0;
 /// The most any one rung may be owed against the first, so a modded or
 /// runaway yield cannot take over the queue. The shipped ceiling is the
@@ -5053,6 +5101,7 @@ impl AdvancedAi {
             science_payback_horizon: false,
             science_multiplier_payoff: false,
             research_tier_premium: false,
+            campus_finishes_first: false,
             research_floor_holds: false,
             idle_faith_patronage: false,
             early_contact_window: false,
@@ -5075,6 +5124,7 @@ impl AdvancedAi {
             research_economy: false,
             housing_research: false,
             research_weight: 0.0,
+            research_chain_completion: 1.0,
         }
     }
 
@@ -9347,8 +9397,11 @@ impl AdvancedAi {
             return 0.0;
         }
         let range = spec.regional_range;
-        let own: Vec<&crate::game::City> =
-            g.cities.values().filter(|other| other.owner == pid).collect();
+        let own: Vec<&crate::game::City> = g
+            .cities
+            .values()
+            .filter(|other| other.owner == pid)
+            .collect();
         own.iter()
             .filter(|other| other.id != city.id && g.wdist(city.pos, other.pos) <= range)
             .filter(|other| {
@@ -9514,6 +9567,46 @@ impl AdvancedAi {
 
     /// Set this turn's science floor. Called once per decision, before any
     /// pricing runs.
+    /// The share of Campus buildings the empire's standing Campuses could
+    /// produce now and do have. See `campus_finishes_first`.
+    ///
+    /// Computed once per decision rather than inside `production_value`,
+    /// which runs per candidate per city per turn on a loop `docs/` measures
+    /// work-bound. Deliberately NOT parameterised on the acting city: the
+    /// question is whether the EMPIRE has unfinished research cities, and the
+    /// city being priced is by construction one that has no Campus at all.
+    fn refresh_research_chain_completion(&mut self, g: &Game, pid: usize) {
+        self.research_chain_completion = 1.0;
+        if !self.campus_finishes_first || !self.research_economy {
+            return;
+        }
+        let campus = crate::name!("campus");
+        let (mut held, mut buildable) = (0usize, 0usize);
+        for cid in g.player_city_ids(pid) {
+            let city = &g.cities[&cid];
+            if !g.city_has_district_family(city, campus) {
+                continue;
+            }
+            for (name, spec) in g.rules.buildings.iter() {
+                if spec.wonder || spec.district.map(|d| g.district_family(d)) != Some(campus) {
+                    continue;
+                }
+                let building = Name::new(name);
+                if city.buildings.contains(&building) {
+                    held += 1;
+                    buildable += 1;
+                } else if g.can_produce(pid, cid, &Item::Building { building }) {
+                    buildable += 1;
+                }
+            }
+        }
+        if buildable == 0 {
+            return;
+        }
+        self.research_chain_completion = (held as f64 / buildable as f64)
+            .clamp(RESEARCH_COVERAGE_UNFINISHED_FLOOR, 1.0);
+    }
+
     fn refresh_research_weight(&mut self, g: &Game) {
         self.research_weight = if self.research_economy {
             // See `research_floor_holds`: what a beaker is worth to every
@@ -20482,7 +20575,11 @@ impl AdvancedAi {
                     // `RESEARCH_CAMPUS_PAYBACK`: the old scaling priced this at
                     // 0.40 with a hundred turns of compounding left, while every
                     // rival term is a flat constant that never decays.
-                    RESEARCH_CAMPUS_COVERAGE * self.research_payback(g)
+                    // See `campus_finishes_first`: an unfinished research
+                    // city is a reason to build LESS of the expensive half.
+                    RESEARCH_CAMPUS_COVERAGE
+                        * self.research_chain_completion
+                        * self.research_payback(g)
                 } else {
                     0.0
                 };
@@ -30848,6 +30945,9 @@ impl AdvancedAi {
         // reads this one number, so the horizon cannot drift between the
         // production ordering, the citizen governor, and the search evaluator.
         self.refresh_research_weight(g);
+        // And how finished the research cities already standing are, on the
+        // same once-per-decision footing. See `campus_finishes_first`.
+        self.refresh_research_chain_completion(g, pid);
         self.base.minor = g.players[pid].is_minor;
         self.base.barb = g.players[pid].is_barbarian;
         let active_victory_target = self.active_victory_target(g);

@@ -22,6 +22,9 @@ use crate::ai::Ai;
 use crate::game::{Action, Game};
 use crate::setup::GameSpeed;
 
+/// A named census arm and the genes it turns on.
+type Arm = (&'static str, fn(&mut AdvancedAi));
+
 /// One seat's research chain at the end of a game.
 struct Chain {
     cities: usize,
@@ -117,8 +120,8 @@ fn report(label: &str, arms: &[(&str, Chain)]) {
 #[test]
 #[ignore = "census, not an assertion; run explicitly with --nocapture"]
 fn the_research_chain_treated_against_control() {
-    let seeds: Vec<u64> = (0..3).map(|i| 84_000_000 + i).collect();
-    let arms: Vec<(&str, fn(&mut AdvancedAi))> = vec![
+    let seeds: Vec<u64> = (0..4).map(|i| 84_000_000 + i).collect();
+    let arms: Vec<Arm> = vec![
         ("control (universe)", |_ai| {}),
         ("science-payback-horizon", |ai| {
             ai.enable_science_payback_horizon()
@@ -132,11 +135,31 @@ fn the_research_chain_treated_against_control() {
         ("research-floor-holds", |ai| {
             ai.enable_research_floor_holds()
         }),
+        ("campus-finishes-first", |ai| {
+            ai.enable_campus_finishes_first()
+        }),
+        // The pairing the gradient predicts: the two genes that raised
+        // terminal Science, with the brake that stops them buying Campuses
+        // they will not finish.
+        ("premium+payoff+brake", |ai| {
+            ai.enable_research_tier_premium();
+            ai.enable_science_multiplier_payoff();
+            ai.enable_campus_finishes_first();
+        }),
         ("all four", |ai| {
             ai.enable_science_payback_horizon();
             ai.enable_science_multiplier_payoff();
             ai.enable_research_tier_premium();
             ai.enable_research_floor_holds();
+        }),
+        // The same four with the brake: does it recover the nine Labs the
+        // bundle lost, or is the bundle bad for some other reason?
+        ("all four + brake", |ai| {
+            ai.enable_science_payback_horizon();
+            ai.enable_science_multiplier_payoff();
+            ai.enable_research_tier_premium();
+            ai.enable_research_floor_holds();
+            ai.enable_campus_finishes_first();
         }),
     ];
     let mut totals: Vec<(String, Chain)> = Vec::new();

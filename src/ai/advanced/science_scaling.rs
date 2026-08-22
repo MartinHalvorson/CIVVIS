@@ -136,6 +136,9 @@ mod tests {
             ("research-floor-holds", |ai: &AdvancedAi| {
                 ai.research_floor_holds
             }),
+            ("campus-finishes-first", |ai: &AdvancedAi| {
+                ai.campus_finishes_first
+            }),
         ] {
             let mut ai = AdvancedAi::new();
             ai.enable_live_bridge_universe();
@@ -152,14 +155,17 @@ mod tests {
         ai.enable_science_multiplier_payoff();
         ai.enable_research_tier_premium();
         ai.enable_research_floor_holds();
+        ai.enable_campus_finishes_first();
         ai.disable_science_payback_horizon();
         ai.disable_science_multiplier_payoff();
         ai.disable_research_tier_premium();
         ai.disable_research_floor_holds();
+        ai.disable_campus_finishes_first();
         assert!(!ai.science_payback_horizon);
         assert!(!ai.science_multiplier_payoff);
         assert!(!ai.research_tier_premium);
         assert!(!ai.research_floor_holds);
+        assert!(!ai.campus_finishes_first);
     }
 
     /// The citizen half of the taper, and the proof it is a separate gene:
@@ -268,6 +274,92 @@ mod tests {
             treated.research_tier_weight(&game, &game.cities[&city], &runaway),
             super::super::RESEARCH_TIER_PREMIUM_CAP
         );
+    }
+
+    /// The brake only brakes where there is something unfinished to brake
+    /// for. Both no-op cases are the point: an empire with no Campus is not
+    /// being told to want research less, and neither is one that has finished
+    /// every Campus it owns.
+    #[test]
+    fn the_campus_brake_reads_one_until_a_campus_stands_empty() {
+        let mut game = Game::new_full(1, 24, 16, 91_989, 200, 0, false);
+        let city = found_capital(&mut game, 0);
+        let mut ai = AdvancedAi::new();
+        ai.research_economy = true;
+        ai.enable_campus_finishes_first();
+
+        // No Campus anywhere: nothing to finish, so the term is untouched and
+        // the first research city is bought at the shipped price.
+        ai.refresh_research_chain_completion(&game, 0);
+        assert_eq!(ai.research_chain_completion, 1.0, "no Campus, no brake");
+
+        // ⚠ A Campus alone is still not a brake, and that is deliberate: a
+        // city that cannot yet PRODUCE any Campus building has nothing
+        // unfinished to answer for. The Library is gated on `writing`, so the
+        // fixture has to grant it — a first draft did not and read 1.0 with an
+        // empty Campus, which is the same fixture trap that once made a
+        // purchase-ranking test pass vacuously because its only rival was not
+        // producible.
+        game.players[0].techs.insert(crate::name!("writing"));
+
+        // A Campus with every building it can currently produce still missing
+        // is what the census measured being bought over and over.
+        let site = game.cities[&city]
+            .owned_tiles
+            .iter()
+            .copied()
+            .find(|position| *position != game.cities[&city].pos)
+            .unwrap();
+        set_district(&mut game, city, site, "campus");
+        ai.refresh_research_chain_completion(&game, 0);
+        let empty = ai.research_chain_completion;
+        assert!(
+            empty < 1.0,
+            "a Campus standing without its chain brakes the next one: {empty}"
+        );
+        assert!(
+            empty >= super::super::RESEARCH_COVERAGE_UNFINISHED_FLOOR,
+            "and never below the floor, so a real research hole can still be \
+             filled: {empty}"
+        );
+
+        // Filling what it can produce releases the brake completely.
+        let producible: Vec<Name> = game
+            .rules
+            .buildings
+            .iter()
+            .filter(|(_, spec)| {
+                !spec.wonder
+                    && spec.district.map(|d| game.district_family(d))
+                        == Some(crate::name!("campus"))
+            })
+            .map(|(name, _)| Name::new(name))
+            .filter(|building| {
+                game.can_produce(
+                    0,
+                    city,
+                    &crate::game::Item::Building {
+                        building: *building,
+                    },
+                )
+            })
+            .collect();
+        assert!(!producible.is_empty(), "the fixture can build its chain");
+        for building in producible {
+            game.cities.get_mut(&city).unwrap().buildings.push(building);
+        }
+        ai.refresh_research_chain_completion(&game, 0);
+        assert_eq!(
+            ai.research_chain_completion, 1.0,
+            "a finished Campus is not a reason to want research less"
+        );
+
+        // And with the gene off it is 1.0 whatever the board looks like.
+        let mut shipped = AdvancedAi::new();
+        shipped.research_economy = true;
+        game.cities.get_mut(&city).unwrap().buildings.clear();
+        shipped.refresh_research_chain_completion(&game, 0);
+        assert_eq!(shipped.research_chain_completion, 1.0);
     }
 
     /// A constant standing in for a ruleset value has to be pinned to the

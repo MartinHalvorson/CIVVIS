@@ -165,6 +165,18 @@ impl AdvancedAi {
         self.research_tier_premium = false;
     }
 
+    /// The Campus coverage term is scaled by how finished the empire's
+    /// standing Campuses are. See [`AdvancedAi::campus_finishes_first`].
+    /// Opt-in gene `campus-finishes-first`.
+    pub fn enable_campus_finishes_first(&mut self) {
+        self.campus_finishes_first = true;
+    }
+
+    /// The twin of `enable_campus_finishes_first`.
+    pub fn disable_campus_finishes_first(&mut self) {
+        self.campus_finishes_first = false;
+    }
+
     /// The citizen tilt and the beaker floor hold while the research can
     /// still pay. See [`AdvancedAi::research_floor_holds`]. Opt-in gene
     /// `research-floor-holds`.

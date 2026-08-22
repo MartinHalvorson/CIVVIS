@@ -239,6 +239,9 @@ pub const PRODUCTION_OPT_INS: &[LiveTreatment] = &[
     // The chain's rungs are 2, 4 and 3-plus-5 and the debt that buys them is
     // flat. See `AdvancedAi::research_tier_premium`.
     ("research_tier_premium", "research-tier-premium", AdvancedAi::enable_research_tier_premium),
+    // Measured: every extra Campus bought late came out of a Research Lab
+    // that then never got built. See `AdvancedAi::campus_finishes_first`.
+    ("campus_finishes_first", "campus-finishes-first", AdvancedAi::enable_campus_finishes_first),
     // The empire builds the laboratory and then declines to staff it. See
     // `AdvancedAi::research_floor_holds`.
     ("research_floor_holds", "research-floor-holds", AdvancedAi::enable_research_floor_holds),
