@@ -188,13 +188,31 @@
         "design": "foldover",
         "start_seed": 100000000
       }
+    },
+    {
+      "path": "docs/gene_screens/2026-08-22-h1-holy-lane-parity-direct-6p-allseats-1200-pairs.json",
+      "regime": "native",
+      "complete_pairs": 7200,
+      "family_wise_z": 1.96,
+      "profile": {
+        "players": 6,
+        "width": 60,
+        "height": 38,
+        "speed": "online",
+        "victories": "science,culture,religious,diplomatic,domination,score",
+        "all_seats": true,
+        "baseline": "best",
+        "field": "advanced",
+        "design": "foldover",
+        "start_seed": 110000000
+      }
     }
   ],
   "counts": {
     "helps": 21,
     "hurts": 8,
     "unresolved": 37,
-    "default_on": 33
+    "default_on": 34
   },
   "genes": [
     {
@@ -1406,36 +1424,29 @@
     {
       "tag": "holy-lane-parity",
       "verdict": "helps",
-      "default_on": false,
-      "wins_last_10k": 63,
-      "wins_prior_10k": -27,
+      "default_on": true,
+      "wins_last_10k": 99,
+      "wins_prior_10k": 63,
       "deciding_regime": "native",
       "family_wise": true,
       "conflict": true,
       "native": {
-        "pairs": 17574,
-        "n_on": 17574,
-        "n_off": 17574,
-        "win_delta_pp": 1.263,
-        "win_z": 3.48,
-        "share_delta_pp": -0.016,
-        "share_z": -0.245,
+        "pairs": 7200,
+        "n_on": 7200,
+        "n_off": 7200,
+        "win_delta_pp": 1.972,
+        "win_z": 4.052,
+        "share_delta_pp": 0.08,
+        "share_z": 1.23,
         "read": "HELPS **",
-        "source": "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
+        "source": "2026-08-22-h1-holy-lane-parity-direct-6p-allseats-1200-pairs.json",
         "win_tranches": [
           {
             "position": "latest",
-            "pairs": 10002,
-            "win_delta_pp": 1.62,
-            "win_z": 3.456,
-            "win_se_pp": 0.469
-          },
-          {
-            "position": "previous",
-            "pairs": 7572,
-            "win_delta_pp": 0.792,
-            "win_z": 1.387,
-            "win_se_pp": 0.571
+            "pairs": 7200,
+            "win_delta_pp": 1.972,
+            "win_z": 4.052,
+            "win_se_pp": 0.487
           }
         ]
       },
