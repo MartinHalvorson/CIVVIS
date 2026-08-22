@@ -4895,7 +4895,11 @@ impl BasicAi {
     /// without moving anything. A serial path that moves a unit between two
     /// steps still recomputes, because the moved unit's zone of control is
     /// part of every enemy's reach; the exact key does not pretend otherwise.
-    fn enemy_attack_envelopes(&self, g: &Game, pid: usize) -> std::sync::Arc<AttackEnvelopes> {
+    pub(crate) fn enemy_attack_envelopes(
+        &self,
+        g: &Game,
+        pid: usize,
+    ) -> std::sync::Arc<AttackEnvelopes> {
         let key = (
             g.turn,
             pid,

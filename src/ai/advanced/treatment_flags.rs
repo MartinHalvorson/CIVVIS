@@ -102,6 +102,19 @@ impl AdvancedAi {
         self.theology_for_founders = false;
     }
 
+    /// A unit already inside a hostile's next-turn reach picks a posture:
+    /// stand and heal where the melee exchange favours holding, close on a
+    /// shooter it cannot answer, or step out of that shooter's envelope. See
+    /// [`AdvancedAi::contact_posture`]. Opt-in gene `contact-posture`.
+    pub fn enable_contact_posture(&mut self) {
+        self.contact_posture = true;
+    }
+
+    /// The twin of `enable_contact_posture`.
+    pub fn disable_contact_posture(&mut self) {
+        self.contact_posture = false;
+    }
+
     /// A settler scores a site by the districts the plan would build there,
     /// each on its own plot. See [`AdvancedAi::district_lookahead_settle`].
     /// Opt-in gene `district-lookahead-settle`.

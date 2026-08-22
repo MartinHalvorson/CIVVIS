@@ -3813,6 +3813,28 @@ pub struct AdvancedAi {
     /// once nothing is left in reach. Off everywhere by default; opt-in gene
     /// `opportunistic-war`. See `advanced/opportunistic_war.rs`.
     pub opportunistic_war: bool,
+    /// A unit already inside a hostile's next-turn reach picks a posture
+    /// instead of only picking an attack: stand and heal where the melee
+    /// exchange favours holding, close on a shooter it cannot answer, or step
+    /// out of that shooter's envelope.
+    ///
+    /// ★★★★ THE SHIPPED SCAN CANNOT EXPRESS "DO NOT SWING". A declined attack
+    /// falls through to the march, so the controller has no way to buy the
+    /// three things Civilization VI pays a stationary defender — the melee
+    /// counter (`do_attack` resolves both blows), fortification and terrain
+    /// (`unit_strength(u, true)`, `tile_defense_bonus`, `support_bonus`, all
+    /// defender-side), and the 5–20 hit points `end_turn` grants a unit that
+    /// did not act. The mirror of that gap is the ranged one: `do_ranged` has
+    /// no second blow at all, so a unit loitering inside an archer's envelope
+    /// with no reply of its own is losing health for nothing, which is
+    /// precisely the position the march leaves it in.
+    ///
+    /// Both branches are priced with the engine's own
+    /// `Game::melee_exchange_strengths` and `Game::ranged_strike_strengths`,
+    /// run once each way, so standing and swinging are compared on one scale.
+    /// Off everywhere by default; opt-in gene `contact-posture`. See
+    /// `advanced/contact_posture.rs`.
+    pub contact_posture: bool,
     /// The pillage half of `opportunistic_war`: count a neighbour's unpillaged
     /// improvements and districts within reach as prizes, and walk raiding
     /// soldiers to them. Off, a raid is priced on civilians alone. Its own
@@ -4269,6 +4291,10 @@ mod great_person_housing;
 /// unescorted Settlers and Builders, unpillaged tiles — taken by movement
 /// and closed by peace. See `advanced/opportunistic_war.rs`.
 mod opportunistic_war;
+
+/// The contact posture: standing to receive a melee attack and heal, closing
+/// on a shooter, or leaving its envelope. See `advanced/contact_posture.rs`.
+mod contact_posture;
 
 /// The district look-ahead at settlement and the priced tile purchase: two
 /// opt-in territory genes, one file. See `advanced/site_lookahead.rs`.
@@ -4906,6 +4932,7 @@ impl AdvancedAi {
             early_contact_window: false,
             great_person_housing: false,
             opportunistic_war: false,
+            contact_posture: false,
             raid_pillage_prizes: false,
             raid_war: None,
             diplomatic_opening: false,
@@ -28320,6 +28347,16 @@ impl AdvancedAi {
             .iter()
             .find(|group| group.units.contains(&uid))
             .cloned();
+
+        // ⚠ BEFORE the attack scan, because the one decision it can take that
+        // the scan cannot is *not swinging*. A declined attack below falls
+        // through to the march; only here can a unit choose to hold the
+        // ground it is standing on and heal. See `advanced/contact_posture.rs`
+        // — off by default, opt-in gene `contact-posture`.
+        if let Some(acted) = self.contact_posture_step(g, pid, uid) {
+            self.force_groups_dirty |= acted;
+            return acted;
+        }
 
         let radius = if spec.has_ranged_attack() {
             g.unit_attack_range(uid).max(1)
