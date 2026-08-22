@@ -312,4 +312,9 @@ pub const PRODUCTION_OPT_INS: &[LiveTreatment] = &[
     // running screen keeps its positional genome. See
     // `AdvancedAi::fifteenth_citizen`.
     ("fifteenth_citizen", "fifteenth-citizen", AdvancedAi::enable_fifteenth_citizen),
+    // The chain is clock-bound and the clock is serialized: Chemistry follows
+    // the University STANDING by 36-73 turns. Appended at the END so a running
+    // screen keeps its positional genome. See
+    // `AdvancedAi::chain_tech_lookahead`.
+    ("chain_tech_lookahead", "chain-tech-lookahead", AdvancedAi::enable_chain_tech_lookahead),
 ];

@@ -316,6 +316,18 @@ impl AdvancedAi {
         self.fifteenth_citizen = false;
     }
 
+    /// The research goal aims at a Campus rung the empire can BUILD, not only
+    /// one it has already built. See [`AdvancedAi::chain_tech_lookahead`].
+    /// Opt-in gene `chain-tech-lookahead`.
+    pub fn enable_chain_tech_lookahead(&mut self) {
+        self.chain_tech_lookahead = true;
+    }
+
+    /// The twin of `enable_chain_tech_lookahead`.
+    pub fn disable_chain_tech_lookahead(&mut self) {
+        self.chain_tech_lookahead = false;
+    }
+
     /// The citizen tilt and the beaker floor hold while the research can
     /// still pay. See [`AdvancedAi::research_floor_holds`]. Opt-in gene
     /// `research-floor-holds`.
