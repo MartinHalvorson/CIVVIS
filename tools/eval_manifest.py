@@ -72,9 +72,11 @@ def withholding_arms(
 
     ⚠⚠ THERE IS NO RULE, AND BOTH OBVIOUS ONES ARE WRONG SOMEWHERE. This was
     `live_without_{tag.replace('-', '_')}`, which names an arm that does not
-    exist for `ranged-line-of-sight` — its arm is
-    `live_without_ranged_needs_line_of_sight`, after the flag. Deriving from the
-    flag instead is wrong the other way: `army-target-weighs-enemy` sets
+    exist for `live-trader-route` — its arm is
+    `live_without_live_trader_route_adapter`, after the flag. (The original
+    example was `ranged-line-of-sight`, which left the code on 2026-08-21 with
+    the ranking's bottom ten.) Deriving from the flag instead is wrong the other
+    way: `army-target-weighs-enemy` sets
     `army_target_weighs_the_enemy` and its arm is
     `live_without_army_target_weighs_enemy`, after the tag.
 
