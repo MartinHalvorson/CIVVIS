@@ -94,6 +94,17 @@ ADVISORY_CHECKS = {
         "when there is evidence it can be, not on the strength of its name.",
     "control-mod":
         "Same workflow and same reasoning as `published-build`.",
+    "paired-cost":
+        "New on 2026-08-22 and advisory on purpose, for two separate reasons. "
+        "It is timing, on a shared 4-core hosted runner, at a shape chosen to "
+        "fit that runner rather than to match deployment — so its number is a "
+        "smoke alarm and not a promotion figure, and a gate that can be wrong "
+        "should not hold the merge queue on its first day. And requiring it "
+        "means changing branch protection, which is the repository owner's "
+        "call, not a pull request's. Promote it once its false-positive rate "
+        "is observed rather than assumed: it is looking for the six-fold "
+        "event #2059 shipped, and a 50% budget has room to spare before it "
+        "reaches an honest change.",
 }
 # Terminal check conclusions that say nothing about the code. A run that was
 # superseded by its own concurrency group, killed by the runner clock, or

@@ -89,7 +89,7 @@ fn only_the_live_bridge_raises_the_housing_ceiling() {
         "the frozen tournament controller must keep its recorded ladders"
     );
     let mut live = AdvancedAi::new();
-    live.enable_live_bridge();
+    live.enable_live_bridge_universe();
     assert!(live.base.housing_districts, "the deployment turns it on");
     live.disable_housing_districts();
     assert!(
@@ -97,23 +97,6 @@ fn only_the_live_bridge_raises_the_housing_ceiling() {
         "and the control arm holds it off"
     );
 }
-/// Off by default, set only by the live bridge, and holdable off on its own.
-#[test]
-fn only_the_live_bridge_lets_a_capped_city_buy_its_ceiling() {
-    assert!(
-        !AdvancedAi::new().base.housing_buildings,
-        "the frozen tournament controller must keep its recorded ladders"
-    );
-    let mut live = AdvancedAi::new();
-    live.enable_live_bridge();
-    assert!(live.base.housing_buildings, "the deployment turns it on");
-    live.disable_housing_buildings();
-    assert!(
-        !live.base.housing_buildings,
-        "and the control arm holds it off"
-    );
-}
-
 /// Off by default, set only by the live bridge, and holdable off on its own
 /// so the arm is a controlled comparison — which is what makes the repair
 /// measurable rather than merely deployed.
@@ -125,7 +108,7 @@ fn only_the_live_bridge_discounts_a_stranded_settler() {
     );
     assert!(!AdvancedAi::new().settler_founds_when_stalled);
     let mut live = AdvancedAi::new();
-    live.enable_live_bridge();
+    live.enable_live_bridge_universe();
     assert!(
         live.base.settler_strand_discount,
         "the deployment turns it on"
@@ -142,17 +125,6 @@ fn only_the_live_bridge_discounts_a_stranded_settler() {
     assert!(!live.settler_founds_when_stalled);
 }
 
-/// Off by default, set only by the live bridge, and holdable off on its own
-/// so the arm is a controlled comparison.
-#[test]
-fn only_the_live_bridge_keeps_asking_for_a_campus() {
-    assert!(!AdvancedAi::new().campus_every_city);
-    let mut live = AdvancedAi::new();
-    live.enable_live_bridge();
-    assert!(live.campus_every_city);
-    live.disable_campus_every_city();
-    assert!(!live.campus_every_city);
-}
 
 /// ⚠ The whole point: a Campus with a hundred turns left must not be priced
 /// as if the game were nearly over. The old game-fraction horizon said 0.40
@@ -217,15 +189,12 @@ fn only_the_two_trees_are_exempt_from_the_half_empire_cliff() {
         .split("};")
         .next()
         .expect("the balanced_core block ends");
-    // The Campus exemption gained a population floor on 2026-08-19 (see
-    // `campus_every_city`: −2.8 pp wins over 4,000 screened pairs when a
-    // size-three town's Campus outbid its growth buildings), so its gate is
-    // a three-term conjunction; the Theater Square keeps the original pair.
+    // The Campus gene was REMOVED 2026-08-21 (ranking row −90/10k) with the
+    // bottom of the table; the campus rejoined the half-empire cliff and only
+    // the Theater Square exemption remains.
     assert!(
-        block.contains("self.campus_every_city")
-            && block.contains("&& family == \"campus\"")
-            && block.contains("&& city.pop >= CAMPUS_EVERY_CITY_POP_FLOOR"),
-        "the campus exemption must be gated on its treatment and the pop floor"
+        block.contains("let campus_keeps_asking = false;"),
+        "the campus exemption stays removed"
     );
     assert!(
         block.contains("self.culture_coverage && family == \"theater_square\""),
@@ -237,64 +206,17 @@ fn only_the_two_trees_are_exempt_from_the_half_empire_cliff() {
             "{family} must keep the half-empire cap"
         );
     }
-    // Both exemptions are live-bridge treatments; a stock controller keeps
-    // the cliff for every family.
     let stock = AdvancedAi::new();
-    assert!(!stock.campus_every_city);
     assert!(!stock.culture_coverage);
 }
-/// Off by default, set only by the live bridge, holdable off on its own.
-#[test]
-fn only_the_live_bridge_plays_the_housing_cards() {
-    assert!(!AdvancedAi::new().housing_cards);
-    let mut live = AdvancedAi::new();
-    live.enable_live_bridge();
-    assert!(live.housing_cards);
-    live.disable_housing_cards();
-    assert!(!live.housing_cards);
-}
 
-/// ⚠ The two cards must be the ones the empire can actually unlock, and
-/// they must be REAL rows in the shipped ruleset — a card name the game does
-/// not have is the defect class this project has hit six times.
-#[test]
-fn the_housing_cards_exist_and_are_the_reachable_pair() {
-    let rules = crate::rules::Rules::shipped();
-    for card in ["medina_quarter", "insulae"] {
-        let spec = rules
-            .policies
-            .get(&crate::name::Name::new(card))
-            .unwrap_or_else(|| panic!("{card} is a shipped policy"));
-        assert_eq!(
-            spec.slot, "economic",
-            "{card} competes for an economic slot, which is what the insert \
-                 point assumes"
-        );
-    }
-    // `new_deal` is the strongest housing card and is ALREADY in every
-    // strategic list — it is excluded here because it needs `suffrage`,
-    // which these games do not reach (slotted in 1 of 107 live runs).
-    assert!(rules
-        .policies
-        .contains_key(&crate::name::Name::new("new_deal")));
-}
 
-/// The insert sits behind the lane's leading cards, exactly like the
-/// research pair — a lane keeps its opening and pays for this from the tail.
-#[test]
-fn the_housing_cards_go_behind_the_lanes_own_opening() {
-    assert_eq!(HOUSING_DECK_INSERT, RESEARCH_DECK_INSERT);
-    assert_eq!(
-        HOUSING_CARD_HEADROOM, 2.0,
-        "the break-even of the engine's own growth band, not a margin"
-    );
-}
 /// Off by default, set only by the live bridge, holdable off on its own.
 #[test]
 fn only_the_live_bridge_aims_research_at_the_housing_ceiling() {
     assert!(!AdvancedAi::new().housing_research);
     let mut live = AdvancedAi::new();
-    live.enable_live_bridge();
+    live.enable_live_bridge_universe();
     assert!(live.housing_research);
     live.disable_housing_research();
     assert!(!live.housing_research);
@@ -344,7 +266,7 @@ fn the_housing_goal_fires_only_while_the_ceiling_is_being_paid() {
         .expect("two cities");
 
     let mut ai = AdvancedAi::new();
-    ai.enable_live_bridge();
+    ai.enable_live_bridge_universe();
 
     // A size-1 city has room to grow, so nothing is being paid.
     game.cities.get_mut(&cid).unwrap().pop = 1;
@@ -380,192 +302,7 @@ fn the_housing_goal_fires_only_while_the_ceiling_is_being_paid() {
     assert_eq!(legacy.unreachable_housing_tech(&game, 0), None);
 }
 
-/// A city under attack that cannot wall itself researches the wall first:
-/// civvis-20260816T040537Z lost its unwalled capital on t79 with Masonry
-/// "at 16" behind Celestial Navigation. See `walls_tech_goal`.
-#[test]
-fn a_major_war_sends_an_unwalled_empire_at_the_wall_tech() {
-    let mut game = crate::game::Game::new(2, 32, 24, 9_103, 250, 0);
-    for pid in 0..2 {
-        let settler = game
-            .player_unit_ids(pid)
-            .into_iter()
-            .find(|unit| game.units[unit].kind == "settler")
-            .expect("starting settler");
-        game.found_city_for(pid, game.units[&settler].pos, None);
-        game.remove_unit(settler);
-    }
-    game.record_contact(0, 1);
-    game.players[0].techs.remove(&crate::name!("masonry"));
-    assert!(
-        game.rules.buildings["walls"].tech.as_deref() == Some("masonry"),
-        "the ruleset unlocks the first Walls with Masonry"
-    );
 
-    let mut live = AdvancedAi::new();
-    live.enable_live_bridge();
-    assert!(
-        live.base.garrison_walls,
-        "the walls doctrine is on for the live seat"
-    );
-    // At peace, with no threatened city: nothing to force.
-    assert_eq!(live.walls_tech_goal(&game, 0), None);
-
-    // The neighbour declares: the unwalled empire is sent at Masonry.
-    game.current = 1;
-    game.apply(1, &Action::DeclareWar { player: 0 }).unwrap();
-    game.current = 0;
-    assert_eq!(live.walls_tech_goal(&game, 0), Some("masonry"));
-    // And it drives the research decision itself.
-    game.players[0].research = None;
-    let plan = StrategicPlan {
-        strategy: GrandStrategy::Recovery,
-        target_player: Some(1),
-        target_city: None,
-        threatened_city: None,
-        desired_cities: 3,
-        assessed_turn: game.turn,
-        rush: false,
-    };
-    live.advanced_research(&mut game, 0, &plan);
-    let picked = game.players[0].research.clone().expect("a tech is chosen");
-    assert!(
-            live.tech_leads_to(&game, picked.as_str(), "masonry"),
-            "under a major war the cheapest step toward the wall tech is researched first, not {picked}"
-        );
-
-    // Walls known: the goal is spent.
-    game.players[0].techs.insert(crate::name!("masonry"));
-    assert_eq!(live.walls_tech_goal(&game, 0), None);
-    game.players[0].techs.remove(&crate::name!("masonry"));
-    // Every city walled: nothing to force either.
-    let capital = game.player_city_ids(0)[0];
-    game.cities
-        .get_mut(&capital)
-        .unwrap()
-        .buildings
-        .push(crate::name!("walls"));
-    assert_eq!(live.walls_tech_goal(&game, 0), None);
-    game.cities.get_mut(&capital).unwrap().buildings.pop();
-
-    // The stock controller and the frozen anchor never enter it.
-    let stock = AdvancedAi::new();
-    assert!(!stock.base.garrison_walls);
-    assert_eq!(stock.walls_tech_goal(&game, 0), None);
-    let frozen = AdvancedAi::legacy();
-    assert_eq!(frozen.walls_tech_goal(&game, 0), None);
-}
-
-/// The live Campus treatment used to be unable to act during a religious
-/// opening: Astronomy won correctly, then the housing goal pulled the next
-/// slot to Engineering and Writing waited behind ordinary scores. Keep the
-/// finite Prophet opener, but make the first Campus legal before that
-/// optional detour consumes its handoff.
-#[test]
-fn live_first_campus_writing_precedes_the_housing_research_detour() {
-    let setup = || {
-        let mut game = Game::new(2, 32, 24, 9_102, 250, 0);
-        let settler = game
-            .player_unit_ids(0)
-            .into_iter()
-            .find(|unit| game.units[unit].kind == "settler")
-            .expect("starting settler");
-        game.apply(0, &Action::FoundCity { unit: settler })
-            .expect("found city");
-        let capital = game.player_city_ids(0)[0];
-        let home = game.cities[&capital].pos;
-        let second_site = game
-            .map
-            .tiles
-            .iter()
-            .filter(|(_, tile)| {
-                tile.owner_city.is_none()
-                    && game.rules.is_passable(tile)
-                    && !game.rules.is_water(tile)
-            })
-            .map(|(position, _)| *position)
-            .find(|position| {
-                (4..=10).contains(&game.wdist(home, *position))
-                    && game
-                        .cities
-                        .values()
-                        .all(|city| game.wdist(city.pos, *position) >= 4)
-            })
-            .expect("test map has a nearby city site");
-        game.found_city_for(0, second_site, None);
-        game.players[0].techs.extend([
-            crate::name!("mining"),
-            crate::name!("pottery"),
-            crate::name!("astrology"),
-        ]);
-        // The repaired gate (2026-08-19) needs the cap to bind the empire
-        // AND to be tech-bound: both cities are capped, and both already
-        // hold the granary production could otherwise answer with — the
-        // live run's own shape (relief built, ceiling still paid).
-        for city in game.player_city_ids(0) {
-            game.cities
-                .get_mut(&city)
-                .unwrap()
-                .buildings
-                .push(crate::name!("granary"));
-            let capped = (2..40)
-                .find(|pop| {
-                    game.cities.get_mut(&city).unwrap().pop = *pop;
-                    game.city_housing_headroom(&game.cities[&city]) < HOUSING_CARD_HEADROOM
-                })
-                .expect("some population overruns this city's housing");
-            game.cities.get_mut(&city).unwrap().pop = capped;
-        }
-        game
-    };
-    let plan = StrategicPlan {
-        strategy: GrandStrategy::Religion,
-        target_player: None,
-        target_city: None,
-        threatened_city: None,
-        desired_cities: 3,
-        assessed_turn: 1,
-        rush: false,
-    };
-
-    let mut housing_game = setup();
-    let mut housing_only = AdvancedAi::new();
-    housing_only.enable_housing_research();
-    assert_eq!(
-        housing_only.unreachable_housing_tech(&housing_game, 0),
-        Some("engineering"),
-        "the fixture must reproduce the competing live housing goal"
-    );
-    housing_only.advanced_research(&mut housing_game, 0, &plan);
-    let housing_pick = housing_game.players[0]
-        .research
-        .as_deref()
-        .expect("the housing goal selects a prerequisite");
-    assert!(
-        housing_only.tech_leads_to(&housing_game, housing_pick, "engineering"),
-        "with Campus coverage off, the existing housing route remains available"
-    );
-
-    let mut live_game = setup();
-    let mut live = AdvancedAi::new();
-    live.enable_live_bridge();
-    assert_eq!(
-        live.first_campus_tech(&live_game, 0),
-        Some("writing"),
-        "two cities with a legal Campus site make the live coverage promise actionable"
-    );
-    assert_eq!(
-        AdvancedAi::legacy().first_campus_tech(&live_game, 0),
-        None,
-        "the frozen controller does not acquire the Writing handoff"
-    );
-    live.advanced_research(&mut live_game, 0, &plan);
-    assert_eq!(
-        live_game.players[0].research.as_deref(),
-        Some("writing"),
-        "Writing must beat the post-Astrology housing detour"
-    );
-}
 
 /// Off by default, set only by the live bridge, holdable off on its own —
 /// the recon-replacement arm follows the same contract as every other
@@ -577,7 +314,7 @@ fn only_the_live_bridge_replaces_the_recon_arm() {
     assert!(AdvancedAi::new().base.recon_replacement);
     assert!(!AdvancedAi::legacy().base.recon_replacement);
     let mut live = AdvancedAi::new();
-    live.enable_live_bridge();
+    live.enable_live_bridge_universe();
     assert!(live.base.recon_replacement);
     live.disable_recon_replacement();
     assert!(!live.base.recon_replacement);
@@ -591,7 +328,7 @@ fn only_the_live_bridge_prices_the_wonder_ring_into_settling() {
     assert!(!AdvancedAi::new().base.wonder_ring_settle_value);
     assert!(!AdvancedAi::legacy().base.wonder_ring_settle_value);
     let mut live = AdvancedAi::new();
-    live.enable_live_bridge();
+    live.enable_live_bridge_universe();
     assert!(live.base.wonder_ring_settle_value);
     live.disable_wonder_ring_settle_value();
     assert!(!live.base.wonder_ring_settle_value);
@@ -1072,7 +809,7 @@ fn live_stalled_settler_refuses_an_unsupported_hostile_frontier() {
     let mut control_board = game.clone();
 
     let mut live = AdvancedAi::new();
-    live.enable_live_bridge();
+    live.enable_live_bridge_universe();
     assert!(live.settler_founds_when_stalled);
     assert_eq!(
         live.live_stalled_settlement_is_unsupported_frontline(&game, 0, here),
@@ -1461,7 +1198,7 @@ fn only_the_live_bridge_fights_the_war_conversion_quartet() {
             && !legacy.endgame_war_runway
     );
     let mut live = AdvancedAi::new();
-    live.enable_live_bridge();
+    live.enable_live_bridge_universe();
     assert!(
         live.war_economy && live.war_reinforcement && live.war_patience && live.endgame_war_runway
     );
@@ -1477,12 +1214,10 @@ fn only_the_live_bridge_fights_the_war_conversion_quartet() {
     );
 }
 
-/// The routing in `take_turn` must name the adaptive Conquest plan behind
-/// the flag: `docs/RUSH.md` measured that raising the army anywhere else
-/// is a no-op, because an adaptive Conquest plan historically never
-/// reached `advanced_production` at all.
+/// The removal note stands where the routing stood: `take_turn`'s dispatch
+/// records the three repairs and the numbers that ended them.
 #[test]
-fn the_war_economy_routes_an_adaptive_conquest_plan_to_war_production() {
+fn the_war_economy_conquest_routing_is_gone_from_the_dispatch() {
     let src = include_str!("../advanced.rs");
     let block = src
         .split("|| adaptive_expansion_dispatch")
@@ -1492,13 +1227,12 @@ fn the_war_economy_routes_an_adaptive_conquest_plan_to_war_production() {
         .next()
         .expect("the routing block ends at the production call");
     assert!(
-        block.contains("self.war_economy")
-            && block.contains("&& plan.strategy == GrandStrategy::Conquest")
-            && block.contains(".is_some_and(|target| g.is_at_war(pid, target))"),
-        "the war economy routes the adaptive Conquest plan only while the \
-         war with its target is DECLARED (repaired 2026-08-19: the
-         unconditional routing measured −7.2 pp native / −26.7 pp in the \
-         domination,score regime)"
+        block.contains("CONQUEST ROUTING WAS REMOVED"),
+        "the dispatch must carry the removal note where the routing stood"
+    );
+    assert!(
+        !block.contains("self.war_economy"),
+        "no war-economy disjunct may return to the dispatch"
     );
 }
 
@@ -1554,7 +1288,7 @@ fn the_strategic_governor_runs_under_every_lane_on_the_treated_seat() {
     assert!(!AdvancedAi::new().governor_every_lane);
     assert!(!AdvancedAi::legacy().governor_every_lane);
     let mut live = AdvancedAi::new();
-    live.enable_live_bridge();
+    live.enable_live_bridge_universe();
     assert!(live.governor_every_lane);
     live.disable_governor_every_lane();
     assert!(!live.governor_every_lane);

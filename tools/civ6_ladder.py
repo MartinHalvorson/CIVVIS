@@ -312,18 +312,18 @@ def decider_revisions(updates_path: Path) -> list[str] | None:
 def decider_genome(why_log: Path) -> dict | None:
     """The genome the decider actually played, from its own first record.
 
-    ★★★★ WHAT WAS ASKED FOR IS NOT WHAT WAS PLAYED. `civvis_orders --strategy
-    NAME` resolves NAME against the league snapshot's internal names
-    (`g56-48`); the supervisor has passed the display name (`WildCard9`) since
-    it was written, the resolver printed "[genome] no strategy 'WildCard9'"
-    into `why.log` and fell back to the stock controller, and thirty-five
-    ladder rows carried `strategy=WildCard9` in their brain log while every one
-    of them played `AdvancedAi::new`. The decider writes a machine-readable
-    `{"kind":"genome", ...}` line at the top of `why.log` with the strategy it
-    resolved and the source it came from; this reads it, so the ledger says
-    which genome played rather than which name was typed. None when the run
-    has no `why.log` or the record is missing (an older decider): absence stays
-    distinct from "stock".
+    ★★★★ WHAT WAS ASKED FOR IS NOT WHAT WAS PLAYED. Before the live-selector
+    compatibility repair, `civvis_orders --strategy NAME` accepted only the
+    league snapshot's internal name (`g56-48`), while the supervisor passed
+    its display name (`WildCard9`). The resolver printed "[genome] no strategy
+    'WildCard9'", fell back to stock, and thirty-five ladder rows carried
+    `strategy=WildCard9` while every one played `AdvancedAi::new`. New deciders
+    accept a unique display label but still report the immutable internal name.
+    The decider writes that machine-readable `{"kind":"genome", ...}` line at
+    the top of `why.log`; this reads it so the ledger says which genome played,
+    not merely which selector was typed. None when the run has no `why.log` or
+    the record is missing (an older decider): absence stays distinct from
+    "stock".
     """
     if not why_log.is_file():
         return None

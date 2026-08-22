@@ -258,6 +258,16 @@ pub struct TilesChunk {
     pub plots: Vec<Plot>,
 }
 
+/// The one stamp a between-sweeps `tiles` delta carries (`CivvisTiles.sweep`:
+/// only the plots revealed or changed hands since the last board went out).
+/// Read beside [`TilesChunk`] rather than on it so the chunk's many literal
+/// constructions stay as they are.
+#[derive(Deserialize)]
+struct TilesDeltaStamp {
+    #[serde(default)]
+    delta: bool,
+}
+
 /// The seat's view of the world at one turn, assembled from its `tiles` chunks.
 ///
 /// Deliberately not a `Game`: the holes have to survive into whatever consumes
@@ -276,20 +286,36 @@ impl Snapshot {
     pub fn from_chunks(chunks: &[TilesChunk]) -> Snapshot {
         let mut snapshot = Snapshot::default();
         for chunk in chunks {
-            snapshot.turn = snapshot.turn.max(chunk.turn);
-            snapshot.width = snapshot.width.max(chunk.width);
-            snapshot.height = snapshot.height.max(chunk.height);
-            for plot in &chunk.plots {
-                snapshot.revealed.insert((plot.x, plot.y), plot.clone());
-            }
+            snapshot.merge_sweep(chunk);
         }
         snapshot
+    }
+
+    /// Merge one chunk of a full sweep: its plots land and its turn advances
+    /// the snapshot's sweep turn.
+    pub fn merge_sweep(&mut self, chunk: &TilesChunk) {
+        self.turn = self.turn.max(chunk.turn);
+        self.merge_delta(chunk);
     }
 
     /// Whether this seat has revealed a plot. Everything outside this is unknown
     /// ground and must never be treated as ordinary ground.
     pub fn is_revealed(&self, pos: (i32, i32)) -> bool {
         self.revealed.contains_key(&pos)
+    }
+
+    /// Merge a between-sweeps delta: its plots land like any chunk's, but
+    /// the snapshot's sweep turn stays where the last FULL sweep put it. The
+    /// `improved` fold (`apply_finished_improvements`) keeps events at or
+    /// after the newest sweep, and a delta carries none of the older plots'
+    /// improvements — letting it stand for a sweep would drop every
+    /// improvement finished since the real one.
+    pub fn merge_delta(&mut self, chunk: &TilesChunk) {
+        self.width = self.width.max(chunk.width);
+        self.height = self.height.max(chunk.height);
+        for plot in &chunk.plots {
+            self.revealed.insert((plot.x, plot.y), plot.clone());
+        }
     }
 
     pub fn plot(&self, pos: (i32, i32)) -> Option<&Plot> {
@@ -489,6 +515,69 @@ mod tests {
         assert!(early.plot((7, 7)).is_none(), "turn 1 must not see turn 10");
         let latest = snapshot_from_events(&path).unwrap();
         assert_eq!(latest.revealed_count(), 2);
+        let _ = std::fs::remove_file(path);
+        let _ = std::fs::remove_dir(dir);
+    }
+
+    /// ★★★★ A TILES DELTA IS NEW GROUND, NOT A NEW SWEEP. The mod sends what
+    /// a unit revealed since the last board went out, every turn and frame,
+    /// stamped `delta`. It must merge onto the map like any chunk — that is
+    /// the whole point — and must NOT move the snapshot's sweep turn, or the
+    /// `improved` fold would discard every improvement finished between the
+    /// real sweep and the delta (rule 3 of `apply_finished_improvements`).
+    #[test]
+    fn a_tiles_delta_merges_new_ground_without_standing_for_a_sweep() {
+        let dir =
+            std::env::temp_dir().join(format!("civvis-mirror-tiles-delta-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("events.jsonl");
+        std::fs::write(
+            &path,
+            [
+                r#"{"kind":"tiles","turn":1,"width":8,"height":8,"chunk":1,"plots":[{"x":1,"y":1,"t":"TERRAIN_GRASS"}]}"#,
+                r#"{"kind":"improved","turn":3,"x":1,"y":1,"im":"IMPROVEMENT_FARM"}"#,
+                r#"{"kind":"tiles","turn":5,"width":8,"height":8,"chunk":1,"delta":true,"frame":1,"plots":[{"x":2,"y":1,"t":"TERRAIN_PLAINS"}]}"#,
+            ]
+            .join("\n"),
+        )
+        .unwrap();
+
+        let snapshot = snapshot_from_events(&path).unwrap();
+        assert_eq!(
+            snapshot.revealed_count(),
+            2,
+            "the delta's plot is on the map"
+        );
+        assert_eq!(
+            snapshot.plot((2, 1)).and_then(|plot| plot.t.as_deref()),
+            Some("TERRAIN_PLAINS")
+        );
+        assert_eq!(snapshot.turn, 1, "the sweep turn is the last FULL sweep's");
+        assert_eq!(
+            snapshot.plot((1, 1)).and_then(|plot| plot.im.as_deref()),
+            Some("IMPROVEMENT_FARM"),
+            "an improvement finished after the sweep survives a later delta"
+        );
+
+        // Stream order decides a plot, whichever kind of chunk carried it:
+        // a later sweep overrides an earlier delta's owner, and a later
+        // delta overrides the sweep's.
+        std::fs::write(
+            &path,
+            [
+                r#"{"kind":"tiles","turn":5,"width":8,"height":8,"chunk":1,"delta":true,"plots":[{"x":2,"y":1,"t":"TERRAIN_PLAINS","o":3}]}"#,
+                r#"{"kind":"tiles","turn":25,"width":8,"height":8,"chunk":1,"plots":[{"x":2,"y":1,"t":"TERRAIN_PLAINS","o":-1}]}"#,
+                r#"{"kind":"tiles","turn":26,"width":8,"height":8,"chunk":1,"delta":true,"plots":[{"x":2,"y":1,"t":"TERRAIN_PLAINS","o":4}]}"#,
+            ]
+            .join("\n"),
+        )
+        .unwrap();
+        let at_sweep = snapshot_from_events_at(&path, Some(25)).unwrap();
+        assert_eq!(at_sweep.plot((2, 1)).map(|plot| plot.o), Some(-1));
+        assert_eq!(at_sweep.turn, 25);
+        let latest = snapshot_from_events(&path).unwrap();
+        assert_eq!(latest.plot((2, 1)).map(|plot| plot.o), Some(4));
+        assert_eq!(latest.turn, 25, "the delta at turn 26 is not a sweep");
         let _ = std::fs::remove_file(path);
         let _ = std::fs::remove_dir(dir);
     }
@@ -1591,14 +1680,21 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("civvis-route-{}", std::process::id()));
         std::fs::create_dir_all(&dir).expect("scratch dir");
         let path = dir.join("events.jsonl");
+        // Each pairing is refused twice: this test is about the TURN LIMIT,
+        // and a single refusal no longer condemns anything (see
+        // `TRADE_ROUTE_REFUSALS_BEFORE_BLOCK`).
         std::fs::write(
             &path,
             concat!(
                 r#"{"kind":"state","turn":41}"#,
                 "\n",
+                r#"{"kind":"trade_route_refused","turn":39,"unit":9,"from_x":6,"from_y":6,"x":9,"y":9}"#,
+                "\n",
                 r#"{"kind":"trade_route_refused","turn":40,"unit":9,"from_x":6,"from_y":6,"x":9,"y":9}"#,
                 "\n",
                 r#"{"kind":"trade_route_refused","turn":42,"unit":9,"from_x":6,"from_y":6,"x":10,"y":10}"#,
+                "\n",
+                r#"{"kind":"trade_route_refused","turn":43,"unit":9,"from_x":6,"from_y":6,"x":10,"y":10}"#,
                 "\n",
             ),
         )
@@ -1612,6 +1708,62 @@ mod tests {
                 crate::hex::offset_to_axial(9, 9),
             )]),
             "future refusals must not leak into an earlier reconstructed frame"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Three Traders parked in Rome, and the ledger that put them there.
+    ///
+    /// Live run `civvis-20260822T020434Z` ended with a trade capacity of 20,
+    /// only 16 routes running, and four idle Traders. Its refusal ledger holds
+    /// 23 distinct pairings, **every one refused exactly once**, and 8 of the
+    /// 15 condemned destinations are our OWN cities. `blocked_trade_routes` is
+    /// never cleared, so each of those single readings retired a pairing for
+    /// the rest of the game and the parked Traders were never offered another.
+    #[test]
+    fn one_trade_route_refusal_is_a_report_and_two_are_a_verdict() {
+        let dir = std::env::temp_dir().join(format!("civvis-route2-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("scratch dir");
+        let path = dir.join("events.jsonl");
+        let refusal = |turn: u32, x: i32, y: i32| {
+            format!(
+                r#"{{"kind":"trade_route_refused","turn":{turn},"unit":9,"from_x":6,"from_y":6,"x":{x},"y":{y}}}"#
+            )
+        };
+        std::fs::write(
+            &path,
+            [
+                // Two state anchors: a frame can only be reconstructed at a
+                // turn the run actually exported one for.
+                r#"{"kind":"state","turn":45}"#.to_string(),
+                r#"{"kind":"state","turn":60}"#.to_string(),
+                // Refused once, exactly like all 23 pairings in the live run.
+                refusal(40, 9, 9),
+                // Refused twice: the host has said it twice and means it.
+                refusal(41, 12, 12),
+                refusal(50, 12, 12),
+            ]
+            .join("\n")
+                + "\n",
+        )
+        .expect("write events");
+
+        let state = state_from_events(&path, Some(60)).expect("turn 60 state");
+        assert_eq!(
+            state.refused_trade_routes,
+            std::collections::BTreeSet::from([(
+                crate::hex::offset_to_axial(6, 6),
+                crate::hex::offset_to_axial(12, 12),
+            )]),
+            "only the corroborated pairing is retired; retiring is forever"
+        );
+
+        // And the corroboration must fall inside the reconstructed frame: a
+        // second refusal from the future cannot condemn a pairing early.
+        let earlier = state_from_events(&path, Some(45)).expect("turn 45 state");
+        assert!(
+            earlier.refused_trade_routes.is_empty(),
+            "the second reading is at turn 50 and this frame is turn 45"
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -5204,6 +5356,60 @@ mod tests {
         );
     }
 
+    /// A zero-target answer is stronger than a city-local site disagreement. The
+    /// host cannot see a location for this world unique anywhere, so every city must
+    /// stop valuing it — including through the prerequisite-reach query.
+    #[test]
+    fn a_world_unique_the_host_cannot_place_is_blocked_in_every_city() {
+        let mut game = crate::game::Game::new(4, 20, 20, 71, 500, 0);
+        let mut ours: Vec<u32> = game
+            .cities
+            .values()
+            .filter(|city| city.owner == 0)
+            .map(|city| city.id)
+            .collect();
+        while ours.len() < 2 {
+            let seed = ours.len() as i32;
+            let pos = (seed * 5 + 6, seed * 5 + 6);
+            if !game.map.tiles.contains_key(&pos) {
+                break;
+            }
+            game.place_city(0, pos, None);
+            ours = game
+                .cities
+                .values()
+                .filter(|city| city.owner == 0)
+                .map(|city| city.id)
+                .collect();
+        }
+        assert!(ours.len() >= 2, "need two cities to prove the world scope");
+        let (first_city, second_city) = (ours[0], ours[1]);
+        game.players[0].techs = game.rules.techs.keys().copied().collect();
+        game.players[0].civics = game.rules.civics.keys().copied().collect();
+        for city in [first_city, second_city] {
+            game.cities.get_mut(&city).unwrap().pop = 12;
+        }
+        let wonder = game
+            .rules
+            .wonders
+            .keys()
+            .copied()
+            .find(|wonder| {
+                !game.wonder_sites(first_city, wonder).is_empty()
+                    && !game.wonder_sites(second_city, wonder).is_empty()
+            })
+            .expect("some wonder must be sitable in both cities for this to prove anything");
+
+        game.host_unavailable_wonders.insert(wonder);
+
+        for city in [first_city, second_city] {
+            assert!(
+                game.wonder_sites(city, wonder.as_str()).is_empty(),
+                "the host's zero-target response must block {wonder:?} in city {city}"
+            );
+        }
+    }
+
     /// A positive host answer must beat the temporary block emitted beside it.
     /// Otherwise the bridge learns the legal coordinates and still leaves the
     /// district unavailable for all eight cooldown turns.
@@ -8247,18 +8453,26 @@ pub fn snapshot_from_events_at(
     turn: Option<u32>,
 ) -> std::io::Result<Snapshot> {
     let raw = std::fs::read_to_string(path)?;
-    let mut chunks = Vec::new();
+    // In stream order, so a later chunk's plot wins whichever kind it is;
+    // a delta (`CivvisTiles.sweep`) merges without standing for a sweep —
+    // see `Snapshot::merge_delta`.
+    let mut snapshot = Snapshot::default();
     for line in raw.lines() {
         if !line.contains("\"tiles\"") {
             continue;
         }
         if let Ok(chunk) = serde_json::from_str::<TilesChunk>(line) {
             if !chunk.plots.is_empty() && turn.is_none_or(|limit| chunk.turn <= limit) {
-                chunks.push(chunk);
+                let is_delta =
+                    serde_json::from_str::<TilesDeltaStamp>(line).is_ok_and(|stamp| stamp.delta);
+                if is_delta {
+                    snapshot.merge_delta(&chunk);
+                } else {
+                    snapshot.merge_sweep(&chunk);
+                }
             }
         }
     }
-    let mut snapshot = Snapshot::from_chunks(&chunks);
     apply_finished_improvements(&raw, turn, &mut snapshot);
     Ok(snapshot)
 }
@@ -9722,6 +9936,62 @@ pub struct StateGreatPerson {
     pub empty_slots: Option<u32>,
 }
 
+impl StateGreatPerson {
+    /// This person has nowhere to put its work: it cannot activate, and no
+    /// tile the host offers can take one.
+    ///
+    /// ★★★★★ `empty_slots == Some(0)` IS NOT THE SAME QUESTION, AND EVERY
+    /// ESCAPE HATCH WAS ASKING IT. Live run `civvis-20260822T020434Z` reached
+    /// turn 231 with **three Great Artists, three Great Writers, three Great
+    /// Musicians and a Great Scientist stacked in Rome** — and
+    /// `orders.sqlite` holds **not one order of any kind, ever, for any of
+    /// the nine**. `ACTIVATE_GREAT_PERSON` fired 18 times that game, all of
+    /// them Scientists, Merchants and one Engineer; no Writer, Artist or
+    /// Musician was used once in 231 turns.
+    ///
+    /// Their export says why. Every one reads `can_activate: false` with
+    /// **every single `activation_plot` at `slot_open: false`** — the host
+    /// saying, tile by tile, that none of them can take the work — while
+    /// `empty_slots` reads **24 for the Writers, 4 for the Musicians, 2 for
+    /// the Artists**, because that field counts compatible empty slots
+    /// EMPIRE-WIDE by the survey's reckoning, including slots on plots the
+    /// engine will not offer this person at all.
+    ///
+    /// So all three exits were shut at once. The driver would not activate
+    /// (`can_activate` false), would not walk (every plot known-full is never
+    /// a destination, by design and correctly), the mirror's needs machinery
+    /// would not ask for capacity, and the work-sale arm would not free a
+    /// slot — the last two because both gate on `empty_slots == Some(0)` and
+    /// it was 24. Nine Great People fell clean through every branch and idled
+    /// for the whole game.
+    ///
+    /// The operative question is not how many slots the empire owns; it is
+    /// whether this person can REACH one. The host answers that per plot with
+    /// `slot_open`, so ask it there. `empty_slots == Some(0)` stays a
+    /// sufficient condition — it still is one — and `None` keeps the older
+    /// control mod's benefit of the doubt exactly as before, never read as
+    /// either claim.
+    ///
+    /// A person the host offers NO plot at all is deliberately not starved
+    /// here: that is a missing district, not a missing slot, and the needs
+    /// machinery already has its own branch for it — which is how the same
+    /// run's Great Scientist correctly asks for the Spaceport its
+    /// `required_district` names.
+    pub fn slot_starved(&self) -> bool {
+        if self.can_activate {
+            return false;
+        }
+        if self.empty_slots == Some(0) {
+            return true;
+        }
+        !self.activation_plots.is_empty()
+            && self
+                .activation_plots
+                .iter()
+                .all(|plot| plot.slot_open == Some(false))
+    }
+}
+
 /// One currently recruitable entry in Firaxis's Great Person timeline.
 ///
 /// The enclosing map is keyed by `GREAT_PERSON_CLASS_*`; keeping the class
@@ -10650,8 +10920,13 @@ pub struct StateSnapshot {
     /// because the mod reports a refused wonder under `building` and a refused
     /// district under `district`, and the two translate against different rulesets.
     #[serde(default)]
-    pub refused_wonders:
-        std::collections::BTreeMap<i64, std::collections::BTreeSet<String>>,
+    pub refused_wonders: std::collections::BTreeMap<i64, std::collections::BTreeSet<String>>,
+    /// World-unique wonders a `build_no_plot` answer ruled out on every host
+    /// location. This is deliberately separate from [`StateSnapshot::refused_wonders`]:
+    /// a city-local refusal can be a terrain mismatch, while an explicit
+    /// `offered: 0` is the host saying the requested wonder has no target at all.
+    #[serde(default)]
+    pub host_unavailable_wonders: std::collections::BTreeSet<String>,
     /// Production items the host has recently reported as unplayable, by its city id.
     /// These are translated and applied as a cooldown rather than a permanent ban.
     #[serde(default)]
@@ -11243,11 +11518,15 @@ fn apply_live_great_person_activation_needs(
         // Seven Writers, Artists and Musicians stood on one Theater plot for
         // thirty-plus turns on run civvis-20260817T010950Z, unactivatable,
         // while this gate read their nine highlighted plots as "nothing to
-        // build". The host's own empty-slot count is the tiebreaker: zero
-        // compatible empty slots empire-wide is a need exactly as surely as
-        // no plot at all — including the moment a person's previous work
-        // fills the last slot, which is when the next building should start.
-        let slot_starved = person.empty_slots == Some(0);
+        // build".
+        //
+        // The tiebreaker was the host's empire-wide empty-slot count, and it
+        // was the wrong question — see `StateGreatPerson::slot_starved`. Nine
+        // cultural people idled the WHOLE of run civvis-20260822T020434Z with
+        // that count reading 24, 4 and 2 while every plot the host offered
+        // them read `slot_open: false`. Ask instead whether this person can
+        // reach a slot; zero empire-wide is still a need, and still counted.
+        let slot_starved = person.slot_starved();
         if !person.activation_plots.is_empty() && !slot_starved {
             continue;
         }
@@ -11584,6 +11863,30 @@ pub struct Seat {
     /// before, because the export's `moves` has misled twice in the past.
     #[serde(default)]
     pub moves_at_turn_start: bool,
+    /// The mod opens mid-turn replan frames (`CivvisFrames`, `ReplanFrames`
+    /// ≥ 1): once the opening orders settle on a board with newly revealed
+    /// ground and movement left to spend on it, the board is exported again
+    /// and the same turn re-planned. Only then does `civvis_orders` cut a
+    /// unit's walk at its first unrevealed hex (`step_and_reassess`) — the
+    /// frame is what spends the rest of the movement on what the step
+    /// uncovered; against an older mod the cut would strand it. Absent
+    /// (older mod) reads `false`.
+    #[serde(default)]
+    pub replan_frames: bool,
+    /// How many replan frames the mod will open per turn (`ReplanFrames`),
+    /// so the brain can tell the LAST frame it will be asked on from the
+    /// others: a walk cut at the edge of the known on a frame no further
+    /// frame follows would strand the rest of the unit's movement, so on
+    /// that frame the walk keeps its furthest hex. Absent (a mod that
+    /// advertises `replan_frames` without the count) reads `None`, and the
+    /// cut is made on every frame exactly as before.
+    #[serde(default)]
+    pub replan_frames_max: Option<u32>,
+    /// Newly revealed plots cross every turn and frame as `tiles` deltas
+    /// (`CivvisTiles`), not only with the periodic sweep. Informational: the
+    /// snapshot merges chunks cumulatively either way.
+    #[serde(default)]
+    pub tile_delta: bool,
 }
 
 /// See [`Seat::victories`]. Each checkbox is independently optional so one
@@ -12251,6 +12554,7 @@ pub fn state_from_events(
         state.host_district_sites = host_district_sites_through(path, state.turn);
         state.host_wonder_sites = host_wonder_sites_through(path, state.turn);
         state.refused_wonders = refused_wonders_through(path, turn);
+        state.host_unavailable_wonders = host_unavailable_wonders_through(path, Some(state.turn));
         state.refused_production = refused_production(path, state.turn);
         state.refused_purchases = refused_purchases(path, state.turn);
         state.refused_promotions = refused_promotions_through(path, turn);
@@ -12956,13 +13260,41 @@ fn refused_promotions_through(
     refused
 }
 
+/// How many times the host must refuse the same origin/destination pair
+/// before the mirror condemns it.
+///
+/// ★★★★★ ONE REFUSAL IS A REPORT; A VERDICT NEEDS TWO. `blocked_trade_routes`
+/// carries the same contract as `blocked_improvement_sites` — extended and
+/// NEVER cleared — so a single entry retires that pairing for the rest of the
+/// game.
+///
+/// Live run `civvis-20260822T020434Z` finished with **three Traders parked in
+/// Rome and a fourth elsewhere against a trade capacity of 20 with only 16
+/// routes running**. Its refusal ledger is 23 distinct pairs, **every one of
+/// them refused exactly once**, all between turns 183 and 223 — the window
+/// where capacity climbed from 9 to 21 and the chooser was reaching for new
+/// pairings. And **8 of the 15 condemned destinations are our OWN cities**, so
+/// this is not a foreign-borders story: domestic pairings were retired on one
+/// reading each and never tried again. The three parked Traders each received
+/// their last order at turns 205, 221 and 222 and then nothing at all.
+///
+/// A refusal is a snapshot of one instant — a closed border, a war not yet
+/// ended, a unit out of movement, a route slot filled that turn — and the
+/// mod's own comment for this event names only the permanent case ("geometric
+/// range is not a route"). Requiring corroboration keeps that permanent case,
+/// which refuses again the moment it is retried, and costs exactly one extra
+/// order for a transient one. The builder path met this same shape and got a
+/// transient guard for it (`moves == 0`); the trade path never did, and cannot
+/// use that one anyway because the mod sends no `moves` on this event.
+const TRADE_ROUTE_REFUSALS_BEFORE_BLOCK: usize = 2;
+
 fn refused_trade_routes_through(
     path: &std::path::Path,
     turn: Option<u32>,
 ) -> std::collections::BTreeSet<(crate::Pos, crate::Pos)> {
-    let mut refused = std::collections::BTreeSet::new();
+    let mut seen: std::collections::BTreeMap<(crate::Pos, crate::Pos), usize> = Default::default();
     let Ok(raw) = std::fs::read_to_string(path) else {
-        return refused;
+        return Default::default();
     };
     for line in raw.lines().filter(|line| line.contains("trade_route_refused")) {
         let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
@@ -12979,13 +13311,20 @@ fn refused_trade_routes_through(
         let values = ["from_x", "from_y", "x", "y"]
             .map(|key| event.get(key).and_then(|value| value.as_i64()).map(|v| v as i32));
         if let [Some(from_x), Some(from_y), Some(x), Some(y)] = values {
-            refused.insert((
-                crate::hex::offset_to_axial(from_x, from_y),
-                crate::hex::offset_to_axial(x, y),
-            ));
+            *seen
+                .entry((
+                    crate::hex::offset_to_axial(from_x, from_y),
+                    crate::hex::offset_to_axial(x, y),
+                ))
+                .or_default() += 1;
         }
     }
-    refused
+    // See `TRADE_ROUTE_REFUSALS_BEFORE_BLOCK`: a pairing is retired only once
+    // the host has refused it more than once, because retiring it is forever.
+    seen.into_iter()
+        .filter(|(_, count)| *count >= TRADE_ROUTE_REFUSALS_BEFORE_BLOCK)
+        .map(|(pair, _)| pair)
+        .collect()
 }
 
 /// Translate host refusals onto CIVVIS's own city and district names.
@@ -13100,6 +13439,20 @@ fn blocked_wonders_from(
         }
     }
     out
+}
+
+/// Translate permanent host facts about world-unique wonders. Unlike
+/// [`blocked_wonders_from`], no city id participates: an explicit zero-target
+/// answer says the wonder cannot start in any city.
+fn host_unavailable_wonders_from(
+    unavailable: &std::collections::BTreeSet<String>,
+    rules: &crate::rules::Rules,
+) -> std::collections::BTreeSet<Name> {
+    unavailable
+        .iter()
+        .filter_map(|civ6| civvis_node_name(&rules.wonders, civ6, "BUILDING_"))
+        .map(|name| Name::new(&name))
+        .collect()
 }
 
 /// Translate recent host production refusals onto CIVVIS city ids and typed keys.
@@ -13323,6 +13676,49 @@ fn refused_wonders_through(
     turn: Option<u32>,
 ) -> std::collections::BTreeMap<i64, std::collections::BTreeSet<String>> {
     refused_no_plot_through(path, turn, "building", "BUILDING_")
+}
+
+/// World-unique wonders for which the host found no location at all.
+///
+/// A direct order carries a model-legal wonder site. When Firaxis responds with an
+/// explicit `offered: 0`, its operation-target query found no site in the world, not
+/// merely a different site in this city. The common cause is a rival completing the
+/// world unique outside the partial mirror. Keep the fact forever; a later city does
+/// not make a claimed world wonder available again. An absent `offered` belongs to
+/// older telemetry and deliberately keeps the previous city-scoped behaviour.
+fn host_unavailable_wonders_through(
+    path: &std::path::Path,
+    turn: Option<u32>,
+) -> std::collections::BTreeSet<String> {
+    let mut unavailable = std::collections::BTreeSet::new();
+    let Ok(raw) = std::fs::read_to_string(path) else {
+        return unavailable;
+    };
+    for line in raw.lines().filter(|line| line.contains("build_no_plot")) {
+        let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        if event.get("kind").and_then(|value| value.as_str()) != Some("build_no_plot")
+            || event.get("offered").and_then(|value| value.as_i64()) != Some(0)
+        {
+            continue;
+        }
+        if let Some(limit) = turn {
+            let Some(at) = event.get("turn").and_then(|value| value.as_u64()) else {
+                continue;
+            };
+            if at > u64::from(limit) {
+                continue;
+            }
+        }
+        let Some(wonder) = event.get("building").and_then(|value| value.as_str()) else {
+            continue;
+        };
+        if wonder.starts_with("BUILDING_") {
+            unavailable.insert(wonder.to_string());
+        }
+    }
+    unavailable
 }
 
 /// The newest fresh positive placement result for every `(city, district)` pair.
@@ -16389,8 +16785,9 @@ pub fn rebuild_from_state(
         host_district_sites_from(&state.host_district_sites, &city_ids, &game.rules);
     game.host_wonder_sites =
         host_wonder_sites_from(&state.host_wonder_sites, &city_ids, &game.rules);
-    game.blocked_wonders =
-        blocked_wonders_from(&state.refused_wonders, &city_ids, &game.rules);
+    game.blocked_wonders = blocked_wonders_from(&state.refused_wonders, &city_ids, &game.rules);
+    game.host_unavailable_wonders =
+        host_unavailable_wonders_from(&state.host_unavailable_wonders, &game.rules);
     let blocked_production =
         blocked_production_from(&state.refused_production, &city_ids, &game.rules);
     game.replace_blocked_production(blocked_production);
@@ -17243,6 +17640,11 @@ impl LiveMirror {
         for (cid, names) in refused_wonders {
             self.game.blocked_wonders.entry(cid).or_default().extend(names);
         }
+        let unavailable_wonders =
+            host_unavailable_wonders_from(&state.host_unavailable_wonders, &self.game.rules);
+        self.game
+            .host_unavailable_wonders
+            .extend(unavailable_wonders);
         // Unlike impossible district plots, a production refusal can be temporary.
         // Replace this cooldown snapshot so entries disappear after their TTL.
         let blocked_production = blocked_production_from(
@@ -18232,6 +18634,42 @@ mod transient_refusal_tests {
         );
     }
 
+    /// A zero-site wonder response is a world fact, not the city-local cooldown
+    /// used for a wrong-coordinate response. Keep only explicit modern telemetry:
+    /// an old event without `offered` cannot prove that the wonder is gone.
+    #[test]
+    fn a_zero_site_wonder_becomes_a_permanent_world_fact() {
+        let p = events(
+            "world_wonder",
+            &[
+                r#"{"kind":"build_no_plot","turn":40,"city":7,"building":"BUILDING_GREAT_BATH","offered":0}"#,
+                r#"{"kind":"build_no_plot","turn":41,"city":8,"building":"BUILDING_PYRAMIDS","offered":2}"#,
+                r#"{"kind":"build_no_plot","turn":42,"city":8,"building":"BUILDING_ORACLE"}"#,
+                r#"{"kind":"build_no_plot","city":8,"building":"BUILDING_ORACLE","offered":0}"#,
+                r#"{"kind":"build_no_plot","turn":43,"city":8,"building":"BUILDING_NOT_MODELED","offered":0}"#,
+                r#"{"kind":"build_no_plot","turn":50,"city":8,"building":"BUILDING_HANGING_GARDENS","offered":0}"#,
+                r#"{"kind":"state","turn":49}"#,
+            ],
+        );
+        let state = state_from_events(&p, None).expect("state at the current turn");
+        assert_eq!(
+            state.host_unavailable_wonders,
+            BTreeSet::from([
+                "BUILDING_GREAT_BATH".to_string(),
+                "BUILDING_NOT_MODELED".to_string(),
+            ]),
+            "only an explicit, timestamped zero-target answer before this board becomes a world fact"
+        );
+        assert_eq!(
+            host_unavailable_wonders_from(
+                &state.host_unavailable_wonders,
+                &crate::rules::Rules::embedded(),
+            ),
+            BTreeSet::from([Name::new("great_bath")]),
+            "unknown host names stay observable in the state but cannot populate a dead gate"
+        );
+    }
+
     /// ⚠⚠⚠ "Never block it" was the wrong half. #1555 dropped these refusals
     /// entirely and the very next full run showed the loop it recreated:
     /// `civvis-20260811T202458Z`, 28 `build_no_plot` events in 250 turns, **all
@@ -18999,7 +19437,9 @@ mod host_fact_tests {
             });
         apply_great_person_points(&mut game, &state, &mut unmapped);
         assert!(
-            game.players[0].live_great_person_activation_needs.is_empty(),
+            game.players[0]
+                .live_great_person_activation_needs
+                .is_empty(),
             "a host-valid destination clears the production demand immediately"
         );
     }
@@ -19045,12 +19485,17 @@ mod host_fact_tests {
             1,
             "zero empty slots with highlighted plots is a need"
         );
-        assert_eq!(game.players[0].live_great_person_activation_needs[0].kind, "writer");
+        assert_eq!(
+            game.players[0].live_great_person_activation_needs[0].kind,
+            "writer"
+        );
 
         // Slots free: the highlighted plot really is actionable — no need.
         state.units[0].great_person = Some(person(Some(3), false));
         apply_great_person_points(&mut game, &state, &mut unmapped);
-        assert!(game.players[0].live_great_person_activation_needs.is_empty());
+        assert!(game.players[0]
+            .live_great_person_activation_needs
+            .is_empty());
 
         // An older mod that cannot count slots sends nothing: old behaviour,
         // no need while plots are listed.
@@ -19062,6 +19507,92 @@ mod host_fact_tests {
         state.units[0].great_person = Some(person(Some(0), true));
         apply_great_person_points(&mut game, &state, &mut unmapped);
         assert!(game.players[0].live_great_person_activation_needs.is_empty());
+    }
+
+    /// The nine Great People of live run `civvis-20260822T020434Z`, and the
+    /// gap they fell through.
+    ///
+    /// Three Artists, three Writers, three Musicians and a Scientist stood in
+    /// Rome at turn 231 with NOT ONE ORDER between them in the whole game.
+    /// The test above closed the `empty_slots == Some(0)` case; these nine
+    /// were never in it. Their exports read **24, 4 and 2** empty slots —
+    /// compatible slots the EMPIRE owns — while every plot the host offered
+    /// them read `slot_open: false`, tile by tile: nowhere this person can
+    /// put a work. The needs machinery saw a non-empty plot list and a
+    /// non-zero count and concluded there was nothing to build, so no city
+    /// ever started the Amphitheater or Museum that would have seated them.
+    #[test]
+    fn every_offered_plot_full_is_a_need_however_many_slots_the_empire_owns() {
+        let mut game = crate::game::Game::new_full(1, 20, 14, 95_104, 80, 0, false);
+        // As exported at turn 231: three of the Writer's plots, all closed.
+        let closed = |x: i32, y: i32, distance: i32| StateActivationPlot {
+            x,
+            y,
+            distance,
+            slot_open: Some(false),
+        };
+        let writer = |empty_slots: Option<u32>| StateGreatPerson {
+            individual: Some("GREAT_PERSON_INDIVIDUAL_HG_WELLS".to_string()),
+            class: Some("GREAT_PERSON_CLASS_WRITER".to_string()),
+            required_district: None,
+            charges: 0,
+            can_activate: false,
+            activation_plots: vec![closed(67, 14, 12), closed(65, 25, 1), closed(64, 27, 2)],
+            empty_slots,
+        };
+        let mut state = StateSnapshot {
+            units: vec![StateUnit {
+                id: 10_092_559,
+                kind: "UNIT_GREAT_WRITER".to_string(),
+                great_person: Some(writer(Some(24))),
+                ..StateUnit::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let mut unmapped = Vec::new();
+
+        apply_great_person_points(&mut game, &state, &mut unmapped);
+        assert_eq!(
+            game.players[0].live_great_person_activation_needs.len(),
+            1,
+            "twenty-four slots the empire owns and none this Writer can reach"
+        );
+        assert_eq!(
+            game.players[0].live_great_person_activation_needs[0].kind,
+            "writer"
+        );
+
+        // One reachable slot and the need is gone — the empire has somewhere
+        // to seat them and should not spend production on another building.
+        state.units[0]
+            .great_person
+            .as_mut()
+            .unwrap()
+            .activation_plots[1]
+            .slot_open = Some(true);
+        apply_great_person_points(&mut game, &state, &mut unmapped);
+        assert!(
+            game.players[0]
+                .live_great_person_activation_needs
+                .is_empty(),
+            "a reachable slot is not a reason to build capacity"
+        );
+
+        // ⚠ And an older control mod, which sends `slot_open` on no plot at
+        // all, keeps exactly the behaviour it had: `None` is an absence, not
+        // a claim, and must never be read as "full".
+        let mut older = writer(None);
+        for plot in &mut older.activation_plots {
+            plot.slot_open = None;
+        }
+        state.units[0].great_person = Some(older);
+        apply_great_person_points(&mut game, &state, &mut unmapped);
+        assert!(
+            game.players[0]
+                .live_great_person_activation_needs
+                .is_empty(),
+            "an unknowing export must not manufacture a need"
+        );
     }
 
     /// The government HISTORY must reach the planner, so a return switch is

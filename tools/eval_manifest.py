@@ -72,9 +72,11 @@ def withholding_arms(
 
     ⚠⚠ THERE IS NO RULE, AND BOTH OBVIOUS ONES ARE WRONG SOMEWHERE. This was
     `live_without_{tag.replace('-', '_')}`, which names an arm that does not
-    exist for `ranged-line-of-sight` — its arm is
-    `live_without_ranged_needs_line_of_sight`, after the flag. Deriving from the
-    flag instead is wrong the other way: `army-target-weighs-enemy` sets
+    exist for `live-trader-route` — its arm is
+    `live_without_live_trader_route_adapter`, after the flag. (The original
+    example was `ranged-line-of-sight`, which left the code on 2026-08-21 with
+    the ranking's bottom ten.) Deriving from the flag instead is wrong the other
+    way: `army-target-weighs-enemy` sets
     `army_target_weighs_the_enemy` and its arm is
     `live_without_army_target_weighs_enemy`, after the tag.
 
@@ -360,12 +362,117 @@ def bundle_coverage(
     }
 
 
+def genome_coverage(repo: Path) -> dict[str, Any]:
+    """How much of the controller the genome instrument can actually see.
+
+    ⚠⚠ THE MIRROR OF `bundle_coverage`, AND IT ERRS THE OTHER WAY ON PURPOSE.
+    That function publishes an UNDER-count of the debt, because a tag it cannot
+    find in the evidence certainly has no result. This one publishes an
+    OVER-count: some capability toggles are host-only plumbing that no native
+    screen could ever price, and this makes no attempt to tell those apart. So
+    the number below is a ceiling on the debt, not a floor.
+
+    Both are the same discipline. A count that can only be wrong in the
+    direction of *more work than there really is* cannot be flattered either,
+    and it is the only kind of count a regex is entitled to publish.
+
+    Why it is worth publishing: `precise_evacuation` reached `main` in #2059
+    ON for every major, city-state and barbarian, holding roughly half of the
+    simulator's main thread — and with no gene row, no evaluator arm and no
+    mention in any recorded round. Neither gate could address it, and nothing
+    said so. `docs/GENE_SCREEN.md` names the growth direction as "hundreds of
+    genes"; this is the denominator that direction is measured against.
+
+    Three sources, none of them a hand-maintained list:
+
+    * `treatment_flags.rs` — every `enable_*`/`disable_*` capability toggle.
+      The file's own guard keeps them all there and nothing else there.
+    * the three gene tables — `PRODUCTION_TREATMENTS` and `PRODUCTION_OPT_INS`
+      carry the field name in the row; `ENGINE_REPAIR_TREATMENTS` carries only
+      a tag, resolved to its field through `LIVE_TREATMENTS`. This is exactly
+      what `gene_screen::gene_table` walks, so "reachable" here means reachable
+      by the binary rather than by a list somebody kept in step.
+    * `docs/gene_ledger.json` — which of those genes a screen has measured.
+    """
+    flags_source = _strip_comments(
+        (repo / "src" / "ai" / "advanced" / "treatment_flags.rs").read_text(
+            encoding="utf-8"))
+    toggles = set(re.findall(r"pub fn (?:enable|disable)_([a-z0-9_]+)\s*\(",
+                             flags_source))
+    if not toggles:
+        raise ValueError(
+            "src/ai/advanced/treatment_flags.rs yielded no capability toggles; "
+            "the scrape broke rather than finding an empty file")
+
+    treatments_source = _strip_comments(
+        (repo / "src" / "ai" / "advanced" / "treatments.rs").read_text(encoding="utf-8"))
+    # ⚠⚠ A ROW'S FIELD STRING AND ITS TOGGLE'S NAME ARE NOT THE SAME WORD, and
+    # joining on the wrong one invents debt. `army-target-weighs-enemy` is a
+    # row reading ("army_target_weighs_enemy", …, disable_army_target_weighs_the_enemy)
+    # — note "the" — so matching the toggle set against the field string alone
+    # reported a measured gene as unreachable on this function's first run.
+    # `withholding_arms` above records the same trap from the other side.
+    # A toggle counts as reachable under EITHER spelling.
+    ROW = (r'\(\s*"([a-z0-9_]+)"\s*,\s*"([a-z0-9-]+)"\s*,\s*'
+           r'AdvancedAi::(?:enable|disable)_([a-z0-9_]+)\s*\)')
+
+    def rows_of(name: str, source: str) -> list[tuple[str, str, str]]:
+        parts = source.split(f"pub const {name}", 1)
+        if len(parts) < 2:
+            raise ValueError(f"{name} not found; the scrape broke")
+        found = re.findall(ROW, parts[1].split("];", 1)[0])
+        if not found:
+            raise ValueError(f"{name} yielded no rows; the scrape broke")
+        return found
+
+    live_rows = rows_of("LIVE_TREATMENTS", treatments_source)
+    spellings_of_tag = {tag: {field, fn} for field, tag, fn in live_rows}
+
+    screenable_tags: set[str] = set()
+    screenable_spellings: set[str] = set()
+    for name in ("PRODUCTION_TREATMENTS", "PRODUCTION_OPT_INS"):
+        for field, tag, fn in rows_of(name, treatments_source):
+            screenable_tags.add(tag)
+            screenable_spellings |= {field, fn}
+
+    repairs = re.findall(
+        r'"([a-z0-9-]+)"',
+        _strip_comments((repo / "src" / "elo.rs").read_text(encoding="utf-8"))
+        .split("pub const ENGINE_REPAIR_TREATMENTS", 1)[1].split("];", 1)[0])
+    unresolvable = sorted(tag for tag in repairs if tag not in spellings_of_tag)
+    if unresolvable:
+        raise ValueError(
+            "these engine repairs have no LIVE_TREATMENTS row, so their toggle "
+            "cannot be resolved and the coverage count would be wrong: "
+            + ", ".join(unresolvable))
+    for tag in repairs:
+        screenable_tags.add(tag)
+        screenable_spellings |= spellings_of_tag[tag]
+
+    ledger = json.loads(
+        (repo / "docs" / "gene_ledger.json").read_text(encoding="utf-8"))
+    measured = {row["tag"] for row in ledger["genes"]}
+    resolved = {row["tag"] for row in ledger["genes"]
+                if row.get("verdict") in ("helps", "hurts")}
+
+    unreachable = sorted(toggles - screenable_spellings)
+    return {
+        "capability_toggles": len(toggles),
+        "reachable_as_a_gene": len(screenable_tags),
+        "measured_by_a_screen": len(screenable_tags & measured),
+        "resolved_by_a_screen": len(screenable_tags & resolved),
+        "unreachable_by_any_screen": len(unreachable),
+        "unreachable_toggles": unreachable,
+    }
+
+
 def build_manifest(repo: Path) -> dict[str, Any]:
     registry = read_registry(repo)
     live = registry["LIVE_BRIDGE_TREATMENTS"]["items"]
     firaxis = set(registry["FIRAXIS_ONLY_TREATMENTS"]["items"])
     return {
         "schema_version": 1,
+        "genome_coverage": genome_coverage(repo),
         "source": {
             "registry": "src/elo.rs",
             "ladder": "docs/civ6_ladder.json",
@@ -503,6 +610,43 @@ def render_status(manifest: dict[str, Any]) -> str:
         ).rstrip(", "))
     else:
         lines.append("_None — every withholdable treatment has been named._")
+    genome = manifest["genome_coverage"]
+    lines += [
+        "",
+        "## Genome coverage",
+        "",
+        "How much of the controller the genome instrument can vary at all.",
+        "`docs/GENE_SCREEN.md` names the growth direction as \"hundreds of",
+        "genes\"; this is the denominator that direction is measured against.",
+        "",
+        f"- Capability toggles on the controller: **{genome['capability_toggles']}**",
+        f"- Reachable as a gene `gene_screen` can vary: **{genome['reachable_as_a_gene']}**",
+        f"- Measured by at least one screen: **{genome['measured_by_a_screen']}**",
+        f"- Resolved by the ledger (helps or hurts): **{genome['resolved_by_a_screen']}**",
+        f"- **Unreachable by any screen: {genome['unreachable_by_any_screen']}**",
+        "",
+        "⚠ This is the mirror of the section above and it errs the other way.",
+        "`Never named` under-counts the live-bundle debt; this OVER-counts the",
+        "genome debt, because some toggles are host-only or bundle plumbing",
+        "that no native screen could price and nothing here tries to tell them",
+        "apart. So the last number is a ceiling on the work, not a floor — and",
+        "a count that can only be wrong in the direction of more work cannot be",
+        "flattered either.",
+        "",
+        "Why it is published: `precise_evacuation` shipped in #2059 ON for",
+        "every major, city-state and barbarian, holding roughly half of the",
+        "simulator's main thread, with no gene row, no evaluator arm and no",
+        "mention in any recorded round. Neither gate could address it and",
+        "nothing said so.",
+        "",
+        "Unreachable:",
+        "",
+    ]
+    if genome["unreachable_toggles"]:
+        lines.append("".join(
+            f"`{flag}`, " for flag in genome["unreachable_toggles"]).rstrip(", "))
+    else:
+        lines.append("_None — every capability toggle is a gene._")
     lines += [
         "",
         "## Live ladder",

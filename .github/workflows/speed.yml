@@ -1,0 +1,112 @@
+name: speed
+
+# ⚠⚠ THE RULE THIS ENFORCES WAS ALREADY WRITTEN DOWN, AND WRITING IT DOWN DID
+# NOT WORK. `docs/SIMULATOR_PERFORMANCE.md`, under "one promoted feature made
+# every simulation six times slower":
+#
+#   a promoted feature is a performance event, and this one was a six-fold
+#   event that no strength gate could see. `speed_ab.py` costs four minutes;
+#   a strength gate on a feature that multiplies game cost by six costs a day.
+#   Run the paired speed harness before promoting anything that adds a
+#   per-unit or per-tile pass.
+#
+# #2059 added a per-unit pass, passed `cargo test` and a twelve-game crash
+# soak, and made every simulation in the fleet six times slower. Four PRs and
+# four days of envelope-cache work paid it back. Nobody skipped a step: there
+# was no step. AGENTS.md calls this shape out by name — "a guard you add runs
+# in the same change that adds it".
+
+on:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'data/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'tools/speed_ab.py'
+      - '.github/workflows/speed.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  # A newer push to a pull request really does supersede an older one, so
+  # cancelling is pure savings here. (`tests.yml` explains at length why the
+  # same is NOT true of a push to `main`; this workflow does not run there.)
+  group: speed-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  paired-cost:
+    # The empty claim commit that opens every task PR has a zero-byte diff.
+    if: github.event.pull_request.changed_files > 0
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      CARGO_INCREMENTAL: 0
+    steps:
+      # Full history: the baseline is the pull request's own base commit, and
+      # a shallow clone cannot check it out.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      # Same lineage and the same reasoning as `tests.yml`: dependency
+      # registry only. `target/` is not cached because a single 320k-line
+      # crate at CARGO_INCREMENTAL=0 re-derives every `civvis` artifact from
+      # any source change, so the only reusable bytes are the dependencies —
+      # and here they are reused twice within one job anyway, because both
+      # builds share one target directory.
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: cargo-ci-deps-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-ci-deps-${{ runner.os }}-
+
+      # The candidate is the merge result, which is what would actually land —
+      # not the branch tip in isolation.
+      - name: Build the candidate
+        run: |
+          cargo build --profile ci --bin civvis --locked
+          cp target/ci/civvis /tmp/civvis-candidate
+
+      # ⚠ The baseline is built SECOND and from the same target directory, so
+      # the dependency crates are already compiled and only `civvis` itself is
+      # redone. Building it in a second checkout would double the dependency
+      # work for nothing.
+      - name: Build the baseline (the pull request's base commit)
+        run: |
+          git checkout --detach ${{ github.event.pull_request.base.sha }}
+          cargo build --profile ci --bin civvis --locked
+          cp target/ci/civvis /tmp/civvis-baseline
+          git checkout --force -
+
+      # ⚠⚠ THE ARMS ARE EXPECTED TO DISAGREE, AND THAT IS THE POINT. A PR that
+      # changes how the agent plays produces a different game, so the reports
+      # differ and no *overhead* claim survives — but the percentage is still
+      # exactly what the new behaviour costs, and that is the number #2059
+      # needed somebody to see. `--budget` judges the cost either way.
+      #
+      # 50% is deliberately loose. A shared 4-core runner cannot resolve five
+      # percent and this does not try to; it exists so nothing multiplies the
+      # cost of every evaluation batch in the fleet without a human reading
+      # the number first. Six times is not a close call.
+      #
+      # Three seeds at 100 turns, because #2059's cost is per-unit-per-turn
+      # and is already several-fold by the time an empire has an army. The
+      # shape is a compromise with a 4-core runner, NOT the deployment shape —
+      # `docs/EVAL.md` owns that, and a number from here is not a number for
+      # a promotion. It is a smoke alarm.
+      - name: Paired cost against the base commit
+        run: |
+          python3 tools/speed_ab.py \
+            --baseline /tmp/civvis-baseline \
+            --candidate /tmp/civvis-candidate \
+            --seeds 900001 --games 3 \
+            --players 6 --width 60 --height 38 --city-states 6 \
+            --turns 100 --speed online \
+            --budget 50

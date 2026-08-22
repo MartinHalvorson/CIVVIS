@@ -461,6 +461,7 @@ pub(crate) fn vacate_land_combat_purchase_slot(game: &mut Game, player: usize, c
 }
 
 pub mod adjacency;
+pub mod border_forecast;
 pub mod quests;
 
 #[cfg(test)]
@@ -843,6 +844,14 @@ pub fn damage(att: f64, def: f64, rng: &mut Rng) -> i32 {
     (d.round() as i32).clamp(1, 100)
 }
 
+/// [`damage`] with its uniform factor taken at its mean: the blow a
+/// controller should expect without consuming the game RNG or rounding to a
+/// particular roll. Stated here, beside the roll it is the centre of, so the
+/// two cannot drift.
+pub fn expected_damage(att: f64, def: f64) -> f64 {
+    (30.0 * ((att - def) / 25.0).exp()).clamp(1.0, 100.0)
+}
+
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 pub struct GreatWorkPiece {
     pub kind: String,
@@ -997,10 +1006,11 @@ struct VisionFrame {
     visible: Arc<TileBits>,
 }
 
-/// Runtime-only per-seat visibility frames.  A cloned game starts with no
-/// frames: a search branch is allowed to move its sources before its first
-/// read, and copying a parent's bitsets would retain work that belongs to the
-/// parent position.  The cache is deliberately separate from [`VisionCache`],
+/// Runtime-only per-seat visibility frames.  A cloned game inherits its
+/// parent's, because each frame carries the stamp of every input the
+/// derivation reads: a branch that moves its sight sources before its first
+/// read restamps and recomputes, and one that does not would have derived the
+/// same bitset.  The cache is deliberately separate from [`VisionCache`],
 /// whose entries are per-unit ray answers and are merged from worker worlds.
 #[derive(Default)]
 struct VisionFrameCache {
@@ -1010,11 +1020,36 @@ struct VisionFrameCache {
     /// once per map epoch so those unrelated writes do not evict every seat's
     /// frame.
     map_geometry: std::cell::RefCell<Option<(u64, u64)>>,
+    /// One full roster walk yields every viewer's unit-source stamp.  Frame
+    /// lookups are far more frequent than unit writes, so retain that fan-out
+    /// until a mutable unit access can have changed one of its inputs.
+    unit_stamps: std::cell::RefCell<Option<(u64, Vec<u64>)>>,
 }
 
 impl Clone for VisionFrameCache {
+    /// A branch inherits its parent's sight frames rather than starting cold.
+    ///
+    /// This is exact by construction, and the reason is the stamp: a frame is
+    /// reused only when `vision_input_stamp_with_suzerains` still matches, and
+    /// that stamp folds every input `player_vision` reads — map geometry, the
+    /// viewer set, and each viewer's units, cities, suzerained city-states and
+    /// spies. A branch that moves a sight source restamps and recomputes; one
+    /// that does not would have derived the bitset it inherited. The fields
+    /// `speculative_clone` changes — `track_fog_memory`, `track_war_ledger`,
+    /// `visibility_suppressed`, `visibility_batch` — are read by neither the
+    /// stamp nor the derivation.
+    ///
+    /// ⚠ Returning `Self::default()` here, as this did, made every speculative
+    /// clone pay a cold cache. The tactical picker scores a candidate by
+    /// cloning and applying, and `do_ranged`/`do_attack`/`do_city_strike` each
+    /// ask `combat_target_visible` — so one full ray-cast per candidate, on a
+    /// world discarded immediately afterwards.
     fn clone(&self) -> Self {
-        Self::default()
+        Self {
+            frames: std::cell::RefCell::new(self.frames.borrow().clone()),
+            map_geometry: std::cell::RefCell::new(*self.map_geometry.borrow()),
+            unit_stamps: std::cell::RefCell::new(self.unit_stamps.borrow().clone()),
+        }
     }
 }
 
@@ -1784,17 +1819,30 @@ pub struct Unit {
 /// with the extra per-unit indirection making combat lookahead proportional to
 /// the units it actually touches rather than to the whole army.
 #[derive(Default)]
-pub struct Units(Arc<BTreeMap<u32, Arc<Unit>>>, BTreeSet<u32>);
+pub struct Units(Arc<BTreeMap<u32, Arc<Unit>>>, BTreeSet<u32>, u64);
 
 impl Clone for Units {
     fn clone(&self) -> Self {
         // A game clone starts a new branch. The immutable map is shared, but
         // its write set belongs only to that branch and therefore starts empty.
-        Self(Arc::clone(&self.0), BTreeSet::new())
+        Self(Arc::clone(&self.0), BTreeSet::new(), self.2)
     }
 }
 
 impl Units {
+    /// Bump the cache epoch before exposing a mutable unit.  The vision stamp
+    /// itself still folds only sight-relevant fields, so a combat-only write
+    /// recomputes the small stamp but keeps an otherwise matching frame.
+    #[inline]
+    fn mark_mutated(&mut self) {
+        self.2 = self.2.wrapping_add(1);
+    }
+
+    #[inline]
+    fn vision_epoch(&self) -> u64 {
+        self.2
+    }
+
     /// Borrow one unit from the immutable snapshot.
     #[inline]
     pub fn get(&self, id: &u32) -> Option<&Unit> {
@@ -1808,6 +1856,7 @@ impl Units {
     pub fn get_mut(&mut self, id: &u32) -> Option<&mut Unit> {
         if self.0.contains_key(id) {
             self.1.insert(*id);
+            self.mark_mutated();
         }
         Arc::make_mut(&mut self.0)
             .get_mut(id)
@@ -1850,6 +1899,7 @@ impl Units {
     /// deliberately explicit rather than making ordinary reads pay for it.
     pub fn values_mut(&mut self) -> impl DoubleEndedIterator<Item = &mut Unit> + ExactSizeIterator {
         self.1.extend(self.0.keys().copied());
+        self.mark_mutated();
         Arc::make_mut(&mut self.0)
             .values_mut()
             .map(Arc::make_mut)
@@ -1859,6 +1909,7 @@ impl Units {
         &mut self,
     ) -> impl DoubleEndedIterator<Item = (&u32, &mut Unit)> + ExactSizeIterator {
         self.1.extend(self.0.keys().copied());
+        self.mark_mutated();
         Arc::make_mut(&mut self.0)
             .iter_mut()
             .map(|(id, unit)| (id, Arc::make_mut(unit)))
@@ -1867,6 +1918,7 @@ impl Units {
     /// Insert a unit, returning the previous value just like `BTreeMap`.
     pub fn insert(&mut self, id: u32, unit: Unit) -> Option<Unit> {
         self.1.insert(id);
+        self.mark_mutated();
         Arc::make_mut(&mut self.0)
             .insert(id, Arc::new(unit))
             .map(arc_into_unit)
@@ -1875,6 +1927,7 @@ impl Units {
     /// Remove a unit, returning the owned value just like `BTreeMap`.
     pub fn remove(&mut self, id: &u32) -> Option<Unit> {
         self.1.insert(*id);
+        self.mark_mutated();
         Arc::make_mut(&mut self.0)
             .remove(id)
             .map(arc_into_unit)
@@ -1882,6 +1935,7 @@ impl Units {
 
     pub fn clear(&mut self) {
         self.1.extend(self.0.keys().copied());
+        self.mark_mutated();
         Arc::make_mut(&mut self.0).clear();
     }
 
@@ -1892,6 +1946,7 @@ impl Units {
         F: FnMut(&u32, &Unit) -> bool,
     {
         self.1.extend(self.0.keys().copied());
+        self.mark_mutated();
         Arc::make_mut(&mut self.0).retain(|id, unit| keep(id, unit));
     }
 
@@ -1990,6 +2045,7 @@ impl<'a> IntoIterator for &'a mut Units {
     >;
 
     fn into_iter(self) -> Self::IntoIter {
+        self.mark_mutated();
         self.1.extend(self.0.keys().copied());
         Arc::make_mut(&mut self.0)
             .iter_mut()
@@ -2018,12 +2074,16 @@ impl IntoIterator for Units {
 
 impl FromIterator<(u32, Unit)> for Units {
     fn from_iter<I: IntoIterator<Item = (u32, Unit)>>(items: I) -> Self {
-        Self(Arc::new(
-            items
-                .into_iter()
-                .map(|(id, unit)| (id, Arc::new(unit)))
-                .collect(),
-        ), BTreeSet::new())
+        Self(
+            Arc::new(
+                items
+                    .into_iter()
+                    .map(|(id, unit)| (id, Arc::new(unit)))
+                    .collect(),
+            ),
+            BTreeSet::new(),
+            0,
+        )
     }
 }
 
@@ -5180,6 +5240,18 @@ pub struct Game {
     /// no ground for. `HANGING_GARDENS` 159, `GREAT_BATH` 129, `TEMPLE_ARTEMIS` 45.
     #[serde(default)]
     pub blocked_wonders: BTreeMap<u32, BTreeSet<Name>>,
+    /// World-unique wonders the live host has ruled out everywhere.
+    ///
+    /// `blocked_wonders` is deliberately city-local: an ordinary zero-site answer
+    /// can mean this city lacks a river or floodplain. But the control bridge also
+    /// records the host's number of offered locations. An explicit `offered: 0` for
+    /// a model-legal wonder means Firaxis has no target anywhere, most commonly
+    /// because an unseen rival already completed that world unique. Carry that
+    /// stronger, permanent live-only fact separately so the next developed city
+    /// does not spend a production decision rediscovering it. Native games leave
+    /// the set empty.
+    #[serde(default)]
+    pub host_unavailable_wonders: BTreeSet<Name>,
     /// Production choices a HOST ruleset has refused in a particular city.
     ///
     /// The bridge keeps these blocks on a short cooldown: a missing prerequisite or
@@ -5778,6 +5850,7 @@ impl From<GameSer> for Game {
             host_district_sites: BTreeMap::new(),
             host_wonder_sites: BTreeMap::new(),
             blocked_wonders: BTreeMap::new(),
+            host_unavailable_wonders: BTreeSet::new(),
             blocked_production: BTreeMap::new(),
             blocked_purchases: BTreeMap::new(),
             peace_treaties: s.peace_treaties.into_iter().collect(),
@@ -6384,6 +6457,7 @@ impl Game {
             host_district_sites: BTreeMap::new(),
             host_wonder_sites: BTreeMap::new(),
             blocked_wonders: BTreeMap::new(),
+            host_unavailable_wonders: BTreeSet::new(),
             blocked_production: BTreeMap::new(),
             blocked_purchases: BTreeMap::new(),
             peace_treaties: BTreeMap::new(),
@@ -7805,7 +7879,29 @@ impl Game {
             }
             if !self.barb_scout_targets.contains_key(&unit) {
                 let visible = self.unit_visible_tiles(unit);
-                if let Some(city) = self
+                // ★★★★★ A SETTLER WALKING PAST A CAMP WAS NOT A SIGHTING, SO
+                // NOTHING A CAMP EVER DID WAS TRIGGERED BY THE THING WORTH
+                // RAIDING.
+                //
+                // Only a CITY could be reported, so a camp's entire raid
+                // throughput was one Scout's round trip to a settlement and
+                // back — and an empire's walkers, which is what a
+                // Civilization VI barbarian actually takes, were invisible to
+                // the pipeline that decides whether a camp raises anybody at
+                // all. MEASURED with the report as cities-only, `ai_eval`
+                // 72 seat-games an arm at 6p/150t/online: 0.47 civilians lost
+                // to barbarians per game, against 8 Settlers in 104 turns on
+                // the live Civilization VI seat — a seventeen-fold gap that
+                // no tuning value inside the alert window can close, because
+                // the window mostly never opens near an expanding empire.
+                //
+                // A Civilization VI Scout reports what it SEES. So does this
+                // one now: the nearest visible major settlement or unit,
+                // whichever is closer. Everything downstream is unchanged —
+                // the Scout still has to walk home before the camp is
+                // alerted, the alert still expires, and the party size still
+                // comes from the difficulty band.
+                let city = self
                     .cities
                     .values()
                     .filter(|city| {
@@ -7813,9 +7909,21 @@ impl Game {
                         owner.alive && !owner.is_minor && !owner.is_barbarian
                     })
                     .filter(|city| visible.contains(&city.pos))
-                    .min_by_key(|city| (self.wdist(position, city.pos), city.id))
-                {
-                    self.barb_scout_targets.insert(unit, city.pos);
+                    .map(|city| (self.wdist(position, city.pos), city.pos));
+                // A Scout that has to walk home before anything happens cannot
+                // chase; the sighting is a REPORT, and the position it carries
+                // is where our people were standing when it saw them.
+                let quarry = self
+                    .units
+                    .values()
+                    .filter(|other| {
+                        let owner = &self.players[other.owner];
+                        owner.alive && !owner.is_minor && !owner.is_barbarian
+                    })
+                    .filter(|other| visible.contains(&other.pos))
+                    .map(|other| (self.wdist(position, other.pos), other.pos));
+                if let Some((_, target)) = city.chain(quarry).min() {
+                    self.barb_scout_targets.insert(unit, target);
                 }
             }
             if let Some(target) = self.barb_scout_targets.get(&unit).copied() {
@@ -21227,7 +21335,7 @@ impl Game {
     /// asked of a tile the unit is only *considering*. Movement scoring needs
     /// it because line of sight binds at exactly range 2 — adjacent fire is
     /// unconditional and range 3+ lobs — which is precisely where a Field
-    /// Cannon parks. See `AdvancedAi::ranged_tile_is_blind`.
+    /// Cannon parks.
     pub fn line_of_sight_from(&self, from: Pos, to: Pos) -> bool {
         if !self.map.tiles.contains_key(&from) || !self.map.tiles.contains_key(&to) {
             return false;
@@ -21641,34 +21749,12 @@ impl Game {
         &self,
         viewer: usize,
         suzerains: &BTreeMap<usize, Option<usize>>,
-        unit_stamps: Option<&[u64]>,
+        unit_stamps: &[u64],
     ) -> u64 {
         let mut stamp = unit_stamps
-            .and_then(|stamps| stamps.get(viewer).copied())
-            .unwrap_or_else(|| {
-                let mut stamp = vision_key(&[viewer as u64]);
-                for unit in self.units.values().filter(|unit| unit.owner == viewer) {
-                    stamp = vision_key(&[
-                        stamp,
-                        1,
-                        unit.id as u64,
-                        unit.kind.id() as u64,
-                        unit.pos.0 as i64 as u64,
-                        unit.pos.1 as i64 as u64,
-                        unit.air_patrol_pos.is_some() as u64,
-                        unit.air_patrol_pos
-                            .map(|pos| pos.0 as i64 as u64)
-                            .unwrap_or_default(),
-                        unit.air_patrol_pos
-                            .map(|pos| pos.1 as i64 as u64)
-                            .unwrap_or_default(),
-                    ]);
-                    for promotion in &unit.promotions {
-                        stamp = vision_key(&[stamp, 2, promotion.id() as u64]);
-                    }
-                }
-                stamp
-            });
+            .get(viewer)
+            .copied()
+            .unwrap_or_else(|| vision_key(&[viewer as u64]));
         for city in self.cities.values().filter(|city| city.owner == viewer) {
             stamp = vision_key(&[
                 stamp,
@@ -21730,7 +21816,7 @@ impl Game {
         stamp
     }
 
-    fn unit_vision_input_stamps(&self) -> Vec<u64> {
+    fn collect_unit_vision_input_stamps(&self) -> Vec<u64> {
         let mut stamps: Vec<u64> = (0..self.players.len())
             .map(|viewer| vision_key(&[viewer as u64]))
             .collect();
@@ -21760,6 +21846,31 @@ impl Game {
         stamps
     }
 
+    /// Reuse the all-viewer unit stamp fan-out until any unit has been
+    /// exposed mutably.  The epoch intentionally over-invalidates: a hitpoint
+    /// write does not alter sight, but it is always safer to recompute the
+    /// small signature than to miss a moved, promoted, transferred, or
+    /// patrolling unit.  The signature still keeps the existing frame when
+    /// the actual sight inputs are unchanged.
+    fn with_unit_vision_input_stamps<R>(&self, read: impl FnOnce(&[u64]) -> R) -> R {
+        let epoch = self.units.vision_epoch();
+        let stale = match self.vision_frames.unit_stamps.borrow().as_ref() {
+            Some((cached_epoch, stamps)) => {
+                *cached_epoch != epoch || stamps.len() != self.players.len()
+            }
+            None => true,
+        };
+        if stale {
+            let stamps = self.collect_unit_vision_input_stamps();
+            *self.vision_frames.unit_stamps.borrow_mut() = Some((epoch, stamps));
+        }
+        let cache = self.vision_frames.unit_stamps.borrow();
+        let (_, stamps) = cache
+            .as_ref()
+            .expect("unit vision stamps are installed before use");
+        read(stamps)
+    }
+
     /// Stamp every input to one player's current sight.  The result is small
     /// enough to carry beside a cached [`TileBits`] frame, while the fields it
     /// folds are the exact source identities and positions the visibility
@@ -21778,7 +21889,7 @@ impl Game {
         &self,
         pid: usize,
         suzerains: &BTreeMap<usize, Option<usize>>,
-        unit_stamps: Option<&[u64]>,
+        unit_stamps: &[u64],
     ) -> u64 {
         let mut stamp = vision_key(&[
             self.vision_geometry_stamp(),
@@ -21814,7 +21925,9 @@ impl Game {
     fn vision_input_stamp(&self, pid: usize) -> u64 {
         self.with_suzerain_read_memo(|| {
             let suzerains = self.suzerain_input_map();
-            self.vision_input_stamp_with_suzerains(pid, &suzerains, None)
+            self.with_unit_vision_input_stamps(|unit_stamps| {
+                self.vision_input_stamp_with_suzerains(pid, &suzerains, unit_stamps)
+            })
         })
     }
 
@@ -21825,25 +21938,17 @@ impl Game {
     fn vision_frame(&self, pid: usize, heights: &mut HeightField) -> Arc<TileBits> {
         self.with_suzerain_read_memo(|| {
             let suzerains = self.suzerain_input_map();
-            let input_stamp = self.vision_input_stamp_with_suzerains(pid, &suzerains, None);
-            {
-                let frames = self.vision_frames.frames.borrow();
-                if let Some(Some(frame)) = frames.get(pid) {
-                    if frame.input_stamp == input_stamp {
-                        return Arc::clone(&frame.visible);
-                    }
+            self.with_unit_vision_input_stamps(|unit_stamps| {
+                let input_stamp =
+                    self.vision_input_stamp_with_suzerains(pid, &suzerains, unit_stamps);
+                if let Some(visible) = self.matching_vision_frame(pid, input_stamp) {
+                    visible
+                } else {
+                    let visible = Arc::new(self.player_vision(heights, pid));
+                    self.store_vision_frame(pid, input_stamp, Arc::clone(&visible));
+                    visible
                 }
-            }
-            let visible = Arc::new(self.player_vision(heights, pid));
-            let mut frames = self.vision_frames.frames.borrow_mut();
-            if frames.len() <= pid {
-                frames.resize_with(pid + 1, || None);
-            }
-            frames[pid] = Some(VisionFrame {
-                input_stamp,
-                visible: Arc::clone(&visible),
-            });
-            visible
+            })
         })
     }
 
@@ -22974,18 +23079,16 @@ impl Game {
         let mut pending = Vec::<(usize, u64)>::new();
         self.with_suzerain_read_memo(|| {
             let suzerains = self.suzerain_input_map();
-            let unit_stamps = self.unit_vision_input_stamps();
-            for pid in &players {
-                let input_stamp = self.vision_input_stamp_with_suzerains(
-                    *pid,
-                    &suzerains,
-                    Some(&unit_stamps),
-                );
-                match self.matching_vision_frame(*pid, input_stamp) {
-                    Some(visible) => cached.push((*pid, input_stamp, visible)),
-                    None => pending.push((*pid, input_stamp)),
+            self.with_unit_vision_input_stamps(|unit_stamps| {
+                for pid in &players {
+                    let input_stamp =
+                        self.vision_input_stamp_with_suzerains(*pid, &suzerains, unit_stamps);
+                    match self.matching_vision_frame(*pid, input_stamp) {
+                        Some(visible) => cached.push((*pid, input_stamp, visible)),
+                        None => pending.push((*pid, input_stamp)),
+                    }
                 }
-            }
+            });
         });
 
         let count = pending.len();
@@ -30169,6 +30272,9 @@ impl Game {
     pub fn wonder_sites(&self, cid: u32, wname: &str) -> Vec<Pos> {
         let city = &self.cities[&cid];
         let spec = &self.rules.wonders[wname];
+        if self.host_unavailable_wonders.contains(&Name::new(wname)) {
+            return Vec::new();
+        }
         // A positive host answer is stronger than our reconstructed placement
         // model. Keep only fresh mirrored tiles; an incomplete map must retain
         // the ordinary fallback rather than fabricate a wonder site.
@@ -30384,72 +30490,6 @@ impl Game {
         }
         out.sort();
         out
-    }
-
-    /// The construction still standing between this city and a wonder: the
-    /// same building/district checks `wonder_sites` applies before it ever
-    /// looks at ground, reported as what is missing rather than as an empty
-    /// site list. Each inner group is a set of alternatives of which one
-    /// suffices (`requires_any_buildings`); `requires_buildings` and
-    /// `adjacent_district` contribute singleton groups. `None` means no
-    /// amount of construction here can open the wonder — already built
-    /// anywhere, tech/civic locked, host-refused in this city, or waiting on
-    /// a religion. An empty list means construction is not the blocker.
-    pub(crate) fn wonder_missing_prerequisites(
-        &self,
-        cid: u32,
-        wname: &str,
-    ) -> Option<Vec<Vec<Name>>> {
-        let city = &self.cities[&cid];
-        let spec = &self.rules.wonders[wname];
-        if self.wonder_built(wname)
-            || !self.unlocked(city.owner, &spec.tech, &spec.civic)
-            || self
-                .blocked_wonders
-                .get(&cid)
-                .is_some_and(|blocked| blocked.contains(&Name::new(wname)))
-            || (spec.founded_religion && self.players[city.owner].religion.is_none())
-            || (spec
-                .effects
-                .get("free_warrior_monks")
-                .copied()
-                .unwrap_or(0.0)
-                > 0.0
-                && self.players[city.owner].religion.is_none()
-                && self.city_religion(city).is_none())
-        {
-            return None;
-        }
-        let mut missing = Vec::new();
-        for required in &spec.requires_buildings {
-            if !self.city_has_building_family(city, *required) {
-                missing.push(vec![*required]);
-            }
-        }
-        if !spec.requires_any_buildings.is_empty()
-            && !spec
-                .requires_any_buildings
-                .iter()
-                .any(|required| self.city_has_building_family(city, *required))
-        {
-            missing.push(spec.requires_any_buildings.clone());
-        }
-        if let Some(required) = &spec.adjacent_district {
-            if required != "city_center" && !self.city_has_district_family(city, *required) {
-                missing.push(vec![*required]);
-            }
-        }
-        Some(missing)
-    }
-
-    /// Whether producing this item is one of the ways to satisfy a wonder
-    /// prerequisite family reported by `wonder_missing_prerequisites`.
-    pub(crate) fn item_satisfies_wonder_prerequisite(&self, item: &Item, family: Name) -> bool {
-        match item {
-            Item::Building { building } => self.building_is_family(*building, family),
-            Item::District { district, .. } => self.district_is_family(*district, family),
-            _ => false,
-        }
     }
 
     pub fn item_cost(&self, item: &Item) -> f64 {
@@ -31250,6 +31290,16 @@ impl Game {
         Self::NATIVE_COMPETITIONS
             .iter()
             .find(|competition| competition.kind == kind)
+    }
+
+    /// The Diplomatic Victory Points this competition's first place pays, or
+    /// zero for a competition CIVVIS does not seat itself.
+    ///
+    /// The table above is the authority on what a competition is worth to the
+    /// diplomatic race; a planner that wants to price those points must not
+    /// carry its own copy of it. See `AdvancedAi::competition_victory_point_value`.
+    pub fn competition_victory_points(kind: &str) -> i64 {
+        Self::native_competition(kind).map_or(0, |spec| spec.diplomatic_victory_points)
     }
 
     /// Seat a competition if one may run and an empire could score in it.
@@ -33731,6 +33781,104 @@ impl Game {
             && self.can_pay_melee_entry(uid, target)
     }
 
+    /// The two strengths `do_attack` resolves a melee blow with, `(attacker,
+    /// defender)`, each already through [`effective_strength`]. `None` when
+    /// either unit is gone.
+    ///
+    /// ★★★★ THIS IS THE ENGINE'S OWN ARITHMETIC, EXPOSED — NOT A COPY OF IT.
+    /// `do_attack` calls it, so a controller that prices a melee exchange
+    /// *before* it happens cannot drift from the exchange the engine will
+    /// actually resolve. That matters here more than for an attack scan,
+    /// because the terms this function carries and a strength-only estimate
+    /// does not — matchup, flanking, the amphibious and river penalties,
+    /// terrain, adjacent support, and fortification — are exactly the ones
+    /// that decide whether standing still beats swinging. See
+    /// `ranged_order_is_legal` for the same argument about the predicates.
+    ///
+    /// Feed both halves to [`expected_damage`] to get the two blows of one
+    /// melee round at the engine's unrandomized centre: the defender takes
+    /// `expected_damage(att, def)` and the attacker takes
+    /// `expected_damage(def, att)`.
+    pub(crate) fn melee_exchange_strengths(&self, uid: u32, did: u32) -> Option<(f64, f64)> {
+        let attacker = self.units.get(&uid)?;
+        let defender = self.units.get(&did)?;
+        let target = defender.pos;
+        let unamphibious = self.promotion_effect(attacker, "amphibious") == 0.0;
+        let mut att_base = self.unit_unembarked_strength(attacker)
+            + self.matchup_bonus(uid, defender, true)
+            + self.flanking_bonus(uid, target)
+            + self.vs_bonus(attacker.owner, defender.owner);
+        if self.is_embarked(attacker) && unamphibious {
+            att_base -= 10.0;
+        }
+        let mut def_base = self.unit_strength(defender, true)
+            + self.matchup_bonus(did, attacker, false)
+            + self.tile_defense_bonus(target)
+            + self.support_bonus(defender)
+            + self.vs_bonus(defender.owner, attacker.owner);
+        if self.crosses_river(attacker.pos, target) && unamphibious {
+            def_base += 5.0;
+        }
+        Some((
+            effective_strength(att_base, attacker.hp),
+            effective_strength(def_base, defender.hp),
+        ))
+    }
+
+    /// The two strengths `do_ranged` resolves a shot with, `(shooter,
+    /// defender)`, each already through [`effective_strength`]. `target` is
+    /// the tile fired at, which is the defender's own tile except for an air
+    /// unit answered on patrol. `None` when either unit is gone.
+    ///
+    /// The companion of [`melee_exchange_strengths`], and the asymmetry
+    /// between them is the whole point: a shot returns *nothing*. There is no
+    /// second blow in `do_ranged` for a controller to price, which is why
+    /// standing under one is a straight loss and standing under a melee
+    /// attack need not be.
+    pub(crate) fn ranged_strike_strengths(
+        &self,
+        uid: u32,
+        did: u32,
+        target: Pos,
+    ) -> Option<(f64, f64)> {
+        let shooter = self.units.get(&uid)?;
+        let defender = self.units.get(&did)?;
+        let spec = &self.rules.units[shooter.kind];
+        let defender_spec = &self.rules.units[defender.kind];
+        let defender_is_sea = defender_spec.domain.as_deref() == Some("sea");
+        let mut att_base = self.unit_ranged_attack_strength(shooter)
+            + self.matchup_bonus(uid, defender, true)
+            + if defender_is_sea {
+                self.promotion_effect(shooter, "ranged_vs_units")
+                    + self.promotion_effect(shooter, "ranged_vs_naval")
+                    + self.promotion_effect(shooter, "siege_vs_naval")
+            } else {
+                self.promotion_effect(shooter, "ranged_vs_land")
+                    + self.promotion_effect(shooter, "ranged_vs_units")
+                    + self.promotion_effect(shooter, "siege_vs_land")
+            }
+            + self.vs_bonus(shooter.owner, defender.owner);
+        if (spec.bombard_strength > 0.0 && !defender_is_sea)
+            || (spec.ranged_strength > 0.0
+                && spec.domain.as_deref() != Some("sea")
+                && defender_is_sea)
+        {
+            att_base -= 17.0;
+        }
+        let def_base = self.unit_strength(defender, true)
+            + self.ranged_defense_bonus(defender, false)
+            + if defender_spec.domain.as_deref() == Some("air") {
+                0.0
+            } else {
+                self.tile_defense_bonus(target)
+            }
+            + self.vs_bonus(defender.owner, shooter.owner);
+        Some((
+            effective_strength(att_base, shooter.hp),
+            effective_strength(def_base, defender.hp),
+        ))
+    }
+
     /// A ranged target must be in current shared vision, and a stealthed unit
     /// on that tile must be detected by at least one of the direct viewers.
     /// Range-three indirect fire ignores terrain along the shooter's ray, but
@@ -33739,7 +33887,7 @@ impl Game {
     /// frames the caller already holds. `do_ranged`, `do_attack` and
     /// `do_city_strike` each apply exactly this before a shot, so a controller
     /// that proposes a target without asking is proposing an order the engine
-    /// will refuse. Hoist `player_vision_now` and `visibility_viewers` once per
+    /// will refuse. Hoist `player_vision_frame` and `visibility_viewers` once per
     /// unit and pass them in; the frames cannot move while no action is applied.
     pub(crate) fn combat_target_visible_at(
         &self,
@@ -33768,17 +33916,6 @@ impl Game {
                         .iter()
                         .any(|viewer| self.unit_visible_to(unit.id, *viewer))
             })
-    }
-
-    /// ⚠ Recomputes both frames on every call, and `player_vision_now` clones
-    /// a whole `TileBits` to do it. Fine once per action; a caller testing a
-    /// disk of candidate tiles must hoist the two frames and use
-    /// [`Game::combat_target_visible_at`] instead. Measured: doing this per
-    /// candidate tile cost +6.4% of simulator CPU.
-    fn combat_target_visible(&self, pid: usize, pos: Pos) -> bool {
-        let visible = self.player_vision_now(pid);
-        let viewers = self.visibility_viewers(pid);
-        self.combat_target_visible_at(pid, pos, &visible, &viewers)
     }
 
     fn unit_currently_visible_to(&self, uid: u32, pid: usize) -> bool {
@@ -34963,25 +35100,15 @@ impl Game {
             let attacker = self.units[&uid].clone();
             self.record_war_unit_participation(&attacker, d.owner);
             self.record_war_unit_participation(&d, attacker.owner);
-            let mut att_base = self.unit_unembarked_strength(&attacker)
-                + self.matchup_bonus(uid, &d, true)
-                + self.flanking_bonus(uid, target)
-                + self.vs_bonus(pid, d.owner);
-            if amphibious && self.promotion_effect(&attacker, "amphibious") == 0.0 {
-                att_base -= 10.0;
-            }
-            let mut def_base = self.unit_strength(&d, true)
-                + self.matchup_bonus(did, &attacker, false)
-                + self.tile_defense_bonus(target)
-                + self.support_bonus(&d)
-                + self.vs_bonus(d.owner, pid);
-            if self.crosses_river(u.pos, target)
-                && self.promotion_effect(&attacker, "amphibious") == 0.0
-            {
-                def_base += 5.0;
-            }
-            let att = effective_strength(att_base, attacker.hp);
-            let ds = effective_strength(def_base, d.hp);
+            // The strengths live in `melee_exchange_strengths` so a controller
+            // can price this exact exchange before choosing to take it. The
+            // unit has been consumed above, but nothing `consume_melee_attack`
+            // touches (attacks, movement, fortification) enters an attacker's
+            // strength, and it does not move the unit — so the shared reading
+            // is the reading this line always had.
+            let (att, ds) = self
+                .melee_exchange_strengths(uid, did)
+                .expect("both combatants exist at the blow");
             let dmg_out = damage(att, ds, &mut self.rng);
             let dmg_in = damage(ds, att, &mut self.rng);
             self.apply_unit_damage(uid, did, dmg_out);
@@ -35211,6 +35338,18 @@ impl Game {
                 if mover_is_barbarian {
                     bump(&mut self.players[old], "civilians_lost_to_barbarians");
                 }
+                // `captured:settler` / `captured:builder`: how many of each
+                // this seat has taken from a rival by entering their tile;
+                // `rescued:*` is the same take from a barbarian that had
+                // taken it first. An evaluator row can say whether a raid
+                // ever paid, not only that it was declared.
+                let from_barbarian = self.players[old].is_barbarian;
+                let key = if from_barbarian {
+                    "rescued"
+                } else {
+                    "captured"
+                };
+                bump(&mut self.players[owner], &format!("{key}:{kind}"));
                 self.transfer_unit_owner(oid, owner);
             } else if matches!(class, "civilian" | "support") {
                 let old = self.units[&oid].owner;
@@ -35245,7 +35384,9 @@ impl Game {
         if self.wdist(u.pos, target) > range {
             return Err("out of range".into());
         }
-        if !self.combat_target_visible(pid, target) {
+        let visible = self.player_vision_frame(pid);
+        let viewers = self.visibility_viewers(pid);
+        if !self.combat_target_visible_at(pid, target, visible.as_ref(), &viewers) {
             return Err("target is not visible".into());
         }
         if !self.unit_has_line_of_sight(uid, target) {
@@ -35320,38 +35461,12 @@ impl Game {
             let downer = defender.owner;
             self.record_war_unit_participation(&attacker, downer);
             self.record_war_unit_participation(&defender, attacker.owner);
-            let defender_spec = &self.rules.units[defender.kind];
-            let mut att_base = self.unit_ranged_attack_strength(&self.units[&uid])
-                + self.matchup_bonus(uid, &defender, true)
-                + if defender_spec.domain.as_deref() == Some("sea") {
-                    self.promotion_effect(&attacker, "ranged_vs_units")
-                        + self.promotion_effect(&attacker, "ranged_vs_naval")
-                        + self.promotion_effect(&attacker, "siege_vs_naval")
-                } else {
-                    self.promotion_effect(&attacker, "ranged_vs_land")
-                        + self.promotion_effect(&attacker, "ranged_vs_units")
-                        + self.promotion_effect(&attacker, "siege_vs_land")
-                }
-                + self.vs_bonus(pid, downer);
-            if (spec.bombard_strength > 0.0 && defender_spec.domain.as_deref() != Some("sea"))
-                || (spec.ranged_strength > 0.0
-                    && spec.domain.as_deref() != Some("sea")
-                    && defender_spec.domain.as_deref() == Some("sea"))
-            {
-                att_base -= 17.0;
-            }
-            let att = effective_strength(att_base, self.units[&uid].hp);
-            let ds = effective_strength(
-                self.unit_strength(&defender, true)
-                    + self.ranged_defense_bonus(&defender, false)
-                    + if defender_spec.domain.as_deref() == Some("air") {
-                        0.0
-                    } else {
-                        self.tile_defense_bonus(target)
-                    }
-                    + self.vs_bonus(downer, pid),
-                defender.hp,
-            );
+            // As in `do_attack`: the strengths are stated once, in
+            // `ranged_strike_strengths`, so a controller deciding whether to
+            // stand under this shot prices the shot the engine will fire.
+            let (att, ds) = self
+                .ranged_strike_strengths(uid, did, target)
+                .expect("both combatants exist at the shot");
             let dmg = damage(att, ds, &mut self.rng);
             self.apply_unit_damage(uid, did, dmg);
             let defender_dead = self.units[&did].hp <= 0;
@@ -36540,7 +36655,18 @@ impl Game {
         Ok(())
     }
 
-    fn pillageable_at(&self, pid: usize, pos: Pos) -> bool {
+    pub(crate) fn pillageable_at(&self, pid: usize, pos: Pos) -> bool {
+        self.pillageable_at_with(pid, pos, true)
+    }
+
+    /// `pillageable_at` with the state of war assumed: what a declaration on
+    /// the tile's owner would put on the table. The advanced controller's
+    /// opportunistic war prices a surprise war on this before opening it.
+    pub(crate) fn pillageable_after_declaring(&self, pid: usize, pos: Pos) -> bool {
+        self.pillageable_at_with(pid, pos, false)
+    }
+
+    fn pillageable_at_with(&self, pid: usize, pos: Pos, require_war: bool) -> bool {
         let Some(tile) = self.map.get(pos) else {
             return false;
         };
@@ -36553,7 +36679,10 @@ impl Game {
         let Some(city) = self.cities.get(&cid) else {
             return false;
         };
-        if city.owner == pid || !self.is_at_war(pid, city.owner) || self.city_at(pos).is_some() {
+        if city.owner == pid
+            || (require_war && !self.is_at_war(pid, city.owner))
+            || self.city_at(pos).is_some()
+        {
             return false;
         }
         if let Some(improvement) = tile.improvement.as_deref() {
@@ -36693,6 +36822,10 @@ impl Game {
         if !self.pillageable_at(pid, pos) {
             return Err("nothing pillageable there".into());
         }
+        // `pillages`: tiles and district layers this seat has pillaged,
+        // barbarian camps included. The same evaluator reading as the
+        // capture counters above.
+        bump(&mut self.players[pid], "pillages");
         let enemy = self.map.tiles[&pos]
             .owner_city
             .and_then(|city| self.cities.get(&city))
@@ -37240,8 +37373,12 @@ impl Game {
             || attacker.attacks_left <= 0
             || self.wdist(self.air_operation_origin(uid), target) > self.unit_attack_range(uid)
             || !self.enemy_air_strike_target_at(pid, target)
-            || !self.combat_target_visible(pid, target)
         {
+            return Err("invalid air strike".into());
+        }
+        let visible = self.player_vision_frame(pid);
+        let viewers = self.visibility_viewers(pid);
+        if !self.combat_target_visible_at(pid, target, visible.as_ref(), &viewers) {
             return Err("invalid air strike".into());
         }
         let (destroyed, fighter_engaged) = self.resolve_air_interceptions(uid, target);
@@ -37370,8 +37507,12 @@ impl Game {
                 target,
             ) > self.unit_attack_range(uid)
             || (!air && !self.unit_has_line_of_sight(uid, target))
-            || !self.combat_target_visible(pid, target)
         {
+            return Err("unit cannot priority target there".into());
+        }
+        let visible = self.player_vision_frame(pid);
+        let viewers = self.visibility_viewers(pid);
+        if !self.combat_target_visible_at(pid, target, visible.as_ref(), &viewers) {
             return Err("unit cannot priority target there".into());
         }
         let Some(defender_id) = self.priority_support_target_at(pid, target) else {
@@ -39048,7 +39189,9 @@ impl Game {
         if self.city_at(target).is_some() || self.encampment_at(target).is_some() {
             return Err("cities cannot strike defensible districts".into());
         }
-        if !self.combat_target_visible(pid, target) {
+        let visible = self.player_vision_frame(pid);
+        let viewers = self.visibility_viewers(pid);
+        if !self.combat_target_visible_at(pid, target, visible.as_ref(), &viewers) {
             return Err("target is not visible".into());
         }
         if !self.has_line_of_sight(self.cities[&cid].pos, target, true) {
@@ -39142,7 +39285,9 @@ impl Game {
         if self.wdist(position, target) > 2 || !self.has_line_of_sight(position, target, true) {
             return Err("target out of range or sight".into());
         }
-        if !self.combat_target_visible(pid, target) {
+        let visible = self.player_vision_frame(pid);
+        let viewers = self.visibility_viewers(pid);
+        if !self.combat_target_visible_at(pid, target, visible.as_ref(), &viewers) {
             return Err("target is not visible".into());
         }
         if self.city_at(target).is_some() || self.encampment_at(target).is_some() {

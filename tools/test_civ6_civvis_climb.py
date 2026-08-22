@@ -259,14 +259,17 @@ class _Harness:
         root = Path(self.tmp.name)
         self.logs = root / "logs"
         self.logs.mkdir()
+        self.runs = root / "runs"
+        self.runs.mkdir()
         self.ledger = root / "ladder.jsonl"
         self.orders_bin = root / "civvis_orders"
         self.orders_bin.write_text("#!/bin/sh\n")
 
         self.saved = {name: getattr(climb, name) for name in
                       ("LEDGER", "BLOCKED_BACKOFF_S", "teardown", "busy",
-                       "wake_steam", "outcome_of", "code_state")}
+                       "wake_steam", "outcome_of", "code_state", "RUN_ROOT")}
         climb.LEDGER = self.ledger
+        climb.RUN_ROOT = self.runs
         climb.BLOCKED_BACKOFF_S = (0.0, 0.0, 0.0)   # the table, without the waiting
         climb.teardown = lambda *args, **kwargs: None
         climb.busy = lambda: None
@@ -859,6 +862,64 @@ class KilledAttemptSaysSo(unittest.TestCase):
     def test_nothing_is_invented_when_the_loop_has_no_verdict(self):
         row = self._stamp({"last_turn": 250}, None)
         self.assertIsNone(row.get("reason"))
+
+
+class MissingSummaryExitProvenanceTests(unittest.TestCase):
+    """A child that vanishes after turns must leave more than ``attempt exited``.
+
+    `civvis-20260820T210941Z` reached turn 95 with four cities, then its child
+    exited without `summary.json`. The old row retained the turn but discarded
+    the only remaining OS-level signal: the child's return code.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.saved_root = climb.RUN_ROOT
+        climb.RUN_ROOT = self.root
+
+    def tearDown(self):
+        climb.RUN_ROOT = self.saved_root
+        self.tmp.cleanup()
+
+    def test_an_exit_without_a_summary_preserves_status_and_last_state(self):
+        run = self.root / "civvis-exited"
+        run.mkdir()
+        outcome = {"last_turn": 95, "last_score": 203, "rival_best": 396,
+                   "cities": 4, "army": 7}
+
+        detail = climb.record_unexplained_child_exit(
+            "civvis-exited", "exited", -9, outcome)
+
+        self.assertEqual(detail["returncode"], -9)
+        self.assertEqual(detail["watcher_reason"], "exited")
+        self.assertEqual(detail["last_observed"], outcome)
+        self.assertEqual(
+            json.loads((run / "exit.json").read_text()), detail,
+            "the run-local sidecar survives for a later ledger backfill")
+
+    def test_outcome_of_reloads_the_exit_sidecar(self):
+        run = self.root / "civvis-exited"
+        run.mkdir()
+        (run / "events.jsonl").write_text(
+            json.dumps({"kind": "turn", "turn": 95, "score": 203,
+                        "rival_best": 396, "cities": 4, "army": 7}) + "\n")
+        detail = climb.record_unexplained_child_exit(
+            "civvis-exited", "exited", 137, climb.outcome_of("civvis-exited"))
+
+        self.assertEqual(climb.outcome_of("civvis-exited")["child_exit"], detail)
+
+    def test_a_real_summary_or_a_non_exit_never_gets_the_artifact(self):
+        run = self.root / "civvis-finished"
+        run.mkdir()
+        (run / "summary.json").write_text(json.dumps({"reason": "stopped"}))
+        self.assertIsNone(climb.record_unexplained_child_exit(
+            "civvis-finished", "exited", 0, {}))
+        self.assertFalse((run / "exit.json").exists())
+
+        self.assertIsNone(climb.record_unexplained_child_exit(
+            "civvis-finished", "frozen", -15, {}))
+        self.assertFalse((run / "exit.json").exists())
 
 
 class OuterWatchdogOrdering(unittest.TestCase):
@@ -1582,8 +1643,9 @@ class BatchRefreshSecondsTests(unittest.TestCase):
             campus_specialist=False, envoys=False, envoy_place=False,
             envoy_levy=False, envoy_consider=False, victory="science",
             strategy="auto", war_from_plan=False, tile_export_every=25,
-            refresh_seconds=None, no_peace_deterrence=False, without=[],
-            no_counter_resolutions=False,
+            refresh_seconds=None, no_peace_deterrence=False, with_=[], without=[],
+            no_counter_resolutions=False, combat_frames=0, replan_frames=2,
+            settler_escort_cap_sync=False,
         )
         values.update(changes)
         return SimpleNamespace(**values)
@@ -1601,6 +1663,31 @@ class BatchRefreshSecondsTests(unittest.TestCase):
             "--abandon-below-win-rate",
             climb.play_command(self._play_args(), "t",
                                Path("orders.sqlite"), Path("civvis_orders")))
+
+    def test_the_mid_turn_frames_reach_the_play_command(self):
+        """The combat frame (#2132) was never forwarded by the climb, so no
+        ladder run ever played it; both frame counts now cross verbatim, the
+        replan frames on by default and withholdable with 0."""
+        cmd = climb.play_command(self._play_args(), "t",
+                                 Path("orders.sqlite"), Path("civvis_orders"))
+        self.assertEqual(cmd[cmd.index("--replan-frames") + 1], "2")
+        self.assertEqual(cmd[cmd.index("--combat-frames") + 1], "0")
+        cmd = climb.play_command(self._play_args(replan_frames=0, combat_frames=1), "t",
+                                 Path("orders.sqlite"), Path("civvis_orders"))
+        self.assertEqual(cmd[cmd.index("--replan-frames") + 1], "0")
+        self.assertEqual(cmd[cmd.index("--combat-frames") + 1], "1")
+
+    def test_the_capped_escort_arm_reaches_play_only_when_enabled(self):
+        cmd = climb.play_command(
+            self._play_args(settler_escort_cap_sync=True), "t",
+            Path("orders.sqlite"), Path("civvis_orders"))
+        self.assertIn("--settler-escort-cap-sync", cmd)
+        self.assertNotIn(
+            "--settler-escort-cap-sync",
+            climb.play_command(self._play_args(), "t",
+                               Path("orders.sqlite"), Path("civvis_orders")),
+            "the experiment must stay off unless the batch names it",
+        )
 
     def test_a_withheld_deterrence_reaches_the_play_command(self):
         cmd = climb.play_command(self._play_args(no_peace_deterrence=True), "t",
@@ -1633,6 +1720,19 @@ class BatchRefreshSecondsTests(unittest.TestCase):
             climb.play_command(self._play_args(), "t",
                                Path("orders.sqlite"), Path("civvis_orders")),
             "the treatment half withholds nothing",
+        )
+
+    def test_a_batch_can_restore_a_ledger_held_live_gene(self):
+        cmd = climb.play_command(
+            self._play_args(with_=["stacked-escort"]), "t",
+            Path("orders.sqlite"), Path("civvis_orders"))
+        at = cmd.index("--civvis-with")
+        self.assertEqual(cmd[at + 1], "stacked-escort")
+        self.assertNotIn(
+            "--civvis-with",
+            climb.play_command(self._play_args(), "t",
+                               Path("orders.sqlite"), Path("civvis_orders")),
+            "the deployment arm must not turn a held gene back on",
         )
 
     def test_the_freeze_reaches_the_play_command(self):

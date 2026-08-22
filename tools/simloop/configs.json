@@ -1,0 +1,122 @@
+[
+  {
+    "name": "baseline",
+    "note": "six on continents, the shape the exhibition ships",
+    "players": 6,
+    "speed": "online",
+    "difficulty": "prince",
+    "map_script": "continents",
+    "map_topology": "flat",
+    "map_poles": "poles",
+    "benchmark_seed": 1036,
+    "start_era": "ancient"
+  },
+  {
+    "name": "globe",
+    "note": "the sphere: its own geometry, its own width/height derivation, its own adjacency",
+    "players": 6,
+    "speed": "online",
+    "difficulty": "prince",
+    "map_script": "continents",
+    "map_topology": "planet",
+    "map_poles": "poles",
+    "benchmark_seed": 1037,
+    "start_era": "ancient"
+  },
+  {
+    "name": "pangaea-king",
+    "note": "one landmass and a harder ladder \u2014 everyone reachable by foot",
+    "players": 4,
+    "speed": "online",
+    "difficulty": "king",
+    "map_script": "pangaea",
+    "map_topology": "flat",
+    "map_poles": "poles",
+    "benchmark_seed": 1032,
+    "start_era": "ancient"
+  },
+  {
+    "name": "islands",
+    "note": "the opposite: almost nothing reachable without a boat",
+    "players": 6,
+    "speed": "online",
+    "difficulty": "prince",
+    "map_script": "islands",
+    "map_topology": "flat",
+    "map_poles": "randomized",
+    "benchmark_seed": 1033,
+    "start_era": "ancient"
+  },
+  {
+    "name": "crowded",
+    "note": "ten majors on the map size ten pairs with \u2014 the widest roster the lobby seats",
+    "players": 10,
+    "speed": "online",
+    "difficulty": "prince",
+    "map_script": "small_continents",
+    "map_topology": "flat",
+    "map_poles": "poles",
+    "benchmark_seed": 1034,
+    "start_era": "ancient"
+  },
+  {
+    "name": "inland-sea-emperor",
+    "note": "quick speed, so a different turn budget as well as a different board",
+    "players": 6,
+    "speed": "quick",
+    "difficulty": "emperor",
+    "map_script": "inland_sea",
+    "map_topology": "flat",
+    "map_poles": "poles",
+    "benchmark_seed": 1035,
+    "start_era": "ancient"
+  },
+  {
+    "name": "true-start-earth",
+    "note": "a real-world map \u2014 its own generation path entirely, shared with nothing else here",
+    "players": 6,
+    "speed": "online",
+    "difficulty": "prince",
+    "map_script": "true_start_earth",
+    "map_topology": "flat",
+    "map_poles": "poles",
+    "benchmark_seed": 1038,
+    "start_era": "ancient"
+  },
+  {
+    "name": "lakes-deity",
+    "note": "the hardest rung, on a board nothing else covers \u2014 max AI bonuses reach different code",
+    "players": 6,
+    "speed": "online",
+    "difficulty": "deity",
+    "map_script": "lakes",
+    "map_topology": "flat",
+    "map_poles": "poles",
+    "benchmark_seed": 1039,
+    "start_era": "ancient"
+  },
+  {
+    "name": "medieval-start",
+    "note": "opens in the medieval era \u2014 a different world before a turn is played: map, units and cities all differ from the ancient start on the same seed",
+    "players": 6,
+    "speed": "online",
+    "difficulty": "prince",
+    "map_script": "continents",
+    "map_topology": "flat",
+    "map_poles": "poles",
+    "start_era": "medieval",
+    "benchmark_seed": 1040
+  },
+  {
+    "name": "water-world",
+    "note": "almost all ocean \u2014 the far end of the reachability axis that `islands` only leans toward",
+    "players": 6,
+    "speed": "online",
+    "difficulty": "prince",
+    "map_script": "water_world",
+    "map_topology": "flat",
+    "map_poles": "poles",
+    "start_era": "ancient",
+    "benchmark_seed": 1041
+  }
+]
