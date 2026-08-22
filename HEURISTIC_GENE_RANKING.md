@@ -23,68 +23,69 @@ Regenerate with `python3 tools/heuristic_gene_ranking.py --write` after every sc
 |---:|---|---|---|---:|---:|---:|---:|---:|---:|---:|
 | 1 | `great-person-housing` | A class earned and blocked reserves a city for the slot building, district, wonder or soldier that lifts the block, and a due cultural person sells duplicate… | **on** | +78 | – | 17.45% | 15.89% | 35,148 | -0.01% ±0.34% | -0.29% ±0.60% |
 | 2 | `escort-unstick` | Release an escort that is not walking its settler. | **on** | +72 | +7 | 16.96% | 16.37% | 92,040 | -0.26% ±0.33% | -0.08% ±0.59% |
-| 3 | `settler-threat-detour` | Let a Settler switch to the best safe alternate when a visible threat blocks the next step toward an otherwise sound settlement site. | **on** | +50 | – | 17.17% | 16.17% | 35,148 | +0.47% ±0.39% | +0.51% ±0.64% |
-| 4 | `recon-replacement` | Rebuild the recon arm when it is gone and there is ground left to chart. | **on** | +48 | +81 | 17.20% | 16.13% | 92,040 | +0.78% ±0.37% | +0.49% ±0.62% |
-| 5 | `governor-victory-lanes` | Half the composite: the governor under the four victory lanes only. | **on** | +46 | – | 17.12% | 16.21% | 35,148 | +1.16% ±0.34% | +2.17% ±0.60% |
-| 6 | `settle-sooner` | Price a Settler's walk in turns, each turn dearer the longer the Settler has already been walking, so expansion founds sooner without giving up a site good e… | **on** | +41 | – | 17.08% | 16.26% | 35,148 | -0.04% ±0.36% | -0.23% ±0.61% |
-| 7 | `loyalty-rate-alarm` | Rank loyalty emergencies by turns-to-flip instead of by level. | **on** | +40 | +73 | 17.16% | 16.18% | 92,040 | +0.21% ±0.34% | +0.83% ±0.60% |
-| 8 | `war-economy` | Send an adaptive Conquest plan through the war production path. | **on** | +38 | +8 | 16.28% | 17.06% | 92,040 | -0.31% ±0.40% | -0.82% ±0.62% |
-| 9 | `idle-faith-patronage` | A seat with no religion and 600+ Faith patronizes Great People with it whatever the shortfall. | **on** | +36 | +23 | 16.99% | 16.34% | 47,148 | +0.31% ±0.34% | +0.53% ±0.60% |
-| 10 | `wide-map-capacity` | Price the city ceiling off uncontested land. | **on** | +35 | +29 | 17.00% | 16.33% | 92,040 | +0.23% ±0.34% | -0.15% ±0.58% |
-| 11 | `district-coverage` | Rank district families by how much of the empire still lacks them. | off | +32 | -9 | 16.73% | 16.60% | 92,040 | -0.72% ±0.33% | -1.28% ±0.60% |
-| 12 | `army-target-weighs-enemy` | Let the army target account for the enemy it has to beat. | off | +30 | -4 | 16.67% | 16.66% | 92,040 | -0.18% ±0.34% | -0.27% ±0.59% |
-| 13 | `blind-objective-strength` | Stop a fogged objective city from reading as an empty tile when the army decides whether it is strong enough to engage. | **on** | +30 | +17 | 16.94% | 16.39% | 92,040 | +0.52% ±0.36% | +0.37% ±0.62% |
-| 14 | `raid-pillage-prizes` | Count a neighbour's unpillaged tiles within reach as raid prizes and send raiding soldiers to them. | **on** | +30 | – | 16.96% | 16.37% | 35,148 | +0.74% ±0.33% | +0.57% ±0.59% |
-| 15 | `recorded-tactical-step` | Record tactical steps so a unit stepped twice in one turn cannot walk back onto the tile it just left. | off | +30 | -2 | 16.81% | 16.52% | 92,040 | -0.09% ±0.38% | -0.08% ±0.62% |
-| 16 | `builder-worked-tile-priority` | Prefer existing Builder work that pays on a tile a citizen currently works, while preserving luxury and strategic connections. | **on** | +24 | – | 16.91% | 16.42% | 35,148 | -0.23% ±0.34% | -0.58% ±0.60% |
-| 17 | `score-horizon` | Skip a space race or a bomb that cannot finish before the turn limit. | off | +24 | -3 | 16.85% | 16.48% | 92,040 | -0.27% ±0.32% | -0.23% ±0.59% |
-| 18 | `settler-site-agreement` | THE ORDER AND THE MARCH MUST AGREE ON THE GROUND. | **on** | +24 | +23 | 16.77% | 16.56% | 92,040 | -0.12% ±0.37% | -0.09% ±0.62% |
-| 19 | `barbarian-scouts-are-scouts` | Stop pricing a Firaxis barbarian scout as a threat. | **on** | +23 | +61 | 17.11% | 16.22% | 92,040 | +0.11% ±0.35% | +0.65% ±0.61% |
-| 20 | `opportunistic-war` | Open a surprise war on a neighbour whose unescorted Settlers, Builders or unpillaged tiles lie within a short march of our soldiers, take them, and sue for p… | **on** | +23 | – | 16.89% | 16.44% | 35,148 | +1.53% ±0.39% | +2.57% ±0.63% |
-| 21 | `bounded-recovery` | Stop the defensive-war posture from becoming permanent. | **on** | +19 | +39 | 16.95% | 16.38% | 92,040 | -0.02% ±0.32% | -0.17% ±0.58% |
-| 22 | `whole-turn-backtrack-guard` | Refuse a step onto any tile this unit has already stood on this turn. | **on** | +18 | +23 | 16.92% | 16.41% | 92,040 | +0.28% ±0.38% | +0.47% ±0.64% |
-| 23 | `strike-opening` | Let movement credit the attack a tile opens. | **on** | +17 | +21 | 16.86% | 16.48% | 92,040 | -0.27% ±0.35% | -0.17% ±0.60% |
-| 24 | `naval-recon` | Buy one ship for an empire that has none while unexplored water lies off its coast, and send it exploring. | off | +16 | -11 | 16.65% | 16.68% | 92,040 | +0.23% ±0.38% | +0.25% ±0.61% |
-| 25 | `one-launch-pad` | Give the 3,000-point first-pad rung to one city at a time. | **on** | +15 | +24 | 16.87% | 16.46% | 92,040 | +0.00% ±0.34% | -0.27% ±0.59% |
-| 26 | `settler-target-hysteresis` | Keep a settler target dropped for danger out of the next picks for a few turns. | **on** | +15 | +1 | 16.70% | 16.63% | 92,040 | +0.45% ±0.34% | +0.69% ±0.59% |
-| 27 | `apostle-promotion-by-role` | Promote an Apostle for the job the empire has rather than for the largest number on the card. | **on** | +14 | +12 | 16.64% | 16.70% | 92,040 | +0.13% ±0.33% | +0.19% ±0.58% |
-| 28 | `barbarian-ranged-answer` | Answer a ring of shooters with a shooter. | off | +14 | – | 16.81% | 16.52% | 35,148 | +0.03% ±0.32% | +0.32% ±0.58% |
-| 29 | `founder-temple` | A founder outside the Religion lane still builds its Shrine and Temple. | **on** | +14 | +48 | 16.90% | 16.44% | 47,148 | +0.03% ±0.34% | +0.53% ±0.59% |
-| 30 | `relief-targets-the-siege` | Send a relief force at the units actually besieging the city rather than the nearest one to itself. | **on** | +14 | +6 | 16.71% | 16.63% | 92,040 | +0.12% ±0.34% | +0.25% ±0.59% |
-| 31 | `builder-barbarian-safety` | Keep Builders from entering a visible Barbarian-capture envelope. | off | +13 | – | 16.79% | 16.54% | 35,148 | -0.04% ±0.32% | -0.04% ±0.57% |
-| 32 | `camp-party` | The peacetime camp party. | **on** | +13 | +53 | 17.01% | 16.32% | 92,040 | -0.27% ±0.35% | -0.55% ±0.59% |
-| 33 | `governor-every-lane` | Run the strategic governor under every lane. | off | +13 | -8 | 16.53% | 16.81% | 92,040 | +1.11% ±0.33% | +1.18% ±0.59% |
-| 34 | `housing-research` | Aim research at the housing ceiling when the empire is paying it. | **on** | +13 | +39 | 16.77% | 16.56% | 92,040 | -0.78% ±0.31% | -0.90% ±0.57% |
-| 35 | `stranded-settler-discount` | Stop a Settler that has stopped walking from holding the expansion gate shut. | **on** | +13 | +21 | 16.80% | 16.53% | 92,040 | +0.35% ±0.34% | +1.28% ±0.60% |
-| 36 | `amenity-district-path` | Price an amenity district by the building it will host and a regional amenity building by every city it reaches. | **on** | +12 | +18 | 16.74% | 16.60% | 92,040 | -0.07% ±0.33% | +0.57% ±0.60% |
-| 37 | `come-ashore` | Keep the land army out of the water. | **on** | +11 | +36 | 16.78% | 16.56% | 92,040 | -0.13% ±0.38% | -0.58% ±0.62% |
-| 38 | `wonder-ring-settle-value` | Price a revealed natural wonder's ring into the settle scorer. | off | +7 | -7 | 16.72% | 16.62% | 92,040 | -0.03% ±0.34% | -0.10% ±0.59% |
-| 39 | `religion-sues-peace` | A Religion strategy offers peace to unblock its spread lane. | **on** | +6 | +29 | 16.86% | 16.48% | 92,040 | +0.11% ±0.35% | +0.47% ±0.62% |
-| 40 | `barbarian-bargain` | Price a raider's life below a major's. | off | +5 | – | 16.71% | 16.62% | 35,148 | -0.31% ±0.34% | -0.23% ±0.59% |
-| 41 | `housing-districts` | Let the baseline governor raise the housing ceiling. | off | +5 | -9 | 16.60% | 16.74% | 92,040 | +0.19% ±0.35% | +0.42% ±0.58% |
-| 42 | `joint-tactics` | Plan each engagement's attacks as one joint problem instead of one unit at a time in a fixed class order. | off | +3 | -4 | 16.61% | 16.72% | 92,040 | +27.29% ±0.47% | +27.69% ±0.79% |
-| 43 | `war-reinforcement` | March rear units to the campaign objective while the war is on. | off | +3 | -5 | 16.80% | 16.53% | 92,040 | +0.09% ±0.34% | +0.26% ±0.60% |
-| 44 | `inquisition-on-threat` | A founder under conversion pressure may hold one Apostle for the Inquisition, bought after its Missionaries when the bank covers it. | **on** | +2 | +35 | 16.77% | 16.56% | 47,148 | +0.05% ±0.32% | -0.30% ±0.57% |
-| 45 | `peacetime-deterrence` | Let the strongest met major weigh on the army target while at peace, so deterrence exists before a declaration. | **on** | +1 | +39 | 16.80% | 16.54% | 92,040 | +0.18% ±0.32% | +0.14% ±0.58% |
-| 46 | `siege-commitment` | Keep a live campaign pointed at its chosen city. | **on** | +1 | +3 | 16.56% | 16.77% | 92,040 | -0.25% ±0.33% | -0.20% ±0.57% |
-| 47 | `buildings-before-projects` | A district project waits behind the science and production buildings the city can already build. | off | -2 | +26 | 16.81% | 16.52% | 92,040 | +0.01% ±0.36% | -0.18% ±0.60% |
-| 48 | `settler-guard-holds` | A stacked guard holds with its settler, and only a guard that can hold counts as protection. | off | -3 | +13 | 16.68% | 16.65% | 92,040 | -0.41% ±0.36% | -0.85% ±0.60% |
-| 49 | `siege-tracks-wall` | Size the siege train by the wall it has to breach. | off | -3 | +21 | 16.87% | 16.46% | 92,040 | -0.03% ±0.35% | -0.02% ±0.60% |
-| 50 | `endgame-war-runway` | Keep a fresh direct declaration out of the final campaign reserve. | off | -5 | -11 | 16.62% | 16.71% | 92,040 | +0.17% ±0.33% | +0.48% ±0.60% |
-| 51 | `garrison-under-fire` | A city losing hitpoints is besieged, whatever the fog says. | off | -5 | +17 | 16.90% | 16.43% | 92,040 | -0.15% ±0.39% | -0.03% ±0.63% |
-| 52 | `strategic-wonders` | Build the wonders the chosen victory actually needs. | off | -5 | +21 | 16.78% | 16.56% | 92,040 | +0.38% ±0.34% | -0.02% ±0.59% |
-| 53 | `civilian-rescue` | Walk onto a capturable civilian within reach, and never decline a settler held by the barbarians. | off | -6 | -4 | 16.61% | 16.72% | 92,040 | +0.10% ±0.37% | +0.50% ±0.62% |
-| 54 | `blind-objective-units` | Let the army price the enemy units it REMEMBERS around an objective it cannot currently see, instead of reading an unseen approach as empty. | off | -7 | +4 | 16.67% | 16.66% | 92,040 | +0.02% ±0.35% | +0.30% ±0.60% |
-| 55 | `slot-kind-tiebreak` | Break a production cost tie by which great-work slots can be filled. | off | -12 | +20 | 16.76% | 16.57% | 92,040 | +0.14% ±0.35% | +0.39% ±0.60% |
-| 56 | `amenity-project-preemption` | When host-observed Amenity deficits have crossed a severe empire-wide threshold, pause one repeatable project for the concrete repair chain and let the polic… | off | -14 | -4 | 16.70% | 16.64% | 92,040 | +0.34% ±0.33% | +0.29% ±0.57% |
-| 57 | `home-defense` | Let a raider standing in our own territory claim a unit before the offensive does. | off | -15 | +4 | 16.54% | 16.80% | 92,040 | -0.62% ±0.32% | -0.57% ±0.57% |
-| 58 | `siege-is-progress` | A SIEGE THAT IS WINNING IS NOT A STALLED WAR. | off | -16 | +14 | 16.46% | 16.87% | 92,040 | +0.27% ±0.34% | -0.45% ±0.56% |
-| 59 | `theology-for-founders` | A founder researches Theology next. | off | -16 | -5 | 16.54% | 16.80% | 47,148 | +0.07% ±0.34% | -0.20% ±0.59% |
-| 60 | `war-patience` | Keep prosecuting a war the empire overwhelmingly outweighs instead of suing it out as stalled. | off | -19 | +20 | 16.67% | 16.67% | 92,040 | -0.48% ±0.34% | -0.96% ±0.59% |
-| 61 | `district-lookahead-settle` | A settler scores a site by the districts the plan would build there, each on its own plot. | off | -22 | – | 16.45% | 16.88% | 35,148 | +0.73% ±0.38% | +0.91% ±0.62% |
-| 62 | `governor-expansion-lane` | The other half: the governor under Expansion only. | off | -30 | – | 16.37% | 16.97% | 35,148 | +0.48% ±0.35% | +0.51% ±0.60% |
-| 63 | `priced-tile-purchase` | A border plot is bought only when its priced benefit clears its Gold by a margin. | off | -31 | – | 16.36% | 16.97% | 35,148 | -0.37% ±0.37% | -0.55% ±0.64% |
-| 64 | `barbarian-hunt` | Walk onto a visible, undefended barbarian camp one legal step away — the clear IS the move, so no attack scan ever offers it, and without this a unit ends it… | off | -86 | – | 15.80% | 17.53% | 35,148 | -0.94% ±0.32% | -0.78% ±0.58% |
+| 3 | `holy-lane-parity` | The Religion lane pays for its Holy Site what the Culture lane pays for its Theater Square. | off | +63 | -27 | 17.07% | 16.26% | 47,148 | +0.57% ±0.34% | +1.30% ±0.60% |
+| 4 | `settler-threat-detour` | Let a Settler switch to the best safe alternate when a visible threat blocks the next step toward an otherwise sound settlement site. | **on** | +50 | – | 17.17% | 16.17% | 35,148 | +0.47% ±0.39% | +0.51% ±0.64% |
+| 5 | `recon-replacement` | Rebuild the recon arm when it is gone and there is ground left to chart. | **on** | +48 | +81 | 17.20% | 16.13% | 92,040 | +0.78% ±0.37% | +0.49% ±0.62% |
+| 6 | `governor-victory-lanes` | Half the composite: the governor under the four victory lanes only. | **on** | +46 | – | 17.12% | 16.21% | 35,148 | +1.16% ±0.34% | +2.17% ±0.60% |
+| 7 | `settle-sooner` | Price a Settler's walk in turns, each turn dearer the longer the Settler has already been walking, so expansion founds sooner without giving up a site good e… | **on** | +41 | – | 17.08% | 16.26% | 35,148 | -0.04% ±0.36% | -0.23% ±0.61% |
+| 8 | `loyalty-rate-alarm` | Rank loyalty emergencies by turns-to-flip instead of by level. | **on** | +40 | +73 | 17.16% | 16.18% | 92,040 | +0.21% ±0.34% | +0.83% ±0.60% |
+| 9 | `war-economy` | Send an adaptive Conquest plan through the war production path. | **on** | +38 | +8 | 16.28% | 17.06% | 92,040 | -0.31% ±0.40% | -0.82% ±0.62% |
+| 10 | `idle-faith-patronage` | A seat with no religion and 600+ Faith patronizes Great People with it whatever the shortfall. | **on** | +36 | +23 | 16.99% | 16.34% | 47,148 | +0.31% ±0.34% | +0.53% ±0.60% |
+| 11 | `wide-map-capacity` | Price the city ceiling off uncontested land. | **on** | +35 | +29 | 17.00% | 16.33% | 92,040 | +0.23% ±0.34% | -0.15% ±0.58% |
+| 12 | `district-coverage` | Rank district families by how much of the empire still lacks them. | off | +32 | -9 | 16.73% | 16.60% | 92,040 | -0.72% ±0.33% | -1.28% ±0.60% |
+| 13 | `army-target-weighs-enemy` | Let the army target account for the enemy it has to beat. | off | +30 | -4 | 16.67% | 16.66% | 92,040 | -0.18% ±0.34% | -0.27% ±0.59% |
+| 14 | `blind-objective-strength` | Stop a fogged objective city from reading as an empty tile when the army decides whether it is strong enough to engage. | **on** | +30 | +17 | 16.94% | 16.39% | 92,040 | +0.52% ±0.36% | +0.37% ±0.62% |
+| 15 | `raid-pillage-prizes` | Count a neighbour's unpillaged tiles within reach as raid prizes and send raiding soldiers to them. | **on** | +30 | – | 16.96% | 16.37% | 35,148 | +0.74% ±0.33% | +0.57% ±0.59% |
+| 16 | `recorded-tactical-step` | Record tactical steps so a unit stepped twice in one turn cannot walk back onto the tile it just left. | off | +30 | -2 | 16.81% | 16.52% | 92,040 | -0.09% ±0.38% | -0.08% ±0.62% |
+| 17 | `builder-worked-tile-priority` | Prefer existing Builder work that pays on a tile a citizen currently works, while preserving luxury and strategic connections. | **on** | +24 | – | 16.91% | 16.42% | 35,148 | -0.23% ±0.34% | -0.58% ±0.60% |
+| 18 | `score-horizon` | Skip a space race or a bomb that cannot finish before the turn limit. | off | +24 | -3 | 16.85% | 16.48% | 92,040 | -0.27% ±0.32% | -0.23% ±0.59% |
+| 19 | `settler-site-agreement` | THE ORDER AND THE MARCH MUST AGREE ON THE GROUND. | **on** | +24 | +23 | 16.77% | 16.56% | 92,040 | -0.12% ±0.37% | -0.09% ±0.62% |
+| 20 | `barbarian-scouts-are-scouts` | Stop pricing a Firaxis barbarian scout as a threat. | **on** | +23 | +61 | 17.11% | 16.22% | 92,040 | +0.11% ±0.35% | +0.65% ±0.61% |
+| 21 | `opportunistic-war` | Open a surprise war on a neighbour whose unescorted Settlers, Builders or unpillaged tiles lie within a short march of our soldiers, take them, and sue for p… | **on** | +23 | – | 16.89% | 16.44% | 35,148 | +1.53% ±0.39% | +2.57% ±0.63% |
+| 22 | `bounded-recovery` | Stop the defensive-war posture from becoming permanent. | **on** | +19 | +39 | 16.95% | 16.38% | 92,040 | -0.02% ±0.32% | -0.17% ±0.58% |
+| 23 | `whole-turn-backtrack-guard` | Refuse a step onto any tile this unit has already stood on this turn. | **on** | +18 | +23 | 16.92% | 16.41% | 92,040 | +0.28% ±0.38% | +0.47% ±0.64% |
+| 24 | `strike-opening` | Let movement credit the attack a tile opens. | **on** | +17 | +21 | 16.86% | 16.48% | 92,040 | -0.27% ±0.35% | -0.17% ±0.60% |
+| 25 | `naval-recon` | Buy one ship for an empire that has none while unexplored water lies off its coast, and send it exploring. | off | +16 | -11 | 16.65% | 16.68% | 92,040 | +0.23% ±0.38% | +0.25% ±0.61% |
+| 26 | `one-launch-pad` | Give the 3,000-point first-pad rung to one city at a time. | **on** | +15 | +24 | 16.87% | 16.46% | 92,040 | +0.00% ±0.34% | -0.27% ±0.59% |
+| 27 | `settler-target-hysteresis` | Keep a settler target dropped for danger out of the next picks for a few turns. | **on** | +15 | +1 | 16.70% | 16.63% | 92,040 | +0.45% ±0.34% | +0.69% ±0.59% |
+| 28 | `apostle-promotion-by-role` | Promote an Apostle for the job the empire has rather than for the largest number on the card. | **on** | +14 | +12 | 16.64% | 16.70% | 92,040 | +0.13% ±0.33% | +0.19% ±0.58% |
+| 29 | `barbarian-ranged-answer` | Answer a ring of shooters with a shooter. | off | +14 | – | 16.81% | 16.52% | 35,148 | +0.03% ±0.32% | +0.32% ±0.58% |
+| 30 | `founder-temple` | A founder outside the Religion lane still builds its Shrine and Temple. | **on** | +14 | +48 | 16.90% | 16.44% | 47,148 | +0.03% ±0.34% | +0.53% ±0.59% |
+| 31 | `relief-targets-the-siege` | Send a relief force at the units actually besieging the city rather than the nearest one to itself. | **on** | +14 | +6 | 16.71% | 16.63% | 92,040 | +0.12% ±0.34% | +0.25% ±0.59% |
+| 32 | `builder-barbarian-safety` | Keep Builders from entering a visible Barbarian-capture envelope. | off | +13 | – | 16.79% | 16.54% | 35,148 | -0.04% ±0.32% | -0.04% ±0.57% |
+| 33 | `camp-party` | The peacetime camp party. | **on** | +13 | +53 | 17.01% | 16.32% | 92,040 | -0.27% ±0.35% | -0.55% ±0.59% |
+| 34 | `governor-every-lane` | Run the strategic governor under every lane. | off | +13 | -8 | 16.53% | 16.81% | 92,040 | +1.11% ±0.33% | +1.18% ±0.59% |
+| 35 | `housing-research` | Aim research at the housing ceiling when the empire is paying it. | **on** | +13 | +39 | 16.77% | 16.56% | 92,040 | -0.78% ±0.31% | -0.90% ±0.57% |
+| 36 | `stranded-settler-discount` | Stop a Settler that has stopped walking from holding the expansion gate shut. | **on** | +13 | +21 | 16.80% | 16.53% | 92,040 | +0.35% ±0.34% | +1.28% ±0.60% |
+| 37 | `amenity-district-path` | Price an amenity district by the building it will host and a regional amenity building by every city it reaches. | **on** | +12 | +18 | 16.74% | 16.60% | 92,040 | -0.07% ±0.33% | +0.57% ±0.60% |
+| 38 | `come-ashore` | Keep the land army out of the water. | **on** | +11 | +36 | 16.78% | 16.56% | 92,040 | -0.13% ±0.38% | -0.58% ±0.62% |
+| 39 | `wonder-ring-settle-value` | Price a revealed natural wonder's ring into the settle scorer. | off | +7 | -7 | 16.72% | 16.62% | 92,040 | -0.03% ±0.34% | -0.10% ±0.59% |
+| 40 | `religion-sues-peace` | A Religion strategy offers peace to unblock its spread lane. | **on** | +6 | +29 | 16.86% | 16.48% | 92,040 | +0.11% ±0.35% | +0.47% ±0.62% |
+| 41 | `barbarian-bargain` | Price a raider's life below a major's. | off | +5 | – | 16.71% | 16.62% | 35,148 | -0.31% ±0.34% | -0.23% ±0.59% |
+| 42 | `housing-districts` | Let the baseline governor raise the housing ceiling. | off | +5 | -9 | 16.60% | 16.74% | 92,040 | +0.19% ±0.35% | +0.42% ±0.58% |
+| 43 | `joint-tactics` | Plan each engagement's attacks as one joint problem instead of one unit at a time in a fixed class order. | off | +3 | -4 | 16.61% | 16.72% | 92,040 | +27.29% ±0.47% | +27.69% ±0.79% |
+| 44 | `war-reinforcement` | March rear units to the campaign objective while the war is on. | off | +3 | -5 | 16.80% | 16.53% | 92,040 | +0.09% ±0.34% | +0.26% ±0.60% |
+| 45 | `inquisition-on-threat` | A founder under conversion pressure may hold one Apostle for the Inquisition, bought after its Missionaries when the bank covers it. | **on** | +2 | +35 | 16.77% | 16.56% | 47,148 | +0.05% ±0.32% | -0.30% ±0.57% |
+| 46 | `peacetime-deterrence` | Let the strongest met major weigh on the army target while at peace, so deterrence exists before a declaration. | **on** | +1 | +39 | 16.80% | 16.54% | 92,040 | +0.18% ±0.32% | +0.14% ±0.58% |
+| 47 | `siege-commitment` | Keep a live campaign pointed at its chosen city. | **on** | +1 | +3 | 16.56% | 16.77% | 92,040 | -0.25% ±0.33% | -0.20% ±0.57% |
+| 48 | `buildings-before-projects` | A district project waits behind the science and production buildings the city can already build. | off | -2 | +26 | 16.81% | 16.52% | 92,040 | +0.01% ±0.36% | -0.18% ±0.60% |
+| 49 | `settler-guard-holds` | A stacked guard holds with its settler, and only a guard that can hold counts as protection. | off | -3 | +13 | 16.68% | 16.65% | 92,040 | -0.41% ±0.36% | -0.85% ±0.60% |
+| 50 | `siege-tracks-wall` | Size the siege train by the wall it has to breach. | off | -3 | +21 | 16.87% | 16.46% | 92,040 | -0.03% ±0.35% | -0.02% ±0.60% |
+| 51 | `endgame-war-runway` | Keep a fresh direct declaration out of the final campaign reserve. | off | -5 | -11 | 16.62% | 16.71% | 92,040 | +0.17% ±0.33% | +0.48% ±0.60% |
+| 52 | `garrison-under-fire` | A city losing hitpoints is besieged, whatever the fog says. | off | -5 | +17 | 16.90% | 16.43% | 92,040 | -0.15% ±0.39% | -0.03% ±0.63% |
+| 53 | `strategic-wonders` | Build the wonders the chosen victory actually needs. | off | -5 | +21 | 16.78% | 16.56% | 92,040 | +0.38% ±0.34% | -0.02% ±0.59% |
+| 54 | `civilian-rescue` | Walk onto a capturable civilian within reach, and never decline a settler held by the barbarians. | off | -6 | -4 | 16.61% | 16.72% | 92,040 | +0.10% ±0.37% | +0.50% ±0.62% |
+| 55 | `blind-objective-units` | Let the army price the enemy units it REMEMBERS around an objective it cannot currently see, instead of reading an unseen approach as empty. | off | -7 | +4 | 16.67% | 16.66% | 92,040 | +0.02% ±0.35% | +0.30% ±0.60% |
+| 56 | `slot-kind-tiebreak` | Break a production cost tie by which great-work slots can be filled. | off | -12 | +20 | 16.76% | 16.57% | 92,040 | +0.14% ±0.35% | +0.39% ±0.60% |
+| 57 | `amenity-project-preemption` | When host-observed Amenity deficits have crossed a severe empire-wide threshold, pause one repeatable project for the concrete repair chain and let the polic… | off | -14 | -4 | 16.70% | 16.64% | 92,040 | +0.34% ±0.33% | +0.29% ±0.57% |
+| 58 | `home-defense` | Let a raider standing in our own territory claim a unit before the offensive does. | off | -15 | +4 | 16.54% | 16.80% | 92,040 | -0.62% ±0.32% | -0.57% ±0.57% |
+| 59 | `siege-is-progress` | A SIEGE THAT IS WINNING IS NOT A STALLED WAR. | off | -16 | +14 | 16.46% | 16.87% | 92,040 | +0.27% ±0.34% | -0.45% ±0.56% |
+| 60 | `theology-for-founders` | A founder researches Theology next. | off | -16 | -5 | 16.54% | 16.80% | 47,148 | +0.07% ±0.34% | -0.20% ±0.59% |
+| 61 | `war-patience` | Keep prosecuting a war the empire overwhelmingly outweighs instead of suing it out as stalled. | off | -19 | +20 | 16.67% | 16.67% | 92,040 | -0.48% ±0.34% | -0.96% ±0.59% |
+| 62 | `district-lookahead-settle` | A settler scores a site by the districts the plan would build there, each on its own plot. | off | -22 | – | 16.45% | 16.88% | 35,148 | +0.73% ±0.38% | +0.91% ±0.62% |
+| 63 | `governor-expansion-lane` | The other half: the governor under Expansion only. | off | -30 | – | 16.37% | 16.97% | 35,148 | +0.48% ±0.35% | +0.51% ±0.60% |
+| 64 | `priced-tile-purchase` | A border plot is bought only when its priced benefit clears its Gold by a margin. | off | -31 | – | 16.36% | 16.97% | 35,148 | -0.37% ±0.37% | -0.55% ±0.64% |
+| 65 | `barbarian-hunt` | Walk onto a visible, undefended barbarian camp one legal step away — the clear IS the move, so no attack scan ever offers it, and without this a unit ends it… | off | -86 | – | 15.80% | 17.53% | 35,148 | -0.94% ±0.32% | -0.78% ±0.58% |
 
 ## Awaiting native measurement
 
@@ -133,7 +134,6 @@ Genes whose code has left the repository (operator directive: the bottom of the 
 
 | Gene | Wins ±10k (last tracked measurement) | Regime | Win rate (on) | Win rate (off) | Source |
 |---|---:|---|---:|---:|---|
-| `holy-lane-parity` | +63 | native | 17.30% | 16.04% | `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` |
 | `suzerain-cards` | +42 | native | 17.09% | 16.25% | `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` |
 | `wonder-prereq-reach` | +29 | native | 16.96% | 16.38% | `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` |
 | `camp-reach` | +10 | native | 16.77% | 16.56% | `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` |
@@ -154,6 +154,8 @@ Genes whose code has left the repository (operator directive: the bottom of the 
 | `settler-stack-discipline` | -116 | native | 15.51% | 17.83% | `2026-08-20-p4-native-6p-allseats-13446-pairs.json` |
 
 ## Follow-ups
+
+**`holy-lane-parity` came back and was confirmed directly.** It left the code with #2266's bottom ten on a **-27** reading from the four-gene `s6` screen, whose column band is +/-64 -- a null, not a measurement against the gene. P10 was already running when that cull merged (its binary predates it by 1h43m), so it priced the gene after the code was gone: **+63** at z +3.48, past P10's own family-wise bar and the only such reading among the nineteen genes in *Removed from the code*. #2299 restored the code and ran the direct arm the cull never got to: 1,200 map pairs on seeds 110M, every other treatment held at the deployment genome, all 2,400 games complete. It reads **+99 wins/10k, z +4.05, 95% CI [+51, +147]** (`HELPS **`), against a run that resolves +/-68 -- an independent seed window agreeing with P10's independent instrument. Score share is null (+0.08 pp, z +1.23): the gene converts games, it does not accumulate score. The 850 it pays is `(Culture, theater_square)`'s own figure, deliberately an upper bound rather than a tuned value, so a positive result opens the tuning question rather than answering it. Following the P9 precedent this direct screen is a note, not a ledger source, so the row below still reads +63/-27 and the gene is still **off**; entering it would make both columns positive and default it on. See [the confirmation](docs/eval/2026-08-22-holy-lane-parity-direct-confirmation.md).
 
 **Direct follow-up.** This is a ranking screen, not a promotion queue. The subsequent [P9 direct confirmation](docs/eval/2026-08-21-current-genome-settler-guard-direct-confirmation.md) held every other deployment gene fixed and flipped only `settler-guard-holds` across 300 maps / 1,800 treated-seat pairs. It measured exactly **+0.0 pp** on wins and score share; the flag remains unresolved and off. Its +13 row below is retained as historical p7 screen output, not a current recommendation.
 
