@@ -844,6 +844,14 @@ pub fn damage(att: f64, def: f64, rng: &mut Rng) -> i32 {
     (d.round() as i32).clamp(1, 100)
 }
 
+/// [`damage`] with its uniform factor taken at its mean: the blow a
+/// controller should expect without consuming the game RNG or rounding to a
+/// particular roll. Stated here, beside the roll it is the centre of, so the
+/// two cannot drift.
+pub fn expected_damage(att: f64, def: f64) -> f64 {
+    (30.0 * ((att - def) / 25.0).exp()).clamp(1.0, 100.0)
+}
+
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 pub struct GreatWorkPiece {
     pub kind: String,
@@ -998,10 +1006,11 @@ struct VisionFrame {
     visible: Arc<TileBits>,
 }
 
-/// Runtime-only per-seat visibility frames.  A cloned game starts with no
-/// frames: a search branch is allowed to move its sources before its first
-/// read, and copying a parent's bitsets would retain work that belongs to the
-/// parent position.  The cache is deliberately separate from [`VisionCache`],
+/// Runtime-only per-seat visibility frames.  A cloned game inherits its
+/// parent's, because each frame carries the stamp of every input the
+/// derivation reads: a branch that moves its sight sources before its first
+/// read restamps and recomputes, and one that does not would have derived the
+/// same bitset.  The cache is deliberately separate from [`VisionCache`],
 /// whose entries are per-unit ray answers and are merged from worker worlds.
 #[derive(Default)]
 struct VisionFrameCache {
@@ -1014,8 +1023,28 @@ struct VisionFrameCache {
 }
 
 impl Clone for VisionFrameCache {
+    /// A branch inherits its parent's sight frames rather than starting cold.
+    ///
+    /// This is exact by construction, and the reason is the stamp: a frame is
+    /// reused only when `vision_input_stamp_with_suzerains` still matches, and
+    /// that stamp folds every input `player_vision` reads — map geometry, the
+    /// viewer set, and each viewer's units, cities, suzerained city-states and
+    /// spies. A branch that moves a sight source restamps and recomputes; one
+    /// that does not would have derived the bitset it inherited. The fields
+    /// `speculative_clone` changes — `track_fog_memory`, `track_war_ledger`,
+    /// `visibility_suppressed`, `visibility_batch` — are read by neither the
+    /// stamp nor the derivation.
+    ///
+    /// ⚠ Returning `Self::default()` here, as this did, made every speculative
+    /// clone pay a cold cache. The tactical picker scores a candidate by
+    /// cloning and applying, and `do_ranged`/`do_attack`/`do_city_strike` each
+    /// ask `combat_target_visible` — so one full ray-cast per candidate, on a
+    /// world discarded immediately afterwards.
     fn clone(&self) -> Self {
-        Self::default()
+        Self {
+            frames: std::cell::RefCell::new(self.frames.borrow().clone()),
+            map_geometry: std::cell::RefCell::new(*self.map_geometry.borrow()),
+        }
     }
 }
 
@@ -21276,7 +21305,7 @@ impl Game {
     /// asked of a tile the unit is only *considering*. Movement scoring needs
     /// it because line of sight binds at exactly range 2 — adjacent fire is
     /// unconditional and range 3+ lobs — which is precisely where a Field
-    /// Cannon parks. See `AdvancedAi::ranged_tile_is_blind`.
+    /// Cannon parks.
     pub fn line_of_sight_from(&self, from: Pos, to: Pos) -> bool {
         if !self.map.tiles.contains_key(&from) || !self.map.tiles.contains_key(&to) {
             return false;
@@ -30438,73 +30467,6 @@ impl Game {
         out
     }
 
-    /// The construction still standing between this city and a wonder: the
-    /// same building/district checks `wonder_sites` applies before it ever
-    /// looks at ground, reported as what is missing rather than as an empty
-    /// site list. Each inner group is a set of alternatives of which one
-    /// suffices (`requires_any_buildings`); `requires_buildings` and
-    /// `adjacent_district` contribute singleton groups. `None` means no
-    /// amount of construction here can open the wonder — already built
-    /// anywhere, tech/civic locked, host-refused in this city, or waiting on
-    /// a religion. An empty list means construction is not the blocker.
-    pub(crate) fn wonder_missing_prerequisites(
-        &self,
-        cid: u32,
-        wname: &str,
-    ) -> Option<Vec<Vec<Name>>> {
-        let city = &self.cities[&cid];
-        let spec = &self.rules.wonders[wname];
-        if self.wonder_built(wname)
-            || !self.unlocked(city.owner, &spec.tech, &spec.civic)
-            || self.host_unavailable_wonders.contains(&Name::new(wname))
-            || self
-                .blocked_wonders
-                .get(&cid)
-                .is_some_and(|blocked| blocked.contains(&Name::new(wname)))
-            || (spec.founded_religion && self.players[city.owner].religion.is_none())
-            || (spec
-                .effects
-                .get("free_warrior_monks")
-                .copied()
-                .unwrap_or(0.0)
-                > 0.0
-                && self.players[city.owner].religion.is_none()
-                && self.city_religion(city).is_none())
-        {
-            return None;
-        }
-        let mut missing = Vec::new();
-        for required in &spec.requires_buildings {
-            if !self.city_has_building_family(city, *required) {
-                missing.push(vec![*required]);
-            }
-        }
-        if !spec.requires_any_buildings.is_empty()
-            && !spec
-                .requires_any_buildings
-                .iter()
-                .any(|required| self.city_has_building_family(city, *required))
-        {
-            missing.push(spec.requires_any_buildings.clone());
-        }
-        if let Some(required) = &spec.adjacent_district {
-            if required != "city_center" && !self.city_has_district_family(city, *required) {
-                missing.push(vec![*required]);
-            }
-        }
-        Some(missing)
-    }
-
-    /// Whether producing this item is one of the ways to satisfy a wonder
-    /// prerequisite family reported by `wonder_missing_prerequisites`.
-    pub(crate) fn item_satisfies_wonder_prerequisite(&self, item: &Item, family: Name) -> bool {
-        match item {
-            Item::Building { building } => self.building_is_family(*building, family),
-            Item::District { district, .. } => self.district_is_family(*district, family),
-            _ => false,
-        }
-    }
-
     pub fn item_cost(&self, item: &Item) -> f64 {
         self.game_speed.scale(self.base_item_cost(item))
     }
@@ -31303,6 +31265,16 @@ impl Game {
         Self::NATIVE_COMPETITIONS
             .iter()
             .find(|competition| competition.kind == kind)
+    }
+
+    /// The Diplomatic Victory Points this competition's first place pays, or
+    /// zero for a competition CIVVIS does not seat itself.
+    ///
+    /// The table above is the authority on what a competition is worth to the
+    /// diplomatic race; a planner that wants to price those points must not
+    /// carry its own copy of it. See `AdvancedAi::competition_victory_point_value`.
+    pub fn competition_victory_points(kind: &str) -> i64 {
+        Self::native_competition(kind).map_or(0, |spec| spec.diplomatic_victory_points)
     }
 
     /// Seat a competition if one may run and an empire could score in it.
@@ -33784,6 +33756,104 @@ impl Game {
             && self.can_pay_melee_entry(uid, target)
     }
 
+    /// The two strengths `do_attack` resolves a melee blow with, `(attacker,
+    /// defender)`, each already through [`effective_strength`]. `None` when
+    /// either unit is gone.
+    ///
+    /// ★★★★ THIS IS THE ENGINE'S OWN ARITHMETIC, EXPOSED — NOT A COPY OF IT.
+    /// `do_attack` calls it, so a controller that prices a melee exchange
+    /// *before* it happens cannot drift from the exchange the engine will
+    /// actually resolve. That matters here more than for an attack scan,
+    /// because the terms this function carries and a strength-only estimate
+    /// does not — matchup, flanking, the amphibious and river penalties,
+    /// terrain, adjacent support, and fortification — are exactly the ones
+    /// that decide whether standing still beats swinging. See
+    /// `ranged_order_is_legal` for the same argument about the predicates.
+    ///
+    /// Feed both halves to [`expected_damage`] to get the two blows of one
+    /// melee round at the engine's unrandomized centre: the defender takes
+    /// `expected_damage(att, def)` and the attacker takes
+    /// `expected_damage(def, att)`.
+    pub(crate) fn melee_exchange_strengths(&self, uid: u32, did: u32) -> Option<(f64, f64)> {
+        let attacker = self.units.get(&uid)?;
+        let defender = self.units.get(&did)?;
+        let target = defender.pos;
+        let unamphibious = self.promotion_effect(attacker, "amphibious") == 0.0;
+        let mut att_base = self.unit_unembarked_strength(attacker)
+            + self.matchup_bonus(uid, defender, true)
+            + self.flanking_bonus(uid, target)
+            + self.vs_bonus(attacker.owner, defender.owner);
+        if self.is_embarked(attacker) && unamphibious {
+            att_base -= 10.0;
+        }
+        let mut def_base = self.unit_strength(defender, true)
+            + self.matchup_bonus(did, attacker, false)
+            + self.tile_defense_bonus(target)
+            + self.support_bonus(defender)
+            + self.vs_bonus(defender.owner, attacker.owner);
+        if self.crosses_river(attacker.pos, target) && unamphibious {
+            def_base += 5.0;
+        }
+        Some((
+            effective_strength(att_base, attacker.hp),
+            effective_strength(def_base, defender.hp),
+        ))
+    }
+
+    /// The two strengths `do_ranged` resolves a shot with, `(shooter,
+    /// defender)`, each already through [`effective_strength`]. `target` is
+    /// the tile fired at, which is the defender's own tile except for an air
+    /// unit answered on patrol. `None` when either unit is gone.
+    ///
+    /// The companion of [`melee_exchange_strengths`], and the asymmetry
+    /// between them is the whole point: a shot returns *nothing*. There is no
+    /// second blow in `do_ranged` for a controller to price, which is why
+    /// standing under one is a straight loss and standing under a melee
+    /// attack need not be.
+    pub(crate) fn ranged_strike_strengths(
+        &self,
+        uid: u32,
+        did: u32,
+        target: Pos,
+    ) -> Option<(f64, f64)> {
+        let shooter = self.units.get(&uid)?;
+        let defender = self.units.get(&did)?;
+        let spec = &self.rules.units[shooter.kind];
+        let defender_spec = &self.rules.units[defender.kind];
+        let defender_is_sea = defender_spec.domain.as_deref() == Some("sea");
+        let mut att_base = self.unit_ranged_attack_strength(shooter)
+            + self.matchup_bonus(uid, defender, true)
+            + if defender_is_sea {
+                self.promotion_effect(shooter, "ranged_vs_units")
+                    + self.promotion_effect(shooter, "ranged_vs_naval")
+                    + self.promotion_effect(shooter, "siege_vs_naval")
+            } else {
+                self.promotion_effect(shooter, "ranged_vs_land")
+                    + self.promotion_effect(shooter, "ranged_vs_units")
+                    + self.promotion_effect(shooter, "siege_vs_land")
+            }
+            + self.vs_bonus(shooter.owner, defender.owner);
+        if (spec.bombard_strength > 0.0 && !defender_is_sea)
+            || (spec.ranged_strength > 0.0
+                && spec.domain.as_deref() != Some("sea")
+                && defender_is_sea)
+        {
+            att_base -= 17.0;
+        }
+        let def_base = self.unit_strength(defender, true)
+            + self.ranged_defense_bonus(defender, false)
+            + if defender_spec.domain.as_deref() == Some("air") {
+                0.0
+            } else {
+                self.tile_defense_bonus(target)
+            }
+            + self.vs_bonus(defender.owner, shooter.owner);
+        Some((
+            effective_strength(att_base, shooter.hp),
+            effective_strength(def_base, defender.hp),
+        ))
+    }
+
     /// A ranged target must be in current shared vision, and a stealthed unit
     /// on that tile must be detected by at least one of the direct viewers.
     /// Range-three indirect fire ignores terrain along the shooter's ray, but
@@ -35016,25 +35086,15 @@ impl Game {
             let attacker = self.units[&uid].clone();
             self.record_war_unit_participation(&attacker, d.owner);
             self.record_war_unit_participation(&d, attacker.owner);
-            let mut att_base = self.unit_unembarked_strength(&attacker)
-                + self.matchup_bonus(uid, &d, true)
-                + self.flanking_bonus(uid, target)
-                + self.vs_bonus(pid, d.owner);
-            if amphibious && self.promotion_effect(&attacker, "amphibious") == 0.0 {
-                att_base -= 10.0;
-            }
-            let mut def_base = self.unit_strength(&d, true)
-                + self.matchup_bonus(did, &attacker, false)
-                + self.tile_defense_bonus(target)
-                + self.support_bonus(&d)
-                + self.vs_bonus(d.owner, pid);
-            if self.crosses_river(u.pos, target)
-                && self.promotion_effect(&attacker, "amphibious") == 0.0
-            {
-                def_base += 5.0;
-            }
-            let att = effective_strength(att_base, attacker.hp);
-            let ds = effective_strength(def_base, d.hp);
+            // The strengths live in `melee_exchange_strengths` so a controller
+            // can price this exact exchange before choosing to take it. The
+            // unit has been consumed above, but nothing `consume_melee_attack`
+            // touches (attacks, movement, fortification) enters an attacker's
+            // strength, and it does not move the unit — so the shared reading
+            // is the reading this line always had.
+            let (att, ds) = self
+                .melee_exchange_strengths(uid, did)
+                .expect("both combatants exist at the blow");
             let dmg_out = damage(att, ds, &mut self.rng);
             let dmg_in = damage(ds, att, &mut self.rng);
             self.apply_unit_damage(uid, did, dmg_out);
@@ -35385,38 +35445,12 @@ impl Game {
             let downer = defender.owner;
             self.record_war_unit_participation(&attacker, downer);
             self.record_war_unit_participation(&defender, attacker.owner);
-            let defender_spec = &self.rules.units[defender.kind];
-            let mut att_base = self.unit_ranged_attack_strength(&self.units[&uid])
-                + self.matchup_bonus(uid, &defender, true)
-                + if defender_spec.domain.as_deref() == Some("sea") {
-                    self.promotion_effect(&attacker, "ranged_vs_units")
-                        + self.promotion_effect(&attacker, "ranged_vs_naval")
-                        + self.promotion_effect(&attacker, "siege_vs_naval")
-                } else {
-                    self.promotion_effect(&attacker, "ranged_vs_land")
-                        + self.promotion_effect(&attacker, "ranged_vs_units")
-                        + self.promotion_effect(&attacker, "siege_vs_land")
-                }
-                + self.vs_bonus(pid, downer);
-            if (spec.bombard_strength > 0.0 && defender_spec.domain.as_deref() != Some("sea"))
-                || (spec.ranged_strength > 0.0
-                    && spec.domain.as_deref() != Some("sea")
-                    && defender_spec.domain.as_deref() == Some("sea"))
-            {
-                att_base -= 17.0;
-            }
-            let att = effective_strength(att_base, self.units[&uid].hp);
-            let ds = effective_strength(
-                self.unit_strength(&defender, true)
-                    + self.ranged_defense_bonus(&defender, false)
-                    + if defender_spec.domain.as_deref() == Some("air") {
-                        0.0
-                    } else {
-                        self.tile_defense_bonus(target)
-                    }
-                    + self.vs_bonus(downer, pid),
-                defender.hp,
-            );
+            // As in `do_attack`: the strengths are stated once, in
+            // `ranged_strike_strengths`, so a controller deciding whether to
+            // stand under this shot prices the shot the engine will fire.
+            let (att, ds) = self
+                .ranged_strike_strengths(uid, did, target)
+                .expect("both combatants exist at the shot");
             let dmg = damage(att, ds, &mut self.rng);
             self.apply_unit_damage(uid, did, dmg);
             let defender_dead = self.units[&did].hp <= 0;

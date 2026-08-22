@@ -1222,8 +1222,11 @@ fn disturbance(before: &Game, after: &Game, pid: usize) -> f64 {
 /// `docs/TACTICS.md`.
 const FORTIFICATION_FORFEIT: f64 = 40.0;
 
+/// The engine's own curve, re-exported under this module's name so the
+/// prior below and `Game::damage` cannot drift apart. See
+/// [`crate::game::expected_damage`].
 fn expected_damage(attack: f64, defence: f64) -> f64 {
-    (30.0 * ((attack - defence) / 25.0).exp()).clamp(1.0, 100.0)
+    crate::game::expected_damage(attack, defence)
 }
 
 /// Material swing between two positions from `pid`'s point of view.

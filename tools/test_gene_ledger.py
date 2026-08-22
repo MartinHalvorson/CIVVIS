@@ -1,5 +1,6 @@
-"""The gene ledger: verdict rules, source precedence, and the two generated
-files staying together with the recorded sources."""
+"""The gene ledger: the win-column default rule, the verdict rules, source
+precedence, and the two generated files staying together with the recorded
+sources."""
 from __future__ import annotations
 
 import json
@@ -12,16 +13,24 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import gene_ledger  # noqa: E402
 
 
+PLAYERS = 4
+
+
 def analysis(regime: str, genes: list[dict], pairs: int = 1000, family: float = 3.0) -> dict:
+    """One screen. `wins` is the gene's win column in this screen — wins per
+    10,000 games above the 1-in-`PLAYERS` a seat takes by chance — written
+    back as the on-rate the analyzer would have printed."""
     return {
         "kind": "gene_screen_analysis",
         "regime": regime,
         "complete_pairs": pairs,
         "family_wise_z": family,
-        "profile": {"players": 4, "victories": "" if regime == "native" else regime},
+        "profile": {"players": PLAYERS, "victories": "" if regime == "native" else regime},
         "genes": [
             {
                 "tag": g["tag"], "pairs": pairs, "n_on": pairs, "n_off": pairs,
+                "win_on": 1.0 / PLAYERS + g.get("wins", 0) / 10_000,
+                "win_off": 1.0 / PLAYERS,
                 "win_delta_pp": g.get("win", 0.0), "win_z": g.get("wz", 0.0),
                 "share_delta_pp": g.get("share", 0.0), "share_z": g.get("sz", 0.0),
                 "read": "",
@@ -82,8 +91,14 @@ class Merging(unittest.TestCase):
         self.assertEqual(by["b"]["deciding_regime"], "war")
         self.assertEqual(by["c"]["verdict"], "hurts")
         self.assertEqual(by["d"]["verdict"], "hurts")
-        self.assertEqual([g["default_on"] for g in ledger["genes"]], [True, True, False, False])
-        self.assertEqual(ledger["counts"], {"helps": 2, "hurts": 2, "unresolved": 0})
+        self.assertEqual(
+            [g["default_on"] for g in ledger["genes"]], [False, False, False, False],
+            "a verdict no longer turns a gene on: these have no win columns to clear the rule",
+        )
+        self.assertEqual(
+            ledger["counts"],
+            {"helps": 2, "hurts": 2, "unresolved": 0, "default_on": 0},
+        )
 
     def test_a_later_source_overrides_an_earlier_one_per_gene_and_regime(self):
         ledger = self.build([
@@ -127,6 +142,67 @@ class Merging(unittest.TestCase):
     def test_a_war_file_recorded_as_native_is_refused(self):
         with self.assertRaises(SystemExit):
             self.build([("native", analysis("domination,score", [{"tag": "a"}]))])
+
+
+class TheDefaultRule(unittest.TestCase):
+    """Operator directive 2026-08-22: the default is read off the ranking's two
+    win columns — both positive, or an average above +15 with neither below
+    -10 — and nothing else, the verdict included."""
+
+    def on(self, *wins: int) -> bool:
+        """Build a gene screened once per given win column, oldest first."""
+        with tempfile.TemporaryDirectory() as tmp:
+            sources = []
+            for i, w in enumerate(wins):
+                path = Path(tmp) / f"s{i}.json"
+                path.write_text(json.dumps(analysis("native", [{"tag": "g", "wins": w}])))
+                sources.append((path, "native"))
+            ledger = gene_ledger.build_ledger(sources, filter_known=False)
+        gene = ledger["genes"][0]
+        self.assertEqual(gene["wins_last_10k"], wins[-1] if wins else None)
+        self.assertEqual(gene["wins_prior_10k"], wins[-2] if len(wins) > 1 else None)
+        return gene["default_on"]
+
+    def test_two_positive_columns_turn_a_gene_on(self):
+        self.assertTrue(self.on(29, 25))
+        self.assertTrue(self.on(1, 1))
+
+    def test_a_zero_column_is_not_a_positive_one(self):
+        self.assertFalse(self.on(1, 0))
+        self.assertTrue(self.on(0, 39), "an average of 19.5 carries it instead")
+
+    def test_a_strong_average_carries_one_negative_column_down_to_the_floor(self):
+        self.assertTrue(self.on(-10, 48), "average 19, floor exactly met")
+        self.assertFalse(self.on(-11, 50), "a column below -10 is off however good the average")
+        self.assertFalse(self.on(0, 30), "an average of exactly 15 does not clear +15")
+
+    def test_one_bad_reading_sinks_a_gene_the_average_does_not_carry(self):
+        self.assertFalse(self.on(-26, 39), "housing-research: average 6.5")
+        self.assertFalse(self.on(-192, 8), "war-economy: a helps verdict does not save it")
+
+    def test_one_native_reading_is_never_enough(self):
+        self.assertFalse(self.on(48), "no prior column to agree with it")
+        # A gene no screen has measured has no row at all; the rule still
+        # answers for it, and `ledger_default_on` gives the same `false`.
+        self.assertFalse(gene_ledger.default_from_win_columns(None, None))
+
+    def test_only_the_last_two_native_readings_decide(self):
+        self.assertTrue(self.on(-500, 20, 21), "an old bad screen is history, not a veto")
+        self.assertFalse(self.on(20, 21, -500))
+
+    def test_the_war_regime_does_not_supply_a_column(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            native = Path(tmp) / "n.json"
+            native.write_text(json.dumps(analysis("native", [{"tag": "g", "wins": 40}])))
+            war = Path(tmp) / "w.json"
+            war.write_text(json.dumps(
+                analysis("domination,score", [{"tag": "g", "wins": 40, "wz": 3.0}])))
+            ledger = gene_ledger.build_ledger(
+                [(native, "native"), (war, "war")], filter_known=False)
+        gene = ledger["genes"][0]
+        self.assertEqual(gene["verdict"], "helps")
+        self.assertIsNone(gene["wins_prior_10k"], "the war screen is not a native reading")
+        self.assertFalse(gene["default_on"])
 
 
 class KnownTags(unittest.TestCase):
