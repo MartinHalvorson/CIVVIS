@@ -187,12 +187,23 @@ impl AdvancedAi {
     /// (`--victories diplomatic,score`, 120 pairs) the composite read −0.61 pp
     /// of score share at z −2.33 — a screen flag *against* it, while its
     /// neighbour `congress-banks-decided` read +6.7 pp of wins on the same
-    /// games. The plausible mechanism is entirely on the staking side:
-    /// `congress_affordable_votes` empties the treasury behind a ballot and a
-    /// **winning** ballot is not refunded, so a seat still settling pays for a
-    /// resolution it would have named correctly for free. Naming the right
-    /// outcome costs nothing; buying it costs everything the treasury has.
-    /// Two claims, two genes.
+    /// games.
+    ///
+    /// ★★★ **THE SPLIT WAS RIGHT AND THE REASON GIVEN FOR IT WAS WRONG.** The
+    /// argument for splitting was that the harm had to be on the staking
+    /// side: `congress_affordable_votes` empties a treasury that a **winning**
+    /// ballot does not refund, while naming the right outcome costs nothing.
+    /// Priced apart (`docs/VICTORY_GENES.md` §8.5, 570 pairs, ±2.8 pp), the
+    /// stake is the **positive** half in all four windows (+3.7, +4.2, +2.0,
+    /// +1.4) and **this** gene — naming the ballot for the raced lane — is the
+    /// one carrying the negative (−1.9, +0.0, −2.0, −1.8). Nothing is
+    /// resolved either way, so the ordering is a suggestion; but the
+    /// mechanism that motivated the split is not the one the split found.
+    ///
+    /// What the ordering suggests instead is that a seat still settling has
+    /// different interests in a resolution than the diplomat it intends to
+    /// become, and voting as that diplomat costs it the Favor refund a losing
+    /// ballot would have paid.
     pub(super) fn congress_lane(
         &self,
         g: &Game,
