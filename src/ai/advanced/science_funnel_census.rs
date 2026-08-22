@@ -679,7 +679,7 @@ mod envoy_and_deck_probe {
             "international_space_agency",
         ]
         .into_iter()
-        .filter(|card| g.players[0].policies.contains(&Name::new(*card)))
+        .filter(|card| g.players[0].policies.contains(&Name::new(card)))
         .collect();
         // What is actually running, and whether anything could have joined it.
         let running: Vec<String> = g.players[0]

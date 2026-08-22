@@ -4046,6 +4046,30 @@ pub struct AdvancedAi {
     /// both of them, and to `production_value` that citizen looks exactly like
     /// any other.
     ///
+    /// ⚠⚠ MEASURED AND NEGATIVE — the opportunity was real and the gene does
+    /// not convert it. Twelve paired census seeds, conditioned to reach the
+    /// clock:
+    ///
+    /// | arm | Research Lab | Science |
+    /// |---|---:|---:|
+    /// | control | 60 | 3512.0 |
+    /// | `fifteenth-citizen` | 59 | **3437.4** (−2.1%) |
+    /// | `premium + payoff` | **64** | **3647.4** (+3.9%) |
+    /// | those two **+ this** | 64 | 3662.4 (+0.4% over the pair) |
+    ///
+    /// Alone it costs Science; added to the pair that works it adds 0.4%,
+    /// which is noise. The census that motivated it was not wrong — five
+    /// Campus cities really were growing and five citizens short — but buying
+    /// their growth trades away something worth more than the half-card it
+    /// wins, and the citizens still do not arrive before the clock.
+    ///
+    /// Kept, off, with the number on it. **This is the fourth science gene in
+    /// this bundle to price a real, measured opportunity and return nothing**;
+    /// the one mechanism that does convert is pricing a Campus BUILDING by
+    /// what it will actually earn (`science-multiplier-payoff`,
+    /// `research-tier-premium`), which has now replicated on four disjoint
+    /// seed ranges.
+    ///
     /// With this on, a non-wonder building that adds food or housing to a
     /// Campus city **within reach of the gate and still able to grow** is
     /// credited a share of the beakers crossing it would unlock — the share
