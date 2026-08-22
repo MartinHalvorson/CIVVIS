@@ -46,6 +46,31 @@ fn vision_frames_reuse_static_inputs_and_invalidate_on_sight_changes() {
     let again = game.vision_frame(0, &mut game.height_field());
     assert!(Arc::ptr_eq(&first, &again), "a static frame should be reused");
 
+    // A speculative branch inherits the same immutable frame. The stamp is
+    // still the authority: moving a sight source in that branch must replace
+    // the inherited Arc without disturbing the source world's cache.
+    let mut branch = game.speculative_clone();
+    let inherited = branch.vision_frame(0, &mut branch.height_field());
+    assert!(
+        Arc::ptr_eq(&first, &inherited),
+        "an unchanged branch should inherit the populated frame"
+    );
+    branch.relocate(scout, along(&branch, center, 1));
+    let branch_moved = branch.vision_frame(0, &mut branch.height_field());
+    assert!(
+        !Arc::ptr_eq(&first, &branch_moved),
+        "a changed branch must reject the inherited frame"
+    );
+    let branch_uncached = branch.player_vision(&mut branch.height_field(), 0);
+    assert!(
+        branch_moved.as_ref() == &branch_uncached,
+        "a changed branch must recompute the exact uncached frame"
+    );
+    assert!(
+        Arc::ptr_eq(&first, &game.vision_frame(0, &mut game.height_field())),
+        "branch recomputation must not replace the source world's frame"
+    );
+
     // A turn advances remembered-tile timestamps, not the sight ray.
     game.turn += 1;
     let next_turn = game.vision_frame(0, &mut game.height_field());

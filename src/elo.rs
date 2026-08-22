@@ -80,16 +80,12 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "live_without_army_target_weighs_enemy",
     "live_without_peacetime_deterrence",
     "live_without_siege_tracks_wall",
-    "live_without_siege_role",
     "live_without_come_ashore",
-    "live_without_suzerain_cards",
     "live_without_blind_objective_strength",
-    "live_without_muster_at_command_radius",
     "live_without_relief_targets_the_siege",
     "live_without_blind_objective_units",
     "live_without_loyalty_rate_alarm",
     "live_without_housing_districts",
-    "live_without_housing_buildings",
     "live_without_housing_research",
     "live_without_war_economy",
     "live_without_war_reinforcement",
@@ -106,7 +102,6 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "live_without_frontier_loyalty",
     "live_without_garrison_under_fire",
     "live_without_naval_recon",
-    "live_without_recon_flight",
     "live_without_recon_replacement",
     "live_without_religion_sues_peace",
     "live_without_score_horizon",
@@ -121,7 +116,6 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "live_without_whole_turn_backtrack_guard",
     "live_without_step_and_reassess",
     "live_without_strike_opening",
-    "live_without_ranged_needs_line_of_sight",
     "live_without_one_launch_pad",
     "live_without_culture_building_debt",
     "live_without_culture_coverage",
@@ -131,7 +125,6 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "live_without_barbarian_hunt",
     "live_without_barbarian_bargain",
     "live_without_barbarian_ranged_answer",
-    "live_without_camp_reach",
     "live_without_camp_party",
     "live_without_buildings_before_projects",
     "live_without_parallel_settlers",
@@ -145,8 +138,6 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "live_without_settler_site_agreement",
     "live_without_civilian_rescue",
     "live_without_district_building_chain",
-    "live_without_idle_walkers_close_the_pipeline",
-    "live_without_barbarian_walls_one_tier",
     "live_without_settler_guard_holds",
     "live_without_expansion_pantheon",
     "live_without_expansion_hall",
@@ -222,10 +213,8 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "advanced_garrison_loyalty",
     "advanced_settler_first",
     "advanced_holy_priority",
-    "advanced_holy_lane",
     "advanced_holy_v0",
     "advanced_settle_food",
-    "advanced_holy_lane_v0",
     "advanced_roster_live",
     "advanced_roster_live_keep_districts",
     "advanced_diplomatic_opening",
@@ -266,11 +255,6 @@ pub const EVAL_ONLY_AIS: &[&str] = &[
     "advanced_every_lane",
     "advanced_builder_survey",
     "advanced_unit_efficiency",
-    // A wonder's missing prerequisite buildings/districts are credited with a
-    // share of the wonder's own production score, so valued wonders become
-    // reachable instead of never offered. Reserved matrix seed 32000000; one
-    // pre-registered run.
-    "advanced_wonder_reach",
     "advanced_without_unpriced_economy",
     "advanced_without_unpriced_war",
     "advanced_without_city_defence",
@@ -362,15 +346,11 @@ pub const LIVE_BRIDGE_TREATMENTS: &[&str] = &[
     "blind-objective-strength",
     "solvent-faith-army",
     "loyalty-rate-alarm",
-    "ranged-line-of-sight",
     "district-coverage",
     "slot-kind-tiebreak",
-    "siege-role",
     "come-ashore",
     "relief-targets-the-siege",
     "blind-objective-units",
-    "suzerain-cards",
-    "muster-at-command-radius",
     "housing-districts",
     "housing-research",
     "war-economy",
@@ -386,7 +366,6 @@ pub const LIVE_BRIDGE_TREATMENTS: &[&str] = &[
     "stranded-settler-discount",
     "siege-commitment",
     "wonder-ring-settle-value",
-    "housing-buildings",
     "amenity-project-preemption",
     "amenity-district-path",
     "governor-every-lane",
@@ -394,7 +373,6 @@ pub const LIVE_BRIDGE_TREATMENTS: &[&str] = &[
     "expansion-before-prophet",
     "no-elective-war",
     "fog-land-capacity",
-    "recon-flight",
     "score-horizon",
     "one-launch-pad",
     "naval-recon",
@@ -410,7 +388,6 @@ pub const LIVE_BRIDGE_TREATMENTS: &[&str] = &[
     "barbarian-hunt",
     "barbarian-bargain",
     "barbarian-ranged-answer",
-    "camp-reach",
     "camp-party",
     "buildings-before-projects",
     "deny-while-targeted",
@@ -427,8 +404,6 @@ pub const LIVE_BRIDGE_TREATMENTS: &[&str] = &[
     "settler-site-agreement",
     "civilian-rescue",
     "district-building-chain",
-    "idle-walkers-close-the-pipeline",
-    "barbarian-walls-one-tier",
     "settler-guard-holds",
     "expansion-pantheon",
     "expansion-hall",
@@ -617,7 +592,6 @@ pub const FIRAXIS_ONLY_TREATMENTS: &[&str] = &[
 /// The military half of the native repair bundle: force assembly, marching,
 /// siege, threat reading, and the war/peace decision.
 pub const ENGINE_REPAIR_WAR_TREATMENTS: &[&str] = &[
-    "muster-at-command-radius",
     "war-reinforcement",
     "come-ashore",
     "recorded-tactical-step",
@@ -629,7 +603,6 @@ pub const ENGINE_REPAIR_WAR_TREATMENTS: &[&str] = &[
     "peacetime-deterrence",
     "war-economy",
     "bounded-recovery",
-    "siege-role",
     "siege-tracks-wall",
     "siege-commitment",
     "war-patience",
@@ -637,18 +610,14 @@ pub const ENGINE_REPAIR_WAR_TREATMENTS: &[&str] = &[
     "endgame-war-runway",
     "home-defense",
     "garrison-under-fire",
-    "barbarian-walls-one-tier",
     "strike-opening",
-    "ranged-line-of-sight",
     "recon-replacement",
-    "recon-flight",
     "barbarian-scouts-are-scouts",
     "barbarian-hunt",
     "barbarian-bargain",
     "barbarian-ranged-answer",
     "civilian-rescue",
     "naval-recon",
-    "camp-reach",
     "camp-party",
     "religion-sues-peace",
 ];
@@ -659,12 +628,10 @@ pub const ENGINE_REPAIR_ECONOMY_TREATMENTS: &[&str] = &[
     "buildings-before-projects",
     "wonder-ring-settle-value",
     "settler-site-agreement",
-    "idle-walkers-close-the-pipeline",
     "settler-guard-holds",
     "stranded-settler-discount",
     "wide-map-capacity",
     "housing-districts",
-    "housing-buildings",
     "amenity-project-preemption",
     "amenity-district-path",
     "governor-every-lane",
@@ -672,7 +639,6 @@ pub const ENGINE_REPAIR_ECONOMY_TREATMENTS: &[&str] = &[
     "district-coverage",
     "slot-kind-tiebreak",
     "loyalty-rate-alarm",
-    "suzerain-cards",
     "score-horizon",
     "one-launch-pad",
     "settler-target-hysteresis",
@@ -709,7 +675,6 @@ pub const ENGINE_REPAIR_ECONOMY_TREATMENTS: &[&str] = &[
 /// union of the two halves above. `engine_repair_tags_partition_the_bridge`
 /// fails if any of those three relationships stops holding.
 pub const ENGINE_REPAIR_TREATMENTS: &[&str] = &[
-    "muster-at-command-radius",
     "war-reinforcement",
     "come-ashore",
     "recorded-tactical-step",
@@ -721,7 +686,6 @@ pub const ENGINE_REPAIR_TREATMENTS: &[&str] = &[
     "peacetime-deterrence",
     "war-economy",
     "bounded-recovery",
-    "siege-role",
     "siege-tracks-wall",
     "siege-commitment",
     "war-patience",
@@ -729,30 +693,24 @@ pub const ENGINE_REPAIR_TREATMENTS: &[&str] = &[
     "endgame-war-runway",
     "home-defense",
     "garrison-under-fire",
-    "barbarian-walls-one-tier",
     "strike-opening",
-    "ranged-line-of-sight",
     "recon-replacement",
-    "recon-flight",
     "barbarian-scouts-are-scouts",
     "barbarian-hunt",
     "barbarian-bargain",
     "barbarian-ranged-answer",
     "civilian-rescue",
     "naval-recon",
-    "camp-reach",
     "camp-party",
     "religion-sues-peace",
     "escort-unstick",
     "buildings-before-projects",
     "wonder-ring-settle-value",
     "settler-site-agreement",
-    "idle-walkers-close-the-pipeline",
     "settler-guard-holds",
     "stranded-settler-discount",
     "wide-map-capacity",
     "housing-districts",
-    "housing-buildings",
     "amenity-project-preemption",
     "amenity-district-path",
     "governor-every-lane",
@@ -760,7 +718,6 @@ pub const ENGINE_REPAIR_TREATMENTS: &[&str] = &[
     "district-coverage",
     "slot-kind-tiebreak",
     "loyalty-rate-alarm",
-    "suzerain-cards",
     "score-horizon",
     "one-launch-pad",
     "settler-target-hysteresis",
@@ -826,16 +783,12 @@ define_arm_kinds! {
     LiveWithoutArmyTargetWeighsEnemy => "live_without_army_target_weighs_enemy",
     LiveWithoutPeacetimeDeterrence => "live_without_peacetime_deterrence",
     LiveWithoutSiegeTracksWall => "live_without_siege_tracks_wall",
-    LiveWithoutSiegeRole => "live_without_siege_role",
     LiveWithoutComeAshore => "live_without_come_ashore",
-    LiveWithoutSuzerainCards => "live_without_suzerain_cards",
     LiveWithoutBlindObjectiveStrength => "live_without_blind_objective_strength",
-    LiveWithoutMusterAtCommandRadius => "live_without_muster_at_command_radius",
     LiveWithoutReliefTargetsTheSiege => "live_without_relief_targets_the_siege",
     LiveWithoutBlindObjectiveUnits => "live_without_blind_objective_units",
     LiveWithoutLoyaltyRateAlarm => "live_without_loyalty_rate_alarm",
     LiveWithoutHousingDistricts => "live_without_housing_districts",
-    LiveWithoutHousingBuildings => "live_without_housing_buildings",
     LiveWithoutHousingResearch => "live_without_housing_research",
     LiveWithoutWarEconomy => "live_without_war_economy",
     LiveWithoutWarReinforcement => "live_without_war_reinforcement",
@@ -850,7 +803,6 @@ define_arm_kinds! {
     LiveWithoutFrontierLoyalty => "live_without_frontier_loyalty",
     LiveWithoutGarrisonUnderFire => "live_without_garrison_under_fire",
     LiveWithoutNavalRecon => "live_without_naval_recon",
-    LiveWithoutReconFlight => "live_without_recon_flight",
     LiveWithoutReconReplacement => "live_without_recon_replacement",
     LiveWithoutReligionSuesPeace => "live_without_religion_sues_peace",
     LiveWithoutScoreHorizon => "live_without_score_horizon",
@@ -867,7 +819,6 @@ define_arm_kinds! {
     LiveWithoutWholeTurnBacktrackGuard => "live_without_whole_turn_backtrack_guard",
     LiveWithoutStepAndReassess => "live_without_step_and_reassess",
     LiveWithoutStrikeOpening => "live_without_strike_opening",
-    LiveWithoutRangedNeedsLineOfSight => "live_without_ranged_needs_line_of_sight",
     LiveWithoutOneLaunchPad => "live_without_one_launch_pad",
     LiveWithoutCultureBuildingDebt => "live_without_culture_building_debt",
     LiveWithoutCultureCoverage => "live_without_culture_coverage",
@@ -877,7 +828,6 @@ define_arm_kinds! {
     LiveWithoutBarbarianHunt => "live_without_barbarian_hunt",
     LiveWithoutBarbarianBargain => "live_without_barbarian_bargain",
     LiveWithoutBarbarianRangedAnswer => "live_without_barbarian_ranged_answer",
-    LiveWithoutCampReach => "live_without_camp_reach",
     LiveWithoutCampParty => "live_without_camp_party",
     LiveWithoutBuildingsBeforeProjects => "live_without_buildings_before_projects",
     LiveWithoutParallelSettlers => "live_without_parallel_settlers",
@@ -891,8 +841,6 @@ define_arm_kinds! {
     LiveWithoutSettlerSiteAgreement => "live_without_settler_site_agreement",
     LiveWithoutCivilianRescue => "live_without_civilian_rescue",
     LiveWithoutDistrictBuildingChain => "live_without_district_building_chain",
-    LiveWithoutIdleWalkersCloseThePipeline => "live_without_idle_walkers_close_the_pipeline",
-    LiveWithoutBarbarianWallsOneTier => "live_without_barbarian_walls_one_tier",
     LiveWithoutSettlerGuardHolds => "live_without_settler_guard_holds",
     LiveWithoutExpansionPantheon => "live_without_expansion_pantheon",
     LiveWithoutExpansionHall => "live_without_expansion_hall",
@@ -954,10 +902,8 @@ define_arm_kinds! {
     AdvancedSettlerCommit => "advanced_settler_commit",
     AdvancedSettlerFirst => "advanced_settler_first",
     AdvancedHolyPriority => "advanced_holy_priority",
-    AdvancedHolyLane => "advanced_holy_lane",
     AdvancedHolyV0 => "advanced_holy_v0",
     AdvancedSettleFood => "advanced_settle_food",
-    AdvancedHolyLaneV0 => "advanced_holy_lane_v0",
     AdvancedRosterLive => "advanced_roster_live",
     AdvancedRosterLiveKeepDistricts => "advanced_roster_live_keep_districts",
     AdvancedDiplomaticOpening => "advanced_diplomatic_opening",
@@ -987,7 +933,6 @@ define_arm_kinds! {
     AdvancedEveryLane => "advanced_every_lane",
     AdvancedBuilderSurvey => "advanced_builder_survey",
     AdvancedUnitEfficiency => "advanced_unit_efficiency",
-    AdvancedWonderReach => "advanced_wonder_reach",
     AdvancedWithoutUnpricedEconomy => "advanced_without_unpriced_economy",
     AdvancedWithoutUnpricedWar => "advanced_without_unpriced_war",
     AdvancedWithoutCityDefence => "advanced_without_city_defence",
@@ -3072,16 +3017,6 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             w.settle_food = LEAGUE_WINNER_SETTLE_FOOD;
             Box::new(AdvancedAi::with_weights(w))
         }
-        // The second cell of the 2x2 that reads the lane-table null.
-        //
-        // `advanced_holy_lane` against `advanced` left 399 of 400 maps
-        // untouched, but both arms already pay `d_holy` 5.6, so a ceiling
-        // ("BasicAi builds the Holy Site anyway, the lane term is redundant")
-        // and an inert path ("the lane term decides nothing") predict the same
-        // flat result. This arm carries the lane change on the PRE-shipment
-        // weights, so measured against `advanced_holy_v0` it separates them: a
-        // gain here means redundancy, another null means the path itself does
-        // not bind.
         // Everything the roster's winners agree on, restricted to coordinates
         // that can actually reach a decision.
         //
@@ -3533,15 +3468,6 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             ai.enable_fortify_idle_units();
             Box::new(ai)
         }
-        // A wonder blocked only by missing buildings/districts prices those
-        // prerequisites with a share of its own wonder-arm score, so the
-        // build order can walk toward wonders it values instead of waiting
-        // to qualify by accident. Reserved matrix seed 32000000.
-        "advanced_wonder_reach" => {
-            let mut ai = AdvancedAi::new();
-            ai.enable_wonder_prereq_reach();
-            Box::new(ai)
-        }
         // Price the promoted open-water rule by taking it back out. The
         // enqueue path gated on `city_is_coastal`, and a lake is water, so a
         // lakeside city built Galleys that never left the lake: 20 of 53 major
@@ -3642,7 +3568,6 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         "advanced_without_recon_fleet" => {
             let mut ai = AdvancedAi::new();
             ai.disable_recon_replacement();
-            ai.disable_recon_flight();
             ai.disable_naval_recon();
             ai.disable_come_ashore();
             Box::new(ai)
@@ -3686,22 +3611,6 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         "advanced_diplomatic_opening" => {
             let mut ai = AdvancedAi::new();
             ai.diplomatic_opening = true;
-            Box::new(ai)
-        }
-        "advanced_holy_lane_v0" => {
-            let mut w = Weights::default();
-            w.d_holy = PRE_2026_08_10_D_HOLY;
-            let mut ai = AdvancedAi::with_weights(w);
-            ai.holy_lane_parity = true;
-            Box::new(ai)
-        }
-        // Upper bound for the lane-district axis: a Religion empire prices its
-        // own Holy Site the way a Culture empire prices its own Theater Square.
-        // See `AdvancedAi::holy_lane_parity` for why this is a bound and not a
-        // proposal, and why the table it edits has never been measured.
-        "advanced_holy_lane" => {
-            let mut ai = AdvancedAi::new();
-            ai.holy_lane_parity = true;
             Box::new(ai)
         }
         // A high-rated league genome against the genome the repository evolved.
@@ -4553,16 +4462,12 @@ impl ArmKind {
             Self::LiveWithoutArmyTargetWeighsEnemy => live_without("army-target-weighs-enemy"),
             Self::LiveWithoutSiegeTracksWall => live_without("siege-tracks-wall"),
             Self::LiveWithoutBlindObjectiveStrength => live_without("blind-objective-strength"),
-            Self::LiveWithoutSiegeRole => live_without("siege-role"),
             Self::LiveWithoutComeAshore => live_without("come-ashore"),
-            Self::LiveWithoutSuzerainCards => live_without("suzerain-cards"),
             Self::LiveWithoutReliefTargetsTheSiege => live_without("relief-targets-the-siege"),
             Self::LiveWithoutBlindObjectiveUnits => live_without("blind-objective-units"),
-            Self::LiveWithoutMusterAtCommandRadius => live_without("muster-at-command-radius"),
             Self::LiveWithoutSlotKindTiebreak => live_without("slot-kind-tiebreak"),
             Self::LiveWithoutHousingDistricts => live_without("housing-districts"),
             Self::LiveWithoutHousingResearch => live_without("housing-research"),
-            Self::LiveWithoutHousingBuildings => live_without("housing-buildings"),
             Self::LiveWithoutPeacetimeDeterrence => live_without("peacetime-deterrence"),
             Self::LiveWithoutWarEconomy => live_without("war-economy"),
             Self::LiveWithoutWarReinforcement => live_without("war-reinforcement"),
@@ -4577,7 +4482,6 @@ impl ArmKind {
             Self::LiveWithoutFrontierLoyalty => live_without("frontier-loyalty"),
             Self::LiveWithoutGarrisonUnderFire => live_without("garrison-under-fire"),
             Self::LiveWithoutNavalRecon => live_without("naval-recon"),
-            Self::LiveWithoutReconFlight => live_without("recon-flight"),
             Self::LiveWithoutReconReplacement => live_without("recon-replacement"),
             Self::LiveWithoutReligionSuesPeace => live_without("religion-sues-peace"),
             Self::LiveWithoutScoreHorizon => live_without("score-horizon"),
@@ -4592,7 +4496,6 @@ impl ArmKind {
             Self::LiveWithoutWholeTurnBacktrackGuard => live_without("whole-turn-backtrack-guard"),
             Self::LiveWithoutStepAndReassess => live_without("step-and-reassess"),
             Self::LiveWithoutStrikeOpening => live_without("strike-opening"),
-            Self::LiveWithoutRangedNeedsLineOfSight => live_without("ranged-line-of-sight"),
             Self::LiveWithoutOneLaunchPad => live_without("one-launch-pad"),
             Self::LiveWithoutCultureBuildingDebt => live_without("culture-building-debt"),
             Self::LiveWithoutCultureCoverage => live_without("culture-coverage"),
@@ -4604,7 +4507,6 @@ impl ArmKind {
             Self::LiveWithoutBarbarianHunt => live_without("barbarian-hunt"),
             Self::LiveWithoutBarbarianBargain => live_without("barbarian-bargain"),
             Self::LiveWithoutBarbarianRangedAnswer => live_without("barbarian-ranged-answer"),
-            Self::LiveWithoutCampReach => live_without("camp-reach"),
             Self::LiveWithoutCampParty => live_without("camp-party"),
             Self::LiveWithoutBuildingsBeforeProjects => live_without("buildings-before-projects"),
             Self::LiveWithoutParallelSettlers => live_without("parallel-settlers"),
@@ -4618,10 +4520,6 @@ impl ArmKind {
             Self::LiveWithoutSettlerSiteAgreement => live_without("settler-site-agreement"),
             Self::LiveWithoutCivilianRescue => live_without("civilian-rescue"),
             Self::LiveWithoutDistrictBuildingChain => live_without("district-building-chain"),
-            Self::LiveWithoutIdleWalkersCloseThePipeline => {
-                live_without("idle-walkers-close-the-pipeline")
-            }
-            Self::LiveWithoutBarbarianWallsOneTier => live_without("barbarian-walls-one-tier"),
             Self::LiveWithoutSettlerGuardHolds => live_without("settler-guard-holds"),
             Self::LiveWithoutExpansionPantheon => live_without("expansion-pantheon"),
             Self::LiveWithoutExpansionHall => live_without("expansion-hall"),
@@ -4725,10 +4623,8 @@ impl ArmKind {
             Self::AdvancedPlanCityTarget => &["plan-city-target"],
             Self::AdvancedSettlerFirst => &["settler-oracle"],
             Self::AdvancedHolyPriority => &["district-holy-priority"],
-            Self::AdvancedHolyLane => &["lane-holy-parity"],
             Self::AdvancedHolyV0 => &["district-holy-pre-2026-08-10"],
             Self::AdvancedSettleFood => &["settle-site-food-weight"],
-            Self::AdvancedHolyLaneV0 => &["lane-holy-parity", "district-holy-pre-2026-08-10"],
             Self::AdvancedRosterLive => &["roster-winner-live-genes"],
             Self::AdvancedRosterLiveKeepDistricts => &["roster-winner-live-genes-except-districts"],
             Self::AdvancedDiplomaticOpening => &["diplomatic-lane-prospective"],
@@ -4755,17 +4651,11 @@ impl ArmKind {
             Self::AdvancedWithoutAdjacentCampClear => &["adjacent-camp-clear-withheld"],
             Self::AdvancedEngineFaithPrice => &["engine-faith-price"],
             Self::AdvancedMaintenanceDeck => &["maintenance-aware-deck"],
-            Self::AdvancedReconFleet => &[
-                "recon-replacement",
-                "recon-flight",
-                "naval-recon",
-                "come-ashore",
-            ],
+            Self::AdvancedReconFleet => &["recon-replacement", "naval-recon", "come-ashore"],
             Self::AdvancedWithoutReconFleet => &["recon-fleet-withheld"],
             Self::AdvancedEveryLane => &["governor-under-every-lane"],
             Self::AdvancedBuilderSurvey => &["builder-priced-by-survey"],
             Self::AdvancedUnitEfficiency => &["unit-strength-per-cost"],
-            Self::AdvancedWonderReach => &["wonder-prereq-reach"],
             Self::AdvancedWithoutUnpricedEconomy => &["unpriced-economy-half-withheld"],
             Self::AdvancedWithoutUnpricedWar => &["unpriced-war-half-withheld"],
             Self::AdvancedWithoutCityDefence => &["city-defence-quarter-withheld"],
@@ -5244,10 +5134,8 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_measured_dedication" => (vec![genome], "advanced_measured_dedication"),
         "advanced_settler_first" => (Vec::new(), "advanced_settler_first"),
         "advanced_holy_priority" => (Vec::new(), "advanced_holy_priority"),
-        "advanced_holy_lane" => (Vec::new(), "advanced_holy_lane"),
         "advanced_holy_v0" => (Vec::new(), "advanced"),
         "advanced_settle_food" => (Vec::new(), "advanced_settle_food"),
-        "advanced_holy_lane_v0" => (Vec::new(), "advanced_holy_lane_v0"),
         "advanced_roster_live" => (Vec::new(), "advanced_roster_live"),
         "advanced_roster_live_keep_districts" => (Vec::new(), "advanced_roster_live_keep_districts"),
         "advanced_diplomatic_opening" => (Vec::new(), "advanced_diplomatic_opening"),
@@ -5287,7 +5175,6 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_every_lane" => (Vec::new(), "advanced_every_lane"),
         "advanced_builder_survey" => (Vec::new(), "advanced_builder_survey"),
         "advanced_unit_efficiency" => (Vec::new(), "advanced_unit_efficiency"),
-        "advanced_wonder_reach" => (Vec::new(), "advanced_wonder_reach"),
         "advanced_without_unpriced_economy" => (Vec::new(), "advanced_without_unpriced_economy"),
         // Aliases since the 2026-08-14 war-half removal: the flags these
         // withheld no longer ship, so the arms construct the control.
@@ -6786,10 +6673,8 @@ mod tests {
                 "advanced_war_half",
                 "advanced_settler_first",
                 "advanced_holy_priority",
-                "advanced_holy_lane",
                 "advanced_holy_v0",
                 "advanced_settle_food",
-                "advanced_holy_lane_v0",
                 "advanced_roster_live",
                 "advanced_roster_live_keep_districts",
                 "advanced_diplomatic_opening",
@@ -6819,7 +6704,6 @@ mod tests {
                 "advanced_every_lane",
                 "advanced_builder_survey",
                 "advanced_unit_efficiency",
-                "advanced_wonder_reach",
                 "advanced_without_unpriced_economy",
                 "advanced_without_unpriced_war",
                 "advanced_without_city_defence",

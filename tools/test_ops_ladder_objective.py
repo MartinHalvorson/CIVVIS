@@ -191,6 +191,42 @@ class NoOperationalScriptHoldsALaneOfItsOwn(unittest.TestCase):
                 words = [word for word in done.stdout.split("\n") if word]
                 self.assertEqual(words, expected)
 
+    def test_the_installed_supervisor_forwards_live_timeout_budgets_as_words(self):
+        """A slow GUI host can extend both linked watchdog budgets per batch.
+
+        The defaults still belong to ``civ6_civvis_climb.py``; an absent
+        operator knob must therefore add no argument. Values are array words,
+        not a shell fragment, so each number remains one argparse value.
+        """
+        if shutil.which("zsh") is None:
+            self.skipTest("zsh is not installed here")
+        source = (OPS / "civvis-game-supervisor.sh").read_text()
+        start = source.index("PLAY_TIMEOUT=${CIVVIS_PLAY_TIMEOUT:-}")
+        end = source.index("SUP=$LOGS/supervisor.log", start)
+        gate = source[start:end]
+        invocation_start = source.index("python3 -u tools/civ6_civvis_climb.py")
+        invocation_end = source.index("# \"Played a turn\"", invocation_start)
+        self.assertIn('"${TIMEOUT_ARGS[@]}"',
+                      source[invocation_start:invocation_end])
+        script = gate + (
+            '\nfor word in "${TIMEOUT_ARGS[@]}"; do print -r -- "$word"; done\n'
+        )
+        for knobs, expected in (
+            ({}, []),
+            ({"CIVVIS_PLAY_TIMEOUT": "10800"}, ["--timeout", "10800"]),
+            ({"CIVVIS_PLAY_TIMEOUT": "10800",
+              "CIVVIS_PLAY_TIMEOUT_CEILING": "14400"},
+             ["--timeout", "10800", "--timeout-ceiling", "14400"]),
+        ):
+            with self.subTest(knobs=knobs):
+                env = {key: value for key, value in os.environ.items()
+                       if not key.startswith("CIVVIS_")}
+                env.update(knobs)
+                done = subprocess.run(["zsh", "-c", script], env=env,
+                                      capture_output=True, text=True, check=True)
+                words = [word for word in done.stdout.split("\n") if word]
+                self.assertEqual(words, expected)
+
     def test_the_installed_supervisor_forwards_a_named_ledger_force_on_or_file_as_words(self):
         """A force-on arm stays explicit through either approved control path.
 

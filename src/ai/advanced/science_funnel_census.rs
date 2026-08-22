@@ -120,25 +120,28 @@ fn report(label: &str, arms: &[(&str, Chain)]) {
 #[test]
 #[ignore = "census, not an assertion; run explicitly with --nocapture"]
 fn the_research_chain_treated_against_control() {
-    let seeds: Vec<u64> = (0..12).map(|i| 85_000_000 + i).collect();
-    // ⚠ TRIMMED TO THE QUESTION. Round one ran eight arms over four seeds and
-    // spent most of its games on answers it already had: `science-payback-
-    // horizon` lost 3 Research Labs and 166 Science in BOTH rounds, and
-    // `campus-finishes-first` was byte-identical to control in every column.
-    // Neither needs more seeds; the two arms that RAISED terminal Science do.
-    // Four arms at twelve seeds reads them three times as hard for half the
-    // games eight arms at four seeds cost.
+    let seeds: Vec<u64> = (0..12).map(|i| 86_000_000 + i).collect();
+    // ⚠ TRIMMED TO THE QUESTION, ROUND THREE. Twelve seeds settled the two
+    // building-half genes: `science-multiplier-payoff` +25% Research Labs and
+    // +11.9% Science, `research-tier-premium` +20% and +13.5%, both together
+    // +30% and +13.1%. What is unmeasured is `power-the-laboratory`, which
+    // aims at the same rung from the other side — the Lab's `powered_science`
+    // 5 is switched off until something generates power, and nothing in the
+    // controller bought the switch. So: does it help alone, and does it add to
+    // the stack that already works?
     let arms: Vec<Arm> = vec![
         ("control (universe)", |_ai| {}),
-        ("science-multiplier-payoff", |ai| {
-            ai.enable_science_multiplier_payoff()
-        }),
-        ("research-tier-premium", |ai| {
-            ai.enable_research_tier_premium()
+        ("power-the-laboratory", |ai| {
+            ai.enable_power_the_laboratory()
         }),
         ("premium + payoff", |ai| {
             ai.enable_research_tier_premium();
             ai.enable_science_multiplier_payoff();
+        }),
+        ("premium + payoff + power", |ai| {
+            ai.enable_research_tier_premium();
+            ai.enable_science_multiplier_payoff();
+            ai.enable_power_the_laboratory();
         }),
     ];
     let mut totals: Vec<(String, Chain)> = Vec::new();

@@ -170,8 +170,8 @@ tables**, never listed by hand:
   bundle in the host regime is a different instrument (`tools/civ6_treatment_census.py`, the ladder).
 - `civvis::ai::PRODUCTION_TREATMENTS` — what production itself turns on
   (`strategic-wonders`); on in both baselines.
-- `civvis::ai::PRODUCTION_OPT_INS` — off-by-default arms (`wonder-prereq-reach`,
-  `apostle-promotion-by-role`, `joint-tactics`, `arrival-waves`); the gene *on*
+- `civvis::ai::PRODUCTION_OPT_INS` — off-by-default arms
+  (`apostle-promotion-by-role`, `joint-tactics`, …); the gene *on*
   means enabling it. `joint-tactics` is the one `FIRAXIS_ONLY` tag that is not
   host-only at all — `advanced_joint_tactics` is production plus that flag, and
   `docs/TACTICS.md` §6 left its whole-game effect inconclusive — so it is
@@ -207,6 +207,29 @@ progress, and `--append` with a disjoint `--start-seed` grows a run across
 sessions. Genomes are drawn from `(start seed, pair)`, so a run reproduces
 exactly and two seed windows draw disjoint genomes.
 
+The same run now prices the runtime cost of every gene without adding a timer
+to any heuristic and without replaying a game:
+
+- **compute cost** is the on/off percent change in wall seconds per completed
+  turn. It removes a gene's effect on how many turns the game lasts and asks
+  whether each simulated turn itself became dearer.
+- **time cost** is the on/off percent change in whole-game wall seconds. This is
+  the throughput cost an operator pays, including a gene that makes games end
+  earlier or later.
+
+Positive costs are slower and negative costs are faster. The analysis takes the
+log ratio inside each same-map game pair, regresses it on every randomized gene
+at once, and includes an arm-order intercept so machine-load drift cannot ride a
+small chance genome imbalance. An all-seats game has one timing, not six: its
+per-seat gene signs are summed and that timing enters the fit once, making the
+coefficient the incremental cost of enabling the gene for one major. Reported
+uncertainty is one HC1 heteroskedasticity-robust standard error, so long and
+short games need not have the same timing variance. This paired, scale-free fit
+is both more stable than averaging raw seconds and effectively free: `secs`,
+`turn`, and the genomes were already in every JSONL row. Old rows with
+absent/zero timing remain readable and produce an unknown cost rather than a
+false zero.
+
 ## The rows file
 
 The first line is a header (`kind: header`, the gene order, the screened set,
@@ -219,9 +242,10 @@ the profile); every other line is one game:
 ```
 
 Interactions (epistasis), subgroup tables (by seat, victory type, map), and a
-fitted logistic are all re-analyses of these rows and never need a game
-replayed. `--analyze` refuses to merge files written at different profiles or
-gene orders — a merged table would mix two experiments.
+fitted logistic — plus the compute/time cost estimates above — are all
+re-analyses of these rows and never need a game replayed. `--analyze` refuses to
+merge files written at different profiles or gene orders — a merged table would
+mix two experiments.
 
 ## Per-civilization effects — `--by-civ <tag>`
 
@@ -306,17 +330,32 @@ that change how the tool is read:
 ## The gene ledger: the defaults are the best genome, and the best genome is data
 
 Operator directive 2026-08-20: *let the defaults for the genes reflect our best
-genome — only genes that provably help; unhelpful genes can default off — so
-our verification games use our best genome. When we test, still test and try
-to improve the less helpful genes.*
+genome — unhelpful genes can default off — so our verification games use our
+best genome. When we test, still test and try to improve the less helpful
+genes.*
+
+Operator directive 2026-08-22, which is now the rule: *genes can default on if
+both the last 10k and 10k prior columns are positive, or if the average of the
+two columns is >15 and neither is less than −10; otherwise they default off.*
+Those are the two columns `HEURISTIC_GENE_RANKING.md` prints — wins added per
+10,000 games at the gene's measured on-rate, `(win_on − 1/players) × 10,000` —
+from the latest two native screens that priced the gene. A gene with only one
+native reading has no prior column to agree with it, so it is off: one screen
+is never a result. The verdicts below still record what the screens *proved*,
+and the screen still prints them; they no longer decide what ships, so a gene
+can be `helps` and off (its prior reading was against it) or `hurts` and on
+(two positive win columns since). The war regime never enters the default —
+the verification games are the all-six regime.
 
 Until then "on by default" meant somebody had written `self.enable_x()` into
 the bundle, and the phase-1 anchors had measured that all-on bundle at **7.5%
 wins against 27% for all-off** (4p classic, 200 anchor pairs). Now:
 
 - **`docs/gene_ledger.json`** records, per gene, what the screens measured in
-  each regime (`native` = all six lanes, `war` = `domination,score`) and the
-  verdict that follows; **`src/ai/advanced/gene_ledger_table.rs`** is the same
+  each regime (`native` = all six lanes, `war` = `domination,score`), the
+  verdict that follows, the two native win columns (`wins_last_10k`,
+  `wins_prior_10k`) and the `default_on` they decide;
+  **`src/ai/advanced/gene_ledger_table.rs`** is the same
   table generated into Rust. `tools/gene_ledger.py --write --source <analysis>
   --regime <native|war> …` builds both from `gene_screen --analyze --json`
   outputs (the analyses themselves are tracked under `docs/gene_screens/`);
@@ -332,12 +371,19 @@ wins against 27% for all-off** (4p classic, 200 anchor pairs). Now:
   recorded as `family_wise`, not required: with sixty-odd genes that bar would
   leave three on. The **native** regime governs when it resolves; a gene
   unresolved natively takes the **war** verdict when that resolves.
+- **The deployment rule** (`default_from_win_columns` in
+  `tools/gene_ledger.py`, mirrored as `win_columns_default_on` in
+  `src/ai/advanced/gene_ledger.rs`, and re-derived from the generated table by
+  `the_default_follows_the_win_columns`): **on** when both native win columns
+  are positive, or when their average is above +15 with neither below −10;
+  **off** otherwise. Only native screens supply a column, and only the latest
+  two count — an older bad screen is history, not a veto.
 - **The deployment genome.** `AdvancedAi::enable_live_bridge` and
   `enable_engine_repairs` now end with `apply_gene_ledger`: every live or
-  production treatment whose verdict is not `helps` is withheld, every opt-in
-  whose verdict is `helps` is enabled, and a flag no native screen can price
+  production treatment the ledger does not default on is withheld, every
+  opt-in it defaults on is enabled, and a flag no native screen can price
   (the Firaxis-only flags) is left as the bundle set it. A **screenable gene
-  nobody has screened yet is not proven either, and ships off.** The
+  nobody has screened yet, or has screened only once, ships off.** The
   `_universe` twins (`enable_live_bridge_universe`, `enable_engine_repairs_universe`)
   set every flag and skip the ledger — they are what this screen starts from
   (it then sets each gene to its drawn state) and what the membership tests
@@ -371,6 +417,53 @@ wins against 27% for all-off** (4p classic, 200 anchor pairs). Now:
   tool now drops those rows and says so, because the Rust table refuses a tag
   the registry does not know.
 
+- **The default rule replaced the verdict (2026-08-22).** No screen was re-run
+  and no measurement moved; the ledger simply re-decided every default from
+  the two native win columns. **22 genes on, was 20.** On: `religion-sues-peace`
+  (+29/+25), `one-launch-pad` (+24/+23), `whole-turn-backtrack-guard` (+23/+39),
+  `siege-tracks-wall` (+21/+51), `strategic-wonders` (+21/+21), `strike-opening`
+  (+21/+20), `war-patience` (+20/+3), `blind-objective-units` (+4/+6) and
+  `war-reinforcement` (−5/+49, average +22). Off: `founder-temple` (+48/–) and
+  `idle-faith-patronage` (+23/–), each one native screen short of a prior
+  column; `siege-is-progress` (+14/−64), `war-economy` (+8/−192),
+  `amenity-project-preemption` (−4/+33), `army-target-weighs-enemy` (−4/−33)
+  and `joint-tactics` (−4/−18). Note `war-patience`: it ships with a `hurts`
+  verdict, family-wise on the **share** axis at native share z −3.43, because
+  the rule reads the win axis only.
+
+- **Ten more genes left the code (2026-08-21).** A second application of the
+  directive behind the #2235 cull — the bottom of `HEURISTIC_GENE_RANKING.md`
+  leaves the repository — removed `holy-lane-parity`, `camp-reach`,
+  `wonder-prereq-reach`, `ranged-line-of-sight`, `housing-buildings`,
+  `muster-at-command-radius`, `barbarian-walls-one-tier`,
+  `idle-walkers-close-the-pipeline`, `suzerain-cards` and `siege-role`, with
+  their `live_without_*` arms and the `advanced_holy_lane`,
+  `advanced_holy_lane_v0` and `advanced_wonder_reach` arms that set their
+  fields. **Every one was already held off by the ledger**, so the deployment
+  genome is unchanged and every screen's "off" arm is what now ships; what is
+  gone is the ability to turn them on. `holy-lane-parity` and `siege-role`
+  are measured `hurts` at war; the other eight sit inside the ±110/10k noise
+  band on wins and are recorded as directive removals, not measured harms.
+  `recon-flight` followed a day later (#2271) — see below.
+
+- **`recon-flight` leaves production too (2026-08-21).** It was held out of
+  the cull above because `promoted_policy_envoy` turns it on, as one leg of
+  the recon quartet promoted at +35 Elo (#1923). The operator's reading is the
+  right one, and it is this document's own instrument that answers it: a
+  screened gene's arms are drawn on a seat built from `AdvancedAi::new()`, so
+  **every screen already played "production with it" against "production
+  without it"** — 15,000 native seat-pairs and 5,844 war ones, and it read
+  negative on all four axes (native −0.52 pp win / −0.03 pp share, war
+  −0.55 / −0.24) without ever resolving. `docs/eval/README.md`'s rule finishes
+  it: a composite gate licenses the composite, never its parts, and the ledger
+  had already unpicked three of the quartet's four legs for deployment. The
+  **frozen rating anchor is untouched** — `advanced_v1` is `legacy()`, which
+  never routed through `promoted_policy_envoy`, and
+  `advanced_v1_plays_the_same_game_it_always_did` stays green. Against that
+  anchor over the same 60 maps, production reads +47 Elo-equivalent with the
+  flag and **+58 without** — no detectable regression, at a resolution
+  (±102) far too coarse to call it a gain.
+
 - **The operator's view of the same games** is `HEURISTIC_GENE_RANKING.md`
   at the repository root — every screenable gene ranked by wins added per
   10,000 six-player games, each from the latest native screen that measured
@@ -383,7 +476,7 @@ wins against 27% for all-off** (4p classic, 200 anchor pairs). Now:
 ledger already holds off is identical to `live` — the screen is that gene's
 instrument now. And a treatment PR no longer ships its flag on: it ships it
 into the universe, screens it (a few hundred pairs resolve ±3 pp), and the
-ledger turns it on if it helps.
+ledger turns it on when two native screens agree it pays.
 
 ## Prior-weighted screens: the helpful genes play most of the time, and are still priced
 

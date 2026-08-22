@@ -42,7 +42,8 @@ clicking it goes there.
 ### Blocker priority
 
 The order the client resolves blockers in, highest first. It is the order the
-End Turn button announces them, and the order `Enter` walks them.
+End Turn button announces them, and the order `1` — Civ 6's own EndTurn
+key — walks them.
 
 | # | Blocker | Resolved by |
 |---|---------|-------------|
@@ -59,7 +60,7 @@ End Turn button announces them, and the order `Enter` walks them.
 
 Blockers 1–4 and 7–10 are engine-legal actions the client can already resolve;
 5 and 6 arrive with the panels that resolve them, and a blocker is never shown
-before the UI that answers it exists. A blocker is skippable — `Shift`+`Enter`,
+before the UI that answers it exists. A blocker is skippable — `Shift`+`1`,
 or shift-clicking the button, ends the turn regardless — because a rule that
 cannot be overridden becomes a trap the first time a player disagrees with it.
 
@@ -92,8 +93,8 @@ Fortify (`F`) is an engine action and outlives both. The client never invents
 engine state: a skipped unit is simply one the client stops asking about.
 
 Turn start selects the first unit that needs orders and centres the camera on
-it. Spending a unit's last movement point advances to the next one. `Tab`
-cycles manually.
+it. Spending a unit's last movement point advances to the next one. `.` and
+`,` cycle the roster manually, and `N` takes the nearest one still waiting.
 
 ## What the client covers
 
@@ -124,6 +125,97 @@ the action from the UI without a debugger.
 Rows marked "no" or "partial" are the remaining work, in roughly that order of
 value to a player. What is left is a production *queue*, which is an engine
 gap rather than a client one: `do_produce` sets `city.queue = vec![item]`.
+
+## The arrangement
+
+Everything above is about *what* a person can decide. This is about where the
+controls are, which turned out to matter just as much: the client grew up
+around the spectator, so a person who sat down to play met a laboratory. An
+Elo table ran across the top of the map, the arena's stats ran down the right,
+and End Turn was the third control in a column of simulation settings on the
+left. Every decision in the table above was reachable, and almost none of it
+was where a Civilization VI player's hand already goes.
+
+A world with somebody in seat 0 now wears that game's own arrangement. The
+anchors are not remembered; they are read off the installed game's interface
+definitions under `Base/Assets/UI`, and the code says which file each one
+comes from:
+
+| Civ 6 | Its anchor | Here |
+|-------|-----------|------|
+| `TopPanel.xml` | one 29px strip, yields left, turn and menu right | `#civtop` |
+| `LaunchBar.xml` | horizontal, upper left: tech tree, civics tree, Government, Religion, Great People, Great Works | `#launchbar` |
+| `WorldTracker.xml` | under the launch bar: research, then civics | `#worldtracker` |
+| `MinimapPanel.xml` | `Anchor="L,B"` | `.minimap-frame` |
+| `UnitPanel.xml` | `Anchor="R,B" Offset="172,0"` | `#ubar` |
+| `ActionPanel.xml` | `Anchor="R,B"` | `#actionpanel` |
+| `NotificationPanel.xml` | `Anchor="R,B"`, stack growth up | `#notify` |
+
+The switch is one class, `body.playing-solo`, set from the engine's own
+`spectate` flag so it cannot drift from what the server thinks; everything
+else is stylesheet. Nothing in the layer decides anything — every control
+posts exactly the action it posted before, so the rule that no screen
+constructs an action of its own still holds.
+
+Four choices in it are worth their reasons.
+
+**The top strip is this empire's yields, not the standings.** Science and
+Culture carry a rate alone, Faith and Gold a balance with its rate beside it,
+and Tourism appears only once there is some — which is exactly how
+`TopPanel.lua`'s `RefreshYields` divides them, down to `YieldButton_SingleLabel`
+against `YieldButton_DoubleLabel`. Then trade routes against capacity, unspent
+envoys, Diplomatic Favor, and the resources this empire actually controls. The
+turn, the era and its score sit on the right with the Civilopedia and the
+menu, where Civ 6's `RightContents` stack puts them.
+
+**The two trees lead the launch bar, each ringed by its meter.** They are the
+first two hooks in `LaunchBar.xml` and they were the two screens this client
+had no hook for at all: research was a `<select>` in a settings drawer. The
+ring is the fraction of the current study that is done, so a glance at the bar
+answers "how far into this tech am I" without opening anything.
+
+**The rankings are a report, not scenery.** Civilization VI has no permanent
+table of rivals over the map, and neither does a played game here: the
+standings masthead and the arena rail answer the launch bar's ☗ instead. That
+is a class of its own rather than the shared overlay preferences, so a person
+sitting down to play never writes over what a spectator chose to keep on
+screen. The same judgement puts the command deck away on the first played
+world — one menu button brings it back, and once somebody has asked for it
+either way, that answer is kept.
+
+**End Turn says what is blocking it, in Civ 6's words.** The blocker priority
+table above has always been right; what the button said about it was this
+project's own phrasing. It now reads `CHOOSE RESEARCH`, `UNIT NEEDS ORDERS`,
+`CHOOSE PRODUCTION`, `KEEP CITY?` — the `LOC_ACTION_PANEL_*` strings from
+`Base/Assets/Text/en_US/InGameText.xml` — and `NEXT TURN` when nothing is
+waiting. What CIVVIS knows and Civ 6 does not, which city is idle and how many
+units are waiting, goes on a second line rather than displacing the phrase a
+player already recognises. The notification chips keep the longer sentences:
+a rail is read deliberately, and there the specific one is better.
+
+Two smaller corrections came out of the same reading. The selected unit leads
+with its name and the four numbers a player decides on — health, combat
+strength, ranged strength, and the movement left of the movement it has —
+where it used to read `warrior hp 100 · mp 2`, the same facts in the register
+of a debugger. And a city opens on what it can build: the plot market was the
+first group in that column, seventeen cards deep, and pushed Districts and
+Buildings off the bottom of the screen, so the one thing a person opens a city
+to do was the one thing they had to scroll for. It is a fold at the foot of
+the column now, which is where Civ 6 keeps buying land.
+
+A battlefield keeps none of this. An arena has no empire behind it — the
+economy is a fixed grant, nothing is built or worshipped — so the strip keeps
+the turn and the era, which a battle does have, and drops the rest rather than
+printing six zeroes about a civilization that is not there; the world tracker
+and the two tree hooks go with them. It is the same test the standings columns
+already use, `worldStandingsInPlay()`.
+
+Auto-play folds away under the button. It is this project's own addition to
+that corner and a real one — handing your seat to a *named* league strategy is
+most of why a laboratory has a play mode at all — but it is not a thing a
+player reaches for every turn, and Civ 6's corner holds one control. It opens
+by itself while an agent is playing, because the controls that take the seat
+back cannot be the ones folded away.
 
 ## The Empire panel
 
@@ -419,24 +511,32 @@ no viewer, and waits for nothing.
 
 ## Keys
 
-Chosen to match Civ 6 where Civ 6 has an opinion, and to leave the existing
-camera and spectator keys alone.
+The map is Civilization VI's own, read out of that game's `InputSettings.json`
+rather than chosen: `1` ends the turn, `Space` skips a unit, `Z` sleeps it, `V`
+puts it on alert, `F` fortifies it, `B` founds a city, `E` sends it exploring,
+`.` and `,` walk the units that still want orders, `]` and `[` walk the cities,
+`T` and `C` open the trees, `D` opens Quick Deals, and the screens Civ 6 keeps
+on function keys keep them. The lenses run `2` through `0` exactly as they do
+there. [CIV6_KEYBINDINGS.md](CIV6_KEYBINDINGS.md) is the whole table, and the places
+the map cannot be that game's: `A` is Attack there and CIVVIS attacks by
+pointing, so Alert sits on `V` where that game has it; F5, F6, F11 and F12
+belong to the browser; and Tab is how somebody navigating by keyboard reaches
+every control on the page, so the board does not take it.
 
-| Key | Action |
-|-----|--------|
-| `Enter` | Resolve the next blocker, or end the turn |
-| `Shift`+`Enter` | End the turn regardless of blockers |
-| `Space` | Skip the selected unit's turn (or end the turn with nothing selected) |
-| `Z` | Sleep the selected unit |
-| `F` | Fortify the selected unit — with nothing selected, toggle the command deck |
-| `Tab` | Select the next unit needing orders |
-| `Escape` | Clear the selection |
-| Secondary-click a far tile | Travel there over as many turns as it takes |
-| `P` | Civilopedia |
-| `D` | Quick Deals |
-| `A` | Auto-play the selected agent for the selected turns — again to stop |
-| `Y` | Tile yields |
-| `1` `2` `3` | Next unit · appeal lens · tack a marker |
+Two rules the table does not show:
+
+- `1` resolves the next blocker rather than ending the turn, in the priority
+  order above. `Shift`+`1` ends it regardless, because a rule that cannot be
+  overridden becomes a trap the first time a player disagrees with it.
+- Secondary-clicking a tile outside this turn's movement is an order to travel
+  there over as many turns as it takes.
+
+This section used to promise `Enter`, `Space`, `Z`, `Tab`, `P`, `D`, `L` and
+`Y`, and an `A` that meant auto-play. **None of those keys were bound to
+anything**: the client's map had five entries and the ones a player would
+actually reach for were not among them, though every handler behind them
+already existed. They are bound now, and this document and
+`CIV6_KEYBINDINGS.md` describe the same map.
 
 ## Notifications
 

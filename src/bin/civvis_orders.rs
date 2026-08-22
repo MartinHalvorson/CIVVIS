@@ -3055,12 +3055,6 @@ fn decide(
         std::collections::BTreeMap::new();
     let mut skipped_examples: Vec<String> = Vec::new();
     let mut note_bits: Vec<String> = Vec::new();
-    {
-        let blind = civvis::ai::AdvancedAi::blind_tiles_charged();
-        if blind > 0 {
-            note_bits.push(format!("blind_ranged_tiles_charged={blind}"));
-        }
-    }
     // ⚠ Which rule is refusing the army its attacks. 45 of 87 declined attacks
     // on a replay of run `civvis-20260803T005930Z` were the forward model
     // rejecting the action outright rather than judging it bad, 27 of them a
@@ -5692,11 +5686,6 @@ mod tests {
             .expect("the fogged-capacity control arm is registered");
         assert!(!ai.fog_land_capacity, "the named fogged-capacity control must hold it off");
 
-        assert!(ai.recon_flight);
-        withhold_live_treatment(&mut ai, "recon-flight")
-            .expect("the recon-flight control arm is registered");
-        assert!(!ai.recon_flight, "the named recon-flight control must hold it off");
-
         assert!(ai.score_horizon);
         withhold_live_treatment(&mut ai, "score-horizon")
             .expect("the score-horizon control arm is registered");
@@ -5763,11 +5752,6 @@ mod tests {
             !ai.barbarian_scouts_are_scouts,
             "the named barbarian-scout control must hold it off"
         );
-
-        assert!(ai.camp_reach());
-        withhold_live_treatment(&mut ai, "camp-reach")
-            .expect("the camp-reach control arm is registered");
-        assert!(!ai.camp_reach(), "the named camp-reach control must hold it off");
 
         assert!(ai.camp_party());
         withhold_live_treatment(&mut ai, "camp-party")
@@ -5855,7 +5839,7 @@ mod tests {
             "the requested gene is restored in the arm's genome"
         );
         assert!(
-            !ai.war_patience,
+            !ai.war_economy,
             "a neighbouring held gene stays off until the experiment names it"
         );
 
