@@ -194,3 +194,89 @@ fn the_research_chain_treated_against_control() {
             .collect::<Vec<_>>(),
     );
 }
+
+#[cfg(test)]
+mod power_probe {
+    use super::*;
+    /// Does the decision a gene prices ever actually ARISE?
+    ///
+    /// ★★★★★ THE CHECK THAT WOULD HAVE SAVED TWO GENES. `campus-finishes-first`
+    /// and `power-the-laboratory` both came back byte-identical to control —
+    /// the second over TWELVE seeds — and in both cases the code was correct,
+    /// wired, and reachable. What was missing was a board where the choice it
+    /// changes is ever offered.
+    ///
+    /// For the power gene this probe answers it in one game: **10 cities, 4
+    /// with an Industrial Zone, 4 drawing power, 3 ALREADY HOLDING A PLANT,
+    /// and exactly ONE left dark.** The empire builds its power plants for
+    /// reasons that have nothing to do with beakers — a Factory and a plant
+    /// are production — so the Research Lab's `powered_science` 5 is switched
+    /// on nearly everywhere already, and a gene that pays for the switch has
+    /// almost nothing left to buy. The premise was right and the opportunity
+    /// is not there.
+    ///
+    /// Run this BEFORE spending census games on a gene, not after.
+    #[test]
+    #[ignore = "probe"]
+    fn does_the_empire_ever_face_the_power_decision() {
+        let mut g = Game::new(6, 60, 38, 86_000_000, 250, 6);
+        g.game_speed = GameSpeed::Online;
+        g.victory_conditions =
+            crate::game::VictoryConditions::parse("science,culture,domination,score").unwrap();
+        let mut me = AdvancedAi::new();
+        me.enable_engine_repairs_universe();
+        me.enable_power_the_laboratory();
+        let mut others = AdvancedAi::fleet(&g);
+        while g.winner.is_none() && g.turn <= 250 {
+            let pid = g.current;
+            if pid == 0 {
+                me.take_turn(&mut g, pid);
+            } else {
+                others[pid].take_turn(&mut g, pid);
+            }
+            if g.winner.is_none() && g.current == pid {
+                let _ = g.apply(pid, &Action::EndTurn);
+            }
+        }
+        let cities = g.player_city_ids(0);
+        let plants = ["coal_power_plant", "oil_power_plant", "nuclear_power_plant"];
+        let mut industrial = 0;
+        let mut dark = 0;
+        let mut demanding = 0;
+        let mut holds_plant = 0;
+        let mut plant_producible = 0;
+        for cid in &cities {
+            let city = &g.cities[cid];
+            if g.city_has_district_family(city, crate::name!("industrial_zone")) {
+                industrial += 1;
+            }
+            if g.city_power_demand(city) > 0.0 {
+                demanding += 1;
+            }
+            if !g.city_is_powered(city) {
+                dark += 1;
+            }
+            for plant in plants {
+                if city.buildings.contains(&Name::new(plant)) {
+                    holds_plant += 1;
+                }
+                if g.can_produce(
+                    0,
+                    *cid,
+                    &crate::game::Item::Building {
+                        building: Name::new(plant),
+                    },
+                ) {
+                    plant_producible += 1;
+                }
+            }
+        }
+        println!(
+            "POWER cities={} industrial_zone={industrial} demanding_power={demanding} \
+             dark={dark} holds_plant={holds_plant} plant_producible_now={plant_producible} \
+             techs={}",
+            cities.len(),
+            g.players[0].techs.len()
+        );
+    }
+}

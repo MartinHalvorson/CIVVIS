@@ -3943,6 +3943,19 @@ pub struct AdvancedAi {
     /// but a Research Lab is the largest of them and the era it lands in is
     /// the one this bundle is about.
     ///
+    /// ⚠⚠ MEASURED AND NEARLY IRRELEVANT — THE PREMISE IS RIGHT AND THE
+    /// OPPORTUNITY IS NOT THERE. Over twelve conditioned census games this gene
+    /// was **byte-identical to control** on every column. The reason is not
+    /// the code: `science_funnel_census`'s power probe counts, in one game,
+    /// **10 cities, 4 with an Industrial Zone, 4 drawing power, 3 ALREADY
+    /// HOLDING A PLANT and exactly ONE left dark.** The empire builds its power
+    /// plants for reasons that have nothing to do with beakers — a Factory and
+    /// a plant are production — so the Lab's `powered_science` is switched on
+    /// nearly everywhere already and there is almost nothing left for this to
+    /// buy. Kept, off, because the reasoning is sound and a regime that
+    /// industrialises less would face the choice; **do not spend games on it
+    /// without checking the probe first.**
+    ///
     /// With this on, a building that generates power is credited the
     /// `powered_*` yields the buildings THIS CITY ALREADY HOLDS would begin to
     /// pay, valued through `yield_value` at the same 42 a point as any other
