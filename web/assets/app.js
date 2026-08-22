@@ -9346,8 +9346,40 @@ function drawNaturalWonderPerimeters(tiles) {
 // then a square — so the count reads from silhouette before a player has to
 // inspect it. Five signs would obscure the tile, so five-or-more becomes one
 // deliberately larger, numbered sign instead.
-// Keep Civ's familiar yield colour families, but turn up their chroma so the
-// strategic layer reads immediately against terrain, fog, and ownership paint.
+// The signs themselves are the base game's own. tools/civ6_yield_icons.py cuts
+// them from the very texture the plate geometry was measured against, so a
+// spectator's Food is the Civilization VI corn rather than a wheat ellipse
+// somebody drew to stand in for it. Each cell is one finished circular icon --
+// the colour and the object are a single piece of art -- which is why nothing
+// below paints a disc underneath one.
+const CIV6_YIELD_ICON_KINDS = ["food", "production", "gold",
+                               "science", "culture", "faith"];
+const CIV6_YIELD_ICON_INDEX = new Map(
+  CIV6_YIELD_ICON_KINDS.map((kind, index) => [kind, index]));
+const CIV6_YIELD_ICON_CELL = 80;
+const CIV6_YIELD_ICON_ATLAS = new Image();
+let CIV6_YIELD_ICON_ATLAS_READY = false;
+CIV6_YIELD_ICON_ATLAS.onload = () => {
+  CIV6_YIELD_ICON_ATLAS_READY = true;
+  if (state) { draw(); drawMini(); }
+};
+CIV6_YIELD_ICON_ATLAS.src = "/assets/civ6-yield-icons.png";
+function civ6YieldIconReady(kind) {
+  return CIV6_YIELD_ICON_ATLAS_READY && CIV6_YIELD_ICON_INDEX.has(kind);
+}
+// Firaxis authors every sign at one size, so one radius covers the sheet: the
+// generator cuts each disc at the widest of the six and centres it in the cell.
+function drawCiv6YieldIcon(kind, x, y, r) {
+  cx.drawImage(CIV6_YIELD_ICON_ATLAS,
+               CIV6_YIELD_ICON_INDEX.get(kind) * CIV6_YIELD_ICON_CELL, 0,
+               CIV6_YIELD_ICON_CELL, CIV6_YIELD_ICON_CELL,
+               x - r, y - r, r * 2, r * 2);
+}
+// The drawn signs below stand in for the first frame, and for an atlas the
+// browser could not fetch: a coloured disc under a white pictograph, which is
+// what the strategic layer looked like before the base game's own icons could
+// be cut. Keep Civ's familiar yield colour families, with the chroma turned up
+// so they read against terrain, fog, and ownership paint.
 const YPIP = { food:"#69e64f", production:"#ff8b3d", gold:"#ffda3b",
                science:"#36cfff", culture:"#ca74ff", faith:"#f6e5a8" };
 const YINK = { food:"#f3fbef", production:"#fff4e6", gold:"#553a08",
@@ -9407,10 +9439,16 @@ function tileYieldMarkers(yields) {
     .filter(({pips}) => pips.length)
     .map(({kind, amount, pips}) => {
       const value = fmtYield(amount);
+      // `--tip-yield-cell` picks this kind's icon out of the same sheet the map
+      // draws from; `--tip-yield-fill` stays behind it as the coloured disc the
+      // signs used to be, so a tooltip that cannot fetch the sheet still counts.
+      // The ink that used to rim a marker went with the drawn pictograph it was
+      // rimming — the icon carries its own edge.
+      const cell = CIV6_YIELD_ICON_INDEX.get(kind) ?? 0;
       return `<span class="tip-yield-group" title="${value} ${kind}" aria-label="${value} ${kind}">` +
         pips.map(({portion}) =>
           `<span class="tip-yield-marker" aria-hidden="true" ` +
-          `style="--tip-yield-fill:${YPIP[kind]};--tip-yield-ink:${YINK[kind]};` +
+          `style="--tip-yield-fill:${YPIP[kind]};--tip-yield-cell:${cell};` +
           `--tip-yield-portion:${Math.round(portion * 100)}%"></span>`
         ).join("") + `</span>`;
     }).join("");
@@ -9522,11 +9560,12 @@ function strategicYieldCenterY(y) {
   return tileTop + tileHeight * STRATEGIC_YIELD_CENTER_FRACTION;
 }
 
-// The tiny signs borrow Civ's familiar six silhouettes rather than browser
-// emoji, whose colour-font rendering would turn a strategic layer into a row
-// of inconsistent stickers.  Colour remains the fast first cue; the white
-// wheat, gear, coin, flask, rosette, and star make the marks survive a quick
-// scan or a colour-imperfect display.
+// The stand-in pictographs, drawn on the coloured disc above when the base
+// game's own sheet is not there to be drawn instead.  They borrow Civ's six
+// silhouettes rather than browser emoji, whose colour-font rendering would
+// turn a strategic layer into a row of inconsistent stickers: the white wheat,
+// gear, coin, flask, rosette, and star make the marks survive a quick scan or
+// a colour-imperfect display for as long as they are what is on screen.
 function drawYieldPipGlyph(kind, x, y, r) {
   const fill = YPIP[kind] || "#cccccc";
   const ink = YINK[kind] || "#ffffff";
@@ -9661,25 +9700,49 @@ function drawYieldPlate(signs, dx, dy, worked) {
 }
 
 // A sign standing on the plate needs no rim and no shadow of its own — the
-// plate is the separation. What is left is the coloured disc and the glyph
-// that names its kind.
-function drawYieldPip(kind, x, y, r, portion, label = "") {
-  const fill = YPIP[kind] || "#cccccc";
-  const fraction = Math.max(.05, Math.min(1, portion));
-  const isSummary = !!label;
-  cx.save();
-  // The disc itself, clipped so a fractional sign fills from the bottom up.
+// plate is the separation. What is left is the base game's icon, and, until
+// the sheet carrying it has loaded, the drawn disc that used to stand for it.
+function drawYieldSign(kind, x, y, r, fraction) {
+  // A whole sign is simply the base game's icon. A fractional one is that same
+  // icon twice — a dimmed ghost of all of it, then the earned part painted
+  // over the top — so half a point reads as one sign half-earned rather than
+  // as half a mark on the plate.
+  if (civ6YieldIconReady(kind)) {
+    if (fraction >= 1) { drawCiv6YieldIcon(kind, x, y, r); return; }
+    cx.save();
+    cx.globalAlpha *= .26;
+    drawCiv6YieldIcon(kind, x, y, r);
+    cx.restore();
+    cx.save();
+    cx.beginPath();
+    cx.rect(x - r, y + r - r * 2 * fraction, r * 2, r * 2 * fraction);
+    cx.clip();
+    drawCiv6YieldIcon(kind, x, y, r);
+    cx.restore();
+    return;
+  }
   cx.save();
   cx.beginPath(); cx.arc(x, y, r, 0, 7); cx.clip();
-  // The unearned part of a fractional sign stays a dimmed disc, so half a
-  // point still reads as one sign rather than as half a mark on the plate.
   if (fraction < 1) {
     cx.fillStyle = "rgba(228,242,234,.13)";
     cx.fillRect(x - r, y - r, r * 2, r * 2);
   }
-  cx.fillStyle = fill;
+  cx.fillStyle = YPIP[kind] || "#cccccc";
   cx.fillRect(x - r, y + r - r * 2 * fraction, r * 2, r * 2 * fraction);
   cx.restore();
+  if (fraction >= .35) {
+    cx.save();
+    cx.globalAlpha *= .4 + fraction * .6;
+    drawYieldPipGlyph(kind, x, y, r);
+    cx.restore();
+  }
+}
+
+function drawYieldPip(kind, x, y, r, portion, label = "") {
+  const fraction = Math.max(.05, Math.min(1, portion));
+  const isSummary = !!label;
+  cx.save();
+  drawYieldSign(kind, x, y, r, fraction);
   if (isSummary) {
     // The count is painted over the larger sign, with a dark keyline so it
     // remains readable on every yield colour and over a bright terrain tile.
@@ -9693,9 +9756,6 @@ function drawYieldPip(kind, x, y, r, portion, label = "") {
     cx.strokeText(label, x, y + r * .04);
     cx.fillText(label, x, y + r * .04);
     cx.restore();
-  } else if (fraction >= .35) {
-    cx.globalAlpha *= .4 + fraction * .6;
-    drawYieldPipGlyph(kind, x, y, r);
   }
   cx.restore();
 }
@@ -12644,27 +12704,89 @@ function strategicResourceUnitPlacement(tile, placement, hexInradius) {
     r: placement.r * RESOURCE_UNIT_CLEARANCE_SCALE,
   };
 }
-// Every command token is the same circle. The civilian capsule was a second
-// counter shape sitting among the military circles at the same moment the
-// icons inside them were a second counter size, and between them the map read
-// as if it were mixing two marker sets. The owner's colour and the unit's own
-// silhouette already say what is standing on the tile.
-function strategicUnitTokenPath(x, y, r) {
+// Two counter shapes, and they are the base game's two: a circle for anything
+// that can fight, and Civilization VI's rounded triangle, point down at the
+// tile it stands on, for everything that cannot. The retired civilian capsule
+// was a shape of the viewer's own invention, which is why it read as a second
+// marker set rather than as the same set saying "this one is not an army".
+//
+// Built the way the base game builds a rounded triangle -- and the way this
+// file already builds the three-count yield plate: the hull of three discs at
+// the corners, so `cx.arc` draws each corner and the straight side into it in
+// one call. The corner radius is a share of the seat the counter is given, and
+// the vertices take the rest, so the painted triangle stands exactly inside
+// the circle a fighting unit would have used and can never crowd its hex.
+const CIVILIAN_TOKEN_CORNER = .30;
+const CIVILIAN_TOKEN_VERTEX = 1 - CIVILIAN_TOKEN_CORNER;
+function strategicUnitTokenPath(x, y, r, civilian = false) {
   cx.beginPath();
-  cx.arc(x, y, r, 0, 7);
+  if (!civilian) { cx.arc(x, y, r, 0, 7); return; }
+  const corner = r * CIVILIAN_TOKEN_CORNER, vertex = r * CIVILIAN_TOKEN_VERTEX;
+  for (let at = 0; at < 3; at++) {
+    // The first vertex is straight down, so the point hangs off the unit the
+    // way the game's own flags do.
+    const out = Math.PI / 2 + at * 2 * Math.PI / 3;
+    cx.arc(x + Math.cos(out) * vertex, y + Math.sin(out) * vertex, corner,
+           out - Math.PI / 3, out + Math.PI / 3);
+  }
+  cx.closePath();
+}
+// How wide the counter is, `dy` below its centre. A circle is its own answer;
+// the triangle narrows toward its point at exactly the rate its sides do, plus
+// the corner radius the offset gives every side.
+function strategicUnitCounterHalfWidth(r, dy, civilian) {
+  if (!civilian) return Math.sqrt(Math.max(0, r * r - dy * dy));
+  const corner = r * CIVILIAN_TOKEN_CORNER, vertex = r * CIVILIAN_TOKEN_VERTEX;
+  return Math.max(0, (vertex - dy) / Math.sqrt(3) + corner * 2 / Math.sqrt(3));
+}
+// One rule for every counter, on every surface, at every zoom: its glyph is
+// drawn on the largest square the counter's own outline can hold, filling this
+// share of it. The old zoom curve existed to spend each atlas cell's authored
+// margin as the camera closed in, and it could only do that because the margin
+// was there to spend -- the same accident that made the icons uneven.
+// `drawUnitPictogram` measures that margin away once, so an icon simply keeps
+// its proportion of its counter and the counter keeps its proportion of the
+// hex. Sized a little under what the widest silhouettes used to reach, which
+// is what was overflowing the token.
+//
+// A circle holds r*sqrt(2) across its middle. A triangle standing in the same
+// seat hangs its square from the flat side -- solving `s/2 = (vertex - top - s
+// + 2*corner) / sqrt(3)` -- and that square is about four fifths as wide,
+// seated a little above centre. Which is the proportion the base game draws
+// too: its civilian flag carries a visibly smaller icon than its military one,
+// because a triangle has less room than a banner, not because anybody chose a
+// second size for it.
+const COMMAND_UNIT_ICON_SHARE = .66;
+function strategicUnitGlyphSeat(x, y, r, civilian = false) {
+  if (!civilian) return {x, y, size:r * 2 * COMMAND_UNIT_ICON_SHARE};
+  const corner = r * CIVILIAN_TOKEN_CORNER, vertex = r * CIVILIAN_TOKEN_VERTEX;
+  const top = -vertex / 2 - corner;
+  const side = Math.min((vertex - top + corner * 2) / (1 + Math.sqrt(3) / 2),
+                        vertex * Math.sqrt(3));
+  return {
+    x,
+    y: y + top + side / 2,
+    size: side * COMMAND_UNIT_ICON_SHARE * 2 / Math.SQRT2,
+  };
 }
 // Damage is exceptional state, so a healthy unit keeps its clean command token.
 // When damage exists, its bar is part of the token rather than a floating map
-// label. Its largest corner is still inside the token's enclosing circle, so
-// the same inradius calculation that contains the unit contains its health.
-function drawStrategicUnitHealth(x, y, r, hp, now) {
+// label, and it is only ever as wide as the counter is at the line it sits on.
+// A circle is at its widest across the middle and never binds; a triangle is
+// narrowing toward its point there, so a plundered Trader's bar tightens into
+// the shape instead of hanging out over the tile.
+function drawStrategicUnitHealth(x, y, r, hp, now, civilian = false) {
   if (!Number.isFinite(hp)) return;
   const health = Math.max(0, Math.min(100, Math.round(hp)));
   if (!(r > 0) || health >= 100) return;
   cx.save();
   const frac = health / 100;
-  const bw = r * 1.28, bh = r * 0.4, frame = r * 0.05;
+  const bh = r * 0.4, frame = r * 0.05;
   const by = y + r * 0.24 - bh / 2;
+  // Measured at the bar's lower edge, which is the line the counter is
+  // narrowest across, and inset by the frame drawn around it.
+  const room = strategicUnitCounterHalfWidth(r, by + bh + frame - y, civilian);
+  const bw = Math.min(r * 1.28, Math.max(0, room - frame) * 2);
   const color = frac > 0.5 ? "#4fd45c" : (frac > 0.25 ? "#f0b429" : "#f04f3f");
   cx.fillStyle = "#10151dd8";
   cx.beginPath(); cx.roundRect(x - bw / 2 - frame, by - frame,
@@ -12688,16 +12810,6 @@ function drawStrategicUnitHealth(x, y, r, hp, now) {
   }
   cx.restore();
 }
-// One silhouette size for every unit, on every surface, at every zoom: the
-// glyph spans this share of its token's diameter. The old zoom curve existed
-// to spend each cell's authored margin as the camera closed in, and it could
-// only do that because the margin was there to spend -- which is the same
-// accident that made the icons uneven. `drawUnitPictogram` now measures that
-// margin away once, so an icon simply keeps its proportion of its token and
-// the token keeps its proportion of the hex. Sized a little under what the
-// widest silhouettes used to reach, which is what was overflowing the token.
-const COMMAND_UNIT_ICON_SHARE = .66;
-
 // Civ 6 hangs a small flag off each unit carrying its icon, because a drawn
 // figure at map scale reads as "somebody's soldier" and nothing more. Same
 // badge glyph the production medallion uses, so a unit looks the same coming
@@ -20326,11 +20438,13 @@ function drawPlanetMap() {
     cx.lineWidth = outline;
     const commandTokenClip = !stack.stacked;
     if (commandTokenClip) { cx.save(); planetPath(cx, cell.points); cx.clip(); }
-    strategicUnitTokenPath(ux, uy, r);
+    const civilian = CIVILIAN_UNITS.has(unit.type);
+    strategicUnitTokenPath(ux, uy, r, civilian);
     cx.fill(); cx.stroke();
-    drawUnitPictogram(unit.type, ux, uy,
-                      r * 2 * COMMAND_UNIT_ICON_SHARE, tokenInk);
-    if (unitHasHealth(unit)) drawStrategicUnitHealth(ux, uy, r, unit.hp, now);
+    const seat = strategicUnitGlyphSeat(ux, uy, r, civilian);
+    drawUnitPictogram(unit.type, seat.x, seat.y, seat.size, tokenInk);
+    if (unitHasHealth(unit))
+      drawStrategicUnitHealth(ux, uy, r, unit.hp, now, civilian);
     if (commandTokenClip) cx.restore();
     cx.restore();
   }
@@ -21234,8 +21348,10 @@ function drawScene() {
         // The exhaustive base-game table keeps every district's queue glyph in
         // the same exact color as its map counter.
         if (it.unit) {
-          drawUnitPictogram(it.unit, mx, my,
-                            mr * 2 * COMMAND_UNIT_ICON_SHARE, "#f0ead8");
+          // The medallion is a ring, so it seats its glyph the way a round
+          // counter does whatever is being built inside it.
+          const seat = strategicUnitGlyphSeat(mx, my, mr);
+          drawUnitPictogram(it.unit, seat.x, seat.y, seat.size, "#f0ead8");
         } else if (it.wonder) {
           drawWorldWonderIcon(it.wonder, mx, my + mr * .18, mr / 29);
         } else {
@@ -21354,19 +21470,21 @@ function drawScene() {
     // Spent units recede so the ones that can still act carry the eye.
     cx.globalAlpha = unitAlpha *
       ((u.moves_left !== undefined && u.moves_left <= 0) ? 0.62 : 1);
+    const civilian = CIVILIAN_UNITS.has(u.type);
     cx.save();
     cx.fillStyle = pcol(u.owner);
-    strategicUnitTokenPath(x, y, rr);
+    strategicUnitTokenPath(x, y, rr, civilian);
     cx.fill();
     cx.restore();
     const tokenInk = unitTokenInk(u.owner);
     cx.strokeStyle = u.fortified ? "#f4f8ff" : tokenInk;
     cx.lineWidth = tokenOutline;
-    strategicUnitTokenPath(x, y, rr);
+    strategicUnitTokenPath(x, y, rr, civilian);
     cx.stroke();
-    drawUnitPictogram(u.type, x, y, rr * 2 * COMMAND_UNIT_ICON_SHARE, tokenInk);
+    const seat = strategicUnitGlyphSeat(x, y, rr, civilian);
+    drawUnitPictogram(u.type, seat.x, seat.y, seat.size, tokenInk);
     cx.globalAlpha = unitAlpha;
-    if (unitHasHealth(u)) drawStrategicUnitHealth(x, y, rr, u.hp, now);
+    if (unitHasHealth(u)) drawStrategicUnitHealth(x, y, rr, u.hp, now, civilian);
     if (u.level > 1) {
       const count = u.level - 1;
       const pipRadius = Math.min(2, rr * .12);
@@ -21388,9 +21506,10 @@ function drawScene() {
       cx.strokeStyle = "#f0c674"; cx.lineWidth = 2.4;
       cx.setLineDash([5, 4]);
       // The strategic selection cue lives inside its token rather than adding
-      // another ring outside the stack footprint at survey zoom.
-      const selectionRadius = Math.max(0, rr - 1.2);
-      cx.beginPath(); cx.arc(x, y, selectionRadius, 0, 7); cx.stroke();
+      // another ring outside the stack footprint at survey zoom, and it is the
+      // token's own outline so a selected Settler is ringed as a triangle.
+      strategicUnitTokenPath(x, y, Math.max(0, rr - 1.2), civilian);
+      cx.stroke();
       cx.setLineDash([]);
     }
     cx.globalAlpha = 1;
@@ -21411,10 +21530,11 @@ function drawScene() {
     cx.fillStyle = pcol(d.owner);
     cx.strokeStyle = tokenInk;
     cx.lineWidth = 1.6;
-    strategicUnitTokenPath(d.x, d.y, r);
+    const civilian = CIVILIAN_UNITS.has(d.type);
+    strategicUnitTokenPath(d.x, d.y, r, civilian);
     cx.fill(); cx.stroke();
-    drawUnitPictogram(d.type, d.x, d.y,
-                      r * 2 * COMMAND_UNIT_ICON_SHARE, tokenInk);
+    const seat = strategicUnitGlyphSeat(d.x, d.y, r, civilian);
+    drawUnitPictogram(d.type, seat.x, seat.y, seat.size, tokenInk);
     cx.restore();
     cx.globalAlpha = 1;
   }
