@@ -20603,6 +20603,24 @@ fn settler_threat_detour_is_an_off_by_default_native_gene() {
     assert!(!ai.settler_threat_detour);
 }
 
+/// `one_shot_recovery` lives on `BasicAi`, which is where `healing_step`
+/// reads it, so the registry row has to reach through the controller's base.
+/// The behaviour itself is tested in `src/ai.rs`; this is the wiring.
+#[test]
+fn one_shot_recovery_is_an_off_by_default_native_gene() {
+    assert!(!AdvancedAi::new().base.one_shot_recovery);
+    assert!(!AdvancedAi::legacy().base.one_shot_recovery);
+    let (_, _, enable) = PRODUCTION_OPT_INS
+        .iter()
+        .find(|(_, tag, _)| *tag == "one-shot-recovery")
+        .expect("the gene is published for gene_screen and evaluator arms");
+    let mut ai = AdvancedAi::new();
+    enable(&mut ai);
+    assert!(ai.base.one_shot_recovery);
+    ai.disable_one_shot_recovery();
+    assert!(!ai.base.one_shot_recovery);
+}
+
 /// `settle_sooner` is a native, off-by-default gene: off in both default
 /// controllers and in the deployment genome (it ships unmeasured, so the
 /// ledger holds it off), flippable by name through `PRODUCTION_OPT_INS`.

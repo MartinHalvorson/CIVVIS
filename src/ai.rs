@@ -98,6 +98,16 @@ const UNIT_DANGER_MEMORY_TURNS: u32 = 3;
 /// this is a pause to survive rather than a silent abandonment of the campaign.
 const UNIT_RETREAT_TURNS: u32 = 2;
 
+/// `game::damage` rolls every blow at `uniform(0.8, 1.2)` around the centre
+/// this controller prices with, so the average is not the number a survival
+/// question wants: a unit that lives through the mean still dies on the good
+/// rolls. `one_shot_recovery` reads the top of the roll instead.
+const COMBAT_ROLL_MAX: f64 = 1.2;
+
+/// The engine's own ceiling on one blow (`game::damage` clamps to it), so a
+/// roll scaled to its top cannot claim more damage than the game can deal.
+const MAX_SINGLE_BLOW: f64 = 100.0;
+
 /// Unlevied city-state forces defend the state and its immediate approaches;
 /// ownership transfers to the Suzerain while levied, so those units naturally
 /// use the major civilization's unrestricted tactical doctrine instead.
@@ -1803,6 +1813,44 @@ pub struct UnitDangerMemory {
     pub expires_turn: u32,
 }
 
+/// What a tile invites from everything that can strike it next turn, read two
+/// ways from one pass.
+///
+/// ★★★ THE SUM AND THE LARGEST BLOW ANSWER DIFFERENT QUESTIONS, and the sum
+/// answers the survival one wrongly in both directions. Three shooters that
+/// each take a third of a unit's hit points make a tile lethal without any of
+/// them being able to kill it, and one Bombard that kills outright reads the
+/// same as three Archers that between them merely wound. Route safety wants
+/// `total`; whether a unit is one blow from death wants `worst`.
+#[derive(Clone, Copy, Default)]
+struct IncomingDamage {
+    /// Every covering source's expected damage, added up.
+    total: f64,
+    /// The largest single one of them.
+    worst: f64,
+}
+
+impl IncomingDamage {
+    /// Nothing survives this: the unit is already gone from the board.
+    const LETHAL: Self = Self {
+        total: f64::INFINITY,
+        worst: f64::INFINITY,
+    };
+
+    fn with(mut self, damage: f64) -> Self {
+        self.total += damage;
+        self.worst = self.worst.max(damage);
+        self
+    }
+
+    fn merge(self, other: Self) -> Self {
+        Self {
+            total: self.total + other.total,
+            worst: self.worst.max(other.worst),
+        }
+    }
+}
+
 /// A legal resting place scored for an endangered unit. Safety is deliberately
 /// recorded separately from the healing rate: a City Center is excellent
 /// recovery ground only when the enemy's next turn cannot harm its garrison.
@@ -2365,6 +2413,20 @@ pub struct BasicAi {
     /// frozen `advanced_v1` replay explicitly withholds it so its historical
     /// decision stream remains a stable control.
     precise_evacuation: bool,
+    /// A unit one enemy blow from death withdraws to safe healing ground, and
+    /// leaves that ground again the moment an enemy can strike it.
+    ///
+    /// `withdraw_hp` is a constant, and a constant cannot know how hard the
+    /// thing across the river hits. This reads the board instead: the largest
+    /// single blow anything visible could land on this unit where it stands,
+    /// at the top of the engine's damage roll, is the hit point total at which
+    /// it must be somewhere else. It rides on the same envelopes
+    /// `precise_evacuation` already computes, and pairs with it — with that
+    /// protection off, the fetch below is a fresh flow field per unit.
+    ///
+    /// Off by default and listed in `PRODUCTION_OPT_INS`, so it is measurable
+    /// natively before any promotion question is asked.
+    one_shot_recovery: bool,
     w: Weights,
     book_pos: usize, // opening-book progress (capital builds played so far)
     /// The opening book's Settler slot, held back because the capital was
@@ -4296,6 +4358,7 @@ impl BasicAi {
             tactical_strategy: false,
             unit_objective_memory: false,
             precise_evacuation: true,
+            one_shot_recovery: false,
             w: Weights::default(),
             book_pos: 0,
             book_settler_pending: false,
@@ -4649,6 +4712,7 @@ impl BasicAi {
             tactical_strategy: false,
             unit_objective_memory: false,
             precise_evacuation: true,
+            one_shot_recovery: false,
             w,
             book_pos: 0,
             book_settler_pending: false,
@@ -5305,10 +5369,8 @@ impl BasicAi {
         out
     }
 
-    /// Conservative expected damage from the hostile units whose precise
-    /// next-turn envelopes cover `position`. The engine still rolls combat;
-    /// this intentionally uses its unrandomized centre so a route decision is
-    /// stable and does not consume the game RNG.
+    /// The total of `incoming_damage`, which is what every route and refuge
+    /// decision has always read.
     fn evacuation_incoming_damage(
         g: &Game,
         pid: usize,
@@ -5316,8 +5378,23 @@ impl BasicAi {
         position: Pos,
         envelopes: &[(u32, std::sync::Arc<BTreeSet<Pos>>)],
     ) -> f64 {
+        Self::incoming_damage(g, pid, uid, position, envelopes).total
+    }
+
+    /// Conservative expected damage from the hostile units whose precise
+    /// next-turn envelopes cover `position`, as a total and as the largest
+    /// single blow among the same sources. The engine still rolls combat;
+    /// this intentionally uses its unrandomized centre so a route decision is
+    /// stable and does not consume the game RNG.
+    fn incoming_damage(
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        position: Pos,
+        envelopes: &[(u32, std::sync::Arc<BTreeSet<Pos>>)],
+    ) -> IncomingDamage {
         let Some(unit) = g.units.get(&uid) else {
-            return f64::INFINITY;
+            return IncomingDamage::LETHAL;
         };
         let mut defender = unit.clone();
         defender.pos = position;
@@ -5330,8 +5407,8 @@ impl BasicAi {
         // it. That makes a friendly city a genuine safe refuge even while the
         // enemy can still bombard its walls.
         let garrisoned = g.city_at(position).is_some() || g.encampment_at(position).is_some();
-        let unit_damage: f64 = if garrisoned {
-            0.0
+        let unit_damage: IncomingDamage = if garrisoned {
+            IncomingDamage::default()
         } else {
             envelopes
                 .iter()
@@ -5350,14 +5427,14 @@ impl BasicAi {
                         * ((effective_strength(attack, enemy.hp) - defender_strength) / 25.0).exp())
                     .clamp(1.0, 100.0)
                 })
-                .sum()
+                .fold(IncomingDamage::default(), IncomingDamage::with)
         };
 
         // A walled hostile City Center can strike on its next turn even when
         // it already spent this turn's strike. A garrison on a City Center or
         // Encampment is protected by that district rather than directly hit.
-        let city_damage: f64 = if garrisoned {
-            0.0
+        let city_damage: IncomingDamage = if garrisoned {
+            IncomingDamage::default()
         } else {
             g.cities
                 .values()
@@ -5372,13 +5449,13 @@ impl BasicAi {
                     (30.0 * ((g.city_ranged_strength(city.id) - defense) / 25.0).exp())
                         .clamp(1.0, 100.0)
                 })
-                .sum()
+                .fold(IncomingDamage::default(), IncomingDamage::with)
         };
         // Encampments carry an independent strike. As above, a strike spent
         // today is available again by the enemy's next turn, so only the
         // durable wall, health, and pillage state constrain this envelope.
-        let encampment_damage: f64 = if garrisoned {
-            0.0
+        let encampment_damage: IncomingDamage = if garrisoned {
+            IncomingDamage::default()
         } else {
             g.cities
                 .values()
@@ -5401,9 +5478,24 @@ impl BasicAi {
                     (30.0 * ((g.city_ranged_strength(city.id) - defense) / 25.0).exp())
                         .clamp(1.0, 100.0)
                 })
-                .sum()
+                .fold(IncomingDamage::default(), IncomingDamage::with)
         };
-        unit_damage + city_damage + encampment_damage
+        unit_damage.merge(city_damage).merge(encampment_damage)
+    }
+
+    /// The largest single blow anything the controller can see would land on
+    /// `uid` at `position` next turn, at the top of the engine's damage roll
+    /// and under the engine's own ceiling on one blow. A unit whose hit points
+    /// do not exceed this is one attack from being removed from the board.
+    fn killing_blow(
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        position: Pos,
+        envelopes: &[(u32, std::sync::Arc<BTreeSet<Pos>>)],
+    ) -> f64 {
+        (Self::incoming_damage(g, pid, uid, position, envelopes).worst * COMBAT_ROLL_MAX)
+            .min(MAX_SINGLE_BLOW)
     }
 
     fn evacuation_tile(
@@ -13943,6 +14035,88 @@ impl BasicAi {
         false
     }
 
+    /// The largest single blow the observed enemy could land on this unit
+    /// where it stands, at the top of the engine's damage roll. Zero when the
+    /// gene is off, so a caller can compare against it unconditionally.
+    ///
+    /// ⚠ COSTS NOTHING EXTRA WHERE IT IS CALLED. `healing_step` has already
+    /// run `retreat_step`, which computes this board's attack envelopes, so
+    /// the fetch below is a hit on that cache under the same key. A garrison
+    /// is answered before it: an attack on a City Center or an Encampment
+    /// damages the district, not the formation standing in it.
+    /// See `one_shot_recovery`.
+    fn one_shot_killing_blow(&self, g: &Game, pid: usize, uid: u32) -> f64 {
+        if !self.one_shot_recovery {
+            return 0.0;
+        }
+        let Some(unit) = g.units.get(&uid) else {
+            return 0.0;
+        };
+        let spec = &g.rules.units[unit.kind];
+        // Air units are not on the board between missions; they rebase.
+        if spec.class != "military" || spec.domain.as_deref() == Some("air") {
+            return 0.0;
+        }
+        let here = unit.pos;
+        if g.city_at(here).is_some() || g.encampment_at(here).is_some() {
+            return 0.0;
+        }
+        let envelopes = self.enemy_attack_envelopes(g, pid);
+        Self::killing_blow(g, pid, uid, here, &envelopes)
+    }
+
+    /// Recovery ground an enemy can strike next turn is not recovery ground.
+    /// Score every tile this unit can reach the way an evacuation does and
+    /// take the best of them, so a unit healing under a shooter that has just
+    /// arrived steps out of its reach instead of fortifying beneath it.
+    ///
+    /// ★★ THE ROUTE STEP CANNOT OFFER THIS MOVE. `safe_healing_step` returns
+    /// the first hop of a route to distant healing ground, so the one step
+    /// sideways that leaves the envelope is invisible to it, and so is every
+    /// tile that is merely less exposed than this one. When it finds nothing,
+    /// the caller fortifies where it stands and heals under the axe.
+    /// See `one_shot_recovery`.
+    fn step_out_of_reach_to_heal(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+        envelopes: &[(u32, std::sync::Arc<BTreeSet<Pos>>)],
+    ) -> bool {
+        let Some(unit) = g.units.get(&uid) else {
+            return false;
+        };
+        if unit.moves_left <= 0.0 {
+            return false;
+        }
+        let here = unit.pos;
+        let Some(holding) = Self::evacuation_tile(g, pid, uid, here, None, envelopes) else {
+            return false;
+        };
+        // Nothing can reach this tile next turn, so healing on it is right.
+        if holding.incoming <= 1e-9 {
+            return false;
+        }
+        let mut candidates: Vec<EvacuationTile> = g
+            .reachable(uid)
+            .into_iter()
+            .filter_map(|position| Self::evacuation_tile(g, pid, uid, position, None, envelopes))
+            .collect();
+        if let Some(step) = self.safe_healing_step(g, pid, uid, envelopes) {
+            candidates.extend(Self::evacuation_tile(g, pid, uid, step, None, envelopes));
+        }
+        // ⚠ NO DANGER ANCHOR, ON PURPOSE. With one, `evacuation_tile_cmp`
+        // depends on where the unit is standing, and a unit stepping to the
+        // best tile from A can find A the best tile again from B. Without one
+        // the order is fixed over tiles, this only ever moves to a strictly
+        // better tile, and a turn cannot be spent walking in a circle.
+        let Some(next) = candidates.into_iter().max_by(Self::evacuation_tile_cmp) else {
+            return false;
+        };
+        Self::evacuation_tile_is_better(next, holding)
+            && self.move_to_evacuation_tile(g, pid, uid, next.position)
+    }
+
     fn healing_step(&mut self, g: &mut Game, pid: usize, uid: u32) -> Option<bool> {
         // There is no recovery on a Tactics arena, because nothing heals
         // there. A unit that dropped below the withdrawal line would be put
@@ -13973,11 +14147,21 @@ impl BasicAi {
         let return_at_hp = self.w.rejoin_hp.max(self.w.withdraw_hp + 5.0).round() as i32;
 
         let hp = g.units[&uid].hp;
-        if hp >= return_at_hp {
+        // ★★★ `one_shot_recovery`: THE WITHDRAWAL LINE IS THE ENEMY'S TO SET.
+        // A constant cannot know that the thing across the river hits for 70,
+        // so a unit on 60 reads healthy right up to the turn it is removed
+        // from the board. This asks what one blow would do to this unit here,
+        // treats a unit that would not survive one as already in recovery
+        // whatever its hit points say, and keeps it there while the offer
+        // stands — rejoining at the static line walks it back under the same
+        // gun on the same hit points.
+        let killing_blow = self.one_shot_killing_blow(g, pid, uid);
+        let one_blow_from_death = f64::from(hp) <= killing_blow;
+        if hp >= return_at_hp && !one_blow_from_death {
             self.recovering_units.remove(&uid);
             return None;
         }
-        if hp <= withdraw_at_hp {
+        if hp <= withdraw_at_hp || one_blow_from_death {
             self.recovering_units.insert(uid);
         }
         if !self.recovering_units.contains(&uid) {
@@ -13994,6 +14178,17 @@ impl BasicAi {
             // an enemy envelope is not a place to wait merely because it heals.
             if g.unit_heal_rate(uid) >= 15 && holding.is_some_and(|tile| tile.incoming <= 1e-9) {
                 return Some(self.fortify_or_stop(g, pid, uid));
+            }
+            // ★★★ `one_shot_recovery`, the other half: GROUND UNDER AN ENEMY'S
+            // NEXT TURN IS NOT RECOVERY GROUND, whatever it heals at. The hold
+            // above has just refused this tile, and the route hop below can
+            // only offer the first step toward distant healing ground — one
+            // tile, chosen without asking whether it is still under the same
+            // shooter. This scores every tile the unit can actually reach,
+            // which is what puts a wounded unit inside the City Center two
+            // steps away instead of one tile nearer to it.
+            if self.one_shot_recovery && self.step_out_of_reach_to_heal(g, pid, uid, &envelopes) {
+                return Some(true);
             }
             if let (Some(holding), Some(next)) =
                 (holding, self.safe_healing_step(g, pid, uid, &envelopes))
@@ -18800,6 +18995,202 @@ mod tests {
         g.units.get_mut(&warrior).unwrap().hp = 80;
         assert_eq!(ai.healing_step(&mut g, 0, warrior), None);
         assert!(!ai.recovering_units.contains(&warrior));
+    }
+
+    /// A flat, empty two-player board at war, holding exactly three things:
+    /// our City Center, a Warrior of ours standing two steps outside it, and
+    /// one enemy Archer two steps beyond that Warrior on the far side.
+    ///
+    /// The Archer is the whole point. Its shot at a Warrior on 50 hit points
+    /// is worth about 45 on the average — survivable, and so not a lethal
+    /// pool — while `game::damage` rolls it at `uniform(0.8, 1.2)`, which
+    /// kills outright. Returns `(game, our Warrior, its tile, the city)`.
+    fn a_warrior_under_one_archer() -> (Game, u32, Pos, Pos) {
+        let mut game = Game::new_full(2, 20, 14, 91_484, 80, 0, false);
+        for unit in game.units.keys().copied().collect::<Vec<_>>() {
+            game.remove_unit(unit);
+        }
+        game.map.clear_rivers();
+        for tile in game.map.tiles.values_mut() {
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+            tile.resource = None;
+            tile.improvement = None;
+            tile.district = None;
+            tile.district_foundation = None;
+            tile.wonder = None;
+            tile.owner_city = None;
+            tile.hills = false;
+            tile.road = 0;
+        }
+        game.at_war.insert((0, 1));
+        game.current = 0;
+
+        let front = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .find(|position| game.wdisk(*position, 4).len() == 61)
+            .expect("fixture needs an interior tile with four clear rings");
+        let home = game
+            .wdisk(front, 2)
+            .into_iter()
+            .find(|position| game.wdist(*position, front) == 2)
+            .expect("fixture needs a tile two steps from the front");
+        game.found_city_for(0, home, Some("Refuge".to_string()));
+        let shooter = game
+            .wdisk(front, 2)
+            .into_iter()
+            .filter(|position| game.wdist(*position, front) == 2)
+            .max_by_key(|position| game.wdist(*position, home))
+            .expect("fixture needs a firing position on the far side");
+
+        let ours = game.spawn_test_unit("warrior", 0, front);
+        let archer = game.spawn_test_unit("archer", 1, shooter);
+        assert!(
+            game.attack_reach(archer).contains(&front),
+            "the fixture's whole subject is a shot the Archer can take next turn"
+        );
+        assert!(
+            game.reachable(ours).contains(&home),
+            "and a City Center the Warrior can reach this turn"
+        );
+        (game, ours, front, home)
+    }
+
+    /// ★★★ THE CASE BOTH EXISTING TESTS ABOVE MISS. `withdraw_hp` is 45 and
+    /// the pool this tile invites is 45, so a Warrior on 50 is healthy by the
+    /// floor and safe by the lethal-pool test — and dies to the next shot
+    /// whenever the engine rolls above its average, which is half the time.
+    /// See `one_shot_recovery`.
+    #[test]
+    fn a_unit_one_blow_from_death_withdraws_though_the_static_floor_calls_it_healthy() {
+        let (mut game, ours, front, home) = a_warrior_under_one_archer();
+        game.units.get_mut(&ours).unwrap().hp = 50;
+
+        let probe = BasicAi::new();
+        let envelopes = probe.enemy_attack_envelopes(&game, 0);
+        let pool = BasicAi::evacuation_incoming_damage(&game, 0, ours, front, &envelopes);
+        let blow = BasicAi::killing_blow(&game, 0, ours, front, &envelopes);
+        assert!(pool < 50.0, "the expected pool is {pool:.1}: a survivable tile");
+        assert!(blow >= 50.0, "the top of that same roll is {blow:.1}: a dead Warrior");
+
+        // Untreated, no part of the controller has anything to say about it.
+        let mut control = game.clone();
+        let mut untreated = BasicAi::new();
+        assert_eq!(
+            untreated.healing_step(&mut control, 0, ours),
+            None,
+            "50 is above the withdrawal floor and the pool is not lethal"
+        );
+        assert_eq!(control.units[&ours].pos, front);
+        assert!(!untreated.recovering_units.contains(&ours));
+
+        let mut ai = BasicAi::new();
+        ai.one_shot_recovery = true;
+        assert_eq!(ai.healing_step(&mut game, 0, ours), Some(true));
+        assert!(ai.recovering_units.contains(&ours));
+        assert_eq!(
+            game.units[&ours].pos, home,
+            "the Warrior spends the turn getting inside the City Center"
+        );
+        let envelopes = ai.enemy_attack_envelopes(&game, 0);
+        assert_eq!(
+            BasicAi::killing_blow(&game, 0, ours, home, &envelopes),
+            0.0,
+            "a garrison is not a target: the district takes the shot"
+        );
+    }
+
+    /// The other half: a unit part-way through recovery, on ground an Archer
+    /// has since come within reach of.
+    ///
+    /// Nothing above answers this. The pool is not lethal, so no retreat is
+    /// created; the tile is threatened, so the stationary hold refuses it; and
+    /// the route hop is one tile toward distant healing ground, chosen without
+    /// asking whether the same shooter still covers where it lands. What is
+    /// left is the fortify-and-heal fallback, under the Archer.
+    /// See `one_shot_recovery`.
+    #[test]
+    fn a_healing_unit_leaves_ground_the_enemy_can_still_reach() {
+        let (mut game, ours, front, home) = a_warrior_under_one_archer();
+        // Withdrawn at 45 several turns ago and healing since: still in
+        // recovery, and now well clear of one Archer shot.
+        game.units.get_mut(&ours).unwrap().hp = 60;
+
+        let probe = BasicAi::new();
+        let envelopes = probe.enemy_attack_envelopes(&game, 0);
+        let pool = BasicAi::evacuation_incoming_damage(&game, 0, ours, front, &envelopes);
+        assert!(pool > 0.0 && pool < 60.0, "a threatened but survivable tile: {pool:.1}");
+        assert!(
+            BasicAi::killing_blow(&game, 0, ours, front, &envelopes) < 60.0,
+            "and not one blow from death either: this half stands on its own"
+        );
+
+        let mut control = game.clone();
+        let mut untreated = BasicAi::new();
+        untreated.recovering_units.insert(ours);
+        assert_eq!(untreated.healing_step(&mut control, 0, ours), Some(true));
+        let control_envelopes = untreated.enemy_attack_envelopes(&control, 0);
+        let rested = control.units[&ours].pos;
+        assert!(
+            BasicAi::killing_blow(&control, 0, ours, rested, &control_envelopes) > 0.0,
+            "untreated, the Warrior heals on where the Archer can still shoot it"
+        );
+
+        let mut ai = BasicAi::new();
+        ai.one_shot_recovery = true;
+        ai.recovering_units.insert(ours);
+        assert_eq!(ai.healing_step(&mut game, 0, ours), Some(true));
+        assert_eq!(
+            game.units[&ours].pos, home,
+            "treated, it finishes healing on ground the Archer cannot reach"
+        );
+        assert!(
+            ai.recovering_units.contains(&ours),
+            "and it is still recovering: leaving the tile is not rejoining the line"
+        );
+    }
+
+    /// The pool and the largest blow are different questions, and the pool
+    /// answers the survival one wrongly in both directions: three Warriors
+    /// that cannot kill anything add up to a lethal tile, while the single
+    /// Archer that can kill outright is a fraction of their sum.
+    #[test]
+    fn the_incoming_pool_and_the_killing_blow_are_different_readings() {
+        let (mut game, ours, front, _home) = a_warrior_under_one_archer();
+        game.units.get_mut(&ours).unwrap().hp = 60;
+        for position in game.nbrs(front) {
+            if game.units_at(position).is_empty() && game.city_at(position).is_none() {
+                game.spawn_test_unit("warrior", 1, position);
+            }
+        }
+
+        let envelopes = BasicAi::new().enemy_attack_envelopes(&game, 0);
+        let pool = BasicAi::evacuation_incoming_damage(&game, 0, ours, front, &envelopes);
+        let blow = BasicAi::killing_blow(&game, 0, ours, front, &envelopes);
+        assert!(
+            pool > blow,
+            "a pool of {pool:.1} is not one blow of {blow:.1}"
+        );
+        assert!(
+            blow <= MAX_SINGLE_BLOW,
+            "no single blow exceeds what the engine can deal: {blow:.1}"
+        );
+    }
+
+    /// The gene ships off, and it is registered where a native screen can
+    /// price it. `production_opt_in_rows_are_real` guards the row itself.
+    #[test]
+    fn one_shot_recovery_is_an_off_by_default_native_gene() {
+        assert!(!BasicAi::new().one_shot_recovery);
+        let (field, tag, _) = *PRODUCTION_OPT_INS
+            .iter()
+            .find(|(field, _, _)| *field == "one_shot_recovery")
+            .expect("the gene is registered as a native opt-in");
+        assert_eq!(field, "one_shot_recovery");
+        assert_eq!(tag, "one-shot-recovery");
     }
 
     /// One major with a capital, plus a fabricated barbarian warrior on an
