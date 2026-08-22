@@ -3,6 +3,7 @@ precedence, and the two generated files staying together with the recorded
 sources."""
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 import tempfile
@@ -13,19 +14,19 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import gene_ledger  # noqa: E402
 
 
-PLAYERS = 4
+PLAYERS = gene_ledger.SCREEN["players"]
 
 
-def analysis(regime: str, genes: list[dict], pairs: int = 1000, family: float = 3.0) -> dict:
+def analysis(genes: list[dict], pairs: int = 1000, family: float = 3.0, **profile) -> dict:
     """One screen. `wins` is the gene's win column in this screen — wins per
     10,000 games above the 1-in-`PLAYERS` a seat takes by chance — written
-    back as the on-rate the analyzer would have printed."""
+    back as the on-rate the analyzer would have printed. Keyword arguments
+    override legs of the screen's profile, which is how a probe is built."""
     return {
         "kind": "gene_screen_analysis",
-        "regime": regime,
         "complete_pairs": pairs,
         "family_wise_z": family,
-        "profile": {"players": PLAYERS, "victories": "" if regime == "native" else regime},
+        "profile": {**gene_ledger.SCREEN, **profile},
         "genes": [
             {
                 "tag": g["tag"], "pairs": pairs, "n_on": pairs, "n_off": pairs,
@@ -63,32 +64,28 @@ class Merging(unittest.TestCase):
     def build(self, sources):
         with tempfile.TemporaryDirectory() as tmp:
             paths = []
-            for i, (regime, data) in enumerate(sources):
+            for i, data in enumerate(sources):
                 path = Path(tmp) / f"s{i}.json"
                 path.write_text(json.dumps(data))
-                paths.append((path, regime))
+                paths.append(path)
             return gene_ledger.build_ledger(paths, filter_known=False)
 
-    def test_native_governs_and_war_fills_in_when_native_is_unresolved(self):
+    def test_the_newest_screen_that_priced_a_gene_supplies_its_verdict(self):
         ledger = self.build([
-            ("native", analysis("native", [
-                {"tag": "a", "wz": 2.4},           # helps natively
-                {"tag": "b", "wz": 0.3},           # unresolved natively
-                {"tag": "c", "wz": -2.2},          # hurts natively
-                {"tag": "d", "wz": 0.1},
-            ])),
-            ("war", analysis("domination,score", [
-                {"tag": "a", "wz": -2.5},          # conflict: native governs
-                {"tag": "b", "wz": 3.0},           # war resolves b
-                {"tag": "c", "wz": 2.5},           # native governs
-                {"tag": "d", "wz": -2.5},          # war resolves d as hurts
-            ])),
+            analysis([
+                {"tag": "a", "wz": 2.4},           # helps, and not re-screened
+                {"tag": "b", "wz": 0.3},           # unresolved, then resolved below
+                {"tag": "c", "wz": -2.2},          # hurts, and stays hurt
+            ]),
+            analysis([
+                {"tag": "b", "wz": 3.0},
+                {"tag": "c", "wz": -2.4},
+                {"tag": "d", "wz": -2.5},          # first priced by the newer screen
+            ]),
         ])
         by = {g["tag"]: g for g in ledger["genes"]}
-        self.assertEqual(by["a"]["verdict"], "helps")
-        self.assertTrue(by["a"]["conflict"])
+        self.assertEqual(by["a"]["verdict"], "helps", "the older screen still stands where nothing re-priced it")
         self.assertEqual(by["b"]["verdict"], "helps")
-        self.assertEqual(by["b"]["deciding_regime"], "war")
         self.assertEqual(by["c"]["verdict"], "hurts")
         self.assertEqual(by["d"]["verdict"], "hurts")
         self.assertEqual(
@@ -100,30 +97,28 @@ class Merging(unittest.TestCase):
             {"helps": 2, "hurts": 2, "unresolved": 0, "default_on": 0},
         )
 
-    def test_a_later_source_overrides_an_earlier_one_per_gene_and_regime(self):
+    def test_a_later_source_overrides_an_earlier_one_per_gene(self):
         ledger = self.build([
-            ("war", analysis("domination,score", [
-                {"tag": "repaired", "wz": -4.0}, {"tag": "other", "wz": 2.5},
-            ])),
-            ("war", analysis("domination,score", [{"tag": "repaired", "wz": 2.5}], pairs=500)),
+            analysis([{"tag": "repaired", "wz": -4.0}, {"tag": "other", "wz": 2.5}]),
+            analysis([{"tag": "repaired", "wz": 2.5}], pairs=500),
         ])
         by = {g["tag"]: g for g in ledger["genes"]}
         self.assertEqual(by["repaired"]["verdict"], "helps")
-        self.assertEqual(by["repaired"]["war"]["pairs"], 500)
+        self.assertEqual(by["repaired"]["screen"]["pairs"], 500)
         self.assertEqual(by["other"]["verdict"], "helps", "the earlier screen still stands for the rest")
 
     def test_family_wise_is_recorded_from_the_deciding_runs_bar(self):
         ledger = self.build([
-            ("native", analysis("native", [
+            analysis([
                 {"tag": "strong", "wz": 3.5}, {"tag": "weak", "wz": 2.2},
-            ], family=3.3)),
+            ], family=3.3),
         ])
         by = {g["tag"]: g for g in ledger["genes"]}
         self.assertTrue(by["strong"]["family_wise"])
         self.assertFalse(by["weak"]["family_wise"])
 
     def test_chronological_win_tranches_survive_in_the_ledger(self):
-        ledger = self.build([("native", analysis("native", [{
+        ledger = self.build([analysis([{
             "tag": "repeated-harm",
             "wz": -3.0,
             "tranches": [
@@ -131,17 +126,63 @@ class Merging(unittest.TestCase):
                 {"position": "previous", "pairs": 9996, "win_delta_pp": -0.9876, "win_se_pp": 0.4655, "win_z": -2.1234},
                 {"position": "earlier", "pairs": 10002, "win_delta_pp": -1.1111, "win_se_pp": 0.4366, "win_z": -2.5432},
             ],
-        }]))])
-        measure = ledger["genes"][0]["native"]
+        }])])
+        measure = ledger["genes"][0]["screen"]
         self.assertEqual(measure["win_tranches"], [
             {"position": "latest", "pairs": 10002, "win_delta_pp": -1.234, "win_se_pp": 0.344, "win_z": -2.346},
             {"position": "previous", "pairs": 9996, "win_delta_pp": -0.988, "win_se_pp": 0.466, "win_z": -2.123},
             {"position": "earlier", "pairs": 10002, "win_delta_pp": -1.111, "win_se_pp": 0.437, "win_z": -2.543},
         ])
 
-    def test_a_war_file_recorded_as_native_is_refused(self):
+    def test_every_source_records_the_shape_it_was_played_at(self):
+        ledger = self.build([
+            analysis([{"tag": "a"}]),
+            analysis([{"tag": "a"}], map="pangaea", width=60, height=38, city_states=6),
+        ])
+        self.assertEqual([s["shape"] for s in ledger["sources"]], ["standard", "legacy"])
+
+
+class OneShape(unittest.TestCase):
+    """⭐ There is one screen (operator, 2026-08-22). A batch played at another
+    profile answers a different question, so it is refused as a source rather
+    than pooled into a column beside the screen's."""
+
+    def sources(self, data, legacy_shape=False):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "probe.json"
+            path.write_text(json.dumps(data))
+            args = argparse.Namespace(source=[str(path)], legacy_shape=legacy_shape)
+            return gene_ledger.sources_from_args(args)
+
+    def test_the_screens_own_shape_is_accepted(self):
+        self.assertEqual(len(self.sources(analysis([{"tag": "a"}]))), 1)
+
+    def test_a_probe_at_another_map_is_refused(self):
+        with self.assertRaises(SystemExit) as refusal:
+            self.sources(analysis([{"tag": "a"}], map="pangaea"))
+        self.assertIn("map='pangaea'", str(refusal.exception))
+
+    def test_a_restricted_lane_set_is_a_probe_not_a_screen(self):
+        """The war regime, as it would arrive today: refused at the door."""
         with self.assertRaises(SystemExit):
-            self.build([("native", analysis("domination,score", [{"tag": "a"}]))])
+            self.sources(analysis([{"tag": "a"}], players=4, victories="domination,score"))
+
+    def test_legacy_shape_records_a_probe_deliberately(self):
+        self.assertEqual(len(self.sources(analysis([{"tag": "a"}], map="pangaea"),
+                                          legacy_shape=True)), 1)
+
+    def test_the_tool_and_the_binary_name_the_same_screen(self):
+        """`gene_screen`'s bare defaults ARE this shape; if one side moves, the
+        ledger would silently accept a batch the binary no longer plays."""
+        rs = (gene_ledger.ROOT / "src" / "bin" / "gene_screen.rs").read_text()
+        for constant, value in (
+            ("SCREEN_PLAYERS: usize", gene_ledger.SCREEN["players"]),
+            ("SCREEN_WIDTH: i32", gene_ledger.SCREEN["width"]),
+            ("SCREEN_HEIGHT: i32", gene_ledger.SCREEN["height"]),
+            ("SCREEN_CITY_STATES: usize", gene_ledger.SCREEN["city_states"]),
+        ):
+            self.assertIn(f"const {constant} = {value};", rs, constant)
+        self.assertIn("const SCREEN_MAP: MapScript = MapScript::Continents;", rs)
 
 
 class TheDefaultRule(unittest.TestCase):
@@ -155,8 +196,8 @@ class TheDefaultRule(unittest.TestCase):
             sources = []
             for i, w in enumerate(wins):
                 path = Path(tmp) / f"s{i}.json"
-                path.write_text(json.dumps(analysis("native", [{"tag": "g", "wins": w}])))
-                sources.append((path, "native"))
+                path.write_text(json.dumps(analysis([{"tag": "g", "wins": w}])))
+                sources.append(path)
             ledger = gene_ledger.build_ledger(sources, filter_known=False)
         gene = ledger["genes"][0]
         self.assertEqual(gene["wins_last_10k"], wins[-1] if wins else None)
@@ -180,7 +221,7 @@ class TheDefaultRule(unittest.TestCase):
         self.assertFalse(self.on(-26, 39), "housing-research: average 6.5")
         self.assertFalse(self.on(-192, 8), "war-economy: a helps verdict does not save it")
 
-    def test_one_native_reading_must_clear_twenty(self):
+    def test_one_reading_must_clear_twenty(self):
         self.assertTrue(self.on(21), "a single reading above +20 is provisionally on")
         self.assertFalse(self.on(20), "exactly +20 does not clear the strict bar")
         self.assertFalse(self.on(-21))
@@ -190,23 +231,23 @@ class TheDefaultRule(unittest.TestCase):
         # answers for it, and `ledger_default_on` gives the same `false`.
         self.assertFalse(gene_ledger.default_from_win_columns(None, None))
 
-    def test_only_the_last_two_native_readings_decide(self):
+    def test_only_the_last_two_readings_decide(self):
         self.assertTrue(self.on(-500, 20, 21), "an old bad screen is history, not a veto")
         self.assertFalse(self.on(20, 21, -500))
 
-    def test_the_war_regime_does_not_supply_a_column(self):
+    def test_a_legacy_shape_still_supplies_a_column(self):
+        """The Pangaea history is what the deployment genome stands on: it is
+        kept, and the standard screen overwrites it gene by gene."""
         with tempfile.TemporaryDirectory() as tmp:
-            native = Path(tmp) / "n.json"
-            native.write_text(json.dumps(analysis("native", [{"tag": "g", "wins": 20}])))
-            war = Path(tmp) / "w.json"
-            war.write_text(json.dumps(
-                analysis("domination,score", [{"tag": "g", "wins": 40, "wz": 3.0}])))
-            ledger = gene_ledger.build_ledger(
-                [(native, "native"), (war, "war")], filter_known=False)
+            old = Path(tmp) / "legacy.json"
+            old.write_text(json.dumps(
+                analysis([{"tag": "g", "wins": 30}], map="pangaea", width=60, height=38)))
+            new = Path(tmp) / "screen.json"
+            new.write_text(json.dumps(analysis([{"tag": "g", "wins": 25}])))
+            ledger = gene_ledger.build_ledger([old, new], filter_known=False)
         gene = ledger["genes"][0]
-        self.assertEqual(gene["verdict"], "helps")
-        self.assertIsNone(gene["wins_prior_10k"], "the war screen is not a native reading")
-        self.assertFalse(gene["default_on"], "the war +40 must not help native +20 clear its bar")
+        self.assertEqual((gene["wins_prior_10k"], gene["wins_last_10k"]), (30, 25))
+        self.assertTrue(gene["default_on"], "two positive columns, whatever shape they came from")
 
 
 class KnownTags(unittest.TestCase):
@@ -216,11 +257,11 @@ class KnownTags(unittest.TestCase):
         self.assertIn("wide-map-capacity", known)
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "s.json"
-            path.write_text(json.dumps(analysis("native", [
+            path.write_text(json.dumps(analysis([
                 {"tag": "wide-map-capacity", "wz": 2.5},
                 {"tag": "a-gene-whose-code-was-removed", "wz": 3.0},
             ])))
-            ledger = gene_ledger.build_ledger([(path, "native")])
+            ledger = gene_ledger.build_ledger([path])
         tags = [g["tag"] for g in ledger["genes"]]
         self.assertIn("wide-map-capacity", tags)
         self.assertNotIn("a-gene-whose-code-was-removed", tags)

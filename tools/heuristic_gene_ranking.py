@@ -1,19 +1,21 @@
 #!/usr/bin/env python3
 """Regenerate `HEURISTIC_GENE_RANKING.md` — every screenable heuristic gene,
-with a native measurement, ranked by wins added per 10,000 six-player games,
-plus the screenable genes still awaiting that measurement.
+with a measurement, ranked by wins added per 10,000 six-player games, plus the
+screenable genes still awaiting one.
 
     python3 tools/heuristic_gene_ranking.py --write     # rewrite the table
     python3 tools/heuristic_gene_ranking.py --check     # fail if it is stale
 
 The table used to be written once, by hand, from one screen's rows. Now it is
-derived: for each gene the **latest native source** in `docs/gene_ledger.json`
-that measured it supplies the on/off wins and games (so a gene added after the
-whole-genome screen still appears, from its own screen), the **latest war
-source** supplies the war column, and the deployment verdict comes from the
-ledger. Screenable genes without a native result are listed separately without
-a rank. Genes whose code has been removed this cycle are listed from their last
-measurement, as before. Descriptions are the first sentence of each toggle's
+derived: for each gene the **latest source** in `docs/gene_ledger.json` that
+measured it supplies the on/off wins and games (so a gene added after the
+whole-genome screen still appears, from its own screen), and the deployment
+verdict comes from the ledger. Every source is the one screen the ledger
+accepts — the war regime's four-player columns are gone, and the Pangaea
+screens the current defaults stand on are marked `legacy` until the screen
+re-prices each gene. Screenable genes with no result are listed separately
+without a rank. Genes whose code has been removed this cycle are listed from
+their last measurement, as before. Descriptions are the first sentence of each toggle's
 doc comment in `src/ai/advanced/treatment_flags.rs`. Hand-written follow-ups
 go in `docs/gene_ranking_notes.md` and are carried under the table.
 
@@ -77,7 +79,7 @@ def unpaired_constant(players: int) -> float:
 
 
 def resolutions(ledger: dict) -> list[dict]:
-    """What each native screen can actually resolve, from its own errors.
+    """What each screen can actually resolve, from its own errors.
 
     The median gene's column standard error times `POWER_80`, plus the *pairing
     gain* — how far the screen's own error per pair sits below the unpaired
@@ -97,8 +99,6 @@ def resolutions(ledger: dict) -> list[dict]:
     """
     out = []
     for src in ledger["sources"]:
-        if src["regime"] != "native":
-            continue
         data = json.loads((ROOT / src["path"]).read_text())
         errors = sorted(
             column_se(float(gene["win_se_pp"]))
@@ -113,6 +113,7 @@ def resolutions(ledger: dict) -> list[dict]:
         unpaired = unpaired_constant(players)
         out.append({
             "name": Path(src["path"]).name,
+            "shape": src["shape"],
             "genes": len(errors),
             "pairs": pairs,
             "se": median,
@@ -189,16 +190,12 @@ def descriptions() -> dict[str, str]:
     return out
 
 
-def load_sources(
-    ledger: dict,
-) -> tuple[dict[str, list[dict]], dict[str, dict], dict[str, str], dict[str, str]]:
-    """Per-gene native measurement history in source order (the ledger records
-    sources oldest-first, so a gene's last entry is its newest reading), the
-    latest war measurement, and the source file each came from."""
-    native: dict[str, list[dict]] = {}
-    war: dict[str, dict] = {}
-    native_src: dict[str, str] = {}
-    war_src: dict[str, str] = {}
+def load_sources(ledger: dict) -> tuple[dict[str, list[dict]], dict[str, str]]:
+    """Per-gene measurement history in source order (the ledger records sources
+    oldest-first, so a gene's last entry is its newest reading), and the source
+    file the newest one came from."""
+    history: dict[str, list[dict]] = {}
+    newest_src: dict[str, str] = {}
     for src in ledger["sources"]:
         data = json.loads((ROOT / src["path"]).read_text())
         name = Path(src["path"]).name
@@ -216,13 +213,9 @@ def load_sources(
                 "time_cost_pct": gene.get("time_cost_pct"),
                 "time_cost_se_pct": gene.get("time_cost_se_pct"),
             }
-            if src["regime"] == "native":
-                native.setdefault(gene["tag"], []).append(g)
-                native_src[gene["tag"]] = name
-            else:
-                war[gene["tag"]] = g
-                war_src[gene["tag"]] = name
-    return native, war, native_src, war_src
+            history.setdefault(gene["tag"], []).append(g)
+            newest_src[gene["tag"]] = name
+    return history, newest_src
 
 
 def fmt_int(n: float) -> str:
@@ -230,7 +223,7 @@ def fmt_int(n: float) -> str:
 
 
 def cost_cell(history: list[dict], value: str, uncertainty: str) -> str:
-    """The newest usable native cost reading, with one-standard-error
+    """The newest usable cost reading, with one-standard-error
     uncertainty. Old analysis JSON predates the timing estimator and therefore
     carries no cost rather than a made-up zero."""
     for measurement in reversed(history):
@@ -245,7 +238,7 @@ def cost_cell(history: list[dict], value: str, uncertainty: str) -> str:
 
 
 def render(ledger: dict) -> str:
-    native, war, native_src, war_src = load_sources(ledger)
+    measured, newest_src = load_sources(ledger)
     tags = screenable_tags()
     desc = descriptions()
     verdict = {g["tag"]: g for g in ledger["genes"]}
@@ -254,46 +247,46 @@ def render(ledger: dict) -> str:
     rows = []
     unmeasured = []
     for tag in tags:
-        history = native.get(tag)
+        history = measured.get(tag)
         if not history:
             unmeasured.append(tag)
             continue
         rows.append((wins_per(history[-1]["win_on"], history[-1]["players"]), tag, history))
     rows.sort(key=lambda r: (-r[0], r[1]))
 
-    removed = sorted(
-        (tag for tag in set(native) | set(war) if tag not in reg),
-    )
-    latest = {tag: history[-1] for tag, history in native.items()}
+    removed = sorted(tag for tag in measured if tag not in reg)
+    latest = {tag: history[-1] for tag, history in measured.items()}
 
     lines = [
         "# The heuristic gene ranking",
         "",
         "Every screenable heuristic gene on the Advanced controller, ranked most beneficial "
         "to least by **± Wins Last 10k** — wins added per 10,000 six-player games at the "
-        "gene's measured on-rate in its **latest** native screen. *± Wins 10k Prior* is the "
-        "same figure from the screen before that (\u2013 when the gene has only one native "
+        "gene's measured on-rate in its **latest** screen. *± Wins 10k Prior* is the "
+        "same figure from the screen before that (\u2013 when the gene has only one "
         "reading); movement between the two columns is the gene's trend across cycles. "
         "*Default* is the deployment ledger's call (`docs/gene_ledger.json`), and since "
         "2026-08-22 that call is read off these two win columns: a gene defaults **on** "
         "when both are positive, or when their average clears +15 with neither below "
         "\u221210; with exactly one populated column it defaults **on** when that reading "
         "is above +20. It defaults **off** otherwise. The *Total* win-rate "
-        "columns pool every native screen that measured the gene, weighted by games, and "
+        "columns pool every screen that measured the gene, weighted by games, and "
         "each carries its own game count `n` — the two arms are only equal when every "
         "screen that measured the gene split them evenly. *Diff* is the on rate minus the "
         "off rate in percentage points: the **whole** on−off difference, so it stands at "
         "roughly twice the scale of the win columns beside it and must be read against a "
-        "screen’s difference band rather than the halved column band below. Every "
-        "screen is a foldover against the best-genome baseline with shuffled civs and every "
+        "screen’s difference band rather than the halved column band below. "
+        "**There is one screen** (operator, 2026-08-22): six majors on 74x46 continents "
+        "with nine city-states, Online speed to its own 250-turn clock, all six victory "
+        "lanes, a foldover against the best-genome baseline with shuffled civs and every "
         "major seat carrying its own genome (errors clustered by game pair), so a gene's "
         "on/off readings cover the same maps. `docs/GENE_SCREEN.md` documents the "
         "instrument; the paired contrasts, intervals and family-wise verdicts stay in "
-        "`docs/gene_ledger.json`. Screenable genes awaiting their first native "
+        "`docs/gene_ledger.json`. Screenable genes awaiting their first "
         "measurement are listed separately below without a rank.",
         "",
-        "**Reading the table.** A six-player seat wins 1-in-6 by chance (1-in-4 in a "
-        "four-player screen), so the expected count is 1,667 wins per 10,000 games and the "
+        "**Reading the table.** A six-player seat wins 1-in-6 by chance, so the expected "
+        "count is 1,667 wins per 10,000 games and the "
         "win columns say how far above or below that a seat carrying the gene lands. "
         "**A column is half its screen’s on−off difference** — a foldover puts the two arms "
         "either side of chance — so the band that says whether a column is real is half the "
@@ -304,7 +297,15 @@ def render(ledger: dict) -> str:
         "baseline as repairs land, so the *Prior* column reads as history, not a strict A/B "
         "against *Last*.",
         "",
-        "**What each native screen resolves.** The median gene’s column standard error "
+        "**⚠ Every column below is `legacy`.** The shape marked `legacy` in the screen "
+        "table is the pre-2026-08-22 instrument: 60x38 Pangaea, six city-states, where 48% "
+        "of games ended in a religious conversion against 28% on continents. Those readings "
+        "are what the deployment genome stands on and they are kept for that reason, but a "
+        "gene is only priced at the screen once a `standard` row appears beside it. The "
+        "four-player `domination,score` war columns are gone: a 1-in-4 chance base made "
+        "them incomparable with the six-player columns printed next to them.",
+        "",
+        "**What each screen resolves.** The median gene’s column standard error "
         f"times {POWER_80} — a two-sided 5% test at 80% power. Judge a column against "
         "the band of the screen named beside it, never against a single number for the "
         "instrument: these differ by more than three to one.",
@@ -322,10 +323,10 @@ def render(ledger: dict) -> str:
         "four-gene `s6` at 6,000 pairs. Its gene changes nearly every game; `s7`'s "
         "rarely fires. That, not the count, is the difference.",
         "",
-        "| Native screen | Genes | Seat pairs | 1 SE | ±80% power | Pairing gain |",
-        "|---|---:|---:|---:|---:|---:|",
+        "| Screen | Shape | Genes | Seat pairs | 1 SE | ±80% power | Pairing gain |",
+        "|---|---|---:|---:|---:|---:|---:|",
         *(
-            f"| `{r['name']}` | {r['genes']} | {fmt_int(r['pairs'])} | "
+            f"| `{r['name']}` | {r['shape']} | {r['genes']} | {fmt_int(r['pairs'])} | "
             f"{r['se']:.1f} | ±{r['band']:.0f} | {r['gain']:.2f}× |"
             for r in resolutions(ledger)
         ),
@@ -333,7 +334,7 @@ def render(ledger: dict) -> str:
         "**Cost.** Positive is slower; negative is faster. *cost (compute)* is the "
         "on/off percent change in wall seconds per completed turn, while *cost (time)* "
         "is the percent change in whole-game wall seconds and therefore includes games "
-        "that end earlier or later. Each cell is the newest native estimate ± one standard "
+        "that end earlier or later. Each cell is the newest estimate ± one standard "
         "error. The screen derives both from paired log-ratios on the same maps, fits every "
         "randomized gene together with an arm-order intercept, and keeps one timing per game "
         "pair; all-seats signs are summed so the answer is the incremental cost of enabling "
@@ -372,10 +373,10 @@ def render(ledger: dict) -> str:
     if unmeasured:
         lines += [
             "",
-            "## Awaiting native measurement",
+            "## Awaiting measurement",
             "",
-            "These screenable genes have no native on/off result, so they receive no rank or "
-            "promotion from this table. Their deployment state remains explicit while a native "
+            "These screenable genes have no on/off result, so they receive no rank or "
+            "promotion from this table. Their deployment state remains explicit while a "
             "screen is pending.",
             "",
             "| Gene | Default | Description |",
@@ -397,17 +398,13 @@ def render(ledger: dict) -> str:
             "Genes whose code has left the repository (operator directive: the bottom of the "
             "table leaves the code), listed from their last measurement:",
             "",
-            "| Gene | Wins ±10k (last tracked measurement) | Regime | Win rate (on) | Win rate (off) | Source |",
-            "|---|---:|---|---:|---:|---|",
+            "| Gene | Wins ±10k (last tracked measurement) | Win rate (on) | Win rate (off) | Source |",
+            "|---|---:|---:|---:|---|",
         ]
-        def last(tag):
-            if tag in latest:
-                return latest[tag], "native", native_src[tag]
-            return war[tag], "war", war_src[tag]
-        for tag in sorted(removed, key=lambda t: wins_per(last(t)[0]["win_on"], last(t)[0]["players"]), reverse=True):
-            m, regime, src = last(tag)
+        for tag in sorted(removed, key=lambda t: wins_per(latest[t]["win_on"], latest[t]["players"]), reverse=True):
+            m, src = latest[tag], newest_src[tag]
             lines.append(
-                f"| `{tag}` | {wins_per(m['win_on'], m['players']):+d} | {regime} | {100 * m['win_on']:.2f}% | "
+                f"| `{tag}` | {wins_per(m['win_on'], m['players']):+d} | {100 * m['win_on']:.2f}% | "
                 f"{100 * m['win_off']:.2f}% | `{src}` |"
             )
 
@@ -419,7 +416,7 @@ def render(ledger: dict) -> str:
         body = "\n".join(notes).strip()
         if body:
             lines += ["", "## Follow-ups", "", body]
-    sources = ", ".join(f"`{Path(s['path']).name}` ({s['regime']}, {s['complete_pairs']:,} pairs)" for s in ledger["sources"])
+    sources = ", ".join(f"`{Path(s['path']).name}` ({s['shape']}, {s['complete_pairs']:,} pairs)" for s in ledger["sources"])
     lines += [
         "",
         f"_Generated by `tools/heuristic_gene_ranking.py` from the ledger's sources: {sources}. "
