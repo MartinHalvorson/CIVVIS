@@ -14358,12 +14358,7 @@ impl BasicAi {
     /// terrain costs, rivers, zone of control, and the movement point the
     /// final melee blow spends.  A geometric disk would claim captures the
     /// engine refuses and leave the unit doing nothing.
-    fn capture_reachable_barbarian_target(
-        &self,
-        g: &mut Game,
-        pid: usize,
-        uid: u32,
-    ) -> bool {
+    fn capture_reachable_barbarian_target(&self, g: &mut Game, pid: usize, uid: u32) -> bool {
         if !self.barbarian_capture_priority || self.minor || self.barb {
             return false;
         }
@@ -14429,15 +14424,15 @@ impl BasicAi {
             // an in-range shot is the capture action.  Ask the engine's own
             // legality predicates rather than assuming a visible target is
             // shootable through terrain or enterable across a river.
-            if can_melee && g.melee_order_is_legal(pid, uid, target) {
-                if g.apply(pid, &Action::Attack { unit: uid, target }).is_ok() {
-                    return true;
-                }
+            if can_melee
+                && g.melee_order_is_legal(pid, uid, target)
+                && g.apply(pid, &Action::Attack { unit: uid, target }).is_ok()
+            {
+                return true;
             }
             if can_ranged {
-                let frames = vision_frames.get_or_insert_with(|| {
-                    (g.player_vision_now(pid), g.visibility_viewers(pid))
-                });
+                let frames = vision_frames
+                    .get_or_insert_with(|| (g.player_vision_now(pid), g.visibility_viewers(pid)));
                 if g.ranged_order_is_legal(pid, uid, target, &frames.0, &frames.1)
                     && g.apply(pid, &Action::Ranged { unit: uid, target }).is_ok()
                 {
