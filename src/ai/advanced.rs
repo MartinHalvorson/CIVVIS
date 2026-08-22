@@ -4188,6 +4188,29 @@ pub struct AdvancedAi {
     /// percent of Production as gold; fifteen percent as beakers is the next
     /// technology sooner, and the technology after that sooner again.
     ///
+    /// ⚠⚠ MEASURED TWICE, AND THE GATE WAS THE WHOLE STORY. With the first
+    /// gate (`can_produce`, false while the tech is still out) the gene cost
+    /// **15 Research Labs — 40 against the control's 55** — because cities
+    /// took the premium before Chemistry and spent those turns on Grants.
+    /// With the gate repaired to the deepest rung HELD, on fresh seeds the
+    /// chain comes back untouched and the gene is a small positive alone and a
+    /// small negative in company:
+    ///
+    /// ```text
+    /// arm                        campus lib univ lab techs  Science   score
+    /// control                        98  94   87  60   787   3143.9   10796
+    /// research-grants-first          98  95   87  60   787   3177.0   10756
+    /// premium + payoff              100  98   93  69   782   3291.9   10610
+    /// premium + payoff + grants      99  97   90  68   782   3250.9   10619
+    /// ```
+    ///
+    /// **+1.1% Science alone with an identical chain; −1.2% added to the pair
+    /// that works.** That is the gate doing its job — nothing displaced — and
+    /// the premium then buying almost nothing. Unresolved at this size, and
+    /// **not a promotion candidate**: a repeatable project converting 15% of
+    /// Production is simply a small lever next to a Research Lab's eight
+    /// beakers, which is what the pair buys more of.
+    ///
     /// With this on, a city whose Campus chain is COMPLETE pays
     /// `RESEARCH_GRANTS_COMPOUNDING_PREMIUM` more for its Campus project.
     /// Only that project, only in a city with nothing left in the chain to
@@ -10144,7 +10167,7 @@ impl AdvancedAi {
                     .take(if self.culture_building_debt { 4 } else { 0 }),
             );
             let owed = waiting_for.into_iter().any(|building| {
-                g.rules.buildings.contains_key(*building)
+                g.rules.buildings.contains_key(building)
                     && g.can_produce(
                         pid,
                         cid,
