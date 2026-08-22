@@ -328,6 +328,18 @@ impl AdvancedAi {
         self.chain_tech_lookahead = false;
     }
 
+    /// A finished research city pays more for its own district's project. See
+    /// [`AdvancedAi::research_grants_first`]. Opt-in gene
+    /// `research-grants-first`.
+    pub fn enable_research_grants_first(&mut self) {
+        self.research_grants_first = true;
+    }
+
+    /// The twin of `enable_research_grants_first`.
+    pub fn disable_research_grants_first(&mut self) {
+        self.research_grants_first = false;
+    }
+
     /// The citizen tilt and the beaker floor hold while the research can
     /// still pay. See [`AdvancedAi::research_floor_holds`]. Opt-in gene
     /// `research-floor-holds`.
