@@ -66,6 +66,42 @@ class TheTableIsDerived(unittest.TestCase):
             "–",
         )
 
+    def test_the_band_is_the_columns_own_scale_not_the_differences(self):
+        """A column is half the on−off difference, so its band is half too.
+
+        The regression this guards: the header quoted ±110/10k — correct for
+        `win_delta_pp`, twice too wide for the column beside it — and #2266
+        removed eight genes calling readings up to that "inside the noise".
+        """
+        self.assertAlmostEqual(ranking.column_se(1.0), ranking.PER / 200.0)
+        # Proved from a screen's own numbers rather than asserted: a foldover
+        # holds the arms symmetric about chance, so `column / column_se` must
+        # reproduce the screen's `win_z` exactly, which it can only do if the
+        # column and its error are on the same (halved) scale.
+        ledger = json.loads(ranking.LEDGER_JSON.read_text())
+        source = next(s for s in reversed(ledger["sources"]) if s["regime"] == "native")
+        data = json.loads((ranking.ROOT / source["path"]).read_text())
+        chance = 1.0 / int(data["profile"]["players"])
+        for gene in data["genes"]:
+            column = (float(gene["win_on"]) - chance) * ranking.PER
+            se = ranking.column_se(float(gene["win_se_pp"]))
+            self.assertAlmostEqual(column / se, float(gene["win_z"]), places=6, msg=gene["tag"])
+
+    def test_every_native_screen_prints_its_own_band(self):
+        ledger = json.loads(ranking.LEDGER_JSON.read_text())
+        rows = ranking.resolutions(ledger)
+        native = [s for s in ledger["sources"] if s["regime"] == "native"]
+        self.assertEqual(len(rows), len(native))
+        text = ranking.RANKING_MD.read_text()
+        for row in rows:
+            self.assertIn(f"`{row['name']}` | {row['genes']} |", text, row["name"])
+        # Screens are not interchangeable: a one-gene screen resolves tighter
+        # than a whole-genome screen with more pairs, so no single number serves
+        # — and none of them is the retired ±110.
+        self.assertGreater(len({round(r["band"]) for r in rows}), 1)
+        self.assertTrue(all(round(r["band"]) != 110 for r in rows))
+        self.assertIn("twice too wide", text)
+
 
 if __name__ == "__main__":
     unittest.main()

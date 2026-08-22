@@ -454,9 +454,39 @@ wins against 27% for all-off** (4p classic, 200 anchor pairs). Now:
   fields. **Every one was already held off by the ledger**, so the deployment
   genome is unchanged and every screen's "off" arm is what now ships; what is
   gone is the ability to turn them on. `holy-lane-parity` and `siege-role`
-  are measured `hurts` at war; the other eight sit inside the ±110/10k noise
+  are measured `hurts` at war; the other eight sit inside their screen's noise
   band on wins and are recorded as directive removals, not measured harms.
+  ⚠ The band quoted at the time, ±110/10k, was the on−off **difference**'s band
+  read against a **column**, which is half that difference — see the correction
+  below. The eight are inside the corrected ±56 band too, so the reading stands;
+  what does not is calling anything up to ±110 noise.
   `recon-flight` followed a day later (#2271) — see below.
+
+- **The noise band was quoted at twice its scale (2026-08-22).** The ranking's
+  win columns are `(win_on − chance) × 10,000`, and a foldover puts the on and
+  off arms symmetric about chance — so a column is **half** its screen's on−off
+  difference and carries half its error. The ±110/10k the ranking header quoted
+  (and #2266 used to justify eight removals) is the difference's 80%-power band:
+  correct for `win_delta_pp`, twice too wide for the column printed beside it.
+  Nothing about a screen changed; the sentence judging it did. The header now
+  derives each native screen's own band from that screen's own errors —
+  `2026-08-22-p10` resolves **±51**, `2026-08-21-p7` ±56, the single-gene
+  `2026-08-21-s7` ±29 — and `tools/heuristic_gene_ranking.py::column_se` owns
+  the arithmetic, next to the `wins_per_10k` it halves, so the printed band and
+  the printed column cannot drift apart. What this changes in practice: a column
+  between ±51 and ±110 used to read as noise and does not. `holy-lane-parity`'s
+  +63 in P10 is the live case — see #2299.
+
+- **The removal ledger is priced on native screens again (2026-08-22).** #2235
+  deleted its eight genes' rows out of `2026-08-19-p2`, `2026-08-20-p3b` and
+  `2026-08-20-p4`; #2266 left its ten "as played", which is the policy. The
+  eight rows are restored (306 lines, additions only, every surviving row
+  byte-identical), so every gene in *Removed from the code* is now priced on a
+  **native** screen at the same 1-in-6 chance base. Before this, `siege-muster`
+  had no native row left and was listed at **+5** from a 4-player *war* screen
+  where chance is 1-in-4 — a number that read as "removed while helping" and is
+  really −26 at p4. `tools/gene_ledger.py` filters unregistered tags, so the
+  deployment ledger is byte-identical either way.
 
 - **`recon-flight` leaves production too (2026-08-21).** It was held out of
   the cull above because `promoted_policy_envoy` turns it on, as one leg of
