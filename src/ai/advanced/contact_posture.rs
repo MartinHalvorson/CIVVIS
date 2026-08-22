@@ -71,6 +71,16 @@
 //! 3. **Nothing** otherwise: the ordinary attack scan and march run exactly
 //!    as they do today.
 //!
+//! ⚠ THE HOOK SITS INSIDE THE WAR BRANCH, deliberately. It runs after
+//! `advanced_military_step_with_decline` has established a non-empty `enemies`
+//! list and before that step's attack scan, so it can decline a swing the scan
+//! would take. A unit meeting a lone raider in the field during peace never
+//! reaches it — the barbarian seat joins `enemies` only when it is pressing a
+//! city or a field civilian. Extending the posture to that regime is a real
+//! second arm and it is left for one, because the two halves would otherwise
+//! be measured as one number and neither could be attributed. The same
+//! argument split `raid-pillage-prizes` out of `opportunistic-war`.
+//!
 //! ## What is deliberately *not* claimed
 //!
 //! Standing collects its counter-damage only if the enemy actually attacks.
