@@ -703,3 +703,112 @@ mod envoy_and_deck_probe {
         );
     }
 }
+
+#[cfg(test)]
+mod chain_tech_probe {
+    use super::*;
+
+    /// When does the chain's technology actually arrive, and how many turns
+    /// does each rung then have to be built in?
+    ///
+    /// The census leaves 40 of 100 Campuses without a Research Lab even with
+    /// the two genes that work. The Lab costs **440** and is gated on
+    /// `chemistry`; the University costs 250 and is gated on `education`. If
+    /// those nodes land late, the gap is a CLOCK problem and no pricing term
+    /// closes it — which is exactly the distinction that killed four genes in
+    /// this bundle.
+    ///
+    /// ★★★★ MEASURED, AND IT IS THE CLOCK. Three seeds, both merged genes on:
+    ///
+    /// ```text
+    /// seed  writing  library    education  university  CHEMISTRY  lab      labs
+    /// 0     t58      stands t95 t88        stands t111 t147       t158       8
+    /// 1     t53      stands t69 t78        stands t85  t134       t151       8
+    /// 2     t30      stands t120 t119      stands t132 t205       never      0
+    /// ```
+    ///
+    /// Where Chemistry lands by ~t147 the Lab gets built in every Campus that
+    /// has a University; where it lands at **t205 there are none at all.** The
+    /// pricing is not the binding constraint at that point — the tech is.
+    ///
+    /// And the delay compounds because `unreachable_science_building_tech`
+    /// only aims at a rung whose prerequisite buildings ALREADY STAND, so
+    /// every build time is added to every later tech's start: Chemistry
+    /// follows the University STANDING by 36, 49 and 73 turns.
+    ///
+    /// ⚠ Seed 2 also shows the other half of it, and the merged genes do not
+    /// fix it: **Writing at t30 and the first Library standing at t120** — a
+    /// Campus without its Library for ninety turns.
+    #[test]
+    #[ignore = "probe"]
+    fn when_does_the_research_chain_become_buildable() {
+        for seed in 0..3u64 {
+            let mut g = Game::new(6, 60, 38, 88_000_000 + seed, 250, 6);
+            g.game_speed = GameSpeed::Online;
+            g.victory_conditions =
+                crate::game::VictoryConditions::parse("science,culture,domination,score").unwrap();
+            let mut me = AdvancedAi::new();
+            me.enable_engine_repairs_universe();
+            me.enable_research_tier_premium();
+            me.enable_science_multiplier_payoff();
+            let mut others = AdvancedAi::fleet(&g);
+            let mut arrived: std::collections::BTreeMap<&str, u32> = Default::default();
+            let mut built: std::collections::BTreeMap<&str, u32> = Default::default();
+            while g.winner.is_none() && g.turn <= 250 {
+                let pid = g.current;
+                if pid == 0 {
+                    me.take_turn(&mut g, pid);
+                    for tech in ["writing", "education", "chemistry"] {
+                        if !arrived.contains_key(tech)
+                            && g.players[0].techs.contains(&Name::new(tech))
+                        {
+                            arrived.insert(tech, g.turn);
+                        }
+                    }
+                    // ⭐ AND WHEN EACH RUNG STANDS, because that is what gates
+                    // the NEXT tech goal: `unreachable_science_building_tech`
+                    // only aims at a rung whose prerequisite buildings ALREADY
+                    // STAND, so every build time is added to every later
+                    // tech's start.
+                    for rung in ["library", "university", "research_lab"] {
+                        if !built.contains_key(rung)
+                            && g.player_city_ids(0)
+                                .into_iter()
+                                .any(|cid| g.cities[&cid].buildings.contains(&Name::new(rung)))
+                        {
+                            built.insert(rung, g.turn);
+                        }
+                    }
+                } else {
+                    others[pid].take_turn(&mut g, pid);
+                }
+                if g.winner.is_none() && g.current == pid {
+                    let _ = g.apply(pid, &Action::EndTurn);
+                }
+            }
+            let cities = g.player_city_ids(0);
+            let holding = |name: &str| {
+                cities
+                    .iter()
+                    .filter(|c| g.cities[c].buildings.contains(&Name::new(name)))
+                    .count()
+            };
+            println!(
+                "CHAINTECH seed {} tech writing=t{:?} education=t{:?} CHEMISTRY=t{:?} \
+                 | first stood library=t{:?} university=t{:?} lab=t{:?} \
+                 | cities={} library={} university={} lab={}",
+                88_000_000 + seed,
+                arrived.get("writing"),
+                arrived.get("education"),
+                arrived.get("chemistry"),
+                built.get("library"),
+                built.get("university"),
+                built.get("research_lab"),
+                cities.len(),
+                holding("library"),
+                holding("university"),
+                holding("research_lab"),
+            );
+        }
+    }
+}
