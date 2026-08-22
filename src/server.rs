@@ -16683,6 +16683,19 @@ mod tests {
         );
         assert!(edge < vars);
 
+        // A battlefield has no empire behind it, so the strip keeps the turn
+        // and the era and drops the rest, and neither the world tracker nor
+        // the two tree hooks are painted at all.
+        assert!(EMBEDDED_INDEX.contains("const empire = worldStandingsInPlay();"));
+        assert!(EMBEDDED_INDEX.contains("const yields = !empire ? \"\" :"));
+        assert!(EMBEDDED_INDEX.contains("const meters = !empire ? \"\" :"));
+        assert!(EMBEDDED_INDEX.contains(
+            "if (!playingSolo() || !RULES || !worldStandingsInPlay()) {"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "(empireWorld ? launchTreeHook(\"science\") + launchTreeHook(\"culture\") : \"\") +"
+        ));
+
         // Civilization VI opens a city on what it can build. The plot market
         // is a fold at the foot of that column, never ahead of it.
         let build = EMBEDDED_INDEX

@@ -24466,7 +24466,9 @@ function drawLaunchBar() {
   // People, Great Works). CIVVIS's own screens follow that order and keep the
   // ones Civ 6 hangs elsewhere — Cities, Governors, City-States, Espionage —
   // behind them rather than inventing a second bar for them.
-  if (tabs) tabs.innerHTML = launchTreeHook("science") + launchTreeHook("culture") +
+  const empireWorld = worldStandingsInPlay();
+  if (tabs) tabs.innerHTML =
+    (empireWorld ? launchTreeHook("science") + launchTreeHook("culture") : "") +
     LAUNCH_BAR_ORDER.map(id => EMPIRE_TABS.find(tab => tab.id === id))
       .filter(Boolean).map(tab => {
     const badge = empireBadge(tab.id);
@@ -24535,7 +24537,7 @@ function arrangeSoloHud() {
   if (!panel || !footer) return;
   panel.appendChild(footer);
   buildAutoplayDisclosure(panel, footer);
-  watchSoloActionHeight(panel);
+  watchSoloCornerHeights(panel);
   soloArranged = true;
 }
 // Civilization VI's corner holds one control. Auto-play is this project's own
@@ -24572,19 +24574,24 @@ function buildAutoplayDisclosure(panel, footer) {
   footer.insertBefore(toggle, bar);
 }
 // The notification rail climbs out of the corner the turn button owns, so it
-// has to know how tall that corner is — and that height moves: the button
-// grows a second line the moment a blocker names itself, and the auto-play
-// note appears and goes. Publish the live box rather than guessing at it.
-function watchSoloActionHeight(panel) {
-  const publish = () => {
-    const height = Math.round(panel.getBoundingClientRect().height);
-    if (!height) return;
-    document.getElementById("maparea").style
-      .setProperty("--solo-action-height", `${height}px`);
-  };
+// has to know how tall that corner is — and both heights there move: the
+// button grows a second line the moment a blocker names itself, the auto-play
+// note appears and goes, and the selected unit's row of orders wraps with the
+// unit. Publish the live boxes rather than guessing at them. The unit's height
+// matters only while the rankings report has pushed the rail inboard, into the
+// column the unit panel is already standing in.
+function watchSoloCornerHeights(panel) {
+  const publish = () => publishSoloHeight(panel, "--solo-action-height");
   publish();
   if (typeof ResizeObserver !== "function") return;
   new ResizeObserver(publish).observe(panel);
+}
+function publishSoloHeight(element, property) {
+  const area = document.getElementById("maparea");
+  if (!area || !element) return;
+  const height = getComputedStyle(element).display === "none"
+    ? 0 : Math.round(element.getBoundingClientRect().height);
+  area.style.setProperty(property, `${height}px`);
 }
 
 // Civ 6's top panel writes a rate as `+12` / `-3`, and a stock as a plain
@@ -24666,6 +24673,12 @@ function drawCivTop() {
   if (!playingSolo()) { bar.innerHTML = ""; civTopHtml = ""; return; }
   const me = state.me || {};
   const y = me.yields || {};
+  // An arena has no empire behind it: the economy is a fixed grant, nothing is
+  // built or worshipped, and no city-state offers a suzerain. The strip keeps
+  // the turn and the era, which a battle does have, and drops the rest rather
+  // than printing six zeroes about a civilization that is not there. Same test
+  // the standings columns use.
+  const empire = worldStandingsInPlay();
   const routes = (me.routes || []).length;
   const capacity = Math.round(Number(me.trade_capacity) || 0);
   const envoys = Math.round(Number(me.envoys_free) || 0);
@@ -24675,7 +24688,7 @@ function drawCivTop() {
   const seat = (state.players || [])[state.player ?? 0] || {};
   const tourism = Math.round(Number(seat.tourism_per_turn) || 0);
   const favor = Math.round(Number(me.diplomatic_favor) || 0);
-  const yields =
+  const yields = !empire ? "" :
     soloYieldChip({key:"science", icon:"⌬", rate:soloRate(y.science),
       title:`Science — ${soloRate(y.science)} per turn toward the current research`}) +
     soloYieldChip({key:"culture", icon:"❦", rate:soloRate(y.culture),
@@ -24687,7 +24700,7 @@ function drawCivTop() {
         `after maintenance`}) +
     (tourism > 0 ? soloYieldChip({key:"tourism", icon:"✈", rate:String(tourism),
       title:`Tourism — ${tourism} per turn · ${soloStock(me.tourism)} accumulated`}) : "");
-  const meters =
+  const meters = !empire ? "" :
     `<div class="civtop-meter" title="Trade routes in use against the routes this empire can run">` +
       `<span class="civtop-icon">⇄</span><b>${routes}</b><span>/${capacity}</span></div>` +
     (envoys > 0
@@ -24700,7 +24713,7 @@ function drawCivTop() {
   const turnTitle = `Turn ${state.turn}${cap ? ` of ${cap}` : ""} · ` +
     `${titleCase(state.game_speed || "standard")} speed`;
   const html =
-    `<div class="civtop-left">${yields}${meters}${soloResourceChips(me)}</div>` +
+    `<div class="civtop-left">${yields}${meters}${empire ? soloResourceChips(me) : ""}</div>` +
     `<div class="civtop-right">` +
       soloEraChip(me) +
       `<span class="civtop-turn" title="${escapeAttr(turnTitle)}">` +
@@ -24764,7 +24777,9 @@ let worldTrackerHtml = "";
 function drawWorldTracker() {
   const tracker = document.getElementById("worldtracker");
   if (!tracker) return;
-  if (!playingSolo() || !RULES) { tracker.innerHTML = ""; worldTrackerHtml = ""; return; }
+  if (!playingSolo() || !RULES || !worldStandingsInPlay()) {
+    tracker.innerHTML = ""; worldTrackerHtml = ""; return;
+  }
   const html = soloTrackerCard("science") + soloTrackerCard("culture");
   if (html === worldTrackerHtml) return;
   worldTrackerHtml = html;
@@ -25775,7 +25790,16 @@ function unitPlaque(u, {linked, escortName}) {
 }
 function drawUbar() {
   const bar = document.getElementById("ubar");
-  if (!sel || SPEC) { bar.style.display = "none"; return; }
+  // Published from here rather than watched: the bar is `display:none`
+  // whenever nothing is selected, and an element with no CSS box gives a
+  // ResizeObserver nothing to report. The rail above it needs the number in
+  // both states — a rail that stands off a unit panel which is not there
+  // hangs in the middle of the map.
+  if (!sel || SPEC) {
+    bar.style.display = "none";
+    publishSoloHeight(bar, "--solo-unit-height");
+    return;
+  }
   const u = sel;
   const linked = u.linked_to !== null && u.linked_to !== undefined;
   const escortPeer = linked && state.units.find(candidate => candidate.id === u.linked_to);
@@ -25874,6 +25898,7 @@ function drawUbar() {
   }
   bar.innerHTML = h;
   bar.style.display = "block";
+  publishSoloHeight(bar, "--solo-unit-height");
 }
 
 function prog(v, total, color) {

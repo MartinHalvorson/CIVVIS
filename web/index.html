@@ -4134,9 +4134,10 @@
     --solo-launch-height: 60px;
     --solo-track-width: clamp(196px, 18vw, 262px);
     --solo-action-width: clamp(186px, 16vw, 236px);
-    /* Republished from the live box by `watchSoloActionHeight`; this is only
-       what the first paint stands on. */
+    /* Republished from the live boxes by `watchSoloCornerHeights`; these are
+       only what the first paint stands on. */
     --solo-action-height: 96px;
+    --solo-unit-height: 0px;
     --solo-corner-clearance: calc(var(--panel-edge) + var(--solo-action-height) + var(--panel-gap));
   }
 
@@ -4440,6 +4441,16 @@
   body.playing-solo.solo-rankings #victoryhud {
     top: calc(var(--civtop-height) + var(--panel-gap));
     bottom: var(--solo-corner-clearance);
+  }
+  /* An open report takes the right edge back, so the rail steps inboard of it
+     rather than climbing through it — the same gutter the spectator layout
+     reserves for that rail. */
+  body.playing-solo.solo-rankings #notify {
+    right: calc(var(--victory-hud-width) + var(--panel-gap) + var(--panel-edge));
+    /* Inboard, the rail stands over the selected unit rather than over End
+       Turn, so it clears whichever of the two is taller. */
+    bottom: max(var(--solo-corner-clearance),
+      calc(var(--panel-edge) + var(--solo-unit-height) + var(--panel-gap)));
   }
 
   /* ---- what a laboratory shows and a game does not ------------------ */

@@ -202,6 +202,13 @@ Buildings off the bottom of the screen, so the one thing a person opens a city
 to do was the one thing they had to scroll for. It is a fold at the foot of
 the column now, which is where Civ 6 keeps buying land.
 
+A battlefield keeps none of this. An arena has no empire behind it — the
+economy is a fixed grant, nothing is built or worshipped — so the strip keeps
+the turn and the era, which a battle does have, and drops the rest rather than
+printing six zeroes about a civilization that is not there; the world tracker
+and the two tree hooks go with them. It is the same test the standings columns
+already use, `worldStandingsInPlay()`.
+
 Auto-play folds away under the button. It is this project's own addition to
 that corner and a real one — handing your seat to a *named* league strategy is
 most of why a laboratory has a play mode at all — but it is not a thing a
