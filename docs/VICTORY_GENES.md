@@ -112,16 +112,17 @@ half of it, with the reason stated in its own comment: *a targeted agent whose
 plan has swung to Conquest under pressure is still playing for the target.*
 The genes below extend it, one decider at a time.
 
-## 4. The six genes
+## 4. The genes
 
-All six ship **off**, live in `src/ai/advanced/victory_lane.rs`, and are rows
+Seven ship **off**, live in `src/ai/advanced/victory_lane.rs`, and are rows
 in `PRODUCTION_OPT_INS` — so `gene_screen` discovers them without being told,
 and `victory_eval --with <tag>` can seat one by name in the lane it exists
 for. Each is one sentence and one call site.
 
 | gene | lane | what it changes |
 |---|---|---|
-| `lane-congress-ballot` | diplomacy | the World Congress ballot is scored, and backed with Favor, by the raced lane |
+| `lane-congress-ballot` | diplomacy | the World Congress ballot is **scored** for the raced lane — which outcome and target this seat names |
+| `lane-congress-favor` | diplomacy | the Favor **stake** behind that ballot. Split from the row above by §8's reading; naming the right outcome is free, buying it is not |
 | `lane-great-people` | all four | Great Person patronage **and the Great Person points a project earns** rank classes by the raced lane. The one gene here that overrides a war plan — see §7 for the fires-check that chose that scope |
 | `lane-policy-deck` | all four | the policy cards are chosen for the raced lane |
 | `lane-culture-spending` | culture | the Naturalist and the touring Rock Bands, and the Faith reserve that keeps them affordable, follow the race rather than the plan |
@@ -368,33 +369,44 @@ kind of interaction the all-lanes screen exists to catch, and the reason the
 ### The lane's own regime — `--victories diplomatic,score`
 
 `docs/gene_screens/2026-08-22-v2-victory-lane-diplomacy-regime-6p-allseats-120-pairs.json`,
-seed 64000000. **120 pairs, resolving ±8.6 pp at 80% power**, so both flags
-below are candidates for a dedicated arm and neither is a verdict; the
-family-wise bar for four genes is |z| ≥ 2.50 and neither clears it.
+seed 64000000. **174 pairs, resolving ±7.1 pp at 80% power**, so the flag
+below is a candidate for a dedicated arm and not a verdict; the family-wise
+bar for four genes is |z| ≥ 2.50 and nothing clears it.
 
 | gene | on% | off% | win Δpp | z | share Δpp | z | read |
 |---|---:|---:|---:|---:|---:|---:|---|
-| `congress-banks-decided` | 20.0% | 13.3% | **+6.7** | **+2.18** | +0.19 | +0.54 | **helps \*** |
-| `congress-counter-votes` | 16.7% | 16.7% | +0.0 | +0.00 | −0.21 | −0.89 | ~ |
-| `envoy-infrastructure` | 15.8% | 17.5% | −1.7 | −0.57 | −0.42 | −1.71 | ~ |
-| `lane-congress-ballot` | 15.0% | 18.3% | −3.3 | −1.00 | **−0.61** | **−2.33** | **share hurts \*** |
+| `congress-banks-decided` | 18.4% | 14.9% | +3.4 | +1.36 | +0.02 | +0.05 | ~ |
+| `envoy-infrastructure` | 16.1% | 17.2% | −1.1 | −0.44 | +0.03 | +0.10 | ~ |
+| `congress-counter-votes` | 16.1% | 17.2% | −1.1 | −0.57 | −0.37 | −1.55 | ~ |
+| `lane-congress-ballot` | 14.9% | 18.4% | −3.4 | −1.36 | **−0.51** | **−2.07** | **share hurts \*** |
 
-Two readings, and they point opposite ways for the two genes that touch the
-same ballot:
+Two things happened as this run grew from 120 pairs to 174, and both are worth
+recording because they are what a screen is for:
 
-- **`congress-banks-decided` is the strongest thing in this whole file**, and
-  it is not a gene this work invented. It existed, off, reachable only as an
-  `elo.rs` arm, with the number that motivates it sitting unused in its own
-  doc comment (26 of 192 ballot decisions already settled, ~1.4 free points a
-  seat a game). Registering it as a gene is a toggle pair and a row; that is
-  the whole cost of finding this out. §9 is about the other thirty.
-- **`lane-congress-ballot` reads negative on score share.** The plausible
-  mechanism is the half of the gene that stakes Favor:
-  `congress_affordable_votes` empties the treasury behind a ballot, and a
-  *winning* ballot is not refunded. A seat still settling has better uses for
-  its Favor than a resolution it would have got right for free. If it is
-  re-run, the split worth screening is the scoring half against the staking
-  half, as two genes rather than one.
+- **`congress-banks-decided` was the strongest reading in this whole body of
+  work at 120 pairs (+6.7 pp, z +2.18, `helps *`) and had fallen to +3.4 pp
+  (z +1.36, unresolved) by 174.** That is the ordinary behaviour of a
+  discovery-sized flag and the reason `docs/GENE_SCREEN.md` says a `*` is a
+  candidate for a dedicated arm rather than a promotion. It remains the gene
+  worth pointing the next batch at — it is not one this work invented, but one
+  that existed, off, reachable only as an `elo.rs` arm, with the number that
+  motivates it sitting unused in its own doc comment (26 of 192 ballot
+  decisions already settled, ~1.4 free points a seat a game). Registering it
+  as a gene cost a toggle pair and a row; §9 is about the other thirty.
+- **`lane-congress-ballot`'s negative persisted** across both windows
+  (−0.61 z −2.33 at 120, −0.51 z −2.07 at 174), which is why it was split
+  rather than left alone.
+- **`lane-congress-ballot` reads negative on score share, and has been split
+  because of it.** The plausible mechanism is entirely on one side: naming the
+  right outcome and target costs nothing, while `congress_affordable_votes`
+  empties the treasury behind the ballot and a **winning** ballot is not
+  refunded — so a seat still settling pays for a resolution it would have named
+  correctly for free. That is two claims, so it is now two genes:
+  `lane-congress-ballot` keeps the **scoring** half and `lane-congress-favor`
+  takes the **stake**. ⚠ **The reading above belongs to the composite**, which
+  is what the screened binary carried; it is attributed to the composite and
+  to neither half. The halves are unscreened, and pricing them apart is the
+  first thing the next batch should do.
 
 ⚠ **Even here the lane barely lands.** The regime census reads *score 94%
 (median t250), diplomatic 6% (median t233)* — restricting the game to two

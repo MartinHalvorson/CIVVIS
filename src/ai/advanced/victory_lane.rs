@@ -179,8 +179,20 @@ impl AdvancedAi {
         }
     }
 
-    /// `lane-congress-ballot`: the lane the World Congress ballot is scored
-    /// and weighted by.
+    /// `lane-congress-ballot`: the lane the World Congress ballot is **scored**
+    /// by — which outcome and target this seat names.
+    ///
+    /// ⚠ **The Favor stake is a separate gene, and the screen is why.** These
+    /// were one gene, and in the lane's own regime
+    /// (`--victories diplomatic,score`, 120 pairs) the composite read −0.61 pp
+    /// of score share at z −2.33 — a screen flag *against* it, while its
+    /// neighbour `congress-banks-decided` read +6.7 pp of wins on the same
+    /// games. The plausible mechanism is entirely on the staking side:
+    /// `congress_affordable_votes` empties the treasury behind a ballot and a
+    /// **winning** ballot is not refunded, so a seat still settling pays for a
+    /// resolution it would have named correctly for free. Naming the right
+    /// outcome costs nothing; buying it costs everything the treasury has.
+    /// Two claims, two genes.
     pub(super) fn congress_lane(
         &self,
         g: &Game,
@@ -188,6 +200,18 @@ impl AdvancedAi {
         plan: &StrategicPlan,
     ) -> GrandStrategy {
         self.lane_or_plan(self.lane_congress_ballot, g, pid, plan)
+    }
+
+    /// `lane-congress-favor`: the lane the Favor **stake** behind a ballot is
+    /// decided by. The staking half of what `congress_lane` used to be; see
+    /// its doc for the reading that split them.
+    pub(super) fn congress_favor_lane(
+        &self,
+        g: &Game,
+        pid: usize,
+        plan: &StrategicPlan,
+    ) -> GrandStrategy {
+        self.lane_or_plan(self.lane_congress_favor, g, pid, plan)
     }
 
     /// `lane-great-people`: the lane Great Person patronage and the Great
@@ -386,9 +410,10 @@ mod tests {
 
     /// Every one of the six is off in production and comes back off.
     #[test]
-    fn the_six_victory_lane_genes_are_native_opt_ins() {
+    fn the_seven_victory_lane_genes_are_native_opt_ins() {
         let mut ai = AdvancedAi::new();
         assert!(!ai.lane_congress_ballot);
+        assert!(!ai.lane_congress_favor);
         assert!(!ai.lane_great_people);
         assert!(!ai.lane_policy_deck);
         assert!(!ai.lane_culture_spending);
@@ -396,12 +421,14 @@ mod tests {
         assert!(!ai.competition_victory_points);
 
         ai.enable_lane_congress_ballot();
+        ai.enable_lane_congress_favor();
         ai.enable_lane_great_people();
         ai.enable_lane_policy_deck();
         ai.enable_lane_culture_spending();
         ai.enable_lane_space_race();
         ai.enable_competition_victory_points();
         assert!(ai.lane_congress_ballot);
+        assert!(ai.lane_congress_favor);
         assert!(ai.lane_great_people);
         assert!(ai.lane_policy_deck);
         assert!(ai.lane_culture_spending);
@@ -409,17 +436,49 @@ mod tests {
         assert!(ai.competition_victory_points);
 
         ai.disable_lane_congress_ballot();
+        ai.disable_lane_congress_favor();
         ai.disable_lane_great_people();
         ai.disable_lane_policy_deck();
         ai.disable_lane_culture_spending();
         ai.disable_lane_space_race();
         ai.disable_competition_victory_points();
         assert!(!ai.lane_congress_ballot);
+        assert!(!ai.lane_congress_favor);
         assert!(!ai.lane_great_people);
         assert!(!ai.lane_policy_deck);
         assert!(!ai.lane_culture_spending);
         assert!(!ai.lane_space_race);
         assert!(!ai.competition_victory_points);
+    }
+
+    /// The two halves of what used to be one ballot gene answer separately.
+    #[test]
+    fn the_ballot_score_and_the_favor_stake_are_two_genes() {
+        let g = game();
+        let plan = expansion_plan();
+        let mut scoring = AdvancedAi::targeting(VictoryTarget::Diplomacy);
+        scoring.enable_lane_congress_ballot();
+        assert_eq!(
+            scoring.congress_lane(&g, 0, &plan),
+            GrandStrategy::Diplomacy,
+            "the ballot is scored for the raced lane"
+        );
+        assert_eq!(
+            scoring.congress_favor_lane(&g, 0, &plan),
+            GrandStrategy::Expansion,
+            "and the treasury is not staked on it"
+        );
+
+        let mut staking = AdvancedAi::targeting(VictoryTarget::Diplomacy);
+        staking.enable_lane_congress_favor();
+        assert_eq!(
+            staking.congress_lane(&g, 0, &plan),
+            GrandStrategy::Expansion
+        );
+        assert_eq!(
+            staking.congress_favor_lane(&g, 0, &plan),
+            GrandStrategy::Diplomacy
+        );
     }
 
     /// The premise, stated as a test: a seat told to play for Culture and

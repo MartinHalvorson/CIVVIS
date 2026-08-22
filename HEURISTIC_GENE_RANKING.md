@@ -88,7 +88,8 @@ These screenable genes have no native on/off result, so they receive no rank or 
 | `great-person-housing` | off (unmeasured) | A class earned and blocked reserves a city for the slot building, district, wonder or soldier that lifts the block, and a due cultural person sells duplicate… |
 | `guru-heals-the-corps` | off (unmeasured) | Let a founder that is defending its own cities hold one Guru, the only field heal a religious corps has. |
 | `holy-site-where-the-threat-is` | off (unmeasured) | Put a Holy Site in the city that is actually losing its majority, so its defender can be bought there instead of walking from the Holy City. |
-| `lane-congress-ballot` | off (unmeasured) | Score the World Congress ballot, and stake Favor behind it, for the victory the empire is actually racing rather than for an expansion posture that has no lane. |
+| `lane-congress-ballot` | off (unmeasured) | Score the World Congress ballot — which outcome and target this seat names — for the victory the empire is actually racing rather than for an expansion postu… |
+| `lane-congress-favor` | off (unmeasured) | Stake the Favor behind a World Congress ballot for the victory the empire is actually racing. |
 | `lane-culture-spending` | off (unmeasured) | Run the Culture lane's Faith pass — the Naturalist that founds a National Park, the touring Rock Bands — and size its reserve, for an empire racing Culture w… |
 | `lane-great-people` | off (unmeasured) | Rank Great Person classes, and the Great Person points a project earns, by the victory the empire is actually racing rather than by a war it is fighting. |
 | `lane-policy-deck` | off (unmeasured) | Choose the policy cards for the victory the empire is actually racing while its plan is still Expansion. |

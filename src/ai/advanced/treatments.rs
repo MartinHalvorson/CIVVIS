@@ -253,6 +253,7 @@ pub const PRODUCTION_OPT_INS: &[LiveTreatment] = &[
     // of them; the sixth prices the Diplomatic Victory Points a scored
     // competition pays, which nothing priced.
     ("lane_congress_ballot", "lane-congress-ballot", AdvancedAi::enable_lane_congress_ballot),
+    ("lane_congress_favor", "lane-congress-favor", AdvancedAi::enable_lane_congress_favor),
     ("lane_great_people", "lane-great-people", AdvancedAi::enable_lane_great_people),
     ("lane_policy_deck", "lane-policy-deck", AdvancedAi::enable_lane_policy_deck),
     ("lane_culture_spending", "lane-culture-spending", AdvancedAi::enable_lane_culture_spending),

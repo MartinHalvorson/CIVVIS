@@ -3769,9 +3769,15 @@ pub struct AdvancedAi {
     /// default. See `advanced/victory_lane.rs` for the census that motivates
     /// them and `docs/VICTORY_GENES.md` for the lane-by-lane coverage table.
     ///
-    /// `lane-congress-ballot`: the World Congress ballot is scored, and
-    /// backed with Favor, by the raced lane.
+    /// `lane-congress-ballot`: the World Congress ballot is **scored** for the
+    /// raced lane — which outcome and target this seat names.
     pub lane_congress_ballot: bool,
+    /// `lane-congress-favor`: the **stake** behind that ballot is decided by
+    /// the raced lane. Split from the row above after the lane's own regime
+    /// flagged the composite at −0.61 pp of score share (z −2.33): naming the
+    /// right outcome is free, buying it empties a treasury that a winning
+    /// ballot does not refund. See `advanced/victory_lane.rs`.
+    pub lane_congress_favor: bool,
     /// `lane-great-people`: Great Person patronage ranks classes by the
     /// raced lane.
     pub lane_great_people: bool,
@@ -4854,6 +4860,7 @@ impl AdvancedAi {
             district_lookahead_settle: false,
             priced_tile_purchase: false,
             lane_congress_ballot: false,
+            lane_congress_favor: false,
             lane_great_people: false,
             lane_policy_deck: false,
             lane_culture_spending: false,
@@ -13371,6 +13378,7 @@ impl AdvancedAi {
             // cannot be reached in the opening, and the Favor behind a vote is
             // never staked. One answer for the whole session.
             let congress_lane = self.congress_lane(g, pid, plan);
+            let congress_favor_lane = self.congress_favor_lane(g, pid, plan);
             for resolution in session.resolutions {
                 if resolution.ballots.contains_key(&pid) {
                     continue;
@@ -13418,7 +13426,8 @@ impl AdvancedAi {
                         );
                     let votes = if settled.is_some() {
                         1
-                    } else if congress_lane == GrandStrategy::Diplomacy || counters_the_leader {
+                    } else if congress_favor_lane == GrandStrategy::Diplomacy || counters_the_leader
+                    {
                         g.congress_affordable_votes(pid)
                     } else {
                         1

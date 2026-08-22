@@ -2205,10 +2205,11 @@ impl AdvancedAi {
         self.base.pantheon_reads_the_board = true;
     }
 
-    /// Score the World Congress ballot, and stake Favor behind it, for the
-    /// victory the empire is actually racing rather than for an expansion
-    /// posture that has no lane. See `advanced/victory_lane.rs`. Off everywhere by
-    /// default; opt-in gene `lane-congress-ballot`.
+    /// Score the World Congress ballot — which outcome and target this seat
+    /// names — for the victory the empire is actually racing rather than for
+    /// an expansion posture that has no lane. See `advanced/victory_lane.rs`.
+    /// The Favor stake behind the ballot is `lane-congress-favor`, a separate
+    /// gene. Off everywhere by default; opt-in gene `lane-congress-ballot`.
     pub fn enable_lane_congress_ballot(&mut self) {
         self.lane_congress_ballot = true;
     }
@@ -2216,6 +2217,22 @@ impl AdvancedAi {
     /// The twin of `enable_lane_congress_ballot`.
     pub fn disable_lane_congress_ballot(&mut self) {
         self.lane_congress_ballot = false;
+    }
+
+    /// Stake the Favor behind a World Congress ballot for the victory the
+    /// empire is actually racing. The other half of what
+    /// `lane-congress-ballot` used to be, split from it after the lane's own
+    /// regime flagged the composite at −0.61 pp of score share (z −2.33):
+    /// naming the right outcome is free, buying it empties a treasury a
+    /// winning ballot does not refund. See `advanced/victory_lane.rs`. Off
+    /// everywhere by default; opt-in gene `lane-congress-favor`.
+    pub fn enable_lane_congress_favor(&mut self) {
+        self.lane_congress_favor = true;
+    }
+
+    /// The twin of `enable_lane_congress_favor`.
+    pub fn disable_lane_congress_favor(&mut self) {
+        self.lane_congress_favor = false;
     }
 
     /// Rank Great Person classes, and the Great Person points a project earns,
