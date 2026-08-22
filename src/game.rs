@@ -1162,6 +1162,7 @@ type HousedWorksByPlayer = BTreeMap<usize, GreatWorksByCity>;
 type GreatWorkSlotsByPlayer = BTreeMap<usize, Vec<(u32, String)>>;
 type GreatWorkHousing = BTreeMap<(usize, String, usize), bool>;
 type WonderEffectsByPlayer = BTreeMap<usize, BTreeMap<String, f64>>;
+type AirPatrols = Vec<(usize, Pos)>;
 
 #[derive(Default)]
 pub struct QueryCache {
@@ -1184,7 +1185,7 @@ pub struct QueryCache {
     /// inside a `&self` query, so it is computed once per memo scope. Almost
     /// always empty: a patrol needs a fighter, and Flight is deep enough
     /// that most games never see one.
-    air_patrols: std::cell::RefCell<Option<Arc<Vec<(usize, Pos)>>>>,
+    air_patrols: std::cell::RefCell<Option<Arc<AirPatrols>>>,
     /// Which improvements let a unit pass, indexed by [`Name::id`].
     ///
     /// ★★★★ A RULESET FACT ASKED PER TILE, BY STRING. `class_can_traverse`
@@ -16126,11 +16127,11 @@ impl Game {
     /// rebuilt per call — exactly the work the open-coded scan did, never
     /// more. `query_memo.yields` is the discriminator for "a scope is live",
     /// the same one `query_memo()` itself uses.
-    fn air_patrols(&self) -> Arc<Vec<(usize, Pos)>> {
+    fn air_patrols(&self) -> Arc<AirPatrols> {
         if let Some(cached) = self.query_memo.air_patrols.borrow().as_ref() {
             return Arc::clone(cached);
         }
-        let patrols: Arc<Vec<(usize, Pos)>> = Arc::new(
+        let patrols: Arc<AirPatrols> = Arc::new(
             self.units
                 .values()
                 .filter(|unit| unit.air_patrol)
@@ -16162,8 +16163,7 @@ impl Game {
             .unwrap_or(0);
         let mut table = vec![false; span];
         for (name, spec) in self.rules.improvements.iter() {
-            table[name.id() as usize] =
-                spec.effects.get("passage").copied().unwrap_or(0.0) > 0.0;
+            table[name.id() as usize] = spec.effects.get("passage").copied().unwrap_or(0.0) > 0.0;
         }
         let table = Arc::new(table);
         if self.query_memo.yields.borrow().is_some() {
@@ -23758,11 +23758,9 @@ impl Game {
         // every game that never fields a fighter.
         let patrols = self.air_patrols();
         if !patrols.is_empty()
-            && patrols
-                .iter()
-                .any(|&(owner, patrol)| {
-                    patrol == pos && owner != u.owner && self.is_at_war(u.owner, owner)
-                })
+            && patrols.iter().any(|&(owner, patrol)| {
+                patrol == pos && owner != u.owner && self.is_at_war(u.owner, owner)
+            })
         {
             return false;
         }
