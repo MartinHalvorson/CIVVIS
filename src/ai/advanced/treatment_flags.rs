@@ -230,6 +230,92 @@ impl AdvancedAi {
         self.base.plot_purchase_delegated = false;
     }
 
+    /// Price the science economy on whether it can still repay rather than on
+    /// how much of the game is left. See
+    /// [`AdvancedAi::science_payback_horizon`]. Opt-in gene
+    /// `science-payback-horizon`.
+    pub fn enable_science_payback_horizon(&mut self) {
+        self.science_payback_horizon = true;
+    }
+
+    /// The twin of `enable_science_payback_horizon`.
+    pub fn disable_science_payback_horizon(&mut self) {
+        self.science_payback_horizon = false;
+    }
+
+    /// Credit a Campus building the beakers its city's multipliers will
+    /// actually pay it. See [`AdvancedAi::science_multiplier_payoff`]. Opt-in
+    /// gene `science-multiplier-payoff`.
+    pub fn enable_science_multiplier_payoff(&mut self) {
+        self.science_multiplier_payoff = true;
+    }
+
+    /// The twin of `enable_science_multiplier_payoff`.
+    pub fn disable_science_multiplier_payoff(&mut self) {
+        self.science_multiplier_payoff = false;
+    }
+
+    /// A Campus building's debt is scaled by its own Science against the
+    /// chain's first rung. See [`AdvancedAi::research_tier_premium`]. Opt-in
+    /// gene `research-tier-premium`.
+    pub fn enable_research_tier_premium(&mut self) {
+        self.research_tier_premium = true;
+    }
+
+    /// The twin of `enable_research_tier_premium`.
+    pub fn disable_research_tier_premium(&mut self) {
+        self.research_tier_premium = false;
+    }
+
+    /// The Campus coverage term is scaled by how finished the empire's
+    /// standing Campuses are. See [`AdvancedAi::campus_finishes_first`].
+    /// Opt-in gene `campus-finishes-first`.
+    pub fn enable_campus_finishes_first(&mut self) {
+        self.campus_finishes_first = true;
+    }
+
+    /// The twin of `enable_campus_finishes_first`.
+    pub fn disable_campus_finishes_first(&mut self) {
+        self.campus_finishes_first = false;
+    }
+
+    /// A power plant is credited the yields it switches on in its city. See
+    /// [`AdvancedAi::power_the_laboratory`]. Opt-in gene
+    /// `power-the-laboratory`.
+    pub fn enable_power_the_laboratory(&mut self) {
+        self.power_the_laboratory = true;
+    }
+
+    /// The twin of `enable_power_the_laboratory`.
+    pub fn disable_power_the_laboratory(&mut self) {
+        self.power_the_laboratory = false;
+    }
+
+    /// A Campus plot that clears the multiplier's adjacency threshold is
+    /// credited what crossing it unlocks. See
+    /// [`AdvancedAi::campus_adjacency_threshold`]. Opt-in gene
+    /// `campus-adjacency-threshold`.
+    pub fn enable_campus_adjacency_threshold(&mut self) {
+        self.campus_adjacency_threshold = true;
+    }
+
+    /// The twin of `enable_campus_adjacency_threshold`.
+    pub fn disable_campus_adjacency_threshold(&mut self) {
+        self.campus_adjacency_threshold = false;
+    }
+
+    /// The citizen tilt and the beaker floor hold while the research can
+    /// still pay. See [`AdvancedAi::research_floor_holds`]. Opt-in gene
+    /// `research-floor-holds`.
+    pub fn enable_research_floor_holds(&mut self) {
+        self.research_floor_holds = true;
+    }
+
+    /// The twin of `enable_research_floor_holds`.
+    pub fn disable_research_floor_holds(&mut self) {
+        self.research_floor_holds = false;
+    }
+
     /// A seat with no religion and 600+ Faith patronizes Great People with it
     /// whatever the shortfall. See [`AdvancedAi::idle_faith_patronage`].
     /// Opt-in gene.

@@ -233,6 +233,23 @@ pub const PRODUCTION_OPT_INS: &[LiveTreatment] = &[
     ("contact_posture", "contact-posture", AdvancedAi::enable_contact_posture),
     ("district_lookahead_settle", "district-lookahead-settle", AdvancedAi::enable_district_lookahead_settle),
     ("priced_tile_purchase", "priced-tile-purchase", AdvancedAi::enable_priced_tile_purchase),
+    // Every science term in the controller tapers to zero while the flat
+    // constants it competes with never do; this asks whether the investment
+    // can still repay instead. See `AdvancedAi::science_payback_horizon`.
+    ("science_payback_horizon", "science-payback-horizon", AdvancedAi::enable_science_payback_horizon),
+    // A Library bought after Rationalism earns twice a Library bought before
+    // it, and the price never noticed. See
+    // `AdvancedAi::science_multiplier_payoff`.
+    ("science_multiplier_payoff", "science-multiplier-payoff", AdvancedAi::enable_science_multiplier_payoff),
+    // The chain's rungs are 2, 4 and 3-plus-5 and the debt that buys them is
+    // flat. See `AdvancedAi::research_tier_premium`.
+    ("research_tier_premium", "research-tier-premium", AdvancedAi::enable_research_tier_premium),
+    // Measured: every extra Campus bought late came out of a Research Lab
+    // that then never got built. See `AdvancedAi::campus_finishes_first`.
+    ("campus_finishes_first", "campus-finishes-first", AdvancedAi::enable_campus_finishes_first),
+    // The empire builds the laboratory and then declines to staff it. See
+    // `AdvancedAi::research_floor_holds`.
+    ("research_floor_holds", "research-floor-holds", AdvancedAi::enable_research_floor_holds),
     // `governor-every-lane` is a losing composite: the deployment screen's
     // score-share drag is large enough that the two pre-existing halves need
     // their own randomised comparisons before either can be retained. The
@@ -275,4 +292,19 @@ pub const PRODUCTION_OPT_INS: &[LiveTreatment] = &[
     // Aerodrome and a bomber wing, and takes the appointed city with the
     // cavalry behind it. See `advanced/air_surge.rs`.
     ("air_surge", "air-surge", AdvancedAi::enable_air_surge),
+    // ⭐ APPENDED AT THE END ON PURPOSE. A gene inserted into the middle of
+    // this table renumbers every row after it, and `gene_screen` writes the
+    // genome as a POSITIONAL bit string — so a screen already running against
+    // an older binary cannot be pooled with one running against this. That
+    // cost the 83,000,000 run its analysis; see
+    // `tools/gene_quantity_contrast.py`.
+    //
+    // The Research Lab's larger half is switched off until something generates
+    // power, and nothing in the controller buys the switch. See
+    // `AdvancedAi::power_the_laboratory`.
+    ("power_the_laboratory", "power-the-laboratory", AdvancedAi::enable_power_the_laboratory),
+    // Rationalism is slotted and NOT ONE Campus in the empire clears the
+    // adjacency half it pays. Appended at the end, for the reason above. See
+    // `AdvancedAi::campus_adjacency_threshold`.
+    ("campus_adjacency_threshold", "campus-adjacency-threshold", AdvancedAi::enable_campus_adjacency_threshold),
 ];
