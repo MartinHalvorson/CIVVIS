@@ -1984,11 +1984,19 @@
   .tip-yields { display: inline-flex; align-items: center; gap: 3px; vertical-align: middle; }
   .tip-yield-group { display: inline-flex; align-items: center; gap: 1px; }
   .tip-yield-marker {
-    flex: 0 0 auto; width: 11px; height: 11px; display: inline-block; box-sizing: border-box;
+    flex: 0 0 auto; width: 13px; height: 13px; display: inline-block; box-sizing: border-box;
     border: 1px solid #0c1012cc; border-radius: 50%;
-    background: linear-gradient(to top, var(--tip-yield-fill) 0 var(--tip-yield-portion),
-      color-mix(in srgb, var(--tip-yield-fill) 17%, #08110e) var(--tip-yield-portion) 100%);
-    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tip-yield-ink) 28%, transparent), 0 1px 2px #0009;
+    /* Civilization VI's own sign, off the same sheet the map draws, dimmed
+       above the earned portion exactly as a fractional sign is on the map. The
+       coloured disc stays underneath as the layer that survives a sheet the
+       browser could not fetch. */
+    background:
+      linear-gradient(to top, #0000 0 var(--tip-yield-portion),
+        #08110ec2 var(--tip-yield-portion) 100%),
+      url("/assets/civ6-yield-icons.png") calc(var(--tip-yield-cell) * 20%) 0 / 600% 100% no-repeat,
+      linear-gradient(to top, var(--tip-yield-fill) 0 var(--tip-yield-portion),
+        color-mix(in srgb, var(--tip-yield-fill) 17%, #08110e) var(--tip-yield-portion) 100%);
+    box-shadow: 0 1px 2px #0009;
   }
   /* The yield breakdown reads as an indented explanation under the thing built
      on the tile. It is deliberately plain text: the labels do the hierarchy. */

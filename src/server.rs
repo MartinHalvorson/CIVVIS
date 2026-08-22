@@ -444,10 +444,9 @@ const EMBEDDED_APP_SETUP_JS: &str = include_str!("../web/assets/app_setup.js");
 const EMBEDDED_FEATURE_ATLAS: &[u8] = include_bytes!("../web/assets/feature-atlas.png");
 const EMBEDDED_ENVIRONMENT_FEATURE_ATLAS: &[u8] =
     include_bytes!("../web/assets/environment-feature-atlas.png");
-const EMBEDDED_HIDDEN_MAP_MONSTERS: &[u8] =
-    include_bytes!("../web/assets/hidden-map-monsters.png");
-const EMBEDDED_CIV6_UNIT_FLAGS: &[u8] =
-    include_bytes!("../web/assets/civ6-unit-flags.png");
+const EMBEDDED_HIDDEN_MAP_MONSTERS: &[u8] = include_bytes!("../web/assets/hidden-map-monsters.png");
+const EMBEDDED_CIV6_UNIT_FLAGS: &[u8] = include_bytes!("../web/assets/civ6-unit-flags.png");
+const EMBEDDED_CIV6_YIELD_ICONS: &[u8] = include_bytes!("../web/assets/civ6-yield-icons.png");
 
 /// The agents that exist in every build, whether or not a league snapshot is
 /// on disk, with the handle the leaderboards give them. `make_send_ai`
@@ -3470,6 +3469,11 @@ fn civ6_unit_flags() -> Vec<u8> {
         .unwrap_or_else(|_| EMBEDDED_CIV6_UNIT_FLAGS.to_vec())
 }
 
+fn civ6_yield_icons() -> Vec<u8> {
+    std::fs::read("web/assets/civ6-yield-icons.png")
+        .unwrap_or_else(|_| EMBEDDED_CIV6_YIELD_ICONS.to_vec())
+}
+
 /// Where a single-player game keeps its own saves, relative to the process's
 /// working directory. Files are named `*.save.json`, which `.gitignore`
 /// already covers, so a game played inside a checkout leaves the tree clean.
@@ -4656,6 +4660,9 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
         ("GET", "/assets/civ6-unit-flags.png") => {
             respond(stream, "200 OK", "image/png", &civ6_unit_flags());
         }
+        ("GET", "/assets/civ6-yield-icons.png") => {
+            respond(stream, "200 OK", "image/png", &civ6_yield_icons());
+        }
         // A lock-free identity probe for supervised process handoffs. The
         // browser used to fetch the multi-megabyte `/state` document here and
         // could queue behind an AI step for its entire three-second timeout.
@@ -5276,8 +5283,8 @@ mod tests {
         tile_mark, valid_between_game_countdown_ms, viewer_path, ChronicleSnapshot, ChronicleState,
         FrameDelivery, Params, Session, Shared, SpectatorFrame, BETWEEN_GAME_COUNTDOWN_OPTIONS_MS,
         DEFAULT_BETWEEN_GAME_COUNTDOWN_MS, EMBEDDED_APP_JS, EMBEDDED_APP_SETUP_JS,
-        EMBEDDED_CIV6_UNIT_FLAGS, EMBEDDED_HIDDEN_MAP_MONSTERS, EMBEDDED_INDEX,
-        MAX_EXACT_JAVASCRIPT_INTEGER, SAVE_DIR, STATE_LONG_POLL, VIEWER_ACTIVE,
+        EMBEDDED_CIV6_UNIT_FLAGS, EMBEDDED_CIV6_YIELD_ICONS, EMBEDDED_HIDDEN_MAP_MONSTERS,
+        EMBEDDED_INDEX, MAX_EXACT_JAVASCRIPT_INTEGER, SAVE_DIR, STATE_LONG_POLL, VIEWER_ACTIVE,
     };
     use crate::game::{Action, Game, LeaderPool, PlayOnMode, VictoryConditions, CIV6_LEADER_POOL};
     use crate::server::{
@@ -13017,9 +13024,6 @@ mod tests {
             .expect("strategic unit pictogram renderer");
         assert!(renderer.contains("const official = civ6UnitIconSprite(type, color)"));
         assert!(renderer.contains("cx.drawImage(official"));
-        assert!(EMBEDDED_INDEX.contains("drawUnitPictogram(u.type, x, y,"));
-        assert!(EMBEDDED_INDEX.contains("drawUnitPictogram(unit.type, ux, uy,"));
-        assert!(EMBEDDED_INDEX.contains("drawUnitPictogram(d.type, d.x, d.y,"));
         assert!(!EMBEDDED_INDEX.contains("embarked ? \"galley\""));
 
         // The cells carry a per-icon margin -- 38 to 64 px of silhouette in the
@@ -13036,18 +13040,30 @@ mod tests {
 
         // And one size means one size everywhere: no surface may reintroduce
         // its own multiplier, and none may make the icon grow with the camera
-        // the way the retired COMMAND_UNIT_ICON_K did.
+        // the way the retired COMMAND_UNIT_ICON_K did. Every surface asks the
+        // one seat routine, which is also what keeps a counter that is not a
+        // circle from being a second, separately chosen size.
         assert!(!EMBEDDED_INDEX.contains("COMMAND_UNIT_ICON_K"));
         assert!(EMBEDDED_INDEX.contains("const COMMAND_UNIT_ICON_SHARE = .66;"));
         assert_eq!(
             EMBEDDED_INDEX.matches("COMMAND_UNIT_ICON_SHARE").count(),
+            3,
+            "the one share is declared once and spent only by the seat routine"
+        );
+        assert_eq!(
+            EMBEDDED_INDEX.matches("strategicUnitGlyphSeat(").count(),
             5,
             "the flat map, the globe, the casualty and the production medallion \
-             all draw their unit glyph at the one shared size"
+             all seat their unit glyph through the one routine"
         );
-        assert!(EMBEDDED_INDEX.contains("rr * 2 * COMMAND_UNIT_ICON_SHARE, tokenInk"));
-        assert!(EMBEDDED_INDEX.contains("r * 2 * COMMAND_UNIT_ICON_SHARE, tokenInk"));
-        assert!(EMBEDDED_INDEX.contains("mr * 2 * COMMAND_UNIT_ICON_SHARE, \"#f0ead8\""));
+        assert!(EMBEDDED_INDEX
+            .contains("drawUnitPictogram(u.type, seat.x, seat.y, seat.size, tokenInk)"));
+        assert!(EMBEDDED_INDEX
+            .contains("drawUnitPictogram(unit.type, seat.x, seat.y, seat.size, tokenInk)"));
+        assert!(EMBEDDED_INDEX
+            .contains("drawUnitPictogram(d.type, seat.x, seat.y, seat.size, tokenInk)"));
+        assert!(EMBEDDED_INDEX
+            .contains("drawUnitPictogram(it.unit, seat.x, seat.y, seat.size, \"#f0ead8\")"));
 
         // Religious units are ordinary units of the map: each has its own
         // Civilization VI cell and rides the same token as everything else.
@@ -13069,21 +13085,63 @@ mod tests {
         }
     }
 
-    /// One counter shape for every unit. The civilian capsule was a second
-    /// silhouette sitting among the military circles, and it read as a second
-    /// class of marker rather than as "this one cannot fight".
+    /// Two counter shapes, and they are the base game's two: a circle for a
+    /// unit that can fight and Civilization VI's rounded triangle, point down,
+    /// for one that cannot. The retired civilian capsule was a shape of the
+    /// viewer's own invention, which is why it read as a second marker set
+    /// instead of as the same set saying "this one is not an army".
     #[test]
-    fn every_command_token_is_the_same_circle() {
-        assert!(EMBEDDED_INDEX.contains(
-            "function strategicUnitTokenPath(x, y, r) {\n  cx.beginPath();\n  cx.arc(x, y, r, 0, 7);\n}"
-        ));
+    fn a_civilian_counter_is_the_base_games_rounded_triangle() {
         assert!(!EMBEDDED_INDEX.contains("cx.roundRect(x - r, y - h / 2, r * 2, h, h / 2)"));
+        assert!(EMBEDDED_INDEX.contains("const CIVILIAN_TOKEN_CORNER = .30;"));
+        assert!(EMBEDDED_INDEX.contains("const CIVILIAN_TOKEN_VERTEX = 1 - CIVILIAN_TOKEN_CORNER;"));
+        let token = EMBEDDED_INDEX
+            .split("function strategicUnitTokenPath(x, y, r, civilian = false) {")
+            .nth(1)
+            .and_then(|tail| tail.split("function strategicUnitCounterHalfWidth").next())
+            .expect("strategic unit counter outline");
+        assert!(token.contains("if (!civilian) { cx.arc(x, y, r, 0, 7); return; }"));
+        // The corners are three discs and `cx.arc` draws the side into each,
+        // which is how the three-count yield plate already makes the base
+        // game's rounded triangle. The first vertex points straight down.
+        assert!(token.contains("const out = Math.PI / 2 + at * 2 * Math.PI / 3;"));
+        assert!(token.contains(
+            "cx.arc(x + Math.cos(out) * vertex, y + Math.sin(out) * vertex, corner,\n           out - Math.PI / 3, out + Math.PI / 3);"
+        ));
+
+        // The triangle stands inside the circle its seat was measured for, so
+        // a civilian can no more crowd its hex than a soldier can.
+        assert!(EMBEDDED_INDEX.contains("strategicUnitTokenPath(ux, uy, r, civilian);"));
+        assert!(EMBEDDED_INDEX.contains("strategicUnitTokenPath(x, y, rr, civilian);"));
+        assert!(EMBEDDED_INDEX.contains("strategicUnitTokenPath(d.x, d.y, r, civilian);"));
+        // And the selection ring is the counter's own outline, not a circle
+        // drawn over a triangle.
+        assert!(EMBEDDED_INDEX
+            .contains("strategicUnitTokenPath(x, y, Math.max(0, rr - 1.2), civilian);"));
         assert_eq!(
             EMBEDDED_INDEX.matches("strategicUnitTokenPath(").count(),
-            5,
-            "the flat map fill and outline, the globe and the casualty all take \
-             the one token path"
+            6,
+            "the flat map fill, outline and selection ring, the globe and the \
+             casualty all take the one token path"
         );
+
+        // Which unit gets which counter is the viewer's one answer to "can
+        // this fight", not a second list kept beside it.
+        assert!(EMBEDDED_INDEX.contains("const civilian = CIVILIAN_UNITS.has(u.type);"));
+        assert!(EMBEDDED_INDEX.contains("const civilian = CIVILIAN_UNITS.has(unit.type);"));
+        assert!(EMBEDDED_INDEX.contains("const civilian = CIVILIAN_UNITS.has(d.type);"));
+
+        // A health bar is only ever as wide as the counter is where it sits,
+        // so a plundered Trader's bar tightens into the point instead of
+        // hanging out over the tile.
+        assert!(
+            EMBEDDED_INDEX.contains("function strategicUnitCounterHalfWidth(r, dy, civilian) {")
+        );
+        assert!(EMBEDDED_INDEX.contains(
+            "const room = strategicUnitCounterHalfWidth(r, by + bh + frame - y, civilian);"
+        ));
+        assert!(EMBEDDED_INDEX
+            .contains("const bw = Math.min(r * 1.28, Math.max(0, room - frame) * 2);"));
     }
 
     #[test]
@@ -13091,7 +13149,7 @@ mod tests {
         let renderer = EMBEDDED_INDEX
             .split("function drawStrategicUnitHealth")
             .nth(1)
-            .and_then(|tail| tail.split("// One silhouette size for every unit").next())
+            .and_then(|tail| tail.split("// Civ 6 hangs a small flag").next())
             .expect("strategic unit health renderer");
         assert!(EMBEDDED_INDEX.contains(
             "const CAPTURE_ONLY_CIVILIAN_UNITS = new Set([\"settler\", \"builder\"]);"
@@ -14240,6 +14298,48 @@ mod tests {
         assert!(!EMBEDDED_INDEX.contains("function yieldPipRuns"));
         assert!(EMBEDDED_INDEX.contains("class=\"tip-yield-group\""));
         assert!(EMBEDDED_INDEX.contains("--tip-yield-portion:${Math.round(portion * 100)}%"));
+    }
+
+    /// The signs on the plate are Civilization VI's own, cut from the very
+    /// texture the plate geometry was measured against. Each is one finished
+    /// circular icon, so nothing paints a disc under one -- the disc and the
+    /// pictograph are what the viewer drew while it had no sheet to draw.
+    #[test]
+    fn browser_tile_yield_signs_are_the_base_games_own_icons() {
+        assert!(EMBEDDED_CIV6_YIELD_ICONS.starts_with(b"\x89PNG\r\n\x1a\n"));
+        assert!(EMBEDDED_CIV6_YIELD_ICONS.len() > 8_000);
+        assert!(
+            EMBEDDED_INDEX.contains("CIV6_YIELD_ICON_ATLAS.src = \"/assets/civ6-yield-icons.png\"")
+        );
+        assert!(EMBEDDED_INDEX.contains(
+            "const CIV6_YIELD_ICON_KINDS = [\"food\", \"production\", \"gold\",\n                               \"science\", \"culture\", \"faith\"];"
+        ));
+        assert!(EMBEDDED_INDEX.contains("const CIV6_YIELD_ICON_CELL = 80;"));
+
+        let sign = EMBEDDED_INDEX
+            .split("function drawYieldSign(kind, x, y, r, fraction) {")
+            .nth(1)
+            .and_then(|tail| tail.split("function drawYieldPip").next())
+            .expect("tile-yield sign renderer");
+        assert!(
+            sign.contains("if (CIV6_YIELD_ICON_ATLAS_READY && CIV6_YIELD_ICON_INDEX.has(kind)) {")
+        );
+        assert!(sign.contains("if (fraction >= 1) { drawCiv6YieldIcon(kind, x, y, r); return; }"));
+        // A fractional sign is that same icon twice: a dimmed ghost of all of
+        // it, then the earned part over the top. Never a second kind of mark.
+        assert!(sign.contains("cx.globalAlpha *= .26;"));
+        assert!(sign.contains("cx.rect(x - r, y + r - r * 2 * fraction, r * 2, r * 2 * fraction);"));
+        // And the drawn disc is still there underneath the branch, for the
+        // first frame and for a sheet the browser could not fetch.
+        assert!(sign.contains("cx.fillStyle = YPIP[kind] || \"#cccccc\";"));
+        assert!(sign.contains("drawYieldPipGlyph(kind, x, y, r);"));
+
+        // The tooltip counts with the same six signs off the same sheet, so a
+        // hover is never a second, private vocabulary for the same yield.
+        assert!(EMBEDDED_INDEX.contains("--tip-yield-cell:${cell};"));
+        assert!(EMBEDDED_INDEX.contains(
+            "url(\"/assets/civ6-yield-icons.png\") calc(var(--tip-yield-cell) * 20%) 0 / 600% 100% no-repeat,"
+        ));
     }
 
     #[test]
