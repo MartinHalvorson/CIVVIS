@@ -76,10 +76,25 @@ anything else could pay. Continents halves that grip and doubles the games
 decided on score, for **+11.9% wall per game** (34.5 → 38.6 s at that size).
 That is a real de-biasing of the instrument at a price worth paying.
 
-⚠ Those numbers are from the 60×38 six-city-state probe, not from the screen's
-74×46 nine-city-state shape — the direction is what carries over, not the
-seconds. 74×46 is ~1.5× the tiles and three more city-states (each ≈ 2.7% per
-turn), so budget the batch from a measured probe at the screen's own shape.
+⚠ Those numbers are from a 60×38 six-city-state probe. **At the screen's own
+74×46 nine-city-state shape the de-biasing is much larger**, measured on this
+branch (seeds 170000000+, 12 pairs = 24 games, 98 genes screened):
+
+| ending | pangaea 60×38 | continents 60×38 | **the screen (continents 74×46)** |
+|---|---:|---:|---:|
+| score (at the clock) | 38% | 52% | **75%** (median t250) |
+| culture | 11% | 18% | **17%** (median t221) |
+| religious | 48% | 28% | **8%** (median t203) |
+
+Room is what breaks a conversion race: on the six-player map Civ VI actually
+uses for six players, the faith that swept 48% of Pangaea games takes 8%. ⚠ That
+last column is **24 games**, a pilot reading and not a census — it fixes the
+direction and the order of magnitude, not the percentages.
+
+**Cost at the screen's shape: ~52 CPU-seconds per game** (24 games, 1,244 CPU-s,
+98 genes screened, `--jobs 10`), against 38.0 s at 60×38. So a 10,000-game
+batch is **~144 CPU-hours** — about 15 hours of wall clock at ten jobs. Budget
+from this number, not from the older 60×38 ones.
 
 ⚠⚠ Science and diplomatic victories land at median **t283 and t285** — past the
 standard clock — so at 250 turns they are 1–2% of endings. A science or congress
