@@ -28,15 +28,15 @@ class TheTableIsDerived(unittest.TestCase):
 
     def test_every_screenable_gene_is_visible(self):
         ledger = json.loads(ranking.LEDGER_JSON.read_text())
-        native, _, _, _ = ranking.load_sources(ledger)
+        measured, _ = ranking.load_sources(ledger)
         text = ranking.RANKING_MD.read_text()
         for tag in ranking.screenable_tags():
-            if tag in native:
+            if tag in measured:
                 self.assertIn(f"`{tag}`", text, tag)
             else:
-                self.assertIn("## Awaiting native measurement", text)
+                self.assertIn("## Awaiting measurement", text)
                 self.assertIn(f"| `{tag}` | off (unmeasured) |", text, tag)
-        self.assertNotIn("`step-and-reassess` | ", text, "a host-only flag is not ranked natively")
+        self.assertNotIn("`step-and-reassess` | ", text, "a host-only flag is not ranked")
 
     def test_descriptions_come_from_the_toggle_docs(self):
         desc = ranking.descriptions()
@@ -70,11 +70,11 @@ class TheTableIsDerived(unittest.TestCase):
         screen's difference band, not the halved column band the table prints.
         """
         ledger = json.loads(ranking.LEDGER_JSON.read_text())
-        native, _, _, _ = ranking.load_sources(ledger)
+        measured, _ = ranking.load_sources(ledger)
         rows = self._ranked_rows()
         self.assertGreater(len(rows), 50)
         for cells in rows:
-            history = native[cells[1].strip("`")]
+            history = measured[cells[1].strip("`")]
             on_games = sum(m["n_on"] for m in history)
             off_games = sum(m["n_off"] for m in history)
             on = sum(m["win_on"] * m["n_on"] for m in history) / on_games
@@ -136,7 +136,7 @@ class TheTableIsDerived(unittest.TestCase):
         # reproduce the screen's `win_z` exactly, which it can only do if the
         # column and its error are on the same (halved) scale.
         ledger = json.loads(ranking.LEDGER_JSON.read_text())
-        source = next(s for s in reversed(ledger["sources"]) if s["regime"] == "native")
+        source = ledger["sources"][-1]
         data = json.loads((ranking.ROOT / source["path"]).read_text())
         chance = 1.0 / int(data["profile"]["players"])
         for gene in data["genes"]:
@@ -144,14 +144,16 @@ class TheTableIsDerived(unittest.TestCase):
             se = ranking.column_se(float(gene["win_se_pp"]))
             self.assertAlmostEqual(column / se, float(gene["win_z"]), places=6, msg=gene["tag"])
 
-    def test_every_native_screen_prints_its_own_band(self):
+    def test_every_screen_prints_its_own_band_and_its_shape(self):
         ledger = json.loads(ranking.LEDGER_JSON.read_text())
         rows = ranking.resolutions(ledger)
-        native = [s for s in ledger["sources"] if s["regime"] == "native"]
-        self.assertEqual(len(rows), len(native))
+        self.assertEqual(len(rows), len(ledger["sources"]))
         text = ranking.RANKING_MD.read_text()
         for row in rows:
-            self.assertIn(f"`{row['name']}` | {row['genes']} |", text, row["name"])
+            # ⭐ The shape is printed beside the band because a `legacy` row is
+            # a reading from the retired Pangaea instrument, not from the
+            # screen the ledger now accepts.
+            self.assertIn(f"`{row['name']}` | {row['shape']} | {row['genes']} |", text, row["name"])
         # Screens are not interchangeable, so no single number serves — and
         # none of them is the retired ±110.
         self.assertGreater(len({round(r["band"]) for r in rows}), 1)
