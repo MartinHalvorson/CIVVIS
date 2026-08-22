@@ -330,10 +330,12 @@ first window did not replicate; and one gene is a measured null.** Every
 reading below is a screening flag at |z| ≥ 2, never a promotion; nothing here
 changes a default.
 
-⚠ **Read §8.4 before §8.1.** The first window's two loudest readings are both
-contradicted by the disjoint-seed replication that follows it. They are left
-in place, unedited, because what was believed and why is evidence — but
-neither of them is a current conclusion.
+⚠ **Read §8.6 first, then the rest as history.** Three claims made earlier in
+this section were overturned by more of their own data — §8.1's
+`lane-culture-spending` negative, §8.2's mechanism for splitting the ballot
+gene, and §8.4's `lane-great-people` flag. Each is left in place, unedited,
+because what was believed and why is evidence. **None of the three is a
+current conclusion.** The one durable reading is in §8.6.
 
 ### 8.1 The regime production plays — all six victory conditions
 
@@ -510,6 +512,57 @@ wrong outcome: a seat still settling has different interests in a resolution
 than the diplomat it intends to become, and voting as the diplomat costs it
 the Favor refund a losing ballot would have paid. **The splitting was right;
 the reason given for it was not.**
+
+### 8.6 ★★★★ Every reading regressed toward zero as the sample grew — except one
+
+Both §8.4 and §8.5 were written from runs still in flight, and both were
+re-read at roughly 2.4× the pairs. The summaries in
+`docs/gene_screens/2026-08-22-v4-*.json` and `-v5-*.json` are the larger reads;
+the tables in §8.4 and §8.5 are the smaller ones, kept as written.
+
+**The native disjoint window (§8.4), 480 → 1,158 pairs:**
+
+| gene | at 480 | at 1,158 |
+|---|---:|---:|
+| `lane-great-people` | **+3.3 (z +2.04) `helps *`** | **+0.3 (z +0.35)** |
+| `congress-banks-decided` | +2.1 (z +1.30) | +1.9 (z +1.87) |
+| `congress-counter-votes` | +2.9 (z +1.47) | −0.2 (z −0.15) |
+| `lane-culture-spending` | +1.7 (z +0.94) | −0.5 (z −0.52) |
+| `lane-policy-deck` | +1.2 (z +0.62) | +1.2 (z +1.04) |
+| `envoy-infrastructure` | −0.4 | −0.0 |
+| `lane-congress-ballot` | −0.4 (z −0.26) | **−1.0, share −0.20 (z −2.31) `share hurts *`** |
+
+**The ballot halves (§8.5), 570 → 984 pairs:** `lane-congress-favor` +1.4 →
++1.0, `congress-banks-decided` +1.1 → +1.0, `lane-congress-ballot` −1.8 → −1.0.
+
+⚠ **§8.4's headline is withdrawn in its turn.** "`lane-great-people` is the
+only gene here to reach `helps *`" was true of 480 pairs and is not true of
+1,158: +3.3 pp became +0.3 pp. That is the third claim in this document
+overturned by more of its own data, after §8.1's `lane-culture-spending` and
+§8.2's mechanism for the ballot split. **The pattern is the finding**: at these
+effect sizes, a reading at a few hundred pairs is a draw from noise, and the
+honest summary of every positive row in this file is *unresolved*.
+
+**One reading did not regress, and it is the one nobody wanted.**
+`lane-congress-ballot` — a gene invented in #2274 to serve the Diplomacy lane —
+is negative in **every window of both regimes**: −0.4 and −1.0 native,
+−1.9 / +0.0 / −2.0 / −1.8 / −1.0 in `--victories diplomatic,score`, and it now
+reads `share hurts *` at z −2.31 on the largest native window. It is the only
+gene in this file whose sign has never flipped.
+
+That does not make it a confirmed loss — nothing here clears the family-wise
+bar, and §8's whole lesson is that a `*` is a place to point a batch. It does
+make it the **first candidate for a dedicated `ai_eval` arm**, ahead of
+anything positive, because a consistently-signed reading is worth more than a
+loud one. If that arm confirms it, the gene should leave the code by the same
+rule that culled the bottom of the ranking — and it will have cost nothing,
+because it never shipped on.
+
+⚠ The four rows files are megabytes and live outside the repository at
+`~/civvis-gene-screens/` with a `README.md` naming each command; every one was
+stopped short of its `--pairs` target because the box is shared. Continue any
+of them with `--append` and a disjoint `--start-seed`, **against a build whose
+genome order matches the file's header** (§8.4).
 
 ## 9. What the genome instrument cannot see
 
