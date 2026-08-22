@@ -25,6 +25,7 @@ def analysis(regime: str, genes: list[dict], pairs: int = 1000, family: float = 
                 "win_delta_pp": g.get("win", 0.0), "win_z": g.get("wz", 0.0),
                 "share_delta_pp": g.get("share", 0.0), "share_z": g.get("sz", 0.0),
                 "read": "",
+                "win_tranches": g.get("tranches", []),
             }
             for g in genes
         ],
@@ -57,7 +58,7 @@ class Merging(unittest.TestCase):
                 path = Path(tmp) / f"s{i}.json"
                 path.write_text(json.dumps(data))
                 paths.append((path, regime))
-            return gene_ledger.build_ledger(paths)
+            return gene_ledger.build_ledger(paths, filter_known=False)
 
     def test_native_governs_and_war_fills_in_when_native_is_unresolved(self):
         ledger = self.build([
@@ -106,9 +107,43 @@ class Merging(unittest.TestCase):
         self.assertTrue(by["strong"]["family_wise"])
         self.assertFalse(by["weak"]["family_wise"])
 
+    def test_chronological_win_tranches_survive_in_the_ledger(self):
+        ledger = self.build([("native", analysis("native", [{
+            "tag": "repeated-harm",
+            "wz": -3.0,
+            "tranches": [
+                {"position": "latest", "pairs": 10002, "win_delta_pp": -1.2345, "win_se_pp": 0.3444, "win_z": -2.3456},
+                {"position": "previous", "pairs": 9996, "win_delta_pp": -0.9876, "win_se_pp": 0.4655, "win_z": -2.1234},
+                {"position": "earlier", "pairs": 10002, "win_delta_pp": -1.1111, "win_se_pp": 0.4366, "win_z": -2.5432},
+            ],
+        }]))])
+        measure = ledger["genes"][0]["native"]
+        self.assertEqual(measure["win_tranches"], [
+            {"position": "latest", "pairs": 10002, "win_delta_pp": -1.234, "win_se_pp": 0.344, "win_z": -2.346},
+            {"position": "previous", "pairs": 9996, "win_delta_pp": -0.988, "win_se_pp": 0.466, "win_z": -2.123},
+            {"position": "earlier", "pairs": 10002, "win_delta_pp": -1.111, "win_se_pp": 0.437, "win_z": -2.543},
+        ])
+
     def test_a_war_file_recorded_as_native_is_refused(self):
         with self.assertRaises(SystemExit):
             self.build([("native", analysis("domination,score", [{"tag": "a"}]))])
+
+
+class KnownTags(unittest.TestCase):
+    def test_the_registry_is_read_and_a_removed_gene_is_dropped(self):
+        known = gene_ledger.known_tags()
+        self.assertGreater(len(known), 50, "the treatments registry scrape found too few tags")
+        self.assertIn("wide-map-capacity", known)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "s.json"
+            path.write_text(json.dumps(analysis("native", [
+                {"tag": "wide-map-capacity", "wz": 2.5},
+                {"tag": "a-gene-whose-code-was-removed", "wz": 3.0},
+            ])))
+            ledger = gene_ledger.build_ledger([(path, "native")])
+        tags = [g["tag"] for g in ledger["genes"]]
+        self.assertIn("wide-map-capacity", tags)
+        self.assertNotIn("a-gene-whose-code-was-removed", tags)
 
 
 class GeneratedFiles(unittest.TestCase):

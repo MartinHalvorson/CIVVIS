@@ -111,17 +111,26 @@ withholding arms would price three.
 ## What one row of the table means
 
 ```
-gene                 pairs   on%   off%   Δpp    95% CI       z   shareΔ     z    adjΔpp   read
-muster-at-command-…    300  31.0%  22.3%  +8.7 [ +1.9,+15.5] +2.51  +2.10pp +3.12  +8.1±3.5  helps *
+gene                 pairs   on%   off%   latest 10k    prior 10k   earlier 10k  all 95% CI       z   shareΔ     z    adjΔpp   read
+muster-at-command-…  30000  31.0%  22.3% +8.9pp z+2.53 +8.4pp z+2.40 +8.7pp z+2.51 [ +6.0,+11.4] +6.28  +2.10pp +3.12  +8.1±1.4  helps **
 ```
 
 | column | meaning |
 |---|---|
-| `on%` / `off%` | the treated seat's win rate (any victory) over the pairs where this gene was on / off — the same 300 maps in both columns |
-| `Δpp`, `95% CI`, `z` | on − off in points, from the paired differences (each pair contributes one on-arm and one off-arm) |
+| `on%` / `off%` | the treated seat's win rate (any victory) over the pairs where this gene was on / off — the same paired maps in both columns |
+| `latest 10k` / `prior 10k` / `earlier 10k` | three newest-first, non-overlapping chronological replications. Each cell is that window's win `Δpp` / paired `z`; `—` means the file has not accumulated that window yet |
+| `all 95% CI`, `z` | the pooled on − off estimate from every complete pair. `on% − off%` is the same pooled win `Δpp` |
 | `shareΔ`, `z` | the same contrast on **score share** (treated score ÷ all majors' scores): continuous, so it resolves an edge at a fraction of the games a win count needs |
 | `adjΔpp` | the win Δ from an OLS of every pair's difference on the whole ±1 sign matrix at once, so a gene is not credited with its neighbours' chance imbalance; printed once there are at least `2·genes+10` pairs |
 | `read` | `helps *`/`hurts *` at \|z\| ≥ 2, `HELPS **`/`HURTS **` past the family-wise 5% bar — on the win Δ first, then `share …` when the score-share z says more; `~` otherwise |
+
+The windows count **complete paired comparisons**, not raw arm rows. In an
+`--all-seats` screen all seat pairs from one map remain together, because they
+share a winner; therefore a nominal 10,000-pair boundary may be 10,002 (or a
+smaller final window). This preserves the independence of the three
+replications. The header prints each actual count. A pooled flag remains a
+screening result; consistent direction across complete chronological windows
+is the extra evidence to use before dropping a gene or changing the ledger.
 
 The header lines carry the treated seat's overall win rate against chance
 (1/players), **how the games ended** (victory type, count, median turn — the
@@ -348,6 +357,27 @@ wins against 27% for all-off** (4p classic, 200 anchor pairs). Now:
   all-six, seeds 52M: all-on 18.4% wins / 20.6% share, best genome 31.2% /
   26.7%, paired win Δ +12.8 pp ± 3.3 for the best genome** (round:
   `docs/eval/2026-08-20-the-bridge-talks-more-than-once-a-turn.md`).
+
+- **The war column, re-priced (2026-08-21).** Every gene's war verdict now
+  comes from one screen against the best genome
+  (`docs/gene_screens/2026-08-21-s8-war-rerank-vs-best-4p-allseats.json`:
+  4p all-seats, `domination,score`, 5,844 seat-pairs, ±2.0 pp), replacing the
+  pre-repair p2/p3b rows. It turned on `score-horizon`, `joint-tactics` and
+  `blind-objective-strength` (unresolved natively, helps at war) and held
+  off `siege-role`, `housing-districts`, `settler-site-agreement`,
+  `holy-lane-parity` and `inquisition-on-threat` (unresolved natively, hurt
+  at war); `wide-map-capacity` reads **+15.6 pp** at war. A screen played on
+  an older build can carry a gene whose code has since been removed; the
+  tool now drops those rows and says so, because the Rust table refuses a tag
+  the registry does not know.
+
+- **The operator's view of the same games** is `HEURISTIC_GENE_RANKING.md`
+  at the repository root — every screenable gene ranked by wins added per
+  10,000 six-player games, each from the latest native screen that measured
+  it, with the war figure and the ledger's default beside it. It is generated
+  (`python3 tools/heuristic_gene_ranking.py --write`) and
+  `tools/test_heuristic_gene_ranking.py` fails when it is older than the
+  ledger's sources; regenerate it in the same change that adds a source.
 
 ⚠ Two consequences to know. A `live_without_<gene>` arm for a gene the
 ledger already holds off is identical to `live` — the screen is that gene's

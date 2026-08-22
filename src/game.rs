@@ -461,6 +461,7 @@ pub(crate) fn vacate_land_combat_purchase_slot(game: &mut Game, player: usize, c
 }
 
 pub mod adjacency;
+pub mod border_forecast;
 pub mod quests;
 
 #[cfg(test)]
@@ -35263,6 +35264,18 @@ impl Game {
                 if mover_is_barbarian {
                     bump(&mut self.players[old], "civilians_lost_to_barbarians");
                 }
+                // `captured:settler` / `captured:builder`: how many of each
+                // this seat has taken from a rival by entering their tile;
+                // `rescued:*` is the same take from a barbarian that had
+                // taken it first. An evaluator row can say whether a raid
+                // ever paid, not only that it was declared.
+                let from_barbarian = self.players[old].is_barbarian;
+                let key = if from_barbarian {
+                    "rescued"
+                } else {
+                    "captured"
+                };
+                bump(&mut self.players[owner], &format!("{key}:{kind}"));
                 self.transfer_unit_owner(oid, owner);
             } else if matches!(class, "civilian" | "support") {
                 let old = self.units[&oid].owner;
@@ -36592,7 +36605,18 @@ impl Game {
         Ok(())
     }
 
-    fn pillageable_at(&self, pid: usize, pos: Pos) -> bool {
+    pub(crate) fn pillageable_at(&self, pid: usize, pos: Pos) -> bool {
+        self.pillageable_at_with(pid, pos, true)
+    }
+
+    /// `pillageable_at` with the state of war assumed: what a declaration on
+    /// the tile's owner would put on the table. The advanced controller's
+    /// opportunistic war prices a surprise war on this before opening it.
+    pub(crate) fn pillageable_after_declaring(&self, pid: usize, pos: Pos) -> bool {
+        self.pillageable_at_with(pid, pos, false)
+    }
+
+    fn pillageable_at_with(&self, pid: usize, pos: Pos, require_war: bool) -> bool {
         let Some(tile) = self.map.get(pos) else {
             return false;
         };
@@ -36605,7 +36629,10 @@ impl Game {
         let Some(city) = self.cities.get(&cid) else {
             return false;
         };
-        if city.owner == pid || !self.is_at_war(pid, city.owner) || self.city_at(pos).is_some() {
+        if city.owner == pid
+            || (require_war && !self.is_at_war(pid, city.owner))
+            || self.city_at(pos).is_some()
+        {
             return false;
         }
         if let Some(improvement) = tile.improvement.as_deref() {
@@ -36745,6 +36772,10 @@ impl Game {
         if !self.pillageable_at(pid, pos) {
             return Err("nothing pillageable there".into());
         }
+        // `pillages`: tiles and district layers this seat has pillaged,
+        // barbarian camps included. The same evaluator reading as the
+        // capture counters above.
+        bump(&mut self.players[pid], "pillages");
         let enemy = self.map.tiles[&pos]
             .owner_city
             .and_then(|city| self.cities.get(&city))

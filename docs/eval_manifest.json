@@ -1,11 +1,12 @@
 {
   "coverage": {
-    "named": 40,
-    "never_named": 16,
+    "named": 41,
+    "never_named": 17,
     "never_named_arms": {
       "amenity-district-path": "live_without_amenity_district_path",
       "amenity-project-preemption": "live_without_amenity_project_preemption",
-      "barbarian-hunt": "live_without_barbarian_hunt",
+      "barbarian-bargain": "live_without_barbarian_bargain",
+      "barbarian-ranged-answer": "live_without_barbarian_ranged_answer",
       "barbarian-walls-one-tier": "live_without_barbarian_walls_one_tier",
       "blind-objective-strength": "live_without_blind_objective_strength",
       "blind-objective-units": "live_without_blind_objective_units",
@@ -23,7 +24,8 @@
     "never_named_treatments": [
       "amenity-district-path",
       "amenity-project-preemption",
-      "barbarian-hunt",
+      "barbarian-bargain",
+      "barbarian-ranged-answer",
       "barbarian-walls-one-tier",
       "blind-objective-strength",
       "blind-objective-units",
@@ -38,14 +40,14 @@
       "suzerain-cards",
       "wonder-ring-settle-value"
     ],
-    "withholdable": 56
+    "withholdable": 58
   },
   "derived": {
-    "eval_only_count": 236,
+    "eval_only_count": 238,
     "firaxis_only_count": 30,
-    "live_bridge_count": 86,
-    "native_engine_repair_count": 56,
-    "withholdable_live_count": 56
+    "live_bridge_count": 88,
+    "native_engine_repair_count": 58,
+    "withholdable_live_count": 58
   },
   "ladder": {
     "ahead": 12,
@@ -141,7 +143,7 @@
       ]
     },
     "ENGINE_REPAIR_TREATMENTS": {
-      "declared_count": 56,
+      "declared_count": 58,
       "items": [
         "muster-at-command-radius",
         "war-reinforcement",
@@ -170,6 +172,8 @@
         "recon-flight",
         "barbarian-scouts-are-scouts",
         "barbarian-hunt",
+        "barbarian-bargain",
+        "barbarian-ranged-answer",
         "civilian-rescue",
         "naval-recon",
         "camp-reach",
@@ -202,7 +206,7 @@
       ]
     },
     "ENGINE_REPAIR_WAR_TREATMENTS": {
-      "declared_count": 32,
+      "declared_count": 34,
       "items": [
         "muster-at-command-radius",
         "war-reinforcement",
@@ -231,6 +235,8 @@
         "recon-flight",
         "barbarian-scouts-are-scouts",
         "barbarian-hunt",
+        "barbarian-bargain",
+        "barbarian-ranged-answer",
         "civilian-rescue",
         "naval-recon",
         "camp-reach",
@@ -239,7 +245,7 @@
       ]
     },
     "EVAL_ONLY_AIS": {
-      "declared_count": 236,
+      "declared_count": 238,
       "items": [
         "fog_honest",
         "advanced_build_first",
@@ -319,6 +325,8 @@
         "live_without_tally_great_people",
         "live_without_barbarian_scouts_are_scouts",
         "live_without_barbarian_hunt",
+        "live_without_barbarian_bargain",
+        "live_without_barbarian_ranged_answer",
         "live_without_camp_reach",
         "live_without_camp_party",
         "live_without_buildings_before_projects",
@@ -515,7 +523,7 @@
       ]
     },
     "LIVE_BRIDGE_TREATMENTS": {
-      "declared_count": 86,
+      "declared_count": 88,
       "items": [
         "joint-tactics",
         "joint-reach-lines",
@@ -580,6 +588,8 @@
         "tally-great-people",
         "barbarian-scouts-are-scouts",
         "barbarian-hunt",
+        "barbarian-bargain",
+        "barbarian-ranged-answer",
         "camp-reach",
         "camp-party",
         "buildings-before-projects",

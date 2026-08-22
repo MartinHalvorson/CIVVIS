@@ -102,6 +102,32 @@ impl AdvancedAi {
         self.theology_for_founders = false;
     }
 
+    /// A settler scores a site by the districts the plan would build there,
+    /// each on its own plot. See [`AdvancedAi::district_lookahead_settle`].
+    /// Opt-in gene `district-lookahead-settle`.
+    pub fn enable_district_lookahead_settle(&mut self) {
+        self.district_lookahead_settle = true;
+    }
+
+    /// The twin of `enable_district_lookahead_settle`.
+    pub fn disable_district_lookahead_settle(&mut self) {
+        self.district_lookahead_settle = false;
+    }
+
+    /// A border plot is bought only when its priced benefit clears its Gold
+    /// by a margin. See [`AdvancedAi::priced_tile_purchase`]. Opt-in gene
+    /// `priced-tile-purchase`.
+    pub fn enable_priced_tile_purchase(&mut self) {
+        self.priced_tile_purchase = true;
+        self.base.plot_purchase_delegated = true;
+    }
+
+    /// The twin of `enable_priced_tile_purchase`.
+    pub fn disable_priced_tile_purchase(&mut self) {
+        self.priced_tile_purchase = false;
+        self.base.plot_purchase_delegated = false;
+    }
+
     /// A seat with no religion and 600+ Faith patronizes Great People with it
     /// whatever the shortfall. See [`AdvancedAi::idle_faith_patronage`].
     /// Opt-in gene.
@@ -124,6 +150,45 @@ impl AdvancedAi {
     /// The twin of `enable_early_contact_window`.
     pub fn disable_early_contact_window(&mut self) {
         self.early_contact_window = false;
+    }
+
+    /// A class earned and blocked reserves a city for the slot building,
+    /// district, wonder or soldier that lifts the block, and a due cultural
+    /// person sells duplicate works to make room. See
+    /// [`AdvancedAi::great_person_housing`]. Opt-in gene.
+    pub fn enable_great_person_housing(&mut self) {
+        self.great_person_housing = true;
+    }
+
+    /// The twin of `enable_great_person_housing`.
+    pub fn disable_great_person_housing(&mut self) {
+        self.great_person_housing = false;
+    }
+
+    /// Open a surprise war on a neighbour whose unescorted Settlers, Builders
+    /// or unpillaged tiles lie within a short march of our soldiers, take
+    /// them, and sue for peace. See [`AdvancedAi::opportunistic_war`].
+    /// Opt-in gene.
+    pub fn enable_opportunistic_war(&mut self) {
+        self.opportunistic_war = true;
+    }
+
+    /// The twin of `enable_opportunistic_war`.
+    pub fn disable_opportunistic_war(&mut self) {
+        self.opportunistic_war = false;
+        self.raid_war = None;
+    }
+
+    /// Count a neighbour's unpillaged tiles within reach as raid prizes and
+    /// send raiding soldiers to them. See [`AdvancedAi::raid_pillage_prizes`].
+    /// Opt-in gene; inert unless `opportunistic_war` is on.
+    pub fn enable_raid_pillage_prizes(&mut self) {
+        self.raid_pillage_prizes = true;
+    }
+
+    /// The twin of `enable_raid_pillage_prizes`.
+    pub fn disable_raid_pillage_prizes(&mut self) {
+        self.raid_pillage_prizes = false;
     }
 
     /// The Religion lane pays for its Holy Site what the Culture lane pays
@@ -489,6 +554,8 @@ impl AdvancedAi {
         self.price_the_suzerainty = true;
     }
 
+    /// Suzerain policy cards are valued only while a suzerainty actually
+    /// exists.
     pub fn enable_suzerain_cards_need_a_suzerainty(&mut self) {
         self.suzerain_cards_need_a_suzerainty = true;
     }
@@ -559,6 +626,7 @@ impl AdvancedAi {
         self.base.come_ashore = false;
     }
 
+    /// Size the siege train by the wall it has to breach.
     pub fn enable_siege_tracks_the_wall(&mut self) {
         self.siege_tracks_the_wall = true;
     }
@@ -1147,6 +1215,15 @@ impl AdvancedAi {
         // distance to our cities: eight Settlers taken in 104 turns on run
         // civvis-20260821T130446Z. See `barbarian_hunt`.
         self.enable_barbarian_hunt();
+        // And a raider is cheaper to kill than a major: over the repaired
+        // bridge our 225 melee attacks killed 119 and cost 6 attackers, while
+        // the barbarians attacked us 867 times to our 290. See
+        // `BasicAi::barbarian_bargain`.
+        self.enable_barbarian_bargain();
+        // And a ring of shooters is answered by a shooter: they field 45 % of
+        // their attacks ranged to our 22 %, and our ranged attacks have never
+        // lost the attacker. See `BasicAi::barbarian_ranged_answer`.
+        self.enable_barbarian_ranged_answer();
         // ⚠⚠ AND THE REPAIR IS BEHIND A TECH THE ARGMAX NEVER AIMS AT. Over 94
         // live runs the median empire ends on **30 techs of 77**, `engineering`
         // is reached by only **73%** and at a median turn **116** — which is why
@@ -1336,6 +1413,15 @@ impl AdvancedAi {
         // measures distance from our CITIES, so the walk to a site ten tiles
         // out is unguarded ground by construction. See `BasicAi::barbarian_hunt`.
         self.enable_barbarian_hunt();
+        // And a raider is cheaper to kill than a major: 225 melee attacks over
+        // the repaired bridge killed 119 and cost 6 attackers, while the
+        // barbarians attacked us 867 times to our 290. See
+        // `BasicAi::barbarian_bargain`.
+        self.enable_barbarian_bargain();
+        // And a ring of shooters is answered by a shooter: they field 45 % of
+        // their attacks ranged to our 22 %, and our ranged attacks have never
+        // lost the attacker. See `BasicAi::barbarian_ranged_answer`.
+        self.enable_barbarian_ranged_answer();
         // And a camp within nine tiles of a city is home ground the guard clears.
         // See `BasicAi::camp_reach`.
         self.enable_camp_reach();
@@ -1511,6 +1597,17 @@ impl AdvancedAi {
         self.builder_worked_tile_priority = false;
     }
 
+    /// Keep Builders from entering a visible Barbarian-capture envelope.
+    /// Native opt-in gene `builder-barbarian-safety`; off in production until
+    /// its targeted barbarian screen has priced the safety/tempo trade.
+    pub fn enable_builder_barbarian_safety(&mut self) {
+        self.builder_barbarian_safety = true;
+    }
+
+    /// The twin of `enable_builder_barbarian_safety`.
+    pub fn disable_builder_barbarian_safety(&mut self) {
+        self.builder_barbarian_safety = false;
+    }
     /// Credit a wonder's missing prerequisite buildings/districts with a
     /// share of the wonder's own production score. Evaluator arm
     /// `advanced_wonder_reach`; off in production.
@@ -1574,8 +1671,26 @@ impl AdvancedAi {
         self.base.sea_answers = true;
     }
 
-    /// Deliberate camp clearing as a peacetime errand. See
-    /// `BasicAi::camp_bounty`; entrant `advanced_camp_bounty`.
+    /// Answer a ring of shooters with a shooter. See
+    /// `BasicAi::barbarian_ranged_answer`; withheld by `barbarian-ranged-answer`.
+    pub fn enable_barbarian_ranged_answer(&mut self) {
+        self.base.enable_barbarian_ranged_answer();
+    }
+
+    pub fn disable_barbarian_ranged_answer(&mut self) {
+        self.base.disable_barbarian_ranged_answer();
+    }
+
+    /// Price a raider's life below a major's. See `BasicAi::barbarian_bargain`;
+    /// withheld by `barbarian-bargain`.
+    pub fn enable_barbarian_bargain(&mut self) {
+        self.base.enable_barbarian_bargain();
+    }
+
+    pub fn disable_barbarian_bargain(&mut self) {
+        self.base.disable_barbarian_bargain();
+    }
+
     /// See `BasicAi::barbarian_hunt`; withheld by the `barbarian-hunt`
     /// treatment.
     pub fn enable_barbarian_hunt(&mut self) {
@@ -1586,6 +1701,8 @@ impl AdvancedAi {
         self.base.disable_barbarian_hunt();
     }
 
+    /// Deliberate camp clearing as a peacetime errand. See
+    /// `BasicAi::camp_bounty`; entrant `advanced_camp_bounty`.
     pub fn enable_camp_bounty(&mut self) {
         self.base.camp_bounty = true;
     }
@@ -1953,6 +2070,28 @@ impl AdvancedAi {
         self.settler_target_hysteresis = false;
     }
 
+    /// Let a Settler switch to the best safe alternate when a visible threat
+    /// blocks the next step toward an otherwise sound settlement site. See
+    /// `settler_threat_detour`.
+    pub fn enable_settler_threat_detour(&mut self) {
+        self.settler_threat_detour = true;
+    }
+
+    pub fn disable_settler_threat_detour(&mut self) {
+        self.settler_threat_detour = false;
+    }
+
+    /// Price a Settler's walk in turns, each turn dearer the longer the
+    /// Settler has already been walking, so expansion founds sooner without
+    /// giving up a site good enough to pay for its walk. See `settle_sooner`.
+    pub fn enable_settle_sooner(&mut self) {
+        self.settle_sooner = true;
+    }
+
+    pub fn disable_settle_sooner(&mut self) {
+        self.settle_sooner = false;
+    }
+
     /// Let banked Faith or gold patronize any Great Person it can pay for on
     /// the tally seat. See `tally_great_people`.
     pub fn enable_tally_great_people(&mut self) {
@@ -2050,8 +2189,6 @@ impl AdvancedAi {
         self.housing_research = false;
     }
 
-    /// Require a faith-bought soldier's gold upkeep to be payable. Native
-    /// tournament games leave this disabled so their ladders stay comparable.
     /// Rank loyalty emergencies by turns-to-flip instead of by level. Native
     /// tournament games leave this disabled.
     pub fn enable_loyalty_rate_alarm(&mut self) {

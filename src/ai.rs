@@ -157,6 +157,12 @@ const HOME_DEFENSE_RECALL_RANGE: i32 = 10;
 /// native slot. Deliberately NOT a gene: the genome is pinned at 40.
 const CAMP_BOUNTY_PARTY: usize = 2;
 
+/// How much cheaper a barbarian is to attack than the same fight against a
+/// major. See `barbarian_bargain`. Eight points is the size of the whole
+/// `strength_drive` term, so it moves a marginal trade without ever inverting
+/// the Recon penalty (+14) that keeps scouts out of fights.
+pub(crate) const BARBARIAN_BARGAIN_DISCOUNT: f64 = 8.0;
+
 /// A raider may operate this far from the camp that raised it. The camp's
 /// scout supplies the target; this leash keeps a successful raid from turning
 /// into an all-map chase that abandons the outpost.
@@ -2144,6 +2150,12 @@ pub struct BasicAi {
     /// Off by default and listed in `PRODUCTION_OPT_INS`, so it is measurable
     /// by name before any promotion question is asked.
     pub(crate) apostle_promotion_by_role: bool,
+    /// The advanced controller's `priced_tile_purchase` has taken over plot
+    /// purchases for this seat: its pass prices every border plot against
+    /// its Gold, so the baseline `buy_gold_plot` fallthrough must not buy
+    /// the same plots on a flat score behind it. Set only by
+    /// `AdvancedAi::enable_priced_tile_purchase`.
+    pub(crate) plot_purchase_delegated: bool,
     /// The advanced live envoy planner has already chosen whether a held envoy
     /// has a productive destination this turn.  Its ancillary baseline pass
     /// must not replace that deliberate bank with a blind "highest count"
@@ -2585,6 +2597,65 @@ pub struct BasicAi {
     /// Entrant `advanced_barbarian_hunt`; withheld by the `barbarian-hunt`
     /// treatment.
     pub(crate) barbarian_hunt: bool,
+    /// ★★★★★ WE DO NOT LOSE THE FIGHTS. WE DO NOT TAKE ENOUGH OF THEM.
+    ///
+    /// MEASURED across every live run since the melee bridge was repaired
+    /// (#2223), counting `combat` events:
+    ///
+    /// | | attacks | kills | attacker died |
+    /// |---|---:|---:|---:|
+    /// | ours, melee | 225 | 119 (53 %) | **6 (2.7 %)** |
+    /// | ours, ranged | 65 | 34 (52 %) | **0** |
+    /// | barbarians, melee | 479 | | |
+    /// | barbarians, ranged | 388 | | |
+    ///
+    /// Our attacks are good: better than even odds of a kill, and the attacker
+    /// dies once in thirty-seven. **The barbarians simply attack us three times
+    /// as often — 867 against 290.** The early window is a 0.71 exchange
+    /// (44 kills for 62 losses over seven runs) not because our swings are bad
+    /// but because we take so few of them.
+    ///
+    /// `attack_threshold` prices a fight the way a major-war fight is priced.
+    /// A barbarian is not that: there is no war weariness, no retaliation to
+    /// invite, no peace to lose, the camp respawns whatever we do, and killing
+    /// the unit is the only exit from the zone-of-control lock that strands our
+    /// Settlers. So a trade that is marginal against Persia is worth taking
+    /// against a raider, and this flag says so with one number.
+    ///
+    /// ⚠ Deliberately NOT a licence for Recon: the doctrine term already adds
+    /// +14 for a scout, so a −8 discount still leaves it +6 and scouts keep out
+    /// of fights. The barbarian controller never gets it (`!self.barb`).
+    ///
+    /// Entrant `live_without_barbarian_bargain`; treatment `barbarian-bargain`.
+    pub(crate) barbarian_bargain: bool,
+    /// ★★★★★ WE ANSWER SLINGERS AND ARCHERS WITH SPEARMEN.
+    ///
+    /// `barbarian_defense_item` asks for a MELEE-capable land defender
+    /// (`best_military(.., Some(false))`) whatever the ring is made of. MEASURED
+    /// across every live run since the melee bridge was repaired:
+    ///
+    /// | | attacks | share |
+    /// |---|---:|---:|
+    /// | barbarian melee | 479 | 55 % |
+    /// | **barbarian ranged** | **388** | **45 %** |
+    /// | our melee | 225 | 78 % |
+    /// | **our ranged** | **65** | **22 %** |
+    ///
+    /// They field twice our proportion of ranged, and ranged is the safer half
+    /// of the board by a distance: our 65 ranged attacks killed 34 and lost the
+    /// attacker **zero** times, while 225 melee attacks killed 119 and lost 6.
+    /// A Spearman walking at an Archer eats the shot on the way in and the
+    /// counter when it arrives; an Archer of ours kills the same unit for
+    /// nothing.
+    ///
+    /// So when the ring around a city is mostly shooters, the defender that
+    /// city must produce is a shooter. Melee stays the answer to a melee ring —
+    /// this changes WHICH defender, never how many, and the wall tiers below
+    /// are untouched.
+    ///
+    /// Entrant `live_without_barbarian_ranged_answer`; treatment
+    /// `barbarian-ranged-answer`.
+    pub(crate) barbarian_ranged_answer: bool,
     pub(crate) adjacent_camp_clear: bool,
     /// The camp errand's claims for the current turn: camp -> (turn,
     /// claimant unit). One hunter per camp and two camps at a time, so the
@@ -3901,7 +3972,22 @@ impl BasicAi {
                 _ => 0.0,
             }
         };
-        self.w.attack_floor + role + target_adjustment - strength_drive
+        // A raider's life is cheaper than a major's: no war weariness, no
+        // retaliation invited, no peace to lose, the camp respawns whatever we
+        // do, and killing the unit is the only exit from the zone-of-control
+        // lock that strands our Settlers. See `barbarian_bargain`.
+        let bargain = if self.barbarian_bargain
+            && !self.barb
+            && g.barb_pid.is_some_and(|barb| {
+                g.units_at(target)
+                    .into_iter()
+                    .any(|other| g.units[&other].owner == barb)
+            }) {
+            BARBARIAN_BARGAIN_DISCOUNT
+        } else {
+            0.0
+        };
+        self.w.attack_floor + role + target_adjustment - strength_drive - bargain
     }
 
     /// Non-generic actions that define a unit's strategic job. Fast raiders
@@ -4190,6 +4276,7 @@ impl BasicAi {
             pursue_religion: true,
             pantheon_reads_the_board: false,
             apostle_promotion_by_role: false,
+            plot_purchase_delegated: false,
             bank_envoys: false,
             live_religious_purchase_guard: false,
             siege_role: false,
@@ -4235,6 +4322,8 @@ impl BasicAi {
             camp_bounty: false,
             adjacent_camp_clear: true,
             barbarian_hunt: false,
+            barbarian_bargain: false,
+            barbarian_ranged_answer: false,
             camp_bounty_claims: BTreeMap::new(),
             maintenance_aware_deck: false,
             explore_goal: RefCell::new(HashMap::new()),
@@ -4347,6 +4436,24 @@ impl BasicAi {
 
     pub fn disable_camp_reach(&mut self) {
         self.camp_reach = false;
+    }
+
+    /// Answer a ring of shooters with a shooter. See `barbarian_ranged_answer`.
+    pub fn enable_barbarian_ranged_answer(&mut self) {
+        self.barbarian_ranged_answer = true;
+    }
+
+    pub fn disable_barbarian_ranged_answer(&mut self) {
+        self.barbarian_ranged_answer = false;
+    }
+
+    /// Price a raider's life below a major's. See `barbarian_bargain`.
+    pub fn enable_barbarian_bargain(&mut self) {
+        self.barbarian_bargain = true;
+    }
+
+    pub fn disable_barbarian_bargain(&mut self) {
+        self.barbarian_bargain = false;
     }
 
     /// Count a barbarian unit beside one of our civilians in the field as a
@@ -4522,6 +4629,7 @@ impl BasicAi {
             pursue_religion: true,
             pantheon_reads_the_board: false,
             apostle_promotion_by_role: false,
+            plot_purchase_delegated: false,
             bank_envoys: false,
             live_religious_purchase_guard: false,
             siege_role: false,
@@ -4567,6 +4675,8 @@ impl BasicAi {
             camp_bounty: false,
             adjacent_camp_clear: true,
             barbarian_hunt: false,
+            barbarian_bargain: false,
+            barbarian_ranged_answer: false,
             camp_bounty_claims: BTreeMap::new(),
             maintenance_aware_deck: false,
             explore_goal: RefCell::new(HashMap::new()),
@@ -9032,7 +9142,7 @@ impl BasicAi {
         // Plots are a surplus investment after concrete unit and building
         // gaps are filled. Keep another 200 Gold above the ordinary reserve
         // so border appetite cannot crowd out next turn's Builder or upgrade.
-        if self.buy_gold_plot(g, pid, reserve + 200.0) {
+        if !self.plot_purchase_delegated && self.buy_gold_plot(g, pid, reserve + 200.0) {
             return true;
         }
 
@@ -9355,6 +9465,28 @@ impl BasicAi {
             .count()
     }
 
+    /// Whether the barbarian ring pressing this city is made mostly of units
+    /// that shoot. Strictly more shooters than melee, so an even ring keeps the
+    /// historical melee answer and only a genuinely ranged siege changes it.
+    /// See `barbarian_ranged_answer`.
+    fn barbarian_ring_is_mostly_ranged(g: &Game, pid: usize, cid: u32) -> bool {
+        let Some(city) = g.cities.get(&cid).filter(|city| city.owner == pid) else {
+            return false;
+        };
+        let mut ranged = 0usize;
+        let mut melee = 0usize;
+        for unit in g.units.values().filter(|unit| {
+            Self::is_barbarian_raider(g, unit) && g.wdist(unit.pos, city.pos) <= HOME_THREAT_RADIUS
+        }) {
+            if g.rules.units[unit.kind].has_ranged_attack() {
+                ranged += 1;
+            } else {
+                melee += 1;
+            }
+        }
+        ranged > melee
+    }
+
     /// The local body count a barbarian threat asks for. One defender covers a
     /// camp or lone raider; two hold a city against a small early raiding party
     /// while the field army closes the camp. This is deliberately bounded so a
@@ -9389,8 +9521,18 @@ impl BasicAi {
             return None;
         }
         if Self::barbarian_defense_gap(g, pid, cid) > 0 {
+            // A ring of shooters wants a shooter back. See
+            // `barbarian_ranged_answer`.
+            let want = if self.barbarian_ranged_answer
+                && Self::barbarian_ring_is_mostly_ranged(g, pid, cid)
+            {
+                Some(true)
+            } else {
+                Some(false)
+            };
             let unit = self
-                .best_military(g, pid, cid, Some(false))
+                .best_military(g, pid, cid, want)
+                .or_else(|| self.best_military(g, pid, cid, Some(false)))
                 .or_else(|| self.best_military(g, pid, cid, None))?;
             return Some(Item::Unit {
                 unit: Name::new(&unit),
