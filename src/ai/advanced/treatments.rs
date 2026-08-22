@@ -322,4 +322,9 @@ pub const PRODUCTION_OPT_INS: &[LiveTreatment] = &[
     // screen keeps its positional genome. See
     // `AdvancedAi::research_grants_first`.
     ("research_grants_first", "research-grants-first", AdvancedAi::enable_research_grants_first),
+    // Einstein scores five and Wernher von Braun fourteen hundred, because a
+    // per-building rate is summed with a one-off lump. Appended at the END so
+    // a running screen keeps its positional genome. See
+    // `AdvancedAi::great_person_effect_reach`.
+    ("great_person_effect_reach", "great-person-effect-reach", AdvancedAi::enable_great_person_effect_reach),
 ];

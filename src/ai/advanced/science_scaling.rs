@@ -152,6 +152,9 @@ mod tests {
             ("research-grants-first", |ai: &AdvancedAi| {
                 ai.research_grants_first
             }),
+            ("great-person-effect-reach", |ai: &AdvancedAi| {
+                ai.great_person_effect_reach
+            }),
         ] {
             let mut ai = AdvancedAi::new();
             ai.enable_live_bridge_universe();
@@ -174,6 +177,7 @@ mod tests {
         ai.enable_fifteenth_citizen();
         ai.enable_chain_tech_lookahead();
         ai.enable_research_grants_first();
+        ai.enable_great_person_effect_reach();
         ai.disable_science_payback_horizon();
         ai.disable_science_multiplier_payoff();
         ai.disable_research_tier_premium();
@@ -184,6 +188,7 @@ mod tests {
         ai.disable_fifteenth_citizen();
         ai.disable_chain_tech_lookahead();
         ai.disable_research_grants_first();
+        ai.disable_great_person_effect_reach();
         assert!(!ai.science_payback_horizon);
         assert!(!ai.science_multiplier_payoff);
         assert!(!ai.research_tier_premium);
@@ -194,6 +199,7 @@ mod tests {
         assert!(!ai.fifteenth_citizen);
         assert!(!ai.chain_tech_lookahead);
         assert!(!ai.research_grants_first);
+        assert!(!ai.great_person_effect_reach);
     }
 
     /// The citizen half of the taper, and the proof it is a separate gene:
@@ -851,6 +857,74 @@ mod tests {
         // With the gene off nothing is paid, in any state.
         let shipped = AdvancedAi::new();
         assert_eq!(shipped.research_grants_premium(&game, city, &grants), 0.0);
+    }
+
+    /// Einstein against Wernher von Braun, which is the whole gene.
+    #[test]
+    fn a_per_building_rate_is_not_a_one_off_lump() {
+        let mut game = Game::new_full(1, 24, 16, 91_989, 200, 0, false);
+        let city = found_capital(&mut game, 0);
+        let einstein = game.rules.great_people["albert_einstein"].clone();
+        let von_braun = game.rules.great_people["wernher_von_braun"].clone();
+        assert_eq!(einstein.effects["research_labs_science"], 4.0);
+        assert_eq!(von_braun.effects["wonder_production"], 1400.0);
+
+        let shipped = AdvancedAi::new();
+        let mut treated = AdvancedAi::new();
+        treated.enable_great_person_effect_reach();
+        game.turn = 150;
+
+        // Shipped: a raw sum of magnitudes. Einstein's whole contribution is
+        // 4 + 1 against fourteen hundred — a factor of 280 the wrong way.
+        let shipped_einstein = shipped.great_person_effect_value(&game, 0, &einstein);
+        let shipped_braun = shipped.great_person_effect_value(&game, 0, &von_braun);
+        assert!(
+            shipped_braun > shipped_einstein * 250.0,
+            "the shipped ranking: {shipped_braun} against {shipped_einstein}"
+        );
+
+        // Treated, with no Research Lab anywhere: the Laboratory clause is
+        // worth exactly nothing, which is what it is worth there. Einstein is
+        // priced on his remaining one-off alone.
+        assert_eq!(
+            treated.great_person_effect_value(&game, 0, &einstein),
+            einstein.effects["modern_atomic_tech_boosts"] * 12.0,
+            "no Laboratory, no Laboratory clause"
+        );
+        // And a one-off is untouched by the gene, in either arm.
+        assert_eq!(
+            shipped_braun,
+            treated.great_person_effect_value(&game, 0, &von_braun)
+        );
+
+        // Eight Laboratories — the count this profile's census actually
+        // finishes with — and the comparison becomes a comparison.
+        let site = game.cities[&city]
+            .owned_tiles
+            .iter()
+            .copied()
+            .find(|position| *position != game.cities[&city].pos)
+            .unwrap();
+        set_district(&mut game, city, site, "campus");
+        for _ in 0..8 {
+            game.cities
+                .get_mut(&city)
+                .unwrap()
+                .buildings
+                .push(crate::name!("research_lab"));
+        }
+        // One city can hold one Lab; count the empire's, which is what the
+        // effect reaches. The fixture stands in for eight cities holding one.
+        let with_labs = treated.great_person_effect_value(&game, 0, &einstein);
+        assert!(
+            with_labs > shipped_einstein,
+            "a Laboratory the effect reaches raises it: {with_labs}"
+        );
+        assert!(
+            with_labs > shipped_braun / 100.0,
+            "and brings it within reach of the one-off it should compare to: \
+             {with_labs} against {shipped_braun}"
+        );
     }
 
     /// A constant standing in for a ruleset value has to be pinned to the

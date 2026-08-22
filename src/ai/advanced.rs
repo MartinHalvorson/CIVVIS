@@ -4220,6 +4220,77 @@ pub struct AdvancedAi {
     /// opt-in gene `research-grants-first`.
     pub research_grants_first: bool,
 
+    /// Price a Great Person's effect by what it actually reaches, instead of
+    /// adding a per-turn rate to a one-off lump as though they were the same
+    /// number.
+    ///
+    /// ★★★★★ EINSTEIN SCORES FIVE AND WERNHER VON BRAUN SCORES FOURTEEN
+    /// HUNDRED. `advanced_great_people` ranks a candidate by
+    /// `person.effects.values().sum() * 12`, a raw sum of magnitudes across
+    /// incommensurable units:
+    ///
+    /// ```text
+    /// wernher_von_braun  engineer   1400   wonder_production 1400   (one-off)
+    /// estee_lauder       merchant   1320   gold              1320   (one-off)
+    /// albert_einstein    scientist     5   research_labs_science 4  (PER LAB,
+    ///                                      modern_atomic_tech_boosts 1  PER TURN)
+    /// ```
+    ///
+    /// `research_labs_science: 4` is **+4 Science in every Research Lab the
+    /// empire owns, every turn, for the rest of the game**. Measured on this
+    /// profile the seat finishes with five to eight Laboratories, so Einstein
+    /// is worth 20–32 Science a turn from the moment he lands — a probe timed
+    /// him at turn 142 in one game, which is 3,400 Science before the clock.
+    /// Von Braun's 1400 is 1400 Production, once. The valuation rates them
+    /// **280 to 1** the wrong way.
+    ///
+    /// This is the same defect as `apostle_promotion_by_role`'s — that one
+    /// ranks promotions by the largest number on the card across units that do
+    /// not compare — and the same shape as `science_multiplier_payoff`, the
+    /// gene in this bundle that actually converts: the price used the printed
+    /// number instead of what the thing will earn.
+    ///
+    /// ⚠⚠⚠ MEASURED: BYTE-IDENTICAL TO CONTROL OVER TWELVE SEEDS. The
+    /// mispricing above is real and the repricing does not reach it, because
+    /// **`effect_value` is not what decides a patronage.** The candidate loop
+    /// filters first and scores second:
+    ///
+    /// ```text
+    /// limit = 0.40 for the lane's own class, else 0.15   (1.0 with tally_great_people)
+    /// if close_fraction > limit { continue }             ← the filter
+    /// score = (affinity + effect_value) * (1 - opportunity)   ← only then
+    /// ```
+    ///
+    /// `close_fraction` is how far the empire still is from earning the
+    /// person, and `affinity` is a flat lane table — 500 for the lane's own
+    /// class, 100 otherwise. Neither reads an effect. So the score ranks only
+    /// the candidates that already survived a filter this gene cannot move,
+    /// and on these games that set is small enough that the ordering rarely
+    /// decides anything at all.
+    ///
+    /// ⚠ AND THE PROBE THAT WOULD HAVE CAUGHT IT WAS HALF-RUN. This bundle's
+    /// own first rule is to ask whether the decision arises.
+    /// `great_scientist_probe` established that Great Scientists ARE recruited
+    /// (one to three a game, Einstein among them) and that their counters DO
+    /// pay 20–32 Science a turn — and I priced the patronage ranking on that.
+    /// "The mechanism is used" is not the same question as "the code path I
+    /// changed decides anything". `patronage_reach_probe` asks the second one:
+    /// the path is busy (4,420 Faith spent on arrivals in one game), and the
+    /// ranking inside it still never flips.
+    ///
+    /// Kept, off, with the number on it. The lever the diagnosis points at is
+    /// the FILTER, not the score — and `tally_great_people` is already the
+    /// gene that lifts it.
+    ///
+    /// With this on, a per-building science effect is multiplied by the
+    /// buildings the empire HOLDS and by a bounded horizon
+    /// (`GREAT_PERSON_RATE_HORIZON`), and every other effect keeps its face
+    /// value as the one-off it is. An empire with no Research Lab prices
+    /// Einstein's Laboratory clause at nothing, which is what it is worth
+    /// there. Off everywhere by default; opt-in gene
+    /// `great-person-effect-reach`.
+    pub great_person_effect_reach: bool,
+
     /// The citizen half of the taper: an empire that has built the research
     /// economy should still be WORKING it in the half of the game the tech
     /// tree decides.
@@ -4557,6 +4628,14 @@ const RESEARCH_BUILDING_DEBT: f64 = 240.0;
 /// however empty the standing Campuses are. A city with no Campus at all is a
 /// real research hole and the gene is a brake on spreading, not a ban on it.
 const RESEARCH_COVERAGE_UNFINISHED_FLOOR: f64 = 0.25;
+/// How many turns of a Great Person's per-building rate the patronage
+/// decision counts. Bounded rather than "the rest of the game" so an early
+/// recruit is not priced off a hundred and fifty turns it may not get, and so
+/// the clause cannot dominate a one-off it should merely be comparable to:
+/// at the profile's five-to-eight Laboratories this puts Einstein beside
+/// Wernher von Braun rather than 280 times under him. See
+/// `great_person_effect_reach`.
+const GREAT_PERSON_RATE_HORIZON: f64 = 40.0;
 /// What a finished research city pays extra for its own district's project,
 /// as a fraction of the value already computed. The measured gap to the
 /// Commercial Hub's project in a finished city was about 13% (769.6 against
@@ -5410,6 +5489,7 @@ impl AdvancedAi {
             fifteenth_citizen: false,
             chain_tech_lookahead: false,
             research_grants_first: false,
+            great_person_effect_reach: false,
             research_floor_holds: false,
             lane_congress_ballot: false,
             lane_congress_favor: false,
@@ -14900,6 +14980,44 @@ impl AdvancedAi {
     /// active plan and the purchase leaves a useful operating reserve. Normal
     /// GPP recruitment is automatic at turn start; this phase is deliberately
     /// limited to one tempo purchase per turn.
+    /// What a Great Person's effects are worth to THIS empire. See
+    /// `great_person_effect_reach`; the shipped raw sum when the gene is off,
+    /// so the flag is the only difference.
+    fn great_person_effect_value(
+        &self,
+        g: &Game,
+        pid: usize,
+        person: &crate::rules::GreatPersonSpec,
+    ) -> f64 {
+        if !self.great_person_effect_reach {
+            return person.effects.values().sum::<f64>() * 12.0;
+        }
+        // ⚠ The three per-building clauses are the ones `Game::city_yields`
+        // pays through the `great_person:*_science` counters, and they are the
+        // only effects in the table whose magnitude is a RATE. Everything else
+        // — Wernher von Braun's 1400 Production, Estee Lauder's 1320 Gold — is
+        // a lump, and keeps its face value untouched.
+        let holding = |building: &str| {
+            let name = Name::new(building);
+            g.cities
+                .values()
+                .filter(|city| city.owner == pid && city.buildings.contains(&name))
+                .count() as f64
+        };
+        let (mut lump, mut per_turn) = (0.0, 0.0);
+        for (effect, magnitude) in &person.effects {
+            match effect.as_str() {
+                "libraries_science" => per_turn += magnitude * holding("library"),
+                "universities_science" => per_turn += magnitude * holding("university"),
+                "research_labs_science" => per_turn += magnitude * holding("research_lab"),
+                _ => lump += magnitude,
+            }
+        }
+        let remaining = g.max_turns.saturating_sub(g.turn) as f64;
+        let horizon = remaining.clamp(0.0, GREAT_PERSON_RATE_HORIZON);
+        (lump + per_turn * horizon) * 12.0
+    }
+
     fn advanced_great_people(&self, g: &mut Game, pid: usize, strategy: GrandStrategy) {
         let city_count = g.player_city_ids(pid).len() as f64;
         let gold_reserve = (150.0 + 50.0 * city_count).max(self.war_treasury_floor(g, pid));
@@ -14983,7 +15101,7 @@ impl AdvancedAi {
             if affinity < 0.0 {
                 continue;
             }
-            let effect_value = person.effects.values().sum::<f64>() * 12.0;
+            let effect_value = self.great_person_effect_value(g, pid, person);
             for (currency, bank, reserve) in [
                 ("gold", g.players[pid].gold, gold_reserve),
                 ("faith", g.players[pid].faith, faith_reserve),

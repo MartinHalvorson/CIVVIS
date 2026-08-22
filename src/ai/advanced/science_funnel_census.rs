@@ -133,35 +133,26 @@ fn report(label: &str, arms: &[(&str, Chain)]) {
 #[test]
 #[ignore = "census, not an assertion; run explicitly with --nocapture"]
 fn the_research_chain_treated_against_control() {
-    let seeds: Vec<u64> = (0..12).map(|i| 91_000_000 + i).collect();
-    // ⚠ ROUND EIGHT: the SAME question with the gate repaired. Round seven
-    // measured `research-grants-first` at Research Labs 40 against 55 —
-    // because its "finished" test asked `can_produce`, which is false while
-    // Chemistry is still out, so cities took the premium and spent the turns
-    // before Chemistry on Grants. The gate now asks for the DEEPEST rung held.
-    // Fresh seeds so the repaired gate is priced on games the broken one never
-    // touched.
-    //
-    // ⚠ ROUND SEVEN: what a FINISHED research city does with its last hundred
-    // turns. Rounds three to six settled the building-half genes and returned
-    // five nulls and one harm, and the variance probe showed Science is
-    // downstream of expansion. What none of them asked is what the cities that
-    // DID finish their chain build afterwards — and the answer was
-    // `campus_research_grants` **zero times in 1,113 city-turns**, priced
-    // second by about a hundred points.
+    let seeds: Vec<u64> = (0..12).map(|i| 92_000_000 + i).collect();
+    // ⚠ ROUND NINE: the first empire-wide science multiplier in this campaign.
+    // Every lever priced so far was per-city. `great-person-effect-reach` fixes
+    // a patronage ranking that sums a per-building RATE with a one-off LUMP —
+    // Einstein's `research_labs_science: 4` scores five against Wernher von
+    // Braun's fourteen hundred — and the probe confirms the seat really does
+    // recruit one to three Great Scientists a game, so the decision arises.
     let arms: Vec<Arm> = vec![
         ("control (universe)", |_ai| {}),
-        ("research-grants-first", |ai| {
-            ai.enable_research_grants_first()
+        ("great-person-effect-reach", |ai| {
+            ai.enable_great_person_effect_reach()
         }),
         ("premium + payoff", |ai| {
             ai.enable_research_tier_premium();
             ai.enable_science_multiplier_payoff();
         }),
-        ("premium + payoff + grants", |ai| {
+        ("premium + payoff + reach", |ai| {
             ai.enable_research_tier_premium();
             ai.enable_science_multiplier_payoff();
-            ai.enable_research_grants_first();
+            ai.enable_great_person_effect_reach();
         }),
     ];
     let mut totals: Vec<(String, Chain)> = Vec::new();
@@ -1196,6 +1187,179 @@ mod finished_city_ranking_probe {
             if g.winner.is_none() && g.current == pid {
                 let _ = g.apply(pid, &Action::EndTurn);
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod great_scientist_probe {
+    use super::*;
+
+    /// Does the seat ever collect the Great People that multiply its chain?
+    ///
+    /// ★★ THE ONLY EMPIRE-WIDE SCIENCE MULTIPLIERS LEFT. Every science lever
+    /// this campaign priced was per-city. The Great Scientists are not:
+    ///
+    /// ```text
+    /// hypatia      era 1  cost   60  free_library      libraries_science    1
+    /// omar_khayyam era 2  cost  120  free_library      libraries_science    1
+    /// isaac_newton era 3  cost  240  free_university   universities_science 2
+    /// charles_darwin era 4 cost 420  free_university   universities_science 2
+    /// albert_einstein era 5 cost 660 modern_boosts     research_labs_science 4
+    /// erwin_schrodinger era 6 cost 960                 research_labs_science 3
+    /// ```
+    ///
+    /// `research_labs_science: 4` against the sixty Research Labs a census
+    /// control finishes with is **+240 Science a turn**, an order of magnitude
+    /// past anything in this bundle. `Game::city_yields` pays them through the
+    /// `great_person:library_science` / `university_science` /
+    /// `research_lab_science` counters.
+    ///
+    /// Before pricing anything: are they recruited at all, and does the empire
+    /// hold the chain for them to multiply when they arrive?
+    #[test]
+    #[ignore = "census, not an assertion; run explicitly with --nocapture"]
+    fn does_the_seat_ever_recruit_the_scientists_that_multiply_its_chain() {
+        for seed in 0..4u64 {
+            let mut g = Game::new(6, 60, 38, 91_000_000 + seed, 250, 6);
+            g.game_speed = GameSpeed::Online;
+            g.victory_conditions =
+                crate::game::VictoryConditions::parse("science,culture,domination,score").unwrap();
+            let mut me = AdvancedAi::new();
+            me.enable_engine_repairs_universe();
+            me.enable_research_tier_premium();
+            me.enable_science_multiplier_payoff();
+            let mut others = AdvancedAi::fleet(&g);
+            let mut earned: Vec<(u32, String)> = Vec::new();
+            let mut seen: std::collections::BTreeSet<String> = Default::default();
+            while g.winner.is_none() && g.turn <= 250 {
+                let pid = g.current;
+                if pid == 0 {
+                    me.take_turn(&mut g, pid);
+                    for (name, spec) in g.rules.great_people.iter() {
+                        if spec.kind != "scientist" {
+                            continue;
+                        }
+                        if !seen.contains(name.as_str())
+                            && g.players[0].great_people.iter().any(|held| held == name)
+                        {
+                            seen.insert(name.to_string());
+                            earned.push((g.turn, name.to_string()));
+                        }
+                    }
+                } else {
+                    others[pid].take_turn(&mut g, pid);
+                }
+                if g.winner.is_none() && g.current == pid {
+                    let _ = g.apply(pid, &Action::EndTurn);
+                }
+            }
+            let counter = |key: &str| g.players[0].counters.get(key).copied().unwrap_or(0);
+            let cities = g.player_city_ids(0);
+            let holding = |name: &str| {
+                cities
+                    .iter()
+                    .filter(|c| g.cities[c].buildings.contains(&Name::new(name)))
+                    .count()
+            };
+            let labs = holding("research_lab");
+            let per_lab = counter("great_person:research_lab_science");
+            println!(
+                "GPSCI seed {} scientists_earned={} {:?} · counters lib={} univ={} lab={} \
+                 · chain lib={} univ={} lab={} · that lab counter is worth {} Science/turn \
+                 · total gpp_scientist={:.0} · Science {:.1}",
+                91_000_000 + seed,
+                earned.len(),
+                earned,
+                counter("great_person:library_science"),
+                counter("great_person:university_science"),
+                per_lab,
+                holding("library"),
+                holding("university"),
+                labs,
+                per_lab as usize * labs,
+                g.players[0].gpp.get("scientist").copied().unwrap_or(0.0),
+                cities
+                    .iter()
+                    .map(|c| g.city_yields(*c).science)
+                    .sum::<f64>(),
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod patronage_reach_probe {
+    use super::*;
+
+    /// Does the PATRONAGE path — the one `great-person-effect-reach` reprices
+    /// — ever actually decide anything?
+    ///
+    /// ⚠⚠ THE CHECK I SKIPPED HALF OF. `great_scientist_probe` established
+    /// that the seat recruits one to three Great Scientists a game and that
+    /// their counters pay 20–32 Science a turn, and I priced the patronage
+    /// ranking on that. But a Great Person arriving on POINTS never passes
+    /// through `advanced_great_people`'s candidate list at all, and the gene
+    /// came back **byte-identical to control over twelve seeds**. The rule
+    /// this bundle already carries is to ask whether the decision arises —
+    /// and "the mechanism is used" is not the same question as "the code path
+    /// I changed is used".
+    ///
+    /// This counts patronage actions, by currency, against the Great People
+    /// that arrive without one.
+    #[test]
+    #[ignore = "census, not an assertion; run explicitly with --nocapture"]
+    fn is_a_great_person_ever_bought_rather_than_earned() {
+        for seed in 0..3u64 {
+            let mut g = Game::new(6, 60, 38, 92_000_000 + seed, 250, 6);
+            g.game_speed = GameSpeed::Online;
+            g.victory_conditions =
+                crate::game::VictoryConditions::parse("science,culture,domination,score").unwrap();
+            let mut me = AdvancedAi::new();
+            me.enable_engine_repairs_universe();
+            let mut others = AdvancedAi::fleet(&g);
+            let mut held = 0usize;
+            let mut arrivals: Vec<(u32, String)> = Vec::new();
+            let mut gold_spent_on_people = 0.0_f64;
+            let mut faith_spent_on_people = 0.0_f64;
+            while g.winner.is_none() && g.turn <= 250 {
+                let pid = g.current;
+                if pid == 0 {
+                    let (gold_before, faith_before) = (g.players[0].gold, g.players[0].faith);
+                    let before = g.players[0].great_people.len();
+                    me.take_turn(&mut g, pid);
+                    if g.players[0].great_people.len() > before {
+                        for person in g.players[0].great_people.iter().skip(before) {
+                            arrivals.push((g.turn, person.to_string()));
+                        }
+                        // A person that arrived on the same turn the treasury
+                        // fell was bought; one that arrived with the treasury
+                        // flat or rising was earned on points.
+                        if g.players[0].gold < gold_before {
+                            gold_spent_on_people += gold_before - g.players[0].gold;
+                        }
+                        if g.players[0].faith < faith_before {
+                            faith_spent_on_people += faith_before - g.players[0].faith;
+                        }
+                    }
+                    held = g.players[0].great_people.len();
+                } else {
+                    others[pid].take_turn(&mut g, pid);
+                }
+                if g.winner.is_none() && g.current == pid {
+                    let _ = g.apply(pid, &Action::EndTurn);
+                }
+            }
+            println!(
+                "PATRONAGE seed {} great_people_held={held} arrivals={} \
+                 gold_dropped_on_arrival={gold_spent_on_people:.0} \
+                 faith_dropped_on_arrival={faith_spent_on_people:.0} \
+                 · end gold={:.0} faith={:.0}",
+                92_000_000 + seed,
+                arrivals.len(),
+                g.players[0].gold,
+                g.players[0].faith,
+            );
         }
     }
 }
