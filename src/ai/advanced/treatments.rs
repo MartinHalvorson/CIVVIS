@@ -260,7 +260,7 @@ pub const PRODUCTION_OPT_INS: &[LiveTreatment] = &[
     ("competition_victory_points", "competition-victory-points", AdvancedAi::enable_competition_victory_points),
     // Three behaviours that already existed and could not be screened: off in
     // production, reachable only as named `elo.rs` arms, so `gene_screen`
-    // never saw them. `docs/VICTORY_GENES.md` §8 counts these fields; these
+    // never saw them. `docs/VICTORY_GENES.md` §9 counts these fields; these
     // are the three the Diplomacy lane needs — and the first has a measured
     // number sitting unused in its own field doc (26 of 192 ballot decisions
     // already settled, ~1.4 free Diplomatic Victory Points a seat a game).

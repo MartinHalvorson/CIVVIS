@@ -321,7 +321,55 @@ deployment profile is not one of them.
 **`competition-victory-points` is inert in a default native game**, and that is
 a property of the rules rather than of the gene — see the section above.
 
-## 8. What the genome instrument cannot see
+## 8. First readings — under-powered, and recorded as such
+
+`docs/gene_screens/2026-08-22-v1-victory-lane-genes-native-6p-allseats-486-pairs.json`.
+Command, so it can be extended with `--append` and a disjoint `--start-seed`:
+
+```sh
+target/ci/gene_screen --genes lane-congress-ballot,lane-policy-deck,\
+lane-culture-spending,lane-great-people,congress-banks-decided,\
+congress-counter-votes,envoy-infrastructure \
+  --pairs 1200 --anchor-pairs 0 --players 6 --all-seats --randomize-civs \
+  --jobs 6 --start-seed 62000000 --out lanes.jsonl
+```
+
+**486 complete pairs — 2,916 seat-pairs — which resolves a win Δ of ±4.5 pp at
+80% power. Nothing here is resolved, and every row reads `~`.** The run was cut
+short deliberately: the box is shared with eight other agent sessions and was
+running at load 34 on 18 cores. What the rows are good for is direction and a
+starting point, not a verdict.
+
+| gene | on% | off% | win Δpp | z | share Δpp | z |
+|---|---:|---:|---:|---:|---:|---:|
+| `lane-congress-ballot` | 17.1% | 16.3% | +0.8 | +0.50 | +0.06 | +0.37 |
+| `envoy-infrastructure` | 17.1% | 16.3% | +0.8 | +0.50 | −0.08 | −0.47 |
+| `lane-policy-deck` | 16.9% | 16.5% | +0.4 | +0.26 | +0.07 | +0.43 |
+| `congress-counter-votes` | 16.9% | 16.5% | +0.4 | +0.26 | +0.36 | +1.78 |
+| `congress-banks-decided` | 16.5% | 16.9% | −0.4 | −0.26 | −0.14 | −1.01 |
+| `lane-great-people` | 15.8% | 17.5% | −1.6 | −1.16 | +0.06 | +0.56 |
+| `lane-culture-spending` | 15.4% | 17.9% | −2.5 | −1.75 | −0.20 | −1.19 |
+
+The one row worth a sentence is the bottom one. `lane-culture-spending` is the
+largest reading in the table and it is **negative**, in a regime whose own
+census reads religious 58% — an empire that spends Faith on a Naturalist and a
+touring Rock Band in a world decided by conversion has spent it on the wrong
+thing. That is a hypothesis at z −1.75, not a finding; it is also exactly the
+kind of interaction the all-lanes screen exists to catch, and the reason the
+`--victories culture,score` run is a separate question rather than the same one.
+
+Two other runs are in flight and are not reported here because they had not
+accumulated enough pairs: `--victories diplomatic,score` on the four Diplomacy
+genes (seed 64000000) and `--turns 600` on `lane-space-race` (seed 63000000).
+Their early readings — `congress-banks-decided` +8.3 pp (z +1.53, 48 pairs) and
+`lane-space-race` +8.3 pp (z +1.00, 24 pairs) — are recorded here as *where to
+point the next batch*, not as results.
+
+⚠ Nothing in this file promotes anything. Every gene remains `default:off`, and
+`docs/GENE_SCREEN.md`'s rule stands: the screen ranks and directs, `ai_eval` is
+the ship decision.
+
+## 9. What the genome instrument cannot see
 
 `gene_screen` discovers its genome from `LIVE_TREATMENTS`,
 `PRODUCTION_TREATMENTS` and `PRODUCTION_OPT_INS`. A behaviour with no row in
