@@ -31,9 +31,16 @@ arms played the same game:**
 | 7311001..7311008 | 263.85s | 237.16s | −10.11% (both) |
 | 7311020..7311027 | 332.28s | 298.98s | −10.02% (both, quiet host) |
 | 7311040..7311047 | 255.64s | 224.53s | −12.17% (both, against merged `main`) |
-| **7311060..7311067** | **326.39s** | **285.51s** | **−12.52%** (both arms rebuilt at `5f2699fd`, after #2308) |
+| 7311060..7311067 | 326.39s | 285.51s | −12.52% (both arms rebuilt at `5f2699fd`, after #2308) |
+| **7311080..7311083** | **171.49s** | **152.07s** | **−11.32%** — at the **standard screen shape**, 74×46 / 9 city-states |
 
-*same game on every seed* in all five. The air-patrol hoist is ~9 points of
+⚠ **The last row is the one worth quoting.** #2308 made 74×46 / 9 city-states
+`gene_screen`'s bare default, so that is the shape a batch actually pays; every
+row above it was taken at 60×38 / 6 and measures a shape no screen runs.
+⚠ Rebuild **both** arms at the base the change lands on — `main` moves hourly
+here, and a stale baseline flatters or punishes the reading.
+
+*same game on every seed* in all six. The air-patrol hoist is ~9 points of
 the 10; the passage table is the last one.
 
 ⚠ This is an optimization, not a feature, so whole-game wall clock is the right
