@@ -1693,10 +1693,11 @@ fn append_favor_sale_order(
     None
 }
 
-// ★★★★★ THE WORK SOLD TO SEAT THE PERSON. A cultural Great Person whose
-// `empty_slots` reads zero is out of space by the host's own count: every
-// compatible slot in the empire holds a work, and #2086's driver rightly
-// stands them still while the needs machinery builds more. But capacity is
+// ★★★★★ THE WORK SOLD TO SEAT THE PERSON. A cultural Great Person the host
+// will not let activate anywhere is out of space by the host's own account —
+// see `StateGreatPerson::slot_starved`, which asks whether this person can
+// REACH a slot rather than how many the empire owns — and #2086's driver
+// rightly stands them still while the needs machinery builds more. But capacity is
 // bounded (one Amphitheater per city, one Museum per Theater), the person
 // produces NOTHING while parked, and Firaxis trades placed Great Works as
 // ordinary deal items. So sell ONE placed work of the starved class's own
@@ -1734,13 +1735,14 @@ fn append_work_sale_order(
     orders: &mut Vec<Order>,
 ) -> Option<&'static str> {
     // The trigger is the person, not the treasury: a slot consumer the host
-    // says cannot activate anywhere. `empty_slots == Some(0)` is honest since
-    // #2086 — `None` (an older mod) must NOT trigger a sale on a guess.
+    // says cannot activate anywhere. `slot_starved` is that question asked
+    // per plot as well as empire-wide; an older mod's `None` still must NOT
+    // trigger a sale on a guess, and does not.
     let starved = state
         .units
         .iter()
         .filter_map(|unit| unit.great_person.as_ref())
-        .filter(|person| !person.can_activate && person.empty_slots == Some(0))
+        .filter(|person| person.slot_starved())
         .filter_map(|person| person.class.as_deref().and_then(class_sale_objects))
         .next();
     let Some(objects) = starved else {
@@ -2060,12 +2062,14 @@ fn great_person_orders(
             });
             continue;
         }
-        // Zero compatible empty slots empire-wide is not a cooldown and not a
-        // marching problem: nothing this unit can do fixes it, and walking to
-        // a highlighted-but-full district is motion without progress. Stand
+        // No slot this person can REACH is not a cooldown and not a marching
+        // problem: nothing this unit can do fixes it, and walking to a
+        // highlighted-but-full district is motion without progress. Stand
         // still and let the mirror's activation-needs machinery build the
-        // capacity (the host counts the slots itself; see `empty_slots`).
-        if person.empty_slots == Some(0) {
+        // capacity — which it now actually does for this case, because the
+        // same predicate opens that door. See `StateGreatPerson::slot_starved`
+        // and the nine people it found idling a whole game.
+        if person.slot_starved() {
             stall.no_empty_slot += 1;
             continue;
         }
@@ -7191,7 +7195,121 @@ mod tests {
     /// district whether or not a compatible Great Work slot is free, so the
     /// cooldown branch swallowed them forever and no one built the slots.
     /// With the host's own empty-slot count, a slot-starved person stands
-    /// still under an explicit counter — and never marches to a full building.
+     /// The nine Great People of live run `civvis-20260822T020434Z`, replayed.
+    ///
+    /// Three Artists, three Writers, three Musicians and a Scientist stood in
+    /// Rome at turn 231 and `orders.sqlite` holds NOT ONE ORDER for any of
+    /// them, ever. Their exports are reproduced here field for field: every
+    /// activation plot at `slot_open: false`, and `empty_slots` at 24, 4 and
+    /// 2 — never the zero that every escape hatch was gated on.
+    #[test]
+    fn the_rome_stack_is_starved_even_though_the_empire_owns_empty_slots() {
+        // As exported. The counts are what made this invisible: an empire-wide
+        // tally of slots this person cannot reach.
+        let cultural = |empty: u32, plots: Vec<(i32, i32, i32)>| StateGreatPerson {
+            can_activate: false,
+            charges: 0,
+            empty_slots: Some(empty),
+            activation_plots: plots
+                .into_iter()
+                .map(|(x, y, distance)| StateActivationPlot {
+                    x,
+                    y,
+                    distance,
+                    slot_open: Some(false),
+                })
+                .collect(),
+            ..StateGreatPerson::default()
+        };
+        let writer = cultural(24, vec![(67, 14, 12), (65, 25, 1), (64, 27, 2)]);
+        let musician = cultural(4, vec![(65, 26, 1), (67, 32, 6)]);
+        let artist = cultural(2, vec![(65, 26, 1)]);
+        for (label, person) in [
+            ("writer", &writer),
+            ("musician", &musician),
+            ("artist", &artist),
+        ] {
+            assert!(
+                person.slot_starved(),
+                "{label} has 24/4/2 slots the empire owns and none it can reach"
+            );
+        }
+
+        // The Great Scientist of the same stack: no plots at all, waiting on
+        // the Spaceport its `required_district` names. That is a missing
+        // DISTRICT, not a missing slot, and it must not read as starved here —
+        // the needs machinery has its own branch for it, and a work sale
+        // cannot help a Scientist.
+        let scientist = StateGreatPerson {
+            can_activate: false,
+            charges: 1,
+            class: Some("GREAT_PERSON_CLASS_SCIENTIST".to_string()),
+            required_district: Some("DISTRICT_SPACEPORT".to_string()),
+            ..StateGreatPerson::default()
+        };
+        assert!(!scientist.slot_starved(), "no plot offered is not no slot");
+
+        // The three cases the predicate must NOT change, or it trades one
+        // wedge for another:
+        let mut can_go = writer.clone();
+        can_go.can_activate = true;
+        assert!(!can_go.slot_starved(), "a person the host will activate");
+
+        let mut one_open = writer.clone();
+        one_open.activation_plots[1].slot_open = Some(true);
+        assert!(!one_open.slot_starved(), "one reachable slot is not starved");
+
+        // ⚠ An older control mod sends no `slot_open` at all. `None` is an
+        // absence, never a claim — it kept the benefit of the doubt before
+        // this predicate existed and it still does.
+        let mut older_mod = writer.clone();
+        for plot in &mut older_mod.activation_plots {
+            plot.slot_open = None;
+        }
+        older_mod.empty_slots = None;
+        assert!(
+            !older_mod.slot_starved(),
+            "an unknowing export must not be read as starved"
+        );
+
+        // And the whole point: the driver now counts them, and the work-sale
+        // arm now sees them, where before both walked past.
+        let state = StateSnapshot {
+            units: vec![
+                StateUnit {
+                    id: 10092559,
+                    kind: "UNIT_GREAT_WRITER".to_string(),
+                    great_person: Some(writer),
+                    ..StateUnit::default()
+                },
+                StateUnit {
+                    id: 9175056,
+                    kind: "UNIT_GREAT_MUSICIAN".to_string(),
+                    great_person: Some(musician),
+                    ..StateUnit::default()
+                },
+                StateUnit {
+                    id: 6684677,
+                    kind: "UNIT_GREAT_ARTIST".to_string(),
+                    great_person: Some(artist),
+                    ..StateUnit::default()
+                },
+            ],
+            ..StateSnapshot::default()
+        };
+        let (orders, stall) = great_person_orders(&state);
+        assert!(
+            orders.is_empty(),
+            "marching to a known-full district is still never the answer"
+        );
+        assert_eq!(
+            stall.no_empty_slot, 3,
+            "all three report the real reason, not `no_activation_plot`"
+        );
+        assert_eq!(stall.no_activation_plot, 0);
+    }
+
+   /// still under an explicit counter — and never marches to a full building.
     #[test]
     fn a_person_with_no_empty_slot_anywhere_stalls_explicitly_not_as_cooldown() {
         let on_plot = StateActivationPlot {

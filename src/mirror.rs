@@ -9873,6 +9873,62 @@ pub struct StateGreatPerson {
     pub empty_slots: Option<u32>,
 }
 
+impl StateGreatPerson {
+    /// This person has nowhere to put its work: it cannot activate, and no
+    /// tile the host offers can take one.
+    ///
+    /// ★★★★★ `empty_slots == Some(0)` IS NOT THE SAME QUESTION, AND EVERY
+    /// ESCAPE HATCH WAS ASKING IT. Live run `civvis-20260822T020434Z` reached
+    /// turn 231 with **three Great Artists, three Great Writers, three Great
+    /// Musicians and a Great Scientist stacked in Rome** — and
+    /// `orders.sqlite` holds **not one order of any kind, ever, for any of
+    /// the nine**. `ACTIVATE_GREAT_PERSON` fired 18 times that game, all of
+    /// them Scientists, Merchants and one Engineer; no Writer, Artist or
+    /// Musician was used once in 231 turns.
+    ///
+    /// Their export says why. Every one reads `can_activate: false` with
+    /// **every single `activation_plot` at `slot_open: false`** — the host
+    /// saying, tile by tile, that none of them can take the work — while
+    /// `empty_slots` reads **24 for the Writers, 4 for the Musicians, 2 for
+    /// the Artists**, because that field counts compatible empty slots
+    /// EMPIRE-WIDE by the survey's reckoning, including slots on plots the
+    /// engine will not offer this person at all.
+    ///
+    /// So all three exits were shut at once. The driver would not activate
+    /// (`can_activate` false), would not walk (every plot known-full is never
+    /// a destination, by design and correctly), the mirror's needs machinery
+    /// would not ask for capacity, and the work-sale arm would not free a
+    /// slot — the last two because both gate on `empty_slots == Some(0)` and
+    /// it was 24. Nine Great People fell clean through every branch and idled
+    /// for the whole game.
+    ///
+    /// The operative question is not how many slots the empire owns; it is
+    /// whether this person can REACH one. The host answers that per plot with
+    /// `slot_open`, so ask it there. `empty_slots == Some(0)` stays a
+    /// sufficient condition — it still is one — and `None` keeps the older
+    /// control mod's benefit of the doubt exactly as before, never read as
+    /// either claim.
+    ///
+    /// A person the host offers NO plot at all is deliberately not starved
+    /// here: that is a missing district, not a missing slot, and the needs
+    /// machinery already has its own branch for it — which is how the same
+    /// run's Great Scientist correctly asks for the Spaceport its
+    /// `required_district` names.
+    pub fn slot_starved(&self) -> bool {
+        if self.can_activate {
+            return false;
+        }
+        if self.empty_slots == Some(0) {
+            return true;
+        }
+        !self.activation_plots.is_empty()
+            && self
+                .activation_plots
+                .iter()
+                .all(|plot| plot.slot_open == Some(false))
+    }
+}
+
 /// One currently recruitable entry in Firaxis's Great Person timeline.
 ///
 /// The enclosing map is keyed by `GREAT_PERSON_CLASS_*`; keeping the class
@@ -11399,11 +11455,15 @@ fn apply_live_great_person_activation_needs(
         // Seven Writers, Artists and Musicians stood on one Theater plot for
         // thirty-plus turns on run civvis-20260817T010950Z, unactivatable,
         // while this gate read their nine highlighted plots as "nothing to
-        // build". The host's own empty-slot count is the tiebreaker: zero
-        // compatible empty slots empire-wide is a need exactly as surely as
-        // no plot at all — including the moment a person's previous work
-        // fills the last slot, which is when the next building should start.
-        let slot_starved = person.empty_slots == Some(0);
+        // build".
+        //
+        // The tiebreaker was the host's empire-wide empty-slot count, and it
+        // was the wrong question — see `StateGreatPerson::slot_starved`. Nine
+        // cultural people idled the WHOLE of run civvis-20260822T020434Z with
+        // that count reading 24, 4 and 2 while every plot the host offered
+        // them read `slot_open: false`. Ask instead whether this person can
+        // reach a slot; zero empire-wide is still a need, and still counted.
+        let slot_starved = person.slot_starved();
         if !person.activation_plots.is_empty() && !slot_starved {
             continue;
         }
@@ -19342,6 +19402,90 @@ mod host_fact_tests {
         state.units[0].great_person = Some(person(Some(0), true));
         apply_great_person_points(&mut game, &state, &mut unmapped);
         assert!(game.players[0].live_great_person_activation_needs.is_empty());
+    }
+
+    /// The nine Great People of live run `civvis-20260822T020434Z`, and the
+    /// gap they fell through.
+    ///
+    /// Three Artists, three Writers, three Musicians and a Scientist stood in
+    /// Rome at turn 231 with NOT ONE ORDER between them in the whole game.
+    /// The test above closed the `empty_slots == Some(0)` case; these nine
+    /// were never in it. Their exports read **24, 4 and 2** empty slots —
+    /// compatible slots the EMPIRE owns — while every plot the host offered
+    /// them read `slot_open: false`, tile by tile: nowhere this person can
+    /// put a work. The needs machinery saw a non-empty plot list and a
+    /// non-zero count and concluded there was nothing to build, so no city
+    /// ever started the Amphitheater or Museum that would have seated them.
+    #[test]
+    fn a_person_whose_every_offered_plot_is_full_is_a_need_however_many_slots_the_empire_owns()
+    {
+        let mut game = crate::game::Game::new_full(1, 20, 14, 95_104, 80, 0, false);
+        // As exported at turn 231: three of the Writer's plots, all closed.
+        let closed = |x: i32, y: i32, distance: i32| StateActivationPlot {
+            x,
+            y,
+            distance,
+            slot_open: Some(false),
+        };
+        let writer = |empty_slots: Option<u32>| StateGreatPerson {
+            individual: Some("GREAT_PERSON_INDIVIDUAL_HG_WELLS".to_string()),
+            class: Some("GREAT_PERSON_CLASS_WRITER".to_string()),
+            required_district: None,
+            charges: 0,
+            can_activate: false,
+            activation_plots: vec![closed(67, 14, 12), closed(65, 25, 1), closed(64, 27, 2)],
+            empty_slots,
+        };
+        let mut state = StateSnapshot {
+            units: vec![StateUnit {
+                id: 10_092_559,
+                kind: "UNIT_GREAT_WRITER".to_string(),
+                great_person: Some(writer(Some(24))),
+                ..StateUnit::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let mut unmapped = Vec::new();
+
+        apply_great_person_points(&mut game, &state, &mut unmapped);
+        assert_eq!(
+            game.players[0].live_great_person_activation_needs.len(),
+            1,
+            "twenty-four slots the empire owns and none this Writer can reach"
+        );
+        assert_eq!(
+            game.players[0].live_great_person_activation_needs[0].kind,
+            "writer"
+        );
+
+        // One reachable slot and the need is gone — the empire has somewhere
+        // to seat them and should not spend production on another building.
+        state
+            .units[0]
+            .great_person
+            .as_mut()
+            .unwrap()
+            .activation_plots[1]
+            .slot_open = Some(true);
+        apply_great_person_points(&mut game, &state, &mut unmapped);
+        assert!(
+            game.players[0].live_great_person_activation_needs.is_empty(),
+            "a reachable slot is not a reason to build capacity"
+        );
+
+        // ⚠ And an older control mod, which sends `slot_open` on no plot at
+        // all, keeps exactly the behaviour it had: `None` is an absence, not
+        // a claim, and must never be read as "full".
+        let mut older = writer(None);
+        for plot in &mut older.activation_plots {
+            plot.slot_open = None;
+        }
+        state.units[0].great_person = Some(older);
+        apply_great_person_points(&mut game, &state, &mut unmapped);
+        assert!(
+            game.players[0].live_great_person_activation_needs.is_empty(),
+            "an unknowing export must not manufacture a need"
+        );
     }
 
     /// The government HISTORY must reach the planner, so a return switch is
