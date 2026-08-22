@@ -166,13 +166,14 @@ def settler_holds(run: Path) -> dict:
         return {"holds": 0, "sites": []}
     sites: dict[str, int] = {}
     holds = 0
-    for line in why.open(errors="ignore"):
-        if "HELD short of" not in line:
-            continue
-        holds += 1
-        found = re.search(r"\((\d+, \d+)\)", line)
-        if found:
-            sites[found.group(1)] = sites.get(found.group(1), 0) + 1
+    with why.open(errors="ignore") as handle:
+        for line in handle:
+            if "HELD short of" not in line:
+                continue
+            holds += 1
+            found = re.search(r"\((\d+, \d+)\)", line)
+            if found:
+                sites[found.group(1)] = sites.get(found.group(1), 0) + 1
     ranked = sorted(sites.items(), key=lambda kv: -kv[1])[:3]
     return {"holds": holds, "sites": [{"site": s, "holds": n} for s, n in ranked]}
 
@@ -295,16 +296,134 @@ def render(data: dict) -> str:
     return "\n".join(lines)
 
 
+def aggregate(root: Path, every: int) -> dict:
+    """The same questions, asked of every recorded run instead of one.
+
+    ★★★ THIS EXISTS BECAUSE ONE GAME ANSWERED THEM WRONG. Reading three runs by
+    hand produced "we win the opening and get out-developed from turn 100" —
+    and the distribution over sixty-one completed losses says the median
+    crossover is turn 77, the modal band is t25-49, and a third of losses never
+    led at all. The three-game story came from one atypical run. A per-run
+    report invites exactly that mistake; this is the counterweight, and it costs
+    one command.
+
+    Runs that never reached a terminal event, or never reached turn 60, are
+    counted and excluded rather than silently dropped: a rate whose denominator
+    is unstated is the other way to be wrong here.
+    """
+    runs = sorted(p for p in root.glob("civvis-*") if (p / "events.jsonl").exists())
+    if not runs:
+        raise ReportError(f"no run directories under {root}")
+    by_cities: dict[int, list[bool]] = {}
+    crossovers: list[int] = []
+    never_led = wins = completed = skipped_unfinished = skipped_short = 0
+    ballots_multi = ballots_registered = 0
+    for run in runs:
+        try:
+            data = report(run, every)
+        except ReportError:
+            skipped_unfinished += 1
+            continue
+        ballots_multi += data["ballots"]["multi_vote_ballots"]
+        ballots_registered += data["ballots"]["multi_vote_registered"]
+        if data["ending"].get("victory") is None:
+            skipped_unfinished += 1
+            continue
+        completed += 1
+        won = bool(data["ending"].get("won"))
+        wins += won
+        cities = data["cities_at_60"]
+        if cities is None:
+            skipped_short += 1
+        else:
+            by_cities.setdefault(cities, []).append(won)
+        if won:
+            continue
+        cross = data["crossover"]
+        if cross is None:
+            continue
+        if cross.get("last_led_turn") is None:
+            never_led += 1
+        else:
+            crossovers.append(cross["last_led_turn"])
+    crossovers.sort()
+    bands: dict[int, int] = {}
+    for turn in crossovers:
+        bands[(turn // 25) * 25] = bands.get((turn // 25) * 25, 0) + 1
+    return {
+        "runs_seen": len(runs),
+        "completed": completed,
+        "wins": wins,
+        "skipped_unfinished": skipped_unfinished,
+        "skipped_before_turn_60": skipped_short,
+        "by_cities_at_60": {c: {"games": len(v), "wins": sum(v)}
+                            for c, v in sorted(by_cities.items())},
+        "never_led": never_led,
+        "crossovers": crossovers,
+        "crossover_median": crossovers[len(crossovers) // 2] if crossovers else None,
+        "crossover_bands": bands,
+        "multi_vote_ballots": ballots_multi,
+        "multi_vote_registered": ballots_registered,
+    }
+
+
+def render_aggregate(data: dict) -> str:
+    lines = [f"{data['completed']} completed runs of {data['runs_seen']} "
+             f"({data['skipped_unfinished']} without a terminal event), "
+             f"{data['wins']} won"]
+    band = f"{WIN_BAND[0]}-{WIN_BAND[1]}"
+    lines.append("")
+    lines.append(f"  {'cities@60':>9} {'games':>6} {'wins':>5} {'rate':>6}")
+    inside = outside = inside_won = outside_won = 0
+    for cities, cell in data["by_cities_at_60"].items():
+        rate = cell["wins"] / cell["games"]
+        lines.append(f"  {cities:>9} {cell['games']:>6} {cell['wins']:>5} {rate:>5.0%}")
+        if WIN_BAND[0] <= cities <= WIN_BAND[1]:
+            inside += cell["games"]; inside_won += cell["wins"]
+        else:
+            outside += cell["games"]; outside_won += cell["wins"]
+    if inside or outside:
+        lines.append(f"  {'in ' + band:>9} {inside:>6} {inside_won:>5} "
+                     f"{(inside_won / inside if inside else 0):>5.0%}")
+        lines.append(f"  {'outside':>9} {outside:>6} {outside_won:>5} "
+                     f"{(outside_won / outside if outside else 0):>5.0%}")
+    if data["skipped_before_turn_60"]:
+        lines.append(f"  ({data['skipped_before_turn_60']} completed before turn 60, "
+                     f"excluded from the table above)")
+    lines.append("")
+    lines.append(f"  losses that never led once a rival was visible: {data['never_led']}")
+    if data["crossover_median"] is not None:
+        lines.append(f"  losses that led then lost it — median turn "
+                     f"{data['crossover_median']}, n={len(data['crossovers'])}")
+        for start in sorted(data["crossover_bands"]):
+            lines.append(f"    t{start:>3}-{start + 24:<4} "
+                         f"{data['crossover_bands'][start]:>4}")
+    if data["multi_vote_ballots"]:
+        lines.append("")
+        lines.append(f"  purchased-vote ballots registered: "
+                     f"{data['multi_vote_registered']}/{data['multi_vote_ballots']}")
+    return "\n".join(lines)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("run", help="a recorded run directory")
+    parser.add_argument("run", help="a recorded run directory, or the directory "
+                                     "holding them with --aggregate")
+    parser.add_argument("--aggregate", action="store_true",
+                        help="treat the path as the parent of many runs and "
+                             "report across all of them")
     parser.add_argument("--every", type=int, default=25,
                         help="trajectory stride in turns (default 25)")
     parser.add_argument("--json", help="also write the full report here")
     args = parser.parse_args(argv)
 
-    data = report(Path(args.run).expanduser(), args.every)
-    print(render(data))
+    target = Path(args.run).expanduser()
+    if args.aggregate:
+        data = aggregate(target, args.every)
+        print(render_aggregate(data))
+    else:
+        data = report(target, args.every)
+        print(render(data))
     if args.json:
         Path(args.json).write_text(json.dumps(data, indent=2) + "\n")
     return 0
