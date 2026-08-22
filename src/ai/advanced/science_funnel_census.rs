@@ -585,3 +585,119 @@ mod map_reach_probe {
         }
     }
 }
+
+#[cfg(test)]
+mod envoy_and_deck_probe {
+    use super::*;
+
+    /// The two science multipliers the gate census left unexplained: a
+    /// suzerainty count of ZERO, and Natural Philosophy never slotted.
+    ///
+    /// `international_space_agency` is `science_pct_per_suzerain: 5`, so four
+    /// suzerainties would be +20% empire science — and the seat ends with
+    /// none. `natural_philosophy` doubles a Campus's adjacency yield (it
+    /// cannot open the Population/adjacency GATE, which `city_yields` reads
+    /// raw, but it doubles what the district earns), and
+    /// `strategic_policies` inserts it beside Rationalism the moment the
+    /// empire owns a Campus.
+    ///
+    /// ★★★★ ANSWERED, AND THE ANSWER IS THAT NEITHER IS A GENE. Measured on
+    /// the screen's own profile:
+    ///
+    ///     DECK  running = cryptography, five_year_plan, gunboat_diplomacy,
+    ///                     levee_en_masse, new_deal, rationalism, wisselbanken
+    ///           slots   = military 1 · ECONOMIC 2 · diplomatic 3 · wildcard 1
+    ///     ENVOYS unspent 0 · peak unspent 1 · PLACED 16
+    ///     city-states alive 4 · met 4 · ours 0 (PEAK 2) · taken by rivals 2
+    ///
+    /// **Natural Philosophy is not missing, it is homeless.** There are TWO
+    /// economic slots and Rationalism is in one of them; the card that would
+    /// double a Campus's adjacency has nowhere to go, and Rationalism is the
+    /// better of the two anyway. No pricing term creates a slot.
+    ///
+    /// **The envoys are not banked either** — 16 placed, 0 unspent, so the
+    /// native seat does not have the live seat's 56-envoy hole. What it has is
+    /// a LOSS: suzerainty peaked at 2 and ended at 0, with 2 of the four
+    /// living city-states held by rivals. That is an influence race, not a
+    /// valuation gap, and `international_space_agency` would need a slot the
+    /// deck has not got either.
+    ///
+    /// ⇒ The science-multiplier lane is exhausted for pricing genes. What is
+    /// left of it is slot scarcity (a government question) and an influence
+    /// race (a diplomatic one). The lever that works stays the one already
+    /// merged: buy more Campus BUILDINGS.
+    #[test]
+    #[ignore = "probe"]
+    fn where_do_the_envoys_and_the_science_cards_go() {
+        let mut g = Game::new(6, 60, 38, 88_000_000, 250, 6);
+        g.game_speed = GameSpeed::Online;
+        g.victory_conditions =
+            crate::game::VictoryConditions::parse("science,culture,domination,score").unwrap();
+        let mut me = AdvancedAi::new();
+        me.enable_engine_repairs_universe();
+        let mut others = AdvancedAi::fleet(&g);
+        let mut peak_envoys = 0i64;
+        let mut peak_suzerain = 0usize;
+        while g.winner.is_none() && g.turn <= 250 {
+            let pid = g.current;
+            if pid == 0 {
+                me.take_turn(&mut g, pid);
+                peak_envoys = peak_envoys.max(g.players[0].envoys_free);
+                peak_suzerain = peak_suzerain.max(
+                    g.players
+                        .iter()
+                        .filter(|p| p.is_minor && p.alive)
+                        .filter(|p| g.suzerain_of(p.id) == Some(0))
+                        .count(),
+                );
+            } else {
+                others[pid].take_turn(&mut g, pid);
+            }
+            if g.winner.is_none() && g.current == pid {
+                let _ = g.apply(pid, &Action::EndTurn);
+            }
+        }
+        let minors: Vec<usize> = g
+            .players
+            .iter()
+            .filter(|p| p.is_minor && p.alive)
+            .map(|p| p.id)
+            .collect();
+        let met = minors.iter().filter(|m| g.has_met(0, **m)).count();
+        let ours = minors
+            .iter()
+            .filter(|m| g.suzerain_of(**m) == Some(0))
+            .count();
+        let taken = minors
+            .iter()
+            .filter(|m| g.suzerain_of(**m).is_some_and(|s| s != 0))
+            .count();
+        // The deck: what the seat is actually running at the end.
+        let slotted: Vec<&str> = [
+            "rationalism",
+            "natural_philosophy",
+            "international_space_agency",
+        ]
+        .into_iter()
+        .filter(|card| g.players[0].policies.contains(&Name::new(*card)))
+        .collect();
+        // What is actually running, and whether anything could have joined it.
+        let running: Vec<String> = g.players[0]
+            .policies
+            .iter()
+            .map(|card| card.to_string())
+            .collect();
+        let slots = g.gov_slots(0);
+        println!("DECK running={running:?} slots={slots:?}");
+        println!(
+            "ENVOYS unspent_at_end={} peak_unspent={peak_envoys} placed={} · \
+             city_states alive={} met={met} OURS={ours} (peak {peak_suzerain}) \
+             taken_by_rivals={taken} · science_cards_slotted={slotted:?} · \
+             cards_running={}",
+            g.players[0].envoys_free,
+            g.players[0].envoys.iter().map(|(_, n)| n).sum::<i64>(),
+            minors.len(),
+            g.players[0].policies.len()
+        );
+    }
+}
