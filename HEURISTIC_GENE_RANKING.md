@@ -1,23 +1,25 @@
 # The heuristic gene ranking
 
-Every screenable heuristic gene on the Advanced controller, ranked most beneficial to least by **± Wins Last 10k** — wins added per 10,000 six-player games at the gene's measured on-rate in its **latest** native screen. *± Wins 10k Prior* is the same figure from the screen before that (– when the gene has only one native reading); movement between the two columns is the gene's trend across cycles. *Default* is the deployment ledger's call (`docs/gene_ledger.json`), and since 2026-08-22 that call is read off these two win columns: a gene defaults **on** when both are positive, or when their average clears +15 with neither below −10; with exactly one populated column it defaults **on** when that reading is above +20. It defaults **off** otherwise. The *Total* win-rate columns pool every native screen that measured the gene, weighted by games, and each carries its own game count `n` — the two arms are only equal when every screen that measured the gene split them evenly. *Diff* is the on rate minus the off rate in percentage points: the **whole** on−off difference, so it stands at roughly twice the scale of the win columns beside it and must be read against a screen’s difference band rather than the halved column band below. Every screen is a foldover against the best-genome baseline with shuffled civs and every major seat carrying its own genome (errors clustered by game pair), so a gene's on/off readings cover the same maps. `docs/GENE_SCREEN.md` documents the instrument; the paired contrasts, intervals and family-wise verdicts stay in `docs/gene_ledger.json`. Screenable genes awaiting their first native measurement are listed separately below without a rank.
+Every screenable heuristic gene on the Advanced controller, ranked most beneficial to least by **± Wins Last 10k** — wins added per 10,000 six-player games at the gene's measured on-rate in its **latest** screen. *± Wins 10k Prior* is the same figure from the screen before that (– when the gene has only one reading); movement between the two columns is the gene's trend across cycles. *Default* is the deployment ledger's call (`docs/gene_ledger.json`), and since 2026-08-22 that call is read off these two win columns: a gene defaults **on** when both are positive, or when their average clears +15 with neither below −10; with exactly one populated column it defaults **on** when that reading is above +20. It defaults **off** otherwise. The *Total* win-rate columns pool every screen that measured the gene, weighted by games, and each carries its own game count `n` — the two arms are only equal when every screen that measured the gene split them evenly. *Diff* is the on rate minus the off rate in percentage points: the **whole** on−off difference, so it stands at roughly twice the scale of the win columns beside it and must be read against a screen’s difference band rather than the halved column band below. **There is one screen** (operator, 2026-08-22): six majors on 74x46 continents with nine city-states, Online speed to its own 250-turn clock, all six victory lanes, a foldover against the best-genome baseline with shuffled civs and every major seat carrying its own genome (errors clustered by game pair), so a gene's on/off readings cover the same maps. `docs/GENE_SCREEN.md` documents the instrument; the paired contrasts, intervals and family-wise verdicts stay in `docs/gene_ledger.json`. Screenable genes awaiting their first measurement are listed separately below without a rank.
 
-**Reading the table.** A six-player seat wins 1-in-6 by chance (1-in-4 in a four-player screen), so the expected count is 1,667 wins per 10,000 games and the win columns say how far above or below that a seat carrying the gene lands. **A column is half its screen’s on−off difference** — a foldover puts the two arms either side of chance — so the band that says whether a column is real is half the band on that difference. The two are not interchangeable: the ±110/10k figure this paragraph used to quote, and #2266 used to call eight removals noise, is the *difference*’s band and is twice too wide for the column beside it. Each screen’s own band is below, derived from its errors rather than quoted. Screens differ in baseline as repairs land, so the *Prior* column reads as history, not a strict A/B against *Last*.
+**Reading the table.** A six-player seat wins 1-in-6 by chance, so the expected count is 1,667 wins per 10,000 games and the win columns say how far above or below that a seat carrying the gene lands. **A column is half its screen’s on−off difference** — a foldover puts the two arms either side of chance — so the band that says whether a column is real is half the band on that difference. The two are not interchangeable: the ±110/10k figure this paragraph used to quote, and #2266 used to call eight removals noise, is the *difference*’s band and is twice too wide for the column beside it. Each screen’s own band is below, derived from its errors rather than quoted. Screens differ in baseline as repairs land, so the *Prior* column reads as history, not a strict A/B against *Last*.
 
-**What each native screen resolves.** The median gene’s column standard error times 2.8 — a two-sided 5% test at 80% power. Judge a column against the band of the screen named beside it, never against a single number for the instrument: these differ by more than three to one.
+**⚠ Every column below is `legacy`.** The shape marked `legacy` in the screen table is the pre-2026-08-22 instrument: 60x38 Pangaea, six city-states, where 48% of games ended in a religious conversion against 28% on continents. Those readings are what the deployment genome stands on and they are kept for that reason, but a gene is only priced at the screen once a `standard` row appears beside it. The four-player `domination,score` war columns are gone: a 1-in-4 chance base made them incomparable with the six-player columns printed next to them.
+
+**What each screen resolves.** The median gene’s column standard error times 2.8 — a two-sided 5% test at 80% power. Judge a column against the band of the screen named beside it, never against a single number for the instrument: these differ by more than three to one.
 
 *Pairing gain* is how far a screen’s error per pair sits below the unpaired baseline, and it is what separates them. A foldover cancels only to the extent its two arms play a similar game, so the gain reads on the **genes**, not the design — a gene that rarely fires leaves most pairs identical and cancels almost everything, while a whole-genome screen flips every gene between arms and cancels almost nothing. ⚠ Gene count is not the driver, though the rows below make it look like one. The falsifier is a screen that is not a ledger source and so is not in this table — `docs/gene_screens/2026-08-22-h1-holy-lane-parity-direct-6p-allseats-1200-pairs.json`, **one** gene over **7,200** pairs, resolves ±68 at a 1.28× gain: wider than the four-gene `s6` at 6,000 pairs. Its gene changes nearly every game; `s7`'s rarely fires. That, not the count, is the difference.
 
-| Native screen | Genes | Seat pairs | 1 SE | ±80% power | Pairing gain |
-|---|---:|---:|---:|---:|---:|
-| `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` | 75 | 17,574 | 18.3 | ±51 | 1.09× |
-| `2026-08-21-p7-native-6p-allseats-15000-pairs.json` | 57 | 15,000 | 19.9 | ±56 | 1.08× |
-| `2026-08-21-s7-idle-faith-patronage-native-6p-allseats-6000-pairs.json` | 1 | 6,000 | 10.3 | ±29 | 3.32× |
-| `2026-08-21-s6-religion-genes-native-6p-allseats-6000-pairs.json` | 4 | 6,000 | 22.9 | ±64 | 1.49× |
-| `2026-08-20-s2-step-and-reassess-native-4p-1000-pairs.json` | 1 | 1,000 | 36.1 | ±101 | 2.68× |
-| `2026-08-20-p4-native-6p-allseats-13446-pairs.json` | 64 | 13,446 | 21.5 | ±60 | 1.06× |
+| Screen | Shape | Genes | Seat pairs | 1 SE | ±80% power | Pairing gain |
+|---|---|---:|---:|---:|---:|---:|
+| `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` | legacy | 75 | 17,574 | 18.3 | ±51 | 1.09× |
+| `2026-08-21-p7-native-6p-allseats-15000-pairs.json` | legacy | 57 | 15,000 | 19.9 | ±56 | 1.08× |
+| `2026-08-21-s7-idle-faith-patronage-native-6p-allseats-6000-pairs.json` | legacy | 1 | 6,000 | 10.3 | ±29 | 3.32× |
+| `2026-08-21-s6-religion-genes-native-6p-allseats-6000-pairs.json` | legacy | 4 | 6,000 | 22.9 | ±64 | 1.49× |
+| `2026-08-20-s2-step-and-reassess-native-4p-1000-pairs.json` | legacy | 1 | 1,000 | 36.1 | ±101 | 2.68× |
+| `2026-08-20-p4-native-6p-allseats-13446-pairs.json` | legacy | 64 | 13,446 | 21.5 | ±60 | 1.06× |
 
-**Cost.** Positive is slower; negative is faster. *cost (compute)* is the on/off percent change in wall seconds per completed turn, while *cost (time)* is the percent change in whole-game wall seconds and therefore includes games that end earlier or later. Each cell is the newest native estimate ± one standard error. The screen derives both from paired log-ratios on the same maps, fits every randomized gene together with an arm-order intercept, and keeps one timing per game pair; all-seats signs are summed so the answer is the incremental cost of enabling one major's genome. This reuses the screen's existing `secs` and `turn` rows — no hot-path timers and no extra profiling games. A dash means the source analysis predates the estimator and is unknown, never zero.
+**Cost.** Positive is slower; negative is faster. *cost (compute)* is the on/off percent change in wall seconds per completed turn, while *cost (time)* is the percent change in whole-game wall seconds and therefore includes games that end earlier or later. Each cell is the newest estimate ± one standard error. The screen derives both from paired log-ratios on the same maps, fits every randomized gene together with an arm-order intercept, and keeps one timing per game pair; all-seats signs are summed so the answer is the incremental cost of enabling one major's genome. This reuses the screen's existing `secs` and `turn` rows — no hot-path timers and no extra profiling games. A dash means the source analysis predates the estimator and is unknown, never zero.
 
 Regenerate with `python3 tools/heuristic_gene_ranking.py --write` after every screen enters the ledger; `tools/test_heuristic_gene_ranking.py` fails when this file is older than the ledger's sources.
 
@@ -89,9 +91,9 @@ Regenerate with `python3 tools/heuristic_gene_ranking.py --write` after every sc
 | 64 | `priced-tile-purchase` | A border plot is bought only when its priced benefit clears its Gold by a margin. | off | -31 | – | 16.36% (n=17,574) | 16.97% (n=17,574) | -0.61pp | -0.37% ±0.37% | -0.55% ±0.64% |
 | 65 | `barbarian-hunt` | Walk onto a visible, undefended barbarian camp one legal step away — the clear IS the move, so no attack scan ever offers it, and without this a unit ends its turn beside a free 50-gold clear until the camp spawns the archer that kills it. | off | -86 | – | 15.80% (n=17,574) | 17.53% (n=17,574) | -1.73pp | -0.94% ±0.32% | -0.78% ±0.58% |
 
-## Awaiting native measurement
+## Awaiting measurement
 
-These screenable genes have no native on/off result, so they receive no rank or promotion from this table. Their deployment state remains explicit while a native screen is pending.
+These screenable genes have no on/off result, so they receive no rank or promotion from this table. Their deployment state remains explicit while a screen is pending.
 
 | Gene | Default | Description |
 |---|---|---|
@@ -135,26 +137,26 @@ These screenable genes have no native on/off result, so they receive no rank or 
 
 Genes whose code has left the repository (operator directive: the bottom of the table leaves the code), listed from their last measurement:
 
-| Gene | Wins ±10k (last tracked measurement) | Regime | Win rate (on) | Win rate (off) | Source |
-|---|---:|---|---:|---:|---|
-| `suzerain-cards` | +42 | native | 17.09% | 16.25% | `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` |
-| `wonder-prereq-reach` | +29 | native | 16.96% | 16.38% | `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` |
-| `camp-reach` | +10 | native | 16.77% | 16.56% | `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` |
-| `housing-buildings` | +8 | native | 16.75% | 16.59% | `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` |
-| `ranged-line-of-sight` | +4 | native | 16.71% | 16.63% | `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` |
-| `recon-flight` | -1 | native | 16.66% | 16.67% | `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` |
-| `housing-cards` | -4 | native | 16.62% | 16.71% | `2026-08-20-p4-native-6p-allseats-13446-pairs.json` |
-| `arrival-waves` | -7 | native | 16.59% | 16.74% | `2026-08-20-p4-native-6p-allseats-13446-pairs.json` |
-| `idle-walkers-close-the-pipeline` | -10 | native | 16.56% | 16.77% | `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` |
-| `muster-at-command-radius` | -12 | native | 16.55% | 16.79% | `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` |
-| `barbarian-walls-one-tier` | -13 | native | 16.54% | 16.80% | `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` |
-| `siege-muster` | -26 | native | 16.41% | 16.93% | `2026-08-20-p4-native-6p-allseats-13446-pairs.json` |
-| `siege-role` | -39 | native | 16.27% | 17.06% | `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` |
-| `garrison-walls` | -54 | native | 16.12% | 17.21% | `2026-08-20-p4-native-6p-allseats-13446-pairs.json` |
-| `loyalty-policy-defence` | -54 | native | 16.13% | 17.20% | `2026-08-20-p4-native-6p-allseats-13446-pairs.json` |
-| `campus-every-city` | -94 | native | 15.73% | 17.60% | `2026-08-20-p4-native-6p-allseats-13446-pairs.json` |
-| `stacked-escort` | -104 | native | 15.63% | 17.71% | `2026-08-20-p4-native-6p-allseats-13446-pairs.json` |
-| `settler-stack-discipline` | -116 | native | 15.51% | 17.83% | `2026-08-20-p4-native-6p-allseats-13446-pairs.json` |
+| Gene | Wins ±10k (last tracked measurement) | Win rate (on) | Win rate (off) | Source |
+|---|---:|---:|---:|---|
+| `suzerain-cards` | +42 | 17.09% | 16.25% | `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` |
+| `wonder-prereq-reach` | +29 | 16.96% | 16.38% | `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` |
+| `camp-reach` | +10 | 16.77% | 16.56% | `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` |
+| `housing-buildings` | +8 | 16.75% | 16.59% | `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` |
+| `ranged-line-of-sight` | +4 | 16.71% | 16.63% | `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` |
+| `recon-flight` | -1 | 16.66% | 16.67% | `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` |
+| `housing-cards` | -4 | 16.62% | 16.71% | `2026-08-20-p4-native-6p-allseats-13446-pairs.json` |
+| `arrival-waves` | -7 | 16.59% | 16.74% | `2026-08-20-p4-native-6p-allseats-13446-pairs.json` |
+| `idle-walkers-close-the-pipeline` | -10 | 16.56% | 16.77% | `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` |
+| `muster-at-command-radius` | -12 | 16.55% | 16.79% | `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` |
+| `barbarian-walls-one-tier` | -13 | 16.54% | 16.80% | `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` |
+| `siege-muster` | -26 | 16.41% | 16.93% | `2026-08-20-p4-native-6p-allseats-13446-pairs.json` |
+| `siege-role` | -39 | 16.27% | 17.06% | `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` |
+| `garrison-walls` | -54 | 16.12% | 17.21% | `2026-08-20-p4-native-6p-allseats-13446-pairs.json` |
+| `loyalty-policy-defence` | -54 | 16.13% | 17.20% | `2026-08-20-p4-native-6p-allseats-13446-pairs.json` |
+| `campus-every-city` | -94 | 15.73% | 17.60% | `2026-08-20-p4-native-6p-allseats-13446-pairs.json` |
+| `stacked-escort` | -104 | 15.63% | 17.71% | `2026-08-20-p4-native-6p-allseats-13446-pairs.json` |
+| `settler-stack-discipline` | -116 | 15.51% | 17.83% | `2026-08-20-p4-native-6p-allseats-13446-pairs.json` |
 
 ## Follow-ups
 
@@ -164,4 +166,4 @@ Genes whose code has left the repository (operator directive: the bottom of the 
 
 **P10 ended early at the operator's request.** Its 2,929 complete map seeds provide 5,858 controlled games and 17,574 treated-seat pairs; the analysis excludes 11 interrupted one-arm seeds (66 raw seat rows), with zero duplicate or invalid tuples. The new *Wins Last 10k* value extrapolates each measured on-arm rate to 10,000 games as `round((win_on − 1/6) × 10,000)`; it does not invent synthetic games. The former *Wins Last 10k* reading shifts intact to *Wins 10k Prior*. P10 used the 6p all-six native regime on seeds 100000000–100002962, 60×38 pangaea/online/250 turns, shuffled civilizations, every major seat treated, and foldover against the best-genome baseline. Its fixed binary came from `d23f92d944cd889aa4c9dfe58c37aceb8e55eabd` (SHA-256 `79385db96e89e91cc0b6fd8389e837cb66dc05ccaa4eee493576f152daf627ed`), before later gene removals and additions; ledger generation drops obsolete tags and retains newer genes from their existing sources.
 
-_Generated by `tools/heuristic_gene_ranking.py` from the ledger's sources: `2026-08-20-p4-native-6p-allseats-13446-pairs.json` (native, 13,446 pairs), `2026-08-19-p2-war-4p-allseats-3300-pairs.json` (war, 3,300 pairs), `2026-08-20-p3b-war-repaired-4p-allseats-1064-pairs.json` (war, 1,064 pairs), `2026-08-20-s2-step-and-reassess-native-4p-1000-pairs.json` (native, 1,000 pairs), `2026-08-20-s3-step-and-reassess-war-4p-800-pairs.json` (war, 800 pairs), `2026-08-21-s6-religion-genes-native-6p-allseats-6000-pairs.json` (native, 6,000 pairs), `2026-08-21-s7-idle-faith-patronage-native-6p-allseats-6000-pairs.json` (native, 6,000 pairs), `2026-08-21-p7-native-6p-allseats-15000-pairs.json` (native, 15,000 pairs), `2026-08-21-s8-war-rerank-vs-best-4p-allseats.json` (war, 5,844 pairs), `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` (native, 17,574 pairs). The paired contrasts, intervals and family-wise verdicts live in `docs/gene_ledger.json`; this table is the operator's wins-per-ten-thousand view of the same games._
+_Generated by `tools/heuristic_gene_ranking.py` from the ledger's sources: `2026-08-20-p4-native-6p-allseats-13446-pairs.json` (legacy, 13,446 pairs), `2026-08-20-s2-step-and-reassess-native-4p-1000-pairs.json` (legacy, 1,000 pairs), `2026-08-21-s6-religion-genes-native-6p-allseats-6000-pairs.json` (legacy, 6,000 pairs), `2026-08-21-s7-idle-faith-patronage-native-6p-allseats-6000-pairs.json` (legacy, 6,000 pairs), `2026-08-21-p7-native-6p-allseats-15000-pairs.json` (legacy, 15,000 pairs), `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` (legacy, 17,574 pairs). The paired contrasts, intervals and family-wise verdicts live in `docs/gene_ledger.json`; this table is the operator's wins-per-ten-thousand view of the same games._
