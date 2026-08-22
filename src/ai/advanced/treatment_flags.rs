@@ -2480,6 +2480,33 @@ impl AdvancedAi {
     pub fn disable_air_surge(&mut self) {
         self.air_surge = false;
     }
+
+    /// Route a unit that the enemy's exact next-turn attack envelopes can
+    /// kill to safe recovery ground, ahead of the ordinary withdrawal
+    /// threshold. See [`crate::ai::BasicAi::retreat_step`] and
+    /// `safe_healing_step`. Shipped ON since #2059 for every seat —
+    /// `BasicAi::new()` and `BasicAi::with_weights()` both set it, so majors,
+    /// city-states and barbarians all pay for it; only `AdvancedAi::legacy()`
+    /// withholds it, behind the frozen `advanced_v1` anchor.
+    ///
+    /// ★★★ THIS IS NOT NEW BEHAVIOUR, AND IT IS THE MOST EXPENSIVE DEFAULT IN
+    /// THE SIMULATOR. Profiled at head `cefe73b8` (2026-08-21), the block it
+    /// gates is `healing_step` **41.0%** and `retreat_step` **35.9%** of the
+    /// main thread, and withholding it measures **−41.0%** wall clock at the
+    /// 150-turn deployment shape and **−48.7%** at the 250-turn gene-screen
+    /// shape (`tools/speed_ab.py`, four paired games each). It reached `main`
+    /// with no arm, no gene row and no mention in `docs/EVAL.md` — so the
+    /// single largest consumer of every evaluation batch was also the one
+    /// thing neither gate could address. A row in `PRODUCTION_TREATMENTS`
+    /// makes it answerable; it does not presume the answer.
+    pub fn enable_precise_evacuation(&mut self) {
+        self.base.precise_evacuation = true;
+    }
+
+    /// The twin of `enable_precise_evacuation`.
+    pub fn disable_precise_evacuation(&mut self) {
+        self.base.precise_evacuation = false;
+    }
 }
 
 #[cfg(test)]

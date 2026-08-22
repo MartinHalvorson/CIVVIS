@@ -4861,6 +4861,12 @@ impl AdvancedAi {
         // the historical candidate set; `advanced_unscreened_candidates` in
         // `src/elo.rs` withholds it so the axis stays measurable.
         ai.base.legal_tactical_candidates = true;
+        // Redundant against `BasicAi::with_weights`, which already ships this
+        // ON — and written out anyway, because `precise_evacuation` is now a
+        // `PRODUCTION_TREATMENTS` row and `production_bundle_rows_are_real`
+        // requires the bundle to name every behaviour a `--without` claims to
+        // withhold. Naming it here is what makes the withholding honest.
+        ai.base.precise_evacuation = true;
         // ⚠ The production floor of six was REMOVED on 2026-08-10. It did
         // exactly what it promised — +2.1 cities, +20 population, +6.5
         // districts, +62 terminal score — and paid about **thirty Elo of wins**
