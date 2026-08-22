@@ -337,13 +337,71 @@ const CIV6_UNIT_ICON_INDEX = new Map(
 const CIV6_UNIT_ICON_CELL = 64, CIV6_UNIT_ICON_COLUMNS = 12;
 const CIV6_UNIT_ICON_ATLAS = new Image();
 const CIV6_UNIT_ICON_CACHE = new Map();
+// Where each silhouette actually sits inside its cell. The atlas is cut from
+// Civilopedia cards, so the authored margin is per-icon: a Pike and Shot fills
+// 38 of its 64 px, a Spec Ops 59, and the roster averages 49. Drawing whole
+// cells at one box size therefore drew the same command counter at sizes 1.6x
+// apart, which reads as the map keeping two or three classes of unit marker.
+// Measuring the alpha once turns every cell into a silhouette rectangle, and
+// one requested size then means one size.
+const CIV6_UNIT_ICON_BOXES = new Map();
+// Ignore the near-transparent fringe the background subtraction leaves behind,
+// so a stray pixel cannot inflate an icon's measured extent.
+const CIV6_UNIT_ICON_ALPHA_FLOOR = 12;
+const CIV6_UNIT_ICON_FULL_CELL = Object.freeze(
+  {x:0, y:0, w:CIV6_UNIT_ICON_CELL, h:CIV6_UNIT_ICON_CELL});
 let CIV6_UNIT_ICON_ATLAS_READY = false;
 CIV6_UNIT_ICON_ATLAS.onload = () => {
   CIV6_UNIT_ICON_ATLAS_READY = true;
   CIV6_UNIT_ICON_CACHE.clear();
+  measureCiv6UnitIconBoxes();
   if (state) { draw(); drawMini(); }
 };
 CIV6_UNIT_ICON_ATLAS.src = "/assets/civ6-unit-flags.png";
+
+// One pass over the loaded atlas rather than a hand-kept table of rectangles:
+// tools/civ6_unit_flags.swift can add or re-cut a cell without a second list
+// going quietly stale beside it. A canvas the browser refuses to read leaves
+// every icon on its full cell, which is exactly the old behaviour.
+function measureCiv6UnitIconBoxes() {
+  CIV6_UNIT_ICON_BOXES.clear();
+  const sheet = document.createElement("canvas");
+  sheet.width = CIV6_UNIT_ICON_ATLAS.naturalWidth;
+  sheet.height = CIV6_UNIT_ICON_ATLAS.naturalHeight;
+  if (!sheet.width || !sheet.height) return;
+  const g = sheet.getContext("2d", {willReadFrequently:true});
+  g.drawImage(CIV6_UNIT_ICON_ATLAS, 0, 0);
+  let pixels;
+  try { pixels = g.getImageData(0, 0, sheet.width, sheet.height).data; }
+  catch { return; }
+  for (const [type, index] of CIV6_UNIT_ICON_INDEX) {
+    const ox = (index % CIV6_UNIT_ICON_COLUMNS) * CIV6_UNIT_ICON_CELL;
+    const oy = Math.floor(index / CIV6_UNIT_ICON_COLUMNS) * CIV6_UNIT_ICON_CELL;
+    if (ox + CIV6_UNIT_ICON_CELL > sheet.width
+        || oy + CIV6_UNIT_ICON_CELL > sheet.height) continue;
+    let x0 = CIV6_UNIT_ICON_CELL, y0 = CIV6_UNIT_ICON_CELL, x1 = -1, y1 = -1;
+    for (let y = 0; y < CIV6_UNIT_ICON_CELL; y++) {
+      let at = ((oy + y) * sheet.width + ox) * 4 + 3;   // the alpha byte
+      for (let x = 0; x < CIV6_UNIT_ICON_CELL; x++, at += 4) {
+        if (pixels[at] < CIV6_UNIT_ICON_ALPHA_FLOOR) continue;
+        if (x < x0) x0 = x;
+        if (x > x1) x1 = x;
+        if (y < y0) y0 = y;
+        if (y > y1) y1 = y;
+      }
+    }
+    if (x1 < x0 || y1 < y0) continue;      // an empty cell keeps its full box
+    CIV6_UNIT_ICON_BOXES.set(type,
+                             {x:x0, y:y0, w:x1 - x0 + 1, h:y1 - y0 + 1});
+  }
+}
+
+// The measured silhouette, in the sprite's own cell coordinates. Falling back
+// to the whole cell keeps a never-measured atlas drawing at its authored size
+// instead of vanishing.
+function civ6UnitIconBox(type) {
+  return CIV6_UNIT_ICON_BOXES.get(type) || CIV6_UNIT_ICON_FULL_CELL;
+}
 
 function civ6UnitIconSprite(type, color) {
   const index = CIV6_UNIT_ICON_INDEX.get(type);
@@ -368,7 +426,10 @@ function civ6UnitIconSprite(type, color) {
 }
 
 // Canvas-drawn fallbacks cover the first frame while the local atlas loads and
-// make an asset-load failure visible without making the map unusable.
+// make an asset-load failure visible without making the map unusable. They are
+// drawn on a grid their silhouettes span about this much of, so one requested
+// size means one size whichever renderer answers.
+const PICTOGRAM_GLYPH_SPAN = 20;
 const UNIT_PICTOGRAM = {
   // civilians & specialists
   settler:"camp", builder:"hammer", trader:"caravan", naturalist:"leaf",
@@ -9290,9 +9351,23 @@ const YPIP = { food:"#69e64f", production:"#ff8b3d", gold:"#ffda3b",
                science:"#36cfff", culture:"#ca74ff", faith:"#f6e5a8" };
 const YINK = { food:"#f3fbef", production:"#fff4e6", gold:"#553a08",
                science:"#f1fbff", culture:"#fbf3ff", faith:"#463f2e" };
-// The charcoal rim ties a same-yield stack together without making it read
-// like a row of separate black tokens.
-const YIELD_PIP_RIM = .58;
+// Firaxis does not rim each sign. It lays one shaded plate under the whole
+// same-yield cluster, and that plate is what makes a rich tile read as three
+// marks rather than a dozen tokens. The numbers are measured off the base
+// game's own map overlay atlas (Base/Platforms/…/TEXTURE_YieldOverlayAtlas):
+// a 43px sign cell carrying a 38px icon, so 2.5px of plate shows around each
+// sign and 4px between neighbours, all over a near-black rgb(8,12,16) at 92%
+// with a soft 6px shadow under it.
+const YIELD_PLATE_FILL = "rgba(8,12,16,.92)";
+const YIELD_PLATE_SHADOW = "rgba(5,8,6,.55)";
+// Plate edge beyond a sign, as a fraction of that sign's radius.
+const YIELD_PLATE_PAD = .13;
+// A lone sign sits on a squircle, not on a ring of plate: the base game's
+// one-count plate is a rounded square whose corner is .84 of its half-side,
+// which reads as a marker laid on the map rather than an outline on the sign.
+const YIELD_PLATE_SOLO_CORNER = .84;
+// A worked tile keeps its warm keyline — now one line around the cluster.
+const YIELD_PLATE_WORKED_EDGE = "rgba(244,206,122,.95)";
 // Place the visual centre below the tile's midpoint, measured from its top
 // point to bottom point. This preserves the same seat on flat and globe maps.
 const STRATEGIC_YIELD_CENTER_FRACTION = .60;
@@ -9349,10 +9424,11 @@ function tileDetailYieldWords(yields, sign = false) {
 }
 
 // One to four pips form the small, instantly-recognisable Civ-style stacks.
-// Base-game stacks are nearly nested: a narrow coloured gap keeps each sign
-// countable while the thin charcoal rim binds them into one compact mark.
+// The gap is the base game's own: 4px between two 38px signs, so a thin line
+// of plate separates neighbours and keeps them countable while the plate
+// under them binds the stack into one mark.
 function yieldPipOffsets(count, r) {
-  const gap = .55 * r / 4.4;
+  const gap = .92 * r / 4.4;
   const step = r * 2 + gap;
   if (count === 2) return [[0, -step / 2], [0, step / 2]];
   if (count === 3) {
@@ -9380,7 +9456,7 @@ function yieldPipCluster(kind, amount, r) {
       portion:summary ? 1 : pips[index].portion,
       label,
     }));
-  const edge = sign => sign.r + YIELD_PIP_RIM;
+  const edge = sign => sign.r * (1 + YIELD_PLATE_PAD);
   const minX = Math.min(...signs.map(sign => sign.x - edge(sign)));
   const maxX = Math.max(...signs.map(sign => sign.x + edge(sign)));
   const minY = Math.min(...signs.map(sign => sign.y - edge(sign)));
@@ -9506,24 +9582,103 @@ function drawYieldPipGlyph(kind, x, y, r) {
   cx.restore();
 }
 
-function drawYieldPip(kind, x, y, r, portion, worked, label = "") {
+// ------------------------------------------------------------- yield plates
+//
+// The plate under a cluster is the union of that cluster's signs grown by one
+// padding — which is exactly the hull of the sign centres offset by that
+// radius. So a single routine reproduces the base game's whole plate
+// vocabulary without enumerating it: a capsule under a stacked pair, a
+// rounded triangle under a trio, a rounded square under a quartet, each one
+// hugging its formation instead of boxing it.
+function yieldPlateHull(points) {
+  if (points.length < 3) return points;
+  const sorted = points.slice().sort((a, b) => a.x - b.x || a.y - b.y);
+  const cross = (o, a, b) =>
+    (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+  const chain = list => {
+    const out = [];
+    for (const point of list) {
+      while (out.length >= 2 &&
+             cross(out[out.length - 2], out[out.length - 1], point) <= 0) out.pop();
+      out.push(point);
+    }
+    out.pop();
+    return out;
+  };
+  const hull = chain(sorted).concat(chain(sorted.slice().reverse()));
+  return hull.length >= 2 ? hull : points;
+}
+
+// Walk the hull's outward normals: every edge contributes a straight side of
+// the plate and every corner the arc that rounds it. `arc` draws the side for
+// us as the line into each arc's start, and the normal angle only ever
+// increases around the walk, so the sides and corners join without a seam.
+function traceYieldPlate(signs, dx, dy) {
+  const grow = sign => sign.r * (1 + YIELD_PLATE_PAD);
+  if (signs.length === 1) {
+    const [sign] = signs, r = grow(sign);
+    const x = dx + sign.x, y = dy + sign.y;
+    // Five-or-more is a numbered badge, and the base game seats that one on a
+    // disc. Every other lone sign gets the rounded square.
+    if (sign.label) { cx.moveTo(x + r, y); cx.arc(x, y, r, 0, 7); return; }
+    cx.roundRect(x - r, y - r, r * 2, r * 2, r * YIELD_PLATE_SOLO_CORNER);
+    return;
+  }
+  const hull = yieldPlateHull(signs.map(sign =>
+    ({x:dx + sign.x, y:dy + sign.y, r:grow(sign)})));
+  const outward = hull.map((point, index) => {
+    const next = hull[(index + 1) % hull.length];
+    return Math.atan2(-(next.x - point.x), next.y - point.y);
+  });
+  for (let index = 0; index < hull.length; index++) {
+    const point = hull[index];
+    cx.arc(point.x, point.y, point.r,
+      outward[(index + hull.length - 1) % hull.length], outward[index]);
+  }
+  cx.closePath();
+}
+
+function drawYieldPlate(signs, dx, dy, worked) {
+  const r = Math.max(...signs.map(sign => sign.r));
+  cx.save();
+  cx.beginPath();
+  traceYieldPlate(signs, dx, dy);
+  cx.shadowColor = YIELD_PLATE_SHADOW;
+  cx.shadowBlur = Math.max(1.1, r * .3);
+  cx.shadowOffsetY = Math.max(.35, r * .12);
+  cx.fillStyle = YIELD_PLATE_FILL;
+  cx.fill();
+  cx.shadowBlur = 0; cx.shadowOffsetY = 0;
+  // One keyline around the cluster, where there used to be one around every
+  // sign in it.
+  if (worked) {
+    cx.strokeStyle = YIELD_PLATE_WORKED_EDGE;
+    cx.lineWidth = Math.max(.55, r * .11);
+    cx.stroke();
+  }
+  cx.restore();
+}
+
+// A sign standing on the plate needs no rim and no shadow of its own — the
+// plate is the separation. What is left is the coloured disc and the glyph
+// that names its kind.
+function drawYieldPip(kind, x, y, r, portion, label = "") {
   const fill = YPIP[kind] || "#cccccc";
   const fraction = Math.max(.05, Math.min(1, portion));
   const isSummary = !!label;
   cx.save();
-  cx.shadowColor = "rgba(7,10,7,.42)";
-  cx.shadowBlur = 1.45; cx.shadowOffsetY = .65;
-  cx.fillStyle = "rgba(7,12,9,.82)";
-  cx.beginPath(); cx.arc(x, y, r + YIELD_PIP_RIM, 0, 7); cx.fill();
-  cx.shadowBlur = 0; cx.shadowOffsetY = 0;
+  // The disc itself, clipped so a fractional sign fills from the bottom up.
   cx.save();
   cx.beginPath(); cx.arc(x, y, r, 0, 7); cx.clip();
+  // The unearned part of a fractional sign stays a dimmed disc, so half a
+  // point still reads as one sign rather than as half a mark on the plate.
+  if (fraction < 1) {
+    cx.fillStyle = "rgba(228,242,234,.13)";
+    cx.fillRect(x - r, y - r, r * 2, r * 2);
+  }
   cx.fillStyle = fill;
   cx.fillRect(x - r, y + r - r * 2 * fraction, r * 2, r * 2 * fraction);
   cx.restore();
-  cx.strokeStyle = worked ? "rgba(244,206,122,.95)" : "rgba(12,16,12,.82)";
-  cx.lineWidth = worked ? .95 : (isSummary ? .78 : .58);
-  cx.beginPath(); cx.arc(x, y, r, 0, 7); cx.stroke();
   if (isSummary) {
     // The count is painted over the larger sign, with a dark keyline so it
     // remains readable on every yield colour and over a bright terrain tile.
@@ -9569,9 +9724,10 @@ function drawTileYields(t, x, y, worked) {
     for (let index = 0; index < row.clusters.length; index++) {
       const cluster = row.clusters[index];
       const clusterX = px + cluster.width / 2;
+      drawYieldPlate(cluster.signs, clusterX, cy, worked);
       for (const sign of cluster.signs) {
         drawYieldPip(sign.kind, clusterX + sign.x, cy + sign.y,
-          sign.r, sign.portion, worked, sign.label);
+          sign.r, sign.portion, sign.label);
       }
       px += cluster.width + (index + 1 < row.clusters.length ? row.gap : 0);
     }
@@ -9609,10 +9765,9 @@ function tri(ax, ay, bx, by, ccx, ccy) {
 // Completed buildings stand on the token as dark bars; see `drawDistrictBars`.
 //
 // Square, not round, because the other painted piece on a tile is a unit, and
-// a unit's command token is a circle (a capsule for civilians). Two colored
-// discs a tile apart are told apart only by reading their contents; a square
-// beside a circle is told apart by silhouette, at any zoom, before either
-// resolves. It is a true square rather than a projected one, for the same
+// a unit's command token is a circle. Two colored discs a tile apart are told
+// apart only by reading their contents; a square beside a circle is told apart
+// by silhouette, at any zoom, before either resolves. It is a true square rather than a projected one, for the same
 // reason the unit token is a true circle: these are pieces set on the board,
 // not paint applied to it. Sized to cover the ground the disc covered —
 // 4·h² ≈ π·(0.56·S)²·YS — so the swap changes shape, not weight.
@@ -12488,14 +12643,14 @@ function strategicResourceUnitPlacement(tile, placement, hexInradius) {
     r: placement.r * RESOURCE_UNIT_CLEARANCE_SCALE,
   };
 }
-// Civilian tokens retain their rounded-rectangle cue, but use a capsule whose
-// entire outline fits the same enclosing circle as a military token.
-function strategicUnitTokenPath(civilian, x, y, r) {
+// Every command token is the same circle. The civilian capsule was a second
+// counter shape sitting among the military circles at the same moment the
+// icons inside them were a second counter size, and between them the map read
+// as if it were mixing two marker sets. The owner's colour and the unit's own
+// silhouette already say what is standing on the tile.
+function strategicUnitTokenPath(x, y, r) {
   cx.beginPath();
-  if (civilian) {
-    const h = r * 1.08;
-    cx.roundRect(x - r, y - h / 2, r * 2, h, h / 2);
-  } else cx.arc(x, y, r, 0, 7);
+  cx.arc(x, y, r, 0, 7);
 }
 // Damage is exceptional state, so a healthy unit keeps its clean command token.
 // When damage exists, its bar is part of the token rather than a floating map
@@ -12532,12 +12687,15 @@ function drawStrategicUnitHealth(x, y, r, hp, now) {
   }
   cx.restore();
 }
-// The Civ VI atlas cells carry breathing room around each silhouette. Preserve
-// the authored survey size through zoom 1, then spend that room as the camera
-// closes in: at maximum zoom the glyph fills nearly a third more of its token
-// without changing the token footprint or crowding the zoomed-out map.
-const COMMAND_UNIT_ICON_K = () => 1 + .32 * Math.max(0, Math.min(1,
-  (cam.scale - 1) / 2.2));
+// One silhouette size for every unit, on every surface, at every zoom: the
+// glyph spans this share of its token's diameter. The old zoom curve existed
+// to spend each cell's authored margin as the camera closed in, and it could
+// only do that because the margin was there to spend -- which is the same
+// accident that made the icons uneven. `drawUnitPictogram` now measures that
+// margin away once, so an icon simply keeps its proportion of its token and
+// the token keeps its proportion of the hex. Sized a little under what the
+// widest silhouettes used to reach, which is what was overflowing the token.
+const COMMAND_UNIT_ICON_SHARE = .66;
 
 // Civ 6 hangs a small flag off each unit carrying its icon, because a drawn
 // figure at map scale reads as "somebody's soldier" and nothing more. Same
@@ -12716,15 +12874,22 @@ function pictogramCannon(kind, color) {
   if (kind === "bombard") { cx.fillRect(-1,-6,4,4); }
 }
 
+// `size` is the glyph's own extent -- its longest side -- and not the box its
+// cell was cut at, so asking every unit for one size gives one size.
 function drawUnitPictogram(type, x, y, size, color = "#f0ead8") {
   const official = civ6UnitIconSprite(type, color);
   if (official) {
-    cx.drawImage(official, x - size / 2, y - size / 2, size, size);
+    const box = civ6UnitIconBox(type);
+    const k = size / Math.max(box.w, box.h);
+    const w = box.w * k, h = box.h * k;
+    cx.drawImage(official, box.x, box.y, box.w, box.h,
+                 x - w / 2, y - h / 2, w, h);
     return;
   }
   const kind = UNIT_PICTOGRAM[type] || "shield";
   cx.save();
-  cx.translate(x, y); cx.scale(size / 24, size / 24);
+  cx.translate(x, y);
+  cx.scale(size / PICTOGRAM_GLYPH_SPAN, size / PICTOGRAM_GLYPH_SPAN);
   cx.lineCap = "round"; cx.lineJoin = "round";
   cx.strokeStyle = color; cx.fillStyle = color; cx.lineWidth = 1.6;
 
@@ -20153,7 +20318,6 @@ function drawPlanetMap() {
     // seats around it. Let stacked tokens cross the individual face edge a
     // little instead of cutting their already-reduced silhouettes flat.
     const ux = cell.center.x + stack.x, uy = cell.center.y + stack.y;
-    const civilian = CIVILIAN_UNITS.has(unit.type);
     const tokenInk = unitTokenInk(unit.owner);
     cx.save();
     cx.globalAlpha = unitAlpha;
@@ -20161,10 +20325,10 @@ function drawPlanetMap() {
     cx.lineWidth = outline;
     const commandTokenClip = !stack.stacked;
     if (commandTokenClip) { cx.save(); planetPath(cx, cell.points); cx.clip(); }
-    strategicUnitTokenPath(civilian, ux, uy, r);
+    strategicUnitTokenPath(ux, uy, r);
     cx.fill(); cx.stroke();
     drawUnitPictogram(unit.type, ux, uy,
-                      r * 1.48, tokenInk);
+                      r * 2 * COMMAND_UNIT_ICON_SHARE, tokenInk);
     if (unitHasHealth(unit)) drawStrategicUnitHealth(ux, uy, r, unit.hp, now);
     if (commandTokenClip) cx.restore();
     cx.restore();
@@ -21069,7 +21233,8 @@ function drawScene() {
         // The exhaustive base-game table keeps every district's queue glyph in
         // the same exact color as its map counter.
         if (it.unit) {
-          drawUnitPictogram(it.unit, mx, my, mr * 1.42, "#f0ead8");
+          drawUnitPictogram(it.unit, mx, my,
+                            mr * 2 * COMMAND_UNIT_ICON_SHARE, "#f0ead8");
         } else if (it.wonder) {
           drawWorldWonderIcon(it.wonder, mx, my + mr * .18, mr / 29);
         } else {
@@ -21185,21 +21350,20 @@ function drawScene() {
     // singleton sizing and moving-unit behavior remain unchanged.
     const strategicTokenClip = !moving && !stack.stacked;
     if (strategicTokenClip) { cx.save(); hexPath(tileX, tileY); cx.clip(); }
-    const civ = CIVILIAN_UNITS.has(u.type);
     // Spent units recede so the ones that can still act carry the eye.
     cx.globalAlpha = unitAlpha *
       ((u.moves_left !== undefined && u.moves_left <= 0) ? 0.62 : 1);
     cx.save();
     cx.fillStyle = pcol(u.owner);
-    strategicUnitTokenPath(civ, x, y, rr);
+    strategicUnitTokenPath(x, y, rr);
     cx.fill();
     cx.restore();
     const tokenInk = unitTokenInk(u.owner);
     cx.strokeStyle = u.fortified ? "#f4f8ff" : tokenInk;
     cx.lineWidth = tokenOutline;
-    strategicUnitTokenPath(civ, x, y, rr);
+    strategicUnitTokenPath(x, y, rr);
     cx.stroke();
-    drawUnitPictogram(u.type, x, y, rr * 1.45 * COMMAND_UNIT_ICON_K(), tokenInk);
+    drawUnitPictogram(u.type, x, y, rr * 2 * COMMAND_UNIT_ICON_SHARE, tokenInk);
     cx.globalAlpha = unitAlpha;
     if (unitHasHealth(u)) drawStrategicUnitHealth(x, y, rr, u.hp, now);
     if (u.level > 1) {
@@ -21207,8 +21371,8 @@ function drawScene() {
       const pipRadius = Math.min(2, rr * .12);
       const pipY = y - rr * .28;
       // Keep a row of promotion pips inside the token's upper interior. The
-      // available width is deliberately narrower than its full diameter so
-      // even the civilian capsule stays inside its hex.
+      // available width is deliberately narrower than the token's diameter so
+      // the row stays inside the curve rather than riding its edge.
       const pipGap = count > 1
         ? Math.min(5, Math.max(0, (rr * 1.25 - pipRadius * 2) / (count - 1)))
         : 0;
@@ -21242,15 +21406,14 @@ function drawScene() {
     cx.rotate((d.owner % 2 ? 1 : -1) * e * 1.2);
     cx.translate(-d.x, -d.y);
     const r = 10.5;
-    const civilian = CIVILIAN_UNITS.has(d.type);
     const tokenInk = unitTokenInk(d.owner);
     cx.fillStyle = pcol(d.owner);
     cx.strokeStyle = tokenInk;
     cx.lineWidth = 1.6;
-    strategicUnitTokenPath(civilian, d.x, d.y, r);
+    strategicUnitTokenPath(d.x, d.y, r);
     cx.fill(); cx.stroke();
     drawUnitPictogram(d.type, d.x, d.y,
-                      r * 1.45 * COMMAND_UNIT_ICON_K(), tokenInk);
+                      r * 2 * COMMAND_UNIT_ICON_SHARE, tokenInk);
     cx.restore();
     cx.globalAlpha = 1;
   }

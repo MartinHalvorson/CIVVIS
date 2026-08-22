@@ -12921,12 +12921,73 @@ mod tests {
             .expect("strategic unit pictogram renderer");
         assert!(renderer.contains("const official = civ6UnitIconSprite(type, color)"));
         assert!(renderer.contains("cx.drawImage(official"));
-        assert!(EMBEDDED_INDEX.contains("const COMMAND_UNIT_ICON_K = () => 1 + .32"));
         assert!(EMBEDDED_INDEX.contains("drawUnitPictogram(u.type, x, y,"));
         assert!(EMBEDDED_INDEX.contains("drawUnitPictogram(unit.type, ux, uy,"));
         assert!(EMBEDDED_INDEX.contains("drawUnitPictogram(d.type, d.x, d.y,"));
         assert!(!EMBEDDED_INDEX.contains("embarked ? \"galley\""));
-        assert!(EMBEDDED_INDEX.contains("rr * 1.45 * COMMAND_UNIT_ICON_K(), tokenInk"));
+
+        // The cells carry a per-icon margin -- 38 to 64 px of silhouette in the
+        // same 64 px cell -- so drawing whole cells at one box size drew the
+        // roster at 1.7x apart. Every icon is measured and then drawn from its
+        // own silhouette rectangle, which is what makes one requested size mean
+        // one size.
+        assert!(EMBEDDED_INDEX.contains("function measureCiv6UnitIconBoxes() {"));
+        assert!(EMBEDDED_INDEX.contains("function civ6UnitIconBox(type) {"));
+        assert!(renderer.contains("const box = civ6UnitIconBox(type)"));
+        assert!(renderer.contains("const k = size / Math.max(box.w, box.h)"));
+        assert!(renderer.contains("cx.drawImage(official, box.x, box.y, box.w, box.h,"));
+        assert!(renderer.contains("x - w / 2, y - h / 2, w, h);"));
+
+        // And one size means one size everywhere: no surface may reintroduce
+        // its own multiplier, and none may make the icon grow with the camera
+        // the way the retired COMMAND_UNIT_ICON_K did.
+        assert!(!EMBEDDED_INDEX.contains("COMMAND_UNIT_ICON_K"));
+        assert!(EMBEDDED_INDEX.contains("const COMMAND_UNIT_ICON_SHARE = .66;"));
+        assert_eq!(
+            EMBEDDED_INDEX.matches("COMMAND_UNIT_ICON_SHARE").count(),
+            5,
+            "the flat map, the globe, the casualty and the production medallion \
+             all draw their unit glyph at the one shared size"
+        );
+        assert!(EMBEDDED_INDEX.contains("rr * 2 * COMMAND_UNIT_ICON_SHARE, tokenInk"));
+        assert!(EMBEDDED_INDEX.contains("r * 2 * COMMAND_UNIT_ICON_SHARE, tokenInk"));
+        assert!(EMBEDDED_INDEX.contains("mr * 2 * COMMAND_UNIT_ICON_SHARE, \"#f0ead8\""));
+
+        // Religious units are ordinary units of the map: each has its own
+        // Civilization VI cell and rides the same token as everything else.
+        for religious in [
+            "missionary",
+            "apostle",
+            "guru",
+            "inquisitor",
+            "warrior_monk",
+        ] {
+            assert!(
+                rules.units.contains_key(religious),
+                "{religious} must be a real unit of the ruleset"
+            );
+            assert!(
+                ids.contains(&format!("\"{religious}\"")),
+                "{religious} has no Civilization VI icon cell"
+            );
+        }
+    }
+
+    /// One counter shape for every unit. The civilian capsule was a second
+    /// silhouette sitting among the military circles, and it read as a second
+    /// class of marker rather than as "this one cannot fight".
+    #[test]
+    fn every_command_token_is_the_same_circle() {
+        assert!(EMBEDDED_INDEX.contains(
+            "function strategicUnitTokenPath(x, y, r) {\n  cx.beginPath();\n  cx.arc(x, y, r, 0, 7);\n}"
+        ));
+        assert!(!EMBEDDED_INDEX.contains("cx.roundRect(x - r, y - h / 2, r * 2, h, h / 2)"));
+        assert_eq!(
+            EMBEDDED_INDEX.matches("strategicUnitTokenPath(").count(),
+            5,
+            "the flat map fill and outline, the globe and the casualty all take \
+             the one token path"
+        );
     }
 
     #[test]
@@ -12934,7 +12995,7 @@ mod tests {
         let renderer = EMBEDDED_INDEX
             .split("function drawStrategicUnitHealth")
             .nth(1)
-            .and_then(|tail| tail.split("// The Civ VI atlas cells").next())
+            .and_then(|tail| tail.split("// One silhouette size for every unit").next())
             .expect("strategic unit health renderer");
         assert!(EMBEDDED_INDEX.contains(
             "const CAPTURE_ONLY_CIVILIAN_UNITS = new Set([\"settler\", \"builder\"]);"
@@ -14024,7 +14085,7 @@ mod tests {
         assert!(formations.contains("if (count === 3)"));
         assert!(formations.contains("Math.sqrt(3)"));
         assert!(formations.contains("if (count === 4) return ["));
-        assert!(formations.contains("const gap = .55 * r / 4.4;"));
+        assert!(formations.contains("const gap = .92 * r / 4.4;"));
         assert!(formations.contains("const step = r * 2 + gap;"));
 
         let cluster = EMBEDDED_INDEX
@@ -14035,7 +14096,7 @@ mod tests {
         assert!(cluster.contains("const summary = pips.length >= 5;"));
         assert!(cluster.contains("const iconR = summary ? r * 1.7 : r;"));
         assert!(cluster.contains("const label = summary ? fmtYield(Number(amount)) : \"\";"));
-        assert!(cluster.contains("const edge = sign => sign.r + YIELD_PIP_RIM;"));
+        assert!(cluster.contains("const edge = sign => sign.r * (1 + YIELD_PLATE_PAD);"));
 
         let renderer = EMBEDDED_INDEX
             .split("function drawTileYields")
@@ -14043,8 +14104,12 @@ mod tests {
             .and_then(|tail| tail.split("function tri(").next())
             .expect("tile-yield renderer");
         assert!(renderer.contains("const rows = yieldPipLayout(full, r);"));
+        // The plate is painted once per cluster, under that cluster's signs.
+        assert!(renderer.contains("drawYieldPlate(cluster.signs, clusterX, cy, worked);"));
         assert!(renderer.contains("const visualRows = rows.slice().reverse();"));
-        assert!(renderer.contains("drawYieldPip(sign.kind, clusterX + sign.x, cy + sign.y,"));
+        assert!(renderer.contains(
+            "drawYieldPip(sign.kind, clusterX + sign.x, cy + sign.y,\n          sign.r, sign.portion, sign.label);"
+        ));
         assert!(renderer.contains("const totalHeight = visualRows.reduce"));
         assert!(renderer.contains("let top = strategicYieldCenterY(y) - totalHeight / 2;"));
         assert!(EMBEDDED_INDEX.contains("function drawYieldPipGlyph(kind, x, y, r)"));
@@ -14059,20 +14124,63 @@ mod tests {
             placement.contains("return tileTop + tileHeight * STRATEGIC_YIELD_CENTER_FRACTION;")
         );
         let pip = EMBEDDED_INDEX
-            .split("function drawYieldPip(kind, x, y, r, portion, worked, label = \"\")")
+            .split("function drawYieldPip(kind, x, y, r, portion, label = \"\")")
             .nth(1)
             .and_then(|tail| tail.split("function drawTileYields").next())
             .expect("numbered tile-yield pip renderer");
         assert!(pip.contains("cx.strokeText(label, x, y + r * .04);"));
         assert!(pip.contains("cx.fillText(label, x, y + r * .04);"));
         assert!(pip.contains("label.length === 1 ? 1.25"));
-        assert!(pip.contains("cx.arc(x, y, r + YIELD_PIP_RIM, 0, 7);"));
-        assert!(pip.contains("cx.lineWidth = worked ? .95 : (isSummary ? .78 : .58);"));
-        assert!(EMBEDDED_INDEX.contains("const YIELD_PIP_RIM = .58;"));
+        // A sign on the plate carries no rim, no shadow and no keyline of its
+        // own — every one of those was a per-sign repeat of what the cluster's
+        // plate now says once.
+        assert!(!pip.contains("cx.shadowColor"));
+        assert!(!pip.contains("cx.arc(x, y, r + "));
+        assert!(!EMBEDDED_INDEX.contains("YIELD_PIP_RIM"));
         assert!(!EMBEDDED_INDEX.contains("function yieldPipLines"));
         assert!(!EMBEDDED_INDEX.contains("function yieldPipRuns"));
         assert!(EMBEDDED_INDEX.contains("class=\"tip-yield-group\""));
         assert!(EMBEDDED_INDEX.contains("--tip-yield-portion:${Math.round(portion * 100)}%"));
+    }
+
+    #[test]
+    fn browser_tile_yield_clusters_stand_on_one_shaded_plate() {
+        // Measured off the base game's own map overlay atlas rather than
+        // guessed: rgb(8,12,16) at 92%, a 43px sign cell around a 38px icon.
+        assert!(EMBEDDED_INDEX.contains("const YIELD_PLATE_FILL = \"rgba(8,12,16,.92)\";"));
+        assert!(EMBEDDED_INDEX.contains("const YIELD_PLATE_PAD = .13;"));
+        assert!(EMBEDDED_INDEX.contains("const YIELD_PLATE_SOLO_CORNER = .84;"));
+        let hull = EMBEDDED_INDEX
+            .split("function yieldPlateHull")
+            .nth(1)
+            .and_then(|tail| tail.split("function traceYieldPlate").next())
+            .expect("tile-yield plate hull");
+        // The hull is what makes a capsule, a rounded triangle and a rounded
+        // square fall out of one routine instead of three special cases.
+        assert!(hull.contains("if (points.length < 3) return points;"));
+        assert!(hull.contains("(a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x)"));
+        let trace = EMBEDDED_INDEX
+            .split("function traceYieldPlate")
+            .nth(1)
+            .and_then(|tail| tail.split("function drawYieldPlate").next())
+            .expect("tile-yield plate outline");
+        assert!(trace
+            .contains("cx.roundRect(x - r, y - r, r * 2, r * 2, r * YIELD_PLATE_SOLO_CORNER);"));
+        assert!(trace
+            .contains("if (sign.label) { cx.moveTo(x + r, y); cx.arc(x, y, r, 0, 7); return; }"));
+        assert!(trace.contains("Math.atan2(-(next.x - point.x), next.y - point.y)"));
+        assert!(trace.contains("outward[(index + hull.length - 1) % hull.length], outward[index]"));
+        let plate = EMBEDDED_INDEX
+            .split("function drawYieldPlate")
+            .nth(1)
+            .and_then(|tail| tail.split("function drawYieldPip").next())
+            .expect("tile-yield plate renderer");
+        assert!(plate.contains("traceYieldPlate(signs, dx, dy);"));
+        assert!(plate.contains("cx.fillStyle = YIELD_PLATE_FILL;"));
+        assert!(plate.contains("cx.shadowColor = YIELD_PLATE_SHADOW;"));
+        // One keyline around the worked cluster, where there used to be one
+        // around every sign in it.
+        assert!(plate.contains("cx.strokeStyle = YIELD_PLATE_WORKED_EDGE;"));
     }
 
     #[test]
