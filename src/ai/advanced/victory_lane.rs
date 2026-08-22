@@ -190,14 +190,48 @@ impl AdvancedAi {
         self.lane_or_plan(self.lane_congress_ballot, g, pid, plan)
     }
 
-    /// `lane-great-people`: the lane Great Person patronage ranks classes by.
+    /// `lane-great-people`: the lane Great Person patronage and the Great
+    /// Person points a project earns are ranked by.
+    ///
+    /// ⚠ **This is the one gene here that overrides a war plan, and the scope
+    /// was forced by two fires-checks.** Restricted to `Expansion` it was
+    /// inert in both regimes — 0 of 4 targeted games, 0 of 36 native
+    /// seat-pairs — for a reason the expansion window makes unavoidable:
+    /// patronage needs a bank the opening rarely has, and a district project
+    /// needs districts the opening has not built. Everything this decider
+    /// ranks exists only after the settling turns are over.
+    ///
+    /// So this one asks the question at the posture where it is actually
+    /// live, and where it is genuinely contestable: a `Conquest` plan ranks
+    /// Generals and Admirals at 2.3 and the class the empire's *race* needs at
+    /// 0.85. A Great Person is a finite global race and a war does not change
+    /// which class wins it — but a war does need Generals, and which of those
+    /// two is worth more is exactly what a screen is for. It is deliberately
+    /// the cheapest and most reversible decider to test that on: no production
+    /// is committed and no card is slotted, only a ranking among people the
+    /// empire is competing for anyway. `Recovery` — losing ground at home —
+    /// still keeps its own strategy.
     pub(super) fn great_person_lane(
         &self,
         g: &Game,
         pid: usize,
         plan: &StrategicPlan,
     ) -> GrandStrategy {
-        self.lane_or_plan(self.lane_great_people, g, pid, plan)
+        if !self.lane_great_people || plan.strategy == GrandStrategy::Recovery {
+            return plan.strategy;
+        }
+        let lane = self.victory_focus(g, pid).strategy;
+        if matches!(
+            lane,
+            GrandStrategy::Science
+                | GrandStrategy::Culture
+                | GrandStrategy::Religion
+                | GrandStrategy::Diplomacy
+        ) {
+            lane
+        } else {
+            plan.strategy
+        }
     }
 
     /// `lane-policy-deck`: the lane the policy cards are chosen for.
@@ -430,7 +464,6 @@ mod tests {
         let g = game();
         let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
         ai.enable_lane_congress_ballot();
-        ai.enable_lane_great_people();
         ai.enable_lane_policy_deck();
         ai.enable_lane_culture_spending();
         for strategy in [GrandStrategy::Conquest, GrandStrategy::Recovery] {
@@ -440,9 +473,30 @@ mod tests {
             };
             assert_eq!(ai.raced_lane(&g, 0, &plan), None, "{strategy:?}");
             assert_eq!(ai.congress_lane(&g, 0, &plan), strategy);
-            assert_eq!(ai.great_person_lane(&g, 0, &plan), strategy);
             assert_eq!(ai.policy_lane(&g, 0, &plan), strategy);
         }
+    }
+
+    /// `lane-great-people` is the exception, and says so: it overrides a
+    /// Conquest plan and stops at Recovery.
+    #[test]
+    fn the_great_person_gene_outlives_a_war_but_not_a_rout() {
+        let g = game();
+        let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
+        ai.enable_lane_great_people();
+        let war = StrategicPlan {
+            strategy: GrandStrategy::Conquest,
+            ..expansion_plan()
+        };
+        assert_eq!(ai.great_person_lane(&g, 0, &war), GrandStrategy::Science);
+        let rout = StrategicPlan {
+            strategy: GrandStrategy::Recovery,
+            ..expansion_plan()
+        };
+        assert_eq!(ai.great_person_lane(&g, 0, &rout), GrandStrategy::Recovery);
+        let mut off = AdvancedAi::targeting(VictoryTarget::Science);
+        off.disable_lane_great_people();
+        assert_eq!(off.great_person_lane(&g, 0, &war), GrandStrategy::Conquest);
     }
 
     /// The two capability genes switch a whole pass on, and the pass can only

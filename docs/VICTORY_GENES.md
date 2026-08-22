@@ -122,7 +122,7 @@ for. Each is one sentence and one call site.
 | gene | lane | what it changes |
 |---|---|---|
 | `lane-congress-ballot` | diplomacy | the World Congress ballot is scored, and backed with Favor, by the raced lane |
-| `lane-great-people` | all four | Great Person patronage ranks classes by the raced lane |
+| `lane-great-people` | all four | Great Person patronage **and the Great Person points a project earns** rank classes by the raced lane. The one gene here that overrides a war plan — see §7 for the fires-check that chose that scope |
 | `lane-policy-deck` | all four | the policy cards are chosen for the raced lane |
 | `lane-culture-spending` | culture | the Naturalist and the touring Rock Bands, and the Faith reserve that keeps them affordable, follow the race rather than the plan |
 | `lane-space-race` | science | a Science **racer** is treated as a Science **target** by the space race: three pads for the parallel laser race instead of one, a launch project may claim a city with something else queued, and the pass opens at all |
@@ -130,7 +130,7 @@ for. Each is one sentence and one call site.
 
 And three that are **not new behaviour** — they already existed, off in
 production and reachable only as named `elo.rs` arms, so `gene_screen` could
-not see them and the genome instrument has never priced any of them (§7):
+not see them and the genome instrument has never priced any of them (§8):
 
 | gene | lane | what it already did |
 |---|---|---|
@@ -169,9 +169,11 @@ So the scope now follows the kind of decider, and each kind is stated:
    for every plan that is not `Expansion`: a `Conquest` or `Recovery` plan is
    a *deliberate* refusal of the economic lanes, and overriding it is a much
    riskier claim than filling in a posture that has no victory content yet.
-   The war case is a separate gene and a separate screen, not made here.
-   `raced_lane` also answers `None` when the raced lane is Conquest or the
-   score tally, because there is no economic lane to substitute.
+   The war case is otherwise a separate gene and a separate screen — the one
+   exception is `lane-great-people`, which §7 explains and which is where that
+   claim is actually tested. `raced_lane` also answers `None` when the raced
+   lane is Conquest or the score tally, because there is no economic lane to
+   substitute.
 2. **A whole pass switched off unless the plan names the lane** —
    `culture_spending`, `space_race_production`. What is missing here is not
    the settling turns: an **adaptive** seat holds the Culture plan for 5.0% of
@@ -257,7 +259,53 @@ The screen ranks and directs; `ai_eval` remains the ship decision for any
 promotion (`docs/GENE_SCREEN.md`). A `*` here is a candidate for a dedicated
 arm, never a promotion.
 
-## 7. What the genome instrument cannot see
+## 7. The fires-check ledger
+
+Before any of these is worth screen games, it has to change a game at all.
+Two paired instruments, both on the same seeds with and without one gene:
+`victory_eval` (every seat carries the lane's target) and `gene_screen
+--genes <one>` (every seat adaptive, the regime production ships).
+
+| gene | targeted, 4 games | native adaptive, seat-pairs | read |
+|---|---:|---:|---|
+| `lane-policy-deck` | **4/4** culture, 2/4 diplomatic | — | fires |
+| `lane-congress-ballot` | **3/4** diplomatic | — | fires |
+| `lane-culture-spending` | 0/4 | **5/36** at 250 turns | fires, and only where it was supposed to |
+| `lane-great-people` | 0/4 | 0/36 Expansion-scoped → **19/36** at the war scope | the scope was chosen by this row; see below |
+| `lane-space-race` | 0/4 at 250 turns, 0/4 at its own 1,300-turn clock | 0/36 at 250 turns → **13/24** at 600 turns | live exactly where the space race can finish |
+| `competition-victory-points` | 0/4 | not applicable | `Game::native_competitions` ships off, so no competition is ever seated |
+
+Three of those rows are findings in their own right.
+
+**`lane-great-people` was inert at the Expansion scope and could not be
+rescued by widening the decider.** Reaching the Great Person points a
+*project* earns as well as patronage did not help: 0 of 36 either way. The
+reason is not the decider, it is the window — patronage needs a bank the
+opening rarely has and a district project needs districts the opening has not
+built, so *everything this gene ranks exists only after the settling turns are
+over*. It therefore asks its question where the question is live and genuinely
+contestable: a `Conquest` plan ranks Generals and Admirals at 2.3 and the class
+the empire's own race needs at 0.85. That is the war-scope claim §4 otherwise
+defers, made at deliberately the cheapest and most reversible decider — no
+production committed, no card slotted, only a ranking among people the empire
+is competing for anyway. `Recovery` still keeps its own strategy. 19 of 36.
+
+**`lane-space-race` cannot be checked on a targeted seat at all, by
+construction.** `--target science` sets `victory_target`, which is exactly what
+all three of `science_production`'s gates already test — so the gene adds
+nothing there whatever the clock, which is what 0/4 at 250 turns *and* 0/4 at
+1,300 turns says. Its subject is the **adaptive** seat, which has no target and
+is therefore held to one launch pad and to spaceport cities with empty queues.
+At the deployment clock it is still inert (0/36) for the reason §1 gives —
+science does not finish in 250 turns. Give the same adaptive seats 600 turns,
+where science victories land at turns 254 and 260, and it moves **13 of 24**
+seat-pairs. The gene is live exactly in the games its lane can win, and the
+deployment profile is not one of them.
+
+**`competition-victory-points` is inert in a default native game**, and that is
+a property of the rules rather than of the gene — see the section above.
+
+## 8. What the genome instrument cannot see
 
 `gene_screen` discovers its genome from `LIVE_TREATMENTS`,
 `PRODUCTION_TREATMENTS` and `PRODUCTION_OPT_INS`. A behaviour with no row in
