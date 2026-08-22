@@ -568,6 +568,29 @@ pub const LAND_GRAB_CITY_FLOOR: usize = 8;
 /// payback deadline decide the rest. See `land_grab`.
 pub const LAND_GRAB_CITY_CEILING: usize = 16;
 
+/// How wide the SCIENCE lane may go while its cities can still mature.
+///
+/// Live rows scale with final city count, but at FIXED count science goes as
+/// `pop^1.21` — growing an existing city is super-linear while adding one
+/// dilutes. Timing reconciles them: a city founded early matures into the
+/// super-linear term, one founded late only dilutes. So the science lane
+/// widens past the shared ceiling ONLY while a new city can still mature, then
+/// reverts to [`LAND_GRAB_CITY_CEILING`] and grows what it holds.
+///
+/// Live evidence, 250-turn Settler games on the real Civ 6 seat:
+///   patched  653 (13 cities) / 276 (4) / **1063 (15)**
+///   stock    963 (8 cities)
+/// The best and worst games are both patched — n is small against a ~398 score
+/// stdev — but the 1063 came against the strongest rival field seen (1254)
+/// while the 963 met the weakest (999), so `lead` flatters the stock row.
+pub const SCIENCE_EXPANSION_CITY_CEILING: usize = 24;
+
+/// When the science lane stops widening and starts growing, in STANDARD-speed
+/// turns (`Game::standard_duration` rescales: 175 standard = t116 Online). 188
+/// standard is ~t125 Online — half way through the 250-turn ladder game. The
+/// switch is observable in `civvis_notes.jsonl` as desired_cities 24 -> 16.
+pub const SCIENCE_EXPANSION_UNTIL_TURN: u32 = 188;
+
 /// Settlers the land grab keeps in flight from the first city, before the
 /// per-three-cities widening. Two: the capital may queue its next Settler
 /// while the last one walks, which is how the second and third cities come
@@ -7385,8 +7408,18 @@ impl AdvancedAi {
             } else {
                 land
             };
+            // The science lane widens further while its cities can still
+            // mature; see `SCIENCE_EXPANSION_CITY_CEILING`. Every other lane,
+            // and the science lane's second half, keep the shared ceiling.
+            let ceiling = if self.victory_target == Some(VictoryTarget::Science)
+                && g.turn < g.standard_duration(SCIENCE_EXPANSION_UNTIL_TURN)
+            {
+                SCIENCE_EXPANSION_CITY_CEILING
+            } else {
+                LAND_GRAB_CITY_CEILING
+            };
             (2 + land / LAND_GRAB_TILES_PER_CITY)
-                .clamp(LAND_GRAB_CITY_FLOOR, LAND_GRAB_CITY_CEILING)
+                .clamp(LAND_GRAB_CITY_FLOOR, ceiling)
         } else {
             (city_floor + g.turn as usize / city_cadence).min(city_ceiling)
         };
