@@ -75,6 +75,7 @@ These screenable genes have no native on/off result, so they receive no rank or 
 | `builder-worked-tile-priority` | off (unmeasured) | Prefer existing Builder work that pays on a tile a citizen currently works, while preserving luxury and strategic connections. |
 | `campus-adjacency-threshold` | off (unmeasured) | A Campus plot that clears the multiplier's adjacency threshold is credited what crossing it unlocks. |
 | `campus-finishes-first` | off (unmeasured) | The Campus coverage term is scaled by how finished the empire's standing Campuses are. |
+| `chain-tech-lookahead` | off (unmeasured) | The research goal aims at a Campus rung the empire can BUILD, not only one it has already built. |
 | `competition-victory-points` | off (unmeasured) | Price a scored competition's first place by the Diplomatic Victory Points it pays, at the rate `strategic_wonder_value` already pays a wonder's. |
 | `condemn-under-congress` | off (unmeasured) | Condemn a heretic the World Congress has condemned, not only one this seat is at war with. |
 | `congress-banks-decided` | off (unmeasured) | Answer a World Congress resolution that is already decided with the one free vote on its settled winner, taking the Diplomatic Victory Point for an exact pre… |

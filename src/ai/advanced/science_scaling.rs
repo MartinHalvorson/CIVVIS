@@ -146,6 +146,9 @@ mod tests {
                 ai.campus_adjacency_threshold
             }),
             ("fifteenth-citizen", |ai: &AdvancedAi| ai.fifteenth_citizen),
+            ("chain-tech-lookahead", |ai: &AdvancedAi| {
+                ai.chain_tech_lookahead
+            }),
         ] {
             let mut ai = AdvancedAi::new();
             ai.enable_live_bridge_universe();
@@ -166,6 +169,7 @@ mod tests {
         ai.enable_power_the_laboratory();
         ai.enable_campus_adjacency_threshold();
         ai.enable_fifteenth_citizen();
+        ai.enable_chain_tech_lookahead();
         ai.disable_science_payback_horizon();
         ai.disable_science_multiplier_payoff();
         ai.disable_research_tier_premium();
@@ -174,6 +178,7 @@ mod tests {
         ai.disable_power_the_laboratory();
         ai.disable_campus_adjacency_threshold();
         ai.disable_fifteenth_citizen();
+        ai.disable_chain_tech_lookahead();
         assert!(!ai.science_payback_horizon);
         assert!(!ai.science_multiplier_payoff);
         assert!(!ai.research_tier_premium);
@@ -182,6 +187,7 @@ mod tests {
         assert!(!ai.power_the_laboratory);
         assert!(!ai.campus_adjacency_threshold);
         assert!(!ai.fifteenth_citizen);
+        assert!(!ai.chain_tech_lookahead);
     }
 
     /// The citizen half of the taper, and the proof it is a separate gene:
@@ -668,6 +674,84 @@ mod tests {
         assert!(shipped
             .population_gate_prize(&game, &game.cities[&city])
             .is_none());
+    }
+
+    /// The goal starts one construction earlier, and only for a rung the
+    /// empire can actually build.
+    #[test]
+    fn the_chain_goal_aims_at_a_rung_the_empire_can_build() {
+        let mut game = Game::new_full(1, 24, 16, 91_989, 200, 0, false);
+        let city = found_capital(&mut game, 0);
+        let site = game.cities[&city]
+            .owned_tiles
+            .iter()
+            .copied()
+            .find(|position| *position != game.cities[&city].pos)
+            .unwrap();
+        set_district(&mut game, city, site, "campus");
+        let mut shipped = AdvancedAi::new();
+        shipped.research_economy = true;
+        let mut treated = AdvancedAi::new();
+        treated.research_economy = true;
+        treated.enable_chain_tech_lookahead();
+
+        // A Campus and nothing else: both arms aim at the Library's tech,
+        // because the Library requires no building at all.
+        assert_eq!(
+            shipped.unreachable_science_building_tech(&game, 0),
+            Some("writing")
+        );
+        assert_eq!(
+            treated.unreachable_science_building_tech(&game, 0),
+            Some("writing")
+        );
+
+        // ⭐ THE DIFFERENCE. With Writing held and a Library PRODUCIBLE but
+        // not yet standing, the shipped goal still cannot see Education —
+        // the University's prerequisite has not been built — while the
+        // treated one can. That gap is one Library's construction, and it is
+        // added to every rung after it.
+        game.players[0].techs.insert(crate::name!("writing"));
+        assert!(game.can_produce(
+            0,
+            city,
+            &crate::game::Item::Building {
+                building: crate::name!("library"),
+            },
+        ));
+        assert!(!game.cities[&city]
+            .buildings
+            .contains(&crate::name!("library")));
+        assert_eq!(
+            shipped.unreachable_science_building_tech(&game, 0),
+            None,
+            "the shipped goal waits for the Library to stand"
+        );
+        assert_eq!(
+            treated.unreachable_science_building_tech(&game, 0),
+            Some("education"),
+            "the treated goal aims at the rung it can build toward"
+        );
+
+        // Once the Library stands the two agree again: this is strictly the
+        // same set plus the mid-build case, never a different answer.
+        game.cities
+            .get_mut(&city)
+            .unwrap()
+            .buildings
+            .push(crate::name!("library"));
+        assert_eq!(
+            shipped.unreachable_science_building_tech(&game, 0),
+            treated.unreachable_science_building_tech(&game, 0)
+        );
+
+        // ⚠ And a rung whose prerequisite the empire cannot even produce is
+        // still refused by BOTH — the check that keeps this from becoming a
+        // beeline to anything expensive. Strip the Campus and the whole goal
+        // goes away, producible or not.
+        game.cities.get_mut(&city).unwrap().districts.clear();
+        assert_eq!(shipped.unreachable_science_building_tech(&game, 0), None);
+        assert_eq!(treated.unreachable_science_building_tech(&game, 0), None);
     }
 
     /// A constant standing in for a ruleset value has to be pinned to the
