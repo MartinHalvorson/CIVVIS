@@ -87,8 +87,34 @@ Flight sits twenty-five technologies deep on its own branch. **Do not read a
 flat screen as "the wing does not help".** Run the census first: it separates
 "the gene lost" from "the gene never fired", which a paired screen cannot.
 
-`CIVVIS_AIR_SURGE_TURNS=600` runs the same census on a game long enough to
-reach the air, which is how the machinery is exercised end to end.
+### The same census at 600 turns
+
+`CIVVIS_AIR_SURGE_TURNS=600` gives the seat long enough to reach the air, and
+on the one seed that does, the whole pipeline runs:
+
+| seed | closest | appointments | breakthroughs | peak field / Al / bombers | declared | captured | end |
+|---|---|---|---|---|---|---|---|
+| 941200 | **0** at t341 | 4 | 3 | 1 / 2 / **3** | 1 | **1** | 9 cities, score 690 |
+| 941201 | 16 at t156 | 0 | 0 | 0 / 0 / 0 | 0 | 0 | 4 cities, score 270 |
+| 941202 | 7 at t172 | 1 | 0 | 0 / 0 / 0 | 0 | 0 | 6 cities, score 283 |
+| 941203 | 8 at t330 | 1 | 0 | 0 / 0 / 0 | 0 | 0 | 0 cities, score 232 |
+
+Seed 941200 is the end-to-end proof: beeline → Aerodrome → two connected
+Aluminium → **three Bombers** → declaration → the appointed city taken. It also
+finished with the best score of the four. The other three never reached the
+breakthrough at all (`breakthroughs 0`), so the wing was never possible there
+— the same science ceiling as above, not an air defect.
+
+⚠ Two things this census does **not** say, and a screen must:
+
+- Seed 941203 ended with **no cities**. It held one appointment and never got
+  the technology. Whether the beeline contributed to that collapse, or the seat
+  would have been wiped anyway, is unmeasured — there is no control arm here.
+  A diverted research plan is exactly the cost a paired screen exists to price.
+- The 941200 seat ended with **zero** Bombers despite peaking at three. A
+  Bomber costs 1 Aluminium a turn to keep and can be shot down; end-state
+  counts cannot tell a wing that was never built from one that was spent. Read
+  the peak, not the end.
 
 ## Lifecycle
 
