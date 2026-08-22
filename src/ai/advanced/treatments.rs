@@ -323,4 +323,9 @@ pub const PRODUCTION_OPT_INS: &[LiveTreatment] = &[
     // screen keeps its positional genome. See
     // `AdvancedAi::research_grants_first`.
     ("research_grants_first", "research-grants-first", AdvancedAi::enable_research_grants_first),
+    // A visible Barbarian Settler or Scout that a military unit can take this
+    // turn outranks healing and every tactical alternative. Appended at the
+    // END so a running screen keeps its positional genome. See
+    // `BasicAi::barbarian_capture_priority`.
+    ("barbarian_capture_priority", "barbarian-capture-priority", AdvancedAi::enable_barbarian_capture_priority),
 ];

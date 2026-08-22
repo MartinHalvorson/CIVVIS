@@ -98,6 +98,7 @@ These screenable genes have no on/off result, so they receive no rank or promoti
 | Gene | Default | Description |
 |---|---|---|
 | `air-surge` | off (unmeasured) | Beeline Advanced Flight from three technologies out, raise an Aerodrome and a bomber wing, and take the appointed city with the cavalry behind it. |
+| `barbarian-capture-priority` | off (unmeasured) | Take a visible Barbarian Settler or Scout in exact one-turn reach before healing, retreat, or any ordinary tactical choice. |
 | `campus-adjacency-threshold` | off (unmeasured) | A Campus plot that clears the multiplier's adjacency threshold is credited what crossing it unlocks. |
 | `campus-finishes-first` | off (unmeasured) | The Campus coverage term is scaled by how finished the empire's standing Campuses are. |
 | `chain-tech-lookahead` | off (unmeasured) | The research goal aims at a Campus rung the empire can BUILD, not only one it has already built. |
