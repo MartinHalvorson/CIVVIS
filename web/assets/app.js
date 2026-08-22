@@ -24757,6 +24757,9 @@ function soloTrackerCard(kind) {
   const progress = Number(science ? me.research_progress : me.civic_progress) || 0;
   const boosted = (science ? me.boosted_techs : me.boosted_civics) || [];
   const isBoosted = boosted.includes(name);
+  // What would halve this study, while it can still be halved.
+  const spec = (science ? RULES.techs : RULES.civics)[name];
+  const wants = isBoosted ? "" : boostRequirement(spec);
   const eta = perTurn > 0 ? Math.max(1, Math.ceil((total - progress) / perTurn)) : null;
   const pct = Math.min(100, 100 * progress / Math.max(1, total));
   const detail = `${label}: ${titleCase(name)} — ${Math.round(progress)} of ${Math.round(total)}` +
@@ -24770,6 +24773,7 @@ function soloTrackerCard(kind) {
         (isBoosted ? `<i class="wt-boost" title="Boosted">⚡</i>` : "") + `</span>` +
       `<span class="wt-bar"><i style="width:${pct}%"></i></span>` +
       `<span class="wt-sub">${Math.round(progress)}/${Math.round(total)} · ${soloRate(perTurn)} per turn</span>` +
+      (wants ? `<span class="wt-boostwant" title="${escapeAttr(`Boost: ${wants}`)}">⚡ ${escapeAttr(wants)}</span>` : "") +
     `</span>` +
     `<span class="wt-turns">${eta ?? "∞"}<small>turn${eta === 1 ? "" : "s"}</small></span></button>`;
 }
@@ -27639,6 +27643,104 @@ function drawPedia() {
 }
 
 let treeKind = null;
+// What would boost this study, in the words Civ 6 puts on the node.
+//
+// Every tech and civic in the ruleset carries `boost: {trigger, count}`, and
+// the client had been showing only ⚡ *after* the boost landed — which is the
+// one moment the information is worthless. Civ 6 prints the requirement on
+// every node, because planning around eurekas and inspirations is most of what
+// reading the tree is for.
+//
+// The 108 triggers the ruleset ships are a handful of prefixed families over a
+// short list of bare ones. Anything unrecognised falls through to its own name
+// with its count, so a trigger added to the engine tomorrow reads as
+// "Barbs killed · 3" rather than disappearing.
+// Ruleset names are singular and ordinary English, so the two rules that make
+// a count read as a sentence are worth the eight lines: "Academy" pluralises
+// to "Academies", not "Academys", and "an Oil Power Plant" is not "a".
+function boostPlural(count, word) {
+  if (count === 1) return word;
+  if (/[^aeiou]y$/i.test(word)) return `${word.slice(0, -1)}ies`;
+  if (/(s|x|z|ch|sh)$/i.test(word)) return `${word}es`;
+  return `${word}s`;
+}
+// The article follows the sound, not the spelling: it is "a Unit" and "a
+// University" because both open on a /juː/. Those two shapes are the only
+// ones the ruleset's names produce.
+function boostArticle(word) {
+  if (/^u(ni|se|ti)/i.test(word)) return "a";
+  return /^[aeiou]/i.test(word) ? "an" : "a";
+}
+function boostCount(count, word) {
+  return count === 1 ? `${boostArticle(word)} ${word}` : `${count} ${boostPlural(count, word)}`;
+}
+const BOOST_PHRASES = {
+  airbase_foreign_continent: n => `Build an airstrip on another continent`,
+  alliance_level: n => `Reach alliance level ${n}`,
+  alliances: n => `Form ${boostCount(n, "alliance")}`,
+  armies: n => `Form ${n} Armies`,
+  artifacts: n => `Excavate ${boostCount(n, "artifact")}`,
+  barbs_killed: n => `Kill ${boostCount(n, "barbarian")}`,
+  camps: n => `Clear ${boostCount(n, "barbarian camp")}`,
+  casus_belli: n => `Declare a war with a casus belli`,
+  coastal_city: n => `Found a coastal city`,
+  corps: n => `Form ${n} Corps`,
+  discover_continent: n => `Meet another continent`,
+  government_slots: n => `Hold ${n} government policy slots`,
+  great_people: n => `Recruit ${n} Great People`,
+  improvements: n => `Build ${boostCount(n, "improvement")}`,
+  land_units: n => `Field ${n} land units`,
+  met_city_states: n => `Meet ${boostCount(n, "city-state")}`,
+  met_civ: n => `Meet another civilization`,
+  national_park: n => `Found a National Park`,
+  natural_wonder: n => `Find a natural wonder`,
+  pantheon: n => `Found a pantheon`,
+  pop: n => `Grow a city to ${n} population`,
+  received_dow: n => `Be declared war on`,
+  religion: n => `Found a religion`,
+  religion_cities: n => `Convert ${n} cities to your religion`,
+  specialty_districts: n => `Build ${boostCount(n, "specialty district")}`,
+  themed_buildings: n => `Theme ${boostCount(n, "building")}`,
+  total_pop: n => `Reach ${n} total population`,
+  trade_routes: n => `Run ${boostCount(n, "trade route")}`,
+  wonder_era: n => `Build ${n} wonders of any era`,
+  wonders: n => `Build ${boostCount(n, "wonder")}`,
+};
+const BOOST_FAMILIES = [
+  ["building_near_mountain:", (n, x) => `Build ${boostArticle(x)} ${x} next to a mountain`],
+  ["improvement_on_resource:", (n, x) => `Build ${boostCount(n, x)} on a resource`],
+  ["improve_resource:", (n, x) => `Improve ${boostCount(n, `${x} resource`)}`],
+  ["district_appeal:", (n, x) => `Build ${boostCount(n, `${x} district`)} on appealing land`],
+  ["great_person_of:", (n, x) => `Recruit a Great ${x}`],
+  ["improvement:", (n, x) => `Build ${boostCount(n, x)}`],
+  ["building:", (n, x) => `Build ${boostCount(n, x)}`],
+  ["district:", (n, x) => `Build ${boostCount(n, `${x} district`)}`],
+  ["units_of:", (n, x) => `Train ${boostCount(n, x)}`],
+  ["kill_with:", (n, x) => `Kill ${boostCount(n, "unit")} with ${boostArticle(x)} ${x}`],
+  ["kill_kind:", (n, x) => `Kill ${boostCount(n, x)}`],
+  ["trained:", (n, x) => `Train ${boostArticle(x)} ${x}`],
+  ["civic:", (n, x) => `Adopt the ${x} civic`],
+  ["tech:", (n, x) => `Research ${x}`],
+];
+function boostRequirement(spec) {
+  const boost = spec && spec.boost;
+  if (!boost || !boost.trigger) return "";
+  const count = Math.max(1, Math.round(Number(boost.count) || 1));
+  const trigger = String(boost.trigger);
+  const bare = BOOST_PHRASES[trigger];
+  if (bare) return bare(count);
+  for (const [prefix, phrase] of BOOST_FAMILIES) {
+    if (!trigger.startsWith(prefix)) continue;
+    // `unit_and_improve:ironclad:coal` and friends carry two subjects.
+    const rest = trigger.slice(prefix.length).split(":").map(titleCase);
+    return phrase(count, rest.join(" and "));
+  }
+  if (trigger.startsWith("unit_and_improve:")) {
+    const [unit, resource] = trigger.slice("unit_and_improve:".length).split(":");
+    return `Train a ${titleCase(unit)} and improve ${titleCase(resource)}`;
+  }
+  return `${titleCase(trigger)}${count > 1 ? ` · ${count}` : ""}`;
+}
 function openTree(kind) {
   if (!RULES || !state) return;
   treeKind = kind;
@@ -27688,12 +27790,17 @@ function openTree(kind) {
             : avail
               ? `Available, but ${heldBy} is under way — this game studies one at a time`
               : `Needs ${s.requires.map(r => titleCase(r)).join(", ")}`;
+      // Civ 6 prints the eureka on every node, because planning around them is
+      // most of what reading the tree is for. Showing ⚡ only once the boost
+      // has landed says it at the one moment it is worthless.
+      const wants = !completed && !boosted.includes(n) ? boostRequirement(s) : "";
       return `<div class="tnode ${cls}" title="${escapeAttr(why)}"` +
         (canPick ? ` onclick='pickTree("${kind}","${n}")'` : "") + `>` +
         `<b>${titleCase(n)}</b>` +
         (s.repeatable ? ` <span class="boost">↻</span>` : "") +
         (boosted.includes(n) ? ` <span class="boost">⚡</span>` : "") +
         ` <span class="req">${s.cost}${!completed && turns ? ` · ${turns}t` : ""}</span>` +
+        (wants ? `<div class="req tboost">⚡ ${escapeAttr(wants)}</div>` : "") +
         (s.requires.length ? `<div class="req">← ${s.requires.map(x => x.replaceAll("_"," ")).join(", ")}</div>` : "") +
         (unlocks.length ? `<div class="req">Unlocks ${unlocks.join(" · ")}</div>` : "") +
         (abilities.length ? `<div class="req">Abilities ${abilities.join(" · ")}</div>` : "") +
