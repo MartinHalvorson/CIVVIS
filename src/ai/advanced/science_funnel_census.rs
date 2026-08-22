@@ -310,13 +310,16 @@ mod science_gates_probe {
         // placed — the empire's own later districts made it good. Reading the
         // end state and calling it an available choice is the same mistake as
         // matching a per-turn snapshot to an event by turn number.
+        // ⚠⚠ SURVEY THE LEGAL SITES, NOT EVERY OWNED TILE. A first draft scored
+        // adjacency on every tile the city owned and reported a 5.0 "available"
+        // — but a Campus cannot stand on a mountain, and a tile RINGED by
+        // mountains is exactly where the adjacency arithmetic peaks. The tiles
+        // with the best numbers were the ones no Campus can ever occupy.
+        // `district_sites` is the engine's own answer to "where could this go",
+        // and it is the only honest denominator.
         let survey = |g: &Game, cid: u32| -> f64 {
-            let city = &g.cities[&cid];
             let mut best = 0.0_f64;
-            for position in city.owned_tiles.iter().copied() {
-                if g.map.tiles[&position].district.is_some() || position == city.pos {
-                    continue;
-                }
+            for position in g.district_sites(cid, campus) {
                 let mut yields = Yields::default();
                 for source in g.district_adjacency_sources(campus, position) {
                     if source.source != "adjacency_bonus" {
@@ -330,6 +333,8 @@ mod science_gates_probe {
         let mut best_at_siting: Vec<f64> = Vec::new();
         let mut sited: std::collections::BTreeSet<u32> = Default::default();
         let mut carried: std::collections::BTreeMap<u32, f64> = Default::default();
+        let mut offers: std::collections::BTreeMap<u32, Vec<f64>> = Default::default();
+        let mut offered_at_siting: Vec<Vec<f64>> = Vec::new();
         let mut others = AdvancedAi::fleet(&g);
         while g.winner.is_none() && g.turn <= 250 {
             let pid = g.current;
@@ -346,8 +351,37 @@ mod science_gates_probe {
                     if g.city_has_district_family(&g.cities[&cid], campus) {
                         sited.insert(cid);
                         best_at_siting.push(carried.get(&cid).copied().unwrap_or(-1.0));
+                        offered_at_siting.push(offers.get(&cid).cloned().unwrap_or_default());
                     } else {
                         carried.insert(cid, survey(&g, cid));
+                        // ⭐ AND WHAT WAS ACTUALLY ON THE TABLE. `producible_items`
+                        // offers at most the best TWO fresh sites per district,
+                        // ranked by `district_yields(...).total()`. If the good
+                        // plot is not in that pair, no pricing term downstream
+                        // can ever choose it — which is the difference between
+                        // "the chooser declined it" and "the chooser never saw
+                        // it", and they need opposite fixes.
+                        let offered: Vec<f64> = g
+                            .producible_items(0, cid)
+                            .into_iter()
+                            .filter_map(|item| match item {
+                                crate::game::Item::District { district, pos }
+                                    if g.district_family(district) == campus =>
+                                {
+                                    let mut yields = Yields::default();
+                                    for source in g.district_adjacency_sources(campus, pos) {
+                                        if source.source != "adjacency_bonus" {
+                                            yields.add(source.yields);
+                                        }
+                                    }
+                                    Some((yields.science * 10.0).round() / 10.0)
+                                }
+                                _ => None,
+                            })
+                            .collect();
+                        if !offered.is_empty() {
+                            offers.insert(cid, offered);
+                        }
                     }
                 }
                 me.take_turn(&mut g, pid);
@@ -358,6 +392,10 @@ mod science_gates_probe {
                 let _ = g.apply(pid, &Action::EndTurn);
             }
         }
+        println!(
+            "OFFERED Campus plot adjacencies producible_items actually put on the \
+             table, per Campus: {offered_at_siting:?}"
+        );
         best_at_siting.sort_by(|a, b| b.partial_cmp(a).unwrap());
         println!(
             "AT-SITING best free Campus adjacency the chooser actually had, per Campus: {:?} \
@@ -412,20 +450,8 @@ mod science_gates_probe {
         let mut could_reach_four = 0;
         let mut best_available: Vec<f64> = Vec::new();
         for cid in &cities {
-            let city = &g.cities[cid];
-            let mut best = 0.0_f64;
-            for position in city.owned_tiles.iter().copied() {
-                if g.map.tiles[&position].district.is_some() || position == city.pos {
-                    continue;
-                }
-                let mut yields = Yields::default();
-                for source in g.district_adjacency_sources(campus, position) {
-                    if source.source != "adjacency_bonus" {
-                        yields.add(source.yields);
-                    }
-                }
-                best = best.max(yields.science);
-            }
+            // Same legal denominator as the siting survey above.
+            let best = survey(&g, *cid);
             best_available.push(best);
             if best >= 4.0 {
                 could_reach_four += 1;
