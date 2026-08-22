@@ -206,13 +206,6 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         war: Some(Measure { pairs: 5844, win_delta_pp: 1.677, win_z: 2.392, share_delta_pp: 0.425, share_z: 2.377, source: "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json" }),
     },
     GeneVerdict {
-        tag: "recon-flight",
-        verdict: Verdict::Unresolved,
-        family_wise: false,
-        native: Some(Measure { pairs: 15000, win_delta_pp: -0.52, win_z: -1.319, share_delta_pp: -0.031, share_z: -0.476, source: "2026-08-21-p7-native-6p-allseats-15000-pairs.json" }),
-        war: Some(Measure { pairs: 5844, win_delta_pp: -0.548, win_z: -0.782, share_delta_pp: -0.238, share_z: -1.366, source: "2026-08-21-s8-war-rerank-vs-best-4p-allseats.json" }),
-    },
-    GeneVerdict {
         tag: "recon-replacement",
         verdict: Verdict::Helps,
         family_wise: true,

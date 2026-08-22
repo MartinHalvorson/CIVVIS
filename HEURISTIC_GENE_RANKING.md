@@ -58,7 +58,6 @@ Regenerate with `python3 tools/heuristic_gene_ranking.py --write` after every sc
 | 48 | -9 | -19 | `housing-districts` | Let the baseline governor raise the housing ceiling. | off | 16.53% | 16.81% | 56,892 |
 | 49 | -11 | +4 | `endgame-war-runway` | Keep a fresh direct declaration out of the final campaign reserve. | off | 16.63% | 16.71% | 56,892 |
 | 50 | -11 | -13 | `naval-recon` | Buy one ship for an empire that has none while unexplored water lies off its coast, and send it exploring. | off | 16.55% | 16.79% | 56,892 |
-| 51 | -26 | +1 | `recon-flight` | Let a recon unit step out of a visible hostile's reach before it explores. | off | 16.54% | 16.80% | 56,892 |
 
 ## Awaiting native measurement
 
@@ -103,6 +102,7 @@ Genes whose code has left the repository (operator directive: the bottom of the 
 | `muster-at-command-radius` | -14 | native | 16.53% | 16.81% | `2026-08-21-p7-native-6p-allseats-15000-pairs.json` |
 | `ranged-line-of-sight` | -16 | native | 16.51% | 16.83% | `2026-08-21-p7-native-6p-allseats-15000-pairs.json` |
 | `camp-reach` | -26 | native | 16.41% | 16.93% | `2026-08-21-p7-native-6p-allseats-15000-pairs.json` |
+| `recon-flight` | -26 | native | 16.41% | 16.93% | `2026-08-21-p7-native-6p-allseats-15000-pairs.json` |
 | `wonder-prereq-reach` | -26 | native | 16.41% | 16.93% | `2026-08-21-p7-native-6p-allseats-15000-pairs.json` |
 | `holy-lane-parity` | -27 | native | 16.40% | 16.93% | `2026-08-21-s6-religion-genes-native-6p-allseats-6000-pairs.json` |
 | `stacked-escort` | -36 | war | 24.64% | 25.36% | `2026-08-21-s8-war-rerank-vs-best-4p-allseats.json` |

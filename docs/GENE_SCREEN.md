@@ -384,10 +384,25 @@ wins against 27% for all-off** (4p classic, 200 anchor pairs). Now:
   gone is the ability to turn them on. `holy-lane-parity` and `siege-role`
   are measured `hurts` at war; the other eight sit inside the ±110/10k noise
   band on wins and are recorded as directive removals, not measured harms.
-  ⚠ `recon-flight` is the ranking's new tail (−26/10k) and did **not** go
-  with them: `promoted_policy_envoy` turns it on, so removing it would move
-  the production incumbent every recorded Elo result is filed against. That
-  is a promotion-gate question (`ai_eval --matrix`), not a cull.
+  `recon-flight` followed a day later (#2271) — see below.
+
+- **`recon-flight` leaves production too (2026-08-21).** It was held out of
+  the cull above because `promoted_policy_envoy` turns it on, as one leg of
+  the recon quartet promoted at +35 Elo (#1923). The operator's reading is the
+  right one, and it is this document's own instrument that answers it: a
+  screened gene's arms are drawn on a seat built from `AdvancedAi::new()`, so
+  **every screen already played "production with it" against "production
+  without it"** — 15,000 native seat-pairs and 5,844 war ones, and it read
+  negative on all four axes (native −0.52 pp win / −0.03 pp share, war
+  −0.55 / −0.24) without ever resolving. `docs/eval/README.md`'s rule finishes
+  it: a composite gate licenses the composite, never its parts, and the ledger
+  had already unpicked three of the quartet's four legs for deployment. The
+  **frozen rating anchor is untouched** — `advanced_v1` is `legacy()`, which
+  never routed through `promoted_policy_envoy`, and
+  `advanced_v1_plays_the_same_game_it_always_did` stays green. Against that
+  anchor over the same 60 maps, production reads +47 Elo-equivalent with the
+  flag and **+58 without** — no detectable regression, at a resolution
+  (±102) far too coarse to call it a gain.
 
 - **The operator's view of the same games** is `HEURISTIC_GENE_RANKING.md`
   at the repository root — every screenable gene ranked by wins added per
