@@ -133,25 +133,27 @@ fn report(label: &str, arms: &[(&str, Chain)]) {
 #[test]
 #[ignore = "census, not an assertion; run explicitly with --nocapture"]
 fn the_research_chain_treated_against_control() {
-    let seeds: Vec<u64> = (0..12).map(|i| 89_000_000 + i).collect();
-    // ⚠ ROUND SIX: the clock, not the price. Rounds three to five settled the
-    // building-half genes (merged) and returned four nulls, and the chain-tech
-    // probe then found the constraint had moved: where Chemistry lands by
-    // ~t147 every University gets its Lab, and where it lands at t205 there
-    // are none. This prices the goal that decides when Chemistry lands.
+    let seeds: Vec<u64> = (0..12).map(|i| 90_000_000 + i).collect();
+    // ⚠ ROUND SEVEN: what a FINISHED research city does with its last hundred
+    // turns. Rounds three to six settled the building-half genes and returned
+    // five nulls and one harm, and the variance probe showed Science is
+    // downstream of expansion. What none of them asked is what the cities that
+    // DID finish their chain build afterwards — and the answer was
+    // `campus_research_grants` **zero times in 1,113 city-turns**, priced
+    // second by about a hundred points.
     let arms: Vec<Arm> = vec![
         ("control (universe)", |_ai| {}),
-        ("chain-tech-lookahead", |ai| {
-            ai.enable_chain_tech_lookahead()
+        ("research-grants-first", |ai| {
+            ai.enable_research_grants_first()
         }),
         ("premium + payoff", |ai| {
             ai.enable_research_tier_premium();
             ai.enable_science_multiplier_payoff();
         }),
-        ("premium + payoff + lookahead", |ai| {
+        ("premium + payoff + grants", |ai| {
             ai.enable_research_tier_premium();
             ai.enable_science_multiplier_payoff();
-            ai.enable_chain_tech_lookahead();
+            ai.enable_research_grants_first();
         }),
     ];
     let mut totals: Vec<(String, Chain)> = Vec::new();
