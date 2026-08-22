@@ -160,6 +160,18 @@ VICTORY=${CIVVIS_VICTORY:-}
 # CIVVIS_DIFFICULTY), and an abandoned game is filed as `abandoned`, never as
 # a stall or a defeat.
 ABANDON_BELOW=${CIVVIS_ABANDON_BELOW_WIN_RATE:-}
+# Optional live-host wall-clock budget. The climb's defaults remain the source
+# of truth when these are absent; the operator can raise them for a GUI host
+# whose healthy 250-turn games take longer. Run civvis-20260822T020434Z was
+# still advancing and leading at turn 246 when the default 8,100-second ceiling
+# stopped it, four turns before its autosave continuation won 1458-990. Keep
+# each flag/value as argv words so a decimal setting reaches argparse intact.
+PLAY_TIMEOUT=${CIVVIS_PLAY_TIMEOUT:-}
+PLAY_TIMEOUT_CEILING=${CIVVIS_PLAY_TIMEOUT_CEILING:-}
+TIMEOUT_ARGS=()
+[[ -n "$PLAY_TIMEOUT" ]] && TIMEOUT_ARGS+=(--timeout "$PLAY_TIMEOUT")
+[[ -n "$PLAY_TIMEOUT_CEILING" ]] \
+    && TIMEOUT_ARGS+=(--timeout-ceiling "$PLAY_TIMEOUT_CEILING")
 SUP=$LOGS/supervisor.log
 MIRROR_HOME=$HOME/civvis-civ6-mirror
 FOLLOW_LOG=$MIRROR_HOME/follow-nohup.log
@@ -491,6 +503,7 @@ while true; do
       --difficulty "$DIFFICULTY" --strategy "$STRATEGY" \
       "${WITHOUT_ARGS[@]}" \
       "${WITH_ARGS[@]}" \
+      "${TIMEOUT_ARGS[@]}" \
       ${VICTORY:+--victory} ${VICTORY:+"$VICTORY"} \
       ${ABANDON_BELOW:+--abandon-below-win-rate} ${ABANDON_BELOW:+"$ABANDON_BELOW"} \
       --logs "$LOGS" > "$LOGS/climb-$TAG.log" 2>&1
