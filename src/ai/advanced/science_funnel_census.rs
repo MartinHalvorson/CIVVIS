@@ -992,3 +992,200 @@ mod variance_probe {
         );
     }
 }
+
+#[cfg(test)]
+mod finished_city_probe {
+    use super::*;
+
+    /// What does a city with a FINISHED research chain build for the rest of
+    /// the game?
+    ///
+    /// The variance probe showed Science is downstream of expansion and early
+    /// timing — but it did not ask what the cities that DID finish their chain
+    /// do afterwards. From about turn 150 a Campus city holding its Library,
+    /// University and Research Lab has nothing left in the chain to build, and
+    /// whatever it picks instead is the empire's remaining late-game science
+    /// decision. If those turns go to repeatable projects with no beaker in
+    /// them, or to units, that is a late-game science lever that no pricing on
+    /// the CHAIN can reach.
+    ///
+    /// Counts what finished Campus cities actually queue over the last
+    /// hundred turns, by item family.
+    #[test]
+    #[ignore = "census, not an assertion; run explicitly with --nocapture"]
+    fn what_does_a_finished_research_city_do_with_its_last_hundred_turns() {
+        let campus = crate::name!("campus");
+        let chain = ["library", "university", "research_lab"];
+        let mut tally: std::collections::BTreeMap<String, usize> = Default::default();
+        let mut finished_city_turns = 0usize;
+        let mut idle_city_turns = 0usize;
+        for seed in 0..4u64 {
+            let mut g = Game::new(6, 60, 38, 89_000_000 + seed, 250, 6);
+            g.game_speed = GameSpeed::Online;
+            g.victory_conditions =
+                crate::game::VictoryConditions::parse("science,culture,domination,score").unwrap();
+            let mut me = AdvancedAi::new();
+            me.enable_engine_repairs_universe();
+            me.enable_research_tier_premium();
+            me.enable_science_multiplier_payoff();
+            let mut others = AdvancedAi::fleet(&g);
+            while g.winner.is_none() && g.turn <= 250 {
+                let pid = g.current;
+                if pid == 0 {
+                    me.take_turn(&mut g, pid);
+                    if g.turn > 150 {
+                        for cid in g.player_city_ids(0) {
+                            let city = &g.cities[&cid];
+                            if !g.city_has_district_family(city, campus) {
+                                continue;
+                            }
+                            // "Finished" = every rung it can produce, it has.
+                            let done = chain.iter().all(|rung| {
+                                let name = Name::new(*rung);
+                                city.buildings.contains(&name)
+                                    || !g.can_produce(
+                                        0,
+                                        cid,
+                                        &crate::game::Item::Building { building: name },
+                                    )
+                            });
+                            if !done {
+                                continue;
+                            }
+                            finished_city_turns += 1;
+                            match city.queue.first() {
+                                None => idle_city_turns += 1,
+                                Some(item) => {
+                                    let family = match item {
+                                        crate::game::Item::Unit { unit } => {
+                                            format!("unit:{unit}")
+                                        }
+                                        crate::game::Item::Formation { unit, .. } => {
+                                            format!("unit:{unit}")
+                                        }
+                                        crate::game::Item::Building { building } => {
+                                            format!("building:{building}")
+                                        }
+                                        crate::game::Item::District { district, .. } => {
+                                            format!("district:{district}")
+                                        }
+                                        crate::game::Item::Wonder { wonder, .. } => {
+                                            format!("wonder:{wonder}")
+                                        }
+                                        crate::game::Item::Project { project } => {
+                                            format!("project:{project}")
+                                        }
+                                        other => format!("{other:?}")
+                                            .split_whitespace()
+                                            .next()
+                                            .unwrap_or("other")
+                                            .to_ascii_lowercase(),
+                                    };
+                                    *tally.entry(family).or_default() += 1;
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    others[pid].take_turn(&mut g, pid);
+                }
+                if g.winner.is_none() && g.current == pid {
+                    let _ = g.apply(pid, &Action::EndTurn);
+                }
+            }
+        }
+        let mut ranked: Vec<(&String, &usize)> = tally.iter().collect();
+        ranked.sort_by(|a, b| b.1.cmp(a.1));
+        println!(
+            "FINISHED finished_city_turns={finished_city_turns} idle={idle_city_turns} \
+             ({:.1}% idle)",
+            100.0 * idle_city_turns as f64 / finished_city_turns.max(1) as f64
+        );
+        for (family, count) in ranked.iter().take(14) {
+            println!(
+                "FINISHED   {:<40}{count:>6}  {:>5.1}%",
+                family,
+                100.0 * **count as f64 / finished_city_turns.max(1) as f64
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod finished_city_ranking_probe {
+    use super::*;
+
+    /// Why does a finished research city never run `campus_research_grants`?
+    ///
+    /// The seven district projects are symmetric in the ruleset — cost 25,
+    /// repeatable, 15% ongoing yield (Commercial Hub 30%), 10 Great Person
+    /// points — yet over 1,113 finished-Campus city-turns past t150 the
+    /// Theater and Commercial projects ran 4.5% and 3.6% of the time and the
+    /// **Campus project ran ZERO**. Symmetric inputs and asymmetric output
+    /// means the answer is in the valuation, so print it.
+    #[test]
+    #[ignore = "census, not an assertion; run explicitly with --nocapture"]
+    fn what_does_a_finished_city_actually_rank_its_options() {
+        let campus = crate::name!("campus");
+        let mut g = Game::new(6, 60, 38, 89_000_008, 250, 6);
+        g.game_speed = GameSpeed::Online;
+        g.victory_conditions =
+            crate::game::VictoryConditions::parse("science,culture,domination,score").unwrap();
+        let mut me = AdvancedAi::new();
+        me.enable_engine_repairs_universe();
+        me.enable_research_tier_premium();
+        me.enable_science_multiplier_payoff();
+        let mut others = AdvancedAi::fleet(&g);
+        let mut reported = false;
+        while g.winner.is_none() && g.turn <= 250 {
+            let pid = g.current;
+            if pid == 0 {
+                me.take_turn(&mut g, pid);
+                if !reported && g.turn >= 200 {
+                    let finished: Vec<u32> = g
+                        .player_city_ids(0)
+                        .into_iter()
+                        .filter(|cid| {
+                            let city = &g.cities[cid];
+                            g.city_has_district_family(city, campus)
+                                && city.buildings.contains(&crate::name!("research_lab"))
+                        })
+                        .collect();
+                    if let Some(cid) = finished.first().copied() {
+                        reported = true;
+                        // The seven district projects, priced by the same
+                        // function, in the same city, on the same turn.
+                        let plan = me.assess(&g, 0);
+                        println!(
+                            "RANK city {cid} at t{} · production {:.0} · lane {:?}",
+                            g.turn,
+                            g.city_yields(cid).production,
+                            plan.strategy
+                        );
+                        for project in [
+                            "campus_research_grants",
+                            "theater_square_festival",
+                            "commercial_hub_investment",
+                            "holy_site_prayers",
+                            "industrial_zone_logistics",
+                        ] {
+                            let has_district = g.rules.projects[project]
+                                .district
+                                .map(|d| g.city_has_district_family(&g.cities[&cid], d))
+                                .unwrap_or(true);
+                            let value = me.district_project_value(&g, 0, cid, project, &plan);
+                            println!(
+                                "RANK   {value:>10.1}  {project:<28} district_here={has_district}"
+                            );
+                        }
+                    }
+                }
+            } else {
+                others[pid].take_turn(&mut g, pid);
+            }
+            if g.winner.is_none() && g.current == pid {
+                let _ = g.apply(pid, &Action::EndTurn);
+            }
+        }
+    }
+}

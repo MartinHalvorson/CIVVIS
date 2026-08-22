@@ -149,6 +149,9 @@ mod tests {
             ("chain-tech-lookahead", |ai: &AdvancedAi| {
                 ai.chain_tech_lookahead
             }),
+            ("research-grants-first", |ai: &AdvancedAi| {
+                ai.research_grants_first
+            }),
         ] {
             let mut ai = AdvancedAi::new();
             ai.enable_live_bridge_universe();
@@ -170,6 +173,7 @@ mod tests {
         ai.enable_campus_adjacency_threshold();
         ai.enable_fifteenth_citizen();
         ai.enable_chain_tech_lookahead();
+        ai.enable_research_grants_first();
         ai.disable_science_payback_horizon();
         ai.disable_science_multiplier_payoff();
         ai.disable_research_tier_premium();
@@ -179,6 +183,7 @@ mod tests {
         ai.disable_campus_adjacency_threshold();
         ai.disable_fifteenth_citizen();
         ai.disable_chain_tech_lookahead();
+        ai.disable_research_grants_first();
         assert!(!ai.science_payback_horizon);
         assert!(!ai.science_multiplier_payoff);
         assert!(!ai.research_tier_premium);
@@ -188,6 +193,7 @@ mod tests {
         assert!(!ai.campus_adjacency_threshold);
         assert!(!ai.fifteenth_citizen);
         assert!(!ai.chain_tech_lookahead);
+        assert!(!ai.research_grants_first);
     }
 
     /// The citizen half of the taper, and the proof it is a separate gene:
@@ -752,6 +758,80 @@ mod tests {
         game.cities.get_mut(&city).unwrap().districts.clear();
         assert_eq!(shipped.unreachable_science_building_tech(&game, 0), None);
         assert_eq!(treated.unreachable_science_building_tech(&game, 0), None);
+    }
+
+    /// The premium reaches exactly one project, in exactly one state.
+    #[test]
+    fn only_a_finished_research_city_pays_more_for_its_own_project() {
+        let mut game = Game::new_full(1, 24, 16, 91_989, 200, 0, false);
+        let city = found_capital(&mut game, 0);
+        let site = game.cities[&city]
+            .owned_tiles
+            .iter()
+            .copied()
+            .find(|position| *position != game.cities[&city].pos)
+            .unwrap();
+        set_district(&mut game, city, site, "campus");
+        game.players[0].techs.insert(crate::name!("writing"));
+        let mut ai = AdvancedAi::new();
+        ai.enable_research_grants_first();
+        let grants = game.rules.projects["campus_research_grants"].clone();
+        let festival = game.rules.projects["theater_square_festival"].clone();
+
+        // A Campus with a Library still to build is a city that should build
+        // the Library. No premium.
+        assert!(game.can_produce(
+            0,
+            city,
+            &crate::game::Item::Building {
+                building: crate::name!("library"),
+            },
+        ));
+        assert_eq!(ai.research_grants_premium(&game, 0, city, &grants), 0.0);
+
+        // Once nothing in the chain can still be produced here, the project is
+        // what this city does with its remaining turns.
+        game.cities
+            .get_mut(&city)
+            .unwrap()
+            .buildings
+            .push(crate::name!("library"));
+        assert!(!game.can_produce(
+            0,
+            city,
+            &crate::game::Item::Building {
+                building: crate::name!("university"),
+            },
+        ));
+        assert_eq!(
+            ai.research_grants_premium(&game, 0, city, &grants),
+            super::super::RESEARCH_GRANTS_COMPOUNDING_PREMIUM
+        );
+
+        // ⚠ And it is the CAMPUS project only. The other six district projects
+        // are identical in the ruleset — cost 25, repeatable, 10 Great Person
+        // points, an ongoing percent of Production — and none of them moves.
+        assert_eq!(ai.research_grants_premium(&game, 0, city, &festival), 0.0);
+        for other in [
+            "commercial_hub_investment",
+            "holy_site_prayers",
+            "industrial_zone_logistics",
+            "harbor_shipping",
+        ] {
+            let spec = game.rules.projects[other].clone();
+            assert_eq!(
+                ai.research_grants_premium(&game, 0, city, &spec),
+                0.0,
+                "{other} is not the Campus project"
+            );
+        }
+
+        // With the gene off nothing is paid, in any state.
+        let shipped = AdvancedAi::new();
+        assert_eq!(
+            shipped.research_grants_premium(&game, 0, city, &grants),
+            0.0
+        );
     }
 
     /// A constant standing in for a ruleset value has to be pinned to the
