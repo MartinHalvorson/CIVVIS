@@ -203,5 +203,48 @@ class TheTableIsDerived(unittest.TestCase):
         self.assertIn("Pairing gain", ranking.RANKING_MD.read_text())
 
 
+    def test_the_table_is_the_first_thing_in_the_file(self):
+        """Operator, 2026-08-22: "i want the table on top."
+
+        Twenty-two lines of preamble used to stand between the title and the
+        first row. The reference did not go away — it is carried under the
+        tables — but nothing may get back in front of them.
+        """
+        lines = ranking.RANKING_MD.read_text().splitlines()
+        self.assertEqual(lines[0], "# The heuristic gene ranking")
+        self.assertEqual(lines[1], "")
+        self.assertTrue(lines[2].startswith("| Rank | Gene |"), lines[2])
+        self.assertTrue(lines[3].startswith("|---:|"), lines[3])
+        self.assertTrue(lines[4].startswith("| 1 | `"), lines[4])
+
+    def test_the_reference_is_carried_under_the_tables_not_deleted(self):
+        """Moving the preamble must not become dropping it.
+
+        Every derived paragraph the header used to open with is load-bearing —
+        the band correction in particular is why a culled gene came back — so
+        each is asserted present, and after the last table rather than before
+        the first.
+        """
+        text = ranking.RANKING_MD.read_text()
+        self.assertIn("## How to read this", text)
+        for phrase in (
+            "Reading the table",
+            "What each screen resolves",
+            "Pairing gain",
+            "twice too wide",
+            "**Cost.**",
+            "Regenerate with",
+        ):
+            self.assertIn(phrase, text, phrase)
+        self.assertLess(
+            text.index("| Rank | Gene |"),
+            text.index("## How to read this"),
+            "the reference must sit under the table, not over it",
+        )
+        for heading in ("## Awaiting measurement", "## Removed from the code"):
+            if heading in text:
+                self.assertLess(text.index(heading), text.index("## How to read this"), heading)
+
+
 if __name__ == "__main__":
     unittest.main()

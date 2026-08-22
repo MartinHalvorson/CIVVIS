@@ -273,9 +273,11 @@ def render(ledger: dict) -> str:
     removed = sorted(tag for tag in measured if tag not in reg)
     latest = {tag: history[-1] for tag, history in measured.items()}
 
-    lines = [
-        "# The heuristic gene ranking",
-        "",
+    # Everything that explains the table, kept but moved out from in front of it:
+    # the operator reads the ranking, and twenty-two lines of preamble stood
+    # between the file and its first row. Carried under the table instead, so
+    # nothing derived is lost and nothing derived is in the way.
+    reference = [
         "Every screenable heuristic gene on the Advanced controller, ranked most beneficial "
         "to least by **± Wins Last 10k** — wins added per 10,000 six-player games at the "
         "gene's measured on-rate in its **latest** screen. *± Wins 10k Prior* is the "
@@ -366,6 +368,10 @@ def render(ledger: dict) -> str:
         "Regenerate with `python3 tools/heuristic_gene_ranking.py --write` after every "
         "screen enters the ledger; `tools/test_heuristic_gene_ranking.py` fails when this "
         "file is older than the ledger's sources.",
+    ]
+
+    lines = [
+        "# The heuristic gene ranking",
         "",
         "| Rank | Gene | Description | Default | ± Wins Last 10k | ± Wins 10k Prior | Total (on) Win rate | Total (off) Win rate | Diff | cost (compute) | cost (time) |",
         "|---:|---|---|---|---:|---:|---:|---:|---:|---:|---:|",
@@ -427,6 +433,8 @@ def render(ledger: dict) -> str:
                 f"| `{tag}` | {wins_per(m['win_on'], m['players']):+d} | {100 * m['win_on']:.2f}% | "
                 f"{100 * m['win_off']:.2f}% | `{src}` |"
             )
+
+    lines += ["", "## How to read this", ""] + reference
 
     # Hand-written follow-ups live in `docs/gene_ranking_notes.md` and are
     # carried under the table, so a reading written against one screen is
