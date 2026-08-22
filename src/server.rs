@@ -14216,11 +14216,11 @@ mod tests {
     }
 
     #[test]
-    fn browser_tile_yields_are_compact_electric_and_centered_at_sixty_percent() {
+    fn browser_tile_yields_are_compact_electric_and_centered_at_sixty_three_percent() {
         assert!(EMBEDDED_INDEX.contains(
             "const YPIP = { food:\"#69e64f\", production:\"#ff8b3d\", gold:\"#ffda3b\",\n               science:\"#36cfff\", culture:\"#ca74ff\", faith:\"#f6e5a8\" };"
         ));
-        assert!(EMBEDDED_INDEX.contains("const STRATEGIC_YIELD_CENTER_FRACTION = .60;"));
+        assert!(EMBEDDED_INDEX.contains("const STRATEGIC_YIELD_CENTER_FRACTION = .63;"));
         assert!(EMBEDDED_INDEX.contains(
             "[\"food\", \"production\", \"gold\"],\n  [\"science\", \"culture\", \"faith\"],"
         ));
@@ -14262,13 +14262,16 @@ mod tests {
             .expect("tile-yield renderer");
         assert!(renderer.contains("const rows = yieldPipLayout(full, r);"));
         // The plate is painted once per cluster, under that cluster's signs.
-        assert!(renderer.contains("drawYieldPlate(cluster.signs, clusterX, cy, worked);"));
+        assert!(renderer.contains("drawYieldPlate(cluster.signs, clusterX, cy);"));
         assert!(renderer.contains("const visualRows = rows.slice().reverse();"));
         assert!(renderer.contains(
             "drawYieldPip(sign.kind, clusterX + sign.x, cy + sign.y,\n          sign.r, sign.portion, sign.label);"
         ));
         assert!(renderer.contains("const totalHeight = visualRows.reduce"));
-        assert!(renderer.contains("let top = strategicYieldCenterY(y) - totalHeight / 2;"));
+        assert!(renderer.contains("const centerY = strategicYieldCenterY(y);"));
+        assert!(renderer.contains("const widestRow = Math.max(...visualRows.map(row => row.width));"));
+        assert!(renderer.contains("let top = centerY - totalHeight / 2;"));
+        assert!(renderer.contains("if (worked) drawWorkedYieldRing(x, centerY, widestRow, totalHeight, r);"));
         assert!(EMBEDDED_INDEX.contains("function drawYieldPipGlyph(kind, x, y, r)"));
         let placement = EMBEDDED_INDEX
             .split("function strategicYieldCenterY")
@@ -14343,7 +14346,7 @@ mod tests {
     }
 
     #[test]
-    fn browser_tile_yield_clusters_stand_on_one_shaded_plate() {
+    fn browser_tile_yield_clusters_stand_on_one_shaded_plate_and_worked_tiles_get_one_ring() {
         // Measured off the base game's own map overlay atlas rather than
         // guessed: rgb(8,12,16) at 92%, a 43px sign cell around a 38px icon.
         assert!(EMBEDDED_INDEX.contains("const YIELD_PLATE_FILL = \"rgba(8,12,16,.92)\";"));
@@ -14377,9 +14380,24 @@ mod tests {
         assert!(plate.contains("traceYieldPlate(signs, dx, dy);"));
         assert!(plate.contains("cx.fillStyle = YIELD_PLATE_FILL;"));
         assert!(plate.contains("cx.shadowColor = YIELD_PLATE_SHADOW;"));
-        // One keyline around the worked cluster, where there used to be one
-        // around every sign in it.
-        assert!(plate.contains("cx.strokeStyle = YIELD_PLATE_WORKED_EDGE;"));
+        // City assignment is one tile-level fact, not a repeat on every yield
+        // cluster. Its high-contrast ring stays visible over bright terrain.
+        assert!(!plate.contains("YIELD_PLATE_WORKED_EDGE"));
+        assert!(EMBEDDED_INDEX.contains("const WORKED_YIELD_RING = \"rgba(255,255,255,.98)\";"));
+        assert!(EMBEDDED_INDEX.contains(
+            "const WORKED_YIELD_RING_OUTLINE = \"rgba(5,8,7,.94)\";"
+        ));
+        let ring = EMBEDDED_INDEX
+            .split("function drawWorkedYieldRing")
+            .nth(1)
+            .and_then(|tail| tail.split("function drawYieldSign").next())
+            .expect("worked tile-yield ring renderer");
+        assert!(ring.contains(
+            "const radius = Math.hypot(width / 2, height / 2) + Math.max(1.2, r * .28);"
+        ));
+        assert!(ring.contains("cx.strokeStyle = WORKED_YIELD_RING_OUTLINE;"));
+        assert!(ring.contains("cx.lineWidth = whiteWidth + outlineWidth * 2;"));
+        assert!(ring.contains("cx.strokeStyle = WORKED_YIELD_RING;"));
     }
 
     #[test]

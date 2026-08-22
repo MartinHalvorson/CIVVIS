@@ -9399,11 +9399,13 @@ const YIELD_PLATE_PAD = .13;
 // one-count plate is a rounded square whose corner is .84 of its half-side,
 // which reads as a marker laid on the map rather than an outline on the sign.
 const YIELD_PLATE_SOLO_CORNER = .84;
-// A worked tile keeps its warm keyline — now one line around the cluster.
-const YIELD_PLATE_WORKED_EDGE = "rgba(244,206,122,.95)";
+// A worked tile is marked by one white ring around the complete yield group.
+// The dark edge keeps that ring legible over snow, desert, and bright icons.
+const WORKED_YIELD_RING = "rgba(255,255,255,.98)";
+const WORKED_YIELD_RING_OUTLINE = "rgba(5,8,7,.94)";
 // Place the visual centre below the tile's midpoint, measured from its top
 // point to bottom point. This preserves the same seat on flat and globe maps.
-const STRATEGIC_YIELD_CENTER_FRACTION = .60;
+const STRATEGIC_YIELD_CENTER_FRACTION = .63;
 // The material row is the first row a player reads. Extra yield kinds make a
 // second row directly above it, preserving the requested Food → Faith order.
 const YIELD_ROWS = [
@@ -9678,7 +9680,7 @@ function traceYieldPlate(signs, dx, dy) {
   cx.closePath();
 }
 
-function drawYieldPlate(signs, dx, dy, worked) {
+function drawYieldPlate(signs, dx, dy) {
   const r = Math.max(...signs.map(sign => sign.r));
   cx.save();
   cx.beginPath();
@@ -9689,13 +9691,27 @@ function drawYieldPlate(signs, dx, dy, worked) {
   cx.fillStyle = YIELD_PLATE_FILL;
   cx.fill();
   cx.shadowBlur = 0; cx.shadowOffsetY = 0;
-  // One keyline around the cluster, where there used to be one around every
-  // sign in it.
-  if (worked) {
-    cx.strokeStyle = YIELD_PLATE_WORKED_EDGE;
-    cx.lineWidth = Math.max(.55, r * .11);
-    cx.stroke();
-  }
+  cx.restore();
+}
+
+// A city assignment belongs to the tile rather than any individual yield, so
+// encircle the whole compact layout. Its bounds already include every plate,
+// then the little extra radius leaves the white line visibly separate from it.
+function drawWorkedYieldRing(x, y, width, height, r) {
+  const radius = Math.hypot(width / 2, height / 2) + Math.max(1.2, r * .28);
+  const whiteWidth = Math.max(.8, r * .18);
+  const outlineWidth = Math.max(.6, r * .13);
+  cx.save();
+  cx.beginPath();
+  cx.arc(x, y, radius, 0, Math.PI * 2);
+  cx.strokeStyle = WORKED_YIELD_RING_OUTLINE;
+  cx.lineWidth = whiteWidth + outlineWidth * 2;
+  cx.stroke();
+  cx.beginPath();
+  cx.arc(x, y, radius, 0, Math.PI * 2);
+  cx.strokeStyle = WORKED_YIELD_RING;
+  cx.lineWidth = whiteWidth;
+  cx.stroke();
   cx.restore();
 }
 
@@ -9777,15 +9793,18 @@ function drawTileYields(t, x, y, worked) {
   const rowGap = 2.7 * r / 4.4;
   const totalHeight = visualRows.reduce((height, row, index) => height + row.height +
     (index ? rowGap : 0), 0);
-  let top = strategicYieldCenterY(y) - totalHeight / 2;
+  const centerY = strategicYieldCenterY(y);
+  const widestRow = Math.max(...visualRows.map(row => row.width));
+  let top = centerY - totalHeight / 2;
   cx.save();
+  if (worked) drawWorkedYieldRing(x, centerY, widestRow, totalHeight, r);
   for (const row of visualRows) {
     let px = x - row.width / 2;
     const cy = top + row.height / 2;
     for (let index = 0; index < row.clusters.length; index++) {
       const cluster = row.clusters[index];
       const clusterX = px + cluster.width / 2;
-      drawYieldPlate(cluster.signs, clusterX, cy, worked);
+      drawYieldPlate(cluster.signs, clusterX, cy);
       for (const sign of cluster.signs) {
         drawYieldPip(sign.kind, clusterX + sign.x, cy + sign.y,
           sign.r, sign.portion, sign.label);
