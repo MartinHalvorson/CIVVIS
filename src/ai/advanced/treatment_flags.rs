@@ -934,9 +934,6 @@ impl AdvancedAi {
         // ~100 to 251 while the army grew to 22, 77% of the map never seen, and
         // the eventual winner first met on turn 215 already holding 927 points.
         self.enable_recon_replacement();
-        // And the recon it rebuilds must stop walking into barbarians. See
-        // `recon_flight`.
-        self.enable_recon_flight();
         // And a settler target dropped for danger stays dropped for a while.
         // See `settler_target_hysteresis`.
         self.enable_settler_target_hysteresis();
@@ -1362,9 +1359,6 @@ impl AdvancedAi {
         // Tactical quality on the tile the unit actually stands on.
         self.enable_strike_opening();
         self.enable_recon_replacement();
-        // And the recon it rebuilds must stop walking into barbarians. See
-        // `recon_flight`.
-        self.enable_recon_flight();
         // And a barbarian scout is a scout in both regimes — it can neither
         // attack nor capture, so nothing retreats from one. See
         // `barbarian_scouts_are_scouts`.
@@ -2081,16 +2075,6 @@ impl AdvancedAi {
 
     pub fn disable_barbarian_scouts_are_scouts(&mut self) {
         self.barbarian_scouts_are_scouts = false;
-    }
-
-    /// Let a recon unit step out of a visible hostile's reach before it
-    /// explores. See `recon_flight`.
-    pub fn enable_recon_flight(&mut self) {
-        self.recon_flight = true;
-    }
-
-    pub fn disable_recon_flight(&mut self) {
-        self.recon_flight = false;
     }
 
     /// Skip a space race or a bomb that cannot finish before the turn limit.

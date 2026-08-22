@@ -93,7 +93,6 @@ pub const LIVE_TREATMENTS: &[LiveTreatment] = &[
     ("expansion_before_prophet", "expansion-before-prophet", AdvancedAi::disable_expansion_before_prophet),
     ("no_elective_war", "no-elective-war", AdvancedAi::disable_no_elective_war),
     ("fog_land_capacity", "fog-land-capacity", AdvancedAi::disable_fog_land_capacity),
-    ("recon_flight", "recon-flight", AdvancedAi::disable_recon_flight),
     ("score_horizon", "score-horizon", AdvancedAi::disable_score_horizon),
     ("one_launch_pad", "one-launch-pad", AdvancedAi::disable_one_launch_pad),
     ("naval_recon", "naval-recon", AdvancedAi::disable_naval_recon),
