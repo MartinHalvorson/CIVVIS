@@ -2129,6 +2129,20 @@ impl AdvancedAi {
     pub fn enable_pantheon_board(&mut self) {
         self.base.pantheon_reads_the_board = true;
     }
+
+    /// Beeline Advanced Flight from three technologies out, raise an
+    /// Aerodrome and a bomber wing, and take the appointed city with the
+    /// cavalry behind it. See [`AdvancedAi::maintain_air_surge`] and
+    /// `advanced/air_surge.rs`. Off everywhere by default; opt-in gene
+    /// `air-surge`.
+    pub fn enable_air_surge(&mut self) {
+        self.air_surge = true;
+    }
+
+    /// The twin of `enable_air_surge`.
+    pub fn disable_air_surge(&mut self) {
+        self.air_surge = false;
+    }
 }
 
 #[cfg(test)]

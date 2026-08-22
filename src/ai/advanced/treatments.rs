@@ -235,4 +235,11 @@ pub const PRODUCTION_OPT_INS: &[LiveTreatment] = &[
     // hit points say, and healing ground that comes under a shooter's reach
     // is left. See `BasicAi::one_shot_recovery`.
     ("one_shot_recovery", "one-shot-recovery", AdvancedAi::enable_one_shot_recovery),
+    // Nothing in this controller reaches the air layer: the melee package
+    // skips `domain == "air"` and ranks its unlocks by cheapest remaining
+    // research, so it can appoint the next technology and never a chain.
+    // This beelines Advanced Flight from three technologies out, raises an
+    // Aerodrome and a bomber wing, and takes the appointed city with the
+    // cavalry behind it. See `advanced/air_surge.rs`.
+    ("air_surge", "air-surge", AdvancedAi::enable_air_surge),
 ];
