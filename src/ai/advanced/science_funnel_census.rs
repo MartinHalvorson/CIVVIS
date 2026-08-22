@@ -15,6 +15,13 @@
 //! Research Lab held at the end, per city, treated against control on the
 //! same seeds and the same map shape the screen runs.
 //!
+//! ★★ AND THE ANSWER DEPENDS ON THE CONTROL'S HEADROOM. `science-multiplier-
+//! payoff` + `research-tier-premium` bought Research Labs **+25%, +20%,
+//! +21.7%, +6.7% and finally 0%** across five disjoint seed ranges. The trend
+//! is not noise: the last range's CONTROL already reached 115 Campuses and 65
+//! Labs, so there was nothing left to add. A gene that fills a gap is worth
+//! what the gap is, and quoting its best range as its effect overstates it.
+//!
 //! ⚠ A census, not an assertion. It plays whole games and is `#[ignore]`d.
 //!
 //! ⚠ Adding a gene makes `HEURISTIC_GENE_RANKING.md` stale — it is generated

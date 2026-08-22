@@ -4119,6 +4119,33 @@ pub struct AdvancedAi {
     /// refused, which is the check that keeps this from becoming a beeline to
     /// anything expensive.
     ///
+    /// ⚠⚠⚠ MEASURED AND HARMFUL — the largest negative in this bundle. Twelve
+    /// paired census seeds, conditioned to reach the clock:
+    ///
+    /// ```text
+    /// arm                    cities  campus  univ  lab  techs  Science   score
+    /// control                   135     115    95   65    774   3483.4   10791
+    /// chain-tech-lookahead      118     100    94   54    753   2894.6    9345
+    /// ```
+    ///
+    /// **−17% Research Labs, −16.9% Science, −13.4% score, and seventeen fewer
+    /// cities.** Starting the goal a construction earlier does not add a tech,
+    /// it MOVES the research argmax off whatever the empire needed at that
+    /// turn — and at the turn a Library becomes producible the empire is still
+    /// expanding. The forced goal is bought with the expansion the rest of the
+    /// science economy is built on, which is why the damage shows in CITIES
+    /// first and Labs second.
+    ///
+    /// This is the same lesson `housing_research`'s repair note records from
+    /// the other direction: "a capped city that can already produce a
+    /// housing-raising building is the production lanes' job, not a research
+    /// detour". A research goal is the most expensive instrument in this
+    /// controller, and it should be spent later than feels right, not earlier.
+    ///
+    /// Kept, off, with the number on it. The estimate below was written before
+    /// the games and was right about the SIZE of the shift and wrong about its
+    /// sign; both halves are left standing.
+    ///
     /// ⚠ Sized honestly BEFORE any games: this is worth about one building's
     /// construction time per rung — on seed 0, a Chemistry goal starting at
     /// t95 instead of t111. On a campaign record of eight genes and two
@@ -10354,15 +10381,12 @@ impl AdvancedAi {
             // See `chain_tech_lookahead`: standing is one construction later
             // than buildable, and that difference is added to every rung after
             // this one.
+            let lookahead = self.chain_tech_lookahead;
             let ready = equipped.iter().any(|city| {
                 spec.requires.iter().all(|needed| {
+                    let item = Item::Building { building: *needed };
                     city.buildings.iter().any(|built| built == needed)
-                        || (self.chain_tech_lookahead
-                            && g.can_produce(
-                                pid,
-                                city.id,
-                                &Item::Building { building: *needed },
-                            ))
+                        || (lookahead && g.can_produce(pid, city.id, &item))
                 })
             });
             if !ready {
