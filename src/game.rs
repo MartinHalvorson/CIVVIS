@@ -1174,6 +1174,26 @@ pub struct QueryCache {
     // turn -- 34 evaluations per tile per turn, of which one was new.
     appeal: std::cell::RefCell<Option<BTreeMap<Pos, i32>>>,
     traversal: std::cell::RefCell<Option<BTreeMap<u32, TraversalClass>>>,
+    /// Every unit currently flying a patrol, as `(owner, tile)`.
+    ///
+    /// ★★★★ A WHOLE-BOARD FACT ASKED ONCE PER NEIGHBOUR. `can_enter_past`
+    /// walked `units` in full to find out whether an enemy fighter was
+    /// patrolling the tile being stepped onto — and `flow_past` asks it for
+    /// every neighbour of every tile it expands, so a single unit's movement
+    /// flood scanned the world hundreds of times. The answer cannot change
+    /// inside a `&self` query, so it is computed once per memo scope. Almost
+    /// always empty: a patrol needs a fighter, and Flight is deep enough
+    /// that most games never see one.
+    air_patrols: std::cell::RefCell<Option<AirPatrols>>,
+    /// Which improvements let a unit pass, indexed by [`Name::id`].
+    ///
+    /// ★★★★ A RULESET FACT ASKED PER TILE, BY STRING. `class_can_traverse`
+    /// read `improvements[name].effects["passage"]` — a `BTreeMap<String,
+    /// f64>` descent, so `memcmp` per level — for every tile of every
+    /// movement flood. The rules do not change inside a game, let alone
+    /// inside a query, so the answer is a table built once per memo scope
+    /// and read with one array index.
+    passage_improvements: std::cell::RefCell<Option<PassageTable>>,
     amenities: std::cell::RefCell<Option<BTreeMap<u32, i64>>>,
     // Ownership-filtered ids are requested throughout AI evaluation. A
     // 100-seat game otherwise rescans every world entity for each request,
@@ -1243,6 +1263,12 @@ impl Clone for QueryCache {
 /// Scope over which `Game::city_yields`, `Game::traversal_class`, and the
 /// empire-wide read aggregates answer from a cache. Dropping the outermost
 /// guard clears it.
+/// Every unit flying a patrol, as `(owner, tile)` — see `Game::air_patrols`.
+type AirPatrols = Arc<Vec<(usize, Pos)>>;
+/// `true` at `Name::id` for improvements that grant passage — see
+/// `Game::passage_improvements`.
+type PassageTable = Arc<Vec<bool>>;
+
 pub struct QueryMemo<'a> {
     game: &'a Game,
     outermost: bool,
@@ -1254,6 +1280,8 @@ impl Drop for QueryMemo<'_> {
             *self.game.query_memo.yields.borrow_mut() = None;
             *self.game.query_memo.appeal.borrow_mut() = None;
             *self.game.query_memo.traversal.borrow_mut() = None;
+            *self.game.query_memo.air_patrols.borrow_mut() = None;
+            *self.game.query_memo.passage_improvements.borrow_mut() = None;
             *self.game.query_memo.amenities.borrow_mut() = None;
             *self.game.query_memo.unit_ids.borrow_mut() = None;
             *self.game.query_memo.unit_territory_access.borrow_mut() = None;
@@ -16092,6 +16120,63 @@ impl Game {
         class
     }
 
+    /// Every unit flying a patrol right now, as `(owner, tile)`.
+    ///
+    /// The open-coded scan this replaces sat in `can_enter_past`, which
+    /// `flow_past` calls once per neighbour of every tile it expands — so one
+    /// unit's movement flood walked `units` hundreds of times to learn a fact
+    /// about the whole board. Inside a `&self` query the board cannot change,
+    /// so the answer is computed once per memo scope and shared.
+    ///
+    /// Outside a memo scope there is nothing to hold it against, so it is
+    /// rebuilt per call — exactly the work the open-coded scan did, never
+    /// more. `query_memo.yields` is the discriminator for "a scope is live",
+    /// the same one `query_memo()` itself uses.
+    fn air_patrols(&self) -> AirPatrols {
+        if let Some(cached) = self.query_memo.air_patrols.borrow().as_ref() {
+            return Arc::clone(cached);
+        }
+        let patrols: AirPatrols = Arc::new(
+            self.units
+                .values()
+                .filter(|unit| unit.air_patrol)
+                .filter_map(|unit| unit.air_patrol_pos.map(|pos| (unit.owner, pos)))
+                .collect(),
+        );
+        if self.query_memo.yields.borrow().is_some() {
+            *self.query_memo.air_patrols.borrow_mut() = Some(Arc::clone(&patrols));
+        }
+        patrols
+    }
+
+    /// `true` at `Name::id` for every improvement whose `passage` effect is
+    /// positive — the test `class_can_traverse` makes per tile.
+    ///
+    /// Sized to the largest improvement id, so an id past the end simply names
+    /// something that is not an improvement and reads `false`, which is what
+    /// the `BTreeMap` miss it replaces returned.
+    fn passage_improvements(&self) -> PassageTable {
+        if let Some(cached) = self.query_memo.passage_improvements.borrow().as_ref() {
+            return Arc::clone(cached);
+        }
+        let span = self
+            .rules
+            .improvements
+            .keys()
+            .map(|name| name.id() as usize + 1)
+            .max()
+            .unwrap_or(0);
+        let mut table = vec![false; span];
+        for (name, spec) in self.rules.improvements.iter() {
+            table[name.id() as usize] = spec.effects.get("passage").copied().unwrap_or(0.0) > 0.0;
+        }
+        let table = Arc::new(table);
+        if self.query_memo.yields.borrow().is_some() {
+            *self.query_memo.passage_improvements.borrow_mut() = Some(Arc::clone(&table));
+        }
+        table
+    }
+
     /// A unit's traversal class costs a ruleset effect sum over every tech
     /// and civic it owns plus two improvement unlocks, and a route search
     /// asks for it once per tile it examines — hence the memo above.
@@ -16145,13 +16230,11 @@ impl Game {
     fn class_can_traverse(&self, class: TraversalClass, tile: &Tile) -> bool {
         let mountain_worker = tile.terrain == "mountain" && class.mountain;
         let improvement_passage = !tile.pillaged
-            && tile.improvement.as_deref().is_some_and(|improvement| {
-                self.rules.improvements[improvement]
-                    .effects
-                    .get("passage")
+            && tile.improvement.is_some_and(|improvement| {
+                self.passage_improvements()
+                    .get(improvement.id() as usize)
                     .copied()
-                    .unwrap_or(0.0)
-                    > 0.0
+                    .unwrap_or(false)
             });
         // A mirror frontier is an invitation to discover the tile, not a claim
         // that it is land or water. Until the host reveals it, either movement
@@ -23671,18 +23754,18 @@ impl Game {
         if !self.unit_can_traverse(uid, pos) {
             return false;
         }
-        // Ask the two field reads that almost always settle it before asking
-        // diplomacy: this walks every unit in the world, once per neighbour a
-        // route search considers, and only a fighter actually flying a patrol
-        // over this very tile can block the step. Deciding a war is far from
-        // free — a city-state's belligerence follows its Suzerain, which is
-        // derived from every major's envoys.
-        if self.units.values().any(|other| {
-            other.air_patrol
-                && other.air_patrol_pos == Some(pos)
-                && other.owner != u.owner
-                && self.is_at_war(u.owner, other.owner)
-        }) {
+        // Only a fighter actually flying a patrol over this very tile can
+        // block the step, and deciding a war is far from free — a city-state's
+        // belligerence follows its Suzerain, which is derived from every
+        // major's envoys. This used to walk every unit in the world here, once
+        // per neighbour a route search considers; `air_patrols` hoists that
+        // whole-board scan to once per memo scope, and the list is empty in
+        // every game that never fields a fighter.
+        let patrols = self.air_patrols();
+        if patrols
+            .iter()
+            .any(|&(owner, at)| at == pos && owner != u.owner && self.is_at_war(u.owner, owner))
+        {
             return false;
         }
         if !self.unit_can_cross_cliff(uid, from, pos) {
@@ -28146,6 +28229,8 @@ impl Game {
             *self.query_memo.yields.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.appeal.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.traversal.borrow_mut() = Some(BTreeMap::new());
+            *self.query_memo.air_patrols.borrow_mut() = None;
+            *self.query_memo.passage_improvements.borrow_mut() = None;
             *self.query_memo.amenities.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.unit_ids.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.unit_territory_access.borrow_mut() = Some(BTreeMap::new());
