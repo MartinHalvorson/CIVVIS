@@ -30,6 +30,19 @@
 //! `players` a seat wins by chance — and it is the same number
 //! `HEURISTIC_GENE_RANKING.md` prints.
 //!
+//! ★★★★ AND IT IS PUBLISHED BESIDE A PRECISION-WEIGHTED POSTERIOR.
+//! A threshold in column units is not a threshold in evidence: the screens
+//! those columns come from resolve between ±29 and ±101 at 80% power, so the
+//! same reading decides differently depending only on which screen priced the
+//! gene. `posterior_pp` / `posterior_se_pp` are a random-effects
+//! (DerSimonian–Laird) inverse-variance pool of every screen's on−off
+//! difference on the win column's scale, with the between-screen
+//! disagreement carried in the interval. They are **published, not in
+//! force**: `AUTHORITY` in `tools/gene_ledger.py` is `columns` and the
+//! generated table records it, so `deployment_default_on` re-derives exactly
+//! what shipped. `HEURISTIC_GENE_RANKING.md` prints what the other authority
+//! would change.
+//!
 //! What that replaced: the default used to be `verdict == helps`, one
 //! screen's significance test. The verdicts are still
 //! recorded and still say what the screens proved; they no longer decide what
@@ -102,7 +115,7 @@ pub struct GeneVerdict {
     pub verdict: Verdict,
     /// Whether the gene is on in the deployment genome — the win-column rule
     /// in the module header, decided by `tools/gene_ledger.py` and checked
-    /// here against the columns below by `the_default_follows_the_win_columns`.
+    /// here against the figures below by `the_default_follows_the_ledgers_authority`.
     pub default_on: bool,
     /// ± wins per 10,000 games at the gene's measured on-rate in the latest
     /// screen that priced it: `HEURISTIC_GENE_RANKING.md`'s
@@ -116,6 +129,15 @@ pub struct GeneVerdict {
     /// priced the gene, each weighted by its games. Negative vetoes the
     /// default. `None` when no screen has priced it.
     pub win_diff_pp: Option<f64>,
+    /// The precision-weighted pooled effect, in wins per 10,000 on-arm seats:
+    /// a random-effects (DerSimonian–Laird) inverse-variance pool of every
+    /// screen's on−off difference on the win column's scale, with the
+    /// between-screen disagreement carried in the error rather than assumed
+    /// away. `None` when no screen has priced the gene.
+    pub posterior_pp: Option<f64>,
+    /// That pooled effect's standard error, same units. A 95% interval is
+    /// `posterior_pp ± 1.96 × posterior_se_pp`.
+    pub posterior_se_pp: Option<f64>,
     /// Past the family-wise bar of the screen that supplied the verdict.
     pub family_wise: bool,
     /// The newest screen's paired contrast for this gene.
@@ -139,6 +161,85 @@ pub fn columns_default_on(last: Option<i32>, prior: Option<i32>, diff_pp: Option
         return false;
     }
     win_columns_default_on(last, prior)
+}
+
+/// A two-sided 95% interval.
+const Z95: f64 = 1.959_963_984_540_054;
+
+/// What the precision-weighted pooled estimate says on its own: `on` where its
+/// 95% interval lies wholly above zero, `off` where wholly below, and
+/// `Unresolved` where it straddles. The mirror of
+/// `tools/gene_ledger.py`'s `posterior_call`.
+pub fn posterior_call(effect: Option<f64>, se: Option<f64>) -> Verdict {
+    let (Some(effect), Some(se)) = (effect, se) else {
+        return Verdict::Unresolved;
+    };
+    if se <= 0.0 {
+        return Verdict::Unresolved;
+    }
+    if effect - Z95 * se > 0.0 {
+        return Verdict::Helps;
+    }
+    if effect + Z95 * se < 0.0 {
+        return Verdict::Hurts;
+    }
+    Verdict::Unresolved
+}
+
+/// The posterior authority's deployment call: it decides where its interval
+/// excludes zero and **defers to `fallback`** — the threshold rule's own call —
+/// where it straddles, rather than churning the genome on noise. The mirror of
+/// `tools/gene_ledger.py`'s `default_from_posterior`.
+pub fn posterior_default_on(effect: Option<f64>, se: Option<f64>, fallback: bool) -> bool {
+    match posterior_call(effect, se) {
+        Verdict::Helps => true,
+        Verdict::Hurts => false,
+        Verdict::Unresolved => fallback,
+    }
+}
+
+/// The win-column clause vetoed only by a **resolved** negative record — the
+/// posterior's 95% interval wholly below zero — rather than by the bare sign
+/// of a pooled difference that carries no error at all. The mirror of
+/// `tools/gene_ledger.py`'s `default_from_resolved_veto`.
+pub fn resolved_veto_default_on(
+    last: Option<i32>,
+    prior: Option<i32>,
+    effect: Option<f64>,
+    se: Option<f64>,
+) -> bool {
+    if posterior_call(effect, se) == Verdict::Hurts {
+        return false;
+    }
+    win_columns_default_on(last, prior)
+}
+
+/// `default_on` under whichever rule the ledger records as its authority:
+/// `"columns"` for the operator's threshold rule as it ships, `"posterior-veto"`
+/// for that rule with an error bar on its veto, `"posterior"` for the
+/// precision-weighted pool deciding wherever its interval excludes zero. The
+/// switch is `AUTHORITY` in `tools/gene_ledger.py`; the generated table carries
+/// the answer it was written under, and
+/// `the_default_follows_the_ledgers_authority` re-derives every row under it.
+pub fn deployment_default_on(
+    authority: &str,
+    last: Option<i32>,
+    prior: Option<i32>,
+    diff_pp: Option<f64>,
+    effect: Option<f64>,
+    se: Option<f64>,
+) -> bool {
+    if authority == "columns" {
+        return columns_default_on(last, prior, diff_pp);
+    }
+    let resolved = resolved_veto_default_on(last, prior, effect, se);
+    match authority {
+        "posterior-veto" => resolved,
+        "posterior" => posterior_default_on(effect, se, resolved),
+        // An authority this build does not know must never silently invent a
+        // genome: fall back to the rule that ships.
+        _ => columns_default_on(last, prior, diff_pp),
+    }
 }
 
 /// A gene's win columns clear the deployment rule's column clause: one
@@ -171,6 +272,14 @@ mod table;
 /// Every gene the ledger has a verdict for, in the generated order.
 pub fn gene_ledger() -> &'static [GeneVerdict] {
     table::ROWS
+}
+
+/// Which rule decided every `default_on` in the generated table — `columns`,
+/// `posterior-veto` or `posterior`. Written by `tools/gene_ledger.py` from its
+/// `AUTHORITY` constant, so anything reporting the deployment genome can say
+/// what decided it rather than assuming.
+pub fn ledger_authority() -> &'static str {
+    table::AUTHORITY
 }
 
 /// The ledger's row for a published tag, if the screens have measured it.
@@ -313,6 +422,11 @@ mod tests {
         let json: serde_json::Value =
             serde_json::from_str(include_str!("../../../docs/gene_ledger.json"))
                 .expect("docs/gene_ledger.json parses");
+        assert_eq!(
+            json["rules"]["authority"].as_str(),
+            Some(table::AUTHORITY),
+            "the JSON ledger and the generated table were written under different authorities"
+        );
         let genes = json["genes"].as_array().expect("genes array");
         assert_eq!(
             genes.len(),
@@ -344,34 +458,151 @@ mod tests {
                     "{tag}: {column} differs between the table and the JSON"
                 );
             }
-            assert_eq!(
-                row.win_diff_pp,
-                entry["win_diff_pp"].as_f64(),
-                "{tag}: win_diff_pp differs between the table and the JSON"
-            );
+            for (column, recorded) in [
+                ("win_diff_pp", row.win_diff_pp),
+                ("posterior_pp", row.posterior_pp),
+                ("posterior_se_pp", row.posterior_se_pp),
+            ] {
+                assert_eq!(
+                    recorded,
+                    entry[column].as_f64(),
+                    "{tag}: {column} differs between the table and the JSON"
+                );
+            }
         }
     }
 
-    /// The rule itself: every default in the generated table is the one its two
-    /// win columns and its pooled difference produce. The tool decides; this
-    /// re-derives.
+    /// The rule itself: every default in the generated table is the one the
+    /// ledger's recorded authority produces from the figures beside it. The
+    /// tool decides; this re-derives, so a hand-edited table cannot quietly
+    /// ship a gene no rule does.
     #[test]
-    fn the_default_follows_the_win_columns() {
+    fn the_default_follows_the_ledgers_authority() {
         let mut on = 0;
         for row in gene_ledger() {
             assert_eq!(
                 row.default_on,
-                columns_default_on(row.wins_last_10k, row.wins_prior_10k, row.win_diff_pp),
-                "{}: default {} does not follow its columns {:?}/{:?} and difference {:?}",
+                deployment_default_on(
+                    table::AUTHORITY,
+                    row.wins_last_10k,
+                    row.wins_prior_10k,
+                    row.win_diff_pp,
+                    row.posterior_pp,
+                    row.posterior_se_pp,
+                ),
+                "{}: default {} does not follow the `{}` authority on columns {:?}/{:?}, \
+                 difference {:?} and posterior {:?} ± {:?}",
                 row.tag,
                 row.default_on,
+                table::AUTHORITY,
                 row.wins_last_10k,
                 row.wins_prior_10k,
-                row.win_diff_pp
+                row.win_diff_pp,
+                row.posterior_pp,
+                row.posterior_se_pp
             );
             on += usize::from(row.default_on);
         }
         assert!(on > 0, "a genome with no gene on is a broken regeneration");
+    }
+
+    /// ⚠ THE SWITCH IS NOT THROWN. The shipped genome is the operator's
+    /// threshold rule, and the posterior is published beside it. Flipping
+    /// `AUTHORITY` in `tools/gene_ledger.py` and regenerating is the whole
+    /// change; this fails first if it happens without the decision being
+    /// taken deliberately.
+    #[test]
+    fn the_threshold_rule_is_still_the_authority() {
+        assert_eq!(
+            ledger_authority(),
+            "columns",
+            "the ledger was regenerated under a different authority: that re-decides the \
+             deployment genome and is the operator's call, not a regeneration's"
+        );
+        for row in gene_ledger() {
+            assert_eq!(
+                row.default_on,
+                columns_default_on(row.wins_last_10k, row.wins_prior_10k, row.win_diff_pp),
+                "{}: the published default is not the threshold rule's",
+                row.tag
+            );
+        }
+    }
+
+    /// The posterior's three states, at the boundary of each, and the one-way
+    /// deferral that keeps a straddling interval from churning the genome.
+    #[test]
+    fn the_posterior_decides_only_where_its_interval_excludes_zero() {
+        // 20 ± 1.96·10 = [0.4, 39.6] — wholly above zero.
+        assert_eq!(posterior_call(Some(20.0), Some(10.0)), Verdict::Helps);
+        assert!(posterior_default_on(Some(20.0), Some(10.0), false));
+        assert_eq!(posterior_call(Some(-20.0), Some(10.0)), Verdict::Hurts);
+        assert!(!posterior_default_on(Some(-20.0), Some(10.0), true));
+        // 19 ± 1.96·10 straddles: the incumbent call stands, either way.
+        assert_eq!(posterior_call(Some(19.0), Some(10.0)), Verdict::Unresolved);
+        assert!(posterior_default_on(Some(19.0), Some(10.0), true));
+        assert!(!posterior_default_on(Some(19.0), Some(10.0), false));
+        // An unpriced gene has no posterior at all.
+        assert_eq!(posterior_call(None, None), Verdict::Unresolved);
+        assert!(!posterior_default_on(None, None, false));
+        // And the dispatcher: `columns` never reads the posterior, and an
+        // unknown authority falls back to the rule that ships.
+        assert!(!deployment_default_on(
+            "columns",
+            Some(1),
+            Some(-5),
+            Some(1.0),
+            Some(200.0),
+            Some(1.0)
+        ));
+        assert!(deployment_default_on(
+            "posterior",
+            Some(1),
+            Some(-5),
+            Some(1.0),
+            Some(200.0),
+            Some(1.0)
+        ));
+        assert!(!deployment_default_on(
+            "no-such-authority",
+            Some(1),
+            Some(-5),
+            Some(1.0),
+            Some(200.0),
+            Some(1.0)
+        ));
+    }
+
+    /// The veto with an error bar. `war-economy` is the live case: two
+    /// positive columns removed by a record of −0.78 pp that no screen in the
+    /// ledger can tell from zero.
+    #[test]
+    fn the_resolved_veto_fires_only_on_a_resolved_negative_record() {
+        // The shipped veto removes it on the sign alone.
+        assert!(!columns_default_on(Some(38), Some(8), Some(-0.78)));
+        // Its pooled record is −48 ± 70: nowhere near resolved, so the
+        // columns decide as they always did.
+        assert!(resolved_veto_default_on(
+            Some(38),
+            Some(8),
+            Some(-48.4),
+            Some(69.7)
+        ));
+        // A record that IS resolved negative still vetoes.
+        assert!(!resolved_veto_default_on(
+            Some(38),
+            Some(8),
+            Some(-86.5),
+            Some(18.6)
+        ));
+        // And it is strictly weaker than the shipped veto: it can only
+        // re-admit genes the columns already like, never promote one.
+        assert!(!resolved_veto_default_on(
+            Some(-5),
+            Some(-11),
+            Some(200.0),
+            Some(1.0)
+        ));
     }
 
     /// The veto, at its boundary and in its one direction.
