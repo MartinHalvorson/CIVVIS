@@ -85,7 +85,7 @@ their evidence is.
 
 For implementation details see `docs/AI_GUIDE.md`; for the run-by-run evidence
 and its corrections see `docs/EVAL.md`; for the rating/seating contract see
-`docs/LEAGUE.md`. Closed lanes keep their writeups in `docs/closed/`, including
+`docs/closed/LEAGUE.md`. Closed lanes keep their writeups in `docs/closed/`, including
 the two that answer the recurring “spend the terminal Faith” question with a
 measured null: `docs/closed/FAITH_CONVERSION.md` (the conversion-policy
 development screen, stopped with no gameplay integration) and
@@ -523,7 +523,7 @@ not, and is item 4 of the current list.
 
 For implementation details see `docs/AI_GUIDE.md`; for the run-by-run evidence
 and its corrections see `docs/EVAL.md`; for the rating/seating contract see
-`docs/LEAGUE.md`.
+`docs/closed/LEAGUE.md`.
 
 ## 2026-07-31 full-prefix resolution
 

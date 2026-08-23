@@ -188,7 +188,7 @@ function setupControlOrder(tactics) {
   const world = tactics
     ? ["tactics-scenario", "tactics-scenario-brief", "tacticsworldtype", "maptype", "np", "mapshape"]
     : ["np", "mapshape", "maptype", "tactics-scenario", "tactics-scenario-brief", "tacticsworldtype"];
-  return ["gamemode", "humanplayers", "civ6-status", "aiplayerpool", ...world, "startera", "gamespeed",
+  return ["gamemode", "humanplayers", "civ6-status", ...world, "startera", "gamespeed",
     "victory-options", "tactics-options", "saves-group"];
 }
 // Compose the pass in the live DOM. Moving the real controls (rather than
@@ -1933,7 +1933,6 @@ const PLAYER_HUD_COLUMNS = [
   {key:"leader", label:"Leader", block:"identity", min:"--hud-ident-min", width:1.85},
   {key:"watch", label:"Watch as", block:"identity", min:"--hud-watch-column", width:0, fixed:true},
   {key:"player", label:"Player", block:"identity", min:"--hud-ident-min", width:1.85},
-  {key:"elo", label:"Elo rating", block:"identity", min:"--hud-ident-num-min", width:1.017},
   {key:"elo_delta", label:"Elo delta", block:"identity", min:"--hud-ident-num-min", width:.85},
   // One movement, three columns: the odds this seat started with, the trend
   // between them, and the odds it holds now — each separately sortable,
@@ -1982,8 +1981,8 @@ const HUD_COLUMN_LAYOUT_STORAGE_KEY = "civvis-hud-column-layout-v1";
 const playerHudColumnWidths = new Map(PLAYER_HUD_COLUMNS.map(c => [c.key, c.width]));
 let playerHudColumnOrder = PLAYER_HUD_COLUMNS.map(column => column.key);
 // The one column a fresh viewer starts without: the live Elo delta is a
-// second reading of the rating beside it, so it waits in the Display
-// Settings roster until asked for. A saved layout still decides for itself.
+// second reading of the odds beside it, so it waits in the Display Settings
+// roster until asked for. A saved layout still decides for itself.
 const PLAYER_HUD_DEFAULT_HIDDEN_COLUMNS = ["elo_delta"];
 let playerHudHiddenColumns = new Set(PLAYER_HUD_DEFAULT_HIDDEN_COLUMNS);
 const playerHudColumnMinPx = new Map();
@@ -2166,10 +2165,6 @@ function playerHudSortValue(player, key, stats, rankById) {
   if (key === "civ") return player.civ || null;
   if (key === "leader") return player.leader || null;
   if (key === "player") return player.player_username || player.ai_username || player.ai_name || "AI player";
-  if (key === "elo") {
-    const value = Number(player.player_username ? player.player_elo : player.ai_elo);
-    return Number.isFinite(value) ? value : null;
-  }
   if (key === "elo_delta") {
     // Sort by the model's numeric Elo position, not by the signed label shown
     // in the cell. Missing odds keep the delta unavailable under fog.
@@ -2350,7 +2345,6 @@ function playerHudSortHead(key, label, title, classes = "", attrs = "") {
 const PLAYER_HUD_HEAD_LABELS = {
   rank:["RANK", "Score rank"], civ:["CIV", "Civilization"],
   leader:["LEADER", "Leader"], player:["PLAYER", "Player"],
-  elo:["ELO", "Elo rating", "numeric"],
   elo_delta:["Δ", "Live Elo position against the living field", "numeric"],
   win_start:["START", "Win odds at the start of the game", "numeric"],
   win_delta:["Δ", "Change in win odds", "odds-trend-head"],
@@ -2455,9 +2449,7 @@ function syncPlayerHudColumns(placeGrips = true) {
 // inside its grid track, and therefore belong in the floor too.
 function syncPlayerHudEloFloor() {
   const hud = document.getElementById("playerhud");
-  const scores = [...(hud?.querySelectorAll(
-    ".diplomacy-elo-value, .diplomacy-elo-delta-value"
-  ) || [])];
+  const scores = [...(hud?.querySelectorAll(".diplomacy-elo-delta-value") || [])];
   if (!hud || !scores.length) return;
   const probe = document.createElement("span");
   probe.style.cssText = "position:fixed; visibility:hidden; inset:auto; display:inline-block; " +
@@ -2999,7 +2991,6 @@ const RESPONSIVE_TEXT_RULES = [
   {selector:"#playerhud .diplomacy-civ", min:9, max:13},
   {selector:"#playerhud .diplomacy-leader-name", min:9, max:13},
   {selector:"#playerhud .diplomacy-player", min:9, max:13},
-  {selector:"#playerhud .diplomacy-elo-value", min:9, max:HUD_ELO_MAX_TYPE_SIZE},
   {selector:"#playerhud .diplomacy-elo-delta-value", min:9, max:HUD_ELO_MAX_TYPE_SIZE},
   {selector:"#playerhud .diplomacy-expected span", min:9, max:13},
   {selector:"#playerhud .diplomacy-age .civ-age", min:9, max:12},
@@ -23588,43 +23579,16 @@ function drawPlayerHud() {
       // registered a new one for it rather than lending it an agent's name,
       // so the row says who you are and what you are defending.
       const playerName = p.player_username || p.ai_username || p.ai_name || "AI player";
-      const playedGames = +p.player_games || 0;
-      // Everybody has a rating. Somebody who has finished nothing holds the
-      // 1500 every player starts from, and their first result moves it — so
-      // the column carries that number, dimmed, rather than a dash that read
-      // as "this seat cannot be rated at all". The seat is the source of its
-      // own figure: a person's is their registration, an agent's is the
-      // league row playing it.
+      // Nothing rates a seat: the column beside the name is the live odds
+      // position, and the tooltip says who is here and what they are doing.
       const isPerson = Boolean(p.player_username);
-      const eloValue = +(isPerson ? p.player_elo : p.ai_elo);
-      const eloRd = +(isPerson ? p.player_elo_rd : p.ai_elo_rd);
-      const eloCiv = isPerson ? p.player_elo_civ : p.ai_elo_civ;
-      const eloKnown = Number.isFinite(eloValue);
-      const eloProvisional = isPerson
-        ? Boolean(p.player_elo_provisional) : Boolean(p.ai_elo_provisional);
-      const provisionalNote = "provisional — the starting rating, unmoved until a first rated result";
-      const playerEloLabel = eloKnown
-        ? `${eloValue} ELO${eloProvisional ? ` (${provisionalNote})` : ""}`
-        : "Unrated";
-      // The column heading already supplies the unit, so keep its cells to the
-      // rating itself. The protected ELO track keeps the full score visible, so
-      // a provisional one is marked by its class rather than by a character
-      // that would push the value over the column's width.
-      const playerElo = eloKnown ? `${eloValue}` : "—";
       const playerEloDelta = signedEloDelta(playerHudEloDeltaValue(p));
-      const humanTitle = `You · new league player ${p.player_username}` +
-        ` · ${playedGames ? `${p.player_elo} ±${p.player_elo_rd} over ${playedGames} rated ` +
-          `${playedGames === 1 ? "game" : "games"}`
-          : `${p.player_elo} ±${p.player_elo_rd} to start, ${provisionalNote}`}` +
-        `${p.player_rated ? "" : " · this game is not being rated"}`;
-      const leagueTitle = isPerson ? humanTitle
+      const leagueTitle = isPerson
+        ? `You · ${p.player_username} · this game rates nobody`
         : p.ai_username
-        ? `League player ${p.ai_username} (${p.ai_strat_label || "unrated"})` +
-          ` · ${eloCiv ? `${p.civ}-specific` : "overall"} ELO ${p.ai_elo} ±${p.ai_elo_rd}` +
-          `${eloProvisional ? ` (${provisionalNote})` : ""}` +
+        ? `${p.ai_username} (${p.ai_strat_label || p.ai_username})` +
           `${startPct === null ? "" : ` · ${startPct}% to win this table when it sat down`}`
-        : `${p.ai_name || "AI player"} · ${eloKnown
-            ? `${eloProvisional ? "provisional " : ""}ELO ${eloValue} ±${eloRd}` : "unrated"}` +
+        : `${p.ai_name || "AI player"}` +
           ` · ${strategy ? `${titleCase(strategy)} active strategy` : "no active strategy"}`;
       const stateClass = `${atWar ? "at-war" : ""} ${p.alive ? "" : "dead"}`;
       const stats = statsByPlayer.get(p.id);
@@ -23672,10 +23636,6 @@ function drawPlayerHud() {
           case "player":
             return `<button class="diplomacy-identity" data-hud-col="player" ${dossierAttrs}>` +
               `<span class="diplomacy-identity-field" title="${leagueTitle}"><span class="diplomacy-player">${playerName}</span></span></button>`;
-          case "elo":
-            return `<button class="diplomacy-identity" data-hud-col="elo" ${dossierAttrs}>` +
-              `<span class="diplomacy-identity-field diplomacy-elo" title="${playerEloLabel} · ${leagueTitle}">` +
-              `<span class="diplomacy-elo-value${eloProvisional ? " provisional" : ""}">${playerElo}</span></span></button>`;
           case "elo_delta":
             return `<button class="diplomacy-identity" data-hud-col="elo_delta" ${dossierAttrs}>` +
               `<span class="diplomacy-identity-field diplomacy-elo-delta" title="${escapeAttr(eloDeltaTitle(p))}">` +
@@ -24222,29 +24182,9 @@ function civDossier(p, rank, relation) {
     ` · objective ${force.objective?.[0]},${force.objective?.[1]} · local strength ${Math.round((force.strength_ratio || 0) * 100)}%` +
     ` of the defenders · readiness ${Math.round((force.readiness || 0) * 100)}%">` +
     `${force.domain === "sea" ? "⚓" : "⚔"} ${titleCase(force.posture)} ×${force.units}</span>`).join("");
-  // Rated-league identity: strategy handle and the elo it defends here. A
-  // seat a person plays carries their own registration instead — a new player
-  // every game, never one of the agents already on the leaderboard.
-  //
-  // Every seat gets an Elo row. One with no finished game behind it says so
-  // and still shows the number: 1500 is where a player stands before their
-  // first result, not the absence of a standing.
+  // Who is in this seat. A seat a person plays carries their own handle for
+  // this game — never one of the agents; nothing rates anybody.
   const isPerson = Boolean(p.player_username);
-  const dossierElo = +(isPerson ? p.player_elo : p.ai_elo);
-  const dossierEloRd = +(isPerson ? p.player_elo_rd : p.ai_elo_rd);
-  const dossierEloCiv = isPerson ? p.player_elo_civ : p.ai_elo_civ;
-  const dossierProvisional = isPerson
-    ? Boolean(p.player_elo_provisional) : Boolean(p.ai_elo_provisional);
-  const dossierEloValue = Number.isFinite(dossierElo)
-    ? `${dossierElo} ±${dossierEloRd} · ` +
-      `${dossierProvisional ? "provisional" : dossierEloCiv ? `${p.civ} table` : "overall"}`
-    : "Unrated";
-  const dossierEloWhy = dossierProvisional
-    ? "The rating every player starts from. It has not moved yet: the first rated result takes it up or down"
-    : dossierEloCiv
-    ? `This player's rating specifically when playing ${p.civ}; each civ keeps its own table`
-    : `Overall league rating — not enough rated ${p.civ} games yet for a civ-specific number`;
-  const eloRow = row("Elo", dossierEloValue, dossierEloWhy);
   // Both odds, named and explained. The masthead has room for two figures and
   // an arrow; this is where the pair says what it is made of — and it is shown
   // for every seat, the one you are playing included.
@@ -24257,8 +24197,8 @@ function civDossier(p, rank, relation) {
     row("Win odds at start", `${startOdds}% of this table`,
         noVictoryPath
           ? "No victory condition was enabled, so no seat could win when the game began"
-          : "Judged before a tile was drawn: the ratings sitting at this table, the " +
-            "civilizations they drew and what the difficulty setting hands each seat. " +
+          : "Judged before a tile was drawn: the size of this table, the " +
+            "civilizations drawn and what the difficulty setting hands each seat. " +
             "Nothing on the board moves it, so the finished game can be scored against it" +
             (Number.isFinite(dossierHandicap) && dossierHandicap !== 0
               ? ` — difficulty is worth ${dossierHandicap > 0 ? "+" : ""}${dossierHandicap} Elo to this seat`
@@ -24275,19 +24215,17 @@ function civDossier(p, rank, relation) {
               ? `. This position is worth ${dossierStanding > 0 ? "+" : ""}${dossierStanding} Elo against the living field`
               : ""));
   const leagueRows = isPerson
-    ? row("League player", `${p.player_username} (you)`,
-        p.player_rated
-          ? "Registered in the rated roster when this game began — the result is filed under this name"
-          : "Registered for this game only: nothing is being rated, so the handle goes no further") +
-      eloRow + oddsRows
+    ? row("Player", `${p.player_username} (you)`,
+        "A handle for this game only: nothing is being rated, so it goes no further") +
+      oddsRows
     : p.ai_username
-    ? row("League player", `${p.ai_username} (${p.ai_strat_label || "unrated"})`,
-        "Which league strategy is playing this civilization") +
-      eloRow + oddsRows
+    ? row("Agent", `${p.ai_username} (${p.ai_strat_label || p.ai_username})`,
+        "Which built-in agent is playing this civilization") +
+      oddsRows
     : p.ai_name
     ? row("AI player", p.ai_name,
         strategy ? `Generated from this AI's ${titleCase(strategy)} strategy` : "Generated for this AI seat") +
-      eloRow + oddsRows
+      oddsRows
     : "";
   // The plan rows run top-down, each derived from the one above it — the same
   // order the sidebar dossier uses: victory lane, the doctrine pursuing it,
@@ -31755,21 +31693,16 @@ const AUTOPLAY_STRATEGY_KEY = "civvis-autoplay-strategy-v1";
 const AUTOPLAY_BATCH_TIMEOUT_MS = 120000;
 let autoplayRequestSequence = 0;
 // Fill the agent picker from the roster the server offers. Every entrant is
-// one of ours, named by the handle its leaderboard uses and carrying the
-// rating it is defending, so the choice is between strategies and not between
-// adjectives. The seat's current agent is preselected, so pressing Auto-play
-// without touching this changes nothing about who plays.
+// one of ours, named by its handle, so the choice is between agents and not
+// between adjectives. The seat's current agent is preselected, so pressing
+// Auto-play without touching this changes nothing about who plays.
 function fillStrategies(rules) {
   const select = document.getElementById("autoplaystrategy");
   const roster = Array.isArray(rules.strategies) ? rules.strategies : [];
   if (!select || !roster.length) return;
-  select.innerHTML = roster.map(entry => {
-    const rating = entry.provisional ? "unrated"
-      : entry.rating ? `${Math.round(entry.rating)} elo` : "";
-    const played = entry.games ? ` · ${entry.games} games` : "";
-    return `<option value="${escapeAttr(entry.name)}" title="${escapeAttr(entry.label || entry.name)}` +
-      `${played}">${escapeAttr(entry.username || entry.name)}${rating ? ` · ${rating}` : ""}</option>`;
-  }).join("");
+  select.innerHTML = roster.map(entry =>
+    `<option value="${escapeAttr(entry.name)}" title="${escapeAttr(entry.label || entry.name)}">` +
+      `${escapeAttr(entry.username || entry.name)}</option>`).join("");
   let remembered = null;
   try { remembered = localStorage.getItem(AUTOPLAY_STRATEGY_KEY); } catch (e) {}
   const wanted = [remembered, rules.seat_strategy]

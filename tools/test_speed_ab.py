@@ -743,7 +743,7 @@ class TheCheckAlwaysReportsAVerdict(unittest.TestCase):
                     "Cargo.lock", "tools/speed_ab.py",
                     ".github/workflows/speed.yml"]
         skips = ["docs/GENE_SCREEN.md", "docs/speed_ledger.json", "README.md",
-                 "tools/gene_ledger.py", "tools/test_speed_ab.py",
+                 "tools/genes.py", "tools/test_speed_ab.py",
                  "web/src/app.js", ""]
         for path in measures:
             with self.subTest(measures=path):

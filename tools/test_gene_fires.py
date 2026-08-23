@@ -113,7 +113,7 @@ class ProbesAreNotLedgerSources(unittest.TestCase):
     """Three map pairs must never price a gene, and only a name stops them.
 
     A single-gene probe runs at the screen's own profile, so its file says
-    `"shape": "standard"` and `tools/gene_ledger.py`'s shape guard — the one
+    `"shape": "standard"` and `tools/genes.py`'s shape guard — the one
     that refuses a probe — would let it through. What actually keeps it out is
     that the ledger takes its sources by name. That is a convention until
     something checks it, and eighteen seat pairs entering the ledger would
@@ -139,7 +139,11 @@ class ProbesAreNotLedgerSources(unittest.TestCase):
         for path in sorted(directory.glob("*.json")):
             with self.subTest(probe=path.name):
                 probe = json.loads(path.read_text(encoding="utf-8"))
-                self.assertLess(probe["complete_pairs"], 200)
+                # The screen's unit is the seat (#2349); a legacy probe
+                # recorded pairs, two seats each.
+                seats = (probe["seats"] if "seats" in probe
+                         else 2 * probe["complete_pairs"])
+                self.assertLess(seats, 400)
 
 
 class Waivers(unittest.TestCase):

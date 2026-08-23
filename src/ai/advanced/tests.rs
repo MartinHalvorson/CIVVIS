@@ -31723,3 +31723,266 @@ fn the_corps_enhancers_outrank_the_lane_pick_only_with_the_gene() {
         Some(380)
     );
 }
+
+// ---------------------------------------------------------------------------
+// District planning. See `advanced/district_planning.rs`.
+// ---------------------------------------------------------------------------
+
+use super::district_planning::DistrictPlanCache;
+
+/// The gene is registered, discoverable by name, and reversible.
+#[test]
+fn district_planning_is_a_registered_reversible_opt_in() {
+    assert!(GENES.iter().any(|gene| gene.opt_in()
+        && gene.field == "district_planning"
+        && gene.tag == "district-planning"));
+    let mut ai = AdvancedAi::new();
+    assert!(!ai.district_planning, "production ships it off");
+    ai.enable_district_planning();
+    assert!(ai.district_planning);
+    ai.disable_district_planning();
+    assert!(!ai.district_planning);
+}
+
+/// A founded capital for a civilization with no unique district, on a disk
+/// of bare plains out to radius six, so every plot differs only by what a
+/// test raised beside it.
+fn planning_capital() -> (Game, u32, Pos) {
+    let mut game = Game::new_full(2, 28, 18, 91_779, 200, 0, false);
+    game.players[0].civ = "America".to_string();
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .unwrap();
+    let center = game.units[&settler].pos;
+    for pos in game.wdisk(center, 6) {
+        if let Some(tile) = game.map.tiles.get_mut(&pos) {
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+            tile.hills = false;
+            tile.resource = None;
+            tile.improvement = None;
+            tile.district = None;
+            tile.wonder = None;
+            tile.river_edges = [false; 6];
+        }
+    }
+    game.apply(0, &crate::game::Action::FoundCity { unit: settler })
+        .unwrap();
+    let city = game.player_city_ids(0)[0];
+    (game, city, center)
+}
+
+fn district_planning_lane(turn: u32) -> StrategicPlan {
+    StrategicPlan {
+        strategy: GrandStrategy::Science,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 4,
+        assessed_turn: turn,
+        rush: false,
+    }
+}
+
+/// Raise mountains on `count` neighbours of `around`, skipping the city
+/// center and any tile a predicate refuses.
+fn raise_mountains_beside(
+    game: &mut Game,
+    around: Pos,
+    count: usize,
+    keep: impl Fn(&Game, Pos) -> bool,
+) -> usize {
+    let neighbors = game.nbrs(around);
+    let mut raised = 0;
+    for pos in neighbors {
+        if raised == count || !keep(game, pos) {
+            continue;
+        }
+        if let Some(tile) = game.map.tiles.get_mut(&pos) {
+            tile.terrain = Name::new("mountain");
+            raised += 1;
+        }
+    }
+    raised
+}
+
+/// Three mountains ring one owned plot: the Campus's best ground on a board
+/// where every other plot is equal. The plan gives the nest to the Campus —
+/// the Science lane's heaviest family — and every other family is assigned
+/// other ground rather than squatting on it.
+#[test]
+fn the_plan_reserves_the_nest_for_the_campus() {
+    let (mut game, city, center) = planning_capital();
+    let nest = game.nbrs(center)[0];
+    let raised = raise_mountains_beside(&mut game, nest, 3, |_, pos| pos != center);
+    assert_eq!(raised, 3, "the fixture found three neighbours to raise");
+    let ai = AdvancedAi::new();
+    let plan = district_planning_lane(game.turn);
+    let rows = ai.city_district_plan(&game, 0, &plan, city);
+    let campus = rows
+        .iter()
+        .find(|row| row.family.as_str() == "campus")
+        .expect("the Science lane plans a campus");
+    assert_eq!(campus.pos, nest, "the campus takes the mountain nest");
+    assert!(campus.purchase.is_none(), "ring-one ground is owned");
+    assert!(
+        rows.iter()
+            .all(|row| row.family.as_str() == "campus" || row.pos != nest),
+        "the nest is reserved: no other family sits on it"
+    );
+    assert!(
+        rows.iter().all(|row| row.value <= campus.value),
+        "the nested campus is the plan's most valuable pick"
+    );
+}
+
+/// The menu gains the plan's site and the squatter yields it: a Commercial
+/// Hub offered on the Campus nest is withdrawn while the Hub still holds a
+/// candidate of its own, and the Campus joins the menu at the nest.
+#[test]
+fn the_menu_gains_the_plans_site_and_the_squatter_yields() {
+    let (mut game, city, center) = planning_capital();
+    let nest = game.nbrs(center)[0];
+    raise_mountains_beside(&mut game, nest, 3, |_, pos| pos != center);
+    let mut ai = AdvancedAi::new();
+    ai.enable_district_planning();
+    let plan = district_planning_lane(game.turn);
+    let hub = Name::new("commercial_hub");
+    let other = game
+        .district_sites(city, hub)
+        .into_iter()
+        .find(|pos| *pos != nest)
+        .expect("a second legal hub site");
+    let mut items = vec![
+        Item::District {
+            district: hub,
+            pos: nest,
+        },
+        Item::District {
+            district: hub,
+            pos: other,
+        },
+    ];
+    ai.district_plan_shape_menu(&game, 0, &plan, city, &mut items);
+    assert!(
+        items.iter().any(|item| matches!(item, Item::District { district, pos }
+            if district.as_str() == "campus" && *pos == nest)),
+        "the campus joins the menu at the nest"
+    );
+    assert!(
+        !items.contains(&Item::District {
+            district: hub,
+            pos: nest
+        }),
+        "the hub is withdrawn from the reserved nest"
+    );
+    assert!(
+        items.iter().any(|item| matches!(item, Item::District { district, .. }
+            if district.as_str() == "commercial_hub")),
+        "the hub keeps a candidate of its own"
+    );
+}
+
+/// A very valuable site on unowned ground is bought and a marginal one is
+/// not: three mountains ring a ring-two plot the city does not own, the plan
+/// names it, and the quote clears the raw-adjacency bar, the edge over owned
+/// ground and the Gold floor. With one mountain fewer the same plot is under
+/// the bar and no score is returned.
+#[test]
+fn a_very_valuable_unowned_site_is_bought_and_a_marginal_one_is_not() {
+    let (mut game, city, center) = planning_capital();
+    // A ring-two corner: three of its neighbours sit on ring three, so the
+    // raised mountains touch no owned ring-one plot and the owned ground
+    // keeps only its city-center half-point of adjacency.
+    let target = game
+        .wdisk(center, 2)
+        .into_iter()
+        .find(|pos| {
+            game.wdist(*pos, center) == 2
+                && game.map.tiles[pos].owner_city.is_none()
+                && game
+                    .nbrs(*pos)
+                    .into_iter()
+                    .filter(|n| game.wdist(*n, center) == 3)
+                    .count()
+                    == 3
+        })
+        .expect("a ring-two corner plot");
+    let raised = raise_mountains_beside(&mut game, target, 3, |g, pos| {
+        g.wdist(pos, center) == 3
+    });
+    assert_eq!(raised, 3, "three ring-three mountains ring the target");
+    game.players[0].explored.insert(target);
+    game.players[0].gold = 1_500.0;
+    let mut ai = AdvancedAi::new();
+    ai.enable_district_planning();
+    let plan = district_planning_lane(game.turn);
+    let counts = ai.counts(&game, 0);
+    let rows = ai.city_district_plan(&game, 0, &plan, city);
+    let campus = rows
+        .iter()
+        .find(|row| row.family.as_str() == "campus")
+        .expect("the Science lane plans a campus");
+    let cost = game
+        .plot_purchase_cost(0, city, target)
+        .expect("the engine quotes ring-two ground");
+    assert_eq!(campus.pos, target, "the plan names the unowned nest");
+    assert_eq!(campus.purchase, Some(cost), "priced at the engine's quote");
+    assert!(
+        campus.owned_fallback.is_some(),
+        "an unbought head still leaves the menu an owned candidate"
+    );
+    let mut cache = DistrictPlanCache::default();
+    let score = ai.district_plan_plot_score(&game, 0, &plan, &counts, city, target, cost, &mut cache);
+    assert!(
+        score.is_some_and(|s| s >= 120.0),
+        "the buy clears the strategic-purchase floor: {score:?}"
+    );
+    game.apply(
+        0,
+        &crate::game::Action::BuyPlot {
+            city,
+            pos: target,
+            cost,
+        },
+    )
+    .expect("the engine sells the quoted plot");
+    assert_eq!(
+        game.map.tiles[&target].owner_city,
+        Some(city),
+        "the nest is annexed"
+    );
+    assert!(
+        game.district_sites(city, Name::new("campus")).contains(&target),
+        "the bought plot is immediately a legal campus site"
+    );
+
+    // The marginal twin: one mountain fewer is under the bar.
+    let (mut game, city, center) = planning_capital();
+    let target = game
+        .wdisk(center, 2)
+        .into_iter()
+        .find(|pos| {
+            game.wdist(*pos, center) == 2
+                && game.map.tiles[pos].owner_city.is_none()
+                && game
+                    .nbrs(*pos)
+                    .into_iter()
+                    .filter(|n| game.wdist(*n, center) == 3)
+                    .count()
+                    == 3
+        })
+        .expect("a ring-two corner plot");
+    raise_mountains_beside(&mut game, target, 2, |g, pos| g.wdist(pos, center) == 3);
+    game.players[0].explored.insert(target);
+    game.players[0].gold = 1_500.0;
+    let counts = ai.counts(&game, 0);
+    let cost = game
+        .plot_purchase_cost(0, city, target)
+        .expect("the engine quotes ring-two ground");
+    let mut cache = DistrictPlanCache::default();
+    let score = ai.district_plan_plot_score(&game, 0, &plan, &counts, city, target, cost, &mut cache);
+    assert_eq!(score, None, "two adjacency is not worth Gold");
+}

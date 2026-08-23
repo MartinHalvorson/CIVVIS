@@ -1176,14 +1176,7 @@
   }
   .diplomacy-civ { color: #f1f4ed; }
   .diplomacy-rank { margin-right: 4px; color: var(--gold-bright); font: 700 var(--type-secondary)/1.1 var(--font-display); }
-  .diplomacy-elo { flex: 0 0 auto; color: var(--gold-bright); font-weight: 850; }
   .diplomacy-elo-delta { flex: 0 0 auto; color: #c1d0c8; font-weight: 800; }
-  /* A rating nothing has been finished behind is still the real starting
-     number, so it is the same figure in the same cell — only unfilled, the
-     way an unearned thing should look. Opacity and nothing else: a marker
-     character would widen the narrowest column in the table, and italics
-     would compete with the protected width reserved for the full score. */
-  .diplomacy-elo-value.provisional { opacity: 0.62; }
   .diplomacy-expected { flex: 0 0 auto; color: #8fd6a4; font-weight: 850; }
   /* Start, trend and Now are three columns of their own; the shared classes
      below keep the opening estimate dimmed against the current one. */
@@ -3345,13 +3338,12 @@
   #playerhud .diplomacy-leader-name { color: var(--muted); font-weight: 650; }
   #playerhud .diplomacy-player { color: #d9e1dc; font-weight: 750; }
   #playerhud .diplomacy-civ, #playerhud .diplomacy-leader-name,
-  #playerhud .diplomacy-player, #playerhud .diplomacy-elo-value,
-  #playerhud .diplomacy-elo-delta-value, #playerhud .diplomacy-age .civ-age,
+  #playerhud .diplomacy-player, #playerhud .diplomacy-elo-delta-value,
+  #playerhud .diplomacy-age .civ-age,
   #playerhud .diplomacy-strategy .ai-plan {
     min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
-  #playerhud .diplomacy-elo, #playerhud .diplomacy-elo-delta,
-  #playerhud .diplomacy-expected {
+  #playerhud .diplomacy-elo-delta, #playerhud .diplomacy-expected {
     justify-content: flex-end; text-align: right; font-variant-numeric: tabular-nums;
   }
   #playerhud .diplomacy-odds-trend { justify-content: center; text-align: center; }
@@ -5039,14 +5031,6 @@
           <div class="civ6-line"><span class="civ6-dot"></span><span id="civ6-host">Checking this computer…</span></div>
           <div class="civ6-line civ6-run" id="civ6-run" hidden></div>
         </div>
-        <label class="small civ6-hidden">AI player pool<select id="aiplayerpool" style="margin-top:4px"
-          title="Which of the rated AI strategies may be seated for the game's AI civilizations, in the Civvis game and Tactics alike. Each civ is played by one of the pool's best still-unseated strategies: Best 1 hands every civ the strongest strategy still free, the wider pools draw rank-weighted from the best few, and All opens the whole roster. The pool always includes the generic strategies — none of them is tied to a leader, so any leader, including a general leader with no particular special ability or power, can be handed any of them.">
-          <option value="best1">Best AI strategy per civ</option>
-          <option value="best2">Best 2 AI strategies per civ</option>
-          <option value="best3" selected>Best 3 AI strategies per civ</option>
-          <option value="best5">Best 5 AI strategies per civ</option>
-          <option value="all">All AI strategies</option>
-        </select></label>
         <label class="small tactics-only">Scenario<span class="setup-info" style="cursor:help;opacity:.7"
           title="Custom is a battle of your own: choose the world type, map and size below and set the arena up in Tactics settings. A named battle brings its own ground, opening forces, era and clock, and is fought under the economy it had — only how long you play, and how many battles the match is, stay yours."> ⓘ</span><select id="tactics-scenario" style="margin-top:4px">
           <option value="" selected>Custom</option>
@@ -5272,8 +5256,8 @@
           <div class="small custom-leader-help">Choose the team, civilization and leader for each major seat. ELO choices are the ratings currently available for that civilization-leader combination.</div>
           <div class="custom-leader-table-wrap">
             <table class="custom-leader-table" id="custom-leader-table">
-              <thead><tr><th scope="col">Team</th><th scope="col">Civ — leader</th><th scope="col">ELO</th></tr></thead>
-              <tbody id="custom-leader-rows"><tr><td class="custom-leader-empty" colspan="3">Choose Custom selection to build the table.</td></tr></tbody>
+              <thead><tr><th scope="col">Team</th><th scope="col">Civ — leader</th></tr></thead>
+              <tbody id="custom-leader-rows"><tr><td class="custom-leader-empty" colspan="2">Choose Custom selection to build the table.</td></tr></tbody>
             </table>
           </div>
         </div>

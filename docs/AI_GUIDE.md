@@ -36,8 +36,9 @@ There are seven concrete `Ai` implementations: `RandomAi`, `BasicAi`,
 entrant.
 
 The real Civilization VI tooling does not transplant this controller whole.
-`tools/civ6_strategy.py` exports the economic subset of a parameterized league
-strategy while Firaxis' AI handles the rest. `tools/civ6_control` is a separate
+(`tools/civ6_strategy.py`, which exported the economic subset of a
+parameterized league strategy while Firaxis' AI handled the rest, left with
+the league — #2357.) `tools/civ6_control` is a separate
 Lua heuristic seat controller. Its generated ladder currently contains no
 completed attempt; neither bridge is external strength evidence for
 `AdvancedAi`.
@@ -327,7 +328,7 @@ objective pressure, local-superiority caution, and withdraw/rejoin thresholds.
 ```bash
 cargo run --release -- evolve --generations 100 --pop 24 --games 12 \
   --players 4 --threads 8 --dir evolved
-civvis tournament --ais evolved,advanced,advanced_v1,basic --games 80
+civvis tournament --ais evolved,advanced,advanced_v1,basic --games 80  # retired (#2357)
 ```
 
 Every genome plays the real `AdvancedAi` against the reigning champion on
@@ -369,6 +370,13 @@ The standalone `evolve` fitness above still uses its cheaper score/combat proxy;
 its separate promotion gate remains the point where wins decide shipment.
 
 ## Elo tournaments
+
+> ⚠ **Retired 2026-08-23 (#2357).** The commands in this section — `civvis
+> tournament`, `civvis league`, `civvis arena`, `civvis rating` — do not run
+> against this tree: the league and the Elo ledgers were removed at the
+> operator's direction. The section is kept as the record of how those
+> results were measured; `docs/closed/LEAGUE.md` and `docs/closed/RATING.md`
+> carry the retired instruments.
 
 ```bash
 civvis tournament \

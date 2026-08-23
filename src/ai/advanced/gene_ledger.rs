@@ -5,7 +5,7 @@
 //! same shape — six majors on 74x46 continents with nine city-states, Online
 //! speed to its own 250-turn clock, all six victory lanes, every seat carrying
 //! its own drawn genome against the best-genome baseline. There is no second
-//! regime to reconcile, and `tools/gene_ledger.py` refuses a source played at
+//! regime to reconcile, and `tools/genes.py` refuses a source played at
 //! any other profile. The columns carried over from the pre-2026-08-22 Pangaea
 //! screens are marked `legacy` in `docs/gene_ledger.json`: history the
 //! deployment genome stands on until the screen re-prices each gene.
@@ -38,7 +38,7 @@
 //! (DerSimonian–Laird) inverse-variance pool of every screen's on−off
 //! difference on the win column's scale, with the between-screen
 //! disagreement carried in the interval. They are **published, not in
-//! force**: `AUTHORITY` in `tools/gene_ledger.py` is `columns` and the
+//! force**: `AUTHORITY` in `tools/genes.py` is `columns` and the
 //! generated table records it, so `deployment_default_on` re-derives exactly
 //! what shipped. `HEURISTIC_GENE_RANKING.md` prints what the other authority
 //! would change.
@@ -49,8 +49,8 @@
 //! ships. A gene can now be `helps` and off (its prior reading was against
 //! it) or `hurts` and on (two positive win columns since).
 //!
-//! The table in `gene_ledger_table.rs` is **generated** by
-//! `tools/gene_ledger.py` from `gene_screen --analyze --json` outputs and
+//! The verdict block at the end of `genes.rs` is **generated** by
+//! `tools/genes.py` from `gene_screen --analyze --json` outputs and
 //! mirrored in `docs/gene_ledger.json`; a test holds the generated file and
 //! the JSON together, and another re-derives every `default_on` from the two
 //! columns beside it. The verdict rules live in the tool and are repeated
@@ -114,7 +114,7 @@ pub struct GeneVerdict {
     pub tag: &'static str,
     pub verdict: Verdict,
     /// Whether the gene is on in the deployment genome — the win-column rule
-    /// in the module header, decided by `tools/gene_ledger.py` and checked
+    /// in the module header, decided by `tools/genes.py` and checked
     /// here against the figures below by `the_default_follows_the_ledgers_authority`.
     pub default_on: bool,
     /// ± wins per 10,000 on-arm seats at the gene's measured on-rate in the latest
@@ -151,7 +151,7 @@ pub struct GeneVerdict {
     /// ⭐ A VERSIONED GENE'S RUNNER-UP. `war-economy-2` is screened beside
     /// `war-economy` as a gene of its own; the deployment genome carries at
     /// most one version of a family, the best of those the rule would turn
-    /// on (`tools/gene_ledger.py::choose_family_heads`). A version the rule
+    /// on (`tools/genes.py::choose_family_heads`). A version the rule
     /// passes that is not its family's head is recorded here and ships off,
     /// which is the one case `default_on` is not the rule's own answer.
     pub family_runner_up: bool,
@@ -161,7 +161,7 @@ pub struct GeneVerdict {
 
 /// A gene's columns clear the deployment rule: the win-column clause below,
 /// vetoed by a negative pooled on-off difference. The mirror of
-/// `tools/gene_ledger.py`'s `default_from_columns`, so a hand-edited table
+/// `tools/genes.py`'s `default_from_columns`, so a hand-edited table
 /// cannot quietly ship a gene the rule does not.
 ///
 /// The veto is one-way, and it is the one clause that lets a screen older than
@@ -184,7 +184,7 @@ const Z95: f64 = 1.959_963_984_540_054;
 /// What the precision-weighted pooled estimate says on its own: `on` where its
 /// 95% interval lies wholly above zero, `off` where wholly below, and
 /// `Unresolved` where it straddles. The mirror of
-/// `tools/gene_ledger.py`'s `posterior_call`.
+/// `tools/genes.py`'s `posterior_call`.
 pub fn posterior_call(effect: Option<f64>, se: Option<f64>) -> Verdict {
     let (Some(effect), Some(se)) = (effect, se) else {
         return Verdict::Unresolved;
@@ -204,7 +204,7 @@ pub fn posterior_call(effect: Option<f64>, se: Option<f64>) -> Verdict {
 /// The posterior authority's deployment call: it decides where its interval
 /// excludes zero and **defers to `fallback`** — the threshold rule's own call —
 /// where it straddles, rather than churning the genome on noise. The mirror of
-/// `tools/gene_ledger.py`'s `default_from_posterior`.
+/// `tools/genes.py`'s `default_from_posterior`.
 pub fn posterior_default_on(effect: Option<f64>, se: Option<f64>, fallback: bool) -> bool {
     match posterior_call(effect, se) {
         Verdict::Helps => true,
@@ -216,7 +216,7 @@ pub fn posterior_default_on(effect: Option<f64>, se: Option<f64>, fallback: bool
 /// The win-column clause vetoed only by a **resolved** negative record — the
 /// posterior's 95% interval wholly below zero — rather than by the bare sign
 /// of a pooled difference that carries no error at all. The mirror of
-/// `tools/gene_ledger.py`'s `default_from_resolved_veto`.
+/// `tools/genes.py`'s `default_from_resolved_veto`.
 pub fn resolved_veto_default_on(
     last: Option<i32>,
     prior: Option<i32>,
@@ -233,7 +233,7 @@ pub fn resolved_veto_default_on(
 /// `"columns"` for the operator's threshold rule as it ships, `"posterior-veto"`
 /// for that rule with an error bar on its veto, `"posterior"` for the
 /// precision-weighted pool deciding wherever its interval excludes zero. The
-/// switch is `AUTHORITY` in `tools/gene_ledger.py`; the generated table carries
+/// switch is `AUTHORITY` in `tools/genes.py`; the generated table carries
 /// the answer it was written under, and
 /// `the_default_follows_the_ledgers_authority` re-derives every row under it.
 pub fn deployment_default_on(
@@ -260,7 +260,7 @@ pub fn deployment_default_on(
 /// A gene's win columns clear the deployment rule's column clause: one
 /// populated column above `SINGLE_COLUMN_BAR`, both positive, or an average
 /// above `AVERAGE_BAR` with neither column below `COLUMN_FLOOR`. No populated
-/// columns means off — the mirror of `tools/gene_ledger.py`'s
+/// columns means off — the mirror of `tools/genes.py`'s
 /// `default_from_win_columns`. This is the clause alone; `columns_default_on`
 /// is the deployment call.
 pub fn win_columns_default_on(last: Option<i32>, prior: Option<i32>) -> bool {
@@ -281,8 +281,11 @@ pub fn win_columns_default_on(last: Option<i32>, prior: Option<i32>) -> bool {
     f64::from(last + prior) / 2.0 > AVERAGE_BAR && last >= COLUMN_FLOOR && prior >= COLUMN_FLOOR
 }
 
-#[path = "gene_ledger_table.rs"]
-mod table;
+/// The verdicts: the generated block at the end of `genes.rs`, written by
+/// `python3 tools/genes.py write` under the rows it judges.
+mod table {
+    pub(super) use super::super::genes::{LEDGER_AUTHORITY as AUTHORITY, VERDICTS as ROWS};
+}
 
 /// Every gene the ledger has a verdict for, in the generated order.
 pub fn gene_ledger() -> &'static [GeneVerdict] {
@@ -290,7 +293,7 @@ pub fn gene_ledger() -> &'static [GeneVerdict] {
 }
 
 /// Which rule decided every `default_on` in the generated table — `columns`,
-/// `posterior-veto` or `posterior`. Written by `tools/gene_ledger.py` from its
+/// `posterior-veto` or `posterior`. Written by `tools/genes.py` from its
 /// `AUTHORITY` constant, so anything reporting the deployment genome can say
 /// what decided it rather than assuming.
 pub fn ledger_authority() -> &'static str {
@@ -430,7 +433,7 @@ mod tests {
     use super::*;
 
     /// The generated table and `docs/gene_ledger.json` are two writings of
-    /// one measurement; `tools/gene_ledger.py --write` produces both.
+    /// one measurement; `tools/genes.py write` produces both.
     #[test]
     fn the_generated_table_matches_the_json_ledger() {
         let json: serde_json::Value =
@@ -446,7 +449,7 @@ mod tests {
             genes.len(),
             gene_ledger().len(),
             "the Rust table and the JSON ledger hold different gene counts; run \
-             `python3 tools/gene_ledger.py --write`"
+             `python3 tools/genes.py write`"
         );
         for entry in genes {
             let tag = entry["tag"].as_str().expect("tag");
@@ -522,7 +525,7 @@ mod tests {
 
     /// ⚠ THE SWITCH IS NOT THROWN. The shipped genome is the operator's
     /// threshold rule, and the posterior is published beside it. Flipping
-    /// `AUTHORITY` in `tools/gene_ledger.py` and regenerating is the whole
+    /// `AUTHORITY` in `tools/genes.py` and regenerating is the whole
     /// change; this fails first if it happens without the decision being
     /// taken deliberately.
     #[test]

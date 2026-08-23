@@ -4,7 +4,11 @@
 
 The controller is treated as a **genome**: every behaviour flag is a gene, a
 player is the set of genes it has on, and genes are tested **regularly**, not
-once at birth. The instrument is this screen — very large randomized batches
+once at birth. The vocabulary, formalized 2026-08-23: the **gene pool** is
+the collection of all genes, whether on or off — the registry,
+`src/ai/advanced/genes.rs`, is the pool written down. A **genome** is one
+player's set of on genes, a subset of the pool; the deployment genome is the
+set the ledger ships on, and every screen seat draws its own. The instrument is this screen — very large randomized batches
 whose aggregate is the signal. **Every seat in every game draws its own genome
 at random, independently of every other seat and every other game**; the
 gene's value is the win rate of the seats that had it on against the win rate
@@ -60,10 +64,10 @@ gene is on and when gene is off."*
 
 `gene_screen --games N --out rows.jsonl` — no profile flags — *is* the screen.
 Every profile flag still exists, and every one of them turns a batch into a
-**probe**: `tools/gene_ledger.py` refuses a source whose header does not match
+**probe**: `tools/genes.py` refuses a source whose header does not match
 this table, so the ledger cannot quietly hold two worlds in one column. The
 shape lives in `SCREEN_PLAYERS`/`SCREEN_MAP`/… in `src/bin/gene_screen.rs` and
-in `SCREEN` in `tools/gene_ledger.py`, and a test fails if the two drift apart.
+in `SCREEN` in `tools/genes.py`, and a test fails if the two drift apart.
 The draw design is deliberately **not** a leg of the shape: a file written by
 the earlier paired designs at this shape prices the same genes on the same
 board, and the estimator reads both the same way — rows are seats.
@@ -207,7 +211,7 @@ because it forced a full optimized rebuild for every promoted HEAD, and
 
 ### What the ledger refuses
 
-`tools/gene_ledger.py` re-derives the gene tags at the commit a source claims —
+`tools/genes.py` re-derives the gene tags at the commit a source claims —
 every screenable row of the registry `src/ai/advanced/genes.rs` in order,
 which is exactly what `gene_table()` builds (and, for a commit older than the
 registry, the three tables that preceded it) — and refuses the source when the
@@ -250,7 +254,7 @@ fails when one moves.
   parses the two source tables by the ledger's own rule and asserts the result
   **is** the compiled `gene_table()`. If the text rule and the compiled table
   ever disagreed, the guard would refuse every honest screen.
-- `tools/test_gene_ledger.py`'s `TheHeaderFieldsMatch` compares the fields of
+- `tools/test_genes.py`'s `TheHeaderFieldsMatch` compares the fields of
   the Rust `Build` and `Batch` structs against `BUILD_KEYS` and `BATCH_KEYS`,
   so a field added on one side and forgotten on the other fails a test rather
   than reaching the ledger.
@@ -363,7 +367,7 @@ varies every `screenable()` row in registry order:
   instrument (`civvis_orders --without`, the ladder).
 
 A gene added to the registry reaches the genome, the ledger, the ranking and
-the manifest without touching any of them: `tools/gene_registry.py` is the one
+the manifest without touching any of them: `tools/genes.py` is the one
 Python reader, and `gene_screen.rs`'s
 `the_gene_table_is_exactly_what_the_ledger_re_derives_from_the_tables` holds
 the Rust and Python readings of the registry to one answer.
@@ -563,17 +567,17 @@ wins against 27% for all-off** (4p classic, 200 anchor pairs). Now:
   what the newest screen measured, the verdict that follows, the two win
   columns (`wins_last_10k`, `wins_prior_10k`) and the `default_on` they decide;
   **`src/ai/advanced/gene_ledger_table.rs`** is the same
-  table generated into Rust. `tools/gene_ledger.py --write --source <analysis>
+  table generated into Rust. `tools/genes.py source <analysis>
   …` builds both from `gene_screen --analyze --json` outputs (the analyses
   themselves are tracked under `docs/gene_screens/`);
-  `tools/test_gene_ledger.py` fails if either file has drifted from the
+  `tools/test_genes.py` fails if either file has drifted from the
   recorded sources. Later sources override earlier ones per gene, so a repaired
   gene's re-screen replaces its pre-repair number while the rest of the old
   screen stands. Each source carries the `shape` it was played at: `standard`
   is the screen, `legacy` is a reading kept as history (every source today —
   the Pangaea screens the current defaults stand on). A new source that is not
   `standard` is refused unless `--legacy-shape` says otherwise.
-- **Verdict rules** (`tools/gene_ledger.py`, repeated in
+- **Verdict rules** (`tools/genes.py`, repeated in
   `src/ai/advanced/gene_ledger.rs`): `helps` = win z ≥ 2 with share z > −2, or
   share z ≥ 2 with win z > −2 — the screen's own `*` flag; `hurts` the mirror;
   `unresolved` otherwise, including a gene whose axes disagree past |z| ≥ 2
@@ -581,7 +585,7 @@ wins against 27% for all-off** (4p classic, 200 anchor pairs). Now:
   recorded as `family_wise`, not required: with sixty-odd genes that bar would
   leave three on. The newest screen that priced the gene supplies the verdict.
 - **The deployment rule** (`default_from_columns` in
-  `tools/gene_ledger.py`, mirrored as `columns_default_on` in
+  `tools/genes.py`, mirrored as `columns_default_on` in
   `src/ai/advanced/gene_ledger.rs`, and re-derived from the generated table by
   `the_default_follows_the_ledgers_authority`): **on** when both win columns
   are positive, or when their average is above +15 with neither below −10;
@@ -725,7 +729,7 @@ wins against 27% for all-off** (4p classic, 200 anchor pairs). Now:
   Nothing about a screen changed; the sentence judging it did. The header now
   derives each native screen's own band from that screen's own errors —
   `2026-08-22-p10` resolves **±51**, `2026-08-21-p7` ±56, the single-gene
-  `2026-08-21-s7` ±29 — and `tools/heuristic_gene_ranking.py::column_se` owns
+  `2026-08-21-s7` ±29 — and `tools/genes.py::column_se` owns
   the arithmetic, next to the `wins_per_10k` it halves, so the printed band and
   the printed column cannot drift apart. What this changes in practice: a column
   between ±51 and ±110 used to read as noise and does not. `holy-lane-parity`'s
@@ -739,7 +743,7 @@ wins against 27% for all-off** (4p classic, 200 anchor pairs). Now:
   **native** screen at the same 1-in-6 chance base. Before this, `siege-muster`
   had no native row left and was listed at **+5** from a 4-player *war* screen
   where chance is 1-in-4 — a number that read as "removed while helping" and is
-  really −26 at p4. `tools/gene_ledger.py` filters unregistered tags, so the
+  really −26 at p4. `tools/genes.py` filters unregistered tags, so the
   deployment ledger is byte-identical either way.
 
 - **`holy-lane-parity` defaults ON (2026-08-22).** The operator took the call
@@ -796,8 +800,8 @@ wins against 27% for all-off** (4p classic, 200 anchor pairs). Now:
   at the repository root — every screenable gene ranked by wins added per
   10,000 six-player on-arm seats, each from the latest native screen that measured
   it, with the war figure and the ledger's default beside it. It is generated
-  (`python3 tools/heuristic_gene_ranking.py --write`) and
-  `tools/test_heuristic_gene_ranking.py` fails when it is older than the
+  (`python3 tools/genes.py write`) and
+  `tools/test_genes.py` fails when it is older than the
   ledger's sources; regenerate it in the same change that adds a source.
 
 ⚠ Two consequences to know. A `live_without_<gene>` arm for a gene the
@@ -859,7 +863,7 @@ Six games is enough, because the question is qualitative. ⚠ Look at the score
 share as well as wins: `coupled-expansion`'s probe read a win Δ of exactly zero
 and a share Δ of +0.29 pp — a gene that fired and did not change who won, which
 is firing. Those probes are **not ledger sources**: they set no profile of their
-own, they are six games, and `tools/gene_ledger.py` takes its sources by name.
+own, they are six games, and `tools/genes.py` takes its sources by name.
 
 A gene that cannot be made to fire takes a waiver in
 `tools/gene_fire_waivers.json` with the reason, in the shape
@@ -926,7 +930,7 @@ the deployment rule are true from this repository's own numbers:
    reading is positive, and `war-economy` needs roughly 48,000 more pairs at its
    P10 margin merely to climb back over zero.
 
-`tools/gene_ledger.py::pooled_posterior` answers all three with one estimator:
+`tools/genes.py::pooled_posterior` answers all three with one estimator:
 a **random-effects (DerSimonian–Laird) inverse-variance pool** of every screen's
 on−off difference, on the win column's own scale, each screen weighted by its
 own standard error, with the between-screen disagreement estimated as `τ²` and
@@ -957,8 +961,8 @@ by side so the choice is made on the numbers.
 
 ### The switch, and why it is not thrown
 
-`AUTHORITY` in `tools/gene_ledger.py` is the whole switch. Change it, run
-`python3 tools/gene_ledger.py --write`, and `docs/gene_ledger.json`, the
+`AUTHORITY` in `tools/genes.py` is the whole switch. Change it, run
+`python3 tools/genes.py write`, and `docs/gene_ledger.json`, the
 generated Rust table and the ranking all follow; the ledger records which rule
 decided, so `--check` and the Rust mirror re-derive under the recorded one and
 cannot drift. Three settings, weakest first, each containing the one before it:
@@ -1000,7 +1004,7 @@ repository has measured (`s7`'s 3.32× against `p10`'s 1.09×), 234 pairs resolv
 **±145**. That is 2.84× wider than ±51, and because error falls with √N it means
 **8× the games** to reach the same resolution per gene. Every game informs every
 gene, which is the whole reason the screen exists.
-`tools/test_heuristic_gene_ranking.py::test_the_eight_times_figure_is_the_screens_own_arithmetic`
+`tools/test_genes.py::test_the_eight_times_figure_is_the_screens_own_arithmetic`
 recomputes those three numbers from the ledger's own screens, so this paragraph
 cannot go stale while the screens under it move.
 
@@ -1011,7 +1015,7 @@ identical: `s7` reads ±29 on 6,000 pairs at a 3.32× pairing gain, against
 `p10`'s 1.09× (#2302). So the screen says *which* genes are still in doubt and
 a direct arm settles them.
 
-`python3 tools/heuristic_gene_ranking.py --boundary` is stage two's worklist. It
+`python3 tools/genes.py boundary` is stage two's worklist. It
 lists every gene whose posterior interval straddles zero, ranked by the expected
 value of one direct arm read against the gene's **shipped** state — so a gene
 the evidence likes that the rule holds off has the whole effect to buy, and one
@@ -1047,7 +1051,7 @@ is not a strict test, it is a test of nothing.
 
 **Who is a lane gene.** Discovered from the code, never listed: every gene whose
 flag field `src/ai/advanced/victory_lane.rs` reads
-(`tools/heuristic_gene_ranking.py::lane_tags`). A gene joins the set by being a
+(`tools/genes.py::lane_tags`). A gene joins the set by being a
 lane gene, not by being written into a list that is complete the day it is
 written.
 
@@ -1089,6 +1093,6 @@ had already said. `docs/gene_ranking_notes.md` carries the numbers.
   outcome at all. The genes here are the boolean treatment flags.
 - Not a verdict on its own. A screen's `*` is where to point a single-gene
   run (`--genes tag`) on disjoint seeds; the ledger's rule (`docs/gene_ledger.json`,
-  `tools/gene_ledger.py`) is what moves a default, and it reads both.
+  `tools/genes.py`) is what moves a default, and it reads both.
 - Not the deployment regime. Firaxis-only flags are excluded by construction;
   the live ladder (`docs/CIV6_LADDER.md`) prices those.

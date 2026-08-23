@@ -238,10 +238,8 @@ if [[ "${civvis_mode}" == "rust" ]]; then
 else
     readonly site_root="${contents_dir}/Resources/site"
     readonly server_script="${contents_dir}/Resources/serve.py"
-    readonly rating_binary="${contents_dir}/Resources/civvis-rating-${civvis_commit}"
-    readonly rating_league="${state_dir}/rust-source/league"
     if [[ ! -f "${site_root}/beta/civvis.wasm" || ! -x "${server_script}" || \
-          ! -x "${rating_binary}" || ! -x "${watcher_script}" ]]; then
+          ! -x "${watcher_script}" ]]; then
         show_civvis_dialog "The WASM CIVVIS launcher is missing its optimized local site." "stop"
         exit 1
     fi
@@ -304,7 +302,6 @@ if [[ "${civvis_mode}" == "rust" ]]; then
     print -r -- "$!" >| "${supervisor_pid_file}"
 else
     /usr/bin/nohup /usr/bin/python3 "${server_script}" "${site_root}" "${civvis_port}" \
-        "${rating_binary}" "${rating_league}" \
         >>"${log_file}" 2>&1 </dev/null &
 fi
 readonly civvis_pid="$!"

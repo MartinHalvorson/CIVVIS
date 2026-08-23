@@ -23,14 +23,14 @@ from pathlib import Path
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import gene_registry  # noqa: E402
+import genes  # noqa: E402
 
 
 
 # The one list still read out of `src/elo.rs`: the built-in agents. Every gene
 # list — live, host-only, repair (and its war/economy halves) — is a view of
 # the gene registry (`src/ai/advanced/genes.rs`) read through
-# `gene_registry.py`, and is published under the names the old `elo.rs` lists
+# `genes.py`, and is published under the names the old `elo.rs` lists
 # had so the manifest's shape and the page's rows stay readable.
 REGISTRY_NAMES = ("BUILTIN_AIS",)
 GENE_LISTS = (
@@ -97,14 +97,14 @@ def read_registry(repo: Path) -> dict[str, dict[str, Any]]:
     missing = [name for name in REGISTRY_NAMES if name not in found]
     if missing:
         raise ValueError(f"src/elo.rs is missing registry constants: {', '.join(missing)}")
-    genes = gene_registry.genes_from_text(
-        (repo / gene_registry.REGISTRY).read_text(encoding="utf-8"))
+    rows = genes.genes_from_text(
+        (repo / genes.REGISTRY).read_text(encoding="utf-8"))
     views = {
-        "LIVE_BRIDGE_TREATMENTS": [g.tag for g in genes if g.live],
-        "FIRAXIS_ONLY_TREATMENTS": [g.tag for g in genes if g.host_only],
-        "ENGINE_REPAIR_WAR_TREATMENTS": [g.tag for g in genes if g.axis == "War"],
-        "ENGINE_REPAIR_ECONOMY_TREATMENTS": [g.tag for g in genes if g.axis == "Economy"],
-        "ENGINE_REPAIR_TREATMENTS": [g.tag for g in genes if g.repair],
+        "LIVE_BRIDGE_TREATMENTS": [g.tag for g in rows if g.live],
+        "FIRAXIS_ONLY_TREATMENTS": [g.tag for g in rows if g.host_only],
+        "ENGINE_REPAIR_WAR_TREATMENTS": [g.tag for g in rows if g.axis == "War"],
+        "ENGINE_REPAIR_ECONOMY_TREATMENTS": [g.tag for g in rows if g.axis == "Economy"],
+        "ENGINE_REPAIR_TREATMENTS": [g.tag for g in rows if g.repair],
     }
     for name in GENE_LISTS:
         items = views[name]
@@ -347,11 +347,11 @@ def genome_coverage(repo: Path) -> dict[str, Any]:
     # toggle set against the field alone reported a measured gene as
     # unreachable on this function's first run. A toggle counts as reachable
     # under EITHER spelling.
-    genes = gene_registry.genes_from_text(
-        (repo / gene_registry.REGISTRY).read_text(encoding="utf-8"))
-    screenable_tags = {g.tag for g in genes if g.screenable}
+    rows = genes.genes_from_text(
+        (repo / genes.REGISTRY).read_text(encoding="utf-8"))
+    screenable_tags = {g.tag for g in rows if g.screenable}
     screenable_spellings: set[str] = set()
-    for g in genes:
+    for g in rows:
         if g.screenable:
             screenable_spellings |= {g.field, g.toggle}
 

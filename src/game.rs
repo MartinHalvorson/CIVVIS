@@ -5029,7 +5029,7 @@ impl Decided {
 pub const MERCY_VICTORY: &str = "mercy";
 /// Terminal result recorded when a Tactics deadline expires with both sides
 /// still alive. It is a result label, not a victory lane: `winner` remains
-/// `None`, and match/league consumers record a draw.
+/// `None`, and match consumers record a draw.
 pub const DRAW_RESULT: &str = "draw";
 /// The victory type a capture-the-flag battle is recorded under. Like the
 /// Mercy Rule it answers to its own setup option rather than the victory
@@ -5046,11 +5046,10 @@ pub const FLAG_VICTORY: &str = "flag";
 /// A seat that crossed on standing alone, with no progress in any open lane,
 /// keeps the bare rule.
 ///
-/// The joiner is deliberately not a comma. This exact string is written into
-/// the `victory` column of the league's `matches.csv`, and both readers of
-/// that file split its rows on commas (`league::backfill_win_profiles` and
-/// [`crate::rating::parse_matches_csv`]), so a comma here would shift every
-/// later column and make the whole history unparseable.
+/// The joiner is deliberately not a comma. This exact string was written into
+/// the `victory` column of the retired league's `matches.csv`, whose readers
+/// split rows on commas; the recorded histories still parse only while no
+/// comma ever appears here.
 pub fn mercy_label(lanes: &[String]) -> String {
     if lanes.is_empty() {
         return "Mercy Rule".to_string();
@@ -30521,48 +30520,14 @@ impl Game {
         false
     }
 
-    pub fn district_sites(&self, cid: u32, dname: impl AsName) -> Vec<Pos> {
-        let dname = dname.as_name();
-        // A positive answer from the host is stronger than our reconstructed
-        // placement model. These coordinates are kept only for the short refusal
-        // window and only when their tile is on the mirrored board; if the export
-        // did not reveal one, retain the ordinary fallback below.
-        if let Some(sites) = self
-            .host_district_sites
-            .get(&cid)
-            .and_then(|by_district| by_district.get(&dname))
-        {
-            let sites: Vec<Pos> = sites
-                .iter()
-                .copied()
-                .filter(|position| self.map.tiles.contains_key(position))
-                .collect();
-            if !sites.is_empty() {
-                return sites;
-            }
-        }
-        // A district the HOST refused to place IN THIS CITY. Empty in an ordinary
-        // game; see `blocked_districts` for why this is per city and not global.
-        if self
-            .blocked_districts
-            .get(&cid)
-            .is_some_and(|blocked| blocked.contains(&dname))
-        {
-            return vec![];
-        }
-        let city = &self.cities[&cid];
+    /// The city-level gates a new district site must pass before any tile
+    /// is looked at: the family caps, the exclusion list, and the specialty
+    /// capacity. Split out of `district_sites` unchanged so a planner can
+    /// ask whether owning one more plot could open a site at all — when
+    /// these refuse, no plot purchase can help
+    /// (`ai/advanced/district_planning.rs`).
+    pub(crate) fn city_accepts_new_district_site(&self, city: &City, dname: Name) -> bool {
         let spec = &self.rules.districts[dname];
-        let mut out: Vec<Pos> = city
-            .owned_tiles
-            .iter()
-            .copied()
-            .filter(|position| {
-                self.map.tiles[position]
-                    .district_foundation
-                    .as_ref()
-                    .is_some_and(|foundation| foundation.district == dname)
-            })
-            .collect();
         let city_family_count = city
             .districts
             .keys()
@@ -30612,7 +30577,52 @@ impl Game {
         } else {
             false
         };
-        if blocked_new_site || specialty_capacity_full {
+        !(blocked_new_site || specialty_capacity_full)
+    }
+
+    pub fn district_sites(&self, cid: u32, dname: impl AsName) -> Vec<Pos> {
+        let dname = dname.as_name();
+        // A positive answer from the host is stronger than our reconstructed
+        // placement model. These coordinates are kept only for the short refusal
+        // window and only when their tile is on the mirrored board; if the export
+        // did not reveal one, retain the ordinary fallback below.
+        if let Some(sites) = self
+            .host_district_sites
+            .get(&cid)
+            .and_then(|by_district| by_district.get(&dname))
+        {
+            let sites: Vec<Pos> = sites
+                .iter()
+                .copied()
+                .filter(|position| self.map.tiles.contains_key(position))
+                .collect();
+            if !sites.is_empty() {
+                return sites;
+            }
+        }
+        // A district the HOST refused to place IN THIS CITY. Empty in an ordinary
+        // game; see `blocked_districts` for why this is per city and not global.
+        if self
+            .blocked_districts
+            .get(&cid)
+            .is_some_and(|blocked| blocked.contains(&dname))
+        {
+            return vec![];
+        }
+        let city = &self.cities[&cid];
+        let spec = &self.rules.districts[dname];
+        let mut out: Vec<Pos> = city
+            .owned_tiles
+            .iter()
+            .copied()
+            .filter(|position| {
+                self.map.tiles[position]
+                    .district_foundation
+                    .as_ref()
+                    .is_some_and(|foundation| foundation.district == dname)
+            })
+            .collect();
+        if !self.city_accepts_new_district_site(city, dname) {
             out.sort();
             return out;
         }
@@ -46886,8 +46896,8 @@ impl Game {
                 if let Some(threshold) = self.mercy_rule {
                     if let Some(leader) = crate::odds::mercy_leader(self, threshold) {
                         // The lanes go on before the crown, not after it: the
-                        // verdict note, the league record and the finish
-                        // screen all read the composed label, and the board
+                        // verdict note and the finish screen read the
+                        // composed label, and the board
                         // they are describing is the one standing at this
                         // crossing. Cleared again if the crown is refused —
                         // a play-on extension can decline this very result —

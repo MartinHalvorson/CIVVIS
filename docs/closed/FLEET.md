@@ -1,4 +1,12 @@
-# Fleet: improving the AI on whatever machines are up
+# Fleet: improving the AI on whatever machines are up (retired 2026-08-23)
+
+> **Closed.** `tools/civvis_fleet.py` and the league it distributed were removed on 2026-08-23 (#2357, operator: *"lets remove the league /
+> elo work for now"*). The gene screen (`docs/GENE_SCREEN.md`) prices
+> behaviours; nothing rates named agents against each other for now, and the
+> deployment genome is the gene ledger's default-on set. A rating system for
+> finished genomes is planned to return — see `docs/ROADMAP.md`. This document
+> is kept as the record of how the retired instrument worked and what it
+> measured.
 
 `tools/civvis_fleet.py` runs the strategy league across every machine that
 happens to be available, and — more importantly — keeps checking that the
