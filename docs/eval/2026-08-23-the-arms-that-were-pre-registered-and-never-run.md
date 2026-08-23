@@ -329,11 +329,18 @@ settlement sites.
 
 **Why one profile and not the matrix.** AI_GAPS asks for a *deployment
 comparison*, which is this profile. Seed 36000000 is unused anywhere in the
-tree. It runs only in the window that opens when §1's compact and
-deployment-online children exit (~09:25 UTC), so the machine never carries
-more than the four jobs the operator allowed. If that window does not open,
-this section records the registration and reports it unrun — which is the
-failure mode this whole round exists to make visible.
+tree.
+
+⚠ **Scheduling amendment, recorded rather than made silently.** This was
+registered to start only in the window that opens when §1's compact and
+deployment-online children exit, so the machine would never carry more than
+the four jobs the operator allowed while load was high. At 07:24 UTC the
+machine's load average fell from 72 to **17** on 18 cores — the sibling agents
+had finished — so it was started immediately at `--jobs 3` instead of waiting
+about an hour for that window. The operator's cap was conditioned on load, and
+this changes only when the games are played, not which games: N, seed, shape
+and the fixed-N rule are exactly as registered above, and nothing about the
+schedule can bias a paired estimate.
 
 ## Results
 
