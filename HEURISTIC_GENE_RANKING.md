@@ -71,7 +71,7 @@
 | 65 | `stranded-settler-discount` | Stop a Settler that has stopped walking from holding the expansion gate shut. | — | off | +1 | -4 | +7 | 16.72% (n=74,635) | 16.61% (n=74,651) | 0.11% | +6 [-12, +23] | 73.3% | +0.11 (z +0.68) ~ | -0.34% ±0.36% | -0.59% ±0.65% |
 | 66 | `strategic-wonders` | Build the wonders the chosen victory actually needs. | — | off | +1 | +6 | -3 | 16.77% (n=74,693) | 16.56% (n=74,593) | 0.21% | +10 [-7, +28] | 87.9% | -0.24 (z -1.54) ~ | -0.11% ±0.36% | -0.34% ±0.63% |
 | 67 | `culture-coverage` | Pay for the Theater Square the empire has not got. | — | off | +0 | -7 | – | 16.55% (n=28,585) | 16.78% (n=28,661) | -0.23% | -12 [-40, +16] | 20.0% | +0.00 (z +0.01) ~ | +0.43% ±0.38% | +0.85% ±0.67% |
-| 68 | `escort-unstick` | Release an escort that is not walking its settler. | — | **on** | +0 | +18 | +36 | 16.95% (n=77,181) | 16.36% (n=72,105) | 0.59% | +27 [-1, +56] | 97.0% | +0.02 (z +0.09) ~ | -0.39% ±0.45% | -0.63% ±0.79% |
+| 68 | `escort-unstick` | Release an escort that is not walking its settler. | 1 | **on** | +0 | +18 | +36 | v1 16.95% (n=77,181) | v1 16.36% (n=72,105) | 0.59% | +27 [-1, +56] | 97.0% | +0.02 (z +0.09) ~ | -0.39% ±0.45% | -0.63% ±0.79% |
 | 69 | `amenity-project-preemption` | When host-observed Amenity deficits have crossed a severe empire-wide threshold, pause one repeatable project for the concrete repair chain and let the policy deck use its direct empire-wide repair. | — | off | -1 | -17 | -7 | 16.58% (n=74,693) | 16.76% (n=74,593) | -0.18% | -7 [-31, +16] | 26.9% | -0.02 (z -0.12) ~ | +0.54% ±0.37% | +0.78% ±0.66% |
 | 70 | `culture-building-debt` | Make the Theater Square owe its buildings. | — | **on** | -1 | +12 | – | 16.85% (n=31,123) | 16.45% (n=26,123) | 0.39% | +21 [-8, +50] | 92.0% | +0.03 (z +0.15) ~ | +0.63% ±0.43% | +1.10% ±0.77% |
 | 71 | `slot-kind-tiebreak` | Break a production cost tie by which great-work slots can be filled. | — | off | -1 | +0 | -6 | 16.72% (n=74,592) | 16.61% (n=74,694) | 0.11% | +5 [-12, +23] | 72.5% | -0.21 (z -1.37) ~ | -0.45% ±0.39% | -0.60% ±0.70% |
@@ -366,6 +366,7 @@ These screenable genes have no on/off result, so they receive no rank or promoti
 | Gene | Default | Description | Best version |
 |---|---|---|---:|
 | `district-planning` | off (unmeasured) | The city plans its districts, sites and tile buys together: wished districts get jointly assigned, reserved plots over rings 1-3, and the tile a very valuable site needs is bought. | — |
+| `escort-unstick-2` | off (unmeasured) | Version 2 of `escort_unstick`: the same two-turn release, refused while a visible barbarian raider can reach the settler's tile. | 1 |
 | `settle-plan-ahead` | off (unmeasured) | Rank a settle site by the cities it leaves room for as well as its own ground, so a Settler stops taking the one plot in a pocket that would have held two. | — |
 
 ## Removed from the code
