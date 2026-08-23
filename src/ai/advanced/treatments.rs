@@ -128,6 +128,26 @@ pub const LIVE_TREATMENTS: &[LiveTreatment] = &[
     ("expansion_pantheon", "expansion-pantheon", AdvancedAi::disable_expansion_pantheon),
     ("expansion_hall", "expansion-hall", AdvancedAi::disable_expansion_hall),
     ("opening_settler_waits", "opening-settler-waits", AdvancedAi::disable_opening_settler_waits),
+    // Append points, one per name range: a new treatment goes under the range
+    // its own name falls in, so that two of them do not append to one line.
+    // The rule, the measurement behind it and the check that enforces it are
+    // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
+
+    // ---- append: a-b ------------------------------------------------
+
+    // ---- append: c-d ------------------------------------------------
+
+    // ---- append: e-f ------------------------------------------------
+
+    // ---- append: g-k ------------------------------------------------
+
+    // ---- append: l-o ------------------------------------------------
+
+    // ---- append: p-r ------------------------------------------------
+
+    // ---- append: s-s ------------------------------------------------
+
+    // ---- append: t-z ------------------------------------------------
 ];
 
 /// ★★★★ THE MIRROR OF THE TABLE ABOVE, AND IT DID NOT EXIST.
@@ -406,4 +426,24 @@ pub const PRODUCTION_OPT_INS: &[LiveTreatment] = &[
     ("engine_faith_price", "engine-faith-price", AdvancedAi::enable_engine_faith_price),
     // A wounded unit may still take its promotion.
     ("promote_when_wounded", "promote-when-wounded", AdvancedAi::enable_promote_when_wounded),
+    // Append points, one per name range: a new treatment goes under the range
+    // its own name falls in, so that two of them do not append to one line.
+    // The rule, the measurement behind it and the check that enforces it are
+    // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
+
+    // ---- append: a-b ------------------------------------------------
+
+    // ---- append: c-d ------------------------------------------------
+
+    // ---- append: e-f ------------------------------------------------
+
+    // ---- append: g-k ------------------------------------------------
+
+    // ---- append: l-o ------------------------------------------------
+
+    // ---- append: p-r ------------------------------------------------
+
+    // ---- append: s-s ------------------------------------------------
+
+    // ---- append: t-z ------------------------------------------------
 ];
