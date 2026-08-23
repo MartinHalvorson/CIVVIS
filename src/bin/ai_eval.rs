@@ -1840,9 +1840,12 @@ fn profile_names() -> String {
 /// ★★★★★ WHY A NAME AND NOT ELEVEN FLAGS.
 ///
 /// `deployment-contested` is the only board this repository has that produces
-/// the conditions the live ladder actually loses to — 83 of 232 terminal games
-/// taken by a rival's victory, 47 of them diplomatic and 27 culture
-/// (`docs/EVAL_STATUS.md`). Until now it existed only *inside* `--matrix`, so
+/// the conditions the live ladder actually loses to — **107 of 299 terminal
+/// games taken by a rival's victory, 58 of them diplomatic and 38 culture, and
+/// 15 of them lost while our own score was the highest on the board**
+/// (`docs/EVAL_STATUS.md`, after #2332 reconciled the fleet's two live seats:
+/// `publish` had been copying one seat's ledger instead of merging, hiding 76
+/// attempts). Until now it existed only *inside* `--matrix`, so
 /// every single-arm round measured on it retyped its axes by hand — and
 /// whether the retyping matched depended on who did it. The three congress
 /// rounds in `docs/eval/` record their world as `pangaea`/`flat`/fixed

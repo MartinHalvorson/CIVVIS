@@ -685,6 +685,7 @@ roster keeps `strategic` as an offline-only anchor.
   entrants hold two of six chairs there instead of all six, so one game is one
   contest rather than three; and the field decides which victory conditions
   the board can reach at all. Read them as different questions.
+
 - Keep mechanism controls separate. `advanced_policy_live_control`,
   `advanced_envoy_policy`, `advanced_envoy_infrastructure`, and
   `advanced_envoy_economy` decompose policy-deck, influence-card, and production
