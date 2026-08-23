@@ -17,14 +17,17 @@ name: speed
 # in the same change that adds it".
 
 on:
+  # ⚠ NO `paths:` FILTER, DELIBERATELY, AND IT IS NOT A COST DECISION. A
+  # filtered workflow produces no check at all on a documentation-only pull
+  # request, and `required_check_state` in `tools/civvis_collab.py` reads an
+  # absent required check as *pending* — so the moment `paired-cost` is
+  # promoted out of `ADVISORY_CHECKS`, every docs-only PR in the fleet would
+  # sit until `ship` timed out. A job-level `if:` is no better: a skipped job
+  # reports the conclusion `skipped`, which that same function reads as a
+  # failure. The scope decision therefore happens in the first *step*, which
+  # always reports success, and costs about forty seconds when there is
+  # nothing to measure.
   pull_request:
-    paths:
-      - 'src/**'
-      - 'data/**'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - 'tools/speed_ab.py'
-      - '.github/workflows/speed.yml'
 
 permissions:
   contents: read
@@ -38,8 +41,6 @@ concurrency:
 
 jobs:
   paired-cost:
-    # The empty claim commit that opens every task PR has a zero-byte diff.
-    if: github.event.pull_request.changed_files > 0
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
@@ -50,7 +51,23 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      # Nothing that can change simulator cost? Then say so and finish green.
+      # The empty claim commit that opens every task PR lands here too: its
+      # diff is zero bytes, so the file list is empty and nothing matches.
+      - name: Is there anything to measure?
+        id: scope
+        run: |
+          changed="$(git diff --name-only ${{ github.event.pull_request.base.sha }}...HEAD)"
+          if printf '%s\n' "$changed" | grep -qE '^(src/|data/|Cargo\.toml$|Cargo\.lock$|tools/speed_ab\.py$|\.github/workflows/speed\.yml$)'; then
+            echo "measure=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "measure=false" >> "$GITHUB_OUTPUT"
+            echo "No src/, data/, Cargo or harness change: simulator cost cannot have moved."
+          fi
+
       - uses: dtolnay/rust-toolchain@stable
+        if: steps.scope.outputs.measure == 'true'
       # Same lineage and the same reasoning as `tests.yml`: dependency
       # registry only. `target/` is not cached because a single 320k-line
       # crate at CARGO_INCREMENTAL=0 re-derives every `civvis` artifact from
@@ -58,6 +75,7 @@ jobs:
       # and here they are reused twice within one job anyway, because both
       # builds share one target directory.
       - uses: actions/cache@v4
+        if: steps.scope.outputs.measure == 'true'
         with:
           path: |
             ~/.cargo/registry/index
@@ -70,6 +88,7 @@ jobs:
       # The candidate is the merge result, which is what would actually land —
       # not the branch tip in isolation.
       - name: Build the candidate
+        if: steps.scope.outputs.measure == 'true'
         run: |
           cargo build --profile ci --bin civvis --locked
           cp target/ci/civvis /tmp/civvis-candidate
@@ -79,6 +98,7 @@ jobs:
       # redone. Building it in a second checkout would double the dependency
       # work for nothing.
       - name: Build the baseline (the pull request's base commit)
+        if: steps.scope.outputs.measure == 'true'
         run: |
           git checkout --detach ${{ github.event.pull_request.base.sha }}
           cargo build --profile ci --bin civvis --locked
@@ -87,26 +107,45 @@ jobs:
 
       # ⚠⚠ THE ARMS ARE EXPECTED TO DISAGREE, AND THAT IS THE POINT. A PR that
       # changes how the agent plays produces a different game, so the reports
-      # differ and no *overhead* claim survives — but the percentage is still
-      # exactly what the new behaviour costs, and that is the number #2059
-      # needed somebody to see. `--budget` judges the cost either way.
+      # differ and no *overhead* claim survives — but the number is still
+      # exactly what the new behaviour costs, and that is what #2059 needed
+      # somebody to see. `--budget` judges the cost either way.
       #
-      # 50% is deliberately loose. A shared 4-core runner cannot resolve five
-      # percent and this does not try to; it exists so nothing multiplies the
-      # cost of every evaluation batch in the fleet without a human reading
-      # the number first. Six times is not a close call.
+      # THE SHAPE IS `gene_screen`'s SCREEN_* MAP ROW, EXACTLY: six majors,
+      # 74x46, NINE city-states, Continents, Online. The city-state count is
+      # the leg that used to be wrong — #2301 measured 87% of
+      # `precise_evacuation`'s bill on minor seats, so the old 60x38/6CS shape
+      # systematically under-weighted the cost that dominates the fleet's
+      # compute. The turn clock is the one leg traded for the runner: the
+      # screen plays Online's own 250, this stops at 120, and
+      # `tools/speed_ab.py` documents what that concession costs.
       #
-      # Three seeds at 100 turns, because #2059's cost is per-unit-per-turn
-      # and is already several-fold by the time an empire has an army. The
-      # shape is a compromise with a 4-core runner, NOT the deployment shape —
-      # `docs/EVAL.md` owns that, and a number from here is not a number for
-      # a promotion. It is a smoke alarm.
+      # THE BUDGET IS THE MEDIAN PAIR, PER COMPLETED TURN. Whole-game time
+      # mixes cost with game length — `docs/SIMULATOR_PERFORMANCE.md`
+      # (2026-08-22) retracts a -48.7% reading for precisely that — so the
+      # gate reads the column that is only cost. A median rather than a pooled
+      # ratio because one pair landing under a burst of host load cannot move
+      # a median, and over budget the harness re-measures on a disjoint block
+      # of seeds before it fails anything.
+      #
+      # `paired-cost` is a REQUIRED check (`REQUIRED_CHECKS` in
+      # `tools/civvis_collab.py`), so it needs a way to say yes: a
+      # `paired-cost: allow <reason>` line in the pull request body accepts an
+      # intended cost, the same escape hatch `overwrite-guard: allow` is. The
+      # body arrives through `env:` rather than through the command line, which
+      # is the documented safe way to hand untrusted text to a step.
       - name: Paired cost against the base commit
+        if: steps.scope.outputs.measure == 'true'
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
         run: |
           python3 tools/speed_ab.py \
             --baseline /tmp/civvis-baseline \
             --candidate /tmp/civvis-candidate \
-            --seeds 900001 --games 3 \
-            --players 6 --width 60 --height 38 --city-states 6 \
-            --turns 100 --speed online \
-            --budget 50
+            --seeds 900001 --games 5 --interleaves 1 \
+            --players 6 --width 74 --height 46 --city-states 9 \
+            --turns 120 --speed online --map continents \
+            --noise-floor 1.0 \
+            --ledger-machine github-ubuntu-latest \
+            --acknowledge-env PR_BODY \
+            --budget 8

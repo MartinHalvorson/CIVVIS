@@ -1600,3 +1600,187 @@ answer. The moment the reports disagree — which is every promoted feature —
 whole-game time stops being a cost and starts being a mixture. `gene_screen`
 already separates the two columns for this reason; the paired harness does not,
 and a reader who quotes its number for a behaviour change is quoting a mixture.
+
+
+## 2026-08-23 — the gate measured the wrong game, on the wrong clock, and could not block anything
+
+`speed.yml` shipped on 2026-08-22 (#2289) and closed the hole #2059 fell
+through: nothing in CI could see a promoted feature multiply the fleet's
+compute. It closed it with four measured gaps, all of them named in this file
+already, and this section closes those.
+
+| | #2289 | now |
+| --- | --- | --- |
+| shape | 6p **60x38, 6 city-states**, 100t, default map | 6p **74x46, 9 city-states**, 120t, Continents — `gene_screen`'s `SCREEN_*` map row |
+| metric | whole-game user CPU | **user CPU per completed turn**, whole game reported beside it |
+| statistic | pooled ratio of two totals | **median of five paired blocks**, with the spread and the run's own resolution printed |
+| budget | +50% | **+8%**, and a second disjoint block before anything fails |
+| absolute | none | `docs/speed_ledger.json`, recorded deliberately, per machine, with its load average |
+| binding | advisory | **required** (`REQUIRED_CHECKS`), with `paired-cost: allow <reason>` as the escape hatch |
+
+### 1. Nine city-states, because the minor seats are the bill
+
+The section above this one measured **87% of `precise_evacuation`'s cost on
+city-states and barbarians** — 29.1 of 33.3 points. Minor-seat cost scales with
+the minor-seat count, and #2289's gate ran six of them against the screen's
+nine on a map two thirds the area. It systematically under-weighted exactly the
+cost that dominates every evaluation batch in the fleet. The map row is now the
+screen's, leg for leg: 6 majors, 74x46, 9 city-states, Continents, Online.
+
+⚠⚠ **The map script was the worst leg of the four, and it was invisible.**
+`speed_ab.py` never passed `--map` at all, so every reading it has ever
+produced was taken on `civvis simulate`'s default `tennis_ball` while the
+screen plays Continents. Found by the envelope-representation work (#2324),
+which measured **the same hotspot at 1.42% on tennis_ball and 13.19% on
+continents**. The other three legs change how much of the code runs; the map
+changes *which code is hot*, so the harness could have waved through a
+regression in a dense-table path and refused to credit the fix for it, with
+the number looking clean either way. `--map` is now a first-class leg of the
+shape and defaults to the screen's, and
+`test_speed_ab.TheWorkflowMeasuresTheScreensShape` reads `SCREEN_PLAYERS`,
+`SCREEN_WIDTH`, `SCREEN_HEIGHT`, `SCREEN_CITY_STATES` and `SCREEN_MAP` out of
+`src/bin/gene_screen.rs` and pins the workflow's arguments, the harness's own
+defaults and the ledger's shape block to them. That test is the durable part;
+`--map` is only today's instance of the divergence it prevents.
+
+⚠ **The turn clock is the one leg still traded**, and the trade is
+one-directional. Measured on `mbp-m5-max-128` (ci profile, quiet, four seeds):
+
+| clock | s/turn | what it is |
+| ---: | ---: | --- |
+| 120 | 0.0878 | the gate |
+| 150 | 0.1150 | |
+| 250 (full games) | 0.1833 | the screen |
+
+Cost per turn rises steeply with the turn number, so the gate reads about half
+the screen's per-turn density and under-weights the late game, where a
+per-unit pass hurts most. That is a runner budget, not a claim: the whole
+paired step has to sit under `cargo-test`'s ~10.5 minutes or it becomes the
+merge path for the entire fleet. Five games at 120 turns costs ~270 s on a
+hosted runner; four at 150 costs ~345 s and would.
+
+⚠ Changing `--turns` changes the **game**, not just how much of it is played:
+seed 900002 wins a religious victory on turn 134 at a 150-turn clock and runs
+to 250 at a 250-turn one. A short-clock run is a different game, not a prefix
+of a long one.
+
+### 2. Per completed turn, which is what the section above asked for
+
+The 2026-08-22 section ends: *"`gene_screen` already separates the two columns
+for this reason; the paired harness does not, and a reader who quotes its
+number for a behaviour change is quoting a mixture."* It does now. The turn
+count comes from the game's own report — `standings()` prints exactly one of
+`Winner: … on turn N`, `Draw: turn limit reached on turn N`, `No winner: turn N
+of M` — and a report the harness cannot read is a hard error, never a default,
+because a silently-guessed divisor would restore the mixture invisibly.
+
+Whole-game CPU is still printed. When the turn totals match, the two are the
+same number algebraically and the output says so; when they do not, the gap is
+game length and the output says that instead, with both turn totals. For a
+byte-identical optimisation — the four landing beside this section today — the
+two agree exactly, and that agreement is itself the evidence the arms played
+the same game.
+
+### 3. The conditions are half the reading
+
+Measured while twelve sibling agents built concurrently, one binary against
+itself in both arms, so the honest answer is zero:
+
+| shape | 1-min load | absolute s/turn | paired delta | pair IQR |
+| --- | ---: | ---: | ---: | ---: |
+| 5x120t (the gate) | ~6 (4 of 5 seeds) | 0.0878 | — | — |
+| 5x120t (the gate) | 61 → 86 | 0.1436 (**+63%**) | +0.33% | 1.48pp |
+| 3x150t | ~6 | 0.1134 | — | — |
+| 3x150t | 49 | 0.1737 (**+53%**) | -0.56% | — |
+| 3x150t | 94 | 0.1761 (**+55%**) | +0.11% | — |
+
+**The absolute inflates by more than half on a busy fleet host. The
+interleaved paired delta does not move at all.** That single pair of facts is
+what the rest of the design rests on:
+
+- tightening the budget from +50% to +8% is defensible, because the quantity
+  being judged survived a load average of 94 on eighteen cores inside ±0.6%;
+- an absolute with no load average beside it is not comparable to anything, so
+  every ledger row carries load at start, peak and end, and rows are per
+  machine.
+
+What interleaving cannot cancel is a **burst landing on one arm of one pair**.
+So the gate statistic is the median of the per-pair per-turn deltas, not a
+pooled ratio: four clean pairs and one at +150% leave the median at 0.00% and
+move the pooled number past +25%. Beside it the run prints the interquartile
+spread and the smallest change that spread could have resolved (two robust
+standard errors of the median, taking the larger of the MAD- and IQR-based
+sigma so the estimate errs toward *noisier*). When that resolution is wider
+than the budget the line says so outright: a green verdict there is **"not
+seen", not "not there"**.
+
+### 4. The absolute ledger, because a relative gate cannot see drift
+
+Every pull request is measured against the commit before it, so the fleet can
+lose five percent a month and every single run reads green. `docs/census.json`
+already solved this shape — record the reading, let the number move, make the
+*diff* the signal — and `docs/speed_ledger.json` is that device for cost:
+
+```
+tools/speed_ab.py --baseline B --candidate B --record-ledger \
+    --ledger-machine mbp-m5-max-128 --note "why this reading was taken"
+```
+
+Deliberate, never automatic, and never written by CI — a runner cannot commit.
+A reading taken on a runner is transcribed with
+`--ledger-cpu/--ledger-turns/--ledger-load`, which require the same `--note`.
+The gate prints the trunk's absolute cost per turn on every run either way, so
+the number is in the log even before it is in the file.
+
+`tools/test_speed_ab.py` checks the ledger's shape block against the arguments
+`speed.yml` actually passes, and both against `gene_screen.rs`'s `SCREEN_*`
+constants read out of the source. That is deliberate: an artefact and its
+source drifting apart is the defect that put `main` red the same morning this
+landed — `17a27004` was pushed with no pull request and left the generated
+`HEURISTIC_GENE_RANKING.md` out of step with its generator, failing six tests
+every PR inherits (fixed by #2336). An absolute cost recorded at one shape
+while the gate runs another is that defect with the drift line calling the
+difference a regression.
+
+**Host scaling**, kept in the ledger because it is exactly the constant that
+gets re-derived badly later: hosted 4-core `ubuntu-latest` is **2.57x** this
+Mac per single-thread core — 56.23 s user CPU for 3 games at the old shape on
+run 32601426938, against 21.89 s for the identical command on
+`mbp-m5-max-128` at load 5.8 the next day.
+
+### 5. Required, and how to clear one
+
+Advisory, the gate could not do the job it exists for. There is no branch
+protection on this repository — `REQUIRED_CHECKS` in `tools/civvis_collab.py`
+is the only thing that makes a check binding — and `ship` merges on that tuple
+without reading anything else. #2059 would have merged again with a red
+advisory X beside it.
+
+Three properties make requiring it safe, and each is pinned by a test:
+
+1. **It always reports.** No `paths:` filter and no job-level `if:`:
+   `required_check_state` reads an absent required check as *pending* and a
+   skipped one as a *failure*, so either would hang every docs-only PR in the
+   fleet. The scope decision is the job's first step, which always succeeds and
+   costs ~40 s when there is nothing to measure.
+2. **One bad pair cannot fail a merge.** Median statistic, and over budget the
+   harness re-measures on a *disjoint* block of seeds and fails only if both
+   agree. An ordinary run never reaches that code.
+3. **An intended cost can be accepted.** A promoted feature is a performance
+   event by definition, so the gate will fire on honest changes:
+   `paired-cost: allow <reason>` in the pull request body passes the run, the
+   same escape hatch `overwrite-guard: allow` is. The reason is mandatory —
+   that sentence, the number and why it is worth paying, is the one #2059 never
+   wrote.
+
+A false failure is cleared by re-running the job (`gh run rerun --failed
+<run-id>`); `ship` already re-dispatches required checks that end without a
+verdict.
+
+### What is still owed
+
+The `mbp-m5-max-128` row in `docs/speed_ledger.json` was taken at load 61-86
+and is marked PROVISIONAL in its own note. A quiet-host row for that machine,
+and the first `github-ubuntu-latest` row, are both still to be recorded — the
+file is designed so that adding them is one command and the old rows stay as
+history rather than being overwritten.
