@@ -49,7 +49,6 @@
 //! winner log loss so confidence as well as ranking is checked.
 
 use crate::game::Game;
-use crate::league::League;
 use std::collections::BTreeMap;
 
 /// [`crate::elo::win_shares`], on soft-float `libm::pow`.
@@ -150,9 +149,6 @@ const LEAD_SHARPEN: f64 = 1.10;
 /// still ages instead of treating turn three as the last turn.
 const NOMINAL_HORIZON: f64 = 500.0;
 
-/// Games of evidence a civilization's edge is shrunk against. With none behind
-/// it the edge is zero; with plenty it is taken at face value.
-const CIV_EDGE_PRIOR_GAMES: f64 = 30.0;
 /// The Elo-to-Glicko scale: 400 / ln(10). Rating deviation lives on this scale
 /// when the forecast attenuates an uncertain rating difference.
 const ELO_PER_LOGIT: f64 = 173.717_792_761_797_6;
@@ -203,8 +199,8 @@ pub struct SeatOdds {
 /// Start and now odds for every major at the table, keyed by seat.
 ///
 /// `prior_rating` supplies the rating and deviation each seat sits down with,
-/// before difficulty: the league's numbers where there are any, and the
-/// provisional base otherwise. A plain `f64` is accepted for callers without
+/// before difficulty: the provisional base for every seat now that nothing
+/// rates them. A plain `f64` is accepted for callers without
 /// an RD and is treated as settled. City-states and barbarians are absent.
 pub fn table<R>(game: &Game, prior_rating: impl Fn(usize) -> R) -> BTreeMap<usize, SeatOdds>
 where
@@ -338,37 +334,6 @@ pub fn mercy_leader(game: &Game, threshold: f64) -> Option<usize> {
         .filter(|(pid, seat)| game.players[**pid].alive && seat.now >= threshold)
         .max_by(|a, b| a.1.now.total_cmp(&b.1.now).then_with(|| b.0.cmp(a.0)))
         .map(|(pid, _)| *pid)
-}
-
-/// How much stronger than their own rating the roster has been *while playing
-/// this civilization*, in Elo.
-///
-/// A seat whose player already has a civ-specific rating needs none of this —
-/// their number is that measurement. This is for everybody else: a player with
-/// no games as Rome still drew Rome, and the roster knows something about what
-/// that is worth. The edge is games-weighted and shrunk toward zero by the
-/// evidence behind it, so a civilization played twice moves a seat barely at
-/// all and one played five hundred times moves it fully.
-pub fn civ_edge_elo(league: &League, civ: &str) -> f64 {
-    let mut games = 0.0;
-    let mut weighted = 0.0;
-    for player in &league.strategies {
-        for combinations in player.leader_elo.values() {
-            let Some(rated) = combinations.get(civ) else {
-                continue;
-            };
-            if rated.games == 0 {
-                continue;
-            }
-            let weight = f64::from(rated.games);
-            games += weight;
-            weighted += weight * (rated.rating - player.rating);
-        }
-    }
-    if games <= 0.0 {
-        return 0.0;
-    }
-    weighted / games * (games / (games + CIV_EDGE_PRIOR_GAMES))
 }
 
 /// What the difficulty setting is worth to one seat, in Elo.
@@ -668,7 +633,6 @@ fn mean(values: &[f64]) -> f64 {
 mod tests {
     use super::*;
     use crate::game::{Game, GameOptions};
-    use crate::league::{League, Strategy, StrategyKind};
     use std::collections::BTreeSet;
 
     fn arena(cities: u8) -> Game {
@@ -1247,43 +1211,4 @@ mod tests {
         }
     }
 
-    /// The civilization edge is learned from the roster, weighted by the games
-    /// behind it, and shrunk toward nothing when there are few.
-    #[test]
-    fn the_civ_edge_is_learned_and_shrunk_by_its_evidence() {
-        let mut league = League {
-            round: 1,
-            strategies: Vec::new(),
-            calibration: Default::default(),
-        };
-        let mut player = Strategy::new(
-            "test",
-            StrategyKind::Builtin {
-                ai: "basic".to_string(),
-            },
-            1,
-        );
-        player.rating = 1500.0;
-        player.games = 400;
-        for (civ, rating, games) in [("Rome", 1700.0, 400_u32), ("Norway", 1700.0, 2_u32)] {
-            player
-                .leader_elo
-                .entry("Leader".to_string())
-                .or_default()
-                .insert(
-                    civ.to_string(),
-                    crate::league::CivRating {
-                        rating,
-                        games,
-                        ..Default::default()
-                    },
-                );
-        }
-        league.strategies.push(player);
-        let rome = civ_edge_elo(&league, "Rome");
-        let norway = civ_edge_elo(&league, "Norway");
-        assert!(rome > 150.0, "400 games of a +200 edge is nearly all of it: {rome}");
-        assert!(norway < 25.0, "two games of the same edge is almost none: {norway}");
-        assert_eq!(civ_edge_elo(&league, "Sumeria"), 0.0, "and none is none");
-    }
 }

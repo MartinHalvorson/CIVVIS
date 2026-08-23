@@ -53,8 +53,11 @@ CLI / HTTP server / browser / WASM / evaluation tools
   `src/strategic.rs`, `src/neural.rs`, `src/policy.rs`, and `src/production.rs`
   are search/learning experiments with explicit fallbacks and evaluation
   status. `src/oracle.rs` is a diagnostic wrapper, not a playable strategy.
-- **Evaluation and training** — `src/elo.rs`, `src/evolve.rs`, `src/league.rs`,
-  `src/action_space.rs`, and the binaries under `src/bin/`. Python in `tools/`
+- **Evaluation and training** — `src/elo.rs` (Elo arithmetic and the built-in
+  agent registry), `src/evolve.rs`, `src/action_space.rs`, and the binaries
+  under `src/bin/`. The strategy league (`src/league.rs`), the rating layer
+  (`src/rating.rs`, `src/arena.rs`) and the tournament harness were removed
+  on 2026-08-23 (#2357; `docs/closed/LEAGUE.md`). Python in `tools/`
   trains offline models, analyzes evidence, and supervises deployments; it is
   not the game engine.
 - **Interfaces** — `src/main.rs` exposes the CLI, while `src/server.rs` serves
@@ -65,10 +68,10 @@ CLI / HTTP server / browser / WASM / evaluation tools
   existing global contract while setup work no longer conflicts with map
   rendering edits. Native, beta, and WASM delivery all serve the same pair.
   The same Rust engine is compiled for native and WASM use.
-- **Civilization VI bridges** — `tools/civ6_strategy.py` exports only the
-  economic subset of a league genome to a grounding mod; Firaxis' AI controls
-  the remaining real-game behavior. `tools/civ6_control/` is a separate Lua
-  controller and does not embed or call the Rust agent.
+- **Civilization VI bridges** — `tools/civ6_control/` is a Lua controller
+  driven by the Rust decider over a mirror; it does not embed the Rust agent
+  in-process. (`tools/civ6_strategy.py`, which exported a league genome's
+  economic subset to the grounding mod, left with the league — #2357.)
 
 The former Python `rules.py`, `game.py`, `hexgrid.py`, `CivEnv`, and
 `ai/basic_ai.py` architecture no longer exists.
@@ -175,18 +178,13 @@ factories therefore resolve missing learned artifacts to documented scripted or
 score-share behavior. `builtin_provenance` uses the same loaders as the agent
 factory so an evaluator can report what will actually play.
 
-### League and live seating
+### Seating
 
-`src/league.rs` stores named builtin or parameterized `AdvancedAi` strategies
-with Glicko-2 state. The supervised exhibition starts with a committed snapshot,
-records into a gitignored runtime copy, and rank-weights each
-leader/civilization's top three live-eligible strategies while avoiding repeats
-where possible. `league_only` entries participate in offline rating but are
-excluded from exhibition and auto-play seating.
-
-Without a league, `Session::ai_fleet` constructs stock `AdvancedAi` for major
-civilizations and `BasicAi` for minors/barbarians. A human seat is never silently
-credited to a roster strategy.
+`Session::ai_fleet` constructs stock `AdvancedAi` — the deployment genome —
+for major civilizations and `BasicAi` for minors/barbarians. A person's seat
+is named for this game only and rated into nothing; auto-play can hand a seat
+to any built-in agent by name. (Rated league seating was removed on
+2026-08-23 — #2357, `docs/closed/LEAGUE.md`.)
 
 ## Learning surfaces
 

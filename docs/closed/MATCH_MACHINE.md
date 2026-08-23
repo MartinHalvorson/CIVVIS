@@ -1,4 +1,12 @@
-# CIVVIS match machine
+# CIVVIS match machine (retired 2026-08-23)
+
+> **Closed.** `tools/civvis_match_machine.py` and the league it rated into were removed on 2026-08-23 (#2357, operator: *"lets remove the league /
+> elo work for now"*). The gene screen (`docs/GENE_SCREEN.md`) prices
+> behaviours; nothing rates named agents against each other for now, and the
+> deployment genome is the gene ledger's default-on set. A rating system for
+> finished genomes is planned to return — see `docs/ROADMAP.md`. This document
+> is kept as the record of how the retired instrument worked and what it
+> measured.
 
 `tools/civvis_match_machine.py` is the unattended evaluator for a bounded
 operator window. It runs exactly one browser-visible match and then keeps up

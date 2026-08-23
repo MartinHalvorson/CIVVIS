@@ -1,4 +1,12 @@
-# Rating: measuring which strategy is actually better
+# Rating: measuring which strategy is actually better (retired 2026-08-23)
+
+> **Closed.** The rating layer — `civvis rating`, `civvis arena`, `src/rating.rs`, `src/arena.rs` — was removed on 2026-08-23 (#2357, operator: *"lets remove the league /
+> elo work for now"*). The gene screen (`docs/GENE_SCREEN.md`) prices
+> behaviours; nothing rates named agents against each other for now, and the
+> deployment genome is the gene ledger's default-on set. A rating system for
+> finished genomes is planned to return — see `docs/ROADMAP.md`. This document
+> is kept as the record of how the retired instrument worked and what it
+> measured.
 
 `civvis rating` is the measurement layer under the strategy league. It exists
 because a rating that nobody audits is a number, not a measurement — and when

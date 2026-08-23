@@ -4291,163 +4291,20 @@ fn translate(
     }
 }
 
-/// A league genome this run will play with, and enough provenance to defend it.
-struct ChosenStrategy {
-    name: String,
-    source: String,
-    civ: Option<String>,
-    strength: f64,
-    per_civ: bool,
-    /// The victory lane this genome was bred and rated in, if it has one.
-    ///
-    /// ⚠ Reported because `--victory` stays authoritative and the two can disagree:
-    /// the strongest genome by outright wins is currently a RELIGIOUS one, and the
-    /// harness asks for domination. That is a real mismatch, not a detail — a genome
-    /// tuned for a lane it is not being pointed at is not the thing that was rated.
-    lane: Option<String>,
-    weights: civvis::ai::Weights,
-}
-
-/// Where `data/league` is, without trusting the working directory.
-///
-/// ⚠ **Never resolve an asset relative to the cwd here.** This binary is launched by
-/// `civ6_brain.py` from whatever directory the harness happened to be in, and every
-/// cwd-relative asset read in this project has eventually resolved to nothing
-/// somewhere real — the champion genome, the league roster, and a value net that has
-/// never once loaded. The executable's own location is stable; the cwd is not.
-fn league_dirs(args: &[String]) -> Vec<std::path::PathBuf> {
-    let mut out = Vec::new();
-    if let Some(dir) = arg_text(args, "--league") {
-        out.push(std::path::PathBuf::from(dir));
+/// `--strategy` named a league genome for this seat to play. The league is
+/// retired (#2357): the live seat plays the deployment genome — `AdvancedAi`
+/// with the gene ledger applied — and the gene screen prices everything else.
+/// A launcher that still passes the flag is told so rather than silently
+/// played stock, which is what the old resolver did when its roster was
+/// missing.
+fn refuse_retired_strategy_flag(args: &[String]) {
+    if let Some(want) = arg_text(args, "--strategy") {
+        eprintln!(
+            "civvis-orders: --strategy {want} names a league genome, and the league is \
+             retired (#2357); the live seat plays the deployment genome. Drop the flag."
+        );
+        std::process::exit(2);
     }
-    if let Ok(exe) = std::env::current_exe() {
-        // target/release/civvis_orders -> <repo>/data/league
-        for up in [3usize, 2, 1] {
-            let mut base = exe.clone();
-            for _ in 0..up {
-                base.pop();
-            }
-            out.push(base.join("data").join("league"));
-        }
-    }
-    out.push(std::path::PathBuf::from("data/league"));
-    out
-}
-
-/// Resolve an explicit strategy selector against one league snapshot.
-///
-/// Internal strategy names are the durable identity and therefore always win.
-/// A league username is also a useful *explicit* selector for a human-facing
-/// launcher, provided it identifies exactly one entry. That compatibility path
-/// is deliberately here rather than in a caller: every invocation still records
-/// the immutable internal name in its genome record, and an ambiguous display
-/// name refuses loudly instead of selecting whichever row happened to be first.
-fn named_strategy<'a>(
-    league: &'a civvis::league::League,
-    want: &str,
-) -> Result<Option<&'a civvis::league::Strategy>, String> {
-    if let Some(strategy) = league
-        .strategies
-        .iter()
-        .find(|strategy| strategy.name == want)
-    {
-        return Ok(Some(strategy));
-    }
-
-    let matches: Vec<_> = league
-        .strategies
-        .iter()
-        .filter(|strategy| !strategy.username.is_empty() && strategy.username == want)
-        .collect();
-    match matches.as_slice() {
-        [] => Ok(None),
-        [strategy] => Ok(Some(*strategy)),
-        _ => Err(format!(
-            "display strategy name {want:?} is ambiguous ({}); use an internal strategy name",
-            matches
-                .iter()
-                .map(|strategy| strategy.name.as_str())
-                .collect::<Vec<_>>()
-                .join(", ")
-        )),
-    }
-}
-
-/// Pick the genome this seat should play, or `None` to keep the shipped default.
-///
-/// ★★★★ **`--strategy` IS OPT-IN, AND THAT IS DELIBERATE.** The league's leader is not
-/// automatically the right controller for a real Civilization VI game: the champion
-/// measured **+48 in the compact evaluation and −53 deployed**, and the shipped
-/// default genome is already the deployment-capable one. So this makes the rated
-/// genome *reachable and reportable* without silently changing how every run plays;
-/// deciding which is better is a matched pair, not an assumption.
-///
-/// `--strategy auto` ranks on `league::strategy_strength`, which is the outright-win
-/// lower bound rather than the placement rating — see `league::strongest_strategy`.
-/// `--civ` narrows to the per-civilization table when that pair has history; the civ
-/// comes from the `seat` event because Civilization VI deals it and nothing can
-/// choose it. A named `--strategy` accepts its immutable internal name first and a
-/// unique league display username second; the genome record always names the former.
-fn resolve_strategy(args: &[String]) -> Option<ChosenStrategy> {
-    let want = arg_text(args, "--strategy")?;
-    let civ = arg_text(args, "--civ");
-    // ⚠ Through CIVVIS's own roster, not by string surgery. `CIVILIZATION_ROME`
-    // is `Rome` here; a civilization CIVVIS does not model answers None and the
-    // ranking falls back to the global bound rather than inventing a key that
-    // matches nothing.
-    let civ_key = civ
-        .as_deref()
-        .and_then(civvis::mirror::civvis_civ_name)
-        .map(str::to_string);
-    let mut tried = Vec::new();
-    for dir in league_dirs(args) {
-        tried.push(dir.display().to_string());
-        let Some(league) = civvis::league::load_league(&dir.display().to_string()) else {
-            continue;
-        };
-        let picked = if want == "auto" {
-            Ok(civvis::league::strongest_strategy(
-                &league,
-                civ_key.as_deref(),
-            ))
-        } else {
-            named_strategy(&league, &want)
-        };
-        let picked = match picked {
-            Ok(strategy) => strategy,
-            Err(why) => {
-                eprintln!("[genome] {why} in {}", dir.display());
-                return None;
-            }
-        };
-        let Some(strategy) = picked else {
-            eprintln!("[genome] no strategy '{want}' in {}", dir.display());
-            return None;
-        };
-        let Some((weights, lane)) = civvis::league::strategy_genome(strategy) else {
-            eprintln!("[genome] '{}' carries no Weights genome", strategy.name);
-            return None;
-        };
-        let per_civ = civ_key.as_deref().is_some_and(|c| {
-            strategy
-                .leader_elo
-                .values()
-                .any(|civs| civs.get(c).is_some_and(|r| r.games > 0))
-        });
-        return Some(ChosenStrategy {
-            name: strategy.name.clone(),
-            source: dir.display().to_string(),
-            civ: civ_key.clone(),
-            strength: civvis::league::strategy_strength(strategy, civ_key.as_deref()),
-            per_civ,
-            lane,
-            weights,
-        });
-    }
-    // ⚠ Loud. A league that did not load must not read as "played with the default
-    // on purpose".
-    eprintln!("[genome] --strategy {want} requested but NO league loaded; tried: {tried:?}");
-    None
 }
 
 fn main() {
@@ -4466,7 +4323,7 @@ fn main() {
         .and_then(|v| v.parse().ok())
         .unwrap_or(6);
     let victory = arg_text(&args, "--victory").unwrap_or_else(|| DEFAULT_VICTORY.to_string());
-    let rated = resolve_strategy(&args);
+    refuse_retired_strategy_flag(&args);
     let mut ai = match victory_lane(&victory) {
         Some(lane) => lane,
         None => {
@@ -4474,11 +4331,6 @@ fn main() {
             std::process::exit(2);
         }
     };
-    // ⚠ Applied AFTER the victory lane so `--victory` keeps meaning what it meant;
-    // `reweight` swaps the genome and leaves the target alone.
-    if let Some(chosen) = &rated {
-        ai.reweight(chosen.weights.clone());
-    }
     // Repeatable: `--with stacked-escort --with settler-stack-discipline`.
     // A `--with` arm restores only a ledger-held live treatment; it never
     // changes the deployment genome when the flag is absent.
@@ -4550,12 +4402,15 @@ fn main() {
         "{}",
         serde_json::json!({
             "kind": "genome",
-            "strategy": rated.as_ref().map(|c| c.name.clone()).unwrap_or_else(|| "stock".into()),
-            "source": rated.as_ref().map(|c| c.source.clone()).unwrap_or_else(|| "AdvancedAi::new".into()),
-            "civ": rated.as_ref().and_then(|c| c.civ.clone()),
-            "strength_bound": rated.as_ref().map(|c| c.strength),
-            "per_civ": rated.as_ref().map(|c| c.per_civ),
-            "lane": rated.as_ref().and_then(|c| c.lane.clone()),
+            // The deployment genome, always: the league's named genomes are
+            // retired (#2357). The keys stay so the ladder ledger's reader
+            // (`civ6_ladder.decider_genome`) keeps its shape.
+            "strategy": "stock",
+            "source": "AdvancedAi::new",
+            "civ": serde_json::Value::Null,
+            "strength_bound": serde_json::Value::Null,
+            "per_civ": serde_json::Value::Null,
+            "lane": serde_json::Value::Null,
             "victory": victory.clone(),
             "parallel_settlers": ai.parallel_settlers,
             // ⚠⚠ SAY WHAT THIS BINARY ACTUALLY CARRIES, EVERY RUN.
@@ -4725,23 +4580,13 @@ fn main() {
         //
         // The first version of this diagnostic used stock `AdvancedAi::new()`
         // weights and reported `mil_per_city` 1.0, while the live journal for the
-        // same run printed **1.4**. A probe answering with a different genome than
-        // the deployment cannot be used to say the live decider is wrong — it is a
-        // different agent. `--strategy auto` resolves the league genome exactly as
-        // the live decider does, and the header line below names which one played
-        // so a stock fallback can never be mistaken for the deployment.
-        let mut advanced = civvis::ai::AdvancedAi::new();
-        let chosen = resolve_strategy(&args);
-        if let Some(chosen) = &chosen {
-            advanced.reweight(chosen.weights.clone());
-        }
-        println!(
-            "genome: {}",
-            chosen
-                .as_ref()
-                .map(|c| format!("{} (from {})", c.name, c.source))
-                .unwrap_or_else(|| "stock AdvancedAi::new — NOT the deployment".to_string())
-        );
+        // same run printed **1.4** — a league genome the live seat had been handed.
+        // The league is retired (#2357) and the live seat plays `AdvancedAi::new`
+        // itself, so the probe and the deployment are the same agent again; the
+        // header line still names it so nobody has to take that on trust.
+        let advanced = civvis::ai::AdvancedAi::new();
+        refuse_retired_strategy_flag(&args);
+        println!("genome: stock AdvancedAi::new — the deployment genome");
         let w = advanced.weights().clone();
         let mut ai = civvis::ai::BasicAi::with_weights(w.clone());
         // The live decider plays with the second pipeline slot open, the
@@ -5535,26 +5380,6 @@ mod tests {
             super::victory_lane(super::DEFAULT_VICTORY).and_then(|ai| ai.victory_target()),
             Some(civvis::ai::VictoryTarget::Diplomacy)
         );
-    }
-
-    /// The operator-facing live launcher historically sent the roster display
-    /// name `WildCard9`; its durable entry is `g56-48`. This is a real
-    /// compatibility contract, not a synthetic alias: if the roster changes
-    /// either side of it, the live selector must fail here before it silently
-    /// falls back to stock again.
-    #[test]
-    fn an_explicit_display_name_resolves_to_its_internal_genome() {
-        let league = civvis::league::shipped_league().expect("the shipped roster parses");
-        let internal = super::named_strategy(&league, "g56-48")
-            .expect("an internal strategy name is never ambiguous")
-            .expect("the pinned live candidate is present");
-        let display = super::named_strategy(&league, "WildCard9")
-            .expect("the displayed live candidate is never ambiguous")
-            .expect("the displayed live candidate is present");
-
-        assert_eq!(internal.name, "g56-48");
-        assert_eq!(display.name, internal.name);
-        assert_eq!(display.username, "WildCard9");
     }
 
     /// ⚠⚠ THREE OF THESE SIX RESOLVED TO NOTHING UNTIL 2026-08-17. The live seat

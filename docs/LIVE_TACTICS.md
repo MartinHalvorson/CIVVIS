@@ -12,7 +12,7 @@ step that is not yet measured says so.
 
 The engine's tactical brain is strong: on the Tactics arena the joint search
 beats the frozen `advanced_v1` controller **99.6 %** of the time in pure
-combat (`docs/TACTICS_BASELINE.md`). The live seat does not get that strength.
+combat (`docs/closed/TACTICS_BASELINE.md`). The live seat does not get that strength.
 The host's own Hall of Fame for the twelve finished live games of 2026-08-01/02
 has our seat losing **343 units and killing 61** (0.18 kills per loss) while
 the sixty Firaxis-AI seats in the same games ran **1.71** the other way, at
