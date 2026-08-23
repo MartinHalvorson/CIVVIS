@@ -375,7 +375,26 @@ different question — what the **shipped bundle** pays for it — and a null he
 is a real answer to a question nobody has asked, not a repeat of the screen.
 `ai_eval`'s "nothing differed" line is the check that the arm fired at all.
 
-### Results
+## PRE-REGISTRATION: a second real withhold, from the other half of the bundle
+
+Also written and committed before its run. At 09:00 UTC the machine's load
+average was **4.5** on 18 cores with this round's critical path still pinned to
+one job, so a second arm cost nothing on the wall clock.
+
+**Arm.** `live_without_blind_objective_strength` vs `live`. Ledger
+`default_on: true`, so it is a real withhold. Chosen as the war-side
+counterpart to `settler-site-agreement`'s expansion side — between them the two
+arms sample both halves of the bundle rather than two draws from one — and it
+is the highest-ranked of the five real withholds among §3's original ten
+(6th-decile of `HEURISTIC_GENE_RANKING.md` at +30 wins/10k seats). It also
+carries the sharpest disagreement to test: the ranking's +30 against the
+standard screen's −0.01 pp at z −0.03.
+
+**Design.** Identical to the arm above in every respect but the treatment and
+the seed: `deployment-online` arguments, fixed N = 100, no early stopping,
+`--city-states 9`, seed **38000000** (unused anywhere in the tree).
+
+### Results — `settler-site-agreement`
 
 <!-- RESULTS-3 -->
 
