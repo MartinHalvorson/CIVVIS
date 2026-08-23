@@ -139,6 +139,19 @@ jobs:
       # a median, and over budget the harness re-measures on a disjoint block
       # of seeds before it fails anything.
       #
+      # ⚠⚠ THE BUDGET COMES FROM THE RUNNER ROW OF `docs/speed_ledger.json`,
+      # NEVER FROM A DESKTOP READING. Measured 2026-08-23 with byte-identical
+      # binaries in both arms on each host: this runner scattered 2.37pp
+      # pair-to-pair at load average 3.77, while `mbp-m5-max-128` scattered
+      # 1.48pp under twelve concurrent agents at load 61-86. The single-tenant
+      # hosted runner is the NOISIER of the two, at a tenth of the load and
+      # with the steadier absolute — interleaving cancels a desktop's
+      # slowly-varying contention almost perfectly and does nothing about a
+      # cloud VM's frequency and co-tenancy jitter, which lands as a burst
+      # inside one pair. +8% is 9.5x that run's noise median (+0.84%) and 5.1x
+      # its reported resolution (±1.57%). Re-deriving it from the tighter
+      # desktop numbers would hand the fleet a flaky required check.
+      #
       # `paired-cost` is a REQUIRED check (`REQUIRED_CHECKS` in
       # `tools/civvis_collab.py`), so it needs a way to say yes: a
       # `paired-cost: allow <reason>` line in the pull request body accepts an
