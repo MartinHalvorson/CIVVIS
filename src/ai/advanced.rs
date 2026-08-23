@@ -4937,13 +4937,6 @@ impl AdvancedAi {
         Self::configured(BasicAi::new(), true, None)
     }
 
-    /// Weighted counterpart to [`Self::pre_policy_envoy`]. Keeping this
-    /// separate prevents an evaluator control from accidentally inheriting
-    /// today's production defaults through [`Self::with_weights`].
-    pub(crate) fn pre_policy_envoy_with_weights(weights: Weights) -> AdvancedAi {
-        Self::configured(BasicAi::with_weights(weights), true, None)
-    }
-
     fn production_weights(mut weights: Weights) -> Weights {
         // `policy_deck` is deliberately not a gene, so a generated or legacy
         // weight vector cannot silently withdraw the confirmed production

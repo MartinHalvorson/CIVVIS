@@ -17,77 +17,6 @@ REPO = Path(__file__).resolve().parent.parent
 
 
 class EvalManifestTests(unittest.TestCase):
-    def test_every_withholdable_treatment_names_a_runnable_arm(self):
-        """⚠⚠ THE DEBT LIST NAMED TREATMENTS NOBODY COULD RUN.
-
-        `docs/EVAL_STATUS.md` publishes the never-named list as the work
-        roadmap objective 3 asks the fleet to do, and the arm name was derived
-        as `live_without_{tag with underscores}`. There is no such rule, and
-        both obvious ones are wrong somewhere: `live-trader-route`'s arm is
-        `live_without_live_trader_route_adapter`, after the flag, while
-        `army-target-weighs-enemy` sets `army_target_weighs_the_enemy` and its
-        arm is `live_without_army_target_weighs_enemy`, after the tag.
-
-        ⚠ The non-vacuity check reads the WHOLE bridge table, not just the
-        withholdable half. It used to name `ranged-line-of-sight` (arm
-        `live_without_ranged_needs_line_of_sight`) and scope itself to the
-        screenable tags; that gene left the code on 2026-08-21 with the
-        ranking's bottom ten, and every remaining screenable tag happens to
-        spell its arm naively — so scoped that way the check would silently
-        stop testing anything. The two Firaxis-only rows still differ, and
-        they carry registered arms like any other row.
-
-        So the arm is looked up in `EVAL_ONLY_AIS` rather than guessed, and a
-        treatment with no arm raises. That found one immediately:
-        ⚠ Scoped to the withholdable tags. `LIVE_TREATMENTS` also carries rows
-        that are not live-bridge treatments — `strategic-wonders` is one — and
-        those correctly have no arm; checking every row raised on them.
-        """
-        registry = eval_manifest.read_registry(REPO)
-        withholdable = {
-            tag
-            for tag in registry["LIVE_BRIDGE_TREATMENTS"]["items"]
-            if tag not in set(registry["FIRAXIS_ONLY_TREATMENTS"]["items"])
-        }
-        arms = eval_manifest.withholding_arms(
-            REPO, registry["EVAL_ONLY_AIS"]["items"], withholdable
-        )
-        known = set(registry["EVAL_ONLY_AIS"]["items"])
-        self.assertTrue(arms, "no withholding arms were resolved at all")
-        for tag, arm in arms.items():
-            self.assertIn(arm, known, f"{tag} resolves to {arm}, which is not a registered arm")
-        # Non-vacuous: at least one tag's arm is not the naive transformation,
-        # so the lookup is doing work a derivation could not. Read over every
-        # bridge row, for the reason in the docstring.
-        every = eval_manifest.withholding_arms(
-            REPO,
-            registry["EVAL_ONLY_AIS"]["items"],
-            set(registry["LIVE_BRIDGE_TREATMENTS"]["items"]),
-        )
-        naive = {tag: f"live_without_{tag.replace('-', '_')}" for tag in every}
-        self.assertTrue(
-            any(every[tag] != naive[tag] for tag in every),
-            "every arm matches the naive spelling; this test would pass on the "
-            "derivation it exists to replace",
-        )
-
-    def test_a_treatment_without_an_arm_is_refused(self):
-        """The guard bites rather than guessing a name."""
-        registry = eval_manifest.read_registry(REPO)
-        short = [
-            name
-            for name in registry["EVAL_ONLY_AIS"]["items"]
-            if not name.startswith("live_without_")
-        ]
-        withholdable = {
-            tag
-            for tag in registry["LIVE_BRIDGE_TREATMENTS"]["items"]
-            if tag not in set(registry["FIRAXIS_ONLY_TREATMENTS"]["items"])
-        }
-        with self.assertRaises(ValueError) as refused:
-            eval_manifest.withholding_arms(REPO, short, withholdable)
-        self.assertIn("no evaluator arm", str(refused.exception))
-
     def setUp(self) -> None:
         self.manifest = eval_manifest.build_manifest(REPO)
 
@@ -101,7 +30,6 @@ class EvalManifestTests(unittest.TestCase):
         derived = self.manifest["derived"]
         live = set(registry["LIVE_BRIDGE_TREATMENTS"]["items"])
         firaxis = set(registry["FIRAXIS_ONLY_TREATMENTS"]["items"])
-        self.assertEqual(derived["eval_only_count"], len(registry["EVAL_ONLY_AIS"]["items"]))
         self.assertEqual(derived["live_bridge_count"], len(live))
         self.assertEqual(derived["firaxis_only_count"], len(firaxis))
         self.assertEqual(derived["withholdable_live_count"], len(live - firaxis))
@@ -193,7 +121,7 @@ class BundleCoverageTests(unittest.TestCase):
     On 2026-08-18, 34 of the 51 withholdable live-bridge treatments had never
     been named in any recorded round, and nothing said so — `docs/ROADMAP.md`
     objective 3 asks for exactly this bundle to be priced by withholding, while
-    the generated inventory counted the arms that *exist*.
+    the generated inventory counted what *exists*.
     """
 
     def setUp(self):
@@ -299,7 +227,7 @@ class GenomeCoverageTests(unittest.TestCase):
     """The count of what the genome instrument cannot see.
 
     ⚠⚠ THE FIRST VERSION OF THIS COUNT INVENTED DEBT, and the trap is the one
-    `withholding_arms` already records from the other side: a treatment row's
+    the manifest's row scrape already records from the other side: a treatment row's
     FIELD string and its toggle's NAME are not the same word. The row for
     `army-target-weighs-enemy` reads
     `("army_target_weighs_enemy", …, disable_army_target_weighs_the_enemy)` —

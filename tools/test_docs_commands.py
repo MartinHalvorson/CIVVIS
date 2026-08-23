@@ -73,6 +73,7 @@ def documented_binaries() -> dict[str, list[str]]:
 # not here at all still fails the gate above. Adding a row means writing down why.
 REMOVED_TOOLING = {
     "age_census": "#1278",
+    "ai_eval": "#2351",
     "evolve_probe": "#1278",
     "leader_census": "#1278",
     "policy_eval": "#1278",
