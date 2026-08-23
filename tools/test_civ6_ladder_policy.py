@@ -28,40 +28,68 @@ def attempt(difficulty: str, won: bool, **extra):
     }
 
 
-class LadderPolicyTests(unittest.TestCase):
+def wins(difficulty: str, n: int, **extra):
+    return [attempt(difficulty, True, **extra) for _ in range(n)]
+
+
+class TheRuleIsThreeWinsOnTheHighestClaimedRung(unittest.TestCase):
+    """Operator, 2026-08-23: play the highest claimed rung until it has three
+    wins there, then move up. Losses are not evidence against a rung."""
+
     def test_unclaimed_ladder_starts_at_settler(self):
         target, statuses = policy.next_target({"attempts": [], "wins": {}})
         self.assertEqual(target, "DIFFICULTY_SETTLER")
         self.assertFalse(statuses[0]["claimed"])
 
-    def test_one_historical_win_does_not_advance(self):
-        state = {
-            "wins": {"DIFFICULTY_SETTLER": {"tag": "first"}},
-            "attempts": [
-                attempt("DIFFICULTY_SETTLER", True),
-                attempt("DIFFICULTY_SETTLER", False),
-                attempt("DIFFICULTY_SETTLER", False),
-            ],
-        }
+    def test_one_win_claims_a_rung_and_keeps_the_seat_on_it(self):
+        state = {"wins": {"DIFFICULTY_SETTLER": {"tag": "first"}},
+                 "attempts": wins("DIFFICULTY_SETTLER", 1)
+                 + [attempt("DIFFICULTY_SETTLER", False)] * 7}
         target, statuses = policy.next_target(state)
         self.assertEqual(target, "DIFFICULTY_SETTLER")
-        self.assertFalse(statuses[0]["repeatable"])
-        self.assertEqual(statuses[0]["window_wins"], 1)
+        self.assertTrue(statuses[0]["claimed"])
+        self.assertFalse(statuses[0]["earned"])
+        self.assertEqual(statuses[0]["wins"], 1)
 
-    def test_two_wins_in_a_comparable_window_advance_to_chieftain(self):
-        state = {
-            "wins": {"DIFFICULTY_SETTLER": {"tag": "first"}},
-            "attempts": [
-                attempt("DIFFICULTY_SETTLER", True),
-                attempt("DIFFICULTY_SETTLER", False),
-                attempt("DIFFICULTY_SETTLER", True),
-            ],
-        }
-        target, statuses = policy.next_target(
-            state, window=3, repeat_wins=2, min_attempts=3
-        )
+    def test_two_wins_do_not_advance_and_three_do(self):
+        two = {"wins": {}, "attempts": wins("DIFFICULTY_SETTLER", 2)}
+        self.assertEqual(policy.next_target(two)[0], "DIFFICULTY_SETTLER")
+        three = {"wins": {}, "attempts": wins("DIFFICULTY_SETTLER", 3)}
+        target, statuses = policy.next_target(three)
         self.assertEqual(target, "DIFFICULTY_CHIEFTAIN")
-        self.assertTrue(statuses[0]["repeatable"])
+        self.assertTrue(statuses[0]["earned"])
+
+    def test_losses_however_many_are_not_evidence_against_a_rung(self):
+        """Two wins in a window of eight used to advance the seat and eight
+        losses used to hold it; now only the win count speaks."""
+        state = {"wins": {}, "attempts": wins("DIFFICULTY_SETTLER", 3)
+                 + [attempt("DIFFICULTY_SETTLER", False)] * 40}
+        self.assertEqual(policy.next_target(state)[0], "DIFFICULTY_CHIEFTAIN")
+
+    def test_the_seat_plays_the_highest_claimed_rung_not_the_lowest_unearned(self):
+        """Settler 16, Chieftain 2, Warlord 1 — the record on 2026-08-23 once
+        the Warlord win is published. The seat plays Warlord: the rung above
+        Chieftain being claimed answers the question Chieftain asks."""
+        state = {"wins": {}, "attempts": wins("DIFFICULTY_SETTLER", 16)
+                 + wins("DIFFICULTY_CHIEFTAIN", 2) + wins("DIFFICULTY_WARLORD", 1)}
+        target, statuses = policy.next_target(state)
+        self.assertEqual(target, "DIFFICULTY_WARLORD")
+        by = {s["difficulty"]: s for s in statuses}
+        self.assertEqual(by["DIFFICULTY_CHIEFTAIN"]["wins"], 2)
+        self.assertFalse(by["DIFFICULTY_CHIEFTAIN"]["earned"])
+
+    def test_before_the_warlord_win_is_published_the_seat_plays_chieftain(self):
+        state = {"wins": {}, "attempts": wins("DIFFICULTY_SETTLER", 16)
+                 + wins("DIFFICULTY_CHIEFTAIN", 2)}
+        self.assertEqual(policy.next_target(state)[0], "DIFFICULTY_CHIEFTAIN")
+
+    def test_the_required_count_is_adjustable_and_the_ladder_is_finite(self):
+        state = {"wins": {}, "attempts": wins("DIFFICULTY_SETTLER", 2)}
+        self.assertEqual(policy.next_target(state, wins_required=2)[0],
+                         "DIFFICULTY_CHIEFTAIN")
+        everything = {"wins": {}, "attempts": sum(
+            (wins(difficulty, 3) for difficulty, _ in civ6_ladder.LADDER), [])}
+        self.assertEqual(policy.next_target(everything)[0], civ6_ladder.LADDER[-1][0])
 
     def test_a_game_that_was_not_the_game_asked_for_never_counts(self):
         """`configured` is read back from INSIDE the running session —
@@ -70,16 +98,35 @@ class LadderPolicyTests(unittest.TestCase):
         for the rung the run claims to be climbing."""
         state = {
             "wins": {"DIFFICULTY_SETTLER": {"tag": "first"}},
-            "attempts": [
-                attempt("DIFFICULTY_SETTLER", True, configured=False),
-                attempt("DIFFICULTY_SETTLER", True, configured=False),
-                attempt("DIFFICULTY_SETTLER", True, configured=False),
-            ],
+            "attempts": wins("DIFFICULTY_SETTLER", 3, configured=False),
         }
         target, statuses = policy.next_target(state)
         self.assertEqual(target, "DIFFICULTY_SETTLER")
         self.assertEqual(statuses[0]["comparable_attempts"], 0)
+        self.assertEqual(statuses[0]["wins"], 0)
 
+    def test_unconfigured_win_is_not_a_chieftain_claim(self):
+        state = {
+            "wins": {},
+            "attempts": [attempt("DIFFICULTY_CHIEFTAIN", True, configured=False)],
+        }
+        target, _ = policy.next_target(state)
+        self.assertEqual(target, "DIFFICULTY_SETTLER")
+
+    def test_a_late_backfill_cannot_change_the_answer(self):
+        """A win counts whenever its row arrives: there is no window for a
+        merged publish to redefine."""
+        recent = [attempt("DIFFICULTY_SETTLER", False, utc=f"2026-08-19T0{i}:00:00Z")
+                  for i in range(8)]
+        backfilled = [attempt("DIFFICULTY_SETTLER", True, utc=f"2026-07-0{i}T00:00:00Z")
+                      for i in (1, 2, 3)]
+        self.assertEqual(policy.next_target({"wins": {}, "attempts": recent + backfilled})[0],
+                         "DIFFICULTY_CHIEFTAIN")
+        self.assertEqual(policy.next_target({"wins": {}, "attempts": backfilled + recent})[0],
+                         "DIFFICULTY_CHIEFTAIN")
+
+
+class TheGateReadsOnlyKeysTheLedgerWrites(unittest.TestCase):
     def test_every_key_the_gate_reads_is_a_key_the_ledger_writes(self):
         """★★★★★ A FILTER KEY NOTHING WRITES IS A GUARD THAT CANNOT FIRE.
 
@@ -122,64 +169,6 @@ class LadderPolicyTests(unittest.TestCase):
                 f"civ6_ladder.entry_from never writes it, so the condition can "
                 f"never be anything but true")
 
-    def test_unconfigured_win_is_not_a_chieftain_claim(self):
-        state = {
-            "wins": {},
-            "attempts": [attempt("DIFFICULTY_CHIEFTAIN", True, configured=False)],
-        }
-        target, _ = policy.next_target(state)
-        self.assertEqual(target, "DIFFICULTY_SETTLER")
-
-
-class TheWindowIsTheNewestGamesNotTheNewestRows(unittest.TestCase):
-    """★★★★★ INSERTION ORDER WEARING CHRONOLOGY'S NAME, IN THE RUNG GATE.
-
-    `civ6_ladder.apply` carries this correction in its own words and applied it
-    to the rung MILESTONE: the earliest win stands "by the clock, not by the
-    order attempts happened to reach this function", because `sync` exists to
-    record attempts late. The gate kept reading `attempts[-window:]`, so the
-    same late arrival that could not move a milestone could still redefine
-    "the last eight attempts" as eight games from a week ago -- and a merged
-    publish, which appends another seat's history in one go, is that arrival
-    at scale.
-    """
-
-    def _rows(self, spec):
-        return [attempt("DIFFICULTY_SETTLER", won, utc=utc, tag=tag)
-                for tag, utc, won in spec]
-
-    def test_a_batch_of_old_wins_appended_late_is_not_the_recent_record(self):
-        recent = self._rows([(f"new-{i}", f"2026-08-19T0{i}:00:00Z", False)
-                             for i in range(8)])
-        backfilled = self._rows([
-            ("old-win-1", "2026-07-01T00:00:00Z", True),
-            ("old-win-2", "2026-07-02T00:00:00Z", True),
-            ("old-win-3", "2026-07-03T00:00:00Z", True)])
-        state = {"wins": {}, "attempts": recent + backfilled}
-        status = policy.rung_status(state, "DIFFICULTY_SETTLER")
-        self.assertEqual(status["window_wins"], 0)
-        self.assertFalse(status["repeatable"])
-        self.assertEqual(policy.next_target(state)[0], "DIFFICULTY_SETTLER")
-
-    def test_recent_wins_still_count_when_older_rows_arrive_after_them(self):
-        """The correction must not cut the other way: a real recent win is
-        still in the window however late the rows around it were recorded."""
-        state = {"wins": {}, "attempts": self._rows([
-            ("old-loss", "2026-07-01T00:00:00Z", False),
-            ("win-a", "2026-08-19T01:00:00Z", True),
-            ("win-b", "2026-08-19T02:00:00Z", True),
-            ("older-loss", "2026-07-02T00:00:00Z", False)])}
-        status = policy.rung_status(state, "DIFFICULTY_SETTLER", window=3)
-        self.assertEqual(status["window_wins"], 2)
-        self.assertTrue(status["repeatable"])
-
-    def test_a_row_with_no_stamp_cannot_claim_to_be_the_newest_game(self):
-        state = {"wins": {}, "attempts":
-                 self._rows([(f"new-{i}", f"2026-08-19T0{i}:00:00Z", False)
-                             for i in range(3)])
-                 + [attempt("DIFFICULTY_SETTLER", True, tag="undated")]}
-        status = policy.rung_status(state, "DIFFICULTY_SETTLER", window=3)
-        self.assertEqual(status["window_wins"], 0)
 
 
 class TheGateReadsTheFleetsRecordNotOneSeatsCopy(unittest.TestCase):
@@ -189,11 +178,11 @@ class TheGateReadsTheFleetsRecordNotOneSeatsCopy(unittest.TestCase):
     file from the committed snapshot the first time and never looks at it
     again, so a second Civilization VI seat gates on the record as it stood the
     day it was seeded. On 2026-08-23 the published snapshot said Settler was
-    repeatable -- two wins in its trailing eight -- while 76 Settler games from
-    the other seat, whose newest eight were all losses, were in no published
+    repeatable while 76 Settler games from the other seat were in no published
     record at all. `mbp-m5-max-128` answered `DIFFICULTY_SETTLER` and the
     publishing seat answered `DIFFICULTY_CHIEFTAIN`, on the same day, about the
-    same controller.
+    same controller. Under the win-count rule the union matters for the wins
+    it adds: a win the other seat recorded is a win.
     """
 
     def setUp(self):
@@ -209,7 +198,9 @@ class TheGateReadsTheFleetsRecordNotOneSeatsCopy(unittest.TestCase):
     def _write(self, path, rows):
         path.write_text(json.dumps({"attempts": rows, "wins": {}}))
 
-    def test_the_other_seats_losses_reach_this_seats_gate(self):
+    def test_the_other_seats_wins_reach_this_seats_gate(self):
+        """Two published Settler wins plus one recorded only here make three:
+        the union earns the rung where either copy alone would not."""
         self._write(self.snapshot, [
             attempt("DIFFICULTY_SETTLER", True, tag="pub-win-1",
                     utc="2026-08-18T01:00:00Z"),
@@ -217,28 +208,26 @@ class TheGateReadsTheFleetsRecordNotOneSeatsCopy(unittest.TestCase):
                     utc="2026-08-18T02:00:00Z"),
             attempt("DIFFICULTY_SETTLER", False, tag="pub-loss",
                     utc="2026-08-18T03:00:00Z")])
-        # This seat's own newer games, none of them published, all losses.
         self._write(civ6_ladder.live_ledger_for(self.runs), [
-            attempt("DIFFICULTY_SETTLER", False, tag=f"local-{i}",
-                    utc=f"2026-08-19T0{i}:00:00Z") for i in range(3)])
+            attempt("DIFFICULTY_SETTLER", True, tag="local-win",
+                    utc="2026-08-19T01:00:00Z"),
+            attempt("DIFFICULTY_SETTLER", False, tag="local-loss",
+                    utc="2026-08-19T02:00:00Z")])
         state = policy.load_live(self.runs)
-        self.assertEqual(len(state["attempts"]), 6)
-        status = policy.rung_status(state, "DIFFICULTY_SETTLER", window=3)
-        self.assertEqual(status["window_wins"], 0)
-        self.assertFalse(status["repeatable"])
+        self.assertEqual(len(state["attempts"]), 5)
+        status = policy.rung_status(state, "DIFFICULTY_SETTLER")
+        self.assertEqual(status["wins"], 3)
+        self.assertTrue(status["earned"])
+        self.assertEqual(policy.next_target(state)[0], "DIFFICULTY_CHIEFTAIN")
 
-    def test_the_published_record_alone_would_have_advanced_the_rung(self):
-        """The same fixture, gated the old way, hands out Chieftain."""
+    def test_one_copy_of_the_record_alone_would_hold_the_seat_back(self):
         published = [
             attempt("DIFFICULTY_SETTLER", True, tag="pub-win-1",
                     utc="2026-08-18T01:00:00Z"),
             attempt("DIFFICULTY_SETTLER", True, tag="pub-win-2",
-                    utc="2026-08-18T02:00:00Z"),
-            attempt("DIFFICULTY_SETTLER", False, tag="pub-loss",
-                    utc="2026-08-18T03:00:00Z")]
-        target, _ = policy.next_target({"wins": {}, "attempts": published},
-                                       window=3)
-        self.assertEqual(target, "DIFFICULTY_CHIEFTAIN")
+                    utc="2026-08-18T02:00:00Z")]
+        target, _ = policy.next_target({"wins": {}, "attempts": published})
+        self.assertEqual(target, "DIFFICULTY_SETTLER")
 
     def test_a_seat_with_no_committed_snapshot_still_gates_on_its_own_rows(self):
         self._write(civ6_ladder.live_ledger_for(self.runs), [
