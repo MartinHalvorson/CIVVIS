@@ -1,7 +1,7 @@
 # census — take the readings the crate's `#[ignore]`d censuses produce, and
 # fail when one has drifted from the committed baseline.
 #
-# Twenty-two tests carry a reason like "census, not an assertion; run
+# Twenty-eight tests carry a reason like "census, not an assertion; run
 # explicitly with --nocapture". That reasoning is right — a census is a
 # reading, and asserting an exact number would fail on every legitimate change
 # — but it left the project's best diagnostic surface invisible unless somebody
@@ -10,10 +10,11 @@
 # loop stopped for 14.3 hours with a correct detector wired to nothing.
 #
 # Why a schedule and not a pull-request gate: the full set takes about fourteen
-# minutes and one census plays 24 games to a result. Putting that in front of
-# every pull request would tax the whole fleet to re-measure something that only
-# moves when the engine does. The `#[ignore]` is a correct call about where this
-# work belongs, not laziness — so this is where it belongs.
+# minutes here and over an hour on a hosted runner, and one census plays 24
+# games to a result. Putting that in front of every pull request would tax the
+# whole fleet to re-measure something that only moves when the engine does. The
+# `#[ignore]` is a correct call about where this work belongs, not laziness —
+# so this is where it belongs.
 #
 # ⚠ THE CHECK IS ALSO A CROSS-PLATFORM DETERMINISM CHECK, AND THAT IS FREE.
 # The baseline in `docs/census.json` was recorded on macOS; this runs on Linux.
@@ -27,6 +28,33 @@
 # the intended one, run `tools/census_report.py --write` and commit it with the
 # reason. That is the point — the number stays free to move and cannot move
 # silently.
+#
+# ⚠⚠ TWO JOBS, BECAUSE ONE JOB MEANT THE DETERMINISM CHECK NEVER RAN.
+# The hotspot reading below is cheap and belongs first: it needs no toolchain
+# and no build, so a roadmap pointing at a file nobody edits is reported in
+# seconds instead of after the census budget. That reasoning is still right and
+# it is still first. What was wrong was making it a *step* of the census job.
+# `bash -e` ends the job on the first non-zero exit, so from 2026-08-19 a single
+# stale row in `docs/ROADMAP.md` — `src/main.rs`, 16% when it was written and 4%
+# five days later — failed this workflow eighteen seconds in, five nights
+# running, and the ninety-minute census never executed once in the workflow's
+# lifetime. A doc going stale silenced an instrument, which is the exact failure
+# this whole directory exists to prevent (#2326).
+#
+# They are separate jobs with no `needs:` between them, so both always run and
+# the workflow is red if either is. Two independent findings report as two
+# independent findings. `continue-on-error` plus a summarising gate would give
+# the same conclusion, but it hides the real failure behind a green step and a
+# red one nobody can attribute; `tools/test_conflict_hotspots.py` pins the
+# separation so the two cannot be recombined by accident.
+#
+# ⚠ THE CENSUS BUDGET SCALES WITH THE NUMBER OF CENSUSES. Measured on the
+# 2026-08-20 run: 6m30s to build, then 75m43s for 22 censuses on a hosted
+# runner — the fourteen-minute figure above is an M5 Max, not `ubuntu-latest`.
+# Six more censuses landed by 2026-08-22 and the run hit the 90-minute ceiling
+# and was killed mid-reading, twice. 180 minutes covers 28 censuses with room to
+# grow; when it stops doing so, shard the set across a matrix rather than
+# raising this again, because the ceiling is not what makes the job slow.
 #
 # 04:23 UTC, an odd minute for the same reason the rest of this directory uses
 # one: on-the-hour crons get delayed or dropped under GitHub's load.
@@ -46,20 +74,28 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  census:
+  # Seconds, no toolchain, no build. Runs alongside the census, never in front
+  # of it.
+  objective:
+    name: The split targets are files that are really contended
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
-          # The conflict-hotspot reading below counts merges, so it needs the
-          # history to count. The rust censuses do not care.
+          # The conflict-hotspot reading counts merges, so it needs the history
+          # to count. A shallow clone reads every file at 0%, which the tool
+          # refuses rather than passing vacuously.
           fetch-depth: 0
-      # Cheap, and first: it needs no toolchain and no build, so a roadmap that
-      # points at a file nobody edits is reported in seconds rather than after
-      # the ninety-minute census budget.
-      - name: The split targets are files that are really contended
-        run: python3 tools/conflict_hotspots.py --check
+      - run: python3 tools/conflict_hotspots.py --check
+
+  census:
+    name: Take the readings and compare them with the committed baseline
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      # The rust censuses do not count merges, so this one stays shallow.
+      - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: actions/cache@v4
         with:
@@ -70,7 +106,6 @@ jobs:
           key: cargo-census-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: cargo-census-${{ runner.os }}-
       # Build once so the per-census runs below are test time rather than
-      # twenty-two compilations.
+      # twenty-eight compilations.
       - run: cargo build --profile ci --locked --tests
-      - name: Take the readings and compare them with the committed baseline
-        run: python3 tools/census_report.py --check
+      - run: python3 tools/census_report.py --check
