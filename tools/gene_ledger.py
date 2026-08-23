@@ -33,9 +33,9 @@ workflow's `unittest discover` runs on every PR.
 Default rule (repeated in src/ai/advanced/gene_ledger.rs, and the columns it
 reads are the ones `HEURISTIC_GENE_RANKING.md` prints):
 
-- The win column is wins added per 10,000 games at the gene's measured on-rate
-  in one screen — `(win_on - 1/players) * 10,000`, against the 1-in-`players` a
-  seat wins by chance. `wins_last_10k` is the latest screen that priced the
+- The win column is wins added per 10,000 on-arm seats at the gene's measured
+  on-rate in one screen — `(win_on - 1/players) * 10,000`, against the
+  1-in-`players` a seat wins by chance. `wins_last_10k` is the latest screen that priced the
   gene, `wins_prior_10k` the screen before that.
 - **on** when both columns are positive, or when their average is above +15
   and neither column is below -10.
@@ -44,12 +44,12 @@ reads are the ones `HEURISTIC_GENE_RANKING.md` prints):
 - **off** whatever the columns say when `win_diff_pp` is negative (operator
   directive 2026-08-22). That is the ranking's *Diff*: the pooled on rate minus
   the pooled off rate in percentage points, over **every** screen that priced
-  the gene, each weighted by its games. The win columns read the latest two
+  the gene, each weighted by its on-arm seats. The win columns read the latest two
   screens only, so this veto is the one clause that lets an older screen speak:
   a gene whose two newest readings are positive but whose whole record is not
-  ships off. Both arms of a screen carry the same games, so the 1-in-`players`
+  ships off. Both arms of a screen carry the same number of seat observations, so the 1-in-`players`
   chance base cancels inside each screen and the pooled figure is a
-  games-weighted average of per-screen differences, comparable across shapes
+  on-arm-seat-weighted average of per-screen differences, comparable across shapes
   and player counts in a way a raw win rate is not.
 
 ⚠ The columns recorded before 2026-08-22 were read on 60x38 Pangaea, under a
@@ -144,8 +144,8 @@ def axes_conflict(win_z: float, share_z: float) -> bool:
 
 
 def wins_per_10k(win_rate: float, players: int) -> int:
-    """One screen's win column: wins added per 10,000 games at this measured
-    on-rate. A seat wins 1-in-`players` by chance (1-in-6 when a fixture does
+    """One screen's win column: wins added per 10,000 on-arm seats at this
+    measured on-rate. A seat wins 1-in-`players` by chance (1-in-6 when a fixture does
     not say), so the column is how far above or below that the gene's on arm
     landed. `tools/heuristic_gene_ranking.py` imports this, so the table's
     printed column and the ledger's decision are one arithmetic."""
@@ -154,15 +154,15 @@ def wins_per_10k(win_rate: float, players: int) -> int:
 
 
 def pooled_win_rates(history: list[dict]) -> tuple[float, float]:
-    """The games-weighted on and off win rates across every screen that priced
+    """The on-arm-seat-weighted on and off win rates across every screen that priced
     the gene — `HEURISTIC_GENE_RANKING.md`'s two *Total* columns. Each entry
-    carries `win_on`/`win_off` and the games behind each arm.
+    carries `win_on`/`win_off` and the seat observations behind each arm.
     `tools/heuristic_gene_ranking.py` imports this, so the printed totals and
     the ledger's veto are one arithmetic."""
-    on_games = sum(m["n_on"] for m in history)
-    off_games = sum(m["n_off"] for m in history)
-    on = sum(m["win_on"] * m["n_on"] for m in history) / on_games
-    off = sum(m["win_off"] * m["n_off"] for m in history) / off_games
+    on_seats = sum(m["n_on"] for m in history)
+    off_seats = sum(m["n_off"] for m in history)
+    on = sum(m["win_on"] * m["n_on"] for m in history) / on_seats
+    off = sum(m["win_off"] * m["n_off"] for m in history) / off_seats
     return on, off
 
 
@@ -305,7 +305,7 @@ def build_ledger(sources: list[Path], filter_known: bool = True) -> dict:
     per gene. `filter_known=False` keeps every tag (synthetic tests)."""
     measures: dict[str, dict] = {}
     # Every win column a gene has, oldest first: the last two are the ranking's
-    # `± Wins Last 10k` and `± Wins 10k Prior`, and the deployment default is
+    # `± Wins / 10k seats` and `± Wins / 10k seats prior`, and the deployment default is
     # read off them.
     columns: dict[str, list[int]] = {}
     # Every screen's two arms, for the pooled on-off difference that vetoes a
@@ -393,11 +393,11 @@ def build_ledger(sources: list[Path], filter_known: bool = True) -> dict:
             "hurts": "the mirror image",
             "shape": "one screen: a source whose profile is not `screen` above is "
                      "marked legacy and kept as history; new ones are refused",
-            "win_column": "wins added per 10,000 games at the gene's measured on-rate in one "
+            "win_column": "wins added per 10,000 on-arm seats at the gene's measured on-rate in one "
                           "screen, (win_on - 1/players) * 10000; last and prior are the "
                           "two most recent screens that priced the gene",
             "win_diff": "the pooled on rate minus the pooled off rate in percentage points, "
-                        "over every screen that priced the gene, each weighted by its games "
+                        "over every screen that priced the gene, each weighted by its on-arm seats "
                         "- the ranking's `Diff`, the whole on-off difference",
             "default_on": f"both win columns positive, or their average above +{AVERAGE_BAR:.0f} "
                           f"with neither below {COLUMN_FLOOR}; with exactly one populated "
