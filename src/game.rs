@@ -1194,6 +1194,18 @@ pub struct QueryCache {
     /// inside a query, so the answer is a table built once per memo scope
     /// and read with one array index.
     passage_improvements: std::cell::RefCell<Option<PassageTable>>,
+    /// What each unit's movement costs before the tile is even named.
+    ///
+    /// ★★★★ A UNIT-WIDE FACT ASKED PER NEIGHBOUR, BY STRING. `flow_past`
+    /// reaches `unit_step_cost`, `unit_max_moves_at` and
+    /// `formation_enters_enemy_zoc` once for every neighbour of every tile it
+    /// expands, and each of those descended a `BTreeMap<String, f64>` — one
+    /// `memcmp` per level — for `woods_move_cost`, `hills_move_cost`,
+    /// `amphibious`, `movement` and the rest, plus a seven-tile occupancy
+    /// sweep for the support aura. None of it depends on the tile, so a flood
+    /// over three hundred tiles asked the same questions three hundred times.
+    /// The answers are computed once per unit per memo scope instead.
+    movement: std::cell::RefCell<Option<BTreeMap<u32, MovementProfile>>>,
     amenities: std::cell::RefCell<Option<BTreeMap<u32, i64>>>,
     // Ownership-filtered ids are requested throughout AI evaluation. A
     // 100-seat game otherwise rescans every world entity for each request,
@@ -1269,6 +1281,48 @@ type AirPatrols = Arc<Vec<(usize, Pos)>>;
 /// `Game::passage_improvements`.
 type PassageTable = Arc<Vec<bool>>;
 
+/// What a movement flood asks about one unit and gets the same answer for at
+/// every tile it considers — see [`Game::movement_profile`].
+///
+/// Each field is the *value* the open-coded expression produced, not a
+/// simplification of it, so the arithmetic that reads them adds the same
+/// terms in the same order and lands on the same bits.
+#[derive(Clone, Copy)]
+struct MovementProfile {
+    /// `unit_effect(unit, "woods_move_cost")`.
+    woods_move_cost: f64,
+    /// `unit_effect(unit, "hills_move_cost")`.
+    hills_move_cost: f64,
+    /// `promotion_effect(unit, "amphibious")`.
+    amphibious: f64,
+    /// `has_ability(unit.owner, "knarr")`.
+    knarr: bool,
+    /// A religious unit whose religion flattens every step to 1 MP.
+    religious_flat_movement: bool,
+    /// `promotion_effect(unit, "movement")`.
+    promotion_movement: f64,
+    /// `tree_effect(unit.owner, "naval_movement")`.
+    naval_movement_tree: f64,
+    /// `tree_effect(unit.owner, "embarked_movement")`.
+    embarked_movement_tree: f64,
+    /// `has_ability(unit.owner, "mana")`.
+    mana: bool,
+    /// `empire_wonder_effect(unit.owner, "naval_movement")`.
+    naval_movement_wonder: f64,
+    /// A religious unit standing beside a Guru of its own religion. The
+    /// wonder effect that pays for it is left at the call site because it is
+    /// this scan, not the lookup, that walks seven tiles of occupancy.
+    guru_adjacent: bool,
+    /// Monumentality is active and this unit is a Builder or a Settler.
+    monumentality_civilian: bool,
+    /// Exodus of the Evangelists is active and this unit is religious.
+    exodus_religious: bool,
+    /// `adjacent_support_effect(unit, "adjacent_movement")`.
+    adjacent_movement: f64,
+    /// `unit_ignores_zoc(unit.id)`.
+    ignores_zoc: bool,
+}
+
 pub struct QueryMemo<'a> {
     game: &'a Game,
     outermost: bool,
@@ -1282,6 +1336,7 @@ impl Drop for QueryMemo<'_> {
             *self.game.query_memo.traversal.borrow_mut() = None;
             *self.game.query_memo.air_patrols.borrow_mut() = None;
             *self.game.query_memo.passage_improvements.borrow_mut() = None;
+            *self.game.query_memo.movement.borrow_mut() = None;
             *self.game.query_memo.amenities.borrow_mut() = None;
             *self.game.query_memo.unit_ids.borrow_mut() = None;
             *self.game.query_memo.unit_territory_access.borrow_mut() = None;
@@ -16177,6 +16232,69 @@ impl Game {
         table
     }
 
+    /// Everything a step costs this unit before the destination tile is even
+    /// named: its terrain promotions, its owner's movement unlocks, the
+    /// support aura it is standing in, and whether zone of control binds it.
+    ///
+    /// `flow_past` asks all of it once per neighbour of every tile it
+    /// expands, through `unit_step_cost`, `unit_max_moves_at` and
+    /// `formation_enters_enemy_zoc`. None of those answers can change while
+    /// the flood runs, so — exactly as [`Game::traversal_class`] already does
+    /// for the same reason — they are computed once per unit per memo scope.
+    ///
+    /// Outside a memo scope there is nothing to hold the answer against, so it
+    /// is rebuilt per call; `query_memo.movement` is the "a scope is live"
+    /// discriminator.
+    fn movement_profile(&self, unit: &Unit) -> MovementProfile {
+        if let Some(memo) = self.query_memo.movement.borrow().as_ref() {
+            if let Some(profile) = memo.get(&unit.id) {
+                return *profile;
+            }
+        }
+        let profile = self.movement_profile_uncached(unit);
+        if let Some(memo) = self.query_memo.movement.borrow_mut().as_mut() {
+            memo.insert(unit.id, profile);
+        }
+        profile
+    }
+
+    /// Derive [`MovementProfile`]. Every field keeps the guard its open-coded
+    /// original had, so a unit that could never earn a term does not pay to
+    /// look it up here either.
+    fn movement_profile_uncached(&self, unit: &Unit) -> MovementProfile {
+        let spec = &self.rules.units[unit.kind];
+        let religious = spec.class == "religious";
+        MovementProfile {
+            woods_move_cost: self.unit_effect(unit, "woods_move_cost"),
+            hills_move_cost: self.unit_effect(unit, "hills_move_cost"),
+            amphibious: self.promotion_effect(unit, "amphibious"),
+            knarr: self.has_ability(unit.owner, "knarr"),
+            religious_flat_movement: religious
+                && unit.religion.as_deref().is_some_and(|religion| {
+                    self.religion_belief_effect(religion, "religious_flat_movement") > 0.0
+                }),
+            promotion_movement: self.promotion_effect(unit, "movement"),
+            naval_movement_tree: self.tree_effect(unit.owner, "naval_movement"),
+            embarked_movement_tree: self.tree_effect(unit.owner, "embarked_movement"),
+            mana: self.has_ability(unit.owner, "mana"),
+            naval_movement_wonder: self.empire_wonder_effect(unit.owner, "naval_movement"),
+            guru_adjacent: religious
+                && self.wdisk(unit.pos, 1).into_iter().any(|position| {
+                    self.unit_ids_at(position).iter().any(|other| {
+                        self.units[other].owner == unit.owner
+                            && self.units[other].kind == "guru"
+                            && self.units[other].religion == unit.religion
+                    })
+                }),
+            monumentality_civilian: self.dedication_active(unit.owner, "monumentality")
+                && matches!(unit.kind.as_str(), "builder" | "settler"),
+            exodus_religious: self.dedication_active(unit.owner, "exodus_of_the_evangelists")
+                && religious,
+            adjacent_movement: self.adjacent_support_effect(unit, "adjacent_movement"),
+            ignores_zoc: self.unit_ignores_zoc_uncached(unit),
+        }
+    }
+
     /// A unit's traversal class costs a ruleset effect sum over every tech
     /// and civic it owns plus two improvement unlocks, and a route search
     /// asks for it once per tile it examines — hence the memo above.
@@ -20899,6 +21017,9 @@ impl Game {
     fn unit_step_cost(&self, uid: u32, from: Pos, to: Pos) -> f64 {
         let unit = &self.units[&uid];
         let tile = &self.map.tiles[&to];
+        // Five of the tests below name the unit, not the tile, and a flood
+        // asks all five once per neighbour of every tile it expands.
+        let profile = self.movement_profile(unit);
         // Medieval and later routes bridge rivers (SupportsBridges); Ancient
         // roads leave the crossing penalty in place. Bridging has to withhold
         // the surcharge rather than refund it afterwards: the route ladder
@@ -20930,29 +21051,25 @@ impl Game {
             }
             cost = cost.min(route);
         }
-        if self.rules.units[unit.kind].class == "religious"
-            && unit.religion.as_deref().is_some_and(|religion| {
-                self.religion_belief_effect(religion, "religious_flat_movement") > 0.0
-            })
-        {
+        if profile.religious_flat_movement {
             cost = 1.0;
         }
-        if self.unit_effect(unit, "woods_move_cost") > 0.0
+        if profile.woods_move_cost > 0.0
             && matches!(tile.feature.as_deref(), Some("forest" | "jungle"))
         {
             cost = 1.0;
         }
-        if self.unit_effect(unit, "hills_move_cost") > 0.0 && tile.hills {
+        if profile.hills_move_cost > 0.0 && tile.hills {
             cost = 1.0;
         }
-        if self.promotion_effect(unit, "amphibious") > 0.0 && self.crosses_river(from, to) {
+        if profile.amphibious > 0.0 && self.crosses_river(from, to) {
             cost = self.rules.move_cost(tile);
         }
         let changes_embarkation =
             self.unit_is_embarked_at(unit, from) != self.unit_is_embarked_at(unit, to);
         if changes_embarkation
-            && self.promotion_effect(unit, "amphibious") <= 0.0
-            && !self.has_ability(unit.owner, "knarr")
+            && profile.amphibious <= 0.0
+            && !profile.knarr
             && !self.embarkation_facility_at(from)
             && !self.embarkation_facility_at(to)
         {
@@ -21457,6 +21574,10 @@ impl Game {
         let u = &self.units[&uid];
         let spec = &self.rules.units[u.kind];
         let tile = &self.map.tiles[&pos];
+        // Only the terrain terms and the emergency below read `pos`; the rest
+        // is a property of the unit, and `flow_past` re-derives the allowance
+        // at every neighbour it relaxes.
+        let profile = self.movement_profile(u);
         let embarked = self.unit_is_embarked_at(u, pos);
         let mut moves = if embarked {
             2.0
@@ -21468,28 +21589,20 @@ impl Game {
         } else {
             spec.moves
         };
-        moves += self.promotion_effect(u, "movement") + u.bonus_moves;
+        moves += profile.promotion_movement + u.bonus_moves;
         if spec.domain.as_deref() == Some("sea") || embarked {
-            moves += self.tree_effect(u.owner, "naval_movement");
+            moves += profile.naval_movement_tree;
         }
         if embarked {
-            moves += self.tree_effect(u.owner, "embarked_movement");
-            if self.has_ability(u.owner, "mana") {
+            moves += profile.embarked_movement_tree;
+            if profile.mana {
                 moves += 2.0;
             }
         }
         if spec.domain.as_deref() == Some("sea") || embarked {
-            moves += self.empire_wonder_effect(u.owner, "naval_movement");
+            moves += profile.naval_movement_wonder;
         }
-        if spec.class == "religious"
-            && self.wdisk(u.pos, 1).into_iter().any(|position| {
-                self.units_at(position).into_iter().any(|other| {
-                    self.units[&other].owner == u.owner
-                        && self.units[&other].kind == "guru"
-                        && self.units[&other].religion == u.religion
-                })
-            })
-        {
+        if profile.guru_adjacent {
             moves += self.empire_wonder_effect(u.owner, "guru_adjacent_religious_movement");
         }
         if u.kind == "giant_death_robot" {
@@ -21505,13 +21618,10 @@ impl Game {
         {
             moves += spec.clear_terrain_start_movement;
         }
-        if self.dedication_active(u.owner, "monumentality")
-            && matches!(u.kind.as_str(), "builder" | "settler")
-        {
+        if profile.monumentality_civilian {
             moves += 2.0;
         }
-        if self.dedication_active(u.owner, "exodus_of_the_evangelists") && spec.class == "religious"
-        {
+        if profile.exodus_religious {
             moves += 2.0;
         }
         let territory_owner = tile
@@ -21525,7 +21635,7 @@ impl Game {
         }) {
             moves += 1.0;
         }
-        moves += self.adjacent_support_effect(u, "adjacent_movement");
+        moves += profile.adjacent_movement;
         moves
     }
 
@@ -23454,6 +23564,12 @@ impl Game {
         let Some(unit) = self.units.get(&uid) else {
             return false;
         };
+        // `formation_enters_enemy_zoc` asks this for every neighbour a flood
+        // considers, and the answer is a property of the unit and its escort.
+        self.movement_profile(unit).ignores_zoc
+    }
+
+    fn unit_ignores_zoc_uncached(&self, unit: &Unit) -> bool {
         let spec = &self.rules.units[unit.kind];
         let innate = spec.cavalry
             || spec.promotion_class == "naval_raider"
@@ -23630,16 +23746,20 @@ impl Game {
             return false;
         };
         let water = self.rules.is_water(t);
+        // The mover's half of the religious test is the same at all six
+        // neighbours and for every unit standing on them, and the occupancy
+        // list is read, not kept — `units_at` would copy it into a fresh
+        // `Vec` once per neighbour of every tile a flood expands.
+        let mover_religious = mover_spec.class == "religious" && mover.religion.is_some();
         for n in self.nbrs(pos) {
-            for oid in self.units_at(n) {
-                let other = &self.units[&oid];
+            for oid in self.unit_ids_at(n) {
+                let other = &self.units[oid];
                 if other.owner == mover.owner {
                     continue;
                 }
                 let other_spec = &self.rules.units[other.kind];
-                let religious_zoc = mover_spec.class == "religious"
+                let religious_zoc = mover_religious
                     && other_spec.class == "religious"
-                    && mover.religion.is_some()
                     && other.religion.is_some()
                     && mover.religion != other.religion;
                 let military_zoc =
@@ -23819,11 +23939,13 @@ impl Game {
                 }
             }
         }
-        for oid in self.units_at(pos) {
+        // Read the occupancy list in place: `units_at` copies it into a fresh
+        // `Vec`, and `flow_past` asks this once per neighbour of every tile.
+        for oid in self.unit_ids_at(pos) {
             if through_units {
                 break;
             }
-            let o = &self.units[&oid];
+            let o = &self.units[oid];
             let ospec = &self.rules.units[o.kind];
             // Based aircraft occupy a slot, not the land/naval stacking layer.
             // A hostile ground unit may enter the base and subsequently
@@ -28231,6 +28353,7 @@ impl Game {
             *self.query_memo.traversal.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.air_patrols.borrow_mut() = None;
             *self.query_memo.passage_improvements.borrow_mut() = None;
+            *self.query_memo.movement.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.amenities.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.unit_ids.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.unit_territory_access.borrow_mut() = Some(BTreeMap::new());
