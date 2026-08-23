@@ -1600,3 +1600,187 @@ answer. The moment the reports disagree — which is every promoted feature —
 whole-game time stops being a cost and starts being a mixture. `gene_screen`
 already separates the two columns for this reason; the paired harness does not,
 and a reader who quotes its number for a behaviour change is quoting a mixture.
+
+## 2026-08-23 — the flood stopped re-asking the ruleset what the unit is (−4.6%), and a dense frontier that did not pay
+
+The direct sequel to 2026-08-22 above. That change hoisted the two *whole-board*
+facts out of the movement flood — the air-patrol scan and the passage table.
+The *per-unit* ones were still being asked once per neighbour of every tile
+`flow_past` expands.
+
+### The profile that found it, at the shape a screen actually runs
+
+`/usr/bin/sample` at 1 ms over `civvis simulate --seed 7311001 --jobs 1
+--players 6 --turns 250 --width 74 --height 46 --city-states 9 --speed online
+--map continents` — the #2308 standard screen shape, not the 60×38/6 the
+2026-08-22 profile was taken at. Load average 16 during the sample, so read the
+shares, not any wall clock. Self time, over 32,860 non-idle samples:
+
+| leaf | self |
+| --- | ---: |
+| `BTreeMap<(i64,i64), SetVal>::insert` — the `BTreeSet<Pos>` envelopes | 13.4% |
+| `memcmp` | 3.4% |
+| `memmove` | 3.2% |
+| `BTreeMap<String, f64>::get` | 2.7% |
+| `free` | 2.6% |
+
+and, inclusive, where the flood's own work sits:
+
+| | inclusive |
+| --- | ---: |
+| `BasicAi::enemy_attack_envelopes` | 16.9% |
+| `attack_reach_from_flood` | 12.8% |
+| `flow_past` | 11.0% |
+| `BTreeMap<String, f64>::get` | 4.5% |
+| **`units_at`** | **4.1%** |
+| `can_enter_past` | 3.3% |
+| `formation_enters_enemy_zoc` | 2.3% |
+| `unit_step_cost` | 2.1% |
+
+Attributing the two rows that matter to their callers:
+
+| the work | caller | share |
+| --- | --- | ---: |
+| `units_at` | `unit_max_moves_at` → `adjacent_support_effect` | 1.71% |
+| `units_at` | `in_enemy_zoc_for` ← `flow_past` | 1.00% |
+| `units_at` | `can_enter_past` ← `flow_past` | 0.40% |
+| `BTreeMap<String,f64>::get` | `class_can_traverse` ← **`routing_zones`** | 1.69% |
+| `BTreeMap<String,f64>::get` | `unit_effect` ← `unit_step_cost` | 0.10%+ |
+
+### What changed
+
+**A per-unit movement profile in the existing `QueryMemo` scope.** `flow_past`
+reaches `unit_step_cost`, `unit_max_moves_at` and `formation_enters_enemy_zoc`
+once per neighbour of every tile it expands. Between them they asked, *per
+neighbour*: `unit_effect("woods_move_cost")`, `unit_effect("hills_move_cost")`,
+`promotion_effect("amphibious")`, `promotion_effect("movement")` — each a
+`BTreeMap<String, f64>` descent with a `memcmp` per level — two
+`dedication_active` string tests, and `adjacent_support_effect`, which sweeps
+the occupancy of seven tiles to find a support aura. None of it depends on the
+tile. It is now derived once per unit per memo scope, with the same
+no-invalidation argument `traversal_class`, `air_patrols` and
+`passage_improvements` already make: the guard borrows the world immutably.
+
+**`units_at` reads the occupancy list in place** at the flood's two sites. This
+file already named it — *"`units_at` … 1.08M allocations for 4.5 MB, an average
+of four bytes, because it clones a one- or two-element `Vec<u32>` out of the
+occupancy map"* — and `unit_ids_at` was already there, returning the slice.
+
+### ⚠ The fix from 2026-08-22 was a pessimization on the path with no memo
+
+The 1.69% row above is not the movement flood. It is `build_routing_zones`,
+which maps `class_can_traverse` over **every tile on the map** to label
+connected regions — and it runs with no `QueryMemo` scope open.
+
+`Game::passage_improvements`, added by #2309, builds a `Vec<bool>` over the
+whole improvement list and keeps it for the scope. Its own comment says that
+outside a scope it is rebuilt per call, *"exactly the work the open-coded scan
+did, never more"*. That sentence is true of `air_patrols` and false of this
+one: the code it replaced was a single `improvements[name].effects["passage"]`
+lookup, and rebuilding the table costs one such lookup **per improvement in the
+ruleset**. On the one path with no scope, #2309 turned one string lookup per
+improved tile into one per improvement.
+
+Opening a memo scope over the sweep is the whole fix — one line, with the same
+`&self` argument as everywhere else. **−0.98% on its own**, on a workload where
+a 144 CPU-hour screen is the unit of account.
+
+The general lesson outlives the line: **a lazily built table is only "never
+more work" if its miss path is as cheap as what it replaced.** A memo whose
+miss path builds a whole table must not be reachable without a scope.
+`air_patrols` is safe because its miss path is the identical scan;
+`passage_improvements` was not, and nothing said so.
+
+### The measurement
+
+`tools/speed_ab.py`, which pairs the arms seed by seed, flips their order
+between seeds, and **hashes each game report — so a timing difference only
+counts as overhead when both arms played the same game.** Every row below
+reports *same game on every seed*, which is the correctness claim: the play is
+bit-for-bit what it was, the engine simply stopped repeating itself.
+
+Both arms at 6p **74×46, 9 city-states, 250 turns online** — the #2308 standard
+screen shape — over eight paired games on seeds 7311001..7311008.
+
+⚠ `tools/speed_ab.py` does not pass `--map`, so these games run the CLI default
+map, not the `Continents` a screen runs (#2328 is fixing that). The profile
+above *was* taken on `--map continents`. For the digest verdict the map is
+irrelevant — a digest is a digest of whatever game ran. For the percentages it
+is one more reason to read them as provisional.
+
+| arm | baseline | candidate | |
+| --- | ---: | ---: | ---: |
+| per-unit movement profile + in-place occupancy | 432.11s | 412.39s | **−4.56%** |
+| the whole-map connectivity sweep, inside a memo scope | 401.80s | 397.87s | **−0.98%** |
+| dense frontier scratch for `flow_past` | 399.95s | 403.19s | **+0.81% — rejected** |
+
+⚠⚠ **Every number here was taken with the host at load average 62–86 and up to
+six other CIVVIS processes running**, which this file's own harness prints a
+warning about. They are provisional. The pairing and the alternating run order
+are what make them worth quoting at all; a single-arm reading at this load
+would mean nothing. The digests are not provisional — those are exact.
+
+### Rejected: a dense frontier for `flow_past` (+0.81%)
+
+`flow_past`'s `best` was a `BTreeMap<Pos, f64>` keyed on a hex coordinate,
+relaxed once per neighbour of every tile — the classic case for the dense
+per-slot scratch `first_route_step` already uses, indexed by
+`TileGrid::index_of`. `TileGrid` keeps its tiles sorted by `Pos`, so the
+reached set read back in index order reproduces the tree's iteration order
+exactly, and the four callers that turn it straight into a result see no
+change: *same game on every seed*, all eight.
+
+**It measured +0.81%, and was reverted — but the clock is not what decided
+it.** At ±1% on this fleet no available clock resolves a sign, so the verdict
+is a counter. Instrumented over one whole standard-shape game (seed 7311001, 6p
+74×46, 9 city-states, 250 turns), counting every `flow_past` call, every
+relaxation probe, and the size of every reached set:
+
+| | |
+| --- | ---: |
+| `flow_past` calls in one game | **250,000** |
+| relaxation probes | 9,848,274 — **39.4 per flood** |
+| tiles reached | 3,364,457 — **13.5 per flood** |
+
+| reached set | share of floods |
+| --- | ---: |
+| 1 tile | 0.2% |
+| 2–5 | 6.3% |
+| **6–11** | **52.2%** |
+| 12–23 | 30.2% |
+| 24–50 | 9.7% |
+| 51–132 | 1.3% |
+| 133+ | 0.03% |
+
+**Rust's B-tree holds 11 keys in a node, so 58.7% of these floods are a
+`BTreeMap` of exactly one node** — a flat, cache-resident array — and 98.7% are
+at most two levels. There is no tree descent to remove. What the dense version
+adds is real: a `Vec<f64>` sized to all 3,404 tiles (27 KB, written at ~13
+scattered slots) in place of one hot node, plus a sort to rebuild the ordering
+the tree supplied for free. Even if all 9.8M probes were made free, at a
+plausible 20 ns each that is 0.2 s of a ~50 s game — an **0.4% ceiling** against
+a cache cost that is certain.
+
+That is this file's ninth null of the same shape, and the second in this exact
+spot: *"Route-search scratch reuse: rejected"* above measured the same idea 25%
+slower in 2026-07 and diagnosed it identically — *"it replaces cheap dense
+initialization with an extra per-tile generation array … for this map size,
+that additional cache traffic loses to the allocator."* The standing rule it
+produced — *the payer is an expensive derivation that is recomputed, not a
+cheap operation that is frequent* — predicted this one before it was written.
+
+The three changes that *did* pay in this area — #2309's two and the profile
+above — all removed a derivation that was being recomputed. Nothing that merely
+made frequent cheap work cheaper has ever paid here. The count is now nine
+nulls against five wins and it has still never gone the other way.
+
+⚠ The next target is unchanged from 2026-08-22 and is now **13.4% of self
+time**, up from 9.0%: `AttackEnvelopes = Vec<(u32, Arc<BTreeSet<Pos>>)>`, whose
+`BTreeMap<(i64,i64), SetVal>::insert` is the largest single leaf in the
+profile. That set is queried with `contains` and iterated in sorted order, so a
+sorted `Vec<Pos>` with `binary_search` gives identical answers and identical
+order with no node allocation. It touches ~40 sites and deserves its own
+change. Note that this is the *opposite* shape to the rejection above and is
+not evidence against it: those sets hold hundreds of positions and are built
+once and read many times, where the flood's frontier holds tens and is thrown
+away.

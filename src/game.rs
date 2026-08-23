@@ -24855,6 +24855,17 @@ impl Game {
     /// impassable. A breadth-first flood in map order keeps labels
     /// deterministic, though only label *equality* ever matters.
     fn build_routing_zones(&self, class: TraversalClass) -> Vec<u32> {
+        // ⚠ #2309 moved `improvements[name].effects["passage"]` behind
+        // `Game::passage_improvements`, which builds a table over the whole
+        // improvement list and keeps it for the memo scope — and *rebuilds it
+        // per call* when there is no scope to keep it in. That is the right
+        // trade for the movement flood, which always has one, and the wrong
+        // one here: this sweep asks `class_can_traverse` for every tile on the
+        // map with no scope open, so an improved tile paid a lookup per
+        // improvement in the ruleset instead of one. Opening a scope over the
+        // sweep is all it needs; the guard borrows the world immutably, so the
+        // flood below cannot see a table it did not build.
+        let _memo = self.query_memo();
         let mut zones = vec![0u32; self.map.tiles.len()];
         // The flood visits a tile once as a seed or neighbor and may inspect
         // it many more times from adjacent frontier tiles. Evaluate the
