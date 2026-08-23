@@ -705,6 +705,20 @@ class TheCheckAlwaysReportsAVerdict(unittest.TestCase):
         trigger = self.body.split("jobs:")[0]
         self.assertNotIn("paths:", trigger)
 
+    def test_marking_a_pull_request_ready_produces_a_run(self):
+        """Every task PR here opens as a draft and `ship` marks it ready. One
+        that was already open with a settled head when this workflow changed
+        would otherwise carry no `paired-cost` run at all — and a required
+        check with no run reads as pending until `ship` times out."""
+        trigger = self.body.split("jobs:")[0]
+        self.assertIn("ready_for_review", trigger)
+        for default in ("opened", "synchronize", "reopened"):
+            self.assertIn(default, trigger,
+                          "naming any type drops the defaults; name them all")
+        self.assertNotIn("edited", trigger,
+                         "a ten-minute job on every body edit is how "
+                         "overwrite-guard ends up cancelled half the time")
+
     def test_the_job_is_never_skipped_wholesale(self):
         job = self.body.split("paired-cost:")[1].split("steps:")[0]
         self.assertNotIn("if:", job,

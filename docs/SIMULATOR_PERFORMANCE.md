@@ -1826,7 +1826,7 @@ already, and this section closes those.
 
 | | #2289 | now |
 | --- | --- | --- |
-| shape | 6p **60x38, 6 city-states**, 100t, default map | 6p **74x46, 9 city-states**, 120t, Continents — `gene_screen`'s `SCREEN_*` map row |
+| shape | 6p **60x38, 6 city-states**, 100t, the CLI's default **`tennis_ball`** | 6p **74x46, 9 city-states**, 120t, **Continents** — `gene_screen`'s `SCREEN_*` map row |
 | metric | whole-game user CPU | **user CPU per completed turn**, whole game reported beside it |
 | statistic | pooled ratio of two totals | **median of five paired blocks**, with the spread and the run's own resolution printed |
 | budget | +50% | **+8%**, and a second disjoint block before anything fails |
@@ -1919,6 +1919,28 @@ itself in both arms, so the honest answer is zero:
 | 3x150t | 49 | 0.1737 (**+53%**) | -0.56% | — |
 | 3x150t | 94 | 0.1761 (**+55%**) | +0.11% | — |
 
+And the same experiment on the gate's real host, from this change's own CI run
+(`32623627991` — the pull request touches no Rust, so both arms built
+byte-identical binaries and the run is nothing but runner noise):
+
+| host | 1-min load | absolute s/turn | paired median | pair IQR | resolution |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `github-ubuntu-latest` | 3.77 | 0.2389 | +0.84% | **2.37pp** | ±1.57% |
+| `mbp-m5-max-128` | 61 → 86 | 0.1436 | +0.33% | 1.48pp | ±0.52% |
+
+⚠ **The hosted runner's pair-to-pair scatter is WIDER than this Mac's under a
+twelve-agent load** — 2.37pp against 1.48pp — even though its load average is
+3.77 and its absolute is the steadier of the two. Interleaving cancels a
+desktop's slowly-varying contention very well; it does nothing about a cloud
+VM's frequency and co-tenancy jitter, which lands as a burst inside a single
+pair. So **the CI budget is calibrated on the runner row and not on the
+desktop row**, and the two hosts keep separate rows in the ledger precisely so
+nobody averages them.
+
++8% is **9.5x the noise median that run measured and 5.1x the resolution it
+reported**, and a failure needs two *disjoint* seed blocks to agree. +50% was
+not defended by a measurement in either direction; this is.
+
 **The absolute inflates by more than half on a busy fleet host. The
 interleaved paired delta does not move at all.** That single pair of facts is
 what the rest of the design rests on:
@@ -2001,6 +2023,15 @@ Three properties make requiring it safe, and each is pinned by a test:
 A false failure is cleared by re-running the job (`gh run rerun --failed
 <run-id>`); `ship` already re-dispatches required checks that end without a
 verdict.
+
+**It costs the merge path nothing.** On this change's own pull request
+`paired-cost` and `cargo-test` both started at 06:42:35 and finished at
+06:53:11 and 06:52:55 — **sixteen seconds apart**. The paired step grew from
+~112 s to 288 s and the job from ~7m32s to 10m36s, which is still inside
+`cargo-test`'s 10-11 minutes, so the two finish together and nothing waits
+longer than it did. That is the whole reason the turn clock is 120 and not
+150: four games at 150 turns would have made this gate the trunk's critical
+path for every merge in the fleet.
 
 ### A note on the other instrument the load moves
 

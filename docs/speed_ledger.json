@@ -34,6 +34,19 @@
       "load_end": 79.3,
       "pair_spread_pct": 1.484,
       "note": "PROVISIONAL: taken while twelve sibling agents were building (see load_peak). The quiet-host row for this machine is still owed; the paired delta beside it is load-robust, the absolute is not."
+    },
+    {
+      "date": "2026-08-23",
+      "machine": "github-ubuntu-latest",
+      "commit": "ef51a3cf",
+      "cpu_seconds": 143.32,
+      "turns": 600,
+      "seconds_per_turn": 0.238867,
+      "load_start": 3.77,
+      "load_peak": 3.77,
+      "load_end": 3.77,
+      "pair_spread_pct": 2.37,
+      "note": "Transcribed from PR #2328's own run 32623627991 (2026-08-23), which changes no Rust — both arms built byte-identical binaries, so it is a pure runner-noise sample: median +0.84% per completed turn over 5 pairs, range [-0.83%, +2.38%], resolution +/-1.57%. This is the row the +8% CI budget is calibrated on, and note the runner's pair scatter is WIDER than this Mac's under a 12-agent load."
     }
   ]
 }

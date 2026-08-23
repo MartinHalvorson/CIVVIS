@@ -27,7 +27,18 @@ on:
   # failure. The scope decision therefore happens in the first *step*, which
   # always reports success, and costs about forty seconds when there is
   # nothing to measure.
+  #
+  # ⚠ `ready_for_review` is added to the DEFAULT types (which are `opened`,
+  # `synchronize` and `reopened`) for the transition, and it earns its keep
+  # afterwards. Every task pull request in this fleet opens as a draft and is
+  # marked ready by `civvis_collab.py ship`; a pull request that was already
+  # open with a settled head when this workflow changed would otherwise have no
+  # `paired-cost` run at all, and a required check with no run reads as pending
+  # until `ship` times out. `edited` is deliberately NOT here: it would re-run a
+  # ten-minute job on every body edit, which is how `overwrite-guard` ends up
+  # cancelled on 15 of its 50 most recent runs.
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
 
 permissions:
   contents: read

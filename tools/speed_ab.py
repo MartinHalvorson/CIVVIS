@@ -664,6 +664,12 @@ def build_parser() -> argparse.ArgumentParser:
                         help="completed turns for --ledger-cpu")
     parser.add_argument("--ledger-load", type=float, default=None,
                         help="load average that reading was taken under")
+    parser.add_argument("--ledger-spread", type=float, default=None,
+                        help="pair-to-pair IQR, in percentage points, of the "
+                             "run being transcribed. Without it the row records "
+                             "an absolute with no scatter beside it, which is "
+                             "the half of the reading that says how much to "
+                             "believe the other half.")
     parser.add_argument("--ledger-commit", default=None,
                         help="commit the recorded reading describes "
                              "(default: this worktree's HEAD)")
@@ -696,7 +702,7 @@ def transcribe(args: argparse.Namespace, shape: dict) -> int:
             "end": args.ledger_load or 0.0}
     row = record_reading(ledger, args.ledger_machine, args.ledger_cpu,
                          args.ledger_turns, commit=args.ledger_commit or "unknown",
-                         note=args.note, load=load)
+                         note=args.note, load=load, spread_pct=args.ledger_spread)
     write_ledger(ledger, args.ledger)
     print(f"recorded {json.dumps(row)}")
     return 0
