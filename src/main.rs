@@ -1791,7 +1791,8 @@ mod tests {
 
     use super::{
         game_options, jobs_arg, map_topology, simultaneous_soak_job_split,
-        single_simulation_jobs_arg, start_era, tactics_rules, turn_structure, ANCHOR_BEHAVIOUR_FNV, ANCHOR_DECISIONS, SINGLE_SIMULATION_DEFAULT_MAX_JOBS,
+        single_simulation_jobs_arg, start_era, tactics_rules, turn_structure, ANCHOR_BEHAVIOUR_FNV,
+        ANCHOR_DECISIONS, SINGLE_SIMULATION_DEFAULT_MAX_JOBS,
     };
     use civvis::ai::AdvancedAi;
     use civvis::game::{Action, Game};
