@@ -4,10 +4,14 @@ sources."""
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
 import json
+import re
 import sys
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -360,13 +364,345 @@ class KnownTags(unittest.TestCase):
         self.assertNotIn("a-gene-whose-code-was-removed", tags)
 
 
+def stamped(data: dict, tags: list[str], commit: str = "c" * 40, dirty: bool = False,
+            fingerprint: str | None = None) -> dict:
+    """One screen, stamped by the binary that played it: the gene set it
+    compiled in, and the commit it says that set came from."""
+    data["profile"]["genes"] = list(tags)
+    data["profile"]["screened"] = list(tags)
+    data["profile"]["build"] = {
+        "commit": commit,
+        "commit_source": "env",
+        "dirty": dirty,
+        "genes_sha256": fingerprint or gene_ledger.gene_set_fingerprint(tags),
+        "binary_sha256": "b" * 64,
+    }
+    return data
+
+
+def preregistered(data: dict, target: int) -> dict:
+    """The same screen, declaring the size it was launched to play."""
+    data["batch"] = {
+        "target_pairs": target,
+        "target_comparisons": target,
+        "complete_comparisons": data["complete_pairs"],
+        "completion": data["complete_pairs"] / target,
+        "partial": data["complete_pairs"] < target,
+    }
+    return data
+
+
+class TheGeneSetDerivation(unittest.TestCase):
+    """⭐ The ledger re-derives a binary's gene set from the source tables at
+    the commit a screen claims. If that derivation were wrong the guard would
+    refuse honest screens, so it is checked against a real binary's own output
+    rather than against itself."""
+
+    def test_the_derivation_reproduces_a_real_binarys_gene_list(self):
+        """P10's header was written by a binary built at `d23f92d9`, and lists
+        the 75 genes that binary compiled in. The derivation must reproduce it
+        exactly, in order — no fixture, a genuine artefact.
+
+        ⚠ Needs the commit. A shallow CI checkout has one commit, so this
+        corroboration skips there; `gene_screen.rs`'s
+        `the_gene_table_is_exactly_what_the_ledger_re_derives_from_the_tables`
+        holds the same rule against the compiled table on every run."""
+        p10 = json.loads((gene_ledger.ROOT / "docs" / "gene_screens" /
+                          "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json"
+                          ).read_text())
+        commit = p10["batch"]["source_commit"]
+        derived = gene_ledger.gene_tags_at(commit)
+        if derived is None:
+            self.skipTest(f"this clone cannot read {commit[:12]}")
+        self.assertEqual(derived, p10["profile"]["genes"])
+        self.assertEqual(len(derived), 75)
+
+    def test_a_commit_this_clone_cannot_read_derives_nothing(self):
+        self.assertIsNone(gene_ledger.gene_tags_at("0" * 40))
+
+    def test_comments_and_nested_brackets_do_not_invent_genes(self):
+        """The tables are heavily commented and the comments quote tag names."""
+        elo = '''
+            pub const OTHER: &[&str] = &["not-a-gene"];
+            /// A doc comment naming "decoy-one".
+            pub const ENGINE_REPAIR_TREATMENTS: &[&str] = &[
+                "war-reinforcement",
+                // "decoy-two" was culled; see #2266.
+                "come-ashore", /* "decoy-three" */
+            ];
+        '''
+        treatments = '''
+            pub const PRODUCTION_TREATMENTS: &[LiveTreatment] = &[
+                ("strategic_wonders", "strategic-wonders", AdvancedAi::disable),
+            ];
+            pub const PRODUCTION_OPT_INS: &[LiveTreatment] = &[
+                // The joint search: "decoy-four".
+                ("joint_tactics", "joint-tactics", AdvancedAi::enable),
+            ];
+        '''
+        read = {"src/elo.rs": elo, "src/ai/advanced/treatments.rs": treatments}
+        self.assertEqual(
+            gene_ledger.gene_tags_from_sources(read.__getitem__),
+            ["war-reinforcement", "come-ashore", "strategic-wonders", "joint-tactics"],
+        )
+
+    def test_the_fingerprint_is_the_tags_newline_terminated(self):
+        """`gene_screen.rs` pins the same two-tag constant, so the Rust binary
+        and this tool cannot compute different fingerprints for one gene set."""
+        self.assertEqual(
+            gene_ledger.gene_set_fingerprint(["a", "b"]),
+            "911169ddaaf146aff539f58c26c489af3b892dff0fe283c1c264c65ae5aa59a2",
+        )
+
+    def test_the_working_tree_derives_the_gene_set_the_repository_registers(self):
+        tags = gene_ledger.gene_tags_now()
+        self.assertGreater(len(tags), 50, "the tables scrape found too few genes")
+        self.assertEqual(len(tags), len(set(tags)), "a tag is listed twice")
+        self.assertLessEqual(set(tags), gene_ledger.known_tags(),
+                             "every gene the screen varies is a registered treatment")
+        self.assertIn("holy-lane-parity", tags)
+        self.assertIn("barbarian-hunt", tags)
+
+
+class TheBuildGuard(unittest.TestCase):
+    """⚠⚠ A SCREEN MUST NOT PRICE CODE IT DID NOT PLAY. This has happened three
+    times: P10 published a `holy-lane-parity` column after #2266 deleted the
+    gene (#2299, #2307 restored it at +99); #2307 had to state its build in
+    prose; and on 2026-08-23 a sibling change was minutes from deleting
+    `barbarian-hunt` while the first standard-shape screen re-priced it."""
+
+    TAGS = ["alpha", "beta", "gamma"]
+
+    def sources(self, data, legacy_shape=False, unverified_build=None, notes=None,
+                at=None, now=None):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "screen.json"
+            path.write_text(json.dumps(data))
+            args = argparse.Namespace(source=[str(path)], legacy_shape=legacy_shape,
+                                      unverified_build=unverified_build)
+            with unittest.mock.patch.object(
+                gene_ledger, "gene_tags_at",
+                lambda commit: None if at is None else at.get(commit)
+            ), unittest.mock.patch.object(
+                gene_ledger, "gene_tags_now",
+                lambda: list(self.TAGS if now is None else now)
+            ):
+                return gene_ledger.sources_from_args(args, notes)
+
+    def screen(self, tags=None, **kwargs):
+        tags = self.TAGS if tags is None else tags
+        return stamped(analysis([{"tag": tag} for tag in tags]), tags, **kwargs)
+
+    def refusal(self, data, **kwargs) -> str:
+        with self.assertRaises(SystemExit) as refused:
+            self.sources(data, **kwargs)
+        return str(refused.exception)
+
+    def test_a_screen_played_by_the_code_it_names_is_accepted(self):
+        self.assertEqual(
+            len(self.sources(self.screen(), at={"c" * 40: self.TAGS})), 1)
+
+    def test_a_source_pricing_a_gene_its_commit_does_not_have_is_refused(self):
+        """P10's shape exactly: the binary had `holy-lane-parity`, the commit
+        it is recorded against does not."""
+        said = self.refusal(self.screen(), at={"c" * 40: ["alpha", "beta"]})
+        self.assertIn("NOT played by the code at the commit it names", said)
+        self.assertIn("priced here but absent", said)
+        self.assertIn("gamma", said)
+
+    def test_a_source_missing_a_gene_its_commit_has_is_refused(self):
+        """The other direction, which is what an unmeasured gene quietly looks
+        like: the code has a gene this screen never compiled in."""
+        said = self.refusal(self.screen(),
+                            at={"c" * 40: self.TAGS + ["barbarian-hunt"]})
+        self.assertIn("never compiled in", said)
+        self.assertIn("barbarian-hunt", said)
+
+    def test_a_reordered_gene_set_is_still_a_different_gene_set(self):
+        said = self.refusal(self.screen(), at={"c" * 40: list(reversed(self.TAGS))})
+        self.assertIn("different order", said)
+
+    def test_an_unstamped_build_is_refused(self):
+        said = self.refusal(self.screen(commit=""), at={})
+        self.assertIn("names no commit", said)
+        self.assertIn("CIVVIS_COMMIT", said)
+
+    def test_a_dirty_build_is_refused(self):
+        said = self.refusal(self.screen(dirty=True), at={"c" * 40: self.TAGS})
+        self.assertIn("DIRTY tree", said)
+
+    def test_a_commit_this_clone_cannot_read_is_refused_not_shrugged_at(self):
+        said = self.refusal(self.screen(), at={})
+        self.assertIn("cannot read", said)
+        self.assertIn("git fetch", said)
+
+    def test_an_edited_artefact_is_refused(self):
+        """A stamp copied from a screen that did pass, onto a header it does
+        not describe."""
+        said = self.refusal(self.screen(fingerprint="f" * 64),
+                            at={"c" * 40: self.TAGS})
+        self.assertIn("does not describe its own header", said)
+        self.assertIn("edited", said)
+
+    def test_a_source_pricing_a_gene_the_repository_removed_is_refused(self):
+        """2026-08-23's near miss: the screen and its commit agree, and the
+        gene was deleted from the trunk in between."""
+        said = self.refusal(self.screen(), at={"c" * 40: self.TAGS},
+                            now=["alpha", "beta"])
+        self.assertIn("no longer registers", said)
+        self.assertIn("gamma", said)
+
+    def test_the_shape_escape_does_not_waive_the_build_check(self):
+        probe = stamped(analysis([{"tag": "alpha"}], map="pangaea"), self.TAGS, dirty=True)
+        self.assertIn("DIRTY tree",
+                      self.refusal(probe, legacy_shape=True, at={"c" * 40: self.TAGS}))
+
+    def test_the_build_escape_does_not_waive_the_shape_check(self):
+        probe = stamped(analysis([{"tag": "alpha"}], map="pangaea"), self.TAGS)
+        said = self.refusal(probe, unverified_build="whatever",
+                            at={"c" * 40: self.TAGS})
+        self.assertIn("not played at the screen's shape", said)
+
+    def test_the_escape_records_its_reason_beside_the_source(self):
+        notes = {}
+        self.sources(self.screen(dirty=True), unverified_build="rebuilt from a lost worktree",
+                     notes=notes, at={"c" * 40: self.TAGS})
+        self.assertEqual(notes, {"screen.json": "rebuilt from a lost worktree"})
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "screen.json"
+            path.write_text(json.dumps(self.screen(dirty=True)))
+            ledger = gene_ledger.build_ledger([path], filter_known=False,
+                                              build_notes={"screen.json": "a reason"})
+        source = ledger["sources"][0]
+        self.assertEqual(source["unverified"], "a reason")
+        self.assertEqual(source["build"]["commit"], "c" * 40)
+        self.assertTrue(source["build"]["dirty"])
+        # And a re-derivation carries the reason back, so `--check` reproduces
+        # the file rather than reporting drift on its own record.
+        self.assertEqual(gene_ledger.notes_from_ledger(ledger), {"screen.json": "a reason"})
+
+    def test_an_escape_with_no_reason_is_not_an_escape(self):
+        """`--unverified-build` takes a REASON, so an operator cannot wave a
+        source through without saying why: an empty string is falsy and the
+        refusal stands."""
+        self.assertIn("DIRTY tree",
+                      self.refusal(self.screen(dirty=True), unverified_build="",
+                                   at={"c" * 40: self.TAGS}))
+
+
+class PreFingerprintSources(unittest.TestCase):
+    """The twenty sources recorded before 2026-08-23 carry no build block. They
+    are grandfathered — the games are played, the artefacts are history — but
+    they are NAMED, because a grandfather clause nobody can see is the same as
+    no guard at all."""
+
+    def test_a_source_with_no_build_block_is_grandfathered_and_named(self):
+        data = analysis([{"tag": "a"}])
+        self.assertEqual(gene_ledger.build_state(data), "pre-fingerprint")
+        self.assertEqual(gene_ledger.build_gap(data, "old.json"), "")
+
+    def test_a_grandfathered_source_records_no_build_and_prints_as_such(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "old.json"
+            path.write_text(json.dumps(analysis([{"tag": "a"}])))
+            ledger = gene_ledger.build_ledger([path], filter_known=False)
+        self.assertNotIn("build", ledger["sources"][0])
+        printed = io.StringIO()
+        with contextlib.redirect_stdout(printed):
+            gene_ledger.print_table(ledger)
+        self.assertIn("pre-fingerprint", printed.getvalue())
+        self.assertIn("predate the build stamp", printed.getvalue())
+
+    def test_every_source_the_ledger_records_today_is_pre_fingerprint(self):
+        """⚠ This is the boundary. Everything already in the ledger predates
+        the stamp; the moment a stamped source is recorded it is checked, and
+        it cannot become history by having its block removed without that
+        removal showing up here."""
+        current = json.loads(gene_ledger.LEDGER_JSON.read_text())
+        for source in current["sources"]:
+            data = gene_ledger.load_source(gene_ledger.ROOT / source["path"])
+            self.assertEqual(gene_ledger.build_state(data), "pre-fingerprint",
+                             source["path"])
+            self.assertNotIn("build", source, source["path"])
+
+    def test_a_stamped_source_cannot_be_grandfathered_by_a_blank_stamp(self):
+        data = analysis([{"tag": "a"}])
+        data["profile"]["build"] = {"commit": "", "commit_source": "unstamped",
+                                    "dirty": False, "genes_sha256": "",
+                                    "binary_sha256": ""}
+        self.assertEqual(gene_ledger.build_state(data), "stamped")
+        self.assertIn("no gene-set fingerprint", gene_ledger.build_gap(data, "new.json"))
+
+
+class Preregistration(unittest.TestCase):
+    """⚠ THE ANALYSIS MUST NOT PRESENT A TRUNCATED RUN AS A COMPLETED ONE. P10
+    stopped at 5,858 of a planned 10,000 games at the operator's request; the
+    stop was legitimate, the unmarked artefact was not."""
+
+    def test_a_partial_source_is_recorded_and_printed_as_partial(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "partial.json"
+            path.write_text(json.dumps(preregistered(analysis([{"tag": "a"}], pairs=1000),
+                                                     target=6000)))
+            ledger = gene_ledger.build_ledger([path], filter_known=False)
+        self.assertEqual(ledger["sources"][0]["batch"],
+                         {"target_comparisons": 6000, "complete_comparisons": 1000,
+                          "partial": True})
+        printed = io.StringIO()
+        with contextlib.redirect_stdout(printed):
+            gene_ledger.print_table(ledger)
+        self.assertIn("PARTIAL 1000/6000", printed.getvalue())
+
+    def test_a_source_that_played_what_it_declared_reads_complete(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "whole.json"
+            path.write_text(json.dumps(preregistered(analysis([{"tag": "a"}], pairs=6000),
+                                                     target=6000)))
+            ledger = gene_ledger.build_ledger([path], filter_known=False)
+        self.assertFalse(ledger["sources"][0]["batch"]["partial"])
+
+    def test_a_source_with_no_target_is_never_called_complete(self):
+        data = analysis([{"tag": "a"}], pairs=1000)
+        self.assertIsNone(gene_ledger.batch_of(data)["partial"])
+        # A hand-written `batch` block — P10's, the prose ancestor of the
+        # generated one — still declares nothing this tool can read against.
+        data["batch"] = {"requested_target_games": 10000, "stopped_at_operator_request": True}
+        self.assertIsNone(gene_ledger.batch_of(data)["partial"])
+
+
+class TheHeaderFieldsMatch(unittest.TestCase):
+    """⭐ The screen's shape is pinned on both sides; so are the provenance
+    fields. A field added to `Build` or `Batch` in Rust and forgotten in this
+    tool — or the reverse — fails here rather than reaching the ledger."""
+
+    def rust_struct_fields(self, name: str) -> list[str]:
+        text = (gene_ledger.ROOT / "src" / "bin" / "gene_screen.rs").read_text()
+        start = text.index(f"struct {name} {{")
+        body = text[start:text.index("\n}\n", start)]
+        return re.findall(r"^    ([a-z0-9_]+): ", body, re.M)
+
+    def test_the_build_stamp_names_the_same_fields_on_both_sides(self):
+        self.assertEqual(self.rust_struct_fields("Build"), list(gene_ledger.BUILD_KEYS))
+
+    def test_the_pre_registration_names_the_same_fields_on_both_sides(self):
+        self.assertEqual(self.rust_struct_fields("Batch"), list(gene_ledger.BATCH_KEYS))
+
+    def test_both_sides_read_the_same_source_tables(self):
+        """The Rust side proves the parse against its compiled table; this side
+        runs it over a commit. They must be looking at the same tables."""
+        text = (gene_ledger.ROOT / "src" / "bin" / "gene_screen.rs").read_text()
+        for path, table, _ in gene_ledger.GENE_TABLES:
+            self.assertIn(table, text, table)
+            self.assertIn(path, text, path)
+
+
 class GeneratedFiles(unittest.TestCase):
     """`docs/gene_ledger.json` and `src/ai/advanced/gene_ledger_table.rs` are
     both derived from the sources the JSON records; neither may drift."""
 
     def test_the_checked_in_ledger_reproduces_from_its_recorded_sources(self):
         current = json.loads(gene_ledger.LEDGER_JSON.read_text())
-        ledger = gene_ledger.build_ledger(gene_ledger.sources_from_ledger(current))
+        ledger = gene_ledger.rebuild_from_ledger(current)
         self.assertEqual(gene_ledger.render_json(ledger), gene_ledger.LEDGER_JSON.read_text(),
                          "docs/gene_ledger.json is stale: run tools/gene_ledger.py --write")
         self.assertEqual(gene_ledger.render_rust(ledger), gene_ledger.LEDGER_RS.read_text(),

@@ -388,13 +388,18 @@ struct Build {
     /// `binary-name` (a promoted `civvis-<40-hex>` executable), `build-tree`
     /// (Git in the directory this crate was compiled from), or `unstamped`.
     commit_source: String,
-    /// Whether the tree that answered had uncommitted changes to tracked
-    /// files. A dirty tree is not a commit, so the ledger refuses it: the code
-    /// that played the games is not recoverable from any revision.
+    /// Whether the tree that answered had uncommitted changes to anything the
+    /// games are played out of. A dirty tree is not a commit, so the ledger
+    /// refuses it: the code that played the games is not recoverable from any
+    /// revision.
     ///
-    /// Untracked files are deliberately not counted. Nothing untracked reaches
-    /// the crate without a tracked `mod`/`include` line, and that line is a
-    /// tracked modification this does see.
+    /// Scoped to `BUILD_INPUTS` rather than the whole worktree, and untracked
+    /// files are not counted. Both narrowings are the same argument: an
+    /// edited analysis tool or an untracked scratch file cannot change how a
+    /// game plays out, while anything that can — a source file, the manifest,
+    /// the lockfile, a data table — is a tracked change under one of those
+    /// paths. A guard that fired on every open editor buffer would be turned
+    /// off, and a guard that is turned off measures nothing.
     dirty: bool,
     /// ⭐ The gene set, hashed: sha256 over the tags this binary can vary, in
     /// header order, one per line. See `gene_set_fingerprint`.
@@ -483,6 +488,12 @@ fn binary_mtime_secs(path: &std::path::Path) -> Option<u64> {
         .map(|since| since.as_secs())
 }
 
+/// Everything a played game comes out of: the crate's sources, what pins its
+/// build, and the tables it reads. A tracked change under any of these makes
+/// the revision a lie; a change anywhere else — an analysis tool, a document —
+/// cannot reach a game.
+const BUILD_INPUTS: &[&str] = &["src", "Cargo.toml", "Cargo.lock", "build.rs", "data"];
+
 /// Stamp the running binary: its gene set, its own bytes, and the revision it
 /// was built from.
 ///
@@ -546,8 +557,10 @@ fn stamp_build(genes: &[Gene]) -> Build {
     }
     build.commit = head;
     build.commit_source = "build-tree".to_string();
-    build.dirty = git(tree, &["status", "--porcelain", "--untracked-files=no"])
-        .map(|status| !status.is_empty())
+    let mut status = vec!["status", "--porcelain", "--untracked-files=no", "--"];
+    status.extend_from_slice(BUILD_INPUTS);
+    build.dirty = git(tree, &status)
+        .map(|changed| !changed.is_empty())
         .unwrap_or(true);
     build
 }
