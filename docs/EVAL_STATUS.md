@@ -23,8 +23,8 @@ How much of the shipped live-bridge bundle the evaluation evidence has
 ever *named* — `docs/EVAL.md` plus every round under `docs/eval/`.
 
 - Withholdable live treatments: **49**
-- Named somewhere in the evidence: **39**
-- **Never named in any round: 10**
+- Named somewhere in the evidence: **49**
+- **Never named in any round: 0**
 
 ⚠ This is deliberately the weaker half of the question. Whether a
 treatment was *priced* is a judgement about what a round concluded and
@@ -40,7 +40,7 @@ them is what stayed invisible.
 
 Never named:
 
-`amenity-district-path` (`live_without_amenity_district_path`), `amenity-project-preemption` (`live_without_amenity_project_preemption`), `blind-objective-strength` (`live_without_blind_objective_strength`), `blind-objective-units` (`live_without_blind_objective_units`), `endgame-war-runway` (`live_without_endgame_war_runway`), `relief-targets-the-siege` (`live_without_relief_targets_the_siege`), `settler-site-agreement` (`live_without_settler_site_agreement`), `siege-commitment` (`live_without_siege_commitment`), `stranded-settler-discount` (`live_without_stranded_settler_discount`), `wonder-ring-settle-value` (`live_without_wonder_ring_settle_value`)
+_None — every withholdable treatment has been named._
 
 ## Genome coverage
 
