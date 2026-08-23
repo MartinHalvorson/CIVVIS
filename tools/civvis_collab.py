@@ -87,7 +87,7 @@ REQUIRED_CHECKS = (
 #:
 #: A path belongs here only if all three hold: its content is a deterministic
 #: function of tracked source, rebuilding it is cheap, and nothing about it is
-#: measured. `docs/TACTICS_BASELINE.md` looks similar and fails the third —
+#: measured. `docs/closed/TACTICS_BASELINE.md` looks similar and fails the third —
 #: `tools/tactics_bench.py --write-baseline` runs a benchmark, so its output
 #: depends on the machine that ran it and must never be regenerated to settle
 #: somebody else's merge.

@@ -2,8 +2,12 @@
 
 Every change that reached `src/ai.rs` or `src/ai/advanced.rs` under the frozen
 rating anchor, and the argument for why it did not change what the anchor
-plays. This is the paper trail behind `ELO_PROTOCOL_VERSION` and the ledger in
-`docs/EVAL.md`.
+plays. It was the paper trail behind `ELO_PROTOCOL_VERSION` and the ledger in
+`docs/EVAL.md`; the ledgers and the tournament harness were removed on
+2026-08-23 (#2357), and the anchor pin itself stays — `ANCHOR_BEHAVIOUR_FNV`
+in `src/main.rs` still hashes what `AdvancedAi::legacy()` plays, because a
+change that moves it is a change that reached production without a gene in
+front of it. New re-pins still belong here.
 
 ## Why it lives here and not in `src/main.rs`
 

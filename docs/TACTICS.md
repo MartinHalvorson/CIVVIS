@@ -971,7 +971,7 @@ Two things kept honest by the profile:
   the new one.
 - `tools/tactics_bench.py` now pins the economy its baseline was recorded
   under (`ECONOMY`: 30/30, five turns a tech, 100-turn clock) instead of
-  inheriting the stock arena, so `docs/TACTICS_BASELINE.md` still means what
+  inheriting the stock arena, so `docs/closed/TACTICS_BASELINE.md` still means what
   it says. Re-baselining on the new stock arena is a deliberate change to that
   pin, made in the same pull request as the new figures.
 

@@ -22,11 +22,15 @@ Everything the old roadmap called planned has shipped and then some:
   judgment (`docs/SPECTATOR_DEPLOY.md`), native/wasm build-parity gates, and
   a home page selling two products — full-game simulations and Tactics
   battles (historical scenarios on real terrain, an era rolled per battle).
-- **The AI is scripted and measured**: `AdvancedAi` plus a league of bred
-  genome variants, rated by a Glicko-2 selection league, priced by a paired
-  evaluator at the deployment shape, and published in batch by `civvis arena`
-  (anchored Elo; standardized table size). No learned policy ships; search
-  wins offline but is not live-eligible. `docs/AI_GAPS.md` ranks the gaps.
+- **The AI is scripted and measured**: `AdvancedAi`, whose behaviours are
+  boolean genes in one registry (`src/ai/advanced/genes.rs`), priced by the
+  random-genome gene screen (`docs/GENE_SCREEN.md`) and shipped by the gene
+  ledger's default rule. The Glicko-2 selection league, the paired evaluator
+  and the `civvis arena` Elo batches are retired (#2351, #2357,
+  `docs/closed/LEAGUE.md`); a rating system for *finished* genomes is planned
+  to return once the screen has settled the gene set. No learned policy
+  ships; search wins offline but is not live-eligible. `docs/AI_GAPS.md`
+  ranks the gaps.
 - **The live bridge plays real Civilization VI**: a Lua control mod + macOS
   harness drives full Settler-difficulty games end to end, self-records every
   attempt on the difficulty ladder (`docs/CIV6_LADDER.md`), and carries its

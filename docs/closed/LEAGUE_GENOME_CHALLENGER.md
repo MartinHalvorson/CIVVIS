@@ -1,4 +1,12 @@
-# Outcome-selected league genome transfer
+# Outcome-selected league genome transfer (retired 2026-08-23)
+
+> **Closed.** The league whose genomes this challenger drew from was removed on 2026-08-23 (#2357, operator: *"lets remove the league /
+> elo work for now"*). The gene screen (`docs/GENE_SCREEN.md`) prices
+> behaviours; nothing rates named agents against each other for now, and the
+> deployment genome is the gene ledger's default-on set. A rating system for
+> finished genomes is planned to return — see `docs/ROADMAP.md`. This document
+> is kept as the record of how the retired instrument worked and what it
+> measured.
 
 ⚠ `ai_eval` was removed in #2351 (2026-08-23): the paired evaluator and its arm registry were retired in favour of the gene screen (`docs/GENE_SCREEN.md`). Every `ai_eval` command in this document is kept as the record of how a result was measured — it does not run against this tree.
 

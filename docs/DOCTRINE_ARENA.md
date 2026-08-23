@@ -214,7 +214,7 @@ condition for the whole-game gate and never a substitute for it.
 
 ### The arena separates two controllers a win rate calls a coin flip
 
-`docs/TACTICS_BASELINE.md` warns that `advanced_v1` — a frozen copy of the live
+`docs/closed/TACTICS_BASELINE.md` warns that `advanced_v1` — a frozen copy of the live
 controller — sits near 50% against `advanced` in the Tactics-mode win-rate
 battery, because nearly everything separating them is empire machinery an arena
 never exercises, and that **a near-50% result there is the expected null rather

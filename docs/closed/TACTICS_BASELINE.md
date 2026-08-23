@@ -1,4 +1,12 @@
-# Tactics arena baseline
+# Tactics arena baseline (retired 2026-08-23)
+
+> **Closed.** `tools/tactics_bench.py` and the `civvis tournament` harness it ran on were removed on 2026-08-23 (#2357, operator: *"lets remove the league /
+> elo work for now"*). The gene screen (`docs/GENE_SCREEN.md`) prices
+> behaviours; nothing rates named agents against each other for now, and the
+> deployment genome is the gene ledger's default-on set. A rating system for
+> finished genomes is planned to return — see `docs/ROADMAP.md`. This document
+> is kept as the record of how the retired instrument worked and what it
+> measured.
 
 What the shipped controllers do on the arena, so a change to tactical AI can be
 answered with a number. Regenerate with `tools/tactics_bench.py --write-baseline`
