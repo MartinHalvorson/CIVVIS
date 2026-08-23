@@ -134,10 +134,10 @@ same field"*).
 **`continents`/`planet`/`poles`/randomized** since #658 —
 `matrix_child_args` hard-coded `--map`, `--shape`, `--poles` and
 `--randomize-civs` *outside* the profile struct, where nothing could compare
-them to anything. Eleven world flags typed by hand, agreeing with the gate on
-eight.
+them to anything. Twelve world axes typed by hand, differing from the gate on
+exactly those four.
 
-⚠ **And a fourth round on the same field got all eleven right.**
+⚠ **And a fourth round on the same field got all twelve right.**
 `2026-08-19-the-suzerainty-prize-was-retired-on-a-board-with-diplomacy-s`
 prints its command line in full and it is the gate's world exactly. That is the
 finding, not an exoneration: whether a hand-typed contested round was on the
@@ -289,13 +289,13 @@ vocabulary.** `compact-standard`, `deployment-online`, `deployment-contested`.
 One expansion — `profile_axis_args` — now builds both the matrix's children and
 a named single-arm run, and `map`/`shape`/`poles`/`randomize_civs` moved out of
 `matrix_child_args` into the profile struct so a profile names its whole world
-instead of eight-elevenths of it. Like `--matrix`, `--profile` **refuses** any
+instead of eight of its twelve axes. Like `--matrix`, `--profile` **refuses** any
 of the thirteen world axes beside it rather than letting the explicit flag win;
 `--pairs`, `--jobs`, `--seed`, `--confirm` and `--difficulty` stay free. Every
 run prints the profile it resolved, or `ad hoc (no --profile)`.
 
 The test is the point of the change, not the flag: for every profile, the named
-expansion and the matrix child must agree on all eleven axes. Written against
+expansion and the matrix child must agree on all twelve axes. Written against
 the discrepancy above, it fails on any future edit to one expansion and not the
 other.
 
@@ -322,7 +322,7 @@ scoring deliberately and changing it is a separate decision with its own
 evidence — but a round that reads the contested win column as "did denial work"
 is reading the wrong number, and now there is a place that says so.
 
-**5. Two denial treatments could not be priced here, and one of them cannot be
+**6. Two denial treatments could not be priced here, and one of them cannot be
 priced by any native run that exists.**
 
 - **`deny-while-targeted` is inert on every arm that carries it.** The gate is

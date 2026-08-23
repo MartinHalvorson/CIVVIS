@@ -1782,7 +1782,7 @@ fn matrix_profile_seed(seed: u64, profile_index: usize) -> u64 {
 /// One expansion, two callers: the promotion matrix builds its children with
 /// it, and `--profile <name>` gives a plain run the identical board. That
 /// sharing is the point. Every recorded contested round in `docs/eval/` was
-/// launched by hand-typing eleven axis flags, and a hand-typed board agrees
+/// launched by hand-typing a dozen axis flags, and a hand-typed board agrees
 /// with the gate's board only for as long as nobody edits either — which is
 /// how this repository has already published a profile line describing a
 /// world the run did not have (`--artifact-dir`, refused a few hundred lines
@@ -3964,9 +3964,9 @@ mod tests {
     /// `--field live_target_diplomatic,live_target_culture` and each states its
     /// world as "`pangaea`/`flat`/fixed civilizations". `deployment-contested`,
     /// the profile the promotion gate runs, has been `continents`/`planet`/
-    /// `poles`/randomized since #658. Eleven flags typed by hand agreed with
-    /// the gate on eight of them, and nothing in the repository could notice —
-    /// a fourth round on the same field typed all eleven correctly, which is
+    /// `poles`/randomized since #658. Twelve world axes typed by hand, four of
+    /// them different, and nothing in the repository could notice —
+    /// a fourth round on the same field typed all twelve correctly, which is
     /// the point: correctness was a property of the typist.
     ///
     /// This is the check that makes `--profile <name>` worth having: the name

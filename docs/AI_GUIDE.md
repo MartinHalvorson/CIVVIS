@@ -669,9 +669,10 @@ roster keeps `strategic` as an offline-only anchor.
   three congress rounds in `docs/eval/` that used
   `--field live_target_diplomatic,live_target_culture` each record their world
   as `pangaea`/`flat`/fixed civilizations, while `deployment-contested` has
-  been `continents`/`planet`/`poles`/randomized since #658 — eleven flags typed
-  by hand, agreeing with the gate on eight. A fourth round on the same field
-  typed all eleven correctly, which is the point: whether a hand-typed board
+  been `continents`/`planet`/`poles`/randomized since #658 — twelve world axes
+  typed by hand, differing from the gate on exactly those four. A fourth round
+  on the same field
+  typed all twelve correctly, which is the point: whether a hand-typed board
   was the gate's board was a property of the typist, and nothing checked.
 
   Like `--matrix`, `--profile` **refuses** any of the thirteen world axes
