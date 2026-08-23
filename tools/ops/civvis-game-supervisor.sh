@@ -38,15 +38,14 @@ PINFILE=${CIVVIS_PINFILE:-$HOME/.civvis-play-pin}
 # up. Resolved ONCE here, before the loop's `cd`, and overridable for a test.
 HEAD_REPO=${CIVVIS_HEAD_REPO:-${0:A:h:h:h}}
 LOGS=$HOME/civvis-climb-logs
-# `CIVVIS_STRATEGY` is the explicit genome gate for this host. Pin the stable
-# internal identity, not a leaderboard display label: Rome's selected
-# `g56-48` bound is 0.510 versus the generic fallback's 0.393, and every row
-# records both this request and the resolved genome. The resolver also accepts
-# a unique display label for compatibility with older launchers, but a `g*-*`
-# pin keeps this batch comparable while the candidate is measured in Civ VI.
-# Set `CIVVIS_STRATEGY=auto` to opt into per-civilization re-selection, or
-# `CIVVIS_STRATEGY=stock` to run the untuned control.
-STRATEGY=${CIVVIS_STRATEGY:-g56-48}
+# Named league genomes were retired in #2357.  The live decider now selects
+# `AdvancedAi::new()` with the gene ledger applied when --strategy is ABSENT;
+# that deployment genome has all and only its default-on genes.  civvis-orders
+# deliberately rejects every --strategy value rather than silently running a
+# different agent, so an inherited pre-retirement CIVVIS_STRATEGY must never be
+# forwarded into a verification game.  Keep it only long enough to make the
+# override visible in the supervisor log below.
+REQUESTED_RETIRED_STRATEGY=${CIVVIS_STRATEGY:-}
 # `CIVVIS_WITHOUT` is the explicit LIVE A/B gate for already registered
 # treatments.  It is deliberately empty by default: a comma-separated value
 # (for example `war-economy`) changes this batch's controller, and
@@ -187,7 +186,10 @@ FOLLOW_REVISION_FILE=$MIRROR_HOME/follower-runtime-revision
 say() { print -r -- "[$(date -u +%FT%TZ)] $*" >> "$SUP" }
 
 mkdir -p "$LOGS"
-say "supervisor up (strategy=$STRATEGY, withheld=${WITHHELD:-none}, force_file=$FORCE_FILE, pinfile=$PINFILE)"
+if [[ -n "$REQUESTED_RETIRED_STRATEGY" ]]; then
+  say "ignoring retired CIVVIS_STRATEGY=$REQUESTED_RETIRED_STRATEGY; live seat uses deployment genome (no --strategy)"
+fi
+say "supervisor up (genome=deployment, withheld=${WITHHELD:-none}, force_file=$FORCE_FILE, pinfile=$PINFILE)"
 
 # This runner can be started manually or by an interactive host wrapper. Two copies
 # are not harmless: each believes it owns the one Civ VI installation and may
@@ -506,7 +508,7 @@ while true; do
   CYCLE_MARK=$LOGS/.cycle-start
   : > "$CYCLE_MARK"
   python3 -u tools/civ6_civvis_climb.py --attempts "$ATTEMPTS" \
-      --difficulty "$DIFFICULTY" --strategy "$STRATEGY" \
+      --difficulty "$DIFFICULTY" \
       "${WITHOUT_ARGS[@]}" \
       "${WITH_ARGS[@]}" \
       "${TIMEOUT_ARGS[@]}" \
