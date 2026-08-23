@@ -142,6 +142,221 @@ fn vision_frames_reuse_static_inputs_and_invalidate_on_sight_changes() {
     assert!(!Arc::ptr_eq(&moved, &changed_map));
 }
 
+/// The unit half of the sight signature is cached behind the roster's
+/// mutation epoch; this is the city half. Every ask used to rehash every
+/// owned tile of every city the seat holds — about 8.6 M tile hashes over a
+/// game — so the fold now lives on the roster and the ask reads one number.
+///
+/// What that trades away is the ability to notice a border move by rehashing
+/// it, which is exactly what this test is here to keep honest: the roster
+/// must drop the fold on *any* mutable access, the refolded signature must
+/// still ignore the city state sight does not read, and every change that
+/// does move a sight source must reach the frame.
+#[test]
+fn vision_frames_reuse_city_border_stamps_and_invalidate_on_a_border_change() {
+    let (mut game, center) = controlled_game(63_100);
+    let city = game.place_city(0, center, None);
+    assert!(
+        !game.cities[&city].owned_tiles.is_empty(),
+        "a founded city owns its centre and ring"
+    );
+
+    let first = game.vision_frame(0, &mut game.height_field());
+    let first_stamp = game.vision_input_stamp(0);
+    assert!(
+        game.cities.vision_stamps_cached(),
+        "asking for sight installs the folded roster"
+    );
+    let again = game.vision_frame(0, &mut game.height_field());
+    assert!(
+        Arc::ptr_eq(&first, &again),
+        "an unchanged roster should be reused"
+    );
+
+    // A city write that sight never reads still drops the fold — the
+    // accessor hands out `&mut City` before the caller has said what it
+    // intends to change — but the refolded signature is identical, so the
+    // frame itself survives. This is the city analogue of a hitpoint write.
+    game.cities.get_mut(&city).unwrap().food += 1.0;
+    assert!(
+        !game.cities.vision_stamps_cached(),
+        "a mutable city handle evicts the fold on the way out"
+    );
+    let after_write = game.vision_frame(0, &mut game.height_field());
+    assert!(
+        Arc::ptr_eq(&first, &after_write),
+        "non-sight city state should not rebuild sight"
+    );
+    assert_eq!(game.vision_input_stamp(0), first_stamp);
+    assert!(
+        game.cities.vision_stamps_cached(),
+        "the next ask reinstalls the fold"
+    );
+
+    // Growing the border is the change this cache exists to notice.
+    let grown = along(&game, center, 3);
+    assert!(
+        !game.cities[&city].owned_tiles.contains(&grown),
+        "the test tile is outside the founded border"
+    );
+    game.cities.get_mut(&city).unwrap().owned_tiles.push(grown);
+    let moved_border = game.vision_frame(0, &mut game.height_field());
+    assert!(
+        !Arc::ptr_eq(&first, &moved_border),
+        "a border change must reject the cached frame"
+    );
+    assert_ne!(
+        game.vision_input_stamp(0),
+        first_stamp,
+        "a border change must move the signature"
+    );
+    let mut heights = game.height_field();
+    let uncached = game.player_vision(&mut heights, 0);
+    assert!(
+        moved_border.as_ref() == &uncached,
+        "cached and fresh sight differ after a border change"
+    );
+
+    // A branch inherits the fold with the roster it was cloned from, and
+    // restamping inside the branch leaves the source world alone.
+    let mut branch = game.speculative_clone();
+    assert!(
+        branch.cities.vision_stamps_cached(),
+        "a clone inherits the fold for the roster it copied"
+    );
+    let inherited = branch.vision_frame(0, &mut branch.height_field());
+    assert!(
+        Arc::ptr_eq(&moved_border, &inherited),
+        "an unchanged branch should inherit the populated frame"
+    );
+    let branch_growth = along(&branch, center, 4);
+    branch
+        .cities
+        .get_mut(&city)
+        .unwrap()
+        .owned_tiles
+        .push(branch_growth);
+    let branch_frame = branch.vision_frame(0, &mut branch.height_field());
+    assert!(
+        !Arc::ptr_eq(&moved_border, &branch_frame),
+        "a branch that moves a border must reject the inherited frame"
+    );
+    let mut branch_heights = branch.height_field();
+    let branch_uncached = branch.player_vision(&mut branch_heights, 0);
+    assert!(
+        branch_frame.as_ref() == &branch_uncached,
+        "a changed branch must recompute the exact uncached frame"
+    );
+    assert!(
+        Arc::ptr_eq(&moved_border, &game.vision_frame(0, &mut game.height_field())),
+        "branch recomputation must not replace the source world's frame"
+    );
+
+    // Handing the city to a rival moves the same sight source between seats.
+    // The fold is keyed by owner, so both signatures have to move.
+    let rival_before = game.vision_input_stamp(1);
+    let owner_before = game.vision_input_stamp(0);
+    game.cities.get_mut(&city).unwrap().owner = 1;
+    assert_ne!(
+        game.vision_input_stamp(0),
+        owner_before,
+        "the losing seat must stop seeing the border it no longer owns"
+    );
+    assert_ne!(
+        game.vision_input_stamp(1),
+        rival_before,
+        "the gaining seat must start seeing it"
+    );
+    let captured = game.vision_frame(0, &mut game.height_field());
+    let mut captured_heights = game.height_field();
+    let captured_uncached = game.player_vision(&mut captured_heights, 0);
+    assert!(
+        captured.as_ref() == &captured_uncached,
+        "a captured city must leave the old owner the sight an uncached walk gives"
+    );
+
+    // Razing is a structural change rather than a field write, and the
+    // roster is the only thing that can report it.
+    let razed_before = game.vision_input_stamp(1);
+    game.cities.remove(&city);
+    assert!(
+        !game.cities.vision_stamps_cached(),
+        "removing a city evicts the fold"
+    );
+    assert_ne!(
+        game.vision_input_stamp(1),
+        razed_before,
+        "a razed city must move its owner's signature"
+    );
+    let razed = game.vision_frame(1, &mut game.height_field());
+    let mut razed_heights = game.height_field();
+    let razed_uncached = game.player_vision(&mut razed_heights, 1);
+    assert!(
+        razed.as_ref() == &razed_uncached,
+        "a razed city must leave the exact uncached frame behind"
+    );
+}
+
+/// Whole-roster replacement is the case an epoch counter beside the cache
+/// would get wrong: the counter travels with the new cities while the memo
+/// stays with the old. The fold is a field of the roster precisely so that
+/// `mem::take`, `mem::swap` and plain assignment cannot come apart from it.
+#[test]
+fn vision_frames_follow_a_wholesale_roster_replacement() {
+    let (mut game, center) = controlled_game(63_104);
+    let city = game.place_city(0, center, None);
+    let populated = game.vision_frame(0, &mut game.height_field());
+    let populated_stamp = game.vision_input_stamp(0);
+    assert!(game.cities.vision_stamps_cached());
+
+    // A roster taken out and put back unchanged is the same roster, memo and
+    // all, so nothing about sight may move.
+    let roster = std::mem::take(&mut game.cities);
+    assert!(
+        !game.cities.vision_stamps_cached(),
+        "the emptied field carries no fold"
+    );
+    assert_ne!(
+        game.vision_input_stamp(0),
+        populated_stamp,
+        "a seat with no cities does not sign like a seat with one"
+    );
+    game.cities = roster;
+    assert_eq!(
+        game.vision_input_stamp(0),
+        populated_stamp,
+        "restoring the roster restores the signature"
+    );
+    assert!(
+        Arc::ptr_eq(
+            &populated,
+            &game.vision_frame(0, &mut game.height_field())
+        ),
+        "restoring the roster restores the frame"
+    );
+
+    // A roster replaced by a *different* one must be signed as that one, even
+    // though the field it lands in previously held a fold of its own.
+    let mut other = game.clone();
+    other
+        .cities
+        .get_mut(&city)
+        .unwrap()
+        .owned_tiles
+        .push(along(&game, center, 3));
+    let other_stamp = other.vision_input_stamp(0);
+    assert_ne!(other_stamp, populated_stamp);
+    game.cities = other.cities.clone();
+    assert_eq!(
+        game.vision_input_stamp(0),
+        other_stamp,
+        "an assigned roster brings its own fold, not the one it displaced"
+    );
+    let mut heights = game.height_field();
+    let uncached = game.player_vision(&mut heights, 0);
+    assert!(game.vision_frame(0, &mut game.height_field()).as_ref() == &uncached);
+}
+
 fn observed_tile(observation: &serde_json::Value, position: Pos) -> &serde_json::Value {
     observation["map"]["tiles"]
         .as_array()
