@@ -1074,9 +1074,11 @@ fn ols_clustered(design: &[Vec<f64>], y: &[f64], clusters: &[GameKey]) -> Option
             }
         }
     }
-    for i in 0..k {
-        for j in 0..i {
-            xtx[i][j] = xtx[j][i];
+    // Mirror the upper triangle accumulated above into the lower one.
+    for i in 1..k {
+        let (above, from_i) = xtx.split_at_mut(i);
+        for (j, row) in above.iter().enumerate() {
+            from_i[0][j] = row[i];
         }
     }
     let inverse = invert(&xtx)?;
@@ -2483,11 +2485,6 @@ fn build_line(header: &Header) -> String {
     )
 }
 
-/// Actual against intended, in the unit the table already counts.
-///
-/// ⚠ THE ANALYSIS MUST NOT BE ABLE TO PRESENT A TRUNCATED RUN AS A COMPLETED
-/// ONE. P10 stopped at 5,858 of a planned 10,000 games at the operator's
-
 /// Actual against intended, in seats.
 ///
 /// ⚠ THE ANALYSIS MUST NOT BE ABLE TO PRESENT A TRUNCATED RUN AS A COMPLETED
@@ -3429,7 +3426,7 @@ mod tests {
         for pair in 0..60u64 {
             for arm in 0..2u8 {
                 for seat in 0..3 {
-                    let bit = ((pair as usize + seat) % 2 == 0) == (arm == 0);
+                    let bit = (pair as usize + seat).is_multiple_of(2) == (arm == 0);
                     let genome = if bit { "10" } else { "01" };
                     let mut row = test_row(0, seat, genome, bit);
                     row.seed = pair;
