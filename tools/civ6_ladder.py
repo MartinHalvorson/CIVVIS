@@ -562,6 +562,83 @@ def entry_from(summary: dict) -> dict:
     }
 
 
+def claim_rung(state: dict, entry: dict) -> None:
+    """Fold one attempt's rung claim into ``wins``: earliest configured win.
+
+    Extracted so the two paths that can put an attempt into a record --
+    ``apply`` (one summary at a time) and ``merge_state`` (a whole ledger at
+    once) -- cannot drift on what claims a rung. The rule and its reasoning
+    live at the call site in ``apply``; this is only where it is spelled.
+    """
+    difficulty = entry.get("difficulty")
+    if not (entry.get("won") and entry.get("configured")
+            and difficulty in NAMES):
+        return
+    wins = state.setdefault("wins", {})
+    recorded = wins.get(difficulty)
+    if recorded is None or (entry.get("utc") or "￿") < (
+            recorded.get("utc") or "￿"):
+        wins[difficulty] = entry
+
+
+def merge_state(base: dict, incoming: dict) -> tuple[dict, list[dict]]:
+    """Union two ladder records by attempt tag. ``base`` is never diminished.
+
+    ⚠⚠⚠ THE RECORD FORKED BECAUSE `publish` WAS A WHOLESALE COPY OF ONE
+    MACHINE'S PRIVATE LEDGER, IN A FLEET THAT HAS MORE THAN ONE LIVE SEAT.
+    ``load`` seeds a machine with no live ledger from the committed snapshot,
+    so a second Civilization VI seat starts as a copy of the record and then
+    diverges from it -- and every ``publish`` after that replaced the shared
+    document with one seat's copy. Measured on 2026-08-23: the published
+    snapshot held 349 attempts and `mbp-m5-max-128`'s live ledger held 331,
+    with **255 in common, 94 only in the snapshot and 76 only on this
+    machine** -- 76 real games, nine of them Settler victories, that could
+    never reach the repository, and that the other seat's next publish would
+    not have imported either. The two sets diverge from exactly the 255
+    attempts published by #1767, which is the snapshot the second seat was
+    seeded from.
+
+    Merging makes publishing monotone: whichever seat lands next, the shared
+    record only ever grows, and neither seat's rows can erase the other's.
+    Order is the base's, then the incoming rows the base lacked, because a row
+    is never rewritten and reordering the committed record would rewrite every
+    one of them. Returns the merged state and the rows that were added.
+    """
+    merged: dict = {
+        "attempts": list(base.get("attempts") or []),
+        "wins": dict(base.get("wins") or {}),
+    }
+    table = base.get("victory_types") or incoming.get("victory_types")
+    if table:
+        merged["victory_types"] = table
+    seen = {a.get("tag") for a in merged["attempts"]
+            if isinstance(a, dict) and a.get("tag")}
+    added: list[dict] = []
+    for entry in incoming.get("attempts") or []:
+        if not isinstance(entry, dict):
+            continue
+        tag = entry.get("tag")
+        if tag and tag in seen:
+            continue
+        if tag:
+            seen.add(tag)
+        merged["attempts"].append(entry)
+        added.append(entry)
+        claim_rung(merged, entry)
+    return merged, added
+
+
+def load_snapshot(snapshot: Path | None = None) -> dict:
+    """The committed record, or an empty one when this clone has none."""
+    snapshot = DATA if snapshot is None else snapshot
+    if snapshot.is_file():
+        try:
+            return json.loads(snapshot.read_text())
+        except json.JSONDecodeError:
+            return {"attempts": [], "wins": {}}
+    return {"attempts": [], "wins": {}}
+
+
 def apply(state: dict, summary: dict) -> bool:
     """Fold one summary into the state. False if its tag is already recorded.
 
@@ -593,10 +670,7 @@ def apply(state: dict, summary: dict) -> bool:
         #
         # `utc` is an ISO-8601 Z stamp, so a string compare is a time compare.
         # A missing stamp sorts last rather than winning by accident.
-        recorded = state["wins"].get(difficulty)
-        if recorded is None or (entry.get("utc") or "￿") < (
-                recorded.get("utc") or "￿"):
-            state["wins"][difficulty] = entry
+        claim_rung(state, entry)
         # ⚠⚠ AND SEPARATELY BY VICTORY TYPE, BECAUSE `wins` HAS ONE SLOT PER
         # DIFFICULTY AND THAT SLOT IS ALREADY FULL.
         #
@@ -705,13 +779,25 @@ def sync(runs_dir: Path, ledger: Path, *, quiet: bool = False) -> int:
 
 def publish(ledger: Path, snapshot: Path | None = None,
             markdown: Path | None = None) -> int:
-    """Refresh the repository's snapshot of the live ledger."""
+    """Fold this machine's live ledger INTO the repository's snapshot.
+
+    ⚠⚠⚠ THIS USED TO BE A WHOLESALE OVERWRITE AND THAT IS HOW 76 GAMES WENT
+    UNRECORDED. See ``merge_state``: with two live seats in the fleet, the
+    shared document is not any one machine's ledger, and writing one over it
+    is how the other seat's rows leave the record. Merging cannot drop a
+    committed row, so publishing is safe from whichever seat happens to run
+    it, and a seat that has never published can still land its history later.
+    """
     snapshot = DATA if snapshot is None else snapshot
     markdown = LEDGER if markdown is None else markdown
-    state = load(ledger)
+    live = load(ledger)
+    committed = load_snapshot(snapshot)
+    state, added = merge_state(committed, live)
     snapshot.write_text(json.dumps(state, indent=2, sort_keys=True) + "\n")
     markdown.write_text(markdown_for(state))
-    print(f"published {len(state['attempts'])} attempt(s) to {snapshot} and {markdown}")
+    print(f"published {len(state['attempts'])} attempt(s) to {snapshot} and "
+          f"{markdown} ({len(added)} new from {ledger}, "
+          f"{len(committed.get('attempts') or [])} already committed)")
     return 0
 
 
@@ -834,13 +920,38 @@ def check(runs_dir: Path, ledger: Path, stale_hours: float | None,
         problems.append(f"{len(unrecorded)} summary(ies) on disk are not in the "
                         f"live ledger (run `civ6_ladder.py sync`)")
 
+    # ⚠⚠⚠ BY TAG, NEVER BY COUNT. `behind = len(live) - len(published)` was
+    # the whole snapshot comparison, and on a fleet with two live seats it is
+    # not a comparison at all: on 2026-08-23 this machine held 331 attempts
+    # and the snapshot 349, so `behind` was -18 and `check` printed "snapshot
+    # in step" -- while 76 of this machine's games were in no published record
+    # and 94 published rows were in no ledger here. The alarm that exists to
+    # say the record is behind the truth on disk could not see either.
+    fork = None
     if snapshot.is_file():
         published = json.loads(snapshot.read_text())
-        behind = len(state["attempts"]) - len(published.get("attempts", []))
-        if behind > 0:
-            problems.append(f"published snapshot trails the live ledger by "
-                            f"{behind} attempt(s) (run `civ6_ladder.py publish` "
-                            f"and land it)")
+        published_tags = {a.get("tag") for a in published.get("attempts") or []
+                          if isinstance(a, dict)}
+        unpublished = [a.get("tag") for a in state["attempts"]
+                       if a.get("tag") not in published_tags]
+        if unpublished:
+            problems.append(
+                f"{len(unpublished)} attempt(s) recorded here are in no "
+                f"published snapshot, oldest {unpublished[0]} (run "
+                f"`civ6_ladder.py publish` and land it)")
+        # The other direction is NOT a failure: another seat playing games
+        # this machine has never seen is the normal state of a multi-seat
+        # fleet, and `publish` merges rather than replaces, so it is also not
+        # a hazard. It is still worth saying out loud, because it is the
+        # difference between "this ledger is the record" and "this ledger is
+        # one seat's share of it" -- and the rung gate reads the union.
+        local = {a.get("tag") for a in state["attempts"]}
+        elsewhere = [tag for tag in published_tags if tag not in local]
+        if elsewhere:
+            fork = (f"{len(elsewhere)} published attempt(s) were recorded by "
+                    f"another seat and are not in this machine's live ledger; "
+                    f"`publish` merges, so this is a fleet with more than one "
+                    f"Civilization VI seat, not a lost record")
 
     if stale_hours is not None:
         now = now or datetime.now(timezone.utc)
@@ -893,6 +1004,8 @@ def check(runs_dir: Path, ledger: Path, stale_hours: float | None,
 
     for problem in problems:
         print(f"LADDER: {problem}")
+    if fork:
+        print(f"ladder note: {fork}")
     if not problems:
         print(f"ladder current: {len(state['attempts'])} attempt(s) recorded, "
               f"snapshot in step")
@@ -1179,7 +1292,12 @@ def markdown_for(state: dict) -> str:
             "| run | difficulty | playing for | configured | outcome | turns | score | ended |",
             "|---|---|---|---|---|---|---|---|",
         ]
-        for a in attempts[-40:]:
+        # ⚠ THE NEWEST FORTY BY THE CLOCK, NOT THE LAST FORTY APPENDED. The
+        # published record interleaves two live seats and is topped up by
+        # `sync` backfills, so append order is ARRIVAL order and stopped being
+        # chronology the first time an attempt was recorded late. Sorted
+        # stably, so rows sharing a stamp keep the order they were recorded in.
+        for a in sorted(attempts, key=lambda row: row.get("utc") or "")[-40:]:
             outcome = ("win" if a["won"]
                        else "defeat" if a.get("defeat")
                        else cell(a.get("reason")))
