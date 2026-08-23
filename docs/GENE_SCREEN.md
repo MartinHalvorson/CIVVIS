@@ -4,7 +4,11 @@
 
 The controller is treated as a **genome**: every behaviour flag is a gene, a
 player is the set of genes it has on, and genes are tested **regularly**, not
-once at birth. The instrument is this screen — very large randomized batches
+once at birth. The vocabulary, formalized 2026-08-23: the **gene pool** is
+the collection of all genes, whether on or off — the registry,
+`src/ai/advanced/genes.rs`, is the pool written down. A **genome** is one
+player's set of on genes, a subset of the pool; the deployment genome is the
+set the ledger ships on, and every screen seat draws its own. The instrument is this screen — very large randomized batches
 whose aggregate is the signal. **Every seat in every game draws its own genome
 at random, independently of every other seat and every other game**; the
 gene's value is the win rate of the seats that had it on against the win rate

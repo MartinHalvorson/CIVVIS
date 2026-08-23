@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """⭐ THE ONE GENE TOOL: the registry, the ledger and the ranking.
 
+Vocabulary: the GENE POOL is the collection of all genes, on or off — the
+registry, `src/ai/advanced/genes.rs`. A GENOME is one player's set of on
+genes, a subset of the pool; the deployment genome is the ledger's defaults.
+
     python3 tools/genes.py list                 every gene: kind, default, verdict
     python3 tools/genes.py source FILE [...]    enter a `gene_screen --analyze --json` file as a ledger source
     python3 tools/genes.py write                regenerate docs/gene_ledger.json, the verdict block in
