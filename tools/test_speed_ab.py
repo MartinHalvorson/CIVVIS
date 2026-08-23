@@ -715,6 +715,39 @@ class TheCheckAlwaysReportsAVerdict(unittest.TestCase):
         self.assertIn("steps.scope.outputs.measure == 'true'", self.body)
         self.assertIn("git diff --name-only", self.body)
 
+    def test_the_scope_predicate_matches_what_can_change_simulator_cost(self):
+        """⚠ Promoting this check put nine open pull requests behind it at
+        once. If the no-op path stopped reporting, or the trigger set stopped
+        covering `src/`, the failure would be fleet-wide and immediate — so the
+        predicate itself is read out of the workflow and exercised here rather
+        than trusted.
+        """
+        pattern = re.compile(
+            re.search(r"grep -qE '(?P<p>[^']+)'", self.raw).group("p"),
+            re.MULTILINE)
+        measures = ["src/ai/advanced.rs", "data/units.json", "Cargo.toml",
+                    "Cargo.lock", "tools/speed_ab.py",
+                    ".github/workflows/speed.yml"]
+        skips = ["docs/GENE_SCREEN.md", "docs/speed_ledger.json", "README.md",
+                 "tools/gene_ledger.py", "tools/test_speed_ab.py",
+                 "web/src/app.js", ""]
+        for path in measures:
+            with self.subTest(measures=path):
+                self.assertTrue(pattern.search(path))
+        for path in skips:
+            with self.subTest(skips=path):
+                self.assertIsNone(pattern.search(path))
+
+    def test_an_empty_diff_takes_the_no_op_path(self):
+        """The empty claim commit that opens every task pull request. `grep`
+        finds nothing in one blank line, exits non-zero, and the `else` branch
+        writes `measure=false` — a green check in about forty seconds."""
+        pattern = re.compile(
+            re.search(r"grep -qE '(?P<p>[^']+)'", self.raw).group("p"),
+            re.MULTILINE)
+        self.assertIsNone(pattern.search("\n"))
+        self.assertIn("measure=false", self.raw)
+
     def test_it_is_required_and_this_file_knows_it(self):
         """⚠ Advisory, it could not do the job it exists for.
 

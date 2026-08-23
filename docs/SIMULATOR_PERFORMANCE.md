@@ -1664,6 +1664,16 @@ seed 900002 wins a religious victory on turn 134 at a 150-turn clock and runs
 to 250 at a 250-turn one. A short-clock run is a different game, not a prefix
 of a long one.
 
+⚠⚠ **So say it plainly, because "the gate measures the screen's shape" will
+otherwise be read as stronger than it is — which is the exact failure this
+whole section is about. THE GATE IS BLIND TO A REGRESSION THAT ONLY APPEARS
+AFTER TURN 120.** Six of the seven legs match; the clock does not, and it is
+the one leg whose difference is not proportional — turn 200 has bigger
+empires, more units per seat, more cities, aircraft and a congress, so its
+profile is not turn 100's scaled up. When a change plausibly touches late-game
+code, `tools/speed_ab.py --turns 250 --games 4` by hand is the reading to
+trust, and a green gate is not a substitute for it.
+
 ### 2. Per completed turn, which is what the section above asked for
 
 The 2026-08-22 section ends: *"`gene_screen` already separates the two columns
@@ -1776,6 +1786,19 @@ Three properties make requiring it safe, and each is pinned by a test:
 A false failure is cleared by re-running the job (`gh run rerun --failed
 <run-id>`); `ship` already re-dispatches required checks that end without a
 verdict.
+
+### A note on the other instrument the load moves
+
+Measured the same evening: `python3 -m unittest discover -s tools` on plain
+`origin/main` fails **25 tests and errors 6** at load 70 on this host —
+`test_ladder_watchdog`, `test_spectator_supervisor`, `test_ops_portability`,
+`test_conflict_hotspots`, every one of them timing-sensitive. The identical
+suite is green on a hosted runner. That is the same fact this section is
+about, applied to a different instrument: a result taken on a fleet host and
+not labelled with its load is not a result. It is worth fixing on its own
+terms, because a suite that is red on the machine agents actually work on
+trains a fleet to stop reading it — the credibility problem `rust-quality`
+already cost this repository once.
 
 ### What is still owed
 

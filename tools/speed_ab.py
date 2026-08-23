@@ -122,6 +122,15 @@ about half the screen's per-turn density and under-weights the late game where
 a per-unit pass hurts most. It is a smoke alarm sized to the runner, not a
 promotion figure; `docs/EVAL.md` and the screen own that.
 
+⚠⚠ **State it plainly: this gate is blind to a regression that only appears
+after turn 120.** Six of the seven legs match the screen; the clock does not,
+and it is the one leg whose difference is not proportional — turn 200 has
+bigger empires, more units per seat, more cities, aircraft and a congress, so
+its profile is not turn 100's scaled up. When a change plausibly touches
+late-game code, run a full-clock reading by hand before believing the gate:
+
+    tools/speed_ab.py --baseline B --candidate C --turns 250 --games 4
+
 ## It runs in CI, because reading this file was never the failure
 
 `.github/workflows/speed.yml` builds the merge base and the head and runs this
