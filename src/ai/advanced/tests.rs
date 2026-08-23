@@ -20261,9 +20261,11 @@ fn settle_plan_ahead_prefers_the_site_that_leaves_room_for_the_next_city() {
     let cramped = open_ground_at(&game, home, 5);
     let roomy = open_ground_at(&game, home, 9);
     let future = open_ground_at(&game, roomy, SETTLE_PLAN_AHEAD_SPACING);
-    assert!(game.wdist(cramped, future) > SETTLE_PLAN_AHEAD_REACH
-        || game.wdist(cramped, future) < SETTLE_PLAN_AHEAD_SPACING
-        || game.wdist(roomy, future) <= game.wdist(cramped, future));
+    assert!(
+        game.wdist(cramped, future) > SETTLE_PLAN_AHEAD_REACH
+            || game.wdist(cramped, future) < SETTLE_PLAN_AHEAD_SPACING
+            || game.wdist(roomy, future) <= game.wdist(cramped, future)
+    );
     let mut sites = vec![(cramped, 40.0), (roomy, 40.0)];
     let raw: BTreeMap<Pos, f64> = [(cramped, 40.0), (roomy, 40.0), (future, 50.0)]
         .into_iter()
@@ -20271,7 +20273,10 @@ fn settle_plan_ahead_prefers_the_site_that_leaves_room_for_the_next_city() {
     AdvancedAi::settle_plan_ahead_rerank(&game, &mut sites, &raw);
     let roomy_value = sites.iter().find(|(pos, _)| *pos == roomy).unwrap().1;
     let cramped_value = sites.iter().find(|(pos, _)| *pos == cramped).unwrap().1;
-    assert!(roomy_value > cramped_value, "{roomy_value} vs {cramped_value}");
+    assert!(
+        roomy_value > cramped_value,
+        "{roomy_value} vs {cramped_value}"
+    );
 
     let off = AdvancedAi::new();
     let mut on = AdvancedAi::new();

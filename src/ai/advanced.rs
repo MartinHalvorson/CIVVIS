@@ -23269,7 +23269,10 @@ impl AdvancedAi {
                     .contains(&distance)
                     .then(|| {
                         let stretch = (distance - SETTLE_PLAN_AHEAD_SPACING) as f64;
-                        (*pos, value * (1.0 - SETTLE_PLAN_AHEAD_STRETCH_DISCOUNT * stretch))
+                        (
+                            *pos,
+                            value * (1.0 - SETTLE_PLAN_AHEAD_STRETCH_DISCOUNT * stretch),
+                        )
                     })
             })
             .collect();
