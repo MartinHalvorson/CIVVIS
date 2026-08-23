@@ -328,21 +328,30 @@ pub const PRODUCTION_OPT_INS: &[LiveTreatment] = &[
     // END so a running screen keeps its positional genome. See
     // `BasicAi::barbarian_capture_priority`.
     ("barbarian_capture_priority", "barbarian-capture-priority", AdvancedAi::enable_barbarian_capture_priority),
-    // ★★★★ EIGHTEEN BEHAVIOURS THAT NO SCREEN COULD REACH, AND THE COUNT THAT
+    // ★★★★ FOURTEEN BEHAVIOURS THAT NO SCREEN COULD REACH, AND THE COUNT THAT
     // FOUND THEM. `docs/EVAL_STATUS.md`'s "Genome coverage" section read 165
     // capability toggles on the controller, 100 reachable as a gene and **65
     // unreachable by any screen** — a number published because
     // `precise_evacuation` shipped ON for every seat, held roughly half the
     // simulator's main thread, and had no gene row, no evaluator arm and no
     // mention in any round. Neither gate could address it and nothing said so.
-    // These eighteen are the part of that 65 a native screen can honestly
+    // These fourteen are the part of that 65 a native screen can honestly
     // price. Every one is off in `promoted_policy_envoy`, so an opt-in row is
     // the whole change: `apply_gene_ledger` enables an opt-in only on a
     // `default_on` ledger row and there is none, so each ships off and
-    // unmeasured and NOTHING about the deployed agent moves. The rest of the
-    // 65 is accounted for one line at a time in `docs/GENE_SCREEN.md`
-    // (§"What the 65 unreachable toggles are"); the residual is examined work,
-    // not an unexamined ceiling.
+    // unmeasured and NOTHING about the deployed agent moves.
+    //
+    // ⭐ EIGHTEEN ROWS WERE WRITTEN AND FOUR WERE TAKEN BACK OUT, BY THE GATE
+    // THIS SAME CHANGE ADDS. `camp_bounty`, `great_work_veto_by_district`,
+    // `sea_answers` and `settler_founds_when_stalled` each left both arms of a
+    // single-gene probe byte-identical — win Δ, share Δ and both standard
+    // errors exactly zero — so they would have consumed a genome bit and
+    // returned the zero-width interval `docs/GENE_SCREEN.md` warns about.
+    // `tools/gene_fires.py` is what says so; their probes and their reasons are
+    // in `docs/gene_screens/fires/` and `docs/genome_reach_debt.json`. The rest
+    // of the residual is accounted for one line at a time in
+    // `docs/GENE_SCREEN.md` (§"The toggles no screen can reach"); it is
+    // examined work, not an unexamined ceiling.
     //
     // ⭐ APPENDED AT THE END, for the reason four rows up: `gene_screen` writes
     // the genome as a POSITIONAL bit string.
@@ -374,12 +383,6 @@ pub const PRODUCTION_OPT_INS: &[LiveTreatment] = &[
     // Choose the pantheon from the land the empire actually holds rather than
     // from a fixed order.
     ("pantheon_board", "pantheon-board", AdvancedAi::enable_pantheon_board),
-    // Clearing a camp is a peacetime errand worth sending for, not only
-    // something a unit does when a camp is already in its way.
-    ("camp_bounty", "camp-bounty", AdvancedAi::enable_camp_bounty),
-    // A sea threat gets a sea answer: a naval raider counts toward the
-    // decision that builds hulls.
-    ("sea_answers", "sea-answers", AdvancedAi::enable_sea_answers),
     // The policy counterfactual sees the unit-maintenance bill, so the cards
     // that pay it stop scoring zero.
     ("maintenance_aware_deck", "maintenance-aware-deck", AdvancedAi::enable_maintenance_aware_deck),
@@ -393,8 +396,6 @@ pub const PRODUCTION_OPT_INS: &[LiveTreatment] = &[
     // Price Builder production by a survey of the work it would actually do
     // rather than by `ceil(cities / 2)`.
     ("builder_reward_survey", "builder-reward-survey", AdvancedAi::enable_builder_reward_survey),
-    // A Settler that has stalled founds where it stands.
-    ("settler_founds_when_stalled", "settler-founds-when-stalled", AdvancedAi::enable_settler_founds_when_stalled),
     // The settlement-gap redirect and the Settler ranking read the same city
     // target, instead of two that can disagree.
     ("settlement_gap_target", "settlement-gap-target", AdvancedAi::enable_settlement_gap_target),
@@ -403,9 +404,6 @@ pub const PRODUCTION_OPT_INS: &[LiveTreatment] = &[
     // Read the Faith price from the engine instead of the Standard-speed
     // literal, which overquotes by 2x at Online — the screen's own speed.
     ("engine_faith_price", "engine-faith-price", AdvancedAi::enable_engine_faith_price),
-    // For a lane that is not Culture the veto boundary is the Theater Square,
-    // not any Great Work slot.
-    ("great_work_veto_by_district", "great-work-veto-by-district", AdvancedAi::enable_great_work_veto_by_district),
     // A wounded unit may still take its promotion.
     ("promote_when_wounded", "promote-when-wounded", AdvancedAi::enable_promote_when_wounded),
 ];

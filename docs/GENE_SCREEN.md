@@ -822,8 +822,9 @@ gene, in `docs/genome_reach_debt.json`, and
 computed list — a toggle that gains a gene row must lose its entry, and a new
 unreachable toggle must gain one. The residual is examined work.
 
-The count went **165 / 100 reachable / 65 unreachable → 166 / 118 / 48** when
-eighteen of them became opt-in genes. What the remaining 48 are:
+The count went **165 / 100 reachable / 65 unreachable → 166 / 114 / 52** when
+fourteen of them became opt-in genes — eighteen rows were written and the fires
+gate above refused four on their own probes. What the remaining 52 are:
 
 | group | n | why not a gene |
 |---|---:|---|
@@ -834,6 +835,7 @@ eighteen of them became opt-in genes. What the remaining 48 are:
 | `configured-on` | 5 | On in `AdvancedAi::configured` but not in `promoted_policy_envoy`, so `production_bundle_rows_are_real` rejects the row as written, and it carries the same hazard as the group above. |
 | `infrastructure` | 2 | No decision content: a cache lifetime, and a controller-wide mode that is itself an aggregate over genes that already exist. |
 | `already-on` | 1 | `adjacent_camp_clear` is on in `BasicAi::new`, so an opt-in row would be on in both arms and screen as exactly inert. |
+| `does-not-fire` | 4 | A gene row was written for it here and `tools/gene_fires.py` refused it: a single-gene probe over 12 map pairs left both arms byte-identical. The row was removed rather than shipped to return a zero-width interval. |
 
 ⚠ The `production-on` and `live-bridge-row` rows are the finding worth
 carrying out of this: **making a shipped behaviour screenable is not a

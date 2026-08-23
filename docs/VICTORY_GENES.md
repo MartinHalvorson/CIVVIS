@@ -650,7 +650,7 @@ unused in its own doc comment. The remaining thirty are a standing backlog,
 not a claim that any of them helps: **making a behaviour screenable is cheap
 (a toggle pair and a row) and says nothing about whether it should ship.**
 
-**2026-08-23: eighteen of that backlog got their rows, and the count is
+**2026-08-23: fourteen of that backlog got their rows, and the count is
 generated now.** The heuristic above has been replaced by
 `docs/EVAL_STATUS.md`'s *Genome coverage* section, which derives the same
 question from `treatment_flags.rs` and the three gene tables rather than from a
@@ -659,13 +659,16 @@ one line per remaining toggle saying why it is not a gene —
 `tools/test_genome_reach_debt.py` requires that file to cover exactly the
 computed list, so neither a stale reason nor a new silent debt survives a run.
 #2330 moved the published count from **165 toggles / 100 reachable / 65
-unreachable** to **166 / 118 / 48**, taking `coordinated_finish` — named first
+unreachable** to **166 / 114 / 52**, taking `coordinated_finish` — named first
 in the paragraph above, and until then invisible even to the count, because a
 field only ever set directly by an `elo.rs` arm has no toggle pair to be
 counted by — along with `coupled_expansion`, `tactical_strategy`,
-`unit_objective_memory` and fourteen more.
+`unit_objective_memory` and ten more. It wrote eighteen rows; the fires gate
+the same change adds refused four of them on their own probes, which is the
+second half of the point — **a row is cheap to write and the gate is what
+makes it mean something.**
 
-⚠ And the residual is not thirty cheap rows. Of the 48 left, **22 are
+⚠ And the residual is not thirty cheap rows. Of the 52 left, **22 are
 behaviours production ships ON**, and for those "a toggle pair and a row" is
 not cheap and not neutral: `apply_gene_ledger` reads *unmeasured ⇒ off*, so a
 gene row switches the behaviour off at deployment while its first screen runs.

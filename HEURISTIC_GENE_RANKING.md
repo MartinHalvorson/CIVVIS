@@ -77,7 +77,6 @@ These screenable genes have no on/off result, so they receive no rank or promoti
 | `air-surge` | off (unmeasured) | Beeline Advanced Flight from three technologies out, raise an Aerodrome and a bomber wing, and take the appointed city with the cavalry behind it. |
 | `barbarian-capture-priority` | off (unmeasured) | Take a visible Barbarian Settler or Scout in exact one-turn reach before healing, retreat, or any ordinary tactical choice. |
 | `builder-reward-survey` | off (unmeasured) | Price Builder production by a survey of the work it would do. |
-| `camp-bounty` | off (unmeasured) | Deliberate camp clearing as a peacetime errand. |
 | `campus-adjacency-threshold` | off (unmeasured) | A Campus plot that clears the multiplier's adjacency threshold is credited what crossing it unlocks. |
 | `campus-finishes-first` | off (unmeasured) | The Campus coverage term is scaled by how finished the empire's standing Campuses are. |
 | `chain-tech-lookahead` | off (unmeasured) | The research goal aims at a Campus rung the empire can BUILD, not only one it has already built. |
@@ -97,7 +96,6 @@ These screenable genes have no on/off result, so they receive no rank or promoti
 | `envoy-infrastructure` | off (unmeasured) | Value the infrastructure that produces city-state influence: the Consulate and Chancery's per-turn influence becomes the envoys it can produce before the turn limit, and a first Diplomatic Quarter sees part of the Consulate stream it unlocks. |
 | `fifteenth-citizen` | off (unmeasured) | A Campus city within reach of the Population gate credits growth with what crossing it unlocks. |
 | `fortify-idle-units` | off (unmeasured) | Fortify units the planner gave nothing to do. |
-| `great-work-veto-by-district` | off (unmeasured) | Treat a Theater Square, rather than any Great Work slot, as the non-Culture lane's veto boundary. |
 | `guru-heals-the-corps` | off (unmeasured) | Let a founder that is defending its own cities hold one Guru, the only field heal a religious corps has. |
 | `holy-site-where-the-threat-is` | off (unmeasured) | Put a Holy Site in the city that is actually losing its majority, so its defender can be bought there instead of walking from the Holy City. |
 | `lane-congress-ballot` | off (unmeasured) | Score the World Congress ballot — which outcome and target this seat names — for the victory the empire is actually racing rather than for an expansion posture that has no lane. |
@@ -120,9 +118,7 @@ These screenable genes have no on/off result, so they receive no rank or promoti
 | `research-tier-premium` | off (unmeasured) | A Campus building's debt is scaled by its own Science against the chain's first rung. |
 | `science-multiplier-payoff` | off (unmeasured) | Credit a Campus building the beakers its city's multipliers will actually pay it. |
 | `science-payback-horizon` | off (unmeasured) | Price the science economy on whether it can still repay rather than on how much of the game is left. |
-| `sea-answers` | off (unmeasured) | Sea threats get sea answers. |
 | `settlement-gap-target` | off (unmeasured) | Make the settlement-gap redirect and the Settler ranking honour the same city target the cascade settles toward. |
-| `settler-founds-when-stalled` | off (unmeasured) | Let a stalled settler found where it stands. |
 | `spread-campaign-persists` | off (unmeasured) | Keep a spread campaign that has already converted a foreign city on the offensive between waves, instead of dropping the posture the turn its last charge is spent. |
 | `tactical-strategy` | off (unmeasured) | Enable explicit battlefield roles: the land-unit counter cycle, safe ranged standoff, wall-focused siege/support, and cavalry job priority. |
 | `unit-cost-efficiency` | off (unmeasured) | Credit strength-per-production and the civ's own unique unit in the military production arm. |

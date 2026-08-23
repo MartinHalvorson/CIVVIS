@@ -10,7 +10,7 @@
     "board; `live-bridge-row` could fire but a gene row would withhold it from the",
     "live bridge; `production-on` ships on and a gene row would switch it off;",
     "`configured-on` ships on from the wrong constructor for the table's own test;",
-    "`infrastructure` has no decision content; `already-on` would screen inert."
+    "`infrastructure` has no decision content; `already-on` would screen inert;"
   ],
   "toggles": {
     "adjacent_camp_clear": {
@@ -28,6 +28,10 @@
     "battlefront_observation": {
       "group": "configured-on",
       "reason": "On in `AdvancedAi::configured` but NOT in `promoted_policy_envoy`, so `production_bundle_rows_are_real` rejects a `PRODUCTION_TREATMENTS` row for it as written. Moving the assignment is a controller change owned by whoever owns the behaviour, and it carries the same deployment hazard as the group above. What it does: plan campaigns and battlefronts from player-visible observations only."
+    },
+    "camp_bounty": {
+      "group": "does-not-fire",
+      "reason": "A GENE ROW WAS WRITTEN FOR IT IN #2330 AND THE FIRES GATE REFUSED IT. Clearing a camp is a peacetime errand worth sending for, not only something a unit does when a camp is already in its way. A single-gene probe over 12 map pairs (72 matched seat comparisons, 24 games) left both arms byte-identical: win Δ, score-share Δ and both standard errors all exactly zero, which is the never-fired signature, not a null. The row was removed rather than shipped to consume a genome bit and return a zero-width interval. Evidence: `docs/gene_screens/fires/camp-bounty.json`. To wire it, make the behaviour reachable on the screen's board first, then re-probe."
     },
     "counter_in_lane": {
       "group": "live-bridge-row",
@@ -96,6 +100,10 @@
     "governor_in_recovery": {
       "group": "configured-on",
       "reason": "On in `AdvancedAi::configured` but NOT in `promoted_policy_envoy`, so `production_bundle_rows_are_real` rejects a `PRODUCTION_TREATMENTS` row for it as written. Moving the assignment is a controller change owned by whoever owns the behaviour, and it carries the same deployment hazard as the group above. What it does: the strategic governor runs cities under an adaptive Recovery plan."
+    },
+    "great_work_veto_by_district": {
+      "group": "does-not-fire",
+      "reason": "A GENE ROW WAS WRITTEN FOR IT IN #2330 AND THE FIRES GATE REFUSED IT. For a lane that is not Culture the Great Work veto boundary is the Theater Square, not any Great Work slot. A single-gene probe over 12 map pairs (72 matched seat comparisons, 24 games) left both arms byte-identical: win Δ, score-share Δ and both standard errors all exactly zero, which is the never-fired signature, not a null. The row was removed rather than shipped to consume a genome bit and return a zero-width interval. Evidence: `docs/gene_screens/fires/great-work-veto-by-district.json`. To wire it, make the behaviour reachable on the screen's board first, then re-probe."
     },
     "host_settler_pop": {
       "group": "host-only",
@@ -173,9 +181,17 @@
       "group": "live-bridge-row",
       "reason": "Screenable would mean WITHHELD. It has a `LIVE_TREATMENTS` row, so a `PRODUCTION_OPT_INS` row flips `ledger_default_on` from `None` to `Some(false)` and `apply_gene_ledger` would then take it out of the live bridge. That is a deployment change wearing an instrument's clothes. The move it wants is the door `culture-coverage` went through: out of `FIRAXIS_ONLY_TREATMENTS` and into an `ENGINE_REPAIR_*` half, taken deliberately with the bridge change owned and priced. What it does: the denial alarm reads projected pressure, raw plus slope times horizon. Its host-only classification is an argument about which rivals the weights were bred against, not a claim the code cannot fire natively."
     },
+    "sea_answers": {
+      "group": "does-not-fire",
+      "reason": "A GENE ROW WAS WRITTEN FOR IT IN #2330 AND THE FIRES GATE REFUSED IT. A sea threat gets a sea answer: a naval raider counts toward the decision that builds hulls. A single-gene probe over 12 map pairs (72 matched seat comparisons, 24 games) left both arms byte-identical: win Δ, score-share Δ and both standard errors all exactly zero, which is the never-fired signature, not a null. The row was removed rather than shipped to consume a genome bit and return a zero-width interval. Evidence: `docs/gene_screens/fires/sea-answers.json`. To wire it, make the behaviour reachable on the screen's board first, then re-probe."
+    },
     "settlement_safety": {
       "group": "configured-on",
       "reason": "On in `AdvancedAi::configured` but NOT in `promoted_policy_envoy`, so `production_bundle_rows_are_real` rejects a `PRODUCTION_TREATMENTS` row for it as written. Moving the assignment is a controller change owned by whoever owns the behaviour, and it carries the same deployment hazard as the group above. What it does: visible attack envelopes, barbarian pressure, support distance and march cost in the settle scorer."
+    },
+    "settler_founds_when_stalled": {
+      "group": "does-not-fire",
+      "reason": "A GENE ROW WAS WRITTEN FOR IT IN #2330 AND THE FIRES GATE REFUSED IT. A Settler that has stalled founds where it stands. A single-gene probe over 12 map pairs (72 matched seat comparisons, 24 games) left both arms byte-identical: win Δ, score-share Δ and both standard errors all exactly zero, which is the never-fired signature, not a null. The row was removed rather than shipped to consume a genome bit and return a zero-width interval. Evidence: `docs/gene_screens/fires/settler-founds-when-stalled.json`. To wire it, make the behaviour reachable on the screen's board first, then re-probe."
     },
     "solvent_faith_army": {
       "group": "live-bridge-row",

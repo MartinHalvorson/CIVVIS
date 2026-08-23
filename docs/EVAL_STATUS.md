@@ -49,10 +49,10 @@ How much of the controller the genome instrument can vary at all.
 genes"; this is the denominator that direction is measured against.
 
 - Capability toggles on the controller: **166**
-- Reachable as a gene `gene_screen` can vary: **118**
+- Reachable as a gene `gene_screen` can vary: **114**
 - Measured by at least one screen: **65**
 - Resolved by the ledger (helps or hurts): **21**
-- **Unreachable by any screen: 48**
+- **Unreachable by any screen: 52**
 
 ⚠ This is the mirror of the section above and it errs the other way.
 `Never named` under-counts the live-bundle debt; this OVER-counts the
@@ -70,7 +70,7 @@ nothing said so.
 
 Unreachable:
 
-`adjacent_camp_clear`, `amenity_districts`, `bank_envoys`, `battlefront_observation`, `counter_in_lane`, `deny_while_targeted`, `engine_repairs`, `engine_repairs_economy`, `engine_repairs_universe`, `engine_repairs_war`, `envelope_cache_across_own_moves`, `era_paced_expansion`, `expansion_before_prophet`, `expansion_hall`, `expansion_pantheon`, `explore_commit`, `explore_dead_targets`, `fog_honest`, `fog_land_capacity`, `frontier_loyalty`, `governor_in_recovery`, `host_settler_pop`, `hut_collection`, `joint_reach_lines`, `land_grab`, `legal_tactical_candidates`, `live_bridge`, `live_bridge_universe`, `live_formationless_settler_shadow`, `live_motion_turn_accounting`, `live_religious_purchase_guard`, `live_trader_route_adapter`, `live_wonder_race`, `no_elective_war`, `open_water_navy`, `opening_settler_waits`, `parallel_settlers`, `production_builder_floor`, `production_settler_deadline`, `projected_stock_denial`, `settlement_safety`, `solvent_faith_army`, `spy_mission_patience`, `step_and_reassess`, `stock_denial_lead_time`, `tally_culture`, `tally_great_people`, `village_seeking`
+`adjacent_camp_clear`, `amenity_districts`, `bank_envoys`, `battlefront_observation`, `camp_bounty`, `counter_in_lane`, `deny_while_targeted`, `engine_repairs`, `engine_repairs_economy`, `engine_repairs_universe`, `engine_repairs_war`, `envelope_cache_across_own_moves`, `era_paced_expansion`, `expansion_before_prophet`, `expansion_hall`, `expansion_pantheon`, `explore_commit`, `explore_dead_targets`, `fog_honest`, `fog_land_capacity`, `frontier_loyalty`, `governor_in_recovery`, `great_work_veto_by_district`, `host_settler_pop`, `hut_collection`, `joint_reach_lines`, `land_grab`, `legal_tactical_candidates`, `live_bridge`, `live_bridge_universe`, `live_formationless_settler_shadow`, `live_motion_turn_accounting`, `live_religious_purchase_guard`, `live_trader_route_adapter`, `live_wonder_race`, `no_elective_war`, `open_water_navy`, `opening_settler_waits`, `parallel_settlers`, `production_builder_floor`, `production_settler_deadline`, `projected_stock_denial`, `sea_answers`, `settlement_safety`, `settler_founds_when_stalled`, `solvent_faith_army`, `spy_mission_patience`, `step_and_reassess`, `stock_denial_lead_time`, `tally_culture`, `tally_great_people`, `village_seeking`
 
 ## Live ladder
 
