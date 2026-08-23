@@ -27,7 +27,7 @@
       "standard",
       "legacy"
     ],
-    "authority_meaning": "which rule decided default_on. `columns` is the operator's threshold rule above. `posterior-veto` keeps those columns but fires the veto only on a resolved negative record - the posterior's 95% interval wholly below zero - instead of on the bare sign of a difference with no error. `posterior` decides wherever the interval excludes zero and falls back to `posterior-veto` where it straddles. AUTHORITY in tools/gene_ledger.py is the switch and src/ai/advanced/gene_ledger.rs mirrors it"
+    "authority_meaning": "which rule decided default_on. `columns` is the operator's threshold rule above. `posterior-veto` keeps those columns but fires the veto only on a resolved negative record - the posterior's 95% interval wholly below zero - instead of on the bare sign of a difference with no error. `posterior` decides wherever the interval excludes zero and falls back to `posterior-veto` where it straddles. AUTHORITY in tools/genes.py is the switch and src/ai/advanced/gene_ledger.rs mirrors it"
   },
   "sources": [
     {
