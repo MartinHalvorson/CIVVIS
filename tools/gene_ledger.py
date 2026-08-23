@@ -975,6 +975,53 @@ def measure_from(gene: dict, source_name: str) -> dict:
     return measure
 
 
+def families_of(tags: list[str]) -> list[list[str]]:
+    """⭐ VERSIONED GENES, the Python twin of `gene_screen.rs::families_of`.
+
+    An improvement to a gene is a NEW gene, `<base>-<n>` (`war-economy-2`),
+    screened beside the original; the original keeps its tag and its history
+    and is version one. A tag `<base>-<n>` with `n >= 2` whose `<base>` is
+    itself a gene is that gene's version `n`. Returned base first, then
+    ascending versions; only families with two or more members."""
+    known = set(tags)
+    found: dict[str, list[tuple[int, str]]] = {}
+    for tag in tags:
+        base, _, version = tag.rpartition("-")
+        if not base or not version.isdigit() or int(version) < 2:
+            continue
+        if base in known:
+            found.setdefault(base, []).append((int(version), tag))
+    return [[base] + [tag for _, tag in sorted(versions)]
+            for base, versions in sorted(found.items())]
+
+
+def choose_family_heads(genes: list[dict]) -> None:
+    """⭐ ONE VERSION OF A FAMILY PLAYS. Every version is priced on its own row
+    under the same rule, but the deployment genome carries at most one of
+    them: among the versions the rule would turn on, the one with the best
+    newest win column (ties to the higher version — the improvement that
+    matched the original is the one to keep iterating on). The others are
+    recorded as `family_runner_up`, off in deployment, with the rule's own
+    verdict still on their row so the ranking shows what they measured.
+
+    The screen's family table (`gene_screen --analyze`) is where "did the
+    improvement improve" is read head to head; this is only what ships."""
+    by_tag = {gene["tag"]: gene for gene in genes}
+    for family in families_of([gene["tag"] for gene in genes]):
+        for rank, tag in enumerate(family, start=1):
+            by_tag[tag]["family"] = family[0]
+            by_tag[tag]["version"] = rank
+            by_tag[tag]["family_runner_up"] = False
+        passing = [by_tag[tag] for tag in family if by_tag[tag]["default_on"]]
+        if len(passing) <= 1:
+            continue
+        head = max(passing, key=lambda g: (g["wins_last_10k"] or 0, g["version"]))
+        for gene in passing:
+            if gene is not head:
+                gene["default_on"] = False
+                gene["family_runner_up"] = True
+
+
 def build_ledger(sources: list[Path], filter_known: bool = True,
                  build_notes: dict[str, str] | None = None,
                  authority: str = AUTHORITY) -> dict:
@@ -1112,6 +1159,7 @@ def build_ledger(sources: list[Path], filter_known: bool = True,
             "conflict": conflict,
             "screen": measure,
         })
+    choose_family_heads(genes)
     # What EVERY authority would ship, published so the delta is visible in the
     # ledger itself and not only in the ranking's table. This is the number the
     # operator's call is taken on.
@@ -1128,6 +1176,7 @@ def build_ledger(sources: list[Path], filter_known: bool = True,
                                   g["posterior_se_pp"])
             for g in genes
         ]
+        would = [w and not g.get("family_runner_up", False) for g, w in zip(genes, would)]
         counts[f"default_on_under_{candidate}"] = sum(would)
         counts[f"moved_by_{candidate}"] = sum(
             g["default_on"] != w for g, w in zip(genes, would))
@@ -1238,6 +1287,7 @@ def render_rust(ledger: dict) -> str:
         lines.append(f"        posterior_pp: {rust_opt_f(gene['posterior_pp'])},")
         lines.append(f"        posterior_se_pp: {rust_opt_f(gene['posterior_se_pp'])},")
         lines.append(f"        family_wise: {'true' if gene['family_wise'] else 'false'},")
+        lines.append(f"        family_runner_up: {'true' if gene.get('family_runner_up') else 'false'},")
         lines.append(f"        screen: {rust_measure(gene['screen'])},")
         lines.append("    },")
     lines.append("];")

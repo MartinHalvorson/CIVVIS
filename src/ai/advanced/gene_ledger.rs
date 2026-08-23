@@ -148,6 +148,13 @@ pub struct GeneVerdict {
     pub posterior_se_pp: Option<f64>,
     /// Past the family-wise bar of the screen that supplied the verdict.
     pub family_wise: bool,
+    /// ⭐ A VERSIONED GENE'S RUNNER-UP. `war-economy-2` is screened beside
+    /// `war-economy` as a gene of its own; the deployment genome carries at
+    /// most one version of a family, the best of those the rule would turn
+    /// on (`tools/gene_ledger.py::choose_family_heads`). A version the rule
+    /// passes that is not its family's head is recorded here and ships off,
+    /// which is the one case `default_on` is not the rule's own answer.
+    pub family_runner_up: bool,
     /// The newest screen's paired contrast for this gene.
     pub screen: Option<Measure>,
 }
@@ -497,7 +504,7 @@ mod tests {
                     row.win_diff_pp,
                     row.posterior_pp,
                     row.posterior_se_pp,
-                ),
+                ) && !row.family_runner_up,
                 "{}: default {} does not follow the `{}` authority on columns {:?}/{:?}, \
                  difference {:?} and posterior {:?} ± {:?}",
                 row.tag,

@@ -24,6 +24,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(107.526882),
         posterior_se_pp: Some(15.380193),
         family_wise: true,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: 2.151, win_z: 6.991, share_delta_pp: 0.45, share_z: 7.737, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -36,6 +37,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(10.511592),
         posterior_se_pp: Some(9.233796),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: 0.339, win_z: 1.073, share_delta_pp: 0.059, share_z: 1.026, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -48,6 +50,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(-7.259857),
         posterior_se_pp: Some(13.707692),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: -0.677, win_z: -2.166, share_delta_pp: -0.115, share_z: -2.003, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -60,6 +63,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(2.117182),
         posterior_se_pp: Some(12.73794),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: 0.322, win_z: 1.017, share_delta_pp: -0.05, share_z: -0.865, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -72,6 +76,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(5.247431),
         posterior_se_pp: Some(13.027793),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: 0.364, win_z: 1.152, share_delta_pp: 0.01, share_z: 0.176, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -84,6 +89,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(7.845452),
         posterior_se_pp: Some(11.982251),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: 0.203, win_z: 0.65, share_delta_pp: 0.026, share_z: 0.45, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -96,6 +102,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(1.270003),
         posterior_se_pp: Some(15.767991),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: 0.025, win_z: 0.081, share_delta_pp: -0.124, share_z: -2.099, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -108,6 +115,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(-37.655923),
         posterior_se_pp: Some(48.323025),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: 0.203, win_z: 0.645, share_delta_pp: -0.134, share_z: -2.286, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -120,6 +128,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(15.552532),
         posterior_se_pp: Some(11.955023),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: 0.33, win_z: 1.053, share_delta_pp: -0.011, share_z: -0.203, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -132,6 +141,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(35.073709),
         posterior_se_pp: Some(12.030762),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: 0.246, win_z: 0.788, share_delta_pp: 0.022, share_z: 0.389, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -144,6 +154,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(17.659739),
         posterior_se_pp: Some(9.164527),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: -0.008, win_z: -0.027, share_delta_pp: 0.003, share_z: 0.054, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -156,6 +167,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(0.003378),
         posterior_se_pp: Some(9.059427),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: -0.008, win_z: -0.028, share_delta_pp: -0.057, share_z: -0.985, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -168,6 +180,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(28.446104),
         posterior_se_pp: Some(9.215507),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: 0.576, win_z: 1.842, share_delta_pp: 0.187, share_z: 3.158, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -180,6 +193,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(-0.343822),
         posterior_se_pp: Some(11.865083),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: -0.195, win_z: -0.624, share_delta_pp: 0.004, share_z: 0.075, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -192,6 +206,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(6.840167),
         posterior_se_pp: Some(16.426383),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: -0.169, win_z: -0.54, share_delta_pp: -0.044, share_z: -0.747, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -204,6 +219,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(28.233682),
         posterior_se_pp: Some(14.547491),
         family_wise: true,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: 1.228, win_z: 3.949, share_delta_pp: 0.282, share_z: 4.886, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -216,6 +232,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(21.505307),
         posterior_se_pp: Some(16.177401),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: -0.305, win_z: -0.959, share_delta_pp: -0.012, share_z: -0.208, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -228,6 +245,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(-17.780036),
         posterior_se_pp: Some(15.495953),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: -0.356, win_z: -1.147, share_delta_pp: -0.059, share_z: -1.018, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -240,6 +258,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(3.810008),
         posterior_se_pp: Some(15.550386),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: 0.076, win_z: 0.245, share_delta_pp: 0.096, share_z: 1.643, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -252,6 +271,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(-24.553382),
         posterior_se_pp: Some(15.791551),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: -0.491, win_z: -1.555, share_delta_pp: -0.034, share_z: -0.586, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -264,6 +284,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(-4.012919),
         posterior_se_pp: Some(9.232314),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: -0.025, win_z: -0.08, share_delta_pp: 0.096, share_z: 1.647, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -276,6 +297,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(9.201381),
         posterior_se_pp: Some(9.912531),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: 0.093, win_z: 0.293, share_delta_pp: 0.015, share_z: 0.249, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -288,6 +310,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(-0.423334),
         posterior_se_pp: Some(15.847382),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: -0.008, win_z: -0.027, share_delta_pp: -0.069, share_z: -1.169, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -300,6 +323,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(-7.620015),
         posterior_se_pp: Some(15.532728),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: -0.152, win_z: -0.491, share_delta_pp: 0.037, share_z: 0.639, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -312,6 +336,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(-8.466684),
         posterior_se_pp: Some(15.497956),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: -0.169, win_z: -0.546, share_delta_pp: -0.043, share_z: -0.732, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -324,6 +349,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(-12.700025),
         posterior_se_pp: Some(15.381116),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: -0.254, win_z: -0.826, share_delta_pp: 0.064, share_z: 1.113, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -336,6 +362,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(-54.610109),
         posterior_se_pp: Some(15.398598),
         family_wise: true,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: -1.092, win_z: -3.546, share_delta_pp: -0.358, share_z: -6.148, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -348,6 +375,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(24.130048),
         posterior_se_pp: Some(15.842715),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: 0.483, win_z: 1.523, share_delta_pp: 0.05, share_z: 0.833, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -360,6 +388,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(-13.970028),
         posterior_se_pp: Some(15.409945),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: -0.279, win_z: -0.907, share_delta_pp: 0.083, share_z: 1.435, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -372,6 +401,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(-0.846668),
         posterior_se_pp: Some(15.705348),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: -0.017, win_z: -0.054, share_delta_pp: -0.183, share_z: -3.154, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -384,6 +414,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(-2.972191),
         posterior_se_pp: Some(12.462119),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: -0.44, win_z: -1.44, share_delta_pp: -0.021, share_z: -0.358, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -396,6 +427,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(-32.809202),
         posterior_se_pp: Some(11.759247),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: -0.821, win_z: -2.649, share_delta_pp: -0.117, share_z: -1.991, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -408,6 +440,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(1.693337),
         posterior_se_pp: Some(15.567762),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: 0.034, win_z: 0.109, share_delta_pp: 0.022, share_z: 0.382, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -420,6 +453,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(-8.646684),
         posterior_se_pp: Some(9.215306),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: -0.33, win_z: -1.059, share_delta_pp: -0.057, share_z: -0.979, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -432,6 +466,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(7.620015),
         posterior_se_pp: Some(15.818613),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: 0.152, win_z: 0.482, share_delta_pp: -0.03, share_z: -0.512, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -444,6 +479,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(-5.926679),
         posterior_se_pp: Some(15.705069),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: -0.119, win_z: -0.377, share_delta_pp: 0.003, share_z: 0.051, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -456,6 +492,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(30.124123),
         posterior_se_pp: Some(16.042415),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: 0.72, win_z: 2.287, share_delta_pp: 0.166, share_z: 2.853, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -468,6 +505,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(-11.853357),
         posterior_se_pp: Some(15.612633),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: -0.237, win_z: -0.759, share_delta_pp: -0.067, share_z: -1.136, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -480,6 +518,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(19.135575),
         posterior_se_pp: Some(11.49542),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: 0.144, win_z: 0.455, share_delta_pp: -0.092, share_z: -1.566, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -492,6 +531,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(11.896268),
         posterior_se_pp: Some(20.146449),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: -0.542, win_z: -1.75, share_delta_pp: -0.046, share_z: -0.791, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -504,6 +544,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(-71.558363),
         posterior_se_pp: Some(63.511046),
         family_wise: true,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: -4.682, win_z: -15.12, share_delta_pp: -1.998, share_z: -35.456, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -516,6 +557,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(-28.617241),
         posterior_se_pp: Some(11.960276),
         family_wise: true,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: -0.55, win_z: -1.757, share_delta_pp: -0.233, share_z: -4.026, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -528,6 +570,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(-142.32886),
         posterior_se_pp: Some(105.929107),
         family_wise: true,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 3600, win_delta_pp: -4.778, win_z: -6.112, share_delta_pp: -2.732, share_z: -23.757, source: "2026-08-23-g1-governor-victory-lanes-direct-6p-allseats-3600-pairs.json" }),
     },
     GeneVerdict {
@@ -540,6 +583,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(87.016416),
         posterior_se_pp: Some(12.023346),
         family_wise: true,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: 1.871, win_z: 5.93, share_delta_pp: 0.631, share_z: 10.827, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -552,6 +596,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(-29.210058),
         posterior_se_pp: Some(15.975762),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: -0.584, win_z: -1.828, share_delta_pp: -0.026, share_z: -0.455, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -564,6 +609,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(38.032015),
         posterior_se_pp: Some(24.120908),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: 0.389, win_z: 1.228, share_delta_pp: -0.012, share_z: -0.214, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -576,6 +622,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(-18.626704),
         posterior_se_pp: Some(15.426134),
         family_wise: true,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: -0.373, win_z: -1.207, share_delta_pp: -0.286, share_z: -4.964, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -588,6 +635,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(-14.694182),
         posterior_se_pp: Some(9.240066),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: -0.364, win_z: -1.156, share_delta_pp: 0.055, share_z: 0.927, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -600,6 +648,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(-17.09006),
         posterior_se_pp: Some(9.449019),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: -0.737, win_z: -2.346, share_delta_pp: -0.145, share_z: -2.469, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -612,6 +661,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(2.038047),
         posterior_se_pp: Some(14.437946),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: -0.347, win_z: -1.103, share_delta_pp: -0.095, share_z: -1.628, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -624,6 +674,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(29.353784),
         posterior_se_pp: Some(7.760813),
         family_wise: true,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: 0.77, win_z: 2.496, share_delta_pp: 0.221, share_z: 3.829, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -636,6 +687,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(9.374131),
         posterior_se_pp: Some(10.575053),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: 0.051, win_z: 0.161, share_delta_pp: -0.041, share_z: -0.697, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -648,6 +700,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(-5.145492),
         posterior_se_pp: Some(11.41702),
         family_wise: true,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 17574, win_delta_pp: 0.068, win_z: 0.186, share_delta_pp: 0.248, share_z: 3.838, source: "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json" }),
     },
     GeneVerdict {
@@ -660,6 +713,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(8.043349),
         posterior_se_pp: Some(15.66483),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: 0.161, win_z: 0.513, share_delta_pp: -0.012, share_z: -0.214, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -672,6 +726,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(-13.970028),
         posterior_se_pp: Some(15.54891),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: -0.279, win_z: -0.898, share_delta_pp: -0.093, share_z: -1.607, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -684,6 +739,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(8.043349),
         posterior_se_pp: Some(15.699122),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: 0.161, win_z: 0.512, share_delta_pp: -0.073, share_z: -1.258, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -696,6 +752,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(-2.963339),
         posterior_se_pp: Some(15.538901),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: -0.059, win_z: -0.191, share_delta_pp: -0.039, share_z: -0.661, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -708,6 +765,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(0.0),
         posterior_se_pp: Some(15.636721),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: 0.0, win_z: 0.0, share_delta_pp: -0.043, share_z: -0.745, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -720,6 +778,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(10.583355),
         posterior_se_pp: Some(15.823845),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: 0.212, win_z: 0.669, share_delta_pp: -0.013, share_z: -0.225, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -732,6 +791,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(45.253303),
         posterior_se_pp: Some(9.162528),
         family_wise: true,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: 0.762, win_z: 2.422, share_delta_pp: 0.288, share_z: 5.025, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -744,6 +804,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(-7.76717),
         posterior_se_pp: Some(9.173696),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: -0.406, win_z: -1.307, share_delta_pp: 0.029, share_z: 0.506, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -756,6 +817,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(9.767815),
         posterior_se_pp: Some(9.140807),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: -0.212, win_z: -0.677, share_delta_pp: 0.013, share_z: 0.223, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -768,6 +830,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(-8.466684),
         posterior_se_pp: Some(15.521072),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: -0.169, win_z: -0.545, share_delta_pp: 0.017, share_z: 0.288, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -780,6 +843,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(37.851865),
         posterior_se_pp: Some(13.032549),
         family_wise: true,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: 0.982, win_z: 3.135, share_delta_pp: 0.386, share_z: 6.646, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -792,6 +856,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(15.675434),
         posterior_se_pp: Some(9.311329),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: 0.415, win_z: 1.323, share_delta_pp: 0.009, share_z: 0.149, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -804,6 +869,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(-8.466684),
         posterior_se_pp: Some(15.381856),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: -0.169, win_z: -0.55, share_delta_pp: -0.044, share_z: -0.765, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -816,6 +882,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(-19.626455),
         posterior_se_pp: Some(11.723375),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: -0.229, win_z: -0.739, share_delta_pp: 0.019, share_z: 0.337, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -828,6 +895,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(43.013614),
         posterior_se_pp: Some(11.744172),
         family_wise: true,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: 1.058, win_z: 3.418, share_delta_pp: 0.356, share_z: 6.11, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -840,6 +908,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(46.179037),
         posterior_se_pp: Some(11.827045),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: 0.593, win_z: 1.896, share_delta_pp: 0.181, share_z: 3.111, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -852,6 +921,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(15.729503),
         posterior_se_pp: Some(9.237274),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: 0.356, win_z: 1.144, share_delta_pp: 0.044, share_z: 0.768, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -864,6 +934,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(4.945),
         posterior_se_pp: Some(9.244581),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: 0.119, win_z: 0.38, share_delta_pp: 0.028, share_z: 0.486, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -876,6 +947,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(7.907618),
         posterior_se_pp: Some(11.267787),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: -0.356, win_z: -1.143, share_delta_pp: 0.034, share_z: 0.579, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -888,6 +960,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(-8.466684),
         posterior_se_pp: Some(15.761741),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: -0.169, win_z: -0.537, share_delta_pp: -0.059, share_z: -0.995, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -900,6 +973,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(11.853357),
         posterior_se_pp: Some(15.381288),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: 0.237, win_z: 0.771, share_delta_pp: 0.102, share_z: 1.735, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -912,6 +986,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(-18.626704),
         posterior_se_pp: Some(15.691127),
         family_wise: true,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: -0.373, win_z: -1.187, share_delta_pp: -0.258, share_z: -4.415, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -924,6 +999,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(-20.320041),
         posterior_se_pp: Some(15.413966),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: -0.406, win_z: -1.318, share_delta_pp: -0.035, share_z: -0.606, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -936,6 +1012,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(-5.926679),
         posterior_se_pp: Some(15.624967),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: -0.119, win_z: -0.379, share_delta_pp: -0.104, share_z: -1.8, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -948,6 +1025,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(-7.620015),
         posterior_se_pp: Some(15.451733),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: -0.152, win_z: -0.493, share_delta_pp: -0.008, share_z: -0.131, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -960,6 +1038,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(-10.583355),
         posterior_se_pp: Some(15.503408),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: -0.212, win_z: -0.683, share_delta_pp: -0.161, share_z: -2.79, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -972,6 +1051,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(18.098408),
         posterior_se_pp: Some(9.247158),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: 0.356, win_z: 1.14, share_delta_pp: 0.132, share_z: 2.28, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -984,6 +1064,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(33.494158),
         posterior_se_pp: Some(11.821844),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: 0.559, win_z: 1.79, share_delta_pp: 0.136, share_z: 2.351, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -996,6 +1077,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(-1.583607),
         posterior_se_pp: Some(9.131295),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: -0.161, win_z: -0.515, share_delta_pp: -0.046, share_z: -0.782, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -1008,6 +1090,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(0.337885),
         posterior_se_pp: Some(13.367959),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: -0.457, win_z: -1.472, share_delta_pp: -0.026, share_z: -0.454, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -1020,6 +1103,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(-3.605405),
         posterior_se_pp: Some(9.116102),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: -0.364, win_z: -1.156, share_delta_pp: -0.07, share_z: -1.206, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -1032,6 +1116,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(32.616627),
         posterior_se_pp: Some(15.862447),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: 0.364, win_z: 1.159, share_delta_pp: 0.099, share_z: 1.74, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -1044,6 +1129,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(-5.000474),
         posterior_se_pp: Some(9.893066),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: 0.119, win_z: 0.379, share_delta_pp: -0.005, share_z: -0.081, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -1056,6 +1142,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(-16.866239),
         posterior_se_pp: Some(14.967804),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: -0.119, win_z: -0.38, share_delta_pp: 0.191, share_z: 3.263, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -1068,6 +1155,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(16.628943),
         posterior_se_pp: Some(10.819428),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: 0.152, win_z: 0.492, share_delta_pp: -0.021, share_z: -0.354, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -1080,6 +1168,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(5.778034),
         posterior_se_pp: Some(9.162766),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: -0.017, win_z: -0.054, share_delta_pp: -0.008, share_z: -0.147, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -1092,6 +1181,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(-15.663365),
         posterior_se_pp: Some(15.743271),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: -0.313, win_z: -0.995, share_delta_pp: -0.044, share_z: -0.748, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -1104,6 +1194,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(-18.224413),
         posterior_se_pp: Some(17.30875),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 15000, win_delta_pp: -0.533, win_z: -1.352, share_delta_pp: -0.15, share_z: -2.315, source: "2026-08-21-p7-native-6p-allseats-15000-pairs.json" }),
     },
     GeneVerdict {
@@ -1116,6 +1207,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(5.809664),
         posterior_se_pp: Some(9.227437),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: -0.169, win_z: -0.54, share_delta_pp: -0.032, share_z: -0.548, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -1128,6 +1220,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(10.938151),
         posterior_se_pp: Some(9.196383),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: 0.229, win_z: 0.73, share_delta_pp: 0.066, share_z: 1.139, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -1140,6 +1233,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(13.802139),
         posterior_se_pp: Some(9.128001),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: 0.085, win_z: 0.273, share_delta_pp: 0.066, share_z: 1.125, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -1152,6 +1246,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(2.813855),
         posterior_se_pp: Some(12.606021),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: 0.449, win_z: 1.435, share_delta_pp: -0.002, share_z: -0.032, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -1164,6 +1259,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(-6.622122),
         posterior_se_pp: Some(62.967136),
         family_wise: true,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: 2.354, win_z: 7.498, share_delta_pp: 1.426, share_z: 24.582, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -1176,6 +1272,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(-8.921559),
         posterior_se_pp: Some(10.894315),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: -0.55, win_z: -1.769, share_delta_pp: -0.205, share_z: -3.455, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -1188,6 +1285,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(19.988646),
         posterior_se_pp: Some(12.174707),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: 0.677, win_z: 2.169, share_delta_pp: 0.154, share_z: 2.636, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -1200,6 +1298,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(18.703707),
         posterior_se_pp: Some(9.251633),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: 0.127, win_z: 0.401, share_delta_pp: -0.101, share_z: -1.718, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -1212,6 +1311,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(49.209132),
         posterior_se_pp: Some(16.035688),
         family_wise: true,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: 1.812, win_z: 5.836, share_delta_pp: 0.443, share_z: 7.609, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
     GeneVerdict {
@@ -1224,6 +1324,7 @@ pub(super) const ROWS: &[GeneVerdict] = &[
         posterior_pp: Some(10.599093),
         posterior_se_pp: Some(9.27529),
         family_wise: false,
+        family_runner_up: false,
         screen: Some(Measure { pairs: 23622, win_delta_pp: 0.432, win_z: 1.366, share_delta_pp: -0.03, share_z: -0.523, source: "2026-08-22-standard-10k-6p-allseats-23622-pairs.json" }),
     },
 ];

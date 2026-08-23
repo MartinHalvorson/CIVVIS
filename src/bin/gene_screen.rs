@@ -695,6 +695,14 @@ struct Header {
     p_on: f64,
     #[serde(default)]
     p_default_on: f64,
+    /// ⭐ The gene FAMILIES: every versioned gene with its versions, in
+    /// version order, base first (`war-economy`, `war-economy-2`, …). A seat
+    /// plays at most one version of a family, so the screen can say whether
+    /// the improvement improved. Re-derived from the tags by `--analyze`;
+    /// recorded so a reader of the file sees it too. Empty when no gene is
+    /// versioned, and in every legacy file.
+    #[serde(default)]
+    families: Vec<Vec<String>>,
     /// ⭐ The binary that played these games. Absent in files written before
     /// 2026-08-23, which `tools/gene_ledger.py` grandfathers as history and
     /// marks `pre-fingerprint` rather than accepting silently.
@@ -711,7 +719,51 @@ fn foldover() -> String {
     "foldover".to_string()
 }
 
+/// ⭐ VERSIONED GENES. An improvement to a gene is a NEW gene, `<base>-<n>`
+/// (`war-economy-2`), with its own flag, toggles and code path, screened
+/// beside the original under the same rules. The original keeps its tag and
+/// its history and is version one. Versions form a FAMILY: a seat plays at
+/// most one of them — off, the original, or one improvement — so every
+/// version is priced against the same "off" and, head to head, against the
+/// version it claims to improve (operator, 2026-08-23).
+///
+/// Discovered from the tags, never listed: a tag `<base>-<n>` with `n ≥ 2`
+/// whose `<base>` is itself a gene is that gene's version `n`. Returned as
+/// header indices, one list per family, base first then ascending versions.
+fn families_of(tags: &[String]) -> Vec<Vec<usize>> {
+    let index_of = |tag: &str| tags.iter().position(|candidate| candidate == tag);
+    let mut found: BTreeMap<usize, Vec<(u32, usize)>> = BTreeMap::new();
+    for (i, tag) in tags.iter().enumerate() {
+        let Some((base, version)) = tag.rsplit_once('-') else {
+            continue;
+        };
+        let Ok(version) = version.parse::<u32>() else {
+            continue;
+        };
+        if version < 2 {
+            continue;
+        }
+        if let Some(base_index) = index_of(base) {
+            found.entry(base_index).or_default().push((version, i));
+        }
+    }
+    found
+        .into_iter()
+        .map(|(base_index, mut versions)| {
+            versions.sort_unstable();
+            std::iter::once(base_index)
+                .chain(versions.into_iter().map(|(_, index)| index))
+                .collect()
+        })
+        .collect()
+}
+
 impl Header {
+    /// The families among this file's genes, as header indices.
+    fn families(&self) -> Vec<Vec<usize>> {
+        families_of(&self.genes)
+    }
+
     /// Which header genes were screened, as a mask over the gene order.
     fn screened_mask(&self) -> Vec<bool> {
         self.genes
@@ -763,8 +815,21 @@ fn present(args: &[String], flag: &str) -> bool {
 /// The on-probability of every gene in header order: `p_default_on` for a
 /// screened gene the deployment genome ships on, `p_on` for any other screened
 /// gene, and 0 or 1 for a gene held at its default.
-fn on_probabilities(genes: &[Gene], screened: &[bool], p_on: f64, p_default_on: f64) -> Vec<f64> {
-    genes
+///
+/// A FAMILY is drawn as one level — off, or exactly one of its versions — so
+/// its members' probabilities here are MARGINALS: the family is on with the
+/// probability its deployment state says (`p_default_on` if any version ships
+/// on, else `p_on`), shared equally among the screened versions. A version
+/// held ON at its default forces its siblings off; a version held off simply
+/// takes no share. The draw reads the family back off these marginals.
+fn on_probabilities(
+    genes: &[Gene],
+    screened: &[bool],
+    p_on: f64,
+    p_default_on: f64,
+    families: &[Vec<usize>],
+) -> Vec<f64> {
+    let mut probabilities: Vec<f64> = genes
         .iter()
         .zip(screened)
         .map(
@@ -775,7 +840,33 @@ fn on_probabilities(genes: &[Gene], screened: &[bool], p_on: f64, p_default_on: 
                 (false, false) => 0.0,
             },
         )
-        .collect()
+        .collect();
+    for family in families {
+        let candidates: Vec<usize> = family
+            .iter()
+            .copied()
+            .filter(|&i| probabilities[i] > 0.0 && probabilities[i] < 1.0)
+            .collect();
+        let forced_on = family.iter().any(|&i| probabilities[i] >= 1.0);
+        if forced_on {
+            for &i in &candidates {
+                probabilities[i] = 0.0;
+            }
+            continue;
+        }
+        if candidates.is_empty() {
+            continue;
+        }
+        let family_p = candidates
+            .iter()
+            .map(|&i| probabilities[i])
+            .fold(0.0, f64::max);
+        let share = family_p / candidates.len() as f64;
+        for &i in &candidates {
+            probabilities[i] = share;
+        }
+    }
+    probabilities
 }
 
 /// Draw one seat's genome: gene `i` on with probability `probabilities[i]`,
@@ -783,12 +874,17 @@ fn on_probabilities(genes: &[Gene], screened: &[bool], p_on: f64, p_default_on: 
 /// (`game × players + seat`), so a run reproduces exactly and two runs on
 /// disjoint seed windows draw disjoint genomes. Every seat of every game is
 /// an independent draw — nothing is paired, mirrored or complemented.
+///
+/// A family is then drawn as ONE level over its drawable versions: on with
+/// the family's probability (the sum of its members' marginals), and if on,
+/// one version uniformly at random — never two versions on one seat.
 fn draw_genome(
     start_seed: u64,
     game: usize,
     players: usize,
     seat: usize,
     probabilities: &[f64],
+    families: &[Vec<usize>],
 ) -> Vec<bool> {
     let mut rng = Rng::new(
         start_seed
@@ -796,7 +892,7 @@ fn draw_genome(
             .wrapping_add((game * players + seat) as u64)
             .wrapping_add(0x5EED_6E4E),
     );
-    probabilities
+    let mut genome: Vec<bool> = probabilities
         .iter()
         .map(|&p| {
             if p >= 1.0 {
@@ -807,7 +903,26 @@ fn draw_genome(
                 rng.chance(p)
             }
         })
-        .collect()
+        .collect();
+    for family in families {
+        let candidates: Vec<usize> = family
+            .iter()
+            .copied()
+            .filter(|&i| probabilities[i] > 0.0 && probabilities[i] < 1.0)
+            .collect();
+        if candidates.is_empty() {
+            continue;
+        }
+        for &i in &candidates {
+            genome[i] = false;
+        }
+        let family_p: f64 = candidates.iter().map(|&i| probabilities[i]).sum();
+        if rng.chance(family_p.min(1.0)) {
+            let pick = (rng.f64() * candidates.len() as f64) as usize;
+            genome[candidates[pick.min(candidates.len() - 1)]] = true;
+        }
+    }
+    genome
 }
 
 fn genome_string(genome: &[bool]) -> String {
@@ -1327,6 +1442,158 @@ fn estimate(header: &Header, rows: &[Row]) -> Estimates {
         overall_win,
         overall_share,
     }
+}
+
+/// One cell of a family table: the seats that played one level of the
+/// family — `off`, or one of its versions — and how they did.
+#[derive(Clone, Debug)]
+struct FamilyCell {
+    label: String,
+    seats: usize,
+    win: f64,
+    share: f64,
+}
+
+/// One head-to-head inside a family: `b` against `a`, on seats that played
+/// exactly one of the two, errors clustered by game.
+#[derive(Clone, Debug)]
+struct FamilyContrast {
+    a: String,
+    b: String,
+    win_delta: f64,
+    win_se: f64,
+    share_delta: f64,
+    share_se: f64,
+}
+
+impl FamilyContrast {
+    fn win_z(&self) -> f64 {
+        if self.win_se > 0.0 && self.win_se.is_finite() {
+            self.win_delta / self.win_se
+        } else {
+            0.0
+        }
+    }
+    fn share_z(&self) -> f64 {
+        if self.share_se > 0.0 && self.share_se.is_finite() {
+            self.share_delta / self.share_se
+        } else {
+            0.0
+        }
+    }
+}
+
+/// A versioned gene read as one family: what each level did, and whether
+/// each version beats `off` and beats the version before it.
+#[derive(Clone, Debug)]
+struct FamilyEstimate {
+    base: String,
+    versions: Vec<String>,
+    cells: Vec<FamilyCell>,
+    contrasts: Vec<FamilyContrast>,
+}
+
+/// Every family's cells and contrasts. A seat that somehow played two
+/// versions (impossible under the screen's draw; possible in a hand-built
+/// file) is left out of that family rather than filed under either.
+fn estimate_families(header: &Header, rows: &[Row]) -> Vec<FamilyEstimate> {
+    let seats = Seats::of(header, rows);
+    header
+        .families()
+        .into_iter()
+        .filter(|family| family.len() >= 2)
+        .map(|family| {
+            let labels: Vec<String> = std::iter::once("off".to_string())
+                .chain(family.iter().map(|&i| header.genes[i].clone()))
+                .collect();
+            // Level per seat: 0 = off, k = version k (1-based in `family`).
+            let levels: Vec<Option<usize>> = seats
+                .rows
+                .iter()
+                .map(|row| {
+                    let bits = row.bits();
+                    let on: Vec<usize> = family
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, &i)| bits[i])
+                        .map(|(k, _)| k + 1)
+                        .collect();
+                    match on.as_slice() {
+                        [] => Some(0),
+                        [one] => Some(*one),
+                        _ => None,
+                    }
+                })
+                .collect();
+            let cells: Vec<FamilyCell> = (0..labels.len())
+                .map(|level| {
+                    let members: Vec<usize> = levels
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, l)| **l == Some(level))
+                        .map(|(r, _)| r)
+                        .collect();
+                    let n = members.len();
+                    let mean = |values: &[f64]| {
+                        if n == 0 {
+                            0.0
+                        } else {
+                            members.iter().map(|&r| values[r]).sum::<f64>() / n as f64
+                        }
+                    };
+                    FamilyCell {
+                        label: labels[level].clone(),
+                        seats: n,
+                        win: mean(&seats.wins),
+                        share: mean(&seats.shares),
+                    }
+                })
+                .collect();
+            let contrast = |a: usize, b: usize| -> FamilyContrast {
+                let picked: Vec<usize> = levels
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, l)| **l == Some(a) || **l == Some(b))
+                    .map(|(r, _)| r)
+                    .collect();
+                let design: Vec<Vec<f64>> = picked
+                    .iter()
+                    .map(|&r| vec![1.0, if levels[r] == Some(b) { 1.0 } else { 0.0 }])
+                    .collect();
+                let clusters: Vec<GameKey> = picked.iter().map(|&r| seats.clusters[r]).collect();
+                let fit = |outcome: &[f64]| -> (f64, f64) {
+                    let y: Vec<f64> = picked.iter().map(|&r| outcome[r]).collect();
+                    match ols_clustered(&design, &y, &clusters) {
+                        Some(fit) => (fit[1].0, fit[1].1),
+                        None => (cells[b].win - cells[a].win, f64::INFINITY),
+                    }
+                };
+                let (win_delta, win_se) = fit(&seats.wins);
+                let (share_delta, share_se) = fit(&seats.shares);
+                FamilyContrast {
+                    a: labels[a].clone(),
+                    b: labels[b].clone(),
+                    win_delta,
+                    win_se,
+                    share_delta,
+                    share_se,
+                }
+            };
+            let mut contrasts = Vec::new();
+            for version in 1..labels.len() {
+                contrasts.push(contrast(0, version));
+            }
+            for version in 2..labels.len() {
+                contrasts.push(contrast(version - 1, version));
+            }
+            FamilyEstimate {
+                base: header.genes[family[0]].clone(),
+                versions: family.iter().map(|&i| header.genes[i].clone()).collect(),
+                cells,
+                contrasts,
+            }
+        })
+        .collect()
 }
 
 /// One gene's causal simulation-cost estimate. Effects stay on the log scale
@@ -2075,6 +2342,54 @@ fn print_table(header: &Header, rows: &[Row]) {
          standard error: compute is wall seconds per completed turn, time is whole-game wall \
          seconds, and positive is slower."
     );
+    print_families(header, rows);
+}
+
+/// The family tables: for every versioned gene, what each level did and
+/// whether each version beats `off` and the version before it.
+fn print_families(header: &Header, rows: &[Row]) {
+    let families = estimate_families(header, rows);
+    if families.is_empty() {
+        return;
+    }
+    println!(
+        "\nversioned genes · a seat plays at most one version of a family; every contrast is \
+         seats-on-b against seats-on-a, errors clustered by game"
+    );
+    for family in &families {
+        let cells = family
+            .cells
+            .iter()
+            .map(|cell| {
+                format!(
+                    "{} {} seats win {:.1}% share {:.1}%",
+                    cell.label,
+                    cell.seats,
+                    100.0 * cell.win,
+                    100.0 * cell.share
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(" · ");
+        println!("\n{}: {}", family.base, cells);
+        for contrast in &family.contrasts {
+            println!(
+                "  {} − {}: win {:+.1} pp ± {:.1} (z {:+.2}) · share {:+.2} pp (z {:+.2})",
+                contrast.b,
+                contrast.a,
+                100.0 * contrast.win_delta,
+                100.0 * contrast.win_se,
+                contrast.win_z(),
+                100.0 * contrast.share_delta,
+                contrast.share_z()
+            );
+        }
+    }
+    println!(
+        "\nan improvement improves when its \"against the version before it\" contrast is \
+         positive on the win axis and it also beats off; the ledger keeps one version of a \
+         family on — the best one — and never two"
+    );
 }
 
 /// One gene's contrast split by the civilization the seat played — the
@@ -2282,6 +2597,31 @@ fn write_json_summary(path: &str, header: &Header, rows: &[Row]) {
             "target_seats_per_window": REPRO_WINDOW_SEATS,
             "windows": "newest first; whole games only",
         },
+        "families": estimate_families(header, rows)
+            .iter()
+            .map(|family| {
+                serde_json::json!({
+                    "base": family.base,
+                    "versions": family.versions,
+                    "cells": family.cells.iter().map(|cell| serde_json::json!({
+                        "label": cell.label,
+                        "seats": cell.seats,
+                        "win": cell.win,
+                        "share": cell.share,
+                    })).collect::<Vec<_>>(),
+                    "contrasts": family.contrasts.iter().map(|c| serde_json::json!({
+                        "a": c.a,
+                        "b": c.b,
+                        "win_delta_pp": 100.0 * c.win_delta,
+                        "win_se_pp": 100.0 * c.win_se,
+                        "win_z": c.win_z(),
+                        "share_delta_pp": 100.0 * c.share_delta,
+                        "share_se_pp": 100.0 * c.share_se,
+                        "share_z": c.share_z(),
+                    })).collect::<Vec<_>>(),
+                })
+            })
+            .collect::<Vec<_>>(),
         "cost_method": {
             "unit": "percent change per enabled major seat; positive is slower",
             "compute": "log of wall seconds per completed turn, per game",
@@ -2542,6 +2882,18 @@ fn main() {
              HELD = out of the default screened set on cost, ask for it by name",
             genes.len()
         );
+        let tags: Vec<String> = genes.iter().map(|gene| gene.tag.to_string()).collect();
+        for family in families_of(&tags) {
+            println!(
+                "family {}: {} — a seat plays at most one version",
+                tags[family[0]],
+                family
+                    .iter()
+                    .map(|&i| tags[i].as_str())
+                    .collect::<Vec<_>>()
+                    .join(" · ")
+            );
+        }
         for (i, gene) in genes.iter().enumerate() {
             let verdict = civvis::ai::ledger_verdict(gene.tag)
                 .map(|row| row.verdict.as_str())
@@ -2736,7 +3088,9 @@ fn main() {
         eprintln!("nothing to screen");
         std::process::exit(2);
     }
-    let probabilities = on_probabilities(&genes, &screened, p_on, p_default_on);
+    let tags: Vec<String> = genes.iter().map(|gene| gene.tag.to_string()).collect();
+    let families = families_of(&tags);
+    let probabilities = on_probabilities(&genes, &screened, p_on, p_default_on, &families);
 
     let out_path =
         text(&args, "--out").unwrap_or_else(|| format!("gene_screen-{start_seed}.jsonl"));
@@ -2787,6 +3141,10 @@ fn main() {
         all_seats: true,
         design: "independent".to_string(),
         prior: probabilities.clone(),
+        families: families
+            .iter()
+            .map(|family| family.iter().map(|&i| tags[i].clone()).collect())
+            .collect(),
         p_on,
         p_default_on,
         build: stamp_build(&genes),
@@ -2841,7 +3199,7 @@ fn main() {
         |game| {
             let seed = start_seed + game as u64;
             let genomes: Vec<Vec<bool>> = (0..players)
-                .map(|seat| draw_genome(start_seed, game, players, seat, &probabilities))
+                .map(|seat| draw_genome(start_seed, game, players, seat, &probabilities, &families))
                 .collect();
             play_game(&profile, &genes, game, seed, &genomes)
         },
@@ -2913,6 +3271,7 @@ mod tests {
             prior: vec![0.5; genes.len()],
             p_on: 0.5,
             p_default_on: 0.75,
+            families: Vec::new(),
             build: Build::default(),
             batch: Batch::default(),
         }
@@ -2967,7 +3326,7 @@ mod tests {
         let mut rows = Vec::new();
         for game in 0..games {
             for seat in 0..3 {
-                let bits = draw_genome(11, game, 3, seat, &probabilities);
+                let bits = draw_genome(11, game, 3, seat, &probabilities, &[]);
                 let (win, share) = outcome(&bits, seat);
                 let mut row = test_row(game, seat, &genome_string(&bits), win);
                 row.score_share = share;
@@ -3024,14 +3383,14 @@ mod tests {
     #[test]
     fn a_seat_reproduces_from_its_seed_and_seats_are_independent() {
         let probabilities = [0.5, 0.75, 1.0, 0.0, 0.5];
-        let a = draw_genome(7, 3, 6, 2, &probabilities);
-        assert_eq!(a, draw_genome(7, 3, 6, 2, &probabilities));
+        let a = draw_genome(7, 3, 6, 2, &probabilities, &[]);
+        assert_eq!(a, draw_genome(7, 3, 6, 2, &probabilities, &[]));
         assert!(a[2], "a gene held on stays on");
         assert!(!a[3], "a gene held off stays off");
         let mut identical = 0;
         for game in 0..200 {
-            let seat0 = draw_genome(7, game, 6, 0, &probabilities);
-            let seat1 = draw_genome(7, game, 6, 1, &probabilities);
+            let seat0 = draw_genome(7, game, 6, 0, &probabilities, &[]);
+            let seat1 = draw_genome(7, game, 6, 1, &probabilities, &[]);
             if seat0 == seat1 {
                 identical += 1;
             }
@@ -3054,7 +3413,7 @@ mod tests {
         let mut on = [0usize; 4];
         let seats = 4000;
         for index in 0..seats {
-            for (i, &bit) in draw_genome(99, index / 6, 6, index % 6, &probabilities)
+            for (i, &bit) in draw_genome(99, index / 6, 6, index % 6, &probabilities, &[])
                 .iter()
                 .enumerate()
             {
@@ -3079,7 +3438,7 @@ mod tests {
         let genes = gene_table();
         let mut screened = vec![true; genes.len()];
         screened[0] = false;
-        let p = on_probabilities(&genes, &screened, 0.5, 0.75);
+        let p = on_probabilities(&genes, &screened, 0.5, 0.75, &[]);
         assert_eq!(p[0], if genes[0].default_on { 1.0 } else { 0.0 });
         for (gene, (&p, &s)) in genes.iter().zip(p.iter().zip(&screened)).skip(1) {
             assert!(s);
@@ -3462,6 +3821,185 @@ mod tests {
         assert_eq!(shape_of(&header), "standard");
         header.map = "pangaea".into();
         assert_eq!(shape_of(&header), "legacy");
+    }
+
+    /// A tag `<base>-<n>` whose base is a gene is that gene's version `n`;
+    /// anything else is just a name.
+    #[test]
+    fn tags_form_families_only_when_the_base_is_a_gene() {
+        let tags: Vec<String> = [
+            "war-economy",
+            "war-economy-2",
+            "war-economy-3",
+            "one-launch-pad",
+            "search-cadence-20",
+            "war-economy-1",
+        ]
+        .iter()
+        .map(|t| t.to_string())
+        .collect();
+        let families = families_of(&tags);
+        assert_eq!(families, vec![vec![0, 1, 2]], "{families:?}");
+        assert!(families_of(&["a".to_string(), "b-2".to_string()]).is_empty());
+    }
+
+    /// A family is one level per seat: off, or exactly one version. Over many
+    /// seats the family is on as often as its probability says and each
+    /// version takes an equal share of it.
+    #[test]
+    fn a_family_is_drawn_one_version_at_a_time() {
+        // genes: g0 plain, g1 = base, g2 = base-2, g3 = base-3; family p = 0.75
+        let probabilities = [0.5, 0.25, 0.25, 0.25];
+        let families = vec![vec![1, 2, 3]];
+        let seats = 6000;
+        let mut on = [0usize; 4];
+        let mut family_on = 0usize;
+        for index in 0..seats {
+            let genome = draw_genome(5, index / 6, 6, index % 6, &probabilities, &families);
+            let versions_on = genome[1..].iter().filter(|&&b| b).count();
+            assert!(
+                versions_on <= 1,
+                "seat {index} played two versions: {genome:?}"
+            );
+            family_on += versions_on;
+            for (i, &bit) in genome.iter().enumerate() {
+                on[i] += usize::from(bit);
+            }
+        }
+        let rate = |count: usize| count as f64 / seats as f64;
+        assert!(
+            (rate(family_on) - 0.75).abs() < 0.03,
+            "family on {}",
+            rate(family_on)
+        );
+        for (i, &count) in on.iter().enumerate().skip(1) {
+            assert!(
+                (rate(count) - 0.25).abs() < 0.03,
+                "version {i} on {}",
+                rate(count)
+            );
+        }
+        assert!((rate(on[0]) - 0.5).abs() < 0.03);
+        // Reproducible from the seed.
+        assert_eq!(
+            draw_genome(5, 7, 6, 2, &probabilities, &families),
+            draw_genome(5, 7, 6, 2, &probabilities, &families)
+        );
+    }
+
+    /// The family's marginals: the family probability shared among the
+    /// screened versions; a version held on forces its siblings off.
+    #[test]
+    fn family_marginals_share_the_family_probability() {
+        let genes = gene_table();
+        let mut screened = vec![true; genes.len()];
+        let families = vec![vec![0, 1, 2]];
+        let p = on_probabilities(&genes, &screened, 0.5, 0.75, &families);
+        let family_p = if genes[..3].iter().any(|g| g.default_on) {
+            0.75
+        } else {
+            0.5
+        };
+        for i in 0..3 {
+            assert!(
+                (p[i] - family_p / 3.0).abs() < 1e-12,
+                "{} {}",
+                genes[i].tag,
+                p[i]
+            );
+        }
+        // Hold gene 1 at its default: on → siblings are forced off; off → the
+        // other two share the family.
+        screened[1] = false;
+        let held = on_probabilities(&genes, &screened, 0.5, 0.75, &families);
+        if genes[1].default_on {
+            assert_eq!(held[1], 1.0);
+            assert_eq!((held[0], held[2]), (0.0, 0.0));
+        } else {
+            assert_eq!(held[1], 0.0);
+            let family_p = if genes[0].default_on || genes[2].default_on {
+                0.75
+            } else {
+                0.5
+            };
+            assert!((held[0] - family_p / 2.0).abs() < 1e-12);
+            assert!((held[2] - family_p / 2.0).abs() < 1e-12);
+        }
+    }
+
+    /// A planted improvement reads as one: version 2 beats off and beats
+    /// version 1; version 1 beats off; the cells carry the seats.
+    #[test]
+    fn family_contrasts_read_a_planted_improvement() {
+        let names = ["g", "g-2"];
+        let header = {
+            let mut h = test_header(&names);
+            h.families = vec![vec!["g".into(), "g-2".into()]];
+            h.prior = vec![0.375, 0.375];
+            h
+        };
+        let families = vec![vec![0, 1]];
+        let mut rows = Vec::new();
+        for game in 0..1500 {
+            for seat in 0..3 {
+                let bits = draw_genome(3, game, 3, seat, &[0.375, 0.375], &families);
+                // off wins 20%, v1 30%, v2 50%, decided by a hash of the seat.
+                let roll = ((game * 7 + seat * 13) % 10) as f64 / 10.0;
+                let threshold = if bits[1] {
+                    0.5
+                } else if bits[0] {
+                    0.3
+                } else {
+                    0.2
+                };
+                let win = roll < threshold;
+                let mut row = test_row(game, seat, &genome_string(&bits), win);
+                row.score_share = threshold;
+                rows.push(row);
+            }
+        }
+        assert_eq!(header.families(), vec![vec![0, 1]]);
+        let families = estimate_families(&header, &rows);
+        assert_eq!(families.len(), 1);
+        let family = &families[0];
+        assert_eq!(family.base, "g");
+        assert_eq!(
+            family
+                .cells
+                .iter()
+                .map(|c| c.label.as_str())
+                .collect::<Vec<_>>(),
+            ["off", "g", "g-2"]
+        );
+        assert_eq!(family.cells.iter().map(|c| c.seats).sum::<usize>(), 4500);
+        let by = |a: &str, b: &str| {
+            family
+                .contrasts
+                .iter()
+                .find(|c| c.a == a && c.b == b)
+                .unwrap_or_else(|| panic!("contrast {b} − {a}"))
+        };
+        let v1 = by("off", "g");
+        let v2 = by("off", "g-2");
+        let step = by("g", "g-2");
+        assert!(
+            (v1.win_delta - 0.10).abs() < 0.05,
+            "v1 − off {}",
+            v1.win_delta
+        );
+        assert!(
+            (v2.win_delta - 0.30).abs() < 0.05,
+            "v2 − off {}",
+            v2.win_delta
+        );
+        assert!(
+            (step.win_delta - 0.20).abs() < 0.05,
+            "v2 − v1 {}",
+            step.win_delta
+        );
+        assert!(step.win_z() > 4.0, "z {}", step.win_z());
+        // The share axis was planted noise-free, so it is exact.
+        assert!((step.share_delta - 0.20).abs() < 1e-9);
     }
 
     // ─── provenance: the binary a screen was played by ────────────────────
