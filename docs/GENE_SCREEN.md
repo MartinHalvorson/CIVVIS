@@ -369,6 +369,58 @@ not a silent omission.
 | `--stock-civs` | stop shuffling every seat's civilization per map (a probe); stock seating is a FIXED civ per seat, and on the first 250-pair run seats 0 and 2 won twice as often as seat 3 whoever sat there |
 | `--players`, `--width`, `--height`, `--city-states`, `--speed`, `--map`, `--turns` | probe legs; the ledger refuses a batch that moved one |
 
+## Versioning a gene: `war-economy-2` beside `war-economy`
+
+*"For testing improvements to a gene we can use a versioning system … we would
+want to test both independently and make sure improvements actually improve
+the gene performance."* — operator, 2026-08-23.
+
+An improvement to a gene is a **new gene**, screened under exactly the rules
+above; nothing about it is special except that the screen and the ledger know
+it belongs to a family.
+
+**The recipe.** To improve `war-economy`:
+
+1. Give the improvement its own flag on `AdvancedAi` (`war_economy_2`), its
+   own `enable_war_economy_2` / `disable_war_economy_2` toggles in
+   `treatment_flags.rs`, and its own code path — a second implementation of the
+   behaviour, not a patch to the first. The original's code and tag stay as
+   they are; it is version one.
+2. Add the row to the table the original lives in (`PRODUCTION_OPT_INS`,
+   `LIVE_TREATMENTS`, …) with the tag **`war-economy-2`**. That suffix is the
+   whole declaration: a tag `<base>-<n>` with `n ≥ 2` whose `<base>` is itself
+   a gene is that gene's version `n`. (`search-cadence-20` is not a version of
+   anything; `war-economy-1` is not used — the original keeps its name and
+   its history.) `gene_screen --list` shows the family.
+3. Run the screen. **A seat plays at most one version of a family**: the
+   family is drawn as one level — off, or exactly one version — on with the
+   family's probability (`P_DEFAULT_ON` if any version ships on, else
+   `P_ON`) and the versions sharing it equally. So `war-economy` and
+   `war-economy-2` are never on the same seat, each is priced against the
+   same "off", and the two are priced against each other.
+4. Read the **family table** under the main table (and `families` in the
+   `--json` summary): one cell per level — `off`, `war-economy`,
+   `war-economy-2` — with seats, win and share, and a contrast for every
+   version against `off` and for every version against the one before it,
+   clustered by game like everything else. **An improvement improved when its
+   "against the version before it" contrast is positive on the win axis and
+   it also beats `off`.** Every version also has its own row in the main
+   table and its own row in the ledger, read by the same rule as any gene.
+5. The ledger ships **one version of a family** (`choose_family_heads`):
+   among the versions the deployment rule would turn on, the one with the
+   best newest win column, ties to the higher version. The others are
+   recorded `family_runner_up` and ship off — the rule's verdict still on
+   their row so the ranking shows what they measured — and the Rust mirror
+   re-derives the same choice (`the_default_follows_the_ledgers_authority`).
+
+Two consequences worth stating. A version that does not beat the original
+head to head is not an improvement however well it does against `off`, and
+the family table says so in one line. And the code is the contract: since the
+screen never seats two versions together and the ledger never ships two, an
+`enable_war_economy_2` that left `war_economy` on would only ever matter to a
+hand-built seat — but write it so the newer version's enable turns the older
+one off anyway, so a hand-built seat cannot play both.
+
 ## Cost
 
 The same run prices the runtime cost of every gene without adding a timer to
