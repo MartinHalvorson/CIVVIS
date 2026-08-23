@@ -26,7 +26,7 @@
 //! every turn until it is accepted. The existing peace triggers (outmatched,
 //! Recovery, stalled) stay live on top.
 //!
-//! Off by default: `PRODUCTION_OPT_INS` row `opportunistic-war`. It ships
+//! Off by default: registry row `opportunistic-war`. It ships
 //! into the genome unmeasured and stays off until a screen says it helps
 //! (`gene_ledger`); `gene_screen --genes opportunistic-war` prices it. The
 //! pillage half is its own opt-in, `raid-pillage-prizes`: with it off a raid

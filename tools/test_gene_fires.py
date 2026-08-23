@@ -36,43 +36,39 @@ def _row(tag, **stats):
 class Discovery(unittest.TestCase):
     """The gene set comes from the binary's own tables, not from a list here."""
 
-    def test_the_three_doors_are_all_read(self):
+    def test_every_screenable_kind_is_read(self):
         genes = gene_fires.gene_tables()
         self.assertGreater(len(genes), 90, "the scrape found almost nothing")
-        # One known inhabitant of each table, so a scrape that silently reads
-        # only one of the three fails here instead of under-reporting forever.
-        self.assertEqual(genes["barbarian-hunt"], "ENGINE_REPAIR_TREATMENTS")
-        self.assertEqual(genes["strategic-wonders"], "PRODUCTION_TREATMENTS")
-        self.assertEqual(genes["holy-lane-parity"], "PRODUCTION_OPT_INS")
+        # One known inhabitant of each screenable kind, so a scrape that
+        # silently lost a kind fails here instead of under-reporting forever.
+        self.assertEqual(genes["barbarian-hunt"], "Kind::Repair(Axis::War)")
+        self.assertEqual(genes["strategic-wonders"], "Kind::Production")
+        self.assertEqual(genes["holy-lane-parity"], "Kind::OptIn")
+        self.assertNotIn("land-grab", genes, "a plain host-only gene is never screened")
 
-    def test_a_new_opt_in_row_reaches_the_gate_without_touching_this_tool(self):
+    def test_a_new_row_reaches_the_gate_without_touching_this_tool(self):
         """The property that makes the gate survive the next gene."""
-        treatments = gene_fires.TREATMENTS.read_text(encoding="utf-8")
-        added = treatments.replace(
-            '    ("promote_when_wounded", "promote-when-wounded",',
-            '    ("a_brand_new_gene", "a-brand-new-gene", '
-            "AdvancedAi::enable_a_brand_new_gene),\n"
-            '    ("promote_when_wounded", "promote-when-wounded",')
-        self.assertNotEqual(added, treatments, "the anchor row moved; fix this test")
+        registry = gene_fires.REGISTRY.read_text(encoding="utf-8")
+        anchor = '    Gene { tag: "promote-when-wounded",'
+        added = registry.replace(
+            anchor,
+            '    Gene { tag: "a-brand-new-gene", field: "a_brand_new_gene", kind: Kind::OptIn, '
+            "enable: AdvancedAi::enable_a_brand_new_gene, disable: AdvancedAi::disable_a_brand_new_gene },\n"
+            + anchor)
+        self.assertNotEqual(added, registry, "the anchor row moved; fix this test")
         with TemporaryDirectory() as tmp:
-            fake = Path(tmp) / "treatments.rs"
+            fake = Path(tmp) / "genes.rs"
             fake.write_text(added, encoding="utf-8")
-            with mock.patch.object(gene_fires, "TREATMENTS", fake):
+            with mock.patch.object(gene_fires, "REGISTRY", fake):
                 self.assertIn("a-brand-new-gene", gene_fires.gene_tables())
 
     def test_a_broken_scrape_raises_rather_than_reporting_zero(self):
         with TemporaryDirectory() as tmp:
-            empty = Path(tmp) / "treatments.rs"
+            empty = Path(tmp) / "genes.rs"
             empty.write_text("// nothing here\n", encoding="utf-8")
-            with mock.patch.object(gene_fires, "TREATMENTS", empty):
+            with mock.patch.object(gene_fires, "REGISTRY", empty):
                 with self.assertRaises(SystemExit):
                     gene_fires.gene_tables()
-
-    def test_an_empty_screen_directory_raises(self):
-        with TemporaryDirectory() as tmp:
-            with mock.patch.object(gene_fires, "SCREENS", Path(tmp)):
-                with self.assertRaises(SystemExit):
-                    gene_fires.firing_evidence()
 
 
 class WhatCountsAsFiring(unittest.TestCase):

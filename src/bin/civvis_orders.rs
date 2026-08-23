@@ -2815,29 +2815,19 @@ fn self_tile_move_key(mirror_state: &civvis::mirror::LiveMirror, unit: u32) -> S
 fn withhold_live_treatment(ai: &mut civvis::ai::AdvancedAi, treatment: &str) -> Result<(), String> {
     // ⚠⚠ THIS WAS A SECOND LIST, AND IT WAS SHORTER THAN THE FIRST.
     //
-    // `civvis::ai::LIVE_TREATMENTS` is the canonical table and it already
-    // carries the disabler for each row — `(field, kebab-name, fn(&mut
-    // AdvancedAi))` — which is why `elo.rs` builds every `live_without_*` arm by
-    // looking a name up in it rather than by writing the names out again. This
-    // binary wrote them out again: 57 hand-written arms against 68 rows, so
-    // ELEVEN SHIPPED LIVE TREATMENTS HAD NO CONTROL on the only harness where
-    // they fire — `deny-while-targeted`, `endgame-war-runway`, `joint-tactics`,
-    // `live-religious-purchase`, `live-trader-route`, `loyalty-policy-defence`,
-    // `peacetime-deterrence`, `ranged-line-of-sight`, `recorded-tactical-step`,
-    // `slot-kind-tiebreak`, `strike-opening`.
-    //
-    // The usage string was a THIRD copy and shorter still, so several names the
-    // match did accept were undiscoverable from the error that listed them.
-    //
-    // A lookup cannot drift from the table by construction, and a treatment
-    // added to `LIVE_TREATMENTS` now reaches this binary and its usage line at
-    // the same moment it reaches the Elo registry.
-    match civvis::ai::LIVE_TREATMENTS
+    // The gene registry (`src/ai/advanced/genes.rs`) carries the disabler for
+    // every `live()` gene. This binary once wrote the names out again: 57
+    // hand-written arms against 68 rows, so ELEVEN SHIPPED LIVE TREATMENTS HAD
+    // NO CONTROL on the only harness where they fire. The usage string was a
+    // THIRD copy and shorter still. A lookup cannot drift from the registry by
+    // construction: a live gene added there reaches this binary and its usage
+    // line at the same moment.
+    match civvis::ai::GENES
         .iter()
-        .find(|(_, name, _)| *name == treatment)
+        .find(|gene| gene.live() && gene.tag == treatment)
     {
-        Some((_, _, disable)) => {
-            disable(ai);
+        Some(gene) => {
+            (gene.disable)(ai);
             Ok(())
         }
         // An unknown name stays a hard error rather than a warning: a typo that
@@ -2852,9 +2842,10 @@ fn withhold_live_treatment(ai: &mut civvis::ai::AdvancedAi, treatment: &str) -> 
 
 /// Every treatment `--without` accepts, in table order, for the usage line.
 fn withholdable_treatments() -> String {
-    civvis::ai::LIVE_TREATMENTS
+    civvis::ai::GENES
         .iter()
-        .map(|(_, name, _)| *name)
+        .filter(|gene| gene.live())
+        .map(|gene| gene.tag)
         .collect::<Vec<_>>()
         .join(", ")
 }
@@ -2866,16 +2857,17 @@ fn withholdable_treatments() -> String {
 fn forced_live_treatments(forced: &[String]) -> Result<Vec<&'static str>, String> {
     let mut selected = Vec::new();
     for treatment in forced {
-        match civvis::ai::LIVE_TREATMENTS
+        match civvis::ai::GENES
             .iter()
-            .find(|(_, name, _)| *name == treatment)
+            .find(|gene| gene.live() && gene.tag == treatment)
+            .map(|gene| gene.tag)
         {
-            Some((_, tag, _)) if civvis::ai::gene_ledger::ledger_held_live_treatment(tag) => {
-                if !selected.contains(tag) {
-                    selected.push(*tag);
+            Some(tag) if civvis::ai::gene_ledger::ledger_held_live_treatment(tag) => {
+                if !selected.contains(&tag) {
+                    selected.push(tag);
                 }
             }
-            Some((_, tag, _)) => {
+            Some(tag) => {
                 return Err(format!(
                     "--with treatment {treatment:?} already ships in the deployment genome \
                      (tag {tag:?}); only ledger-held live treatments form a distinct arm"
@@ -4575,39 +4567,31 @@ fn main() {
             // a later commit had corrected — an accident that will not repeat for
             // the next stale build.
             //
-            // `LIVE_BRIDGE_TREATMENTS` is the canonical list of what
-            // `enable_live_bridge` turns on, and a test already forces the two to
-            // agree. So a binary that predates a repair emits a SHORTER list, and
-            // the difference names exactly which repairs were missing. That also
-            // gives any A/B the one thing it needs and has never had: which
-            // treatments were actually live in the arm it measured.
+            // The registry's `live()` genes are what `enable_live_bridge`
+            // turns on. So a binary that predates a repair emits a SHORTER list,
+            // and the difference names exactly which repairs were missing. That
+            // also gives any A/B the one thing it needs and has never had: which
+            // genes were actually live in the arm it measured.
             //
             // `revision` beside it is the supervisor's label when there is one —
             // `CIVVIS_COMMIT`, or a promoted `civvis-<sha>` executable name. It is
             // `null` for an ordinary development build, which is honest: the
             // treatment list is the identity that always reports.
             "revision": civvis::server::runtime_commit_or_none(),
-            // ⚠ THE CONSTANT IS A SLICE, AND THAT IS LOAD-BEARING HERE. serde
-            // implements `Serialize` for `[T; N]` only up to N = 32, so while this
-            // was a fixed-size array the registry had a silent ceiling at 32
-            // treatments: the 33rd stopped compiling in this binary, which has
-            // nothing to do with adding one. It carried `.as_slice()` for that
-            // reason; `LIVE_BRIDGE_TREATMENTS` is `&[&str]` now, so the bound is
-            // gone at the declaration and `.as_slice()` on it would resolve to the
-            // unstable `str::as_slice` instead.
             // ★★★★ THE LIST IS WHAT THE LEDGER LEFT ON, NOT THE UNIVERSE. Since
             // the gene ledger (`docs/gene_ledger.json`) decides the deployment
-            // genome, `LIVE_BRIDGE_TREATMENTS` names what COULD be on; this
+            // genome, the registry's live genes name what COULD be on; this
             // names what IS — the helpers the screens proved, the opt-ins they
             // proved, and the host-only flags no screen can price.
             "treatments": civvis::ai::gene_ledger::deployment_treatments_with_forced_live(&forced_on),
-            "ledger_withheld": civvis::elo::LIVE_BRIDGE_TREATMENTS
+            "ledger_withheld": civvis::ai::GENES
                 .iter()
+                .filter(|gene| gene.live())
+                .map(|gene| gene.tag)
                 .filter(|tag| {
                     civvis::ai::ledger_default_on(tag) == Some(false)
                         && !forced_on.contains(tag)
                 })
-                .copied()
                 .collect::<Vec<_>>(),
             "forced": &forced_on,
         })
@@ -5795,11 +5779,11 @@ mod tests {
     /// The list cannot be short again: it is the table.
     #[test]
     fn every_registered_live_treatment_can_be_withheld() {
-        for (field, name, _) in civvis::ai::LIVE_TREATMENTS {
+        for gene in civvis::ai::GENES.iter().filter(|gene| gene.live()) {
             let mut ai = civvis::ai::AdvancedAi::new();
             ai.enable_live_bridge();
-            withhold_live_treatment(&mut ai, name).unwrap_or_else(|error| {
-                panic!("{field} is in LIVE_TREATMENTS but not withholdable: {error}")
+            withhold_live_treatment(&mut ai, gene.tag).unwrap_or_else(|error| {
+                panic!("{} is a live gene but not withholdable: {error}", gene.field)
             });
         }
     }
@@ -5812,9 +5796,10 @@ mod tests {
             .split(", ")
             .map(str::to_string)
             .collect();
-        let registered: Vec<String> = civvis::ai::LIVE_TREATMENTS
+        let registered: Vec<String> = civvis::ai::GENES
             .iter()
-            .map(|(_, name, _)| (*name).to_string())
+            .filter(|gene| gene.live())
+            .map(|gene| gene.tag.to_string())
             .collect();
         assert_eq!(listed, registered);
     }
