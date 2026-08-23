@@ -163,77 +163,121 @@ added to that file.
 
 ---
 
-# 3. The ten never-named live treatments — the counter reached zero without one withholding run
+# 3. The ten never-named live treatments — and the arm inventory behind them
 
-**Disposition: the debt list is EMPTY, and that is a measurement artifact.**
+**Disposition: the debt list is EMPTY, that is a measurement artifact, and
+underneath it 26 of the 49 arms objective 3 tells the fleet to run are
+byte-identical to their own control.**
 
-`docs/EVAL_STATUS.md` at `1510b482` reads:
+## The counter reached zero without a single withholding run
 
-- Withholdable live treatments: **49**
-- Named somewhere in the evidence: **49**
-- **Never named in any round: 0**
+`docs/EVAL_STATUS.md` at `1510b482` reads *Withholdable live treatments 49 ·
+Named somewhere in the evidence 49 · **Never named in any round: 0***, and
+`tools/eval_manifest.py --check` passes, so it is current rather than stale.
+But the count went **10 → 0 in a single commit** — `1510b482` itself (#2323,
+*"Publish 10,000-seat gene-screen results"*) — and the mechanism was not ten
+rounds. All ten became "named" as one row each in the table in
+`docs/eval/2026-08-22-standard-gene-screen-23622-paired-seats.md`.
 
-`tools/eval_manifest.py --check` passes, so this is current, not stale. But the
-count went **10 → 0 in a single commit**, `1510b482` itself (#2323, *"Publish
-10,000-seat gene-screen results"*), and the mechanism was not ten rounds:
-
-| treatment | where it is now "named" |
-|---|---|
-| all ten | one row each in the table in `docs/eval/2026-08-22-standard-gene-screen-23622-paired-seats.md` |
-
-The generated block warns about exactly this — *"whether a treatment was
-**priced** is a judgement… whether it has ever been **named** is mechanical… act
-on the last one, which cannot be flattered"*. The last number has now been
+The generated block warns about exactly this: *"whether a treatment was
+**priced** is a judgement… whether it has ever been **named** is mechanical…
+act on the last one, which cannot be flattered."* The last number has now been
 flattered, because one whole-genome screen names every gene at once. **After
 2026-08-22, `never_named` cannot measure objective-3 debt at all**: any future
 whole-genome round zeroes it on publication. It is a solved metric, not a
-solved problem, and it is the "a claim is not a check" shape AGENTS.md names.
+solved problem.
 
-## What those ten actually have now, which is more than "named" and less than the objective asked
+To be fair to what did land: the screen row is real evidence and a far larger
+instrument than the 400-pair arm objective 3 asks for — 23,622 matched seat
+comparisons each. All ten read null on it (largest |z| = 2.17, against the
+screen's own family-wise bar), so a 100-pair withholding arm, which resolves
+roughly ±30 Elo, could not add to those rows. This round declines to spend the
+budget re-asking two hundred times more coarsely.
 
-The screen row is real evidence, and it is a far bigger instrument than the
-400-pair arm the objective calls for — 23,622 matched seat comparisons each.
-Every one of the ten reads null:
+## ⚠ The finding underneath: over half the objective-3 arm inventory cannot fire
 
-| treatment | ships in the deployment genome? | standard screen win Δpp | win z |
+Chasing "which of the ten is cheapest to price" turned up something worse than
+the counter. **`live_without_X` is not a withhold from the universe bundle — it
+is a withhold from the deployment genome, and for a treatment the ledger
+already holds off it withholds nothing at all.**
+
+`src/elo.rs`'s derived factory builds every one of these arms as:
+
+```rust
+let mut ai = AdvancedAi::new();
+ai.enable_live_bridge();   // = enable_live_bridge_universe() + apply_gene_ledger()
+disable(&mut ai);          // withhold the one treatment
+```
+
+and `apply_gene_ledger` (`src/ai/advanced/gene_ledger.rs`) already runs, for
+every tag with `ledger_default_on(tag) == Some(false)`, **the same `disable`
+function**. Every `disable_*` is a plain `self.field = false`, so the second
+call is a no-op and the arm is the control. Counted over the published 49:
+
+| | count |
+|---|---:|
+| arm is a real withhold — ledger `default_on: true` | 20 |
+| arm is a real withhold — tag absent from the ledger, so untouched and on | 3 |
+| **arm is byte-identical to `live` — ledger `default_on: false`** | **26** |
+
+The 26: `amenity-project-preemption`, `army-target-weighs-enemy`,
+`barbarian-bargain`, `barbarian-hunt`, `barbarian-ranged-answer`,
+`blind-objective-units`, `buildings-before-projects`, `civilian-rescue`,
+`district-coverage`, `endgame-war-runway`, `garrison-under-fire`,
+`governor-every-lane`, `home-defense`, `housing-districts`, `naval-recon`,
+`recorded-tactical-step`, `score-horizon`, `settler-guard-holds`,
+`siege-commitment`, `siege-is-progress`, `siege-tracks-wall`,
+`slot-kind-tiebreak`, `war-economy`, `war-patience`, `war-reinforcement`,
+`wonder-ring-settle-value`.
+
+**Five of the original ten are in that list** (`amenity-project-preemption`,
+`blind-objective-units`, `endgame-war-runway`, `siege-commitment`,
+`wonder-ring-settle-value`), so half the debt roadmap was pointing at arms that
+cannot measure. This is #2095's title — *"the never-named list names treatments
+you cannot run"* — one level deeper: that PR fixed arms whose **names** were
+wrong, and these arms have correct names, exist, and run.
+
+### Confirmed on the board, with a positive control
+
+Byte-identity is a proof from the source, so the run is a confirmation rather
+than the evidence. 20 paired maps, seed 778001, 4p 24×16, 4 city-states, 120
+turns, standard speed, identical seeds across all three:
+
+| arm | ledger | maps broken on wins | maps broken on terminal score |
 |---|---|---:|---:|
-| `amenity-district-path` | **yes** | +0.34 | +1.07 |
-| `blind-objective-strength` | **yes** | −0.01 | −0.03 |
-| `relief-targets-the-siege` | **yes** | +0.12 | +0.38 |
-| `settler-site-agreement` | **yes** | −0.46 | −1.47 |
-| `stranded-settler-discount` | **yes** | −0.17 | −0.54 |
-| `amenity-project-preemption` | no | −0.68 | −2.17 |
-| `blind-objective-units` | no | −0.01 | −0.03 |
-| `endgame-war-runway` | no | −0.33 | −1.06 |
-| `siege-commitment` | no | +0.12 | +0.38 |
-| `wonder-ring-settle-value` | no | +0.43 | +1.37 |
+| `live_without_recorded_tactical_step` | OFF → predicted inert | **0 / 20** | **0 / 20** |
+| `live_without_war_economy` | OFF → predicted inert | **0 / 20** | **0 / 20** |
+| `live_without_whole_turn_backtrack_guard` | **ON** → predicted live | 1 / 20 | **11 / 20** |
 
-Two consequences the "0" hides, both of which change what should be run next:
+Both predicted-inert arms returned `ai_eval`'s own *"nothing differed: all 20
+maps were neutral on wins AND on terminal score… it did not fire on this
+profile"*. `recorded-tactical-step` is the sharp case: it records every
+tactical step, so if it were live it would perturb nearly every game — and the
+positive control, which does perturb them, breaks 11 of the same 20 maps at
+the same shape and seeds. (An earlier 6-pair attempt is not quoted: its
+positive control did not fire either, so its null was not evidence.)
 
-1. **Five of the ten do not ship.** `docs/gene_ledger.json` has them
-   `default_on: false`, and `enable_live_bridge` is
-   `enable_live_bridge_universe()` + `apply_gene_ledger()`, so the ledger
-   withholds them from the deployed agent already. Their `live_without_*` arms
-   price them inside `LIVE_BRIDGE_TREATMENTS` — the **universe** bundle, every
-   treatment on — which is not the bundle that deploys. For those five, the
-   objective-3 question ("what does the shipped bundle pay for this?") has the
-   answer "nothing, it is not in it".
-2. **A 100-pair withholding arm cannot add to these rows.** At the cost
-   measured above, ~100 pairs is what a round can buy here, and 100 pairs
-   resolves roughly ±30 Elo. The screen has already bounded all ten to
-   |Δwin| < 0.7 pp on 23,622 comparisons. Spending the budget to re-ask a
-   question two hundred times more coarsely would be theatre, and this round
-   declines to do it.
+### And the one line a reader would check says the opposite
 
-**What remains, stated so it is not lost:** none of the 49 withholdable
-treatments has been priced by *withholding from the deployment genome at the
-deployment shape*, which is what objective 3 asks and what
-`city_target_floor` needed. The `live_without_*` arms withhold from the
-universe bundle instead. That gap is real, it is now invisible to the only
-counter that tracked it, and closing it needs either a new arm family that
-withholds from `enable_live_bridge` rather than from the universe, or a
-coverage metric that counts *priced*, not *named*. Both are more than this
-round's claim.
+`ai_eval` prints `arms differ on: war-economy` for a pair that is one agent.
+The arm **spec** carries `LIVE_BRIDGE_TREATMENTS` minus the tag, while the
+constructed agent carries the ledger's genome minus nothing, so the sanity line
+that exists to stop a comparison of two identical agents asserts the axis is
+there. Nothing in CI relates the two.
+
+**Recommended, not done here** (it is `src/elo.rs`, a declared hotspot, and a
+material expansion of this task): a test that constructs each
+`live_without_X` and its `live` control and fails when their flag state is
+equal — the guard that runs in the change that adds it. `MINOR_DEPENDENT_ARMS`
+already encodes this exact lesson for `advanced_price_suzerainty`
+(*"with no minor seated the arm is byte-identical to its control"*); the ledger
+produces the same failure 26 times and nothing lists it.
+
+**What remains, stated so it is not lost:** 23 of the 49 can genuinely be
+priced by withholding, and none of the 23 has been. The other 26 need the
+ledger default flipped before any withholding arm means anything — which is a
+gene-screen decision, not an evaluator one. The counter that tracked this reads
+0.
 
 ---
 
