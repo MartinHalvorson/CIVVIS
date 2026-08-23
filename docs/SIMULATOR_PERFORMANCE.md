@@ -2054,7 +2054,7 @@ and the first `github-ubuntu-latest` row, are both still to be recorded — the
 file is designed so that adding them is one command and the old rows stay as
 history rather than being overwritten.
 
-## 2026-08-23 — the flood stopped re-asking the ruleset what the unit is (−9.2%), and a dense frontier that did not pay
+## 2026-08-23 — the flood stopped re-asking the ruleset what the unit is (−9.9%/turn), and a dense frontier that did not pay
 
 The direct sequel to 2026-08-22 above. That change hoisted the two *whole-board*
 facts out of the movement flood — the air-patrol scan and the passage table.
@@ -2152,41 +2152,56 @@ counts as overhead when both arms played the same game.** Every row below
 reports *same game on every seed*, which is the correctness claim: the play is
 bit-for-bit what it was, the engine simply stopped repeating itself.
 
-Both arms at 6p **74×46, 9 city-states, 250 turns online** — the #2308 standard
-screen shape — over eight paired games on seeds 7311001..7311008.
+Both arms at 6p **74×46, 9 city-states, 250 turns online, Continents** — the
+#2308 standard screen shape, on the screen's own map — over eight paired games
+on seeds 7311001..7311008, **both arms rebuilt at the merged base**:
 
-⚠ `tools/speed_ab.py` does not pass `--map`, so these games run the CLI default
-map, not the `Continents` a screen runs (#2328 is fixing that). The profile
-above *was* taken on `--map continents`. For the digest verdict the map is
-irrelevant — a digest is a digest of whatever game ran. For the percentages it
-is one more reason to read them as provisional.
+    seeds 7311001..7311008 (8 games x 1 interleave(s) = 8 pairs),
+    6p 74x46 9CS 250t online continents, --jobs 1
+      load average 17.30 at start, 18.33 peak, 10.70 at end
+      baseline    450.87s user CPU /  1787 turns = 0.252308 s/turn
+      candidate   395.30s user CPU /  1787 turns = 0.221210 s/turn
+      -9.94% per completed turn (median of 8 pairs)
+          — same game on every seed, done faster
+      spread: IQR 11.57pp over [-20.56%, -5.00%]; this run resolves ±6.07%
+      pooled -12.33% per turn; whole game -12.33% over the same 1787 turns
 
-| arm | host load | baseline | candidate | |
+**That is the row to quote: −9.94% median, −12.33% pooled**, both arms built
+from the base this lands on, at the shape *and the map* a screen actually runs.
+The two metrics agreeing exactly is not a coincidence — they must agree when
+both arms play the same game, and the harness prints it as a self-check.
+
+⚠ The median's own resolution on this run is ±6.07%, so **−9.94% is a sign and
+an order of magnitude, not three significant figures.** The pooled figure is
+the tighter of the two here because the arms played identical games.
+
+The earlier readings from this session are kept below because they say
+something the headline cannot. All were taken with the pre-#2328 harness, which
+never passed `--map` and so measured `tennis_ball`, and they report whole-game
+user CPU rather than per turn:
+
+| arm (old harness, `tennis_ball`, whole game) | host load | baseline | candidate | |
 | --- | ---: | ---: | ---: | ---: |
-| **both changes, against the base they land on** | **~25** | **407.20s** | **369.94s** | **−9.15%** |
+| both changes | ~25 | 407.20s | 369.94s | −9.15% |
 | per-unit movement profile + in-place occupancy | ~25 | 418.25s | 395.01s | −5.56% |
 | per-unit movement profile + in-place occupancy | ~78 | 432.11s | 412.39s | −4.56% |
 | memo scope over the connectivity sweep, on top of it | ~73 | 401.80s | 397.87s | −0.98% |
 | dense frontier scratch for `flow_past` | ~72 | 399.95s | 403.19s | **+0.81% — rejected** |
 
-**Quote the first row.** It is both changes against the exact base they land on,
-at the quietest the host reached all session, and it is *same game on every
-seed*.
-
-⚠⚠ **The rows do not sum, and that is the reading to take away from this
-table, not an error in it.** The same change — the movement profile, unchanged
-binary, same seeds, same shape — reads −4.56% at load 78 and −5.56% at load 25.
-A machine that is already memory- and scheduler-bound returns less of a
-CPU-work saving, so a heavily loaded host **understates** an optimization. The
-connectivity-sweep row was taken at load 73 and is therefore a floor, not a
-measurement of that change at rest; the honest split between the two is
-unknown, and only the total against `origin/main` is quoted anywhere here as a
-result.
+⚠⚠ **Those rows do not sum, and that is the reading to take from them, not an
+error in them.** The same change — the movement profile, an unchanged binary,
+the same seeds and shape — reads −4.56% at load 78 and −5.56% at load 25. A
+machine that is already memory- and scheduler-bound returns less of a CPU-work
+saving, so **a loaded host understates an optimization**, and a per-part row
+taken at load 73 is a floor rather than that part's figure at rest. The split
+between the two shipped changes is therefore not known to better than "both are
+real and the profile is the larger"; only the total is quoted as a result.
 
 ⚠ A dozen agents share this machine. The pairing and the alternating run order
-are what make any of these worth quoting; a single-arm reading at load 78 would
-mean nothing at all. **The digests are not provisional** — those are exact, and
-they are the claim that matters.
+are what make any of these worth quoting at all; a single-arm reading at load 78
+would mean nothing. **The digests are not provisional** — 40 paired games across
+five windows, two harnesses and two maps, every one of them *same game on every
+seed*. That is the claim this change actually rests on.
 
 ### Rejected: a dense frontier for `flow_past` (+0.81%)
 
