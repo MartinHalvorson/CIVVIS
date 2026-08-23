@@ -11,6 +11,7 @@ GitHub's merged pull requests cut the same day's list from 151 to 26.
 
 from __future__ import annotations
 
+import datetime
 import sys
 import unittest
 from pathlib import Path
@@ -83,6 +84,87 @@ class TheSnapshotSectionIsAQueue(unittest.TestCase):
             rows = report.rescue_refs()
         listed = [r for r in rows if r.startswith("- ")]
         self.assertEqual(len(listed), 3)
+
+
+class ARunThatNeverEndsIsStrandedWork(unittest.TestCase):
+    """`release.yml` run 31116714949, as a test.
+
+    A re-run of the `v0.6.1` tag build sat `queued` with zero jobs allocated
+    from 2026-08-06 to 2026-08-22 — 390 hours. `timeout-minutes` cannot bound
+    that (its clock starts when a runner claims a job, and this run had none),
+    so the only thing that would ever have surfaced it is a report that asks.
+    """
+
+    NOW = datetime.datetime(2026, 8, 23, 0, 0, 0)
+
+    def payloads(self, runs):
+        def fake_api(path, *args, **kwargs):
+            status = "queued" if "status=queued" in path else "in_progress"
+            return {"workflow_runs": [r for r in runs if r["_status"] == status]}
+        return mock.patch.object(report, "api", fake_api)
+
+    def run_row(self, **over):
+        row = {"_status": "queued", "id": 31116714949, "name": "release",
+               "html_url": "https://example.invalid/31116714949",
+               "head_branch": "v0.6.1", "event": "push",
+               "display_title": "Publish a lane whose revision predates assets",
+               "created_at": "2026-08-06T15:37:40Z",
+               "run_started_at": "2026-08-06T20:12:32Z"}
+        row.update(over)
+        return row
+
+    def test_the_390_hour_run_is_reported(self):
+        with self.payloads([self.run_row()]):
+            rows = report.stuck_runs(self.NOW)
+        self.assertEqual(len(rows), 1, rows)
+        self.assertIn("31116714949", rows[0])
+        self.assertIn("queued", rows[0])
+        self.assertIn("16.2d", rows[0])
+
+    def test_a_run_inside_the_window_is_not_reported(self):
+        fresh = self.run_row(run_started_at="2026-08-22T23:00:00Z")
+        with self.payloads([fresh]):
+            self.assertEqual(report.stuck_runs(self.NOW), [])
+
+    def test_a_long_in_progress_run_is_reported_too(self):
+        """The other non-terminal state; a wedged job hangs the same way."""
+        stuck = self.run_row(_status="in_progress", id=7,
+                             run_started_at="2026-08-20T00:00:00Z")
+        with self.payloads([stuck]):
+            rows = report.stuck_runs(self.NOW)
+        self.assertEqual(len(rows), 1, rows)
+        self.assertIn("in_progress", rows[0])
+
+    def test_a_stuck_run_alone_reopens_the_issue(self):
+        """It is actionable, so it must not be a footnote like a snapshot is.
+
+        `upsert` reopens a closed report only when `actionable` is true. A
+        stuck run that could not set it would be written into an issue nobody
+        gets notified about — which is how this one lasted 390 hours.
+        """
+        with mock.patch.object(report, "commentless_closes", lambda now: []), \
+             mock.patch.object(report, "idle_branches", lambda now: []), \
+             mock.patch.object(report, "rescue_refs", lambda: []), \
+             mock.patch.object(report, "stuck_runs", lambda now: ["- a stuck run"]):
+            body, actionable = report.compose(self.NOW)
+        self.assertTrue(actionable)
+        self.assertIn("Workflow runs that never ended", body)
+        self.assertIn("- a stuck run", body)
+
+    def test_an_empty_run_list_leaves_the_report_quiet(self):
+        with mock.patch.object(report, "commentless_closes", lambda now: []), \
+             mock.patch.object(report, "idle_branches", lambda now: []), \
+             mock.patch.object(report, "rescue_refs", lambda: []), \
+             mock.patch.object(report, "stuck_runs", lambda now: []):
+            body, actionable = report.compose(self.NOW)
+        self.assertFalse(actionable)
+        self.assertIn("Nothing stranded here today.", body)
+
+    def test_github_losing_the_actions_api_still_produces_a_report(self):
+        def boom(path, *args, **kwargs):
+            raise RuntimeError("actions API unavailable")
+        with mock.patch.object(report, "api", boom):
+            self.assertEqual(report.stuck_runs(self.NOW), [])
 
 
 class ItDoesNotJudgeBySquashedDiff(unittest.TestCase):

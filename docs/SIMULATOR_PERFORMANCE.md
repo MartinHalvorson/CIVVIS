@@ -1779,3 +1779,219 @@ answer. The moment the reports disagree — which is every promoted feature —
 whole-game time stops being a cost and starts being a mixture. `gene_screen`
 already separates the two columns for this reason; the paired harness does not,
 and a reader who quotes its number for a behaviour change is quoting a mixture.
+
+## 2026-08-23 — the city half of the sight stamp, and the 11.6 M allocations nobody was counting
+
+The 2026-08-21 (fifth) entry left two vision targets. The first — "the 25.2 M-visit
+unit scan" — shipped as #2295. This is the second:
+
+> 2. **The 8.6 M owned-tile hashes.** Every ask hashes every owned tile of every
+>    city of every viewer. Borders move rarely; a per-city tiles counter bumped
+>    on mutation would replace the inner loop with one number.
+
+It is the right target and the wrong count, because **three** loops walked the
+roster on every ask, not one:
+
+- `base_vision_input_stamp` hashed every owned tile of every city the viewer
+  holds — the 8.6 M, measured here at 7.5 M;
+- `vision_geometry_stamp` hashed every city and every district in the **world**,
+  viewer or not;
+- `world_stamp` hashed the same world roster a third time, on the hotter path of
+  the two: `height_field()` asks for it, and `player_can_see` and
+  `player_vision_frame` build a height field per question.
+
+⚠ **And the expensive part of those two was not the hashing.**
+`impl IntoIterator for &Districts` is `self.iter().collect::<Vec<_>>().into_iter()`,
+so `for (district, position) in &city.districts` **allocates a `Vec` per city per
+ask**. Measured below: **11,616,354 allocations in one game**, from a loop whose
+own arithmetic is a rounding error. The 2026-08-17 profile's largest single block
+was not a function but the allocator at ~18%; this is some of it.
+
+All three now read one number off the roster.
+
+### The measurement that does not need a quiet host
+
+Taken with a deterministic counter, because the host was at load 63–96 with a
+dozen sibling agents building, and this file's own history is full of clocks that
+read a change backwards under exactly that condition. One game, seed 7311001,
+6p 74×46, 9 city-states, 250 turns, online — the shape the newest sections use.
+
+| | per game |
+| --- | ---: |
+| `vision_stamps()` asks | 452,140 |
+| …answered from the fold | 441,886 (**97.7%**) |
+| rebuilds | 10,254 |
+| owned-tile hashes | 7,532,856 → **5,884,334** (−21.9%) |
+| district hashes | 26,083,412 → **790,477** (−97.0%) |
+| city visits, each of which allocated a `Vec` | 11,616,354 → **0** |
+
+Total hash work falls from **45.2 M to about 6.7 M** plus one city-header pass
+per rebuild. The `Vec` allocations go to zero: the fold iterates with
+`Districts::iter()`, which does not collect.
+
+### Read the 21.9% row before copying this shape
+
+The owned-tile row is the weakest of the three and it is worth understanding why:
+a **rebuild folds every owner's tiles**, where the old loop folded only the
+viewer's. At six majors plus nine city-states that is roughly a sixfold larger
+unit of work, and a 97.7% hit rate buys back only 21.9% of it.
+
+The obvious next move is a per-city fold with a dirty set, so that `get_mut(id)`
+refolds one city instead of all of them. **Do not spend a day on it.** The
+residual is 5.88 M hash operations at a few nanoseconds each — about 15 ms on a
+game that costs 54 CPU-seconds, or **0.03%**. The allocations are the whole
+number: 11.6 M at roughly 45 ns is about 0.5 s, or **1.0%**, and that is what the
+paired harness measured.
+
+### The paired harness, and what it proves
+
+`tools/speed_ab.py --seeds 7311001 --games 8 --players 6 --width 74 --height 46
+--city-states 9 --turns 250 --speed online`:
+
+| | user CPU |
+| --- | ---: |
+| baseline (`5205a424`) | 433.82 s |
+| candidate | 429.07 s |
+| | **−1.09%** |
+
+⚠ **Provisional on the timing.** Host load averages were 63–96 on 18 cores
+throughout, with the harness itself reporting three other CIVVIS processes; a
+number taken at that load is not a result, and the agreement with the 1.0%
+allocation estimate above should be read as corroboration, not as confirmation.
+
+**What is not provisional is that the reports agree on every paired seed.** That
+is the correctness proof this change needs and it does not care about load: all
+three stamps changed *value* — they fold the same inputs in a different order —
+and a stamp that reached play rather than staying a cache key would surface here
+as a divergent report. `docs/FLOAT_DETERMINISM.md`'s same-seed-same-world rule is
+the contract, and eight identical paired digests are the evidence.
+
+### Where the invalidation lives, and why it is not an epoch counter
+
+`Units` carries a `u64` epoch bumped inside `get_mut`, and
+`with_unit_vision_input_stamps` keys the unit fan-out on it. Copying that shape
+for cities has a hole the unit version does not: an epoch and the memo it guards
+are two values in two places, and `game.cities = other.cities` moves one without
+the other. Nothing in the tree does that today. Nothing had to.
+
+So the memo is a field of the roster instead:
+
+```rust
+pub struct Cities {
+    map: BTreeMap<u32, City>,
+    vision: RefCell<Option<Arc<CityVisionStamps>>>,
+}
+```
+
+`Deref` — and **deliberately no `DerefMut`** — exposes the whole read API, so
+every read, every `values()`, every `cities[&id]` compiled unchanged. Without
+`DerefMut` nothing in the crate can obtain `&mut BTreeMap<u32, City>`, so the
+only routes to a `&mut City` are six inherent methods, and each drops the memo
+before it returns. Three properties follow, and they are the whole argument:
+
+1. **The compiler enumerates the mutation surface, on every build.** A mutating
+   map method not reimplemented here does not compile. `iter_mut`, `entry`,
+   `retain`, `append`, `drain`, `split_off`, `pop_first` and `pop_last` are
+   absent on purpose — nothing calls them, and an untested accessor is a worse
+   guard than a build error. This is `AGENTS.md`'s "discover, never list"
+   enforced by `rustc` rather than by a grep that was complete the day it was
+   written.
+2. **The memo cannot come apart from the roster.** Assignment, `mem::take` and
+   `mem::swap` move the fold with the cities. `Cities` is declared inside a
+   private `mod city_roster` rather than as a bare type, because a private field
+   is readable by every *descendant* module and `game` has three dozen of them.
+3. **Borrowck forbids reading the memo while a write is outstanding.**
+   `vision_stamps()` needs `&Cities`; every mutable handle borrows `&mut Cities`.
+   Invalidation is eager — it happens when the handle is *issued*, before the
+   caller has written anything — so no ask can fall between the two. The new
+   test needed a `let` hoisted out of `push(along(&branch, …))` for exactly this
+   reason, which is the guarantee showing up as a compile error.
+
+### What the enumeration found
+
+The claim above is worth what the search behind it is worth. Every `.rs` file in
+the repository, single-line **and** line-broken forms — an `rg -U` multiline pass
+found 369 chained-across-lines sites a single-line grep misses. **~972
+mutable-access sites to `Game::cities`**, 852 of them outside `src/game.rs`: 21
+production (14 `mirror.rs`, 3 `ai/advanced.rs`, 2 `bin/civvis_orders.rs`, 2 the
+feature-gated `oracle.rs`) and 831 in tests. **None needed an edit.** Confirmed
+absent, each of which would have been a hole: any `&mut BTreeMap<u32, City>` in a
+signature, any whole-roster assignment in production, any `Game { … }` literal
+outside `game.rs`, any `for … in &mut …cities`, any path that moves a `City` out
+and puts it back, and any `unsafe` or `UnsafeCell` route into the roster.
+
+`owned_tiles` is written from twelve production sites — `found_city_for`,
+`do_buy_plot`, `expand_borders` (twice), `fogged_clone`, six in `mirror.rs` where
+the authoritative host reassigns a worked tile, and `oracle.rs`. Ownership moves
+in `mirror_set_city_owner`, `fogged_clone`, `transfer_city` (capture, cession, and
+the loyalty flip that routes through it) and `do_liberate_city`. Cities appear and
+disappear in `found_city_for`, `do_raze_city`, `mirror_remove_city` and
+`clear_mirror_cities`. Save and load go through `GameSer`, whose `Vec<City>`
+becomes a `Cities` by `FromIterator` with an empty memo. **None of them is named
+in the code.** They are covered because they all go through `get_mut`,
+`values_mut`, `insert`, `remove` or `clear`, and there is no seventh way.
+
+### What was left alone
+
+`memory_world_stamp` walks the roster too, and folds `pop`, `hp`, `wall_hp`,
+`buildings.len()` and every religious pressure. Those change on most turns, so a
+memo behind them would miss more often than it hit, and it would need a second
+invalidation rule for the fields the sight fold does not read. It keeps its loop.
+
+## 2026-08-23 (follow-up) — the city sight-fold's two clocks disagreed in sign
+
+The section above shipped as #2325 with a paired reading of **−1.09%** and a
+warning that host load was 63–96. CI's own `paired-cost` job then read
+**+1.01% overhead** on the same change. Opposite signs, and neither run is
+allowed to be dismissed just because the other is nicer.
+
+| harness | shape | reading |
+| --- | --- | ---: |
+| local, load 63–96 on 18 cores | 6p 74×46, 9CS, 250t, 8 seeds | −1.09% |
+| `speed.yml`, shared 4-core runner | 6p 60×38, 6CS, 100t, 3 seeds | +1.01% |
+
+Both said **"same game on every seed"**, so the correctness proof is doubled and
+only the cost is in question.
+
+### The plausible mechanism, and why it is wrong
+
+The obvious explanation is shape. A 100-turn game is mostly the early game,
+where cities are founded and borders grow every few turns, so the memo should
+hit far less often than over 250 turns — and a rebuild folds *every* owner's
+owned tiles where the old loop folded only the viewer's. A low hit rate at a
+small shape would turn the win into a loss, and that would be a real finding.
+
+It is not what happens. The same deterministic counter, run at both shapes:
+
+| | 60×38 / 6CS / 100t | 74×46 / 9CS / 250t |
+| --- | ---: | ---: |
+| `vision_stamps()` asks | 117,299 | 452,140 |
+| rebuilds | 3,035 | 10,254 |
+| **hit rate** | **97.41%** | **97.73%** |
+| hash operations | 5,113,713 → 973,235 (−81.0%) | 45,232,622 → 7,042,723 (−84.4%) |
+| `Vec` allocations | 2,080,373 → **0** | 11,616,354 → **0** |
+
+**The hit rate is shape-insensitive to within a third of a percentage point.**
+The small shape removes proportionally almost as much work as the large one, and
+2.08 M allocations at roughly 45 ns is about 0.09 s against that job's ~19
+CPU-seconds per game — a predicted saving of about **0.5%**, not a 1% cost.
+
+So the CI reading is host noise, which is exactly what `speed.yml`'s own comment
+says to expect of it: *"A shared 4-core runner cannot resolve five percent and
+this does not try to… It is a smoke alarm."* Three seeds at 100 turns on a
+shared runner is a budget check, and quoting its percentage as a cost is reading
+an instrument past its resolution.
+
+### The rule this is an instance of
+
+`docs/EVAL.md` says to compute the headline fact twice and read both. Both
+clocks here were inside their own noise and they still disagreed in sign,
+because ±1% is *below the resolution of every clock available on this fleet
+under load*. The counter is not a second opinion about the same quantity — it
+measures a different one (work removed, exactly, with no host in the answer),
+and it is the only one of the three instruments that could settle the question.
+
+⚠ For the next reader: at ±1% on a busy fleet, **stop planning to resolve it
+with a clock.** Neither a quiet window on this Mac nor a rerun of `paired-cost`
+would have separated −1.09% from +1.01% with any confidence. Instrument the
+work instead, and quote the clock only for its report-digest verdict.

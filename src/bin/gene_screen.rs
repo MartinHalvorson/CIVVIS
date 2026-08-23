@@ -57,9 +57,18 @@
 //! This is NOT `gene_census`, which asks whether a continuous `Weights` gene
 //! moves an outcome at all. The genes here are the boolean treatment flags.
 //!
+//! Every batch stamps the binary that played it — the commit, whether that
+//! tree was dirty, a sha256 of the executable, and a sha256 of the gene set
+//! compiled into it — and pre-registers the size it was launched to play. See
+//! `Build` and `Batch`: `tools/gene_ledger.py` refuses a source whose gene set
+//! does not match the code at the commit it names, and `--analyze` reports
+//! actual against intended so a run that stopped early cannot read as a
+//! finished screen.
+//!
 //! Usage:
 //!   gene_screen [--pairs N] [--start-seed N] [--jobs N] [--out PATH]
-//!               [--genes tag,tag,...] [--anchor-pairs N] [--append] [--quiet]
+//!               [--genes tag,tag,...] [--anchor-pairs N] [--target-pairs N]
+//!               [--append] [--quiet]
 //!               PROBE ONLY, and a batch using any of them is not a ledger
 //!               source: [--players N] [--turns N] [--width N] [--height N]
 //!               [--city-states N] [--speed ID] [--map ID] [--victories a,b]
@@ -340,6 +349,315 @@ struct Row {
     raid_settler_prizes: i64,
 }
 
+/// ⭐ THE BINARY A SCREEN WAS PLAYED BY, stamped into the batch's own header.
+///
+/// ⚠⚠ NOTHING CHECKED THIS, AND IT HAS COST THE PROJECT THREE TIMES.
+/// `docs/gene_ledger.json` records where a column came from; it never recorded
+/// which binary produced it, so a screen could price code that no longer
+/// existed and read as current:
+///
+/// - **P10, 2026-08-22.** #2266 culled ten genes. P10's simulation binary was
+///   built 1h43m before that merge, so the batch was already in flight and
+///   published a **+63** column for `holy-lane-parity` after the gene's code
+///   was gone. The reading was real; the gene came back (#2299) and confirmed
+///   directly at +99, z +4.05 (#2307). The project got the right answer from a
+///   careful reader, not from a gate.
+/// - **#2307's own write-up** had to state its source commit and its binary's
+///   SHA-256 in prose, because the artefact had nowhere to put them.
+/// - **2026-08-23.** The first standard-shape screen re-priced `barbarian-hunt`
+///   from the legacy −1.73 pp to +0.20 pp (z +0.65) while a sibling change was
+///   minutes from deleting that gene on the legacy reading — which would have
+///   made a brand-new screen a source pricing a gene the code no longer had.
+///
+/// `genes_sha256` is the load-bearing field, and it is the one that cannot go
+/// stale: it is hashed from `gene_table()` **as compiled into this binary**,
+/// never read back from a file, an environment variable, or a working tree.
+/// A commit can be misreported; the gene set of the running code cannot. So
+/// `tools/gene_ledger.py` re-derives the gene tags at the commit a source
+/// claims and refuses that source when the two disagree **in either
+/// direction** — a gene priced here and absent there, or a gene present there
+/// and never compiled in here. The second is what an unmeasured gene quietly
+/// looks like.
+#[derive(Clone, Serialize, Deserialize, Debug, Default, PartialEq, Eq)]
+struct Build {
+    /// The commit this binary was built from, or empty when nothing could say
+    /// so honestly. Empty is a refusal at the ledger, never a guess.
+    commit: String,
+    /// Where `commit` came from, so a weak answer cannot pass for a strong
+    /// one: `env` (`CIVVIS_COMMIT`, what every supervisor already sets),
+    /// `binary-name` (a promoted `civvis-<40-hex>` executable), `build-tree`
+    /// (Git in the directory this crate was compiled from), or `unstamped`.
+    commit_source: String,
+    /// Whether the tree that answered had uncommitted changes to anything the
+    /// games are played out of. A dirty tree is not a commit, so the ledger
+    /// refuses it: the code that played the games is not recoverable from any
+    /// revision.
+    ///
+    /// Scoped to `BUILD_INPUTS` rather than the whole worktree, and untracked
+    /// files are not counted. Both narrowings are the same argument: an
+    /// edited analysis tool or an untracked scratch file cannot change how a
+    /// game plays out, while anything that can — a source file, the manifest,
+    /// the lockfile, a data table — is a tracked change under one of those
+    /// paths. A guard that fired on every open editor buffer would be turned
+    /// off, and a guard that is turned off measures nothing.
+    dirty: bool,
+    /// ⭐ The gene set, hashed: sha256 over the tags this binary can vary, in
+    /// header order, one per line. See `gene_set_fingerprint`.
+    genes_sha256: String,
+    /// sha256 of this executable's own bytes — the exact artefact. This is
+    /// what `docs/eval/2026-08-22-standard-gene-screen-23622-paired-seats.md`
+    /// had to write out by hand as "release binary SHA-256".
+    binary_sha256: String,
+}
+
+/// ⭐ WHAT THE BATCH WAS LAUNCHED TO PLAY, declared before its first game.
+///
+/// P10 "ended early at the operator's request" at 5,858 of a planned 10,000
+/// games. Stopping early is legitimate and stays legitimate — the operator
+/// does it deliberately — but with no pre-registered target the analysis
+/// tranche is chosen after seeing the data, and the artefact cannot tell a
+/// completed screen from a truncated one. The target is therefore written into
+/// the header before the first game finishes, and every `--analyze` reports
+/// actual against intended whether or not anyone asks.
+#[derive(Clone, Serialize, Deserialize, Debug, Default, PartialEq, Eq)]
+struct Batch {
+    /// Map pairs this segment was launched to play — `--target-pairs`, else
+    /// `--pairs`. Zero in a file written before pre-registration existed.
+    target_pairs: usize,
+    /// The matched seat comparisons that target implies: one per major seat
+    /// under the screen's all-seats design, one per map pair otherwise. This
+    /// is the unit `complete_pairs` counts, so intended and actual are the
+    /// same currency and their ratio means something.
+    target_comparisons: usize,
+    /// The seed window the target reserves, inclusive. A run that stops early
+    /// leaves the tail of this window unplayed, which is exactly the gap the
+    /// analysis prints.
+    seed_first: u64,
+    seed_last: u64,
+}
+
+/// The fingerprint of the gene set a binary can vary: sha256 over the tags in
+/// header order, one per line, each newline-terminated.
+///
+/// `tools/gene_ledger.py::gene_set_fingerprint` computes the same string from
+/// `ENGINE_REPAIR_TREATMENTS` in `src/elo.rs` and `PRODUCTION_TREATMENTS` plus
+/// `PRODUCTION_OPT_INS` in `src/ai/advanced/treatments.rs` **at any commit**,
+/// which is how a screen is checked against the code it claims to have played.
+/// `the_gene_table_is_exactly_what_the_ledger_re_derives_from_the_tables`
+/// holds the two rules together against the compiled table itself.
+fn gene_set_fingerprint(genes: &[Gene]) -> String {
+    let mut text = String::new();
+    for gene in genes {
+        text.push_str(gene.tag);
+        text.push('\n');
+    }
+    sha256_hex(text.as_bytes())
+}
+
+/// Run `git` in `dir`, or `None` when it cannot answer.
+fn git(dir: &str, args: &[&str]) -> Option<String> {
+    let output = std::process::Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(args)
+        .output()
+        .ok()?;
+    output
+        .status
+        .success()
+        .then(|| String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+/// A promoted `civvis-<40-hex-sha>` executable names its own revision, exactly
+/// as `server.rs` reads it. Kept in step with that reader by
+/// `a_promoted_binary_names_its_own_revision`.
+fn promoted_binary_commit(name: &str) -> Option<String> {
+    let commit = name.strip_prefix("civvis-")?;
+    (commit.len() == 40 && commit.bytes().all(|byte| byte.is_ascii_hexdigit()))
+        .then(|| commit.to_owned())
+}
+
+/// Seconds since the epoch that this executable's bytes were last written.
+fn binary_mtime_secs(path: &std::path::Path) -> Option<u64> {
+    path.metadata()
+        .ok()?
+        .modified()
+        .ok()?
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .map(|since| since.as_secs())
+}
+
+/// Everything a played game comes out of: the crate's sources, what pins its
+/// build, and the tables it reads. A tracked change under any of these makes
+/// the revision a lie; a change anywhere else — an analysis tool, a document —
+/// cannot reach a game.
+const BUILD_INPUTS: &[&str] = &["src", "Cargo.toml", "Cargo.lock", "build.rs", "data"];
+
+/// Stamp the running binary: its gene set, its own bytes, and the revision it
+/// was built from.
+///
+/// ⚠ THE ORDER IS THE POINT. `CIVVIS_COMMIT` is what every supervisor in this
+/// repository already sets (`server.rs`, `spectator_supervisor.py`,
+/// `simloop/iterate.sh`) and is the launcher's own word; a promoted
+/// `civvis-<sha>` name is the artefact's word; the build tree is a *guess*,
+/// because a worktree moves on after a binary is built. That guess is refused
+/// outright when the tree's HEAD is newer than this executable's bytes — a
+/// stale revision reported confidently is the failure this whole struct
+/// exists to stop, and `build.rs` deliberately keeps the revision out of
+/// Cargo's inputs (#892) so it cannot be baked in at compile time instead.
+fn stamp_build(genes: &[Gene]) -> Build {
+    let executable = std::env::current_exe().ok();
+    let binary_sha256 = executable
+        .as_deref()
+        .and_then(|path| std::fs::read(path).ok())
+        .map(|bytes| sha256_hex(&bytes))
+        .unwrap_or_default();
+    let mut build = Build {
+        commit: String::new(),
+        commit_source: "unstamped".to_string(),
+        dirty: false,
+        genes_sha256: gene_set_fingerprint(genes),
+        binary_sha256,
+    };
+    if let Some(commit) = std::env::var("CIVVIS_COMMIT")
+        .ok()
+        .filter(|commit| !commit.is_empty())
+    {
+        build.commit = commit;
+        build.commit_source = "env".to_string();
+        return build;
+    }
+    if let Some(commit) = executable
+        .as_deref()
+        .and_then(|path| path.file_name())
+        .and_then(|name| name.to_str())
+        .and_then(promoted_binary_commit)
+    {
+        build.commit = commit;
+        build.commit_source = "binary-name".to_string();
+        return build;
+    }
+    let tree = env!("CARGO_MANIFEST_DIR");
+    let Some(head) = git(tree, &["rev-parse", "HEAD"]) else {
+        return build;
+    };
+    // ⚠ Against the last commit that touched a BUILD INPUT, not against HEAD.
+    // This fleet lands a hundred merges a day and most of them are tools and
+    // documents; comparing with HEAD would call a perfectly good binary stale
+    // every time somebody committed a Python file, and a guard that cries wolf
+    // is a guard that gets waved through. What matters is whether the tree
+    // changed the code the games are played out of since this executable was
+    // linked.
+    let mut last_touch = vec!["log", "-1", "--format=%ct", "--"];
+    last_touch.extend_from_slice(BUILD_INPUTS);
+    let code_time: Option<u64> = git(tree, &last_touch).and_then(|at| at.parse().ok());
+    let built = executable.as_deref().and_then(binary_mtime_secs);
+    if let (Some(code_time), Some(built)) = (code_time, built) {
+        if built < code_time {
+            // The tree changed the engine after this binary was linked, so its
+            // HEAD is not what played the games. Say nothing rather than
+            // something false: the ledger refuses an unstamped source, and the
+            // fix is a rebuild or an explicit `CIVVIS_COMMIT`.
+            //
+            // ⚠ The residual this cannot see is a checkout *backwards* — a
+            // bisect that moves the tree to an older commit whose code the
+            // binary does not have. The gene-set fingerprint is what catches
+            // that, whenever the gene set is one of the things that differ.
+            build.commit_source = "unstamped-tree-moved".to_string();
+            return build;
+        }
+    }
+    build.commit = head;
+    build.commit_source = "build-tree".to_string();
+    let mut status = vec!["status", "--porcelain", "--untracked-files=no", "--"];
+    status.extend_from_slice(BUILD_INPUTS);
+    build.dirty = git(tree, &status)
+        .map(|changed| !changed.is_empty())
+        .unwrap_or(true);
+    build
+}
+
+/// SHA-256 (FIPS 180-4) of `bytes`, lowercase hex.
+///
+/// Written out rather than pulled in: the crate's dependency list is three
+/// entries wide on purpose, and a hash the fleet's Python side already has in
+/// `hashlib` does not justify a fourth. `sha256_matches_the_published_vectors`
+/// pins it against the standard's own test vectors, and the Python side is
+/// held to the same answers.
+fn sha256_hex(bytes: &[u8]) -> String {
+    const K: [u32; 64] = [
+        0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4,
+        0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe,
+        0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f,
+        0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7,
+        0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc,
+        0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b,
+        0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070, 0x19a4c116,
+        0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+        0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7,
+        0xc67178f2,
+    ];
+    let mut state: [u32; 8] = [
+        0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab,
+        0x5be0cd19,
+    ];
+    let mut message = bytes.to_vec();
+    let bit_length = (bytes.len() as u64) * 8;
+    message.push(0x80);
+    while message.len() % 64 != 56 {
+        message.push(0);
+    }
+    message.extend_from_slice(&bit_length.to_be_bytes());
+    // The padding above makes the length an exact multiple of 64, so both
+    // remainders are empty by construction.
+    let (blocks, _) = message.as_chunks::<64>();
+    for chunk in blocks {
+        let mut w = [0u32; 64];
+        let (words, _) = chunk.as_chunks::<4>();
+        for (index, word) in words.iter().enumerate() {
+            w[index] = u32::from_be_bytes(*word);
+        }
+        for index in 16..64 {
+            let s0 = w[index - 15].rotate_right(7)
+                ^ w[index - 15].rotate_right(18)
+                ^ (w[index - 15] >> 3);
+            let s1 = w[index - 2].rotate_right(17)
+                ^ w[index - 2].rotate_right(19)
+                ^ (w[index - 2] >> 10);
+            w[index] = w[index - 16]
+                .wrapping_add(s0)
+                .wrapping_add(w[index - 7])
+                .wrapping_add(s1);
+        }
+        let [mut a, mut b, mut c, mut d, mut e, mut f, mut g, mut h] = state;
+        for index in 0..64 {
+            let s1 = e.rotate_right(6) ^ e.rotate_right(11) ^ e.rotate_right(25);
+            let choose = (e & f) ^ ((!e) & g);
+            let temp1 = h
+                .wrapping_add(s1)
+                .wrapping_add(choose)
+                .wrapping_add(K[index])
+                .wrapping_add(w[index]);
+            let s0 = a.rotate_right(2) ^ a.rotate_right(13) ^ a.rotate_right(22);
+            let majority = (a & b) ^ (a & c) ^ (b & c);
+            let temp2 = s0.wrapping_add(majority);
+            h = g;
+            g = f;
+            f = e;
+            e = d.wrapping_add(temp1);
+            d = c;
+            c = b;
+            b = a;
+            a = temp1.wrapping_add(temp2);
+        }
+        for (slot, value) in state.iter_mut().zip([a, b, c, d, e, f, g, h]) {
+            *slot = slot.wrapping_add(value);
+        }
+    }
+    state.iter().map(|word| format!("{word:08x}")).collect()
+}
+
 /// The first line of the JSONL file: the gene order every genome string is
 /// written in, and the profile the games were played at.
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -381,6 +699,16 @@ struct Header {
     /// foldover file.
     #[serde(default)]
     prior: Vec<f64>,
+    /// ⭐ The binary that played these games. Absent in files written before
+    /// 2026-08-23, which `tools/gene_ledger.py` grandfathers as history and
+    /// marks `pre-fingerprint` rather than accepting silently.
+    #[serde(default)]
+    build: Build,
+    /// ⭐ What the batch was launched to play, declared before its first game.
+    /// Absent in files written before 2026-08-23, where actual cannot be read
+    /// against intended at all.
+    #[serde(default)]
+    batch: Batch,
 }
 
 fn foldover() -> String {
@@ -1525,6 +1853,27 @@ fn write_json_summary(path: &str, header: &Header, rows: &[Row]) {
         // `tools/gene_ledger.py` refuses it as a source. This replaced the
         // `regime` field, which named which of two worlds a batch played.
         "shape": shape_of(header),
+        // ⭐ INTENDED AGAINST ACTUAL. `target_pairs` was written into the
+        // header before the first game finished, so a batch that stopped early
+        // is a partial screen in its own artefact rather than an unmarked one.
+        // A file written before 2026-08-23 carries nulls here, which is the
+        // honest answer: nothing was pre-registered, so nothing can be read
+        // against it. (The two hand-written `batch` blocks under
+        // `docs/gene_screens/` are this field's prose ancestors.)
+        "batch": {
+            "target_pairs": (header.batch.target_pairs > 0).then_some(header.batch.target_pairs),
+            "target_comparisons": (header.batch.target_comparisons > 0)
+                .then_some(header.batch.target_comparisons),
+            "complete_comparisons": pairs,
+            "completion": (header.batch.target_comparisons > 0)
+                .then(|| pairs as f64 / header.batch.target_comparisons as f64),
+            "partial": (header.batch.target_comparisons > 0)
+                .then_some(pairs < header.batch.target_comparisons),
+            "seed_window": (header.batch.target_pairs > 0)
+                .then_some([header.batch.seed_first, header.batch.seed_last]),
+            "seed_window_played": played_seed_window(rows).map(|(low, high)| [low, high]),
+            "read": completeness_line(header, pairs),
+        },
         "complete_pairs": pairs,
         "overall_win": overall_win,
         "overall_share": overall_share,
@@ -1912,6 +2261,8 @@ fn print_table(header: &Header, rows: &[Row]) {
             format!("lanes {}", header.victories)
         }
     );
+    println!("{}", build_line(header));
+    println!("{}", completeness_line(header, pairs));
     println!(
         "treated seat overall: win {:.1}% (chance {:.1}%) · score share {:.1}% (equal share {:.1}%)",
         100.0 * overall_win,
@@ -2309,6 +2660,12 @@ fn print_by_civ(header: &Header, rows: &[Row], tag: &str) {
 
 fn read_rows(paths: &[String]) -> (Header, Vec<Row>) {
     let mut header: Option<Header> = None;
+    // Pre-registration is per segment, keyed by the seed window it reserved:
+    // an `--append` session declares its own share of the screen on its own
+    // disjoint start seed, and the screen's intended size is their sum. A
+    // header rewritten over the same window — the same segment restarted —
+    // counts once rather than twice.
+    let mut targets: BTreeMap<u64, Batch> = BTreeMap::new();
     let mut rows = Vec::new();
     for path in paths {
         let file = std::fs::File::open(path).unwrap_or_else(|error| {
@@ -2325,6 +2682,9 @@ fn read_rows(paths: &[String]) -> (Header, Vec<Row>) {
             }
             if let Ok(found) = serde_json::from_str::<Header>(&line) {
                 if found.kind == "header" {
+                    if found.batch.target_pairs > 0 {
+                        targets.insert(found.batch.seed_first, found.batch.clone());
+                    }
                     match &header {
                         None => header = Some(found),
                         Some(first) => {
@@ -2369,11 +2729,45 @@ fn read_rows(paths: &[String]) -> (Header, Vec<Row>) {
             }
         }
     }
-    let Some(header) = header else {
+    let Some(mut header) = header else {
         eprintln!("no header line found; was this file written by gene_screen?");
         std::process::exit(2);
     };
+    header.batch = merged_target(&targets);
     (header, rows)
+}
+
+/// The whole screen's pre-registration, from every segment that declared one.
+/// Empty when no merged file carried a target, which is what a file written
+/// before 2026-08-23 looks like.
+fn merged_target(targets: &BTreeMap<u64, Batch>) -> Batch {
+    Batch {
+        target_pairs: targets.values().map(|batch| batch.target_pairs).sum(),
+        target_comparisons: targets.values().map(|batch| batch.target_comparisons).sum(),
+        seed_first: targets
+            .values()
+            .map(|batch| batch.seed_first)
+            .min()
+            .unwrap_or(0),
+        seed_last: targets
+            .values()
+            .map(|batch| batch.seed_last)
+            .max()
+            .unwrap_or(0),
+    }
+}
+
+/// The seed window a file's finished games actually cover, or `None` when it
+/// holds no game rows.
+fn played_seed_window(rows: &[Row]) -> Option<(u64, u64)> {
+    let mut seeds = rows
+        .iter()
+        .filter(|row| row.kind == "game")
+        .map(|row| row.seed);
+    let first = seeds.next()?;
+    Some(seeds.fold((first, first), |(low, high), seed| {
+        (low.min(seed), high.max(seed))
+    }))
 }
 
 /// Whether an analysis was played at the screen or is a probe. Every leg is
@@ -2403,10 +2797,84 @@ fn shape_of(header: &Header) -> &'static str {
     }
 }
 
+/// One line naming the binary a batch was played by, printed before the first
+/// game and again by `--analyze`.
+///
+/// An unstamped or dirty build is called out here rather than left for the
+/// ledger to discover hours later: `tools/gene_ledger.py` refuses both, and
+/// the cheapest moment to learn that is before the batch starts.
+fn build_line(header: &Header) -> String {
+    let build = &header.build;
+    if build.genes_sha256.is_empty() {
+        return "build: pre-fingerprint — this file predates the build stamp (2026-08-23)"
+            .to_string();
+    }
+    let short = |sha: &str| sha.chars().take(12).collect::<String>();
+    let revision = if build.commit.is_empty() {
+        format!(
+            "⚠ UNSTAMPED ({}) — set CIVVIS_COMMIT, or the ledger will refuse this batch",
+            build.commit_source
+        )
+    } else {
+        format!(
+            "{} ({}{})",
+            short(&build.commit),
+            build.commit_source,
+            if build.dirty {
+                ", ⚠ DIRTY TREE — the ledger will refuse this batch"
+            } else {
+                ""
+            }
+        )
+    };
+    format!(
+        "build: {revision} · {} genes sha {} · binary sha {}",
+        header.genes.len(),
+        short(&build.genes_sha256),
+        if build.binary_sha256.is_empty() {
+            "unknown".to_string()
+        } else {
+            short(&build.binary_sha256)
+        }
+    )
+}
+
+/// Actual against intended, in the unit the table already counts.
+///
+/// ⚠ THE ANALYSIS MUST NOT BE ABLE TO PRESENT A TRUNCATED RUN AS A COMPLETED
+/// ONE. P10 stopped at 5,858 of a planned 10,000 games at the operator's
+/// request — a legitimate decision that left an artefact which read like a
+/// finished screen. Every printed table now says which it is, and a file
+/// written before pre-registration says that instead of guessing.
+fn completeness_line(header: &Header, pairs: usize) -> String {
+    let target = header.batch.target_comparisons;
+    if target == 0 {
+        return "⚠ batch size was not pre-registered: this file predates `--target-pairs` \
+                (2026-08-23), so actual cannot be read against intended"
+            .to_string();
+    }
+    let window = format!(
+        "seeds {}..{} reserved",
+        header.batch.seed_first, header.batch.seed_last
+    );
+    let percent = 100.0 * pairs as f64 / target as f64;
+    if pairs < target {
+        format!(
+            "⚠⚠ PARTIAL SCREEN · {pairs} of {target} intended paired comparisons \
+             ({percent:.1}%) · {window} — a truncated run, not a completed one"
+        )
+    } else {
+        format!(
+            "screen complete · {pairs} of {target} intended paired comparisons \
+             ({percent:.1}%) · {window}"
+        )
+    }
+}
+
 fn usage() -> ! {
     eprintln!(
         "the screen: gene_screen [--pairs N] [--start-seed N] [--jobs N] [--genes tag,tag,...] \
-         [--anchor-pairs N] [--out PATH] [--append] [--quiet]\n       \
+         [--anchor-pairs N] [--target-pairs N] [--out PATH] [--append] [--quiet]\n       \
          (6 majors, 74x46 continents, 9 city-states, online/250, all six lanes, all seats, \
          shuffled civs, baseline best — the one shape the ledger accepts)\n       \
          probe only, NOT a ledger source: [--players N] [--turns N] [--width N] [--height N] \
@@ -2506,6 +2974,14 @@ fn main() {
     let pairs = number(&args, "--pairs", 100).max(1) as usize;
     let anchor_pairs = number(&args, "--anchor-pairs", 0).max(0) as usize;
     let start_seed = number(&args, "--start-seed", 26_081_900) as u64;
+    // ⭐ PRE-REGISTER THE SIZE. A single-session batch declares it by playing
+    // it, so `--pairs` is the default target and no operator has to remember a
+    // second flag. `--target-pairs` is for the screen deliberately split over
+    // `--append` sessions: each segment declares its share of the whole on its
+    // own disjoint start seed, and `--analyze` sums them. Either way the
+    // header carries the intention before the first game finishes, so a run
+    // that stops early is visibly partial instead of quietly complete.
+    let target_pairs = number(&args, "--target-pairs", pairs as i64).max(1) as usize;
     // ⚠ THE SCREEN IS ONE SHAPE (operator, 2026-08-22). Every default below
     // is a leg of it, and a batch that changes one is a probe, not the screen:
     // `tools/gene_ledger.py` refuses a source that does not match. The shape is
@@ -2732,7 +3208,18 @@ fn main() {
         all_seats,
         design: design.id().to_string(),
         prior: prior.clone(),
+        build: stamp_build(&genes),
+        batch: Batch {
+            target_pairs,
+            target_comparisons: target_pairs * if all_seats { players } else { 1 },
+            seed_first: start_seed,
+            seed_last: start_seed + (target_pairs + anchor_pairs) as u64 - 1,
+        },
     };
+    // ⚠ PRINTED BEFORE THE BATCH, not after it. An eight-hour screen whose
+    // build could not be identified is eight hours the ledger will refuse, and
+    // the operator can see that in the first line instead of at the end.
+    println!("{}", build_line(&header));
     writeln!(
         out,
         "{}",
@@ -2932,6 +3419,8 @@ mod tests {
             all_seats,
             design: "foldover".into(),
             prior: Vec::new(),
+            build: Build::default(),
+            batch: Batch::default(),
         }
     }
 
@@ -3181,6 +3670,8 @@ mod tests {
             all_seats: false,
             design: "foldover".into(),
             prior: Vec::new(),
+            build: Build::default(),
+            batch: Batch::default(),
         };
         let mut rows = Vec::new();
         let screened = vec![true, true];
@@ -3306,6 +3797,8 @@ mod tests {
             all_seats: false,
             design: "foldover".into(),
             prior: Vec::new(),
+            build: Build::default(),
+            batch: Batch::default(),
         };
         // y = 0.5 + 0.30·a  −  0.20·c  + 0.25·(a·b) in the ±1 coding, plus a
         // per-map offset that is constant inside a pair — which is what a map
@@ -3469,6 +3962,8 @@ mod tests {
             all_seats: true,
             design: "foldover".into(),
             prior: Vec::new(),
+            build: Build::default(),
+            batch: Batch::default(),
         };
         let screened = vec![true, true];
         let mut rows = Vec::new();
@@ -3721,6 +4216,8 @@ mod tests {
             all_seats: false,
             design: "prior".into(),
             prior: prior.clone(),
+            build: Build::default(),
+            batch: Batch::default(),
         };
         let screened = vec![true, true];
         let mut rows = Vec::new();
@@ -3815,5 +4312,341 @@ mod tests {
         // And the universe baseline keeps every repair on whatever the ledger says.
         let universe = treated_seat(&genes, &genome, &none, Baseline::Repairs);
         assert!(universe.siege_is_progress && universe.war_reinforcement);
+    }
+    // ─── provenance: the binary a screen was played by ────────────────────
+
+    /// Every double-quoted string in `text`, with `//` and `/* */` comments
+    /// removed first so a tag named inside a comment cannot join the table.
+    ///
+    /// ⚠ THIS IS `tools/gene_ledger.py::_quoted` IN THE OTHER LANGUAGE, and
+    /// the rule is deliberately the simplest one that both can state without
+    /// argument: strip comments, take the quoted strings in order.
+    fn quoted(text: &str) -> Vec<String> {
+        let mut stripped = String::with_capacity(text.len());
+        let mut rest = text;
+        loop {
+            let line = rest.find("//");
+            let block = rest.find("/*");
+            match (line, block) {
+                (None, None) => {
+                    stripped.push_str(rest);
+                    break;
+                }
+                (Some(at), None) => {
+                    stripped.push_str(&rest[..at]);
+                    rest = rest[at..].find('\n').map_or("", |end| &rest[at + end..]);
+                }
+                (None, Some(at)) => {
+                    stripped.push_str(&rest[..at]);
+                    rest = rest[at..]
+                        .find("*/")
+                        .map_or("", |end| &rest[at + end + 2..]);
+                }
+                (Some(a), Some(b)) if a < b => {
+                    stripped.push_str(&rest[..a]);
+                    rest = rest[a..].find('\n').map_or("", |end| &rest[a + end..]);
+                }
+                (Some(_), Some(b)) => {
+                    stripped.push_str(&rest[..b]);
+                    rest = rest[b..].find("*/").map_or("", |end| &rest[b + end + 2..]);
+                }
+            }
+        }
+        stripped
+            .split('"')
+            .skip(1)
+            .step_by(2)
+            .map(str::to_owned)
+            .collect()
+    }
+
+    /// The body of `pub const <name>: … = &[ … ];`, brackets balanced.
+    fn table_body<'a>(text: &'a str, name: &str) -> &'a str {
+        let start = text
+            .find(&format!("pub const {name}"))
+            .unwrap_or_else(|| panic!("{name} is not declared"));
+        let open = text[start..].find("= &[").expect("a slice literal") + start + 4;
+        let mut depth = 1usize;
+        for (offset, byte) in text[open..].bytes().enumerate() {
+            match byte {
+                b'[' => depth += 1,
+                b']' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return &text[open..open + offset];
+                    }
+                }
+                _ => {}
+            }
+        }
+        panic!("{name} is not closed");
+    }
+
+    /// The gene tags a reader gets from the source tables alone, in the order
+    /// `gene_table()` builds them: every tag of `ENGINE_REPAIR_TREATMENTS`,
+    /// then the `(field, tag, toggle)` rows of `PRODUCTION_TREATMENTS` and
+    /// `PRODUCTION_OPT_INS`, whose tag is the second string of each row.
+    fn tags_from_source_tables(root: &std::path::Path) -> Vec<String> {
+        let elo = std::fs::read_to_string(root.join("src/elo.rs")).expect("src/elo.rs");
+        let treatments =
+            std::fs::read_to_string(root.join("src/ai/advanced/treatments.rs")).expect("tables");
+        let mut tags = quoted(table_body(&elo, "ENGINE_REPAIR_TREATMENTS"));
+        for name in ["PRODUCTION_TREATMENTS", "PRODUCTION_OPT_INS"] {
+            tags.extend(
+                quoted(table_body(&treatments, name))
+                    .into_iter()
+                    .skip(1)
+                    .step_by(2),
+            );
+        }
+        tags
+    }
+
+    /// ⭐ THE GUARD'S FOUNDATION. `tools/gene_ledger.py` recomputes a screen's
+    /// gene-set fingerprint from these two files at the commit the screen
+    /// claims, by exactly this rule, and refuses the screen when the answer
+    /// differs. If the text rule and the compiled table ever disagreed, that
+    /// guard would refuse every honest screen instead of the dishonest one —
+    /// so the rule is pinned here, against the table the binary actually
+    /// varies, in the same change that adds the guard.
+    #[test]
+    fn the_gene_table_is_exactly_what_the_ledger_re_derives_from_the_tables() {
+        let compiled: Vec<String> = gene_table()
+            .iter()
+            .map(|gene| gene.tag.to_string())
+            .collect();
+        let parsed = tags_from_source_tables(std::path::Path::new(env!("CARGO_MANIFEST_DIR")));
+        assert_eq!(
+            parsed, compiled,
+            "the source tables and the compiled gene table disagree; \
+             tools/gene_ledger.py reads the tables"
+        );
+        assert!(compiled.len() > 50, "the tables scrape found too few genes");
+    }
+
+    /// The fingerprint is the tags, newline-terminated, hashed — the exact
+    /// string `tools/gene_ledger.py::gene_set_fingerprint` builds. Pinned on a
+    /// literal so a change to either side is a failure and not a surprise.
+    #[test]
+    fn the_gene_set_fingerprint_is_the_tags_newline_terminated() {
+        let genes = gene_table();
+        let expected = sha256_hex(
+            genes
+                .iter()
+                .map(|gene| format!("{}\n", gene.tag))
+                .collect::<String>()
+                .as_bytes(),
+        );
+        assert_eq!(gene_set_fingerprint(&genes), expected);
+        // Two tags, so the constant below can be checked by hand against any
+        // sha256 tool: printf 'a\nb\n' | shasum -a 256
+        let two = [
+            Gene {
+                field: "a",
+                tag: "a",
+                after_setup_on: false,
+                stock_on: false,
+                default_on: false,
+                flip: |_| {},
+            },
+            Gene {
+                field: "b",
+                tag: "b",
+                after_setup_on: false,
+                stock_on: false,
+                default_on: false,
+                flip: |_| {},
+            },
+        ];
+        assert_eq!(
+            gene_set_fingerprint(&two),
+            "911169ddaaf146aff539f58c26c489af3b892dff0fe283c1c264c65ae5aa59a2"
+        );
+    }
+
+    /// FIPS 180-4's own vectors, plus the length-block boundary a hand-written
+    /// implementation gets wrong.
+    #[test]
+    fn sha256_matches_the_published_vectors() {
+        assert_eq!(
+            sha256_hex(b""),
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
+        assert_eq!(
+            sha256_hex(b"abc"),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+        assert_eq!(
+            sha256_hex(b"abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq"),
+            "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1"
+        );
+        // 55, 56 and 64 bytes: either side of the padding boundary and exactly
+        // one block, where an off-by-one loses or doubles a chunk.
+        assert_eq!(
+            sha256_hex(&[b'a'; 55]),
+            "9f4390f8d30c2dd92ec9f095b65e2b9ae9b0a925a5258e241c9f1e910f734318"
+        );
+        assert_eq!(
+            sha256_hex(&[b'a'; 56]),
+            "b35439a4ac6f0948b6d6f9e3c6af0f5f590ce20f1bde7090ef7970686ec6738a"
+        );
+        assert_eq!(
+            sha256_hex(&[b'a'; 64]),
+            "ffe054fe7ae0cb6dc65c3af9b61d5209f439851db43d0ba5997337df154668eb"
+        );
+    }
+
+    /// The promoted-executable fallback reads the same names `server.rs` does.
+    #[test]
+    fn a_promoted_binary_names_its_own_revision() {
+        let sha = "d23f92d944cd889aa4c9dfe58c37aceb8e55eabd";
+        assert_eq!(
+            promoted_binary_commit(&format!("civvis-{sha}")).as_deref(),
+            Some(sha)
+        );
+        assert_eq!(promoted_binary_commit("gene_screen"), None);
+        assert_eq!(promoted_binary_commit("civvis-not-a-sha"), None);
+        assert_eq!(
+            promoted_binary_commit(&format!("civvis-{}", &sha[..39])),
+            None
+        );
+    }
+
+    /// ⚠ A TRUNCATED RUN MUST NOT READ AS A COMPLETED ONE. P10 stopped at
+    /// 5,858 of a planned 10,000 games and its artefact said nothing about it.
+    #[test]
+    fn a_partial_run_says_partial_and_a_complete_one_says_complete() {
+        let mut header = test_header(&["a"], true);
+        header.batch = Batch {
+            target_pairs: 10_000,
+            target_comparisons: 60_000,
+            seed_first: 100_000_000,
+            seed_last: 100_009_999,
+        };
+        let partial = completeness_line(&header, 17_574);
+        assert!(partial.contains("PARTIAL SCREEN"), "{partial}");
+        assert!(partial.contains("17574 of 60000"), "{partial}");
+        assert!(partial.contains("29.3%"), "{partial}");
+        assert!(partial.contains("100000000..100009999"), "{partial}");
+
+        let done = completeness_line(&header, 60_000);
+        assert!(done.contains("screen complete"), "{done}");
+        assert!(!done.contains("PARTIAL"), "{done}");
+
+        // A file written before pre-registration says so rather than guessing.
+        header.batch = Batch::default();
+        let unknown = completeness_line(&header, 17_574);
+        assert!(unknown.contains("not pre-registered"), "{unknown}");
+        assert!(!unknown.contains("complete"), "{unknown}");
+    }
+
+    /// The screen's own defaults pre-register the batch, so the common case
+    /// needs no extra flag: `--pairs N` on the all-seats screen reserves
+    /// `N * players` matched comparisons and the seeds it will draw.
+    #[test]
+    fn the_pairs_argument_pre_registers_the_batch_on_its_own() {
+        let target_pairs = 10_000usize;
+        let players = SCREEN_PLAYERS;
+        let start_seed = 141_000_000u64;
+        let batch = Batch {
+            target_pairs,
+            target_comparisons: target_pairs * players,
+            seed_first: start_seed,
+            seed_last: start_seed + target_pairs as u64 - 1,
+        };
+        assert_eq!(batch.target_comparisons, 60_000);
+        assert_eq!(batch.seed_last, 141_009_999);
+    }
+
+    /// Segments of one screen sum; the same segment written twice counts once.
+    #[test]
+    fn merged_targets_sum_segments_and_count_a_rewritten_header_once() {
+        let segment = |first: u64, pairs: usize| Batch {
+            target_pairs: pairs,
+            target_comparisons: pairs * 6,
+            seed_first: first,
+            seed_last: first + pairs as u64 - 1,
+        };
+        let mut targets = BTreeMap::new();
+        for batch in [
+            segment(1_000, 400),
+            segment(2_000, 600),
+            // the first segment's header, written again on a restart
+            segment(1_000, 400),
+        ] {
+            targets.insert(batch.seed_first, batch);
+        }
+        let merged = merged_target(&targets);
+        assert_eq!(merged.target_pairs, 1_000);
+        assert_eq!(merged.target_comparisons, 6_000);
+        assert_eq!((merged.seed_first, merged.seed_last), (1_000, 2_599));
+        assert_eq!(merged_target(&BTreeMap::new()), Batch::default());
+    }
+
+    /// The operator learns before the batch, not after it.
+    #[test]
+    fn the_build_line_calls_out_an_unstamped_or_dirty_build() {
+        let mut header = test_header(&["a", "b"], true);
+        header.build = Build {
+            commit: "d23f92d944cd889aa4c9dfe58c37aceb8e55eabd".into(),
+            commit_source: "env".into(),
+            dirty: false,
+            genes_sha256: "0".repeat(64),
+            binary_sha256: "1".repeat(64),
+        };
+        let clean = build_line(&header);
+        assert!(clean.contains("d23f92d944cd"), "{clean}");
+        assert!(clean.contains("2 genes"), "{clean}");
+        assert!(!clean.contains("⚠"), "{clean}");
+
+        header.build.dirty = true;
+        assert!(build_line(&header).contains("DIRTY TREE"));
+
+        header.build.commit = String::new();
+        header.build.commit_source = "unstamped-tree-moved".into();
+        let unstamped = build_line(&header);
+        assert!(unstamped.contains("UNSTAMPED"), "{unstamped}");
+        assert!(unstamped.contains("unstamped-tree-moved"), "{unstamped}");
+
+        header.build = Build::default();
+        assert!(build_line(&header).contains("pre-fingerprint"));
+    }
+
+    /// A header written before 2026-08-23 still parses, and reads as
+    /// unstamped rather than as a build that could not be identified.
+    #[test]
+    fn a_pre_fingerprint_header_still_reads() {
+        let legacy = r#"{"kind":"header","genes":["a"],"screened":["a"],"players":6,
+            "width":60,"height":38,"turns":250,"city_states":6,"speed":"online",
+            "map":"pangaea","baseline":"best","field":"advanced","start_seed":1}"#;
+        let header: Header = serde_json::from_str(legacy).expect("legacy header parses");
+        assert_eq!(header.build, Build::default());
+        assert_eq!(header.batch, Batch::default());
+        assert!(header.build.genes_sha256.is_empty());
+        assert_eq!(header.batch.target_comparisons, 0);
+    }
+
+    /// The seed window the finished games actually cover, which is the half of
+    /// "actual against intended" the rows know.
+    #[test]
+    fn the_played_seed_window_is_read_from_the_game_rows() {
+        let mut rows = vec![
+            test_row(0, 0, 0, "1", true),
+            test_row(0, 0, 1, "0", false),
+            test_row(7, 0, 0, "1", true),
+        ];
+        rows[0].seed = 141_000_000;
+        rows[1].seed = 141_000_000;
+        rows[2].seed = 141_000_006;
+        let mut anchor = test_row(9, 0, 0, "1", true);
+        anchor.kind = "anchor".into();
+        anchor.seed = 999;
+        rows.push(anchor);
+        assert_eq!(
+            played_seed_window(&rows),
+            Some((141_000_000, 141_000_006)),
+            "anchors are not screened games and do not widen the window"
+        );
+        assert_eq!(played_seed_window(&[]), None);
     }
 }

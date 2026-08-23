@@ -52,6 +52,49 @@ watched terminal stops every process group. On macOS, a matching `caffeinate`
 assertion keeps the machine awake on AC power until the operator exits, which
 supports clamshell operation without leaving an orphaned always-awake service.
 
+## What stops it, and how to tell which one happened
+
+⚠⚠ **Nothing on any machine restarts this.** There is no launchd job, no cron
+entry and no workflow; the only launcher is the command below, typed into a
+shell. `--watch-pid` then binds the run to that shell's life on purpose, so
+whatever ends the shell ends the run.
+
+That is not hypothetical. On **2026-08-15T08:59:11Z** the machine was killed
+mid-window — it had 17 h 51 m of its 24-hour window left — because it had been
+started as a background task of an agent session, and the session ended. Every
+row of `AI_PLAYER_ELO_RANKINGS.md` then read "last played 2026-08-15" for eight
+days, and **79 rated eight-player games sat unpublished** in
+`target/match-machine/league/matches.csv` (rounds 4120–4198) the whole time.
+The operator halt of 2026-08-19 is four days later and is not the cause; it
+does gate the exhibition arm today.
+
+Eight days is how long it took because the record could not tell a kill from a
+finished window. `state.json` said
+
+```json
+"reason": "stopped", "deadline_utc": "2026-08-16T02:50:04+00:00"
+```
+
+— a completed window writes exactly that. Every other way the loop can end
+already names itself in `events.jsonl` (`terminal_closed`,
+`operator_window_ended`, `fatal`); the signal path was the one silent case, and
+the signal handler discarded its argument. It no longer does. `reason` and the
+`machine_stopped` event now carry a cause and the unspent time:
+
+| `stop_cause` | what happened |
+| --- | --- |
+| `stopped:sigterm` / `stopped:sigint` | something killed it — read `seconds_unspent` |
+| `stopped:window_ended` | `--duration` or `--deadline-utc` ran out; publish the results |
+| `stopped:loop_exit` | the loop returned with time left and no signal |
+
+Two smaller traps in the same launch, both observed: the tool dies with
+`fatal: [Errno 2] ... 'cargo'` unless `~/.cargo/bin` is on `PATH`, and on a
+crash `machine_stopped` is emitted from the `finally` block *before* `fatal`,
+so the log reads backwards.
+
+Publishing is a manual pull request either way — see `data/league/README.md`.
+Results already on disk can be published without playing anything.
+
 ## Durable evidence
 
 The runtime directory defaults to `target/match-machine/` and contains:

@@ -33,9 +33,9 @@ workflow's `unittest discover` runs on every PR.
 Default rule (repeated in src/ai/advanced/gene_ledger.rs, and the columns it
 reads are the ones `HEURISTIC_GENE_RANKING.md` prints):
 
-- The win column is wins added per 10,000 games at the gene's measured on-rate
-  in one screen — `(win_on - 1/players) * 10,000`, against the 1-in-`players` a
-  seat wins by chance. `wins_last_10k` is the latest screen that priced the
+- The win column is wins added per 10,000 on-arm seats at the gene's measured
+  on-rate in one screen — `(win_on - 1/players) * 10,000`, against the
+  1-in-`players` a seat wins by chance. `wins_last_10k` is the latest screen that priced the
   gene, `wins_prior_10k` the screen before that.
 - **on** when both columns are positive, or when their average is above +15
   and neither column is below -10.
@@ -44,13 +44,57 @@ reads are the ones `HEURISTIC_GENE_RANKING.md` prints):
 - **off** whatever the columns say when `win_diff_pp` is negative (operator
   directive 2026-08-22). That is the ranking's *Diff*: the pooled on rate minus
   the pooled off rate in percentage points, over **every** screen that priced
-  the gene, each weighted by its games. The win columns read the latest two
+  the gene, each weighted by its on-arm seats. The win columns read the latest two
   screens only, so this veto is the one clause that lets an older screen speak:
   a gene whose two newest readings are positive but whose whole record is not
-  ships off. Both arms of a screen carry the same games, so the 1-in-`players`
+  ships off. Both arms of a screen carry the same number of seat observations, so the 1-in-`players`
   chance base cancels inside each screen and the pooled figure is a
-  games-weighted average of per-screen differences, comparable across shapes
+  on-arm-seat-weighted average of per-screen differences, comparable across shapes
   and player counts in a way a raw win rate is not.
+
+⭐ A SOURCE PROVES IT PRICED THE CODE IT NAMES (2026-08-23). Beside the shape
+guard there is now a build guard, and it is the same idiom: a source is
+refused at the `--source` path, and one explicit flag records a deviation
+deliberately. `gene_screen` stamps every header with the commit its binary was
+built from, whether that tree was dirty, a sha256 of the executable, and a
+sha256 of the **gene set compiled into it**. This tool re-derives the gene tags
+from `ENGINE_REPAIR_TREATMENTS`, `PRODUCTION_TREATMENTS` and
+`PRODUCTION_OPT_INS` at the commit the source claims, and refuses the source
+when the two disagree in either direction — a gene priced here and absent
+there, or a gene present there and never compiled in here. It also refuses an
+unstamped build, a dirty one, a commit this clone cannot read, an artefact
+whose stamp does not describe its own header, and a source pricing a gene the
+repository no longer registers. `--unverified-build "<why>"` records one
+anyway, and the reason is written into the ledger beside the source it excuses.
+
+⚠⚠ THIS HAS COST THE PROJECT THREE TIMES, which is why the fingerprint and not
+the commit is the load-bearing field:
+
+- **2026-08-22, P10.** #2266 culled ten genes; P10's binary was built 1h43m
+  before that merge, so the batch was in flight and published a **+63** column
+  for `holy-lane-parity` after the gene's code was gone. The reading was real,
+  the gene came back (#2299) and confirmed directly at **+99, z +4.05**
+  (#2307) — found by a careful reader, not by a gate.
+- **#2307's own write-up** stated its source commit and its binary's SHA-256 in
+  prose, because the artefact had nowhere to put them.
+- **2026-08-23.** The first standard-shape screen re-priced `barbarian-hunt`
+  from the legacy -1.73 pp to +0.20 pp while a sibling change was minutes from
+  deleting that gene on the legacy reading, which would have made a brand-new
+  screen a source pricing a gene the code no longer had.
+
+⚠ The twenty sources recorded before 2026-08-23 carry no build block. They are
+grandfathered — the games are played and the artefacts are history — and they
+are **named** `pre-fingerprint` everywhere this tool prints or records them,
+because a grandfather clause nobody can see is the same as no guard. A source
+that carries a block is checked; the absence of one is a fact about the file's
+age, not a way past the guard.
+
+⭐ AND A SCREEN DECLARES ITS SIZE BEFORE IT PLAYS. `gene_screen` writes the
+pairs it was launched for into the header, so `complete_pairs` can be read
+against an intention rather than against nothing. P10 "ended early at the
+operator's request" at 5,858 of a planned 10,000 games: a legitimate decision
+that left an artefact indistinguishable from a completed screen. A partial
+source now says so in the analysis, in this tool's table, and in the ledger.
 
 ⚠ The columns recorded before 2026-08-22 were read on 60x38 Pangaea, under a
 four-player `domination,score` regime for some genes. The Pangaea readings are
@@ -76,12 +120,45 @@ The verdict is read off the newest screen that priced the gene. Later
 `--source` arguments override earlier ones per gene, so a repaired gene's
 re-screen replaces its pre-repair number while the rest of the pre-repair
 screen stands.
+
+★★★★ THE PRECISION-WEIGHTED POSTERIOR, PUBLISHED BESIDE THE RULE
+================================================================
+A threshold in column units is not a threshold in evidence. The screens the
+columns come from resolve between +/-29 and +/-101 at 80% power - a spread of
+more than three to one, derived per screen since #2300 - so the same reading
+decides differently depending only on which screen happened to price the gene,
+and #2294's single-column +20 bar sits below every band the instrument has
+printed. "Both columns positive" is not two confirmations either: the two
+screens differ in baseline, in build and in shape, and #2283/#2284 measured
+what that is worth (five of seven lane genes changed sign on disjoint seeds).
+And the veto reads the sign of a pooled difference that carries no error at
+all, weighted by games rather than by precision or recency.
+
+`pooled_posterior` answers all three with one estimator: a random-effects
+(DerSimonian-Laird) inverse-variance pool of every screen's on-off difference
+on the win column's own scale, each weighted by that screen's own standard
+error, with the between-screen disagreement carried in `tau` and therefore in
+the interval. Every gene gets `posterior_pp`, `posterior_se_pp` and, in
+`HEURISTIC_GENE_RANKING.md`, a 95% interval and `P(effect > 0)`.
+
+It is **published, not in force**. `AUTHORITY` above is the whole switch and
+it says `columns`; the ledger records which rule decided, and
+`src/ai/advanced/gene_ledger.rs::deployment_default_on` re-derives under the
+recorded one, so the two derivations cannot drift. Two reasons it is not
+flipped here, neither of them arithmetic: the threshold rule is an explicit
+operator directive, and every source in the ledger today is the retired
+`legacy` 60x38 Pangaea shape - re-deciding the deployment genome now would
+re-decide it on the wrong instrument. The ranking publishes the delta and the
+operator takes the call.
 """
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import math
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -110,6 +187,24 @@ SCREEN = {
 }
 #: The profile keys recorded for every source, whether or not they match.
 PROFILE_KEYS = tuple(SCREEN) + ("start_seed",)
+#: ⭐ THE BUILD A SOURCE WAS PLAYED BY, leg by leg — the keys
+#: `src/bin/gene_screen.rs`'s `Build` writes into every header. Held together
+#: with the Rust struct by `tools/test_gene_ledger.py`, so a field added on one
+#: side and forgotten on the other fails a test instead of reaching the ledger.
+BUILD_KEYS = ("commit", "commit_source", "dirty", "genes_sha256", "binary_sha256")
+#: The same, for `Batch` — what the screen was launched to play.
+BATCH_KEYS = ("target_pairs", "target_comparisons", "seed_first", "seed_last")
+#: Where the gene tags live, in the order `gene_screen`'s `gene_table()` builds
+#: them. `ENGINE_REPAIR_TREATMENTS` is a flat list of tags; the other two are
+#: `(field, tag, toggle)` rows whose tag is the second string.
+GENE_TABLES = (
+    ("src/elo.rs", "ENGINE_REPAIR_TREATMENTS", 0),
+    ("src/ai/advanced/treatments.rs", "PRODUCTION_TREATMENTS", 1),
+    ("src/ai/advanced/treatments.rs", "PRODUCTION_OPT_INS", 1),
+)
+#: The date the build stamp landed. A source written before it carries no
+#: `build` block at all; see `build_state`.
+FINGERPRINT_SINCE = "2026-08-23"
 Z_BAR = 2.0
 # The win column's scale, then the deployment rule's bars: the threshold for
 # one provisional column, the average two columns must clear, and the floor
@@ -126,6 +221,48 @@ DIFF_FLOOR = 0.0
 # rounded figure the ledger publishes, never on a wider one, so the generated
 # Rust table re-derives the same answer from the same number.
 DIFF_PLACES = 6
+
+#: ⭐ WHICH RULE DECIDES `default_on`. `columns` is the operator's threshold
+#: rule — the two win columns, vetoed by a negative pooled difference — and is
+#: what ships today. `posterior` hands the decision to the precision-weighted
+#: pooled estimate below. **This constant is the whole switch**: change it,
+#: run `python3 tools/gene_ledger.py --write`, and the ledger, the generated
+#: Rust table and `HEURISTIC_GENE_RANKING.md` all follow. The ledger records
+#: which authority decided, so `--check` and the Rust re-derivation read the
+#: same rule the file was written under and neither can drift.
+#:
+#: It is deliberately NOT flipped. Two reasons, both about evidence rather
+#: than arithmetic: the threshold rule is an explicit operator directive
+#: (2026-08-22), and every source in the ledger today is the retired `legacy`
+#: 60x38 Pangaea shape, so re-deciding the genome now would re-decide it on
+#: the wrong instrument. `HEURISTIC_GENE_RANKING.md` publishes the delta
+#: instead, and the operator takes the call.
+AUTHORITY = "columns"
+#: The three settings, weakest first. Each contains the one before it:
+#:
+#: - `columns`      the operator's threshold rule, exactly as it ships: the two
+#:                  win columns, vetoed by a negative pooled `Diff`.
+#: - `posterior-veto`  the same columns, but the veto fires only on a **resolved**
+#:                  negative record - the posterior's 95% interval wholly below
+#:                  zero - instead of on the bare sign of a difference that
+#:                  carries no error at all. This is the smallest honest repair:
+#:                  the veto is the one clause in the rule with no uncertainty
+#:                  attached, and it currently removes three genes on records of
+#:                  -0.78, -0.21 and -0.06 pp.
+#: - `posterior`    the pooled estimate decides wherever its interval excludes
+#:                  zero, and `posterior-veto` decides where it straddles.
+AUTHORITIES = ("columns", "posterior-veto", "posterior")
+#: Which source shapes the published posterior pools. Both today, because every
+#: source is `legacy`; the moment a `standard` source lands this is the dial
+#: that says whether the deployment shape is pooled with the retired one or
+#: reads alone. `HEURISTIC_GENE_RANKING.md` prints all three scopes side by
+#: side so the choice is made on the numbers.
+POSTERIOR_SHAPES = ("standard", "legacy")
+#: A two-sided 95% interval, and the standard normal's own constant.
+Z95 = 1.959963984540054
+#: A two-sided 5% test reaches 80% power at 1.96 + 0.84 standard errors.
+#: `tools/heuristic_gene_ranking.py` prints each screen's band from it.
+POWER_80 = 2.8
 
 
 def axis_verdict(win_z: float, share_z: float) -> str:
@@ -144,8 +281,8 @@ def axes_conflict(win_z: float, share_z: float) -> bool:
 
 
 def wins_per_10k(win_rate: float, players: int) -> int:
-    """One screen's win column: wins added per 10,000 games at this measured
-    on-rate. A seat wins 1-in-`players` by chance (1-in-6 when a fixture does
+    """One screen's win column: wins added per 10,000 on-arm seats at this
+    measured on-rate. A seat wins 1-in-`players` by chance (1-in-6 when a fixture does
     not say), so the column is how far above or below that the gene's on arm
     landed. `tools/heuristic_gene_ranking.py` imports this, so the table's
     printed column and the ledger's decision are one arithmetic."""
@@ -154,15 +291,15 @@ def wins_per_10k(win_rate: float, players: int) -> int:
 
 
 def pooled_win_rates(history: list[dict]) -> tuple[float, float]:
-    """The games-weighted on and off win rates across every screen that priced
+    """The on-arm-seat-weighted on and off win rates across every screen that priced
     the gene — `HEURISTIC_GENE_RANKING.md`'s two *Total* columns. Each entry
-    carries `win_on`/`win_off` and the games behind each arm.
+    carries `win_on`/`win_off` and the seat observations behind each arm.
     `tools/heuristic_gene_ranking.py` imports this, so the printed totals and
     the ledger's veto are one arithmetic."""
-    on_games = sum(m["n_on"] for m in history)
-    off_games = sum(m["n_off"] for m in history)
-    on = sum(m["win_on"] * m["n_on"] for m in history) / on_games
-    off = sum(m["win_off"] * m["n_off"] for m in history) / off_games
+    on_seats = sum(m["n_on"] for m in history)
+    off_seats = sum(m["n_off"] for m in history)
+    on = sum(m["win_on"] * m["n_on"] for m in history) / on_seats
+    off = sum(m["win_off"] * m["n_off"] for m in history) / off_seats
     return on, off
 
 
@@ -172,6 +309,311 @@ def pooled_win_diff_pp(history: list[dict]) -> float:
     on-off difference, twice the scale of a win column beside it."""
     on, off = pooled_win_rates(history)
     return round(100 * (on - off), DIFF_PLACES)
+
+
+# ---------------------------------------------------------------------------
+# The precision-weighted posterior.
+#
+# ★★★★ A THRESHOLD IN COLUMN UNITS IS NOT A THRESHOLD IN EVIDENCE. The rule
+# above compares every gene's columns to the same +15/-10/+20 bars, and the
+# screens those columns come from resolve between +/-29 and +/-101 at 80%
+# power - a spread of more than three to one, derived per screen since #2300.
+# So the same reading decides differently depending only on which screen
+# happened to price the gene, and #2294's single-column +20 bar sits below
+# EVERY band the instrument has printed. Two positive columns are not two
+# confirmations either: they come from screens that differ in baseline
+# (`repairs` against `best`), in build and in shape, and #2283/#2284 measured
+# what that is worth - five of seven lane genes changed sign on disjoint
+# seeds, and every flag regressed toward zero as the sample grew.
+#
+# What follows prices a gene the way the evidence actually arrives: each
+# screen's own estimate, weighted by its own precision, with the disagreement
+# between screens carried in the interval instead of assumed away.
+# ---------------------------------------------------------------------------
+
+
+def column_estimate(win_delta_pp: float) -> float:
+    """One screen's on-off difference, on the win column's own scale.
+
+    A foldover holds the two arms symmetric about chance, so the column
+    `(win_on - chance) * PER` is exactly **half** the on-off difference. This
+    is that half, unrounded, and it is the quantity `win_se_pp` measures the
+    error of - so `column_estimate / column_se` reproduces the screen's own
+    `win_z` exactly.
+
+    ⚠ The two coincide only while the arms are symmetric, which every
+    all-seats foldover source in the ledger is. The one exception is the
+    single-seat four-player probe `2026-08-20-s2`, whose treated seat sits
+    860 wins/10k below chance in BOTH arms: there the printed column is a
+    statement about the seat and the difference is the statement about the
+    gene. The posterior reads the difference, because that is what the
+    screen's standard error belongs to."""
+    return win_delta_pp * PER / 200.0
+
+
+def column_se(win_se_pp: float) -> float:
+    """One `wins_per_10k` column's standard error, in the column's own units.
+
+    A screen reports `win_se_pp`: the error on the on-off **difference**, in
+    percentage points. The column is half that difference and carries half
+    its error. The two are not interchangeable, and quoting one against the
+    other is not a rounding error: the +/-110/10k band #2266 called eight
+    removals "inside" is the difference's band, twice the width of the column
+    it was read against (#2300). It lives here, beside the `wins_per_10k` it
+    halves and the default that rule decides, so the printed band, the printed
+    column and the decision stay one arithmetic;
+    `tools/heuristic_gene_ranking.py` imports it."""
+    return win_se_pp * PER / 200.0
+
+
+def normal_cdf(x: float) -> float:
+    """The standard normal CDF, from the C library's `erf`."""
+    return 0.5 * (1.0 + math.erf(x / math.sqrt(2.0)))
+
+
+def normal_pdf(x: float) -> float:
+    return math.exp(-0.5 * x * x) / math.sqrt(2.0 * math.pi)
+
+
+def screen_readings(history: list[dict],
+                    shapes: tuple[str, ...] | None = None) -> list[tuple[float, float]]:
+    """Every screen's `(estimate, standard error)` in column units, for the
+    entries that carry both. A source that recorded no `win_se_pp` cannot be
+    weighted and is skipped rather than given a made-up precision. `shapes`
+    restricts the pool to sources played at those shapes."""
+    readings = []
+    for measurement in history:
+        if shapes is not None and measurement.get("shape") not in shapes:
+            continue
+        delta, se = measurement.get("win_delta_pp"), measurement.get("win_se_pp")
+        if delta is None or se is None:
+            continue
+        delta, se = float(delta), float(se)
+        if not (math.isfinite(delta) and math.isfinite(se)) or se <= 0:
+            continue
+        readings.append((column_estimate(delta), column_se(se)))
+    return readings
+
+
+def pooled_posterior(history: list[dict],
+                     shapes: tuple[str, ...] | None = None) -> dict | None:
+    """Pool every screen that priced a gene, weighted by its own precision.
+
+    **Random effects, DerSimonian-Laird.** With `k` readings `yᵢ` carrying
+    standard errors `sᵢ`:
+
+        wᵢ  = 1 / sᵢ²                         inverse-variance weights
+        ȳ   = Σ wᵢ yᵢ / Σ wᵢ                  the fixed-effect mean
+        Q   = Σ wᵢ (yᵢ − ȳ)²                  the heterogeneity statistic
+        C   = Σ wᵢ − Σ wᵢ² / Σ wᵢ
+        τ²  = max(0, (Q − (k − 1)) / C)       between-screen variance
+        wᵢ* = 1 / (sᵢ² + τ²)                  precision, heterogeneity included
+        m   = Σ wᵢ* yᵢ / Σ wᵢ*                the pooled effect
+        se  = sqrt(1 / Σ wᵢ*)
+
+    `τ²` is the whole point of the random-effects form and the reason a fixed
+    effect would be dishonest here. The screens differ in baseline, in build
+    and in shape, so they are not `k` draws from one number; when they
+    disagree by more than their errors allow, `Q` is large, `τ²` absorbs it
+    and the interval widens. A fixed-effect pool would instead report a
+    narrow interval around the average of two irreconcilable instruments.
+
+    With one reading the pool IS that reading (`τ² = 0`, `Q = 0`) and all the
+    work is done by the interval: a +30 from a screen resolving +/-64 and a
+    +30 from one resolving +/-29 print the same point and utterly different
+    `p_positive`.
+
+    `shapes` pools only the sources played at those shapes. That is not a
+    nicety: pooling a `standard` reading with a `legacy` one is exactly the
+    case `τ²` is built to expose, and when the two instruments disagree by
+    more than their errors allow the honest published answer is the two
+    shapes apart, not one average of two worlds.
+
+    Returns `None` when no reading carries an error. Units are the win
+    column's: wins added per 10,000 on-arm seats."""
+    readings = screen_readings(history, shapes)
+    if not readings:
+        return None
+    k = len(readings)
+    weights = [1.0 / (se * se) for _, se in readings]
+    total = sum(weights)
+    fixed = sum(w * y for w, (y, _) in zip(weights, readings)) / total
+    q = sum(w * (y - fixed) ** 2 for w, (y, _) in zip(weights, readings))
+    c = total - sum(w * w for w in weights) / total
+    tau2 = max(0.0, (q - (k - 1)) / c) if c > 0 else 0.0
+    adjusted = [1.0 / (se * se + tau2) for _, se in readings]
+    total_adjusted = sum(adjusted)
+    effect = sum(w * y for w, (y, _) in zip(adjusted, readings)) / total_adjusted
+    se = math.sqrt(1.0 / total_adjusted)
+    return {
+        "screens": k,
+        "effect": round(effect, DIFF_PLACES),
+        "se": round(se, DIFF_PLACES),
+        "lo": round(effect - Z95 * se, DIFF_PLACES),
+        "hi": round(effect + Z95 * se, DIFF_PLACES),
+        "p_positive": round(normal_cdf(effect / se), DIFF_PLACES),
+        "tau": round(math.sqrt(tau2), DIFF_PLACES),
+        "q": round(q, DIFF_PLACES),
+        "fixed_effect": round(fixed, DIFF_PLACES),
+    }
+
+
+def posterior_call(effect: float | None, se: float | None) -> str:
+    """`on` when the 95% interval lies wholly above zero, `off` when wholly
+    below, `unresolved` when it straddles - the three states the ranking's
+    *what would change* table is built from, and the boundary set `--boundary`
+    ranks."""
+    if effect is None or se is None or se <= 0:
+        return "unresolved"
+    if effect - Z95 * se > 0:
+        return "on"
+    if effect + Z95 * se < 0:
+        return "off"
+    return "unresolved"
+
+
+def default_from_posterior(effect: float | None, se: float | None,
+                           fallback: bool) -> bool:
+    """The posterior authority's deployment call.
+
+    Where the interval excludes zero the posterior decides. Where it straddles
+    it **defers to `fallback`** rather than churning the genome on noise. That
+    deferral is deliberate and it is also forced: `default_on` must be a pure
+    function of the recorded sources, so the fallback cannot be "whatever
+    shipped yesterday" - it has to be another rule read off the same data.
+    `--boundary` names every straddler and ranks what a direct arm would buy
+    on each, which is the way out of the deferral rather than a guess through
+    it."""
+    call = posterior_call(effect, se)
+    if call == "on":
+        return True
+    if call == "off":
+        return False
+    return fallback
+
+
+def default_from_resolved_veto(last: int | None, prior: int | None,
+                               effect: float | None, se: float | None) -> bool:
+    """The win-column clause, vetoed only by a **resolved** negative record.
+
+    The operator's veto (2026-08-22) fires on the sign of the pooled `Diff`,
+    which is the one quantity in the whole rule with no error attached. It
+    currently removes three genes on records of -0.78, -0.21 and -0.06 pp,
+    none of which any screen in the ledger can distinguish from zero. This
+    clause keeps the veto and gives it an error bar: it fires when the
+    posterior's 95% interval lies wholly below zero, and otherwise the columns
+    decide as they always did.
+
+    ⚠ It is strictly weaker than the shipped veto - it can only re-admit genes
+    the columns already like - and it is published, not in force."""
+    if posterior_call(effect, se) == "off":
+        return False
+    return default_from_win_columns(last, prior)
+
+
+def deployment_default_on(authority: str, last: int | None, prior: int | None,
+                          diff_pp: float | None, effect: float | None,
+                          se: float | None) -> bool:
+    """`default_on`, under whichever rule the ledger records as its authority.
+
+    Mirrored in `src/ai/advanced/gene_ledger.rs::deployment_default_on`, on the
+    same rounded figures the ledger publishes, so the generated Rust table
+    re-derives the identical answer under any of them."""
+    if authority not in AUTHORITIES:
+        raise SystemExit(
+            f"unknown ledger authority {authority!r}; expected one of "
+            + ", ".join(AUTHORITIES)
+        )
+    if authority == "columns":
+        return default_from_columns(last, prior, diff_pp)
+    resolved = default_from_resolved_veto(last, prior, effect, se)
+    if authority == "posterior-veto":
+        return resolved
+    return default_from_posterior(effect, se, resolved)
+
+
+def direct_arm_constant(sources: list[dict]) -> tuple[float, str] | None:
+    """`column_se x sqrt(seat pairs)` for a **single-gene direct arm**, taken
+    from the widest arm the repository has actually run at the screen's player
+    count, with the file it came from.
+
+    Discovered, never assumed. A direct arm's precision is a fact about the
+    gene it flips - `s7`'s `idle-faith-patronage` rarely fires and cancels
+    3.32x, `h1`'s `holy-lane-parity` changes nearly every game and cancels
+    1.28x (#2302) - so a single number cannot be right for every gene. The
+    **widest** measured arm is the conservative end, and it is what
+    `--boundary` sizes the next round from: a rarely-firing gene will do
+    better than this estimate, never worse.
+
+    `sources` are the ledger's recorded source entries, each with the loaded
+    analysis under `"analysis"`."""
+    best = None
+    for source in sources:
+        data = source["analysis"]
+        genes = data.get("genes", [])
+        if len(genes) != 1:
+            continue
+        if int(data.get("profile", {}).get("players") or 0) != SCREEN["players"]:
+            continue
+        se = genes[0].get("win_se_pp")
+        pairs = int(data.get("complete_pairs", 0))
+        if se is None or pairs <= 0:
+            continue
+        constant = column_se(float(se)) * math.sqrt(pairs)
+        if best is None or constant > best[0]:
+            best = (constant, source["name"])
+    return best
+
+
+def arm_pairs_to_resolve(effect: float, se: float, constant: float) -> int | None:
+    """Seat pairs a single-gene direct arm needs before the combined interval
+    excludes zero, **if the arm reads the gene's current pooled effect**.
+
+    Combining a reading of precision `1/a²` with the posterior's `1/se²` gives
+    `se'² = 1 / (1/se² + 1/a²)`, and the interval clears zero when
+    `|m| > Z95 * se'`. Solving for the arm's variance and substituting
+    `a = constant / sqrt(N)`:
+
+        N > constant² * ((Z95 / |m|)² − 1 / se²)
+
+    `0` means the posterior already resolves it and `None` a gene whose
+    effect is exactly zero, which no finite arm resolves. The figure is a
+    planning number and not a promise: it assumes the arm reproduces the
+    current mean, which is the assumption an operator is making anyway when
+    they decide a gene is worth another run."""
+    if effect == 0 or se <= 0:
+        return None
+    remaining = (Z95 / abs(effect)) ** 2 - 1.0 / (se * se)
+    if remaining <= 0:
+        return 0
+    return math.ceil(constant * constant * remaining)
+
+
+def arm_information_value(effect: float, se: float, arm_se: float,
+                          deployed: bool) -> float:
+    """What one direct arm buys, in wins per 10,000 on-arm seats.
+
+    The expected value of sample information, against **the gene's shipped
+    state** rather than against the posterior's own preference. Ship-on is
+    worth `θ` and ship-off is worth `0`, so with the arm's reading `x` the
+    best post-arm choice is worth `max(E[θ|x], 0)`; the posterior mean after
+    the arm is itself normal, `m' ~ N(m, σ²)` with `σ = se² / sqrt(se² + a²)`,
+    and for a normal that expectation is closed form:
+
+        EVSI = m·Φ(m/σ) + σ·φ(m/σ) − (m if the gene ships on else 0)
+
+    Reading it against the shipped state is what makes the number answer the
+    operator's question. A gene the posterior likes and the genome already
+    plays has little to buy - only the chance the arm reverses it. A gene the
+    posterior likes that the threshold rule holds **off** has the whole effect
+    to buy, and those are exactly the rows `--boundary` puts at the top."""
+    variance = se * se
+    sigma = variance / math.sqrt(variance + arm_se * arm_se)
+    if sigma <= 0:
+        return 0.0
+    standardised = effect / sigma
+    best = effect * normal_cdf(standardised) + sigma * normal_pdf(standardised)
+    return best - (effect if deployed else 0.0)
 
 
 def default_from_win_columns(last: int | None, prior: int | None) -> bool:
@@ -247,6 +689,183 @@ def shape_gap(profile: dict) -> str:
     )
 
 
+def _uncommented(text: str) -> str:
+    """`text` with `//` line comments and `/* */` blocks removed.
+
+    Comments come out first because the tables are heavily commented and those
+    comments quote tag names; a scrape that read them would invent genes."""
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.S)
+    return re.sub(r"//[^\n]*", "", text)
+
+
+def _quoted(text: str) -> list[str]:
+    """Every double-quoted string in `text`, in order, comments removed.
+
+    ⚠ THIS IS `gene_screen.rs`'s `quoted` IN THE OTHER LANGUAGE. The rule is
+    deliberately the simplest one both can state without argument, because a
+    disagreement between them would refuse honest screens rather than
+    dishonest ones."""
+    return re.findall(r'"([^"\\]*)"', _uncommented(text))
+
+
+def _table_body(text: str, name: str) -> str:
+    """The body of `pub const <name>: … = &[ … ];`, brackets balanced."""
+    start = text.index(f"pub const {name}")
+    open_at = text.index("= &[", start) + 4
+    depth, index = 1, open_at
+    while depth:
+        if text[index] == "[":
+            depth += 1
+        elif text[index] == "]":
+            depth -= 1
+        index += 1
+    return text[open_at:index - 1]
+
+
+def gene_tags_from_sources(read) -> list[str]:
+    """The gene tags a `gene_screen` binary compiles in, in header order, from
+    the source tables `read(path)` supplies.
+
+    Every tag of `ENGINE_REPAIR_TREATMENTS`, then the `(field, tag, toggle)`
+    rows of `PRODUCTION_TREATMENTS` and `PRODUCTION_OPT_INS`, whose tag is the
+    second string of each row — exactly what `gene_table()` builds.
+    `gene_screen.rs`'s
+    `the_gene_table_is_exactly_what_the_ledger_re_derives_from_the_tables`
+    holds this rule against the compiled table itself."""
+    tags: list[str] = []
+    cache: dict[str, str] = {}
+    for path, name, offset in GENE_TABLES:
+        if path not in cache:
+            cache[path] = read(path)
+        found = _quoted(_table_body(cache[path], name))
+        tags += found[offset::2] if offset else found
+    return tags
+
+
+def gene_tags_at(commit: str) -> list[str] | None:
+    """The gene tags at `commit`, or `None` when this clone cannot reach it.
+
+    ⚠ `None` is not a pass. A commit the clone has never fetched is a claim
+    nobody here can check, and `build_gap` refuses it as such — a shallow
+    checkout must fetch the revision, not shrug at it."""
+    def read(path: str) -> str:
+        shown = subprocess.run(
+            ["git", "-C", str(ROOT), "show", f"{commit}:{path}"],
+            capture_output=True, text=True, check=False)
+        if shown.returncode != 0:
+            raise LookupError(path)
+        return shown.stdout
+    try:
+        return gene_tags_from_sources(read)
+    except (LookupError, ValueError, IndexError):
+        return None
+
+
+def gene_tags_now() -> list[str]:
+    """The gene tags in the working tree — the code a ledger written here
+    would ship."""
+    return gene_tags_from_sources(lambda path: (ROOT / path).read_text())
+
+
+def gene_set_fingerprint(tags) -> str:
+    """The gene set, hashed: sha256 over the tags in order, one per line, each
+    newline-terminated. `gene_screen.rs`'s `gene_set_fingerprint` builds the
+    same string from the table it compiled in."""
+    return hashlib.sha256("".join(f"{tag}\n" for tag in tags).encode()).hexdigest()
+
+
+def build_of(data: dict) -> dict:
+    """The build block a source recorded, with every key the stamp names.
+
+    An empty dict means the file predates the stamp; see `build_state`."""
+    raw = (data.get("profile") or {}).get("build") or {}
+    return {key: raw.get(key) for key in BUILD_KEYS} if raw else {}
+
+
+def batch_of(data: dict) -> dict:
+    """What the source pre-registered, and what it actually played."""
+    raw = data.get("batch") or {}
+    target = raw.get("target_comparisons")
+    complete = int(data.get("complete_pairs", 0))
+    return {
+        "target_comparisons": target,
+        "complete_comparisons": complete,
+        "partial": None if not target else complete < target,
+    }
+
+
+def build_state(data: dict) -> str:
+    """`pre-fingerprint` for a source written before the build stamp existed,
+    else `stamped`.
+
+    ⚠ GRANDFATHERED IS NOT SILENT. The twenty sources recorded before
+    2026-08-23 carry no build block and cannot acquire one — the games are
+    played — so they are kept as history and *named* `pre-fingerprint`
+    everywhere the ledger prints or records them. What must never happen is a
+    new screen entering unmarked: `gene_screen` always writes the block now, so
+    the absence of one is a fact about the file's age, and a stamped source
+    that fails its check is refused rather than downgraded to history."""
+    return "pre-fingerprint" if not build_of(data) else "stamped"
+
+
+def build_gap(data: dict, name: str, tags_at=None, tags_now=None) -> str:
+    """Why this source cannot be trusted to have played the code it names, or
+    `""` when it can.
+
+    ⚠⚠ THE GENE SET IS THE LOAD-BEARING CHECK, and it is checked in BOTH
+    directions. A source that prices a gene absent at the commit it claims is
+    pricing code that commit does not have; a source missing a gene that
+    commit does have is what an unmeasured gene quietly looks like. Both have
+    happened here: P10 published a `holy-lane-parity` column after the cull
+    that deleted it (#2266, #2299, #2307), and on 2026-08-23 a sibling change
+    was minutes from deleting `barbarian-hunt` while the first standard-shape
+    screen was re-pricing it."""
+    tags_at = tags_at or gene_tags_at
+    tags_now = tags_now or gene_tags_now
+    build = build_of(data)
+    if not build:
+        return ""
+    if not build.get("genes_sha256"):
+        return (f"{name} carries a build block with no gene-set fingerprint, so nothing "
+                "about the code it played can be checked")
+    priced = [gene["tag"] for gene in data.get("genes", [])]
+    compiled = list((data.get("profile") or {}).get("genes") or [])
+    if gene_set_fingerprint(compiled) != build["genes_sha256"]:
+        return (f"{name}'s recorded gene-set fingerprint does not describe its own header: "
+                f"{len(compiled)} gene tags hash to {gene_set_fingerprint(compiled)[:12]}, "
+                f"the file claims {build['genes_sha256'][:12]}. The artefact has been edited.")
+    if build.get("dirty"):
+        return (f"{name} was played by a binary built from a DIRTY tree at "
+                f"{str(build.get('commit'))[:12]}: the code that played the games is not "
+                "recoverable from any revision")
+    commit = build.get("commit") or ""
+    if not commit:
+        return (f"{name} names no commit ({build.get('commit_source')}), so the code it "
+                "played cannot be identified. Rebuild, or launch with CIVVIS_COMMIT set.")
+    at_commit = tags_at(commit)
+    if at_commit is None:
+        return (f"{name} claims commit {commit[:12]}, which this clone cannot read. "
+                f"Fetch that revision (`git fetch origin {commit}`) before recording it.")
+    if gene_set_fingerprint(at_commit) != build["genes_sha256"]:
+        extra = [tag for tag in compiled if tag not in set(at_commit)]
+        missing = [tag for tag in at_commit if tag not in set(compiled)]
+        detail = "; ".join(filter(None, [
+            f"priced here but absent at {commit[:12]}: " + ", ".join(extra) if extra else "",
+            f"present at {commit[:12]} but never compiled in: " + ", ".join(missing)
+            if missing else "",
+            "same tags in a different order" if not extra and not missing else "",
+        ]))
+        return (f"{name} was NOT played by the code at the commit it names "
+                f"({commit[:12]}) — {detail}")
+    gone = [tag for tag in priced if tag not in set(tags_now())]
+    if gone:
+        return (f"{name} prices {len(gone)} gene(s) this repository no longer registers: "
+                + ", ".join(sorted(gone))
+                + ". The screen is real; the code it measured is gone. Restore the genes or "
+                  "record the source deliberately.")
+    return ""
+
+
 def known_tags() -> set[str]:
     """Every gene tag the repository registers — the `(field, tag, toggle)`
     rows of `LIVE_TREATMENTS`, `PRODUCTION_TREATMENTS` and
@@ -299,13 +918,24 @@ def measure_from(gene: dict, source_name: str) -> dict:
     return measure
 
 
-def build_ledger(sources: list[Path], filter_known: bool = True) -> dict:
+def build_ledger(sources: list[Path], filter_known: bool = True,
+                 build_notes: dict[str, str] | None = None,
+                 authority: str = AUTHORITY) -> dict:
     """Merge the sources into one ledger object (the JSON file's content).
     Sources are recorded oldest-first, and a later one overrides an earlier one
-    per gene. `filter_known=False` keeps every tag (synthetic tests)."""
+    per gene. `filter_known=False` keeps every tag (synthetic tests).
+
+    `authority` names which rule decides `default_on`; it is recorded in the
+    ledger so `--check` and the Rust mirror re-derive under the same rule.
+
+    `build_notes` maps a source's file name to the reason its build check was
+    waived, and is what makes `--unverified-build` a *recorded* escape rather
+    than a spoken one: the reason lands in the ledger beside the source it
+    excuses, and `rebuild_from_ledger` reads it back so `--check` re-derives
+    the same file."""
     measures: dict[str, dict] = {}
     # Every win column a gene has, oldest first: the last two are the ranking's
-    # `± Wins Last 10k` and `± Wins 10k Prior`, and the deployment default is
+    # `± Wins / 10k seats` and `± Wins / 10k seats prior`, and the deployment default is
     # read off them.
     columns: dict[str, list[int]] = {}
     # Every screen's two arms, for the pooled on-off difference that vetoes a
@@ -321,13 +951,27 @@ def build_ledger(sources: list[Path], filter_known: bool = True) -> dict:
         profile = profile_of(data)
         players = int(profile.get("players") or 0)
         family[name] = float(data.get("family_wise_z", 0.0))
-        recorded.append({
+        entry = {
             "path": str(path.relative_to(ROOT)) if path.is_relative_to(ROOT) else str(path),
             "shape": shape_of(profile),
             "complete_pairs": int(data.get("complete_pairs", 0)),
             "family_wise_z": round(family[name], 3),
             "profile": profile,
-        })
+        }
+        # ⚠ Written only when the source has one. The twenty pre-2026-08-23
+        # sources carry no build block and no pre-registration, so recording
+        # them here would rewrite twenty entries to say nothing; their state is
+        # `pre-fingerprint`, which `build_state` derives and `print_table`
+        # names on every line.
+        build = build_of(data)
+        if build:
+            entry["build"] = build
+        batch = batch_of(data)
+        if batch["target_comparisons"] is not None:
+            entry["batch"] = batch
+        if build_notes and name in build_notes:
+            entry["unverified"] = build_notes[name]
+        recorded.append(entry)
         for gene in data.get("genes", []):
             if known and gene["tag"] not in known:
                 dropped.add(gene["tag"])
@@ -341,11 +985,20 @@ def build_ledger(sources: list[Path], filter_known: bool = True) -> dict:
             columns.setdefault(gene["tag"], []).append(
                 wins_per_10k(float(gene["win_on"]), players)
             )
+            # `win_delta_pp`/`win_se_pp` are what the posterior pools, and
+            # `shape` is what lets it be pooled per instrument as well as
+            # whole - the live question the moment a `standard` source lands
+            # beside the `legacy` ones.
             arms.setdefault(gene["tag"], []).append({
                 "win_on": float(gene["win_on"]),
                 "win_off": float(gene["win_off"]),
                 "n_on": int(gene.get("n_on", gene["pairs"])),
                 "n_off": int(gene.get("n_off", gene["pairs"])),
+                "win_delta_pp": float(gene["win_delta_pp"]),
+                "win_se_pp": (None if gene.get("win_se_pp") is None
+                              else float(gene["win_se_pp"])),
+                "shape": shape_of(profile),
+                "source": name,
             })
     if dropped:
         print("gene ledger: dropped rows for genes the repository no longer registers: "
@@ -367,23 +1020,47 @@ def build_ledger(sources: list[Path], filter_known: bool = True) -> dict:
         prior = history[-2] if len(history) > 1 else None
         record = arms.get(tag, [])
         diff_pp = pooled_win_diff_pp(record) if record else None
+        posterior = pooled_posterior(record, POSTERIOR_SHAPES) if record else None
+        effect = posterior["effect"] if posterior else None
+        posterior_se = posterior["se"] if posterior else None
         genes.append({
             "tag": tag,
             "verdict": verdict,
-            "default_on": default_from_columns(last, prior, diff_pp),
+            "default_on": deployment_default_on(
+                authority, last, prior, diff_pp, effect, posterior_se),
             "wins_last_10k": last,
             "wins_prior_10k": prior,
             "win_diff_pp": diff_pp,
+            # The precision-weighted pooled on-off difference on the win
+            # column's scale, and its standard error. Published beside the
+            # columns, decided on only when `authority` says `posterior`.
+            "posterior_pp": effect,
+            "posterior_se_pp": posterior_se,
+            "posterior_screens": posterior["screens"] if posterior else None,
+            "posterior_tau_pp": posterior["tau"] if posterior else None,
             "family_wise": family_wise,
             "conflict": conflict,
             "screen": measure,
         })
+    # What EVERY authority would ship, published so the delta is visible in the
+    # ledger itself and not only in the ranking's table. This is the number the
+    # operator's call is taken on.
     counts = {
         "helps": sum(g["verdict"] == "helps" for g in genes),
         "hurts": sum(g["verdict"] == "hurts" for g in genes),
         "unresolved": sum(g["verdict"] == "unresolved" for g in genes),
         "default_on": sum(g["default_on"] for g in genes),
     }
+    for candidate in AUTHORITIES:
+        would = [
+            deployment_default_on(candidate, g["wins_last_10k"], g["wins_prior_10k"],
+                                  g["win_diff_pp"], g["posterior_pp"],
+                                  g["posterior_se_pp"])
+            for g in genes
+        ]
+        counts[f"default_on_under_{candidate}"] = sum(would)
+        counts[f"moved_by_{candidate}"] = sum(
+            g["default_on"] != w for g, w in zip(genes, would))
     return {
         "kind": "gene_ledger",
         "screen": dict(SCREEN),
@@ -393,17 +1070,33 @@ def build_ledger(sources: list[Path], filter_known: bool = True) -> dict:
             "hurts": "the mirror image",
             "shape": "one screen: a source whose profile is not `screen` above is "
                      "marked legacy and kept as history; new ones are refused",
-            "win_column": "wins added per 10,000 games at the gene's measured on-rate in one "
+            "win_column": "wins added per 10,000 on-arm seats at the gene's measured on-rate in one "
                           "screen, (win_on - 1/players) * 10000; last and prior are the "
                           "two most recent screens that priced the gene",
             "win_diff": "the pooled on rate minus the pooled off rate in percentage points, "
-                        "over every screen that priced the gene, each weighted by its games "
+                        "over every screen that priced the gene, each weighted by its on-arm seats "
                         "- the ranking's `Diff`, the whole on-off difference",
             "default_on": f"both win columns positive, or their average above +{AVERAGE_BAR:.0f} "
                           f"with neither below {COLUMN_FLOOR}; with exactly one populated "
                           f"column, on when it is above +{SINGLE_COLUMN_BAR}; unmeasured is off; "
                           f"and off whatever the columns say when win_diff_pp is below "
                           f"{DIFF_FLOOR:.0f}",
+            "posterior": "random-effects (DerSimonian-Laird) inverse-variance pool of every "
+                         "screen's on-off difference on the win column's scale, each weighted "
+                         "by its own standard error and the between-screen variance carried in "
+                         "the interval; posterior_pp is the pooled effect and posterior_se_pp "
+                         "its standard error, both in wins per 10,000 on-arm seats",
+            "authority": authority,
+            "posterior_shapes": list(POSTERIOR_SHAPES),
+            "authority_meaning": "which rule decided default_on. `columns` is the operator's "
+                                 "threshold rule above. `posterior-veto` keeps those columns "
+                                 "but fires the veto only on a resolved negative record - the "
+                                 "posterior's 95% interval wholly below zero - instead of on "
+                                 "the bare sign of a difference with no error. `posterior` "
+                                 "decides wherever the interval excludes zero and falls back "
+                                 "to `posterior-veto` where it straddles. AUTHORITY in "
+                                 "tools/gene_ledger.py is the switch and "
+                                 "src/ai/advanced/gene_ledger.rs mirrors it",
         },
         "sources": recorded,
         "counts": counts,
@@ -452,6 +1145,11 @@ def render_rust(ledger: dict) -> str:
         ")]",
         "use super::{GeneVerdict, Measure, Verdict};",
         "",
+        "/// Which rule decided every `default_on` below: the switch is",
+        "/// `AUTHORITY` in `tools/gene_ledger.py`, and",
+        "/// `the_default_follows_the_ledgers_authority` re-derives under it.",
+        f"pub(super) const AUTHORITY: &str = {json.dumps(ledger['rules']['authority'])};",
+        "",
         "#[rustfmt::skip]",
         "pub(super) const ROWS: &[GeneVerdict] = &[",
     ]
@@ -465,6 +1163,8 @@ def render_rust(ledger: dict) -> str:
         lines.append(f"        wins_last_10k: {rust_opt_i32(gene['wins_last_10k'])},")
         lines.append(f"        wins_prior_10k: {rust_opt_i32(gene['wins_prior_10k'])},")
         lines.append(f"        win_diff_pp: {rust_opt_f(gene['win_diff_pp'])},")
+        lines.append(f"        posterior_pp: {rust_opt_f(gene['posterior_pp'])},")
+        lines.append(f"        posterior_se_pp: {rust_opt_f(gene['posterior_se_pp'])},")
         lines.append(f"        family_wise: {'true' if gene['family_wise'] else 'false'},")
         lines.append(f"        screen: {rust_measure(gene['screen'])},")
         lines.append("    },")
@@ -478,15 +1178,43 @@ def render_json(ledger: dict) -> str:
 
 
 def print_table(ledger: dict) -> None:
+    authority = ledger["rules"]["authority"]
     print(f"gene ledger · {len(ledger['genes'])} genes · "
           f"helps {ledger['counts']['helps']} · hurts {ledger['counts']['hurts']} · "
           f"unresolved {ledger['counts']['unresolved']} · "
-          f"default on {ledger['counts']['default_on']}")
+          f"default on {ledger['counts']['default_on']} (authority: {authority})")
+    for candidate in AUTHORITIES:
+        mark = "*" if candidate == authority else " "
+        print(f" {mark} {candidate:<15} would ship "
+              f"{ledger['counts'][f'default_on_under_{candidate}']:>3}, moving "
+              f"{ledger['counts'][f'moved_by_{candidate}']:>2} genes")
     for src in ledger["sources"]:
-        print(f"  source {src['shape']:<8} {src['path']}  ({src['complete_pairs']} pairs, "
+        build = src.get("build") or {}
+        if build.get("commit"):
+            stamp = build["commit"][:12] + (" DIRTY" if build.get("dirty") else "")
+        elif build:
+            stamp = "unstamped"
+        else:
+            stamp = "pre-fingerprint"
+        batch = src.get("batch") or {}
+        if batch.get("partial") is None:
+            size = ""
+        elif batch["partial"]:
+            size = (f", ⚠ PARTIAL {batch['complete_comparisons']}"
+                    f"/{batch['target_comparisons']}")
+        else:
+            size = ", complete"
+        print(f"  source {src['shape']:<8} {stamp:<14} {src['path']}  "
+              f"({src['complete_pairs']} pairs{size}, "
               f"family-wise |z|≥{src['family_wise_z']})")
+        if src.get("unverified"):
+            print(f"           ⚠ build unverified: {src['unverified']}")
+    grandfathered = sum(1 for src in ledger["sources"] if not src.get("build"))
+    if grandfathered:
+        print(f"  ⚠ {grandfathered} of {len(ledger['sources'])} sources predate the build "
+              f"stamp ({FINGERPRINT_SINCE}) and are kept as pre-fingerprint history")
     print(f"{'gene':<30} {'verdict':<10} {'default':<7} {'last':>6} {'prior':>6} "
-          f"{'diff':>7} {'win/share z':<20} source")
+          f"{'diff':>7} {'posterior':>18} {'P>0':>6} {'win/share z':<20} source")
     # Best default first, then the deciding column, so the rule reads down the page.
     for gene in sorted(ledger["genes"],
                        key=lambda g: (not g["default_on"],
@@ -498,38 +1226,83 @@ def print_table(ledger: dict) -> None:
             return "–" if v is None else f"{v:+d}"
         def diff(v):
             return "–" if v is None else f"{v:+.2f}"
+        effect, se = gene["posterior_pp"], gene["posterior_se_pp"]
+        if effect is None or se is None:
+            post, prob = "–", "–"
+        else:
+            post = f"{effect:+.0f} ±{Z95 * se:.0f}"
+            prob = f"{100 * normal_cdf(effect / se):.0f}%"
         flag = "**" if gene["family_wise"] else ("!" if gene["conflict"] else "")
         source = gene["screen"]["source"] if gene["screen"] else "-"
         print(f"{gene['tag']:<30} {gene['verdict']:<10} {'on' if gene['default_on'] else 'off':<7} "
               f"{col(gene['wins_last_10k']):>6} {col(gene['wins_prior_10k']):>6} "
-              f"{diff(gene['win_diff_pp']):>7} "
+              f"{diff(gene['win_diff_pp']):>7} {post:>18} {prob:>6} "
               f"{z(gene['screen']):<20} {source} {flag}")
 
 
-def sources_from_args(args) -> list[Path]:
-    """The `--source` files, oldest first, each held to the screen's shape.
+def sources_from_args(args, notes: dict[str, str] | None = None) -> list[Path]:
+    """The `--source` files, oldest first, each held to the screen's shape AND
+    to the code it says it played.
 
-    ⚠ This is the whole enforcement of "one screen": a probe played at another
-    profile answers a different question, and pooling its column with the
-    screen's would report the difference between two worlds as a gene's
-    effect. `--legacy-shape` records one anyway, which is how the Pangaea
-    history already in the ledger stays there."""
+    ⚠ These are the whole enforcement of "one screen, played by one known
+    build", and they are two guards of the same shape rather than two idioms.
+    A probe played at another profile answers a different question, and pooling
+    its column with the screen's would report the difference between two worlds
+    as a gene's effect: `--legacy-shape` records one anyway, which is how the
+    Pangaea history already in the ledger stays there. A screen played by a
+    binary that is not the code it names prices something nobody can read back:
+    `--unverified-build "<why>"` records one anyway, and the reason lands in
+    the ledger beside the source it excuses.
+
+    `notes` collects those reasons for `build_ledger` to record."""
     paths = [Path(p).resolve() for p in args.source]
-    if args.legacy_shape:
-        return paths
+    escape = getattr(args, "unverified_build", None)
     for path in paths:
-        profile = profile_of(load_source(path))
-        if shape_of(profile) != "standard":
+        data = load_source(path)
+        profile = profile_of(data)
+        if not args.legacy_shape and shape_of(profile) != "standard":
             raise SystemExit(
                 f"{path.name} was not played at the screen's shape: {shape_gap(profile)}."
                 "\nRun it at the screen (`gene_screen --pairs N --out rows.jsonl`, no"
                 " profile flags), or pass --legacy-shape to record it as history."
             )
+        gap = build_gap(data, path.name)
+        if not gap:
+            continue
+        if not escape:
+            raise SystemExit(
+                gap + "\nRe-run the batch on a clean build of the code it prices, or pass"
+                ' --unverified-build "<why this source is recorded anyway>".'
+            )
+        if notes is not None:
+            notes[path.name] = escape
     return paths
+
+
+def notes_from_ledger(ledger: dict) -> dict[str, str]:
+    """The escape reasons the ledger already recorded, keyed by file name."""
+    return {Path(src["path"]).name: src["unverified"]
+            for src in ledger["sources"] if src.get("unverified")}
+
+
+def rebuild_from_ledger(ledger: dict, authority: str | None = None) -> dict:
+    """Re-derive a ledger from the sources it records, carrying its own escape
+    reasons — and, unless one is named, its own authority — back in, so
+    `--check` reproduces the file rather than reporting drift on the record it
+    just read."""
+    return build_ledger(sources_from_ledger(ledger),
+                        build_notes=notes_from_ledger(ledger),
+                        authority=authority or authority_of(ledger))
 
 
 def sources_from_ledger(ledger: dict) -> list[Path]:
     return [(ROOT / s["path"]).resolve() for s in ledger["sources"]]
+
+
+def authority_of(ledger: dict) -> str:
+    """Which rule a recorded ledger was written under. A file from before the
+    posterior existed has no key and was written under the threshold rule."""
+    return ledger.get("rules", {}).get("authority", "columns")
 
 
 def main(argv=None) -> int:
@@ -540,15 +1313,26 @@ def main(argv=None) -> int:
                          "later wins per gene)")
     ap.add_argument("--legacy-shape", action="store_true",
                     help="record a source that was not played at the screen's shape, as history")
+    ap.add_argument("--unverified-build", metavar="REASON",
+                    help="record a source whose build cannot be verified against the code it "
+                         "prices (unstamped, dirty, or a gene set that is not the claimed "
+                         "commit's), with the reason it is recorded anyway")
     ap.add_argument("--write", action="store_true",
                     help="write docs/gene_ledger.json and src/ai/advanced/gene_ledger_table.rs")
     ap.add_argument("--check", action="store_true",
                     help="re-derive both files from the sources the ledger records and fail on drift")
+    ap.add_argument("--authority", choices=AUTHORITIES, default=None,
+                    help=f"which rule decides default_on (default: {AUTHORITY}, the AUTHORITY "
+                         "constant). `posterior` hands the call to the precision-weighted "
+                         "pool; without --write it only prints what that would ship")
     args = ap.parse_args(argv)
 
     if args.check:
         current = json.loads(LEDGER_JSON.read_text())
-        ledger = build_ledger(sources_from_ledger(current))
+        # Under the authority the FILE records, never the one the constant
+        # happens to hold: a check must reproduce the checked-in bytes — and
+        # the same goes for the escape reasons it records.
+        ledger = rebuild_from_ledger(current)
         drift = []
         if render_json(ledger) != LEDGER_JSON.read_text():
             drift.append(str(LEDGER_JSON.relative_to(ROOT)))
@@ -561,10 +1345,14 @@ def main(argv=None) -> int:
         print("gene ledger: up to date")
         return 0
 
+    authority = args.authority or AUTHORITY
     if args.source:
-        ledger = build_ledger(sources_from_args(args))
+        notes: dict[str, str] = {}
+        ledger = build_ledger(sources_from_args(args, notes), build_notes=notes,
+                              authority=authority)
     elif LEDGER_JSON.exists():
-        ledger = build_ledger(sources_from_ledger(json.loads(LEDGER_JSON.read_text())))
+        ledger = rebuild_from_ledger(json.loads(LEDGER_JSON.read_text()),
+                                     authority=authority)
     else:
         raise SystemExit("no --source given and no docs/gene_ledger.json to read sources from")
 
