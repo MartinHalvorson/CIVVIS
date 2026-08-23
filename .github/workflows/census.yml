@@ -9,9 +9,8 @@
 # baseline went stale because nothing re-read it, and the Civilization VI ladder
 # loop stopped for 14.3 hours with a correct detector wired to nothing.
 #
-# Why a schedule and not a pull-request gate: the full set takes about fourteen
-# minutes here and over an hour on a hosted runner, and one census plays 24
-# games to a result. Putting that in front of every pull request would tax the
+# Why a schedule and not a pull-request gate: the full set is hours of compute
+# and one census plays 24 games to a result. Putting that in front of every pull request would tax the
 # whole fleet to re-measure something that only moves when the engine does. The
 # `#[ignore]` is a correct call about where this work belongs, not laziness —
 # so this is where it belongs.
@@ -57,13 +56,27 @@
 # red one nobody can attribute; `tools/test_conflict_hotspots.py` pins the
 # separation so the two cannot be recombined by accident.
 #
-# ⚠ THE CENSUS BUDGET SCALES WITH THE NUMBER OF CENSUSES. Measured on the
-# 2026-08-20 run: 6m30s to build, then 75m43s for 22 censuses on a hosted
-# runner — the fourteen-minute figure above is an M5 Max, not `ubuntu-latest`.
-# Six more censuses landed by 2026-08-22 and the run hit the 90-minute ceiling
-# and was killed mid-reading, twice. 180 minutes covers 28 censuses with room to
-# grow; when it stops doing so, shard the set across a matrix rather than
-# raising this again, because the ceiling is not what makes the job slow.
+# ⚠⚠ THE SET OUTGREW A SEQUENTIAL RUNNER, AND RAISING THE CEILING DOES NOT FIX
+# THAT. Measured on the 2026-08-20 run: 6m30s to build, then 75m43s for 22
+# censuses, one of them 980s on its own. Six more landed within five days, and
+# the 08-19 and 08-22 runs were both killed mid-reading at the 90-minute
+# ceiling. Sequentially the 28 now need hours, growing every week, against a
+# GitHub job cap of six hours that cannot be raised at all — so a bigger number
+# here buys weeks and then fails the same way.
+#
+# `--jobs 4` uses the runner's cores instead. Concurrency is safe here in a way
+# it is not in most places, and the reason is worth stating rather than
+# assuming: each census is a separate `cargo test` process replaying fixed
+# seeds. Nothing is shared, nothing races, and a count is a function of the
+# simulation and not of what else is on the machine. The single reading that IS
+# a function of the machine is the microbenchmark below, and it is already out
+# of the comparison. `tools/test_census_report.py` pins that the same readings
+# come back at any width.
+#
+# `--timeout 5400` is the per-census bound, raised from the tool's local default
+# of 1800: the heaviest census now runs about 40 minutes, and a census that
+# overran was RECORDED AS "timed out after 1800s" — a baseline entry no other
+# host could ever reproduce.
 #
 # 04:23 UTC, an odd minute for the same reason the rest of this directory uses
 # one: on-the-hour crons get delayed or dropped under GitHub's load.
@@ -101,7 +114,7 @@ jobs:
   census:
     name: Take the readings and compare them with the committed baseline
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 150
     steps:
       # The rust censuses do not count merges, so this one stays shallow.
       - uses: actions/checkout@v4
@@ -117,4 +130,4 @@ jobs:
       # Build once so the per-census runs below are test time rather than
       # twenty-eight compilations.
       - run: cargo build --profile ci --locked --tests
-      - run: python3 tools/census_report.py --check
+      - run: python3 tools/census_report.py --check --jobs 4 --timeout 5400

@@ -8,8 +8,11 @@ separate bugs in the first drafts recorded an empty one while reporting success.
 
 from __future__ import annotations
 
+import collections
+import inspect
 import json
 import sys
+import threading
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -109,7 +112,7 @@ class DriftIsTheSignal(unittest.TestCase):
     def check(self, tmp: Path, now: dict) -> int:
         with mock.patch.object(census, "LEDGER", tmp / "census.json"), \
              mock.patch.object(census, "MARKDOWN", tmp / "CENSUS.md"), \
-             mock.patch.object(census, "take", lambda timeout, only: now):
+             mock.patch.object(census, "take", lambda timeout, only, jobs=1: now):
             return census.main(["--check"])
 
     def test_an_unchanged_reading_passes(self):
@@ -208,7 +211,7 @@ class FilteringNarrowsBothSides(unittest.TestCase):
             with mock.patch.object(census, "LEDGER", tmp / "census.json"), \
                  mock.patch.object(census, "MARKDOWN", tmp / "CENSUS.md"), \
                  mock.patch.object(census, "take",
-                                   lambda timeout, only: {"wanted": {"ok": True,
+                                   lambda timeout, only, jobs=1: {"wanted": {"ok": True,
                                                                      "output": ["n = 7"]}}):
                 code = census.main(["--check", "--only", "wanted"])
         self.assertEqual(code, 0)
@@ -230,7 +233,7 @@ class AStopwatchIsNotADeterminismReading(unittest.TestCase):
     def check(self, tmp: Path, now: dict) -> int:
         with mock.patch.object(census, "LEDGER", tmp / "census.json"), \
              mock.patch.object(census, "MARKDOWN", tmp / "CENSUS.md"), \
-             mock.patch.object(census, "take", lambda timeout, only: now):
+             mock.patch.object(census, "take", lambda timeout, only, jobs=1: now):
             return census.main(["--check"])
 
     def reading(self, note: str, ns: int, ok: bool = True) -> dict:
@@ -289,6 +292,93 @@ class AStopwatchIsNotADeterminismReading(unittest.TestCase):
         self.assertIn("ran and passed", page)
         self.assertNotIn(
             "ran and passed", census.render(self.reading(self.COUNTED, 1)))
+
+
+class RunningThemConcurrentlyChangesNoReading(unittest.TestCase):
+    """The scheduled job outgrew a sequential runner, and the cores were idle.
+
+    22 censuses took 75m43s on the 2026-08-20 hosted runner; six more landed
+    within five days and the 08-19 and 08-22 runs were killed mid-reading at a
+    ceiling that cannot be raised past GitHub's six-hour job cap. What makes
+    concurrency safe here is that each census is a separate process replaying
+    fixed seeds, so a count cannot depend on how many run beside it.
+    """
+
+    def entries(self, n: int) -> list[dict]:
+        return [{"test": f"c{i}", "file": "x.rs", "line": i, "note": "census"}
+                for i in range(n)]
+
+    def run_take(self, n: int, jobs: int):
+        seen = []
+        lock = threading.Lock()
+
+        def one(test, timeout):
+            with lock:
+                seen.append(test)
+            return {"ok": True, "output": [f"reading for {test}"]}
+
+        with mock.patch.object(census, "run_one", one), \
+             mock.patch.object(census, "censuses", lambda: self.entries(n)):
+            return census.take(60, None, jobs), seen
+
+    def test_the_same_readings_come_back_whatever_the_width(self):
+        serial, _ = self.run_take(9, 1)
+        parallel, _ = self.run_take(9, 4)
+        self.assertEqual(serial, parallel)
+
+    def test_every_census_runs_exactly_once(self):
+        readings, seen = self.run_take(9, 4)
+        self.assertEqual(sorted(seen), [f"c{i}" for i in range(9)])
+        self.assertEqual(len(readings), 9)
+
+    def test_a_filter_still_narrows_a_parallel_run(self):
+        with mock.patch.object(census, "run_one",
+                               lambda test, timeout: {"ok": True, "output": [test]}), \
+             mock.patch.object(census, "censuses", lambda: self.entries(9)):
+            readings = census.take(60, "c3", 4)
+        self.assertEqual(list(readings), ["c3"])
+
+    def test_a_failure_is_still_retried_once_when_parallel(self):
+        calls = collections.Counter()
+        lock = threading.Lock()
+
+        def flaky(test, timeout):
+            with lock:
+                calls[test] += 1
+                n = calls[test]
+            return {"ok": n > 1, "output": [f"{test} attempt {n}"]}
+
+        with mock.patch.object(census, "run_one", flaky), \
+             mock.patch.object(census, "censuses", lambda: self.entries(4)):
+            readings = census.take(60, None, 3)
+        self.assertTrue(all(row["ok"] for row in readings.values()))
+        self.assertEqual(set(calls.values()), {2})
+
+    def test_the_default_is_still_one_at_a_time(self):
+        """A local run must behave exactly as it did before."""
+        signature = inspect.signature(census.take)
+        self.assertEqual(signature.parameters["jobs"].default, 1)
+
+    def test_the_heaviest_censuses_are_scheduled_first(self):
+        """The tail of a batch is set by its slowest member.
+
+        Tested on the ordering itself rather than on observed start times: with
+        a pool of workers every early entry starts at once, so a race would be
+        the only thing such a test could measure.
+        """
+        entries = [{"test": "z_small"}, {"test": "a_deployment_scale"},
+                   {"test": "b_small"}, {"test": "y_at_deployment_scale"}]
+        self.assertEqual(
+            [row["test"] for row in census.heaviest_first(entries)],
+            ["a_deployment_scale", "y_at_deployment_scale", "b_small", "z_small"])
+
+    def test_scheduling_order_changes_no_reading(self):
+        with mock.patch.object(census, "run_one",
+                               lambda test, timeout: {"ok": True, "output": [test]}), \
+             mock.patch.object(census, "censuses", lambda: self.entries(6)):
+            serial = census.take(60, None, 1)
+            parallel = census.take(60, None, 3)
+        self.assertEqual(serial, parallel)
 
 
 if __name__ == "__main__":
