@@ -13,7 +13,8 @@ import heuristic_gene_ranking as ranking  # noqa: E402
 
 class TheTableIsDerived(unittest.TestCase):
     EXPECTED_COLUMNS = (
-        "| Rank | Gene | Description | Default | ± Wins Last 10k | ± Wins 10k Prior | "
+        "| Rank | Gene | Description | Default | ± Wins Per Last 10k Seats | "
+        "± Wins Per 10k Seats Prior | "
         "Total (on) Win rate | Total (off) Win rate | Diff | "
         "cost (compute) | cost (time) |"
     )

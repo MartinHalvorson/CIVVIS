@@ -279,8 +279,9 @@ def render(ledger: dict) -> str:
     # nothing derived is lost and nothing derived is in the way.
     reference = [
         "Every screenable heuristic gene on the Advanced controller, ranked most beneficial "
-        "to least by **± Wins Last 10k** — wins added per 10,000 six-player games at the "
-        "gene's measured on-rate in its **latest** screen. *± Wins 10k Prior* is the "
+        "to least by **± Wins Per Last 10k Seats** — wins added per 10,000 six-player on-arm "
+        "seats at the gene's measured on-rate in its **latest** screen. *± Wins Per 10k "
+        "Seats Prior* is the "
         "same figure from the screen before that (\u2013 when the gene has only one "
         "reading); movement between the two columns is the gene's trend across cycles. "
         "*Default* is the deployment ledger's call (`docs/gene_ledger.json`), and since "
@@ -373,7 +374,7 @@ def render(ledger: dict) -> str:
     lines = [
         "# The heuristic gene ranking",
         "",
-        "| Rank | Gene | Description | Default | ± Wins Last 10k | ± Wins 10k Prior | Total (on) Win rate | Total (off) Win rate | Diff | cost (compute) | cost (time) |",
+        "| Rank | Gene | Description | Default | ± Wins Per Last 10k Seats | ± Wins Per 10k Seats Prior | Total (on) Win rate | Total (off) Win rate | Diff | cost (compute) | cost (time) |",
         "|---:|---|---|---|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for rank, (wins, tag, history) in enumerate(rows, 1):
