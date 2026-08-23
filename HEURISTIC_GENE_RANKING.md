@@ -1,5 +1,7 @@
 # The heuristic gene ranking
 
+**Default on:** both newest columns >0; or avg >+15 with neither <−10; sole reading >+20; pooled *Diff* <0 vetoes.
+
 | Rank | Gene | Description | Default | ± Wins / 10k seats | ± Wins / 10k seats prior | ± Wins / 10k seats third | Total (on) Win rate | Total (off) Win rate | Diff | Posterior (95% CI) | P(>0) | Share Δpp (z) | cost (compute) | cost (time) |
 |---:|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|
 | 1 | `war-economy` | Send an adaptive Conquest plan through the war production path. | **on** | +118 | +38 | +8 | 16.81% (n=69,642) | 16.53% (n=69,642) | 0.28% | -7 [-130, +117] | 45.8% | +1.43 (z +24.58) helps * | +1.04% ±0.16% | +1.21% ±0.29% |
