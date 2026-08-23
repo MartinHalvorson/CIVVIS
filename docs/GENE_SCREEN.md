@@ -882,6 +882,88 @@ serially. The repaired gene carries a serial leg and the next 41 pairs already
 differed. Read the interval's width before the sign: a zero-width interval is
 a fires-check failure, and the fix is in the gene, not in more pairs.
 
+### And since 2026-08-23 a gate says so, instead of four documents
+
+That paragraph was written down here; `treatment_flags.rs` wrote the same
+warning from the other direction — an `ENGINE_REPAIR_TREATMENTS` tag whose
+enable is missing from the bundle is off in **both** arms, "the two arms play
+byte-identical games", and *"three tags reached the tables before this line and
+burned 30 games saying nothing"*; `ai_eval`, `battle_bench`, `doctrine_arena`
+and `gene_census` each implement a fires-check for their own instrument. What
+none of that was, was a **gate**. Nothing stopped a tag reaching the three gene
+tables with no evidence it fires, and nothing failed when a committed screen
+contained a zero-width row. `competition-victory-points` is in the tables today
+and cannot fire at all: `native_competitions` is `false` in `GameOptions` and no
+screen sets it.
+
+`tools/gene_fires.py --max 0` is that gate, wired into `cargo-test` beside
+`civvis_inert.py --max 0`, which is the ratchet it is modelled on. It discovers
+the gene set exactly the way `gene_table()` does — the engine repairs resolved
+through `LIVE_TREATMENTS`, plus both production tables, so a new gene reaches
+the gate without touching the tool — and reads each gene's own rows out of
+`docs/gene_screens/**/*.json`. **A gene is proven when some committed row has a
+non-zero paired statistic**, which is a number read out of an artifact rather
+than a sentence somebody wrote. The cheapest artifact that carries it is a
+single-gene probe, because `--genes <tag>` holds everything else at the
+baseline and any divergence between the arms is then that gene and nothing
+else:
+
+```bash
+target/ci/gene_screen --pairs 3 --jobs 6 --genes <tag> \
+  --baseline best --field advanced --design foldover --all-seats \
+  --randomize-civs --start-seed <seed> --out target/<tag>.jsonl
+target/ci/gene_screen --analyze target/<tag>.jsonl \
+  --json docs/gene_screens/fires/<tag>.json
+```
+
+Three pairs is enough, because the question is qualitative. ⚠ Look at the score
+share as well as wins: `coupled-expansion`'s probe read a win Δ of exactly zero
+and a share Δ of +0.29 pp — a gene that fired and did not change who won, which
+is firing. Those probes are **not ledger sources**: they set no profile of their
+own, they are three pairs, and `tools/gene_ledger.py` takes its sources by name.
+
+A gene that cannot be made to fire takes a waiver in
+`tools/gene_fire_waivers.json` with the reason, in the shape
+`tools/inert_waivers.json` uses — except that the reason is enforced, and a
+waiver goes **stale** the moment its gene is proven or leaves the tables, which
+fails the same ratchet. The list can only shrink.
+
+## The toggles no screen can reach, and why each one is not a gene
+
+`docs/EVAL_STATUS.md`'s *Genome coverage* deliberately publishes an over-count:
+it makes no attempt to separate a behaviour worth pricing from host-only
+plumbing, so the number is a ceiling on the debt rather than a floor. A ceiling
+nobody has examined is the same shape as the defect the section exists for, so
+since 2026-08-23 every toggle on that list carries a line saying why it is not a
+gene, in `docs/genome_reach_debt.json`, and
+`tools/test_genome_reach_debt.py` requires the file to cover **exactly** the
+computed list — a toggle that gains a gene row must lose its entry, and a new
+unreachable toggle must gain one. The residual is examined work.
+
+The count went **165 / 100 reachable / 65 unreachable → 166 / 114 / 52** when
+fourteen of them became opt-in genes — eighteen rows were written and the fires
+gate above refused four on their own probes. What the remaining 52 are:
+
+| group | n | why not a gene |
+|---|---:|---|
+| `bundle` | 6 | It turns a group of other genes on. `gene_screen` already builds its treated seat from `enable_engine_repairs_universe`; a row would vary everything inside it and file the sum under one tag. |
+| `host-only` | 12 | Cannot fire on a native board, each with its reason already recorded beside its tag in `FIRAXIS_ONLY_TREATMENTS`. `step-and-reassess` is the founding example of the paragraph above. |
+| `live-bridge-row` | 16 | **Screenable would mean withheld.** It has a `LIVE_TREATMENTS` row, so a `PRODUCTION_OPT_INS` row flips `ledger_default_on` from `None` to `Some(false)` and `apply_gene_ledger` takes it out of the live bridge. Its host-only classification is an argument about which rivals the weights were bred against, not a claim it cannot fire — so the move it wants is the one `culture-coverage` made, out of `FIRAXIS_ONLY_TREATMENTS` into an `ENGINE_REPAIR_*` half, taken deliberately with the bridge change owned. |
+| `production-on` | 6 | Production ships it ON, so its door is `PRODUCTION_TREATMENTS` — and that row is **not** neutral: `apply_gene_ledger` disables every production treatment whose `ledger_default_on` is `Some(false)`, which is exactly a screenable tag with no ledger row. Adding it would switch a shipped behaviour off; `open_water_navy` alone was promoted at +61 Elo-equivalent (200 pairs, seed 8700000, CI +21..+109, PASS on the corrected-gate matrix; see `AdvancedAi::promoted_policy_envoy`). It needs its first screen row before it can have a gene row. |
+| `configured-on` | 5 | On in `AdvancedAi::configured` but not in `promoted_policy_envoy`, so `production_bundle_rows_are_real` rejects the row as written, and it carries the same hazard as the group above. |
+| `infrastructure` | 2 | No decision content: a cache lifetime, and a controller-wide mode that is itself an aggregate over genes that already exist. |
+| `already-on` | 1 | `adjacent_camp_clear` is on in `BasicAi::new`, so an opt-in row would be on in both arms and screen as exactly inert. |
+| `does-not-fire` | 4 | A gene row was written for it here and `tools/gene_fires.py` refused it: a single-gene probe over 12 map pairs left both arms byte-identical. The row was removed rather than shipped to return a zero-width interval. |
+
+⚠ The `production-on` and `live-bridge-row` rows are the finding worth
+carrying out of this: **making a shipped behaviour screenable is not a
+measurement-only change.** The ledger's default rule reads "unmeasured ⇒ off",
+which is the right rule for a behaviour that was already off and the wrong one
+for twenty-two that were on. Twenty-two genes' worth of reach is available for
+the price of deciding, per behaviour, whether it is allowed to go off while its
+first screen runs — and that is a genome decision for the operator, not a
+side effect of a row.
+
 ## The precision-weighted posterior, published beside the rule
 
 A threshold in column units is not a threshold in evidence. Three things about
@@ -1056,6 +1138,7 @@ and #2294's single-column clause promoted it on the +46 win column because the
 rule reads the win axis only. The first standard-shape screen's **win** axis
 reads it at z **−15.37**, within half a sigma of what the legacy **share** axis
 had already said. `docs/gene_ranking_notes.md` carries the numbers.
+
 
 ## What it is not
 

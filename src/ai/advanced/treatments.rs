@@ -328,4 +328,82 @@ pub const PRODUCTION_OPT_INS: &[LiveTreatment] = &[
     // END so a running screen keeps its positional genome. See
     // `BasicAi::barbarian_capture_priority`.
     ("barbarian_capture_priority", "barbarian-capture-priority", AdvancedAi::enable_barbarian_capture_priority),
+    // ★★★★ FOURTEEN BEHAVIOURS THAT NO SCREEN COULD REACH, AND THE COUNT THAT
+    // FOUND THEM. `docs/EVAL_STATUS.md`'s "Genome coverage" section read 165
+    // capability toggles on the controller, 100 reachable as a gene and **65
+    // unreachable by any screen** — a number published because
+    // `precise_evacuation` shipped ON for every seat, held roughly half the
+    // simulator's main thread, and had no gene row, no evaluator arm and no
+    // mention in any round. Neither gate could address it and nothing said so.
+    // These fourteen are the part of that 65 a native screen can honestly
+    // price. Every one is off in `promoted_policy_envoy`, so an opt-in row is
+    // the whole change: `apply_gene_ledger` enables an opt-in only on a
+    // `default_on` ledger row and there is none, so each ships off and
+    // unmeasured and NOTHING about the deployed agent moves.
+    //
+    // ⭐ EIGHTEEN ROWS WERE WRITTEN AND FOUR WERE TAKEN BACK OUT, BY THE GATE
+    // THIS SAME CHANGE ADDS. `camp_bounty`, `great_work_veto_by_district`,
+    // `sea_answers` and `settler_founds_when_stalled` each left both arms of a
+    // single-gene probe byte-identical — win Δ, share Δ and both standard
+    // errors exactly zero — so they would have consumed a genome bit and
+    // returned the zero-width interval `docs/GENE_SCREEN.md` warns about.
+    // `tools/gene_fires.py` is what says so; their probes and their reasons are
+    // in `docs/gene_screens/fires/` and `docs/genome_reach_debt.json`. The rest
+    // of the residual is accounted for one line at a time in
+    // `docs/GENE_SCREEN.md` (§"The toggles no screen can reach"); it is
+    // examined work, not an unexamined ceiling.
+    //
+    // ⭐ APPENDED AT THE END, for the reason four rows up: `gene_screen` writes
+    // the genome as a POSITIONAL bit string.
+    //
+    // ⚠⚠ AND THE TABLE ABOVE IS DELIBERATELY THE ONLY DOOR USED HERE. Six more
+    // of the 65 — `explore_commit`, `open_water_navy`, `amenity_districts`,
+    // `hut_collection`, `village_seeking`, `legal_tactical_candidates` — are
+    // native behaviours production ships ON, whose door is `PRODUCTION_TREATMENTS`.
+    // That row is NOT neutral: `apply_gene_ledger` disables every production
+    // treatment whose `ledger_default_on` is `Some(false)`, and a screenable tag
+    // with no ledger row is exactly that. Adding those six would switch six
+    // shipped behaviours off at deployment — `open_water_navy` alone was
+    // promoted at +61 Elo — which is a genome change wearing an instrument's
+    // clothes. They need their first screen row before they can have a gene row.
+    //
+    // Price a Settler as the coupled investment it is — production, population,
+    // escort, route, safety and founding lag together — instead of a unit cost.
+    ("coupled_expansion", "coupled-expansion", AdvancedAi::enable_coupled_expansion),
+    // The friendly-volley extension without the rest of the closed war-half
+    // bundle: a force finishes a defender together. The volley shipped inside
+    // `tactical_strategy` and left with that bundle's removal (#1589, +38 for
+    // the composite), and a composite gate never prices its parts.
+    ("coordinated_finish", "coordinated-finish", AdvancedAi::enable_coordinated_finish),
+    // The other two survivors of the same 2026-08-14 withhold, which measured
+    // +32/+34 as a bundle of four and has never been priced one flag at a
+    // time. `advanced_war_half` re-adds them together; these price them apart.
+    ("tactical_strategy", "tactical-strategy", AdvancedAi::enable_tactical_strategy),
+    ("unit_objective_memory", "unit-objective-memory", AdvancedAi::enable_unit_objective_memory),
+    // Choose the pantheon from the land the empire actually holds rather than
+    // from a fixed order.
+    ("pantheon_board", "pantheon-board", AdvancedAi::enable_pantheon_board),
+    // The policy counterfactual sees the unit-maintenance bill, so the cards
+    // that pay it stop scoring zero.
+    ("maintenance_aware_deck", "maintenance-aware-deck", AdvancedAi::enable_maintenance_aware_deck),
+    // A unit the planner gave nothing to do fortifies instead of standing.
+    ("fortify_idle_units", "fortify-idle-units", AdvancedAi::enable_fortify_idle_units),
+    // Splice the +100% naval-production card family in while hulls are wanted.
+    ("naval_production_policy", "naval-production-policy", AdvancedAi::enable_naval_production_policy),
+    // Credit strength-per-production, and the civilization's unique unit, in
+    // military production.
+    ("unit_cost_efficiency", "unit-cost-efficiency", AdvancedAi::enable_unit_cost_efficiency),
+    // Price Builder production by a survey of the work it would actually do
+    // rather than by `ceil(cities / 2)`.
+    ("builder_reward_survey", "builder-reward-survey", AdvancedAi::enable_builder_reward_survey),
+    // The settlement-gap redirect and the Settler ranking read the same city
+    // target, instead of two that can disagree.
+    ("settlement_gap_target", "settlement-gap-target", AdvancedAi::enable_settlement_gap_target),
+    // Let the envoy scorer see the suzerainty it is walking toward.
+    ("price_the_suzerainty", "price-the-suzerainty", AdvancedAi::enable_price_the_suzerainty),
+    // Read the Faith price from the engine instead of the Standard-speed
+    // literal, which overquotes by 2x at Online — the screen's own speed.
+    ("engine_faith_price", "engine-faith-price", AdvancedAi::enable_engine_faith_price),
+    // A wounded unit may still take its promotion.
+    ("promote_when_wounded", "promote-when-wounded", AdvancedAi::enable_promote_when_wounded),
 ];
