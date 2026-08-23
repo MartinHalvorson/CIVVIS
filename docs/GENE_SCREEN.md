@@ -404,12 +404,21 @@ it belongs to a family.
    a gene is that gene's version `n`. (`search-cadence-20` is not a version of
    anything; `war-economy-1` is not used — the original keeps its name and
    its history.) `gene_screen --list` shows the family.
-3. Run the screen. **A seat plays at most one version of a family**: the
-   family is drawn as one level — off, or exactly one version — on with the
-   family's probability (`P_DEFAULT_ON` if any version ships on, else
-   `P_ON`) and the versions sharing it equally. So `war-economy` and
-   `war-economy-2` are never on the same seat, each is priced against the
-   same "off", and the two are priced against each other.
+3. Run the standard screen — there is no separate testing regime for
+   versions (operator, 2026-08-23: *"don't have a separate testing regime for
+   the versions. we should simply test them too in our large batch runs"*).
+   **A seat plays at most one version of a family**: the family is drawn as
+   one level — off, or exactly one version — on with the family's
+   probability (`P_DEFAULT_ON` if any version ships on, else `P_ON`), and
+   within it **the best version takes two shares to every other version's
+   one** (`BEST_VERSION_WEIGHT`; the best is the version the ledger ships,
+   else the priced version with the highest tracked wins — *"regularly swap
+   between different versions of the genes, biasing towards the best
+   versions"*). So `war-economy` and `war-economy-2` are never on the same
+   seat, each is priced against the same "off", the two are priced against
+   each other, and the batch mostly plays what would ship. ⚠ A version named
+   alone in `--genes` while a sibling ships on is refused: the held-on
+   sibling would force it off and its row would read +0.0 — name the family.
 4. Read the **family table** under the main table (and `families` in the
    `--json` summary): one cell per level — `off`, `war-economy`,
    `war-economy-2` — with seats, win and share, and a contrast for every
@@ -420,10 +429,16 @@ it belongs to a family.
    table and its own row in the ledger, read by the same rule as any gene.
 5. The ledger ships **one version of a family** (`choose_family_heads`):
    among the versions the deployment rule would turn on, the one with the
-   best newest win column, ties to the higher version. The others are
-   recorded `family_runner_up` and ship off — the rule's verdict still on
-   their row so the ranking shows what they measured — and the Rust mirror
-   re-derives the same choice (`the_default_follows_the_ledgers_authority`).
+   highest **tracked wins** — the pooled on−off win difference over every
+   screen that priced it (`win_diff_pp`, the ranking's *Diff*) — ties to the
+   higher version. Whatever the best version is, it is what the real games
+   play (operator, 2026-08-23: *"always use the best version for our real
+   games, whatever the best version is"*); every version keeps being priced
+   screen after screen on its own row, and the head changes hands as the
+   record grows. The others are recorded `family_runner_up` and ship off —
+   the rule's verdict still on their row so the ranking shows what they
+   measured — and the Rust mirror re-derives the same choice
+   (`the_default_follows_the_ledgers_authority`).
 
 Two consequences worth stating. A version that does not beat the original
 head to head is not an improvement however well it does against `off`, and
