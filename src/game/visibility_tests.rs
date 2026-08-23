@@ -248,7 +248,10 @@ fn vision_frames_reuse_city_border_stamps_and_invalidate_on_a_border_change() {
         "a changed branch must recompute the exact uncached frame"
     );
     assert!(
-        Arc::ptr_eq(&moved_border, &game.vision_frame(0, &mut game.height_field())),
+        Arc::ptr_eq(
+            &moved_border,
+            &game.vision_frame(0, &mut game.height_field())
+        ),
         "branch recomputation must not replace the source world's frame"
     );
 
@@ -328,10 +331,7 @@ fn vision_frames_follow_a_wholesale_roster_replacement() {
         "restoring the roster restores the signature"
     );
     assert!(
-        Arc::ptr_eq(
-            &populated,
-            &game.vision_frame(0, &mut game.height_field())
-        ),
+        Arc::ptr_eq(&populated, &game.vision_frame(0, &mut game.height_field())),
         "restoring the roster restores the frame"
     );
 

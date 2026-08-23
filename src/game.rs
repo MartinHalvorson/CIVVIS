@@ -2218,11 +2218,8 @@ mod city_roster {
                     city.owned_tiles.len() as u64,
                 ]);
                 for position in &city.owned_tiles {
-                    *owned = vision_key(&[
-                        *owned,
-                        position.0 as i64 as u64,
-                        position.1 as i64 as u64,
-                    ]);
+                    *owned =
+                        vision_key(&[*owned, position.0 as i64 as u64, position.1 as i64 as u64]);
                 }
                 let centres = stamps
                     .centres
