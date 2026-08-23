@@ -5791,10 +5791,7 @@ impl BasicAi {
         // incoming `0.0` is below any live unit's hit points, so `lethal` was
         // false and with no remembered danger the tile below returns `None` —
         // which is exactly what an unmapped tile's `?` returns too.
-        if remembered.is_none()
-            && hp > 0
-            && !Self::anything_can_reach(g, pid, here, &envelopes)
-        {
+        if remembered.is_none() && hp > 0 && !Self::anything_can_reach(g, pid, here, &envelopes) {
             return None;
         }
         let holding = Self::evacuation_tile(
