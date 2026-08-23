@@ -1697,7 +1697,6 @@ impl EloPool {
     }
 }
 
-
 /// Directory `builtin_ai` resolves trained artifacts from.
 pub const ARTIFACT_DIR: &str = "evolved";
 /// Evolved strategy genome written by `civvis evolve`.
@@ -1722,11 +1721,9 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
     match name {
         "advanced" => Box::new(AdvancedAi::new()),
         "advanced_v1" => Box::new(AdvancedAi::legacy()),
-        "advanced_evolved" | "evolved" => Box::new(
-            champion()
-                .map(AdvancedAi::with_weights)
-                .unwrap_or_default(),
-        ),
+        "advanced_evolved" | "evolved" => {
+            Box::new(champion().map(AdvancedAi::with_weights).unwrap_or_default())
+        }
         "basic" => Box::new(BasicAi::new()),
         "random" => Box::new(RandomAi::new(seed)),
         "strategic" => {
@@ -1736,11 +1733,14 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
             {
                 Box::new(crate::strategic::StrategicAi::with_weights(weights))
             } else {
-                Box::new(crate::strategic::StrategicAi::score_only_with_weights(weights))
+                Box::new(crate::strategic::StrategicAi::score_only_with_weights(
+                    weights,
+                ))
             }
         }
         "strategic_deep" => {
-            let mut ai = crate::strategic::StrategicAi::with_weights(champion().unwrap_or_default());
+            let mut ai =
+                crate::strategic::StrategicAi::with_weights(champion().unwrap_or_default());
             ai.review_every = 20;
             ai.horizon = 80;
             Box::new(ai)
@@ -1826,7 +1826,12 @@ impl AgentProvenance {
             true => format!("plays as {}", self.effective),
             false => format!("plays as {} with untrained defaults", self.requested),
         };
-        format!("{}: {} (missing {})", self.requested, plays, missing.join(", "))
+        format!(
+            "{}: {} (missing {})",
+            self.requested,
+            plays,
+            missing.join(", ")
+        )
     }
 
     fn artifacts_list(&self) -> String {
@@ -1860,7 +1865,11 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         // are one agent under two names.
         "evolved" | "advanced_evolved" => (
             vec![genome(true)],
-            if champion { "advanced_evolved" } else { "advanced" },
+            if champion {
+                "advanced_evolved"
+            } else {
+                "advanced"
+            },
         ),
         "advanced" => (Vec::new(), "advanced"),
         "advanced_v1" => (Vec::new(), "advanced_v1"),
@@ -1881,7 +1890,6 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         effective,
     }
 }
-
 
 pub struct TourneyCfg {
     pub games: u32,
@@ -2606,11 +2614,11 @@ mod tests {
         );
     }
 
-    use std::collections::BTreeSet;
-    use std::path::Path;
     use crate::rng::Rng;
     use crate::rules::Rules;
     use crate::setup::{GameMode, MapScript};
+    use std::collections::BTreeSet;
+    use std::path::Path;
 
     use std::collections::BTreeMap;
     use std::fs;
