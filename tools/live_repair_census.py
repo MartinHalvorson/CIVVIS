@@ -705,6 +705,17 @@ JOURNAL_MARKERS = {
     "loyalty_doomed_fallback": "loyalty-doomed fallback",
 }
 
+#: ★ THE AGENT'S OWN ARMY ARITHMETIC, in its own words, on every production
+#: decision it explains: "the empire holds 8 military for 9 cities against a
+#: target of 1.0 each". Reading the army this way needs no hand-written list of
+#: which unit kinds are naval — a list that is complete the day it is written
+#: and shrinks afterwards — and it is the exact quantity
+#: `enemy_weighted_army_target` compares, which a headcount off the state
+#: export is not.
+ARMY_LINE = re.compile(
+    r"the empire holds (?P<held>\d+) military for (?P<cities>\d+) cities"
+    r" against a target of (?P<target>[\d.]+) each")
+
 
 def replay_turn(binary: Path, mirror: Path, turn: int, victory: str,
                 timeout: float) -> dict:
@@ -739,8 +750,12 @@ def replay_turn(binary: Path, mirror: Path, turn: int, victory: str,
                 counters[key] = int(value)
     markers = {name: done.stderr.count(text)
                for name, text in JOURNAL_MARKERS.items()}
+    army = ARMY_LINE.search(done.stderr)
     return {
         "ok": True,
+        "army_held": int(army.group("held")) if army else None,
+        "army_cities": int(army.group("cities")) if army else None,
+        "army_target_each": float(army.group("target")) if army else None,
         "orders": [(o.get("kind"), o.get("subject"), o.get("verb"),
                     o.get("x"), o.get("y")) for o in orders],
         "found_city": sum(1 for o in orders if o.get("verb") == "FOUND_CITY"),
@@ -828,6 +843,40 @@ def report_replay(rows: list[dict], arms: list[str]) -> list[str]:
         totals = " ".join(
             f"{arm}={sum(v[arm].get(key, 0) for v in paired)}" for arm in arms)
         lines.append(f"  {key:<34} {totals}")
+
+    # The decider's own army arithmetic, averaged over the turns it explained
+    # one. `held / cities` against `target` is the only comparison that uses
+    # the same quantity on both sides.
+    for arm in arms:
+        held = [v[arm]["army_held"] / v[arm]["army_cities"] for v in paired
+                if v[arm].get("army_cities")]
+        target = [v[arm]["army_target_each"] for v in paired
+                  if v[arm].get("army_target_each") is not None]
+        if not held:
+            continue
+        lines.append(
+            f"  army held/city [{arm}]  mean {_mean(held):.2f}"
+            f"  median {statistics.median(held):.2f}"
+            f"  vs its own target/city mean {_mean(target):.2f}"
+            f"  ({len(held)} explained turns)")
+
+    # Where the two arms spent the production they took away from each other.
+    tally: dict[str, dict[str, int]] = {}
+    for arm in arms:
+        for pair in paired:
+            for kind, _subject, verb, _x, _y in pair[arm]["orders"]:
+                key = f"{kind}:{verb}"
+                tally.setdefault(key, {a: 0 for a in arms})[arm] += 1
+    moved = sorted(
+        ((key, counts) for key, counts in tally.items()
+         if len(set(counts.values())) > 1),
+        key=lambda row: -abs(row[1][arms[-1]] - row[1][arms[0]]))
+    if moved:
+        lines.append("  what moved (top 12 by absolute change):")
+        for key, counts in moved[:12]:
+            delta = counts[arms[-1]] - counts[arms[0]]
+            body = "  ".join(f"{arm}={counts[arm]}" for arm in arms)
+            lines.append(f"    {key:<44} {body}  ({delta:+d})")
     return lines
 
 
