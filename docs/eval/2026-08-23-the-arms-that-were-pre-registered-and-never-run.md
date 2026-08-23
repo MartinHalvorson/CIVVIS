@@ -160,11 +160,123 @@ reported beside them and is not comparable to either.
 
 ## Results
 
-<!-- RESULTS-1 -->
+Ran exactly as registered: 100 fixed pairs per profile, no early stopping, on
+the registered seed and its recorded strides. `arms differ on:
+governor-victory-lanes` on all three.
 
-## Verdict
+| profile | seed prefix | paired score | **Elo** | 95% betting CI | sign test | gate |
+|---|---|---:|---:|---|---|---|
+| compact-standard | 29000000..=29000099 | 45.8% | **−30** | −68..+1 | p=0.0161 **for `advanced`** | INCONCLUSIVE → ACCEPT |
+| deployment-online | 30000000..=30000099 | 43.5% | **−45** | −104..+21 | p=0.0470 **for `advanced`** | INCONCLUSIVE → **REJECT** |
+| deployment-contested | 31000000..=31000099 | 59.8% | **+69** | +31..+114 | p=0.0000 for the treatment | **PASS** → ACCEPT |
 
-<!-- VERDICT-1 -->
+`multi-profile promotion gate: RETAIN advanced — cleared 2/3 required
+profiles.` Both fieldless Elo figures are reported by the run as *"not
+gate-selected — the gate did not fire, so this estimate is not conditioned on
+being large"*; the +69 is reported as a **DISCOVERY ESTIMATE**, selected on
+passing and explicitly *"not quotable until confirmed on a disjoint seed"*.
+
+### ⚠ First, the correction this round owes its own pre-registration
+
+The registration estimated that 100 pairs would resolve ±30 Elo, extrapolated
+from the sibling arm's 400-pair p-value. **That was about 2.5× too optimistic.**
+Each run states its own power, and they say +83 (compact), +76 (deployment) and
++85 (contested) at 80%. So the two INCONCLUSIVE verdicts are a statement about
+*this run's length*, not about the treatment: an effect of −45 was never going
+to fire a gate that needs about +76. The point estimates and their intervals
+carry the information here, and the gate verdicts carry almost none.
+
+### The census reproduces the composite's own fingerprint
+
+At the deployment profile the treated seat is smaller on **every** development
+column, which is what #1955 measured for the whole `advanced_every_lane`
+composite (*"the empire is uniformly ~30% smaller"*) — over 100 maps, 200 games:
+
+| deployment-online | seat-win% | score | cities | pop | districts | buildings | gold |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `advanced_governor_victory_lanes` | 14.5% | 481.5 | 5.66 | 54.4 | 17.8 | 58.2 | 146.3 |
+| `advanced` | 18.8% | 611.2 | 6.22 | 67.0 | 21.4 | 74.6 | 218.4 |
+
+Terminal score is the sharper reading, because every map breaks on it: **10
+favored vs 90 against, p=0.0000** at deployment and 29 vs 71, p=0.0000 on
+compact. The victory-lane governor makes a materially poorer empire.
+
+Its win mix says how: the treated seat collapses into a religion monoculture
+and loses the score lane. Deployment victories, treated
+`{religious 46, score 31, culture 10}` against `advanced`
+`{score 67, culture 22, religious 13, science 9, diplomatic 2}`.
+
+### And the seat-win delta agrees with the screens to within half a point
+
+The three instruments that resolved this gene count seat wins with the gene
+toggled inside a genome. This arm is an Elo pairing against bare `advanced`, a
+different baseline entirely — yet the same column lands in the same place:
+
+| instrument | basis | seat-win Δ |
+|---|---|---:|
+| standard whole-genome screen (#2323) | 23,622 matched seat comparisons | −4.73 pp |
+| direct single-gene arm (#2344) | 3,600 pairs, seeds 150000000–150000599 | −4.78 pp |
+| **this arm, deployment-online** | 100 maps / 200 games, seed 30000000 | **−4.3 pp** |
+
+Four instruments, three baselines, four disjoint seed windows, one answer.
+
+### ⚠ The third profile flips the sign, and the census says why
+
+On `deployment-contested` — the same 74×46 board, but four of six chairs seated
+with `live_target_diplomatic` and `live_target_culture` instead of the entrants
+— the treatment wins **36.5% of seats against 17.0%**, and its census is nearly
+identical to the control's (score 561.5 vs 567.6, cities 6.39 vs 6.55,
+districts 17.6 vs 18.6). The smaller empire is gone; what remains is
+conversion, `{religious 66, score 7}` against `{religious 18, score 12,
+culture 3, diplomatic 1}`.
+
+So the same commitment that starves the empire in fieldless self-play is what
+beats a field chasing diplomacy and culture. This is the profile whose own
+definition in `src/bin/ai_eval.rs` is headed *"★★★★★ THIS IS WHY THE MATRIX WAS
+BLIND TO TWO THIRDS OF WHAT KILLS US"* — and every instrument that resolved
+this gene (p10, the standard screen, #2344's direct arm) is fieldless.
+
+**This is not a reason to reverse #2344 and this round does not ask for one.**
+It is a DISCOVERY ESTIMATE by the tool's own label, on a `NoRegression` profile
+whose comment warns its numbers *"are not comparable to `deployment-online`'s"*
+because two entrants hold two chairs instead of six. The disciplined next step
+is the one the run itself prints: rerun with a new seed and `--confirm
+31000000`. Recorded here so the observation is not lost.
+
+## Verdict: RETAIN `advanced` — and the −70 to −80 prediction is **half right**
+
+**Direction: CONFIRMED, on both of the round's own profiles.** The four victory
+lanes are the carrier, exactly as the 2026-08-18 subtraction claimed. Negative
+on compact and on deployment, sign-significant on both (p=0.0161, p=0.0470),
+and worse on terminal score at p=0.0000 on both, with the composite's own
+census fingerprint.
+
+**Magnitude: NOT reproduced at the predicted size.** Doing the subtraction the
+2026-08-18 round actually did — composite minus Expansion half — predicts
+compact −42 and deployment −79:
+
+| | composite | Expansion half | predicted victory half | **measured here** |
+|---|---:|---:|---:|---:|
+| compact | −62 | −20 | −42 | **−30** (CI −68..+1) |
+| deployment | −95 | −16 | −79 | **−45** (CI −104..+21) |
+
+The prediction is not excluded — −79 sits inside the deployment interval — but
+the point estimate is 34 Elo short of it, and the compact estimate is short
+too. **The honest verdict is that the decomposition got the direction and the
+carrier right and the size wrong, in the direction this ledger always fails:
+downward.**
+
+**And the halves do not add up.** −45 and −16 sum to −61 against a composite
+measured at −95; on compact, −30 and −20 sum to −50 against −62. Both gaps
+point the same way — the composite is worse than its parts — which is what
+*"a composite gate licenses the composite and never its parts"* predicts and
+this is the first time this decomposition has had a number for it. ⚠ With
+intervals this wide the interaction is suggestive and not established: −95's
+own interval is −131..−60, so −61 is not far outside it.
+
+No default changes here. The gene was already turned off by #2344 before this
+merged, and this round's fieldless profiles agree with that decision from a
+fourth direction.
 
 ---
 
