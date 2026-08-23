@@ -27,24 +27,14 @@
 /// So it is checked instead. The bundle's own source is the input: a
 /// treatment added to `enable_live_bridge` without a registry row fails
 /// here, naming itself.
-/// ★★★★ THE MIRROR THE REGISTRY DID NOT HAVE.
-///
-/// `live_bundle_and_registry_agree` above pins what the live bridge adds. Ask
-/// the same question of production and there was no table to ask it of, so a
-/// tool that wanted "the shipped agent minus one promoted behaviour" learned
-/// each name by hand — the exact shape that left `civvis_orders` carrying 57
-/// hand-written arms against 68 registry rows, with eleven shipped treatments
-/// uncontrolled.
-///
-/// `PRODUCTION_TREATMENTS` is that table, and this is what keeps it honest: a
-/// row must name a behaviour `promoted_policy_envoy` really turns on, and must
-/// have the withholding twin its third field points at.
-///
-/// ⚠ Correctness, not completeness — and that is deliberate. A promoted
-/// behaviour with no row is not a defect; a row that names a behaviour
-/// production does not have is a `--without` that silently withholds nothing.
+/// ★★★★ THE REGISTRY'S PRODUCTION ROWS ARE REAL: a `Kind::Production` gene
+/// names a behaviour `promoted_policy_envoy` really turns on, so withholding
+/// it withholds something; a `Kind::OptIn` gene names one production ships
+/// OFF, so enabling it enables something. The one registry replaced the two
+/// tables these guards used to read (`PRODUCTION_TREATMENTS`,
+/// `PRODUCTION_OPT_INS`) and the question is the same.
 #[test]
-fn production_bundle_rows_are_real() {
+fn production_and_opt_in_rows_are_real() {
     let source = concat!(
         include_str!("../advanced.rs"),
         include_str!("treatment_flags.rs")
@@ -58,62 +48,32 @@ fn production_bundle_rows_are_real() {
         .expect("promoted_policy_envoy must be a complete function");
     let bundle = &body[..end];
 
-    for (field, tag, _) in PRODUCTION_TREATMENTS.iter() {
+    for gene in GENES.iter() {
+        let field = gene.field;
         // Either form the constructor uses: the toggle, or the field directly.
         let enabled = bundle.contains(&format!("enable_{field}();"))
             || bundle.contains(&format!("{field} = true;"));
-        assert!(
-            enabled,
-            "PRODUCTION_TREATMENTS lists `{tag}` but promoted_policy_envoy \
-             never turns `{field}` on, so withholding it withholds nothing"
-        );
-        assert!(
-            source.contains(&format!("pub fn disable_{field}(&mut self)")),
-            "`{tag}` has no withholding twin `disable_{field}`, so it ships \
-             unpriceable"
-        );
-    }
-}
-
-/// The complement guard: every `PRODUCTION_OPT_INS` row names a behaviour
-/// production actually ships OFF and whose enable function actually turns it
-/// on — otherwise `victory_eval --with` seats the untreated agent and calls
-/// it treated.
-#[test]
-fn production_opt_in_rows_are_real() {
-    let source = concat!(
-        include_str!("../advanced.rs"),
-        include_str!("treatment_flags.rs")
-    );
-    let start = source
-        .find("fn promoted_policy_envoy(")
-        .expect("promoted_policy_envoy must exist to be checked");
-    let body = &source[start..];
-    let end = body
-        .find("\n    }\n")
-        .expect("promoted_policy_envoy must be a complete function");
-    let bundle = &body[..end];
-
-    for (field, tag, enable) in PRODUCTION_OPT_INS.iter() {
-        let enabled = bundle.contains(&format!("enable_{field}();"))
-            || bundle.contains(&format!("{field} = true;"));
-        assert!(
-            !enabled,
-            "PRODUCTION_OPT_INS lists `{tag}` but promoted_policy_envoy \
-             already turns `{field}` on; a shipped behaviour belongs in \
-             PRODUCTION_TREATMENTS with a withholding twin instead"
-        );
-        assert!(
-            source.contains(&format!("pub fn enable_{field}(&mut self)")),
-            "`{tag}` has no opt-in function `enable_{field}`"
-        );
-        let mut ai = AdvancedAi::new();
-        enable(&mut ai);
+        if gene.production() {
+            assert!(
+                enabled,
+                "`{}` is a production gene but promoted_policy_envoy never turns `{field}` \
+                 on, so withholding it withholds nothing",
+                gene.tag
+            );
+        }
+        if gene.opt_in() {
+            assert!(
+                !enabled,
+                "`{}` is an opt-in but promoted_policy_envoy already turns `{field}` on; a \
+                 shipped behaviour is `Kind::Production`",
+                gene.tag
+            );
+        }
     }
     let mut ai = AdvancedAi::new();
     assert!(!ai.founder_temple, "an opt-in must ship off");
-    for row in PRODUCTION_OPT_INS.iter() {
-        (row.2)(&mut ai);
+    for gene in GENES.iter().filter(|gene| gene.opt_in()) {
+        (gene.enable)(&mut ai);
     }
     assert!(
         ai.founder_temple,
@@ -121,94 +81,100 @@ fn production_opt_in_rows_are_real() {
     );
 }
 
+/// ⭐ THE ONE REGISTRY IS WELL-FORMED. Every tag and every field appears once;
+/// a tag is the published spelling (`war-economy`) and a field the flag's
+/// (`war_economy`); the kinds partition the way the old lists did (repairs
+/// are the live genes a native board can play); and every gene's two toggles
+/// are two different functions that can be called on a live controller.
 #[test]
-fn live_bundle_and_registry_agree() {
-    // ⚠ The registry rows live in `treatments.rs`, the bundle and the toggles
-    // in `treatment_flags.rs`, and `advanced.rs` still holds everything else.
-    // Splitting a file must not quietly narrow a check that scrapes it: this
-    // test's whole subject is a fact that spans them, and reading only one
-    // would have gone green on an empty registry. So the scrape reads the
-    // controller's whole text — the concatenation, not a named half — and
-    // survives the next move as it survived the last one.
-    let source = concat!(
-        include_str!("../advanced.rs"),
-        include_str!("treatment_flags.rs")
-    );
-    let registry = include_str!("treatments.rs");
-    let start = source
-        .find("pub fn enable_live_bridge_universe(&mut self) {")
-        .expect("enable_live_bridge_universe must exist to be checked");
-    let body = &source[start..];
-    let end = body
-        .find("\n    }\n")
-        .expect("enable_live_bridge must be a complete function");
-    let body = &body[..end];
-
-    let mut called: Vec<&str> = Vec::new();
-    for piece in body.split("self.enable_").skip(1) {
-        if let Some(name) = piece.split("()").next() {
-            if name
-                .chars()
-                .all(|c| c.is_ascii_lowercase() || c == '_' || c.is_ascii_digit())
-            {
-                called.push(name);
-            }
-        }
-    }
-    // ⚠ A census that reports zero is a broken census, not a null. If the
-    // scrape stops matching, this test must fail rather than pass empty.
-    assert!(
-        called.len() > 50,
-        "scraped only {} enable_ calls out of enable_live_bridge; the \
-             scrape broke, it did not find an empty bundle",
-        called.len()
-    );
-
-    let mut missing: Vec<&str> = Vec::new();
-    for flag in &called {
-        let disabler = format!("disable_{flag}");
-        if !source.contains(&format!("pub fn {disabler}(&mut self)")) {
-            missing.push(flag);
-        }
-    }
-    assert!(
-        missing.is_empty(),
-        "these live-bundle treatments have no withholding twin, so they \
-             ship unpriceable: {missing:?}"
-    );
-
-    assert_eq!(
-        called.len(),
-        LIVE_TREATMENTS.len(),
-        "enable_live_bridge turns on {} treatments but LIVE_TREATMENTS \
-             lists {}; every shipped treatment needs a row so it can be \
-             withheld and priced",
-        called.len(),
-        LIVE_TREATMENTS.len()
-    );
-
-    // Registry rows are (published name, provenance tag, withholding
-    // call). The published name is not always the flag name — three tags
-    // were published shorter than the methods they call — so the join is
-    // on the disabler, which is unambiguous.
-    for flag in &called {
-        let disabler = format!("disable_{flag}");
+fn the_gene_registry_is_well_formed() {
+    let mut tags: Vec<&str> = GENES.iter().map(|gene| gene.tag).collect();
+    tags.sort_unstable();
+    let distinct = tags.len();
+    tags.dedup();
+    assert_eq!(distinct, tags.len(), "two registry rows share a tag");
+    let mut fields: Vec<&str> = GENES.iter().map(|gene| gene.field).collect();
+    fields.sort_unstable();
+    let distinct = fields.len();
+    fields.dedup();
+    assert_eq!(distinct, fields.len(), "two registry rows share a field");
+    for gene in GENES.iter() {
         assert!(
-            LIVE_TREATMENTS.iter().any(|(name, tag, _)| {
-                registry.contains(&format!("(\"{name}\", \"{tag}\", AdvancedAi::{disabler})"))
-            }),
-            "enable_live_bridge turns on {flag} but no LIVE_TREATMENTS row \
-                 calls {disabler}; add one, or the treatment ships with no way \
-                 to withhold it"
+            gene.tag
+                .chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-'),
+            "{} is not a published tag spelling",
+            gene.tag
+        );
+        assert!(
+            gene.field
+                .chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_'),
+            "{} is not a flag spelling",
+            gene.field
+        );
+        assert!(
+            gene.enable as usize != gene.disable as usize,
+            "{}'s enable and disable are the same function",
+            gene.tag
+        );
+        assert_eq!(
+            gene.repair(),
+            gene.live() && !gene.host_only(),
+            "{}",
+            gene.tag
+        );
+        assert_eq!(
+            gene.screenable(),
+            gene.universe_on() || gene.opt_in(),
+            "{}",
+            gene.tag
         );
     }
-
-    let mut names: Vec<&str> = LIVE_TREATMENTS.iter().map(|(n, _, _)| *n).collect();
-    names.sort_unstable();
-    let before = names.len();
-    names.dedup();
-    assert_eq!(before, names.len(), "two registry rows share a name");
+    let live = GENES.iter().filter(|gene| gene.live()).count();
+    let host_only = GENES.iter().filter(|gene| gene.host_only()).count();
+    let repairs = GENES.iter().filter(|gene| gene.repair()).count();
+    assert_eq!(repairs, live - host_only);
+    assert!(
+        live > 50 && repairs > 30 && host_only > 10,
+        "{live}/{host_only}/{repairs}"
+    );
+    assert_eq!(
+        super::gene("joint-tactics").map(|gene| gene.kind),
+        Some(Kind::HostOnlyOptIn),
+        "the one host-only gene that is also a native opt-in"
+    );
+    // Every toggle runs on a live controller without panicking.
+    let mut ai = AdvancedAi::new();
+    ai.enable_live_bridge_universe();
+    for gene in GENES.iter() {
+        (gene.disable)(&mut ai);
+        (gene.enable)(&mut ai);
+    }
 }
+
+/// The bundles are loops over the registry — `enable_live_bridge_universe`
+/// turns on every `live()` gene and `enable_engine_repairs_universe` every
+/// `repair()` — so the only way the two can disagree with the rows is for a
+/// row's toggle to set the wrong flag. That is caught per flag where the flag
+/// is public; this pins the structure: the war and economy halves partition
+/// the repairs, and a host-only gene is never a repair.
+#[test]
+fn the_bundles_are_the_registry() {
+    let war = super::genes::repair_tags_on(Axis::War);
+    let economy = super::genes::repair_tags_on(Axis::Economy);
+    let repairs = super::genes::repair_tags();
+    assert_eq!(war.len() + economy.len(), repairs.len());
+    assert!(war.iter().all(|tag| !economy.contains(tag)));
+    for tag in super::genes::host_only_tags() {
+        assert!(!repairs.contains(&tag), "{tag} is host-only and a repair");
+        assert!(
+            super::genes::live_tags().contains(&tag),
+            "{tag} is host-only but not live"
+        );
+    }
+}
+
 use super::opportunistic_war::{
     PILLAGE_PRIZE_BASE, RAID_PEACE_EARLIEST, RAID_POWER_MARGIN, RAID_POWER_RATIO,
     RAID_REPEAT_COOLDOWN, RAID_SETTLER_HOME_RADIUS, RAID_WAR_MIN_VALUE, SETTLER_PRIZE,
@@ -11300,9 +11266,9 @@ fn builder_worked_tile_priority_prices_idle_tiles_by_marginal_worker_swap() {
         );
     }
 
-    assert!(PRODUCTION_OPT_INS.iter().any(|(field, tag, _)| {
-        *field == "builder_worked_tile_priority" && *tag == "builder-worked-tile-priority"
-    }));
+    assert!(GENES.iter().any(|gene| gene.opt_in()
+        && gene.field == "builder_worked_tile_priority"
+        && gene.tag == "builder-worked-tile-priority"));
     treated.disable_builder_worked_tile_priority();
     assert!(!treated.builder_worked_tile_priority);
 }
@@ -11521,9 +11487,9 @@ fn builder_barbarian_safety_rejects_and_escapes_a_barbarian_capture_envelope() {
     ));
     assert_eq!(unsafe_game.units[&builder].charges, 2);
 
-    assert!(PRODUCTION_OPT_INS.iter().any(|(field, tag, _)| {
-        *field == "builder_barbarian_safety" && *tag == "builder-barbarian-safety"
-    }));
+    assert!(GENES.iter().any(|gene| gene.opt_in()
+        && gene.field == "builder_barbarian_safety"
+        && gene.tag == "builder-barbarian-safety"));
     cautious.disable_builder_barbarian_safety();
     assert!(!cautious.builder_barbarian_safety);
 }
@@ -15730,7 +15696,7 @@ fn the_culture_economy_is_in_the_native_universe_and_the_ledger_decides_deployme
         universe.culture_coverage
             && universe.culture_building_debt
             && universe.district_building_chain,
-        "the native repair universe must carry every ENGINE_REPAIR_TREATMENTS tag, \
+        "the native repair universe must carry every repair gene, \
          or the screen varies nothing"
     );
 
@@ -15741,14 +15707,9 @@ fn the_culture_economy_is_in_the_native_universe_and_the_ledger_decides_deployme
         ("culture-building-debt", deployed.culture_building_debt),
         ("district-building-chain", deployed.district_building_chain),
     ] {
-        assert!(
-            crate::elo::ENGINE_REPAIR_TREATMENTS.contains(&tag),
-            "{tag} is a native repair"
-        );
-        assert!(
-            !crate::elo::FIRAXIS_ONLY_TREATMENTS.contains(&tag),
-            "{tag} left the host-only list"
-        );
+        let row = crate::ai::gene(tag).expect("registered");
+        assert!(row.repair(), "{tag} is a native repair");
+        assert!(!row.host_only(), "{tag} left the host-only list");
         let ledger = crate::ai::ledger_default_on(tag);
         assert!(
             ledger.is_some(),
@@ -15778,10 +15739,11 @@ fn idle_faith_patronage_is_a_native_opt_in() {
     let mut ai = AdvancedAi::new();
     ai.enable_live_bridge_universe();
     assert!(!ai.idle_faith_patronage);
-    let (_, _, enable) = PRODUCTION_OPT_INS
+    let enable = GENES
         .iter()
-        .find(|(_, tag, _)| *tag == "idle-faith-patronage")
-        .expect("an opt-in row");
+        .find(|gene| gene.tag == "idle-faith-patronage")
+        .expect("an opt-in row")
+        .enable;
     enable(&mut ai);
     assert!(ai.idle_faith_patronage);
     ai.disable_idle_faith_patronage();
@@ -15795,10 +15757,11 @@ fn early_contact_window_is_an_off_by_default_native_opt_in() {
     let mut ai = AdvancedAi::new();
     ai.enable_live_bridge_universe();
     assert!(!ai.early_contact_window);
-    let (_, _, enable) = PRODUCTION_OPT_INS
+    let enable = GENES
         .iter()
-        .find(|(_, tag, _)| *tag == "early-contact-window")
-        .expect("an opt-in row");
+        .find(|gene| gene.tag == "early-contact-window")
+        .expect("an opt-in row")
+        .enable;
     enable(&mut ai);
     assert!(ai.early_contact_window);
     ai.disable_early_contact_window();
@@ -16513,10 +16476,11 @@ fn the_religion_genes_are_native_opt_ins() {
         "theology-for-founders",
         "holy-lane-parity",
     ] {
-        let (_, _, enable) = PRODUCTION_OPT_INS
+        let enable = GENES
             .iter()
-            .find(|(_, row_tag, _)| *row_tag == tag)
-            .unwrap_or_else(|| panic!("{tag} is an opt-in row"));
+            .find(|gene| gene.tag == tag)
+            .unwrap_or_else(|| panic!("{tag} is an opt-in row"))
+            .enable;
         let mut seat = AdvancedAi::new();
         enable(&mut seat);
         let on = match tag {
@@ -20162,10 +20126,11 @@ fn settler_threat_detour_is_a_native_opt_in_deployed_by_the_ledger() {
         deployed.settler_threat_detour,
         "its sole +50 win column clears the provisional deployment bar"
     );
-    let (_, _, enable) = PRODUCTION_OPT_INS
+    let enable = GENES
         .iter()
-        .find(|(_, tag, _)| *tag == "settler-threat-detour")
-        .expect("the gene is published for gene_screen and evaluator arms");
+        .find(|gene| gene.tag == "settler-threat-detour")
+        .expect("the gene is published for gene_screen and evaluator arms")
+        .enable;
     let mut ai = AdvancedAi::new();
     enable(&mut ai);
     assert!(ai.settler_threat_detour);
@@ -20180,10 +20145,11 @@ fn settler_threat_detour_is_a_native_opt_in_deployed_by_the_ledger() {
 fn one_shot_recovery_is_an_off_by_default_native_gene() {
     assert!(!AdvancedAi::new().base.one_shot_recovery);
     assert!(!AdvancedAi::legacy().base.one_shot_recovery);
-    let (_, _, enable) = PRODUCTION_OPT_INS
+    let enable = GENES
         .iter()
-        .find(|(_, tag, _)| *tag == "one-shot-recovery")
-        .expect("the gene is published for gene_screen and evaluator arms");
+        .find(|gene| gene.tag == "one-shot-recovery")
+        .expect("the gene is published for gene_screen and evaluator arms")
+        .enable;
     let mut ai = AdvancedAi::new();
     enable(&mut ai);
     assert!(ai.base.one_shot_recovery);
@@ -20204,10 +20170,11 @@ fn settle_sooner_is_a_native_opt_in_deployed_by_the_ledger() {
         deployed.settle_sooner,
         "its sole +41 win column clears the provisional deployment bar"
     );
-    let (_, _, enable) = PRODUCTION_OPT_INS
+    let enable = GENES
         .iter()
-        .find(|(_, tag, _)| *tag == "settle-sooner")
-        .expect("the gene is published for gene_screen and evaluator arms");
+        .find(|gene| gene.tag == "settle-sooner")
+        .expect("the gene is published for gene_screen and evaluator arms")
+        .enable;
     let mut ai = AdvancedAi::new();
     enable(&mut ai);
     assert!(ai.settle_sooner);
@@ -23874,9 +23841,9 @@ fn the_live_bridge_hunts_and_the_treatment_withholds_it() {
         "native production keeps the historical rule until a screen prices this"
     );
     assert!(
-        crate::ai::advanced::treatments::LIVE_TREATMENTS
-            .iter()
-            .any(|(flag, arm, _)| *flag == "barbarian_hunt" && *arm == "barbarian-hunt"),
+        GENES.iter().any(|gene| gene.live()
+            && gene.field == "barbarian_hunt"
+            && gene.tag == "barbarian-hunt"),
         "the arm must be published so a screen can price it"
     );
     // The frozen anchor keeps the historical rule.
@@ -28044,18 +28011,20 @@ fn a_rising_stock_pressure_reads_urgent_a_congress_earlier() {
     assert!(!withheld.victory_pressure_is_urgent(&game, 1, rising));
 
     // The published withhold row reaches the same flag.
-    let (field, name, disable) = super::treatments::LIVE_TREATMENTS
+    let row = GENES
         .iter()
-        .find(|(field, _, _)| *field == "projected_stock_denial")
-        .copied()
-        .expect("the treatment is published");
-    assert_eq!(name, "projected-stock-denial");
+        .find(|gene| gene.field == "projected_stock_denial")
+        .expect("the gene is published");
+    assert!(row.live());
+    assert_eq!(row.tag, "projected-stock-denial");
+    let disable = row.disable;
     let mut via_row = AdvancedAi::new();
     via_row.enable_live_bridge();
     disable(&mut via_row);
     assert!(
         !via_row.projected_stock_denial,
-        "{field} row disables the flag"
+        "{} row disables the flag",
+        row.field
     );
 
     // Frozen and ordinary controllers never project.
@@ -28301,8 +28270,9 @@ fn step_and_reassess_is_a_host_only_live_treatment() {
     let mut repairs = AdvancedAi::new();
     repairs.enable_engine_repairs();
     assert!(!repairs.step_and_reassess, "no native twin");
-    assert!(crate::elo::FIRAXIS_ONLY_TREATMENTS.contains(&"step-and-reassess"));
-    assert!(!crate::elo::ENGINE_REPAIR_TREATMENTS.contains(&"step-and-reassess"));
+    let row = crate::ai::gene("step-and-reassess").expect("registered");
+    assert!(row.host_only());
+    assert!(!row.repair());
     assert!(!crate::ai::gene_ledger::screenable("step-and-reassess"));
 }
 
@@ -29070,10 +29040,11 @@ fn great_person_housing_is_a_native_opt_in() {
     let mut ai = AdvancedAi::new();
     ai.enable_live_bridge_universe();
     assert!(!ai.great_person_housing);
-    let (_, _, enable) = PRODUCTION_OPT_INS
+    let enable = GENES
         .iter()
-        .find(|(_, tag, _)| *tag == "great-person-housing")
-        .expect("an opt-in row");
+        .find(|gene| gene.tag == "great-person-housing")
+        .expect("an opt-in row")
+        .enable;
     enable(&mut ai);
     assert!(ai.great_person_housing);
     ai.disable_great_person_housing();
@@ -29283,10 +29254,11 @@ fn settler_walk_census() {
                 if !game.players[pid].is_minor && !game.players[pid].is_barbarian {
                     ai.enable_engine_repairs();
                     for tag in &opt_ins {
-                        let (_, _, enable) = PRODUCTION_OPT_INS
+                        let enable = GENES
                             .iter()
-                            .find(|(_, t, _)| t == tag)
-                            .unwrap_or_else(|| panic!("{tag} is not a PRODUCTION_OPT_INS tag"));
+                            .find(|gene| gene.tag == *tag && gene.opt_in())
+                            .unwrap_or_else(|| panic!("{tag} is not an opt-in gene"))
+                            .enable;
                         enable(&mut ai);
                     }
                 }
@@ -29626,10 +29598,11 @@ fn opportunistic_war_is_a_native_opt_in() {
     let mut ai = AdvancedAi::new();
     ai.enable_live_bridge_universe();
     assert!(!ai.opportunistic_war);
-    let (_, _, enable) = PRODUCTION_OPT_INS
+    let enable = GENES
         .iter()
-        .find(|(_, tag, _)| *tag == "opportunistic-war")
-        .expect("an opt-in row");
+        .find(|gene| gene.tag == "opportunistic-war")
+        .expect("an opt-in row")
+        .enable;
     enable(&mut ai);
     assert!(ai.opportunistic_war);
     ai.raid_war = Some(opportunistic_war::RaidWar {
@@ -29644,10 +29617,11 @@ fn opportunistic_war_is_a_native_opt_in() {
     assert!(!ai.opportunistic_war);
     assert!(ai.raid_war.is_none());
     assert!(!ai.raid_pillage_prizes);
-    let (_, _, enable) = PRODUCTION_OPT_INS
+    let enable = GENES
         .iter()
-        .find(|(_, tag, _)| *tag == "raid-pillage-prizes")
-        .expect("the pillage half has its own row");
+        .find(|gene| gene.tag == "raid-pillage-prizes")
+        .expect("the pillage half has its own row")
+        .enable;
     enable(&mut ai);
     assert!(ai.raid_pillage_prizes);
     ai.disable_raid_pillage_prizes();
@@ -30237,9 +30211,9 @@ fn the_exchange_forecasts_are_the_blows_the_engine_resolves() {
 /// The gene is registered, discoverable by name, and reversible.
 #[test]
 fn contact_posture_is_a_registered_reversible_opt_in() {
-    assert!(PRODUCTION_OPT_INS
-        .iter()
-        .any(|(field, tag, _)| *field == "contact_posture" && *tag == "contact-posture"));
+    assert!(GENES.iter().any(|gene| gene.opt_in()
+        && gene.field == "contact_posture"
+        && gene.tag == "contact-posture"));
     let mut ai = AdvancedAi::new();
     assert!(!ai.contact_posture, "production ships it off");
     ai.enable_contact_posture();
@@ -31031,9 +31005,9 @@ fn the_religious_corps_genes_are_registered_reversible_opt_ins() {
         ("enhancer_for_the_corps", "enhancer-for-the-corps"),
     ] {
         assert!(
-            PRODUCTION_OPT_INS
+            GENES
                 .iter()
-                .any(|(row_field, row_tag, _)| *row_field == field && *row_tag == tag),
+                .any(|gene| gene.opt_in() && gene.field == field && gene.tag == tag),
             "{tag} must be a registered native opt-in"
         );
         assert!(

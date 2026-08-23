@@ -303,14 +303,10 @@ pub fn ledger_verdict(tag: &str) -> Option<&'static GeneVerdict> {
 }
 
 /// Whether the screen can price a tag at all: the engine repairs, the
-/// production treatments and the opt-ins — `gene_screen`'s own universe. A
-/// Firaxis-only flag is not here, and the ledger has nothing to say about it.
+/// production genes and the opt-ins — `gene_screen`'s own universe. A
+/// host-only flag is not here, and the ledger has nothing to say about it.
 pub fn screenable(tag: &str) -> bool {
-    crate::elo::ENGINE_REPAIR_TREATMENTS.contains(&tag)
-        || super::PRODUCTION_TREATMENTS
-            .iter()
-            .chain(super::PRODUCTION_OPT_INS)
-            .any(|(_, row_tag, _)| *row_tag == tag)
+    super::gene(tag).is_some_and(|gene| gene.screenable())
 }
 
 /// Whether a gene is on in the deployment genome: the ledger's own
@@ -334,10 +330,7 @@ pub fn ledger_default_on(tag: &str) -> Option<bool> {
 /// verification arm may force on: host-only rows already ship as the universe
 /// set them, while production opt-ins are not part of that universe at all.
 pub fn ledger_held_live_treatment(tag: &str) -> bool {
-    ledger_default_on(tag) == Some(false)
-        && super::LIVE_TREATMENTS
-            .iter()
-            .any(|(_, live_tag, _)| *live_tag == tag)
+    ledger_default_on(tag) == Some(false) && super::gene(tag).is_some_and(|gene| gene.live())
 }
 
 /// Every live treatment an explicit ledger-override arm may restore, in
@@ -345,9 +338,10 @@ pub fn ledger_held_live_treatment(tag: &str) -> bool {
 /// the caller begins from the live universe, so only its withheld rows can be
 /// restored without silently enabling a different bundle.
 pub fn ledger_held_live_treatments() -> Vec<&'static str> {
-    super::LIVE_TREATMENTS
+    super::GENES
         .iter()
-        .map(|(_, tag, _)| *tag)
+        .filter(|gene| gene.live())
+        .map(|gene| gene.tag)
         .filter(|tag| ledger_held_live_treatment(tag))
         .collect()
 }
@@ -358,20 +352,20 @@ pub fn ledger_held_live_treatments() -> Vec<&'static str> {
 /// event reports — the list that used to be `LIVE_BRIDGE_TREATMENTS` whole,
 /// which the ledger makes untrue.
 pub fn deployment_treatments_with_forced_live(forced_on: &[&str]) -> Vec<&'static str> {
-    let mut tags: Vec<&'static str> = super::LIVE_TREATMENTS
+    let mut tags: Vec<&'static str> = super::GENES
         .iter()
-        .map(|(_, tag, _)| *tag)
+        .filter(|gene| gene.live())
+        .map(|gene| gene.tag)
         .filter(|tag| {
             ledger_default_on(tag) != Some(false)
                 || (ledger_held_live_treatment(tag) && forced_on.contains(tag))
         })
         .collect();
-    tags.extend(
-        super::PRODUCTION_OPT_INS
-            .iter()
-            .map(|(_, tag, _)| *tag)
-            .filter(|tag| ledger_default_on(tag) == Some(true)),
-    );
+    for gene in super::GENES.iter().filter(|gene| gene.opt_in()) {
+        if ledger_default_on(gene.tag) == Some(true) && !tags.contains(&gene.tag) {
+            tags.push(gene.tag);
+        }
+    }
     tags
 }
 
@@ -405,21 +399,26 @@ impl AdvancedAi {
     /// than becoming a back door around the ledger.
     pub fn apply_gene_ledger_with_forced_live(&mut self, forced_on: &[&str]) -> GeneLedgerApplied {
         let mut applied = GeneLedgerApplied::default();
-        for &(_, tag, disable) in super::LIVE_TREATMENTS
+        // What the bundle had on — every live gene and the production genes —
+        // the ledger may hold off; what it had off — the opt-ins — the ledger
+        // may turn on. `joint-tactics` is both live and an opt-in: as a live
+        // gene it is withheld or kept like any other.
+        for gene in super::GENES
             .iter()
-            .chain(super::PRODUCTION_TREATMENTS)
+            .filter(|gene| gene.live() || gene.production())
         {
+            let tag = gene.tag;
             if ledger_held_live_treatment(tag) && forced_on.contains(&tag) {
                 applied.forced.push(tag);
             } else if ledger_default_on(tag) == Some(false) {
-                disable(self);
+                (gene.disable)(self);
                 applied.withheld.push(tag);
             }
         }
-        for &(_, tag, enable) in super::PRODUCTION_OPT_INS {
-            if ledger_default_on(tag) == Some(true) {
-                enable(self);
-                applied.enabled.push(tag);
+        for gene in super::GENES.iter().filter(|gene| gene.opt_in()) {
+            if ledger_default_on(gene.tag) == Some(true) {
+                (gene.enable)(self);
+                applied.enabled.push(gene.tag);
             }
         }
         applied
@@ -705,7 +704,7 @@ mod tests {
             None,
             "a host-only flag is never governed by a screen row"
         );
-        for repair in crate::elo::ENGINE_REPAIR_TREATMENTS {
+        for repair in super::super::genes::repair_tags() {
             assert!(screenable(repair));
             assert!(
                 ledger_default_on(repair).is_some(),
@@ -719,16 +718,10 @@ mod tests {
     /// treatment cannot leave a stale verdict governing nothing.
     #[test]
     fn every_ledger_tag_names_a_known_gene() {
-        let known: Vec<&str> = super::super::LIVE_TREATMENTS
-            .iter()
-            .chain(super::super::PRODUCTION_TREATMENTS)
-            .chain(super::super::PRODUCTION_OPT_INS)
-            .map(|(_, tag, _)| *tag)
-            .collect();
         for row in gene_ledger() {
             assert!(
-                known.contains(&row.tag),
-                "ledger row {} names no live treatment, production treatment or opt-in",
+                super::super::gene(row.tag).is_some(),
+                "ledger row {} names no gene in the registry",
                 row.tag
             );
         }
@@ -742,16 +735,21 @@ mod tests {
         let mut ai = AdvancedAi::new();
         ai.enable_live_bridge_universe();
         let applied = ai.apply_gene_ledger();
-        for &(_, tag, _) in super::super::LIVE_TREATMENTS
+        for tag in super::super::GENES
             .iter()
-            .chain(super::super::PRODUCTION_TREATMENTS)
+            .filter(|gene| gene.live() || gene.production())
+            .map(|gene| gene.tag)
         {
             match ledger_default_on(tag) {
                 Some(false) => assert!(applied.withheld.contains(&tag), "{tag} should be withheld"),
                 _ => assert!(!applied.withheld.contains(&tag), "{tag} should stand"),
             }
         }
-        for &(_, tag, _) in super::super::PRODUCTION_OPT_INS {
+        for tag in super::super::GENES
+            .iter()
+            .filter(|gene| gene.opt_in())
+            .map(|gene| gene.tag)
+        {
             assert_eq!(
                 applied.enabled.contains(&tag),
                 ledger_default_on(tag) == Some(true),
@@ -773,9 +771,9 @@ mod tests {
                 "{tag} is enabled yet not listed as deployed"
             );
         }
-        for tag in crate::elo::LIVE_BRIDGE_TREATMENTS {
+        for tag in super::super::genes::live_tags() {
             assert_eq!(
-                deployed.contains(tag),
+                deployed.contains(&tag),
                 ledger_default_on(tag) != Some(false),
                 "{tag}: deployed exactly unless the ledger holds it off"
             );

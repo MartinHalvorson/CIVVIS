@@ -1,7 +1,7 @@
 //! Two territory genes: the district look-ahead a settler scores a site by,
 //! and the priced tile purchase a treasury decides with.
 //!
-//! Both are opt-in (`PRODUCTION_OPT_INS`), ship off, and are priced by
+//! Both are opt-in (`Kind::OptIn` in `genes.rs`), ship off, and are priced by
 //! `gene_screen` before any promotion question is asked — see
 //! `docs/GENE_SCREEN.md`. They live in their own file because they are
 //! one sentence each and `src/ai/advanced.rs` is the most contended file in
@@ -410,7 +410,7 @@ impl AdvancedAi {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ai::advanced::PRODUCTION_OPT_INS;
+    use crate::ai::advanced::GENES;
     use crate::game::Action;
 
     fn plan(strategy: GrandStrategy, turn: u32) -> StrategicPlan {
@@ -487,10 +487,11 @@ mod tests {
         let mut ai = AdvancedAi::new();
         ai.enable_live_bridge_universe();
         assert!(!ai.district_lookahead_settle);
-        let (_, _, enable) = PRODUCTION_OPT_INS
+        let enable = GENES
             .iter()
-            .find(|(_, tag, _)| *tag == "district-lookahead-settle")
-            .expect("an opt-in row");
+            .find(|gene| gene.tag == "district-lookahead-settle")
+            .expect("an opt-in row")
+            .enable;
         enable(&mut ai);
         assert!(ai.district_lookahead_settle);
         ai.disable_district_lookahead_settle();
@@ -503,10 +504,11 @@ mod tests {
         ai.enable_live_bridge_universe();
         assert!(!ai.priced_tile_purchase);
         assert!(!ai.base.plot_purchase_delegated);
-        let (_, _, enable) = PRODUCTION_OPT_INS
+        let enable = GENES
             .iter()
-            .find(|(_, tag, _)| *tag == "priced-tile-purchase")
-            .expect("an opt-in row");
+            .find(|gene| gene.tag == "priced-tile-purchase")
+            .expect("an opt-in row")
+            .enable;
         enable(&mut ai);
         assert!(ai.priced_tile_purchase);
         assert!(ai.base.plot_purchase_delegated);

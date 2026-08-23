@@ -208,11 +208,10 @@ because it forced a full optimized rebuild for every promoted HEAD, and
 ### What the ledger refuses
 
 `tools/gene_ledger.py` re-derives the gene tags at the commit a source claims —
-`ENGINE_REPAIR_TREATMENTS` in `src/elo.rs`, then the `(field, tag, toggle)`
-rows of `PRODUCTION_TREATMENTS` and `PRODUCTION_OPT_INS` in
-`src/ai/advanced/treatments.rs`, which is exactly the order `gene_table()`
-builds — and refuses the source when the fingerprints differ, **in either
-direction**:
+every screenable row of the registry `src/ai/advanced/genes.rs` in order,
+which is exactly what `gene_table()` builds (and, for a commit older than the
+registry, the three tables that preceded it) — and refuses the source when the
+fingerprints differ, **in either direction**:
 
 - a gene **priced here and absent at that commit** — P10's shape;
 - a gene **present at that commit and never compiled in** — which is what an
@@ -342,23 +341,32 @@ run, not a promotion. Read the resolution line before reading the table.
 
 ## Which genes
 
-`--list` prints the genome order. It is **discovered from the repository's own
-tables**, never listed by hand:
+`--list` prints the genome order. It is **discovered from the gene registry**,
+`src/ai/advanced/genes.rs`, never listed by hand: every gene is declared once
+there — its tag, its flag, its kind and its two toggles — and the screen
+varies every `screenable()` row in registry order:
 
-- `civvis::elo::ENGINE_REPAIR_TREATMENTS` — every live-bridge repair that fixes a
-  CIVVIS engine defect, i.e. `LIVE_BRIDGE_TREATMENTS` minus
-  `FIRAXIS_ONLY_TREATMENTS`. Host-only flags (`land-grab`, `explore-commit`,
-  `bank-envoys`, `fog-land-capacity`, …) read the Civ VI mirror's state and are
-  inert on a native board; screening them would measure noise and report it as
-  noise, so they are excluded rather than measured.
-- `civvis::ai::PRODUCTION_TREATMENTS` — what production itself turns on.
-- `civvis::ai::PRODUCTION_OPT_INS` — off-by-default behaviours; the gene *on*
-  means enabling it. `joint-tactics` is the one `FIRAXIS_ONLY` tag that is not
-  host-only at all, so it is listed as an opt-in and screened like one.
+- `Kind::Repair(axis)` — an engine repair the Civilization VI seat ships and a
+  native board can play; on in the genome's universe.
+- `Kind::Production` — what production itself turns on before the ledger
+  (`strategic-wonders`); on in the universe.
+- `Kind::OptIn` — off everywhere until the ledger turns it on
+  (`apostle-promotion-by-role`, `war-economy-2`, …); the gene *on* means
+  enabling it.
+- `Kind::HostOnlyOptIn` — `joint-tactics`: shipped by the bridge as a host
+  adapter *and* screenable as an opt-in, because its search runs headless.
+- `Kind::HostOnly` — shipped by the Civilization VI seat but reading host
+  state a native board does not have (`land-grab`, `explore-commit`,
+  `bank-envoys`, `fog-land-capacity`, …): inert headless, so **never
+  screened** — screening them would measure noise and report it as noise.
+  Pricing the deployment bundle in the host regime is a different
+  instrument (`civvis_orders --without`, the ladder).
 
-A treatment added to any of those tables reaches the genome without touching
-`gene_screen.rs`; an engine repair with no `LIVE_TREATMENTS` row is a panic,
-not a silent omission.
+A gene added to the registry reaches the genome, the ledger, the ranking and
+the manifest without touching any of them: `tools/gene_registry.py` is the one
+Python reader, and `gene_screen.rs`'s
+`the_gene_table_is_exactly_what_the_ledger_re_derives_from_the_tables` holds
+the Rust and Python readings of the registry to one answer.
 
 | flag | meaning |
 |---|---|
@@ -386,8 +394,8 @@ it belongs to a family.
    `treatment_flags.rs`, and its own code path — a second implementation of the
    behaviour, not a patch to the first. The original's code and tag stay as
    they are; it is version one.
-2. Add the row to the table the original lives in (`PRODUCTION_OPT_INS`,
-   `LIVE_TREATMENTS`, …) with the tag **`war-economy-2`**. That suffix is the
+2. Add the row to the registry (`src/ai/advanced/genes.rs`, the same kind as
+   the original — usually `Kind::OptIn`) with the tag **`war-economy-2`**. That suffix is the
    whole declaration: a tag `<base>-<n>` with `n ≥ 2` whose `<base>` is itself
    a gene is that gene's version `n`. (`search-cadence-20` is not a version of
    anything; `war-economy-1` is not used — the original keeps its name and
@@ -830,9 +838,9 @@ screen sets it.
 
 `tools/gene_fires.py --max 0` is that gate, wired into `cargo-test` beside
 `civvis_inert.py --max 0`, which is the ratchet it is modelled on. It discovers
-the gene set exactly the way `gene_table()` does — the engine repairs resolved
-through `LIVE_TREATMENTS`, plus both production tables, so a new gene reaches
-the gate without touching the tool — and reads each gene's own rows out of
+the gene set exactly the way `gene_table()` does — every screenable row of the
+registry, so a new gene reaches the gate without touching the tool — and reads
+each gene's own rows out of
 `docs/gene_screens/**/*.json`. **A gene is proven when some committed row has a
 non-zero paired statistic**, which is a number read out of an artifact rather
 than a sentence somebody wrote. The cheapest artifact that carries it is a
@@ -878,10 +886,10 @@ gate above refused four on their own probes. What the remaining 52 are:
 | group | n | why not a gene |
 |---|---:|---|
 | `bundle` | 6 | It turns a group of other genes on. `gene_screen` already builds its treated seat from `enable_engine_repairs_universe`; a row would vary everything inside it and file the sum under one tag. |
-| `host-only` | 12 | Cannot fire on a native board, each with its reason already recorded beside its tag in `FIRAXIS_ONLY_TREATMENTS`. `step-and-reassess` is the founding example of the paragraph above. |
-| `live-bridge-row` | 16 | **Screenable would mean withheld.** It has a `LIVE_TREATMENTS` row, so a `PRODUCTION_OPT_INS` row flips `ledger_default_on` from `None` to `Some(false)` and `apply_gene_ledger` takes it out of the live bridge. Its host-only classification is an argument about which rivals the weights were bred against, not a claim it cannot fire — so the move it wants is the one `culture-coverage` made, out of `FIRAXIS_ONLY_TREATMENTS` into an `ENGINE_REPAIR_*` half, taken deliberately with the bridge change owned. |
-| `production-on` | 6 | Production ships it ON, so its door is `PRODUCTION_TREATMENTS` — and that row is **not** neutral: `apply_gene_ledger` disables every production treatment whose `ledger_default_on` is `Some(false)`, which is exactly a screenable tag with no ledger row. Adding it would switch a shipped behaviour off; `open_water_navy` alone was promoted at +61 Elo-equivalent (200 pairs, seed 8700000, CI +21..+109, PASS on the corrected-gate matrix; see `AdvancedAi::promoted_policy_envoy`). It needs its first screen row before it can have a gene row. |
-| `configured-on` | 5 | On in `AdvancedAi::configured` but not in `promoted_policy_envoy`, so `production_bundle_rows_are_real` rejects the row as written, and it carries the same hazard as the group above. |
+| `host-only` | 12 | Cannot fire on a native board, each with its reason already recorded beside its row in the registry (`Kind::HostOnly`). `step-and-reassess` is the founding example of the paragraph above. |
+| `live-bridge-row` | 16 | **Screenable would mean withheld.** It is a live gene, so an opt-in row flips `ledger_default_on` from `None` to `Some(false)` and `apply_gene_ledger` takes it out of the live bridge. Its host-only classification is an argument about which rivals the weights were bred against, not a claim it cannot fire — so the move it wants is the one `culture-coverage` made, out of `FIRAXIS_ONLY_TREATMENTS` into an `ENGINE_REPAIR_*` half, taken deliberately with the bridge change owned. |
+| `production-on` | 6 | Production ships it ON, so its door is `Kind::Production` — and that row is **not** neutral: `apply_gene_ledger` disables every production treatment whose `ledger_default_on` is `Some(false)`, which is exactly a screenable tag with no ledger row. Adding it would switch a shipped behaviour off; `open_water_navy` alone was promoted at +61 Elo-equivalent (200 pairs, seed 8700000, CI +21..+109, PASS on the corrected-gate matrix; see `AdvancedAi::promoted_policy_envoy`). It needs its first screen row before it can have a gene row. |
+| `configured-on` | 5 | On in `AdvancedAi::configured` but not in `promoted_policy_envoy`, so `production_and_opt_in_rows_are_real` rejects the row as written, and it carries the same hazard as the group above. |
 | `infrastructure` | 2 | No decision content: a cache lifetime, and a controller-wide mode that is itself an aggregate over genes that already exist. |
 | `already-on` | 1 | `adjacent_camp_clear` is on in `BasicAi::new`, so an opt-in row would be on in both arms and screen as exactly inert. |
 | `does-not-fire` | 4 | A gene row was written for it here and `tools/gene_fires.py` refused it: a single-gene probe over 12 map pairs left both arms byte-identical. The row was removed rather than shipped to return a zero-width interval. |

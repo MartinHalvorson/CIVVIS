@@ -2,7 +2,8 @@
 
 <!-- GENERATED FILE: python3 tools/eval_manifest.py --write -->
 
-This page is generated from `src/elo.rs` and `docs/civ6_ladder.json`.
+This page is generated from the gene registry (`src/ai/advanced/genes.rs`),
+`src/elo.rs` (the built-in agents) and `docs/civ6_ladder.json`.
 The append-only experiment evidence remains in `docs/EVAL.md`; this
 page is the current inventory and live-bridge snapshot.
 

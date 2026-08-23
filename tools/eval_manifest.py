@@ -22,9 +22,18 @@ import sys
 from pathlib import Path
 from typing import Any
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import gene_registry  # noqa: E402
 
-REGISTRY_NAMES = (
-    "BUILTIN_AIS",
+
+
+# The one list still read out of `src/elo.rs`: the built-in agents. Every gene
+# list — live, host-only, repair (and its war/economy halves) — is a view of
+# the gene registry (`src/ai/advanced/genes.rs`) read through
+# `gene_registry.py`, and is published under the names the old `elo.rs` lists
+# had so the manifest's shape and the page's rows stay readable.
+REGISTRY_NAMES = ("BUILTIN_AIS",)
+GENE_LISTS = (
     "LIVE_BRIDGE_TREATMENTS",
     "FIRAXIS_ONLY_TREATMENTS",
     "ENGINE_REPAIR_WAR_TREATMENTS",
@@ -88,6 +97,18 @@ def read_registry(repo: Path) -> dict[str, dict[str, Any]]:
     missing = [name for name in REGISTRY_NAMES if name not in found]
     if missing:
         raise ValueError(f"src/elo.rs is missing registry constants: {', '.join(missing)}")
+    genes = gene_registry.genes_from_text(
+        (repo / gene_registry.REGISTRY).read_text(encoding="utf-8"))
+    views = {
+        "LIVE_BRIDGE_TREATMENTS": [g.tag for g in genes if g.live],
+        "FIRAXIS_ONLY_TREATMENTS": [g.tag for g in genes if g.host_only],
+        "ENGINE_REPAIR_WAR_TREATMENTS": [g.tag for g in genes if g.axis == "War"],
+        "ENGINE_REPAIR_ECONOMY_TREATMENTS": [g.tag for g in genes if g.axis == "Economy"],
+        "ENGINE_REPAIR_TREATMENTS": [g.tag for g in genes if g.repair],
+    }
+    for name in GENE_LISTS:
+        items = views[name]
+        found[name] = {"declared_count": len(items), "items": items}
     return found
 
 
@@ -303,10 +324,9 @@ def genome_coverage(repo: Path) -> dict[str, Any]:
 
     * `treatment_flags.rs` — every `enable_*`/`disable_*` capability toggle.
       The file's own guard keeps them all there and nothing else there.
-    * the three gene tables — `PRODUCTION_TREATMENTS` and `PRODUCTION_OPT_INS`
-      carry the field name in the row; `ENGINE_REPAIR_TREATMENTS` carries only
-      a tag, resolved to its field through `LIVE_TREATMENTS`. This is exactly
-      what `gene_screen::gene_table` walks, so "reachable" here means reachable
+    * the gene registry (`src/ai/advanced/genes.rs`) — every screenable row
+      carries its field and its toggle. This is exactly what
+      `gene_screen::gene_table` walks, so "reachable" here means reachable
       by the binary rather than by a list somebody kept in step.
     * `docs/gene_ledger.json` — which of those genes a screen has measured.
     """
@@ -320,49 +340,20 @@ def genome_coverage(repo: Path) -> dict[str, Any]:
             "src/ai/advanced/treatment_flags.rs yielded no capability toggles; "
             "the scrape broke rather than finding an empty file")
 
-    treatments_source = _strip_comments(
-        (repo / "src" / "ai" / "advanced" / "treatments.rs").read_text(encoding="utf-8"))
-    # ⚠⚠ A ROW'S FIELD STRING AND ITS TOGGLE'S NAME ARE NOT THE SAME WORD, and
-    # joining on the wrong one invents debt. `army-target-weighs-enemy` is a
-    # row reading ("army_target_weighs_enemy", …, disable_army_target_weighs_the_enemy)
-    # — note "the" — so matching the toggle set against the field string alone
-    # reported a measured gene as unreachable on this function's first run.
-    # A toggle counts as reachable under EITHER spelling.
-    ROW = (r'\(\s*"([a-z0-9_]+)"\s*,\s*"([a-z0-9-]+)"\s*,\s*'
-           r'AdvancedAi::(?:enable|disable)_([a-z0-9_]+)\s*\)')
-
-    def rows_of(name: str, source: str) -> list[tuple[str, str, str]]:
-        parts = source.split(f"pub const {name}", 1)
-        if len(parts) < 2:
-            raise ValueError(f"{name} not found; the scrape broke")
-        found = re.findall(ROW, parts[1].split("];", 1)[0])
-        if not found:
-            raise ValueError(f"{name} yielded no rows; the scrape broke")
-        return found
-
-    live_rows = rows_of("LIVE_TREATMENTS", treatments_source)
-    spellings_of_tag = {tag: {field, fn} for field, tag, fn in live_rows}
-
-    screenable_tags: set[str] = set()
+    # ⚠⚠ A ROW'S FIELD AND ITS TOGGLE'S NAME ARE NOT ALWAYS THE SAME WORD, and
+    # joining on the wrong one invents debt: `army-target-weighs-enemy` is the
+    # field `army_target_weighs_enemy` toggled through
+    # `disable_army_target_weighs_the_enemy` — note "the" — so matching the
+    # toggle set against the field alone reported a measured gene as
+    # unreachable on this function's first run. A toggle counts as reachable
+    # under EITHER spelling.
+    genes = gene_registry.genes_from_text(
+        (repo / gene_registry.REGISTRY).read_text(encoding="utf-8"))
+    screenable_tags = {g.tag for g in genes if g.screenable}
     screenable_spellings: set[str] = set()
-    for name in ("PRODUCTION_TREATMENTS", "PRODUCTION_OPT_INS"):
-        for field, tag, fn in rows_of(name, treatments_source):
-            screenable_tags.add(tag)
-            screenable_spellings |= {field, fn}
-
-    repairs = re.findall(
-        r'"([a-z0-9-]+)"',
-        _strip_comments((repo / "src" / "elo.rs").read_text(encoding="utf-8"))
-        .split("pub const ENGINE_REPAIR_TREATMENTS", 1)[1].split("];", 1)[0])
-    unresolvable = sorted(tag for tag in repairs if tag not in spellings_of_tag)
-    if unresolvable:
-        raise ValueError(
-            "these engine repairs have no LIVE_TREATMENTS row, so their toggle "
-            "cannot be resolved and the coverage count would be wrong: "
-            + ", ".join(unresolvable))
-    for tag in repairs:
-        screenable_tags.add(tag)
-        screenable_spellings |= spellings_of_tag[tag]
+    for g in genes:
+        if g.screenable:
+            screenable_spellings |= {g.field, g.toggle}
 
     ledger = json.loads(
         (repo / "docs" / "gene_ledger.json").read_text(encoding="utf-8"))
@@ -389,7 +380,8 @@ def build_manifest(repo: Path) -> dict[str, Any]:
         "schema_version": 1,
         "genome_coverage": genome_coverage(repo),
         "source": {
-            "registry": "src/elo.rs",
+            "registry": "src/ai/advanced/genes.rs",
+            "agents": "src/elo.rs",
             "ladder": "docs/civ6_ladder.json",
         },
         "registry": registry,
@@ -470,7 +462,8 @@ def render_status(manifest: dict[str, Any]) -> str:
         "",
         "<!-- GENERATED FILE: python3 tools/eval_manifest.py --write -->",
         "",
-        "This page is generated from `src/elo.rs` and `docs/civ6_ladder.json`.",
+        "This page is generated from the gene registry (`src/ai/advanced/genes.rs`),",
+        "`src/elo.rs` (the built-in agents) and `docs/civ6_ladder.json`.",
         "The append-only experiment evidence remains in `docs/EVAL.md`; this",
         "page is the current inventory and live-bridge snapshot.",
         "",

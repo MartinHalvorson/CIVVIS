@@ -4797,14 +4797,16 @@ impl Default for AdvancedAi {
 /// than the methods they call and must stay that way, or a published result
 /// stops being findable. Same for the arm names `army_target_weighs_enemy`,
 /// `siege_tracks_wall` and `suzerain_cards`.
-/// The live-bridge treatment table lives in its own file.
-///
-/// It is a single shared list that every treatment PR appends to, in the file
-/// `tools/conflict_hotspots.py` measures as the most contended in the
-/// repository. `docs/ROADMAP.md` objective 5 names that as the case splitting
-/// does not answer and moving the data out does. See `advanced/treatments.rs`.
-mod treatments;
-pub use treatments::{LiveTreatment, LIVE_TREATMENTS, PRODUCTION_OPT_INS, PRODUCTION_TREATMENTS};
+/// ⭐ THE GENE REGISTRY lives in its own file: every behaviour flag the genome
+/// can carry, declared once with its tag, kind and toggles. It is a single
+/// shared list that every gene PR appends to, kept out of this file because
+/// `tools/conflict_hotspots.py` measures `advanced.rs` as the most contended
+/// in the repository. See `advanced/genes.rs`.
+pub mod genes;
+pub use genes::{
+    gene, host_only_tags, live_tags, repair_tags, repair_tags_on, screenable_genes, Axis, Gene,
+    Kind, GENES,
+};
 
 /// Every `enable_*` / `disable_*` capability toggle lives in its own file.
 ///

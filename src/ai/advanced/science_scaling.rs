@@ -1,6 +1,6 @@
 //! Two late-game science genes, and the tests that pin them.
 //!
-//! Both are opt-in (`PRODUCTION_OPT_INS`), ship off, and are priced by
+//! Both are opt-in (`Kind::OptIn` in `genes.rs`), ship off, and are priced by
 //! `gene_screen` before any promotion question is asked — see
 //! `docs/GENE_SCREEN.md`. They live here because they are one sentence each
 //! and `src/ai/advanced.rs` is the most contended file in the repository
@@ -94,7 +94,7 @@
 #[cfg(test)]
 mod tests {
     use super::super::*;
-    use crate::ai::advanced::PRODUCTION_OPT_INS;
+    use crate::ai::advanced::GENES;
     use crate::Pos;
 
     fn found_capital(game: &mut Game, pid: usize) -> u32 {
@@ -156,10 +156,11 @@ mod tests {
             let mut ai = AdvancedAi::new();
             ai.enable_live_bridge_universe();
             assert!(!read(&ai), "{tag} ships off even under the live bridge");
-            let (_, _, enable) = PRODUCTION_OPT_INS
+            let enable = GENES
                 .iter()
-                .find(|(_, row, _)| *row == tag)
-                .unwrap_or_else(|| panic!("{tag} has an opt-in row"));
+                .find(|gene| gene.tag == tag)
+                .unwrap_or_else(|| panic!("{tag} has an opt-in row"))
+                .enable;
             enable(&mut ai);
             assert!(read(&ai), "{tag} turns on");
         }

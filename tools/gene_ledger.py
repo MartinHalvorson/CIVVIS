@@ -69,8 +69,8 @@ refused at the `--source` path, and one explicit flag records a deviation
 deliberately. `gene_screen` stamps every header with the commit its binary was
 built from, whether that tree was dirty, a sha256 of the executable, and a
 sha256 of the **gene set compiled into it**. This tool re-derives the gene tags
-from `ENGINE_REPAIR_TREATMENTS`, `PRODUCTION_TREATMENTS` and
-`PRODUCTION_OPT_INS` at the commit the source claims, and refuses the source
+from the gene registry (`src/ai/advanced/genes.rs`) at the commit the source
+claims, and refuses the source
 when the two disagree in either direction — a gene priced here and absent
 there, or a gene present there and never compiled in here. It also refuses an
 unstamped build, a dirty one, a commit this clone cannot read, an artefact
@@ -175,6 +175,9 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
+sys.path.insert(0, str(ROOT / "tools"))
+import gene_registry  # noqa: E402
+
 LEDGER_JSON = ROOT / "docs" / "gene_ledger.json"
 LEDGER_RS = ROOT / "src" / "ai" / "advanced" / "gene_ledger_table.rs"
 #: ⭐ THE SCREEN, leg by leg — the profile a `gene_screen` header must carry to
@@ -210,13 +213,10 @@ BUILD_KEYS = ("commit", "commit_source", "dirty", "genes_sha256", "binary_sha256
 BATCH_KEYS = ("target_games", "target_seats", "target_pairs", "target_comparisons",
               "seed_first", "seed_last")
 #: Where the gene tags live, in the order `gene_screen`'s `gene_table()` builds
-#: them. `ENGINE_REPAIR_TREATMENTS` is a flat list of tags; the other two are
-#: `(field, tag, toggle)` rows whose tag is the second string.
-GENE_TABLES = (
-    ("src/elo.rs", "ENGINE_REPAIR_TREATMENTS", 0),
-    ("src/ai/advanced/treatments.rs", "PRODUCTION_TREATMENTS", 1),
-    ("src/ai/advanced/treatments.rs", "PRODUCTION_OPT_INS", 1),
-)
+#: them: the registry, `src/ai/advanced/genes.rs`, read by `gene_registry.py` —
+#: and, for a commit older than the registry (before 2026-08-23), the three
+#: tables that preceded it.
+GENE_TABLES = ((gene_registry.REGISTRY, "GENES", None),) + gene_registry.LEGACY_TABLES
 #: The date the build stamp landed. A source written before it carries no
 #: `build` block at all; see `build_state`.
 FINGERPRINT_SINCE = "2026-08-23"
@@ -663,8 +663,6 @@ def default_from_columns(last: int | None, prior: int | None,
     return default_from_win_columns(last, prior)
 
 
-TREATMENTS_RS = ROOT / "src" / "ai" / "advanced" / "treatments.rs"
-ROW = re.compile(r'\(\s*"([a-z0-9_]+)"\s*,\s*"([a-z0-9-]+)"\s*,\s*AdvancedAi::')
 
 
 def profile_of(data: dict) -> dict:
@@ -704,57 +702,14 @@ def shape_gap(profile: dict) -> str:
     )
 
 
-def _uncommented(text: str) -> str:
-    """`text` with `//` line comments and `/* */` blocks removed.
-
-    Comments come out first because the tables are heavily commented and those
-    comments quote tag names; a scrape that read them would invent genes."""
-    text = re.sub(r"/\*.*?\*/", "", text, flags=re.S)
-    return re.sub(r"//[^\n]*", "", text)
-
-
-def _quoted(text: str) -> list[str]:
-    """Every double-quoted string in `text`, in order, comments removed.
-
-    ⚠ THIS IS `gene_screen.rs`'s `quoted` IN THE OTHER LANGUAGE. The rule is
-    deliberately the simplest one both can state without argument, because a
-    disagreement between them would refuse honest screens rather than
-    dishonest ones."""
-    return re.findall(r'"([^"\\]*)"', _uncommented(text))
-
-
-def _table_body(text: str, name: str) -> str:
-    """The body of `pub const <name>: … = &[ … ];`, brackets balanced."""
-    start = text.index(f"pub const {name}")
-    open_at = text.index("= &[", start) + 4
-    depth, index = 1, open_at
-    while depth:
-        if text[index] == "[":
-            depth += 1
-        elif text[index] == "]":
-            depth -= 1
-        index += 1
-    return text[open_at:index - 1]
-
-
 def gene_tags_from_sources(read) -> list[str]:
     """The gene tags a `gene_screen` binary compiles in, in header order, from
-    the source tables `read(path)` supplies.
-
-    Every tag of `ENGINE_REPAIR_TREATMENTS`, then the `(field, tag, toggle)`
-    rows of `PRODUCTION_TREATMENTS` and `PRODUCTION_OPT_INS`, whose tag is the
-    second string of each row — exactly what `gene_table()` builds.
+    the registry `read(path)` supplies — `gene_registry.screenable_tags_from`,
+    which also reads the three tables a pre-2026-08-23 commit had instead.
     `gene_screen.rs`'s
     `the_gene_table_is_exactly_what_the_ledger_re_derives_from_the_tables`
     holds this rule against the compiled table itself."""
-    tags: list[str] = []
-    cache: dict[str, str] = {}
-    for path, name, offset in GENE_TABLES:
-        if path not in cache:
-            cache[path] = read(path)
-        found = _quoted(_table_body(cache[path], name))
-        tags += found[offset::2] if offset else found
-    return tags
+    return gene_registry.screenable_tags_from(read)
 
 
 def gene_tags_at(commit: str) -> list[str] | None:
@@ -916,12 +871,10 @@ def build_gap(data: dict, name: str, tags_at=None, tags_now=None) -> str:
 
 
 def known_tags() -> set[str]:
-    """Every gene tag the repository registers — the `(field, tag, toggle)`
-    rows of `LIVE_TREATMENTS`, `PRODUCTION_TREATMENTS` and
-    `PRODUCTION_OPT_INS` in `src/ai/advanced/treatments.rs`. A screen played
-    on an older build can carry a gene whose code has since been removed;
-    its row must not enter the ledger (the Rust table refuses unknown tags)."""
-    return {tag for _, tag in ROW.findall(TREATMENTS_RS.read_text())}
+    """Every gene tag the registry declares. A screen played on an older build
+    can carry a gene whose code has since been removed; its row must not enter
+    the ledger (the Rust table refuses unknown tags)."""
+    return gene_registry.known_tags()
 
 
 def load_source(path: Path) -> dict:
