@@ -33,7 +33,7 @@ DEPLOYED_GENOME_20260823 = (
     "amenity-district-path", "barbarian-scouts-are-scouts",
     "blind-objective-strength", "bounded-recovery",
     "builder-worked-tile-priority", "camp-party", "come-ashore",
-    "escort-unstick", "founder-temple", "governor-victory-lanes",
+    "escort-unstick", "founder-temple",
     "great-person-housing", "holy-lane-parity", "housing-research",
     "idle-faith-patronage", "inquisition-on-threat", "loyalty-rate-alarm",
     "one-launch-pad", "opportunistic-war", "peacetime-deterrence",
@@ -541,9 +541,15 @@ class ThePrecisionWeightedPosterior(unittest.TestCase):
             for s in ledger["sources"]
         ]
         constant, name = gene_ledger.direct_arm_constant(sources)
-        self.assertIn("h1-holy-lane-parity-direct", name)
-        # h1: 7,200 seat pairs at a 24.34 per-column standard error.
-        self.assertAlmostEqual(constant / math.sqrt(7200), 24.34, places=2)
+        # g1 replaced h1 as the widest arm on 2026-08-23. It flips
+        # `governor-victory-lanes`, which reaches nearly every decision the
+        # governor makes, so its two arms play very different games and the
+        # foldover cancels almost nothing: 39.09 per column against h1's
+        # 24.34. Widest is deliberately the conservative end, so the constant
+        # rising is the estimator getting safer, not worse.
+        self.assertIn("g1-governor-victory-lanes-direct", name)
+        # g1: 3,600 seat pairs at a 39.09 per-column standard error.
+        self.assertAlmostEqual(constant / math.sqrt(3600), 39.09, places=2)
         # The four-player single-gene probe is not eligible: a 1-in-4 chance
         # base is not the screen's instrument.
         self.assertNotIn("s2-step-and-reassess", name)
@@ -605,8 +611,12 @@ class TheDeploymentAuthority(unittest.TestCase):
         # The published delta the operator takes the call on. Both settings
         # re-admit exactly the three genes the sign-of-Diff veto removed --
         # none of which has a resolved negative record.
-        self.assertEqual(counts["default_on_under_posterior-veto"], 34)
-        self.assertEqual(counts["default_on_under_posterior"], 34)
+        # 33, not 34, since 2026-08-23: the base moved 31 -> 30 when g1's
+        # direct arm resolved `governor-victory-lanes` off. The posterior
+        # re-admits the same three genes and agrees with the threshold rule
+        # about that gene, so the delta itself is unchanged at 3.
+        self.assertEqual(counts["default_on_under_posterior-veto"], 33)
+        self.assertEqual(counts["default_on_under_posterior"], 33)
         self.assertEqual(counts["moved_by_posterior-veto"], 3)
         self.assertEqual(counts["moved_by_posterior"], 3)
 

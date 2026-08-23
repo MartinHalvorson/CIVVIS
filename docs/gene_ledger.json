@@ -185,18 +185,40 @@
         "field": "advanced",
         "start_seed": 110000000
       }
+    },
+    {
+      "path": "docs/gene_screens/2026-08-23-g1-governor-victory-lanes-direct-6p-allseats-3600-pairs.json",
+      "shape": "standard",
+      "complete_pairs": 3600,
+      "family_wise_z": 1.96,
+      "profile": {
+        "players": 6,
+        "map": "continents",
+        "width": 74,
+        "height": 46,
+        "city_states": 9,
+        "speed": "online",
+        "turns": 250,
+        "victories": "science,culture,religious,diplomatic,domination,score",
+        "all_seats": true,
+        "randomize_civs": true,
+        "design": "foldover",
+        "baseline": "best",
+        "field": "advanced",
+        "start_seed": 150000000
+      }
     }
   ],
   "counts": {
     "helps": 18,
-    "hurts": 4,
-    "unresolved": 44,
-    "default_on": 31,
-    "default_on_under_columns": 31,
+    "hurts": 5,
+    "unresolved": 43,
+    "default_on": 30,
+    "default_on_under_columns": 30,
     "moved_by_columns": 0,
-    "default_on_under_posterior-veto": 34,
+    "default_on_under_posterior-veto": 33,
     "moved_by_posterior-veto": 3,
-    "default_on_under_posterior": 34,
+    "default_on_under_posterior": 33,
     "moved_by_posterior": 3
   },
   "genes": [
@@ -1227,41 +1249,34 @@
     },
     {
       "tag": "governor-victory-lanes",
-      "verdict": "unresolved",
-      "default_on": true,
-      "wins_last_10k": 46,
-      "wins_prior_10k": null,
-      "win_diff_pp": 0.910436,
-      "posterior_pp": 45.521794,
-      "posterior_se_pp": 18.475054,
-      "posterior_screens": 1,
-      "posterior_tau_pp": 0.0,
-      "family_wise": false,
-      "conflict": true,
+      "verdict": "hurts",
+      "default_on": false,
+      "wins_last_10k": -239,
+      "wins_prior_10k": 46,
+      "win_diff_pp": -0.056673,
+      "posterior_pp": -94.597698,
+      "posterior_se_pp": 142.190043,
+      "posterior_screens": 2,
+      "posterior_tau_pp": 198.771609,
+      "family_wise": true,
+      "conflict": false,
       "screen": {
-        "pairs": 17574,
-        "n_on": 17574,
-        "n_off": 17574,
-        "win_delta_pp": 0.91,
-        "win_z": 2.464,
-        "share_delta_pp": -1.024,
-        "share_z": -15.918,
-        "read": "helps * \u00b7 share HURTS **",
-        "source": "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
+        "pairs": 3600,
+        "n_on": 3600,
+        "n_off": 3600,
+        "win_delta_pp": -4.778,
+        "win_z": -6.112,
+        "share_delta_pp": -2.732,
+        "share_z": -23.757,
+        "read": "HURTS ** \u00b7 share HURTS **",
+        "source": "2026-08-23-g1-governor-victory-lanes-direct-6p-allseats-3600-pairs.json",
         "win_tranches": [
           {
             "position": "latest",
-            "pairs": 10002,
-            "win_delta_pp": 1.14,
-            "win_z": 2.313,
-            "win_se_pp": 0.493
-          },
-          {
-            "position": "previous",
-            "pairs": 7572,
-            "win_delta_pp": 0.608,
-            "win_z": 1.088,
-            "win_se_pp": 0.558
+            "pairs": 3600,
+            "win_delta_pp": -4.778,
+            "win_z": -6.112,
+            "win_se_pp": 0.782
           }
         ]
       }
