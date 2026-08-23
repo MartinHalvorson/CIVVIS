@@ -62,3 +62,14 @@ strength claim and no effect size is quotable from it
 untouched: `ai_eval advanced_wonder_reach advanced --matrix --pairs 400
 --seed 32000000`, one run, decided by the matrix gate and nothing else. The
 flag stays off in production until that gate speaks.
+
+---
+
+⚠ **2026-08-23: that gate can never speak.** #2266 removed
+`wonder-prereq-reach` from the code on 2026-08-21 together with the
+`advanced_wonder_reach` arm, so the pre-registered run above has nothing to
+seat and seed 32000000 stays unspent. The gene was culled at −26 wins/10k and
+the p10 screen — already in flight, its binary older than the cull — priced it
+afterwards at **+29** (z +1.57 against a family-wise bar of 3.40, i.e. inside
+noise, as the −26 also was). It was never resolved either way. See
+[`2026-08-23-the-arms-that-were-pre-registered-and-never-run.md`](2026-08-23-the-arms-that-were-pre-registered-and-never-run.md) §2.
