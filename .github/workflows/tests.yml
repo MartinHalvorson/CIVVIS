@@ -191,6 +191,12 @@ jobs:
       # as soon as its gene is proven or leaves the tables.
       - name: Every gene has been shown to fire in at least one game
         run: python3 tools/gene_fires.py --max 0
+      # The ledger (`docs/gene_ledger.json`), the verdict block at the end of
+      # `src/ai/advanced/genes.rs` and `HEURISTIC_GENE_RANKING.md` are all
+      # derived from the same screen sources by one tool; a change that edits
+      # one by hand, or re-enters a source without regenerating, fails here.
+      - name: The gene ledger, the verdict block and the ranking are current
+        run: python3 tools/genes.py check
 
   # The published build at civvis.ai/beta compiles this same crate for the
   # browser (`src/wasm.rs`, gated to wasm32). `cargo test` never builds that

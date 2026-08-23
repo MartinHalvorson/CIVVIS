@@ -49,7 +49,7 @@
 //! Every batch stamps the binary that played it — the commit, whether that
 //! tree was dirty, a sha256 of the executable, and a sha256 of the gene set
 //! compiled into it — and pre-registers the size it was launched to play
-//! (`Build`, `Batch`): `tools/gene_ledger.py` refuses a source whose gene set
+//! (`Build`, `Batch`): `tools/genes.py` refuses a source whose gene set
 //! does not match the code at the commit it names, and `--analyze` reports
 //! actual against intended so a run that stopped early cannot read as a
 //! finished screen.
@@ -73,7 +73,7 @@
 //! Civilization VI's own six-player map row and the deployment shape, so the
 //! ledger is read from the games the agent actually plays.
 //! `gene_screen --games N --out rows.jsonl` is a screen; anything that moves
-//! a leg of the profile is a probe, and `tools/gene_ledger.py` refuses it as
+//! a leg of the profile is a probe, and `tools/genes.py` refuses it as
 //! a source rather than mixing shapes.
 //!
 //! Files written by the earlier paired designs (every header before this one
@@ -100,7 +100,7 @@ use std::time::Instant;
 /// all endings and drowned everything else; the same seeds on continents read
 /// 28% religious, 18% culture and 52% at the clock, for +11.9% wall per game
 /// (`docs/GENE_SCREEN.md`, "Why continents"). A batch that changes any leg of
-/// this is a probe: `tools/gene_ledger.py` refuses it as a ledger source.
+/// this is a probe: `tools/genes.py` refuses it as a ledger source.
 const SCREEN_PLAYERS: usize = 6;
 const SCREEN_WIDTH: i32 = 74;
 const SCREEN_HEIGHT: i32 = 46;
@@ -310,7 +310,7 @@ impl Row {
 /// stale: it is hashed from `gene_table()` **as compiled into this binary**,
 /// never read back from a file, an environment variable, or a working tree.
 /// A commit can be misreported; the gene set of the running code cannot. So
-/// `tools/gene_ledger.py` re-derives the gene tags at the commit a source
+/// `tools/genes.py` re-derives the gene tags at the commit a source
 /// claims and refuses that source when the two disagree **in either
 /// direction** — a gene priced here and absent there, or a gene present there
 /// and never compiled in here. The second is what an unmeasured gene quietly
@@ -401,7 +401,7 @@ impl Batch {
 /// The fingerprint of the gene set a binary can vary: sha256 over the tags in
 /// header order, one per line, each newline-terminated.
 ///
-/// `tools/gene_ledger.py::gene_set_fingerprint` computes the same string from
+/// `tools/genes.py::gene_set_fingerprint` computes the same string from
 /// the registry, `src/ai/advanced/genes.rs` — every `screenable()` row in
 /// order — **at any commit** (and from the three tables that preceded it at
 /// older commits), which is how a screen is checked against the code it
@@ -678,7 +678,7 @@ struct Header {
     #[serde(default)]
     families: Vec<Vec<String>>,
     /// ⭐ The binary that played these games. Absent in files written before
-    /// 2026-08-23, which `tools/gene_ledger.py` grandfathers as history and
+    /// 2026-08-23, which `tools/genes.py` grandfathers as history and
     /// marks `pre-fingerprint` rather than accepting silently.
     #[serde(default)]
     build: Build,
@@ -2479,7 +2479,7 @@ fn print_by_civ(header: &Header, rows: &[Row], tag: &str) {
 }
 
 /// The analysis as data: one object per screened gene with the numbers the
-/// table prints, plus the profile. `tools/gene_ledger.py` reads this to
+/// table prints, plus the profile. `tools/genes.py` reads this to
 /// build `docs/gene_ledger.json` and the generated Rust table, so the
 /// deployment genome is derived from the screens rather than typed in.
 fn write_json_summary(path: &str, header: &Header, rows: &[Row]) {
@@ -2541,7 +2541,7 @@ fn write_json_summary(path: &str, header: &Header, rows: &[Row]) {
         "kind": "gene_screen_analysis",
         "profile": header,
         // ⭐ `standard` is THE screen; anything else is a probe, and
-        // `tools/gene_ledger.py` refuses it as a source.
+        // `tools/genes.py` refuses it as a source.
         "shape": shape_of(header),
         // ⭐ INTENDED AGAINST ACTUAL. The target was written into the header
         // before the first game finished, so a batch that stopped early is a
@@ -2761,7 +2761,7 @@ fn shape_of(header: &Header) -> &'static str {
 /// game and again by `--analyze`.
 ///
 /// An unstamped or dirty build is called out here rather than left for the
-/// ledger to discover hours later: `tools/gene_ledger.py` refuses both, and
+/// ledger to discover hours later: `tools/genes.py` refuses both, and
 /// the cheapest moment to learn that is before the batch starts.
 fn build_line(header: &Header) -> String {
     let build = &header.build;
@@ -2967,7 +2967,7 @@ fn main() {
     let target_games = number(&args, "--target-games", games_to_play as i64).max(1) as usize;
     // ⚠ THE SCREEN IS ONE SHAPE (operator, 2026-08-22). Every default below
     // is a leg of it, and a batch that changes one is a probe, not the screen:
-    // `tools/gene_ledger.py` refuses a source that does not match. The shape is
+    // `tools/genes.py` refuses a source that does not match. The shape is
     // Civilization VI's own six-player row (`CIV6_MAP_SIZES`, "small": 74x46,
     // nine city-states, three continents) so the games the ledger is read from
     // are the games the deployment shape plays, not a cheaper stand-in.
@@ -3972,7 +3972,7 @@ mod tests {
     /// Every double-quoted string in `text`, with `//` and `/* */` comments
     /// removed first so a tag named inside a comment cannot join the table.
     ///
-    /// ⚠ THIS IS `tools/gene_ledger.py::_quoted` IN THE OTHER LANGUAGE, and
+    /// ⚠ THIS IS `tools/genes.py::_quoted` IN THE OTHER LANGUAGE, and
     /// the rule is deliberately the simplest one that both can state without
     /// argument: strip comments, take the quoted strings in order.
     fn quoted(text: &str) -> Vec<String> {
@@ -4039,7 +4039,7 @@ mod tests {
     /// The gene tags a reader gets from the registry's text alone, in the
     /// order `gene_table()` builds them: every `Gene { tag: "…", field: "…",
     /// kind: Kind::… }` row of `GENES` whose kind is screenable — anything but
-    /// a plain `Kind::HostOnly` — in order. `tools/gene_ledger.py` implements
+    /// a plain `Kind::HostOnly` — in order. `tools/genes.py` implements
     /// the same reading (and the older three-table one for older commits).
     fn tags_from_source_tables(root: &std::path::Path) -> Vec<String> {
         let registry = std::fs::read_to_string(root.join("src/ai/advanced/genes.rs"))
@@ -4062,7 +4062,7 @@ mod tests {
         tags
     }
 
-    /// ⭐ THE GUARD'S FOUNDATION. `tools/gene_ledger.py` recomputes a screen's
+    /// ⭐ THE GUARD'S FOUNDATION. `tools/genes.py` recomputes a screen's
     /// gene-set fingerprint from these two files at the commit the screen
     /// claims, by exactly this rule, and refuses the screen when the answer
     /// differs. If the text rule and the compiled table ever disagreed, that
@@ -4079,13 +4079,13 @@ mod tests {
         assert_eq!(
             parsed, compiled,
             "the source tables and the compiled gene table disagree; \
-             tools/gene_ledger.py reads the tables"
+             tools/genes.py reads the registry"
         );
         assert!(compiled.len() > 50, "the tables scrape found too few genes");
     }
 
     /// The fingerprint is the tags, newline-terminated, hashed — the exact
-    /// string `tools/gene_ledger.py::gene_set_fingerprint` builds. Pinned on a
+    /// string `tools/genes.py::gene_set_fingerprint` builds. Pinned on a
     /// literal so a change to either side is a failure and not a surprise.
     #[test]
     fn the_gene_set_fingerprint_is_the_tags_newline_terminated() {
