@@ -11793,6 +11793,39 @@ end
 -- verdict's `budget` field carries both walks so the session that decides it
 -- is attributable.
 --
+-- ★★★★★ 2026-08-23: THE PROBE CAME BACK AND THE THEORY IS DEAD.
+--
+-- #2108 pre-registered its own falsifier -- "watch the first
+-- `wc_ballot_verdict` with `asked = 3`; `recorded 1` kills the affordability
+-- theory too" -- and then nobody read it. Read now, over every run under
+-- `~/civvis-civ6-runs/control/`: **802 verdict rows, 139 multi-vote asks, 0
+-- registered.** Twenty-three of those are the three-vote probe, across nine
+-- separate post-#2108 runs, and every one recorded ONE. Three votes cost 12
+-- Favor on the Online table and 30 on the Standard one against banks of
+-- 169-427, with `MaxVotes` 13-15 -- affordable on BOTH tables at once, which
+-- is the exact ask no ballot had ever made when the theory was written. A
+-- core charging Standard while reporting Online would have honoured it.
+--
+-- Fourteen of the thirty-one probe ballots were cast with
+-- `in_congress_segment = true`, from inside `TURNSEG_WORLDCONGRESS_*`, so
+-- the moment theory is dead beside it. And the option is NOT what is being
+-- refused: `option_asked == option_recorded` on 82.8% of one-vote rows and
+-- 73.4% of multi-vote rows, so the ballot registers and only its COUNT is
+-- clamped.
+--
+-- The dual-table cap below is therefore known to be answering a question
+-- with a settled negative answer. It is kept, not removed, for the reason
+-- its own paragraph gives: when the theory is wrong the cap asks fewer votes
+-- on a ballot that registers one either way, so removing it would change no
+-- outcome and would only churn a file that cannot be tested without a live
+-- game. What is NOT kept is the impression that the question is open.
+--
+-- ⚠ What remains is host-side and unreachable from this file. The run that
+-- would settle it is a single live game with the popup driven by hand for
+-- one resolution -- a human clicking two votes -- next to an agent ballot
+-- asking two on the same seat, comparing `wc_outcome`. That needs the live
+-- harness, which is under an operator halt; do not start one to answer this.
+--
 -- Exposed for the offline Lua regression. Must remain a bare global -- another
 -- file-scope `local` would exceed Civ 6's 200-register chunk ceiling.
 CivvisCongressVoteBudget = function(favor, costs, maxVotes)
@@ -14153,11 +14186,33 @@ local function tick()
 			local before = tonumber(try(function() return ballotPlayer:GetFavor(); end, -1)) or -1;
 			local cast, spent, why, leader, leaderPoints, leaderScore, mode = voteWorldCongress(ballotPid);
 			if (cast or 0) > 0 then envoyTally.ballot_turn = ballotTurn; end
+			-- ★★★★★ `spent` IS WHAT THE BALLOT ASKED FOR. IT IS NOT WHAT WAS TAKEN.
+			--
+			-- `voteWorldCongress` returns its own model of the stake: it walks
+			-- the host's cost table, decrements a local bank, and adds the
+			-- charge for every vote it requested. The host charges for the
+			-- votes it RECORDS, and it has never recorded more than one --
+			-- 139 of 139 multi-vote asks came back `recorded 1` across the
+			-- whole `wc_ballot_verdict` corpus. So every `spent` above zero
+			-- this ledger has ever carried is Favor that never moved, and the
+			-- reader had to join two sessions of `wc_ballot_verdict` to find
+			-- that out.
+			--
+			-- `favor_before` was already read here; reading the bank back
+			-- costs one more accessor and makes the row self-describing.
+			-- ⚠ A player operation is queued, not applied inline, so a real
+			-- charge may land after this read: treat `favor_after` as a lower
+			-- bound on what was taken, and `wc_ballot_verdict.favor_now` at
+			-- the next review as the settled figure. The two together are
+			-- still strictly more than `spent` alone, which is a forecast.
+			local after = tonumber(try(function() return ballotPlayer:GetFavor(); end, -1)) or -1;
 			emit("wc_vote", { turn = ballotTurn, cast = cast, spent = spent,
+			                  favor_asked = spent,
 			                  why = why, leader = leader,
 			                  leader_points = leaderPoints,
 			                  leader_score = leaderScore, source = trigger,
 			                  stage = stage, favor_before = before, mode = mode,
+			                  favor_after = after,
 			                  segment = segment,
 			                  in_congress_segment = inCongressSegment });
 		end
