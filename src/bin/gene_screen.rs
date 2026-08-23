@@ -542,15 +542,28 @@ fn stamp_build(genes: &[Gene]) -> Build {
     let Some(head) = git(tree, &["rev-parse", "HEAD"]) else {
         return build;
     };
-    let head_time: Option<u64> = git(tree, &["show", "-s", "--format=%ct", "HEAD"])
-        .and_then(|seconds| seconds.parse().ok());
+    // ⚠ Against the last commit that touched a BUILD INPUT, not against HEAD.
+    // This fleet lands a hundred merges a day and most of them are tools and
+    // documents; comparing with HEAD would call a perfectly good binary stale
+    // every time somebody committed a Python file, and a guard that cries wolf
+    // is a guard that gets waved through. What matters is whether the tree
+    // changed the code the games are played out of since this executable was
+    // linked.
+    let mut last_touch = vec!["log", "-1", "--format=%ct", "--"];
+    last_touch.extend_from_slice(BUILD_INPUTS);
+    let code_time: Option<u64> = git(tree, &last_touch).and_then(|at| at.parse().ok());
     let built = executable.as_deref().and_then(binary_mtime_secs);
-    if let (Some(head_time), Some(built)) = (head_time, built) {
-        if built < head_time {
-            // The tree took commits after this binary was linked, so its HEAD
-            // is not what played the games. Say nothing rather than something
-            // false: the ledger refuses an unstamped source, and the fix is a
-            // rebuild or an explicit `CIVVIS_COMMIT`.
+    if let (Some(code_time), Some(built)) = (code_time, built) {
+        if built < code_time {
+            // The tree changed the engine after this binary was linked, so its
+            // HEAD is not what played the games. Say nothing rather than
+            // something false: the ledger refuses an unstamped source, and the
+            // fix is a rebuild or an explicit `CIVVIS_COMMIT`.
+            //
+            // ⚠ The residual this cannot see is a checkout *backwards* — a
+            // bisect that moves the tree to an older commit whose code the
+            // binary does not have. The gene-set fingerprint is what catches
+            // that, whenever the gene set is one of the things that differ.
             build.commit_source = "unstamped-tree-moved".to_string();
             return build;
         }

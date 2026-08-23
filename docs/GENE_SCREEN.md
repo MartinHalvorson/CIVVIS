@@ -145,6 +145,121 @@ target/ci/gene_screen --pairs 300 --anchor-pairs 20 --jobs 8 --out screen.jsonl
 target/ci/gene_screen --analyze screen.jsonl [more.jsonl ...]  # re-read, merge, re-table
 ```
 
+## ⭐ A screen carries the binary it played, and a source proves it (2026-08-23)
+
+A column is a claim about code. Until this landed, nothing tied a column to the
+code that produced it, and the failure that follows from that has happened
+**three times in two days**:
+
+| when | what happened |
+|---|---|
+| **2026-08-22, P10** | #2266 culled ten genes. P10's simulation binary (`d23f92d9`) was built **1h43m before that merge**, so the batch was already in flight and published a **+63** column for `holy-lane-parity` after the gene's code was gone. The reading turned out to be real: the gene was restored (#2299) and confirmed directly at **+99, z +4.05** (#2307). The project got the right answer from a careful reader, not from a gate. |
+| **2026-08-22, #2307** | The direct arm's write-up states its source commit and its release binary's SHA-256 **in prose**, in a Markdown header line, because the analysis artefact had nowhere structured to put them. `docs/eval/2026-08-22-standard-gene-screen-23622-paired-seats.md` does the same. |
+| **2026-08-23** | The first standard-shape screen re-priced `barbarian-hunt` from the legacy **−1.73 pp** to **+0.20 pp** (z +0.65) while a sibling change was minutes from deleting that gene on the legacy reading — which would have made a brand-new screen a source pricing a gene the code no longer had. |
+
+### What the header now carries
+
+`gene_screen` stamps every batch before its first game and prints the stamp on
+the first line, so an eight-hour run the ledger would refuse says so at the
+start rather than at the end:
+
+```text
+build: 4391f51c835f (build-tree) · 100 genes sha e6015634ff76 · binary sha b59c4c4e0648
+```
+
+| field | what it is |
+|---|---|
+| `commit` | the revision the binary was built from |
+| `commit_source` | `env` (`CIVVIS_COMMIT`, which every supervisor already sets), `binary-name` (a promoted `civvis-<40-hex>` executable), `build-tree` (Git where the crate was compiled), or `unstamped` |
+| `dirty` | tracked changes under `src`, `Cargo.toml`, `Cargo.lock`, `build.rs` or `data` — everything a played game comes out of |
+| `genes_sha256` | ⭐ sha256 over the gene tags **compiled into this binary**, in header order |
+| `binary_sha256` | sha256 of the executable's own bytes — the field #2307 wrote by hand |
+
+**`genes_sha256` is the load-bearing one, and it is the only one that cannot go
+stale.** It is hashed from `gene_table()` as compiled, never read back from a
+file, an environment variable, or a working tree. A commit can be misreported;
+the gene set of the running code cannot. Everything else is defended by
+refusing to guess: `CIVVIS_COMMIT` first, then the promoted executable's own
+name, then the build tree — and the build tree is dropped entirely when the
+tree took a commit touching a build input **after** this executable was linked.
+The revision is deliberately *not* baked in at compile time: #892 removed that
+because it forced a full optimized rebuild for every promoted HEAD, and
+`build.rs` is empty for exactly this reason.
+
+### What the ledger refuses
+
+`tools/gene_ledger.py` re-derives the gene tags at the commit a source claims —
+`ENGINE_REPAIR_TREATMENTS` in `src/elo.rs`, then the `(field, tag, toggle)`
+rows of `PRODUCTION_TREATMENTS` and `PRODUCTION_OPT_INS` in
+`src/ai/advanced/treatments.rs`, which is exactly the order `gene_table()`
+builds — and refuses the source when the fingerprints differ, **in either
+direction**:
+
+- a gene **priced here and absent at that commit** — P10's shape;
+- a gene **present at that commit and never compiled in** — which is what an
+  unmeasured gene quietly looks like.
+
+It also refuses an unstamped build, a dirty one, a commit this clone cannot
+read (fetch it; a claim nobody can check is not a pass), an artefact whose
+stamp does not describe its own header, and a source pricing a gene the
+repository no longer registers — 2026-08-23's near miss.
+
+`--unverified-build "<why>"` records one anyway, and the reason is written into
+the ledger beside the source it excuses. That is deliberately the same idiom as
+`--legacy-shape`: one flag at the `--source` path per guard, each recording its
+deviation in the artefact. The two are independent — the shape escape does not
+waive the build check and the build escape does not waive the shape check.
+
+**Legacy sources are grandfathered and named, never silently accepted.** The
+sources recorded before 2026-08-23 carry no build block, because the games are
+already played; they are kept as history and printed as `pre-fingerprint` on
+every line the tool writes:
+
+```text
+  source legacy   pre-fingerprint docs/gene_screens/2026-08-22-p10-…json  (17574 pairs, …)
+  ⚠ 7 of 7 sources predate the build stamp (2026-08-23) and are kept as pre-fingerprint history
+```
+
+A source that carries a block is checked. The absence of one is a fact about
+the file's age, not a way past the guard — `gene_screen` always writes it now.
+
+### How the two definitions are kept from drifting
+
+The same way the screen's shape is: pinned on both sides, with a test that
+fails when one moves.
+
+- `gene_screen.rs`'s `the_gene_table_is_exactly_what_the_ledger_re_derives_from_the_tables`
+  parses the two source tables by the ledger's own rule and asserts the result
+  **is** the compiled `gene_table()`. If the text rule and the compiled table
+  ever disagreed, the guard would refuse every honest screen.
+- `tools/test_gene_ledger.py`'s `TheHeaderFieldsMatch` compares the fields of
+  the Rust `Build` and `Batch` structs against `BUILD_KEYS` and `BATCH_KEYS`,
+  so a field added on one side and forgotten on the other fails a test rather
+  than reaching the ledger.
+- `TheGeneSetDerivation` runs the derivation at **P10's own source commit** and
+  asserts it reproduces the 75 gene tags P10's real binary wrote into its
+  header — a genuine artefact, not a fixture.
+
+### A screen declares its size before it plays
+
+P10 "ended early at the operator's request" at **5,858 of a planned 10,000
+games**. Stopping early is legitimate and stays legitimate; an artefact that
+cannot be told apart from a finished screen is not. `--pairs N` pre-registers
+the batch on its own, so the common case needs no extra flag, and
+`--target-pairs N` declares the whole screen when it is split over `--append`
+sessions (each segment on its own disjoint start seed; the analysis sums them).
+The header records the pairs, the matched comparisons they imply, and the seed
+window reserved; every printed table and the analysis JSON then read actual
+against intended:
+
+```text
+⚠⚠ PARTIAL SCREEN · 17574 of 60000 intended paired comparisons (29.3%) · seeds 100000000..100009999 reserved — a truncated run, not a completed one
+```
+
+A file written before this says `⚠ batch size was not pre-registered`, which is
+the honest answer rather than a guess. The ledger prints `⚠ PARTIAL n/N` beside
+such a source and records it.
+
 ## ⚠ Overlap with `treatment_lottery`, and what should happen about it
 
 `src/bin/treatment_lottery.rs` + `docs/TREATMENT_LOTTERY.md` landed on `main`
