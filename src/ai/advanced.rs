@@ -4508,11 +4508,11 @@ pub struct AdvancedAi {
     //
     // Every pull request that adds a treatment appends to this anchor, and
     // until these markers existed every one of them appended to the SAME last
-    // line, so any two of them conflicted. Replaying the 200 merges to
-    // 2026-08-23 pairwise with git's own three-way merge
+    // line, so any two of them conflicted. Replaying the 200 merges ending at
+    // `2c570f4f` (2026-08-23) pairwise with git's own three-way merge
     // (`tools/conflict_hotspots.py --modes`) puts 8 of this file's 16
-    // conflicted regions on this struct and on `fn configured`, and 10 of 10
-    // of `advanced/treatments.rs`'s on its two tables.
+    // conflicted regions on this struct (3 pairs) and on `fn configured`
+    // (5), and 10 of 10 of `advanced/treatments.rs`'s on its two tables.
     //
     // ⚠ MOVING THE LIST TO ANOTHER FILE IS NOT THE FIX; `treatments.rs` IS
     // that move (#2022) and five days later it was the most anchored file in

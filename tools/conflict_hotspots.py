@@ -47,16 +47,23 @@ the collisions two ways:
   pull requests appending to one shared list. Move the data out;
 * anything else — two pull requests editing the same code. Split the file.
 
-Measured over the 200 merges to 2026-08-23, that separates files the ranking
-prints side by side:
+Measured over the 200 merges ending at `2c570f4f` (2026-08-23), that separates
+files the ranking prints side by side:
 
-    src/ai/advanced/treatments.rs   10/10 anchored   ANCHOR   two list literals
-    src/elo.rs                      21/24 anchored   ANCHOR   four registries
-    src/ai/advanced.rs               8/16 anchored   BOTH     `configured`, the struct
-    src/ai/advanced/tests.rs         0/10 anchored   SPREAD   ten different tests
-    src/ai/advanced/treatment_flags.rs 0/9 anchored  SPREAD   182 toggles, never twice
-    src/game.rs                      2/25 anchored   SPREAD
-    web/assets/app.js                0/3  anchored   SPREAD
+    src/ai/advanced/treatments.rs      10/10 anchored  ANCHOR  two list literals
+    src/elo.rs                         15/18 anchored  ANCHOR  four registries
+    src/ai/advanced.rs                  8/16 anchored  BOTH    `configured`, the struct
+    src/ai/advanced/tests.rs            0/10 anchored  SPREAD  ten different tests
+    src/ai/advanced/treatment_flags.rs   0/7 anchored  SPREAD  182 toggles, never twice
+    src/ai.rs                           2/21 anchored  SPREAD
+    src/game.rs                         2/25 anchored  SPREAD
+    web/assets/app.js                    0/3 anchored  SPREAD
+
+⚠ Every one of those numbers is a reading with a date on it, which is why
+`--modes` prints the merge its window ends at. The RANK moves daily — this is
+the objective whose table went stale in five days and took a CI job with it —
+but the VERDICT has not: re-measured across three windows on 2026-08-23, the
+percentages moved and no file changed sides.
 
 Two of those are worth reading twice. `treatment_flags.rs` and `treatments.rs`
 were created by the SAME relief effort, and only one of them worked: the 182
@@ -454,9 +461,15 @@ def main(argv: list[str] | None = None) -> int:
               file=sys.stderr)
         return 1
     if args.modes:
-        print(f"of the last {len(shas)} merges to main, every consecutive pair "
-              f"of merges\ntouching one file replayed as if the two had been "
-              f"written concurrently:\n")
+        # The window, so a reading quoted anywhere can be reproduced. Every
+        # number here moves as merges land; `src/main.rs` went 16% -> 4% in
+        # five days and took a CI job down with it.
+        newest = subprocess.run(
+            ["git", "-C", str(REPO), "show", "-s", "--format=%h %cs", shas[0]],
+            capture_output=True, text=True, check=False).stdout.strip()
+        print(f"of the {len(shas)} merges to main ending at {newest}, every "
+              f"consecutive pair\nof merges touching one file replayed as if "
+              f"the two had been written\nconcurrently:\n")
         for row in modes(args.merges, args.top):
             call = verdict(row)
             total = len(row["regions"])

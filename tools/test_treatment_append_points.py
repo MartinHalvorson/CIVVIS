@@ -6,9 +6,9 @@ Adding a treatment appends to several shared anchors — the flag field on
 pair, a row in one of the tables in `advanced/treatments.rs`. Every one of
 those appends used to land on the anchor's LAST line, so any two treatment pull
 requests conflicted in every file they shared. Measured with
-`tools/conflict_hotspots.py --modes` over the 200 merges to 2026-08-23: 10 of
-10 of `treatments.rs`'s replayed collisions sit on its two tables, and 8 of 16
-of `advanced.rs`'s sit on the struct and on `configured`.
+`tools/conflict_hotspots.py --modes` over the 200 merges ending at `2c570f4f`
+(2026-08-23): 10 of 10 of `treatments.rs`'s replayed collisions sit on its two
+tables, and 8 of 16 of `advanced.rs`'s sit on the struct and on `configured`.
 
 `docs/ROADMAP.md` objective 5 separates the two reasons a file is contended and
 this is the second one. It is NOT answered by moving the list to another file —
