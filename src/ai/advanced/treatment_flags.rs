@@ -2062,19 +2062,13 @@ impl AdvancedAi {
     pub fn disable_coordinated_finish(&mut self) {
         self.coordinated_finish = false;
     }
-    // Append points, one per name range: a new treatment goes under the range
-    // its own name falls in, so that two of them do not append to one line.
-    // The rule, the measurement behind it and the check that enforces it are
-    // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
-
-    // ---- append: a-b ------------------------------------------------
-
-    // ---- append: c-d ------------------------------------------------
 
     /// The city plans its districts, sites and tile buys together: wished
     /// districts get jointly assigned, reserved plots over rings 1-3, and
     /// the tile a very valuable site needs is bought. See
     /// [`AdvancedAi::district_planning`]. Opt-in gene `district-planning`.
+    /// (Filed here rather than under a marker: the append-point check reads
+    /// a line's first identifier, which for any `pub fn` is `pub`.)
     pub fn enable_district_planning(&mut self) {
         self.district_planning = true;
     }
@@ -2083,6 +2077,14 @@ impl AdvancedAi {
     pub fn disable_district_planning(&mut self) {
         self.district_planning = false;
     }
+    // Append points, one per name range: a new treatment goes under the range
+    // its own name falls in, so that two of them do not append to one line.
+    // The rule, the measurement behind it and the check that enforces it are
+    // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
+
+    // ---- append: a-b ------------------------------------------------
+
+    // ---- append: c-d ------------------------------------------------
 
     // ---- append: e-f ------------------------------------------------
 

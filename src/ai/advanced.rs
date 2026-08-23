@@ -4541,7 +4541,9 @@ pub struct AdvancedAi {
     /// sites join the production menu; and the tile a very valuable site
     /// needs is bought. Off everywhere by default; opt-in gene
     /// `district-planning`. See `advanced/district_planning.rs`.
-    pub district_planning: bool,
+    /// (Filed name-first, without `pub`, so the append-point check can read
+    /// the name; the toggles and child modules are the whole interface.)
+    district_planning: bool,
 
     // ---- append: e-f ------------------------------------------------
 

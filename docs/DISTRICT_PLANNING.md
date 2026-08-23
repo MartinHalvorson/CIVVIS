@@ -39,8 +39,7 @@ physically legal for the family), each site priced as
 
     adjacency value at the lane's weights
     − the worked-tile value the district would destroy
-    − (for unowned plots) the purchase price at the lane's Gold value,
-      amortized like priced-tile-purchase's horizon
+    − (for unowned plots) an amortized charge on the purchase price
 
 then one greedy assignment, best (family × site) first, each plot given away
 at most once, each family placed at most once. The head of the plan — the
