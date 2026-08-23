@@ -296,6 +296,62 @@ class MatchMachineTests(unittest.TestCase):
             )
         )
 
+    def test_a_killed_run_is_not_recorded_as_a_finished_window(self):
+        """The 2026-08-15 league outage, as a test.
+
+        A SIGTERM from the dying agent session that had launched this in the
+        background wrote `reason: "stopped"` beside a `deadline_utc` 17h51m in
+        the future — byte-for-byte the record a window that ran to term
+        writes. The league then sat idle for eight days because every reader
+        of that file, human and machine, saw a completed job.
+        """
+        subject = machine.MatchMachine.__new__(machine.MatchMachine)
+        subject.deadline = machine.time.monotonic() + 3600
+        subject.stop_signal = None
+        unspent = max(0.0, subject.deadline - machine.time.monotonic())
+
+        # Killed with most of its window unspent.
+        subject.stop_signal = "SIGTERM"
+        killed = subject.stop_cause(unspent)
+
+        # The same clock, no signal: the loop simply came back.
+        subject.stop_signal = None
+        exited = subject.stop_cause(unspent)
+
+        # The window genuinely ran out.
+        ended = subject.stop_cause(0.0)
+
+        self.assertEqual(killed, "stopped:sigterm")
+        self.assertEqual(ended, "stopped:window_ended")
+        self.assertNotEqual(killed, ended,
+                            "a kill and a completed window must not write the "
+                            "same reason; that is the whole defect")
+        self.assertNotEqual(exited, killed)
+
+    def test_a_signal_wins_over_the_clock(self):
+        """A run killed in its last second is a kill, not a finished window."""
+        subject = machine.MatchMachine.__new__(machine.MatchMachine)
+        subject.stop_signal = "SIGINT"
+        self.assertEqual(subject.stop_cause(0.0), "stopped:sigint")
+
+    def test_the_signal_handler_records_which_signal_arrived(self):
+        """`stop()` discarded its argument, so nothing downstream could tell."""
+        import signal as signal_module
+
+        subject = machine.MatchMachine.__new__(machine.MatchMachine)
+        subject.stopping = False
+        subject.stop_signal = None
+        with mock.patch.object(machine, "MatchMachine", return_value=subject), \
+             mock.patch.object(machine, "parse_args", return_value=SimpleNamespace()), \
+             mock.patch.object(machine.signal, "signal") as installed:
+            with mock.patch.object(subject, "run", create=True, return_value=0):
+                machine.main([])
+        handlers = {call.args[0]: call.args[1] for call in installed.call_args_list}
+        self.assertIn(signal_module.SIGTERM, handlers)
+        handlers[signal_module.SIGTERM](signal_module.SIGTERM, None)
+        self.assertTrue(subject.stopping)
+        self.assertEqual(subject.stop_signal, "SIGTERM")
+
     def test_terminal_watcher_compares_the_original_process_identity(self):
         subject = machine.MatchMachine.__new__(machine.MatchMachine)
         subject.args = SimpleNamespace(watch_pid=42)
@@ -324,6 +380,8 @@ class MatchMachineTests(unittest.TestCase):
         subject = machine.MatchMachine.__new__(machine.MatchMachine)
         subject.args = SimpleNamespace(duration=60, watch_pid=42, headless=6, limit=70)
         subject.stopping = False
+        subject.stop_signal = None
+        subject.deadline = machine.time.monotonic() + 60
         subject.games = []
         subject.caffeinate = None
         subject.build_future = None
@@ -349,6 +407,7 @@ class MatchMachineTests(unittest.TestCase):
         subject.args = SimpleNamespace(duration=60, watch_pid=42, headless=6, limit=70)
         subject.deadline = 10.0
         subject.stopping = False
+        subject.stop_signal = None
         subject.games = []
         subject.caffeinate = None
         subject.build_future = None
