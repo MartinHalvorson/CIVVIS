@@ -177,6 +177,20 @@ jobs:
       # in the data doing nothing.
       - name: Rules data has no effect key the engine ignores
         run: python3 tools/civvis_inert.py --max 0
+      # The same ratchet, one layer up: a gene the screen cannot make fire.
+      # `docs/GENE_SCREEN.md` records the signature — a Δ of exactly zero with a
+      # zero-width interval is not a null, it is two arms that played
+      # byte-identical games — and `treatment_flags.rs` records that three tags
+      # reached the gene tables in that state and "burned 30 games saying
+      # nothing". `competition-victory-points` is in the tables now and cannot
+      # fire at all, because `native_competitions` ships off. The doctrine was
+      # written down four times and gated nowhere; this reads each gene's own
+      # screen row and fails when a new one arrives with no evidence it ever
+      # moved a game. Waivers with their reasons are in
+      # `tools/gene_fire_waivers.json`, and one goes stale — and fails here —
+      # as soon as its gene is proven or leaves the tables.
+      - name: Every gene has been shown to fire in at least one game
+        run: python3 tools/gene_fires.py --max 0
 
   # The published build at civvis.ai/beta compiles this same crate for the
   # browser (`src/wasm.rs`, gated to wasm32). `cargo test` never builds that
