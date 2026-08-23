@@ -18903,16 +18903,15 @@ impl AdvancedAi {
             // first building into the strategic table.
             let best: Option<(f64, String, Item)> = {
                 let _memo = g.query_memo();
-                let mut items = g
-                    .producible_items(pid, cid)
-                    .into_iter()
-                    .filter(|item| {
-                        let Item::Project { project } = item else {
-                            return true;
-                        };
-                        let spec = &g.rules.projects[project];
-                        spec.repeatable
-                            || !g.cities.values().any(|city| {
+                let mut items =
+                    g.producible_items(pid, cid)
+                        .into_iter()
+                        .filter(|item| {
+                            let Item::Project { project } = item else {
+                                return true;
+                            };
+                            let spec = &g.rules.projects[project];
+                            spec.repeatable || !g.cities.values().any(|city| {
                                 city.owner == pid
                                     && city.id != cid
                                     && matches!(

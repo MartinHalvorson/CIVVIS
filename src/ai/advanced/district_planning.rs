@@ -236,6 +236,10 @@ impl AdvancedAi {
                 reserved.push(pos);
             }
         }
+        // Assignment order is score order already; sorting on the stored
+        // value makes head-is-best a contract rather than a coincidence of
+        // the loop above, for every consumer that reads only the head.
+        plan_rows.sort_by(|a, b| b.value.total_cmp(&a.value).then_with(|| a.pos.cmp(&b.pos)));
         plan_rows
     }
 
