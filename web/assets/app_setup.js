@@ -22,14 +22,6 @@ document.getElementById("gamemode").addEventListener("change", syncSetupMode);
 document.getElementById("leaderpool").addEventListener("change", syncLeaderPool);
 document.getElementById("leaderselection").addEventListener("change", syncCustomLeaderSelection);
 document.getElementById("teams").addEventListener("change", syncCustomLeaderSelection);
-document.getElementById("custom-leader-table").addEventListener("change", event => {
-  if (!event.target.matches("[data-custom-civ]")) return;
-  const row = event.target.closest("tr");
-  const selected = event.target.selectedOptions[0];
-  const elo = row?.querySelector("[data-custom-elo]");
-  if (elo && selected)
-    elo.innerHTML = customEloOptions(event.target.value, selected.dataset.leader || "", "");
-});
 // Each Tactics world question re-fits the ones below it, on the select
 // itself so the work is done before `#newgame-options`'s delegated listener
 // stages what is now selected. The battle decides whether the world type and
@@ -328,10 +320,6 @@ function selectedSimulationSettings() {
   return {num_players: np, map_script: ourMap, map_topology: mapTopology,
           map_poles: mapPoles, game_speed: gameSpeed,
           leader_pool: leaderPool,
-          // Which of the rated strategies may play the AI civilizations —
-          // read in both game modes, because a Tactics arena seats its two
-          // sides from the same pool a world does.
-          ai_player_pool: readSetting("aiplayerpool") || "best3",
           leader_selection: leaderSelection,
           base_ruleset: baseRuleset, start_era: startEra,
           future_era: futureEra,
@@ -478,8 +466,6 @@ function applyQueuedSimulationSettings(settings) {
   document.getElementById("gamespeed").value = settings.speed;
   setOptionalWorldNumber("mapseed", settings.seed);
   document.getElementById("leaderpool").value = normalizedLeaderPoolId(settings.leader_pool || "civ6");
-  if (settings.ai_pool)
-    document.getElementById("aiplayerpool").value = settings.ai_pool;
   if (settings.leader_selection)
     document.getElementById("leaderselection").value = settings.leader_selection;
   syncLeaderPool();
@@ -1086,13 +1072,7 @@ function customLeaderRowsFromDom() {
     team: row.querySelector("[data-custom-team]")?.value ?? "",
     civ: row.querySelector("[data-custom-civ]")?.value ?? "",
     leader: row.querySelector("[data-custom-civ] option:checked")?.dataset.leader || "",
-    elo: row.querySelector("[data-custom-elo]")?.value ?? "",
   }));
-}
-function customLeaderEloOptions(civ, leader) {
-  const match = (RULES?.leader_elo_options || []).find(entry =>
-    entry.civ === civ && entry.leader === leader);
-  return Array.isArray(match?.elos) ? match.elos : [];
 }
 function customTeamOptions(players, rule, selected) {
   const count = teamCount(players, rule);
@@ -1100,19 +1080,6 @@ function customTeamOptions(players, rule, selected) {
   return Array.from({length: count}, (_, team) =>
     `<option value="${team}"${String(team) === String(selected) ? " selected" : ""}>Team ${team + 1}</option>`
   ).join("");
-}
-function customEloOptions(civ, leader, selected) {
-  const options = customLeaderEloOptions(civ, leader);
-  if (!options.length)
-    return `<option value="" selected>No recorded ELO</option>`;
-  const value = options.some(option => String(option.elo) === String(selected))
-    ? String(selected) : String(options[0].elo);
-  return options.map(option => {
-    const elo = String(option.elo);
-    const source = (option.strategies || []).join(", ");
-    return `<option value="${escapeAttr(elo)}"${elo === value ? " selected" : ""}` +
-      `${source ? ` title="${escapeAttr(source)}"` : ""}>${escapeAttr(elo)}</option>`;
-  }).join("");
 }
 function syncCustomLeaderSelection() {
   const section = document.getElementById("custom-leader-selection");
@@ -1129,7 +1096,7 @@ function syncCustomLeaderSelection() {
   const rule = readSetting("teams");
   const automaticTeams = teamAssignment(players, rule);
   if (!entries.length || !players) {
-    body.innerHTML = `<tr><td class="custom-leader-empty" colspan="3">No leaders are available in this pool.</td></tr>`;
+    body.innerHTML = `<tr><td class="custom-leader-empty" colspan="2">No leaders are available in this pool.</td></tr>`;
     return;
   }
   const rows = Array.from({length: players}, (_, seat) => {
@@ -1143,8 +1110,6 @@ function syncCustomLeaderSelection() {
       team,
       civ: entry.civ,
       leader: entry.leader,
-      elo: customLeaderEloOptions(entry.civ, entry.leader).some(option =>
-        String(option.elo) === String(old.elo)) ? String(old.elo) : "",
     };
   });
   body.innerHTML = rows.map((row, seat) => `<tr data-seat="${seat}">
@@ -1153,7 +1118,6 @@ function syncCustomLeaderSelection() {
       `<option value="${escapeAttr(entry.civ)}" data-leader="${escapeAttr(entry.leader)}"` +
       `${entry.civ === row.civ ? " selected" : ""}>${escapeAttr(entry.civ)} — ${escapeAttr(entry.leader)}</option>`
     ).join("")}</select></td>
-    <td><select data-custom-elo aria-label="ELO for seat ${seat + 1}">${customEloOptions(row.civ, row.leader, row.elo)}</select></td>
   </tr>`).join("");
 }
 

@@ -1,4 +1,12 @@
-# Strategy league (Glicko-2 ratings + selection)
+# Strategy league (Glicko-2 ratings + selection) (retired 2026-08-23)
+
+> **Closed.** The strategy league — `civvis league`, `src/league.rs`, the Glicko-2 roster in `data/league/` — was removed on 2026-08-23 (#2357, operator: *"lets remove the league /
+> elo work for now"*). The gene screen (`docs/GENE_SCREEN.md`) prices
+> behaviours; nothing rates named agents against each other for now, and the
+> deployment genome is the gene ledger's default-on set. A rating system for
+> finished genomes is planned to return — see `docs/ROADMAP.md`. This document
+> is kept as the record of how the retired instrument worked and what it
+> measured.
 
 `civvis league` maintains a **persistent, distributed rated pool of high-level
 AI strategies** and searches it for improvements for as long as simulators keep

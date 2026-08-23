@@ -5029,7 +5029,7 @@ impl Decided {
 pub const MERCY_VICTORY: &str = "mercy";
 /// Terminal result recorded when a Tactics deadline expires with both sides
 /// still alive. It is a result label, not a victory lane: `winner` remains
-/// `None`, and match/league consumers record a draw.
+/// `None`, and match consumers record a draw.
 pub const DRAW_RESULT: &str = "draw";
 /// The victory type a capture-the-flag battle is recorded under. Like the
 /// Mercy Rule it answers to its own setup option rather than the victory
@@ -5046,11 +5046,10 @@ pub const FLAG_VICTORY: &str = "flag";
 /// A seat that crossed on standing alone, with no progress in any open lane,
 /// keeps the bare rule.
 ///
-/// The joiner is deliberately not a comma. This exact string is written into
-/// the `victory` column of the league's `matches.csv`, and both readers of
-/// that file split its rows on commas (`league::backfill_win_profiles` and
-/// [`crate::rating::parse_matches_csv`]), so a comma here would shift every
-/// later column and make the whole history unparseable.
+/// The joiner is deliberately not a comma. This exact string was written into
+/// the `victory` column of the retired league's `matches.csv`, whose readers
+/// split rows on commas; the recorded histories still parse only while no
+/// comma ever appears here.
 pub fn mercy_label(lanes: &[String]) -> String {
     if lanes.is_empty() {
         return "Mercy Rule".to_string();
@@ -46886,8 +46885,8 @@ impl Game {
                 if let Some(threshold) = self.mercy_rule {
                     if let Some(leader) = crate::odds::mercy_leader(self, threshold) {
                         // The lanes go on before the crown, not after it: the
-                        // verdict note, the league record and the finish
-                        // screen all read the composed label, and the board
+                        // verdict note and the finish screen read the
+                        // composed label, and the board
                         // they are describing is the one standing at this
                         // crossing. Cleared again if the crown is refused —
                         // a play-on extension can decline this very result —

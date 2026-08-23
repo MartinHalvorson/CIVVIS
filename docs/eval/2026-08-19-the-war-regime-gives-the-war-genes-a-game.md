@@ -109,7 +109,7 @@ this is not an edge case.
 **The war genes do not belong in a lane-restricted full game, and this run is
 the evidence.** The repository already has the instrument built for the
 question: `docs/TACTICS.md`'s arena, where combat is the only thing on the
-board, and where `docs/TACTICS_BASELINE.md` has already measured the shape of
+board, and where `docs/closed/TACTICS_BASELINE.md` has already measured the shape of
 the problem — the advanced controller is overwhelmingly better than `basic` with
 a city to take (39/40) and overwhelmingly **worse** in pure attrition (1/40).
 A full game with four lanes removed produces one conquest in three hundred
