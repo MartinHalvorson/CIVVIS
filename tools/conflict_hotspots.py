@@ -22,25 +22,81 @@ registry inside it.
     tools/conflict_hotspots.py                 # the current ranking
     tools/conflict_hotspots.py --merges 500
     tools/conflict_hotspots.py --check         # fail on a split target nobody edits
+    tools/conflict_hotspots.py --modes         # WHICH of the two problems each file has
 
 Run daily in CI by `.github/workflows/census.yml`, first in that job because it
 needs no toolchain and no build.
+
+## Two problems, and the ranking above cannot tell them apart
+
+`docs/ROADMAP.md` objective 5 says there are two reasons a file is contended
+and they take opposite remedies. Splitting along a seam answers **size**. It
+does nothing for a file where every change appends to **one shared list**:
+those two changes conflict whatever the file's length, and only moving the
+data relieves them. The touch-rate ranking scores both the same, and acting on
+it alone is how `advanced.rs`'s `LIVE_TREATMENTS` table was moved into
+`advanced/treatments.rs` — where, five days later, it was the third-worst
+hotspot in the repository. **The anchor moved; it was not removed.**
+
+`--modes` measures which problem a file has. It replays every consecutive pair
+of merges that touch the file as if the two had been written concurrently
+(`replay`), using git's own three-way merge on the real bytes, and then splits
+the collisions two ways:
+
+* both sides only INSERTED lines, at a place where collisions REPEAT — two
+  pull requests appending to one shared list. Move the data out;
+* anything else — two pull requests editing the same code. Split the file.
+
+Measured over the 200 merges ending at `2c570f4f` (2026-08-23), that separates
+files the ranking prints side by side:
+
+    src/ai/advanced/treatments.rs      10/10 anchored  ANCHOR  two list literals
+    src/elo.rs                         15/18 anchored  ANCHOR  four registries
+    src/ai/advanced.rs                  8/16 anchored  BOTH    `configured`, the struct
+    src/ai/advanced/tests.rs            0/10 anchored  SPREAD  ten different tests
+    src/ai/advanced/treatment_flags.rs   0/7 anchored  SPREAD  182 toggles, never twice
+    src/ai.rs                           2/21 anchored  SPREAD
+    src/game.rs                         2/25 anchored  SPREAD
+    web/assets/app.js                    0/3 anchored  SPREAD
+
+⚠ Every one of those numbers is a reading with a date on it, which is why
+`--modes` prints the merge its window ends at. The RANK moves daily — this is
+the objective whose table went stale in five days and took a CI job with it —
+but the VERDICT has not: re-measured across three windows on 2026-08-23, the
+percentages moved and no file changed sides.
+
+Two of those are worth reading twice. `treatment_flags.rs` and `treatments.rs`
+were created by the SAME relief effort, and only one of them worked: the 182
+toggles now collide at 182 different places, which is no anchor at all, while
+the two tables still collide at exactly two lines. And `advanced.rs`, whose
+shared-anchor half the roadmap recorded as done, holds the two largest single
+anchors left — `fn configured` and `pub struct AdvancedAi`, the flag field and
+its initialiser, which nobody has ever named.
 
 ## What this deliberately does not measure
 
 Touch rate is exposure, not pain: two PRs editing distant parts of one file do
 not conflict. Real conflict counts are not recoverable from `main`'s history,
 because a squash merge records the resolution and never the collision. Touch
-rate is the honest available proxy, and it is stated as one — the ranking is
-what it can support, and a precise conflict count is not.
+rate is the honest available proxy, and it is stated as one.
+
+`--modes` is a reconstruction, not a log, for the same reason, and `replay`
+states its three caveats where it makes them. One more belongs here: a
+collision is located by the innermost item it sits inside, so a 400-line
+function or a 1,000-line struct reports its whole span as one place. That is
+precise enough to name an anchor and too coarse to say two collisions hit the
+same LINE.
 """
 
 from __future__ import annotations
 
 import argparse
+import collections
+import functools
 import re
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
@@ -90,12 +146,15 @@ SOURCE_EXTENSIONS = ("rs", "js", "py", "sh", "lua", "html")
 SOURCE_SUFFIXES = r"\.(" + "|".join(SOURCE_EXTENSIONS) + r")$"
 
 
-def touched(sha: str) -> set[str]:
+@functools.lru_cache(maxsize=None)
+def touched(sha: str) -> frozenset[str]:
+    """The paths one merge changed. Memoized: `--modes` asks for every merge
+    once per ranked file, which without this is 1,600 `git show` calls."""
     out = subprocess.run(
         ["git", "-C", str(REPO), "show", "--name-only", "--format=",
          "-m", "--first-parent", sha],
         capture_output=True, text=True, check=False).stdout
-    return {line.strip() for line in out.splitlines() if line.strip()}
+    return frozenset(line.strip() for line in out.splitlines() if line.strip())
 
 
 #: Below this many merges the ranking is not worth judging on. A shallow clone
@@ -120,6 +179,239 @@ def recent_merges(count: int) -> list[str]:
         if out.split():
             return out.split()
     return []
+
+
+#: ★★★ TWO AXES, BECAUSE ONE OF THEM CALLS A TEST FILE A SHARED LIST.
+#:
+#: An append anchor has two properties and needs both. First, the two sides of
+#: the collision only INSERTED lines — neither touched a line the other had —
+#: which is what two pull requests appending a row to a table look like.
+#: Second, it happens AT THE SAME PLACE more than once: a list every change
+#: appends to collides there again and again.
+#:
+#: The first test alone was measured and rejected. It scored
+#: `src/ai/advanced/tests.rs` at 10 of 10 "appends", because two pull requests
+#: each adding a whole new `#[test]` function are also two pure insertions —
+#: but at ten DIFFERENT functions, so there is no list to move anywhere and
+#: the collisions are resolved by keeping both. On the same reading
+#: `treatments.rs` put all ten of its collisions on two lines. The second test
+#: separates them: a place is an anchor when at least this many distinct
+#: replayed pairs collide there.
+ANCHOR_REPEATS = 2
+
+#: Two thirds rather than a bare majority, because the real cases are not
+#: close. Measured 2026-08-23: `treatments.rs` and `elo.rs` are at 100%,
+#: `tests.rs`, `treatment_flags.rs`, `game.rs` and `app.js` at 0-16%, and
+#: `advanced.rs` in between — which is the honest answer for it, and prints as
+#: BOTH.
+ANCHOR_SHARE = 2 / 3
+
+#: A file needs at least this many replayed collisions before `--modes` calls
+#: it anything. One collision is a coin toss, not a mode.
+MIN_COLLISIONS = 3
+
+#: The innermost thing a conflicted region sits inside, for the four languages
+#: this repository hand-writes. It names the anchor — `LIVE_TREATMENTS`,
+#: `pub struct AdvancedAi`, `fn configured` — which is what a reader needs in
+#: order to go and move it. Deliberately loose: a name that is slightly wrong
+#: still points at the right part of the file, and an unrecognised line falls
+#: back to `(top of file)` rather than guessing.
+ITEM = re.compile(
+    r"""^(?:
+          [^\S\n]*(?:
+              (?:pub(?:\([^)]*\))?\s+)?
+              (?:default\s+|async\s+|unsafe\s+|extern\s+"[^"]*"\s+)*
+              (?:fn|struct|enum|union|trait|impl|mod|type|const|static
+                |macro_rules!)\b
+            | (?:export\s+)?(?:async\s+)?(?:function|class)\s
+            | (?:local\s+)?function\s
+            | def\s+[A-Za-z_]
+            )
+          # A JavaScript module-level binding, and ONLY at column zero: an
+          # indented `let` is a Rust local, and treating one as the enclosing
+          # item names a variable where the reader needs the function.
+        | (?:export\s+)?(?:const|let|var)\s+[A-Za-z_$][\w$]*\s*=
+        )""",
+    re.VERBOSE,
+)
+
+
+def blob(rev: str, path: str) -> str | None:
+    """`path`'s content at `rev`, or None where it did not exist."""
+    done = subprocess.run(["git", "-C", str(REPO), "show", f"{rev}:{path}"],
+                          capture_output=True, check=False)
+    if done.returncode:
+        return None
+    return done.stdout.decode("utf-8", "replace")
+
+
+def _only_inserted(before: list[str], after: list[str]) -> bool:
+    """True when `after` is `before` with whole lines inserted and none touched.
+
+    An ordered-subsequence test, which is what "nobody edited an existing line"
+    means once both sides are reduced to their text.
+    """
+    remaining = iter(after)
+    return all(any(line == candidate for candidate in remaining)
+               for line in before)
+
+
+def _enclosing_item(lines: list[str], index: int) -> str:
+    for line in reversed(lines[:index + 1]):
+        if ITEM.match(line):
+            return line.strip()[:72]
+    return "(top of file)"
+
+
+def _regions(merged: str) -> list[tuple[bool, str]]:
+    """(both sides only appended, what the conflict sits inside) per region.
+
+    `--diff3` prints the base between `|||||||` and `=======`, which is the
+    whole point: without it there is no way to tell an append from an edit.
+    """
+    lines = merged.splitlines()
+    out: list[tuple[bool, str]] = []
+    start = None
+    for index, line in enumerate(lines):
+        if line.startswith("<<<<<<<"):
+            start = index
+        elif line.startswith(">>>>>>>") and start is not None:
+            block = lines[start + 1:index]
+            try:
+                mid = block.index(next(x for x in block
+                                       if x.startswith("|||||||")))
+                sep = block.index("=======", mid)
+            except (StopIteration, ValueError):
+                out.append((False, _enclosing_item(lines, start)))
+                start = None
+                continue
+            undone, base, later = (block[:mid], block[mid + 1:sep],
+                                   block[sep + 1:])
+            # ⚠ THE TWO SIDES ARE NOT SYMMETRIC AND THE FIRST VERSION OF THIS
+            # SCORED EVERY FILE AT ZERO. `replay` puts the EARLIER merge
+            # UNDONE on the ours side, so that merge's pure insertion appears
+            # here as a pure deletion; only the later merge appears as an
+            # insertion. An append collision is therefore: the earlier side
+            # took whole lines out of the base and put none back, and the
+            # later side put whole lines in and touched none.
+            append = (_only_inserted(undone, base)
+                      and _only_inserted(base, later))
+            out.append((append, _enclosing_item(lines, start)))
+            start = None
+    return out
+
+
+def replay(path: str, shas: list[str]) -> dict:
+    """Replay consecutive merges touching `path` as if they were concurrent.
+
+    ★★★ TOUCH RATE IS EXPOSURE; THIS IS THE COLLISION. Take two merges A then
+    B that both touch `path` with nothing in between that does — so `path` at
+    B's parent IS `path` at A — and ask git to undo A while merging B in:
+
+        merge-file  ours = path@A^   base = path@A   theirs = path@B
+
+    Reverting A out of the base and taking B on top is the three-way merge Git
+    would have run had the two branched together, and it is run by the same
+    algorithm on the real bytes rather than by a proxy for it. A conflict means
+    A's edit and B's edit landed in the same place.
+
+    ⚠ IT IS STILL A COUNTERFACTUAL, and the honest caveats are three. Those two
+    merges were not necessarily written at the same time, though at a hundred
+    merges a day two consecutive touches of one file usually are. It sees pairs
+    and never the three-way pile-up. And a squash merge records the resolution
+    and never the collision, so this reconstructs what would have happened
+    rather than reading what did — the same limit the touch-rate ranking above
+    states about itself.
+    """
+    hits = [sha for sha in reversed(shas) if path in touched(sha)]
+    collisions = pairs = 0
+    regions: list[tuple[bool, str, int]] = []
+    for earlier, later in zip(hits, hits[1:]):
+        base = blob(earlier, path)
+        undone = blob(earlier + "^", path)
+        after = blob(later, path)
+        if base is None or undone is None or after is None:
+            continue          # created or deleted in one of the two
+        pairs += 1
+        with tempfile.TemporaryDirectory() as scratch:
+            sides = []
+            for name, text in (("ours", undone), ("base", base),
+                               ("theirs", after)):
+                target = Path(scratch) / name
+                target.write_text(text, encoding="utf-8")
+                sides.append(str(target))
+            done = subprocess.run(
+                ["git", "merge-file", "-q", "-p", "--diff3", *sides],
+                capture_output=True, text=True, errors="replace", check=False)
+        # `git merge-file` returns the number of conflicts, and 255 when it
+        # could not merge at all (a binary side, say). A refusal is not a
+        # collision, so drop the pair rather than count it as one.
+        if done.returncode >= 128:
+            pairs -= 1
+            continue
+        if done.returncode > 0:
+            collisions += 1
+            regions.extend((append, where, pairs)
+                           for append, where in _regions(done.stdout))
+    return {"collisions": collisions, "pairs": pairs, "regions": regions}
+
+
+def anchors(regions: list[tuple[bool, str, int]]) -> dict[str, int]:
+    """Places where appends collided in more than one replayed pair.
+
+    Counted in DISTINCT PAIRS, not regions: one pair can conflict twice inside
+    the same function, and two conflicts from one collision are one event.
+    """
+    seen: dict[str, set[int]] = collections.defaultdict(set)
+    for append, where, pair in regions:
+        if append:
+            seen[where].add(pair)
+    return {where: len(pairs) for where, pairs in seen.items()
+            if len(pairs) >= ANCHOR_REPEATS}
+
+
+def modes(count: int, top: int) -> list[dict]:
+    """The two failure modes, per contended file, most contended first."""
+    shas = recent_merges(count)
+    if not shas:
+        raise SystemExit("no history to rank; fetch before measuring")
+    out = []
+    for path, hits, pct in ranking(count)[:top]:
+        row = replay(path, shas)
+        found = anchors(row["regions"])
+        row.update({
+            "path": path, "merges": hits, "pct": pct,
+            "anchored": sum(1 for append, where, _ in row["regions"]
+                            if append and where in found),
+            "at": collections.Counter(found),
+            "elsewhere": collections.Counter(
+                where for append, where, _ in row["regions"]
+                if not (append and where in found)),
+        })
+        out.append(row)
+    return out
+
+
+def verdict(row: dict) -> str:
+    """ANCHOR, SPREAD, BOTH — or UNJUDGED below `MIN_COLLISIONS`."""
+    total = len(row["regions"])
+    if total < MIN_COLLISIONS:
+        return "unjudged"
+    share = row["anchored"] / total
+    if share >= ANCHOR_SHARE:
+        return "ANCHOR"
+    if share <= 1 - ANCHOR_SHARE:
+        return "SPREAD"
+    return "BOTH"
+
+
+REMEDY = {
+    # Two problems, two remedies — `docs/ROADMAP.md` objective 5.
+    "ANCHOR": "move the list out of source; splitting the file changes nothing",
+    "SPREAD": "split along a seam; the data is not the problem",
+    "BOTH": "move the lists out AND split; one remedy leaves the other tax",
+    "unjudged": "too few replayed collisions to call",
+}
 
 
 def ranking(count: int = DEFAULT_MERGES,
@@ -165,6 +457,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--check", action="store_true",
                         help="fail when the roadmap names a file outside the "
                              "measured top ranks, or misses one inside them")
+    parser.add_argument("--modes", action="store_true",
+                        help="replay each file's merges pairwise and split its "
+                             "collisions into appends-to-one-list and "
+                             "edits-spread-through-the-file")
     args = parser.parse_args(argv)
 
     shas = recent_merges(args.merges)
@@ -174,9 +470,35 @@ def main(argv: list[str] | None = None) -> int:
               f"by measuring nothing. Check out with fetch-depth: 0.",
               file=sys.stderr)
         return 1
+    if args.modes:
+        # The window, so a reading quoted anywhere can be reproduced. Every
+        # number here moves as merges land; `src/main.rs` went 16% -> 4% in
+        # five days and took a CI job down with it.
+        newest = subprocess.run(
+            ["git", "-C", str(REPO), "show", "-s", "--format=%h %cs", shas[0]],
+            capture_output=True, text=True, check=False).stdout.strip()
+        print(f"of the {len(shas)} merges to main ending at {newest}, every "
+              f"consecutive pair\nof merges touching one file replayed as if "
+              f"the two had been written\nconcurrently:\n")
+        for row in modes(args.merges, args.top):
+            call = verdict(row)
+            total = len(row["regions"])
+            print(f"{row['path']}  —  {row['pct']}% of merges touch it")
+            print(f"    {row['collisions']} of {row['pairs']} consecutive "
+                  f"pairs would have collided, over {total} conflicted "
+                  f"region(s)")
+            print(f"    {row['anchored']} of {total} are two appends to one "
+                  f"shared list  ->  {call}")
+            print(f"    {REMEDY[call]}")
+            for where, pairs in row["at"].most_common(4):
+                print(f"        anchor  {pairs:3} pairs  {where}")
+            for where, hits in row["elsewhere"].most_common(3):
+                print(f"        spread  {hits:3}       {where}")
+            print()
+        return 0
     rows = ranking(args.merges)
     if not args.check:
-        print(f"of the last {len(recent_merges(args.merges))} merges to main:")
+        print(f"of the last {len(shas)} merges to main:")
         for path, hits, pct in rows[:args.top]:
             print(f"  {path:26} {hits:4} ({pct}%)")
         return 0
