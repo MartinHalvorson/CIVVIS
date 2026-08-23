@@ -185,8 +185,7 @@ impl AdvancedAi {
                 } else {
                     0.0
                 };
-                let score =
-                    weight * (lane - lost) - price.unwrap_or(0.0) * PLAN_PURCHASE_WEIGHT;
+                let score = weight * (lane - lost) - price.unwrap_or(0.0) * PLAN_PURCHASE_WEIGHT;
                 candidates.push((index, pos, score, price));
             }
         }
@@ -293,8 +292,7 @@ impl AdvancedAi {
                 return true;
             }
             let held_for = reserved.get(pos);
-            let squatting =
-                held_for.is_some_and(|family| *family != g.district_family(*district));
+            let squatting = held_for.is_some_and(|family| *family != g.district_family(*district));
             if squatting && remaining[district] > 1 {
                 *remaining.get_mut(district).expect("counted above") -= 1;
                 return false;
@@ -330,7 +328,9 @@ impl AdvancedAi {
             .iter()
             .find(|row| row.pos == pos && row.purchase.is_some())?;
         let variant = row.district;
-        let here = g.district_adjacency_assuming(variant, pos, None, None).total();
+        let here = g
+            .district_adjacency_assuming(variant, pos, None, None)
+            .total();
         if here + f64::EPSILON < PLAN_BUY_MIN_ADJACENCY {
             return None;
         }
@@ -341,7 +341,8 @@ impl AdvancedAi {
             .map(|site| {
                 (
                     site,
-                    g.district_adjacency_assuming(variant, site, None, None).total(),
+                    g.district_adjacency_assuming(variant, site, None, None)
+                        .total(),
                 )
             })
             .max_by(|a, b| a.1.total_cmp(&b.1).then_with(|| b.0.cmp(&a.0)));

@@ -31832,6 +31832,10 @@ fn the_plan_reserves_the_nest_for_the_campus() {
             .all(|row| row.family.as_str() == "campus" || row.pos != nest),
         "the nest is reserved: no other family sits on it"
     );
+    assert!(
+        rows.iter().all(|row| row.value <= campus.value),
+        "the nested campus is the plan's most valuable pick"
+    );
 }
 
 /// The menu gains the plan's site and the squatter yields it: a Commercial
