@@ -54,10 +54,16 @@ Everything the old roadmap called planned has shipped and then some:
    next-frame host readback (`envoy_reconcile`) rather than treating an issued
    request as proof. Batch runs still measure the resulting applied-rate and
    ladder-share change before the next objective is reprioritized.
-3. **Price the shipped live-seat bundle by withholding.** `live_without_*`
-   arms exist for every withholdable treatment; run the unpriced ones
-   through the paired evaluator before the next `city_target_floor` hides
-   in a composite (`docs/EVAL.md` is the ledger).
+3. **Price every gene, and only through the screen.** ✅ (re-cut 2026-08-23)
+   The paired evaluator and its 228 arms — one flag per arm, priced against a
+   fixed background — were retired in favour of the one random-genome
+   instrument: `gene_screen` draws every seat's genome independently and
+   reads each gene as seats-on against seats-off (`docs/GENE_SCREEN.md`;
+   `HEURISTIC_GENE_RANKING.md` is the ledger). What that instrument cannot
+   see is now the objective: the host-only treatments only the live seat can
+   price (`civvis_orders --without` over ladder games), and a contested board
+   that produces the diplomatic and culture endings the live seat loses to —
+   which no screen plays yet (`docs/eval/2026-08-23-the-arms-that-were-pre-registered-and-never-run.md`).
 4. **A tactics-grade controller for the arena.** ✅ The existing bounded
    portfolio search now auto-activates for promoted `AdvancedAi` on the 20×20
    Battlefield, is measured on the skirmish benchmark, and leaves native-world
@@ -74,7 +80,7 @@ Everything the old roadmap called planned has shipped and then some:
    | `src/ai/advanced/tests.rs` | 24% | size — 31.7k lines, cut out of `advanced.rs` by #1918 and now longer than it |
    | `src/ai.rs` | 10% | size |
    | `tools/civ6_control/mod/CivvisControlAgent.lua` | 10% | size — 12.2k lines in one chunk, against a 199-local ceiling |
-   | `src/bin/civvis_orders.rs` | 10% | one shared list: the `--without` arms |
+   | `src/bin/civvis_orders.rs` | 10% | one shared list: the `--without` treatments |
 
    ⚠ The Lua row was invisible until 2026-08-18. `conflict_hotspots.py` ranked
    `(rs|js|py|sh)` only, so the fifth-most-contended file in the repository

@@ -16,7 +16,7 @@
 //! what it claims to cancel and no treatment number from the same harness can
 //! be believed.
 use civvis::ai::{run_game, Ai};
-use civvis::elo::{builtin_ai, BUILTIN_AIS, EVAL_ONLY_AIS};
+use civvis::elo::{builtin_ai, BUILTIN_AIS};
 use civvis::game::Game;
 use civvis::parallel::{default_jobs, map};
 use civvis::skirmish::{matched_skirmish, MatchedSkirmish, SkirmishLedger, SkirmishSetup};
@@ -40,7 +40,7 @@ fn text(args: &[String], key: &str, default: &str) -> String {
 }
 
 fn known_ai(name: &str) -> bool {
-    BUILTIN_AIS.contains(&name) || EVAL_ONLY_AIS.contains(&name)
+    BUILTIN_AIS.contains(&name)
 }
 
 /// Two-sided sign test: the probability of a split at least this lopsided if

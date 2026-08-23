@@ -1,5 +1,13 @@
 # Evaluation integrity: what failed, why it was possible, and what closes it
 
+> **2026-08-23.** The paired evaluator this plan remediated — `ai_eval`, its
+> promotion matrix and its typed arm registry in `src/elo.rs` — has been
+> retired; the gene screen (`docs/GENE_SCREEN.md`) is the one instrument that
+> prices a behaviour. The root causes named below are not retired with it:
+> §4 (a gate-selected number is not quotable alone) and §5 (publish the
+> interval with the point) are still enforced by `tools/civvis_collab.py` and
+> the README ranking refresh, and the rest is the record of why.
+
 The 2026-07-31 stack audit (PR #659) found six defects. Five of them are in the
 *evaluator*, not in the agents — which matters more than it sounds, because the
 evaluator is the only thing that decides what ships. An engine optimized for
