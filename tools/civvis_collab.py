@@ -41,6 +41,21 @@ DEFAULT_BRANCH = "main"
 #: format-and-clippy ratchet is scoped to the lines a change touches precisely
 #: so it is always satisfiable; a ratchet nobody has to pass ratchets nothing,
 #: and it trains a fleet at a hundred merges a day to read red as normal.
+#:
+#: `paired-cost` joined on 2026-08-23. Advisory it could not do the one job it
+#: exists for: `ship` waits on this tuple and merges without reading anything
+#: else, so #2059 — six times slower, four PRs and four days to pay back —
+#: would have merged again with a red advisory X beside it. What made it safe
+#: to require is not confidence, it is three properties the check now has:
+#: it always reports (no `paths:` filter and no job-level `if:`, because an
+#: absent required check reads as pending here and a skipped one reads as a
+#: failure); its verdict is the MEDIAN of five paired blocks and it re-measures
+#: on a disjoint block of seeds before failing anything, so one contended pair
+#: cannot fail a merge; and an intended cost is accepted by a
+#: `paired-cost: allow <reason>` line in the pull request body, the same escape
+#: hatch `overwrite-guard: allow` is. A false failure is cleared by re-running
+#: the job — `gh run rerun --failed <run-id>`, which `ship` already does for
+#: itself on a cancelled or timed-out run.
 def _eval_manifest_outputs() -> Tuple[str, ...]:
     """`eval_manifest.GENERATED_OUTPUTS`, without importing the module eagerly.
 
@@ -56,7 +71,15 @@ def _eval_manifest_outputs() -> Tuple[str, ...]:
     return tuple(GENERATED_OUTPUTS)
 
 
-REQUIRED_CHECKS = ("cargo-test", "collaboration-policy", "rust-quality")
+#: Kept in sorted order: `required_check_state` reports missing checks in
+#: this tuple's order and `test_civvis_collab.py` compares that report
+#: with `sorted(REQUIRED_CHECKS)`.
+REQUIRED_CHECKS = (
+    "cargo-test",
+    "collaboration-policy",
+    "paired-cost",
+    "rust-quality",
+)
 
 #: Generated artifacts a merge conflict may be resolved in by regenerating,
 #: mapped to the command that rebuilds them (argv relative to the repo root,
@@ -94,17 +117,6 @@ ADVISORY_CHECKS = {
         "when there is evidence it can be, not on the strength of its name.",
     "control-mod":
         "Same workflow and same reasoning as `published-build`.",
-    "paired-cost":
-        "New on 2026-08-22 and advisory on purpose, for two separate reasons. "
-        "It is timing, on a shared 4-core hosted runner, at a shape chosen to "
-        "fit that runner rather than to match deployment — so its number is a "
-        "smoke alarm and not a promotion figure, and a gate that can be wrong "
-        "should not hold the merge queue on its first day. And requiring it "
-        "means changing branch protection, which is the repository owner's "
-        "call, not a pull request's. Promote it once its false-positive rate "
-        "is observed rather than assumed: it is looking for the six-fold "
-        "event #2059 shipped, and a 50% budget has room to spare before it "
-        "reaches an honest change.",
 }
 # Terminal check conclusions that say nothing about the code. A run that was
 # superseded by its own concurrency group, killed by the runner clock, or
