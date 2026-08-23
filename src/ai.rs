@@ -1916,6 +1916,10 @@ impl EnvelopeReach {
         self.0.binary_search(position).is_ok()
     }
 
+    fn len(&self) -> usize {
+        self.0.len()
+    }
+
     pub(crate) fn iter(&self) -> std::slice::Iter<'_, Pos> {
         self.0.iter()
     }
@@ -2484,6 +2488,16 @@ pub struct BasicAi {
     enemy_envelope_cache: std::sync::Arc<std::sync::Mutex<HashMap<u32, EnemyEnvelope>>>,
     /// The board those envelopes were measured against. See [`EnvelopeBoard`].
     envelope_board: std::sync::Arc<std::sync::Mutex<Option<EnvelopeBoard>>>,
+    /// Every tile any hostile envelope covers, unioned once and kept against
+    /// the exact envelope table it was built from. See [`Self::covered_tiles`].
+    covered_tiles_cache: std::sync::Arc<
+        std::sync::Mutex<
+            Option<(
+                std::sync::Arc<AttackEnvelopes>,
+                std::sync::Arc<EnvelopeReach>,
+            )>,
+        >,
+    >,
     /// Keep the hostile-envelope table across this seat's own unit moves.
     ///
     /// The exact key (see `attack_envelope_fingerprint`) covers every unit's
@@ -3261,10 +3275,32 @@ impl BasicAi {
                     && (tile.terrain != "ocean" || can_cross_ocean)
             })
         };
-        let mut seen = BTreeSet::new();
+        // ★★★★ THE VISITED SET WAS 8.3% OF THE MAIN THREAD, ALL BY ITSELF.
+        // A `BTreeSet<Pos>` here paid a node allocation and a tree descent per
+        // ocean tile, and the walk's worst case — a charted body with no
+        // frontier, which is most of a settled game — has to exhaust the
+        // component to say "no". `sample` on the standard screen shape put
+        // `BTreeSet<Pos>::insert` at 9.02% of the main thread and **92% of
+        // those samples were this line**, not the attack envelopes
+        // `docs/SIMULATOR_PERFORMANCE.md` had attributed the row to.
+        //
+        // `TileGrid::index_of` is documented for exactly this: "callers that
+        // keep their own per-tile table index it by this, so the table is
+        // dense and in the same order as the map itself". The walk is
+        // unchanged — `seen` is only ever tested and set, never iterated, so
+        // the frontier order, the `tiles` count and the early exit are the
+        // ones a set gave.
+        let mut seen = vec![false; g.map.tiles.len()];
+        let mut first_visit = |pos: Pos| match g.map.tiles.index_of(pos) {
+            Some(index) if !seen[index] => {
+                seen[index] = true;
+                true
+            }
+            _ => false,
+        };
         let mut frontier = VecDeque::new();
         for pos in starts {
-            if navigable_water(pos) && seen.insert(pos) {
+            if navigable_water(pos) && first_visit(pos) {
                 frontier.push_back(pos);
             }
         }
@@ -3291,7 +3327,7 @@ impl BasicAi {
                 return true;
             }
             for neighbor in g.nbrs(pos) {
-                if navigable_water(neighbor) && seen.insert(neighbor) {
+                if navigable_water(neighbor) && first_visit(neighbor) {
                     frontier.push_back(neighbor);
                 }
             }
@@ -4375,6 +4411,7 @@ impl BasicAi {
             attack_envelope_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
             enemy_envelope_cache: std::sync::Arc::new(std::sync::Mutex::new(HashMap::new())),
             envelope_board: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            covered_tiles_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
             envelope_cache_across_own_moves: false,
             last_path_step_from: RefCell::new(HashMap::new()),
             explore_dead_targets: false,
@@ -4707,6 +4744,7 @@ impl BasicAi {
             attack_envelope_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
             enemy_envelope_cache: std::sync::Arc::new(std::sync::Mutex::new(HashMap::new())),
             envelope_board: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            covered_tiles_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
             envelope_cache_across_own_moves: false,
             last_path_step_from: RefCell::new(HashMap::new()),
             explore_dead_targets: false,
@@ -5366,11 +5404,74 @@ impl BasicAi {
         Self::incoming_damage(g, pid, uid, position, envelopes).total
     }
 
+    /// Whether this hostile City Center can bombard `position` next turn.
+    /// Named because `incoming_damage` and `safe_healing_step` must agree on
+    /// it exactly: one prices the tile and the other skips pricing it, and a
+    /// difference between the two is a different game, not a faster one.
+    fn city_centre_strikes(g: &Game, pid: usize, city: &crate::game::City, position: Pos) -> bool {
+        city.owner != pid
+            && g.is_at_war(pid, city.owner)
+            && city.wall_hp > 0
+            && g.wdist(city.pos, position) <= 2
+            && g.line_of_sight_from(city.pos, position)
+    }
+
+    /// The Encampment counterpart of [`Self::city_centre_strikes`].
+    fn city_encampment_strikes(
+        g: &Game,
+        pid: usize,
+        city: &crate::game::City,
+        position: Pos,
+    ) -> bool {
+        city.owner != pid
+            && g.is_at_war(pid, city.owner)
+            && city.encampment_hp > 0
+            && city.encampment_wall_hp > 0
+            && !city.encampment_pillaged
+            && g.city_district_family_position(city, crate::name!("encampment"))
+                .is_some_and(|source| {
+                    g.wdist(source, position) <= 2 && g.line_of_sight_from(source, position)
+                })
+    }
+
+    /// Whether any observed hostile unit, City Center or Encampment could
+    /// damage a unit standing on `position` next turn. Exactly the union of
+    /// the three source sets [`Self::incoming_damage`] folds over, so "no" is
+    /// precisely the case where all three folds are empty and the answer is
+    /// `IncomingDamage::default()`.
+    fn anything_can_reach(
+        g: &Game,
+        pid: usize,
+        position: Pos,
+        envelopes: &[(u32, std::sync::Arc<EnvelopeReach>)],
+    ) -> bool {
+        envelopes
+            .iter()
+            .any(|(enemy_id, reach)| reach.contains(&position) && g.units.contains_key(enemy_id))
+            || g.cities
+                .values()
+                .any(|city| Self::city_centre_strikes(g, pid, city, position))
+            || g.cities
+                .values()
+                .any(|city| Self::city_encampment_strikes(g, pid, city, position))
+    }
+
     /// Conservative expected damage from the hostile units whose precise
     /// next-turn envelopes cover `position`, as a total and as the largest
     /// single blow among the same sources. The engine still rolls combat;
     /// this intentionally uses its unrandomized centre so a route decision is
     /// stable and does not consume the game RNG.
+    ///
+    /// ⚠ THE ANSWER IS ZERO FOR MOST TILES, AND THE PRICE OF THE ZERO IS WHAT
+    /// THIS COSTS. Every source is filtered out before the arithmetic on a
+    /// tile nothing covers, so the whole result is `IncomingDamage::default()`
+    /// — but the defender's strength was priced first, on every call, and a
+    /// garrisoned tile discarded three answers it had already paid for. The
+    /// sources are gathered first now and the defender is priced only when one
+    /// of them exists. Skipping work whose answer was already zero, never
+    /// changing an answer: the empty folds this replaces returned exactly
+    /// `IncomingDamage::default()`, and `default().merge(default())` is
+    /// `default()`.
     fn incoming_damage(
         g: &Game,
         pid: usize,
@@ -5381,20 +5482,24 @@ impl BasicAi {
         let Some(unit) = g.units.get(&uid) else {
             return IncomingDamage::LETHAL;
         };
+        // A garrisoned unit is not a combat target: attacks on a City Center
+        // or Encampment damage that district, not the formation stationed in
+        // it. That makes a friendly city a genuine safe refuge even while the
+        // enemy can still bombard its walls.
+        let garrisoned = g.city_at(position).is_some() || g.encampment_at(position).is_some();
+        if garrisoned {
+            return IncomingDamage::default();
+        }
+        if !Self::anything_can_reach(g, pid, position, envelopes) {
+            return IncomingDamage::default();
+        }
         let mut defender = unit.clone();
         defender.pos = position;
         let defense = effective_strength(
             g.unit_strength(&defender, true) + g.tile_defense_bonus(position),
             defender.hp,
         );
-        // A garrisoned unit is not a combat target: attacks on a City Center
-        // or Encampment damage that district, not the formation stationed in
-        // it. That makes a friendly city a genuine safe refuge even while the
-        // enemy can still bombard its walls.
-        let garrisoned = g.city_at(position).is_some() || g.encampment_at(position).is_some();
-        let unit_damage: IncomingDamage = if garrisoned {
-            IncomingDamage::default()
-        } else {
+        let unit_damage: IncomingDamage = {
             envelopes
                 .iter()
                 .filter(|(_, reach)| reach.contains(&position))
@@ -5417,19 +5522,12 @@ impl BasicAi {
 
         // A walled hostile City Center can strike on its next turn even when
         // it already spent this turn's strike. A garrison on a City Center or
-        // Encampment is protected by that district rather than directly hit.
-        let city_damage: IncomingDamage = if garrisoned {
-            IncomingDamage::default()
-        } else {
+        // Encampment is protected by that district rather than directly hit —
+        // handled by the early return above.
+        let city_damage: IncomingDamage = {
             g.cities
                 .values()
-                .filter(|city| {
-                    city.owner != pid
-                        && g.is_at_war(pid, city.owner)
-                        && city.wall_hp > 0
-                        && g.wdist(city.pos, position) <= 2
-                        && g.line_of_sight_from(city.pos, position)
-                })
+                .filter(|city| Self::city_centre_strikes(g, pid, city, position))
                 .map(|city| {
                     (30.0 * ((g.city_ranged_strength(city.id) - defense) / 25.0).exp())
                         .clamp(1.0, 100.0)
@@ -5439,26 +5537,10 @@ impl BasicAi {
         // Encampments carry an independent strike. As above, a strike spent
         // today is available again by the enemy's next turn, so only the
         // durable wall, health, and pillage state constrain this envelope.
-        let encampment_damage: IncomingDamage = if garrisoned {
-            IncomingDamage::default()
-        } else {
+        let encampment_damage: IncomingDamage = {
             g.cities
                 .values()
-                .filter(|city| {
-                    city.owner != pid
-                        && g.is_at_war(pid, city.owner)
-                        && city.encampment_hp > 0
-                        && city.encampment_wall_hp > 0
-                        && !city.encampment_pillaged
-                })
-                .filter_map(|city| {
-                    g.city_district_family_position(city, crate::name!("encampment"))
-                        .filter(|source| {
-                            g.wdist(*source, position) <= 2
-                                && g.line_of_sight_from(*source, position)
-                        })
-                        .map(|_| city)
-                })
+                .filter(|city| Self::city_encampment_strikes(g, pid, city, position))
                 .map(|city| {
                     (30.0 * ((g.city_ranged_strength(city.id) - defense) / 25.0).exp())
                         .clamp(1.0, 100.0)
@@ -5537,12 +5619,97 @@ impl BasicAi {
     /// First legal step toward healing ground that no observed enemy can attack
     /// next turn. City Centers win before ordinary friendly ground; neutral
     /// ground is a last resort when no safe homeward route exists.
+    /// Every tile some hostile envelope covers, unioned once per envelope
+    /// table instead of once per recovering unit.
+    ///
+    /// ★★★★ THE KEY IS THE `Arc` ITSELF, AND THAT IS SOUND RATHER THAN
+    /// CONVENIENT. `enemy_attack_envelopes` builds a fresh `Arc` whenever the
+    /// envelopes change and hands the same one back on a hit, so pointer
+    /// identity says "the same table"; and the entry holds that `Arc`, so the
+    /// allocation cannot be freed and reused underneath the comparison while
+    /// the cache is alive. The union is the identical sorted set
+    /// `safe_healing_step` used to rebuild — every recovering unit of one
+    /// seat-turn shares one board and therefore one union.
+    fn covered_tiles(
+        &self,
+        envelopes: &std::sync::Arc<AttackEnvelopes>,
+    ) -> std::sync::Arc<EnvelopeReach> {
+        let mut slot = self
+            .covered_tiles_cache
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let Some((table, covered)) = slot.as_ref() {
+            if std::sync::Arc::ptr_eq(table, envelopes) {
+                return std::sync::Arc::clone(covered);
+            }
+        }
+        let mut tiles: Vec<Pos> =
+            Vec::with_capacity(envelopes.iter().map(|(_, reach)| reach.len()).sum());
+        for (_, reach) in envelopes.iter() {
+            tiles.extend_from_slice(reach.as_slice());
+        }
+        let covered = std::sync::Arc::new(EnvelopeReach::from_tiles(tiles));
+        *slot = Some((
+            std::sync::Arc::clone(envelopes),
+            std::sync::Arc::clone(&covered),
+        ));
+        covered
+    }
+
+    /// Every hostile City Center and Encampment that could bombard something
+    /// this turn, as the tiles they strike from. The district half of
+    /// [`Self::anything_can_reach`], hoisted so a whole-map scan pays for the
+    /// city walk once rather than once per tile.
+    fn district_strike_sources(g: &Game, pid: usize) -> Vec<Pos> {
+        g.cities
+            .values()
+            .filter(|city| city.owner != pid && g.is_at_war(pid, city.owner))
+            .flat_map(|city| {
+                let centre = (city.wall_hp > 0).then_some(city.pos);
+                let encampment = (city.encampment_hp > 0
+                    && city.encampment_wall_hp > 0
+                    && !city.encampment_pillaged)
+                    .then(|| g.city_district_family_position(city, crate::name!("encampment")))
+                    .flatten();
+                centre.into_iter().chain(encampment)
+            })
+            .collect()
+    }
+
+    /// A cheap, conservative "nothing can touch this tile next turn".
+    ///
+    /// One binary search in the cached union answers what a linear pass over
+    /// every enemy envelope answered before, and the district halves are the
+    /// same predicates [`Self::incoming_damage`] folds over. It is allowed to
+    /// say `false` when the true answer is zero — an envelope belonging to a
+    /// unit that has since died still counts here — because a `false` only
+    /// means the caller prices the tile the long way and gets the same
+    /// number. A `true` is exact: it implies every one of `incoming_damage`'s
+    /// three folds is empty, so the tile's incoming damage is `0.0`.
+    fn nothing_can_reach(
+        &self,
+        g: &Game,
+        pid: usize,
+        position: Pos,
+        envelopes: &std::sync::Arc<AttackEnvelopes>,
+    ) -> bool {
+        !self.covered_tiles(envelopes).contains(&position)
+            && !g
+                .cities
+                .values()
+                .any(|city| Self::city_centre_strikes(g, pid, city, position))
+            && !g
+                .cities
+                .values()
+                .any(|city| Self::city_encampment_strikes(g, pid, city, position))
+    }
+
     fn safe_healing_step(
         &self,
         g: &Game,
         pid: usize,
         uid: u32,
-        envelopes: &[(u32, std::sync::Arc<EnvelopeReach>)],
+        envelopes: &std::sync::Arc<AttackEnvelopes>,
     ) -> Option<Pos> {
         // ★★★★ THIS WALKS THE WHOLE MAP, ONCE PER RECOVERING UNIT PER TURN,
         // and it used to price every tile with `evacuation_tile` — a defender
@@ -5558,24 +5725,8 @@ impl BasicAi {
         // loop pays only for its heal-rate read — under a query-memo scope, so
         // `suzerain_of` is answered once per minor, not once per tile.
         let _memo = g.query_memo();
-        let covered: BTreeSet<Pos> = envelopes
-            .iter()
-            .flat_map(|(_, reach)| reach.iter().copied())
-            .collect();
-        let strike_sources: Vec<Pos> = g
-            .cities
-            .values()
-            .filter(|city| city.owner != pid && g.is_at_war(pid, city.owner))
-            .flat_map(|city| {
-                let centre = (city.wall_hp > 0).then_some(city.pos);
-                let encampment = (city.encampment_hp > 0
-                    && city.encampment_wall_hp > 0
-                    && !city.encampment_pillaged)
-                    .then(|| g.city_district_family_position(city, crate::name!("encampment")))
-                    .flatten();
-                centre.into_iter().chain(encampment)
-            })
-            .collect();
+        let covered = self.covered_tiles(envelopes);
+        let strike_sources: Vec<Pos> = Self::district_strike_sources(g, pid);
         let struck = |position: Pos| {
             strike_sources.iter().any(|source| {
                 g.wdist(*source, position) <= 2 && g.line_of_sight_from(*source, position)
@@ -5701,6 +5852,22 @@ impl BasicAi {
                 .and(memory.danger)
         });
         let envelopes = self.enemy_attack_envelopes(g, pid);
+        // ★★★★ MOST UNITS ARE OUT OF EVERY ENVELOPE AND WERE PAYING A FULL
+        // EVACUATION PRICE TO FIND OUT. `retreat_step` runs for every military
+        // unit of every seat every turn — 87% of that bill is on city-states
+        // and barbarians (`docs/SIMULATOR_PERFORMANCE.md`, 2026-08-22) — and
+        // on a quiet tile it priced the defender's strength, walked every
+        // hostile city twice and read a heal rate, only to compute `0.0`,
+        // conclude "not lethal" and return. The union of the envelopes is
+        // already built for `safe_healing_step`; one binary search in it plus
+        // the district predicates settles the same question. This skips work
+        // whose answer was zero, it does not change an answer: incoming `0.0`
+        // is below any live unit's hit points, so `lethal` was false and with
+        // no remembered danger the tile below returns `None` — which is
+        // exactly what an unmapped tile's `?` returns too.
+        if remembered.is_none() && hp > 0 && self.nothing_can_reach(g, pid, here, &envelopes) {
+            return None;
+        }
         let holding = Self::evacuation_tile(
             g,
             pid,
@@ -13938,7 +14105,7 @@ impl BasicAi {
         g: &mut Game,
         pid: usize,
         uid: u32,
-        envelopes: &[(u32, std::sync::Arc<EnvelopeReach>)],
+        envelopes: &std::sync::Arc<AttackEnvelopes>,
     ) -> bool {
         let Some(unit) = g.units.get(&uid) else {
             return false;
@@ -24441,6 +24608,88 @@ mod attack_envelope_key_tests {
             seen[2], seen[3],
             "the enemy moved and its envelope did not, so the comparison above \
              cannot detect a stale one"
+        );
+    }
+
+    /// ★★★★ THE ORDER IS THE PART THAT COULD CHANGE A GAME. An envelope is
+    /// unioned into the whole-map safety scan and `evacuation_tile_cmp` breaks
+    /// its last tie on `Pos`, so a sorted `Vec` replacing a `BTreeSet` is only
+    /// safe while it iterates in the same sequence — including when the tiles
+    /// arrive unordered and with duplicates, which is exactly what an air
+    /// unit's disk hands over.
+    #[test]
+    fn an_envelope_iterates_in_the_order_the_tree_did() {
+        let messy = vec![(3, -1), (0, 0), (3, -1), (-2, 7), (0, 0), (1, 1)];
+        let tree: BTreeSet<Pos> = messy.iter().copied().collect();
+        let reach = EnvelopeReach::from_tiles(messy.clone());
+        assert_eq!(
+            reach.iter().copied().collect::<Vec<Pos>>(),
+            tree.iter().copied().collect::<Vec<Pos>>(),
+            "the slice must hand back the tree's ascending, distinct sequence"
+        );
+        for position in &messy {
+            assert!(reach.contains(position), "{position:?} is in the envelope");
+        }
+        assert!(!reach.contains(&(9, 9)), "and nothing else is");
+        // Already ascending and distinct: the common path, adopted untouched.
+        let sorted: Vec<Pos> = tree.iter().copied().collect();
+        assert_eq!(
+            EnvelopeReach::from_tiles(sorted.clone())
+                .iter()
+                .copied()
+                .collect::<Vec<Pos>>(),
+            sorted
+        );
+    }
+
+    /// ★★★★ THE SKIP IS ONLY LEGAL BECAUSE THE ANSWER WAS ALREADY ZERO.
+    /// `retreat_step` now returns without pricing its own tile, and
+    /// `incoming_damage` returns without pricing the defender, whenever
+    /// `nothing_can_reach` accepts the tile. Both rest on one implication, and
+    /// an implication argued in a comment is a guess with good posture: if
+    /// `nothing_can_reach` says yes, the incoming damage there is exactly
+    /// `0.0`, so the decision the caller skipped could only have been the one
+    /// it takes.
+    #[test]
+    fn a_tile_nothing_can_reach_prices_at_exactly_zero() {
+        let mut game = Game::new_full(2, 32, 22, 8_181, 300, 0, false);
+        game.at_war.insert((0, 1));
+        game.at_war.insert((1, 0));
+        let mine = game.player_unit_ids(0).into_iter().next().unwrap();
+        let home = game.units[&mine].pos;
+        let beside = game
+            .nbrs(home)
+            .into_iter()
+            .find(|pos| {
+                game.map.get(*pos).is_some_and(|tile| !game.rules.is_water(tile))
+                    && game.units_at(*pos).is_empty()
+            })
+            .expect("the fixture offers dry ground beside the starting unit");
+        game.spawn_test_unit("warrior", 1, beside);
+
+        let ai = BasicAi::new();
+        let envelopes = ai.enemy_attack_envelopes(&game, 0);
+        assert!(
+            !envelopes.is_empty(),
+            "without a visible hostile envelope every tile is trivially quiet"
+        );
+        let (mut quiet, mut loud) = (0usize, 0usize);
+        for position in game.map.tiles.keys().copied() {
+            if ai.nothing_can_reach(&game, 0, position, &envelopes) {
+                quiet += 1;
+                assert_eq!(
+                    BasicAi::evacuation_incoming_damage(&game, 0, mine, position, &envelopes),
+                    0.0,
+                    "{position:?} was accepted as out of reach and is not"
+                );
+            } else {
+                loud += 1;
+            }
+        }
+        assert!(quiet > 0, "the skip never fires, so it is measuring nothing");
+        assert!(
+            loud > 0,
+            "every tile is quiet, so the assertion above is vacuous"
         );
     }
 
