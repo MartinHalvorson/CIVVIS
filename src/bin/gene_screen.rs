@@ -618,8 +618,9 @@ fn sha256_hex(bytes: &[u8]) -> String {
             let s0 = w[index - 15].rotate_right(7)
                 ^ w[index - 15].rotate_right(18)
                 ^ (w[index - 15] >> 3);
-            let s1 =
-                w[index - 2].rotate_right(17) ^ w[index - 2].rotate_right(19) ^ (w[index - 2] >> 10);
+            let s1 = w[index - 2].rotate_right(17)
+                ^ w[index - 2].rotate_right(19)
+                ^ (w[index - 2] >> 10);
             w[index] = w[index - 16]
                 .wrapping_add(s0)
                 .wrapping_add(w[index - 7])
@@ -1863,9 +1864,9 @@ fn write_json_summary(path: &str, header: &Header, rows: &[Row]) {
             "completion": (header.batch.target_comparisons > 0)
                 .then(|| pairs as f64 / header.batch.target_comparisons as f64),
             "partial": (header.batch.target_comparisons > 0)
-                .then(|| pairs < header.batch.target_comparisons),
+                .then_some(pairs < header.batch.target_comparisons),
             "seed_window": (header.batch.target_pairs > 0)
-                .then(|| [header.batch.seed_first, header.batch.seed_last]),
+                .then_some([header.batch.seed_first, header.batch.seed_last]),
             "seed_window_played": played_seed_window(rows).map(|(low, high)| [low, high]),
             "read": completeness_line(header, pairs),
         },
@@ -2739,17 +2740,30 @@ fn merged_target(targets: &BTreeMap<u64, Batch>) -> Batch {
     Batch {
         target_pairs: targets.values().map(|batch| batch.target_pairs).sum(),
         target_comparisons: targets.values().map(|batch| batch.target_comparisons).sum(),
-        seed_first: targets.values().map(|batch| batch.seed_first).min().unwrap_or(0),
-        seed_last: targets.values().map(|batch| batch.seed_last).max().unwrap_or(0),
+        seed_first: targets
+            .values()
+            .map(|batch| batch.seed_first)
+            .min()
+            .unwrap_or(0),
+        seed_last: targets
+            .values()
+            .map(|batch| batch.seed_last)
+            .max()
+            .unwrap_or(0),
     }
 }
 
 /// The seed window a file's finished games actually cover, or `None` when it
 /// holds no game rows.
 fn played_seed_window(rows: &[Row]) -> Option<(u64, u64)> {
-    let mut seeds = rows.iter().filter(|row| row.kind == "game").map(|row| row.seed);
+    let mut seeds = rows
+        .iter()
+        .filter(|row| row.kind == "game")
+        .map(|row| row.seed);
     let first = seeds.next()?;
-    Some(seeds.fold((first, first), |(low, high), seed| (low.min(seed), high.max(seed))))
+    Some(seeds.fold((first, first), |(low, high), seed| {
+        (low.min(seed), high.max(seed))
+    }))
 }
 
 /// Whether an analysis was played at the screen or is a probe. Every leg is
@@ -4320,7 +4334,9 @@ mod tests {
                 }
                 (None, Some(at)) => {
                     stripped.push_str(&rest[..at]);
-                    rest = rest[at..].find("*/").map_or("", |end| &rest[at + end + 2..]);
+                    rest = rest[at..]
+                        .find("*/")
+                        .map_or("", |end| &rest[at + end + 2..]);
                 }
                 (Some(a), Some(b)) if a < b => {
                     stripped.push_str(&rest[..a]);
@@ -4486,7 +4502,10 @@ mod tests {
         );
         assert_eq!(promoted_binary_commit("gene_screen"), None);
         assert_eq!(promoted_binary_commit("civvis-not-a-sha"), None);
-        assert_eq!(promoted_binary_commit(&format!("civvis-{}", &sha[..39])), None);
+        assert_eq!(
+            promoted_binary_commit(&format!("civvis-{}", &sha[..39])),
+            None
+        );
     }
 
     /// ⚠ A TRUNCATED RUN MUST NOT READ AS A COMPLETED ONE. P10 stopped at
