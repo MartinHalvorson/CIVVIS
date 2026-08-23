@@ -389,7 +389,60 @@ schedule can bias a paired estimate.
 
 ## Results
 
-<!-- RESULTS-4 -->
+Ran as registered: **100 maps, 200 games, seed prefix 36000000..=36000099
+inclusive**, 6 players, 74×46 continents, 9 city-states, Online, 250 turns,
+average 218.3 turns, `arms differ on: coupled-expansion`. Fixed N, no early
+stopping.
+
+| reading | `advanced_coupled_expansion` |
+|---|---|
+| game-win share | 89/200 (44.5%) vs `advanced` 111/200 (55.5%) |
+| paired-map score | 44.5%, 95% betting CI 37.6%..52.3% |
+| **Elo-equivalent** | **−38 (CI −88..+16)** |
+| paired direction | 9 favored · 71 neutral · 20 against, sign p=0.0614 |
+| promotion gate | **INCONCLUSIVE** |
+| terminal-score diagnostic | 48.9%; direction 33 · 0 · 67, sign **p=0.0009** |
+| maps that broke | wins 29/100, terminal score 100/100 |
+
+The arm fired on this profile — 29 of 100 maps broke on wins and every map
+broke on terminal score — so the reading is about the treatment, not about a
+flag that never reached the board.
+
+Two lines from the run matter as much as the estimate:
+
+- **`resolution: … this gate promotes a true edge of about +67
+  Elo-equivalent 80% of the time, and anything smaller reads as INCONCLUSIVE
+  here whether or not it is real.`** This is the tool's own power statement
+  and it is *worse* than the ±30 this round estimated from the sibling arm's
+  400-pair p-value. The tool's number governs; the estimate in §1's
+  pre-registration was optimistic and is corrected here rather than quietly
+  left standing.
+- **`effect size: −38 (not gate-selected — the gate did not fire, so this
+  estimate is not conditioned on being large)`.** The winner's curse that
+  `docs/EVAL_INTEGRITY.md` R3 names does not apply to this −38: nothing
+  selected it. It is still one seed window.
+
+## Verdict: RETAIN `advanced`. `coupled_expansion` is not promoted.
+
+Both readings point the same way and one of them is significant. Wins fall
+short of significance (p=0.0614) at a resolution that could only have caught
+about +67; terminal score, which breaks on every map and therefore carries far
+more information, is **worse at p=0.0009**. Nothing here supports promoting the
+arm, and the direction is wrong for the hypothesis that pricing a Settler as a
+bounded investment against a 90-turn payoff horizon buys anything at the
+deployment shape.
+
+`docs/AI_GAPS.md` ranked this #3 with the note *"the modelling is done; the
+disjoint gameplay screen that would promote or reject it has not run."* It has
+now run, on a seed window disjoint from everything in the tree, and it rejects.
+The arm stays off in production, where it already was, and keeps its number.
+
+⚠ **What this run cannot say.** Domination was enabled and never produced in
+200 games, and diplomatic decided 1 game — so an expansion treatment acting
+through conquest is invisible here. The lane it *should* act through, score, is
+the largest at 80 of 200, so the main channel was present. And the strategic-
+search half of AI_GAPS #3 is untouched by this: it prices the coupled
+valuation, not the search.
 
 ## Why the great-work veto was *not* run, and what it needs first
 
