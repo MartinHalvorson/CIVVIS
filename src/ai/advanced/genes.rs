@@ -1,5 +1,10 @@
-//! ⭐ THE GENE REGISTRY: every behaviour flag the genome can carry, declared
-//! once.
+//! ⭐ THE GENE REGISTRY — the **gene pool**: every gene there is, on or off,
+//! declared once.
+//!
+//! Vocabulary (operator, 2026-08-23): the **gene pool** is the collection of
+//! all genes, whether on or off — this table is it. A **genome** is one
+//! player's set of on genes, a subset of the pool: the deployment genome is
+//! the set the ledger ships on, and a screen seat draws its own.
 //!
 //! A gene is one boolean flag on `AdvancedAi` with a published tag. This table
 //! is the one place a gene is declared — its tag, its flag, what kind of gene

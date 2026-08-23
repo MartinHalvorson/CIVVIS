@@ -1,5 +1,12 @@
 # The genome, and why breeding it has not worked
 
+> ⚠ Vocabulary note (2026-08-23): "genome" in this document means the legacy
+> continuous `Weights` vector searched by `civvis evolve` and the league —
+> not the behaviour-gene genome. In current vocabulary the **gene pool** is
+> the collection of all behaviour genes, on or off (the registry,
+> `src/ai/advanced/genes.rs`), and a **genome** is one player's set of on
+> genes — see `docs/GENE_SCREEN.md`.
+
 `docs/SUPERHUMAN.md` is about the macro search. This is about the other half:
 the 47-gene vector returned by `Weights::to_vec` and searched by `civvis
 evolve` and `civvis league`. It was 40 wide until #1520 brought seven
