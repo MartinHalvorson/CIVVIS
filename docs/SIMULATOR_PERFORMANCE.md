@@ -39,7 +39,7 @@ and the call tree is the finding.
 
 ### What was done
 
-Three changes, all exact, all verified by `tools/speed_ab.py` reporting the
+Four changes, all exact, all verified by `tools/speed_ab.py` reporting the
 same report digest on every paired seed.
 
 1. **The naval-recon visited set is a dense table.** `TileGrid::index_of` is
@@ -68,6 +68,12 @@ same report digest on every paired seed.
    implication the skip rests on over a real board rather than arguing it in a
    comment.
 
+4. **`AttackEnvelopes` holds a sorted slice.** Decided on counted work; see
+   the section below for the numbers and for why the clock could not decide
+   it. `Game::attack_reach_from_flood` also built the answer twice — a
+   `BTreeSet` that its caller re-collected into a second one — and now builds
+   one `Vec` the envelope adopts.
+
 `safe_healing_step`'s whole-map scan now takes its covered-tile union from a
 cache keyed on the envelope table's own `Arc` — pointer identity is sound as
 the key because the entry holds that `Arc`, so the allocation cannot be freed
@@ -87,32 +93,51 @@ union to answer a single membership question is a loss, and the union earns
 its keep only across `safe_healing_step`'s 3,400-tile scan. Recorded here
 because the reasoning for it was good and the measurement was not.
 
-### Rejected, with the number: the envelope representation itself
+### The envelope representation: decided by counting, not by the clock
 
-The change the section below ranked first was **built, measured and reverted.**
-`AttackEnvelopes` held a sorted `Vec<Pos>` instead of an `Arc<BTreeSet<Pos>>`,
-and `Game::attack_reach_from_flood` built one `Vec` where it used to build a
-`BTreeSet` that its caller re-collected into a second one — a genuine double
-build. It buys nothing measurable. Paired, `tools/speed_ab.py`, 4 seeds each,
-6p 60×38 6CS 120t online, reports agreeing on every seed, host load 6.5 and
-5.6 (provisional — not a quiet host, but the two readings bracket zero and
-both lean the wrong way):
+The change that section ranked first was built, measured, reverted and then
+restored, and the round trip is the useful part.
+
+Measured on the clock it reads **+1.17%** and **+0.20%** — paired,
+`tools/speed_ab.py`, 4 seeds each, 6p 60×38 6CS 120t online, reports agreeing
+on every seed, host load 6.5 and 5.6:
 
 | seeds | baseline | candidate | |
 | --- | ---: | ---: | ---: |
 | 7311001–04 | 42.87 s | 43.37 s | +1.17% |
 | 7311010–13 | 38.90 s | 38.98 s | +0.20% (inside the noise floor) |
 
-The profile says why: `attack_reach_from_flood` is 12–16% of the main thread
-and essentially all of it is `flow_past`. The set was never the cost there,
-and the double build is a rounding error next to the flood that feeds it.
+Both are inside the band #2339 has since shown this fleet cannot resolve the
+*sign* of, so neither is evidence of anything, and no quiet window would have
+made them evidence. Counted instead, with a counting `GlobalAlloc` over one
+250-turn 74×46/9CS continents game at seed 7311001 (deterministic: two runs of
+the same arm differed by 3 allocations in 375 million):
 
-Reverted rather than kept as a neutral, and the reasoning is worth stating
-because "it is not slower and it is tidier" is how hotspot files grow: it is
-about forty call sites across `src/ai.rs` and `src/game.rs`, the repository's
-two largest conflict hotspots, in exchange for nothing a measurement can see.
-The idea is sound and the target was wrong; if `flow_past` is ever cut down
-far enough for the set to matter, the numbers to beat are the two above.
+| arm | allocations | bytes |
+| --- | ---: | ---: |
+| `Arc<BTreeSet<Pos>>` | 375,799,768 | 45.13 GB |
+| sorted `Vec<Pos>` | 374,642,802 | 44.87 GB |
+| **difference** | **−1,156,966 (−0.31%)** | −253 MB (−0.56%) |
+
+And the shape of the workload, counted in the same run: **271,484 envelope
+builds against 12,123,375 `contains` calls**, on sets averaging 17.3 tiles —
+44 queries per build. The failure mode a sorted `Vec` has here is a set built
+once and queried rarely, where the sort costs more than incremental inserts;
+this is forty-four times the opposite. Per query, two separately allocated
+nodes and ~7.5 linear comparisons (Rust's `BTreeMap` searches a node linearly)
+become ~4.1 comparisons over 136 contiguous bytes.
+
+At ~45 ns an allocation that is ~0.05 s, and the query side is worth perhaps
+as much again, on a ~43 s game: **an estimated ~0.3%, which no clock on this
+machine can confirm.** It is kept because the counted work is strictly lower
+on both axes that can be counted exactly, not because a percentage said so —
+and **~0.3% is an estimate from counts and must never be quoted as a
+measurement.**
+
+⚠ The counting build is not in the tree. It is a `GlobalAlloc` wrapper in
+`src/main.rs` incrementing two `AtomicU64`s in `src/lib.rs`, printed at the
+end of `ai::run_game`; roughly thirty throwaway lines, and worth rebuilding
+the next time a sub-1% change needs deciding.
 
 ### What Part 2's target was actually worth
 
@@ -219,8 +244,9 @@ here — it touches ~40 sites and deserves its own change.~~
 collapsed into one symbol, and 92% of that 9.0% is the visited set of the
 naval-recon flood fill in `BasicAi::naval_recon_can_chart_from`, not these
 envelopes. The paragraph above was written from the collapsed self-time list;
-the call tree says otherwise. The envelope conversion was subsequently built,
-measured at **+1.17% / +0.20%** on paired seeds, and reverted. The row itself
+the call tree says otherwise. The envelope conversion was subsequently built and
+kept, but on counted allocations rather than on the clock, and it is worth
+about 0.3% rather than the large share this paragraph expected. The row itself
 is real and is now 0.13%.
 
 ⚠ **Read the last section first.** Each profile here superseded the one above
