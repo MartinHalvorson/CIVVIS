@@ -270,9 +270,50 @@ That is what this ledger's winner's-curse record says happens (+207 → +86,
 +92 → +61, +45 → −8), and stating it before the run is the only way the round
 can be wrong about it.
 
-#### Result
+#### Result: it replicated, and the registered prediction was right on both counts
 
-<!-- RESULTS-CONFIRM -->
+100 maps, 200 games, seeds **39000000..=39000099**, declared to the tool as
+`--confirm 31000000` so the disjointness was checked rather than asserted.
+
+| | discovery (seed 31000000) | **confirmation (seed 39000000)** |
+|---|---:|---:|
+| game-win share | 73/200 (36.5%) vs 34/200 | **75/200 (37.5%) vs 41/200** |
+| paired-map score | 59.8% | **58.5%** (95% betting CI 54.0%..65.6%) |
+| Elo-equivalent | +69 | **+60 (CI +28..+114→+112)** |
+| sign test | p=0.0000 | **p=0.0021** |
+| gate | PASS | **PASS** |
+| terminal score | 47·0·53, p=0.6173 | 52·0·48, p=0.7644 |
+
+The run's own label: **`effect size: +60 (CONFIRMED — measured on seed
+39000000, disjoint from the discovery seed 31000000; quotable, and quote this
+estimate rather than the discovery one)`.** So +60 is the number, not +69.
+
+**The registered prediction held exactly: the direction replicated and the size
+fell**, +69 → +60, which is this ledger's own pattern (+207 → +86, +92 → +61).
+
+The mechanism replicated too, which is what makes it a finding rather than two
+lucky seed windows. Both arms field near-identical empires — confirmation score
+559.9 vs 575.1, cities 6.36 vs 6.38, districts 17.2 vs 18.6 — and the win comes
+entirely from conversion: `{religious 65, score 9, science 1}` against
+`{religious 32, score 7, culture 2}`. Terminal score is null in both windows.
+The victory-lane governor is not building a better empire on this board; it is
+converting one, against a field that is chasing diplomacy and culture.
+
+⚠ **What this is and is not.** It is a confirmed, quotable +60 on
+`deployment-contested`. It is **not** comparable to the −45 on
+`deployment-online`: that profile's own definition warns its numbers are not,
+because two entrants hold two chairs here instead of six. And the field is four
+`live_target_*` agents, which is a *model* of the lanes Firaxis' AI pursues, not
+Firaxis' AI. This does not overturn #2344 and this round does not ask for it to.
+
+What it does establish is narrower and still worth having: **every instrument
+that resolved this gene off — p10, the standard screen, and #2344's direct arm —
+is fieldless, and on the one board in this repository built to model who the
+live seat actually plays, the same gene is worth +60 Elo across two disjoint
+seed windows.** `src/bin/ai_eval.rs` heads that profile *"★★★★★ THIS IS WHY THE
+MATRIX WAS BLIND TO TWO THIRDS OF WHAT KILLS US"*. Recommended follow-up, for
+somebody who owns the ledger: a contested-field gene screen before this gene is
+treated as settled.
 
 ## Verdict: RETAIN `advanced` — and the −70 to −80 prediction is **half right**
 
