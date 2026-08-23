@@ -32,7 +32,7 @@ DEBT = ROOT / "docs" / "genome_reach_debt.json"
 # The groups the file's own `_doc` defines. A new group is a deliberate edit
 # here, not a typo that quietly creates a category of one.
 GROUPS = {"bundle", "host-only", "live-bridge-row", "production-on",
-          "configured-on", "infrastructure", "already-on"}
+          "configured-on", "infrastructure", "already-on", "does-not-fire"}
 
 # Long enough to be a reason. `test_ci_wiring.py` and `gene_fires.py` use the
 # same bar, well clear of "host-only" or "n/a".

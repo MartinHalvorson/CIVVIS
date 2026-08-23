@@ -10,7 +10,8 @@
     "board; `live-bridge-row` could fire but a gene row would withhold it from the",
     "live bridge; `production-on` ships on and a gene row would switch it off;",
     "`configured-on` ships on from the wrong constructor for the table's own test;",
-    "`infrastructure` has no decision content; `already-on` would screen inert."
+    "`infrastructure` has no decision content; `already-on` would screen inert;",
+    "`does-not-fire` had a gene row written and the fires gate refused it."
   ],
   "toggles": {
     "adjacent_camp_clear": {
