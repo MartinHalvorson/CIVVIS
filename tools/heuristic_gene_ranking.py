@@ -77,6 +77,15 @@ NOTES_MD = ROOT / "docs" / "gene_ranking_notes.md"
 #: now prints whole and the "…" that clipped 16 of them is gone.
 DESCRIPTION_CHARS = 480
 
+#: The en dash this table prints for a cell no screen can fill.
+#: ⚠ A MODULE CONSTANT RATHER THAN AN ESCAPE INSIDE AN f-STRING. A
+#: backslash in an f-string's expression part is a syntax error before
+#: Python 3.12, so #2329's `f"{'\\u2013' if ...}"` made this whole file
+#: unparseable on the fleet's macOS seats, which run the system 3.9 —
+#: the ranking could not be regenerated there at all. CI's newer Python
+#: accepted it, so nothing failed until a seat tried to run it.
+EN_DASH = "\u2013"
+
 
 # ⭐ `column_se` and `POWER_80` moved into `gene_ledger.py` (#2300 put the
 # arithmetic beside the `wins_per_10k` it halves; that function lives there,
@@ -691,7 +700,7 @@ def boundary_section(ledger: dict, measured: dict[str, list[dict]]) -> list[str]
             f"| `{row['tag']}` | {posterior_cell(row['posterior'])} | "
             f"{probability_cell(row['posterior'])} | "
             f"{'on' if row['shipped'] else 'off'} | {row['buys']:+.1f} | "
-            f"{'\u2013' if needs is None else fmt_int(needs)} |"
+            f"{EN_DASH if needs is None else fmt_int(needs)} |"
         )
     feasible = [r for r in rows
                 if r["needs"] is not None and 0 < r["needs"] <= FEASIBLE_ARM_PAIRS]
@@ -787,10 +796,16 @@ def render(ledger: dict) -> str:
         "Every screenable heuristic gene on the Advanced controller, ranked most beneficial "
         "to least by **± Wins / 10k seats** — wins added per 10,000 six-player on-arm seats at the "
         "gene's measured on-rate in its **latest** screen. *± Wins / 10k seats prior* is the "
-        "same figure from the screen before that (\u2013 when the gene has only one "
-        "reading); movement between the two columns is the gene's trend across cycles. "
+        "same figure from the screen before that, and *± Wins / 10k seats third* the one "
+        "before that again (\u2013 where the gene has no reading that far back): three "
+        "chronological windows, newest first, so every new screen shifts a gene's readings "
+        "one column right and drops the fourth-oldest off the table. Movement across the "
+        "three is the gene's trend, and it is the column the two-column rule cannot see \u2014 "
+        "a pair of positives that is the tail of a decline reads the same as one that is a "
+        "rise until the third window is printed beside it. **The third column is published, "
+        "not in force**: the rule below reads the first two and nothing else. "
         "*Default* is the deployment ledger's call (`docs/gene_ledger.json`), and since "
-        "2026-08-22 that call is read off these two win columns: a gene defaults **on** "
+        "2026-08-22 that call is read off the first two win columns: a gene defaults **on** "
         "when both are positive, or when their average clears +15 with neither below "
         "\u221210; with exactly one populated column it defaults **on** when that reading "
         "is above +20. It defaults **off** otherwise. The *Total* win-rate "
@@ -894,23 +909,30 @@ def render(ledger: dict) -> str:
     lines = [
         "# The heuristic gene ranking",
         "",
-        "| Rank | Gene | Description | Default | ± Wins / 10k seats | ± Wins / 10k seats prior | Total (on) Win rate | Total (off) Win rate | Diff | Posterior (95% CI) | P(>0) | Share Δpp (z) | cost (compute) | cost (time) |",
-        "|---:|---|---|---|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|",
+        "| Rank | Gene | Description | Default | ± Wins / 10k seats | ± Wins / 10k seats prior | ± Wins / 10k seats third | Total (on) Win rate | Total (off) Win rate | Diff | Posterior (95% CI) | P(>0) | Share Δpp (z) | cost (compute) | cost (time) |",
+        "|---:|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|",
     ]
     for rank, (wins, tag, history) in enumerate(rows, 1):
         v = verdict.get(tag, {})
         default = "**on**" if v.get("default_on") else "off"
-        prior = (
-            f"{wins_per(history[-2]['win_on'], history[-2]['players']):+d}"
-            if len(history) > 1
-            else "\u2013"
-        )
+        # The window columns, newest first. Each new screen that prices a gene
+        # shifts its predecessor one place right, so `third` is the reading
+        # before the two the ledger's rule is taken on and the fourth-oldest
+        # falls off the table (operator request 2026-08-23).
+        def window(back: int) -> str:
+            if len(history) <= back:
+                return "\u2013"
+            screen = history[-1 - back]
+            return f"{wins_per(screen['win_on'], screen['players']):+d}"
+
+        prior, third = window(1), window(2)
         on_seats = sum(m["n_on"] for m in history)
         off_seats = sum(m["n_off"] for m in history)
         on_rate, off_rate = pooled_win_rates(history)
         posterior = posterior_of(history)
         lines.append(
             f"| {rank} | `{tag}` | {desc.get(tag, '')} | {default} | {wins:+d} | {prior} | "
+            f"{third} | "
             f"{100 * on_rate:.2f}% (n={fmt_int(on_seats)}) | "
             f"{100 * off_rate:.2f}% (n={fmt_int(off_seats)}) | "
             f"{diff_cell(history)} | "
