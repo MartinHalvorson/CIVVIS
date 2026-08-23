@@ -35,12 +35,7 @@ def main():
         (root / "home").mkdir()
         (root / "home" / "index.html").write_text("landing", encoding="utf-8")
 
-        # `Handler` requires a rating host and never consults it on any route
-        # this script exercises — /roster and /result are `test_serve.py`'s,
-        # with a fake. Passing None keeps the two files testing different
-        # halves rather than one of them re-implementing the other's stub.
-        handler = functools.partial(Handler, directory=root,
-                                    rating_host=None)
+        handler = functools.partial(Handler, directory=root)
         with Server(("127.0.0.1", 0), handler) as server:
             thread = threading.Thread(target=server.serve_forever, daemon=True)
             thread.start()
