@@ -665,12 +665,14 @@ roster keeps `strategic` as an offline-only anchor.
   The three names are `compact-standard`, `deployment-online` and
   `deployment-contested`, and each expands through the same function the
   matrix builds its children with, so a named round and the gate play one
-  board rather than two that agree by hand. ⚠ **They did not agree.** Four
-  rounds in `docs/eval/` measured congress arms on
-  `--field live_target_diplomatic,live_target_culture` and each records its
-  world as `pangaea`/`flat`/fixed civilizations, while `deployment-contested`
-  has been `continents`/`planet`/`poles`/randomized since #658 — eleven flags
-  typed by hand, agreeing with the gate on eight.
+  board rather than two that agree by hand. ⚠ **They did not agree.** The
+  three congress rounds in `docs/eval/` that used
+  `--field live_target_diplomatic,live_target_culture` each record their world
+  as `pangaea`/`flat`/fixed civilizations, while `deployment-contested` has
+  been `continents`/`planet`/`poles`/randomized since #658 — eleven flags typed
+  by hand, agreeing with the gate on eight. A fourth round on the same field
+  typed all eleven correctly, which is the point: whether a hand-typed board
+  was the gate's board was a property of the typist, and nothing checked.
 
   Like `--matrix`, `--profile` **refuses** any of the thirteen world axes
   alongside it rather than letting the explicit flag win: a run that reported

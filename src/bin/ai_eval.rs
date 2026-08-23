@@ -1843,10 +1843,13 @@ fn profile_names() -> String {
 /// the conditions the live ladder actually loses to — 83 of 232 terminal games
 /// taken by a rival's victory, 47 of them diplomatic and 27 culture
 /// (`docs/EVAL_STATUS.md`). Until now it existed only *inside* `--matrix`, so
-/// every single-arm round measured on it — four of them in `docs/eval/` —
-/// retyped its axes by hand. Nothing checked those eleven flags against the
-/// gate's own profile, and a round whose board has silently drifted from the
-/// gate's board is not evidence about the gate.
+/// every single-arm round measured on it retyped its axes by hand — and
+/// whether the retyping matched depended on who did it. The three congress
+/// rounds in `docs/eval/` record their world as `pangaea`/`flat`/fixed
+/// civilizations; `2026-08-19-the-suzerainty-prize-…` typed out
+/// `continents`/`planet`/`poles`/`--randomize-civs` and matched. Nothing
+/// checked either against the gate's own profile, and a round whose board has
+/// silently drifted from the gate's board is not evidence about the gate.
 ///
 /// Conflicting explicit axes are **refused, not overridden**, on the same
 /// reasoning `MATRIX_PROFILE_FLAGS` already carries for the matrix: accepting
@@ -3954,12 +3957,14 @@ mod tests {
 
     /// ★★★★★ THE HAND-TYPED CONTESTED ROUNDS WERE NOT ON THE CONTESTED BOARD.
     ///
-    /// Four rounds in `docs/eval/` measured congress arms on
+    /// Three rounds in `docs/eval/` measured congress arms on
     /// `--field live_target_diplomatic,live_target_culture` and each states its
     /// world as "`pangaea`/`flat`/fixed civilizations". `deployment-contested`,
     /// the profile the promotion gate runs, has been `continents`/`planet`/
     /// `poles`/randomized since #658. Eleven flags typed by hand agreed with
-    /// the gate on eight of them, and nothing in the repository could notice.
+    /// the gate on eight of them, and nothing in the repository could notice —
+    /// a fourth round on the same field typed all eleven correctly, which is
+    /// the point: correctness was a property of the typist.
     ///
     /// This is the check that makes `--profile <name>` worth having: the name
     /// and the matrix child must expand to one world, derived from one place.
