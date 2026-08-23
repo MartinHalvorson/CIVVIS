@@ -63,9 +63,6 @@ CANNOT_RUN_IN_CI = {
         "Reads Civ VI's player-colour tables from the install.",
     "civ6_yield_drift.py":
         "Reads a live mirror's per-turn economy drift from a bridged game.",
-    "civ6_strategy.py":
-        "Exports a rated league strategy to the grounding mod; the artifact it "
-        "reads is produced by a league run, not by the repository.",
     "civvis_push_guard.py":
         "A pre-push hook for development clones. CI has already received the "
         "push it exists to gate.",

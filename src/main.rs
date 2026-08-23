@@ -11,17 +11,15 @@ use civvis::leader_roster;
 use civvis::rules::Rules;
 use civvis::setup::{self, BaseRuleset, GameSpeed, MapPoles, MapScript, MapSize, MapTopology};
 
-/// The mutable controller is deliberately given a dated rating identity.
-/// Reusing the bare `advanced` row after its implementation changes would
-/// blend two players into one lifetime average and erase the very improvement
-/// the longitudinal tournament is supposed to expose.
-const DEFAULT_TOURNAMENT_ENTRANTS: &str =
-    "advanced-20260801-diplomacy=advanced,advanced_v1,basic-20260801-diplomacy=basic,random-20260730=random";
-
-/// `advanced_v1` freezes the planning configuration, but deliberately shares
-/// the production `BasicAi`/`AdvancedAi` implementation. What stops a code edit
-/// from silently changing the longitudinal anchor is [`ANCHOR_BEHAVIOUR_FNV`]
-/// below, which pins the anchor's decision stream rather than its source bytes.
+/// `advanced_v1` — `AdvancedAi::legacy()`, every gene off — freezes the
+/// planning configuration, but deliberately shares the production
+/// `BasicAi`/`AdvancedAi` implementation. What stops a code edit from silently
+/// changing that frozen anchor is [`ANCHOR_BEHAVIOUR_FNV`] below, which pins
+/// the anchor's decision stream rather than its source bytes. The anchor used
+/// to be the longitudinal Elo tournament's fixed point; the tournament is
+/// retired (#2357) and the pin stays, because what it now guards is the gene
+/// discipline itself: a change that moves `legacy()` is a change that reached
+/// production without a gene in front of it.
 ///
 /// The per-change argument for every edit that has reached those shared files —
 /// **1,371 lines of it**, one paragraph per pull request — moved to
@@ -80,39 +78,6 @@ const ANCHOR_BEHAVIOUR_FNV: u64 = 0xf78a_2b10_c0e3_5945;
 /// diagnosis than a changed 64-bit number.
 #[cfg(test)]
 const ANCHOR_DECISIONS: usize = 18_596;
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct TournamentEntrant {
-    identity: String,
-    controller: String,
-}
-
-/// Parse `rating-identity=controller`, with a bare name meaning both.
-///
-/// Separating the two lets a changing builtin enter a persistent ledger under
-/// a new immutable identity while still constructing the existing controller.
-fn parse_tournament_entrants(spec: &str) -> Result<Vec<TournamentEntrant>, String> {
-    let mut entrants = Vec::new();
-    for raw in spec.split(',') {
-        let raw = raw.trim();
-        if raw.is_empty() {
-            return Err("--ais contains an empty entrant".to_string());
-        }
-        let (identity, controller) = raw.split_once('=').unwrap_or((raw, raw));
-        let identity = identity.trim();
-        let controller = controller.trim();
-        if identity.is_empty() || controller.is_empty() {
-            return Err(format!(
-                "invalid tournament entrant {raw:?}; use rating-identity=controller"
-            ));
-        }
-        entrants.push(TournamentEntrant {
-            identity: identity.to_string(),
-            controller: controller.to_string(),
-        });
-    }
-    Ok(entrants)
-}
 
 fn arg(args: &[String], key: &str, default: i64) -> i64 {
     args.iter()
@@ -371,16 +336,6 @@ fn leader_pool(args: &[String]) -> LeaderPool {
         std::process::exit(2);
     }
     pool
-}
-
-/// How deep the AI player pool runs: which of the rated strategies may be
-/// seated for the game's AI civilizations.
-fn ai_player_pool(args: &[String]) -> setup::AiPlayerPool {
-    let id = arg_text(args, "--ai-pool", setup::AiPlayerPool::default().id());
-    setup::AiPlayerPool::from_id(&id).unwrap_or_else(|| {
-        eprintln!("unknown AI player pool {id:?}; choose best1, best2, best3, best5, or all");
-        std::process::exit(2);
-    })
 }
 
 /// The civilizations a Tactics match is between, resolved the same way the
@@ -782,39 +737,22 @@ fn simultaneous_soak_job_split(games: usize, jobs: usize) -> (usize, usize, usiz
     )
 }
 
-/// Subcommands that seat entrants from `--ais`. Everything else builds its
-/// fleet from `AdvancedAi::fleet` or reads a committed roster, and cannot
-/// honour the flag.
+/// ★★★★★ A FLAG NOTHING HONOURS IS REFUSED, NOT IGNORED.
 ///
-/// ⚠ `arena` looks like it belongs here and does not: it runs from the
-/// committed league roster and never reads `--ais` either. Checked rather than
-/// assumed, because assuming it was the first version of this list.
-const ENTRANT_SEATING_COMMANDS: [&str; 1] = ["tournament"];
-
-/// ★★★★★ A FLAG THE SUBCOMMAND CANNOT HONOUR IS REFUSED, NOT IGNORED.
-///
-/// `--ais` is advertised in the one shared usage line, so it reads as global.
-/// Only `tournament` parses it. `civvis simulate --ais basic,basic,...`
-/// therefore played a full game with `AdvancedAi` in every seat and printed a
-/// winner, with no indication that the instruction had been dropped — and an
-/// unknown controller name was not rejected either, because nothing ever
-/// looked at it.
-///
-/// That is the worst kind of defect an experiment tool can have: it does not
-/// fail, it answers a different question and says nothing. It cost this session
-/// a whole line of investigation. Four games seating
-/// `advanced_target_diplomatic` in all six chairs, then three more each for
-/// culture and domination, came back byte-identical to the default run and to
-/// each other, which read as "the AI cannot complete these victories" and was
-/// really "the flag did nothing".
+/// `--ais` seated the entrants of `civvis tournament`, and that command is
+/// retired with the Elo ledger (#2357). The flag used to read as global
+/// because it sat in the one shared usage line, and `civvis simulate --ais
+/// basic,basic,…` played a full game with `AdvancedAi` in every seat and
+/// printed a winner with no indication that the instruction had been dropped
+/// — it answered a different question and said nothing, which cost a whole
+/// line of investigation once. So it still fails loudly.
 fn refuse_unhonoured_entrant_flag(cmd: &str, args: &[String]) {
-    if ENTRANT_SEATING_COMMANDS.contains(&cmd) || !args.iter().any(|arg| arg == "--ais") {
+    if !args.iter().any(|arg| arg == "--ais") {
         return;
     }
     eprintln!(
         "--ais is not honoured by `{cmd}`: it seats every chair with the default controller. \
-         Only `{}` reads it. Remove the flag, or use that.",
-        ENTRANT_SEATING_COMMANDS.join("`, `")
+         The tournament that read it is retired (#2357); remove the flag."
     );
     std::process::exit(2);
 }
@@ -1507,257 +1445,6 @@ fn main() {
             println!("clone + end (no fog) {fast_end_us:6.1} us  = {:.0}/sec", 1e6 / fast_end_us);
             let _ = sink;
         }
-        "tournament" => {
-            // Each mode keeps its own ladder: a Tactics rating is earned
-            // against Tactics opponents on an arena and says nothing about
-            // the grand strategy game, so `--map battlefield` writes to the
-            // Tactics ledger unless `--ratings` names another. Offered to the
-            // Civ ledger it would be refused anyway — the profile records the
-            // map script — so this names the right file rather than making
-            // the operator discover the mismatch.
-            let ratings_path = arg_text(
-                &args,
-                "--ratings",
-                civvis::elo::ratings_path_for(setup::GameMode::for_script(map_script(&args))),
-            );
-            if args.iter().any(|arg| arg == "--standings") {
-                match civvis::elo::EloPool::load(&ratings_path) {
-                    Ok(pool) => print!("{}", civvis::elo::leaderboard(&pool)),
-                    Err(error) => {
-                        eprintln!("cannot load Elo ledger {ratings_path}: {error}");
-                        std::process::exit(1);
-                    }
-                }
-                return;
-            }
-            let entrant_spec = args
-                .iter()
-                .position(|a| a == "--ais")
-                .and_then(|i| args.get(i + 1))
-                .map(String::as_str)
-                .unwrap_or(DEFAULT_TOURNAMENT_ENTRANTS);
-            let entrants = parse_tournament_entrants(entrant_spec).unwrap_or_else(|error| {
-                eprintln!("{error}");
-                std::process::exit(2);
-            });
-            for entrant in &entrants {
-                if !civvis::elo::BUILTIN_AIS.contains(&entrant.controller.as_str()) {
-                    eprintln!(
-                        "unknown AI controller {:?}; builtin: {:?} (custom bots: \
-                         use civvis::elo::run_tournament from Rust)",
-                        entrant.controller,
-                        civvis::elo::BUILTIN_AIS
-                    );
-                    std::process::exit(1);
-                }
-            }
-            let mut effective = BTreeMap::<&'static str, String>::new();
-            for entrant in &entrants {
-                let provenance = civvis::elo::builtin_provenance(
-                    &entrant.controller,
-                    civvis::elo::ARTIFACT_DIR,
-                );
-                if provenance.degraded() {
-                    eprintln!(
-                        "cannot rate identity {:?}: {}",
-                        entrant.identity,
-                        provenance.line()
-                    );
-                    std::process::exit(2);
-                }
-                if let Some(other) = effective.insert(provenance.effective, entrant.identity.clone()) {
-                    eprintln!(
-                        "rating identities {:?} and {:?} both play as {:?}; cloned controllers cannot be rated as separate players",
-                        other,
-                        entrant.identity,
-                        provenance.effective,
-                    );
-                    std::process::exit(2);
-                }
-                if entrant.identity != entrant.controller {
-                    eprintln!(
-                        "rating identity {:?} plays controller {:?}",
-                        entrant.identity, entrant.controller
-                    );
-                }
-                if provenance.untrained() {
-                    eprintln!("warning: {}", provenance.line());
-                }
-            }
-            let names: Vec<String> = entrants
-                .iter()
-                .map(|entrant| entrant.identity.clone())
-                .collect();
-            let controller_roster: Vec<String> = entrants
-                .iter()
-                .map(|entrant| entrant.controller.clone())
-                .collect();
-            let controllers: BTreeMap<String, String> = entrants
-                .into_iter()
-                .map(|entrant| (entrant.identity, entrant.controller))
-                .collect();
-            let rating_anchor = match args.iter().position(|arg| arg == "--anchor") {
-                Some(index) => {
-                    let value = args.get(index + 1).unwrap_or_else(|| {
-                        eprintln!("--anchor needs an entrant identity or 'none'");
-                        std::process::exit(2);
-                    });
-                    if value.starts_with("--") || value.trim().is_empty() {
-                        eprintln!("--anchor needs an entrant identity or 'none'");
-                        std::process::exit(2);
-                    }
-                    (value != "none").then(|| value.clone())
-                }
-                None => names
-                    .iter()
-                    .any(|name| name == "advanced_v1")
-                    .then(|| "advanced_v1".to_string()),
-            };
-            let strict = |result: Result<i64, String>| {
-                result.unwrap_or_else(|error| {
-                    eprintln!("{error}");
-                    std::process::exit(2);
-                })
-            };
-            let players = strict(strict_i64_arg(
-                &args,
-                "--players",
-                names.len().max(2) as i64,
-            ));
-            if !(2..=100).contains(&players) {
-                eprintln!("--players must be between 2 and 100");
-                std::process::exit(2);
-            }
-            let rules = Rules::embedded();
-            let speed = arg_text(&args, "--speed", &default_speed());
-            if !rules.speeds.contains_key(&speed) {
-                eprintln!("unknown game speed {speed:?}; choose one of {:?}", speeds(&rules));
-                std::process::exit(2);
-            }
-            let map_id = arg_text(&args, "--map", "pangaea");
-            let map_script = MapScript::from_id(&map_id).unwrap_or_else(|| {
-                eprintln!("unknown map script {map_id:?}; choose pangaea, continents, or archipelago");
-                std::process::exit(2);
-            });
-            // Ratings are a persistent experiment. Keep its historical flat
-            // default unless the operator explicitly selects a globe.
-            let topology_default = if map_id == "planet" { "planet" } else { "flat" };
-            let topology_id = arg_text(&args, "--shape", topology_default);
-            let tournament_topology = MapTopology::from_id(&topology_id).unwrap_or_else(|| {
-                eprintln!("unknown map shape {topology_id:?}; choose flat or planet");
-                std::process::exit(2);
-            });
-            let poles_id = arg_text(&args, "--poles", "poles");
-            let tournament_poles = MapPoles::from_id(&poles_id).unwrap_or_else(|| {
-                eprintln!("unknown pole setting {poles_id:?}; choose poles or randomized");
-                std::process::exit(2);
-            });
-            let size = MapSize::for_players(players as usize);
-            let (default_width, default_height) = size.dimensions(tournament_topology);
-            let width = strict(strict_i64_arg(&args, "--width", i64::from(default_width)));
-            let height = strict(strict_i64_arg(&args, "--height", i64::from(default_height)));
-            if width < 8 || height < 8 || width > i64::from(i32::MAX) || height > i64::from(i32::MAX)
-            {
-                eprintln!("tournament dimensions must each be between 8 and {}", i32::MAX);
-                std::process::exit(2);
-            }
-            let games = strict(strict_i64_arg(&args, "--games", 20));
-            let turns = strict(strict_i64_arg(&args, "--turns", stock_turns(&args)));
-            let seed = strict(strict_i64_arg(&args, "--seed", 0));
-            let city_states = strict(strict_i64_arg(
-                &args,
-                "--city-states",
-                size.default_city_states
-                    .min(civvis::game::CITY_STATE_NAMES.len()) as i64,
-            ));
-            if games <= 0 || games > i64::from(u32::MAX) {
-                eprintln!("--games must be between 1 and {}", u32::MAX);
-                std::process::exit(2);
-            }
-            if turns <= 0 || turns > i64::from(u32::MAX) {
-                eprintln!("--turns must be between 1 and {}", u32::MAX);
-                std::process::exit(2);
-            }
-            if seed < 0 {
-                eprintln!("--seed must be non-negative");
-                std::process::exit(2);
-            }
-            if city_states < 0 || city_states as usize > civvis::game::CITY_STATE_NAMES.len() {
-                eprintln!(
-                    "--city-states must be between 0 and {}",
-                    civvis::game::CITY_STATE_NAMES.len()
-                );
-                std::process::exit(2);
-            }
-            let k = strict_f64_arg(&args, "--k", 24.0).unwrap_or_else(|error| {
-                eprintln!("{error}");
-                std::process::exit(2);
-            });
-            if !k.is_finite() || k <= 0.0 {
-                eprintln!("--k must be finite and greater than zero");
-                std::process::exit(2);
-            }
-            let jobs = strict(strict_i64_arg(&args, "--jobs", 0));
-            if jobs < 0 {
-                eprintln!("--jobs must be non-negative (zero means one per core)");
-                std::process::exit(2);
-            }
-            let cfg = civvis::elo::TourneyCfg {
-                games: games as u32,
-                players_per_game: players as usize,
-                width: width as i32,
-                height: height as i32,
-                speed,
-                map_script,
-                map_topology: tournament_topology,
-                map_poles: tournament_poles,
-                // A tournament writes the project's persistent Elo, so it has
-                // to rank on whole games; see `stock_turns`.
-                max_turns: turns as u32,
-                num_city_states: city_states as usize,
-                // A tournament rolls its own per-game seeds, so the era
-                // choice travels rather than one era resolved here.
-                start_era: if arg_text(&args, "--start-era", setup::stock_start_era_id())
-                    == "random"
-                {
-                    setup::StartEraChoice::RandomPerGame
-                } else {
-                    setup::StartEraChoice::Fixed(start_era(&args, seed as u64))
-                },
-                tactics: tactics_rules(&args),
-                seed: seed as u64,
-                k,
-                rating_anchor,
-                controller_roster,
-                verbose: !args.iter().any(|a| a == "--quiet"),
-                jobs: if jobs == 0 {
-                    civvis::parallel::default_jobs()
-                } else {
-                    jobs as usize
-                },
-            };
-            match civvis::elo::run_persistent_tournament(
-                &names,
-                |identity, seed| {
-                    let controller = controllers
-                        .get(identity)
-                        .expect("every scheduled identity came from --ais");
-                    civvis::elo::builtin_ai(controller, seed)
-                },
-                &cfg,
-                &ratings_path,
-            ) {
-                Ok(pool) => {
-                    println!();
-                    print!("{}", civvis::elo::leaderboard(&pool));
-                    println!("ratings checkpointed to {ratings_path}");
-                }
-                Err(error) => {
-                    eprintln!("Elo tournament failed: {error}");
-                    std::process::exit(1);
-                }
-            }
-        }
         #[cfg(not(feature = "closed-experiments"))]
         "selfplay" => {
             eprintln!(
@@ -1812,153 +1499,6 @@ fn main() {
                     std::process::exit(1);
                 }
             }
-        }
-        "arena" => {
-            // A batch rating event: refit the corrected contextual model over
-            // the league's standardized games and publish an anchored table
-            // that moves only when an arena runs. `src/arena.rs` says why.
-            let dir = arg_text(
-                &args,
-                "--dir",
-                &std::env::var("CIVVIS_LEAGUE_DIR").unwrap_or_else(|_| "league".into()),
-            );
-            // 0 = the history's modal table size, printed in the report.
-            let seats = arg(&args, "--seats", 0).max(0) as usize;
-            let anchors: Vec<String> = arg_text(&args, "--anchors", "advanced,basic")
-                .split(',')
-                .map(|a| a.trim().to_string())
-                .filter(|a| !a.is_empty())
-                .collect();
-            let anchor_elo = arg_f64(&args, "--anchor-elo", 1500.0);
-            match civvis::arena::run_dir(
-                &dir,
-                seats,
-                &anchors,
-                anchor_elo,
-                std::time::SystemTime::now(),
-            ) {
-                Ok(report) => print!("{report}"),
-                Err(error) => {
-                    eprintln!("arena failed: {error}");
-                    std::process::exit(1);
-                }
-            }
-        }
-        "league" => {
-            let players = arg(&args, "--players", 4).max(2);
-            let defaults = civvis::league::LeagueCfg::default();
-            let rules = Rules::embedded();
-            let speed = arg_text(&args, "--speed", &defaults.speed);
-            let Some(speed_spec) = rules.speeds.get(&speed) else {
-                eprintln!(
-                    "unknown game speed {speed:?}; choose one of {:?}",
-                    speeds(&rules)
-                );
-                std::process::exit(2);
-            };
-            let shared_dir =
-                std::env::var("CIVVIS_LEAGUE_DIR").unwrap_or_else(|_| defaults.dir.clone());
-            let cfg = civvis::league::LeagueCfg {
-                rounds: arg(&args, "--rounds", 10).max(0) as u32,
-                games_per_round: arg(&args, "--games", 16).max(1) as u32,
-                players_per_game: players as usize,
-                width: auto_dimension(&args, "--width", players, true),
-                height: auto_dimension(&args, "--height", players, false),
-                speed,
-                max_turns: arg(&args, "--turns", i64::from(speed_spec.turns)).max(1) as u32,
-                num_city_states: auto_cs(&args, players),
-                seed: arg(&args, "--seed", 1) as u64,
-                jobs: jobs_arg(&args),
-                dir: arg_text(&args, "--dir", &shared_dir),
-                evolve_every: arg(&args, "--evolve-every", 4).max(0) as u32,
-                max_pop: arg(&args, "--pop", 12).max(1) as usize,
-                verbose: !args.iter().any(|a| a == "--quiet"),
-                worker_id: arg_text(&args, "--worker", &defaults.worker_id),
-                lease_seconds: arg(&args, "--lease-seconds", defaults.lease_seconds as i64).max(1)
-                    as u64,
-            };
-            let civ = arg_text(&args, "--civ", "");
-            if args.iter().any(|a| a == "--standings") || !civ.is_empty() {
-                match civvis::league::load_league(&cfg.dir) {
-                    Some(league) => {
-                        if !civ.is_empty() {
-                            print!("{}", civvis::league::civ_standings(&league, &civ));
-                        } else if args.iter().any(|a| a == "--civs") {
-                            print!("{}", civvis::league::civ_summary(&league));
-                        } else {
-                            print!("{}", civvis::league::standings(&league));
-                        }
-                    }
-                    None => {
-                        eprintln!("no league at {}/league.json", cfg.dir);
-                        std::process::exit(1);
-                    }
-                }
-            } else {
-                if let Err(error) = civvis::league::try_run_league(&cfg) {
-                    eprintln!("league failed: {error}");
-                    std::process::exit(1);
-                }
-            }
-        }
-        "league-init" => {
-            let dir = arg_text(&args, "--league", "");
-            let Some(league) = (!dir.is_empty())
-                .then(|| civvis::league::initialize_shipped_league(&dir))
-                .flatten()
-            else {
-                eprintln!("league-init needs a writable --league directory");
-                std::process::exit(2);
-            };
-            println!("{}", serde_json::json!({
-                "status": "ready",
-                "round": league.round,
-                "strategies": league.strategies.len(),
-            }));
-        }
-        "rate-game" => {
-            let dir = arg_text(&args, "--league", "");
-            if dir.is_empty() {
-                eprintln!("rate-game needs a writable --league directory");
-                std::process::exit(2);
-            }
-            let report: civvis::league::LiveGameReport =
-                match serde_json::from_reader(std::io::stdin().lock()) {
-                    Ok(report) => report,
-                    Err(error) => {
-                        eprintln!("invalid live-game report: {error}");
-                        std::process::exit(2);
-                    }
-                };
-            if civvis::league::initialize_shipped_league(&dir).is_none() {
-                eprintln!("could not initialize the live league at {dir}");
-                std::process::exit(1);
-            }
-            let Some(record) = civvis::league::record_ranked_game_once(
-                &dir,
-                &report.result_id,
-                &report.seats,
-                report.seed,
-                report.turn,
-                &report.victory,
-            ) else {
-                eprintln!("the live-game report is invalid or names an unknown strategy");
-                std::process::exit(2);
-            };
-            let league = record.league();
-            println!("{}", serde_json::json!({
-                "status": record.status(),
-                "round": league.round,
-                "strategies": report.seats.iter().filter_map(|seat| {
-                    league.strategies.iter().find(|strategy| strategy.name == seat.strategy)
-                }).map(|strategy| serde_json::json!({
-                    "name": strategy.name,
-                    "rating": strategy.rating,
-                    "rd": strategy.rd,
-                    "games": strategy.games,
-                    "wins": strategy.wins,
-                })).collect::<Vec<_>>(),
-            }));
         }
         "evolve" => {
             let players = arg(&args, "--players", 4);
@@ -2223,16 +1763,6 @@ fn main() {
                     leader_pool: play_options.leader_pool,
                     civs: play_options.civs,
                     supervised: args.iter().any(|a| a == "--supervised"),
-                    league_dir: {
-                        let dir = arg_text(&args, "--league", "");
-                        (!dir.is_empty()).then_some(dir)
-                    },
-                    league_record: args.iter().any(|a| a == "--league-record"),
-                    ai_pool: ai_player_pool(&args),
-                    force_strategy: {
-                        let name = arg_text(&args, "--force-strategy", "");
-                        (!name.is_empty()).then_some(name)
-                    },
                 },
                 mirrored.or(resumed),
                 args.iter().any(|a| a == "--paused"),
@@ -2266,105 +1796,11 @@ fn main() {
                 std::process::exit(1);
             }
         }
-        "rating" => {
-            let dir = arg_text(
-                &args,
-                "--dir",
-                &std::env::var("CIVVIS_LEAGUE_DIR").unwrap_or_else(|_| "league".into()),
-            );
-            let mut history = match civvis::rating::load_history(&dir) {
-                Ok(history) if history.len() >= 2 => history,
-                Ok(_) => {
-                    eprintln!("{dir}/matches.csv has no finished games to rate");
-                    std::process::exit(1);
-                }
-                Err(error) => {
-                    eprintln!("cannot read {dir}/matches.csv: {error}");
-                    std::process::exit(1);
-                }
-            };
-            // A league directory can hold games of several table sizes; a
-            // single size is the cleaner slice to reason about.
-            let want_seats = arg(&args, "--seats", 0).max(0) as usize;
-            if want_seats > 0 {
-                history.retain(|m| m.seats.len() == want_seats);
-                if history.len() < 2 {
-                    eprintln!("{dir}/matches.csv has fewer than 2 games with {want_seats} seats");
-                    std::process::exit(1);
-                }
-            }
-            let seats = history.iter().map(|m| m.seats.len()).sum::<usize>() as f64
-                / history.len() as f64;
-            let burn_in = arg_f64(&args, "--burn-in", 0.3).clamp(0.0, 0.95);
-            let mut cfg = civvis::rating::RatingCfg {
-                stage_decay: arg_f64(&args, "--stage-decay", 0.5).clamp(0.0, 1.0),
-                beta: arg_f64(&args, "--beta", 0.9).max(1e-3),
-                ..civvis::rating::RatingCfg::default()
-            };
-            for anchor in arg_text(&args, "--anchors", "advanced,basic").split(',') {
-                let anchor = anchor.trim();
-                if !anchor.is_empty() {
-                    cfg.anchors.insert(anchor.to_string());
-                }
-            }
-            // Explicit per-stage credit, e.g. `--stage-credit 1,0.5,0.25,0`
-            // to keep the geometric shape but silence an anti-informative
-            // last stage. Overrides --stage-decay.
-            let credit = arg_text(&args, "--stage-credit", "");
-            if !credit.is_empty() {
-                let parsed: Vec<f64> = credit
-                    .split(',')
-                    .filter_map(|x| x.trim().parse::<f64>().ok())
-                    .collect();
-                if parsed.is_empty() {
-                    eprintln!("--stage-credit needs comma-separated numbers");
-                    std::process::exit(1);
-                }
-                cfg.stage_credit = Some(parsed);
-            }
-            println!("{} games from {dir}/matches.csv\n", history.len());
-            if args.iter().any(|a| a == "--stages") {
-                let info = civvis::rating::fit_stage_weights(&history, burn_in);
-                println!("information carried by each placement stage (nats, measured)");
-                println!("  a stage at or below zero is noise and should not move a rating\n");
-                for (k, nats) in info.iter().enumerate() {
-                    let bar = "#".repeat(((nats.max(0.0)) * 60.0) as usize);
-                    println!("  stage {:<3} {:+8.4}  {bar}", k + 1, nats);
-                }
-            } else if args.iter().any(|a| a == "--sweep") {
-                println!(
-                    "{:<14}{:>12}{:>10}{:>12}",
-                    "stage decay", "winner LL", "accuracy", "info/game"
-                );
-                for step in 0..=10 {
-                    let decay = step as f64 / 10.0;
-                    let mut model = civvis::rating::ContextualRating::new(
-                        civvis::rating::RatingCfg {
-                            stage_decay: decay,
-                            ..cfg.clone()
-                        },
-                    );
-                    let m = civvis::rating::evaluate(&mut model, &history, burn_in);
-                    println!(
-                        "{decay:<14.1}{:>12.4}{:>9.1}%{:>12.4}",
-                        m.win_log_loss,
-                        100.0 * m.win_accuracy,
-                        m.information
-                    );
-                }
-            } else if args.iter().any(|a| a == "--backtest") {
-                let rows = civvis::rating::backtest(&history, burn_in, &cfg);
-                print!("{}", civvis::rating::backtest_report(&rows, seats));
-            } else {
-                let rating = civvis::rating::rate_history(&history, &cfg);
-                print!("{}", rating.standings());
-            }
-        }
         _ => {
             println!(
-                "usage: civvis <simulate|soak|odds-audit|benchmark|tournament|league|league-init|arena|rate-game|rating|play|evolve|validate|pedia> \
+                "usage: civvis <simulate|soak|odds-audit|benchmark|play|evolve|validate|pedia> \
                       [--players N] [--seed N] [--turns N] [--width N] [--height N] \
-                      [--city-states N] [--games N] [--ais [identity=]controller,...] [--anchor identity|none] [--ratings path] [--standings] [--port N] [--no-open] \
+                      [--city-states N] [--games N] [--port N] [--no-open] \
                       [--map land_only|lakes|inland_sea|tenins_ball|grand_canals|grand_canals_2|pangaea|earth|true_start_earth|continents|small_continents|fjords|islands|water_world|battlefield|tactics_planet|tactics_ocean|trafalgar] \
                       [--shape flat|planet] [--poles poles|randomized] \
                       [--difficulty settler|chieftain|warlord|prince|king|emperor|immortal|deity] \
@@ -2376,10 +1812,8 @@ fn main() {
                       [--leader-pool civ6|historical|today] \
                       [--human-seats 0,1] [--teams 0,0,1,1] [--mods path/to/mod,path/to/other] \
                       [--victories science,culture,religious,diplomatic,domination,score] \
-                      [--native-competitions] [--spectate] [--supervised] [--force-strategy NAME] [--ai-pool best1|best2|best3|best5|all] [--resume checkpoint.json] [--strict] \
-                      [--league dir] [--league-record] [--standings [--civ Rome | --civs]] [--rounds N] \
-                      [--evolve-every N] [--pop N] [--worker ID] [--lease-seconds N] \
-                      [rating: --dir league/ --backtest|--sweep|--stages --burn-in F --stage-decay F --anchors a,b]"
+                      [--native-competitions] [--spectate] [--supervised] [--resume checkpoint.json] [--strict] \
+                      [--generations N] [--pop N]"
             );
         }
     }
@@ -2388,35 +1822,10 @@ fn main() {
 #[cfg(test)]
 mod tests {
 
-    /// The list is the whole guard, so it has to match what the dispatch
-    /// actually does. `arena` was in the first version of it and does not read
-    /// `--ais` at all.
-    #[test]
-    fn only_the_commands_that_seat_entrants_accept_ais() {
-        assert_eq!(ENTRANT_SEATING_COMMANDS, ["tournament"]);
-        // Every other name in the usage line builds its fleet itself.
-        for cmd in [
-            "simulate",
-            "soak",
-            "benchmark",
-            "arena",
-            "league",
-            "evolve",
-            "play",
-            "validate",
-        ] {
-            assert!(
-                !ENTRANT_SEATING_COMMANDS.contains(&cmd),
-                "{cmd} is listed as seating entrants; confirm it reads --ais before allowing it"
-            );
-        }
-    }
-
     use super::{
-        game_options, jobs_arg, map_topology, parse_tournament_entrants,
-        simultaneous_soak_job_split, single_simulation_jobs_arg, start_era, strict_f64_arg,
-        strict_i64_arg, tactics_rules, turn_structure, ANCHOR_BEHAVIOUR_FNV, ANCHOR_DECISIONS,
-        DEFAULT_TOURNAMENT_ENTRANTS, ENTRANT_SEATING_COMMANDS, SINGLE_SIMULATION_DEFAULT_MAX_JOBS,
+        game_options, jobs_arg, map_topology, simultaneous_soak_job_split,
+        single_simulation_jobs_arg, start_era, strict_f64_arg, strict_i64_arg, tactics_rules,
+        turn_structure, ANCHOR_BEHAVIOUR_FNV, ANCHOR_DECISIONS, SINGLE_SIMULATION_DEFAULT_MAX_JOBS,
     };
     use civvis::ai::AdvancedAi;
     use civvis::game::{Action, Game};
@@ -2657,26 +2066,6 @@ mod tests {
     }
 
     #[test]
-    fn tournament_entrants_separate_immutable_identity_from_controller() {
-        let entrants = parse_tournament_entrants(
-            "advanced-20260801-policy-envoy=advanced, advanced_v1, basic-20260730=basic, random-20260730=random",
-        )
-        .unwrap();
-        assert_eq!(entrants[0].identity, "advanced-20260801-policy-envoy");
-        assert_eq!(entrants[0].controller, "advanced");
-        assert_eq!(entrants[1].identity, "advanced_v1");
-        assert_eq!(entrants[1].controller, "advanced_v1");
-        assert_eq!(entrants[2].identity, "basic-20260730");
-        assert_eq!(entrants[2].controller, "basic");
-        assert!(parse_tournament_entrants("candidate=").is_err());
-        assert!(parse_tournament_entrants("advanced,,basic").is_err());
-
-        let default = parse_tournament_entrants(DEFAULT_TOURNAMENT_ENTRANTS).unwrap();
-        assert_eq!(default[0].identity, "advanced-20260801-diplomacy");
-        assert_eq!(default[0].controller, "advanced");
-    }
-
-    #[test]
     fn implicit_single_simulation_workers_are_bounded_without_changing_batches() {
         let implicit = Vec::new();
         let host_default = civvis::parallel::default_jobs();
@@ -2705,42 +2094,19 @@ mod tests {
         }
     }
 
-    /// The re-pin above claims the pantheon change is free for the Elo anchor
-    /// because every legacy entrant plays at Standard, where the scaled price is
-    /// exactly the old literal. ⚠ That is a load-bearing claim guarding a whole
-    /// ratings ledger, and prose does not hold — the `_G` incident on 2026-08-03
-    /// had TWO prose warnings in the repo and still shipped. Check it.
+    /// The frozen anchor never reaches `settler_commit`, which every default
+    /// constructor leaves off — the claim behind several "free" re-pins, and
+    /// prose does not hold — check it.
     #[test]
-    fn elo_anchor_speed_is_standard_so_the_pantheon_repin_is_free() {
-        use civvis::setup::GameSpeed;
-        assert_eq!(
-            GameSpeed::default(),
-            GameSpeed::Standard,
-            "if the default speed ever moves, the re-pin above stops being free and \
-             ELO_PROTOCOL_VERSION must be bumped instead"
-        );
-        assert_eq!(
-            GameSpeed::Standard.scale(civvis::game::PANTHEON_FAITH_STANDARD),
-            25.0,
-            "the scaled price must equal the literal it replaced, or the anchor's \
-             behaviour changed and this is not a compatibility re-pin"
-        );
-    }
-
-    /// The re-pin above claims the `settler_blocked_turns` change is free for the
-    /// Elo anchor because the edited line sits behind `settler_commit`, which every
-    /// default constructor leaves off. ⚠ That is load-bearing for a ratings ledger,
-    /// and prose does not hold — check it.
-    #[test]
-    fn elo_anchor_never_reaches_the_settler_commit_path() {
-        // ⚠ THE ANCHOR IS `legacy()`, NOT `new()` — `league.rs` maps
+    fn the_anchor_never_reaches_the_settler_commit_path() {
+        // ⚠ THE ANCHOR IS `legacy()`, NOT `new()` — `builtin_ai` maps
         // "advanced_v1" => AdvancedAi::legacy(). I first asserted this on `new()`,
         // which sets `settler_commit = true`, and this test failed and corrected me.
         // That is the whole reason the claim is checked rather than written down.
         assert!(
             !civvis::ai::AdvancedAi::legacy().settler_commit,
             "advanced_v1 is legacy(); if it ever reaches the settler_commit path the \
-             re-pin above stops being free and ELO_PROTOCOL_VERSION must be bumped"
+             frozen anchor moves and the fingerprint below says so"
         );
         // The global Recovery front hold is likewise a production-only branch.
         // If the anchor ever enables it, its campaign movement may change and a
@@ -2748,7 +2114,7 @@ mod tests {
         assert!(
             !civvis::ai::AdvancedAi::legacy().bounded_recovery,
             "advanced_v1 is legacy(); if it ever carries bounded Recovery the global \
-             front-hold branch reaches the anchor and ELO_PROTOCOL_VERSION must be bumped"
+             front-hold branch reaches the anchor and the fingerprint below moves"
         );
         // ⚠ And record the other half honestly: `advanced` DOES set it, so that
         // entrant's settler pipeline genuinely changes. The anchor pins the scale
@@ -2767,8 +2133,8 @@ mod tests {
         // was written down instead of tested the written claim was wrong.
         assert!(
             !civvis::ai::AdvancedAi::legacy().garrison_loyalty_policy,
-            "advanced_v1 must not slot limitanei; if it ever does, the re-pin is \
-             no longer free and ELO_PROTOCOL_VERSION must be bumped"
+            "advanced_v1 must not slot limitanei; if it ever does, the frozen \
+             anchor moves and the fingerprint below says so"
         );
         assert!(
             !civvis::ai::AdvancedAi::new().garrison_loyalty_policy,
@@ -2787,8 +2153,8 @@ mod tests {
         assert!(
             !civvis::ai::AdvancedAi::legacy().coordinates_forces(),
             "advanced_v1 must not victory-plan; if it ever does, the nuclear \
-             beeline and strike doctrine reach the anchor and the re-pin is \
-             no longer free — bump ELO_PROTOCOL_VERSION instead"
+             beeline and strike doctrine reach the anchor and the frozen \
+             anchor moves and the fingerprint below says so"
         );
         assert!(
             civvis::ai::AdvancedAi::new().coordinates_forces(),
@@ -2875,16 +2241,18 @@ mod tests {
             decisions, ANCHOR_DECISIONS,
             "the anchor made a different number of decisions ({decisions} rather \
              than {ANCHOR_DECISIONS}), so its play changed. See the note on \
-             ANCHOR_BEHAVIOUR_FNV: bump ELO_PROTOCOL_VERSION and start a new \
-             ledger, or find the gate that should have kept this away from it"
+             ANCHOR_BEHAVIOUR_FNV: find the gene that should have kept this away \
+             from legacy(), or — for a deliberate change to the shared engine — \
+             re-pin and say so in docs/ELO_REPINS.md"
         );
         assert_eq!(
             fingerprint, ANCHOR_BEHAVIOUR_FNV,
             "advanced_v1 chose differently somewhere in {decisions} decisions \
              across {} profiles. This is a real behaviour change to the frozen \
-             rating anchor, not a formatting one: bump ELO_PROTOCOL_VERSION and \
-             start a new ledger, or find the gate that should have kept the \
-             change away from it. Do NOT re-pin to make the test pass",
+             anchor, not a formatting one: find the gene that should have kept \
+             the change away from legacy(), or — for a deliberate change to the \
+             shared engine — re-pin and say so in docs/ELO_REPINS.md. Do NOT \
+             re-pin to make the test pass",
             ANCHOR_PROFILES.len()
         );
     }
@@ -2961,9 +2329,9 @@ mod tests {
     }
 
     #[test]
-    fn strict_tournament_numbers_never_fall_back_on_malformed_input() {
+    fn strict_numbers_never_fall_back_on_malformed_input() {
         let args = vec![
-            "tournament".to_string(),
+            "soak".to_string(),
             "--games".to_string(),
             "forty".to_string(),
             "--k".to_string(),

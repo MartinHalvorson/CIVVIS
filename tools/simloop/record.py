@@ -383,11 +383,11 @@ def main():
                 and past.get("ok")
             ):
                 # Which agent sat down has to match before a difference in
-                # *play* can be blamed on the build. Since #1094 it often does
-                # not: the module seats from a shipped league and the native
-                # binary seats `advanced`, and there is no way through the API
-                # to align them — `/host-league` refuses an empty roster and
-                # `/new` does not take a strategy.
+                # *play* can be blamed on the build. Historically it often did
+                # not: the module seated from a shipped league while the native
+                # binary seated `advanced` (#1094). The league is retired
+                # (#2357) and both sides seat `advanced` now, but the guard
+                # below is kept because the lesson was general.
                 #
                 # Going blind would be the wrong answer. The map and the
                 # starting positions are built before any agent acts, so they

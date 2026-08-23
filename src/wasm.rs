@@ -26,13 +26,6 @@ use std::cell::{Cell, RefCell};
 thread_local! {
     /// The one game this page is playing.
     static SESSION: RefCell<Option<Session>> = const { RefCell::new(None) };
-    /// Latest persistent roster supplied by the local desktop host.
-    ///
-    /// The public static build has no such host and falls back to the shipped
-    /// snapshot. The desktop channel refreshes this before the first world and
-    /// after every rated result, so the next game both displays and seats from
-    /// the ratings the previous game just changed.
-    static HOST_LEAGUE: RefCell<Option<crate::league::League>> = const { RefCell::new(None) };
     /// Why the module last died.
     ///
     /// A panic on `wasm32-unknown-unknown` unwinds nowhere: it aborts, and the
@@ -81,10 +74,7 @@ fn opening_params() -> Params {
 }
 
 fn browser_session(params: Params) -> Session {
-    let league = HOST_LEAGUE
-        .with(|held| held.borrow().clone())
-        .or_else(crate::league::shipped_league);
-    Session::new_with_league(params, league, true)
+    Session::new(params)
 }
 
 fn start_automatic_browser_next_game(session: &mut Session, queued: Option<Params>) {
@@ -293,22 +283,6 @@ fn route_unversioned(method: &str, target: &str, body: &str) -> Value {
     let path = request_path(target);
 
     match (method, path) {
-        // A local static-file host is the browser module's filesystem. Accept
-        // its current authoritative roster before a session is created; the
-        // public /beta build never calls this route and stays read-only.
-        ("POST", "/host-league") => {
-            match serde_json::from_value::<crate::league::League>(parsed) {
-                Ok(league) if !league.strategies.is_empty() => {
-                    let round = league.round;
-                    let strategies = league.strategies.len();
-                    HOST_LEAGUE.with(|held| *held.borrow_mut() = Some(league));
-                    json!({"ok": true, "round": round, "strategies": strategies})
-                }
-                Ok(_) => json!({"error": "the host league has no strategies"}),
-                Err(error) => json!({"error": format!("invalid host league: {error}")}),
-            }
-        }
-
         ("GET", "/runtime") => json!({
             "server_instance": process_identity(),
             "seed": with_session(|s| s.game.seed),

@@ -9,8 +9,8 @@
 //! same protocol. The shared module now owns the game-side behavior for the
 //! common read and control routes, while each dispatcher retains only its
 //! transport concerns. Two copies of a rule is two chances to change one of
-//! them, and the intentional boundary is explicit: `/host-league` and
-//! `/next-game` exist only in wasm, `/adjacency` and `/saves` only in native.
+//! them, and the intentional boundary is explicit: `/next-game` exists only
+//! in wasm, `/adjacency` and `/saves` only in native.
 //!
 //! The roadmap files that as a viewer bug — "panels that read native-only state
 //! are silently dead on civvis.ai" — but it is a protocol-duplication bug, and
@@ -82,7 +82,6 @@ pub fn rules(session: &Session, include_civ6: bool) -> Value {
         "game_speeds": CIV6_GAME_SPEEDS,
         "default_setup": server::default_setup_json(),
         "strategies": server::strategy_roster(session),
-        "leader_elo_options": server::leader_elo_options(session),
         "seat_strategy": session.seated_strategy_name(0),
     });
     if include_civ6 {

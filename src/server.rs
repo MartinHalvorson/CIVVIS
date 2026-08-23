@@ -27,7 +27,7 @@ use crate::name::Name;
 use crate::rules::Rules;
 use crate::setup::{
     battlefield_sizes, future_era_from_id, future_era_id, start_era_from_id, start_era_id,
-    turn_structure_id, AiPlayerPool, BaseRuleset, FutureEra, GameSpeed, MapPoles, MapScript,
+    turn_structure_id, BaseRuleset, FutureEra, GameSpeed, MapPoles, MapScript,
     MapSize, MapTopology, TacticsEra, TacticsRules, TurnStructure,
 };
 use crate::Pos;
@@ -448,10 +448,9 @@ const EMBEDDED_HIDDEN_MAP_MONSTERS: &[u8] = include_bytes!("../web/assets/hidden
 const EMBEDDED_CIV6_UNIT_FLAGS: &[u8] = include_bytes!("../web/assets/civ6-unit-flags.png");
 const EMBEDDED_CIV6_YIELD_ICONS: &[u8] = include_bytes!("../web/assets/civ6-yield-icons.png");
 
-/// The agents that exist in every build, whether or not a league snapshot is
-/// on disk, with the handle the leaderboards give them. `make_send_ai`
-/// resolves each id, and the auto-play control offers this list when there is
-/// no roster to offer instead.
+/// The agents that exist in every build, with a friendly handle each.
+/// `crate::elo::builtin_send_ai` resolves the id, and the auto-play control
+/// offers this list.
 const BUILTIN_STRATEGIES: [(&str, &str); 4] = [
     ("advanced", "JackOfAllTrades"),
     ("advanced_evolved", "Evolved"),
@@ -511,29 +510,6 @@ pub struct Params {
     /// A lifecycle supervisor, rather than the browser countdown, owns the
     /// transition after a completed spectator game.
     pub supervised: bool,
-    /// League directory to seat major players from (`civvis play --league`):
-    /// each civ samples from the roster's best few live-eligible strategies
-    /// with descending rank weights — `ai_pool` says how deep the pool runs —
-    /// and the HUD shows per-player Elo. `None` still annotates Elo
-    /// when a `league/` dir exists, because the default fleet below IS the
-    /// league's "advanced" entrant — but the AIs themselves are unchanged.
-    pub league_dir: Option<String>,
-    /// How deep the AI player pool runs: which of the rated strategies may be
-    /// seated for the game's AI civilizations. The setup panel's "AI player
-    /// pool" control, read on every world — the full Civvis game and a
-    /// Tactics arena alike. `Best3` is the long-standing stock policy.
-    pub ai_pool: AiPlayerPool,
-    /// Rate the finished game into `league_dir` (`--league-record`). Off by
-    /// default because the shipped `data/league` roster is a committed
-    /// snapshot: a run that seats from it must not rewrite it. Point this at
-    /// a runtime copy and the table moves with every game played.
-    pub league_record: bool,
-    /// Optional match-machine coverage target. When set, this unretired
-    /// strategy owns seat zero for the game; the other seats keep the normal
-    /// rank-weighted exhibition selection. It is deliberately separate from
-    /// world settings so rotating targets cannot trigger a spectator restart
-    /// or alter tournament rules.
-    pub force_strategy: Option<String>,
 }
 
 pub struct Session {
@@ -557,35 +533,13 @@ pub struct Session {
     /// The live queue belongs to `Shared`; this only hands the resumed value
     /// across at construction, and is taken exactly once.
     resumed_next_game_params: Option<Params>,
-    /// League roster used to label seats with player handles and elo (and,
-    /// with `--league`, to choose who plays each civ).
-    league: Option<crate::league::League>,
-    /// Per-seat index into `league.strategies` for rated major seats.
-    seat_strategy: Vec<Option<usize>>,
-    /// Whether the roster above actually *chose* who plays each civ. Without
-    /// `--league` it did not: every major runs the default hierarchical agent
-    /// and each seat points at the entrant the league rates that agent as, so
-    /// the rating is the seat's own but the handle is one name repeated down
-    /// the table. Such a seat keeps its generated per-seat name instead.
-    seat_from_roster: bool,
-    /// The strategies auto-play can hand the human seat to. `league` above is
-    /// the roster this game is *rated* against and is often absent; every
-    /// build ships the committed snapshot under `data/league`, so the choice
-    /// on offer is our bred strategies whether or not anything is being rated.
-    /// Reading it is a labelling concern only: nothing here seats a rival.
-    roster: Option<crate::league::League>,
-    /// The strategy a player handed their own seat to, by roster name. Held
-    /// separately from `seat_strategy[0]` because the roster it came from is
-    /// not always the roster this game is rated against.
+    /// The built-in agent a player handed their own seat to, by name.
     autoplay_strategy: Option<String>,
     /// The last browser batch that borrowed the human seat, and how many
     /// turns it played. A client retries the same id after a dropped socket;
     /// remembering one completed batch makes that retry an acknowledgement,
     /// not a second run.
     last_autoplay_request: Option<(String, usize)>,
-    /// Set once this game's result has been rated, so a winner that is
-    /// stepped past more than once is only ever counted for one game.
-    league_recorded: bool,
     /// Who is playing each human seat: a player registered when this game
     /// began, never one of the agents already in the roster.
     human_players: BTreeMap<usize, SeatPlayer>,
@@ -2054,217 +2008,45 @@ fn automatic_successor_seed(seed: u64) -> u64 {
 }
 
 impl Session {
-    /// Seat AIs plus each seat's league identity. With a roster to seat from,
-    /// each major gets a rank-weighted sample from the best proven winners
-    /// for this table size (`league::seat_by_civ_seeded`) — the AI player
-    /// pool setting says how many are eligible — overall placement
-    /// rating breaking win-bound ties, repeats avoided while possible, and the
-    /// sampled entrants rotated across the table's civilizations by Latin
-    /// square over the league round — never seated by their rating on the civ
-    /// itself, which is the confound documented in docs/RATING.md. Otherwise
-    /// majors run the default hierarchical AI, which the league rates as its
-    /// "advanced" entrant, so a loaded roster can still label those seats with
-    /// an elo.
-    ///
-    /// A seat somebody is playing is never seated from the roster. Whoever is
-    /// at the keyboard is their own player — `register_human_players` gives
-    /// them a new one — and an entrant that had this seat handed to it would
-    /// wear a person's game as its own result.
-    fn ai_fleet(
-        game: &Game,
-        league: Option<&crate::league::League>,
-        seat_from_roster: bool,
-        ai_pool: AiPlayerPool,
-        force_strategy: Option<&str>,
-    ) -> (Vec<Box<dyn Ai + Send>>, Vec<Option<usize>>) {
-        let mut seat_strategy: Vec<Option<usize>> = vec![None; game.players.len()];
-        if let Some(l) = league {
-            let majors: Vec<usize> = game
-                .players
-                .iter()
-                .filter(|p| !p.is_minor && !p.is_barbarian && !game.is_human_seat(p.id))
-                .map(|p| p.id)
-                .collect();
-            if seat_from_roster && !l.exhibition_active().is_empty() {
-                let civs: Vec<String> =
-                    majors.iter().map(|id| game.players[*id].civ.clone()).collect();
-                let table_size = game
-                    .players
-                    .iter()
-                    .filter(|player| !player.is_minor && !player.is_barbarian)
-                    .count();
-                for (id, pick) in majors.iter().zip(crate::league::seat_by_civ_seeded(
-                    l,
-                    &civs,
-                    table_size,
-                    game.seed,
-                    ai_pool.depth(),
-                )) {
-                    seat_strategy[*id] = Some(pick);
-                }
-            } else if let Some(default_entrant) =
-                l.strategies.iter().position(|s| s.name == "advanced")
-            {
-                for id in &majors {
-                    seat_strategy[*id] = Some(default_entrant);
-                }
-            }
-            // The match machine rotates every unretired strategy through a
-            // dedicated seat. This includes an entrant marked `league_only`:
-            // it is still a valid rated strategy, and an explicit coverage
-            // request is the operator's admission decision for this game.
-            // Keep all other seats on the ordinary sampler and swap rather
-            // than duplicate the target when it was already selected.
-            if let Some(name) = force_strategy {
-                if let Some(target) = l.strategies.iter().position(|strategy| {
-                    strategy.name == name && !strategy.retired && !strategy.human
-                }) {
-                    if let Some(seat) = majors.first().copied() {
-                        if let Some(existing) = seat_strategy
-                            .iter()
-                            .position(|strategy| *strategy == Some(target))
-                        {
-                            seat_strategy.swap(seat, existing);
-                        } else {
-                            seat_strategy[seat] = Some(target);
-                        }
-                    }
-                }
-            }
-        }
-        let ais = game
-            .players
+    /// Seat the AIs: every major plays the deployment genome — `AdvancedAi`
+    /// with the gene ledger applied — and minors and barbarians keep the
+    /// cheaper baseline. A seat somebody is playing gets an agent too, so the
+    /// world can be handed to it or watched from it.
+    fn ai_fleet(game: &Game) -> Vec<Box<dyn Ai + Send>> {
+        game.players
             .iter()
             .map(|p| -> Box<dyn Ai + Send> {
                 if p.is_minor || p.is_barbarian {
-                    return Box::new(BasicAi::new());
-                }
-                match (seat_from_roster, league, seat_strategy[p.id]) {
-                    (true, Some(l), Some(si)) => crate::league::make_send_ai(
-                        &l.strategies[si].kind,
-                        game.seed.wrapping_add(p.id as u64),
-                    ),
-                    _ => Box::new(AdvancedAi::new()),
+                    Box::new(BasicAi::new())
+                } else {
+                    Box::new(AdvancedAi::new())
                 }
             })
-            .collect();
-        (ais, seat_strategy)
+            .collect()
     }
 
-    /// The strategies auto-play may offer. Prefer whatever this game is
-    /// already rated against, so the ratings shown are the ones in play; fall
-    /// back to the snapshot every build ships, so the control still names our
-    /// bred strategies in a game that is rating nothing.
-    fn load_roster(league: Option<&crate::league::League>) -> Option<crate::league::League> {
-        match league {
-            Some(l) => Some(l.clone()),
-            None => crate::league::shipped_league(),
-        }
-    }
 
-    /// The roster named by `--league`, else a best-effort load purely for
-    /// elo labels: the runtime `league/` this checkout records into, then the
-    /// snapshot compiled into every build. Only the named roster is ever
-    /// written to, so a labelled game still rates nothing — but it does say
-    /// what the league already knows about the agent in each seat, which used
-    /// to require passing `--league` to see at all.
-    ///
-    /// The last step is `league::shipped_league` rather than a read of
-    /// `data/league`, because a directory is resolved against the working
-    /// directory and a rating must not depend on where the binary was started
-    /// from. Reading that path is what left every seat at a provisional 1500
-    /// anywhere but a checkout root.
-    fn load_params_league(params: &Params) -> (Option<crate::league::League>, bool) {
-        match &params.league_dir {
-            Some(dir) => (crate::league::load_league(dir), true),
-            None => (
-                crate::league::load_league("league").or_else(crate::league::shipped_league),
-                false,
-            ),
-        }
-    }
 
-    /// Register a new player for every seat a person is at, and hand the seat
-    /// that identity.
-    ///
-    /// Sitting down to play does not make you one of the agents on the
-    /// leaderboard. When this game is being rated (`--league --league-record`)
-    /// the new player is written into that roster, so `record_league_result`
-    /// files the result under a name that is the person's own; otherwise
-    /// there is nothing to rate into and the handle is minted against the
-    /// roster in memory purely so the game can say who is playing. Either way
-    /// no existing entrant is reused.
-    fn register_human_players(
-        params: &Params,
-        game: &Game,
-        league: &mut Option<crate::league::League>,
-        seat_strategy: &mut [Option<usize>],
-    ) -> BTreeMap<usize, SeatPlayer> {
+    /// Name every seat a person is at. Sitting down to play does not make you
+    /// one of the agents; the handle is minted for this game so the world can
+    /// say who is playing, and nothing rates it.
+    fn register_human_players(game: &Game) -> BTreeMap<usize, SeatPlayer> {
         let mut players = BTreeMap::new();
-        let rated_dir = params
-            .league_record
-            .then(|| params.league_dir.clone())
-            .flatten();
-        // Handles for an unrated game are drawn against this scratch roster,
-        // so two seats in one game cannot mint the same one.
-        let mut unrated: Option<crate::league::League> = None;
-        for seat in game.human_seats.iter().copied() {
+        for (index, seat) in game.human_seats.iter().copied().enumerate() {
             if game.players.get(seat).is_none() {
                 continue;
             }
-            let registered = rated_dir
-                .as_deref()
-                .and_then(crate::league::register_player);
-            let player = match registered {
-                Some((updated, index)) => {
-                    let entry = &updated.strategies[index];
-                    let player = SeatPlayer {
-                        name: entry.name.clone(),
-                        username: entry.username.clone(),
-                        rated: true,
-                    };
-                    seat_strategy[seat] = Some(index);
-                    *league = Some(updated);
-                    player
-                }
-                None => {
-                    let table = unrated.get_or_insert_with(|| {
-                        league.clone().unwrap_or(crate::league::League {
-                            round: 0,
-                            strategies: Vec::new(),
-                            calibration: Default::default(),
-                        })
-                    });
-                    let index = crate::league::register_new_player(table);
-                    let entry = &table.strategies[index];
-                    SeatPlayer {
-                        name: entry.name.clone(),
-                        username: entry.username.clone(),
-                        rated: false,
-                    }
-                }
+            let (name, username) = if index == 0 {
+                ("player".to_string(), "Player".to_string())
+            } else {
+                (format!("player{}", index + 1), format!("Player {}", index + 1))
             };
-            players.insert(seat, player);
+            players.insert(seat, SeatPlayer { name, username, rated: false });
         }
         players
     }
 
     pub fn new(params: Params) -> Session {
-        let (league, seat_from_roster) = Self::load_params_league(&params);
-        Self::new_with_league(params, league, seat_from_roster)
-    }
-
-    /// Construct a world against a roster supplied by its host.
-    ///
-    /// Native sessions normally load from `Params::league_dir`. A browser
-    /// module has no filesystem, so the local desktop host hands it the same
-    /// live roster as the native spectator and asks it to seat directly from
-    /// that snapshot.
-    fn new_with_league(
-        params: Params,
-        mut league: Option<crate::league::League>,
-        seat_from_roster: bool,
-    ) -> Session {
         // Seat 0 is the person at the keyboard, which is what decides who the
         // difficulty hands its bonuses to. A spectated game has nobody there.
         let human_seats = if params.spectate {
@@ -2300,16 +2082,10 @@ impl Session {
         game.victory_conditions = params.victory_conditions;
         game.mercy_rule = params.mercy_rule;
         game.required_victory_types = params.required_victory_types;
-        // The hierarchical agent is the stock major-civilization default when
-        // no league strategy is seated. Minors/barbarians retain the cheaper
-        // baseline because they do not need empire-level planning.
-        let (mut ais, mut seat_strategy) = Self::ai_fleet(
-            &game,
-            league.as_ref(),
-            seat_from_roster,
-            params.ai_pool,
-            params.force_strategy.as_deref(),
-        );
+        // The hierarchical agent is the stock major-civilization default.
+        // Minors/barbarians retain the cheaper baseline because they do not
+        // need empire-level planning.
+        let mut ais = Self::ai_fleet(&game);
         // Only a watched table records its reasoning. Everywhere else the
         // journal is off and every `think!` is one `Option` test.
         let journal = if params.spectate {
@@ -2320,10 +2096,8 @@ impl Session {
         for ai in &mut ais {
             ai.attach_journal(journal.handle());
         }
-        let human_players =
-            Self::register_human_players(&params, &game, &mut league, &mut seat_strategy);
+        let human_players = Self::register_human_players(&game);
         let chronicle = ChronicleState::from_game(&game);
-        let roster = Self::load_roster(league.as_ref());
         Session {
             params,
             game,
@@ -2332,13 +2106,8 @@ impl Session {
             view_player: None,
             chronicle,
             resumed_next_game_params: None,
-            league,
-            seat_strategy,
-            seat_from_roster,
-            roster,
             autoplay_strategy: None,
             last_autoplay_request: None,
-            league_recorded: false,
             human_players,
             journal,
             simultaneous_census: crate::simultaneous::SimultaneousCensus::default(),
@@ -2395,14 +2164,7 @@ impl Session {
         let next_game_params = (simulation_settings(&requested_next)
             != simulation_settings(&params))
         .then_some(requested_next);
-        let (mut league, seat_from_roster) = Self::load_params_league(&params);
-        let (mut ais, mut seat_strategy) = Self::ai_fleet(
-            &game,
-            league.as_ref(),
-            seat_from_roster,
-            params.ai_pool,
-            params.force_strategy.as_deref(),
-        );
+        let mut ais = Self::ai_fleet(&game);
         // A save carries the world, not what anyone was thinking while they
         // played it. The restored table starts a fresh record from the turn it
         // resumes.
@@ -2415,18 +2177,13 @@ impl Session {
             ai.attach_journal(journal.handle());
         }
         let chronicle = ChronicleState::from_game(&game);
-        // A match restored with its winner already decided was rated when it
-        // finished; rating it again on the next step would count it twice.
-        let league_recorded = game.is_finished();
         // A save carries the world, not the person: whoever reloads it is a
-        // new player again, and a decided game has nothing left to rate, so
-        // it registers nobody.
-        let human_players = if league_recorded {
+        // new player again; a decided game names nobody.
+        let human_players = if game.is_finished() {
             BTreeMap::new()
         } else {
-            Self::register_human_players(&params, &game, &mut league, &mut seat_strategy)
+            Self::register_human_players(&game)
         };
-        let roster = Self::load_roster(league.as_ref());
         Session {
             params,
             game,
@@ -2435,13 +2192,8 @@ impl Session {
             view_player: None,
             chronicle,
             resumed_next_game_params: next_game_params,
-            league,
-            seat_strategy,
-            seat_from_roster,
-            roster,
             autoplay_strategy: None,
             last_autoplay_request: None,
-            league_recorded,
             human_players,
             journal,
             simultaneous_census: crate::simultaneous::SimultaneousCensus::default(),
@@ -2686,82 +2438,19 @@ impl Session {
             player["player_name"] = json!(seat.name);
             player["player_username"] = json!(seat.username);
             player["player_rated"] = json!(seat.rated);
-            // Their own row, found by the name they were registered under —
-            // not `seat_entry`, which follows whichever agent is holding the
-            // seat. Handing it to auto-play does not hand over your rating.
-            let entry = self
-                .league
-                .as_ref()
-                .and_then(|league| league.strategies.iter().find(|s| s.name == seat.name));
-            let civ = &self.game.players[id].civ;
-            let shown = crate::league::display_rating(entry, civ);
-            player["player_elo"] = json!(shown.rating.round() as i64);
-            player["player_elo_rd"] = json!(shown.rd.round() as i64);
-            player["player_elo_civ"] = json!(shown.civ_specific);
-            player["player_elo_provisional"] = json!(shown.provisional);
-            player["player_games"] = json!(entry.map_or(0, |entry| entry.games));
         }
     }
 
-    /// The league row backing a seat, if the league has one. `None` is the
-    /// ordinary case for a game running without a roster, and is a seat the
-    /// league has never heard of rather than a seat that cannot be rated:
-    /// `league::display_rating` gives it the provisional base.
-    fn seat_entry(&self, seat: usize) -> Option<&crate::league::Strategy> {
-        let index = self.seat_strategy.get(seat).copied().flatten()?;
-        self.league.as_ref()?.strategies.get(index)
-    }
 
-    /// Give every met major the rating it is defending and both of its odds of
-    /// winning this game: the ones it sat down with, and the ones it holds now.
-    ///
-    /// Every major carries a rating, roster or no roster. Most games run
-    /// without `--league`, and a column of dashes read as "this build cannot
-    /// rate anyone" when the truth was only that nobody at this table has
-    /// finished a rated game yet. An unknown player is a provisional 1500
-    /// that the first result moves. A standing is public the way a chess
-    /// opponent's is, so an *opponent* in an interactive game carries one
-    /// too — subject to the same fog as everything else here: a civ you have
-    /// not met is not annotated at all.
-    ///
-    /// The odds themselves are [`crate::odds`]. This is where the ratings live,
-    /// which is why the model is fed from here: the seat's league number, plus
-    /// its civilization's measured edge where that number is not already
-    /// civ-specific, becomes the prior the difficulty setting and the board then
-    /// correct. A game with no roster still gets both figures — every seat is
-    /// then the same provisional 1500, so the start odds are the difficulty
-    /// bargain and the size of the table, which is exactly what they should be.
-    fn name_seat_ratings(&self, o: &mut Value) {
+    /// Give every met major both of its odds of winning this game: the ones
+    /// it sat down with, and the ones it holds now. The odds themselves are
+    /// [`crate::odds`]; every seat sits down at the same provisional prior,
+    /// so the start odds are the difficulty bargain and the size of the
+    /// table, which is exactly what they should be with nothing rating the
+    /// seats.
+    fn name_seat_odds(&self, o: &mut Value) {
         let g = &self.game;
-        let rating_of = |pid: usize| {
-            crate::league::display_rating(self.seat_entry(pid), &g.players[pid].civ)
-        };
-        // The rating each seat brings to the table, before the world touches
-        // it. A seat the league has never heard of is in here at the
-        // provisional base rather than left out: leaving it out would make the
-        // remaining shares add to one between themselves and quietly claim the
-        // unrated seat cannot win.
-        let odds = crate::odds::table(g, |pid| {
-            let shown = rating_of(pid);
-            let elo = if shown.civ_specific {
-                // Already a measurement of this player as this civilization.
-                shown.rating
-            } else {
-                // Otherwise the roster still knows something about the civ
-                // they drew, even if this player has never played it.
-                shown.rating
-                    + self
-                    .league
-                    .as_ref()
-                    .map_or(0.0, |league| {
-                        crate::odds::civ_edge_elo(league, &g.players[pid].civ)
-                    })
-            };
-            // The midpoint and the uncertainty are both part of a pregame
-            // prediction. A one-game rating must not make the same promise as
-            // a settled one merely because the two badges show the same Elo.
-            crate::odds::PriorRating::new(elo, shown.rd)
-        });
+        let odds = crate::odds::table(g, |_pid| 1500.0f64);
         let Some(players) = o["players"].as_array_mut() else {
             return;
         };
@@ -2777,27 +2466,6 @@ impl Session {
             {
                 continue;
             }
-            let shown = rating_of(id);
-            // A handle names a seat only when the roster picked that seat.
-            // Otherwise the whole table is the same entrant and repeating its
-            // name down every row would hide who is who; the generated
-            // per-seat name from `name_ai_players` reads better and is just
-            // as true.
-            if let (true, Some(s)) = (self.seat_from_roster, self.seat_entry(id)) {
-                // Stable rating identity, distinct from both the friendly
-                // username and the controller's one-word tactical label.
-                // Hosted browser games return this exact value when filing
-                // the terminal result into the persistent league.
-                if !s.human {
-                    player["ai_player_strategy"] = json!(s.name);
-                }
-                player["ai_username"] = json!(s.username);
-                player["ai_strat_label"] = json!(s.label());
-            }
-            player["ai_elo"] = json!(shown.rating.round() as i64);
-            player["ai_elo_rd"] = json!(shown.rd.round() as i64);
-            player["ai_elo_civ"] = json!(shown.civ_specific);
-            player["ai_elo_provisional"] = json!(shown.provisional);
             if let Some(seat) = odds.get(&id) {
                 // Preserve the model's positive probability exactly. Rounding
                 // at the transport boundary can turn a living long shot into
@@ -2929,9 +2597,8 @@ impl Session {
                     }
                 }
             }
-            // League identity: who is playing each seat and how strong the
-            // league currently believes they are on this civ.
-            self.name_seat_ratings(&mut o);
+            // Who is at each seat and its odds of winning from here.
+            self.name_seat_odds(&mut o);
             self.name_ai_players(&mut o);
             o["spectate"] = json!(true);
             o["supervised"] = json!(self.params.supervised);
@@ -2965,7 +2632,7 @@ impl Session {
         // does, and the HUD has always had a column for it. It used to be
         // empty in every interactive game because only the spectator wrote
         // one. Their plan is still theirs; only the rating is public.
-        self.name_seat_ratings(&mut o);
+        self.name_seat_odds(&mut o);
         self.name_ai_players(&mut o);
         self.name_human_players(&mut o);
         o["spectate"] = json!(false);
@@ -3037,7 +2704,6 @@ impl Session {
                     self.simultaneous_census.summary()
                 );
             }
-            self.record_league_result();
             return pid;
         }
         self.ais[pid].take_turn(g, pid);
@@ -3048,7 +2714,6 @@ impl Session {
         // stepping a batch, the headless pacer running an unattended
         // exhibition, autoplay — so this is the one place a result cannot be
         // missed.
-        self.record_league_result();
         pid
     }
 
@@ -3068,95 +2733,6 @@ impl Session {
         }
     }
 
-    /// Rate a just-decided game into the roster it was seated from. Without
-    /// this a rated exhibition plays hundreds of games against a frozen
-    /// table: the elo on screen is whatever the last offline league run left
-    /// behind, no matter who keeps winning.
-    fn record_league_result(&mut self) {
-        if self.league_recorded || !self.game.is_finished() || !self.params.league_record {
-            return;
-        }
-        // The ratings are a sequential-regime instrument. A simultaneous
-        // game changes every seat's information set, so its results must
-        // never blend into the same Glicko-2 table — the game plays and is
-        // shown, but it rates nobody.
-        if self.game.turn_structure == TurnStructure::Simultaneous {
-            return;
-        }
-        self.league_recorded = true;
-        let (Some(dir), Some(league)) = (self.params.league_dir.clone(), self.league.as_ref())
-        else {
-            return;
-        };
-        // Name every rated seat up front so the roster can be replaced below.
-        let seat_names: Vec<Option<String>> = self
-            .seat_strategy
-            .iter()
-            .enumerate()
-            .map(|(pid, si)| {
-                let p = &self.game.players[pid];
-                match (si, p.is_minor || p.is_barbarian) {
-                    (Some(si), false) => Some(league.strategies[*si].name.clone()),
-                    _ => None,
-                }
-            })
-            .collect();
-        let winner = self.game.winner;
-        let drawn = self.game.is_draw();
-        // Same ordering and competition ranks as a distributed league game:
-        // the declared winner stands alone, while a terminal Tactics draw
-        // gives every rated seat the same rank regardless of material left.
-        let rated: Vec<usize> = (0..seat_names.len())
-            .filter(|pid| seat_names[*pid].is_some())
-            .collect();
-        let (rated, ranks) = crate::league::competition_ranking(
-            rated,
-            winner,
-            |pid| if drawn { 0 } else { self.game.score(pid) },
-        );
-        let seats: Vec<crate::league::LiveGameSeat> = rated
-            .iter()
-            .enumerate()
-            .map(|(place, pid)| {
-                let civilization = self.game.players[*pid].civ.clone();
-                let leader = self
-                    .game
-                    .rules
-                    .civs
-                    .get(&civilization)
-                    .map(|spec| spec.leader.clone())
-                    .unwrap_or_else(|| civilization.clone());
-                crate::league::LiveGameSeat {
-                    strategy: seat_names[*pid].clone().unwrap(),
-                    leader,
-                    civilization,
-                    rank: ranks[place],
-                    won: winner == Some(*pid),
-                }
-            })
-            .collect();
-        let victory = self.game.victory_label().unwrap_or_default();
-        let Some(updated) = crate::league::record_ranked_game(
-            &dir,
-            &seats,
-            self.game.seed,
-            self.game.reported_turn(),
-            &victory,
-        ) else {
-            eprintln!("[league] could not rate this game into {dir}");
-            return;
-        };
-        // Show the new numbers for the rest of the results screen, and let the
-        // next game seat from them.
-        for (pid, slot) in self.seat_strategy.iter_mut().enumerate() {
-            let Some(name) = &seat_names[pid] else {
-                *slot = None;
-                continue;
-            };
-            *slot = updated.strategies.iter().position(|s| &s.name == name);
-        }
-        self.league = Some(updated);
-    }
 
     pub fn step_many(&mut self, count: usize) -> Vec<SpectatorStep> {
         let mut steps = Vec::new();
@@ -3206,45 +2782,25 @@ impl Session {
     /// Hand seat 0 to a named strategy, so auto-play runs *that* agent rather
     /// than whichever one the fleet happened to build for the seat.
     ///
-    /// A name is matched against the live-eligible league roster first — by
-    /// entrant name or by the handle the leaderboards show — and then against
-    /// the built-in agents, so a build with no roster on disk still has
-    /// something to hand the seat to. An unknown or league-only name is an
-    /// error rather than a silent fallback: a player who picked a strategy and
-    /// got a different one has been lied to.
+    /// A name is matched against the built-in agents, by id or by the handle
+    /// the picker shows. An unknown name is an error rather than a silent
+    /// fallback: a player who picked a strategy and got a different one has
+    /// been lied to.
     pub fn seat_strategy_at(&mut self, seat: usize, name: &str) -> Result<(), String> {
         if name.is_empty() || self.autoplay_strategy.as_deref() == Some(name) {
             return Ok(());
         }
         let seed = self.game.seed.wrapping_add(seat as u64);
-        let kind = self
-            .roster
-            .as_ref()
-            .and_then(|roster| {
-                roster
-                    .strategies
-                    .iter()
-                    .find(|s| !s.league_only && (s.name == name || s.username == name))
-                    .map(|s| s.kind.clone())
-            })
-            .or_else(|| {
-                BUILTIN_STRATEGIES.iter().any(|(id, _)| *id == name).then(|| {
-                    crate::league::StrategyKind::Builtin { ai: name.to_string() }
-                })
-            })
+        let id = BUILTIN_STRATEGIES
+            .iter()
+            .find(|(id, username)| *id == name || *username == name)
+            .map(|(id, _)| *id)
             .ok_or_else(|| format!("no strategy named {name}"))?;
-        self.ais[seat] = crate::league::make_send_ai(&kind, seed);
+        self.ais[seat] = crate::elo::builtin_send_ai(id, seed);
         // A newly seated agent joins the same record as the rest of the table;
         // without this the seat a player just handed over goes quiet.
         self.ais[seat].attach_journal(self.journal.handle());
-        // The rated roster and the offered roster can be different rosters, so
-        // only claim a rated identity for the seat when this name is in the
-        // rated one; the name below is what the browser is told either way.
-        self.seat_strategy[seat] = self
-            .league
-            .as_ref()
-            .and_then(|l| l.strategies.iter().position(|s| s.name == name || s.username == name));
-        self.autoplay_strategy = Some(name.to_string());
+        self.autoplay_strategy = Some(id.to_string());
         Ok(())
     }
 
@@ -3262,13 +2818,8 @@ impl Session {
         if let Some(player) = self.human_players.get(&seat) {
             return Some(&player.name);
         }
-        if let (Some(Some(index)), Some(league)) = (self.seat_strategy.get(seat), self.league.as_ref())
-        {
-            return Some(league.strategies[*index].name.as_str());
-        }
-        // No rated identity for the seat. That does not make it nameless: the
-        // fleet built the default agent there, and the roster's name for that
-        // agent is "advanced" — the cheaper baseline for minors.
+        // Nobody has been handed this seat: the fleet built the default agent
+        // there — "advanced", or the cheaper baseline for minors.
         let player = self.game.players.get(seat)?;
         Some(if player.is_minor || player.is_barbarian { "basic" } else { "advanced" })
     }
@@ -3327,7 +2878,6 @@ impl Session {
                 }
                 guard += 1;
             }
-            self.record_league_result();
             played += 1;
         }
         played
@@ -3386,7 +2936,6 @@ impl Session {
                 }
                 guard += 1;
             }
-            self.record_league_result();
         }
         None
     }
@@ -3797,10 +3346,6 @@ fn stock_opening_params(seed: u64) -> Params {
         leader_pool: LeaderPool::Civ6,
         civs: Vec::new(),
         supervised: false,
-        league_dir: None,
-        league_record: false,
-        ai_pool: AiPlayerPool::Best3,
-        force_strategy: None,
     }
 }
 
@@ -3844,7 +3389,6 @@ pub(crate) fn simulation_settings(params: &Params) -> Value {
         "poles": params.map_poles.id(),
         "speed": params.game_speed.id(),
         "leader_pool": params.leader_pool.id(),
-        "ai_pool": params.ai_pool.id(),
         "teams": params.teams,
         "victories": victories,
         "mercy_rule": params.mercy_rule,
@@ -3852,103 +3396,22 @@ pub(crate) fn simulation_settings(params: &Params) -> Value {
     })
 }
 
-/// The agents a person can hand their seat to, strongest first.
-///
-/// With a league roster on disk this is every live-eligible entrant still
-/// competing, with the rating it is defending, so the choice is between *our*
-/// strategies and not between adjectives. Offline-only entrants stay on the
-/// rating schedule without becoming an offer this server cannot yet afford.
-/// An entrant that has not played a rated game yet is marked provisional
-/// rather than shown as an authoritative 1500. Without a roster the list falls
-/// back to the built-in agents, because a control with nothing in it is worse
-/// than one with four honest entries.
-pub(crate) fn strategy_roster(session: &Session) -> Value {
-    let mut rows: Vec<Value> = Vec::new();
-    if let Some(roster) = session.roster.as_ref() {
-        // Agents only. A person registered in this roster is a player in it,
-        // but a seat cannot be handed to somebody who is not at a keyboard.
-        let mut active: Vec<&crate::league::Strategy> = roster
-            .strategies
-            .iter()
-            .filter(|s| !s.retired && !s.human && !s.league_only)
-            .collect();
-        active.sort_by(|a, b| b.rating.total_cmp(&a.rating));
-        rows.extend(active.into_iter().map(|s| {
-            json!({
-                "name": s.name,
-                "username": s.username,
-                "label": s.label(),
-                "rating": s.rating.round(),
-                "games": s.games,
-                "wins": s.wins,
-                "provisional": s.games == 0,
-            })
-        }));
-    }
-    if rows.is_empty() {
-        rows.extend(BUILTIN_STRATEGIES.iter().map(|(name, username)| {
+/// The agents a person can hand their seat to: the built-in agents, named by
+/// id and by handle. Nothing rates them, so every row is provisional.
+pub(crate) fn strategy_roster(_session: &Session) -> Value {
+    json!(BUILTIN_STRATEGIES
+        .iter()
+        .map(|(name, username)| {
             json!({
                 "name": name,
                 "username": username,
                 "label": name,
                 "provisional": true,
             })
-        }));
-    }
-    json!(rows)
-}
-
-/// The ELO choices the custom setup table may name. Ratings are sparse by
-/// design: a combination only appears after an entrant has actually played
-/// that leader and civilization. Keep the strategy identity beside each
-/// number so a later custom-seat protocol can bind the choice to the exact
-/// entrant instead of treating equal-looking ratings as interchangeable.
-pub(crate) fn leader_elo_options(session: &Session) -> Value {
-    let mut combinations: BTreeMap<(String, String), BTreeMap<i64, BTreeSet<String>>> =
-        BTreeMap::new();
-    let Some(roster) = session.roster.as_ref() else {
-        return json!([]);
-    };
-    for strategy in roster
-        .strategies
-        .iter()
-        .filter(|strategy| !strategy.retired && !strategy.human && !strategy.league_only)
-    {
-        let strategy_name = if strategy.username.is_empty() {
-            strategy.name.clone()
-        } else {
-            strategy.username.clone()
-        };
-        for (leader, civs) in &strategy.leader_elo {
-            for (civ, rating) in civs {
-                if rating.games == 0 || !rating.rating.is_finite() {
-                    continue;
-                }
-                combinations
-                    .entry((civ.clone(), leader.clone()))
-                    .or_default()
-                    .entry(rating.rating.round() as i64)
-                    .or_default()
-                    .insert(strategy_name.clone());
-            }
-        }
-    }
-    json!(combinations
-        .into_iter()
-        .map(|((civ, leader), elos)| json!({
-            "civ": civ,
-            "leader": leader,
-            "elos": elos
-                .into_iter()
-                .rev()
-                .map(|(elo, strategies)| json!({
-                    "elo": elo,
-                    "strategies": strategies.into_iter().collect::<Vec<_>>(),
-                }))
-                .collect::<Vec<_>>(),
-        }))
+        })
         .collect::<Vec<_>>())
 }
+
 
 /// An explicit turn cap is a real configuration value, not a cast through an
 /// arbitrary JSON number. Zero cannot produce a playable game and a number
@@ -4059,15 +3522,6 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
     }
     if let Some(v) = request["leader_pool"].as_str().and_then(LeaderPool::from_id) {
         p.leader_pool = v.available_or_default();
-    }
-    // The AI player pool: how many of the roster's best strategies may be
-    // seated for the AI civilizations. An unknown depth is refused rather
-    // than silently seating a different pool than the panel promised.
-    if let Some(v) = request["ai_player_pool"]
-        .as_str()
-        .and_then(AiPlayerPool::from_id)
-    {
-        p.ai_pool = v;
     }
     let selected_pool = p.leader_pool;
     p.civs.retain(|civ| {
@@ -5293,7 +4747,7 @@ mod tests {
     use crate::setup::{
         battlefield_map_scripts, battlefield_sizes, future_era_from_id, scenario_map_scripts,
         start_era_from_id, world_map_scripts,
-        AiPlayerPool, TacticsEra, TacticsRules,
+        TacticsEra, TacticsRules,
         BaseRuleset, FutureEra, GameSpeed, MapPoles, MapScript, MapSize, MapTopology,
         TurnStructure, MAP_POLES,
     };
@@ -7929,14 +7383,10 @@ fetchpriority=\"high\""
         assert!(EMBEDDED_INDEX.contains("width: calc(100% - 2px); height: 22px; margin: 0 1px;"));
         assert_eq!(EMBEDDED_INDEX.matches("width: calc(100% - 2px);").count(), 2,
             "the two controls in the Watch-as column are the same width at every screen size");
-        // And a player with nothing behind them still wears a rating: the
-        // 1500 every player starts from, marked provisional rather than
-        // replaced by a dash that would read as "cannot be rated".
-        assert!(player_hud.contains("const playerElo = eloKnown ? `${eloValue}` : \"—\";"));
+        // Nothing rates a seat; the live odds position beside the name is
+        // the one signed figure the identity block carries.
         assert!(player_hud.contains("const playerEloDelta = signedEloDelta(playerHudEloDeltaValue(p));"));
         assert!(player_hud.contains("class=\"diplomacy-identity-field diplomacy-elo-delta\""));
-        assert!(player_hud.contains("${eloProvisional ? \" provisional\" : \"\"}"));
-        assert!(EMBEDDED_INDEX.contains(".diplomacy-elo-value.provisional {"));
 
         // The side panel is the one part of a frame that is allowed to skip a
         // repaint, because below a second per turn it changes faster than
@@ -9163,10 +8613,6 @@ fetchpriority=\"high\""
             leader_pool: LeaderPool::Civ6,
             civs: Vec::new(),
             supervised: false,
-            league_dir: None,
-            league_record: false,
-            ai_pool: AiPlayerPool::Best3,
-            force_strategy: None,
         }
     }
 
@@ -9203,31 +8649,6 @@ fetchpriority=\"high\""
         assert_eq!(majors.len(), 4);
         let unique: std::collections::BTreeSet<&str> = majors.iter().copied().collect();
         assert_eq!(unique.len(), 4, "two majors were seated as {majors:?}");
-    }
-
-    /// The AI player pool travels the whole loop: a request names a depth,
-    /// the params carry it into seating, the published settings hand it back
-    /// to the panel, and a depth nobody offers is refused rather than
-    /// silently seating a different pool than the panel promised.
-    #[test]
-    fn the_ai_player_pool_is_parsed_published_and_nonsense_is_refused() {
-        let current = current();
-        assert_eq!(current.ai_pool, AiPlayerPool::Best3);
-
-        let narrowed = new_game_params(&current, &json!({"ai_player_pool": "best1"}));
-        assert_eq!(narrowed.ai_pool, AiPlayerPool::Best1);
-        assert_eq!(simulation_settings(&narrowed)["ai_pool"], json!("best1"));
-
-        let opened = new_game_params(&current, &json!({"ai_player_pool": "all"}));
-        assert_eq!(opened.ai_pool, AiPlayerPool::All);
-        assert_eq!(opened.ai_pool.depth(), usize::MAX);
-
-        let refused = new_game_params(&narrowed, &json!({"ai_player_pool": "everyone"}));
-        assert_eq!(refused.ai_pool, AiPlayerPool::Best1);
-
-        // The stock lobby names the exhibition's long-standing best-three
-        // policy, so an untouched panel changes nothing about seating.
-        assert_eq!(default_setup_json()["ai_pool"], json!("best3"));
     }
 
     /// A save name becomes a path, so it is checked rather than trusted.
@@ -10233,27 +9654,6 @@ fetchpriority=\"high\""
         // because staged settings and saved lobbies already carry it.
         assert!(EMBEDDED_INDEX.contains("<option value=\"civ\" selected>Civvis</option>"));
         assert!(EMBEDDED_INDEX.contains("<option value=\"tactics\">Tactics</option>"));
-        // The AI player pool follows who plays: it says which of the rated
-        // strategies may be seated for the AI civilizations, in the Civvis
-        // game and Tactics alike, and its stock depth is the exhibition's
-        // long-standing best-three policy.
-        assert!(EMBEDDED_INDEX.contains("id=\"aiplayerpool\""));
-        assert!(EMBEDDED_INDEX.contains(">AI player pool<"));
-        assert!(EMBEDDED_INDEX.contains("<option value=\"best1\">Best AI strategy per civ</option>"));
-        assert!(EMBEDDED_INDEX.contains("<option value=\"best2\">Best 2 AI strategies per civ</option>"));
-        assert!(EMBEDDED_INDEX
-            .contains("<option value=\"best3\" selected>Best 3 AI strategies per civ</option>"));
-        assert!(EMBEDDED_INDEX.contains("<option value=\"best5\">Best 5 AI strategies per civ</option>"));
-        assert!(EMBEDDED_INDEX.contains("<option value=\"all\">All AI strategies</option>"));
-        assert!(
-            EMBEDDED_INDEX.find(">Human players<") < EMBEDDED_INDEX.find(">AI player pool<"),
-            "the AI player pool is asked right after who plays"
-        );
-        assert!(
-            EMBEDDED_INDEX.find(">AI player pool<") < EMBEDDED_INDEX.find(">Base game ruleset<"),
-            "the AI player pool belongs to the short setup pass, not the advanced drawer"
-        );
-        assert!(EMBEDDED_INDEX.contains("ai_player_pool: readSetting(\"aiplayerpool\") || \"best3\","));
         // Who plays leads the primary path. The advanced ruleset and the
         // start-era ladder still come from the server, so a new ruleset — or a
         // rung somebody finally builds — never means editing the markup.
@@ -10709,7 +10109,7 @@ fetchpriority=\"high\""
         // ahead of the advanced drawer, which strands it above the whole form
         // — the way the endgame rules were stranded until they were nested.
         assert!(EMBEDDED_INDEX.contains(
-            "return [\"gamemode\", \"humanplayers\", \"civ6-status\", \"aiplayerpool\", ...world, \"startera\", \"gamespeed\",\n    \"victory-options\", \"tactics-options\", \"saves-group\"];"
+            "return [\"gamemode\", \"humanplayers\", \"civ6-status\", ...world, \"startera\", \"gamespeed\",\n    \"victory-options\", \"tactics-options\", \"saves-group\"];"
         ));
         // Recomposed on every change of mode, from the same one function.
         assert!(EMBEDDED_INDEX.contains("placeSetupControls(tactics);"));
@@ -11070,8 +10470,6 @@ fetchpriority=\"high\""
         assert!(EMBEDDED_INDEX.contains("id=\"custom-leader-selection\""));
         assert!(EMBEDDED_INDEX.contains("data-custom-team"));
         assert!(EMBEDDED_INDEX.contains("data-custom-civ"));
-        assert!(EMBEDDED_INDEX.contains("data-custom-elo"));
-        assert!(EMBEDDED_INDEX.contains("RULES?.leader_elo_options"));
         assert!(EMBEDDED_INDEX.contains("id=\"game-mod-settings\""));
         assert!(EMBEDDED_INDEX.contains("id=\"game-mod-summary\""));
         assert!(EMBEDDED_INDEX.contains("teamRuleFromArray(st.teams)"));
@@ -11811,8 +11209,8 @@ fetchpriority=\"high\""
         assert!(EMBEDDED_INDEX.contains("if (delta > .02) return {symbol:\"↗\", direction:\"up\"};"));
         assert!(EMBEDDED_INDEX.contains("if (delta < -.02) return {symbol:\"↘\", direction:\"down\"};"));
         for key in [
-            "rank", "civ", "leader", "player", "elo", "elo_delta", "win_start", "win_delta",
-            "win", "age", "plan",
+            "rank", "civ", "leader", "player", "elo_delta", "win_start", "win_delta", "win",
+            "age", "plan",
         ] {
             assert!(
                 EMBEDDED_INDEX.contains(&format!("{key}:[")),
@@ -14660,7 +14058,6 @@ fetchpriority=\"high\""
                 "poles": "poles",
                 "speed": "quick",
                 "leader_pool": "historical",
-                "ai_pool": "best3",
                 "teams": [],
                 "victories": ["science", "religious", "diplomatic", "domination"],
                 "mercy_rule": null,
@@ -14826,7 +14223,6 @@ fetchpriority=\"high\""
                 "poles": "poles",
                 "speed": "quick",
                 "leader_pool": "historical",
-                "ai_pool": "best3",
                 "teams": [],
                 "victories": ["science", "religious", "diplomatic", "domination"],
                 "mercy_rule": null,
@@ -16085,7 +15481,7 @@ fetchpriority=\"high\""
         assert!(names.contains(&"advanced"), "the default agent is offerable");
         assert!(
             !names.contains(&"strategic"),
-            "a league-only search entrant is not a live auto-play offer"
+            "the score-only search is not a live auto-play offer"
         );
         assert!(
             names.len() >= 4,
@@ -16129,162 +15525,15 @@ fetchpriority=\"high\""
         assert_eq!(session.game.turn, before + 3);
     }
 
+    /// Every major on screen carries its odds of winning, whether or not this
+    /// game rates anybody — and nothing does: every seat sits down at the same
+    /// provisional prior, so the start odds are the table and the difficulty.
     #[test]
-    fn an_explicit_coverage_target_can_include_a_live_excluded_strategy() {
-        let dir = std::env::temp_dir().join(format!(
-            "civvis-server-coverage-{}-{:?}",
-            std::process::id(),
-            std::thread::current().id()
-        ));
-        let dir = dir.to_str().unwrap().to_string();
-        let _ = std::fs::remove_dir_all(&dir);
-        let entrant = |name: &str| {
-            crate::league::Strategy::new(
-                name,
-                crate::league::StrategyKind::Builtin {
-                    ai: name.to_string(),
-                },
-                0,
-            )
-        };
-        let mut excluded = entrant("strategic");
-        assert!(excluded.exclude_from_live("coverage test", "the test ends"));
-        crate::league::save_league(
-            &dir,
-            &crate::league::League {
-                round: 2,
-                strategies: vec![entrant("advanced"), entrant("basic"), excluded],
-                calibration: Default::default(),
-            },
-        );
-
-        let mut params = current();
-        params.num_players = 4;
-        params.spectate = true;
-        params.league_dir = Some(dir.clone());
-        params.force_strategy = Some("strategic".to_string());
-        let session = Session::new(params);
-        let target = session
-            .league
-            .as_ref()
-            .unwrap()
-            .strategies
-            .iter()
-            .position(|strategy| strategy.name == "strategic")
-            .unwrap();
-        assert_eq!(session.seat_strategy[0], Some(target));
-        assert_eq!(session.seat_entry(0).unwrap().name, "strategic");
-        assert_eq!(
-            session.state()["players"][0]["ai_player_strategy"],
-            json!("strategic"),
-            "terminal evidence carries the stable league identity"
-        );
-        std::fs::remove_dir_all(&dir).unwrap();
-    }
-
-    /// Sitting down to play registers a *new* player.
-    ///
-    /// The seat used to be dealt an entrant off the league table like any
-    /// other major, so a person wore an agent's handle and rating, and the
-    /// game they finished was filed as that agent's win. Both halves are the
-    /// same mistake: an identity nobody at the keyboard earned.
-    #[test]
-    fn a_single_player_game_registers_a_new_player() {
-        let dir = std::env::temp_dir().join(format!(
-            "civvis-server-register-{}-{:?}",
-            std::process::id(),
-            std::thread::current().id()
-        ));
-        let dir = dir.to_str().unwrap().to_string();
-        let _ = std::fs::remove_dir_all(&dir);
-        let entrant = |ai: &str| {
-            crate::league::Strategy::new(
-                ai,
-                crate::league::StrategyKind::Builtin { ai: ai.to_string() },
-                0,
-            )
-        };
-        crate::league::save_league(
-            &dir,
-            &crate::league::League {
-                round: 2,
-                strategies: vec![entrant("advanced"), entrant("basic")],
-                calibration: Default::default(),
-            },
-        );
-
-        let mut params = current();
-        params.league_dir = Some(dir.clone());
-        params.league_record = true;
-        let mut session = Session::new(params);
-
-        // Seat 0 is the person: a row of their own, provisional, and not one
-        // of the two agents that were already here.
-        let seated = session.seat_strategy[0].expect("the person is rated");
-        let league = session.league.clone().expect("a rated roster");
-        assert!(league.strategies[seated].human);
-        assert_eq!(league.strategies[seated].username, "Player");
-        assert_eq!(session.seated_strategy_name(0), Some("player"));
-        // The rival is still seated from the roster, and is still an agent.
-        let rival = session.seat_strategy[1].expect("the rival is rated");
-        assert!(!league.strategies[rival].human);
-
-        // The registration reached the roster on disk, so the result has a
-        // name to be filed under.
-        let saved = crate::league::load_league(&dir).expect("roster on disk");
-        assert_eq!(saved.strategies.len(), 3);
-        assert_eq!(saved.humans().len(), 1);
-
-        // And the game says who is playing it.
-        let state = session.state();
-        let me = &state["players"][0];
-        assert_eq!(me["player_username"], json!("Player"));
-        assert_eq!(me["player_rated"], json!(true));
-        assert_eq!(me["player_games"], json!(0));
-        assert!(
-            state["players"][1]["player_username"].is_null(),
-            "only a seat somebody is playing carries a person"
-        );
-
-        // A decided game rates the person, and rates nobody in their place.
-        session.game.winner = Some(0);
-        session.game.victory_type = Some("score".to_string());
-        session.record_league_result();
-        let rated = crate::league::load_league(&dir).expect("roster on disk");
-        let person = rated.strategies.iter().find(|s| s.human).expect("the person");
-        assert_eq!((person.games, person.wins), (1, 1));
-        assert!(person.rating > 1500.0);
-        for agent in rated.strategies.iter().filter(|s| !s.human) {
-            assert_eq!(agent.wins, 0, "{} was credited a person's win", agent.name);
-        }
-        assert_eq!(
-            rated.strategies.iter().filter(|s| s.games > 0).count(),
-            2,
-            "the person and the rival they beat, nobody else"
-        );
-        std::fs::remove_dir_all(&dir).unwrap();
-    }
-
-    /// Every major on screen carries a rating, whether or not this game is
-    /// being rated into anything.
-    ///
-    /// The elo column used to be empty for every seat in every game that was
-    /// not launched with `--league`, which is almost all of them — a table of
-    /// dashes that reads as "this build cannot rate anyone". Two things fix
-    /// it: the snapshot every build ships is loaded for labels, and a seat
-    /// the league has no row for shows the provisional base rather than
-    /// nothing.
-    #[test]
-    fn every_major_carries_a_rating_without_a_named_roster() {
+    fn every_major_carries_odds_without_a_rating() {
         let mut params = current();
         params.spectate = true;
         params.num_players = 4;
         let session = Session::new(params);
-        assert!(
-            session.league.is_some(),
-            "the shipped snapshot labels a game that names no roster"
-        );
-        assert!(!session.seat_from_roster, "and it seats nobody");
 
         let state = session.state();
         let majors: Vec<&Value> = state["players"]
@@ -16297,13 +15546,11 @@ fetchpriority=\"high\""
         let mut shares = 0.0;
         let mut now_shares = 0.0;
         for player in &majors {
-            let elo = player["ai_elo"].as_i64().expect("every major has a rating");
-            assert!((800..=2600).contains(&elo), "{elo} is not a rating");
-            assert!(player["ai_elo_rd"].as_i64().is_some());
-            shares += player["odds_start"].as_f64().expect("and start odds");
+            assert!(player["ai_elo"].is_null(), "nothing rates a seat any more");
+            shares += player["odds_start"].as_f64().expect("every major has start odds");
             now_shares += player["odds_now"].as_f64().expect("and now odds");
             assert!(player["odds_prior_elo"].as_i64().is_some());
-            // Nobody chose these seats, so the one entrant behind all of them
+            // Nobody chose these seats, so the one agent behind all of them
             // does not get to put its handle on four different civilizations.
             assert!(
                 player["ai_username"].is_null(),
@@ -16319,16 +15566,6 @@ fetchpriority=\"high\""
             (now_shares - 1.0).abs() < 0.02,
             "and so does the live answer: now odds summed to {now_shares}"
         );
-        // An earned rating, not the base everybody starts from. The check
-        // above passes on a provisional 1500 too, which is exactly what the
-        // whole table showed while the roster was read from a relative path.
-        for player in &majors {
-            assert_eq!(
-                player["ai_elo_provisional"],
-                json!(false),
-                "the shipped roster has games behind it"
-            );
-        }
     }
 
     /// A seated player is told their own odds, and an unmet rival's are withheld
@@ -16371,46 +15608,10 @@ fetchpriority=\"high\""
         assert!(unmet > 0, "a fresh interactive game has civilizations still to meet");
     }
 
-    /// The roster that labels an ordinary game is compiled in, so the ratings
-    /// on screen are the same wherever the binary was started from.
-    ///
-    /// The label roster ended at a read of `data/league`, a directory resolved
-    /// against the working directory. `cargo test` runs at the crate root and
-    /// a developer is usually standing in a checkout, so the read succeeded
-    /// exactly where anyone would look and failed everywhere the program
-    /// actually ships: the installed binary run from a home directory, a
-    /// launcher that starts it from `/`, and the WASM build, which has no
-    /// filesystem at all. Every seat in those games showed a provisional 1500.
+    /// An interactive game gives the rivals you have met their odds too — and
+    /// never their plan.
     #[test]
-    fn the_label_roster_is_compiled_in_rather_than_read_from_the_working_directory() {
-        let shipped = crate::league::shipped_league().expect("the snapshot is compiled in");
-        let mut params = current();
-        params.league_dir = None;
-        let (league, seats) = Session::load_params_league(&params);
-        let league = league.expect("a game that names no roster is still labelled");
-        assert!(!seats, "a label roster seats nobody and rates nothing");
-        // A checkout that has been recording locally answers from its own
-        // runtime `league/` first, which is the point of that step. With no
-        // such directory — a fresh checkout, and every shipped build — the
-        // chain has to reach the compiled-in snapshot rather than stop at a
-        // path that is not there.
-        if crate::league::load_league("league").is_none() {
-            assert_eq!(
-                league.strategies.len(),
-                shipped.strategies.len(),
-                "the labels come from the shipped roster"
-            );
-        }
-    }
-
-    /// An interactive game rates its rivals on screen too — but only the
-    /// ones you have met, and never their plan.
-    ///
-    /// Only the spectator used to annotate ratings, so the HUD's ELO column
-    /// was empty for every opponent in every game somebody was actually
-    /// playing.
-    #[test]
-    fn an_interactive_game_rates_the_rivals_you_have_met() {
+    fn an_interactive_game_annotates_the_rivals_you_have_met() {
         let mut params = current();
         params.num_players = 3;
         let session = Session::new(params);
@@ -16423,13 +15624,13 @@ fetchpriority=\"high\""
             let minor = player["is_minor"] == json!(true) || player["is_barbarian"] == json!(true);
             if unmet || minor {
                 assert!(
-                    player["ai_elo"].is_null(),
+                    player["odds_start"].is_null(),
                     "an unmet or minor seat is not annotated"
                 );
                 continue;
             }
             met += 1;
-            assert!(player["ai_elo"].as_i64().is_some(), "a met major is rated");
+            assert!(player["odds_start"].as_f64().is_some(), "a met major has odds");
             // Their standing is public; what they intend to do with it is not.
             assert!(player["ai_plan"].is_null());
             assert!(player["ai_strategy"].is_null());
@@ -16437,23 +15638,16 @@ fetchpriority=\"high\""
         assert!(met > 0, "the player's own seat is met at the very least");
     }
 
-    /// Most games are rated against nothing at all. The person is still not
-    /// an existing player: they get a handle for this game, and it goes no
-    /// further than this game.
+    /// Nothing rates a game. The person is still not one of the agents: they
+    /// get a handle for this game, and it goes no further than this game.
     #[test]
-    fn an_unrated_single_player_game_still_names_the_person() {
+    fn a_single_player_game_still_names_the_person() {
         let session = Session::new(current());
         assert_eq!(session.seated_strategy_name(0), Some("player"));
-        assert_eq!(session.seat_strategy[0], None, "there is nothing to rate into");
         let state = session.state();
         assert_eq!(state["players"][0]["player_username"], json!("Player"));
         assert_eq!(state["players"][0]["player_rated"], json!(false));
-        // Nothing is being rated, and they have still never finished a game,
-        // so the seat wears the rating everybody starts from and says so.
-        assert_eq!(state["players"][0]["player_elo"], json!(1500));
-        assert_eq!(state["players"][0]["player_elo_rd"], json!(350));
-        assert_eq!(state["players"][0]["player_elo_provisional"], json!(true));
-        assert_eq!(state["players"][0]["player_games"], json!(0));
+        assert!(state["players"][0]["player_elo"].is_null(), "nothing rates the person");
 
         // A spectated world has nobody at a keyboard and registers nobody.
         let mut params = current();
