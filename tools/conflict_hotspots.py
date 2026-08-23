@@ -92,6 +92,7 @@ from __future__ import annotations
 
 import argparse
 import collections
+import functools
 import re
 import subprocess
 import sys
@@ -145,12 +146,15 @@ SOURCE_EXTENSIONS = ("rs", "js", "py", "sh", "lua", "html")
 SOURCE_SUFFIXES = r"\.(" + "|".join(SOURCE_EXTENSIONS) + r")$"
 
 
-def touched(sha: str) -> set[str]:
+@functools.lru_cache(maxsize=None)
+def touched(sha: str) -> frozenset[str]:
+    """The paths one merge changed. Memoized: `--modes` asks for every merge
+    once per ranked file, which without this is 1,600 `git show` calls."""
     out = subprocess.run(
         ["git", "-C", str(REPO), "show", "--name-only", "--format=",
          "-m", "--first-parent", sha],
         capture_output=True, text=True, check=False).stdout
-    return {line.strip() for line in out.splitlines() if line.strip()}
+    return frozenset(line.strip() for line in out.splitlines() if line.strip())
 
 
 #: Below this many merges the ranking is not worth judging on. A shallow clone
@@ -339,6 +343,12 @@ def replay(path: str, shas: list[str]) -> dict:
             done = subprocess.run(
                 ["git", "merge-file", "-q", "-p", "--diff3", *sides],
                 capture_output=True, text=True, errors="replace", check=False)
+        # `git merge-file` returns the number of conflicts, and 255 when it
+        # could not merge at all (a binary side, say). A refusal is not a
+        # collision, so drop the pair rather than count it as one.
+        if done.returncode >= 128:
+            pairs -= 1
+            continue
         if done.returncode > 0:
             collisions += 1
             regions.extend((append, where, pairs)
