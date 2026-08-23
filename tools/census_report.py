@@ -3,7 +3,7 @@
 
 ## Why
 
-Twenty-eight tests carry `#[ignore]`, twenty of them with the same note:
+Twenty-eight of the crate's censuses carry `#[ignore]`, most with the same note:
 *"census, not an assertion; run explicitly with --nocapture."* The reasoning is
 right — a census is a reading, not a pass/fail, and asserting an exact number
 would fail on every legitimate change. The consequence is that the project's
@@ -27,12 +27,20 @@ intended, `--write` it.
 
 That keeps them censuses and makes them visible, which is the whole complaint.
 
+⚠ One exception, and it is the reason the gate could not be green even with a
+fresh baseline: a census whose note says *microbenchmark* prints wall-clock
+nanoseconds, which differ between two runs on one machine and certainly between
+macOS and a hosted Linux runner. It is recorded and rendered like the rest —
+`--check` just compares whether it still ran and passed rather than what the
+stopwatch said. See `STOPWATCH_NOTE`.
+
 ## Why this is not a per-PR gate
 
-Measured 2026-08-18: the full set takes over ten minutes, and one of them plays
-24 games to a result. That is a scheduled job, not something to put in front of
-every pull request — the `#[ignore]` is not laziness, it is a correct call about
-where this work belongs.
+Measured 2026-08-18: the full set takes over ten minutes here and, on the
+2026-08-20 hosted runner, 75m43s for 22 of them. One plays 24 games to a
+result. That is a scheduled job, not something to put in front of every pull
+request — the `#[ignore]` is not laziness, it is a correct call about where
+this work belongs.
 
     tools/census_report.py --list
     tools/census_report.py --write          # take the readings, record them
@@ -56,6 +64,37 @@ MARKDOWN = REPO / "docs" / "CENSUS.md"
 # test and none of this applies to it.
 CENSUS_NOTE = re.compile(r'#\[ignore\s*=\s*"([^"]*(?:census|microbenchmark)[^"]*)"\s*\]')
 TEST_NAME = re.compile(r"\s*(?:async\s+)?fn\s+([A-Za-z_][\w]*)")
+
+#: ⚠⚠ A STOPWATCH IS NOT A DETERMINISM READING, AND ONE OF THESE IS A STOPWATCH.
+#:
+#: `.github/workflows/census.yml` compares this ledger on Linux against a
+#: baseline recorded on macOS, and calls a difference a determinism break,
+#: because `docs/FLOAT_DETERMINISM.md` makes identical readings the contract.
+#: That contract is about what the engine *computes*. It says nothing about how
+#: long a CPU took, and `sphere_distance_cache_order_benchmark` prints
+#: `median_elapsed_ns` straight off `Instant::elapsed()` — 26,225,791 ns in the
+#: committed baseline. That number differs between a hosted runner and an M5
+#: Max, and differs between two runs on the same machine. Pinned, it is drift
+#: on every single run forever: a red X that means nothing, next to twenty-seven
+#: that would mean something.
+#:
+#: So a timing reading is recorded and rendered like any other — the numbers
+#: stay visible, and `docs/closed/SPHERE_PERFORMANCE.md` is where their
+#: conclusion lives — but the drift gate compares only whether it still RAN AND
+#: PASSED. The benchmark asserts its own invariant (eight distinct long queries
+#: admit the reused source row), so a real regression in what it exists to watch
+#: still turns this red.
+#:
+#: Read off the `#[ignore]` note, so `src/` stays the single source of truth and
+#: nothing in the generated ledger can disagree with it. `run_one` already drops
+#: harness durations for exactly this reason; this is the same judgement applied
+#: to a census whose whole output is one.
+STOPWATCH_NOTE = re.compile(r"microbenchmark", re.IGNORECASE)
+
+
+def is_stopwatch(note: str) -> bool:
+    """True when a reading's numbers are wall-clock time on the measuring host."""
+    return bool(STOPWATCH_NOTE.search(note or ""))
 
 
 def censuses() -> list[dict[str, str]]:
@@ -163,6 +202,10 @@ def render(readings: dict) -> str:
         parts.append("")
         parts.append(f"`{row['file']}:{row['line']}` — {row['note']}")
         parts.append("")
+        if is_stopwatch(row.get("note", "")):
+            parts.append("_Wall-clock time on whichever host took the reading, so"
+                         " `--check` compares only that it still ran and passed._")
+            parts.append("")
         parts.append("```")
         parts.extend(row["output"] or ["(printed nothing)"])
         parts.append("```")
@@ -209,11 +252,21 @@ def main(argv: list[str] | None = None) -> int:
         # 21 false alarms and one real answer.
         before = {k: v for k, v in before.items() if args.only in k}
     drifted = []
+    timed = []
     for name, row in sorted(readings.items()):
         was = before.get(name)
         if was is None:
             drifted.append(f"{name}: new census, never recorded")
-        elif was.get("output") != row.get("output"):
+            continue
+        # A new one is still reported above, so a timing census cannot slip in
+        # unrecorded; what it skips is only the comparison of its numbers.
+        if is_stopwatch(row.get("note", "")):
+            timed.append(name)
+            if was.get("ok") != row.get("ok"):
+                drifted.append(
+                    f"{name}: now {'passes' if row['ok'] else 'fails'}")
+            continue
+        if was.get("output") != row.get("output"):
             drifted.append(f"{name}: reading changed")
         elif was.get("ok") != row.get("ok"):
             drifted.append(f"{name}: now {'passes' if row['ok'] else 'fails'}")
@@ -227,7 +280,10 @@ def main(argv: list[str] | None = None) -> int:
               "defect — read the diff. If the new number is the intended one, "
               "`--write` it and say why in the commit.")
         return 1
-    print(f"{len(readings)} census reading(s) unchanged")
+    print(f"{len(readings) - len(timed)} census reading(s) unchanged")
+    if timed:
+        print(f"{len(timed)} timing reading(s) recorded but not compared "
+              f"(wall clock is not a determinism reading): " + ", ".join(timed))
     return 0
 
 

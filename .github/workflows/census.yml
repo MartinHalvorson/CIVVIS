@@ -24,6 +24,15 @@
 # are the contract, and a difference here is a determinism break rather than a
 # census that moved. Either way it is worth a red X.
 #
+# ⚠ ONE READING IS A STOPWATCH AND IS NOT PART OF THAT CONTRACT.
+# `sphere_distance_cache_order_benchmark` prints `median_elapsed_ns` off
+# `Instant::elapsed()`. Wall clock is not something the engine computes; it
+# differs between a hosted runner and an M5 Max, and between two runs on one
+# machine. Pinned it is drift on every run forever — a red X that means nothing
+# standing next to twenty-seven that would mean something — so `--check`
+# compares only that it still ran and passed. Its numbers stay in
+# `docs/CENSUS.md`, and its own assertions still fail the gate.
+#
 # When a reading legitimately changes: read the diff, and if the new number is
 # the intended one, run `tools/census_report.py --write` and commit it with the
 # reason. That is the point — the number stays free to move and cannot move

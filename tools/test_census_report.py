@@ -155,10 +155,6 @@ class TheDiscoveryFindsThemAll(unittest.TestCase):
             census.CENSUS_NOTE.search('    #[ignore = "census, not an assertion"]'))
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class ATransientFailureIsRetriedBeforeItIsBelieved(unittest.TestCase):
     """These run for minutes on a machine that is also playing Civilization VI.
 
@@ -216,3 +212,84 @@ class FilteringNarrowsBothSides(unittest.TestCase):
                                                                      "output": ["n = 7"]}}):
                 code = census.main(["--check", "--only", "wanted"])
         self.assertEqual(code, 0)
+
+
+class AStopwatchIsNotADeterminismReading(unittest.TestCase):
+    """The reason the gate could not go green even with a fresh baseline.
+
+    `.github/workflows/census.yml` compares a macOS baseline on Linux and calls
+    a difference a determinism break. `sphere_distance_cache_order_benchmark`
+    prints `median_elapsed_ns` straight off `Instant::elapsed()`, which differs
+    between two runs on one machine. Pinned, it is a red X on every run forever,
+    standing next to twenty-seven that would mean something.
+    """
+
+    TIMED = "preregistered microbenchmark; run explicitly with --nocapture"
+    COUNTED = "census, not an assertion; run explicitly with --nocapture"
+
+    def check(self, tmp: Path, now: dict) -> int:
+        with mock.patch.object(census, "LEDGER", tmp / "census.json"), \
+             mock.patch.object(census, "MARKDOWN", tmp / "CENSUS.md"), \
+             mock.patch.object(census, "take", lambda timeout, only: now):
+            return census.main(["--check"])
+
+    def reading(self, note: str, ns: int, ok: bool = True) -> dict:
+        return {"a": {"ok": ok, "note": note, "file": "src/sphere.rs", "line": 1,
+                      "output": [f"cold_local: median_elapsed_ns={ns}"]}}
+
+    def test_the_note_is_what_says_a_reading_is_a_stopwatch(self):
+        self.assertTrue(census.is_stopwatch(self.TIMED))
+        self.assertFalse(census.is_stopwatch(self.COUNTED))
+        self.assertFalse(census.is_stopwatch(""))
+        self.assertFalse(census.is_stopwatch(None))
+
+    def test_the_live_repository_has_one_and_it_is_the_sphere_benchmark(self):
+        """Pinned on the repository, not on a fixture: if this stops matching,
+        the workflow silently goes back to asserting nanoseconds."""
+        timed = [row["test"] for row in census.censuses()
+                 if census.is_stopwatch(row["note"])]
+        self.assertEqual(timed, ["sphere_distance_cache_order_benchmark"])
+
+    def test_a_timing_reading_that_moved_does_not_fail_the_gate(self):
+        with TemporaryDirectory() as raw:
+            tmp = Path(raw)
+            (tmp / "census.json").write_text(
+                json.dumps(self.reading(self.TIMED, 26_225_791)))
+            self.assertEqual(self.check(tmp, self.reading(self.TIMED, 31_004_112)), 0)
+
+    def test_the_same_movement_in_a_counted_census_still_fails(self):
+        """The exemption is the note, not the shape of the number."""
+        with TemporaryDirectory() as raw:
+            tmp = Path(raw)
+            (tmp / "census.json").write_text(
+                json.dumps(self.reading(self.COUNTED, 26_225_791)))
+            self.assertEqual(self.check(tmp, self.reading(self.COUNTED, 31_004_112)), 1)
+
+    def test_a_timing_census_that_starts_failing_still_fails_the_gate(self):
+        """Its own assertions are the signal that survives. The sphere benchmark
+        asserts that eight distinct long queries admit the reused source row, so
+        the regression it exists to watch still turns this red."""
+        with TemporaryDirectory() as raw:
+            tmp = Path(raw)
+            (tmp / "census.json").write_text(
+                json.dumps(self.reading(self.TIMED, 26_225_791)))
+            self.assertEqual(
+                self.check(tmp, self.reading(self.TIMED, 26_225_791, ok=False)), 1)
+
+    def test_a_timing_census_is_still_recorded_before_it_is_exempt(self):
+        """Skipping the comparison must not become a way to never appear."""
+        with TemporaryDirectory() as raw:
+            tmp = Path(raw)
+            (tmp / "census.json").write_text(json.dumps({}))
+            self.assertEqual(self.check(tmp, self.reading(self.TIMED, 1)), 1)
+
+    def test_the_rendered_page_says_the_numbers_are_not_compared(self):
+        page = census.render(self.reading(self.TIMED, 26_225_791))
+        self.assertIn("26225791", page, "the numbers stay visible")
+        self.assertIn("ran and passed", page)
+        self.assertNotIn(
+            "ran and passed", census.render(self.reading(self.COUNTED, 1)))
+
+
+if __name__ == "__main__":
+    unittest.main()
