@@ -1228,7 +1228,7 @@ def build_ledger(sources: list[Path], filter_known: bool = True,
     the same file."""
     measures: dict[str, dict] = {}
     # Every win column a gene has, oldest first. The tail three are the
-    # ranking's `± Wins / 10k seats`, `… prior` and `… third`, so each screen
+    # ranking's scaled last, prior and third batch columns, so each screen
     # that prices a gene shifts its predecessor one column right and pushes the
     # fourth-oldest reading out of the table. The deployment default is read off
     # the newest two only; the third is published beside them.
@@ -1764,11 +1764,24 @@ def load_sources(ledger: dict) -> tuple[dict[str, list[dict]], dict[str, str]]:
         data = json.loads((ROOT / src["path"]).read_text())
         name = Path(src["path"]).name
         for gene in data.get("genes", []):
+            # Only legacy sources need this fallback. Do not evaluate it for
+            # an independent batch that recorded both arms but no `pairs`.
+            legacy_arm_seats = None
+            if gene.get("n_on") is None or gene.get("n_off") is None:
+                legacy_arm_seats = seat_pairs(gene_seats(gene))
             g = {
                 "win_on": float(gene["win_on"]),
                 "win_off": float(gene["win_off"]),
-                "n_on": int(gene.get("n_on", gene["pairs"])),
-                "n_off": int(gene.get("n_off", gene["pairs"])),
+                # The batch cells are on-arm rates, so carry the sample size
+                # from that same arm. Older symmetric sources recorded only
+                # pairs (or total seats), while newer independent batches may
+                # state each arm explicitly.
+                "n_on": int(
+                    gene["n_on"] if gene.get("n_on") is not None else legacy_arm_seats
+                ),
+                "n_off": int(
+                    gene["n_off"] if gene.get("n_off") is not None else legacy_arm_seats
+                ),
                 "win_z": float(gene["win_z"]),
                 "share_z": float(gene["share_z"]),
                 # What the precision-weighted posterior pools, and the shape
@@ -1793,6 +1806,19 @@ def load_sources(ledger: dict) -> tuple[dict[str, list[dict]], dict[str, str]]:
 
 def fmt_int(n: float) -> str:
     return f"{int(round(n)):,}"
+
+
+def batch_win_cell(history: list[dict], back: int = 0) -> str:
+    """One chronological batch cell: its on-arm win rate scaled to 10,000
+    seats, followed by the very same on-arm sample size.
+
+    `back=0` is the latest batch, `back=1` the prior batch, and so on. A
+    source without that many readings leaves the table cell unpopulated.
+    """
+    if len(history) <= back:
+        return EN_DASH
+    batch = history[-1 - back]
+    return f"{wins_per(batch['win_on'], batch['players']):+d} (n={fmt_int(batch['n_on'])})"
 
 
 def diff_cell(history: list[dict]) -> str:
@@ -2331,10 +2357,11 @@ def render(ledger: dict) -> str:
     # nothing derived is lost and nothing derived is in the way.
     reference = [
         "Every screenable heuristic gene on the Advanced controller, ranked most beneficial "
-        "to least by **± Wins / 10k seats** — wins added per 10,000 six-player on-arm seats at the "
-        "gene's measured on-rate in its **latest** screen. *± Wins / 10k seats prior* is the "
-        "same figure from the screen before that, and *± Wins / 10k seats third* the one "
-        "before that again (\u2013 where the gene has no reading that far back): three "
+        "to least by **Scaled ± Wins Last Batch (n seats)**. Each batch column scales that "
+        "batch's on-arm win rate to 10,000 seats; its `(n=...)` is the same batch's on-arm "
+        "seat count. *Scaled ± Wins Prior Batch (n seats)* is the screen before that, and "
+        "*Scaled ± Wins Third Batch (n seats)* the one before that again (\u2013 where the "
+        "gene has no reading that far back): three "
         "chronological windows, newest first, so every new screen shifts a gene's readings "
         "one column right and drops the fourth-oldest off the table. Movement across the "
         "three is the gene's trend, and it is the column the two-column rule cannot see \u2014 "
@@ -2448,29 +2475,25 @@ def render(ledger: dict) -> str:
         "",
         default_on_summary(ledger["rules"]["authority"]),
         "",
-        "| Rank | Gene | Description | Default | ± Wins / 10k seats | ± Wins / 10k seats prior | ± Wins / 10k seats third | Total (on) Win rate | Total (off) Win rate | Diff | Posterior (95% CI) | P(>0) | Share Δpp (z) | cost (compute) | cost (time) |",
+        "| Rank | Gene | Description | Default | Scaled ± Wins Last Batch (n seats) | Scaled ± Wins Prior Batch (n seats) | Scaled ± Wins Third Batch (n seats) | Total (on) Win rate | Total (off) Win rate | Diff | Posterior (95% CI) | P(>0) | Share Δpp (z) | cost (compute) | cost (time) |",
         "|---:|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|",
     ]
     for rank, (wins, tag, history) in enumerate(rows, 1):
         v = verdict.get(tag, {})
         default = "**on**" if v.get("default_on") else "off"
-        # The window columns, newest first. Each new screen that prices a gene
-        # shifts its predecessor one place right, so `third` is the reading
-        # before the two the ledger's rule is taken on and the fourth-oldest
-        # falls off the table (operator request 2026-08-23).
-        def window(back: int) -> str:
-            if len(history) <= back:
-                return "\u2013"
-            screen = history[-1 - back]
-            return f"{wins_per(screen['win_on'], screen['players']):+d}"
-
-        prior, third = window(1), window(2)
+        # The batch columns are newest first. Each value is always scaled to
+        # 10,000 seats and names the on-arm seat count behind that same batch.
+        # A new screen shifts its predecessor right; the fourth-oldest falls
+        # off the table (operator request 2026-08-23).
+        last = batch_win_cell(history)
+        prior = batch_win_cell(history, 1)
+        third = batch_win_cell(history, 2)
         on_seats = sum(m["n_on"] for m in history)
         off_seats = sum(m["n_off"] for m in history)
         on_rate, off_rate = pooled_win_rates(history)
         posterior = posterior_of(history)
         lines.append(
-            f"| {rank} | `{tag}` | {desc.get(tag, '')} | {default} | {wins:+d} | {prior} | "
+            f"| {rank} | `{tag}` | {desc.get(tag, '')} | {default} | {last} | {prior} | "
             f"{third} | "
             f"{100 * on_rate:.2f}% (n={fmt_int(on_seats)}) | "
             f"{100 * off_rate:.2f}% (n={fmt_int(off_seats)}) | "
