@@ -184,6 +184,19 @@ The replay saw no order change at all: `TRADE_ROUTE` is 103 in both arms. The
 eight replayed runs carry four refusals between them, so the rule had almost
 nothing to hand back.
 
+⚠ **The corroboration buys one retry, not a recovery.**
+`refused_trade_routes_through` (`src/mirror.rs:13291`) counts refusals
+anywhere in the game, with no window and no expiry, and retires a pairing at
+`TRADE_ROUTE_REFUSALS_BEFORE_BLOCK = 2`. So a transient condition that lasts
+more than one turn — a war not yet ended, a border that opens later, a route
+slot filled on two consecutive turns — still condemns that pairing for the
+rest of the game, exactly as before. The corpus cannot show this yet, because
+under the old rule a condemned pairing was never re-ordered and so never
+reached a second refusal; the first live run on the new rule will. **The named
+next repair is a window or an expiry** — two refusals within N turns, or
+re-open after N — which is the shape `settler_dead_sites` already uses with
+`SETTLER_DEAD_SITE_AVOID_TURNS`, in the very function #2316 edited.
+
 ⚠ **Scale.** The motivating run reported 23 pairings in one game. The corpus
 rate is **0.20 pairings per run**. That run is a hundredfold outlier, and the
 typical benefit of this half is correspondingly smaller than its PR body
@@ -382,7 +395,9 @@ effect that only accumulates across a `--serve` session's plan continuity.
 
 ## The settle veto is fog, not loyalty — with the number
 
-76 runs carry a decider journal. Across them, 4,639 settle-site vetoes:
+**356** of the 560 runs carry a decider journal, and **76 of them vetoed at
+least one site**. Across those 76, 4,639 settle-site vetoes (13 per journalled
+run, 61 per run that vetoed at all):
 
 | reason the site was refused | count | share |
 |---|---:|---:|
@@ -392,7 +407,7 @@ effect that only accumulates across a `--serve` session's plan continuity.
 | anything else | 0 | 0.0% |
 | **fog, both kinds** | **4,153** | **89.5%** |
 
-In the 18 most recent journalled runs the fog share is **92.2%** and the rate is
+In the 18 most recent vetoing runs the fog share is **92.2%** and the rate is
 135 vetoes per run.
 
 And the ground is taken: of **1,653 distinct sites vetoed**, **979 (59.2%) had a
@@ -403,9 +418,9 @@ pairs.)
 
 So the recorded conclusion holds and now has a magnitude. **The binding
 constraint is mid-game exploration, and the size of the prize is the 80.1%
-bucket: 3,715 of 4,639 vetoes, 49 per journalled run, resolving to about 22
-distinct sites per run, of which roughly 13 are ground a rival subsequently
-settled.** A softer veto is not the lever — only 10.5% of refusals are the
+bucket: 3,715 of 4,639 vetoes, 49 per run that vetoed at all, resolving to
+about 22 distinct sites per such run, of which roughly 13 are ground a rival
+subsequently settled.** A softer veto is not the lever — only 10.5% of refusals are the
 veto's arithmetic at all.
 
 ## What was decided

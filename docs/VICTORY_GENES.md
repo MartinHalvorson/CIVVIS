@@ -558,6 +558,50 @@ loud one. If that arm confirms it, the gene should leave the code by the same
 rule that culled the bottom of the ranking — and it will have cost nothing,
 because it never shipped on.
 
+### ⚠ The sign flipped on the fourth try, and the arm above is now the wrong ask
+
+**2026-08-23 (#2330).** A cull of `lane-congress-ballot` was proposed on this
+section and refused twice over.
+
+*The rule did not license it.* "The same rule that culled the bottom of the
+ranking" is a rule about the bottom of the **ranking**, and this gene has no
+rank: it sits in `HEURISTIC_GENE_RANKING.md`'s *Awaiting measurement* list, not
+in the table, precisely because no screen had priced it. A gene with no reading
+cannot be at the bottom of a ranking of readings. Nothing here was ever a
+licence to remove code, and the paragraph above should have said what reading
+would be — which is what this one is for.
+
+*And the reading arrived, and it is a null.* The first standard-shape screen
+([`docs/eval/2026-08-22-standard-gene-screen-23622-paired-seats.md`](eval/2026-08-22-standard-gene-screen-23622-paired-seats.md),
+source `b3ad9f00`, 3,937 complete map pairs, **23,622 matched seat comparisons
+per gene**, 74×46 Continents with nine city-states) reads
+`lane-congress-ballot` at **+0.16 pp, win z +0.51**. Positive, and nowhere near
+the screen's family-wise bar of |z| ≥ 3.478. That is one instrument with more
+seat comparisons than every window in §8 put together, and the sign it gives is
+the opposite of the one "has never flipped" was written about. §8's own
+withdrawn headlines are the precedent: a reading at a few hundred pairs is a
+draw from noise, and *the pattern is the finding*. The consistency of this
+gene's sign across five small windows was the same kind of artefact — five
+draws from one under-powered instrument, four of them on the
+`--victories diplomatic,score` regime that no longer exists.
+
+**What would decide it now.** Not an `ai_eval` arm. The bar is a
+`lane-congress-ballot` row from a **`standard`-shape screen** entering
+`docs/gene_ledger.json` and landing below that screen's own column band — the
+band derived from the screen's errors, not a number quoted from elsewhere. If a
+standard row reproduces §8's negative direction at that size, the gene leaves
+the code with the standard number recorded in *Removed from the code*. If it
+lands where the 23,622-seat screen has already put it, this section's "one
+reading did not regress" was the fifth claim in this file overturned by more of
+its own data, and the honest summary of the ballot gene is what §8 says of every
+other row here: **unresolved**. Either way the gene stays `off`, which is what it
+has always been, and the cost of waiting is one row in a foldover screen and no
+games.
+
+The companion refusal is recorded in `docs/gene_ranking_notes.md`: the same
+screen prices `barbarian-hunt` at +0.20 pp / z +0.65 against the legacy P10's
+−1.73 pp, so the bottom-of-the-ranking cull did not fire on that gene either.
+
 ⚠ The four rows files are megabytes and live outside the repository at
 `~/civvis-gene-screens/` with a `README.md` naming each command; every one was
 stopped short of its `--pairs` target because the box is shared. Continue any
@@ -605,3 +649,29 @@ was the thinnest and because the first of them has a measured number sitting
 unused in its own doc comment. The remaining thirty are a standing backlog,
 not a claim that any of them helps: **making a behaviour screenable is cheap
 (a toggle pair and a row) and says nothing about whether it should ship.**
+
+**2026-08-23: fourteen of that backlog got their rows, and the count is
+generated now.** The heuristic above has been replaced by
+`docs/EVAL_STATUS.md`'s *Genome coverage* section, which derives the same
+question from `treatment_flags.rs` and the three gene tables rather than from a
+regex over field spellings, and by `docs/genome_reach_debt.json`, which carries
+one line per remaining toggle saying why it is not a gene —
+`tools/test_genome_reach_debt.py` requires that file to cover exactly the
+computed list, so neither a stale reason nor a new silent debt survives a run.
+#2330 moved the published count from **165 toggles / 100 reachable / 65
+unreachable** to **166 / 114 / 52**, taking `coordinated_finish` — named first
+in the paragraph above, and until then invisible even to the count, because a
+field only ever set directly by an `elo.rs` arm has no toggle pair to be
+counted by — along with `coupled_expansion`, `tactical_strategy`,
+`unit_objective_memory` and ten more. It wrote eighteen rows; the fires gate
+the same change adds refused four of them on their own probes, which is the
+second half of the point — **a row is cheap to write and the gate is what
+makes it mean something.**
+
+⚠ And the residual is not thirty cheap rows. Of the 52 left, **22 are
+behaviours production ships ON**, and for those "a toggle pair and a row" is
+not cheap and not neutral: `apply_gene_ledger` reads *unmeasured ⇒ off*, so a
+gene row switches the behaviour off at deployment while its first screen runs.
+That is the right rule for a behaviour that was already off and the wrong one
+for one carrying +61 Elo-equivalent (200 pairs, seed 8700000, CI +21..+109, PASS on the corrected-gate matrix; see `AdvancedAi::promoted_policy_envoy`). `docs/GENE_SCREEN.md` §"The toggles no screen
+can reach" has the group-by-group account.

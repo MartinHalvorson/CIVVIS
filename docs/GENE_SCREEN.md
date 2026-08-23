@@ -48,6 +48,8 @@ Every profile flag still exists, and every one of them turns a batch into a
 this table, so the ledger cannot quietly hold two worlds in one column. The
 shape lives in `SCREEN_PLAYERS`/`SCREEN_MAP`/… in `src/bin/gene_screen.rs` and
 in `SCREEN` in `tools/gene_ledger.py`, and a test fails if the two drift apart.
+The same door now also asks *which binary played it* and *how big it was meant
+to be* — see "A screen carries the binary it played" below.
 
 **What this replaced.** Two regimes: `native` (all six lanes, six players) and
 `war` (`--victories domination,score`, four players), the second one added
@@ -144,6 +146,121 @@ target/ci/gene_screen --pairs 300 --anchor-pairs 20 --jobs 8 --out screen.jsonl
                                                             # ↑ THE screen: no profile flags
 target/ci/gene_screen --analyze screen.jsonl [more.jsonl ...]  # re-read, merge, re-table
 ```
+
+## ⭐ A screen carries the binary it played, and a source proves it (2026-08-23)
+
+A column is a claim about code. Until this landed, nothing tied a column to the
+code that produced it, and the failure that follows from that has happened
+**three times in two days**:
+
+| when | what happened |
+|---|---|
+| **2026-08-22, P10** | #2266 culled ten genes. P10's simulation binary (`d23f92d9`) was built **1h43m before that merge**, so the batch was already in flight and published a **+63** column for `holy-lane-parity` after the gene's code was gone. The reading turned out to be real: the gene was restored (#2299) and confirmed directly at **+99, z +4.05** (#2307). The project got the right answer from a careful reader, not from a gate. |
+| **2026-08-22, #2307** | The direct arm's write-up states its source commit and its release binary's SHA-256 **in prose**, in a Markdown header line, because the analysis artefact had nowhere structured to put them. `docs/eval/2026-08-22-standard-gene-screen-23622-paired-seats.md` does the same. |
+| **2026-08-23** | The first standard-shape screen re-priced `barbarian-hunt` from the legacy **−1.73 pp** to **+0.20 pp** (z +0.65) while a sibling change was minutes from deleting that gene on the legacy reading — which would have made a brand-new screen a source pricing a gene the code no longer had. |
+
+### What the header now carries
+
+`gene_screen` stamps every batch before its first game and prints the stamp on
+the first line, so an eight-hour run the ledger would refuse says so at the
+start rather than at the end:
+
+```text
+build: 4391f51c835f (build-tree) · 100 genes sha e6015634ff76 · binary sha b59c4c4e0648
+```
+
+| field | what it is |
+|---|---|
+| `commit` | the revision the binary was built from |
+| `commit_source` | `env` (`CIVVIS_COMMIT`, which every supervisor already sets), `binary-name` (a promoted `civvis-<40-hex>` executable), `build-tree` (Git where the crate was compiled), or `unstamped` |
+| `dirty` | tracked changes under `src`, `Cargo.toml`, `Cargo.lock`, `build.rs` or `data` — everything a played game comes out of |
+| `genes_sha256` | ⭐ sha256 over the gene tags **compiled into this binary**, in header order |
+| `binary_sha256` | sha256 of the executable's own bytes — the field #2307 wrote by hand |
+
+**`genes_sha256` is the load-bearing one, and it is the only one that cannot go
+stale.** It is hashed from `gene_table()` as compiled, never read back from a
+file, an environment variable, or a working tree. A commit can be misreported;
+the gene set of the running code cannot. Everything else is defended by
+refusing to guess: `CIVVIS_COMMIT` first, then the promoted executable's own
+name, then the build tree — and the build tree is dropped entirely when the
+tree took a commit touching a build input **after** this executable was linked.
+The revision is deliberately *not* baked in at compile time: #892 removed that
+because it forced a full optimized rebuild for every promoted HEAD, and
+`build.rs` is empty for exactly this reason.
+
+### What the ledger refuses
+
+`tools/gene_ledger.py` re-derives the gene tags at the commit a source claims —
+`ENGINE_REPAIR_TREATMENTS` in `src/elo.rs`, then the `(field, tag, toggle)`
+rows of `PRODUCTION_TREATMENTS` and `PRODUCTION_OPT_INS` in
+`src/ai/advanced/treatments.rs`, which is exactly the order `gene_table()`
+builds — and refuses the source when the fingerprints differ, **in either
+direction**:
+
+- a gene **priced here and absent at that commit** — P10's shape;
+- a gene **present at that commit and never compiled in** — which is what an
+  unmeasured gene quietly looks like.
+
+It also refuses an unstamped build, a dirty one, a commit this clone cannot
+read (fetch it; a claim nobody can check is not a pass), an artefact whose
+stamp does not describe its own header, and a source pricing a gene the
+repository no longer registers — 2026-08-23's near miss.
+
+`--unverified-build "<why>"` records one anyway, and the reason is written into
+the ledger beside the source it excuses. That is deliberately the same idiom as
+`--legacy-shape`: one flag at the `--source` path per guard, each recording its
+deviation in the artefact. The two are independent — the shape escape does not
+waive the build check and the build escape does not waive the shape check.
+
+**Legacy sources are grandfathered and named, never silently accepted.** The
+sources recorded before 2026-08-23 carry no build block, because the games are
+already played; they are kept as history and printed as `pre-fingerprint` on
+every line the tool writes:
+
+```text
+  source legacy   pre-fingerprint docs/gene_screens/2026-08-22-p10-…json  (17574 pairs, …)
+  ⚠ 7 of 7 sources predate the build stamp (2026-08-23) and are kept as pre-fingerprint history
+```
+
+A source that carries a block is checked. The absence of one is a fact about
+the file's age, not a way past the guard — `gene_screen` always writes it now.
+
+### How the two definitions are kept from drifting
+
+The same way the screen's shape is: pinned on both sides, with a test that
+fails when one moves.
+
+- `gene_screen.rs`'s `the_gene_table_is_exactly_what_the_ledger_re_derives_from_the_tables`
+  parses the two source tables by the ledger's own rule and asserts the result
+  **is** the compiled `gene_table()`. If the text rule and the compiled table
+  ever disagreed, the guard would refuse every honest screen.
+- `tools/test_gene_ledger.py`'s `TheHeaderFieldsMatch` compares the fields of
+  the Rust `Build` and `Batch` structs against `BUILD_KEYS` and `BATCH_KEYS`,
+  so a field added on one side and forgotten on the other fails a test rather
+  than reaching the ledger.
+- `TheGeneSetDerivation` runs the derivation at **P10's own source commit** and
+  asserts it reproduces the 75 gene tags P10's real binary wrote into its
+  header — a genuine artefact, not a fixture.
+
+### A screen declares its size before it plays
+
+P10 "ended early at the operator's request" at **5,858 of a planned 10,000
+games**. Stopping early is legitimate and stays legitimate; an artefact that
+cannot be told apart from a finished screen is not. `--pairs N` pre-registers
+the batch on its own, so the common case needs no extra flag, and
+`--target-pairs N` declares the whole screen when it is split over `--append`
+sessions (each segment on its own disjoint start seed; the analysis sums them).
+The header records the pairs, the matched comparisons they imply, and the seed
+window reserved; every printed table and the analysis JSON then read actual
+against intended:
+
+```text
+⚠⚠ PARTIAL SCREEN · 17574 of 60000 intended paired comparisons (29.3%) · seeds 100000000..100009999 reserved — a truncated run, not a completed one
+```
+
+A file written before this says `⚠ batch size was not pre-registered`, which is
+the honest answer rather than a guess. The ledger prints `⚠ PARTIAL n/N` beside
+such a source and records it.
 
 ## ⚠ Overlap with `treatment_lottery`, and what should happen about it
 
@@ -338,7 +455,8 @@ false zero.
 ## The rows file
 
 The first line is a header (`kind: header`, the gene order, the screened set,
-the profile); every other line is one game:
+the profile, the `build` that played it and the `batch` it was launched as);
+every other line is one game:
 
 ```json
 {"kind":"game","pair":0,"arm":1,"seed":26081900,"seat":0,"genome":"0010100110…","win":true,
@@ -764,6 +882,88 @@ serially. The repaired gene carries a serial leg and the next 41 pairs already
 differed. Read the interval's width before the sign: a zero-width interval is
 a fires-check failure, and the fix is in the gene, not in more pairs.
 
+### And since 2026-08-23 a gate says so, instead of four documents
+
+That paragraph was written down here; `treatment_flags.rs` wrote the same
+warning from the other direction — an `ENGINE_REPAIR_TREATMENTS` tag whose
+enable is missing from the bundle is off in **both** arms, "the two arms play
+byte-identical games", and *"three tags reached the tables before this line and
+burned 30 games saying nothing"*; `ai_eval`, `battle_bench`, `doctrine_arena`
+and `gene_census` each implement a fires-check for their own instrument. What
+none of that was, was a **gate**. Nothing stopped a tag reaching the three gene
+tables with no evidence it fires, and nothing failed when a committed screen
+contained a zero-width row. `competition-victory-points` is in the tables today
+and cannot fire at all: `native_competitions` is `false` in `GameOptions` and no
+screen sets it.
+
+`tools/gene_fires.py --max 0` is that gate, wired into `cargo-test` beside
+`civvis_inert.py --max 0`, which is the ratchet it is modelled on. It discovers
+the gene set exactly the way `gene_table()` does — the engine repairs resolved
+through `LIVE_TREATMENTS`, plus both production tables, so a new gene reaches
+the gate without touching the tool — and reads each gene's own rows out of
+`docs/gene_screens/**/*.json`. **A gene is proven when some committed row has a
+non-zero paired statistic**, which is a number read out of an artifact rather
+than a sentence somebody wrote. The cheapest artifact that carries it is a
+single-gene probe, because `--genes <tag>` holds everything else at the
+baseline and any divergence between the arms is then that gene and nothing
+else:
+
+```bash
+target/ci/gene_screen --pairs 3 --jobs 6 --genes <tag> \
+  --baseline best --field advanced --design foldover --all-seats \
+  --randomize-civs --start-seed <seed> --out target/<tag>.jsonl
+target/ci/gene_screen --analyze target/<tag>.jsonl \
+  --json docs/gene_screens/fires/<tag>.json
+```
+
+Three pairs is enough, because the question is qualitative. ⚠ Look at the score
+share as well as wins: `coupled-expansion`'s probe read a win Δ of exactly zero
+and a share Δ of +0.29 pp — a gene that fired and did not change who won, which
+is firing. Those probes are **not ledger sources**: they set no profile of their
+own, they are three pairs, and `tools/gene_ledger.py` takes its sources by name.
+
+A gene that cannot be made to fire takes a waiver in
+`tools/gene_fire_waivers.json` with the reason, in the shape
+`tools/inert_waivers.json` uses — except that the reason is enforced, and a
+waiver goes **stale** the moment its gene is proven or leaves the tables, which
+fails the same ratchet. The list can only shrink.
+
+## The toggles no screen can reach, and why each one is not a gene
+
+`docs/EVAL_STATUS.md`'s *Genome coverage* deliberately publishes an over-count:
+it makes no attempt to separate a behaviour worth pricing from host-only
+plumbing, so the number is a ceiling on the debt rather than a floor. A ceiling
+nobody has examined is the same shape as the defect the section exists for, so
+since 2026-08-23 every toggle on that list carries a line saying why it is not a
+gene, in `docs/genome_reach_debt.json`, and
+`tools/test_genome_reach_debt.py` requires the file to cover **exactly** the
+computed list — a toggle that gains a gene row must lose its entry, and a new
+unreachable toggle must gain one. The residual is examined work.
+
+The count went **165 / 100 reachable / 65 unreachable → 166 / 114 / 52** when
+fourteen of them became opt-in genes — eighteen rows were written and the fires
+gate above refused four on their own probes. What the remaining 52 are:
+
+| group | n | why not a gene |
+|---|---:|---|
+| `bundle` | 6 | It turns a group of other genes on. `gene_screen` already builds its treated seat from `enable_engine_repairs_universe`; a row would vary everything inside it and file the sum under one tag. |
+| `host-only` | 12 | Cannot fire on a native board, each with its reason already recorded beside its tag in `FIRAXIS_ONLY_TREATMENTS`. `step-and-reassess` is the founding example of the paragraph above. |
+| `live-bridge-row` | 16 | **Screenable would mean withheld.** It has a `LIVE_TREATMENTS` row, so a `PRODUCTION_OPT_INS` row flips `ledger_default_on` from `None` to `Some(false)` and `apply_gene_ledger` takes it out of the live bridge. Its host-only classification is an argument about which rivals the weights were bred against, not a claim it cannot fire — so the move it wants is the one `culture-coverage` made, out of `FIRAXIS_ONLY_TREATMENTS` into an `ENGINE_REPAIR_*` half, taken deliberately with the bridge change owned. |
+| `production-on` | 6 | Production ships it ON, so its door is `PRODUCTION_TREATMENTS` — and that row is **not** neutral: `apply_gene_ledger` disables every production treatment whose `ledger_default_on` is `Some(false)`, which is exactly a screenable tag with no ledger row. Adding it would switch a shipped behaviour off; `open_water_navy` alone was promoted at +61 Elo-equivalent (200 pairs, seed 8700000, CI +21..+109, PASS on the corrected-gate matrix; see `AdvancedAi::promoted_policy_envoy`). It needs its first screen row before it can have a gene row. |
+| `configured-on` | 5 | On in `AdvancedAi::configured` but not in `promoted_policy_envoy`, so `production_bundle_rows_are_real` rejects the row as written, and it carries the same hazard as the group above. |
+| `infrastructure` | 2 | No decision content: a cache lifetime, and a controller-wide mode that is itself an aggregate over genes that already exist. |
+| `already-on` | 1 | `adjacent_camp_clear` is on in `BasicAi::new`, so an opt-in row would be on in both arms and screen as exactly inert. |
+| `does-not-fire` | 4 | A gene row was written for it here and `tools/gene_fires.py` refused it: a single-gene probe over 12 map pairs left both arms byte-identical. The row was removed rather than shipped to return a zero-width interval. |
+
+⚠ The `production-on` and `live-bridge-row` rows are the finding worth
+carrying out of this: **making a shipped behaviour screenable is not a
+measurement-only change.** The ledger's default rule reads "unmeasured ⇒ off",
+which is the right rule for a behaviour that was already off and the wrong one
+for twenty-two that were on. Twenty-two genes' worth of reach is available for
+the price of deciding, per behaviour, whether it is allowed to go off while its
+first screen runs — and that is a genome decision for the operator, not a
+side effect of a row.
+
 ## The precision-weighted posterior, published beside the rule
 
 A threshold in column units is not a threshold in evidence. Three things about
@@ -938,6 +1138,7 @@ and #2294's single-column clause promoted it on the +46 win column because the
 rule reads the win axis only. The first standard-shape screen's **win** axis
 reads it at z **−15.37**, within half a sigma of what the legacy **share** axis
 had already said. `docs/gene_ranking_notes.md` carries the numbers.
+
 
 ## What it is not
 

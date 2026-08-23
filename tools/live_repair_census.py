@@ -1091,16 +1091,24 @@ def report_army(rows: list[dict]) -> list[str]:
 
 
 def report_vetoes(rows: list[dict]) -> list[str]:
-    live = [r for r in rows if r["vetoes"]["veto_log"] and r["vetoes"]["total"]]
+    # ⚠ TWO DENOMINATORS, AND THEY ARE NOT THE SAME ONE. A run can carry a
+    # decider journal and never veto a site; quoting a per-run rate against
+    # the journal count understates it by 4.7x, and quoting it against the
+    # vetoing count while calling them "runs with a journal" is the mislabel
+    # this line used to carry. Print both and say which the rate is over.
+    journalled = [r for r in rows if r["vetoes"]["veto_log"]]
+    live = [r for r in journalled if r["vetoes"]["total"]]
     total = _sum(live, "vetoes", "total")
     fog = _sum(live, "vetoes", "unexplored") + _sum(live, "vetoes", "unseen_rival_city")
     sites = _sum(live, "vetoes", "distinct_sites")
     taken = _sum(live, "vetoes", "sites_taken_by_a_rival")
     return [
         "=== the settle-site veto: is it loyalty, or is it fog?  [BEHAVIOUR] ===",
-        f"  runs with a decider journal          {len(live)}",
+        f"  runs with a decider journal          {len(journalled)}",
+        f"    of those, vetoing at least one site  {len(live)}",
         f"  settle-site vetoes                   {total:.0f}"
-        f"  (mean {total / len(live) if live else 0:.0f} per run)",
+        f"  (mean {total / len(live) if live else 0:.0f} per VETOING run,"
+        f" {total / len(journalled) if journalled else 0:.0f} per journalled run)",
         f"    ground the seat HAS NOT EXPLORED   "
         f"{_sum(live, 'vetoes', 'unexplored'):.0f}"
         f"  ({100 * _sum(live, 'vetoes', 'unexplored') / total if total else 0:.1f}%)",
