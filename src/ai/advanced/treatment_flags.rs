@@ -1687,6 +1687,17 @@ impl AdvancedAi {
         self.settle_sooner = false;
     }
 
+    /// Rank a settle site by the cities it leaves room for as well as its
+    /// own ground, so a Settler stops taking the one plot in a pocket that
+    /// would have held two. See `settle_plan_ahead`.
+    pub fn enable_settle_plan_ahead(&mut self) {
+        self.settle_plan_ahead = true;
+    }
+
+    pub fn disable_settle_plan_ahead(&mut self) {
+        self.settle_plan_ahead = false;
+    }
+
     /// Let banked Faith or gold patronize any Great Person it can pay for on
     /// the tally seat. See `tally_great_people`.
     pub fn enable_tally_great_people(&mut self) {

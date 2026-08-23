@@ -942,6 +942,13 @@ pub const GENES: &[Gene] = &[
     // END so a running screen keeps its positional genome. See
     // `AdvancedAi::district_planning` / `advanced/district_planning.rs`.
     Gene { tag: "district-planning", field: "district_planning", kind: Kind::OptIn, enable: AdvancedAi::enable_district_planning, disable: AdvancedAi::disable_district_planning },
+    // A Settler ranks a site by the cities it leaves room for as well as its
+    // own ground: the best twelve candidates each add a share of the best two
+    // sites that stay settleable once they are founded, so the one plot in a
+    // pocket that would have held two cities loses to the edge that keeps
+    // both. Operator, 2026-08-23: "be mindful of our likely future settling
+    // spots when settling cities." See `AdvancedAi::settle_plan_ahead`.
+    Gene { tag: "settle-plan-ahead", field: "settle_plan_ahead", kind: Kind::OptIn, enable: AdvancedAi::enable_settle_plan_ahead, disable: AdvancedAi::disable_settle_plan_ahead },
     // ⭐ THE FIRST VERSIONED GENE. `escort-unstick` (a Repair, ships on)
     // releases a linked escort after two turns without closing on the site —
     // blind to WHY the pair stopped. Watched live 2026-08-23: the formation
