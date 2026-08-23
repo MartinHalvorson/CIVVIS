@@ -1601,7 +1601,7 @@ whole-game time stops being a cost and starts being a mixture. `gene_screen`
 already separates the two columns for this reason; the paired harness does not,
 and a reader who quotes its number for a behaviour change is quoting a mixture.
 
-## 2026-08-23 — the flood stopped re-asking the ruleset what the unit is (−4.6%), and a dense frontier that did not pay
+## 2026-08-23 — the flood stopped re-asking the ruleset what the unit is (−9.2%), and a dense frontier that did not pay
 
 The direct sequel to 2026-08-22 above. That change hoisted the two *whole-board*
 facts out of the movement flood — the air-patrol scan and the passage table.
@@ -1682,8 +1682,8 @@ ruleset**. On the one path with no scope, #2309 turned one string lookup per
 improved tile into one per improvement.
 
 Opening a memo scope over the sweep is the whole fix — one line, with the same
-`&self` argument as everywhere else. **−0.98% on its own**, on a workload where
-a 144 CPU-hour screen is the unit of account.
+`&self` argument as everywhere else. **−0.98% measured on its own on a host at
+load 73**, which the table below explains is a floor rather than a figure.
 
 The general lesson outlives the line: **a lazily built table is only "never
 more work" if its miss path is as cheap as what it replaced.** A memo whose
@@ -1708,17 +1708,32 @@ above *was* taken on `--map continents`. For the digest verdict the map is
 irrelevant — a digest is a digest of whatever game ran. For the percentages it
 is one more reason to read them as provisional.
 
-| arm | baseline | candidate | |
-| --- | ---: | ---: | ---: |
-| per-unit movement profile + in-place occupancy | 432.11s | 412.39s | **−4.56%** |
-| the whole-map connectivity sweep, inside a memo scope | 401.80s | 397.87s | **−0.98%** |
-| dense frontier scratch for `flow_past` | 399.95s | 403.19s | **+0.81% — rejected** |
+| arm | host load | baseline | candidate | |
+| --- | ---: | ---: | ---: | ---: |
+| **both changes, against the base they land on** | **~25** | **407.20s** | **369.94s** | **−9.15%** |
+| per-unit movement profile + in-place occupancy | ~25 | 418.25s | 395.01s | −5.56% |
+| per-unit movement profile + in-place occupancy | ~78 | 432.11s | 412.39s | −4.56% |
+| memo scope over the connectivity sweep, on top of it | ~73 | 401.80s | 397.87s | −0.98% |
+| dense frontier scratch for `flow_past` | ~72 | 399.95s | 403.19s | **+0.81% — rejected** |
 
-⚠⚠ **Every number here was taken with the host at load average 62–86 and up to
-six other CIVVIS processes running**, which this file's own harness prints a
-warning about. They are provisional. The pairing and the alternating run order
-are what make them worth quoting at all; a single-arm reading at this load
-would mean nothing. The digests are not provisional — those are exact.
+**Quote the first row.** It is both changes against the exact base they land on,
+at the quietest the host reached all session, and it is *same game on every
+seed*.
+
+⚠⚠ **The rows do not sum, and that is the reading to take away from this
+table, not an error in it.** The same change — the movement profile, unchanged
+binary, same seeds, same shape — reads −4.56% at load 78 and −5.56% at load 25.
+A machine that is already memory- and scheduler-bound returns less of a
+CPU-work saving, so a heavily loaded host **understates** an optimization. The
+connectivity-sweep row was taken at load 73 and is therefore a floor, not a
+measurement of that change at rest; the honest split between the two is
+unknown, and only the total against `origin/main` is quoted anywhere here as a
+result.
+
+⚠ A dozen agents share this machine. The pairing and the alternating run order
+are what make any of these worth quoting; a single-arm reading at load 78 would
+mean nothing at all. **The digests are not provisional** — those are exact, and
+they are the claim that matters.
 
 ### Rejected: a dense frontier for `flow_past` (+0.81%)
 
