@@ -4504,6 +4504,48 @@ pub struct AdvancedAi {
     /// per candidate plot. See `campus_adjacency_threshold`.
     campus_multiplier_half: f64,
     campus_chain_science: f64,
+    // ★★★ APPEND POINTS, SO THAT TWO TREATMENTS ARE NOT APPENDED TO ONE LINE.
+    //
+    // Every pull request that adds a treatment appends to this anchor, and
+    // until these markers existed every one of them appended to the SAME last
+    // line, so any two of them conflicted. Replaying the 200 merges ending at
+    // `2c570f4f` (2026-08-23) pairwise with git's own three-way merge
+    // (`tools/conflict_hotspots.py --modes`) puts 8 of this file's 16
+    // conflicted regions on this struct (3 pairs) and on `fn configured`
+    // (5), and 10 of 10 of `advanced/treatments.rs`'s on its two tables.
+    //
+    // ⚠ MOVING THE LIST TO ANOTHER FILE IS NOT THE FIX; `treatments.rs` IS
+    // that move (#2022) and five days later it was the most anchored file in
+    // the repository. Two pull requests appending to one line conflict
+    // wherever that line lives. Spreading the append point is what helps.
+    //
+    // A new flag goes under the range ITS OWN NAME falls in. Git's merge only
+    // conflicts when two insertions land on the same line, so two treatments
+    // whose names start in different ranges now merge; two in the same range
+    // still collide, which over the 156 existing names is 13% of pairs rather
+    // than all of them. The ranges are cut so each holds about an eighth.
+    //
+    // ⚠ A CONVENTION IS NOT A CHECK. `tools/test_treatment_append_points.py`
+    // fails when a flag is filed under the wrong range, when an anchor loses
+    // its markers, and — the part that matters — it builds two synthetic
+    // treatment pull requests and MERGES them, so what this comment claims is
+    // verified by merging rather than asserted.
+
+    // ---- append: a-b ------------------------------------------------
+
+    // ---- append: c-d ------------------------------------------------
+
+    // ---- append: e-f ------------------------------------------------
+
+    // ---- append: g-k ------------------------------------------------
+
+    // ---- append: l-o ------------------------------------------------
+
+    // ---- append: p-r ------------------------------------------------
+
+    // ---- append: s-s ------------------------------------------------
+
+    // ---- append: t-z ------------------------------------------------
 }
 
 /// Science weight floor at the start of a game, and at its very end.
@@ -5487,6 +5529,26 @@ impl AdvancedAi {
             research_chain_completion: 1.0,
             campus_multiplier_half: 0.0,
             campus_chain_science: 0.0,
+            // Append points, one per name range: a new treatment goes under the range
+            // its own name falls in, so that two of them do not append to one line.
+            // The rule, the measurement behind it and the check that enforces it are
+            // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
+
+            // ---- append: a-b ----------------------------------------
+
+            // ---- append: c-d ----------------------------------------
+
+            // ---- append: e-f ----------------------------------------
+
+            // ---- append: g-k ----------------------------------------
+
+            // ---- append: l-o ----------------------------------------
+
+            // ---- append: p-r ----------------------------------------
+
+            // ---- append: s-s ----------------------------------------
+
+            // ---- append: t-z ----------------------------------------
         }
     }
 

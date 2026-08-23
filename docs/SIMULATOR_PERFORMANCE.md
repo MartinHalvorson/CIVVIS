@@ -1601,6 +1601,459 @@ whole-game time stops being a cost and starts being a mixture. `gene_screen`
 already separates the two columns for this reason; the paired harness does not,
 and a reader who quotes its number for a behaviour change is quoting a mixture.
 
+## 2026-08-23 — the city half of the sight stamp, and the 11.6 M allocations nobody was counting
+
+The 2026-08-21 (fifth) entry left two vision targets. The first — "the 25.2 M-visit
+unit scan" — shipped as #2295. This is the second:
+
+> 2. **The 8.6 M owned-tile hashes.** Every ask hashes every owned tile of every
+>    city of every viewer. Borders move rarely; a per-city tiles counter bumped
+>    on mutation would replace the inner loop with one number.
+
+It is the right target and the wrong count, because **three** loops walked the
+roster on every ask, not one:
+
+- `base_vision_input_stamp` hashed every owned tile of every city the viewer
+  holds — the 8.6 M, measured here at 7.5 M;
+- `vision_geometry_stamp` hashed every city and every district in the **world**,
+  viewer or not;
+- `world_stamp` hashed the same world roster a third time, on the hotter path of
+  the two: `height_field()` asks for it, and `player_can_see` and
+  `player_vision_frame` build a height field per question.
+
+⚠ **And the expensive part of those two was not the hashing.**
+`impl IntoIterator for &Districts` is `self.iter().collect::<Vec<_>>().into_iter()`,
+so `for (district, position) in &city.districts` **allocates a `Vec` per city per
+ask**. Measured below: **11,616,354 allocations in one game**, from a loop whose
+own arithmetic is a rounding error. The 2026-08-17 profile's largest single block
+was not a function but the allocator at ~18%; this is some of it.
+
+All three now read one number off the roster.
+
+### The measurement that does not need a quiet host
+
+Taken with a deterministic counter, because the host was at load 63–96 with a
+dozen sibling agents building, and this file's own history is full of clocks that
+read a change backwards under exactly that condition. One game, seed 7311001,
+6p 74×46, 9 city-states, 250 turns, online — the shape the newest sections use.
+
+| | per game |
+| --- | ---: |
+| `vision_stamps()` asks | 452,140 |
+| …answered from the fold | 441,886 (**97.7%**) |
+| rebuilds | 10,254 |
+| owned-tile hashes | 7,532,856 → **5,884,334** (−21.9%) |
+| district hashes | 26,083,412 → **790,477** (−97.0%) |
+| city visits, each of which allocated a `Vec` | 11,616,354 → **0** |
+
+Total hash work falls from **45.2 M to about 6.7 M** plus one city-header pass
+per rebuild. The `Vec` allocations go to zero: the fold iterates with
+`Districts::iter()`, which does not collect.
+
+### Read the 21.9% row before copying this shape
+
+The owned-tile row is the weakest of the three and it is worth understanding why:
+a **rebuild folds every owner's tiles**, where the old loop folded only the
+viewer's. At six majors plus nine city-states that is roughly a sixfold larger
+unit of work, and a 97.7% hit rate buys back only 21.9% of it.
+
+The obvious next move is a per-city fold with a dirty set, so that `get_mut(id)`
+refolds one city instead of all of them. **Do not spend a day on it.** The
+residual is 5.88 M hash operations at a few nanoseconds each — about 15 ms on a
+game that costs 54 CPU-seconds, or **0.03%**. The allocations are the whole
+number: 11.6 M at roughly 45 ns is about 0.5 s, or **1.0%**, and that is what the
+paired harness measured.
+
+### The paired harness, and what it proves
+
+`tools/speed_ab.py --seeds 7311001 --games 8 --players 6 --width 74 --height 46
+--city-states 9 --turns 250 --speed online`:
+
+| | user CPU |
+| --- | ---: |
+| baseline (`5205a424`) | 433.82 s |
+| candidate | 429.07 s |
+| | **−1.09%** |
+
+⚠ **Provisional on the timing.** Host load averages were 63–96 on 18 cores
+throughout, with the harness itself reporting three other CIVVIS processes; a
+number taken at that load is not a result, and the agreement with the 1.0%
+allocation estimate above should be read as corroboration, not as confirmation.
+
+**What is not provisional is that the reports agree on every paired seed.** That
+is the correctness proof this change needs and it does not care about load: all
+three stamps changed *value* — they fold the same inputs in a different order —
+and a stamp that reached play rather than staying a cache key would surface here
+as a divergent report. `docs/FLOAT_DETERMINISM.md`'s same-seed-same-world rule is
+the contract, and eight identical paired digests are the evidence.
+
+### Where the invalidation lives, and why it is not an epoch counter
+
+`Units` carries a `u64` epoch bumped inside `get_mut`, and
+`with_unit_vision_input_stamps` keys the unit fan-out on it. Copying that shape
+for cities has a hole the unit version does not: an epoch and the memo it guards
+are two values in two places, and `game.cities = other.cities` moves one without
+the other. Nothing in the tree does that today. Nothing had to.
+
+So the memo is a field of the roster instead:
+
+```rust
+pub struct Cities {
+    map: BTreeMap<u32, City>,
+    vision: RefCell<Option<Arc<CityVisionStamps>>>,
+}
+```
+
+`Deref` — and **deliberately no `DerefMut`** — exposes the whole read API, so
+every read, every `values()`, every `cities[&id]` compiled unchanged. Without
+`DerefMut` nothing in the crate can obtain `&mut BTreeMap<u32, City>`, so the
+only routes to a `&mut City` are six inherent methods, and each drops the memo
+before it returns. Three properties follow, and they are the whole argument:
+
+1. **The compiler enumerates the mutation surface, on every build.** A mutating
+   map method not reimplemented here does not compile. `iter_mut`, `entry`,
+   `retain`, `append`, `drain`, `split_off`, `pop_first` and `pop_last` are
+   absent on purpose — nothing calls them, and an untested accessor is a worse
+   guard than a build error. This is `AGENTS.md`'s "discover, never list"
+   enforced by `rustc` rather than by a grep that was complete the day it was
+   written.
+2. **The memo cannot come apart from the roster.** Assignment, `mem::take` and
+   `mem::swap` move the fold with the cities. `Cities` is declared inside a
+   private `mod city_roster` rather than as a bare type, because a private field
+   is readable by every *descendant* module and `game` has three dozen of them.
+3. **Borrowck forbids reading the memo while a write is outstanding.**
+   `vision_stamps()` needs `&Cities`; every mutable handle borrows `&mut Cities`.
+   Invalidation is eager — it happens when the handle is *issued*, before the
+   caller has written anything — so no ask can fall between the two. The new
+   test needed a `let` hoisted out of `push(along(&branch, …))` for exactly this
+   reason, which is the guarantee showing up as a compile error.
+
+### What the enumeration found
+
+The claim above is worth what the search behind it is worth. Every `.rs` file in
+the repository, single-line **and** line-broken forms — an `rg -U` multiline pass
+found 369 chained-across-lines sites a single-line grep misses. **~972
+mutable-access sites to `Game::cities`**, 852 of them outside `src/game.rs`: 21
+production (14 `mirror.rs`, 3 `ai/advanced.rs`, 2 `bin/civvis_orders.rs`, 2 the
+feature-gated `oracle.rs`) and 831 in tests. **None needed an edit.** Confirmed
+absent, each of which would have been a hole: any `&mut BTreeMap<u32, City>` in a
+signature, any whole-roster assignment in production, any `Game { … }` literal
+outside `game.rs`, any `for … in &mut …cities`, any path that moves a `City` out
+and puts it back, and any `unsafe` or `UnsafeCell` route into the roster.
+
+`owned_tiles` is written from twelve production sites — `found_city_for`,
+`do_buy_plot`, `expand_borders` (twice), `fogged_clone`, six in `mirror.rs` where
+the authoritative host reassigns a worked tile, and `oracle.rs`. Ownership moves
+in `mirror_set_city_owner`, `fogged_clone`, `transfer_city` (capture, cession, and
+the loyalty flip that routes through it) and `do_liberate_city`. Cities appear and
+disappear in `found_city_for`, `do_raze_city`, `mirror_remove_city` and
+`clear_mirror_cities`. Save and load go through `GameSer`, whose `Vec<City>`
+becomes a `Cities` by `FromIterator` with an empty memo. **None of them is named
+in the code.** They are covered because they all go through `get_mut`,
+`values_mut`, `insert`, `remove` or `clear`, and there is no seventh way.
+
+### What was left alone
+
+`memory_world_stamp` walks the roster too, and folds `pop`, `hp`, `wall_hp`,
+`buildings.len()` and every religious pressure. Those change on most turns, so a
+memo behind them would miss more often than it hit, and it would need a second
+invalidation rule for the fields the sight fold does not read. It keeps its loop.
+
+## 2026-08-23 (follow-up) — the city sight-fold's two clocks disagreed in sign
+
+The section above shipped as #2325 with a paired reading of **−1.09%** and a
+warning that host load was 63–96. CI's own `paired-cost` job then read
+**+1.01% overhead** on the same change. Opposite signs, and neither run is
+allowed to be dismissed just because the other is nicer.
+
+| harness | shape | reading |
+| --- | --- | ---: |
+| local, load 63–96 on 18 cores | 6p 74×46, 9CS, 250t, 8 seeds | −1.09% |
+| `speed.yml`, shared 4-core runner | 6p 60×38, 6CS, 100t, 3 seeds | +1.01% |
+
+Both said **"same game on every seed"**, so the correctness proof is doubled and
+only the cost is in question.
+
+### The plausible mechanism, and why it is wrong
+
+The obvious explanation is shape. A 100-turn game is mostly the early game,
+where cities are founded and borders grow every few turns, so the memo should
+hit far less often than over 250 turns — and a rebuild folds *every* owner's
+owned tiles where the old loop folded only the viewer's. A low hit rate at a
+small shape would turn the win into a loss, and that would be a real finding.
+
+It is not what happens. The same deterministic counter, run at both shapes:
+
+| | 60×38 / 6CS / 100t | 74×46 / 9CS / 250t |
+| --- | ---: | ---: |
+| `vision_stamps()` asks | 117,299 | 452,140 |
+| rebuilds | 3,035 | 10,254 |
+| **hit rate** | **97.41%** | **97.73%** |
+| hash operations | 5,113,713 → 973,235 (−81.0%) | 45,232,622 → 7,042,723 (−84.4%) |
+| `Vec` allocations | 2,080,373 → **0** | 11,616,354 → **0** |
+
+**The hit rate is shape-insensitive to within a third of a percentage point.**
+The small shape removes proportionally almost as much work as the large one, and
+2.08 M allocations at roughly 45 ns is about 0.09 s against that job's ~19
+CPU-seconds per game — a predicted saving of about **0.5%**, not a 1% cost.
+
+So the CI reading is host noise, which is exactly what `speed.yml`'s own comment
+says to expect of it: *"A shared 4-core runner cannot resolve five percent and
+this does not try to… It is a smoke alarm."* Three seeds at 100 turns on a
+shared runner is a budget check, and quoting its percentage as a cost is reading
+an instrument past its resolution.
+
+### The rule this is an instance of
+
+`docs/EVAL.md` says to compute the headline fact twice and read both. Both
+clocks here were inside their own noise and they still disagreed in sign,
+because ±1% is *below the resolution of every clock available on this fleet
+under load*. The counter is not a second opinion about the same quantity — it
+measures a different one (work removed, exactly, with no host in the answer),
+and it is the only one of the three instruments that could settle the question.
+
+⚠ For the next reader: at ±1% on a busy fleet, **stop planning to resolve it
+with a clock.** Neither a quiet window on this Mac nor a rerun of `paired-cost`
+would have separated −1.09% from +1.01% with any confidence. Instrument the
+work instead, and quote the clock only for its report-digest verdict.
+
+## 2026-08-23 — the gate measured the wrong game, on the wrong clock, and could not block anything
+
+`speed.yml` shipped on 2026-08-22 (#2289) and closed the hole #2059 fell
+through: nothing in CI could see a promoted feature multiply the fleet's
+compute. It closed it with four measured gaps, all of them named in this file
+already, and this section closes those.
+
+| | #2289 | now |
+| --- | --- | --- |
+| shape | 6p **60x38, 6 city-states**, 100t, the CLI's default **`tennis_ball`** | 6p **74x46, 9 city-states**, 120t, **Continents** — `gene_screen`'s `SCREEN_*` map row |
+| metric | whole-game user CPU | **user CPU per completed turn**, whole game reported beside it |
+| statistic | pooled ratio of two totals | **median of five paired blocks**, with the spread and the run's own resolution printed |
+| budget | +50% | **+8%**, and a second disjoint block before anything fails |
+| absolute | none | `docs/speed_ledger.json`, recorded deliberately, per machine, with its load average |
+| binding | advisory | **required** (`REQUIRED_CHECKS`), with `paired-cost: allow <reason>` as the escape hatch |
+
+### 1. Nine city-states, because the minor seats are the bill
+
+The section above this one measured **87% of `precise_evacuation`'s cost on
+city-states and barbarians** — 29.1 of 33.3 points. Minor-seat cost scales with
+the minor-seat count, and #2289's gate ran six of them against the screen's
+nine on a map two thirds the area. It systematically under-weighted exactly the
+cost that dominates every evaluation batch in the fleet. The map row is now the
+screen's, leg for leg: 6 majors, 74x46, 9 city-states, Continents, Online.
+
+⚠⚠ **The map script was the worst leg of the four, and it was invisible.**
+`speed_ab.py` never passed `--map` at all, so every reading it has ever
+produced was taken on `civvis simulate`'s default `tennis_ball` while the
+screen plays Continents. Found by the envelope-representation work (#2324),
+which measured **the same hotspot at 1.42% on tennis_ball and 13.19% on
+continents**. The other three legs change how much of the code runs; the map
+changes *which code is hot*, so the harness could have waved through a
+regression in a dense-table path and refused to credit the fix for it, with
+the number looking clean either way. `--map` is now a first-class leg of the
+shape and defaults to the screen's, and
+`test_speed_ab.TheWorkflowMeasuresTheScreensShape` reads `SCREEN_PLAYERS`,
+`SCREEN_WIDTH`, `SCREEN_HEIGHT`, `SCREEN_CITY_STATES` and `SCREEN_MAP` out of
+`src/bin/gene_screen.rs` and pins the workflow's arguments, the harness's own
+defaults and the ledger's shape block to them. That test is the durable part;
+`--map` is only today's instance of the divergence it prevents.
+
+⚠ **The turn clock is the one leg still traded**, and the trade is
+one-directional. Measured on `mbp-m5-max-128` (ci profile, quiet, four seeds):
+
+| clock | s/turn | what it is |
+| ---: | ---: | --- |
+| 120 | 0.0878 | the gate |
+| 150 | 0.1150 | |
+| 250 (full games) | 0.1833 | the screen |
+
+Cost per turn rises steeply with the turn number, so the gate reads about half
+the screen's per-turn density and under-weights the late game, where a
+per-unit pass hurts most. That is a runner budget, not a claim: the whole
+paired step has to sit under `cargo-test`'s ~10.5 minutes or it becomes the
+merge path for the entire fleet. Five games at 120 turns costs ~270 s on a
+hosted runner; four at 150 costs ~345 s and would.
+
+⚠ Changing `--turns` changes the **game**, not just how much of it is played:
+seed 900002 wins a religious victory on turn 134 at a 150-turn clock and runs
+to 250 at a 250-turn one. A short-clock run is a different game, not a prefix
+of a long one.
+
+⚠⚠ **So say it plainly, because "the gate measures the screen's shape" will
+otherwise be read as stronger than it is — which is the exact failure this
+whole section is about. THE GATE IS BLIND TO A REGRESSION THAT ONLY APPEARS
+AFTER TURN 120.** Six of the seven legs match; the clock does not, and it is
+the one leg whose difference is not proportional — turn 200 has bigger
+empires, more units per seat, more cities, aircraft and a congress, so its
+profile is not turn 100's scaled up. When a change plausibly touches late-game
+code, `tools/speed_ab.py --turns 250 --games 4` by hand is the reading to
+trust, and a green gate is not a substitute for it.
+
+### 2. Per completed turn, which is what the section above asked for
+
+The 2026-08-22 section ends: *"`gene_screen` already separates the two columns
+for this reason; the paired harness does not, and a reader who quotes its
+number for a behaviour change is quoting a mixture."* It does now. The turn
+count comes from the game's own report — `standings()` prints exactly one of
+`Winner: … on turn N`, `Draw: turn limit reached on turn N`, `No winner: turn N
+of M` — and a report the harness cannot read is a hard error, never a default,
+because a silently-guessed divisor would restore the mixture invisibly.
+
+Whole-game CPU is still printed. When the turn totals match, the two are the
+same number algebraically and the output says so; when they do not, the gap is
+game length and the output says that instead, with both turn totals. For a
+byte-identical optimisation — the four landing beside this section today — the
+two agree exactly, and that agreement is itself the evidence the arms played
+the same game.
+
+### 3. The conditions are half the reading
+
+Measured while twelve sibling agents built concurrently, one binary against
+itself in both arms, so the honest answer is zero:
+
+| shape | 1-min load | absolute s/turn | paired delta | pair IQR |
+| --- | ---: | ---: | ---: | ---: |
+| 5x120t (the gate) | ~6 (4 of 5 seeds) | 0.0878 | — | — |
+| 5x120t (the gate) | 61 → 86 | 0.1436 (**+63%**) | +0.33% | 1.48pp |
+| 3x150t | ~6 | 0.1134 | — | — |
+| 3x150t | 49 | 0.1737 (**+53%**) | -0.56% | — |
+| 3x150t | 94 | 0.1761 (**+55%**) | +0.11% | — |
+
+And the same experiment on the gate's real host, from this change's own CI run
+(`32623627991` — the pull request touches no Rust, so both arms built
+byte-identical binaries and the run is nothing but runner noise):
+
+| host | 1-min load | absolute s/turn | paired median | pair IQR | resolution |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `github-ubuntu-latest` | 3.77 | 0.2389 | +0.84% | **2.37pp** | ±1.57% |
+| `mbp-m5-max-128` | 61 → 86 | 0.1436 | +0.33% | 1.48pp | ±0.52% |
+
+⚠ **The hosted runner's pair-to-pair scatter is WIDER than this Mac's under a
+twelve-agent load** — 2.37pp against 1.48pp — even though its load average is
+3.77 and its absolute is the steadier of the two. Interleaving cancels a
+desktop's slowly-varying contention very well; it does nothing about a cloud
+VM's frequency and co-tenancy jitter, which lands as a burst inside a single
+pair. So **the CI budget is calibrated on the runner row and not on the
+desktop row**, and the two hosts keep separate rows in the ledger precisely so
+nobody averages them.
+
++8% is **9.5x the noise median that run measured and 5.1x the resolution it
+reported**, and a failure needs two *disjoint* seed blocks to agree. +50% was
+not defended by a measurement in either direction; this is.
+
+**The absolute inflates by more than half on a busy fleet host. The
+interleaved paired delta does not move at all.** That single pair of facts is
+what the rest of the design rests on:
+
+- tightening the budget from +50% to +8% is defensible, because the quantity
+  being judged survived a load average of 94 on eighteen cores inside ±0.6%;
+- an absolute with no load average beside it is not comparable to anything, so
+  every ledger row carries load at start, peak and end, and rows are per
+  machine.
+
+What interleaving cannot cancel is a **burst landing on one arm of one pair**.
+So the gate statistic is the median of the per-pair per-turn deltas, not a
+pooled ratio: four clean pairs and one at +150% leave the median at 0.00% and
+move the pooled number past +25%. Beside it the run prints the interquartile
+spread and the smallest change that spread could have resolved (two robust
+standard errors of the median, taking the larger of the MAD- and IQR-based
+sigma so the estimate errs toward *noisier*). When that resolution is wider
+than the budget the line says so outright: a green verdict there is **"not
+seen", not "not there"**.
+
+### 4. The absolute ledger, because a relative gate cannot see drift
+
+Every pull request is measured against the commit before it, so the fleet can
+lose five percent a month and every single run reads green. `docs/census.json`
+already solved this shape — record the reading, let the number move, make the
+*diff* the signal — and `docs/speed_ledger.json` is that device for cost:
+
+```
+tools/speed_ab.py --baseline B --candidate B --record-ledger \
+    --ledger-machine mbp-m5-max-128 --note "why this reading was taken"
+```
+
+Deliberate, never automatic, and never written by CI — a runner cannot commit.
+A reading taken on a runner is transcribed with
+`--ledger-cpu/--ledger-turns/--ledger-load`, which require the same `--note`.
+The gate prints the trunk's absolute cost per turn on every run either way, so
+the number is in the log even before it is in the file.
+
+`tools/test_speed_ab.py` checks the ledger's shape block against the arguments
+`speed.yml` actually passes, and both against `gene_screen.rs`'s `SCREEN_*`
+constants read out of the source. That is deliberate: an artefact and its
+source drifting apart is the defect that put `main` red the same morning this
+landed — `17a27004` was pushed with no pull request and left the generated
+`HEURISTIC_GENE_RANKING.md` out of step with its generator, failing six tests
+every PR inherits (fixed by #2336). An absolute cost recorded at one shape
+while the gate runs another is that defect with the drift line calling the
+difference a regression.
+
+**Host scaling**, kept in the ledger because it is exactly the constant that
+gets re-derived badly later: hosted 4-core `ubuntu-latest` is **2.57x** this
+Mac per single-thread core — 56.23 s user CPU for 3 games at the old shape on
+run 32601426938, against 21.89 s for the identical command on
+`mbp-m5-max-128` at load 5.8 the next day.
+
+### 5. Required, and how to clear one
+
+Advisory, the gate could not do the job it exists for. There is no branch
+protection on this repository — `REQUIRED_CHECKS` in `tools/civvis_collab.py`
+is the only thing that makes a check binding — and `ship` merges on that tuple
+without reading anything else. #2059 would have merged again with a red
+advisory X beside it.
+
+Three properties make requiring it safe, and each is pinned by a test:
+
+1. **It always reports.** No `paths:` filter and no job-level `if:`:
+   `required_check_state` reads an absent required check as *pending* and a
+   skipped one as a *failure*, so either would hang every docs-only PR in the
+   fleet. The scope decision is the job's first step, which always succeeds and
+   costs ~40 s when there is nothing to measure.
+2. **One bad pair cannot fail a merge.** Median statistic, and over budget the
+   harness re-measures on a *disjoint* block of seeds and fails only if both
+   agree. An ordinary run never reaches that code.
+3. **An intended cost can be accepted.** A promoted feature is a performance
+   event by definition, so the gate will fire on honest changes:
+   `paired-cost: allow <reason>` in the pull request body passes the run, the
+   same escape hatch `overwrite-guard: allow` is. The reason is mandatory —
+   that sentence, the number and why it is worth paying, is the one #2059 never
+   wrote.
+
+A false failure is cleared by re-running the job (`gh run rerun --failed
+<run-id>`); `ship` already re-dispatches required checks that end without a
+verdict.
+
+**It costs the merge path nothing.** On this change's own pull request
+`paired-cost` and `cargo-test` both started at 06:42:35 and finished at
+06:53:11 and 06:52:55 — **sixteen seconds apart**. The paired step grew from
+~112 s to 288 s and the job from ~7m32s to 10m36s, which is still inside
+`cargo-test`'s 10-11 minutes, so the two finish together and nothing waits
+longer than it did. That is the whole reason the turn clock is 120 and not
+150: four games at 150 turns would have made this gate the trunk's critical
+path for every merge in the fleet.
+
+### A note on the other instrument the load moves
+
+Measured the same evening: `python3 -m unittest discover -s tools` on plain
+`origin/main` fails **25 tests and errors 6** at load 70 on this host —
+`test_ladder_watchdog`, `test_spectator_supervisor`, `test_ops_portability`,
+`test_conflict_hotspots`, every one of them timing-sensitive. The identical
+suite is green on a hosted runner. That is the same fact this section is
+about, applied to a different instrument: a result taken on a fleet host and
+not labelled with its load is not a result. It is worth fixing on its own
+terms, because a suite that is red on the machine agents actually work on
+trains a fleet to stop reading it — the credibility problem `rust-quality`
+already cost this repository once.
+
+### What is still owed
+
+The `mbp-m5-max-128` row in `docs/speed_ledger.json` was taken at load 61-86
+and is marked PROVISIONAL in its own note. A quiet-host row for that machine,
+and the first `github-ubuntu-latest` row, are both still to be recorded — the
+file is designed so that adding them is one command and the old rows stay as
+history rather than being overwritten.
+
 ## 2026-08-23 — the flood stopped re-asking the ruleset what the unit is (−9.2%), and a dense frontier that did not pay
 
 The direct sequel to 2026-08-22 above. That change hoisted the two *whole-board*

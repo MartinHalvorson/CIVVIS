@@ -10,6 +10,16 @@
 #
 # Runs on `edited` too: the fix for a flagged PR is a body edit, and the fix
 # must be able to turn the check green without a new push.
+#
+# The two body edits that turn it green are `Supersedes: #N`, naming the work
+# being replaced, and — for a genuinely bulk rewrite — a line of its own:
+#
+#     overwrite-guard: allow <why this replaces the work it deletes>
+#
+# ⚠ Anchored to the line and the reason is mandatory, because until #2341 the
+# marker was matched as a bare substring and any pull request that merely
+# *wrote about* the hatch switched this gate off. `speed.yml` spells its
+# `paired-cost: allow <reason>` hatch the same way; one idiom, not two.
 
 name: overwrite-guard
 
@@ -53,6 +63,9 @@ jobs:
           # branch may lack it and no branch may audition its own judge.
           git fetch --quiet origin main
           git show origin/main:tools/overwrite_guard.py > /tmp/overwrite_guard.py
+          # The tool takes the merge base itself now, and the merge base of a
+          # merge base and the head is itself, so this stays correct and keeps
+          # the workflow working against main's older copies of the tool.
           base="$(git merge-base "$BASE_REF" "$HEAD_SHA")"
           python3 /tmp/overwrite_guard.py --base "$base" --head "$HEAD_SHA" \
             --body-file /tmp/pr-body.txt

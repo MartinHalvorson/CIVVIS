@@ -48,11 +48,11 @@ How much of the controller the genome instrument can vary at all.
 `docs/GENE_SCREEN.md` names the growth direction as "hundreds of
 genes"; this is the denominator that direction is measured against.
 
-- Capability toggles on the controller: **165**
-- Reachable as a gene `gene_screen` can vary: **100**
+- Capability toggles on the controller: **166**
+- Reachable as a gene `gene_screen` can vary: **114**
 - Measured by at least one screen: **65**
 - Resolved by the ledger (helps or hurts): **21**
-- **Unreachable by any screen: 65**
+- **Unreachable by any screen: 52**
 
 ⚠ This is the mirror of the section above and it errs the other way.
 `Never named` under-counts the live-bundle debt; this OVER-counts the
@@ -70,20 +70,20 @@ nothing said so.
 
 Unreachable:
 
-`adjacent_camp_clear`, `amenity_districts`, `bank_envoys`, `battlefront_observation`, `builder_reward_survey`, `camp_bounty`, `counter_in_lane`, `coupled_expansion`, `deny_while_targeted`, `engine_faith_price`, `engine_repairs`, `engine_repairs_economy`, `engine_repairs_universe`, `engine_repairs_war`, `envelope_cache_across_own_moves`, `era_paced_expansion`, `expansion_before_prophet`, `expansion_hall`, `expansion_pantheon`, `explore_commit`, `explore_dead_targets`, `fog_honest`, `fog_land_capacity`, `fortify_idle_units`, `frontier_loyalty`, `governor_in_recovery`, `great_work_veto_by_district`, `host_settler_pop`, `hut_collection`, `joint_reach_lines`, `land_grab`, `legal_tactical_candidates`, `live_bridge`, `live_bridge_universe`, `live_formationless_settler_shadow`, `live_motion_turn_accounting`, `live_religious_purchase_guard`, `live_trader_route_adapter`, `live_wonder_race`, `maintenance_aware_deck`, `naval_production_policy`, `no_elective_war`, `open_water_navy`, `opening_settler_waits`, `pantheon_board`, `parallel_settlers`, `price_the_suzerainty`, `production_builder_floor`, `production_settler_deadline`, `projected_stock_denial`, `promote_when_wounded`, `sea_answers`, `settlement_gap_target`, `settlement_safety`, `settler_founds_when_stalled`, `solvent_faith_army`, `spy_mission_patience`, `step_and_reassess`, `stock_denial_lead_time`, `tactical_strategy`, `tally_culture`, `tally_great_people`, `unit_cost_efficiency`, `unit_objective_memory`, `village_seeking`
+`adjacent_camp_clear`, `amenity_districts`, `bank_envoys`, `battlefront_observation`, `camp_bounty`, `counter_in_lane`, `deny_while_targeted`, `engine_repairs`, `engine_repairs_economy`, `engine_repairs_universe`, `engine_repairs_war`, `envelope_cache_across_own_moves`, `era_paced_expansion`, `expansion_before_prophet`, `expansion_hall`, `expansion_pantheon`, `explore_commit`, `explore_dead_targets`, `fog_honest`, `fog_land_capacity`, `frontier_loyalty`, `governor_in_recovery`, `great_work_veto_by_district`, `host_settler_pop`, `hut_collection`, `joint_reach_lines`, `land_grab`, `legal_tactical_candidates`, `live_bridge`, `live_bridge_universe`, `live_formationless_settler_shadow`, `live_motion_turn_accounting`, `live_religious_purchase_guard`, `live_trader_route_adapter`, `live_wonder_race`, `no_elective_war`, `open_water_navy`, `opening_settler_waits`, `parallel_settlers`, `production_builder_floor`, `production_settler_deadline`, `projected_stock_denial`, `sea_answers`, `settlement_safety`, `settler_founds_when_stalled`, `solvent_faith_army`, `spy_mission_patience`, `step_and_reassess`, `stock_denial_lead_time`, `tally_culture`, `tally_great_people`, `village_seeking`
 
 ## Live ladder
 
-- Attempts recorded: **349**
-- Configured attempts: **342**
-- Terminal outcomes: **232**
-- Configured wins: **7**
+- Attempts recorded: **425**
+- Configured attempts: **418**
+- Terminal outcomes: **299**
+- Configured wins: **16**
 - Latest ledger entry: **2026-08-19T11:21:36Z**
 
-- Attempts that ran the full clock: **147**, median score **461**, best **1588**
-- Graded against the best rival: **48** of 147 finished attempts; rival bar median **1077**, our lead median **-207**, best **+759**, ahead in **12**
-- Lost to a rival's victory before the clock: **83** (diplomatic 47, culture 27, religious 5, technology 3, conquest 1), of which **4** while our own score was the highest on the board
-- The turns those landed on: conquest 27–27 (median 27), culture 145–245 (median 221), diplomatic 202–247 (median 234), religious 75–233 (median 170), technology 242–244 (median 242)
+- Attempts that ran the full clock: **190**, median score **514**, best **1606**
+- Graded against the best rival: **120** of 190 finished attempts; rival bar median **1108**, our lead median **-218**, best **+759**, ahead in **34**
+- Lost to a rival's victory before the clock: **107** (diplomatic 58, culture 38, religious 5, technology 5, conquest 1), of which **15** while our own score was the highest on the board
+- The turns those landed on: conquest 27–27 (median 27), culture 145–247 (median 230), diplomatic 202–247 (median 241), religious 75–233 (median 170), technology 242–246 (median 244)
 
 Regenerate with `python3 tools/eval_manifest.py --write`; CI runs
 `--check` so registry or ledger changes cannot silently leave this
