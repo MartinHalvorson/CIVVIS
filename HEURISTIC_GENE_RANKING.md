@@ -352,6 +352,7 @@ These screenable genes have no on/off result, so they receive no rank or promoti
 | Gene | Default | Description |
 |---|---|---|
 | `builder-reward-survey` | off (unmeasured) | Price Builder production by a survey of the work it would do. |
+| `civilian-out-of-reach` | off (unmeasured) | Settlers and builders stay out of a barbarian's one-turn reach: flee it, never step into it alone, and summon a guard onto the settler's tile when they must cross it. |
 | `coordinated-finish` | off (unmeasured) | Admit the friendly-volley extension without the rest of the closed war-half bundle. |
 | `coupled-expansion` | off (unmeasured) | Enable the evaluator-only paid expansion treatment. |
 | `district-planning` | off (unmeasured) | The city plans its districts, sites and tile buys together: wished districts get jointly assigned, reserved plots over rings 1-3, and the tile a very valuable site needs is bought. |

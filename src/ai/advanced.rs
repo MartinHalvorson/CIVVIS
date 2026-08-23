@@ -4545,6 +4545,15 @@ pub struct AdvancedAi {
     /// the name; the toggles and child modules are the whole interface.)
     district_planning: bool,
 
+    /// Settlers and builders stay out of a barbarian's one-turn reach:
+    /// they flee a reach tile before anything else, refuse a route step
+    /// into one unless a guard walks in with them or the city is founded
+    /// this turn, and a threatened settler summons the nearest healthy
+    /// land unit onto its tile and pulls it along. Off everywhere by
+    /// default; opt-in gene `civilian-out-of-reach`. See
+    /// `advanced/civilian_safety.rs`.
+    civilian_out_of_reach: bool,
+
     // ---- append: e-f ------------------------------------------------
 
     // ---- append: g-k ------------------------------------------------
@@ -4854,6 +4863,11 @@ mod site_lookahead;
 /// `district-planning`. See `advanced/district_planning.rs`.
 mod district_planning;
 use district_planning::DistrictPlanCache;
+
+/// Settlers and builders out of a barbarian's reach: flee it, never step
+/// into it, stack with a summoned guard when they must. Opt-in gene
+/// `civilian-out-of-reach`. See `advanced/civilian_safety.rs`.
+mod civilian_safety;
 
 /// The religious corps: the four opt-in genes for what a founder buys with
 /// Faith once its cities start slipping, and what it does with the units
@@ -5550,6 +5564,7 @@ impl AdvancedAi {
             // ---- append: c-d ----------------------------------------
 
             district_planning: false,
+            civilian_out_of_reach: false,
 
             // ---- append: e-f ----------------------------------------
 
@@ -23888,6 +23903,13 @@ impl AdvancedAi {
         // is left alone; otherwise, when the tile itself is over the step
         // limit, take the neighbour that lowers the risk most and let the
         // target wait for the next turn's march.
+        // See `civilian_out_of_reach`: the same retreat, native, against the
+        // exact tiles a raider could stand on next turn.
+        if self.civilian_out_of_reach {
+            if let Some(acted) = self.civilian_flee_step(g, pid, uid) {
+                return acted;
+            }
+        }
         if self.formationless_settler_escort() && self.settlement_safety {
             // Protected where it stands: inside a city, or sharing the tile
             // with any of our own military units (the assigned guard or not).
@@ -24366,7 +24388,13 @@ impl AdvancedAi {
         think!(self.journal(), Expansion, Detail, "Settler marching to {target:?}";
                "{} tiles away, the site is worth {:.1}",
                g.wdist(current, target), self.settle_value(g, pid, target); target);
-        let moved = self.settler_step_toward_safe(g, pid, uid, target);
+        // See `civilian_out_of_reach`: the step is refused inside a raider's
+        // reach unless the guard walks in too or the city is founded now.
+        let moved = if self.civilian_out_of_reach {
+            self.settler_step_out_of_reach(g, pid, uid, target)
+        } else {
+            self.settler_step_toward_safe(g, pid, uid, target)
+        };
         // ★★★★ "marching" is printed ABOVE, before the step is attempted, so the
         // journal has never been able to tell a march from a hold. Measured on the
         // live ladder: settlers cross **0.78 tiles/turn on 2 movement points**,
@@ -25374,6 +25402,13 @@ impl AdvancedAi {
         if let Some(retreated) = self.builder_retreat_from_barbarian_capture(g, pid, uid) {
             return retreated;
         }
+        // See `civilian_out_of_reach`: a builder inside a raider's reach
+        // leaves it before it takes a job.
+        if self.civilian_out_of_reach {
+            if let Some(acted) = self.civilian_flee_step(g, pid, uid) {
+                return acted;
+            }
+        }
         let project = g
             .player_city_ids(pid)
             .into_iter()
@@ -25389,7 +25424,12 @@ impl AdvancedAi {
                     .apply(pid, &Action::ContributeProject { unit: uid, city })
                     .is_ok();
             }
-            if self.builder_step_toward_barbarian_safe(g, pid, uid, position) {
+            let stepped = if self.civilian_out_of_reach {
+                self.builder_step_out_of_reach(g, pid, uid, position)
+            } else {
+                self.builder_step_toward_barbarian_safe(g, pid, uid, position)
+            };
+            if stepped {
                 return true;
             }
         }
@@ -25435,10 +25475,21 @@ impl AdvancedAi {
         // empire-wide questions each tile asks are answered once for the whole
         // sweep rather than once per tile. The borrow checker rejects the
         // guard the moment anything in here starts mutating the game.
+        // See `civilian_out_of_reach`: a job tile a raider could stand on
+        // next turn is not a job today.
+        let reach = self
+            .civilian_out_of_reach
+            .then(|| self.barbarian_reach(g, pid, current, civilian_safety::REACH_SCAN_RADIUS));
+        let job_out_of_reach = |pos: Pos| {
+            reach
+                .as_ref()
+                .is_none_or(|reach| self.builder_job_out_of_reach(g, pid, uid, pos, reach))
+        };
         let best = {
             let _memo = g.query_memo();
             let current_target = self.builder_targets.get(&uid).copied().filter(|pos| {
                 !reserved.contains(pos)
+                    && job_out_of_reach(*pos)
                     && !self
                         .worthwhile_improvements(g, pid, *pos, strategy)
                         .is_empty()
@@ -25467,7 +25518,7 @@ impl AdvancedAi {
                                 (HashSet::new(), None)
                             };
                         for pos in &g.cities[&cid].owned_tiles {
-                            if reserved.contains(pos) {
+                            if reserved.contains(pos) || !job_out_of_reach(*pos) {
                                 continue;
                             }
                             for improvement in self.worthwhile_improvements(g, pid, *pos, strategy)
@@ -25499,7 +25550,13 @@ impl AdvancedAi {
                 self.builder_targets.insert(uid, *pos);
             }),
         };
-        target.is_some_and(|pos| self.builder_step_toward_barbarian_safe(g, pid, uid, pos))
+        target.is_some_and(|pos| {
+            if self.civilian_out_of_reach {
+                self.builder_step_out_of_reach(g, pid, uid, pos)
+            } else {
+                self.builder_step_toward_barbarian_safe(g, pid, uid, pos)
+            }
+        })
     }
 
     fn advanced_trader_step(
@@ -28866,6 +28923,16 @@ impl AdvancedAi {
                 .get(&cid)
                 .is_some_and(|city| g.wdist(unit.pos, city.pos) <= 3)
         });
+        // See `civilian_out_of_reach`: a guard the settler summoned keeps
+        // its tile, or closes on it, before any other military business.
+        if self.civilian_out_of_reach
+            && spec.class == "military"
+            && self.settler_guards.values().any(|guard| *guard == uid)
+        {
+            if let Some(acted) = self.stacked_guard_step(g, pid, uid) {
+                return acted;
+            }
+        }
         // See `settler_guard_holds`: a bound guard sharing its settler's tile
         // holds there before it heals or retreats — leaving is what exposes
         // the civilian, and the settler's own step decides for the pair.

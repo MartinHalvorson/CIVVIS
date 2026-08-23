@@ -2077,6 +2077,20 @@ impl AdvancedAi {
     pub fn disable_district_planning(&mut self) {
         self.district_planning = false;
     }
+
+    /// Settlers and builders stay out of a barbarian's one-turn reach: flee
+    /// it, never step into it alone, and summon a guard onto the settler's
+    /// tile when they must cross it. See
+    /// [`AdvancedAi::civilian_out_of_reach`]. Opt-in gene
+    /// `civilian-out-of-reach`.
+    pub fn enable_civilian_out_of_reach(&mut self) {
+        self.civilian_out_of_reach = true;
+    }
+
+    /// The twin of `enable_civilian_out_of_reach`.
+    pub fn disable_civilian_out_of_reach(&mut self) {
+        self.civilian_out_of_reach = false;
+    }
     // Append points, one per name range: a new treatment goes under the range
     // its own name falls in, so that two of them do not append to one line.
     // The rule, the measurement behind it and the check that enforces it are
