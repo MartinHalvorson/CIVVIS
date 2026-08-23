@@ -48,6 +48,36 @@ point the same way — which is what makes the third leg worth buying:
 | `docs/gene_ledger.json` | `verdict: unresolved`, **`conflict: true`**, `helps * · share HURTS **`: win z **+2.46** against share z **−15.918** |
 | the sibling half | `governor-every-lane` reads share z −16.933 and is correctly OFF |
 
+## ⚠ The question was resolved while this arm was in flight, and that changes what it is
+
+This round launched at 06:39 UTC with `governor-victory-lanes` shipping default
+ON and `verdict: unresolved`. At merge time it does not. **#2344 turned the gene
+off**: a pre-registered single-gene *direct* arm on 3,600 matched seat
+comparisons, seeds 150000000–150000599 and disjoint from the whole-genome
+screen, read **−4.778 pp at win z −6.112** with score share −2.732 pp at z
+−23.757. The ledger now carries `verdict: hurts`, `default_on: false`,
+`family_wise: true`, and the genome went 31 → 30
+(`docs/eval/2026-08-23-governor-victory-lanes-direct-confirmation.md`).
+
+That round names this arm as the reason it was run: *"a decomposition predicted
+it, and its confirming arm was never run… It named
+`advanced_governor_victory_lanes` (seed 29000000) as 'the open end'. That arm
+had not run."*
+
+**So this is no longer the open question — it is the fourth instrument on a
+closed one, and it is the only one of the four that is an Elo measurement.**
+The three that resolved it all count seat wins with the gene toggled inside a
+genome (p10, the standard screen, and #2344's direct arm). This one plays 100
+mirrored maps of `advanced` + the lane routing against plain `advanced` and
+scores the pairing. Agreement across that gap is worth more than a fourth
+seat-count would have been; disagreement would localise to the baseline, since
+this arm's control is bare `advanced` and theirs is the deployment genome.
+
+Its verdict is reported below against the 2026-08-18 round's own conventions —
+compact and deployment point estimates with intervals — and explicitly against
+the −70 to −80 that round predicted, which no seat-share reading can address
+because it is an Elo claim.
+
 ## ⚠ The two screens disagree on the *sign*, and the difference is the map
 
 This was not visible from either screen alone and it decides how to read
