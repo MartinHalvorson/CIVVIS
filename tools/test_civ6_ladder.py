@@ -959,6 +959,219 @@ class ThePublishedPairAgrees(unittest.TestCase):
             "run `python3 tools/civ6_ladder.py publish` and land both files")
 
 
+class TheRecordBelongsToTheFleetNotToOneMachine(LedgerCase):
+    """★★★★★ 76 GAMES WERE PLAYED, RECORDED, AND COULD NEVER REACH THE RECORD.
+
+    `load` seeds a machine with no live ledger from the committed snapshot and
+    then never consults it again, and `publish` wrote that machine's ledger
+    over the shared document. Once a second Civilization VI seat existed, the
+    two records forked from the 255 attempts of #1767 and every publish after
+    that was one seat's copy. On 2026-08-23 the snapshot held 349 attempts and
+    `mbp-m5-max-128` held 331: 255 shared, 94 only published, **76 only on
+    this machine — including nine Settler victories** — and `check` reported
+    "snapshot in step", because it compared the two lengths and 331 is not
+    more than 349.
+    """
+
+    def _rows(self, tags):
+        return [{"tag": tag, "utc": f"2026-08-1{i}T00:00:00Z",
+                 "difficulty": "DIFFICULTY_SETTLER", "configured": True,
+                 "won": False, "turns": 250, "score": 100}
+                for i, tag in enumerate(tags)]
+
+    def _snapshot(self, tags):
+        self.snapshot.write_text(
+            json.dumps({"attempts": self._rows(tags), "wins": {}}))
+
+    def _live(self, tags):
+        """Write the live ledger directly: a seat that forked from the record
+        has rows the snapshot never had, and lacks rows the snapshot gained."""
+        self.ledger.write_text(
+            json.dumps({"attempts": self._rows(tags), "wins": {}}))
+
+    def check(self, **kwargs) -> int:
+        with redirect_stdout(io.StringIO()) as out:
+            code = civ6_ladder.check(self.runs, self.ledger, None,
+                                     self.snapshot, **kwargs)
+        self.last_report = out.getvalue()
+        return code
+
+    def test_publish_keeps_every_row_another_seat_landed(self):
+        self._snapshot(["remote-1", "remote-2"])
+        self._live(["local-1"])
+        with redirect_stdout(io.StringIO()):
+            civ6_ladder.publish(self.ledger, self.snapshot, self.markdown)
+        self.assertEqual(
+            [a["tag"] for a in json.loads(self.snapshot.read_text())["attempts"]],
+            ["remote-1", "remote-2", "local-1"])
+
+    def test_publishing_twice_lands_nothing_the_second_time(self):
+        self._snapshot(["remote-1"])
+        self._live(["local-1"])
+        with redirect_stdout(io.StringIO()):
+            civ6_ladder.publish(self.ledger, self.snapshot, self.markdown)
+            civ6_ladder.publish(self.ledger, self.snapshot, self.markdown)
+        self.assertEqual(
+            [a["tag"] for a in json.loads(self.snapshot.read_text())["attempts"]],
+            ["remote-1", "local-1"])
+
+    def test_a_longer_snapshot_is_not_evidence_the_ledger_was_published(self):
+        """The 2026-08-23 shape exactly: more rows published than recorded
+        here, and two of the recorded ones in no published record at all."""
+        self._snapshot(["shared", "remote-1", "remote-2", "remote-3"])
+        self._live(["shared", "local-1", "local-2"])
+        state = json.loads(self.ledger.read_text())
+        published = json.loads(self.snapshot.read_text())
+        self.assertLess(len(state["attempts"]), len(published["attempts"]),
+                        "the fixture must reproduce the count that hid it")
+        self.assertEqual(self.check(), 1)
+        self.assertIn("2 attempt(s) recorded here are in no published "
+                      "snapshot", self.last_report)
+        self.assertIn("publish", self.last_report)
+
+    def test_the_other_seats_rows_are_a_note_and_not_a_failure(self):
+        self._snapshot(["remote-1"])
+        self._live(["local-1"])
+        with redirect_stdout(io.StringIO()):
+            civ6_ladder.publish(self.ledger, self.snapshot, self.markdown)
+        self.assertEqual(self.check(), 0)
+        self.assertIn("recorded by another seat", self.last_report)
+        self.assertNotIn("LADDER:", self.last_report)
+
+    def test_a_win_that_arrives_only_in_the_merge_claims_its_rung(self):
+        base = {"attempts": [], "wins": {}}
+        incoming = {"attempts": [{
+            "tag": "other-seat-win", "utc": "2026-08-18T18:46:46Z",
+            "difficulty": "DIFFICULTY_CHIEFTAIN", "configured": True,
+            "won": True}], "wins": {}}
+        merged, added = civ6_ladder.merge_state(base, incoming)
+        self.assertEqual([a["tag"] for a in added], ["other-seat-win"])
+        self.assertEqual(merged["wins"]["DIFFICULTY_CHIEFTAIN"]["tag"],
+                         "other-seat-win")
+
+    def test_the_earliest_win_still_stands_across_a_merge(self):
+        """The milestone is when the rung was FIRST climbed, and a merge is
+        exactly the late arrival that rule exists for."""
+        late = {"tag": "late", "utc": "2026-08-18T00:00:00Z",
+                "difficulty": "DIFFICULTY_SETTLER", "configured": True,
+                "won": True}
+        early = {"tag": "early", "utc": "2026-08-16T00:00:00Z",
+                 "difficulty": "DIFFICULTY_SETTLER", "configured": True,
+                 "won": True}
+        merged, _ = civ6_ladder.merge_state(
+            {"attempts": [late], "wins": {"DIFFICULTY_SETTLER": late}},
+            {"attempts": [early], "wins": {}})
+        self.assertEqual(merged["wins"]["DIFFICULTY_SETTLER"]["tag"], "early")
+        back, _ = civ6_ladder.merge_state(
+            {"attempts": [early], "wins": {"DIFFICULTY_SETTLER": early}},
+            {"attempts": [late], "wins": {}})
+        self.assertEqual(back["wins"]["DIFFICULTY_SETTLER"]["tag"], "early")
+
+    def test_an_unconfigured_win_claims_nothing_through_a_merge_either(self):
+        merged, _ = civ6_ladder.merge_state({"attempts": [], "wins": {}}, {
+            "attempts": [{"tag": "menu-defaults", "utc": "2026-08-18T00:00:00Z",
+                          "difficulty": "DIFFICULTY_SETTLER",
+                          "configured": False, "won": True}], "wins": {}})
+        self.assertEqual(merged["wins"], {})
+
+    def _sync(self, quiet=True) -> str:
+        with redirect_stdout(io.StringIO()) as out:
+            civ6_ladder.sync(self.runs, self.ledger, quiet=quiet)
+        return out.getvalue()
+
+    def test_the_backfill_names_a_backlog_no_snapshot_has(self):
+        """The one hook guaranteed to run between games says it out loud.
+
+        `heal_the_ladder` calls `sync` before every attempt. Nothing calls
+        `check`, so until this line existed an unpublished backlog was visible
+        only to somebody who typed a command — and for 76 attempts nobody did.
+        """
+        self._snapshot(["shared"])
+        self._live(["shared"])
+        write_run(self.runs, summary("brand-new"))
+        report = self._sync()
+        self.assertIn("LADDER: 1 recorded attempt(s) are in no published "
+                      "snapshot", report)
+        self.assertIn("brand-new", report)
+
+    def test_it_speaks_even_when_the_backfill_recorded_nothing(self):
+        """The backlog is not created by this run; being quiet about it while
+        nothing new arrives is exactly how it grew to 76."""
+        self._snapshot(["shared"])
+        self._live(["shared", "local-1"])
+        report = self._sync()
+        self.assertIn("local-1", report)
+
+    def test_a_published_ledger_says_nothing(self):
+        self._snapshot(["shared", "local-1"])
+        self._live(["shared", "local-1"])
+        self.assertNotIn("LADDER:", self._sync())
+
+    def test_a_clone_with_no_snapshot_at_all_claims_nothing(self):
+        """Absence of a committed record is not evidence of a backlog."""
+        self._live(["local-1"])
+        self.assertFalse(self.snapshot.exists())
+        self.assertNotIn("LADDER:", self._sync())
+        self.assertIsNone(
+            civ6_ladder.unpublished_tags({"attempts": [{"tag": "x"}]}))
+
+    def test_the_attempt_table_is_the_newest_forty_by_the_clock(self):
+        """Two seats interleave, and `sync` appends old games at the end, so
+        the last forty rows of the file are not the last forty games."""
+        rows = [{"tag": f"remote-{i}", "utc": f"2026-08-2{i}T00:00:00Z",
+                 "difficulty": "DIFFICULTY_SETTLER", "configured": True,
+                 "won": False, "turns": 250, "score": 1}
+                for i in range(3)]
+        backfilled = [{"tag": "old-backfill", "utc": "2026-07-01T00:00:00Z",
+                       "difficulty": "DIFFICULTY_SETTLER", "configured": True,
+                       "won": False, "turns": 250, "score": 1}]
+        table = civ6_ladder.markdown_for(
+            {"attempts": rows + backfilled, "wins": {}})
+        body = table.split("| run | difficulty |", 1)[1]
+        self.assertLess(body.index("`old-backfill`"), body.index("`remote-0`"),
+                        "a row recorded late must not sort as the newest game")
+
+
+class TheCommittedRecordIsInternallyConsistent(unittest.TestCase):
+    """A guard on the real `docs/civ6_ladder.json`, run by CI on every PR.
+
+    The two ways this record can be corrupted are a hand edit and a bad merge,
+    and both show up here: a tag recorded twice (a merge that appended instead
+    of unioning) or a `wins` slot that is not the earliest configured win in
+    `attempts` (a merge that kept one seat's milestone over an earlier one, or
+    a row rewritten by hand). `ThePublishedPairAgrees` proves the markdown is
+    derived from this file; this proves the file itself hangs together.
+    """
+
+    def setUp(self):
+        if not civ6_ladder.DATA.is_file():
+            self.skipTest("no published snapshot yet")
+        self.state = json.loads(civ6_ladder.DATA.read_text())
+
+    def test_no_attempt_is_recorded_twice(self):
+        tags = [a.get("tag") for a in self.state["attempts"] if a.get("tag")]
+        duplicated = sorted({t for t in tags if tags.count(t) > 1})
+        self.assertEqual(duplicated, [],
+                         "the published record holds the same run twice")
+
+    def test_every_rung_names_the_earliest_configured_win_it_holds(self):
+        earliest: dict = {}
+        for attempt in self.state["attempts"]:
+            difficulty = attempt.get("difficulty")
+            if not (attempt.get("won") and attempt.get("configured")
+                    and difficulty in civ6_ladder.NAMES):
+                continue
+            held = earliest.get(difficulty)
+            if held is None or (attempt.get("utc") or "\uffff") < (
+                    held.get("utc") or "\uffff"):
+                earliest[difficulty] = attempt
+        self.assertEqual(
+            {k: v.get("tag") for k, v in self.state["wins"].items()},
+            {k: v.get("tag") for k, v in earliest.items()},
+            "a rung in `wins` is not the earliest configured win the record "
+            "holds at that difficulty; run `civ6_ladder.py publish`")
+
+
 class LatestCodeGuarantee(LedgerCase):
     """The run's revision history reaches the ledger; the watcher's silence
     fails check."""
