@@ -144,6 +144,14 @@ struct Gene {
     /// On in the deployment genome: the ledger's `helps`, or — for a gene the
     /// ledger has not measured — the universe state. See `gene_ledger.rs`.
     default_on: bool,
+    /// The ledger's pooled on−off win difference in points — the gene's
+    /// tracked wins over every screen that priced it (`win_diff_pp`).
+    /// `None` for an unmeasured gene. Decides which version of a family is
+    /// the best; see `best_version`.
+    tracked_wins: Option<f64>,
+    /// A version the ledger's rule passes but does not ship, because its
+    /// family's head is another version (`family_runner_up`).
+    runner_up: bool,
     flip: fn(&mut AdvancedAi),
 }
 
@@ -167,6 +175,8 @@ fn gene_table() -> Vec<Gene> {
             after_setup_on: gene.universe_on(),
             stock_on: gene.stock_on(),
             default_on: ledger_default(gene.tag, gene.universe_on()),
+            tracked_wins: civvis::ai::ledger_verdict(gene.tag).and_then(|row| row.win_diff_pp),
+            runner_up: civvis::ai::ledger_verdict(gene.tag).is_some_and(|row| row.family_runner_up),
             flip: if gene.universe_on() {
                 gene.disable
             } else {
@@ -786,6 +796,41 @@ fn present(args: &[String], flag: &str) -> bool {
     args.iter().any(|arg| arg == flag)
 }
 
+/// How many shares of a family's on-probability the best version takes to
+/// every other version's one. Two: the best version plays twice as often as
+/// each challenger, so the batch mostly plays what would ship, and the
+/// head-to-head loses only ~6% of its precision against an equal split at two
+/// versions (error² ∝ 1/p_a + 1/p_b: 4.5/p against 4/p). A challenger is
+/// still priced against off and against the best on every screen it sits in.
+const BEST_VERSION_WEIGHT: f64 = 2.0;
+
+/// ⭐ THE BEST VERSION of a family, among the given drawable members: the
+/// version the ledger ships (on and not a runner-up) if any, else the priced
+/// version with the highest tracked wins (the ledger's pooled on−off win
+/// difference), ties to the higher version; `None` when nothing is priced,
+/// so an unmeasured family shares its probability equally. The same reading
+/// `tools/genes.py::choose_family_heads` takes when it decides what ships:
+/// the best version by tracked wins is what plays, and what plays most.
+fn best_version(genes: &[Gene], candidates: &[usize]) -> Option<usize> {
+    if let Some(&shipping) = candidates
+        .iter()
+        .find(|&&i| genes[i].default_on && !genes[i].runner_up)
+    {
+        return Some(shipping);
+    }
+    candidates
+        .iter()
+        .copied()
+        .filter(|&i| genes[i].tracked_wins.is_some())
+        .max_by(|&a, &b| {
+            genes[a]
+                .tracked_wins
+                .partial_cmp(&genes[b].tracked_wins)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then(a.cmp(&b))
+        })
+}
+
 /// The on-probability of every gene in header order: `p_default_on` for a
 /// screened gene the deployment genome ships on, `p_on` for any other screened
 /// gene, and 0 or 1 for a gene held at its default.
@@ -793,9 +838,12 @@ fn present(args: &[String], flag: &str) -> bool {
 /// A FAMILY is drawn as one level — off, or exactly one of its versions — so
 /// its members' probabilities here are MARGINALS: the family is on with the
 /// probability its deployment state says (`p_default_on` if any version ships
-/// on, else `p_on`), shared equally among the screened versions. A version
-/// held ON at its default forces its siblings off; a version held off simply
-/// takes no share. The draw reads the family back off these marginals.
+/// on, else `p_on`), shared among the screened versions with the BEST version
+/// taking `BEST_VERSION_WEIGHT` shares to every other version's one (operator,
+/// 2026-08-23: *"regularly swap between different versions of the genes,
+/// biasing towards the best versions"* — see `best_version`). A version held
+/// ON at its default forces its siblings off; a version held off simply takes
+/// no share. The draw reads the family back off these marginals.
 fn on_probabilities(
     genes: &[Gene],
     screened: &[bool],
@@ -835,9 +883,17 @@ fn on_probabilities(
             .iter()
             .map(|&i| probabilities[i])
             .fold(0.0, f64::max);
-        let share = family_p / candidates.len() as f64;
+        let best = best_version(genes, &candidates);
+        let weight = |i: usize| {
+            if best == Some(i) {
+                BEST_VERSION_WEIGHT
+            } else {
+                1.0
+            }
+        };
+        let total: f64 = candidates.iter().map(|&i| weight(i)).sum();
         for &i in &candidates {
-            probabilities[i] = share;
+            probabilities[i] = family_p * weight(i) / total;
         }
     }
     probabilities
@@ -851,7 +907,8 @@ fn on_probabilities(
 ///
 /// A family is then drawn as ONE level over its drawable versions: on with
 /// the family's probability (the sum of its members' marginals), and if on,
-/// one version uniformly at random — never two versions on one seat.
+/// one version in proportion to the marginals — the best version's share is
+/// `BEST_VERSION_WEIGHT` times each other's — never two versions on one seat.
 fn draw_genome(
     start_seed: u64,
     game: usize,
@@ -892,8 +949,16 @@ fn draw_genome(
         }
         let family_p: f64 = candidates.iter().map(|&i| probabilities[i]).sum();
         if rng.chance(family_p.min(1.0)) {
-            let pick = (rng.f64() * candidates.len() as f64) as usize;
-            genome[candidates[pick.min(candidates.len() - 1)]] = true;
+            let mut roll = rng.f64() * family_p;
+            let mut pick = candidates[candidates.len() - 1];
+            for &i in &candidates {
+                if roll < probabilities[i] {
+                    pick = i;
+                    break;
+                }
+                roll -= probabilities[i];
+            }
+            genome[pick] = true;
         }
     }
     genome
@@ -2362,7 +2427,9 @@ fn print_families(header: &Header, rows: &[Row]) {
     println!(
         "\nan improvement improves when its \"against the version before it\" contrast is \
          positive on the win axis and it also beats off; the ledger keeps one version of a \
-         family on — the best one — and never two"
+         family on — the best by tracked wins — and never two, and the draw plays that best \
+         version {:.0}× as often as each other version",
+        BEST_VERSION_WEIGHT
     );
 }
 
@@ -3064,6 +3131,35 @@ fn main() {
     }
     let tags: Vec<String> = genes.iter().map(|gene| gene.tag.to_string()).collect();
     let families = families_of(&tags);
+    // ⚠ A version screened without its family measures nothing: a sibling
+    // held ON at its default forces every screened version off (the family
+    // is one level per seat), so the row comes back +0.0 and reads as inert.
+    // Versions are priced in the standard batch beside everything else; a
+    // probe that names one must name them all.
+    for family in &families {
+        let named: Vec<&str> = family
+            .iter()
+            .filter(|&&i| screened[i])
+            .map(|&i| genes[i].tag)
+            .collect();
+        let held_on: Vec<&str> = family
+            .iter()
+            .filter(|&&i| !screened[i] && genes[i].default_on)
+            .map(|&i| genes[i].tag)
+            .collect();
+        if !named.is_empty() && !held_on.is_empty() {
+            let whole: Vec<&str> = family.iter().map(|&i| genes[i].tag).collect();
+            eprintln!(
+                "{} is a version of {}, and {} is held on at its default: a held-on version \
+                 forces its siblings off, so screen the family together — --genes {}",
+                named.join(","),
+                genes[family[0]].tag,
+                held_on.join(","),
+                whole.join(",")
+            );
+            std::process::exit(2);
+        }
+    }
     let probabilities = on_probabilities(&genes, &screened, p_on, p_default_on, &families);
 
     let out_path =
@@ -3852,44 +3948,95 @@ mod tests {
         );
     }
 
+    /// The best version plays most: with marginals 0.25 / 0.5 the family is
+    /// on three quarters of the time and version 2 takes two thirds of that.
+    #[test]
+    fn the_best_version_is_drawn_twice_as_often() {
+        let probabilities = [0.5, 0.25, 0.5];
+        let families = vec![vec![1, 2]];
+        let seats = 6000;
+        let mut on = [0usize; 3];
+        for index in 0..seats {
+            let genome = draw_genome(9, index / 6, 6, index % 6, &probabilities, &families);
+            assert!(!(genome[1] && genome[2]), "seat {index} played two versions");
+            for (i, &bit) in genome.iter().enumerate() {
+                on[i] += usize::from(bit);
+            }
+        }
+        let rate = |count: usize| count as f64 / seats as f64;
+        assert!((rate(on[1]) - 0.25).abs() < 0.03, "version 1 on {}", rate(on[1]));
+        assert!((rate(on[2]) - 0.5).abs() < 0.03, "version 2 on {}", rate(on[2]));
+        assert!((rate(on[1] + on[2]) - 0.75).abs() < 0.03);
+    }
+
     /// The family's marginals: the family probability shared among the
-    /// screened versions; a version held on forces its siblings off.
+    /// screened versions, two shares to the best version; a version held on
+    /// forces its siblings off.
     #[test]
     fn family_marginals_share_the_family_probability() {
-        let genes = gene_table();
-        let mut screened = vec![true; genes.len()];
-        let families = vec![vec![0, 1, 2]];
-        let p = on_probabilities(&genes, &screened, 0.5, 0.75, &families);
-        let family_p = if genes[..3].iter().any(|g| g.default_on) {
-            0.75
-        } else {
-            0.5
+        let synthetic = |tag: &'static str,
+                         default_on: bool,
+                         tracked_wins: Option<f64>,
+                         runner_up: bool| Gene {
+            field: tag,
+            tag,
+            after_setup_on: false,
+            stock_on: false,
+            default_on,
+            tracked_wins,
+            runner_up,
+            flip: |_| {},
         };
-        for i in 0..3 {
+        let close = |p: &[f64], want: &[f64]| {
             assert!(
-                (p[i] - family_p / 3.0).abs() < 1e-12,
-                "{} {}",
-                genes[i].tag,
-                p[i]
+                p.iter().zip(want).all(|(a, b)| (a - b).abs() < 1e-12),
+                "{p:?} != {want:?}"
             );
-        }
-        // Hold gene 1 at its default: on → siblings are forced off; off → the
-        // other two share the family.
-        screened[1] = false;
-        let held = on_probabilities(&genes, &screened, 0.5, 0.75, &families);
-        if genes[1].default_on {
-            assert_eq!(held[1], 1.0);
-            assert_eq!((held[0], held[2]), (0.0, 0.0));
-        } else {
-            assert_eq!(held[1], 0.0);
-            let family_p = if genes[0].default_on || genes[2].default_on {
-                0.75
-            } else {
-                0.5
-            };
-            assert!((held[0] - family_p / 2.0).abs() < 1e-12);
-            assert!((held[2] - family_p / 2.0).abs() < 1e-12);
-        }
+        };
+        // An unmeasured family shares equally.
+        let genes = vec![
+            synthetic("g", false, None, false),
+            synthetic("g-2", false, None, false),
+            synthetic("g-3", false, None, false),
+        ];
+        let families = vec![vec![0, 1, 2]];
+        let p = on_probabilities(&genes, &[true, true, true], 0.5, 0.75, &families);
+        close(&p, &[0.5 / 3.0, 0.5 / 3.0, 0.5 / 3.0]);
+        // The shipping version is the best and takes two shares of three;
+        // the family is on at p_default_on because a version ships.
+        let genes = vec![
+            synthetic("g", true, Some(0.4), false),
+            synthetic("g-2", false, Some(0.9), false),
+        ];
+        let families = vec![vec![0, 1]];
+        let p = on_probabilities(&genes, &[true, true], 0.5, 0.75, &families);
+        close(&p, &[0.5, 0.25]);
+        // With nothing shipping, tracked wins decide, ties to the higher
+        // version.
+        let genes = vec![
+            synthetic("g", false, Some(0.4), false),
+            synthetic("g-2", false, Some(0.9), false),
+            synthetic("g-3", false, Some(0.9), false),
+        ];
+        let p = on_probabilities(&genes, &[true, true, true], 0.5, 0.75, &[vec![0, 1, 2]]);
+        close(&p, &[0.125, 0.125, 0.25]);
+        // A runner-up the rule passes is not the best; the head is.
+        let genes = vec![
+            synthetic("g", false, Some(0.9), true),
+            synthetic("g-2", true, Some(0.6), false),
+        ];
+        let p = on_probabilities(&genes, &[true, true], 0.5, 0.75, &[vec![0, 1]]);
+        close(&p, &[0.25, 0.5]);
+        // Hold a version at its default: on → its siblings are forced off;
+        // off → it takes no share and the rest of the family carries on.
+        let genes = vec![
+            synthetic("g", true, Some(0.4), false),
+            synthetic("g-2", false, Some(0.9), false),
+        ];
+        let held = on_probabilities(&genes, &[false, true], 0.5, 0.75, &[vec![0, 1]]);
+        assert_eq!(held, vec![1.0, 0.0]);
+        let held = on_probabilities(&genes, &[true, false], 0.5, 0.75, &[vec![0, 1]]);
+        assert_eq!(held, vec![0.75, 0.0]);
     }
 
     /// A planted improvement reads as one: version 2 beats off and beats
@@ -4107,6 +4254,8 @@ mod tests {
                 after_setup_on: false,
                 stock_on: false,
                 default_on: false,
+                tracked_wins: None,
+                runner_up: false,
                 flip: |_| {},
             },
             Gene {
@@ -4115,6 +4264,8 @@ mod tests {
                 after_setup_on: false,
                 stock_on: false,
                 default_on: false,
+                tracked_wins: None,
+                runner_up: false,
                 flip: |_| {},
             },
         ];

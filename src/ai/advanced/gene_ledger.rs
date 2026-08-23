@@ -150,8 +150,9 @@ pub struct GeneVerdict {
     pub family_wise: bool,
     /// ⭐ A VERSIONED GENE'S RUNNER-UP. `war-economy-2` is screened beside
     /// `war-economy` as a gene of its own; the deployment genome carries at
-    /// most one version of a family, the best of those the rule would turn
-    /// on (`tools/genes.py::choose_family_heads`). A version the rule
+    /// most one version of a family — the best by tracked wins (the pooled
+    /// on−off win difference) of those the rule would turn on, whatever it
+    /// is (`tools/genes.py::choose_family_heads`). A version the rule
     /// passes that is not its family's head is recorded here and ships off,
     /// which is the one case `default_on` is not the rule's own answer.
     pub family_runner_up: bool,

@@ -1282,17 +1282,37 @@ def families_of(tags: list[str]) -> list[list[str]]:
             for base, versions in sorted(found.items())]
 
 
+def tracked_wins(gene: dict) -> float:
+    """A version's tracked wins: the ledger's pooled on−off win difference over
+    every screen that priced it (`win_diff_pp`, the ranking's *Diff*) — the
+    whole record, not the newest reading, because versions keep being priced
+    screen after screen and "independently track wins" means across all of
+    them. A row with no pooled figure (synthetic) falls back to its newest
+    column, scaled to points."""
+    diff = gene.get("win_diff_pp")
+    if diff is None:
+        return float(gene.get("wins_last_10k") or 0) / 100.0
+    return float(diff)
+
+
 def choose_family_heads(genes: list[dict]) -> None:
-    """⭐ ONE VERSION OF A FAMILY PLAYS. Every version is priced on its own row
-    under the same rule, but the deployment genome carries at most one of
-    them: among the versions the rule would turn on, the one with the best
-    newest win column (ties to the higher version — the improvement that
-    matched the original is the one to keep iterating on). The others are
-    recorded as `family_runner_up`, off in deployment, with the rule's own
-    verdict still on their row so the ranking shows what they measured.
+    """⭐ ONE VERSION OF A FAMILY PLAYS — THE BEST, WHATEVER IT IS. Every
+    version is priced on its own row under the same rule, but the deployment
+    genome carries at most one of them: among the versions the rule would
+    turn on, the one with the highest tracked wins (`tracked_wins`, ties to
+    the higher version — the improvement that matched the original is the
+    one to keep iterating on). Operator, 2026-08-23: *"use the best version
+    for our default, if the gene is to default on … continue testing the
+    different versions over time (and independently track wins) but always
+    use the best version for our real games, whatever the best version is."*
+    The others are recorded as `family_runner_up`, off in deployment, with
+    the rule's own verdict still on their row so the ranking shows what they
+    measured; the head changes hands as the record grows.
 
     The screen's family table (`gene_screen --analyze`) is where "did the
-    improvement improve" is read head to head; this is only what ships."""
+    improvement improve" is read head to head; this is only what ships. The
+    screen's own draw reads the same choice back (`best_version` in
+    `src/bin/gene_screen.rs`) to play the best version most often."""
     by_tag = {gene["tag"]: gene for gene in genes}
     for family in families_of([gene["tag"] for gene in genes]):
         for rank, tag in enumerate(family, start=1):
@@ -1302,7 +1322,7 @@ def choose_family_heads(genes: list[dict]) -> None:
         passing = [by_tag[tag] for tag in family if by_tag[tag]["default_on"]]
         if len(passing) <= 1:
             continue
-        head = max(passing, key=lambda g: (g["wins_last_10k"] or 0, g["version"]))
+        head = max(passing, key=lambda g: (tracked_wins(g), g["version"]))
         for gene in passing:
             if gene is not head:
                 gene["default_on"] = False

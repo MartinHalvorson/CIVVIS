@@ -1195,10 +1195,10 @@ class VersionedGenes(unittest.TestCase):
 
     def test_one_version_of_a_family_plays(self):
         genes = [
-            {"tag": "war-economy", "default_on": True, "wins_last_10k": 40},
-            {"tag": "war-economy-2", "default_on": True, "wins_last_10k": 70},
-            {"tag": "war-economy-3", "default_on": False, "wins_last_10k": -5},
-            {"tag": "other", "default_on": True, "wins_last_10k": 10},
+            {"tag": "war-economy", "default_on": True, "wins_last_10k": 40, "win_diff_pp": 0.4},
+            {"tag": "war-economy-2", "default_on": True, "wins_last_10k": 70, "win_diff_pp": 0.7},
+            {"tag": "war-economy-3", "default_on": False, "wins_last_10k": -5, "win_diff_pp": -0.05},
+            {"tag": "other", "default_on": True, "wins_last_10k": 10, "win_diff_pp": 0.1},
         ]
         gene_ledger.choose_family_heads(genes)
         by = {g["tag"]: g for g in genes}
@@ -1213,17 +1213,30 @@ class VersionedGenes(unittest.TestCase):
         self.assertNotIn("family", by["other"], "a gene with no versions is not a family")
         self.assertTrue(by["other"]["default_on"])
 
+    def test_the_head_is_the_best_by_tracked_wins_not_the_newest_column(self):
+        """Operator, 2026-08-23: always use the best version, whatever it is —
+        best over the whole record (`win_diff_pp`), not the last screen."""
+        genes = [
+            {"tag": "g", "default_on": True, "wins_last_10k": 70, "win_diff_pp": 0.3},
+            {"tag": "g-2", "default_on": True, "wins_last_10k": 40, "win_diff_pp": 0.6},
+        ]
+        gene_ledger.choose_family_heads(genes)
+        self.assertTrue(genes[1]["default_on"], "the higher pooled record ships")
+        self.assertTrue(genes[0]["family_runner_up"])
+        self.assertEqual(gene_ledger.tracked_wins({"wins_last_10k": 25}), 0.25,
+                         "a row without a pooled figure falls back to its newest column")
+
     def test_a_tie_goes_to_the_higher_version_and_a_lone_pass_needs_no_choice(self):
         genes = [
-            {"tag": "g", "default_on": True, "wins_last_10k": 30},
-            {"tag": "g-2", "default_on": True, "wins_last_10k": 30},
+            {"tag": "g", "default_on": True, "wins_last_10k": 30, "win_diff_pp": 0.3},
+            {"tag": "g-2", "default_on": True, "wins_last_10k": 30, "win_diff_pp": 0.3},
         ]
         gene_ledger.choose_family_heads(genes)
         self.assertFalse(genes[0]["default_on"])
         self.assertTrue(genes[1]["default_on"])
         alone = [
-            {"tag": "g", "default_on": False, "wins_last_10k": -3},
-            {"tag": "g-2", "default_on": True, "wins_last_10k": 25},
+            {"tag": "g", "default_on": False, "wins_last_10k": -3, "win_diff_pp": -0.03},
+            {"tag": "g-2", "default_on": True, "wins_last_10k": 25, "win_diff_pp": 0.25},
         ]
         gene_ledger.choose_family_heads(alone)
         self.assertTrue(alone[1]["default_on"])
