@@ -1274,6 +1274,39 @@ const SETTLE_SOONER_TURN_PRICE: f64 = 2.0;
 /// `SETTLER_THREAT_DETOUR_TURNS` both set the same clock.
 const SETTLE_SOONER_PATIENCE: u32 = 6;
 
+/// `settle_plan_ahead`: how many of the best-ranked sites are re-ranked by
+/// the cities they leave room for. The site value is the expensive half of a
+/// ranking scan (a growth forecast per site), and the re-rank spends none of
+/// it: the future sites are read from the same scan, so the lookahead is a
+/// distance test per pair. Twelve keeps that trivially cheap while covering
+/// every site a Settler could realistically be sent to.
+const SETTLE_PLAN_AHEAD_CANDIDATES: usize = 12;
+/// `settle_plan_ahead`: what the best and the second-best site the candidate
+/// leaves room for are worth, as a share of their own site value. Against
+/// per-tile walk discounts of 1.25–2 points and sites worth ~40–120, a quarter
+/// of the next site is about eight tiles of walk — enough to move a Settler
+/// one or two tiles off the cramped pick, never enough to send it across the
+/// map for room it will not use for twenty turns.
+const SETTLE_PLAN_AHEAD_FUTURE_SHARE: [f64; 2] = [0.25, 0.10];
+/// `settle_plan_ahead`: the farthest a future site may stand from the
+/// candidate and still count as the next city of its cluster. Seven is the
+/// local scan's own radius, less one: the ground the next Settler will be
+/// offered from the city founded here.
+const SETTLE_PLAN_AHEAD_REACH: i32 = 7;
+/// `settle_plan_ahead`: the closest two cities may stand. The founding rule
+/// excludes every plot within `wdisk(city, 3)`, so four is the first legal
+/// distance, and two future sites must keep it from each other too.
+const SETTLE_PLAN_AHEAD_SPACING: i32 = 4;
+/// `settle_plan_ahead`: how much of a future site's value each tile beyond
+/// the minimum spacing costs. A tight cluster is worth more than a loose one
+/// of the same ground: shorter walks for the next Settler, loyalty pressure
+/// shared, fewer plots left in nobody's ring.
+const SETTLE_PLAN_AHEAD_STRETCH_DISCOUNT: f64 = 0.05;
+/// `settle_plan_ahead`: the site value below which a plot is not a future
+/// city — the same bar `settle_sites_scanning` sets for a site worth
+/// walking to at all.
+const SETTLE_PLAN_AHEAD_FUTURE_MIN: f64 = 12.0;
+
 /// Route-scoring is exact for the valuable prefix, then falls back to the
 /// existing reachability scan if that prefix is disconnected. This bounds the
 /// cost of asking the pathfinder about every site on a large map while keeping
@@ -3218,6 +3251,26 @@ pub struct AdvancedAi {
     /// a long walk: the price is linear in turns, never a cap. Native,
     /// off-by-default gene priced through `PRODUCTION_OPT_INS`.
     pub settle_sooner: bool,
+    /// A Settler ranks a site by the cities it leaves room for, not only by
+    /// its own ground.
+    ///
+    /// The ranking scores every candidate on its own radius-two disk and the
+    /// walk to it, so between two sites of equal ground it is indifferent to
+    /// what each one does to the land around it — and the founding rule then
+    /// takes every plot within three of the new city out of the next
+    /// Settler's reach. A site one tile into a pocket that would have held
+    /// two cities leaves room for none; a site on the pocket's edge keeps the
+    /// second. Under this gene the best twelve candidates each add a share of
+    /// the best two sites that stay settleable once they are founded
+    /// (`SETTLE_PLAN_AHEAD_FUTURE_SHARE`, sites at least
+    /// `SETTLE_PLAN_AHEAD_SPACING` apart and within
+    /// `SETTLE_PLAN_AHEAD_REACH`, each discounted per tile of stretch), read
+    /// from the same scan's values so the lookahead costs no site valuation.
+    /// A cramped pick loses that share; a pick that anchors a cluster keeps
+    /// it. The operator's ask (2026-08-23): *"be mindful of our likely future
+    /// settling spots when settling cities."* Native, off-by-default gene
+    /// screened as an opt-in.
+    pub settle_plan_ahead: bool,
     /// On the tally seat, banked Faith (or gold) patronizes any Great Person
     /// it can pay for, not only one the empire is already close to earning.
     ///
@@ -5469,6 +5522,7 @@ impl AdvancedAi {
             settler_target_hysteresis: false,
             settler_threat_detour: false,
             settle_sooner: false,
+            settle_plan_ahead: false,
             tally_great_people: false,
             buildings_before_projects: false,
             barbarian_scouts_are_scouts: false,
@@ -23090,6 +23144,10 @@ impl AdvancedAi {
             let atlas_positions = candidates.iter().map(|(pos, _)| *pos).collect::<Vec<_>>();
             self.settlement_atlas_values(g, pid, &atlas_positions);
         }
+        // `settle_plan_ahead` reads every scored site's own value — before
+        // the walk discount, which is the settler's and not the site's — as
+        // the pool of cities a candidate could leave room for.
+        let mut raw_values: BTreeMap<Pos, f64> = BTreeMap::new();
         let mut score_site = |pos| {
             // The local and global radius passes in `best_settler_target` can
             // contain the same plot. Their distance penalties differ, but
@@ -23112,6 +23170,9 @@ impl AdvancedAi {
                 }
                 value
             };
+            if self.settle_plan_ahead && site_value >= SETTLE_PLAN_AHEAD_FUTURE_MIN {
+                raw_values.insert(pos, site_value);
+            }
             let distance = g.wdist(from, pos);
             let overreach = if self.settlement_safety {
                 distance.saturating_sub(8) as f64 * SETTLE_DISTANCE_PENALTY
@@ -23165,8 +23226,73 @@ impl AdvancedAi {
         if sites.is_empty() {
             sites = emergency_sites;
         }
+        if self.settle_plan_ahead && !stop_at_first && sites.len() > 1 {
+            Self::settle_plan_ahead_rerank(g, &mut sites, &raw_values);
+        }
         sites.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap().then(a.0.cmp(&b.0)));
         sites
+    }
+
+    /// `settle_plan_ahead`: add to each of the best
+    /// `SETTLE_PLAN_AHEAD_CANDIDATES` sites what the cities it leaves room
+    /// for are worth. `raw` is every site the scan valued, at its own value;
+    /// the walk discount already in `sites` is left alone, so a candidate's
+    /// order among its peers moves only by what founding it would do to the
+    /// ground around it.
+    fn settle_plan_ahead_rerank(g: &Game, sites: &mut [(Pos, f64)], raw: &BTreeMap<Pos, f64>) {
+        sites.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap().then(a.0.cmp(&b.0)));
+        let pool: Vec<(Pos, f64)> = raw.iter().map(|(pos, value)| (*pos, *value)).collect();
+        let top = sites.len().min(SETTLE_PLAN_AHEAD_CANDIDATES);
+        for site in sites.iter_mut().take(top) {
+            site.1 += Self::settle_plan_ahead_bonus(site.0, &pool, |a, b| g.wdist(a, b));
+        }
+    }
+
+    /// `settle_plan_ahead`: what the best two sites that stay settleable once
+    /// `candidate` is founded are worth. Greedy in value: the best site at
+    /// least `SETTLE_PLAN_AHEAD_SPACING` and at most `SETTLE_PLAN_AHEAD_REACH`
+    /// from the candidate, then the best that also keeps the spacing from
+    /// the first; each discounted `SETTLE_PLAN_AHEAD_STRETCH_DISCOUNT` per
+    /// tile beyond the spacing and weighted by
+    /// `SETTLE_PLAN_AHEAD_FUTURE_SHARE`. Zero when nothing fits — the pocket
+    /// holds this one city and no more.
+    fn settle_plan_ahead_bonus(
+        candidate: Pos,
+        pool: &[(Pos, f64)],
+        wdist: impl Fn(Pos, Pos) -> i32,
+    ) -> f64 {
+        let mut future: Vec<(Pos, f64)> = pool
+            .iter()
+            .filter_map(|(pos, value)| {
+                let distance = wdist(candidate, *pos);
+                (SETTLE_PLAN_AHEAD_SPACING..=SETTLE_PLAN_AHEAD_REACH)
+                    .contains(&distance)
+                    .then(|| {
+                        let stretch = (distance - SETTLE_PLAN_AHEAD_SPACING) as f64;
+                        (
+                            *pos,
+                            value * (1.0 - SETTLE_PLAN_AHEAD_STRETCH_DISCOUNT * stretch),
+                        )
+                    })
+            })
+            .collect();
+        future.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap().then(a.0.cmp(&b.0)));
+        let mut chosen: Vec<Pos> = Vec::new();
+        let mut bonus = 0.0;
+        for (pos, value) in future {
+            if chosen.len() == SETTLE_PLAN_AHEAD_FUTURE_SHARE.len() {
+                break;
+            }
+            if chosen
+                .iter()
+                .any(|earlier| wdist(*earlier, pos) < SETTLE_PLAN_AHEAD_SPACING)
+            {
+                continue;
+            }
+            bonus += SETTLE_PLAN_AHEAD_FUTURE_SHARE[chosen.len()] * value;
+            chosen.push(pos);
+        }
+        bonus
     }
 
     fn best_settle_site(&self, g: &Game, pid: usize, from: Pos, radius: i32) -> Option<(Pos, f64)> {

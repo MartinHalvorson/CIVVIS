@@ -20182,6 +20182,124 @@ fn settle_sooner_is_a_native_opt_in_deployed_by_the_ledger() {
     assert!(!ai.settle_sooner);
 }
 
+/// `settle_plan_ahead` is a native opt-in: off in both bare controllers,
+/// left to the ledger, and flippable by name through the registry row.
+#[test]
+fn settle_plan_ahead_is_a_native_opt_in_off_in_both_controllers() {
+    assert!(!AdvancedAi::new().settle_plan_ahead);
+    assert!(!AdvancedAi::legacy().settle_plan_ahead);
+    let gene = GENES
+        .iter()
+        .find(|gene| gene.tag == "settle-plan-ahead")
+        .expect("the gene is published for gene_screen");
+    assert!(gene.opt_in() && gene.screenable() && !gene.live());
+    let mut ai = AdvancedAi::new();
+    (gene.enable)(&mut ai);
+    assert!(ai.settle_plan_ahead);
+    (gene.disable)(&mut ai);
+    assert!(!ai.settle_plan_ahead);
+}
+
+/// The lookahead itself, on a real hex metric: a candidate adds a quarter of
+/// the best site that stays settleable once it is founded and a tenth of the
+/// next, each discounted per tile of stretch beyond the founding spacing;
+/// sites inside the spacing are the ground the candidate itself takes, sites
+/// past the reach belong to another cluster, and two future sites must keep
+/// the spacing from each other. A pocket that holds one city adds nothing.
+#[test]
+fn settle_plan_ahead_credits_the_best_two_sites_a_candidate_leaves_room_for() {
+    let (game, home) = camp_bounty_board(93_501);
+    let wdist = |a: Pos, b: Pos| game.wdist(a, b);
+    let at = |distance: i32| open_ground_at(&game, home, distance);
+    let near = at(SETTLE_PLAN_AHEAD_SPACING);
+    let stretched = at(SETTLE_PLAN_AHEAD_SPACING + 2);
+    let too_close = at(SETTLE_PLAN_AHEAD_SPACING - 1);
+    let too_far = at(SETTLE_PLAN_AHEAD_REACH + 1);
+    assert_eq!(wdist(home, near), SETTLE_PLAN_AHEAD_SPACING);
+    assert_eq!(wdist(home, stretched), SETTLE_PLAN_AHEAD_SPACING + 2);
+
+    // One site in reach: a quarter of it, undiscounted at the spacing.
+    let pool = vec![(near, 60.0)];
+    let bonus = AdvancedAi::settle_plan_ahead_bonus(home, &pool, wdist);
+    assert!((bonus - 0.25 * 60.0).abs() < 1e-9, "{bonus}");
+
+    // Two sites in reach that keep the spacing from each other: the better
+    // one takes the larger share, the stretched one is discounted per tile.
+    if wdist(near, stretched) >= SETTLE_PLAN_AHEAD_SPACING {
+        let pool = vec![(near, 60.0), (stretched, 80.0)];
+        let stretched_value = 80.0 * (1.0 - 2.0 * SETTLE_PLAN_AHEAD_STRETCH_DISCOUNT);
+        let expected = 0.25 * stretched_value + 0.10 * 60.0;
+        let bonus = AdvancedAi::settle_plan_ahead_bonus(home, &pool, wdist);
+        assert!((bonus - expected).abs() < 1e-9, "{bonus} vs {expected}");
+    }
+
+    // Ground the candidate takes itself, and ground past the reach, is not
+    // a future city of this cluster.
+    let pool = vec![(too_close, 90.0), (too_far, 90.0)];
+    assert_eq!(AdvancedAi::settle_plan_ahead_bonus(home, &pool, wdist), 0.0);
+
+    // Two future sites inside each other's spacing are one city, not two.
+    let crowded: Vec<Pos> = game
+        .wdisk(near, 1)
+        .into_iter()
+        .filter(|pos| *pos != near && wdist(home, *pos) == SETTLE_PLAN_AHEAD_SPACING)
+        .collect();
+    if let Some(neighbour) = crowded.first() {
+        let pool = vec![(near, 60.0), (*neighbour, 50.0)];
+        let bonus = AdvancedAi::settle_plan_ahead_bonus(home, &pool, wdist);
+        assert!((bonus - 0.25 * 60.0).abs() < 1e-9, "{bonus}");
+    }
+}
+
+/// The re-rank moves a pick: of two candidates worth the same on their own
+/// ground, the one that leaves room for another city ranks first, and the
+/// order among the rest is untouched. On a real board the gene changes the
+/// ranking a Settler is handed — it fires — and never lowers a site.
+#[test]
+fn settle_plan_ahead_prefers_the_site_that_leaves_room_for_the_next_city() {
+    let (game, home) = camp_bounty_board(93_601);
+    let cramped = open_ground_at(&game, home, 5);
+    let roomy = open_ground_at(&game, home, 9);
+    let future = open_ground_at(&game, roomy, SETTLE_PLAN_AHEAD_SPACING);
+    assert!(
+        game.wdist(cramped, future) > SETTLE_PLAN_AHEAD_REACH
+            || game.wdist(cramped, future) < SETTLE_PLAN_AHEAD_SPACING
+            || game.wdist(roomy, future) <= game.wdist(cramped, future)
+    );
+    let mut sites = vec![(cramped, 40.0), (roomy, 40.0)];
+    let raw: BTreeMap<Pos, f64> = [(cramped, 40.0), (roomy, 40.0), (future, 50.0)]
+        .into_iter()
+        .collect();
+    AdvancedAi::settle_plan_ahead_rerank(&game, &mut sites, &raw);
+    let roomy_value = sites.iter().find(|(pos, _)| *pos == roomy).unwrap().1;
+    let cramped_value = sites.iter().find(|(pos, _)| *pos == cramped).unwrap().1;
+    assert!(
+        roomy_value > cramped_value,
+        "{roomy_value} vs {cramped_value}"
+    );
+
+    let off = AdvancedAi::new();
+    let mut on = AdvancedAi::new();
+    on.enable_settle_plan_ahead();
+    let before = off.settle_ranking(&game, 0, home, 8);
+    let after = on.settle_ranking(&game, 0, home, 8);
+    assert!(!before.is_empty(), "the board has sites to rank");
+    let before_values: BTreeMap<Pos, f64> = before.iter().copied().collect();
+    let mut raised = 0;
+    for (pos, value) in &after {
+        let was = before_values[pos];
+        assert!(*value >= was - 1e-9, "{pos:?} fell from {was} to {value}");
+        if *value > was + 1e-9 {
+            raised += 1;
+        }
+    }
+    assert!(raised > 0, "the gene changed nothing on this board");
+    assert!(
+        after.windows(2).all(|pair| pair[0].1 >= pair[1].1),
+        "the ranking stays sorted"
+    );
+}
+
 /// The walk price: nothing when the gene is off; `SETTLE_SOONER_TURN_PRICE`
 /// a turn for a Settler that has just started; doubled once it has been
 /// walking `SETTLE_SOONER_PATIENCE` standard turns; and a route is charged
