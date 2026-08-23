@@ -2517,6 +2517,46 @@ impl AdvancedAi {
     pub fn disable_air_surge(&mut self) {
         self.air_surge = false;
     }
+
+    /// Admit the friendly-volley extension without the rest of the closed
+    /// war-half bundle. See [`AdvancedAi::coordinated_finish`].
+    ///
+    /// ⭐ THIS PAIR EXISTS SO THE FLAG IS COUNTED AT ALL. `docs/EVAL_STATUS.md`
+    /// counts a capability toggle by its `enable_*`/`disable_*` pair here, so a
+    /// field only ever set directly — `ai.coordinated_finish = true` in
+    /// `src/elo.rs`'s `advanced_coordinated_finish` arm — is not merely
+    /// unreachable by a screen, it is invisible to the count that measures the
+    /// debt. `docs/VICTORY_GENES.md` §9 names it first among the fields in
+    /// that position. Off everywhere by default; opt-in gene
+    /// `coordinated-finish`.
+    pub fn enable_coordinated_finish(&mut self) {
+        self.coordinated_finish = true;
+    }
+
+    /// The twin of `enable_coordinated_finish`.
+    pub fn disable_coordinated_finish(&mut self) {
+        self.coordinated_finish = false;
+    }
+    // Append points, one per name range: a new treatment goes under the range
+    // its own name falls in, so that two of them do not append to one line.
+    // The rule, the measurement behind it and the check that enforces it are
+    // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
+
+    // ---- append: a-b ------------------------------------------------
+
+    // ---- append: c-d ------------------------------------------------
+
+    // ---- append: e-f ------------------------------------------------
+
+    // ---- append: g-k ------------------------------------------------
+
+    // ---- append: l-o ------------------------------------------------
+
+    // ---- append: p-r ------------------------------------------------
+
+    // ---- append: s-s ------------------------------------------------
+
+    // ---- append: t-z ------------------------------------------------
 }
 
 #[cfg(test)]

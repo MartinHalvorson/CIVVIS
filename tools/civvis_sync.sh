@@ -266,7 +266,12 @@ for home in /Users/martin/civvis-*.sh; do
     say "UNTRACKED SCRIPT: $home has no tools/ops/$name -- it exists only on this disk"
     problems=$((problems+1))
   elif ! cmp -s "$home" "$tracked"; then
-    say "SCRIPT DRIFT: $home differs from tools/ops/$name -- launchd runs the home copy"
+    # ⚠ NOT "launchd runs the home copy", which this line used to say and which
+    # is true of exactly one script: `civvis-sync.sh`, skipped above. Every
+    # other home copy runs because something NAMES it -- `civvis-keeper.sh`
+    # called three of them as `$HOME/...` until 2026-08-23. Say the thing a
+    # reader can act on instead: find the caller, or make the copies match.
+    say "SCRIPT DRIFT: $home differs from tools/ops/$name -- whatever names the home path runs this copy, not the tracked one"
     problems=$((problems+1))
   fi
 done

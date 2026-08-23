@@ -1,0 +1,225 @@
+{
+  "_doc": [
+    "Why each toggle in `docs/EVAL_STATUS.md`'s `Unreachable by any screen` list is",
+    "not a gene. One line each, so the residual count is examined work rather than",
+    "an unexamined ceiling. `tools/test_genome_reach_debt.py` requires this file to",
+    "cover exactly that computed list: a toggle that becomes reachable must LOSE its",
+    "entry here, and a new unreachable toggle must gain one. Neither side can rot.",
+    "",
+    "Groups: `bundle` turns other genes on; `host-only` cannot fire on a native",
+    "board; `live-bridge-row` could fire but a gene row would withhold it from the",
+    "live bridge; `production-on` ships on and a gene row would switch it off;",
+    "`configured-on` ships on from the wrong constructor for the table's own test;",
+    "`infrastructure` has no decision content; `already-on` would screen inert;"
+  ],
+  "toggles": {
+    "adjacent_camp_clear": {
+      "group": "already-on",
+      "reason": "On by default in `BasicAi::new`, so an `enable_*` opt-in row would be on in BOTH arms of every pair and screen as exactly inert — the zero-width failure this repository's fires gate exists to catch. Withholding it is the `legacy()` anchor's route, not an opt-in row."
+    },
+    "amenity_districts": {
+      "group": "production-on",
+      "reason": "Production ships it ON, so its door is `PRODUCTION_TREATMENTS` — and that row is not neutral: `apply_gene_ledger` disables every production treatment whose `ledger_default_on` is `Some(false)`, which is exactly what a screenable tag with no ledger row is. The row would switch a shipped behaviour off at deployment. What it does: the baseline governor may build the district that repairs an Amenity deficit."
+    },
+    "bank_envoys": {
+      "group": "live-bridge-row",
+      "reason": "Screenable would mean WITHHELD. It has a `LIVE_TREATMENTS` row, so a `PRODUCTION_OPT_INS` row flips `ledger_default_on` from `None` to `Some(false)` and `apply_gene_ledger` would then take it out of the live bridge. That is a deployment change wearing an instrument's clothes. The move it wants is the door `culture-coverage` went through: out of `FIRAXIS_ONLY_TREATMENTS` and into an `ENGINE_REPAIR_*` half, taken deliberately with the bridge change owned and priced. What it does: the baseline envoy pass must not overwrite a deliberate bank. Its host-only classification is an argument about which rivals the weights were bred against, not a claim the code cannot fire natively."
+    },
+    "battlefront_observation": {
+      "group": "configured-on",
+      "reason": "On in `AdvancedAi::configured` but NOT in `promoted_policy_envoy`, so `production_bundle_rows_are_real` rejects a `PRODUCTION_TREATMENTS` row for it as written. Moving the assignment is a controller change owned by whoever owns the behaviour, and it carries the same deployment hazard as the group above. What it does: plan campaigns and battlefronts from player-visible observations only."
+    },
+    "camp_bounty": {
+      "group": "does-not-fire",
+      "reason": "A GENE ROW WAS WRITTEN FOR IT IN #2330 AND THE FIRES GATE REFUSED IT. Clearing a camp is a peacetime errand worth sending for, not only something a unit does when a camp is already in its way. A single-gene probe over 12 map pairs (72 matched seat comparisons, 24 games) left both arms byte-identical: win Δ, score-share Δ and both standard errors all exactly zero, which is the never-fired signature, not a null. The row was removed rather than shipped to consume a genome bit and return a zero-width interval. Evidence: `docs/gene_screens/fires/camp-bounty.json`. To wire it, make the behaviour reachable on the screen's board first, then re-probe."
+    },
+    "counter_in_lane": {
+      "group": "live-bridge-row",
+      "reason": "Screenable would mean WITHHELD. It has a `LIVE_TREATMENTS` row, so a `PRODUCTION_OPT_INS` row flips `ledger_default_on` from `None` to `Some(false)` and `apply_gene_ledger` would then take it out of the live bridge. That is a deployment change wearing an instrument's clothes. The move it wants is the door `culture-coverage` went through: out of `FIRAXIS_ONLY_TREATMENTS` and into an `ENGINE_REPAIR_*` half, taken deliberately with the bridge change owned and priced. What it does: answer a Science or score leader by racing rather than declaring. Its host-only classification is an argument about which rivals the weights were bred against, not a claim the code cannot fire natively."
+    },
+    "deny_while_targeted": {
+      "group": "host-only",
+      "reason": "Host-only, and the reason is already recorded beside its tag in `FIRAXIS_ONLY_TREATMENTS`. Overrides an assigned `victory_target` gate, and every seat the native screen plays is adaptive, so there is no assigned lane to override and the flag cannot fire."
+    },
+    "engine_repairs": {
+      "group": "bundle",
+      "reason": "Bundle, not a behaviour: it turns a named group of other genes on. `gene_screen` already builds its treated seat from `enable_engine_repairs_universe`, so a row here would vary every gene inside it at once and file the sum under one tag. Here: the deployment bundle: the universe plus `apply_gene_ledger`."
+    },
+    "engine_repairs_economy": {
+      "group": "bundle",
+      "reason": "Bundle, not a behaviour: it turns a named group of other genes on. `gene_screen` already builds its treated seat from `enable_engine_repairs_universe`, so a row here would vary every gene inside it at once and file the sum under one tag. Here: twenty-one economy repairs, each already its own gene."
+    },
+    "engine_repairs_universe": {
+      "group": "bundle",
+      "reason": "Bundle, not a behaviour: it turns a named group of other genes on. `gene_screen` already builds its treated seat from `enable_engine_repairs_universe`, so a row here would vary every gene inside it at once and file the sum under one tag. Here: the two native halves and nothing else."
+    },
+    "engine_repairs_war": {
+      "group": "bundle",
+      "reason": "Bundle, not a behaviour: it turns a named group of other genes on. `gene_screen` already builds its treated seat from `enable_engine_repairs_universe`, so a row here would vary every gene inside it at once and file the sum under one tag. Here: twenty-eight war repairs, each already its own gene."
+    },
+    "envelope_cache_across_own_moves": {
+      "group": "infrastructure",
+      "reason": "Cache lifetime, not a decision rule: it keeps the hostile-envelope table across this seat's own unit moves. It has a correctness edge (an own unit's zone of control ends an enemy's move) so it is screenable in principle, but what a row would price is a performance trade, and `tools/speed_ab.py` is the gate that exists for those."
+    },
+    "era_paced_expansion": {
+      "group": "live-bridge-row",
+      "reason": "Screenable would mean WITHHELD. It has a `LIVE_TREATMENTS` row, so a `PRODUCTION_OPT_INS` row flips `ledger_default_on` from `None` to `Some(false)` and `apply_gene_ledger` would then take it out of the live bridge. That is a deployment change wearing an instrument's clothes. The move it wants is the door `culture-coverage` went through: out of `FIRAXIS_ONLY_TREATMENTS` and into an `ENGINE_REPAIR_*` half, taken deliberately with the bridge change owned and priced. What it does: raise the city target one rung per era instead of per ninety standard turns. Its host-only classification is an argument about which rivals the weights were bred against, not a claim the code cannot fire natively."
+    },
+    "expansion_before_prophet": {
+      "group": "live-bridge-row",
+      "reason": "Screenable would mean WITHHELD. It has a `LIVE_TREATMENTS` row, so a `PRODUCTION_OPT_INS` row flips `ledger_default_on` from `None` to `Some(false)` and `apply_gene_ledger` would then take it out of the live bridge. That is a deployment change wearing an instrument's clothes. The move it wants is the door `culture-coverage` went through: out of `FIRAXIS_ONLY_TREATMENTS` and into an `ENGINE_REPAIR_*` half, taken deliberately with the bridge change owned and priced. What it does: the third city comes before the Holy Site. Its host-only classification is an argument about which rivals the weights were bred against, not a claim the code cannot fire natively."
+    },
+    "expansion_hall": {
+      "group": "live-bridge-row",
+      "reason": "Screenable would mean WITHHELD. It has a `LIVE_TREATMENTS` row, so a `PRODUCTION_OPT_INS` row flips `ledger_default_on` from `None` to `Some(false)` and `apply_gene_ledger` would then take it out of the live bridge. That is a deployment change wearing an instrument's clothes. The move it wants is the door `culture-coverage` went through: out of `FIRAXIS_ONLY_TREATMENTS` and into an `ENGINE_REPAIR_*` half, taken deliberately with the bridge change owned and priced. What it does: price the Ancestral Hall for the land grab. Its host-only classification is an argument about which rivals the weights were bred against, not a claim the code cannot fire natively."
+    },
+    "expansion_pantheon": {
+      "group": "live-bridge-row",
+      "reason": "Screenable would mean WITHHELD. It has a `LIVE_TREATMENTS` row, so a `PRODUCTION_OPT_INS` row flips `ledger_default_on` from `None` to `Some(false)` and `apply_gene_ledger` would then take it out of the live bridge. That is a deployment change wearing an instrument's clothes. The move it wants is the door `culture-coverage` went through: out of `FIRAXIS_ONLY_TREATMENTS` and into an `ENGINE_REPAIR_*` half, taken deliberately with the bridge change owned and priced. What it does: take the city-founding pantheon and keep the Faith card that buys it. Its host-only classification is an argument about which rivals the weights were bred against, not a claim the code cannot fire natively."
+    },
+    "explore_commit": {
+      "group": "production-on",
+      "reason": "Production ships it ON, so its door is `PRODUCTION_TREATMENTS` — and that row is not neutral: `apply_gene_ledger` disables every production treatment whose `ledger_default_on` is `Some(false)`, which is exactly what a screenable tag with no ledger row is. The row would switch a shipped behaviour off at deployment. What it does: committed exploration goals; `FIRAXIS_ONLY_TREATMENTS`' own reason for it is that production already carries it."
+    },
+    "explore_dead_targets": {
+      "group": "host-only",
+      "reason": "Host-only, and the reason is already recorded beside its tag in `FIRAXIS_ONLY_TREATMENTS`. Reacts to a host accepting a move order that never moves the unit."
+    },
+    "fog_honest": {
+      "group": "infrastructure",
+      "reason": "A controller-wide mode and itself an aggregate: it also sets `battlefront_observation`, `belief_pressure`, `blind_objective_strength` and `blind_objective_units`, and the last two are already genes. A row for it would vary those two again under a second name and file the sum under this one."
+    },
+    "fog_land_capacity": {
+      "group": "host-only",
+      "reason": "Host-only, and the reason is already recorded beside its tag in `FIRAXIS_ONLY_TREATMENTS`. Provably inert natively: a native board carries no unknown terrain, so the estimate equals the count and the flag is a no-op."
+    },
+    "frontier_loyalty": {
+      "group": "live-bridge-row",
+      "reason": "Screenable would mean WITHHELD. It has a `LIVE_TREATMENTS` row, so a `PRODUCTION_OPT_INS` row flips `ledger_default_on` from `None` to `Some(false)` and `apply_gene_ledger` would then take it out of the live bridge. That is a deployment change wearing an instrument's clothes. The move it wants is the door `culture-coverage` went through: out of `FIRAXIS_ONLY_TREATMENTS` and into an `ENGINE_REPAIR_*` half, taken deliberately with the bridge change owned and priced. What it does: do not found beyond Loyalty reach on unexplored ground. Its host-only classification is an argument about which rivals the weights were bred against, not a claim the code cannot fire natively."
+    },
+    "governor_in_recovery": {
+      "group": "configured-on",
+      "reason": "On in `AdvancedAi::configured` but NOT in `promoted_policy_envoy`, so `production_bundle_rows_are_real` rejects a `PRODUCTION_TREATMENTS` row for it as written. Moving the assignment is a controller change owned by whoever owns the behaviour, and it carries the same deployment hazard as the group above. What it does: the strategic governor runs cities under an adaptive Recovery plan."
+    },
+    "great_work_veto_by_district": {
+      "group": "does-not-fire",
+      "reason": "A GENE ROW WAS WRITTEN FOR IT IN #2330 AND THE FIRES GATE REFUSED IT. For a lane that is not Culture the Great Work veto boundary is the Theater Square, not any Great Work slot. A single-gene probe over 12 map pairs (72 matched seat comparisons, 24 games) left both arms byte-identical: win Δ, score-share Δ and both standard errors all exactly zero, which is the never-fired signature, not a null. The row was removed rather than shipped to consume a genome bit and return a zero-width interval. Evidence: `docs/gene_screens/fires/great-work-veto-by-district.json`. To wire it, make the behaviour reachable on the screen's board first, then re-probe."
+    },
+    "host_settler_pop": {
+      "group": "host-only",
+      "reason": "Host-only, and the reason is already recorded beside its tag in `FIRAXIS_ONLY_TREATMENTS`. Reacts to host production semantics (the pop-2 Settler start) that native CIVVIS does not have."
+    },
+    "hut_collection": {
+      "group": "production-on",
+      "reason": "Production ships it ON, so its door is `PRODUCTION_TREATMENTS` — and that row is not neutral: `apply_gene_ledger` disables every production treatment whose `ledger_default_on` is `Some(false)`, which is exactly what a screenable tag with no ledger row is. The row would switch a shipped behaviour off at deployment. What it does: walk an explorer onto a reachable tribal village instead of marching past."
+    },
+    "joint_reach_lines": {
+      "group": "host-only",
+      "reason": "Host-only, and the reason is already recorded beside its tag in `FIRAXIS_ONLY_TREATMENTS`. Rides with `joint-tactics` — `enable_joint_tactics` turns both on — so it already varies through that gene, and it is inert wherever the joint search is off. Its own row would be a duplicate."
+    },
+    "land_grab": {
+      "group": "live-bridge-row",
+      "reason": "Screenable would mean WITHHELD. It has a `LIVE_TREATMENTS` row, so a `PRODUCTION_OPT_INS` row flips `ledger_default_on` from `None` to `Some(false)` and `apply_gene_ledger` would then take it out of the live bridge. That is a deployment change wearing an instrument's clothes. The move it wants is the door `culture-coverage` went through: out of `FIRAXIS_ONLY_TREATMENTS` and into an `ENGINE_REPAIR_*` half, taken deliberately with the bridge change owned and priced. What it does: expand to the land the empire can hold at pipeline pace, not on an era clock. Its host-only classification is an argument about which rivals the weights were bred against, not a claim the code cannot fire natively."
+    },
+    "legal_tactical_candidates": {
+      "group": "production-on",
+      "reason": "Production ships it ON, so its door is `PRODUCTION_TREATMENTS` — and that row is not neutral: `apply_gene_ledger` disables every production treatment whose `ledger_default_on` is `Some(false)`, which is exactly what a screenable tag with no ledger row is. The row would switch a shipped behaviour off at deployment. What it does: drop engine-illegal attack candidates before scoring, so a doomed order cannot shadow a legal one."
+    },
+    "live_bridge": {
+      "group": "bundle",
+      "reason": "Bundle, not a behaviour: it turns a named group of other genes on. `gene_screen` already builds its treated seat from `enable_engine_repairs_universe`, so a row here would vary every gene inside it at once and file the sum under one tag. Here: the whole live-bridge set plus `apply_gene_ledger`."
+    },
+    "live_bridge_universe": {
+      "group": "bundle",
+      "reason": "Bundle, not a behaviour: it turns a named group of other genes on. `gene_screen` already builds its treated seat from `enable_engine_repairs_universe`, so a row here would vary every gene inside it at once and file the sum under one tag. Here: the whole live-bridge treatment set."
+    },
+    "live_formationless_settler_shadow": {
+      "group": "host-only",
+      "reason": "Host-only, and the reason is already recorded beside its tag in `FIRAXIS_ONLY_TREATMENTS`. Replaces the host's broken Settler formation channel with ordinary unit movement; native formations have no corresponding defect."
+    },
+    "live_motion_turn_accounting": {
+      "group": "host-only",
+      "reason": "Host-only, and the reason is already recorded beside its tag in `FIRAXIS_ONLY_TREATMENTS`. A host replan frame after an accepted order is not a second game turn for persistent unit motion."
+    },
+    "live_religious_purchase_guard": {
+      "group": "host-only",
+      "reason": "Host-only, and the reason is already recorded beside its tag in `FIRAXIS_ONLY_TREATMENTS`. Enforces Firaxis' city-majority purchase rule, which is not a CIVVIS rule."
+    },
+    "live_trader_route_adapter": {
+      "group": "host-only",
+      "reason": "Host-only, and the reason is already recorded beside its tag in `FIRAXIS_ONLY_TREATMENTS`. Adapts a live Trader's zero walking movement to a distinct route-start action; no native game has that action."
+    },
+    "live_wonder_race": {
+      "group": "host-only",
+      "reason": "Host-only, and the reason is already recorded beside its tag in `FIRAXIS_ONLY_TREATMENTS`. Prices an uncontested host wonder catalogue and a score tally at the host's turn limit, neither of which a CIVVIS-vs-CIVVIS game offers."
+    },
+    "no_elective_war": {
+      "group": "live-bridge-row",
+      "reason": "Screenable would mean WITHHELD. It has a `LIVE_TREATMENTS` row, so a `PRODUCTION_OPT_INS` row flips `ledger_default_on` from `None` to `Some(false)` and `apply_gene_ledger` would then take it out of the live bridge. That is a deployment change wearing an instrument's clothes. The move it wants is the door `culture-coverage` went through: out of `FIRAXIS_ONLY_TREATMENTS` and into an `ENGINE_REPAIR_*` half, taken deliberately with the bridge change owned and priced. What it does: never open an elective war. Its host-only classification is an argument about which rivals the weights were bred against, not a claim the code cannot fire natively."
+    },
+    "open_water_navy": {
+      "group": "production-on",
+      "reason": "Production ships it ON, so its door is `PRODUCTION_TREATMENTS` — and that row is not neutral: `apply_gene_ledger` disables every production treatment whose `ledger_default_on` is `Some(false)`, which is exactly what a screenable tag with no ledger row is. The row would switch a shipped behaviour off at deployment. What it does: build hulls only where there is open water — promoted at +61 Elo-equivalent (200 pairs, seed 8700000, CI +21..+109, PASS on the corrected-gate matrix; see `AdvancedAi::promoted_policy_envoy`), so switching it off is the opposite of a null change."
+    },
+    "opening_settler_waits": {
+      "group": "live-bridge-row",
+      "reason": "Screenable would mean WITHHELD. It has a `LIVE_TREATMENTS` row, so a `PRODUCTION_OPT_INS` row flips `ledger_default_on` from `None` to `Some(false)` and `apply_gene_ledger` would then take it out of the live bridge. That is a deployment change wearing an instrument's clothes. The move it wants is the door `culture-coverage` went through: out of `FIRAXIS_ONLY_TREATMENTS` and into an `ENGINE_REPAIR_*` half, taken deliberately with the bridge change owned and priced. What it does: the opening book's Settler waits for the population floor. Its host-only classification is an argument about which rivals the weights were bred against, not a claim the code cannot fire natively."
+    },
+    "parallel_settlers": {
+      "group": "live-bridge-row",
+      "reason": "Screenable would mean WITHHELD. It has a `LIVE_TREATMENTS` row, so a `PRODUCTION_OPT_INS` row flips `ledger_default_on` from `None` to `Some(false)` and `apply_gene_ledger` would then take it out of the live bridge. That is a deployment change wearing an instrument's clothes. The move it wants is the door `culture-coverage` went through: out of `FIRAXIS_ONLY_TREATMENTS` and into an `ENGINE_REPAIR_*` half, taken deliberately with the bridge change owned and priced. What it does: more than one Settler alive at once, up to the city-target shortfall. Its host-only classification is an argument about which rivals the weights were bred against, not a claim the code cannot fire natively."
+    },
+    "production_builder_floor": {
+      "group": "configured-on",
+      "reason": "On in `AdvancedAi::configured` but NOT in `promoted_policy_envoy`, so `production_bundle_rows_are_real` rejects a `PRODUCTION_TREATMENTS` row for it as written. Moving the assignment is a controller change owned by whoever owns the behaviour, and it carries the same deployment hazard as the group above. What it does: the call-local Builder floor in `delegated_cities`."
+    },
+    "production_settler_deadline": {
+      "group": "configured-on",
+      "reason": "On in `AdvancedAi::configured` but NOT in `promoted_policy_envoy`, so `production_bundle_rows_are_real` rejects a `PRODUCTION_TREATMENTS` row for it as written. Moving the assignment is a controller change owned by whoever owns the behaviour, and it carries the same deployment hazard as the group above. What it does: the call-local settler-deadline extension in `delegated_cities`."
+    },
+    "projected_stock_denial": {
+      "group": "live-bridge-row",
+      "reason": "Screenable would mean WITHHELD. It has a `LIVE_TREATMENTS` row, so a `PRODUCTION_OPT_INS` row flips `ledger_default_on` from `None` to `Some(false)` and `apply_gene_ledger` would then take it out of the live bridge. That is a deployment change wearing an instrument's clothes. The move it wants is the door `culture-coverage` went through: out of `FIRAXIS_ONLY_TREATMENTS` and into an `ENGINE_REPAIR_*` half, taken deliberately with the bridge change owned and priced. What it does: the denial alarm reads projected pressure, raw plus slope times horizon. Its host-only classification is an argument about which rivals the weights were bred against, not a claim the code cannot fire natively."
+    },
+    "sea_answers": {
+      "group": "does-not-fire",
+      "reason": "A GENE ROW WAS WRITTEN FOR IT IN #2330 AND THE FIRES GATE REFUSED IT. A sea threat gets a sea answer: a naval raider counts toward the decision that builds hulls. A single-gene probe over 12 map pairs (72 matched seat comparisons, 24 games) left both arms byte-identical: win Δ, score-share Δ and both standard errors all exactly zero, which is the never-fired signature, not a null. The row was removed rather than shipped to consume a genome bit and return a zero-width interval. Evidence: `docs/gene_screens/fires/sea-answers.json`. To wire it, make the behaviour reachable on the screen's board first, then re-probe."
+    },
+    "settlement_safety": {
+      "group": "configured-on",
+      "reason": "On in `AdvancedAi::configured` but NOT in `promoted_policy_envoy`, so `production_bundle_rows_are_real` rejects a `PRODUCTION_TREATMENTS` row for it as written. Moving the assignment is a controller change owned by whoever owns the behaviour, and it carries the same deployment hazard as the group above. What it does: visible attack envelopes, barbarian pressure, support distance and march cost in the settle scorer."
+    },
+    "settler_founds_when_stalled": {
+      "group": "does-not-fire",
+      "reason": "A GENE ROW WAS WRITTEN FOR IT IN #2330 AND THE FIRES GATE REFUSED IT. A Settler that has stalled founds where it stands. A single-gene probe over 12 map pairs (72 matched seat comparisons, 24 games) left both arms byte-identical: win Δ, score-share Δ and both standard errors all exactly zero, which is the never-fired signature, not a null. The row was removed rather than shipped to consume a genome bit and return a zero-width interval. Evidence: `docs/gene_screens/fires/settler-founds-when-stalled.json`. To wire it, make the behaviour reachable on the screen's board first, then re-probe."
+    },
+    "solvent_faith_army": {
+      "group": "live-bridge-row",
+      "reason": "Screenable would mean WITHHELD. It has a `LIVE_TREATMENTS` row, so a `PRODUCTION_OPT_INS` row flips `ledger_default_on` from `None` to `Some(false)` and `apply_gene_ledger` would then take it out of the live bridge. That is a deployment change wearing an instrument's clothes. The move it wants is the door `culture-coverage` went through: out of `FIRAXIS_ONLY_TREATMENTS` and into an `ENGINE_REPAIR_*` half, taken deliberately with the bridge change owned and priced. What it does: a faith-bought soldier's gold upkeep must be payable first. Its host-only classification is an argument about which rivals the weights were bred against, not a claim the code cannot fire natively."
+    },
+    "spy_mission_patience": {
+      "group": "host-only",
+      "reason": "Host-only, and the reason is already recorded beside its tag in `FIRAXIS_ONLY_TREATMENTS`. Reacts to the host export's blindness to a running Spy operation; native `do_spy_mission` sets `spy.mission` and legality already debounces, so the repair cannot fire."
+    },
+    "step_and_reassess": {
+      "group": "host-only",
+      "reason": "Host-only, and the reason is already recorded beside its tag in `FIRAXIS_ONLY_TREATMENTS`. A walk cut at its first unrevealed hex because the host executes one coalesced walk per unit. THIS GATE'S FOUNDING EXAMPLE: its native stand-in screened +0.0 [+0.0, +0.0] over 204 pairs because the code path was never entered, and when repaired it measured harmful and was removed."
+    },
+    "stock_denial_lead_time": {
+      "group": "live-bridge-row",
+      "reason": "Screenable would mean WITHHELD. It has a `LIVE_TREATMENTS` row, so a `PRODUCTION_OPT_INS` row flips `ledger_default_on` from `None` to `Some(false)` and `apply_gene_ledger` would then take it out of the live bridge. That is a deployment change wearing an instrument's clothes. The move it wants is the door `culture-coverage` went through: out of `FIRAXIS_ONLY_TREATMENTS` and into an `ENGINE_REPAIR_*` half, taken deliberately with the bridge change owned and priced. What it does: an earlier denial bar for the accumulated-stock lanes. Its host-only classification is an argument about which rivals the weights were bred against, not a claim the code cannot fire natively."
+    },
+    "tally_culture": {
+      "group": "live-bridge-row",
+      "reason": "Screenable would mean WITHHELD. It has a `LIVE_TREATMENTS` row, so a `PRODUCTION_OPT_INS` row flips `ledger_default_on` from `None` to `Some(false)` and `apply_gene_ledger` would then take it out of the live bridge. That is a deployment change wearing an instrument's clothes. The move it wants is the door `culture-coverage` went through: out of `FIRAXIS_ONLY_TREATMENTS` and into an `ENGINE_REPAIR_*` half, taken deliberately with the bridge change owned and priced. What it does: price a point of culture at the lane's price of a point of science. Its host-only classification is an argument about which rivals the weights were bred against, not a claim the code cannot fire natively."
+    },
+    "tally_great_people": {
+      "group": "live-bridge-row",
+      "reason": "Screenable would mean WITHHELD. It has a `LIVE_TREATMENTS` row, so a `PRODUCTION_OPT_INS` row flips `ledger_default_on` from `None` to `Some(false)` and `apply_gene_ledger` would then take it out of the live bridge. That is a deployment change wearing an instrument's clothes. The move it wants is the door `culture-coverage` went through: out of `FIRAXIS_ONLY_TREATMENTS` and into an `ENGINE_REPAIR_*` half, taken deliberately with the bridge change owned and priced. What it does: banked Faith and gold patronise any affordable Great Person. Its host-only classification is an argument about which rivals the weights were bred against, not a claim the code cannot fire natively."
+    },
+    "village_seeking": {
+      "group": "production-on",
+      "reason": "Production ships it ON, so its door is `PRODUCTION_TREATMENTS` — and that row is not neutral: `apply_gene_ledger` disables every production treatment whose `ledger_default_on` is `Some(false)`, which is exactly what a screenable tag with no ledger row is. The row would switch a shipped behaviour off at deployment. What it does: detour toward a charted village outside this turn's reach."
+    }
+  }
+}

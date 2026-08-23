@@ -2,12 +2,16 @@
 not fall behind them."""
 from __future__ import annotations
 
+import io
 import json
+import math
 import sys
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import gene_ledger  # noqa: E402
 import heuristic_gene_ranking as ranking  # noqa: E402
 
 
@@ -15,6 +19,7 @@ class TheTableIsDerived(unittest.TestCase):
     EXPECTED_COLUMNS = (
         "| Rank | Gene | Description | Default | ± Wins / 10k seats | ± Wins / 10k seats prior | "
         "Total (on) Win rate | Total (off) Win rate | Diff | "
+        "Posterior (95% CI) | P(>0) | Share Δpp (z) | "
         "cost (compute) | cost (time) |"
     )
 
@@ -244,6 +249,397 @@ class TheTableIsDerived(unittest.TestCase):
         for heading in ("## Awaiting measurement", "## Removed from the code"):
             if heading in text:
                 self.assertLess(text.index(heading), text.index("## How to read this"), heading)
+
+
+class ThePosteriorIsPublishedAndNotInForce(unittest.TestCase):
+    """The precision-weighted posterior: printed beside the win columns,
+    deciding nothing, with the delta it would make published under it."""
+
+    def setUp(self):
+        self.ledger = json.loads(ranking.LEDGER_JSON.read_text())
+        self.measured, _ = ranking.load_sources(self.ledger)
+        self.text = ranking.RANKING_MD.read_text()
+
+    def _rows(self):
+        lines = self.text.splitlines()
+        start = lines.index(TheTableIsDerived.EXPECTED_COLUMNS) + 2
+        rows = []
+        for line in lines[start:]:
+            if not line.startswith("| "):
+                break
+            rows.append([c.strip() for c in line.strip().strip("|").split(" | ")])
+        return rows
+
+    def test_the_printed_posterior_is_the_figure_the_ledger_records(self):
+        """One arithmetic, not two — the same rule the *Diff* column follows.
+        A gene cannot print one interval here and have the switch read
+        another."""
+        recorded = {g["tag"]: g for g in self.ledger["genes"]}
+        seen = 0
+        for cells in self._rows():
+            tag = cells[1].strip("`")
+            posterior = ranking.posterior_of(self.measured[tag])
+            self.assertEqual(cells[9], ranking.posterior_cell(posterior), tag)
+            self.assertEqual(cells[10], ranking.probability_cell(posterior), tag)
+            self.assertEqual(posterior["effect"], recorded[tag]["posterior_pp"], tag)
+            self.assertEqual(posterior["se"], recorded[tag]["posterior_se_pp"], tag)
+            seen += 1
+        self.assertGreater(seen, 50)
+
+    def test_the_shrinkage_is_visible_in_the_probability_not_the_point(self):
+        """The operator's own framing: a +30 from a ±64 screen and a +30 from
+        a ±29 screen must not read the same. They print the same point and
+        different `P(>0)`, which is the column that decides anything."""
+        wide = ranking.posterior_of([{"win_delta_pp": 0.6, "win_se_pp": 0.4576,
+                                      "shape": "legacy"}])
+        tight = ranking.posterior_of([{"win_delta_pp": 0.6, "win_se_pp": 0.2052,
+                                       "shape": "legacy"}])
+        self.assertEqual(ranking.posterior_cell(wide).split(" ")[0],
+                         ranking.posterior_cell(tight).split(" ")[0])
+        self.assertNotEqual(ranking.probability_cell(wide),
+                            ranking.probability_cell(tight))
+
+    def test_nothing_the_posterior_publishes_decides_a_default(self):
+        """★ The hard constraint of this change. The ranking's *Default*
+        column is the ledger's, under the threshold rule, gene for gene."""
+        recorded = {g["tag"]: g for g in self.ledger["genes"]}
+        self.assertEqual(self.ledger["rules"]["authority"], "columns")
+        for cells in self._rows():
+            gene = recorded[cells[1].strip("`")]
+            self.assertEqual(
+                cells[3], "**on**" if gene["default_on"] else "off", cells[1])
+            self.assertEqual(
+                gene["default_on"],
+                gene_ledger.default_from_columns(
+                    gene["wins_last_10k"], gene["wins_prior_10k"],
+                    gene["win_diff_pp"]),
+                cells[1])
+
+    def test_every_authority_is_published_with_what_it_would_ship(self):
+        self.assertIn("## What the posterior would change", self.text)
+        for candidate in ranking.AUTHORITIES:
+            self.assertIn(f"| `{candidate}`", self.text, candidate)
+        self.assertIn("`columns` **(in force)**", self.text)
+        rows = ranking.authority_table(self.ledger, self.measured)
+        for candidate in ranking.AUTHORITIES:
+            self.assertEqual(
+                sum(r[f"would/{candidate}"] for r in rows),
+                self.ledger["counts"][f"default_on_under_{candidate}"],
+                candidate)
+
+    def test_the_three_way_call_covers_every_priced_gene(self):
+        rows = ranking.authority_table(self.ledger, self.measured)
+        calls = [r["call"] for r in rows]
+        self.assertEqual(len(rows), len(calls))
+        self.assertGreater(calls.count("on"), 0)
+        self.assertGreater(calls.count("unresolved"), calls.count("on"))
+        self.assertIn("### What the posterior can decide at all", self.text)
+        for row in rows:
+            if row["call"] != "unresolved":
+                self.assertIn(f"| `{row['tag']}` |", self.text, row["tag"])
+        # A host-only flag carries a ledger row from a retired native
+        # stand-in and the ledger never governs it, so it is in no table here.
+        self.assertNotIn("step-and-reassess", {r["tag"] for r in rows})
+
+    def test_the_shapes_are_published_apart(self):
+        self.assertIn("## The two shapes, apart", self.text)
+        self.assertIn("| standard |", self.text)
+        self.assertIn("| legacy |", self.text)
+        # Today every source is legacy; the file must say so rather than let a
+        # reader take a Pangaea column for the deployment shape.
+        shapes = {s["shape"] for s in self.ledger["sources"]}
+        if shapes == {"legacy"}:
+            self.assertIn("No `standard` source is in the ledger yet", self.text)
+
+
+class TheBoundarySet(unittest.TestCase):
+    """`--boundary`: the genes whose interval straddles the decision line,
+    ranked by what one single-gene direct arm would buy, printed as an
+    argument list."""
+
+    maxDiff = None
+
+    def setUp(self):
+        self.ledger = json.loads(ranking.LEDGER_JSON.read_text())
+        self.measured, _ = ranking.load_sources(self.ledger)
+
+    def test_the_boundary_is_exactly_the_straddling_intervals(self):
+        rows, arm = ranking.boundary_table(self.ledger, self.measured)
+        self.assertIsNotNone(arm)
+        every = ranking.authority_table(self.ledger, self.measured)
+        self.assertEqual({r["tag"] for r in rows},
+                         {r["tag"] for r in every if r["call"] == "unresolved"})
+        for row in rows:
+            self.assertLessEqual(row["posterior"]["lo"], 0.0, row["tag"])
+            self.assertGreaterEqual(row["posterior"]["hi"], 0.0, row["tag"])
+
+    def test_it_is_ranked_by_what_an_arm_buys_and_the_top_is_a_disagreement(self):
+        rows, _ = ranking.boundary_table(self.ledger, self.measured)
+        self.assertEqual([r["buys"] for r in rows],
+                         sorted((r["buys"] for r in rows), reverse=True))
+        # An arm buys most where the genome and the evidence disagree: the
+        # leader is held OFF by the rule while the posterior leans positive.
+        top = rows[0]
+        self.assertFalse(top["shipped"], top["tag"])
+        self.assertGreater(top["posterior"]["effect"], 0.0, top["tag"])
+
+    def test_a_bigger_arm_buys_more_and_resolves_more(self):
+        small, _ = ranking.boundary_table(self.ledger, self.measured, arm_pairs=2000)
+        large, _ = ranking.boundary_table(self.ledger, self.measured, arm_pairs=40000)
+        by_small = {r["tag"]: r["buys"] for r in small}
+        for row in large:
+            self.assertGreaterEqual(row["buys"] + 1e-9, by_small[row["tag"]], row["tag"])
+
+    def test_the_output_is_a_genes_argument_list(self):
+        out = io.StringIO()
+        with redirect_stdout(out):
+            ranking.print_boundary(self.ledger, ranking.ARM_PAIRS,
+                                   ranking.FEASIBLE_ARM_PAIRS)
+        text = out.getvalue()
+        self.assertIn("boundary genes ·", text)
+        line = next(l for l in text.splitlines() if l.startswith("--genes "))
+        tags = line.removeprefix("--genes ").split(",")
+        self.assertLessEqual(len(tags), ranking.BOUNDARY_SUGGESTIONS)
+        known = set(ranking.screenable_tags())
+        for tag in tags:
+            self.assertIn(tag, known, tag)
+        # Only genes one batch could actually resolve are proposed.
+        needs = {r["tag"]: r["needs"]
+                 for r in ranking.boundary_table(self.ledger, self.measured)[0]}
+        for tag in tags:
+            self.assertLessEqual(needs[tag], ranking.FEASIBLE_ARM_PAIRS, tag)
+        self.assertIn("gene_screen --genes ", ranking.RANKING_MD.read_text())
+
+    def test_the_two_stage_arithmetic_is_recorded_where_it_will_be_read(self):
+        """⚠ The efficient plan is two stage and NOT a partial foldover. The
+        ranking says so; `docs/GENE_SCREEN.md` carries the arithmetic."""
+        self.assertIn("two stage", ranking.RANKING_MD.read_text())
+        screen = (ranking.ROOT / "docs" / "GENE_SCREEN.md").read_text()
+        for phrase in ("two-stage", "±145", "partial", "blocked", "8× the games"):
+            self.assertIn(phrase, screen, phrase)
+
+    def test_the_eight_times_figure_is_the_screens_own_arithmetic(self):
+        """±146 is not quoted, it is derived — and this recomputes it from the
+        ledger's own screens so the paragraph cannot rot.
+
+        Split p10's budget into one screen per gene: 17,574 / 75 = 234 pairs
+        each. Even at the best single-gene pairing gain the repository has
+        measured (`s7`'s 3.32× against p10's 1.09×) that resolves ±146, which
+        is 2.9× wider than p10's ±51 — 8× the games for the same band.
+        """
+        rows = {r["name"].split("-native")[0].split("-holy")[0].split("-idle")[0]:
+                r for r in ranking.resolutions(self.ledger)}
+        p10 = next(r for k, r in rows.items() if "p10" in k)
+        s7 = next(r for k, r in rows.items() if "s7" in k)
+        self.assertEqual(round(p10["band"]), 51)
+        self.assertEqual(round(s7["band"]), 29)
+        per_gene_pairs = p10["pairs"] / p10["genes"]
+        self.assertAlmostEqual(per_gene_pairs, 234.32, places=1)
+        # p10's own error per pair, improved by the single-gene gain ratio.
+        constant = p10["se"] * math.sqrt(p10["pairs"]) * p10["gain"] / s7["gain"]
+        band = ranking.POWER_80 * constant / math.sqrt(per_gene_pairs)
+        self.assertAlmostEqual(band, 145, delta=1)
+        self.assertAlmostEqual(band / p10["band"], 2.84, places=2)
+        # Error falls with the square root of the games, so 2.84x the width is
+        # 8.1x the games for the same band.
+        self.assertAlmostEqual((band / p10["band"]) ** 2, 8.1, places=1)
+
+
+class TheLaneGenes(unittest.TestCase):
+    """A lane gene is discovered from the code, and its share reading is
+    published beside its win columns."""
+
+    def test_the_lane_set_is_read_off_victory_lane_rs(self):
+        tags = ranking.lane_tags()
+        self.assertGreaterEqual(len(tags), 6)
+        for tag in ("lane-congress-ballot", "lane-great-people", "lane-policy-deck",
+                    "lane-space-race", "lane-culture-spending", "lane-congress-favor"):
+            self.assertIn(tag, tags, tag)
+        # Discovered, not listed: a gene joins by being read in the module.
+        reg = ranking.registry()
+        read = ranking.LANE_MODULES[0].read_text()
+        for tag in tags:
+            self.assertIn(f"self.{reg[tag][0]}", read, tag)
+        self.assertNotIn("wide-map-capacity", tags)
+
+    def test_every_lane_gene_appears_with_its_axis(self):
+        text = ranking.RANKING_MD.read_text()
+        self.assertIn("## Lane genes and the share axis", text)
+        for tag in ranking.lane_tags():
+            self.assertIn(f"| `{tag}` |", text, tag)
+        self.assertIn("science 0/8", text)
+        self.assertIn("t283", text)
+
+    def test_the_share_cell_carries_the_reading_and_its_verdict(self):
+        self.assertEqual(ranking.share_verdict(2.0), "helps *")
+        self.assertEqual(ranking.share_verdict(-2.0), "hurts *")
+        self.assertEqual(ranking.share_verdict(1.99), "~")
+        history = [{"share_delta_pp": -1.024, "share_z": -15.92}]
+        self.assertEqual(ranking.share_cell(history), "-1.02 (z -15.92) hurts *")
+
+    def test_the_pre_registered_rule_is_written_down_before_the_screen(self):
+        screen = (ranking.ROOT / "docs" / "GENE_SCREEN.md").read_text()
+        self.assertIn("Pre-registered", screen)
+        self.assertIn("lane gene", screen)
+        # The axis that decides is still WINS.
+        self.assertIn("decision axis stays", screen)
+
+
+class TheStandardScreenPreview(unittest.TestCase):
+    """⭐ `docs/gene_ranking_notes.md` records what the first standard-shape
+    screen says, and the ranking carries it verbatim. That screen is NOT a
+    ledger source yet — no analysis JSON for it exists — so every figure in
+    that note is computed by hand from its published table. This recomputes
+    them, so the note cannot go stale silently while it is the only place the
+    disagreement is written down.
+
+    Source: `docs/eval/2026-08-22-standard-gene-screen-23622-paired-seats.md`
+    (PR #2323): 3,937 complete map pairs, 23,622 matched seat comparisons per
+    gene, 74x46 Continents / 9 CS / Online-250, all six lanes, best-genome
+    baseline, all-seats foldover, source commit `b3ad9f00`.
+    """
+
+    #: tag -> (on−off win Δpp, win z), read off that document's table.
+    STANDARD = {
+        "governor-victory-lanes": (-4.73, -15.37),
+        "governor-every-lane": (-4.68, -15.12),
+        "governor-expansion-lane": (-0.55, -1.76),
+        "war-economy": (2.35, 7.50),
+        "apostle-promotion-by-role": (0.32, 1.02),
+        "theology-for-founders": (0.45, 1.43),
+        "settler-site-agreement": (-0.46, -1.47),
+        "settler-target-hysteresis": (-0.36, -1.16),
+        "housing-research": (-0.35, -1.10),
+        "religion-sues-peace": (-0.36, -1.14),
+    }
+    #: The eight defaults the pooled-`Diff` veto alone would move if that
+    #: screen entered the ledger, and whether the reading behind each is a
+    #: signal or a coin flip.
+    VETO_FLIPS = ("governor-victory-lanes", "war-economy",
+                  "settler-site-agreement", "settler-target-hysteresis",
+                  "housing-research", "religion-sues-peace",
+                  "apostle-promotion-by-role", "theology-for-founders")
+
+    def setUp(self):
+        self.ledger = json.loads(ranking.LEDGER_JSON.read_text())
+        self.measured, _ = ranking.load_sources(self.ledger)
+        self.notes = ranking.NOTES_MD.read_text()
+
+    def reading(self, tag):
+        """That screen's row as a history entry: a foldover holds the arms
+        symmetric about chance, so `win_on = 1/6 + Δ/200`."""
+        delta, z = self.STANDARD[tag]
+        chance = 1.0 / gene_ledger.SCREEN["players"]
+        return {"win_on": chance + delta / 200.0, "win_off": chance - delta / 200.0,
+                "n_on": 23622, "n_off": 23622, "win_delta_pp": delta,
+                "win_se_pp": abs(delta / z), "shape": "standard"}
+
+    def pools(self, tag):
+        history = self.measured[tag]
+        return (gene_ledger.pooled_posterior(history, ("legacy",)),
+                gene_ledger.pooled_posterior([self.reading(tag)]),
+                gene_ledger.pooled_posterior(list(history) + [self.reading(tag)]))
+
+    def test_governor_victory_lanes_is_the_largest_correctable_defect(self):
+        """RESOLVED 2026-08-23. It shipped ON, promoted on P10's single +46
+        column; the deployment shape read it at −237 [−267, −206]; and the
+        pre-registered direct arm `g1` (600 map pairs, seeds 150000000+,
+        disjoint from the whole-genome screen's maps) confirmed −4.78 pp at
+        win z −6.11. The threshold rule then wrote it **off** — both clauses
+        agreeing, so it does not rest on the marginal Diff veto."""
+        row = next(g for g in self.ledger["genes"]
+                   if g["tag"] == "governor-victory-lanes")
+        self.assertFalse(row["default_on"], "g1 resolved it off")
+        self.assertEqual(row["verdict"], "hurts")
+        # The +46 that promoted it is now the PRIOR column; g1 is the latest.
+        self.assertEqual(row["wins_last_10k"], -239)
+        self.assertEqual(row["wins_prior_10k"], 46, "the column that promoted it")
+        legacy, standard, pooled = self.pools("governor-victory-lanes")
+        self.assertEqual((round(legacy["effect"]), round(legacy["lo"]),
+                          round(legacy["hi"])), (46, 9, 82))
+        self.assertEqual((round(standard["effect"]), round(standard["lo"]),
+                          round(standard["hi"])), (-236, -267, -206))
+        # The two intervals do not merely disagree, they do not come close.
+        self.assertGreater(legacy["lo"] - standard["hi"], 200)
+        # So the pool is a warning, not an answer. Assert the figure the
+        # LEDGER publishes (its two screens: P10 legacy and g1 standard),
+        # not a recomputation over the note's preview as well -- since
+        # 2026-08-23 that would pool three readings and report a different
+        # tau for a quantity nothing ships.
+        self.assertEqual(round(row["posterior_tau_pp"]), 199)
+        self.assertEqual(row["posterior_screens"], 2)
+        self.assertEqual(gene_ledger.posterior_call(pooled["effect"], pooled["se"]),
+                         "unresolved")
+        self.assertEqual(gene_ledger.posterior_call(standard["effect"],
+                                                    standard["se"]), "off")
+        for phrase in ("-237", "[-267, -206]", "tau = 199", "-15.37"):
+            self.assertIn(phrase, self.notes, phrase)
+
+    def test_the_legacy_share_axis_already_said_it(self):
+        """P10 read this gene win z +2.46 / share z −15.92 — a recorded
+        `conflict`, because the rule reads the win axis only. The share axis
+        was right a day before the win axis caught up, and g1's own arm now
+        agrees on BOTH axes, so the conflict is gone."""
+        row = next(g for g in self.ledger["genes"]
+                   if g["tag"] == "governor-victory-lanes")
+        # g1 is the current screen: both axes negative, no conflict left.
+        self.assertFalse(row["conflict"], "both axes now agree")
+        self.assertAlmostEqual(row["screen"]["win_z"], -6.11, places=2)
+        self.assertAlmostEqual(row["screen"]["share_z"], -23.76, places=2)
+        # P10's share axis (−15.92) landed within half a sigma of what the
+        # deployment shape's WIN axis said a day later (−15.37).
+        self.assertLess(abs(15.92 - abs(self.STANDARD["governor-victory-lanes"][1])),
+                        0.6)
+        self.assertIn("-15.92", self.notes)
+
+    def test_the_composite_harm_is_carried_by_one_named_half(self):
+        composite = self.STANDARD["governor-every-lane"][0]
+        victory = self.STANDARD["governor-victory-lanes"][0]
+        expansion = self.STANDARD["governor-expansion-lane"][0]
+        self.assertLess(abs(composite - victory), 0.1, "the half is the composite")
+        self.assertLess(abs(expansion), abs(victory) / 5, "the other half is cheap")
+        self.assertLess(abs(victory + expansion - composite), 0.7, "roughly additive")
+        # The harmful half was the only one that shipped, until g1 resolved
+        # it off on 2026-08-23. All three governor genes now default off.
+        by_tag = {g["tag"]: g for g in self.ledger["genes"]}
+        self.assertFalse(by_tag["governor-victory-lanes"]["default_on"])
+        self.assertFalse(by_tag["governor-every-lane"]["default_on"])
+        self.assertFalse(by_tag["governor-expansion-lane"]["default_on"])
+
+    def test_six_of_the_eight_veto_flips_are_decided_at_z_about_one(self):
+        """The sharpest argument for the posterior, in the rule's own numbers:
+        the veto reads the sign of a difference that carries no error, and on
+        the very next screen six of its eight decisions come from |z| ≈ 1."""
+        signal = [tag for tag in self.VETO_FLIPS
+                  if abs(self.STANDARD[tag][1]) >= 3.0]
+        noise = [tag for tag in self.VETO_FLIPS
+                 if abs(self.STANDARD[tag][1]) < 2.0]
+        self.assertEqual(sorted(signal), ["governor-victory-lanes", "war-economy"])
+        self.assertEqual(len(noise), 6)
+        for tag in noise:
+            self.assertLess(abs(self.STANDARD[tag][1]), 1.5, tag)
+
+    def test_read_standard_only_the_posterior_resolves_exactly_the_two(self):
+        """And read pooled it resolves none, because tau swamps both. Both
+        halves are the recommendation the note makes."""
+        resolved_standard, resolved_pooled = [], []
+        for tag in self.VETO_FLIPS:
+            _, standard, pooled = self.pools(tag)
+            if gene_ledger.posterior_call(standard["effect"], standard["se"]) != "unresolved":
+                resolved_standard.append(tag)
+            if gene_ledger.posterior_call(pooled["effect"], pooled["se"]) != "unresolved":
+                resolved_pooled.append(tag)
+        self.assertEqual(sorted(resolved_standard),
+                         ["governor-victory-lanes", "war-economy"])
+        self.assertEqual(resolved_pooled, [])
+        self.assertIn("resolves exactly two of the eight", self.notes)
+        self.assertIn('POSTERIOR_SHAPES = ("standard",)', self.notes)
+
+    def test_the_note_is_carried_into_the_published_ranking(self):
+        text = ranking.RANKING_MD.read_text()
+        self.assertIn("23,622", text)
+        self.assertIn("not a ledger source", text)
+        self.assertIn("governor-victory-lanes", text)
 
 
 if __name__ == "__main__":

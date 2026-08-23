@@ -14,22 +14,19 @@
     "withholdable_live_count": 49
   },
   "genome_coverage": {
-    "capability_toggles": 165,
+    "capability_toggles": 166,
     "measured_by_a_screen": 65,
-    "reachable_as_a_gene": 100,
-    "resolved_by_a_screen": 21,
-    "unreachable_by_any_screen": 65,
+    "reachable_as_a_gene": 114,
+    "resolved_by_a_screen": 22,
+    "unreachable_by_any_screen": 52,
     "unreachable_toggles": [
       "adjacent_camp_clear",
       "amenity_districts",
       "bank_envoys",
       "battlefront_observation",
-      "builder_reward_survey",
       "camp_bounty",
       "counter_in_lane",
-      "coupled_expansion",
       "deny_while_targeted",
-      "engine_faith_price",
       "engine_repairs",
       "engine_repairs_economy",
       "engine_repairs_universe",
@@ -43,7 +40,6 @@
       "explore_dead_targets",
       "fog_honest",
       "fog_land_capacity",
-      "fortify_idle_units",
       "frontier_loyalty",
       "governor_in_recovery",
       "great_work_veto_by_district",
@@ -59,52 +55,43 @@
       "live_religious_purchase_guard",
       "live_trader_route_adapter",
       "live_wonder_race",
-      "maintenance_aware_deck",
-      "naval_production_policy",
       "no_elective_war",
       "open_water_navy",
       "opening_settler_waits",
-      "pantheon_board",
       "parallel_settlers",
-      "price_the_suzerainty",
       "production_builder_floor",
       "production_settler_deadline",
       "projected_stock_denial",
-      "promote_when_wounded",
       "sea_answers",
-      "settlement_gap_target",
       "settlement_safety",
       "settler_founds_when_stalled",
       "solvent_faith_army",
       "spy_mission_patience",
       "step_and_reassess",
       "stock_denial_lead_time",
-      "tactical_strategy",
       "tally_culture",
       "tally_great_people",
-      "unit_cost_efficiency",
-      "unit_objective_memory",
       "village_seeking"
     ]
   },
   "ladder": {
-    "ahead": 12,
-    "attempts": 349,
-    "configured": 342,
-    "full_length": 147,
-    "graded": 48,
+    "ahead": 34,
+    "attempts": 425,
+    "configured": 418,
+    "full_length": 190,
+    "graded": 120,
     "latest_utc": "2026-08-19T11:21:36Z",
     "lead_best": 759,
-    "lead_median": -207,
-    "rival_bar_median": 1077,
-    "score_best": 1588,
-    "score_median": 461,
+    "lead_median": -218,
+    "rival_bar_median": 1108,
+    "score_best": 1606,
+    "score_median": 514,
     "stolen": {
       "conquest": 1,
-      "culture": 27,
-      "diplomatic": 47,
+      "culture": 38,
+      "diplomatic": 58,
       "religious": 5,
-      "technology": 3
+      "technology": 5
     },
     "stolen_turns": {
       "conquest": {
@@ -114,13 +101,13 @@
       },
       "culture": {
         "earliest": 145,
-        "latest": 245,
-        "median": 221
+        "latest": 247,
+        "median": 230
       },
       "diplomatic": {
         "earliest": 202,
         "latest": 247,
-        "median": 234
+        "median": 241
       },
       "religious": {
         "earliest": 75,
@@ -129,13 +116,13 @@
       },
       "technology": {
         "earliest": 242,
-        "latest": 244,
-        "median": 242
+        "latest": 246,
+        "median": 244
       }
     },
-    "stolen_while_ahead": 4,
-    "terminal": 232,
-    "wins": 7
+    "stolen_while_ahead": 15,
+    "terminal": 299,
+    "wins": 16
   },
   "registry": {
     "BUILTIN_AIS": {

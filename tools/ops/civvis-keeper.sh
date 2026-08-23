@@ -18,6 +18,31 @@ export PATH="$HOME/.cargo/bin:$PATH"
 # six-worker background fleet league burning 490% CPU. Nothing in the Python
 # does this and no launchd key fixes it; it is the shell. Turn it off.
 unsetopt BG_NICE
+# ⚠⚠ THE TRACKED HELPER, NOT THE ONE IN $HOME. The three helpers this loop calls
+# below were invoked as `$HOME/<name>.sh`, which is the hand-edited home copy —
+# "a home copy is a dead ladder", the failure this fleet keeps rediscovering
+# (civvis-the-supervisor-must-run-from-its-tracked-path). It was not theoretical:
+# on 2026-08-18 `tools/ops/` had `/Users/martin` mechanically replaced by `$HOME`
+# so the scripts would run on a host that is not their author's
+# (tools/test_ops_portability.py, whose LEGACY_DEBT table is empty because of
+# it). Not one home copy was re-synced, so for five days every one of those
+# fixes sat in a file this loop did not call, and `civvis-sync.sh` reported
+# SCRIPT DRIFT on eleven of them every fifteen minutes.
+#
+# The tracked helper is the sibling of this script, so it needs no repository
+# root to be guessed: `${0:A:h}` is `tools/ops/` in whatever worktree this copy
+# came from. $HOME stays as the fallback, because a host that installed only the
+# home copies must keep working.
+OPS=${0:A:h}
+ops() {
+  local name=$1
+  shift
+  if [[ -x $OPS/$name ]]; then
+    $OPS/$name "$@"
+  elif [[ -x $HOME/$name ]]; then
+    $HOME/$name "$@"
+  fi
+}
 REPO=$HOME/CIVVIS
 # Start the supervisor from the CANONICAL source worktree, never from $REPO.
 # $REPO is a shared checkout that other agents edit live: on 2026-07-25 its
@@ -161,12 +186,12 @@ while true; do
     # Prune stale CIVVIS tabs so the machine renders one map, not eight. Every
     # restarted game and every other agent's test server leaves a tab behind,
     # and each one drives a full canvas. Only 127.0.0.1:87xx is touched.
-    [[ -x $HOME/civvis-tabs.sh ]] && $HOME/civvis-tabs.sh "$PORT" > /dev/null 2>&1
+    ops civvis-tabs.sh "$PORT" > /dev/null 2>&1
 
     # A tab that points at the exhibition is not necessarily a tab that is
     # SHOWING it -- see civvis-refresh.sh. Everything above this line was green
     # on 2026-07-25 while the visible page was frozen a full game behind.
-    [[ -x $HOME/civvis-refresh.sh ]] && $HOME/civvis-refresh.sh "$PORT" > /dev/null 2>&1
+    ops civvis-refresh.sh "$PORT" > /dev/null 2>&1
 
     # Keep provisional challengers seatable. A new entrant competes with one
     # flat global rating against the third-best per-civ rating of a 15-way
@@ -174,7 +199,7 @@ while true; do
     # rate it -- see civvis-challenger-guard.sh. Self-limiting: it touches only
     # named challengers and stops at 12 games each, after which it is a no-op
     # forever. Throttles itself; safe to call every pass.
-    [[ -x $HOME/civvis-challenger-guard.sh ]] && $HOME/civvis-challenger-guard.sh >> $KEEPLOG 2>&1
+    ops civvis-challenger-guard.sh >> $KEEPLOG 2>&1
   fi
 
   sleep 15

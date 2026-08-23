@@ -1194,6 +1194,18 @@ pub struct QueryCache {
     /// inside a query, so the answer is a table built once per memo scope
     /// and read with one array index.
     passage_improvements: std::cell::RefCell<Option<PassageTable>>,
+    /// What each unit's movement costs before the tile is even named.
+    ///
+    /// ★★★★ A UNIT-WIDE FACT ASKED PER NEIGHBOUR, BY STRING. `flow_past`
+    /// reaches `unit_step_cost`, `unit_max_moves_at` and
+    /// `formation_enters_enemy_zoc` once for every neighbour of every tile it
+    /// expands, and each of those descended a `BTreeMap<String, f64>` — one
+    /// `memcmp` per level — for `woods_move_cost`, `hills_move_cost`,
+    /// `amphibious`, `movement` and the rest, plus a seven-tile occupancy
+    /// sweep for the support aura. None of it depends on the tile, so a flood
+    /// over three hundred tiles asked the same questions three hundred times.
+    /// The answers are computed once per unit per memo scope instead.
+    movement: std::cell::RefCell<Option<BTreeMap<u32, MovementProfile>>>,
     amenities: std::cell::RefCell<Option<BTreeMap<u32, i64>>>,
     // Ownership-filtered ids are requested throughout AI evaluation. A
     // 100-seat game otherwise rescans every world entity for each request,
@@ -1269,6 +1281,69 @@ type AirPatrols = Arc<Vec<(usize, Pos)>>;
 /// `Game::passage_improvements`.
 type PassageTable = Arc<Vec<bool>>;
 
+/// What a movement flood asks about one unit and gets the same answer for at
+/// every tile it considers — see [`Game::step_terms`], [`Game::move_terms`]
+/// and [`Game::naval_move_terms`].
+///
+/// The three groups are filled independently, because the code they come from
+/// asks for them independently: a step cost never needs the support aura, and
+/// a land unit standing on land never needs the naval unlocks. Deriving a
+/// group its caller did not ask for would charge a one-off caller for work the
+/// open-coded version skipped, which is how a memo becomes a pessimization.
+///
+/// Each field is the *value* the open-coded expression produced, not a
+/// simplification of it, so the arithmetic that reads them adds the same terms
+/// in the same order and lands on the same bits.
+#[derive(Clone, Copy, Default)]
+struct MovementProfile {
+    step: Option<StepTerms>,
+    moves: Option<MoveTerms>,
+    naval: Option<NavalMoveTerms>,
+}
+
+/// The unit's half of `Game::unit_step_cost`.
+#[derive(Clone, Copy)]
+struct StepTerms {
+    /// A religious unit whose religion flattens every step to 1 MP.
+    religious_flat_movement: bool,
+    /// `unit_effect(unit, "woods_move_cost")`.
+    woods_move_cost: f64,
+    /// `unit_effect(unit, "hills_move_cost")`.
+    hills_move_cost: f64,
+    /// `promotion_effect(unit, "amphibious")`.
+    amphibious: f64,
+}
+
+/// The terms of `Game::unit_base_max_moves_at` that do not read the tile.
+#[derive(Clone, Copy)]
+struct MoveTerms {
+    /// `promotion_effect(unit, "movement")`.
+    promotion_movement: f64,
+    /// A religious unit standing beside a Guru of its own religion. The wonder
+    /// effect that pays for it stays at the call site: it is this seven-tile
+    /// occupancy scan, not the lookup, that costs anything.
+    guru_adjacent: bool,
+    /// Monumentality is active and this unit is a Builder or a Settler.
+    monumentality_civilian: bool,
+    /// Exodus of the Evangelists is active and this unit is religious.
+    exodus_religious: bool,
+    /// `adjacent_support_effect(unit, "adjacent_movement")`.
+    adjacent_movement: f64,
+}
+
+/// The movement unlocks only a naval or embarked unit is charged for.
+#[derive(Clone, Copy)]
+struct NavalMoveTerms {
+    /// `tree_effect(unit.owner, "naval_movement")`.
+    naval_movement_tree: f64,
+    /// `tree_effect(unit.owner, "embarked_movement")`.
+    embarked_movement_tree: f64,
+    /// `has_ability(unit.owner, "mana")`.
+    mana: bool,
+    /// `empire_wonder_effect(unit.owner, "naval_movement")`.
+    naval_movement_wonder: f64,
+}
+
 pub struct QueryMemo<'a> {
     game: &'a Game,
     outermost: bool,
@@ -1282,6 +1357,7 @@ impl Drop for QueryMemo<'_> {
             *self.game.query_memo.traversal.borrow_mut() = None;
             *self.game.query_memo.air_patrols.borrow_mut() = None;
             *self.game.query_memo.passage_improvements.borrow_mut() = None;
+            *self.game.query_memo.movement.borrow_mut() = None;
             *self.game.query_memo.amenities.borrow_mut() = None;
             *self.game.query_memo.unit_ids.borrow_mut() = None;
             *self.game.query_memo.unit_territory_access.borrow_mut() = None;
@@ -2120,6 +2196,267 @@ impl From<BTreeMap<u32, Unit>> for Units {
         map.into_iter().collect()
     }
 }
+
+/// The world's cities, and the sight inputs folded out of them.
+///
+/// This is a module rather than a bare type so that `Cities::map` is private
+/// to *these* lines and not merely to `game`. A private field is readable by
+/// every descendant module of the one that declares it, and `game` has three
+/// dozen of them; declaring the roster here means no other file in the crate
+/// can reach past the accessors, whatever it is a child of.
+mod city_roster {
+    use super::{vision_key, Arc, BTreeMap, City};
+
+    /// Every city fact the visibility derivation reads, folded once per
+    /// roster state instead of once per sight ask.
+    ///
+    /// Three folds, because sight asks the roster three different questions.
+    /// `Game::see_from_level` reads the whole world's city geometry; a seat's
+    /// own borders are an unconditional sight source; and a suzerain is shown
+    /// a fixed ring around each of its city-states' centres. Every chain walks
+    /// the roster in city-id order, exactly as the `BTreeMap::values()` loops
+    /// it replaces did, so a fold is a pure function of the roster.
+    #[derive(Default)]
+    pub(super) struct CityVisionStamps {
+        /// The city half of `Game::vision_geometry_stamp`: identity, centre,
+        /// encampment damage and every district placement, for every city in
+        /// the world regardless of owner.
+        pub(super) geometry: u64,
+        /// Per owner: identity, centre and every owned tile — the border
+        /// reveal `Game::base_player_visibility` unions for a seat's own
+        /// cities.
+        owned: BTreeMap<usize, u64>,
+        /// Per owner: identity and centre only — all that a suzerain's
+        /// three-tile reveal around a city-state's cities can depend on.
+        centres: BTreeMap<usize, u64>,
+    }
+
+    impl CityVisionStamps {
+        const GEOMETRY_BASE: u64 = 0x67;
+        const OWNED_BASE: u64 = 0x68;
+        const CENTRE_BASE: u64 = 0x69;
+
+        /// The empty chain for one owner. An owner with no cities and an owner
+        /// whose cities were all folded in must not share a value, and this is
+        /// also what that owner's chain starts from.
+        fn owner_seed(base: u64, owner: usize) -> u64 {
+            vision_key(&[base, owner as u64])
+        }
+
+        pub(super) fn owned(&self, owner: usize) -> u64 {
+            self.owned
+                .get(&owner)
+                .copied()
+                .unwrap_or_else(|| Self::owner_seed(Self::OWNED_BASE, owner))
+        }
+
+        pub(super) fn centres(&self, owner: usize) -> u64 {
+            self.centres
+                .get(&owner)
+                .copied()
+                .unwrap_or_else(|| Self::owner_seed(Self::CENTRE_BASE, owner))
+        }
+
+        fn build(map: &BTreeMap<u32, City>) -> Self {
+            let mut stamps = Self {
+                geometry: vision_key(&[Self::GEOMETRY_BASE, map.len() as u64]),
+                owned: BTreeMap::new(),
+                centres: BTreeMap::new(),
+            };
+            for city in map.values() {
+                stamps.geometry = vision_key(&[
+                    stamps.geometry,
+                    city.id as u64,
+                    city.pos.0 as i64 as u64,
+                    city.pos.1 as i64 as u64,
+                    city.encampment_pillaged as u64,
+                    city.districts.len() as u64,
+                    city.wonders.len() as u64,
+                ]);
+                for (district, position) in city.districts.iter() {
+                    stamps.geometry = vision_key(&[
+                        stamps.geometry,
+                        district.id() as u64,
+                        position.0 as i64 as u64,
+                        position.1 as i64 as u64,
+                    ]);
+                }
+                let owned = stamps
+                    .owned
+                    .entry(city.owner)
+                    .or_insert_with(|| Self::owner_seed(Self::OWNED_BASE, city.owner));
+                *owned = vision_key(&[
+                    *owned,
+                    3,
+                    city.id as u64,
+                    city.pos.0 as i64 as u64,
+                    city.pos.1 as i64 as u64,
+                    city.owned_tiles.len() as u64,
+                ]);
+                for position in &city.owned_tiles {
+                    *owned =
+                        vision_key(&[*owned, position.0 as i64 as u64, position.1 as i64 as u64]);
+                }
+                let centres = stamps
+                    .centres
+                    .entry(city.owner)
+                    .or_insert_with(|| Self::owner_seed(Self::CENTRE_BASE, city.owner));
+                *centres = vision_key(&[
+                    *centres,
+                    city.id as u64,
+                    city.pos.0 as i64 as u64,
+                    city.pos.1 as i64 as u64,
+                ]);
+            }
+            stamps
+        }
+    }
+
+    /// The world's cities, wrapped so that every route which can change one is
+    /// a method on this type.
+    ///
+    /// Reads reach the whole `BTreeMap` API through `Deref`, so borrowing,
+    /// iterating, indexing and looking a city up are unchanged — 589 existing
+    /// `cities.get_mut` call sites and every read compiled against this
+    /// without an edit. **`DerefMut` is deliberately absent, and adding one
+    /// would undo the whole guarantee.** Without it nothing can obtain
+    /// `&mut BTreeMap<u32, City>`, so the only ways to reach a `&mut City`, or
+    /// to add, drop or replace one, are the inherent methods below — and each
+    /// clears the memo before it hands the caller anything.
+    ///
+    /// A mutating map method that is not reimplemented here does not compile
+    /// at all. That is what makes the invalidation exhaustive rather than
+    /// remembered: `cargo check` re-enumerates the whole mutation surface of
+    /// every file in the crate on every build, and a mutation route added
+    /// years from now is a build error rather than a stale sight frame. Only
+    /// the routes the crate actually uses are here, deliberately — `iter_mut`,
+    /// `entry`, `retain`, `append`, `drain`, `split_off`, `pop_first` and
+    /// `pop_last` are all absent because nothing calls them, and an untested
+    /// accessor is a worse guard than a compile error. If you need one, add it
+    /// here with an `invalidate()` first; never reach for `DerefMut`.
+    ///
+    /// The memo is a field of the roster rather than an epoch counter beside
+    /// it in `VisionFrameCache`, because a counter can be desynchronized by
+    /// assigning or swapping a whole roster: the counter would travel with the
+    /// new cities while the memo stayed with the old. A memo that *is* part of
+    /// the value cannot come apart from it, and `mem::take`, `mem::swap` and
+    /// whole-field assignment are all safe for the same reason.
+    ///
+    /// Reading the memo needs `&Cities` and every mutable handle borrows
+    /// `&mut Cities`, so the borrow checker already forbids a sight ask from
+    /// observing the memo while a write to any city is outstanding.
+    /// Invalidation is therefore eager — it happens when the handle is issued,
+    /// before the caller has written anything — and no ask can fall between
+    /// the two.
+    #[derive(Default)]
+    pub struct Cities {
+        map: BTreeMap<u32, City>,
+        vision: std::cell::RefCell<Option<Arc<CityVisionStamps>>>,
+    }
+
+    impl Cities {
+        /// Drop the folded sight inputs. Every mutable accessor calls this
+        /// before it returns, so a caller cannot forget it.
+        #[inline]
+        fn invalidate(&mut self) {
+            *self.vision.get_mut() = None;
+        }
+
+        /// The folded city inputs to sight, rebuilt only after a mutation.
+        ///
+        /// The cached `Arc` is cloned out before the build so the shared
+        /// borrow is released first; the fold reads only `self.map` and can
+        /// therefore never re-enter this cell.
+        pub(super) fn vision_stamps(&self) -> Arc<CityVisionStamps> {
+            let cached = self.vision.borrow().clone();
+            cached.unwrap_or_else(|| {
+                let stamps = Arc::new(CityVisionStamps::build(&self.map));
+                *self.vision.borrow_mut() = Some(Arc::clone(&stamps));
+                stamps
+            })
+        }
+
+        /// Whether the folded sight inputs are currently installed. Only the
+        /// visibility tests read this; it is how they assert that a border
+        /// change actually evicted the memo rather than merely producing a
+        /// different answer.
+        #[cfg(test)]
+        pub(super) fn vision_stamps_cached(&self) -> bool {
+            self.vision.borrow().is_some()
+        }
+
+        #[inline]
+        pub fn get_mut(&mut self, id: &u32) -> Option<&mut City> {
+            self.invalidate();
+            self.map.get_mut(id)
+        }
+
+        pub fn values_mut(&mut self) -> std::collections::btree_map::ValuesMut<'_, u32, City> {
+            self.invalidate();
+            self.map.values_mut()
+        }
+
+        pub fn insert(&mut self, id: u32, city: City) -> Option<City> {
+            self.invalidate();
+            self.map.insert(id, city)
+        }
+
+        pub fn remove(&mut self, id: &u32) -> Option<City> {
+            self.invalidate();
+            self.map.remove(id)
+        }
+
+        pub fn clear(&mut self) {
+            self.invalidate();
+            self.map.clear();
+        }
+
+        pub fn into_values(self) -> std::collections::btree_map::IntoValues<u32, City> {
+            self.map.into_values()
+        }
+    }
+
+    impl Clone for Cities {
+        /// A clone inherits the memo, which describes exactly the roster being
+        /// cloned with it. The two cells are independent from then on, so a
+        /// branch that moves a border restamps only its own copy — the same
+        /// reasoning `VisionFrameCache::clone` records for the sight frames.
+        fn clone(&self) -> Self {
+            Self {
+                map: self.map.clone(),
+                vision: std::cell::RefCell::new(self.vision.borrow().clone()),
+            }
+        }
+    }
+
+    impl std::ops::Deref for Cities {
+        type Target = BTreeMap<u32, City>;
+
+        fn deref(&self) -> &Self::Target {
+            &self.map
+        }
+    }
+
+    impl<'a> IntoIterator for &'a Cities {
+        type Item = (&'a u32, &'a City);
+        type IntoIter = std::collections::btree_map::Iter<'a, u32, City>;
+
+        fn into_iter(self) -> Self::IntoIter {
+            self.map.iter()
+        }
+    }
+
+    impl FromIterator<(u32, City)> for Cities {
+        fn from_iter<I: IntoIterator<Item = (u32, City)>>(items: I) -> Self {
+            Self {
+                map: items.into_iter().collect(),
+                vision: std::cell::RefCell::new(None),
+            }
+        }
+    }
+}
+
+pub use city_roster::Cities;
 
 /// An immutable unit roster captured before a speculative branch runs.
 #[derive(Clone)]
@@ -5006,7 +5343,7 @@ pub struct Game {
     pub players: Players,
     pub units: Units,
     pub spies: BTreeMap<u32, Spy>,
-    pub cities: BTreeMap<u32, City>,
+    pub cities: Cities,
     pub at_war: BTreeSet<(usize, usize)>,
     /// Military scores reported by an authoritative host, keyed by CIVVIS seat.
     ///
@@ -6450,7 +6787,7 @@ impl Game {
             players: Players::default(),
             units: Units::default(),
             spies: BTreeMap::new(),
-            cities: BTreeMap::new(),
+            cities: Cities::default(),
             at_war: BTreeSet::new(),
             observed_military_power: BTreeMap::new(),
             observed_score: BTreeMap::new(),
@@ -16177,6 +16514,110 @@ impl Game {
         table
     }
 
+    /// The unit's half of a step cost, from the memo when a scope is live.
+    ///
+    /// `flow_past` calls `unit_step_cost` once per neighbour of every tile it
+    /// expands, and three of that function's five tests name only the unit —
+    /// each one a `BTreeMap<String, f64>` descent, a `memcmp` per level, for
+    /// an answer the flood cannot change. So, exactly as
+    /// [`Game::traversal_class`] already does for the same reason, they are
+    /// derived once per unit per memo scope.
+    ///
+    /// Outside a memo scope there is nothing to hold the answer against, so it
+    /// is rebuilt per call — precisely the work the open-coded version did,
+    /// never more. That "never more" is why the three groups of
+    /// [`MovementProfile`] are separate: see its documentation.
+    fn step_terms(&self, unit: &Unit) -> StepTerms {
+        if let Some(terms) = self
+            .query_memo
+            .movement
+            .borrow()
+            .as_ref()
+            .and_then(|memo| memo.get(&unit.id))
+            .and_then(|profile| profile.step)
+        {
+            return terms;
+        }
+        let spec = &self.rules.units[unit.kind];
+        let terms = StepTerms {
+            religious_flat_movement: spec.class == "religious"
+                && unit.religion.as_deref().is_some_and(|religion| {
+                    self.religion_belief_effect(religion, "religious_flat_movement") > 0.0
+                }),
+            woods_move_cost: self.unit_effect(unit, "woods_move_cost"),
+            hills_move_cost: self.unit_effect(unit, "hills_move_cost"),
+            amphibious: self.promotion_effect(unit, "amphibious"),
+        };
+        if let Some(memo) = self.query_memo.movement.borrow_mut().as_mut() {
+            memo.entry(unit.id).or_default().step = Some(terms);
+        }
+        terms
+    }
+
+    /// The tile-independent terms of a unit's movement allowance.
+    ///
+    /// `flow_past` re-derives the allowance at every neighbour it relaxes, and
+    /// the support aura alone sweeps the occupancy of seven tiles to find out
+    /// whether anything is standing next to a unit that has not moved.
+    fn move_terms(&self, unit: &Unit) -> MoveTerms {
+        if let Some(terms) = self
+            .query_memo
+            .movement
+            .borrow()
+            .as_ref()
+            .and_then(|memo| memo.get(&unit.id))
+            .and_then(|profile| profile.moves)
+        {
+            return terms;
+        }
+        let spec = &self.rules.units[unit.kind];
+        let terms = MoveTerms {
+            promotion_movement: self.promotion_effect(unit, "movement"),
+            guru_adjacent: spec.class == "religious"
+                && self.wdisk(unit.pos, 1).into_iter().any(|position| {
+                    self.unit_ids_at(position).iter().any(|other| {
+                        self.units[other].owner == unit.owner
+                            && self.units[other].kind == "guru"
+                            && self.units[other].religion == unit.religion
+                    })
+                }),
+            monumentality_civilian: self.dedication_active(unit.owner, "monumentality")
+                && matches!(unit.kind.as_str(), "builder" | "settler"),
+            exodus_religious: self.dedication_active(unit.owner, "exodus_of_the_evangelists")
+                && spec.class == "religious",
+            adjacent_movement: self.adjacent_support_effect(unit, "adjacent_movement"),
+        };
+        if let Some(memo) = self.query_memo.movement.borrow_mut().as_mut() {
+            memo.entry(unit.id).or_default().moves = Some(terms);
+        }
+        terms
+    }
+
+    /// The movement unlocks a naval or embarked unit adds. Derived only from
+    /// inside that branch, so a land unit on land never pays for it.
+    fn naval_move_terms(&self, unit: &Unit) -> NavalMoveTerms {
+        if let Some(terms) = self
+            .query_memo
+            .movement
+            .borrow()
+            .as_ref()
+            .and_then(|memo| memo.get(&unit.id))
+            .and_then(|profile| profile.naval)
+        {
+            return terms;
+        }
+        let terms = NavalMoveTerms {
+            naval_movement_tree: self.tree_effect(unit.owner, "naval_movement"),
+            embarked_movement_tree: self.tree_effect(unit.owner, "embarked_movement"),
+            mana: self.has_ability(unit.owner, "mana"),
+            naval_movement_wonder: self.empire_wonder_effect(unit.owner, "naval_movement"),
+        };
+        if let Some(memo) = self.query_memo.movement.borrow_mut().as_mut() {
+            memo.entry(unit.id).or_default().naval = Some(terms);
+        }
+        terms
+    }
+
     /// A unit's traversal class costs a ruleset effect sum over every tech
     /// and civic it owns plus two improvement unlocks, and a route search
     /// asks for it once per tile it examines — hence the memo above.
@@ -20899,6 +21340,9 @@ impl Game {
     fn unit_step_cost(&self, uid: u32, from: Pos, to: Pos) -> f64 {
         let unit = &self.units[&uid];
         let tile = &self.map.tiles[&to];
+        // Three of the tests below name the unit, not the tile, and a flood
+        // asks all three once per neighbour of every tile it expands.
+        let terms = self.step_terms(unit);
         // Medieval and later routes bridge rivers (SupportsBridges); Ancient
         // roads leave the crossing penalty in place. Bridging has to withhold
         // the surcharge rather than refund it afterwards: the route ladder
@@ -20930,28 +21374,24 @@ impl Game {
             }
             cost = cost.min(route);
         }
-        if self.rules.units[unit.kind].class == "religious"
-            && unit.religion.as_deref().is_some_and(|religion| {
-                self.religion_belief_effect(religion, "religious_flat_movement") > 0.0
-            })
-        {
+        if terms.religious_flat_movement {
             cost = 1.0;
         }
-        if self.unit_effect(unit, "woods_move_cost") > 0.0
+        if terms.woods_move_cost > 0.0
             && matches!(tile.feature.as_deref(), Some("forest" | "jungle"))
         {
             cost = 1.0;
         }
-        if self.unit_effect(unit, "hills_move_cost") > 0.0 && tile.hills {
+        if terms.hills_move_cost > 0.0 && tile.hills {
             cost = 1.0;
         }
-        if self.promotion_effect(unit, "amphibious") > 0.0 && self.crosses_river(from, to) {
+        if terms.amphibious > 0.0 && self.crosses_river(from, to) {
             cost = self.rules.move_cost(tile);
         }
         let changes_embarkation =
             self.unit_is_embarked_at(unit, from) != self.unit_is_embarked_at(unit, to);
         if changes_embarkation
-            && self.promotion_effect(unit, "amphibious") <= 0.0
+            && terms.amphibious <= 0.0
             && !self.has_ability(unit.owner, "knarr")
             && !self.embarkation_facility_at(from)
             && !self.embarkation_facility_at(to)
@@ -21457,6 +21897,10 @@ impl Game {
         let u = &self.units[&uid];
         let spec = &self.rules.units[u.kind];
         let tile = &self.map.tiles[&pos];
+        // Only the terrain terms and the emergency below read `pos`; the rest
+        // is a property of the unit, and `flow_past` re-derives the allowance
+        // at every neighbour it relaxes.
+        let terms = self.move_terms(u);
         let embarked = self.unit_is_embarked_at(u, pos);
         let mut moves = if embarked {
             2.0
@@ -21468,28 +21912,23 @@ impl Game {
         } else {
             spec.moves
         };
-        moves += self.promotion_effect(u, "movement") + u.bonus_moves;
-        if spec.domain.as_deref() == Some("sea") || embarked {
-            moves += self.tree_effect(u.owner, "naval_movement");
-        }
-        if embarked {
-            moves += self.tree_effect(u.owner, "embarked_movement");
-            if self.has_ability(u.owner, "mana") {
-                moves += 2.0;
-            }
-        }
-        if spec.domain.as_deref() == Some("sea") || embarked {
-            moves += self.empire_wonder_effect(u.owner, "naval_movement");
-        }
-        if spec.class == "religious"
-            && self.wdisk(u.pos, 1).into_iter().any(|position| {
-                self.units_at(position).into_iter().any(|other| {
-                    self.units[&other].owner == u.owner
-                        && self.units[&other].kind == "guru"
-                        && self.units[&other].religion == u.religion
-                })
-            })
+        moves += terms.promotion_movement + u.bonus_moves;
+        // The three naval unlocks are added in the order they always were —
+        // `embarked` implies this branch, so nesting changes which terms are
+        // summed for no unit and their sequence for none either.
+        if let Some(naval) =
+            (spec.domain.as_deref() == Some("sea") || embarked).then(|| self.naval_move_terms(u))
         {
+            moves += naval.naval_movement_tree;
+            if embarked {
+                moves += naval.embarked_movement_tree;
+                if naval.mana {
+                    moves += 2.0;
+                }
+            }
+            moves += naval.naval_movement_wonder;
+        }
+        if terms.guru_adjacent {
             moves += self.empire_wonder_effect(u.owner, "guru_adjacent_religious_movement");
         }
         if u.kind == "giant_death_robot" {
@@ -21505,13 +21944,10 @@ impl Game {
         {
             moves += spec.clear_terrain_start_movement;
         }
-        if self.dedication_active(u.owner, "monumentality")
-            && matches!(u.kind.as_str(), "builder" | "settler")
-        {
+        if terms.monumentality_civilian {
             moves += 2.0;
         }
-        if self.dedication_active(u.owner, "exodus_of_the_evangelists") && spec.class == "religious"
-        {
+        if terms.exodus_religious {
             moves += 2.0;
         }
         let territory_owner = tile
@@ -21525,7 +21961,7 @@ impl Game {
         }) {
             moves += 1.0;
         }
-        moves += self.adjacent_support_effect(u, "adjacent_movement");
+        moves += terms.adjacent_movement;
         moves
     }
 
@@ -21726,27 +22162,17 @@ impl Game {
     /// changed: the map itself, and the cities whose centers and Encampments
     /// look out over it.
     fn world_stamp(&self) -> u64 {
-        let mut stamp = vision_key(&[self.map.tiles.epoch(), self.turn as u64]);
-        for city in self.cities.values() {
-            stamp = vision_key(&[
-                stamp,
-                city.id as u64,
-                city.pos.0 as u64,
-                city.pos.1 as u64,
-                city.encampment_pillaged as u64,
-                city.districts.len() as u64,
-                city.wonders.len() as u64,
-            ]);
-            for (district, position) in &city.districts {
-                stamp = vision_key(&[
-                    stamp,
-                    district.id() as u64,
-                    position.0 as i64 as u64,
-                    position.1 as i64 as u64,
-                ]);
-            }
-        }
-        stamp
+        // Same roster walk as [`Self::vision_geometry_stamp`], and on the
+        // hotter path of the two: `height_field()` asks for this, and
+        // `player_can_see` builds a height field per question.  Every ask used
+        // to rewalk every city and every district — allocating a `Vec` per
+        // city on the way, because `&Districts` collects before it iterates —
+        // so it reads the roster's own fold instead.
+        vision_key(&[
+            self.map.tiles.epoch(),
+            self.turn as u64,
+            self.cities.vision_stamps().geometry,
+        ])
     }
 
     /// Fold only map fields that a sight ray reads.  Roads, improvements,
@@ -21789,7 +22215,7 @@ impl Game {
                 2_u64.wrapping_add(frequency as i64 as u64)
             }
         };
-        let mut stamp = vision_key(&[
+        let stamp = vision_key(&[
             self.map_vision_geometry_stamp(),
             self.map.width as i64 as u64,
             self.map.height as i64 as u64,
@@ -21800,27 +22226,11 @@ impl Game {
         // `see_from_level` reads exactly these city facts in addition to the
         // map.  Keep the geometry stamp in lockstep with the unit-ray cache's
         // existing world stamp, but leave the turn counter out as explained
-        // above.
-        for city in self.cities.values() {
-            stamp = vision_key(&[
-                stamp,
-                city.id as u64,
-                city.pos.0 as i64 as u64,
-                city.pos.1 as i64 as u64,
-                city.encampment_pillaged as u64,
-                city.districts.len() as u64,
-                city.wonders.len() as u64,
-            ]);
-            for (district, position) in &city.districts {
-                stamp = vision_key(&[
-                    stamp,
-                    district.id() as u64,
-                    position.0 as i64 as u64,
-                    position.1 as i64 as u64,
-                ]);
-            }
-        }
-        stamp
+        // above.  The walk itself lives on [`Cities`], which re-folds it only
+        // after a city has been exposed mutably; every sight ask used to pay
+        // for it, districts included, and iterating `&city.districts`
+        // allocated a `Vec` per city per ask on the way.
+        vision_key(&[stamp, self.cities.vision_stamps().geometry])
     }
 
     /// Hash one viewer's sight sources into a compact, position-independent
@@ -21838,23 +22248,12 @@ impl Game {
             .get(viewer)
             .copied()
             .unwrap_or_else(|| vision_key(&[viewer as u64]));
-        for city in self.cities.values().filter(|city| city.owner == viewer) {
-            stamp = vision_key(&[
-                stamp,
-                3,
-                city.id as u64,
-                city.pos.0 as i64 as u64,
-                city.pos.1 as i64 as u64,
-                city.owned_tiles.len() as u64,
-            ]);
-            for position in &city.owned_tiles {
-                stamp = vision_key(&[
-                    stamp,
-                    position.0 as i64 as u64,
-                    position.1 as i64 as u64,
-                ]);
-            }
-        }
+        // A seat's own borders are the widest input here: one ask used to
+        // hash every tile of every city it owns, roughly 8.6 M tile hashes
+        // over a game.  Borders move rarely, so [`Cities`] folds them once per
+        // roster state and this reads the owner's number.
+        let city_stamps = self.cities.vision_stamps();
+        stamp = vision_key(&[stamp, city_stamps.owned(viewer)]);
         // A suzerain's city-state ring is a sight source.  Hash only the
         // relationships that actually reveal ground; changes to envoys that
         // leave the same city-state under the same suzerain do not force a
@@ -21866,15 +22265,7 @@ impl Game {
                 && !minor.is_barbarian
                 && suzerains.get(&minor.id).copied().flatten() == Some(viewer)
         }) {
-            stamp = vision_key(&[stamp, 4, minor.id as u64]);
-            for city in self.cities.values().filter(|city| city.owner == minor.id) {
-                stamp = vision_key(&[
-                    stamp,
-                    city.id as u64,
-                    city.pos.0 as i64 as u64,
-                    city.pos.1 as i64 as u64,
-                ]);
-            }
+            stamp = vision_key(&[stamp, 4, minor.id as u64, city_stamps.centres(minor.id)]);
         }
         for spy in self.spies.values().filter(|spy| {
             spy.owner == viewer && spy.captured_by.is_none() && spy.ready_turn <= self.turn
@@ -23630,16 +24021,20 @@ impl Game {
             return false;
         };
         let water = self.rules.is_water(t);
+        // The mover's half of the religious test is the same at all six
+        // neighbours and for every unit standing on them, and the occupancy
+        // list is read, not kept — `units_at` would copy it into a fresh
+        // `Vec` once per neighbour of every tile a flood expands.
+        let mover_religious = mover_spec.class == "religious" && mover.religion.is_some();
         for n in self.nbrs(pos) {
-            for oid in self.units_at(n) {
-                let other = &self.units[&oid];
+            for oid in self.unit_ids_at(n) {
+                let other = &self.units[oid];
                 if other.owner == mover.owner {
                     continue;
                 }
                 let other_spec = &self.rules.units[other.kind];
-                let religious_zoc = mover_spec.class == "religious"
+                let religious_zoc = mover_religious
                     && other_spec.class == "religious"
-                    && mover.religion.is_some()
                     && other.religion.is_some()
                     && mover.religion != other.religion;
                 let military_zoc =
@@ -23819,11 +24214,13 @@ impl Game {
                 }
             }
         }
-        for oid in self.units_at(pos) {
+        // Read the occupancy list in place: `units_at` copies it into a fresh
+        // `Vec`, and `flow_past` asks this once per neighbour of every tile.
+        for oid in self.unit_ids_at(pos) {
             if through_units {
                 break;
             }
-            let o = &self.units[&oid];
+            let o = &self.units[oid];
             let ospec = &self.rules.units[o.kind];
             // Based aircraft occupy a slot, not the land/naval stacking layer.
             // A hostile ground unit may enter the base and subsequently
@@ -24215,7 +24612,14 @@ impl Game {
         let max_moves = self.unit_max_moves(uid);
         let positions = self.flow_past(uid, start, max_moves, true);
         let flood: Vec<Pos> = positions.keys().copied().collect();
-        let mut targets = BTreeSet::new();
+        // ⚠ THIS WAS A `BTreeSet` AND IT ALLOCATED ONE NODE PER CANDIDATE.
+        // A ranged unit offers the same tile from every stride it can shoot
+        // from, so the set spent most of its work absorbing duplicates a node
+        // at a time, and its caller then re-collected the result into a
+        // second set. A `Vec` sorted once produces the identical ascending,
+        // distinct sequence this function's contract promises, from one
+        // buffer, and `BasicAi`'s envelope adopts it without copying.
+        let mut targets: Vec<Pos> = Vec::new();
         for (from, remaining) in positions {
             if remaining <= 0.0 {
                 continue;
@@ -24232,7 +24636,7 @@ impl Game {
                         && self.map.tiles.contains_key(&target)
                         && self.unit_has_line_of_sight_from(uid, from, target)
                     {
-                        targets.insert(target);
+                        targets.push(target);
                     }
                 }
             }
@@ -24247,12 +24651,14 @@ impl Game {
                     }
                     let fresh = from == start && remaining >= max_moves;
                     if fresh || remaining >= self.unit_step_cost(uid, from, target) {
-                        targets.insert(target);
+                        targets.push(target);
                     }
                 }
             }
         }
-        (targets.into_iter().collect(), flood)
+        targets.sort_unstable();
+        targets.dedup();
+        (targets, flood)
     }
 
     /// Every legal single step inside this turn's remaining movement, as
@@ -24674,6 +25080,17 @@ impl Game {
     /// impassable. A breadth-first flood in map order keeps labels
     /// deterministic, though only label *equality* ever matters.
     fn build_routing_zones(&self, class: TraversalClass) -> Vec<u32> {
+        // ⚠ #2309 moved `improvements[name].effects["passage"]` behind
+        // `Game::passage_improvements`, which builds a table over the whole
+        // improvement list and keeps it for the memo scope — and *rebuilds it
+        // per call* when there is no scope to keep it in. That is the right
+        // trade for the movement flood, which always has one, and the wrong
+        // one here: this sweep asks `class_can_traverse` for every tile on the
+        // map with no scope open, so an improved tile paid a lookup per
+        // improvement in the ruleset instead of one. Opening a scope over the
+        // sweep is all it needs; the guard borrows the world immutably, so the
+        // flood below cannot see a table it did not build.
+        let _memo = self.query_memo();
         let mut zones = vec![0u32; self.map.tiles.len()];
         // The flood visits a tile once as a seed or neighbor and may inspect
         // it many more times from adjacent frontier tiles. Evaluate the
@@ -28231,6 +28648,7 @@ impl Game {
             *self.query_memo.traversal.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.air_patrols.borrow_mut() = None;
             *self.query_memo.passage_improvements.borrow_mut() = None;
+            *self.query_memo.movement.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.amenities.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.unit_ids.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.unit_territory_access.borrow_mut() = Some(BTreeMap::new());
