@@ -1295,6 +1295,71 @@ def tracked_wins(gene: dict) -> float:
     return float(diff)
 
 
+def family_of(tag: str, tags: list[str]) -> list[str]:
+    """`tag`'s family in version order, base first — `[]` when the gene is
+    not versioned."""
+    return next((family for family in families_of(tags) if tag in family), [])
+
+
+def best_versions(family: list[str], verdict: dict[str, dict],
+                  measured: dict[str, list[dict]]) -> list[str]:
+    """⭐ A FAMILY'S VERSIONS, BEST FIRST. The version that ships (on and not
+    a runner-up) leads; the rest follow by tracked wins — the ledger's pooled
+    on−off win difference, or the display record's for a version the ledger
+    has not recorded — ties to the higher version. Only priced versions are
+    listed; an unpriced version that ships still leads (it is what plays)."""
+    def key(tag: str) -> tuple[bool, float, int]:
+        row = verdict.get(tag, {})
+        ships = bool(row.get("default_on")) and not row.get("family_runner_up")
+        if row.get("win_diff_pp") is not None:
+            wins = tracked_wins(row)
+        elif measured.get(tag):
+            wins = pooled_win_diff_pp(measured[tag])
+        else:
+            wins = float("-inf")
+        return (ships, wins, family.index(tag))
+    listed = [tag for tag in family
+              if measured.get(tag) or (verdict.get(tag, {}).get("default_on")
+                                       and not verdict[tag].get("family_runner_up"))]
+    return sorted(listed, key=key, reverse=True)
+
+
+def best_version_cell(tag: str, tags: list[str], verdict: dict[str, dict],
+                      measured: dict[str, list[dict]]) -> str:
+    """The ranking's *Best version* column: the number of the family's best
+    version (`1` = the original, `n` = `<base>-<n>`), the same on every row
+    of the family; `—` for a gene that is not versioned."""
+    family = family_of(tag, tags)
+    if not family:
+        return "—"
+    best = best_versions(family, verdict, measured)
+    return str(family.index(best[0]) + 1) if best else "—"
+
+
+def family_rate_cells(tag: str, tags: list[str], verdict: dict[str, dict],
+                      measured: dict[str, list[dict]]) -> tuple[str, str] | None:
+    """The *Total (on)* / *Total (off)* cells of a versioned gene's row: the
+    best two versions' pooled on and off win rates, best first, each with its
+    own seats — a version's *on* is the seats that played THAT version, and
+    every other seat (off, or a sibling version on) is its *off*, exactly as
+    the screen prices each version on its own row. `None` when the gene is
+    not versioned or no version is priced, so the row prints its own rates."""
+    family = family_of(tag, tags)
+    if not family:
+        return None
+    shown = [t for t in best_versions(family, verdict, measured) if measured.get(t)][:2]
+    if not shown:
+        return None
+    on_cells, off_cells = [], []
+    for t in shown:
+        history = measured[t]
+        on_rate, off_rate = pooled_win_rates(history)
+        label = f"v{family.index(t) + 1}"
+        on_cells.append(f"{label} {100 * on_rate:.2f}% (n={fmt_int(sum(m['n_on'] for m in history))})")
+        off_cells.append(f"{label} {100 * off_rate:.2f}% (n={fmt_int(sum(m['n_off'] for m in history))})")
+    return " · ".join(on_cells), " · ".join(off_cells)
+
+
 def choose_family_heads(genes: list[dict]) -> None:
     """⭐ ONE VERSION OF A FAMILY PLAYS — THE BEST, WHATEVER IT IS. Every
     version is priced on its own row under the same rule, but the deployment
@@ -2544,6 +2609,15 @@ def render(ledger: dict) -> str:
         "rules decision records the batch as an authoritative source. Screenable genes awaiting "
         "every displayed measurement are listed separately below without a rank.",
         "",
+        "**Versioned genes.** An improvement to a gene is a new gene `<base>-<n>` "
+        "(`docs/GENE_SCREEN.md`, *Versioning a gene*), priced on its own row: a version's "
+        "*on* is the seats that played that version, and every other seat — off, or a "
+        "sibling version on — is its *off*. *Best version* names the family's best version "
+        "(`1` is the original) on every row of the family: the version that ships, else the "
+        "priced version with the highest tracked wins. A versioned row's *Total (on)* and "
+        "*Total (off)* cells show the best two versions' rates side by side, best first, "
+        "each with its own `n`; `—` marks a gene with no versions.",
+        "",
         "**Reading the table.** A six-player seat wins 1-in-6 by chance, so the expected "
         "count is 1,667 wins per 10,000 total seats. The batch cells are the enabled arm's "
         "excess over that chance rate, scaled from actual completed seats; they do not invent "
@@ -2616,14 +2690,14 @@ def render(ledger: dict) -> str:
         "",
         default_on_summary(ledger["rules"]["authority"]),
         "",
-        "| Rank | Gene | Description | Default | "
+        "| Rank | Gene | Description | Best version | Default | "
         + " | ".join(
             reporting_batch_header(label, batch)
             for label, batch in zip(REPORTING_BATCH_LABELS, reporting_slots)
         )
         + " | Total (on) Win rate | Total (off) Win rate | Diff | Posterior (95% CI) | "
         "P(>0) | Share Δpp (z) | cost (compute) | cost (time) |",
-        "|---:|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|",
+        "|---:|---|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|",
     ]
     for rank, (wins, tag, history) in enumerate(rows, 1):
         v = verdict.get(tag, {})
@@ -2636,12 +2710,19 @@ def render(ledger: dict) -> str:
         on_seats = sum(m["n_on"] for m in history)
         off_seats = sum(m["n_off"] for m in history)
         on_rate, off_rate = pooled_win_rates(history)
+        # A versioned gene's row shows the best two versions' rates side by
+        # side (operator, 2026-08-23); every other row shows its own.
+        on_cell, off_cell = family_rate_cells(tag, tags, verdict, measured) or (
+            f"{100 * on_rate:.2f}% (n={fmt_int(on_seats)})",
+            f"{100 * off_rate:.2f}% (n={fmt_int(off_seats)})",
+        )
         posterior = posterior_of(history)
         lines.append(
-            f"| {rank} | `{tag}` | {desc.get(tag, '')} | {default} | {last} | {prior} | "
+            f"| {rank} | `{tag}` | {desc.get(tag, '')} | "
+            f"{best_version_cell(tag, tags, verdict, measured)} | {default} | {last} | {prior} | "
             f"{third} | "
-            f"{100 * on_rate:.2f}% (n={fmt_int(on_seats)}) | "
-            f"{100 * off_rate:.2f}% (n={fmt_int(off_seats)}) | "
+            f"{on_cell} | "
+            f"{off_cell} | "
             f"{diff_cell(history)} | "
             f"{posterior_cell(posterior)} | {probability_cell(posterior)} | "
             f"{share_cell(history)} | "
@@ -2662,15 +2743,16 @@ def render(ledger: dict) -> str:
             "promotion from this table. Their deployment state remains explicit while a "
             "screen is pending.",
             "",
-            "| Gene | Default | Description |",
-            "|---|---|---|",
+            "| Gene | Default | Description | Best version |",
+            "|---|---|---|---:|",
         ]
         for tag in sorted(unmeasured):
             v = verdict.get(tag, {})
             default = "**on**" if v.get("default_on") else "off"
             verdict_word = v.get("verdict", "unmeasured")
             lines.append(
-                f"| `{tag}` | {default} ({verdict_word}) | {desc.get(tag, '')} |"
+                f"| `{tag}` | {default} ({verdict_word}) | {desc.get(tag, '')} | "
+                f"{best_version_cell(tag, tags, verdict, measured)} |"
             )
 
     if removed:
