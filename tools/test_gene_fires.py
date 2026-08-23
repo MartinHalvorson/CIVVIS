@@ -113,6 +113,39 @@ class WhatCountsAsFiring(unittest.TestCase):
         self.assertIn("escort-unstick", fired)
 
 
+class ProbesAreNotLedgerSources(unittest.TestCase):
+    """Three map pairs must never price a gene, and only a name stops them.
+
+    A single-gene probe runs at the screen's own profile, so its file says
+    `"shape": "standard"` and `tools/gene_ledger.py`'s shape guard — the one
+    that refuses a probe — would let it through. What actually keeps it out is
+    that the ledger takes its sources by name. That is a convention until
+    something checks it, and eighteen seat pairs entering the ledger would
+    move a default.
+    """
+
+    def test_no_fires_probe_is_a_ledger_source(self):
+        ledger = json.loads(
+            (gene_fires.ROOT / "docs" / "gene_ledger.json").read_text(
+                encoding="utf-8"))
+        sources = [source["path"] for source in ledger["sources"]]
+        probes = [path for path in sources if "/fires/" in path]
+        self.assertEqual(
+            probes, [],
+            "a fires probe is being used to price genes; it is three map "
+            "pairs and proves only that the gene moves a game: " + str(probes))
+
+    def test_a_probe_is_small_enough_that_this_matters(self):
+        """If a probe ever grows into a real screen, revisit the guard above."""
+        directory = gene_fires.SCREENS / "fires"
+        if not directory.is_dir():
+            self.skipTest("no probes committed yet")
+        for path in sorted(directory.glob("*.json")):
+            with self.subTest(probe=path.name):
+                probe = json.loads(path.read_text(encoding="utf-8"))
+                self.assertLess(probe["complete_pairs"], 200)
+
+
 class Waivers(unittest.TestCase):
     def test_every_waiver_names_a_gene_that_exists(self):
         genes = gene_fires.gene_tables()
