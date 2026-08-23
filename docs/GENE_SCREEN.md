@@ -767,8 +767,9 @@ That paragraph was written down here; `treatment_flags.rs` wrote the same
 warning from the other direction — an `ENGINE_REPAIR_TREATMENTS` tag whose
 enable is missing from the bundle is off in **both** arms, "the two arms play
 byte-identical games", and *"three tags reached the tables before this line and
-burned 30 games saying nothing"*; `ai_eval`, `battle_bench`, `doctrine_arena`
-and `gene_census` each implement a fires-check for their own instrument. What
+burned 30 games saying nothing"*; `battle_bench`, `doctrine_arena` and
+`gene_census` each implement a fires-check for their own instrument (so did
+the retired `ai_eval`). What
 none of that was, was a **gate**. Nothing stopped a tag reaching the three gene
 tables with no evidence it fires, and nothing failed when a committed screen
 contained a zero-width row. `competition-victory-points` is in the tables today
@@ -1026,7 +1027,8 @@ had already said. `docs/gene_ranking_notes.md` carries the numbers.
 
 - Not `gene_census`, which asks whether a continuous `Weights` gene moves an
   outcome at all. The genes here are the boolean treatment flags.
-- Not a promotion gate. `ai_eval --matrix` and the Elo ledgers stay the
-  authority on whether an arm ships; a screen's `*` is where to point one.
+- Not a verdict on its own. A screen's `*` is where to point a single-gene
+  run (`--genes tag`) on disjoint seeds; the ledger's rule (`docs/gene_ledger.json`,
+  `tools/gene_ledger.py`) is what moves a default, and it reads both.
 - Not the deployment regime. Firaxis-only flags are excluded by construction;
   the live ladder (`docs/CIV6_LADDER.md`) prices those.
