@@ -63,77 +63,122 @@ Everything the old roadmap called planned has shipped and then some:
    Battlefield, is measured on the skirmish benchmark, and leaves native-world
    and frozen-anchor identities unchanged.
 5. **Relieve the measured conflict hotspots**, which are not the three this
-   objective originally named and are no longer the seven that replaced them.
-   Measured over the 200 merges preceding 2026-08-23
+   objective used to name. Measured over the 200 merges preceding 2026-08-18
    (`tools/conflict_hotspots.py`; CI checks the targets below are real):
 
    | file | merges touching it | why it is contended |
    |---|---:|---|
-   | `src/ai/advanced.rs` | 26% | size — 31.7k lines |
-   | `src/ai/advanced/tests.rs` | 25% | size — 31.7k lines, split out of `advanced.rs` by #1918 |
-   | `src/ai/advanced/treatment_flags.rs` | 23% | one shared list: the `enable_*`/`disable_*` toggles, moved here by #2029 |
-   | `src/ai/advanced/treatments.rs` | 20% | one shared list: `LIVE_TREATMENTS`, moved here by #2022 |
-   | `src/ai.rs` | 14% | size — 24.5k lines |
-   | `src/elo.rs` | 12% | one shared list: the arm and treatment registries |
-   | `src/game.rs` | 12% | size — 50.2k lines |
-   | `web/assets/app.js` | 10% | size — 32.2k lines |
-
-   **⚠ The anchor moved; it was not removed.** `treatment_flags.rs` and
-   `treatments.rs` exist *because of this objective* — #2022 and #2029 carried
-   `advanced.rs`'s two append anchors out of it, and this entry recorded that
-   half as done on 2026-08-18. Five days later the two new files are hotspots
-   **#3 and #4**, and `advanced.rs` did not fall: it went 23% → 26% and is
-   still first. The overlap says why. Of the 47 merges in this window that
-   touch an anchor file, **36 touch `advanced.rs` in the same merge** and only
-   11 do not. Splitting a list into its own file gives two PRs appending to it
-   two files to collide in instead of one; it decouples them only once the work
-   that appends to the list stops needing to edit `advanced.rs` too. Counting
-   the whole family — `advanced.rs`, its tests, and the two anchor files —
-   **70 of 200 merges (35%) land somewhere inside it.** So the next move is not
-   another extraction: it is to find why a treatment that registers itself in
-   `treatments.rs` still has to reach into `advanced.rs`, and cut that.
-
-   **`src/ai/advanced/tests.rs` is second at 25% and the old table never named
-   it.** #1918 moved 22,647 test lines out of `advanced.rs` to relieve it; the
-   file is now 31,733 lines — marginally *longer* than the 31,674-line
-   `advanced.rs` it was cut from — and only 8 of the 50 merges touching it
-   leave `advanced.rs` alone. It is the same story as the anchors, told by a
-   third file.
-
-   **The ranking is volatile, and pinning it in prose is what broke the gate.**
-   `src/main.rs` was on this table at 16%; it is at 4% now, below the tool's
-   own 5% floor, and from 2026-08-19 that one stale row failed
-   `.github/workflows/census.yml` on its first step five nights running —
-   taking the ninety-minute census and the free cross-platform determinism
-   check down with it every time. Two lessons, and the second is the one that
-   cost the five nights:
-
-   - a row here is a reading with a date on it, not a standing fact.
-     `web/assets/app.js` is the file this objective was once wrong to name — 2%
-     on 2026-08-18, *"one merge in fifty"*, struck off the list — and it is
-     back at 10%. Re-run the tool before trusting the table;
-   - **a doc going stale must not be able to silence an instrument.** The
-     hotspot check is cheap and still runs first, but it now runs as its own
-     job, so a red objective and a red determinism reading are two separate
-     findings and neither hides the other.
-
-   **Two problems, two remedies.** Splitting along seams answers the files
-   contended for their size — `advanced.rs` and `tests.rs`, then `game.rs`. It
-   does nothing for `elo.rs`, `treatment_flags.rs`, `treatments.rs` and
-   `src/bin/civvis_orders.rs` (8%), where every treatment PR appends to *one
-   shared line or list*: two such PRs conflict whatever the file's length, and
-   the fix is to move that data out of source entirely, the way `docs/eval/`
-   did it for `docs/EVAL.md`'s single append point. The two new anchor files
-   above are the evidence that moving it to *another source file* is not the
-   same remedy.
+   | `src/ai/advanced.rs` | 23% | size — one 23.3k-line impl block |
+   | `src/elo.rs` | 18% | one shared list: the arm and treatment registries |
+   | `src/game.rs` | 17% | size |
+   | `src/ai/advanced/tests.rs` | 24% | size — 31.7k lines, cut out of `advanced.rs` by #1918 and now longer than it |
+   | `src/ai.rs` | 10% | size |
+   | `tools/civ6_control/mod/CivvisControlAgent.lua` | 10% | size — 12.2k lines in one chunk, against a 199-local ceiling |
+   | `src/bin/civvis_orders.rs` | 10% | one shared list: the `--without` arms |
 
    ⚠ The Lua row was invisible until 2026-08-18. `conflict_hotspots.py` ranked
    `(rs|js|py|sh)` only, so the fifth-most-contended file in the repository
    could not appear in the ranking however contended it became — and an absent
    file prints exactly like an uncontended one. The tool now ranks every
    hand-written source suffix, and a test pins that rather than the rank.
-   `tools/civ6_control/mod/CivvisControlAgent.lua` has since eased to 8%,
-   which is a fact the ranking can now state either way.
+
+   The old list was built from file size, and size is not the tax. `elo.rs` is
+   a seventh of `game.rs`'s length and is contended more often. And
+   `web/assets/app.js` — the third-largest file in the repository, and one of
+   the three this objective used to name — is touched by **one merge in fifty**;
+   it is off the list, because splitting a file nobody edits costs a large diff
+   and buys nothing.
+
+   **Two problems, two remedies.** Splitting along seams answers the ones
+   contended for their size — `advanced.rs`, then `game.rs`. It does nothing
+   for `main.rs`, `elo.rs` and `civvis_orders.rs`, where every treatment PR
+   appends to *one shared line or list*: two such PRs conflict whatever the
+   file's length, and the fix is to move that data out of source, the way
+   `docs/eval/` did it for `docs/EVAL.md`'s single append point.
+
+   **Which problem each file has, measured (2026-08-23).** The table above is
+   touch rate, and touch rate scores a file contended for its size and a file
+   contended for one shared list identically. `conflict_hotspots.py --modes`
+   separates them: for each file it takes every pair of *consecutive* merges
+   that touch it, undoes the earlier one and merges the later one in with
+   git's own three-way merge, then splits the conflicts into **two pull
+   requests appending to one shared list** (both sides only inserted lines, at
+   a place where collisions repeat) and **two pull requests editing the same
+   code**. Over the 200 merges ending at `2c570f4f`:
+
+   ```
+   file                                touch  collide  anchored  verdict
+   src/ai/advanced.rs                    24%     8/47      8/16  BOTH
+   src/ai/advanced/tests.rs              24%    10/46      0/10  SPREAD
+   src/ai/advanced/treatment_flags.rs    22%     7/42       0/7  SPREAD
+   src/ai/advanced/treatments.rs         19%    10/37     10/10  ANCHOR
+   src/ai.rs                             12%     7/24      2/21  SPREAD
+   src/elo.rs                            11%     4/21     15/18  ANCHOR
+   src/game.rs                           11%     7/21      2/25  SPREAD
+   web/assets/app.js                     10%     1/20       0/3  SPREAD
+   ```
+
+   ⚠⚠ **Half of the 2026-08-18 relocation worked and half did not, and only
+   this reading can tell which.** `treatment_flags.rs` and `treatments.rs`
+   came out of the same effort. The 182 toggles now collide at 182 *different*
+   places, which is no anchor at all; the two tables still collide at exactly
+   two lines. Moving a list to another file relieves it only if the appends
+   stop landing on one line — for the toggles they did, for the tables they
+   did not. `tests.rs`, second in the ranking and never on this table before,
+   is pure size (0 of 10): splitting is its remedy and moving data is not. And
+   `advanced.rs`, recorded below as having had its shared-anchor half done,
+   still holds the two largest single anchors in the repository — the flag
+   field on `pub struct AdvancedAi` (3 pairs) and its `flag: false,` twin in
+   `fn configured` (5), which no list of hotspots had ever named.
+
+   **What the anchor relocation cost, and what replaced it (2026-08-23).**
+   #2022 and #2029 moved two anchors out of `advanced.rs` and bought two new
+   hotspots at 22% and 19%; `advanced.rs` did not fall. So the second attempt
+   does not move anything. Each anchor a treatment pull request appends to —
+   the struct field, the `configured` initialiser, the `enable_*`/`disable_*`
+   pair, and both tables — now carries a run of markers, one per range of
+   first letters, and a treatment is filed under the range its own name falls
+   in. Git's merge conflicts only when two insertions land on the same line,
+   so two treatments whose names start in different ranges no longer collide
+   anywhere. On the 156 existing names the eight ranges hold
+   19/20/23/17/24/18/23/12, so two new treatments share a range **13% of the
+   time — 7.7x fewer collisions, dividing the rate rather than removing it.**
+   Cost: 122 added comment lines, no row re-ordered, no line deleted, no
+   consumer touched. `tools/test_treatment_append_points.py` builds two
+   synthetic treatment pull requests and *merges* them rather than asserting
+   that they would, and pins the same-range case as a control so the suite
+   cannot pass by testing nothing.
+
+   ⚠ **Why nothing was re-ordered, and why a data file is not the answer.**
+   `gene_screen`'s `draw_genome` walks `ENGINE_REPAIR_TREATMENTS ++
+   PRODUCTION_TREATMENTS ++ PRODUCTION_OPT_INS` **positionally**, taking the
+   i-th value of one seeded stream for the i-th gene, so re-ordering those
+   tables re-assigns every gene's drawn bit. That is why every row has always
+   been appended at the very end — the only edit that leaves the existing
+   genes' bits alone. A JSON or TOML table would relocate the anchor a third
+   time for the reason `treatments.rs` already demonstrates: two pull requests
+   appending a row to one file conflict wherever that file lives, and sorting
+   it only narrows the collision to neighbouring names.
+
+   **Still open, in the order the measurement ranks them:** removing the
+   `fn configured` anchor outright rather than dividing it — its 143
+   `flag: false,` lines are all the derived default, but `impl Default for
+   AdvancedAi` already means `Self::new()`, so the derive is a semantic change
+   to a public trait impl and 83 of those lines are less than a week old;
+   `src/elo.rs`'s four registries and two `ArmKind` match tables (ANCHOR, 15
+   of 18); and the size half of `advanced.rs` and `tests.rs`, 31.7k lines
+   each, which is the only one of these that splitting answers.
+
+   **`advanced.rs` had both problems, and its shared-anchor half is done
+   (2026-08-18).** It is the most contended file in the repository *and* the
+   one every live-treatment PR appends to. Both of its append anchors have now left it:
+   the `LIVE_TREATMENTS` table to `advanced/treatments.rs` (#2022), and the 182
+   `enable_*`/`disable_*` toggles — the anchor whose collisions had already
+   swallowed a function's closing brace twice — to
+   `advanced/treatment_flags.rs`. A guard in the new file fails when a toggle
+   is defined in `advanced.rs` again, so the move does not quietly reverse.
+   The size half is untouched: `advanced.rs` is still 27k lines and still
+   first on the table above.
 
    ⚠ Touch rate is exposure, not pain — two PRs editing distant parts of one
    file do not collide. Real conflict counts are not recoverable from `main`,

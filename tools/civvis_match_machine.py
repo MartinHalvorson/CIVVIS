@@ -539,6 +539,7 @@ class MatchMachine:
             remaining = (absolute_deadline - datetime.now(timezone.utc)).total_seconds()
             self.deadline = self.started_monotonic + max(0.0, remaining)
         self.stopping = False
+        self.stop_signal: str | None = None
         self.watch_identity = process_identity(args.watch_pid) if args.watch_pid else None
         self.caffeinate: subprocess.Popen[str] | None = None
         self.maxima = {"cpu": 0.0, "memory": 0.0, "disk": 0.0, "gpu": 0.0}
@@ -551,6 +552,17 @@ class MatchMachine:
         event = {"at": utc_now(), "kind": kind, **values}
         append_jsonl(self.events, event)
         print(f"[match-machine] {kind}: " + " ".join(f"{k}={v}" for k, v in values.items()), flush=True)
+
+    def stop_cause(self, unspent: float) -> str:
+        """Why this run ended, in the one field a reader looks at first.
+
+        A signal wins over the clock: a run killed in its final second is
+        still a kill, and calling it `window_ended` is what made the
+        2026-08-15 outage look like a completed job for a week.
+        """
+        if self.stop_signal:
+            return f"stopped:{self.stop_signal.lower()}"
+        return "stopped:window_ended" if unspent <= 0 else "stopped:loop_exit"
 
     def persist(self, reason: str = "heartbeat") -> None:
         matches = self.league / "matches.csv"
@@ -1584,8 +1596,15 @@ class MatchMachine:
                 self.build_future.cancel()
             self.build_executor.shutdown(wait=True)
             self.refresh_ranking()
-            self.persist("stopped")
-            self.event("machine_stopped", completed=self.completed, failed=self.failed, resources=asdict(last_sample))
+            # `stopped` said nothing a reader could act on. The cause and the
+            # unspent time are what separate "the window ended, publish it"
+            # from "something killed this, restart it".
+            unspent = max(0.0, self.deadline - time.monotonic())
+            cause = self.stop_cause(unspent)
+            self.persist(cause)
+            self.event("machine_stopped", completed=self.completed, failed=self.failed,
+                       stop_cause=cause, seconds_unspent=round(unspent, 1),
+                       resources=asdict(last_sample))
         return 0
 
 
@@ -1677,7 +1696,20 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     machine = MatchMachine(args)
 
-    def stop(_signum: int, _frame: Any) -> None:
+    def stop(signum: int, _frame: Any) -> None:
+        # ⚠ RECORD *WHICH* SIGNAL. Discarding it is why the league's week-long
+        # outage went unnoticed: on 2026-08-15T08:59:11Z this process was
+        # SIGTERM'd when the agent session that had launched it in the
+        # background ended, and the only trace it left was
+        # `reason: "stopped"` beside a `deadline_utc` 17h51m in the future —
+        # a record identical to the one a window that ran to term writes.
+        # Every other way this loop can end already names itself
+        # (`terminal_closed`, `operator_window_ended`, `fatal`); the one that
+        # actually happened was the silent one.
+        try:
+            machine.stop_signal = signal.Signals(signum).name
+        except ValueError:  # a signal number Python does not name
+            machine.stop_signal = f"signal {signum}"
         machine.stopping = True
 
     signal.signal(signal.SIGINT, stop)

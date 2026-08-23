@@ -2121,6 +2121,267 @@ impl From<BTreeMap<u32, Unit>> for Units {
     }
 }
 
+/// The world's cities, and the sight inputs folded out of them.
+///
+/// This is a module rather than a bare type so that `Cities::map` is private
+/// to *these* lines and not merely to `game`. A private field is readable by
+/// every descendant module of the one that declares it, and `game` has three
+/// dozen of them; declaring the roster here means no other file in the crate
+/// can reach past the accessors, whatever it is a child of.
+mod city_roster {
+    use super::{vision_key, Arc, BTreeMap, City};
+
+    /// Every city fact the visibility derivation reads, folded once per
+    /// roster state instead of once per sight ask.
+    ///
+    /// Three folds, because sight asks the roster three different questions.
+    /// `Game::see_from_level` reads the whole world's city geometry; a seat's
+    /// own borders are an unconditional sight source; and a suzerain is shown
+    /// a fixed ring around each of its city-states' centres. Every chain walks
+    /// the roster in city-id order, exactly as the `BTreeMap::values()` loops
+    /// it replaces did, so a fold is a pure function of the roster.
+    #[derive(Default)]
+    pub(super) struct CityVisionStamps {
+        /// The city half of `Game::vision_geometry_stamp`: identity, centre,
+        /// encampment damage and every district placement, for every city in
+        /// the world regardless of owner.
+        pub(super) geometry: u64,
+        /// Per owner: identity, centre and every owned tile — the border
+        /// reveal `Game::base_player_visibility` unions for a seat's own
+        /// cities.
+        owned: BTreeMap<usize, u64>,
+        /// Per owner: identity and centre only — all that a suzerain's
+        /// three-tile reveal around a city-state's cities can depend on.
+        centres: BTreeMap<usize, u64>,
+    }
+
+    impl CityVisionStamps {
+        const GEOMETRY_BASE: u64 = 0x67;
+        const OWNED_BASE: u64 = 0x68;
+        const CENTRE_BASE: u64 = 0x69;
+
+        /// The empty chain for one owner. An owner with no cities and an owner
+        /// whose cities were all folded in must not share a value, and this is
+        /// also what that owner's chain starts from.
+        fn owner_seed(base: u64, owner: usize) -> u64 {
+            vision_key(&[base, owner as u64])
+        }
+
+        pub(super) fn owned(&self, owner: usize) -> u64 {
+            self.owned
+                .get(&owner)
+                .copied()
+                .unwrap_or_else(|| Self::owner_seed(Self::OWNED_BASE, owner))
+        }
+
+        pub(super) fn centres(&self, owner: usize) -> u64 {
+            self.centres
+                .get(&owner)
+                .copied()
+                .unwrap_or_else(|| Self::owner_seed(Self::CENTRE_BASE, owner))
+        }
+
+        fn build(map: &BTreeMap<u32, City>) -> Self {
+            let mut stamps = Self {
+                geometry: vision_key(&[Self::GEOMETRY_BASE, map.len() as u64]),
+                owned: BTreeMap::new(),
+                centres: BTreeMap::new(),
+            };
+            for city in map.values() {
+                stamps.geometry = vision_key(&[
+                    stamps.geometry,
+                    city.id as u64,
+                    city.pos.0 as i64 as u64,
+                    city.pos.1 as i64 as u64,
+                    city.encampment_pillaged as u64,
+                    city.districts.len() as u64,
+                    city.wonders.len() as u64,
+                ]);
+                for (district, position) in city.districts.iter() {
+                    stamps.geometry = vision_key(&[
+                        stamps.geometry,
+                        district.id() as u64,
+                        position.0 as i64 as u64,
+                        position.1 as i64 as u64,
+                    ]);
+                }
+                let owned = stamps
+                    .owned
+                    .entry(city.owner)
+                    .or_insert_with(|| Self::owner_seed(Self::OWNED_BASE, city.owner));
+                *owned = vision_key(&[
+                    *owned,
+                    3,
+                    city.id as u64,
+                    city.pos.0 as i64 as u64,
+                    city.pos.1 as i64 as u64,
+                    city.owned_tiles.len() as u64,
+                ]);
+                for position in &city.owned_tiles {
+                    *owned =
+                        vision_key(&[*owned, position.0 as i64 as u64, position.1 as i64 as u64]);
+                }
+                let centres = stamps
+                    .centres
+                    .entry(city.owner)
+                    .or_insert_with(|| Self::owner_seed(Self::CENTRE_BASE, city.owner));
+                *centres = vision_key(&[
+                    *centres,
+                    city.id as u64,
+                    city.pos.0 as i64 as u64,
+                    city.pos.1 as i64 as u64,
+                ]);
+            }
+            stamps
+        }
+    }
+
+    /// The world's cities, wrapped so that every route which can change one is
+    /// a method on this type.
+    ///
+    /// Reads reach the whole `BTreeMap` API through `Deref`, so borrowing,
+    /// iterating, indexing and looking a city up are unchanged — 589 existing
+    /// `cities.get_mut` call sites and every read compiled against this
+    /// without an edit. **`DerefMut` is deliberately absent, and adding one
+    /// would undo the whole guarantee.** Without it nothing can obtain
+    /// `&mut BTreeMap<u32, City>`, so the only ways to reach a `&mut City`, or
+    /// to add, drop or replace one, are the inherent methods below — and each
+    /// clears the memo before it hands the caller anything.
+    ///
+    /// A mutating map method that is not reimplemented here does not compile
+    /// at all. That is what makes the invalidation exhaustive rather than
+    /// remembered: `cargo check` re-enumerates the whole mutation surface of
+    /// every file in the crate on every build, and a mutation route added
+    /// years from now is a build error rather than a stale sight frame. Only
+    /// the routes the crate actually uses are here, deliberately — `iter_mut`,
+    /// `entry`, `retain`, `append`, `drain`, `split_off`, `pop_first` and
+    /// `pop_last` are all absent because nothing calls them, and an untested
+    /// accessor is a worse guard than a compile error. If you need one, add it
+    /// here with an `invalidate()` first; never reach for `DerefMut`.
+    ///
+    /// The memo is a field of the roster rather than an epoch counter beside
+    /// it in `VisionFrameCache`, because a counter can be desynchronized by
+    /// assigning or swapping a whole roster: the counter would travel with the
+    /// new cities while the memo stayed with the old. A memo that *is* part of
+    /// the value cannot come apart from it, and `mem::take`, `mem::swap` and
+    /// whole-field assignment are all safe for the same reason.
+    ///
+    /// Reading the memo needs `&Cities` and every mutable handle borrows
+    /// `&mut Cities`, so the borrow checker already forbids a sight ask from
+    /// observing the memo while a write to any city is outstanding.
+    /// Invalidation is therefore eager — it happens when the handle is issued,
+    /// before the caller has written anything — and no ask can fall between
+    /// the two.
+    #[derive(Default)]
+    pub struct Cities {
+        map: BTreeMap<u32, City>,
+        vision: std::cell::RefCell<Option<Arc<CityVisionStamps>>>,
+    }
+
+    impl Cities {
+        /// Drop the folded sight inputs. Every mutable accessor calls this
+        /// before it returns, so a caller cannot forget it.
+        #[inline]
+        fn invalidate(&mut self) {
+            *self.vision.get_mut() = None;
+        }
+
+        /// The folded city inputs to sight, rebuilt only after a mutation.
+        ///
+        /// The cached `Arc` is cloned out before the build so the shared
+        /// borrow is released first; the fold reads only `self.map` and can
+        /// therefore never re-enter this cell.
+        pub(super) fn vision_stamps(&self) -> Arc<CityVisionStamps> {
+            let cached = self.vision.borrow().clone();
+            cached.unwrap_or_else(|| {
+                let stamps = Arc::new(CityVisionStamps::build(&self.map));
+                *self.vision.borrow_mut() = Some(Arc::clone(&stamps));
+                stamps
+            })
+        }
+
+        /// Whether the folded sight inputs are currently installed. Only the
+        /// visibility tests read this; it is how they assert that a border
+        /// change actually evicted the memo rather than merely producing a
+        /// different answer.
+        #[cfg(test)]
+        pub(super) fn vision_stamps_cached(&self) -> bool {
+            self.vision.borrow().is_some()
+        }
+
+        #[inline]
+        pub fn get_mut(&mut self, id: &u32) -> Option<&mut City> {
+            self.invalidate();
+            self.map.get_mut(id)
+        }
+
+        pub fn values_mut(&mut self) -> std::collections::btree_map::ValuesMut<'_, u32, City> {
+            self.invalidate();
+            self.map.values_mut()
+        }
+
+        pub fn insert(&mut self, id: u32, city: City) -> Option<City> {
+            self.invalidate();
+            self.map.insert(id, city)
+        }
+
+        pub fn remove(&mut self, id: &u32) -> Option<City> {
+            self.invalidate();
+            self.map.remove(id)
+        }
+
+        pub fn clear(&mut self) {
+            self.invalidate();
+            self.map.clear();
+        }
+
+        pub fn into_values(self) -> std::collections::btree_map::IntoValues<u32, City> {
+            self.map.into_values()
+        }
+    }
+
+    impl Clone for Cities {
+        /// A clone inherits the memo, which describes exactly the roster being
+        /// cloned with it. The two cells are independent from then on, so a
+        /// branch that moves a border restamps only its own copy — the same
+        /// reasoning `VisionFrameCache::clone` records for the sight frames.
+        fn clone(&self) -> Self {
+            Self {
+                map: self.map.clone(),
+                vision: std::cell::RefCell::new(self.vision.borrow().clone()),
+            }
+        }
+    }
+
+    impl std::ops::Deref for Cities {
+        type Target = BTreeMap<u32, City>;
+
+        fn deref(&self) -> &Self::Target {
+            &self.map
+        }
+    }
+
+    impl<'a> IntoIterator for &'a Cities {
+        type Item = (&'a u32, &'a City);
+        type IntoIter = std::collections::btree_map::Iter<'a, u32, City>;
+
+        fn into_iter(self) -> Self::IntoIter {
+            self.map.iter()
+        }
+    }
+
+    impl FromIterator<(u32, City)> for Cities {
+        fn from_iter<I: IntoIterator<Item = (u32, City)>>(items: I) -> Self {
+            Self {
+                map: items.into_iter().collect(),
+                vision: std::cell::RefCell::new(None),
+            }
+        }
+    }
+}
+
+pub use city_roster::Cities;
+
 /// An immutable unit roster captured before a speculative branch runs.
 #[derive(Clone)]
 pub struct UnitSnapshot(Arc<BTreeMap<u32, Arc<Unit>>>);
@@ -5006,7 +5267,7 @@ pub struct Game {
     pub players: Players,
     pub units: Units,
     pub spies: BTreeMap<u32, Spy>,
-    pub cities: BTreeMap<u32, City>,
+    pub cities: Cities,
     pub at_war: BTreeSet<(usize, usize)>,
     /// Military scores reported by an authoritative host, keyed by CIVVIS seat.
     ///
@@ -6450,7 +6711,7 @@ impl Game {
             players: Players::default(),
             units: Units::default(),
             spies: BTreeMap::new(),
-            cities: BTreeMap::new(),
+            cities: Cities::default(),
             at_war: BTreeSet::new(),
             observed_military_power: BTreeMap::new(),
             observed_score: BTreeMap::new(),
@@ -21726,27 +21987,17 @@ impl Game {
     /// changed: the map itself, and the cities whose centers and Encampments
     /// look out over it.
     fn world_stamp(&self) -> u64 {
-        let mut stamp = vision_key(&[self.map.tiles.epoch(), self.turn as u64]);
-        for city in self.cities.values() {
-            stamp = vision_key(&[
-                stamp,
-                city.id as u64,
-                city.pos.0 as u64,
-                city.pos.1 as u64,
-                city.encampment_pillaged as u64,
-                city.districts.len() as u64,
-                city.wonders.len() as u64,
-            ]);
-            for (district, position) in &city.districts {
-                stamp = vision_key(&[
-                    stamp,
-                    district.id() as u64,
-                    position.0 as i64 as u64,
-                    position.1 as i64 as u64,
-                ]);
-            }
-        }
-        stamp
+        // Same roster walk as [`Self::vision_geometry_stamp`], and on the
+        // hotter path of the two: `height_field()` asks for this, and
+        // `player_can_see` builds a height field per question.  Every ask used
+        // to rewalk every city and every district — allocating a `Vec` per
+        // city on the way, because `&Districts` collects before it iterates —
+        // so it reads the roster's own fold instead.
+        vision_key(&[
+            self.map.tiles.epoch(),
+            self.turn as u64,
+            self.cities.vision_stamps().geometry,
+        ])
     }
 
     /// Fold only map fields that a sight ray reads.  Roads, improvements,
@@ -21789,7 +22040,7 @@ impl Game {
                 2_u64.wrapping_add(frequency as i64 as u64)
             }
         };
-        let mut stamp = vision_key(&[
+        let stamp = vision_key(&[
             self.map_vision_geometry_stamp(),
             self.map.width as i64 as u64,
             self.map.height as i64 as u64,
@@ -21800,27 +22051,11 @@ impl Game {
         // `see_from_level` reads exactly these city facts in addition to the
         // map.  Keep the geometry stamp in lockstep with the unit-ray cache's
         // existing world stamp, but leave the turn counter out as explained
-        // above.
-        for city in self.cities.values() {
-            stamp = vision_key(&[
-                stamp,
-                city.id as u64,
-                city.pos.0 as i64 as u64,
-                city.pos.1 as i64 as u64,
-                city.encampment_pillaged as u64,
-                city.districts.len() as u64,
-                city.wonders.len() as u64,
-            ]);
-            for (district, position) in &city.districts {
-                stamp = vision_key(&[
-                    stamp,
-                    district.id() as u64,
-                    position.0 as i64 as u64,
-                    position.1 as i64 as u64,
-                ]);
-            }
-        }
-        stamp
+        // above.  The walk itself lives on [`Cities`], which re-folds it only
+        // after a city has been exposed mutably; every sight ask used to pay
+        // for it, districts included, and iterating `&city.districts`
+        // allocated a `Vec` per city per ask on the way.
+        vision_key(&[stamp, self.cities.vision_stamps().geometry])
     }
 
     /// Hash one viewer's sight sources into a compact, position-independent
@@ -21838,23 +22073,12 @@ impl Game {
             .get(viewer)
             .copied()
             .unwrap_or_else(|| vision_key(&[viewer as u64]));
-        for city in self.cities.values().filter(|city| city.owner == viewer) {
-            stamp = vision_key(&[
-                stamp,
-                3,
-                city.id as u64,
-                city.pos.0 as i64 as u64,
-                city.pos.1 as i64 as u64,
-                city.owned_tiles.len() as u64,
-            ]);
-            for position in &city.owned_tiles {
-                stamp = vision_key(&[
-                    stamp,
-                    position.0 as i64 as u64,
-                    position.1 as i64 as u64,
-                ]);
-            }
-        }
+        // A seat's own borders are the widest input here: one ask used to
+        // hash every tile of every city it owns, roughly 8.6 M tile hashes
+        // over a game.  Borders move rarely, so [`Cities`] folds them once per
+        // roster state and this reads the owner's number.
+        let city_stamps = self.cities.vision_stamps();
+        stamp = vision_key(&[stamp, city_stamps.owned(viewer)]);
         // A suzerain's city-state ring is a sight source.  Hash only the
         // relationships that actually reveal ground; changes to envoys that
         // leave the same city-state under the same suzerain do not force a
@@ -21866,15 +22090,7 @@ impl Game {
                 && !minor.is_barbarian
                 && suzerains.get(&minor.id).copied().flatten() == Some(viewer)
         }) {
-            stamp = vision_key(&[stamp, 4, minor.id as u64]);
-            for city in self.cities.values().filter(|city| city.owner == minor.id) {
-                stamp = vision_key(&[
-                    stamp,
-                    city.id as u64,
-                    city.pos.0 as i64 as u64,
-                    city.pos.1 as i64 as u64,
-                ]);
-            }
+            stamp = vision_key(&[stamp, 4, minor.id as u64, city_stamps.centres(minor.id)]);
         }
         for spy in self.spies.values().filter(|spy| {
             spy.owner == viewer && spy.captured_by.is_none() && spy.ready_turn <= self.turn
@@ -24215,7 +24431,14 @@ impl Game {
         let max_moves = self.unit_max_moves(uid);
         let positions = self.flow_past(uid, start, max_moves, true);
         let flood: Vec<Pos> = positions.keys().copied().collect();
-        let mut targets = BTreeSet::new();
+        // ⚠ THIS WAS A `BTreeSet` AND IT ALLOCATED ONE NODE PER CANDIDATE.
+        // A ranged unit offers the same tile from every stride it can shoot
+        // from, so the set spent most of its work absorbing duplicates a node
+        // at a time, and its caller then re-collected the result into a
+        // second set. A `Vec` sorted once produces the identical ascending,
+        // distinct sequence this function's contract promises, from one
+        // buffer, and `BasicAi`'s envelope adopts it without copying.
+        let mut targets: Vec<Pos> = Vec::new();
         for (from, remaining) in positions {
             if remaining <= 0.0 {
                 continue;
@@ -24232,7 +24455,7 @@ impl Game {
                         && self.map.tiles.contains_key(&target)
                         && self.unit_has_line_of_sight_from(uid, from, target)
                     {
-                        targets.insert(target);
+                        targets.push(target);
                     }
                 }
             }
@@ -24247,12 +24470,14 @@ impl Game {
                     }
                     let fresh = from == start && remaining >= max_moves;
                     if fresh || remaining >= self.unit_step_cost(uid, from, target) {
-                        targets.insert(target);
+                        targets.push(target);
                     }
                 }
             }
         }
-        (targets.into_iter().collect(), flood)
+        targets.sort_unstable();
+        targets.dedup();
+        (targets, flood)
     }
 
     /// Every legal single step inside this turn's remaining movement, as
