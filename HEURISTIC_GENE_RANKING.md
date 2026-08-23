@@ -1,6 +1,6 @@
 # The heuristic gene ranking
 
-| Rank | Gene | Description | Default | ± Wins Last 10k | ± Wins 10k Prior | Total (on) Win rate | Total (off) Win rate | Diff | cost (compute) | cost (time) |
+| Rank | Gene | Description | Default | ± Wins Per Last 10k Seats | ± Wins Per 10k Seats Prior | Total (on) Win rate | Total (off) Win rate | Diff | cost (compute) | cost (time) |
 |---:|---|---|---|---:|---:|---:|---:|---:|---:|---:|
 | 1 | `holy-lane-parity` | The Religion lane pays for its Holy Site what the Culture lane pays for its Theater Square. | **on** | +99 | +63 | 17.21% (n=30,774) | 16.13% (n=30,774) | 1.08% | +0.49% ±0.31% | +1.07% ±0.70% |
 | 2 | `great-person-housing` | A class earned and blocked reserves a city for the slot building, district, wonder or soldier that lifts the block, and a due cultural person sells duplicate works to make room. | **on** | +78 | – | 17.45% (n=17,574) | 15.89% (n=17,574) | 1.56% | -0.01% ±0.34% | -0.29% ±0.60% |
