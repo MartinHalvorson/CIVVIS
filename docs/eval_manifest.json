@@ -71,23 +71,23 @@
     ]
   },
   "ladder": {
-    "ahead": 12,
-    "attempts": 349,
-    "configured": 342,
-    "full_length": 147,
-    "graded": 48,
+    "ahead": 34,
+    "attempts": 425,
+    "configured": 418,
+    "full_length": 190,
+    "graded": 120,
     "latest_utc": "2026-08-19T11:21:36Z",
     "lead_best": 759,
-    "lead_median": -207,
-    "rival_bar_median": 1077,
-    "score_best": 1588,
-    "score_median": 461,
+    "lead_median": -218,
+    "rival_bar_median": 1108,
+    "score_best": 1606,
+    "score_median": 514,
     "stolen": {
       "conquest": 1,
-      "culture": 27,
-      "diplomatic": 47,
+      "culture": 38,
+      "diplomatic": 58,
       "religious": 5,
-      "technology": 3
+      "technology": 5
     },
     "stolen_turns": {
       "conquest": {
@@ -97,13 +97,13 @@
       },
       "culture": {
         "earliest": 145,
-        "latest": 245,
-        "median": 221
+        "latest": 247,
+        "median": 230
       },
       "diplomatic": {
         "earliest": 202,
         "latest": 247,
-        "median": 234
+        "median": 241
       },
       "religious": {
         "earliest": 75,
@@ -112,13 +112,13 @@
       },
       "technology": {
         "earliest": 242,
-        "latest": 244,
-        "median": 242
+        "latest": 246,
+        "median": 244
       }
     },
-    "stolen_while_ahead": 4,
-    "terminal": 232,
-    "wins": 7
+    "stolen_while_ahead": 15,
+    "terminal": 299,
+    "wins": 16
   },
   "registry": {
     "BUILTIN_AIS": {
