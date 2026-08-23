@@ -908,7 +908,8 @@ def default_on_summary(authority: str) -> str:
     return (
         "**Default on:** both newest columns >0; or avg "
         f">{AVERAGE_BAR:+.0f} with neither <{COLUMN_FLOOR:.0f}; sole reading "
-        f">{SINGLE_COLUMN_BAR:+.0f}; pooled *Diff* <{DIFF_FLOOR:.0f} vetoes."
+        f">{SINGLE_COLUMN_BAR:+.0f}; pooled *Diff* <{DIFF_FLOOR:.0f} vetoes. "
+        "These batch columns do not change this deployed default."
     ).replace("-", "−")
 
 
@@ -1124,6 +1125,78 @@ def load_source(path: Path) -> dict:
     return data
 
 
+REPORTING_BATCH_LABELS = ("Last Batch", "Prior Batch", "Third Batch")
+
+
+def source_record(path: Path, data: dict) -> dict:
+    """The immutable metadata one analysis contributes to a record.
+
+    Deployment sources and reporting-only batches have the same provenance
+    contract.  They differ only in whether their rows are allowed to change
+    the deployment ledger, so keep their identity, seat count and build stamp
+    in one byte-stable shape.
+    """
+    profile = profile_of(data)
+    entry = {
+        "path": str(path.relative_to(ROOT)) if path.is_relative_to(ROOT) else str(path),
+        "shape": shape_of(profile),
+        "seats": source_seats(data),
+        "complete_pairs": seat_pairs(source_seats(data)),
+        "family_wise_z": round(float(data.get("family_wise_z", 0.0)), 3),
+        "profile": profile,
+    }
+    if data.get("games") is not None:
+        entry["games"] = int(data["games"])
+    build = build_of(data)
+    if build:
+        entry["build"] = build
+    batch = batch_of(data)
+    if batch["target_seats"] is not None:
+        entry["batch"] = batch
+    return entry
+
+
+def reporting_batches_from_ledger(ledger: dict) -> list[Path]:
+    """The newest-first, report-only batches the ranking displays.
+
+    They deliberately stay outside ``sources``: the operator asked for the
+    completed 10k screen to be visible without changing the deployment genome
+    while that result is reviewed.  Their provenance is still re-read by
+    ``check`` so a table cannot quietly point at a different artifact.
+    """
+    raw = ledger.get("reporting_batches", [])
+    if not isinstance(raw, list):
+        raise SystemExit("gene ledger reporting_batches must be a list")
+    if len(raw) > len(REPORTING_BATCH_LABELS):
+        raise SystemExit(
+            f"gene ledger has {len(raw)} reporting batches; the ranking has "
+            f"only {len(REPORTING_BATCH_LABELS)} batch columns"
+        )
+    paths = []
+    for entry in raw:
+        if not isinstance(entry, dict) or not entry.get("path"):
+            raise SystemExit("every reporting batch must name its analysis path")
+        path = (ROOT / str(entry["path"])).resolve()
+        if path in paths:
+            raise SystemExit(f"reporting batch appears twice: {path}")
+        paths.append(path)
+    return paths
+
+
+def reporting_batch_records(paths: list[Path]) -> list[dict]:
+    """Validate and record report-only batch artifacts without pricing rules."""
+    records = []
+    for path in paths:
+        data = load_source(path)
+        gap = build_gap(data, path.name)
+        if gap:
+            raise SystemExit(
+                gap + "\nA reporting batch must name the clean build it measured."
+            )
+        records.append(source_record(path, data))
+    return records
+
+
 def measure_from(gene: dict, source_name: str) -> dict:
     seats = gene_seats(gene)
     measure = {
@@ -1217,7 +1290,8 @@ def choose_family_heads(genes: list[dict]) -> None:
 
 def build_ledger(sources: list[Path], filter_known: bool = True,
                  build_notes: dict[str, str] | None = None,
-                 authority: str = AUTHORITY) -> dict:
+                 authority: str = AUTHORITY,
+                 reporting_batches: list[Path] | None = None) -> dict:
     """Merge the sources into one ledger object (the JSON file's content).
     Sources are recorded oldest-first, and a later one overrides an earlier one
     per gene. `filter_known=False` keeps every tag (synthetic tests).
@@ -1229,7 +1303,9 @@ def build_ledger(sources: list[Path], filter_known: bool = True,
     waived, and is what makes `--unverified-build` a *recorded* escape rather
     than a spoken one: the reason lands in the ledger beside the source it
     excuses, and `rebuild_from_ledger` reads it back so `--check` re-derives
-    the same file."""
+    the same file. ``reporting_batches`` are separately verified screens the
+    ranking displays but deliberately does not use to re-decide ``default_on``.
+    """
     measures: dict[str, dict] = {}
     # Every win column a gene has, oldest first. The tail three are the
     # ranking's scaled last, prior and third batch columns, so each screen
@@ -1250,28 +1326,12 @@ def build_ledger(sources: list[Path], filter_known: bool = True,
         profile = profile_of(data)
         players = int(profile.get("players") or 0)
         family[name] = float(data.get("family_wise_z", 0.0))
-        seats = source_seats(data)
-        entry = {
-            "path": str(path.relative_to(ROOT)) if path.is_relative_to(ROOT) else str(path),
-            "shape": shape_of(profile),
-            "seats": seats,
-            "complete_pairs": seat_pairs(seats),
-            "family_wise_z": round(family[name], 3),
-            "profile": profile,
-        }
-        if data.get("games") is not None:
-            entry["games"] = int(data["games"])
+        entry = source_record(path, data)
         # ⚠ Written only when the source has one. The twenty pre-2026-08-23
         # sources carry no build block and no pre-registration, so recording
         # them here would rewrite twenty entries to say nothing; their state is
         # `pre-fingerprint`, which `build_state` derives and `print_table`
         # names on every line.
-        build = build_of(data)
-        if build:
-            entry["build"] = build
-        batch = batch_of(data)
-        if batch["target_seats"] is not None:
-            entry["batch"] = batch
         if build_notes and name in build_notes:
             entry["unverified"] = build_notes[name]
         recorded.append(entry)
@@ -1413,6 +1473,7 @@ def build_ledger(sources: list[Path], filter_known: bool = True,
                                  "src/ai/advanced/gene_ledger.rs mirrors it",
         },
         "sources": recorded,
+        "reporting_batches": reporting_batch_records(reporting_batches or []),
         "counts": counts,
         "genes": genes,
     }
@@ -1615,7 +1676,8 @@ def rebuild_from_ledger(ledger: dict, authority: str | None = None) -> dict:
     just read."""
     return build_ledger(sources_from_ledger(ledger),
                         build_notes=notes_from_ledger(ledger),
-                        authority=authority or authority_of(ledger))
+                        authority=authority or authority_of(ledger),
+                        reporting_batches=reporting_batches_from_ledger(ledger))
 
 
 def sources_from_ledger(ledger: dict) -> list[Path]:
@@ -1704,6 +1766,7 @@ def resolutions(ledger: dict) -> list[dict]:
             "name": Path(src["path"]).name,
             "shape": src["shape"],
             "genes": len(errors),
+            "seats": source_seats(data),
             "pairs": pairs,
             "se": median,
             "band": POWER_80 * median,
@@ -1758,53 +1821,82 @@ def descriptions() -> dict[str, str]:
     return out
 
 
+def measurements_from_source(data: dict, name: str, shape: str) -> dict[str, dict]:
+    """One source's per-gene observations, retaining real on/off seat counts."""
+    rows: dict[str, dict] = {}
+    source_total_seats = source_seats(data)
+    for gene in data.get("genes", []):
+        # Only legacy sources need this fallback. Do not evaluate it for an
+        # independent batch that recorded both arms but no `pairs`.
+        legacy_arm_seats = None
+        if gene.get("n_on") is None or gene.get("n_off") is None:
+            legacy_arm_seats = seat_pairs(gene_seats(gene))
+        rows[gene["tag"]] = {
+            "win_on": float(gene["win_on"]),
+            "win_off": float(gene["win_off"]),
+            "n_on": int(gene["n_on"] if gene.get("n_on") is not None else legacy_arm_seats),
+            "n_off": int(gene["n_off"] if gene.get("n_off") is not None else legacy_arm_seats),
+            "win_z": float(gene["win_z"]),
+            "share_z": float(gene["share_z"]),
+            "win_delta_pp": float(gene["win_delta_pp"]),
+            "win_se_pp": (None if gene.get("win_se_pp") is None
+                          else float(gene["win_se_pp"])),
+            "share_delta_pp": float(gene["share_delta_pp"]),
+            "shape": shape,
+            "source": name,
+            "source_seats": source_total_seats,
+            "players": int(data.get("profile", {}).get("players", 0) or 0),
+            "compute_cost_pct": gene.get("compute_cost_pct"),
+            "compute_cost_se_pct": gene.get("compute_cost_se_pct"),
+            "time_cost_pct": gene.get("time_cost_pct"),
+            "time_cost_se_pct": gene.get("time_cost_se_pct"),
+        }
+    return rows
+
+
 def load_sources(ledger: dict) -> tuple[dict[str, list[dict]], dict[str, str]]:
-    """Per-gene measurement history in source order (the ledger records sources
-    oldest-first, so a gene's last entry is its newest reading), and the source
-    file the newest one came from."""
+    """Authoritative per-gene history, oldest source first."""
     history: dict[str, list[dict]] = {}
     newest_src: dict[str, str] = {}
     for src in ledger["sources"]:
         data = json.loads((ROOT / src["path"]).read_text())
         name = Path(src["path"]).name
-        for gene in data.get("genes", []):
-            # Only legacy sources need this fallback. Do not evaluate it for
-            # an independent batch that recorded both arms but no `pairs`.
-            legacy_arm_seats = None
-            if gene.get("n_on") is None or gene.get("n_off") is None:
-                legacy_arm_seats = seat_pairs(gene_seats(gene))
-            g = {
-                "win_on": float(gene["win_on"]),
-                "win_off": float(gene["win_off"]),
-                # The batch cells are on-arm rates, so carry the sample size
-                # from that same arm. Older symmetric sources recorded only
-                # pairs (or total seats), while newer independent batches may
-                # state each arm explicitly.
-                "n_on": int(
-                    gene["n_on"] if gene.get("n_on") is not None else legacy_arm_seats
-                ),
-                "n_off": int(
-                    gene["n_off"] if gene.get("n_off") is not None else legacy_arm_seats
-                ),
-                "win_z": float(gene["win_z"]),
-                "share_z": float(gene["share_z"]),
-                # What the precision-weighted posterior pools, and the shape
-                # it was measured at, so the pool can be taken per instrument
-                # as well as whole.
-                "win_delta_pp": float(gene["win_delta_pp"]),
-                "win_se_pp": (None if gene.get("win_se_pp") is None
-                              else float(gene["win_se_pp"])),
-                "share_delta_pp": float(gene["share_delta_pp"]),
-                "shape": src["shape"],
-                "source": name,
-                "players": int(data.get("profile", {}).get("players", 0) or 0),
-                "compute_cost_pct": gene.get("compute_cost_pct"),
-                "compute_cost_se_pct": gene.get("compute_cost_se_pct"),
-                "time_cost_pct": gene.get("time_cost_pct"),
-                "time_cost_se_pct": gene.get("time_cost_se_pct"),
-            }
-            history.setdefault(gene["tag"], []).append(g)
-            newest_src[gene["tag"]] = name
+        for tag, row in measurements_from_source(data, name, src["shape"]).items():
+            history.setdefault(tag, []).append(row)
+            newest_src[tag] = name
+    return history, newest_src
+
+
+def load_reporting_batches(ledger: dict) -> list[dict]:
+    """The three fixed batch columns, newest first, with their source rows."""
+    batches = []
+    for meta in ledger.get("reporting_batches", []):
+        data = load_source(ROOT / meta["path"])
+        name = Path(meta["path"]).name
+        batches.append({
+            "meta": meta,
+            "rows": measurements_from_source(data, name, meta["shape"]),
+        })
+    return batches
+
+
+def load_display_sources(ledger: dict) -> tuple[dict[str, list[dict]], dict[str, str]]:
+    """Display history: ledger evidence plus any report-only latest batch.
+
+    Existing authoritative sources are never counted twice when they also
+    occupy a fixed batch slot.  Report-only data therefore refreshes the table
+    totals and rankings while the deployment ledger stays byte-for-byte tied
+    to its own sources.
+    """
+    history, newest_src = load_sources(ledger)
+    authoritative = {str(src["path"]) for src in ledger["sources"]}
+    for batch in load_reporting_batches(ledger):
+        meta = batch["meta"]
+        if str(meta["path"]) in authoritative:
+            continue
+        for tag, row in batch["rows"].items():
+            history.setdefault(tag, []).append(row)
+            newest_src[tag] = row["source"]
     return history, newest_src
 
 
@@ -1813,16 +1905,42 @@ def fmt_int(n: float) -> str:
 
 
 def batch_win_cell(history: list[dict], back: int = 0) -> str:
-    """One chronological batch cell: its on-arm win rate scaled to 10,000
-    seats, followed by the very same on-arm sample size.
+    """One legacy chronological batch cell, scaled to 10,000 on-arm seats.
 
     `back=0` is the latest batch, `back=1` the prior batch, and so on. A
-    source without that many readings leaves the table cell unpopulated.
+    source without that many readings leaves the table cell unpopulated. The
+    production table uses ``load_reporting_batches`` instead, so its sample
+    size appears once in each fixed column header rather than in every cell.
     """
     if len(history) <= back:
         return EN_DASH
     batch = history[-1 - back]
-    return f"{wins_per(batch['win_on'], batch['players']):+d} (n={fmt_int(batch['n_on'])})"
+    return f"{wins_per(batch['win_on'], batch['players']):+d}"
+
+
+def total_seat_batch_wins(row: dict) -> int:
+    """On-arm excess, normalized to 10,000 *total* player seats.
+
+    This keeps the displayed chance expectation at 1,667 wins per 10,000
+    seats even when a default-on gene occupies roughly three quarters of an
+    independent screen's seats.
+    """
+    players = int(row["players"])
+    chance = 1.0 / players if players else 1.0 / 6.0
+    return round((row["win_on"] - chance) * row["n_on"] * PER / row["source_seats"])
+
+
+def reporting_batch_cell(batch: dict | None, tag: str) -> str:
+    if batch is None or tag not in batch["rows"]:
+        return EN_DASH
+    return f"{total_seat_batch_wins(batch['rows'][tag]):+d}"
+
+
+def reporting_batch_header(label: str, batch: dict | None) -> str:
+    if batch is None:
+        return f"Wins ± /10k total seats — {label} (n=not recorded)"
+    return (f"Wins ± /10k total seats — {label} "
+            f"(n={fmt_int(batch['meta']['seats'])} total seats)")
 
 
 def diff_cell(history: list[dict]) -> str:
@@ -2152,9 +2270,9 @@ def shape_section(ledger: dict, measured: dict[str, list[dict]],
     silently."""
     shapes: dict[str, dict] = {}
     for src in ledger["sources"]:
-        entry = shapes.setdefault(src["shape"], {"sources": 0, "pairs": 0})
+        entry = shapes.setdefault(src["shape"], {"sources": 0, "seats": 0})
         entry["sources"] += 1
-        entry["pairs"] += int(src["complete_pairs"])
+        entry["seats"] += int(src["seats"])
     ranked = {row["tag"] for row in rows}
     for shape in shapes:
         shapes[shape]["genes"] = sum(
@@ -2173,12 +2291,12 @@ def shape_section(ledger: dict, measured: dict[str, list[dict]],
         f"`POSTERIOR_SHAPES` in `tools/genes.py` says which shapes the published "
         f"pool admits and is currently `{', '.join(POSTERIOR_SHAPES)}`.",
         "",
-        "| Shape | Sources | Seat pairs | Genes priced |",
+        "| Shape | Sources | Player seats | Genes priced |",
         "|---|---:|---:|---:|",
     ]
     for shape in ("standard", "legacy"):
-        entry = shapes.get(shape, {"sources": 0, "pairs": 0, "genes": 0})
-        lines.append(f"| {shape} | {entry['sources']} | {fmt_int(entry['pairs'])} | "
+        entry = shapes.get(shape, {"sources": 0, "seats": 0, "genes": 0})
+        lines.append(f"| {shape} | {entry['sources']} | {fmt_int(entry['seats'])} | "
                      f"{entry['genes']} |")
 
     both = []
@@ -2336,7 +2454,10 @@ def lane_section(ledger: dict, measured: dict[str, list[dict]],
 
 
 def render(ledger: dict) -> str:
-    measured, newest_src = load_sources(ledger)
+    authoritative_measured, _ = load_sources(ledger)
+    measured, newest_src = load_display_sources(ledger)
+    reporting = load_reporting_batches(ledger)
+    reporting_slots = reporting + [None] * (len(REPORTING_BATCH_LABELS) - len(reporting))
     tags = screenable_tags()
     desc = descriptions()
     verdict = {g["tag"]: g for g in ledger["genes"]}
@@ -2349,7 +2470,13 @@ def render(ledger: dict) -> str:
         if not history:
             unmeasured.append(tag)
             continue
-        rows.append((wins_per(history[-1]["win_on"], history[-1]["players"]), tag, history))
+        score = next(
+            (total_seat_batch_wins(batch["rows"][tag])
+             for batch in reporting_slots
+             if batch is not None and tag in batch["rows"]),
+            total_seat_batch_wins(history[-1]),
+        )
+        rows.append((score, tag, history))
     rows.sort(key=lambda r: (-r[0], r[1]))
 
     removed = sorted(tag for tag in measured if tag not in reg)
@@ -2361,63 +2488,28 @@ def render(ledger: dict) -> str:
     # nothing derived is lost and nothing derived is in the way.
     reference = [
         "Every screenable heuristic gene on the Advanced controller, ranked most beneficial "
-        "to least by **Scaled ± Wins Last Batch (n seats)**. Each batch column scales that "
-        "batch's on-arm win rate to 10,000 seats; its `(n=...)` is the same batch's on-arm "
-        "seat count. *Scaled ± Wins Prior Batch (n seats)* is the screen before that, and "
-        "*Scaled ± Wins Third Batch (n seats)* the one before that again (\u2013 where the "
-        "gene has no reading that far back): three "
-        "chronological windows, newest first, so every new screen shifts a gene's readings "
-        "one column right and drops the fourth-oldest off the table. Movement across the "
-        "three is the gene's trend, and it is the column the two-column rule cannot see \u2014 "
-        "a pair of positives that is the tail of a decline reads the same as one that is a "
-        "rise until the third window is printed beside it. **The third column is published, "
-        "not in force**: the rule below reads the first two and nothing else. "
-        "*Default* is the deployment ledger's call (`docs/gene_ledger.json`), and since "
-        "2026-08-22 that call is read off the first two win columns: a gene defaults **on** "
-        "when both are positive, or when their average clears +15 with neither below "
-        "\u221210; with exactly one populated column it defaults **on** when that reading "
-        "is above +20. It defaults **off** otherwise. The *Total* win-rate "
-        "columns pool every screen that measured the gene, weighted by on-arm seats, and "
-        "each carries its own on-arm seat count `n` — the two arms are only equal when every "
-        "screen that measured the gene split them evenly. *Diff* is the on rate minus the "
-        "off rate, rendered as a percentage: the **whole** on−off difference, so it stands at "
-        "roughly twice the scale of the win columns beside it and must be read against a "
-        "screen’s difference band rather than the halved column band below. "
-        "**A negative *Diff* vetoes the default** (operator, 2026-08-22): a gene that has "
-        "not won more than it lost across its whole record ships off however its two win "
-        "columns read. That is the one clause that lets a screen older than the last two "
-        "speak, and it is one-way — a positive *Diff* promotes nothing on its own, the "
-        "columns still have to clear their bars. Three genes ship off on it alone: "
-        "`war-economy`, `apostle-promotion-by-role` and `siege-commitment`, each carrying "
-        "positive recent columns over a 2026-08-20 screen they have not made back. "
-        "**There is one screen** (operator, 2026-08-22): six majors on 74x46 continents "
-        "with nine city-states, Online speed to its own 250-turn clock, all six victory "
-        "lanes, a foldover against the best-genome baseline with shuffled civs and every "
-        "major seat carrying its own genome (errors clustered by game pair), so a gene's "
-        "on/off readings cover the same maps. `docs/GENE_SCREEN.md` documents the "
-        "instrument; the paired contrasts, intervals and family-wise verdicts stay in "
-        "`docs/gene_ledger.json`. Screenable genes awaiting their first "
-        "measurement are listed separately below without a rank.",
+        "to least by the latest fixed batch. Each batch header carries its actual player-seat "
+        "count once; cells show the enabled arm's excess projected to 10,000 **total** player "
+        "seats, where a six-player chance expectation is 1,667 wins. A dash means that batch "
+        "did not screen the gene. The *Total* win-rate columns pool the displayed observations "
+        "and retain their real per-gene on/off seat counts in every row. *Diff* is that display "
+        "total's on rate minus off rate, in percentage points. The report-only latest 10k batch "
+        "updates these display statistics but does **not** change the deployment genome: "
+        "*Default* remains the existing ledger call in `docs/gene_ledger.json` until an explicit "
+        "rules decision records the batch as an authoritative source. Screenable genes awaiting "
+        "every displayed measurement are listed separately below without a rank.",
         "",
         "**Reading the table.** A six-player seat wins 1-in-6 by chance, so the expected "
-        "count is 1,667 wins per 10,000 on-arm seats and the "
-        "win columns say how far above or below that a seat carrying the gene lands. "
-        "**A column is half its screen’s on−off difference** — a foldover puts the two arms "
-        "either side of chance — so the band that says whether a column is real is half the "
-        "band on that difference. The two are not interchangeable: the ±110/10k figure this "
-        "paragraph used to quote, and #2266 used to call eight removals noise, is the "
-        "*difference*’s band and is twice too wide for the column beside it. Each screen’s "
-        "own band is below, derived from its errors rather than quoted. Screens differ in "
-        "baseline as repairs land, so the *Prior* column reads as history, not a strict A/B "
-        "against *Last*.",
+        "count is 1,667 wins per 10,000 total seats. The batch cells are the enabled arm's "
+        "excess over that chance rate, scaled from actual completed seats; they do not invent "
+        "games or seats. The independent latest batch can have unequal on/off arms, which is "
+        "why the pooled *Total (on)* and *Total (off)* cells retain their own `n` on every row.",
         "",
-        "**⚠ Every column below is `legacy`.** The shape marked `legacy` in the screen "
-        "table is the pre-2026-08-22 instrument: 60x38 Pangaea, six city-states, where 48% "
-        "of games ended in a religious conversion against 28% on continents. Those readings "
-        "are what the deployment genome stands on and they are kept for that reason, but a "
-        "gene is only priced at the screen once a `standard` row appears beside it. The "
-        "four-player `domination,score` war columns are gone: a 1-in-4 chance base made "
-        "them incomparable with the six-player columns printed next to them.",
+        "**Batch provenance.** The newest displayed batch is the completed current-standard "
+        "6-major Continents screen (74×46, nine city-states, Online speed through turn 250, "
+        "all six victory lanes, shuffled civilizations and best-genome baseline). Older "
+        "displayed batches remain visible for trend context. The deployment ledger's sources "
+        "and default state remain intact while this report-only result is reviewed.",
         "",
         "**What each screen resolves.** The median gene’s column standard error "
         f"times {POWER_80} — a two-sided 5% test at 80% power. Judge a column against "
@@ -2431,14 +2523,14 @@ def render(ledger: dict) -> str:
         "almost everything, while a whole-genome screen flips every gene between arms "
         "and cancels almost nothing. ⚠ Gene count is not the driver, though the rows "
         "below invite that reading — the falsifier is in them. `h1` carries **one** gene "
-        "over **7,200** pairs and resolves ±68 at a 1.28× gain, *wider* than four-gene "
-        "`s6` over 6,000. Its gene changes nearly every game; `s7`'s rarely fires. That, "
+        "over **14,400 player seats** and resolves ±68 at a 1.28× gain, *wider* than "
+        "four-gene `s6` over 12,000 seats. Its gene changes nearly every game; `s7`'s rarely fires. That, "
         "not the count, is the difference.",
         "",
-        "| Screen | Shape | Genes | Seat pairs | 1 SE | ±80% power | Pairing gain |",
+        "| Screen | Shape | Genes | Player seats | 1 SE | ±80% power | Pairing gain |",
         "|---|---|---:|---:|---:|---:|---:|",
         *(
-            f"| `{r['name']}` | {r['shape']} | {r['genes']} | {fmt_int(r['pairs'])} | "
+            f"| `{r['name']}` | {r['shape']} | {r['genes']} | {fmt_int(r['seats'])} | "
             f"{r['se']:.1f} | ±{r['band']:.0f} | {r['gain']:.2f}× |"
             for r in resolutions(ledger)
         ),
@@ -2479,19 +2571,23 @@ def render(ledger: dict) -> str:
         "",
         default_on_summary(ledger["rules"]["authority"]),
         "",
-        "| Rank | Gene | Description | Default | Scaled ± Wins Last Batch (n seats) | Scaled ± Wins Prior Batch (n seats) | Scaled ± Wins Third Batch (n seats) | Total (on) Win rate | Total (off) Win rate | Diff | Posterior (95% CI) | P(>0) | Share Δpp (z) | cost (compute) | cost (time) |",
+        "| Rank | Gene | Description | Default | "
+        + " | ".join(
+            reporting_batch_header(label, batch)
+            for label, batch in zip(REPORTING_BATCH_LABELS, reporting_slots)
+        )
+        + " | Total (on) Win rate | Total (off) Win rate | Diff | Posterior (95% CI) | "
+        "P(>0) | Share Δpp (z) | cost (compute) | cost (time) |",
         "|---:|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|",
     ]
     for rank, (wins, tag, history) in enumerate(rows, 1):
         v = verdict.get(tag, {})
         default = "**on**" if v.get("default_on") else "off"
-        # The batch columns are newest first. Each value is always scaled to
-        # 10,000 seats and names the on-arm seat count behind that same batch.
-        # A new screen shifts its predecessor right; the fourth-oldest falls
-        # off the table (operator request 2026-08-23).
-        last = batch_win_cell(history)
-        prior = batch_win_cell(history, 1)
-        third = batch_win_cell(history, 2)
+        # Fixed report batches put `n` in the headers once, while each total
+        # arm keeps its own real seat count below.
+        last, prior, third = (
+            reporting_batch_cell(batch, tag) for batch in reporting_slots
+        )
         on_seats = sum(m["n_on"] for m in history)
         off_seats = sum(m["n_off"] for m in history)
         on_rate, off_rate = pooled_win_rates(history)
@@ -2508,7 +2604,9 @@ def render(ledger: dict) -> str:
             f"{cost_cell(history, 'time_cost_pct', 'time_cost_se_pct')} |"
         )
 
-    lines += posterior_sections(ledger, measured, desc)
+    # The deployment analysis stays tied to authoritative ledger sources. A
+    # display batch cannot silently change a game rule or runtime default.
+    lines += posterior_sections(ledger, authoritative_measured, desc)
 
     if unmeasured:
         lines += [
@@ -2558,12 +2656,20 @@ def render(ledger: dict) -> str:
         body = "\n".join(notes).strip()
         if body:
             lines += ["", "## Follow-ups", "", body]
-    sources = ", ".join(f"`{Path(s['path']).name}` ({s['shape']}, {s['complete_pairs']:,} pairs)" for s in ledger["sources"])
+    sources = ", ".join(
+        f"`{Path(s['path']).name}` ({s['shape']}, {s['seats']:,} seats)"
+        for s in ledger["sources"]
+    )
+    reporting_sources = ", ".join(
+        f"`{Path(s['path']).name}` ({s['seats']:,} seats)"
+        for s in ledger.get("reporting_batches", [])
+    )
     lines += [
         "",
         f"_Generated by `tools/genes.py` from the ledger's sources: {sources}. "
-        "The paired contrasts, intervals and family-wise verdicts live in `docs/gene_ledger.json`; "
-        "this table is the operator's wins-per-ten-thousand-seat view of the same observations._",
+        + (f"The fixed display batches are: {reporting_sources}. " if reporting_sources else "")
+        + "The deployment verdicts live in `docs/gene_ledger.json`; the table's batch cells "
+        "are the operator's wins-per-ten-thousand-total-seat reporting view._",
         "",
     ]
     return "\n".join(lines)
@@ -2629,6 +2735,11 @@ def rust_block_of(text: str) -> str:
 
 def _add_source_args(ap: argparse.ArgumentParser) -> None:
     ap.add_argument("sources", nargs="*", help="gene_screen --analyze --json outputs to enter")
+    ap.add_argument(
+        "--reporting-batch", action="append", default=[], metavar="FILE",
+        help=("newest-first report-only batch for the ranking's three display columns; "
+              "does not change deployment defaults"),
+    )
     ap.add_argument("--legacy-shape", action="store_true",
                     help="record a source played away from the screen's shape as history")
     ap.add_argument("--unverified-build", metavar="REASON", default=None,
@@ -2686,16 +2797,27 @@ def main(argv=None) -> int:
         return 0
 
     # source / write
+    current = json.loads(LEDGER_JSON.read_text()) if LEDGER_JSON.exists() else None
+    recorded_reporting = reporting_batches_from_ledger(current) if current else []
+    entered_reporting = [Path(path).resolve() for path in args.reporting_batch]
+    reporting = entered_reporting + [
+        path for path in recorded_reporting if path not in entered_reporting
+    ]
     if getattr(args, "sources", None):
         notes: dict[str, str] = {}
         # New sources are appended to the ones the ledger already records.
-        recorded = sources_from_ledger(json.loads(LEDGER_JSON.read_text())) if LEDGER_JSON.exists() else []
-        recorded_notes = notes_from_ledger(json.loads(LEDGER_JSON.read_text())) if LEDGER_JSON.exists() else {}
+        recorded = sources_from_ledger(current) if current else []
+        recorded_notes = notes_from_ledger(current) if current else {}
         entered = sources_from_args(args, notes)
         paths = recorded + [p for p in entered if p not in recorded]
-        ledger = build_ledger(paths, build_notes={**recorded_notes, **notes}, authority=authority)
+        ledger = build_ledger(paths, build_notes={**recorded_notes, **notes}, authority=authority,
+                              reporting_batches=reporting)
     else:
-        ledger = rebuild_from_ledger(json.loads(LEDGER_JSON.read_text()), authority=authority)
+        if current is None:
+            raise SystemExit("no existing ledger; provide at least one source")
+        ledger = build_ledger(sources_from_ledger(current),
+                              build_notes=notes_from_ledger(current), authority=authority,
+                              reporting_batches=reporting)
     LEDGER_JSON.write_text(render_json(ledger))
     REGISTRY_PATH.write_text(registry_with_block(render_rust(ledger)), encoding="utf-8")
     RANKING_MD.write_text(render(ledger))

@@ -229,6 +229,87 @@
       }
     }
   ],
+  "reporting_batches": [
+    {
+      "path": "docs/gene_screens/2026-08-23-standard-gene-screen-10000-total-seats.json",
+      "shape": "standard",
+      "seats": 10002,
+      "complete_pairs": 5001,
+      "family_wise_z": 3.513,
+      "profile": {
+        "players": 6,
+        "map": "continents",
+        "width": 74,
+        "height": 46,
+        "city_states": 9,
+        "speed": "online",
+        "turns": 250,
+        "victories": "science,culture,religious,diplomatic,domination,score",
+        "all_seats": true,
+        "randomize_civs": true,
+        "baseline": "best",
+        "design": "independent",
+        "start_seed": 168000000
+      },
+      "games": 1667,
+      "build": {
+        "commit": "5afee5666f0850484e6b7a63c91c671e668475f5",
+        "commit_source": "build-tree",
+        "dirty": false,
+        "genes_sha256": "ee67b3b391478697d9a73fbab8748136f7eab89d5342d128407e4638ef6d04b7",
+        "binary_sha256": "704907b03bc5c68378ba501ca3bb81254cbbe68f79e49574947222979e0cac86"
+      },
+      "batch": {
+        "target_seats": 10002,
+        "complete_seats": 10002,
+        "partial": false
+      }
+    },
+    {
+      "path": "docs/gene_screens/2026-08-22-standard-10k-6p-allseats-23622-pairs.json",
+      "shape": "standard",
+      "seats": 47244,
+      "complete_pairs": 23622,
+      "family_wise_z": 3.478,
+      "profile": {
+        "players": 6,
+        "map": "continents",
+        "width": 74,
+        "height": 46,
+        "city_states": 9,
+        "speed": "online",
+        "turns": 250,
+        "victories": "science,culture,religious,diplomatic,domination,score",
+        "all_seats": true,
+        "randomize_civs": true,
+        "baseline": "best",
+        "design": "foldover",
+        "start_seed": 141000000
+      }
+    },
+    {
+      "path": "docs/gene_screens/2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
+      "shape": "legacy",
+      "seats": 35148,
+      "complete_pairs": 17574,
+      "family_wise_z": 3.403,
+      "profile": {
+        "players": 6,
+        "map": "pangaea",
+        "width": 60,
+        "height": 38,
+        "city_states": 6,
+        "speed": "online",
+        "turns": 250,
+        "victories": "science,culture,religious,diplomatic,domination,score",
+        "all_seats": true,
+        "randomize_civs": true,
+        "baseline": "best",
+        "design": "foldover",
+        "start_seed": 100000000
+      }
+    }
+  ],
   "counts": {
     "helps": 17,
     "hurts": 15,

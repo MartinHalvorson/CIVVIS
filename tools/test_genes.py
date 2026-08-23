@@ -1126,6 +1126,32 @@ class GeneratedFiles(unittest.TestCase):
         self.assertEqual(genes.render(ledger), genes.RANKING_MD.read_text(),
                          "HEURISTIC_GENE_RANKING.md is stale: run tools/genes.py write")
 
+    def test_reporting_batches_refresh_the_table_but_not_the_deployment_genome(self):
+        """A display-only screen must never re-price a game default."""
+        current = json.loads(gene_ledger.LEDGER_JSON.read_text())
+        authority = gene_ledger.authority_of(current)
+        deployment_only = gene_ledger.build_ledger(
+            gene_ledger.sources_from_ledger(current),
+            build_notes=gene_ledger.notes_from_ledger(current),
+            authority=authority,
+        )
+        with_reporting = gene_ledger.rebuild_from_ledger(current)
+        self.assertEqual(
+            [(g["tag"], g["default_on"]) for g in deployment_only["genes"]],
+            [(g["tag"], g["default_on"]) for g in with_reporting["genes"]],
+        )
+        self.assertEqual(gene_ledger.render_rust(deployment_only),
+                         gene_ledger.render_rust(with_reporting))
+
+        newest = current["reporting_batches"][0]
+        self.assertEqual(newest["seats"], 10_002)
+        self.assertEqual(newest["games"], 1_667)
+        self.assertNotIn(newest["path"], {s["path"] for s in current["sources"]})
+        authoritative, _ = ranking.load_sources(current)
+        displayed, _ = ranking.load_display_sources(current)
+        self.assertNotIn("engine-faith-price", authoritative)
+        self.assertIn("engine-faith-price", displayed)
+
     def test_the_verdict_block_sits_under_the_rows_and_names_every_gene_once(self):
         text = genes.REGISTRY_PATH.read_text()
         rows_end = text.index("];\n")  # the end of `GENES`
@@ -1218,8 +1244,10 @@ class VersionedGenes(unittest.TestCase):
 #: The main table's columns, in order. One definition, read both as the header
 #: assertion and as the name -> index map every cell lookup goes through.
 EXPECTED_COLUMNS = (
-    "| Rank | Gene | Description | Default | Scaled ± Wins Last Batch (n seats) | "
-    "Scaled ± Wins Prior Batch (n seats) | Scaled ± Wins Third Batch (n seats) | "
+    "| Rank | Gene | Description | Default | "
+    "Wins ± /10k total seats — Last Batch (n=10,002 total seats) | "
+    "Wins ± /10k total seats — Prior Batch (n=47,244 total seats) | "
+    "Wins ± /10k total seats — Third Batch (n=35,148 total seats) | "
     "Total (on) Win rate | Total (off) Win rate | Diff | "
     "Posterior (95% CI) | P(>0) | Share Δpp (z) | "
     "cost (compute) | cost (time) |"
@@ -1261,7 +1289,7 @@ class TheTableIsDerived(unittest.TestCase):
 
     def test_every_screenable_gene_is_visible(self):
         ledger = json.loads(ranking.LEDGER_JSON.read_text())
-        measured, _ = ranking.load_sources(ledger)
+        measured, _ = ranking.load_display_sources(ledger)
         text = ranking.RANKING_MD.read_text()
         for tag in ranking.screenable_tags():
             if tag in measured:
@@ -1303,7 +1331,7 @@ class TheTableIsDerived(unittest.TestCase):
         screen's difference band, not the halved column band the table prints.
         """
         ledger = json.loads(ranking.LEDGER_JSON.read_text())
-        measured, _ = ranking.load_sources(ledger)
+        measured, _ = ranking.load_display_sources(ledger)
         rows = self._ranked_rows()
         self.assertGreater(len(rows), 50)
         for cells in rows:
@@ -1332,18 +1360,26 @@ class TheTableIsDerived(unittest.TestCase):
         self.assertEqual(ranking.diff_cell(arms(0.17, 0.15)), "2.00%")
         self.assertEqual(ranking.diff_cell(arms(0.15, 0.17)), "-2.00%")
 
-    def test_the_printed_diff_is_the_figure_the_ledger_vetoes_on(self):
-        """One arithmetic, not two: the *Diff* cell and `win_diff_pp` are the
-        same call, so a gene cannot read positive in the table while the
-        deployment rule sees a negative record."""
+    def test_the_printed_diff_includes_the_display_batch_but_not_the_default(self):
+        """The completed 10k report refreshes display statistics only.
+
+        Its shown *Diff* must be calculated from the displayed rows, while
+        deployment still follows the unmodified ledger record. This prevents a
+        reporting refresh from silently changing game rules.
+        """
         ledger = json.loads(ranking.LEDGER_JSON.read_text())
-        measured, _ = ranking.load_sources(ledger)
-        recorded = {g["tag"]: g["win_diff_pp"] for g in ledger["genes"]}
+        measured, _ = ranking.load_display_sources(ledger)
+        recorded = {g["tag"]: g for g in ledger["genes"]}
         self.assertGreater(len(recorded), 50)
         for cells in self._ranked_rows():
             tag = cell(cells, "Gene").strip("`")
-            self.assertEqual(cell(cells, "Diff"), f"{recorded[tag]:.2f}%", tag)
-            self.assertEqual(recorded[tag], ranking.pooled_win_diff_pp(measured[tag]), tag)
+            self.assertEqual(cell(cells, "Diff"), ranking.diff_cell(measured[tag]), tag)
+            if tag in recorded:
+                self.assertEqual(
+                    cell(cells, "Default"),
+                    "**on**" if recorded[tag]["default_on"] else "off",
+                    tag,
+                )
 
     def test_each_win_rate_cell_carries_its_own_sample_size(self):
         """`n` is per arm, not one pooled figure: the arms are equal only while
@@ -1355,37 +1391,31 @@ class TheTableIsDerived(unittest.TestCase):
                 self.assertRegex(rate, r"^\d+\.\d\d% \(n=[\d,]+\)$",
                                  cell(cells, "Gene"))
 
-    def test_each_batch_cell_is_scaled_to_10k_and_carries_its_on_arm_sample_size(self):
-        """Each score and `n` comes from one on-arm source measurement."""
+    def test_each_batch_cell_is_scaled_to_10k_with_n_in_the_header_only(self):
+        """Each fixed batch has one total-seat `n` header, never row clutter."""
         ledger = json.loads(ranking.LEDGER_JSON.read_text())
-        measured, _ = ranking.load_sources(ledger)
+        batches = ranking.load_reporting_batches(ledger)
+        self.assertEqual(len(batches), 3)
         columns = (
-            (0, "Scaled ± Wins Last Batch (n seats)"),
-            (1, "Scaled ± Wins Prior Batch (n seats)"),
-            (2, "Scaled ± Wins Third Batch (n seats)"),
+            (0, "Wins ± /10k total seats — Last Batch (n=10,002 total seats)"),
+            (1, "Wins ± /10k total seats — Prior Batch (n=47,244 total seats)"),
+            (2, "Wins ± /10k total seats — Third Batch (n=35,148 total seats)"),
         )
         for cells in self._ranked_rows():
             tag = cell(cells, "Gene").strip("`")
-            history = measured[tag]
             for back, column in columns:
-                if len(history) <= back:
-                    expected = ranking.EN_DASH
-                else:
-                    batch = history[-1 - back]
-                    expected = (
-                        f"{ranking.wins_per(batch['win_on'], batch['players']):+d} "
-                        f"(n={ranking.fmt_int(batch['n_on'])})"
-                    )
+                expected = ranking.reporting_batch_cell(batches[back], tag)
                 self.assertEqual(cell(cells, column), expected, f"{tag}: {column}")
+                self.assertNotIn("n=", cell(cells, column), f"{tag}: {column}")
 
-    def test_batch_win_cell_uses_the_same_on_arm_size_as_its_rate(self):
+    def test_batch_win_cell_does_not_repeat_its_sample_size(self):
         history = [{
             "win_on": 1 / 6 + 0.01,
             "players": 6,
             "n_on": 1300,
             "n_off": 500,
         }]
-        self.assertEqual(ranking.batch_win_cell(history), "+100 (n=1,300)")
+        self.assertEqual(ranking.batch_win_cell(history), "+100")
 
     def test_load_sources_preserves_explicit_arm_sizes_without_legacy_pairs(self):
         source = {
@@ -1560,7 +1590,8 @@ class ThePosteriorIsPublishedAndNotInForce(unittest.TestCase):
 
     def setUp(self):
         self.ledger = json.loads(ranking.LEDGER_JSON.read_text())
-        self.measured, _ = ranking.load_sources(self.ledger)
+        self.authoritative, _ = ranking.load_sources(self.ledger)
+        self.measured, _ = ranking.load_display_sources(self.ledger)
         self.text = ranking.RANKING_MD.read_text()
 
     def _rows(self):
@@ -1573,11 +1604,8 @@ class ThePosteriorIsPublishedAndNotInForce(unittest.TestCase):
             rows.append([c.strip() for c in line.strip().strip("|").split(" | ")])
         return rows
 
-    def test_the_printed_posterior_is_the_figure_the_ledger_records(self):
-        """One arithmetic, not two — the same rule the *Diff* column follows.
-        A gene cannot print one interval here and have the switch read
-        another."""
-        recorded = {g["tag"]: g for g in self.ledger["genes"]}
+    def test_the_printed_posterior_uses_the_displayed_observations(self):
+        """The table's posterior moves with its report-only display batch."""
         seen = 0
         for cells in self._rows():
             tag = cell(cells, "Gene").strip("`")
@@ -1586,8 +1614,6 @@ class ThePosteriorIsPublishedAndNotInForce(unittest.TestCase):
                              ranking.posterior_cell(posterior), tag)
             self.assertEqual(cell(cells, "P(>0)"),
                              ranking.probability_cell(posterior), tag)
-            self.assertEqual(posterior["effect"], recorded[tag]["posterior_pp"], tag)
-            self.assertEqual(posterior["se"], recorded[tag]["posterior_se_pp"], tag)
             seen += 1
         self.assertGreater(seen, 50)
 
@@ -1610,7 +1636,11 @@ class ThePosteriorIsPublishedAndNotInForce(unittest.TestCase):
         recorded = {g["tag"]: g for g in self.ledger["genes"]}
         self.assertEqual(self.ledger["rules"]["authority"], "columns")
         for cells in self._rows():
-            gene = recorded[cell(cells, "Gene").strip("`")]
+            tag = cell(cells, "Gene").strip("`")
+            if tag not in recorded:
+                self.assertEqual(cell(cells, "Default"), "off", tag)
+                continue
+            gene = recorded[tag]
             self.assertEqual(
                 cell(cells, "Default"),
                 "**on**" if gene["default_on"] else "off",
@@ -1627,7 +1657,7 @@ class ThePosteriorIsPublishedAndNotInForce(unittest.TestCase):
         for candidate in ranking.AUTHORITIES:
             self.assertIn(f"| `{candidate}`", self.text, candidate)
         self.assertIn("`columns` **(in force)**", self.text)
-        rows = ranking.authority_table(self.ledger, self.measured)
+        rows = ranking.authority_table(self.ledger, self.authoritative)
         for candidate in ranking.AUTHORITIES:
             self.assertEqual(
                 sum(r[f"would/{candidate}"] for r in rows),
@@ -1635,7 +1665,7 @@ class ThePosteriorIsPublishedAndNotInForce(unittest.TestCase):
                 candidate)
 
     def test_the_three_way_call_covers_every_priced_gene(self):
-        rows = ranking.authority_table(self.ledger, self.measured)
+        rows = ranking.authority_table(self.ledger, self.authoritative)
         calls = [r["call"] for r in rows]
         self.assertEqual(len(rows), len(calls))
         self.assertGreater(calls.count("on"), 0)
