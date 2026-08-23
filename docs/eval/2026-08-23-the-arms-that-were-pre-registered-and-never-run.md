@@ -6,9 +6,23 @@ _2026-08-23 · `1510b482`_
 
 `docs/ROADMAP.md` objective 3 asks the shipped bundle to be priced by
 withholding *before the next effect hides inside a composite the way
-`city_target_floor` did* — that one hid −41 Elo. Several arms were registered,
-pre-priced, and never run. This round runs the load-bearing one and records the
-disposition of the rest, so the open ends stop being invisible.
+`city_target_floor` did*. Removing that floor measured **+41 Elo** on the
+deployment profile (#1504 — `advanced_without_city_target_floor advanced
+--matrix --pairs 400 --seed 8600000`, 55.9%, CI 51.0..60.7%, p=0.0000, against
+−1 and p=0.9248 on the compact board), which is the same statement as the floor
+costing that much for as long as it shipped unpriced inside the 2026-08-01
+composite.
+
+⚠ **That figure is gate-selected and is quoted here as the top of a band, not
+as a point.** The run passed its gate, so `docs/EVAL_INTEGRITY.md` §4 applies to
+it exactly as to any promoted number. `docs/EVAL.md`'s own entry gives the
+replication: *"Five runs now agree: +30, +29, +34, +41 on deployment shapes,
+flat on the compact board."* The honest reading of what a composite hid is
+roughly +29 to +41, and the brief's "−41" is the largest of the five.
+
+Several arms were registered, pre-priced, and never run. This round runs the
+load-bearing one and records the disposition of the rest, so the open ends stop
+being invisible.
 
 Four things were asked for. One was run, one **cannot** be run, one turns out
 to be **already answered by a different instrument** — and the counter that was
