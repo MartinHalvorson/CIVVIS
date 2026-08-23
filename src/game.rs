@@ -21655,8 +21655,8 @@ impl Game {
         // The three naval unlocks are added in the order they always were —
         // `embarked` implies this branch, so nesting changes which terms are
         // summed for no unit and their sequence for none either.
-        if let Some(naval) = (spec.domain.as_deref() == Some("sea") || embarked)
-            .then(|| self.naval_move_terms(u))
+        if let Some(naval) =
+            (spec.domain.as_deref() == Some("sea") || embarked).then(|| self.naval_move_terms(u))
         {
             moves += naval.naval_movement_tree;
             if embarked {
