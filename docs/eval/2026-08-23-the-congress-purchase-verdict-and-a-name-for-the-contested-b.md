@@ -229,8 +229,7 @@ CIVVIS's own diplomacy lane rarely completes at all."* That was measured on
 field yields four times as many diplomatic victories. **The lever it looked for
 may exist; it was looking on the wrong map.**
 
-### 6. ⚠⚠ And the contested board cannot price a denial treatment through its
-win column
+### 6. ⚠⚠ And the contested win column cannot price a lane victory at all
 
 The harness said this itself, unprompted, and it is the most important line
 either run printed:
