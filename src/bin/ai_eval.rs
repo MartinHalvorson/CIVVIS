@@ -3985,7 +3985,13 @@ mod tests {
                 profile.name.to_string(),
             ])
             .unwrap_or_else(|why| panic!("{} should resolve: {why}", profile.name));
-            for flag in ["--players", "--width", "--height", "--city-states", "--turns"] {
+            for flag in [
+                "--players",
+                "--width",
+                "--height",
+                "--city-states",
+                "--turns",
+            ] {
                 assert_eq!(
                     number(&named, flag, -1),
                     number(&child, flag, -2),
