@@ -2425,7 +2425,10 @@ fn wilson_interval(score: f64, games: usize) -> (f64, f64) {
     let denominator = 1.0 + z2 / n;
     let centre = (p + z2 / (2.0 * n)) / denominator;
     let margin = z * (p * (1.0 - p) / n + z2 / (4.0 * n * n)).sqrt() / denominator;
-    ((centre - margin).clamp(0.0, 1.0), (centre + margin).clamp(0.0, 1.0))
+    (
+        (centre - margin).clamp(0.0, 1.0),
+        (centre + margin).clamp(0.0, 1.0),
+    )
 }
 
 fn performance_elo(base: f64, pair_score: f64) -> f64 {
@@ -2654,10 +2657,7 @@ mod tests {
     /// rather than a 1500 dragging every average toward the middle.
     #[test]
     fn a_player_carries_one_rating_per_mode_and_an_overall() {
-        let dir = std::env::temp_dir().join(format!(
-            "civvis-mode-ratings-{}",
-            std::process::id()
-        ));
+        let dir = std::env::temp_dir().join(format!("civvis-mode-ratings-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).expect("scratch ladder directory");
         let write = |mode: GameMode, rows: &[(&str, f64, u32, u32)]| {
@@ -2669,13 +2669,17 @@ mod tests {
             for (player, elo, games, wins) in rows {
                 pool.overall.insert(
                     (*player).to_string(),
-                    Rating { elo: *elo, games: *games, wins: *wins },
+                    Rating {
+                        elo: *elo,
+                        games: *games,
+                        wins: *wins,
+                    },
                 );
             }
             let name = Path::new(ratings_path_for(mode))
                 .file_name()
                 .expect("ladder file name");
-            pool.save(&dir.join(name)).expect("write scratch ladder");
+            pool.save(dir.join(name)).expect("write scratch ladder");
         };
         write(
             GameMode::Civ,
@@ -2688,11 +2692,18 @@ mod tests {
         let advanced = &ratings["advanced"];
         assert_eq!(advanced.by_mode["civ"].elo, 1600.0);
         assert_eq!(advanced.by_mode["tactics"].elo, 1800.0);
-        assert!(!advanced.by_mode.contains_key("simcity"), "an unplayed mode is absent");
+        assert!(
+            !advanced.by_mode.contains_key("simcity"),
+            "an unplayed mode is absent"
+        );
         assert_eq!(advanced.games, 50);
         // Weighted by games played, not a flat mean of the two ladders: forty
         // Civ games at 1600 and ten Tactics games at 1800 is 1640, not 1700.
-        assert!((advanced.overall - 1640.0).abs() < 1e-9, "{}", advanced.overall);
+        assert!(
+            (advanced.overall - 1640.0).abs() < 1e-9,
+            "{}",
+            advanced.overall
+        );
         // A player who has only ever played one mode is that mode's rating.
         let basic = &ratings["basic"];
         assert_eq!(basic.by_mode.len(), 1);
@@ -2722,8 +2733,12 @@ mod tests {
         let civ_profile = ladder_profile(MapScript::Pangaea);
         let arena_profile = ladder_profile(MapScript::Battlefield);
         let mut ledger = EloPool::new(&[], ELO_BASE_RATING);
-        ledger.bind_profile(civ_profile).expect("first run binds the ladder");
-        let refusal = ledger.bind_profile(arena_profile).expect_err("modes must not mix");
+        ledger
+            .bind_profile(civ_profile)
+            .expect("first run binds the ladder");
+        let refusal = ledger
+            .bind_profile(arena_profile)
+            .expect_err("modes must not mix");
         assert!(refusal.to_string().contains("rating profile mismatch"));
 
         let _ = fs::remove_dir_all(&dir);
