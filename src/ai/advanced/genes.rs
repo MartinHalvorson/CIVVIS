@@ -164,7 +164,7 @@ pub fn repair_tags_on(axis: Axis) -> Vec<&'static str> {
 
 /// Every `screenable()` gene, in registry order — the genome `gene_screen`
 /// varies and `tools/gene_ledger.py` fingerprints.
-pub fn screenable() -> Vec<&'static Gene> {
+pub fn screenable_genes() -> Vec<&'static Gene> {
     GENES.iter().filter(|g| g.screenable()).collect()
 }
 

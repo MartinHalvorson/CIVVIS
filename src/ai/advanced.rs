@@ -4803,7 +4803,10 @@ impl Default for AdvancedAi {
 /// `tools/conflict_hotspots.py` measures `advanced.rs` as the most contended
 /// in the repository. See `advanced/genes.rs`.
 pub mod genes;
-pub use genes::{gene, Axis, Gene, Kind, GENES};
+pub use genes::{
+    gene, host_only_tags, live_tags, repair_tags, repair_tags_on, screenable_genes, Axis, Gene,
+    Kind, GENES,
+};
 
 /// Every `enable_*` / `disable_*` capability toggle lives in its own file.
 ///

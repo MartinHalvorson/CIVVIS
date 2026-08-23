@@ -270,7 +270,8 @@ type PlotPurchaseCandidate = (f64, std::cmp::Reverse<(u32, Pos)>, Action);
 mod advanced;
 mod tactics;
 pub use advanced::{
-    gene, Axis, Gene, Kind, GENES,
+    gene, host_only_tags, live_tags, repair_tags, repair_tags_on, screenable_genes, Axis, Gene,
+    Kind, GENES,
     deployment_treatments, gene_ledger, gene_ledger_rows, ledger_default_on, ledger_verdict,
     AdvancedAi, ExpansionCensus, ForceDomain, ForceGroup, ForcePosture, GeneLedgerApplied,
     GeneVerdict, GrandStrategy, Measure, StrategicPlan, StrategyCensus, Verdict,

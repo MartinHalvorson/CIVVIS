@@ -118,14 +118,27 @@ fn the_gene_registry_is_well_formed() {
             "{}'s enable and disable are the same function",
             gene.tag
         );
-        assert_eq!(gene.repair(), gene.live() && !gene.host_only(), "{}", gene.tag);
-        assert_eq!(gene.screenable(), gene.universe_on() || gene.opt_in(), "{}", gene.tag);
+        assert_eq!(
+            gene.repair(),
+            gene.live() && !gene.host_only(),
+            "{}",
+            gene.tag
+        );
+        assert_eq!(
+            gene.screenable(),
+            gene.universe_on() || gene.opt_in(),
+            "{}",
+            gene.tag
+        );
     }
     let live = GENES.iter().filter(|gene| gene.live()).count();
     let host_only = GENES.iter().filter(|gene| gene.host_only()).count();
     let repairs = GENES.iter().filter(|gene| gene.repair()).count();
     assert_eq!(repairs, live - host_only);
-    assert!(live > 50 && repairs > 30 && host_only > 10, "{live}/{host_only}/{repairs}");
+    assert!(
+        live > 50 && repairs > 30 && host_only > 10,
+        "{live}/{host_only}/{repairs}"
+    );
     assert_eq!(
         super::gene("joint-tactics").map(|gene| gene.kind),
         Some(Kind::HostOnlyOptIn),
@@ -155,7 +168,10 @@ fn the_bundles_are_the_registry() {
     assert!(war.iter().all(|tag| !economy.contains(tag)));
     for tag in super::genes::host_only_tags() {
         assert!(!repairs.contains(&tag), "{tag} is host-only and a repair");
-        assert!(super::genes::live_tags().contains(&tag), "{tag} is host-only but not live");
+        assert!(
+            super::genes::live_tags().contains(&tag),
+            "{tag} is host-only but not live"
+        );
     }
 }
 
@@ -11250,7 +11266,9 @@ fn builder_worked_tile_priority_prices_idle_tiles_by_marginal_worker_swap() {
         );
     }
 
-    assert!(GENES.iter().any(|gene| gene.opt_in() && gene.field == "builder_worked_tile_priority" && gene.tag == "builder-worked-tile-priority"));
+    assert!(GENES.iter().any(|gene| gene.opt_in()
+        && gene.field == "builder_worked_tile_priority"
+        && gene.tag == "builder-worked-tile-priority"));
     treated.disable_builder_worked_tile_priority();
     assert!(!treated.builder_worked_tile_priority);
 }
@@ -11469,7 +11487,9 @@ fn builder_barbarian_safety_rejects_and_escapes_a_barbarian_capture_envelope() {
     ));
     assert_eq!(unsafe_game.units[&builder].charges, 2);
 
-    assert!(GENES.iter().any(|gene| gene.opt_in() && gene.field == "builder_barbarian_safety" && gene.tag == "builder-barbarian-safety"));
+    assert!(GENES.iter().any(|gene| gene.opt_in()
+        && gene.field == "builder_barbarian_safety"
+        && gene.tag == "builder-barbarian-safety"));
     cautious.disable_builder_barbarian_safety();
     assert!(!cautious.builder_barbarian_safety);
 }
@@ -15719,7 +15739,11 @@ fn idle_faith_patronage_is_a_native_opt_in() {
     let mut ai = AdvancedAi::new();
     ai.enable_live_bridge_universe();
     assert!(!ai.idle_faith_patronage);
-    let enable = GENES.iter().find(|gene| gene.tag == "idle-faith-patronage").expect("an opt-in row").enable;
+    let enable = GENES
+        .iter()
+        .find(|gene| gene.tag == "idle-faith-patronage")
+        .expect("an opt-in row")
+        .enable;
     enable(&mut ai);
     assert!(ai.idle_faith_patronage);
     ai.disable_idle_faith_patronage();
@@ -15733,7 +15757,11 @@ fn early_contact_window_is_an_off_by_default_native_opt_in() {
     let mut ai = AdvancedAi::new();
     ai.enable_live_bridge_universe();
     assert!(!ai.early_contact_window);
-    let enable = GENES.iter().find(|gene| gene.tag == "early-contact-window").expect("an opt-in row").enable;
+    let enable = GENES
+        .iter()
+        .find(|gene| gene.tag == "early-contact-window")
+        .expect("an opt-in row")
+        .enable;
     enable(&mut ai);
     assert!(ai.early_contact_window);
     ai.disable_early_contact_window();
@@ -16448,7 +16476,11 @@ fn the_religion_genes_are_native_opt_ins() {
         "theology-for-founders",
         "holy-lane-parity",
     ] {
-        let enable = GENES.iter().find(|gene| gene.tag == tag).unwrap_or_else(|| panic!("{tag} is an opt-in row")).enable;
+        let enable = GENES
+            .iter()
+            .find(|gene| gene.tag == tag)
+            .unwrap_or_else(|| panic!("{tag} is an opt-in row"))
+            .enable;
         let mut seat = AdvancedAi::new();
         enable(&mut seat);
         let on = match tag {
@@ -20094,7 +20126,11 @@ fn settler_threat_detour_is_a_native_opt_in_deployed_by_the_ledger() {
         deployed.settler_threat_detour,
         "its sole +50 win column clears the provisional deployment bar"
     );
-    let enable = GENES.iter().find(|gene| gene.tag == "settler-threat-detour").expect("the gene is published for gene_screen and evaluator arms").enable;
+    let enable = GENES
+        .iter()
+        .find(|gene| gene.tag == "settler-threat-detour")
+        .expect("the gene is published for gene_screen and evaluator arms")
+        .enable;
     let mut ai = AdvancedAi::new();
     enable(&mut ai);
     assert!(ai.settler_threat_detour);
@@ -20109,7 +20145,11 @@ fn settler_threat_detour_is_a_native_opt_in_deployed_by_the_ledger() {
 fn one_shot_recovery_is_an_off_by_default_native_gene() {
     assert!(!AdvancedAi::new().base.one_shot_recovery);
     assert!(!AdvancedAi::legacy().base.one_shot_recovery);
-    let enable = GENES.iter().find(|gene| gene.tag == "one-shot-recovery").expect("the gene is published for gene_screen and evaluator arms").enable;
+    let enable = GENES
+        .iter()
+        .find(|gene| gene.tag == "one-shot-recovery")
+        .expect("the gene is published for gene_screen and evaluator arms")
+        .enable;
     let mut ai = AdvancedAi::new();
     enable(&mut ai);
     assert!(ai.base.one_shot_recovery);
@@ -20130,7 +20170,11 @@ fn settle_sooner_is_a_native_opt_in_deployed_by_the_ledger() {
         deployed.settle_sooner,
         "its sole +41 win column clears the provisional deployment bar"
     );
-    let enable = GENES.iter().find(|gene| gene.tag == "settle-sooner").expect("the gene is published for gene_screen and evaluator arms").enable;
+    let enable = GENES
+        .iter()
+        .find(|gene| gene.tag == "settle-sooner")
+        .expect("the gene is published for gene_screen and evaluator arms")
+        .enable;
     let mut ai = AdvancedAi::new();
     enable(&mut ai);
     assert!(ai.settle_sooner);
@@ -23797,9 +23841,9 @@ fn the_live_bridge_hunts_and_the_treatment_withholds_it() {
         "native production keeps the historical rule until a screen prices this"
     );
     assert!(
-        GENES
-            .iter()
-            .any(|gene| gene.live() && gene.field == "barbarian_hunt" && gene.tag == "barbarian-hunt"),
+        GENES.iter().any(|gene| gene.live()
+            && gene.field == "barbarian_hunt"
+            && gene.tag == "barbarian-hunt"),
         "the arm must be published so a screen can price it"
     );
     // The frozen anchor keeps the historical rule.
@@ -28996,7 +29040,11 @@ fn great_person_housing_is_a_native_opt_in() {
     let mut ai = AdvancedAi::new();
     ai.enable_live_bridge_universe();
     assert!(!ai.great_person_housing);
-    let enable = GENES.iter().find(|gene| gene.tag == "great-person-housing").expect("an opt-in row").enable;
+    let enable = GENES
+        .iter()
+        .find(|gene| gene.tag == "great-person-housing")
+        .expect("an opt-in row")
+        .enable;
     enable(&mut ai);
     assert!(ai.great_person_housing);
     ai.disable_great_person_housing();
@@ -29550,7 +29598,11 @@ fn opportunistic_war_is_a_native_opt_in() {
     let mut ai = AdvancedAi::new();
     ai.enable_live_bridge_universe();
     assert!(!ai.opportunistic_war);
-    let enable = GENES.iter().find(|gene| gene.tag == "opportunistic-war").expect("an opt-in row").enable;
+    let enable = GENES
+        .iter()
+        .find(|gene| gene.tag == "opportunistic-war")
+        .expect("an opt-in row")
+        .enable;
     enable(&mut ai);
     assert!(ai.opportunistic_war);
     ai.raid_war = Some(opportunistic_war::RaidWar {
@@ -29565,7 +29617,11 @@ fn opportunistic_war_is_a_native_opt_in() {
     assert!(!ai.opportunistic_war);
     assert!(ai.raid_war.is_none());
     assert!(!ai.raid_pillage_prizes);
-    let enable = GENES.iter().find(|gene| gene.tag == "raid-pillage-prizes").expect("the pillage half has its own row").enable;
+    let enable = GENES
+        .iter()
+        .find(|gene| gene.tag == "raid-pillage-prizes")
+        .expect("the pillage half has its own row")
+        .enable;
     enable(&mut ai);
     assert!(ai.raid_pillage_prizes);
     ai.disable_raid_pillage_prizes();
@@ -30155,7 +30211,9 @@ fn the_exchange_forecasts_are_the_blows_the_engine_resolves() {
 /// The gene is registered, discoverable by name, and reversible.
 #[test]
 fn contact_posture_is_a_registered_reversible_opt_in() {
-    assert!(GENES.iter().any(|gene| gene.opt_in() && gene.field == "contact_posture" && gene.tag == "contact-posture"));
+    assert!(GENES.iter().any(|gene| gene.opt_in()
+        && gene.field == "contact_posture"
+        && gene.tag == "contact-posture"));
     let mut ai = AdvancedAi::new();
     assert!(!ai.contact_posture, "production ships it off");
     ai.enable_contact_posture();

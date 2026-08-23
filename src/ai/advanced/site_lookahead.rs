@@ -487,7 +487,11 @@ mod tests {
         let mut ai = AdvancedAi::new();
         ai.enable_live_bridge_universe();
         assert!(!ai.district_lookahead_settle);
-        let enable = GENES.iter().find(|gene| gene.tag == "district-lookahead-settle").expect("an opt-in row").enable;
+        let enable = GENES
+            .iter()
+            .find(|gene| gene.tag == "district-lookahead-settle")
+            .expect("an opt-in row")
+            .enable;
         enable(&mut ai);
         assert!(ai.district_lookahead_settle);
         ai.disable_district_lookahead_settle();
@@ -500,7 +504,11 @@ mod tests {
         ai.enable_live_bridge_universe();
         assert!(!ai.priced_tile_purchase);
         assert!(!ai.base.plot_purchase_delegated);
-        let enable = GENES.iter().find(|gene| gene.tag == "priced-tile-purchase").expect("an opt-in row").enable;
+        let enable = GENES
+            .iter()
+            .find(|gene| gene.tag == "priced-tile-purchase")
+            .expect("an opt-in row")
+            .enable;
         enable(&mut ai);
         assert!(ai.priced_tile_purchase);
         assert!(ai.base.plot_purchase_delegated);

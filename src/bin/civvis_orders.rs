@@ -5783,7 +5783,10 @@ mod tests {
             let mut ai = civvis::ai::AdvancedAi::new();
             ai.enable_live_bridge();
             withhold_live_treatment(&mut ai, gene.tag).unwrap_or_else(|error| {
-                panic!("{} is a live gene but not withholdable: {error}", gene.field)
+                panic!(
+                    "{} is a live gene but not withholdable: {error}",
+                    gene.field
+                )
             });
         }
     }

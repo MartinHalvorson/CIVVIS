@@ -32,11 +32,10 @@ pub const BUILTIN_AIS: &[&str] = &[
     "strategic_deep",
 ];
 
-/// ⭐ The gene registry — every live, host-only, repair, production and opt-in
-/// gene — is `crate::ai::advanced::genes`; the five tag lists that used to
-/// live here are columns of its rows (`live_tags()`, `host_only_tags()`,
-/// `repair_tags()`, `repair_tags_on(axis)`).
-
+// ⭐ The gene registry — every live, host-only, repair, production and opt-in
+// gene — is `crate::ai::advanced::genes`; the five tag lists that used to
+// live here are columns of its rows (`live_tags()`, `host_only_tags()`,
+// `repair_tags()`, `repair_tags_on(axis)`).
 
 /// On-disk schema for the shared player/leader/civilization rating ledger.
 pub const ELO_SCHEMA_VERSION: u32 = 3;

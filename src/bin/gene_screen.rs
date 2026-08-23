@@ -159,9 +159,8 @@ fn ledger_default(tag: &str, universe_on: bool) -> bool {
 /// genes and the opt-ins — in registry order. A host-only gene reads Civ 6
 /// state a native board does not have and is excluded rather than measured.
 fn gene_table() -> Vec<Gene> {
-    civvis::ai::GENES
-        .iter()
-        .filter(|gene| gene.screenable())
+    civvis::ai::screenable_genes()
+        .into_iter()
         .map(|gene| Gene {
             field: gene.field,
             tag: gene.tag,
