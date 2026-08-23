@@ -3,6 +3,208 @@
 This note records the July 2026 simulator profile, the changes kept from that
 work, the production-catalog follow-up, and the next optimization targets.
 
+## 2026-08-23: the 9% BTreeSet row was never the attack envelopes
+
+The section below ranks *"the next target is `AttackEnvelopes = Vec<(u32,
+Arc<BTreeSet<Pos>>)>`"* on the strength of `BTreeSet<Pos>` holding **9.0% of
+the main thread**. The row is real. The attribution was not.
+
+`sample`'s collapsed self-time list gives a symbol, not a caller, and
+`BTreeMap<(i64,i64), SetVal>` is every `BTreeSet<Pos>` in the binary at once.
+Walking the call tree instead of reading the symbol name puts **92% of those
+samples in one line**: the `seen` set of the naval-recon flood fill in
+`BasicAi::naval_recon_can_chart_from`. Same command as that section, `ci`
+profile, `--map continents`:
+
+| symbol, main-thread share | |
+| --- | ---: |
+| `BTreeSet<Pos>::insert` | 9.02% |
+| ├ `naval_recon_ship_can_chart` (via `AdvancedAi::naval_explorer`) | 8.3% |
+| └ everything else, envelopes included | 0.7% |
+| `naval_recon_ship_can_chart`, inclusive | **13.19%** |
+| `evacuation_tile`, inclusive | 1.31% |
+| `incoming_damage`, inclusive | 1.31% |
+
+So the two changes that section ranked first and third were aimed at 0.7% and
+2.6% of the run, and the 13% sitting beside them had no entry in this file at
+all. #2033 gave that walk an early exit and its docstring still says *"building
+it was 13% of the simulator"* — the early exit is exact and it works, but its
+worst case is a fully-charted body with no frontier, which is what a settled
+game mostly has, and that case still has to exhaust the ocean to answer "no".
+What was left after the early exit was the price of the *set*.
+
+**⚠ Read a `sample` self-time row as a symbol, never as a subsystem.** This
+file has now mis-ranked a target that way once; the collapsed list is a lead,
+and the call tree is the finding.
+
+### What was done
+
+Four changes, all exact, all verified by `tools/speed_ab.py` reporting the
+same report digest on every paired seed.
+
+1. **The naval-recon visited set is a dense table.** `TileGrid::index_of` is
+   documented for exactly this — *"callers that keep their own per-tile table
+   index it by this"* — and `seen` is only ever tested and set, never iterated,
+   so the frontier order, the tile count and the early-exit point are the ones
+   a `BTreeSet` gave. `naval_recon_early_exit_agrees_with_the_full_walk` still
+   checks the walk against the reference `naval_recon_waterway`, which keeps
+   its tree.
+
+2. **`incoming_damage` tests its sources before pricing its defender.** It
+   cloned the unit, ran `unit_strength` and read `tile_defense_bonus` first,
+   then discovered on most tiles that no envelope covered them and no walled
+   district could see them — and a garrisoned tile threw away three answers it
+   had already paid for. The empty folds it replaces returned exactly
+   `IncomingDamage::default()`, and `default().merge(default())` is
+   `default()`.
+
+3. **`retreat_step` stops pricing the escape from a tile nothing can reach.**
+   It runs for every military unit of every seat every turn — 87% of that bill
+   is on city-states and barbarians, per the 2026-08-22 section below — and on
+   a quiet tile it priced a heal rate, a City Center's ownership and a suzerain
+   only to read `0.0`, conclude "not lethal" and return `None`. The pre-test is
+   `anything_can_reach`, the same source scan `incoming_damage` performs
+   anyway. `a_tile_nothing_can_reach_prices_at_exactly_zero` asserts the
+   implication the skip rests on over a real board rather than arguing it in a
+   comment.
+
+4. **`AttackEnvelopes` holds a sorted slice.** Decided on counted work; see
+   the section below for the numbers and for why the clock could not decide
+   it. `Game::attack_reach_from_flood` also built the answer twice — a
+   `BTreeSet` that its caller re-collected into a second one — and now builds
+   one `Vec` the envelope adopts.
+
+`safe_healing_step`'s whole-map scan now takes its covered-tile union from a
+cache keyed on the envelope table's own `Arc` — pointer identity is sound as
+the key because the entry holds that `Arc`, so the allocation cannot be freed
+and reused underneath the comparison, and `enemy_attack_envelopes` builds a
+fresh one whenever the envelopes change. ⚠ That one is an argument, not a
+measurement: the set is identical and the cache can only turn several builds
+of it into one — `military_step` reaches `safe_healing_step` up to three times
+for one unit on one board — so it cannot cost more than a mutex and a pointer
+comparison. It is not separately priced and should not be quoted as a number.
+
+### The paired reading
+
+The tree's own harness gained a `--map` option the same day (#2328); this is
+its method at the standard screen shape — 6p 74×46, 9 city-states, 250 turns,
+online — 8 paired games:
+
+| seeds | baseline | candidate | | |
+| --- | ---: | ---: | ---: | --- |
+| 7311001–08, continents | 513.09 s | 492.56 s | **−4.00%** | host load 17–50 |
+| 7311001–08, `tennis_ball` | 411.13 s | 405.71 s | **−1.32%** | host load 30–44 |
+
+**Same game on every paired seed**, which is the correctness proof this change
+needed: three of the four edits skip work and the fourth changes a container,
+and a matching digest on eight 250-turn games says none of them moved a
+decision.
+
+⚠⚠ **THE TWO ROWS ARE THE SAME BINARY PAIR AND THE SAME EIGHT SEEDS.** The
+only difference is the map, and it is worth **three times the answer** — which
+is the point of the subsection below on what the gate could not see. Quote the
+continents row: it is the shape every `gene_screen` batch pays.
+
+⚠ Taken while sibling agents held this host at load 17–95. `speed_ab.py`
+interleaves the arms seed by seed and flips their order, so the *paired delta*
+survives that and the absolute totals do not. The evidence each change was
+actually decided on is load-independent: the `sample` share table above and
+the allocation counts below.
+
+### Rejected, with the number: the envelope union as a membership test
+
+The first version of change 3 answered it from that cached union: one binary
+search instead of one per envelope. `sample` priced the union build at **1.8%
+of the main thread against the 1.2% the skip saves**. Building an 800-tile
+union to answer a single membership question is a loss, and the union earns
+its keep only across `safe_healing_step`'s 3,400-tile scan. Recorded here
+because the reasoning for it was good and the measurement was not.
+
+### The envelope representation: decided by counting, not by the clock
+
+The change that section ranked first was built, measured, reverted and then
+restored, and the round trip is the useful part.
+
+Measured on the clock it reads **+1.17%** and **+0.20%** — paired,
+`tools/speed_ab.py`, 4 seeds each, 6p 60×38 6CS 120t online, reports agreeing
+on every seed, host load 6.5 and 5.6:
+
+| seeds | baseline | candidate | |
+| --- | ---: | ---: | ---: |
+| 7311001–04 | 42.87 s | 43.37 s | +1.17% |
+| 7311010–13 | 38.90 s | 38.98 s | +0.20% (inside the noise floor) |
+
+Both are inside the band #2339 has since shown this fleet cannot resolve the
+*sign* of, so neither is evidence of anything, and no quiet window would have
+made them evidence. Counted instead, with a counting `GlobalAlloc` over one
+250-turn 74×46/9CS continents game at seed 7311001 (deterministic: two runs of
+the same arm differed by 3 allocations in 375 million):
+
+| arm | allocations | bytes |
+| --- | ---: | ---: |
+| `Arc<BTreeSet<Pos>>` | 375,799,768 | 45.13 GB |
+| sorted `Vec<Pos>` | 374,642,802 | 44.87 GB |
+| **difference** | **−1,156,966 (−0.31%)** | −253 MB (−0.56%) |
+
+And the shape of the workload, counted in the same run: **271,484 envelope
+builds against 12,123,375 `contains` calls**, on sets averaging 17.3 tiles —
+44 queries per build. The failure mode a sorted `Vec` has here is a set built
+once and queried rarely, where the sort costs more than incremental inserts;
+this is forty-four times the opposite. Per query, two separately allocated
+nodes and ~7.5 linear comparisons (Rust's `BTreeMap` searches a node linearly)
+become ~4.1 comparisons over 136 contiguous bytes.
+
+At ~45 ns an allocation that is ~0.05 s, and the query side is worth perhaps
+as much again, on a ~43 s game: **an estimated ~0.3%, which no clock on this
+machine can confirm.** It is kept because the counted work is strictly lower
+on both axes that can be counted exactly, not because a percentage said so —
+and **~0.3% is an estimate from counts and must never be quoted as a
+measurement.**
+
+⚠ The counting build is not in the tree. It is a `GlobalAlloc` wrapper in
+`src/main.rs` incrementing two `AtomicU64`s in `src/lib.rs`, printed at the
+end of `ai::run_game`; roughly thirty throwaway lines, and worth rebuilding
+the next time a sub-1% change needs deciding.
+
+### What Part 2's target was actually worth
+
+The same brief expected 5–10% from a zero-incoming pre-test in
+retreat/healing. `evacuation_tile` and `incoming_damage` are **1.31% of the
+main thread each**, so the whole target was ~2.6% before any of it was
+skipped, and the changes above take it to 0.68% and 0.68%. The large
+inclusive shares `healing_step` and `retreat_step` carry — 27.7% and 24.8% on
+this profile, 41.0% and 35.9% on the 2026-08-21 one — are almost entirely
+`enemy_attack_envelopes` (17.6%) and the `flow_past` beneath it, not the
+evacuation pricing. **That is where the next real win in this subsystem is,
+and it is the same problem #2155 left open: the envelope table is rebuilt
+whenever one of the viewer's own units moves.**
+
+### ⚠ The paired harness measured a map no screen ran — closed by #2328
+
+While this work was in flight `tools/speed_ab.py` did not pass `--map`, so it
+timed `civvis simulate`'s default `tennis_ball`, while `gene_screen`'s
+`SCREEN_MAP` is `MapScript::Continents`. Same binary, same 74×46/9CS/250t
+shape, one `sample` each:
+
+| | `tennis_ball` (what the harness timed) | `continents` (what every batch runs) |
+| --- | ---: | ---: |
+| `BTreeSet<Pos>::insert` | 1.29% | **9.02%** |
+| `naval_recon_ship_can_chart` | 1.42% | **13.19%** |
+| **this change, paired, 8 seeds** | **−1.32%** | **−4.00%** |
+
+The hotspot this section is about was **twelve points smaller on the map the
+gate timed than on the map the fleet runs** — invisible to `paired-cost` on
+every pull request. It is the same trap the 2026-08-22 section below records
+for map *size* (*"every row above it was taken at 60×38 / 6 and measures a
+shape no screen runs"*), one axis further in.
+
+**#2328 closed it independently and while this was being written**: the gate's
+shape is now `GATE_SHAPE`, pinned field-by-field against `gene_screen`'s own
+`SCREEN_*` constants, with `map="continents"`. Recorded here anyway because
+the two findings arrived from opposite directions — that one from auditing the
+gate, this one from a hotspot that hid behind it — and because the pair is the
+concrete size of what a default map costs a measurement.
+
 ## 2026-08-22: the movement flood stopped rescanning the world (−10.0%)
 
 Two whole-board facts were being recomputed inside the innermost movement
@@ -55,7 +257,7 @@ condition the 2026-08-21 retraction below says makes it valid.
 
 | | before | after |
 |---|---:|---:|
-| `BTreeMap<(i64,i64), SetVal>` — the `BTreeSet<Pos>` envelopes | 7.6% | **9.0%** |
+| `BTreeMap<(i64,i64), SetVal>` — ~~the `BTreeSet<Pos>` envelopes~~ **the naval-recon visited set, corrected 2026-08-23** | 7.6% | **9.0%** |
 | `memcmp` | 5.0% | 6.0% |
 | `free` / `malloc` | 7.3% | ~7% |
 | `memmove` | 5.4% | 5.7% |
@@ -63,12 +265,22 @@ condition the 2026-08-21 retraction below says makes it valid.
 | `BTreeMap<String, f64>::get` | 3.6% | 4.2% |
 | `can_enter_past` | 3.9% | **gone from the top 16** |
 
-**The next target is `AttackEnvelopes = Vec<(u32, Arc<BTreeSet<Pos>>)>`.** Its
+~~**The next target is `AttackEnvelopes = Vec<(u32, Arc<BTreeSet<Pos>>)>`.** Its
 `BTreeSet<Pos>` is queried with `contains` and iterated in sorted order; a
 sorted `Vec<Pos>` with `binary_search` gives the identical iteration order and
 identical answers with no node allocation and contiguous memory, which should
 take a large share of the BTree, malloc and memmove rows at once. Not attempted
-here — it touches ~40 sites and deserves its own change.
+here — it touches ~40 sites and deserves its own change.~~
+
+⚠⚠ **WRONG, AND CORRECTED BY THE 2026-08-23 SECTION AT THE TOP OF THIS FILE.**
+`BTreeMap<(i64,i64), SetVal>` is *every* `BTreeSet<Pos>` in the binary
+collapsed into one symbol, and 92% of that 9.0% is the visited set of the
+naval-recon flood fill in `BasicAi::naval_recon_can_chart_from`, not these
+envelopes. The paragraph above was written from the collapsed self-time list;
+the call tree says otherwise. The envelope conversion was subsequently built and
+kept, but on counted allocations rather than on the clock, and it is worth
+about 0.3% rather than the large share this paragraph expected. The row itself
+is real and is now 0.13%.
 
 ⚠ **Read the last section first.** Each profile here superseded the one above
 it, and the most recent — 2026-08-22 — corrects the 2026-08-21 section directly

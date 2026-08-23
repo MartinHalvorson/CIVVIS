@@ -24431,7 +24431,14 @@ impl Game {
         let max_moves = self.unit_max_moves(uid);
         let positions = self.flow_past(uid, start, max_moves, true);
         let flood: Vec<Pos> = positions.keys().copied().collect();
-        let mut targets = BTreeSet::new();
+        // ⚠ THIS WAS A `BTreeSet` AND IT ALLOCATED ONE NODE PER CANDIDATE.
+        // A ranged unit offers the same tile from every stride it can shoot
+        // from, so the set spent most of its work absorbing duplicates a node
+        // at a time, and its caller then re-collected the result into a
+        // second set. A `Vec` sorted once produces the identical ascending,
+        // distinct sequence this function's contract promises, from one
+        // buffer, and `BasicAi`'s envelope adopts it without copying.
+        let mut targets: Vec<Pos> = Vec::new();
         for (from, remaining) in positions {
             if remaining <= 0.0 {
                 continue;
@@ -24448,7 +24455,7 @@ impl Game {
                         && self.map.tiles.contains_key(&target)
                         && self.unit_has_line_of_sight_from(uid, from, target)
                     {
-                        targets.insert(target);
+                        targets.push(target);
                     }
                 }
             }
@@ -24463,12 +24470,14 @@ impl Game {
                     }
                     let fresh = from == start && remaining >= max_moves;
                     if fresh || remaining >= self.unit_step_cost(uid, from, target) {
-                        targets.insert(target);
+                        targets.push(target);
                     }
                 }
             }
         }
-        (targets.into_iter().collect(), flood)
+        targets.sort_unstable();
+        targets.dedup();
+        (targets, flood)
     }
 
     /// Every legal single step inside this turn's remaining movement, as
