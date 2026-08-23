@@ -614,7 +614,7 @@ wins against 27% for all-off** (4p classic, 200 anchor pairs). Now:
 - **The deployment rule** (`default_from_columns` in
   `tools/gene_ledger.py`, mirrored as `columns_default_on` in
   `src/ai/advanced/gene_ledger.rs`, and re-derived from the generated table by
-  `the_default_follows_the_win_columns`): **on** when both win columns
+  `the_default_follows_the_ledgers_authority`): **on** when both win columns
   are positive, or when their average is above +15 with neither below −10;
   with exactly one populated column, **on** when it is above +20; **off**
   otherwise. That clause is `default_from_win_columns` /
@@ -881,6 +881,181 @@ CLI; every evaluator, `gene_screen` included, and the live decider run units
 serially. The repaired gene carries a serial leg and the next 41 pairs already
 differed. Read the interval's width before the sign: a zero-width interval is
 a fires-check failure, and the fix is in the gene, not in more pairs.
+
+## The precision-weighted posterior, published beside the rule
+
+A threshold in column units is not a threshold in evidence. Three things about
+the deployment rule are true from this repository's own numbers:
+
+1. **The bars are not derived from the errors.** Each screen's 80%-power band
+   is in the table at the foot of `HEURISTIC_GENE_RANKING.md` and they differ by
+   more than three to one — p10 ±51, p7 ±56, p4 ±60, s6 ±64, h1 ±68, s7 ±29,
+   s2 ±101. A fixed +15 / −10 / +20 bar therefore decides the same reading
+   differently depending only on which screen happened to price the gene, and
+   #2294's single-column +20 bar sits **below every band in that table**.
+2. **"Prior" is not a replication.** The two columns come from screens that
+   differ in baseline (`p4` at `repairs` against `p7`/`p10` at `best`), in build
+   and in shape, so "both columns positive" is not two independent
+   confirmations. #2283/#2284 measured the consequence directly: five of seven
+   lane genes changed sign on disjoint seeds and every flag regressed toward
+   zero as the sample grew.
+3. **The veto weights by games, not by precision or recency**, and it fires on
+   the *sign* of a difference that carries no error at all. All three genes it
+   removes are condemned by the same 2026-08-20 `p4` screen while every later
+   reading is positive, and `war-economy` needs roughly 48,000 more pairs at its
+   P10 margin merely to climb back over zero.
+
+`tools/gene_ledger.py::pooled_posterior` answers all three with one estimator:
+a **random-effects (DerSimonian–Laird) inverse-variance pool** of every screen's
+on−off difference, on the win column's own scale, each screen weighted by its
+own standard error, with the between-screen disagreement estimated as `τ²` and
+carried in the interval rather than assumed away.
+
+```text
+wᵢ  = 1 / sᵢ²                    ȳ  = Σ wᵢ yᵢ / Σ wᵢ        Q = Σ wᵢ (yᵢ − ȳ)²
+C   = Σ wᵢ − Σ wᵢ² / Σ wᵢ        τ² = max(0, (Q − (k−1)) / C)
+wᵢ* = 1 / (sᵢ² + τ²)             m  = Σ wᵢ* yᵢ / Σ wᵢ*      se = √(1 / Σ wᵢ*)
+```
+
+`yᵢ` is `column_estimate(win_delta_pp)` and `sᵢ` is `column_se(win_se_pp)` —
+both **half** the on−off difference, because a foldover holds the two arms
+symmetric about chance, so `yᵢ / sᵢ` reproduces the screen's own `win_z`
+exactly and the pooled figure reads directly against the win columns beside it.
+The ledger records `posterior_pp` and `posterior_se_pp` per gene at six decimal
+places, the ranking prints the 95% interval and `P(effect > 0)`, and
+`src/ai/advanced/gene_ledger.rs` re-derives the deployment call from the same
+published figures.
+
+⚠ `τ` is the load-bearing term, not a refinement. When two screens agree to
+within their errors it is zero and the pool is the ordinary inverse-variance
+one. When they do not — a `legacy` Pangaea reading against a `standard`
+continents one — it widens the interval instead of averaging two worlds into a
+confident wrong answer. `POSTERIOR_SHAPES` says which shapes the published pool
+admits, and `HEURISTIC_GENE_RANKING.md` prints legacy, standard and pooled side
+by side so the choice is made on the numbers.
+
+### The switch, and why it is not thrown
+
+`AUTHORITY` in `tools/gene_ledger.py` is the whole switch. Change it, run
+`python3 tools/gene_ledger.py --write`, and `docs/gene_ledger.json`, the
+generated Rust table and the ranking all follow; the ledger records which rule
+decided, so `--check` and the Rust mirror re-derive under the recorded one and
+cannot drift. Three settings, weakest first, each containing the one before it:
+
+| setting | what decides |
+|---|---|
+| `columns` | the operator's threshold rule exactly as it ships — the two win columns, vetoed by a negative pooled `Diff` |
+| `posterior-veto` | the same columns, with an error bar on the veto: it fires only when the posterior's 95% interval lies **wholly below zero** |
+| `posterior` | the pooled estimate decides wherever its interval excludes zero; where it straddles, `posterior-veto` decides |
+
+It says `columns`, and this is deliberate. The threshold rule is an explicit
+operator directive, and **every source in the ledger today is the retired
+`legacy` 60×38 Pangaea shape** — re-deciding the deployment genome now would
+re-decide it on the wrong instrument. The statistic is published, the delta is
+published (*What the posterior would change* in `HEURISTIC_GENE_RANKING.md`),
+and the call is the operator's.
+
+⚠ Where the interval straddles zero, the `posterior` setting inherits the
+column rule's answer. That is forced, not chosen: `default_on` has to be a pure
+function of the recorded sources, so the fallback cannot be "whatever shipped
+yesterday". The way out of the deferral is the boundary set below, not a
+guess through it.
+
+## Two stages, and why not a partial foldover
+
+The efficient plan is **two-stage**: the whole-genome foldover ranks and a
+single-gene direct arm resolves. Both are efficient, at different jobs, and the
+arithmetic that says so is already in the repository's screens. Do not
+re-derive it into a partial or blocked foldover, which is neither stage.
+
+**Stage one — the whole-genome screen RANKS.** `p10` priced 75 genes at ±51
+each on 17,574 seat pairs. Spend the identical budget as 75 single-gene screens
+and each gets 234 pairs; even at the best single-gene pairing gain this
+repository has measured (`s7`'s 3.32× against `p10`'s 1.09×), 234 pairs resolve
+**±145**. That is 2.84× wider than ±51, and because error falls with √N it means
+**8× the games** to reach the same resolution per gene. Every game informs every
+gene, which is the whole reason the screen exists.
+`tools/test_heuristic_gene_ranking.py::test_the_eight_times_figure_is_the_screens_own_arithmetic`
+recomputes those three numbers from the ledger's own screens, so this paragraph
+cannot go stale while the screens under it move.
+
+**Stage two — a single-gene direct arm RESOLVES.** Once aimed, a single-gene
+screen resolves far tighter *per pair*, because a foldover cancels only what its
+two arms play in common and one gene left flipping leaves most of the game
+identical: `s7` reads ±29 on 6,000 pairs at a 3.32× pairing gain, against
+`p10`'s 1.09× (#2302). So the screen says *which* genes are still in doubt and
+a direct arm settles them.
+
+`python3 tools/heuristic_gene_ranking.py --boundary` is stage two's worklist. It
+lists every gene whose posterior interval straddles zero, ranked by the expected
+value of one direct arm read against the gene's **shipped** state — so a gene
+the evidence likes that the rule holds off has the whole effect to buy, and one
+the genome already plays has only the chance of a reversal — and prints, per
+gene, how many matched seat pairs an arm needs before the combined interval
+clears zero. It ends in a `--genes a,b,c` list sized to one batch. The arm's
+precision is taken from the widest single-gene arm the repository has actually
+run (`2026-08-22-h1`, 24.3 per-column SE at 7,200 seat pairs), which is the
+conservative end: a gene that rarely fires cancels far more and resolves
+tighter.
+
+⚠ What is **not** efficient is a partial foldover — randomising a subset of the
+genome and holding the rest fixed. It pays the whole-genome screen's residual
+(every randomised gene's draw is in every other gene's error) without pricing
+the whole genome, and it does not buy the direct arm's cancellation either,
+because the arms still differ in many genes. `s6` is the measured example: four
+genes over 6,000 pairs resolves ±64, *wider* than one gene over 7,200 (`h1`,
+±68) is close to and far wider than one gene over 6,000 (`s7`, ±29). Rank with
+everything or resolve with one; the middle is the expensive place.
+
+## Pre-registered: how a lane gene is judged
+
+⚠⚠ **Fixed before the next screen, deliberately, so the axis is not chosen
+after the numbers arrive.**
+
+At the standing 250-turn Online clock, science and diplomatic victories land at
+median **t283 and t285** — past the clock — so they are 1–2% of endings and
+`docs/VICTORY_GENES.md` records **science 0/8** and **diplomacy 1/8** for
+exactly that reason. A science or congress gene therefore **cannot pay through
+the win axis at all**: the seat it would have carried to a science victory shows
+up as a score win or a score loss instead. Judging such a gene by its win column
+is not a strict test, it is a test of nothing.
+
+**Who is a lane gene.** Discovered from the code, never listed: every gene whose
+flag field `src/ai/advanced/victory_lane.rs` reads
+(`tools/heuristic_gene_ranking.py::lane_tags`). A gene joins the set by being a
+lane gene, not by being written into a list that is complete the day it is
+written.
+
+**The rule, pre-registered.**
+
+1. **The decision axis stays WINS.** A lane gene ships when the deployment rule
+   in force says it ships, on the win columns, exactly like every other gene.
+   Nothing below promotes anything. `docs/GENOME.md` records what happened the
+   one time selection ran on a correlate, and
+   `docs/eval/README.md`'s rule stands: a screen's `*` is where to point an arm.
+2. **The secondary axis is score share**, printed for every gene as
+   *Share Δpp (z)* in `HEURISTIC_GENE_RANKING.md` and listed again for the lane
+   genes alone. Its verdict is the screen's own `*` convention on that axis:
+   `helps *` at share z ≥ 2, `hurts *` at ≤ −2, `~` otherwise.
+3. **A lane gene whose share reading is `hurts *` is a removal candidate even
+   with a positive win column.** The share axis is continuous and resolves an
+   edge at a fraction of the games a win count needs; a lane gene that loses
+   score share while its win column sits inside the band is losing, and the win
+   axis at this clock cannot see it.
+4. **A lane gene whose share reading is `helps *` with a win column inside the
+   band is a candidate for a direct arm, never a promotion.** It is on the
+   `--boundary` list like anything else.
+5. **A lane gene resolved on neither axis after two screens goes to the bottom
+   of the ranking with everything else** and is culled on the standing
+   directive. Being hard to measure is not a reason to keep a gene; it is the
+   reason its lane needs a clock it can finish on.
+
+⭐ The genome's own worst row is the case for this. `governor-victory-lanes`
+read win z **+2.46** and share z **−15.92** on `p10` — a recorded `conflict` —
+and #2294's single-column clause promoted it on the +46 win column because the
+rule reads the win axis only. The first standard-shape screen's **win** axis
+reads it at z **−15.37**, within half a sigma of what the legacy **share** axis
+had already said. `docs/gene_ranking_notes.md` carries the numbers.
 
 ## What it is not
 
