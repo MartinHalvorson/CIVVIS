@@ -37,17 +37,27 @@ sys.path.insert(0, str(HERE))
 # The ledger tool owns the win column: it decides each gene's default from the
 # same two numbers this table prints, so both must be one arithmetic.
 from gene_ledger import (  # noqa: E402
+    AUTHORITIES,
+    AUTHORITY,
     PER,
+    POSTERIOR_SHAPES,
+    POWER_80,
+    Z95,
+    arm_information_value,
+    arm_pairs_to_resolve,
+    column_se,
+    deployment_default_on,
+    direct_arm_constant,
+    normal_cdf,
+    pooled_posterior,
     pooled_win_diff_pp,
     pooled_win_rates,
+    posterior_call,
     wins_per_10k as wins_per,
 )
 LEDGER_JSON = ROOT / "docs" / "gene_ledger.json"
 RANKING_MD = ROOT / "HEURISTIC_GENE_RANKING.md"
 NOTES_MD = ROOT / "docs" / "gene_ranking_notes.md"
-
-#: A two-sided 5% test reaches 80% power at 1.96 + 0.84 standard errors.
-POWER_80 = 2.8
 
 #: How much of a gene's sentence the Description column carries. Widened
 #: 160 → 480 on 2026-08-22 (operator: "three times as wide"): the longest
@@ -56,20 +66,11 @@ POWER_80 = 2.8
 DESCRIPTION_CHARS = 480
 
 
-def column_se(win_se_pp: float) -> float:
-    """One `wins_per` column's standard error, in the column's own units.
-
-    A screen reports `win_se_pp`: the error on the on−off **difference**, in
-    percentage points. The column is `(win_on - chance) * PER`, and a foldover
-    holds the two arms symmetric about chance, so the column is **half** that
-    difference and carries half its error. The two are not interchangeable,
-    and quoting one against the other is not a rounding error: the ±110/10k
-    band #2266 called eight removals "inside" is the difference's band, twice
-    the width of the column it was read against. Derived here so the printed
-    band and the printed column stay one arithmetic, the way `wins_per` and
-    the ledger's default already are.
-    """
-    return win_se_pp * PER / 200.0
+# ⭐ `column_se` and `POWER_80` moved into `gene_ledger.py` (#2300 put the
+# arithmetic beside the `wins_per_10k` it halves; that function lives there,
+# and so now does the precision-weighted posterior that consumes both). They
+# are imported above, so `ranking.column_se` still resolves and the printed
+# band, the printed column and the deployment decision remain one arithmetic.
 
 
 #: A seat wins 1-in-`players` by chance, so an unpaired estimate of the column
@@ -212,6 +213,15 @@ def load_sources(ledger: dict) -> tuple[dict[str, list[dict]], dict[str, str]]:
                 "n_off": int(gene.get("n_off", gene["pairs"])),
                 "win_z": float(gene["win_z"]),
                 "share_z": float(gene["share_z"]),
+                # What the precision-weighted posterior pools, and the shape
+                # it was measured at, so the pool can be taken per instrument
+                # as well as whole.
+                "win_delta_pp": float(gene["win_delta_pp"]),
+                "win_se_pp": (None if gene.get("win_se_pp") is None
+                              else float(gene["win_se_pp"])),
+                "share_delta_pp": float(gene["share_delta_pp"]),
+                "shape": src["shape"],
+                "source": name,
                 "players": int(data.get("profile", {}).get("players", 0) or 0),
                 "compute_cost_pct": gene.get("compute_cost_pct"),
                 "compute_cost_se_pct": gene.get("compute_cost_se_pct"),
@@ -236,6 +246,153 @@ def diff_cell(history: list[dict]) -> str:
     retain their minus sign.
     """
     return f"{pooled_win_diff_pp(history):.2f}%"
+
+
+#: A single-gene direct arm's default size, in matched seat pairs: the 1,200
+#: map pairs `2026-08-22-h1` actually played. `--boundary --arm-pairs N` moves
+#: it; the precision at that size is measured, not modelled (see
+#: `gene_ledger.direct_arm_constant`).
+ARM_PAIRS = 7200
+
+#: The lane modules whose flag fields make a gene a **lane gene** — discovered
+#: from the code, never listed here. A lane gene serves one victory lane, and
+#: `docs/GENE_SCREEN.md` pre-registers how it is judged.
+LANE_MODULES = (ROOT / "src" / "ai" / "advanced" / "victory_lane.rs",)
+
+
+def lane_tags() -> list[str]:
+    """Every gene whose flag field a victory-lane module reads, in registry
+    order.
+
+    Discovered, never listed: `AGENTS.md`'s own rule is that a hand-written
+    list is complete the day it is written. A gene joins this set by being
+    read in `victory_lane.rs`, which is the same act that makes it a lane
+    gene at all."""
+    read = set()
+    for path in LANE_MODULES:
+        read |= set(re.findall(r"self\.([a-z0-9_]+)", path.read_text()))
+    reg = registry()
+    return [tag for tag in screenable_tags()
+            if tag in reg and reg[tag][0] in read]
+
+
+def analyses(ledger: dict) -> list[dict]:
+    """Each ledger source with its loaded analysis, for the statistics that
+    need the file rather than the recorded summary."""
+    return [
+        {
+            "name": Path(src["path"]).name,
+            "shape": src["shape"],
+            "analysis": json.loads((ROOT / src["path"]).read_text()),
+        }
+        for src in ledger["sources"]
+    ]
+
+
+def posterior_cell(posterior: dict | None) -> str:
+    """`+45 [−24, +114]` — the pooled effect and its 95% interval, in the win
+    column's own units, so it reads directly against the two columns beside
+    it."""
+    if posterior is None:
+        return "\u2013"
+    return (f"{posterior['effect']:+.0f} "
+            f"[{posterior['lo']:+.0f}, {posterior['hi']:+.0f}]")
+
+
+def probability_cell(posterior: dict | None) -> str:
+    """`P(effect > 0)`. This is where the shrinkage shows: two genes can print
+    the same `+30` and land at 90% and 99.8% because their screens resolve
+    ±64 and ±29."""
+    if posterior is None:
+        return "\u2013"
+    return f"{100 * posterior['p_positive']:.1f}%"
+
+
+def share_verdict(share_z: float) -> str:
+    """The screen's own `*` convention, on the score-share axis alone."""
+    if share_z >= 2.0:
+        return "helps *"
+    if share_z <= -2.0:
+        return "hurts *"
+    return "~"
+
+
+def share_cell(history: list[dict]) -> str:
+    """The newest screen's score-share contrast and its verdict.
+
+    Published beside the win columns because the deployment rule reads the win
+    axis **only**, and at the standing 250-turn Online clock a science or
+    congress gene cannot pay on that axis at all — science and diplomatic
+    victories land at median t283 and t285, so they are 1–2% of endings. A
+    lane gene's evidence is here or nowhere. `docs/GENE_SCREEN.md` carries the
+    pre-registered rule for reading it."""
+    newest = history[-1]
+    z = newest["share_z"]
+    return f"{newest['share_delta_pp']:+.2f} (z {z:+.2f}) {share_verdict(z)}"
+
+
+def posterior_of(history: list[dict]) -> dict | None:
+    """The published pool: every screen at a shape `POSTERIOR_SHAPES` admits."""
+    return pooled_posterior(history, POSTERIOR_SHAPES)
+
+
+def authority_table(ledger: dict, measured: dict[str, list[dict]]) -> list[dict]:
+    """Every measured gene's shipped default beside what each authority would
+    ship, with the posterior that decides it."""
+    rows = []
+    for gene in ledger["genes"]:
+        history = measured.get(gene["tag"])
+        if not history:
+            continue
+        posterior = posterior_of(history)
+        effect = None if posterior is None else posterior["effect"]
+        se = None if posterior is None else posterior["se"]
+        row = {
+            "tag": gene["tag"],
+            "shipped": bool(gene["default_on"]),
+            "posterior": posterior,
+            "call": posterior_call(effect, se),
+        }
+        for candidate in AUTHORITIES:
+            # Namespaced: one of the authorities is called `posterior`, and
+            # so is the estimate it reads.
+            row[f"would/{candidate}"] = deployment_default_on(
+                candidate, gene["wins_last_10k"], gene["wins_prior_10k"],
+                gene["win_diff_pp"], effect, se)
+        rows.append(row)
+    return rows
+
+
+def boundary_table(ledger: dict, measured: dict[str, list[dict]],
+                   arm_pairs: int = ARM_PAIRS) -> tuple[list[dict], tuple[float, str] | None]:
+    """The genes whose interval straddles the decision line, ranked by what one
+    single-gene direct arm would buy.
+
+    ⚠ THE EFFICIENT PLAN IS TWO STAGE, and this is its second stage. The
+    whole-genome foldover is the efficient way to RANK — p10 priced 75 genes at
+    ±51 each on 17,574 seat pairs, and the same budget split into 75 single-gene
+    screens would give ±146 each, about 8× worse per gene. A single-gene arm
+    resolves far tighter per pair once it is aimed (`s7`: ±29 on 6,000 pairs, a
+    3.32× pairing gain against p10's 1.09%). So the screen ranks and the direct
+    arms resolve the boundary; a partial or blocked foldover is neither, and
+    `docs/GENE_SCREEN.md` records the arithmetic."""
+    arm = direct_arm_constant(analyses(ledger))
+    rows = []
+    for row in authority_table(ledger, measured):
+        if row["call"] != "unresolved" or row["posterior"] is None:
+            continue
+        effect, se = row["posterior"]["effect"], row["posterior"]["se"]
+        entry = dict(row)
+        if arm is not None:
+            constant = arm[0]
+            entry["needs"] = arm_pairs_to_resolve(effect, se, constant)
+            entry["buys"] = arm_information_value(
+                effect, se, constant / math.sqrt(arm_pairs), row["shipped"])
+        else:  # pragma: no cover - the ledger has always had a single-gene arm
+            entry["needs"], entry["buys"] = None, 0.0
+        rows.append(entry)
+    rows.sort(key=lambda r: (-r["buys"], r["tag"]))
+    return rows, arm
 
 
 def cost_cell(history: list[dict], value: str, uncertainty: str) -> str:
