@@ -25,7 +25,7 @@
 //! clears +15 with neither column below −10. With exactly one populated
 //! column, it may provisionally default on when that reading is above +20;
 //! every other gene defaults off.
-//! A win column is wins added per 10,000 games at the gene's measured on-rate
+//! A win column is wins added per 10,000 on-arm seats at the gene's measured on-rate
 //! in one screen — `(win_on − 1/players) × 10,000`, against the 1-in-
 //! `players` a seat wins by chance — and it is the same number
 //! `HEURISTIC_GENE_RANKING.md` prints.
@@ -104,16 +104,16 @@ pub struct GeneVerdict {
     /// in the module header, decided by `tools/gene_ledger.py` and checked
     /// here against the columns below by `the_default_follows_the_win_columns`.
     pub default_on: bool,
-    /// ± wins per 10,000 games at the gene's measured on-rate in the latest
+    /// ± wins per 10,000 on-arm seats at the gene's measured on-rate in the latest
     /// screen that priced it: `HEURISTIC_GENE_RANKING.md`'s
-    /// *± Wins Last 10k*. `None` when no screen has priced it.
+    /// *± Wins / 10k seats*. `None` when no screen has priced it.
     pub wins_last_10k: Option<i32>,
-    /// The same figure from the screen before that — *± Wins 10k Prior*.
+    /// The same figure from the screen before that — *± Wins / 10k seats prior*.
     /// `None` when the gene has only one reading.
     pub wins_prior_10k: Option<i32>,
     /// `HEURISTIC_GENE_RANKING.md`'s *Diff*: the pooled on win rate minus the
     /// pooled off win rate in percentage points, over **every** screen that
-    /// priced the gene, each weighted by its games. Negative vetoes the
+    /// priced the gene, each weighted by its on-arm seats. Negative vetoes the
     /// default. `None` when no screen has priced it.
     pub win_diff_pp: Option<f64>,
     /// Past the family-wise bar of the screen that supplied the verdict.
