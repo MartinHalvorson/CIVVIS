@@ -69,22 +69,24 @@ belief-pressure census: 331/23566 city-turns with memory, 84/23566 memory-only, 
 `src/ai/advanced/tests.rs:25240` — census, not an assertion; run explicitly with --nocapture
 
 ```
-garrison_step reached 10422 times across the whole census
-cities lost: 1  (mean army alive at the moment of loss: 12.0)
-  besieged (hp < max) .......   1  100.0%
-  lost at FULL hp ...........   0    0.0%  <- not a siege
-  an enemy stood ADJACENT ...   1  100.0%
-  had a GARRISON ............   0    0.0%
-  our military within 3 .....   1  100.0%
-  our military within 6 .....   1  100.0%
+garrison_step reached 17356 times across the whole census
+cities lost: 5  (mean army alive at the moment of loss: 14.6)
+  besieged (hp < max) .......   3   60.0%
+  lost at FULL hp ...........   2   40.0%  <- not a siege
+  an enemy stood ADJACENT ...   3   60.0%
+  had a GARRISON ............   1   20.0%
+  our military within 3 .....   5  100.0%
+  our military within 6 .....   5  100.0%
   NO military within 6 ......   0    0.0%
 NEAREST ENEMY on the last turn we held it:
-    distance 1   ..................   1  100.0%
-  BEYOND GARRISON_ALERT_RADIUS (3) ..   0    0.0%
-  an enemy could MOVE+STRIKE it that turn   1  100.0%
+    distance 1   ..................   3   60.0%
+    distance 2   ..................   1   20.0%
+    distance 4   ..................   1   20.0%
+  BEYOND GARRISON_ALERT_RADIUS (3) ..   1   20.0%
+  an enemy could MOVE+STRIKE it that turn   5  100.0%
 WHO HOLDS IT NOW (ground truth the live export cannot give):
-  REVOLTED to Free Cities (loyalty 0) ...   0    0.0%
-  taken by an enemy we are at war with ..   1  100.0%
+  REVOLTED to Free Cities (loyalty 0) ...   3   60.0%
+  taken by an enemy we are at war with ..   2   40.0%
   taken by a city-state/minor ...........   0    0.0%
   owner changed with NO war (revolt) ....   0    0.0%
   razed / gone ..........................   0    0.0%
@@ -106,8 +108,8 @@ WHO HOLDS IT NOW (ground truth the live export cannot give):
 `src/ai/advanced/tests.rs:25488` — census, not an assertion; run explicitly with --nocapture
 
 ```
-come_ashore=false unit_turns=35508  embarked= 16.0%  transitions/1000 unit-turns=  95.6  embarked-with-attack=5678  CITIES_LOST=2  city-damage-turns=86
-come_ashore=true  unit_turns=32429  embarked=  6.2%  transitions/1000 unit-turns=  78.3  embarked-with-attack=2024  CITIES_LOST=1  city-damage-turns=89
+come_ashore=false unit_turns=39340  embarked= 17.6%  transitions/1000 unit-turns=  99.6  embarked-with-attack=6938  CITIES_LOST=2  city-damage-turns=50
+come_ashore=true  unit_turns=40451  embarked=  7.2%  transitions/1000 unit-turns=  89.4  embarked-with-attack=2921  CITIES_LOST=5  city-damage-turns=67
 ```
 
 ## envoy_allocation_census
@@ -279,7 +281,7 @@ come_ashore=true  unit_turns=32429  embarked=  6.2%  transitions/1000 unit-turns
 
 ## influence_visible_fires
 
-`src/ai.rs:23224` — census, not an assertion; run explicitly with --nocapture
+`src/ai.rs:23431` — census, not an assertion; run explicitly with --nocapture
 
 ```
 pol_influence=0     charismatic_leader slotted  44.3% of turns   envoys placed mean 5.54
@@ -422,27 +424,27 @@ TOTALS n=8 science 893.2 vs 1036.7 | techs 377 vs 373 | campuses 28 vs 33 | scor
 `src/ai/advanced/tests.rs:29220` — census, not an assertion; run explicitly with --nocapture
 
 ```
-=== settler walk census: 270 settlers founded, 72 lost, over 8 maps (6p 60x38 online, deployment genome) ===
-  turns from build to founding: mean 5.5   p10 1   median 4   p90 10   max 51
-    walked more than  3 turns:  157 (58.1%)
-    walked more than  6 turns:   77 (28.5%)
-    walked more than 10 turns:   26 (9.6%)
-    walked more than 15 turns:   13 (4.8%)
-    walked more than 20 turns:    9 (3.3%)
-  tiles from the home city, straight line: mean 4.6   median 4   p90 8
-  tiles actually walked: mean 6.4   (walked/straight 1.38)
-  settlers that changed target at least once: 95 (35.2%); twice or more: 36 (13.3%)
-  expansion foundings with a legal site within six tiles of home at birth: 219 (mean chosen raw value 103.6)
-    walks of  0-3    turns:   65 foundings, chosen minus best-legal-within-6-of-home = -38.2 raw value (50 founded a WORSE site than one within six tiles of home)
-    walks of  4-6    turns:   79 foundings, chosen minus best-legal-within-6-of-home = -18.3 raw value (47 founded a WORSE site than one within six tiles of home)
-    walks of  7-10   turns:   51 foundings, chosen minus best-legal-within-6-of-home = -24.0 raw value (33 founded a WORSE site than one within six tiles of home)
-    walks of 11-15   turns:   13 foundings, chosen minus best-legal-within-6-of-home = -50.6 raw value (12 founded a WORSE site than one within six tiles of home)
-    walks of 16-1000 turns:   11 foundings, chosen minus best-legal-within-6-of-home = +6.5 raw value (6 founded a WORSE site than one within six tiles of home)
-    settlers built    t0-49:  159, mean walk 4.4 turns
-    settlers built   t50-99:   42, mean walk 6.0 turns
-    settlers built t100-149:   35, mean walk 6.6 turns
-    settlers built    t150+:   34, mean walk 9.2 turns
-  lost without founding: 72 — they had walked a median 4 turns (p90 20)
+=== settler walk census: 261 settlers founded, 81 lost, over 8 maps (6p 60x38 online, deployment genome) ===
+  turns from build to founding: mean 6.0   p10 1   median 4   p90 12   max 72
+    walked more than  3 turns:  154 (59.0%)
+    walked more than  6 turns:   75 (28.7%)
+    walked more than 10 turns:   33 (12.6%)
+    walked more than 15 turns:   19 (7.3%)
+    walked more than 20 turns:    8 (3.1%)
+  tiles from the home city, straight line: mean 4.7   median 4   p90 8
+  tiles actually walked: mean 6.9   (walked/straight 1.46)
+  settlers that changed target at least once: 91 (34.9%); twice or more: 43 (16.5%)
+  expansion foundings with a legal site within six tiles of home at birth: 209 (mean chosen raw value 103.5)
+    walks of  0-3    turns:   59 foundings, chosen minus best-legal-within-6-of-home = -37.8 raw value (45 founded a WORSE site than one within six tiles of home)
+    walks of  4-6    turns:   78 foundings, chosen minus best-legal-within-6-of-home = -26.3 raw value (54 founded a WORSE site than one within six tiles of home)
+    walks of  7-10   turns:   42 foundings, chosen minus best-legal-within-6-of-home = -31.3 raw value (29 founded a WORSE site than one within six tiles of home)
+    walks of 11-15   turns:   13 foundings, chosen minus best-legal-within-6-of-home = -17.4 raw value (7 founded a WORSE site than one within six tiles of home)
+    walks of 16-1000 turns:   17 foundings, chosen minus best-legal-within-6-of-home = -32.4 raw value (12 founded a WORSE site than one within six tiles of home)
+    settlers built    t0-49:  174, mean walk 5.0 turns
+    settlers built   t50-99:   39, mean walk 8.2 turns
+    settlers built t100-149:   20, mean walk 9.3 turns
+    settlers built    t150+:   28, mean walk 6.7 turns
+  lost without founding: 81 — they had walked a median 3 turns (p90 16)
 ```
 
 ## sphere_distance_cache_order_benchmark
@@ -452,9 +454,9 @@ TOTALS n=8 science 893.2 vs 1036.7 | techs 377 vs 373 | campuses 28 vs 33 | scor
 _Wall-clock time on whichever host took the reading, so `--check` compares only that it still ran and passed._
 
 ```
-cold_local: median_elapsed_ns=38606500 calls=2000000 ns_per_call=19.303250
-admitted_local: median_elapsed_ns=13474500 calls=2000000 ns_per_call=6.737250
-admitted_long: median_elapsed_ns=10744333 calls=2000000 ns_per_call=5.372166
+cold_local: median_elapsed_ns=26808958 calls=2000000 ns_per_call=13.404479
+admitted_local: median_elapsed_ns=5561584 calls=2000000 ns_per_call=2.780792
+admitted_long: median_elapsed_ns=5561958 calls=2000000 ns_per_call=2.780979
 ```
 
 ## the_research_chain_treated_against_control
