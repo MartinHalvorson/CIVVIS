@@ -15,8 +15,8 @@
 //!   freely, and a query that consumes RNG would make merely opening a panel
 //!   change the game.
 
-use crate::name::Name;
 use super::*;
+use crate::name::Name;
 
 /// One outstanding request, as stored on the civilization that owes it.
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
@@ -130,7 +130,9 @@ impl Game {
         self.rules
             .districts
             .iter()
-            .filter(|(name, spec)| spec.specialty && spec.buildable && self.district_family(**name) == name.as_str())
+            .filter(|(name, spec)| {
+                spec.specialty && spec.buildable && self.district_family(**name) == name.as_str()
+            })
             .filter(|(_, spec)| match spec.unique_to.as_deref() {
                 Some(owner) => owner == self.players[pid].civ,
                 None => true,
@@ -157,7 +159,9 @@ impl Game {
             .techs
             .iter()
             .filter(|(_, spec)| spec.boost.is_some())
-            .filter(|(name, _)| !player.techs.contains(*name) && !player.boosted_techs.contains(*name))
+            .filter(|(name, _)| {
+                !player.techs.contains(*name) && !player.boosted_techs.contains(*name)
+            })
             .map(|(name, _)| *name)
             .collect()
     }
@@ -168,7 +172,9 @@ impl Game {
             .civics
             .iter()
             .filter(|(_, spec)| spec.boost.is_some())
-            .filter(|(name, _)| !player.civics.contains(*name) && !player.boosted_civics.contains(*name))
+            .filter(|(name, _)| {
+                !player.civics.contains(*name) && !player.boosted_civics.contains(*name)
+            })
             .map(|(name, _)| *name)
             .collect()
     }
@@ -215,7 +221,11 @@ impl Game {
     /// the game does not hand out an Envoy for something already done.
     fn available_quests(&self, pid: usize, minor: usize) -> Vec<CityStateQuest> {
         let era = self.world_era;
-        let camps = self.players[pid].counters.get("camps").copied().unwrap_or(0);
+        let camps = self.players[pid]
+            .counters
+            .get("camps")
+            .copied()
+            .unwrap_or(0);
         let new = |kind: &str, target: String, pos: Option<Pos>, mark: i64| CityStateQuest {
             kind: kind.to_string(),
             target,
@@ -361,7 +371,8 @@ impl Game {
     /// Pay out finished quests, retire quests a new era has aged out, and hand
     /// a quest to every met city-state that is not currently asking for one.
     pub(crate) fn check_city_state_quests(&mut self, pid: usize) {
-        if self.players[pid].is_minor || self.players[pid].is_barbarian || !self.players[pid].alive {
+        if self.players[pid].is_minor || self.players[pid].is_barbarian || !self.players[pid].alive
+        {
             return;
         }
         let minors: Vec<usize> = self
@@ -533,7 +544,9 @@ mod tests {
         let before = game.players[0].envoys_free;
         let rival_before = game.players[1].envoys_free;
 
-        game.players[0].boosted_techs.insert(crate::name!("writing"));
+        game.players[0]
+            .boosted_techs
+            .insert(crate::name!("writing"));
         game.check_city_state_quests(0);
         assert_eq!(
             game.players[0].envoys_free,
@@ -636,7 +649,10 @@ mod tests {
         // Razing the named outpost without having cleared one does not pay
         // either -- somebody else destroying it is not this civilization's work.
         game.map.tiles.get_mut(&camp).unwrap().improvement = None;
-        let untouched = CityStateQuest { mark: 1, ..quest.clone() };
+        let untouched = CityStateQuest {
+            mark: 1,
+            ..quest.clone()
+        };
         assert!(!game.quest_done(0, minor, &untouched));
 
         // Both together is the completion.
@@ -651,8 +667,7 @@ mod tests {
         game.check_city_state_quests(0);
         let first = game.city_state_quest(0, minor).cloned().unwrap();
         assert_eq!(
-            game.rng,
-            before,
+            game.rng, before,
             "asking a city-state what it wants moved the simulation RNG"
         );
         // And the same state rolls the same quest.

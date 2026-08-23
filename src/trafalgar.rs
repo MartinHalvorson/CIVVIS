@@ -136,12 +136,22 @@ pub struct Ship {
 }
 
 const fn ship(col: i32, row: i32, guns: u16, name: &'static str) -> Ship {
-    Ship { at: (col, row), guns, stars: 0, name }
+    Ship {
+        at: (col, row),
+        guns,
+        stars: 0,
+        name,
+    }
 }
 
 /// A ship with an admiral's flag in her, and how good he was.
 const fn flag(col: i32, row: i32, guns: u16, stars: u8, name: &'static str) -> Ship {
-    Ship { at: (col, row), guns, stars, name }
+    Ship {
+        at: (col, row),
+        guns,
+        stars,
+        name,
+    }
 }
 
 /// Nelson's fleet, twenty-seven of the line, in the order they were stationed.
@@ -157,7 +167,13 @@ const fn flag(col: i32, row: i32, guns: u16, stars: u8, name: &'static str) -> S
 /// her own fleet. She spent the morning running down their line alone.
 pub const BRITISH: [Ship; 27] = [
     // --- Weather column. Vice-Admiral Lord Nelson, in Victory.
-    flag(16, 10, 100, 5, "Victory — Vice-Admiral Lord Nelson, commander-in-chief"),
+    flag(
+        16,
+        10,
+        100,
+        5,
+        "Victory — Vice-Admiral Lord Nelson, commander-in-chief",
+    ),
     ship(15, 10, 98, "Temeraire"),
     ship(14, 10, 98, "Neptune"),
     ship(13, 10, 74, "Conqueror"),
@@ -167,9 +183,21 @@ pub const BRITISH: [Ship; 27] = [
     ship(9, 10, 64, "Agamemnon"),
     ship(8, 10, 74, "Minotaur"),
     ship(7, 10, 74, "Spartiate"),
-    flag(6, 10, 100, 3, "Britannia — Rear-Admiral the Earl of Northesk"),
+    flag(
+        6,
+        10,
+        100,
+        3,
+        "Britannia — Rear-Admiral the Earl of Northesk",
+    ),
     // --- Lee column. Vice-Admiral Collingwood, in Royal Sovereign.
-    flag(17, 15, 100, 4, "Royal Sovereign — Vice-Admiral Collingwood, second in command"),
+    flag(
+        17,
+        15,
+        100,
+        4,
+        "Royal Sovereign — Vice-Admiral Collingwood, second in command",
+    ),
     ship(16, 15, 74, "Belleisle"),
     ship(15, 15, 74, "Mars"),
     ship(14, 15, 80, "Tonnant"),
@@ -185,7 +213,12 @@ pub const BRITISH: [Ship; 27] = [
     ship(4, 15, 98, "Prince"),
     ship(3, 15, 98, "Dreadnought"),
     // --- Detached, and a long way from help.
-    ship(16, 1, 64, "Africa — separated in the night, north of the van"),
+    ship(
+        16,
+        1,
+        64,
+        "Africa — separated in the night, north of the van",
+    ),
 ];
 
 /// Villeneuve's fleet, thirty-three of the line, from the van southward.
@@ -206,15 +239,33 @@ pub const COMBINED: [Ship; 33] = [
     ship(19, 2, 74, "Scipion (Fr)"),
     ship(20, 3, 74, "Intrepide (Fr)"),
     ship(20, 4, 100, "Rayo (Sp)"),
-    flag(20, 5, 80, 2, "Formidable (Fr) — Rear-Admiral Dumanoir le Pelley, the van"),
+    flag(
+        20,
+        5,
+        80,
+        2,
+        "Formidable (Fr) — Rear-Admiral Dumanoir le Pelley, the van",
+    ),
     ship(21, 6, 74, "Duguay-Trouin (Fr)"),
     ship(21, 7, 74, "Mont-Blanc (Fr)"),
     ship(21, 8, 74, "San Francisco de Asis (Sp)"),
     ship(21, 9, 74, "San Agustin (Sp)"),
     // --- Centre. Vice-Admiral Villeneuve, in Bucentaure.
     ship(21, 10, 74, "Heros (Fr)"),
-    flag(22, 10, 136, 3, "Santisima Trinidad (Sp) — Rear-Admiral Cisneros"),
-    flag(21, 11, 80, 2, "Bucentaure (Fr) — Vice-Admiral Villeneuve, commander-in-chief"),
+    flag(
+        22,
+        10,
+        136,
+        3,
+        "Santisima Trinidad (Sp) — Rear-Admiral Cisneros",
+    ),
+    flag(
+        21,
+        11,
+        80,
+        2,
+        "Bucentaure (Fr) — Vice-Admiral Villeneuve, commander-in-chief",
+    ),
     ship(22, 11, 74, "Redoutable (Fr) — Lucas"),
     ship(21, 12, 74, "San Justo (Sp)"),
     ship(22, 12, 80, "Neptune (Fr)"),
@@ -234,7 +285,13 @@ pub const COMBINED: [Ship; 33] = [
     ship(20, 19, 80, "Argonauta (Sp)"),
     ship(21, 19, 74, "San Ildefonso (Sp)"),
     ship(20, 20, 74, "Achille (Fr)"),
-    flag(21, 20, 112, 4, "Principe de Asturias (Sp) — Admiral Gravina, the squadron of observation"),
+    flag(
+        21,
+        20,
+        112,
+        4,
+        "Principe de Asturias (Sp) — Admiral Gravina, the squadron of observation",
+    ),
     ship(19, 21, 74, "Berwick (Fr)"),
     ship(19, 22, 74, "San Juan Nepomuceno (Sp)"),
 ];
@@ -494,7 +551,10 @@ pub fn major_starts(wm: &WorldMap) -> Option<Vec<Pos>> {
         .iter()
         .map(|(col, row)| hex::offset_to_axial(*col, *row))
         .collect();
-    starts.iter().all(|pos| wm.tiles.contains_key(pos)).then_some(starts)
+    starts
+        .iter()
+        .all(|pos| wm.tiles.contains_key(pos))
+        .then_some(starts)
 }
 
 #[cfg(test)]
@@ -539,7 +599,8 @@ mod tests {
                 line.len()
             );
             assert!(
-                line.bytes().all(|cell| matches!(cell, b'~' | b':' | b'.' | b'#')),
+                line.bytes()
+                    .all(|cell| matches!(cell, b'~' | b':' | b'.' | b'#')),
                 "chart row {row} has a cell that is not sea, shoal, shore or inland"
             );
         }
@@ -568,7 +629,10 @@ mod tests {
             );
         }
         let heaviest = COMBINED.iter().max_by_key(|ship| ship.guns).unwrap();
-        assert_eq!(heaviest.guns, 136, "the Santisima Trinidad was the largest ship afloat");
+        assert_eq!(
+            heaviest.guns, 136,
+            "the Santisima Trinidad was the largest ship afloat"
+        );
         assert!(heaviest.name.starts_with("Santisima Trinidad"));
         // First rates: three British against four. The Combined Fleet was the
         // heavier as well as the larger, which is the position Nelson chose to
@@ -595,7 +659,11 @@ mod tests {
         for guns in [64u16, 74, 80, 98, 100, 112, 136] {
             let granted = rate_promotions(guns);
             let held: BTreeSet<&str> = granted.iter().copied().collect();
-            assert_eq!(held.len(), granted.len(), "{guns} guns grants a promotion twice");
+            assert_eq!(
+                held.len(),
+                granted.len(),
+                "{guns} guns grants a promotion twice"
+            );
             for name in granted {
                 let spec = rules
                     .promotions
@@ -609,7 +677,9 @@ mod tests {
                     spec.class
                 );
                 assert!(
-                    spec.effects.keys().any(|effect| live.contains(&effect.as_str())),
+                    spec.effects
+                        .keys()
+                        .any(|effect| live.contains(&effect.as_str())),
                     "{name} is granted at {guns} guns but its effects {:?} do nothing in a \
                      fleet action",
                     spec.effects.keys().collect::<Vec<_>>()
@@ -624,8 +694,7 @@ mod tests {
         for pair in ladder.windows(2) {
             let (lighter, heavier) = (rate_promotions(pair[0]), rate_promotions(pair[1]));
             assert!(
-                heavier.len() >= lighter.len()
-                    && lighter.iter().all(|name| heavier.contains(name)),
+                heavier.len() >= lighter.len() && lighter.iter().all(|name| heavier.contains(name)),
                 "{} guns does not carry everything {} guns does",
                 pair[1],
                 pair[0]
@@ -658,7 +727,12 @@ mod tests {
     #[test]
     fn every_ship_is_afloat_and_on_her_own_tile() {
         let mut taken: BTreeSet<(i32, i32)> = BTreeSet::new();
-        for Ship { at: (col, row), name: ship, .. } in BRITISH.iter().chain(COMBINED.iter()) {
+        for Ship {
+            at: (col, row),
+            name: ship,
+            ..
+        } in BRITISH.iter().chain(COMBINED.iter())
+        {
             assert!(
                 (0..WIDTH).contains(col) && (0..HEIGHT).contains(row),
                 "{ship} is off the chart at ({col}, {row})"
@@ -668,9 +742,16 @@ mod tests {
                 Some(b'~'),
                 "{ship} is not on open water at ({col}, {row})"
             );
-            assert!(taken.insert((*col, *row)), "{ship} shares a tile at ({col}, {row})");
+            assert!(
+                taken.insert((*col, *row)),
+                "{ship} shares a tile at ({col}, {row})"
+            );
         }
-        assert_eq!(taken.len(), 60, "sixty ships of the line were in the action");
+        assert_eq!(
+            taken.len(),
+            60,
+            "sixty ships of the line were in the action"
+        );
     }
 
     /// The seats are the two commanders-in-chief, in that order. Britain first
@@ -711,7 +792,10 @@ mod tests {
     fn the_enemy_line_stands_in_open_water_from_van_to_rear() {
         let rows: Vec<i32> = COMBINED.iter().map(|ship| ship.at.1).collect();
         let (top, bottom) = (*rows.iter().min().unwrap(), *rows.iter().max().unwrap());
-        assert!(bottom - top >= 20, "the line should span most of the map north to south");
+        assert!(
+            bottom - top >= 20,
+            "the line should span most of the map north to south"
+        );
         for row in top..=bottom {
             assert!(
                 COMBINED.iter().any(|ship| ship.at.1 == row),
@@ -751,13 +835,22 @@ mod tests {
     fn the_two_fleets_reach_the_board_ship_for_ship() {
         let game = battle(1_805);
         for (pid, fleet) in [(0usize, &BRITISH[..]), (1, &COMBINED[..])] {
-            for Ship { at: (col, row), name: ship, .. } in fleet {
+            for Ship {
+                at: (col, row),
+                name: ship,
+                ..
+            } in fleet
+            {
                 let pos = hex::offset_to_axial(*col, *row);
                 let standing = game.units_at(pos);
                 assert_eq!(standing.len(), 1, "no ship stands where {ship} should");
                 let unit = &game.units[&standing[0]];
                 assert_eq!(unit.owner, pid, "{ship} is flying the wrong flag");
-                assert_eq!(unit.kind.as_str(), SHIP_OF_THE_LINE, "{ship} is the wrong ship");
+                assert_eq!(
+                    unit.kind.as_str(),
+                    SHIP_OF_THE_LINE,
+                    "{ship} is the wrong ship"
+                );
             }
         }
         let afloat = |pid: usize| game.player_unit_ids(pid).len();
@@ -785,7 +878,11 @@ mod tests {
         };
         let (british, combined) = (flags(&BRITISH), flags(&COMBINED));
         assert_eq!(british.len(), 3, "Nelson, Collingwood and Northesk");
-        assert_eq!(combined.len(), 6, "Villeneuve, Gravina, Alava, Magon, Dumanoir, Cisneros");
+        assert_eq!(
+            combined.len(),
+            6,
+            "Villeneuve, Gravina, Alava, Magon, Dumanoir, Cisneros"
+        );
         assert!(
             combined.len() > british.len(),
             "the Combined Fleet held more flags, which is the whole reason a \
@@ -807,7 +904,10 @@ mod tests {
         // The threshold is what turns more Combined flags into less Combined
         // advantage, so it is asserted as the counts rather than as a rule.
         let worth = |fleet: &'static [Ship]| -> usize {
-            fleet.iter().filter(|ship| admiral_formation(ship.stars) > 0).count()
+            fleet
+                .iter()
+                .filter(|ship| admiral_formation(ship.stars) > 0)
+                .count()
         };
         assert_eq!(worth(&BRITISH), 2, "Nelson and Collingwood");
         assert_eq!(worth(&COMBINED), 1, "Gravina alone");
@@ -815,7 +915,11 @@ mod tests {
             worth(&BRITISH) > worth(&COMBINED),
             "the side with fewer flags must still come out ahead on the ones that count"
         );
-        assert_eq!(admiral_formation(3), 0, "three stars is not a fighting tier");
+        assert_eq!(
+            admiral_formation(3),
+            0,
+            "three stars is not a fighting tier"
+        );
         assert_eq!(admiral_formation(4), 1);
         assert_eq!(admiral_formation(5), 1);
     }
@@ -837,7 +941,12 @@ mod tests {
                 let uid = game.units_at(hex::offset_to_axial(ship.at.0, ship.at.1))[0];
                 let flagship = ship.stars > 0;
                 let moves = game.unit_max_moves(uid);
-                let expected = plain + if flagship { ADMIRAL_MOVEMENT_BONUS } else { 0.0 };
+                let expected = plain
+                    + if flagship {
+                        ADMIRAL_MOVEMENT_BONUS
+                    } else {
+                        0.0
+                    };
                 assert!(
                     (moves - expected).abs() < 1e-9,
                     "{} (seat {pid}) has {moves} movement, not {expected}",
@@ -861,11 +970,19 @@ mod tests {
             let struck = game.spawn_unit(SHIP_OF_THE_LINE, 1, at);
             let unit = game.units.get_mut(&firing).unwrap();
             unit.promotions.extend(
-                rate_promotions(100).iter().map(|name| crate::name::Name::new(name)),
+                rate_promotions(100)
+                    .iter()
+                    .map(|name| crate::name::Name::new(name)),
             );
             unit.formation = admiral_formation(stars);
-            game.apply(0, &crate::game::Action::Ranged { unit: firing, target: at })
-                .expect("a ship of the line can fire on an enemy alongside");
+            game.apply(
+                0,
+                &crate::game::Action::Ranged {
+                    unit: firing,
+                    target: at,
+                },
+            )
+            .expect("a ship of the line can fire on an enemy alongside");
             game.units[&struck].hp
         };
         let (nelson, villeneuve) = (one_broadside(5), one_broadside(2));
@@ -874,8 +991,16 @@ mod tests {
             "a five-star admiral's ship left {nelson} hit points where a two-star's left \
              {villeneuve}"
         );
-        assert_eq!(one_broadside(4), nelson, "four and five stars are the same tier");
-        assert_eq!(one_broadside(3), villeneuve, "three stars is not a fighting tier");
+        assert_eq!(
+            one_broadside(4),
+            nelson,
+            "four and five stars are the same tier"
+        );
+        assert_eq!(
+            one_broadside(3),
+            villeneuve,
+            "three stars is not a fighting tier"
+        );
     }
 
     #[test]
@@ -891,10 +1016,18 @@ mod tests {
                 .iter()
                 .map(|name| (*name).to_string())
                 .collect();
-            let held: BTreeSet<String> =
-                unit.promotions.iter().map(|name| name.to_string()).collect();
+            let held: BTreeSet<String> = unit
+                .promotions
+                .iter()
+                .map(|name| name.to_string())
+                .collect();
             assert_eq!(held, expected, "{} carries the wrong rate", ship.name);
-            assert_eq!(unit.level, 1 + expected.len() as i32, "{}'s level", ship.name);
+            assert_eq!(
+                unit.level,
+                1 + expected.len() as i32,
+                "{}'s level",
+                ship.name
+            );
         }
 
         // Santisima Trinidad, 136, against San Leandro, 64 — the heaviest and
@@ -908,7 +1041,11 @@ mod tests {
         // Reach is deliberately equal: every ship on the board fires two
         // tiles, whatever she rates.
         for at in [trinidad.id, leandro.id, afloat(COMBINED[12].at).id] {
-            assert_eq!(game.unit_attack_range(at), 2, "reach is not a rate difference here");
+            assert_eq!(
+                game.unit_attack_range(at),
+                2,
+                "reach is not a rate difference here"
+            );
         }
 
         // And the broadside is heavier. Fired for real rather than read off a
@@ -929,9 +1066,19 @@ mod tests {
                 .iter()
                 .map(|name| crate::name::Name::new(name))
                 .collect();
-            game.units.get_mut(&firing).unwrap().promotions.extend(promotions);
-            game.apply(0, &crate::game::Action::Ranged { unit: firing, target: at })
-                .expect("a ship of the line can fire on an enemy alongside");
+            game.units
+                .get_mut(&firing)
+                .unwrap()
+                .promotions
+                .extend(promotions);
+            game.apply(
+                0,
+                &crate::game::Action::Ranged {
+                    unit: firing,
+                    target: at,
+                },
+            )
+            .expect("a ship of the line can fire on an enemy alongside");
             game.units[&struck].hp
         };
         let (heavy, light) = (one_broadside(74), one_broadside(64));
@@ -968,7 +1115,11 @@ mod tests {
             ships.sort();
             ships
         };
-        assert_eq!(fleet(&first), fleet(&second), "the fleets moved with the seed");
+        assert_eq!(
+            fleet(&first),
+            fleet(&second),
+            "the fleets moved with the seed"
+        );
         let ground = |game: &Game| {
             let mut chart: Vec<((i32, i32), String, Option<String>)> = game
                 .map
@@ -985,7 +1136,11 @@ mod tests {
             chart.sort();
             chart
         };
-        assert_eq!(ground(&first), ground(&second), "the chart moved with the seed");
+        assert_eq!(
+            ground(&first),
+            ground(&second),
+            "the chart moved with the seed"
+        );
     }
 
     /// The board is the chart: the sea both fleets manoeuvre over is sailable
@@ -1008,7 +1163,11 @@ mod tests {
                     }
                     Some(b':') => {
                         assert_eq!(tile.terrain.as_str(), "coast");
-                        assert_eq!(feature.as_deref(), Some("reef"), "({col}, {row}) is not shoal");
+                        assert_eq!(
+                            feature.as_deref(),
+                            Some("reef"),
+                            "({col}, {row}) is not shoal"
+                        );
                         shoal += 1;
                     }
                     _ => {
@@ -1022,7 +1181,10 @@ mod tests {
             }
         }
         assert_eq!(sea + shoal + shore, WIDTH * HEIGHT);
-        assert!(shoal > 0 && shore > 0 && sea > shore * 8, "{sea} sea, {shoal} shoal, {shore} shore");
+        assert!(
+            shoal > 0 && shore > 0 && sea > shore * 8,
+            "{sea} sea, {shoal} shoal, {shore} shore"
+        );
     }
 
     /// A scenario overrules the arena economy it was handed. Nothing was
@@ -1041,7 +1203,10 @@ mod tests {
         assert!(!game.tactics.flag);
         assert!(!game.tactics.fog);
         assert!(game.cities.is_empty(), "no city stands on this water");
-        assert!(game.arena_flags.is_empty(), "no flag is planted on this water");
+        assert!(
+            game.arena_flags.is_empty(),
+            "no flag is planted on this water"
+        );
         // Still the caller's to choose, because neither is a claim about 1805.
         assert_eq!(game.tactics.turn_limit, TacticsRules::default().turn_limit);
         assert_eq!(game.tactics.best_of, TacticsRules::default().best_of);
@@ -1076,7 +1241,8 @@ mod tests {
         let africa = game.units_at(hex::offset_to_axial(africa_at.0, africa_at.1))[0];
         let rear = COMBINED.last().unwrap().at;
         assert!(
-            game.route_step(africa, hex::offset_to_axial(rear.0, rear.1), 0).is_some(),
+            game.route_step(africa, hex::offset_to_axial(rear.0, rear.1), 0)
+                .is_some(),
             "Africa cannot reach the enemy rear"
         );
     }

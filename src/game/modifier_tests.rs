@@ -55,7 +55,8 @@ fn arbitrary_building_yields_and_abilities_flow_through_runtime_attachments() {
     let baseline = game.city_yields(city).science;
 
     assert!(!game.has_ability(0, "public_engineering"));
-    game.attach_modifier_to_player(0, "selector_bundle").unwrap();
+    game.attach_modifier_to_player(0, "selector_bundle")
+        .unwrap();
     assert!(game.has_ability(0, "public_engineering"));
     assert_eq!(game.city_yields(city).science - baseline, 12.0);
 
@@ -70,7 +71,8 @@ fn per_unit_purchase_discount_is_shared_by_quotes_actions_and_execution() {
     vacate_land_combat_purchase_slot(&mut game, 0, city);
     install_selector_modifier(&mut game);
     let full = game.unit_purchase_cost(0, city, "warrior", "gold").unwrap();
-    game.attach_modifier_to_player(0, "selector_bundle").unwrap();
+    game.attach_modifier_to_player(0, "selector_bundle")
+        .unwrap();
     let discounted = game.unit_purchase_cost(0, city, "warrior", "gold").unwrap();
     assert_eq!(discounted, full * 0.75);
 
@@ -126,11 +128,29 @@ fn every_product_resource_has_both_a_flat_yield_and_a_real_effect() {
         );
     }
     assert_eq!(rules.resources["wine"].product_yields.food, 3.0);
-    assert_eq!(rules.resources["wine"].product_effects.city_yield_pct.culture, 20.0);
+    assert_eq!(
+        rules.resources["wine"]
+            .product_effects
+            .city_yield_pct
+            .culture,
+        20.0
+    );
     assert_eq!(rules.resources["salt"].product_effects.growth_pct, 20.0);
     assert_eq!(rules.resources["salt"].product_effects.housing, 3.0);
-    assert_eq!(rules.resources["coffee"].industry_effects.city_yield_pct.culture, 20.0);
-    assert_eq!(rules.resources["coffee"].product_effects.city_yield_pct.culture, 30.0);
+    assert_eq!(
+        rules.resources["coffee"]
+            .industry_effects
+            .city_yield_pct
+            .culture,
+        20.0
+    );
+    assert_eq!(
+        rules.resources["coffee"]
+            .product_effects
+            .city_yield_pct
+            .culture,
+        30.0
+    );
     assert_eq!(rules.resources["turtles"].product_yields.science, 5.0);
 }
 

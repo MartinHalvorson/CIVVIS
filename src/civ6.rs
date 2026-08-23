@@ -61,21 +61,81 @@ pub struct MapSpec {
 /// *refused* with a reason where it cannot run. `tools/civ6_setup.py` is where
 /// the list is checked against an install that does exist.
 pub const MAPS: [MapSpec; 15] = [
-    MapSpec { id: "Continents.lua", name: "Continents", civvis: Some("continents") },
-    MapSpec { id: "Fractal.lua", name: "Fractal", civvis: None },
-    MapSpec { id: "InlandSea.lua", name: "Inland Sea", civvis: Some("inland_sea") },
-    MapSpec { id: "Island_Plates.lua", name: "Island Plates", civvis: Some("islands") },
-    MapSpec { id: "Lakes.lua", name: "Lakes", civvis: Some("lakes") },
-    MapSpec { id: "Pangaea.lua", name: "Pangaea", civvis: Some("pangaea") },
-    MapSpec { id: "Seven_Seas.lua", name: "Seven Seas", civvis: None },
-    MapSpec { id: "Shuffle.lua", name: "Shuffle", civvis: None },
-    MapSpec { id: "Small_Continents.lua", name: "Small Continents", civvis: Some("small_continents") },
-    MapSpec { id: "Terra.lua", name: "Terra", civvis: None },
-    MapSpec { id: "Archipelago.lua", name: "Archipelago", civvis: Some("water_world") },
-    MapSpec { id: "Continents_Islands.lua", name: "Continents & Islands", civvis: None },
-    MapSpec { id: "Primordial.lua", name: "Primordial", civvis: None },
-    MapSpec { id: "Splintered_Fractal.lua", name: "Splintered Fractal", civvis: None },
-    MapSpec { id: "Tilted_Axis.lua", name: "Tilted Axis", civvis: None },
+    MapSpec {
+        id: "Continents.lua",
+        name: "Continents",
+        civvis: Some("continents"),
+    },
+    MapSpec {
+        id: "Fractal.lua",
+        name: "Fractal",
+        civvis: None,
+    },
+    MapSpec {
+        id: "InlandSea.lua",
+        name: "Inland Sea",
+        civvis: Some("inland_sea"),
+    },
+    MapSpec {
+        id: "Island_Plates.lua",
+        name: "Island Plates",
+        civvis: Some("islands"),
+    },
+    MapSpec {
+        id: "Lakes.lua",
+        name: "Lakes",
+        civvis: Some("lakes"),
+    },
+    MapSpec {
+        id: "Pangaea.lua",
+        name: "Pangaea",
+        civvis: Some("pangaea"),
+    },
+    MapSpec {
+        id: "Seven_Seas.lua",
+        name: "Seven Seas",
+        civvis: None,
+    },
+    MapSpec {
+        id: "Shuffle.lua",
+        name: "Shuffle",
+        civvis: None,
+    },
+    MapSpec {
+        id: "Small_Continents.lua",
+        name: "Small Continents",
+        civvis: Some("small_continents"),
+    },
+    MapSpec {
+        id: "Terra.lua",
+        name: "Terra",
+        civvis: None,
+    },
+    MapSpec {
+        id: "Archipelago.lua",
+        name: "Archipelago",
+        civvis: Some("water_world"),
+    },
+    MapSpec {
+        id: "Continents_Islands.lua",
+        name: "Continents & Islands",
+        civvis: None,
+    },
+    MapSpec {
+        id: "Primordial.lua",
+        name: "Primordial",
+        civvis: None,
+    },
+    MapSpec {
+        id: "Splintered_Fractal.lua",
+        name: "Splintered Fractal",
+        civvis: None,
+    },
+    MapSpec {
+        id: "Tilted_Axis.lua",
+        name: "Tilted Axis",
+        civvis: None,
+    },
 ];
 
 /// The script a game gets when nothing else applies: Civilization VI's own
@@ -100,14 +160,46 @@ pub struct DifficultySpec {
 /// The eight rungs, weakest first. `tools/civ6_play.py` takes these ids
 /// directly and rejects anything else.
 pub const DIFFICULTIES: [DifficultySpec; 8] = [
-    DifficultySpec { id: "DIFFICULTY_SETTLER", name: "Settler", civvis: "settler" },
-    DifficultySpec { id: "DIFFICULTY_CHIEFTAIN", name: "Chieftain", civvis: "chieftain" },
-    DifficultySpec { id: "DIFFICULTY_WARLORD", name: "Warlord", civvis: "warlord" },
-    DifficultySpec { id: "DIFFICULTY_PRINCE", name: "Prince", civvis: "prince" },
-    DifficultySpec { id: "DIFFICULTY_KING", name: "King", civvis: "king" },
-    DifficultySpec { id: "DIFFICULTY_EMPEROR", name: "Emperor", civvis: "emperor" },
-    DifficultySpec { id: "DIFFICULTY_IMMORTAL", name: "Immortal", civvis: "immortal" },
-    DifficultySpec { id: "DIFFICULTY_DEITY", name: "Deity", civvis: "deity" },
+    DifficultySpec {
+        id: "DIFFICULTY_SETTLER",
+        name: "Settler",
+        civvis: "settler",
+    },
+    DifficultySpec {
+        id: "DIFFICULTY_CHIEFTAIN",
+        name: "Chieftain",
+        civvis: "chieftain",
+    },
+    DifficultySpec {
+        id: "DIFFICULTY_WARLORD",
+        name: "Warlord",
+        civvis: "warlord",
+    },
+    DifficultySpec {
+        id: "DIFFICULTY_PRINCE",
+        name: "Prince",
+        civvis: "prince",
+    },
+    DifficultySpec {
+        id: "DIFFICULTY_KING",
+        name: "King",
+        civvis: "king",
+    },
+    DifficultySpec {
+        id: "DIFFICULTY_EMPEROR",
+        name: "Emperor",
+        civvis: "emperor",
+    },
+    DifficultySpec {
+        id: "DIFFICULTY_IMMORTAL",
+        name: "Immortal",
+        civvis: "immortal",
+    },
+    DifficultySpec {
+        id: "DIFFICULTY_DEITY",
+        name: "Deity",
+        civvis: "deity",
+    },
 ];
 
 /// A world size, keyed by the seat count our lobby chooses it with.
@@ -126,12 +218,42 @@ pub struct SizeSpec {
 /// larger worlds Civilization VI does not ship — which is why picking one of
 /// those and switching to this mode has to fall back rather than translate.
 pub const SIZES: [SizeSpec; 6] = [
-    SizeSpec { id: "MAPSIZE_DUEL", name: "Duel", civvis: "duel", players: 2 },
-    SizeSpec { id: "MAPSIZE_TINY", name: "Tiny", civvis: "tiny", players: 4 },
-    SizeSpec { id: "MAPSIZE_SMALL", name: "Small", civvis: "small", players: 6 },
-    SizeSpec { id: "MAPSIZE_STANDARD", name: "Standard", civvis: "standard", players: 8 },
-    SizeSpec { id: "MAPSIZE_LARGE", name: "Large", civvis: "large", players: 10 },
-    SizeSpec { id: "MAPSIZE_HUGE", name: "Huge", civvis: "huge", players: 12 },
+    SizeSpec {
+        id: "MAPSIZE_DUEL",
+        name: "Duel",
+        civvis: "duel",
+        players: 2,
+    },
+    SizeSpec {
+        id: "MAPSIZE_TINY",
+        name: "Tiny",
+        civvis: "tiny",
+        players: 4,
+    },
+    SizeSpec {
+        id: "MAPSIZE_SMALL",
+        name: "Small",
+        civvis: "small",
+        players: 6,
+    },
+    SizeSpec {
+        id: "MAPSIZE_STANDARD",
+        name: "Standard",
+        civvis: "standard",
+        players: 8,
+    },
+    SizeSpec {
+        id: "MAPSIZE_LARGE",
+        name: "Large",
+        civvis: "large",
+        players: 10,
+    },
+    SizeSpec {
+        id: "MAPSIZE_HUGE",
+        name: "Huge",
+        civvis: "huge",
+        players: 12,
+    },
 ];
 
 /// A game speed and the turn limit it comes with.
@@ -146,11 +268,36 @@ pub struct SpeedSpec {
 }
 
 pub const SPEEDS: [SpeedSpec; 5] = [
-    SpeedSpec { id: "GAMESPEED_ONLINE", name: "Online", civvis: "online", turns: 250 },
-    SpeedSpec { id: "GAMESPEED_QUICK", name: "Quick", civvis: "quick", turns: 330 },
-    SpeedSpec { id: "GAMESPEED_STANDARD", name: "Standard", civvis: "standard", turns: 500 },
-    SpeedSpec { id: "GAMESPEED_EPIC", name: "Epic", civvis: "epic", turns: 750 },
-    SpeedSpec { id: "GAMESPEED_MARATHON", name: "Marathon", civvis: "marathon", turns: 1500 },
+    SpeedSpec {
+        id: "GAMESPEED_ONLINE",
+        name: "Online",
+        civvis: "online",
+        turns: 250,
+    },
+    SpeedSpec {
+        id: "GAMESPEED_QUICK",
+        name: "Quick",
+        civvis: "quick",
+        turns: 330,
+    },
+    SpeedSpec {
+        id: "GAMESPEED_STANDARD",
+        name: "Standard",
+        civvis: "standard",
+        turns: 500,
+    },
+    SpeedSpec {
+        id: "GAMESPEED_EPIC",
+        name: "Epic",
+        civvis: "epic",
+        turns: 750,
+    },
+    SpeedSpec {
+        id: "GAMESPEED_MARATHON",
+        name: "Marathon",
+        civvis: "marathon",
+        turns: 1500,
+    },
 ];
 
 /// The ruleset a run is configured with. Gathering Storm is the only one the
@@ -205,7 +352,9 @@ fn install_candidates(home: &Path) -> Vec<PathBuf> {
 }
 
 fn home_dir() -> PathBuf {
-    std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default()
+    std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_default()
 }
 
 /// The installation root — the directory holding `Civ6.app` — or `None`.
@@ -214,7 +363,9 @@ pub fn install_dir() -> Option<PathBuf> {
         let path = PathBuf::from(explicit);
         return path.is_dir().then_some(path);
     }
-    install_candidates(&home_dir()).into_iter().find(|path| path.is_dir())
+    install_candidates(&home_dir())
+        .into_iter()
+        .find(|path| path.is_dir())
 }
 
 /// This repository's `tools/`, which holds the controller.
@@ -327,7 +478,11 @@ pub struct Run {
 /// the events win on the fields they both carry.
 fn read_run(dir: &Path, live: bool) -> Option<Run> {
     let tag = dir.file_name()?.to_string_lossy().to_string();
-    let mut run = Run { tag, live, ..Run::default() };
+    let mut run = Run {
+        tag,
+        live,
+        ..Run::default()
+    };
     let mut seen_anything = false;
 
     if let Ok(raw) = fs::read_to_string(dir.join("summary.json")) {
@@ -633,8 +788,12 @@ pub fn start(request: &Request, tag: &str) -> Result<Started, String> {
         .controller
         .ok_or_else(|| "the CIVVIS tools directory is not beside this server".to_string())?;
     let run_dir = run_root().join(tag);
-    fs::create_dir_all(&run_dir)
-        .map_err(|error| format!("cannot make the run directory {}: {error}", run_dir.display()))?;
+    fs::create_dir_all(&run_dir).map_err(|error| {
+        format!(
+            "cannot make the run directory {}: {error}",
+            run_dir.display()
+        )
+    })?;
     let log = fs::File::create(run_dir.join("controller.log"))
         .map_err(|error| format!("cannot open the controller's log: {error}"))?;
     let errors = log
@@ -704,7 +863,14 @@ fn civil_from_unix(secs: i64) -> (i64, u32, u32, u32, u32, u32) {
     let d = (doy - (153 * mp + 2) / 5 + 1) as u32;
     let m = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
     let year = if m <= 2 { y + 1 } else { y };
-    (year, m, d, (rem / 3_600) as u32, ((rem % 3_600) / 60) as u32, (rem % 60) as u32)
+    (
+        year,
+        m,
+        d,
+        (rem / 3_600) as u32,
+        ((rem % 3_600) / 60) as u32,
+        (rem % 60) as u32,
+    )
 }
 
 #[cfg(test)]
@@ -718,11 +884,17 @@ mod tests {
     #[test]
     fn every_map_names_a_script_and_the_shared_ones_round_trip() {
         for spec in MAPS {
-            assert!(spec.id.ends_with(".lua"), "{} is not a script file", spec.id);
+            assert!(
+                spec.id.ends_with(".lua"),
+                "{} is not a script file",
+                spec.id
+            );
             assert!(!spec.name.is_empty());
             if let Some(civvis) = spec.civvis {
                 assert!(
-                    crate::setup::CIV6_MAP_SCRIPTS.iter().any(|ours| ours.id == civvis),
+                    crate::setup::CIV6_MAP_SCRIPTS
+                        .iter()
+                        .any(|ours| ours.id == civvis),
                     "{} claims a CIVVIS world {civvis} that does not exist",
                     spec.id
                 );
@@ -789,7 +961,10 @@ mod tests {
         for (rung, (id, _)) in DIFFICULTIES.iter().zip(ladder) {
             assert_eq!(rung.civvis, id.as_str());
             assert_eq!(rung.id, format!("DIFFICULTY_{}", id.to_uppercase()));
-            assert_eq!(difficulty_for_civvis(id).map(|found| found.id), Some(rung.id));
+            assert_eq!(
+                difficulty_for_civvis(id).map(|found| found.id),
+                Some(rung.id)
+            );
         }
     }
 
@@ -804,7 +979,10 @@ mod tests {
             assert_eq!(size.civvis, ours.id);
             assert_eq!(size.players, ours.default_players);
             assert_eq!(size.id, format!("MAPSIZE_{}", ours.id.to_uppercase()));
-            assert_eq!(size_for_players(size.players).map(|found| found.id), Some(size.id));
+            assert_eq!(
+                size_for_players(size.players).map(|found| found.id),
+                Some(size.id)
+            );
         }
         // Sizes past Huge are ours alone, so they have to fall back.
         assert!(crate::setup::CIV6_MAP_SIZES.len() > SIZES.len());
@@ -813,7 +991,10 @@ mod tests {
             let ours = crate::setup::GameSpeed::from_id(speed.civvis)
                 .unwrap_or_else(|| panic!("{} is not one of our speeds", speed.civvis));
             assert_eq!(speed.turns, ours.turn_limit());
-            assert_eq!(speed_for_civvis(speed.civvis).map(|found| found.id), Some(speed.id));
+            assert_eq!(
+                speed_for_civvis(speed.civvis).map(|found| found.id),
+                Some(speed.id)
+            );
         }
     }
 
@@ -879,13 +1060,20 @@ mod tests {
         assert_eq!(
             argv,
             [
-                "--tag", "civvis-20260731T154034Z",
-                "--difficulty", "DIFFICULTY_IMMORTAL",
-                "--ruleset", "RULESET_EXPANSION_2",
-                "--map", "Shuffle.lua",
-                "--map-size", "MAPSIZE_SMALL",
-                "--speed", "GAMESPEED_QUICK",
-                "--max-turns", "330",
+                "--tag",
+                "civvis-20260731T154034Z",
+                "--difficulty",
+                "DIFFICULTY_IMMORTAL",
+                "--ruleset",
+                "RULESET_EXPANSION_2",
+                "--map",
+                "Shuffle.lua",
+                "--map-size",
+                "MAPSIZE_SMALL",
+                "--speed",
+                "GAMESPEED_QUICK",
+                "--max-turns",
+                "330",
             ]
         );
     }

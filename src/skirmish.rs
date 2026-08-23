@@ -260,7 +260,11 @@ fn account(
         let side = *owner;
         match after.get(uid) {
             None => {
-                let cost = g.rules.units.get(kind.as_str()).map_or(0.0, |spec| spec.cost);
+                let cost = g
+                    .rules
+                    .units
+                    .get(kind.as_str())
+                    .map_or(0.0, |spec| spec.cost);
                 let taken = *hp as f64;
                 let (mine, theirs) = split(ledgers, side);
                 mine.losses += 1;
@@ -323,10 +327,7 @@ fn build_scenario(seed: u64, setup: &SkirmishSetup) -> Option<Game> {
         .collect();
     // Each army musters on its own side of the midpoint, so the two forces
     // start `separation` apart and have to close.
-    let midpoint = (
-        (home[0].0 + home[1].0) / 2,
-        (home[0].1 + home[1].1) / 2,
-    );
+    let midpoint = ((home[0].0 + home[1].0) / 2, (home[0].1 + home[1].1) / 2);
     let half = (setup.separation / 2).max(1);
     let anchors: Vec<Pos> = (0..2)
         .map(|pid| toward(&g, midpoint, home[pid], half))

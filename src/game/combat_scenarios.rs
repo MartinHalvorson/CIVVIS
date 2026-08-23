@@ -144,7 +144,10 @@ fn units_keep_exact_lifetime_damage_without_counting_overkill() {
     assert_eq!(lifetime.damage_dealt, 7);
     assert_eq!(lifetime.production_cost, production_cost);
     assert_eq!(lifetime.average_damage(), Some(7.0));
-    assert_eq!(lifetime.damage_per_production(), Some(7.0 / production_cost));
+    assert_eq!(
+        lifetime.damage_per_production(),
+        Some(7.0 / production_cost)
+    );
 
     let (mut last_blow, target, ring) = controlled_game(41_064);
     let doomed = last_blow.spawn_unit("warrior", 0, ring[0]);
@@ -253,15 +256,9 @@ fn slinger_upgrade_is_legal_only_when_affordable_and_in_friendly_territory() {
     assert!(!game.legal_unit_upgrade_actions(0).contains(&action));
     game.map.tiles.get_mut(&home).unwrap().owner_city = Some(city);
     assert!(game.legal_unit_upgrade_actions(0).contains(&action));
-    assert_eq!(
-        game.unit_gold_upgrade_offer(0, slinger).unwrap().1,
-        60.0
-    );
+    assert_eq!(game.unit_gold_upgrade_offer(0, slinger).unwrap().1, 60.0);
     game.game_speed = GameSpeed::Online;
-    assert_eq!(
-        game.unit_gold_upgrade_offer(0, slinger).unwrap().1,
-        30.0
-    );
+    assert_eq!(game.unit_gold_upgrade_offer(0, slinger).unwrap().1, 30.0);
     game.game_speed = GameSpeed::Standard;
 
     {
@@ -276,7 +273,10 @@ fn slinger_upgrade_is_legal_only_when_affordable_and_in_friendly_territory() {
     let unit = &game.units[&slinger];
     assert_eq!(unit.kind, "archer");
     assert_eq!(unit.hp, 43);
-    assert_eq!(unit.damage_dealt, 91, "an upgrade continues the same lifetime");
+    assert_eq!(
+        unit.damage_dealt, 91,
+        "an upgrade continues the same lifetime"
+    );
     assert_eq!(
         unit.production_cost, game.rules.units["slinger"].cost,
         "an upgrade does not pretend the original unit cost Archer Production"
@@ -327,7 +327,8 @@ fn upgrades_resolve_the_owners_unique_replacement() {
     let action = Action::UpgradeUnit { unit: slinger };
 
     assert_eq!(
-        game.unit_upgrade_target(0, crate::name!("slinger")).as_deref(),
+        game.unit_upgrade_target(0, crate::name!("slinger"))
+            .as_deref(),
         Some("pitati_archer")
     );
     assert!(game.legal_unit_upgrade_actions(0).contains(&action));
@@ -428,11 +429,19 @@ fn the_tourism_multipliers_are_the_ones_the_parameters_name() {
     // Religious Tourism is halved between two different religions, and
     // only when both sides actually have one.
     g.players[0].religion = Some("Ours".to_string());
-    assert_eq!(g.international_tourism_multiplier(0, 1, true), 1.0, "the target has none");
+    assert_eq!(
+        g.international_tourism_multiplier(0, 1, true),
+        1.0,
+        "the target has none"
+    );
     g.players[1].religion = Some("Theirs".to_string());
     assert_eq!(g.international_tourism_multiplier(0, 1, true), 0.5);
     g.players[1].religion = Some("Ours".to_string());
-    assert_eq!(g.international_tourism_multiplier(0, 1, true), 1.0, "the same faith is not reduced");
+    assert_eq!(
+        g.international_tourism_multiplier(0, 1, true),
+        1.0,
+        "the same faith is not reduced"
+    );
 
     // TOURISM_CULTURE_PER_CITIZEN 100 and TOURISM_TOURISM_TO_MOVE_CITIZEN 200.
     g.players[0].culture_lifetime = 950.0;
@@ -484,7 +493,11 @@ fn walls_absorb_the_share_of_each_attack_its_parameter_names() {
     // down at full rate. Behind healthy walls the city itself takes 1.
     let (mut g, centre, _) = controlled_game(4_164);
     let capital = g.found_city_for(1, centre, None);
-    g.cities.get_mut(&capital).unwrap().buildings.push(crate::name!("walls"));
+    g.cities
+        .get_mut(&capital)
+        .unwrap()
+        .buildings
+        .push(crate::name!("walls"));
     let max = g.city_max_wall_hp(&g.cities[&capital]);
     assert!(max > 0);
 
@@ -495,7 +508,11 @@ fn walls_absorb_the_share_of_each_attack_its_parameter_names() {
         probe.city_take_damage(0, capital, 20, multiplier, false);
         max - probe.cities[&capital].wall_hp
     };
-    assert_eq!(wall_after(&g, 0.15), 3, "melee puts 15% of the roll on walls");
+    assert_eq!(
+        wall_after(&g, 0.15),
+        3,
+        "melee puts 15% of the roll on walls"
+    );
     assert_eq!(wall_after(&g, 0.5), 10, "ranged puts half");
     assert_eq!(wall_after(&g, 1.0), 20, "a Bombard puts all of it");
 
@@ -553,7 +570,11 @@ fn gathering_storm_pillage_rewards_are_data_driven_and_complete() {
     ];
     for (improvement, yield_type, amount) in improvements {
         let spec = &game.rules.improvements[improvement];
-        assert_eq!(spec.plunder_type.as_deref(), Some(yield_type), "{improvement}");
+        assert_eq!(
+            spec.plunder_type.as_deref(),
+            Some(yield_type),
+            "{improvement}"
+        );
         assert_eq!(spec.plunder_amount, amount, "{improvement}");
     }
     for improvement in [
@@ -639,8 +660,7 @@ fn barbarians_do_not_heal_passively_but_healing_plunder_still_works() {
     game.begin_turn(0);
     assert_eq!(game.units[&barbarian].hp, 40);
 
-    game.apply(0, &Action::Pillage { unit: barbarian })
-        .unwrap();
+    game.apply(0, &Action::Pillage { unit: barbarian }).unwrap();
     assert_eq!(
         game.units[&barbarian].hp, 90,
         "healing plunder is the fixed 50 HP even in the Future Era with Raid"
@@ -725,10 +745,7 @@ fn pillage_rewards_scale_and_stack_with_norway_raid_and_the_chapel() {
     game.players[0].policies.insert(crate::name!("raid"));
     game.world_era = 2;
     game.game_speed = GameSpeed::Online;
-    assert_eq!(
-        game.scaled_pillage_amount(0, "gold", 50.0),
-        112.5
-    );
+    assert_eq!(game.scaled_pillage_amount(0, "gold", 50.0), 112.5);
     game.game_speed = GameSpeed::Standard;
 
     let home_center = game
@@ -736,9 +753,7 @@ fn pillage_rewards_scale_and_stack_with_norway_raid_and_the_chapel() {
         .tiles
         .keys()
         .copied()
-        .find(|position| {
-            game.wdist(center, *position) >= 6 && game.wdisk(*position, 1).len() == 7
-        })
+        .find(|position| game.wdist(center, *position) >= 6 && game.wdisk(*position, 1).len() == 7)
         .unwrap();
     let home_city = game.found_city_for(0, home_center, None);
     let plaza = game.cities[&home_city]
@@ -794,9 +809,7 @@ fn every_district_layer_pays_the_district_reward() {
     let raider = game.spawn_test_unit("horseman", 0, campus);
     let science = game.players[0].research_overflow;
 
-    for (layer, expected_building) in
-        [(1, Some("university")), (2, Some("library")), (3, None)]
-    {
+    for (layer, expected_building) in [(1, Some("university")), (2, Some("library")), (3, None)] {
         game.units.get_mut(&raider).unwrap().moves_left = 4.0;
         game.apply(0, &Action::Pillage { unit: raider }).unwrap();
         assert_eq!(
@@ -1049,8 +1062,12 @@ fn military_tradition_flanking_and_support_follow_provider_rules() {
 
     assert_eq!(g.flanking_bonus(attacker, target), 0.0);
     assert_eq!(g.support_bonus(&g.units[&defender]), 0.0);
-    g.players[0].civics.insert(crate::name!("military_tradition"));
-    g.players[1].civics.insert(crate::name!("military_tradition"));
+    g.players[0]
+        .civics
+        .insert(crate::name!("military_tradition"));
+    g.players[1]
+        .civics
+        .insert(crate::name!("military_tradition"));
     assert_eq!(
         g.flanking_bonus(attacker, target),
         2.0,
@@ -1743,8 +1760,7 @@ fn a_read_range_passes_units_and_still_stops_at_zone_of_control() {
         .into_iter()
         .find(|pos| {
             g.wdist(*pos, start) == 2
-                && g
-                    .nbrs(*pos)
+                && g.nbrs(*pos)
                     .into_iter()
                     .filter(|step| g.wdist(*step, start) == 1)
                     .eq(std::iter::once(blocked))
@@ -2002,7 +2018,10 @@ fn religious_layer_and_undefended_unit_capture_follow_civ6_targeting() {
             },
         )
         .unwrap();
-        assert_eq!(g.units[&civilian].owner, 0, "{civilian_kind} should be captured");
+        assert_eq!(
+            g.units[&civilian].owner, 0,
+            "{civilian_kind} should be captured"
+        );
         assert!(matches!(
             g.log.last(),
             Some((0, Action::Move { unit, to })) if *unit == warrior && *to == target
@@ -2370,7 +2389,9 @@ fn a_unit_leaves_the_menu_when_its_upgrade_unlocks_not_when_steel_arrives() {
         "the late MandatoryObsoleteTech is NOT what retires it"
     );
 
-    game.players[0].techs.insert(crate::name!("military_engineering"));
+    game.players[0]
+        .techs
+        .insert(crate::name!("military_engineering"));
     assert!(
         game.unit_is_obsolete(0, crate::name!("catapult")),
         "unlocking the Trebuchet withdraws the Catapult, 54 refused siege orders \
@@ -2779,15 +2800,16 @@ fn air_pillage_uses_exact_health_floor_layer_order_and_no_spoils() {
         .buildings
         .extend([crate::name!("library"), crate::name!("university")]);
 
-    let spotter =
-        game.nbrs(campus)
-            .into_iter()
-            .find(|position| {
-                game.map.get(*position).is_some_and(|tile| {
-                    game.rules.is_passable(tile) && !game.rules.is_water(tile)
-                }) && game.units_at(*position).is_empty()
-            })
-            .unwrap();
+    let spotter = game
+        .nbrs(campus)
+        .into_iter()
+        .find(|position| {
+            game.map
+                .get(*position)
+                .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
+                && game.units_at(*position).is_empty()
+        })
+        .unwrap();
     game.spawn_unit("warrior", 0, spotter);
 
     let bomber = game.spawn_unit("bomber", 0, base);
@@ -3360,8 +3382,12 @@ fn corps_armies_and_linked_escorts_preserve_their_rules() {
     );
     assert_eq!(g.units[&veteran].hp, 60);
     assert_eq!(g.units[&veteran].xp, 20);
-    assert!(g.units[&veteran].promotions.contains(&Name::new("battlecry")));
-    assert!(g.units[&veteran].promotions.contains(&Name::new("tortoise")));
+    assert!(g.units[&veteran]
+        .promotions
+        .contains(&Name::new("battlecry")));
+    assert!(g.units[&veteran]
+        .promotions
+        .contains(&Name::new("tortoise")));
     assert_eq!(g.units[&veteran].xp_bonus_pct, 25.0);
     assert_eq!(g.unit_unembarked_strength(&g.units[&veteran]), 30.0);
 
@@ -3387,7 +3413,9 @@ fn corps_armies_and_linked_escorts_preserve_their_rules() {
     assert_eq!(g.units[&veteran].damage_dealt, 27);
     assert_eq!(g.units[&veteran].production_cost, 120.0);
     assert_eq!(g.units[&veteran].hp, 70);
-    assert!(g.units[&veteran].promotions.contains(&Name::new("amphibious")));
+    assert!(g.units[&veteran]
+        .promotions
+        .contains(&Name::new("amphibious")));
     assert_eq!(g.unit_unembarked_strength(&g.units[&veteran]), 37.0);
 
     let (mut g, center, ring) = controlled_game(3162);
@@ -3397,10 +3425,9 @@ fn corps_armies_and_linked_escorts_preserve_their_rules() {
         unit: escort,
         with: builder,
     };
-    assert!(
-        g.legal_actions_within(0, ActionFamilies::FORMATIONS)
-            .contains(&form_escort)
-    );
+    assert!(g
+        .legal_actions_within(0, ActionFamilies::FORMATIONS)
+        .contains(&form_escort));
     g.apply(0, &form_escort).unwrap();
     assert_eq!(g.units[&escort].linked_to, Some(builder));
     assert_eq!(g.units[&builder].linked_to, Some(escort));
@@ -3415,10 +3442,9 @@ fn corps_armies_and_linked_escorts_preserve_their_rules() {
     assert_eq!(g.units[&escort].pos, ring[0]);
     assert_eq!(g.units[&builder].pos, ring[0]);
     let unform_escort = Action::UnlinkUnits { unit: escort };
-    assert!(
-        g.legal_actions_within(0, ActionFamilies::FORMATIONS)
-            .contains(&unform_escort)
-    );
+    assert!(g
+        .legal_actions_within(0, ActionFamilies::FORMATIONS)
+        .contains(&unform_escort));
     g.apply(0, &unform_escort).unwrap();
     assert_eq!(g.units[&escort].linked_to, None);
     assert_eq!(g.units[&builder].linked_to, None);
@@ -3492,7 +3518,12 @@ fn isibongo_capture_upgrade_and_garrison_loyalty_are_formation_aware() {
     carrier_capture.players[0]
         .civics
         .insert(crate::name!("nationalism"));
-    carrier_capture.map.tiles.get_mut(&city_pos).unwrap().terrain = crate::name!("coast");
+    carrier_capture
+        .map
+        .tiles
+        .get_mut(&city_pos)
+        .unwrap()
+        .terrain = crate::name!("coast");
     carrier_capture.map.tiles.get_mut(&ring[0]).unwrap().terrain = crate::name!("coast");
     let city = carrier_capture.found_city_for(1, city_pos, None);
     carrier_capture.cities.get_mut(&city).unwrap().hp = 0;
@@ -3916,7 +3947,10 @@ fn enforced_borders_share_one_rule_across_steps_and_routes() {
 
     g.players[0].friends_until.insert(1, 40);
     g.players[1].friends_until.insert(0, 40);
-    assert!(!g.can_move(warrior, target), "friendship is not Open Borders");
+    assert!(
+        !g.can_move(warrior, target),
+        "friendship is not Open Borders"
+    );
     g.players[0].open_borders_until.insert(1, 40);
     assert!(
         !g.can_move(warrior, target),
@@ -4001,14 +4035,19 @@ fn enforced_or_expired_borders_expel_only_units_that_need_access() {
     };
 
     let (mut expired, foreign) = setup(3_204);
-    expired.players[1].civics.insert(crate::name!("early_empire"));
+    expired.players[1]
+        .civics
+        .insert(crate::name!("early_empire"));
     expired.players[1].open_borders_until.insert(0, 5);
     let warrior = expired.spawn_unit("warrior", 0, foreign);
     let trader = expired.spawn_unit("trader", 0, foreign);
     expired.turn = 5;
     expired.begin_turn(0);
     assert_ne!(expired.units[&warrior].pos, foreign);
-    assert_ne!(expired.territory_owner_at(expired.units[&warrior].pos), Some(1));
+    assert_ne!(
+        expired.territory_owner_at(expired.units[&warrior].pos),
+        Some(1)
+    );
     assert_eq!(
         expired.units[&trader].pos, foreign,
         "a Trader remains legal when ordinary Open Borders expires"
@@ -4017,7 +4056,9 @@ fn enforced_or_expired_borders_expel_only_units_that_need_access() {
     let (mut enforced, foreign) = setup(3_205);
     let scout = enforced.spawn_unit("warrior", 0, foreign);
     assert!(enforced.has_open_borders(0, 1));
-    enforced.players[1].civics.insert(crate::name!("early_empire"));
+    enforced.players[1]
+        .civics
+        .insert(crate::name!("early_empire"));
     enforced.apply_tree_completion(1, false, "early_empire", true);
     assert_ne!(
         enforced.units[&scout].pos, foreign,
@@ -4062,14 +4103,20 @@ fn reverse_flow_fields_match_forward_goal_search_and_reuse_the_field() {
         .into_iter()
         .filter(|position| g.wdist(start, *position) == 4)
         .collect();
-    assert!(goals.len() > 1, "the fixture supplies a multi-source goal ring");
+    assert!(
+        goals.len() > 1,
+        "the fixture supplies a multi-source goal ring"
+    );
 
     let expected = g.first_route_step(warrior, |position| goals.contains(&position));
     assert!(expected.is_some(), "the goal ring is reachable on plains");
     assert!(g.routing.borrow().reverse_fields.is_empty());
 
     let first = g.route_step_to_any(warrior, &goals);
-    assert_eq!(first, expected, "reverse and forward fields choose the same step");
+    assert_eq!(
+        first, expected,
+        "reverse and forward fields choose the same step"
+    );
     assert_eq!(g.routing.borrow().reverse_fields.len(), 1);
 
     let second = g.route_step_to_any(warrior, &goals);
@@ -4417,7 +4464,10 @@ fn pyramids_use_a_legal_tile_remain_world_unique_and_improve_builders() {
         .count();
     assert!(g.complete_item(0, cid, &item));
     assert_eq!(g.map.tiles[&site].wonder.as_deref(), Some("pyramids"));
-    assert_eq!(g.cities[&cid].wonders.get(&Name::new("pyramids")), Some(&site));
+    assert_eq!(
+        g.cities[&cid].wonders.get(&Name::new("pyramids")),
+        Some(&site)
+    );
     assert!(g.wonder_built("pyramids"));
     assert!(!g.can_produce(0, cid, &item));
 
@@ -4505,7 +4555,10 @@ fn pillaging_pays_the_yield_and_amount_its_row_ships() {
 
     // A unique district plunders as the district it replaces.
     assert_eq!(
-        rules.districts["hansa"].plunder_type.as_deref().or(Some("science")),
+        rules.districts["hansa"]
+            .plunder_type
+            .as_deref()
+            .or(Some("science")),
         Some("science")
     );
 }
@@ -4682,7 +4735,8 @@ fn an_ordinary_cuirassier_leaves_the_survivor_where_it_stood() {
     let defender = g.spawn_unit("musketman", 1, target);
     g.units.get_mut(&defender).unwrap().hp = 100;
 
-    g.do_attack(0, cuirassier, target).expect("the attack resolves");
+    g.do_attack(0, cuirassier, target)
+        .expect("the attack resolves");
 
     if g.units.contains_key(&defender) {
         assert_eq!(
@@ -4715,7 +4769,8 @@ fn a_cornered_survivor_pays_for_the_retreat_it_cannot_make() {
                 open.remove_unit(id);
             }
         }
-        open.do_attack(0, hussar, target).expect("the attack resolves");
+        open.do_attack(0, hussar, target)
+            .expect("the attack resolves");
         open.units.get(&defender).map(|u| u.hp)
     };
 

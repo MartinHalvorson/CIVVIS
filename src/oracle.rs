@@ -25,12 +25,12 @@
 //!
 //! Each grant is applied at the start of the seat's turn, before the wrapped
 //! agent plays, because `AdvancedAi::take_turn` ends its own turn.
-use crate::name::Name;
 use crate::ai::{Ai, PlanReport};
-use std::collections::BTreeSet;
 use crate::game::{Game, Item};
+use crate::name::Name;
 use crate::world::DistrictFoundation;
 use crate::Pos;
+use std::collections::BTreeSet;
 
 /// The engine's workable ring. `plot_purchase_cost` prices rings one through
 /// three and nothing beyond, so this is exactly the ground a citizen could
@@ -621,15 +621,15 @@ impl<A: Ai> Oracle<A> {
         for (_, city_pos) in open {
             // Somewhere legal to stand: an adjacent land tile with nobody on
             // it. Sorted so the grant is deterministic across runs.
-            let mut approaches: Vec<Pos> = g
-                .nbrs(city_pos)
-                .into_iter()
-                .filter(|position| {
-                    g.map.get(*position).is_some_and(|tile| {
-                        g.rules.is_passable(tile) && !g.rules.is_water(tile)
-                    }) && g.units_at(*position).is_empty()
-                })
-                .collect();
+            let mut approaches: Vec<Pos> =
+                g.nbrs(city_pos)
+                    .into_iter()
+                    .filter(|position| {
+                        g.map.get(*position).is_some_and(|tile| {
+                            g.rules.is_passable(tile) && !g.rules.is_water(tile)
+                        }) && g.units_at(*position).is_empty()
+                    })
+                    .collect();
             approaches.sort_unstable();
             let Some(landing) = approaches.first().copied() else {
                 continue;
@@ -866,10 +866,17 @@ mod tests {
                 let before: Vec<u32> = probe.player_unit_ids(0);
                 let gold = probe.players[0].gold;
                 oracle.grant_attrition(&mut probe, 0);
-                assert_eq!(before, probe.player_unit_ids(0), "the grant changed the roster");
+                assert_eq!(
+                    before,
+                    probe.player_unit_ids(0),
+                    "the grant changed the roster"
+                );
                 assert_eq!(gold, probe.players[0].gold, "the grant moved the treasury");
                 assert!(
-                    probe.player_unit_ids(0).iter().all(|uid| probe.units[uid].hp == 100),
+                    probe
+                        .player_unit_ids(0)
+                        .iter()
+                        .all(|uid| probe.units[uid].hp == 100),
                     "a healed empire must have no wounded units left"
                 );
                 oracle.take_turn(&mut g, pid);
@@ -880,9 +887,11 @@ mod tests {
                 let _ = g.apply(pid, &crate::game::Action::EndTurn);
             }
         }
-        assert!(oracle.fired() > 0, "the attrition grant never healed anything");
+        assert!(
+            oracle.fired() > 0,
+            "the attrition grant never healed anything"
+        );
     }
-
 
     /// The ground grant must actually hand a city ground, must leave every
     /// other city's territory alone, and must never reach past the workable
@@ -969,7 +978,6 @@ mod tests {
         assert!(ever_grew, "the grant never enlarged a city's territory");
     }
 
-
     /// The siting grant must actually move foundations, must never lose a
     /// city's banked production when it does, must never leave two tiles
     /// holding the same foundation, and must only ever improve a site.
@@ -1037,7 +1045,10 @@ mod tests {
                 let _ = g.apply(pid, &crate::game::Action::EndTurn);
             }
         }
-        assert!(oracle.fired() > 0, "the siting grant never moved a foundation");
+        assert!(
+            oracle.fired() > 0,
+            "the siting grant never moved a foundation"
+        );
         assert!(ever_moved, "no foundation ever changed tile");
     }
 
@@ -1056,7 +1067,6 @@ mod tests {
         out.sort();
         out
     }
-
 
     /// The expansion grant must actually hand out Settlers, must hand out
     /// exactly one at a time, must stop at the target, and must grant nothing
@@ -1099,8 +1109,11 @@ mod tests {
                         cities < EXPANSION_TARGET,
                         "the grant fired at or above its own target"
                     );
-                    let fresh: Vec<u32> =
-                        after.iter().copied().filter(|uid| !before.contains(uid)).collect();
+                    let fresh: Vec<u32> = after
+                        .iter()
+                        .copied()
+                        .filter(|uid| !before.contains(uid))
+                        .collect();
                     assert_eq!(fresh.len(), 1);
                     assert_eq!(
                         probe.units[&fresh[0]].kind, "settler",
@@ -1115,10 +1128,12 @@ mod tests {
                 let _ = g.apply(pid, &crate::game::Action::EndTurn);
             }
         }
-        assert!(oracle.fired() > 0, "the expansion grant never handed out a settler");
+        assert!(
+            oracle.fired() > 0,
+            "the expansion grant never handed out a settler"
+        );
         assert!(ever_granted, "no settler was ever observed being granted");
     }
-
 
     /// The confiscation must actually take Gold, must leave a working buffer
     /// rather than emptying the treasury, and must take nothing else.
@@ -1147,8 +1162,16 @@ mod tests {
                 let after = probe.players[0].gold;
                 assert!(after <= before + 1e-9, "the ablation ADDED Gold");
                 assert_eq!(faith, probe.players[0].faith, "the ablation moved Faith");
-                assert_eq!(units, probe.player_unit_ids(0), "the ablation changed the roster");
-                assert_eq!(cities, probe.player_city_ids(0), "the ablation changed the cities");
+                assert_eq!(
+                    units,
+                    probe.player_unit_ids(0),
+                    "the ablation changed the roster"
+                );
+                assert_eq!(
+                    cities,
+                    probe.player_city_ids(0),
+                    "the ablation changed the cities"
+                );
                 // Whatever it leaves must still be a working buffer.
                 assert!(
                     after >= (income * IDLE_RESERVE_TURNS).min(before) - 1e-6,
@@ -1166,7 +1189,10 @@ mod tests {
                 let _ = g.apply(pid, &crate::game::Action::EndTurn);
             }
         }
-        assert!(oracle.fired() > 0, "the idle-reserve ablation never took anything");
+        assert!(
+            oracle.fired() > 0,
+            "the idle-reserve ablation never took anything"
+        );
         assert!(ever_took, "no confiscation was ever observed");
     }
 
@@ -1276,7 +1302,10 @@ mod tests {
                     .filter(|p| p.id != 0)
                     .map(|p| p.envoys.clone())
                     .collect();
-                assert_eq!(rival_envoys, rivals_after, "the grant moved a rival's envoys");
+                assert_eq!(
+                    rival_envoys, rivals_after,
+                    "the grant moved a rival's envoys"
+                );
                 for minor in &met {
                     assert_eq!(
                         probe.suzerain_of(*minor),
@@ -1295,7 +1324,10 @@ mod tests {
                 let _ = g.apply(pid, &crate::game::Action::EndTurn);
             }
         }
-        assert!(oracle.fired() > 0, "the suzerain grant never placed an envoy");
+        assert!(
+            oracle.fired() > 0,
+            "the suzerain grant never placed an envoy"
+        );
         assert!(ever_gained, "no suzerainty was ever actually gained");
     }
 

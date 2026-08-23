@@ -284,7 +284,9 @@ impl Journal {
     /// civilization's turn as truncated.
     pub fn wants(&self, level: Level) -> bool {
         let Some(log) = &self.0 else { return false };
-        let Ok(mut log) = log.lock() else { return false };
+        let Ok(mut log) = log.lock() else {
+            return false;
+        };
         level <= log.ceiling && log.within_budget()
     }
 

@@ -1442,7 +1442,10 @@ fn main() {
                     1e6 / us
                 );
             }
-            println!("clone + end (no fog) {fast_end_us:6.1} us  = {:.0}/sec", 1e6 / fast_end_us);
+            println!(
+                "clone + end (no fog) {fast_end_us:6.1} us  = {:.0}/sec",
+                1e6 / fast_end_us
+            );
             let _ = sink;
         }
         #[cfg(not(feature = "closed-experiments"))]
@@ -2246,7 +2249,8 @@ mod tests {
              re-pin and say so in docs/ELO_REPINS.md"
         );
         assert_eq!(
-            fingerprint, ANCHOR_BEHAVIOUR_FNV,
+            fingerprint,
+            ANCHOR_BEHAVIOUR_FNV,
             "advanced_v1 chose differently somewhere in {decisions} decisions \
              across {} profiles. This is a real behaviour change to the frozen \
              anchor, not a formatting one: find the gene that should have kept \

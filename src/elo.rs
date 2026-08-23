@@ -107,11 +107,9 @@ pub fn builtin_send_ai(name: &str, seed: u64) -> Box<dyn Ai + Send> {
     match name {
         "advanced" => Box::new(AdvancedAi::new()),
         "advanced_v1" => Box::new(AdvancedAi::legacy()),
-        "advanced_evolved" | "evolved" => Box::new(
-            champion()
-                .map(AdvancedAi::with_weights)
-                .unwrap_or_default(),
-        ),
+        "advanced_evolved" | "evolved" => {
+            Box::new(champion().map(AdvancedAi::with_weights).unwrap_or_default())
+        }
         "basic" => Box::new(BasicAi::new()),
         "random" => Box::new(RandomAi::new(seed)),
         "strategic" => Box::new(crate::strategic::StrategicAi::with_weights(

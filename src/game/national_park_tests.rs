@@ -173,8 +173,8 @@ fn national_parks_use_four_tiles_live_appeal_and_exact_city_amenities() {
         .map(|city_id| game.city_yields(city_id).culture)
         .sum::<f64>();
     let tourism_with_park = game.tourism_per_turn(0);
-    let expected_gain = (initial_appeal as f64 + 0.15 * (culture_with_park - culture_before))
-        * global_multiplier;
+    let expected_gain =
+        (initial_appeal as f64 + 0.15 * (culture_with_park - culture_before)) * global_multiplier;
     assert!((tourism_with_park - tourism_before - expected_gain).abs() < 1e-9);
 
     let mut nearest = other_cities.clone();

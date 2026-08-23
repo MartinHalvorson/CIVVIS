@@ -3,11 +3,11 @@
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::name::Name;
 use crate::game::{
     City, Game, Item, RememberedCity, Unit, UnitMoveTrail, DIPLOMATIC_VICTORY_POINTS,
     EXOPLANET_DESTINATION, EXOPLANET_TARGETS,
 };
+use crate::name::Name;
 use crate::world::Tile;
 use crate::Pos;
 
@@ -60,8 +60,12 @@ pub const EXOPLANET_EYE: &str = "launch_earth_satellite";
 /// a book.
 pub fn knows_globe(p: &crate::game::Player) -> bool {
     p.went_around
-        || GLOBE_TECHS.iter().any(|tech| p.techs.contains(&Name::new(tech)))
-        || p.great_people.iter().any(|id| id.as_str() == GLOBE_GREAT_PERSON)
+        || GLOBE_TECHS
+            .iter()
+            .any(|tech| p.techs.contains(&Name::new(tech)))
+        || p.great_people
+            .iter()
+            .any(|id| id.as_str() == GLOBE_GREAT_PERSON)
 }
 
 /// The instruments that reach past what an eye can see.
@@ -86,7 +90,9 @@ pub const OUTER_SYSTEM_GREAT_PERSON: &str = "isaac_newton";
 /// there is no system to put them in yet.
 pub fn sees_outer_system(p: &crate::game::Player) -> bool {
     knows_globe(p)
-        && (OUTER_SYSTEM_TECHS.iter().any(|tech| p.techs.contains(&Name::new(tech)))
+        && (OUTER_SYSTEM_TECHS
+            .iter()
+            .any(|tech| p.techs.contains(&Name::new(tech)))
             || p.great_people
                 .iter()
                 .any(|id| id.as_str() == OUTER_SYSTEM_GREAT_PERSON)
@@ -1055,7 +1061,11 @@ fn wars_json(g: &Game, explored: &BTreeSet<Pos>) -> Vec<Value> {
     conflicts.sort_by_key(|records| {
         let ongoing = records.iter().any(|war| war.ended.is_none());
         let started = records.iter().map(|war| war.started).min().unwrap_or(0);
-        let ended = records.iter().filter_map(|war| war.ended).max().unwrap_or(0);
+        let ended = records
+            .iter()
+            .filter_map(|war| war.ended)
+            .max()
+            .unwrap_or(0);
         (!ongoing, if ongoing { started } else { u32::MAX - ended })
     });
 
@@ -1083,9 +1093,7 @@ fn wars_json(g: &Game, explored: &BTreeSet<Pos>) -> Vec<Value> {
             let ended = (!ongoing)
                 .then(|| records.iter().filter_map(|war| war.ended).max())
                 .flatten();
-            let casus_belli = records
-                .iter()
-                .find_map(|war| war.casus_belli.as_deref());
+            let casus_belli = records.iter().find_map(|war| war.casus_belli.as_deref());
             let joint_war_until = records.iter().filter_map(|war| war.joint_war_until).max();
 
             let mut losses: BTreeMap<usize, crate::game::WarLosses> = BTreeMap::new();
@@ -1178,9 +1186,7 @@ fn wars_json(g: &Game, explored: &BTreeSet<Pos>) -> Vec<Value> {
                         .iter()
                         .filter(|participant| participant.entered == entered)
                         .find_map(|participant| participant.suzerain)
-                        .or_else(|| {
-                            entries.iter().find_map(|participant| participant.suzerain)
-                        });
+                        .or_else(|| entries.iter().find_map(|participant| participant.suzerain));
                     let toll = losses.get(&player).cloned().unwrap_or_default();
                     let saw_action_strength = saw_action_units.values().sum::<i64>();
                     json!({
@@ -1214,7 +1220,12 @@ fn wars_json(g: &Game, explored: &BTreeSet<Pos>) -> Vec<Value> {
                 .flat_map(|war| war.highlights.iter())
                 .collect::<Vec<_>>();
             highlights.sort_by_key(|moment| {
-                (moment.turn, moment.kind.as_str(), moment.actor, moment.subject)
+                (
+                    moment.turn,
+                    moment.kind.as_str(),
+                    moment.actor,
+                    moment.subject,
+                )
             });
             highlights.dedup_by(|a, b| {
                 a.turn == b.turn
@@ -1243,7 +1254,12 @@ fn wars_json(g: &Game, explored: &BTreeSet<Pos>) -> Vec<Value> {
             let mut settlements = BTreeMap::new();
             for peace in records.iter().flat_map(|war| &war.peace_terms) {
                 settlements
-                    .entry((peace.turn, peace.first, peace.second, peace.terms.join("\u{1f}")))
+                    .entry((
+                        peace.turn,
+                        peace.first,
+                        peace.second,
+                        peace.terms.join("\u{1f}"),
+                    ))
                     .or_insert(peace);
             }
             // The ledger's bounded action tail remains in the save, but the
@@ -1385,7 +1401,12 @@ fn nuclear_strikes_json(g: &Game) -> Vec<Value> {
 /// cut down to the visible stretches, each emitted as its own trail so a
 /// client never has to reason about gaps — a route that dips into fog simply
 /// arrives as two shorter ones.
-fn unit_move_trails_json(g: &Game, pid: usize, omniscient: bool, vis: &BTreeSet<Pos>) -> Vec<Value> {
+fn unit_move_trails_json(
+    g: &Game,
+    pid: usize,
+    omniscient: bool,
+    vis: &BTreeSet<Pos>,
+) -> Vec<Value> {
     let trail_json = |trail: &UnitMoveTrail, path: &[Pos]| {
         json!({
             "unit": trail.unit,
@@ -1518,7 +1539,6 @@ fn tile_json(
     // otherwise report yields from tiles the player cannot see.
     let district_yields = tile
         .district
-
         .filter(|district| live && g.rules.districts.contains_key(district.as_str()))
         .map(|district| {
             (
@@ -1820,7 +1840,10 @@ mod tests {
             .id;
 
         let open = unit_intel(&game, None, hidden);
-        assert!(open["error"].is_null(), "the spectator sees the whole board");
+        assert!(
+            open["error"].is_null(),
+            "the spectator sees the whole board"
+        );
         assert_eq!(open["unit"], hidden);
         assert!(
             !open["vision"].as_array().expect("a vision set").is_empty(),
@@ -1880,14 +1903,20 @@ mod tests {
         // Every other shape does come back on itself: a cylinder through its
         // own east-west seam, a globe through its geometry.
         let world = Game::new_full(2, 20, 14, 4_402, 60, 1, false);
-        assert_eq!(observation_spectator(&world, 0)["map"]["wrap_x"], json!(true));
+        assert_eq!(
+            observation_spectator(&world, 0)["map"]["wrap_x"],
+            json!(true)
+        );
         let size = crate::setup::MapSize::for_players(2);
         let (width, height) = size.dimensions(crate::setup::MapTopology::Planet);
         let globe = Game::new_with(crate::game::GameOptions {
             map_topology: crate::setup::MapTopology::Planet,
             ..crate::game::GameOptions::new(2, width, height, 4_402, 60, 2)
         });
-        assert_eq!(observation_spectator(&globe, 0)["map"]["wrap_x"], json!(true));
+        assert_eq!(
+            observation_spectator(&globe, 0)["map"]["wrap_x"],
+            json!(true)
+        );
     }
 
     #[test]
@@ -2214,7 +2243,10 @@ mod tests {
         game.record_contact(0, 1);
         let found = &observation(&game, 0)["players"][1];
         assert_eq!(found["met"], json!(true));
-        assert!(found["score"].is_number(), "the dashboard arrives on contact");
+        assert!(
+            found["score"].is_number(),
+            "the dashboard arrives on contact"
+        );
         assert!(!found["victories"].is_null());
         assert_eq!(
             observation(&game, 1)["players"][0]["met"],
@@ -2242,7 +2274,9 @@ mod tests {
             json!(false)
         );
 
-        game.players[2].techs.insert(crate::name!("nuclear_fission"));
+        game.players[2]
+            .techs
+            .insert(crate::name!("nuclear_fission"));
         for observed in [observation_spectator(&game, 0), observation(&game, 1)] {
             assert_eq!(
                 observed["nuclear_weapons_unlocked"],
@@ -2342,9 +2376,7 @@ mod tests {
             next_column, plan_column,
             "the resizable AGE column belongs immediately before PLAN"
         );
-        assert!(INDEX.contains(
-            "age:[\"AGE\", \"Civilization age\"],"
-        ));
+        assert!(INDEX.contains("age:[\"AGE\", \"Civilization age\"],"));
         assert!(INDEX.contains("diplomacy-identity-field diplomacy-age"));
     }
 
@@ -2522,7 +2554,9 @@ mod tests {
         // Newton is the recruit who does it without the discovery, for the same
         // reason Hypatia opens the globe: the reflecting telescope every one of
         // those findings was made with a descendant of is his.
-        game.players[0].techs.remove(&Name::new(OUTER_SYSTEM_TECHS[0]));
+        game.players[0]
+            .techs
+            .remove(&Name::new(OUTER_SYSTEM_TECHS[0]));
         assert_eq!(
             observation(&game, 0)["me"]["sees_outer_system"],
             json!(false),
@@ -2674,7 +2708,9 @@ mod tests {
         ));
         assert!(index.contains("function setShowRocketAnimations(on)"));
         assert!(index.contains("if (!SHOW_ROCKET_ANIMATIONS) anim.skyLaunches.length = 0;"));
-        assert!(index.contains("rockets.onchange = () => setShowRocketAnimations(rockets.checked);"));
+        assert!(
+            index.contains("rockets.onchange = () => setShowRocketAnimations(rockets.checked);")
+        );
         assert!(index.contains(
             "function drawSkySatellites(crew, camera, radius, centerX, centerY, alpha, now) {\n  if (!SHOW_ROCKET_ANIMATIONS) return;"
         ));
@@ -2731,16 +2767,13 @@ mod tests {
         assert!(queue.contains("expeditionProgress:Math.max(0, Math.min(1,"));
         // The rocket leaves from the Spaceport that ran the project. Only an
         // empire with no visible Spaceport falls back to its anchor city.
-        assert!(queue.contains(
-            "const origin = skyLaunchOrigin(prev, next, player.id, flight.project) ||"
-        ));
+        assert!(queue
+            .contains("const origin = skyLaunchOrigin(prev, next, player.id, flight.project) ||"));
         assert!(index.contains("function citySpaceportPos(city)"));
-        assert!(index.contains(
-            "RULES?.districts?.[district]?.replaces !== \"spaceport\""
-        ));
-        assert!(index.contains(
-            "owned(prev).find(city => (city.queue || [])[0]?.project === project)"
-        ));
+        assert!(index.contains("RULES?.districts?.[district]?.replaces !== \"spaceport\""));
+        assert!(
+            index.contains("owned(prev).find(city => (city.queue || [])[0]?.project === project)")
+        );
 
         let lifetime = index
             .split_once("function activeSkyLaunches(")

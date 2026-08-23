@@ -2,7 +2,7 @@
 //!
 //! `server.rs` (native) and `wasm.rs` (civvis.ai) each dispatch the same JSON
 //! protocol. Nothing compared their route tables, so they drifted quietly:
-//! `/host-league` and `/next-game` reached only the browser, `/adjacency` and
+//! `/next-game` reached only the browser, `/adjacency` and
 //! `/saves` only the native server. The roadmap records the consequence as a
 //! viewer bug — "panels that read native-only state are silently dead on
 //! civvis.ai" — but the cause is that a route can be added to one side and the
@@ -18,12 +18,6 @@ use std::path::Path;
 
 /// Routes only the browser build serves, and why.
 const WASM_ONLY: &[(&str, &str)] = &[
-    (
-        "/host-league",
-        "A local static-file host is the browser module's filesystem: it posts \
-         the authoritative roster before a session exists. The native server IS \
-         the host and reads the league directly, so it has nothing to accept.",
-    ),
     (
         "/next-game",
         "The page queues the next simulation itself because a wasm module has no \

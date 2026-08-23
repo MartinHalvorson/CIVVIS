@@ -80,8 +80,12 @@ fn district_projects_convert_live_production_and_stop_when_the_district_is_pilla
     // Research Grants" in the city's own ledger), so `city_yields` carries
     // it while the project runs, and turn processing pays exactly that.
     let running = game.city_yields(city);
-    assert!((running.science - base.science - 0.15 * base.production).abs() < 1e-9,
-        "15% of the Production rate as Science: {} -> {}", base.science, running.science);
+    assert!(
+        (running.science - base.science - 0.15 * base.production).abs() < 1e-9,
+        "15% of the Production rate as Science: {} -> {}",
+        base.science,
+        running.science
+    );
     let observed = game.process_city(0, city);
     assert!((observed.science - running.science).abs() < 1e-9);
 
