@@ -366,6 +366,7 @@ These screenable genes have no on/off result, so they receive no rank or promoti
 | Gene | Default | Description |
 |---|---|---|
 | `district-planning` | off (unmeasured) | The city plans its districts, sites and tile buys together: wished districts get jointly assigned, reserved plots over rings 1-3, and the tile a very valuable site needs is bought. |
+| `escort-unstick-2` | off (unmeasured) | Version 2 of `escort_unstick`: the same two-turn release, refused while a visible barbarian raider can reach the settler's tile. |
 
 ## Removed from the code
 
