@@ -1758,3 +1758,61 @@ in the code.** They are covered because they all go through `get_mut`,
 `buildings.len()` and every religious pressure. Those change on most turns, so a
 memo behind them would miss more often than it hit, and it would need a second
 invalidation rule for the fields the sight fold does not read. It keeps its loop.
+
+## 2026-08-23 (follow-up) — the city sight-fold's two clocks disagreed in sign
+
+The section above shipped as #2325 with a paired reading of **−1.09%** and a
+warning that host load was 63–96. CI's own `paired-cost` job then read
+**+1.01% overhead** on the same change. Opposite signs, and neither run is
+allowed to be dismissed just because the other is nicer.
+
+| harness | shape | reading |
+| --- | --- | ---: |
+| local, load 63–96 on 18 cores | 6p 74×46, 9CS, 250t, 8 seeds | −1.09% |
+| `speed.yml`, shared 4-core runner | 6p 60×38, 6CS, 100t, 3 seeds | +1.01% |
+
+Both said **"same game on every seed"**, so the correctness proof is doubled and
+only the cost is in question.
+
+### The plausible mechanism, and why it is wrong
+
+The obvious explanation is shape. A 100-turn game is mostly the early game,
+where cities are founded and borders grow every few turns, so the memo should
+hit far less often than over 250 turns — and a rebuild folds *every* owner's
+owned tiles where the old loop folded only the viewer's. A low hit rate at a
+small shape would turn the win into a loss, and that would be a real finding.
+
+It is not what happens. The same deterministic counter, run at both shapes:
+
+| | 60×38 / 6CS / 100t | 74×46 / 9CS / 250t |
+| --- | ---: | ---: |
+| `vision_stamps()` asks | 117,299 | 452,140 |
+| rebuilds | 3,035 | 10,254 |
+| **hit rate** | **97.41%** | **97.73%** |
+| hash operations | 5,113,713 → 973,235 (−81.0%) | 45,232,622 → 7,042,723 (−84.4%) |
+| `Vec` allocations | 2,080,373 → **0** | 11,616,354 → **0** |
+
+**The hit rate is shape-insensitive to within a third of a percentage point.**
+The small shape removes proportionally almost as much work as the large one, and
+2.08 M allocations at roughly 45 ns is about 0.09 s against that job's ~19
+CPU-seconds per game — a predicted saving of about **0.5%**, not a 1% cost.
+
+So the CI reading is host noise, which is exactly what `speed.yml`'s own comment
+says to expect of it: *"A shared 4-core runner cannot resolve five percent and
+this does not try to… It is a smoke alarm."* Three seeds at 100 turns on a
+shared runner is a budget check, and quoting its percentage as a cost is reading
+an instrument past its resolution.
+
+### The rule this is an instance of
+
+`docs/EVAL.md` says to compute the headline fact twice and read both. Both
+clocks here were inside their own noise and they still disagreed in sign,
+because ±1% is *below the resolution of every clock available on this fleet
+under load*. The counter is not a second opinion about the same quantity — it
+measures a different one (work removed, exactly, with no host in the answer),
+and it is the only one of the three instruments that could settle the question.
+
+⚠ For the next reader: at ±1% on a busy fleet, **stop planning to resolve it
+with a clock.** Neither a quiet window on this Mac nor a rerun of `paired-cost`
+would have separated −1.09% from +1.01% with any confidence. Instrument the
+work instead, and quote the clock only for its report-digest verdict.
