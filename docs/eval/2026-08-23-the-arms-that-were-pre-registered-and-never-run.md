@@ -239,9 +239,40 @@ this gene (p10, the standard screen, #2344's direct arm) is fieldless.
 **This is not a reason to reverse #2344 and this round does not ask for one.**
 It is a DISCOVERY ESTIMATE by the tool's own label, on a `NoRegression` profile
 whose comment warns its numbers *"are not comparable to `deployment-online`'s"*
-because two entrants hold two chairs instead of six. The disciplined next step
-is the one the run itself prints: rerun with a new seed and `--confirm
-31000000`. Recorded here so the observation is not lost.
+because two entrants hold two chairs instead of six.
+
+### PRE-REGISTRATION: the confirmation the run itself prescribes
+
+Written and committed before the run. A discovery estimate that is left
+unconfirmed is precisely the failure `docs/EVAL_INTEGRITY.md` §4 records — *"the
++45 lived in `docs/GENOME.md` as a bare promoted figure; the refutation reached
+a PR body and never reached the document"* — so rather than hand this one on as
+a striking observation, this round buys the replication. The machine was at
+load average 5 on 18 cores with one job left running.
+
+**Design.** Exactly the `deployment-contested` profile arguments, fixed N = 100,
+no early stopping, on a disjoint prefix declared to the tool:
+
+```
+ai_eval advanced_governor_victory_lanes advanced --pairs 100 --jobs 4 \
+  --seed 39000000 --confirm 31000000 \
+  --players 6 --width 74 --height 46 --city-states 9 --turns 250 --speed online \
+  --map continents --shape planet --poles poles --randomize-civs \
+  --victories science,culture,religious,diplomatic,domination,score \
+  --difficulty prince --deployment-comparison \
+  --field live_target_diplomatic,live_target_culture
+```
+
+`--confirm 31000000` makes the disjointness mechanical rather than a
+convention: `ai_eval` compares the full inclusive prefixes and refuses any
+overlap. **Registered prediction: the direction replicates and the size falls.**
+That is what this ledger's winner's-curse record says happens (+207 → +86,
++92 → +61, +45 → −8), and stating it before the run is the only way the round
+can be wrong about it.
+
+#### Result
+
+<!-- RESULTS-CONFIRM -->
 
 ## Verdict: RETAIN `advanced` — and the −70 to −80 prediction is **half right**
 
