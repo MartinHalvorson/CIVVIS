@@ -84,6 +84,33 @@ of it into one — `military_step` reaches `safe_healing_step` up to three times
 for one unit on one board — so it cannot cost more than a mutex and a pointer
 comparison. It is not separately priced and should not be quoted as a number.
 
+### The paired reading
+
+The tree's own harness gained a `--map` option the same day (#2328); this is
+its method at the standard screen shape — 6p 74×46, 9 city-states, 250 turns,
+online — 8 paired games:
+
+| seeds | baseline | candidate | | |
+| --- | ---: | ---: | ---: | --- |
+| 7311001–08, continents | 513.09 s | 492.56 s | **−4.00%** | host load 17–50 |
+| 7311001–08, `tennis_ball` | 411.13 s | 405.71 s | **−1.32%** | host load 30–44 |
+
+**Same game on every paired seed**, which is the correctness proof this change
+needed: three of the four edits skip work and the fourth changes a container,
+and a matching digest on eight 250-turn games says none of them moved a
+decision.
+
+⚠⚠ **THE TWO ROWS ARE THE SAME BINARY PAIR AND THE SAME EIGHT SEEDS.** The
+only difference is the map, and it is worth **three times the answer** — which
+is the point of the subsection below on what the gate could not see. Quote the
+continents row: it is the shape every `gene_screen` batch pays.
+
+⚠ Taken while sibling agents held this host at load 17–95. `speed_ab.py`
+interleaves the arms seed by seed and flips their order, so the *paired delta*
+survives that and the absolute totals do not. The evidence each change was
+actually decided on is load-independent: the `sample` share table above and
+the allocation counts below.
+
 ### Rejected, with the number: the envelope union as a membership test
 
 The first version of change 3 answered it from that cached union: one binary
@@ -163,6 +190,7 @@ shape, one `sample` each:
 | --- | ---: | ---: |
 | `BTreeSet<Pos>::insert` | 1.29% | **9.02%** |
 | `naval_recon_ship_can_chart` | 1.42% | **13.19%** |
+| **this change, paired, 8 seeds** | **−1.32%** | **−4.00%** |
 
 The hotspot this section is about was **twelve points smaller on the map the
 gate timed than on the map the fleet runs** — invisible to `paired-cost` on
