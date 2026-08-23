@@ -892,6 +892,20 @@ def default_from_columns(last: int | None, prior: int | None,
     return default_from_win_columns(last, prior)
 
 
+def default_on_summary(authority: str) -> str:
+    """The current deployment rule, short enough to sit above the ranking.
+
+    This deliberately renders from the same bars `default_from_columns` uses.
+    A different authority needs its own equally short explanation rather than
+    silently leaving the current one above the table.
+    """
+    if authority != "columns":
+        raise ValueError(f"no concise ranking summary for authority {authority!r}")
+    return (
+        "**Default on:** both newest columns >0; or avg "
+        f">{AVERAGE_BAR:+.0f} with neither <{COLUMN_FLOOR:.0f}; sole reading "
+        f">{SINGLE_COLUMN_BAR:+.0f}; pooled *Diff* <{DIFF_FLOOR:.0f} vetoes."
+    ).replace("-", "−")
 
 
 def profile_of(data: dict) -> dict:
@@ -2431,6 +2445,8 @@ def render(ledger: dict) -> str:
 
     lines = [
         "# The heuristic gene ranking",
+        "",
+        default_on_summary(ledger["rules"]["authority"]),
         "",
         "| Rank | Gene | Description | Default | ± Wins / 10k seats | ± Wins / 10k seats prior | ± Wins / 10k seats third | Total (on) Win rate | Total (off) Win rate | Diff | Posterior (95% CI) | P(>0) | Share Δpp (z) | cost (compute) | cost (time) |",
         "|---:|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|",
