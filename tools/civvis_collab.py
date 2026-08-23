@@ -151,6 +151,22 @@ BRANCH_RE = re.compile(
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,31}$")
 TASK_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,47}$")
 PUSH_GUARD_MARKER = "CIVVIS managed pre-push guard v1"
+#: How `install_push_guard` recognises a hook it is allowed to replace.
+#:
+#: ⚠ It used to be `PUSH_GUARD_MARKER.encode() not in existing`, a bare
+#: substring over the whole file, so any pre-push hook that merely *named* this
+#: guard — "runs before the CIVVIS managed pre-push guard v1", in a comment or
+#: a docstring — was silently overwritten by a refusal that exists to protect
+#: exactly that file. Same shape as the waiver hole in #2341 and the same fix:
+#: the marker counts when it is a line of its own, either a comment or the
+#: constant assignment the versioned guard actually carries (`civvis_push_guard
+#: .py:12`), which is what every managed copy old or new looks like.
+PUSH_GUARD_SIGNATURE = re.compile(
+    r"^(?:[#;][ \t]*|PUSH_GUARD_MARKER[ \t]*=[ \t]*[\"'])"
+    + re.escape(PUSH_GUARD_MARKER)
+    + r"[\"']?[ \t]*$",
+    re.MULTILINE,
+)
 FRESHNESS_MARKER = "CIVVIS managed Git freshness service v1"
 FRESHNESS_SCHEMA = 2
 FRESHNESS_INTERVAL_SECONDS = 300
@@ -164,6 +180,51 @@ FIELD_LABELS = {
     "coordinated": "Coordinated with",
 }
 PLACEHOLDERS = {"", "todo", "tbd", "fill me", "n/a"}
+
+# --- One idiom: writing about a marker must not be using it -----------------
+#
+# `tools/overwrite_guard.py` and `tools/speed_ab.py` learned this the hard way
+# and spell it the same way (#2341): a policy marker is matched **anchored to a
+# line**, and fenced code blocks are blanked before the search, because
+# documenting a gate means showing its markers and showing one is not using it.
+# The gates in this file read the same pull request bodies and had the same
+# defect in a worse form — `parse_claims` matched an ownership line anywhere,
+# at any indentation, and let the *last* one win, so a body that quoted the
+# template replaced the claim the required check then validated.
+#
+# `FENCE` and `prose` are kept byte-identical to the copies in those two
+# modules; `OneIdiomTests` in `tools/test_civvis_collab.py` fails if they drift.
+# The duplication is forced, not sloppy: `overwrite-guard.yml` copies its tool
+# alone to `/tmp` so a branch cannot audition its own judge, which means that
+# copy cannot import anything from this repository.
+FENCE = re.compile(r"^ {0,3}(```+|~~~+)")
+
+
+def prose(body: str) -> str:
+    """The body with fenced code blocks blanked out, line numbering preserved.
+
+    An unterminated fence swallows the rest of the body. For a *waiver* that
+    fails towards fewer waivers, which is safe. Here it is the same direction:
+    every marker this module looks for either grants something (a claim, a
+    coordination number) or is required to be present (a ticked checkbox), and
+    losing one to a runaway fence produces a refusal, never a silent pass.
+    """
+    kept: List[str] = []
+    fence: Optional[str] = None
+    for line in body.splitlines():
+        mark = FENCE.match(line)
+        if fence is None:
+            if mark:
+                fence = mark.group(1)[:3]
+                kept.append("")
+            else:
+                kept.append(line)
+            continue
+        if mark and mark.group(1).startswith(fence):
+            fence = None
+        kept.append("")
+    return "\n".join(kept)
+
 
 # --- R3: an effect size must carry its evidence into the record -------------
 #
@@ -193,23 +254,50 @@ EFFECT_SIZE_RE = re.compile(
     )
     """
 )
+#: Evidence that *states itself*: a seed, an interval, an evidence base, a
+#: p-value. These are what a measurement looks like written down, so they may
+#: sit anywhere in the surrounding paragraph.
+#:
+#: ⚠ `\bCI\b` used to be one of these on its own, meaning "confidence
+#: interval". In this repository `CI` overwhelmingly means *continuous
+#: integration*, so any sentence mentioning the gate that runs on every pull
+#: request waived the evidence gate for a bare figure beside it. It now has to
+#: be followed by the interval it claims to be — `CI [+51, +147]`, `CI of +51`.
+#: Measured before tightening: across all 158 documents `\bCI\b` is the sole
+#: evidence for **zero** effect sizes, so the loose form was carrying nothing
+#: except the escape.
 EVIDENCE_RE = re.compile(
     r"""(?ix)
     (?: \b seeds? \b
-      | \b CI \b | 95\s*% | ±                  # an interval
+      | 95\s*% | ±                                  # an interval
+      | \b CI \b (?:\s*(?:of|at|is|was|[:=]))? \s*   # ...and CI, only when it
+        [\[\(]? \s* [+−-]? \d                       #    carries one
       | \b\d+\s*(?:maps|pairs|games)\b              # the evidence base
-      | \bPR\s*\#?\d+ | \#\d{2,}                    # where it was measured
       | discovery\s+estimate | confirmed\s+on | disjoint
       | p\s*[=<>]                                   # a reported p-value
     )
     """
 )
 
+#: Evidence *by reference*: the pull request or issue the number was measured
+#: in. This is the repository's real convention — "measured +20 Elo causally
+#: (#1469)", "**−41 Elo** — removed (#1504)" — and it is worth keeping, but it
+#: is also the weakest thing on the list, because `#\d{2,}` matches any issue
+#: reference at all. A citation is provenance only when it is *attached to the
+#: figure*, so it gets its own, much narrower window.
+CITATION_RE = re.compile(r"(?ix) (?: \b PR \s* \#?\d+ | \#\d{2,} )")
 
 #: How much added prose around a figure counts as "beside it". Wide enough to
 #: reach the sentence that sources the number, narrow enough that an unrelated
 #: measurement elsewhere in the same hunk cannot launder a bare claim.
 EVIDENCE_WINDOW_CHARS = 320
+
+#: The same distance for a bare citation, where "beside it" has to mean beside
+#: it. Measured over every effect size in `docs/` and `README.md`: at 320 the
+#: four cases whose nearest `#N` is in a *different sentence* about a
+#: *different* measurement all passed; at 120 those are reported and every one
+#: of the eleven honest "(#1504)"-style citations still passes.
+CITATION_WINDOW_CHARS = 120
 
 
 def unevidenced_effect_sizes(added: Dict[str, Sequence[str]]) -> List[str]:
@@ -230,6 +318,12 @@ def unevidenced_effect_sizes(added: Dict[str, Sequence[str]]) -> List[str]:
             start = max(0, match.start() - EVIDENCE_WINDOW_CHARS)
             window = joined[start : match.end() + EVIDENCE_WINDOW_CHARS]
             if EVIDENCE_RE.search(window):
+                continue
+            cited = joined[
+                max(0, match.start() - CITATION_WINDOW_CHARS)
+                : match.end() + CITATION_WINDOW_CHARS
+            ]
+            if CITATION_RE.search(cited):
                 continue
             quoted = joined[max(0, match.start() - 40) : match.end() + 40].strip()
             problems.append(
@@ -282,17 +376,146 @@ def clean_token(value: str) -> str:
     return value.strip().strip("`").strip()
 
 
-def parse_claims(body: str) -> Dict[str, str]:
+#: The ownership block's heading, which `format_claim_body` writes and every
+#: pull request body in the fleet carries as its *first* heading (checked
+#: against all 23 bodies open or merged on 2026-08-23: 23 of 23, with all five
+#: fields inside the section).
+OWNERSHIP_HEADING = re.compile(r"^#{1,6}[ \t]*Ownership claim[ \t]*$",
+                               re.MULTILINE | re.IGNORECASE)
+ANY_HEADING = re.compile(r"^#{1,6}[ \t]", re.MULTILINE)
+
+#: One ownership line, spelled the way `overwrite_guard.WAIVER` and
+#: `speed_ab.ACKNOWLEDGEMENT` spell their markers: anchored to the start of a
+#: line, case-insensitive, a list bullet permitted because this *is* a bulleted
+#: list. Arbitrary indentation is deliberately **not** permitted — four leading
+#: spaces is a Markdown code block, and showing an ownership block is not
+#: making one.
+CLAIM_LINE = re.compile(
+    r"^(?:[-*+][ \t]+)(?P<label>[^:\n]+):[ \t]*(?P<value>.*)$",
+    re.MULTILINE | re.IGNORECASE,
+)
+
+
+def ownership_section(body: str) -> Tuple[str, bool]:
+    """The `## Ownership claim` section of a body, and whether it was found.
+
+    Scoping the parse to the section is what makes the claim unforgeable by
+    text placed elsewhere. When the heading is absent the whole (unfenced) body
+    is scanned, as before, so a hand-written body still works — but the caller
+    is told, and says so, because "just leave the heading out" must not become
+    the next quiet way around this.
+    """
+    text = prose(body)
+    found = OWNERSHIP_HEADING.search(text)
+    if not found:
+        return text, False
+    rest = text[found.end():]
+    nxt = ANY_HEADING.search(rest)
+    return (rest[: nxt.start()] if nxt else rest), True
+
+
+def scan_claims(body: str) -> Tuple[Dict[str, str], List[str], bool]:
+    """Ownership claims, the labels a later line tried to change, and framing.
+
+    Returns ``(claims, shadowed, has_heading)``.
+
+    ⚠ **First occurrence wins.** It used to be the last: `parse_claims`
+    assigned on every match, so a pull request that quoted the template, showed
+    an example block, or explained the protocol silently *replaced* the
+    `Machine ID`, `Claimed paths` and `Coordinated with` that this file's own
+    required check then validated. Both directions were live. A quoted
+    `- Claimed paths: `src/**`` widened the claim until "changed path is not
+    claimed" could not fire at all; a quoted foreign `- Machine ID:` failed an
+    honest pull request against its own branch name.
+
+    ``shadowed`` carries the labels a later line would have overwritten, so the
+    refusal-by-quotation becomes a visible notice instead of a changed verdict.
+    """
     claims: Dict[str, str] = {}
+    shadowed: List[str] = []
     wanted = {label.lower(): key for key, label in FIELD_LABELS.items()}
-    for raw in body.splitlines():
-        match = re.match(r"^\s*-\s*([^:]+):\s*(.*?)\s*$", raw)
-        if not match:
+    section, has_heading = ownership_section(body)
+    for match in CLAIM_LINE.finditer(section):
+        key = wanted.get(match.group("label").strip().lower())
+        if not key:
             continue
-        key = wanted.get(match.group(1).strip().lower())
-        if key:
-            claims[key] = clean_token(match.group(2))
-    return claims
+        value = clean_token(match.group("value"))
+        if key not in claims:
+            claims[key] = value
+        elif value != claims[key]:
+            shadowed.append(FIELD_LABELS[key])
+    return claims, shadowed, has_heading
+
+
+def parse_claims(body: str) -> Dict[str, str]:
+    return scan_claims(body)[0]
+
+
+VALIDATION_HEADING = re.compile(r"^#{1,6}[ \t]*Validation[ \t]*$",
+                                re.MULTILINE | re.IGNORECASE)
+#: A checklist item. Indentation is allowed here, unlike an ownership line: a
+#: nested checkbox is still a checkbox, and this pattern is used to *require*
+#: items, so being generous about what counts cannot manufacture a pass — it
+#: can only fail to notice one, and the fenced-block blanking is what stops a
+#: quoted template from counting.
+CHECKLIST_ITEM = re.compile(r"^[ \t]*[-*+][ \t]*\[(?P<state>[ xX])\]", re.MULTILINE)
+
+
+def required_validation_items() -> int:
+    """How many checklist items the template asks for. Discovered, not listed.
+
+    AGENTS.md: "Discover, never list." The template in `format_claim_body` is
+    the specification of what validation a task owes, so the count comes from
+    it. Adding or removing an item there moves this gate with it.
+    """
+    template = format_claim_body(
+        machine="m", agent="a", task="t", paths=["p"], coordinated=()
+    )
+    return len(CHECKLIST_ITEM.findall(prose(template)))
+
+
+def validation_errors(body: str) -> List[str]:
+    """Why a ready pull request's validation record is not one.
+
+    ⚠ The gate used to be `re.search(r"^\\s*- \\[ \\]", body)` and nothing else,
+    which asked only "are any boxes unticked?". **A body with no Validation
+    section at all therefore passed both `check-pr` and `ship`** — a gate that
+    checks only unticked boxes rewards deleting the boxes. The section and its
+    items are now required, so removing them is the loud failure that ticking
+    them dishonestly at least has to be written down for.
+
+    What is deliberately *not* required is the item **text**. Nine of the
+    fourteen pull requests merged on 2026-08-23 reworded template items while
+    validating honestly ("`cargo test --profile ci --locked` — not run locally,
+    and it cannot be affected: ..."), so matching text would refuse the
+    fleet's real, correct practice. The count is what says the record exists.
+    """
+    text = prose(body)
+    errors: List[str] = []
+    heading = VALIDATION_HEADING.search(text)
+    required = required_validation_items()
+    if not heading:
+        return [
+            "ready PRs must carry a '## Validation' section listing every check "
+            f"that was run; this body has none. The template writes {required} "
+            "items — omitting them is not the same as passing them"
+        ]
+    rest = text[heading.end():]
+    nxt = ANY_HEADING.search(rest)
+    section = rest[: nxt.start()] if nxt else rest
+    items = CHECKLIST_ITEM.findall(section)
+    if len(items) < required:
+        errors.append(
+            f"the Validation section lists {len(items)} checklist item(s); the "
+            f"template asks for {required}. Restore the missing item(s) and "
+            "record the result, or say why one does not apply — do not delete it"
+        )
+    if any(state == " " for state in CHECKLIST_ITEM.findall(text)):
+        errors.append(
+            "ready PRs must complete every validation checkbox; run each listed "
+            "check, then change its '- [ ]' to '- [x]' in this PR body"
+        )
+    return errors
 
 
 MACHINE_REGISTRY = Path("docs/MACHINES.md")
@@ -524,7 +747,20 @@ def validate_pr(
             "python3 tools/civvis_collab.py start <task-slug> --path <path>"
         )
 
-    claims = parse_claims(body)
+    claims, shadowed, has_ownership_heading = scan_claims(body)
+    notes = advisories if advisories is not None else []
+    if not has_ownership_heading:
+        notes.append(
+            "this body has no '## Ownership claim' heading, so the whole body "
+            "was scanned for the claim. Add the heading: it is what stops an "
+            "example block elsewhere in the body from being read as the claim"
+        )
+    for label in shadowed:
+        notes.append(
+            f"a later line also says '{label}:' with a different value and was "
+            "ignored — the first one in the ownership block is the claim. If "
+            "the later line is the real one, move it into the block"
+        )
     for key, label in FIELD_LABELS.items():
         value = claims.get(key, "").strip().lower()
         if value in PLACEHOLDERS:
@@ -555,7 +791,6 @@ def validate_pr(
 
     coordinated = split_coordination(claims.get("coordinated", ""))
     mine = as_range_map(files, ranges)
-    notes = advisories if advisories is not None else []
     for other_number in sorted({*(other_files or {}), *(other_ranges or {})}):
         if other_ranges and other_number in other_ranges:
             theirs = other_ranges[other_number]
@@ -580,6 +815,26 @@ def validate_pr(
             f"edits collide with PR #{other_number} on the same lines of {preview}"
         )
         if other_number in coordinated:
+            # ⚠ This `continue` is the escape that makes the overlap error
+            # optional: one number on one line, no reason and no agreement from
+            # the other side, silences a refusal that exists to stop two
+            # writers rewriting the same lines. It stays a pass, because the
+            # agreement AGENTS.md asks for is made *in the older PR* — often as
+            # a comment — and requiring the other body to name this PR would
+            # refuse honest work: on 2026-08-23, ready #2337 collided with open
+            # #2326 on `docs/ROADMAP.md` and `tools/conflict_hotspots.py`, said
+            # `Coordinated with: #2326`, and #2326's body said `none`.
+            #
+            # What it no longer is, is silent. An unreciprocated claim is now
+            # recorded on the run, so "I said we coordinated" leaves a trace
+            # somebody can check rather than looking exactly like agreement.
+            if number not in (other_coordination or {}).get(other_number, set()):
+                notes.append(
+                    f"{detail} — silenced by 'Coordinated with: #{other_number}' "
+                    f"in this body alone; PR #{other_number} does not name PR "
+                    f"#{number} back. Coordination is agreed in the older PR, so "
+                    "make sure that agreement exists there"
+                )
             continue
         # A newly started task records its existing neighbours automatically.
         # Its older neighbour cannot have known that future PR number when it
@@ -603,11 +858,8 @@ def validate_pr(
                 "to the 'Coordinated with:' line of this PR body"
             )
 
-    if not draft and re.search(r"^\s*- \[ \]", body, re.MULTILINE):
-        errors.append(
-            "ready PRs must complete every validation checkbox; run each listed "
-            "check, then change its '- [ ]' to '- [x]' in this PR body"
-        )
+    if not draft:
+        errors.extend(validation_errors(body))
 
     return errors
 
@@ -1004,11 +1256,13 @@ def ship_pr_errors(pr: Dict[str, Any], branch: str) -> List[str]:
     if str(pr.get("headRefName") or "") != branch:
         errors.append("the current branch does not own the discovered PR")
     body = str(pr.get("body") or "")
-    if re.search(r"^\s*- \[ \]", body, re.MULTILINE):
-        errors.append("complete every PR validation checkbox before shipping")
+    # Same gate as the required check, from the same function: `ship` used to
+    # spell it separately and inherited the same hole — no Validation section
+    # meant nothing to complete, so an unvalidated body shipped.
+    errors.extend(validation_errors(body))
     summary = re.search(
         r"^## What changed\s*(.*?)(?=^## |\Z)",
-        body,
+        prose(body),
         re.MULTILINE | re.DOTALL,
     )
     summary_text = summary.group(1).strip() if summary else ""
@@ -1852,6 +2106,14 @@ def push_guard_paths(repo: Path) -> Tuple[Path, Path]:
     return source, target
 
 
+def is_managed_push_guard(data: bytes) -> bool:
+    """Whether an existing pre-push hook is a copy of this repository's guard.
+
+    Naming the guard is not being it. See `PUSH_GUARD_SIGNATURE`.
+    """
+    return bool(PUSH_GUARD_SIGNATURE.search(data.decode("utf-8", errors="replace")))
+
+
 def install_push_guard(repo: Path) -> Path:
     source, target = push_guard_paths(repo)
     if not source.is_file():
@@ -1861,7 +2123,7 @@ def install_push_guard(repo: Path) -> Path:
         raise CommandError(f"refusing to replace symlinked pre-push hook: {target}")
     if target.exists():
         existing = target.read_bytes()
-        if existing != source_bytes and PUSH_GUARD_MARKER.encode() not in existing:
+        if existing != source_bytes and not is_managed_push_guard(existing):
             raise CommandError(
                 f"refusing to overwrite unmanaged pre-push hook: {target}; "
                 "preserve and resolve that hook explicitly before retrying"
