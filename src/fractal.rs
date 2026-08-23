@@ -47,13 +47,7 @@ impl Fractal {
         Self::new_inner(rng, width, height, grain, false)
     }
 
-    fn new_inner(
-        rng: &mut Rng,
-        width: i32,
-        height: i32,
-        grain: u32,
-        index: bool,
-    ) -> Self {
+    fn new_inner(rng: &mut Rng, width: i32, height: i32, grain: u32, index: bool) -> Self {
         let mut fractal = Fractal {
             values: vec![0.0; LATTICE * (LATTICE + 1)],
             width,
@@ -237,7 +231,10 @@ impl Fractal {
         }
         let len = cells.len();
         if len == 0 {
-            return percents.iter().map(|percent| self.percentile(*percent)).collect();
+            return percents
+                .iter()
+                .map(|percent| self.percentile(*percent))
+                .collect();
         }
         percents
             .iter()
@@ -279,7 +276,11 @@ impl Fractal {
             }
             // Square: the edge midpoints, wrapping in x and folding at the poles.
             for row in (0..=LATTICE).step_by(half) {
-                let offset = if (row / half).is_multiple_of(2) { half } else { 0 };
+                let offset = if (row / half).is_multiple_of(2) {
+                    half
+                } else {
+                    0
+                };
                 for col in (offset..LATTICE).step_by(step) {
                     let mut total = self.get(col + half, row) + self.get(col + LATTICE - half, row);
                     let mut count = 2.0;
@@ -360,8 +361,7 @@ mod tests {
                     .into_iter()
                     .filter(|(dcol, drow)| {
                         let (ncol, nrow) = (col + dcol, row + drow);
-                        (0..38).contains(&nrow)
-                            && field.at((ncol + 60) % 60, nrow) >= threshold
+                        (0..38).contains(&nrow) && field.at((ncol + 60) % 60, nrow) >= threshold
                     })
                     .count();
                 if neighbors >= 2 {

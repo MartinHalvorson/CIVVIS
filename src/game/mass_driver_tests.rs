@@ -82,7 +82,11 @@ fn the_modified_future_era_is_the_only_one_with_a_moon_worth_going_back_to() {
     let ores = modified.moon_ores();
     assert_eq!(
         ores,
-        vec![Name::new("aluminum"), Name::new("iron"), Name::new("uranium")],
+        vec![
+            Name::new("aluminum"),
+            Name::new("iron"),
+            Name::new("uranium")
+        ],
     );
     for ore in ores {
         let spec = modified.rules.resources[&ore]
@@ -115,8 +119,7 @@ fn the_modified_future_era_is_the_only_one_with_a_moon_worth_going_back_to() {
     }
 
     // And a match keeps the era it was played under across a save.
-    let restored: Game =
-        serde_json::from_str(&serde_json::to_string(&modified).unwrap()).unwrap();
+    let restored: Game = serde_json::from_str(&serde_json::to_string(&modified).unwrap()).unwrap();
     assert_eq!(restored.future_era, FutureEra::Modified);
     assert_eq!(restored.moon_deposits, modified.moon_deposits);
     assert!(restored.rules.projects.contains_key("mass_driver"));
@@ -166,15 +169,17 @@ fn a_driver_lands_one_unit_a_turn_and_the_moon_is_that_much_lighter() {
     game.players[0].mass_driver_site = Some(elsewhere);
     let held = game.moon_deposit(iron);
     game.process_mass_drivers(0);
-    assert_eq!(game.moon_deposit(iron), held, "nobody else catches your ore");
+    assert_eq!(
+        game.moon_deposit(iron),
+        held,
+        "nobody else catches your ore"
+    );
     game.players[0].mass_driver_site = Some(site);
 
     // A full warehouse does not spill a shared, finite resource: the ore stays
     // on the Moon for whoever can still hold it.
     let capacity = game.strategic_stockpile_capacity(0);
-    game.players[0]
-        .strategic_resources
-        .insert(iron, capacity);
+    game.players[0].strategic_resources.insert(iron, capacity);
     let full = game.moon_deposit(iron);
     game.process_mass_drivers(0);
     assert_eq!(game.moon_deposit(iron), full);
@@ -293,9 +298,7 @@ fn a_slug_is_refused_in_peace_and_costs_the_metal_it_is_made_of() {
         "one driver, one shot a turn"
     );
     assert!(
-        game.units
-            .get(&defender)
-            .is_none_or(|unit| unit.hp < 100),
+        game.units.get(&defender).is_none_or(|unit| unit.hp < 100),
         "whatever is standing on the tile takes the impact"
     );
     let struck = &game.cities[&theirs];

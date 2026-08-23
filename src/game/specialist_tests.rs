@@ -157,9 +157,7 @@ fn campus_slots_are_worked_and_tier_three_yield_applies_to_every_scientist() {
     assert!(jobs.iter().all(|(_, yields)| yields.science == 3.0));
     assert_eq!(game.city_citizen_plan(city).specialists.len(), 3);
     let expected_delta = 8.0 * game.amenity_yield_mult(&game.cities[&city]);
-    assert!(
-        (game.city_yields(city).science - before_lab.science - expected_delta).abs() < 1e-9
-    );
+    assert!((game.city_yields(city).science - before_lab.science - expected_delta).abs() < 1e-9);
 
     game.cities
         .get_mut(&city)
@@ -284,7 +282,9 @@ fn military_engineers_accelerate_engineering_districts_and_can_finish_them() {
         district: crate::name!("aqueduct"),
         pos: position,
     };
-    assert!(game.district_sites(city, crate::name!("aqueduct")).contains(&position));
+    assert!(game
+        .district_sites(city, crate::name!("aqueduct"))
+        .contains(&position));
     game.cities.get_mut(&city).unwrap().queue = vec![aqueduct.clone()];
 
     let mut england = game.clone();
@@ -313,6 +313,8 @@ fn military_engineers_accelerate_engineering_districts_and_can_finish_them() {
     game.do_contribute_district(0, finisher, city).unwrap();
     assert!(!game.units.contains_key(&finisher));
     assert!(game.cities[&city].queue.is_empty());
-    assert!(game.cities[&city].districts.contains_key(crate::name!("aqueduct")));
+    assert!(game.cities[&city]
+        .districts
+        .contains_key(crate::name!("aqueduct")));
     assert!((game.cities[&city].production - (cost * 0.2 - 1.0)).abs() < 1e-9);
 }

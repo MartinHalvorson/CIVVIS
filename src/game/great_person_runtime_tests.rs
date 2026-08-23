@@ -1,5 +1,5 @@
-use crate::name::Name;
 use super::*;
+use crate::name::Name;
 
 fn scientist_game(seed: u64) -> (Game, u32, Pos) {
     let mut game = Game::new_full(1, 24, 16, seed, 300, 0, false);
@@ -171,7 +171,8 @@ fn named_scientists_grant_exact_buildings_science_and_era_boosts() {
         .contains(&crate::name!("library")));
     assert_eq!(game.players[0].boosted_techs, initial_boosts);
     assert!(
-        (game.city_yields(city).science - initial_science
+        (game.city_yields(city).science
+            - initial_science
             - (game.rules.buildings["library"].yields.science + 1.0))
             .abs()
             < 1e-9
@@ -192,7 +193,8 @@ fn named_scientists_grant_exact_buildings_science_and_era_boosts() {
         .contains(&crate::name!("university")));
     assert_eq!(game.players[0].boosted_techs, initial_boosts);
     assert!(
-        (game.city_yields(city).science - before_newton
+        (game.city_yields(city).science
+            - before_newton
             - (game.rules.buildings["university"].yields.science + 2.0))
             .abs()
             < 1e-9
@@ -518,13 +520,8 @@ fn named_merchants_annex_tiles_and_apply_exact_trade_and_oil_effects() {
         free_trader.pos, game.cities[&merchant_city].pos,
         "the free Trader must obey civilian stacking around the activation city"
     );
-    assert!(
-        (game.city_yields(foreign_city).gold - foreign_origin_gold - 2.0).abs() < 1e-9
-    );
-    assert!(
-        (game.city_yields(merchant_city).gold - merchant_destination_gold - 2.0).abs()
-            < 1e-9
-    );
+    assert!((game.city_yields(foreign_city).gold - foreign_origin_gold - 2.0).abs() < 1e-9);
+    assert!((game.city_yields(merchant_city).gold - merchant_destination_gold - 2.0).abs() < 1e-9);
 
     for position in game.cities[&foreign_city].owned_tiles.clone() {
         let tile = game.map.tiles.get_mut(&position).unwrap();
@@ -573,9 +570,7 @@ fn named_merchants_annex_tiles_and_apply_exact_trade_and_oil_effects() {
     assert_eq!(recruit_current_merchant(&mut game), "john_rockefeller");
     assert_eq!(game.trade_capacity(0), capacity_before_rockefeller);
     assert_eq!(game.players[0].gold, gold_before_rockefeller);
-    assert!(
-        (game.city_yields(merchant_city).gold - rockefeller_route_gold - 4.0).abs() < 1e-9
-    );
+    assert!((game.city_yields(merchant_city).gold - rockefeller_route_gold - 4.0).abs() < 1e-9);
     assert_eq!(
         game.trade_route_yields(0, foreign_city).gold - game.route_yields(foreign_city, false).gold,
         4.0
@@ -642,7 +637,13 @@ fn named_generals_promote_or_form_exactly_one_land_unit() {
 #[test]
 fn named_admirals_apply_exact_unit_trade_building_and_flanking_effects() {
     let mut game = Game::new_full(
-        2, 28, 18, crate::rng::fixture_seed("ADMIRAL", 95_009), 300, 0, false,
+        2,
+        28,
+        18,
+        crate::rng::fixture_seed("ADMIRAL", 95_009),
+        300,
+        0,
+        false,
     );
     let mut cities = Vec::new();
     for pid in 0..2 {
