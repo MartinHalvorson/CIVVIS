@@ -186,9 +186,9 @@ fn a_great_persons_plot_offers_nothing_and_blocks_the_civilian_layer() {
                 && game.rules.is_passable(tile)
                 && !game.tile_is_natural_wonder(tile)
                 && crate::hex::ring(*pos, 1).iter().all(|n| {
-                    game.map
-                        .get(*n)
-                        .is_some_and(|t| !game.rules.is_water(t) && game.rules.is_passable(t))
+                    game.map.get(*n).is_some_and(|t| {
+                        !game.rules.is_water(t) && game.rules.is_passable(t)
+                    })
                 })
         })
         .expect("a standard map has open land with open neighbours");
@@ -199,10 +199,7 @@ fn a_great_persons_plot_offers_nothing_and_blocks_the_civilian_layer() {
         .expect("the ground around a capital should contain an improvable tile");
     let builder = game.spawn_unit("builder", 0, centre);
     let warrior = game.spawn_unit("warrior", 0, centre);
-    assert!(
-        game.can_move(builder, plot),
-        "the plot is open before anyone stands on it"
-    );
+    assert!(game.can_move(builder, plot), "the plot is open before anyone stands on it");
 
     // One of ours: the civilian layer is taken, the military layer is not.
     game.great_person_plots.insert(plot, 0);
@@ -210,31 +207,16 @@ fn a_great_persons_plot_offers_nothing_and_blocks_the_civilian_layer() {
         game.valid_improvements(0, plot).is_empty(),
         "a plot our Great Person holds offers a builder nothing, or it loops on it"
     );
-    assert!(
-        !game.can_move(builder, plot),
-        "and the builder cannot step onto it"
-    );
-    assert!(
-        game.can_move(warrior, plot),
-        "while a military unit still can"
-    );
+    assert!(!game.can_move(builder, plot), "and the builder cannot step onto it");
+    assert!(game.can_move(warrior, plot), "while a military unit still can");
 
     // A rival's, at peace: nothing of ours may enter.
     game.great_person_plots.insert(plot, 1);
     assert!(!game.can_move(builder, plot));
-    assert!(
-        !game.can_move(warrior, plot),
-        "a foreign civilian blocks the step at peace"
-    );
+    assert!(!game.can_move(warrior, plot), "a foreign civilian blocks the step at peace");
     game.at_war.insert((0, 1));
-    assert!(
-        game.can_move(warrior, plot),
-        "and at war the military step is a capture"
-    );
-    assert!(
-        !game.can_move(builder, plot),
-        "which a builder still cannot make"
-    );
+    assert!(game.can_move(warrior, plot), "and at war the military step is a capture");
+    assert!(!game.can_move(builder, plot), "which a builder still cannot make");
 
     // Gone: the plot is ordinary ground again.
     game.great_person_plots.remove(&plot);
@@ -268,15 +250,11 @@ fn terrain_route_does_not_build_through_an_incompatible_feature() {
     game.players[0].techs.insert(crate::name!("mining"));
 
     assert!(
-        !game
-            .valid_improvements(0, site)
-            .contains(&crate::name!("mine")),
+        !game.valid_improvements(0, site).contains(&crate::name!("mine")),
         "Firaxis does not offer the Hills terrain route through Woods"
     );
     game.map.tiles.get_mut(&site).unwrap().feature = None;
-    assert!(game
-        .valid_improvements(0, site)
-        .contains(&crate::name!("mine")));
+    assert!(game.valid_improvements(0, site).contains(&crate::name!("mine")));
 }
 
 #[test]

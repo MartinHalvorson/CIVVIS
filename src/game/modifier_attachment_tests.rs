@@ -48,24 +48,19 @@ fn player_type_attachment_targets_only_that_class_and_reaches_engine_consumers()
     let baseline = game.item_prod_mult(0, city, Some(&builder));
 
     assert_eq!(
-        game.attach_modifier_to_player_type("PLAYERTYPE_MAJOR", "congress_public_works")
-            .unwrap(),
+        game.attach_modifier_to_player_type(
+            "PLAYERTYPE_MAJOR",
+            "congress_public_works"
+        )
+        .unwrap(),
         2
     );
-    assert_eq!(
-        game.player_modifier_effect(0, "builder_production_pct"),
-        25.0
-    );
+    assert_eq!(game.player_modifier_effect(0, "builder_production_pct"), 25.0);
     assert_eq!(game.policy_effect(0, "builder_production_pct"), 25.0);
-    assert_eq!(
-        game.item_prod_mult(0, city, Some(&builder)),
-        baseline + 0.25
-    );
-    for player in game
-        .players
-        .iter()
-        .filter(|player| player.is_minor || player.is_barbarian || player.is_free_city)
-    {
+    assert_eq!(game.item_prod_mult(0, city, Some(&builder)), baseline + 0.25);
+    for player in game.players.iter().filter(|player| {
+        player.is_minor || player.is_barbarian || player.is_free_city
+    }) {
         assert!(player.attached_modifiers.is_empty());
     }
 
@@ -130,7 +125,8 @@ fn runtime_modifier_attachments_survive_save_round_trip() {
     game.attach_modifier_to_player(0, "congress_public_works")
         .unwrap();
 
-    let restored: Game = serde_json::from_str(&serde_json::to_string(&game).unwrap()).unwrap();
+    let restored: Game =
+        serde_json::from_str(&serde_json::to_string(&game).unwrap()).unwrap();
     assert!(restored.players[0]
         .attached_modifiers
         .contains("congress_public_works"));

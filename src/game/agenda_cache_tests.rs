@@ -14,11 +14,7 @@ fn batched_agenda_metrics_preserve_every_pairwise_stance() {
         if game.agenda_of(observer).is_none() {
             continue;
         }
-        for subject in majors
-            .iter()
-            .copied()
-            .filter(|subject| *subject != observer)
-        {
+        for subject in majors.iter().copied().filter(|subject| *subject != observer) {
             let opinion = game.agenda_opinion(observer, subject);
             let stance = if opinion >= 15.0 {
                 1

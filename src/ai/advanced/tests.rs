@@ -787,6 +787,7 @@ fn a_bleeding_city_is_besieged_whatever_the_fog_says() {
     assert!(!bridged.base.garrison_under_fire);
 }
 
+
 /// ★★★★ One barbarian scout pinned a whole opening (civvis-20260816T151716Z
 /// t15–t35: the settler held fourteen turns, our scout fled every frame,
 /// warrior and builder went nowhere). See `barbarian_scouts_are_scouts`.
@@ -880,6 +881,7 @@ fn a_barbarian_scout_is_not_a_threat_the_settler_prices() {
     assert!(AdvancedAi::new().barbarian_scouts_are_scouts);
     assert!(!AdvancedAi::legacy().barbarian_scouts_are_scouts);
 }
+
 
 #[test]
 fn live_siege_response_replaces_a_queued_siege_with_a_local_defender() {
@@ -996,6 +998,7 @@ fn live_siege_response_starts_a_local_defender_after_a_queue_release() {
     live.advanced_production(&mut game, 0, &plan, false);
     assert_eq!(game.cities[&city].queue.first(), Some(&defender));
 }
+
 
 #[test]
 fn the_settler_build_is_never_paid_for_ground_the_march_refuses() {
@@ -2299,6 +2302,7 @@ fn advanced_formations_link_breach_support_to_a_compatible_escort() {
     assert_eq!(game.units[&cavalry].linked_to, None);
 }
 
+
 /// The same separation applies on land, where the current live game was
 /// repeatedly issuing `ENTER_FORMATION`, `EXIT_FORMATION`, then a delayed
 /// march.  A deployment controller keeps the native gene off and instead
@@ -3459,6 +3463,7 @@ mod flagged_gene_repairs {
             "a granary the capped cities can already order is production's job"
         );
     }
+
 }
 
 fn found_test_city(game: &mut Game, pid: usize) -> u32 {
@@ -3779,6 +3784,7 @@ fn a_religion_empire_can_reach_the_campus_policy_multipliers() {
         "a Religion empire holding a Campus must be able to multiply it: {treated:?}"
     );
 }
+
 
 /// The multipliers are Campus cards. A seat with no Campus must not spend a
 /// slot on one, or the treatment buys a religion empire nothing and costs
@@ -16673,19 +16679,11 @@ fn faith_spending_never_buys_walls_and_ignores_gold_actions() {
     );
 
     assert!(
-        !game.cities[&city]
-            .buildings
-            .contains(&crate::name!("walls")),
+        !game.cities[&city].buildings.contains(&crate::name!("walls")),
         "the Faith spender must not buy a city defence the host will not sell"
     );
-    assert_eq!(
-        game.players[0].faith, 200.0,
-        "no Faith spent on a refused item"
-    );
-    assert_eq!(
-        game.players[0].gold, 10_000.0,
-        "and the Gold reserve is untouched"
-    );
+    assert_eq!(game.players[0].faith, 200.0, "no Faith spent on a refused item");
+    assert_eq!(game.players[0].gold, 10_000.0, "and the Gold reserve is untouched");
 }
 
 #[test]
@@ -20744,6 +20742,12 @@ fn quietest_first(g: &Game, mut candidates: Vec<Pos>) -> Vec<Pos> {
     candidates.sort_by_key(|pos| (std::cmp::Reverse(organic_clearance(g, *pos)), *pos));
     candidates
 }
+
+
+
+
+
+
 
 #[test]
 fn armies_and_fleets_receive_domain_specific_shared_orders() {

@@ -398,10 +398,7 @@ impl<'scope> SeatPlannerPool<'scope> {
                     actions,
                     unit_delta,
                 } => {
-                    assert!(
-                        sequence < count,
-                        "planning worker returned an invalid sequence"
-                    );
+                    assert!(sequence < count, "planning worker returned an invalid sequence");
                     assert!(
                         plans[sequence].is_none(),
                         "planning worker returned sequence {sequence} twice"
@@ -409,10 +406,7 @@ impl<'scope> SeatPlannerPool<'scope> {
                     plans[sequence] = Some((seat, actions, unit_delta));
                 }
                 CycleEvent::Cancelled { sequence } => {
-                    assert!(
-                        sequence < count,
-                        "planning worker cancelled an invalid sequence"
-                    );
+                    assert!(sequence < count, "planning worker cancelled an invalid sequence");
                 }
                 CycleEvent::Panicked(payload) => {
                     if first_panic.is_none() {
@@ -493,7 +487,9 @@ fn run_simultaneous<A: Ai + Send>(g: &mut Game, ais: &mut [A], jobs: usize) -> S
     let workers = jobs.max(1).min(ais.len().max(1));
     if workers == 1 {
         while g.winner.is_none() && g.turn <= g.max_turns {
-            if !step_cycle_with_planner(g, &mut census, |prepared| plan_serially(ais, prepared)) {
+            if !step_cycle_with_planner(g, &mut census, |prepared| {
+                plan_serially(ais, prepared)
+            }) {
                 break;
             }
         }
@@ -763,7 +759,8 @@ fn step_cycle_pipelined(
             // A seat the cursor reaches twice in one cycle spent its plan on
             // the first visit; only an unconsumed, unannounced seat after
             // `PrepareDone` is truly unplanned.
-            if consumed.contains(&seat) || (inbox.prepare_done && !inbox.announced.contains(&seat))
+            if consumed.contains(&seat)
+                || (inbox.prepare_done && !inbox.announced.contains(&seat))
             {
                 break None;
             }
@@ -828,7 +825,11 @@ fn step_cycle_pipelined(
 /// turns prepared private worlds into ordered seat plans. Preparation and
 /// commit deliberately stay here on the simulation thread; only this seam is
 /// concurrent, so worker scheduling cannot affect an action or RNG draw.
-fn step_cycle_with_planner<F>(g: &mut Game, census: &mut SimultaneousCensus, plan: F) -> bool
+fn step_cycle_with_planner<F>(
+    g: &mut Game,
+    census: &mut SimultaneousCensus,
+    plan: F,
+) -> bool
 where
     F: FnOnce(Vec<(usize, Game)>) -> Vec<(usize, Vec<Action>, UnitDelta)>,
 {
@@ -999,10 +1000,7 @@ mod tests {
         let delta = branch.units.delta_since(&before);
         assert_eq!(delta.len(), 1);
         assert_eq!(delta.changed_ids().copied().collect::<Vec<_>>(), vec![id]);
-        assert_eq!(
-            before.get(&id).expect("snapshot remains immutable").hp,
-            before_hp
-        );
+        assert_eq!(before.get(&id).expect("snapshot remains immutable").hp, before_hp);
         assert!(delta.conflicts_with(&game.units).is_empty());
 
         let mut live = game;
@@ -1095,7 +1093,8 @@ mod tests {
         let census_serial = run_structured(&mut serial, &mut ais).expect("a census");
         let mut fanned = simultaneous_game(9, 40);
         let mut ais = BasicAi::fleet(&fanned);
-        let census_fanned = run_structured_jobs(&mut fanned, &mut ais, 4).expect("a census");
+        let census_fanned =
+            run_structured_jobs(&mut fanned, &mut ais, 4).expect("a census");
         assert_eq!(
             serde_json::to_value(&serial).unwrap(),
             serde_json::to_value(&fanned).unwrap()
@@ -1123,7 +1122,8 @@ mod tests {
             let mut fanned = Game::new(4, 32, 22, seed, 60, 3);
             fanned.turn_structure = TurnStructure::Simultaneous;
             let mut ais = BasicAi::fleet(&fanned);
-            let census_fanned = run_structured_jobs(&mut fanned, &mut ais, 3).expect("a census");
+            let census_fanned =
+                run_structured_jobs(&mut fanned, &mut ais, 3).expect("a census");
             assert_eq!(
                 serde_json::to_value(&serial).unwrap(),
                 serde_json::to_value(&fanned).unwrap(),
@@ -1250,7 +1250,8 @@ mod tests {
     #[test]
     fn turn_structure_survives_a_save_round_trip() {
         let g = simultaneous_game(5, 10);
-        let restored: Game = serde_json::from_str(&serde_json::to_string(&g).unwrap()).unwrap();
+        let restored: Game =
+            serde_json::from_str(&serde_json::to_string(&g).unwrap()).unwrap();
         assert_eq!(restored.turn_structure, TurnStructure::Simultaneous);
         let mut raw: serde_json::Value =
             serde_json::from_str(&serde_json::to_string(&g).unwrap()).unwrap();

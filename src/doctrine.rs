@@ -856,8 +856,7 @@ impl DoctrineLedger {
     pub fn profile(&self) -> DoctrineProfile {
         let obs = &self.observations;
         let per_turn = |total: f64| (obs.turns > 0).then(|| total / obs.turns as f64);
-        let per_contact =
-            |total: f64| (obs.contact_turns > 0).then(|| total / obs.contact_turns as f64);
+        let per_contact = |total: f64| (obs.contact_turns > 0).then(|| total / obs.contact_turns as f64);
         DoctrineProfile {
             concentration: per_contact(obs.local_ratio),
             dispersion: per_turn(obs.dispersion),
@@ -870,7 +869,8 @@ impl DoctrineLedger {
             foot_arrival: spread(obs.foot_n, obs.foot_sum, obs.foot_sq),
             absent: (obs.deployed > 0.0).then(|| obs.absent / obs.deployed),
             vanguard: (obs.vanguard_n > 0.0).then(|| obs.vanguard_sum / obs.vanguard_n),
-            vanguard_clean: (obs.vanguard_n > 0.0).then(|| obs.vanguard_clean / obs.vanguard_n),
+            vanguard_clean: (obs.vanguard_n > 0.0)
+                .then(|| obs.vanguard_clean / obs.vanguard_n),
         }
     }
 }
@@ -1081,14 +1081,7 @@ fn play_position(
 
     observe(&previous, &game, &mut ledgers);
     note_arrivals(&previous, &game, step, &mut arrival);
-    note_vanguard(
-        &previous,
-        &game,
-        &roster,
-        0,
-        &mut vanguard_taken,
-        &mut ledgers,
-    );
+    note_vanguard(&previous, &game, &roster, 0, &mut vanguard_taken, &mut ledgers);
     while game.winner.is_none() && game.turn < deadline {
         let pid = game.current;
         if pid < 2 {
@@ -1104,14 +1097,7 @@ fn play_position(
         observe(&previous, &game, &mut ledgers);
         note_arrivals(&previous, &game, step, &mut arrival);
         let fallen = roster.len() - previous.len();
-        note_vanguard(
-            &previous,
-            &game,
-            &roster,
-            fallen,
-            &mut vanguard_taken,
-            &mut ledgers,
-        );
+        note_vanguard(&previous, &game, &roster, fallen, &mut vanguard_taken, &mut ledgers);
         // Nothing left to measure once a side has no unit standing.
         if [0usize, 1]
             .iter()
@@ -1453,9 +1439,7 @@ pub fn build(spec: &Position, seed: u64) -> Option<Game> {
             // can never end a position before the ledger's deadline does. A
             // position is read at `spec.turns` and never asks who "won", so
             // the two clocks must not be allowed to disagree.
-            turn_limit: *crate::setup::TacticsRules::TURN_LIMITS
-                .last()
-                .expect("turn ladder"),
+            turn_limit: *crate::setup::TacticsRules::TURN_LIMITS.last().expect("turn ladder"),
             // And no era choice: a position deploys its exact force by hand,
             // so a rolled or pooled era would re-arm the experiment.
             era: crate::setup::TacticsEra::Start,
@@ -1590,7 +1574,8 @@ pub mod paired {
             return (differences.first().copied().unwrap_or(0.0), 0.0, 0.0, 1.0);
         }
         let mean = differences.iter().sum::<f64>() / n as f64;
-        let variance = differences.iter().map(|d| (d - mean).powi(2)).sum::<f64>() / (n - 1) as f64;
+        let variance =
+            differences.iter().map(|d| (d - mean).powi(2)).sum::<f64>() / (n - 1) as f64;
         let stderr = (variance / n as f64).sqrt();
         if stderr <= 0.0 {
             // No spread at all. A zero mean is the control's exact null and
@@ -1805,10 +1790,7 @@ mod tests {
     /// confident null.
     #[test]
     fn a_correlation_with_no_spread_is_nothing_rather_than_zero() {
-        assert!(
-            paired::correlation(&[1.0, 2.0], &[1.0, 2.0]).is_none(),
-            "too few pairs"
-        );
+        assert!(paired::correlation(&[1.0, 2.0], &[1.0, 2.0]).is_none(), "too few pairs");
         assert!(
             paired::correlation(&[1.0, 1.0, 1.0], &[1.0, 2.0, 3.0]).is_none(),
             "a constant x has no correlation, not a zero one"
@@ -1967,11 +1949,7 @@ mod tests {
             assert!(!result.skipped);
             assert_eq!(result.a.kills, result.b.losses, "{}", spec.id);
             assert_eq!(result.b.kills, result.a.losses, "{}", spec.id);
-            assert!(
-                (result.a.damage_dealt - result.b.damage_taken).abs() < 1e-9,
-                "{}",
-                spec.id
-            );
+            assert!((result.a.damage_dealt - result.b.damage_taken).abs() < 1e-9, "{}", spec.id);
             assert!(
                 (result.a.material_destroyed - result.b.material_lost).abs() < 1e-9,
                 "{}",
@@ -2016,12 +1994,7 @@ mod tests {
 
         let result = matched_position(&POSITIONS[0], 41, "advanced", "advanced", &builtin_ai);
         let profile = result.a.profile();
-        for share in [
-            profile.focus,
-            profile.ground,
-            profile.screen,
-            profile.contact,
-        ] {
+        for share in [profile.focus, profile.ground, profile.screen, profile.contact] {
             if let Some(value) = share {
                 assert!((0.0..=1.0).contains(&value), "share out of range: {value}");
             }
@@ -2067,15 +2040,9 @@ mod tests {
     #[test]
     fn the_sign_test_does_not_overflow_into_a_confident_null() {
         let p = paired::sign_test(1_122, 317);
-        assert!(
-            p.is_finite() && p < 1e-6,
-            "overwhelming split reported p = {p}"
-        );
+        assert!(p.is_finite() && p < 1e-6, "overwhelming split reported p = {p}");
         assert!((paired::sign_test(0, 0) - 1.0).abs() < 1e-12);
-        assert!(
-            (paired::sign_test(5, 5) - 1.0).abs() < 1e-9,
-            "an even split is p = 1"
-        );
+        assert!((paired::sign_test(5, 5) - 1.0).abs() < 1e-9, "an even split is p = 1");
         // Either side of the exact/approximate switch, on the same shape.
         let exact = paired::sign_test(600, 400);
         let approximate = paired::sign_test(601, 400);

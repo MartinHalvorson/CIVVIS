@@ -125,6 +125,7 @@ fn only_the_live_bridge_discounts_a_stranded_settler() {
     assert!(!live.settler_founds_when_stalled);
 }
 
+
 /// ⚠ The whole point: a Campus with a hundred turns left must not be priced
 /// as if the game were nearly over. The old game-fraction horizon said 0.40
 /// at turn 150 of 250; the payback horizon says full value, and only ramps
@@ -208,6 +209,7 @@ fn only_the_two_trees_are_exempt_from_the_half_empire_cliff() {
     let stock = AdvancedAi::new();
     assert!(!stock.culture_coverage);
 }
+
 
 /// Off by default, set only by the live bridge, holdable off on its own.
 #[test]
@@ -299,6 +301,8 @@ fn the_housing_goal_fires_only_while_the_ceiling_is_being_paid() {
     let legacy = AdvancedAi::legacy();
     assert_eq!(legacy.unreachable_housing_tech(&game, 0), None);
 }
+
+
 
 /// Off by default, set only by the live bridge, holdable off on its own —
 /// the recon-replacement arm follows the same contract as every other

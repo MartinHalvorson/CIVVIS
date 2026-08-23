@@ -24,10 +24,7 @@ fn replaceable_parts_replaces_the_feudalism_farm_rule_rather_than_stacking() {
         tile.pillaged = false;
         tile.improvement = Some(crate::name!("farm"));
     }
-    let food = |game: &Game| {
-        game.player_tile_yields(0, subject, &game.map.tiles[&subject])
-            .food
-    };
+    let food = |game: &Game| game.player_tile_yields(0, subject, &game.map.tiles[&subject]).food;
     let bare = food(&game);
 
     // Before Feudalism a Farm gets nothing from its neighbours.
@@ -41,14 +38,8 @@ fn replaceable_parts_replaces_the_feudalism_farm_rule_rather_than_stacking() {
     // Farms_MechanizedAdjacency: +1 per Farm. It carries PrereqTech
     // REPLACEABLE_PARTS and the Medieval row carries the same tech as its
     // ObsoleteTech, so the total is four rather than four plus two.
-    game.players[0]
-        .techs
-        .insert(crate::name!("replaceable_parts"));
-    assert_eq!(
-        food(&game) - bare,
-        4.0,
-        "the Feudalism rule is obsolete, not additive"
-    );
+    game.players[0].techs.insert(crate::name!("replaceable_parts"));
+    assert_eq!(food(&game) - bare, 4.0, "the Feudalism rule is obsolete, not additive");
 }
 
 fn one_city() -> (Game, u32) {
@@ -82,9 +73,7 @@ fn unit_upkeep_uses_per_type_formation_and_policy_values() {
     assert_eq!(game.rules.units["giant_death_robot"].maintenance, 15.0);
     assert_eq!(game.unit_gold_maintenance(0), 4.0);
 
-    game.players[0]
-        .policies
-        .insert(crate::name!("conscription"));
+    game.players[0].policies.insert(crate::name!("conscription"));
     assert_eq!(game.unit_gold_maintenance(0), 2.0);
     game.units.get_mut(&swordsman).unwrap().formation = 2;
     assert_eq!(game.unit_gold_maintenance(0), 3.0);

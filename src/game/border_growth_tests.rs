@@ -301,15 +301,11 @@ fn plot_purchase_curve_matches_measured_gathering_storm_prices() {
     let techs: Vec<Name> = game.rules.techs.keys().take(11).cloned().collect();
     let civics: Vec<Name> = game.rules.civics.keys().take(11).cloned().collect();
     game.players[0].techs.extend(techs.iter().take(8).cloned());
-    game.players[0]
-        .civics
-        .extend(civics.iter().take(8).cloned());
+    game.players[0].civics.extend(civics.iter().take(8).cloned());
     assert_eq!(game.tile_purchase_cost(0, 50.0), 180.0);
     assert_eq!(game.tile_purchase_cost(0, 75.0), 272.0);
 
-    game.players[0]
-        .civics
-        .extend(civics.iter().take(11).cloned());
+    game.players[0].civics.extend(civics.iter().take(11).cloned());
     assert_eq!(game.tile_purchase_cost(0, 50.0), 204.0);
     assert_eq!(game.tile_purchase_cost(0, 75.0), 308.0);
 
@@ -338,7 +334,9 @@ fn buying_a_plot_extends_only_that_citys_connected_three_ring_border() {
         .unwrap();
     let disconnected_third = ring(&game, center, 3)
         .into_iter()
-        .find(|position| *position != connected_third && !game.nbrs(*position).contains(&second))
+        .find(|position| {
+            *position != connected_third && !game.nbrs(*position).contains(&second)
+        })
         .unwrap();
 
     assert_eq!(game.plot_purchase_cost(0, city, second), Some(50.0));

@@ -88,7 +88,8 @@ fn spies_train_to_capacity_assign_run_sources_and_survive_saves() {
     let ends = game.spies[&spy].mission.as_ref().unwrap().ends;
     assert_eq!(ends, game.turn + 8);
 
-    let mut restored: Game = serde_json::from_str(&serde_json::to_string(&game).unwrap()).unwrap();
+    let mut restored: Game =
+        serde_json::from_str(&serde_json::to_string(&game).unwrap()).unwrap();
     assert_eq!(restored.spies[&spy].mission, game.spies[&spy].mission);
     restored.turn = ends;
     restored.process_spies(0);
@@ -343,15 +344,11 @@ fn every_targeted_spy_operation_has_an_executable_effect() {
     game.apply_spy_mission_effect(spy_id, &mission("siphon_funds", commercial), true);
     assert!(game.players[0].gold > attacker_gold);
     game.apply_spy_mission_effect(spy_id, &mission("steal_tech_boost", campus), true);
-    assert!(game.players[0]
-        .boosted_techs
-        .contains(&crate::name!("writing")));
+    assert!(game.players[0].boosted_techs.contains(&crate::name!("writing")));
     game.apply_spy_mission_effect(spy_id, &mission("great_work_heist", theater), true);
     assert_eq!(game.players[0].counters["great_work:writing"], 1);
     game.apply_spy_mission_effect(spy_id, &mission("sabotage_production", industrial), true);
-    assert!(game.cities[&target]
-        .pillaged_buildings
-        .contains(&Name::new("workshop")));
+    assert!(game.cities[&target].pillaged_buildings.contains(&Name::new("workshop")));
     let partisans_before = game
         .units
         .values()
@@ -496,10 +493,7 @@ fn a_civilization_cannot_imprison_its_own_spy() {
             spy.captured_by, None,
             "there is no counterparty to ransom a spy back from yourself"
         );
-        assert!(
-            spy.mission.is_none(),
-            "the operation has nothing left to rob"
-        );
+        assert!(spy.mission.is_none(), "the operation has nothing left to rob");
         assert!(
             spy.ready_turn < u32::MAX,
             "the operative comes home usable rather than pinning its slot shut"

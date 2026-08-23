@@ -173,14 +173,14 @@ pub fn decision_features(g: &Game, pid: usize) -> Vec<f32> {
 #[cfg(test)]
 mod tests {
     use super::{decision_features, WIDTH};
+    use crate::evolve::features;
+    use crate::game::Game;
     #[cfg(feature = "closed-experiments")]
     use crate::action_space::{kind_name, legal_encoded};
     #[cfg(feature = "closed-experiments")]
     use crate::ai::{Ai, BasicAi};
-    use crate::evolve::features;
     #[cfg(feature = "closed-experiments")]
     use crate::game::Action;
-    use crate::game::Game;
     #[cfg(feature = "closed-experiments")]
     use std::collections::BTreeMap;
 

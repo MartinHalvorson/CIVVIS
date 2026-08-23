@@ -45,9 +45,7 @@ fn city_state_starting_defenses_follow_difficulty() {
         assert_eq!(army.len(), warriors, "{difficulty} city-state army");
         assert!(army.iter().all(|unit| unit.kind == "warrior"));
         assert_eq!(
-            game.cities[&city]
-                .buildings
-                .contains(&crate::name!("walls")),
+            game.cities[&city].buildings.contains(&crate::name!("walls")),
             walls,
             "{difficulty} starting Walls"
         );

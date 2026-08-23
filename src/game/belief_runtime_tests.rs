@@ -233,24 +233,11 @@ fn the_top_difficulties_also_spawn_barbarians_twice_as_often() {
     // top band does not just field bigger parties -- it assembles them
     // twice as often, on the same band boundary the force scale uses.
     let rules = crate::rules::Rules::embedded();
-    for difficulty in [
-        "settler",
-        "chieftain",
-        "warlord",
-        "prince",
-        "king",
-        "emperor",
-    ] {
-        assert_eq!(
-            rules.difficulties[difficulty].barb_spawn_scale, 1.0,
-            "{difficulty}"
-        );
+    for difficulty in ["settler", "chieftain", "warlord", "prince", "king", "emperor"] {
+        assert_eq!(rules.difficulties[difficulty].barb_spawn_scale, 1.0, "{difficulty}");
     }
     for difficulty in ["immortal", "deity"] {
-        assert_eq!(
-            rules.difficulties[difficulty].barb_spawn_scale, 0.5,
-            "{difficulty}"
-        );
+        assert_eq!(rules.difficulties[difficulty].barb_spawn_scale, 0.5, "{difficulty}");
     }
 
     // And it reaches the map: a Scout report starts a raid, and its camp
@@ -276,10 +263,7 @@ fn the_top_difficulties_also_spawn_barbarians_twice_as_often() {
     };
     let deity = rearm("deity");
     let prince = rearm("prince");
-    assert!(
-        deity < prince,
-        "Deity re-arms sooner than Prince ({deity} vs {prince})"
-    );
+    assert!(deity < prince, "Deity re-arms sooner than Prince ({deity} vs {prince})");
 }
 
 #[test]
@@ -300,10 +284,7 @@ fn difficulty_scales_one_reported_barbarian_raid_party() {
         ("immortal", 1.5),
         ("deity", 1.5),
     ] {
-        assert_eq!(
-            rules.difficulties[difficulty].barb_force_scale, scale,
-            "{difficulty}"
-        );
+        assert_eq!(rules.difficulties[difficulty].barb_force_scale, scale, "{difficulty}");
     }
 
     // And the scale reaches the field rather than sitting in the data: one
@@ -359,9 +340,11 @@ fn barbarian_camps_field_half_the_leaders_technology() {
     // A leader deep in the tree arms the camps with gunpowder, and the
     // pool never fields sea, air, support, or unique units.
     let ranked: Vec<Name> = {
-        let mut ranked: Vec<(&Name, &crate::rules::TechSpec)> = game.rules.techs.iter().collect();
-        ranked
-            .sort_by(|a, b| (a.1.era, a.1.cost as i64, a.0).cmp(&(b.1.era, b.1.cost as i64, b.0)));
+        let mut ranked: Vec<(&Name, &crate::rules::TechSpec)> =
+            game.rules.techs.iter().collect();
+        ranked.sort_by(|a, b| {
+            (a.1.era, a.1.cost as i64, a.0).cmp(&(b.1.era, b.1.cost as i64, b.0))
+        });
         ranked.iter().map(|(name, _)| **name).collect()
     };
     for tech in ranked.iter().take(70) {
@@ -483,7 +466,8 @@ fn wmd_strikes_launch_from_range_consume_devices_and_leave_fallout() {
     );
     for position in game.wdisk(target, spec.blast_radius) {
         assert!(
-            game.map.tiles[&position].fallout_until >= game.turn + spec.fallout_duration,
+            game.map.tiles[&position].fallout_until
+                >= game.turn + spec.fallout_duration,
             "every blast tile carries fallout"
         );
     }
@@ -600,10 +584,7 @@ fn a_nuclear_submarine_carries_a_device_past_its_launch_city_reach() {
     assert_eq!(record.platform, "nuclear_submarine");
     assert_eq!(record.launched_from, boat);
     // The stockpile, not the boat, is what a launch spends.
-    assert_eq!(
-        game.players[0].counters["project_effect:nuclear_devices"],
-        1
-    );
+    assert_eq!(game.players[0].counters["project_effect:nuclear_devices"], 1);
     assert!(
         game.units.contains_key(&submarine),
         "the boat survives its own launch"
@@ -895,6 +876,7 @@ fn fallout_wounds_what_stands_in_it_and_stops_it_healing() {
     assert_eq!(game.units[&survivor].hp, 60, "decayed fallout is harmless");
 }
 
+
 fn place_district(game: &mut Game, city: u32, district: &str) -> Pos {
     let center = game.cities[&city].pos;
     let position = game.cities[&city]
@@ -948,22 +930,14 @@ fn every_district_pays_the_route_yields_its_shipped_row_names() {
         let mut probe = game.clone();
         place_district(&mut probe, dest, district);
         let domestic = probe.route_yields(dest, true);
-        assert_eq!(
-            domestic.food - base_domestic.food,
-            food,
-            "{district} domestic Food"
-        );
+        assert_eq!(domestic.food - base_domestic.food, food, "{district} domestic Food");
         assert_eq!(
             domestic.production - base_domestic.production,
             production,
             "{district} domestic Production"
         );
         let abroad = probe.route_yields(dest, false);
-        assert_eq!(
-            abroad.gold - base_international.gold,
-            gold,
-            "{district} Gold"
-        );
+        assert_eq!(abroad.gold - base_international.gold, gold, "{district} Gold");
         assert_eq!(abroad.science, science, "{district} Science");
         assert_eq!(abroad.faith, faith, "{district} Faith");
         assert_eq!(abroad.culture, culture, "{district} Culture");
@@ -978,11 +952,7 @@ fn every_district_pays_the_route_yields_its_shipped_row_names() {
         let campus = place_district(&mut probe, dest, "campus");
         let paid = probe.route_yields(dest, true);
         probe.map.tiles.get_mut(&campus).unwrap().pillaged = true;
-        assert_eq!(
-            probe.route_yields(dest, true),
-            paid,
-            "a pillaged Campus still pays"
-        );
+        assert_eq!(probe.route_yields(dest, true), paid, "a pillaged Campus still pays");
         assert_eq!(probe.route_yields(dest, false).science, 1.0);
     }
 
@@ -1003,11 +973,7 @@ fn every_district_pays_the_route_yields_its_shipped_row_names() {
                 &base_international
             };
             let got = probe.route_yields(dest, domestic);
-            assert_eq!(
-                got.food - base.food,
-                food,
-                "{district} Food domestic={domestic}"
-            );
+            assert_eq!(got.food - base.food, food, "{district} Food domestic={domestic}");
             assert_eq!(
                 got.production - base.production,
                 production,
@@ -1043,7 +1009,8 @@ fn every_district_pays_the_route_yields_its_shipped_row_names() {
 fn establish_religion(game: &mut Game, city: u32, beliefs: &[&str]) -> String {
     let religion = "Test Faith".to_string();
     game.players[0].religion = Some(religion.clone());
-    game.players[0].religion_beliefs = beliefs.iter().map(|belief| belief.to_string()).collect();
+    game.players[0].religion_beliefs =
+        beliefs.iter().map(|belief| belief.to_string()).collect();
     game.cities
         .get_mut(&city)
         .unwrap()
@@ -1066,7 +1033,8 @@ fn the_pantheon_charges_exactly_what_it_asked_for() {
     let belief = game.rules.beliefs.pantheon.keys().next().unwrap().clone();
     assert!(game.do_choose_pantheon(0, &belief).is_ok());
     assert_eq!(
-        game.players[0].faith, 0.5,
+        game.players[0].faith,
+        0.5,
         "13 faith minus Online's 12.5 price; a bare 25.0 would leave -12"
     );
 
@@ -1075,14 +1043,7 @@ fn the_pantheon_charges_exactly_what_it_asked_for() {
     standard.game_speed = crate::setup::GameSpeed::Standard;
     standard.players[0].pantheon = None;
     standard.players[0].faith = 30.0;
-    let belief = standard
-        .rules
-        .beliefs
-        .pantheon
-        .keys()
-        .next()
-        .unwrap()
-        .clone();
+    let belief = standard.rules.beliefs.pantheon.keys().next().unwrap().clone();
     assert!(standard.do_choose_pantheon(0, &belief).is_ok());
     assert_eq!(standard.players[0].faith, 5.0);
 }
@@ -1112,7 +1073,8 @@ fn every_pantheon_price_reads_the_same_helper() {
             // `assert_eq!(pantheon_faith_cost(), 25.0)` is exactly the check
             // that pins Standard, and flagging it would make this scan
             // unsatisfiable. Skip assertions and the constant's own definition.
-            if code.contains("assert") || code.contains("PANTHEON_FAITH_STANDARD") {
+            if code.contains("assert") || code.contains("PANTHEON_FAITH_STANDARD")
+            {
                 continue;
             }
             assert!(
@@ -1311,7 +1273,9 @@ fn city_states_cannot_claim_pantheons_that_create_unusable_settlers() {
         .filter(|unit| unit.owner == 0 && unit.kind == "settler")
         .count();
 
-    assert!(game.do_choose_pantheon(0, "religious_settlements").is_err());
+    assert!(game
+        .do_choose_pantheon(0, "religious_settlements")
+        .is_err());
     assert_eq!(game.players[0].faith, 25.0);
     assert!(game.players[0].pantheon.is_none());
     assert_eq!(
@@ -1363,10 +1327,7 @@ fn follower_beliefs_execute_building_adjacency_amenity_and_route_effects() {
         game.city_citizen_plan(cities[0])
             .worked_tiles
             .iter()
-            .map(|pos| {
-                game.player_tile_yields(0, *pos, &game.map.tiles[pos])
-                    .culture
-            })
+            .map(|pos| game.player_tile_yields(0, *pos, &game.map.tiles[pos]).culture)
             .sum()
     };
     let baseline_yields = game.city_yields(cities[0]);
@@ -1385,17 +1346,14 @@ fn follower_beliefs_execute_building_adjacency_amenity_and_route_effects() {
 
     game.players[0].religion_beliefs = vec!["choral_music".to_string()];
     assert!(
-        (game.city_yields(cities[0]).culture
-            - worked_culture(&game)
+        (game.city_yields(cities[0]).culture - worked_culture(&game)
             - (baseline_yields.culture - baseline_worked_culture + 6.0))
             .abs()
             < 1e-9
     );
 
     game.players[0].religion_beliefs = vec!["work_ethic".to_string()];
-    let holy_site_adjacency = game
-        .district_yields(crate::name!("holy_site"), holy_site)
-        .faith;
+    let holy_site_adjacency = game.district_yields(crate::name!("holy_site"), holy_site).faith;
     assert!(holy_site_adjacency >= 1.0);
     assert!(
         (game.city_yields(cities[0]).production
@@ -1445,10 +1403,7 @@ fn atheist_pressure_gates_the_majority_religion() {
         .pressure
         .insert(religion.clone(), 50.0);
     assert_eq!(game.city_religion(&game.cities[&target]), None);
-    assert_eq!(
-        game.religious_followers_in_city(&game.cities[&target], &religion),
-        2.0
-    );
+    assert_eq!(game.religious_followers_in_city(&game.cities[&target], &religion), 2.0);
 
     // One more point of Pressure carries the majority.
     game.cities
@@ -1562,10 +1517,7 @@ fn the_army_combat_beliefs_do_not_reach_an_apostle() {
     let warrior = game.spawn_unit("warrior", 0, foreign);
     let plain = game.unit_unembarked_strength(&game.units[&warrior]);
     game.players[0].religion_beliefs = vec!["just_war".to_string()];
-    assert_eq!(
-        game.unit_unembarked_strength(&game.units[&warrior]),
-        plain + 10.0
-    );
+    assert_eq!(game.unit_unembarked_strength(&game.units[&warrior]), plain + 10.0);
 }
 
 #[test]
@@ -1593,7 +1545,8 @@ fn founder_unity_combat_and_loyalty_beliefs_use_runtime_city_state() {
     // Square in cities following the religion (BELIEF_YIELD_PER_DISTRICT);
     // Sacred Places: +2 of every yield per following city with a Wonder
     // (BELIEF_YIELD_PER_CITY_WITH_WONDER). Both are founder income.
-    let holy_site = game.cities[&cities[0]]
+    let holy_site = game
+        .cities[&cities[0]]
         .owned_tiles
         .iter()
         .copied()
@@ -1617,10 +1570,7 @@ fn founder_unity_combat_and_loyalty_beliefs_use_runtime_city_state() {
         .insert(crate::name!("stonehenge"), second_center);
     game.players[0].religion_beliefs = vec!["sacred_places".to_string()];
     let sacred = game.founder_belief_yields(0);
-    assert_eq!(
-        (sacred.faith, sacred.culture, sacred.science, sacred.gold),
-        (2.0, 2.0, 2.0, 2.0)
-    );
+    assert_eq!((sacred.faith, sacred.culture, sacred.science, sacred.gold), (2.0, 2.0, 2.0, 2.0));
     // Divine Inspiration is a follower belief: +4 Faith per Wonder in the
     // city that follows, paid in that city's own yields — even a rival's.
     game.players[0].religion_beliefs = vec!["divine_inspiration".to_string()];
@@ -1640,14 +1590,8 @@ fn founder_unity_combat_and_loyalty_beliefs_use_runtime_city_state() {
         .get(&cities[1])
         .and_then(|works| works.get("relic").copied())
         .unwrap_or(0) as f64;
-    assert_eq!(
-        game.city_yields(cities[1]).faith,
-        plain_relic + 3.0 * 4.0 * housed
-    );
-    assert!(
-        housed >= 1.0,
-        "the relic has to be housed for the belief to show"
-    );
+    assert_eq!(game.city_yields(cities[1]).faith, plain_relic + 3.0 * 4.0 * housed);
+    assert!(housed >= 1.0, "the relic has to be housed for the belief to show");
 
     game.players[1].is_minor = true;
     game.players[0].religion_beliefs = vec!["religious_unity".to_string()];

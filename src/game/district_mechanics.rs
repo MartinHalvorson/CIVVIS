@@ -34,26 +34,13 @@ fn a_wonder_the_host_will_not_place_is_blocked_in_that_city_only() {
             .map(|c| c.id)
             .collect();
     }
-    assert!(
-        ours.len() >= 2,
-        "need two cities to prove the block is scoped"
-    );
+    assert!(ours.len() >= 2, "need two cities to prove the block is scoped");
     let (blocked_city, other_city) = (ours[0], ours[1]);
-    let techs: Vec<Name> = game
-        .rules
-        .techs
-        .keys()
-        .map(|t| Name::new(t.as_str()))
-        .collect();
+    let techs: Vec<Name> = game.rules.techs.keys().map(|t| Name::new(t.as_str())).collect();
     for tech in techs {
         game.players[0].techs.insert(tech);
     }
-    let civics: Vec<Name> = game
-        .rules
-        .civics
-        .keys()
-        .map(|c| Name::new(c.as_str()))
-        .collect();
+    let civics: Vec<Name> = game.rules.civics.keys().map(|c| Name::new(c.as_str())).collect();
     for civic in civics {
         game.players[0].civics.insert(civic);
     }
@@ -211,12 +198,7 @@ fn gathering_storm_catalog_contains_every_generic_and_unique_district() {
     ]
     .into_iter()
     .collect();
-    let actual: BTreeSet<&str> = game
-        .rules
-        .districts
-        .keys()
-        .map(|name| name.as_str())
-        .collect();
+    let actual: BTreeSet<&str> = game.rules.districts.keys().map(|name| name.as_str()).collect();
     assert_eq!(actual, expected);
 
     for (name, spec) in &game.rules.districts {
@@ -499,8 +481,7 @@ fn adjacency_rounding_policies_wonders_and_unique_families_are_runtime_correct()
     game.map.tiles.get_mut(&ring[0]).unwrap().feature = Some(crate::name!("jungle"));
     game.map.tiles.get_mut(&ring[1]).unwrap().district = Some(crate::name!("encampment"));
     assert_eq!(
-        game.district_yields(crate::name!("campus"), position)
-            .science,
+        game.district_yields(crate::name!("campus"), position).science,
         0.0,
         "one Rainforest and one district are separate half-point buckets"
     );
@@ -508,19 +489,11 @@ fn adjacency_rounding_policies_wonders_and_unique_families_are_runtime_correct()
     game.map.tiles.get_mut(&ring[3]).unwrap().terrain = crate::name!("mountain");
     game.map.tiles.get_mut(&ring[4]).unwrap().feature = Some(crate::name!("reef"));
     game.map.tiles.get_mut(&ring[5]).unwrap().feature = Some(crate::name!("geothermal_fissure"));
-    assert_eq!(
-        game.district_yields(crate::name!("campus"), position)
-            .science,
-        6.0
-    );
+    assert_eq!(game.district_yields(crate::name!("campus"), position).science, 6.0);
     game.players[0]
         .policies
         .insert(crate::name!("natural_philosophy"));
-    assert_eq!(
-        game.district_yields(crate::name!("campus"), position)
-            .science,
-        12.0
-    );
+    assert_eq!(game.district_yields(crate::name!("campus"), position).science, 12.0);
 
     game.players[0].policies.clear();
     for neighbor in &ring {
@@ -532,16 +505,14 @@ fn adjacency_rounding_policies_wonders_and_unique_families_are_runtime_correct()
     }
     game.map.tiles.get_mut(&ring[0]).unwrap().wonder = Some(crate::name!("oracle"));
     assert_eq!(
-        game.district_yields(crate::name!("theater_square"), position)
-            .culture,
+        game.district_yields(crate::name!("theater_square"), position).culture,
         2.0
     );
 
     game.map.tiles.get_mut(&ring[0]).unwrap().wonder = None;
     game.map.tiles.get_mut(&ring[0]).unwrap().district = Some(crate::name!("suguba"));
     assert_eq!(
-        game.district_yields(crate::name!("hansa"), position)
-            .production,
+        game.district_yields(crate::name!("hansa"), position).production,
         2.0,
         "a unique Commercial Hub satisfies Hansa's family adjacency"
     );
@@ -781,11 +752,13 @@ fn specialty_threshold_bonuses_ignore_repeatable_green_districts() {
     without_threshold_policies.players[0].policies.clear();
     assert_eq!(
         game.city_housing(&game.cities[&city]),
-        without_threshold_policies.city_housing(&without_threshold_policies.cities[&city]) + 1.0
+        without_threshold_policies.city_housing(&without_threshold_policies.cities[&city])
+            + 1.0
     );
     assert_eq!(
         game.city_local_amenities(&game.cities[&city]),
-        without_threshold_policies.city_local_amenities(&without_threshold_policies.cities[&city])
+        without_threshold_policies
+            .city_local_amenities(&without_threshold_policies.cities[&city])
             + 1
     );
 
@@ -800,11 +773,13 @@ fn specialty_threshold_bonuses_ignore_repeatable_green_districts() {
     without_threshold_policies.players[0].policies.clear();
     assert_eq!(
         game.city_housing(&game.cities[&city]),
-        without_threshold_policies.city_housing(&without_threshold_policies.cities[&city]) + 5.0
+        without_threshold_policies.city_housing(&without_threshold_policies.cities[&city])
+            + 5.0
     );
     assert_eq!(
         game.city_local_amenities(&game.cities[&city]),
-        without_threshold_policies.city_local_amenities(&without_threshold_policies.cities[&city])
+        without_threshold_policies
+            .city_local_amenities(&without_threshold_policies.cities[&city])
             + 3
     );
 
@@ -1086,9 +1061,7 @@ fn gaul_specialty_districts_culture_bomb_from_nonadjacent_sites() {
         .into_iter()
         .find(|position| game.map.tiles[position].owner_city.is_none())
         .unwrap();
-    assert!(game
-        .district_sites(city, crate::name!("campus"))
-        .contains(&site));
+    assert!(game.district_sites(city, crate::name!("campus")).contains(&site));
 
     assert!(game.complete_item(
         0,
@@ -1256,13 +1229,8 @@ fn placed_districts_lock_cost_occupy_capacity_and_resume_after_research() {
         Yields::default()
     );
     assert!(!game.city_has_district_family(&game.cities[&city], crate::name!("campus")));
-    assert_eq!(
-        game.district_sites(city, crate::name!("campus")),
-        vec![position]
-    );
-    assert!(game
-        .district_sites(city, crate::name!("holy_site"))
-        .is_empty());
+    assert_eq!(game.district_sites(city, crate::name!("campus")), vec![position]);
+    assert!(game.district_sites(city, crate::name!("holy_site")).is_empty());
     assert!(!game
         .city_citizen_plan(city)
         .worked_tiles
@@ -1328,8 +1296,7 @@ fn special_placement_rules_cover_land_water_features_and_city_distance() {
         .find(|position| game.wdist(*position, center) == 2)
         .unwrap();
     let is_site = |game: &Game, district: &str, position: Pos| {
-        game.district_sites(city, Name::new(district))
-            .contains(&position)
+        game.district_sites(city, Name::new(district)).contains(&position)
     };
 
     assert!(!is_site(&game, "encampment", near));
@@ -1436,9 +1403,7 @@ fn repeatable_districts_preserve_every_position_and_stack_local_effects() {
         ));
     }
     assert_eq!(
-        game.cities[&city]
-            .districts
-            .positions(crate::name!("neighborhood")),
+        game.cities[&city].districts.positions(crate::name!("neighborhood")),
         neighborhood_positions.as_slice()
     );
     let neighborhood_housing: f64 = neighborhood_positions
@@ -1466,9 +1431,7 @@ fn repeatable_districts_preserve_every_position_and_stack_local_effects() {
 
     let restored: Game = serde_json::from_value(serde_json::to_value(&game).unwrap()).unwrap();
     assert_eq!(
-        restored.cities[&city]
-            .districts
-            .positions(crate::name!("neighborhood")),
+        restored.cities[&city].districts.positions(crate::name!("neighborhood")),
         neighborhood_positions.as_slice()
     );
     assert_eq!(restored.cities[&city].districts.len(), 3);
@@ -1587,9 +1550,7 @@ fn alerted_naval_barbarian_camps_reconnoiter_and_produce_ships() {
         .find_map(|(unit, home)| (*home == camp).then_some(*unit))
         .unwrap();
     assert_eq!(game.units[&recon_id].kind, "galley");
-    assert!(game
-        .rules
-        .is_water(&game.map.tiles[&game.units[&recon_id].pos]));
+    assert!(game.rules.is_water(&game.map.tiles[&game.units[&recon_id].pos]));
 
     let settler = game
         .player_unit_ids(0)
@@ -1614,10 +1575,7 @@ fn alerted_naval_barbarian_camps_reconnoiter_and_produce_ships() {
         .into_iter()
         .filter(|unit| game.rules.units[&game.units[unit].kind].domain.as_deref() == Some("sea"))
         .count();
-    assert!(
-        naval_after > naval_before,
-        "a naval camp should produce a ship"
-    );
+    assert!(naval_after > naval_before, "a naval camp should produce a ship");
 }
 
 #[test]
@@ -1929,10 +1887,7 @@ fn camps_keep_their_clearance_on_a_land_heavy_globe_without_searching_it() {
     });
     let elapsed = started.elapsed();
 
-    assert!(
-        !game.barb_camps.is_empty(),
-        "a land-heavy globe seats camps"
-    );
+    assert!(!game.barb_camps.is_empty(), "a land-heavy globe seats camps");
     for camp in game.barb_camps.keys() {
         for city in game.cities.values() {
             assert!(
@@ -1983,11 +1938,7 @@ fn an_arena_economy_is_granted_rather_than_earned() {
             .filter(|city| city.owner == seat)
             .map(|city| city.id)
             .collect();
-        assert_eq!(
-            cities.len(),
-            1,
-            "seat {seat} opens with the one granted city"
-        );
+        assert_eq!(cities.len(), 1, "seat {seat} opens with the one granted city");
         let yields = game.city_yields(cities[0]);
         assert_eq!(yields.production, 30.0, "the city pays the flat grant");
         for (name, value) in [
@@ -2025,14 +1976,8 @@ fn an_arena_economy_is_granted_rather_than_earned() {
         game.players[0].gold >= gold_before + 5.0 * 30.0,
         "six turns of the flat grant must reach the treasury"
     );
-    assert_eq!(
-        game.players[0].culture_lifetime, 0.0,
-        "an arena pays no Culture"
-    );
-    assert!(
-        game.players[0].civics.is_empty(),
-        "no civic completes on an arena"
-    );
+    assert_eq!(game.players[0].culture_lifetime, 0.0, "an arena pays no Culture");
+    assert!(game.players[0].civics.is_empty(), "no civic completes on an arena");
     assert!(
         game.players[0].techs.len() > techs_before,
         "a five-turn pace must land a technology inside six turns"
@@ -2045,38 +1990,22 @@ fn an_arena_economy_is_granted_rather_than_earned() {
     let owner = game.cities[&city].owner;
     for kind in ["warrior", "battering_ram"] {
         assert!(
-            game.arena_allows_production(&Item::Unit {
-                unit: Name::new(kind)
-            }),
+            game.arena_allows_production(&Item::Unit { unit: Name::new(kind) }),
             "{kind} is a fighting unit and belongs on an arena"
         );
     }
     for kind in ["settler", "builder", "trader"] {
         assert!(
-            !game.arena_allows_production(&Item::Unit {
-                unit: Name::new(kind)
-            }),
+            !game.arena_allows_production(&Item::Unit { unit: Name::new(kind) }),
             "{kind} is empire-building and does not belong on an arena"
         );
     }
     assert!(
-        !game.can_produce(
-            owner,
-            city,
-            &Item::Building {
-                building: crate::name!("monument")
-            }
-        ),
+        !game.can_produce(owner, city, &Item::Building { building: crate::name!("monument") }),
         "an arena builds no buildings"
     );
     assert!(
-        !game.can_produce(
-            owner,
-            city,
-            &Item::Unit {
-                unit: crate::name!("settler")
-            }
-        ),
+        !game.can_produce(owner, city, &Item::Unit { unit: crate::name!("settler") }),
         "an arena builds no Settlers"
     );
 }
@@ -2089,11 +2018,7 @@ fn an_arena_economy_is_granted_rather_than_earned() {
 fn a_city_less_arena_still_collects_gold_and_science() {
     let mut game = Game::new_with(GameOptions {
         map_script: MapScript::Battlefield,
-        tactics: TacticsRules {
-            cities: 0,
-            gold: 30,
-            ..TacticsRules::default()
-        },
+        tactics: TacticsRules { cities: 0, gold: 30, ..TacticsRules::default() },
         ..GameOptions::new(2, 10, 10, 90_411, 250, 0)
     });
     assert!(game.cities.is_empty());
@@ -2128,11 +2053,7 @@ fn flag_arena(seed: u64) -> Game {
     Game::new_with(GameOptions {
         map_script: MapScript::Battlefield,
         // Cities asked for on purpose: flags must replace them.
-        tactics: TacticsRules {
-            flag: true,
-            cities: 1,
-            ..TacticsRules::default()
-        },
+        tactics: TacticsRules { flag: true, cities: 1, ..TacticsRules::default() },
         ..GameOptions::new(2, 20, 20, seed, 250, 0)
     })
 }
@@ -2142,15 +2063,8 @@ fn flag_arena(seed: u64) -> Game {
 #[test]
 fn a_flag_arena_gives_every_side_a_flag_of_its_own() {
     let game = flag_arena(90_412);
-    assert!(
-        game.cities.is_empty(),
-        "flags replace the city objective outright"
-    );
-    assert_eq!(
-        game.arena_flags.len(),
-        2,
-        "a flag each, not one in the middle"
-    );
+    assert!(game.cities.is_empty(), "flags replace the city objective outright");
+    assert_eq!(game.arena_flags.len(), 2, "a flag each, not one in the middle");
     for seat in 0..2 {
         let flag = game.arena_flags[&seat];
         assert!(
@@ -2160,24 +2074,16 @@ fn a_flag_arena_gives_every_side_a_flag_of_its_own() {
         );
         // Its own army is the garrison: a side opens sitting on its flag.
         assert!(
-            game.units_at(flag)
-                .iter()
-                .all(|uid| game.units[uid].owner == seat),
+            game.units_at(flag).iter().all(|uid| game.units[uid].owner == seat),
             "seat {seat}'s flag opens held by somebody else"
         );
     }
     // Symmetric: neither side opens nearer the enemy flag than the other.
     let march = |seat: usize| {
-        let enemy = game
-            .arena_enemy_flag(seat, game.arena_flags[&seat])
-            .unwrap();
+        let enemy = game.arena_enemy_flag(seat, game.arena_flags[&seat]).unwrap();
         game.wdist(game.arena_flags[&seat], enemy)
     };
-    assert_eq!(
-        march(0),
-        march(1),
-        "one side has a shorter run at the enemy flag"
-    );
+    assert_eq!(march(0), march(1), "one side has a shorter run at the enemy flag");
 
     // Only the shape that asked for flags gets them.
     let plain = Game::new_with(GameOptions {
@@ -2211,11 +2117,7 @@ fn taking_the_enemy_flag_wins_and_holding_your_own_does_not() {
 
     // Now onto the enemy's, and the battle is over.
     game.relocate(friendly, theirs);
-    assert_eq!(
-        game.winner,
-        Some(0),
-        "the side that took the enemy flag has won"
-    );
+    assert_eq!(game.winner, Some(0), "the side that took the enemy flag has won");
     assert_eq!(game.victory_type.as_deref(), Some(FLAG_VICTORY));
     assert!(game.is_finished());
 }
@@ -2226,9 +2128,7 @@ fn the_objective_is_the_other_sides_flag() {
     let game = flag_arena(90_415);
     for seat in 0..2 {
         let own = game.arena_flags[&seat];
-        let target = game
-            .arena_enemy_flag(seat, own)
-            .expect("an enemy flag to take");
+        let target = game.arena_enemy_flag(seat, own).expect("an enemy flag to take");
         assert_ne!(target, own);
         assert_eq!(game.arena_flag_holder(target), Some(1 - seat));
     }
@@ -2264,11 +2164,7 @@ fn the_flags_survive_a_save_and_older_saves_open_without_them() {
 fn a_zero_tech_pace_freezes_the_tree() {
     let mut game = Game::new_with(GameOptions {
         map_script: MapScript::Battlefield,
-        tactics: TacticsRules {
-            turns_per_tech: 0,
-            gold: 30,
-            ..TacticsRules::default()
-        },
+        tactics: TacticsRules { turns_per_tech: 0, gold: 30, ..TacticsRules::default() },
         ..GameOptions::new(2, 10, 10, 90_411, 250, 0)
     });
     let cheapest = game
@@ -2288,11 +2184,7 @@ fn a_zero_tech_pace_freezes_the_tree() {
     for _ in 0..40 {
         game.begin_turn(0);
     }
-    assert_eq!(
-        game.arena_side_yields(0).science,
-        0.0,
-        "a zero pace pays no Science"
-    );
+    assert_eq!(game.arena_side_yields(0).science, 0.0, "a zero pace pays no Science");
     assert_eq!(
         game.players[0].research_progress, 0.0,
         "a frozen tree banks no progress"
@@ -2323,13 +2215,8 @@ fn the_stock_arena_never_reinforces_either_side() {
         ..GameOptions::new(2, 10, 10, 90_411, 250, 0)
     });
     assert_eq!(game.tactics, TacticsRules::default());
-    let dealt: Vec<usize> = (0..2)
-        .map(|seat| game.player_unit_ids(seat).len())
-        .collect();
-    assert!(
-        dealt.iter().all(|count| *count > 0),
-        "each side opens with an army: {dealt:?}"
-    );
+    let dealt: Vec<usize> = (0..2).map(|seat| game.player_unit_ids(seat).len()).collect();
+    assert!(dealt.iter().all(|count| *count > 0), "each side opens with an army: {dealt:?}");
     assert_eq!(dealt[0], dealt[1], "and the same army: {dealt:?}");
     let mut cities = Vec::new();
     for seat in 0..2 {
@@ -2345,16 +2232,11 @@ fn the_stock_arena_never_reinforces_either_side() {
             0.0,
             "the stock city collects no Production"
         );
-        assert_eq!(
-            game.arena_side_yields(seat).gold,
-            0.0,
-            "and the side banks no Gold"
-        );
+        assert_eq!(game.arena_side_yields(seat).gold, 0.0, "and the side banks no Gold");
         // Queue a Warrior anyway, so the test is about the paying and
         // not about whether the AI chose to build.
-        game.cities.get_mut(&held[0]).unwrap().queue = vec![Item::Unit {
-            unit: crate::name!("warrior"),
-        }];
+        game.cities.get_mut(&held[0]).unwrap().queue =
+            vec![Item::Unit { unit: crate::name!("warrior") }];
         cities.push(held[0]);
     }
     let gold_before: Vec<f64> = (0..2).map(|seat| game.players[seat].gold).collect();
@@ -2368,7 +2250,8 @@ fn the_stock_arena_never_reinforces_either_side() {
     }
     for seat in 0..2 {
         assert_eq!(
-            game.cities[&cities[seat]].production, 0.0,
+            game.cities[&cities[seat]].production,
+            0.0,
             "seat {seat} banked Production toward a unit it was never granted"
         );
         assert_eq!(
@@ -2420,10 +2303,7 @@ fn a_battlefield_game_opens_as_a_two_sided_arena() {
         map_topology: MapTopology::Planet,
         // Deity: the handicap table would hand every AI seat extra units.
         difficulty: "deity".to_string(),
-        tactics: TacticsRules {
-            cities: 0,
-            ..TacticsRules::default()
-        },
+        tactics: TacticsRules { cities: 0, ..TacticsRules::default() },
         ..GameOptions::new(2, 10, 10, 90_411, 250, 3)
     });
     assert!(game.map.sphere().is_none(), "the arena must be flat");
@@ -2433,14 +2313,8 @@ fn a_battlefield_game_opens_as_a_two_sided_arena() {
     // Two majors and the dormant Free Cities seat: the three city-states
     // asked for were refused by the arena.
     assert_eq!(game.players.len(), 3);
-    assert!(game
-        .players
-        .iter()
-        .all(|player| !player.is_minor || player.is_free_city));
-    assert!(
-        game.cities.is_empty(),
-        "the no-city arena opens with no city"
-    );
+    assert!(game.players.iter().all(|player| !player.is_minor || player.is_free_city));
+    assert!(game.cities.is_empty(), "the no-city arena opens with no city");
 
     let roster = |seat: usize| {
         let mut kinds: Vec<&str> = game
@@ -2496,16 +2370,8 @@ fn a_battlefield_game_opens_as_a_two_sided_arena() {
     // Nothing on the arena exists to be developed, and every hex of it is
     // ground both sides can walk.
     assert!(game.map.tiles.values().all(|tile| tile.resource.is_none()));
-    assert!(game
-        .map
-        .tiles
-        .values()
-        .all(|tile| game.rules.is_passable(tile)));
-    assert!(game
-        .map
-        .tiles
-        .values()
-        .all(|tile| !game.rules.is_water(tile)));
+    assert!(game.map.tiles.values().all(|tile| game.rules.is_passable(tile)));
+    assert!(game.map.tiles.values().all(|tile| !game.rules.is_water(tile)));
 }
 
 /// Which era arms a custom arena is the arena's own setting: one rung
@@ -2520,11 +2386,7 @@ fn the_arena_era_choice_arms_the_battle() {
     let arena = |era: TacticsEra, seed: u64| {
         Game::new_with(GameOptions {
             map_script: MapScript::Battlefield,
-            tactics: TacticsRules {
-                cities: 0,
-                era,
-                ..TacticsRules::default()
-            },
+            tactics: TacticsRules { cities: 0, era, ..TacticsRules::default() },
             ..GameOptions::new(2, 10, 10, seed, 250, 0)
         })
     };
@@ -2554,23 +2416,15 @@ fn the_arena_era_choice_arms_the_battle() {
             "the Future stays out of the hat"
         );
     }
-    let scattered: BTreeSet<usize> = (0..16)
-        .map(|seed| arena(TacticsEra::Random, seed).start_era)
-        .collect();
-    assert!(
-        scattered.len() > 1,
-        "sixteen seeds must not all land on one era"
-    );
+    let scattered: BTreeSet<usize> =
+        (0..16).map(|seed| arena(TacticsEra::Random, seed).start_era).collect();
+    assert!(scattered.len() > 1, "sixteen seeds must not all land on one era");
 
     // A pool of Ancient and Information opens with the Information era's
     // research and deals both sides the identical cross-era mix.
     let pooled = arena(TacticsEra::Pool(1 | 1 << 7), 90_411);
     assert_eq!(pooled.start_era, 7);
-    assert_eq!(
-        roster(&pooled, 0),
-        roster(&pooled, 1),
-        "the two armies must stay even"
-    );
+    assert_eq!(roster(&pooled, 0), roster(&pooled, 1), "the two armies must stay even");
     let ancient: BTreeSet<Name> = roster(&arena(TacticsEra::Fixed(0), 90_411), 0)
         .into_iter()
         .collect();
@@ -2588,24 +2442,14 @@ fn the_arena_era_choice_arms_the_battle() {
     // control says: the server hands Gettysburg its own Industrial start
     // — see `new_game_params` — and the arena's era choice must not
     // reach past it, in either direction.
-    for asked in [
-        TacticsEra::Fixed(0),
-        TacticsEra::Random,
-        TacticsEra::Pool(1),
-    ] {
+    for asked in [TacticsEra::Fixed(0), TacticsEra::Random, TacticsEra::Pool(1)] {
         let gettysburg = Game::new_with(GameOptions {
             map_script: MapScript::Gettysburg,
             start_era: 4,
-            tactics: TacticsRules {
-                era: asked,
-                ..TacticsRules::default()
-            },
+            tactics: TacticsRules { era: asked, ..TacticsRules::default() },
             ..GameOptions::new(2, 26, 20, 7, 250, 0)
         });
-        assert_eq!(
-            gettysburg.start_era, 4,
-            "a scenario's era is the battle's, not {asked:?}"
-        );
+        assert_eq!(gettysburg.start_era, 4, "a scenario's era is the battle's, not {asked:?}");
     }
 }
 
@@ -2616,18 +2460,9 @@ fn a_tactics_planet_game_opens_with_opposite_cities() {
         map_topology: MapTopology::Planet,
         ..GameOptions::new(2, 40, 18, 90_412, 250, 3)
     });
-    assert!(
-        game.map.sphere().is_some(),
-        "the Tactics planet must be a globe"
-    );
+    assert!(game.map.sphere().is_some(), "the Tactics planet must be a globe");
     assert!(game.is_arena());
-    assert_eq!(
-        game.players
-            .iter()
-            .filter(|player| !player.is_minor)
-            .count(),
-        2
-    );
+    assert_eq!(game.players.iter().filter(|player| !player.is_minor).count(), 2);
     let cities: Vec<Pos> = (0..2)
         .map(|owner| {
             let owned: Vec<Pos> = game
@@ -2673,31 +2508,20 @@ fn the_appeal_memo_agrees_with_the_computation_it_replaces() {
     let tiles: Vec<Pos> = game.map.tiles.keys().copied().collect();
     assert!(tiles.len() > 400, "a real world, not a stub");
     let uncached: Vec<i32> = tiles.iter().map(|pos| game.tile_appeal(*pos)).collect();
-    assert!(
-        uncached.iter().any(|appeal| *appeal != 0),
-        "appeal must vary"
-    );
+    assert!(uncached.iter().any(|appeal| *appeal != 0), "appeal must vary");
 
     let memo = game.query_memo();
     for (pos, want) in tiles.iter().zip(&uncached) {
         // Twice, so the second read is the one served from the map.
         assert_eq!(game.tile_appeal(*pos), *want, "{pos:?}");
-        assert_eq!(
-            game.tile_appeal(*pos),
-            *want,
-            "{pos:?} on the memoized read"
-        );
+        assert_eq!(game.tile_appeal(*pos), *want, "{pos:?} on the memoized read");
     }
     drop(memo);
 
     // And the scope really did close: the next read recomputes rather than
     // serving whatever the dropped guard left behind.
     for (pos, want) in tiles.iter().zip(&uncached) {
-        assert_eq!(
-            game.tile_appeal(*pos),
-            *want,
-            "{pos:?} after the scope closed"
-        );
+        assert_eq!(game.tile_appeal(*pos), *want, "{pos:?} after the scope closed");
     }
 }
 
@@ -2718,10 +2542,7 @@ fn a_tactics_ocean_game_opens_with_two_fleets_afloat() {
         map_topology: MapTopology::Planet,
         ..GameOptions::new(2, 40, 18, 90_412, 250, 3)
     });
-    assert!(
-        game.map.sphere().is_some(),
-        "the Tactics ocean must be a globe"
-    );
+    assert!(game.map.sphere().is_some(), "the Tactics ocean must be a globe");
     assert!(game.is_arena());
     assert!(game.is_at_war(0, 1));
 
@@ -2742,16 +2563,8 @@ fn a_tactics_ocean_game_opens_with_two_fleets_afloat() {
         let domain = game.rules.units[unit.kind.as_str()].domain.as_deref();
         assert_eq!(domain, Some("sea"), "{} is not a ship", unit.kind);
         let tile = &game.map.tiles[&unit.pos];
-        assert!(
-            game.rules.is_water(tile),
-            "{} opens on dry ground",
-            unit.kind
-        );
-        assert!(
-            game.rules.is_passable(tile),
-            "{} opens on water it cannot enter",
-            unit.kind
-        );
+        assert!(game.rules.is_water(tile), "{} opens on dry ground", unit.kind);
+        assert!(game.rules.is_passable(tile), "{} opens on water it cannot enter", unit.kind);
     }
 
     // The cities are the one thing still ashore, one island each.
@@ -2763,10 +2576,7 @@ fn a_tactics_ocean_game_opens_with_two_fleets_afloat() {
             .map(|city| city.pos)
             .collect();
         assert_eq!(owned.len(), 1, "seat {owner} opens with one city");
-        assert!(
-            !game.rules.is_water(&game.map.tiles[&owned[0]]),
-            "a city needs ground"
-        );
+        assert!(!game.rules.is_water(&game.map.tiles[&owned[0]]), "a city needs ground");
     }
 }
 
@@ -2827,14 +2637,7 @@ fn a_galley_can_take_the_naval_arenas_port() {
         )),
         "a galley alongside an enemy port must be able to attack it"
     );
-    game.apply(
-        0,
-        &Action::Attack {
-            unit: galley,
-            target: port,
-        },
-    )
-    .expect("the assault resolves");
+    game.apply(0, &Action::Attack { unit: galley, target: port }).expect("the assault resolves");
     assert_eq!(game.cities[&city].owner, 0, "the port changes hands");
 }
 
@@ -2852,27 +2655,17 @@ fn a_naval_flag_stands_on_water_a_fleet_can_reach() {
         let game = Game::new_with(GameOptions {
             map_script: MapScript::TacticsOcean,
             map_topology: MapTopology::Planet,
-            tactics: TacticsRules {
-                flag: true,
-                ..TacticsRules::default()
-            },
+            tactics: TacticsRules { flag: true, ..TacticsRules::default() },
             ..GameOptions::new(2, 40, 18, seed, 250, 3)
         });
-        assert_eq!(
-            game.arena_flags.len(),
-            2,
-            "seed {seed}: every side gets a flag"
-        );
+        assert_eq!(game.arena_flags.len(), 2, "seed {seed}: every side gets a flag");
         for (seat, flag) in &game.arena_flags {
             let tile = &game.map.tiles[flag];
             assert!(
                 game.rules.is_water(tile),
                 "seed {seed}: seat {seat}'s flag is on land no fleet can take"
             );
-            assert!(
-                game.rules.is_passable(tile),
-                "seed {seed}: seat {seat}'s flag is unsailable"
-            );
+            assert!(game.rules.is_passable(tile), "seed {seed}: seat {seat}'s flag is unsailable");
         }
     }
 }
@@ -2886,10 +2679,7 @@ fn an_arena_is_fogged_only_when_the_match_asked_for_it() {
     let arena = |fog: bool| {
         Game::new_with(GameOptions {
             map_script: MapScript::Battlefield,
-            tactics: TacticsRules {
-                fog,
-                ..TacticsRules::default()
-            },
+            tactics: TacticsRules { fog, ..TacticsRules::default() },
             ..GameOptions::new(2, 16, 16, 7_704, 250, 0)
         })
     };
@@ -2951,10 +2741,7 @@ fn an_arena_fields_unique_units_only_when_the_match_asked_for_them() {
     let arena = |unique_units: bool| {
         Game::new_with(GameOptions {
             map_script: MapScript::Battlefield,
-            tactics: TacticsRules {
-                unique_units,
-                ..TacticsRules::default()
-            },
+            tactics: TacticsRules { unique_units, ..TacticsRules::default() },
             // Greece replaces the Spearman with the Hoplite; the Aztecs
             // replace the Warrior with the Eagle Warrior. Both are in the
             // opening roster.
@@ -2985,13 +2772,8 @@ fn an_arena_fields_unique_units_only_when_the_match_asked_for_them() {
     // Greece keeps its Spearman rather than losing it to a Hoplite it is
     // not allowed to have.
     assert!(roster(&even, 0).iter().any(|kind| kind == "spearman"));
-    assert_eq!(
-        even.player_unit_replacement(0, crate::name!("spearman")),
-        crate::name!("spearman")
-    );
-    assert!(!even.arena_allows_production(&Item::Unit {
-        unit: crate::name!("hoplite")
-    }));
+    assert_eq!(even.player_unit_replacement(0, crate::name!("spearman")), crate::name!("spearman"));
+    assert!(!even.arena_allows_production(&Item::Unit { unit: crate::name!("hoplite") }));
 
     let own = arena(true);
     assert!(
@@ -3005,14 +2787,10 @@ fn an_arena_fields_unique_units_only_when_the_match_asked_for_them() {
         "the Aztecs field Eagle Warriors: {:?}",
         roster(&own, 1)
     );
-    assert!(own.arena_allows_production(&Item::Unit {
-        unit: crate::name!("hoplite")
-    }));
+    assert!(own.arena_allows_production(&Item::Unit { unit: crate::name!("hoplite") }));
     // Either way an arena builds only things that fight.
     for game in [&even, &own] {
-        assert!(!game.arena_allows_production(&Item::Unit {
-            unit: crate::name!("settler")
-        }));
+        assert!(!game.arena_allows_production(&Item::Unit { unit: crate::name!("settler") }));
     }
 }
 
@@ -3042,11 +2820,7 @@ fn a_square_arena_seats_its_sides_in_opposite_corners() {
         let apart = {
             let sides: Vec<Pos> = (0..2)
                 .map(|seat| {
-                    game.cities
-                        .values()
-                        .find(|city| city.owner == seat)
-                        .unwrap()
-                        .pos
+                    game.cities.values().find(|city| city.owner == seat).unwrap().pos
                 })
                 .collect();
             game.wdist(sides[0], sides[1])
@@ -3072,10 +2846,7 @@ fn a_square_arena_seats_its_sides_in_opposite_corners() {
         march.iter().all(|(col, _)| *col == 5),
         "a long arena fights up and down the field: {march:?}"
     );
-    assert_eq!(
-        march.iter().map(|(_, row)| *row).collect::<Vec<_>>(),
-        vec![0, 19]
-    );
+    assert_eq!(march.iter().map(|(_, row)| *row).collect::<Vec<_>>(), vec![0, 19]);
     assert_eq!(march_apart, 19);
 }
 
@@ -3118,20 +2889,14 @@ fn an_arena_is_walled_where_a_world_wraps() {
     let west = crate::hex::offset_to_axial(0, 4);
     let east = crate::hex::offset_to_axial(arena.map.width - 1, 4);
     let mut arena = arena;
-    assert!(
-        arena.units_at(west).is_empty(),
-        "the wall hex is free to stand on"
-    );
+    assert!(arena.units_at(west).is_empty(), "the wall hex is free to stand on");
     let uid = arena.spawn_test_unit("horseman", 0, west);
     assert!(
         !arena.can_move(uid, east),
         "a unit on the west wall must not step through it to the east one"
     );
     assert!(
-        arena
-            .nbrs(west)
-            .iter()
-            .all(|next| arena.can_move(uid, *next)),
+        arena.nbrs(west).iter().all(|next| arena.can_move(uid, *next)),
         "and it may still walk every way the field continues"
     );
 }
@@ -3147,10 +2912,7 @@ fn the_last_army_standing_takes_the_field() {
         map_script: MapScript::Battlefield,
         // The no-city arena: a side is exactly its army, so losing the
         // army is losing the battle with nothing left to rebuild from.
-        tactics: TacticsRules {
-            cities: 0,
-            ..TacticsRules::default()
-        },
+        tactics: TacticsRules { cities: 0, ..TacticsRules::default() },
         ..GameOptions::new(2, 10, 10, 7_311, 250, 0)
     });
     let losing: Vec<u32> = game.player_unit_ids(1);
@@ -3158,19 +2920,13 @@ fn the_last_army_standing_takes_the_field() {
     for uid in &losing[1..] {
         game.remove_unit(*uid);
         game.check_elimination(1);
-        assert!(
-            game.players[1].alive,
-            "a side with a unit left is still in the battle"
-        );
+        assert!(game.players[1].alive, "a side with a unit left is still in the battle");
         assert!(game.winner.is_none());
     }
     game.remove_unit(losing[0]);
     game.check_elimination(1);
     game.check_domination();
-    assert!(
-        !game.players[1].alive,
-        "a side with no units left has lost the field"
-    );
+    assert!(!game.players[1].alive, "a side with no units left has lost the field");
     assert_eq!(game.winner, Some(0));
     assert_eq!(game.victory_type.as_deref(), Some("domination"));
 }
@@ -3186,12 +2942,7 @@ fn a_side_with_a_city_it_cannot_field_from_falls_with_its_last_unit() {
     let arena = |production: u32, gold: u32| {
         Game::new_with(GameOptions {
             map_script: MapScript::Battlefield,
-            tactics: TacticsRules {
-                cities: 1,
-                production,
-                gold,
-                ..TacticsRules::default()
-            },
+            tactics: TacticsRules { cities: 1, production, gold, ..TacticsRules::default() },
             ..GameOptions::new(2, 10, 10, 7_311, 250, 0)
         })
     };
@@ -3199,28 +2950,15 @@ fn a_side_with_a_city_it_cannot_field_from_falls_with_its_last_unit() {
     let mut stock = arena(0, 0);
     assert_eq!(stock.tactics.production, 0);
     assert_eq!(stock.tactics.gold, 0);
-    assert!(
-        stock.cities.values().any(|city| city.owner == 1),
-        "seat 1 holds a city"
-    );
+    assert!(stock.cities.values().any(|city| city.owner == 1), "seat 1 holds a city");
     for uid in stock.player_unit_ids(1) {
         stock.remove_unit(uid);
     }
     stock.check_elimination(1);
     stock.check_domination();
-    assert!(
-        !stock.players[1].alive,
-        "a city that can never field a unit is not a way back"
-    );
-    assert!(
-        stock.cities.values().any(|city| city.owner == 1),
-        "the empty city still stands"
-    );
-    assert_eq!(
-        stock.winner,
-        Some(0),
-        "the last army standing takes the field"
-    );
+    assert!(!stock.players[1].alive, "a city that can never field a unit is not a way back");
+    assert!(stock.cities.values().any(|city| city.owner == 1), "the empty city still stands");
+    assert_eq!(stock.winner, Some(0), "the last army standing takes the field");
     assert_eq!(stock.victory_type.as_deref(), Some("domination"));
 
     // Either grant keeps a side with a city in the battle.
@@ -3248,10 +2986,7 @@ fn a_side_with_a_city_it_cannot_field_from_falls_with_its_last_unit() {
 fn an_arena_has_no_economy_behind_its_army() {
     let mut game = Game::new_with(GameOptions {
         map_script: MapScript::Battlefield,
-        tactics: TacticsRules {
-            cities: 0,
-            ..TacticsRules::default()
-        },
+        tactics: TacticsRules { cities: 0, ..TacticsRules::default() },
         ..GameOptions::new(2, 10, 10, 5_150, 250, 0)
     });
     let uid = game.player_unit_ids(0)[0];
@@ -3304,28 +3039,19 @@ fn an_arena_publishes_only_the_lanes_a_battle_can_be_decided_by() {
     game.required_victory_types = 3;
     let published = game.effective_victory_conditions();
     for lane in ["science", "culture", "religious", "diplomatic"] {
-        assert!(
-            !published.is_enabled(lane),
-            "{lane} has nowhere to happen on an arena"
-        );
+        assert!(!published.is_enabled(lane), "{lane} has nowhere to happen on an arena");
         assert!(!game.set_winner(0, lane), "{lane} must not decide a battle");
     }
     assert!(published.is_enabled("domination"));
     assert!(!published.is_enabled("score"));
-    assert!(
-        !game.set_winner(0, "score"),
-        "the deadline is not a victory lane"
-    );
+    assert!(!game.set_winner(0, "score"), "the deadline is not a victory lane");
     // And a battle is decided once, however many types were required.
     assert_eq!(game.effective_required_victories(), 1);
 
     // A Civ world publishes exactly what it was set up with.
     let mut world = Game::new_full(2, 44, 26, 6_161, 250, 0, false);
     world.victory_conditions.science = false;
-    assert_eq!(
-        world.effective_victory_conditions(),
-        world.victory_conditions
-    );
+    assert_eq!(world.effective_victory_conditions(), world.victory_conditions);
 }
 
 /// Reaching the selected deadline with both sides alive ends the battle
@@ -3334,10 +3060,7 @@ fn an_arena_publishes_only_the_lanes_a_battle_can_be_decided_by() {
 fn a_tactics_deadline_is_a_terminal_draw() {
     let mut game = Game::new_with(GameOptions {
         map_script: MapScript::Battlefield,
-        tactics: TacticsRules {
-            turn_limit: 50,
-            ..TacticsRules::default()
-        },
+        tactics: TacticsRules { turn_limit: 50, ..TacticsRules::default() },
         ..GameOptions::new(2, 10, 10, 2_215, 50, 0)
     });
     assert_eq!(game.score(0), game.score(1), "the two armies open even");
@@ -3370,12 +3093,8 @@ fn dark_to_golden_threshold_creates_a_three_dedication_heroic_age() {
     let mut game = Game::new_full(2, 24, 16, 88_102, 100, 0, false);
     game.players[0].age = "dark".to_string();
     game.players[0].era_score = game.players[0].golden_age_threshold;
-    game.players[0]
-        .techs
-        .insert(crate::name!("horseback_riding"));
-    game.players[1]
-        .techs
-        .insert(crate::name!("horseback_riding"));
+    game.players[0].techs.insert(crate::name!("horseback_riding"));
+    game.players[1].techs.insert(crate::name!("horseback_riding"));
     // Half the majors reaching Classical starts the ten-turn warning.
     game.turn = 40;
     game.process_eras();
@@ -3455,12 +3174,8 @@ fn alliance_routes_progression_and_favor_match_gathering_storm() {
     assert_eq!(routed.players[0].alliances[&1].level, 3);
 
     routed.turn = routed.players[0].alliances[&1].ends;
-    routed.players[0]
-        .civics
-        .insert(crate::name!("civil_service"));
-    routed.players[1]
-        .civics
-        .insert(crate::name!("civil_service"));
+    routed.players[0].civics.insert(crate::name!("civil_service"));
+    routed.players[1].civics.insert(crate::name!("civil_service"));
     routed.record_contact(0, 1);
     routed
         .do_propose_deal(0, 1, 0.0, 0.0, false, true, false, Some("economic"))
@@ -3535,9 +3250,7 @@ fn research_alliance_shares_eurekas_and_level_three_science() {
     game.players[1].techs.insert(crate::name!("writing"));
     install_alliance(&mut game, 0, 1, "research", 2, 80.0);
     game.process_diplomacy(0);
-    assert!(game.players[0]
-        .boosted_techs
-        .contains(&crate::name!("writing")));
+    assert!(game.players[0].boosted_techs.contains(&crate::name!("writing")));
 
     // ALLIANCE_SCIENCE_SHARING_FROM_ALLY is MODIFIER_ALLIANCE_PLAYERS_
     // SCIENCE_FROM_ALLY at 10 with NO requirement set -- the exact shape of
@@ -3563,19 +3276,13 @@ fn research_alliance_shares_eurekas_and_level_three_science() {
     baseline.players[1].alliances.clear();
 
     // The ally's Science does not touch the allied player's own cities.
-    assert_eq!(
-        game.city_yields(city).science,
-        baseline.city_yields(city).science
-    );
+    assert_eq!(game.city_yields(city).science, baseline.city_yields(city).science);
 
     game.begin_turn(0);
     baseline.begin_turn(0);
     let gained = game.players[0].research_progress + game.players[0].research_overflow;
     let without = baseline.players[0].research_progress + baseline.players[0].research_overflow;
-    assert!(
-        (gained - without - copied).abs() < 1e-9,
-        "{gained} - {without} != {copied}"
-    );
+    assert!((gained - without - copied).abs() < 1e-9, "{gained} - {without} != {copied}");
 }
 
 #[test]
@@ -3748,11 +3455,7 @@ fn cultural_religious_and_economic_alliance_levels_execute() {
     religion.cities.get_mut(&own_city).unwrap().atheist_pressure = 0.0;
     religion.cities.get_mut(&allied_city).unwrap().pressure =
         BTreeMap::from([("Allied".to_string(), 100.0)]);
-    religion
-        .cities
-        .get_mut(&allied_city)
-        .unwrap()
-        .atheist_pressure = 0.0;
+    religion.cities.get_mut(&allied_city).unwrap().atheist_pressure = 0.0;
     install_alliance(&mut religion, 0, 1, "religious", 3, 240.0);
     let mut religious_baseline = religion.clone();
     religious_baseline.players[0].alliances.clear();
@@ -4391,10 +4094,7 @@ fn the_war_ledger_records_a_declaration_its_cost_and_its_peace() {
     let mut game = emergency_game_with_capitals(3, 5_505, 300);
     game.turn = 40;
     game.record_contact(0, 1);
-    let opening_strength = [
-        game.military_power(0).round() as i64,
-        game.military_power(1).round() as i64,
-    ];
+    let opening_strength = [game.military_power(0).round() as i64, game.military_power(1).round() as i64];
     game.do_declare_war(0, 1).unwrap();
 
     let key = pair(0, 1);
@@ -4500,7 +4200,9 @@ fn the_war_ledger_records_a_declaration_its_cost_and_its_peace() {
     assert_eq!(entry["peace_terms"][0]["turn"], 52);
     let aftermath = crate::obs::observation_spectator(&game, 0)["wars"][0]["theater"].clone();
     assert!(
-        aftermath.as_array().is_some_and(|sites| !sites.is_empty()),
+        aftermath
+            .as_array()
+            .is_some_and(|sites| !sites.is_empty()),
         "a concluded war exposes its durable battlefield to the full-map spectator"
     );
     game.turn = 92;
@@ -4548,7 +4250,8 @@ fn a_disabled_war_ledger_still_syncs_at_declarations_and_turn_boundaries() {
     );
     game.remove_unit(reinforcement);
 
-    let restored: Game = serde_json::from_str(&serde_json::to_string(&game).unwrap()).unwrap();
+    let restored: Game =
+        serde_json::from_str(&serde_json::to_string(&game).unwrap()).unwrap();
     assert!(
         restored.track_war_ledger,
         "the switch is runtime-only; a restored save narrates again"
@@ -4773,11 +4476,7 @@ fn a_defensive_pact_is_one_conflict_with_an_early_exit() {
 
     let observed = crate::obs::observation(&game, 0);
     let conflicts = observed["wars"].as_array().unwrap();
-    assert_eq!(
-        conflicts.len(),
-        1,
-        "the client receives one combined conflict"
-    );
+    assert_eq!(conflicts.len(), 1, "the client receives one combined conflict");
     assert_eq!(conflicts[0]["aggressor"], 0);
     assert_eq!(conflicts[0]["defender"], 1);
     let right_side = conflicts[0]["parties"]
@@ -4802,10 +4501,7 @@ fn a_defensive_pact_is_one_conflict_with_an_early_exit() {
         .iter()
         .find(|party| party["player"] == 2)
         .unwrap();
-    assert_eq!(
-        ally["exited"], 50,
-        "the infobox can say when the ally peaced out"
-    );
+    assert_eq!(ally["exited"], 50, "the infobox can say when the ally peaced out");
     assert_eq!(conflict["peace_terms"][0]["turn"], 50);
 }
 
@@ -4832,8 +4528,7 @@ fn a_peace_treaty_binds_for_the_shipped_ten_turns() {
     );
     game.players[1].denounced_until.insert(0, game.turn + 20);
     assert!(
-        game.do_declare_war_with_casus_belli(1, 0, "formal_war")
-            .is_err(),
+        game.do_declare_war_with_casus_belli(1, 0, "formal_war").is_err(),
         "no justification reopens a war the treaty closed"
     );
     assert!(
@@ -4936,7 +4631,8 @@ fn a_conquest_closes_the_war_it_ended() {
 fn a_city_state_dragged_in_by_its_suzerain_fights_its_suzerains_war() {
     let mut game = emergency_game_with_capitals(2, 5_506, 300);
     let city_state = game.players.len();
-    game.players.push(Player::new(city_state, "Valletta", true));
+    game.players
+        .push(Player::new(city_state, "Valletta", true));
     game.turn = 15;
     for _ in 0..3 {
         game.players[1].envoys.push((city_state, 999));
@@ -5093,10 +4789,7 @@ fn a_civilizations_unique_unit_stands_in_for_the_upgrade_target() {
     let (target, _, _) = game.unit_upgrade_price(0, "warrior").unwrap();
     assert_eq!(target, "legion");
     // Rome's Legion carries the shipped Swordsman upgrade path onward.
-    assert_eq!(
-        game.rules.units["legion"].upgrade_to.as_deref(),
-        Some("man_at_arms")
-    );
+    assert_eq!(game.rules.units["legion"].upgrade_to.as_deref(), Some("man_at_arms"));
 }
 
 #[test]

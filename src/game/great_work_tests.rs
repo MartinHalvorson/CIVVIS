@@ -54,9 +54,7 @@ fn archaeologists_extract_housed_artifacts_and_consume_sites() {
     game.players[0]
         .counters
         .insert("great_work:relic".to_string(), 1);
-    game.players[0]
-        .civics
-        .insert(crate::name!("natural_history"));
+    game.players[0].civics.insert(crate::name!("natural_history"));
     let sites: Vec<Pos> = game.cities[&city]
         .owned_tiles
         .iter()
@@ -112,16 +110,17 @@ fn archaeologists_extract_housed_artifacts_and_consume_sites() {
         .iter()
         .filter(|piece| piece.kind == "artifact")
         .collect();
-    let origins: BTreeSet<&str> = artifacts
-        .iter()
-        .map(|piece| piece.creator.as_str())
-        .collect();
+    let origins: BTreeSet<&str> =
+        artifacts.iter().map(|piece| piece.creator.as_str()).collect();
     let theming = if artifacts.len() >= 3 && origins.len() >= 3 {
         9.0
     } else {
         0.0
     };
-    assert!((culture_with_artifacts - culture_without_artifacts - (9.0 + theming)).abs() < 1e-9);
+    assert!(
+        (culture_with_artifacts - culture_without_artifacts - (9.0 + theming)).abs()
+            < 1e-9
+    );
     game.players[0]
         .counters
         .insert("great_work:artifact".to_string(), 3);
@@ -151,9 +150,7 @@ fn foreign_excavation_requires_access_unless_terracotta_grants_it() {
         .unwrap()
         .buildings
         .push(crate::name!("archaeological_museum"));
-    game.players[0]
-        .civics
-        .insert(crate::name!("natural_history"));
+    game.players[0].civics.insert(crate::name!("natural_history"));
     game.players[1].civics.insert(crate::name!("early_empire"));
     let foreign_city = game.player_city_ids(1)[0];
     let site = game.cities[&foreign_city]

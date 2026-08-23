@@ -332,9 +332,7 @@ impl JointTactics {
             scored.clear();
             for genome in &population {
                 let (score, played) = self.fitness(g, pid, w, genome, &portfolios, baseline_reply);
-                if generation == 0
-                    && genome.choice == incumbent.choice
-                    && genome.order == incumbent.order
+                if generation == 0 && genome.choice == incumbent.choice && genome.order == incumbent.order
                 {
                     greedy_score = greedy_score.max(score);
                 }
@@ -380,7 +378,9 @@ impl JointTactics {
         resolved.extend(g.player_unit_ids(pid).into_iter().filter(|uid| {
             let unit = &g.units[uid];
             let spec = &g.rules.units[unit.kind];
-            spec.class == "military" && spec.domain.as_deref() != Some("sea") && g.is_embarked(unit)
+            spec.class == "military"
+                && spec.domain.as_deref() != Some("sea")
+                && g.is_embarked(unit)
         }));
         let mut moved: BTreeSet<u32> = BTreeSet::new();
         let mut struck: BTreeSet<u32> = BTreeSet::new();
@@ -552,9 +552,11 @@ impl JointTactics {
                     };
                     for (target, action) in Self::strikes_from(g, pid, uid, to, range) {
                         let ranged = matches!(action, Action::Ranged { .. });
-                        let role_bonus =
-                            base.tactical_action_bonus_from(g, uid, to, target, ranged);
-                        let prior = Self::strike_prior(g, pid, uid, target, ranged, w) + role_bonus
+                        let role_bonus = base.tactical_action_bonus_from(
+                            g, uid, to, target, ranged,
+                        );
+                        let prior = Self::strike_prior(g, pid, uid, target, ranged, w)
+                            + role_bonus
                             - 4.0
                             - if handoff { HANDOFF_DISCOUNT } else { 0.0 };
                         lines.push(Line {
@@ -951,10 +953,22 @@ impl JointTactics {
             }
             let distance = g.wdist(from, target);
             if spec.has_ranged_attack() && distance <= range {
-                out.push((target, Action::Ranged { unit: uid, target }));
+                out.push((
+                    target,
+                    Action::Ranged {
+                        unit: uid,
+                        target,
+                    },
+                ));
             }
             if spec.is_melee_capable() && distance == 1 {
-                out.push((target, Action::Attack { unit: uid, target }));
+                out.push((
+                    target,
+                    Action::Attack {
+                        unit: uid,
+                        target,
+                    },
+                ));
             }
         }
         out
@@ -1568,21 +1582,15 @@ mod tests {
             .filter(|pos| {
                 g.wdist(*pos, g.units[&theirs[1]].pos) == 2
                     && g.units_at(*pos).is_empty()
-                    && g.map
-                        .get(*pos)
-                        .is_some_and(|t| g.rules.is_passable(t) && !g.rules.is_water(t))
+                    && g.map.get(*pos).is_some_and(|t| g.rules.is_passable(t) && !g.rules.is_water(t))
             })
             .min()
             .expect("open ground two tiles from the healthy warrior");
         let extra = g.spawn_unit("archer", 0, extra_pos);
         let excluded: BTreeSet<u32> = [mine[0]].into_iter().collect();
-        if let Some(plan) =
-            JointTactics::default().plan_excluding(&g, 0, &BasicAi::new(), &excluded)
+        if let Some(plan) = JointTactics::default().plan_excluding(&g, 0, &BasicAi::new(), &excluded)
         {
-            assert!(
-                !plan.resolved.contains(&mine[0]),
-                "the excluded archer is not resolved"
-            );
+            assert!(!plan.resolved.contains(&mine[0]), "the excluded archer is not resolved");
             assert!(!plan.withdrawn.contains(&mine[0]), "nor withdrawn");
             for action in &plan.actions {
                 let actor = match action {
@@ -1592,11 +1600,7 @@ mod tests {
                     | Action::Move { unit, .. } => Some(*unit),
                     _ => None,
                 };
-                assert_ne!(
-                    actor,
-                    Some(mine[0]),
-                    "the excluded archer issues no action: {action:?}"
-                );
+                assert_ne!(actor, Some(mine[0]), "the excluded archer issues no action: {action:?}");
             }
         }
         let _ = extra;
@@ -1775,9 +1779,7 @@ mod tests {
     fn one_lone_attacker_is_left_to_the_per_unit_path() {
         let (mut g, mine, _) = firing_line(40, 40);
         g.remove_unit(mine[1]);
-        assert!(JointTactics::default()
-            .plan(&g, 0, &BasicAi::new())
-            .is_none());
+        assert!(JointTactics::default().plan(&g, 0, &BasicAi::new()).is_none());
     }
 
     /// The live bridge disembarks land units in the ordinary per-unit path,
@@ -1864,4 +1866,5 @@ mod tests {
             );
         }
     }
+
 }

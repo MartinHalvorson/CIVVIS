@@ -107,29 +107,15 @@ fn adjacency_sources_account_for_every_point_a_district_earns() {
     let holy_site = ring[2];
     set_district(&mut game, capital, holy_site, "holy_site");
     let paired = game.district_adjacency_sources(crate::name!("campus"), site);
-    let district = paired
-        .iter()
-        .find(|source| source.source == "district")
-        .unwrap();
+    let district = paired.iter().find(|source| source.source == "district").unwrap();
     assert_eq!((district.count, district.yields.science), (2, 1.0));
     game.map.tiles.get_mut(&holy_site).unwrap().pillaged = true;
     let broken = game.district_adjacency_sources(crate::name!("campus"), site);
-    let district = broken
-        .iter()
-        .find(|source| source.source == "district")
-        .unwrap();
-    assert_eq!(
-        (district.count, district.yields.science),
-        (1, 0.0),
-        "a pillaged district is not adjacent"
-    );
+    let district = broken.iter().find(|source| source.source == "district").unwrap();
+    assert_eq!((district.count, district.yields.science), (1, 0.0), "a pillaged district is not adjacent");
     game.map.tiles.get_mut(&holy_site).unwrap().pillaged = false;
     game.map.tiles.get_mut(&holy_site).unwrap().district = None;
-    game.cities
-        .get_mut(&capital)
-        .unwrap()
-        .districts
-        .remove(&crate::name!("holy_site"));
+    game.cities.get_mut(&capital).unwrap().districts.remove(&crate::name!("holy_site"));
     let sources = game.district_adjacency_sources(crate::name!("campus"), site);
 
     let sum = |sources: &[AdjacencySource]| {
@@ -187,7 +173,8 @@ fn losing_a_governors_city_clears_live_and_legacy_assignments() {
     let mut captured = game.clone();
     captured.capture_city(second, 1);
     assert_eq!(
-        captured.players[0].governor_roster["victor"].city, None,
+        captured.players[0].governor_roster["victor"].city,
+        None,
         "a live ownership change displaces the Governor immediately"
     );
 
@@ -301,9 +288,7 @@ fn liang_executes_district_fisheries_parks_and_water_works() {
     // Fisheries carry the shipped Sailing prerequisite on top of Liang's
     // Aquaculture promotion, City Parks the Games and Recreation civic.
     game.players[0].techs.insert(crate::name!("sailing"));
-    game.players[0]
-        .civics
-        .insert(crate::name!("games_recreation"));
+    game.players[0].civics.insert(crate::name!("games_recreation"));
     appoint_established(
         &mut game,
         0,
@@ -434,7 +419,9 @@ fn magnus_executes_harvest_logistics_resources_power_and_integration() {
         .owned_tiles
         .iter()
         .copied()
-        .find(|position| *position != game.cities[&city].pos && game.units_at(*position).is_empty())
+        .find(|position| {
+            *position != game.cities[&city].pos && game.units_at(*position).is_empty()
+        })
         .unwrap();
     {
         let tile = game.map.tiles.get_mut(&harvest).unwrap();
@@ -632,7 +619,9 @@ fn moksha_executes_pressure_combat_healing_faith_patronage_and_districts() {
     let mut without_moksha = game.clone();
     without_moksha.players[0].governor_roster.clear();
     assert!(
-        (game.city_yields(city).faith - without_moksha.city_yields(city).faith - 2.0).abs() < 1e-9
+        (game.city_yields(city).faith - without_moksha.city_yields(city).faith - 2.0)
+            .abs()
+            < 1e-9
     );
 
     let inquisitor = game.spawn_test_unit("inquisitor", 0, center);
@@ -707,15 +696,9 @@ fn late_great_person_cards_pay_their_shipped_amounts_per_building() {
         .filter(|position| *position != center)
         .collect();
     // Buildings only pay out while their district stands.
-    for (index, district) in [
-        "commercial_hub",
-        "harbor",
-        "campus",
-        "industrial_zone",
-        "encampment",
-    ]
-    .into_iter()
-    .enumerate()
+    for (index, district) in ["commercial_hub", "harbor", "campus", "industrial_zone", "encampment"]
+        .into_iter()
+        .enumerate()
     {
         set_district(&mut game, city, sites[index], district);
     }
@@ -791,10 +774,7 @@ fn unused_great_person_points_are_paid_out_as_faith() {
     let rate = game.great_person_points_per_turn(0);
     let scientist = rate["scientist"];
     let prophet = rate["prophet"];
-    assert!(
-        scientist > 0.0 && prophet > 0.0,
-        "the two districts pay points: {rate:?}"
-    );
+    assert!(scientist > 0.0 && prophet > 0.0, "the two districts pay points: {rate:?}");
 
     // Every class still has someone to recruit: points bank, no Faith.
     assert!(game.great_person_class_earnable(0, "scientist"));
@@ -857,15 +837,12 @@ fn live_offer_list_blocks_automatic_native_great_person_claims() {
     set_district(&mut game, city, campus, "campus");
     let cost = game.gp_cost(0, "scientist");
     game.players[0].gpp.insert("scientist".to_string(), cost);
-    game.players[0].live_great_person_offers = Some(["merchant".to_string()].into_iter().collect());
+    game.players[0].live_great_person_offers =
+        Some(["merchant".to_string()].into_iter().collect());
 
     game.process_great_people(0);
     assert_eq!(
-        game.players[0]
-            .gp_claimed
-            .get("scientist")
-            .copied()
-            .unwrap_or(0),
+        game.players[0].gp_claimed.get("scientist").copied().unwrap_or(0),
         0,
         "a ready local Scientist remains pending while the host offers Merchant"
     );
@@ -874,10 +851,7 @@ fn live_offer_list_blocks_automatic_native_great_person_claims() {
     game.players[0].live_great_person_offers =
         Some(["scientist".to_string()].into_iter().collect());
     game.process_great_people(0);
-    assert_eq!(
-        game.players[0].gp_claimed.get("scientist").copied(),
-        Some(1)
-    );
+    assert_eq!(game.players[0].gp_claimed.get("scientist").copied(), Some(1));
 }
 
 #[test]
@@ -973,7 +947,9 @@ fn pingala_executes_population_gpp_space_and_curator_effects() {
         .unwrap()
         .promotions
         .remove("curator");
-    assert!((game.tourism_per_turn(0) - without_curator.tourism_per_turn(0) - 2.0).abs() < 1e-9);
+    assert!(
+        (game.tourism_per_turn(0) - without_curator.tourism_per_turn(0) - 2.0).abs() < 1e-9
+    );
 }
 
 #[test]
@@ -1033,9 +1009,7 @@ fn rationalism_pays_in_halves_not_a_flat_double() {
         let ring: Vec<Pos> = game
             .nbrs(site)
             .into_iter()
-            .filter(|position| {
-                *position != game.cities[&city].pos && game.map.get(*position).is_some()
-            })
+            .filter(|position| *position != game.cities[&city].pos && game.map.get(*position).is_some())
             .collect();
         for position in ring.iter().take(2) {
             let tile = game.map.tiles.get_mut(position).unwrap();
@@ -1046,26 +1020,17 @@ fn rationalism_pays_in_halves_not_a_flat_double() {
             tile.district = None;
         }
         let raw = game.district_yields(crate::name!("campus"), site).science;
-        assert!(
-            raw >= 2.0 && raw < 4.0,
-            "raw adjacency below the clause: {raw}"
-        );
-        game.players[0]
-            .policies
-            .insert(crate::name!("natural_philosophy"));
+        assert!(raw >= 2.0 && raw < 4.0, "raw adjacency below the clause: {raw}");
+        game.players[0].policies.insert(crate::name!("natural_philosophy"));
         assert!(game.district_yields(crate::name!("campus"), site).science >= 4.0);
         let with_both = game.city_yields(city).science;
-        game.players[0]
-            .policies
-            .remove(&crate::name!("rationalism"));
+        game.players[0].policies.remove(&crate::name!("rationalism"));
         let philosophy_alone = game.city_yields(city).science;
         assert!(
             (with_both - philosophy_alone).abs() < 1e-9,
             "a doubled adjacency does not open the clause: {philosophy_alone} -> {with_both}"
         );
-        game.players[0]
-            .policies
-            .remove(&crate::name!("natural_philosophy"));
+        game.players[0].policies.remove(&crate::name!("natural_philosophy"));
         game.players[0].policies.insert(crate::name!("rationalism"));
     }
 
@@ -1115,7 +1080,8 @@ fn finest_hour_and_the_pillage_cards_pay_what_they_ship_with() {
     // Gathering Storm reduced Raid and Total War to +50%.
     for card in ["raid", "total_war"] {
         assert_eq!(
-            game.rules.policies[card].effects["pillage_yield_pct"], 50.0,
+            game.rules.policies[card].effects["pillage_yield_pct"],
+            50.0,
             "{card} adds half to pillage yields"
         );
     }
@@ -1136,7 +1102,9 @@ fn unique_improvements_pay_their_conditional_clauses() {
         tile.pillaged = false;
         tile.river_edges = [false; 6];
     }
-    let faith = |game: &Game, at: Pos| game.player_tile_yields(0, at, &game.map.tiles[&at]).faith;
+    let faith = |game: &Game, at: Pos| {
+        game.player_tile_yields(0, at, &game.map.tiles[&at]).faith
+    };
     game.map.tiles.get_mut(&kurgan).unwrap().improvement = Some(crate::name!("kurgan"));
     let bare = faith(&game, kurgan);
     game.map.tiles.get_mut(&pasture).unwrap().improvement = Some(crate::name!("pasture"));
@@ -1147,35 +1115,25 @@ fn unique_improvements_pay_their_conditional_clauses() {
 
     // The Sphinx gains Culture once Natural History is in.
     game.map.tiles.get_mut(&kurgan).unwrap().improvement = Some(crate::name!("sphinx"));
-    let culture = game
-        .player_tile_yields(0, kurgan, &game.map.tiles[&kurgan])
-        .culture;
-    game.players[0]
-        .civics
-        .insert(crate::name!("natural_history"));
+    let culture = game.player_tile_yields(0, kurgan, &game.map.tiles[&kurgan]).culture;
+    game.players[0].civics.insert(crate::name!("natural_history"));
     assert_eq!(
-        game.player_tile_yields(0, kurgan, &game.map.tiles[&kurgan])
-            .culture,
+        game.player_tile_yields(0, kurgan, &game.map.tiles[&kurgan]).culture,
         culture + 1.0
     );
 
     // The Ziggurat starts at 2 Science, gains Culture beside a river, and
     // gains another Culture at Natural History.
-    game.players[0]
-        .civics
-        .remove(&crate::name!("natural_history"));
+    game.players[0].civics.remove(&crate::name!("natural_history"));
     game.map.tiles.get_mut(&kurgan).unwrap().improvement = Some(crate::name!("ziggurat"));
     let plain = game.player_tile_yields(0, kurgan, &game.map.tiles[&kurgan]);
     assert_eq!(plain.science, 2.0);
     game.map.tiles.get_mut(&kurgan).unwrap().river_edges[0] = true;
     let riverside = game.player_tile_yields(0, kurgan, &game.map.tiles[&kurgan]);
     assert_eq!(riverside.culture, plain.culture + 1.0);
-    game.players[0]
-        .civics
-        .insert(crate::name!("natural_history"));
+    game.players[0].civics.insert(crate::name!("natural_history"));
     assert_eq!(
-        game.player_tile_yields(0, kurgan, &game.map.tiles[&kurgan])
-            .culture,
+        game.player_tile_yields(0, kurgan, &game.map.tiles[&kurgan]).culture,
         riverside.culture + 1.0
     );
 }
@@ -1216,11 +1174,7 @@ fn rock_hewn_church_matches_firaxis_placement_yields_appeal_and_tourism() {
         tile.wonder = None;
         tile.pillaged = false;
         if !game.cities[&city].owned_tiles.contains(&position) {
-            game.cities
-                .get_mut(&city)
-                .unwrap()
-                .owned_tiles
-                .push(position);
+            game.cities.get_mut(&city).unwrap().owned_tiles.push(position);
         }
     }
     game.map.tiles.get_mut(&church).unwrap().hills = true;
@@ -1245,13 +1199,10 @@ fn rock_hewn_church_matches_firaxis_placement_yields_appeal_and_tourism() {
 
     let adjacent_appeal = game.tile_appeal(flat);
     let site_appeal = game.tile_appeal(church).max(0) as f64;
-    let bare_faith = game
-        .player_tile_yields(0, church, &game.map.tiles[&church])
-        .faith;
-    game.map.tiles.get_mut(&church).unwrap().improvement = Some(crate::name!("rock_hewn_church"));
-    let church_faith = game
-        .player_tile_yields(0, church, &game.map.tiles[&church])
-        .faith;
+    let bare_faith = game.player_tile_yields(0, church, &game.map.tiles[&church]).faith;
+    game.map.tiles.get_mut(&church).unwrap().improvement =
+        Some(crate::name!("rock_hewn_church"));
+    let church_faith = game.player_tile_yields(0, church, &game.map.tiles[&church]).faith;
     assert_eq!(church_faith - bare_faith, 1.0 + site_appeal + 2.0);
     assert_eq!(game.tile_appeal(flat), adjacent_appeal + 1);
 
@@ -1261,9 +1212,17 @@ fn rock_hewn_church_matches_firaxis_placement_yields_appeal_and_tourism() {
             .contains(&crate::name!("rock_hewn_church")));
     }
 
-    let before_flight = game.tourism_by_tile(0).get(&church).copied().unwrap_or(0.0);
+    let before_flight = game
+        .tourism_by_tile(0)
+        .get(&church)
+        .copied()
+        .unwrap_or(0.0);
     game.players[0].techs.insert(crate::name!("flight"));
-    let after_flight = game.tourism_by_tile(0).get(&church).copied().unwrap_or(0.0);
+    let after_flight = game
+        .tourism_by_tile(0)
+        .get(&church)
+        .copied()
+        .unwrap_or(0.0);
     assert_eq!(after_flight - before_flight, church_faith - bare_faith);
 }
 
@@ -1350,11 +1309,7 @@ fn pairidaeza_matches_firaxis_identity_adjacency_progression_and_tourism() {
         tile.wonder = None;
         tile.pillaged = false;
         if !game.cities[&city].owned_tiles.contains(&position) {
-            game.cities
-                .get_mut(&city)
-                .unwrap()
-                .owned_tiles
-                .push(position);
+            game.cities.get_mut(&city).unwrap().owned_tiles.push(position);
         }
     }
     game.map.tiles.get_mut(&holy).unwrap().district = Some(crate::name!("holy_site"));
@@ -1372,21 +1327,11 @@ fn pairidaeza_matches_firaxis_identity_adjacency_progression_and_tourism() {
     let appeal = game.tile_appeal(appeal_target);
     game.map.tiles.get_mut(&garden).unwrap().improvement = Some(crate::name!("pairidaeza"));
     let early = game.player_tile_yields(0, garden, &game.map.tiles[&garden]);
-    assert_eq!(
-        early.gold - bare.gold,
-        3.0,
-        "2 base plus 1 beside the city centre"
-    );
-    assert_eq!(
-        early.culture - bare.culture,
-        2.0,
-        "1 base plus 1 beside a Holy Site"
-    );
+    assert_eq!(early.gold - bare.gold, 3.0, "2 base plus 1 beside the city centre");
+    assert_eq!(early.culture - bare.culture, 2.0, "1 base plus 1 beside a Holy Site");
     assert_eq!(game.tile_appeal(appeal_target), appeal + 1);
 
-    game.players[0]
-        .civics
-        .insert(crate::name!("diplomatic_service"));
+    game.players[0].civics.insert(crate::name!("diplomatic_service"));
     let late = game.player_tile_yields(0, garden, &game.map.tiles[&garden]);
     assert_eq!(late.culture - early.culture, 1.0);
     let before_flight = game.tourism_by_tile(0).get(&garden).copied().unwrap_or(0.0);
@@ -1414,11 +1359,7 @@ fn cahokia_mound_matches_firaxis_suzerain_placement_and_progression() {
         tile.wonder = None;
         tile.pillaged = false;
         if !game.cities[&city].owned_tiles.contains(&position) {
-            game.cities
-                .get_mut(&city)
-                .unwrap()
-                .owned_tiles
-                .push(position);
+            game.cities.get_mut(&city).unwrap().owned_tiles.push(position);
         }
     }
     let district_sites: Vec<Pos> = neighbors
@@ -1427,7 +1368,8 @@ fn cahokia_mound_matches_firaxis_suzerain_placement_and_progression() {
         .filter(|position| *position != centre)
         .take(2)
         .collect();
-    game.map.tiles.get_mut(&district_sites[0]).unwrap().district = Some(crate::name!("campus"));
+    game.map.tiles.get_mut(&district_sites[0]).unwrap().district =
+        Some(crate::name!("campus"));
     game.map.tiles.get_mut(&district_sites[1]).unwrap().district =
         Some(crate::name!("theater_square"));
     let adjacent_site = neighbors
@@ -1459,10 +1401,7 @@ fn cahokia_mound_matches_firaxis_suzerain_placement_and_progression() {
     assert_eq!(initial.gold - bare.gold, 3.0);
     assert_eq!(initial.food, bare.food);
     assert_eq!(game.city_housing(&game.cities[&city]), housing_before + 1.0);
-    assert_eq!(
-        game.city_local_amenities(&game.cities[&city]),
-        amenities_before + 1
-    );
+    assert_eq!(game.city_local_amenities(&game.cities[&city]), amenities_before + 1);
     assert!(!game
         .valid_improvements(0, adjacent_site)
         .contains(&crate::name!("mound")));
@@ -1470,9 +1409,7 @@ fn cahokia_mound_matches_firaxis_suzerain_placement_and_progression() {
     game.players[0].civics.insert(crate::name!("feudalism"));
     let medieval = game.player_tile_yields(0, mound, &game.map.tiles[&mound]);
     assert_eq!(medieval.food, initial.food + 1.0);
-    game.players[0]
-        .techs
-        .insert(crate::name!("replaceable_parts"));
+    game.players[0].techs.insert(crate::name!("replaceable_parts"));
     let mechanized = game.player_tile_yields(0, mound, &game.map.tiles[&mound]);
     assert_eq!(mechanized.food, initial.food + 2.0);
     game.players[0]
@@ -1504,17 +1441,9 @@ fn cahokia_mound_matches_firaxis_suzerain_placement_and_progression() {
     if !game.cities[&city].owned_tiles.contains(&second) {
         game.cities.get_mut(&city).unwrap().owned_tiles.push(second);
     }
-    assert_eq!(
-        game.city_local_amenities(&game.cities[&city]),
-        amenities_before + 1
-    );
-    game.players[0]
-        .civics
-        .insert(crate::name!("natural_history"));
-    assert_eq!(
-        game.city_local_amenities(&game.cities[&city]),
-        amenities_before + 2
-    );
+    assert_eq!(game.city_local_amenities(&game.cities[&city]), amenities_before + 1);
+    game.players[0].civics.insert(crate::name!("natural_history"));
+    assert_eq!(game.city_local_amenities(&game.cities[&city]), amenities_before + 2);
 }
 
 #[test]
@@ -1535,11 +1464,7 @@ fn armagh_monastery_matches_firaxis_placement_faith_and_religious_healing() {
         tile.pillaged = false;
     }
     if !game.cities[&city].owned_tiles.contains(&monastery) {
-        game.cities
-            .get_mut(&city)
-            .unwrap()
-            .owned_tiles
-            .push(monastery);
+        game.cities.get_mut(&city).unwrap().owned_tiles.push(monastery);
     }
 
     game.players[1].is_minor = true;
@@ -1560,7 +1485,8 @@ fn armagh_monastery_matches_firaxis_placement_faith_and_religious_healing() {
     game.map.tiles.get_mut(&monastery).unwrap().hills = false;
 
     let bare = game.player_tile_yields(0, monastery, &game.map.tiles[&monastery]);
-    game.map.tiles.get_mut(&monastery).unwrap().improvement = Some(crate::name!("monastery"));
+    game.map.tiles.get_mut(&monastery).unwrap().improvement =
+        Some(crate::name!("monastery"));
     let improved = game.player_tile_yields(0, monastery, &game.map.tiles[&monastery]);
     assert_eq!(improved.faith - bare.faith, 2.0);
 
@@ -1589,11 +1515,7 @@ fn cree_mekewap_matches_firaxis_placement_yields_and_housing_progression() {
         tile.wonder = None;
         tile.pillaged = false;
         if !game.cities[&city].owned_tiles.contains(&position) {
-            game.cities
-                .get_mut(&city)
-                .unwrap()
-                .owned_tiles
-                .push(position);
+            game.cities.get_mut(&city).unwrap().owned_tiles.push(position);
         }
     }
     let resource_sites: Vec<Pos> = neighbors
@@ -1611,16 +1533,20 @@ fn cree_mekewap_matches_firaxis_placement_yields_and_housing_progression() {
     assert!(!game
         .valid_improvements(0, mekewap)
         .contains(&crate::name!("mekewap")));
-    game.map.tiles.get_mut(&resource_sites[0]).unwrap().resource = Some(crate::name!("wheat"));
-    game.map.tiles.get_mut(&resource_sites[1]).unwrap().resource = Some(crate::name!("rice"));
-    game.map.tiles.get_mut(&resource_sites[2]).unwrap().resource = Some(crate::name!("silk"));
+    game.map.tiles.get_mut(&resource_sites[0]).unwrap().resource =
+        Some(crate::name!("wheat"));
+    game.map.tiles.get_mut(&resource_sites[1]).unwrap().resource =
+        Some(crate::name!("rice"));
+    game.map.tiles.get_mut(&resource_sites[2]).unwrap().resource =
+        Some(crate::name!("silk"));
     assert!(game
         .valid_improvements(0, mekewap)
         .contains(&crate::name!("mekewap")));
 
     let housing_before = game.city_housing(&game.cities[&city]);
     let bare = game.player_tile_yields(0, mekewap, &game.map.tiles[&mekewap]);
-    game.map.tiles.get_mut(&mekewap).unwrap().improvement = Some(crate::name!("mekewap"));
+    game.map.tiles.get_mut(&mekewap).unwrap().improvement =
+        Some(crate::name!("mekewap"));
     let initial = game.player_tile_yields(0, mekewap, &game.map.tiles[&mekewap]);
     assert_eq!(initial.production - bare.production, 1.0);
     assert_eq!(initial.food - bare.food, 1.0);
@@ -1628,11 +1554,13 @@ fn cree_mekewap_matches_firaxis_placement_yields_and_housing_progression() {
     assert_eq!(game.city_housing(&game.cities[&city]), housing_before + 1.0);
 
     game.players[0].civics.insert(crate::name!("civil_service"));
-    let civil_service = game.player_tile_yields(0, mekewap, &game.map.tiles[&mekewap]);
+    let civil_service =
+        game.player_tile_yields(0, mekewap, &game.map.tiles[&mekewap]);
     assert_eq!(civil_service.production, initial.production + 1.0);
     assert_eq!(game.city_housing(&game.cities[&city]), housing_before + 2.0);
     game.players[0].civics.insert(crate::name!("conservation"));
-    let conservation = game.player_tile_yields(0, mekewap, &game.map.tiles[&mekewap]);
+    let conservation =
+        game.player_tile_yields(0, mekewap, &game.map.tiles[&mekewap]);
     assert_eq!(conservation.food, initial.food + 1.0);
     game.players[0].techs.insert(crate::name!("cartography"));
     let cartography = game.player_tile_yields(0, mekewap, &game.map.tiles[&mekewap]);
@@ -1674,18 +1602,10 @@ fn samarkand_trading_dome_matches_firaxis_placement_yields_and_routes() {
         tile.wonder = None;
         tile.pillaged = false;
         if !game.cities[&origin].owned_tiles.contains(&position) {
-            game.cities
-                .get_mut(&origin)
-                .unwrap()
-                .owned_tiles
-                .push(position);
+            game.cities.get_mut(&origin).unwrap().owned_tiles.push(position);
         }
     }
-    let luxury = neighbors
-        .iter()
-        .copied()
-        .find(|pos| *pos != centre)
-        .unwrap();
+    let luxury = neighbors.iter().copied().find(|pos| *pos != centre).unwrap();
     let adjacent_dome = neighbors
         .iter()
         .copied()
@@ -1709,7 +1629,8 @@ fn samarkand_trading_dome_matches_firaxis_placement_yields_and_routes() {
     game.map.tiles.get_mut(&dome).unwrap().hills = false;
 
     let bare = game.player_tile_yields(0, dome, &game.map.tiles[&dome]);
-    game.map.tiles.get_mut(&dome).unwrap().improvement = Some(crate::name!("trading_dome"));
+    game.map.tiles.get_mut(&dome).unwrap().improvement =
+        Some(crate::name!("trading_dome"));
     let improved = game.player_tile_yields(0, dome, &game.map.tiles[&dome]);
     assert_eq!(improved.gold - bare.gold, 3.0);
     assert_eq!(game.trading_dome_origin_route_gold(origin), 1.0);
@@ -1739,11 +1660,7 @@ fn granada_alcazar_matches_firaxis_placement_yields_tourism_and_defense() {
         tile.wonder = None;
         tile.pillaged = false;
         if !game.cities[&city].owned_tiles.contains(&position) {
-            game.cities
-                .get_mut(&city)
-                .unwrap()
-                .owned_tiles
-                .push(position);
+            game.cities.get_mut(&city).unwrap().owned_tiles.push(position);
         }
     }
 
@@ -1825,11 +1742,7 @@ fn caguana_batey_matches_firaxis_placement_adjacency_and_tourism() {
         tile.wonder = None;
         tile.pillaged = false;
         if !game.cities[&city].owned_tiles.contains(&position) {
-            game.cities
-                .get_mut(&city)
-                .unwrap()
-                .owned_tiles
-                .push(position);
+            game.cities.get_mut(&city).unwrap().owned_tiles.push(position);
         }
     }
 
@@ -1866,10 +1779,17 @@ fn caguana_batey_matches_firaxis_placement_adjacency_and_tourism() {
     let adjacent_batey = neighbors
         .iter()
         .copied()
-        .find(|position| *position != centre && *position != bonus && *position != entertainment)
+        .find(|position| {
+            *position != centre && *position != bonus && *position != entertainment
+        })
         .unwrap();
     game.map.tiles.get_mut(&bonus).unwrap().resource = Some(crate::name!("wheat"));
-    set_district(&mut game, city, entertainment, "entertainment_complex");
+    set_district(
+        &mut game,
+        city,
+        entertainment,
+        "entertainment_complex",
+    );
 
     let bare = game.player_tile_yields(0, batey, &game.map.tiles[&batey]);
     game.map.tiles.get_mut(&batey).unwrap().improvement = Some(crate::name!("batey"));
@@ -1986,20 +1906,14 @@ fn lumber_mills_reach_rainforest_only_at_mercantilism() {
         tile.improvement = None;
     }
     game.players[0].techs.insert(crate::name!("construction"));
-    assert!(!game
-        .valid_improvements(0, site)
-        .contains(&crate::name!("lumber_mill")));
+    assert!(!game.valid_improvements(0, site).contains(&crate::name!("lumber_mill")));
     game.players[0].civics.insert(crate::name!("mercantilism"));
-    assert!(game
-        .valid_improvements(0, site)
-        .contains(&crate::name!("lumber_mill")));
+    assert!(game.valid_improvements(0, site).contains(&crate::name!("lumber_mill")));
 
     // Woods never needed the civic.
     game.map.tiles.get_mut(&site).unwrap().feature = Some(crate::name!("forest"));
     game.players[0].civics.remove(&Name::new("mercantilism"));
-    assert!(game
-        .valid_improvements(0, site)
-        .contains(&crate::name!("lumber_mill")));
+    assert!(game.valid_improvements(0, site).contains(&crate::name!("lumber_mill")));
 }
 
 #[test]
@@ -2063,9 +1977,7 @@ fn base_governor_abilities_arrive_with_the_appointment() {
 
     // Every governor carries exactly the five promotions the shipped
     // promotion set holds beside its base ability.
-    for governor in [
-        "amani", "liang", "magnus", "moksha", "pingala", "reyna", "victor",
-    ] {
+    for governor in ["amani", "liang", "magnus", "moksha", "pingala", "reyna", "victor"] {
         assert_eq!(
             game.rules.governors[governor].promotions.len(),
             5,
@@ -2150,8 +2062,7 @@ fn reyna_executes_routes_borders_adjacency_forestry_purchases_and_renewables() {
         .promotions
         .remove("harbormaster");
     assert_eq!(
-        game.district_yields(crate::name!("commercial_hub"), sites[0])
-            .gold
+        game.district_yields(crate::name!("commercial_hub"), sites[0]).gold
             - without_harbormaster
                 .district_yields(crate::name!("commercial_hub"), sites[0])
                 .gold,

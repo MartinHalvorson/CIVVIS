@@ -991,10 +991,7 @@ pub const CIV6_MAP_SCRIPTS: [MapScriptSpec; 18] = [
 /// battlefield, which is not a world and belongs to the Tactics mode's own
 /// menu. Both menus stay data-driven from the one authoritative roster.
 pub fn world_map_scripts() -> Vec<&'static MapScriptSpec> {
-    CIV6_MAP_SCRIPTS
-        .iter()
-        .filter(|spec| !spec.script.is_battlefield())
-        .collect()
+    CIV6_MAP_SCRIPTS.iter().filter(|spec| !spec.script.is_battlefield()).collect()
 }
 
 /// The Tactics mode's map menu, published separately from the Civ world list
@@ -1005,16 +1002,14 @@ pub fn battlefield_map_scripts() -> Vec<MapScriptSpec> {
         .filter(|spec| spec.script.is_battlefield())
         .copied()
         .collect();
-    maps.extend(
-        crate::historical_scenarios::generic_scenarios().filter_map(|scenario| {
-            Some(MapScriptSpec {
-                id: scenario.id,
-                name: scenario.name,
-                description: scenario.summary,
-                script: crate::historical_scenarios::script_from_id(scenario.id)?,
-            })
-        }),
-    );
+    maps.extend(crate::historical_scenarios::generic_scenarios().filter_map(|scenario| {
+        Some(MapScriptSpec {
+            id: scenario.id,
+            name: scenario.name,
+            description: scenario.summary,
+            script: crate::historical_scenarios::script_from_id(scenario.id)?,
+        })
+    }));
     maps
 }
 
@@ -1142,106 +1137,58 @@ pub const TACTICS_GLOBE_DIAMETERS: [i32; 4] = [8, 10, 15, 20];
 /// globe families share one ladder.
 pub const BATTLEFIELD_SIZES: [BattlefieldSize; 12] = [
     BattlefieldSize {
-        id: "10x10",
-        name: "Square · 10×10",
-        width: 10,
-        height: 10,
-        script: MapScript::Battlefield,
-        topology: MapTopology::Flat,
+        id: "10x10", name: "Square · 10×10", width: 10, height: 10,
+        script: MapScript::Battlefield, topology: MapTopology::Flat,
     },
     BattlefieldSize {
-        id: "10x20",
-        name: "March · 10×20",
-        width: 10,
-        height: 20,
-        script: MapScript::Battlefield,
-        topology: MapTopology::Flat,
+        id: "10x20", name: "March · 10×20", width: 10, height: 20,
+        script: MapScript::Battlefield, topology: MapTopology::Flat,
     },
     BattlefieldSize {
-        id: "20x20",
-        name: "Field · 20×20",
-        width: 20,
-        height: 20,
-        script: MapScript::Battlefield,
-        topology: MapTopology::Flat,
+        id: "20x20", name: "Field · 20×20", width: 20, height: 20,
+        script: MapScript::Battlefield, topology: MapTopology::Flat,
     },
     // Diameter 8 keeps the bare id `planet`: it is the globe Tactics shipped
     // as its only one, and saved games, sweep scripts and lobby deep-links
     // name it that. The rest are `planet_<diameter>` and the ladder reads
     // consistently in the menu, where the name carries the number.
     BattlefieldSize {
-        id: "planet",
-        name: "Planet · diameter 8",
-        width: 40,
-        height: 18,
-        script: MapScript::TacticsPlanet,
-        topology: MapTopology::Planet,
+        id: "planet", name: "Planet · diameter 8", width: 40, height: 18,
+        script: MapScript::TacticsPlanet, topology: MapTopology::Planet,
     },
     BattlefieldSize {
-        id: "planet_10",
-        name: "Planet · diameter 10",
-        width: 50,
-        height: 22,
-        script: MapScript::TacticsPlanet,
-        topology: MapTopology::Planet,
+        id: "planet_10", name: "Planet · diameter 10", width: 50, height: 22,
+        script: MapScript::TacticsPlanet, topology: MapTopology::Planet,
     },
     BattlefieldSize {
-        id: "planet_15",
-        name: "Planet · diameter 15",
-        width: 75,
-        height: 32,
-        script: MapScript::TacticsPlanet,
-        topology: MapTopology::Planet,
+        id: "planet_15", name: "Planet · diameter 15", width: 75, height: 32,
+        script: MapScript::TacticsPlanet, topology: MapTopology::Planet,
     },
     BattlefieldSize {
-        id: "planet_20",
-        name: "Planet · diameter 20",
-        width: 100,
-        height: 42,
-        script: MapScript::TacticsPlanet,
-        topology: MapTopology::Planet,
+        id: "planet_20", name: "Planet · diameter 20", width: 100, height: 42,
+        script: MapScript::TacticsPlanet, topology: MapTopology::Planet,
     },
     BattlefieldSize {
-        id: "ocean_8",
-        name: "Ocean · diameter 8",
-        width: 40,
-        height: 18,
-        script: MapScript::TacticsOcean,
-        topology: MapTopology::Planet,
+        id: "ocean_8", name: "Ocean · diameter 8", width: 40, height: 18,
+        script: MapScript::TacticsOcean, topology: MapTopology::Planet,
     },
     BattlefieldSize {
-        id: "ocean_10",
-        name: "Ocean · diameter 10",
-        width: 50,
-        height: 22,
-        script: MapScript::TacticsOcean,
-        topology: MapTopology::Planet,
+        id: "ocean_10", name: "Ocean · diameter 10", width: 50, height: 22,
+        script: MapScript::TacticsOcean, topology: MapTopology::Planet,
     },
     BattlefieldSize {
-        id: "ocean_15",
-        name: "Ocean · diameter 15",
-        width: 75,
-        height: 32,
-        script: MapScript::TacticsOcean,
-        topology: MapTopology::Planet,
+        id: "ocean_15", name: "Ocean · diameter 15", width: 75, height: 32,
+        script: MapScript::TacticsOcean, topology: MapTopology::Planet,
     },
     BattlefieldSize {
-        id: "ocean_20",
-        name: "Ocean · diameter 20",
-        width: 100,
-        height: 42,
-        script: MapScript::TacticsOcean,
-        topology: MapTopology::Planet,
+        id: "ocean_20", name: "Ocean · diameter 20", width: 100, height: 42,
+        script: MapScript::TacticsOcean, topology: MapTopology::Planet,
     },
     // A scenario's dimensions are its chart's, not a size the player picks:
     // moving them would move the two fleets off the ground they were on.
     BattlefieldSize {
-        id: "trafalgar",
-        name: "Trafalgar · 21 October 1805",
-        width: 30,
-        height: 24,
-        script: MapScript::Trafalgar,
-        topology: MapTopology::Flat,
+        id: "trafalgar", name: "Trafalgar · 21 October 1805", width: 30, height: 24,
+        script: MapScript::Trafalgar, topology: MapTopology::Flat,
     },
 ];
 
@@ -1251,18 +1198,16 @@ pub const BATTLEFIELD_SIZES: [BattlefieldSize; 12] = [
 /// server contract that grows with the battle catalogue.
 pub fn battlefield_sizes() -> Vec<BattlefieldSize> {
     let mut sizes = BATTLEFIELD_SIZES.to_vec();
-    sizes.extend(
-        crate::historical_scenarios::generic_scenarios().filter_map(|scenario| {
-            Some(BattlefieldSize {
-                id: scenario.id,
-                name: scenario.name,
-                width: scenario.width,
-                height: scenario.height,
-                script: crate::historical_scenarios::script_from_id(scenario.id)?,
-                topology: MapTopology::Flat,
-            })
-        }),
-    );
+    sizes.extend(crate::historical_scenarios::generic_scenarios().filter_map(|scenario| {
+        Some(BattlefieldSize {
+            id: scenario.id,
+            name: scenario.name,
+            width: scenario.width,
+            height: scenario.height,
+            script: crate::historical_scenarios::script_from_id(scenario.id)?,
+            topology: MapTopology::Flat,
+        })
+    }));
     sizes
 }
 
@@ -2131,11 +2076,12 @@ mod tests {
     use crate::game::{Action, Game, GameOptions, Item};
 
     use super::{
-        last_start_era, playable_start_eras, start_era_from_id, start_era_id, stock_start_era_id,
-        BaseRuleset, GameMode, GameSpeed, MapPoles, MapScript, MapSize, MapTopology, MatchSeries,
-        TacticsEra, TacticsRules, BASE_RULESETS, BATTLEFIELD_SIZES, CIV6_GAME_SPEEDS,
-        CIV6_MAP_SCRIPTS, CIV6_MAP_SIZES, MAP_POLES, MAP_TOPOLOGIES, START_ERAS,
-        TACTICS_GLOBE_DIAMETERS,
+        last_start_era, playable_start_eras, start_era_from_id, start_era_id,
+        stock_start_era_id, BaseRuleset, GameMode, GameSpeed, MapPoles, MapScript, MapSize,
+        MapTopology, MatchSeries, TacticsEra, TacticsRules,
+        BATTLEFIELD_SIZES,
+        BASE_RULESETS, CIV6_GAME_SPEEDS, CIV6_MAP_SCRIPTS, CIV6_MAP_SIZES, MAP_POLES,
+        MAP_TOPOLOGIES, START_ERAS, TACTICS_GLOBE_DIAMETERS,
     };
 
     /// One ruleset is offered, and the setting still has to behave like a
@@ -2167,11 +2113,7 @@ mod tests {
             assert!(seen.insert(spec.id), "{} is listed twice", spec.id);
             // An unbuilt rung still has to be described, or the lobby has
             // nothing honest to show for it.
-            assert!(
-                !spec.description.is_empty(),
-                "{} has no description",
-                spec.id
-            );
+            assert!(!spec.description.is_empty(), "{} has no description", spec.id);
             match spec.era {
                 Some(_) => history_has_begun = true,
                 // Prehistory precedes history: no unbuilt rung may appear
@@ -2192,10 +2134,7 @@ mod tests {
         assert_eq!(last_start_era(), playable.len() - 1);
         // Future is the last playable start, and an era off the end of the
         // ladder names the stock start rather than nothing at all.
-        assert_eq!(
-            start_era_from_id("future"),
-            Some(crate::rules::ERA_NAMES.len() - 1)
-        );
+        assert_eq!(start_era_from_id("future"), Some(crate::rules::ERA_NAMES.len() - 1));
         assert_eq!(start_era_id(playable.len()), "ancient");
         assert_eq!(start_era_from_id("holocene"), None);
     }
@@ -2225,10 +2164,7 @@ mod tests {
         assert_eq!(wire[0]["name"], "Stone Age");
         assert_eq!(wire[0]["playable"], false);
         assert_eq!(wire[1]["playable"], true);
-        assert!(
-            wire[0].get("era").is_none(),
-            "the era index reached the wire"
-        );
+        assert!(wire[0].get("era").is_none(), "the era index reached the wire");
     }
 
     /// A world set up to open in a later age of human history, built through
@@ -2239,14 +2175,7 @@ mod tests {
             barbarians: false,
             start_era: era,
             city_states: size.default_city_states,
-            ..GameOptions::new(
-                2,
-                size.width,
-                size.height,
-                909,
-                250,
-                size.default_city_states,
-            )
+            ..GameOptions::new(2, size.width, size.height, 909, 250, size.default_city_states)
         })
     }
 
@@ -2276,17 +2205,9 @@ mod tests {
         assert!(!earlier.is_empty());
         // Majors and city-states alike: a minor still holding Ancient spears
         // in a Renaissance world is free conquest, not a setting.
-        for player in renaissance
-            .players
-            .iter()
-            .filter(|player| !player.is_barbarian)
-        {
+        for player in renaissance.players.iter().filter(|player| !player.is_barbarian) {
             for tech in &earlier {
-                assert!(
-                    player.techs.contains(&crate::name::Name::new(tech)),
-                    "{} lacks {tech}",
-                    player.civ
-                );
+                assert!(player.techs.contains(&crate::name::Name::new(tech)), "{} lacks {tech}", player.civ);
             }
             assert!(
                 player
@@ -2316,14 +2237,8 @@ mod tests {
             .values()
             .map(|unit| unit.kind.as_str())
             .collect();
-        assert!(
-            !kinds.contains("warrior"),
-            "a Renaissance world still opens on Warriors: {kinds:?}"
-        );
-        assert!(
-            kinds.contains("settler"),
-            "the Settler is not an upgradeable unit: {kinds:?}"
-        );
+        assert!(!kinds.contains("warrior"), "a Renaissance world still opens on Warriors: {kinds:?}");
+        assert!(kinds.contains("settler"), "the Settler is not an upgradeable unit: {kinds:?}");
 
         // The final rung is a real opening too: it carries every earlier age
         // forward while leaving the Future tree for the new world to play.
@@ -2331,21 +2246,10 @@ mod tests {
         let future = world_opening_in(future_era);
         assert_eq!(future.start_era, future_era);
         assert_eq!(future.world_era, future_era);
-        assert!(future
-            .rules
-            .techs
-            .values()
-            .any(|spec| spec.era == future_era));
-        assert!(future
-            .rules
-            .civics
-            .values()
-            .any(|spec| spec.era == future_era));
+        assert!(future.rules.techs.values().any(|spec| spec.era == future_era));
+        assert!(future.rules.civics.values().any(|spec| spec.era == future_era));
         for player in future.players.iter().filter(|player| !player.is_barbarian) {
-            assert!(player
-                .techs
-                .iter()
-                .all(|tech| future.rules.techs[tech].era < future_era));
+            assert!(player.techs.iter().all(|tech| future.rules.techs[tech].era < future_era));
             assert!(player
                 .civics
                 .iter()
@@ -2416,20 +2320,12 @@ mod tests {
         assert_eq!(MapScript::LandOnly.land_percent(), 95);
         assert_eq!(MapScript::WaterWorld.land_percent(), 5);
         assert_eq!(MapScript::Fjords.land_percent(), 60);
-        assert_eq!(
-            MapScript::Earth.land_percent(),
-            MapScript::TrueStartEarth.land_percent()
-        );
+        assert_eq!(MapScript::Earth.land_percent(), MapScript::TrueStartEarth.land_percent());
         // Every type is reachable by the id the protocol carries, and the list
         // holds each of them exactly once.
         let mut seen = BTreeSet::new();
         for spec in CIV6_MAP_SCRIPTS {
-            assert_eq!(
-                MapScript::from_id(spec.id),
-                Some(spec.script),
-                "{}",
-                spec.id
-            );
+            assert_eq!(MapScript::from_id(spec.id), Some(spec.script), "{}", spec.id);
             assert_eq!(spec.script.id(), spec.id);
             assert!(seen.insert(spec.id), "{} is listed twice", spec.id);
         }
@@ -2472,20 +2368,10 @@ mod tests {
             // Every scenario is a Tactics map; almost no Tactics map is a
             // scenario. Getting that backwards would send an arena down the
             // fixed-chart path and panic the generator.
-            assert!(
-                !spec.script.is_scenario() || spec.script.is_battlefield(),
-                "{}",
-                spec.id
-            );
+            assert!(!spec.script.is_scenario() || spec.script.is_battlefield(), "{}", spec.id);
         }
-        assert_eq!(
-            MapScript::from_id("battlefield"),
-            Some(MapScript::Battlefield)
-        );
-        assert_eq!(
-            MapScript::from_id("tactics_planet"),
-            Some(MapScript::TacticsPlanet)
-        );
+        assert_eq!(MapScript::from_id("battlefield"), Some(MapScript::Battlefield));
+        assert_eq!(MapScript::from_id("tactics_planet"), Some(MapScript::TacticsPlanet));
         assert_eq!(MapScript::from_id("trafalgar"), Some(MapScript::Trafalgar));
         for size in BATTLEFIELD_SIZES {
             if size.script.is_scenario() {
@@ -2501,19 +2387,11 @@ mod tests {
                     .map(|side| side.parse().expect("battlefield ids read WxH"))
                     .collect();
                 assert_eq!(ground.len(), 2, "{}", size.id);
-                assert_eq!(
-                    size.width, ground[0],
-                    "{} is its own fighting ground",
-                    size.id
-                );
+                assert_eq!(size.width, ground[0], "{} is its own fighting ground", size.id);
                 assert_eq!(size.height, ground[1], "{}", size.id);
                 // Both sides are seated at opposite ends of the long axis,
                 // which is the north-south one at every offered size.
-                assert!(
-                    size.height >= size.width,
-                    "{} is not taller than it is wide",
-                    size.id
-                );
+                assert!(size.height >= size.width, "{} is not taller than it is wide", size.id);
                 assert_eq!(size.topology, MapTopology::Flat, "{}", size.id);
             } else {
                 // A globe entry is stored in the rectangle its own diameter
@@ -2525,20 +2403,11 @@ mod tests {
                 assert_eq!(size.topology, MapTopology::Planet, "{}", size.id);
                 assert_eq!(size.width % 5, 0, "{} is not 5n wide", size.id);
                 let diameter = size.width / 5;
-                assert_eq!(
-                    size.height,
-                    2 * diameter + 2,
-                    "{} is not 2n+2 tall",
-                    size.id
-                );
+                assert_eq!(size.height, 2 * diameter + 2, "{} is not 2n+2 tall", size.id);
                 assert!(TACTICS_GLOBE_DIAMETERS.contains(&diameter), "{}", size.id);
                 // The name carries the number, because a menu row reading
                 // "Planet" twice would be two indistinguishable choices.
-                assert!(
-                    size.name.ends_with(&format!("diameter {diameter}")),
-                    "{}",
-                    size.name
-                );
+                assert!(size.name.ends_with(&format!("diameter {diameter}")), "{}", size.name);
             }
             // No *flat* battlefield collides with a real map size: the
             // smallest world is wider than the largest arena several times
@@ -2554,17 +2423,11 @@ mod tests {
             // that touches its size or its shape, and the flat lookup is only
             // reached by maps that are not globes.
             if size.topology.is_globe() {
-                assert!(
-                    MapSize::from_dimensions(size.width, size.height).is_none_or(|found| {
-                        (found.globe_width(), found.globe_height()) == (size.width, size.height)
-                    })
-                );
+                assert!(MapSize::from_dimensions(size.width, size.height).is_none_or(|found| {
+                    (found.globe_width(), found.globe_height()) == (size.width, size.height)
+                }));
             } else {
-                assert!(
-                    MapSize::from_dimensions(size.width, size.height).is_none(),
-                    "{}",
-                    size.id
-                );
+                assert!(MapSize::from_dimensions(size.width, size.height).is_none(), "{}", size.id);
             }
         }
         // Both globe families offer the same ladder, and only that ladder. The
@@ -2589,14 +2452,8 @@ mod tests {
         // Exactly one entry per scenario script, because a scenario has one
         // size and a menu offering it twice would be offering two battles.
         assert_eq!(
-            BATTLEFIELD_SIZES
-                .iter()
-                .filter(|size| size.script.is_scenario())
-                .count(),
-            CIV6_MAP_SCRIPTS
-                .iter()
-                .filter(|spec| spec.script.is_scenario())
-                .count()
+            BATTLEFIELD_SIZES.iter().filter(|size| size.script.is_scenario()).count(),
+            CIV6_MAP_SCRIPTS.iter().filter(|spec| spec.script.is_scenario()).count()
         );
     }
 
@@ -2640,10 +2497,7 @@ mod tests {
             generous.sanitized(),
             "an arena's economy is still the player's"
         );
-        assert_eq!(
-            generous.for_script(MapScript::Pangaea),
-            generous.sanitized()
-        );
+        assert_eq!(generous.for_script(MapScript::Pangaea), generous.sanitized());
     }
 
     /// The three games CIVVIS offers, and how a world says which one it is.
@@ -2664,19 +2518,11 @@ mod tests {
             let mode = GameMode::for_script(spec.script);
             assert_eq!(
                 mode,
-                if spec.script.is_battlefield() {
-                    GameMode::Tactics
-                } else {
-                    GameMode::Civ
-                },
+                if spec.script.is_battlefield() { GameMode::Tactics } else { GameMode::Civ },
                 "{}",
                 spec.id
             );
-            assert!(
-                mode.is_playable(),
-                "{} builds a mode nobody can play",
-                spec.id
-            );
+            assert!(mode.is_playable(), "{} builds a mode nobody can play", spec.id);
         }
         // Sim City is declared and not yet built: it has a name, an id and a
         // ladder of its own, and no map script produces one.
@@ -2695,20 +2541,9 @@ mod tests {
     /// before the shape existed — load with it off.
     #[test]
     fn a_flag_battle_is_always_city_less() {
-        assert!(
-            !TacticsRules::default().flag,
-            "cities decide a battle unless a flag is asked for"
-        );
-        let flagged = TacticsRules {
-            flag: true,
-            cities: 1,
-            ..TacticsRules::default()
-        }
-        .sanitized();
-        assert_eq!(
-            flagged.cities, 0,
-            "the flag replaces the city objective outright"
-        );
+        assert!(!TacticsRules::default().flag, "cities decide a battle unless a flag is asked for");
+        let flagged = TacticsRules { flag: true, cities: 1, ..TacticsRules::default() }.sanitized();
+        assert_eq!(flagged.cities, 0, "the flag replaces the city objective outright");
         assert!(flagged.flag);
         let mut old = serde_json::to_value(TacticsRules::default()).unwrap();
         old.as_object_mut().unwrap().remove("flag");
@@ -2727,14 +2562,8 @@ mod tests {
     /// keeps the two from drifting together the next time the default moves.
     #[test]
     fn a_new_battle_is_fogged_and_an_old_save_is_not() {
-        assert!(
-            TacticsRules::default().fog,
-            "a battle is fought through its own fog"
-        );
-        assert!(
-            TacticsRules::default().sanitized().fog,
-            "sanitizing must not lift the fog"
-        );
+        assert!(TacticsRules::default().fog, "a battle is fought through its own fog");
+        assert!(TacticsRules::default().sanitized().fog, "sanitizing must not lift the fog");
         let mut old = serde_json::to_value(TacticsRules::default()).unwrap();
         old.as_object_mut().unwrap().remove("fog");
         assert!(
@@ -2744,10 +2573,7 @@ mod tests {
         // A save that does carry the field keeps what it was played under,
         // both ways round.
         for fog in [false, true] {
-            let written = serde_json::to_value(TacticsRules {
-                fog,
-                ..TacticsRules::default()
-            });
+            let written = serde_json::to_value(TacticsRules { fog, ..TacticsRules::default() });
             let read: TacticsRules = serde_json::from_value(written.unwrap()).unwrap();
             assert_eq!(read.fog, fog);
         }
@@ -2762,35 +2588,15 @@ mod tests {
         // An even length is not a match: best of four is best of three with a
         // dead rubber attached, and can be split with nothing left to play.
         for asked in [0, 1, 2, 3, 4, 5, 6, 1_000] {
-            let length = TacticsRules {
-                best_of: asked,
-                ..TacticsRules::default()
-            }
-            .sanitized()
-            .best_of;
+            let length = TacticsRules { best_of: asked, ..TacticsRules::default() }
+                .sanitized()
+                .best_of;
             assert_eq!(length % 2, 1, "asked for {asked}, got {length}");
-            assert!(
-                (1..=TacticsRules::MAX_BEST_OF).contains(&length),
-                "{length}"
-            );
+            assert!((1..=TacticsRules::MAX_BEST_OF).contains(&length), "{length}");
         }
-        assert_eq!(
-            TacticsRules {
-                best_of: 5,
-                ..TacticsRules::default()
-            }
-            .wins_needed(),
-            3
-        );
-        assert_eq!(
-            TacticsRules::default().best_of,
-            1,
-            "one battle unless a match is asked for"
-        );
-        assert!(
-            !TacticsRules::default().unique_units,
-            "even rosters unless asked otherwise"
-        );
+        assert_eq!(TacticsRules { best_of: 5, ..TacticsRules::default() }.wins_needed(), 3);
+        assert_eq!(TacticsRules::default().best_of, 1, "one battle unless a match is asked for");
+        assert!(!TacticsRules::default().unique_units, "even rosters unless asked otherwise");
 
         let mut series = MatchSeries::new(5, ["Greece".to_string(), "Egypt".to_string()]);
         assert_eq!(series.wins_needed(), 3);
@@ -2803,11 +2609,7 @@ mod tests {
         series.record(Some("Greece"));
         assert!(series.decided());
         assert_eq!(series.winner(), Some("Greece"));
-        assert_eq!(
-            series.played(),
-            4,
-            "a match stops at the battle that settles it"
-        );
+        assert_eq!(series.played(), 4, "a match stops at the battle that settles it");
         assert_eq!(series.scoreline(), "Greece 3 – Egypt 1");
 
         // A battle nobody wins is counted rather than dropped, and enough of
@@ -2819,11 +2621,7 @@ mod tests {
         assert!(drawn.decided());
         assert_eq!(drawn.winner(), None);
         assert_eq!(drawn.played(), 3);
-        assert!(
-            drawn.scoreline().contains("3 drawn"),
-            "{}",
-            drawn.scoreline()
-        );
+        assert!(drawn.scoreline().contains("3 drawn"), "{}", drawn.scoreline());
     }
 
     /// A battle clock is a small, deliberate Tactics setting rather than an
@@ -2833,52 +2631,35 @@ mod tests {
     /// was fought under rather than being restated to the new default.
     #[test]
     fn tactics_turn_limits_use_the_published_ladder_and_survive_old_saves() {
-        assert_eq!(
-            TacticsRules::TURN_LIMITS,
-            [10, 20, 30, 40, 50, 100, 150, 200, 250]
-        );
-        assert_eq!(
-            TacticsRules::default().turn_limit,
-            TacticsRules::DEFAULT_TURN_LIMIT
-        );
+        assert_eq!(TacticsRules::TURN_LIMITS, [10, 20, 30, 40, 50, 100, 150, 200, 250]);
+        assert_eq!(TacticsRules::default().turn_limit, TacticsRules::DEFAULT_TURN_LIMIT);
         assert_eq!(TacticsRules::DEFAULT_TURN_LIMIT, 250);
         assert!(TacticsRules::TURN_LIMITS.contains(&TacticsRules::DEFAULT_TURN_LIMIT));
         for limit in TacticsRules::TURN_LIMITS {
             assert_eq!(
-                TacticsRules {
-                    turn_limit: limit,
-                    ..TacticsRules::default()
-                }
-                .sanitized()
-                .turn_limit,
+                TacticsRules { turn_limit: limit, ..TacticsRules::default() }
+                    .sanitized()
+                    .turn_limit,
                 limit
             );
         }
         assert_eq!(
-            TacticsRules {
-                turn_limit: 0,
-                ..TacticsRules::default()
-            }
-            .sanitized()
-            .turn_limit,
+            TacticsRules { turn_limit: 0, ..TacticsRules::default() }
+                .sanitized()
+                .turn_limit,
             10
         );
         assert_eq!(
-            TacticsRules {
-                turn_limit: 149,
-                ..TacticsRules::default()
-            }
-            .sanitized()
-            .turn_limit,
+            TacticsRules { turn_limit: 149, ..TacticsRules::default() }
+                .sanitized()
+                .turn_limit,
             150
         );
 
         let mut old = serde_json::to_value(TacticsRules::default()).unwrap();
         old.as_object_mut().unwrap().remove("turn_limit");
         assert_eq!(
-            serde_json::from_value::<TacticsRules>(old)
-                .unwrap()
-                .turn_limit,
+            serde_json::from_value::<TacticsRules>(old).unwrap().turn_limit,
             100,
             "a save from before the clock was a setting keeps its 100 turns"
         );
@@ -2891,30 +2672,13 @@ mod tests {
     #[test]
     fn the_stock_arena_deals_two_standing_armies_and_no_reinforcements() {
         let stock = TacticsRules::default();
-        assert_eq!(
-            stock.cities, 1,
-            "each side holds the one city it is dropped in with"
-        );
+        assert_eq!(stock.cities, 1, "each side holds the one city it is dropped in with");
         assert_eq!(stock.production, 0, "the stock city builds nothing");
-        assert_eq!(
-            stock.gold, 0,
-            "the stock side banks nothing to upgrade with"
-        );
+        assert_eq!(stock.gold, 0, "the stock side banks nothing to upgrade with");
         assert_eq!(stock.sanitized(), stock, "the stock arena is already sane");
-        let reinforced = TacticsRules {
-            production: 30,
-            gold: 30,
-            ..stock
-        }
-        .sanitized();
-        assert_eq!(
-            reinforced.production, 30,
-            "Production per turn is still the player's to set"
-        );
-        assert_eq!(
-            reinforced.gold, 30,
-            "Gold per turn is still the player's to set"
-        );
+        let reinforced = TacticsRules { production: 30, gold: 30, ..stock }.sanitized();
+        assert_eq!(reinforced.production, 30, "Production per turn is still the player's to set");
+        assert_eq!(reinforced.gold, 30, "Gold per turn is still the player's to set");
     }
 
     /// The world's shape and its poles are settings of their own, orthogonal to
@@ -2947,11 +2711,7 @@ mod tests {
         assert_eq!(MapPoles::from_id("on"), Some(MapPoles::Poles));
         assert_eq!(MapPoles::from_id("randomized"), Some(MapPoles::Randomized));
         for retired in ["no_poles", "none", "off", "false"] {
-            assert_eq!(
-                MapPoles::from_id(retired),
-                None,
-                "{retired} still names a world"
-            );
+            assert_eq!(MapPoles::from_id(retired), None, "{retired} still names a world");
         }
         assert_eq!(MapPoles::from_id("hot_and_cold"), None);
         // A save is not a lobby. A checkpoint written while that world was on
@@ -2988,10 +2748,7 @@ mod tests {
 
         // `planet` named a world type before the globe became a shape of its
         // own. The old name still resolves, to the type that script generated.
-        assert_eq!(
-            MapScript::from_id("planet"),
-            Some(MapScript::SmallContinents)
-        );
+        assert_eq!(MapScript::from_id("planet"), Some(MapScript::SmallContinents));
         assert_eq!(MapTopology::from_id("planet"), Some(MapTopology::Planet));
         assert_eq!(MapScript::from_id("pangea"), Some(MapScript::Pangaea));
 
@@ -3011,10 +2768,7 @@ mod tests {
                 size.dimensions(MapTopology::Planet),
                 (size.globe_width(), size.globe_height())
             );
-            assert_eq!(
-                size.dimensions(MapTopology::Flat),
-                (size.width, size.height)
-            );
+            assert_eq!(size.dimensions(MapTopology::Flat), (size.width, size.height));
         }
     }
 
@@ -3069,11 +2823,7 @@ mod tests {
         ];
         for (standard, scaled) in rows {
             for (speed, want) in order.iter().zip(scaled) {
-                assert_eq!(
-                    speed.scale_turns(standard),
-                    want,
-                    "{speed:?} for {standard}"
-                );
+                assert_eq!(speed.scale_turns(standard), want, "{speed:?} for {standard}");
             }
         }
     }
@@ -3176,20 +2926,11 @@ mod tests {
     /// off those is a world that no longer plays like a Civilization VI map.
     #[test]
     fn the_scaled_worlds_keep_the_stock_ratios_and_stay_inside_the_roster() {
-        let scaled = [
-            ("massive", 15),
-            ("enormous", 20),
-            ("colossal", 50),
-            ("ludicrous", 100),
-        ];
+        let scaled = [("massive", 15), ("enormous", 20), ("colossal", 50), ("ludicrous", 100)];
         for (id, players) in scaled {
             let size = CIV6_MAP_SIZES.iter().find(|size| size.id == id).unwrap();
             assert_eq!(size.default_players, players, "{id} seats");
-            assert_eq!(
-                MapSize::for_players(players).id,
-                id,
-                "{id} is chosen for {players}"
-            );
+            assert_eq!(MapSize::for_players(players).id, id, "{id} is chosen for {players}");
 
             let tiles = (size.width * size.height) as f64;
             let per_civ = tiles / players as f64;

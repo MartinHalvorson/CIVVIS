@@ -36,10 +36,7 @@ fn each_leader_pool_uses_every_entry_before_it_repeats() {
                 "duplicate civilization in {pool:?} at {players} players: {seated:?}"
             );
             for civ in &seated {
-                assert!(
-                    known.contains(&Name::new(civ)),
-                    "{civ} is not in the ruleset"
-                );
+                assert!(known.contains(&Name::new(civ)), "{civ} is not in the ruleset");
             }
         }
     }
@@ -68,7 +65,12 @@ fn a_chosen_civilization_takes_its_seat_and_is_not_duplicated() {
     assert_eq!(&two[..2], ["Nubia".to_string(), "Rome".to_string()]);
     assert_eq!(two.iter().collect::<BTreeSet<_>>().len(), 4);
 
-    let rejected_historical_pick = seat_civs(3, &["Denmark".to_string()], &known, LeaderPool::Civ6);
+    let rejected_historical_pick = seat_civs(
+        3,
+        &["Denmark".to_string()],
+        &known,
+        LeaderPool::Civ6,
+    );
     assert_eq!(rejected_historical_pick[0], CIV6_LEADER_POOL[0]);
 
     let historical_pick = seat_civs(
@@ -85,7 +87,12 @@ fn a_chosen_civilization_takes_its_seat_and_is_not_duplicated() {
 #[test]
 fn an_unknown_civilization_falls_back_to_the_stock_roster() {
     let known: BTreeSet<Name> = Rules::shared().civs.keys().cloned().collect();
-    let seated = seat_civs(3, &["Atlantis".to_string()], &known, LeaderPool::Civ6);
+    let seated = seat_civs(
+        3,
+        &["Atlantis".to_string()],
+        &known,
+        LeaderPool::Civ6,
+    );
     assert_eq!(seated[0], CIV_NAMES[0]);
     assert_eq!(seated.iter().collect::<BTreeSet<_>>().len(), 3);
 }
@@ -131,8 +138,10 @@ fn randomized_seating_is_seeded_unique_and_preserves_explicit_picks() {
     let chosen = ["Egypt".to_string()];
     let mut first_rng = Rng::new(71);
     let mut repeat_rng = Rng::new(71);
-    let first = seat_civs_randomized(8, &chosen, &known, LeaderPool::Civ6, &mut first_rng);
-    let repeat = seat_civs_randomized(8, &chosen, &known, LeaderPool::Civ6, &mut repeat_rng);
+    let first =
+        seat_civs_randomized(8, &chosen, &known, LeaderPool::Civ6, &mut first_rng);
+    let repeat =
+        seat_civs_randomized(8, &chosen, &known, LeaderPool::Civ6, &mut repeat_rng);
     assert_eq!(first, repeat);
     assert_eq!(first[0], "Egypt");
     assert_eq!(first.iter().collect::<BTreeSet<_>>().len(), 8);
@@ -158,7 +167,9 @@ fn each_random_pool_contains_exactly_its_selected_roster() {
         }
         assert_eq!(
             seen,
-            pool.entries().map(|entry| entry.civ.clone()).collect(),
+            pool.entries()
+                .map(|entry| entry.civ.clone())
+                .collect(),
             "randomized {pool:?} roster differs from its declared pool"
         );
     }

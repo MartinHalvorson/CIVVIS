@@ -300,7 +300,11 @@ impl WorkPool {
             assert!(states.is_empty(), "an empty work batch needs no states");
             return Vec::new();
         }
-        let active = self.workers.len().min(count).min(max_workers.max(1));
+        let active = self
+            .workers
+            .len()
+            .min(count)
+            .min(max_workers.max(1));
         assert_eq!(
             states.len(),
             active,
@@ -369,10 +373,7 @@ impl WorkPool {
                 .expect("a stateful worker stopped without reporting completion")
             {
                 BatchMessage::Value(index, value) => {
-                    assert!(
-                        index < count,
-                        "stateful worker returned index {index} out of range"
-                    );
+                    assert!(index < count, "stateful worker returned index {index} out of range");
                     assert!(
                         values[index].is_none(),
                         "stateful worker returned index {index} twice"
@@ -396,10 +397,7 @@ impl WorkPool {
     fn ordered_stateful_results<T>(count: usize, results: Vec<(usize, T)>) -> Vec<T> {
         let mut values: Vec<Option<T>> = (0..count).map(|_| None).collect();
         for (index, value) in results {
-            assert!(
-                index < count,
-                "stateful worker returned index {index} out of range"
-            );
+            assert!(index < count, "stateful worker returned index {index} out of range");
             assert!(
                 values[index].is_none(),
                 "stateful worker returned index {index} twice"
@@ -685,10 +683,7 @@ mod tests {
                 .collect()
         });
         assert_eq!(
-            values
-                .iter()
-                .map(|(square, _, _)| *square)
-                .collect::<Vec<_>>(),
+            values.iter().map(|(square, _, _)| *square).collect::<Vec<_>>(),
             (0..64).map(|index| index * index).collect::<Vec<_>>()
         );
         for state in 0..4 {
