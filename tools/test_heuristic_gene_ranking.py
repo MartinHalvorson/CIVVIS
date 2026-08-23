@@ -541,13 +541,19 @@ class TheStandardScreenPreview(unittest.TestCase):
                 gene_ledger.pooled_posterior(list(history) + [self.reading(tag)]))
 
     def test_governor_victory_lanes_is_the_largest_correctable_defect(self):
-        """It ships ON, promoted on P10's single +46 column, and the
-        deployment shape reads it at −237 [−267, −206]."""
+        """RESOLVED 2026-08-23. It shipped ON, promoted on P10's single +46
+        column; the deployment shape read it at −237 [−267, −206]; and the
+        pre-registered direct arm `g1` (600 map pairs, seeds 150000000+,
+        disjoint from the whole-genome screen's maps) confirmed −4.78 pp at
+        win z −6.11. The threshold rule then wrote it **off** — both clauses
+        agreeing, so it does not rest on the marginal Diff veto."""
         row = next(g for g in self.ledger["genes"]
                    if g["tag"] == "governor-victory-lanes")
-        self.assertTrue(row["default_on"], "the note's premise: it ships on")
-        self.assertEqual(row["wins_last_10k"], 46)
-        self.assertIsNone(row["wins_prior_10k"], "one column, the #2294 clause")
+        self.assertFalse(row["default_on"], "g1 resolved it off")
+        self.assertEqual(row["verdict"], "hurts")
+        # The +46 that promoted it is now the PRIOR column; g1 is the latest.
+        self.assertEqual(row["wins_last_10k"], -239)
+        self.assertEqual(row["wins_prior_10k"], 46, "the column that promoted it")
         legacy, standard, pooled = self.pools("governor-victory-lanes")
         self.assertEqual((round(legacy["effect"]), round(legacy["lo"]),
                           round(legacy["hi"])), (46, 9, 82))
@@ -555,8 +561,13 @@ class TheStandardScreenPreview(unittest.TestCase):
                           round(standard["hi"])), (-236, -267, -206))
         # The two intervals do not merely disagree, they do not come close.
         self.assertGreater(legacy["lo"] - standard["hi"], 200)
-        # So the pool is a warning, not an answer.
-        self.assertEqual(round(pooled["tau"]), 199)
+        # So the pool is a warning, not an answer. Assert the figure the
+        # LEDGER publishes (its two screens: P10 legacy and g1 standard),
+        # not a recomputation over the note's preview as well -- since
+        # 2026-08-23 that would pool three readings and report a different
+        # tau for a quantity nothing ships.
+        self.assertEqual(round(row["posterior_tau_pp"]), 199)
+        self.assertEqual(row["posterior_screens"], 2)
         self.assertEqual(gene_ledger.posterior_call(pooled["effect"], pooled["se"]),
                          "unresolved")
         self.assertEqual(gene_ledger.posterior_call(standard["effect"],
@@ -566,15 +577,19 @@ class TheStandardScreenPreview(unittest.TestCase):
 
     def test_the_legacy_share_axis_already_said_it(self):
         """P10 read this gene win z +2.46 / share z −15.92 — a recorded
-        `conflict` — and the rule reads the win axis only."""
+        `conflict`, because the rule reads the win axis only. The share axis
+        was right a day before the win axis caught up, and g1's own arm now
+        agrees on BOTH axes, so the conflict is gone."""
         row = next(g for g in self.ledger["genes"]
                    if g["tag"] == "governor-victory-lanes")
-        self.assertTrue(row["conflict"])
-        self.assertAlmostEqual(row["screen"]["win_z"], 2.46, places=2)
-        self.assertAlmostEqual(row["screen"]["share_z"], -15.92, places=2)
-        # Within half a sigma of what the deployment shape's WIN axis now says.
-        self.assertLess(abs(abs(row["screen"]["share_z"])
-                            - abs(self.STANDARD["governor-victory-lanes"][1])), 0.6)
+        # g1 is the current screen: both axes negative, no conflict left.
+        self.assertFalse(row["conflict"], "both axes now agree")
+        self.assertAlmostEqual(row["screen"]["win_z"], -6.11, places=2)
+        self.assertAlmostEqual(row["screen"]["share_z"], -23.76, places=2)
+        # P10's share axis (−15.92) landed within half a sigma of what the
+        # deployment shape's WIN axis said a day later (−15.37).
+        self.assertLess(abs(15.92 - abs(self.STANDARD["governor-victory-lanes"][1])),
+                        0.6)
         self.assertIn("-15.92", self.notes)
 
     def test_the_composite_harm_is_carried_by_one_named_half(self):
@@ -584,9 +599,10 @@ class TheStandardScreenPreview(unittest.TestCase):
         self.assertLess(abs(composite - victory), 0.1, "the half is the composite")
         self.assertLess(abs(expansion), abs(victory) / 5, "the other half is cheap")
         self.assertLess(abs(victory + expansion - composite), 0.7, "roughly additive")
-        # And the harmful half is the one that ships.
+        # The harmful half was the only one that shipped, until g1 resolved
+        # it off on 2026-08-23. All three governor genes now default off.
         by_tag = {g["tag"]: g for g in self.ledger["genes"]}
-        self.assertTrue(by_tag["governor-victory-lanes"]["default_on"])
+        self.assertFalse(by_tag["governor-victory-lanes"]["default_on"])
         self.assertFalse(by_tag["governor-every-lane"]["default_on"])
         self.assertFalse(by_tag["governor-expansion-lane"]["default_on"])
 
