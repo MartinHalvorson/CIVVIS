@@ -1937,6 +1937,14 @@ impl EnvelopeReach {
 /// can strike next turn. Shared, so a per-enemy cache hit costs a refcount.
 pub(crate) type AttackEnvelopes = Vec<(u32, std::sync::Arc<EnvelopeReach>)>;
 
+/// One envelope table and the union of every tile in it, kept together so a
+/// reader can tell whether the union still describes the table it holds. See
+/// [`BasicAi::covered_tiles`].
+type CoveredTiles = (
+    std::sync::Arc<AttackEnvelopes>,
+    std::sync::Arc<EnvelopeReach>,
+);
+
 /// One enemy's envelope, with the key that says when it may be reused.
 ///
 /// ★★★★★ THE BOARD KEY IS TOO COARSE AND THAT IS MOST OF THE COST. The
@@ -2490,14 +2498,7 @@ pub struct BasicAi {
     envelope_board: std::sync::Arc<std::sync::Mutex<Option<EnvelopeBoard>>>,
     /// Every tile any hostile envelope covers, unioned once and kept against
     /// the exact envelope table it was built from. See [`Self::covered_tiles`].
-    covered_tiles_cache: std::sync::Arc<
-        std::sync::Mutex<
-            Option<(
-                std::sync::Arc<AttackEnvelopes>,
-                std::sync::Arc<EnvelopeReach>,
-            )>,
-        >,
-    >,
+    covered_tiles_cache: std::sync::Arc<std::sync::Mutex<Option<CoveredTiles>>>,
     /// Keep the hostile-envelope table across this seat's own unit moves.
     ///
     /// The exact key (see `attack_envelope_fingerprint`) covers every unit's
@@ -5137,8 +5138,16 @@ impl BasicAi {
         if SEEN.fetch_add(1, Ordering::Relaxed) >= 6 {
             return;
         }
-        let gained: Vec<Pos> = fresh.iter().filter(|p| !stale.contains(p)).copied().collect();
-        let lost: Vec<Pos> = stale.iter().filter(|p| !fresh.contains(p)).copied().collect();
+        let gained: Vec<Pos> = fresh
+            .iter()
+            .filter(|p| !stale.contains(p))
+            .copied()
+            .collect();
+        let lost: Vec<Pos> = stale
+            .iter()
+            .filter(|p| !fresh.contains(p))
+            .copied()
+            .collect();
         let near = |pos: Pos| -> Vec<String> {
             g.units
                 .values()
@@ -5676,34 +5685,6 @@ impl BasicAi {
             .collect()
     }
 
-    /// A cheap, conservative "nothing can touch this tile next turn".
-    ///
-    /// One binary search in the cached union answers what a linear pass over
-    /// every enemy envelope answered before, and the district halves are the
-    /// same predicates [`Self::incoming_damage`] folds over. It is allowed to
-    /// say `false` when the true answer is zero — an envelope belonging to a
-    /// unit that has since died still counts here — because a `false` only
-    /// means the caller prices the tile the long way and gets the same
-    /// number. A `true` is exact: it implies every one of `incoming_damage`'s
-    /// three folds is empty, so the tile's incoming damage is `0.0`.
-    fn nothing_can_reach(
-        &self,
-        g: &Game,
-        pid: usize,
-        position: Pos,
-        envelopes: &std::sync::Arc<AttackEnvelopes>,
-    ) -> bool {
-        !self.covered_tiles(envelopes).contains(&position)
-            && !g
-                .cities
-                .values()
-                .any(|city| Self::city_centre_strikes(g, pid, city, position))
-            && !g
-                .cities
-                .values()
-                .any(|city| Self::city_encampment_strikes(g, pid, city, position))
-    }
-
     fn safe_healing_step(
         &self,
         g: &Game,
@@ -5856,16 +5837,27 @@ impl BasicAi {
         // EVACUATION PRICE TO FIND OUT. `retreat_step` runs for every military
         // unit of every seat every turn — 87% of that bill is on city-states
         // and barbarians (`docs/SIMULATOR_PERFORMANCE.md`, 2026-08-22) — and
-        // on a quiet tile it priced the defender's strength, walked every
-        // hostile city twice and read a heal rate, only to compute `0.0`,
-        // conclude "not lethal" and return. The union of the envelopes is
-        // already built for `safe_healing_step`; one binary search in it plus
-        // the district predicates settles the same question. This skips work
-        // whose answer was zero, it does not change an answer: incoming `0.0`
-        // is below any live unit's hit points, so `lethal` was false and with
-        // no remembered danger the tile below returns `None` — which is
-        // exactly what an unmapped tile's `?` returns too.
-        if remembered.is_none() && hp > 0 && self.nothing_can_reach(g, pid, here, &envelopes) {
+        // on a quiet tile it priced a heal rate, a City Center's ownership and
+        // a suzerain, only to read an incoming pool of `0.0`, conclude "not
+        // lethal" and return. `anything_can_reach` is the same source test
+        // `incoming_damage` performs anyway, asked before the rest is paid
+        // for.
+        //
+        // ⚠ NOT THE ENVELOPE UNION, AND THAT WAS MEASURED. A first version
+        // answered this from `covered_tiles`, one binary search instead of one
+        // per envelope — and building an 800-tile union to answer a single
+        // membership question cost `sample` 1.8% of the main thread against
+        // the 1.2% the skip saves. The union earns its keep across
+        // `safe_healing_step`'s whole-map scan and nowhere else.
+        //
+        // This skips work whose answer was zero, it does not change an answer:
+        // incoming `0.0` is below any live unit's hit points, so `lethal` was
+        // false and with no remembered danger the tile below returns `None` —
+        // which is exactly what an unmapped tile's `?` returns too.
+        if remembered.is_none()
+            && hp > 0
+            && !Self::anything_can_reach(g, pid, here, &envelopes)
+        {
             return None;
         }
         let holding = Self::evacuation_tile(
@@ -24645,11 +24637,11 @@ mod attack_envelope_key_tests {
     /// ★★★★ THE SKIP IS ONLY LEGAL BECAUSE THE ANSWER WAS ALREADY ZERO.
     /// `retreat_step` now returns without pricing its own tile, and
     /// `incoming_damage` returns without pricing the defender, whenever
-    /// `nothing_can_reach` accepts the tile. Both rest on one implication, and
-    /// an implication argued in a comment is a guess with good posture: if
-    /// `nothing_can_reach` says yes, the incoming damage there is exactly
-    /// `0.0`, so the decision the caller skipped could only have been the one
-    /// it takes.
+    /// `anything_can_reach` rejects the tile. Both rest on one implication,
+    /// and an implication argued in a comment is a guess with good posture: if
+    /// nothing can reach the tile, the incoming damage there is exactly `0.0`,
+    /// so the decision the caller skipped could only have been the one it
+    /// takes.
     #[test]
     fn a_tile_nothing_can_reach_prices_at_exactly_zero() {
         let mut game = Game::new_full(2, 32, 22, 8_181, 300, 0, false);
@@ -24661,7 +24653,9 @@ mod attack_envelope_key_tests {
             .nbrs(home)
             .into_iter()
             .find(|pos| {
-                game.map.get(*pos).is_some_and(|tile| !game.rules.is_water(tile))
+                game.map
+                    .get(*pos)
+                    .is_some_and(|tile| !game.rules.is_water(tile))
                     && game.units_at(*pos).is_empty()
             })
             .expect("the fixture offers dry ground beside the starting unit");
@@ -24675,7 +24669,7 @@ mod attack_envelope_key_tests {
         );
         let (mut quiet, mut loud) = (0usize, 0usize);
         for position in game.map.tiles.keys().copied() {
-            if ai.nothing_can_reach(&game, 0, position, &envelopes) {
+            if !BasicAi::anything_can_reach(&game, 0, position, &envelopes) {
                 quiet += 1;
                 assert_eq!(
                     BasicAi::evacuation_incoming_damage(&game, 0, mine, position, &envelopes),
@@ -24686,7 +24680,10 @@ mod attack_envelope_key_tests {
                 loud += 1;
             }
         }
-        assert!(quiet > 0, "the skip never fires, so it is measuring nothing");
+        assert!(
+            quiet > 0,
+            "the skip never fires, so it is measuring nothing"
+        );
         assert!(
             loud > 0,
             "every tile is quiet, so the assertion above is vacuous"

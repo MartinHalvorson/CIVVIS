@@ -24217,10 +24217,11 @@ impl Game {
         let flood: Vec<Pos> = positions.keys().copied().collect();
         // ⚠ THIS WAS A `BTreeSet` AND IT ALLOCATED ONE NODE PER CANDIDATE.
         // A ranged unit offers the same tile from every stride it can shoot
-        // from, so the set was mostly absorbing duplicates a node at a time,
-        // and `sample` put `BTreeSet<Pos>` at 9.0% of the main thread. A
-        // `Vec` sorted once produces the identical ascending, distinct
-        // sequence this function's contract promises, from one buffer.
+        // from, so the set spent most of its work absorbing duplicates a node
+        // at a time, and its caller then re-collected the result into a
+        // second set. A `Vec` sorted once produces the identical ascending,
+        // distinct sequence this function's contract promises, from one
+        // buffer, and `BasicAi`'s envelope adopts it without copying.
         let mut targets: Vec<Pos> = Vec::new();
         for (from, remaining) in positions {
             if remaining <= 0.0 {
