@@ -10,6 +10,7 @@ list was built from file size, and size is not the tax.
 
 from __future__ import annotations
 
+import re
 import sys
 import unittest
 from pathlib import Path
@@ -32,6 +33,47 @@ OBJECTIVE = """
 6. **Something else**
 """
 
+
+def jobs(path: Path) -> dict[str, str]:
+    """Each job in a workflow, by id, as its own block of text.
+
+    Indentation, not PyYAML: this suite runs wherever the repository is checked
+    out and PyYAML is not a dependency of it. A job id is the only thing at
+    exactly two spaces of indent under `jobs:`.
+    """
+    found: dict[str, list[str]] = {}
+    current: list[str] | None = None
+    in_jobs = False
+    for line in path.read_text(encoding="utf-8").splitlines():
+        head, _, _ = line.partition("#")
+        if re.fullmatch(r"jobs:\s*", head):
+            in_jobs = True
+            continue
+        if not in_jobs:
+            continue
+        if head.strip() and not head.startswith(" "):
+            break                      # a later top-level key ends `jobs:`
+        job = re.fullmatch(r"  ([A-Za-z0-9_-]+):\s*", head)
+        if job:
+            current = found.setdefault(job.group(1), [])
+            continue
+        if current is not None:
+            current.append(line)
+    return {name: "\n".join(body) for name, body in found.items()}
+
+
+def needs(body: str) -> list[str]:
+    """The job ids a job block declares it waits for, inline or as a list."""
+    inline = re.search(r"^\s*needs:\s*(.+)$", body, re.M)
+    if not inline:
+        return []
+    rest = inline.group(1).strip()
+    if rest.startswith("["):
+        return re.findall(r"[A-Za-z0-9_-]+", rest)
+    if rest:
+        return [rest]
+    return re.findall(r"^\s*-\s*([A-Za-z0-9_-]+)\s*$",
+                      body[inline.end():], re.M)
 
 class TheObjectiveIsFound(unittest.TestCase):
     def test_it_is_anchored_on_the_phrase_not_the_verb(self):
@@ -305,11 +347,59 @@ class TheCheckIsWiredAndOneDirectional(unittest.TestCase):
 
     def test_that_workflow_fetches_enough_history_to_count_merges(self):
         """`actions/checkout` is shallow by default, and a shallow clone would
-        make every file read 0% — the check would pass by measuring nothing."""
-        for name in (path for path in WORKFLOWS.glob("*.yml")
-                     if "conflict_hotspots.py --check" in path.read_text()):
-            with self.subTest(workflow=name.name):
-                self.assertIn("fetch-depth: 0", name.read_text())
+        make every file read 0% — the check would pass by measuring nothing.
+
+        Read per job, not per file. Once the census moved into a job of its own
+        the file kept a `fetch-depth: 0` that belonged to a different job, so a
+        whole-file search would have gone on passing after the hotspot job lost
+        its own deep checkout.
+        """
+        for path in WORKFLOWS.glob("*.yml"):
+            for job, body in jobs(path).items():
+                if "conflict_hotspots.py --check" not in body:
+                    continue
+                with self.subTest(workflow=path.name, job=job):
+                    self.assertIn("fetch-depth: 0", body)
+
+    def test_a_stale_roadmap_cannot_silence_the_census(self):
+        """The defect that kept `census.yml` red for five nights (#2326).
+
+        `bash -e` ends a job on the first non-zero exit, so running the cheap
+        hotspot check as a *step* of the census job meant one stale table row —
+        `src/main.rs`, 16% when it was written and 4% five days later — failed
+        the workflow eighteen seconds in and the ninety-minute census, including
+        the free cross-platform determinism check its own header advertises,
+        never ran to completion once in the workflow's lifetime.
+
+        Cheap-and-first is still right; cheap-and-*in-front-of* is what broke.
+        So: wherever a workflow runs both, they are separate jobs, and the
+        census job does not wait on the hotspot job.
+        """
+        checked = 0
+        for path in WORKFLOWS.glob("*.yml"):
+            table = jobs(path)
+            hotspot = {name for name, body in table.items()
+                       if "conflict_hotspots.py --check" in body}
+            census = {name for name, body in table.items()
+                      if "census_report.py --check" in body}
+            if not (hotspot and census):
+                continue
+            checked += 1
+            with self.subTest(workflow=path.name):
+                self.assertFalse(
+                    hotspot & census,
+                    f"{sorted(hotspot & census)} runs the hotspot check and the "
+                    f"census in one job, so a stale roadmap row aborts the "
+                    f"census before it takes a single reading")
+                for name in census:
+                    self.assertFalse(
+                        hotspot & set(needs(table[name])),
+                        f"job {name!r} waits on the hotspot check, so a stale "
+                        f"roadmap row skips the census instead of aborting it")
+        self.assertTrue(
+            checked,
+            "no workflow runs both checks any more; if the census moved, move "
+            "this guard with it rather than deleting it")
 
 
 if __name__ == "__main__":

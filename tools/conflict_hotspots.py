@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Which files actually tax concurrent work, measured rather than remembered.
 
-`docs/ROADMAP.md` objective 5 names three conflict hotspots — `src/game.rs`,
-`src/ai/advanced.rs`, `web/assets/app.js` — and says they tax every concurrent
-PR. Two of those three are right. Measured over the 200 merges to `main`
-preceding 2026-08-18:
+`docs/ROADMAP.md` objective 5 used to name three conflict hotspots —
+`src/game.rs`, `src/ai/advanced.rs`, `web/assets/app.js` — and say they tax
+every concurrent PR. Two of those three were right. Measured over the 200
+merges to `main` preceding 2026-08-18:
 
     src/ai/advanced.rs   26%
     src/elo.rs           18%   <- not on the list
@@ -19,13 +19,20 @@ built from and size is not the tax: `elo.rs` is a seventh of `game.rs`'s length
 and is contended more often, because every live-bridge treatment appends to one
 registry inside it.
 
+⚠ AND THEN THE REPLACEMENT LIST WENT STALE TOO, in five days. On 2026-08-23
+`src/main.rs` — 16% when it was written onto the table — was at 4%, and
+`web/assets/app.js`, struck off at 2%, was back at 10%. Every ranking this
+file prints has a date on it. Nothing here is a standing fact, which is why the
+check reads the tool and not the table.
+
     tools/conflict_hotspots.py                 # the current ranking
     tools/conflict_hotspots.py --merges 500
     tools/conflict_hotspots.py --check         # fail on a split target nobody edits
     tools/conflict_hotspots.py --modes         # WHICH of the two problems each file has
 
-Run daily in CI by `.github/workflows/census.yml`, first in that job because it
-needs no toolchain and no build.
+Run daily in CI by `.github/workflows/census.yml`, in a job of its own because
+it needs no toolchain and no build — and because when it shared the census's
+job, a stale row here meant the census never ran (#2326).
 
 ## Two problems, and the ranking above cannot tell them apart
 
@@ -107,14 +114,24 @@ DEFAULT_MERGES = 200
 #:
 #: Two reasons. The ranking moves every day as merges land, so a both-ways check
 #: would go red on ordinary work rather than on a defect. And touch rate mixes
-#: two problems with different remedies — `src/main.rs` (20%) and `src/elo.rs`
-#: (18%) are contended because every treatment PR appends to one shared line or
-#: list in them, which splitting the file does not fix; moving that data out of
-#: source does, the way `docs/eval/` did it for `docs/EVAL.md`. Only
-#: `advanced.rs` and `game.rs` are contended for the reason "split it" answers.
+#: two problems with different remedies — `src/elo.rs` and
+#: `src/ai/advanced/treatments.rs` are contended because every treatment PR
+#: appends to one shared line or list in them, which splitting the file does not
+#: fix; moving that data out of source does, the way `docs/eval/` did it for
+#: `docs/EVAL.md`. Only `advanced.rs`, its tests and `game.rs` are contended for
+#: the reason "split it" answers. ⚠ Do not guess which is which from this
+#: comment — `--modes` measures it, and it has already contradicted the guess
+#: once: `treatment_flags.rs` looks like an anchor and is SPREAD (0 of 7),
+#: because 182 toggles collide at 182 different places.
 #:
 #: So the machine checks the half that is mechanical — is this target real? —
 #: and leaves which remedy fits to the prose.
+#:
+#: ⚠ FAILING THIS CHECK MUST NOT COST ANYTHING BUT THIS CHECK. It ran as the
+#: first step of the census job, `bash -e` ended the job on it, and one stale
+#: table row kept the ninety-minute census and its cross-platform determinism
+#: reading from executing at all for five nights (#2326). It is its own job now,
+#: and `tools/test_conflict_hotspots.py` fails if the two are recombined.
 MIN_CONTENDED_PCT = 5
 
 #: Hand-written source, whatever language it is written in.
