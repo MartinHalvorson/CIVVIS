@@ -362,6 +362,7 @@ These screenable genes have no on/off result, so they receive no rank or promoti
 | `pantheon-board` | off (unmeasured) | Choose the pantheon from the land the empire holds rather than from a fixed order. |
 | `price-the-suzerainty` | off (unmeasured) | Let the envoy scorer see the suzerainty it is walking toward. |
 | `promote-when-wounded` | off (unmeasured) |  |
+| `settle-plan-ahead` | off (unmeasured) | Rank a settle site by the cities it leaves room for as well as its own ground, so a Settler stops taking the one plot in a pocket that would have held two. |
 | `settlement-gap-target` | off (unmeasured) | Make the settlement-gap redirect and the Settler ranking honour the same city target the cascade settles toward. |
 | `tactical-strategy` | off (unmeasured) | Enable explicit battlefield roles: the land-unit counter cycle, safe ranged standoff, wall-focused siege/support, and cavalry job priority. |
 | `unit-cost-efficiency` | off (unmeasured) | Credit strength-per-production and the civ's own unique unit in the military production arm. |
