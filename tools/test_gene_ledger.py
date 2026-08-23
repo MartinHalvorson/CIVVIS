@@ -180,11 +180,36 @@ class Merging(unittest.TestCase):
             ],
         }])])
         measure = ledger["genes"][0]["screen"]
+        # A legacy tranche of N matched pairs is 2N seats; the pair count is
+        # kept beside it as the currency the ranking still speaks.
         self.assertEqual(measure["win_tranches"], [
-            {"position": "latest", "pairs": 10002, "win_delta_pp": -1.234, "win_se_pp": 0.344, "win_z": -2.346},
-            {"position": "previous", "pairs": 9996, "win_delta_pp": -0.988, "win_se_pp": 0.466, "win_z": -2.123},
-            {"position": "earlier", "pairs": 10002, "win_delta_pp": -1.111, "win_se_pp": 0.437, "win_z": -2.543},
+            {"position": "latest", "seats": 20004, "pairs": 10002, "win_delta_pp": -1.234, "win_se_pp": 0.344, "win_z": -2.346},
+            {"position": "previous", "seats": 19992, "pairs": 9996, "win_delta_pp": -0.988, "win_se_pp": 0.466, "win_z": -2.123},
+            {"position": "earlier", "seats": 20004, "pairs": 10002, "win_delta_pp": -1.111, "win_se_pp": 0.437, "win_z": -2.543},
         ])
+
+    def test_a_seat_screen_records_seats_and_their_pair_equivalent(self):
+        """A screen since 2026-08-23 counts seats — every seat its own random
+        genome — and the ledger carries the seat count beside the matched-pair
+        currency the ranking's bands are still stated in."""
+        data = analysis([{"tag": "a", "wz": 2.5}], pairs=1000)
+        del data["complete_pairs"]
+        data["seats"] = 1800
+        data["games"] = 300
+        data["profile"]["design"] = "independent"
+        gene = data["genes"][0]
+        del gene["pairs"]
+        gene["seats"] = 1800
+        gene["n_on"] = 1300
+        gene["n_off"] = 500
+        ledger = self.build([data])
+        source = ledger["sources"][0]
+        self.assertEqual((source["seats"], source["games"], source["complete_pairs"]),
+                         (1800, 300, 900))
+        self.assertEqual(source["shape"], "standard", "the draw design is not a leg of the shape")
+        measure = ledger["genes"][0]["screen"]
+        self.assertEqual((measure["seats"], measure["pairs"], measure["n_on"], measure["n_off"]),
+                         (1800, 900, 1300, 500))
 
     def test_every_source_records_the_shape_it_was_played_at(self):
         ledger = self.build([
@@ -997,13 +1022,15 @@ class Preregistration(unittest.TestCase):
             path.write_text(json.dumps(preregistered(analysis([{"tag": "a"}], pairs=1000),
                                                      target=6000)))
             ledger = gene_ledger.build_ledger([path], filter_known=False)
+        # A legacy file pre-registered 6,000 matched comparisons and played
+        # 1,000: in seats, 12,000 intended and 2,000 played.
         self.assertEqual(ledger["sources"][0]["batch"],
-                         {"target_comparisons": 6000, "complete_comparisons": 1000,
+                         {"target_seats": 12000, "complete_seats": 2000,
                           "partial": True})
         printed = io.StringIO()
         with contextlib.redirect_stdout(printed):
             gene_ledger.print_table(ledger)
-        self.assertIn("PARTIAL 1000/6000", printed.getvalue())
+        self.assertIn("PARTIAL 2000/12000 seats", printed.getvalue())
 
     def test_a_source_that_played_what_it_declared_reads_complete(self):
         with tempfile.TemporaryDirectory() as tmp:
