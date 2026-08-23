@@ -1,91 +1,85 @@
-//! Gene screen: price EVERY treatment flag from ONE batch of random-genome games.
+//! Gene screen: price EVERY gene from ONE batch of random-genome games.
 //!
-//! Every behaviour the live bridge and production turn on is a boolean flag
-//! with a named withholding twin (`LIVE_TREATMENTS`, `PRODUCTION_TREATMENTS`,
-//! `PRODUCTION_OPT_INS`). Read as genes, each is on or off, and the question
-//! the whole evaluation lane keeps asking is the same one for each of them:
-//! *does the agent win more with this gene on than off?*
+//! A gene is one boolean behaviour flag on `AdvancedAi`; the genome a seat
+//! plays is the set of genes it has on. The question asked of every gene is
+//! the same: *does a seat win more with this gene on than off?*
 //!
-//! The existing answer is one arm per gene — `live` against
-//! `live_without_<flag>`, forty to two hundred maps each — and it has two
-//! costs. It is priced per gene, so pricing fifty-seven genes at two hundred
-//! maps is eleven thousand games. And it measures each repair against a
-//! background in which every OTHER repair is on, which
-//! `AdvancedAi::enable_engine_repairs` itself warns is a link priced inside an
-//! otherwise-whole chain.
+//! The design is deliberately the simplest one that answers it cleanly. Every
+//! game seats `players` majors, and EVERY major seat draws its own genome
+//! independently of every other seat and every other game: each screened gene
+//! is on with probability one half, or three quarters for a gene the
+//! deployment genome already ships on (`P_ON`, `P_DEFAULT_ON`). Nothing is
+//! paired, mirrored or complemented — the operator asked for the randomness,
+//! because a gene priced against a structured background can ride on the
+//! genes it happens to be drawn beside, and here it cannot: averaged over
+//! thousands of random backgrounds, each gene holds its own. Every game is
+//! written as one row per major seat — genome beside outcome — so nothing is
+//! ever replayed to ask a new question of it.
 //!
-//! This binary runs the classical screening design instead. Every game seats
-//! ONE treated major whose genome is drawn at random — each screened gene on
-//! or off with probability one half — against a stock field, and records the
-//! genome beside the outcome. Games come in **foldover pairs**: the second
-//! game of a pair replays the SAME map seed and seat with the COMPLEMENT
-//! genome, so every gene is on in exactly one arm of every pair and the map's
-//! own difficulty cancels out of every per-gene difference. Every game then
-//! informs every gene: `N` pairs give each gene `N` games on and `N` off, and
-//! the per-gene effect is the mean paired difference in the outcome, averaged
-//! over random backgrounds rather than over the all-on one.
+//! What it prices per gene, with intervals, **per seat**:
 //!
-//! What it prices per gene, with intervals:
-//!
-//! - win rate on vs off (the treated seat winning by any victory), Δ in points
-//!   with a 95% CI and z from the paired differences;
-//! - the same for **score share** (treated score over all majors' scores), a
-//!   continuous outcome that resolves an edge at a fraction of the games a
+//! - win rate of the seats with the gene on against the seats with it off
+//!   (the seat winning by any victory), Δ in points with a 95% CI and z. The
+//!   seats of one game share a winner, so every error is clustered by game;
+//! - the same for **score share** (a seat's score over all majors' scores), a
+//!   continuous outcome that resolves an edge at a fraction of the seats a
 //!   win/loss count needs;
-//! - an OLS-adjusted Δ that regresses the paired difference on the whole
-//!   ±1 sign matrix at once, so a gene is not credited with the chance
-//!   imbalance of its neighbours (printed once the pair count can support it).
-//! - three newest-first, non-overlapping ≈10,000-pair win tranches. They make
-//!   an apparent win or loss auditable for replication before it changes the
-//!   genome; every seat from one all-seats map pair stays in the same tranche.
+//! - an OLS-adjusted Δ that regresses the seat outcome on every screened
+//!   gene at once (plus an intercept), so a gene is not credited with the
+//!   chance imbalance of its neighbours (printed once the seat count can
+//!   support it);
+//! - three newest-first, non-overlapping replication tranches of about
+//!   `REPRO_WINDOW_SEATS` seats, whole games only, so an apparent win or loss
+//!   is auditable for replication before it changes the genome;
+//! - the incremental simulation cost of enabling the gene on one major seat.
 //!
-//! ⚠ It is a SCREEN. Fifty-seven genes at |z| ≥ 2 flag ~2.6 of them by chance
+//! ⚠ It is a SCREEN. A hundred genes at |z| ≥ 2 flag ~4.5 of them by chance
 //! alone; the table prints that number, the family-wise |z| bar, and the
 //! smallest Δ the run could resolve at 80% power, so a `~` row is read as
-//! "unresolved at this size" and never as "no effect". Interactions are not
-//! estimated here — the per-game rows are written to a JSONL file precisely so
-//! a later pass (epistasis, subgroup by map, a fitted logistic) never has to
-//! replay a game. `--analyze` recomputes the table from those rows and merges
-//! several runs' files.
+//! "unresolved at this size" and never as "no effect". Two-factor interactions
+//! are a separate scan (`--analyze --interactions`), estimated from the same
+//! rows.
 //!
-//! ⚠ The genome carries the NATIVE bundle only: `ENGINE_REPAIR_TREATMENTS`
-//! (the live bridge minus `FIRAXIS_ONLY_TREATMENTS`, which read host-only
-//! state and are inert on a CIVVIS board), plus the production treatments and
-//! opt-ins. A Firaxis-only flag screened here would measure noise and be
-//! reported as noise; it is excluded rather than measured.
-//!
-//! This is NOT `gene_census`, which asks whether a continuous `Weights` gene
-//! moves an outcome at all. The genes here are the boolean treatment flags.
+//! ⚠ The genome carries the NATIVE bundle only: the engine repairs minus the
+//! Firaxis-only flags (which read host state a CIVVIS board does not have and
+//! are inert here), plus the production treatments and opt-ins. A host-only
+//! flag screened here would measure noise and be reported as noise; it is
+//! excluded rather than measured.
 //!
 //! Every batch stamps the binary that played it — the commit, whether that
 //! tree was dirty, a sha256 of the executable, and a sha256 of the gene set
-//! compiled into it — and pre-registers the size it was launched to play. See
-//! `Build` and `Batch`: `tools/gene_ledger.py` refuses a source whose gene set
+//! compiled into it — and pre-registers the size it was launched to play
+//! (`Build`, `Batch`): `tools/gene_ledger.py` refuses a source whose gene set
 //! does not match the code at the commit it names, and `--analyze` reports
 //! actual against intended so a run that stopped early cannot read as a
 //! finished screen.
 //!
 //! Usage:
-//!   gene_screen [--pairs N] [--start-seed N] [--jobs N] [--out PATH]
-//!               [--genes tag,tag,...] [--anchor-pairs N] [--target-pairs N]
-//!               [--append] [--quiet]
+//!   gene_screen [--games N] [--start-seed N] [--jobs N] [--out PATH]
+//!               [--genes tag,tag,...] [--target-games N] [--append] [--quiet]
+//!               [--p-on 0.5] [--p-default-on 0.75]
 //!               PROBE ONLY, and a batch using any of them is not a ledger
 //!               source: [--players N] [--turns N] [--width N] [--height N]
 //!               [--city-states N] [--speed ID] [--map ID] [--victories a,b]
-//!               [--baseline repairs|stock] [--field advanced|repairs]
-//!               [--single-seat] [--stock-civs]
-//!   gene_screen --analyze PATH [PATH ...] [--interactions] [--top N]
+//!               [--stock-civs]
+//!   gene_screen --analyze PATH [PATH ...] [--json OUT] [--interactions]
+//!               [--top N] [--by-civ TAG]
 //!   gene_screen --list
 //!
 //! ⭐ ONE SCREEN, and the bare defaults are it: six majors on 74x46 Continents
 //! with nine city-states, Online speed to its own 250-turn clock, all six
-//! victory lanes, every seat carrying its own drawn genome against the
-//! best-genome baseline (`SCREEN_PLAYERS` and friends below). That is
-//! Civilization VI's own six-player map row and the deployment shape
-//! `docs/EVAL.md` quotes, so the ledger is read from the games the agent
-//! actually plays. `gene_screen --pairs N --out rows.jsonl` is a screen;
-//! anything that moves a leg of the profile is a probe, and
-//! `tools/gene_ledger.py` refuses it as a source rather than mixing shapes.
+//! victory lanes, every seat carrying its own drawn genome, civilizations
+//! shuffled per map (`SCREEN_PLAYERS` and friends below). That is
+//! Civilization VI's own six-player map row and the deployment shape, so the
+//! ledger is read from the games the agent actually plays.
+//! `gene_screen --games N --out rows.jsonl` is a screen; anything that moves
+//! a leg of the profile is a probe, and `tools/gene_ledger.py` refuses it as
+//! a source rather than mixing shapes.
+//!
+//! Files written by the earlier paired designs (every header before this one
+//! says `foldover` or `prior`) still analyse: their rows are seats with a
+//! genome and an outcome like any other, and the estimator here never needed
+//! the pairing. Only the sampling changed.
 use civvis::ai::{run_game, AdvancedAi, LiveTreatment};
 use civvis::game::{Game, GameOptions};
 use civvis::rng::Rng;
@@ -100,7 +94,7 @@ use std::time::Instant;
 /// Civilization VI's own six-player map row — `CIV6_MAP_SIZES` "small", 74x46
 /// with nine city-states and three continents — at Online speed to its own
 /// 250-turn clock, every victory lane live, every seat carrying its own drawn
-/// genome against the best-genome baseline.
+/// genome.
 ///
 /// Continents rather than Pangaea because Pangaea's religion wins were 48% of
 /// all endings and drowned everything else; the same seeds on continents read
@@ -113,7 +107,16 @@ const SCREEN_HEIGHT: i32 = 46;
 const SCREEN_CITY_STATES: usize = 9;
 const SCREEN_MAP: MapScript = MapScript::Continents;
 
-/// Genes the screen holds at their baseline unless `--genes` asks for them by
+/// ⭐ THE DRAW (operator, 2026-08-23). Every screened gene is on with
+/// probability one half — except a gene the deployment genome already ships
+/// on, which is on three quarters of the time, so the batch plays mostly the
+/// genome people actually get while every gene still has both arms well
+/// populated. Each seat's genome is drawn independently of every other seat
+/// and every other game; nothing is paired or complemented.
+const P_ON: f64 = 0.5;
+const P_DEFAULT_ON: f64 = 0.75;
+
+/// Genes the screen holds at their default unless `--genes` asks for them by
 /// name. This is a COST list, not a verdict: `joint-tactics` costs +27.3%
 /// compute per enabled major seat (P10, 17,574 seat pairs) against ±1.6% for
 /// every other gene, and screening it multiplies the whole batch by 2.52x —
@@ -121,19 +124,17 @@ const SCREEN_MAP: MapScript = MapScript::Continents;
 ///
 /// ⚠ Do not read this as "it does nothing". Its win columns are +3/-4, inside
 /// any band this instrument has printed, but P10 reads `share HELPS **` at
-/// share z +3.84 — past that screen's family-wise bar. The deployment rule
-/// reads the WIN axis only, so the gene cannot turn on through that share
-/// reading however often it is re-screened; what it is owed is a deliberate
-/// arm (`--genes joint-tactics`), not a seat on every batch at 2.5x the bill.
+/// share z +3.84 — past that screen's family-wise bar. What it is owed is a
+/// deliberate run (`--genes joint-tactics`), not a seat on every batch at
+/// 2.5x the bill.
 const HELD_UNLESS_ASKED: &[&str] = &["joint-tactics"];
 
 /// One boolean treatment flag read as a gene.
 ///
-/// `after_setup_on` is the flag's state after the treated seat is built (stock
-/// production plus `enable_engine_repairs`), `stock_on` its state on the
-/// production agent alone, and `flip` the toggle that moves it away from
+/// `after_setup_on` is the flag's state after the seat is built (stock
+/// production plus `enable_engine_repairs_universe`), `stock_on` its state on
+/// the production agent alone, and `flip` the toggle that moves it away from
 /// `after_setup_on`.
-#[derive(Clone, Copy)]
 struct Gene {
     field: &'static str,
     tag: &'static str,
@@ -202,83 +203,30 @@ fn gene_table() -> Vec<Gene> {
     genes
 }
 
-/// How the on-probability of each screened gene is chosen.
-#[derive(Clone, Copy, PartialEq, Debug)]
-enum Design {
-    /// Each gene on with probability one half; arm 1 is arm 0's exact
-    /// complement. Every gene on in exactly one arm of every pair.
-    Foldover,
-    /// ★★★★ THE HELPFUL GENES PLAY MOST OF THE TIME, AND ARE STILL PRICED.
-    /// Operator directive 2026-08-20: in the large batch tests a helpful gene
-    /// may be on in 90% of games and a harmful one in 10%, and the win rate
-    /// of the 90% is still compared with the win rate of the 10% — for a
-    /// helper the 90% should win more. Each arm is drawn independently from
-    /// the prior (both arms still share the map and seat), the per-gene
-    /// contrast is the marginal on-versus-off difference with errors
-    /// clustered by game, and the adjusted column is the map-paired OLS on
-    /// the arms' differences, which cancels the map exactly where the arms
-    /// differ on a gene.
-    Prior,
+fn is_zero_usize(value: &usize) -> bool {
+    *value == 0
 }
 
-impl Design {
-    fn id(self) -> &'static str {
-        match self {
-            Design::Foldover => "foldover",
-            Design::Prior => "prior",
-        }
-    }
+fn is_zero_u8(value: &u8) -> bool {
+    *value == 0
 }
 
-/// The on-probability of a gene under the prior design, from its ledger
-/// verdict: helps 0.9, hurts 0.1, unresolved (or unmeasured) 0.5 unless the
-/// operator moves them.
-#[derive(Clone, Copy, Debug)]
-struct PriorWeights {
-    helps: f64,
-    hurts: f64,
-    unresolved: f64,
-}
-
-impl PriorWeights {
-    fn for_tag(&self, tag: &str) -> f64 {
-        match civvis::ai::ledger_verdict(tag).map(|row| row.verdict) {
-            Some(civvis::ai::Verdict::Helps) => self.helps,
-            Some(civvis::ai::Verdict::Hurts) => self.hurts,
-            _ => self.unresolved,
-        }
-    }
-}
-
-/// What the un-screened genes are held at.
-#[derive(Clone, Copy, PartialEq, Debug)]
-enum Baseline {
-    /// The deployment genome: every gene at the ledger's default (helps on,
-    /// the rest off; unmeasured genes as the universe set them). The default.
-    Best,
-    /// The genome's universe: every engine repair on.
-    Repairs,
-    /// Production `advanced`: every engine repair off.
-    Stock,
-}
-
-/// Who the treated seat plays against.
-#[derive(Clone, Copy, PartialEq, Debug)]
-enum Field {
-    /// Production `advanced`, the ladder's incumbent.
-    Advanced,
-    /// The native repair bundle as deployed (`advanced_synergy`, ledger applied).
-    Repairs,
-}
-
-/// One screened game's row, written to the JSONL file and read back by
-/// `--analyze`.
+/// One seat of one screened game, written to the JSONL file and read back by
+/// `--analyze`. A game yields one row per major seat.
 #[derive(Clone, Serialize, Deserialize, Debug)]
 struct Row {
-    /// `game` for a screened pair member, `anchor` for an all-on/all-off pair.
+    /// `game` for a screened seat. (Files written by the earlier paired designs
+    /// also hold `anchor` rows; those are skipped by every estimate here.)
     kind: String,
+    /// The game's index in its batch: seed `start_seed + game`.
+    #[serde(default)]
+    game: usize,
+    /// ⚠ Legacy only. Files written by the paired designs name a row by the
+    /// map pair it came from and the arm it played; seats of one game share
+    /// `(seed, arm)`. New files write neither.
+    #[serde(default, skip_serializing_if = "is_zero_usize")]
     pair: usize,
-    /// 0 = the drawn genome, 1 = its complement (anchor: 0 = all on, 1 = all off).
+    #[serde(default, skip_serializing_if = "is_zero_u8")]
     arm: u8,
     seed: u64,
     seat: usize,
@@ -289,22 +237,23 @@ struct Row {
     victory: String,
     turn: u32,
     score: i64,
-    /// Treated score over the sum of every major's score.
+    /// This seat's score over the sum of every major's score.
     score_share: f64,
     /// 1 = highest score among majors.
     rank: usize,
     cities: usize,
     alive: bool,
+    /// Whole-game wall seconds; every seat of one game carries the same value.
     secs: f64,
-    /// ★ WHY THE SEAT LOST, NOT ONLY THAT IT DID. The first 300-pair run's
-    /// census said 66% of native games end by RELIGIOUS conversion at a median
-    /// of turn 149 — the single largest failure mode on the board — and the
-    /// rows could not say one thing about how the losing seat stood in that
-    /// race. These fields are the cheapest possible answer, all end-of-game
-    /// reads, and they turn "lost to religion" into a diagnosis: did it found
-    /// a faith at all, how many of its own cities were flying a foreign one at
-    /// the end, was the faith banked rather than spent, and had it ever
-    /// unlocked the Inquisitor.
+    /// ★ WHY THE SEAT LOST, NOT ONLY THAT IT DID. The first native runs said
+    /// two thirds of games ended by RELIGIOUS conversion at a median of turn
+    /// 149 — the single largest failure mode on the board — and the rows could
+    /// not say one thing about how the losing seat stood in that race. These
+    /// fields are the cheapest possible answer, all end-of-game reads, and
+    /// they turn "lost to religion" into a diagnosis: did it found a faith at
+    /// all, how many of its own cities were flying a foreign one at the end,
+    /// was the faith banked rather than spent, and had it ever unlocked the
+    /// Inquisitor.
     ///
     /// `#[serde(default)]` on every one of them, so a file written before they
     /// existed still analyses.
@@ -326,9 +275,8 @@ struct Row {
     techs: usize,
     #[serde(default)]
     military: f64,
-    /// The civilization this seat played. Both arms of a pair share it — the
-    /// roster shuffle is seeded by the map seed — so per-civ contrasts stay
-    /// paired. Empty in files written before the field existed.
+    /// The civilization this seat played. Empty in files written before the
+    /// field existed.
     #[serde(default)]
     civ: String,
     /// The war this seat chose and what it took: surprise wars the
@@ -347,6 +295,22 @@ struct Row {
     /// Settlers counted as prizes at the raids' declarations.
     #[serde(default)]
     raid_settler_prizes: i64,
+}
+
+/// The game a row belongs to. Seats of one game share a winner and a timing,
+/// so every standard error here is clustered on this key. A screened game is
+/// its seed; a legacy paired file plays two games on one seed and tells them
+/// apart by arm.
+type GameKey = (u64, u8);
+
+impl Row {
+    fn game_key(&self) -> GameKey {
+        (self.seed, self.arm)
+    }
+
+    fn bits(&self) -> Vec<bool> {
+        self.genome.chars().map(|c| c == '1').collect()
+    }
 }
 
 /// ⭐ THE BINARY A SCREEN WAS PLAYED BY, stamped into the batch's own header.
@@ -421,19 +385,44 @@ struct Build {
 /// actual against intended whether or not anyone asks.
 #[derive(Clone, Serialize, Deserialize, Debug, Default, PartialEq, Eq)]
 struct Batch {
-    /// Map pairs this segment was launched to play — `--target-pairs`, else
-    /// `--pairs`. Zero in a file written before pre-registration existed.
-    target_pairs: usize,
-    /// The matched seat comparisons that target implies: one per major seat
-    /// under the screen's all-seats design, one per map pair otherwise. This
-    /// is the unit `complete_pairs` counts, so intended and actual are the
+    /// Games this segment was launched to play — `--target-games`, else
+    /// `--games`. Zero in a file written before pre-registration existed.
+    #[serde(default)]
+    target_games: usize,
+    /// The seat observations that target implies: `target_games × players`.
+    /// This is the unit the analysis counts, so intended and actual are the
     /// same currency and their ratio means something.
+    #[serde(default)]
+    target_seats: usize,
+    /// ⚠ Legacy only: the paired designs pre-registered map PAIRS and the
+    /// matched seat COMPARISONS (one on-seat against one off-seat) they
+    /// implied. Read back so an old file still reports actual against
+    /// intended, in seats: a comparison is two seats. New files write neither.
+    #[serde(default, skip_serializing_if = "is_zero_usize")]
+    target_pairs: usize,
+    #[serde(default, skip_serializing_if = "is_zero_usize")]
     target_comparisons: usize,
     /// The seed window the target reserves, inclusive. A run that stops early
     /// leaves the tail of this window unplayed, which is exactly the gap the
     /// analysis prints.
     seed_first: u64,
     seed_last: u64,
+}
+
+impl Batch {
+    /// The seats this batch was launched to observe, in whichever currency the
+    /// file pre-registered. Zero when nothing was pre-registered.
+    fn intended_seats(&self) -> usize {
+        if self.target_seats > 0 {
+            self.target_seats
+        } else {
+            self.target_comparisons * 2
+        }
+    }
+
+    fn pre_registered(&self) -> bool {
+        self.intended_seats() > 0
+    }
 }
 
 /// The fingerprint of the gene set a binary can vary: sha256 over the tags in
@@ -658,6 +647,7 @@ fn sha256_hex(bytes: &[u8]) -> String {
     state.iter().map(|word| format!("{word:08x}")).collect()
 }
 
+
 /// The first line of the JSONL file: the gene order every genome string is
 /// written in, and the profile the games were played at.
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -672,8 +662,10 @@ struct Header {
     city_states: usize,
     speed: String,
     map: String,
+    /// What an un-screened gene is held at. Always `best` — the deployment
+    /// genome — for a screen; the earlier designs also had `repairs` and
+    /// `stock` probes, which old files may still say.
     baseline: String,
-    field: String,
     start_seed: u64,
     /// Whether every seat's civilization was shuffled per map instead of the
     /// stock order (Rome, Egypt, Greece, China, … by seat). Absent in files
@@ -684,21 +676,26 @@ struct Header {
     /// before the flag existed, which means all six.
     #[serde(default)]
     victories: String,
-    /// Every major seat carries its own drawn genome (arm 1 complements all of
-    /// them), so each game yields one observation per major instead of one per
-    /// game. Absent in files written before the mode existed, which means the
-    /// classic one-treated-seat design.
+    /// Every major seat carries its own drawn genome, so each game yields one
+    /// observation per major. Always true for a screen; the classic
+    /// one-treated-seat files say `false` (or nothing, which is the same).
     #[serde(default)]
     all_seats: bool,
-    /// `foldover` or `prior`. Absent in files written before the prior
-    /// design existed, which means foldover.
+    /// `independent` — every seat's genome drawn on its own. Files written by
+    /// the earlier paired designs say `foldover` or `prior`; absent means
+    /// `foldover`. They analyse the same way: rows are rows.
     #[serde(default = "foldover")]
     design: String,
-    /// Under the prior design, each gene's on-probability in header order
-    /// (un-screened genes carry 0 or 1 for their held state). Empty for a
-    /// foldover file.
+    /// Each gene's on-probability in header order: `P_ON`, `P_DEFAULT_ON`, or
+    /// 0/1 for a gene held at its default. A legacy foldover file leaves it
+    /// empty, which the analysis reads as one half for every screened gene.
     #[serde(default)]
     prior: Vec<f64>,
+    /// The two draw probabilities the batch ran with. Zero in a legacy file.
+    #[serde(default)]
+    p_on: f64,
+    #[serde(default)]
+    p_default_on: f64,
     /// ⭐ The binary that played these games. Absent in files written before
     /// 2026-08-23, which `tools/gene_ledger.py` grandfathers as history and
     /// marks `pre-fingerprint` rather than accepting silently.
@@ -715,7 +712,37 @@ fn foldover() -> String {
     "foldover".to_string()
 }
 
+impl Header {
+    /// Which header genes were screened, as a mask over the gene order.
+    fn screened_mask(&self) -> Vec<bool> {
+        self.genes
+            .iter()
+            .map(|gene| self.screened.contains(gene))
+            .collect()
+    }
+
+    /// The on-probability each gene was drawn with, in header order. A legacy
+    /// file without the field drew every screened gene at one half.
+    fn on_probabilities(&self) -> Vec<f64> {
+        if self.prior.len() == self.genes.len() {
+            return self.prior.clone();
+        }
+        self.screened_mask()
+            .into_iter()
+            .map(|screened| if screened { 0.5 } else { 0.0 })
+            .collect()
+    }
+}
+
 fn number(args: &[String], flag: &str, default: i64) -> i64 {
+    args.iter()
+        .position(|arg| arg == flag)
+        .and_then(|index| args.get(index + 1))
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(default)
+}
+
+fn real(args: &[String], flag: &str, default: f64) -> f64 {
     args.iter()
         .position(|arg| arg == flag)
         .and_then(|index| args.get(index + 1))
@@ -734,51 +761,45 @@ fn present(args: &[String], flag: &str) -> bool {
     args.iter().any(|arg| arg == flag)
 }
 
-/// Draw one genome: each screened gene on with probability one half, seeded
-/// from the screen's start seed and the pair index so a run reproduces
-/// exactly and two runs on disjoint seed windows draw disjoint genomes.
-fn draw_genome(start_seed: u64, pair: usize, screened: &[bool]) -> Vec<bool> {
-    let mut rng = Rng::new(
-        start_seed
-            .wrapping_mul(0x9E37_79B9_7F4A_7C15)
-            .wrapping_add(pair as u64)
-            .wrapping_add(0x5EED_6E4E),
-    );
-    screened
-        .iter()
-        .map(|&is_screened| is_screened && rng.chance(0.5))
-        .collect()
-}
-
-/// One arm's genome under the prior design: each screened gene on with its
-/// own probability, seeded from the start seed, the pair and the ARM, so the
-/// two arms of a pair are independent draws on the same map and seat.
-fn draw_genome_prior(
-    start_seed: u64,
-    pair: usize,
-    arm: u8,
-    screened: &[bool],
-    prior: &[f64],
-) -> Vec<bool> {
-    let mut rng = Rng::new(
-        start_seed
-            .wrapping_mul(0x9E37_79B9_7F4A_7C15)
-            .wrapping_add((pair as u64) * 2 + u64::from(arm))
-            .wrapping_add(0x9E4E_5EED),
-    );
-    screened
-        .iter()
-        .zip(prior)
-        .map(|(&is_screened, &p)| is_screened && rng.chance(p))
-        .collect()
-}
-
-/// The foldover: every screened gene flipped, un-screened genes untouched.
-fn complement(genome: &[bool], screened: &[bool]) -> Vec<bool> {
-    genome
+/// The on-probability of every gene in header order: `p_default_on` for a
+/// screened gene the deployment genome ships on, `p_on` for any other screened
+/// gene, and 0 or 1 for a gene held at its default.
+fn on_probabilities(genes: &[Gene], screened: &[bool], p_on: f64, p_default_on: f64) -> Vec<f64> {
+    genes
         .iter()
         .zip(screened)
-        .map(|(&on, &is_screened)| if is_screened { !on } else { on })
+        .map(|(gene, &is_screened)| match (is_screened, gene.default_on) {
+            (true, true) => p_default_on,
+            (true, false) => p_on,
+            (false, true) => 1.0,
+            (false, false) => 0.0,
+        })
+        .collect()
+}
+
+/// Draw one seat's genome: gene `i` on with probability `probabilities[i]`,
+/// seeded from the screen's start seed and the seat's position in the batch
+/// (`game × players + seat`), so a run reproduces exactly and two runs on
+/// disjoint seed windows draw disjoint genomes. Every seat of every game is
+/// an independent draw — nothing is paired, mirrored or complemented.
+fn draw_genome(start_seed: u64, game: usize, players: usize, seat: usize, probabilities: &[f64]) -> Vec<bool> {
+    let mut rng = Rng::new(
+        start_seed
+            .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+            .wrapping_add((game * players + seat) as u64)
+            .wrapping_add(0x5EED_6E4E),
+    );
+    probabilities
+        .iter()
+        .map(|&p| {
+            if p >= 1.0 {
+                true
+            } else if p <= 0.0 {
+                false
+            } else {
+                rng.chance(p)
+            }
+        })
         .collect()
 }
 
@@ -789,40 +810,18 @@ fn genome_string(genome: &[bool]) -> String {
         .collect()
 }
 
-/// Build the treated seat: production plus the repair bundle, then every gene
-/// set to its desired state — the genome bit when screened, the baseline
-/// otherwise.
-fn treated_seat(
-    genes: &[Gene],
-    genome: &[bool],
-    screened: &[bool],
-    baseline: Baseline,
-) -> AdvancedAi {
+/// Build a seat: production plus the whole repair universe, then every gene
+/// set to the genome bit. The genome string carries every gene, held ones
+/// included, so a seat's row says exactly what it played.
+fn seat_with_genome(genes: &[Gene], genome: &[bool]) -> AdvancedAi {
     let mut ai = AdvancedAi::new();
     // The universe, not the deployment genome: every gene is set explicitly
     // below, and `after_setup_on` describes the universe.
     ai.enable_engine_repairs_universe();
-    for ((gene, &on), &is_screened) in genes.iter().zip(genome).zip(screened) {
-        let desired = if is_screened {
-            on
-        } else {
-            match baseline {
-                Baseline::Best => gene.default_on,
-                Baseline::Repairs => gene.after_setup_on,
-                Baseline::Stock => gene.stock_on,
-            }
-        };
-        if desired != gene.after_setup_on {
+    for (gene, &on) in genes.iter().zip(genome) {
+        if on != gene.after_setup_on {
             (gene.flip)(&mut ai);
         }
-    }
-    ai
-}
-
-fn field_seat(field: Field) -> AdvancedAi {
-    let mut ai = AdvancedAi::new();
-    if field == Field::Repairs {
-        ai.enable_engine_repairs();
     }
     ai
 }
@@ -839,23 +838,21 @@ struct Profile {
     victories: civvis::game::VictoryConditions,
 }
 
-/// Play one game with the treated seat carrying `genome` and report its row.
-#[allow(clippy::too_many_arguments)]
-fn play(
+/// Play one game in which EVERY major seat carries its own drawn genome, and
+/// report one row per major. Minor and barbarian seats stay stock. The field
+/// is the other drawn majors — effects are averaged over random opposing
+/// genomes rather than measured against a fixed production field, which is
+/// the point: a flag that only pays against untreated opponents is a flag
+/// the mixed ecosystem does not have.
+fn play_game(
     profile: &Profile,
     genes: &[Gene],
-    screened: &[bool],
-    baseline: Baseline,
-    field: Field,
-    kind: &str,
-    pair: usize,
-    arm: u8,
+    game: usize,
     seed: u64,
-    seat: usize,
-    genome: &[bool],
-) -> Row {
+    genomes: &[Vec<bool>],
+) -> Vec<Row> {
     let started = Instant::now();
-    let mut game = Game::new_with(GameOptions {
+    let mut world = Game::new_with(GameOptions {
         speed: profile.speed.id().to_string(),
         map_script: profile.map,
         randomize_civs: profile.randomize_civs,
@@ -869,43 +866,28 @@ fn play(
             profile.city_states,
         )
     });
-    let mut ais: Vec<AdvancedAi> = (0..game.players.len())
+    let mut majors = Vec::new();
+    let mut ais: Vec<AdvancedAi> = (0..world.players.len())
         .map(|pid| {
-            if pid == seat {
-                treated_seat(genes, genome, screened, baseline)
-            } else if game.players[pid].is_minor || game.players[pid].is_barbarian {
+            if world.players[pid].is_minor || world.players[pid].is_barbarian {
                 AdvancedAi::new()
             } else {
-                field_seat(field)
+                majors.push(pid);
+                seat_with_genome(genes, &genomes[majors.len() - 1])
             }
         })
         .collect();
-    run_game(&mut game, &mut ais);
-
-    row_for_seat(
-        &game,
-        kind,
-        pair,
-        arm,
-        seed,
-        seat,
-        genome_string(genome),
-        started.elapsed().as_secs_f64(),
-    )
+    run_game(&mut world, &mut ais);
+    let secs = started.elapsed().as_secs_f64();
+    majors
+        .iter()
+        .enumerate()
+        .map(|(index, &seat)| row_for_seat(&world, game, seed, seat, genome_string(&genomes[index]), secs))
+        .collect()
 }
 
 /// One finished game read from one seat's point of view.
-#[allow(clippy::too_many_arguments)]
-fn row_for_seat(
-    game: &Game,
-    kind: &str,
-    pair: usize,
-    arm: u8,
-    seed: u64,
-    seat: usize,
-    genome: String,
-    secs: f64,
-) -> Row {
+fn row_for_seat(game: &Game, index: usize, seed: u64, seat: usize, genome: String, secs: f64) -> Row {
     let majors: Vec<usize> = game
         .players
         .iter()
@@ -928,9 +910,10 @@ fn row_for_seat(
         .count();
     let counter = |key: &str| game.players[seat].counters.get(key).copied().unwrap_or(0);
     Row {
-        kind: kind.to_string(),
-        pair,
-        arm,
+        kind: "game".to_string(),
+        game: index,
+        pair: 0,
+        arm: 0,
         seed,
         seat,
         genome,
@@ -966,100 +949,6 @@ fn row_for_seat(
     }
 }
 
-/// The per-seat genomes of one all-seats game: seat `s` draws from the
-/// screen's seed stream at index `pair * players + s`, and arm 1 complements
-/// every seat. Deterministic in `(start_seed, pair, seat)`, so a run
-/// reproduces exactly and `--append` on a disjoint seed window draws disjoint
-/// genomes, exactly as in the classic design.
-fn all_seat_genomes(
-    start_seed: u64,
-    pair: usize,
-    players: usize,
-    screened: &[bool],
-    arm: u8,
-    design: Design,
-    prior: &[f64],
-) -> Vec<Vec<bool>> {
-    (0..players)
-        .map(|seat| match design {
-            Design::Foldover => {
-                let drawn = draw_genome(start_seed, pair * players + seat, screened);
-                if arm == 0 {
-                    drawn
-                } else {
-                    complement(&drawn, screened)
-                }
-            }
-            Design::Prior => {
-                draw_genome_prior(start_seed, pair * players + seat, arm, screened, prior)
-            }
-        })
-        .collect()
-}
-
-/// Play one game in which EVERY major seat carries its own drawn genome, and
-/// report one row per major. Minor and barbarian seats stay stock. The field
-/// is the other treated majors — effects are averaged over random opposing
-/// genomes rather than measured against a fixed production field, which is
-/// the point: a flag that only pays against untreated opponents is a flag
-/// the mixed ecosystem does not have.
-#[allow(clippy::too_many_arguments)]
-fn play_all_seats(
-    profile: &Profile,
-    genes: &[Gene],
-    screened: &[bool],
-    baseline: Baseline,
-    pair: usize,
-    arm: u8,
-    seed: u64,
-    genomes: &[Vec<bool>],
-) -> Vec<Row> {
-    let started = Instant::now();
-    let mut game = Game::new_with(GameOptions {
-        speed: profile.speed.id().to_string(),
-        map_script: profile.map,
-        randomize_civs: profile.randomize_civs,
-        victory_conditions: profile.victories,
-        ..GameOptions::new(
-            profile.players,
-            profile.width,
-            profile.height,
-            seed,
-            profile.turns,
-            profile.city_states,
-        )
-    });
-    let mut majors = Vec::new();
-    let mut ais: Vec<AdvancedAi> = (0..game.players.len())
-        .map(|pid| {
-            if game.players[pid].is_minor || game.players[pid].is_barbarian {
-                AdvancedAi::new()
-            } else {
-                majors.push(pid);
-                treated_seat(genes, &genomes[majors.len() - 1], screened, baseline)
-            }
-        })
-        .collect();
-    run_game(&mut game, &mut ais);
-    let secs = started.elapsed().as_secs_f64();
-    majors
-        .iter()
-        .enumerate()
-        .map(|(index, &seat)| {
-            row_for_seat(
-                &game,
-                "game",
-                pair,
-                arm,
-                seed,
-                seat,
-                genome_string(&genomes[index]),
-                secs,
-            )
-        })
-        .collect()
-}
-
 // ----------------------------------------------------------------- statistics
 
 /// Standard normal CDF (Abramowitz & Stegun 7.1.26, |error| < 1.5e-7).
@@ -1084,36 +973,6 @@ fn normal_quantile_upper(p: f64) -> f64 {
         }
     }
     0.5 * (lo + hi)
-}
-
-/// Mean and standard error of paired differences, clustered: observations
-/// sharing a `(seed, pair)` key are averaged into one number first, so seat
-/// pairs from the same all-seats game — whose outcomes share one winner —
-/// contribute one observation, not `players` correlated ones. With singleton
-/// clusters (the classic design) this IS `mean_se`, value for value.
-fn clustered_mean_se(values: &[f64], clusters: &[(u64, usize)]) -> (f64, f64) {
-    let mut grouped: BTreeMap<(u64, usize), (f64, usize)> = BTreeMap::new();
-    for (value, key) in values.iter().zip(clusters) {
-        let slot = grouped.entry(*key).or_insert((0.0, 0));
-        slot.0 += value;
-        slot.1 += 1;
-    }
-    let means: Vec<f64> = grouped.values().map(|(sum, n)| sum / *n as f64).collect();
-    mean_se(&means)
-}
-
-/// Mean and standard error of a sample of paired differences.
-fn mean_se(values: &[f64]) -> (f64, f64) {
-    let n = values.len() as f64;
-    if values.is_empty() {
-        return (0.0, f64::INFINITY);
-    }
-    let mean = values.iter().sum::<f64>() / n;
-    if values.len() < 2 {
-        return (mean, f64::INFINITY);
-    }
-    let var = values.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / (n - 1.0);
-    (mean, (var / n).sqrt())
 }
 
 /// Solve `A x = b` in place by Gaussian elimination with partial pivoting.
@@ -1167,67 +1026,52 @@ fn invert(a: &[Vec<f64>]) -> Option<Vec<Vec<f64>>> {
     )
 }
 
-/// OLS of the paired differences on the ±1 sign matrix, no intercept: the
-/// coefficient on gene `i` is its on-vs-off effect adjusted for every other
-/// gene's chance imbalance across the pairs. Returns (effect, se) per gene, or
-/// `None` when the design cannot support it.
-fn adjusted_effects(
-    signs: &[Vec<f64>],
-    diffs: &[f64],
-    clusters: &[(u64, usize)],
-) -> Option<Vec<(f64, f64)>> {
-    let n = diffs.len();
-    let k = signs.first()?.len();
-    if k == 0 || n < 2 * k + 10 {
+/// OLS of `y` on `design` — rows that already carry their intercept column —
+/// with cluster-robust (sandwich) standard errors: the seats of one game share
+/// a winner, so their residuals are correlated and a per-seat error would be
+/// too small. Each cluster's score vector `Σᵢ xᵢeᵢ` is summed whole before it
+/// is squared: `(XᵀX)⁻¹ (Σ_g s_g s_gᵀ) (XᵀX)⁻¹`, scaled by `G/(G−1)`.
+///
+/// Returns `(coefficient, se)` per column, or `None` when the design cannot
+/// support it (fewer rows than columns plus ten, fewer than two clusters, or a
+/// singular matrix — a gene that never varied, for instance).
+fn ols_clustered(design: &[Vec<f64>], y: &[f64], clusters: &[GameKey]) -> Option<Vec<(f64, f64)>> {
+    let n = y.len();
+    let k = design.first()?.len();
+    if k == 0 || n < k + 10 {
         return None;
     }
     let mut xtx = vec![vec![0.0; k]; k];
     let mut xty = vec![0.0; k];
-    for (row, &d) in signs.iter().zip(diffs) {
+    for (row, &value) in design.iter().zip(y) {
         for i in 0..k {
-            xty[i] += row[i] * d;
-            for j in 0..k {
+            xty[i] += row[i] * value;
+            for j in i..k {
                 xtx[i][j] += row[i] * row[j];
             }
+        }
+    }
+    for i in 0..k {
+        for j in 0..i {
+            xtx[i][j] = xtx[j][i];
         }
     }
     let inverse = invert(&xtx)?;
     let beta: Vec<f64> = (0..k)
         .map(|i| (0..k).map(|j| inverse[i][j] * xty[j]).sum())
         .collect();
-    let residuals: Vec<f64> = signs
-        .iter()
-        .zip(diffs)
-        .map(|(row, &d)| {
-            let fitted: f64 = row.iter().zip(&beta).map(|(s, b)| s * b).sum();
-            d - fitted
-        })
-        .collect();
-    let mut cluster_ids: Vec<(u64, usize)> = clusters.to_vec();
-    cluster_ids.sort_unstable();
-    cluster_ids.dedup();
-    if cluster_ids.len() == n {
-        // Singleton clusters: the classic design. Keep the homoskedastic OLS
-        // standard error the column has always printed, value for value.
-        let rss: f64 = residuals.iter().map(|e| e * e).sum();
-        let sigma2 = rss / (n - k) as f64;
-        return Some(
-            (0..k)
-                .map(|i| (beta[i], (sigma2 * inverse[i][i]).max(0.0).sqrt()))
-                .collect(),
-        );
-    }
-    // All-seats files: seat pairs from one game share a winner, so their OLS
-    // residuals are correlated and the homoskedastic error would be too
-    // small. The cluster-robust (sandwich) variance sums each game pair's
-    // score vector `Xᵍᵀeᵍ` whole before squaring:
-    // `(XᵀX)⁻¹ (Σᵍ sᵍ sᵍᵀ) (XᵀX)⁻¹`.
-    let mut scores: BTreeMap<(u64, usize), Vec<f64>> = BTreeMap::new();
-    for ((row, &e), key) in signs.iter().zip(&residuals).zip(clusters) {
+    let mut scores: BTreeMap<GameKey, Vec<f64>> = BTreeMap::new();
+    for ((row, &value), key) in design.iter().zip(y).zip(clusters) {
+        let fitted: f64 = row.iter().zip(&beta).map(|(x, b)| x * b).sum();
+        let residual = value - fitted;
         let score = scores.entry(*key).or_insert_with(|| vec![0.0; k]);
         for i in 0..k {
-            score[i] += row[i] * e;
+            score[i] += row[i] * residual;
         }
+    }
+    let groups = scores.len();
+    if groups < 2 {
+        return None;
     }
     let mut meat = vec![vec![0.0; k]; k];
     for score in scores.values() {
@@ -1237,6 +1081,7 @@ fn adjusted_effects(
             }
         }
     }
+    let small_sample = groups as f64 / (groups - 1) as f64;
     Some(
         (0..k)
             .map(|i| {
@@ -1246,20 +1091,111 @@ fn adjusted_effects(
                             .map(|b| inverse[i][a] * meat[a][b] * inverse[b][i])
                             .sum::<f64>()
                     })
-                    .sum();
+                    .sum::<f64>()
+                    * small_sample;
                 (beta[i], variance.max(0.0).sqrt())
             })
             .collect(),
     )
 }
 
-/// One gene's estimates from the pairs.
+/// The screened rows of a file as the analysis sees them: one seat per row
+/// with its ±1 sign on every screened gene, its game, and its outcomes.
+struct Seats<'a> {
+    rows: Vec<&'a Row>,
+    /// Header-order index of each screened gene, in column order.
+    columns: Vec<usize>,
+    /// ±1 per screened column, per row.
+    signs: Vec<Vec<f64>>,
+    clusters: Vec<GameKey>,
+    wins: Vec<f64>,
+    shares: Vec<f64>,
+}
+
+impl<'a> Seats<'a> {
+    fn of(header: &Header, rows: &'a [Row]) -> Self {
+        let k = header.genes.len();
+        let screened = header.screened_mask();
+        let columns: Vec<usize> = (0..k).filter(|&i| screened[i]).collect();
+        let rows: Vec<&Row> = rows
+            .iter()
+            .filter(|row| row.kind == "game" && row.genome.chars().count() == k)
+            .collect();
+        let signs = rows
+            .iter()
+            .map(|row| {
+                let bits = row.bits();
+                columns
+                    .iter()
+                    .map(|&i| if bits[i] { 1.0 } else { -1.0 })
+                    .collect()
+            })
+            .collect();
+        let clusters = rows.iter().map(|row| row.game_key()).collect();
+        let wins = rows.iter().map(|row| f64::from(u8::from(row.win))).collect();
+        let shares = rows.iter().map(|row| row.score_share).collect();
+        Seats {
+            rows,
+            columns,
+            signs,
+            clusters,
+            wins,
+            shares,
+        }
+    }
+
+    fn games(&self) -> usize {
+        let mut keys: Vec<GameKey> = self.clusters.clone();
+        keys.sort_unstable();
+        keys.dedup();
+        keys.len()
+    }
+
+    /// One gene's on−off difference on an outcome, with its clustered error:
+    /// the regression of the outcome on `[1, sign]`, whose slope is half the
+    /// on−off difference exactly.
+    fn contrast(&self, column: usize, outcome: &[f64]) -> (f64, f64) {
+        let design: Vec<Vec<f64>> = self.signs.iter().map(|row| vec![1.0, row[column]]).collect();
+        match ols_clustered(&design, outcome, &self.clusters) {
+            Some(fit) => (2.0 * fit[1].0, 2.0 * fit[1].1),
+            None => {
+                // Too few seats for an error: report the raw difference and no
+                // precision, so the row reads as unresolved rather than exact.
+                let (mut on, mut n_on, mut off, mut n_off) = (0.0, 0usize, 0.0, 0usize);
+                for (row, &value) in self.signs.iter().zip(outcome) {
+                    if row[column] > 0.0 {
+                        on += value;
+                        n_on += 1;
+                    } else {
+                        off += value;
+                        n_off += 1;
+                    }
+                }
+                let mean = |sum: f64, n: usize| if n > 0 { sum / n as f64 } else { 0.0 };
+                (mean(on, n_on) - mean(off, n_off), f64::INFINITY)
+            }
+        }
+    }
+
+    /// Every gene's win Δ at once: the regression of the win on an intercept
+    /// and every screened sign, so a gene is not credited with the chance
+    /// imbalance of its neighbours. `None` until the seats can support it.
+    fn adjusted(&self, outcome: &[f64]) -> Option<Vec<(f64, f64)>> {
+        let design: Vec<Vec<f64>> = self
+            .signs
+            .iter()
+            .map(|row| std::iter::once(1.0).chain(row.iter().copied()).collect())
+            .collect();
+        let fit = ols_clustered(&design, outcome, &self.clusters)?;
+        Some(fit.into_iter().skip(1).map(|(b, se)| (2.0 * b, 2.0 * se)).collect())
+    }
+}
+
+/// One gene's estimates from the seats.
 #[derive(Clone, Debug)]
 struct GeneEstimate {
     tag: String,
-    pairs: usize,
-    /// Games with the gene on / off behind `win_on` / `win_off`. Equal to
-    /// `pairs` each under the foldover; unequal under a prior-weighted draw.
+    /// Seats with the gene on / off behind `win_on` / `win_off`.
     n_on: usize,
     n_off: usize,
     win_on: f64,
@@ -1272,6 +1208,82 @@ struct GeneEstimate {
     adjusted: Option<(f64, f64)>,
 }
 
+impl GeneEstimate {
+    fn seats(&self) -> usize {
+        self.n_on + self.n_off
+    }
+    fn win_z(&self) -> f64 {
+        if self.win_se > 0.0 && self.win_se.is_finite() {
+            self.win_delta / self.win_se
+        } else {
+            0.0
+        }
+    }
+    fn share_z(&self) -> f64 {
+        if self.share_se > 0.0 && self.share_se.is_finite() {
+            self.share_delta / self.share_se
+        } else {
+            0.0
+        }
+    }
+}
+
+/// The whole table's worth of estimates, plus what they rest on.
+struct Estimates {
+    genes: Vec<GeneEstimate>,
+    games: usize,
+    seats: usize,
+    overall_win: f64,
+    overall_share: f64,
+}
+
+fn estimate(header: &Header, rows: &[Row]) -> Estimates {
+    let seats = Seats::of(header, rows);
+    let n = seats.rows.len();
+    let overall_win = if n > 0 { seats.wins.iter().sum::<f64>() / n as f64 } else { 0.0 };
+    let overall_share = if n > 0 { seats.shares.iter().sum::<f64>() / n as f64 } else { 0.0 };
+    let adjusted = seats.adjusted(&seats.wins);
+    let genes = seats
+        .columns
+        .iter()
+        .enumerate()
+        .map(|(column, &index)| {
+            let (mut wins_on, mut n_on, mut wins_off, mut n_off) = (0usize, 0usize, 0usize, 0usize);
+            for (row, seat) in seats.signs.iter().zip(&seats.rows) {
+                if row[column] > 0.0 {
+                    n_on += 1;
+                    wins_on += usize::from(seat.win);
+                } else {
+                    n_off += 1;
+                    wins_off += usize::from(seat.win);
+                }
+            }
+            let (win_delta, win_se) = seats.contrast(column, &seats.wins);
+            let (share_delta, share_se) = seats.contrast(column, &seats.shares);
+            let rate = |wins: usize, n: usize| if n > 0 { wins as f64 / n as f64 } else { 0.0 };
+            GeneEstimate {
+                tag: header.genes[index].clone(),
+                n_on,
+                n_off,
+                win_on: rate(wins_on, n_on),
+                win_off: rate(wins_off, n_off),
+                win_delta,
+                win_se,
+                share_delta,
+                share_se,
+                adjusted: adjusted.as_ref().map(|all| all[column]),
+            }
+        })
+        .collect();
+    Estimates {
+        genes,
+        games: seats.games(),
+        seats: n,
+        overall_win,
+        overall_share,
+    }
+}
+
 /// One gene's causal simulation-cost estimate. Effects stay on the log scale
 /// internally: a coefficient of `ln(1.10)` means enabling the gene for one
 /// major seat makes the measured quantity 10% larger. Log ratios are the
@@ -1280,12 +1292,12 @@ struct GeneEstimate {
 /// worker from dominating the estimate.
 #[derive(Clone, Copy, Debug)]
 struct CostEstimate {
-    /// Complete game-pair comparisons with usable seconds and turn counts.
-    pairs: usize,
-    /// Change in wall seconds per completed game turn (on versus off).
+    /// Games with usable seconds and turn counts behind the fit.
+    games: usize,
+    /// Change in wall seconds per completed game turn, per enabled major seat.
     compute_log_delta: f64,
     compute_log_se: f64,
-    /// Change in whole-game wall seconds (on versus off).
+    /// Change in whole-game wall seconds, per enabled major seat.
     time_log_delta: f64,
     time_log_se: f64,
 }
@@ -1317,215 +1329,19 @@ impl CostEstimate {
     }
 }
 
-impl GeneEstimate {
-    fn win_z(&self) -> f64 {
-        if self.win_se > 0.0 && self.win_se.is_finite() {
-            self.win_delta / self.win_se
-        } else {
-            0.0
-        }
-    }
-    fn share_z(&self) -> f64 {
-        if self.share_se > 0.0 && self.share_se.is_finite() {
-            self.share_delta / self.share_se
-        } else {
-            0.0
-        }
-    }
-}
-
-/// A chronological replication tranche contains this many complete on/off
-/// comparisons, rounded only enough to keep an all-seats game pair whole.
-/// The latter is important: seats from one game share a winner, so putting
-/// them into two tranches would make the purported replications correlated.
-const REPRO_WINDOW_PAIRS: usize = 10_000;
-const REPRO_WINDOW_COUNT: usize = 3;
-
-/// A complete foldover pair plus its position in the JSONL stream. `ordinal`
-/// is deliberately the input order rather than the seed: appended runs can
-/// use any disjoint seed range, while input order is what "latest 10k" means.
-#[derive(Clone, Copy)]
-struct CompletePair<'a> {
-    a: &'a Row,
-    b: &'a Row,
-    ordinal: usize,
-}
-
-type PairKey = (u64, usize, usize);
-type OrderedRow<'a> = (usize, &'a Row);
-type PairSlots<'a> = [Option<OrderedRow<'a>>; 2];
-
-/// One newest-first, non-overlapping replication tranche.
-#[derive(Clone, Debug)]
-struct ReproTranche {
-    pairs: usize,
-    estimates: Vec<GeneEstimate>,
-}
-
-/// The screened rows grouped into complete foldover pairs, in (arm 0, arm 1)
-/// order and annotated with their position in the input stream.
-///
-/// A pair is complete when both arms are present for one `(seed, seat, pair)`
-/// key; an unfinished run's odd row is dropped rather than counted as an
-/// unpaired game. Merged files may repeat a key only if they replayed the same
-/// pair, in which case the later row wins.
-fn complete_pairs_with_order(rows: &[Row]) -> Vec<CompletePair<'_>> {
-    let mut pairs: BTreeMap<PairKey, PairSlots<'_>> = BTreeMap::new();
-    for (ordinal, row) in rows
-        .iter()
-        .enumerate()
-        .filter(|(_, row)| row.kind == "game")
-    {
-        let slot = pairs
-            .entry((row.seed, row.seat, row.pair))
-            .or_insert([None, None]);
-        slot[usize::from(row.arm.min(1))] = Some((ordinal, row));
-    }
-    pairs
-        .values()
-        .filter_map(|[a, b]| {
-            let (a_ordinal, a) = (*a)?;
-            let (b_ordinal, b) = (*b)?;
-            Some(CompletePair {
-                a,
-                b,
-                ordinal: a_ordinal.max(b_ordinal),
-            })
-        })
-        .collect()
-}
-
-fn complete_pairs(rows: &[Row]) -> Vec<(&Row, &Row)> {
-    complete_pairs_with_order(rows)
-        .into_iter()
-        .map(|pair| (pair.a, pair.b))
-        .collect()
-}
-
-/// Split the newest data into non-overlapping, chronological replication
-/// tranches. A whole `(seed, pair)` cluster moves as one unit; in all-seats
-/// files that is every seat from the two games on one map. The requested
-/// width is therefore approximate only when it would otherwise split a
-/// correlated cluster.
-fn reproducibility_tranches(
-    header: &Header,
-    rows: &[Row],
-    window_pairs: usize,
-    window_count: usize,
-) -> Vec<ReproTranche> {
-    let mut grouped: BTreeMap<(u64, usize), Vec<CompletePair<'_>>> = BTreeMap::new();
-    for pair in complete_pairs_with_order(rows) {
-        grouped
-            .entry((pair.a.seed, pair.a.pair))
-            .or_default()
-            .push(pair);
-    }
-    let mut clusters: Vec<(usize, Vec<CompletePair<'_>>)> = grouped
-        .into_values()
-        .map(|pairs| {
-            let ordinal = pairs.iter().map(|pair| pair.ordinal).max().unwrap_or(0);
-            (ordinal, pairs)
-        })
-        .collect();
-    // `complete_pairs_with_order` preserves later-row-wins semantics; the
-    // ordinal then makes this correct for both --append and several --analyze
-    // input files, even if their disjoint seed ranges are not increasing.
-    clusters.sort_by_key(|(ordinal, _)| *ordinal);
-
-    let target = window_pairs.max(1);
-    let mut end = clusters.len();
-    let mut tranches = Vec::new();
-    while end > 0 && tranches.len() < window_count {
-        let mut start = end;
-        let mut count = 0usize;
-        while start > 0 && count < target {
-            start -= 1;
-            count += clusters[start].1.len();
-        }
-        // Choose the closest boundary, but never create an empty window. For
-        // six treated seats a 10,000-pair target becomes 10,002 rather than
-        // splitting four seats from the next map pair away from their peers.
-        if count > target {
-            let without_first = count - clusters[start].1.len();
-            if without_first > 0 && target - without_first < count - target {
-                start += 1;
-            }
-        }
-        let selected: Vec<CompletePair<'_>> = clusters[start..end]
-            .iter()
-            .flat_map(|(_, pairs)| pairs.iter().copied())
-            .collect();
-        let mut tranche_rows = Vec::with_capacity(selected.len() * 2);
-        for pair in selected {
-            tranche_rows.push(pair.a.clone());
-            tranche_rows.push(pair.b.clone());
-        }
-        let (estimates, pairs, _, _) = estimate(header, &tranche_rows);
-        tranches.push(ReproTranche { pairs, estimates });
-        end = start;
-    }
-    tranches
-}
-
-fn tranche_estimate<'a>(tranche: &'a ReproTranche, tag: &str) -> Option<&'a GeneEstimate> {
-    tranche
-        .estimates
-        .iter()
-        .find(|estimate| estimate.tag == tag)
-}
-
-/// A compact table cell for one chronological win-rate replication tranche.
-/// The effect is in percentage points and the z retains the window's paired,
-/// cluster-aware uncertainty rather than pretending the raw seat rows are
-/// independent.
-fn tranche_cell(tranche: Option<&ReproTranche>, tag: &str) -> String {
-    match tranche.and_then(|tranche| tranche_estimate(tranche, tag)) {
-        Some(estimate) => format!(
-            "{:+.1}pp z{:+.2}",
-            100.0 * estimate.win_delta,
-            estimate.win_z()
-        ),
-        None => "—".to_string(),
-    }
-}
-
-/// The ±1 sign vector of a pair's arm-0 genome, restricted to screened genes,
-/// or `None` when the genome string does not match the header's gene order.
-fn pair_signs(genome: &str, screened: &[bool], k: usize) -> Option<Vec<f64>> {
-    let bits: Vec<bool> = genome.chars().map(|c| c == '1').collect();
-    if bits.len() != k {
-        return None;
-    }
-    Some(
-        (0..k)
-            .filter(|&i| screened[i])
-            .map(|i| if bits[i] { 1.0 } else { -1.0 })
-            .collect(),
-    )
-}
-
-/// Which header genes were screened, as a mask over the gene order.
-fn screened_mask(header: &Header) -> Vec<bool> {
-    header
-        .genes
-        .iter()
-        .map(|gene| header.screened.contains(gene))
-        .collect()
-}
-
 /// OLS with HC1 heteroskedasticity-robust errors. Timing variance grows with a
-/// game's size and length even after taking logs, so the homoskedastic error
-/// used by the historical win table would be optimistic here. Rows are already
-/// one independent game pair each; no further clustering is required.
-fn robust_cost_regression(design: &[Vec<f64>], diffs: &[f64]) -> Option<Vec<(f64, f64)>> {
-    let n = diffs.len();
+/// game's size and length even after taking logs, so a homoskedastic error
+/// would be optimistic here. Rows are one independent game each; no further
+/// clustering is required.
+fn robust_cost_regression(design: &[Vec<f64>], y: &[f64]) -> Option<Vec<(f64, f64)>> {
+    let n = y.len();
     let k = design.first()?.len();
     if k == 0 || n < 2 * k + 10 {
         return None;
     }
     let mut xtx = vec![vec![0.0; k]; k];
     let mut xty = vec![0.0; k];
-    for (row, &d) in design.iter().zip(diffs) {
+    for (row, &d) in design.iter().zip(y) {
         for i in 0..k {
             xty[i] += row[i] * d;
             for j in 0..k {
@@ -1538,7 +1354,7 @@ fn robust_cost_regression(design: &[Vec<f64>], diffs: &[f64]) -> Option<Vec<(f64
         .map(|i| (0..k).map(|j| inverse[i][j] * xty[j]).sum())
         .collect();
     let mut meat = vec![vec![0.0; k]; k];
-    for (row, &d) in design.iter().zip(diffs) {
+    for (row, &d) in design.iter().zip(y) {
         let fitted: f64 = row.iter().zip(&beta).map(|(x, b)| x * b).sum();
         let residual2 = (d - fitted).powi(2);
         for i in 0..k {
@@ -1565,27 +1381,26 @@ fn robust_cost_regression(design: &[Vec<f64>], diffs: &[f64]) -> Option<Vec<(f64
     )
 }
 
-/// Fit the paired timing differences with an intercept and every screened
-/// gene at once. The intercept absorbs an arm-order or machine-load drift; the
-/// gene coefficients therefore cannot inherit a small chance imbalance in
-/// which genomes happened to run first. When a short pilot cannot support the
-/// full matrix, fit each gene with the same intercept rather than publishing
-/// no measurement at all.
-fn adjusted_cost_effects(signs: &[Vec<f64>], diffs: &[f64]) -> Vec<Option<(f64, f64)>> {
-    let Some(k) = signs.first().map(Vec::len) else {
+/// Fit the game timings on an intercept and every screened gene at once. The
+/// intercept absorbs machine-load drift; the gene coefficients therefore
+/// cannot inherit a small chance imbalance in which genomes happened to run
+/// first. When a short pilot cannot support the full matrix, fit each gene
+/// with the same intercept rather than publishing no measurement at all.
+fn adjusted_cost_effects(counts: &[Vec<f64>], y: &[f64]) -> Vec<Option<(f64, f64)>> {
+    let Some(k) = counts.first().map(Vec::len) else {
         return Vec::new();
     };
-    let with_intercept: Vec<Vec<f64>> = signs
+    let with_intercept: Vec<Vec<f64>> = counts
         .iter()
         .map(|row| std::iter::once(1.0).chain(row.iter().copied()).collect())
         .collect();
-    if let Some(all) = robust_cost_regression(&with_intercept, diffs) {
+    if let Some(all) = robust_cost_regression(&with_intercept, y) {
         return all.into_iter().skip(1).map(Some).collect();
     }
     (0..k)
         .map(|column| {
-            let one: Vec<Vec<f64>> = signs.iter().map(|row| vec![1.0, row[column]]).collect();
-            robust_cost_regression(&one, diffs).and_then(|fit| fit.get(1).copied())
+            let one: Vec<Vec<f64>> = counts.iter().map(|row| vec![1.0, row[column]]).collect();
+            robust_cost_regression(&one, y).and_then(|fit| fit.get(1).copied())
         })
         .collect()
 }
@@ -1594,85 +1409,63 @@ fn adjusted_cost_effects(signs: &[Vec<f64>], diffs: &[f64]) -> Vec<Option<(f64, 
 /// the screen rows that already exist. No heuristic is timed in its hot path
 /// and no profiling-only game is required.
 ///
-/// Both arms share the map, seat and machine conditions. We regress their log
-/// ratio on `(x_on_arm0 - x_on_arm1) / 2`, so foldovers use the familiar ±1
-/// signs and prior-weighted screens use −1/0/+1 according to whether a gene
-/// actually differed. In all-seats mode we sum those signs across seats and
-/// keep the game's one timing once. The coefficient is consequently the cost
-/// of enabling the gene for one major seat, with one independent observation
-/// per game pair rather than `players` duplicate timings.
+/// A game's timing is regressed on how many of its major seats had each gene
+/// on, so the coefficient is the cost of enabling the gene for one major
+/// seat, with one independent observation per game rather than `players`
+/// duplicate timings.
 ///
 /// `compute` is seconds per completed turn: it answers whether the simulation
 /// does more wall-clock work at the same game length. `time` is whole-game
 /// seconds: it is the throughput impact operators actually pay, including a
 /// gene that reaches the same victory in more or fewer turns.
 fn estimate_costs(header: &Header, rows: &[Row]) -> BTreeMap<String, CostEstimate> {
-    let k = header.genes.len();
-    let screened = screened_mask(header);
-    // key -> (sum of per-seat gene differences, compute log ratio, time log
-    // ratio). A classic screen contributes one seat; all-seats contributes
-    // every independently drawn major to the sum but still one game timing.
-    let mut games: BTreeMap<(u64, usize), (Vec<f64>, f64, f64)> = BTreeMap::new();
-
-    for (a, b) in complete_pairs(rows) {
-        if !(a.secs.is_finite() && b.secs.is_finite() && a.secs > 0.0 && b.secs > 0.0)
-            || a.turn == 0
-            || b.turn == 0
-        {
+    let seats = Seats::of(header, rows);
+    let width = seats.columns.len();
+    // key -> (count of seats with each gene on, compute log, time log)
+    let mut games: BTreeMap<GameKey, (Vec<f64>, f64, f64)> = BTreeMap::new();
+    for ((row, signs), key) in seats.rows.iter().zip(&seats.signs).zip(&seats.clusters) {
+        if !(row.secs.is_finite() && row.secs > 0.0) || row.turn == 0 {
             continue;
         }
-        let (Some(a_signs), Some(b_signs)) = (
-            pair_signs(&a.genome, &screened, k),
-            pair_signs(&b.genome, &screened, k),
-        ) else {
-            continue;
-        };
-        // Foldover: (x - -x) / 2 = x. Prior design: zero when both arms
-        // happened to agree, which correctly says that pair carries no direct
-        // information for that gene.
-        let time_diff = a.secs.ln() - b.secs.ln();
-        let compute_diff = (a.secs / f64::from(a.turn)).ln() - (b.secs / f64::from(b.turn)).ln();
-        let game = games
-            .entry((a.seed, a.pair))
-            .or_insert_with(|| (vec![0.0; a_signs.len()], compute_diff, time_diff));
-        for (total, (a, b)) in game.0.iter_mut().zip(a_signs.iter().zip(&b_signs)) {
-            *total += (a - b) / 2.0;
+        let game = games.entry(*key).or_insert_with(|| {
+            (
+                vec![0.0; width],
+                (row.secs / f64::from(row.turn)).ln(),
+                row.secs.ln(),
+            )
+        });
+        for (count, sign) in game.0.iter_mut().zip(signs) {
+            if *sign > 0.0 {
+                *count += 1.0;
+            }
         }
     }
     if games.is_empty() {
         return BTreeMap::new();
     }
-
-    let signs: Vec<Vec<f64>> = games.values().map(|game| game.0.clone()).collect();
-    let compute_diffs: Vec<f64> = games.values().map(|game| game.1).collect();
-    let time_diffs: Vec<f64> = games.values().map(|game| game.2).collect();
-
-    let compute = adjusted_cost_effects(&signs, &compute_diffs);
-    let time = adjusted_cost_effects(&signs, &time_diffs);
-    let screened_tags: Vec<&String> = header
-        .genes
+    let counts: Vec<Vec<f64>> = games.values().map(|game| game.0.clone()).collect();
+    let compute_y: Vec<f64> = games.values().map(|game| game.1).collect();
+    let time_y: Vec<f64> = games.values().map(|game| game.2).collect();
+    let compute = adjusted_cost_effects(&counts, &compute_y);
+    let time = adjusted_cost_effects(&counts, &time_y);
+    seats
+        .columns
         .iter()
-        .zip(&screened)
-        .filter_map(|(tag, &is_screened)| is_screened.then_some(tag))
-        .collect();
-    screened_tags
-        .into_iter()
         .enumerate()
-        .filter_map(|(column, tag)| {
+        .filter_map(|(column, &index)| {
             let ((compute_log_delta, compute_log_se), (time_log_delta, time_log_se)) = (
                 compute.get(column).copied().flatten()?,
                 time.get(column).copied().flatten()?,
             );
-            let informative = signs.iter().filter(|row| row[column] != 0.0).count();
             (compute_log_delta.is_finite()
                 && compute_log_se.is_finite()
                 && time_log_delta.is_finite()
                 && time_log_se.is_finite())
             .then(|| {
                 (
-                    tag.clone(),
+                    header.genes[index].clone(),
                     CostEstimate {
-                        pairs: informative,
+                        games: games.len(),
                         compute_log_delta,
                         compute_log_se,
                         time_log_delta,
@@ -1684,222 +1477,98 @@ fn estimate_costs(header: &Header, rows: &[Row]) -> BTreeMap<String, CostEstimat
         .collect()
 }
 
-fn estimate(header: &Header, rows: &[Row]) -> (Vec<GeneEstimate>, usize, f64, f64) {
-    if header.design == "prior" {
-        return estimate_prior(header, rows);
-    }
-    let k = header.genes.len();
-    let complete = complete_pairs(rows);
-    let treated_wins = complete
-        .iter()
-        .map(|(a, b)| usize::from(a.win) + usize::from(b.win))
-        .sum::<usize>();
-    let treated_share = complete
-        .iter()
-        .map(|(a, b)| a.score_share + b.score_share)
-        .sum::<f64>();
-    let games = complete.len() * 2;
-    let overall_win = if games > 0 {
-        treated_wins as f64 / games as f64
-    } else {
-        0.0
-    };
-    let overall_share = if games > 0 {
-        treated_share / games as f64
-    } else {
-        0.0
-    };
+/// A chronological replication tranche holds about this many seats — whole
+/// games only, since the seats of one game share a winner and splitting them
+/// across tranches would make the purported replications correlated. Twenty
+/// thousand seats is the precision the old design's 10,000 seat pairs bought.
+const REPRO_WINDOW_SEATS: usize = 20_000;
+const REPRO_WINDOW_COUNT: usize = 3;
 
-    let screened = screened_mask(header);
-    let mut signs: Vec<Vec<f64>> = Vec::with_capacity(complete.len());
-    let mut win_diffs: Vec<f64> = Vec::with_capacity(complete.len());
-    let mut share_diffs: Vec<f64> = Vec::with_capacity(complete.len());
-    // The game pair each seat pair came from. In the classic design every
-    // cluster is one seat pair and the clustering below is the identity; in
-    // an all-seats file one game holds `players` seat pairs whose outcomes
-    // share a single winner, and treating them as independent would
-    // understate every standard error.
-    let mut clusters: Vec<(u64, usize)> = Vec::with_capacity(complete.len());
-    for (a, b) in &complete {
-        let Some(row_signs) = pair_signs(&a.genome, &screened, k) else {
-            continue;
-        };
-        if b.genome.chars().count() != k {
-            continue;
-        }
-        signs.push(row_signs);
-        win_diffs.push(f64::from(u8::from(a.win)) - f64::from(u8::from(b.win)));
-        share_diffs.push(a.score_share - b.score_share);
-        clusters.push((a.seed, a.pair));
-    }
-    let adjusted = adjusted_effects(&signs, &win_diffs, &clusters);
-
-    let mut estimates = Vec::new();
-    let mut screened_index = 0;
-    for (i, tag) in header.genes.iter().enumerate() {
-        if !screened[i] {
-            continue;
-        }
-        let column = screened_index;
-        screened_index += 1;
-        // Orient every pair so the difference reads on − off for this gene.
-        let oriented_win: Vec<f64> = signs
-            .iter()
-            .zip(&win_diffs)
-            .map(|(row, d)| row[column] * d)
-            .collect();
-        let oriented_share: Vec<f64> = signs
-            .iter()
-            .zip(&share_diffs)
-            .map(|(row, d)| row[column] * d)
-            .collect();
-        let (win_delta, win_se) = clustered_mean_se(&oriented_win, &clusters);
-        let (share_delta, share_se) = clustered_mean_se(&oriented_share, &clusters);
-        // Win rate on/off from the same pairs: each pair contributes exactly
-        // one on-arm and one off-arm.
-        let mut wins_on = 0usize;
-        let mut wins_off = 0usize;
-        for ((a, b), row) in complete.iter().zip(&signs) {
-            let (on, off) = if row[column] > 0.0 { (a, b) } else { (b, a) };
-            wins_on += usize::from(on.win);
-            wins_off += usize::from(off.win);
-        }
-        let n = signs.len();
-        estimates.push(GeneEstimate {
-            tag: tag.clone(),
-            pairs: n,
-            n_on: n,
-            n_off: n,
-            win_on: if n > 0 {
-                wins_on as f64 / n as f64
-            } else {
-                0.0
-            },
-            win_off: if n > 0 {
-                wins_off as f64 / n as f64
-            } else {
-                0.0
-            },
-            win_delta,
-            win_se,
-            share_delta,
-            share_se,
-            adjusted: adjusted.as_ref().map(|all| all[column]),
-        });
-    }
-    (estimates, complete.len(), overall_win, overall_share)
+/// One newest-first, non-overlapping replication tranche.
+#[derive(Clone, Debug)]
+struct ReproTranche {
+    seats: usize,
+    games: usize,
+    estimates: Vec<GeneEstimate>,
 }
 
-/// The analysis as data: one object per screened gene with the numbers the
-/// table prints, plus the profile. `tools/gene_ledger.py` reads this to
-/// build `docs/gene_ledger.json` and the generated Rust table, so the
-/// deployment genome is derived from the screens rather than typed in.
-fn write_json_summary(path: &str, header: &Header, rows: &[Row]) {
-    let (estimates, pairs, overall_win, overall_share) = estimate(header, rows);
-    let costs = estimate_costs(header, rows);
-    let tranches = reproducibility_tranches(header, rows, REPRO_WINDOW_PAIRS, REPRO_WINDOW_COUNT);
-    let family_z = family_wise_z(estimates.len());
-    let genes: Vec<serde_json::Value> = estimates
+/// Split the newest data into non-overlapping, chronological replication
+/// tranches. "Newest" is input order, deliberately, rather than the seed:
+/// appended runs can use any disjoint seed range, while input order is what
+/// "latest" means. A whole game moves as one unit, so the requested width is
+/// approximate only when it would otherwise split a game.
+fn reproducibility_tranches(
+    header: &Header,
+    rows: &[Row],
+    window_seats: usize,
+    window_count: usize,
+) -> Vec<ReproTranche> {
+    let k = header.genes.len();
+    let mut grouped: BTreeMap<GameKey, (usize, Vec<&Row>)> = BTreeMap::new();
+    for (ordinal, row) in rows
         .iter()
-        .map(|e| {
-            let cost = costs.get(&e.tag);
-            let win_tranches: Vec<serde_json::Value> = tranches
-                .iter()
-                .enumerate()
-                .filter_map(|(index, tranche)| {
-                    let estimate = tranche_estimate(tranche, &e.tag)?;
-                    Some(serde_json::json!({
-                        "position": match index {
-                            0 => "latest",
-                            1 => "previous",
-                            _ => "earlier",
-                        },
-                        "pairs": tranche.pairs,
-                        "win_delta_pp": 100.0 * estimate.win_delta,
-                        "win_se_pp": 100.0 * estimate.win_se,
-                        "win_z": estimate.win_z(),
-                    }))
-                })
-                .collect();
-            serde_json::json!({
-                "tag": e.tag,
-                "pairs": e.pairs,
-                "n_on": e.n_on,
-                "n_off": e.n_off,
-                "win_on": e.win_on,
-                "win_off": e.win_off,
-                "win_delta_pp": 100.0 * e.win_delta,
-                "win_se_pp": 100.0 * e.win_se,
-                "win_z": e.win_z(),
-                "share_delta_pp": 100.0 * e.share_delta,
-                "share_se_pp": 100.0 * e.share_se,
-                "share_z": e.share_z(),
-                "adjusted_pp": e.adjusted.map(|(b, _)| 100.0 * b),
-                "adjusted_se_pp": e.adjusted.map(|(_, se)| 100.0 * se),
-                "read": read_column(e.win_z(), e.share_z(), family_z),
-                "win_tranches": win_tranches,
-                "cost_pairs": cost.map(|c| c.pairs),
-                "compute_cost_pct": cost.map(CostEstimate::compute_pct),
-                "compute_cost_se_pct": cost.map(CostEstimate::compute_se_pct),
-                "time_cost_pct": cost.map(CostEstimate::time_pct),
-                "time_cost_se_pct": cost.map(CostEstimate::time_se_pct),
-            })
-        })
-        .collect();
-    let summary = serde_json::json!({
-        "kind": "gene_screen_analysis",
-        "profile": header,
-        // ⭐ `standard` is THE screen; anything else is a probe, and
-        // `tools/gene_ledger.py` refuses it as a source. This replaced the
-        // `regime` field, which named which of two worlds a batch played.
-        "shape": shape_of(header),
-        // ⭐ INTENDED AGAINST ACTUAL. `target_pairs` was written into the
-        // header before the first game finished, so a batch that stopped early
-        // is a partial screen in its own artefact rather than an unmarked one.
-        // A file written before 2026-08-23 carries nulls here, which is the
-        // honest answer: nothing was pre-registered, so nothing can be read
-        // against it. (The two hand-written `batch` blocks under
-        // `docs/gene_screens/` are this field's prose ancestors.)
-        "batch": {
-            "target_pairs": (header.batch.target_pairs > 0).then_some(header.batch.target_pairs),
-            "target_comparisons": (header.batch.target_comparisons > 0)
-                .then_some(header.batch.target_comparisons),
-            "complete_comparisons": pairs,
-            "completion": (header.batch.target_comparisons > 0)
-                .then(|| pairs as f64 / header.batch.target_comparisons as f64),
-            "partial": (header.batch.target_comparisons > 0)
-                .then_some(pairs < header.batch.target_comparisons),
-            "seed_window": (header.batch.target_pairs > 0)
-                .then_some([header.batch.seed_first, header.batch.seed_last]),
-            "seed_window_played": played_seed_window(rows).map(|(low, high)| [low, high]),
-            "read": completeness_line(header, pairs),
-        },
-        "complete_pairs": pairs,
-        "overall_win": overall_win,
-        "overall_share": overall_share,
-        "family_wise_z": family_z,
-        "reproducibility": {
-            "unit": "complete paired comparisons",
-            "target_pairs_per_window": REPRO_WINDOW_PAIRS,
-            "windows": "newest first; whole game-pair clusters only",
-        },
-        "cost_method": {
-            "unit": "percent change per enabled major seat; positive is slower",
-            "compute": "paired log ratio of wall seconds per completed turn",
-            "time": "paired log ratio of whole-game wall seconds",
-            "fit": "OLS adjusted for every screened gene and arm-order intercept; one observation per paired game with HC1 robust errors",
-        },
-        "genes": genes,
-    });
-    std::fs::write(
-        path,
-        serde_json::to_string_pretty(&summary).expect("summary serializes"),
-    )
-    .unwrap_or_else(|error| {
-        eprintln!("cannot write {path}: {error}");
-        std::process::exit(2);
-    });
-    println!("analysis written to {path}");
+        .enumerate()
+        .filter(|(_, row)| row.kind == "game" && row.genome.chars().count() == k)
+    {
+        let game = grouped.entry(row.game_key()).or_insert((0, Vec::new()));
+        game.0 = game.0.max(ordinal);
+        game.1.push(row);
+    }
+    let mut games: Vec<(usize, Vec<&Row>)> = grouped.into_values().collect();
+    games.sort_by_key(|(ordinal, _)| *ordinal);
+
+    let target = window_seats.max(1);
+    let mut end = games.len();
+    let mut tranches = Vec::new();
+    while end > 0 && tranches.len() < window_count {
+        let mut start = end;
+        let mut count = 0usize;
+        while start > 0 && count < target {
+            start -= 1;
+            count += games[start].1.len();
+        }
+        // Choose the closest boundary, but never create an empty window.
+        if count > target {
+            let without_first = count - games[start].1.len();
+            if without_first > 0 && target - without_first < count - target {
+                start += 1;
+            }
+        }
+        let tranche_rows: Vec<Row> = games[start..end]
+            .iter()
+            .flat_map(|(_, seats)| seats.iter().map(|row| (*row).clone()))
+            .collect();
+        let estimates = estimate(header, &tranche_rows);
+        tranches.push(ReproTranche {
+            seats: estimates.seats,
+            games: estimates.games,
+            estimates: estimates.genes,
+        });
+        end = start;
+    }
+    tranches
+}
+
+fn tranche_estimate<'a>(tranche: &'a ReproTranche, tag: &str) -> Option<&'a GeneEstimate> {
+    tranche
+        .estimates
+        .iter()
+        .find(|estimate| estimate.tag == tag)
+}
+
+/// A compact table cell for one chronological win-rate replication tranche.
+/// The effect is in percentage points and the z retains the window's
+/// cluster-aware uncertainty rather than pretending the raw seat rows are
+/// independent.
+fn tranche_cell(tranche: Option<&ReproTranche>, tag: &str) -> String {
+    match tranche.and_then(|tranche| tranche_estimate(tranche, tag)) {
+        Some(estimate) => format!(
+            "{:+.1}pp z{:+.2}",
+            100.0 * estimate.win_delta,
+            estimate.win_z()
+        ),
+        None => "—".to_string(),
+    }
 }
 
 /// The family-wise 5% bar for `k` genes (Bonferroni, two-sided).
@@ -1907,109 +1576,6 @@ fn family_wise_z(k: usize) -> f64 {
     normal_quantile_upper(0.025 / k.max(1) as f64)
 }
 
-/// The prior design's estimates: the marginal on-versus-off contrast over
-/// every game (the 90% against the 10%, errors clustered by game), and the
-/// map-paired OLS on the arms' differences as the adjusted column.
-///
-/// Unlike the foldover, a pair's two arms are independent draws, so per-gene
-/// balance is no longer exact and the map's own difficulty does not cancel
-/// in the marginal contrast; it does cancel in the adjusted one, which
-/// regresses `y₀ − y₁` on `x₀ − x₁ ∈ {−1, 0, +1}` — zero for every gene the
-/// two arms agree on, so each gene is priced from the pairs that differ on
-/// it, with the rest of the genome differenced out.
-fn estimate_prior(header: &Header, rows: &[Row]) -> (Vec<GeneEstimate>, usize, f64, f64) {
-    let k = header.genes.len();
-    let screened = screened_mask(header);
-    let games: Vec<&Row> = rows
-        .iter()
-        .filter(|row| row.kind == "game" && row.genome.chars().count() == k)
-        .collect();
-    let n = games.len();
-    let overall_win = if n > 0 {
-        games.iter().filter(|row| row.win).count() as f64 / n as f64
-    } else {
-        0.0
-    };
-    let overall_share = if n > 0 {
-        games.iter().map(|row| row.score_share).sum::<f64>() / n as f64
-    } else {
-        0.0
-    };
-    // One game is one cluster: `(seed, pair·2 + arm)` — a classic row is alone
-    // in its cluster, an all-seats game's rows share one.
-    let game_key = |row: &Row| (row.seed, row.pair * 2 + usize::from(row.arm.min(1)));
-    let bits: Vec<Vec<bool>> = games
-        .iter()
-        .map(|row| row.genome.chars().map(|c| c == '1').collect())
-        .collect();
-
-    // Adjusted: the pairs whose arms both exist, differenced.
-    let complete = complete_pairs(rows);
-    let mut diff_signs: Vec<Vec<f64>> = Vec::with_capacity(complete.len());
-    let mut win_diffs = Vec::with_capacity(complete.len());
-    let mut share_diffs = Vec::with_capacity(complete.len());
-    let mut clusters = Vec::with_capacity(complete.len());
-    for (a, b) in &complete {
-        let (Some(sa), Some(sb)) = (
-            pair_signs(&a.genome, &screened, k),
-            pair_signs(&b.genome, &screened, k),
-        ) else {
-            continue;
-        };
-        // (±1 − ±1) / 2 ∈ {−1, 0, +1}: on in arm 0 only, same, on in arm 1 only.
-        diff_signs.push(sa.iter().zip(&sb).map(|(x, y)| (x - y) / 2.0).collect());
-        win_diffs.push(f64::from(u8::from(a.win)) - f64::from(u8::from(b.win)));
-        share_diffs.push(a.score_share - b.score_share);
-        clusters.push((a.seed, a.pair));
-    }
-    let adjusted = adjusted_effects(&diff_signs, &win_diffs, &clusters);
-
-    let mut estimates = Vec::new();
-    let mut column = 0;
-    for (i, tag) in header.genes.iter().enumerate() {
-        if !screened[i] {
-            continue;
-        }
-        let this_column = column;
-        column += 1;
-        let (mut on_win, mut on_share, mut on_keys) = (Vec::new(), Vec::new(), Vec::new());
-        let (mut off_win, mut off_share, mut off_keys) = (Vec::new(), Vec::new(), Vec::new());
-        for (row, genome) in games.iter().zip(&bits) {
-            let (win, share, keys) = if genome[i] {
-                (&mut on_win, &mut on_share, &mut on_keys)
-            } else {
-                (&mut off_win, &mut off_share, &mut off_keys)
-            };
-            win.push(f64::from(u8::from(row.win)));
-            share.push(row.score_share);
-            keys.push(game_key(row));
-        }
-        let (win_on, win_on_se) = clustered_mean_se(&on_win, &on_keys);
-        let (win_off, win_off_se) = clustered_mean_se(&off_win, &off_keys);
-        let (share_on, share_on_se) = clustered_mean_se(&on_share, &on_keys);
-        let (share_off, share_off_se) = clustered_mean_se(&off_share, &off_keys);
-        let hypot = |a: f64, b: f64| (a * a + b * b).sqrt();
-        estimates.push(GeneEstimate {
-            tag: tag.clone(),
-            pairs: complete.len(),
-            n_on: on_win.len(),
-            n_off: off_win.len(),
-            win_on: if on_win.is_empty() { 0.0 } else { win_on },
-            win_off: if off_win.is_empty() { 0.0 } else { win_off },
-            win_delta: win_on - win_off,
-            win_se: hypot(win_on_se, win_off_se),
-            share_delta: share_on - share_off,
-            share_se: hypot(share_on_se, share_off_se),
-            adjusted: adjusted.as_ref().map(|all| all[this_column]),
-        });
-    }
-    (estimates, complete.len(), overall_win, overall_share)
-}
-
-/// The `read` column: the win-Δ verdict, then the score-share verdict when it
-/// says more. Share resolves an edge at a fraction of the games a win count
-/// needs, so a gene the win column cannot yet see is often already loud here
-/// — and a reader sorting by the win z would otherwise never meet it.
 fn read_column(win_z: f64, share_z: f64, family_z: f64) -> String {
     let word = |z: f64| -> Option<&'static str> {
         if z.abs() >= family_z {
@@ -2028,13 +1594,14 @@ fn read_column(win_z: f64, share_z: f64, family_z: f64) -> String {
     }
 }
 
+
 /// One two-factor interaction between screened genes.
 #[derive(Clone, Debug)]
 struct Interaction {
     a: usize,
     b: usize,
     /// How much more gene `b` is worth when gene `a` is on (and symmetrically),
-    /// on the outcome's own scale. `4γ` in the ±1 parameterisation.
+    /// on the outcome's own scale. `4γ` in the centred ±1 parameterisation.
     synergy: f64,
     se: f64,
 }
@@ -2049,81 +1616,58 @@ impl Interaction {
     }
 }
 
-/// Every two-factor interaction, estimated from the PAIR SUMS.
+/// Every two-factor interaction, estimated marginally from the seats.
 ///
-/// ★★★★ THE FOLDOVER SPLITS THE EVIDENCE IN TWO AND THE MAIN TABLE USES ONLY
-/// HALF OF IT. Write the outcome as `y = μ + Σβᵢxᵢ + Σγᵢⱼxᵢxⱼ` with
-/// `x ∈ {−1,+1}`. The second arm of a pair is the exact complement, so every
-/// `xᵢ` flips sign, and therefore:
+/// Write the outcome as `y = μ + Σβᵢzᵢ + Σγᵢⱼzᵢzⱼ` with `zᵢ` the ±1 gene sign
+/// CENTRED on its draw probability (`sᵢ − (2pᵢ − 1)`), so that under the
+/// independent draw every product `zᵢzⱼ` is uncorrelated with every main
+/// effect and every other product in expectation. Each `γᵢⱼ` is then the
+/// marginal regression of the centred outcome on `zᵢzⱼ`, errors clustered by
+/// game. A hundred genes have 4,950 two-factor terms and no affordable run
+/// fits them all at once, so the marginal estimate is what is affordable; what
+/// it pays is variance, since every other interaction and the game's own
+/// difficulty sit in the residual. The reported figure is `4γ`: **how much
+/// more one gene is worth when the other is on**.
 ///
-/// - the **difference** `y(g) − y(ḡ)` keeps `2βᵢxᵢ` and CANCELS every
-///   two-factor term, because `xᵢxⱼ − (−xᵢ)(−xⱼ) = 0`. That cancellation is
-///   exactly why the main-effect table above is clean — a foldover de-aliases
-///   main effects from two-factor interactions, which is the classical reason
-///   to run one.
-/// - the **sum** `y(g) + y(ḡ)` cancels every main effect and keeps `2γᵢⱼxᵢxⱼ`.
-///
-/// So the interactions were never missing from these games; they were in the
-/// half of each pair the difference throws away. Nothing here needs a game
-/// replayed.
-///
-/// Each `γᵢⱼ` is estimated marginally — `mean(centred pair sum × xᵢxⱼ) / 2` —
-/// rather than jointly, because 57 genes have 1,596 two-factor terms and no
-/// affordable run fits them all at once. The other terms are orthogonal in
-/// expectation (the draws are independent coin flips), so a marginal estimate
-/// is unbiased; what it pays is variance, since every other interaction and
-/// the map's own difficulty sit in the residual. The reported figure is `4γ`:
-/// **how much more one gene is worth when the other is on**.
-///
-/// ⚠ The map effect does NOT cancel here the way it does in the difference. A
-/// pair's sum is twice its map mean plus the interaction terms, so these
-/// estimates carry the full between-map variance and are far noisier than the
-/// main effects from the same run. Read the multiplicity bar, not the top row.
-fn interactions(
-    header: &Header,
-    rows: &[Row],
-    outcome: fn(&Row) -> f64,
-) -> (Vec<Interaction>, usize) {
-    let k = header.genes.len();
-    let screened = screened_mask(header);
-    let complete = complete_pairs(rows);
-    let mut signs: Vec<Vec<f64>> = Vec::with_capacity(complete.len());
-    let mut sums: Vec<f64> = Vec::with_capacity(complete.len());
-    for (a, b) in &complete {
-        let Some(row_signs) = pair_signs(&a.genome, &screened, k) else {
-            continue;
-        };
-        if b.genome.chars().count() != k {
-            continue;
-        }
-        signs.push(row_signs);
-        sums.push(outcome(a) + outcome(b));
-    }
-    let n = sums.len();
+/// ⚠ Far noisier than the main effects from the same run. Read the
+/// multiplicity bar, not the top row.
+fn interactions(header: &Header, rows: &[Row], outcome: fn(&Row) -> f64) -> (Vec<Interaction>, usize) {
+    let seats = Seats::of(header, rows);
+    let n = seats.rows.len();
     if n < 3 {
         return (Vec::new(), n);
     }
-    // Centre the sums: a pair's sum is dominated by its own map's difficulty,
-    // which is a constant within the pair and contributes nothing to any
-    // product's expectation once the mean is removed.
-    let mean: f64 = sums.iter().sum::<f64>() / n as f64;
-    let centred: Vec<f64> = sums.iter().map(|value| value - mean).collect();
-    let width = signs[0].len();
+    let probabilities = header.on_probabilities();
+    let centres: Vec<f64> = seats.columns.iter().map(|&i| 2.0 * probabilities[i] - 1.0).collect();
+    let y: Vec<f64> = seats.rows.iter().map(|row| outcome(row)).collect();
+    let mean = y.iter().sum::<f64>() / n as f64;
+    let centred: Vec<f64> = y.iter().map(|value| value - mean).collect();
+    let width = seats.columns.len();
     let mut found = Vec::with_capacity(width * width / 2);
     for a in 0..width {
         for b in a + 1..width {
-            let products: Vec<f64> = signs
+            let w: Vec<f64> = seats
+                .signs
                 .iter()
-                .zip(&centred)
-                .map(|(row, value)| row[a] * row[b] * value)
+                .map(|row| (row[a] - centres[a]) * (row[b] - centres[b]))
                 .collect();
-            let (mean, se) = mean_se(&products);
-            // mean = 2γ, and the reported synergy is 4γ.
+            let ww: f64 = w.iter().map(|x| x * x).sum();
+            if ww <= 0.0 {
+                continue;
+            }
+            let gamma = w.iter().zip(&centred).map(|(x, y)| x * y).sum::<f64>() / ww;
+            // Cluster-robust error of the ratio estimator: each game's score
+            // summed whole before squaring.
+            let mut scores: BTreeMap<GameKey, f64> = BTreeMap::new();
+            for ((x, y), key) in w.iter().zip(&centred).zip(&seats.clusters) {
+                *scores.entry(*key).or_insert(0.0) += x * (y - gamma * x);
+            }
+            let se = scores.values().map(|s| s * s).sum::<f64>().sqrt() / ww;
             found.push(Interaction {
                 a,
                 b,
-                synergy: 2.0 * mean,
-                se: 2.0 * se,
+                synergy: 4.0 * gamma,
+                se: 4.0 * se,
             });
         }
     }
@@ -2140,15 +1684,16 @@ fn print_interactions(
     outcome: fn(&Row) -> f64,
     top: usize,
 ) {
-    let (mut found, pairs) = interactions(header, rows, outcome);
+    let (mut found, seats) = interactions(header, rows, outcome);
     if found.is_empty() {
-        println!("\ninteractions ({label}): not enough complete pairs");
+        println!("\ninteractions ({label}): not enough seats");
         return;
     }
+    let screened = header.screened_mask();
     let names: Vec<&String> = header
         .genes
         .iter()
-        .zip(screened_mask(header))
+        .zip(screened)
         .filter(|(_, screened)| *screened)
         .map(|(gene, _)| gene)
         .collect();
@@ -2157,14 +1702,14 @@ fn print_interactions(
     found.sort_by(|a, b| b.z().abs().total_cmp(&a.z().abs()));
     let flagged = found.iter().filter(|row| row.z().abs() >= family_z).count();
     // ⚠ THE COUNT AT |z|≥2 IS THE ONLY HONEST HEADLINE HERE, and it is a
-    // count against an expectation, not a list of exciting rows. 1,596 tests
-    // throw ~73 flags at |z|≥2 with nothing whatever going on, so a table that
-    // printed its top twelve without this line would read as twelve findings
-    // every single time it was run — including on pure noise.
+    // count against an expectation, not a list of exciting rows. 4,950 tests
+    // throw ~225 flags at |z|≥2 with nothing whatever going on, so a table
+    // that printed its top twelve without this line would read as twelve
+    // findings every single time it was run — including on pure noise.
     let loose = found.iter().filter(|row| row.z().abs() >= 2.0).count();
     let expected_loose = tests as f64 * 0.0455;
     println!(
-        "\ntwo-factor interactions on {label} · {pairs} pairs · {tests} gene pairs tested · \
+        "\ntwo-factor interactions on {label} · {seats} seats · {tests} gene pairs tested · \
          {loose} at |z|≥2 against {expected_loose:.0} expected by chance · \
          {flagged} past the family-wise bar |z|≥{family_z:.2} against {:.2} expected{}",
         0.05,
@@ -2175,8 +1720,8 @@ fn print_interactions(
         }
     );
     println!(
-        "estimated from the pair SUMS, which is the half of each pair the main-effect table cancels; \
-         the figure is how much more one gene is worth when the other is on"
+        "estimated marginally from the same seats as the main table; the figure is how much more \
+         one gene is worth when the other is on"
     );
     println!(
         "\n{:<28} {:<28} {:>10} {:>8} {:>7}  read",
@@ -2215,30 +1760,12 @@ fn print_interactions(
 }
 
 fn print_table(header: &Header, rows: &[Row]) {
-    let (mut estimates, pairs, overall_win, overall_share) = estimate(header, rows);
+    let estimates = estimate(header, rows);
     let costs = estimate_costs(header, rows);
-    let anchors: Vec<&Row> = rows.iter().filter(|row| row.kind == "anchor").collect();
-    let game_pairs = if header.all_seats {
-        let mut keys: Vec<(u64, usize)> = rows
-            .iter()
-            .filter(|row| row.kind == "game")
-            .map(|row| (row.seed, row.pair))
-            .collect();
-        keys.sort_unstable();
-        keys.dedup();
-        keys.len()
-    } else {
-        pairs
-    };
     println!(
-        "\ngene screen · {} complete pairs ({} games{}) · {}p {}x{} {} · {} · {} turns · {} city-states · baseline {} · field {} · {} · {}",
-        pairs,
-        game_pairs * 2,
-        if header.all_seats {
-            ", every major treated — errors clustered by game pair"
-        } else {
-            ""
-        },
+        "\ngene screen · {} seats in {} games · {}p {}x{} {} · {} · {} turns · {} city-states · {} · {} · design {}",
+        estimates.seats,
+        estimates.games,
         header.players,
         header.width,
         header.height,
@@ -2246,8 +1773,6 @@ fn print_table(header: &Header, rows: &[Row]) {
         header.speed,
         header.turns,
         header.city_states,
-        header.baseline,
-        header.field,
         if header.randomize_civs {
             "shuffled civs"
         } else {
@@ -2259,19 +1784,20 @@ fn print_table(header: &Header, rows: &[Row]) {
             "all lanes".to_string()
         } else {
             format!("lanes {}", header.victories)
-        }
+        },
+        header.design
     );
     println!("{}", build_line(header));
-    println!("{}", completeness_line(header, pairs));
+    println!("{}", completeness_line(header, estimates.seats));
     println!(
-        "treated seat overall: win {:.1}% (chance {:.1}%) · score share {:.1}% (equal share {:.1}%)",
-        100.0 * overall_win,
+        "a seat overall: win {:.1}% (chance {:.1}%) · score share {:.1}% (equal share {:.1}%)",
+        100.0 * estimates.overall_win,
         100.0 / header.players as f64,
-        100.0 * overall_share,
+        100.0 * estimates.overall_share,
         100.0 / header.players as f64
     );
-    if header.design == "prior" {
-        let screened = screened_mask(header);
+    if header.design == "independent" {
+        let screened = header.screened_mask();
         let mut by_p: BTreeMap<String, usize> = BTreeMap::new();
         for (p, &s) in header.prior.iter().zip(&screened) {
             if s {
@@ -2279,10 +1805,10 @@ fn print_table(header: &Header, rows: &[Row]) {
             }
         }
         println!(
-            "design: prior-weighted — each arm drawn independently from the ledger's prior \
-             (genes at p = {}); Δ is the marginal on-versus-off contrast, errors clustered by \
-             game; adjΔpp is the map-paired OLS on the arms' differences",
-            by_p.iter()
+            "draw: every seat's genome independent, genes on at p = {}; Δ is the seats-on against \
+             seats-off difference, errors clustered by game; adjΔpp is the OLS over every screened gene",
+            by_p
+                .iter()
                 .map(|(p, n)| format!("{p}×{n}"))
                 .collect::<Vec<_>>()
                 .join(", ")
@@ -2318,67 +1844,14 @@ fn print_table(header: &Header, rows: &[Row]) {
             })
             .collect();
         if !parts.is_empty() {
-            println!("how the games ended: {}", parts.join(" · "));
+            println!("how the games ended (by seat): {}", parts.join(" · "));
         }
-    }
-    if !anchors.is_empty() {
-        let (on, off): (Vec<&Row>, Vec<&Row>) = anchors.iter().partition(|row| row.arm == 0);
-        let rate = |rows: &[&Row]| {
-            if rows.is_empty() {
-                0.0
-            } else {
-                rows.iter().filter(|row| row.win).count() as f64 / rows.len() as f64
-            }
-        };
-        let share = |rows: &[&Row]| {
-            if rows.is_empty() {
-                0.0
-            } else {
-                rows.iter().map(|row| row.score_share).sum::<f64>() / rows.len() as f64
-            }
-        };
-        // Paired: both arms of an anchor pair share the map and seat, so the
-        // win difference carries its own standard error over pairs.
-        let mut by_key: BTreeMap<(u64, usize, usize), [Option<&Row>; 2]> = BTreeMap::new();
-        for row in &anchors {
-            by_key
-                .entry((row.seed, row.seat, row.pair))
-                .or_insert([None, None])[usize::from(row.arm.min(1))] = Some(row);
-        }
-        let diffs: Vec<f64> = by_key
-            .values()
-            .filter_map(|[a, b]| {
-                Some(f64::from(u8::from((*a)?.win)) - f64::from(u8::from((*b)?.win)))
-            })
-            .collect();
-        let (delta, se) = mean_se(&diffs);
-        // Under the deployment baseline arm 1 is the best genome, not all-off.
-        let off_label = if header.baseline == "best" {
-            "best genome"
-        } else {
-            "all-off"
-        };
-        println!(
-            "anchors: all-on {} games win {:.1}% share {:.1}% · {off_label} {} games win {:.1}% share {:.1}% · paired win Δ {:+.1} pp ± {:.1} over {} pairs",
-            on.len(),
-            100.0 * rate(&on),
-            100.0 * share(&on),
-            off.len(),
-            100.0 * rate(&off),
-            100.0 * share(&off),
-            100.0 * delta,
-            100.0 * se,
-            diffs.len()
-        );
     }
     {
-        // The religion census: how the treated seat stood in the race that
-        // decides two thirds of these games. Printed only when the rows carry
-        // it, so a file written before the instrumentation still analyses.
-        let played: Vec<&Row> = rows
-            .iter()
-            .filter(|row| row.kind == "game" || row.kind == "anchor")
-            .collect();
+        // The religion census: how a seat stood in the race that decides so
+        // many of these games. Printed only when the rows carry it, so a file
+        // written before the instrumentation still analyses.
+        let played: Vec<&Row> = rows.iter().filter(|row| row.kind == "game").collect();
         let instrumented = played
             .iter()
             .any(|row| row.founded_religion || row.faith > 0.0 || row.techs > 0);
@@ -2397,7 +1870,7 @@ fn print_table(header: &Header, rows: &[Row]) {
                 }
             };
             println!(
-                "religion census: founded a faith in {:.0}% of games · inquisition launched in {:.0}% · \
+                "religion census: founded a faith in {:.0}% of seats · inquisition launched in {:.0}% · \
                  own cities under a foreign faith at the end {:.1} of {:.1} · faith left banked {:.0}",
                 100.0 * founded as f64 / n,
                 100.0 * played.iter().filter(|row| row.inquisition).count() as f64 / n,
@@ -2407,7 +1880,7 @@ fn print_table(header: &Header, rows: &[Row]) {
             );
             if !lost_to_faith.is_empty() {
                 println!(
-                    "  of the {} games lost to a rival's religion: {:.0}% had founded one of our own, \
+                    "  of the {} seats lost to a rival's religion: {:.0}% had founded one of our own, \
                      {:.1} of {:.1} cities had flipped, {:.0} faith was still banked",
                     lost_to_faith.len(),
                     100.0
@@ -2423,11 +1896,12 @@ fn print_table(header: &Header, rows: &[Row]) {
             }
         }
     }
-    if estimates.is_empty() {
-        println!("no screened genes with complete pairs");
+    let mut genes = estimates.genes;
+    if genes.is_empty() {
+        println!("no screened genes with seats");
         return;
     }
-    let tranches = reproducibility_tranches(header, rows, REPRO_WINDOW_PAIRS, REPRO_WINDOW_COUNT);
+    let tranches = reproducibility_tranches(header, rows, REPRO_WINDOW_SEATS, REPRO_WINDOW_COUNT);
     let tranche_sizes = tranches
         .iter()
         .enumerate()
@@ -2437,18 +1911,18 @@ fn print_table(header: &Header, rows: &[Row]) {
                 1 => "previous",
                 _ => "earlier",
             };
-            format!("{label}={}", tranche.pairs)
+            format!("{label}={} seats/{} games", tranche.seats, tranche.games)
         })
         .collect::<Vec<_>>()
         .join(", ");
     println!(
-        "reproducibility windows (newest first): {tranche_sizes} complete paired comparisons; \
-         target 10,000 each, rounded only to keep every all-seats game pair whole"
+        "reproducibility windows (newest first): {tranche_sizes}; target {REPRO_WINDOW_SEATS} seats each, \
+         rounded only to keep every game whole"
     );
-    let k = estimates.len();
-    let family_z = normal_quantile_upper(0.025 / k as f64);
+    let k = genes.len();
+    let family_z = family_wise_z(k);
     let median_se = {
-        let mut ses: Vec<f64> = estimates
+        let mut ses: Vec<f64> = genes
             .iter()
             .map(|e| e.win_se)
             .filter(|se| se.is_finite())
@@ -2457,7 +1931,7 @@ fn print_table(header: &Header, rows: &[Row]) {
         ses.get(ses.len() / 2).copied().unwrap_or(f64::INFINITY)
     };
     let median_share_se = {
-        let mut ses: Vec<f64> = estimates
+        let mut ses: Vec<f64> = genes
             .iter()
             .map(|e| e.share_se)
             .filter(|se| se.is_finite())
@@ -2474,24 +1948,23 @@ fn print_table(header: &Header, rows: &[Row]) {
         k as f64 * 0.0455,
         family_z
     );
-    let adjusted_shown = estimates.iter().any(|e| e.adjusted.is_some());
+    let adjusted_shown = genes.iter().any(|e| e.adjusted.is_some());
     if !adjusted_shown {
         println!(
-            "adjusted column needs at least {} pairs (2·genes+10) — showing marginal estimates only",
-            2 * k + 10
+            "adjusted column needs at least {} seats (genes+11) — showing marginal estimates only",
+            k + 11
         );
     }
-    estimates.sort_by(|a, b| b.win_z().total_cmp(&a.win_z()));
-    let prior_design = header.design == "prior";
+    genes.sort_by(|a, b| b.win_z().total_cmp(&a.win_z()));
     println!(
-        "\n{:<28} {:>11} {:>6} {:>6} {:>16} {:>16} {:>16} {:>15} {:>6}  {:>8} {:>6}  {:>9}  {:>16} {:>16}  read",
+        "\n{:<28} {:>13} {:>6} {:>6} {:>16} {:>16} {:>16} {:>15} {:>6}  {:>8} {:>6}  {:>9}  {:>16} {:>16}  read",
         "gene",
-        if prior_design { "on n/off n" } else { "pairs" },
+        "on n/off n",
         "on%",
         "off%",
-        "latest 10k",
-        "prior 10k",
-        "earlier 10k",
+        "latest 20k",
+        "previous 20k",
+        "earlier 20k",
         "all 95% CI",
         "z",
         "shareΔ",
@@ -2500,18 +1973,14 @@ fn print_table(header: &Header, rows: &[Row]) {
         "compute cost",
         "time cost"
     );
-    for e in &estimates {
+    for e in &genes {
         let z = e.win_z();
         let read = read_column(z, e.share_z(), family_z);
         let adjusted = match e.adjusted {
             Some((effect, se)) => format!("{:+.1}±{:.1}", 100.0 * effect, 100.0 * se),
             None => "-".to_string(),
         };
-        let count = if prior_design {
-            format!("{}/{}", e.n_on, e.n_off)
-        } else {
-            e.pairs.to_string()
-        };
+        let count = format!("{}/{}", e.n_on, e.n_off);
         let latest = tranche_cell(tranches.first(), &e.tag);
         let previous = tranche_cell(tranches.get(1), &e.tag);
         let earlier = tranche_cell(tranches.get(2), &e.tag);
@@ -2523,7 +1992,7 @@ fn print_table(header: &Header, rows: &[Row]) {
             None => ("-".to_string(), "-".to_string()),
         };
         println!(
-            "{:<28} {:>11} {:>5.1}% {:>5.1}% {:>16} {:>16} {:>16} [{:>+6.1},{:>+6.1}] {:>+6.2}  {:>+7.2}pp {:>+6.2}  {:>9}  {:>16} {:>16}  {}",
+            "{:<28} {:>13} {:>5.1}% {:>5.1}% {:>16} {:>16} {:>16} [{:>+6.1},{:>+6.1}] {:>+6.2}  {:>+7.2}pp {:>+6.2}  {:>9}  {:>16} {:>16}  {}",
             e.tag,
             count,
             100.0 * e.win_on,
@@ -2545,18 +2014,18 @@ fn print_table(header: &Header, rows: &[Row]) {
     println!(
         "\n`*` = |z|≥2 (a screen flag, ~1 in 22 by chance); `**` = past the family-wise bar; the read \
          column names the win Δ first and the score-share Δ when it says more. `~` = unresolved at \
-         this size, NOT no effect. Each 10k cell is that window's win Δpp / paired z; on% minus \
-         off% is the pooled win Δ. shareΔ is the score-share Δ in points; adjΔpp is the OLS win Δ \
-         over the whole sign matrix. Cost cells are percent on/off change ± one standard error: compute +         is wall seconds per completed turn, time is whole-game wall seconds, and positive is slower."
+         this size, NOT no effect. Each 20k cell is that window's win Δpp / clustered z; on% minus \
+         off% is the win Δ. shareΔ is the score-share Δ in points; adjΔpp is the OLS win Δ over \
+         every screened gene at once. Cost cells are percent change per enabled major seat ± one \
+         standard error: compute is wall seconds per completed turn, time is whole-game wall \
+         seconds, and positive is slower."
     );
 }
 
-/// One gene's paired contrast split by the civilization the treated seat
-/// played. Both arms of a pair share the civ (the roster shuffle is seeded by
-/// the map seed), so every per-civ row is still a clean foldover contrast;
-/// errors cluster by game pair as everywhere else. This is the subgroup the
-/// marginal table averages away: a flag can be worth nothing on average and
-/// still be a real strategy for one civilization — or the reverse.
+/// One gene's contrast split by the civilization the seat played — the
+/// subgroup the marginal table averages away: a flag can be worth nothing on
+/// average and still be a real strategy for one civilization, or the reverse.
+/// Errors cluster by game as everywhere else.
 fn print_by_civ(header: &Header, rows: &[Row], tag: &str) {
     let Some(index) = header.genes.iter().position(|gene| gene == tag) else {
         println!("\nby-civ: {tag:?} is not a gene in this file's header");
@@ -2566,41 +2035,26 @@ fn print_by_civ(header: &Header, rows: &[Row], tag: &str) {
         println!("\nby-civ: {tag:?} was not screened in this file");
         return;
     }
-    let complete = complete_pairs(rows);
-    /// One civilization's evidence for the gene: paired win differences,
-    /// paired share differences, and the game pair each came from.
-    #[derive(Default)]
-    struct CivEvidence {
-        win: Vec<f64>,
-        share: Vec<f64>,
-        clusters: Vec<(u64, usize)>,
-    }
-    let mut by_civ: BTreeMap<&str, CivEvidence> = BTreeMap::new();
+    let k = header.genes.len();
+    let mut by_civ: BTreeMap<&str, Vec<&Row>> = BTreeMap::new();
     let mut unlabelled = 0usize;
-    for (a, b) in &complete {
-        let bits: Vec<bool> = a.genome.chars().map(|c| c == '1').collect();
-        if bits.len() != header.genes.len() {
-            continue;
-        }
-        if a.civ.is_empty() {
+    for row in rows
+        .iter()
+        .filter(|row| row.kind == "game" && row.genome.chars().count() == k)
+    {
+        if row.civ.is_empty() {
             unlabelled += 1;
             continue;
         }
-        let sign = if bits[index] { 1.0 } else { -1.0 };
-        let entry = by_civ.entry(a.civ.as_str()).or_default();
-        entry
-            .win
-            .push(sign * (f64::from(u8::from(a.win)) - f64::from(u8::from(b.win))));
-        entry.share.push(sign * (a.score_share - b.score_share));
-        entry.clusters.push((a.seed, a.pair));
+        by_civ.entry(row.civ.as_str()).or_default().push(row);
     }
     if unlabelled > 0 {
         println!(
-            "\nby-civ: {unlabelled} pairs have no civ on their rows (written before the field              existed) and are left out"
+            "\nby-civ: {unlabelled} seats have no civ on their rows (written before the field existed) and are left out"
         );
     }
     if by_civ.is_empty() {
-        println!("\nby-civ: no labelled pairs");
+        println!("\nby-civ: no labelled seats");
         return;
     }
     let civs = by_civ.len();
@@ -2611,16 +2065,27 @@ fn print_by_civ(header: &Header, rows: &[Row], tag: &str) {
     );
     println!(
         "{:<16} {:>6} {:>7} {:>15} {:>6}  {:>8} {:>6}  read",
-        "civ", "pairs", "Δpp", "95% CI", "z", "shareΔ", "z"
+        "civ", "seats", "Δpp", "95% CI", "z", "shareΔ", "z"
     );
     let mut table: Vec<(&str, usize, f64, f64, f64, f64)> = by_civ
         .iter()
-        .map(|(civ, evidence)| {
-            let (wd, wse) = clustered_mean_se(&evidence.win, &evidence.clusters);
-            let (sd, sse) = clustered_mean_se(&evidence.share, &evidence.clusters);
+        .map(|(civ, seats)| {
+            let design: Vec<Vec<f64>> = seats
+                .iter()
+                .map(|row| vec![1.0, if row.bits()[index] { 1.0 } else { -1.0 }])
+                .collect();
+            let clusters: Vec<GameKey> = seats.iter().map(|row| row.game_key()).collect();
+            let wins: Vec<f64> = seats.iter().map(|row| f64::from(u8::from(row.win))).collect();
+            let shares: Vec<f64> = seats.iter().map(|row| row.score_share).collect();
+            let contrast = |y: &[f64]| match ols_clustered(&design, y, &clusters) {
+                Some(fit) => (2.0 * fit[1].0, 2.0 * fit[1].1),
+                None => (0.0, f64::INFINITY),
+            };
+            let (wd, wse) = contrast(&wins);
+            let (sd, sse) = contrast(&shares);
             (
                 *civ,
-                evidence.win.len(),
+                seats.len(),
                 wd,
                 wse,
                 sd,
@@ -2633,11 +2098,11 @@ fn print_by_civ(header: &Header, rows: &[Row], tag: &str) {
         })
         .collect();
     table.sort_by(|a, b| {
-        let za = if a.3 > 0.0 { a.2 / a.3 } else { 0.0 };
-        let zb = if b.3 > 0.0 { b.2 / b.3 } else { 0.0 };
+        let za = if a.3 > 0.0 && a.3.is_finite() { a.2 / a.3 } else { 0.0 };
+        let zb = if b.3 > 0.0 && b.3.is_finite() { b.2 / b.3 } else { 0.0 };
         zb.total_cmp(&za)
     });
-    for (civ, pairs, wd, wse, sd, sz) in table {
+    for (civ, seats, wd, wse, sd, sz) in table {
         let z = if wse > 0.0 && wse.is_finite() {
             wd / wse
         } else {
@@ -2646,7 +2111,7 @@ fn print_by_civ(header: &Header, rows: &[Row], tag: &str) {
         println!(
             "{:<16} {:>6} {:>+7.1} [{:>+6.1},{:>+6.1}] {:>+6.2}  {:>+7.2}pp {:>+6.2}  {}",
             civ,
-            pairs,
+            seats,
             100.0 * wd,
             100.0 * (wd - 1.96 * wse),
             100.0 * (wd + 1.96 * wse),
@@ -2656,6 +2121,118 @@ fn print_by_civ(header: &Header, rows: &[Row], tag: &str) {
             read_column(z, sz, family_z)
         );
     }
+}
+
+/// The analysis as data: one object per screened gene with the numbers the
+/// table prints, plus the profile. `tools/gene_ledger.py` reads this to
+/// build `docs/gene_ledger.json` and the generated Rust table, so the
+/// deployment genome is derived from the screens rather than typed in.
+fn write_json_summary(path: &str, header: &Header, rows: &[Row]) {
+    let estimates = estimate(header, rows);
+    let costs = estimate_costs(header, rows);
+    let tranches = reproducibility_tranches(header, rows, REPRO_WINDOW_SEATS, REPRO_WINDOW_COUNT);
+    let family_z = family_wise_z(estimates.genes.len());
+    let genes: Vec<serde_json::Value> = estimates
+        .genes
+        .iter()
+        .map(|e| {
+            let cost = costs.get(&e.tag);
+            let win_tranches: Vec<serde_json::Value> = tranches
+                .iter()
+                .enumerate()
+                .filter_map(|(index, tranche)| {
+                    let estimate = tranche_estimate(tranche, &e.tag)?;
+                    Some(serde_json::json!({
+                        "position": match index {
+                            0 => "latest",
+                            1 => "previous",
+                            _ => "earlier",
+                        },
+                        "seats": estimate.seats(),
+                        "games": tranche.games,
+                        "win_delta_pp": 100.0 * estimate.win_delta,
+                        "win_se_pp": 100.0 * estimate.win_se,
+                        "win_z": estimate.win_z(),
+                    }))
+                })
+                .collect();
+            serde_json::json!({
+                "tag": e.tag,
+                "seats": e.seats(),
+                "n_on": e.n_on,
+                "n_off": e.n_off,
+                "win_on": e.win_on,
+                "win_off": e.win_off,
+                "win_delta_pp": 100.0 * e.win_delta,
+                "win_se_pp": 100.0 * e.win_se,
+                "win_z": e.win_z(),
+                "share_delta_pp": 100.0 * e.share_delta,
+                "share_se_pp": 100.0 * e.share_se,
+                "share_z": e.share_z(),
+                "adjusted_pp": e.adjusted.map(|(b, _)| 100.0 * b),
+                "adjusted_se_pp": e.adjusted.map(|(_, se)| 100.0 * se),
+                "read": read_column(e.win_z(), e.share_z(), family_z),
+                "win_tranches": win_tranches,
+                "cost_games": cost.map(|c| c.games),
+                "compute_cost_pct": cost.map(CostEstimate::compute_pct),
+                "compute_cost_se_pct": cost.map(CostEstimate::compute_se_pct),
+                "time_cost_pct": cost.map(CostEstimate::time_pct),
+                "time_cost_se_pct": cost.map(CostEstimate::time_se_pct),
+            })
+        })
+        .collect();
+    let intended = header.batch.intended_seats();
+    let summary = serde_json::json!({
+        "kind": "gene_screen_analysis",
+        "profile": header,
+        // ⭐ `standard` is THE screen; anything else is a probe, and
+        // `tools/gene_ledger.py` refuses it as a source.
+        "shape": shape_of(header),
+        // ⭐ INTENDED AGAINST ACTUAL. The target was written into the header
+        // before the first game finished, so a batch that stopped early is a
+        // partial screen in its own artefact rather than an unmarked one. A
+        // file written before 2026-08-23 carries nulls here, which is the
+        // honest answer: nothing was pre-registered, so nothing can be read
+        // against it.
+        "batch": {
+            "target_games": (header.batch.target_games > 0).then_some(header.batch.target_games),
+            "target_seats": (intended > 0).then_some(intended),
+            "complete_seats": estimates.seats,
+            "complete_games": estimates.games,
+            "completion": (intended > 0).then(|| estimates.seats as f64 / intended as f64),
+            "partial": (intended > 0).then_some(estimates.seats < intended),
+            "seed_window": header.batch.pre_registered()
+                .then_some([header.batch.seed_first, header.batch.seed_last]),
+            "seed_window_played": played_seed_window(rows).map(|(low, high)| [low, high]),
+            "read": completeness_line(header, estimates.seats),
+        },
+        "seats": estimates.seats,
+        "games": estimates.games,
+        "overall_win": estimates.overall_win,
+        "overall_share": estimates.overall_share,
+        "family_wise_z": family_z,
+        "reproducibility": {
+            "unit": "seats",
+            "target_seats_per_window": REPRO_WINDOW_SEATS,
+            "windows": "newest first; whole games only",
+        },
+        "cost_method": {
+            "unit": "percent change per enabled major seat; positive is slower",
+            "compute": "log of wall seconds per completed turn, per game",
+            "time": "log of whole-game wall seconds, per game",
+            "fit": "OLS on how many seats had each screened gene on, with an intercept; one observation per game with HC1 robust errors",
+        },
+        "genes": genes,
+    });
+    std::fs::write(
+        path,
+        serde_json::to_string_pretty(&summary).expect("summary serializes"),
+    )
+    .unwrap_or_else(|error| {
+        eprintln!("cannot write {path}: {error}");
+        std::process::exit(2);
+    });
+    println!("analysis written to {path}");
 }
 
 fn read_rows(paths: &[String]) -> (Header, Vec<Row>) {
@@ -2682,7 +2259,7 @@ fn read_rows(paths: &[String]) -> (Header, Vec<Row>) {
             }
             if let Ok(found) = serde_json::from_str::<Header>(&line) {
                 if found.kind == "header" {
-                    if found.batch.target_pairs > 0 {
+                    if found.batch.pre_registered() {
                         targets.insert(found.batch.seed_first, found.batch.clone());
                     }
                     match &header {
@@ -2703,13 +2280,14 @@ fn read_rows(paths: &[String]) -> (Header, Vec<Row>) {
                                 || first.speed != found.speed
                                 || first.map != found.map
                                 || first.baseline != found.baseline
-                                || first.field != found.field
                                 || first.randomize_civs != found.randomize_civs
                                 || first.victories != found.victories
                                 || first.all_seats != found.all_seats
+                                || first.design != found.design
+                                || first.prior != found.prior
                             {
                                 eprintln!(
-                                    "{path} was played at a different profile than {}; a merged \
+                                    "{path} was played at a different profile or draw than {}; a merged \
                                      table would mix two experiments",
                                     paths[0]
                                 );
@@ -2742,6 +2320,8 @@ fn read_rows(paths: &[String]) -> (Header, Vec<Row>) {
 /// before 2026-08-23 looks like.
 fn merged_target(targets: &BTreeMap<u64, Batch>) -> Batch {
     Batch {
+        target_games: targets.values().map(|batch| batch.target_games).sum(),
+        target_seats: targets.values().map(|batch| batch.target_seats).sum(),
         target_pairs: targets.values().map(|batch| batch.target_pairs).sum(),
         target_comparisons: targets.values().map(|batch| batch.target_comparisons).sum(),
         seed_first: targets
@@ -2773,7 +2353,9 @@ fn played_seed_window(rows: &[Row]) -> Option<(u64, u64)> {
 /// Whether an analysis was played at the screen or is a probe. Every leg is
 /// checked, because any one of them changes what a column means: the lanes
 /// decide which genes can act, the map decides how the game ends, and the
-/// player count decides the chance base the column is measured against.
+/// player count decides the chance base the column is measured against. The
+/// draw design is NOT a leg: a foldover file at this shape and an independent
+/// one price the same genes on the same board, and the estimator reads both.
 fn shape_of(header: &Header) -> &'static str {
     let all_lanes = header.victories.is_empty()
         || header.victories.split(',').count() == civvis::game::VictoryConditions::NAMES.len();
@@ -2787,9 +2369,7 @@ fn shape_of(header: &Header) -> &'static str {
         && all_lanes
         && header.all_seats
         && header.randomize_civs
-        && header.design == "foldover"
-        && header.baseline == "best"
-        && header.field == "advanced";
+        && header.baseline == "best";
     if standard {
         "standard"
     } else {
@@ -2843,13 +2423,18 @@ fn build_line(header: &Header) -> String {
 ///
 /// ⚠ THE ANALYSIS MUST NOT BE ABLE TO PRESENT A TRUNCATED RUN AS A COMPLETED
 /// ONE. P10 stopped at 5,858 of a planned 10,000 games at the operator's
+
+/// Actual against intended, in seats.
+///
+/// ⚠ THE ANALYSIS MUST NOT BE ABLE TO PRESENT A TRUNCATED RUN AS A COMPLETED
+/// ONE. P10 stopped at 5,858 of a planned 10,000 games at the operator's
 /// request — a legitimate decision that left an artefact which read like a
 /// finished screen. Every printed table now says which it is, and a file
 /// written before pre-registration says that instead of guessing.
-fn completeness_line(header: &Header, pairs: usize) -> String {
-    let target = header.batch.target_comparisons;
+fn completeness_line(header: &Header, seats: usize) -> String {
+    let target = header.batch.intended_seats();
     if target == 0 {
-        return "⚠ batch size was not pre-registered: this file predates `--target-pairs` \
+        return "⚠ batch size was not pre-registered: this file predates pre-registration \
                 (2026-08-23), so actual cannot be read against intended"
             .to_string();
     }
@@ -2857,30 +2442,25 @@ fn completeness_line(header: &Header, pairs: usize) -> String {
         "seeds {}..{} reserved",
         header.batch.seed_first, header.batch.seed_last
     );
-    let percent = 100.0 * pairs as f64 / target as f64;
-    if pairs < target {
+    let percent = 100.0 * seats as f64 / target as f64;
+    if seats < target {
         format!(
-            "⚠⚠ PARTIAL SCREEN · {pairs} of {target} intended paired comparisons \
+            "⚠⚠ PARTIAL SCREEN · {seats} of {target} intended seats \
              ({percent:.1}%) · {window} — a truncated run, not a completed one"
         )
     } else {
-        format!(
-            "screen complete · {pairs} of {target} intended paired comparisons \
-             ({percent:.1}%) · {window}"
-        )
+        format!("screen complete · {seats} of {target} intended seats ({percent:.1}%) · {window}")
     }
 }
 
 fn usage() -> ! {
     eprintln!(
-        "the screen: gene_screen [--pairs N] [--start-seed N] [--jobs N] [--genes tag,tag,...] \
-         [--anchor-pairs N] [--target-pairs N] [--out PATH] [--append] [--quiet]\n       \
-         (6 majors, 74x46 continents, 9 city-states, online/250, all six lanes, all seats, \
-         shuffled civs, baseline best — the one shape the ledger accepts)\n       \
+        "the screen: gene_screen [--games N] [--start-seed N] [--jobs N] [--genes tag,tag,...] \
+         [--target-games N] [--out PATH] [--append] [--quiet] [--p-on 0.5] [--p-default-on 0.75]\n       \
+         (6 majors, 74x46 continents, 9 city-states, online/250, all six lanes, every seat its own \
+         random genome, shuffled civs — the one shape the ledger accepts)\n       \
          probe only, NOT a ledger source: [--players N] [--turns N] [--width N] [--height N] \
-         [--city-states N] [--speed ID] [--map ID] [--victories a,b,...] [--single-seat] \
-         [--stock-civs] [--baseline best|repairs|stock] [--field advanced|repairs] \
-         [--design foldover|prior] [--p-helps 0.9] [--p-hurts 0.1] [--p-unresolved 0.5]\n       \
+         [--city-states N] [--speed ID] [--map ID] [--victories a,b,...] [--stock-civs]\n       \
          gene_screen --analyze PATH [PATH ...] [--json OUT] [--interactions] [--top N] [--by-civ TAG]\n       \
          gene_screen --list"
     );
@@ -2895,15 +2475,10 @@ fn main() {
     let genes = gene_table();
 
     if present(&args, "--list") {
-        let weights = PriorWeights {
-            helps: 0.9,
-            hurts: 0.1,
-            unresolved: 0.5,
-        };
         println!(
             "{} genes (bit order) · default = the deployment genome (docs/gene_ledger.json) · \
-             prior = on-probability under --design prior · HELD = out of the default \
-             screened set on cost, ask for it by name",
+             p = on-probability in the screen ({P_ON} / {P_DEFAULT_ON} for a default-on gene) · \
+             HELD = out of the default screened set on cost, ask for it by name",
             genes.len()
         );
         for (i, gene) in genes.iter().enumerate() {
@@ -2911,14 +2486,14 @@ fn main() {
                 .map(|row| row.verdict.as_str())
                 .unwrap_or("unmeasured");
             println!(
-                "{i:>3}  {:<28} {:<32} universe:{} stock:{} default:{} ledger:{:<10} prior:{:.1}{}",
+                "{i:>3}  {:<28} {:<32} universe:{} stock:{} default:{} ledger:{:<10} p:{:.2}{}",
                 gene.tag,
                 gene.field,
                 if gene.after_setup_on { "on " } else { "off" },
                 if gene.stock_on { "on " } else { "off" },
                 if gene.default_on { "on " } else { "off" },
                 verdict,
-                weights.for_tag(gene.tag),
+                if gene.default_on { P_DEFAULT_ON } else { P_ON },
                 if HELD_UNLESS_ASKED.contains(&gene.tag) {
                     "  HELD"
                 } else {
@@ -2971,17 +2546,27 @@ fn main() {
         return;
     }
 
-    let pairs = number(&args, "--pairs", 100).max(1) as usize;
-    let anchor_pairs = number(&args, "--anchor-pairs", 0).max(0) as usize;
+    for retired in ["--pairs", "--target-pairs", "--anchor-pairs", "--design", "--single-seat", "--field", "--baseline", "--p-helps", "--p-hurts", "--p-unresolved"] {
+        if present(&args, retired) {
+            eprintln!(
+                "{retired} belonged to the paired designs, which are gone: every seat now draws its own \
+                 genome independently. Size the batch with --games N (one game = {SCREEN_PLAYERS} seats at \
+                 the screen) and tune the draw with --p-on / --p-default-on."
+            );
+            std::process::exit(2);
+        }
+    }
+
+    let games_to_play = number(&args, "--games", 200).max(1) as usize;
     let start_seed = number(&args, "--start-seed", 26_081_900) as u64;
     // ⭐ PRE-REGISTER THE SIZE. A single-session batch declares it by playing
-    // it, so `--pairs` is the default target and no operator has to remember a
-    // second flag. `--target-pairs` is for the screen deliberately split over
+    // it, so `--games` is the default target and no operator has to remember a
+    // second flag. `--target-games` is for the screen deliberately split over
     // `--append` sessions: each segment declares its share of the whole on its
     // own disjoint start seed, and `--analyze` sums them. Either way the
     // header carries the intention before the first game finishes, so a run
     // that stops early is visibly partial instead of quietly complete.
-    let target_pairs = number(&args, "--target-pairs", pairs as i64).max(1) as usize;
+    let target_games = number(&args, "--target-games", games_to_play as i64).max(1) as usize;
     // ⚠ THE SCREEN IS ONE SHAPE (operator, 2026-08-22). Every default below
     // is a leg of it, and a batch that changes one is a probe, not the screen:
     // `tools/gene_ledger.py` refuses a source that does not match. The shape is
@@ -2996,30 +2581,16 @@ fn main() {
     let quiet = present(&args, "--quiet");
     // ⚠ Stock seating is a FIXED civ per seat (Rome, Egypt, Greece, China…),
     // and on the first 250-pair run seats 0 and 2 won twice as often as seat 3
-    // whoever sat there. The foldover cancels that for every per-gene contrast
-    // — both arms share the seat — but the field is always the same three
-    // civs unless this is on.
-    // A leg of the screen; `--stock-civs` is the probe escape.
+    // whoever sat there. Shuffling per map is a leg of the screen;
+    // `--stock-civs` is the probe escape.
     let randomize_civs = !present(&args, "--stock-civs");
-    // Every major seat carries its own drawn genome; arm 1 complements all of
-    // them, so each gene is still on in exactly one arm of every seat's pair
-    // and each game yields `players` observations instead of one. Outcomes
-    // within one game share a winner, so the analysis clusters by game pair —
-    // the gain over the classic design is real but less than ×players on the
-    // win axis. The field is the other treated majors: effects are averaged
-    // over random opposing genomes, not measured against a fixed production
-    // field, so `--field` only shapes the anchors in this mode.
-    // A leg of the screen; `--single-seat` is the probe escape.
-    let all_seats = !present(&args, "--single-seat");
     // ⚠ THE LANES DECIDE WHICH GENES CAN EVEN ACT, so the screen leaves all six
     // live and the ledger reads one world. Restricting them (`--victories
     // domination,score`) once gave the war and siege genes a game that did not
     // end by conversion at turn 149; that was a second regime, its columns were
     // never comparable with the six-lane ones, and it is now a probe rather
-    // than a ledger source. The flag stays — it is the same one `civvis` takes,
-    // parsed by the same function — but a batch that uses it does not enter the
-    // ledger. Continents is what de-biases the religion lane now: 48% of
-    // Pangaea endings were conversions against 28% here.
+    // than a ledger source. Continents is what de-biases the religion lane
+    // now: 48% of Pangaea endings were conversions against 28% here.
     let victories = match text(&args, "--victories") {
         None => civvis::game::VictoryConditions::default(),
         Some(list) => civvis::game::VictoryConditions::parse(&list).unwrap_or_else(|why| {
@@ -3049,52 +2620,14 @@ fn main() {
             std::process::exit(2);
         }),
     };
-    let baseline = match text(&args, "--baseline").as_deref() {
-        None | Some("best") => Baseline::Best,
-        Some("repairs") => Baseline::Repairs,
-        Some("stock") => Baseline::Stock,
-        Some(other) => {
-            eprintln!("unknown --baseline {other:?}; use best|repairs|stock");
-            std::process::exit(2);
-        }
-    };
-    let design = match text(&args, "--design").as_deref() {
-        None | Some("foldover") => Design::Foldover,
-        Some("prior") => Design::Prior,
-        Some(other) => {
-            eprintln!("unknown --design {other:?}; use foldover|prior");
-            std::process::exit(2);
-        }
-    };
-    let prior_weights = PriorWeights {
-        helps: text(&args, "--p-helps")
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(0.9),
-        hurts: text(&args, "--p-hurts")
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(0.1),
-        unresolved: text(&args, "--p-unresolved")
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(0.5),
-    };
-    for (name, p) in [
-        ("--p-helps", prior_weights.helps),
-        ("--p-hurts", prior_weights.hurts),
-        ("--p-unresolved", prior_weights.unresolved),
-    ] {
-        if !(0.0..=1.0).contains(&p) {
-            eprintln!("{name} must be a probability, got {p}");
+    let p_on = real(&args, "--p-on", P_ON);
+    let p_default_on = real(&args, "--p-default-on", P_DEFAULT_ON);
+    for (name, p) in [("--p-on", p_on), ("--p-default-on", p_default_on)] {
+        if !(p > 0.0 && p < 1.0) {
+            eprintln!("{name} must be strictly between 0 and 1 (both arms need seats), got {p}");
             std::process::exit(2);
         }
     }
-    let field = match text(&args, "--field").as_deref() {
-        None | Some("advanced") => Field::Advanced,
-        Some("repairs") => Field::Repairs,
-        Some(other) => {
-            eprintln!("unknown --field {other:?}; use advanced|repairs");
-            std::process::exit(2);
-        }
-    };
     let screened: Vec<bool> = match text(&args, "--genes") {
         // Everything but the cost list, which `--genes` can still ask for.
         None => genes
@@ -3131,32 +2664,7 @@ fn main() {
         eprintln!("nothing to screen");
         std::process::exit(2);
     }
-    // The on-probability of every gene in header order: the prior for a
-    // screened gene, the held state (0 or 1) for the rest. Recorded in the
-    // header so `--analyze` can say what the draw was.
-    let prior: Vec<f64> = match design {
-        Design::Foldover => Vec::new(),
-        Design::Prior => genes
-            .iter()
-            .zip(&screened)
-            .map(|(gene, &s)| {
-                if s {
-                    prior_weights.for_tag(gene.tag)
-                } else {
-                    let held = match baseline {
-                        Baseline::Best => gene.default_on,
-                        Baseline::Repairs => gene.after_setup_on,
-                        Baseline::Stock => gene.stock_on,
-                    };
-                    if held {
-                        1.0
-                    } else {
-                        0.0
-                    }
-                }
-            })
-            .collect(),
-    };
+    let probabilities = on_probabilities(&genes, &screened, p_on, p_default_on);
 
     let out_path =
         text(&args, "--out").unwrap_or_else(|| format!("gene_screen-{start_seed}.jsonl"));
@@ -3195,8 +2703,7 @@ fn main() {
         city_states,
         speed: speed.id().to_string(),
         map: map.id().to_string(),
-        baseline: format!("{baseline:?}").to_lowercase(),
-        field: format!("{field:?}").to_lowercase(),
+        baseline: "best".to_string(),
         start_seed,
         randomize_civs,
         victories: civvis::game::VictoryConditions::NAMES
@@ -3205,15 +2712,19 @@ fn main() {
             .copied()
             .collect::<Vec<_>>()
             .join(","),
-        all_seats,
-        design: design.id().to_string(),
-        prior: prior.clone(),
+        all_seats: true,
+        design: "independent".to_string(),
+        prior: probabilities.clone(),
+        p_on,
+        p_default_on,
         build: stamp_build(&genes),
         batch: Batch {
-            target_pairs,
-            target_comparisons: target_pairs * if all_seats { players } else { 1 },
+            target_games,
+            target_seats: target_games * players,
+            target_pairs: 0,
+            target_comparisons: 0,
             seed_first: start_seed,
-            seed_last: start_seed + (target_pairs + anchor_pairs) as u64 - 1,
+            seed_last: start_seed + target_games as u64 - 1,
         },
     };
     // ⚠ PRINTED BEFORE THE BATCH, not after it. An eight-hour screen whose
@@ -3239,98 +2750,30 @@ fn main() {
         victories,
     };
     println!(
-        "gene screen: {pairs} {} pairs ({} games{}){} · {} of {} genes screened · {players}p {width}x{height} {} · {} · {turns} turns · {city_states} city-states · {} civs · baseline {:?} · field {:?} · seeds {start_seed}..{} · {jobs} jobs · rows → {out_path}",
-        design.id(),
-        pairs * 2,
-        if all_seats {
-            format!(", every major treated: {} seat pairs", pairs * players)
-        } else {
-            String::new()
-        },
-        if anchor_pairs > 0 {
-            format!(" + {anchor_pairs} anchor pairs")
-        } else {
-            String::new()
-        },
+        "gene screen: {games_to_play} games ({} seats, every seat its own genome, on at p={p_on} / {p_default_on} default-on) · {} of {} genes screened · {players}p {width}x{height} {} · {} · {turns} turns · {city_states} city-states · {} civs · seeds {start_seed}..{} · {jobs} jobs · rows → {out_path}",
+        games_to_play * players,
         screened_count,
         genes.len(),
         map.id(),
         speed.id(),
         if randomize_civs { "shuffled" } else { "stock-seated" },
-        baseline,
-        field,
-        start_seed + (pairs + anchor_pairs) as u64 - 1
+        start_seed + games_to_play as u64 - 1
     );
 
-    // Job list: screened pairs first, then anchors, two games each. Every job
-    // is independent, so the batch goes through the repository's pool.
-    let total_games = 2 * (pairs + anchor_pairs);
-    // Anchors: arm 0 every screened gene on, arm 1 every screened gene off —
-    // or, at the deployment baseline, arm 1 at the ledger's defaults, so the
-    // anchor prices the all-on universe against the best genome: what the
-    // ledger bought.
-    let all_on: Vec<bool> = genes
-        .iter()
-        .zip(&screened)
-        .map(|(gene, &s)| if s { true } else { gene.after_setup_on })
-        .collect();
-    let all_off: Vec<bool> = genes
-        .iter()
-        .zip(&screened)
-        .map(|(gene, &s)| {
-            if s {
-                baseline == Baseline::Best && gene.default_on
-            } else {
-                gene.after_setup_on
-            }
-        })
-        .collect();
     let started = Instant::now();
     let done = std::sync::atomic::AtomicUsize::new(0);
-    let wins = std::sync::atomic::AtomicUsize::new(0);
     let out = std::sync::Mutex::new(out);
-    let games: Vec<Vec<Row>> = civvis::parallel::map_reporting(
-        total_games,
+    let played: Vec<Vec<Row>> = civvis::parallel::map_reporting(
+        games_to_play,
         jobs,
-        |index| {
-            let pair = index / 2;
-            let arm = (index % 2) as u8;
-            let seed = start_seed + pair as u64;
-            let seat = pair % players;
-            if pair < pairs {
-                if all_seats {
-                    let genomes =
-                        all_seat_genomes(start_seed, pair, players, &screened, arm, design, &prior);
-                    return play_all_seats(
-                        &profile, &genes, &screened, baseline, pair, arm, seed, &genomes,
-                    );
-                }
-                let genome = match design {
-                    Design::Foldover => {
-                        let drawn = draw_genome(start_seed, pair, &screened);
-                        if arm == 0 {
-                            drawn
-                        } else {
-                            complement(&drawn, &screened)
-                        }
-                    }
-                    Design::Prior => draw_genome_prior(start_seed, pair, arm, &screened, &prior),
-                };
-                return vec![play(
-                    &profile, &genes, &screened, baseline, field, "game", pair, arm, seed, seat,
-                    &genome,
-                )];
-            }
-            // Anchors keep the classic single treated seat in both modes:
-            // an all-on-versus-all-off contrast where every seat flips is
-            // symmetric and measures nothing.
-            let genome = if arm == 0 { &all_on } else { &all_off };
-            vec![play(
-                &profile, &genes, &screened, baseline, field, "anchor", pair, arm, seed, seat,
-                genome,
-            )]
+        |game| {
+            let seed = start_seed + game as u64;
+            let genomes: Vec<Vec<bool>> = (0..players)
+                .map(|seat| draw_genome(start_seed, game, players, seat, &probabilities))
+                .collect();
+            play_game(&profile, &genes, game, seed, &genomes)
         },
-        |_index, game_rows| {
+        |_game, game_rows| {
             let mut out = out.lock().expect("row writer");
             for row in game_rows {
                 writeln!(
@@ -3339,9 +2782,6 @@ fn main() {
                     serde_json::to_string(row).expect("row serializes")
                 )
                 .expect("write row");
-                if row.win {
-                    wins.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                }
             }
             out.flush().expect("flush rows");
             let finished = done.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
@@ -3349,48 +2789,29 @@ fn main() {
                 let elapsed = started.elapsed().as_secs_f64();
                 let row = &game_rows[0];
                 println!(
-                    "[{finished:>5}/{total_games}] {} pair {} arm {} seed {}{} · {} · t{} · {} · {:.0}s ({:.2} games/s, ~{:.0}s left)",
-                    row.kind,
-                    row.pair,
-                    row.arm,
+                    "[{finished:>5}/{games_to_play}] game {} seed {} ({} seats) · {} · t{} · {} · {:.0}s ({:.2} games/s, ~{:.0}s left)",
+                    row.game,
                     row.seed,
-                    if game_rows.len() == 1 {
-                        format!(" seat {}", row.seat)
-                    } else {
-                        format!(" ({} seats)", game_rows.len())
-                    },
+                    game_rows.len(),
                     if row.victory.is_empty() { "-" } else { &row.victory },
                     row.turn,
-                    if game_rows.len() == 1 {
-                        format!(
-                            "win={} share={:.1}% rank {} cities {}",
-                            u8::from(row.win),
-                            100.0 * row.score_share,
-                            row.rank,
-                            row.cities
-                        )
-                    } else {
-                        match game_rows.iter().find(|r| r.win) {
-                            Some(winner) => {
-                                format!("winner seat {} ({})", winner.seat, winner.civ)
-                            }
-                            None => "no treated winner".to_string(),
-                        }
+                    match game_rows.iter().find(|r| r.win) {
+                        Some(winner) => format!("winner seat {} ({})", winner.seat, winner.civ),
+                        None => "no winner".to_string(),
                     },
                     row.secs,
                     finished as f64 / elapsed.max(1e-9),
-                    elapsed / finished as f64 * (total_games - finished) as f64
+                    elapsed / finished as f64 * (games_to_play - finished) as f64
                 );
             }
         },
     );
-    let rows: Vec<Row> = games.into_iter().flatten().collect();
+    let rows: Vec<Row> = played.into_iter().flatten().collect();
     println!(
-        "\n{total_games} games ({} rows) in {:.0}s ({:.2} games/s); treated seats won {} of them",
+        "\n{games_to_play} games ({} seats) in {:.0}s ({:.2} games/s)",
         rows.len(),
         started.elapsed().as_secs_f64(),
-        total_games as f64 / started.elapsed().as_secs_f64().max(1e-9),
-        wins.load(std::sync::atomic::Ordering::Relaxed)
+        games_to_play as f64 / started.elapsed().as_secs_f64().max(1e-9),
     );
     print_table(&header, &rows);
 }
@@ -3399,12 +2820,12 @@ fn main() {
 mod tests {
     use super::*;
 
-    fn test_header(genes: &[&str], all_seats: bool) -> Header {
+    fn test_header(genes: &[&str]) -> Header {
         Header {
             kind: "header".into(),
             genes: genes.iter().map(|gene| (*gene).to_string()).collect(),
             screened: genes.iter().map(|gene| (*gene).to_string()).collect(),
-            players: if all_seats { 3 } else { 4 },
+            players: 3,
             width: 1,
             height: 1,
             turns: 1,
@@ -3412,24 +2833,26 @@ mod tests {
             speed: "online".into(),
             map: "pangaea".into(),
             baseline: "best".into(),
-            field: "advanced".into(),
             start_seed: 1,
             randomize_civs: false,
             victories: String::new(),
-            all_seats,
-            design: "foldover".into(),
-            prior: Vec::new(),
+            all_seats: true,
+            design: "independent".into(),
+            prior: vec![0.5; genes.len()],
+            p_on: 0.5,
+            p_default_on: 0.75,
             build: Build::default(),
             batch: Batch::default(),
         }
     }
 
-    fn test_row(pair: usize, seat: usize, arm: u8, genome: &str, win: bool) -> Row {
+    fn test_row(game: usize, seat: usize, genome: &str, win: bool) -> Row {
         Row {
             kind: "game".into(),
-            pair,
-            arm,
-            seed: pair as u64,
+            game,
+            pair: 0,
+            arm: 0,
+            seed: game as u64,
             seat,
             genome: genome.into(),
             win,
@@ -3455,6 +2878,27 @@ mod tests {
             pillages: 0,
             raid_settler_prizes: 0,
         }
+    }
+
+    /// A synthetic screen: `games` games of three seats over `k` genes, every
+    /// seat's genome drawn by the real draw, outcomes supplied by `outcome`
+    /// from the seat's bits.
+    fn synthetic(k: usize, games: usize, outcome: impl Fn(&[bool], usize) -> (bool, f64)) -> (Header, Vec<Row>) {
+        let names: Vec<String> = (0..k).map(|i| format!("g{i}")).collect();
+        let name_refs: Vec<&str> = names.iter().map(String::as_str).collect();
+        let header = test_header(&name_refs);
+        let probabilities = vec![0.5; k];
+        let mut rows = Vec::new();
+        for game in 0..games {
+            for seat in 0..3 {
+                let bits = draw_genome(11, game, 3, seat, &probabilities);
+                let (win, share) = outcome(&bits, seat);
+                let mut row = test_row(game, seat, &genome_string(&bits), win);
+                row.score_share = share;
+                rows.push(row);
+            }
+        }
+        (header, rows)
     }
 
     /// The gene table is discovered from the repository's tables and every
@@ -3499,45 +2943,82 @@ mod tests {
         }
     }
 
+    /// The same seed, game and seat draw the same genome; different seats of
+    /// one game are independent draws; a held gene never moves.
     #[test]
-    fn a_pair_is_a_foldover_and_reproduces_from_its_seed() {
-        let screened = vec![true, true, false, true];
-        let a = draw_genome(7, 3, &screened);
-        let b = draw_genome(7, 3, &screened);
-        assert_eq!(a, b, "the same seed and pair must draw the same genome");
-        assert!(!a[2], "an un-screened gene is never drawn on");
-        let c = complement(&a, &screened);
-        for i in [0, 1, 3] {
-            assert_ne!(a[i], c[i], "screened gene {i} must flip");
+    fn a_seat_reproduces_from_its_seed_and_seats_are_independent() {
+        let probabilities = [0.5, 0.75, 1.0, 0.0, 0.5];
+        let a = draw_genome(7, 3, 6, 2, &probabilities);
+        assert_eq!(a, draw_genome(7, 3, 6, 2, &probabilities));
+        assert!(a[2], "a gene held on stays on");
+        assert!(!a[3], "a gene held off stays off");
+        let mut identical = 0;
+        for game in 0..200 {
+            let seat0 = draw_genome(7, game, 6, 0, &probabilities);
+            let seat1 = draw_genome(7, game, 6, 1, &probabilities);
+            if seat0 == seat1 {
+                identical += 1;
+            }
+            // No seat is ever another seat's complement by construction: the
+            // held genes agree, and the drawn ones are independent coins.
+            assert_eq!(seat0[2], seat1[2]);
         }
-        assert_eq!(a[2], c[2], "un-screened gene must not flip");
-        assert_eq!(complement(&c, &screened), a);
+        assert!(
+            identical < 60,
+            "{identical} of 200 seat pairs drew the same genome: the seats are not independent"
+        );
         assert_eq!(genome_string(&[true, false, true]), "101");
     }
 
-    /// Over many pairs a screened gene is on about half the time — the
-    /// property the whole per-gene comparison rests on.
+    /// Over many seats a gene is on about as often as its probability says —
+    /// one half for an ordinary gene, three quarters for a default-on one.
     #[test]
-    fn genes_are_balanced_across_pairs() {
-        let screened = vec![true; 8];
-        let mut on = [0usize; 8];
-        let pairs = 2000;
-        for pair in 0..pairs {
-            for (i, &bit) in draw_genome(99, pair, &screened).iter().enumerate() {
+    fn genes_follow_their_draw_probabilities() {
+        let probabilities = [0.5, 0.75, 0.5, 0.75];
+        let mut on = [0usize; 4];
+        let seats = 4000;
+        for index in 0..seats {
+            for (i, &bit) in draw_genome(99, index / 6, 6, index % 6, &probabilities)
+                .iter()
+                .enumerate()
+            {
                 on[i] += usize::from(bit);
             }
         }
         for (i, count) in on.iter().enumerate() {
-            let rate = *count as f64 / pairs as f64;
+            let rate = *count as f64 / seats as f64;
+            let want = probabilities[i];
             assert!(
-                (0.45..=0.55).contains(&rate),
-                "gene {i} on-rate {rate} is not near one half"
+                (rate - want).abs() < 0.04,
+                "gene {i} on-rate {rate} is not near {want}"
             );
         }
     }
 
+    /// The draw probability of every gene in header order: the deployment's
+    /// default-on genes at `p_default_on`, the rest at `p_on`, and a gene held
+    /// out of the screen pinned to its default.
     #[test]
-    fn treated_seat_respects_the_baseline_for_unscreened_genes() {
+    fn on_probabilities_follow_the_deployment_default() {
+        let genes = gene_table();
+        let mut screened = vec![true; genes.len()];
+        screened[0] = false;
+        let p = on_probabilities(&genes, &screened, 0.5, 0.75);
+        assert_eq!(p[0], if genes[0].default_on { 1.0 } else { 0.0 });
+        for (gene, (&p, &s)) in genes.iter().zip(p.iter().zip(&screened)).skip(1) {
+            assert!(s);
+            assert_eq!(p, if gene.default_on { 0.75 } else { 0.5 }, "{}", gene.tag);
+        }
+        assert!(
+            genes.iter().any(|gene| gene.default_on) && genes.iter().any(|gene| !gene.default_on),
+            "the table should hold both default-on and default-off genes"
+        );
+    }
+
+    /// A seat plays exactly the genome it was drawn: the bit wins over the
+    /// universe and over the ledger's default.
+    #[test]
+    fn a_seat_plays_exactly_its_genome() {
         // Nothing observable is exposed for most flags, so this test pins the
         // logic on the one flag that is public: `siege_is_progress` is an
         // engine repair, on after setup, off on stock.
@@ -3546,53 +3027,38 @@ mod tests {
             .iter()
             .position(|g| g.tag == "siege-is-progress")
             .expect("siege-is-progress is an engine repair");
-        let none_screened = vec![false; genes.len()];
-        let genome = vec![false; genes.len()];
-        let repairs = treated_seat(&genes, &genome, &none_screened, Baseline::Repairs);
-        assert!(
-            repairs.siege_is_progress,
-            "repairs baseline keeps the repair on"
-        );
-        let stock = treated_seat(&genes, &genome, &none_screened, Baseline::Stock);
-        assert!(
-            !stock.siege_is_progress,
-            "stock baseline turns the repair off"
-        );
-        // Screened: the genome bit wins over either baseline.
-        let mut one_screened = vec![false; genes.len()];
-        one_screened[index] = true;
         let mut on = vec![false; genes.len()];
         on[index] = true;
-        assert!(treated_seat(&genes, &on, &one_screened, Baseline::Stock).siege_is_progress);
+        assert!(seat_with_genome(&genes, &on).siege_is_progress);
         let off = vec![false; genes.len()];
-        assert!(!treated_seat(&genes, &off, &one_screened, Baseline::Repairs).siege_is_progress);
+        assert!(!seat_with_genome(&genes, &off).siege_is_progress);
+        let universe: Vec<bool> = genes.iter().map(|gene| gene.after_setup_on).collect();
+        assert!(seat_with_genome(&genes, &universe).siege_is_progress);
     }
 
     /// The harmful `governor-every-lane` composite is deliberately split in
     /// the controller. These two rows make that split a real genome choice:
-    /// a targeted screen can enable either established predicate while its
-    /// sibling and the historical composite stay off.
+    /// a seat can carry either established predicate while its sibling and
+    /// the historical composite stay off.
     #[test]
     fn governor_halves_are_independent_opt_in_genes() {
         let genes = gene_table();
-        let arm = |tag: &str| {
+        let seat = |tag: &str| {
             let index = genes
                 .iter()
                 .position(|gene| gene.tag == tag)
                 .unwrap_or_else(|| panic!("{tag} is a screenable gene"));
-            let mut screened = vec![false; genes.len()];
             let mut genome = vec![false; genes.len()];
-            screened[index] = true;
             genome[index] = true;
-            treated_seat(&genes, &genome, &screened, Baseline::Stock)
+            seat_with_genome(&genes, &genome)
         };
 
-        let victory = arm("governor-victory-lanes");
+        let victory = seat("governor-victory-lanes");
         assert!(victory.governor_victory_lanes);
         assert!(!victory.governor_expansion_lane);
         assert!(!victory.governor_every_lane);
 
-        let expansion = arm("governor-expansion-lane");
+        let expansion = seat("governor-expansion-lane");
         assert!(!expansion.governor_victory_lanes);
         assert!(expansion.governor_expansion_lane);
         assert!(!expansion.governor_every_lane);
@@ -3615,704 +3081,255 @@ mod tests {
         assert!((normal_quantile_upper(0.025 / 57.0) - 3.33).abs() < 0.02);
     }
 
+    /// Noise-free planted on−off differences come back exactly from the
+    /// all-genes regression, and the marginal contrast of each gene agrees
+    /// with it up to the neighbours' chance imbalance.
     #[test]
     fn ols_recovers_planted_effects() {
-        // 400 pairs, 5 genes, planted effects; noise-free so the solve is exact.
         let planted = [0.3, -0.2, 0.0, 0.1, 0.05];
-        let screened = vec![true; 5];
-        let mut signs = Vec::new();
-        let mut diffs = Vec::new();
-        for pair in 0..400 {
-            let g = draw_genome(5, pair, &screened);
-            let row: Vec<f64> = g.iter().map(|&b| if b { 1.0 } else { -1.0 }).collect();
-            let d: f64 = row.iter().zip(&planted).map(|(s, e)| s * e).sum();
-            signs.push(row);
-            diffs.push(d);
-        }
-        let clusters: Vec<(u64, usize)> = (0..400).map(|pair| (pair as u64, pair)).collect();
-        let fitted =
-            adjusted_effects(&signs, &diffs, &clusters).expect("400 pairs support 5 genes");
+        let (header, rows) = synthetic(5, 400, |bits, _| {
+            let share = 0.2 + bits
+                .iter()
+                .zip(&planted)
+                .map(|(&b, d)| if b { d / 2.0 } else { -d / 2.0 })
+                .sum::<f64>();
+            (false, share)
+        });
+        let seats = Seats::of(&header, &rows);
+        let fitted = seats.adjusted(&seats.shares).expect("1,200 seats support 5 genes");
         for (i, (effect, se)) in fitted.iter().enumerate() {
             assert!(
                 (effect - planted[i]).abs() < 1e-9,
                 "gene {i}: {effect} vs {}",
                 planted[i]
             );
-            assert!(*se < 1e-6);
+            assert!(se.abs() < 1e-6, "noise-free fit should carry no error, got {se}");
         }
-        assert!(
-            adjusted_effects(&signs[..15], &diffs[..15], &clusters[..15]).is_none(),
-            "too few pairs for the design"
-        );
+        // The marginal contrast on a single gene is the adjusted figure up to
+        // the other genes' imbalance, which 1,200 seats leave small.
+        let (marginal, _) = seats.contrast(0, &seats.shares);
+        assert!((marginal - planted[0]).abs() < 0.03, "marginal {marginal}");
     }
 
-    /// The estimator reads a planted gene out of synthetic rows: on-arm wins
-    /// more often, and the pair difference carries the sign.
+    /// A gene that decides the outcome reads as such; a gene that does nothing
+    /// reads as nothing — each holds its own against the other's randomness.
     #[test]
-    fn estimate_reads_a_planted_gene() {
-        let genes = vec!["a".to_string(), "b".to_string()];
-        let header = Header {
-            kind: "header".into(),
-            genes: genes.clone(),
-            screened: genes,
-            players: 4,
-            width: 1,
-            height: 1,
-            turns: 1,
-            city_states: 0,
-            speed: "online".into(),
-            map: "pangaea".into(),
-            baseline: "repairs".into(),
-            field: "advanced".into(),
-            start_seed: 1,
-            randomize_civs: false,
-            victories: String::new(),
-            all_seats: false,
-            design: "foldover".into(),
-            prior: Vec::new(),
-            build: Build::default(),
-            batch: Batch::default(),
-        };
-        let mut rows = Vec::new();
-        let screened = vec![true, true];
-        for pair in 0..300 {
-            let g = draw_genome(11, pair, &screened);
-            let c = complement(&g, &screened);
-            // Gene `a` on wins the pair; gene `b` does nothing.
-            for (arm, genome) in [(0u8, &g), (1u8, &c)] {
-                rows.push(Row {
-                    kind: "game".into(),
-                    pair,
-                    arm,
-                    seed: pair as u64,
-                    seat: pair % 4,
-                    genome: genome_string(genome),
-                    win: genome[0],
-                    winner: None,
-                    victory: String::new(),
-                    turn: 1,
-                    score: 0,
-                    score_share: if genome[0] { 0.4 } else { 0.2 },
-                    rank: 1,
-                    cities: 0,
-                    alive: true,
-                    secs: 0.0,
-                    founded_religion: false,
-                    foreign_faith_cities: 0,
-                    faith: 0.0,
-                    inquisition: false,
-                    techs: 0,
-                    military: 0.0,
-                    civ: String::new(),
-                    raid_wars: 0,
-                    settlers_captured: 0,
-                    builders_captured: 0,
-                    pillages: 0,
-                    raid_settler_prizes: 0,
-                });
-            }
-        }
-        let (estimates, pairs, overall_win, _) = estimate(&header, &rows);
-        assert_eq!(pairs, 300);
-        assert!((overall_win - 0.5).abs() < 1e-9);
-        let a = estimates.iter().find(|e| e.tag == "a").unwrap();
-        let b = estimates.iter().find(|e| e.tag == "b").unwrap();
-        assert!((a.win_on - 1.0).abs() < 1e-9 && a.win_off.abs() < 1e-9);
-        assert!((a.win_delta - 1.0).abs() < 1e-9);
-        assert!((a.share_delta - 0.2).abs() < 1e-9);
-        assert!(
-            b.win_delta.abs() < 0.15,
-            "b is planted null: {}",
-            b.win_delta
-        );
-        assert!(b.win_z().abs() < 2.5);
-        let (adj_a, _) = a.adjusted.expect("300 pairs support 2 genes");
-        assert!((adj_a - 1.0).abs() < 1e-9);
-        // An unfinished pair (one arm only) is dropped, not counted.
-        rows.push(Row {
-            pair: 999,
-            arm: 0,
-            seed: 999,
-            ..rows[0].clone()
+    fn estimate_reads_a_planted_gene_and_clears_an_inert_one() {
+        // Gene 0 wins the seat unless it sits in chair 2, so the outcome is
+        // decided by the gene and still carries variance for an error.
+        let (header, rows) = synthetic(3, 300, |bits, seat| {
+            (bits[0] && seat < 2, if bits[0] { 0.4 } else { 0.2 })
         });
-        assert_eq!(estimate(&header, &rows).1, 300);
+        let estimates = estimate(&header, &rows);
+        assert_eq!(estimates.seats, 900);
+        assert_eq!(estimates.games, 300);
+        let planted = &estimates.genes[0];
+        assert_eq!(planted.tag, "g0");
+        assert!((planted.win_on - 2.0 / 3.0).abs() < 0.06, "on {}", planted.win_on);
+        assert!(planted.win_off.abs() < 1e-9);
+        assert!((planted.win_delta - 2.0 / 3.0).abs() < 0.06, "Δ {}", planted.win_delta);
+        assert!(planted.win_z() > 10.0, "z {}", planted.win_z());
+        assert!(planted.n_on > 350 && planted.n_off > 350, "{}/{}", planted.n_on, planted.n_off);
+        let inert = &estimates.genes[1];
+        assert!(inert.win_z().abs() < 3.0, "inert gene z {}", inert.win_z());
+        assert!(inert.win_delta.abs() < 0.12, "inert gene Δ {}", inert.win_delta);
+        assert!(inert.adjusted.is_some());
     }
 
-    /// A 10k tranche is a chronological replication, not an arbitrary slice
-    /// of seat rows. This deliberately asks for four comparisons when one
-    /// all-seats game contributes three: the nearest whole cluster is three,
-    /// so a result from one map can never leak into two windows.
+    /// The seats of one game share a winner, so the error is clustered on the
+    /// game: a file whose seats are all in one game cannot carry an error at
+    /// all, and perfectly duplicated seats do not shrink it.
     #[test]
-    fn reproducibility_tranches_are_newest_first_and_cluster_safe() {
-        let header = test_header(&["a"], true);
-        let mut rows = Vec::new();
-        for (pair, on_wins) in [(0, false), (1, false), (2, false), (3, true)] {
-            for seat in 0..3 {
-                rows.push(test_row(pair, seat, 0, "1", on_wins));
-                rows.push(test_row(pair, seat, 1, "0", !on_wins));
-            }
-        }
+    fn errors_cluster_by_game() {
+        let design: Vec<Vec<f64>> = (0..40).map(|i| vec![1.0, if i % 2 == 0 { 1.0 } else { -1.0 }]).collect();
+        let y: Vec<f64> = (0..40).map(|i| if i % 2 == 0 { 1.0 } else { 0.0 } + (i % 5) as f64 * 0.1).collect();
+        let one_game: Vec<GameKey> = vec![(1, 0); 40];
+        assert!(ols_clustered(&design, &y, &one_game).is_none());
+        let own_games: Vec<GameKey> = (0..40).map(|i| (i as u64, 0)).collect();
+        let (_, se_independent) = ols_clustered(&design, &y, &own_games).unwrap()[1];
+        // Duplicate every row inside its own game: the seat count doubles,
+        // the information does not.
+        let mut design2 = design.clone();
+        design2.extend(design.iter().cloned());
+        let mut y2 = y.clone();
+        y2.extend(y.iter().copied());
+        let mut games2 = own_games.clone();
+        games2.extend(own_games.iter().copied());
+        let (_, se_clustered) = ols_clustered(&design2, &y2, &games2).unwrap()[1];
+        assert!(
+            (se_clustered - se_independent).abs() < 0.2 * se_independent,
+            "clustered {se_clustered} vs {se_independent}: duplicates inside a game must not count twice"
+        );
+        // Treated as independent seats, the duplicates would halve the variance.
+        let naive: Vec<GameKey> = (0..80).map(|i| (i as u64, 0)).collect();
+        let (_, se_naive) = ols_clustered(&design2, &y2, &naive).unwrap()[1];
+        assert!(se_naive < 0.8 * se_clustered, "naive {se_naive} vs clustered {se_clustered}");
+    }
 
-        let tranches = reproducibility_tranches(&header, &rows, 4, 3);
+    /// Tranches are newest first (input order), never split a game, and
+    /// their seats add up to what was analysed.
+    #[test]
+    fn reproducibility_tranches_are_newest_first_and_whole_game() {
+        let (header, rows) = synthetic(2, 10, |bits, _| (bits[0], 0.3));
+        let tranches = reproducibility_tranches(&header, &rows, 9, 3);
         assert_eq!(tranches.len(), 3);
-        assert_eq!(
-            tranches
-                .iter()
-                .map(|tranche| tranche.pairs)
-                .collect::<Vec<_>>(),
-            vec![3, 3, 3],
-            "a four-pair target must not divide the three-seat game cluster"
-        );
-        let effect = |index: usize| tranches[index].estimates[0].win_delta;
-        assert!((effect(0) - 1.0).abs() < 1e-9, "latest map is helpful");
-        assert!((effect(1) + 1.0).abs() < 1e-9, "previous map is harmful");
-        assert!((effect(2) + 1.0).abs() < 1e-9, "older map is harmful");
+        // 30 seats in games of 3: a 9-seat target is exactly 3 games.
+        assert!(tranches.iter().all(|t| t.seats % 3 == 0), "{:?}", tranches.iter().map(|t| t.seats).collect::<Vec<_>>());
+        assert_eq!(tranches[0].seats, 9);
+        assert_eq!(tranches[0].games, 3);
+        // Re-ordering the input re-orders the tranches: the newest games are
+        // the last written, not the highest seed.
+        let mut reversed = rows.clone();
+        reversed.reverse();
+        let again = reproducibility_tranches(&header, &reversed, 9, 1);
+        assert_eq!(again[0].seats, 9);
+        // Everything analysed lands in some tranche when the count allows.
+        let all = reproducibility_tranches(&header, &rows, 9, 10);
+        assert_eq!(all.iter().map(|t| t.seats).sum::<usize>(), 30);
     }
 
-    /// Synthetic rows with a planted interaction and planted main effects: the
-    /// pair-sum estimator must find the interaction and must NOT report the
-    /// main effects as interactions. That second half is the load-bearing one —
-    /// it is the property that makes the foldover's two halves independent,
-    /// and if it ever stops holding, every synergy in the table is really a
-    /// main effect wearing a disguise.
+    /// A planted two-factor synergy is recovered with its sign and size, and
+    /// a pure main effect does not masquerade as one.
     #[test]
-    fn interactions_come_out_of_the_pair_sums_and_main_effects_do_not() {
-        let genes: Vec<String> = ["a", "b", "c", "d"].iter().map(|g| g.to_string()).collect();
-        let header = Header {
-            kind: "header".into(),
-            genes: genes.clone(),
-            screened: genes,
-            players: 4,
-            width: 1,
-            height: 1,
-            turns: 1,
-            city_states: 0,
-            speed: "online".into(),
-            map: "pangaea".into(),
-            baseline: "repairs".into(),
-            field: "advanced".into(),
-            start_seed: 1,
-            randomize_civs: false,
-            victories: String::new(),
-            all_seats: false,
-            design: "foldover".into(),
-            prior: Vec::new(),
-            build: Build::default(),
-            batch: Batch::default(),
-        };
-        // y = 0.5 + 0.30·a  −  0.20·c  + 0.25·(a·b) in the ±1 coding, plus a
-        // per-map offset that is constant inside a pair — which is what a map
-        // is. The design is the COMPLETE factorial (all 16 genomes of 4 genes,
-        // each paired with its complement) repeated over ten maps, so every
-        // sign product is exactly balanced and the recovery is exact rather
-        // than approximate. A random draw would be off by an O(1/√n) term and
-        // could only be asserted loosely, which would not prove the property.
-        let screened = vec![true; 4];
-        let mut rows = Vec::new();
-        let mut pair = 0usize;
-        for map in 0..10 {
-            let map_offset = f64::from(map) * 0.05;
-            for combination in 0u32..16 {
-                let genome: Vec<bool> = (0..4).map(|bit| combination >> bit & 1 == 1).collect();
-                let flipped = complement(&genome, &screened);
-                for (arm, genome) in [(0u8, &genome), (1u8, &flipped)] {
-                    let x: Vec<f64> = genome.iter().map(|&b| if b { 1.0 } else { -1.0 }).collect();
-                    let y = 0.5 + 0.30 * x[0] - 0.20 * x[2] + 0.25 * x[0] * x[1] + map_offset;
-                    rows.push(Row {
-                        kind: "game".into(),
-                        pair,
-                        arm,
-                        seed: pair as u64,
-                        seat: pair % 4,
-                        genome: genome_string(genome),
-                        win: false,
-                        winner: None,
-                        victory: String::new(),
-                        turn: 1,
-                        score: 0,
-                        score_share: y,
-                        rank: 1,
-                        cities: 0,
-                        alive: true,
-                        secs: 0.0,
-                        founded_religion: false,
-                        foreign_faith_cities: 0,
-                        faith: 0.0,
-                        inquisition: false,
-                        techs: 0,
-                        military: 0.0,
-                        civ: String::new(),
-                        raid_wars: 0,
-                        settlers_captured: 0,
-                        builders_captured: 0,
-                        pillages: 0,
-                        raid_settler_prizes: 0,
-                    });
-                }
-                pair += 1;
-            }
+    fn interactions_recover_a_planted_synergy() {
+        let (header, rows) = synthetic(3, 1500, |bits, _| {
+            let s = |b: bool| if b { 1.0 } else { -1.0 };
+            // y = 0.5 + 0.1·s0 + 0.05·(s1·s2): a main effect and one synergy.
+            (false, 0.5 + 0.1 * s(bits[0]) + 0.05 * s(bits[1]) * s(bits[2]))
+        });
+        let (found, seats) = interactions(&header, &rows, |row| row.score_share);
+        assert_eq!(seats, 4500);
+        let pair = |a: usize, b: usize| found.iter().find(|i| i.a == a && i.b == b).expect("pair");
+        let synergy = pair(1, 2);
+        // Marginal, so the other terms' finite-sample correlation leaks in a
+        // little; 4,500 seats hold it to the second decimal.
+        assert!((synergy.synergy - 0.2).abs() < 0.03, "4γ should be near 0.2, got {}", synergy.synergy);
+        assert!(synergy.z() > 10.0, "z {}", synergy.z());
+        let none = pair(0, 1);
+        assert!(none.synergy.abs() < 0.03, "a main effect is not a synergy: {}", none.synergy);
+    }
+
+    /// The cost column is the cost of enabling a gene on ONE seat: a game's
+    /// seconds per turn grow with how many of its seats carry the gene.
+    #[test]
+    fn timing_cost_is_per_enabled_seat() {
+        let (header, mut rows) = synthetic(2, 400, |bits, _| (bits[0], 0.3));
+        let mut on_count: BTreeMap<GameKey, usize> = BTreeMap::new();
+        for row in &rows {
+            *on_count.entry(row.game_key()).or_default() += usize::from(row.bits()[0]);
         }
-        let (found, pairs) = interactions(&header, &rows, |row| row.score_share);
-        assert_eq!(pairs, 160);
-        assert_eq!(found.len(), 6, "four genes have six two-factor pairs");
-        let ab = found
-            .iter()
-            .find(|row| row.a == 0 && row.b == 1)
-            .expect("a×b is a pair");
-        // Planted γ = 0.25 in the ±1 coding, and the reported synergy is 4γ.
-        assert!(
-            (ab.synergy - 1.0).abs() < 1e-12,
-            "planted a×b not recovered: {}",
-            ab.synergy
-        );
-        for row in &found {
-            if row.a == 0 && row.b == 1 {
-                continue;
-            }
-            assert!(
-                row.synergy.abs() < 1e-12,
-                "genes {} and {} carry main effects but no interaction, and one leaked: {}",
-                row.a,
-                row.b,
-                row.synergy
-            );
-        }
-        // And the main-effect table still reads the main effects out of the
-        // same rows: the two halves of a pair do not interfere.
-        let (marginal, _, _, _) = estimate(&header, &rows);
-        let a = marginal.iter().find(|e| e.tag == "a").unwrap();
-        let b = marginal.iter().find(|e| e.tag == "b").unwrap();
-        let c = marginal.iter().find(|e| e.tag == "c").unwrap();
-        let d = marginal.iter().find(|e| e.tag == "d").unwrap();
-        assert!((a.share_delta - 0.60).abs() < 1e-12, "a: {}", a.share_delta);
-        assert!(
-            b.share_delta.abs() < 1e-12,
-            "b has no main effect, only an interaction, and the difference must not see it: {}",
-            b.share_delta
-        );
-        assert!((c.share_delta + 0.40).abs() < 1e-12, "c: {}", c.share_delta);
-        assert!(d.share_delta.abs() < 1e-9, "d is null: {}", d.share_delta);
-    }
-
-    /// All-seats mode: every seat draws its own genome, arm 1 complements
-    /// every seat, and the draw reproduces from `(start_seed, pair, seat)`.
-    #[test]
-    fn all_seat_genomes_are_per_seat_foldovers() {
-        let screened = vec![true, true, false, true];
-        let a = all_seat_genomes(9, 4, 3, &screened, 0, Design::Foldover, &[]);
-        let b = all_seat_genomes(9, 4, 3, &screened, 1, Design::Foldover, &[]);
-        assert_eq!(a.len(), 3);
-        assert_eq!(
-            a,
-            all_seat_genomes(9, 4, 3, &screened, 0, Design::Foldover, &[]),
-            "reproduces"
-        );
-        for (ga, gb) in a.iter().zip(&b) {
-            assert_eq!(
-                ga,
-                &complement(gb, &screened),
-                "arm 1 complements every seat"
-            );
-            assert!(!ga[2] && !gb[2], "an un-screened gene is never drawn on");
-        }
-        assert_ne!(a[0], a[1], "seats draw independently (these seeds differ)");
-    }
-
-    /// Clustered errors: two seat pairs from one game whose differences
-    /// cancel carry no evidence, and the estimator must say so. Treated as
-    /// independent they would read as variance instead.
-    #[test]
-    fn clustered_mean_se_pools_seat_pairs_from_one_game() {
-        // Two game pairs, two seats each; within every game the two seat
-        // differences cancel exactly.
-        let values = vec![1.0, -1.0, 1.0, -1.0];
-        let clusters = vec![(7, 0), (7, 0), (8, 1), (8, 1)];
-        let (mean, se) = clustered_mean_se(&values, &clusters);
-        assert!(mean.abs() < 1e-12);
-        assert!(se.abs() < 1e-12, "cluster means are both zero: {se}");
-        // Singleton clusters reproduce mean_se exactly.
-        let singles = vec![(1, 0), (2, 1), (3, 2), (4, 3)];
-        let (m1, s1) = clustered_mean_se(&values, &singles);
-        let (m2, s2) = mean_se(&values);
-        assert!((m1 - m2).abs() < 1e-12 && (s1 - s2).abs() < 1e-12);
-    }
-
-    /// The estimate pipeline on an all-seats file: a planted gene is read at
-    /// its value, and the standard error comes from game pairs, not from the
-    /// (players × larger, correlated) seat-pair count.
-    #[test]
-    fn estimate_clusters_an_all_seats_file_by_game_pair() {
-        let genes = vec!["a".to_string(), "b".to_string()];
-        let header = Header {
-            kind: "header".into(),
-            genes: genes.clone(),
-            screened: genes,
-            players: 4,
-            width: 1,
-            height: 1,
-            turns: 1,
-            city_states: 0,
-            speed: "online".into(),
-            map: "pangaea".into(),
-            baseline: "repairs".into(),
-            field: "advanced".into(),
-            start_seed: 1,
-            randomize_civs: false,
-            victories: String::new(),
-            all_seats: true,
-            design: "foldover".into(),
-            prior: Vec::new(),
-            build: Build::default(),
-            batch: Batch::default(),
-        };
-        let screened = vec![true, true];
-        let mut rows = Vec::new();
-        for pair in 0..200 {
-            for seat in 0..4 {
-                let g = draw_genome(13, pair * 4 + seat, &screened);
-                let c = complement(&g, &screened);
-                for (arm, genome) in [(0u8, &g), (1u8, &c)] {
-                    rows.push(Row {
-                        kind: "game".into(),
-                        pair,
-                        arm,
-                        seed: pair as u64,
-                        seat,
-                        genome: genome_string(genome),
-                        win: genome[0],
-                        winner: None,
-                        victory: String::new(),
-                        turn: 1,
-                        score: 0,
-                        score_share: if genome[0] { 0.4 } else { 0.1 },
-                        rank: 1,
-                        cities: 0,
-                        alive: true,
-                        secs: 0.0,
-                        founded_religion: false,
-                        foreign_faith_cities: 0,
-                        faith: 0.0,
-                        inquisition: false,
-                        techs: 0,
-                        military: 0.0,
-                        civ: ["rome", "egypt", "greece", "china"][seat].into(),
-                        raid_wars: 0,
-                        settlers_captured: 0,
-                        builders_captured: 0,
-                        pillages: 0,
-                        raid_settler_prizes: 0,
-                    });
-                }
-            }
-        }
-        let (estimates, pairs, _, _) = estimate(&header, &rows);
-        assert_eq!(pairs, 800, "seat pairs");
-        let a = estimates.iter().find(|e| e.tag == "a").unwrap();
-        assert!((a.win_delta - 1.0).abs() < 1e-9);
-        // Every seat pair reads +1 for `a`, so its SE is zero either way.
-        // `b` is null; its evidence comes from 200 cluster means, and the
-        // point of this test is simply that the all-seats path pairs, keys
-        // and estimates without losing the planted signal.
-        let b = estimates.iter().find(|e| e.tag == "b").unwrap();
-        assert!(b.win_delta.abs() < 0.2);
-        assert!(b.win_se.is_finite() && b.win_se > 0.0);
-    }
-
-    #[test]
-    fn timing_cost_separates_per_turn_compute_from_whole_game_time() {
-        let header = test_header(&["a", "b"], false);
-        let screened = vec![true, true];
-        let mut rows = Vec::new();
-        for pair in 0..240 {
-            let drawn = draw_genome(17, pair, &screened);
-            let flipped = complement(&drawn, &screened);
-            for (arm, genome) in [(0, drawn), (1, flipped)] {
-                let a_on = genome[0];
-                let mut row = test_row(pair, pair % 4, arm, &genome_string(&genome), false);
-                // `a` makes each turn 10% dearer and the game 20% longer:
-                // total time therefore rises by 1.10 × 1.20 = 1.32.
-                row.turn = if a_on { 120 } else { 100 };
-                row.secs = f64::from(row.turn) * if a_on { 1.10 } else { 1.0 };
-                rows.push(row);
-            }
+        for row in rows.iter_mut() {
+            let n = on_count[&row.game_key()] as f64;
+            row.turn = 100;
+            // +10% compute per enabled seat on gene 0; gene 1 costs nothing.
+            row.secs = 50.0 * 1.10f64.powf(n);
         }
         let costs = estimate_costs(&header, &rows);
-        let a = costs.get("a").expect("the timed gene is estimated");
-        assert!((a.compute_pct() - 10.0).abs() < 1e-8, "{a:?}");
-        assert!((a.time_pct() - 32.0).abs() < 1e-8, "{a:?}");
-        let b = costs.get("b").expect("the null gene is estimated");
-        assert!(b.compute_pct().abs() < 1e-8, "{b:?}");
-        assert!(b.time_pct().abs() < 1e-8, "{b:?}");
+        let g0 = costs.get("g0").expect("gene 0 priced");
+        assert!((g0.compute_pct() - 10.0).abs() < 0.05, "{}", g0.compute_pct());
+        assert!((g0.time_pct() - 10.0).abs() < 0.05, "{}", g0.time_pct());
+        let g1 = costs.get("g1").expect("gene 1 priced");
+        assert!(g1.compute_pct().abs() < 0.05, "{}", g1.compute_pct());
+        assert_eq!(g0.games, 400);
+    }
+
+    /// Rows without a timing publish no cost guess.
+    #[test]
+    fn rows_without_timings_publish_no_cost() {
+        let (header, rows) = synthetic(2, 50, |bits, _| (bits[0], 0.3));
+        assert!(estimate_costs(&header, &rows).is_empty(), "secs are 0.0 in test rows");
     }
 
     #[test]
-    fn all_seats_timing_reports_the_cost_of_enabling_one_major() {
-        let header = test_header(&["a", "b"], true);
-        let screened = vec![true, true];
+    fn rows_round_trip_through_json_and_a_legacy_row_still_reads() {
+        let mut row = test_row(3, 2, "0110", true);
+        row.seed = 42;
+        row.winner = Some(2);
+        row.victory = "science".into();
+        row.civ = "rome".into();
+        let text = serde_json::to_string(&row).unwrap();
+        assert!(!text.contains("\"pair\""), "a new row carries no pair: {text}");
+        assert!(!text.contains("\"arm\""), "a new row carries no arm: {text}");
+        let back: Row = serde_json::from_str(&text).unwrap();
+        assert_eq!(back.genome, "0110");
+        assert_eq!(back.winner, Some(2));
+        assert_eq!(back.game_key(), (42, 0));
+        assert!(serde_json::from_str::<Header>(&text)
+            .map(|h| h.kind != "header")
+            .unwrap_or(true));
+        // A paired-design row: the two arms of one pair share a seed and are
+        // two games, which the game key tells apart.
+        let legacy = r#"{"kind":"game","pair":3,"arm":1,"seed":42,"seat":2,"genome":"0110","win":true,
+            "winner":2,"victory":"science","turn":210,"score":1234,"score_share":0.31,"rank":1,
+            "cities":9,"alive":true,"secs":12.5}"#;
+        let old: Row = serde_json::from_str(legacy).unwrap();
+        assert_eq!(old.game_key(), (42, 1));
+        assert_eq!(old.game, 0);
+    }
+
+    /// A file written by the paired designs still analyses: its rows are
+    /// seats with genomes, its draw reads as one half, and its pre-registered
+    /// comparisons read back as seats.
+    #[test]
+    fn a_legacy_file_still_analyses() {
+        let mut header = test_header(&["a", "b"]);
+        header.design = "foldover".into();
+        header.prior = Vec::new();
+        header.p_on = 0.0;
+        header.p_default_on = 0.0;
+        assert_eq!(header.on_probabilities(), vec![0.5, 0.5]);
+        header.batch = Batch {
+            target_games: 0,
+            target_seats: 0,
+            target_pairs: 100,
+            target_comparisons: 600,
+            seed_first: 1,
+            seed_last: 100,
+        };
+        assert_eq!(header.batch.intended_seats(), 1_200);
+        assert!(header.batch.pre_registered());
         let mut rows = Vec::new();
-        for pair in 0..300 {
+        for pair in 0..60u64 {
             for arm in 0..2u8 {
-                let genomes = all_seat_genomes(
-                    29,
-                    pair,
-                    header.players,
-                    &screened,
-                    arm,
-                    Design::Foldover,
-                    &[],
-                );
-                let enabled = genomes.iter().filter(|genome| genome[0]).count() as i32;
-                // Every enabled seat adds 5% multiplicatively. Each seat row
-                // repeats the game's one timing, as production rows do.
-                let secs = 100.0 * 1.05_f64.powi(enabled);
-                for (seat, genome) in genomes.iter().enumerate() {
-                    let mut row = test_row(pair, seat, arm, &genome_string(genome), false);
-                    row.turn = 100;
-                    row.secs = secs;
+                for seat in 0..3 {
+                    let bit = ((pair as usize + seat) % 2 == 0) == (arm == 0);
+                    let genome = if bit { "10" } else { "01" };
+                    let mut row = test_row(0, seat, genome, bit);
+                    row.seed = pair;
+                    row.arm = arm;
+                    row.pair = pair as usize;
                     rows.push(row);
                 }
             }
         }
-        let costs = estimate_costs(&header, &rows);
-        let a = costs.get("a").expect("the timed gene is estimated");
-        assert!((a.compute_pct() - 5.0).abs() < 1e-8, "{a:?}");
-        assert!((a.time_pct() - 5.0).abs() < 1e-8, "{a:?}");
+        let estimates = estimate(&header, &rows);
+        assert_eq!(estimates.seats, 360);
+        assert_eq!(estimates.games, 120, "two arms on one seed are two games");
+        assert!((estimates.genes[0].win_delta - 1.0).abs() < 1e-9);
+        assert!((estimates.genes[1].win_delta + 1.0).abs() < 1e-9);
     }
 
+    /// The one-shape rule: the draw design is not a leg of the shape, so a
+    /// foldover file at the screen's shape and an independent one both read
+    /// `standard`; moving any map leg makes a probe.
     #[test]
-    fn old_or_synthetic_rows_without_timings_publish_no_cost_guess() {
-        let header = test_header(&["a"], false);
-        let rows = vec![test_row(0, 0, 0, "1", false), test_row(0, 0, 1, "0", false)];
-        assert!(estimate_costs(&header, &rows).is_empty());
+    fn the_shape_ignores_the_draw_and_checks_every_map_leg() {
+        let mut header = test_header(&["a"]);
+        header.players = SCREEN_PLAYERS;
+        header.width = SCREEN_WIDTH;
+        header.height = SCREEN_HEIGHT;
+        header.city_states = SCREEN_CITY_STATES;
+        header.map = SCREEN_MAP.id().to_string();
+        header.speed = GameSpeed::Online.id().to_string();
+        header.turns = GameSpeed::Online.turn_limit();
+        header.randomize_civs = true;
+        assert_eq!(shape_of(&header), "standard");
+        header.design = "foldover".into();
+        assert_eq!(shape_of(&header), "standard");
+        header.map = "pangaea".into();
+        assert_eq!(shape_of(&header), "legacy");
     }
 
-    #[test]
-    fn rows_round_trip_through_json() {
-        let row = Row {
-            kind: "game".into(),
-            pair: 3,
-            arm: 1,
-            seed: 42,
-            seat: 2,
-            genome: "0110".into(),
-            win: true,
-            winner: Some(2),
-            victory: "science".into(),
-            turn: 210,
-            score: 1234,
-            score_share: 0.31,
-            rank: 1,
-            cities: 9,
-            alive: true,
-            secs: 12.5,
-            founded_religion: true,
-            foreign_faith_cities: 2,
-            faith: 310.5,
-            inquisition: false,
-            techs: 40,
-            military: 820.0,
-            civ: "rome".into(),
-            raid_wars: 0,
-            settlers_captured: 0,
-            builders_captured: 0,
-            pillages: 0,
-            raid_settler_prizes: 0,
-        };
-        let text = serde_json::to_string(&row).unwrap();
-        let back: Row = serde_json::from_str(&text).unwrap();
-        assert_eq!(back.genome, "0110");
-        assert_eq!(back.winner, Some(2));
-        assert!(serde_json::from_str::<Header>(&text)
-            .map(|h| h.kind != "header")
-            .unwrap_or(true));
-    }
-
-    /// ★★★★ THE HELPFUL GENES PLAY MOST OF THE TIME. Under the prior design a
-    /// gene is on with its own probability, the two arms of a pair are
-    /// independent draws, and a run reproduces from its seed.
-    #[test]
-    fn prior_draws_follow_the_weights_and_arms_are_independent() {
-        let screened = vec![true, true, true, false];
-        let prior = vec![0.9, 0.1, 0.5, 1.0];
-        let mut on = [0usize; 4];
-        let mut differ = 0usize;
-        let pairs = 4000;
-        for pair in 0..pairs {
-            let a = draw_genome_prior(5, pair, 0, &screened, &prior);
-            let b = draw_genome_prior(5, pair, 1, &screened, &prior);
-            assert_eq!(
-                a,
-                draw_genome_prior(5, pair, 0, &screened, &prior),
-                "reproduces"
-            );
-            assert!(!a[3] && !b[3], "an un-screened gene is never drawn on");
-            for (i, &bit) in a.iter().enumerate() {
-                on[i] += usize::from(bit);
-            }
-            differ += usize::from(a[0] != b[0]);
-        }
-        let rate = |i: usize| on[i] as f64 / pairs as f64;
-        assert!((rate(0) - 0.9).abs() < 0.03, "helper on ~90%: {}", rate(0));
-        assert!((rate(1) - 0.1).abs() < 0.03, "harmful on ~10%: {}", rate(1));
-        assert!(
-            (rate(2) - 0.5).abs() < 0.03,
-            "unresolved on ~50%: {}",
-            rate(2)
-        );
-        // Independent arms differ on a p = 0.9 gene in 2·0.9·0.1 = 18% of pairs.
-        let discordant = differ as f64 / pairs as f64;
-        assert!(
-            (discordant - 0.18).abs() < 0.03,
-            "arms drawn independently: {discordant}"
-        );
-    }
-
-    /// The prior weights come from the ledger's verdict per tag.
-    #[test]
-    fn prior_weights_follow_the_ledger() {
-        let weights = PriorWeights {
-            helps: 0.9,
-            hurts: 0.1,
-            unresolved: 0.5,
-        };
-        for row in civvis::ai::gene_ledger_rows() {
-            let expected = match row.verdict {
-                civvis::ai::Verdict::Helps => 0.9,
-                civvis::ai::Verdict::Hurts => 0.1,
-                civvis::ai::Verdict::Unresolved => 0.5,
-            };
-            assert_eq!(weights.for_tag(row.tag), expected, "{}", row.tag);
-        }
-        assert_eq!(
-            weights.for_tag("no-such-gene"),
-            0.5,
-            "unmeasured draws at one half"
-        );
-    }
-
-    /// Under an unbalanced draw the marginal contrast still reads a planted
-    /// gene — the 90% against the 10% — and the map-paired OLS recovers it
-    /// from the pairs whose arms differ on it.
-    #[test]
-    fn estimate_prior_reads_a_planted_gene_through_an_unbalanced_draw() {
-        let genes = vec!["a".to_string(), "b".to_string()];
-        let prior = vec![0.9, 0.5];
-        let header = Header {
-            kind: "header".into(),
-            genes: genes.clone(),
-            screened: genes,
-            players: 4,
-            width: 1,
-            height: 1,
-            turns: 1,
-            city_states: 0,
-            speed: "online".into(),
-            map: "pangaea".into(),
-            baseline: "best".into(),
-            field: "advanced".into(),
-            start_seed: 1,
-            randomize_civs: false,
-            victories: String::new(),
-            all_seats: false,
-            design: "prior".into(),
-            prior: prior.clone(),
-            build: Build::default(),
-            batch: Batch::default(),
-        };
-        let screened = vec![true, true];
-        let mut rows = Vec::new();
-        for pair in 0..600 {
-            for arm in 0u8..2 {
-                let genome = draw_genome_prior(3, pair, arm, &screened, &prior);
-                // Gene `a` on wins; gene `b` does nothing; the map adds a
-                // per-pair share offset that the paired OLS cancels.
-                rows.push(Row {
-                    kind: "game".into(),
-                    pair,
-                    arm,
-                    seed: pair as u64,
-                    seat: pair % 4,
-                    genome: genome_string(&genome),
-                    win: genome[0],
-                    winner: None,
-                    victory: String::new(),
-                    turn: 1,
-                    score: 0,
-                    score_share: if genome[0] { 0.4 } else { 0.2 } + (pair % 5) as f64 * 0.01,
-                    rank: 1,
-                    cities: 0,
-                    alive: true,
-                    secs: 0.0,
-                    founded_religion: false,
-                    foreign_faith_cities: 0,
-                    faith: 0.0,
-                    inquisition: false,
-                    techs: 0,
-                    military: 0.0,
-                    civ: String::new(),
-                    raid_wars: 0,
-                    settlers_captured: 0,
-                    builders_captured: 0,
-                    pillages: 0,
-                    raid_settler_prizes: 0,
-                });
-            }
-        }
-        let (estimates, pairs, overall_win, _) = estimate(&header, &rows);
-        assert_eq!(pairs, 600);
-        assert!(
-            (overall_win - 0.9).abs() < 0.05,
-            "a is on 90% of the time: {overall_win}"
-        );
-        let a = estimates.iter().find(|e| e.tag == "a").unwrap();
-        let b = estimates.iter().find(|e| e.tag == "b").unwrap();
-        assert!(
-            a.n_on > 1000 && a.n_off < 200,
-            "unbalanced: {}/{}",
-            a.n_on,
-            a.n_off
-        );
-        assert!((a.win_on - 1.0).abs() < 1e-9 && a.win_off.abs() < 1e-9);
-        assert!(
-            (a.win_delta - 1.0).abs() < 1e-9,
-            "the 90% beat the 10% by the planted 100pp"
-        );
-        assert!((a.share_delta - 0.2).abs() < 0.02, "{}", a.share_delta);
-        assert!(
-            b.win_delta.abs() < 0.1,
-            "b is planted null: {}",
-            b.win_delta
-        );
-        let (adj_a, _) = a.adjusted.expect("600 pairs support 2 genes");
-        assert!((adj_a - 1.0).abs() < 1e-6, "paired OLS recovers a: {adj_a}");
-        let (adj_b, _) = b.adjusted.unwrap();
-        assert!(adj_b.abs() < 0.1, "paired OLS reads b null: {adj_b}");
-    }
-
-    /// The deployment baseline holds an un-screened gene at the ledger's
-    /// default: a measured harmful repair is off, a measured helper on.
-    #[test]
-    fn the_best_baseline_holds_unscreened_genes_at_the_ledger_default() {
-        let genes = gene_table();
-        let none = vec![false; genes.len()];
-        let genome = vec![false; genes.len()];
-        let best = treated_seat(&genes, &genome, &none, Baseline::Best);
-        let siege = genes.iter().find(|g| g.tag == "siege-is-progress").unwrap();
-        let reinforcement = genes.iter().find(|g| g.tag == "war-reinforcement").unwrap();
-        assert_eq!(best.siege_is_progress, siege.default_on);
-        assert_eq!(best.war_reinforcement, reinforcement.default_on);
-        assert_eq!(
-            siege.default_on,
-            civvis::ai::ledger_default_on("siege-is-progress").unwrap()
-        );
-        assert_eq!(
-            reinforcement.default_on,
-            civvis::ai::ledger_default_on("war-reinforcement").unwrap()
-        );
-        // And the universe baseline keeps every repair on whatever the ledger says.
-        let universe = treated_seat(&genes, &genome, &none, Baseline::Repairs);
-        assert!(universe.siege_is_progress && universe.war_reinforcement);
-    }
     // ─── provenance: the binary a screen was played by ────────────────────
 
     /// Every double-quoted string in `text`, with `//` and `/* */` comments
@@ -4512,81 +3529,10 @@ mod tests {
         );
     }
 
-    /// ⚠ A TRUNCATED RUN MUST NOT READ AS A COMPLETED ONE. P10 stopped at
-    /// 5,858 of a planned 10,000 games and its artefact said nothing about it.
-    #[test]
-    fn a_partial_run_says_partial_and_a_complete_one_says_complete() {
-        let mut header = test_header(&["a"], true);
-        header.batch = Batch {
-            target_pairs: 10_000,
-            target_comparisons: 60_000,
-            seed_first: 100_000_000,
-            seed_last: 100_009_999,
-        };
-        let partial = completeness_line(&header, 17_574);
-        assert!(partial.contains("PARTIAL SCREEN"), "{partial}");
-        assert!(partial.contains("17574 of 60000"), "{partial}");
-        assert!(partial.contains("29.3%"), "{partial}");
-        assert!(partial.contains("100000000..100009999"), "{partial}");
-
-        let done = completeness_line(&header, 60_000);
-        assert!(done.contains("screen complete"), "{done}");
-        assert!(!done.contains("PARTIAL"), "{done}");
-
-        // A file written before pre-registration says so rather than guessing.
-        header.batch = Batch::default();
-        let unknown = completeness_line(&header, 17_574);
-        assert!(unknown.contains("not pre-registered"), "{unknown}");
-        assert!(!unknown.contains("complete"), "{unknown}");
-    }
-
-    /// The screen's own defaults pre-register the batch, so the common case
-    /// needs no extra flag: `--pairs N` on the all-seats screen reserves
-    /// `N * players` matched comparisons and the seeds it will draw.
-    #[test]
-    fn the_pairs_argument_pre_registers_the_batch_on_its_own() {
-        let target_pairs = 10_000usize;
-        let players = SCREEN_PLAYERS;
-        let start_seed = 141_000_000u64;
-        let batch = Batch {
-            target_pairs,
-            target_comparisons: target_pairs * players,
-            seed_first: start_seed,
-            seed_last: start_seed + target_pairs as u64 - 1,
-        };
-        assert_eq!(batch.target_comparisons, 60_000);
-        assert_eq!(batch.seed_last, 141_009_999);
-    }
-
-    /// Segments of one screen sum; the same segment written twice counts once.
-    #[test]
-    fn merged_targets_sum_segments_and_count_a_rewritten_header_once() {
-        let segment = |first: u64, pairs: usize| Batch {
-            target_pairs: pairs,
-            target_comparisons: pairs * 6,
-            seed_first: first,
-            seed_last: first + pairs as u64 - 1,
-        };
-        let mut targets = BTreeMap::new();
-        for batch in [
-            segment(1_000, 400),
-            segment(2_000, 600),
-            // the first segment's header, written again on a restart
-            segment(1_000, 400),
-        ] {
-            targets.insert(batch.seed_first, batch);
-        }
-        let merged = merged_target(&targets);
-        assert_eq!(merged.target_pairs, 1_000);
-        assert_eq!(merged.target_comparisons, 6_000);
-        assert_eq!((merged.seed_first, merged.seed_last), (1_000, 2_599));
-        assert_eq!(merged_target(&BTreeMap::new()), Batch::default());
-    }
-
     /// The operator learns before the batch, not after it.
     #[test]
     fn the_build_line_calls_out_an_unstamped_or_dirty_build() {
-        let mut header = test_header(&["a", "b"], true);
+        let mut header = test_header(&["a", "b"]);
         header.build = Build {
             commit: "d23f92d944cd889aa4c9dfe58c37aceb8e55eabd".into(),
             commit_source: "env".into(),
@@ -4626,26 +3572,85 @@ mod tests {
         assert_eq!(header.batch.target_comparisons, 0);
     }
 
+
+
+    /// ⚠ A TRUNCATED RUN MUST NOT READ AS A COMPLETED ONE. P10 stopped at
+    /// 5,858 of a planned 10,000 games and its artefact said nothing about it.
+    #[test]
+    fn a_partial_run_says_partial_and_a_complete_one_says_complete() {
+        let mut header = test_header(&["a"]);
+        header.batch = Batch {
+            target_games: 10_000,
+            target_seats: 60_000,
+            target_pairs: 0,
+            target_comparisons: 0,
+            seed_first: 100_000_000,
+            seed_last: 100_009_999,
+        };
+        let partial = completeness_line(&header, 17_574);
+        assert!(partial.contains("PARTIAL SCREEN"), "{partial}");
+        assert!(partial.contains("17574 of 60000"), "{partial}");
+        assert!(partial.contains("29.3%"), "{partial}");
+        assert!(partial.contains("100000000..100009999"), "{partial}");
+
+        let done = completeness_line(&header, 60_000);
+        assert!(done.contains("screen complete"), "{done}");
+        assert!(!done.contains("PARTIAL"), "{done}");
+
+        // A file written before pre-registration says so rather than guessing.
+        header.batch = Batch::default();
+        let unknown = completeness_line(&header, 17_574);
+        assert!(unknown.contains("not pre-registered"), "{unknown}");
+        assert!(!unknown.contains("complete"), "{unknown}");
+    }
+
+    /// Segments of one screen sum; the same segment written twice counts once.
+    #[test]
+    fn merged_targets_sum_segments_and_count_a_rewritten_header_once() {
+        let segment = |first: u64, games: usize| Batch {
+            target_games: games,
+            target_seats: games * 6,
+            target_pairs: 0,
+            target_comparisons: 0,
+            seed_first: first,
+            seed_last: first + games as u64 - 1,
+        };
+        let mut targets = BTreeMap::new();
+        for batch in [
+            segment(1_000, 400),
+            segment(2_000, 600),
+            // the first segment's header, written again on a restart
+            segment(1_000, 400),
+        ] {
+            targets.insert(batch.seed_first, batch);
+        }
+        let merged = merged_target(&targets);
+        assert_eq!(merged.target_games, 1_000);
+        assert_eq!(merged.target_seats, 6_000);
+        assert_eq!((merged.seed_first, merged.seed_last), (1_000, 2_599));
+        assert_eq!(merged_target(&BTreeMap::new()), Batch::default());
+    }
+
     /// The seed window the finished games actually cover, which is the half of
     /// "actual against intended" the rows know.
     #[test]
     fn the_played_seed_window_is_read_from_the_game_rows() {
         let mut rows = vec![
-            test_row(0, 0, 0, "1", true),
-            test_row(0, 0, 1, "0", false),
-            test_row(7, 0, 0, "1", true),
+            test_row(0, 0, "1", true),
+            test_row(0, 1, "0", false),
+            test_row(7, 0, "1", true),
         ];
         rows[0].seed = 141_000_000;
         rows[1].seed = 141_000_000;
         rows[2].seed = 141_000_006;
-        let mut anchor = test_row(9, 0, 0, "1", true);
+        let mut anchor = test_row(9, 0, "1", true);
         anchor.kind = "anchor".into();
         anchor.seed = 999;
         rows.push(anchor);
         assert_eq!(
             played_seed_window(&rows),
             Some((141_000_000, 141_000_006)),
-            "anchors are not screened games and do not widen the window"
+            "legacy anchors are not screened games and do not widen the window"
         );
         assert_eq!(played_seed_window(&[]), None);
     }
