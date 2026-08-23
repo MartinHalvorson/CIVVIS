@@ -55,9 +55,27 @@ RANGES = [("a", "b"), ("c", "d"), ("e", "f"), ("g", "k"),
 MIN_ANCHORS = 2
 
 
-def git(*args: str, **kwargs) -> str:
+#: ⚠ A CI RUNNER HAS NO GIT IDENTITY AND THIS SUITE WRITES COMMITS.
+#:
+#: `git commit-tree` refuses without a committer, and `actions/checkout` does
+#: not set one. Every local run passed because a developer machine has a
+#: `user.email`; the first CI run died on `exit status 128` in `setUpClass`,
+#: which is the whole "it works on my machine" failure in one line. Supplied
+#: through the environment rather than `git config`, so the suite never writes
+#: to the repository it is measuring.
+PROBE = {
+    "GIT_AUTHOR_NAME": "append-point probe",
+    "GIT_AUTHOR_EMAIL": "probe@civvis.invalid",
+    "GIT_COMMITTER_NAME": "append-point probe",
+    "GIT_COMMITTER_EMAIL": "probe@civvis.invalid",
+}
+
+
+def git(*args: str, env: dict | None = None, **kwargs) -> str:
     return subprocess.run(["git", "-C", str(REPO), *args], capture_output=True,
-                          text=True, check=True, **kwargs).stdout
+                          text=True, check=True,
+                          env={**os.environ, **PROBE, **(env or {})},
+                          **kwargs).stdout
 
 
 def tracked_sources() -> list[str]:
@@ -121,15 +139,18 @@ def _treatment_pr(rev: str, name: str, under: tuple[str, str] | None = None
 def _commit(rev: str, files: dict[str, str], message: str) -> str:
     """A commit on `rev` carrying those file contents, built with plumbing."""
     index = Path(git("rev-parse", "--absolute-git-dir").strip()) / f"ix-{message}"
-    env = dict(os.environ, GIT_INDEX_FILE=str(index))
-    git("read-tree", rev, env=env)
-    for path, text in files.items():
-        blob = subprocess.run(["git", "-C", str(REPO), "hash-object", "-w",
-                               "--stdin"], input=text, capture_output=True,
-                              text=True, check=True).stdout.strip()
-        git("update-index", "--cacheinfo", f"100644,{blob},{path}", env=env)
-    tree = git("write-tree", env=env).strip()
-    index.unlink(missing_ok=True)
+    env = {"GIT_INDEX_FILE": str(index)}
+    try:
+        git("read-tree", rev, env=env)
+        for path, text in files.items():
+            blob = subprocess.run(["git", "-C", str(REPO), "hash-object", "-w",
+                                   "--stdin"], input=text,
+                                  capture_output=True, text=True,
+                                  check=True).stdout.strip()
+            git("update-index", "--cacheinfo", f"100644,{blob},{path}", env=env)
+        tree = git("write-tree", env=env).strip()
+    finally:
+        index.unlink(missing_ok=True)
     return git("commit-tree", tree, "-p", rev, "-m", message).strip()
 
 
@@ -137,7 +158,8 @@ def _merge(one: str, other: str) -> str:
     """'' when they merge, else git's report of what conflicted."""
     done = subprocess.run(["git", "-C", str(REPO), "merge-tree", "--write-tree",
                            "--name-only", one, other],
-                          capture_output=True, text=True, check=False)
+                          capture_output=True, text=True, check=False,
+                          env={**os.environ, **PROBE})
     return "" if done.returncode == 0 else done.stdout
 
 
@@ -203,6 +225,28 @@ class TwoTreatmentPullRequestsMerge(unittest.TestCase):
             {path: (REPO / path).read_text(encoding="utf-8")
              for path in anchors()},
             "append-base")
+
+    def test_it_still_builds_a_commit_with_no_git_identity_configured(self):
+        """The first CI run died here and every local run had passed.
+
+        `actions/checkout` sets no `user.email`, `git commit-tree` refuses
+        without one, and a developer machine always has one — so the failure
+        was invisible until it ran somewhere real. Strip the identity and
+        require a commit anyway, rather than trusting that it is supplied.
+        """
+        bare = {"GIT_CONFIG_GLOBAL": os.devnull,
+                "GIT_CONFIG_SYSTEM": os.devnull}
+        previous = {key: os.environ.get(key) for key in bare}
+        os.environ.update(bare)
+        try:
+            self.assertRegex(
+                _commit(self.base, {}, "no-identity"), r"^[0-9a-f]{40}$")
+        finally:
+            for key, was in previous.items():
+                if was is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = was
 
     def test_two_treatments_in_different_ranges_merge(self):
         one = _commit(self.base, _treatment_pr(self.base, "alpha_probe"),
