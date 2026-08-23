@@ -1616,6 +1616,16 @@ struct MatrixProfile {
     /// diplomatic victory and 24 to culture**: 65 of 310 attempts, ended by two
     /// conditions no promotion decision in this repository's history could see.
     field: &'static str,
+    /// The remaining world axes, held here rather than hard-coded inside
+    /// `matrix_child_args` so that a profile *names its whole world*. They were constants in the child builder until
+    /// `--profile` made the same profile reachable from a plain run: two
+    /// expansions of one name that agreed only by coincidence would be the
+    /// exact defect this file already refuses elsewhere — reporting a profile
+    /// the run does not have.
+    map: &'static str,
+    shape: &'static str,
+    poles: &'static str,
+    randomize_civs: bool,
     /// Relative cost of one game on this profile, used only to split the
     /// concurrency budget. The deployment shape measures about twice the
     /// compact one.
@@ -1660,6 +1670,10 @@ const PROMOTION_PROFILES: [MatrixProfile; 3] = [
         speed: "standard",
         victories: "science,culture,domination",
         field: "",
+        map: "continents",
+        shape: "planet",
+        poles: "poles",
+        randomize_civs: true,
         cost_weight: 1,
         requirement: MatrixRequirement::NoRegression,
     },
@@ -1677,6 +1691,10 @@ const PROMOTION_PROFILES: [MatrixProfile; 3] = [
         // play).
         victories: "science,culture,religious,diplomatic,domination,score",
         field: "",
+        map: "continents",
+        shape: "planet",
+        poles: "poles",
+        randomize_civs: true,
         cost_weight: 2,
         requirement: MatrixRequirement::Strength,
     },
@@ -1710,6 +1728,10 @@ const PROMOTION_PROFILES: [MatrixProfile; 3] = [
         speed: "online",
         victories: "science,culture,religious,diplomatic,domination,score",
         field: "live_target_diplomatic,live_target_culture",
+        map: "continents",
+        shape: "planet",
+        poles: "poles",
+        randomize_civs: true,
         cost_weight: 2,
         requirement: MatrixRequirement::NoRegression,
     },
@@ -1755,27 +1777,18 @@ fn matrix_profile_seed(seed: u64, profile_index: usize) -> u64 {
     seed + profile_index as u64 * MATRIX_PROFILE_SEED_STRIDE
 }
 
-fn matrix_child_args(request: MatrixChildRequest<'_>) -> Vec<String> {
-    let MatrixChildRequest {
-        challenger,
-        incumbent,
-        pairs,
-        jobs,
-        seed,
-        profile,
-        difficulty,
-        require_artifacts,
-        confirm_seed,
-    } = request;
-    let mut args: Vec<String> = [
-        challenger.to_string(),
-        incumbent.to_string(),
-        "--pairs".to_string(),
-        pairs.to_string(),
-        "--jobs".to_string(),
-        jobs.max(1).to_string(),
-        "--seed".to_string(),
-        seed.to_string(),
+/// The world a named profile stands for, as the command line that produces it.
+///
+/// One expansion, two callers: the promotion matrix builds its children with
+/// it, and `--profile <name>` gives a plain run the identical board. That
+/// sharing is the point. Every recorded contested round in `docs/eval/` was
+/// launched by hand-typing a dozen axis flags, and a hand-typed board agrees
+/// with the gate's board only for as long as nobody edits either — which is
+/// how this repository has already published a profile line describing a
+/// world the run did not have (`--artifact-dir`, refused a few hundred lines
+/// below for exactly that reason).
+fn profile_axis_args(profile: MatrixProfile) -> Vec<String> {
+    let mut args: Vec<String> = vec![
         "--players".to_string(),
         profile.players.to_string(),
         "--width".to_string(),
@@ -1789,31 +1802,133 @@ fn matrix_child_args(request: MatrixChildRequest<'_>) -> Vec<String> {
         "--speed".to_string(),
         profile.speed.to_string(),
         "--map".to_string(),
-        "continents".to_string(),
+        profile.map.to_string(),
         "--shape".to_string(),
-        "planet".to_string(),
+        profile.shape.to_string(),
         "--poles".to_string(),
-        "poles".to_string(),
-        "--randomize-civs".to_string(),
+        profile.poles.to_string(),
         "--victories".to_string(),
         profile.victories.to_string(),
+    ];
+    if profile.randomize_civs {
+        args.push("--randomize-civs".to_string());
+    }
+    if !profile.field.is_empty() {
+        args.push("--field".to_string());
+        args.push(profile.field.to_string());
+    }
+    args
+}
+
+/// Resolve a `--profile <name>` request against the recorded profiles.
+fn named_profile(name: &str) -> Option<MatrixProfile> {
+    PROMOTION_PROFILES
+        .into_iter()
+        .find(|profile| profile.name == name)
+}
+
+fn profile_names() -> String {
+    PROMOTION_PROFILES
+        .iter()
+        .map(|profile| profile.name)
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// Expand `--profile <name>` into the world axes that name stands for.
+///
+/// ★★★★★ WHY A NAME AND NOT ELEVEN FLAGS.
+///
+/// `deployment-contested` is the only board this repository has that produces
+/// the conditions the live ladder actually loses to — **107 of 299 terminal
+/// games taken by a rival's victory, 58 of them diplomatic and 38 culture, and
+/// 15 of them lost while our own score was the highest on the board**
+/// (`docs/EVAL_STATUS.md`, after #2332 reconciled the fleet's two live seats:
+/// `publish` had been copying one seat's ledger instead of merging, hiding 76
+/// attempts). Until now it existed only *inside* `--matrix`, so
+/// every single-arm round measured on it retyped its axes by hand — and
+/// whether the retyping matched depended on who did it. The three congress
+/// rounds in `docs/eval/` record their world as `pangaea`/`flat`/fixed
+/// civilizations; `2026-08-19-the-suzerainty-prize-…` typed out
+/// `continents`/`planet`/`poles`/`--randomize-civs` and matched. Nothing
+/// checked either against the gate's own profile, and a round whose board has
+/// silently drifted from the gate's board is not evidence about the gate.
+///
+/// Conflicting explicit axes are **refused, not overridden**, on the same
+/// reasoning `MATRIX_PROFILE_FLAGS` already carries for the matrix: accepting
+/// an axis the profile also supplies would report one world and play another.
+/// `--difficulty`, `--pairs`, `--jobs`, `--seed` and `--confirm` are not world
+/// axes and stay free.
+fn expand_named_profile(args: Vec<String>) -> Result<Vec<String>, String> {
+    let Some(index) = args.iter().position(|argument| argument == "--profile") else {
+        return Ok(args);
+    };
+    let requested = args
+        .get(index + 1)
+        .cloned()
+        .ok_or_else(|| format!("--profile needs a name; choose from {}", profile_names()))?;
+    let Some(profile) = named_profile(&requested) else {
+        return Err(format!(
+            "--profile: unknown profile {requested:?}; choose from {}",
+            profile_names()
+        ));
+    };
+    if args.iter().any(|argument| argument == "--matrix") {
+        return Err(
+            "--profile names one board and --matrix runs all of them; choose one".to_string(),
+        );
+    }
+    if let Some(flag) = matrix_profile_flag(&args) {
+        return Err(format!(
+            "--profile {requested} already fixes {flag}; passing it as well would report \
+             {requested}'s world and play a different one. Drop {flag}, or drop --profile \
+             and name every axis yourself"
+        ));
+    }
+    // `--profile <name>` stays on the command line the run reports, because
+    // the name is the provenance: a round that cites `deployment-contested`
+    // has to be able to point at the run saying it played it.
+    let mut expanded = args;
+    expanded.extend(profile_axis_args(profile));
+    Ok(expanded)
+}
+
+fn matrix_child_args(request: MatrixChildRequest<'_>) -> Vec<String> {
+    let MatrixChildRequest {
+        challenger,
+        incumbent,
+        pairs,
+        jobs,
+        seed,
+        profile,
+        difficulty,
+        require_artifacts,
+        confirm_seed,
+    } = request;
+    let mut args: Vec<String> = vec![
+        challenger.to_string(),
+        incumbent.to_string(),
+        "--pairs".to_string(),
+        pairs.to_string(),
+        "--jobs".to_string(),
+        jobs.max(1).to_string(),
+        "--seed".to_string(),
+        seed.to_string(),
+    ];
+    // The world itself, from the one expansion `--profile` also uses. The
+    // command line may not pass `--field` alongside `--matrix` — the matrix
+    // owns its profiles — but the matrix supplies it to the child that
+    // declares one. The child is a plain `ai_eval` invocation with no
+    // `--matrix`, so nothing here is bypassing that refusal.
+    args.extend(profile_axis_args(profile));
+    args.extend([
         "--difficulty".to_string(),
         difficulty.to_string(),
         // A profile matrix asks the explicitly replacement-oriented question
         // of whether the challenger should displace the incumbent. It is not
         // an attribution claim, so its child runs opt into multi-axis arms.
         "--deployment-comparison".to_string(),
-    ]
-    .into_iter()
-    .collect();
-    // The command line may not pass `--field` alongside `--matrix` — the
-    // matrix owns its profiles — but the matrix supplies it to the child that
-    // declares one. The child is a plain `ai_eval` invocation with no
-    // `--matrix`, so nothing here is bypassing that refusal.
-    if !profile.field.is_empty() {
-        args.push("--field".to_string());
-        args.push(profile.field.to_string());
-    }
+    ]);
     if require_artifacts {
         args.push("--require-artifacts".to_string());
     }
@@ -2088,6 +2203,17 @@ fn run_profile_matrix(args: &[String], challenger: &str, incumbent: &str) -> ! {
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    // `--profile <name>` is resolved before anything reads an axis, so every
+    // reader below sees the same command line it would have seen from a fully
+    // typed-out invocation. With no `--profile` the vector is returned
+    // unchanged and this call cannot alter a single recorded result.
+    let args = match expand_named_profile(args) {
+        Ok(expanded) => expanded,
+        Err(why) => {
+            eprintln!("{why}");
+            std::process::exit(2);
+        }
+    };
     let a = args.first().map(|name| name.as_str()).unwrap_or("advanced");
     let b = args.get(1).map(|name| name.as_str()).unwrap_or("basic");
     assert_ne!(a, b, "choose two different AIs");
@@ -2380,8 +2506,17 @@ here and any null is uninformative"
         .filter(|name| victory_conditions.is_enabled(name))
         .collect::<Vec<_>>()
         .join(",");
+    // A named profile is provenance, so it goes at the front of the line the
+    // round will quote. An unnamed run says so rather than leaving the reader
+    // to assume the axes below happen to match a recorded board.
+    let profile_name = text(&args, "--profile", "");
+    let named = if profile_name.is_empty() {
+        "ad hoc (no --profile)".to_string()
+    } else {
+        profile_name
+    };
     println!(
-        "profile: speed {speed}, map {}, shape {}, poles {}, civilizations {}, victories {enabled_victories}, native competitions {}",
+        "profile: {named}, speed {speed}, map {}, shape {}, poles {}, civilizations {}, victories {enabled_victories}, native competitions {}",
         map_script.id(),
         map_topology.id(),
         map_poles.id(),
@@ -3821,6 +3956,140 @@ mod tests {
         assert!(PROMOTION_PROFILES
             .iter()
             .any(|profile| profile.cost_weight > 1));
+    }
+
+    /// ★★★★★ THE HAND-TYPED CONTESTED ROUNDS WERE NOT ON THE CONTESTED BOARD.
+    ///
+    /// Three rounds in `docs/eval/` measured congress arms on
+    /// `--field live_target_diplomatic,live_target_culture` and each states its
+    /// world as "`pangaea`/`flat`/fixed civilizations". `deployment-contested`,
+    /// the profile the promotion gate runs, has been `continents`/`planet`/
+    /// `poles`/randomized since #658. Twelve world axes typed by hand, four of
+    /// them different, and nothing in the repository could notice —
+    /// a fourth round on the same field typed all twelve correctly, which is
+    /// the point: correctness was a property of the typist.
+    ///
+    /// This is the check that makes `--profile <name>` worth having: the name
+    /// and the matrix child must expand to one world, derived from one place.
+    #[test]
+    fn a_named_profile_plays_the_same_world_as_its_matrix_child() {
+        for profile in PROMOTION_PROFILES {
+            let child = matrix_child_args(MatrixChildRequest {
+                challenger: "chal",
+                incumbent: "inc",
+                pairs: 60,
+                jobs: 4,
+                seed: 90_000,
+                profile,
+                difficulty: "prince",
+                require_artifacts: false,
+                confirm_seed: None,
+            });
+            let named = expand_named_profile(vec![
+                "chal".to_string(),
+                "inc".to_string(),
+                "--profile".to_string(),
+                profile.name.to_string(),
+            ])
+            .unwrap_or_else(|why| panic!("{} should resolve: {why}", profile.name));
+            for flag in [
+                "--players",
+                "--width",
+                "--height",
+                "--city-states",
+                "--turns",
+            ] {
+                assert_eq!(
+                    number(&named, flag, -1),
+                    number(&child, flag, -2),
+                    "{} disagrees on {flag}",
+                    profile.name
+                );
+            }
+            for flag in ["--speed", "--map", "--shape", "--poles", "--victories"] {
+                assert_eq!(
+                    text(&named, flag, "named-missing"),
+                    text(&child, flag, "child-missing"),
+                    "{} disagrees on {flag}",
+                    profile.name
+                );
+            }
+            for flag in ["--randomize-civs", "--field"] {
+                assert_eq!(
+                    named.iter().any(|argument| argument == flag),
+                    child.iter().any(|argument| argument == flag),
+                    "{} disagrees on {flag}",
+                    profile.name
+                );
+            }
+            assert_eq!(
+                text(&named, "--field", ""),
+                profile.field,
+                "{} did not seat its field",
+                profile.name
+            );
+            // The name survives into the resolved command line, because the
+            // run has to be able to report which board it played.
+            assert_eq!(text(&named, "--profile", ""), profile.name);
+            // `--deployment-comparison` belongs to the matrix's replacement
+            // question, not to the world, so a named single-arm run does not
+            // silently inherit permission for a multi-axis comparison.
+            assert!(!named
+                .iter()
+                .any(|argument| argument == "--deployment-comparison"));
+        }
+    }
+
+    /// A profile that can be silently overridden is a profile that reports one
+    /// world and plays another — the defect `--artifact-dir` is refused for.
+    #[test]
+    fn a_named_profile_refuses_the_axes_it_already_fixes() {
+        let unchanged = vec!["chal".to_string(), "inc".to_string(), "--pairs".to_string()];
+        assert_eq!(
+            expand_named_profile(unchanged.clone()).expect("no --profile is a no-op"),
+            unchanged,
+            "a run with no --profile must be returned byte-identical"
+        );
+
+        for flag in MATRIX_PROFILE_FLAGS {
+            let why = expand_named_profile(vec![
+                "chal".to_string(),
+                "inc".to_string(),
+                "--profile".to_string(),
+                "deployment-contested".to_string(),
+                flag.to_string(),
+                "7".to_string(),
+            ])
+            .expect_err("an explicitly named axis must be refused, not overridden");
+            assert!(why.contains(flag), "{why}");
+        }
+
+        let matrixed = expand_named_profile(vec![
+            "chal".to_string(),
+            "inc".to_string(),
+            "--profile".to_string(),
+            "deployment-contested".to_string(),
+            "--matrix".to_string(),
+        ])
+        .expect_err("--profile and --matrix are different questions");
+        assert!(matrixed.contains("--matrix"), "{matrixed}");
+
+        let unknown = expand_named_profile(vec![
+            "chal".to_string(),
+            "inc".to_string(),
+            "--profile".to_string(),
+            "deployment-contsted".to_string(),
+        ])
+        .expect_err("a misspelled profile must not silently fall back to the defaults");
+        assert!(unknown.contains("deployment-contested"), "{unknown}");
+
+        let nameless = expand_named_profile(vec![
+            "chal".to_string(),
+            "inc".to_string(),
+            "--profile".to_string(),
+        ])
+        .expect_err("--profile with no name must be refused");
+        assert!(nameless.contains("deployment-contested"), "{nameless}");
     }
 
     /// ⚠⚠ THE GATE MUST BE ABLE TO PRODUCE THE VICTORIES IT IS GATING ON.
