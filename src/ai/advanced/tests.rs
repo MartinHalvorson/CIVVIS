@@ -15709,10 +15709,21 @@ fn idle_faith_buys_a_great_person_outright_only_for_a_seat_with_no_religion() {
 /// nothing.
 ///
 /// This pins the two halves of the contract for them: the universe carries
-/// them, so the screen can vary them, and the ledger withholds them, so
-/// nothing ships unmeasured.
+/// them, so the screen can vary them, and the ledger decides the deployment,
+/// so nothing ships on anything but a measurement.
+///
+/// ⭐ AND THEY HAVE NOW BEEN MEASURED (2026-08-23). The 23,622-paired-seat
+/// standard screen priced all three, which is exactly what this test was
+/// written waiting for: `culture-building-debt` reads +24 and defaults **on**
+/// under the one-column clause, `culture-coverage` -14 and
+/// `district-building-chain` -1 stay off. So the second half is no longer
+/// "unmeasured means off" — it is "the ledger's call, whatever it is", and
+/// each tag is asserted against `ledger_default_on` rather than against a
+/// constant `false`. The half that must never move is the first one: a tag the
+/// universe does not carry is off in BOTH arms and prints a zero-width
+/// interval that reads like a null.
 #[test]
-fn the_culture_economy_is_in_the_native_universe_and_out_of_the_deployment() {
+fn the_culture_economy_is_in_the_native_universe_and_the_ledger_decides_deployment() {
     let mut universe = AdvancedAi::new();
     universe.enable_engine_repairs_universe();
     assert!(
@@ -15725,17 +15736,10 @@ fn the_culture_economy_is_in_the_native_universe_and_out_of_the_deployment() {
 
     let mut deployed = AdvancedAi::new();
     deployed.enable_engine_repairs();
-    assert!(
-        !deployed.culture_coverage
-            && !deployed.culture_building_debt
-            && !deployed.district_building_chain,
-        "unmeasured means off at deployment; `apply_gene_ledger` withholds them"
-    );
-
-    for tag in [
-        "culture-coverage",
-        "culture-building-debt",
-        "district-building-chain",
+    for (tag, shipped) in [
+        ("culture-coverage", deployed.culture_coverage),
+        ("culture-building-debt", deployed.culture_building_debt),
+        ("district-building-chain", deployed.district_building_chain),
     ] {
         assert!(
             crate::elo::ENGINE_REPAIR_TREATMENTS.contains(&tag),
@@ -15745,12 +15749,26 @@ fn the_culture_economy_is_in_the_native_universe_and_out_of_the_deployment() {
             !crate::elo::FIRAXIS_ONLY_TREATMENTS.contains(&tag),
             "{tag} left the host-only list"
         );
+        let ledger = crate::ai::ledger_default_on(tag);
+        assert!(
+            ledger.is_some(),
+            "{tag}: screenable, so the ledger must have a row for it either way"
+        );
         assert_eq!(
-            crate::ai::ledger_default_on(tag),
-            Some(false),
-            "{tag}: screenable and unmeasured, so off"
+            Some(shipped),
+            ledger,
+            "{tag}: `enable_engine_repairs` must ship exactly what the ledger says"
         );
     }
+    assert!(
+        deployed.culture_building_debt,
+        "the standard screen priced culture-building-debt at +24 and the one-column \
+         clause promoted it; if this fails, a regeneration moved it"
+    );
+    assert!(
+        !deployed.culture_coverage && !deployed.district_building_chain,
+        "the other two read negative on that screen and stay withheld"
+    );
 }
 
 /// The gene is an opt-in: off in every bundle, flippable by name, in

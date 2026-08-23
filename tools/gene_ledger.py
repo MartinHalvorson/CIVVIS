@@ -36,7 +36,17 @@ reads are the ones `HEURISTIC_GENE_RANKING.md` prints):
 - The win column is wins added per 10,000 on-arm seats at the gene's measured
   on-rate in one screen — `(win_on - 1/players) * 10,000`, against the
   1-in-`players` a seat wins by chance. `wins_last_10k` is the latest screen that priced the
-  gene, `wins_prior_10k` the screen before that.
+  gene, `wins_prior_10k` the screen before that, and `wins_third_10k` the one
+  before *that*: three chronological readings, newest first, so recording a new
+  screen shifts every gene it prices one column right and drops the
+  fourth-oldest reading off the table.
+- ⭐ THE THIRD COLUMN IS PUBLISHED, NOT IN FORCE (operator request 2026-08-23).
+  The rule below reads `wins_last_10k` and `wins_prior_10k` and nothing else;
+  `wins_third_10k` exists so a reader can see whether the two the rule stands on
+  are a trend or a bounce — the record says five of seven lane genes changed
+  sign on disjoint seeds (#2283/#2284), and two columns cannot tell those apart.
+  Widening the rule to three columns would be a change to the operator's
+  directive, not a consequence of printing one more number.
 - **on** when both columns are positive, or when their average is above +15
   and neither column is below -10.
 - **on** with exactly one populated column when that reading is above +20.
@@ -45,7 +55,8 @@ reads are the ones `HEURISTIC_GENE_RANKING.md` prints):
   directive 2026-08-22). That is the ranking's *Diff*: the pooled on rate minus
   the pooled off rate in percentage points, over **every** screen that priced
   the gene, each weighted by its on-arm seats. The win columns read the latest two
-  screens only, so this veto is the one clause that lets an older screen speak:
+  screens only (the third column is published beside them but decides nothing),
+  so this veto is the one clause that lets an older screen speak:
   a gene whose two newest readings are positive but whose whole record is not
   ships off. Both arms of a screen carry the same number of seat observations, so the 1-in-`players`
   chance base cancels inside each screen and the pooled figure is a
@@ -934,9 +945,11 @@ def build_ledger(sources: list[Path], filter_known: bool = True,
     excuses, and `rebuild_from_ledger` reads it back so `--check` re-derives
     the same file."""
     measures: dict[str, dict] = {}
-    # Every win column a gene has, oldest first: the last two are the ranking's
-    # `± Wins / 10k seats` and `± Wins / 10k seats prior`, and the deployment default is
-    # read off them.
+    # Every win column a gene has, oldest first. The tail three are the
+    # ranking's `± Wins / 10k seats`, `… prior` and `… third`, so each screen
+    # that prices a gene shifts its predecessor one column right and pushes the
+    # fourth-oldest reading out of the table. The deployment default is read off
+    # the newest two only; the third is published beside them.
     columns: dict[str, list[int]] = {}
     # Every screen's two arms, for the pooled on-off difference that vetoes a
     # default. Unlike the columns this keeps the whole record, not the tail.
@@ -1018,6 +1031,7 @@ def build_ledger(sources: list[Path], filter_known: bool = True,
         history = columns.get(tag, [])
         last = history[-1] if history else None
         prior = history[-2] if len(history) > 1 else None
+        third = history[-3] if len(history) > 2 else None
         record = arms.get(tag, [])
         diff_pp = pooled_win_diff_pp(record) if record else None
         posterior = pooled_posterior(record, POSTERIOR_SHAPES) if record else None
@@ -1030,6 +1044,12 @@ def build_ledger(sources: list[Path], filter_known: bool = True,
                 authority, last, prior, diff_pp, effect, posterior_se),
             "wins_last_10k": last,
             "wins_prior_10k": prior,
+            # ⭐ THE THIRD WINDOW IS PUBLISHED, NOT DECIDED ON. The rule reads
+            # `last` and `prior`; this is the screen behind them, so a reader
+            # can see whether the pair the rule stands on is a trend or a
+            # bounce. Adding it to the rule would be a change to the operator's
+            # directive, and is not one this column makes.
+            "wins_third_10k": third,
             "win_diff_pp": diff_pp,
             # The precision-weighted pooled on-off difference on the win
             # column's scale, and its standard error. Published beside the
@@ -1071,8 +1091,10 @@ def build_ledger(sources: list[Path], filter_known: bool = True,
             "shape": "one screen: a source whose profile is not `screen` above is "
                      "marked legacy and kept as history; new ones are refused",
             "win_column": "wins added per 10,000 on-arm seats at the gene's measured on-rate in one "
-                          "screen, (win_on - 1/players) * 10000; last and prior are the "
-                          "two most recent screens that priced the gene",
+                          "screen, (win_on - 1/players) * 10000; last, prior and third are the "
+                          "three most recent screens that priced the gene, newest first, so a new "
+                          "screen shifts last to prior and prior to third; only last and prior "
+                          "decide default_on",
             "win_diff": "the pooled on rate minus the pooled off rate in percentage points, "
                         "over every screen that priced the gene, each weighted by its on-arm seats "
                         "- the ranking's `Diff`, the whole on-off difference",
@@ -1214,7 +1236,7 @@ def print_table(ledger: dict) -> None:
         print(f"  ⚠ {grandfathered} of {len(ledger['sources'])} sources predate the build "
               f"stamp ({FINGERPRINT_SINCE}) and are kept as pre-fingerprint history")
     print(f"{'gene':<30} {'verdict':<10} {'default':<7} {'last':>6} {'prior':>6} "
-          f"{'diff':>7} {'posterior':>18} {'P>0':>6} {'win/share z':<20} source")
+          f"{'third':>6} {'diff':>7} {'posterior':>18} {'P>0':>6} {'win/share z':<20} source")
     # Best default first, then the deciding column, so the rule reads down the page.
     for gene in sorted(ledger["genes"],
                        key=lambda g: (not g["default_on"],
@@ -1236,6 +1258,7 @@ def print_table(ledger: dict) -> None:
         source = gene["screen"]["source"] if gene["screen"] else "-"
         print(f"{gene['tag']:<30} {gene['verdict']:<10} {'on' if gene['default_on'] else 'off':<7} "
               f"{col(gene['wins_last_10k']):>6} {col(gene['wins_prior_10k']):>6} "
+              f"{col(gene['wins_third_10k']):>6} "
               f"{diff(gene['win_diff_pp']):>7} {post:>18} {prob:>6} "
               f"{z(gene['screen']):<20} {source} {flag}")
 

@@ -912,10 +912,24 @@ fn live_stalled_settler_refuses_a_loyalty_doomed_fallback() {
     );
     let mut control_board = game.clone();
 
+    // ⚠ THE UNIVERSE, NOT THE DEPLOYMENT GENOME. What this pins is the live
+    // guard on the stalled-settler fallback, so the fallback has to exist: it
+    // is switched on as a side effect of `enable_stranded_settler_discount`,
+    // and on 2026-08-23 the standard screen took that gene out of the shipped
+    // genome, which turned `settler_founds_when_stalled` off and made
+    // `founds_where_it_stands` return `false` at its first line — the assertion
+    // below still passed, for entirely the wrong reason, and the site was never
+    // retired. A behaviour test must not be able to pass because a gene stopped
+    // shipping. Its sibling above already reads the universe; this one was
+    // missed, and only worked while the gene happened to be on.
     let mut live = AdvancedAi::new();
-    live.enable_live_bridge();
+    live.enable_live_bridge_universe();
     assert!(live.base.loyalty_rate_alarm);
     assert!(live.frontier_loyalty);
+    assert!(
+        live.settler_founds_when_stalled,
+        "the fallback under test must be reachable, whatever the ledger ships"
+    );
     assert!(
         live.settle_site_loyalty_verdict(&game, 0, here).is_some(),
         "the live forecast must identify the unsupported fogged frontier"

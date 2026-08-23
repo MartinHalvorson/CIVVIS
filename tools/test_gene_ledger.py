@@ -21,27 +21,41 @@ import gene_ledger  # noqa: E402
 
 PLAYERS = gene_ledger.SCREEN["players"]
 
-#: ★★★★ THE DEPLOYMENT GENOME, FROZEN 2026-08-23. Every gene
-#: `docs/gene_ledger.json` defaults on, as it stood before the precision-
-#: weighted posterior was published beside the rule. This is a tripwire, not a
-#: rule: nothing in the repository else pins what the agent actually plays, and
+#: ★★★★ THE DEPLOYMENT GENOME, FROZEN 2026-08-23 (the standard screen).
+#: Every gene `docs/gene_ledger.json` defaults on. This is a tripwire, not a
+#: rule: nothing else in the repository pins what the agent actually plays, and
 #: a regeneration that quietly moved a default would otherwise be invisible.
 #: Moving one is legitimate and routine -- a new screen, a new operator
 #: directive -- and the way to do it is to update this tuple in the same change
 #: and name the gene and the reason in the pull request.
+#:
+#: ⭐ IT MOVED, AND THIS IS WHY. The 23,622-paired-seat standard screen
+#: (`2026-08-22-standard-10k-...`) is the first whole-genome batch played at
+#: the canonical shape, so it became the deciding `last` column for 99 of the
+#: 101 genes at once and took the count from 30 to 33. Twelve entered --
+#: air-surge, apostle-promotion-by-role, army-target-weighs-enemy,
+#: barbarian-bargain, barbarian-ranged-answer, buildings-before-projects,
+#: culture-building-debt, recorded-tactical-step, score-horizon, war-economy,
+#: war-reinforcement, wonder-ring-settle-value -- and nine left:
+#: blind-objective-strength, builder-worked-tile-priority, camp-party,
+#: housing-research, one-launch-pad, religion-sues-peace,
+#: settler-site-agreement, settler-target-hysteresis, stranded-settler-discount.
+#: None of that is a rule change: the rule is the operator's unchanged
+#: threshold on the two newest columns, and one screen re-priced almost every
+#: gene's newest column at a shape the ledger had only ever seen twice before.
 DEPLOYED_GENOME_20260823 = (
-    "amenity-district-path", "barbarian-scouts-are-scouts",
-    "blind-objective-strength", "bounded-recovery",
-    "builder-worked-tile-priority", "camp-party", "come-ashore",
-    "escort-unstick", "founder-temple",
-    "great-person-housing", "holy-lane-parity", "housing-research",
-    "idle-faith-patronage", "inquisition-on-threat", "loyalty-rate-alarm",
-    "one-launch-pad", "opportunistic-war", "peacetime-deterrence",
-    "raid-pillage-prizes", "recon-replacement", "relief-targets-the-siege",
-    "religion-sues-peace", "settle-sooner", "settler-site-agreement",
-    "settler-target-hysteresis", "settler-threat-detour",
-    "stranded-settler-discount", "strike-opening",
-    "whole-turn-backtrack-guard", "wide-map-capacity",
+    "air-surge", "amenity-district-path", "apostle-promotion-by-role",
+    "army-target-weighs-enemy", "barbarian-bargain", "barbarian-ranged-answer",
+    "barbarian-scouts-are-scouts", "bounded-recovery",
+    "buildings-before-projects", "come-ashore", "culture-building-debt",
+    "escort-unstick", "founder-temple", "great-person-housing",
+    "holy-lane-parity", "idle-faith-patronage", "inquisition-on-threat",
+    "loyalty-rate-alarm", "opportunistic-war", "peacetime-deterrence",
+    "raid-pillage-prizes", "recon-replacement", "recorded-tactical-step",
+    "relief-targets-the-siege", "score-horizon", "settle-sooner",
+    "settler-threat-detour", "strike-opening", "war-economy",
+    "war-reinforcement", "whole-turn-backtrack-guard", "wide-map-capacity",
+    "wonder-ring-settle-value",
 )
 
 
@@ -608,17 +622,21 @@ class TheDeploymentAuthority(unittest.TestCase):
         counts = ledger["counts"]
         self.assertEqual(counts["default_on_under_columns"], counts["default_on"])
         self.assertEqual(counts["moved_by_columns"], 0)
-        # The published delta the operator takes the call on. Both settings
-        # re-admit exactly the three genes the sign-of-Diff veto removed --
-        # none of which has a resolved negative record.
-        # 33, not 34, since 2026-08-23: the base moved 31 -> 30 when g1's
-        # direct arm resolved `governor-victory-lanes` off. The posterior
-        # re-admits the same three genes and agrees with the threshold rule
-        # about that gene, so the delta itself is unchanged at 3.
-        self.assertEqual(counts["default_on_under_posterior-veto"], 33)
-        self.assertEqual(counts["default_on_under_posterior"], 33)
-        self.assertEqual(counts["moved_by_posterior-veto"], 3)
-        self.assertEqual(counts["moved_by_posterior"], 3)
+        # The published delta the operator takes the call on: both settings
+        # re-admit whatever the sign-of-Diff veto removed without a resolved
+        # negative record.
+        #
+        # ⭐ THE DELTA SHRANK 3 -> 1 ON THE STANDARD SCREEN, and that is the
+        # useful reading of it. The gap between the two rules is genes whose
+        # columns like them and whose pooled record is negative-but-unresolved,
+        # which is a shortage of evidence, not a disagreement about method. A
+        # 23,622-paired-seat screen resolved two of the three: `war-economy`
+        # and `apostle-promotion-by-role` now clear the sign veto outright and
+        # ship under BOTH rules. Only `siege-commitment` still divides them.
+        self.assertEqual(counts["default_on_under_posterior-veto"], 34)
+        self.assertEqual(counts["default_on_under_posterior"], 34)
+        self.assertEqual(counts["moved_by_posterior-veto"], 1)
+        self.assertEqual(counts["moved_by_posterior"], 1)
 
     def test_the_posterior_decides_only_where_its_interval_excludes_zero(self):
         # 20 +/- 1.96*10 = [0.4, 39.6]: wholly above zero.
@@ -633,8 +651,14 @@ class TheDeploymentAuthority(unittest.TestCase):
         self.assertEqual(gene_ledger.posterior_call(None, None), "unresolved")
 
     def test_the_veto_with_an_error_bar_is_strictly_weaker_than_the_sign_veto(self):
-        """`war-economy`: two positive columns removed by a record of -0.78 pp
-        whose interval is [-185, +88]."""
+        """The shape of the disagreement, on `war-economy`'s pre-standard-screen
+        figures: two positive columns removed by a record of -0.78 pp whose
+        interval is [-185, +88] — negative in sign, unresolved in evidence.
+
+        Kept as a fixture rather than re-pinned to the live gene. The 23,622-
+        paired-seat standard screen resolved war-economy's record positive, so
+        it now ships under both rules; the arithmetic this asserts is the rule
+        comparison, and it must not move when a gene's numbers do."""
         self.assertFalse(gene_ledger.default_from_columns(38, 8, -0.78))
         self.assertTrue(gene_ledger.default_from_resolved_veto(38, 8, -48.4, 69.7))
         # A record that IS resolved negative still vetoes.
@@ -659,8 +683,9 @@ class TheDeploymentAuthority(unittest.TestCase):
         self.assertEqual(posterior["rules"]["authority"], "posterior")
         moved = {g["tag"] for g, h in zip(shipped["genes"], posterior["genes"])
                  if g["default_on"] != h["default_on"]}
-        self.assertEqual(moved, {"war-economy", "siege-commitment",
-                                 "apostle-promotion-by-role"})
+        # One gene, since the standard screen resolved the other two — see
+        # `test_the_authorities_form_a_chain_and_only_the_first_ships`.
+        self.assertEqual(moved, {"siege-commitment"})
         # And the generated Rust carries the authority it was written under,
         # so the mirror re-derives under the same rule.
         self.assertIn('pub(super) const AUTHORITY: &str = "posterior";',

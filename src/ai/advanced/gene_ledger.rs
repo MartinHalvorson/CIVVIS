@@ -123,6 +123,14 @@ pub struct GeneVerdict {
     pub wins_last_10k: Option<i32>,
     /// The same figure from the screen before that — *± Wins / 10k seats prior*.
     /// `None` when the gene has only one reading.
+    ///
+    /// ⭐ THERE IS A THIRD WINDOW, AND IT IS DELIBERATELY NOT HERE. The ledger
+    /// JSON and `HEURISTIC_GENE_RANKING.md` carry `wins_third_10k`, the screen
+    /// before this one, so a reader can see whether the two readings the rule
+    /// stands on are a trend or a bounce (operator request 2026-08-23). It
+    /// decides nothing, and this table exists to re-derive what the rule
+    /// decides from exactly the figures it reads — carrying a column no
+    /// authority consults would invite a later rule to read it by accident.
     pub wins_prior_10k: Option<i32>,
     /// `HEURISTIC_GENE_RANKING.md`'s *Diff*: the pooled on win rate minus the
     /// pooled off win rate in percentage points, over **every** screen that

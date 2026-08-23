@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import json
 import math
+import re
 import sys
 import unittest
 from contextlib import redirect_stdout
@@ -15,13 +16,41 @@ import gene_ledger  # noqa: E402
 import heuristic_gene_ranking as ranking  # noqa: E402
 
 
-class TheTableIsDerived(unittest.TestCase):
-    EXPECTED_COLUMNS = (
-        "| Rank | Gene | Description | Default | ± Wins / 10k seats | ± Wins / 10k seats prior | "
-        "Total (on) Win rate | Total (off) Win rate | Diff | "
-        "Posterior (95% CI) | P(>0) | Share Δpp (z) | "
-        "cost (compute) | cost (time) |"
+#: The main table's columns, in order. One definition, read both as the header
+#: assertion and as the name -> index map every cell lookup goes through.
+EXPECTED_COLUMNS = (
+    "| Rank | Gene | Description | Default | ± Wins / 10k seats | ± Wins / 10k seats prior | "
+    "± Wins / 10k seats third | "
+    "Total (on) Win rate | Total (off) Win rate | Diff | "
+    "Posterior (95% CI) | P(>0) | Share Δpp (z) | "
+    "cost (compute) | cost (time) |"
+)
+
+#: Every column by name, so an assertion says which cell it reads instead of
+#: counting to it.
+#:
+#: ⚠ THE INDICES USED TO BE WRITTEN OUT, and inserting *± Wins / 10k seats
+#: third* between `prior` and the win rates moved six of them along by one —
+#: every positional assertion in this file began reading its neighbour. Named
+#: lookup makes the next inserted column one loud header mismatch instead of
+#: six assertions quietly checking the wrong cell.
+COLUMN = {
+    name: index
+    for index, name in enumerate(
+        c.strip() for c in EXPECTED_COLUMNS.strip().strip("|").split(" | ")
     )
+}
+
+
+def cell(cells, name):
+    """One named cell of a split table row."""
+    return cells[COLUMN[name]]
+
+
+class TheTableIsDerived(unittest.TestCase):
+    #: Kept as a class attribute too: other classes read
+    #: `TheTableIsDerived.EXPECTED_COLUMNS` to find the table in the file.
+    EXPECTED_COLUMNS = EXPECTED_COLUMNS
 
     def test_the_checked_in_table_matches_the_ledgers_sources(self):
         ledger = json.loads(ranking.LEDGER_JSON.read_text())
@@ -79,18 +108,22 @@ class TheTableIsDerived(unittest.TestCase):
         rows = self._ranked_rows()
         self.assertGreater(len(rows), 50)
         for cells in rows:
-            history = measured[cells[1].strip("`")]
+            history = measured[cell(cells, "Gene").strip("`")]
             on_seats = sum(m["n_on"] for m in history)
             off_seats = sum(m["n_off"] for m in history)
             on = sum(m["win_on"] * m["n_on"] for m in history) / on_seats
             off = sum(m["win_off"] * m["n_off"] for m in history) / off_seats
-            self.assertEqual(cells[8], ranking.diff_cell(history), cells[1])
-            self.assertRegex(cells[8], r"^-?\d+\.\d\d%$", cells[1])
+            self.assertEqual(cell(cells, "Diff"), ranking.diff_cell(history),
+                             cell(cells, "Gene"))
+            self.assertRegex(cell(cells, "Diff"), r"^-?\d+\.\d\d%$",
+                             cell(cells, "Gene"))
             # Taken off the unrounded rates, so it can land a hundredth away
             # from subtracting the two printed cells by eye — 0.01% against a
             # band of half a point. Never further: that would be a real slip.
-            shown = float(cells[6].split("%")[0]) - float(cells[7].split("%")[0])
-            self.assertAlmostEqual(100 * (on - off), shown, delta=0.011, msg=cells[1])
+            shown = (float(cell(cells, "Total (on) Win rate").split("%")[0])
+                     - float(cell(cells, "Total (off) Win rate").split("%")[0]))
+            self.assertAlmostEqual(100 * (on - off), shown, delta=0.011,
+                                   msg=cell(cells, "Gene"))
         self.assertNotIn("Total seats (on+off)", ranking.RANKING_MD.read_text())
 
     def test_diff_cell_is_a_percent_and_keeps_a_negative_sign(self):
@@ -109,8 +142,8 @@ class TheTableIsDerived(unittest.TestCase):
         recorded = {g["tag"]: g["win_diff_pp"] for g in ledger["genes"]}
         self.assertGreater(len(recorded), 50)
         for cells in self._ranked_rows():
-            tag = cells[1].strip("`")
-            self.assertEqual(cells[8], f"{recorded[tag]:.2f}%", tag)
+            tag = cell(cells, "Gene").strip("`")
+            self.assertEqual(cell(cells, "Diff"), f"{recorded[tag]:.2f}%", tag)
             self.assertEqual(recorded[tag], ranking.pooled_win_diff_pp(measured[tag]), tag)
 
     def test_each_win_rate_cell_carries_its_own_sample_size(self):
@@ -118,8 +151,10 @@ class TheTableIsDerived(unittest.TestCase):
         every screen that measured a gene split them evenly, and the row reads
         them from `n_on`/`n_off` separately so an uneven screen shows up."""
         for cells in self._ranked_rows():
-            for cell in (cells[6], cells[7]):
-                self.assertRegex(cell, r"^\d+\.\d\d% \(n=[\d,]+\)$", cells[1])
+            for rate in (cell(cells, "Total (on) Win rate"),
+                         cell(cells, "Total (off) Win rate")):
+                self.assertRegex(rate, r"^\d+\.\d\d% \(n=[\d,]+\)$",
+                                 cell(cells, "Gene"))
 
     def test_descriptions_print_whole(self):
         """The Description column was widened 160 → 480 characters, which is
@@ -127,7 +162,8 @@ class TheTableIsDerived(unittest.TestCase):
         longest = max(len(d) for d in ranking.descriptions().values())
         self.assertLess(longest, ranking.DESCRIPTION_CHARS)
         for cells in self._ranked_rows():
-            self.assertNotIn("\u2026", cells[2], cells[1])
+            self.assertNotIn("\u2026", cell(cells, "Description"),
+                             cell(cells, "Gene"))
 
     def test_cost_uses_the_newest_real_measurement_and_never_invents_zero(self):
         history = [
@@ -277,10 +313,12 @@ class ThePosteriorIsPublishedAndNotInForce(unittest.TestCase):
         recorded = {g["tag"]: g for g in self.ledger["genes"]}
         seen = 0
         for cells in self._rows():
-            tag = cells[1].strip("`")
+            tag = cell(cells, "Gene").strip("`")
             posterior = ranking.posterior_of(self.measured[tag])
-            self.assertEqual(cells[9], ranking.posterior_cell(posterior), tag)
-            self.assertEqual(cells[10], ranking.probability_cell(posterior), tag)
+            self.assertEqual(cell(cells, "Posterior (95% CI)"),
+                             ranking.posterior_cell(posterior), tag)
+            self.assertEqual(cell(cells, "P(>0)"),
+                             ranking.probability_cell(posterior), tag)
             self.assertEqual(posterior["effect"], recorded[tag]["posterior_pp"], tag)
             self.assertEqual(posterior["se"], recorded[tag]["posterior_se_pp"], tag)
             seen += 1
@@ -305,15 +343,17 @@ class ThePosteriorIsPublishedAndNotInForce(unittest.TestCase):
         recorded = {g["tag"]: g for g in self.ledger["genes"]}
         self.assertEqual(self.ledger["rules"]["authority"], "columns")
         for cells in self._rows():
-            gene = recorded[cells[1].strip("`")]
+            gene = recorded[cell(cells, "Gene").strip("`")]
             self.assertEqual(
-                cells[3], "**on**" if gene["default_on"] else "off", cells[1])
+                cell(cells, "Default"),
+                "**on**" if gene["default_on"] else "off",
+                cell(cells, "Gene"))
             self.assertEqual(
                 gene["default_on"],
                 gene_ledger.default_from_columns(
                     gene["wins_last_10k"], gene["wins_prior_10k"],
                     gene["win_diff_pp"]),
-                cells[1])
+                cell(cells, "Gene"))
 
     def test_every_authority_is_published_with_what_it_would_ship(self):
         self.assertIn("## What the posterior would change", self.text)
@@ -377,11 +417,19 @@ class TheBoundarySet(unittest.TestCase):
         rows, _ = ranking.boundary_table(self.ledger, self.measured)
         self.assertEqual([r["buys"] for r in rows],
                          sorted((r["buys"] for r in rows), reverse=True))
-        # An arm buys most where the genome and the evidence disagree: the
-        # leader is held OFF by the rule while the posterior leans positive.
+        # An arm buys most where the genome and the pooled evidence disagree,
+        # and the disagreement runs BOTH ways: a gene held off whose posterior
+        # leans positive, or one that ships while its posterior leans negative.
+        #
+        # ⚠ THIS USED TO PIN THE OFF-AND-POSITIVE DIRECTION ONLY, and the
+        # standard screen put the other one on top: `war-economy` ships on two
+        # positive columns while its whole record pools to -6.6 across an
+        # interval 250 wide. That is the most valuable arm in the table and the
+        # test called it a defect. What the ranking actually claims is the
+        # disagreement, not its sign.
         top = rows[0]
-        self.assertFalse(top["shipped"], top["tag"])
-        self.assertGreater(top["posterior"]["effect"], 0.0, top["tag"])
+        self.assertNotEqual(top["shipped"], top["posterior"]["effect"] > 0.0,
+                            top["tag"])
 
     def test_a_bigger_arm_buys_more_and_resolves_more(self):
         small, _ = ranking.boundary_table(self.ledger, self.measured, arm_pairs=2000)
@@ -485,21 +533,29 @@ class TheLaneGenes(unittest.TestCase):
         self.assertIn("decision axis stays", screen)
 
 
-class TheStandardScreenPreview(unittest.TestCase):
-    """⭐ `docs/gene_ranking_notes.md` records what the first standard-shape
-    screen says, and the ranking carries it verbatim. That screen is NOT a
-    ledger source yet — no analysis JSON for it exists — so every figure in
-    that note is computed by hand from its published table. This recomputes
-    them, so the note cannot go stale silently while it is the only place the
-    disagreement is written down.
+class TheStandardScreen(unittest.TestCase):
+    """⭐ THE SCREEN THE NOTE PREVIEWED IS NOW A LEDGER SOURCE, and this class
+    is what holds the two together.
 
-    Source: `docs/eval/2026-08-22-standard-gene-screen-23622-paired-seats.md`
-    (PR #2323): 3,937 complete map pairs, 23,622 matched seat comparisons per
+    `docs/gene_ranking_notes.md` was written while the first standard-shape
+    screen existed only as a published table: every figure in it was read by
+    hand out of `docs/eval/2026-08-22-standard-gene-screen-23622-paired-seats.md`
+    (PR #2323), because no `gene_screen --analyze --json` file for it had been
+    recorded. That file is now
+    `docs/gene_screens/2026-08-22-standard-10k-6p-allseats-23622-pairs.json`
+    and the ledger reads it, so the hand table below stops being the only
+    record of the screen and becomes a check ON the recorded one: if the two
+    ever disagree, either the note misread the document or the source is not
+    the screen it claims to be.
+
+    The screen: 3,937 complete map pairs, 23,622 matched seat comparisons per
     gene, 74x46 Continents / 9 CS / Online-250, all six lanes, best-genome
     baseline, all-seats foldover, source commit `b3ad9f00`.
     """
 
-    #: tag -> (on−off win Δpp, win z), read off that document's table.
+    #: tag -> (on−off win Δpp, win z), read off that document's table BY HAND.
+    #: Deliberately not derived from the source JSON — that is the whole point
+    #: of `test_the_hand_read_note_matches_the_recorded_source`.
     STANDARD = {
         "governor-victory-lanes": (-4.73, -15.37),
         "governor-every-lane": (-4.68, -15.12),
@@ -526,8 +582,9 @@ class TheStandardScreenPreview(unittest.TestCase):
         self.notes = ranking.NOTES_MD.read_text()
 
     def reading(self, tag):
-        """That screen's row as a history entry: a foldover holds the arms
-        symmetric about chance, so `win_on = 1/6 + Δ/200`."""
+        """That screen's row as a history entry, from the hand-read table: a
+        foldover holds the arms symmetric about chance, so
+        `win_on = 1/6 + Δ/200`."""
         delta, z = self.STANDARD[tag]
         chance = 1.0 / gene_ledger.SCREEN["players"]
         return {"win_on": chance + delta / 200.0, "win_off": chance - delta / 200.0,
@@ -535,10 +592,32 @@ class TheStandardScreenPreview(unittest.TestCase):
                 "win_se_pp": abs(delta / z), "shape": "standard"}
 
     def pools(self, tag):
+        """The gene's record read three ways: legacy shapes only, standard
+        shapes only, and everything pooled.
+
+        ⚠ THESE ARE SLICES OF THE REAL RECORD NOW. They used to append
+        `reading(tag)` to the history, because the standard screen was not a
+        source; doing that today would count it twice and quietly widen every
+        pooled interval this class asserts."""
         history = self.measured[tag]
         return (gene_ledger.pooled_posterior(history, ("legacy",)),
-                gene_ledger.pooled_posterior([self.reading(tag)]),
-                gene_ledger.pooled_posterior(list(history) + [self.reading(tag)]))
+                gene_ledger.pooled_posterior(history, ("standard",)),
+                gene_ledger.pooled_posterior(history, gene_ledger.POSTERIOR_SHAPES))
+
+    def test_the_hand_read_note_matches_the_recorded_source(self):
+        """★ The join. Every figure the note read out of the published
+        document is the figure the recorded analysis JSON carries, to the
+        precision the document printed."""
+        source = json.loads(
+            (gene_ledger.ROOT / "docs" / "gene_screens"
+             / "2026-08-22-standard-10k-6p-allseats-23622-pairs.json").read_text())
+        self.assertEqual(source["complete_pairs"], 23622)
+        self.assertEqual(gene_ledger.shape_of(gene_ledger.profile_of(source)), "standard")
+        self.assertEqual(source["profile"]["start_seed"], 141000000)
+        by_tag = {g["tag"]: g for g in source["genes"]}
+        for tag, (delta, z) in self.STANDARD.items():
+            self.assertAlmostEqual(by_tag[tag]["win_delta_pp"], delta, places=2, msg=tag)
+            self.assertAlmostEqual(by_tag[tag]["win_z"], z, places=2, msg=tag)
 
     def test_governor_victory_lanes_is_the_largest_correctable_defect(self):
         """RESOLVED 2026-08-23. It shipped ON, promoted on P10's single +46
@@ -546,33 +625,41 @@ class TheStandardScreenPreview(unittest.TestCase):
         pre-registered direct arm `g1` (600 map pairs, seeds 150000000+,
         disjoint from the whole-genome screen's maps) confirmed −4.78 pp at
         win z −6.11. The threshold rule then wrote it **off** — both clauses
-        agreeing, so it does not rest on the marginal Diff veto."""
+        agreeing, so it does not rest on the marginal Diff veto.
+
+        ⭐ AND THE THREE WINDOWS NOW TELL THE WHOLE STORY IN ONE ROW: g1 at
+        −239, the whole-genome standard screen at −237, and behind them the
+        legacy +46 that promoted the gene in the first place. Under two
+        columns the promotion simply disappeared from the table; the third
+        window is where a reader can still see it."""
         row = next(g for g in self.ledger["genes"]
                    if g["tag"] == "governor-victory-lanes")
         self.assertFalse(row["default_on"], "g1 resolved it off")
         self.assertEqual(row["verdict"], "hurts")
-        # The +46 that promoted it is now the PRIOR column; g1 is the latest.
-        self.assertEqual(row["wins_last_10k"], -239)
-        self.assertEqual(row["wins_prior_10k"], 46, "the column that promoted it")
+        self.assertEqual(row["wins_last_10k"], -239, "g1, the direct arm")
+        self.assertEqual(row["wins_prior_10k"], -237, "the whole-genome standard screen")
+        self.assertEqual(row["wins_third_10k"], 46, "the column that promoted it")
         legacy, standard, pooled = self.pools("governor-victory-lanes")
         self.assertEqual((round(legacy["effect"]), round(legacy["lo"]),
                           round(legacy["hi"])), (46, 9, 82))
+        # ⭐ THE TWO STANDARD READINGS AGREE TO WITHIN 0.05 pp, so the
+        # random-effects pool of them carries tau = 0 — no between-screen
+        # disagreement at all, on two independent seed windows.
         self.assertEqual((round(standard["effect"]), round(standard["lo"]),
-                          round(standard["hi"])), (-236, -267, -206))
-        # The two intervals do not merely disagree, they do not come close.
+                          round(standard["hi"])), (-237, -265, -209))
+        self.assertEqual(round(standard["tau"]), 0)
+        self.assertEqual(standard["screens"], 2)
+        # The two instruments do not merely disagree, they do not come close.
         self.assertGreater(legacy["lo"] - standard["hi"], 200)
-        # So the pool is a warning, not an answer. Assert the figure the
-        # LEDGER publishes (its two screens: P10 legacy and g1 standard),
-        # not a recomputation over the note's preview as well -- since
-        # 2026-08-23 that would pool three readings and report a different
-        # tau for a quantity nothing ships.
-        self.assertEqual(round(row["posterior_tau_pp"]), 199)
-        self.assertEqual(row["posterior_screens"], 2)
+        # So the pool across shapes is a warning, not an answer, and it is the
+        # figure the LEDGER publishes over all three screens.
+        self.assertEqual(round(row["posterior_tau_pp"]), round(pooled["tau"]))
+        self.assertEqual(row["posterior_screens"], 3)
         self.assertEqual(gene_ledger.posterior_call(pooled["effect"], pooled["se"]),
                          "unresolved")
         self.assertEqual(gene_ledger.posterior_call(standard["effect"],
                                                     standard["se"]), "off")
-        for phrase in ("-237", "[-267, -206]", "tau = 199", "-15.37"):
+        for phrase in ("-237", "[-267, -206]", "-15.37"):
             self.assertIn(phrase, self.notes, phrase)
 
     def test_the_legacy_share_axis_already_said_it(self):
@@ -638,8 +725,39 @@ class TheStandardScreenPreview(unittest.TestCase):
     def test_the_note_is_carried_into_the_published_ranking(self):
         text = ranking.RANKING_MD.read_text()
         self.assertIn("23,622", text)
-        self.assertIn("not a ledger source", text)
         self.assertIn("governor-victory-lanes", text)
+        # ⚠ The note used to say the screen was "not a ledger source". It is
+        # one now, and a paragraph that still said otherwise would be the most
+        # misleading line in the file.
+        self.assertNotIn("not a ledger source", text)
+        self.assertIn("2026-08-22-standard-10k-6p-allseats-23622-pairs.json", text)
+
+
+class EveryTestInThisFileIsCollected(unittest.TestCase):
+    """⚠⚠ A TEST THAT FALLS OUT OF ITS CLASS STILL PASSES, BY NOT RUNNING.
+
+    Adding the third window to this file, a helper was pasted at module
+    indentation between the class header and its first method. Everything
+    below became the body of that helper: fifteen `def test_...` still parsed,
+    still read as tests to any human scrolling past, and were never collected.
+    The suite went green with 98 of 113 tests, and nothing said so.
+
+    So this counts them. `def test_` at method indentation is a test method,
+    and unittest must have loaded every one of them."""
+
+    def test_every_method_named_test_is_loaded(self):
+        source = Path(__file__).read_text()
+        written = set(re.findall(r"^    def (test_\w+)", source, re.M))
+        loaded = set()
+        for suite in unittest.defaultTestLoader.loadTestsFromName(__name__):
+            for case in suite:
+                loaded.add(case.id().rsplit(".", 1)[-1])
+        self.assertGreater(len(written), 30)
+        self.assertEqual(
+            sorted(written - loaded), [],
+            "these are indented as test methods but unittest never loaded them: "
+            "check that each sits directly inside a TestCase class",
+        )
 
 
 if __name__ == "__main__":
