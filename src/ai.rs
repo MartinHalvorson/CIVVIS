@@ -1880,16 +1880,69 @@ struct AttackEnvelopeCache {
     envelopes: std::sync::Arc<AttackEnvelopes>,
 }
 
+/// The tiles one hostile unit can strike next turn, ascending and distinct.
+///
+/// ★★★★ THIS WAS A `BTreeSet<Pos>` AND THE TREE WAS 9.0% OF THE MAIN THREAD.
+/// `sample` on the standard screen shape (`docs/SIMULATOR_PERFORMANCE.md`,
+/// 2026-08-22) put `BTreeMap<Pos, SetVal>` — a `BTreeSet<Pos>`, and these
+/// envelopes are the largest holder of them — at 9.0% self time, ahead of a
+/// share of the 7% in `malloc`/`free` and the 5.7% in `memmove` that its
+/// per-tile nodes were paying for. An envelope is built once and then only
+/// read, by `contains` and by whole-set iteration, so a tree buys nothing a
+/// sorted slice does not: `binary_search` answers membership and the slice
+/// iterates in the identical ascending order, from one contiguous buffer.
+///
+/// ⚠ THE ORDER IS LOAD-BEARING. `safe_healing_step` unions these and
+/// `evacuation_tile_cmp` breaks ties on `Pos`, so a different iteration order
+/// is a different game. The constructor enforces ascending-and-distinct
+/// rather than trusting its caller, which is what makes `binary_search` sound
+/// no matter where the tiles came from.
+#[derive(Debug, Default, PartialEq, Eq, Clone)]
+pub(crate) struct EnvelopeReach(Vec<Pos>);
+
+impl EnvelopeReach {
+    /// Adopt a list of struck tiles. `Game::attack_reach_from_flood` already
+    /// returns them ascending and distinct, so the common path is the linear
+    /// check and no work; an air unit's disk is not ordered, so it is sorted.
+    fn from_tiles(mut tiles: Vec<Pos>) -> Self {
+        if tiles.windows(2).any(|pair| pair[0] >= pair[1]) {
+            tiles.sort_unstable();
+            tiles.dedup();
+        }
+        Self(tiles)
+    }
+
+    pub(crate) fn contains(&self, position: &Pos) -> bool {
+        self.0.binary_search(position).is_ok()
+    }
+
+    fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub(crate) fn iter(&self) -> std::slice::Iter<'_, Pos> {
+        self.0.iter()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    fn as_slice(&self) -> &[Pos] {
+        &self.0
+    }
+}
+
 /// The hostile envelopes one board hands back: each enemy, and the tiles it
 /// can strike next turn. Shared, so a per-enemy cache hit costs a refcount.
-pub(crate) type AttackEnvelopes = Vec<(u32, std::sync::Arc<BTreeSet<Pos>>)>;
+pub(crate) type AttackEnvelopes = Vec<(u32, std::sync::Arc<EnvelopeReach>)>;
 
 /// One envelope table and the union of every tile in it, kept together so a
 /// reader can tell whether the union still describes the table it holds. See
 /// [`BasicAi::covered_tiles`].
 type CoveredTiles = (
     std::sync::Arc<AttackEnvelopes>,
-    std::sync::Arc<BTreeSet<Pos>>,
+    std::sync::Arc<EnvelopeReach>,
 );
 
 /// One enemy's envelope, with the key that says when it may be reused.
@@ -1904,7 +1957,7 @@ type CoveredTiles = (
 /// An enemy's reach can only change if something *inside that reach* changed,
 /// so each envelope carries a key over its own neighbourhood instead.
 struct EnemyEnvelope {
-    reach: std::sync::Arc<BTreeSet<Pos>>,
+    reach: std::sync::Arc<EnvelopeReach>,
     sensitive: std::sync::Arc<std::collections::HashSet<Pos>>,
 }
 
@@ -5077,16 +5130,24 @@ impl BasicAi {
     fn report_stale_envelope(
         g: &Game,
         unit: &crate::game::Unit,
-        stale: &BTreeSet<Pos>,
-        fresh: &BTreeSet<Pos>,
+        stale: &EnvelopeReach,
+        fresh: &EnvelopeReach,
     ) {
         use std::sync::atomic::{AtomicUsize, Ordering};
         static SEEN: AtomicUsize = AtomicUsize::new(0);
         if SEEN.fetch_add(1, Ordering::Relaxed) >= 6 {
             return;
         }
-        let gained: Vec<Pos> = fresh.difference(stale).copied().collect();
-        let lost: Vec<Pos> = stale.difference(fresh).copied().collect();
+        let gained: Vec<Pos> = fresh
+            .iter()
+            .filter(|p| !stale.contains(p))
+            .copied()
+            .collect();
+        let lost: Vec<Pos> = stale
+            .iter()
+            .filter(|p| !fresh.contains(p))
+            .copied()
+            .collect();
         let near = |pos: Pos| -> Vec<String> {
             g.units
                 .values()
@@ -5304,8 +5365,7 @@ impl BasicAi {
                             // and the first disagreement is described. This is
                             // how the leak gets named instead of guessed at.
                             if Self::envelope_audit_enabled() {
-                                let fresh: BTreeSet<Pos> =
-                                    g.attack_reach(unit.id).into_iter().collect();
+                                let fresh = EnvelopeReach::from_tiles(g.attack_reach(unit.id));
                                 if fresh != *entry.reach {
                                     Self::report_stale_envelope(g, unit, &entry.reach, &fresh);
                                 }
@@ -5315,9 +5375,12 @@ impl BasicAi {
                         }
                     }
                 }
+                // ⚠ `attack_reach_from_flood` already returns these ascending
+                // and distinct; re-collecting them into a second set was
+                // building the same answer twice.
                 let (targets, flood) = g.attack_reach_from_flood(unit.id);
-                let reach: std::sync::Arc<BTreeSet<Pos>> =
-                    std::sync::Arc::new(targets.into_iter().collect());
+                let reach: std::sync::Arc<EnvelopeReach> =
+                    std::sync::Arc::new(EnvelopeReach::from_tiles(targets));
                 if reusable {
                     store.insert(
                         unit.id,
@@ -5345,7 +5408,7 @@ impl BasicAi {
         pid: usize,
         uid: u32,
         position: Pos,
-        envelopes: &[(u32, std::sync::Arc<BTreeSet<Pos>>)],
+        envelopes: &[(u32, std::sync::Arc<EnvelopeReach>)],
     ) -> f64 {
         Self::incoming_damage(g, pid, uid, position, envelopes).total
     }
@@ -5389,7 +5452,7 @@ impl BasicAi {
         g: &Game,
         pid: usize,
         position: Pos,
-        envelopes: &[(u32, std::sync::Arc<BTreeSet<Pos>>)],
+        envelopes: &[(u32, std::sync::Arc<EnvelopeReach>)],
     ) -> bool {
         envelopes
             .iter()
@@ -5423,7 +5486,7 @@ impl BasicAi {
         pid: usize,
         uid: u32,
         position: Pos,
-        envelopes: &[(u32, std::sync::Arc<BTreeSet<Pos>>)],
+        envelopes: &[(u32, std::sync::Arc<EnvelopeReach>)],
     ) -> IncomingDamage {
         let Some(unit) = g.units.get(&uid) else {
             return IncomingDamage::LETHAL;
@@ -5505,7 +5568,7 @@ impl BasicAi {
         pid: usize,
         uid: u32,
         position: Pos,
-        envelopes: &[(u32, std::sync::Arc<BTreeSet<Pos>>)],
+        envelopes: &[(u32, std::sync::Arc<EnvelopeReach>)],
     ) -> f64 {
         (Self::incoming_damage(g, pid, uid, position, envelopes).worst * COMBAT_ROLL_MAX)
             .min(MAX_SINGLE_BLOW)
@@ -5517,7 +5580,7 @@ impl BasicAi {
         uid: u32,
         position: Pos,
         danger: Option<Pos>,
-        envelopes: &[(u32, std::sync::Arc<BTreeSet<Pos>>)],
+        envelopes: &[(u32, std::sync::Arc<EnvelopeReach>)],
     ) -> Option<EvacuationTile> {
         g.map.get(position)?;
         let city = g.city_at(position).is_some_and(|city| {
@@ -5562,6 +5625,9 @@ impl BasicAi {
         Self::evacuation_tile_cmp(&candidate, &holding).is_gt()
     }
 
+    /// First legal step toward healing ground that no observed enemy can attack
+    /// next turn. City Centers win before ordinary friendly ground; neutral
+    /// ground is a last resort when no safe homeward route exists.
     /// Every tile some hostile envelope covers, unioned once per envelope
     /// table instead of once per recovering unit.
     ///
@@ -5576,7 +5642,7 @@ impl BasicAi {
     fn covered_tiles(
         &self,
         envelopes: &std::sync::Arc<AttackEnvelopes>,
-    ) -> std::sync::Arc<BTreeSet<Pos>> {
+    ) -> std::sync::Arc<EnvelopeReach> {
         let mut slot = self
             .covered_tiles_cache
             .lock()
@@ -5586,12 +5652,12 @@ impl BasicAi {
                 return std::sync::Arc::clone(covered);
             }
         }
-        let covered: std::sync::Arc<BTreeSet<Pos>> = std::sync::Arc::new(
-            envelopes
-                .iter()
-                .flat_map(|(_, reach)| reach.iter().copied())
-                .collect(),
-        );
+        let mut tiles: Vec<Pos> =
+            Vec::with_capacity(envelopes.iter().map(|(_, reach)| reach.len()).sum());
+        for (_, reach) in envelopes.iter() {
+            tiles.extend_from_slice(reach.as_slice());
+        }
+        let covered = std::sync::Arc::new(EnvelopeReach::from_tiles(tiles));
         *slot = Some((
             std::sync::Arc::clone(envelopes),
             std::sync::Arc::clone(&covered),
@@ -5619,9 +5685,6 @@ impl BasicAi {
             .collect()
     }
 
-    /// First legal step toward healing ground that no observed enemy can attack
-    /// next turn. City Centers win before ordinary friendly ground; neutral
-    /// ground is a last resort when no safe homeward route exists.
     fn safe_healing_step(
         &self,
         g: &Game,
@@ -24534,6 +24597,37 @@ mod attack_envelope_key_tests {
             seen[2], seen[3],
             "the enemy moved and its envelope did not, so the comparison above \
              cannot detect a stale one"
+        );
+    }
+
+    /// ★★★★ THE ORDER IS THE PART THAT COULD CHANGE A GAME. An envelope is
+    /// unioned into the whole-map safety scan and `evacuation_tile_cmp` breaks
+    /// its last tie on `Pos`, so a sorted `Vec` replacing a `BTreeSet` is only
+    /// safe while it iterates in the same sequence — including when the tiles
+    /// arrive unordered and with duplicates, which is exactly what an air
+    /// unit's disk hands over.
+    #[test]
+    fn an_envelope_iterates_in_the_order_the_tree_did() {
+        let messy = vec![(3, -1), (0, 0), (3, -1), (-2, 7), (0, 0), (1, 1)];
+        let tree: BTreeSet<Pos> = messy.iter().copied().collect();
+        let reach = EnvelopeReach::from_tiles(messy.clone());
+        assert_eq!(
+            reach.iter().copied().collect::<Vec<Pos>>(),
+            tree.iter().copied().collect::<Vec<Pos>>(),
+            "the slice must hand back the tree's ascending, distinct sequence"
+        );
+        for position in &messy {
+            assert!(reach.contains(position), "{position:?} is in the envelope");
+        }
+        assert!(!reach.contains(&(9, 9)), "and nothing else is");
+        // Already ascending and distinct: the common path, adopted untouched.
+        let sorted: Vec<Pos> = tree.iter().copied().collect();
+        assert_eq!(
+            EnvelopeReach::from_tiles(sorted.clone())
+                .iter()
+                .copied()
+                .collect::<Vec<Pos>>(),
+            sorted
         );
     }
 

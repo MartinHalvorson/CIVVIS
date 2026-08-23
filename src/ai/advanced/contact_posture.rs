@@ -325,7 +325,7 @@ impl AdvancedAi {
         // walking out of a melee unit's reach is the joint search's withdraw
         // line, priced there and deliberately not duplicated here.
         let mut frames = None;
-        let guns: Vec<(Pos, &std::collections::BTreeSet<Pos>)> = envelopes
+        let guns: Vec<(Pos, &crate::ai::EnvelopeReach)> = envelopes
             .iter()
             .filter_map(|(eid, reach)| {
                 let enemy = g.units.get(eid)?;
