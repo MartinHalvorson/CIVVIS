@@ -30520,48 +30520,14 @@ impl Game {
         false
     }
 
-    pub fn district_sites(&self, cid: u32, dname: impl AsName) -> Vec<Pos> {
-        let dname = dname.as_name();
-        // A positive answer from the host is stronger than our reconstructed
-        // placement model. These coordinates are kept only for the short refusal
-        // window and only when their tile is on the mirrored board; if the export
-        // did not reveal one, retain the ordinary fallback below.
-        if let Some(sites) = self
-            .host_district_sites
-            .get(&cid)
-            .and_then(|by_district| by_district.get(&dname))
-        {
-            let sites: Vec<Pos> = sites
-                .iter()
-                .copied()
-                .filter(|position| self.map.tiles.contains_key(position))
-                .collect();
-            if !sites.is_empty() {
-                return sites;
-            }
-        }
-        // A district the HOST refused to place IN THIS CITY. Empty in an ordinary
-        // game; see `blocked_districts` for why this is per city and not global.
-        if self
-            .blocked_districts
-            .get(&cid)
-            .is_some_and(|blocked| blocked.contains(&dname))
-        {
-            return vec![];
-        }
-        let city = &self.cities[&cid];
+    /// The city-level gates a new district site must pass before any tile
+    /// is looked at: the family caps, the exclusion list, and the specialty
+    /// capacity. Split out of `district_sites` unchanged so a planner can
+    /// ask whether owning one more plot could open a site at all — when
+    /// these refuse, no plot purchase can help
+    /// (`ai/advanced/district_planning.rs`).
+    pub(crate) fn city_accepts_new_district_site(&self, city: &City, dname: Name) -> bool {
         let spec = &self.rules.districts[dname];
-        let mut out: Vec<Pos> = city
-            .owned_tiles
-            .iter()
-            .copied()
-            .filter(|position| {
-                self.map.tiles[position]
-                    .district_foundation
-                    .as_ref()
-                    .is_some_and(|foundation| foundation.district == dname)
-            })
-            .collect();
         let city_family_count = city
             .districts
             .keys()
@@ -30611,7 +30577,52 @@ impl Game {
         } else {
             false
         };
-        if blocked_new_site || specialty_capacity_full {
+        !(blocked_new_site || specialty_capacity_full)
+    }
+
+    pub fn district_sites(&self, cid: u32, dname: impl AsName) -> Vec<Pos> {
+        let dname = dname.as_name();
+        // A positive answer from the host is stronger than our reconstructed
+        // placement model. These coordinates are kept only for the short refusal
+        // window and only when their tile is on the mirrored board; if the export
+        // did not reveal one, retain the ordinary fallback below.
+        if let Some(sites) = self
+            .host_district_sites
+            .get(&cid)
+            .and_then(|by_district| by_district.get(&dname))
+        {
+            let sites: Vec<Pos> = sites
+                .iter()
+                .copied()
+                .filter(|position| self.map.tiles.contains_key(position))
+                .collect();
+            if !sites.is_empty() {
+                return sites;
+            }
+        }
+        // A district the HOST refused to place IN THIS CITY. Empty in an ordinary
+        // game; see `blocked_districts` for why this is per city and not global.
+        if self
+            .blocked_districts
+            .get(&cid)
+            .is_some_and(|blocked| blocked.contains(&dname))
+        {
+            return vec![];
+        }
+        let city = &self.cities[&cid];
+        let spec = &self.rules.districts[dname];
+        let mut out: Vec<Pos> = city
+            .owned_tiles
+            .iter()
+            .copied()
+            .filter(|position| {
+                self.map.tiles[position]
+                    .district_foundation
+                    .as_ref()
+                    .is_some_and(|foundation| foundation.district == dname)
+            })
+            .collect();
+        if !self.city_accepts_new_district_site(city, dname) {
             out.sort();
             return out;
         }

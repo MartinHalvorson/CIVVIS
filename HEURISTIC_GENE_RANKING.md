@@ -354,6 +354,7 @@ These screenable genes have no on/off result, so they receive no rank or promoti
 | `builder-reward-survey` | off (unmeasured) | Price Builder production by a survey of the work it would do. |
 | `coordinated-finish` | off (unmeasured) | Admit the friendly-volley extension without the rest of the closed war-half bundle. |
 | `coupled-expansion` | off (unmeasured) | Enable the evaluator-only paid expansion treatment. |
+| `district-planning` | off (unmeasured) | The city plans its districts, sites and tile buys together: wished districts get jointly assigned, reserved plots over rings 1-3, and the tile a very valuable site needs is bought. |
 | `engine-faith-price` | off (unmeasured) | THE FAITH PRICE THE AI READS IS THE STANDARD-SPEED ONE. |
 | `fortify-idle-units` | off (unmeasured) | Fortify units the planner gave nothing to do. |
 | `maintenance-aware-deck` | off (unmeasured) | Let the deck counterfactual see the unit-maintenance bill. |
