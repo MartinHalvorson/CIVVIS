@@ -460,8 +460,13 @@ class TheGeneSetDerivation(unittest.TestCase):
         self.assertEqual(len(tags), len(set(tags)), "a tag is listed twice")
         self.assertLessEqual(set(tags), gene_ledger.known_tags(),
                              "every gene the screen varies is a registered treatment")
-        self.assertIn("holy-lane-parity", tags)
-        self.assertIn("barbarian-hunt", tags)
+        # One tag from each of the three tables, so a parse that silently
+        # lost a whole table fails here. Deliberately structural rather than
+        # topical: naming a gene under review would make this test a hostage
+        # to the next cull.
+        self.assertIn("war-reinforcement", tags, "ENGINE_REPAIR_TREATMENTS")
+        self.assertIn("strategic-wonders", tags, "PRODUCTION_TREATMENTS")
+        self.assertIn("joint-tactics", tags, "PRODUCTION_OPT_INS")
 
 
 class TheBuildGuard(unittest.TestCase):
