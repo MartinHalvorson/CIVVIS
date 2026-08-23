@@ -1218,8 +1218,8 @@ class VersionedGenes(unittest.TestCase):
 #: The main table's columns, in order. One definition, read both as the header
 #: assertion and as the name -> index map every cell lookup goes through.
 EXPECTED_COLUMNS = (
-    "| Rank | Gene | Description | Default | ± Wins / 10k seats | ± Wins / 10k seats prior | "
-    "± Wins / 10k seats third | "
+    "| Rank | Gene | Description | Default | Scaled ± Wins Last Batch (n seats) | "
+    "Scaled ± Wins Prior Batch (n seats) | Scaled ± Wins Third Batch (n seats) | "
     "Total (on) Win rate | Total (off) Win rate | Diff | "
     "Posterior (95% CI) | P(>0) | Share Δpp (z) | "
     "cost (compute) | cost (time) |"
@@ -1228,8 +1228,8 @@ EXPECTED_COLUMNS = (
 #: Every column by name, so an assertion says which cell it reads instead of
 #: counting to it.
 #:
-#: ⚠ THE INDICES USED TO BE WRITTEN OUT, and inserting *± Wins / 10k seats
-#: third* between `prior` and the win rates moved six of them along by one —
+#: ⚠ THE INDICES USED TO BE WRITTEN OUT, and inserting the third batch
+#: column between `prior` and the win rates moved six of them along by one —
 #: every positional assertion in this file began reading its neighbour. Named
 #: lookup makes the next inserted column one loud header mismatch instead of
 #: six assertions quietly checking the wrong cell.
@@ -1354,6 +1354,70 @@ class TheTableIsDerived(unittest.TestCase):
                          cell(cells, "Total (off) Win rate")):
                 self.assertRegex(rate, r"^\d+\.\d\d% \(n=[\d,]+\)$",
                                  cell(cells, "Gene"))
+
+    def test_each_batch_cell_is_scaled_to_10k_and_carries_its_on_arm_sample_size(self):
+        """Each score and `n` comes from one on-arm source measurement."""
+        ledger = json.loads(ranking.LEDGER_JSON.read_text())
+        measured, _ = ranking.load_sources(ledger)
+        columns = (
+            (0, "Scaled ± Wins Last Batch (n seats)"),
+            (1, "Scaled ± Wins Prior Batch (n seats)"),
+            (2, "Scaled ± Wins Third Batch (n seats)"),
+        )
+        for cells in self._ranked_rows():
+            tag = cell(cells, "Gene").strip("`")
+            history = measured[tag]
+            for back, column in columns:
+                if len(history) <= back:
+                    expected = ranking.EN_DASH
+                else:
+                    batch = history[-1 - back]
+                    expected = (
+                        f"{ranking.wins_per(batch['win_on'], batch['players']):+d} "
+                        f"(n={ranking.fmt_int(batch['n_on'])})"
+                    )
+                self.assertEqual(cell(cells, column), expected, f"{tag}: {column}")
+
+    def test_batch_win_cell_uses_the_same_on_arm_size_as_its_rate(self):
+        history = [{
+            "win_on": 1 / 6 + 0.01,
+            "players": 6,
+            "n_on": 1300,
+            "n_off": 500,
+        }]
+        self.assertEqual(ranking.batch_win_cell(history), "+100 (n=1,300)")
+
+    def test_load_sources_preserves_explicit_arm_sizes_without_legacy_pairs(self):
+        source = {
+            "profile": {"players": 6},
+            "genes": [
+                {
+                    "tag": "explicit-arms",
+                    "win_on": 0.18, "win_off": 0.16,
+                    "n_on": 1300, "n_off": 500,
+                    "win_z": 1.0, "share_z": 0.0,
+                    "win_delta_pp": 2.0, "win_se_pp": 1.0,
+                    "share_delta_pp": 0.0,
+                },
+                {
+                    "tag": "legacy-seats",
+                    "win_on": 0.18, "win_off": 0.16, "seats": 1800,
+                    "win_z": 1.0, "share_z": 0.0,
+                    "win_delta_pp": 2.0, "win_se_pp": 1.0,
+                    "share_delta_pp": 0.0,
+                },
+            ],
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "batch.json"
+            path.write_text(json.dumps(source))
+            measured, _ = ranking.load_sources({"sources": [{
+                "path": str(path), "shape": "standard",
+            }]})
+        self.assertEqual((measured["explicit-arms"][0]["n_on"],
+                          measured["explicit-arms"][0]["n_off"]), (1300, 500))
+        self.assertEqual((measured["legacy-seats"][0]["n_on"],
+                          measured["legacy-seats"][0]["n_off"]), (900, 900))
 
     def test_descriptions_print_whole(self):
         """The Description column was widened 160 → 480 characters, which is
