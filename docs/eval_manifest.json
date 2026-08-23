@@ -1,31 +1,9 @@
 {
   "coverage": {
-    "named": 39,
-    "never_named": 10,
-    "never_named_arms": {
-      "amenity-district-path": "live_without_amenity_district_path",
-      "amenity-project-preemption": "live_without_amenity_project_preemption",
-      "blind-objective-strength": "live_without_blind_objective_strength",
-      "blind-objective-units": "live_without_blind_objective_units",
-      "endgame-war-runway": "live_without_endgame_war_runway",
-      "relief-targets-the-siege": "live_without_relief_targets_the_siege",
-      "settler-site-agreement": "live_without_settler_site_agreement",
-      "siege-commitment": "live_without_siege_commitment",
-      "stranded-settler-discount": "live_without_stranded_settler_discount",
-      "wonder-ring-settle-value": "live_without_wonder_ring_settle_value"
-    },
-    "never_named_treatments": [
-      "amenity-district-path",
-      "amenity-project-preemption",
-      "blind-objective-strength",
-      "blind-objective-units",
-      "endgame-war-runway",
-      "relief-targets-the-siege",
-      "settler-site-agreement",
-      "siege-commitment",
-      "stranded-settler-discount",
-      "wonder-ring-settle-value"
-    ],
+    "named": 49,
+    "never_named": 0,
+    "never_named_arms": {},
+    "never_named_treatments": [],
     "withholdable": 49
   },
   "derived": {
