@@ -101,7 +101,7 @@ that carries a block is checked; the absence of one is a fact about the file's
 age, not a way past the guard.
 
 ⭐ AND A SCREEN DECLARES ITS SIZE BEFORE IT PLAYS. `gene_screen` writes the
-pairs it was launched for into the header, so `complete_pairs` can be read
+games it was launched for into the header, so the seats it played can be read
 against an intention rather than against nothing. P10 "ended early at the
 operator's request" at 5,858 of a planned 10,000 games: a legitimate decision
 that left an artefact indistinguishable from a completed screen. A partial
@@ -192,19 +192,23 @@ SCREEN = {
     "victories": "science,culture,religious,diplomatic,domination,score",
     "all_seats": True,
     "randomize_civs": True,
-    "design": "foldover",
     "baseline": "best",
-    "field": "advanced",
 }
-#: The profile keys recorded for every source, whether or not they match.
-PROFILE_KEYS = tuple(SCREEN) + ("start_seed",)
+#: The profile keys recorded for every source, whether or not they match. The
+#: draw `design` is recorded and NOT checked: it is how each seat's genome was
+#: sampled (`independent` — every seat its own draw, the screen since
+#: 2026-08-23 — or the earlier paired `foldover` / `prior`), not a leg of the
+#: board, and the estimator reads every design the same way: seats with the
+#: gene on against seats with it off.
+PROFILE_KEYS = tuple(SCREEN) + ("design", "start_seed")
 #: ⭐ THE BUILD A SOURCE WAS PLAYED BY, leg by leg — the keys
 #: `src/bin/gene_screen.rs`'s `Build` writes into every header. Held together
 #: with the Rust struct by `tools/test_gene_ledger.py`, so a field added on one
 #: side and forgotten on the other fails a test instead of reaching the ledger.
 BUILD_KEYS = ("commit", "commit_source", "dirty", "genes_sha256", "binary_sha256")
 #: The same, for `Batch` — what the screen was launched to play.
-BATCH_KEYS = ("target_pairs", "target_comparisons", "seed_first", "seed_last")
+BATCH_KEYS = ("target_games", "target_seats", "target_pairs", "target_comparisons",
+              "seed_first", "seed_last")
 #: Where the gene tags live, in the order `gene_screen`'s `gene_table()` builds
 #: them. `ENGINE_REPAIR_TREATMENTS` is a flat list of tags; the other two are
 #: `(field, tag, toggle)` rows whose tag is the second string.
@@ -567,7 +571,7 @@ def direct_arm_constant(sources: list[dict]) -> tuple[float, str] | None:
         if int(data.get("profile", {}).get("players") or 0) != SCREEN["players"]:
             continue
         se = genes[0].get("win_se_pp")
-        pairs = int(data.get("complete_pairs", 0))
+        pairs = seat_pairs(source_seats(data))
         if se is None or pairs <= 0:
             continue
         constant = column_se(float(se)) * math.sqrt(pairs)
@@ -785,6 +789,32 @@ def gene_set_fingerprint(tags) -> str:
     return hashlib.sha256("".join(f"{tag}\n" for tag in tags).encode()).hexdigest()
 
 
+def source_seats(data: dict) -> int:
+    """The seat observations one analysis rests on.
+
+    ⭐ THE UNIT IS THE SEAT: one major seat in one game, carrying a genome and
+    an outcome. A screen written since 2026-08-23 says `seats` outright. The
+    paired designs before it counted `complete_pairs` — matched comparisons of
+    one on-seat against one off-seat — and each of those is two seats."""
+    if data.get("seats") is not None:
+        return int(data["seats"])
+    return 2 * int(data.get("complete_pairs", 0))
+
+
+def gene_seats(gene: dict) -> int:
+    """The seats behind one gene's row, by the same rule as `source_seats`."""
+    if gene.get("seats") is not None:
+        return int(gene["seats"])
+    return 2 * int(gene["pairs"])
+
+
+def seat_pairs(seats: int) -> int:
+    """Seats as the matched-comparison currency the ranking's bands and the
+    direct-arm sizing are still stated in: two seats make one on/off
+    comparison. Kept until the ranking speaks in seats too."""
+    return seats // 2
+
+
 def build_of(data: dict) -> dict:
     """The build block a source recorded, with every key the stamp names.
 
@@ -794,13 +824,21 @@ def build_of(data: dict) -> dict:
 
 
 def batch_of(data: dict) -> dict:
-    """What the source pre-registered, and what it actually played."""
+    """What the source pre-registered, and what it actually played, in seats.
+
+    A screen since 2026-08-23 declares `target_seats`; the paired designs
+    declared `target_comparisons`, two seats each."""
     raw = data.get("batch") or {}
-    target = raw.get("target_comparisons")
-    complete = int(data.get("complete_pairs", 0))
+    if raw.get("target_seats") is not None:
+        target = int(raw["target_seats"])
+    elif raw.get("target_comparisons") is not None:
+        target = 2 * int(raw["target_comparisons"])
+    else:
+        target = None
+    complete = source_seats(data)
     return {
-        "target_comparisons": target,
-        "complete_comparisons": complete,
+        "target_seats": target,
+        "complete_seats": complete,
         "partial": None if not target else complete < target,
     }
 
@@ -894,10 +932,15 @@ def load_source(path: Path) -> dict:
 
 
 def measure_from(gene: dict, source_name: str) -> dict:
+    seats = gene_seats(gene)
     measure = {
-        "pairs": int(gene["pairs"]),
-        "n_on": int(gene.get("n_on", gene["pairs"])),
-        "n_off": int(gene.get("n_off", gene["pairs"])),
+        "seats": seats,
+        # ⚠ `pairs` is `seats // 2`: the matched-comparison currency the
+        # ranking's bands, the Rust mirror and the direct-arm sizing still
+        # speak. The seat is the unit; this is its translation.
+        "pairs": seat_pairs(seats),
+        "n_on": int(gene.get("n_on", seat_pairs(seats))),
+        "n_off": int(gene.get("n_off", seat_pairs(seats))),
         "win_delta_pp": round(float(gene["win_delta_pp"]), 3),
         "win_z": round(float(gene["win_z"]), 3),
         "share_delta_pp": round(float(gene["share_delta_pp"]), 3),
@@ -912,9 +955,12 @@ def measure_from(gene: dict, source_name: str) -> dict:
     # focused on the pooled estimate.
     tranches = []
     for tranche in gene.get("win_tranches", []):
+        tranche_seats = (int(tranche["seats"]) if tranche.get("seats") is not None
+                         else 2 * int(tranche["pairs"]))
         recorded = {
             "position": str(tranche["position"]),
-            "pairs": int(tranche["pairs"]),
+            "seats": tranche_seats,
+            "pairs": seat_pairs(tranche_seats),
             "win_delta_pp": round(float(tranche["win_delta_pp"]), 3),
             "win_z": round(float(tranche["win_z"]), 3),
         }
@@ -964,13 +1010,17 @@ def build_ledger(sources: list[Path], filter_known: bool = True,
         profile = profile_of(data)
         players = int(profile.get("players") or 0)
         family[name] = float(data.get("family_wise_z", 0.0))
+        seats = source_seats(data)
         entry = {
             "path": str(path.relative_to(ROOT)) if path.is_relative_to(ROOT) else str(path),
             "shape": shape_of(profile),
-            "complete_pairs": int(data.get("complete_pairs", 0)),
+            "seats": seats,
+            "complete_pairs": seat_pairs(seats),
             "family_wise_z": round(family[name], 3),
             "profile": profile,
         }
+        if data.get("games") is not None:
+            entry["games"] = int(data["games"])
         # ⚠ Written only when the source has one. The twenty pre-2026-08-23
         # sources carry no build block and no pre-registration, so recording
         # them here would rewrite twenty entries to say nothing; their state is
@@ -980,7 +1030,7 @@ def build_ledger(sources: list[Path], filter_known: bool = True,
         if build:
             entry["build"] = build
         batch = batch_of(data)
-        if batch["target_comparisons"] is not None:
+        if batch["target_seats"] is not None:
             entry["batch"] = batch
         if build_notes and name in build_notes:
             entry["unverified"] = build_notes[name]
@@ -1005,8 +1055,8 @@ def build_ledger(sources: list[Path], filter_known: bool = True,
             arms.setdefault(gene["tag"], []).append({
                 "win_on": float(gene["win_on"]),
                 "win_off": float(gene["win_off"]),
-                "n_on": int(gene.get("n_on", gene["pairs"])),
-                "n_off": int(gene.get("n_off", gene["pairs"])),
+                "n_on": int(gene.get("n_on", seat_pairs(gene_seats(gene)))),
+                "n_off": int(gene.get("n_off", seat_pairs(gene_seats(gene)))),
                 "win_delta_pp": float(gene["win_delta_pp"]),
                 "win_se_pp": (None if gene.get("win_se_pp") is None
                               else float(gene["win_se_pp"])),
@@ -1222,12 +1272,12 @@ def print_table(ledger: dict) -> None:
         if batch.get("partial") is None:
             size = ""
         elif batch["partial"]:
-            size = (f", ⚠ PARTIAL {batch['complete_comparisons']}"
-                    f"/{batch['target_comparisons']}")
+            size = (f", ⚠ PARTIAL {batch['complete_seats']}"
+                    f"/{batch['target_seats']} seats")
         else:
             size = ", complete"
         print(f"  source {src['shape']:<8} {stamp:<14} {src['path']}  "
-              f"({src['complete_pairs']} pairs{size}, "
+              f"({src.get('seats', 2 * src['complete_pairs'])} seats{size}, "
               f"family-wise |z|≥{src['family_wise_z']})")
         if src.get("unverified"):
             print(f"           ⚠ build unverified: {src['unverified']}")
@@ -1286,7 +1336,7 @@ def sources_from_args(args, notes: dict[str, str] | None = None) -> list[Path]:
         if not args.legacy_shape and shape_of(profile) != "standard":
             raise SystemExit(
                 f"{path.name} was not played at the screen's shape: {shape_gap(profile)}."
-                "\nRun it at the screen (`gene_screen --pairs N --out rows.jsonl`, no"
+                "\nRun it at the screen (`gene_screen --games N --out rows.jsonl`, no"
                 " profile flags), or pass --legacy-shape to record it as history."
             )
         gap = build_gap(data, path.name)

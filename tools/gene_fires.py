@@ -244,7 +244,7 @@ def main() -> int:
     if len(found["unproven"]) > args.max:
         print(f"FAIL: {len(found['unproven'])} genes have no evidence they fire "
               f"and no waiver, which exceeds the ratchet of {args.max}. Run "
-              "`gene_screen --genes <tag> --pairs 3 --json "
+              "`gene_screen --genes <tag> --games 6`, then `--analyze … --json "
               "docs/gene_screens/fires/<tag>.json` and commit the result, or "
               "add a waiver naming the reason it cannot fire.", file=sys.stderr)
         failed = 1
