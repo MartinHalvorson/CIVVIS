@@ -1616,9 +1616,8 @@ struct MatrixProfile {
     /// diplomatic victory and 24 to culture**: 65 of 310 attempts, ended by two
     /// conditions no promotion decision in this repository's history could see.
     field: &'static str,
-    /// The three world axes every recorded profile shares, held here rather
-    /// than hard-coded inside `matrix_child_args` so that a profile *names its
-    /// whole world*. They were constants in the child builder until
+    /// The remaining world axes, held here rather than hard-coded inside
+    /// `matrix_child_args` so that a profile *names its whole world*. They were constants in the child builder until
     /// `--profile` made the same profile reachable from a plain run: two
     /// expansions of one name that agreed only by coincidence would be the
     /// exact defect this file already refuses elsewhere — reporting a profile

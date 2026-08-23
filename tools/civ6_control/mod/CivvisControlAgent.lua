@@ -11802,7 +11802,8 @@ end
 -- registered.** Twenty-three of those are the three-vote probe, across nine
 -- separate post-#2108 runs, and every one recorded ONE. Three votes cost 12
 -- Favor on the Online table and 30 on the Standard one against banks of
--- 169-427, with `MaxVotes` 13-15 -- affordable on BOTH tables at once, which
+-- 169-427, with `MaxVotes` 9-15 and this walk's own budget reading host 9-15
+-- and standard 6-9 -- affordable on BOTH tables at once, which
 -- is the exact ask no ballot had ever made when the theory was written. A
 -- core charging Standard while reporting Online would have honoured it.
 --
