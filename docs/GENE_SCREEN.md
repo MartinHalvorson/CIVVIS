@@ -48,6 +48,8 @@ Every profile flag still exists, and every one of them turns a batch into a
 this table, so the ledger cannot quietly hold two worlds in one column. The
 shape lives in `SCREEN_PLAYERS`/`SCREEN_MAP`/… in `src/bin/gene_screen.rs` and
 in `SCREEN` in `tools/gene_ledger.py`, and a test fails if the two drift apart.
+The same door now also asks *which binary played it* and *how big it was meant
+to be* — see "A screen carries the binary it played" below.
 
 **What this replaced.** Two regimes: `native` (all six lanes, six players) and
 `war` (`--victories domination,score`, four players), the second one added
@@ -453,7 +455,8 @@ false zero.
 ## The rows file
 
 The first line is a header (`kind: header`, the gene order, the screened set,
-the profile); every other line is one game:
+the profile, the `build` that played it and the `batch` it was launched as);
+every other line is one game:
 
 ```json
 {"kind":"game","pair":0,"arm":1,"seed":26081900,"seat":0,"genome":"0010100110…","win":true,
