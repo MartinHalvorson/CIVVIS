@@ -11,7 +11,6 @@ page is the current inventory and live-bridge snapshot.
 | inventory | count |
 |---|---:|
 | Built-in agents | 8 |
-| Evaluator-only agents | 228 |
 | Live-bridge treatments | 79 |
 | Firaxis-only treatments | 30 |
 | Native engine-repair treatments | 49 |
@@ -32,11 +31,10 @@ no string search can make it; whether it has ever been *named* is
 mechanical. So the middle number over-counts coverage and the last one
 under-counts the debt — act on the last one, which cannot be flattered.
 
-`docs/ROADMAP.md` objective 3 asks for this bundle to be priced by
-withholding, *before the next effect hides inside a composite the way
-`city_target_floor` did*. The inventory above counts the arms that
-exist; this counts the ones that have been used, and the gap between
-them is what stayed invisible.
+The native half of this bundle is priced by the gene screen
+(`docs/GENE_SCREEN.md`, `HEURISTIC_GENE_RANKING.md`); the host-only
+half can only be priced on the live seat, by `civvis_orders --without`
+over ladder games. This list is the debt neither has touched.
 
 Never named:
 
@@ -64,7 +62,7 @@ flattered either.
 
 Why it is published: `precise_evacuation` shipped in #2059 ON for
 every major, city-state and barbarian, holding roughly half of the
-simulator's main thread, with no gene row, no evaluator arm and no
+simulator's main thread, with no gene row and no
 mention in any recorded round. Neither gate could address it and
 nothing said so.
 
