@@ -96,6 +96,17 @@ from the Expansion half's −16. It **cannot** put a tight interval around
 −70 vs −80. The run reports its own smallest-resolvable-edge line and that
 line, not this paragraph, is the record.
 
+**And the target it is being measured against is itself wide.** The −70 to −80
+prediction is a point-estimate subtraction that carries neither parent's
+interval. `docs/PRODUCTION_VALUE.md` gives the composite as **−95 Elo, CI
+−131..−60** (seed 27000000, deployment-online); the Expansion half's intervals
+were not preserved (the 2026-08-18 round says so). Propagating just the
+composite's own interval puts the victory lanes somewhere near −115..−44
+before this round adds any error of its own. A ±30 reading is therefore about
+as sharp as the question it is answering, which is the honest defence of N=100
+— not that 100 pairs is good, but that 400 would have been spent narrowing one
+term of a difference whose other term is unknown.
+
 **Third profile declared.** The 2026-08-18 round ran two profiles because
 `deployment-contested` was added to `PROMOTION_PROFILES` the same day
 (`ba5515d0`, #2042). Running `--matrix` today therefore produces a profile the
