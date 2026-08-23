@@ -52,6 +52,50 @@ reads are the ones `HEURISTIC_GENE_RANKING.md` prints):
   on-arm-seat-weighted average of per-screen differences, comparable across shapes
   and player counts in a way a raw win rate is not.
 
+⭐ A SOURCE PROVES IT PRICED THE CODE IT NAMES (2026-08-23). Beside the shape
+guard there is now a build guard, and it is the same idiom: a source is
+refused at the `--source` path, and one explicit flag records a deviation
+deliberately. `gene_screen` stamps every header with the commit its binary was
+built from, whether that tree was dirty, a sha256 of the executable, and a
+sha256 of the **gene set compiled into it**. This tool re-derives the gene tags
+from `ENGINE_REPAIR_TREATMENTS`, `PRODUCTION_TREATMENTS` and
+`PRODUCTION_OPT_INS` at the commit the source claims, and refuses the source
+when the two disagree in either direction — a gene priced here and absent
+there, or a gene present there and never compiled in here. It also refuses an
+unstamped build, a dirty one, a commit this clone cannot read, an artefact
+whose stamp does not describe its own header, and a source pricing a gene the
+repository no longer registers. `--unverified-build "<why>"` records one
+anyway, and the reason is written into the ledger beside the source it excuses.
+
+⚠⚠ THIS HAS COST THE PROJECT THREE TIMES, which is why the fingerprint and not
+the commit is the load-bearing field:
+
+- **2026-08-22, P10.** #2266 culled ten genes; P10's binary was built 1h43m
+  before that merge, so the batch was in flight and published a **+63** column
+  for `holy-lane-parity` after the gene's code was gone. The reading was real,
+  the gene came back (#2299) and confirmed directly at **+99, z +4.05**
+  (#2307) — found by a careful reader, not by a gate.
+- **#2307's own write-up** stated its source commit and its binary's SHA-256 in
+  prose, because the artefact had nowhere to put them.
+- **2026-08-23.** The first standard-shape screen re-priced `barbarian-hunt`
+  from the legacy -1.73 pp to +0.20 pp while a sibling change was minutes from
+  deleting that gene on the legacy reading, which would have made a brand-new
+  screen a source pricing a gene the code no longer had.
+
+⚠ The twenty sources recorded before 2026-08-23 carry no build block. They are
+grandfathered — the games are played and the artefacts are history — and they
+are **named** `pre-fingerprint` everywhere this tool prints or records them,
+because a grandfather clause nobody can see is the same as no guard. A source
+that carries a block is checked; the absence of one is a fact about the file's
+age, not a way past the guard.
+
+⭐ AND A SCREEN DECLARES ITS SIZE BEFORE IT PLAYS. `gene_screen` writes the
+pairs it was launched for into the header, so `complete_pairs` can be read
+against an intention rather than against nothing. P10 "ended early at the
+operator's request" at 5,858 of a planned 10,000 games: a legitimate decision
+that left an artefact indistinguishable from a completed screen. A partial
+source now says so in the analysis, in this tool's table, and in the ledger.
+
 ⚠ The columns recorded before 2026-08-22 were read on 60x38 Pangaea, under a
 four-player `domination,score` regime for some genes. The Pangaea readings are
 kept as HISTORY — they are what the deployment genome stands on until the
@@ -110,9 +154,11 @@ operator takes the call.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -141,6 +187,24 @@ SCREEN = {
 }
 #: The profile keys recorded for every source, whether or not they match.
 PROFILE_KEYS = tuple(SCREEN) + ("start_seed",)
+#: ⭐ THE BUILD A SOURCE WAS PLAYED BY, leg by leg — the keys
+#: `src/bin/gene_screen.rs`'s `Build` writes into every header. Held together
+#: with the Rust struct by `tools/test_gene_ledger.py`, so a field added on one
+#: side and forgotten on the other fails a test instead of reaching the ledger.
+BUILD_KEYS = ("commit", "commit_source", "dirty", "genes_sha256", "binary_sha256")
+#: The same, for `Batch` — what the screen was launched to play.
+BATCH_KEYS = ("target_pairs", "target_comparisons", "seed_first", "seed_last")
+#: Where the gene tags live, in the order `gene_screen`'s `gene_table()` builds
+#: them. `ENGINE_REPAIR_TREATMENTS` is a flat list of tags; the other two are
+#: `(field, tag, toggle)` rows whose tag is the second string.
+GENE_TABLES = (
+    ("src/elo.rs", "ENGINE_REPAIR_TREATMENTS", 0),
+    ("src/ai/advanced/treatments.rs", "PRODUCTION_TREATMENTS", 1),
+    ("src/ai/advanced/treatments.rs", "PRODUCTION_OPT_INS", 1),
+)
+#: The date the build stamp landed. A source written before it carries no
+#: `build` block at all; see `build_state`.
+FINGERPRINT_SINCE = "2026-08-23"
 Z_BAR = 2.0
 # The win column's scale, then the deployment rule's bars: the threshold for
 # one provisional column, the average two columns must clear, and the floor
@@ -625,6 +689,183 @@ def shape_gap(profile: dict) -> str:
     )
 
 
+def _uncommented(text: str) -> str:
+    """`text` with `//` line comments and `/* */` blocks removed.
+
+    Comments come out first because the tables are heavily commented and those
+    comments quote tag names; a scrape that read them would invent genes."""
+    text = re.sub(r"/\*.*?\*/", "", text, flags=re.S)
+    return re.sub(r"//[^\n]*", "", text)
+
+
+def _quoted(text: str) -> list[str]:
+    """Every double-quoted string in `text`, in order, comments removed.
+
+    ⚠ THIS IS `gene_screen.rs`'s `quoted` IN THE OTHER LANGUAGE. The rule is
+    deliberately the simplest one both can state without argument, because a
+    disagreement between them would refuse honest screens rather than
+    dishonest ones."""
+    return re.findall(r'"([^"\\]*)"', _uncommented(text))
+
+
+def _table_body(text: str, name: str) -> str:
+    """The body of `pub const <name>: … = &[ … ];`, brackets balanced."""
+    start = text.index(f"pub const {name}")
+    open_at = text.index("= &[", start) + 4
+    depth, index = 1, open_at
+    while depth:
+        if text[index] == "[":
+            depth += 1
+        elif text[index] == "]":
+            depth -= 1
+        index += 1
+    return text[open_at:index - 1]
+
+
+def gene_tags_from_sources(read) -> list[str]:
+    """The gene tags a `gene_screen` binary compiles in, in header order, from
+    the source tables `read(path)` supplies.
+
+    Every tag of `ENGINE_REPAIR_TREATMENTS`, then the `(field, tag, toggle)`
+    rows of `PRODUCTION_TREATMENTS` and `PRODUCTION_OPT_INS`, whose tag is the
+    second string of each row — exactly what `gene_table()` builds.
+    `gene_screen.rs`'s
+    `the_gene_table_is_exactly_what_the_ledger_re_derives_from_the_tables`
+    holds this rule against the compiled table itself."""
+    tags: list[str] = []
+    cache: dict[str, str] = {}
+    for path, name, offset in GENE_TABLES:
+        if path not in cache:
+            cache[path] = read(path)
+        found = _quoted(_table_body(cache[path], name))
+        tags += found[offset::2] if offset else found
+    return tags
+
+
+def gene_tags_at(commit: str) -> list[str] | None:
+    """The gene tags at `commit`, or `None` when this clone cannot reach it.
+
+    ⚠ `None` is not a pass. A commit the clone has never fetched is a claim
+    nobody here can check, and `build_gap` refuses it as such — a shallow
+    checkout must fetch the revision, not shrug at it."""
+    def read(path: str) -> str:
+        shown = subprocess.run(
+            ["git", "-C", str(ROOT), "show", f"{commit}:{path}"],
+            capture_output=True, text=True, check=False)
+        if shown.returncode != 0:
+            raise LookupError(path)
+        return shown.stdout
+    try:
+        return gene_tags_from_sources(read)
+    except (LookupError, ValueError, IndexError):
+        return None
+
+
+def gene_tags_now() -> list[str]:
+    """The gene tags in the working tree — the code a ledger written here
+    would ship."""
+    return gene_tags_from_sources(lambda path: (ROOT / path).read_text())
+
+
+def gene_set_fingerprint(tags) -> str:
+    """The gene set, hashed: sha256 over the tags in order, one per line, each
+    newline-terminated. `gene_screen.rs`'s `gene_set_fingerprint` builds the
+    same string from the table it compiled in."""
+    return hashlib.sha256("".join(f"{tag}\n" for tag in tags).encode()).hexdigest()
+
+
+def build_of(data: dict) -> dict:
+    """The build block a source recorded, with every key the stamp names.
+
+    An empty dict means the file predates the stamp; see `build_state`."""
+    raw = (data.get("profile") or {}).get("build") or {}
+    return {key: raw.get(key) for key in BUILD_KEYS} if raw else {}
+
+
+def batch_of(data: dict) -> dict:
+    """What the source pre-registered, and what it actually played."""
+    raw = data.get("batch") or {}
+    target = raw.get("target_comparisons")
+    complete = int(data.get("complete_pairs", 0))
+    return {
+        "target_comparisons": target,
+        "complete_comparisons": complete,
+        "partial": None if not target else complete < target,
+    }
+
+
+def build_state(data: dict) -> str:
+    """`pre-fingerprint` for a source written before the build stamp existed,
+    else `stamped`.
+
+    ⚠ GRANDFATHERED IS NOT SILENT. The twenty sources recorded before
+    2026-08-23 carry no build block and cannot acquire one — the games are
+    played — so they are kept as history and *named* `pre-fingerprint`
+    everywhere the ledger prints or records them. What must never happen is a
+    new screen entering unmarked: `gene_screen` always writes the block now, so
+    the absence of one is a fact about the file's age, and a stamped source
+    that fails its check is refused rather than downgraded to history."""
+    return "pre-fingerprint" if not build_of(data) else "stamped"
+
+
+def build_gap(data: dict, name: str, tags_at=None, tags_now=None) -> str:
+    """Why this source cannot be trusted to have played the code it names, or
+    `""` when it can.
+
+    ⚠⚠ THE GENE SET IS THE LOAD-BEARING CHECK, and it is checked in BOTH
+    directions. A source that prices a gene absent at the commit it claims is
+    pricing code that commit does not have; a source missing a gene that
+    commit does have is what an unmeasured gene quietly looks like. Both have
+    happened here: P10 published a `holy-lane-parity` column after the cull
+    that deleted it (#2266, #2299, #2307), and on 2026-08-23 a sibling change
+    was minutes from deleting `barbarian-hunt` while the first standard-shape
+    screen was re-pricing it."""
+    tags_at = tags_at or gene_tags_at
+    tags_now = tags_now or gene_tags_now
+    build = build_of(data)
+    if not build:
+        return ""
+    if not build.get("genes_sha256"):
+        return (f"{name} carries a build block with no gene-set fingerprint, so nothing "
+                "about the code it played can be checked")
+    priced = [gene["tag"] for gene in data.get("genes", [])]
+    compiled = list((data.get("profile") or {}).get("genes") or [])
+    if gene_set_fingerprint(compiled) != build["genes_sha256"]:
+        return (f"{name}'s recorded gene-set fingerprint does not describe its own header: "
+                f"{len(compiled)} gene tags hash to {gene_set_fingerprint(compiled)[:12]}, "
+                f"the file claims {build['genes_sha256'][:12]}. The artefact has been edited.")
+    if build.get("dirty"):
+        return (f"{name} was played by a binary built from a DIRTY tree at "
+                f"{str(build.get('commit'))[:12]}: the code that played the games is not "
+                "recoverable from any revision")
+    commit = build.get("commit") or ""
+    if not commit:
+        return (f"{name} names no commit ({build.get('commit_source')}), so the code it "
+                "played cannot be identified. Rebuild, or launch with CIVVIS_COMMIT set.")
+    at_commit = tags_at(commit)
+    if at_commit is None:
+        return (f"{name} claims commit {commit[:12]}, which this clone cannot read. "
+                f"Fetch that revision (`git fetch origin {commit}`) before recording it.")
+    if gene_set_fingerprint(at_commit) != build["genes_sha256"]:
+        extra = [tag for tag in compiled if tag not in set(at_commit)]
+        missing = [tag for tag in at_commit if tag not in set(compiled)]
+        detail = "; ".join(filter(None, [
+            f"priced here but absent at {commit[:12]}: " + ", ".join(extra) if extra else "",
+            f"present at {commit[:12]} but never compiled in: " + ", ".join(missing)
+            if missing else "",
+            "same tags in a different order" if not extra and not missing else "",
+        ]))
+        return (f"{name} was NOT played by the code at the commit it names "
+                f"({commit[:12]}) — {detail}")
+    gone = [tag for tag in priced if tag not in set(tags_now())]
+    if gone:
+        return (f"{name} prices {len(gone)} gene(s) this repository no longer registers: "
+                + ", ".join(sorted(gone))
+                + ". The screen is real; the code it measured is gone. Restore the genes or "
+                  "record the source deliberately.")
+    return ""
+
+
 def known_tags() -> set[str]:
     """Every gene tag the repository registers — the `(field, tag, toggle)`
     rows of `LIVE_TREATMENTS`, `PRODUCTION_TREATMENTS` and
@@ -678,13 +919,20 @@ def measure_from(gene: dict, source_name: str) -> dict:
 
 
 def build_ledger(sources: list[Path], filter_known: bool = True,
+                 build_notes: dict[str, str] | None = None,
                  authority: str = AUTHORITY) -> dict:
     """Merge the sources into one ledger object (the JSON file's content).
     Sources are recorded oldest-first, and a later one overrides an earlier one
     per gene. `filter_known=False` keeps every tag (synthetic tests).
 
     `authority` names which rule decides `default_on`; it is recorded in the
-    ledger so `--check` and the Rust mirror re-derive under the same rule."""
+    ledger so `--check` and the Rust mirror re-derive under the same rule.
+
+    `build_notes` maps a source's file name to the reason its build check was
+    waived, and is what makes `--unverified-build` a *recorded* escape rather
+    than a spoken one: the reason lands in the ledger beside the source it
+    excuses, and `rebuild_from_ledger` reads it back so `--check` re-derives
+    the same file."""
     measures: dict[str, dict] = {}
     # Every win column a gene has, oldest first: the last two are the ranking's
     # `± Wins / 10k seats` and `± Wins / 10k seats prior`, and the deployment default is
@@ -703,13 +951,27 @@ def build_ledger(sources: list[Path], filter_known: bool = True,
         profile = profile_of(data)
         players = int(profile.get("players") or 0)
         family[name] = float(data.get("family_wise_z", 0.0))
-        recorded.append({
+        entry = {
             "path": str(path.relative_to(ROOT)) if path.is_relative_to(ROOT) else str(path),
             "shape": shape_of(profile),
             "complete_pairs": int(data.get("complete_pairs", 0)),
             "family_wise_z": round(family[name], 3),
             "profile": profile,
-        })
+        }
+        # ⚠ Written only when the source has one. The twenty pre-2026-08-23
+        # sources carry no build block and no pre-registration, so recording
+        # them here would rewrite twenty entries to say nothing; their state is
+        # `pre-fingerprint`, which `build_state` derives and `print_table`
+        # names on every line.
+        build = build_of(data)
+        if build:
+            entry["build"] = build
+        batch = batch_of(data)
+        if batch["target_comparisons"] is not None:
+            entry["batch"] = batch
+        if build_notes and name in build_notes:
+            entry["unverified"] = build_notes[name]
+        recorded.append(entry)
         for gene in data.get("genes", []):
             if known and gene["tag"] not in known:
                 dropped.add(gene["tag"])
@@ -927,8 +1189,30 @@ def print_table(ledger: dict) -> None:
               f"{ledger['counts'][f'default_on_under_{candidate}']:>3}, moving "
               f"{ledger['counts'][f'moved_by_{candidate}']:>2} genes")
     for src in ledger["sources"]:
-        print(f"  source {src['shape']:<8} {src['path']}  ({src['complete_pairs']} pairs, "
+        build = src.get("build") or {}
+        if build.get("commit"):
+            stamp = build["commit"][:12] + (" DIRTY" if build.get("dirty") else "")
+        elif build:
+            stamp = "unstamped"
+        else:
+            stamp = "pre-fingerprint"
+        batch = src.get("batch") or {}
+        if batch.get("partial") is None:
+            size = ""
+        elif batch["partial"]:
+            size = (f", ⚠ PARTIAL {batch['complete_comparisons']}"
+                    f"/{batch['target_comparisons']}")
+        else:
+            size = ", complete"
+        print(f"  source {src['shape']:<8} {stamp:<14} {src['path']}  "
+              f"({src['complete_pairs']} pairs{size}, "
               f"family-wise |z|≥{src['family_wise_z']})")
+        if src.get("unverified"):
+            print(f"           ⚠ build unverified: {src['unverified']}")
+    grandfathered = sum(1 for src in ledger["sources"] if not src.get("build"))
+    if grandfathered:
+        print(f"  ⚠ {grandfathered} of {len(ledger['sources'])} sources predate the build "
+              f"stamp ({FINGERPRINT_SINCE}) and are kept as pre-fingerprint history")
     print(f"{'gene':<30} {'verdict':<10} {'default':<7} {'last':>6} {'prior':>6} "
           f"{'diff':>7} {'posterior':>18} {'P>0':>6} {'win/share z':<20} source")
     # Best default first, then the deciding column, so the rule reads down the page.
@@ -956,26 +1240,59 @@ def print_table(ledger: dict) -> None:
               f"{z(gene['screen']):<20} {source} {flag}")
 
 
-def sources_from_args(args) -> list[Path]:
-    """The `--source` files, oldest first, each held to the screen's shape.
+def sources_from_args(args, notes: dict[str, str] | None = None) -> list[Path]:
+    """The `--source` files, oldest first, each held to the screen's shape AND
+    to the code it says it played.
 
-    ⚠ This is the whole enforcement of "one screen": a probe played at another
-    profile answers a different question, and pooling its column with the
-    screen's would report the difference between two worlds as a gene's
-    effect. `--legacy-shape` records one anyway, which is how the Pangaea
-    history already in the ledger stays there."""
+    ⚠ These are the whole enforcement of "one screen, played by one known
+    build", and they are two guards of the same shape rather than two idioms.
+    A probe played at another profile answers a different question, and pooling
+    its column with the screen's would report the difference between two worlds
+    as a gene's effect: `--legacy-shape` records one anyway, which is how the
+    Pangaea history already in the ledger stays there. A screen played by a
+    binary that is not the code it names prices something nobody can read back:
+    `--unverified-build "<why>"` records one anyway, and the reason lands in
+    the ledger beside the source it excuses.
+
+    `notes` collects those reasons for `build_ledger` to record."""
     paths = [Path(p).resolve() for p in args.source]
-    if args.legacy_shape:
-        return paths
+    escape = getattr(args, "unverified_build", None)
     for path in paths:
-        profile = profile_of(load_source(path))
-        if shape_of(profile) != "standard":
+        data = load_source(path)
+        profile = profile_of(data)
+        if not args.legacy_shape and shape_of(profile) != "standard":
             raise SystemExit(
                 f"{path.name} was not played at the screen's shape: {shape_gap(profile)}."
                 "\nRun it at the screen (`gene_screen --pairs N --out rows.jsonl`, no"
                 " profile flags), or pass --legacy-shape to record it as history."
             )
+        gap = build_gap(data, path.name)
+        if not gap:
+            continue
+        if not escape:
+            raise SystemExit(
+                gap + "\nRe-run the batch on a clean build of the code it prices, or pass"
+                ' --unverified-build "<why this source is recorded anyway>".'
+            )
+        if notes is not None:
+            notes[path.name] = escape
     return paths
+
+
+def notes_from_ledger(ledger: dict) -> dict[str, str]:
+    """The escape reasons the ledger already recorded, keyed by file name."""
+    return {Path(src["path"]).name: src["unverified"]
+            for src in ledger["sources"] if src.get("unverified")}
+
+
+def rebuild_from_ledger(ledger: dict, authority: str | None = None) -> dict:
+    """Re-derive a ledger from the sources it records, carrying its own escape
+    reasons — and, unless one is named, its own authority — back in, so
+    `--check` reproduces the file rather than reporting drift on the record it
+    just read."""
+    return build_ledger(sources_from_ledger(ledger),
+                        build_notes=notes_from_ledger(ledger),
+                        authority=authority or authority_of(ledger))
 
 
 def sources_from_ledger(ledger: dict) -> list[Path]:
@@ -996,6 +1313,10 @@ def main(argv=None) -> int:
                          "later wins per gene)")
     ap.add_argument("--legacy-shape", action="store_true",
                     help="record a source that was not played at the screen's shape, as history")
+    ap.add_argument("--unverified-build", metavar="REASON",
+                    help="record a source whose build cannot be verified against the code it "
+                         "prices (unstamped, dirty, or a gene set that is not the claimed "
+                         "commit's), with the reason it is recorded anyway")
     ap.add_argument("--write", action="store_true",
                     help="write docs/gene_ledger.json and src/ai/advanced/gene_ledger_table.rs")
     ap.add_argument("--check", action="store_true",
@@ -1009,9 +1330,9 @@ def main(argv=None) -> int:
     if args.check:
         current = json.loads(LEDGER_JSON.read_text())
         # Under the authority the FILE records, never the one the constant
-        # happens to hold: a check must reproduce the checked-in bytes.
-        ledger = build_ledger(sources_from_ledger(current),
-                              authority=authority_of(current))
+        # happens to hold: a check must reproduce the checked-in bytes — and
+        # the same goes for the escape reasons it records.
+        ledger = rebuild_from_ledger(current)
         drift = []
         if render_json(ledger) != LEDGER_JSON.read_text():
             drift.append(str(LEDGER_JSON.relative_to(ROOT)))
@@ -1026,10 +1347,12 @@ def main(argv=None) -> int:
 
     authority = args.authority or AUTHORITY
     if args.source:
-        ledger = build_ledger(sources_from_args(args), authority=authority)
-    elif LEDGER_JSON.exists():
-        ledger = build_ledger(sources_from_ledger(json.loads(LEDGER_JSON.read_text())),
+        notes: dict[str, str] = {}
+        ledger = build_ledger(sources_from_args(args, notes), build_notes=notes,
                               authority=authority)
+    elif LEDGER_JSON.exists():
+        ledger = rebuild_from_ledger(json.loads(LEDGER_JSON.read_text()),
+                                     authority=authority)
     else:
         raise SystemExit("no --source given and no docs/gene_ledger.json to read sources from")
 
