@@ -646,11 +646,43 @@ roster keeps `strategic` as an offline-only anchor.
     --matrix --pairs 120 --jobs 12 --seed 12000000
   ```
 
-  It runs the compact Standard safety profile and the six-player Online
-  deployment concurrently. Deployment must PASS; compact must have enough
-  evidence and must not RETAIN `advanced`. Matrix mode rejects profile-shaping
-  flags, so the command cannot silently test a different game under the same
-  label.
+  It runs three profiles concurrently: the compact Standard safety profile,
+  the six-player Online deployment, and `deployment-contested` — the same
+  deployment world with the four non-entrant chairs seated by
+  `live_target_diplomatic` and `live_target_culture`. Deployment must PASS;
+  compact and contested must have enough evidence and must not RETAIN
+  `advanced`. Matrix mode rejects profile-shaping flags, so the command cannot
+  silently test a different game under the same label.
+
+- **Name the board, do not retype it.** `--profile <name>` gives a plain
+  single-arm run the exact world one of those three profiles stands for:
+
+  ```sh
+  cargo run --release --bin ai_eval -- treatment advanced \
+    --profile deployment-contested --pairs 60 --seed 36000000
+  ```
+
+  The three names are `compact-standard`, `deployment-online` and
+  `deployment-contested`, and each expands through the same function the
+  matrix builds its children with, so a named round and the gate play one
+  board rather than two that agree by hand. ⚠ **They did not agree.** Four
+  rounds in `docs/eval/` measured congress arms on
+  `--field live_target_diplomatic,live_target_culture` and each records its
+  world as `pangaea`/`flat`/fixed civilizations, while `deployment-contested`
+  has been `continents`/`planet`/`poles`/randomized since #658 — eleven flags
+  typed by hand, agreeing with the gate on eight.
+
+  Like `--matrix`, `--profile` **refuses** any of the thirteen world axes
+  alongside it rather than letting the explicit flag win: a run that reported
+  one profile and played another is the failure this refusal exists for.
+  `--pairs`, `--jobs`, `--seed`, `--confirm` and `--difficulty` are not world
+  axes and stay free. Every run now prints the profile it resolved, or
+  `ad hoc (no --profile)` when it resolved none.
+
+  ⚠ A contested run's numbers are **not** comparable to a fieldless one's. Two
+  entrants hold two of six chairs there instead of all six, so one game is one
+  contest rather than three; and the field decides which victory conditions
+  the board can reach at all. Read them as different questions.
 - Keep mechanism controls separate. `advanced_policy_live_control`,
   `advanced_envoy_policy`, `advanced_envoy_infrastructure`, and
   `advanced_envoy_economy` decompose policy-deck, influence-card, and production
