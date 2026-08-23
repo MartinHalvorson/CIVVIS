@@ -270,12 +270,12 @@ type PlotPurchaseCandidate = (f64, std::cmp::Reverse<(u32, Pos)>, Action);
 mod advanced;
 mod tactics;
 pub use advanced::{
+    gene, Axis, Gene, Kind, GENES,
     deployment_treatments, gene_ledger, gene_ledger_rows, ledger_default_on, ledger_verdict,
     AdvancedAi, ExpansionCensus, ForceDomain, ForceGroup, ForcePosture, GeneLedgerApplied,
-    GeneVerdict, GrandStrategy, LiveTreatment, Measure, StrategicPlan, StrategyCensus, Verdict,
+    GeneVerdict, GrandStrategy, Measure, StrategicPlan, StrategyCensus, Verdict,
     VictoryTarget, LAND_GRAB_CITY_CEILING, LAND_GRAB_CITY_FLOOR, LAND_GRAB_PIPELINE_BASE,
-    LAND_GRAB_TILES_PER_CITY, LIVE_TREATMENTS, PRODUCTION_CITY_TARGET_FLOOR, PRODUCTION_OPT_INS,
-    PRODUCTION_TREATMENTS,
+    LAND_GRAB_TILES_PER_CITY, PRODUCTION_CITY_TARGET_FLOOR,
 };
 
 const TECH_PRIORITY: [&str; 15] = [
@@ -19328,16 +19328,16 @@ mod tests {
     }
 
     /// The gene ships off, and it is registered where a native screen can
-    /// price it. `production_opt_in_rows_are_real` guards the row itself.
+    /// price it. `production_and_opt_in_rows_are_real` guards the row itself.
     #[test]
     fn one_shot_recovery_is_an_off_by_default_native_gene() {
         assert!(!BasicAi::new().one_shot_recovery);
-        let (field, tag, _) = *PRODUCTION_OPT_INS
+        let gene = GENES
             .iter()
-            .find(|(field, _, _)| *field == "one_shot_recovery")
+            .find(|gene| gene.field == "one_shot_recovery")
             .expect("the gene is registered as a native opt-in");
-        assert_eq!(field, "one_shot_recovery");
-        assert_eq!(tag, "one-shot-recovery");
+        assert_eq!(gene.tag, "one-shot-recovery");
+        assert!(gene.opt_in());
     }
 
     /// One major with a capital, plus a fabricated barbarian warrior on an
@@ -22047,12 +22047,12 @@ mod tests {
     #[test]
     fn barbarian_capture_priority_is_a_registered_native_opt_in() {
         assert!(!BasicAi::new().barbarian_capture_priority);
-        let (field, tag, _) = *PRODUCTION_OPT_INS
+        let gene = GENES
             .iter()
-            .find(|(field, _, _)| *field == "barbarian_capture_priority")
+            .find(|gene| gene.field == "barbarian_capture_priority")
             .expect("the capture priority is registered for gene_screen");
-        assert_eq!(field, "barbarian_capture_priority");
-        assert_eq!(tag, "barbarian-capture-priority");
+        assert_eq!(gene.tag, "barbarian-capture-priority");
+        assert!(gene.opt_in());
     }
 
     #[test]

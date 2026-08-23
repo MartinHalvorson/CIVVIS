@@ -813,9 +813,39 @@ class TheGeneSetDerivation(unittest.TestCase):
             ];
         '''
         read = {"src/elo.rs": elo, "src/ai/advanced/treatments.rs": treatments}
+
+        def reader(path):
+            # A commit older than the registry has no genes.rs.
+            if path not in read:
+                raise LookupError(path)
+            return read[path]
         self.assertEqual(
-            gene_ledger.gene_tags_from_sources(read.__getitem__),
+            gene_ledger.gene_tags_from_sources(reader),
             ["war-reinforcement", "come-ashore", "strategic-wonders", "joint-tactics"],
+        )
+
+    def test_the_registry_is_read_in_order_and_host_only_rows_stay_out(self):
+        """The one registry: every screenable row in order, a plain host-only
+        row excluded, comments and the enable/disable paths ignored."""
+        registry = '''
+            pub const GENES: &[Gene] = &[
+                // "decoy-one" in a comment
+                Gene { tag: "war-reinforcement", field: "war_reinforcement", kind: Kind::Repair(Axis::War), enable: AdvancedAi::enable_war_reinforcement, disable: AdvancedAi::disable_war_reinforcement },
+                Gene { tag: "land-grab", field: "land_grab", kind: Kind::HostOnly, enable: AdvancedAi::enable_land_grab, disable: AdvancedAi::disable_land_grab },
+                Gene { tag: "strategic-wonders", field: "strategic_wonders", kind: Kind::Production, enable: AdvancedAi::enable_strategic_wonders, disable: AdvancedAi::disable_strategic_wonders },
+                Gene { tag: "joint-tactics", field: "joint_tactics", kind: Kind::HostOnlyOptIn, enable: AdvancedAi::enable_joint_tactics, disable: AdvancedAi::disable_joint_tactics },
+                Gene { tag: "war-economy-2", field: "war_economy_2", kind: Kind::OptIn, enable: AdvancedAi::enable_war_economy_2, disable: AdvancedAi::disable_war_economy_2 },
+            ];
+        '''
+        read = {gene_ledger.gene_registry.REGISTRY: registry}
+
+        def reader(path):
+            if path not in read:
+                raise LookupError(path)
+            return read[path]
+        self.assertEqual(
+            gene_ledger.gene_tags_from_sources(reader),
+            ["war-reinforcement", "strategic-wonders", "joint-tactics", "war-economy-2"],
         )
 
     def test_the_fingerprint_is_the_tags_newline_terminated(self):
@@ -831,14 +861,14 @@ class TheGeneSetDerivation(unittest.TestCase):
         self.assertGreater(len(tags), 50, "the tables scrape found too few genes")
         self.assertEqual(len(tags), len(set(tags)), "a tag is listed twice")
         self.assertLessEqual(set(tags), gene_ledger.known_tags(),
-                             "every gene the screen varies is a registered treatment")
-        # One tag from each of the three tables, so a parse that silently
-        # lost a whole table fails here. Deliberately structural rather than
-        # topical: naming a gene under review would make this test a hostage
-        # to the next cull.
-        self.assertIn("war-reinforcement", tags, "ENGINE_REPAIR_TREATMENTS")
-        self.assertIn("strategic-wonders", tags, "PRODUCTION_TREATMENTS")
-        self.assertIn("joint-tactics", tags, "PRODUCTION_OPT_INS")
+                             "every gene the screen varies is a registered gene")
+        # One tag of each screenable kind, so a parse that silently lost a
+        # kind fails here. Deliberately structural rather than topical: naming
+        # a gene under review would make this test a hostage to the next cull.
+        self.assertIn("war-reinforcement", tags, "Kind::Repair")
+        self.assertIn("strategic-wonders", tags, "Kind::Production")
+        self.assertIn("joint-tactics", tags, "Kind::HostOnlyOptIn")
+        self.assertNotIn("land-grab", tags, "a plain host-only gene is never screened")
 
 
 class TheBuildGuard(unittest.TestCase):
@@ -1066,13 +1096,13 @@ class TheHeaderFieldsMatch(unittest.TestCase):
     def test_the_pre_registration_names_the_same_fields_on_both_sides(self):
         self.assertEqual(self.rust_struct_fields("Batch"), list(gene_ledger.BATCH_KEYS))
 
-    def test_both_sides_read_the_same_source_tables(self):
+    def test_both_sides_read_the_same_registry(self):
         """The Rust side proves the parse against its compiled table; this side
-        runs it over a commit. They must be looking at the same tables."""
+        runs it over a commit. They must be looking at the same registry."""
         text = (gene_ledger.ROOT / "src" / "bin" / "gene_screen.rs").read_text()
-        for path, table, _ in gene_ledger.GENE_TABLES:
-            self.assertIn(table, text, table)
-            self.assertIn(path, text, path)
+        path, table, _ = gene_ledger.GENE_TABLES[0]
+        self.assertIn(table, text, table)
+        self.assertIn(path, text, path)
 
 
 class GeneratedFiles(unittest.TestCase):

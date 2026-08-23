@@ -8,7 +8,7 @@ zero is a gene that never fired, not a null"*. `step-and-reassess` screened
 **+0.0 [+0.0, +0.0]** on both axes over 204 pairs because its only code path
 lived on a parallel unit planner no evaluator installs, so every pair's two
 games ended identically. `treatment_flags.rs` carries the same warning from the
-other direction: an `ENGINE_REPAIR_TREATMENTS` tag whose enable is missing from
+other direction: a repair gene whose enable is missing from
 the bundle is off in BOTH arms, "the two arms play byte-identical games", and
 *"three tags reached the tables before this line and burned 30 games saying
 nothing"*. `competition-victory-points` is in the tables today and cannot fire
@@ -72,8 +72,10 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
-TREATMENTS = ROOT / "src" / "ai" / "advanced" / "treatments.rs"
-ELO = ROOT / "src" / "elo.rs"
+sys.path.insert(0, str(ROOT / "tools"))
+import gene_registry  # noqa: E402
+
+REGISTRY = ROOT / gene_registry.REGISTRY
 SCREENS = ROOT / "docs" / "gene_screens"
 WAIVERS = Path(__file__).resolve().parent / "gene_fire_waivers.json"
 
@@ -86,56 +88,20 @@ STATISTICS = ("win_delta_pp", "win_se_pp", "share_delta_pp", "share_se_pp",
 # same bar for `CANNOT_RUN_IN_CI`.
 REASON_CHARACTERS = 40
 
-ROW = (r'\(\s*"([a-z0-9_]+)"\s*,\s*"([a-z0-9-]+)"\s*,\s*'
-       r'AdvancedAi::(?:enable|disable)_([a-z0-9_]+)\s*\)')
-
-
-def _strip_comments(source: str) -> str:
-    """Line comments out, so a tag named in prose is not read as a row."""
-    return "\n".join(line.partition("//")[0] for line in source.splitlines())
-
-
-def _rows(name: str, source: str) -> list[tuple[str, str, str]]:
-    parts = source.split(f"pub const {name}", 1)
-    if len(parts) < 2:
-        raise SystemExit(f"{name} not found in treatments.rs; the scrape broke")
-    found = re.findall(ROW, parts[1].split("];", 1)[0])
-    if not found:
-        raise SystemExit(f"{name} yielded no rows; the scrape broke")
-    return found
-
-
 def gene_tables() -> dict[str, str]:
-    """Every gene `gene_screen` can vary, tag -> the table it came from.
+    """Every gene `gene_screen` can vary, tag -> the kind of registry row it is.
 
     ⚠ Discovered, never listed. This is `gene_screen::gene_table` in Python:
-    the engine repairs resolved through `LIVE_TREATMENTS`, plus both production
-    tables. A gene added to any of the three reaches this gate without touching
-    this file, which is the whole point -- a hand-written list here would be
-    complete on the day it was written and silently shrink afterwards.
+    every screenable row of the gene registry (`src/ai/advanced/genes.rs`). A
+    gene added there reaches this gate without touching this file, which is
+    the whole point -- a hand-written list here would be complete on the day
+    it was written and silently shrink afterwards.
     """
-    treatments = _strip_comments(TREATMENTS.read_text(encoding="utf-8"))
-    live = {tag for _, tag, _ in _rows("LIVE_TREATMENTS", treatments)}
-
-    genes: dict[str, str] = {}
-    for table in ("PRODUCTION_TREATMENTS", "PRODUCTION_OPT_INS"):
-        for _, tag, _ in _rows(table, treatments):
-            genes[tag] = table
-
-    elo = _strip_comments(ELO.read_text(encoding="utf-8"))
-    parts = elo.split("pub const ENGINE_REPAIR_TREATMENTS", 1)
-    if len(parts) < 2:
-        raise SystemExit("ENGINE_REPAIR_TREATMENTS not found; the scrape broke")
-    repairs = re.findall(r'"([a-z0-9-]+)"', parts[1].split("];", 1)[0])
-    if not repairs:
-        raise SystemExit("ENGINE_REPAIR_TREATMENTS yielded no tags; the scrape broke")
-    for tag in repairs:
-        if tag not in live:
-            raise SystemExit(
-                f"engine repair {tag} has no LIVE_TREATMENTS row, so gene_screen "
-                "would panic on it; the scrape is reading a broken pair of tables")
-        genes[tag] = "ENGINE_REPAIR_TREATMENTS"
-    return genes
+    try:
+        rows = gene_registry.genes_from_text(REGISTRY.read_text(encoding="utf-8"))
+    except (ValueError, IndexError) as error:
+        raise SystemExit(f"{REGISTRY} yielded no registry rows; the scrape broke: {error}")
+    return {row.tag: row.kind for row in rows if row.screenable}
 
 
 def _screen_files() -> list[Path]:

@@ -52,7 +52,7 @@
 //! persists. It never opens a second front — [`AdvancedAi::air_surge_open`]
 //! refuses while any major war is already on.
 //!
-//! Off by default: `PRODUCTION_OPT_INS` row `air-surge`. It reaches the genome
+//! Off by default: registry row `air-surge`. It reaches the genome
 //! unmeasured and stays off until a screen says it helps (`gene_ledger`);
 //! `gene_screen --genes air-surge` prices it. ⚠ The domination lane is not a
 //! free win here — `docs/eval/` records a pinned `live_target_domination`

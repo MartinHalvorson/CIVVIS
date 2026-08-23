@@ -80,7 +80,7 @@
 //! says `foldover` or `prior`) still analyse: their rows are seats with a
 //! genome and an outcome like any other, and the estimator here never needed
 //! the pairing. Only the sampling changed.
-use civvis::ai::{run_game, AdvancedAi, LiveTreatment};
+use civvis::ai::{run_game, AdvancedAi};
 use civvis::game::{Game, GameOptions};
 use civvis::rng::Rng;
 use civvis::setup::{GameSpeed, MapScript};
@@ -154,53 +154,27 @@ fn ledger_default(tag: &str, universe_on: bool) -> bool {
 
 /// Every gene this screen can vary, in the order the genome bits are written.
 ///
-/// ⚠ Discovered from the repository's own tables, never listed by hand: a
-/// treatment added to `ENGINE_REPAIR_TREATMENTS`, `PRODUCTION_TREATMENTS` or
-/// `PRODUCTION_OPT_INS` reaches the genome without touching this file. An
-/// engine-repair tag with no `LIVE_TREATMENTS` row is a panic, not a silent
-/// omission — the elo tests already hold the two tables in step and this
-/// binary trusts that contract loudly.
+/// ⚠ Discovered from the registry (`src/ai/advanced/genes.rs`), never listed
+/// by hand: every `screenable()` row — the engine repairs, the production
+/// genes and the opt-ins — in registry order. A host-only gene reads Civ 6
+/// state a native board does not have and is excluded rather than measured.
 fn gene_table() -> Vec<Gene> {
-    let mut genes = Vec::new();
-    for repair in civvis::elo::ENGINE_REPAIR_TREATMENTS {
-        let &(field, tag, disable): &LiveTreatment = civvis::ai::LIVE_TREATMENTS
-            .iter()
-            .find(|(_, row_tag, _)| row_tag == repair)
-            .unwrap_or_else(|| {
-                panic!(
-                    "engine repair {repair} has no LIVE_TREATMENTS row, so it cannot be withheld"
-                )
-            });
-        genes.push(Gene {
-            field,
-            tag,
-            after_setup_on: true,
-            stock_on: false,
-            default_on: ledger_default(tag, true),
-            flip: disable,
-        });
-    }
-    for &(field, tag, disable) in civvis::ai::PRODUCTION_TREATMENTS {
-        genes.push(Gene {
-            field,
-            tag,
-            after_setup_on: true,
-            stock_on: true,
-            default_on: ledger_default(tag, true),
-            flip: disable,
-        });
-    }
-    for &(field, tag, enable) in civvis::ai::PRODUCTION_OPT_INS {
-        genes.push(Gene {
-            field,
-            tag,
-            after_setup_on: false,
-            stock_on: false,
-            default_on: ledger_default(tag, false),
-            flip: enable,
-        });
-    }
-    genes
+    civvis::ai::GENES
+        .iter()
+        .filter(|gene| gene.screenable())
+        .map(|gene| Gene {
+            field: gene.field,
+            tag: gene.tag,
+            after_setup_on: gene.universe_on(),
+            stock_on: gene.stock_on(),
+            default_on: ledger_default(gene.tag, gene.universe_on()),
+            flip: if gene.universe_on() {
+                gene.disable
+            } else {
+                gene.enable
+            },
+        })
+        .collect()
 }
 
 fn is_zero_usize(value: &usize) -> bool {
@@ -429,9 +403,10 @@ impl Batch {
 /// header order, one per line, each newline-terminated.
 ///
 /// `tools/gene_ledger.py::gene_set_fingerprint` computes the same string from
-/// `ENGINE_REPAIR_TREATMENTS` in `src/elo.rs` and `PRODUCTION_TREATMENTS` plus
-/// `PRODUCTION_OPT_INS` in `src/ai/advanced/treatments.rs` **at any commit**,
-/// which is how a screen is checked against the code it claims to have played.
+/// the registry, `src/ai/advanced/genes.rs` — every `screenable()` row in
+/// order — **at any commit** (and from the three tables that preceded it at
+/// older commits), which is how a screen is checked against the code it
+/// claims to have played.
 /// `the_gene_table_is_exactly_what_the_ledger_re_derives_from_the_tables`
 /// holds the two rules together against the compiled table itself.
 fn gene_set_fingerprint(genes: &[Gene]) -> String {
@@ -3343,29 +3318,20 @@ mod tests {
         let genes = gene_table();
         assert_eq!(
             genes.len(),
-            civvis::elo::ENGINE_REPAIR_TREATMENTS.len()
-                + civvis::ai::PRODUCTION_TREATMENTS.len()
-                + civvis::ai::PRODUCTION_OPT_INS.len()
+            civvis::ai::GENES.iter().filter(|g| g.screenable()).count()
         );
         let mut tags: Vec<&str> = genes.iter().map(|g| g.tag).collect();
         tags.sort_unstable();
         tags.dedup();
         assert_eq!(tags.len(), genes.len(), "a gene tag is repeated");
-        // Firaxis-only flags are excluded by construction, not by luck —
-        // unless a `PRODUCTION_OPT_INS` row names one on purpose. That table
-        // is an author's statement that the flag acts on a native board
-        // (`joint-tactics`: the bridge turns the joint search on, but
-        // `advanced_joint_tactics` is production plus that flag and the
-        // arena runs it every day); a repair reaches the genome only through
-        // `ENGINE_REPAIR_TREATMENTS`, which still excludes every host-only tag.
-        let opted_in: Vec<&str> = civvis::ai::PRODUCTION_OPT_INS
-            .iter()
-            .map(|(_, tag, _)| *tag)
-            .collect();
+        // Host-only flags are excluded by construction, not by luck — unless
+        // the registry says the flag also acts on a native board
+        // (`Kind::HostOnlyOptIn`: `joint-tactics`, whose search runs
+        // headless). A plain `HostOnly` row never reaches the genome.
         for gene in &genes {
+            let row = civvis::ai::gene(gene.tag).expect("registered");
             assert!(
-                !civvis::elo::FIRAXIS_ONLY_TREATMENTS.contains(&gene.tag)
-                    || opted_in.contains(&gene.tag),
+                !row.host_only() || row.opt_in(),
                 "{} is host-only and would screen as noise",
                 gene.tag
             );
@@ -4071,22 +4037,28 @@ mod tests {
         panic!("{name} is not closed");
     }
 
-    /// The gene tags a reader gets from the source tables alone, in the order
-    /// `gene_table()` builds them: every tag of `ENGINE_REPAIR_TREATMENTS`,
-    /// then the `(field, tag, toggle)` rows of `PRODUCTION_TREATMENTS` and
-    /// `PRODUCTION_OPT_INS`, whose tag is the second string of each row.
+    /// The gene tags a reader gets from the registry's text alone, in the
+    /// order `gene_table()` builds them: every `Gene { tag: "…", field: "…",
+    /// kind: Kind::… }` row of `GENES` whose kind is screenable — anything but
+    /// a plain `Kind::HostOnly` — in order. `tools/gene_ledger.py` implements
+    /// the same reading (and the older three-table one for older commits).
     fn tags_from_source_tables(root: &std::path::Path) -> Vec<String> {
-        let elo = std::fs::read_to_string(root.join("src/elo.rs")).expect("src/elo.rs");
-        let treatments =
-            std::fs::read_to_string(root.join("src/ai/advanced/treatments.rs")).expect("tables");
-        let mut tags = quoted(table_body(&elo, "ENGINE_REPAIR_TREATMENTS"));
-        for name in ["PRODUCTION_TREATMENTS", "PRODUCTION_OPT_INS"] {
-            tags.extend(
-                quoted(table_body(&treatments, name))
-                    .into_iter()
-                    .skip(1)
-                    .step_by(2),
-            );
+        let registry = std::fs::read_to_string(root.join("src/ai/advanced/genes.rs"))
+            .expect("src/ai/advanced/genes.rs");
+        let body = table_body(&registry, "GENES");
+        let mut tags = Vec::new();
+        for row in body.split("Gene {").skip(1) {
+            let strings = quoted(row);
+            let tag = strings.first().expect("a row names its tag").clone();
+            let kind = row
+                .split("kind:")
+                .nth(1)
+                .and_then(|rest| rest.split(',').next())
+                .map(str::trim)
+                .expect("a row names its kind");
+            if kind != "Kind::HostOnly" {
+                tags.push(tag);
+            }
         }
         tags
     }

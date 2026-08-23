@@ -45,6 +45,9 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
+sys.path.insert(0, str(ROOT / "tools"))
+import gene_registry  # noqa: E402
+
 sys.path.insert(0, str(HERE))
 # The ledger tool owns the win column: it decides each gene's default from the
 # same two numbers this table prints, so both must be one arithmetic.
@@ -148,36 +151,22 @@ def resolutions(ledger: dict) -> list[dict]:
             "gain": unpaired / (median * math.sqrt(pairs)) if pairs else 0.0,
         })
     return list(reversed(out))
-TREATMENTS_RS = ROOT / "src" / "ai" / "advanced" / "treatments.rs"
 FLAGS_RS = ROOT / "src" / "ai" / "advanced" / "treatment_flags.rs"
-ELO_RS = ROOT / "src" / "elo.rs"
-
-ROW = re.compile(r'\(\s*"([a-z0-9_]+)"\s*,\s*"([a-z0-9-]+)"\s*,\s*AdvancedAi::(?:enable|disable)_([a-z0-9_]+)')
 
 
 def registry() -> dict[str, tuple[str, str]]:
-    """Every registered gene: tag → (field, toggle name), from the
-    treatments registry. The toggle name is not always the field name
-    (`siege_tracks_wall` toggles through `enable_siege_tracks_the_wall`)."""
-    return {tag: (field, toggle) for field, tag, toggle in ROW.findall(TREATMENTS_RS.read_text())}
+    """Every registered gene: tag → (field, toggle name), from the gene
+    registry (`src/ai/advanced/genes.rs`, read by `gene_registry.py`). The
+    toggle name is not always the field name (`siege_tracks_wall` toggles
+    through `enable_siege_tracks_the_wall`)."""
+    return {row.tag: (row.field, row.toggle) for row in gene_registry.genes()}
 
 
 def screenable_tags() -> list[str]:
-    """The screen's own universe, in its order: the engine repairs (from
-    `elo.rs`), then the production treatments and opt-ins (from the registry
-    tables), never the Firaxis-only flags."""
-    text = ELO_RS.read_text()
-    start = text.index("pub const ENGINE_REPAIR_TREATMENTS: &[&str] = &[")
-    end = text.index("];", start)
-    repairs = re.findall(r'"([a-z0-9-]+)"', text[start:end])
-    reg_text = TREATMENTS_RS.read_text()
-    tags = list(repairs)
-    for table in ("PRODUCTION_TREATMENTS", "PRODUCTION_OPT_INS"):
-        s = reg_text.index(f"pub const {table}: &[LiveTreatment] = &[")
-        e = reg_text.index("];", s)
-        tags += [tag for _, tag, _ in ROW.findall(reg_text[s:e])]
-    seen: set[str] = set()
-    return [t for t in tags if not (t in seen or seen.add(t))]
+    """The screen's own universe, in its order: every screenable row of the
+    registry — the engine repairs, the production genes and the opt-ins, never
+    a plain host-only flag."""
+    return gene_registry.screenable_tags()
 
 
 ADVANCED_RS = ROOT / "src" / "ai" / "advanced.rs"

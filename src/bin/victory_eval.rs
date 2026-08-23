@@ -67,8 +67,8 @@
 //! same agent — so a change to the controller moved these counts and nothing
 //! here could attribute the movement.
 //!
-//! `--without <treatment>` withholds a row of `LIVE_TREATMENTS` or
-//! `PRODUCTION_TREATMENTS` from every seat, so the same seeds replay with one
+//! `--without <gene>` withholds a live or production gene of the registry
+//! from every seat, so the same seeds replay with one
 //! behaviour removed and the lane counts compare directly. Repeat the flag to
 //! withhold more than one; an unknown name lists what is available rather than
 //! failing quietly. The fieldless default path is unchanged, so every number
@@ -184,11 +184,11 @@ fn main() {
     // ⚠ A LANE TABLE WITH NO CONTROL ARM IS A DESCRIPTION, NOT A MEASUREMENT.
     // The table in this file's header says how often each victory lands; it
     // could not say what any one behaviour contributed to that, because every
-    // run built the same agent. `--without <treatment>` withholds a row of
-    // `LIVE_TREATMENTS` from every seat, so the same seeds can be replayed
+    // run built the same agent. `--without <gene>` withholds a live or
+    // production gene from every seat, so the same seeds can be replayed
     // with one behaviour removed and the lane counts compared directly.
     // Repeat the flag to withhold more than one.
-    let withheld: Vec<civvis::ai::LiveTreatment> = {
+    let withheld: Vec<&'static civvis::ai::Gene> = {
         let mut rows = Vec::new();
         for (index, arg) in args.iter().enumerate() {
             if arg != "--without" {
@@ -198,23 +198,22 @@ fn main() {
                 eprintln!("--without requires a treatment name");
                 std::process::exit(2);
             };
-            // ⚠ BOTH TABLES, NOT ONE. `LIVE_TREATMENTS` is what the live
-            // bridge adds; `PRODUCTION_TREATMENTS` is what production itself
-            // adds. A tool that reads only the first cannot withhold a
+            // Both what the live bridge adds and what production itself
+            // ships: a tool that reads only the first cannot withhold a
             // behaviour the shipped agent has and the bridge did not give it.
-            match civvis::ai::LIVE_TREATMENTS
+            match civvis::ai::GENES
                 .iter()
-                .chain(civvis::ai::PRODUCTION_TREATMENTS.iter())
-                .find(|(field, tag, _)| field == name || tag == name)
+                .filter(|gene| gene.live() || gene.production())
+                .find(|gene| gene.field == name || gene.tag == name)
             {
-                Some(row) => rows.push(*row),
+                Some(row) => rows.push(row),
                 None => {
-                    eprintln!("unknown treatment {name:?}; known names:");
-                    for (field, tag, _) in civvis::ai::LIVE_TREATMENTS
+                    eprintln!("unknown gene {name:?}; known names:");
+                    for gene in civvis::ai::GENES
                         .iter()
-                        .chain(civvis::ai::PRODUCTION_TREATMENTS.iter())
+                        .filter(|gene| gene.live() || gene.production())
                     {
-                        eprintln!("  {tag} ({field})");
+                        eprintln!("  {} ({})", gene.tag, gene.field);
                     }
                     std::process::exit(2);
                 }
@@ -227,16 +226,16 @@ fn main() {
             "withholding: {}",
             withheld
                 .iter()
-                .map(|(_, tag, _)| *tag)
+                .map(|gene| gene.tag)
                 .collect::<Vec<_>>()
                 .join(",")
         );
     }
     // The complement of `--without`: an off-by-default production arm can be
     // seated by name, so the targeted regime it exists for can be measured
-    // before any promotion question is asked. Rows come from
-    // `PRODUCTION_OPT_INS`; repeat the flag to enable more than one.
-    let opted_in: Vec<civvis::ai::LiveTreatment> = {
+    // before any promotion question is asked. Rows are the registry's
+    // opt-ins; repeat the flag to enable more than one.
+    let opted_in: Vec<&'static civvis::ai::Gene> = {
         let mut rows = Vec::new();
         for (index, arg) in args.iter().enumerate() {
             if arg != "--with" {
@@ -246,15 +245,16 @@ fn main() {
                 eprintln!("--with requires a treatment name");
                 std::process::exit(2);
             };
-            match civvis::ai::PRODUCTION_OPT_INS
+            match civvis::ai::GENES
                 .iter()
-                .find(|(field, tag, _)| field == name || tag == name)
+                .filter(|gene| gene.opt_in())
+                .find(|gene| gene.field == name || gene.tag == name)
             {
-                Some(row) => rows.push(*row),
+                Some(row) => rows.push(row),
                 None => {
                     eprintln!("unknown opt-in {name:?}; known names:");
-                    for (field, tag, _) in civvis::ai::PRODUCTION_OPT_INS.iter() {
-                        eprintln!("  {tag} ({field})");
+                    for gene in civvis::ai::GENES.iter().filter(|gene| gene.opt_in()) {
+                        eprintln!("  {} ({})", gene.tag, gene.field);
                     }
                     std::process::exit(2);
                 }
@@ -267,7 +267,7 @@ fn main() {
             "opting in: {}",
             opted_in
                 .iter()
-                .map(|(_, tag, _)| *tag)
+                .map(|gene| gene.tag)
                 .collect::<Vec<_>>()
                 .join(",")
         );
@@ -293,11 +293,11 @@ fn main() {
             });
             let mut ais = AdvancedAi::fleet_targeting(&game, target);
             for ai in ais.iter_mut() {
-                for treatment in &withheld {
-                    (treatment.2)(ai);
+                for gene in &withheld {
+                    (gene.disable)(ai);
                 }
-                for treatment in &opted_in {
-                    (treatment.2)(ai);
+                for gene in &opted_in {
+                    (gene.enable)(ai);
                 }
             }
             run_game(&mut game, &mut ais);

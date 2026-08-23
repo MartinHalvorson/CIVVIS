@@ -1,7 +1,7 @@
 //! Six genes for the victory lanes: the race the empire is actually in,
 //! reaching the deciders that still read the expansion posture instead.
 //!
-//! All six are opt-in (`PRODUCTION_OPT_INS`), ship off, and are priced by
+//! All six are opt-in (`Kind::OptIn` in `genes.rs`), ship off, and are priced by
 //! `gene_screen` before any promotion question is asked — see
 //! `docs/GENE_SCREEN.md` and `docs/VICTORY_GENES.md`. They live in their own
 //! file because they are one sentence each and `src/ai/advanced.rs` is the
