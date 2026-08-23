@@ -1001,6 +1001,18 @@ class TheBuildGuard(unittest.TestCase):
                       self.refusal(self.screen(dirty=True), unverified_build="",
                                    at={"c" * 40: self.TAGS}))
 
+    def test_a_reporting_build_exception_is_explicit_and_recorded(self):
+        """Report-only data gets no silent provenance bypass."""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "screen.json"
+            path.write_text(json.dumps(self.screen()))
+            with self.assertRaises(SystemExit):
+                gene_ledger.reporting_batch_records([path])
+            records = gene_ledger.reporting_batch_records(
+                [path], {path.name: "the remote build claim is unavailable"})
+        self.assertEqual(records[0]["unverified"],
+                         "the remote build claim is unavailable")
+
 
 class PreFingerprintSources(unittest.TestCase):
     """The twenty sources recorded before 2026-08-23 carry no build block. They
@@ -1146,6 +1158,7 @@ class GeneratedFiles(unittest.TestCase):
         newest = current["reporting_batches"][0]
         self.assertEqual(newest["seats"], 10_002)
         self.assertEqual(newest["games"], 1_667)
+        self.assertIn("unpublished no-op batch claim", newest["unverified"])
         self.assertNotIn(newest["path"], {s["path"] for s in current["sources"]})
         authoritative, _ = ranking.load_sources(current)
         displayed, _ = ranking.load_display_sources(current)

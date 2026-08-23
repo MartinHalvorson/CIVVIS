@@ -263,7 +263,8 @@
         "target_seats": 10002,
         "complete_seats": 10002,
         "partial": false
-      }
+      },
+      "unverified": "The clean batch binary was stamped with unpublished no-op batch claim 5afee5666f08; its source tree was verified locally identical to public parent 6f6836781aa9."
     },
     {
       "path": "docs/gene_screens/2026-08-22-standard-10k-6p-allseats-23622-pairs.json",

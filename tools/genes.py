@@ -1183,17 +1183,38 @@ def reporting_batches_from_ledger(ledger: dict) -> list[Path]:
     return paths
 
 
-def reporting_batch_records(paths: list[Path]) -> list[dict]:
-    """Validate and record report-only batch artifacts without pricing rules."""
+def reporting_batch_notes_from_ledger(ledger: dict) -> dict[str, str]:
+    """Recorded build exceptions for report-only batches, keyed by file name."""
+    return {
+        Path(batch["path"]).name: batch["unverified"]
+        for batch in ledger.get("reporting_batches", [])
+        if batch.get("unverified")
+    }
+
+
+def reporting_batch_records(paths: list[Path],
+                            build_notes: dict[str, str] | None = None) -> list[dict]:
+    """Validate and record report-only batch artifacts without pricing rules.
+
+    A recorded exception follows the same explicit policy as an authoritative
+    source's ``--unverified-build`` escape. It is never implicit: a new batch
+    with a missing, dirty or unreadable build is refused unless its reason is
+    saved beside the report in the ledger.
+    """
     records = []
     for path in paths:
         data = load_source(path)
         gap = build_gap(data, path.name)
-        if gap:
+        reason = (build_notes or {}).get(path.name)
+        if gap and not reason:
             raise SystemExit(
-                gap + "\nA reporting batch must name the clean build it measured."
+                gap + "\nA reporting batch must name the clean build it measured, or record "
+                "an explicit reporting-build exception."
             )
-        records.append(source_record(path, data))
+        record = source_record(path, data)
+        if reason:
+            record["unverified"] = reason
+        records.append(record)
     return records
 
 
@@ -1291,7 +1312,8 @@ def choose_family_heads(genes: list[dict]) -> None:
 def build_ledger(sources: list[Path], filter_known: bool = True,
                  build_notes: dict[str, str] | None = None,
                  authority: str = AUTHORITY,
-                 reporting_batches: list[Path] | None = None) -> dict:
+                 reporting_batches: list[Path] | None = None,
+                 reporting_build_notes: dict[str, str] | None = None) -> dict:
     """Merge the sources into one ledger object (the JSON file's content).
     Sources are recorded oldest-first, and a later one overrides an earlier one
     per gene. `filter_known=False` keeps every tag (synthetic tests).
@@ -1304,7 +1326,8 @@ def build_ledger(sources: list[Path], filter_known: bool = True,
     than a spoken one: the reason lands in the ledger beside the source it
     excuses, and `rebuild_from_ledger` reads it back so `--check` re-derives
     the same file. ``reporting_batches`` are separately verified screens the
-    ranking displays but deliberately does not use to re-decide ``default_on``.
+    ranking displays but deliberately does not use to re-decide ``default_on``;
+    their recorded build exceptions live in ``reporting_build_notes``.
     """
     measures: dict[str, dict] = {}
     # Every win column a gene has, oldest first. The tail three are the
@@ -1473,7 +1496,8 @@ def build_ledger(sources: list[Path], filter_known: bool = True,
                                  "src/ai/advanced/gene_ledger.rs mirrors it",
         },
         "sources": recorded,
-        "reporting_batches": reporting_batch_records(reporting_batches or []),
+        "reporting_batches": reporting_batch_records(
+            reporting_batches or [], reporting_build_notes),
         "counts": counts,
         "genes": genes,
     }
@@ -1677,7 +1701,8 @@ def rebuild_from_ledger(ledger: dict, authority: str | None = None) -> dict:
     return build_ledger(sources_from_ledger(ledger),
                         build_notes=notes_from_ledger(ledger),
                         authority=authority or authority_of(ledger),
-                        reporting_batches=reporting_batches_from_ledger(ledger))
+                        reporting_batches=reporting_batches_from_ledger(ledger),
+                        reporting_build_notes=reporting_batch_notes_from_ledger(ledger))
 
 
 def sources_from_ledger(ledger: dict) -> list[Path]:
@@ -2740,6 +2765,11 @@ def _add_source_args(ap: argparse.ArgumentParser) -> None:
         help=("newest-first report-only batch for the ranking's three display columns; "
               "does not change deployment defaults"),
     )
+    ap.add_argument(
+        "--reporting-unverified-build", metavar="REASON", default=None,
+        help=("record why every newly named reporting batch cannot have its build "
+              "re-verified; requires --reporting-batch"),
+    )
     ap.add_argument("--legacy-shape", action="store_true",
                     help="record a source played away from the screen's shape as history")
     ap.add_argument("--unverified-build", metavar="REASON", default=None,
@@ -2799,10 +2829,17 @@ def main(argv=None) -> int:
     # source / write
     current = json.loads(LEDGER_JSON.read_text()) if LEDGER_JSON.exists() else None
     recorded_reporting = reporting_batches_from_ledger(current) if current else []
+    recorded_reporting_notes = reporting_batch_notes_from_ledger(current) if current else {}
     entered_reporting = [Path(path).resolve() for path in args.reporting_batch]
+    if args.reporting_unverified_build and not entered_reporting:
+        raise SystemExit("--reporting-unverified-build requires --reporting-batch FILE")
     reporting = entered_reporting + [
         path for path in recorded_reporting if path not in entered_reporting
     ]
+    reporting_notes = dict(recorded_reporting_notes)
+    if args.reporting_unverified_build:
+        for path in entered_reporting:
+            reporting_notes[path.name] = args.reporting_unverified_build
     if getattr(args, "sources", None):
         notes: dict[str, str] = {}
         # New sources are appended to the ones the ledger already records.
@@ -2811,13 +2848,15 @@ def main(argv=None) -> int:
         entered = sources_from_args(args, notes)
         paths = recorded + [p for p in entered if p not in recorded]
         ledger = build_ledger(paths, build_notes={**recorded_notes, **notes}, authority=authority,
-                              reporting_batches=reporting)
+                              reporting_batches=reporting,
+                              reporting_build_notes=reporting_notes)
     else:
         if current is None:
             raise SystemExit("no existing ledger; provide at least one source")
         ledger = build_ledger(sources_from_ledger(current),
                               build_notes=notes_from_ledger(current), authority=authority,
-                              reporting_batches=reporting)
+                              reporting_batches=reporting,
+                              reporting_build_notes=reporting_notes)
     LEDGER_JSON.write_text(render_json(ledger))
     REGISTRY_PATH.write_text(registry_with_block(render_rust(ledger)), encoding="utf-8")
     RANKING_MD.write_text(render(ledger))
