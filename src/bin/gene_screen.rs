@@ -3958,14 +3958,25 @@ mod tests {
         let mut on = [0usize; 3];
         for index in 0..seats {
             let genome = draw_genome(9, index / 6, 6, index % 6, &probabilities, &families);
-            assert!(!(genome[1] && genome[2]), "seat {index} played two versions");
+            assert!(
+                !(genome[1] && genome[2]),
+                "seat {index} played two versions"
+            );
             for (i, &bit) in genome.iter().enumerate() {
                 on[i] += usize::from(bit);
             }
         }
         let rate = |count: usize| count as f64 / seats as f64;
-        assert!((rate(on[1]) - 0.25).abs() < 0.03, "version 1 on {}", rate(on[1]));
-        assert!((rate(on[2]) - 0.5).abs() < 0.03, "version 2 on {}", rate(on[2]));
+        assert!(
+            (rate(on[1]) - 0.25).abs() < 0.03,
+            "version 1 on {}",
+            rate(on[1])
+        );
+        assert!(
+            (rate(on[2]) - 0.5).abs() < 0.03,
+            "version 2 on {}",
+            rate(on[2])
+        );
         assert!((rate(on[1] + on[2]) - 0.75).abs() < 0.03);
     }
 
