@@ -350,6 +350,13 @@ No default changes here. The gene was already turned off by #2344 before this
 merged, and this round's fieldless profiles agree with that decision from a
 fourth direction.
 
+**But the round does not close the gene.** Its third profile, confirmed on a
+disjoint seed and quotable, reads **+60 Elo (CI +28..+112, 100 pairs, seed
+39000000, p=0.0021)** on the one board built to model the lanes the live seat
+actually loses to. A gene that is −45 fieldless and +60 contested is not
+"resolved"; it is **field-dependent**, and every instrument that resolved it
+was fieldless.
+
 ---
 
 # 2. `advanced_wonder_reach`, seed 32000000 — the arm no longer exists
@@ -612,6 +619,38 @@ treatment of 23 runnable ones, on one seed window. It does not license the
 bundle, and a null at ±56 Elo is not evidence that the treatment is worthless —
 only that it is not large.
 
+### Results — `blind-objective-strength`
+
+Ran as registered: 100 maps, 200 games, seeds 38000000..=38000099 inclusive,
+average 233.9 turns, `arms differ on: blind-objective-strength`.
+
+| reading | `live_without_blind_objective_strength` vs `live` |
+|---|---|
+| game-win share | 102/200 (51.0%) vs 98/200 (49.0%) |
+| paired-map score | 51.0%, 95% betting CI 45.4%..57.8% |
+| **Elo-equivalent** | **+7 (CI −32..+54)** |
+| paired direction | 11 · 80 · 9, sign p=0.8238 |
+| terminal-score direction | 49 · 0 · 51, sign p=0.9204 |
+| promotion gate | INCONCLUSIVE; resolves about +55 at 80% power |
+| maps that broke | wins 20/100, terminal score 100/100 |
+
+**The arm fired** — 20 maps broke on wins, all 100 on terminal score, no
+"nothing differed" warning — so this is the war half of the bundle genuinely
+measured and not a second inert pairing.
+
+**Verdict: RETAIN. A second clean, well-controlled null**, and the tightest of
+the two: withholding the treatment is if anything very slightly *better*
+(+7 Elo), with wins and terminal score agreeing at p=0.82 and p=0.92.
+
+⚠ The disagreement this arm was picked to test resolves against the ranking.
+`HEURISTIC_GENE_RANKING.md` still carries `blind-objective-strength` at **+30**
+wins/10k from the legacy 60×38 pangaea p10 screen. Two independent standard-
+shape instruments now say otherwise: the 23,622-seat screen at −0.01 pp
+(z −0.03), and this withholding arm at +7 Elo (CI −32..+54, 100 pairs, seed
+38000000). Neither reproduces the +30. That is the same legacy-vs-standard
+shape gap §1 found for `governor-victory-lanes`, in a treatment where it
+happens not to matter because both readings are null.
+
 ---
 
 # 4. `advanced_coupled_expansion` — pre-registered here
@@ -748,4 +787,65 @@ on budget.**
 
 # What was decided
 
-<!-- DECIDED -->
+Six pre-registered runs, 600 map pairs, 1,200 games, six disjoint seed windows.
+Every one ran to its registered N with no early stopping, and every
+pre-registration was committed and pushed before its run started.
+
+| # | gate | pre-registered | measured | **verdict** |
+|---|---|---|---|---|
+| 1 | `advanced_governor_victory_lanes` compact | 100 pairs, seed 29000000 | −30 Elo (CI −68..+1), sign p=0.0161 | **RETAIN `advanced`** |
+| 1 | …deployment-online | 100 pairs, seed 30000000 | −45 Elo (CI −104..+21), sign p=0.0470 | **RETAIN `advanced`** |
+| 1 | …deployment-contested | 100 pairs, seed 31000000 | +69 Elo, PASS, discovery | superseded by ↓ |
+| 1c | …contested, confirmation | 100 pairs, seed 39000000, `--confirm 31000000` | **+60 Elo (CI +28..+112), p=0.0021, CONFIRMED** | **CHANGE — field-dependent** |
+| 2 | `advanced_wonder_reach`, seed 32000000 | 400 pairs, matrix | — | **UNRUNNABLE — code culled (#2266)** |
+| 3 | `live_without_settler_site_agreement` | 100 pairs, seed 37000000 | −3 Elo (CI −56..+43), p=1.0000 | **RETAIN — clean null** |
+| 3 | `live_without_blind_objective_strength` | 100 pairs, seed 38000000 | +7 Elo (CI −32..+54), p=0.8238 | **RETAIN — clean null** |
+| 4 | `advanced_coupled_expansion` | 100 pairs, seed 36000000 | −38 Elo (CI −88..+16); terminal score p=0.0009 | **RETAIN `advanced` — not promoted** |
+
+**Nothing in this round changes a default.** Two arms measured null, two
+measured negative, one is unrunnable, and the one positive result is on a
+profile whose own definition forbids comparing it to the deployment gate.
+
+## The headline, stated plainly
+
+**The 2026-08-18 decomposition was right about the carrier and wrong about the
+size.** The four victory lanes are what makes the governor composite bad —
+direction confirmed on both of that round's profiles, sign-significant on both,
+terminal score p=0.0000 on both, and the composite's own "uniformly smaller
+empire" census reproduced. But it predicted −70 to −80 and this measured
+**−45** at deployment and **−30** compact. The prediction survives inside the
+interval and fails as a point estimate, downward, which is the direction this
+ledger's effect sizes always fail.
+
+## What this round found that it was not looking for
+
+1. **26 of the 49 arms objective 3 tells the fleet to run are byte-identical to
+   their own control** — `enable_live_bridge()` applies the ledger, which
+   already calls the same `disable_*`, so withholding a ledger-off treatment
+   withholds nothing. Proven from the source, confirmed on the board with a
+   positive control. Over half the roadmap points at no-ops, and `ai_eval`
+   prints `arms differ on: <tag>` for every one of them.
+2. **`never_named` has stopped measuring objective-3 debt.** It went 10 → 0 in
+   one commit because a whole-genome screen tabulated every gene at once. The
+   counter is honest about its own definition and the definition no longer
+   tracks the thing.
+3. **`governor-victory-lanes` is field-dependent, and every instrument that
+   resolved it is fieldless.** −45 with six entrant seats, **+60 confirmed** with
+   four seats chasing diplomacy and culture.
+4. **A pre-registered gate can be deleted before it runs.** #2266 removed
+   `wonder-prereq-reach` on a −26 that the in-flight p10 screen then replaced
+   with +29 — both inside noise — and took the arm that would have settled it.
+
+## What remains
+
+- **22 of the 23 runnable withholding arms are still unpriced.** Two are done
+  here; the other 26 arms cannot be run at all until their ledger default
+  flips.
+- **The great-work veto is blocked on a control decision, not on budget** — its
+  pinned control `advanced_target_science` is `ai_eval`'s sole
+  `DEGENERATE_CONTROLS` entry. Detailed in §4.
+- **A contested-field gene screen**, before `governor-victory-lanes` is treated
+  as settled.
+- **A test that refuses an inert `live_without_*` arm.** Recommended in §3 and
+  deliberately not written here: it is `src/elo.rs`, a declared hotspot, and
+  outside this round's claim.
