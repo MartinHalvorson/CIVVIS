@@ -262,6 +262,28 @@ class TheVetoSectionTellsFogFromLoyalty(unittest.TestCase):
             reading = census.veto_reading(run / "events.jsonl", records, 3)
         self.assertEqual(reading["sites_taken_by_a_rival"], 0)
 
+    def test_the_report_never_calls_the_vetoing_runs_the_journalled_ones(self):
+        """★ TWO DENOMINATORS. 356 of the 560 recorded runs carry a decider
+        journal and only 76 of them ever veto a site, so a per-run rate quoted
+        against the wrong one is out by 4.7x. Both counts must appear, and the
+        rate must say which it is over."""
+        rows = [
+            {"vetoes": {"veto_log": True, "total": 10, "unexplored": 8,
+                        "unseen_rival_city": 1, "loyalty_rate": 1, "other": 0,
+                        "distinct_sites": 4, "sites_taken_by_a_rival": 2}},
+            {"vetoes": {"veto_log": True, "total": 0, "unexplored": 0,
+                        "unseen_rival_city": 0, "loyalty_rate": 0, "other": 0,
+                        "distinct_sites": 0, "sites_taken_by_a_rival": 0}},
+            {"vetoes": {"veto_log": False, "total": 0, "unexplored": 0,
+                        "unseen_rival_city": 0, "loyalty_rate": 0, "other": 0,
+                        "distinct_sites": 0, "sites_taken_by_a_rival": 0}},
+        ]
+        report = "\n".join(census.report_vetoes(rows))
+        self.assertIn("runs with a decider journal          2", report)
+        self.assertIn("vetoing at least one site  1", report)
+        self.assertIn("10 per VETOING run", report)
+        self.assertIn("5 per journalled run", report)
+
     def test_a_run_with_no_journal_is_reported_as_having_none(self):
         with tempfile.TemporaryDirectory() as tmp:
             run = Path(tmp) / "civvis-20260819T000000Z"
