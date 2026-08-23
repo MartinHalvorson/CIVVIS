@@ -290,6 +290,51 @@ ledger default flipped before any withholding arm means anything — which is a
 gene-screen decision, not an evaluator one. The counter that tracked this reads
 0.
 
+## PRE-REGISTRATION: the first of the 23, run here
+
+Written and committed before the run. Knowing which 23 arms are real made one
+of them affordable, and at 07:56 UTC the machine's load average was **10** on
+18 cores while this round's critical path was pinned to a single job — so the
+headroom bought the first withholding price objective 3 has ever had.
+
+**Arm.** `live_without_settler_site_agreement` vs `live`. `live` is
+`AdvancedAi::new()` + `enable_live_bridge()` — the deployment genome itself —
+and the treatment is `default_on: true` in the ledger, so this is a genuine
+withhold and not one of the 26.
+
+**Why this one.** Of the ten treatments §3 opened with, five are real
+withholds; of those five `settler-site-agreement` carries the largest standard-
+screen magnitude (−0.46 pp, z −1.47) and sits on the axis this repository
+repeatedly measures as its binding constraint (`docs/AI_GAPS.md`, expansion;
+opening tempo correlates r=+0.69 with the outcome). Cheapest-and-most-likely-
+to-matter, as asked.
+
+**Design.** The `deployment-online` profile, its exact recorded arguments,
+fixed N = 100, no early stopping, seed **37000000** (unused anywhere in the
+tree):
+
+```
+ai_eval live_without_settler_site_agreement live --pairs 100 --jobs 3 --seed 37000000 \
+  --players 6 --width 74 --height 46 --city-states 9 --turns 250 --speed online \
+  --map continents --shape planet --poles poles --randomize-civs \
+  --victories science,culture,religious,diplomatic,domination,score \
+  --difficulty prince --deployment-comparison
+```
+
+`--city-states 9` is explicit; `ai_eval` seats none in direct mode without it,
+and a settlement treatment screened on an empty board is a null by
+construction.
+
+**What it can see.** The same ±30 Elo as §1. The standard screen already bounds
+this gene to |Δwin| < 0.5 pp *as a gene inside the genome*; this asks the
+different question — what the **shipped bundle** pays for it — and a null here
+is a real answer to a question nobody has asked, not a repeat of the screen.
+`ai_eval`'s "nothing differed" line is the check that the arm fired at all.
+
+### Results
+
+<!-- RESULTS-3 -->
+
 ---
 
 # 4. `advanced_coupled_expansion` — pre-registered here
