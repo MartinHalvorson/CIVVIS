@@ -17,6 +17,8 @@ it was cut.
 
 from __future__ import annotations
 
+import contextlib
+import io
 import os
 import pathlib
 import subprocess
@@ -314,6 +316,14 @@ class MergeBaseTests(unittest.TestCase):
             "\n".join(f"wing line {i}" for i in range(40)) + "\n")
         run(self.repo, "add", "wing.txt")
         run(self.repo, "commit", "-q", "-m", "Land the wing (#2335)", date=YOUNG)
+
+        # A history the head shares nothing with, for the refusal below.
+        run(self.repo, "checkout", "-q", "--orphan", "alien")
+        run(self.repo, "rm", "-q", "-rf", ".")
+        (self.repo / "alien.txt").write_text("alien\n")
+        run(self.repo, "add", "alien.txt")
+        run(self.repo, "commit", "-q", "-m", "Unrelated history", date=OLD)
+        run(self.repo, "checkout", "-q", "main")
         self.addCleanup(self.dir.cleanup)
 
     def in_repo(self, call):
@@ -356,6 +366,69 @@ class MergeBaseTests(unittest.TestCase):
         self.assertEqual(
             self.in_repo(lambda: overwrite_guard.merge_base("main", "nope")),
             "main")
+
+    def test_the_base_it_judged_against_is_printed_every_run(self):
+        """#2328's docstring already said `--base <merge-base>` and was right.
+
+        Its author passed `origin/main` anyway and was told they had deleted
+        2036 lines from a pull request they had never touched. A tool that
+        names the commit it judged against makes that visible in the first
+        line of output instead of nowhere.
+        """
+        body = self.repo / "body.txt"
+        body.write_text("")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.in_repo(lambda: overwrite_guard.main([
+                "--base", "main", "--head", self.head,
+                "--body-file", str(body), "--now", str(NOW),
+            ]))
+        self.assertIn(self.fork[:9], out.getvalue())
+        self.assertIn("merge base", out.getvalue())
+
+    def test_a_base_the_head_does_not_descend_from_is_refused(self):
+        """Neither 0 nor 1: there is no honest verdict, so it says so.
+
+        Without this the fallback silently blames every line of an unrelated
+        history on the branch — the phantom again, just with no merge base to
+        rescue it.
+        """
+        body = self.repo / "body.txt"
+        body.write_text("")
+        verdict = self.in_repo(lambda: overwrite_guard.main([
+            "--base", "alien", "--head", self.head,
+            "--body-file", str(body), "--now", str(NOW),
+        ]))
+        self.assertEqual(verdict, 2)
+
+
+class OneIdiomTests(unittest.TestCase):
+    """The repository gets one waiver idiom, and that is a check, not a claim.
+
+    `tools/speed_ab.py` spells the same hatch as `paired-cost: allow <reason>`.
+    Two hand-maintained copies of a security-shaped pattern drift, and the way
+    they drift is one of them getting looser — which is the whole defect this
+    file exists for. The duplication itself is forced: `overwrite-guard.yml`
+    copies `overwrite_guard.py` alone to `/tmp` and runs it there, so it cannot
+    import from the repository. Comparing them here is the cheap alternative.
+    """
+
+    def setUp(self):
+        import speed_ab
+        self.speed_ab = speed_ab
+
+    def test_the_two_gates_spell_their_hatch_the_same_way(self):
+        self.assertEqual(
+            overwrite_guard.WAIVER.pattern.replace("overwrite-guard", "MARKER"),
+            self.speed_ab.ACKNOWLEDGEMENT.pattern.replace("paired-cost", "MARKER"))
+
+    def test_the_two_gates_match_under_the_same_flags(self):
+        self.assertEqual(overwrite_guard.WAIVER.flags,
+                         self.speed_ab.ACKNOWLEDGEMENT.flags)
+
+    def test_both_blank_fenced_blocks_the_same_way(self):
+        body = "intro\n```\nhidden\n```\ntail\n"
+        self.assertEqual(overwrite_guard.prose(body), self.speed_ab.prose(body))
 
 
 if __name__ == "__main__":

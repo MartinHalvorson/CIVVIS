@@ -59,7 +59,9 @@ workflow already passes the merge base, and the merge base of a merge base and
 the head is itself, so CI is unchanged.
 
 Exit 0 = clean or acknowledged. Exit 1 = unacknowledged young deletions, with
-one `::error` line per victim naming the exact acknowledgment to add.
+one `::error` line per victim naming the exact acknowledgment to add. Exit 2 =
+the base is not an ancestor of the head, so there is no honest verdict to give
+and the tool says so rather than blaming the trunk's own commits on the branch.
 """
 
 from __future__ import annotations
@@ -103,6 +105,13 @@ def git(*args: str) -> str:
         ["git", *args], capture_output=True, text=True, encoding="utf-8",
         errors="replace", check=False,
     ).stdout
+
+
+def git_ok(*args: str) -> bool:
+    """Whether a git query answers yes — for the plumbing that exits 0 or 1."""
+    return subprocess.run(
+        ["git", *args], capture_output=True, text=True, check=False,
+    ).returncode == 0
 
 
 def prose(body: str) -> str:
@@ -176,7 +185,7 @@ def merge_base(base: str, head: str) -> str:
     found = git("merge-base", base, head).strip()
     if re.fullmatch(r"[0-9a-f]{40}", found):
         return found
-    print(f"warning: no merge base for '{base}' and '{head}'; judging against "
+    print(f"warning: no merge base for '{base}' and '{head}'; falling back to "
           f"'{base}' exactly as given", file=sys.stderr)
     return base
 
@@ -269,9 +278,24 @@ def main(argv: list[str] | None = None) -> int:
     if note:
         print(f"note: {note}", file=sys.stderr)
 
+    # Say which commit the verdict is against, every run, and then check that
+    # it is one this tool can honestly judge from. #2328's docstring already
+    # read `--base <merge-base>` and was correct, and its author still passed
+    # `origin/main` and was told they were deleting 2036 lines from #2335. A
+    # usage line that was already right did not prevent the mistake; deriving
+    # the merge base does, and refusing a base the head does not descend from
+    # is what turns that from a claim into a check.
     base = merge_base(args.base, args.head)
-    if base != args.base:
-        print(f"base: merge-base({args.base}, {args.head}) = {base[:9]}")
+    print(f"base: {args.base} → {base[:9]}"
+          + ("" if base == args.base else " (merge base)"))
+    if not git_ok("merge-base", "--is-ancestor", base, args.head):
+        print(
+            f"::error title=overwrite-guard::'{args.base}' resolved to {base[:9]}, "
+            f"which is not an ancestor of {args.head}. Every line the two "
+            f"histories do not share would be blamed on this branch, so there "
+            f"is no verdict to give. Pass a base the head descends from.",
+        )
+        return 2
     victims = young_victims(base, args.head, args.now or time.time())
     if not victims:
         print("no young deletions; nothing to acknowledge")

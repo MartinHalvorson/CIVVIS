@@ -199,8 +199,22 @@ TURNS_PLAYED = re.compile(
 #: and this one CAN legitimately fire on an intended cost, because a promoted
 #: feature is a performance event by definition. The reason is mandatory: the
 #: hatch costs a sentence, which is exactly the sentence #2059 never wrote.
-ACKNOWLEDGEMENT = re.compile(r"^[ \t]*paired-cost:[ \t]*allow\b[ \t]*(?P<reason>.*)$",
-                             re.MULTILINE | re.IGNORECASE)
+#:
+#: ⚠ The first version of this pattern was `^[ \t]*`, which permits arbitrary
+#: indentation — and four spaces is a Markdown code block, so a pull request
+#: that *showed* the line while documenting the gate acknowledged it. That is
+#: the same defect `overwrite_guard.py` had in a cruder form (#2341); the two
+#: patterns are now identical apart from the marker, and
+#: `test_overwrite_guard.py` fails if they ever drift apart. An optional list
+#: bullet is allowed because the ownership block this line joins is a list.
+ACKNOWLEDGEMENT = re.compile(
+    r"^(?:[-*+][ \t]+)?paired-cost:[ \t]*allow\b[ \t]*(?P<reason>.*)$",
+    re.MULTILINE | re.IGNORECASE,
+)
+
+#: Fenced code blocks, blanked before the marker is looked for: documenting a
+#: gate means showing its escape hatch, and showing it is not using it.
+FENCE = re.compile(r"^ {0,3}(```+|~~~+)")
 
 #: The gate's shape: `gene_screen`'s `SCREEN_*` map row exactly, with the turn
 #: clock traded down for the runner (see the module docstring). `speed.yml`
@@ -594,14 +608,40 @@ def ledger_line(ledger: dict, machine: str, measured: float, shape: dict,
             f"({recorded['commit']}) → {drift:+.1f}%")
 
 
+def prose(body: str) -> str:
+    """The body with fenced code blocks blanked out, line numbering preserved.
+
+    Kept byte-identical to `overwrite_guard.prose`. The duplication is not an
+    oversight: `overwrite-guard.yml` copies that one file to `/tmp` and runs it
+    there, deliberately, so it cannot import anything from this repository.
+    """
+    kept: list[str] = []
+    fence: str | None = None
+    for line in body.splitlines():
+        mark = FENCE.match(line)
+        if fence is None:
+            if mark:
+                fence = mark.group(1)[:3]
+                kept.append("")
+            else:
+                kept.append(line)
+            continue
+        if mark and mark.group(1).startswith(fence):
+            fence = None
+        kept.append("")
+    return "\n".join(kept)
+
+
 def acknowledged(text: str | None) -> str | None:
     """The reason a pull request body gives for accepting this cost, if any.
 
-    `paired-cost: allow <reason>`. A bare `allow` is not an acknowledgement —
-    the number and the reason are the whole point, and a marker anybody can
-    paste without thinking is a gate nobody has to answer to.
+    `paired-cost: allow <reason>`, on a line of its own. A bare `allow` is not
+    an acknowledgement — the number and the reason are the whole point, and a
+    marker anybody can paste without thinking is a gate nobody has to answer
+    to. Neither is a mention of the marker in prose, in backticks, indented or
+    fenced: writing about a switch must not flip it.
     """
-    found = ACKNOWLEDGEMENT.search(text or "")
+    found = ACKNOWLEDGEMENT.search(prose(text or ""))
     if not found:
         return None
     reason = found.group("reason").strip()

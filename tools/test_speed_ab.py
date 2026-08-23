@@ -806,6 +806,33 @@ class TheRequiredGateHasAWayToSayYes(unittest.TestCase):
         self.assertIsNone(speed_ab.acknowledged("we made it faster, honest"))
         self.assertIsNone(speed_ab.acknowledged(None))
 
+    def test_a_body_that_only_discusses_the_marker_is_not(self):
+        """Writing about a switch must not flip it.
+
+        The original pattern anchored with `^[ \t]*`, which permits arbitrary
+        indentation — and four spaces is a Markdown code block. Every body here
+        carries the marker with a reason, so each one acknowledged the gate
+        before #2341; each is documentation, not a decision.
+        """
+        for body in (
+            "the `paired-cost: allow <reason>` line accepts an intended cost",
+            "Add:\n\n    paired-cost: allow +31%, the cache is the point\n",
+            "Add:\n\n```\npaired-cost: allow +31%, the cache is the point\n```\n",
+            "~~~text\npaired-cost: allow +31%, the cache is the point\n~~~\n",
+            "> paired-cost: allow +31%, the cache is the point\n",
+            "<!-- paired-cost: allow left in the template -->\n",
+        ):
+            with self.subTest(body=body.splitlines()[0][:40]):
+                self.assertIn("paired-cost: allow", body,
+                              "fixture no longer carries the marker")
+                self.assertIsNone(speed_ab.acknowledged(body))
+
+    def test_a_list_bullet_is_still_an_acknowledgement(self):
+        """The ownership block this line joins is a bulleted list."""
+        self.assertEqual(
+            speed_ab.acknowledged("- paired-cost: allow +31%, the cache\n"),
+            "+31%, the cache")
+
     def test_an_acknowledged_cost_passes_without_a_second_measurement(self):
         seen = []
 
