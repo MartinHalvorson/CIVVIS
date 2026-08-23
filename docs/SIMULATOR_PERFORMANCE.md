@@ -152,25 +152,30 @@ evacuation pricing. **That is where the next real win in this subsystem is,
 and it is the same problem #2155 left open: the envelope table is rebuilt
 whenever one of the viewer's own units moves.**
 
-### ⚠ The paired harness measures a map no screen runs
+### ⚠ The paired harness measured a map no screen ran — closed by #2328
 
-`tools/speed_ab.py` does not pass `--map`, so it measures `civvis simulate`'s
-default, `tennis_ball`. `gene_screen`'s `SCREEN_MAP` is `MapScript::Continents`
-(#2308). The same profile, same binary, same 74×46/9CS/250t shape:
+While this work was in flight `tools/speed_ab.py` did not pass `--map`, so it
+timed `civvis simulate`'s default `tennis_ball`, while `gene_screen`'s
+`SCREEN_MAP` is `MapScript::Continents`. Same binary, same 74×46/9CS/250t
+shape, one `sample` each:
 
-| | `tennis_ball` (what the harness times) | `continents` (what every batch runs) |
+| | `tennis_ball` (what the harness timed) | `continents` (what every batch runs) |
 | --- | ---: | ---: |
 | `BTreeSet<Pos>::insert` | 1.29% | **9.02%** |
 | `naval_recon_ship_can_chart` | 1.42% | **13.19%** |
 
-A twelve-point hotspot is invisible to the gate on every pull request. This is
-the same trap the 2026-08-22 section below records for map *size* — *"every row
-above it was taken at 60×38 / 6 and measures a shape no screen runs"* — one
-axis further in. `tools/speed_ab.py` is not touched here because another pull
-request owns it as this is written; **adding `--map` to it is the follow-up
-this section is asking for.**
+The hotspot this section is about was **twelve points smaller on the map the
+gate timed than on the map the fleet runs** — invisible to `paired-cost` on
+every pull request. It is the same trap the 2026-08-22 section below records
+for map *size* (*"every row above it was taken at 60×38 / 6 and measures a
+shape no screen runs"*), one axis further in.
 
-TIMING_PLACEHOLDER
+**#2328 closed it independently and while this was being written**: the gate's
+shape is now `GATE_SHAPE`, pinned field-by-field against `gene_screen`'s own
+`SCREEN_*` constants, with `map="continents"`. Recorded here anyway because
+the two findings arrived from opposite directions — that one from auditing the
+gate, this one from a hotspot that hid behind it — and because the pair is the
+concrete size of what a default map costs a measurement.
 
 ## 2026-08-22: the movement flood stopped rescanning the world (−10.0%)
 
