@@ -3872,11 +3872,11 @@ mod tests {
             "family on {}",
             rate(family_on)
         );
-        for i in 1..4 {
+        for (i, &count) in on.iter().enumerate().skip(1) {
             assert!(
-                (rate(on[i]) - 0.25).abs() < 0.03,
+                (rate(count) - 0.25).abs() < 0.03,
                 "version {i} on {}",
-                rate(on[i])
+                rate(count)
             );
         }
         assert!((rate(on[0]) - 0.5).abs() < 0.03);
