@@ -87,42 +87,6 @@ fn arg(args: &[String], key: &str, default: i64) -> i64 {
         .unwrap_or(default)
 }
 
-fn arg_f64(args: &[String], key: &str, default: f64) -> f64 {
-    args.iter()
-        .position(|a| a == key)
-        .and_then(|i| args.get(i + 1))
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(default)
-}
-
-fn strict_i64_arg(args: &[String], key: &str, default: i64) -> Result<i64, String> {
-    match args.iter().position(|arg| arg == key) {
-        Some(index) => {
-            let value = args
-                .get(index + 1)
-                .ok_or_else(|| format!("{key} needs a value"))?;
-            value
-                .parse::<i64>()
-                .map_err(|_| format!("{key} needs an integer, got {value:?}"))
-        }
-        None => Ok(default),
-    }
-}
-
-fn strict_f64_arg(args: &[String], key: &str, default: f64) -> Result<f64, String> {
-    match args.iter().position(|arg| arg == key) {
-        Some(index) => {
-            let value = args
-                .get(index + 1)
-                .ok_or_else(|| format!("{key} needs a value"))?;
-            value
-                .parse::<f64>()
-                .map_err(|_| format!("{key} needs a number, got {value:?}"))
-        }
-        None => Ok(default),
-    }
-}
-
 fn arg_text(args: &[String], key: &str, default: &str) -> String {
     args.iter()
         .position(|arg| arg == key)
@@ -1827,8 +1791,7 @@ mod tests {
 
     use super::{
         game_options, jobs_arg, map_topology, simultaneous_soak_job_split,
-        single_simulation_jobs_arg, start_era, strict_f64_arg, strict_i64_arg, tactics_rules,
-        turn_structure, ANCHOR_BEHAVIOUR_FNV, ANCHOR_DECISIONS, SINGLE_SIMULATION_DEFAULT_MAX_JOBS,
+        single_simulation_jobs_arg, start_era, tactics_rules, turn_structure, ANCHOR_BEHAVIOUR_FNV, ANCHOR_DECISIONS, SINGLE_SIMULATION_DEFAULT_MAX_JOBS,
     };
     use civvis::ai::AdvancedAi;
     use civvis::game::{Action, Game};
@@ -2330,21 +2293,6 @@ mod tests {
                 );
             }
         }
-    }
-
-    #[test]
-    fn strict_numbers_never_fall_back_on_malformed_input() {
-        let args = vec![
-            "soak".to_string(),
-            "--games".to_string(),
-            "forty".to_string(),
-            "--k".to_string(),
-            "fast".to_string(),
-        ];
-        assert!(strict_i64_arg(&args, "--games", 20).is_err());
-        assert!(strict_f64_arg(&args, "--k", 24.0).is_err());
-        assert_eq!(strict_i64_arg(&args, "--players", 4).unwrap(), 4);
-        assert!(strict_i64_arg(&["--games".to_string()], "--games", 20).is_err());
     }
 
     /// The soak's WAR block folds over the wars it can see, and
