@@ -159,7 +159,7 @@
     },
     "open_water_navy": {
       "group": "production-on",
-      "reason": "Production ships it ON, so its door is `PRODUCTION_TREATMENTS` — and that row is not neutral: `apply_gene_ledger` disables every production treatment whose `ledger_default_on` is `Some(false)`, which is exactly what a screenable tag with no ledger row is. The row would switch a shipped behaviour off at deployment. What it does: build hulls only where there is open water — promoted at +61 Elo-equivalent, so switching it off is the opposite of a null change."
+      "reason": "Production ships it ON, so its door is `PRODUCTION_TREATMENTS` — and that row is not neutral: `apply_gene_ledger` disables every production treatment whose `ledger_default_on` is `Some(false)`, which is exactly what a screenable tag with no ledger row is. The row would switch a shipped behaviour off at deployment. What it does: build hulls only where there is open water — promoted at +61 Elo-equivalent (200 pairs, seed 8700000, CI +21..+109, PASS on the corrected-gate matrix; see `AdvancedAi::promoted_policy_envoy`), so switching it off is the opposite of a null change."
     },
     "opening_settler_waits": {
       "group": "live-bridge-row",

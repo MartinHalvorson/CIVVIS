@@ -673,5 +673,5 @@ behaviours production ships ON**, and for those "a toggle pair and a row" is
 not cheap and not neutral: `apply_gene_ledger` reads *unmeasured ⇒ off*, so a
 gene row switches the behaviour off at deployment while its first screen runs.
 That is the right rule for a behaviour that was already off and the wrong one
-for one that is carrying +61 Elo. `docs/GENE_SCREEN.md` §"The toggles no screen
+for one carrying +61 Elo-equivalent (200 pairs, seed 8700000, CI +21..+109, PASS on the corrected-gate matrix; see `AdvancedAi::promoted_policy_envoy`). `docs/GENE_SCREEN.md` §"The toggles no screen
 can reach" has the group-by-group account.
