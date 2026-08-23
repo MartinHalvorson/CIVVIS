@@ -616,6 +616,18 @@ impl AdvancedAi {
     pub fn disable_escort_unstick(&mut self) {
         self.escort_unstick = false;
     }
+    /// Version 2 of `escort_unstick`: the same two-turn release, refused
+    /// while a visible barbarian raider can reach the settler's tile. One
+    /// version of a family plays, so this turns version 1 off. Opt-in gene
+    /// `escort-unstick-2`. See [`AdvancedAi::escort_unstick_2`].
+    pub fn enable_escort_unstick_2(&mut self) {
+        self.escort_unstick = false;
+        self.escort_unstick_2 = true;
+    }
+
+    pub fn disable_escort_unstick_2(&mut self) {
+        self.escort_unstick_2 = false;
+    }
     /// Keep live settlers out of Civilization VI's formation channel while
     /// leaving the native `stacked_escort` gene independently screenable.
     ///

@@ -743,6 +743,165 @@ fn a_stalled_escort_is_released_and_the_settler_walks_itself() {
     );
 }
 
+/// ⭐ THE FIRST VERSIONED GENE, `escort-unstick-2`. Watched live 2026-08-23:
+/// a settler and its escort stalled beside a barbarian raider, the two-turn
+/// release (`escort_unstick`) handed the warrior back to the army, and the
+/// raider took the settler the next turn. Version 2 is the same release
+/// refused while a visible raider can reach the settler's tile — at the
+/// settler's unstick and at the escort's route abandonment — and the release
+/// unchanged once nothing can reach it. One version plays: enabling 2 turns
+/// 1 off.
+#[test]
+fn a_threatened_settler_keeps_its_escort_under_version_two() {
+    fn fixture() -> (Game, u32, u32, Pos, Pos) {
+        let mut game = Game::new_full(2, 28, 18, 3, 1_000, 0, false);
+        let first = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .expect("seat starts with a settler");
+        let capital_pos = game.units[&first].pos;
+        game.found_city_for(0, capital_pos, None);
+        game.remove_unit(first);
+        let land_at = |game: &Game, want: &dyn Fn(Pos) -> bool| {
+            game.map
+                .tiles
+                .iter()
+                .filter(|(pos, tile)| {
+                    game.rules.is_passable(tile)
+                        && !game.rules.is_water(tile)
+                        && game.units_at(**pos).is_empty()
+                        && want(**pos)
+                })
+                .map(|(pos, _)| *pos)
+                .next()
+        };
+        let start = land_at(&game, &|pos| {
+            game.wdist(pos, capital_pos) >= 5 && game.wdist(pos, capital_pos) <= 7
+        })
+        .expect("fixture offers ground away from the capital");
+        let settler = game.spawn_test_unit("settler", 0, start);
+        let escort = game.spawn_test_unit("warrior", 0, start);
+        game.apply(
+            0,
+            &Action::LinkUnits {
+                unit: settler,
+                with: escort,
+            },
+        )
+        .expect("test pair must link");
+        let target = land_at(&game, &|pos| {
+            game.wdist(pos, start) >= 6
+                && game.wdist(pos, start) <= 10
+                && game.wdist(pos, capital_pos) >= 4
+        })
+        .expect("fixture offers a distant land target");
+        // Seat 1 is the barbarian seat, at war with us, with a raider on
+        // the tile beside the pair.
+        game.players[1].is_barbarian = true;
+        game.barb_pid = Some(1);
+        game.at_war.insert((0, 1));
+        game.at_war.insert((1, 0));
+        let beside = land_at(&game, &|pos| game.wdist(pos, start) == 1)
+            .expect("fixture offers ground beside the pair");
+        game.spawn_test_unit("warrior", 1, beside);
+        (game, settler, escort, start, target)
+    }
+    let plan_at = |turn: u32| StrategicPlan {
+        strategy: GrandStrategy::Science,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: turn,
+        rush: false,
+    };
+
+    // Version 2 keeps the link at the settler's release point...
+    let (mut game, settler, escort, start, target) = fixture();
+    let mut two = AdvancedAi::new();
+    two.enable_escort_unstick_2();
+    assert!(
+        two.escort_unstick_2 && !two.escort_unstick,
+        "one version of the family plays: enabling version 2 turns version 1 off"
+    );
+    assert!(
+        two.settler_in_barbarian_reach(&game, 0, start),
+        "the fixture's raider can reach the settler's tile"
+    );
+    for _ in 0..4 {
+        two.settler_targets.insert(settler, target);
+        two.advanced_settler_step(&mut game, 0, settler);
+    }
+    assert_eq!(
+        game.units[&settler].linked_to,
+        Some(escort),
+        "version 2 keeps the escort while a raider can reach the settler"
+    );
+    // ...and at the escort's: three stalled turns abandon the route and
+    // unlink under version 1; version 2 holds the pair beside the raider.
+    let plan = plan_at(game.turn);
+    two.settler_stalls.insert(settler, SETTLER_STALL_LIMIT - 1);
+    game.units.get_mut(&escort).unwrap().moves_left = 0.0;
+    two.settler_escort_step(&mut game, 0, escort, &plan);
+    assert_eq!(
+        game.units[&settler].linked_to,
+        Some(escort),
+        "version 2 does not abandon a threatened settler's route"
+    );
+    assert!(two.settler_targets.contains_key(&settler));
+
+    // Version 1 on the same board releases at both points.
+    let (mut game, settler, _escort, _start, target) = fixture();
+    let mut one = AdvancedAi::new();
+    one.enable_escort_unstick();
+    for _ in 0..4 {
+        one.settler_targets.insert(settler, target);
+        one.advanced_settler_step(&mut game, 0, settler);
+        if game.units[&settler].linked_to.is_none() {
+            break;
+        }
+    }
+    assert!(
+        game.units[&settler].linked_to.is_none(),
+        "version 1 releases a stalled escort whatever stands beside it"
+    );
+    let (mut game, settler, escort, _start, target) = fixture();
+    let plan = plan_at(game.turn);
+    let mut one = AdvancedAi::new();
+    one.enable_escort_unstick();
+    one.settler_targets.insert(settler, target);
+    one.settler_stalls.insert(settler, SETTLER_STALL_LIMIT - 1);
+    game.units.get_mut(&escort).unwrap().moves_left = 0.0;
+    one.settler_escort_step(&mut game, 0, escort, &plan);
+    assert!(
+        game.units[&settler].linked_to.is_none(),
+        "version 1 abandons a stalled route beside a raider"
+    );
+
+    // With nothing in reach — the barbarian seat emptied, its own starting
+    // units included — version 2 is version 1: the stalled escort is
+    // released and the settler walks itself.
+    let (mut game, settler, _escort, start, target) = fixture();
+    for unit in game.player_unit_ids(1) {
+        game.remove_unit(unit);
+    }
+    let mut two = AdvancedAi::new();
+    two.enable_escort_unstick_2();
+    assert!(!two.settler_in_barbarian_reach(&game, 0, start));
+    for _ in 0..4 {
+        two.settler_targets.insert(settler, target);
+        two.advanced_settler_step(&mut game, 0, settler);
+        if game.units[&settler].linked_to.is_none() {
+            break;
+        }
+    }
+    assert!(
+        game.units[&settler].linked_to.is_none(),
+        "with no raider in reach version 2 releases like version 1"
+    );
+}
+
 #[test]
 fn a_bleeding_city_is_besieged_whatever_the_fog_says() {
     // The t115 shape from run civvis-20260807T181839Z: city under fire,
