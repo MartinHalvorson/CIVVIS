@@ -4535,6 +4535,14 @@ pub struct AdvancedAi {
 
     // ---- append: c-d ------------------------------------------------
 
+    /// The city plans its districts, sites and tile buys together: wished
+    /// districts are jointly assigned reserved plots over rings 1-3 at the
+    /// lane's weights, net of the worked tile a site destroys; the plan's
+    /// sites join the production menu; and the tile a very valuable site
+    /// needs is bought. Off everywhere by default; opt-in gene
+    /// `district-planning`. See `advanced/district_planning.rs`.
+    pub district_planning: bool,
+
     // ---- append: e-f ------------------------------------------------
 
     // ---- append: g-k ------------------------------------------------
@@ -4838,6 +4846,12 @@ use air_surge::{AirSurge, AirSurgeCensus, AirSurgeStatus};
 /// The district look-ahead at settlement and the priced tile purchase: two
 /// opt-in territory genes, one file. See `advanced/site_lookahead.rs`.
 mod site_lookahead;
+
+/// The standing city's district plan: which districts, on which reserved
+/// plots, and the tile a very valuable site needs bought. Opt-in gene
+/// `district-planning`. See `advanced/district_planning.rs`.
+mod district_planning;
+use district_planning::DistrictPlanCache;
 
 /// The religious corps: the four opt-in genes for what a founder buys with
 /// Faith once its cities start slipping, and what it does with the units
@@ -5532,6 +5546,8 @@ impl AdvancedAi {
             // ---- append: a-b ----------------------------------------
 
             // ---- append: c-d ----------------------------------------
+
+            district_planning: false,
 
             // ---- append: e-f ----------------------------------------
 
@@ -15337,6 +15353,7 @@ impl AdvancedAi {
             let mut candidates = Vec::new();
             let mut plot_options = Vec::new();
             let mut plot_cache = PlotPurchaseCache::default();
+            let mut district_plan_cache = DistrictPlanCache::default();
             let mut purchase_options = Vec::new();
             // Every candidate asks its city for the same yields, twice — once
             // here and once inside `production_value`. The guard borrows the
@@ -15347,6 +15364,28 @@ impl AdvancedAi {
                 if let Action::BuyPlot { city, pos, cost } = &action {
                     if bank + f64::EPSILON < reserve + 200.0 + cost {
                         continue;
+                    }
+                    // See `district_planning`: the plan may have named this
+                    // very plot for a very valuable district site. That buy
+                    // competes as a strategic purchase, not a surplus one.
+                    if self.district_planning {
+                        if let Some(score) = self.district_plan_plot_score(
+                            g,
+                            pid,
+                            plan,
+                            &counts,
+                            *city,
+                            *pos,
+                            *cost,
+                            &mut district_plan_cache,
+                        ) {
+                            candidates.push((
+                                score,
+                                std::cmp::Reverse(format!("{action:?}")),
+                                action,
+                            ));
+                            continue;
+                        }
                     }
                     // See `priced_tile_purchase`: the plot is an investment
                     // priced against its Gold, not a shortlist hint plus a
@@ -18862,7 +18901,7 @@ impl AdvancedAi {
             // first building into the strategic table.
             let best: Option<(f64, String, Item)> = {
                 let _memo = g.query_memo();
-                let items = g
+                let mut items = g
                     .producible_items(pid, cid)
                     .into_iter()
                     .filter(|item| {
@@ -18881,6 +18920,12 @@ impl AdvancedAi {
                             })
                     })
                     .collect::<Vec<_>>();
+                // See `district_planning`: the plan's sites join the menu
+                // and a reserved plot is withdrawn from a rival district —
+                // the argmax below is untouched, it only sees better.
+                if self.district_planning {
+                    self.district_plan_shape_menu(g, pid, plan, cid, &mut items);
+                }
                 let scores = self.production_values(g, pid, cid, &items, plan, counts);
                 let mut best = None;
                 for (item, score) in items.into_iter().zip(scores) {

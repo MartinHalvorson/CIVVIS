@@ -2071,6 +2071,19 @@ impl AdvancedAi {
 
     // ---- append: c-d ------------------------------------------------
 
+    /// The city plans its districts, sites and tile buys together: wished
+    /// districts get jointly assigned, reserved plots over rings 1-3, and
+    /// the tile a very valuable site needs is bought. See
+    /// [`AdvancedAi::district_planning`]. Opt-in gene `district-planning`.
+    pub fn enable_district_planning(&mut self) {
+        self.district_planning = true;
+    }
+
+    /// The twin of `enable_district_planning`.
+    pub fn disable_district_planning(&mut self) {
+        self.district_planning = false;
+    }
+
     // ---- append: e-f ------------------------------------------------
 
     // ---- append: g-k ------------------------------------------------
