@@ -52,14 +52,8 @@ fn casus_belli_profiles_cover_every_published_grievance_multiplier() {
     ] {
         let profile = casus_belli_profile(name).expect("named casus exists");
         assert_eq!(profile.id, name);
-        assert!(
-            (profile.declaration_multiplier - declaration).abs() < 1e-9,
-            "{name}"
-        );
-        assert!(
-            (profile.capture_multiplier - capture).abs() < 1e-9,
-            "{name}"
-        );
+        assert!((profile.declaration_multiplier - declaration).abs() < 1e-9, "{name}");
+        assert!((profile.capture_multiplier - capture).abs() < 1e-9, "{name}");
         assert!((profile.raze_multiplier - raze).abs() < 1e-9, "{name}");
     }
 }
@@ -167,15 +161,11 @@ fn delegations_and_embassies_are_paid_directional_and_non_stacking() {
     assert_eq!(game.players[0].gold, 90.0);
     assert_eq!(game.players[1].gold, 10.0);
     assert_eq!(
-        game.diplomatic_mission_to(0, 1)
-            .map(|mission| mission.kind.as_str()),
+        game.diplomatic_mission_to(0, 1).map(|mission| mission.kind.as_str()),
         Some("delegation")
     );
     assert_eq!(game.diplomatic_visibility(0, 1), visibility_before + 1.0);
-    assert_eq!(
-        game.relationship_opinion(1, 0),
-        recipient_opinion_before + 5.0
-    );
+    assert_eq!(game.relationship_opinion(1, 0), recipient_opinion_before + 5.0);
     assert_eq!(game.relationship_opinion(0, 1), sender_opinion_before);
 
     game.players[0]
@@ -186,8 +176,7 @@ fn delegations_and_embassies_are_paid_directional_and_non_stacking() {
     assert_eq!(game.players[0].gold, 65.0);
     assert_eq!(game.players[1].gold, 35.0);
     assert_eq!(
-        game.diplomatic_mission_to(0, 1)
-            .map(|mission| mission.kind.as_str()),
+        game.diplomatic_mission_to(0, 1).map(|mission| mission.kind.as_str()),
         Some("embassy")
     );
     assert_eq!(
@@ -195,15 +184,10 @@ fn delegations_and_embassies_are_paid_directional_and_non_stacking() {
         visibility_before + 1.0,
         "an Embassy replaces, rather than stacks with, a Delegation"
     );
-    assert!(game
-        .apply(0, &Action::SendDelegation { player: 1 })
-        .is_err());
+    assert!(game.apply(0, &Action::SendDelegation { player: 1 }).is_err());
 
     let restored: Game = serde_json::from_str(&serde_json::to_string(&game).unwrap()).unwrap();
-    assert_eq!(
-        restored.players[0].diplomatic_missions,
-        game.players[0].diplomatic_missions
-    );
+    assert_eq!(restored.players[0].diplomatic_missions, game.players[0].diplomatic_missions);
 }
 
 #[test]
@@ -254,7 +238,8 @@ fn city_state_declaration_charges_its_suzerain_and_other_envoys() {
     game.players[2].envoys.push((city_state, 1));
     assert_eq!(game.suzerain_of(city_state), Some(1));
 
-    game.do_declare_war(0, city_state)
+    game
+        .do_declare_war(0, city_state)
         .expect("a met city-state can be declared on");
 
     assert_eq!(
@@ -492,13 +477,8 @@ fn promises_and_demands_feed_the_retribution_and_grievance_ledgers() {
     .unwrap();
     let promise_offer = game.pending_deals.last().unwrap().id;
     game.current = 1;
-    game.apply(
-        1,
-        &Action::AcceptDeal {
-            deal: promise_offer,
-        },
-    )
-    .unwrap();
+    game.apply(1, &Action::AcceptDeal { deal: promise_offer })
+        .unwrap();
     assert!(game.promise_active(1, 0, "no_spying"));
 
     assert!(game.break_promise(1, 0, "no_spying"));
@@ -518,21 +498,12 @@ fn promises_and_demands_feed_the_retribution_and_grievance_ledgers() {
     .unwrap();
     let repeat_promise_offer = game.pending_deals.last().unwrap().id;
     game.current = 1;
-    game.apply(
-        1,
-        &Action::AcceptDeal {
-            deal: repeat_promise_offer,
-        },
-    )
-    .unwrap();
+    game.apply(1, &Action::AcceptDeal { deal: repeat_promise_offer })
+        .unwrap();
     assert!(game.break_promise(1, 0, "no_spying"));
     assert_eq!(
         game.players[0].grievances.get(&1),
-        Some(
-            &(PROMISE_BROKEN_FIRST_GRIEVANCES
-                + PROMISE_BROKEN_FIRST_GRIEVANCES
-                + PROMISE_BROKEN_REPEAT_GRIEVANCES)
-        ),
+        Some(&(PROMISE_BROKEN_FIRST_GRIEVANCES + PROMISE_BROKEN_FIRST_GRIEVANCES + PROMISE_BROKEN_REPEAT_GRIEVANCES)),
         "the second broken promise costs 125 after the initial 100"
     );
     game.players[0].civics.insert(crate::name!("early_empire"));
@@ -595,12 +566,7 @@ fn promises_and_demands_feed_the_retribution_and_grievance_ledgers() {
     let repeat_demand_offer = demand.pending_deals.last().unwrap().id;
     demand.current = 1;
     demand
-        .apply(
-            1,
-            &Action::RejectDeal {
-                deal: repeat_demand_offer,
-            },
-        )
+        .apply(1, &Action::RejectDeal { deal: repeat_demand_offer })
         .unwrap();
     assert_eq!(
         demand.players[0].grievances.get(&1),
@@ -610,7 +576,8 @@ fn promises_and_demands_feed_the_retribution_and_grievance_ledgers() {
 
     let restored: Game = serde_json::from_str(&serde_json::to_string(&game).unwrap()).unwrap();
     assert_eq!(
-        restored.players[0].diplomatic_incidents, game.players[0].diplomatic_incidents,
+        restored.players[0].diplomatic_incidents,
+        game.players[0].diplomatic_incidents,
         "the conduct that unlocks a future promise survives save/load"
     );
 }

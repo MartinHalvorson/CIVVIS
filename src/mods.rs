@@ -137,13 +137,9 @@ fn apply(values: &mut BTreeMap<String, Value>, path: &Path) -> Result<ModInfo, S
         .map_err(|error| format!("cannot read mod {}: {error}", path.display()))?;
     let mut overlays: Vec<(String, PathBuf)> = Vec::new();
     for entry in entries {
-        let entry =
-            entry.map_err(|error| format!("cannot read mod {}: {error}", path.display()))?;
+        let entry = entry.map_err(|error| format!("cannot read mod {}: {error}", path.display()))?;
         let file = entry.path();
-        let Some(stem) = file
-            .file_stem()
-            .map(|stem| stem.to_string_lossy().to_string())
-        else {
+        let Some(stem) = file.file_stem().map(|stem| stem.to_string_lossy().to_string()) else {
             continue;
         };
         if file.extension().is_none_or(|ext| ext != "json") || stem == "mod" {
@@ -163,8 +159,8 @@ fn apply(values: &mut BTreeMap<String, Value>, path: &Path) -> Result<ModInfo, S
     for (name, file) in overlays {
         let text = std::fs::read_to_string(&file)
             .map_err(|error| format!("cannot read {}: {error}", file.display()))?;
-        let overlay: Value =
-            serde_json::from_str(&text).map_err(|error| format!("{}: {error}", file.display()))?;
+        let overlay: Value = serde_json::from_str(&text)
+            .map_err(|error| format!("{}: {error}", file.display()))?;
         let base = values
             .get_mut(&name)
             .ok_or_else(|| format!("mod {} overlays unknown file {name}.json", info.name))?;
@@ -212,11 +208,7 @@ mod tests {
     }
 
     fn write(dir: &Path, file: &str, value: serde_json::Value) {
-        std::fs::write(
-            dir.join(file),
-            serde_json::to_string_pretty(&value).unwrap(),
-        )
-        .unwrap();
+        std::fs::write(dir.join(file), serde_json::to_string_pretty(&value).unwrap()).unwrap();
     }
 
     /// The three merge rules: add, field-wise override, and removal.
@@ -254,10 +246,7 @@ mod tests {
 
         assert_eq!(rules.units["warrior"].cost, 10.0);
         // The fields the mod did not mention survived the merge.
-        assert_eq!(
-            rules.units["warrior"].strength,
-            shipped.units["warrior"].strength
-        );
+        assert_eq!(rules.units["warrior"].strength, shipped.units["warrior"].strength);
         assert_eq!(rules.units["test_skirmisher"].strength, 22.0);
         assert!(!rules.agendas.contains_key("tlatoani"));
         assert_eq!(rules.civs["Aztec"].agenda, None);
@@ -271,11 +260,7 @@ mod tests {
     #[test]
     fn a_mod_that_breaks_the_ruleset_is_refused() {
         let dir = scratch("broken");
-        write(
-            &dir,
-            "units.json",
-            json!({"warrior": {"tech": "phlogiston"}}),
-        );
+        write(&dir, "units.json", json!({"warrior": {"tech": "phlogiston"}}));
         let error = load(std::slice::from_ref(&dir))
             .map(|_| ())
             .expect_err("a dangling tech is refused");
@@ -313,10 +298,7 @@ mod tests {
     fn merging_replaces_scalars_and_recurses_into_objects() {
         let mut base = json!({"a": {"x": 1, "y": 2}, "b": 3});
         merge(&mut base, json!({"a": {"y": 9, "z": 10}, "b": 4, "c": 5})).unwrap();
-        assert_eq!(
-            base,
-            json!({"a": {"x": 1, "y": 9, "z": 10}, "b": 4, "c": 5})
-        );
+        assert_eq!(base, json!({"a": {"x": 1, "y": 9, "z": 10}, "b": 4, "c": 5}));
     }
 
     /// The Modified Future Era ships as a mod folder as well as a lobby

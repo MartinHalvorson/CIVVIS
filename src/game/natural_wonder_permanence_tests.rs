@@ -161,15 +161,12 @@ fn no_district_may_be_sited_on_an_oasis() {
     }
     game.cities.get_mut(&city).unwrap().pop = 10;
     assert!(
-        game.district_sites(city, crate::name!("campus"))
-            .contains(&site),
+        game.district_sites(city, crate::name!("campus")).contains(&site),
         "a bare desert tile is a legal Campus site"
     );
     game.map.tiles.get_mut(&site).unwrap().feature = Some(crate::name!("oasis"));
     assert!(
-        !game
-            .district_sites(city, crate::name!("campus"))
-            .contains(&site),
+        !game.district_sites(city, crate::name!("campus")).contains(&site),
         "and the same tile with an Oasis is not"
     );
 }

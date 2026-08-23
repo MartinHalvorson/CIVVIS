@@ -440,14 +440,8 @@ fn isolationism_closes_the_frontier_and_pays_at_home() {
     // +2 Food and +2 Production on a domestic route that stays on one
     // continent (`Intercontinental=0`), and nothing else — no Gold, no
     // route capacity.
-    assert_eq!(
-        game.policy_effect(0, "domestic_same_continent_trade_food"),
-        2.0
-    );
-    assert_eq!(
-        game.policy_effect(0, "domestic_same_continent_trade_production"),
-        2.0
-    );
+    assert_eq!(game.policy_effect(0, "domestic_same_continent_trade_food"), 2.0);
+    assert_eq!(game.policy_effect(0, "domestic_same_continent_trade_production"), 2.0);
     assert_eq!(game.policy_effect(0, "domestic_trade_food"), 0.0);
     assert_eq!(game.policy_effect(0, "domestic_trade_gold"), 0.0);
     assert_eq!(game.policy_effect(0, "policy_trade_route_capacity"), 0.0);
@@ -529,7 +523,9 @@ fn monasticism_docks_culture_in_every_city_and_robber_barons_reads_its_own_build
     let before = game.city_yields(city);
     assert!(before.culture > 0.0);
     // No Holy Site here, and the Culture is docked all the same.
-    game.players[0].policies.insert(crate::name!("monasticism"));
+    game.players[0]
+        .policies
+        .insert(crate::name!("monasticism"));
     let after = game.city_yields(city);
     assert!(
         (after.culture - before.culture * 0.75).abs() < 1e-9,
@@ -537,10 +533,7 @@ fn monasticism_docks_culture_in_every_city_and_robber_barons_reads_its_own_build
         before.culture,
         after.culture
     );
-    assert!(
-        (after.science - before.science).abs() < 1e-9,
-        "no Holy Site, no Science bonus"
-    );
+    assert!((after.science - before.science).abs() < 1e-9, "no Holy Site, no Science bonus");
     game.players[0].policies.clear();
 
     // Robber Barons pays nothing until the named building stands.
@@ -551,23 +544,13 @@ fn monasticism_docks_culture_in_every_city_and_robber_barons_reads_its_own_build
     let bank = game.clone();
     // A building is active only on its standing district: place the
     // Commercial Hub and Industrial Zone the two buildings live in.
-    let mut ring = game
-        .nbrs(game.cities[&city].pos)
-        .into_iter()
-        .filter(|position| {
-            game.map
-                .get(*position)
-                .is_some_and(|tile| tile.district.is_none() && tile.wonder.is_none())
-        });
+    let mut ring = game.nbrs(game.cities[&city].pos).into_iter().filter(|position| {
+        game.map.get(*position).is_some_and(|tile| tile.district.is_none() && tile.wonder.is_none())
+    });
     let hub = ring.next().unwrap();
     let zone = ring.next().unwrap();
     let mut with_stock_exchange = game.clone();
-    with_stock_exchange
-        .map
-        .tiles
-        .get_mut(&hub)
-        .unwrap()
-        .district = Some(crate::name!("commercial_hub"));
+    with_stock_exchange.map.tiles.get_mut(&hub).unwrap().district = Some(crate::name!("commercial_hub"));
     with_stock_exchange
         .cities
         .get_mut(&city)
@@ -656,20 +639,13 @@ fn exodus_of_the_evangelists_pays_four_prophet_points_a_turn_in_a_golden_age() {
         .insert("exodus_of_the_evangelists".to_string());
     game.players[0].age = "normal".to_string();
     assert_eq!(
-        game.great_person_points_per_turn(0)
-            .get("prophet")
-            .copied()
-            .unwrap_or(0.0),
+        game.great_person_points_per_turn(0).get("prophet").copied().unwrap_or(0.0),
         before,
         "the Normal-Age half is Era Score, not points"
     );
     game.players[0].age = "golden".to_string();
     let mult = 1.0 + game.gov_effects(0).great_people_pct / 100.0;
-    let golden = game
-        .great_person_points_per_turn(0)
-        .get("prophet")
-        .copied()
-        .unwrap_or(0.0);
+    let golden = game.great_person_points_per_turn(0).get("prophet").copied().unwrap_or(0.0);
     assert!(
         (golden - (before + 4.0 * mult)).abs() < 1e-9,
         "+4 Prophet points a turn, under the government's multiplier: {before} -> {golden}"
@@ -1227,10 +1203,7 @@ fn georgia_banks_dedication_score_during_golden_and_heroic_ages() {
             .dedications
             .insert("exodus_of_the_evangelists".to_string());
         game.dedication_trigger(0, "city_converted", 1);
-        assert_eq!(
-            game.players[0].era_score, 2,
-            "Strength in Unity failed in a {age} age"
-        );
+        assert_eq!(game.players[0].era_score, 2, "Strength in Unity failed in a {age} age");
     }
 }
 
@@ -1471,10 +1444,7 @@ fn every_catalogued_moment_pays_its_score_only_inside_its_window() {
         if let Some(minimum) = spec.minimum_game_era.filter(|minimum| *minimum > 0) {
             game.world_era = minimum - 1;
             game.players[0].era_score = 0;
-            assert!(
-                !game.add_historic_moment(0, &id),
-                "{id} ignored its minimum era"
-            );
+            assert!(!game.add_historic_moment(0, &id), "{id} ignored its minimum era");
             assert_eq!(game.players[0].era_score, 0);
         }
         if let Some(maximum) = spec
@@ -1483,19 +1453,13 @@ fn every_catalogued_moment_pays_its_score_only_inside_its_window() {
         {
             game.world_era = maximum + 1;
             game.players[0].era_score = 0;
-            assert!(
-                !game.add_historic_moment(0, &id),
-                "{id} ignored its maximum era"
-            );
+            assert!(!game.add_historic_moment(0, &id), "{id} ignored its maximum era");
             assert_eq!(game.players[0].era_score, 0);
         }
         if let Some(obsolete) = spec.obsolete_era {
             game.world_era = obsolete;
             game.players[0].era_score = 0;
-            assert!(
-                !game.add_historic_moment(0, &id),
-                "{id} ignored ObsoleteEra"
-            );
+            assert!(!game.add_historic_moment(0, &id), "{id} ignored ObsoleteEra");
             assert_eq!(game.players[0].era_score, 0);
         }
     }
@@ -1507,17 +1471,9 @@ fn unique_replacement_districts_do_not_claim_base_district_moments() {
     let mut korea = two_player_game();
     korea.players[0].civ = "Korea".to_string();
     korea.players[0].era_score = 0;
-    let seowon = korea
-        .units
-        .values()
-        .find(|unit| unit.owner == 0)
-        .unwrap()
-        .pos;
+    let seowon = korea.units.values().find(|unit| unit.owner == 0).unwrap().pos;
     korea.note_district_completed_moments(0, "seowon", seowon);
-    assert_eq!(
-        korea.players[0].era_score, 4,
-        "Seowon earns only the unique-district Moment"
-    );
+    assert_eq!(korea.players[0].era_score, 4, "Seowon earns only the unique-district Moment");
     assert!(!korea.players[0]
         .counters
         .contains_key("historic_moment:high_adjacency:campus"));
@@ -1525,17 +1481,9 @@ fn unique_replacement_districts_do_not_claim_base_district_moments() {
     let mut kongo = two_player_game();
     kongo.players[0].civ = "Kongo".to_string();
     kongo.players[0].era_score = 0;
-    let mbanza = kongo
-        .units
-        .values()
-        .find(|unit| unit.owner == 0)
-        .unwrap()
-        .pos;
+    let mbanza = kongo.units.values().find(|unit| unit.owner == 0).unwrap().pos;
     kongo.note_district_completed_moments(0, "mbanza", mbanza);
-    assert_eq!(
-        kongo.players[0].era_score, 4,
-        "Mbanza earns only the unique-district Moment"
-    );
+    assert_eq!(kongo.players[0].era_score, 4, "Mbanza earns only the unique-district Moment");
     assert!(!kongo.players[0]
         .counters
         .contains_key("historic_moment:neighborhood_district"));
@@ -1550,15 +1498,10 @@ fn free_population_unique_buildings_and_prophets_reach_moment_hooks() {
 
     game.cities.get_mut(&city).unwrap().pop = 9;
     game.increase_city_population(city, 1);
-    assert_eq!(
-        game.players[0].era_score, 2,
-        "a granted tenth Citizen is still a world first"
-    );
+    assert_eq!(game.players[0].era_score, 2, "a granted tenth Citizen is still a world first");
 
     game.grant_free_building_family(0, city, "university");
-    assert!(game.cities[&city]
-        .buildings
-        .contains(&crate::name!("madrasa")));
+    assert!(game.cities[&city].buildings.contains(&crate::name!("madrasa")));
     assert_eq!(
         game.players[0]
             .counters
@@ -1603,15 +1546,8 @@ fn repeat_conversions_keep_their_moments_but_not_repeat_dedication_credit() {
     game.award_conversion_era_score(&before);
     game.award_conversion_era_score(&before);
 
-    assert_eq!(
-        game.players[0].era_score, 14,
-        "war + holy-city Moments pay on each conversion"
-    );
-    assert_eq!(
-        game.players[0].converted_cities.len(),
-        1,
-        "dedication credit stays first-only"
-    );
+    assert_eq!(game.players[0].era_score, 14, "war + holy-city Moments pay on each conversion");
+    assert_eq!(game.players[0].converted_cities.len(), 1, "dedication credit stays first-only");
 }
 
 #[test]
@@ -1620,10 +1556,7 @@ fn team_contact_final_capitals_and_invalid_casus_belli_do_not_misaward() {
     team.players[0].team = Some(7);
     team.players[1].team = Some(7);
     team.note_met_all_majors(0);
-    assert_eq!(
-        team.players[0].era_score, 5,
-        "a known teammate completes the contact table"
-    );
+    assert_eq!(team.players[0].era_score, 5, "a known teammate completes the contact table");
 
     let mut conquest = two_player_game();
     let _own = found_capital(&mut conquest, 0);
@@ -1673,21 +1606,13 @@ fn only_the_first_fully_promoted_governor_earns_the_moment() {
         .unwrap()
         .promotions
         .extend(
-            [
-                "harbormaster",
-                "forestry_management",
-                "tax_collector",
-                "contractor",
-            ]
-            .into_iter()
-            .map(str::to_string),
+            ["harbormaster", "forestry_management", "tax_collector", "contractor"]
+                .into_iter()
+                .map(str::to_string),
         );
     game.do_promote_governor(0, "reyna", "renewable_subsidizer")
         .unwrap();
-    assert_eq!(
-        game.players[0].era_score, 1,
-        "a second Governor earns no second Moment"
-    );
+    assert_eq!(game.players[0].era_score, 1, "a second Governor earns no second Moment");
     assert_eq!(
         game.players[0]
             .counters

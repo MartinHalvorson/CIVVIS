@@ -179,7 +179,8 @@ fn industry_corporation_and_products_form_one_playable_save_stable_chain() {
 fn products_move_between_exact_slots_and_pillaged_hosts_stop_their_effects() {
     let (mut game, origin, positions) = industry_game();
     install_test_district(&mut game, origin, "commercial_hub");
-    game.map.tiles.get_mut(&positions[0]).unwrap().improvement = Some(crate::name!("corporation"));
+    game.map.tiles.get_mut(&positions[0]).unwrap().improvement =
+        Some(crate::name!("corporation"));
     game.cities
         .get_mut(&origin)
         .unwrap()

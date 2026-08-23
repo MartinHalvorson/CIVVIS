@@ -76,11 +76,7 @@ fn market_economy_is_worth_what_the_far_city_owns() {
     };
     let bare = gold_for(&mut game, &[]);
     assert_eq!(gold_for(&mut game, &["wine"]) - bare, 1.0, "one luxury");
-    assert_eq!(
-        gold_for(&mut game, &["wine", "iron"]) - bare,
-        2.0,
-        "plus one strategic"
-    );
+    assert_eq!(gold_for(&mut game, &["wine", "iron"]) - bare, 2.0, "plus one strategic");
     assert_eq!(
         gold_for(&mut game, &["wine", "iron", "rice"]) - bare,
         2.0,
@@ -124,21 +120,12 @@ fn the_unit_ladders_repeat_their_predecessors_eras_instead_of_succeeding_them() 
     assert_eq!(pct(&game, "man_at_arms"), 0.0);
 
     card(&mut game, "feudal_contract");
-    assert_eq!(
-        pct(&game, "warrior"),
-        50.0,
-        "Ancient melee is still covered"
-    );
+    assert_eq!(pct(&game, "warrior"), 50.0, "Ancient melee is still covered");
     assert_eq!(pct(&game, "musketman"), 50.0);
     assert_eq!(pct(&game, "line_infantry"), 0.0, "Industrial is past it");
 
     card(&mut game, "military_first");
-    for unit in [
-        "warrior",
-        "man_at_arms",
-        "line_infantry",
-        "mechanized_infantry",
-    ] {
+    for unit in ["warrior", "man_at_arms", "line_infantry", "mechanized_infantry"] {
         assert_eq!(pct(&game, unit), 50.0, "{unit}");
     }
 
@@ -150,11 +137,7 @@ fn the_unit_ladders_repeat_their_predecessors_eras_instead_of_succeeding_them() 
     for policy in ["feudal_contract", "grande_armee", "military_first"] {
         card(&mut game, policy);
         assert_eq!(pct(&game, "archer"), 50.0, "{policy} covers Ancient ranged");
-        assert_eq!(
-            pct(&game, "saka_horse_archer"),
-            0.0,
-            "{policy} skips Classical ranged"
-        );
+        assert_eq!(pct(&game, "saka_horse_archer"), 0.0, "{policy} skips Classical ranged");
     }
 
     // The naval ladder runs the same way, and Press Gangs stops after the
@@ -188,13 +171,7 @@ fn the_wonder_cards_stop_at_the_era_their_arguments_name() {
     };
     // pyramids Ancient, colosseum Classical, hagia_sophia Medieval,
     // taj_mahal Renaissance, big_ben Industrial.
-    let subjects = [
-        "pyramids",
-        "colosseum",
-        "hagia_sophia",
-        "taj_mahal",
-        "big_ben",
-    ];
+    let subjects = ["pyramids", "colosseum", "hagia_sophia", "taj_mahal", "big_ben"];
     let base: Vec<f64> = subjects.iter().map(|w| at(&game, w)).collect();
     let gain = |game: &Game| -> Vec<f64> {
         subjects
@@ -463,7 +440,10 @@ fn theocracy_faith_per_population_requires_a_governor() {
         .insert(crate::name!("state_workforce"));
     game.do_appoint_governor(0, "pingala", city).unwrap();
     let baseline = without_government(&game);
-    assert!((game.city_yields(city).faith - baseline.city_yields(city).faith - 1.0).abs() < 1e-9);
+    assert!(
+        (game.city_yields(city).faith - baseline.city_yields(city).faith - 1.0).abs()
+            < 1e-9
+    );
 }
 
 #[test]
@@ -477,7 +457,8 @@ fn communism_gates_population_production_but_multiplies_science_empire_wide() {
         baseline.city_yields(city).production
     );
     assert!(
-        (game.city_yields(city).science - baseline.city_yields(city).science * 1.10).abs() < 1e-9
+        (game.city_yields(city).science - baseline.city_yields(city).science * 1.10).abs()
+            < 1e-9
     );
 
     game.players[0]
@@ -486,7 +467,9 @@ fn communism_gates_population_production_but_multiplies_science_empire_wide() {
     game.do_appoint_governor(0, "pingala", city).unwrap();
     let baseline = without_government(&game);
     assert!(
-        (game.city_yields(city).production - baseline.city_yields(city).production - 1.2).abs()
+        (game.city_yields(city).production - baseline.city_yields(city).production
+            - 1.2)
+            .abs()
             < 1e-9
     );
 }
@@ -517,7 +500,10 @@ fn democracy_trade_bonus_requires_an_ally_or_suzerained_city_state() {
     assert_eq!(origin_yields.food, origin_baseline.food + 4.0);
     assert!((origin_yields.production - origin_baseline.production - 4.0).abs() < 1e-9);
     assert_eq!(destination_yields.food, destination_baseline.food + 4.0);
-    assert!((destination_yields.production - destination_baseline.production - 4.0).abs() < 1e-9);
+    assert!(
+        (destination_yields.production - destination_baseline.production - 4.0).abs()
+            < 1e-9
+    );
 
     game.players[0].alliances.clear();
     game.players[1].alliances.clear();
@@ -525,7 +511,9 @@ fn democracy_trade_bonus_requires_an_ally_or_suzerained_city_state() {
     game.players[0].envoys.push((1, 3));
     let baseline = without_government(&game);
     assert!(
-        (game.city_yields(origin).production - baseline.city_yields(origin).production - 4.0).abs()
+        (game.city_yields(origin).production - baseline.city_yields(origin).production
+            - 4.0)
+            .abs()
             < 1e-9
     );
     assert!(
@@ -637,19 +625,22 @@ fn corporate_libertarianism_gates_production_and_rewards_improved_resources() {
         baseline.city_yields(city).production
     );
     assert!(
-        (game.city_yields(city).science - baseline.city_yields(city).science * 0.90).abs() < 1e-9
+        (game.city_yields(city).science - baseline.city_yields(city).science * 0.90).abs()
+            < 1e-9
     );
 
     let commercial_hub = install_test_district(&mut game, city, "commercial_hub");
     let baseline = without_government(&game);
     assert!(
-        (game.city_yields(city).production - baseline.city_yields(city).production * 1.10).abs()
+        (game.city_yields(city).production - baseline.city_yields(city).production * 1.10)
+            .abs()
             < 1e-9
     );
     install_test_district(&mut game, city, "encampment");
     let baseline = without_government(&game);
     assert!(
-        (game.city_yields(city).production - baseline.city_yields(city).production * 1.10).abs()
+        (game.city_yields(city).production - baseline.city_yields(city).production * 1.10)
+            .abs()
             < 1e-9,
         "the two eligible districts grant one city modifier, not two"
     );

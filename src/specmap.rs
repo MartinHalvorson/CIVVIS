@@ -176,10 +176,7 @@ impl<T> SpecMap<T> {
     }
 
     pub fn remove(&mut self, key: &str) -> Option<T> {
-        let index = self
-            .keys
-            .binary_search_by(|probe| probe.as_str().cmp(key))
-            .ok()?;
+        let index = self.keys.binary_search_by(|probe| probe.as_str().cmp(key)).ok()?;
         self.keys.remove(index);
         let value = self.values.remove(index);
         self.reindex();

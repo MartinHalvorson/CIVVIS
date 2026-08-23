@@ -180,7 +180,9 @@ fn shared_resource_connection_contract_preserves_defaults_and_rejects_mismatches
         }
     }
     assert!(game.improvement_connects_resource(crate::name!("industry"), crate::name!("amber")));
-    assert!(game.improvement_connects_resource(crate::name!("corporation"), crate::name!("amber")));
+    assert!(
+        game.improvement_connects_resource(crate::name!("corporation"), crate::name!("amber"))
+    );
     assert!(!game.improvement_connects_resource(crate::name!("farm"), crate::name!("amber")));
 
     set_resource_tile(&mut game, position, "amber", "mine", false);
@@ -260,14 +262,8 @@ fn china_trains_both_the_crouching_tiger_and_the_crossbowman() {
     // The two ranged units differ where the shipped columns say they do.
     let tiger = &game.rules.units["crouching_tiger"];
     let crossbow = &game.rules.units["crossbowman"];
-    assert_eq!(
-        (tiger.ranged_strength, tiger.range, tiger.cost),
-        (50.0, 1, 140.0)
-    );
-    assert_eq!(
-        (crossbow.ranged_strength, crossbow.range, crossbow.cost),
-        (40.0, 2, 180.0)
-    );
+    assert_eq!((tiger.ranged_strength, tiger.range, tiger.cost), (50.0, 1, 140.0));
+    assert_eq!((crossbow.ranged_strength, crossbow.range, crossbow.cost), (40.0, 2, 180.0));
 }
 
 #[test]
@@ -309,6 +305,7 @@ fn unit_build_commits_material_once_even_when_production_is_paused() {
         .any(|unit| game.units[&unit].kind == "swordsman"));
 }
 
+
 #[test]
 fn researching_the_retiring_technology_clears_the_order_and_refunds_material() {
     let mut game = strategic_game();
@@ -331,9 +328,7 @@ fn researching_the_retiring_technology_clears_the_order_and_refunds_material() {
     assert_eq!(game.strategic_stockpile(0, crate::name!("iron")), 0.0);
     game.cities.get_mut(&city).unwrap().production = 30.0;
 
-    game.players[0]
-        .techs
-        .insert(crate::name!("replaceable_parts"));
+    game.players[0].techs.insert(crate::name!("replaceable_parts"));
     game.drop_obsolete_production(0);
     assert!(game.cities[&city].queue.is_empty());
     assert_eq!(game.cities[&city].production, 0.0);
@@ -355,19 +350,13 @@ fn unpaid_fuel_applies_one_shared_strength_penalty_per_unfed_unit() {
 
     game.process_strategic_resources(0);
     assert_eq!(game.strategic_stockpile(0, crate::name!("oil")), 0.0);
-    assert_eq!(
-        game.players[0].strategic_resource_shortages[&Name::new("oil")],
-        2
-    );
+    assert_eq!(game.players[0].strategic_resource_shortages[&Name::new("oil")], 2);
     assert!(infantry
         .iter()
         .all(|unit| game.unit_unembarked_strength(&game.units[unit]) == 73.0));
 
     game.process_strategic_resources(0);
-    assert_eq!(
-        game.players[0].strategic_resource_shortages[&Name::new("oil")],
-        3
-    );
+    assert_eq!(game.players[0].strategic_resource_shortages[&Name::new("oil")], 3);
     assert!(infantry
         .iter()
         .all(|unit| game.unit_unembarked_strength(&game.units[unit]) == 72.0));

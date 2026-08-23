@@ -1,6 +1,6 @@
-use super::*;
 use crate::ai::{AdvancedAi, BasicAi, GrandStrategy};
 use crate::name::Name;
+use super::*;
 
 fn game_with_capitals(players: usize, seed: u64) -> (Game, Vec<u32>) {
     let mut game = Game::new_full(players, 28, 18, seed, 300, 0, false);
@@ -211,7 +211,8 @@ fn rapa_nui_moai_are_suzerain_actions_with_real_adjacency_yields() {
         .nbrs(target)
         .into_iter()
         .find(|position| {
-            game.cities[&city].owned_tiles.contains(position) && *position != game.cities[&city].pos
+            game.cities[&city].owned_tiles.contains(position)
+                && *position != game.cities[&city].pos
         })
         .expect("the capital ring contains adjacent owned sites");
     prepare_improvement_site(&mut game, neighbor, "plains", false);
@@ -247,7 +248,9 @@ fn portugal_nau_builds_feitorias_only_with_foreign_open_borders_and_pays_routes(
             .contains(&crate::name!("feitoria")),
         "foreign coast remains closed until its owner grants Open Borders"
     );
-    game.players[1].open_borders_until.insert(0, game.turn + 30);
+    game.players[1]
+        .open_borders_until
+        .insert(0, game.turn + 30);
     assert!(game
         .valid_improvements(0, target)
         .contains(&crate::name!("feitoria")));
@@ -288,10 +291,7 @@ fn special_improver_units_and_incan_mountain_roads_are_actionable() {
     };
     assert!(game.legal_actions(0).contains(&pa));
     game.apply(0, &pa).unwrap();
-    assert_eq!(
-        game.map.tiles[&sites[0]].improvement.as_deref(),
-        Some("maori_pa")
-    );
+    assert_eq!(game.map.tiles[&sites[0]].improvement.as_deref(), Some("maori_pa"));
 
     game.players[0].civ = "Rome".to_string();
     prepare_improvement_site(&mut game, sites[1], "grassland", false);
@@ -302,10 +302,7 @@ fn special_improver_units_and_incan_mountain_roads_are_actionable() {
     };
     assert!(game.legal_actions(0).contains(&fort));
     game.apply(0, &fort).unwrap();
-    assert_eq!(
-        game.map.tiles[&sites[1]].improvement.as_deref(),
-        Some("roman_fort")
-    );
+    assert_eq!(game.map.tiles[&sites[1]].improvement.as_deref(), Some("roman_fort"));
 
     game.players[0].civ = "Inca".to_string();
     game.players[0].civics.insert(crate::name!("foreign_trade"));
@@ -322,10 +319,7 @@ fn special_improver_units_and_incan_mountain_roads_are_actionable() {
     };
     assert!(game.legal_actions(0).contains(&road));
     game.apply(0, &road).unwrap();
-    assert_eq!(
-        game.map.tiles[&sites[2]].improvement.as_deref(),
-        Some("qhapaq_nan")
-    );
+    assert_eq!(game.map.tiles[&sites[2]].improvement.as_deref(), Some("qhapaq_nan"));
 }
 
 #[test]
@@ -348,10 +342,7 @@ fn basic_ai_spends_toa_and_legion_charges_on_their_unique_improvements() {
         BasicAi::new().special_improver_step(&mut game, 0, toa),
         Some(true)
     );
-    assert_eq!(
-        game.map.tiles[&sites[0]].improvement.as_deref(),
-        Some("maori_pa")
-    );
+    assert_eq!(game.map.tiles[&sites[0]].improvement.as_deref(), Some("maori_pa"));
 
     game.players[0].civ = "Rome".to_string();
     prepare_improvement_site(&mut game, sites[1], "grassland", false);
@@ -435,15 +426,14 @@ fn advanced_ai_spends_nau_charge_only_on_an_open_foreign_feitoria_site() {
     );
     assert!(game.map.tiles[&target].improvement.is_none());
 
-    game.players[1].open_borders_until.insert(0, game.turn + 30);
+    game.players[1]
+        .open_borders_until
+        .insert(0, game.turn + 30);
     assert_eq!(
         ai.advanced_special_improver_step(&mut game, 0, nau, GrandStrategy::Diplomacy),
         Some(true)
     );
-    assert_eq!(
-        game.map.tiles[&target].improvement.as_deref(),
-        Some("feitoria")
-    );
+    assert_eq!(game.map.tiles[&target].improvement.as_deref(), Some("feitoria"));
 }
 
 #[test]
@@ -469,7 +459,9 @@ fn advanced_ai_routes_a_nau_to_the_best_reachable_feitoria_site() {
                     game.nbrs(target)
                         .into_iter()
                         .find(|shore| {
-                            *shore != center && *shore != start && !game.nbrs(start).contains(shore)
+                            *shore != center
+                                && *shore != start
+                                && !game.nbrs(start).contains(shore)
                         })
                         .map(|shore| (target, start, shore))
                 })
@@ -487,7 +479,9 @@ fn advanced_ai_routes_a_nau_to_the_best_reachable_feitoria_site() {
     game.players[0].civ = "Portugal".to_string();
     game.players[0].techs.insert(crate::name!("cartography"));
     game.players[1].civics.insert(crate::name!("early_empire"));
-    game.players[1].open_borders_until.insert(0, game.turn + 30);
+    game.players[1]
+        .open_borders_until
+        .insert(0, game.turn + 30);
     let nau = game.spawn_test_unit("nau", 0, start);
     let mut ai = AdvancedAi::new();
 
@@ -673,14 +667,11 @@ fn hattusa_stockholm_and_vilnius_use_resources_gpp_and_real_adjacency() {
     game.map.tiles.get_mut(&wonder).unwrap().wonder = Some(crate::name!("pyramids"));
     install_alliance(&mut game, 0, 1, "research", 2);
     game.players[minor].civ = "Mohenjo-Daro".to_string();
-    let ordinary = game
-        .district_yields(crate::name!("theater_square"), theater)
-        .culture;
+    let ordinary = game.district_yields(crate::name!("theater_square"), theater).culture;
     assert!(ordinary > 0.0);
     game.players[minor].civ = "Vilnius".to_string();
     assert_close(
-        game.district_yields(crate::name!("theater_square"), theater)
-            .culture,
+        game.district_yields(crate::name!("theater_square"), theater).culture,
         ordinary * 2.0,
     );
 }
@@ -962,12 +953,7 @@ fn no_city_state_seat_claims_a_suzerain_bonus_the_engine_does_not_have() {
                 "{} is marked implemented with no bonus key",
                 seat.name
             );
-            assert_eq!(
-                game.cs_bonus(&seat.name),
-                seat.bonus.as_deref(),
-                "{}",
-                seat.name
-            );
+            assert_eq!(game.cs_bonus(&seat.name), seat.bonus.as_deref(), "{}", seat.name);
         } else {
             assert_eq!(game.cs_bonus(&seat.name), None, "{}", seat.name);
         }
@@ -1027,9 +1013,7 @@ fn valletta_purchases_city_center_and_encampment_buildings_but_never_the_walls()
         !game.legal_actions(0).contains(&purchase),
         "buying walls with Faith must not be offered as a legal action"
     );
-    assert!(!game.cities[&city]
-        .buildings
-        .contains(&crate::name!("walls")));
+    assert!(!game.cities[&city].buildings.contains(&crate::name!("walls")));
 
     install_district(&mut game, city, "encampment");
     assert_eq!(
@@ -1237,19 +1221,12 @@ fn a_city_state_at_war_with_the_seat_suspends_its_envoy_bonuses() {
     let kumasi = add_city_state(&mut game, "Kumasi");
     make_suzerain(&mut game, 0, kumasi);
     let plain = game.envoy_yields(0, &game.cities[&capital]);
-    assert!(
-        plain.culture > 0.0,
-        "a cultural city-state at three Envoys pays the capital"
-    );
+    assert!(plain.culture > 0.0, "a cultural city-state at three Envoys pays the capital");
     game.at_war.insert(pair(0, kumasi));
     let at_war = game.envoy_yields(0, &game.cities[&capital]);
     assert_eq!(at_war, Yields::default(), "nothing while at war");
     game.at_war.remove(&pair(0, kumasi));
-    assert_eq!(
-        game.envoy_yields(0, &game.cities[&capital]),
-        plain,
-        "and all of it back at peace"
-    );
+    assert_eq!(game.envoy_yields(0, &game.cities[&capital]), plain, "and all of it back at peace");
 }
 
 #[test]
@@ -1352,7 +1329,10 @@ fn brussels_hong_kong_and_muscat_pay_wonders_projects_and_amenities() {
     };
     let before = game.item_prod_mult(0, city, Some(&wonder));
     make_suzerain(&mut game, 0, brussels);
-    assert_close(game.item_prod_mult(0, city, Some(&wonder)), before + 0.15);
+    assert_close(
+        game.item_prod_mult(0, city, Some(&wonder)),
+        before + 0.15,
+    );
 
     // +20% Production towards city projects, and not towards wonders.
     game.players[brussels].civ = "Hong Kong".to_string();
@@ -1364,7 +1344,10 @@ fn brussels_hong_kong_and_muscat_pay_wonders_projects_and_amenities() {
         game.item_prod_mult(0, city, Some(&project))
     };
     make_suzerain(&mut game, 0, brussels);
-    assert_close(game.item_prod_mult(0, city, Some(&project)), base + 0.20);
+    assert_close(
+        game.item_prod_mult(0, city, Some(&project)),
+        base + 0.20,
+    );
     assert_close(game.item_prod_mult(0, city, Some(&wonder)), before);
 
     // +1 Amenity in cities with a Commercial Hub, and nothing without one.
@@ -1455,10 +1438,7 @@ fn mitla_grows_campus_cities_and_taruga_counts_resource_kinds_not_tiles() {
         })
         .take(3)
         .collect();
-    assert!(
-        plain.len() >= 3,
-        "the capital needs three workable land tiles"
-    );
+    assert!(plain.len() >= 3, "the capital needs three workable land tiles");
     // Level the city's whole workable ring, not just the three tiles about to
     // carry the resources. Taruga's bonus is a *percentage* of the city's
     // Science, and `city_yields` re-picks which tiles the Citizens work every
@@ -1564,11 +1544,7 @@ fn nan_madol_pays_the_city_center_and_wonder_plots_too() {
     );
     // A wonder with no Culture and no Amenity of its own, so the only Culture
     // that moves is Nan Madol's.
-    game.cities
-        .get_mut(&city)
-        .unwrap()
-        .wonders
-        .insert(crate::name!("great_library"), wonder_pos);
+    game.cities.get_mut(&city).unwrap().wonders.insert(crate::name!("great_library"), wonder_pos);
     game.map.tiles.get_mut(&wonder_pos).unwrap().wonder = Some(crate::name!("great_library"));
     let with_wonder = game.city_yields(city).culture;
     assert!(
@@ -1592,23 +1568,15 @@ fn envoy_and_tributary_policy_income_is_the_players_not_the_capitals() {
     game.players[0].envoys.push((second, 2));
     let quiet_city = game.city_yields(capital);
     let quiet_player = game.player_policy_yields(0);
-    game.players[0]
-        .policies
-        .insert(crate::name!("merchant_confederation"));
+    game.players[0].policies.insert(crate::name!("merchant_confederation"));
     assert!((game.player_policy_yields(0).gold - quiet_player.gold - 7.0).abs() < 1e-9);
-    assert!(
-        (game.city_yields(capital).gold - quiet_city.gold).abs() < 1e-9,
-        "not in the capital"
-    );
+    assert!((game.city_yields(capital).gold - quiet_city.gold).abs() < 1e-9, "not in the capital");
     make_suzerain(&mut game, 0, minor);
     make_suzerain(&mut game, 0, second);
     let before_raj = game.player_policy_yields(0);
     game.players[0].policies.insert(crate::name!("raj"));
     let with_raj = game.player_policy_yields(0);
-    assert!(
-        (with_raj.science - before_raj.science - 4.0).abs() < 1e-9,
-        "two tributaries at 2 each"
-    );
+    assert!((with_raj.science - before_raj.science - 4.0).abs() < 1e-9, "two tributaries at 2 each");
     assert!((with_raj.gold - before_raj.gold - 4.0).abs() < 1e-9);
     // And the per-turn extras every reader adds carry it.
     assert!((game.player_yield_extras(0).science - with_raj.science).abs() < 1e-9);

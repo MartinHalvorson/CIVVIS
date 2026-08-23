@@ -208,9 +208,7 @@ fn carbon_recapture_reduces_lifetime_emissions_below_zero_and_awards_favor() {
 #[test]
 fn unit_fuel_upkeep_emits_half_the_plant_rate_and_advanced_cells_halves_it() {
     let (mut game, city) = power_game();
-    game.players[0]
-        .techs
-        .remove(&Name::new("advanced_power_cells"));
+    game.players[0].techs.remove(&Name::new("advanced_power_cells"));
     game.spawn_unit("infantry", 0, game.cities[&city].pos);
     game.players[0]
         .strategic_resources
@@ -316,18 +314,14 @@ fn lowland_bands_flood_then_submerge_while_barriers_restore_and_protect() {
     assert!(game
         .valid_improvements(0, positions[0])
         .contains(&crate::name!("farm")));
-    assert!(game
-        .district_sites(city, crate::name!("campus"))
-        .contains(&positions[0]));
+    assert!(game.district_sites(city, crate::name!("campus")).contains(&positions[0]));
     game.map.tiles.get_mut(&positions[0]).unwrap().improvement = Some(crate::name!("farm"));
 
     game.apply_climate_phase(2);
     assert!(game.map.tiles[&positions[0]].flooded);
     assert!(game.map.tiles[&positions[0]].pillaged);
     assert!(game.valid_improvements(0, positions[0]).is_empty());
-    assert!(!game
-        .district_sites(city, crate::name!("campus"))
-        .contains(&positions[0]));
+    assert!(!game.district_sites(city, crate::name!("campus")).contains(&positions[0]));
     assert_eq!(
         game.player_tile_yields(0, positions[0], &game.map.tiles[&positions[0]]),
         Yields::default()

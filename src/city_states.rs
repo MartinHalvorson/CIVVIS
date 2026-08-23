@@ -90,10 +90,9 @@ pub fn seat_selection(roster: &[CityStateSpec], wanted: usize, rng: &mut Rng) ->
                 break;
             }
             let kind = TYPES[(offset + turn + step) % TYPES.len()];
-            let Some(tier) = tiers
-                .iter_mut()
-                .find(|tier| tier.iter().any(|&index| roster[index].kind == kind))
-            else {
+            let Some(tier) = tiers.iter_mut().find(|tier| {
+                tier.iter().any(|&index| roster[index].kind == kind)
+            }) else {
                 continue; // no identity of this type is left anywhere
             };
             let pick = farthest(roster, tier, kind, &placed, rng);
@@ -298,21 +297,14 @@ mod tests {
             }
         }
         let twinned: Vec<Vec<usize>> = sites.into_values().filter(|at| at.len() > 1).collect();
-        assert_eq!(
-            twinned.len(),
-            4,
-            "the roster should hold four twinned sites"
-        );
+        assert_eq!(twinned.len(), 4, "the roster should hold four twinned sites");
         for seed in 0..8u64 {
             let mut rng = Rng::new(seed);
             let chosen: std::collections::BTreeSet<usize> =
                 seat_selection(&roster, 24, &mut rng).into_iter().collect();
             for pair in &twinned {
                 let both = pair.iter().filter(|index| chosen.contains(index)).count();
-                assert!(
-                    both <= 1,
-                    "seed {seed} seated one site under both its names"
-                );
+                assert!(both <= 1, "seed {seed} seated one site under both its names");
             }
         }
     }

@@ -39,7 +39,8 @@ fn envoys_require_contact_in_both_enumeration_and_apply() {
     assert_eq!(game.players[0].envoys_free, 1);
     assert_eq!(game.raw_envoys_at(0, hidden), 0);
 
-    game.apply(0, &Action::SendEnvoy { player: known }).unwrap();
+    game.apply(0, &Action::SendEnvoy { player: known })
+        .unwrap();
     assert_eq!(game.players[0].envoys_free, 0);
     assert_eq!(game.raw_envoys_at(0, known), 1);
 }

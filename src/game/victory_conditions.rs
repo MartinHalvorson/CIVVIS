@@ -125,10 +125,7 @@ fn mercy_and_required_types_round_trip_and_old_saves_default_off() {
 #[test]
 fn the_mercy_notation_names_its_lanes_and_never_holds_a_comma() {
     assert_eq!(mercy_label(&[]), "Mercy Rule");
-    assert_eq!(
-        mercy_label(&["science".to_string()]),
-        "Mercy Rule - Science"
-    );
+    assert_eq!(mercy_label(&["science".to_string()]), "Mercy Rule - Science");
     assert_eq!(
         mercy_label(&["science".to_string(), "domination".to_string()]),
         "Mercy Rule - Science + Domination"
@@ -156,10 +153,7 @@ fn the_leading_lanes_are_the_open_races_tied_at_the_front() {
     let mut game = game_with_capitals(2, 91_506, 300);
     // A fresh two-seat board: each seat holds one of the two capitals, so
     // Domination alone reads 50% and no other race has started.
-    assert_eq!(
-        game.leading_victory_lanes(0),
-        vec!["domination".to_string()]
-    );
+    assert_eq!(game.leading_victory_lanes(0), vec!["domination".to_string()]);
 
     // Two science projects put Science at 45%, behind Domination. A lane
     // that is merely under way is not the lane the game is being decided
@@ -167,10 +161,7 @@ fn the_leading_lanes_are_the_open_races_tied_at_the_front() {
     for project in ["launch_earth_satellite", "launch_moon_landing"] {
         game.players[0].science_projects.insert(project.to_string());
     }
-    assert_eq!(
-        game.leading_victory_lanes(0),
-        vec!["domination".to_string()]
-    );
+    assert_eq!(game.leading_victory_lanes(0), vec!["domination".to_string()]);
 
     // A third puts Science at 65% and out in front on its own.
     game.players[0]
@@ -181,10 +172,7 @@ fn the_leading_lanes_are_the_open_races_tied_at_the_front() {
     // A lane the lobby switched off is not a lane this world is deciding,
     // however far along the seat happens to be in it.
     game.victory_conditions.science = false;
-    assert_eq!(
-        game.leading_victory_lanes(0),
-        vec!["domination".to_string()]
-    );
+    assert_eq!(game.leading_victory_lanes(0), vec!["domination".to_string()]);
 
     // Level on two open lanes is two things to say, not a choice between
     // them: ten of the twenty Diplomatic points is exactly the 50% the
@@ -357,10 +345,7 @@ fn playing_on_can_wait_for_the_next_victory_or_run_indefinitely() {
 
     assert!(game.play_on(PlayOnMode::UntilNextVictory));
     assert_eq!(game.winner, None);
-    assert_eq!(
-        game.max_turns, 40,
-        "the configured game setting is retained"
-    );
+    assert_eq!(game.max_turns, 40, "the configured game setting is retained");
     assert_eq!(game.turn_limit(), None, "playing on has no turn cap");
     assert_eq!(game.decided.as_ref().map(|d| d.winner), Some(1));
     assert_eq!(
@@ -446,13 +431,14 @@ fn civilizations_are_seated_on_the_starts_their_bias_asks_for() {
             if game.rules.civs[&civ].start_bias.is_none() {
                 continue;
             }
-            let mine =
-                crate::mapgen::start_bias_score(&game.rules, &game.map, sites[pid], civ.as_str());
+            let mine = crate::mapgen::start_bias_score(&game.rules, &game.map, sites[pid], civ.as_str());
             let others: i32 = sites
                 .iter()
                 .enumerate()
                 .filter(|(other, _)| *other != pid)
-                .map(|(_, pos)| crate::mapgen::start_bias_score(&game.rules, &game.map, *pos, &civ))
+                .map(|(_, pos)| {
+                    crate::mapgen::start_bias_score(&game.rules, &game.map, *pos, &civ)
+                })
                 .sum::<i32>()
                 / 7;
             if mine >= others {
@@ -492,16 +478,7 @@ fn the_published_tournament_lobby_still_sets_up_the_game_it_describes() {
         size.default_city_states,
     );
     options.speed = "online".to_string();
-    options.teams = vec![
-        Some(0),
-        Some(0),
-        Some(0),
-        Some(0),
-        Some(1),
-        Some(1),
-        Some(1),
-        Some(1),
-    ];
+    options.teams = vec![Some(0), Some(0), Some(0), Some(0), Some(1), Some(1), Some(1), Some(1)];
     options.barbarians = false;
     let game = Game::new_with(options);
 
@@ -646,9 +623,7 @@ fn mirrored_spy_units_count_against_spy_capacity() {
     }
     let capacity = g.spy_capacity(0) as usize;
     assert_eq!(capacity, 4);
-    let spy = Item::Unit {
-        unit: crate::name!("spy"),
-    };
+    let spy = Item::Unit { unit: crate::name!("spy") };
     assert_eq!(g.spy_agents(0), 0);
     assert!(g.can_produce(0, cid, &spy), "an empty roster may train one");
 
@@ -658,11 +633,7 @@ fn mirrored_spy_units_count_against_spy_capacity() {
         g.spawn_unit("spy", 0, home);
     }
     assert!(g.spies.is_empty(), "the mirror never fills the agent map");
-    assert_eq!(
-        g.spy_agents(0),
-        capacity,
-        "the unit census is the live count"
-    );
+    assert_eq!(g.spy_agents(0), capacity, "the unit census is the live count");
     assert!(
         !g.can_produce(0, cid, &spy),
         "a full roster of mirrored Spies must refuse another"
@@ -804,9 +775,7 @@ fn late_tree_airlifts_and_repeatable_nodes_execute_from_rules_data() {
     assert!(!g
         .valid_improvements(0, position)
         .contains(&crate::name!("farm")));
-    g.players[0]
-        .civics
-        .insert(crate::name!("civil_engineering"));
+    g.players[0].civics.insert(crate::name!("civil_engineering"));
     assert!(g
         .valid_improvements(0, position)
         .contains(&crate::name!("farm")));
@@ -843,9 +812,7 @@ fn late_tree_airlifts_and_repeatable_nodes_execute_from_rules_data() {
         g.players[0].civics.insert(prerequisite);
     }
     g.players[0].civics.insert(crate::name!("future_civic"));
-    assert!(g
-        .available_civics(0)
-        .contains(&crate::name!("future_civic")));
+    assert!(g.available_civics(0).contains(&crate::name!("future_civic")));
     g.apply_tree_completion(0, false, "future_civic", false);
     assert_eq!(g.players[0].counters["district_governor_titles"], 1);
     assert_eq!(g.players[0].counters["diplomatic_favor"], 50);
@@ -857,10 +824,7 @@ fn save_restore_preserves_the_games_randomized_future_trees() {
     let expected = game.rules.future_tree_layout();
     let value = serde_json::to_value(&game).unwrap();
     assert_eq!(
-        value["future_tree_layout"]["techs"]
-            .as_object()
-            .unwrap()
-            .len(),
+        value["future_tree_layout"]["techs"].as_object().unwrap().len(),
         8
     );
     assert_eq!(
@@ -878,7 +842,10 @@ fn save_restore_preserves_the_games_randomized_future_trees() {
     // domain-separated stream, so loading one cannot perturb the saved
     // runtime RNG and the same seed still recovers the same graph.
     let mut legacy = value;
-    legacy.as_object_mut().unwrap().remove("future_tree_layout");
+    legacy
+        .as_object_mut()
+        .unwrap()
+        .remove("future_tree_layout");
     let restored_legacy: Game = serde_json::from_value(legacy).unwrap();
     assert_eq!(restored_legacy.rules.future_tree_layout(), expected);
     assert_eq!(restored_legacy.rng, game.rng);
@@ -1355,9 +1322,7 @@ fn conquest_applies_population_damage_repairs_conversion_and_occupation() {
     assert!(captured.pillaged_buildings.contains(&Name::new("monument")));
     assert!(captured.pillaged_buildings.contains(&Name::new("granary")));
     assert!(!captured.pillaged_buildings.contains(&Name::new("library")));
-    assert!(captured
-        .districts
-        .contains_key(crate::name!("theater_square")));
+    assert!(captured.districts.contains_key(crate::name!("theater_square")));
     assert!(captured.districts.contains_key(crate::name!("seowon")));
     assert!(captured.districts.contains_key(crate::name!("encampment")));
     assert!(!captured.districts.contains_key(crate::name!("acropolis")));
@@ -1405,9 +1370,7 @@ fn conquest_removes_non_capturable_empire_unique_districts_and_their_buildings()
     game.players[0]
         .techs
         .extend([crate::name!("writing"), crate::name!("mathematics")]);
-    game.players[0]
-        .civics
-        .insert(crate::name!("state_workforce"));
+    game.players[0].civics.insert(crate::name!("state_workforce"));
     let position = game
         .map
         .tiles
@@ -1435,19 +1398,14 @@ fn conquest_removes_non_capturable_empire_unique_districts_and_their_buildings()
             .insert(Name::new(district), site);
         game.map.tiles.get_mut(&site).unwrap().district = Some(Name::new(district));
     }
-    game.cities.get_mut(&city).unwrap().buildings = ["ancestral_hall", "consulate", "library"]
-        .map(Name::new)
-        .to_vec();
+    game.cities.get_mut(&city).unwrap().buildings =
+        ["ancestral_hall", "consulate", "library"].map(Name::new).to_vec();
 
     game.capture_city(city, 0);
 
     let captured = &game.cities[&city];
-    assert!(!captured
-        .districts
-        .contains_key(crate::name!("government_plaza")));
-    assert!(!captured
-        .districts
-        .contains_key(crate::name!("diplomatic_quarter")));
+    assert!(!captured.districts.contains_key(crate::name!("government_plaza")));
+    assert!(!captured.districts.contains_key(crate::name!("diplomatic_quarter")));
     assert!(!captured.buildings.contains(&crate::name!("ancestral_hall")));
     assert!(!captured.buildings.contains(&crate::name!("consulate")));
     assert_eq!(game.map.tiles[&sites[0]].district, None);
@@ -1508,15 +1466,9 @@ fn a_disloyal_city_keeps_its_food_and_loses_the_rest() {
     let loyal = g.city_yields(cid);
     g.cities.get_mut(&cid).unwrap().loyalty = 10.0;
     let unrest = g.city_yields(cid);
-    assert!(
-        (loyal.food - unrest.food).abs() < 1e-9,
-        "food is not banded: {loyal:?} vs {unrest:?}"
-    );
+    assert!((loyal.food - unrest.food).abs() < 1e-9, "food is not banded: {loyal:?} vs {unrest:?}");
     assert!(loyal.production > 0.0);
-    assert!(
-        unrest.production.abs() < 1e-9,
-        "unrest is -100% on the rest: {unrest:?}"
-    );
+    assert!(unrest.production.abs() < 1e-9, "unrest is -100% on the rest: {unrest:?}");
     assert!(unrest.science.abs() < 1e-9);
 }
 
@@ -1536,10 +1488,7 @@ fn an_unemployed_citizen_pays_half_a_gold_and_nothing_else() {
     let mut pin = |pop: i32| {
         g.cities.get_mut(&cid).unwrap().pop = pop;
         let plan = g.city_citizen_plan(cid);
-        (
-            plan.worked_tiles.len() + plan.specialists.len(),
-            g.city_yields(cid),
-        )
+        (plan.worked_tiles.len() + plan.specialists.len(), g.city_yields(cid))
     };
     // Grow until the plan can no longer employ everyone.
     let mut pop = workable as i32;
@@ -1550,26 +1499,16 @@ fn an_unemployed_citizen_pays_half_a_gold_and_nothing_else() {
         employed = e;
         full = y;
     }
-    assert!(
-        employed < pop as usize,
-        "the fixture never ran out of tiles at pop {pop}"
-    );
+    assert!(employed < pop as usize, "the fixture never ran out of tiles at pop {pop}");
     let (employed_more, more) = pin(pop + 2);
-    assert_eq!(
-        employed_more, employed,
-        "two more citizens found no work either"
-    );
+    assert_eq!(employed_more, employed, "two more citizens found no work either");
     // The half-Gold is a base yield, so it wears the city's Amenity band
     // and difficulty handicap like every other Gold.
     let scale = 1.0
         + ((g.amenity_yield_mult(&g.cities[&cid]) - 1.0) * 100.0 + g.handicap_yield_pct(0).gold)
             / 100.0;
-    assert!(
-        (more.gold - full.gold - 1.0 * scale).abs() < 1e-9,
-        "two idle citizens are +1 Gold (x{scale}): {} -> {}",
-        full.gold,
-        more.gold
-    );
+    assert!((more.gold - full.gold - 1.0 * scale).abs() < 1e-9,
+        "two idle citizens are +1 Gold (x{scale}): {} -> {}", full.gold, more.gold);
     // Science and Culture per citizen are paid whether or not the citizen
     // works (the host's "+6 from Population" Science on a pop-12 Rome
     // with two idle); Food, Production and Faith are not per citizen.
@@ -1749,19 +1688,11 @@ fn the_city_state_and_grievance_thresholds_match_their_parameters() {
         .unwrap();
     held.players[0].grievances.insert(1, 100.0);
     held.process_diplomacy(0);
-    assert_eq!(
-        held.players[0].grievances.get(&1),
-        Some(&90.0),
-        "no city held"
-    );
+    assert_eq!(held.players[0].grievances.get(&1), Some(&90.0), "no city held");
     held.cities.get_mut(&capital).unwrap().owner = 1;
     held.players[0].grievances.insert(1, 100.0);
     held.process_diplomacy(0);
-    assert_eq!(
-        held.players[0].grievances.get(&1),
-        Some(&93.0),
-        "Capital held"
-    );
+    assert_eq!(held.players[0].grievances.get(&1), Some(&93.0), "Capital held");
 }
 
 #[test]
@@ -1821,7 +1752,9 @@ fn original_capitals_revolt_to_free_cities_before_joining_a_rival() {
     assert_eq!(
         g.player_unit_ids(free_cities)
             .into_iter()
-            .filter(|unit| { g.rules.units[g.units[unit].kind].promotion_class == "melee" })
+            .filter(|unit| {
+                g.rules.units[g.units[unit].kind].promotion_class == "melee"
+            })
             .count(),
         2
     );
@@ -1945,14 +1878,12 @@ fn free_cities_join_the_civilization_with_most_accumulated_pressure() {
     g.cities.get_mut(&second_rival).unwrap().pop = 20;
     g.process_loyalty(free_cities);
     g.process_loyalty(free_cities);
-    assert!(
-        g.cities[&target].free_city_pressure[&2]
-            > g.cities[&target]
-                .free_city_pressure
-                .get(&1)
-                .copied()
-                .unwrap_or(0.0)
-    );
+    assert!(g.cities[&target].free_city_pressure[&2]
+        > g.cities[&target]
+            .free_city_pressure
+            .get(&1)
+            .copied()
+            .unwrap_or(0.0));
 
     g.cities.get_mut(&second_rival).unwrap().pos = distant;
     g.cities.get_mut(&first_rival).unwrap().pos = nearby;
@@ -2210,9 +2141,7 @@ fn cristo_only_cancels_enlightenments_religious_tourism_reduction() {
 
     g.players[0].tourism_lifetime = 4_000.0;
     g.players[0].religious_tourism_lifetime = 4_000.0;
-    g.players[1]
-        .civics
-        .insert(crate::name!("the_enlightenment"));
+    g.players[1].civics.insert(crate::name!("the_enlightenment"));
     assert_eq!(g.foreign_tourists(0), 5);
 
     g.cities
@@ -2245,9 +2174,7 @@ fn international_tourism_modifiers_accumulate_per_rival_without_retroactivity() 
     g.players[0].religion = Some("source_faith".to_string());
     g.players[1].religion = Some("rival_faith".to_string());
     g.players[2].religion = Some("source_faith".to_string());
-    g.players[1]
-        .civics
-        .insert(crate::name!("the_enlightenment"));
+    g.players[1].civics.insert(crate::name!("the_enlightenment"));
 
     // Granting our borders to them is deliberately the wrong direction
     // and does not improve our Tourism pressure against them.
@@ -2277,9 +2204,7 @@ fn international_tourism_modifiers_accumulate_per_rival_without_retroactivity() 
 
     // Expiring favorable modifiers affects only new pressure. It cannot
     // rewrite the 120 points already accumulated against player 1.
-    g.players[0]
-        .policies
-        .remove(&Name::new("online_communities"));
+    g.players[0].policies.remove(&Name::new("online_communities"));
     g.players[1].open_borders_until.clear();
     g.routes.clear();
     g.players[1].government = Some("democracy".to_string());
@@ -2346,9 +2271,7 @@ fn great_work_tourism_uses_tree_and_slotted_policy_modifiers() {
         "base={base}, printing={printing}"
     );
 
-    g.players[0]
-        .policies
-        .insert(crate::name!("heritage_tourism"));
+    g.players[0].policies.insert(crate::name!("heritage_tourism"));
     let heritage = g.tourism_per_turn(0);
     // Heritage Tourism doubles three works of art at their shipped 2.
     assert!(
@@ -2520,10 +2443,7 @@ fn a_stale_emergency_queue_does_not_cost_the_world_its_regular_session() {
         requested: 30,
     });
     g.process_congress();
-    assert!(
-        g.pending_emergencies.is_empty(),
-        "the stale proposal is dropped"
-    );
+    assert!(g.pending_emergencies.is_empty(), "the stale proposal is dropped");
     let session = g
         .congress
         .as_ref()
@@ -2903,9 +2823,8 @@ fn fascism_endures_war_worse_than_every_other_government() {
     g.players[0].government = Some("oligarchy".to_string());
     g.players[0].policies = [crate::name!("martial_law")].into_iter().collect();
     assert_eq!(g.war_weariness_multiplier(0, false), 0.75);
-    g.players[0].policies = [crate::name!("defense_of_motherland")]
-        .into_iter()
-        .collect();
+    g.players[0].policies =
+        [crate::name!("defense_of_motherland")].into_iter().collect();
     assert_eq!(g.war_weariness_multiplier(0, true), 0.0);
     assert_eq!(g.war_weariness_multiplier(0, false), 1.0);
 }
@@ -3125,15 +3044,12 @@ fn specialty_district_capacity_unlocks_at_population_one_four_and_seven() {
         }
     ));
     assert!(
-        g.district_sites(cid, crate::name!("theater_square"))
-            .is_empty(),
+        g.district_sites(cid, crate::name!("theater_square")).is_empty(),
         "population 4 supports exactly two specialty districts"
     );
 
     g.cities.get_mut(&cid).unwrap().pop = 7;
-    assert!(!g
-        .district_sites(cid, crate::name!("theater_square"))
-        .is_empty());
+    assert!(!g.district_sites(cid, crate::name!("theater_square")).is_empty());
 }
 
 #[test]
@@ -3328,11 +3244,7 @@ fn housing_uses_palace_aqueduct_lighthouse_and_exact_growth_bands() {
         .unwrap()
         .buildings
         .retain(|b| b != "lighthouse");
-    g.cities
-        .get_mut(&cid)
-        .unwrap()
-        .districts
-        .remove(crate::name!("harbor"));
+    g.cities.get_mut(&cid).unwrap().districts.remove(crate::name!("harbor"));
     g.map.tiles.get_mut(&harbor).unwrap().district = None;
     g.map.tiles.get_mut(&coast).unwrap().terrain = crate::name!("plains");
     g.cities

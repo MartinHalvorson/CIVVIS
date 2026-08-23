@@ -76,7 +76,8 @@ impl Game {
             .districts
             .iter()
             .find(|(_, spec)| {
-                spec.replaces == Some(Name::new(family)) && spec.unique_to.as_deref() == Some(civ)
+                spec.replaces == Some(Name::new(family))
+                    && spec.unique_to.as_deref() == Some(civ)
             })
             .map(|(name, _)| *name)
             .unwrap_or_else(|| Name::new(family))
@@ -199,8 +200,10 @@ impl Game {
             .into_iter()
             .map(|district| (district, self.district_family(district)))
             .collect();
-        let mut bests: Vec<(f64, Yields)> =
-            districts.iter().map(|_| (0.0, Yields::default())).collect();
+        let mut bests: Vec<(f64, Yields)> = districts
+            .iter()
+            .map(|_| (0.0, Yields::default()))
+            .collect();
         for pos in positions
             .iter()
             .copied()
@@ -463,7 +466,10 @@ impl Game {
         let is_water = self.rules.is_water(tile);
         if self.players[pid].civ == "Vietnam"
             && spec.specialty
-            && !matches!(tile.feature.as_deref(), Some("forest" | "jungle" | "marsh"))
+            && !matches!(
+                tile.feature.as_deref(),
+                Some("forest" | "jungle" | "marsh")
+            )
         {
             return false;
         }
@@ -494,9 +500,15 @@ impl Game {
                         .iter()
                         .any(|neighbor| self.city_at(*neighbor).is_some())
             }
-            "forest" => !is_water && matches!(tile.feature.as_deref(), Some("forest" | "jungle")),
+            "forest" => {
+                !is_water && matches!(tile.feature.as_deref(), Some("forest" | "jungle"))
+            }
             "vietnam_feature" => {
-                !is_water && matches!(tile.feature.as_deref(), Some("forest" | "jungle" | "marsh"))
+                !is_water
+                    && matches!(
+                        tile.feature.as_deref(),
+                        Some("forest" | "jungle" | "marsh")
+                    )
             }
             "aqueduct" | "dam" | "canal" => false,
             "land" | "" => !is_water && !spec.water,
@@ -740,9 +752,8 @@ mod tests {
 
         let live = game.district_adjacency_sources(crate::name!("holy_site"), site);
         assert!(
-            !live
-                .iter()
-                .any(|source| source.source == "district" && source.count > 1),
+            !live.iter().any(|source| source.source == "district"
+                && source.count > 1),
             "live yields must not pay unfinished districts"
         );
         let assume = PlanAssumption {
@@ -774,13 +785,12 @@ mod tests {
         land.sort();
         land.into_iter()
             .find(|pos| {
-                game.map
-                    .get(*pos)
-                    .is_some_and(|tile| !game.rules.is_water(tile) && game.rules.is_passable(tile))
-                    && game
-                        .units
-                        .values()
-                        .all(|unit| game.wdist(unit.pos, *pos) > 4)
+                game.map.get(*pos).is_some_and(|tile| {
+                    !game.rules.is_water(tile) && game.rules.is_passable(tile)
+                }) && game
+                    .units
+                    .values()
+                    .all(|unit| game.wdist(unit.pos, *pos) > 4)
                     && game
                         .wdisk(*pos, 1)
                         .iter()
@@ -822,9 +832,7 @@ mod tests {
             best.yields.science
         );
         assert!(
-            best.sources
-                .iter()
-                .any(|source| source.source == "district"),
+            best.sources.iter().any(|source| source.source == "district"),
             "the assumed city center pays the district key"
         );
     }
@@ -839,10 +847,7 @@ mod tests {
         for forecast in game.settlement_adjacency_potential(0, center, 2) {
             let spec = &game.rules.districts[forecast.district];
             for site in &forecast.sites {
-                let tile = game
-                    .map
-                    .get(site.pos)
-                    .expect("forecast sites are on the map");
+                let tile = game.map.get(site.pos).expect("forecast sites are on the map");
                 assert_eq!(
                     game.rules.is_water(tile),
                     spec.water,
@@ -850,10 +855,7 @@ mod tests {
                     forecast.district,
                     site.pos
                 );
-                assert!(
-                    tile.owner_city.is_none(),
-                    "claimed ground is not settleable"
-                );
+                assert!(tile.owner_city.is_none(), "claimed ground is not settleable");
             }
         }
     }
