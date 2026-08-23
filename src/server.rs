@@ -22,13 +22,13 @@ use crate::ai::{AdvancedAi, Ai, BasicAi};
 use crate::civ6;
 use crate::game::{Action, Game, GameOptions, LeaderPool, PlayOnMode, VictoryConditions};
 use crate::leader_roster;
-use crate::obs::{observation, observation_player_view, observation_spectator};
 use crate::name::Name;
+use crate::obs::{observation, observation_player_view, observation_spectator};
 use crate::rules::Rules;
 use crate::setup::{
     battlefield_sizes, future_era_from_id, future_era_id, start_era_from_id, start_era_id,
-    turn_structure_id, BaseRuleset, FutureEra, GameSpeed, MapPoles, MapScript,
-    MapSize, MapTopology, TacticsEra, TacticsRules, TurnStructure,
+    turn_structure_id, BaseRuleset, FutureEra, GameSpeed, MapPoles, MapScript, MapSize,
+    MapTopology, TacticsEra, TacticsRules, TurnStructure,
 };
 use crate::Pos;
 
@@ -2025,8 +2025,6 @@ impl Session {
             .collect()
     }
 
-
-
     /// Name every seat a person is at. Sitting down to play does not make you
     /// one of the agents; the handle is minted for this game so the world can
     /// say who is playing, and nothing rates it.
@@ -2039,9 +2037,19 @@ impl Session {
             let (name, username) = if index == 0 {
                 ("player".to_string(), "Player".to_string())
             } else {
-                (format!("player{}", index + 1), format!("Player {}", index + 1))
+                (
+                    format!("player{}", index + 1),
+                    format!("Player {}", index + 1),
+                )
             };
-            players.insert(seat, SeatPlayer { name, username, rated: false });
+            players.insert(
+                seat,
+                SeatPlayer {
+                    name,
+                    username,
+                    rated: false,
+                },
+            );
         }
         players
     }
@@ -2441,7 +2449,6 @@ impl Session {
         }
     }
 
-
     /// Give every met major both of its odds of winning this game: the ones
     /// it sat down with, and the ones it holds now. The odds themselves are
     /// [`crate::odds`]; every seat sits down at the same provisional prior,
@@ -2584,14 +2591,14 @@ impl Session {
                                 // dozens of strings per seat on a document that
                                 // is already the bottleneck, and the card asks
                                 // one question of it.
-                                player["research_boosted"] = json!(seat
-                                    .research
-                                    .as_ref()
-                                    .is_some_and(|tech| seat.boosted_techs.contains(&Name::new(tech))));
-                                player["civic_boosted"] = json!(seat
-                                    .civic
-                                    .as_ref()
-                                    .is_some_and(|civic| seat.boosted_civics.contains(&Name::new(civic))));
+                                player["research_boosted"] =
+                                    json!(seat.research.as_ref().is_some_and(|tech| seat
+                                        .boosted_techs
+                                        .contains(&Name::new(tech))));
+                                player["civic_boosted"] =
+                                    json!(seat.civic.as_ref().is_some_and(|civic| seat
+                                        .boosted_civics
+                                        .contains(&Name::new(civic))));
                             }
                         }
                     }
@@ -2733,7 +2740,6 @@ impl Session {
         }
     }
 
-
     pub fn step_many(&mut self, count: usize) -> Vec<SpectatorStep> {
         let mut steps = Vec::new();
         for _ in 0..count.clamp(1, 12) {
@@ -2821,7 +2827,11 @@ impl Session {
         // Nobody has been handed this seat: the fleet built the default agent
         // there — "advanced", or the cheaper baseline for minors.
         let player = self.game.players.get(seat)?;
-        Some(if player.is_minor || player.is_barbarian { "basic" } else { "advanced" })
+        Some(if player.is_minor || player.is_barbarian {
+            "basic"
+        } else {
+            "advanced"
+        })
     }
 
     /// Read the idempotency receipt for a completed auto-play batch.
@@ -3412,7 +3422,6 @@ pub(crate) fn strategy_roster(_session: &Session) -> Value {
         .collect::<Vec<_>>())
 }
 
-
 /// An explicit turn cap is a real configuration value, not a cast through an
 /// arbitrary JSON number. Zero cannot produce a playable game and a number
 /// wider than the engine's `u32` cap used to wrap into a surprising length.
@@ -3520,12 +3529,16 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
     if let Some(v) = requested_turn_limit(request) {
         p.max_turns = v;
     }
-    if let Some(v) = request["leader_pool"].as_str().and_then(LeaderPool::from_id) {
+    if let Some(v) = request["leader_pool"]
+        .as_str()
+        .and_then(LeaderPool::from_id)
+    {
         p.leader_pool = v.available_or_default();
     }
     let selected_pool = p.leader_pool;
     p.civs.retain(|civ| {
-        leader_roster::entry(civ).is_some_and(|entry| entry.available && entry.pool == selected_pool)
+        leader_roster::entry(civ)
+            .is_some_and(|entry| entry.available && entry.pool == selected_pool)
     });
     // The two settings a Civ 6 lobby asks for that this protocol could not
     // carry: how hard the rivals play, and who the player is. Both are
@@ -4746,10 +4759,8 @@ mod tests {
     };
     use crate::setup::{
         battlefield_map_scripts, battlefield_sizes, future_era_from_id, scenario_map_scripts,
-        start_era_from_id, world_map_scripts,
-        TacticsEra, TacticsRules,
-        BaseRuleset, FutureEra, GameSpeed, MapPoles, MapScript, MapSize, MapTopology,
-        TurnStructure, MAP_POLES,
+        start_era_from_id, world_map_scripts, BaseRuleset, FutureEra, GameSpeed, MapPoles,
+        MapScript, MapSize, MapTopology, TacticsEra, TacticsRules, TurnStructure, MAP_POLES,
     };
     use serde_json::{json, Value};
     use std::io::{Read, Write};
@@ -7381,11 +7392,15 @@ fetchpriority=\"high\""
         // are inset by the same single pixel. Four pixels of difference read as
         // a head overhanging its own column.
         assert!(EMBEDDED_INDEX.contains("width: calc(100% - 2px); height: 22px; margin: 0 1px;"));
-        assert_eq!(EMBEDDED_INDEX.matches("width: calc(100% - 2px);").count(), 2,
-            "the two controls in the Watch-as column are the same width at every screen size");
+        assert_eq!(
+            EMBEDDED_INDEX.matches("width: calc(100% - 2px);").count(),
+            2,
+            "the two controls in the Watch-as column are the same width at every screen size"
+        );
         // Nothing rates a seat; the live odds position beside the name is
         // the one signed figure the identity block carries.
-        assert!(player_hud.contains("const playerEloDelta = signedEloDelta(playerHudEloDeltaValue(p));"));
+        assert!(player_hud
+            .contains("const playerEloDelta = signedEloDelta(playerHudEloDeltaValue(p));"));
         assert!(player_hud.contains("class=\"diplomacy-identity-field diplomacy-elo-delta\""));
 
         // The side panel is the one part of a frame that is allowed to skip a
@@ -11194,34 +11209,57 @@ fetchpriority=\"high\""
         assert!(EMBEDDED_INDEX.contains("function sortedPlayerHudPlayers(players, statsByPlayer, rankById)"));
         assert!(EMBEDDED_INDEX.contains("function togglePlayerHudSort(key)"));
         assert!(EMBEDDED_INDEX.contains("if (leftValue === null || rightValue === null) {"));
-        assert!(EMBEDDED_INDEX.contains(
-            "if (leftValue !== rightValue) return leftValue === null ? 1 : -1;"
-        ), "unavailable values stay below observed values in either sort direction");
+        assert!(
+            EMBEDDED_INDEX
+                .contains("if (leftValue !== rightValue) return leftValue === null ? 1 : -1;"),
+            "unavailable values stay below observed values in either sort direction"
+        );
         assert!(EMBEDDED_INDEX.contains(
             "if (rawValue === null || rawValue === undefined || rawValue === \"\") return null;"
         ), "a missing statistic is distinct from a numeric zero when sorting");
-        assert!(EMBEDDED_INDEX.contains("if (key === \"win_start\") return oddsValue(player.odds_start);"));
+        assert!(EMBEDDED_INDEX
+            .contains("if (key === \"win_start\") return oddsValue(player.odds_start);"));
         assert!(EMBEDDED_INDEX.contains("if (key === \"win_delta\") {"));
-        assert!(EMBEDDED_INDEX.contains("return playerHudEloDeltaValue(player);"),
-            "Elo delta sorting should use its numeric model value");
-        assert!(EMBEDDED_INDEX.contains("return oddsValue(player.odds_now);"),
-            "the NOW Win heading should order by its current estimate");
-        assert!(EMBEDDED_INDEX.contains("if (delta > .02) return {symbol:\"↗\", direction:\"up\"};"));
-        assert!(EMBEDDED_INDEX.contains("if (delta < -.02) return {symbol:\"↘\", direction:\"down\"};"));
+        assert!(
+            EMBEDDED_INDEX.contains("return playerHudEloDeltaValue(player);"),
+            "Elo delta sorting should use its numeric model value"
+        );
+        assert!(
+            EMBEDDED_INDEX.contains("return oddsValue(player.odds_now);"),
+            "the NOW Win heading should order by its current estimate"
+        );
+        assert!(
+            EMBEDDED_INDEX.contains("if (delta > .02) return {symbol:\"↗\", direction:\"up\"};")
+        );
+        assert!(
+            EMBEDDED_INDEX.contains("if (delta < -.02) return {symbol:\"↘\", direction:\"down\"};")
+        );
         for key in [
-            "rank", "civ", "leader", "player", "elo_delta", "win_start", "win_delta", "win",
-            "age", "plan",
+            "rank",
+            "civ",
+            "leader",
+            "player",
+            "elo_delta",
+            "win_start",
+            "win_delta",
+            "win",
+            "age",
+            "plan",
         ] {
             assert!(
                 EMBEDDED_INDEX.contains(&format!("{key}:[")),
                 "the {key} heading should carry a sortable label"
             );
         }
-        assert!(EMBEDDED_INDEX.contains(
-            "return playerHudSortHead(column.key, label, title, classes, attrs);"
-        ), "every generated column heading should be sortable");
-        assert!(!EMBEDDED_INDEX.contains("playerHudSortHead(\"watch\""),
-            "Watch-as stays an action instead of a sort target");
+        assert!(
+            EMBEDDED_INDEX
+                .contains("return playerHudSortHead(column.key, label, title, classes, attrs);"),
+            "every generated column heading should be sortable"
+        );
+        assert!(
+            !EMBEDDED_INDEX.contains("playerHudSortHead(\"watch\""),
+            "Watch-as stays an action instead of a sort target"
+        );
         assert!(EMBEDDED_INDEX.contains("class=\"hud-sort-head\" data-hud-sort=\"${key}\""));
         assert!(EMBEDDED_INDEX.contains(
             "rank:[\"RANK\", \"Score rank\"],"
@@ -15478,7 +15516,10 @@ fetchpriority=\"high\""
             .iter()
             .filter_map(|entry| entry["name"].as_str())
             .collect();
-        assert!(names.contains(&"advanced"), "the default agent is offerable");
+        assert!(
+            names.contains(&"advanced"),
+            "the default agent is offerable"
+        );
         assert!(
             !names.contains(&"strategic"),
             "the score-only search is not a live auto-play offer"
@@ -15490,7 +15531,9 @@ fetchpriority=\"high\""
         // Ratings are shown as ratings, and an entrant that has never played a
         // rated game is marked rather than shown as an authoritative 1500.
         for entry in roster.as_array().expect("a roster") {
-            assert!(entry["username"].as_str().is_some_and(|name| !name.is_empty()));
+            assert!(entry["username"]
+                .as_str()
+                .is_some_and(|name| !name.is_empty()));
             assert!(entry["provisional"].is_boolean());
         }
 
@@ -15547,7 +15590,9 @@ fetchpriority=\"high\""
         let mut now_shares = 0.0;
         for player in &majors {
             assert!(player["ai_elo"].is_null(), "nothing rates a seat any more");
-            shares += player["odds_start"].as_f64().expect("every major has start odds");
+            shares += player["odds_start"]
+                .as_f64()
+                .expect("every major has start odds");
             now_shares += player["odds_now"].as_f64().expect("and now odds");
             assert!(player["odds_prior_elo"].as_i64().is_some());
             // Nobody chose these seats, so the one agent behind all of them
@@ -15585,7 +15630,8 @@ fetchpriority=\"high\""
         let me = state["player"].as_u64().expect("an interactive game has a seat");
         let mut unmet = 0;
         for player in state["players"].as_array().expect("a player list") {
-            let is_major = player["is_minor"] != json!(true) && player["is_barbarian"] != json!(true);
+            let is_major =
+                player["is_minor"] != json!(true) && player["is_barbarian"] != json!(true);
             if !is_major {
                 continue;
             }
@@ -15605,7 +15651,10 @@ fetchpriority=\"high\""
                 );
             }
         }
-        assert!(unmet > 0, "a fresh interactive game has civilizations still to meet");
+        assert!(
+            unmet > 0,
+            "a fresh interactive game has civilizations still to meet"
+        );
     }
 
     /// An interactive game gives the rivals you have met their odds too — and
@@ -15630,7 +15679,10 @@ fetchpriority=\"high\""
                 continue;
             }
             met += 1;
-            assert!(player["odds_start"].as_f64().is_some(), "a met major has odds");
+            assert!(
+                player["odds_start"].as_f64().is_some(),
+                "a met major has odds"
+            );
             // Their standing is public; what they intend to do with it is not.
             assert!(player["ai_plan"].is_null());
             assert!(player["ai_strategy"].is_null());
@@ -15647,7 +15699,10 @@ fetchpriority=\"high\""
         let state = session.state();
         assert_eq!(state["players"][0]["player_username"], json!("Player"));
         assert_eq!(state["players"][0]["player_rated"], json!(false));
-        assert!(state["players"][0]["player_elo"].is_null(), "nothing rates the person");
+        assert!(
+            state["players"][0]["player_elo"].is_null(),
+            "nothing rates the person"
+        );
 
         // A spectated world has nobody at a keyboard and registers nobody.
         let mut params = current();
