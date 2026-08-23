@@ -4546,6 +4546,15 @@ pub struct AdvancedAi {
     district_planning: bool,
 
     // ---- append: e-f ------------------------------------------------
+    /// Version 2 of `escort_unstick`: the same two-turn release, refused
+    /// while a visible barbarian raider can reach the settler's tile — at
+    /// the settler's unstick and at the escort's route abandonment. Watched
+    /// live 2026-08-23: the pair stalled beside a raider, the release
+    /// handed the warrior back to the army, and the raider took the settler
+    /// the next turn. A pinned pair is the one stall the escort exists for.
+    /// Implies version 1; its enable turns `escort_unstick` off so a seat
+    /// plays one version of the family. Opt-in gene `escort-unstick-2`.
+    escort_unstick_2: bool,
 
     // ---- append: g-k ------------------------------------------------
 
@@ -5552,6 +5561,7 @@ impl AdvancedAi {
             district_planning: false,
 
             // ---- append: e-f ----------------------------------------
+            escort_unstick_2: false,
 
             // ---- append: g-k ----------------------------------------
 
@@ -24329,13 +24339,30 @@ impl AdvancedAi {
             })
         }) {
             let distance = g.wdist(current, target);
-            let entry = self.escort_march.entry(uid).or_insert((distance, 0));
-            if distance < entry.0 {
-                *entry = (distance, 0);
-            } else {
-                entry.1 = entry.1.saturating_add(1);
-            }
-            if self.escort_unstick && entry.1 >= 2 {
+            let stalled_turns = {
+                let entry = self.escort_march.entry(uid).or_insert((distance, 0));
+                if distance < entry.0 {
+                    *entry = (distance, 0);
+                } else {
+                    entry.1 = entry.1.saturating_add(1);
+                }
+                entry.1
+            };
+            if (self.escort_unstick || self.escort_unstick_2) && stalled_turns >= 2 {
+                // Version 2: the release is refused while a visible barbarian
+                // raider can reach this tile. A pair pinned beside a raider is
+                // the one stall the escort exists for — releasing it handed a
+                // warrior back to the army and the settler to the raider
+                // (watched live 2026-08-23). The link, and the stacked guard
+                // it keeps, hold until the raider is out of reach.
+                if self.escort_unstick_2 && self.settler_in_barbarian_reach(g, pid, current) {
+                    think!(self.journal(), Expansion, Detail,
+                           "Escort kept by a threatened settler";
+                           "{distance} tiles to {target:?} unchanged for {stalled_turns} turns, \
+                            but a barbarian raider can reach this tile — the escort stays stacked";
+                           target);
+                    return true;
+                }
                 self.escort_march.remove(&uid);
                 if g.apply(pid, &Action::UnlinkUnits { unit: escort }).is_ok() {
                     think!(self.journal(), Expansion, Detail,
@@ -25185,6 +25212,15 @@ impl AdvancedAi {
                 Some(BarbarianCaptureThreat { capture_tiles, sea })
             })
             .collect()
+    }
+
+    /// Whether a visible barbarian raider could end its next move on `pos` —
+    /// the Builder's capture envelope, asked for a Settler's tile. Version 2
+    /// of `escort_unstick` refuses to release an escort while this holds.
+    fn settler_in_barbarian_reach(&self, g: &Game, pid: usize, pos: Pos) -> bool {
+        let visible = self.battlefront_visibility(g, pid);
+        let threats = self.visible_barbarian_capture_threats(g, pid, &visible);
+        Self::barbarian_capture_reaches(g, pos, &threats)
     }
 
     /// Does any threat in a just-snapshotted Barbarian envelope take a Builder
@@ -28622,9 +28658,20 @@ impl AdvancedAi {
                        "the Settler formation advances toward {target:?}"; target);
             } else if self.linked_settler_progress || !moved {
                 *self.settler_blocked_turns.entry(settler).or_insert(0) += 1;
-                let stalls = self.settler_stalls.entry(settler).or_insert(0);
-                *stalls += 1;
-                if *stalls >= SETTLER_STALL_LIMIT {
+                let stalls = {
+                    let stalls = self.settler_stalls.entry(settler).or_insert(0);
+                    *stalls += 1;
+                    *stalls
+                };
+                // Version 2 of `escort_unstick`: a stalled formation is not
+                // abandoned while a visible barbarian raider can reach the
+                // settler — unlinking here would leave the settler alone in
+                // the raider's reach, the loss the version repairs. The pair
+                // holds, stacked, until the raider is out of reach.
+                let held_by_threat = stalls >= SETTLER_STALL_LIMIT
+                    && self.escort_unstick_2
+                    && self.settler_in_barbarian_reach(g, pid, g.units[&settler].pos);
+                if stalls >= SETTLER_STALL_LIMIT && !held_by_threat {
                     self.settler_avoid
                         .insert(settler, (target, g.turn + g.standard_duration(8)));
                     self.settler_targets.remove(&settler);
