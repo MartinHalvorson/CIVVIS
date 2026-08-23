@@ -447,7 +447,8 @@ two columns is >15 and neither is less than −10. If exactly one column is
 filled, the gene can default on when that reading is >20; otherwise it defaults
 off.*
 Those are the two columns `HEURISTIC_GENE_RANKING.md` prints — wins added per
-10,000 games at the gene's measured on-rate, `(win_on − 1/players) × 10,000` —
+10,000 on-arm seats at the gene's measured on-rate, `(win_on − 1/players) ×
+10,000` —
 from the latest two screens that priced the gene. The verdicts below
 still record what the screen *proved*, and the screen still prints them; they
 no longer decide what ships, so a gene can be `helps` and off (its readings do
@@ -456,7 +457,7 @@ not clear the rule) or `hurts` and on (its win columns do).
 Operator directive 2026-08-22, later the same day: *we should default every gene
 to off that has Diff < 0.* *Diff* is the ranking's own column — the pooled on
 win rate minus the pooled off win rate in percentage points, over **every**
-screen that priced the gene, each weighted by its games. It is the **whole**
+screen that priced the gene, each weighted by its on-arm seats. It is the **whole**
 on−off difference, twice the scale of a win column beside it, and it is now a
 veto: a gene whose record is negative defaults off however its two win columns
 read. The veto is one-way — a positive record promotes nothing on its own,
@@ -504,8 +505,9 @@ wins against 27% for all-off** (4p classic, 200 anchor pairs). Now:
   difference over the whole record, recorded beside the columns in
   `docs/gene_ledger.json` and in the generated Rust table so the re-derivation
   reads the same number the decision was taken on. Both arms of a screen carry
-  the same games, so the 1-in-`players` chance base cancels inside each screen
-  and the pooled figure is a games-weighted average of per-screen differences —
+  the same number of seat observations, so the 1-in-`players` chance base
+  cancels inside each screen and the pooled figure is an on-arm-seat-weighted
+  average of per-screen differences —
   comparable across shapes and player counts in a way a raw win rate is not.
   ⚠ It has no recency discount: a gene repaired since its worst screen stays
   vetoed until its newer games outweigh that screen's.
@@ -703,9 +705,9 @@ wins against 27% for all-off** (4p classic, 200 anchor pairs). Now:
   flag and **+58 without** — no detectable regression, at a resolution
   (±102) far too coarse to call it a gain.
 
-- **The operator's view of the same games** is `HEURISTIC_GENE_RANKING.md`
+- **The operator's view of the same seat-pair data** is `HEURISTIC_GENE_RANKING.md`
   at the repository root — every screenable gene ranked by wins added per
-  10,000 six-player games, each from the latest native screen that measured
+  10,000 six-player on-arm seats, each from the latest native screen that measured
   it, with the war figure and the ledger's default beside it. It is generated
   (`python3 tools/heuristic_gene_ranking.py --write`) and
   `tools/test_heuristic_gene_ranking.py` fails when it is older than the

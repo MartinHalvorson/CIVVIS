@@ -17,7 +17,7 @@ import heuristic_gene_ranking as ranking  # noqa: E402
 
 class TheTableIsDerived(unittest.TestCase):
     EXPECTED_COLUMNS = (
-        "| Rank | Gene | Description | Default | ± Wins Last 10k | ± Wins 10k Prior | "
+        "| Rank | Gene | Description | Default | ± Wins / 10k seats | ± Wins / 10k seats prior | "
         "Total (on) Win rate | Total (off) Win rate | Diff | "
         "Posterior (95% CI) | P(>0) | Share Δpp (z) | "
         "cost (compute) | cost (time) |"
@@ -68,7 +68,7 @@ class TheTableIsDerived(unittest.TestCase):
         return rows
 
     def test_diff_is_the_on_rate_minus_the_off_rate(self):
-        """The column that replaced the pooled game count (operator, 2026-08-22).
+        """The column that replaced the pooled seat count (operator, 2026-08-22).
 
         It is the WHOLE on−off difference, so it sits at roughly twice the
         scale of the win columns beside it and must be judged against a
@@ -80,10 +80,10 @@ class TheTableIsDerived(unittest.TestCase):
         self.assertGreater(len(rows), 50)
         for cells in rows:
             history = measured[cells[1].strip("`")]
-            on_games = sum(m["n_on"] for m in history)
-            off_games = sum(m["n_off"] for m in history)
-            on = sum(m["win_on"] * m["n_on"] for m in history) / on_games
-            off = sum(m["win_off"] * m["n_off"] for m in history) / off_games
+            on_seats = sum(m["n_on"] for m in history)
+            off_seats = sum(m["n_off"] for m in history)
+            on = sum(m["win_on"] * m["n_on"] for m in history) / on_seats
+            off = sum(m["win_off"] * m["n_off"] for m in history) / off_seats
             self.assertEqual(cells[8], ranking.diff_cell(history), cells[1])
             self.assertRegex(cells[8], r"^-?\d+\.\d\d%$", cells[1])
             # Taken off the unrounded rates, so it can land a hundredth away
@@ -91,7 +91,7 @@ class TheTableIsDerived(unittest.TestCase):
             # band of half a point. Never further: that would be a real slip.
             shown = float(cells[6].split("%")[0]) - float(cells[7].split("%")[0])
             self.assertAlmostEqual(100 * (on - off), shown, delta=0.011, msg=cells[1])
-        self.assertNotIn("Total Games (on+off)", ranking.RANKING_MD.read_text())
+        self.assertNotIn("Total seats (on+off)", ranking.RANKING_MD.read_text())
 
     def test_diff_cell_is_a_percent_and_keeps_a_negative_sign(self):
         def arms(on, off):

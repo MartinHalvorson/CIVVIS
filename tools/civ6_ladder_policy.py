@@ -105,7 +105,19 @@ def rung_status(
         if isinstance(attempt, dict) and comparable_attempt(attempt, difficulty)
     ]
     wins = [attempt for attempt in attempts if attempt.get("won") is True]
-    tail = attempts[-window:]
+    # ⚠⚠ THE TRAILING WINDOW IS THE NEWEST GAMES, NOT THE LAST ROWS APPENDED,
+    # AND THOSE STOPPED BEING THE SAME THING THE DAY `sync` WAS WRITTEN.
+    # `civ6_ladder.apply` already carries this correction one file over, in
+    # its own words: insertion order wearing chronology's name. It fixed the
+    # rung MILESTONE and left the rung GATE reading arrival order, so a
+    # backfill of week-old games -- which is exactly what `sync` and a merged
+    # publish produce -- redefines "the last eight attempts" as those old
+    # games and can hand the supervisor a rung on evidence that predates
+    # everything it has played since. `utc` is an ISO-8601 Z stamp, so a
+    # string compare is a time compare; a row with no stamp cannot claim to be
+    # recent and sorts oldest, and the sort is stable so same-stamp rows keep
+    # the order they were recorded in.
+    tail = sorted(attempts, key=lambda row: row.get("utc") or "")[-window:]
     tail_wins = sum(attempt.get("won") is True for attempt in tail)
     claimed = difficulty in (state.get("wins") or {}) or bool(wins)
     repeatable = claimed and len(tail) >= min_attempts and tail_wins >= repeat_wins
@@ -150,7 +162,27 @@ def next_target(
 
 
 def load_live(runs: Path) -> dict[str, Any]:
-    return civ6_ladder.load(civ6_ladder.live_ledger_for(runs))
+    """The FLEET's record: this seat's live ledger folded onto the committed one.
+
+    ⚠⚠⚠ A RUNG IS A CLAIM ABOUT THE CONTROLLER, AND THIS READ ONE MACHINE'S
+    COPY OF THE RECORD. `civ6_ladder.load` seeds a machine with no live ledger
+    from the committed snapshot and then never looks at it again, so a second
+    Civilization VI seat gates on a record that stopped at the moment it was
+    seeded. Measured on 2026-08-23, that was not academic: the published
+    snapshot said Settler was repeatable -- two wins in its trailing window --
+    and it said so only because 76 Settler games from the other seat, whose
+    last eight were all losses, were in no published record at all. The two
+    seats therefore answered `DIFFICULTY_CHIEFTAIN` and `DIFFICULTY_SETTLER`
+    for the same controller on the same day.
+
+    Reading the union is strictly more evidence, in both directions: it adds
+    the other seat's wins and the other seat's losses, and it is the only
+    source that matches what `docs/CIV6_LADDER.md` claims to be -- what the
+    controller has beaten, not what one laptop remembers beating.
+    """
+    live = civ6_ladder.load(civ6_ladder.live_ledger_for(runs))
+    merged, _ = civ6_ladder.merge_state(civ6_ladder.load_snapshot(), live)
+    return merged
 
 
 def main(argv: list[str] | None = None) -> int:

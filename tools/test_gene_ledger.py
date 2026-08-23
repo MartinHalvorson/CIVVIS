@@ -43,7 +43,7 @@ DEPLOYED_GENOME_20260823 = (
 
 def analysis(genes: list[dict], pairs: int = 1000, family: float = 3.0, **profile) -> dict:
     """One screen. `wins` is the gene's win column in this screen — wins per
-    10,000 games above the 1-in-`PLAYERS` a seat takes by chance — written
+    10,000 on-arm seats above the 1-in-`PLAYERS` a seat takes by chance — written
     back as the on-rate the analyzer would have printed. Keyword arguments
     override legs of the screen's profile, which is how a probe is built."""
     return {

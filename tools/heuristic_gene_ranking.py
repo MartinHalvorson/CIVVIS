@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Regenerate `HEURISTIC_GENE_RANKING.md` — every screenable heuristic gene,
-with a measurement, ranked by wins added per 10,000 six-player games, plus the
+with a measurement, ranked by wins added per 10,000 six-player on-arm seats, plus the
 screenable genes still awaiting one.
 
     python3 tools/heuristic_gene_ranking.py --write     # rewrite the table
@@ -8,7 +8,7 @@ screenable genes still awaiting one.
 
 The table used to be written once, by hand, from one screen's rows. Now it is
 derived: for each gene the **latest source** in `docs/gene_ledger.json` that
-measured it supplies the on/off wins and games (so a gene added after the
+measured it supplies the on/off wins and seat counts (so a gene added after the
 whole-genome screen still appears, from its own screen), and the deployment
 verdict comes from the ledger. Every source is the one screen the ledger
 accepts — the war regime's four-player columns are gone, and the Pangaea
@@ -736,7 +736,7 @@ def lane_section(ledger: dict, measured: dict[str, list[dict]],
         "`src/ai/advanced/victory_lane.rs` reads. A gene joins it by being a lane gene, "
         "not by being listed here.",
         "",
-        "| Lane gene | Default | ± Wins Last 10k | Share Δpp (z) | Posterior (95% CI) | Status |",
+        "| Lane gene | Default | ± Wins / 10k seats | Share Δpp (z) | Posterior (95% CI) | Status |",
         "|---|---|---:|---|---:|---|",
     ]
     for tag in tags:
@@ -785,8 +785,8 @@ def render(ledger: dict) -> str:
     # nothing derived is lost and nothing derived is in the way.
     reference = [
         "Every screenable heuristic gene on the Advanced controller, ranked most beneficial "
-        "to least by **± Wins Last 10k** — wins added per 10,000 six-player games at the "
-        "gene's measured on-rate in its **latest** screen. *± Wins 10k Prior* is the "
+        "to least by **± Wins / 10k seats** — wins added per 10,000 six-player on-arm seats at the "
+        "gene's measured on-rate in its **latest** screen. *± Wins / 10k seats prior* is the "
         "same figure from the screen before that (\u2013 when the gene has only one "
         "reading); movement between the two columns is the gene's trend across cycles. "
         "*Default* is the deployment ledger's call (`docs/gene_ledger.json`), and since "
@@ -794,8 +794,8 @@ def render(ledger: dict) -> str:
         "when both are positive, or when their average clears +15 with neither below "
         "\u221210; with exactly one populated column it defaults **on** when that reading "
         "is above +20. It defaults **off** otherwise. The *Total* win-rate "
-        "columns pool every screen that measured the gene, weighted by games, and "
-        "each carries its own game count `n` — the two arms are only equal when every "
+        "columns pool every screen that measured the gene, weighted by on-arm seats, and "
+        "each carries its own on-arm seat count `n` — the two arms are only equal when every "
         "screen that measured the gene split them evenly. *Diff* is the on rate minus the "
         "off rate, rendered as a percentage: the **whole** on−off difference, so it stands at "
         "roughly twice the scale of the win columns beside it and must be read against a "
@@ -817,7 +817,7 @@ def render(ledger: dict) -> str:
         "measurement are listed separately below without a rank.",
         "",
         "**Reading the table.** A six-player seat wins 1-in-6 by chance, so the expected "
-        "count is 1,667 wins per 10,000 games and the "
+        "count is 1,667 wins per 10,000 on-arm seats and the "
         "win columns say how far above or below that a seat carrying the gene lands. "
         "**A column is half its screen’s on−off difference** — a foldover puts the two arms "
         "either side of chance — so the band that says whether a column is real is half the "
@@ -894,7 +894,7 @@ def render(ledger: dict) -> str:
     lines = [
         "# The heuristic gene ranking",
         "",
-        "| Rank | Gene | Description | Default | ± Wins Last 10k | ± Wins 10k Prior | Total (on) Win rate | Total (off) Win rate | Diff | Posterior (95% CI) | P(>0) | Share Δpp (z) | cost (compute) | cost (time) |",
+        "| Rank | Gene | Description | Default | ± Wins / 10k seats | ± Wins / 10k seats prior | Total (on) Win rate | Total (off) Win rate | Diff | Posterior (95% CI) | P(>0) | Share Δpp (z) | cost (compute) | cost (time) |",
         "|---:|---|---|---|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|",
     ]
     for rank, (wins, tag, history) in enumerate(rows, 1):
@@ -905,14 +905,14 @@ def render(ledger: dict) -> str:
             if len(history) > 1
             else "\u2013"
         )
-        on_games = sum(m["n_on"] for m in history)
-        off_games = sum(m["n_off"] for m in history)
+        on_seats = sum(m["n_on"] for m in history)
+        off_seats = sum(m["n_off"] for m in history)
         on_rate, off_rate = pooled_win_rates(history)
         posterior = posterior_of(history)
         lines.append(
             f"| {rank} | `{tag}` | {desc.get(tag, '')} | {default} | {wins:+d} | {prior} | "
-            f"{100 * on_rate:.2f}% (n={fmt_int(on_games)}) | "
-            f"{100 * off_rate:.2f}% (n={fmt_int(off_games)}) | "
+            f"{100 * on_rate:.2f}% (n={fmt_int(on_seats)}) | "
+            f"{100 * off_rate:.2f}% (n={fmt_int(off_seats)}) | "
             f"{diff_cell(history)} | "
             f"{posterior_cell(posterior)} | {probability_cell(posterior)} | "
             f"{share_cell(history)} | "
@@ -950,7 +950,7 @@ def render(ledger: dict) -> str:
             "Genes whose code has left the repository (operator directive: the bottom of the "
             "table leaves the code), listed from their last measurement:",
             "",
-            "| Gene | Wins ±10k (last tracked measurement) | Win rate (on) | Win rate (off) | Source |",
+            "| Gene | Wins ±/10k seats (last tracked measurement) | Win rate (on) | Win rate (off) | Source |",
             "|---|---:|---:|---:|---|",
         ]
         for tag in sorted(removed, key=lambda t: wins_per(latest[t]["win_on"], latest[t]["players"]), reverse=True):
@@ -975,7 +975,7 @@ def render(ledger: dict) -> str:
         "",
         f"_Generated by `tools/heuristic_gene_ranking.py` from the ledger's sources: {sources}. "
         "The paired contrasts, intervals and family-wise verdicts live in `docs/gene_ledger.json`; "
-        "this table is the operator's wins-per-ten-thousand view of the same games._",
+        "this table is the operator's wins-per-ten-thousand-seat view of the same observations._",
         "",
     ]
     return "\n".join(lines)

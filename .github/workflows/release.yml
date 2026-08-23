@@ -54,11 +54,18 @@ jobs:
             asset: civvis-macos-aarch64
           # `macos-15-intel`, not `macos-13`: GitHub retired the macOS 13
           # image, and a job asking for a retired label does not fail — it
-          # queues, for ever, and is eventually killed by the timeout. With
-          # `fail-fast: false` the other three legs go green around it, so the
-          # symptom is a release that looks fine and is missing exactly one
-          # download. Measured on the first dispatch: three targets built in
-          # under twelve minutes while this one sat unassigned for forty.
+          # queues, and with `fail-fast: false` the other three legs go green
+          # around it, so the symptom is a release that looks fine and is
+          # missing exactly one download. Measured on the first dispatch:
+          # three targets built in under twelve minutes while this one sat
+          # unassigned for forty.
+          #
+          # ⚠ `timeout-minutes` DOES NOT BOUND THAT WAIT. It starts when a
+          # runner picks the job up, so a job no runner will ever claim is not
+          # covered by it at all; GitHub's own 24-hour queue limit is what
+          # eventually cancels one. This comment said the timeout killed it,
+          # and believing that is how run 31116714949 sat `queued` for 390
+          # hours before anybody looked (see the `publish` job below).
           - os: macos-15-intel
             target: x86_64-apple-darwin
             asset: civvis-macos-x86_64
@@ -145,6 +152,12 @@ jobs:
     needs: build
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
+    # Every other job in every workflow here declares one; this was the only
+    # one left on the 360-minute default, and it is the job that uploads to a
+    # public download page. Downloading four artifacts and cutting a release
+    # is a two-minute step, so fifteen is generous and still fails the same
+    # day rather than six hours later.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
