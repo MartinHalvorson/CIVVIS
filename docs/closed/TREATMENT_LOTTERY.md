@@ -1,4 +1,18 @@
-# The treatment lottery
+# The treatment lottery (retired 2026-08-23)
+
+> **Closed.** `treatment_lottery` was removed on 2026-08-23 (operator: *"scrapping
+> treatment lottery is fine"*). It was the first random-subset screen in the
+> repository — every game drew a random subset of treatments to withhold and
+> played it against a same-seed full-bundle control — and `gene_screen`
+> (`docs/GENE_SCREEN.md`) is its successor and the one random-genome
+> instrument: every seat draws its own genome independently, every gene is
+> priced from every seat, and the ledger reads the result. Its one recorded
+> round, screen-1 (`docs/EVAL.md`, 2026-08-20), flagged `governor-every-lane`
+> at t −3.3, which the gene screen later confirmed past its family-wise bar.
+> The live-ladder half described below was designed and never built. The text
+> below is kept as it was written, as evidence of what the instrument measured
+> and why; nothing in it describes current code.
+
 
 `treatment_lottery` prices many flags from the same games: every game draws an
 independent random subset of treatments to withhold, plays the drawn agent
