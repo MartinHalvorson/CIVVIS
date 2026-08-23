@@ -20,8 +20,8 @@
     "helps": "win z >= 2 with share z > -2, or share z >= 2 with win z > -2",
     "hurts": "the mirror image",
     "shape": "one screen: a source whose profile is not `screen` above is marked legacy and kept as history; new ones are refused",
-    "win_column": "wins added per 10,000 games at the gene's measured on-rate in one screen, (win_on - 1/players) * 10000; last and prior are the two most recent screens that priced the gene",
-    "win_diff": "the pooled on rate minus the pooled off rate in percentage points, over every screen that priced the gene, each weighted by its games - the ranking's `Diff`, the whole on-off difference",
+    "win_column": "wins added per 10,000 on-arm seats at the gene's measured on-rate in one screen, (win_on - 1/players) * 10000; last and prior are the two most recent screens that priced the gene",
+    "win_diff": "the pooled on rate minus the pooled off rate in percentage points, over every screen that priced the gene, each weighted by its on-arm seats - the ranking's `Diff`, the whole on-off difference",
     "default_on": "both win columns positive, or their average above +15 with neither below -10; with exactly one populated column, on when it is above +20; unmeasured is off; and off whatever the columns say when win_diff_pp is below 0"
   },
   "sources": [
