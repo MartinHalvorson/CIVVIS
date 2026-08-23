@@ -27,6 +27,24 @@ def pr(branch, body, *, number=9, draft=True):
     }
 
 
+def validation_block(checked=True):
+    """The template's own validation list, ticked or not.
+
+    Taken from `format_claim_body` rather than written out, so a fixture cannot
+    quietly carry fewer items than the gate requires. That is the defect
+    `validation_errors` exists for, and a fixture is exactly the place it would
+    reappear: every one of these bodies used to carry a single checkbox, which
+    is a body the required check would now refuse.
+    """
+    template = collab.format_claim_body(
+        machine="m", agent="a", task="t", paths=["p"], coordinated=()
+    )
+    section = template.split("## Validation", 1)[1].split("\n## ", 1)[0]
+    if checked:
+        section = section.replace("- [ ]", "- [x]")
+    return "## Validation" + section.rstrip() + "\n"
+
+
 def body(
     machine="render-win-02",
     agent="codex-47",
@@ -34,7 +52,6 @@ def body(
     coordinated="none",
     checked=True,
 ):
-    mark = "x" if checked else " "
     return f"""## Ownership claim
 
 - Machine ID: `{machine}`
@@ -43,10 +60,7 @@ def body(
 - Claimed paths: {paths}
 - Coordinated with: {coordinated}
 
-## Validation
-
-- [{mark}] Branch started from current `origin/main`
-"""
+{validation_block(checked)}"""
 
 
 class BranchTests(unittest.TestCase):
@@ -1120,14 +1134,8 @@ class ShipTests(unittest.TestCase):
         draft = {
             "state": "OPEN",
             "headRefName": "agent/m/a/task-20260723T210500Z-a31f",
-            "body": """## What changed
-
-Draft claim; implementation is in progress.
-
-## Validation
-
-- [ ] Tests
-""",
+            "body": "## What changed\n\nDraft claim; implementation is in "
+                    "progress.\n\n" + validation_block(checked=False),
         }
         errors = collab.ship_pr_errors(draft, draft["headRefName"])
         self.assertTrue(any("checkbox" in error for error in errors))
@@ -1137,14 +1145,8 @@ Draft claim; implementation is in progress.
         finished = {
             "state": "OPEN",
             "headRefName": "agent/m/a/task-20260723T210500Z-a31f",
-            "body": """## What changed
-
-Added the fast shipping path.
-
-## Validation
-
-- [x] Tests
-""",
+            "body": "## What changed\n\nAdded the fast shipping path.\n\n"
+                    + validation_block(checked=True),
         }
         self.assertEqual(
             collab.ship_pr_errors(finished, finished["headRefName"]), []
