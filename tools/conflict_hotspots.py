@@ -115,11 +115,14 @@ DEFAULT_MERGES = 200
 #: Two reasons. The ranking moves every day as merges land, so a both-ways check
 #: would go red on ordinary work rather than on a defect. And touch rate mixes
 #: two problems with different remedies — `src/elo.rs` and
-#: `src/ai/advanced/treatment_flags.rs` are contended because every treatment PR
+#: `src/ai/advanced/treatments.rs` are contended because every treatment PR
 #: appends to one shared line or list in them, which splitting the file does not
 #: fix; moving that data out of source does, the way `docs/eval/` did it for
 #: `docs/EVAL.md`. Only `advanced.rs`, its tests and `game.rs` are contended for
-#: the reason "split it" answers.
+#: the reason "split it" answers. ⚠ Do not guess which is which from this
+#: comment — `--modes` measures it, and it has already contradicted the guess
+#: once: `treatment_flags.rs` looks like an anchor and is SPREAD (0 of 7),
+#: because 182 toggles collide at 182 different places.
 #:
 #: So the machine checks the half that is mechanical — is this target real? —
 #: and leaves which remedy fits to the prose.
