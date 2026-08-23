@@ -1443,19 +1443,23 @@ class TheTableIsDerived(unittest.TestCase):
         self.assertIn("Pairing gain", ranking.RANKING_MD.read_text())
 
 
-    def test_the_table_is_the_first_thing_in_the_file(self):
-        """Operator, 2026-08-22: "i want the table on top."
+    def test_the_default_rule_is_the_only_text_ahead_of_the_table(self):
+        """The title gets one concise, generated rule before the table.
 
-        Twenty-two lines of preamble used to stand between the title and the
-        first row. The reference did not go away — it is carried under the
-        tables — but nothing may get back in front of them.
+        The long reference remains below the tables; this is the operator's
+        requested at-a-glance explanation of the *Default* column.
         """
         lines = ranking.RANKING_MD.read_text().splitlines()
         self.assertEqual(lines[0], "# The heuristic gene ranking")
         self.assertEqual(lines[1], "")
-        self.assertTrue(lines[2].startswith("| Rank | Gene |"), lines[2])
-        self.assertTrue(lines[3].startswith("|---:|"), lines[3])
-        self.assertTrue(lines[4].startswith("| 1 | `"), lines[4])
+        self.assertEqual(
+            lines[2], ranking.default_on_summary("columns"),
+            "the heading summary must derive from the deployment thresholds",
+        )
+        self.assertEqual(lines[3], "")
+        self.assertTrue(lines[4].startswith("| Rank | Gene |"), lines[4])
+        self.assertTrue(lines[5].startswith("|---:|"), lines[5])
+        self.assertTrue(lines[6].startswith("| 1 | `"), lines[6])
 
     def test_the_reference_is_carried_under_the_tables_not_deleted(self):
         """Moving the preamble must not become dropping it.
