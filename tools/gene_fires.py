@@ -73,9 +73,9 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
-import gene_registry  # noqa: E402
+import genes  # noqa: E402
 
-REGISTRY = ROOT / gene_registry.REGISTRY
+REGISTRY = ROOT / genes.REGISTRY
 SCREENS = ROOT / "docs" / "gene_screens"
 WAIVERS = Path(__file__).resolve().parent / "gene_fire_waivers.json"
 
@@ -98,7 +98,7 @@ def gene_tables() -> dict[str, str]:
     it was written and silently shrink afterwards.
     """
     try:
-        rows = gene_registry.genes_from_text(REGISTRY.read_text(encoding="utf-8"))
+        rows = genes.genes_from_text(REGISTRY.read_text(encoding="utf-8"))
     except (ValueError, IndexError) as error:
         raise SystemExit(f"{REGISTRY} yielded no registry rows; the scrape broke: {error}")
     return {row.tag: row.kind for row in rows if row.screenable}
