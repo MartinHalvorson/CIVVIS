@@ -508,7 +508,37 @@ the seed: `deployment-online` arguments, fixed N = 100, no early stopping,
 
 ### Results — `settler-site-agreement`
 
-<!-- RESULTS-3 -->
+Ran as registered: 100 maps, 200 games, seeds 37000000..=37000099 inclusive,
+average 235.5 turns, `arms differ on: settler-site-agreement`.
+
+| reading | `live_without_settler_site_agreement` vs `live` |
+|---|---|
+| game-win share | 99/200 (49.5%) vs 101/200 (50.5%) |
+| paired-map score | 49.5%, 95% betting CI 42.0%..56.1% |
+| **Elo-equivalent** | **−3 (CI −56..+43)** |
+| paired direction | 10 · 79 · 11, sign p=1.0000 |
+| terminal-score direction | 49 · 0 · 51, sign p=0.9204 |
+| promotion gate | INCONCLUSIVE; resolves about +56 at 80% power |
+| maps that broke | wins 21/100, terminal score 100/100 |
+
+**The arm fired.** 21 of 100 maps broke on wins and all 100 on terminal score,
+and `ai_eval` printed no "nothing differed" warning — so this is a measurement
+of the treatment and not one of the 26 inert pairings §3 opened with. That
+matters more than the number: it is the check that separates a null from a
+no-op, and the check §3 exists because 26 arms cannot pass.
+
+**Verdict: RETAIN. A clean, well-controlled null.** Withholding
+`settler-site-agreement` from the deployment genome moves nothing measurable at
+the deployment shape, on either wins or terminal score, and the two readings
+agree. The run bounds the treatment's contribution to roughly ±56 Elo — which
+is the honest limit of one 100-pair round and is stated rather than implied.
+
+⚠ **What this does and does not settle.** It is the first time any of the 49
+withholdable treatments has been priced by withholding it from the bundle that
+actually ships, which is what `docs/ROADMAP.md` objective 3 asks for. It is one
+treatment of 23 runnable ones, on one seed window. It does not license the
+bundle, and a null at ±56 Elo is not evidence that the treatment is worthless —
+only that it is not large.
 
 ---
 
