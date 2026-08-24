@@ -200,6 +200,18 @@ local function resolveActions()
 		"UNITOPERATION_EVANGELIZE_BELIEF",
 		-- These entries have no InterfaceMode in Firaxis' UnitOperations table,
 		-- so UnitPanel requests each directly with no parameters, like spreading.
+		--
+		-- Read off the installed game, not recalled. In
+		-- `Base/Assets/Gameplay/Data/UnitOperations.xml`:
+		--   :24 / :83   UNITOPERATION_LAUNCH_INQUISITION
+		--   :36 / :95   UNITOPERATION_REMOVE_HERESY
+		--   :62 / :121  UNITOPERATION_RELIGIOUS_HEAL
+		--   :12 / :71   UNITOPERATION_CONVERT_BARBARIANS
+		-- none of which carries an `InterfaceMode` attribute; the shipped
+		-- `Base/Assets/UI/Panels/UnitPanel.lua:2518-2535` then takes its
+		-- "No mode needed, just do the operation" branch and calls
+		-- `UnitManager.RequestOperation(pSelectedUnit, actionHash)` with no
+		-- parameter table at all. That is why `{}` below is the whole request.
 		"UNITOPERATION_LAUNCH_INQUISITION", "UNITOPERATION_REMOVE_HERESY",
 		"UNITOPERATION_RELIGIOUS_HEAL", "UNITOPERATION_CONVERT_BARBARIANS",
 		-- ★★★ ESPIONAGE, WHICH THE ENGINE MODELS IN FULL AND THE BRIDGE COULD
@@ -224,6 +236,15 @@ local function resolveActions()
 		"UNITCOMMAND_UPGRADE", "UNITCOMMAND_DELETE",
 		"UNITCOMMAND_ACTIVATE_GREAT_PERSON", "UNITCOMMAND_ENTER_FORMATION",
 		"UNITCOMMAND_EXIT_FORMATION",
+		-- ★★★ CORPS AND ARMY, THE OTHER CONSOLIDATION AND THE ONLY ONE NEVER
+		-- WIRED. `ENTER_FORMATION` above links an ESCORT (a support unit riding
+		-- with a combat unit); merging two identical units into one stronger one
+		-- is a different pair of commands entirely, and CIVVIS decided it 10,015
+		-- times across the live archive without a verb to send. Read off the
+		-- installed game at `Base/Assets/Gameplay/Data/UnitCommands.xml`:
+		--   :20 / :44  UNITCOMMAND_FORM_CORPS (PrereqCivic CIVIC_NATIONALISM)
+		--   :21 / :45  UNITCOMMAND_FORM_ARMY  (PrereqCivic CIVIC_MOBILIZATION)
+		"UNITCOMMAND_FORM_CORPS", "UNITCOMMAND_FORM_ARMY",
 		-- ★★★ THE ONLY WAY A SOLDIER TOUCHES A MISSIONARY. Religious units are
 		-- excluded from ordinary combat by design -- they cannot be attacked,
 		-- captured, or run over -- so an enemy Apostle standing in our land was
@@ -8851,7 +8872,20 @@ end;
 -- empire lost EIGHT Settlers, two Builders, two Warriors, a Slinger, a Scout
 -- and an Archer to raiders it could not hit back.
 --
+-- ★★★ AND IT IS ALSO THE ONLY ROUTE TO THEOLOGICAL COMBAT. There is no
+-- `UNITOPERATION_THEOLOGICAL_ATTACK` on this build and no `UNITCOMMAND_` for
+-- one: `Base/Assets/Gameplay/Data/UnitOperations.xml` lists 57 operations and
+-- none of them is a religious strike. The shipped Civilopedia says why, at
+-- `Base/Assets/Text/en_US/Civilopedia_Concepts_Text.xml:636` — "Theological
+-- combat works just like combat with military units, just attack one Religious
+-- unit with another." An Apostle or Inquisitor therefore attacks through this
+-- same branch, and `Action::TheologicalAttack` translates to the ordinary
+-- `ATTACK` verb for exactly that reason. Religious units have no ranged
+-- combat, so `RequestMoveOperation`'s `GetRangedCombat() > GetCombat()` test
+-- below is false for them and they take the melee path unchanged.
+--
 -- The reason is one parameter. Firaxis's own `Civ6Common.lua:RequestMoveOperation`
+-- (`Base/Assets/UI/Civ6Common.lua:137-169`, the melee branch at :152-163)
 -- — the shipped path behind every melee attack a human ever makes — sets
 --
 --   tParameters[UnitOperationTypes.PARAM_MODIFIERS] =
@@ -10941,6 +10975,56 @@ local function applyOrder(player, pid, row, turn)
 		if verb == "EXIT_FORMATION" then
 			return commandUnit(unit, CMD["UNITCOMMAND_EXIT_FORMATION"]), verb;
 		end
+		-- ★★★ FORM A CORPS OR AN ARMY. Two commands, not one, and the tier is
+		-- the caller's choice: `civvis_orders::translate` picks it from
+		-- `Game::can_combine_units`'s own rule and names it in the verb, so this
+		-- side never guesses which merge was decided.
+		--
+		-- Request shape read off the installed game, not recalled. The shipped
+		-- `Base/Assets/UI/WorldInput.lua` builds both from the OTHER unit's
+		-- owner and id -- `FormCorps` at 2879-2882, `FormArmy` at 2949-2952:
+		--
+		--   tParameters[UnitCommandTypes.PARAM_UNIT_PLAYER] = pUnit:GetOwner();
+		--   tParameters[UnitCommandTypes.PARAM_UNIT_ID]     = pUnit:GetID();
+		--   if (UnitManager.CanStartCommand(pSelectedUnit,
+		--         UnitCommandTypes.FORM_CORPS, tParameters)) then
+		--     UnitManager.RequestCommand(pSelectedUnit,
+		--         UnitCommandTypes.FORM_CORPS, tParameters);
+		--
+		-- which is the identical non-positional owner/id pair ENTER_FORMATION
+		-- already carries in `x`/`y`, so the order shape needs nothing new.
+		--
+		-- ⚠ Both rows DO carry an `InterfaceMode` (INTERFACEMODE_FORM_CORPS /
+		-- _FORM_ARMY, UnitCommands.xml:44-45), unlike CONDEMN_HERETIC. That mode
+		-- exists only so a human can CLICK the partner: the handler above is
+		-- what the mode's click lands in, and it requests the command outright
+		-- once it holds the pair. CIVVIS has already chosen the partner, so
+		-- entering the mode would be asking the UI a question we answered.
+		--
+		-- A refusal is named per tier. `cannot_form_army` against a unit CIVVIS
+		-- believes is already a Corps is precisely the signal that the mirror's
+		-- formation tier and the host's have diverged -- the export carries no
+		-- military formation today, so that divergence has to be observable.
+		if verb == "FORM_CORPS" or verb == "FORM_ARMY" then
+			-- `x`/`y` carry the partner's owner and id, as for ENTER_FORMATION.
+			if x == nil or y == nil then return false, "no_formation_target"; end
+			if liveUnit(x, y) == nil then return false, "formation_target_gone"; end
+			local hash = CMD["UNITCOMMAND_" .. verb];
+			if hash == nil then return false, "unknown_cmd_" .. verb; end
+			local params = {};
+			params[UnitCommandTypes.PARAM_UNIT_PLAYER] = x;
+			params[UnitCommandTypes.PARAM_UNIT_ID] = y;
+			local okCan, can = pcall(function()
+				return UnitManager.CanStartCommand(unit, hash, params);
+			end);
+			if not (okCan and can == true) then
+				return false, "cannot_" .. string.lower(verb);
+			end
+			local ok = pcall(function()
+				UnitManager.RequestCommand(unit, hash, params);
+			end);
+			return ok, ok and verb or "throw";
+		end
 		-- FOUND_CITY, MOVE_TO and RANGE_ATTACK are the three that decide a game.
 		-- ⚠ There is NO attack operation on this build — the resolved list is only
 		-- MOVE_TO and RANGE_ATTACK — so a melee strike IS a MOVE_TO onto the
@@ -11690,10 +11774,22 @@ local function applyOrder(player, pid, row, turn)
 		end
 		-- Anything else is a named operation from the resolved table: FORTIFY,
 		-- ALERT, SKIP_TURN, HEAL, AUTOMATE_EXPLORE, BUILD_IMPROVEMENT,
-		-- SPREAD_RELIGION.
+		-- SPREAD_RELIGION, REMOVE_HERESY, RELIGIOUS_HEAL, LAUNCH_INQUISITION,
+		-- CONVERT_BARBARIANS, PILLAGE. All parameterless -- see the citation on
+		-- the `resolveActions` list for why `{}` is the whole request.
 		local hash = OP["UNITOPERATION_" .. verb];
 		if hash == nil then return false, "unknown_op_" .. verb; end
-		return operate(unit, hash, {}), verb;
+		-- ⚠ NAME THE REFUSAL, NOT THE VERB. This tail returned `verb` for BOTH
+		-- outcomes, so a REMOVE_HERESY the engine declined and a REMOVE_HERESY
+		-- it accepted reached the queue's `refusals` table under the same key --
+		-- the anonymous-count trap this file names everywhere else, one level
+		-- in. The ledger reads only `why` when `ok` is false, so the two are
+		-- worth telling apart: `cannot_REMOVE_HERESY` is "the host said no"
+		-- (wrong tile, no rival religion present, charges spent) and `throw` is
+		-- the request itself raising, which is a different repair entirely.
+		if not canOperate(unit, hash, {}) then return false, "cannot_" .. verb; end
+		local ok = operate(unit, hash, {});
+		return ok, ok and verb or "throw";
 	end
 
 	return false, "unknown_kind_" .. kind;
