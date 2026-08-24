@@ -214,10 +214,15 @@ STOCK_WORLD_FIELDS = {
     "game_speed": "speed",
 }
 # Rust spellings of the values, as the id strings every other surface uses.
+# A spelling the stock world stops naming is kept rather than pruned: this is a
+# translation table, not a second statement of which world is stock, and the
+# reader above already refuses a spelling it does not know.
 STOCK_WORLD_IDS = {
+    "MapScript::Lakes": "lakes",
     "MapScript::TeninsBall": "tenins_ball",
     "MapTopology::Planet": "planet",
     "MapPoles::Poles": "poles",
+    "MapPoles::Randomized": "randomized",
     "GameSpeed::Online": "online",
 }
 

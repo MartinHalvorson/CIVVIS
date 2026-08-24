@@ -1562,6 +1562,30 @@ pub struct AgendaSpec {
     pub approves_of: String,
 }
 
+/// One row of Civilization VI's `StartingBuildings` table, as it applies to a
+/// rung of the difficulty ladder: a *completed* building a city already holds
+/// the moment the game opens, before anything is produced and regardless of
+/// whether its own technology has been researched.
+///
+/// The shipped table has 24 rows and exactly one of them carries a
+/// `MinDifficulty`, so exactly one is a property of the ladder rather than of
+/// the start era. The other 23 are `MinorOnly = 0` with no `MinDifficulty` at
+/// all: they are what a game *opened past the Ancient era* hands a major
+/// civilization, which is a start-era rule and belongs nowhere near a
+/// handicap. See `docs/FIDELITY.md`.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(default)]
+pub struct StartingBuildingSpec {
+    /// The building's id in `buildings.json` — the shipped `Building` column
+    /// under this engine's spelling.
+    pub building: String,
+    /// `StartingBuildings.MinorOnly`. True grants the building to city-states
+    /// and to nobody else; false grants it to major civilizations only. The
+    /// column is a partition, not a permission, which is why one flag decides
+    /// both sides.
+    pub minor_only: bool,
+}
+
 /// A difficulty level, in the Civ VI sense: a bag of handicaps applied to the
 /// AI seats above Prince and to the human seats below it. Prince is the
 /// reference level and carries no modifiers at all.
@@ -1586,6 +1610,24 @@ pub struct DifficultySpec {
     pub ai_era_boosts: usize,
     /// Extra units each AI receives on its start tile.
     pub ai_bonus_units: BTreeMap<String, usize>,
+    /// Completed buildings a city already holds when a game at this rung
+    /// opens, from the shipped `StartingBuildings` table's `MinDifficulty`
+    /// gate.
+    ///
+    /// That table gates one row on difficulty — `BUILDING_WALLS`,
+    /// `ERA_ANCIENT`, `DISTRICT_CITY_CENTER`, `MinorOnly = 1`,
+    /// `MinDifficulty = DIFFICULTY_IMMORTAL` — so Immortal and Deity
+    /// city-states open behind Ancient Walls and every rung below them opens
+    /// behind none. **This runs the opposite way to every other field here:**
+    /// the rest of the ladder hands its bonuses to the AI *major* seats, and
+    /// this one hardens the minor seats the challenger has to take a city off.
+    /// Leaving it out did not make CIVVIS's Immortal harder than the game's,
+    /// it made it *easier*, which is the direction an audit does not look for.
+    ///
+    /// No rung grants a major civilization anything: every major-side row of
+    /// the shipped table is keyed on the start era instead, and CIVVIS's
+    /// Advanced Start deliberately does not grant them (`open_in_start_era`).
+    pub starting_buildings: Vec<StartingBuildingSpec>,
     /// Flat Combat Strength added to every human unit.
     pub human_combat_strength: f64,
     /// Percentage added to human experience awards.
@@ -3422,6 +3464,14 @@ mod tests {
         // 6-player 200-turn games. Each addition takes its class, era, cost
         // and charges from `GreatPersonIndividuals` and `Eras`, so the
         // fidelity audit still reports zero divergent fields.
+        // Moved again by the shipped `StartingBuildings` table, whose one
+        // difficulty-gated row — `BUILDING_WALLS`, `ERA_ANCIENT`,
+        // `DISTRICT_CITY_CENTER`, `MinorOnly = 1`, `MinDifficulty =
+        // DIFFICULTY_IMMORTAL` — had no home in `DifficultySpec` at all.
+        // The engine already granted the walls, from a rung number written
+        // into `Game::new_with`; what moved here is that the ladder now
+        // *says* which rungs grant what, so a rung is transcribed data like
+        // every other line of this file rather than a constant in setup code.
         // Moved again by the imported modifier catalog. `data/modifiers.json`
         // is no longer empty: `tools/civ6_modifiers.py --emit-catalog` writes
         // one bundle per shipped `Modifiers` row of a declared effect, and the
@@ -3435,7 +3485,7 @@ mod tests {
         // by the +25% `COMPUTERS_BOOST_ALL_TOURISM` states instead of +100%.
         assert_eq!(
             Rules::shipped().source_fingerprint(),
-            "fnv1a64:d98cbaa5295c3e34"
+            "fnv1a64:be7a4c06567d4b08"
         );
     }
 

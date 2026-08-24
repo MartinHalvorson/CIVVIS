@@ -4,6 +4,12 @@ Where the project actually is, and what it is doing next. History below is
 kept for orientation; the current-state section is the part to trust, and
 `docs/AI_GAPS.md` is the always-current assessment of the AI specifically.
 
+For the standing question this roadmap exists to close — how far CIVVIS is from
+Civilization VI, and why measured strength here has not transferred there —
+[`docs/THE_GAP.md`](THE_GAP.md) is the synthesis across `FIDELITY.md`,
+`GROUNDING.md`, `AI_GAPS.md` and the ladder record. It owns no findings of its
+own; each one stays with the document that measured it.
+
 The current evaluation inventory and live-bridge counts are generated in
 [`docs/EVAL_STATUS.md`](EVAL_STATUS.md); do not duplicate those numbers in
 prose. Refresh it with `python3 tools/eval_manifest.py --write`.
