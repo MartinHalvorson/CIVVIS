@@ -32468,9 +32468,18 @@ fn wonder_score_tally_never_stacks_and_never_moves_a_gate_it_does_not_own() {
         rush: false,
     };
     let counts = shipped.counts(&game, 0);
+    let already_open = shipped.production_value(&game, 0, city, &cheap, &culture, &counts);
+    assert!(
+        already_open > 0.0,
+        "⭐ THE GATE ON MAIN IS THE PLAN, NOT THE CIVILIZATION. The same Roman \
+         seat refused every wonder under an Expansion plan and is offered one \
+         under a Culture plan, with no gene and no Egypt: `lane_opens`' \
+         civilization clause is not what decides, because `assess` moves any \
+         empire into the Culture lane on its own progress ({already_open})"
+    );
     assert_eq!(
         treated.production_value(&game, 0, city, &cheap, &culture, &counts),
-        shipped.production_value(&game, 0, city, &cheap, &culture, &counts),
+        already_open,
         "a lane that was already open must be priced identically"
     );
 
