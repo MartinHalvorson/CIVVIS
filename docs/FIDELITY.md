@@ -255,6 +255,108 @@ matching the same class's existing entries. Translating each individual's real
 ability would mean new engine keys per person; adding a person to keep the
 class alive does not.
 
+## The "only in Civ VI" column, and what is actually left in it
+
+The audit's divergence count answers "is every number CIVVIS carries right?".
+Its `Only in Civ VI` column answers a different question — "what does the
+shipped game have that CIVVIS does not model at all?" — and that column is the
+one that still has entries. This section is the standing triage of it for
+Units, Promotions, Projects and Policies, so the next agent inherits the
+worklist rather than re-deriving it from the install.
+
+⚠ **Three things in that column are not gaps at all**, and each cost real time
+to discover:
+
+1. **A row Gathering Storm deletes.** `Types` is the parent table of the whole
+   gameplay database; every content row's key column is declared
+   `REFERENCES Types(Type) ON DELETE CASCADE`. A pack that retires content
+   therefore ships a single `<Types><Delete Type="…"/>` and **no**
+   `<Policies><Delete>` beside it. The loader now applies that cascade, which
+   took five rows out of the column at once: `POLICY_MERITOCRACY` and
+   `POLICY_SACK` (retired by both expansions), and the three Mars projects
+   `PROJECT_LAUNCH_MARS_HABITATION`, `_HYDROPONICS` and `_REACTOR`, which
+   `Expansion2_Projects.xml` deletes when it replaces the Mars space race with
+   the Exoplanet Expedition. CIVVIS is right not to carry any of them. Four
+   Beliefs and Genghis Khan leave the column the same way.
+2. **A row CIVVIS spells differently.** A rename shows up as the *same content*
+   appearing in both "only in" columns at once, and the two rows then compare
+   against nothing at all. Read the two columns together before modelling
+   anything: that check is what found the Nau, Toa, Oromo Cavalry and Nihang.
+3. **A pseudo-row the game keeps for its own UI.** The nine `POLICY_GOV_*` rows
+   carry `RequiresGovernmentUnlock="True"` and a `LOC_GOVT_INHERENT_BONUS_*`
+   description. They are how the government screen renders each government's
+   inherent bonus as a card; they are not slottable policies, and CIVVIS models
+   those bonuses in `data/governments.json`. **Policy coverage is complete.**
+
+### Units
+
+Fifty-four rows, in five groups that need five different decisions.
+
+| group | rows | what it needs |
+|---|---:|---|
+| Great Person units | 9 | a decision, not content: CIVVIS models Great People as `data/great_people.json` entries with charges, not as map units, so `UNIT_GREAT_GENERAL` and its eight siblings have no `units.json` shape to take. Owned by the Great People roster, not by `units.json`. |
+| Barbarian-only units | 2 | a roster flag. `barbarian_horseman` (Combat 20, 3 Movement, cost 40) and `barbarian_horse_archer` (Combat 10, Ranged 15, Range 1, 3 Movement, cost 35) are the horse camps' raiders. `Game::barbarian_unit_pool` selects on `spec.buildable && spec.unique_to.is_none()`, so a unit no major can build is excluded from the pool that is supposed to contain it. Add a `barbarian_only` field to `UnitSpec` and admit it in both `barbarian_unit_pool` and `barbarian_naval_unit_pool`. ⚠ This changes what every camp spawns, so it moves every recorded barbarian screen. |
+| Alternate-leader uniques | 6 | leader-gated content. The Hetairoi (Alexander), Longship (Hardrada), Black Army (Matthias Corvinus), Janissary (Suleiman), Rough Rider (Teddy Roosevelt) and Redcoat (Victoria) hang off a `LeaderTraits` row, not a `CivilizationTraits` one. `unique_to` names a civilization, so these need a leader-scoped gate first. |
+| Civilization uniques, civ shipped | 36 | ordinary content work, and the largest reachable block. Each needs a `units.json` row with `unique_to` and `replaces`, its numbers from `Units`, and its ability expressed with a **live** effect key. ⚠ The ability is the whole risk: a unique unit added with correct stats and a silent ability is a build option that does nothing. Check the key against the ninety live promotion/unit effect keys before adding the row, and ship a test that the effect fires. |
+| Civilization uniques, civ absent | 1 | `babylonian_sabum_kibittum` and the Comandante General sit behind content CIVVIS does not model yet. |
+
+Of the 36 reachable uniques, the ones whose whole ability is already a live
+effect key are the place to start — the Samurai's `NO_REDUCTION_DAMAGE` is
+`no_wounded_penalty`, de Zeven Provincien's +7 against districts is
+`ranged_vs_district`, the Domrey's move-and-shoot is `attack_after_move`. The
+ones to leave alone are the abilities with no key at all: a home-continent
+bonus (Redcoat, Garde Impériale, Rough Rider), remaining-movement scaling
+(Carolean), and cheaper corps and armies (Impi).
+
+### Promotions
+
+Nine rows, and neither group should be added as it stands.
+
+- **Four Giant Death Robot promotions.** `PROMOTION_GDR_AA_DEFENSE` (+40
+  anti-air), `_SIEGE_LASER` (ignores the ranged-vs-district penalty, +30
+  strength), `_BONUS_MOVEMENT` (+3 Movement, jump 5) and `_ARMOR_UPGRADE` (+10
+  strength) are **granted by technologies**, not chosen: `Expansion2_Technologies`
+  attaches each one to a tech through a `GRANT_PROMOTION` modifier. CIVVIS
+  offers promotions through the XP tree only, and `giant_death_robot` carries
+  `earns_xp: false`, so all four would be unreachable the day they landed.
+  They need a `granted_by_tech` surface first, and the GDR's `promotion_class`
+  would have to move from `melee` to its own class.
+- **Five Nihang promotions.** These are already modelled, under CIVVIS' own
+  Punjabi names: `tegh` is `NIHANG_FLANKED_BONUS`, `trehsool_mukh` is
+  `_FAITH_FOR_VICTORIES`, `jangi_mojeh` is `_MOVEMENT_BONUS`, `sanjo` is
+  `_NO_WOUNDED_PENALTY` and `jangi_kara` is `_SUZERAIN_COMBAT_BONUS`. They are
+  deliberately **not** aliased: CIVVIS gives the class a seven-node tree with
+  two nodes of its own (`chakram`, `dumalla`) and tiers that do not match the
+  shipped five-node graph, so aliasing them would trade a coverage entry for
+  five divergences. Aliasing is for a rename, not for a redesign.
+
+### Projects
+
+Eight rows, all of them unique-district or unique-civilization projects.
+
+- `water_bread_and_circuses` is **already modelled**. CIVVIS represents the two
+  shipped rows — one for the Entertainment Complex, one for the Water Park — as
+  a single `bread_and_circuses` with `alternate_districts: ["water_park"]`. The
+  audit cannot see a two-rows-to-one-row merge, so it will keep reporting this
+  one; that is the audit's limit, not a gap.
+- `carnival` and `water_carnival` are the genuine gap of the eight, and the
+  cheapest: CIVVIS already has both the `street_carnival` and `copacabana`
+  districts, so only the project is missing. Each grants `AmenitiesWhileActive
+  = 1`, and no project effect key carries an amenity today — `ProjectSpec` has
+  `ongoing_yields`, `completion_gpp`, `full_power_while_active` and a small
+  `effects` map, none of which reaches the amenity balance. One new effect key
+  wired into the city amenity sum closes both rows.
+- `court_festival` and the three `lijia_*` projects carry
+  `UnlocksFromEffect="true"` — they become available through a civilization's
+  own modifier rather than a tech or civic gate, which is a project-availability
+  surface CIVVIS does not have.
+- `cothon_capital_move` needs the capital to be movable at all.
+
+### Policies
+
+Complete. All nine remaining rows are the `POLICY_GOV_*` pseudo-rows described
+above.
+
 ## Running the audit without an install
 
 `tools/civ6_fidelity.py --cache` reads the compiled gameplay database directly

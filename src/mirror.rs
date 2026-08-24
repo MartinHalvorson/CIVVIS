@@ -7843,6 +7843,31 @@ mod tests {
             civvis_unit_promotion_name("PROMOTION_SURF_ROCK"),
             "surf_band"
         );
+        assert_eq!(
+            civvis_unit_promotion_name("PROMOTION_SPY_ACE_DRIVER"),
+            "ace_driver"
+        );
+        assert_eq!(
+            civvis_unit_promotion_name("PROMOTION_SPY_GUERILLA_LEADER"),
+            "guerrilla_leader"
+        );
+        // Every espionage promotion the bridge writes out has to come back in
+        // under the name the ruleset actually holds, or an observed Spy loses
+        // its promotions to `unmapped`.
+        let rules = crate::rules::Rules::embedded();
+        for promotion in crate::game::Game::SPY_PROMOTIONS {
+            let host = if promotion == "guerrilla_leader" {
+                "PROMOTION_SPY_GUERILLA_LEADER".to_string()
+            } else {
+                format!("PROMOTION_SPY_{}", promotion.to_ascii_uppercase())
+            };
+            let name = civvis_unit_promotion_name(&host);
+            assert_eq!(name, promotion, "{host} does not round-trip");
+            assert!(
+                rules.promotions.contains_key(&name),
+                "{name} is not in the ruleset"
+            );
+        }
     }
 
     #[test]
@@ -15186,6 +15211,19 @@ fn civvis_unit_promotion_name(civ6: &str) -> String {
     let lower = bare.to_ascii_lowercase();
     if let Some(monk) = lower.strip_prefix("monk_") {
         return monk.to_string();
+    }
+    // The Spy's tree carries a SPY_ prefix on the host, the same way the
+    // Warrior Monk's carries MONK_. `civ6_unit_promotion_name` has written
+    // that prefix outbound since the espionage promotions were the seat's
+    // largest refusal category; without the matching strip inbound, every
+    // promotion on an observed Spy lands in `unmapped` instead.
+    if let Some(spy) = lower.strip_prefix("spy_") {
+        // Firaxis spells this one with a single `r`.
+        return if spy == "guerilla_leader" {
+            "guerrilla_leader".to_string()
+        } else {
+            spy.to_string()
+        };
     }
     match lower.as_str() {
         "super_carrier" => "supercarrier".to_string(),

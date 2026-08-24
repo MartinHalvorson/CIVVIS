@@ -624,3 +624,264 @@ fn espionage_pact_uses_its_stock_era_window_and_operation_effects() {
         |action| matches!(action, Action::SpyMission { mission, .. } if mission == "foment_unrest")
     ));
 }
+
+/// A Spy holding one promotion, ready in `city`, with no mission running.
+///
+/// `level` matches the number of promotions held, so `spy_needs_promotion` is
+/// false and `legal_spy_actions` offers missions rather than promotion cards.
+fn spy_with(game: &mut Game, owner: usize, city: u32, promotion: &str) -> u32 {
+    let id = game.next_id;
+    game.next_id += 1;
+    game.spies.insert(
+        id,
+        Spy {
+            id,
+            owner,
+            level: !promotion.is_empty() as i64,
+            promotions: if promotion.is_empty() {
+                BTreeSet::new()
+            } else {
+                [promotion.to_string()].into_iter().collect()
+            },
+            city: Some(city),
+            ready_turn: game.turn,
+            mission: None,
+            sources_city: None,
+            sources_until: 0,
+            captured_by: None,
+        },
+    );
+    id
+}
+
+fn counterspy_with(game: &mut Game, owner: usize, city: u32, target: Pos, promotion: &str) -> u32 {
+    let id = spy_with(game, owner, city, promotion);
+    game.spies.get_mut(&id).unwrap().mission = Some(SpyMission {
+        kind: "counterspy".to_string(),
+        city,
+        target,
+        started: game.turn,
+        ends: game.turn + 16,
+    });
+    id
+}
+
+/// The espionage promotion roster is the shipped one, and it is data.
+///
+/// ⚠ `Game::SPY_PROMOTIONS` used to be the roster as well as the live bridge's
+/// spelling table, so a promotion added to `data/promotions.json` was never
+/// offered to anybody — the shape that has already made added content
+/// unreachable twice in this repository. The offer now reads the ruleset; this
+/// pins the constant to it so the bridge cannot drift the other way.
+#[test]
+fn espionage_promotions_are_the_shipped_roster() {
+    let game = Game::new_full(2, 24, 16, 774_270, 250, 0, false);
+    let roster: Vec<&str> = game.spy_promotion_roster().collect();
+    assert_eq!(
+        roster,
+        Game::SPY_PROMOTIONS.to_vec(),
+        "the ruleset's espionage class and the live-bridge constant disagree"
+    );
+    // Every one of them is reachable: a fresh Spy with enough levels and the
+    // free-choice modifier is offered the whole class, not a hardcoded subset.
+    let (mut game, home, _, _) = game_with_spy_cities(774_271);
+    let spy = spy_with(&mut game, 0, home, "");
+    game.spies.get_mut(&spy).unwrap().level = 1;
+    game.players[0]
+        .policies
+        .insert(crate::name!("gothic_horror"));
+    let offered: BTreeSet<String> = game
+        .available_spy_promotions(spy)
+        .into_iter()
+        .map(|name| name.to_string())
+        .collect();
+    assert_eq!(offered.len(), 3, "a levelled Spy is offered three cards");
+    assert!(offered.iter().all(|name| roster.contains(&name.as_str())));
+}
+
+/// Every espionage promotion changes something. A promotion that is only a
+/// name spends one of a Spy's three picks and does nothing, which is worse for
+/// the agent than not shipping it at all.
+#[test]
+fn every_espionage_promotion_changes_an_outcome() {
+    let (mut game, home, target, district) = game_with_spy_cities(774_272);
+    let mut fired: BTreeSet<&str> = BTreeSet::new();
+
+    // The ten operation promotions each add exactly the two levels Civ VI's
+    // ADJUST_SPY_OPERATION_CHANCE gives them, and only to their own operation.
+    let operations = [
+        ("con_artist", "siphon_funds"),
+        ("technologist", "steal_tech_boost"),
+        ("cat_burglar", "great_work_heist"),
+        ("demolitions", "sabotage_production"),
+        ("guerrilla_leader", "recruit_partisans"),
+        ("covert_action", "foment_unrest"),
+        ("license_to_kill", "neutralize_governor"),
+        ("rocket_scientist", "disrupt_rocketry"),
+        ("satchel_charges", "breach_dam"),
+        ("smear_campaign", "fabricate_scandal"),
+    ];
+    let plain = spy_with(&mut game, 0, target, "");
+    for (promotion, operation) in operations {
+        let spy = spy_with(&mut game, 0, target, promotion);
+        game.spies.get_mut(&spy).unwrap().level = game.spies[&plain].level;
+        let mission = SpyMission {
+            kind: operation.to_string(),
+            city: target,
+            target: district,
+            started: game.turn,
+            ends: game.turn + 8,
+        };
+        assert_eq!(
+            game.spy_effective_level(spy, &mission),
+            game.spy_effective_level(plain, &mission) + 2,
+            "{promotion} does not sharpen {operation}"
+        );
+        let other = SpyMission {
+            kind: "listening_post".to_string(),
+            ..mission.clone()
+        };
+        assert_eq!(
+            game.spy_effective_level(spy, &other),
+            game.spy_effective_level(plain, &other),
+            "{promotion} leaks into an operation it does not name"
+        );
+        fired.insert(promotion);
+    }
+
+    // Ace Driver: four levels' worth of escape odds after detection.
+    let ace = spy_with(&mut game, 0, target, "ace_driver");
+    game.spies.get_mut(&ace).unwrap().level = game.spies[&plain].level;
+    assert!(
+        game.spy_escape_chance(&game.spies[&ace]) > game.spy_escape_chance(&game.spies[&plain]),
+        "ace_driver does not improve the escape"
+    );
+    fired.insert("ace_driver");
+
+    // Disguise: one turn to reach a foreign city however far it is.
+    let far = spy_with(&mut game, 0, home, "");
+    let hidden = spy_with(&mut game, 0, home, "disguise");
+    for spy in [far, hidden] {
+        game.apply(0, &Action::AssignSpy { spy, city: target })
+            .unwrap();
+    }
+    assert!(
+        game.spies[&hidden].ready_turn <= game.spies[&far].ready_turn,
+        "disguise does not shorten the journey"
+    );
+    fired.insert("disguise");
+
+    // Linguist: a quarter off the clock of the operation it runs.
+    let slow = spy_with(&mut game, 0, target, "");
+    let quick = spy_with(&mut game, 0, target, "linguist");
+    // One operation of a kind runs per city at a time, so these go in turn.
+    let mut clock = |game: &mut Game, spy: u32| {
+        game.apply(
+            0,
+            &Action::SpyMission {
+                spy,
+                mission: "siphon_funds".to_string(),
+                target: district,
+            },
+        )
+        .unwrap();
+        let mission = game.spies[&spy].mission.clone().unwrap();
+        game.spies.get_mut(&spy).unwrap().mission = None;
+        mission.ends - mission.started
+    };
+    assert!(
+        clock(&mut game, quick) < clock(&mut game, slow),
+        "linguist does not shorten the operation"
+    );
+    fired.insert("linguist");
+
+    // Quartermaster and Polygraph: one Counterspy moves every other agent.
+    let mission = SpyMission {
+        kind: "siphon_funds".to_string(),
+        city: target,
+        target: district,
+        started: game.turn,
+        ends: game.turn + 8,
+    };
+    // Each is measured as the delta a Counterspy already on station causes by
+    // gaining the promotion, so nothing else about that agent moves with it.
+    let home_center = game.cities[&home].pos;
+    let quartermaster = counterspy_with(&mut game, 0, home, home_center, "");
+    let unboosted = game.spy_effective_level(plain, &mission);
+    game.spies
+        .get_mut(&quartermaster)
+        .unwrap()
+        .promotions
+        .insert("quartermaster".to_string());
+    assert_eq!(
+        game.spy_effective_level(plain, &mission),
+        unboosted + 1,
+        "quartermaster does not lift the other agents"
+    );
+    game.spies.remove(&quartermaster);
+    fired.insert("quartermaster");
+
+    let target_center = game.cities[&target].pos;
+    let polygraph = counterspy_with(&mut game, 1, target, target_center, "");
+    let unwatched = game.spy_effective_level(plain, &mission);
+    game.spies
+        .get_mut(&polygraph)
+        .unwrap()
+        .promotions
+        .insert("polygraph".to_string());
+    assert_eq!(
+        game.spy_effective_level(plain, &mission),
+        unwatched - 1,
+        "polygraph does not blunt the intruder"
+    );
+    game.spies.remove(&polygraph);
+    fired.insert("polygraph");
+
+    // Seduction: two more levels off an intruder it is actually defending.
+    let guard = counterspy_with(&mut game, 1, target, district, "");
+    let guarded = game.spy_effective_level(plain, &mission);
+    game.spies
+        .get_mut(&guard)
+        .unwrap()
+        .promotions
+        .insert("seduction".to_string());
+    assert_eq!(
+        game.spy_effective_level(plain, &mission),
+        guarded - 2,
+        "seduction does not strengthen the defence"
+    );
+    game.spies.remove(&guard);
+    fired.insert("seduction");
+
+    // Surveillance: a Counterspy posted anywhere in the city defends all of it.
+    // Without it a Counterspy covers only its own tile and the ring around it,
+    // so the post has to be two tiles away for the promotion to be the change.
+    let elsewhere = game.cities[&target]
+        .owned_tiles
+        .iter()
+        .copied()
+        .find(|tile| game.wdist(*tile, district) >= 2)
+        .expect("the target city owns a tile away from the district");
+    let narrow = counterspy_with(&mut game, 1, target, elsewhere, "");
+    assert!(
+        game.defending_counterspy(1, target, district).is_none(),
+        "the narrow Counterspy already covers the district"
+    );
+    let undefended = game.spy_effective_level(plain, &mission);
+    game.spies
+        .get_mut(&narrow)
+        .unwrap()
+        .promotions
+        .insert("surveillance".to_string());
+    assert!(
+        game.spy_effective_level(plain, &mission) < undefended,
+        "surveillance does not widen the watch"
+    );
+    fired.insert("surveillance");
+
+    assert_eq!(
+        fired,
+        Game::SPY_PROMOTIONS.into_iter().collect::<BTreeSet<_>>(),
+        "an espionage promotion ships without a proven effect"
+    );
+}
