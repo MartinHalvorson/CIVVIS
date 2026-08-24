@@ -258,6 +258,64 @@ def orders_totals(events_path: Path) -> tuple[int, int] | None:
     return (seen, applied) if counted else None
 
 
+DEAL_KINDS = ("deal_session", "deal_closed", "deal_declined", "deal_expired",
+              "peace_response", "deal_sessions_stood_down")
+
+
+def deal_totals(events_path: Path) -> dict | None:
+    """What the deal lane did this run, summed from its own ledger events.
+
+    Over 42 runs the lane sent 636 asks and 253 peace proposals and no
+    answer ever came back — and nothing in the summary said so; the zero
+    lived in `events.jsonl` until somebody wrote a throwaway script over it
+    (#2415, #2421). Since #2421 every deal is asked inside a `MAKE_DEAL`
+    session and every step writes a `deal_session` event; this puts the
+    count on the ledger, so "does Civilization VI answer inside the
+    session" is a column on the very next run rather than an excavation.
+    `None` when the run wrote no deal event at all; tolerant of a truncated
+    tail line.
+    """
+    if not events_path.is_file():
+        return None
+    totals = {"sessions_opened": 0, "sessions_answered": 0,
+              "sessions_unanswered": 0, "stood_down": False,
+              "closed": 0, "declined": 0, "expired": 0,
+              "peace_accepted": 0, "peace_refused": 0}
+    seen = False
+    with events_path.open() as handle:
+        for line in handle:
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            kind = event.get("kind")
+            if kind not in DEAL_KINDS:
+                continue
+            seen = True
+            if kind == "deal_session":
+                phase = event.get("phase")
+                if phase == "opening":
+                    totals["sessions_opened"] += 1
+                elif phase == "answered":
+                    totals["sessions_answered"] += 1
+                elif phase == "unanswered":
+                    totals["sessions_unanswered"] += 1
+            elif kind == "deal_closed":
+                totals["closed"] += 1
+            elif kind == "deal_declined":
+                totals["declined"] += 1
+            elif kind == "deal_expired":
+                totals["expired"] += 1
+            elif kind == "peace_response":
+                if event.get("accepted") is True:
+                    totals["peace_accepted"] += 1
+                else:
+                    totals["peace_refused"] += 1
+            elif kind == "deal_sessions_stood_down":
+                totals["stood_down"] = True
+    return totals if seen else None
+
+
 def final_standing(events_path: Path) -> tuple[int, int] | None:
     """(our score, best rival score) from the last agent turn that saw both.
 
