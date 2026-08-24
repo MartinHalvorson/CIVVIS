@@ -1000,6 +1000,15 @@ direct arm — and 99 of the 101 priced genes now have a deployment-shape
 reading. So the question stopped being "is the instrument right" and became
 "what would the switch actually move".
 
+⭐ **First, the thing the switch is not.** The columns rule reads the *newest*
+screen that priced each gene, so the moment the standard sources landed the
+deployment shape became the deciding instrument — **99 of 101 priced genes, and
+33 of the 33 that ship ON, are decided by a `standard`-shape screen today.**
+The genome is already chosen by the shape the game ships in. `AUTHORITY` and
+`POSTERIOR_SHAPES` choose which *estimator summarises* those screens, not which
+*shape decides*; the deployment-shape question this section used to defer has
+already been answered by the sources, quietly, through the win columns.
+
 **It moves one gene, and the deployment shape says that gene is nothing.**
 Rebuilding the ledger under all six combinations of the two dials (#2385):
 
