@@ -429,6 +429,14 @@ pub struct PlanReport {
     /// war-from-plan channel this exports a decision the planner took, not a
     /// preference upgraded into one.
     pub peace_offers: Vec<usize>,
+    /// The subset of `peace_offers` the planner is ROUTED on — outmatched
+    /// on the front (`my_power < theirs × 0.62`) or the one-war rout — and
+    /// so the only offers a live tribute may ride on. Every other offer
+    /// (a second front, fatigue, a religious lane, an envoy reclaim) is
+    /// white peace: 2026-08-24 the live seat had paid 142 tributes at a
+    /// median 116 Gold, three quarters of the treasury on every retry
+    /// regardless of why the offer was made.
+    pub peace_routed: Vec<usize>,
     pub forces: Vec<ForceReport>,
     /// The one authority spanning target selection, research, production,
     /// treasury, staging, declaration, and exploitation.
@@ -7831,6 +7839,11 @@ impl BasicAi {
         pid: usize,
         deal: crate::game::QuickDeal,
     ) -> bool {
+        // Never a gift, never a demand: the engine allows the first (as
+        // Civilization VI does) and this controller does not make one.
+        if deal.offer.is_empty() || deal.request.is_empty() {
+            return false;
+        }
         if let Some(sharp) = self.deal_at_the_ceiling(g, pid, &deal) {
             let kind = sharp.item.as_str();
             let direction = sharp.direction.as_str();

@@ -2307,6 +2307,20 @@ impl AdvancedAi {
     pub fn disable_zoc_screen(&mut self) {
         self.zoc_screen = false;
     }
+    /// From the midpoint of the game an adaptive seat commits to the victory
+    /// lane it leads the field in and holds that plan, in place of the
+    /// per-turn best-progress pick. See
+    /// [`AdvancedAi::maintain_lane_commit`]. Opt-in gene
+    /// `lane-commit`. (Filed here rather than under a marker: the
+    /// append-point check reads a line's first identifier.)
+    pub fn enable_lane_commit(&mut self) {
+        self.lane_commit = true;
+    }
+
+    /// The twin of `enable_lane_commit`.
+    pub fn disable_lane_commit(&mut self) {
+        self.lane_commit = false;
+    }
 
     /// A seen rival Settler near our cities is screened: up to four of our
     /// nearby land units, recon first, take the stands that add the most

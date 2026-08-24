@@ -1073,6 +1073,20 @@ pub const GENES: &[Gene] = &[
     // The envoy scorer prices where a city-state is and whose it is: a
     // suzerain's land heals as home and its client fights the suzerain's wars.
     Gene { tag: "flip-nearby-city-states", field: "flip_nearby_city_states", kind: Kind::OptIn, enable: AdvancedAi::enable_flip_nearby_city_states, disable: AdvancedAi::disable_flip_nearby_city_states },
+    // Operator goal 2026-08-24: "steering us towards our best victory
+    // condition harder. From the midpoint of the game, we should have the
+    // victory in mind and be optimizing towards winning that." An adaptive
+    // seat is on a victory lane for 52% of its turns and the lane never
+    // reaches the deciders keyed on `victory_target` (`docs/VICTORY_GENES.md`).
+    // From half the turn cap the seat commits to the lane it leads the field
+    // in — every lane read for the seat and for every living major on one
+    // table, never Domination — reviews it every ten standard turns behind a
+    // twenty-point switch margin, in place of `victory_focus`'s per-turn pick
+    // and below every posture and the expansion arm; only the science keys
+    // read it, nothing else an assigned lane carries (four probes on the same
+    // maps priced the rest: docs/VICTORY_GENES.md §10). Appended at the END so a running screen keeps its positional
+    // genome. See `AdvancedAi::lane_commit` / `advanced/lane_commit.rs`.
+    Gene { tag: "lane-commit", field: "lane_commit", kind: Kind::OptIn, enable: AdvancedAi::enable_lane_commit, disable: AdvancedAi::disable_lane_commit },
     Gene { tag: "settler-screen", field: "settler_screen", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_screen, disable: AdvancedAi::disable_settler_screen },
     Gene { tag: "pass-picket", field: "pass_picket", kind: Kind::OptIn, enable: AdvancedAi::enable_pass_picket, disable: AdvancedAi::disable_pass_picket },
 ];
