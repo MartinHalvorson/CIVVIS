@@ -491,16 +491,17 @@ fn fog_honest_2_is_a_version_of_the_mode_and_ships_off() {
     ai.enable_fog_honest_2();
     assert!(ai.fog_honest_2);
     assert!(
-        ai.fog_honest,
-        "version 2 IS the fog-honest major, so it turns the mode on"
+        !ai.fog_honest,
+        "one version of a family plays: version 2's enable turns version 1 off"
     );
     assert!(ai.belief_pressure && ai.blind_objective_strength && ai.blind_objective_units);
+    let mut both = AdvancedAi::fog_honest();
+    both.enable_fog_honest_2();
+    assert!(both.fog_honest_2 && !both.fog_honest);
+    both.enable_fog_honest();
+    assert!(both.fog_honest && !both.fog_honest_2, "and back again");
     ai.disable_fog_honest_2();
-    assert!(!ai.fog_honest_2);
-    assert!(
-        ai.fog_honest,
-        "the twin leaves version 1 where it found it, as disable_fog_honest does"
-    );
+    assert!(!ai.fog_honest_2 && !ai.fog_honest, "neither version plays");
 }
 
 #[test]

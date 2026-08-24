@@ -1580,8 +1580,9 @@ pub struct AdvancedAi {
     /// [`FOG_REPLAN_LIMIT`] times a turn. What the boundary actually does is
     /// in [`FogPlanCensus`]; the measurement is in `docs/AI_GAPS.md`.
     ///
-    /// Turning this on turns [`Self::fog_honest`] on: it is a version of that
-    /// mode, not an independent behaviour. Native, off-by-default gene.
+    /// One version of a family plays: turning this on turns
+    /// [`Self::fog_honest`] OFF, and `take_turn` admits either flag into the
+    /// fog-honest turn. Native, off-by-default gene.
     pub fog_honest_2: bool,
     /// Adapt a live Firaxis Trader's zero walking movement to its distinct
     /// route-start action.  This stays off for every native game and is enabled
@@ -31723,7 +31724,7 @@ impl Ai for AdvancedAi {
         // Stamp the context once, for every layer. Nothing below repeats the
         // turn number or the acting civilization.
         self.journal().begin_turn(g.turn, pid);
-        if self.fog_honest {
+        if self.fog_honest || self.fog_honest_2 {
             self.take_turn_fog_honest(g, pid);
             return;
         }
