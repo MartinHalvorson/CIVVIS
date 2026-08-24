@@ -1,6 +1,5 @@
-"""The gene ledger: the win-column default rule, the verdict rules, source
-precedence, and the two generated files staying together with the recorded
-sources."""
+"""The operator-pinned gene ledger, its screen evidence, source precedence,
+and the generated files staying together with the recorded sources."""
 from __future__ import annotations
 
 import argparse
@@ -26,39 +25,28 @@ ranking = genes
 
 PLAYERS = gene_ledger.SCREEN["players"]
 
-#: ★★★★ THE DEPLOYMENT GENOME, FROZEN 2026-08-24 (38,160-seat standard cutoff).
-#: Every gene `docs/gene_ledger.json` defaults on. This is a tripwire, not a
-#: rule: nothing else in the repository pins what the agent actually plays, and
-#: a regeneration that quietly moved a default would otherwise be invisible.
-#: Moving one is legitimate and routine -- a new screen, a new operator
-#: directive -- and the way to do it is to update this tuple in the same change
-#: and name the gene and the reason in the pull request.
-#:
-#: ⭐ IT MOVED, AND THIS IS WHY. The operator explicitly promoted the clean,
-#: completed 6,360-game / 38,160-seat standard cutoff as an authoritative
-#: source. Its 95.4%-complete target is recorded in the ledger; the source is
-#: otherwise a complete collection of whole games. Under the unchanged columns
-#: calculation, eight genes entered -- competition-victory-points,
-#: early-contact-window, engine-faith-price, lane-culture-spending,
-#: maintenance-aware-deck, price-the-suzerainty,
-#: religious-units-heal-first, theology-for-founders -- and five left:
-#: army-target-weighs-enemy, barbarian-ranged-answer, come-ashore,
-#: whole-turn-backtrack-guard, wonder-ring-settle-value. The three source-new
-#: entrants were previously unmeasured, hence default-off. This is a
-#: deployment-default update, not a game rule change.
+#: ★★★★ THE OPERATOR-PINNED DEPLOYMENT GENOME, 2026-08-24.
+#: This is the exact list the agent plays. It retains the 36 selections that
+#: were already deployed, then adds the seven explicit operator promotions:
+#: `unit-cost-efficiency`, `unit-objective-memory`, `camp-party`,
+#: `slot-kind-tiebreak`, `promote-when-wounded`, `religion-sues-peace`, and
+#: `lane-great-people`. Screen results remain evidence; they cannot move this
+#: tuple automatically. Changing it requires an intentional edit and PR note.
 DEPLOYED_GENOME_20260824 = (
     "air-surge", "amenity-district-path", "apostle-promotion-by-role",
     "barbarian-bargain", "barbarian-scouts-are-scouts", "bounded-recovery",
-    "buildings-before-projects", "competition-victory-points",
+    "buildings-before-projects", "camp-party", "competition-victory-points",
     "culture-building-debt", "early-contact-window", "engine-faith-price",
     "escort-unstick", "founder-temple", "great-person-housing",
     "holy-lane-parity", "idle-faith-patronage", "inquisition-on-threat",
-    "lane-culture-spending", "loyalty-rate-alarm", "maintenance-aware-deck",
+    "lane-culture-spending", "lane-great-people", "loyalty-rate-alarm", "maintenance-aware-deck",
     "opportunistic-war", "peacetime-deterrence", "price-the-suzerainty",
-    "raid-pillage-prizes", "recon-replacement", "recorded-tactical-step",
-    "relief-targets-the-siege", "religious-units-heal-first", "score-horizon",
-    "settle-sooner", "settler-threat-detour", "strike-opening",
-    "theology-for-founders", "war-economy", "war-reinforcement",
+    "promote-when-wounded", "raid-pillage-prizes", "recon-replacement",
+    "recorded-tactical-step", "relief-targets-the-siege", "religion-sues-peace",
+    "religious-units-heal-first", "score-horizon", "settle-sooner",
+    "settler-threat-detour", "slot-kind-tiebreak", "strike-opening",
+    "theology-for-founders", "unit-cost-efficiency", "unit-objective-memory",
+    "war-economy", "war-reinforcement",
     "wide-map-capacity",
 )
 
@@ -147,11 +135,10 @@ class Merging(unittest.TestCase):
              for key in ("helps", "hurts", "unresolved", "default_on")},
             {"helps": 2, "hurts": 2, "unresolved": 0, "default_on": 0},
         )
-        # Every authority is priced beside the one in force, so the delta is
-        # in the ledger and not only in the ranking.
-        for candidate in gene_ledger.AUTHORITIES:
-            self.assertIn(f"default_on_under_{candidate}", ledger["counts"])
-            self.assertIn(f"moved_by_{candidate}", ledger["counts"])
+        self.assertEqual(ledger["rules"]["deployment_policy"], "operator-pinned")
+        self.assertEqual(ledger["rules"]["deployment_genome"],
+                         list(gene_ledger.normalize_deployment_genome(
+                             gene_ledger.OPERATOR_DEFAULT_ON)))
 
     def test_a_later_source_overrides_an_earlier_one_per_gene(self):
         ledger = self.build([
@@ -313,94 +300,42 @@ class OneShape(unittest.TestCase):
             self.assertIn(f"header.{field}", rs, field)
 
 
-class TheDefaultRule(unittest.TestCase):
-    """Operator directive 2026-08-22: the default is read off the ranking's two
-    win columns — both positive, or an average above +15 with neither below
-    -10 — vetoed by a negative pooled on-off difference, and nothing else, the
-    verdict included. The fixture's screens are equal-sized and its off arm is
-    exactly chance, so a gene's pooled difference is the mean of its columns in
-    hundredths of a point: every case here clears the veto unless it is named."""
+class TheOperatorPinnedDefaults(unittest.TestCase):
+    """Screen statistics remain recorded, but selection comes from an explicit
+    list rather than a threshold, posterior, or pooled-difference rule."""
 
-    def on(self, *wins: int) -> bool:
-        """Build a gene screened once per given win column, oldest first."""
+    def build(self, wins: list[int], deployment_genome=()):
         with tempfile.TemporaryDirectory() as tmp:
             sources = []
-            for i, w in enumerate(wins):
+            for i, win in enumerate(wins):
                 path = Path(tmp) / f"s{i}.json"
-                path.write_text(json.dumps(analysis([{"tag": "g", "wins": w}])))
+                path.write_text(json.dumps(analysis([{"tag": "g", "wins": win}])))
                 sources.append(path)
-            ledger = gene_ledger.build_ledger(sources, filter_known=False)
-        gene = ledger["genes"][0]
-        self.assertEqual(gene["wins_last_10k"], wins[-1] if wins else None)
-        self.assertEqual(gene["wins_prior_10k"], wins[-2] if len(wins) > 1 else None)
-        return gene["default_on"]
+            return gene_ledger.build_ledger(
+                sources, filter_known=False, deployment_genome=deployment_genome)
 
-    def test_two_positive_columns_turn_a_gene_on(self):
-        self.assertTrue(self.on(29, 25))
-        self.assertTrue(self.on(1, 1))
+    def test_measurements_do_not_automatically_change_a_pinned_gene(self):
+        on = self.build([-500, 20, 21], deployment_genome=("g",))["genes"][0]
+        off = self.build([500, 200, 100], deployment_genome=())["genes"][0]
+        self.assertTrue(on["default_on"])
+        self.assertFalse(off["default_on"])
+        self.assertEqual(on["wins_last_10k"], 21)
+        self.assertEqual(off["wins_last_10k"], 100)
 
-    def test_a_zero_column_is_not_a_positive_one(self):
-        self.assertFalse(self.on(1, 0))
-        self.assertTrue(self.on(0, 39), "an average of 19.5 carries it instead")
-
-    def test_a_strong_average_carries_one_negative_column_down_to_the_floor(self):
-        self.assertTrue(self.on(-10, 48), "average 19, floor exactly met")
-        self.assertFalse(self.on(-11, 50), "a column below -10 is off however good the average")
-        self.assertFalse(self.on(0, 30), "an average of exactly 15 does not clear +15")
-
-    def test_one_bad_reading_sinks_a_gene_the_average_does_not_carry(self):
-        self.assertFalse(self.on(-26, 39), "housing-research: average 6.5")
-        self.assertFalse(self.on(-192, 8), "war-economy: a helps verdict does not save it")
-
-    def test_one_reading_must_clear_twenty(self):
-        self.assertTrue(self.on(21), "a single reading above +20 is provisionally on")
-        self.assertFalse(self.on(20), "exactly +20 does not clear the strict bar")
-        self.assertFalse(self.on(-21))
-        self.assertTrue(gene_ledger.default_from_win_columns(None, 21))
-        self.assertFalse(gene_ledger.default_from_win_columns(None, 20))
-        # A gene no screen has measured has no row at all; the rule still
-        # answers for it, and `ledger_default_on` gives the same `false`.
-        self.assertFalse(gene_ledger.default_from_win_columns(None, None))
-
-    def test_only_the_last_two_readings_supply_the_columns(self):
-        self.assertTrue(
-            gene_ledger.default_from_win_columns(21, 20),
-            "the column clause never sees a third screen",
-        )
-        self.assertFalse(gene_ledger.default_from_win_columns(-500, 21))
-        self.assertFalse(self.on(20, 21, -500))
-
-    def test_an_old_bad_screen_is_a_veto_through_the_difference(self):
-        """The one clause that lets a screen older than the last two speak.
-
-        Until 2026-08-22 this case shipped: the columns read the newest two
-        readings and an old collapse was history. `war-economy` is the live
-        example — +38/+8 over a -3.84 pp screen it has not made back."""
-        self.assertFalse(self.on(-500, 20, 21), "the record is -1.53 pp")
-        self.assertTrue(self.on(-40, 20, 21), "a record of +0.003 pp is not negative")
-
-    def test_a_legacy_shape_still_supplies_a_column(self):
-        """The Pangaea history is what the deployment genome stands on: it is
-        kept, and the standard screen overwrites it gene by gene."""
+    def test_the_pinned_list_rejects_unknown_tags_and_multiple_versions(self):
+        with self.assertRaises(SystemExit):
+            self.build([1], deployment_genome=("not-a-screenable-gene",))
         with tempfile.TemporaryDirectory() as tmp:
-            old = Path(tmp) / "legacy.json"
-            old.write_text(json.dumps(
-                analysis([{"tag": "g", "wins": 30}], map="pangaea", width=60, height=38)))
-            new = Path(tmp) / "screen.json"
-            new.write_text(json.dumps(analysis([{"tag": "g", "wins": 25}])))
-            ledger = gene_ledger.build_ledger([old, new], filter_known=False)
-        gene = ledger["genes"][0]
-        self.assertEqual((gene["wins_prior_10k"], gene["wins_last_10k"]), (30, 25))
-        self.assertTrue(gene["default_on"], "two positive columns, whatever shape they came from")
+            path = Path(tmp) / "versions.json"
+            path.write_text(json.dumps(analysis([{"tag": "g"}, {"tag": "g-2"}])))
+            with self.assertRaises(SystemExit):
+                gene_ledger.build_ledger(
+                    [path], filter_known=False, deployment_genome=("g", "g-2"))
 
 
-class TheDifferenceVeto(unittest.TestCase):
-    """Operator directive 2026-08-22: a gene whose pooled on-off difference is
-    negative defaults off whatever its win columns say.
-
-    The figure is `HEURISTIC_GENE_RANKING.md`'s *Diff* — the pooled on rate
-    minus the pooled off rate over EVERY screen that priced the gene, each
-    weighted by its games, in percentage points."""
+class TheDifferenceEvidence(unittest.TestCase):
+    """The ranking still reports its pooled on-off difference, but it no
+    longer acts as a deployment veto."""
 
     def gene(self, screens: list[tuple[float, float, int]]) -> dict:
         """One gene measured across `(win_on, win_off, pairs)` screens."""
@@ -420,55 +355,11 @@ class TheDifferenceVeto(unittest.TestCase):
         self.assertAlmostEqual(gene["win_diff_pp"], -7.25)
         self.assertFalse(gene["default_on"])
 
-    def test_the_veto_beats_every_column_clause(self):
-        for columns in ((78, None), (38, 8), (48, -10)):
-            self.assertTrue(gene_ledger.default_from_win_columns(*columns), columns)
-            self.assertFalse(
-                gene_ledger.default_from_columns(*columns, -0.01),
-                f"{columns} must not survive a negative record",
-            )
-
-    def test_the_veto_is_one_way(self):
-        """A positive record promotes nothing: the columns still have to clear
-        their bars, so this cannot turn a gene on behind the operator's rule."""
-        self.assertFalse(gene_ledger.default_from_columns(-5, -11, 1.20))
-        self.assertFalse(gene_ledger.default_from_columns(-26, 39, 0.65))
-
-    def test_a_record_of_exactly_zero_is_not_negative(self):
-        gene = self.gene([(0.20, 0.19, 1000), (0.18, 0.19, 1000)])
-        self.assertEqual(gene["win_diff_pp"], 0.0)
-        self.assertTrue(gene_ledger.default_from_columns(38, 8, gene["win_diff_pp"]))
-
-    def test_the_decision_is_taken_on_the_figure_the_ledger_publishes(self):
-        """Rounded first, then decided — so the generated Rust table re-derives
-        the same answer from the same number and the two cannot drift at a
-        boundary."""
-        tiny = 1.0 / PLAYERS - 1e-12
-        gene = self.gene([(tiny, 1.0 / PLAYERS, 1000)])
-        self.assertEqual(gene["win_diff_pp"], 0.0)
-        self.assertEqual(
-            gene["default_on"],
-            gene_ledger.default_from_columns(
-                gene["wins_last_10k"], gene["wins_prior_10k"], gene["win_diff_pp"]
-            ),
-        )
-
-    def test_an_unmeasured_gene_has_no_record_to_read(self):
-        self.assertFalse(gene_ledger.default_from_columns(None, None, None))
-        self.assertTrue(gene_ledger.default_from_columns(21, None, None))
-
     def test_the_ledger_records_the_difference_beside_the_columns(self):
         ledger = json.loads(gene_ledger.LEDGER_JSON.read_text())
         self.assertIn("win_diff", ledger["rules"])
         for gene in ledger["genes"]:
             self.assertIsInstance(gene["win_diff_pp"], float, gene["tag"])
-            self.assertEqual(
-                gene["default_on"],
-                gene_ledger.default_from_columns(
-                    gene["wins_last_10k"], gene["wins_prior_10k"], gene["win_diff_pp"]
-                ),
-                gene["tag"],
-            )
 
 
 class ThePrecisionWeightedPosterior(unittest.TestCase):
@@ -645,122 +536,41 @@ class ThePrecisionWeightedPosterior(unittest.TestCase):
         self.assertNotIn("s2-step-and-reassess", name)
 
 
-class TheDeploymentAuthority(unittest.TestCase):
-    """⭐ THE SWITCH. `AUTHORITY` decides which rule writes `default_on`, the
-    ledger records it, and the Rust mirror re-derives under the recorded one.
-    This PR publishes the posterior and does NOT throw the switch."""
+class TheOperatorPinnedDeploymentGenome(unittest.TestCase):
+    """The deployment selection is a deliberate list, not an alternate
+    estimator or threshold configuration."""
 
-    def test_the_shipped_genome_matches_the_approved_standard_cutoff(self):
-        """★★★★ THE GENOME THIS PR MOVES.
-
-        These 36 tags are `docs/gene_ledger.json`'s `default_on` set after the
-        operator promoted the 38,160-seat standard cutoff. A change here is a
-        change to what the agent plays in every verification game, so it must
-        name its new evidence and reason in the pull request."""
+    def test_the_shipped_genome_is_the_recorded_operator_selection(self):
         ledger = json.loads(gene_ledger.LEDGER_JSON.read_text())
-        self.assertEqual(gene_ledger.authority_of(ledger), "columns")
-        self.assertEqual(gene_ledger.AUTHORITY, "columns")
+        self.assertEqual(ledger["rules"]["deployment_policy"], "operator-pinned")
+        self.assertEqual(tuple(ledger["rules"]["deployment_genome"]),
+                         DEPLOYED_GENOME_20260824)
         self.assertEqual(
             tuple(sorted(g["tag"] for g in ledger["genes"] if g["default_on"])),
             DEPLOYED_GENOME_20260824,
         )
-        self.assertEqual(ledger["counts"]["default_on"], len(DEPLOYED_GENOME_20260824))
-        # And every one of them is the threshold rule's own call, so the
-        # posterior beside it has touched nothing.
-        for gene in ledger["genes"]:
-            self.assertEqual(
-                gene["default_on"],
-                gene_ledger.default_from_columns(
-                    gene["wins_last_10k"], gene["wins_prior_10k"], gene["win_diff_pp"]),
-                gene["tag"])
+        self.assertEqual(ledger["counts"]["default_on"], 43)
+        self.assertEqual(tuple(ledger["rules"]["operator_promotions"]),
+                         gene_ledger.OPERATOR_PROMOTIONS_20260824)
 
-    def test_the_ledger_records_a_posterior_for_every_priced_gene(self):
+    def test_the_ledger_records_evidence_without_redeciding_the_list(self):
         ledger = json.loads(gene_ledger.LEDGER_JSON.read_text())
         self.assertIn("posterior", ledger["rules"])
-        self.assertIn("authority", ledger["rules"])
+        self.assertNotIn("authority", ledger["rules"])
+        selected = set(ledger["rules"]["deployment_genome"])
         for gene in ledger["genes"]:
             self.assertIsInstance(gene["posterior_pp"], float, gene["tag"])
             self.assertIsInstance(gene["posterior_se_pp"], float, gene["tag"])
             self.assertGreater(gene["posterior_se_pp"], 0.0, gene["tag"])
-            self.assertEqual(
-                gene["default_on"],
-                gene_ledger.deployment_default_on(
-                    "columns", gene["wins_last_10k"], gene["wins_prior_10k"],
-                    gene["win_diff_pp"], gene["posterior_pp"],
-                    gene["posterior_se_pp"]),
-                gene["tag"])
+            self.assertEqual(gene["default_on"], gene["tag"] in selected, gene["tag"])
 
-    def test_the_authorities_form_a_chain_and_only_the_first_ships(self):
-        ledger = json.loads(gene_ledger.LEDGER_JSON.read_text())
-        counts = ledger["counts"]
-        self.assertEqual(counts["default_on_under_columns"], counts["default_on"])
-        self.assertEqual(counts["moved_by_columns"], 0)
-        # The published delta the operator takes the call on: both settings
-        # re-admit whatever the sign-of-Diff veto removed without a resolved
-        # negative record.
-        #
-        # The 38,160-seat cutoff changes the shipped columns call, but this
-        # authority comparison still has one unresolved sign-veto exception:
-        # only `siege-commitment` divides the columns and posterior calls.
-        self.assertEqual(counts["default_on_under_posterior-veto"], 37)
-        self.assertEqual(counts["default_on_under_posterior"], 37)
-        self.assertEqual(counts["moved_by_posterior-veto"], 1)
-        self.assertEqual(counts["moved_by_posterior"], 1)
-
-    def test_the_posterior_decides_only_where_its_interval_excludes_zero(self):
-        # 20 +/- 1.96*10 = [0.4, 39.6]: wholly above zero.
-        self.assertEqual(gene_ledger.posterior_call(20.0, 10.0), "on")
-        self.assertEqual(gene_ledger.posterior_call(-20.0, 10.0), "off")
-        # 19 straddles, and the incumbent call stands either way.
-        self.assertEqual(gene_ledger.posterior_call(19.0, 10.0), "unresolved")
-        self.assertTrue(gene_ledger.default_from_posterior(19.0, 10.0, True))
-        self.assertFalse(gene_ledger.default_from_posterior(19.0, 10.0, False))
-        self.assertTrue(gene_ledger.default_from_posterior(20.0, 10.0, False))
-        self.assertFalse(gene_ledger.default_from_posterior(-20.0, 10.0, True))
-        self.assertEqual(gene_ledger.posterior_call(None, None), "unresolved")
-
-    def test_the_veto_with_an_error_bar_is_strictly_weaker_than_the_sign_veto(self):
-        """The shape of the disagreement, on `war-economy`'s pre-standard-screen
-        figures: two positive columns removed by a record of -0.78 pp whose
-        interval is [-185, +88] — negative in sign, unresolved in evidence.
-
-        Kept as a fixture rather than re-pinned to the live gene. The 23,622-
-        paired-seat standard screen resolved war-economy's record positive, so
-        it now ships under both rules; the arithmetic this asserts is the rule
-        comparison, and it must not move when a gene's numbers do."""
-        self.assertFalse(gene_ledger.default_from_columns(38, 8, -0.78))
-        self.assertTrue(gene_ledger.default_from_resolved_veto(38, 8, -48.4, 69.7))
-        # A record that IS resolved negative still vetoes.
-        self.assertFalse(gene_ledger.default_from_resolved_veto(38, 8, -86.5, 18.6))
-        # It can only re-admit what the columns already like.
-        self.assertFalse(gene_ledger.default_from_resolved_veto(-5, -11, 200.0, 1.0))
-
-    def test_the_dispatcher_refuses_an_authority_it_does_not_know(self):
-        with self.assertRaises(SystemExit):
-            gene_ledger.deployment_default_on("wishful", 21, None, 1.0, 50.0, 1.0)
-        # A ledger written before the key existed was written under the rule
-        # that shipped.
-        self.assertEqual(gene_ledger.authority_of({"rules": {}}), "columns")
-
-    def test_flipping_the_switch_regenerates_a_different_genome(self):
-        """The switch is real: build the same sources under each authority and
-        the `default_on` column actually differs. Nothing is written."""
+    def test_rebuild_preserves_the_recorded_pinned_selection(self):
         current = json.loads(gene_ledger.LEDGER_JSON.read_text())
-        sources = gene_ledger.sources_from_ledger(current)
-        shipped = gene_ledger.build_ledger(sources, authority="columns")
-        posterior = gene_ledger.build_ledger(sources, authority="posterior")
-        self.assertEqual(posterior["rules"]["authority"], "posterior")
-        moved = {g["tag"] for g, h in zip(shipped["genes"], posterior["genes"])
-                 if g["default_on"] != h["default_on"]}
-        # One gene, since the standard screen resolved the other two — see
-        # `test_the_authorities_form_a_chain_and_only_the_first_ships`.
-        self.assertEqual(moved, {"siege-commitment"})
-        # And the generated Rust carries the authority it was written under,
-        # so the mirror re-derives under the same rule.
-        self.assertIn('pub(super) const LEDGER_AUTHORITY: &str = "posterior";',
-                      gene_ledger.render_rust(posterior))
-        self.assertIn('pub(super) const LEDGER_AUTHORITY: &str = "columns";',
-                      genes.rust_block_of(genes.REGISTRY_PATH.read_text()))
+        rebuilt = gene_ledger.rebuild_from_ledger(current)
+        self.assertEqual(rebuilt["rules"]["deployment_genome"],
+                         current["rules"]["deployment_genome"])
+        self.assertIn('pub(super) const DEPLOYMENT_POLICY: &str = "operator-pinned";',
+                      gene_ledger.render_rust(rebuilt))
 
 
 class KnownTags(unittest.TestCase):
@@ -1192,15 +1002,13 @@ class GeneratedFiles(unittest.TestCase):
         self.assertEqual(genes.render(ledger), genes.RANKING_MD.read_text(),
                          "HEURISTIC_GENE_RANKING.md is stale: run tools/genes.py write")
 
-    def test_display_batches_do_not_change_deployment_beyond_sources(self):
-        """A display-only screen cannot re-price a default, even if the newest
-        slot is also an explicitly promoted authoritative source."""
+    def test_display_batches_do_not_change_the_pinned_deployment_selection(self):
+        """A display-only screen refreshes evidence but never rewrites defaults."""
         current = json.loads(gene_ledger.LEDGER_JSON.read_text())
-        authority = gene_ledger.authority_of(current)
         deployment_only = gene_ledger.build_ledger(
             gene_ledger.sources_from_ledger(current),
             build_notes=gene_ledger.notes_from_ledger(current),
-            authority=authority,
+            deployment_genome=gene_ledger.deployment_genome_of(current),
         )
         with_reporting = gene_ledger.rebuild_from_ledger(current)
         self.assertEqual(
@@ -1247,7 +1055,8 @@ class GeneratedFiles(unittest.TestCase):
 class VersionedGenes(unittest.TestCase):
     """⭐ An improvement to a gene is a new gene, `<base>-<n>`, screened beside
     the original; the deployment genome carries at most one version of a
-    family — the best of those the rule would turn on."""
+    family. The pinned selection, rather than a statistic, chooses that
+    version."""
 
     def test_families_are_read_off_the_tags(self):
         self.assertEqual(
@@ -1256,54 +1065,33 @@ class VersionedGenes(unittest.TestCase):
             [["war-economy", "war-economy-2", "war-economy-3"]])
         self.assertEqual(gene_ledger.families_of(["a", "a-10", "a-9"]), [["a", "a-9", "a-10"]])
 
-    def test_one_version_of_a_family_plays(self):
+    def test_family_annotation_never_rewrites_the_pinned_choice(self):
         genes = [
             {"tag": "war-economy", "default_on": True, "wins_last_10k": 40, "win_diff_pp": 0.4},
-            {"tag": "war-economy-2", "default_on": True, "wins_last_10k": 70, "win_diff_pp": 0.7},
+            {"tag": "war-economy-2", "default_on": False, "wins_last_10k": 70, "win_diff_pp": 0.7},
             {"tag": "war-economy-3", "default_on": False, "wins_last_10k": -5, "win_diff_pp": -0.05},
             {"tag": "other", "default_on": True, "wins_last_10k": 10, "win_diff_pp": 0.1},
         ]
-        gene_ledger.choose_family_heads(genes)
+        gene_ledger.annotate_families(genes)
         by = {g["tag"]: g for g in genes}
-        self.assertTrue(by["war-economy-2"]["default_on"])
-        self.assertFalse(by["war-economy-2"]["family_runner_up"])
-        self.assertFalse(by["war-economy"]["default_on"], "the original is the runner-up")
-        self.assertTrue(by["war-economy"]["family_runner_up"])
-        self.assertFalse(by["war-economy-3"]["default_on"], "a version the rule refuses stays off")
-        self.assertFalse(by["war-economy-3"]["family_runner_up"])
+        self.assertTrue(by["war-economy"]["default_on"])
+        self.assertFalse(by["war-economy-2"]["default_on"])
+        self.assertFalse(by["war-economy-3"]["default_on"])
         self.assertEqual((by["war-economy"]["family"], by["war-economy"]["version"]), ("war-economy", 1))
         self.assertEqual((by["war-economy-3"]["family"], by["war-economy-3"]["version"]), ("war-economy", 3))
         self.assertNotIn("family", by["other"], "a gene with no versions is not a family")
         self.assertTrue(by["other"]["default_on"])
 
-    def test_the_head_is_the_best_by_tracked_wins_not_the_newest_column(self):
-        """Operator, 2026-08-23: always use the best version, whatever it is —
-        best over the whole record (`win_diff_pp`), not the last screen."""
-        genes = [
-            {"tag": "g", "default_on": True, "wins_last_10k": 70, "win_diff_pp": 0.3},
-            {"tag": "g-2", "default_on": True, "wins_last_10k": 40, "win_diff_pp": 0.6},
-        ]
-        gene_ledger.choose_family_heads(genes)
-        self.assertTrue(genes[1]["default_on"], "the higher pooled record ships")
-        self.assertTrue(genes[0]["family_runner_up"])
+    def test_the_pinned_list_rejects_multiple_versions_of_a_family(self):
+        with self.assertRaises(SystemExit):
+            gene_ledger.normalize_deployment_genome(
+                ("g", "g-2"), allowed_tags={"g", "g-2"})
+        self.assertEqual(
+            gene_ledger.normalize_deployment_genome(("g-2",), allowed_tags={"g", "g-2"}),
+            ("g-2",),
+        )
         self.assertEqual(gene_ledger.tracked_wins({"wins_last_10k": 25}), 0.25,
-                         "a row without a pooled figure falls back to its newest column")
-
-    def test_a_tie_goes_to_the_higher_version_and_a_lone_pass_needs_no_choice(self):
-        genes = [
-            {"tag": "g", "default_on": True, "wins_last_10k": 30, "win_diff_pp": 0.3},
-            {"tag": "g-2", "default_on": True, "wins_last_10k": 30, "win_diff_pp": 0.3},
-        ]
-        gene_ledger.choose_family_heads(genes)
-        self.assertFalse(genes[0]["default_on"])
-        self.assertTrue(genes[1]["default_on"])
-        alone = [
-            {"tag": "g", "default_on": False, "wins_last_10k": -3, "win_diff_pp": -0.03},
-            {"tag": "g-2", "default_on": True, "wins_last_10k": 25, "win_diff_pp": 0.25},
-        ]
-        gene_ledger.choose_family_heads(alone)
-        self.assertTrue(alone[1]["default_on"])
-        self.assertFalse(alone[0]["family_runner_up"])
+                         "ranking order still falls back to the newest column")
 
     def test_the_ranking_names_the_best_version_and_shows_the_best_two_rates(self):
         """Operator, 2026-08-23: a *Best version* column after *Description*,
@@ -1317,9 +1105,9 @@ class VersionedGenes(unittest.TestCase):
             "g-3": [{"win_on": 0.19, "win_off": 0.16, "n_on": 400, "n_off": 3600}],
         }
         verdict = {
-            "g": {"default_on": False, "family_runner_up": True, "win_diff_pp": 2.0},
-            "g-2": {"default_on": True, "family_runner_up": False, "win_diff_pp": 5.0},
-            "g-3": {"default_on": False, "family_runner_up": True, "win_diff_pp": 3.0},
+            "g": {"default_on": False, "win_diff_pp": 2.0},
+            "g-2": {"default_on": True, "win_diff_pp": 5.0},
+            "g-3": {"default_on": False, "win_diff_pp": 3.0},
         }
         self.assertEqual(gene_ledger.family_of("g-3", tags), ["g", "g-2", "g-3"])
         self.assertEqual(gene_ledger.family_of("plain", tags), [])
@@ -1332,8 +1120,8 @@ class VersionedGenes(unittest.TestCase):
             gene_ledger.family_rate_cells("g", tags, verdict, measured),
             ("v2 21.00% (n=500) · v3 19.00% (n=400)", "v2 16.00% (n=3,500) · v3 16.00% (n=3,600)"))
         self.assertIsNone(gene_ledger.family_rate_cells("plain", tags, verdict, measured))
-        # Nothing ships: tracked wins decide, ties to the higher version; a
-        # version the ledger has not recorded is read off its display record.
+        # When no version is pinned, the display's ordering is still useful;
+        # a version the ledger has not recorded is read off its display record.
         loose = {"g": {"win_diff_pp": 3.0}, "g-2": {"win_diff_pp": 4.0}}
         self.assertEqual(gene_ledger.best_versions(["g", "g-2", "g-3"], loose, measured),
                          ["g-2", "g-3", "g"],
@@ -1341,28 +1129,28 @@ class VersionedGenes(unittest.TestCase):
         self.assertEqual(gene_ledger.best_version_cell("g", tags, loose, measured), "2")
         # An unpriced version that ships still leads; an unpriced family with
         # nothing shipping has no best version yet.
-        fresh = {"g": {"default_on": True, "family_runner_up": False}}
+        fresh = {"g": {"default_on": True}}
         self.assertEqual(gene_ledger.best_version_cell("g-2", tags, fresh, {}), "1")
         self.assertIsNone(gene_ledger.family_rate_cells("g-2", tags, fresh, {}))
         self.assertEqual(gene_ledger.best_version_cell("g-2", tags, {}, {}), "—")
 
-    def test_a_runner_up_ships_off_in_the_generated_table(self):
+    def test_the_explicit_version_is_emitted_in_the_generated_table(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "s.json"
             path.write_text(json.dumps(analysis([
                 {"tag": "g", "wz": 3.0, "wins": 40},
                 {"tag": "g-2", "wz": 3.5, "wins": 70},
             ])))
-            ledger = gene_ledger.build_ledger([path], filter_known=False)
+            ledger = gene_ledger.build_ledger(
+                [path], filter_known=False, deployment_genome=("g-2",))
         by = {g["tag"]: g for g in ledger["genes"]}
         self.assertTrue(by["g-2"]["default_on"])
         self.assertFalse(by["g"]["default_on"])
-        self.assertTrue(by["g"]["family_runner_up"])
         rust = gene_ledger.render_rust(ledger)
         self.assertIn('tag: "g", verdict: Verdict::Helps, default_on: false,', rust)
-        self.assertIn("family_runner_up: true,", rust)
+        self.assertIn('"g-2",', rust)
         self.assertEqual(ledger["counts"]["default_on"], 1)
-        self.assertEqual(ledger["counts"]["default_on_under_columns"], 1)
+        self.assertEqual(ledger["rules"]["deployment_genome"], ["g-2"])
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -1685,24 +1473,19 @@ class TheTableIsDerived(unittest.TestCase):
         self.assertIn("Pairing gain", ranking.RANKING_MD.read_text())
 
 
-    def test_the_default_rule_is_the_only_text_ahead_of_the_table(self):
-        """The title gets one concise, generated rule before the table.
+    def test_the_pinned_default_summary_is_the_only_text_ahead_of_the_table(self):
+        """The title gets one concise, generated policy before the table.
 
         The long reference remains below the tables; this is the operator's
         requested at-a-glance explanation of the *Default* column.
         """
         ledger = json.loads(ranking.LEDGER_JSON.read_text())
-        reporting = ranking.load_reporting_batches(ledger)
-        authoritative = {source["path"] for source in ledger["sources"]}
-        newest_is_authoritative = bool(reporting) and (
-            reporting[0]["meta"]["path"] in authoritative
-        )
         lines = ranking.RANKING_MD.read_text().splitlines()
         self.assertEqual(lines[0], "# The heuristic gene ranking")
         self.assertEqual(lines[1], "")
         self.assertEqual(
-            lines[2], ranking.default_on_summary("columns", newest_is_authoritative),
-            "the heading summary must derive from the deployment thresholds",
+            lines[2], ranking.default_on_summary(ledger),
+            "the heading summary must derive from the pinned deployment genome",
         )
         self.assertEqual(lines[3], "")
         self.assertTrue(lines[4].startswith("| Rank | Gene |"), lines[4])
@@ -1738,7 +1521,7 @@ class TheTableIsDerived(unittest.TestCase):
                 self.assertLess(text.index(heading), text.index("## How to read this"), heading)
 
 
-class ThePosteriorIsPublishedAndNotInForce(unittest.TestCase):
+class ThePosteriorIsPublishedAsEvidence(unittest.TestCase):
     """The precision-weighted posterior: printed beside the win columns,
     deciding nothing, with the delta it would make published under it."""
 
@@ -1774,7 +1557,7 @@ class ThePosteriorIsPublishedAndNotInForce(unittest.TestCase):
     def test_the_shrinkage_is_visible_in_the_probability_not_the_point(self):
         """The operator's own framing: a +30 from a ±64 screen and a +30 from
         a ±29 screen must not read the same. They print the same point and
-        different `P(>0)`, which is the column that decides anything."""
+        different `P(>0)`, making the difference in precision visible."""
         wide = ranking.posterior_of([{"win_delta_pp": 0.6, "win_se_pp": 0.4576,
                                       "shape": "legacy"}])
         tight = ranking.posterior_of([{"win_delta_pp": 0.6, "win_se_pp": 0.2052,
@@ -1786,9 +1569,10 @@ class ThePosteriorIsPublishedAndNotInForce(unittest.TestCase):
 
     def test_nothing_the_posterior_publishes_decides_a_default(self):
         """★ The hard constraint of this change. The ranking's *Default*
-        column is the ledger's, under the threshold rule, gene for gene."""
+        column is the ledger's explicit operator selection, gene for gene."""
         recorded = {g["tag"]: g for g in self.ledger["genes"]}
-        self.assertEqual(self.ledger["rules"]["authority"], "columns")
+        self.assertEqual(self.ledger["rules"]["deployment_policy"], "operator-pinned")
+        selected = set(self.ledger["rules"]["deployment_genome"])
         for cells in self._rows():
             tag = cell(cells, "Gene").strip("`")
             if tag not in recorded:
@@ -1799,32 +1583,25 @@ class ThePosteriorIsPublishedAndNotInForce(unittest.TestCase):
                 cell(cells, "Default"),
                 "**on**" if gene["default_on"] else "off",
                 cell(cells, "Gene"))
-            self.assertEqual(
-                gene["default_on"],
-                gene_ledger.default_from_columns(
-                    gene["wins_last_10k"], gene["wins_prior_10k"],
-                    gene["win_diff_pp"]),
-                cell(cells, "Gene"))
+            self.assertEqual(gene["default_on"], tag in selected, cell(cells, "Gene"))
 
-    def test_every_authority_is_published_with_what_it_would_ship(self):
-        self.assertIn("## What the posterior would change", self.text)
-        for candidate in ranking.AUTHORITIES:
-            self.assertIn(f"| `{candidate}`", self.text, candidate)
-        self.assertIn("`columns` **(in force)**", self.text)
-        rows = ranking.authority_table(self.ledger, self.authoritative)
-        for candidate in ranking.AUTHORITIES:
-            self.assertEqual(
-                sum(r[f"would/{candidate}"] for r in rows),
-                self.ledger["counts"][f"default_on_under_{candidate}"],
-                candidate)
+    def test_the_evidence_section_marks_pinned_state_without_a_counterfactual_rule(self):
+        self.assertIn("## Evidence for future operator selections", self.text)
+        self.assertNotIn("## What the posterior would change", self.text)
+        rows = ranking.evidence_table(self.ledger, self.authoritative)
+        selected = set(self.ledger["rules"]["deployment_genome"])
+        self.assertTrue(rows)
+        for row in rows:
+            self.assertEqual(row["pinned"], row["tag"] in selected, row["tag"])
+            self.assertIn(row["call"], {"on", "off", "unresolved"})
 
-    def test_the_three_way_call_covers_every_priced_gene(self):
-        rows = ranking.authority_table(self.ledger, self.authoritative)
+    def test_the_evidence_call_covers_every_priced_gene(self):
+        rows = ranking.evidence_table(self.ledger, self.authoritative)
         calls = [r["call"] for r in rows]
         self.assertEqual(len(rows), len(calls))
         self.assertGreater(calls.count("on"), 0)
         self.assertGreater(calls.count("unresolved"), calls.count("on"))
-        self.assertIn("### What the posterior can decide at all", self.text)
+        self.assertIn("### What the posterior resolves", self.text)
         for row in rows:
             if row["call"] != "unresolved":
                 self.assertIn(f"| `{row['tag']}` |", self.text, row["tag"])
@@ -1857,7 +1634,7 @@ class TheBoundarySet(unittest.TestCase):
     def test_the_boundary_is_exactly_the_straddling_intervals(self):
         rows, arm = ranking.boundary_table(self.ledger, self.measured)
         self.assertIsNotNone(arm)
-        every = ranking.authority_table(self.ledger, self.measured)
+        every = ranking.evidence_table(self.ledger, self.measured)
         self.assertEqual({r["tag"] for r in rows},
                          {r["tag"] for r in every if r["call"] == "unresolved"})
         for row in rows:
@@ -1879,7 +1656,7 @@ class TheBoundarySet(unittest.TestCase):
         # test called it a defect. What the ranking actually claims is the
         # disagreement, not its sign.
         top = rows[0]
-        self.assertNotEqual(top["shipped"], top["posterior"]["effect"] > 0.0,
+        self.assertNotEqual(top["pinned"], top["posterior"]["effect"] > 0.0,
                             top["tag"])
 
     def test_a_bigger_arm_buys_more_and_resolves_more(self):
@@ -1976,12 +1753,11 @@ class TheLaneGenes(unittest.TestCase):
         history = [{"share_delta_pp": -1.024, "share_z": -15.92}]
         self.assertEqual(ranking.share_cell(history), "-1.02 (z -15.92) hurts *")
 
-    def test_the_pre_registered_rule_is_written_down_before_the_screen(self):
+    def test_the_pinned_lane_selection_is_written_down_before_the_screen(self):
         screen = (ranking.ROOT / "docs" / "GENE_SCREEN.md").read_text()
         self.assertIn("Pre-registered", screen)
         self.assertIn("lane gene", screen)
-        # The axis that decides is still WINS.
-        self.assertIn("decision axis stays", screen)
+        self.assertIn("deployment choice is explicit", screen)
 
 
 class TheStandardScreen(unittest.TestCase):
@@ -2019,13 +1795,13 @@ class TheStandardScreen(unittest.TestCase):
         "housing-research": (-0.35, -1.10),
         "religion-sues-peace": (-0.36, -1.14),
     }
-    #: The eight defaults the pooled-`Diff` veto alone would move if that
-    #: screen entered the ledger, and whether the reading behind each is a
-    #: signal or a coin flip.
-    VETO_FLIPS = ("governor-victory-lanes", "war-economy",
-                  "settler-site-agreement", "settler-target-hysteresis",
-                  "housing-research", "religion-sues-peace",
-                  "apostle-promotion-by-role", "theology-for-founders")
+    #: The eight historical pooled-*Diff* candidates: two were clear signals
+    #: and six were noise. They now demonstrate why evidence cannot decide a
+    #: deployment selection automatically.
+    FORMER_VETO_CANDIDATES = ("governor-victory-lanes", "war-economy",
+                              "settler-site-agreement", "settler-target-hysteresis",
+                              "housing-research", "religion-sues-peace",
+                              "apostle-promotion-by-role", "theology-for-founders")
 
     def setUp(self):
         self.ledger = json.loads(ranking.LEDGER_JSON.read_text())
@@ -2071,12 +1847,11 @@ class TheStandardScreen(unittest.TestCase):
             self.assertAlmostEqual(by_tag[tag]["win_z"], z, places=2, msg=tag)
 
     def test_governor_victory_lanes_is_the_largest_correctable_defect(self):
-        """RESOLVED. It shipped ON, promoted on P10's single +46 column; the
-        23,622-seat deployment shape read it at −237, and the pre-registered
-        direct arm `g1` confirmed −4.78 pp at win z −6.11. The newly promoted
-        38,160-seat cutoff independently reads −2.21 pp at z −5.81, so the
-        threshold rule remains **off** without relying on the marginal Diff
-        veto.
+        """Before the policy was pinned, P10's single +46 column had placed
+        it on. The 23,622-seat deployment shape read it at −237, and the
+        pre-registered direct arm `g1` confirmed −4.78 pp at win z −6.11.
+        The newer 38,160-seat cutoff independently reads −2.21 pp at z −5.81.
+        The explicit pinned deployment selection keeps it **off**.
 
         ⭐ THE THREE DEPLOYMENT WINDOWS NOW TELL THE CURRENT STORY IN ONE ROW:
         the cutoff at −110, g1 at −239, and the whole-genome standard screen
@@ -2114,7 +1889,7 @@ class TheStandardScreen(unittest.TestCase):
 
     def test_the_legacy_share_axis_already_said_it(self):
         """P10 read this gene win z +2.46 / share z −15.92 — a recorded
-        `conflict`, because the rule reads the win axis only. The share axis
+        `conflict`; the former rule looked only at its win axis. The share axis
         was right a day before the win axis caught up, and g1's own arm now
         agrees on BOTH axes, so the conflict is gone."""
         row = next(g for g in self.ledger["genes"]
@@ -2143,24 +1918,23 @@ class TheStandardScreen(unittest.TestCase):
         self.assertFalse(by_tag["governor-every-lane"]["default_on"])
         self.assertFalse(by_tag["governor-expansion-lane"]["default_on"])
 
-    def test_six_of_the_eight_veto_flips_are_decided_at_z_about_one(self):
-        """The sharpest argument for the posterior, in the rule's own numbers:
-        the veto reads the sign of a difference that carries no error, and on
-        the very next screen six of its eight decisions come from |z| ≈ 1."""
-        signal = [tag for tag in self.VETO_FLIPS
+    def test_six_of_the_eight_former_candidates_are_at_z_about_one(self):
+        """Why the former automatic rule was retired: six of its candidates
+        were |z| ≈ 1 on the next screen."""
+        signal = [tag for tag in self.FORMER_VETO_CANDIDATES
                   if abs(self.STANDARD[tag][1]) >= 3.0]
-        noise = [tag for tag in self.VETO_FLIPS
+        noise = [tag for tag in self.FORMER_VETO_CANDIDATES
                  if abs(self.STANDARD[tag][1]) < 2.0]
         self.assertEqual(sorted(signal), ["governor-victory-lanes", "war-economy"])
         self.assertEqual(len(noise), 6)
         for tag in noise:
             self.assertLess(abs(self.STANDARD[tag][1]), 1.5, tag)
 
-    def test_read_standard_only_the_posterior_resolves_exactly_the_two(self):
-        """And read pooled it resolves none, because tau swamps both. Both
-        halves are the recommendation the note makes."""
+    def test_standard_only_posterior_resolves_exactly_the_two_as_evidence(self):
+        """The pooled reading resolves none because tau swamps both. Neither
+        reading changes the pinned deployment selection automatically."""
         resolved_standard, resolved_pooled = [], []
-        for tag in self.VETO_FLIPS:
+        for tag in self.FORMER_VETO_CANDIDATES:
             _, standard, pooled = self.pools(tag)
             if gene_ledger.posterior_call(standard["effect"], standard["se"]) != "unresolved":
                 resolved_standard.append(tag)
@@ -2169,8 +1943,8 @@ class TheStandardScreen(unittest.TestCase):
         self.assertEqual(sorted(resolved_standard),
                          ["governor-victory-lanes", "war-economy"])
         self.assertEqual(resolved_pooled, [])
-        self.assertIn("resolves exactly two of the eight", self.notes)
-        self.assertIn('POSTERIOR_SHAPES = ("standard",)', self.notes)
+        self.assertIn("two strong standard-shape signals", self.notes)
+        self.assertIn("not a fallback policy", self.notes)
 
     def test_the_note_is_carried_into_the_published_ranking(self):
         text = ranking.RANKING_MD.read_text()
