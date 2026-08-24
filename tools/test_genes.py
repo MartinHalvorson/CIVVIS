@@ -1039,7 +1039,12 @@ class GeneratedFiles(unittest.TestCase):
         self.assertEqual(newest["build"]["commit"],
                          "a5a2352ba7e6acf64abaf47646c88e154d32102d")
         self.assertFalse(newest["build"]["dirty"])
-        self.assertNotIn("unverified", newest)
+        self.assertEqual(
+            newest["unverified"],
+            "Governor-lane genes were deliberately removed under the 2026-08-24 "
+            "Diff < -0.05 pp / >=30,000-seat cull criterion; these immutable "
+            "historical display batches were compiled before that removal.",
+        )
         self.assertNotIn(newest["path"], {s["path"] for s in current["sources"]})
         authoritative, _ = ranking.load_sources(current)
         displayed, _ = ranking.load_display_sources(current)
@@ -1855,6 +1860,11 @@ class TheStandardScreen(unittest.TestCase):
                 gene_ledger.pooled_posterior(history, ("standard",)),
                 gene_ledger.pooled_posterior(history, gene_ledger.POSTERIOR_SHAPES))
 
+    def screen_row(self, filename, tag):
+        source = json.loads(
+            (gene_ledger.ROOT / "docs" / "gene_screens" / filename).read_text())
+        return next(g for g in source["genes"] if g["tag"] == tag)
+
     def test_the_hand_read_note_matches_the_recorded_source(self):
         """★ The join. Every figure the note read out of the published
         document is the figure the recorded analysis JSON carries, to the
@@ -1870,25 +1880,28 @@ class TheStandardScreen(unittest.TestCase):
             self.assertAlmostEqual(by_tag[tag]["win_delta_pp"], delta, places=2, msg=tag)
             self.assertAlmostEqual(by_tag[tag]["win_z"], z, places=2, msg=tag)
 
-    def test_governor_victory_lanes_is_the_largest_correctable_defect(self):
+    def test_governor_victory_lanes_historical_evidence_justifies_the_cull(self):
         """Before the policy was pinned, P10's single +46 column had placed
         it on. The 23,622-seat deployment shape read it at −237, and the
         pre-registered direct arm `g1` confirmed −4.78 pp at win z −6.11.
         The newer 38,160-seat cutoff independently reads −2.21 pp at z −5.81.
-        The explicit pinned deployment selection keeps it **off**.
+        The explicit 2026-08-24 cull then removed its implementation.
 
-        ⭐ THE THREE DEPLOYMENT WINDOWS NOW TELL THE CURRENT STORY IN ONE ROW:
+        ⭐ THE THREE DEPLOYMENT WINDOWS NOW TELL THE HISTORICAL STORY IN ONE ROW:
         the cutoff at −110, g1 at −239, and the whole-genome standard screen
         at −237. The legacy +46 remains in the pooled record as the original
         promotion, even though it has now fallen beyond the printed third
         window."""
-        row = next(g for g in self.ledger["genes"]
-                   if g["tag"] == "governor-victory-lanes")
-        self.assertFalse(row["default_on"], "g1 resolved it off")
-        self.assertEqual(row["verdict"], "hurts")
-        self.assertEqual(row["wins_last_10k"], -110, "the 38,160-seat cutoff")
-        self.assertEqual(row["wins_prior_10k"], -239, "g1, the direct arm")
-        self.assertEqual(row["wins_third_10k"], -237, "the whole-genome standard screen")
+        live_tags = {g["tag"] for g in self.ledger["genes"]}
+        self.assertNotIn("governor-victory-lanes", live_tags)
+        ranked = ranking.RANKING_MD.read_text()
+        self.assertIn("## Removed from the code", ranked)
+        self.assertIn("| `governor-victory-lanes` |", ranked)
+        cutoff = self.screen_row(
+            "2026-08-24-standard-continuous-38160-total-seats.json",
+            "governor-victory-lanes")
+        self.assertAlmostEqual(cutoff["win_delta_pp"], -2.21, places=2)
+        self.assertAlmostEqual(cutoff["win_z"], -5.81, places=2)
         legacy, standard, pooled = self.pools("governor-victory-lanes")
         self.assertEqual((round(legacy["effect"]), round(legacy["lo"]),
                           round(legacy["hi"])), (46, 9, 82))
@@ -1900,10 +1913,9 @@ class TheStandardScreen(unittest.TestCase):
         self.assertEqual(standard["screens"], 3)
         # The two instruments do not merely disagree, they do not come close.
         self.assertGreater(legacy["lo"] - standard["hi"], 100)
-        # So the pool across shapes is a warning, not an answer, and it is the
-        # figure the LEDGER publishes over all four screens.
-        self.assertEqual(round(row["posterior_tau_pp"]), round(pooled["tau"]))
-        self.assertEqual(row["posterior_screens"], 4)
+        # So the pool across shapes is a warning, not an answer, even though
+        # the historical evidence decisively met the explicit cull threshold.
+        self.assertEqual(pooled["screens"], 4)
         self.assertEqual(gene_ledger.posterior_call(pooled["effect"], pooled["se"]),
                          "unresolved")
         self.assertEqual(gene_ledger.posterior_call(standard["effect"],
@@ -1916,12 +1928,15 @@ class TheStandardScreen(unittest.TestCase):
         `conflict`; the former rule looked only at its win axis. The share axis
         was right a day before the win axis caught up, and g1's own arm now
         agrees on BOTH axes, so the conflict is gone."""
-        row = next(g for g in self.ledger["genes"]
-                   if g["tag"] == "governor-victory-lanes")
-        # The current cutoff has both axes negative, so no conflict remains.
-        self.assertFalse(row["conflict"], "both axes now agree")
-        self.assertAlmostEqual(row["screen"]["win_z"], -5.81, places=2)
-        self.assertAlmostEqual(row["screen"]["share_z"], -16.41, places=2)
+        cutoff = self.screen_row(
+            "2026-08-24-standard-continuous-38160-total-seats.json",
+            "governor-victory-lanes")
+        # The cutoff has both axes negative, so no conflict remains in the
+        # historical evidence that justified removal.
+        self.assertAlmostEqual(cutoff["win_z"], -5.81, places=2)
+        self.assertAlmostEqual(cutoff["share_z"], -16.41, places=2)
+        self.assertNotIn("governor-victory-lanes",
+                         {g["tag"] for g in self.ledger["genes"]})
         # P10's share axis (−15.92) landed within half a sigma of what the
         # deployment shape's WIN axis said a day later (−15.37).
         self.assertLess(abs(15.92 - abs(self.STANDARD["governor-victory-lanes"][1])),
@@ -1936,11 +1951,13 @@ class TheStandardScreen(unittest.TestCase):
         self.assertLess(abs(expansion), abs(victory) / 5, "the other half is cheap")
         self.assertLess(abs(victory + expansion - composite), 0.7, "roughly additive")
         # The harmful half was the only one that shipped, until g1 resolved
-        # it off on 2026-08-23. All three governor genes now default off.
-        by_tag = {g["tag"]: g for g in self.ledger["genes"]}
-        self.assertFalse(by_tag["governor-victory-lanes"]["default_on"])
-        self.assertFalse(by_tag["governor-every-lane"]["default_on"])
-        self.assertFalse(by_tag["governor-expansion-lane"]["default_on"])
+        # it off on 2026-08-23. The 2026-08-24 cull removes all three genes.
+        live_tags = {g["tag"] for g in self.ledger["genes"]}
+        ranked = ranking.RANKING_MD.read_text()
+        for tag in ("governor-victory-lanes", "governor-every-lane",
+                    "governor-expansion-lane"):
+            self.assertNotIn(tag, live_tags)
+            self.assertIn(f"| `{tag}` |", ranked)
 
     def test_six_of_the_eight_former_candidates_are_at_z_about_one(self):
         """Why the former automatic rule was retired: six of its candidates
@@ -1974,6 +1991,7 @@ class TheStandardScreen(unittest.TestCase):
         text = ranking.RANKING_MD.read_text()
         self.assertIn("23,622", text)
         self.assertIn("governor-victory-lanes", text)
+        self.assertIn("## Removed from the code", text)
         # ⚠ The note used to say the screen was "not a ledger source". It is
         # one now, and a paragraph that still said otherwise would be the most
         # misleading line in the file.
