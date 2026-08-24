@@ -7011,16 +7011,11 @@ impl Game {
             for _ in 0..warriors {
                 g.place_city_state_starting_unit("warrior", pid, pos);
             }
-            // The shipped starting-building table grants completed Ancient
-            // Walls to every city-state on Immortal and Deity. They exist even
-            // before that state researches Masonry, just like other start-era
-            // buildings granted by setup.
-            if g.difficulty_spec().order >= 6 {
-                let state = g.cities.get_mut(&city).unwrap();
-                state.buildings.push(crate::name!("walls"));
-                state.building_eras.insert(crate::name!("walls"), 0);
-                state.wall_hp = 100;
-            }
+            // The shipped `StartingBuildings` table grants completed Ancient
+            // Walls to every city-state from Immortal upward. Which rungs and
+            // which building is `difficulties.json`'s to say now, rather than
+            // a rung number and a wall pool written into the setup code.
+            g.grant_starting_buildings(city);
         }
         // Rise & Fall always reserves a non-playable Free Cities seat. It is
         // dormant until the first Loyalty revolt, so it neither receives a
@@ -7051,6 +7046,55 @@ impl Game {
         g.refresh_great_person_offers();
         g.refresh_all_visibility();
         g
+    }
+
+    /// Give a city the completed buildings the shipped `StartingBuildings`
+    /// table grants a city of its owner's kind at this difficulty.
+    ///
+    /// *Completed* is the whole of it. These are not a production head start
+    /// and not a discount: they are standing when the game opens, with no
+    /// technology behind them and nothing left to build. So the building goes
+    /// into `buildings`, which is the list every yield, adjacency, tourism
+    /// and defence rule in the engine reads, rather than into a counter of
+    /// its own — a city-state at Deity is one the challenger has to breach,
+    /// not one carrying a note that says it has walls.
+    ///
+    /// Anything with an outer defence tops the wall pool up exactly the way
+    /// finishing it in a city does, through `city_max_wall_hp`, so a second
+    /// tier or a mod's own walls need no arithmetic here.
+    ///
+    /// ⚠ `MinorOnly` is a partition, not a permission: a row is granted to
+    /// city-states or to majors, never to both, which is why one flag decides
+    /// each side. Every major-side row of the shipped table is keyed on the
+    /// start era and carries no `MinDifficulty` at all, so with the shipped
+    /// ladder this reaches only city-states.
+    fn grant_starting_buildings(&mut self, cid: u32) {
+        let minor = self.players[self.cities[&cid].owner].is_minor;
+        let granted: Vec<Name> = self
+            .difficulty_spec()
+            .starting_buildings
+            .iter()
+            .filter(|row| row.minor_only == minor)
+            .map(|row| Name::new(&row.building))
+            .collect();
+        for building in granted {
+            if self.cities[&cid].buildings.contains(&building) {
+                continue;
+            }
+            let outer_defense = self.rules.buildings[&building].outer_defense;
+            // Setup runs before `open_in_start_era` moves the world era, so a
+            // start-era grant is stamped with the Ancient era the shipped row
+            // itself names.
+            let era = self.world_era;
+            let city = self.cities.get_mut(&cid).unwrap();
+            city.buildings.push(building);
+            city.building_eras.insert(building, era);
+            if outer_defense > 0 {
+                let pool = self.city_max_wall_hp(&self.cities[&cid]);
+                let city = self.cities.get_mut(&cid).unwrap();
+                city.wall_hp = (city.wall_hp + outer_defense).min(pool);
+            }
+        }
     }
 
     /// Civilization VI's Advanced Start: a game set to open past the first age
@@ -10491,12 +10535,40 @@ impl Game {
             .is_none_or(|resource| self.strategic_stockpile(pid, resource) > 0.0)
     }
 
-    /// Gold and strategic material to upgrade one `kind` into its successor.
+    /// Every number in the upgrade bill, as a named shipped row.
     ///
-    /// `UPGRADE_BASE_COST` (10) and `UPGRADE_MINIMUM_COST` (15) come from the
-    /// shipped GlobalParameters. The per-Production factor does not: the
-    /// game applies it inside its own executable, and the observed in-game
-    /// prices are twice the Production difference on top of the base cost.
+    /// All five are `GlobalParameters` rows read from the host's own compiled
+    /// database (`Cache/DebugGameplay.sqlite`, table `GlobalParameters`) and
+    /// confirmed against `Rules::Units::Instance::GetUpgradeCost` in the
+    /// shipped `GameCore_XP2_FinalRelease.dll`, which reads exactly these:
+    ///
+    /// ```text
+    /// UPGRADE_BASE_COST                    10
+    /// UPGRADE_MINIMUM_COST                 15
+    /// UPGRADE_NET_PRODUCTION_PERCENT_COST 100   Vanilla ships 75; Gathering
+    ///                                           Storm replaces it with 100
+    /// GOLD_EQUIVALENT_OTHER_YIELDS          2
+    /// PURCHASE_DIVISOR                      5
+    /// ```
+    const UPGRADE_BASE_COST: f64 = 10.0;
+    const UPGRADE_MINIMUM_COST: f64 = 15.0;
+    const UPGRADE_NET_PRODUCTION_PERCENT_COST: f64 = 100.0;
+    const GOLD_EQUIVALENT_OTHER_YIELDS: f64 = 2.0;
+    const PURCHASE_DIVISOR: f64 = 5.0;
+
+    /// Gold and strategic material to upgrade one `kind` into its successor,
+    /// priced as a Standard (uncombined) unit.
+    ///
+    /// ★★★ THE PER-PRODUCTION FACTOR OF TWO IS A SHIPPED ROW, NOT A FUDGE.
+    ///
+    /// This doc used to say that factor "does not come from GlobalParameters"
+    /// and had been inferred from in-game prices being twice the Production
+    /// difference. The host disagrees only about where it lives, not about the
+    /// number: `GetUpgradeCost` multiplies the net Production difference by
+    /// `UPGRADE_NET_PRODUCTION_PERCENT_COST` (100, so all of it) and then by
+    /// `GOLD_EQUIVALENT_OTHER_YIELDS` (2), the same Production-to-Gold
+    /// conversion the rest of the host uses. Two is the shipped coefficient.
+    /// Charging one would halve every upgrade in the game.
     pub fn unit_upgrade_price(&self, pid: usize, kind: &str) -> Option<(Name, f64, f64)> {
         let target = self.unit_upgrade_target(pid, Name::new(kind))?;
         self.unit_upgrade_price_to(pid, Name::new(kind), target)
@@ -10515,6 +10587,23 @@ impl Game {
         kind: impl AsName,
         target: impl AsName,
     ) -> Option<(f64, f64)> {
+        self.unit_upgrade_price_in_formation(pid, kind, target, 0)
+    }
+
+    /// The same quote for a unit that is already a Corps or an Army.
+    ///
+    /// `GetUpgradeCost` multiplies the whole bill by 2 for
+    /// `CORPS_MILITARY_FORMATION` and by 3 for `ARMY_MILITARY_FORMATION` --
+    /// two or three bodies are being re-equipped -- and it does so *before*
+    /// the minimum and the rounding, so a combined unit cannot be priced by
+    /// scaling a finished Standard quote.
+    pub fn unit_upgrade_price_in_formation(
+        &self,
+        pid: usize,
+        kind: impl AsName,
+        target: impl AsName,
+        formation: u8,
+    ) -> Option<(f64, f64)> {
         let kind = kind.as_name();
         let target = target.as_name();
         let generic = self.rules.units.get_interned(kind)?.upgrade_to?;
@@ -10523,11 +10612,39 @@ impl Game {
         }
         let from = self.rules.units.get_interned(kind)?.cost;
         let spec = self.rules.units.get_interned(target)?;
-        let gold = self
-            .game_speed
-            .scale((10.0 + 2.0 * (spec.cost - from).max(0.0)).max(15.0));
-        let (gold, resources) = self.upgrade_costs(pid, gold, spec.resource_cost);
-        Some((gold, resources))
+        // BASE + NET_PRODUCTION_PERCENT / 100 * GOLD_EQUIVALENT * max(0, dProd).
+        // The host differences two already speed-scaled Production costs and
+        // speed-scales its base separately; scaling the sum is the same linear
+        // map, and `units.json` holds the Standard-speed costs.
+        let net = (spec.cost - from).max(0.0)
+            * (Self::UPGRADE_NET_PRODUCTION_PERCENT_COST / 100.0)
+            * Self::GOLD_EQUIVALENT_OTHER_YIELDS;
+        let bodies = match formation {
+            0 => 1.0,
+            1 => 2.0,
+            _ => 3.0,
+        };
+        let gold = self.game_speed.scale(Self::UPGRADE_BASE_COST + net) * bodies;
+        let (gold, resources) = self.upgrade_costs(pid, gold, spec.resource_cost * bodies);
+        Some((self.upgrade_bill_floor(gold), resources))
+    }
+
+    /// The last two steps of `GetUpgradeCost`, which run *after* the formation
+    /// multiplier and the player's upgrade discount, not before them.
+    ///
+    /// The minimum is asymmetric in the shipped code and that is copied here
+    /// deliberately: it *compares* against the raw `UPGRADE_MINIMUM_COST` and
+    /// *assigns* the game-speed scaled one, so a cheap upgrade on a fast speed
+    /// settles below 15 Gold rather than at it. The bill is then truncated to
+    /// whole Gold and rounded DOWN to a multiple of `PURCHASE_DIVISOR`, which
+    /// is why the host never quotes 73 Gold for anything.
+    fn upgrade_bill_floor(&self, gold: f64) -> f64 {
+        let gold = if gold < Self::UPGRADE_MINIMUM_COST {
+            self.game_speed.scale(Self::UPGRADE_MINIMUM_COST)
+        } else {
+            gold
+        };
+        gold - gold.rem_euclid(Self::PURCHASE_DIVISOR)
     }
 
     /// Civ VI upgrades happen in friendly territory, before the unit has done
@@ -10575,21 +10692,15 @@ impl Game {
         if !friendly {
             return Err("foreign territory");
         }
-        let (target, base_gold, base_resources) = self
-            .unit_upgrade_price(pid, &unit.kind)
+        let target = self
+            .unit_upgrade_target(pid, unit.kind)
             .ok_or("no unlocked successor")?;
-        let gold = base_gold
-            * match unit.formation {
-                0 => 1.0,
-                1 => 2.0,
-                _ => 3.0,
-            };
-        let resources = base_resources
-            * match unit.formation {
-                0 => 1.0,
-                1 => 2.0,
-                _ => 3.0,
-            };
+        // A Corps or an Army is priced as one bill, not as a Standard quote
+        // multiplied afterwards: the host applies the body count before the
+        // minimum and the `PURCHASE_DIVISOR` rounding.
+        let (gold, resources) = self
+            .unit_upgrade_price_in_formation(pid, unit.kind, target, unit.formation)
+            .ok_or("no unlocked successor")?;
         if self.players[pid].gold + f64::EPSILON < gold {
             return Err("not enough gold");
         }
@@ -50644,6 +50755,9 @@ mod world_lap_tests;
 
 #[cfg(test)]
 mod purchase_gate_tests;
+
+#[cfg(test)]
+mod unit_upgrade_price_tests;
 
 #[cfg(test)]
 mod wonder_effect_cache_tests;
