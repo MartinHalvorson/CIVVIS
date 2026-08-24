@@ -10535,12 +10535,40 @@ impl Game {
             .is_none_or(|resource| self.strategic_stockpile(pid, resource) > 0.0)
     }
 
-    /// Gold and strategic material to upgrade one `kind` into its successor.
+    /// Every number in the upgrade bill, as a named shipped row.
     ///
-    /// `UPGRADE_BASE_COST` (10) and `UPGRADE_MINIMUM_COST` (15) come from the
-    /// shipped GlobalParameters. The per-Production factor does not: the
-    /// game applies it inside its own executable, and the observed in-game
-    /// prices are twice the Production difference on top of the base cost.
+    /// All five are `GlobalParameters` rows read from the host's own compiled
+    /// database (`Cache/DebugGameplay.sqlite`, table `GlobalParameters`) and
+    /// confirmed against `Rules::Units::Instance::GetUpgradeCost` in the
+    /// shipped `GameCore_XP2_FinalRelease.dll`, which reads exactly these:
+    ///
+    /// ```text
+    /// UPGRADE_BASE_COST                    10
+    /// UPGRADE_MINIMUM_COST                 15
+    /// UPGRADE_NET_PRODUCTION_PERCENT_COST 100   Vanilla ships 75; Gathering
+    ///                                           Storm replaces it with 100
+    /// GOLD_EQUIVALENT_OTHER_YIELDS          2
+    /// PURCHASE_DIVISOR                      5
+    /// ```
+    const UPGRADE_BASE_COST: f64 = 10.0;
+    const UPGRADE_MINIMUM_COST: f64 = 15.0;
+    const UPGRADE_NET_PRODUCTION_PERCENT_COST: f64 = 100.0;
+    const GOLD_EQUIVALENT_OTHER_YIELDS: f64 = 2.0;
+    const PURCHASE_DIVISOR: f64 = 5.0;
+
+    /// Gold and strategic material to upgrade one `kind` into its successor,
+    /// priced as a Standard (uncombined) unit.
+    ///
+    /// ★★★ THE PER-PRODUCTION FACTOR OF TWO IS A SHIPPED ROW, NOT A FUDGE.
+    ///
+    /// This doc used to say that factor "does not come from GlobalParameters"
+    /// and had been inferred from in-game prices being twice the Production
+    /// difference. The host disagrees only about where it lives, not about the
+    /// number: `GetUpgradeCost` multiplies the net Production difference by
+    /// `UPGRADE_NET_PRODUCTION_PERCENT_COST` (100, so all of it) and then by
+    /// `GOLD_EQUIVALENT_OTHER_YIELDS` (2), the same Production-to-Gold
+    /// conversion the rest of the host uses. Two is the shipped coefficient.
+    /// Charging one would halve every upgrade in the game.
     pub fn unit_upgrade_price(&self, pid: usize, kind: &str) -> Option<(Name, f64, f64)> {
         let target = self.unit_upgrade_target(pid, Name::new(kind))?;
         self.unit_upgrade_price_to(pid, Name::new(kind), target)
@@ -10559,6 +10587,23 @@ impl Game {
         kind: impl AsName,
         target: impl AsName,
     ) -> Option<(f64, f64)> {
+        self.unit_upgrade_price_in_formation(pid, kind, target, 0)
+    }
+
+    /// The same quote for a unit that is already a Corps or an Army.
+    ///
+    /// `GetUpgradeCost` multiplies the whole bill by 2 for
+    /// `CORPS_MILITARY_FORMATION` and by 3 for `ARMY_MILITARY_FORMATION` --
+    /// two or three bodies are being re-equipped -- and it does so *before*
+    /// the minimum and the rounding, so a combined unit cannot be priced by
+    /// scaling a finished Standard quote.
+    pub fn unit_upgrade_price_in_formation(
+        &self,
+        pid: usize,
+        kind: impl AsName,
+        target: impl AsName,
+        formation: u8,
+    ) -> Option<(f64, f64)> {
         let kind = kind.as_name();
         let target = target.as_name();
         let generic = self.rules.units.get_interned(kind)?.upgrade_to?;
@@ -10567,11 +10612,39 @@ impl Game {
         }
         let from = self.rules.units.get_interned(kind)?.cost;
         let spec = self.rules.units.get_interned(target)?;
-        let gold = self
-            .game_speed
-            .scale((10.0 + 2.0 * (spec.cost - from).max(0.0)).max(15.0));
-        let (gold, resources) = self.upgrade_costs(pid, gold, spec.resource_cost);
-        Some((gold, resources))
+        // BASE + NET_PRODUCTION_PERCENT / 100 * GOLD_EQUIVALENT * max(0, dProd).
+        // The host differences two already speed-scaled Production costs and
+        // speed-scales its base separately; scaling the sum is the same linear
+        // map, and `units.json` holds the Standard-speed costs.
+        let net = (spec.cost - from).max(0.0)
+            * (Self::UPGRADE_NET_PRODUCTION_PERCENT_COST / 100.0)
+            * Self::GOLD_EQUIVALENT_OTHER_YIELDS;
+        let bodies = match formation {
+            0 => 1.0,
+            1 => 2.0,
+            _ => 3.0,
+        };
+        let gold = self.game_speed.scale(Self::UPGRADE_BASE_COST + net) * bodies;
+        let (gold, resources) = self.upgrade_costs(pid, gold, spec.resource_cost * bodies);
+        Some((self.upgrade_bill_floor(gold), resources))
+    }
+
+    /// The last two steps of `GetUpgradeCost`, which run *after* the formation
+    /// multiplier and the player's upgrade discount, not before them.
+    ///
+    /// The minimum is asymmetric in the shipped code and that is copied here
+    /// deliberately: it *compares* against the raw `UPGRADE_MINIMUM_COST` and
+    /// *assigns* the game-speed scaled one, so a cheap upgrade on a fast speed
+    /// settles below 15 Gold rather than at it. The bill is then truncated to
+    /// whole Gold and rounded DOWN to a multiple of `PURCHASE_DIVISOR`, which
+    /// is why the host never quotes 73 Gold for anything.
+    fn upgrade_bill_floor(&self, gold: f64) -> f64 {
+        let gold = if gold < Self::UPGRADE_MINIMUM_COST {
+            self.game_speed.scale(Self::UPGRADE_MINIMUM_COST)
+        } else {
+            gold
+        };
+        gold - gold.rem_euclid(Self::PURCHASE_DIVISOR)
     }
 
     /// Civ VI upgrades happen in friendly territory, before the unit has done
@@ -10619,21 +10692,15 @@ impl Game {
         if !friendly {
             return Err("foreign territory");
         }
-        let (target, base_gold, base_resources) = self
-            .unit_upgrade_price(pid, &unit.kind)
+        let target = self
+            .unit_upgrade_target(pid, unit.kind)
             .ok_or("no unlocked successor")?;
-        let gold = base_gold
-            * match unit.formation {
-                0 => 1.0,
-                1 => 2.0,
-                _ => 3.0,
-            };
-        let resources = base_resources
-            * match unit.formation {
-                0 => 1.0,
-                1 => 2.0,
-                _ => 3.0,
-            };
+        // A Corps or an Army is priced as one bill, not as a Standard quote
+        // multiplied afterwards: the host applies the body count before the
+        // minimum and the `PURCHASE_DIVISOR` rounding.
+        let (gold, resources) = self
+            .unit_upgrade_price_in_formation(pid, unit.kind, target, unit.formation)
+            .ok_or("no unlocked successor")?;
         if self.players[pid].gold + f64::EPSILON < gold {
             return Err("not enough gold");
         }
@@ -50688,6 +50755,9 @@ mod world_lap_tests;
 
 #[cfg(test)]
 mod purchase_gate_tests;
+
+#[cfg(test)]
+mod unit_upgrade_price_tests;
 
 #[cfg(test)]
 mod wonder_effect_cache_tests;
