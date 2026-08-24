@@ -15,7 +15,10 @@
 //! and explicitly promote `unit-cost-efficiency`, `unit-objective-memory`,
 //! `camp-party`, `slot-kind-tiebreak`, `promote-when-wounded`,
 //! `religion-sues-peace`, `lane-great-people`, `one-launch-pad`, and
-//! `civilian-rescue`, for 45 enabled genes.
+//! `civilian-rescue`; then `missionary-evades-raiders`, `district-planning`,
+//! `missionary-last-charge-explores`, `settlement-gap-target`,
+//! `religious-defence-scales`, `lane-policy-deck`, and
+//! `science-multiplier-payoff`, for 52 enabled genes.
 //! `DEPLOYMENT_GENOME` is that exact list. A screen refresh updates evidence,
 //! not the runtime default; changing a default requires an explicit operator
 //! update to the pinned list and regeneration.
@@ -55,10 +58,11 @@
 //! `apply_gene_ledger` is what `enable_live_bridge` and
 //! `enable_engine_repairs` end with: every live treatment and production
 //! treatment the ledger does not default on is withheld, every opt-in it
-//! defaults on is enabled, and a gene with no ledger row (the
-//! Firaxis-only flags, which the screen cannot price) is left exactly as
-//! the bundle set it. The `_universe` twins of those two helpers set every
-//! flag and skip the ledger: they are the genome's universe, for
+//! defaults on is enabled. A screenable gene without a measurement row still
+//! follows the pinned list; a Firaxis-only flag, which the screen cannot
+//! price, is left exactly as the bundle set it. The `_universe` twins of those
+//! two helpers set every flag and skip the ledger: they are the genome's
+//! universe, for
 //! `gene_screen` (which sets each gene to its drawn state explicitly) and for
 //! the membership tests.
 
@@ -352,7 +356,7 @@ mod tests {
     #[test]
     fn the_default_matches_the_operator_pinned_genome() {
         assert_eq!(deployment_policy(), "operator-pinned");
-        let mut on = 0;
+        let mut measured_on = 0;
         for row in gene_ledger() {
             assert_eq!(
                 row.default_on,
@@ -365,17 +369,28 @@ mod tests {
                 screenable(row.tag).then_some(row.default_on),
                 "host-only rows stay outside the runtime deployment policy"
             );
-            on += usize::from(row.default_on);
+            measured_on += usize::from(row.default_on);
         }
-        assert_eq!(on, table::DEPLOYMENT_GENOME.len());
         assert_eq!(
-            on, 45,
+            table::DEPLOYMENT_GENOME.len(),
+            52,
             "an operator selection changed; update it deliberately"
         );
+        assert!(
+            measured_on <= table::DEPLOYMENT_GENOME.len(),
+            "the measured subset cannot contain more defaults than the pinned genome"
+        );
+        for tag in table::DEPLOYMENT_GENOME {
+            assert_eq!(
+                ledger_default_on(tag),
+                Some(true),
+                "{tag} is pinned but not enabled by the runtime ledger"
+            );
+        }
     }
 
     #[test]
-    fn the_nine_explicit_promotions_are_pinned_on() {
+    fn the_sixteen_explicit_promotions_are_pinned_on() {
         for tag in [
             "unit-cost-efficiency",
             "unit-objective-memory",
@@ -386,15 +401,23 @@ mod tests {
             "lane-great-people",
             "one-launch-pad",
             "civilian-rescue",
+            "missionary-evades-raiders",
+            "district-planning",
+            "missionary-last-charge-explores",
+            "settlement-gap-target",
+            "religious-defence-scales",
+            "lane-policy-deck",
+            "science-multiplier-payoff",
         ] {
             assert!(operator_default_on(tag), "{tag} was not pinned on");
         }
     }
 
-    /// A screenable gene outside the pinned list is off; a Firaxis-only flag
-    /// has no instrument and is left alone.
+    /// Every screenable gene has an explicit pinned state, including a gene
+    /// whose first measurement has not landed; a Firaxis-only flag has no
+    /// instrument and is left alone.
     #[test]
-    fn unmeasured_genes_are_off_only_when_a_screen_could_have_priced_them() {
+    fn screenable_genes_have_an_explicit_default_and_host_only_flags_are_untouched() {
         assert_eq!(
             ledger_default_on("live-trader-route"),
             None,

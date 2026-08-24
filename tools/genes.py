@@ -452,8 +452,10 @@ DIFF_PLACES = 6
 #: rows.
 DEPLOYMENT_POLICY = "operator-pinned"
 
-#: The nine explicit 2026-08-24 promotions. They supplement the exact
+#: The sixteen explicit 2026-08-24 promotions. They supplement the exact
 #: 36-gene selection already shipped at the 38,160-seat standard cutoff.
+#: The final seven are the later operator-selected promotions; they remain
+#: explicit here rather than being inferred from screen statistics.
 OPERATOR_PROMOTIONS_20260824 = (
     "unit-cost-efficiency",
     "unit-objective-memory",
@@ -464,11 +466,18 @@ OPERATOR_PROMOTIONS_20260824 = (
     "lane-great-people",
     "one-launch-pad",
     "civilian-rescue",
+    "missionary-evades-raiders",
+    "district-planning",
+    "missionary-last-charge-explores",
+    "settlement-gap-target",
+    "religious-defence-scales",
+    "lane-policy-deck",
+    "science-multiplier-payoff",
 )
 
 #: The complete pinned deployment genome, in stable tag order. Every other
 #: screenable gene defaults off unless an explicit operator update changes this
-#: selection. Keep the nine promotions above named separately so the policy
+#: selection. Keep the sixteen promotions above named separately so the policy
 #: change is auditable without re-deriving it from screen statistics.
 OPERATOR_DEFAULT_ON = (
     "air-surge",
@@ -482,6 +491,7 @@ OPERATOR_DEFAULT_ON = (
     "civilian-rescue",
     "competition-victory-points",
     "culture-building-debt",
+    "district-planning",
     "early-contact-window",
     "engine-faith-price",
     "escort-unstick",
@@ -492,8 +502,11 @@ OPERATOR_DEFAULT_ON = (
     "inquisition-on-threat",
     "lane-culture-spending",
     "lane-great-people",
+    "lane-policy-deck",
     "loyalty-rate-alarm",
     "maintenance-aware-deck",
+    "missionary-evades-raiders",
+    "missionary-last-charge-explores",
     "one-launch-pad",
     "opportunistic-war",
     "peacetime-deterrence",
@@ -504,9 +517,12 @@ OPERATOR_DEFAULT_ON = (
     "recorded-tactical-step",
     "relief-targets-the-siege",
     "religion-sues-peace",
+    "religious-defence-scales",
     "religious-units-heal-first",
+    "science-multiplier-payoff",
     "score-horizon",
     "settle-sooner",
+    "settlement-gap-target",
     "settler-threat-detour",
     "slot-kind-tiebreak",
     "strike-opening",
@@ -850,7 +866,7 @@ def default_on_summary(ledger: dict) -> str:
         raise ValueError("the ranking only renders the operator-pinned deployment policy")
     return (
         f"**Deployment default:** operator-pinned ({len(genome)} genes): retains the prior "
-        f"36 selections and explicitly adds {', '.join(f'`{tag}`' for tag in promotions)}. "
+        f"36 selections and explicitly promotes {', '.join(f'`{tag}`' for tag in promotions)}. "
         "Screen columns, *Diff*, and posterior values are evidence only; new batches do not "
         "automatically change defaults."
     )
@@ -1478,7 +1494,11 @@ def build_ledger(sources: list[Path], filter_known: bool = True,
         "helps": sum(g["verdict"] == "helps" for g in genes),
         "hurts": sum(g["verdict"] == "hurts" for g in genes),
         "unresolved": sum(g["verdict"] == "unresolved" for g in genes),
-        "default_on": sum(g["default_on"] for g in genes),
+        # The pinned selection governs every screenable tag, including one
+        # whose first measurement has not landed yet and therefore has no
+        # `GeneVerdict` row. Counts describe that runtime selection, not only
+        # the measured subset emitted below.
+        "default_on": len(selected),
     }
     return {
         "kind": "gene_ledger",
@@ -2361,6 +2381,7 @@ def lane_section(ledger: dict, measured: dict[str, list[dict]],
                  desc: dict[str, str]) -> list[str]:
     """The lane genes, judged on the axis they can actually pay on."""
     tags = lane_tags()
+    selected = set(ledger["rules"]["deployment_genome"])
     verdicts = {g["tag"]: g for g in ledger["genes"]}
     lines = [
         "",
@@ -2386,7 +2407,7 @@ def lane_section(ledger: dict, measured: dict[str, list[dict]],
     for tag in tags:
         gene = verdicts.get(tag, {})
         history = measured.get(tag)
-        default = "**on**" if gene.get("default_on") else "off"
+        default = "**on**" if tag in selected else "off"
         if not history:
             lines.append(
                 f"| `{tag}` | {default} | \u2013 | \u2013 | \u2013 | awaiting its first "
@@ -2398,7 +2419,7 @@ def lane_section(ledger: dict, measured: dict[str, list[dict]],
             f"| `{tag}` | {default} | "
             f"{wins_per(history[-1]['win_on'], history[-1]['players']):+d} | "
             f"{share_cell(history)} | {posterior_cell(posterior)} | "
-            f"{verdicts[tag]['verdict']} |"
+            f"{gene.get('verdict', 'unmeasured')} |"
         )
     return lines
 
@@ -2411,6 +2432,13 @@ def render(ledger: dict) -> str:
     tags = screenable_tags()
     desc = descriptions()
     verdict = {g["tag"]: g for g in ledger["genes"]}
+    selected = set(ledger["rules"]["deployment_genome"])
+    # A reporting batch can already display a screenable gene before an
+    # authoritative source has supplied its GeneVerdict. Preserve its explicit
+    # pinned state in the display and family helpers instead of falling back to
+    # an accidental "off" merely because that row is still unmeasured.
+    for tag in selected:
+        verdict.setdefault(tag, {"default_on": True})
     reg = registry()
 
     rows = []
@@ -2731,10 +2759,13 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
 
     if args.command == "list":
-        ledger_rows = {g["tag"]: g for g in json.loads(LEDGER_JSON.read_text())["genes"]} if LEDGER_JSON.exists() else {}
+        ledger = json.loads(LEDGER_JSON.read_text()) if LEDGER_JSON.exists() else {}
+        ledger_rows = {g["tag"]: g for g in ledger.get("genes", [])}
+        selected = set(ledger.get("rules", {}).get(
+            "deployment_genome", OPERATOR_DEFAULT_ON))
         for row in genes():
             verdict = ledger_rows.get(row.tag, {})
-            print(f"{row.tag:<32} {row.kind:<26} {'on ' if verdict.get('default_on') else 'off'}  "
+            print(f"{row.tag:<32} {row.kind:<26} {'on ' if row.tag in selected else 'off'}  "
                   f"{verdict.get('verdict', 'unmeasured')}")
         return 0
     if args.command == "table":

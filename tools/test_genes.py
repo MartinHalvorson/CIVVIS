@@ -27,26 +27,31 @@ PLAYERS = gene_ledger.SCREEN["players"]
 
 #: ★★★★ THE OPERATOR-PINNED DEPLOYMENT GENOME, 2026-08-24.
 #: This is the exact list the agent plays. It retains the 36 selections that
-#: were already deployed, then adds the nine explicit operator promotions:
+#: were already deployed, then adds the sixteen explicit operator promotions:
 #: `unit-cost-efficiency`, `unit-objective-memory`, `camp-party`,
 #: `slot-kind-tiebreak`, `promote-when-wounded`, `religion-sues-peace`, and
-#: `lane-great-people`, `one-launch-pad`, and `civilian-rescue`. Screen
-#: results remain evidence; they cannot move this tuple automatically.
+#: `lane-great-people`, `one-launch-pad`, `civilian-rescue`,
+#: `missionary-evades-raiders`, `district-planning`,
+#: `missionary-last-charge-explores`, `settlement-gap-target`,
+#: `religious-defence-scales`, `lane-policy-deck`, and
+#: `science-multiplier-payoff`. Screen results remain evidence; they cannot
+#: move this tuple automatically.
 #: Changing it requires an intentional edit and PR note.
 DEPLOYED_GENOME_20260824 = (
     "air-surge", "amenity-district-path", "apostle-promotion-by-role",
     "barbarian-bargain", "barbarian-scouts-are-scouts", "bounded-recovery",
     "buildings-before-projects", "camp-party", "civilian-rescue", "competition-victory-points",
-    "culture-building-debt", "early-contact-window", "engine-faith-price",
+    "culture-building-debt", "district-planning", "early-contact-window", "engine-faith-price",
     "escort-unstick", "founder-temple", "great-person-housing",
     "holy-lane-parity", "idle-faith-patronage", "inquisition-on-threat",
-    "lane-culture-spending", "lane-great-people", "loyalty-rate-alarm", "maintenance-aware-deck",
+    "lane-culture-spending", "lane-great-people", "lane-policy-deck", "loyalty-rate-alarm", "maintenance-aware-deck",
+    "missionary-evades-raiders", "missionary-last-charge-explores",
     "one-launch-pad",
     "opportunistic-war", "peacetime-deterrence", "price-the-suzerainty",
     "promote-when-wounded", "raid-pillage-prizes", "recon-replacement",
     "recorded-tactical-step", "relief-targets-the-siege", "religion-sues-peace",
-    "religious-units-heal-first", "score-horizon", "settle-sooner",
-    "settler-threat-detour", "slot-kind-tiebreak", "strike-opening",
+    "religious-defence-scales", "religious-units-heal-first", "science-multiplier-payoff",
+    "score-horizon", "settle-sooner", "settlement-gap-target", "settler-threat-detour", "slot-kind-tiebreak", "strike-opening",
     "theology-for-founders", "unit-cost-efficiency", "unit-objective-memory",
     "war-economy", "war-reinforcement",
     "wide-map-capacity",
@@ -108,7 +113,10 @@ class Merging(unittest.TestCase):
                 path = Path(tmp) / f"s{i}.json"
                 path.write_text(json.dumps(data))
                 paths.append(path)
-            return gene_ledger.build_ledger(paths, filter_known=False)
+            # These stand-in tags model evidence only; they deliberately do
+            # not inherit the repository's real pinned deployment selection.
+            return gene_ledger.build_ledger(paths, filter_known=False,
+                                            deployment_genome=())
 
     def test_the_newest_screen_that_priced_a_gene_supplies_its_verdict(self):
         ledger = self.build([
@@ -138,9 +146,7 @@ class Merging(unittest.TestCase):
             {"helps": 2, "hurts": 2, "unresolved": 0, "default_on": 0},
         )
         self.assertEqual(ledger["rules"]["deployment_policy"], "operator-pinned")
-        self.assertEqual(ledger["rules"]["deployment_genome"],
-                         list(gene_ledger.normalize_deployment_genome(
-                             gene_ledger.OPERATOR_DEFAULT_ON)))
+        self.assertEqual(ledger["rules"]["deployment_genome"], [])
 
     def test_a_later_source_overrides_an_earlier_one_per_gene(self):
         ledger = self.build([
@@ -547,11 +553,13 @@ class TheOperatorPinnedDeploymentGenome(unittest.TestCase):
         self.assertEqual(ledger["rules"]["deployment_policy"], "operator-pinned")
         self.assertEqual(tuple(ledger["rules"]["deployment_genome"]),
                          DEPLOYED_GENOME_20260824)
+        selected = set(DEPLOYED_GENOME_20260824)
+        measured = {g["tag"] for g in ledger["genes"]}
         self.assertEqual(
-            tuple(sorted(g["tag"] for g in ledger["genes"] if g["default_on"])),
-            DEPLOYED_GENOME_20260824,
+            {g["tag"] for g in ledger["genes"] if g["default_on"]},
+            selected & measured,
         )
-        self.assertEqual(ledger["counts"]["default_on"], 45)
+        self.assertEqual(ledger["counts"]["default_on"], 52)
         self.assertEqual(tuple(ledger["rules"]["operator_promotions"]),
                          gene_ledger.OPERATOR_PROMOTIONS_20260824)
 
@@ -1582,15 +1590,29 @@ class ThePosteriorIsPublishedAsEvidence(unittest.TestCase):
         selected = set(self.ledger["rules"]["deployment_genome"])
         for cells in self._rows():
             tag = cell(cells, "Gene").strip("`")
-            if tag not in recorded:
-                self.assertEqual(cell(cells, "Default"), "off", tag)
-                continue
-            gene = recorded[tag]
             self.assertEqual(
                 cell(cells, "Default"),
-                "**on**" if gene["default_on"] else "off",
+                "**on**" if tag in selected else "off",
                 cell(cells, "Gene"))
-            self.assertEqual(gene["default_on"], tag in selected, cell(cells, "Gene"))
+            if tag in recorded:
+                self.assertEqual(recorded[tag]["default_on"], tag in selected,
+                                 cell(cells, "Gene"))
+
+    def test_unmeasured_pinned_genes_stay_on_in_the_rendered_ranking_and_list(self):
+        """An authoritative row is optional; the explicit selection is not."""
+        recorded = {g["tag"] for g in self.ledger["genes"]}
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            self.assertEqual(ranking.main(["list"]), 0)
+        list_rows = output.getvalue()
+        displayed = {
+            cell(cells, "Gene").strip("`"): cell(cells, "Default")
+            for cells in self._rows()
+        }
+        for tag in ("missionary-evades-raiders", "missionary-last-charge-explores"):
+            self.assertNotIn(tag, recorded, tag)
+            self.assertEqual(displayed[tag], "**on**", tag)
+            self.assertRegex(list_rows, rf"(?m)^{re.escape(tag)}\s+.+\s+on\s+unmeasured$")
 
     def test_the_evidence_section_marks_pinned_state_without_a_counterfactual_rule(self):
         self.assertIn("## Evidence for future operator selections", self.text)

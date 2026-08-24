@@ -31416,16 +31416,13 @@ fn a_second_front_closes_the_surge_window() {
 
 /// The religious-corps genes are registered, discoverable by name, and
 /// reversible. The bare controller starts them off; the deployment ledger
-/// currently promotes `religious-units-heal-first`. See `advanced/religion.rs`.
+/// currently promotes `religious-defence-scales` and
+/// `religious-units-heal-first`. See `advanced/religion.rs`.
 #[test]
 fn the_religious_corps_genes_are_registered_reversible_opt_ins() {
     let mut ai = AdvancedAi::new();
     for (field, tag, default_on) in [
-        (
-            "religious_defence_scales",
-            "religious-defence-scales",
-            false,
-        ),
+        ("religious_defence_scales", "religious-defence-scales", true),
         ("guru_heals_the_corps", "guru-heals-the-corps", false),
         (
             "religious_units_heal_first",
@@ -32728,12 +32725,17 @@ fn wonder_score_tally_never_stacks_and_never_moves_a_gate_it_does_not_own() {
 
 #[test]
 fn the_missionary_field_genes_are_registered_reversible_opt_ins() {
-    for (field, tag) in [
+    for (field, tag, default_on) in [
         (
             "missionary_last_charge_explores",
             "missionary-last-charge-explores",
+            true,
         ),
-        ("missionary_evades_raiders", "missionary-evades-raiders"),
+        (
+            "missionary_evades_raiders",
+            "missionary-evades-raiders",
+            true,
+        ),
     ] {
         assert!(
             GENES
@@ -32747,8 +32749,8 @@ fn the_missionary_field_genes_are_registered_reversible_opt_ins() {
         );
         assert_eq!(
             crate::ai::advanced::gene_ledger::ledger_default_on(tag),
-            Some(false),
-            "{tag} ships off until a screen prices it"
+            Some(default_on),
+            "{tag} must match the current deployment genome"
         );
     }
     let mut ai = AdvancedAi::new();
