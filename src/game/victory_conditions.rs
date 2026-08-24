@@ -4119,3 +4119,90 @@ fn a_mirrored_competition_pays_nothing_natively() {
         "and a host competition does not lock out a native one either"
     );
 }
+
+/// Every competition Gathering Storm pays a Diplomatic Victory Point for, and
+/// nothing else.
+///
+/// ★★★★★ THE OTHER HALF OF THE TWENTY. The content sources above are worth
+/// about nine points across a 250-turn game and the congress resolution ±2 from
+/// the Modern era; the rest of a Diplomatic victory is meant to come from
+/// competitions, which recur for the whole second half. Joining the shipped
+/// `EmergencyRewards` to `ModifierArguments` names exactly seven of them:
+///
+/// | modifier | Amount | emergencies |
+/// |---|---|---|
+/// | `NON_EMERGENCY_FIRST_PLACE_VICTORY_POINT` | 1 | Nobel Peace, World's Fair, Space Station, World Games |
+/// | `AID_REQUEST_FIRST_PLACE_VICTORY_POINT` | 2 | Send Aid, Send Military Aid |
+/// | `CLIMATE_ACCORDS_FIRST_PLACE_VICTORY_POINT` | 2 | Climate Accords |
+///
+/// ⚠ Nobel **Literature** and Nobel **Physics** are scored competitions and are
+/// deliberately not here: `EmergencyRewards` gives neither a victory-point row
+/// at all. Adding them because they look like their sibling would invent two
+/// points a game.
+///
+/// ⚠ The Favor is the emergency's own top-tier amount, not a shared constant. A
+/// flat 25 shipped here until #2379 and appears in no shipped table.
+#[test]
+fn every_competition_that_pays_a_diplomatic_victory_point_is_seated_natively() {
+    let table: Vec<(&str, i64, f64)> = Game::NATIVE_COMPETITIONS
+        .iter()
+        .map(|competition| {
+            (
+                competition.kind,
+                competition.diplomatic_victory_points,
+                competition.first_place_favor,
+            )
+        })
+        .collect();
+    let mut sorted = table.clone();
+    sorted.sort_by(|left, right| left.0.cmp(right.0));
+    assert_eq!(
+        sorted,
+        vec![
+            ("EMERGENCY_CLIMATE_ACCORDS", 2, 100.0),
+            ("EMERGENCY_NOBEL_PRIZE_PEACE", 1, 0.0),
+            ("EMERGENCY_SEND_AID", 2, 100.0),
+            ("EMERGENCY_SEND_MILITARY_AID", 2, 100.0),
+            ("EMERGENCY_SPACE_STATION", 1, 50.0),
+            ("EMERGENCY_WORLDS_FAIR", 1, 50.0),
+            ("EMERGENCY_WORLD_GAMES", 1, 50.0),
+        ],
+        "a competition added or dropped here, or an award changed, is a change \
+         to how a Diplomatic victory is won"
+    );
+    for (kind, points, _) in &table {
+        assert_eq!(
+            Game::competition_victory_points(kind),
+            *points,
+            "the AI prices a competition from this table and must not carry its own copy"
+        );
+    }
+
+    // The seating order is the simplification this file owes the reader: the
+    // shipped data says which competitions exist and when, and nothing about
+    // which the congress picks among them.
+    let congress: Vec<(&str, usize, Option<usize>)> = Game::NATIVE_COMPETITIONS
+        .iter()
+        .filter(|competition| competition.trigger == NativeCompetitionTrigger::Congress)
+        .map(|competition| {
+            (
+                competition.kind,
+                competition.minimum_world_era,
+                competition.maximum_world_era,
+            )
+        })
+        .collect();
+    assert_eq!(
+        congress,
+        vec![
+            ("EMERGENCY_SPACE_STATION", 8, None),
+            ("EMERGENCY_CLIMATE_ACCORDS", 7, None),
+            ("EMERGENCY_WORLD_GAMES", 6, None),
+            ("EMERGENCY_WORLDS_FAIR", 5, Some(5)),
+            ("EMERGENCY_NOBEL_PRIZE_PEACE", 4, None),
+        ],
+        "newest era first, so the latest competition an era has unlocked takes \
+         the seat and the Nobel Peace Prize takes the Industrial era and the \
+         gaps another kind's lockout leaves"
+    );
+}

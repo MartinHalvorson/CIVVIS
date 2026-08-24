@@ -375,7 +375,7 @@ impl AdvancedAi {
             return 0.0;
         }
         // ⚠ NOT `raced_lane`, which requires an `Expansion` plan: every
-        // scored competition is gated on world era 5 to 8
+        // scored congress competition is gated on world era 4 to 8
         // (`Game::NATIVE_COMPETITIONS`), and a targeted seat's expansion
         // window shuts at `standard_duration(175)` — turn ~87 at Online. Under
         // that restriction this priced nothing at all: 0 of 4
