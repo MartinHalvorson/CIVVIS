@@ -4919,12 +4919,26 @@ pub struct AdvancedAi {
     /// away before the recovery path walks it home. Opt-in gene
     /// `pillage-to-heal`; see `advanced/field_craft.rs`.
     pillage_to_heal: bool,
+    /// A recon unit with nothing left to explore holds the pass toward a
+    /// neighbour, or watches the border tile the walk between the two
+    /// capitals leaves it by. Opt-in gene `pass-picket`; see
+    /// `advanced/recon_disruption.rs`.
+    pass_picket: bool,
+    /// This turn's recon orders — screen stands and picket posts — drawn
+    /// once per turn from the start-of-turn board so units planned in
+    /// parallel agree on them. See `advanced/recon_disruption.rs`.
+    recon_disruption: recon_disruption::ReconPlan,
 
     // ---- append: s-s ------------------------------------------------
     /// A ranged unit inside a hostile melee body's reach steps to a firing
     /// tile inside fewer hostile envelopes and fires at that body. Opt-in
     /// gene `shoot-and-scoot`; see `advanced/field_craft.rs`.
     shoot_and_scoot: bool,
+    /// A seen rival Settler near our cities is screened: up to four of our
+    /// nearby land units, recon first, take the stands that add the most
+    /// expected steps to its likeliest walks, and hold them. Opt-in gene
+    /// `settler-screen`; see `advanced/recon_disruption.rs`.
+    settler_screen: bool,
 
     // ---- append: t-z ------------------------------------------------
     /// A melee unit with nothing to hit stands where its zone of control
@@ -5253,6 +5267,9 @@ use site_lookahead::{PlotOffer, PlotPurchaseCache};
 /// and flipping nearby city-states. Four opt-in genes; see
 /// `advanced/field_craft.rs`.
 mod field_craft;
+/// Recon disruption: the settler screen and the pass picket. Two opt-in
+/// genes; see `advanced/recon_disruption.rs`.
+mod recon_disruption;
 
 /// Six opt-in genes for the victory lanes: the race the empire is actually
 /// in, reaching the deciders that read the expansion posture instead. See
@@ -5978,9 +5995,12 @@ impl AdvancedAi {
             // ---- append: p-r ----------------------------------------
             religious_veto_defence: false,
             pillage_to_heal: false,
+            pass_picket: false,
+            recon_disruption: recon_disruption::ReconPlan::default(),
 
             // ---- append: s-s ----------------------------------------
             shoot_and_scoot: false,
+            settler_screen: false,
 
             // ---- append: t-z ----------------------------------------
             zoc_screen: false,
@@ -29893,6 +29913,13 @@ impl AdvancedAi {
                     }
                 }
             }
+            // `settler-screen` / `pass-picket`: a unit nothing above wanted
+            // takes its recon order — a stand on a rival Settler's walk, or
+            // the post toward a neighbour once nothing is left to explore.
+            // See `advanced/recon_disruption.rs`.
+            if let Some(acted) = self.recon_disruption_step(g, pid, uid) {
+                return acted;
+            }
             return self.base.military_step(g, pid, uid);
         }
         // Combat can change occupancy, local power and the best focus target.
@@ -31415,6 +31442,11 @@ impl AdvancedAi {
         if self.joint_tactics {
             self.plan_engagement(g, pid);
         }
+        // `settler-screen` / `pass-picket`: this turn's recon orders, drawn
+        // once from the start-of-turn board so units planned in parallel
+        // agree on them. Nothing is read with both genes off. See
+        // `advanced/recon_disruption.rs`.
+        self.recon_disruption_plan(g, pid);
         let mut ids = g.player_unit_ids(pid);
         ids.retain(|uid| !settled_first.contains(uid));
         ids.sort_by_key(|uid| {
