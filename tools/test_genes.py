@@ -1013,6 +1013,13 @@ class TheBuildGuard(unittest.TestCase):
         self.assertEqual(records[0]["unverified"],
                          "the remote build claim is unavailable")
 
+    def test_new_reporting_batch_evicts_the_oldest_fixed_slot(self):
+        existing = [Path("last.json"), Path("prior.json"), Path("third.json")]
+        self.assertEqual(
+            gene_ledger.latest_reporting_batches([Path("new.json")], existing),
+            [Path("new.json"), Path("last.json"), Path("prior.json")],
+        )
+
 
 class PreFingerprintSources(unittest.TestCase):
     """The twenty sources recorded before 2026-08-23 carry no build block. They
@@ -1156,9 +1163,13 @@ class GeneratedFiles(unittest.TestCase):
                          gene_ledger.render_rust(with_reporting))
 
         newest = current["reporting_batches"][0]
-        self.assertEqual(newest["seats"], 10_002)
-        self.assertEqual(newest["games"], 1_667)
-        self.assertIn("unpublished no-op batch claim", newest["unverified"])
+        self.assertEqual(newest["seats"], 41_628)
+        self.assertEqual(newest["games"], 6_938)
+        self.assertEqual(newest["batch"], {
+            "target_seats": 50_004,
+            "complete_seats": 41_628,
+            "partial": True,
+        })
         self.assertNotIn(newest["path"], {s["path"] for s in current["sources"]})
         authoritative, _ = ranking.load_sources(current)
         displayed, _ = ranking.load_display_sources(current)
@@ -1312,9 +1323,9 @@ class VersionedGenes(unittest.TestCase):
 #: assertion and as the name -> index map every cell lookup goes through.
 EXPECTED_COLUMNS = (
     "| Rank | Gene | Description | Best version | Default | "
-    "Wins ± /10k total seats — Last Batch (n=10,002 total seats) | "
-    "Wins ± /10k total seats — Prior Batch (n=47,244 total seats) | "
-    "Wins ± /10k total seats — Third Batch (n=35,148 total seats) | "
+    "Wins ± /10k total seats — Last Batch (n=41,628 total seats) | "
+    "Wins ± /10k total seats — Prior Batch (n=10,002 total seats) | "
+    "Wins ± /10k total seats — Third Batch (n=47,244 total seats) | "
     "Total (on) Win rate | Total (off) Win rate | Diff | "
     "Posterior (95% CI) | P(>0) | Share Δpp (z) | "
     "cost (compute) | cost (time) |"
@@ -1472,9 +1483,9 @@ class TheTableIsDerived(unittest.TestCase):
         batches = ranking.load_reporting_batches(ledger)
         self.assertEqual(len(batches), 3)
         columns = (
-            (0, "Wins ± /10k total seats — Last Batch (n=10,002 total seats)"),
-            (1, "Wins ± /10k total seats — Prior Batch (n=47,244 total seats)"),
-            (2, "Wins ± /10k total seats — Third Batch (n=35,148 total seats)"),
+            (0, "Wins ± /10k total seats — Last Batch (n=41,628 total seats)"),
+            (1, "Wins ± /10k total seats — Prior Batch (n=10,002 total seats)"),
+            (2, "Wins ± /10k total seats — Third Batch (n=47,244 total seats)"),
         )
         for cells in self._ranked_rows():
             tag = cell(cells, "Gene").strip("`")
