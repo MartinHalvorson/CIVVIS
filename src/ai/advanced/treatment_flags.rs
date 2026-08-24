@@ -2337,6 +2337,19 @@ impl AdvancedAi {
         self.base.solvency_first_trade_slot = false;
     }
 
+    /// Keep every early Settler pipeline slot, but allocate new slots to
+    /// competitive factories with distinct reachable claims. Opt-in gene
+    /// `settler-factory-coordination`. Filed here rather than under a marker:
+    /// the append-point check reads a method line's first identifier.
+    pub fn enable_settler_factory_coordination(&mut self) {
+        self.settler_factory_coordination = true;
+    }
+
+    /// The twin of `enable_settler_factory_coordination`.
+    pub fn disable_settler_factory_coordination(&mut self) {
+        self.settler_factory_coordination = false;
+    }
+
     /// A seen rival Settler near our cities is screened: up to four of our
     /// nearby land units, recon first, take the stands that add the most
     /// expected steps to its likeliest walks — a tile a foreign unit holds

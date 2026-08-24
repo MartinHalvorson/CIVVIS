@@ -584,6 +584,19 @@ const STACKED_GUARD_MIN_HP: i32 = 40;
 /// radius. Named here because a census that scores siting against raw
 /// `settle_value` is scoring it against an objective the agent never held.
 const SETTLE_DISTANCE_PENALTY: f64 = 0.9;
+/// A second planned city must remain legal whichever Settler arrives first.
+/// The engine excludes founding within three tiles, so four is the exact
+/// spacing floor for simultaneous claims. See `settler_factory_coordination`.
+const SETTLER_FACTORY_SITE_SPACING: i32 = 4;
+/// A factory is still competitive when it finishes within five turns or 2.5×
+/// the fastest open factory, whichever is more generous. That keeps a 3/7
+/// turn opening pair flowing while refusing the 29-turn satellite observed in
+/// run civvis-20260824T204654Z.
+const SETTLER_FACTORY_TURN_RATIO: f64 = 2.5;
+const SETTLER_FACTORY_TURN_MARGIN: f64 = 5.0;
+/// Straight-line distance is already priced by `settle_sites`; charge only
+/// the extra steps a lawful route actually takes around water and borders.
+const SETTLER_ROUTE_DETOUR_PENALTY: f64 = 2.5;
 /// Faith a turn the empire must already collect WITHOUT God-King before the
 /// live portfolio stops wanting the card for its pantheon. Below it the
 /// pantheon is God-King's alone (the live capital makes none of its own — see
@@ -2232,6 +2245,18 @@ pub struct AdvancedAi {
     /// still at least two seats short of its target. `enable_parallel_settlers`
     /// sets both halves; nothing native sets either.
     pub parallel_settlers: bool,
+    /// Keep the early Settler pipeline wide, but give its slots to factories
+    /// that can finish competitively and have distinct reachable claims.
+    ///
+    /// Live run civvis-20260824T204654Z had one Settler walking while Rome,
+    /// Puteoli and Antium offered more at roughly 3, 7 and 29 turns. The
+    /// throughput target was right; the uncoordinated factories and sites
+    /// were not: ten short holds and a claim invalidated by another founding
+    /// turned extra production into walkers with no practical destination.
+    /// This opt-in retains `settler_in_flight_allowed` unchanged, admits the
+    /// 3/7-turn pair rather than the 29-turn satellite, reserves live and
+    /// queued claims four tiles apart, and requires a lawful future route.
+    pub settler_factory_coordination: bool,
     /// Slot `limitanei` (+2 Loyalty in cities with a garrison) when expanding or
     /// conquering.
     ///
@@ -5825,6 +5850,7 @@ impl AdvancedAi {
             linked_settler_progress: false,
             live_governor_assignment_adapter: false,
             parallel_settlers: false,
+            settler_factory_coordination: false,
             garrison_loyalty_policy: false,
             expansion_pays_back: false,
             coupled_expansion: false,
@@ -20403,6 +20429,194 @@ impl AdvancedAi {
         }
     }
 
+    fn settler_factory_turns(&self, g: &Game, pid: usize, cid: u32) -> f64 {
+        let settler = Item::Unit {
+            unit: crate::name!("settler"),
+        };
+        g.item_remaining_cost_for_city(pid, cid, &settler) / g.city_yields(cid).production.max(1.0)
+    }
+
+    /// Whether `cid` should consume one of the still-open Settler slots.
+    ///
+    /// This never narrows the pipeline itself. It ranks every city that could
+    /// fill each remaining slot, then removes factories outside a generous
+    /// completion-time band. A city already building a Settler always keeps
+    /// its queue; this is an admission rule, not a cancellation rule.
+    fn settler_factory_is_competitive(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        plan: &StrategicPlan,
+        counts: &EmpireCounts,
+    ) -> bool {
+        let settler = Item::Unit {
+            unit: crate::name!("settler"),
+        };
+        if g.cities[&cid].queue.first() == Some(&settler) {
+            return true;
+        }
+        let city_count = g.player_city_ids(pid).len();
+        let desired = self.settlement_target(plan);
+        let allowed = self.settler_in_flight_allowed(desired, city_count, counts.settlers);
+        let open_slots = allowed.saturating_sub(counts.settlers);
+        if open_slots == 0 {
+            return false;
+        }
+
+        let mut factories = g
+            .player_city_ids(pid)
+            .into_iter()
+            .filter(|candidate| {
+                let city = &g.cities[candidate];
+                city.pop >= 2
+                    && (city.queue.is_empty()
+                        || city.queue.first() == Some(&settler)
+                        || *candidate == cid)
+                    && g.can_produce(pid, *candidate, &settler)
+                    && self.settler_expansion_window_open(g, pid, *candidate)
+            })
+            .map(|candidate| (self.settler_factory_turns(g, pid, candidate), candidate))
+            .collect::<Vec<_>>();
+        factories.sort_by(|left, right| left.0.total_cmp(&right.0).then(left.1.cmp(&right.1)));
+        let Some(fastest) = factories.first().map(|factory| factory.0) else {
+            return false;
+        };
+        let competitive_turns =
+            (fastest * SETTLER_FACTORY_TURN_RATIO).max(fastest + SETTLER_FACTORY_TURN_MARGIN);
+        factories
+            .into_iter()
+            .filter(|factory| g.cities[&factory.1].queue.first() != Some(&settler))
+            .filter(|factory| factory.0 <= competitive_turns + f64::EPSILON)
+            .take(open_slots)
+            .any(|factory| factory.1 == cid)
+    }
+
+    /// Static future-route distances for a land Settler leaving `origin`.
+    /// Occupancy is deliberately ignored — units move — while terrain,
+    /// embarkation, Ocean access, city centers, wars and borders are facts the
+    /// eventual walker cannot wish away.
+    fn future_settler_routes(&self, g: &Game, pid: usize, origin: Pos) -> BTreeMap<Pos, usize> {
+        let can_embark = g.has_ability(pid, "mana") || g.tree_effect(pid, "land_unit_embark") > 0.0;
+        let can_cross_ocean =
+            g.has_ability(pid, "mana") || g.tree_effect(pid, "ocean_navigation") > 0.0;
+        let mut distances = BTreeMap::from([(origin, 0)]);
+        let mut frontier = vec![origin];
+        let mut cursor = 0;
+        while cursor < frontier.len() {
+            let from = frontier[cursor];
+            cursor += 1;
+            let next_distance = distances[&from] + 1;
+            for position in g.nbrs(from) {
+                if distances.contains_key(&position) {
+                    continue;
+                }
+                let Some(tile) = g.map.get(position) else {
+                    continue;
+                };
+                let traversable = if g.rules.is_unknown(tile) {
+                    tile.assumed_traversable || (can_embark && tile.assumed_navigable)
+                } else if !g.rules.is_passable(tile) {
+                    false
+                } else if g.rules.is_water(tile) {
+                    can_embark && (tile.terrain != "ocean" || can_cross_ocean)
+                } else {
+                    true
+                };
+                if !traversable {
+                    continue;
+                }
+                let territory = tile
+                    .owner_city
+                    .and_then(|city| g.cities.get(&city))
+                    .map(|city| city.owner);
+                if territory.is_some_and(|owner| {
+                    owner != pid && !g.is_at_war(pid, owner) && !g.has_open_borders(pid, owner)
+                }) {
+                    continue;
+                }
+                if g.city_at(position)
+                    .is_some_and(|city| g.cities[&city].owner != pid)
+                {
+                    continue;
+                }
+                distances.insert(position, next_distance);
+                frontier.push(position);
+            }
+        }
+        distances
+    }
+
+    fn coordinated_site_from(
+        &self,
+        g: &Game,
+        pid: usize,
+        origin: Pos,
+        reserved: &[Pos],
+    ) -> Option<(Pos, f64)> {
+        let routes = self.future_settler_routes(g, pid, origin);
+        let choose = |sites: Vec<(Pos, f64)>| {
+            let mut practical = sites
+                .into_iter()
+                .filter_map(|(position, value)| {
+                    let route = *routes.get(&position)?;
+                    if reserved
+                        .iter()
+                        .any(|other| g.wdist(*other, position) < SETTLER_FACTORY_SITE_SPACING)
+                        || !self.settler_site_is_landable(g, pid, position)
+                    {
+                        return None;
+                    }
+                    let detour = route.saturating_sub(g.wdist(origin, position) as usize) as f64;
+                    Some((position, value - detour * SETTLER_ROUTE_DETOUR_PENALTY))
+                })
+                .collect::<Vec<_>>();
+            practical.sort_by(|left, right| right.1.total_cmp(&left.1).then(left.0.cmp(&right.0)));
+            practical.into_iter().next()
+        };
+        choose(self.settle_sites(g, pid, origin, 11)).or_else(|| {
+            (g.has_ability(pid, "mana") || g.tree_effect(pid, "land_unit_embark") > 0.0)
+                .then(|| choose(self.settle_sites(g, pid, origin, g.map.width + g.map.height)))
+                .flatten()
+        })
+    }
+
+    /// Assign the queried factory after reserving every live target and every
+    /// earlier queued factory's deterministic claim. Recomputing this small
+    /// plan after each sequential queue decision means no mutable shadow plan
+    /// can drift away from the game state.
+    fn coordinated_settler_site(&self, g: &Game, pid: usize, cid: u32) -> Option<(Pos, f64)> {
+        let settler = Item::Unit {
+            unit: crate::name!("settler"),
+        };
+        let mut reserved = self
+            .settler_targets
+            .iter()
+            .filter_map(|(unit, position)| {
+                g.units.get(unit).and_then(|unit| {
+                    (unit.owner == pid && unit.kind == "settler").then_some(*position)
+                })
+            })
+            .collect::<Vec<_>>();
+        let mut queued = g
+            .player_city_ids(pid)
+            .into_iter()
+            .filter(|city| g.cities[city].queue.first() == Some(&settler))
+            .map(|city| (self.settler_factory_turns(g, pid, city), city))
+            .collect::<Vec<_>>();
+        queued.sort_by(|left, right| left.0.total_cmp(&right.0).then(left.1.cmp(&right.1)));
+        for (_, city) in queued {
+            let site = self.coordinated_site_from(g, pid, g.cities[&city].pos, &reserved);
+            if city == cid {
+                return site;
+            }
+            if let Some((position, _)) = site {
+                reserved.push(position);
+            }
+        }
+        self.coordinated_site_from(g, pid, g.cities[&cid].pos, &reserved)
+    }
+
     /// Which of the eight production category genes scales this candidate.
     ///
     /// The four specialist civilians and the two housekeeping items return the
@@ -20638,16 +20852,27 @@ impl AdvancedAi {
                     && counts.settlers < in_flight_allowed
                     && city.pop >= 2
                     && self.settler_expansion_window_open(g, pid, cid)
+                    && (!self.settler_factory_coordination
+                        || self.settler_factory_is_competitive(g, pid, cid, plan, counts))
                 {
-                    let site = self.best_settle_site(g, pid, city.pos, 11).or_else(|| {
-                        g.players[pid]
-                            .techs
-                            .contains(&crate::name!("shipbuilding"))
-                            .then(|| {
-                                self.best_settle_site(g, pid, city.pos, g.map.width + g.map.height)
-                            })
-                            .flatten()
-                    });
+                    let site = if self.settler_factory_coordination {
+                        self.coordinated_settler_site(g, pid, cid)
+                    } else {
+                        self.best_settle_site(g, pid, city.pos, 11).or_else(|| {
+                            g.players[pid]
+                                .techs
+                                .contains(&crate::name!("shipbuilding"))
+                                .then(|| {
+                                    self.best_settle_site(
+                                        g,
+                                        pid,
+                                        city.pos,
+                                        g.map.width + g.map.height,
+                                    )
+                                })
+                                .flatten()
+                        })
+                    };
                     if let Some(site) = site {
                         // ★★★ THE ORDER AND THE MARCH MUST AGREE ON THE
                         // GROUND. This gate priced the site; the walker then
