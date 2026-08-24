@@ -496,6 +496,19 @@ written at different profiles, gene orders or draws — a merged table would mix
 two experiments. Files written by the paired designs (`pair` and `arm` on
 their rows) still read: the two games of one seed are told apart by arm.
 
+Beside the outcome, every row carries an end-of-game census — the religion
+fields, `techs`, `military`, the war counters, and `wonders`, the wonders
+standing in that seat's cities. Each exists because a claim about the agent
+was being argued from prose instead of read out of a batch, and `--analyze`
+prints a census line per family whenever the rows carry it. `wonders` is the
+newest: `Game::score_parts` pays 15 points a wonder, the densest line of the
+tally that decides three quarters of these games, so a seat's wonder count is
+both the actuation question ("does it build one at all") and a mechanism
+behind its score share. ⚠ Read it as a census, never as a lever — within one
+arm wonders track score share, and so do cities, and wonders track cities;
+only the on−off contrast says which way the causation runs
+(`docs/eval/2026-08-24-the-wonder-lane-is-already-open-in-both-regimes.md`).
+
 ## Per-civilization effects — `--by-civ <tag>`
 
 `--analyze … --by-civ war-economy` prints one gene's contrast split by the
