@@ -37031,7 +37031,7 @@ impl Game {
         }
     }
 
-    fn builder_operations(&self, pid: usize, pos: Pos) -> Vec<String> {
+    pub(crate) fn builder_operations(&self, pid: usize, pos: Pos) -> Vec<String> {
         let Some(tile) = self.map.get(pos) else {
             return vec![];
         };
@@ -44189,7 +44189,7 @@ impl Game {
             .then_some((city_id, city.owner))
     }
 
-    fn governor_effect(&self, pid: usize, cid: u32, effect: &str) -> f64 {
+    pub(crate) fn governor_effect(&self, pid: usize, cid: u32, effect: &str) -> f64 {
         // Deciding whether a Governor is established walks the roster and the
         // city; no title or promotion granting this makes that moot.
         if !self.rules.effect_index.governors(effect) {
