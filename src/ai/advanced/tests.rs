@@ -9122,6 +9122,164 @@ fn parallel_settlers_open_a_second_pipeline_slot() {
 }
 
 #[test]
+fn settler_factory_coordination_keeps_the_fast_pair_and_gives_them_distinct_sites() {
+    let mut game = Game::new_full(1, 30, 18, 8_124, 160, 0, false);
+    let opening_settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .expect("the opening has a Settler");
+    game.apply(
+        0,
+        &Action::FoundCity {
+            unit: opening_settler,
+        },
+    )
+    .unwrap();
+    for tile in game.map.tiles.values_mut() {
+        tile.terrain = crate::name!("grassland");
+        tile.feature = None;
+        tile.resource = None;
+        tile.improvement = None;
+        tile.wonder = None;
+        tile.hills = false;
+    }
+    let capital = game.player_city_ids(0)[0];
+    let capital_pos = game.cities[&capital].pos;
+    let second = found_nearby_test_city(&mut game, 0, capital_pos);
+    let second_pos = game.cities[&second].pos;
+    let third = found_nearby_test_city(&mut game, 0, second_pos);
+    for city in [capital, second, third] {
+        game.cities.get_mut(&city).unwrap().pop = 3;
+    }
+    let settler = Item::Unit {
+        unit: crate::name!("settler"),
+    };
+    let shape_turns = |game: &mut Game, city: u32, turns: f64| {
+        let cost = game.item_cost_for_city(0, city, &settler);
+        let production = game.city_yields(city).production.max(1.0);
+        game.cities.get_mut(&city).unwrap().production = (cost - turns * production).max(0.0);
+    };
+    shape_turns(&mut game, capital, 3.0);
+    shape_turns(&mut game, second, 7.0);
+    game.cities.get_mut(&third).unwrap().production = 0.0;
+
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Expansion,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 8,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let mut ai = AdvancedAi::new();
+    ai.land_grab = true;
+    ai.enable_settler_factory_coordination();
+    let counts = ai.counts(&game, 0);
+    assert_eq!(
+        ai.settler_in_flight_allowed(plan.desired_cities, 3, counts.settlers),
+        3,
+        "coordination must preserve the widened early pipeline"
+    );
+    assert!(ai.settler_factory_is_competitive(&game, 0, capital, &plan, &counts));
+    assert!(ai.settler_factory_is_competitive(&game, 0, second, &plan, &counts));
+    assert!(
+        !ai.settler_factory_is_competitive(&game, 0, third, &plan, &counts),
+        "the fresh slow satellite must not consume a slot beside 3/7-turn factories"
+    );
+
+    let mut untreated = AdvancedAi::new();
+    untreated.land_grab = true;
+    assert!(
+        untreated.production_value(&game, 0, third, &settler, &plan, &counts) > 0.0,
+        "the ordinary controller still prices the slow factory"
+    );
+    ai.advanced_production(&mut game, 0, &plan, false);
+    assert_eq!(game.cities[&capital].queue.first(), Some(&settler));
+    assert_eq!(game.cities[&second].queue.first(), Some(&settler));
+    assert_ne!(game.cities[&third].queue.first(), Some(&settler));
+
+    let first_site = ai
+        .coordinated_settler_site(&game, 0, capital)
+        .expect("the first factory has a practical claim")
+        .0;
+    let second_site = ai
+        .coordinated_settler_site(&game, 0, second)
+        .expect("the second factory has a practical claim")
+        .0;
+    assert!(
+        game.wdist(first_site, second_site) >= SETTLER_FACTORY_SITE_SPACING,
+        "queued factories must not plan mutually invalidating sites: {first_site:?} / {second_site:?}"
+    );
+
+    assert!(!AdvancedAi::new().settler_factory_coordination);
+    assert!(!AdvancedAi::legacy().settler_factory_coordination);
+    let gene = GENES
+        .iter()
+        .find(|gene| gene.tag == "settler-factory-coordination")
+        .expect("the coordinator is published for gene_screen");
+    assert!(gene.opt_in() && gene.screenable() && !gene.live());
+}
+
+#[test]
+fn settler_factory_coordination_requires_a_route_but_accepts_shipbuilding() {
+    let mut game = Game::new_full(1, 30, 18, 8_125, 160, 0, false);
+    let opening_settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .expect("the opening has a Settler");
+    game.apply(
+        0,
+        &Action::FoundCity {
+            unit: opening_settler,
+        },
+    )
+    .unwrap();
+    let city = game.player_city_ids(0)[0];
+    let origin = game.cities[&city].pos;
+    let remote = game
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .find(|position| game.wdist(origin, *position) == 7 && game.wdisk(*position, 2).len() == 19)
+        .expect("the map has room for an isolated island");
+    for tile in game.map.tiles.values_mut() {
+        tile.terrain = crate::name!("coast");
+        tile.feature = None;
+        tile.resource = None;
+        tile.improvement = None;
+        tile.wonder = None;
+        tile.hills = false;
+    }
+    game.map.tiles.get_mut(&origin).unwrap().terrain = crate::name!("grassland");
+    for position in game.wdisk(remote, 2) {
+        let tile = game.map.tiles.get_mut(&position).unwrap();
+        tile.terrain = crate::name!("grassland");
+        tile.hills = true;
+    }
+
+    let ai = AdvancedAi::new();
+    assert!(
+        ai.best_settle_site(&game, 0, origin, 11).is_some(),
+        "the ordinary straight-line scorer sees the attractive island"
+    );
+    assert!(
+        ai.coordinated_site_from(&game, 0, origin, &[]).is_none(),
+        "a pre-Shipbuilding Settler cannot cross the coastal moat"
+    );
+    game.players[0].techs.insert(crate::name!("shipbuilding"));
+    assert!(game.tree_effect(0, "land_unit_embark") > 0.0);
+    let reachable = ai
+        .coordinated_site_from(&game, 0, origin, &[])
+        .expect("Shipbuilding makes the same island practical")
+        .0;
+    assert!(game.wdisk(remote, 2).contains(&reachable));
+}
+
+#[test]
 fn a_repeatedly_blocked_settler_releases_only_the_next_missing_slot() {
     let mut ai = AdvancedAi::new();
     ai.settler_blocked_turns.insert(41, 2);
