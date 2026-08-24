@@ -3299,7 +3299,8 @@ fn major_teams(game: &Game) -> Vec<Option<usize>> {
 }
 
 /// The stock opening world: four majors playing themselves out on the Tiny
-/// Tennis Ball globe, under simultaneous turns.
+/// Lakes globe, its heat scattered rather than banded by latitude, one seat
+/// at a time.
 ///
 /// This is the one description of "the game nobody has decided anything
 /// about yet". The browser build opens every civvis.ai visit on it (see
@@ -3327,9 +3328,12 @@ fn stock_opening_params(seed: u64) -> Params {
         // `--turn-structure simultaneous`; it is simply not selectable
         // from here.
         turn_structure: TurnStructure::Sequential,
-        map_script: MapScript::TeninsBall,
+        map_script: MapScript::Lakes,
         map_topology,
-        map_poles: MapPoles::Poles,
+        // Heat by noise instead of latitude: the world a first visit opens
+        // on has no ice cap at either end, and its snow, desert and jungle
+        // turn up wherever their own patch of noise puts them.
+        map_poles: MapPoles::Randomized,
         game_speed: GameSpeed::Online,
         max_turns: GameSpeed::Online.turn_limit(),
         victory_conditions: VictoryConditions {
@@ -3504,8 +3508,10 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
         p.map_poles = v;
     }
     // Heat was a boolean once — poles on or off. Only its `true` still names a
-    // world that exists, and that world is the default anyway, so a client
-    // sending the old boolean is left where it already was rather than being
+    // world that exists, and it names it plainly, so an old client sending it
+    // gets the banded world it asked for. Its `false` asked for the retired
+    // no-cold-end world, which nothing can build now, so that one falls
+    // through to whatever the request otherwise settled on rather than being
     // pushed into the one remaining alternative it never asked for.
     if request["map_poles"].as_bool() == Some(true) {
         p.map_poles = MapPoles::Poles;
@@ -12009,19 +12015,21 @@ fetchpriority=\"high\""
     }
 
     /// The first world a civvis.ai visitor ever waits on is the smallest
-    /// stock one: four majors on the Tiny Tennis Ball globe, sized by the
-    /// shipped table, spectated, at Online speed, under simultaneous turns.
-    /// The browser build's `wasm::opening_params` is this function with the
-    /// page's seed, so the contract is tested here, where the suite actually
-    /// runs.
+    /// stock one: four majors on the Tiny Lakes globe, sized by the shipped
+    /// table, its heat scattered rather than banded by latitude, spectated,
+    /// at Online speed, one seat at a time. The browser build's
+    /// `wasm::opening_params` is this function with the page's seed, so the
+    /// contract is tested here, where the suite actually runs.
     #[test]
-    fn the_stock_opening_world_is_the_tiny_tennis_ball_exhibition() {
+    fn the_stock_opening_world_is_the_tiny_lakes_exhibition() {
         let params = stock_opening_params(7);
         let size = MapSize::for_players(params.num_players);
 
         assert_eq!(params.num_players, 4);
-        assert_eq!(params.map_script, MapScript::TeninsBall);
+        assert_eq!(params.map_script, MapScript::Lakes);
         assert_eq!(params.map_topology, MapTopology::Planet);
+        assert_eq!(params.map_poles, MapPoles::Randomized);
+        assert!(!params.map_poles.has_poles());
         assert_eq!(
             (params.width, params.height),
             size.dimensions(MapTopology::Planet)
