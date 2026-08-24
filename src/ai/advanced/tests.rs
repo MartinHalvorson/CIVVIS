@@ -32482,6 +32482,23 @@ fn wonder_score_tally_never_stacks_and_never_moves_a_gate_it_does_not_own() {
         already_open,
         "a lane that was already open must be priced identically"
     );
+    // ⭐ AND THE EXTRACTION IS FAITHFUL. `wonder_ordinary_value` was lifted out
+    // of the arm so the density bar and the score are one number; this pins
+    // that the arm still returns exactly what it returned before — the five
+    // ordinary terms plus the Culture lane's 320, scaled by the wonder
+    // category gene and normalised by `(7 + turns)` — rather than trusting a
+    // reading of the diff.
+    let spec = &game.rules.wonders[&crate::name!("great_bath")];
+    let production = game.city_yields(city).production.max(1.0);
+    let turns = game.item_remaining_cost_for_city(0, city, &cheap) / production;
+    let expected = (shipped.wonder_ordinary_value(spec, culture.strategy) + 320.0)
+        * shipped.base.w.p_wonder
+        / (7.0 + turns.max(1.0));
+    assert!(
+        (already_open - expected).abs() < 1e-9,
+        "the arm's wonder price is its ordinary value plus the lane bonus: \
+         got {already_open}, expected {expected}"
+    );
 
     // Recovery is refused whatever the merit, exactly as the other two gates
     // refuse it: an empire under siege does not buy score.
