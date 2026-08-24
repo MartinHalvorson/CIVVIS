@@ -32073,7 +32073,7 @@ impl Game {
         source: CompetitionScoreSource,
         amount: f64,
     ) {
-        if amount <= 0.0 {
+        if amount <= 0.0 || !self.victory_eligible(pid) {
             return;
         }
         let turn = self.turn;
@@ -32132,6 +32132,13 @@ impl Game {
     /// on closes with an empty score table and pays nobody, which is exactly
     /// what the first native trace recorded.
     fn score_competition_holdings(&mut self, pid: usize) {
+        // ⚠ Majors only. `begin_turn` runs for every seat, and a city-state
+        // holds Campuses like anyone else — but an emergency's members are the
+        // majors, and a city-state that outscored them would take a Diplomatic
+        // Victory Point off the board for nobody.
+        if !self.victory_eligible(pid) {
+            return;
+        }
         let turn = self.turn;
         let Some(spec) = self
             .competition
@@ -49076,7 +49083,7 @@ impl Game {
                 // The score the project declares only means something while a
                 // competition CIVVIS runs itself is open; a mirrored one is
                 // counted by the host and must not be counted twice.
-                if spec.competition_score > 0.0 {
+                if spec.competition_score > 0.0 && self.victory_eligible(pid) {
                     if let Some(running) = self.competition.as_mut() {
                         if running.ends > self.turn
                             && running.target != Some(pid)

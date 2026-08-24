@@ -4077,6 +4077,28 @@ fn a_tied_competition_pays_nobody_and_still_spends_its_lockout() {
         "the competition still ran, so its lockout is still spent"
     );
 
+    // ⚠ And only a seat that could win the game scores at all. `begin_turn`
+    // runs for every seat including city-states and eliminated empires, and a
+    // city-state holds Campuses and generates Great Person Points like anyone
+    // else — but an emergency's members are the majors, so a non-member that
+    // outscored them would take the point off the board for nobody.
+    game.competition_lockout_until.clear();
+    game.turn += 1;
+    game.open_native_competition();
+    game.players[2].alive = false;
+    game.score_great_person_point_competition(2, 500.0);
+    game.score_favor_competition(2, 500.0);
+    game.score_competition_holdings(2);
+    assert!(
+        !game
+            .competition
+            .as_ref()
+            .unwrap()
+            .scores
+            .contains_key(&2),
+        "a seat that is not in the victory race cannot score a competition"
+    );
+
     // One clear leader is paid.
     game.competition_lockout_until.clear();
     game.turn += 1;
