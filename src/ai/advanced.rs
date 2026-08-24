@@ -4830,6 +4830,10 @@ pub struct AdvancedAi {
     /// march does not use. Opt-in gene `campaign-pillage`; see
     /// `advanced/city_campaign.rs`.
     campaign_pillage: bool,
+    /// No campaign plan before this turn: set when a plan expires unlaunched
+    /// or its war closes, so the Conquest posture cannot be redrawn every
+    /// turn. See `advanced/city_campaign.rs`.
+    campaign_retry_after: u32,
 
     // ---- append: e-f ------------------------------------------------
     /// A city-state's place enters the envoy score: proximity to our
@@ -5925,6 +5929,7 @@ impl AdvancedAi {
             city_campaign: false,
             campaign: None,
             campaign_pillage: false,
+            campaign_retry_after: 0,
 
             // ---- append: e-f ----------------------------------------
             flip_nearby_city_states: false,

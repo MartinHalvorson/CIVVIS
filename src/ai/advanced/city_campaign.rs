@@ -144,16 +144,20 @@ pub(crate) const CAMPAIGN_HOLD_LOYALTY_FLOOR: f64 = -4.0;
 /// A plan names at most this many cities.
 pub(crate) const CAMPAIGN_MAX_CITIES: usize = 3;
 /// The field army must already carry this fraction of the first city's
-/// bill for a plan to be drawn.
-pub(crate) const CAMPAIGN_PLAN_FRACTION: f64 = 0.5;
+/// bill for a plan to be drawn. ⚠ At one half the first probe parked the
+/// empire in Conquest posture waiting for the other half — on-seats finished
+/// with 0.56 fewer cities and a fifth less army (the war-freezes-expansion
+/// trap); three quarters keeps the wait short.
+pub(crate) const CAMPAIGN_PLAN_FRACTION: f64 = 0.75;
 /// A later city of the plan must fit inside this fraction of the army the
 /// plan was drawn with — the first city costs bodies.
 pub(crate) const CAMPAIGN_SEQUEL_FRACTION: f64 = 0.8;
 /// No plan before this standard turn, matching the declaration's own floor.
 pub(crate) const CAMPAIGN_MIN_TURN: u32 = 35;
 /// A plan not launched within this many standard turns is dropped.
-pub(crate) const CAMPAIGN_PATIENCE: u32 = 30;
-/// After a campaign closes in peace, no plan for this many standard turns.
+pub(crate) const CAMPAIGN_PATIENCE: u32 = 20;
+/// After a campaign closes in peace — or a plan expires unlaunched — no plan
+/// for this many standard turns (`campaign_retry_after`).
 pub(crate) const CAMPAIGN_REPEAT_COOLDOWN: u32 = 15;
 /// Defenders this close to a city are the city's.
 pub(crate) const CAMPAIGN_DEFENDER_RADIUS: i32 = 6;
@@ -390,7 +394,7 @@ impl AdvancedAi {
     /// cities within a hop of the last, each fitting the army with the
     /// first city's cost taken out. `None` before the turn floor, with one
     /// city, with no weaker neighbour, or with no holdable city the army can
-    /// half afford.
+    /// already afford three quarters of.
     pub(crate) fn plan_city_campaign(&self, g: &Game, pid: usize) -> Option<CampaignPlan> {
         if g.turn < g.standard_duration(CAMPAIGN_MIN_TURN) || g.player_city_ids(pid).len() < 2 {
             return None;
@@ -470,20 +474,30 @@ impl AdvancedAi {
         })
     }
 
+    /// One of the `campaign:*` counters the probe rows read.
+    fn campaign_count(g: &mut Game, pid: usize, key: &str, by: i64) {
+        *g.players[pid].counters.entry(key.to_string()).or_insert(0) += by;
+    }
+
     /// Start of turn: drop the cities the plan has taken or lost, expire a
-    /// plan never launched, and draw or refresh one while at peace.
-    pub(crate) fn maintain_city_campaign(&mut self, g: &Game, pid: usize) {
+    /// plan never launched (and hold off the next for the cooldown), and
+    /// draw or refresh one while at peace.
+    pub(crate) fn maintain_city_campaign(&mut self, g: &mut Game, pid: usize) {
         if !self.city_campaign {
             self.campaign = None;
             return;
         }
         let mut previous = self.campaign.take();
         if let Some(plan) = previous.as_mut() {
-            plan.taken += plan
+            let taken_now = plan
                 .cities
                 .iter()
                 .filter(|cid| g.cities.get(cid).is_some_and(|city| city.owner == pid))
                 .count();
+            if taken_now > 0 {
+                plan.taken += taken_now;
+                Self::campaign_count(g, pid, "campaign:taken", taken_now as i64);
+            }
             plan.cities.retain(|cid| {
                 g.cities
                     .get(cid)
@@ -491,6 +505,7 @@ impl AdvancedAi {
             });
             if g.is_at_war(pid, plan.target) && plan.declared.is_none() {
                 plan.declared = Some(g.turn);
+                Self::campaign_count(g, pid, "campaign:declared", 1);
             }
         }
         let at_war_with = |plan: &CampaignPlan| {
@@ -505,16 +520,17 @@ impl AdvancedAi {
             self.campaign = Some(plan.clone());
             return;
         }
+        let cooldown = g
+            .turn
+            .saturating_add(g.standard_duration(CAMPAIGN_REPEAT_COOLDOWN));
         if previous
             .as_ref()
             .is_some_and(|plan| plan.declared.is_some())
         {
             // The war this plan opened is over: the plan is spent, and the
             // next one waits out the cooldown.
-            self.peace_until = self.peace_until.max(
-                g.turn
-                    .saturating_add(g.standard_duration(CAMPAIGN_REPEAT_COOLDOWN)),
-            );
+            self.peace_until = self.peace_until.max(cooldown);
+            self.campaign_retry_after = self.campaign_retry_after.max(cooldown);
             previous = None;
         }
         let major_war = g.players.iter().any(|player| {
@@ -524,7 +540,7 @@ impl AdvancedAi {
                 && !player.is_barbarian
                 && g.is_at_war(pid, player.id)
         });
-        if major_war || g.turn < self.peace_until {
+        if major_war || g.turn < self.peace_until || g.turn < self.campaign_retry_after {
             self.campaign = None;
             return;
         }
@@ -536,10 +552,15 @@ impl AdvancedAi {
             fresh.planned = plan.planned;
         }
         if g.turn.saturating_sub(fresh.planned) >= g.standard_duration(CAMPAIGN_PATIENCE) {
-            // Thirty turns without a launch: the target moved, or the army
-            // never came. Draw again from scratch next turn.
+            // Twenty turns without a launch: the target moved, or the army
+            // never came. Not again for the cooldown — a plan redrawn the
+            // next turn would hold the Conquest posture forever.
+            self.campaign_retry_after = self.campaign_retry_after.max(cooldown);
             self.campaign = None;
             return;
+        }
+        if fresh.planned == g.turn {
+            Self::campaign_count(g, pid, "campaign:planned", 1);
         }
         if self.journal().wants(crate::reasoning::Level::Strategy) && fresh.planned == g.turn {
             let names: Vec<String> = fresh
@@ -869,7 +890,7 @@ mod tests {
         give_techs(&mut game, 2, 8);
 
         let mut ai = AdvancedAi::new();
-        ai.maintain_city_campaign(&game, 0);
+        ai.maintain_city_campaign(&mut game, 0);
         assert_eq!(ai.campaign, None, "off, nothing is planned");
 
         ai.enable_city_campaign();
@@ -879,7 +900,7 @@ mod tests {
         assert!(!strong_reading.weak_enough(), "{strong_reading:?}");
         assert_eq!(strong_reading.tech_lead, -8);
 
-        ai.maintain_city_campaign(&game, 0);
+        ai.maintain_city_campaign(&mut game, 0);
         let plan = ai
             .campaign
             .clone()
@@ -912,11 +933,23 @@ mod tests {
         // The same plan a turn later keeps its age; thirty turns on with no
         // war it is dropped.
         game.turn = 61;
-        ai.maintain_city_campaign(&game, 0);
+        ai.maintain_city_campaign(&mut game, 0);
         assert_eq!(ai.campaign.as_ref().map(|plan| plan.planned), Some(60));
+        assert_eq!(game.players[0].counters.get("campaign:planned"), Some(&1));
         game.turn = 60 + game.standard_duration(CAMPAIGN_PATIENCE);
-        ai.maintain_city_campaign(&game, 0);
+        ai.maintain_city_campaign(&mut game, 0);
         assert_eq!(ai.campaign, None, "a plan never launched expires");
+        assert!(
+            ai.campaign_retry_after > game.turn,
+            "and holds off the next"
+        );
+        game.turn += 1;
+        ai.maintain_city_campaign(&mut game, 0);
+        assert_eq!(ai.campaign, None, "no plan inside the cooldown");
+        game.turn = ai.campaign_retry_after;
+        ai.maintain_city_campaign(&mut game, 0);
+        assert!(ai.campaign.is_some(), "and a fresh one after it");
+        assert_eq!(game.players[0].counters.get("campaign:planned"), Some(&2));
     }
 
     /// A city the capture cannot hold — the rival's population beside it
@@ -945,7 +978,7 @@ mod tests {
         // the capital that would flip back.
         let second_bill = ai.campaign_city_requirement(&game, 0, second, &appraisal, average);
         assert!(second_bill.holdable, "{second_bill:?}");
-        ai.maintain_city_campaign(&game, 0);
+        ai.maintain_city_campaign(&mut game, 0);
         let plan = ai.campaign.clone().expect("the city that holds is planned");
         assert_eq!(plan.target, 1);
         assert!(plan.cities.contains(&second), "{plan:?}");
@@ -964,7 +997,7 @@ mod tests {
         game.cities.get_mut(&near).unwrap().pop = 10;
         let bill = ai.campaign_city_requirement(&game, 0, rival_capital, &appraisal, average);
         assert!(bill.holdable, "{bill:?}");
-        ai.maintain_city_campaign(&game, 0);
+        ai.maintain_city_campaign(&mut game, 0);
         let plan = ai.campaign.clone().expect("a holdable capital is planned");
         assert_eq!(plan.target, 1);
         assert!(plan.cities.contains(&rival_capital), "{plan:?}");
@@ -985,7 +1018,7 @@ mod tests {
         warriors(&mut game, 1, weak, 1);
         let mut ai = AdvancedAi::new();
         ai.enable_city_campaign();
-        ai.maintain_city_campaign(&game, 0);
+        ai.maintain_city_campaign(&mut game, 0);
         let plan = ai.campaign.clone().expect("planned");
         let strategic = StrategicPlan {
             strategy: GrandStrategy::Conquest,
