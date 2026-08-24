@@ -1859,8 +1859,7 @@ fn peace_tribute_cap(state: &civvis::mirror::StateSnapshot, routed: bool) -> i32
     if !routed {
         return 0;
     }
-    ((state.gold as f64 * PEACE_TRIBUTE_SHARE).floor() as i64)
-        .clamp(0, PEACE_TRIBUTE_MAX) as i32
+    ((state.gold as f64 * PEACE_TRIBUTE_SHARE).floor() as i64).clamp(0, PEACE_TRIBUTE_MAX) as i32
 }
 
 /// The smallest integral gift that puts our tracker score strictly above every
@@ -9248,7 +9247,11 @@ mod tests {
             0,
             "a second front, fatigue, a religious lane or an envoy reclaim is white peace"
         );
-        assert_eq!(peace_tribute_cap(&state, true), 250, "a quarter of the treasury");
+        assert_eq!(
+            peace_tribute_cap(&state, true),
+            250,
+            "a quarter of the treasury"
+        );
         state.gold = 5_000;
         assert_eq!(
             peace_tribute_cap(&state, true),
