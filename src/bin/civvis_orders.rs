@@ -3716,6 +3716,23 @@ fn translate(
         // Religious combat uses the same native move-to-attacker route as a
         // melee strike. The target is adjacent by the model's legal-action
         // gate, while the host's MOVE_TO resolves the theological combat.
+        //
+        // ⚠ READ OFF THE INSTALLED GAME, NOT GUESSED: there is NO
+        // `UNITOPERATION_THEOLOGICAL_ATTACK` and no `UNITCOMMAND_` for it
+        // either. `Base/Assets/Gameplay/Data/UnitOperations.xml` lists 57
+        // operations and none of them is a theological strike, and the shipped
+        // Civilopedia says why —
+        // `Base/Assets/Text/en_US/Civilopedia_Concepts_Text.xml:636`:
+        //
+        //   "Theological combat works just like combat with military units,
+        //    just attack one Religious unit with another."
+        //
+        // So the verb is the ordinary `ATTACK` above, and the mod turns it into
+        // the same MOVE_TO-with-the-ATTACK-modifier that Firaxis's own
+        // `Civ6Common.lua:152-163` requests for every melee strike a human
+        // makes. A religious unit has no ranged combat, so it takes exactly
+        // that branch of `RequestMoveOperation`. Inventing a type literal here
+        // would have produced an order that could never fire.
         Action::TheologicalAttack { unit, target } => civ6_of.get(unit).map(|civ6| Order {
             kind: "unit",
             subject: Some(*civ6),
@@ -3741,6 +3758,77 @@ fn translate(
                 verb: Some("ENTER_FORMATION".to_string()),
                 // This command is not positional: x/y are target owner/unit id.
                 pos: Some((state.seat.local_player, *target as i32)),
+            })
+        }),
+        // ★★★ CORPS AND ARMY: 10,015 DECIDED ACROSS THE LIVE ARCHIVE, ZERO SENT.
+        // `CombineUnits` had no arm at all, fell through this match's
+        // `_ => None`, and was counted untranslatable — the largest named class
+        // left in the live skip tally once the religious, policy and formation
+        // repairs had landed, and it is the whole of CIVVIS's unit-consolidation
+        // layer. It is still decided today: 5 skips in the newest recorded run,
+        // `civvis-20260819T115423Z`.
+        //
+        // Firaxis models this as TWO commands and the caller picks the tier.
+        // Both names were read off the installed game, not recalled:
+        //
+        //   UNITCOMMAND_FORM_CORPS  Gameplay/Data/UnitCommands.xml:20 and :44
+        //   UNITCOMMAND_FORM_ARMY   Gameplay/Data/UnitCommands.xml:21 and :45
+        //
+        // and the shipped `WorldInput.lua` builds each one from the OTHER unit's
+        // owner and id — `FormCorps` at WorldInput.lua:2879-2882 and `FormArmy`
+        // at WorldInput.lua:2949-2952:
+        //
+        //   tParameters[UnitCommandTypes.PARAM_UNIT_PLAYER] = pUnit:GetOwner();
+        //   tParameters[UnitCommandTypes.PARAM_UNIT_ID]     = pUnit:GetID();
+        //   UnitManager.RequestCommand(pSelectedUnit,
+        //                              UnitCommandTypes.FORM_CORPS, tParameters);
+        //
+        // That is the same non-positional owner/id pair `LinkUnits` already
+        // rides in `pos`, so the existing convention carries it unchanged.
+        //
+        // The tier is `Game::can_combine_units`'s own rule, restated: two
+        // standard units make a Corps, a standard joining a Corps makes an Army.
+        //
+        // ⚠ THE TIER IS READ OFF THE HOST NOW, WHICH IS WHAT MAKES FORM_ARMY
+        // REACHABLE AT ALL. When #2373 landed this arm, the export carried no
+        // military formation — only `formation_count`, Firaxis's ESCORT stack
+        // size, which is a different mechanism and belongs to `LinkUnits` — and
+        // `mirror.rs` never wrote `Unit::formation`. The live seat runs
+        // `--fresh-board`, so every unit was reconstructed as STANDARD and this
+        // could only ever emit FORM_CORPS; the Army half was unreachable outside
+        // a persistent mirror carrying a tier CIVVIS itself had raised.
+        //
+        // The mod now exports `formation` from Firaxis's own
+        // `Unit:GetMilitaryFormation()` and `mirror.rs` writes it, so this reads
+        // Civilization VI's tier rather than a guess. An unreadable tier crosses
+        // as the mod's −1 and the mirror keeps the board's own value rather than
+        // flattening it to standard — unknown must never read as STANDARD, which
+        // is how `GetDefenseStrength` went unnoticed for the project's life.
+        // A host that still disagrees answers with a NAMED refusal
+        // (`cannot_form_corps` / `cannot_form_army`) rather than a silent no-op,
+        // which is what makes any remaining divergence measurable.
+        Action::CombineUnits { unit, with } => civ6_of.get(unit).and_then(|civ6| {
+            civ6_of.get(with).map(|target| {
+                let tier = |uid: &u32| {
+                    mirror_state
+                        .game
+                        .units
+                        .get(uid)
+                        .map_or(0, |unit| unit.formation)
+                };
+                let verb = if tier(unit) == 0 && tier(with) == 0 {
+                    "FORM_CORPS"
+                } else {
+                    "FORM_ARMY"
+                };
+                Order {
+                    kind: "unit",
+                    subject: Some(*civ6),
+                    verb: Some(verb.to_string()),
+                    // Not positional: x/y are the target's owner and unit id,
+                    // exactly as `LinkUnits` sends them.
+                    pos: Some((state.seat.local_player, *target as i32)),
+                }
             })
         }),
         Action::UnlinkUnits { unit } => civ6_of.get(unit).map(|civ6| Order {
@@ -4009,6 +4097,14 @@ fn translate(
             verb: Some("RELIGIOUS_HEAL".to_string()),
             pos: None,
         }),
+        // `UNITOPERATION_REMOVE_HERESY`, read off the installed game at
+        // `Base/Assets/Gameplay/Data/UnitOperations.xml:36` (the type) and `:95`
+        // (the row). That row carries **no `InterfaceMode`**, and the shipped
+        // `Panels/UnitPanel.lua:2518-2535` shows exactly what that means: with no
+        // mode it takes the "No mode needed, just do the operation" branch and
+        // calls `UnitManager.RequestOperation(pSelectedUnit, actionHash)` with no
+        // parameter table. So nothing but the subject crosses — an Inquisitor
+        // purges the city it is standing in, and the co-location IS the target.
         Action::RemoveHeresy { unit } => civ6_of.get(unit).map(|civ6| Order {
             kind: "unit",
             subject: Some(*civ6),
@@ -7458,6 +7554,220 @@ mod tests {
         assert_eq!(
             condemn.pos, None,
             "a parameterless command must not invent a destination"
+        );
+    }
+
+    /// ★★★ Corps and Army: decided 10,015 times across the live archive and
+    /// sent zero times, because `CombineUnits` had no arm and fell through
+    /// `translate`'s `_ => None`. It is two Firaxis commands rather than one —
+    /// `UNITCOMMAND_FORM_CORPS` and `UNITCOMMAND_FORM_ARMY`,
+    /// `Gameplay/Data/UnitCommands.xml:20-21` and `:44-45` — and the tier is
+    /// the caller's to choose, so the verb has to carry which merge was decided
+    /// rather than leaving the mod to guess it from a board it cannot see.
+    #[test]
+    fn combining_units_reaches_the_form_corps_and_form_army_commands() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 118,
+            width: 12,
+            height: 12,
+            chunk: 1,
+            plots: vec![grass(4, 4), grass(5, 4)],
+        }]);
+        let state = StateSnapshot {
+            turn: 118,
+            units: vec![
+                StateUnit {
+                    id: 41,
+                    kind: "UNIT_SWORDSMAN".to_string(),
+                    x: 4,
+                    y: 4,
+                    ..StateUnit::default()
+                },
+                StateUnit {
+                    id: 42,
+                    kind: "UNIT_SWORDSMAN".to_string(),
+                    x: 5,
+                    y: 4,
+                    ..StateUnit::default()
+                },
+            ],
+            ..StateSnapshot::default()
+        };
+        let mut mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        let first = *mirror.uid_of.get(&41).expect("the first swordsman mirrors");
+        let second = *mirror
+            .uid_of
+            .get(&42)
+            .expect("the second swordsman mirrors");
+
+        let corps = translate(
+            &Action::CombineUnits {
+                unit: first,
+                with: second,
+            },
+            &mirror,
+            &state,
+        )
+        .expect("two standard units form a Corps on the live seat");
+        assert_eq!(corps.kind, "unit");
+        assert_eq!(corps.subject, Some(41));
+        assert_eq!(corps.verb.as_deref(), Some("FORM_CORPS"));
+        assert_eq!(
+            corps.pos,
+            Some((state.seat.local_player, 42)),
+            "x/y are the partner's OWNER and UNIT ID, the pair Firaxis's own \
+             WorldInput.lua:2879-2880 puts in PARAM_UNIT_PLAYER/PARAM_UNIT_ID — \
+             never a map position"
+        );
+
+        // A standard unit joining a Corps is an Army, which is a DIFFERENT
+        // command with a different prerequisite civic (Mobilization, not
+        // Nationalism). Sending FORM_CORPS here would be refused by the host
+        // for a unit that is already one.
+        mirror
+            .game
+            .units
+            .get_mut(&first)
+            .expect("the mirrored unit is addressable")
+            .formation = 1;
+        let army = translate(
+            &Action::CombineUnits {
+                unit: first,
+                with: second,
+            },
+            &mirror,
+            &state,
+        )
+        .expect("a Corps absorbing a standard unit forms an Army");
+        assert_eq!(army.verb.as_deref(), Some("FORM_ARMY"));
+        assert_eq!(army.subject, Some(41));
+
+        // The partner is half the order. Without a Civilization VI id for it
+        // there is nothing to put in PARAM_UNIT_ID, so this must be counted as
+        // untranslatable rather than sent as a merge with no one to merge with.
+        assert!(
+            translate(
+                &Action::CombineUnits {
+                    unit: first,
+                    with: 9_999,
+                },
+                &mirror,
+                &state,
+            )
+            .is_none(),
+            "an unmapped partner cannot be silently dropped from the command"
+        );
+    }
+
+    /// ★★★★★ THE HOST'S OWN CORPS REACHES `FORM_ARMY`, END TO END.
+    ///
+    /// The test above proves the tier decides the command; it sets the tier by
+    /// hand. That is exactly the half that was missing in #2373: the live seat
+    /// runs `--fresh-board`, the mirror is rebuilt from the host export every
+    /// turn, and the export said nothing about Corps or Army — so every unit was
+    /// reconstructed at tier 0 and this arm could only ever emit FORM_CORPS. The
+    /// Army half of the unit-consolidation layer was unreachable live for that
+    /// one reason.
+    ///
+    /// This drives the whole chain instead: a `StateUnit` carrying the tier the
+    /// mod now exports from `Unit:GetMilitaryFormation()`, through
+    /// `LiveMirror::new`, into the command actually sent. Nothing is set by hand.
+    #[test]
+    fn a_corps_the_host_exported_reaches_form_army_from_a_fresh_board() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 152,
+            width: 12,
+            height: 12,
+            chunk: 1,
+            plots: vec![grass(4, 4), grass(5, 4)],
+        }]);
+        // Exactly what the host export now says: 1 = Corps, and the escort stack
+        // size stays 1 because a Corps is ONE unit. The two fields share a word
+        // and nothing else.
+        let state = StateSnapshot {
+            turn: 152,
+            units: vec![
+                StateUnit {
+                    id: 71,
+                    kind: "UNIT_SWORDSMAN".to_string(),
+                    x: 4,
+                    y: 4,
+                    formation: Some(1),
+                    formation_count: 1,
+                    ..StateUnit::default()
+                },
+                StateUnit {
+                    id: 72,
+                    kind: "UNIT_SWORDSMAN".to_string(),
+                    x: 5,
+                    y: 4,
+                    formation: Some(0),
+                    formation_count: 1,
+                    ..StateUnit::default()
+                },
+            ],
+            ..StateSnapshot::default()
+        };
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        let corps = *mirror.uid_of.get(&71).expect("the Corps mirrors");
+        let standard = *mirror.uid_of.get(&72).expect("the swordsman mirrors");
+        assert_eq!(
+            mirror.game.units[&corps].formation, 1,
+            "the host said Corps, so the mirror must hold a Corps"
+        );
+        assert_eq!(mirror.game.units[&standard].formation, 0);
+
+        let order = translate(
+            &Action::CombineUnits {
+                unit: corps,
+                with: standard,
+            },
+            &mirror,
+            &state,
+        )
+        .expect("a host Corps absorbing a standard unit is an Army");
+        assert_eq!(
+            order.verb.as_deref(),
+            Some("FORM_ARMY"),
+            "a Corps the host itself reported must not be sent FORM_CORPS again — \
+             they are different commands behind different civics (Mobilization, \
+             not Nationalism), so the host refuses the wrong one"
+        );
+        assert_eq!(order.subject, Some(71));
+        assert_eq!(order.pos, Some((state.seat.local_player, 72)));
+
+        // ⚠ And the same pair with the tier UNREAD stays a Corps request. The
+        // mod's −1 means "asked, could not answer"; the mirror keeps the board's
+        // own value rather than claiming standard, and a board that knows nothing
+        // still asks for the merge it can justify.
+        let unknown = StateSnapshot {
+            turn: 152,
+            units: state
+                .units
+                .iter()
+                .map(|unit| StateUnit {
+                    formation: Some(-1),
+                    ..unit.clone()
+                })
+                .collect(),
+            ..StateSnapshot::default()
+        };
+        let blind = civvis::mirror::LiveMirror::new(&snapshot, &unknown, 4, 1, 250, 0);
+        let first = *blind.uid_of.get(&71).expect("the first swordsman mirrors");
+        let second = *blind.uid_of.get(&72).expect("the second swordsman mirrors");
+        assert_eq!(
+            translate(
+                &Action::CombineUnits {
+                    unit: first,
+                    with: second,
+                },
+                &blind,
+                &unknown,
+            )
+            .expect("an unread tier still translates")
+            .verb
+            .as_deref(),
+            Some("FORM_CORPS")
         );
     }
 

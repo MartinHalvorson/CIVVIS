@@ -15193,17 +15193,23 @@ impl AdvancedAi {
             _ => 100.0,
         };
         let mut candidates = Vec::new();
-        for kind in [
-            "scientist",
-            "engineer",
-            "writer",
-            "artist",
-            "musician",
-            "merchant",
-            "general",
-            "admiral",
-            "prophet",
-        ] {
+        // ⚠ THIS WAS A LIST OF THE NINE CLASS NAMES THAT HAPPENED TO EXIST.
+        // `beliefs.json` shipped exactly that shape once: an AI chooser that
+        // enumerated what the data held on the day it was written, so every
+        // later addition was legal, offered by `Game::legal_actions`, and never
+        // once bought. The list never lost a class, which is precisely why it
+        // would have gone unnoticed. `legal_actions` derives the same set from
+        // `rules.great_people`; so does this now. Iteration order does not
+        // matter here — the winner is chosen by `max_by` with an explicit
+        // `(kind, currency)` tie-break below.
+        let classes: std::collections::BTreeSet<String> = g
+            .rules
+            .great_people
+            .values()
+            .map(|person| person.kind.clone())
+            .collect();
+        for kind in &classes {
+            let kind = kind.as_str();
             let Some((_, person)) = g.current_great_person(kind) else {
                 continue;
             };
