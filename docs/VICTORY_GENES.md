@@ -676,3 +676,63 @@ gene row switches the behaviour off at deployment while its first screen runs.
 That is the right rule for a behaviour that was already off and the wrong one
 for one carrying +61 Elo-equivalent (200 pairs, seed 8700000, CI +21..+109, PASS on the corrected-gate matrix; see `AdvancedAi::promoted_policy_envoy`). `docs/GENE_SCREEN.md` §"The toggles no screen
 can reach" has the group-by-group account.
+
+## 10. `lane-commit`: from the midpoint, the empire plays for the victory it can land
+
+Operator, 2026-08-24: *"add some logic or some heuristic for steering us
+towards our best victory condition harder. From the midpoint of the game, we
+should have the victory in mind and be optimizing towards winning that."*
+
+§2 measured the defect this answers: an adaptive seat — production, and every
+measured seat in a `gene_screen` game — is on a victory lane for **52% of its
+seat-turns**, and the lane it is racing never reaches the deciders keyed on
+`victory_target`, because those read the operator's assignment and an
+adaptive seat has none. `assess` puts an adaptive seat on a lane only at
+`victory_focus` ≥ 65%, or when nothing else claims the plan; and
+`victory_focus` re-decides every turn from raw progress.
+
+**The gene** (`AdvancedAi::lane_commit`, `advanced/lane_commit.rs`,
+`Kind::OptIn`, off in both controllers):
+
+- **At the midpoint** — half the turn cap, turn 125 on the 250-turn Online
+  standard; `LANE_COMMIT_MIDPOINT_STANDARD` standard turns with no cap — the
+  seat commits to one lane.
+- **The lane that lands, not the lane that leads.** Each lane's progress
+  (`lane_progress_table`: the same four readings `victory_focus` ranks, minus
+  the civilization preferences) is sampled every `LANE_COMMIT_SAMPLE_EVERY`
+  standard turns; its rate over the last `LANE_COMMIT_RATE_WINDOW` (50
+  standard turns) projects the turn it reaches 100. The earliest projection
+  inside the cap wins. Under the standing regime science lands at a median
+  t283 and diplomacy at t285 (`docs/GENE_SCREEN.md`), so at a 250-turn cap a
+  seat at 45% science is not racing science — and when no lane lands in time
+  the commitment is **Score**, which is a victory condition. Domination is
+  never chosen (0% at every map and clock).
+- **It reaches every decider.** `AdvancedAi::raced_target` answers the
+  operator's `victory_target` or the commitment, and the twenty-one deciders
+  that read the field directly — the tech beeline, government, policy deck,
+  space race, the Congress abstention, Great Works, the wonder lane, the
+  missionary veto, the Culture routing — read it now. `assess` follows the
+  commitment after the postures that must come first (a home city under
+  threat, an emergency objective, a rival at the wire, a war already making
+  progress). City dispositions follow it too.
+- **It holds.** Reviewed every `LANE_COMMIT_REVIEW` standard turns; a
+  challenger takes over only when projected to land `LANE_COMMIT_SWITCH_MARGIN`
+  (20) standard turns sooner, or when the committed lane has stopped moving
+  and another still lands; a Score fallback yields to the first lane that
+  starts landing. The committed lane's rate is also read since the
+  commitment, so a lane that converted a rival at the start of the window and
+  is working on the next is not read as stalled.
+
+**What it does not touch.** `active_victory_target` stays the operator's:
+victory denial keeps its adaptive form (a committed seat still counters a
+rival at the wire), `pursue_religion` and the expansion dispatcher read the
+assignment as before, and the census `victory_target` still reports the
+operator's target. On the live bridge, which always passes `--victory <lane>`,
+the gene is inert by construction.
+
+**Prediction to read on the next standard screen.** Under the 250-turn regime
+the typical commitment is Religion for a founder that is converting, Diplomacy
+for a seat near 20 DVP, and Score otherwise — so the effect should show on
+the **religious** ending share and on score share, not on science or diplomacy
+wins (§8 and `docs/GENE_SCREEN.md`: those lanes pay through share at 250).
+The levers for a version 2 are the four constants and the Score fallback.

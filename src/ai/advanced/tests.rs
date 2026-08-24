@@ -32927,3 +32927,222 @@ fn a_religious_unit_steps_out_of_a_raiders_reach_only_with_the_gene() {
     }
     assert!(blind.units.contains_key(&missionary));
 }
+
+// ── `lane-commit`: from the midpoint, the empire plays for the victory it
+// can land. See `advanced/lane_commit.rs`. ──────────────────────────────────
+
+#[test]
+fn lane_commit_is_a_native_opt_in_off_in_both_controllers() {
+    assert!(!AdvancedAi::new().lane_commit);
+    assert!(!AdvancedAi::legacy().lane_commit);
+    let gene = GENES
+        .iter()
+        .find(|gene| gene.tag == "lane-commit")
+        .expect("the gene is published for gene_screen");
+    assert!(gene.opt_in() && gene.screenable() && !gene.live());
+    let mut ai = AdvancedAi::new();
+    (gene.enable)(&mut ai);
+    assert!(ai.lane_commit);
+    (gene.disable)(&mut ai);
+    assert!(!ai.lane_commit);
+}
+
+/// A two-player board on a 250-turn clock, at Standard speed so standard
+/// turns are turns: the midpoint is turn 125.
+fn lane_commit_board(turn: u32) -> Game {
+    let mut g = Game::new(2, 24, 16, 74, 250, 0);
+    assert_eq!(g.turn_limit(), Some(250));
+    g.turn = turn;
+    g
+}
+
+/// A seat with the gene on and one sample already in its history, so a
+/// review at the board's turn can read a rate for every lane.
+fn lane_commit_seat(sampled_turn: u32, sampled: [i32; 4]) -> AdvancedAi {
+    let mut ai = AdvancedAi::new();
+    ai.enable_lane_commit();
+    ai.lane_samples.push_back(LaneSample {
+        turn: sampled_turn,
+        progress: sampled,
+    });
+    ai
+}
+
+/// Nothing is committed before the midpoint, however the lanes read; and
+/// the gene off, or an operator's assignment, leaves the seat exactly as it
+/// was — `raced_target` answers the assignment alone.
+#[test]
+fn lane_commit_waits_for_the_midpoint_and_yields_to_an_assignment() {
+    let early = lane_commit_board(100);
+    let mut ai = lane_commit_seat(70, [30, 5, 40, 20]);
+    ai.maintain_lane_commit(&early, 0);
+    assert_eq!(ai.lane_commitment(), None);
+    assert_eq!(ai.raced_target(), None);
+    assert!(ai.lane_samples.len() >= 2, "the window before the midpoint is sampled");
+
+    let midpoint = lane_commit_board(125);
+    let mut off = AdvancedAi::new();
+    off.maintain_lane_commit(&midpoint, 0);
+    assert_eq!(off.lane_commitment(), None);
+    assert!(off.lane_samples.is_empty(), "off, the gene reads nothing");
+
+    let mut assigned = lane_commit_seat(95, [30, 5, 40, 20]);
+    assigned.retarget(VictoryTarget::Culture);
+    assigned.maintain_lane_commit(&midpoint, 0);
+    assert_eq!(assigned.lane_commitment(), None);
+    assert_eq!(assigned.raced_target(), Some(VictoryTarget::Culture));
+}
+
+/// The lane chosen is the one whose rate lands it before the clock, not the
+/// one with the most progress: science at 36% moving 0.2 a turn lands on
+/// turn 445, religion at 58% moving 0.6 a turn lands on turn 195 — and the
+/// commitment reaches the assessment and every `raced_target` decider.
+#[test]
+fn lane_commit_picks_the_lane_that_lands_before_the_clock() {
+    let g = lane_commit_board(125);
+    let mut ai = lane_commit_seat(95, [30, 5, 40, 20]);
+    ai.review_lane_commitment(&g, [36, 8, 58, 30]);
+    let commitment = ai.lane_commitment().expect("committed at the midpoint");
+    assert_eq!(commitment.lane, VictoryTarget::Religion);
+    assert_eq!(commitment.since, 125);
+    assert_eq!(commitment.progress_at_commit, 58);
+    assert_eq!(commitment.projected, Some(195));
+    assert_eq!(ai.raced_target(), Some(VictoryTarget::Religion));
+    assert_eq!(ai.committed_lane(), Some(VictoryTarget::Religion));
+    assert!(ai.plan.is_none(), "a fresh commitment is assessed the same turn");
+    let plan = ai.assess(&g, 0);
+    assert_eq!(plan.strategy, GrandStrategy::Religion);
+}
+
+/// When no lane lands before the clock the commitment is Score — a victory
+/// condition under the standing regime — and the assessment follows it as
+/// the Score lane (Expansion). With no score victory on the board the most
+/// advanced lane is raced instead.
+#[test]
+fn lane_commit_falls_back_to_score_when_nothing_lands() {
+    let g = lane_commit_board(125);
+    let mut ai = lane_commit_seat(95, [30, 5, 0, 20]);
+    ai.review_lane_commitment(&g, [33, 6, 0, 22]);
+    let commitment = ai.lane_commitment().expect("committed at the midpoint");
+    assert_eq!(commitment.lane, VictoryTarget::Score);
+    assert_eq!(commitment.projected, Some(250));
+    assert_eq!(ai.assess(&g, 0).strategy, GrandStrategy::Expansion);
+
+    let mut no_score = lane_commit_board(125);
+    no_score.victory_conditions.score = false;
+    let mut ai = lane_commit_seat(95, [30, 5, 0, 20]);
+    ai.review_lane_commitment(&no_score, [33, 6, 0, 22]);
+    assert_eq!(ai.committed_lane(), Some(VictoryTarget::Science));
+}
+
+/// A commitment holds against a challenger that lands only a little sooner
+/// and yields to one that lands well sooner; a fallback to Score yields to
+/// any lane that starts landing; a committed lane that stops moving is left.
+#[test]
+fn lane_commit_holds_against_a_marginal_challenger() {
+    let g = lane_commit_board(125);
+    let mut ai = lane_commit_seat(95, [30, 5, 40, 20]);
+    ai.review_lane_commitment(&g, [36, 8, 58, 30]);
+    assert_eq!(ai.committed_lane(), Some(VictoryTarget::Religion));
+
+    // Turn 135: religion at 64% moving 0.6 a turn since turn 95 lands on
+    // turn 195; diplomacy at 56% moving 0.9 a turn lands on turn 184 —
+    // eleven turns sooner, inside the twenty-turn margin. Hold.
+    let later = lane_commit_board(135);
+    ai.lane_samples.push_back(LaneSample {
+        turn: 105,
+        progress: [32, 6, 46, 30],
+    });
+    ai.review_lane_commitment(&later, [38, 9, 64, 56]);
+    assert_eq!(ai.committed_lane(), Some(VictoryTarget::Religion));
+    assert_eq!(ai.lane_commitment().unwrap().since, 125);
+    assert_eq!(ai.lane_commitment().unwrap().reviewed, 135);
+
+    // Turn 145: diplomacy at 80% moving 1.2 a turn since turn 95 lands on
+    // turn 162, religion on turn 195 — thirty-three turns sooner. Switch.
+    let switch = lane_commit_board(145);
+    ai.lane_samples.push_back(LaneSample {
+        turn: 115,
+        progress: [34, 7, 52, 42],
+    });
+    ai.review_lane_commitment(&switch, [40, 10, 70, 80]);
+    let commitment = ai.lane_commitment().unwrap();
+    assert_eq!(commitment.lane, VictoryTarget::Diplomacy);
+    assert_eq!(commitment.since, 145);
+    assert_eq!(commitment.progress_at_commit, 80);
+
+    // A Score fallback yields to the first lane that lands.
+    let mut fallback = lane_commit_seat(95, [30, 5, 0, 20]);
+    fallback.review_lane_commitment(&g, [33, 6, 0, 22]);
+    assert_eq!(fallback.committed_lane(), Some(VictoryTarget::Score));
+    fallback.lane_samples.push_back(LaneSample {
+        turn: 105,
+        progress: [32, 6, 0, 24],
+    });
+    fallback.review_lane_commitment(&later, [35, 7, 0, 60]);
+    assert_eq!(fallback.committed_lane(), Some(VictoryTarget::Diplomacy));
+
+    // A committed lane that has stopped moving is left for one that lands.
+    let mut stalled = lane_commit_seat(95, [30, 5, 40, 20]);
+    stalled.review_lane_commitment(&g, [36, 8, 58, 30]);
+    assert_eq!(stalled.committed_lane(), Some(VictoryTarget::Religion));
+    let stall = lane_commit_board(175);
+    stalled.lane_samples.push_back(LaneSample {
+        turn: 145,
+        progress: [40, 10, 58, 50],
+    });
+    stalled.review_lane_commitment(&stall, [46, 12, 58, 80]);
+    assert_eq!(stalled.committed_lane(), Some(VictoryTarget::Diplomacy));
+}
+
+/// The rate of the committed lane is read since the commitment as well as
+/// over the window, so a lane that converted a rival at the start of the
+/// window and is working on the next is not read as stalled.
+#[test]
+fn lane_commit_reads_the_committed_lane_since_its_commitment() {
+    let g = lane_commit_board(125);
+    let mut ai = lane_commit_seat(95, [30, 5, 40, 20]);
+    ai.review_lane_commitment(&g, [36, 8, 58, 30]);
+    // Turn 185: the window sample (turn 155) already read 70 and nothing
+    // moved since — but since the commitment the lane rose 12 points in 60
+    // turns, 0.2 a turn, landing on turn 335: past the clock, so it is left.
+    let late = lane_commit_board(185);
+    ai.lane_samples.push_back(LaneSample {
+        turn: 155,
+        progress: [40, 10, 70, 40],
+    });
+    ai.review_lane_commitment(&late, [46, 12, 70, 42]);
+    assert_eq!(ai.committed_lane(), Some(VictoryTarget::Score));
+
+    // The same window sample with a since-commitment rate that still lands:
+    // 58 → 94 over 60 turns is 0.6 a turn, landing on turn 195.
+    let mut moving = lane_commit_seat(95, [30, 5, 40, 20]);
+    moving.review_lane_commitment(&g, [36, 8, 58, 30]);
+    moving.lane_samples.push_back(LaneSample {
+        turn: 155,
+        progress: [40, 10, 94, 40],
+    });
+    moving.review_lane_commitment(&late, [46, 12, 94, 42]);
+    assert_eq!(moving.committed_lane(), Some(VictoryTarget::Religion));
+    assert_eq!(moving.lane_commitment().unwrap().projected, Some(195));
+}
+
+/// `victory_focus` is unchanged by the refactor that exposed the lane table:
+/// the civilization preferences stay in the focus and out of the table.
+#[test]
+fn lane_progress_table_matches_victory_focus() {
+    let ai = AdvancedAi::new();
+    let mut religion = Game::new(2, 24, 16, 74, 80, 0);
+    religion.players[0].religion = Some("Test Faith".to_string());
+    let table = ai.lane_progress_table(&religion, 0);
+    assert_eq!(table[2], 40, "a founder with no foreign convert stands at 40");
+    let focus = ai.victory_focus(&religion, 0);
+    assert_eq!(focus.strategy, GrandStrategy::Religion);
+    assert_eq!(focus.progress, table[2]);
+
+    let mut china = Game::new(2, 24, 16, 77, 80, 0);
+    china.players[0].civ = "China".to_string();
+    let table = ai.lane_progress_table(&china, 0);
+    assert!(table[0] < 45, "the table carries no civilization preference");
+    assert_eq!(ai.victory_focus(&china, 0).progress, 45);
+}
