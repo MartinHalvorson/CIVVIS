@@ -1018,6 +1018,15 @@ pub const GENES: &[Gene] = &[
     // into, the exact tiles a visible raider can reach next turn
     // (`Game::threat_reach`). See `AdvancedAi::missionary_evades_raiders`.
     Gene { tag: "missionary-evades-raiders", field: "missionary_evades_raiders", kind: Kind::OptIn, enable: AdvancedAi::enable_missionary_evades_raiders, disable: AdvancedAi::disable_missionary_evades_raiders },
+    // Operator goal 2026-08-24: "a gene for defending against religion, to
+    // the extent we care about that". A religious victory needs more than
+    // half of EVERY living major's cities, so each civilization is a veto;
+    // the gene reads how much of a rival's victory is done (civs held +
+    // progress toward half of ours), names and targets that faith from half
+    // a victory and scales the defensive corps and the reserve by it from
+    // match point, never withholding the shipped defence; the Inquisitor
+    // goes to the heresy. See `AdvancedAi::religious_veto_defence`.
+    Gene { tag: "religious-veto-defence", field: "religious_veto_defence", kind: Kind::OptIn, enable: AdvancedAi::enable_religious_veto_defence, disable: AdvancedAi::disable_religious_veto_defence },
     // Operator 2026-08-24: "very bad deals and just giving stuff away when
     // more optimally we'd get more in exchange". Three leaks, one gene each.
     // The trade objective was FAIRNESS: `bilateral_trade` picked the quote
