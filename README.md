@@ -23,7 +23,7 @@ I don't write the lines of code these days but will operate a step higher — su
 
 I threw some early progress video demos up on [YouTube](https://www.youtube.com/@civvis). At this point, I run both verification games and tournaments autonomously and indefinitely. Half the videos are just screen recordings of successful games with no audio but I try to eventually throw some commentary in the video description.
 
-The simulator at civvis.ai[www.civvis.ai] needs some work but should be operational.
+The simulator at [civvis.ai](www.civvis.ai) needs some work but should be operational.
 
 Quick simulator UI demo:
 
