@@ -27,15 +27,33 @@ importer below is in the same file for the same reason.
 
 ## What the census says
 
-2,908 modifier rows across **639 distinct effects**, in the Gathering Storm
+2,908 modifier rows across **637 distinct effects**, in the Gathering Storm
 baseline with optional game modes excluded, read from the installed load order.
 
 | Status | Effects | Rows |
 |---|---:|---:|
 | implemented | 76 | 1,599 |
 | partial | 2 | 21 |
-| unmodelled | 560 | 1,139 |
+| unmodelled | 558 | 1,139 |
 | out-of-scope | 1 | 149 |
+
+### The two routes now agree on every imported value
+
+⚠ **The expansions rebalance by `<Update>`, not by shipping a new row**, and
+this census ignored `<Update>` until 2026-08-24. Gathering Storm leaves the base
+`COMPUTERS_BOOST_ALL_TOURISM` row in place and updates its `Amount` from 100 to
+25; it does the same to `AIRPORT_BONUS_AIR_SLOTS` and `HANGAR_BONUS_AIR_SLOTS`,
+from 2 to 1. The install walk therefore reported base-game numbers while the
+compiled cache — which the game built for itself — reported the shipped ones,
+and CIVVIS had transcribed the base-game +100% Tourism for Computers.
+
+`tools/civ6_fidelity.py` has always applied `<Update>`; this file had the same
+`<Delete>` handling and not the `<Update>` half, which is why the rules-data
+audit reported zero divergence on tables the modifier census was reading wrong.
+Both routes now emit a byte-identical catalog, which is the strongest available
+check that the import reads the ruleset the game runs. Where the two still
+disagree — the cache is a smaller ruleset overall — the disagreement is a
+finding, not a default.
 
 The compiled `Cache/DebugGameplay.sqlite` is a smaller ruleset than the install
 walk — 2,626 rows across 581 effects, of which 1,021 are unmodelled and 21
@@ -69,11 +87,11 @@ The work is not concentrated:
 |---|---:|
 | 50% | 29 |
 | 80% | 178 |
-| 95% | 494 |
-| 100% | 639 |
+| 95% | 492 |
+| 100% | 637 |
 
 Twenty-nine effects get you half the rows. The remaining half needs another
-610, most of which appear two or three times each. That shape is the argument
+608, most of which appear two or three times each. That shape is the argument
 for phase 2 stated numerically: hardcoding is efficient right up until it
 isn't, and the crossover is around the 50% mark, which CIVVIS is already
 approaching. Past it, each additional effect buys roughly three rows, and

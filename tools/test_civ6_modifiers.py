@@ -185,6 +185,102 @@ class ActiveModifiers(unittest.TestCase):
         self.assertEqual(modifiers.active_modifier_ids(), set())
 
 
+class ExpansionUpdates(unittest.TestCase):
+    """`<Update>` is how an expansion rebalances a row it does not replace."""
+
+    def test_an_expansion_update_rewrites_a_modifier_argument(self):
+        # Gathering Storm's own shape: the base row stays and its Amount is
+        # updated in place. Ignoring this reported 100 where the game runs 25.
+        modifiers = civ6_modifiers.Modifiers()
+        apply_xml(modifiers, """\
+<GameInfo>
+  <ModifierArguments>
+    <Row>
+      <ModifierId>COMPUTERS_BOOST_ALL_TOURISM</ModifierId>
+      <Name>Amount</Name>
+      <Value>100</Value>
+    </Row>
+  </ModifierArguments>
+</GameInfo>
+""")
+        apply_xml(modifiers, """\
+<GameInfo>
+  <ModifierArguments>
+    <Update>
+      <Where ModifierId="COMPUTERS_BOOST_ALL_TOURISM" Name="Amount"/>
+      <Set>
+        <Value>25</Value>
+      </Set>
+    </Update>
+  </ModifierArguments>
+</GameInfo>
+""")
+        self.assertEqual(
+            modifiers.arguments["COMPUTERS_BOOST_ALL_TOURISM"], {"Amount": "25"}
+        )
+
+    def test_an_update_may_name_the_column_in_its_set_half(self):
+        # The Airport and Hangar air slots use the other spelling: `Where` names
+        # only the modifier, and `Set` supplies both Name and Value.
+        modifiers = civ6_modifiers.Modifiers()
+        apply_xml(modifiers, """\
+<GameInfo>
+  <ModifierArguments>
+    <Row>
+      <ModifierId>AIRPORT_BONUS_AIR_SLOTS</ModifierId>
+      <Name>Amount</Name>
+      <Value>2</Value>
+    </Row>
+    <Row>
+      <ModifierId>OTHER_MODIFIER</ModifierId>
+      <Name>Amount</Name>
+      <Value>2</Value>
+    </Row>
+  </ModifierArguments>
+</GameInfo>
+""")
+        apply_xml(modifiers, """\
+<GameInfo>
+  <ModifierArguments>
+    <Update>
+      <Where ModifierId="AIRPORT_BONUS_AIR_SLOTS"/>
+      <Set>
+        <Name>Amount</Name>
+        <Value>1</Value>
+      </Set>
+    </Update>
+  </ModifierArguments>
+</GameInfo>
+""")
+        self.assertEqual(modifiers.arguments["AIRPORT_BONUS_AIR_SLOTS"], {"Amount": "1"})
+        self.assertEqual(modifiers.arguments["OTHER_MODIFIER"], {"Amount": "2"})
+
+    def test_an_update_repoints_a_dynamic_modifier(self):
+        modifiers = civ6_modifiers.Modifiers()
+        apply_xml(modifiers, """\
+<GameInfo>
+  <DynamicModifiers>
+    <Row ModifierType="SOME_TYPE" CollectionType="COLLECTION_OWNER"
+         EffectType="EFFECT_OLD" />
+  </DynamicModifiers>
+  <ModifierArguments />
+</GameInfo>
+""")
+        apply_xml(modifiers, """\
+<GameInfo>
+  <DynamicModifiers>
+    <Update>
+      <Where ModifierType="SOME_TYPE"/>
+      <Set>
+        <EffectType>EFFECT_NEW</EffectType>
+      </Set>
+    </Update>
+  </DynamicModifiers>
+</GameInfo>
+""")
+        self.assertEqual(modifiers.dynamic["SOME_TYPE"]["EffectType"], "EFFECT_NEW")
+
+
 class CatalogImport(unittest.TestCase):
     """The refusals, because a wrongly imported row is worse than a missing one.
 

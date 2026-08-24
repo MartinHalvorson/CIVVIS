@@ -1636,10 +1636,10 @@ and the per-ring unit damage is the one number the database does not carry).
 ## Phase 2 (measured): the modifier engine
 
 The size of this phase is no longer a guess. `tools/civ6_modifiers.py`
-censuses the shipped `Modifiers` tables and reports 2,908 rows across 639
+censuses the shipped `Modifiers` tables and reports 2,908 rows across 637
 distinct effects, of which CIVVIS covers 1,620 rows — every one of them verified
 row by row. Crucially the tail is long: 29 effects reach half the rows, and the
-other half needs 610 more. See [MODIFIERS.md](MODIFIERS.md) for the ranked
+other half needs 608 more. See [MODIFIERS.md](MODIFIERS.md) for the ranked
 backlog and the order of work.
 
 ### Why an interpreter
@@ -1675,7 +1675,7 @@ cannot say exactly — an effect it declares no translation for, a row carrying 
 requirement set the runtime predicates cannot express, and any collection other
 than the owner's own — so a refused row stays in the census as backlog instead
 of executing as a guess. This is interpreter infrastructure and a first slice of
-content, not a claim that the 639 effects are done: see
+content, not a claim that the 637 effects are done: see
 [MODIFIERS.md](MODIFIERS.md) for what is imported and what the next slice is.
 
 ## Phase 3: the ground-truth bridge

@@ -124,6 +124,58 @@ class Modifiers:
                 pending.append(child)
         return active
 
+    @staticmethod
+    def _where_set(node) -> tuple[dict, dict]:
+        """The match and assignment halves of an `<Update>` element."""
+        where, updates = node.find("Where"), node.find("Set")
+        return (
+            fields(where) if where is not None else {},
+            fields(updates) if updates is not None else {},
+        )
+
+    @staticmethod
+    def _matches(row: dict, where: dict) -> bool:
+        return all(row.get(column) == value for column, value in where.items())
+
+    def _update_rows(self, store: dict, key_column: str, where: dict, sets: dict) -> None:
+        """Apply one `<Update>` to a store keyed by one column."""
+        for key in list(store):
+            row = store[key]
+            if not self._matches(row, where):
+                continue
+            row.update(sets)
+            renamed = row.get(key_column, key)
+            if renamed != key:
+                store[renamed] = store.pop(key)
+
+    def _update_pairs(
+        self, store: dict, owner_column: str, where: dict, sets: dict, table: str
+    ) -> None:
+        """Apply one `<Update>` to an (owner -> {Name: Value}) store.
+
+        The store keeps only what the census reads, so an update is matched
+        against the row it reconstructs. Anything the shape cannot express is
+        reported rather than silently ignored -- an unapplied rebalance is
+        exactly the failure this method exists to fix.
+        """
+        unhandled = set(sets) - {"Name", "Value"}
+        if unhandled:
+            print(
+                f"warning: {table} update sets {sorted(unhandled)}, which this "
+                "census does not model",
+                file=sys.stderr,
+            )
+        for owner, entries in store.items():
+            for name in list(entries):
+                row = {owner_column: owner, "Name": name, "Value": entries[name]}
+                if not self._matches(row, where):
+                    continue
+                renamed = sets.get("Name", name)
+                value = sets.get("Value", entries[name])
+                if renamed != name:
+                    del entries[name]
+                entries[renamed] = value
+
     def apply_file(self, path: Path) -> None:
         try:
             root = ET.parse(path).getroot()
@@ -134,6 +186,9 @@ class Modifiers:
         for table in root:
             if table.tag == "DynamicModifiers":
                 for node in table:
+                    if node.tag == "Update":
+                        self._update_rows(self.dynamic, "ModifierType", *self._where_set(node))
+                        continue
                     row = fields(node)
                     if node.tag == "Delete":
                         self.dynamic.pop(row.get("ModifierType", ""), None)
@@ -141,6 +196,9 @@ class Modifiers:
                         self.dynamic[row["ModifierType"]] = row
             elif table.tag == "Modifiers":
                 for node in table:
+                    if node.tag == "Update":
+                        self._update_rows(self.rows, "ModifierId", *self._where_set(node))
+                        continue
                     row = fields(node)
                     modifier_id = row.get("ModifierId")
                     if node.tag == "Delete" and modifier_id:
@@ -152,6 +210,21 @@ class Modifiers:
                         self.rows.setdefault(row["ModifierId"], {}).update(row)
             elif table.tag == "ModifierArguments":
                 for node in table:
+                    # ⚠ THE EXPANSIONS REBALANCE BY `<Update>`, NOT BY A NEW ROW.
+                    # Gathering Storm leaves the base `COMPUTERS_BOOST_ALL_TOURISM`
+                    # row in place and updates its Amount from 100 to 25, and does
+                    # the same to the Airport and Hangar air slots (2 to 1).
+                    # Ignoring `<Update>` here made the install walk report the
+                    # base-game numbers while the compiled cache -- which the game
+                    # built for itself -- reported the shipped ones.
+                    if node.tag == "Update":
+                        self._update_pairs(
+                            self.arguments,
+                            "ModifierId",
+                            *self._where_set(node),
+                            table="ModifierArguments",
+                        )
+                        continue
                     row = fields(node)
                     modifier_id = row.get("ModifierId")
                     name = row.get("Name")
@@ -165,11 +238,24 @@ class Modifiers:
                         self.arguments[row["ModifierId"]][row["Name"]] = row.get("Value", "")
             elif table.tag == "Requirements":
                 for node in table:
+                    if node.tag == "Update":
+                        self._update_rows(
+                            self.requirements, "RequirementId", *self._where_set(node)
+                        )
+                        continue
                     row = fields(node)
                     if "RequirementId" in row:
                         self.requirements.setdefault(row["RequirementId"], {}).update(row)
             elif table.tag == "RequirementArguments":
                 for node in table:
+                    if node.tag == "Update":
+                        self._update_pairs(
+                            self.requirement_arguments,
+                            "RequirementId",
+                            *self._where_set(node),
+                            table="RequirementArguments",
+                        )
+                        continue
                     row = fields(node)
                     if "RequirementId" in row and "Name" in row:
                         self.requirement_arguments[row["RequirementId"]][row["Name"]] = row.get(
@@ -177,6 +263,20 @@ class Modifiers:
                         )
             elif table.tag == "RequirementSets":
                 for node in table:
+                    if node.tag == "Update":
+                        where, sets = self._where_set(node)
+                        for set_id in list(self.set_kinds):
+                            row = {
+                                "RequirementSetId": set_id,
+                                "RequirementSetType": self.set_kinds[set_id],
+                            }
+                            if self._matches(row, where):
+                                row.update(sets)
+                                self.set_kinds.pop(set_id)
+                                self.set_kinds[row["RequirementSetId"]] = row[
+                                    "RequirementSetType"
+                                ]
+                        continue
                     row = fields(node)
                     if "RequirementSetId" in row:
                         self.set_kinds[row["RequirementSetId"]] = row.get("RequirementSetType", "")
