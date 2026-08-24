@@ -32927,3 +32927,1174 @@ fn a_religious_unit_steps_out_of_a_raiders_reach_only_with_the_gene() {
     }
     assert!(blind.units.contains_key(&missionary));
 }
+
+// ═══ Defence against a rival religion, to the extent we care (advanced/religious_defence.rs) ═══
+
+#[test]
+fn the_religious_veto_defence_gene_is_a_registered_reversible_opt_in() {
+    let tag = "religious-veto-defence";
+    assert!(
+        GENES
+            .iter()
+            .any(|gene| gene.opt_in() && gene.field == "religious_veto_defence" && gene.tag == tag),
+        "{tag} must be a registered native opt-in"
+    );
+    assert!(crate::ai::advanced::gene_ledger::screenable(tag));
+    assert_eq!(
+        crate::ai::advanced::gene_ledger::ledger_default_on(tag),
+        Some(false),
+        "{tag} ships off until a screen prices it"
+    );
+    let mut ai = AdvancedAi::new();
+    assert!(!ai.religious_veto_defence);
+    ai.enable_religious_veto_defence();
+    assert!(ai.religious_veto_defence);
+    ai.disable_religious_veto_defence();
+    assert!(!ai.religious_veto_defence);
+    assert!(
+        !AdvancedAi::legacy().religious_veto_defence,
+        "the frozen anchor plays the game it always did"
+    );
+}
+
+/// Three capitals: ours (player 0, no religion), the rival founder's (player
+/// 1, "Runaway Faith") and a third civilization's (player 2). Player 2's
+/// capital is the ground the rival's victory needs besides ours.
+fn veto_board(seed: u64) -> (Game, u32, u32) {
+    let mut game = Game::new_full(3, 42, 24, seed, 300, 0, false);
+    for pid in 0..3 {
+        let settler = game
+            .player_unit_ids(pid)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.current = pid;
+        game.apply(pid, &Action::FoundCity { unit: settler })
+            .unwrap();
+    }
+    game.current = 0;
+    game.turn = 150;
+    game.victory_conditions.religious = true;
+    game.players[1].religion = Some("Runaway Faith".to_string());
+    let ours = game.player_city_ids(0)[0];
+    let theirs = game.player_city_ids(2)[0];
+    (game, ours, theirs)
+}
+
+#[test]
+fn the_religious_veto_stakes_read_the_victory_arithmetic() {
+    use super::religious_defence::RELIGIOUS_VETO_STAKE_FLOOR;
+    let (mut game, ours, theirs) = veto_board(7_626);
+    let off = AdvancedAi::new();
+    let mut on = AdvancedAi::new();
+    on.enable_religious_veto_defence();
+
+    // Nobody holds anything: no stakes at all.
+    assert_eq!(on.religious_veto_stakes(&game, 0), None);
+
+    // The rival holds the third civilization and none of ours: half of the
+    // two opponents it needs — exactly the floor.
+    game.cities
+        .get_mut(&theirs)
+        .unwrap()
+        .pressure
+        .insert("Runaway Faith".to_string(), 800.0);
+    let stakes = on
+        .religious_veto_stakes(&game, 0)
+        .expect("a rival holding another civilization is a stake");
+    assert_eq!(stakes.religion, "Runaway Faith");
+    assert_eq!((stakes.founder, stakes.dominated, stakes.others), (1, 1, 1));
+    assert_eq!((stakes.our_cities, stakes.our_converted), (1, 0));
+    assert!((stakes.stake - 0.5).abs() < 1e-9, "stake {}", stakes.stake);
+    assert!(stakes.stake >= RELIGIOUS_VETO_STAKE_FLOOR);
+    assert!(on.religious_veto_engaged(&game, 0).is_some());
+    assert_eq!(
+        AdvancedAi::religious_veto_extra_spreaders(on.religious_veto_engaged(&game, 0).as_ref()),
+        0,
+        "the floor names and targets; it does not spend"
+    );
+    assert_eq!(
+        off.religious_veto_stakes(&game, 0),
+        None,
+        "the gene off reads nothing"
+    );
+
+    // And our own capital too: the victory is whole.
+    game.cities
+        .get_mut(&ours)
+        .unwrap()
+        .pressure
+        .insert("Runaway Faith".to_string(), 800.0);
+    let stakes = on.religious_veto_stakes(&game, 0).unwrap();
+    assert_eq!(stakes.our_converted, 1);
+    assert!((stakes.stake - 1.0).abs() < 1e-9, "stake {}", stakes.stake);
+    assert_eq!(AdvancedAi::religious_veto_extra_spreaders(Some(&stakes)), 2);
+    assert_eq!(
+        AdvancedAi::religious_veto_extra_inquisitors(Some(&stakes)),
+        1
+    );
+
+    // Only our capital, nobody else: below the floor, so nothing engages.
+    game.cities
+        .get_mut(&theirs)
+        .unwrap()
+        .pressure
+        .remove("Runaway Faith");
+    let stakes = on.religious_veto_stakes(&game, 0).unwrap();
+    assert!((stakes.stake - 0.5).abs() < 1e-9);
+    game.cities
+        .get_mut(&ours)
+        .unwrap()
+        .pressure
+        .insert("Runaway Faith".to_string(), 100.0);
+    game.cities.get_mut(&ours).unwrap().atheist_pressure = 900.0;
+    let stakes = on.religious_veto_stakes(&game, 0);
+    assert!(
+        stakes.is_none(),
+        "a faith that holds nobody and none of ours is no stake: {stakes:?}"
+    );
+}
+
+#[test]
+fn a_non_founder_defends_by_the_stakes_only_with_the_gene() {
+    let (mut game, ours, theirs) = veto_board(7_627);
+    // The rival faith at 80% of our capital's strongest pressure, short of
+    // a majority: the shipped early warning.
+    let capital = game.cities.get_mut(&ours).unwrap();
+    capital.pressure.insert("Runaway Faith".to_string(), 400.0);
+    capital.atheist_pressure = 600.0;
+    assert_ne!(
+        game.city_religion(&game.cities[&ours]),
+        Some("Runaway Faith"),
+        "fixture: the capital has not flipped"
+    );
+    let off = AdvancedAi::new();
+    let shipped = off.home_conversion_threat(&game, 0);
+    assert_eq!(
+        shipped.as_deref(),
+        Some("Runaway Faith"),
+        "fixture: the shipped warning fires"
+    );
+
+    // The shipped warning is never withheld, gene or no gene.
+    let mut on = AdvancedAi::new();
+    on.enable_religious_veto_defence();
+    assert_eq!(
+        off.religious_veto_threat(&game, 0, shipped.clone()),
+        shipped,
+        "the gene off passes the shipped answer through"
+    );
+    assert_eq!(
+        on.religious_veto_threat(&game, 0, shipped.clone()),
+        shipped,
+        "the shipped defence is the cheap kind and is never withheld"
+    );
+    assert_eq!(
+        on.religious_veto_threat(&game, 0, None),
+        None,
+        "a faith that holds nobody and the warning silent: nothing to name"
+    );
+
+    // The third civilization falls: the stake is at the floor, and the
+    // stakes faith is named even while the shipped warning is silent —
+    // but nothing is spent yet.
+    game.cities
+        .get_mut(&theirs)
+        .unwrap()
+        .pressure
+        .insert("Runaway Faith".to_string(), 800.0);
+    assert_eq!(
+        on.religious_veto_threat(&game, 0, None).as_deref(),
+        Some("Runaway Faith"),
+        "an engaged stake names the faith even before the shipped warning"
+    );
+    let stakes = on.religious_veto_engaged(&game, 0).unwrap();
+    assert_eq!(AdvancedAi::religious_veto_extra_spreaders(Some(&stakes)), 0);
+    assert!(!AdvancedAi::religious_veto_spends(Some(&stakes)));
+
+    // Our capital flips too: match point and past it, the corps grows.
+    game.cities
+        .get_mut(&ours)
+        .unwrap()
+        .pressure
+        .insert("Runaway Faith".to_string(), 2_000.0);
+    let stakes = on.religious_veto_engaged(&game, 0).unwrap();
+    assert!((stakes.stake - 1.0).abs() < 1e-9);
+    assert!(AdvancedAi::religious_veto_spends(Some(&stakes)));
+    assert_eq!(AdvancedAi::religious_veto_extra_spreaders(Some(&stakes)), 2);
+    game.cities
+        .get_mut(&ours)
+        .unwrap()
+        .pressure
+        .remove("Runaway Faith");
+    game.cities
+        .get_mut(&ours)
+        .unwrap()
+        .pressure
+        .insert("Runaway Faith".to_string(), 400.0);
+    let stakes = on.religious_veto_engaged(&game, 0).unwrap();
+
+    // The spreader's target list: a city the threat faith holds outranks
+    // one it merely presses on, and both outrank an untouched city.
+    let held = game.cities[&theirs].clone();
+    let mut held_ours = held.clone();
+    held_ours.owner = 0;
+    let pressed = game.cities[&ours].clone();
+    let mut untouched = pressed.clone();
+    untouched.pressure.clear();
+    let bonus_held = AdvancedAi::religious_veto_target_bonus(0, &held_ours, Some(&stakes), true);
+    let bonus_pressed = AdvancedAi::religious_veto_target_bonus(0, &pressed, Some(&stakes), false);
+    let bonus_untouched =
+        AdvancedAi::religious_veto_target_bonus(0, &untouched, Some(&stakes), false);
+    assert!(bonus_held > bonus_pressed && bonus_pressed > bonus_untouched);
+    assert_eq!(bonus_untouched, 0);
+    assert_eq!(
+        AdvancedAi::religious_veto_target_bonus(0, &held_ours, None, true),
+        0,
+        "no stakes, no bonus"
+    );
+}
+
+#[test]
+fn the_inquisitor_walks_to_the_heresy_only_with_the_gene() {
+    let mut game = Game::new_full(2, 30, 18, 7_116, 200, 0, false);
+    for pid in 0..2 {
+        let settler = game
+            .player_unit_ids(pid)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.current = pid;
+        game.apply(pid, &Action::FoundCity { unit: settler })
+            .unwrap();
+    }
+    game.current = 0;
+    let home = game.player_city_ids(0)[0];
+    install_test_holy_site(&mut game, home);
+    let slipping = found_test_city(&mut game, 0);
+    game.players[0].religion = Some("Our Faith".to_string());
+    game.players[0].holy_city = Some(home);
+    game.players[0]
+        .counters
+        .insert("inquisition".to_string(), 1);
+    game.players[1].religion = Some("Rival Faith".to_string());
+    game.cities
+        .get_mut(&home)
+        .unwrap()
+        .pressure
+        .insert("Our Faith".to_string(), 1_000.0);
+    let pressure = &mut game.cities.get_mut(&slipping).unwrap().pressure;
+    pressure.insert("Our Faith".to_string(), 300.0);
+    pressure.insert("Rival Faith".to_string(), 600.0);
+    let home_pos = game.cities[&home].pos;
+    let slipping_pos = game.cities[&slipping].pos;
+    let inquisitor = game.spawn_test_unit("inquisitor", 0, home_pos);
+    game.units.get_mut(&inquisitor).unwrap().religion = Some("Our Faith".to_string());
+    let charges = game.units[&inquisitor].charges;
+    assert!(charges > 0, "fixture: the Inquisitor has charges");
+
+    // Off: the charge is spent where the unit stands, in the one city that
+    // has no heresy.
+    let mut spent = game.clone();
+    let off = AdvancedAi::new();
+    assert!(off.advanced_religious_step(&mut spent, 0, inquisitor, false));
+    assert_eq!(spent.units[&inquisitor].charges, charges - 1);
+    assert_eq!(spent.units[&inquisitor].pos, home_pos);
+
+    // On: the unit keeps its charge and walks toward the slipping city.
+    let mut on = AdvancedAi::new();
+    on.enable_religious_veto_defence();
+    let mut walked = game.clone();
+    assert!(on.advanced_religious_step(&mut walked, 0, inquisitor, false));
+    assert_eq!(walked.units[&inquisitor].charges, charges);
+    let after = walked.units[&inquisitor].pos;
+    assert!(
+        walked.wdist(after, slipping_pos) < walked.wdist(home_pos, slipping_pos),
+        "the Inquisitor closes on the heresy"
+    );
+
+    // Standing in the slipping city, the charge is spent there.
+    let mut arrived = game.clone();
+    arrived.relocate(inquisitor, slipping_pos);
+    arrived.units.get_mut(&inquisitor).unwrap().moves_left = 4.0;
+    assert!(on.advanced_religious_step(&mut arrived, 0, inquisitor, false));
+    assert_eq!(arrived.units[&inquisitor].charges, charges - 1);
+    assert!(
+        arrived.cities[&slipping].pressure["Rival Faith"] < 600.0,
+        "the heresy is quartered"
+    );
+}
+
+// ═══ Trade deals: three leaks, one gene each (BasicAi::deals_*, no_free_passage) ═══
+
+#[test]
+fn the_trade_deal_genes_are_registered_reversible_opt_ins() {
+    for (field, tag) in [
+        ("deals_for_our_gain", "deals-for-our-gain"),
+        ("deals_at_the_ceiling", "deals-at-the-ceiling"),
+        ("no_free_passage", "no-free-passage"),
+    ] {
+        assert!(
+            GENES
+                .iter()
+                .any(|gene| gene.opt_in() && gene.field == field && gene.tag == tag),
+            "{tag} must be a registered native opt-in"
+        );
+        assert!(crate::ai::advanced::gene_ledger::screenable(tag));
+        assert_eq!(
+            crate::ai::advanced::gene_ledger::ledger_default_on(tag),
+            Some(false),
+            "{tag} ships off until a screen prices it"
+        );
+    }
+    let mut ai = AdvancedAi::new();
+    assert!(
+        !ai.base.deals_for_our_gain && !ai.base.deals_at_the_ceiling && !ai.base.no_free_passage
+    );
+    ai.enable_deals_for_our_gain();
+    ai.enable_deals_at_the_ceiling();
+    ai.enable_no_free_passage();
+    assert!(ai.base.deals_for_our_gain && ai.base.deals_at_the_ceiling && ai.base.no_free_passage);
+    ai.disable_deals_for_our_gain();
+    ai.disable_deals_at_the_ceiling();
+    ai.disable_no_free_passage();
+    assert!(
+        !ai.base.deals_for_our_gain && !ai.base.deals_at_the_ceiling && !ai.base.no_free_passage
+    );
+    let legacy = AdvancedAi::legacy();
+    assert!(
+        !legacy.base.deals_for_our_gain
+            && !legacy.base.deals_at_the_ceiling
+            && !legacy.base.no_free_passage,
+        "the frozen anchor plays the game it always did"
+    );
+}
+
+/// Two met capitals with a surplus luxury each, Gold and Favor to trade
+/// with, and Early Empire on both sides: the engine's own trade fixture.
+fn deal_board() -> Game {
+    let mut game = Game::new_full(2, 24, 16, 7_711, 120, 0, false);
+    game.record_contact(0, 1);
+    for pid in 0..2 {
+        let settler = game
+            .player_unit_ids(pid)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.found_city_for(pid, game.units[&settler].pos, None);
+        game.players[pid].gold = 500.0;
+        game.players[pid].diplomatic_favor = 100.0;
+        game.players[pid]
+            .civics
+            .insert(crate::name!("early_empire"));
+        for city in game.player_city_ids(pid) {
+            for position in game.cities[&city].owned_tiles.clone() {
+                let tile = game.map.tiles.get_mut(&position).unwrap();
+                tile.resource = None;
+                tile.improvement = None;
+                tile.pillaged = false;
+            }
+        }
+    }
+    for (pid, resource) in [(0, "silk"), (1, "wine")] {
+        let positions: Vec<Pos> = game
+            .player_city_ids(pid)
+            .into_iter()
+            .flat_map(|city| game.cities[&city].owned_tiles.clone())
+            .filter(|position| game.city_at(*position).is_none())
+            .take(2)
+            .collect();
+        assert_eq!(positions.len(), 2);
+        for position in positions {
+            let tile = game.map.tiles.get_mut(&position).unwrap();
+            tile.resource = Some(crate::name::Name::new(resource));
+            tile.improvement = Some(crate::name!("plantation"));
+        }
+    }
+    game.current = 0;
+    game
+}
+
+#[test]
+fn a_quote_is_chosen_by_our_gain_only_with_the_gene() {
+    use crate::game::{DealItems, QuickDeal};
+    let quote = |my_value: f64, partner_value: f64| QuickDeal {
+        partner: 1,
+        category: "resource".to_string(),
+        item: "silk".to_string(),
+        direction: "sell".to_string(),
+        offer: DealItems::default(),
+        request: DealItems::default(),
+        my_value,
+        partner_value,
+    };
+    // The lopsided quote is worth more to us; the balanced one is fairer.
+    let lopsided = quote(10.0, 3.0);
+    let balanced = quote(6.0, 6.0);
+    let off = AdvancedAi::new();
+    assert!(
+        off.base.deal_objective(&balanced) > off.base.deal_objective(&lopsided),
+        "shipped: the most balanced exchange wins"
+    );
+    let mut on = AdvancedAi::new();
+    on.enable_deals_for_our_gain();
+    assert!(
+        on.base.deal_objective(&lopsided) > on.base.deal_objective(&balanced),
+        "the gene: the exchange worth most to us wins"
+    );
+    assert_eq!(on.base.deal_objective(&lopsided), 10.0);
+}
+
+#[test]
+fn a_sale_is_priced_at_the_counterpartys_ceiling_only_with_the_gene() {
+    let game = deal_board();
+    let quotes = game.quick_deals(0);
+    let sale = quotes
+        .iter()
+        .find(|deal| deal.direction == "sell" && deal.item == "silk")
+        .cloned()
+        .expect("fixture: a luxury to sell");
+    let purchase = quotes
+        .iter()
+        .find(|deal| deal.direction == "buy" && deal.item == "wine")
+        .cloned()
+        .expect("fixture: a luxury to buy");
+
+    let off = AdvancedAi::new();
+    assert_eq!(
+        off.base.deal_at_the_ceiling(&game, 0, &sale),
+        None,
+        "the gene off leaves the midpoint quote alone"
+    );
+
+    let mut on = AdvancedAi::new();
+    on.enable_deals_at_the_ceiling();
+    let sharp = on
+        .base
+        .deal_at_the_ceiling(&game, 0, &sale)
+        .expect("a midpoint quote has surplus to move");
+    assert!(
+        sharp.request.gold > sale.request.gold,
+        "the sale asks for more: {} over {}",
+        sharp.request.gold,
+        sale.request.gold
+    );
+    assert!(sharp.my_value > sale.my_value);
+    let (_, theirs) = game.trade_utilities(0, 1, &sharp.offer, &sharp.request);
+    assert!(
+        theirs > 0.25 && theirs <= sale.partner_value,
+        "the counterparty still gains, by the margin: {theirs}"
+    );
+    let cheaper = on
+        .base
+        .deal_at_the_ceiling(&game, 0, &purchase)
+        .expect("a purchase has surplus to keep");
+    assert!(
+        cheaper.offer.gold < purchase.offer.gold,
+        "the purchase pays less: {} under {}",
+        cheaper.offer.gold,
+        purchase.offer.gold
+    );
+
+    // And the sharpened sale closes: the engine accepts it and the Gold
+    // lands, more of it than the midpoint would have brought.
+    let mut closed = game.clone();
+    let before = closed.players[0].gold;
+    assert!(on.base.close_quick_deal(&mut closed, 0, sale.clone()));
+    let banked = closed.players[0].gold - before;
+    assert!(
+        banked >= sharp.request.gold - 1e-6 && banked > sale.request.gold,
+        "banked {banked} against the sharpened {} and the midpoint {}",
+        sharp.request.gold,
+        sale.request.gold
+    );
+    // The shipped close banks the midpoint (and the first instalment of any
+    // Gold-per-turn rider `do_trade` settles at signing), which is less.
+    let mut shipped = game.clone();
+    let before = shipped.players[0].gold;
+    assert!(off.base.close_quick_deal(&mut shipped, 0, sale.clone()));
+    let midpoint = shipped.players[0].gold - before;
+    assert!(
+        midpoint >= sale.request.gold - 1e-6 && midpoint < banked,
+        "the midpoint banks {midpoint}, the ceiling {banked}"
+    );
+}
+
+#[test]
+fn a_friendship_ask_carries_no_passage_only_with_the_gene() {
+    let proposal = |gene: bool| -> bool {
+        let mut game = deal_board();
+        game.turn = 20;
+        let mut ai = AdvancedAi::new();
+        if gene {
+            ai.enable_no_free_passage();
+        }
+        ai.base.diplomacy(&mut game, 0);
+        game.pending_deals
+            .iter()
+            .find(|deal| deal.from == 0 && deal.to == 1 && deal.friendship)
+            .map(|deal| deal.open_borders)
+            .expect("fixture: the friendship ask is made at turn 20")
+    };
+    assert!(
+        proposal(false),
+        "shipped: passage rides on the friendship ask"
+    );
+    assert!(!proposal(true), "the gene: the ask carries no passage");
+}
+
+// ═══ One war at a time (advanced/one_war.rs) ═══
+
+#[test]
+fn one_war_at_a_time_is_a_registered_reversible_opt_in() {
+    assert!(
+        GENES.iter().any(|gene| gene.opt_in()
+            && gene.field == "one_war_at_a_time"
+            && gene.tag == "one-war-at-a-time"),
+        "one-war-at-a-time must be a registered native opt-in"
+    );
+    assert!(
+        crate::ai::advanced::gene_ledger::screenable("one-war-at-a-time"),
+        "the ledger must be able to price it"
+    );
+    assert_eq!(
+        crate::ai::advanced::gene_ledger::ledger_default_on("one-war-at-a-time"),
+        Some(false),
+        "it ships off until a screen prices it"
+    );
+    let mut ai = AdvancedAi::new();
+    assert!(!ai.one_war_at_a_time && ai.one_war.is_none());
+    ai.enable_one_war_at_a_time();
+    assert!(ai.one_war_at_a_time);
+    ai.disable_one_war_at_a_time();
+    assert!(!ai.one_war_at_a_time);
+    assert!(
+        !AdvancedAi::legacy().one_war_at_a_time,
+        "the frozen anchor plays the game it always did"
+    );
+}
+
+/// Three majors, cities founded, two armoured bodies each; player 0 at war
+/// with both neighbours and a Conquest plan on player 1.
+fn one_war_board() -> (Game, StrategicPlan) {
+    let mut game = Game::new_full(3, 24, 16, 7_923, 300, 0, false);
+    for pid in 0..3 {
+        let settler = game
+            .player_unit_ids(pid)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .expect("every major starts with a settler");
+        game.found_city_for(pid, game.units[&settler].pos, None);
+        game.remove_unit(settler);
+    }
+    for pid in 0..3 {
+        let home = game.cities[&game.player_city_ids(pid)[0]].pos;
+        for _ in 0..2 {
+            game.spawn_test_unit("modern_armor", pid, home);
+        }
+    }
+    for enemy in [1, 2] {
+        game.record_contact(0, enemy);
+        game.at_war.insert((0, enemy));
+    }
+    game.turn = 60;
+    game.current = 0;
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Conquest,
+        target_player: Some(1),
+        target_city: Some(game.player_city_ids(1)[0]),
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    (game, plan)
+}
+
+fn one_war_peace_deal(game: &Game, from: usize, joint_war_target: Option<usize>) -> DiplomaticDeal {
+    DiplomaticDeal {
+        id: 1,
+        from,
+        to: 0,
+        give_gold: 0.0,
+        request_gold: 0.0,
+        open_borders: false,
+        friendship: false,
+        peace: joint_war_target.is_none(),
+        alliance: None,
+        defensive_pact: false,
+        joint_war_target,
+        promise: None,
+        demand: false,
+        expires: game.turn + 10,
+    }
+}
+
+#[test]
+fn one_war_offers_peace_on_the_second_front_and_keeps_the_campaign() {
+    let (mut game, plan) = one_war_board();
+    assert!(
+        game.military_power(0) >= game.military_power(1) * 0.62
+            && game.military_power(0) >= game.military_power(2) * 0.62,
+        "precondition: neither front trips the ordinary outmatched clause"
+    );
+
+    let mut off = AdvancedAi::new();
+    let mut off_board = game.clone();
+    off.one_war_observe(&off_board, 0);
+    off.advanced_diplomacy(&mut off_board, 0, &plan);
+    assert!(
+        off.peace_offers.is_empty(),
+        "with the gene off a balanced two-front war offers nobody peace: {:?}",
+        off.peace_offers
+    );
+
+    let mut ai = AdvancedAi::new();
+    ai.enable_one_war_at_a_time();
+    // The plan of the previous turn is what the observation reads.
+    ai.plan = Some(plan.clone());
+    ai.one_war_observe(&game, 0);
+    assert_eq!(
+        ai.one_war_front(),
+        Some(1),
+        "the plan's target is the front"
+    );
+    assert_eq!(
+        ai.one_war_objective_enemies(&game, None, &[1, 2]),
+        vec![1],
+        "the force planner aims at the front alone"
+    );
+    ai.advanced_diplomacy(&mut game, 0, &plan);
+    assert!(
+        ai.peace_offers.contains(&2) && !ai.peace_offers.contains(&1),
+        "the second front is offered peace and the front is not: {:?}",
+        ai.peace_offers
+    );
+    assert!(
+        game.pending_deals
+            .iter()
+            .any(|deal| deal.from == 0 && deal.to == 2 && deal.peace),
+        "the offer is an outbound peace deal"
+    );
+    assert_eq!(
+        game.players[0].counters.get("one_war:peace:second_front"),
+        Some(&1)
+    );
+    assert!(
+        ai.incoming_deal_value(&game, 0, &one_war_peace_deal(&game, 2, None), &plan) >= 320.0,
+        "the second front's white peace is taken"
+    );
+    assert!(
+        ai.incoming_deal_value(&game, 0, &one_war_peace_deal(&game, 1, None), &plan) < 0.0,
+        "the front's white peace is still refused while the tide is not against us"
+    );
+    assert!(
+        ai.incoming_deal_value(&game, 0, &one_war_peace_deal(&game, 2, Some(1)), &plan) <= -1_000.0,
+        "a Joint War while a war burns is a second front by treaty"
+    );
+    // Peace with the second front concluded: the front is unchanged.
+    game.at_war.remove(&(0, 2));
+    ai.one_war_observe(&game, 0);
+    assert_eq!(ai.one_war_front(), Some(1));
+    assert_eq!(ai.one_war_objective_enemies(&game, None, &[1]), vec![1]);
+}
+
+#[test]
+fn one_war_holds_a_declaration_while_another_war_burns() {
+    let (mut game, _) = one_war_board();
+    game.at_war.remove(&(0, 2));
+    let mut ai = AdvancedAi::new();
+    assert!(
+        !ai.one_war_holds_declaration(&game, 0, 2),
+        "the gene off holds nothing"
+    );
+    ai.enable_one_war_at_a_time();
+    ai.one_war_observe(&game, 0);
+    assert!(
+        ai.one_war_holds_declaration(&game, 0, 2),
+        "a war on 1 holds the declaration on 2"
+    );
+    assert!(
+        !ai.one_war_holds_declaration(&game, 0, 1),
+        "the war already being fought is never held"
+    );
+    game.at_war.remove(&(0, 1));
+    ai.one_war_observe(&game, 0);
+    assert!(ai.one_war.is_none(), "no war, no front");
+    assert!(
+        !ai.one_war_holds_declaration(&game, 0, 2),
+        "at peace nothing is held"
+    );
+}
+
+#[test]
+fn one_war_presses_a_breaking_city_and_sues_on_a_rout() {
+    let (mut game, plan) = one_war_board();
+    game.at_war.remove(&(0, 2));
+    let front_city = game.player_city_ids(1)[0];
+    let siege_pos = game
+        .wdisk(game.cities[&front_city].pos, 2)
+        .into_iter()
+        .find(|pos| {
+            *pos != game.cities[&front_city].pos
+                && game.city_at(*pos).is_none()
+                && game
+                    .map
+                    .get(*pos)
+                    .is_some_and(|tile| !game.rules.is_water(tile))
+        })
+        .expect("a land tile beside the front city");
+    game.spawn_test_unit("modern_armor", 0, siege_pos);
+
+    // A stalled war by the fatigue clause's own clock.
+    let mut ai = AdvancedAi::new();
+    ai.enable_one_war_at_a_time();
+    ai.major_war_since = Some(20);
+    ai.last_campaign_progress = 20;
+    let mut off = AdvancedAi::new();
+    off.major_war_since = Some(20);
+    off.last_campaign_progress = 20;
+    assert!(
+        off.incoming_deal_value(&game, 0, &one_war_peace_deal(&game, 1, None), &plan) >= 0.0,
+        "gene off: the fatigued war accepts the front's white peace"
+    );
+
+    ai.one_war_observe(&game, 0);
+    game.cities.get_mut(&front_city).unwrap().hp = 140;
+    game.turn += 1;
+    ai.one_war_observe(&game, 0);
+    assert!(
+        ai.one_war_prizes_in_reach(&game, 0),
+        "a front city whose health fell under our soldier is a prize in reach"
+    );
+    assert!(ai.one_war_presses(&game, 0, 1));
+    assert_eq!(ai.one_war_peace(&game, 0, 1), None);
+    assert!(
+        ai.incoming_deal_value(&game, 0, &one_war_peace_deal(&game, 1, None), &plan) < 0.0,
+        "gene on: the front's white peace is refused while its city is breaking"
+    );
+    ai.advanced_diplomacy(&mut game, 0, &plan);
+    assert!(
+        !ai.peace_offers.contains(&1),
+        "the fatigue clause stands down while the city is breaking"
+    );
+
+    // Five of ours lost for none of theirs since the last observation: a rout.
+    let key = (0usize, 1usize);
+    let mut record = crate::game::WarRecord {
+        conflict: 1,
+        declarer: 0,
+        target: 1,
+        casus_belli: None,
+        joint_war_until: None,
+        aggressor: 0,
+        defender: 1,
+        started: 20,
+        ended: None,
+        losses: BTreeMap::new(),
+        participants: Vec::new(),
+        peace_terms: Vec::new(),
+        highlights: Vec::new(),
+        theater: Vec::new(),
+    };
+    record.losses.insert(
+        0,
+        crate::game::WarLosses {
+            units: 5,
+            ..Default::default()
+        },
+    );
+    game.wars.insert(key, record);
+    game.turn += 1;
+    ai.one_war_observe(&game, 0);
+    let front = ai.one_war.as_ref().expect("the front persists");
+    assert_eq!(front.window_net(), -5);
+    assert_eq!(
+        ai.one_war_peace(&game, 0, 1),
+        Some(super::one_war::OneWarPeace::Rout)
+    );
+    assert!(
+        ai.incoming_deal_value(&game, 0, &one_war_peace_deal(&game, 1, None), &plan) >= 320.0,
+        "a rout takes the white peace"
+    );
+    ai.advanced_diplomacy(&mut game, 0, &plan);
+    assert!(
+        ai.peace_offers.contains(&1),
+        "a rout offers peace on the front"
+    );
+    assert_eq!(game.players[0].counters.get("one_war:peace:rout"), Some(&1));
+}
+
+#[test]
+fn one_war_sues_once_the_tide_has_run_against_us_for_long_enough() {
+    let (mut game, _) = one_war_board();
+    game.at_war.remove(&(0, 2));
+    let mut ai = AdvancedAi::new();
+    ai.enable_one_war_at_a_time();
+    ai.one_war_observe(&game, 0);
+    assert_eq!(
+        ai.one_war_peace(&game, 0, 1),
+        None,
+        "an even exchange is no reason"
+    );
+
+    let key = (0usize, 1usize);
+    let mut record = crate::game::WarRecord {
+        conflict: 1,
+        declarer: 0,
+        target: 1,
+        casus_belli: None,
+        joint_war_until: None,
+        aggressor: 0,
+        defender: 1,
+        started: 20,
+        ended: None,
+        losses: BTreeMap::new(),
+        participants: Vec::new(),
+        peace_terms: Vec::new(),
+        highlights: Vec::new(),
+        theater: Vec::new(),
+    };
+    record.losses.insert(
+        0,
+        crate::game::WarLosses {
+            units: 1,
+            ..Default::default()
+        },
+    );
+    game.wars.insert(key, record);
+    game.turn += 1;
+    ai.one_war_observe(&game, 0);
+    let front = ai.one_war.as_ref().unwrap();
+    assert_eq!(front.window_net(), -1);
+    assert_eq!(front.tide_against_since, Some(game.turn));
+    assert_eq!(
+        ai.one_war_peace(&game, 0, 1),
+        None,
+        "one bad turn is not the tide turning"
+    );
+
+    // Patience runs out with nothing in reach: our soldiers are at home,
+    // far from any city of theirs.
+    game.turn += game.standard_duration(super::one_war::ONE_WAR_TIDE_PATIENCE);
+    ai.one_war_observe(&game, 0);
+    assert!(!ai.one_war_prizes_in_reach(&game, 0));
+    assert_eq!(
+        ai.one_war_peace(&game, 0, 1),
+        Some(super::one_war::OneWarPeace::TideTurned)
+    );
+
+    // Two of theirs fall: the window turns, and the clock stops.
+    game.wars.get_mut(&key).unwrap().losses.insert(
+        1,
+        crate::game::WarLosses {
+            units: 2,
+            ..Default::default()
+        },
+    );
+    game.turn += 1;
+    ai.one_war_observe(&game, 0);
+    let front = ai.one_war.as_ref().unwrap();
+    assert!(front.window_net() > 0);
+    assert_eq!(front.tide_against_since, None);
+    assert_eq!(ai.one_war_peace(&game, 0, 1), None);
+}
+
+// ── `lane-commit`: from the midpoint, the empire plays for the victory it
+// leads the field in. See `advanced/lane_commit.rs`. ──────────────────────
+
+#[test]
+fn lane_commit_is_a_native_opt_in_off_in_both_controllers() {
+    assert!(!AdvancedAi::new().lane_commit);
+    assert!(!AdvancedAi::legacy().lane_commit);
+    let gene = GENES
+        .iter()
+        .find(|gene| gene.tag == "lane-commit")
+        .expect("the gene is published for gene_screen");
+    assert!(gene.opt_in() && gene.screenable() && !gene.live());
+    let mut ai = AdvancedAi::new();
+    (gene.enable)(&mut ai);
+    assert!(ai.lane_commit);
+    (gene.disable)(&mut ai);
+    assert!(!ai.lane_commit);
+}
+
+/// A two-player board on a 250-turn clock, at Standard speed so standard
+/// turns are turns: the midpoint is turn 125.
+fn lane_commit_board(turn: u32) -> Game {
+    let mut g = Game::new(2, 24, 16, 74, 250, 0);
+    assert_eq!(g.turn_limit(), Some(250));
+    g.turn = turn;
+    g
+}
+
+fn lane_reading(lane: VictoryTarget, progress: i32, lead: i32) -> lane_commit::LaneReading {
+    lane_commit::LaneReading {
+        lane,
+        progress,
+        lead,
+    }
+}
+
+/// The four lanes as a review reads them: science, culture, religion,
+/// diplomacy, each as (own progress, best rival's progress).
+fn lane_table(table: [(i32, i32); 4]) -> Vec<lane_commit::LaneReading> {
+    lane_commit::LANE_COMMIT_LANES
+        .iter()
+        .zip(table)
+        .map(|(lane, (own, rival))| lane_reading(*lane, own, own - rival))
+        .collect()
+}
+
+/// Nothing is committed before the midpoint; the gene off, or an operator's
+/// assignment, leaves the seat exactly as it was — `raced_target` answers
+/// the assignment alone.
+#[test]
+fn lane_commit_waits_for_the_midpoint_and_yields_to_an_assignment() {
+    let early = lane_commit_board(124);
+    let mut ai = AdvancedAi::new();
+    ai.enable_lane_commit();
+    ai.maintain_lane_commit(&early, 0);
+    assert_eq!(ai.lane_commitment(), None);
+    assert_eq!(ai.raced_target(), None);
+
+    let midpoint = lane_commit_board(125);
+    let mut off = AdvancedAi::new();
+    off.maintain_lane_commit(&midpoint, 0);
+    assert_eq!(off.lane_commitment(), None);
+
+    let mut assigned = AdvancedAi::new();
+    assigned.enable_lane_commit();
+    assigned.retarget(VictoryTarget::Culture);
+    assigned.maintain_lane_commit(&midpoint, 0);
+    assert_eq!(assigned.lane_commitment(), None);
+    assert_eq!(assigned.raced_target(), Some(VictoryTarget::Culture));
+
+    // On a real board the midpoint commits, and the commitment is one of
+    // the raced lanes.
+    let mut live = AdvancedAi::new();
+    live.enable_lane_commit();
+    live.maintain_lane_commit(&midpoint, 0);
+    let commitment = live.lane_commitment().expect("committed at the midpoint");
+    assert!(lane_commit::LANE_COMMIT_LANES.contains(&commitment.lane));
+    assert_eq!(commitment.since, 125);
+    assert_eq!(live.raced_target(), Some(commitment.lane));
+}
+
+/// The lane chosen is the one the seat leads the field in, not the one it
+/// is furthest along in: science at 45% is four points behind the tech
+/// leader, religion at 52% leads every founder by twelve — and the
+/// commitment reaches the assessment and `raced_target`.
+#[test]
+fn lane_commit_picks_the_lane_the_seat_leads() {
+    let g = lane_commit_board(125);
+    let mut ai = AdvancedAi::new();
+    ai.enable_lane_commit();
+    ai.review_lane_commitment(&g, &lane_table([(45, 49), (10, 30), (52, 40), (30, 35)]));
+    let commitment = ai.lane_commitment().expect("committed at the midpoint");
+    assert_eq!(commitment.lane, VictoryTarget::Religion);
+    assert_eq!(commitment.since, 125);
+    assert_eq!(commitment.progress, 52);
+    assert_eq!(commitment.lead, 12);
+    assert_eq!(ai.raced_target(), Some(VictoryTarget::Religion));
+    assert!(
+        ai.plan.is_none(),
+        "a fresh commitment is assessed the same turn"
+    );
+    // Short of cities with land still open, the seat keeps settling; once
+    // the stock window shuts the plan is the committed lane; and a
+    // committed lane 65% along comes before more cities, stock's own bar.
+    assert_eq!(ai.assess(&g, 0).strategy, GrandStrategy::Expansion);
+    let window_shut = lane_commit_board(205);
+    assert_eq!(ai.assess(&window_shut, 0).strategy, GrandStrategy::Religion);
+    let mut far = AdvancedAi::new();
+    far.enable_lane_commit();
+    far.review_lane_commitment(&g, &lane_table([(45, 49), (10, 30), (70, 40), (30, 35)]));
+    assert_eq!(far.assess(&g, 0).strategy, GrandStrategy::Religion);
+
+    // Leading two lanes, the one closer to landing wins; leading none, the
+    // one furthest along — what `victory_focus` would say — made sticky.
+    let mut two = AdvancedAi::new();
+    two.enable_lane_commit();
+    two.review_lane_commitment(&g, &lane_table([(45, 40), (10, 30), (52, 50), (30, 35)]));
+    assert_eq!(two.committed_lane(), Some(VictoryTarget::Religion));
+    let mut none = AdvancedAi::new();
+    none.enable_lane_commit();
+    none.review_lane_commitment(&g, &lane_table([(45, 49), (10, 30), (40, 52), (30, 35)]));
+    assert_eq!(none.committed_lane(), Some(VictoryTarget::Science));
+    assert_eq!(none.lane_commitment().unwrap().lead, -4);
+    assert_eq!(
+        none.assess(&lane_commit_board(205), 0).strategy,
+        GrandStrategy::Science
+    );
+}
+
+/// A commitment holds against a challenger a few points better and yields
+/// to one well further along at the same standing, or to one that leads
+/// once the committed lane's own lead is gone; a lane taken off the board
+/// is left at once.
+#[test]
+fn lane_commit_holds_against_a_marginal_challenger() {
+    let g = lane_commit_board(125);
+    let mut ai = AdvancedAi::new();
+    ai.enable_lane_commit();
+    ai.review_lane_commitment(&g, &lane_table([(45, 49), (10, 30), (52, 40), (30, 35)]));
+    assert_eq!(ai.committed_lane(), Some(VictoryTarget::Religion));
+
+    // Turn 135: diplomacy now leads too and reads 64% against religion's 58
+    // — six points, inside the twenty-point margin. Hold, and record the
+    // review.
+    let later = lane_commit_board(135);
+    ai.review_lane_commitment(
+        &later,
+        &lane_table([(47, 51), (12, 32), (58, 46), (64, 55)]),
+    );
+    let held = ai.lane_commitment().unwrap();
+    assert_eq!(held.lane, VictoryTarget::Religion);
+    assert_eq!((held.since, held.reviewed, held.progress), (125, 135, 58));
+
+    // Turn 145: diplomacy at 80% is twenty-two points further along than
+    // religion at 58 and both lead. Switch.
+    let switch = lane_commit_board(145);
+    ai.review_lane_commitment(
+        &switch,
+        &lane_table([(49, 53), (14, 34), (58, 46), (80, 60)]),
+    );
+    let commitment = ai.lane_commitment().unwrap();
+    assert_eq!(commitment.lane, VictoryTarget::Diplomacy);
+    assert_eq!(
+        (commitment.since, commitment.progress, commitment.lead),
+        (145, 80, 20)
+    );
+
+    // A committed lane whose lead is gone yields to a lane that leads, at
+    // any progress.
+    let mut overtaken = AdvancedAi::new();
+    overtaken.enable_lane_commit();
+    overtaken.review_lane_commitment(&g, &lane_table([(45, 49), (10, 30), (52, 40), (30, 35)]));
+    overtaken.review_lane_commitment(
+        &later,
+        &lane_table([(47, 51), (12, 32), (58, 70), (40, 38)]),
+    );
+    assert_eq!(overtaken.committed_lane(), Some(VictoryTarget::Diplomacy));
+
+    // ...but not to a lane that is merely a little further along while
+    // neither leads.
+    let mut behind = AdvancedAi::new();
+    behind.enable_lane_commit();
+    behind.review_lane_commitment(&g, &lane_table([(45, 49), (10, 30), (40, 52), (30, 35)]));
+    assert_eq!(behind.committed_lane(), Some(VictoryTarget::Science));
+    behind.review_lane_commitment(
+        &later,
+        &lane_table([(47, 53), (12, 32), (55, 70), (30, 35)]),
+    );
+    assert_eq!(behind.committed_lane(), Some(VictoryTarget::Science));
+    behind.review_lane_commitment(
+        &switch,
+        &lane_table([(47, 53), (12, 32), (67, 80), (30, 35)]),
+    );
+    assert_eq!(behind.committed_lane(), Some(VictoryTarget::Religion));
+
+    // A lane the board no longer offers is left at the next review.
+    let mut no_religion = lane_commit_board(135);
+    no_religion.victory_conditions.religious = false;
+    let mut left = AdvancedAi::new();
+    left.enable_lane_commit();
+    left.review_lane_commitment(&g, &lane_table([(45, 49), (10, 30), (52, 40), (30, 35)]));
+    let readings: Vec<_> = lane_table([(47, 51), (12, 32), (58, 46), (30, 35)])
+        .into_iter()
+        .filter(|reading| reading.lane != VictoryTarget::Religion)
+        .collect();
+    left.review_lane_commitment(&no_religion, &readings);
+    assert_eq!(left.committed_lane(), Some(VictoryTarget::Science));
+}
+
+/// The vetoes an assigned lane carries stay the operator's: a committed
+/// seat still votes in Congress, still buys missionaries and Great Works,
+/// still expands on the adaptive cutoff — only the objective resolutions
+/// read the commitment.
+#[test]
+fn lane_commit_reaches_the_objectives_and_not_the_vetoes() {
+    let g = lane_commit_board(125);
+    let mut ai = AdvancedAi::new();
+    ai.enable_lane_commit();
+    ai.review_lane_commitment(&g, &lane_table([(45, 49), (10, 30), (52, 40), (30, 35)]));
+    assert_eq!(ai.raced_target(), Some(VictoryTarget::Religion));
+    assert_eq!(ai.victory_target(), None);
+    assert_eq!(ai.active_victory_target(&g), None);
+    // The rivals' readings come off the same table, so the field is read
+    // for every living major.
+    let readings = ai.lane_readings(&g, 0);
+    assert_eq!(readings.len(), 4);
+    for reading in &readings {
+        assert!((0..=100).contains(&reading.progress));
+    }
+}
+
+/// `victory_focus` is unchanged by the refactor that exposed the lane table:
+/// the civilization preferences stay in the focus and out of the table.
+#[test]
+fn lane_progress_table_matches_victory_focus() {
+    let ai = AdvancedAi::new();
+    let mut religion = Game::new(2, 24, 16, 74, 80, 0);
+    religion.players[0].religion = Some("Test Faith".to_string());
+    let table = ai.lane_progress_table(&religion, 0);
+    assert_eq!(
+        table[2], 40,
+        "a founder with no foreign convert stands at 40"
+    );
+    let focus = ai.victory_focus(&religion, 0);
+    assert_eq!(focus.strategy, GrandStrategy::Religion);
+    assert_eq!(focus.progress, table[2]);
+
+    let mut china = Game::new(2, 24, 16, 77, 80, 0);
+    china.players[0].civ = "China".to_string();
+    let table = ai.lane_progress_table(&china, 0);
+    assert!(
+        table[0] < 45,
+        "the table carries no civilization preference"
+    );
+    assert_eq!(ai.victory_focus(&china, 0).progress, 45);
+}
+
+// ═══ No gifts: the engine allows one (Civilization VI's rule) and the AI never makes one ═══
+
+/// Two advanced seats through a whole short game: quotes are closed, and not
+/// one of them was a gift or a demand. `gifts_given` is the engine's own
+/// count, so this is a check and not a claim.
+#[test]
+fn the_ai_never_gives_without_receiving() {
+    let mut game = Game::new_full(2, 30, 20, 84_211, 150, 0, false);
+    game.record_contact(0, 1);
+    let mut ais = vec![AdvancedAi::new(), AdvancedAi::new()];
+    ais[0].enable_deals_at_the_ceiling();
+    ais[0].enable_deals_for_our_gain();
+    run_game(&mut game, &mut ais);
+    for pid in 0..2 {
+        assert_eq!(
+            game.players[pid].counters.get("gifts_given"),
+            None,
+            "seat {pid} gave something for nothing"
+        );
+    }
+    // And the quote lane refuses a gift or a demand on its own, whatever
+    // the engine would accept.
+    use crate::game::{DealItems, QuickDeal};
+    let mut board = deal_board();
+    let gift = QuickDeal {
+        partner: 1,
+        category: "resource".to_string(),
+        item: "silk".to_string(),
+        direction: "sell".to_string(),
+        offer: DealItems {
+            gold: 25.0,
+            ..DealItems::default()
+        },
+        request: DealItems::default(),
+        my_value: 1.0,
+        partner_value: 25.0,
+    };
+    let ai = AdvancedAi::new();
+    assert!(!ai.base.close_quick_deal(&mut board, 0, gift));
+    assert_eq!(board.players[0].counters.get("gifts_given"), None);
+}

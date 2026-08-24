@@ -1308,6 +1308,21 @@ struct VictoryFocus {
     progress: i32,
 }
 
+/// `lane_commit`: the lane an adaptive seat plays for from the midpoint.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LaneCommitment {
+    pub lane: VictoryTarget,
+    /// The turn the lane was committed to (or switched to).
+    pub since: u32,
+    /// The turn the commitment was last reviewed.
+    pub reviewed: u32,
+    /// The lane's progress at the last review, 0..=100.
+    pub progress: i32,
+    /// Own progress less the best living major rival's at the last review;
+    /// positive is a lead on the field.
+    pub lead: i32,
+}
+
 impl EmpireCounts {
     fn add_unit(&mut self, g: &Game, name: &str) {
         match name {
@@ -1437,6 +1452,23 @@ const SETTLE_PLAN_AHEAD_STRETCH_DISCOUNT: f64 = 0.05;
 /// city — the same bar `settle_sites_scanning` sets for a site worth
 /// walking to at all.
 const SETTLE_PLAN_AHEAD_FUTURE_MIN: f64 = 12.0;
+
+/// `lane_commit`: the midpoint of a game with no turn cap, in standard-speed
+/// turns. A capped game's midpoint is half its cap — turn 125 on the 250-turn
+/// Online standard (`docs/GENE_SCREEN.md`, *One screen*); this stands in
+/// when no clock is set: half of Standard's own 500.
+const LANE_COMMIT_MIDPOINT_STANDARD: u32 = 250;
+/// `lane_commit`: how often a commitment is reviewed, in standard turns.
+/// `lane_readings` is a whole-world tourism and conversion scan for every
+/// living major, and ten turns is the plan's own era-scale cadence twice.
+const LANE_COMMIT_REVIEW: u32 = 10;
+/// `lane_commit`: how many progress points further along a challenger lane
+/// must read, at the same standing on the field, before the seat leaves the
+/// lane it committed to. Religion moves twelve points a converted rival and
+/// science under one a tech; the districts, policies and Great People are
+/// already bought for the committed lane, and a reading a few points better
+/// is noise.
+const LANE_COMMIT_SWITCH_MARGIN: i32 = 20;
 
 /// Route-scoring is exact for the valuable prefix, then falls back to the
 /// existing reachability scan if that prefix is disconnected. This bounds the
@@ -1592,6 +1624,8 @@ pub struct AdvancedAi {
     /// Recorded at the offer site because the internal rival valuation that
     /// answers `ProposeDeal` must not gate a mirrored game's diplomacy.
     peace_offers: BTreeSet<usize>,
+    /// The offers above the planner is routed on; see `AiReport::peace_routed`.
+    peace_routed: BTreeSet<usize>,
     victory_planning: bool,
     victory_target: Option<VictoryTarget>,
     forced_target_player: Option<usize>,
@@ -4823,6 +4857,10 @@ pub struct AdvancedAi {
     district_planning: bool,
 
     // ---- append: e-f ------------------------------------------------
+    /// A city-state's place enters the envoy score: proximity to our
+    /// cities, and the sitting suzerain the envoys would unseat. Opt-in gene
+    /// `flip-nearby-city-states`; see `advanced/field_craft.rs`.
+    flip_nearby_city_states: bool,
     /// An improvement that completes an unresearched technology's or civic's
     /// boost is worth the research the boost grants. Opt-in gene
     /// `eureka-chasing-builder`; see `advanced/deity_habits.rs`.
@@ -4859,12 +4897,54 @@ pub struct AdvancedAi {
     /// visible barbarian raider can reach next turn. Opt-in gene
     /// `missionary-evades-raiders`; see `advanced/missionary_field.rs`.
     missionary_evades_raiders: bool,
+    /// One war at a time: one campaign front, peace on every other, and
+    /// peace on the front once the tide has run against us for long enough.
+    /// Opt-in gene `one-war-at-a-time`; see `advanced/one_war.rs`.
+    one_war_at_a_time: bool,
+    /// The gene's chosen front and its tide clock; `None` at peace or with
+    /// the gene off.
+    one_war: Option<one_war::OneWarFront>,
+    /// From the midpoint of the game an adaptive seat commits to the victory
+    /// lane it leads the field in — every lane read for the seat and for
+    /// every living major on one table, the furthest along of the lanes it
+    /// leads, or of all when it leads none — in place of `victory_focus`'s
+    /// per-turn pick, below every posture and the expansion arm; the science
+    /// keys (tech value, Spaceports) read it through `raced_target`, and
+    /// nothing else an assigned lane carries does.
+    /// Reviewed every `LANE_COMMIT_REVIEW` standard turns behind a
+    /// `LANE_COMMIT_SWITCH_MARGIN`. Operator, 2026-08-24: "from midpoint of
+    /// the game, we should have the victory in mind and be optimizing towards
+    /// winning that". Opt-in gene `lane-commit`; see `advanced/lane_commit.rs`.
+    lane_commit: bool,
+    /// `lane_commit`'s commitment: the lane, when it was made and last
+    /// reviewed, and its progress and lead on the field at that review.
+    lane_commitment: Option<LaneCommitment>,
 
     // ---- append: p-r ------------------------------------------------
+    /// The religious defence grows with how much of a rival's religious
+    /// victory is already done — the civilizations it holds and how close
+    /// it is to half of ours — naming and targeting that faith from half a
+    /// victory and spending on it from match point, never withholding the
+    /// shipped defence. Also sends the Inquisitor to the heresy instead of
+    /// spending its charges where it was bought. Opt-in gene
+    /// `religious-veto-defence`; see `advanced/religious_defence.rs`.
+    religious_veto_defence: bool,
+    /// A wounded unit pillages a heal-type improvement under it or one step
+    /// away before the recovery path walks it home. Opt-in gene
+    /// `pillage-to-heal`; see `advanced/field_craft.rs`.
+    pillage_to_heal: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// A ranged unit inside a hostile melee body's reach steps to a firing
+    /// tile inside fewer hostile envelopes and fires at that body. Opt-in
+    /// gene `shoot-and-scoot`; see `advanced/field_craft.rs`.
+    shoot_and_scoot: bool,
 
     // ---- append: t-z ------------------------------------------------
+    /// A melee unit with nothing to hit stands where its zone of control
+    /// takes the most enemy reaches off our shooters and wounded. Opt-in gene
+    /// `zoc-screen`; see `advanced/field_craft.rs`.
+    zoc_screen: bool,
 }
 
 /// Science weight floor at the start of a game, and at its very end.
@@ -5164,24 +5244,44 @@ mod site_lookahead;
 mod district_planning;
 use district_planning::DistrictPlanCache;
 
-/// The religious corps: the four opt-in genes for what a founder buys with
-/// Faith once its cities start slipping, and what it does with the units
-/// afterwards. See `advanced/religion.rs`.
-mod religion;
 /// The Missionary in the field: a last-charge Missionary explores the fog,
 /// and a religious unit steps out of a raider's reach. Two opt-in genes; see
 /// `advanced/missionary_field.rs`.
 mod missionary_field;
+/// One war at a time: one campaign front, peace on every other front, and
+/// peace on the front once the tide has run against us for long enough
+/// with nothing left in reach. Opt-in gene `one-war-at-a-time`; see
+/// `advanced/one_war.rs`.
+mod one_war;
+/// The religious corps: the four opt-in genes for what a founder buys with
+/// Faith once its cities start slipping, and what it does with the units
+/// afterwards. See `advanced/religion.rs`.
+mod religion;
+/// Defence against a rival religion, to the extent we care: the veto
+/// arithmetic of the religious victory, scaling the corps, the reserve, the
+/// non-founder's answer and the spreaders' targets by how much of a rival's
+/// win is already done. One opt-in gene; see `advanced/religious_defence.rs`.
+mod religious_defence;
 /// Three Deity habits: chop into the queue, chase eurekas with Builders and
 /// with the production queue. Three opt-in genes; see
 /// `advanced/deity_habits.rs`.
 mod deity_habits;
 use site_lookahead::{PlotOffer, PlotPurchaseCache};
+/// Field craft: shoot-and-scoot, the zone-of-control screen, pillage-to-heal
+/// and flipping nearby city-states. Four opt-in genes; see
+/// `advanced/field_craft.rs`.
+mod field_craft;
 
 /// Six opt-in genes for the victory lanes: the race the empire is actually
 /// in, reaching the deciders that read the expansion posture instead. See
 /// `advanced/victory_lane.rs` and `docs/VICTORY_GENES.md`.
 mod victory_lane;
+
+/// `lane-commit`: from the midpoint of the game an adaptive seat commits to
+/// the victory lane it leads the field in, and the deciders that resolve
+/// which lane the empire plays for read the commitment too. One opt-in
+/// gene; see `advanced/lane_commit.rs`.
+mod lane_commit;
 
 /// Victory lanes are target contracts: their beelines and campaign objectives
 /// stay attached to the condition that can actually end (or deny) the game.
@@ -5664,6 +5764,7 @@ impl AdvancedAi {
             last_city_count: 0,
             peace_until: 0,
             peace_offers: BTreeSet::new(),
+            peace_routed: BTreeSet::new(),
             victory_planning,
             victory_target,
             census: StrategyCensus::default(),
@@ -5879,6 +5980,7 @@ impl AdvancedAi {
             district_planning: false,
 
             // ---- append: e-f ----------------------------------------
+            flip_nearby_city_states: false,
             eureka_chasing_builder: false,
             eureka_chasing_production: false,
             eureka_chase_cache: deity_habits::EurekaChaseCache::default(),
@@ -5890,12 +5992,20 @@ impl AdvancedAi {
             missionary_last_charge_explores: false,
             missionary_explore: RefCell::new(BTreeMap::new()),
             missionary_evades_raiders: false,
+            one_war_at_a_time: false,
+            one_war: None,
+            lane_commit: false,
+            lane_commitment: None,
 
             // ---- append: p-r ----------------------------------------
+            religious_veto_defence: false,
+            pillage_to_heal: false,
 
             // ---- append: s-s ----------------------------------------
+            shoot_and_scoot: false,
 
             // ---- append: t-z ----------------------------------------
+            zoc_screen: false,
         }
     }
 
@@ -6318,6 +6428,9 @@ impl AdvancedAi {
         } else {
             self.major_war_since = None;
         }
+        // The front and its tide clock; exact no-op with the gene off. See
+        // `advanced/one_war.rs`.
+        self.one_war_observe(g, pid);
     }
 
     fn plan_stale(&self, g: &Game, pid: usize) -> bool {
@@ -8098,36 +8211,12 @@ impl AdvancedAi {
         (converted, living_majors.len())
     }
 
-    fn victory_focus(&self, g: &Game, pid: usize) -> VictoryFocus {
-        if let Some(target) = self.active_victory_target(g) {
-            return VictoryFocus {
-                strategy: target.strategy(),
-                progress: 100,
-            };
-        }
-        if !self.victory_planning {
-            let preferred = if !self.civ_blind && g.players[pid].civ == "Greece" {
-                GrandStrategy::Culture
-            } else {
-                GrandStrategy::Science
-            };
-            let strategy = [
-                preferred,
-                GrandStrategy::Science,
-                GrandStrategy::Culture,
-                GrandStrategy::Religion,
-                GrandStrategy::Diplomacy,
-                GrandStrategy::Conquest,
-                GrandStrategy::Expansion,
-            ]
-            .into_iter()
-            .find(|strategy| Self::victory_strategy_enabled(g, *strategy))
-            .unwrap_or(GrandStrategy::Science);
-            return VictoryFocus {
-                strategy,
-                progress: 25,
-            };
-        }
+    /// Every raced lane's progress toward its victory, 0..=100, in the order
+    /// of `lane_commit::LANE_COMMIT_LANES`: science, culture, religion,
+    /// diplomacy. Public victory-screen information only; the civilization
+    /// preferences `victory_focus` adds are not progress and stay out of it,
+    /// so `lane_commit` can read a rate from two readings.
+    fn lane_progress_table(&self, g: &Game, pid: usize) -> [i32; 4] {
         let player = &g.players[pid];
         let living_majors: Vec<usize> = g
             .players
@@ -8158,8 +8247,7 @@ impl AdvancedAi {
         let science = tech_progress
             .max(readiness)
             .max(project_progress)
-            .max(travel_progress)
-            .max((!self.civ_blind && player.civ == "China") as i32 * 45);
+            .max(travel_progress);
 
         let culture_target = living_majors
             .iter()
@@ -8213,6 +8301,43 @@ impl AdvancedAi {
             .clamp(0, 100)
             .max(self.diplomatic_opening_score(g, pid))
             as i32;
+
+        [science, culture, religion, diplomacy]
+    }
+
+    fn victory_focus(&self, g: &Game, pid: usize) -> VictoryFocus {
+        if let Some(target) = self.active_victory_target(g) {
+            return VictoryFocus {
+                strategy: target.strategy(),
+                progress: 100,
+            };
+        }
+        if !self.victory_planning {
+            let preferred = if !self.civ_blind && g.players[pid].civ == "Greece" {
+                GrandStrategy::Culture
+            } else {
+                GrandStrategy::Science
+            };
+            let strategy = [
+                preferred,
+                GrandStrategy::Science,
+                GrandStrategy::Culture,
+                GrandStrategy::Religion,
+                GrandStrategy::Diplomacy,
+                GrandStrategy::Conquest,
+                GrandStrategy::Expansion,
+            ]
+            .into_iter()
+            .find(|strategy| Self::victory_strategy_enabled(g, *strategy))
+            .unwrap_or(GrandStrategy::Science);
+            return VictoryFocus {
+                strategy,
+                progress: 25,
+            };
+        }
+        let player = &g.players[pid];
+        let [science, culture, religion, diplomacy] = self.lane_progress_table(g, pid);
+        let science = science.max((!self.civ_blind && player.civ == "China") as i32 * 45);
 
         let candidates = [
             VictoryFocus {
@@ -9031,7 +9156,15 @@ impl AdvancedAi {
                 GrandStrategy::Religion,
                 "a Prophet is a finite race worth entering now",
             )
-        } else if victory.progress >= 65 {
+        } else if let Some(commitment) = self.lane_commitment.filter(|c| c.progress >= 65) {
+            // `lane_commit`: the committed lane, well along, comes before
+            // more cities — the same bar stock sets for its best lane below.
+            // See `advanced/lane_commit.rs`.
+            (
+                commitment.lane.strategy(),
+                "well down the victory it committed to",
+            )
+        } else if self.lane_commitment.is_none() && victory.progress >= 65 {
             (
                 victory.strategy,
                 "already well down its best victory lane",
@@ -9043,6 +9176,15 @@ impl AdvancedAi {
             (
                 GrandStrategy::Expansion,
                 "short of cities with land still open",
+            )
+        } else if let Some(lane) = self.committed_lane() {
+            // `lane_commit`: from the midpoint the seat plays for the victory
+            // it leads the field in, in place of `victory_focus`'s per-turn
+            // pick. The first two drafts sat above the expansion arm and
+            // ended with a city and a half fewer (`advanced/lane_commit.rs`).
+            (
+                lane.strategy(),
+                "committed to the victory it leads the field in",
             )
         } else {
             (
@@ -9137,26 +9279,29 @@ impl AdvancedAi {
             } else {
                 &wartime_majors
             };
-            active_fronts
-                .iter()
-                .copied()
-                .map(|rival| {
-                    (
-                        rival,
-                        self.rival_value_with_culture(
-                            g,
-                            pid,
-                            rival,
-                            rival_culture_pressures.get(&rival).copied(),
-                        ),
-                    )
+            // `one_war_at_a_time`: the front already chosen stays the plan's
+            // target while it is at war with us, so the army and the peace
+            // desk agree on which war this is. See `advanced/one_war.rs`.
+            self.one_war_front()
+                .filter(|front| active_fronts.contains(front))
+                .or_else(|| {
+                    active_fronts
+                        .iter()
+                        .copied()
+                        .map(|rival| {
+                            (
+                                rival,
+                                self.rival_value_with_culture(
+                                    g,
+                                    pid,
+                                    rival,
+                                    rival_culture_pressures.get(&rival).copied(),
+                                ),
+                            )
+                        })
+                        .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap().then(a.0.cmp(&b.0)))
+                        .map(|(rival, _)| rival)
                 })
-                .min_by(|a, b| {
-                    a.1.partial_cmp(&b.1)
-                        .unwrap()
-                        .then(a.0.cmp(&b.0))
-                })
-                .map(|(rival, _)| rival)
         };
         let suppression_target_city = actionable_denial
             .filter(|(rival, counter)| {
@@ -12405,7 +12550,7 @@ impl AdvancedAi {
                 "offworld_mission"
             };
             if self.tech_leads_to(g, tech, milestone) {
-                value += if self.victory_target == Some(VictoryTarget::Science) {
+                value += if self.raced_target() == Some(VictoryTarget::Science) {
                     900.0
                 } else {
                     260.0
@@ -12574,6 +12719,15 @@ impl AdvancedAi {
                 g.turn.saturating_sub(started) >= 24
                     && g.turn.saturating_sub(self.last_campaign_progress) >= 12
             });
+        // `one_war_at_a_time`: a Joint War while any war burns is a second
+        // front by treaty; the fatigue acceptance stands down while the
+        // front still has something to take; the peace the gene wants is a
+        // white peace. See `advanced/one_war.rs`.
+        if self.one_war_refuses_joint_war(g, pid, deal) {
+            return -1_000.0;
+        }
+        let fatigued = fatigued && !self.one_war_presses(g, pid, partner);
+        let one_war_peace = self.one_war_peace(g, pid, partner).is_some();
         let denied_partner = plan.target_player == Some(partner)
             && (plan.strategy == GrandStrategy::Conquest
                 || g.is_at_war(pid, partner)
@@ -12581,7 +12735,7 @@ impl AdvancedAi {
 
         let mut value = deal.give_gold - deal.request_gold;
         if deal.peace {
-            value += if my_power < partner_power * 0.85 || fatigued {
+            value += if my_power < partner_power * 0.85 || fatigued || one_war_peace {
                 320.0
             } else if denied_partner {
                 // Recovery is a temporary battlefield posture, not an order
@@ -12679,24 +12833,15 @@ impl AdvancedAi {
                     g.domestic_tourists(left.partner)
                         .cmp(&g.domestic_tourists(right.partner))
                         .then_with(|| {
-                            left.my_value
-                                .min(left.partner_value)
-                                .partial_cmp(&right.my_value.min(right.partner_value))
+                            self.base
+                                .deal_objective(left)
+                                .partial_cmp(&self.base.deal_objective(right))
                                 .unwrap()
                         })
                         .then_with(|| right.partner.cmp(&left.partner))
                 });
             if let Some(deal) = best {
-                if g.apply(
-                    pid,
-                    &Action::Trade {
-                        player: deal.partner,
-                        offer: Box::new(deal.offer),
-                        request: Box::new(deal.request),
-                    },
-                )
-                .is_ok()
-                {
+                if self.base.close_quick_deal(g, pid, deal) {
                     return;
                 }
             }
@@ -12712,24 +12857,15 @@ impl AdvancedAi {
                         && deal.partner_value >= 2.0
                 })
                 .max_by(|left, right| {
-                    left.my_value
-                        .min(left.partner_value)
-                        .partial_cmp(&right.my_value.min(right.partner_value))
+                    self.base
+                        .deal_objective(left)
+                        .partial_cmp(&self.base.deal_objective(right))
                         .unwrap()
                         .then_with(|| right.partner.cmp(&left.partner))
                         .then_with(|| right.item.cmp(&left.item))
                 });
             if let Some(deal) = best {
-                if g.apply(
-                    pid,
-                    &Action::Trade {
-                        player: deal.partner,
-                        offer: Box::new(deal.offer),
-                        request: Box::new(deal.request),
-                    },
-                )
-                .is_ok()
-                {
+                if self.base.close_quick_deal(g, pid, deal) {
                     return;
                 }
             }
@@ -12748,20 +12884,13 @@ impl AdvancedAi {
                         && deal.partner_value >= 2.0
                 })
                 .max_by(|left, right| {
-                    left.my_value
-                        .min(left.partner_value)
-                        .partial_cmp(&right.my_value.min(right.partner_value))
+                    self.base
+                        .deal_objective(left)
+                        .partial_cmp(&self.base.deal_objective(right))
                         .unwrap()
                 });
             if let Some(deal) = best {
-                let _ = g.apply(
-                    pid,
-                    &Action::Trade {
-                        player: deal.partner,
-                        offer: Box::new(deal.offer),
-                        request: Box::new(deal.request),
-                    },
-                );
+                self.base.close_quick_deal(g, pid, deal);
             }
             return;
         }
@@ -12905,7 +13034,11 @@ impl AdvancedAi {
                     player: partner,
                     give_gold: 0.0,
                     request_gold: 0.0,
-                    open_borders: g.players[pid].civics.contains(&crate::name!("early_empire")),
+                    // `no_free_passage`: passage is sold, not bundled.
+                    open_borders: !self.base.no_free_passage
+                        && g.players[pid]
+                            .civics
+                            .contains(&crate::name!("early_empire")),
                     friendship: true,
                     peace: false,
                     alliance: Some(kind.to_string()),
@@ -14858,6 +14991,7 @@ impl AdvancedAi {
             .map(|p| p.id)
             .collect();
         self.peace_offers.clear();
+        self.peace_routed.clear();
         for other in &rivals {
             let appointed_objective = self.war_plan.as_ref().is_some_and(|war| {
                 war.phase == WarPhase::Exploit && war.target_player == *other
@@ -14903,6 +15037,12 @@ impl AdvancedAi {
                     && deal.expires >= g.turn
             });
             let envoy_reclaim = self.banked_envoy_reclaim_after_peace(g, pid, *other, plan);
+            // `one_war_at_a_time`: peace on every second front, and on the
+            // front once the tide has turned; the fatigue clause stands down
+            // while the front still has something to take. See
+            // `advanced/one_war.rs`.
+            let one_war_peace = self.one_war_peace(g, pid, *other);
+            let one_war_presses = self.one_war_presses(g, pid, *other);
             if g.is_at_war(pid, *other)
                 && !g.emergency_war_pair(pid, *other)
                 && !g.players[*other].is_minor
@@ -14916,13 +15056,32 @@ impl AdvancedAi {
                         && !appointed_objective)
                     || (!appointed_objective
                         && fatigued
+                        && !one_war_presses
                         && g.player_city_ids(*other).len() > 1)
-                    || envoy_reclaim.is_some())
+                    || envoy_reclaim.is_some()
+                    || one_war_peace.is_some())
             {
                 self.peace_offers.insert(*other);
+                // Only a rout licenses a live tribute; every other reason
+                // for the offer is white peace. See `AiReport::peace_routed`.
+                if my_power < g.military_power(*other) * 0.62
+                    || matches!(one_war_peace, Some(one_war::OneWarPeace::Rout))
+                {
+                    self.peace_routed.insert(*other);
+                }
+                if let Some(peace) = one_war_peace {
+                    let key = match peace {
+                        one_war::OneWarPeace::SecondFront => "one_war:peace:second_front",
+                        one_war::OneWarPeace::TideTurned => "one_war:peace:tide",
+                        one_war::OneWarPeace::Rout => "one_war:peace:rout",
+                    };
+                    *g.players[pid].counters.entry(key.to_string()).or_insert(0) += 1;
+                }
                 if self.journal().wants(crate::reasoning::Level::Decision) {
                     let their_power = g.military_power(*other);
-                    let because = if let Some((minor, needed)) = envoy_reclaim {
+                    let because = if let Some(peace) = one_war_peace {
+                        peace.reason().to_string()
+                    } else if let Some((minor, needed)) = envoy_reclaim {
                         format!(
                             "the plan has no campaign there and {needed} banked Envoy{} can immediately take {} after the Suzerain war ends",
                             if needed == 1 { "" } else { "s" },
@@ -14985,6 +15144,21 @@ impl AdvancedAi {
         let Some(target) = plan.target_player else {
             return;
         };
+        // `one_war_at_a_time`: the appointment and the surge refuse a second
+        // front when they are made; this refuses it at the declaration, for
+        // the war that arrived in between. See `advanced/one_war.rs`.
+        if self.one_war_holds_declaration(g, pid, target) {
+            *g.players[pid]
+                .counters
+                .entry("one_war:held_declarations".to_string())
+                .or_insert(0) += 1;
+            if self.journal().wants(crate::reasoning::Level::Strategy) {
+                think!(self.journal(), Military, Strategy,
+                       "Holding off war with {}", g.players[target].civ;
+                       "one war at a time, and a major war is already being fought");
+            }
+            return;
+        }
         if self.timed_war_opening(g, pid, target) {
             return;
         }
@@ -15313,11 +15487,15 @@ impl AdvancedAi {
                     } else {
                         0
                     };
+                    // `flip_nearby_city_states`: where the city-state is, and
+                    // whose it is. See `advanced/field_craft.rs`.
+                    let place = self.flip_nearby_city_state_bonus(g, pid, minor.id, needed);
                     let score = (alignment + unique_alignment) * 10
                         + type_bonus_value
                         + denial
                         + suzerain_prize
                         + nobel_peace_suzerain_prize
+                        + place
                         - needed * 7
                         - if overfunded_uncontested {
                             UNCONTESTED_POST_TIER_ENVOY_PENALTY
@@ -16422,7 +16600,8 @@ impl AdvancedAi {
             .values()
             .filter(|unit| unit.owner == pid && unit.kind == "missionary")
             .count();
-        if defenders >= 2 {
+        let veto = self.religious_veto_engaged(g, pid);
+        if defenders >= 2 + Self::religious_veto_extra_spreaders(veto.as_ref()) {
             return;
         }
         for cid in g.player_city_ids(pid) {
@@ -16523,6 +16702,9 @@ impl AdvancedAi {
         let match_point_defense = self
             .victory_denial(g, pid)
             .is_some_and(|(_, counter)| counter == GrandStrategy::Religion);
+        // `religious_veto_defence`: how much of a rival's religious victory
+        // is already done. Every defensive lever below scales with it.
+        let veto = self.religious_veto_engaged(g, pid);
         let count_units = |kind: &str| {
             g.units
                 .values()
@@ -16555,6 +16737,21 @@ impl AdvancedAi {
                             && g.city_religion(city) != Some(religion.as_str())
                     })
                     .count();
+        // See `inquisition_on_threat`: the one Apostle that unlocks the
+        // Inquisitors, bought once the Missionary corps stands and the bank
+        // covers it — never instead of the Missionaries (the first cut did
+        // that and lost the pressure race they had been holding).
+        let defend_with_inquisition =
+            self.inquisition_on_threat && home_under_pressure && !inquisition_launched;
+        // `religious_veto_defence`: the stake's extra spreaders wait while the
+        // Apostle slot is open — every extra Missionary bought first is 250
+        // Faith the 400-Faith Apostle waits for, and the first probe of this
+        // gene read fewer Inquisitions per founder for exactly that reason.
+        let veto_spreaders = if defend_with_inquisition {
+            0
+        } else {
+            Self::religious_veto_extra_spreaders(veto.as_ref())
+        };
         // A small circulating corps is enough: every Missionary has several
         // spreads, and replacements can be bought as charges are consumed.
         // Scaling gently with live targets preserves a religious push without
@@ -16569,14 +16766,8 @@ impl AdvancedAi {
             self.defensive_missionary_cap(
                 defensive_targets,
                 (1 + defensive_targets.div_ceil(2)).min(2),
-            )
+            ) + veto_spreaders
         };
-        // See `inquisition_on_threat`: the one Apostle that unlocks the
-        // Inquisitors, bought once the Missionary corps stands and the bank
-        // covers it — never instead of the Missionaries (the first cut did
-        // that and lost the pressure race they had been holding).
-        let defend_with_inquisition =
-            self.inquisition_on_threat && home_under_pressure && !inquisition_launched;
         let apostle_cap = if offensive {
             2
         } else if defend_with_inquisition {
@@ -16588,15 +16779,16 @@ impl AdvancedAi {
         let guru_defends = self.guru_defends_the_corps(g, pid, home_under_pressure);
         let guru_cap = usize::from((offensive && apostles > 0) || guru_defends);
         let inquisitor_cap = if home_under_pressure && inquisition_launched {
-            2
+            2 + Self::religious_veto_extra_inquisitors(veto.as_ref())
         } else {
             0
         };
         // A cap nothing asks for is not a cap. The two defensive orders never
         // named the Guru, so `guru_cap` alone could not buy one; with the gene
         // on they name it last, behind the spread and the Inquisition.
-        let priorities: &[&str] = if home_under_pressure && inquisition_launched && inquisitors < 2
-        {
+        let inquisitor_corps_short =
+            home_under_pressure && inquisition_launched && inquisitors < inquisitor_cap;
+        let priorities: &[&str] = if inquisitor_corps_short {
             &["inquisitor", "apostle", "missionary", "guru"]
         } else if defend_with_inquisition && apostles == 0 {
             if guru_defends {
@@ -16639,7 +16831,10 @@ impl AdvancedAi {
             // victory, but it must not block the last affordable defender at
             // match point or when one of our cities is already losing its
             // religious majority.
-            let reserve = if match_point_defense || home_under_pressure {
+            let reserve = if match_point_defense
+                || home_under_pressure
+                || Self::religious_veto_spends(veto.as_ref())
+            {
                 0.0
             } else {
                 ordinary_reserve
@@ -17608,7 +17803,7 @@ impl AdvancedAi {
                                 Some(Item::Project { project: queued }) if queued == project
                             )
                             && (races_science
-                                || self.victory_target == Some(VictoryTarget::Science)
+                                || self.raced_target() == Some(VictoryTarget::Science)
                                 || g.cities[cid].queue.is_empty())
                     })
                     .max_by(|a, b| {
@@ -17650,7 +17845,7 @@ impl AdvancedAi {
         // let the post-Exoplanet laser race run in parallel. Separate cities
         // matter; duplicate Spaceports in one production queue do not.
         let desired_spaceports =
-            if races_science || self.victory_target == Some(VictoryTarget::Science) {
+            if races_science || self.raced_target() == Some(VictoryTarget::Science) {
                 if completed.contains("launch_mars_colony") {
                     3
                 } else if completed.contains("launch_moon_landing") {
@@ -17678,7 +17873,7 @@ impl AdvancedAi {
                 continue;
             }
             if !races_science
-                && self.victory_target != Some(VictoryTarget::Science)
+                && self.raced_target() != Some(VictoryTarget::Science)
                 && !g.cities[&cid].queue.is_empty()
             {
                 continue;
@@ -26294,6 +26489,9 @@ impl AdvancedAi {
             return false;
         };
         let current = g.units[&uid].pos;
+        // `religious_veto_defence`: our cities the threat faith holds or is
+        // closing on outrank the rest, cheapest flip first.
+        let veto = self.religious_veto_engaged(g, pid);
         let mut targets: Vec<(i32, std::cmp::Reverse<u32>, Pos)> = g
             .cities
             .values()
@@ -26315,11 +26513,15 @@ impl AdvancedAi {
                 let swing = (rival_pressure - own_pressure).clamp(0.0, 500.0) as i32;
                 let foreign = (city.owner != pid) as i32;
                 let defensive_conversion = (city.owner == pid) as i32 * 170;
+                let held = veto
+                    .as_ref()
+                    .is_some_and(|veto| g.city_religion(city) == Some(veto.religion.as_str()));
                 let score = defensive_conversion
                     + foreign * 90
                     + city.pop * 12
                     + city.is_capital as i32 * 18
                     + swing / 10
+                    + Self::religious_veto_target_bonus(pid, city, veto.as_ref(), held)
                     - g.wdist(current, city.pos) * 4;
                 (score, std::cmp::Reverse(city.id), city.pos)
             })
@@ -26437,6 +26639,10 @@ impl AdvancedAi {
             }
         }
         if unit.kind == "inquisitor" {
+            // `religious_veto_defence`: the charge goes where the heresy is.
+            if let Some(acted) = self.inquisitor_veto_step(g, pid, uid, &legal) {
+                return acted;
+            }
             if let Some(action) = legal
                 .iter()
                 .find(|action| matches!(action, Action::RemoveHeresy { unit } if *unit == uid))
@@ -27080,6 +27286,11 @@ impl AdvancedAi {
         if enemies.is_empty() {
             return;
         }
+        // `one_war_at_a_time`: a group is aimed at the front, and at a second
+        // front only where it stands at a threatened city of ours. Local
+        // strength is still measured against every enemy. See
+        // `advanced/one_war.rs`.
+        let objective_enemies = self.one_war_objective_enemies(g, plan.threatened_city, &enemies);
         let visible = self.battlefront_visibility(g, pid);
 
         let mut remaining: BTreeSet<u32> = g
@@ -27131,7 +27342,7 @@ impl AdvancedAi {
             }
             units.sort_unstable();
             let anchor = Self::force_anchor(g, &units);
-            let objective = self.domain_objective(g, pid, plan, domain, anchor, &enemies);
+            let objective = self.domain_objective(g, pid, plan, domain, anchor, &objective_enemies);
             // ⚠ MEASURED AND REJECTED: pinning `focus_target` to the objective
             // city for a rush, on the theory that the first defender met
             // otherwise pulls the column off the capital. It made things
@@ -27139,7 +27350,7 @@ impl AdvancedAi {
             // capture slipped turn 65 to 86 — and the city's own ring still
             // never held more than two. A rush that walks past the defenders
             // to stand on the ring is a rush that gets killed on the ring.
-            let focus_target = self.force_focus_target(g, pid, &units, &enemies, plan);
+            let focus_target = self.force_focus_target(g, pid, &units, &objective_enemies, plan);
             let muster_radius = self.base.w.muster_radius.round().max(1.0) as i32;
             let readiness = units
                 .iter()
@@ -29478,6 +29689,14 @@ impl AdvancedAi {
                 return acted;
             }
         }
+        // `pillage_to_heal`: a wounded unit in the enemy's fields heals fifty
+        // on the spot by pillaging, where the recovery path below would walk
+        // it home healing nothing on the way. See `advanced/field_craft.rs`.
+        if !unwanted_settler_adjacent {
+            if let Some(acted) = self.pillage_to_heal_step(g, pid, uid) {
+                return acted;
+            }
+        }
         if !unwanted_settler_adjacent && !holding_threatened_city {
             if let Some(acted) = self.base.healing_step(g, pid, uid) {
                 return acted;
@@ -29613,6 +29832,18 @@ impl AdvancedAi {
             .barb_pid
             .filter(|barb| enemies.len() == 1 && enemies[0] == *barb);
         if enemies.is_empty() {
+            // `shoot_and_scoot`: a shooter beside a raider steps back to its
+            // range and fires before anything below marches it. The raider
+            // that walks up again stops in our zone of control. See
+            // `advanced/field_craft.rs`.
+            if let Some(barb) = g.barb_pid {
+                if !unwanted_settler_adjacent {
+                    if let Some(acted) = self.shoot_and_scoot_step(g, pid, uid, &[barb], None, true)
+                    {
+                        return acted;
+                    }
+                }
+            }
             // Camps are captured by entering their tile rather than attacking,
             // so an adjacent empty one must be claimed before this field unit
             // is sent to a longer village, escort, or pre-war staging order.
@@ -29776,6 +30007,17 @@ impl AdvancedAi {
         // through to the march; only here can a unit choose to hold the
         // ground it is standing on and heal. See `advanced/contact_posture.rs`
         // — off by default, opt-in gene `contact-posture`.
+        // `shoot_and_scoot`: BEFORE the posture and the scan, because the one
+        // thing the scan cannot do is fire from a different tile than the one
+        // the unit stands on. See `advanced/field_craft.rs`.
+        let siege = plan
+            .target_city
+            .and_then(|cid| g.cities.get(&cid))
+            .map(|city| city.pos);
+        if let Some(acted) = self.shoot_and_scoot_step(g, pid, uid, &enemies, siege, false) {
+            self.force_groups_dirty |= acted;
+            return acted;
+        }
         if let Some(acted) = self.contact_posture_step(g, pid, uid) {
             self.force_groups_dirty |= acted;
             return acted;
@@ -30264,6 +30506,13 @@ impl AdvancedAi {
         // for the standing-still trickle at home that will never be locally
         // superior anywhere. Homeland claims all ran above, and the step
         // stands down empire-wide while any city is threatened.
+        // `zoc_screen`: a melee unit the scan found nothing for stands where
+        // its zone of control takes enemy reaches off our shooters and
+        // wounded, instead of marching. See `advanced/field_craft.rs`.
+        if let Some(acted) = self.zoc_screen_step(g, pid, uid, &enemies) {
+            self.force_groups_dirty |= acted;
+            return acted;
+        }
         if let Some(acted) =
             self.wartime_reinforcement_step(g, pid, uid, plan, group.as_ref(), &enemies)
         {
@@ -32016,6 +32265,7 @@ impl Ai for AdvancedAi {
             desired_cities: plan.desired_cities,
             assessed_turn: plan.assessed_turn,
             peace_offers: self.peace_offers.iter().copied().collect(),
+            peace_routed: self.peace_routed.iter().copied().collect(),
             forces: self
                 .force_groups
                 .iter()
@@ -32084,7 +32334,11 @@ impl AdvancedAi {
             self.belief.observe(g, pid);
         }
         let rush_routes_frozen = self.freeze_rush_route_targets(g, pid);
+        // `lane_commit`: from the midpoint, commit to the lane the seat leads
+        // the field in. Exact no-op while off. See `advanced/lane_commit.rs`.
+        self.maintain_lane_commit(g, pid);
         let disposition_strategy = active_victory_target
+            .or_else(|| self.committed_lane())
             .map(VictoryTarget::strategy)
             .unwrap_or_else(|| self.victory_focus(g, pid).strategy);
         self.resolve_city_dispositions(g, pid, disposition_strategy);
@@ -32269,7 +32523,10 @@ impl AdvancedAi {
                 // religious victory needs a majority in every living major,
                 // and before this pass non-religion civilizations never spent
                 // a point of Faith resisting conversion.
-                if let Some(threat) = self.home_conversion_threat(g, pid) {
+                // `religious_veto_defence`: when the shipped warning is silent,
+                // the threat is the faith nearest a victory we are a veto on.
+                let shipped = self.home_conversion_threat(g, pid);
+                if let Some(threat) = self.religious_veto_threat(g, pid, shipped) {
                     self.religious_defense(g, pid, &threat);
                 }
             }

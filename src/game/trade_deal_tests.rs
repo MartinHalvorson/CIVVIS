@@ -400,18 +400,79 @@ fn gathering_storm_merchant_republic_uses_governors_and_district_production() {
     );
 }
 
+/// Civilization VI's rule, read off the game's own database on 2026-08-24:
+/// a one-sided deal that gives is a gift and buys nothing (no diplomatic
+/// modifier exists for one), and a one-sided deal that takes is a demand,
+/// never a trade. The engine used to refuse the gift outright.
 #[test]
-fn one_way_open_borders_are_directional_and_gifts_are_rejected() {
+fn a_gift_is_legal_buys_nothing_and_a_demand_is_refused() {
     let mut game = trade_game();
     let gift = DealItems {
         gold: 25.0,
         ..DealItems::default()
     };
+    let opinion_before = game.relationship_opinion(1, 0);
+    let gold_before = (game.players[0].gold, game.players[1].gold);
+    game.do_trade(0, 1, &gift, &DealItems::default())
+        .expect("a gift is a legal one-sided deal");
+    assert_eq!(game.players[0].gold, gold_before.0 - 25.0);
+    assert_eq!(game.players[1].gold, gold_before.1 + 25.0);
+    assert_eq!(game.players[0].counters.get("gifts_given"), Some(&1));
+    assert_eq!(game.players[1].counters.get("gifts_received"), Some(&1));
     assert_eq!(
-        game.do_trade(0, 1, &gift, &DealItems::default()),
-        Err("both civilizations must benefit from the trade".to_string())
+        game.relationship_opinion(1, 0),
+        opinion_before,
+        "a gift buys no opinion, as in Civilization VI"
+    );
+    assert_eq!(
+        game.do_trade(0, 1, &DealItems::default(), &gift),
+        Err("invalid trade terms".to_string()),
+        "a one-sided deal that only takes is a demand, not a trade"
     );
 
+    // The same rule through the diplomatic lane: a Gold-only proposal is a
+    // gift the recipient may accept, and it lands on the same ledger.
+    let before = game.players[1].gold;
+    game.apply(
+        0,
+        &Action::ProposeDeal {
+            player: 1,
+            give_gold: 40.0,
+            request_gold: 0.0,
+            open_borders: false,
+            friendship: false,
+            peace: false,
+            alliance: None,
+        },
+    )
+    .expect("a Gold-only proposal is a gift");
+    let deal = game.pending_deals.last().map(|deal| deal.id).unwrap();
+    game.current = 1;
+    game.apply(1, &Action::AcceptDeal { deal }).unwrap();
+    assert_eq!(game.players[1].gold, before + 40.0);
+    assert_eq!(game.players[0].counters.get("gifts_given"), Some(&2));
+    game.current = 0;
+    assert_eq!(
+        game.apply(
+            0,
+            &Action::ProposeDeal {
+                player: 1,
+                give_gold: 0.0,
+                request_gold: 40.0,
+                open_borders: false,
+                friendship: false,
+                peace: false,
+                alliance: None,
+            },
+        ),
+        Err("economic exchanges must use mutually favorable trade terms".to_string()),
+        "a Gold-only ask is a demand, and a demand is `DemandGold`"
+    );
+}
+
+#[test]
+fn one_way_open_borders_are_directional() {
+    let mut game = trade_game();
     let borders = game
         .quick_deals(0)
         .into_iter()

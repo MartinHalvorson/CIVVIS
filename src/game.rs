@@ -16006,7 +16006,7 @@ impl Game {
         hash
     }
 
-    fn promotion_effect(&self, unit: &Unit, effect: &str) -> f64 {
+    pub(crate) fn promotion_effect(&self, unit: &Unit, effect: &str) -> f64 {
         unit.promotions
             .iter()
             .filter_map(|name| {
@@ -22180,7 +22180,7 @@ impl Game {
     /// The line-of-sight test `do_ranged` applies, asked of a unit that may
     /// fire from `from`. This preserves a Ranger's `see_through_woods` rule
     /// while also letting threat readers inspect a legal future firing tile.
-    fn unit_has_line_of_sight_from(&self, uid: u32, from: Pos, to: Pos) -> bool {
+    pub(crate) fn unit_has_line_of_sight_from(&self, uid: u32, from: Pos, to: Pos) -> bool {
         let unit = &self.units[&uid];
         if self.unit_effect(unit, "see_through_woods") > 0.0 && self.wdist(from, to) == 2 {
             let attacker_height = self.see_from_level(from);
@@ -24141,7 +24141,7 @@ impl Game {
         })
     }
 
-    fn exerts_zoc(&self, u: &Unit) -> bool {
+    pub(crate) fn exerts_zoc(&self, u: &Unit) -> bool {
         let spec = &self.rules.units[u.kind];
         // Embarkation does not remove a land unit's ZOC. Its native domain
         // still limits projection to land tiles, which is handled by the
@@ -24152,7 +24152,7 @@ impl Game {
     /// Cavalry, Naval Raiders, the Viking Longship, and air units ignore
     /// incoming ZOC. Civilian/support passengers inherit that ability from
     /// an escort, matching linked-formation behavior in Civ VI.
-    fn unit_ignores_zoc(&self, uid: u32) -> bool {
+    pub(crate) fn unit_ignores_zoc(&self, uid: u32) -> bool {
         let Some(unit) = self.units.get(&uid) else {
             return false;
         };
@@ -41636,7 +41636,12 @@ impl Game {
                 return Err("alliance is unavailable".into());
             }
         }
-        if !open_borders && !friendship && !peace && alliance.is_none() {
+        // A proposal that only gives Gold is a gift (legal, buys nothing —
+        // see `validate_trade`); one that only asks is a demand and goes
+        // through `Action::DemandGold`; an exchange goes through the trade
+        // lane, where both sides must gain.
+        let gift = give_gold > 0.0 && request_gold <= 0.0;
+        if !open_borders && !friendship && !peace && alliance.is_none() && !gift {
             return Err("economic exchanges must use mutually favorable trade terms".into());
         }
         let id = self.next_deal_id;
@@ -41956,6 +41961,9 @@ impl Game {
         }
         self.players[deal.from].gold += deal.request_gold - deal.give_gold;
         self.players[deal.to].gold += deal.give_gold - deal.request_gold;
+        if Self::diplomatic_deal_is_gift(&deal) {
+            self.record_gift(deal.from, deal.to);
+        }
         if deal.peace {
             self.conclude_peace(deal.from, deal.to, peace_terms);
         }
@@ -42806,6 +42814,10 @@ impl Game {
             || self.players[to].is_barbarian
             || self.is_at_war(from, to)
             || (offer.is_empty() && request.is_empty())
+            // A one-sided deal that only TAKES is a demand, and a demand is
+            // `Action::DemandGold`: refusable, with a grievance. It never
+            // executes as a trade.
+            || (offer.is_empty() && !request.is_empty())
             || !self.items_are_valid(from, offer)
             || !self.items_are_valid(to, request)
             || offer
@@ -42854,7 +42866,17 @@ impl Game {
             return Err("Open Borders requires Early Empire for both civilizations".into());
         }
         let utilities = self.trade_utilities(from, to, offer, request);
-        if utilities.0 <= 0.25 || utilities.1 <= 0.25 {
+        // ★ A GIFT IS LEGAL, AND IT BUYS NOTHING — Civilization VI's rule, and
+        // since 2026-08-24 this engine's. A one-sided deal that only GIVES
+        // proposes and the recipient accepts; the game's own database carries
+        // no diplomatic modifier for a gift (a delegation and a demand, yes),
+        // so `relationship_opinion` has none either. Until now the engine
+        // refused the gift outright, which was stricter than the game it
+        // mirrors and hid the question the live seat actually faces. An
+        // exchange must still pay both sides; the AI never gives without
+        // receiving (`gifts_given` is the counter that says so).
+        let gift = request.is_empty();
+        if utilities.1 <= 0.25 || (!gift && utilities.0 <= 0.25) {
             return Err("both civilizations must benefit from the trade".into());
         }
         Ok(utilities)
@@ -43090,7 +43112,33 @@ impl Game {
             .counters
             .entry("trades_completed".to_string())
             .or_insert(0) += 1;
+        if request.is_empty() {
+            self.record_gift(from, to);
+        }
         Ok(())
+    }
+
+    /// The gift ledger: what a seat gave for nothing, and what it was given.
+    /// A controller that reads `gifts_given` above zero on its own seat has
+    /// done something no controller here is meant to do.
+    fn record_gift(&mut self, from: usize, to: usize) {
+        bump(&mut self.players[from], "gifts_given");
+        bump(&mut self.players[to], "gifts_received");
+    }
+
+    /// A diplomatic deal that only hands over Gold: legal as a gift, worth
+    /// nothing to the relationship, counted on the ledger.
+    fn diplomatic_deal_is_gift(deal: &DiplomaticDeal) -> bool {
+        deal.give_gold > 0.0
+            && deal.request_gold <= 0.0
+            && !deal.open_borders
+            && !deal.friendship
+            && !deal.peace
+            && deal.alliance.is_none()
+            && !deal.defensive_pact
+            && deal.joint_war_target.is_none()
+            && deal.promise.is_none()
+            && !deal.demand
     }
 
     fn quoted_payment(&self, payer: usize, price: f64) -> Option<DealItems> {

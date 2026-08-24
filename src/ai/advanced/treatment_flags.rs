@@ -2180,6 +2180,147 @@ impl AdvancedAi {
     pub fn disable_missionary_evades_raiders(&mut self) {
         self.missionary_evades_raiders = false;
     }
+
+    /// The religious defence grows with how much of a rival's religious
+    /// victory is already done — every civilization is a veto on it — naming
+    /// and targeting the stakes faith from half a victory and spending on it
+    /// from match point; the Inquisitor walks to the heresy instead of
+    /// spending its charges where it was bought. See
+    /// [`AdvancedAi::religious_veto_defence`]. Opt-in gene
+    /// `religious-veto-defence`.
+    pub fn enable_religious_veto_defence(&mut self) {
+        self.religious_veto_defence = true;
+    }
+
+    /// The twin of `enable_religious_veto_defence`.
+    pub fn disable_religious_veto_defence(&mut self) {
+        self.religious_veto_defence = false;
+    }
+
+    /// A quote is chosen by our own net value instead of the most balanced
+    /// exchange on the board (`min(our gain, their gain)`), which threw away
+    /// the ordering `Game::quick_deals` already produced by our gain. See
+    /// `BasicAi::deals_for_our_gain`. Opt-in gene `deals-for-our-gain`.
+    pub fn enable_deals_for_our_gain(&mut self) {
+        self.base.deals_for_our_gain = true;
+    }
+
+    /// The twin of `enable_deals_for_our_gain`.
+    pub fn disable_deals_for_our_gain(&mut self) {
+        self.base.deals_for_our_gain = false;
+    }
+
+    /// The chosen quote's Gold is moved to the counterparty's walk-away less
+    /// two Gold — a sale asks for more, a purchase pays less — where the
+    /// shipped quote split the surplus down the middle; the midpoint quote
+    /// stays the fallback. See `BasicAi::deals_at_the_ceiling`. Opt-in gene
+    /// `deals-at-the-ceiling`.
+    pub fn enable_deals_at_the_ceiling(&mut self) {
+        self.base.deals_at_the_ceiling = true;
+    }
+
+    /// The twin of `enable_deals_at_the_ceiling`.
+    pub fn disable_deals_at_the_ceiling(&mut self) {
+        self.base.deals_at_the_ceiling = false;
+    }
+
+    /// Friendship and alliance proposals no longer bundle one-way Open
+    /// Borders, which every ask handed out for nothing once Early Empire was
+    /// in; passage is sold through the quote lane. See
+    /// `BasicAi::no_free_passage`. Opt-in gene `no-free-passage`.
+    pub fn enable_no_free_passage(&mut self) {
+        self.base.no_free_passage = true;
+    }
+
+    /// The twin of `enable_no_free_passage`.
+    pub fn disable_no_free_passage(&mut self) {
+        self.base.no_free_passage = false;
+    }
+    /// Fight one war at a time: keep one campaign front and sue every other
+    /// major for peace, hold a fresh declaration while a war is on, press the
+    /// front while a city is breaking or tiles are in reach to pillage, and
+    /// offer peace once the exchange has run against us for long enough with
+    /// nothing left to take. See [`AdvancedAi::one_war_observe`]. Opt-in
+    /// gene `one-war-at-a-time`.
+    pub fn enable_one_war_at_a_time(&mut self) {
+        self.one_war_at_a_time = true;
+    }
+
+    /// The twin of `enable_one_war_at_a_time`.
+    pub fn disable_one_war_at_a_time(&mut self) {
+        self.one_war_at_a_time = false;
+    }
+
+    /// A city-state's place enters the envoy score: up to ninety for one on
+    /// our border, two hundred more when its sitting suzerain is at war with
+    /// us, amortised over the envoys the flip still needs.
+    /// [`AdvancedAi::flip_nearby_city_states`]. Opt-in gene
+    /// `flip-nearby-city-states`; see `advanced/field_craft.rs`.
+    pub fn enable_flip_nearby_city_states(&mut self) {
+        self.flip_nearby_city_states = true;
+    }
+
+    /// The twin of `enable_flip_nearby_city_states`.
+    pub fn disable_flip_nearby_city_states(&mut self) {
+        self.flip_nearby_city_states = false;
+    }
+
+    /// A unit at or below 65 health pillages a heal-type improvement it
+    /// stands on, or steps one tile onto one and pillages it, before the
+    /// recovery path walks it home. [`AdvancedAi::pillage_to_heal`]. Opt-in
+    /// gene `pillage-to-heal`; see `advanced/field_craft.rs`.
+    pub fn enable_pillage_to_heal(&mut self) {
+        self.pillage_to_heal = true;
+    }
+
+    /// The twin of `enable_pillage_to_heal`.
+    pub fn disable_pillage_to_heal(&mut self) {
+        self.pillage_to_heal = false;
+    }
+
+    /// A ranged unit inside a hostile melee body's reach steps to a firing
+    /// tile inside strictly fewer hostile envelopes and fires at that body,
+    /// in war and against barbarians. Shooters exert no zone of control, so
+    /// the step fires behind a melee friend's zone, across a river or onto
+    /// ground the body cannot enter and swing from — never in the open.
+    /// [`AdvancedAi::shoot_and_scoot`]. Opt-in gene `shoot-and-scoot`; see
+    /// `advanced/field_craft.rs`.
+    pub fn enable_shoot_and_scoot(&mut self) {
+        self.shoot_and_scoot = true;
+    }
+
+    /// The twin of `enable_shoot_and_scoot`.
+    pub fn disable_shoot_and_scoot(&mut self) {
+        self.shoot_and_scoot = false;
+    }
+
+    /// A melee unit the attack scan found nothing for stands where its zone
+    /// of control takes the most enemy reaches off our shooters and wounded,
+    /// read exactly off `attack_reach`, and holds only while the stand is
+    /// load-bearing. [`AdvancedAi::zoc_screen`]. Opt-in gene `zoc-screen`;
+    /// see `advanced/field_craft.rs`.
+    pub fn enable_zoc_screen(&mut self) {
+        self.zoc_screen = true;
+    }
+
+    /// The twin of `enable_zoc_screen`.
+    pub fn disable_zoc_screen(&mut self) {
+        self.zoc_screen = false;
+    }
+    /// From the midpoint of the game an adaptive seat commits to the victory
+    /// lane it leads the field in and holds that plan, in place of the
+    /// per-turn best-progress pick. See
+    /// [`AdvancedAi::maintain_lane_commit`]. Opt-in gene
+    /// `lane-commit`. (Filed here rather than under a marker: the
+    /// append-point check reads a line's first identifier.)
+    pub fn enable_lane_commit(&mut self) {
+        self.lane_commit = true;
+    }
+
+    /// The twin of `enable_lane_commit`.
+    pub fn disable_lane_commit(&mut self) {
+        self.lane_commit = false;
+    }
     /// A Builder chops woods, rainforest or marsh into the Settler, district
     /// or wonder at the front of the owning city's queue, priced as a one-off
     /// lump against the per-turn jobs. See

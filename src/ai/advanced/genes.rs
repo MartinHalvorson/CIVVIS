@@ -1018,6 +1018,75 @@ pub const GENES: &[Gene] = &[
     // into, the exact tiles a visible raider can reach next turn
     // (`Game::threat_reach`). See `AdvancedAi::missionary_evades_raiders`.
     Gene { tag: "missionary-evades-raiders", field: "missionary_evades_raiders", kind: Kind::OptIn, enable: AdvancedAi::enable_missionary_evades_raiders, disable: AdvancedAi::disable_missionary_evades_raiders },
+    // Operator goal 2026-08-24: "a gene for defending against religion, to
+    // the extent we care about that". A religious victory needs more than
+    // half of EVERY living major's cities, so each civilization is a veto;
+    // the gene reads how much of a rival's victory is done (civs held +
+    // progress toward half of ours), names and targets that faith from half
+    // a victory and scales the defensive corps and the reserve by it from
+    // match point, never withholding the shipped defence; the Inquisitor
+    // goes to the heresy. See `AdvancedAi::religious_veto_defence`.
+    Gene { tag: "religious-veto-defence", field: "religious_veto_defence", kind: Kind::OptIn, enable: AdvancedAi::enable_religious_veto_defence, disable: AdvancedAi::disable_religious_veto_defence },
+    // Operator 2026-08-24: "very bad deals and just giving stuff away when
+    // more optimally we'd get more in exchange". Three leaks, one gene each.
+    // The trade objective was FAIRNESS: `bilateral_trade` picked the quote
+    // maximising `min(our gain, their gain)`, discarding the ordering
+    // `quick_deals` already produced by our gain. See
+    // `BasicAi::deals_for_our_gain`.
+    Gene { tag: "deals-for-our-gain", field: "deals_for_our_gain", kind: Kind::OptIn, enable: AdvancedAi::enable_deals_for_our_gain, disable: AdvancedAi::disable_deals_for_our_gain },
+    // Every peacetime quote split the surplus down the middle
+    // (`quote_asset_trade`); the war-eve lane prices at the buyer's ceiling
+    // and proves the engine can. The chosen quote's Gold moves to the
+    // counterparty's walk-away less two; the midpoint is the fallback. See
+    // `BasicAi::deals_at_the_ceiling`.
+    Gene { tag: "deals-at-the-ceiling", field: "deals_at_the_ceiling", kind: Kind::OptIn, enable: AdvancedAi::enable_deals_at_the_ceiling, disable: AdvancedAi::disable_deals_at_the_ceiling },
+    // Both alliance proposals bundled one-way Open Borders once Early Empire
+    // was in, and `do_accept_deal` grants them proposer → recipient: passage
+    // through the whole empire for nothing, on every friendship ask. See
+    // `BasicAi::no_free_passage`.
+    Gene { tag: "no-free-passage", field: "no_free_passage", kind: Kind::OptIn, enable: AdvancedAi::enable_no_free_passage, disable: AdvancedAi::disable_no_free_passage },
+    // Operator directive 2026-08-24: "one war at a time — some defences on
+    // the home front, the rest concentrated on a single war; fight while
+    // benefit > cost, sue for peace when the tide is no longer in our
+    // favour consistently". Every offensive opening already refuses a second
+    // front; this decides what happens once a second war ARRIVES — peace on
+    // every front but one, the plan and the force planner held to that one,
+    // the fatigue clause stood down while a city is breaking or tiles are in
+    // reach, and peace sued for once the war ledger's exchange has run
+    // against us for `ONE_WAR_TIDE_PATIENCE` turns. See
+    // `AdvancedAi::one_war_observe` and `advanced/one_war.rs`.
+    Gene { tag: "one-war-at-a-time", field: "one_war_at_a_time", kind: Kind::OptIn, enable: AdvancedAi::enable_one_war_at_a_time, disable: AdvancedAi::disable_one_war_at_a_time },
+    // 2026-08-24 operator goal: "very smart heuristics around unit tactics
+    // in warfare … preserve our units, heal up, use everything to our
+    // advantage: flip nearby city states, defend in our territory, support
+    // bonuses, zone of control". Four genes, `advanced/field_craft.rs`.
+    // A ranged unit beside a melee body steps to a firing tile inside fewer
+    // hostile envelopes and fires — behind a friend's zone of control, across
+    // a river; shooters have no zone of their own, so never in the open.
+    Gene { tag: "shoot-and-scoot", field: "shoot_and_scoot", kind: Kind::OptIn, enable: AdvancedAi::enable_shoot_and_scoot, disable: AdvancedAi::disable_shoot_and_scoot },
+    // A melee unit stands where its zone of control takes enemy reaches off
+    // our shooters and wounded — the doctrine arena's "ranged screened" gap.
+    Gene { tag: "zoc-screen", field: "zoc_screen", kind: Kind::OptIn, enable: AdvancedAi::enable_zoc_screen, disable: AdvancedAi::disable_zoc_screen },
+    // A wounded unit pillages a Farm-type tile for its fifty-point heal
+    // before the recovery path walks it home through ground that heals 0.
+    Gene { tag: "pillage-to-heal", field: "pillage_to_heal", kind: Kind::OptIn, enable: AdvancedAi::enable_pillage_to_heal, disable: AdvancedAi::disable_pillage_to_heal },
+    // The envoy scorer prices where a city-state is and whose it is: a
+    // suzerain's land heals as home and its client fights the suzerain's wars.
+    Gene { tag: "flip-nearby-city-states", field: "flip_nearby_city_states", kind: Kind::OptIn, enable: AdvancedAi::enable_flip_nearby_city_states, disable: AdvancedAi::disable_flip_nearby_city_states },
+    // Operator goal 2026-08-24: "steering us towards our best victory
+    // condition harder. From the midpoint of the game, we should have the
+    // victory in mind and be optimizing towards winning that." An adaptive
+    // seat is on a victory lane for 52% of its turns and the lane never
+    // reaches the deciders keyed on `victory_target` (`docs/VICTORY_GENES.md`).
+    // From half the turn cap the seat commits to the lane it leads the field
+    // in — every lane read for the seat and for every living major on one
+    // table, never Domination — reviews it every ten standard turns behind a
+    // twenty-point switch margin, in place of `victory_focus`'s per-turn pick
+    // and below every posture and the expansion arm; only the science keys
+    // read it, nothing else an assigned lane carries (four probes on the same
+    // maps priced the rest: docs/VICTORY_GENES.md §10). Appended at the END so a running screen keeps its positional
+    // genome. See `AdvancedAi::lane_commit` / `advanced/lane_commit.rs`.
+    Gene { tag: "lane-commit", field: "lane_commit", kind: Kind::OptIn, enable: AdvancedAi::enable_lane_commit, disable: AdvancedAi::disable_lane_commit },
     // ⭐ THREE DEITY HABITS (operator, 2026-08-24: "study expert level deity
     // civ 6 tips and tricks and implement the best as heuristics"). The engine
     // has offered `chop_woods` / `chop_rainforest` / `clear_marsh` through

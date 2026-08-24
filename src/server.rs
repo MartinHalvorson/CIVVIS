@@ -14839,6 +14839,7 @@ fetchpriority=\"high\""
             desired_cities: 4,
             assessed_turn: 37,
             peace_offers: Vec::new(),
+            peace_routed: Vec::new(),
             forces: Vec::new(),
             war: Some(crate::ai::WarPlanReport {
                 enabled: true,

@@ -1021,18 +1021,18 @@ class GeneratedFiles(unittest.TestCase):
                          gene_ledger.render_rust(with_reporting))
 
         newest = current["reporting_batches"][0]
-        self.assertEqual(newest["seats"], 38_160)
-        self.assertEqual(newest["games"], 6_360)
+        self.assertEqual(newest["seats"], 21_030)
+        self.assertEqual(newest["games"], 3_505)
         self.assertEqual(newest["batch"], {
-            "target_seats": 40_008,
-            "complete_seats": 38_160,
+            "target_seats": 30_006,
+            "complete_seats": 21_030,
             "partial": True,
         })
         self.assertEqual(newest["build"]["commit"],
-                         "e385d263853e0f9e94b738036e44136978fc10f1")
+                         "f96600affc610092e2f715ed2a4a3b33232e8c5f")
         self.assertFalse(newest["build"]["dirty"])
         self.assertNotIn("unverified", newest)
-        self.assertIn(newest["path"], {s["path"] for s in current["sources"]})
+        self.assertNotIn(newest["path"], {s["path"] for s in current["sources"]})
         authoritative, _ = ranking.load_sources(current)
         displayed, _ = ranking.load_display_sources(current)
         self.assertIn("engine-faith-price", authoritative)
@@ -1165,9 +1165,9 @@ class VersionedGenes(unittest.TestCase):
 #: assertion and as the name -> index map every cell lookup goes through.
 EXPECTED_COLUMNS = (
     "| Rank | Gene | Description | Best version | Default | "
-    "Wins ± /10k total seats — Last Batch (n=38,160 total seats) | "
-    "Wins ± /10k total seats — Prior Batch (n=41,628 total seats) | "
-    "Wins ± /10k total seats — Third Batch (n=10,002 total seats) | "
+    "Wins ± /10k total seats — Last Batch (n=21,030 total seats) | "
+    "Wins ± /10k total seats — Prior Batch (n=38,160 total seats) | "
+    "Wins ± /10k total seats — Third Batch (n=41,628 total seats) | "
     "Total (on) Win rate | Total (off) Win rate | Diff | "
     "Posterior (95% CI) | P(>0) | Share Δpp (z) | "
     "cost (compute) | cost (time) |"
@@ -1335,9 +1335,9 @@ class TheTableIsDerived(unittest.TestCase):
         batches = ranking.load_reporting_batches(ledger)
         self.assertEqual(len(batches), 3)
         columns = (
-            (0, "Wins ± /10k total seats — Last Batch (n=38,160 total seats)"),
-            (1, "Wins ± /10k total seats — Prior Batch (n=41,628 total seats)"),
-            (2, "Wins ± /10k total seats — Third Batch (n=10,002 total seats)"),
+            (0, "Wins ± /10k total seats — Last Batch (n=21,030 total seats)"),
+            (1, "Wins ± /10k total seats — Prior Batch (n=38,160 total seats)"),
+            (2, "Wins ± /10k total seats — Third Batch (n=41,628 total seats)"),
         )
         for cells in self._ranked_rows():
             tag = cell(cells, "Gene").strip("`")
