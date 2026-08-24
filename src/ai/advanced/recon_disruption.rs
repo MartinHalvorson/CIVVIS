@@ -368,7 +368,9 @@ impl AdvancedAi {
             .filter(|city| explored.contains(&city.pos))
             .map(|city| city.pos)
             .collect();
-        let heading = previous.filter(|(was, _)| *was != settler.pos).map(|(was, _)| was);
+        let heading = previous
+            .filter(|(was, _)| *was != settler.pos)
+            .map(|(was, _)| was);
         let mut sites: Vec<(Pos, f64)> = Vec::new();
         for pos in g.wdisk(settler.pos, SITE_RADIUS) {
             if pos == settler.pos || !explored.contains(&pos) {
@@ -501,7 +503,10 @@ impl AdvancedAi {
                 queue.push_back(next);
             }
         }
-        (goals.iter().map(|goal| dist.get(goal).copied()).collect(), parent)
+        (
+            goals.iter().map(|goal| dist.get(goal).copied()).collect(),
+            parent,
+        )
     }
 
     /// Expected Settler steps the held stands add over `base`, capped per
@@ -739,7 +744,11 @@ impl AdvancedAi {
                 .collect();
             let Some((span, home, away)) = ours
                 .iter()
-                .flat_map(|home| theirs.iter().map(move |away| (g.wdist(*home, *away), *home, *away)))
+                .flat_map(|home| {
+                    theirs
+                        .iter()
+                        .map(move |away| (g.wdist(*home, *away), *home, *away))
+                })
                 .min()
             else {
                 continue;
@@ -763,8 +772,7 @@ impl AdvancedAi {
             .player_unit_ids(pid)
             .into_iter()
             .filter(|uid| {
-                !plan.screens.contains_key(uid)
-                    && self.disruption_unit(g, pid, *uid) == Some(true)
+                !plan.screens.contains_key(uid) && self.disruption_unit(g, pid, *uid) == Some(true)
             })
             .collect();
         for post in plan.posts.values() {
@@ -837,14 +845,19 @@ impl AdvancedAi {
     /// The post toward one neighbour: the first tile of the walk from their
     /// city to ours, outside their borders, whose removal cuts the walk; or
     /// the first such tile at all when no single tile cuts it.
-    fn read_picket_post(g: &Game, pid: usize, rival: usize, home: Pos, away: Pos) -> Option<PicketPost> {
+    fn read_picket_post(
+        g: &Game,
+        pid: usize,
+        rival: usize,
+        home: Pos,
+        away: Pos,
+    ) -> Option<PicketPost> {
         let explored = &g.players[pid].explored;
         let span = g.wdist(home, away);
         let walkable = |pos: Pos| {
             g.wdist(pos, home) + g.wdist(pos, away) <= span + PICKET_WINDOW_SLACK
                 && explored.contains(&pos)
-                && g
-                    .map
+                && g.map
                     .get(pos)
                     .is_some_and(|tile| !g.rules.is_water(tile) && g.rules.is_passable(tile))
         };
@@ -855,8 +868,7 @@ impl AdvancedAi {
             .filter(|pos| {
                 g.wdist(*pos, away) >= PICKET_MIN_FROM_CITY
                     && Self::post_stands(g, pid, *pos)
-                    && g
-                        .map
+                    && g.map
                         .get(*pos)
                         .and_then(|tile| tile.owner_city)
                         .and_then(|city| g.cities.get(&city))
@@ -899,8 +911,14 @@ impl AdvancedAi {
     /// This unit's recon order for the turn. `Some(true)` when it moved,
     /// `Some(false)` when it holds its stand or post, `None` when the plan
     /// has nothing for it and the ordinary peacetime step follows.
-    pub(super) fn recon_disruption_step(&mut self, g: &mut Game, pid: usize, uid: u32) -> Option<bool> {
-        if !(self.settler_screen || self.pass_picket) || self.recon_disruption.turn != Some(g.turn) {
+    pub(super) fn recon_disruption_step(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+    ) -> Option<bool> {
+        if !(self.settler_screen || self.pass_picket) || self.recon_disruption.turn != Some(g.turn)
+        {
             return None;
         }
         let here = g.units.get(&uid)?.pos;
@@ -945,7 +963,9 @@ impl AdvancedAi {
             if let Some(post) = self.recon_disruption.pickets.get(&uid).copied() {
                 // Exploration and the upgrade walk still come first; the
                 // post replaces the patrol.
-                if self.base.should_explore(g, pid, uid, false) && self.base.explore_step(g, pid, uid) {
+                if self.base.should_explore(g, pid, uid, false)
+                    && self.base.explore_step(g, pid, uid)
+                {
                     return Some(true);
                 }
                 if self.base.modernization_step(g, pid, uid) {
@@ -978,12 +998,15 @@ mod tests {
     use super::super::genes::GENES;
     use super::super::AdvancedAi;
     use super::*;
-    use crate::game::Game;
+    use crate::game::{Action, Game};
     use crate::name;
 
     fn opt_in_off_in_both_controllers(tag: &str, read: fn(&AdvancedAi) -> bool) {
         assert!(!read(&AdvancedAi::new()), "{tag} must be off in new()");
-        assert!(!read(&AdvancedAi::legacy()), "{tag} must be off in legacy()");
+        assert!(
+            !read(&AdvancedAi::legacy()),
+            "{tag} must be off in legacy()"
+        );
         let gene = GENES
             .iter()
             .find(|gene| gene.tag == tag)
@@ -1160,7 +1183,11 @@ mod tests {
             .into_iter()
             .filter_map(|uid| ai.recon_disruption.screen(uid).copied())
             .collect();
-        assert_eq!(orders.len(), 2, "both units in reach take a stand: {orders:?}");
+        assert_eq!(
+            orders.len(),
+            2,
+            "both units in reach take a stand: {orders:?}"
+        );
         let stands: BTreeSet<Pos> = orders.iter().map(ScreenOrder::tile).collect();
         assert_eq!(stands.len(), 2, "the stands are distinct");
         for order in &orders {
@@ -1168,8 +1195,16 @@ mod tests {
             // Ahead: beside the Settler and two steps from where it came
             // from — the three forward tiles, not the two flanking its trail.
             let at = order.tile();
-            assert_eq!(game.wdist(at, field), 1, "a stand {at:?} is beside the Settler");
-            assert_eq!(game.wdist(at, behind), 2, "a stand {at:?} lies ahead of the Settler");
+            assert_eq!(
+                game.wdist(at, field),
+                1,
+                "a stand {at:?} is beside the Settler"
+            );
+            assert_eq!(
+                game.wdist(at, behind),
+                2,
+                "a stand {at:?} lies ahead of the Settler"
+            );
         }
         // Walk both; the engine then refuses the Settler both tiles.
         for uid in [scout, warrior] {
@@ -1192,7 +1227,10 @@ mod tests {
         ai.recon_disruption_plan(&game, 0);
         assert_eq!(ai.recon_disruption.turn, None);
         assert_eq!(ai.recon_disruption_step(&mut game, 0, scout), None);
-        assert_eq!(game.units[&scout].pos, game.nbrs(field).into_iter().min().unwrap());
+        assert_eq!(
+            game.units[&scout].pos,
+            game.nbrs(field).into_iter().min().unwrap()
+        );
     }
 
     #[test]
@@ -1205,7 +1243,10 @@ mod tests {
         let mut ai = screening_ai();
         game.at_war.insert((0, 1));
         ai.recon_disruption_plan(&game, 0);
-        assert!(ai.recon_disruption.screen(scout).is_none(), "at war the raid owns the Settler");
+        assert!(
+            ai.recon_disruption.screen(scout).is_none(),
+            "at war the raid owns the Settler"
+        );
         game.at_war.clear();
         // Out of sight: the Scout far away, nothing else of ours near.
         let far = game
@@ -1218,7 +1259,10 @@ mod tests {
         game.relocate(scout, far);
         assert!(!game.player_can_see(0, field));
         ai.recon_disruption_plan(&game, 0);
-        assert!(ai.recon_disruption.screen(scout).is_none(), "an unseen Settler is not read");
+        assert!(
+            ai.recon_disruption.screen(scout).is_none(),
+            "an unseen Settler is not read"
+        );
     }
 
     /// Two capitals joined by a one-tile corridor through mountains, every
@@ -1251,7 +1295,10 @@ mod tests {
         let mut ai = AdvancedAi::new();
         ai.enable_pass_picket();
         ai.recon_disruption_plan(&game, 0);
-        let post = *ai.recon_disruption.post(1).expect("the neighbour has a post");
+        let post = *ai
+            .recon_disruption
+            .post(1)
+            .expect("the neighbour has a post");
         assert!(post.pass, "every corridor tile cuts the walk");
         assert!(walk.contains(&post.at));
         assert!(game.wdist(post.at, away) >= PICKET_MIN_FROM_CITY);
@@ -1297,7 +1344,10 @@ mod tests {
             turns += 1;
             assert!(turns < 30, "the post is reached within thirty turns");
         }
-        assert_eq!(ai.recon_disruption.post(1).map(|post| post.at), Some(post.at));
+        assert_eq!(
+            ai.recon_disruption.post(1).map(|post| post.at),
+            Some(post.at)
+        );
     }
 
     #[test]
@@ -1310,16 +1360,70 @@ mod tests {
         let mut ai = AdvancedAi::new();
         ai.enable_pass_picket();
         ai.recon_disruption_plan(&game, 0);
-        let post = *ai.recon_disruption.post(1).expect("the neighbour has a post");
-        assert!(!post.pass, "an open field has no single tile that cuts the walk");
-        assert!(game.wdist(post.at, away) < game.wdist(post.at, home), "the watch stands on their side");
+        let post = *ai
+            .recon_disruption
+            .post(1)
+            .expect("the neighbour has a post");
         assert!(
-            game.map.tiles[&post.at]
-                .owner_city
-                .and_then(|city| game.cities.get(&city))
-                .is_none_or(|city| city.owner == 0)
+            !post.pass,
+            "an open field has no single tile that cuts the walk"
         );
+        assert!(
+            game.wdist(post.at, away) < game.wdist(post.at, home),
+            "the watch stands on their side"
+        );
+        assert!(game.map.tiles[&post.at]
+            .owner_city
+            .and_then(|city| game.cities.get(&city))
+            .is_none_or(|city| city.owner == 0));
         assert!(game.wdist(post.at, away) >= PICKET_MIN_FROM_CITY);
+    }
+
+    /// The claim is checked in a real game: on a small four-major board with
+    /// both genes on for every seat, the plan draws screen stands and picket
+    /// posts — including a pass — before the turn limit.
+    #[test]
+    fn both_genes_draw_orders_in_a_real_game() {
+        use crate::ai::Ai;
+        let mut game = Game::new_full(4, 44, 28, 26_082_413, 140, 2, true);
+        game.set_fog_memory(false);
+        game.set_war_ledger(false);
+        let mut ais: Vec<AdvancedAi> = (0..game.players.len())
+            .map(|_| {
+                let mut ai = AdvancedAi::new();
+                ai.enable_settler_screen();
+                ai.enable_pass_picket();
+                ai
+            })
+            .collect();
+        let (mut stands, mut pursuits, mut pickets, mut passes) = (0usize, 0usize, 0usize, 0usize);
+        while game.winner.is_none() && game.turn <= game.max_turns {
+            let pid = game.current;
+            ais[pid].take_turn(&mut game, pid);
+            let plan = &ais[pid].recon_disruption;
+            if plan.turn == Some(game.turn) {
+                for order in plan.screens.values() {
+                    match order {
+                        ScreenOrder::Stand { .. } => stands += 1,
+                        ScreenOrder::Pursue { .. } => pursuits += 1,
+                    }
+                }
+                pickets += plan.pickets.len();
+                passes += plan.posts.values().filter(|post| post.pass).count();
+            }
+            if game.winner.is_none() && game.current == pid {
+                let _ = game.apply(pid, &Action::EndTurn);
+            }
+        }
+        assert!(
+            stands > 0,
+            "a stand was taken (stands {stands}, pursuits {pursuits})"
+        );
+        assert!(pickets > 0, "a recon unit was sent to a post");
+        assert!(
+            passes > 0,
+            "a pass was found on some walk ({pickets} picket-turns)"
+        );
     }
 
     #[test]
@@ -1331,9 +1435,14 @@ mod tests {
         fresh(&mut game, settler);
         let mut ai = screening_ai();
         ai.enable_pass_picket();
-        ai.recon_disruption.sightings.insert(settler, (game.nbrs(field).into_iter().max().unwrap(), 59));
+        ai.recon_disruption
+            .sightings
+            .insert(settler, (game.nbrs(field).into_iter().max().unwrap(), 59));
         ai.recon_disruption_plan(&game, 0);
         assert!(ai.recon_disruption.screen(scout).is_some());
-        assert!(ai.recon_disruption.picket(scout).is_none(), "a screening unit is not a picket");
+        assert!(
+            ai.recon_disruption.picket(scout).is_none(),
+            "a screening unit is not a picket"
+        );
     }
 }
