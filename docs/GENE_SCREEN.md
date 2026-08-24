@@ -1239,9 +1239,21 @@ in the artefacts:
 gene, reporting batches included. Its row for this gene reads on 16.91%
 (n = 108,278 on-arm seats) against off 16.35% (n = 82,636), *Diff* +0.55%,
 posterior **+28 [+7, +49]** wins per 10,000 on-arm seats, **P(>0) = 99.6%** —
-an interval that **excludes zero**. The narrower `+28 [−0, +57]` the ledger
-records is the four-*source* pool, and it straddles only because the two
-disjoint standard screens are report-only.
+an interval that **excludes zero**.
+
+⚠ **The ranking prints two different posteriors for the same gene, and the
+distinction is what made this look like an open question.** The main table
+pools `load_display_sources` — ledger sources *plus* the report-only batches,
+six screens here — while the authority table, the shapes-apart table and
+`boundary` all pool `load_sources`, the four authoritative sources alone. That
+is deliberate: the deployment ledger stays byte-for-byte tied to its own
+sources, and report-only data refreshes the display without moving a default.
+The consequence for a reader is that the same generated file says
+**`+28 [+7, +49]`, 99.6%** on one line and **`+28 [−0, +57]`, 97.4%** on
+another, and the second is the one printed beside every decision. Read the
+main table's posterior for *what the evidence says* and the authority table's
+for *what the ledger's sources say*; for this gene the gap between them is
+precisely the two disjoint standard screens #2374 held back.
 
 Pooled over the three deployment-shape screens alone (98,874 seats), the gene
 reads **+0.926 ± 0.239 pp, z +3.88, 95% CI [+0.458, +1.394]**, with
