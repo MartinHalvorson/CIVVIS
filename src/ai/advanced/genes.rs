@@ -1097,6 +1097,17 @@ pub const GENES: &[Gene] = &[
     // origin itself; ordinary and frozen controllers keep the global veto.
     // Appended at the END so a running screen keeps its positional genome.
     Gene { tag: "solvency-first-trade-slot", field: "solvency_first_trade_slot", kind: Kind::OptIn, enable: AdvancedAi::enable_solvency_first_trade_slot, disable: AdvancedAi::disable_solvency_first_trade_slot },
+    // 2026-08-24 operator goal: "much stronger tactical smarts and planning
+    // for taking enemy cities, particularly for weaker enemies … analyze
+    // neighboring enemies' military strength (public information) and their
+    // progress in science … pick a city or two or more that we can likely
+    // take and hold … units to spare … quickly pillage the tiles we can if
+    // we have time". Two genes, `advanced/city_campaign.rs`.
+    // The neighbour appraised on public power and tech count, the holdable
+    // city priced with the spare, the launch on the city's own bill.
+    Gene { tag: "city-campaign", field: "city_campaign", kind: Kind::OptIn, enable: AdvancedAi::enable_city_campaign, disable: AdvancedAi::disable_city_campaign },
+    // A soldier at war pillages with the movement its march does not use.
+    Gene { tag: "campaign-pillage", field: "campaign_pillage", kind: Kind::OptIn, enable: AdvancedAi::enable_campaign_pillage, disable: AdvancedAi::disable_campaign_pillage },
     // Run civvis-20260824T204654Z had a useful wide early pipeline but offered
     // its next Settlers from factories finishing in roughly 3, 7 and 29 turns,
     // while walkers repeatedly held or lost a site to another founding. Keep
