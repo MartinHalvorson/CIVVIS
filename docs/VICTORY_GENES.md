@@ -189,8 +189,9 @@ So the scope now follows the kind of decider, and each kind is stated:
 Thirteen of the twenty points a diplomatic victory needs come from the World
 Congress and its scored competitions. `Game::NATIVE_COMPETITIONS` pays first
 place **2** points for the Climate Accords, Send Aid and Send Military Aid,
-and **1** for the World Games, the World's Fair and the International Space
-Station. `host_competition_score_value` prices the competition's own *score*,
+and **1** for the World Games, the World's Fair, the International Space
+Station and the Nobel Peace Prize — all seven Gathering Storm pays a point for,
+since #2379. `host_competition_score_value` prices the competition's own *score*,
 its deadline and the lead swing — and prices the victory points **at zero**,
 at the same rate for a Conquest seat as for a Diplomacy one.
 

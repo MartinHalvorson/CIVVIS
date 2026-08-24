@@ -843,6 +843,11 @@ fn main() {
                         }
                     }
                     let mut g = Game::new_with(options);
+                    // ⚠ Set here rather than carried in `GameOptions`, for the
+                    // reason `simulate` gives above: this is a staged rules
+                    // mechanism, and a soak is how its effect on the victory
+                    // mix is measured before it is promoted.
+                    g.native_competitions = args.iter().any(|a| a == "--native-competitions");
                     let mut ais = AdvancedAi::fleet(&g);
                     let simultaneous = if g.turn_structure == setup::TurnStructure::Simultaneous {
                         // Spread a non-divisible budget across the first live
@@ -1035,6 +1040,21 @@ fn main() {
                             g.siege.left_depleted,
                             g.siege.depleted_with_a_taker_ready,
                             g.siege.reduced_with_melee_adjacent,
+                        ));
+                        // ⚠ The diplomatic lane is the one that steals most
+                        // live games and the one a native game has never been
+                        // able to finish, and the victory column alone cannot
+                        // say whether it came close or was nowhere near.
+                        // `DIPLOMATIC_VICTORY_POINTS` is 20; this is how far
+                        // the best empire actually got.
+                        let best_dvp = majors.iter().map(|p| p.dvp).max().unwrap_or(0);
+                        flags.push_str(&format!(
+                            " DVP best={best_dvp}/{} reached={}",
+                            civvis::game::DIPLOMATIC_VICTORY_POINTS,
+                            majors
+                                .iter()
+                                .filter(|p| p.dvp >= civvis::game::DIPLOMATIC_VICTORY_POINTS)
+                                .count(),
                         ));
                         let held = (census.hold_threatened + census.hold_weak).max(1);
                         flags.push_str(&format!(
