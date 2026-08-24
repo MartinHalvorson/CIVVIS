@@ -1312,6 +1312,18 @@ impl AdvancedAi {
         self.base.adjacent_camp_clear = false;
     }
 
+    /// The barbarian seat walks onto religious units and condemns them with
+    /// the movement it arrives with. See `BasicAi::barbarian_heretic_hunt`;
+    /// default-ON, off on the frozen anchor, a controller treatment of the
+    /// world rather than a gene of one seat.
+    pub fn enable_barbarian_heretic_hunt(&mut self) {
+        self.base.barbarian_heretic_hunt = true;
+    }
+
+    pub fn disable_barbarian_heretic_hunt(&mut self) {
+        self.base.barbarian_heretic_hunt = false;
+    }
+
     /// Let the deck counterfactual see the unit-maintenance bill. See
     /// `BasicAi::maintenance_aware_deck`; entrant `advanced_maintenance_deck`.
     pub fn enable_maintenance_aware_deck(&mut self) {
@@ -2138,6 +2150,35 @@ impl AdvancedAi {
     /// The twin of `enable_district_planning`.
     pub fn disable_district_planning(&mut self) {
         self.district_planning = false;
+    }
+
+    /// A Missionary on its last charge explores the fog within ten tiles for
+    /// up to twelve turns before spending it, unless a city of ours is
+    /// slipping or an untouched city stands beside it. See
+    /// [`AdvancedAi::missionary_last_charge_explores`]. Opt-in gene
+    /// `missionary-last-charge-explores`. (Filed here rather than under a
+    /// marker: the append-point check reads a line's first identifier.)
+    pub fn enable_missionary_last_charge_explores(&mut self) {
+        self.missionary_last_charge_explores = true;
+    }
+
+    /// The twin of `enable_missionary_last_charge_explores`.
+    pub fn disable_missionary_last_charge_explores(&mut self) {
+        self.missionary_last_charge_explores = false;
+    }
+
+    /// A religious unit steps out of the tiles a visible barbarian raider can
+    /// reach next turn, and never steps into them on the way to anything,
+    /// holding when no safe step makes progress. See
+    /// [`AdvancedAi::missionary_evades_raiders`]. Opt-in gene
+    /// `missionary-evades-raiders`.
+    pub fn enable_missionary_evades_raiders(&mut self) {
+        self.missionary_evades_raiders = true;
+    }
+
+    /// The twin of `enable_missionary_evades_raiders`.
+    pub fn disable_missionary_evades_raiders(&mut self) {
+        self.missionary_evades_raiders = false;
     }
     // Append points, one per name range: a new treatment goes under the range
     // its own name falls in, so that two of them do not append to one line.

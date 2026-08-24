@@ -2751,6 +2751,21 @@ pub struct BasicAi {
     /// `barbarian-ranged-answer`.
     pub(crate) barbarian_ranged_answer: bool,
     pub(crate) adjacent_camp_clear: bool,
+    /// ★ THE BARBARIANS HUNT THE RELIGIOUS CORPS TOO. A Missionary beside a
+    /// city it is converting stands still for three turns at zero movement,
+    /// and in Civilization VI a raider that reaches it condemns it. Here the
+    /// engine already allowed it — the barbarian seat is at war with
+    /// everyone, and `Action::CondemnHeretic` is legal for any military unit
+    /// on the same tile with movement left — but nothing on the barbarian
+    /// side ever asked for a religious unit, so a corps was safe anywhere a
+    /// Settler was not. On, a raider walks onto a religious unit inside its
+    /// raid ring the way it walks onto a Builder, and spends the movement it
+    /// arrives with (or starts its next turn with) on the condemnation.
+    /// Default-ON in every current controller; OFF on the frozen anchor
+    /// (`AdvancedAi::legacy`), exactly as `adjacent_camp_clear` is, so the
+    /// rating experiment does not move. Operator directive 2026-08-24; the
+    /// victim's seat counts it as `religious_lost_to_barbarians`.
+    pub(crate) barbarian_heretic_hunt: bool,
     /// The camp errand's claims for the current turn: camp -> (turn,
     /// claimant unit). One hunter per camp and two camps at a time, so the
     /// bounty never becomes an army diversion.
@@ -4434,6 +4449,7 @@ impl BasicAi {
             sea_answers: false,
             camp_bounty: false,
             adjacent_camp_clear: true,
+            barbarian_heretic_hunt: true,
             barbarian_hunt: false,
             barbarian_bargain: false,
             barbarian_ranged_answer: false,
@@ -4767,6 +4783,7 @@ impl BasicAi {
             sea_answers: false,
             camp_bounty: false,
             adjacent_camp_clear: true,
+            barbarian_heretic_hunt: true,
             barbarian_hunt: false,
             barbarian_bargain: false,
             barbarian_ranged_answer: false,
@@ -14356,6 +14373,9 @@ impl BasicAi {
                     .values()
                     .any(|unit| unit.owner == pid && unit.kind == "settler")
                 || !self.has_practical_settle_site(g, pid));
+        if self.condemn_heretic_here(g, pid, uid) {
+            return true;
+        }
         if self.capture_adjacent_civilian(g, pid, uid, decline_settlers) {
             return true;
         }
@@ -14772,7 +14792,18 @@ impl BasicAi {
                             _ if matches!(
                                 g.rules.units[other.kind].class.as_str(),
                                 "civilian" | "support"
-                            ) => Some(1),
+                            ) =>
+                            {
+                                Some(1)
+                            }
+                            // A religious unit is condemned, not captured, and
+                            // only the barbarian hunt steps onto one here; a
+                            // major's answer is `AdvancedAi::condemn_step`.
+                            _ if self.hunts_heretics()
+                                && g.rules.units[other.kind].class == "religious" =>
+                            {
+                                Some(1)
+                            }
                             _ => None,
                         }
                     })
@@ -14781,7 +14812,65 @@ impl BasicAi {
             })
             .max_by_key(|(value, position)| (*value, std::cmp::Reverse(*position)))
             .map(|(_, position)| position);
-        target.is_some_and(|to| g.apply(pid, &Action::Move { unit: uid, to }).is_ok())
+        let Some(to) = target else {
+            return false;
+        };
+        if g.apply(pid, &Action::Move { unit: uid, to }).is_err() {
+            return false;
+        }
+        // Arriving on a religious unit with movement left is the whole hunt.
+        self.condemn_heretic_here(g, pid, uid);
+        true
+    }
+
+    /// Whether this controller is the barbarian seat hunting religious units.
+    fn hunts_heretics(&self) -> bool {
+        self.barb && self.barbarian_tactics && self.barbarian_heretic_hunt
+    }
+
+    /// The barbarian half of the religious hunt: a raider standing on a
+    /// religious unit's tile with movement left condemns it. `g.apply` holds
+    /// the engine's own legality (a military mover, war, the same tile,
+    /// movement left), so this only chooses the target — the weakest first,
+    /// then the lowest id, for a stable replay. Nothing for a major: its
+    /// answer is `AdvancedAi::condemn_step`, and the frozen anchor never
+    /// carries `barbarian_tactics`.
+    pub(crate) fn condemn_heretic_here(&self, g: &mut Game, pid: usize, uid: u32) -> bool {
+        if !self.hunts_heretics() {
+            return false;
+        }
+        let unit = &g.units[&uid];
+        if g.rules.units[unit.kind].class != "military" || unit.moves_left <= 0.0 {
+            return false;
+        }
+        let here = unit.pos;
+        let target_unit = g
+            .units_at(here)
+            .into_iter()
+            .filter(|oid| {
+                let other = &g.units[oid];
+                other.owner != pid
+                    && g.rules.units[other.kind].class == "religious"
+                    && g.is_at_war(pid, other.owner)
+            })
+            .min_by_key(|oid| (g.units[oid].hp, *oid));
+        let Some(target_unit) = target_unit else {
+            return false;
+        };
+        let kind = g.units[&uid].kind.as_str();
+        think!(self.journal, Military, Decision,
+               "{kind} {uid} condemns the heretic on its tile";
+               "a religious unit is wiped by the movement a military unit \
+                spends standing on it, and the barbarians spend it";
+               here);
+        g.apply(
+            pid,
+            &Action::CondemnHeretic {
+                unit: uid,
+                target_unit,
+            },
+        )
+        .is_ok()
     }
 
     /// The rescue pursuit: a capturable civilian within this turn's movement
@@ -14795,7 +14884,8 @@ impl BasicAi {
     /// composes the walk within the turn, and the adjacent branch above
     /// finishes the capture. Settlers and builders only: a generic support
     /// pickup is not worth pulling a formation apart, and stays
-    /// adjacent-only.
+    /// adjacent-only. The barbarian hunt (`barbarian_heretic_hunt`) also
+    /// walks onto a religious unit, which it condemns rather than captures.
     fn pursue_capturable_civilian(
         &self,
         g: &mut Game,
@@ -14865,6 +14955,12 @@ impl BasicAi {
                     "settler" if barb_rescue == Some(other.owner) => 4,
                     "settler" if !decline_settlers => 3,
                     "builder" => 2,
+                    _ if barbarian_hunter
+                        && self.barbarian_heretic_hunt
+                        && g.rules.units[other.kind].class == "religious" =>
+                    {
+                        1
+                    }
                     _ => return None,
                 };
                 if let Some(home) = minor_gate {
@@ -14915,7 +15011,13 @@ impl BasicAi {
                 walking onto it captures it, and a settler taken back from \
                 the barbarians repays its whole production";
                goal);
-        self.path_move(g, pid, uid, next)
+        if !self.path_move(g, pid, uid, next) {
+            return false;
+        }
+        // A raider that lands on a religious unit with movement to spare
+        // finishes the hunt in the same step.
+        self.condemn_heretic_here(g, pid, uid);
+        true
     }
 
     /// Minors guard home; majors explore, then garrison the nearest city.
@@ -19653,6 +19755,77 @@ mod tests {
             !take(false),
             "and it must still be the barbarian tactics that decide it, so the \
              frozen no-tactics controller plays the game it always did"
+        );
+    }
+
+    /// The religious corps is prey too: a raider two tiles from a Missionary
+    /// walks onto it, and condemns it with the movement it has on arrival or
+    /// at the start of its next turn. The frozen no-tactics controller, and a
+    /// tactics controller with the hunt withheld, leave the Missionary alone.
+    #[test]
+    fn a_barbarian_walks_onto_a_missionary_and_condemns_it() {
+        let condemned = |tactics: bool, hunt: bool| -> bool {
+            let (mut g, city, raider) = barbarian_at_the_gates_game(84);
+            let barb = g.units[&raider].owner;
+            let cpos = g.cities[&city].pos;
+            let home = g.units[&raider].pos;
+            g.barb_camps.insert(home, g.turn + 1_000);
+            g.barb_raider_homes.insert(raider, home);
+            let road = g
+                .map
+                .tiles
+                .keys()
+                .copied()
+                .filter(|pos| {
+                    g.wdist(*pos, home) == 2
+                        && g.wdist(*pos, cpos) > 1
+                        && g.map.get(*pos).is_some_and(|tile| {
+                            g.rules.is_passable(tile) && !g.rules.is_water(tile)
+                        })
+                        && g.units_at(*pos).is_empty()
+                        && g.city_at(*pos).is_none()
+                })
+                .min()
+                .expect("open ground two tiles from the raider");
+            g.players[0].religion = Some("Faith".to_string());
+            let missionary = g.spawn_test_unit("missionary", 0, road);
+            g.units.get_mut(&missionary).unwrap().religion = Some("Faith".to_string());
+            let mut ai = BasicAi::new();
+            ai.barb = true;
+            ai.barbarian_tactics = tactics;
+            ai.barbarian_heretic_hunt = hunt;
+            // The Missionary itself is never moved: the question is whether
+            // the raider comes for it. Eight seat-turns is four world turns,
+            // the walk plus the condemnation on the turn after.
+            for _ in 0..8 {
+                let pid = g.current;
+                if pid == barb {
+                    ai.take_turn(&mut g, barb);
+                    if !g.units.contains_key(&missionary) {
+                        return true;
+                    }
+                }
+                if g.winner.is_none() && g.current == pid {
+                    let _ = g.apply(pid, &Action::EndTurn);
+                }
+            }
+            false
+        };
+        assert!(
+            condemned(true, true),
+            "a barbarian two tiles from a Missionary must walk onto it and condemn it"
+        );
+        assert!(
+            !condemned(true, false),
+            "the hunt withheld leaves the Missionary standing"
+        );
+        assert!(
+            !condemned(false, true),
+            "and the frozen no-tactics controller plays the game it always did"
+        );
+        assert!(
+            BasicAi::new().barbarian_heretic_hunt,
+            "the hunt is on in every current controller"
         );
     }
 
