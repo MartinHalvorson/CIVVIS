@@ -11123,18 +11123,18 @@ impl Game {
     /// `mission_level_<operation>` on the promotion itself, so the mission a
     /// promotion sharpens is data, not a match arm here: a new espionage
     /// promotion needs no edit to this file to take effect.
+    ///
+    /// ⚠ THE KEY IS BUILT WITH `format!` ON PURPOSE. `tools/civvis_inert.py`
+    /// credits an effect key to the engine when it appears as a literal or
+    /// when a `format!` template could build it, and nothing else — a
+    /// `strip_prefix("mission_level_")` consumer is invisible to it, so all
+    /// ten keys were reported as data the engine ignores. The allocation is
+    /// on the espionage path, which runs a handful of times a turn.
     fn spy_mission_promotion_level(&self, spy: &Spy, kind: &str) -> i64 {
-        spy.promotions
-            .iter()
-            .filter_map(|name| self.rules.promotions.get(name.as_str()))
-            .flat_map(|spec| spec.effects.iter())
-            .filter(|(effect, _)| {
-                effect
-                    .strip_prefix("mission_level_")
-                    .is_some_and(|operation| operation == kind)
-            })
-            .map(|(_, value)| *value)
-            .sum::<f64>() as i64
+        if spy.promotions.is_empty() {
+            return 0;
+        }
+        self.spy_promotion_effect(spy, &format!("mission_level_{kind}")) as i64
     }
 
     fn spy_city_has_stealable_tech(&self, owner: usize, target: usize) -> bool {
