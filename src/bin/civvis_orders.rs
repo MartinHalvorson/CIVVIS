@@ -1433,7 +1433,11 @@ fn sale_floor(request: &civvis::game::DealItems, my_value: f64) -> Option<i32> {
         return None;
     }
     let asked = request.gold + 25.0 * request.gold_per_turn;
-    let walk_away = if my_value.is_finite() { asked - my_value } else { asked };
+    let walk_away = if my_value.is_finite() {
+        asked - my_value
+    } else {
+        asked
+    };
     Some((walk_away.ceil() as i32).max(SALE_FLOOR_MIN))
 }
 
@@ -1475,7 +1479,11 @@ fn border_buy_ceiling(
     if offered <= 0.0 {
         return None;
     }
-    let worth = if worth.is_finite() && worth > 0.0 { worth } else { offered };
+    let worth = if worth.is_finite() && worth > 0.0 {
+        worth
+    } else {
+        offered
+    };
     Some((worth.ceil() as i32).clamp(1, BORDER_BUY_CEILING_MAX))
 }
 
@@ -1552,7 +1560,8 @@ fn append_border_buy_order(
     // the engine's own book for this passage (`Game::passage_gold_value`),
     // still bounded by the treasury and the cap.
     let book = passage_value(seat);
-    let affordable = (state.gold - BORDER_BUY_GOLD_RESERVE).min(BORDER_BUY_CEILING_MAX as i64) as i32;
+    let affordable =
+        (state.gold - BORDER_BUY_GOLD_RESERVE).min(BORDER_BUY_CEILING_MAX as i64) as i32;
     let ceiling = if book.is_finite() && book > 0.0 {
         (book.ceil() as i32).min(affordable)
     } else {
@@ -9022,14 +9031,19 @@ mod tests {
         // The floor is our own walk-away by the mirrored board's book: the
         // ask (84 + 25 × 1.1) less our net gain on the quote — not half the
         // ask, which is what it was until 2026-08-24.
-        let (my_value, _) = mirror.game.trade_utilities(0, 1, &offer_copy, &request_copy);
+        let (my_value, _) = mirror
+            .game
+            .trade_utilities(0, 1, &offer_copy, &request_copy);
         let asked = 84.0 + 25.0 * 1.1;
         // A mirrored board that cannot price the copy answers non-finite,
         // and the floor is then the whole ask.
         let net = if my_value.is_finite() { my_value } else { 0.0 };
         let walk_away = ((asked - net).ceil() as i32).max(SALE_FLOOR_MIN);
         assert_eq!(sale.pos, Some((walk_away, 0)));
-        assert!(walk_away > 56, "the old half-ask floor of 56 undercut our own book: {walk_away}");
+        assert!(
+            walk_away > 56,
+            "the old half-ask floor of 56 undercut our own book: {walk_away}"
+        );
 
         // A favor block and a strategic block ride the same verb, favor last,
         // and a tiny ask still carries the minimum floor.
@@ -9056,7 +9070,7 @@ mod tests {
         );
         // A tiny ask carries our walk-away, never less than the minimum.
         let floor = sale.pos.unwrap().0;
-        assert!(floor >= SALE_FLOOR_MIN && floor <= 18, "floor {floor}");
+        assert!((SALE_FLOOR_MIN..=18).contains(&floor), "floor {floor}");
 
         // An unmapped seat still crosses for the ledger, subject-less, like
         // the delegation arm: the Lua side names it `sell_target_unmapped`.
@@ -9126,9 +9140,13 @@ mod tests {
         // The ceiling is what the passage is worth to us by the mirrored
         // board's book: the offer plus our net gain on the quote — not the
         // offer and half again, which is what it was until 2026-08-24.
-        let worth = (mirror.game.passage_gold_value(0).ceil() as i32).clamp(1, BORDER_BUY_CEILING_MAX);
+        let worth =
+            (mirror.game.passage_gold_value(0).ceil() as i32).clamp(1, BORDER_BUY_CEILING_MAX);
         assert_eq!(buy.pos, Some((worth, 0)));
-        assert!(worth >= 28 && worth < 90, "the book, not the offer and half again: {worth}");
+        assert!(
+            (28..90).contains(&worth),
+            "the book, not the offer and half again: {worth}"
+        );
 
         // Per-turn gold rides the same 25× book, and the ceiling never
         // crosses the cap however rich the offer.
@@ -9359,7 +9377,10 @@ mod tests {
         let science = Some(("science", None));
 
         let mut orders = Vec::new();
-        assert_eq!(append_favor_sale_order(science, &state, &mut orders, 2.0), None);
+        assert_eq!(
+            append_favor_sale_order(science, &state, &mut orders, 2.0),
+            None
+        );
         assert_eq!(orders.len(), 1);
         assert_eq!(orders[0].kind, "sell");
         // Not the richest (Persia at 17 DVP would spend it on the win), not
@@ -9413,7 +9434,10 @@ mod tests {
         // The last twenty above the reserve still sell, in a smaller block.
         let mut tail = state.clone();
         tail.favor = Some(140.0);
-        assert_eq!(append_favor_sale_order(science, &tail, &mut held, 2.0), None);
+        assert_eq!(
+            append_favor_sale_order(science, &tail, &mut held, 2.0),
+            None
+        );
         assert_eq!(
             held.pop().and_then(|order| order.verb),
             Some("FAVOR=20".to_string())
