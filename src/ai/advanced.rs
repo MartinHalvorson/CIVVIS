@@ -4819,6 +4819,10 @@ pub struct AdvancedAi {
     district_planning: bool,
 
     // ---- append: e-f ------------------------------------------------
+    /// A city-state's place enters the envoy score: proximity to our
+    /// cities, and the sitting suzerain the envoys would unseat. Opt-in gene
+    /// `flip-nearby-city-states`; see `advanced/field_craft.rs`.
+    flip_nearby_city_states: bool,
     /// Version 2 of `escort_unstick`: the same two-turn release, refused
     /// while a visible barbarian raider can reach the settler's tile — at
     /// the settler's unstick and at the escort's route abandonment. Watched
@@ -4862,10 +4866,22 @@ pub struct AdvancedAi {
     /// spending its charges where it was bought. Opt-in gene
     /// `religious-veto-defence`; see `advanced/religious_defence.rs`.
     religious_veto_defence: bool,
+    /// A wounded unit pillages a heal-type improvement under it or one step
+    /// away before the recovery path walks it home. Opt-in gene
+    /// `pillage-to-heal`; see `advanced/field_craft.rs`.
+    pillage_to_heal: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// A ranged unit inside a hostile melee body's reach steps to a firing
+    /// tile inside fewer hostile envelopes and fires at that body. Opt-in
+    /// gene `shoot-and-scoot`; see `advanced/field_craft.rs`.
+    shoot_and_scoot: bool,
 
     // ---- append: t-z ------------------------------------------------
+    /// A melee unit with nothing to hit stands where its zone of control
+    /// takes the most enemy reaches off our shooters and wounded. Opt-in gene
+    /// `zoc-screen`; see `advanced/field_craft.rs`.
+    zoc_screen: bool,
 }
 
 /// Science weight floor at the start of a game, and at its very end.
@@ -5184,6 +5200,10 @@ mod religion;
 /// win is already done. One opt-in gene; see `advanced/religious_defence.rs`.
 mod religious_defence;
 use site_lookahead::{PlotOffer, PlotPurchaseCache};
+/// Field craft: shoot-and-scoot, the zone-of-control screen, pillage-to-heal
+/// and flipping nearby city-states. Four opt-in genes; see
+/// `advanced/field_craft.rs`.
+mod field_craft;
 
 /// Six opt-in genes for the victory lanes: the race the empire is actually
 /// in, reaching the deciders that read the expansion posture instead. See
@@ -5885,6 +5905,7 @@ impl AdvancedAi {
             district_planning: false,
 
             // ---- append: e-f ----------------------------------------
+            flip_nearby_city_states: false,
             escort_unstick_2: false,
 
             // ---- append: g-k ----------------------------------------
@@ -5898,10 +5919,13 @@ impl AdvancedAi {
 
             // ---- append: p-r ----------------------------------------
             religious_veto_defence: false,
+            pillage_to_heal: false,
 
             // ---- append: s-s ----------------------------------------
+            shoot_and_scoot: false,
 
             // ---- append: t-z ----------------------------------------
+            zoc_screen: false,
         }
     }
 
@@ -15346,11 +15370,15 @@ impl AdvancedAi {
                     } else {
                         0
                     };
+                    // `flip_nearby_city_states`: where the city-state is, and
+                    // whose it is. See `advanced/field_craft.rs`.
+                    let place = self.flip_nearby_city_state_bonus(g, pid, minor.id, needed);
                     let score = (alignment + unique_alignment) * 10
                         + type_bonus_value
                         + denial
                         + suzerain_prize
                         + nobel_peace_suzerain_prize
+                        + place
                         - needed * 7
                         - if overfunded_uncontested {
                             UNCONTESTED_POST_TIER_ENVOY_PENALTY
@@ -29482,6 +29510,14 @@ impl AdvancedAi {
                 return acted;
             }
         }
+        // `pillage_to_heal`: a wounded unit in the enemy's fields heals fifty
+        // on the spot by pillaging, where the recovery path below would walk
+        // it home healing nothing on the way. See `advanced/field_craft.rs`.
+        if !unwanted_settler_adjacent {
+            if let Some(acted) = self.pillage_to_heal_step(g, pid, uid) {
+                return acted;
+            }
+        }
         if !unwanted_settler_adjacent && !holding_threatened_city {
             if let Some(acted) = self.base.healing_step(g, pid, uid) {
                 return acted;
@@ -29617,6 +29653,18 @@ impl AdvancedAi {
             .barb_pid
             .filter(|barb| enemies.len() == 1 && enemies[0] == *barb);
         if enemies.is_empty() {
+            // `shoot_and_scoot`: a shooter beside a raider steps back to its
+            // range and fires before anything below marches it. The raider
+            // that walks up again stops in our zone of control. See
+            // `advanced/field_craft.rs`.
+            if let Some(barb) = g.barb_pid {
+                if !unwanted_settler_adjacent {
+                    if let Some(acted) = self.shoot_and_scoot_step(g, pid, uid, &[barb], None, true)
+                    {
+                        return acted;
+                    }
+                }
+            }
             // Camps are captured by entering their tile rather than attacking,
             // so an adjacent empty one must be claimed before this field unit
             // is sent to a longer village, escort, or pre-war staging order.
@@ -29780,6 +29828,17 @@ impl AdvancedAi {
         // through to the march; only here can a unit choose to hold the
         // ground it is standing on and heal. See `advanced/contact_posture.rs`
         // — off by default, opt-in gene `contact-posture`.
+        // `shoot_and_scoot`: BEFORE the posture and the scan, because the one
+        // thing the scan cannot do is fire from a different tile than the one
+        // the unit stands on. See `advanced/field_craft.rs`.
+        let siege = plan
+            .target_city
+            .and_then(|cid| g.cities.get(&cid))
+            .map(|city| city.pos);
+        if let Some(acted) = self.shoot_and_scoot_step(g, pid, uid, &enemies, siege, false) {
+            self.force_groups_dirty |= acted;
+            return acted;
+        }
         if let Some(acted) = self.contact_posture_step(g, pid, uid) {
             self.force_groups_dirty |= acted;
             return acted;
@@ -30268,6 +30327,13 @@ impl AdvancedAi {
         // for the standing-still trickle at home that will never be locally
         // superior anywhere. Homeland claims all ran above, and the step
         // stands down empire-wide while any city is threatened.
+        // `zoc_screen`: a melee unit the scan found nothing for stands where
+        // its zone of control takes enemy reaches off our shooters and
+        // wounded, instead of marching. See `advanced/field_craft.rs`.
+        if let Some(acted) = self.zoc_screen_step(g, pid, uid, &enemies) {
+            self.force_groups_dirty |= acted;
+            return acted;
+        }
         if let Some(acted) =
             self.wartime_reinforcement_step(g, pid, uid, plan, group.as_ref(), &enemies)
         {
