@@ -1178,6 +1178,193 @@ genes over 6,000 pairs resolves ±64, *wider* than one gene over 7,200 (`h1`,
 ±68) is close to and far wider than one gene over 6,000 (`s7`, ±29). Rank with
 everything or resolve with one; the middle is the expensive place.
 
+## A `~` on a later screen is not a refutation: `buildings-before-projects`
+
+#2385's disjoint-seed replication pass flagged three genes that the standard
+screen had just promoted. Two shrank and held; the third stopped clearing the
+bar:
+
+| gene | 23,622-pair screen | 41,628-seat screen (disjoint) | #2385's read |
+|---|---:|---:|---|
+| `war-economy` | +2.354 pp, z +7.50 | +1.560 pp, z +3.76 | replicates, smaller |
+| `air-surge` | +2.151 pp, z +6.99 | +1.315 pp, z +3.17 | replicates, smaller |
+| `buildings-before-projects` | +1.228 pp, z +3.95 | +0.385 pp, z +0.92 | **`~`** |
+
+That third row was called out as *"a `columns`-rule promotion worth a direct
+arm"* on a gene that ships **on**. It was followed up in #2393, and the answer
+is that **no arm is owed, the default is right, and the flag was a statement
+about the second screen's power rather than about the gene.** The general rule
+it establishes is at the bottom of this section; the arithmetic is why.
+
+### What the whole record says
+
+Six six-player whole-genome screens have priced this gene — the four ledger
+sources plus the two `standard` batches #2374 entered as *reporting* batches
+(seeds 168000000–168001666 and 169000000–169006937, disjoint from each other
+and from the 141000000 discovery window):
+
+| screen | shape | seats | win Δ pp | win z | share Δ pp | share z |
+|---|---|---:|---:|---:|---:|---:|
+| `p4` 2026-08-20 | legacy | 26,892 | +0.461 | +1.07 | +0.232 | +3.37 |
+| `p7` 2026-08-21 | legacy | 30,000 | +0.520 | +1.33 | +0.141 | +2.12 |
+| `p10` 2026-08-22 | legacy | 35,148 | −0.046 | −0.13 | +0.161 | +2.52 |
+| standard 10k 2026-08-22 | **standard** | 47,244 | +1.228 | +3.95 | +0.282 | +4.89 |
+| standard 10,002 (#2374) | **standard** | 10,002 | +0.919 | +1.10 | +0.159 | +0.93 |
+| standard 41,628 (#2374) | **standard** | 41,628 | +0.385 | +0.92 | +0.060 | +0.70 |
+
+**Five of six positive on the win axis, six of six positive on share.** The
+two disjoint deployment-shape replications both read positive. Nothing in the
+record points down.
+
+### The replication does not contradict the discovery — it lacked the power
+
+Two numbers settle it, and both are one line of arithmetic on figures already
+in the artefacts:
+
+- **The two readings are not distinguishable.** +1.228 ± 0.311 against
+  +0.385 ± 0.417 is a difference of **+0.843 ± 0.520, z +1.62, p = 0.105**.
+  The shrinkage is inside noise, and it is the winner's-curse signature
+  `docs/EVAL_INTEGRITY.md` §4 predicts for a figure selected on promotion.
+- **The 41,628-seat screen's power against the effect it was testing was
+  22–30%.** At `win_se_pp` 0.417 it had 84% power against the discovery
+  estimate (+1.228 pp) — which is why its failure to reproduce that *size* is
+  informative — but only **26%** against the six-screen pooled difference
+  (+0.552 pp) and **22%** against the post-discovery estimate (+0.492 pp).
+  A `~` at 22% power is the expected outcome of a true positive effect, not
+  evidence against one.
+
+### The ranking already prints the resolved answer
+
+`HEURISTIC_GENE_RANKING.md`'s main table pools **every** screen that priced a
+gene, reporting batches included. Its row for this gene reads on 16.91%
+(n = 108,278 on-arm seats) against off 16.35% (n = 82,636), *Diff* +0.55%,
+posterior **+28 [+7, +49]** wins per 10,000 on-arm seats, **P(>0) = 99.6%** —
+an interval that **excludes zero**. The narrower `+28 [−0, +57]` the ledger
+records is the four-*source* pool, and it straddles only because the two
+disjoint standard screens are report-only.
+
+Pooled over the three deployment-shape screens alone (98,874 seats), the gene
+reads **+0.926 ± 0.239 pp, z +3.88, 95% CI [+0.458, +1.394]**, with
+heterogeneity Q = 2.63 on 2 df — the three screens agree. The unselected half
+on its own (the two #2374 batches, 51,630 seats, neither run to price this
+gene) reads **+0.492 ± 0.373 pp, 95% CI [−0.239, +1.223]**: positive,
+unresolved alone, and containing both the pooled figure and the discovery
+estimate. Share pools to **+0.209 ± 0.046 pp, z +4.54** over the three
+standard screens.
+
+### The default is on under every rule and every source combination
+
+Rebuilt from the ledger's own recorded sources, with no file edited:
+
+| sources | `wins_last_10k` | `wins_prior_10k` | pooled *Diff* | `columns` |
+|---|---:|---:|---:|---|
+| as it ships (4 sources) | +61 | −2 | +0.606% | **on** |
+| + the 41,628-seat screen entered | +10 | +61 | +0.540% | **on** |
+| + both #2374 batches entered | +10 | +24 | +0.552% | **on** |
+
+The pooled *Diff* is positive in all three, so the veto never fires; and the
+posterior over all six screens excludes zero **above**, so `posterior` and
+`posterior-veto` ship it on as well. There is no rule in the repository, and
+no combination of the recorded sources, under which this gene ships off.
+
+### Sizing: nothing affordable resolves it, and an arm is not even sharper
+
+This is the same question #2385 asked of `siege-commitment`, and it has a
+different answer for a different reason. There, a 600-game arm was **4×
+wider** than the screen already in the ledger. Here the arm is not wider — it
+is *the same instrument*, which is worse, because it means there is no
+cancellation to buy:
+
+| instrument | `win_se_pp × √pairs` |
+|---|---:|
+| direct arm, from `g1` (the conservative/widest measured) | **46.9** |
+| this gene on the 23,622-pair whole-genome foldover | **47.8** |
+| this gene on the 41,628-seat independent screen | 60.2 |
+
+**The direct-arm pairing gain for this gene is 1.02×**, against `s7`'s
+3.32× and `h1`'s 1.28× (#2302). `buildings-before-projects` fires in nearly
+every game, so a foldover cancels almost nothing when that is the gene left
+flipping, and stage two buys nothing over stage one. What a standalone arm
+therefore needs, at 46.9:
+
+| target effect | z ≥ 1.96 | 80% power | vs one standard batch |
+|---|---:|---:|---:|
+| discovery +1.228 pp | 1,869 games | 3,819 games | 0.4× |
+| standard-shape pool +0.926 pp | 3,286 games | 6,714 games | 0.7× |
+| six-screen *Diff* +0.552 pp | 9,249 games | 18,897 games | 1.9× |
+| unselected +0.492 pp | 11,643 games | 23,789 games | **2.4×** |
+
+And what an affordable arm resolves, against an effect of about +0.5 pp:
+
+| arm | 95% half-width | narrowing of the pooled standard-shape interval |
+|---|---:|---:|
+| 172 games (`boundary`'s size, below) | ±4.05 pp | **0.7%** |
+| 600 games (#2385's pre-registered size) | ±2.17 pp | **2.3%** |
+| 3,600 games | ±0.88 pp | 11.6% |
+| 23,959 games (80% power) | ±0.18 pp | 40.9% |
+
+A 600-game arm is 4.4× wider than the effect and moves the standing interval
+by 2.3%. The confirmation is, again, a weaker instrument than its own source.
+And even at the *pooled* effect size, 80% power needs 18,897 games — nearly
+two whole standard batches, about four times what #2385's arm was sized at.
+**Nothing runnable settles this gene on its own, and the three
+deployment-shape screens already in the repository settle it together.**
+
+### ⚠ `boundary`'s `needs` column read without its `buys` column is a trap
+
+`python3 tools/genes.py boundary` prints **516 seat pairs — 172 games — for
+this gene**, the smallest number in the table. That is not a cheap
+confirmation. `arm_pairs_to_resolve` answers "how big an arm tips the
+*combined* interval **if the arm reproduces the current pooled mean**", and
+this gene's ledger posterior sits at z = 1.94, a hair under the line, so
+almost any positive reading tips it. An arm of that size resolves **±4.05 pp**
+— **8× the effect it would be used to certify**. Running it and reporting the
+combined interval would be manufacturing a significance, with a tool's
+blessing, out of 172 games of noise.
+
+The tool already says so in the next column: **`buys +0.0`**. `--boundary`
+sorts on the expected value of the arm against the gene's *shipped* state, and
+a gene the evidence already likes that the genome already plays has only a
+reversal to buy. `buildings-before-projects` sits 76th of 84 on that ordering.
+**Read `buys` first; `needs` is only meaningful for a row `buys` has already
+put near the top.**
+
+### What did change: the size, not the sign
+
+The +61 win column is a **discovery estimate**: it is the reading that
+flipped this gene on, so it is selected on having passed, and §4's
+`E[observed | gate PASS] > true effect` applies to it in full. The honest
+deployment-shape figure is **+45 [+16, +73]** per 10,000 on-arm seats pooled
+over the three standard screens, and the honest *unselected* figure is
+**+25 [−12, +61]**. The +61 should not be quoted as this gene's effect size,
+and §4's corollary — a replication that refutes a documented *size* must land
+in the document that carries the size — is discharged by this paragraph.
+
+### The rule, so the next agent does not repeat the pass
+
+> **A single later screen reading `~` refutes nothing until its power against
+> the pooled effect is stated.** Before calling a gene a failed replication,
+> compute three things from artefacts that already exist: whether the two
+> readings differ by more than their errors, the later screen's power against
+> the *pooled* effect rather than against the discovery estimate, and the
+> pooled reading over every screen that priced the gene. Only when those
+> disagree with the shipped default is an arm owed — and then size the arm
+> against the pooled effect, never against the discovery estimate, because
+> sizing on the number selected for being large is how a confirmation ends up
+> too small to confirm anything.
+
+The two-line check for any gene, costing no games:
+
+```sh
+python3 tools/genes.py boundary | grep '<tag>'      # read `buys`, then `needs`
+grep '`<tag>`' HEURISTIC_GENE_RANKING.md      # all-screen posterior, P(>0)
+```
+
+⚠ Applied to #2385's other two rows: `war-economy` and `air-surge` both
+replicate at significance on the disjoint window, so neither was ever in
+question. This section is only about the row that did not, and its conclusion
+is that the row was mis-read, not that the gene was mis-shipped.
+
 ## Pre-registered: how a lane gene is judged
 
 ⚠⚠ **Fixed before the next screen, deliberately, so the axis is not chosen
