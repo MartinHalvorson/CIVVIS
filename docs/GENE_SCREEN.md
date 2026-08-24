@@ -21,13 +21,21 @@ don't want exact opposite genomes being tested. Genes on/off randomly, no
 complement, large batches of Monte Carlo simulation, measure win rates
 above/below expected. Genes at p = ½ except for known default-on genes, which
 can be p = 0.75."* — operator, 2026-08-23. That replaced the paired designs
-(the foldover and its prior-weighted variant) with one rule, and it is the
-whole design:
+(the foldover and its prior-weighted variant) with one rule. On 2026-08-24 the
+operator moved the draw's centre onto the default genome: *"we should bias
+towards picking 'on' genes as we want high level tournament competition and
+want to select for genes that improve upon this performance, not some baseline
+performance. Each tournament genome should default to our default genome. From
+here, there should be a ¼ chance a default-on gene turns off and a ¼ chance a
+default-off gene turns on. For a gene that is on at this point, there should be
+a 60% chance of using the top version of the gene and a 40% chance of using a
+different gene version (randomly pick among the rest). Genes with only one
+version will use the one version."* That is the whole design:
 
 | | |
 |---|---|
 | unit | **the seat** — one major seat in one game, carrying a genome and an outcome |
-| draw | each screened gene on with **p = ½**; a gene the deployment genome ships on with **p = 0.75**, so the batch plays mostly the genome people actually get while every gene keeps both arms populated (`P_ON`, `P_DEFAULT_ON`; `--p-on`, `--p-default-on`) |
+| draw | **every seat starts from the default genome**: a gene the deployment ships on stays on with **p = 0.75** (a ¼ chance of turning off), any other screened gene turns on with **p = ¼**, so the batch plays mostly the genome people actually get while every gene keeps both arms populated (`P_ON`, `P_DEFAULT_ON`; `--p-on`, `--p-default-on`); a gene that is on plays its **top version 60%** of the time and one of its other versions, drawn evenly, the other 40% (`BEST_VERSION_SHARE`) — a gene with one version plays that version |
 | pairing | **none** — nothing is mirrored, complemented or matched on a map |
 | estimate | seats-on minus seats-off, per gene, with every error **clustered by game** (the seats of one game share a winner) |
 | adjusted | the same Δ from one regression of the seat outcome on every screened gene at once, so a gene is not credited with its neighbours' chance imbalance |
@@ -382,7 +390,7 @@ the Rust and Python readings of the registry to one answer.
 |---|---|
 | `--games N` | the batch size; `--target-games N` declares the whole screen when it is split over `--append` sessions |
 | `--genes a,b,c` | screen only these; the rest are held at the deployment default. This is the single-gene run that confirms a flag |
-| `--p-on`, `--p-default-on` | the draw: ½ and 0.75 by default, both strictly inside (0, 1) so every gene keeps both arms |
+| `--p-on`, `--p-default-on` | the draw: ¼ and 0.75 by default (a default-off gene turns on one time in four, a default-on gene turns off one time in four), both strictly inside (0, 1) so every gene keeps both arms |
 | `--victories a,b,…` | **all six, and a batch that changes them is a probe.** The lanes decide which genes can act at all |
 | `--stock-civs` | stop shuffling every seat's civilization per map (a probe); stock seating is a FIXED civ per seat, and on the first 250-pair run seats 0 and 2 won twice as often as seat 3 whoever sat there |
 | `--players`, `--width`, `--height`, `--city-states`, `--speed`, `--map`, `--turns` | probe legs; the ledger refuses a batch that moved one |
@@ -416,11 +424,13 @@ it belongs to a family.
    **A seat plays at most one version of a family**: the family is drawn as
    one level — off, or exactly one version — on with the family's
    probability (`P_DEFAULT_ON` if any version ships on, else `P_ON`), and
-   within it **the best version takes two shares to every other version's
-   one** (`BEST_VERSION_WEIGHT`; the best is the version the ledger ships,
-   else the priced version with the highest tracked wins — *"regularly swap
-   between different versions of the genes, biasing towards the best
-   versions"*). So `war-economy` and `war-economy-2` are never on the same
+   within it **the best version takes 60% and the other versions split the
+   remaining 40% evenly** (`BEST_VERSION_SHARE`; the best is the version the
+   ledger ships, else the priced version with the highest tracked wins —
+   *"a 60% chance of using the top version of the gene and a 40% chance of
+   using a different gene version (randomly pick among the rest)"*; a family
+   with one drawable version plays that version). So `war-economy` and
+   `war-economy-2` are never on the same
    seat, each is priced against the same "off", the two are priced against
    each other, and the batch mostly plays what would ship. ⚠ A version named
    alone in `--genes` while a sibling ships on is refused: the held-on
