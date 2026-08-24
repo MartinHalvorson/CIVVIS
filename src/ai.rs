@@ -14792,7 +14792,10 @@ impl BasicAi {
                             _ if matches!(
                                 g.rules.units[other.kind].class.as_str(),
                                 "civilian" | "support"
-                            ) => Some(1),
+                            ) =>
+                            {
+                                Some(1)
+                            }
                             // A religious unit is condemned, not captured, and
                             // only the barbarian hunt steps onto one here; a
                             // major's answer is `AdvancedAi::condemn_step`.
@@ -14860,7 +14863,14 @@ impl BasicAi {
                "a religious unit is wiped by the movement a military unit \
                 spends standing on it, and the barbarians spend it";
                here);
-        g.apply(pid, &Action::CondemnHeretic { unit: uid, target_unit }).is_ok()
+        g.apply(
+            pid,
+            &Action::CondemnHeretic {
+                unit: uid,
+                target_unit,
+            },
+        )
+        .is_ok()
     }
 
     /// The rescue pursuit: a capturable civilian within this turn's movement

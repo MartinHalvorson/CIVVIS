@@ -26244,9 +26244,7 @@ impl AdvancedAi {
         // `missionary_last_charge_explores`: the third charge is the unit's
         // life, and the fog is worth more than a third pass at the same city.
         let sites: Vec<Pos> = targets.iter().map(|(_, _, target)| *target).collect();
-        if let Some(acted) =
-            self.last_charge_missionary_explores(g, pid, uid, &religion, &sites)
-        {
+        if let Some(acted) = self.last_charge_missionary_explores(g, pid, uid, &religion, &sites) {
             return acted;
         }
         for (_, _, target) in targets {

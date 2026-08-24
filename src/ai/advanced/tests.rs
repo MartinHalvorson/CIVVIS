@@ -32733,8 +32733,7 @@ fn last_charge_board(seed: u64) -> (Game, u32, Pos) {
     unit.charges = 1;
     game.current = 0;
     assert!(
-        !game.is_at_war(0, 1)
-            && game.city_religion(&game.cities[&rival]) != Some("Our Faith"),
+        !game.is_at_war(0, 1) && game.city_religion(&game.cities[&rival]) != Some("Our Faith"),
         "fixture: the rival capital is a spread target"
     );
     (game, missionary, beside)
@@ -32749,7 +32748,10 @@ fn a_last_charge_missionary_explores_only_with_the_gene() {
         .into_iter()
         .filter(|position| !game.players[0].explored.contains(position))
         .count();
-    assert!(fog > 0, "fixture: there must be fog within reach, or the gene is inert");
+    assert!(
+        fog > 0,
+        "fixture: there must be fog within reach, or the gene is inert"
+    );
 
     // Off: the shipped step spends the last charge on the city beside it,
     // and `do_spread` removes the unit.
@@ -32844,9 +32846,10 @@ fn a_religious_unit_steps_out_of_a_raiders_reach_only_with_the_gene() {
         .nbrs(raider_pos)
         .into_iter()
         .filter(|position| {
-            game.map.get(*position).is_some_and(|tile| {
-                game.rules.is_passable(tile) && !game.rules.is_water(tile)
-            }) && game.city_at(*position).is_none()
+            game.map
+                .get(*position)
+                .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
+                && game.city_at(*position).is_none()
                 && game.units_at(*position).is_empty()
         })
         .max_by_key(|position| (game.wdist(*position, home), *position))
@@ -32926,4 +32929,3 @@ fn a_religious_unit_steps_out_of_a_raiders_reach_only_with_the_gene() {
     }
     assert!(blind.units.contains_key(&missionary));
 }
-

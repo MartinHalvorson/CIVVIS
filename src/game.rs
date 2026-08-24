@@ -13414,9 +13414,15 @@ impl Game {
         // corps and no counter said so. Free Cities also carry
         // `is_barbarian`; only the true barbarian seat's blows count.
         if self.players[pid].is_barbarian && !self.players[pid].is_free_city {
-            bump(&mut self.players[target.owner], "religious_lost_to_barbarians");
+            bump(
+                &mut self.players[target.owner],
+                "religious_lost_to_barbarians",
+            );
         }
-        bump(&mut self.players[pid], &format!("condemned:{}", target.kind));
+        bump(
+            &mut self.players[pid],
+            &format!("condemned:{}", target.kind),
+        );
         self.religious_combat_pressure(None, &religion, target.pos, 6, 125.0);
         if self.congress_effect_active("world_religion", "B", &religion) {
             self.players[pid].diplomatic_favor += 25.0;

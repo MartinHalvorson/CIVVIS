@@ -657,7 +657,10 @@ fn the_ledger_counts_a_missionary_the_barbarians_condemn() {
     g.players[1].religion = Some("B".to_string());
     let raider = g.spawn_unit("warrior", 0, center);
     let missionary = g.spawn_unit("missionary", 1, center);
-    assert!(g.is_at_war(0, 1), "the barbarian seat is at war with everyone");
+    assert!(
+        g.is_at_war(0, 1),
+        "the barbarian seat is at war with everyone"
+    );
     g.apply(
         0,
         &Action::CondemnHeretic {

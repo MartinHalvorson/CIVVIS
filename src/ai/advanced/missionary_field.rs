@@ -101,8 +101,7 @@ impl AdvancedAi {
         if threats.is_empty() {
             return false;
         }
-        if g
-            .city_at(pos)
+        if g.city_at(pos)
             .is_some_and(|city| g.cities[&city].owner == pid)
         {
             return false;
@@ -310,17 +309,20 @@ impl AdvancedAi {
             return None;
         }
         let current = unit.pos;
-        if g
-            .cities
-            .values()
-            .any(|city| city.owner == pid && Self::city_needs_religious_support(g, pid, city, religion))
-        {
+        if g.cities.values().any(|city| {
+            city.owner == pid && Self::city_needs_religious_support(g, pid, city, religion)
+        }) {
             return None;
         }
         let untouched_beside = targets.iter().any(|target| {
             g.wdist(current, *target) <= 1
                 && g.city_at(*target).is_some_and(|city| {
-                    g.cities[&city].pressure.get(religion).copied().unwrap_or(0.0) <= 0.0
+                    g.cities[&city]
+                        .pressure
+                        .get(religion)
+                        .copied()
+                        .unwrap_or(0.0)
+                        <= 0.0
                 })
         });
         if untouched_beside {
@@ -371,7 +373,11 @@ impl AdvancedAi {
     /// The tests' way to spend a unit's exploring turns.
     #[cfg(test)]
     pub(super) fn set_missionary_explore_turns(&self, uid: u32, turns: u32) {
-        self.missionary_explore.borrow_mut().entry(uid).or_default().turns = turns;
+        self.missionary_explore
+            .borrow_mut()
+            .entry(uid)
+            .or_default()
+            .turns = turns;
     }
 
     /// Forget the exploring gene's memory of every unit, for a rebuilt board.
