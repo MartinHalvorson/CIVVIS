@@ -918,6 +918,21 @@ gate above refused four on their own probes. What the remaining 52 are:
 | `already-on` | 1 | `adjacent_camp_clear` is on in `BasicAi::new`, so an opt-in row would be on in both arms and screen as exactly inert. |
 | `does-not-fire` | 4 | A gene row was written for it here and `tools/gene_fires.py` refused it: a single-gene probe over 12 map pairs left both arms byte-identical. The row was removed rather than shipped to return a zero-width interval. |
 
+⚠⚠ **A `host-only` row is also a statement about what you cannot repair.** A
+gene whose value depends on a `Kind::HostOnly` behaviour firing is inert on this
+screen for the same reason that behaviour is: `seat_with_genome` builds from
+`enable_engine_repairs_universe()`, which is the repair halves only, so no
+host-only flag is ever on in a screened seat. Worked example, 2026-08-24:
+`docs/AI_GAPS.md` records a ★★★★★ live defect where the `beyond_loyalty_reach`
+veto refuses 115–213 settle sites a run and idles settlers for 45–112 turns,
+and names the repair — steer recon at the unexplored plots inside the vetoed
+disk. `frontier_loyalty` is `Kind::HostOnly`, so **the veto never fires on the
+board this screen plays**, a gene answering its question would return a
+zero-width interval, and `tools/gene_fires.py --max 0` would refuse it. Check
+the `Kind` of every behaviour your gene *depends on*, not only of the gene you
+are adding; the evidence for that repair has to come from the live seat
+(`civvis_orders --without`) instead.
+
 ⚠ The `production-on` and `live-bridge-row` rows are the finding worth
 carrying out of this: **making a shipped behaviour screenable is not a
 measurement-only change.** The ledger's default rule reads "unmeasured ⇒ off",

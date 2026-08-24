@@ -73,6 +73,12 @@ Answered, and therefore **not** carried forward:
   is to improve fair-play economic planning *before* re-running the gate —
   which is not yet a ranked item because no ranking in this file has priced it
   (2026-08-17, below).
+  ⚠ **That successor's premise is now measured, and it is wrong** (2026-08-24,
+  last section): at matched states the fog-honest planner's economic
+  *decisions* are within 5% of the omniscient controller's, and what it loses
+  is execution — one production order in four is refused by the authoritative
+  board, and two trades in three. The arm is also screenable again for the
+  first time since `ai_eval` was deleted in #2351.
 - **Policy-deck transfer confirmation** (2026-07-30 #4) — resolved against the
   treatment by the full-prefix follow-through below; it survives only as the
   first component of item 1.
@@ -1083,3 +1089,220 @@ This is an infrastructure completion, not a strength claim: no policy file is
 embedded, no default AI loads it, and the incumbent remains scripted. A future
 fresh external screen and mirrored gameplay A/B must earn promotion; the
 rejected historical Q corpora remain closed.
+
+## 2026-08-24 the fog-honest gap is not economic — it is movement and policy churn
+
+★★★★★ **The premise this work started from is refuted by its own first
+measurement.** The section above closes the fog-honest screen by naming its
+successor — *improve fair-play economic planning before re-running the gate* —
+on the reading that a controller collapsing to 15.0% must be one whose
+economics fall apart without omniscience. Nothing had ever checked that. The
+first instrument that does says the economics are close to intact and the
+damage is somewhere else.
+
+`fog_planning` (`experiments/closed/fog_planning.rs`, built with
+`--features closed-experiments`) is two readings, both at the standard screen's
+own shape — six majors, 74x46 continents, nine city-states, Online, 250 turns —
+so they describe the world the ledger measures in.
+
+### The matched-state decision diff
+
+A control game is played with every major on the deployment controller. At
+sampled turns the world **and the acting seat's controller** are cloned twice;
+one clone takes its turn normally, the other takes the same turn with
+`fog_honest` on. Both start from a byte-identical state, so every difference
+between the two action tapes is the information contract and nothing else. The
+source line runs with `set_fog_memory(true)` deliberately: a real fog-honest
+game turns remembered tiles on at its first turn, and a clone that switched
+memory on at turn T would meet `fogged_clone` with an empty memory and read
+every explored-but-unseen plot as unknown ground — measuring a controller
+nobody plays.
+
+24 games, seeds `930000..930023`, **334 matched decision points**:
+
+| | |
+|---|---:|
+| decision points whose tapes differed | **280 (83.8%)** |
+| city foundings lost / gained | 1 / 0 |
+| Settler starts lost / gained | 4 / 2 |
+
+What the fog-honest controller did against what the stock controller did at the
+identical state, over the same 334 states:
+
+| action kind | fog-honest | stock | Δ |
+|---|---:|---:|---:|
+| `move` | 8,788 | 8,929 | −1.6% |
+| `fortify` | 437 | 408 | +7.1% |
+| `slot_policy` | 300 | 233 | **+28.8%** |
+| `produce` | 295 | 310 | −4.8% |
+| `unslot_policy` | 283 | 224 | **+26.3%** |
+| `attack` | 163 | 162 | +0.6% |
+| `improve` | 138 | 139 | −0.7% |
+| `buy` | 69 | 60 | +15.0% |
+
+Where the two tapes **first** part, by the stock side's action kind: `move`
+164, `produce` 43, `buy` 9, `unslot_policy` 6, everything else ≤ 5.
+
+**What this rules out.** It rules out paralysis: the fog-honest planner is not
+failing to act. At matched states its production volume is within 5% of the
+omniscient controller's, its improvement and combat volumes within 1%, and it
+founds and starts almost the same number of cities and Settlers. It rules out
+the tidy story that fog-honesty breaks *expansion* specifically — the expansion
+actions barely move.
+
+**What it rules in.** The divergence is overwhelmingly **movement** — 164 of
+280 first differences, against 43 for production — and the policy deck
+**thrashes**: a quarter more slot and unslot actions for the same number of
+slots, which is a valuation recomputed every turn on a world that keeps
+changing shape underneath it.
+
+⚠ This is a diff of decisions, not a strength measurement, and it does not say
+the movement differences are *worse* — only that they are where the two
+controllers part company. It redirects the fog-honest question from the
+economic planner to the tactical layer and the policy valuation. Whoever takes
+that question next should start there and not, as this task did on the strength
+of a plausible sentence, in `settle_sites_scanning`.
+
+### The replay boundary, which discarded every answer it got
+
+A fog-honest turn is one plan made inside a redacted clone and replayed against
+the real board, where hidden blockers and combat are the legality authority.
+Every one of those replays did `let _ = authoritative.apply(..)`. The one
+number that says whether fair-play planning is *executing* — how much of the
+plan the board accepts — was recorded nowhere, and the superseded ranking below
+asks for exactly it ("measure replay refusals and throughput").
+
+`AdvancedAi::fog_plan_census()` now returns a `FogPlanCensus`: actions planned,
+applied and refused, bucketed by `action_space::kind_name`, plus turns whose
+tape was abandoned because the seat lost the turn cursor. It is telemetry —
+nothing in it feeds a decision, a score, or an action choice — and a stock
+controller's copy stays empty.
+
+Its first reading — `--census`, 12 paired games, seeds `940000..940011`, one
+seat on `AdvancedAi::fog_honest()` against the same seat on `AdvancedAi::new()`
+with the other five majors identical, **2,371 fog-honest turns**:
+
+| | |
+|---|---:|
+| actions planned | 75,483 |
+| applied by the authoritative board | 73,182 (**97.0%**) |
+| refused | 2,301 (3.05% of the plan) |
+| turns carrying at least one refusal | **896 of 2,371 (37.8%)** |
+| abandoned to a lost turn cursor | 0 |
+
+★★★★★ **The refusals are not spread evenly, and where they concentrate is not
+where the fog is.**
+
+| action kind | refused | planned | rate |
+|---|---:|---:|---:|
+| `trade` | 68 | 101 | **67.3%** |
+| `produce` | 619 | 2,490 | **24.9%** |
+| `levy_military` | 7 | 36 | 19.4% |
+| `found_city` | 10 | 70 | 14.3% |
+| `assign_spy` | 5 | 55 | 9.1% |
+| `trade_route` | 5 | 120 | 4.2% |
+| `move` | 1,569 | 56,538 | 2.8% |
+| `attack` | 4 | 1,025 | 0.4% |
+| `spread` | 2 | 729 | 0.3% |
+
+Movement refuses at 2.8% and combat at 0.4% — which is what a hidden blocker
+should look like. **One production order in four is refused, and two trades in
+three.** Production and trade legality is a fact about the seat's *own* empire —
+its cities, treasury, queues and stockpiles — which the redacted planning world
+has no reason to get wrong. Either `Game::fogged_clone` is redacting something
+about the acting seat's own economy that it should not, or the tape's own
+earlier actions change what the later ones cost. Neither is established here;
+the census only proves the size, and the size is large.
+
+⚠ Read the comparison carefully. A stock controller has no replay boundary at
+all — it plans and acts against one world — so its comparable refusal count is
+zero *by construction*, not by merit. This number is the cost the fog boundary
+introduces, not a defect stock also has and hides.
+
+The same twelve pairs, on outcomes, with the paired standard error:
+
+| | fog-honest | stock | Δ |
+|---|---:|---:|---:|
+| score share | 0.127 | 0.160 | **−0.033 ± 0.014** |
+| cities | 5.00 | 6.33 | −1.33 ± 0.75 |
+| techs | 40.1 | 51.3 | −11.25 ± 6.02 |
+| population | 47.3 | 63.7 | −16.3 ± 10.1 |
+| wins | 0.000 | 0.083 | −0.083 ± 0.083 |
+
+So the *whole-game* economic deficit is real and large, while the *matched-state*
+economic decisions are nearly identical. Those two facts together are the
+finding: fog-honesty does not make this controller choose worse economically —
+it makes a quarter of its economic orders fail to land, and the empire that
+results is one city and eleven techs behind by the end. n = 12 pairs; the score
+share Δ is about 2.4 standard errors, the rest are one to two.
+
+### ⚠⚠ The settler-idling lane cannot be screened at all, and that is why it has not moved
+
+The concrete fair-play expansion defect this file already records is the
+`beyond_loyalty_reach` veto: no own city within `FRONTIER_LOYALTY_RADIUS`, and
+any unexplored plot within nine tiles, refuses the site — which on an
+unexplored frontier is permanently true. 115–213 refusals a run, idle-settler
+turns 45–112. Land recon was added (#2080) and refusals did not fall, because
+exploration targeting never aims at the vetoed disks; the recorded next step is
+to steer recon at the unexplored plots inside the veto radius of the best
+refused site.
+
+**No headless screen can price that work.** `frontier_loyalty` is
+`Kind::HostOnly` in `src/ai/advanced/genes.rs`. So it is off in
+`AdvancedAi::new()`, off in `enable_engine_repairs_universe()` — which is
+exactly how `gene_screen::seat_with_genome` builds a seat — and never screened,
+because host-only genes are deliberately excluded from the screened set. The
+veto therefore **never fires on a native board**, a gene that answers its
+question would produce a zero-width interval, and `tools/gene_fires.py --max 0`
+would refuse it as a gene that never fired.
+
+This is not an argument against the repair. It is the reason the repair has sat
+unclaimed: its evidence has to come from the live seat (`civvis_orders
+--without`, the ladder), and the ladder is halted. Anyone who picks the lane up
+from the paragraph above alone will build the gene, run a probe, and discover
+this after the batch. `docs/genome_reach_debt.json` already names the move that
+would fix it — `frontier-loyalty` out of the host-only half into an
+`ENGINE_REPAIR_*` one — and correctly calls it a deployment decision wearing an
+instrument's clothes, not a side effect of adding a row.
+
+### What shipped, and what is deliberately not claimed
+
+Three things, none of them a strength claim:
+
+1. **`fog-honest` is a screenable gene.** Its only recorded screen was 20
+   paired maps on `ai_eval`, and `ai_eval` was deleted in #2351 — so the arm
+   this file most wants re-screened had **no instrument at all**. It now has a
+   row in the one registry and can be priced by the one screen, on the same
+   terms as every other gene. `docs/genome_reach_debt.json` had held it out as
+   an aggregate over `blind-objective-strength` and `blind-objective-units`; it
+   still is one, and its column prices the arm **as constructed**
+   (`AdvancedAi::fog_honest()`) — which is exactly what the 15.0% priced, so
+   the two numbers answer the same question.
+2. **`FogPlanCensus`**, above.
+3. **`fog-honest-2`**, a versioned sibling: when the authoritative board
+   refuses an order, version 1 applies the rest of a tape that assumed the
+   refusal did not happen and then ends the turn on that tape's own `EndTurn`.
+   Version 2 drops the stale remainder and crosses the fog boundary again from
+   the board as it now stands, at most `FOG_REPLAN_LIMIT` times a turn.
+
+### The screen this could not buy
+
+SCREEN_PLACEHOLDER
+
+### What the next agent should do, in order
+
+1. **Find out why one production order in four is refused.** It is the largest
+   single number in this writeup, it is in the economic layer the successor
+   item was pointed at all along, and it is an execution defect rather than a
+   valuation one — the shape this repository's own ledger says pays. Start by
+   diffing `Game::fogged_clone`'s treatment of the *acting seat's own* cities,
+   treasury, stockpiles and queues against the authoritative game; a redaction
+   that touches the seat's own economy is a bug, not a fair-play boundary.
+   `trade` at 67.3% is the same question with a louder answer.
+2. **Take the movement and policy-churn question**, not the settle question:
+   164 of 280 first divergences are `move`, and the policy deck slots and
+   unslots a quarter more often behind the boundary.
+3. **Do not build the recon-steering gene against `beyond_loyalty_reach`
+   without first moving `frontier-loyalty` out of `Kind::HostOnly`**, for the
+   reason two sections up. It cannot fire on the board the screen plays.
+
