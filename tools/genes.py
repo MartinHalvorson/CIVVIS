@@ -2592,13 +2592,10 @@ def render(ledger: dict) -> str:
         if not history:
             unmeasured.append(tag)
             continue
-        score = next(
-            (total_seat_batch_wins(batch["rows"][tag])
-             for batch in reporting_slots
-             if batch is not None and tag in batch["rows"]),
-            total_seat_batch_wins(history[-1]),
-        )
-        rows.append((score, tag, history))
+        # Keep the visual ranking tied to the displayed pooled difference,
+        # rather than to one screen's projected win total.  This is the same
+        # quantity `diff_cell` prints below.
+        rows.append((pooled_win_diff_pp(history), tag, history))
     rows.sort(key=lambda r: (-r[0], r[1]))
 
     removed = sorted(tag for tag in measured if tag not in reg)
@@ -2609,8 +2606,9 @@ def render(ledger: dict) -> str:
     # between the file and its first row. Carried under the table instead, so
     # nothing derived is lost and nothing derived is in the way.
     reference = [
-        "Every screenable heuristic gene on the Advanced controller, ranked most beneficial "
-        "to least by the latest fixed batch. Each batch header carries its actual player-seat "
+        "Every screenable heuristic gene on the Advanced controller, ranked by the displayed "
+        "pooled *Diff* from highest to lowest (alphabetically by tag on a tie). Each batch "
+        "header carries its actual player-seat "
         "count once; cells show the enabled arm's excess projected to 10,000 **total** player "
         "seats, where a six-player chance expectation is 1,667 wins. A dash means that batch "
         "did not screen the gene. The *Total* win-rate columns pool the displayed observations "
@@ -2711,7 +2709,7 @@ def render(ledger: dict) -> str:
         "P(>0) | Share Δpp (z) | cost (compute) | cost (time) |",
         "|---:|---|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|",
     ]
-    for rank, (wins, tag, history) in enumerate(rows, 1):
+    for rank, (_diff, tag, history) in enumerate(rows, 1):
         v = verdict.get(tag, {})
         default = "**on**" if v.get("default_on") else "off"
         # Fixed report batches put `n` in the headers once, while each total
