@@ -231,6 +231,41 @@
   ],
   "reporting_batches": [
     {
+      "path": "docs/gene_screens/2026-08-24-standard-continuous-38160-total-seats.json",
+      "shape": "standard",
+      "seats": 38160,
+      "complete_pairs": 19080,
+      "family_wise_z": 3.52,
+      "profile": {
+        "players": 6,
+        "map": "continents",
+        "width": 74,
+        "height": 46,
+        "city_states": 9,
+        "speed": "online",
+        "turns": 250,
+        "victories": "science,culture,religious,diplomatic,domination,score",
+        "all_seats": true,
+        "randomize_civs": true,
+        "baseline": "best",
+        "design": "independent",
+        "start_seed": 170000000
+      },
+      "games": 6360,
+      "build": {
+        "commit": "e385d263853e0f9e94b738036e44136978fc10f1",
+        "commit_source": "build-tree",
+        "dirty": false,
+        "genes_sha256": "61465a49fba2058b5129792940552509621f6f73cfa60f09e6732141e3708dc3",
+        "binary_sha256": "66d865e28b3ad2d88d0a95ad173755ab7de29b47adc9254ca50e2275152325c0"
+      },
+      "batch": {
+        "target_seats": 40008,
+        "complete_seats": 38160,
+        "partial": true
+      }
+    },
+    {
       "path": "docs/gene_screens/2026-08-23-standard-gene-screen-41628-total-seats.json",
       "shape": "standard",
       "seats": 41628,
@@ -301,28 +336,6 @@
         "partial": false
       },
       "unverified": "The clean batch binary was stamped with unpublished no-op batch claim 5afee5666f08; its source tree was verified locally identical to public parent 6f6836781aa9."
-    },
-    {
-      "path": "docs/gene_screens/2026-08-22-standard-10k-6p-allseats-23622-pairs.json",
-      "shape": "standard",
-      "seats": 47244,
-      "complete_pairs": 23622,
-      "family_wise_z": 3.478,
-      "profile": {
-        "players": 6,
-        "map": "continents",
-        "width": 74,
-        "height": 46,
-        "city_states": 9,
-        "speed": "online",
-        "turns": 250,
-        "victories": "science,culture,religious,diplomatic,domination,score",
-        "all_seats": true,
-        "randomize_civs": true,
-        "baseline": "best",
-        "design": "foldover",
-        "start_seed": 141000000
-      }
     }
   ],
   "counts": {
