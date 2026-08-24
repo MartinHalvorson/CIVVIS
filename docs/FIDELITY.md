@@ -392,14 +392,19 @@ Person points.
 
 Two approximations are deliberate and apply to whole groups:
 
-- **Eureka era windows are not modelled.** Eight Scientists whose action is
-  "N random Eurekas from eras X–Y" are modelled with `tech_boosts: N`, which
-  grants N random un-boosted Eurekas from anywhere in the tree. The count is
-  exact; the window is not. `Game::grant_random_tech_boosts_in_eras` is the
-  primitive that would close it — only `modern_tech_boosts` (5–5) and
-  `modern_atomic_tech_boosts` (5–6) are currently reachable from data.
-- **A specific tech's Eureka becomes a random one.** Euclid's Mathematics,
-  Mendeleev's Chemistry and Turing's Computers are counted, not named.
+- **Eureka era windows are not modelled.** Eight Scientists carry
+  `tech_boosts: N`, which grants N random un-boosted Eurekas from anywhere in
+  the tree; the shipped action is N Eurekas drawn from a named era window
+  (Aryabhata's three are Classical–Medieval, Emilie du Chatelet's three
+  Renaissance–Industrial). The count is exact; the window is not.
+  `Game::grant_random_tech_boosts_in_eras` is the primitive that would close it
+  — only `modern_tech_boosts` (5–5) and `modern_atomic_tech_boosts` (5–6) are
+  reachable from data today, and Alfred Nobel uses the second exactly.
+- **A specific tech's Eureka becomes a random one**, and is counted in the same
+  `tech_boosts` total: Euclid's Mathematics, Mendeleev's Chemistry, Turing's
+  Computers, and all three of Zhang Heng's — whose shipped modifier also grants
+  the technology outright when its Eureka is already earned, which nothing here
+  reproduces.
 
 ### ⚠ Gathering Storm deletes two individuals and then re-adds them
 
