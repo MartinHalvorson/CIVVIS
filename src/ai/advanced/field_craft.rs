@@ -120,10 +120,23 @@
 //! in `genes.rs`, and byte-identical when off. Fires probes under
 //! `docs/gene_screens/fires/`.
 
+use std::cmp::Reverse;
+
 use super::AdvancedAi;
 use crate::game::{Action, Game};
 use crate::think;
 use crate::Pos;
+
+/// One firing tile for the scoot, ordered for `min`: hostile envelopes
+/// covering it, then the longest shot (negated distance), then the weakest
+/// body, then the most friends beside it, then the tile, the body's id and
+/// its tile so a tie is deterministic.
+type FiringTile = (usize, i32, i32, Reverse<usize>, Pos, u32, Pos);
+
+/// One stand for the screen, ordered for `min`: (friend, enemy) reaches that
+/// survive it, hostile envelopes covering it, then the most friends beside
+/// it, the best ground, staying put over moving, then the tile.
+type Stand = (usize, usize, Reverse<usize>, Reverse<i64>, bool, Pos);
 
 /// A unit at or below this many hit points takes the fifty-point pillage
 /// heal. Sixty-five leaves at most fifteen of the fifty unused; above it the
@@ -192,7 +205,8 @@ impl AdvancedAi {
                 return false;
             }
         }
-        path.last().is_some_and(|end| g.units.get(&uid).is_some_and(|unit| unit.pos == *end))
+        path.last()
+            .is_some_and(|end| g.units.get(&uid).is_some_and(|unit| unit.pos == *end))
     }
 
     /// How many of this seat's own military units stand beside `pos` —
@@ -273,7 +287,12 @@ impl AdvancedAi {
         if bodies.is_empty() {
             return None;
         }
-        let covered = |pos: &Pos| envelopes.iter().filter(|(_, reach)| reach.contains(pos)).count();
+        let covered = |pos: &Pos| {
+            envelopes
+                .iter()
+                .filter(|(_, reach)| reach.contains(pos))
+                .count()
+        };
         let here_covered = covered(&here);
         let frames = (g.player_vision_now(pid), g.visibility_viewers(pid));
         // Every firing tile: reachable with movement left to fire, inside
@@ -283,7 +302,7 @@ impl AdvancedAi {
         // the weakest body, then the most friends beside the tile, then the
         // tile itself so a tie is deterministic.
         let reach = g.approach_reach(uid);
-        let mut best: Option<(usize, i32, i32, std::cmp::Reverse<usize>, Pos, u32, Pos)> = None;
+        let mut best: Option<FiringTile> = None;
         for (tile, (remaining, _)) in &reach {
             if *remaining <= 0.0 || !Self::open_to_stand(g, *tile) {
                 continue;
@@ -307,7 +326,7 @@ impl AdvancedAi {
                     tile_covered,
                     -distance,
                     *ehp,
-                    std::cmp::Reverse(Self::friends_beside(g, pid, uid, *tile)),
+                    Reverse(Self::friends_beside(g, pid, uid, *tile)),
                     *tile,
                     *eid,
                     *epos,
@@ -329,15 +348,14 @@ impl AdvancedAi {
                 .then_some(true);
         }
         let fired = fire
-            && g
-                .apply(
-                    pid,
-                    &Action::Ranged {
-                        unit: uid,
-                        target: epos,
-                    },
-                )
-                .is_ok();
+            && g.apply(
+                pid,
+                &Action::Ranged {
+                    unit: uid,
+                    target: epos,
+                },
+            )
+            .is_ok();
         self.force_groups_dirty |= fired;
         if self.journal().wants(crate::reasoning::Level::Detail) {
             let body = g
@@ -362,8 +380,7 @@ impl AdvancedAi {
     /// of an improvement whose plunder is hit points.
     fn pillage_heals_at(g: &Game, pid: usize, pos: Pos) -> bool {
         g.pillageable_at(pid, pos)
-            && g
-                .map
+            && g.map
                 .get(pos)
                 .and_then(|tile| tile.improvement.as_deref())
                 .and_then(|improvement| g.rules.improvements.get(improvement))
@@ -373,7 +390,12 @@ impl AdvancedAi {
     /// The gene: a wounded unit pillages the heal-type improvement under it,
     /// or steps one tile onto one and pillages that, before the recovery
     /// path walks it home.
-    pub(super) fn pillage_to_heal_step(&mut self, g: &mut Game, pid: usize, uid: u32) -> Option<bool> {
+    pub(super) fn pillage_to_heal_step(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+    ) -> Option<bool> {
         if !self.pillage_to_heal || !self.field_craft_unit(g, pid, uid) {
             return None;
         }
@@ -401,7 +423,12 @@ impl AdvancedAi {
         // One step onto a healing tile, with movement left to pillage it, and
         // no deeper inside the enemy's reach than the tile it leaves.
         let envelopes = self.base.enemy_attack_envelopes(g, pid);
-        let covered = |pos: &Pos| envelopes.iter().filter(|(_, reach)| reach.contains(pos)).count();
+        let covered = |pos: &Pos| {
+            envelopes
+                .iter()
+                .filter(|(_, reach)| reach.contains(pos))
+                .count()
+        };
         let here_covered = covered(&here);
         let reach = g.approach_reach(uid);
         let target = reach
@@ -533,7 +560,13 @@ impl AdvancedAi {
         if baseline == 0 {
             return None;
         }
-        let nearest_threat = |pos: Pos| threats.iter().map(|(_, epos)| g.wdist(pos, *epos)).min().unwrap_or(0);
+        let nearest_threat = |pos: Pos| {
+            threats
+                .iter()
+                .map(|(_, epos)| g.wdist(pos, *epos))
+                .min()
+                .unwrap_or(0)
+        };
         // The stands: here, and every reachable tile beside a screened friend.
         let reach = g.approach_reach(uid);
         let beside_a_friend = |pos: Pos| friends.iter().any(|(_, fpos)| g.wdist(pos, *fpos) == 1);
@@ -565,9 +598,13 @@ impl AdvancedAi {
                 .sum()
         };
         let envelopes = self.base.enemy_attack_envelopes(g, pid);
-        let exposure = |pos: &Pos| envelopes.iter().filter(|(_, reach)| reach.contains(pos)).count();
-        let mut best: Option<(usize, usize, std::cmp::Reverse<usize>, std::cmp::Reverse<i64>, bool, Pos)> =
-            None;
+        let exposure = |pos: &Pos| {
+            envelopes
+                .iter()
+                .filter(|(_, reach)| reach.contains(pos))
+                .count()
+        };
+        let mut best: Option<Stand> = None;
         for stand in stands {
             let survived = if stand == here {
                 reaches(g)
@@ -579,8 +616,8 @@ impl AdvancedAi {
             let key = (
                 survived,
                 exposure(&stand),
-                std::cmp::Reverse(Self::friends_beside(g, pid, uid, stand)),
-                std::cmp::Reverse((g.tile_defense_bonus(stand) * 10.0).round() as i64),
+                Reverse(Self::friends_beside(g, pid, uid, stand)),
+                Reverse((g.tile_defense_bonus(stand) * 10.0).round() as i64),
                 stand != here,
                 stand,
             );
@@ -695,7 +732,10 @@ mod tests {
 
     fn opt_in_off_in_both_controllers(tag: &str, read: fn(&AdvancedAi) -> bool) {
         assert!(!read(&AdvancedAi::new()), "{tag} must be off in new()");
-        assert!(!read(&AdvancedAi::legacy()), "{tag} must be off in legacy()");
+        assert!(
+            !read(&AdvancedAi::legacy()),
+            "{tag} must be off in legacy()"
+        );
         let gene = GENES
             .iter()
             .find(|gene| gene.tag == tag)
@@ -840,7 +880,10 @@ mod tests {
         let (beside, behind, screen) = shooters_line(&game, field);
         let archer = game.spawn_test_unit("archer", 0, beside);
         let reach = game.attack_reach(warrior);
-        assert!(reach.binary_search(&beside).is_ok(), "the body reaches the adjacent archer");
+        assert!(
+            reach.binary_search(&beside).is_ok(),
+            "the body reaches the adjacent archer"
+        );
         game.relocate(archer, behind);
         let reach = game.attack_reach(warrior);
         assert!(
@@ -893,7 +936,9 @@ mod tests {
         let walls = game
             .wring(field, 2)
             .into_iter()
-            .filter(|position| game.wdist(*position, behind) > 2 && game.wdist(*position, beside) <= 2)
+            .filter(|position| {
+                game.wdist(*position, behind) > 2 && game.wdist(*position, beside) <= 2
+            })
             .min()
             .expect("a tile in range from beside and out of range from behind");
         assert_eq!(
@@ -911,14 +956,26 @@ mod tests {
         );
         let now = game.units[&archer].pos;
         assert_eq!(now, behind, "the archer stands one step back, at its range");
-        assert_eq!(game.units[&warrior].hp, warrior_hp, "the scan owns the shot");
-        assert!(game.units[&archer].moves_left > 0.0, "with movement left to fire");
+        assert_eq!(
+            game.units[&warrior].hp, warrior_hp,
+            "the scan owns the shot"
+        );
+        assert!(
+            game.units[&archer].moves_left > 0.0,
+            "with movement left to fire"
+        );
         assert!(
             game.attack_reach(warrior).binary_search(&now).is_err(),
             "the body can no longer reach the archer next turn"
         );
-        game.apply(0, &Action::Ranged { unit: archer, target: field })
-            .expect("the body is a legal shot from the new tile");
+        game.apply(
+            0,
+            &Action::Ranged {
+                unit: archer,
+                target: field,
+            },
+        )
+        .expect("the body is a legal shot from the new tile");
         assert!(game.units[&warrior].hp < warrior_hp);
         assert_eq!(game.units[&archer].hp, 100, "a shot pays no counter");
     }
@@ -936,7 +993,8 @@ mod tests {
                 .find(|unit| game.units[unit].kind == "settler")
                 .unwrap();
             game.current = pid;
-            game.apply(pid, &Action::FoundCity { unit: settler }).unwrap();
+            game.apply(pid, &Action::FoundCity { unit: settler })
+                .unwrap();
         }
         for unit in game.units.keys().copied().collect::<Vec<_>>() {
             game.remove_unit(unit);
@@ -982,7 +1040,10 @@ mod tests {
             scooting.shoot_and_scoot_step(&mut game, 0, archer, &[barb], None, true),
             Some(true)
         );
-        assert_eq!(game.units[&archer].pos, behind, "the archer left the raider's side");
+        assert_eq!(
+            game.units[&archer].pos, behind,
+            "the archer left the raider's side"
+        );
         assert!(game.units[&raider].hp < raider_hp, "and shot it");
         assert!(game.attack_reach(raider).binary_search(&behind).is_err());
     }
@@ -1035,7 +1096,10 @@ mod tests {
             .filter(|stand| {
                 let mut world = game.speculative_clone();
                 world.relocate(guard, *stand);
-                world.attack_reach(enemy).binary_search(&archer_pos).is_err()
+                world
+                    .attack_reach(enemy)
+                    .binary_search(&archer_pos)
+                    .is_err()
             })
             .collect();
         assert!(
@@ -1049,9 +1113,15 @@ mod tests {
 
         let mut screening = AdvancedAi::new();
         screening.enable_zoc_screen();
-        assert_eq!(screening.zoc_screen_step(&mut game, 0, guard, &[1]), Some(true));
+        assert_eq!(
+            screening.zoc_screen_step(&mut game, 0, guard, &[1]),
+            Some(true)
+        );
         let stand = game.units[&guard].pos;
-        assert!(screening_stands.contains(&stand), "the guard took a screening stand: {stand:?}");
+        assert!(
+            screening_stands.contains(&stand),
+            "the guard took a screening stand: {stand:?}"
+        );
         assert!(
             game.attack_reach(enemy).binary_search(&archer_pos).is_err(),
             "and the body can no longer reach the archer: it stops in the guard's zone"
@@ -1059,7 +1129,10 @@ mod tests {
         // Standing there is load-bearing, so the next pass holds the stand
         // rather than marching off it.
         fresh(&mut game, guard);
-        assert_eq!(screening.zoc_screen_step(&mut game, 0, guard, &[1]), Some(false));
+        assert_eq!(
+            screening.zoc_screen_step(&mut game, 0, guard, &[1]),
+            Some(false)
+        );
         assert_eq!(game.units[&guard].pos, stand);
     }
 
@@ -1107,7 +1180,10 @@ mod tests {
             .min()
             .expect("the rival capital owns its first ring");
         game.map.tiles.get_mut(&farm).unwrap().improvement = Some(name!("farm"));
-        assert!(game.pillageable_at(0, farm), "an enemy farm at war is pillageable");
+        assert!(
+            game.pillageable_at(0, farm),
+            "an enemy farm at war is pillageable"
+        );
         let warrior = game.spawn_test_unit("warrior", 0, farm);
         game.units.get_mut(&warrior).unwrap().hp = 40;
         fresh(&mut game, warrior);
@@ -1119,8 +1195,14 @@ mod tests {
 
         let mut healing = AdvancedAi::new();
         healing.enable_pillage_to_heal();
-        assert_eq!(healing.pillage_to_heal_step(&mut game, 0, warrior), Some(true));
-        assert_eq!(game.units[&warrior].hp, 90, "the farm heals fifty on the spot");
+        assert_eq!(
+            healing.pillage_to_heal_step(&mut game, 0, warrior),
+            Some(true)
+        );
+        assert_eq!(
+            game.units[&warrior].hp, 90,
+            "the farm heals fifty on the spot"
+        );
         assert!(game.map.tiles[&farm].pillaged);
 
         // A healthy unit leaves the farm to the income genes.
@@ -1161,7 +1243,9 @@ mod tests {
         let beside = game
             .nbrs(farm)
             .into_iter()
-            .filter(|position| game.wdist(*position, rival) == 2 && game.city_at(*position).is_none())
+            .filter(|position| {
+                game.wdist(*position, rival) == 2 && game.city_at(*position).is_none()
+            })
             .min()
             .unwrap();
         let warrior = game.spawn_test_unit("warrior", 0, beside);
@@ -1169,7 +1253,10 @@ mod tests {
         fresh(&mut game, warrior);
         let mut healing = AdvancedAi::new();
         healing.enable_pillage_to_heal();
-        assert_eq!(healing.pillage_to_heal_step(&mut game, 0, warrior), Some(true));
+        assert_eq!(
+            healing.pillage_to_heal_step(&mut game, 0, warrior),
+            Some(true)
+        );
         assert_eq!(game.units[&warrior].pos, farm);
         assert_eq!(game.units[&warrior].hp, 80);
         assert!(game.map.tiles[&farm].pillaged);

@@ -5187,11 +5187,11 @@ mod religious_defence;
 /// and a religious unit steps out of a raider's reach. Two opt-in genes; see
 /// `advanced/missionary_field.rs`.
 mod missionary_field;
+use site_lookahead::{PlotOffer, PlotPurchaseCache};
 /// Field craft: shoot-and-scoot, the zone-of-control screen, pillage-to-heal
 /// and flipping nearby city-states. Four opt-in genes; see
 /// `advanced/field_craft.rs`.
 mod field_craft;
-use site_lookahead::{PlotOffer, PlotPurchaseCache};
 
 /// Six opt-in genes for the victory lanes: the race the empire is actually
 /// in, reaching the deciders that read the expansion posture instead. See
@@ -29592,8 +29592,7 @@ impl AdvancedAi {
             // `advanced/field_craft.rs`.
             if let Some(barb) = g.barb_pid {
                 if !unwanted_settler_adjacent {
-                    if let Some(acted) =
-                        self.shoot_and_scoot_step(g, pid, uid, &[barb], None, true)
+                    if let Some(acted) = self.shoot_and_scoot_step(g, pid, uid, &[barb], None, true)
                     {
                         return acted;
                     }
