@@ -1204,6 +1204,80 @@ mod tests {
         run_phase("admitted_long", &long);
     }
 
+    /// A file either obeys the determinism rule or does not — never half.
+    ///
+    /// [`trig`] exists because IEEE-754 does not pin the transcendentals and
+    /// the platform math libraries disagree by an ULP, so a globe generated a
+    /// different world on wasm32 than on native (#1061,
+    /// `docs/FLOAT_DETERMINISM.md`). The conversion is only worth anything if
+    /// it is complete: one surviving `f64` call puts the platform's rounding
+    /// back into the same pipeline every other call was routed away from.
+    ///
+    /// That is not hypothetical. `tennis_ball_seam_point` was converted and
+    /// `tennis_ball_seam_proximity`, the function directly below it, kept its
+    /// `atan2` — a partial conversion inside one feature, in the default map
+    /// script, which no digest could catch because the digests are computed on
+    /// the same native build that would have to disagree with itself to fail.
+    ///
+    /// So the rule this checks is structural rather than a list: **a file that
+    /// calls `trig::` anywhere must not call a platform transcendental
+    /// anywhere.** Opting in is all-or-nothing. Files that never opt in are
+    /// untouched — `fractal.rs`, the sight-line slerp in `game.rs` and the AI's
+    /// `exp`/`ln` are recorded exclusions in `docs/FLOAT_DETERMINISM.md`, and
+    /// this deliberately leaves them alone; the day one of them is converted it
+    /// inherits the guarantee automatically.
+    #[test]
+    fn a_file_that_uses_trig_uses_nothing_else() {
+        fn walk(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+            for entry in std::fs::read_dir(dir).expect("src/ is readable") {
+                let path = entry.expect("a readable directory entry").path();
+                if path.is_dir() {
+                    walk(&path, out);
+                } else if path.extension().is_some_and(|end| end == "rs") {
+                    out.push(path);
+                }
+            }
+        }
+        // Discovered, never listed: a new module joins this check by existing.
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut files = Vec::new();
+        walk(&root, &mut files);
+        files.sort();
+        assert!(files.len() > 20, "the source walk found almost nothing");
+
+        // Assembled rather than written out: spelling the call patterns
+        // literally would make this very file an offender against itself.
+        let platform: Vec<String> = ["sin", "cos", "asin", "acos", "atan", "atan2"]
+            .iter()
+            .map(|name| format!(".{name}("))
+            .collect();
+        let mut offences = Vec::new();
+        for file in &files {
+            let source = std::fs::read_to_string(file).expect("a readable source file");
+            if !source.contains("trig::") {
+                continue;
+            }
+            for (number, line) in source.lines().enumerate() {
+                // Comments name these functions constantly, including just
+                // above; only real calls count.
+                let code = line.split_once("//").map_or(line, |(before, _)| before);
+                for call in &platform {
+                    if code.contains(call.as_str()) {
+                        let name = file.strip_prefix(&root).unwrap_or(file).display();
+                        offences.push(format!("src/{}:{} {}", name, number + 1, code.trim()));
+                    }
+                }
+            }
+        }
+        assert!(
+            offences.is_empty(),
+            "these files route world geometry through `sphere::trig` and then \
+             call the platform's own transcendentals as well, which puts the \
+             rounding difference `trig` exists to remove back into the same \
+             path: {offences:#?}"
+        );
+    }
+
     #[test]
     fn latitude_runs_from_pole_to_pole_and_edges_are_two_sided() {
         let globe = sphere(8);
