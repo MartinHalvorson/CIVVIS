@@ -4070,47 +4070,6 @@ pub struct AdvancedAi {
     /// Off everywhere by default; opt-in gene `priced-tile-purchase`.
     pub priced_tile_purchase: bool,
 
-    /// Price the science economy on whether it can still REPAY, not on how
-    /// much of the game is left.
-    ///
-    /// ★★★★ EVERY SCIENCE TERM IN THIS CONTROLLER TAPERS TO ZERO, AND ITS
-    /// RIVALS DO NOT. `research_horizon` is `(max_turns - turn) / max_turns`,
-    /// so at turn 150 of 250 a Campus is priced at 0.40 and a missing Library
-    /// at 0.40 of its debt — with a hundred turns of compounding still to
-    /// come — while `(Culture, theater_square)` **850**, `government_plaza`
-    /// `first_copy` **420**, `(Diplomacy, diplomatic_quarter)` **360** and the
-    /// Monument's **+240** are flat constants that never decay at all. The
-    /// empire therefore cares about beakers exactly in the half of the game
-    /// where beakers matter least, and stops caring in the half where a tech
-    /// tier is the difference between Field Cannon and Spearmen.
-    ///
-    /// The shape the repair needs already exists and is already used by this
-    /// building's neighbours: `campus_payback_horizon` holds FULL value while
-    /// more than `RESEARCH_CAMPUS_PAYBACK` of the budget remains and ramps to
-    /// zero only inside that window, so a Campus begun at turn 245 still does
-    /// not outbid a defender. `DISTRICT_BUILDING_CHAIN_DEBT` and
-    /// `CULTURE_THEATER_COVERAGE` are both already scaled by it.
-    ///
-    /// ⚠ The Campus coverage term's own comment has said "**A PAYBACK
-    /// horizon, not a game-fraction one**" since #1095 — but the branch that
-    /// made it true was `campus_every_city`, and #2235 removed that gene with
-    /// the bottom of the ranking, which silently reverted the line under the
-    /// comment to `research_horizon`. `campus-every-city` was culled on a
-    /// **war-regime** screen (`--victories domination,score`, 4p, 299 of 300
-    /// games ending on the score tally at the clock), which is the one regime
-    /// a science treatment cannot be priced in. This gene is the repair
-    /// measured on its own, in the native six-player regime, under its own
-    /// name — not a resurrection of the culled composite, whose other half
-    /// (a Campus in *every* city regardless of coverage) is deliberately left
-    /// out.
-    ///
-    /// With this on, `RESEARCH_CAMPUS_COVERAGE` and `RESEARCH_BUILDING_DEBT`
-    /// use `campus_payback_horizon`. Nothing else moves: the citizen tilt, the
-    /// research-weight floor, the Culture twin and every rival term are
-    /// untouched, so the screen prices one sentence. Off everywhere by
-    /// default; opt-in gene `science-payback-horizon`.
-    pub science_payback_horizon: bool,
-
     /// Price a Campus building at the science it will ACTUALLY earn, so the
     /// research economy scales up as the multipliers arrive instead of down.
     ///
@@ -4185,10 +4144,8 @@ pub struct AdvancedAi {
     /// A six-arm census over the screen's own profile, conditioned to reach
     /// the clock (`advanced/science_funnel_census.rs`), counted the whole
     /// chain at the end of three games an arm. The control held **17 Campuses
-    /// and 14 Research Labs**. `science-payback-horizon`, which holds
-    /// `RESEARCH_CAMPUS_COVERAGE` at full price late instead of tapering it,
-    /// held **19 Campuses and 11 Labs**; all four science genes together held
-    /// **21 Campuses and 9 Labs**. Three points, one gradient — every extra
+    /// and 14 Research Labs**. The observed treatments held more Campuses but
+    /// fewer Labs. Three points, one gradient — every extra
     /// Campus district bought late came out of a Research Lab that then never
     /// got built, and terminal Science ran 567.9, 429.6, 523.0 while the
     /// district count climbed.
@@ -4391,171 +4348,6 @@ pub struct AdvancedAi {
     /// opt-in gene `fifteenth-citizen`.
     pub fifteenth_citizen: bool,
 
-    /// Aim the research goal at a Campus rung the empire can BUILD, not only
-    /// at one it has already built.
-    ///
-    /// ★★★★★ THE CHAIN IS CLOCK-BOUND, AND THE CLOCK IS SERIALIZED. Four
-    /// pricing genes in this bundle returned nothing, so the question became
-    /// whether price is still the binding constraint. It is not. Measured over
-    /// three census seeds with both merged genes on:
-    ///
-    /// ```text
-    /// seed  writing  library     education  university   CHEMISTRY  labs
-    /// 0     t58      stands t95  t88        stands t111  t147          8
-    /// 1     t53      stands t69  t78        stands t85   t134          8
-    /// 2     t30      stands t120 t119       stands t132  t205          0
-    /// ```
-    ///
-    /// Where Chemistry lands by ~t147 the Research Lab is built in every
-    /// Campus that has a University; where it lands at **t205 there are none
-    /// at all**. No valuation term reaches that.
-    ///
-    /// `unreachable_science_building_tech` is the goal that should prevent it,
-    /// and #958's own doc explains why it exists: `advanced_research` is an
-    /// argmax over `available_techs`, so a node one step out is *not present*
-    /// rather than scored low, and a Research Lab behind Chemistry behind a
-    /// Sewer is unreachable however much it is worth. But that goal only aims
-    /// at a rung whose prerequisite buildings **already stand** — so every
-    /// building's construction time is added to every later tech's start.
-    /// Chemistry follows the University STANDING by **36, 49 and 73 turns**
-    /// across those seeds.
-    ///
-    /// With this on, a rung qualifies when its prerequisites stand **or are
-    /// producible now** in an equipped city. That is strictly the same set
-    /// plus the cities that have paid for the tech and are mid-build, so the
-    /// goal starts one construction earlier per rung and nothing else moves.
-    /// A rung whose prerequisites the empire cannot even produce is still
-    /// refused, which is the check that keeps this from becoming a beeline to
-    /// anything expensive.
-    ///
-    /// ⚠⚠⚠ MEASURED AND HARMFUL — the largest negative in this bundle. Twelve
-    /// paired census seeds, conditioned to reach the clock:
-    ///
-    /// ```text
-    /// arm                    cities  campus  univ  lab  techs  Science   score
-    /// control                   135     115    95   65    774   3483.4   10791
-    /// chain-tech-lookahead      118     100    94   54    753   2894.6    9345
-    /// ```
-    ///
-    /// **−17% Research Labs, −16.9% Science, −13.4% score, and seventeen fewer
-    /// cities.** Starting the goal a construction earlier does not add a tech,
-    /// it MOVES the research argmax off whatever the empire needed at that
-    /// turn — and at the turn a Library becomes producible the empire is still
-    /// expanding. The forced goal is bought with the expansion the rest of the
-    /// science economy is built on, which is why the damage shows in CITIES
-    /// first and Labs second.
-    ///
-    /// This is the same lesson `housing_research`'s repair note records from
-    /// the other direction: "a capped city that can already produce a
-    /// housing-raising building is the production lanes' job, not a research
-    /// detour". A research goal is the most expensive instrument in this
-    /// controller, and it should be spent later than feels right, not earlier.
-    ///
-    /// Kept, off, with the number on it. The estimate below was written before
-    /// the games and was right about the SIZE of the shift and wrong about its
-    /// sign; both halves are left standing.
-    ///
-    /// ⚠ Sized honestly BEFORE any games: this is worth about one building's
-    /// construction time per rung — on seed 0, a Chemistry goal starting at
-    /// t95 instead of t111. On a campaign record of eight genes and two
-    /// converting, a modest expected value stated up front beats another null
-    /// discovered afterwards. Off everywhere by default; opt-in gene
-    /// `chain-tech-lookahead`.
-    pub chain_tech_lookahead: bool,
-
-    /// A finished research city runs its own district's project, because a
-    /// beaker compounds through the tree and a coin does not.
-    ///
-    /// ★★★★★ PRICED SECOND AND RUN NEVER. Over **1,113 finished-Campus
-    /// city-turns past turn 150**, across four census games with both merged
-    /// genes on, `campus_research_grants` was queued **zero times** — while
-    /// `operation_ivy` and `manhattan_project` together took **14%** of those
-    /// turns in a `science,culture,domination,score` regime, and Builders took
-    /// another 9.6%.
-    ///
-    /// It is not the cap and it is not the valuation refusing to see it. Asked
-    /// directly in a finished city at turn 200 on 90 Production, the seven
-    /// symmetric district projects price out as:
-    ///
-    /// ```text
-    /// commercial_hub_investment  869.3      campus_research_grants     769.6
-    /// theater_square_festival    702.4      industrial_zone_logistics  677.9
-    /// ```
-    ///
-    /// The Campus project is **second by about a hundred points**, and second
-    /// never runs. The ruleset makes the projects near-identical — cost 25,
-    /// repeatable, 10 Great Person points, 15% of Production as an ongoing
-    /// yield (the Commercial Hub's 30%) — so the order is decided by
-    /// `yield_value`, and at that turn the lane was **Conquest**, where a coin
-    /// is worth 1.4 against a beaker's 1.9. Half a lane away from Science, the
-    /// margin vanishes.
-    ///
-    /// The asymmetry the weights miss is the one this file's own
-    /// `CULTURE_THEATER_COVERAGE` comment already states: science *compounds
-    /// through a tree that unlocks the districts, buildings and units the rest
-    /// of the table prices*. Thirty percent of Production as gold is thirty
-    /// percent of Production as gold; fifteen percent as beakers is the next
-    /// technology sooner, and the technology after that sooner again.
-    ///
-    /// ⚠⚠ MEASURED TWICE, AND THE GATE WAS THE WHOLE STORY. With the first
-    /// gate (`can_produce`, false while the tech is still out) the gene cost
-    /// **15 Research Labs — 40 against the control's 55** — because cities
-    /// took the premium before Chemistry and spent those turns on Grants.
-    /// With the gate repaired to the deepest rung HELD, on fresh seeds the
-    /// chain comes back untouched and the gene is a small positive alone and a
-    /// small negative in company:
-    ///
-    /// ```text
-    /// arm                        campus lib univ lab techs  Science   score
-    /// control                        98  94   87  60   787   3143.9   10796
-    /// research-grants-first          98  95   87  60   787   3177.0   10756
-    /// premium + payoff              100  98   93  69   782   3291.9   10610
-    /// premium + payoff + grants      99  97   90  68   782   3250.9   10619
-    /// ```
-    ///
-    /// **+1.1% Science alone with an identical chain; −1.2% added to the pair
-    /// that works.** That is the gate doing its job — nothing displaced — and
-    /// the premium then buying almost nothing. Unresolved at this size, and
-    /// **not a promotion candidate**: a repeatable project converting 15% of
-    /// Production is simply a small lever next to a Research Lab's eight
-    /// beakers, which is what the pair buys more of.
-    ///
-    /// With this on, a city whose Campus chain is COMPLETE pays
-    /// `RESEARCH_GRANTS_COMPOUNDING_PREMIUM` more for its Campus project.
-    /// Only that project, only in a city with nothing left in the chain to
-    /// build, and only as a fraction of the value the shipped function already
-    /// computed — so a city that should be building something is unaffected
-    /// and no other district's project moves. Off everywhere by default;
-    /// opt-in gene `research-grants-first`.
-    pub research_grants_first: bool,
-
-    /// The citizen half of the taper: an empire that has built the research
-    /// economy should still be WORKING it in the half of the game the tech
-    /// tree decides.
-    ///
-    /// ★★★ THE OTHER TWO SCIENCE TERMS DECAY TOO, AND THEY DECIDE WHO WORKS
-    /// WHAT. `RESEARCH_CITIZEN_TILT` (the standing tilt toward beakers in
-    /// every lane's `lane_emphasis`) and `refresh_research_weight` (the floor
-    /// under a beaker's price, sliding `RESEARCH_FLOOR_EARLY` **3.0** to
-    /// `RESEARCH_FLOOR_LATE` **1.0**) are both multiplied by
-    /// `research_horizon`. So at turn 150 of 250 a beaker is floored at
-    /// **1.8** and the citizen tilt is at 40%, and by turn 220 they are 1.24
-    /// and 12% — in the era where a tech tier is the difference between a
-    /// Field Cannon and a Spearman, and where the Campus buildings the other
-    /// genes fought for are finally standing. The empire builds the
-    /// laboratory and then declines to staff it.
-    ///
-    /// This is a separate claim from `science_payback_horizon` and separately
-    /// screened: that gene moves what the empire BUYS, this one moves what it
-    /// then WORKS and what a beaker is worth to every other price. Either can
-    /// be right without the other.
-    ///
-    /// With this on, both use `campus_payback_horizon` — full value while the
-    /// research still has time to pay, ramping down only inside the payback
-    /// window, so the last few turns still do not bid citizens away from a
-    /// closing game. Off everywhere by default; opt-in gene
-    /// `research-floor-holds`.
-    pub research_floor_holds: bool,
     /// The six victory-lane genes. Each substitutes the victory the empire is
     /// actually racing (`victory_focus`) for the plan's own strategy at ONE
     /// decider, and only while the plan is `Expansion` — a posture that
@@ -5023,12 +4815,6 @@ const RESEARCH_BUILDING_DEBT: f64 = 240.0;
 /// however empty the standing Campuses are. A city with no Campus at all is a
 /// real research hole and the gene is a brake on spreading, not a ban on it.
 const RESEARCH_COVERAGE_UNFINISHED_FLOOR: f64 = 0.25;
-/// What a finished research city pays extra for its own district's project,
-/// as a fraction of the value already computed. The measured gap to the
-/// Commercial Hub's project in a finished city was about 13% (769.6 against
-/// 869.3), so a quarter clears it without making the Campus project
-/// unconditional. See `research_grants_first`.
-const RESEARCH_GRANTS_COMPOUNDING_PREMIUM: f64 = 0.25;
 /// The Campus adjacency `city_yields` gates half of
 /// `campus_building_science_pct` on, matching Gathering Storm's
 /// REQUIREMENT_CITY_HAS_HIGH_ADJACENCY_DISTRICT Amount=4 and pinned to the
@@ -5913,16 +5699,12 @@ impl AdvancedAi {
             theology_for_founders: false,
             district_lookahead_settle: false,
             priced_tile_purchase: false,
-            science_payback_horizon: false,
             science_multiplier_payoff: false,
             research_tier_premium: false,
             campus_finishes_first: false,
             power_the_laboratory: false,
             campus_adjacency_threshold: false,
             fifteenth_citizen: false,
-            chain_tech_lookahead: false,
-            research_grants_first: false,
-            research_floor_holds: false,
             lane_congress_ballot: false,
             lane_congress_favor: false,
             lane_great_people: false,
@@ -7903,8 +7685,7 @@ impl AdvancedAi {
         // marginally better yield mix does not.
         let expanding = self.city_strategy_expansion_first && cities.len() < plan.desired_cities;
         let research_tilt = if self.research_economy {
-            // See `research_floor_holds`: the citizen half of the same taper.
-            RESEARCH_CITIZEN_TILT * self.research_staffing_horizon(g)
+            RESEARCH_CITIZEN_TILT * Self::research_horizon(g)
         } else {
             0.0
         };
@@ -10297,11 +10078,6 @@ impl AdvancedAi {
         spec.yields.science * pct / 100.0 + powered
     }
 
-    /// Which horizon the science economy is priced on. See
-    /// `science_payback_horizon`: `research_horizon` is a fraction of the
-    /// WHOLE GAME and reaches zero at the turn limit; `campus_payback_horizon`
-    /// asks the question the investment actually poses — is there still time
-    /// to repay — and is what the Culture twin and the chain debt already use.
     /// The yields a power plant would switch on in this city. See
     /// `power_the_laboratory`; 0.0 wherever the switch does not flip.
     fn power_switched_on(
@@ -10362,25 +10138,6 @@ impl AdvancedAi {
         };
         ((spec.yields.science + powered) / RESEARCH_CHAIN_FIRST_RUNG_SCIENCE)
             .clamp(1.0, RESEARCH_TIER_PREMIUM_CAP)
-    }
-
-    /// Which horizon the citizens and the beaker floor are priced on. See
-    /// `research_floor_holds`; the twin of `research_payback`, kept separate
-    /// because the two genes are separate claims.
-    fn research_staffing_horizon(&self, g: &Game) -> f64 {
-        if self.research_floor_holds {
-            Self::campus_payback_horizon(g)
-        } else {
-            Self::research_horizon(g)
-        }
-    }
-
-    fn research_payback(&self, g: &Game) -> f64 {
-        if self.science_payback_horizon {
-            Self::campus_payback_horizon(g)
-        } else {
-            Self::research_horizon(g)
-        }
     }
 
     fn campus_payback_horizon(g: &Game) -> f64 {
@@ -10572,9 +10329,7 @@ impl AdvancedAi {
 
     fn refresh_research_weight(&mut self, g: &Game) {
         self.research_weight = if self.research_economy {
-            // See `research_floor_holds`: what a beaker is worth to every
-            // other price, on the same horizon as the citizens who make it.
-            let horizon = self.research_staffing_horizon(g);
+            let horizon = Self::research_horizon(g);
             RESEARCH_FLOOR_LATE + (RESEARCH_FLOOR_EARLY - RESEARCH_FLOOR_LATE) * horizon
         } else {
             0.0
@@ -10841,63 +10596,7 @@ impl AdvancedAi {
                 .into_iter()
                 .map(|(kind, score)| self.host_competition_score_value(g, pid, kind, score, turns))
                 .sum::<f64>();
-        // See `research_grants_first`: a beaker compounds through the tree and
-        // a coin does not, and the shipped weights price them as if it were a
-        // near-run thing. Only the Campus project, only where the chain is
-        // finished, only as a fraction of what is already computed.
-        value * (1.0 + self.research_grants_premium(g, cid, spec))
-    }
-
-    /// The premium a finished research city pays for its own district's
-    /// project, as a fraction. 0.0 everywhere else. See
-    /// `research_grants_first`.
-    fn research_grants_premium(&self, g: &Game, cid: u32, spec: &crate::rules::ProjectSpec) -> f64 {
-        let campus = crate::name!("campus");
-        if !self.research_grants_first
-            || spec.district.map(|d| g.district_family(d)) != Some(campus)
-        {
-            return 0.0;
-        }
-        // ⚠⚠ "FINISHED" MEANS HOLDING THE RUNGS, NOT MERELY BEING UNABLE TO
-        // BUILD ONE TODAY. A first draft asked `can_produce`, which is false
-        // while the TECH is still out — so a city with a Library and a
-        // University but no Chemistry read as finished, took the premium, and
-        // spent the turns before Chemistry on a project whose repeat cost
-        // climbs to 1500%. The census measured exactly that trade: Research
-        // Labs **40 against the control's 55**, technologies 699 against 731,
-        // Science −5.0%. The empire swapped Laboratories for Grants and the
-        // Laboratory is worth more.
-        //
-        // ⚠ AND "EVERY RUNG THE RULESET DEFINES" IS UNREACHABLE. The Campus
-        // family holds `madrasa`, `navigation_school` and `alchemical_society`
-        // as civ-unique replacements for the University; no city can ever hold
-        // them all, and a second draft that asked for it paid the premium
-        // nowhere.
-        //
-        // The rung that matters is the LAST one. `research_lab` requires
-        // `university`, which requires `library`, so a city holding the deepest
-        // Campus building — the one no other Campus building requires — holds
-        // the chain. That is one predicate, it is read off `requires` rather
-        // than off three names, and a unique replacement satisfies it exactly
-        // as its base does.
-        let city = &g.cities[&cid];
-        let campus_family = |spec: &crate::rules::BuildingSpec| {
-            !spec.wonder && spec.district.map(|d| g.district_family(d)) == Some(campus)
-        };
-        let deepest = g.rules.buildings.iter().any(|(name, building)| {
-            if !campus_family(building) || !city.buildings.contains(&Name::new(name)) {
-                return false;
-            }
-            // Nothing in the family is built on top of this one.
-            !g.rules
-                .buildings
-                .values()
-                .any(|other| campus_family(other) && other.requires.iter().any(|need| need == name))
-        });
-        if !deepest {
-            return 0.0;
-        }
-        RESEARCH_GRANTS_COMPOUNDING_PREMIUM
+        value
     }
 
     /// Firaxis's EmergencyScoreSources award one score per Great Person point:
@@ -11158,16 +10857,10 @@ impl AdvancedAi {
             }
             // Every prerequisite building must already stand somewhere the
             // district does, or this is a goal the empire cannot cash in.
-            // See `chain_tech_lookahead`: standing is one construction later
-            // than buildable, and that difference is added to every rung after
-            // this one.
-            let lookahead = self.chain_tech_lookahead;
             let ready = equipped.iter().any(|city| {
-                spec.requires.iter().all(|needed| {
-                    let item = Item::Building { building: *needed };
-                    city.buildings.iter().any(|built| built == needed)
-                        || (lookahead && g.can_produce(pid, city.id, &item))
-                })
+                spec.requires
+                    .iter()
+                    .all(|needed| city.buildings.iter().any(|built| built == needed))
             });
             if !ready {
                 continue;
@@ -21365,7 +21058,7 @@ impl AdvancedAi {
                         // chain are 2, 4 and 3-plus-5, and the debt is flat.
                         RESEARCH_BUILDING_DEBT
                             * self.research_tier_weight(g, city, spec)
-                            * self.research_payback(g)
+                            * Self::research_horizon(g)
                     } else {
                         0.0
                     };
@@ -21835,7 +21528,7 @@ impl AdvancedAi {
                     // city is a reason to build LESS of the expensive half.
                     RESEARCH_CAMPUS_COVERAGE
                         * self.research_chain_completion
-                        * self.research_payback(g)
+                        * Self::research_horizon(g)
                 } else {
                     0.0
                 };

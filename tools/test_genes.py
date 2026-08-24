@@ -1029,21 +1029,22 @@ class GeneratedFiles(unittest.TestCase):
                          gene_ledger.render_rust(with_reporting))
 
         newest = current["reporting_batches"][0]
-        self.assertEqual(newest["seats"], 4_266)
-        self.assertEqual(newest["games"], 711)
+        self.assertEqual(newest["seats"], 5_988)
+        self.assertEqual(newest["games"], 998)
         self.assertEqual(newest["batch"], {
-            "target_seats": 10_002,
-            "complete_seats": 4_266,
+            "target_seats": 20_004,
+            "complete_seats": 5_988,
             "partial": True,
         })
         self.assertEqual(newest["build"]["commit"],
-                         "a5a2352ba7e6acf64abaf47646c88e154d32102d")
+                         "754c5373cfaed0606e564efd079b2123021afba3")
         self.assertFalse(newest["build"]["dirty"])
         self.assertEqual(
             newest["unverified"],
-            "Governor-lane genes were deliberately removed under the 2026-08-24 "
-            "Diff < -0.05 pp / >=30,000-seat cull criterion; these immutable "
-            "historical display batches were compiled before that removal.",
+            "Governor-lane and research-planning genes were deliberately removed "
+            "under the 2026-08-24 Diff < -0.05 pp / >=30,000-seat cull "
+            "criterion; this immutable historical display batch was compiled "
+            "before those removals.",
         )
         self.assertNotIn(newest["path"], {s["path"] for s in current["sources"]})
         authoritative, _ = ranking.load_sources(current)
@@ -1178,9 +1179,9 @@ class VersionedGenes(unittest.TestCase):
 #: assertion and as the name -> index map every cell lookup goes through.
 EXPECTED_COLUMNS = (
     "| Rank | Gene | Description | Best version | Default | "
-    "Wins ± /10k total seats — Last Batch (n=4,266 total seats) | "
-    "Wins ± /10k total seats — Prior Batch (n=21,030 total seats) | "
-    "Wins ± /10k total seats — Third Batch (n=38,160 total seats) | "
+    "Wins ± /10k total seats — Last Batch (n=5,988 total seats) | "
+    "Wins ± /10k total seats — Prior Batch (n=4,266 total seats) | "
+    "Wins ± /10k total seats — Third Batch (n=21,030 total seats) | "
     "Total (on) Win rate | Total (off) Win rate | Diff | "
     "Posterior (95% CI) | P(>0) | Share Δpp (z) | "
     "cost (compute) | cost (time) |"
@@ -1348,9 +1349,9 @@ class TheTableIsDerived(unittest.TestCase):
         batches = ranking.load_reporting_batches(ledger)
         self.assertEqual(len(batches), 3)
         columns = (
-            (0, "Wins ± /10k total seats — Last Batch (n=4,266 total seats)"),
-            (1, "Wins ± /10k total seats — Prior Batch (n=21,030 total seats)"),
-            (2, "Wins ± /10k total seats — Third Batch (n=38,160 total seats)"),
+            (0, "Wins ± /10k total seats — Last Batch (n=5,988 total seats)"),
+            (1, "Wins ± /10k total seats — Prior Batch (n=4,266 total seats)"),
+            (2, "Wins ± /10k total seats — Third Batch (n=21,030 total seats)"),
         )
         for cells in self._ranked_rows():
             tag = cell(cells, "Gene").strip("`")
@@ -1922,6 +1923,27 @@ class TheStandardScreen(unittest.TestCase):
                                                     standard["se"]), "off")
         for phrase in ("-237", "[-267, -206]", "-15.37"):
             self.assertIn(phrase, self.notes, phrase)
+
+    def test_research_cull_keeps_its_historical_rows(self):
+        """The four 38,160-seat research candidates left source, not history."""
+        tags = (
+            "chain-tech-lookahead",
+            "research-floor-holds",
+            "research-grants-first",
+            "science-payback-horizon",
+        )
+        live_tags = {gene["tag"] for gene in self.ledger["genes"]}
+        ranked = ranking.RANKING_MD.read_text()
+        cutoff = json.loads(
+            (gene_ledger.ROOT / "docs" / "gene_screens"
+             / "2026-08-24-standard-continuous-38160-total-seats.json").read_text())
+        cutoff_tags = {gene["tag"] for gene in cutoff["genes"]}
+        for tag in tags:
+            self.assertNotIn(tag, live_tags)
+            self.assertIn(f"| `{tag}` |", ranked)
+            self.assertIn(tag, cutoff_tags)
+        self.assertIn("research-planning genes were deliberately removed",
+                      self.ledger["reporting_batches"][0]["unverified"])
 
     def test_the_legacy_share_axis_already_said_it(self):
         """P10 read this gene win z +2.46 / share z −15.92 — a recorded
