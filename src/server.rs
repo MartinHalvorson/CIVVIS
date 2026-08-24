@@ -16166,15 +16166,18 @@ fetchpriority=\"high\""
         assert!(EMBEDDED_INDEX.contains("function wakeSleepers()"));
     }
 
-    /// The played game wears Civilization VI's own arrangement, so that a
-    /// person who has played that game can drive this one without being told
-    /// where anything is. The geometry below is read off the installed game's
+    /// A world wearing Civilization VI's own arrangement, so that a person who
+    /// has played that game can read this one without being told where
+    /// anything is. The geometry below is read off the installed game's
     /// interface definitions (`Base/Assets/UI`), not remembered:
     /// `TopPanel.xml` for the yield strip, `LaunchBar.xml` for the two ringed
     /// tree hooks that lead the bar, `WorldTracker.xml` for the research and
     /// civic panels under it, `MinimapPanel.xml` (`Anchor="L,B"`) for the
     /// chart, and `ActionPanel.xml` / `NotificationPanel.xml` (`Anchor="R,B"`)
-    /// for the corner End Turn owns and the rail that climbs out of it.
+    /// for the corner the turn control owns and the rail that climbs out of
+    /// it. One class carries all of it — `body.civ6-frame` — and the two ways
+    /// in keep a class each: `playing-solo` for a seat somebody is holding,
+    /// `watching-world` for a simulation being watched.
     #[test]
     fn browser_seats_a_person_in_the_civ_six_arrangement() {
         for piece in [
@@ -16188,6 +16191,8 @@ fetchpriority=\"high\""
             "function drawWorldTracker()",
             "function launchTreeHook(kind)",
             "document.body.classList.toggle(\"playing-solo\", solo);",
+            "document.body.classList.toggle(\"watching-world\", watching);",
+            "document.body.classList.toggle(\"civ6-frame\", frame);",
         ] {
             assert!(
                 EMBEDDED_INDEX.contains(piece),
@@ -16252,23 +16257,23 @@ fetchpriority=\"high\""
         // chart takes the lower left the standings masthead used to make
         // unusable.
         assert!(EMBEDDED_INDEX.contains(
-            "body.playing-solo #actionpanel {\n    position: absolute; z-index: 9; \
+            "body.civ6-frame #actionpanel {\n    position: absolute; z-index: 9; \
              right: var(--panel-edge); bottom: var(--panel-edge);"
         ));
         assert!(EMBEDDED_INDEX.contains(
             "top: auto; right: var(--panel-edge); bottom: var(--solo-corner-clearance);"
         ));
         assert!(EMBEDDED_INDEX.contains("flex-direction: column-reverse;"));
-        assert!(EMBEDDED_INDEX.contains("body.playing-solo .minimap-frame {"));
+        assert!(EMBEDDED_INDEX.contains("body.civ6-frame .minimap-frame {"));
         assert!(EMBEDDED_INDEX.contains("left: var(--panel-edge); right: auto;"));
 
         // A played game does not carry the laboratory's Elo table across its
         // sky; Civ 6 keeps the standings behind a report and so does this.
         assert!(EMBEDDED_INDEX.contains(
-            "body.playing-solo:not(.solo-rankings) #playerhud,\n  \
-             body.playing-solo:not(.solo-rankings) #victoryhud { display: none; }"
+            "body.civ6-frame:not(.rankings-open) #playerhud,\n  \
+             body.civ6-frame:not(.rankings-open) #victoryhud { display: none; }"
         ));
-        assert!(EMBEDDED_INDEX.contains("function toggleSoloRankings(open)"));
+        assert!(EMBEDDED_INDEX.contains("function toggleRankingsReport(open)"));
 
         // The button says what is blocking it in that game's own words —
         // `LOC_ACTION_PANEL_*` from `Base/Assets/Text/en_US/InGameText.xml`.
@@ -16290,7 +16295,7 @@ fetchpriority=\"high\""
         // `--panel-edge` is, or every `calc()` naming both is invalid at
         // computed-value time and the panel silently falls back to `auto`.
         let vars = EMBEDDED_INDEX
-            .find("  body.playing-solo #maparea {")
+            .find("  body.civ6-frame #maparea {")
             .expect("the arrangement's own custom properties");
         let edge = EMBEDDED_INDEX
             .find("--panel-edge: clamp(")
@@ -16304,12 +16309,13 @@ fetchpriority=\"high\""
         // A battlefield has no empire behind it, so the strip keeps the turn
         // and the era and drops the rest, and neither the world tracker nor
         // the two tree hooks are painted at all.
-        assert!(EMBEDDED_INDEX.contains("const empire = worldStandingsInPlay();"));
+        assert!(
+            EMBEDDED_INDEX.contains("const empire = watched !== null && worldStandingsInPlay();")
+        );
         assert!(EMBEDDED_INDEX.contains("const yields = !empire ? \"\" :"));
         assert!(EMBEDDED_INDEX.contains("const meters = !empire ? \"\" :"));
-        assert!(
-            EMBEDDED_INDEX.contains("if (!playingSolo() || !RULES || !worldStandingsInPlay()) {")
-        );
+        assert!(EMBEDDED_INDEX
+            .contains("if (arrangementSeat() === null || !RULES || !worldStandingsInPlay()) {"));
 
         // Civ 6 prints the eureka on every tree node, and the inspiration on
         // the civic panel. Showing the bolt only once the boost has landed
@@ -16395,6 +16401,144 @@ fetchpriority=\"high\""
             "the plot market comes after the production list"
         );
         assert!(build.contains("<details class=\"city-group city-plots\""));
+    }
+
+    /// A watched simulation wears the same arrangement, because the reason a
+    /// spectator met a laboratory is the reason a player did: this client grew
+    /// up around one. Every anchor below is read off the installed game, not
+    /// remembered.
+    ///
+    /// `DiplomacyRibbon.xml` is the piece that makes the standings masthead
+    /// affordable to put away — `<Container ID="RibbonContainer" Size="auto,60"
+    /// Anchor="R,T" Offset="0,27">` over `<Stack ID="LeaderStack" Anchor="R,T"
+    /// StackGrowth="Left">`, one `SIZE_LEADER`=63px cell per civilization,
+    /// and under each the six figures `DiplomacyRibbon.lua`'s
+    /// `UpdateStatValues` writes, in its order: Score, Military, Science,
+    /// Culture, Gold, Faith. `InGame.xml` keeps `WorldRankings` `Hidden="1"`,
+    /// which is why the table itself is a report behind a button here too.
+    #[test]
+    fn browser_seats_a_watcher_in_the_same_civ_six_arrangement() {
+        for piece in [
+            "id=\"diploribbon\"",
+            "function watchingWorld() { return !!state && SPEC; }",
+            "function civ6Frame() { return playingSolo() || watchingWorld(); }",
+            "function arrangementSeat()",
+            "function drawDiploRibbon()",
+            "function arrangeWatchHud()",
+            "const RIBBON_FIGURES = [",
+            "body.watching-world #diploribbon {",
+            "body.watching-world #actionpanel #specbar { display: block; }",
+        ] {
+            assert!(
+                EMBEDDED_INDEX.contains(piece),
+                "the watched arrangement is missing {piece}"
+            );
+        }
+
+        // The corner `ActionPanel.xml` anchors takes the control that decides
+        // whether the world moves. It is a node move, like the played game's,
+        // so every handler bound to pause and restart keeps working.
+        assert!(EMBEDDED_INDEX.contains("panel.appendChild(bar);"));
+        assert!(EMBEDDED_INDEX.contains("else { arrangeWatchHud(); settleWatchRankings(); }"));
+
+        // The ribbon reads `DiplomacyRibbon.lua`'s six figures in its order.
+        let ribbon = EMBEDDED_INDEX
+            .split_once("const RIBBON_FIGURES = [")
+            .expect("the ribbon's figures")
+            .1
+            .split_once("\n];")
+            .expect("the end of the ribbon's figures")
+            .0;
+        let mut previous = 0;
+        for figure in [
+            "key:\"score\"",
+            "key:\"military\"",
+            "key:\"science\"",
+            "key:\"culture\"",
+            "key:\"gold\"",
+            "key:\"faith\"",
+        ] {
+            let at = ribbon
+                .find(figure)
+                .unwrap_or_else(|| panic!("the ribbon is missing {figure}"));
+            assert!(
+                at > previous,
+                "the ribbon must read in DiplomacyRibbon.lua's order; {figure} is out of place"
+            );
+            previous = at;
+        }
+        // `StackGrowth="Left"` from the right edge, under the 29px strip.
+        assert!(EMBEDDED_INDEX.contains("display: flex; flex-direction: row-reverse;"));
+        // Civ 6's ribbon holds the leaders you have met, so a Watch-as view
+        // shows what that civilization knows and no more.
+        assert!(EMBEDDED_INDEX
+            .contains("!p.is_minor && !p.is_barbarian && p.alive !== false && metPlayer(p))"));
+        // Clicking a disc is the standings table's own "Watch as", not a new
+        // action: a spectator has no seat, so the row is also how it takes one.
+        assert!(EMBEDDED_INDEX.contains("data-hud-action=\"watch\" data-hud-civ=\"${p.id}\""));
+        assert!(EMBEDDED_INDEX.contains("class=\"ribbon-leader ribbon-world"));
+
+        // Above the world there is no single empire, so the strip's yields,
+        // the tracker and the two tree hooks all answer to one test rather
+        // than each guessing. `me` there is whichever major is acting.
+        assert!(EMBEDDED_INDEX
+            .contains("return Number.isInteger(state.view_player) ? state.view_player : null;"));
+        assert!(EMBEDDED_INDEX.contains("const watched = arrangementSeat();"));
+        assert!(EMBEDDED_INDEX.contains(
+            "    if (tabs) tabs.innerHTML = arrangementSeat() !== null && worldStandingsInPlay()"
+        ));
+
+        // A `display: none` element gives a `ResizeObserver` nothing to
+        // report, so the ribbon's height is published from the pass that
+        // decides whether it has a box — the same rule `drawUbar` follows.
+        let ribbon_draw = EMBEDDED_INDEX
+            .split_once("function drawDiploRibbon() {")
+            .expect("the ribbon pass")
+            .1
+            .split_once("\n// A window that crosses")
+            .expect("the end of the ribbon pass")
+            .0;
+        assert_eq!(
+            ribbon_draw
+                .matches("publishSoloHeight(ribbon, \"--solo-ribbon-height\");")
+                .count(),
+            2,
+            "the ribbon's height must be published from both branches of the pass \
+             that decides whether it has a box, not from an observer alone"
+        );
+
+        // Custom properties composing `--panel-edge` are declared on
+        // `#maparea`, where that gutter lives. On `body` the `calc()` is
+        // invalid at computed-value time and the offset silently falls back.
+        let vars = EMBEDDED_INDEX
+            .find("  body.civ6-frame #maparea {")
+            .expect("the arrangement's own custom properties");
+        assert!(
+            EMBEDDED_INDEX[vars..].contains("--solo-ribbon-clearance: calc(var(--civtop-height)"),
+            "the ribbon clearance must be composed on #maparea"
+        );
+
+        // The two remembered answers are the watcher's own. Neither may be
+        // written from the other's path, and neither may touch the shared
+        // map-overlay preferences — that separation is the whole reason the
+        // report has a class rather than an overlay flag.
+        assert!(EMBEDDED_INDEX.contains("const WATCH_RANKINGS_KEY = \"civvis-watch-rankings-v1\";"));
+        assert!(EMBEDDED_INDEX.contains("const WATCH_DECK_CHOICE_KEY = \"civvis-watch-deck-v1\";"));
+        assert!(EMBEDDED_INDEX
+            .contains("  return watchingWorld() ? WATCH_DECK_CHOICE_KEY : SOLO_DECK_CHOICE_KEY;"));
+        assert!(EMBEDDED_INDEX.contains("      try { localStorage.setItem(deckChoiceKey(),"));
+        let rankings = EMBEDDED_INDEX
+            .split_once("function toggleRankingsReport(open) {")
+            .expect("the rankings report")
+            .1
+            .split_once("\n}")
+            .expect("the end of the rankings report")
+            .0;
+        assert!(
+            !rankings.contains("civvis-map-overlays-v1") && !rankings.contains("OVERLAY_"),
+            "the rankings report must never write the shared overlay preferences"
+        );
+        assert!(rankings.contains("if (watchingWorld()) {"));
     }
 
     #[test]
