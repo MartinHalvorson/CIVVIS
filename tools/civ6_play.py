@@ -800,6 +800,27 @@ SUBMENU_X = 0.528
 # simply "the menu is not up yet" -- the logos play for minutes after the game
 # core writes its mod scan -- so this is generous.
 BOOTSTRAP_ATTEMPTS = 16
+# How long one attempt keeps looking for a menu that has not drawn yet, and how
+# often. ★ This used to be a flat `time.sleep(20.0)` after ONE failed look, and
+# every game on the ladder paid it: the first attempt of every run fires while
+# the logos still cover the menu ("top menu not readable (0 rows)" against a
+# black window on civvis-20260819T102855Z), slept twenty seconds, then paid the
+# focus/click/settle preamble again. A look is one capture and one recognizer
+# pass, ~1.5 s; looking every three seconds proceeds the moment the menu is up
+# and spends the same budget when it is not.
+SCREEN_POLL_BUDGET_S = 20.0
+SCREEN_POLL_S = 3.0
+
+
+def _poll_screen(read, budget_s: float = SCREEN_POLL_BUDGET_S,
+                 poll_s: float = SCREEN_POLL_S):
+    """Call ``read`` until it returns something other than None or the budget is spent."""
+    deadline = time.monotonic() + budget_s
+    result = read()
+    while result is None and time.monotonic() < deadline:
+        time.sleep(poll_s)
+        result = read()
+    return result
 # How many extra startup budgets the whole bootstrap may spend on a screen that
 # shows no main menu, i.e. a map that is genuinely still generating. Five at the
 # 120 s default is ten minutes of patience for the slowest observed load, shared
@@ -855,6 +876,16 @@ LEADER_PICKER_OFFSET = 0.056
 LEADER_SCROLL_STEPS = 40
 LEADER_SCROLL_RESET = 20
 LEADER_SCROLL_AMOUNT = -2
+# Where the picker found the requested leader last game, kept beside the run
+# directories so every game on a seat shares it. The roster resets to Random
+# Leader on every new game, so the picker is walked every time; walking the
+# wheel to the remembered step without photographing each stop saves one
+# capture and one recognizer pass per step (~1.5 s each; Trajan sat at step 4
+# on civvis-20260819T102855Z). A miss inside the window below resets the
+# wheel and walks the whole roster exactly as before, so a roster that grew
+# costs three looks, not a lost game.
+LEADER_HINT_FILE = "leader-picker-hint.json"
+LEADER_HINT_WINDOW = 3
 
 # Each dropdown's closed box, as a fraction of window height.
 DROPDOWN = {
@@ -1298,6 +1329,56 @@ def _with_covered_headings(rows: dict[str, int]) -> dict[str, int]:
     return filled
 
 
+# ★ ONE RECOGNIZER PASS PER SCREENSHOT. Each setup reader ran the native OCR on
+# the shot it was handed, and `configure_and_start` hands the SAME shot to every
+# row it reads before anything is clicked, so the second and later reads of a
+# shot must cost nothing. A pass is ~0.8 s on this host (measured 2026-08-24,
+# 2880x1864 capture, 107 observations) and the setup screen was paying six of
+# them on rows it had already read. Keyed on the file's identity AND its stamp:
+# `dropdown-speed-closed.png` is reused across attempts, and a fresh capture
+# under the same name must be read afresh.
+_OCR_CACHE: dict[tuple, list[dict]] = {}
+_OCR_CACHE_LIMIT = 64
+
+
+def _shot_key(path: Path, *extra: object) -> tuple | None:
+    try:
+        stat = path.stat()
+    except OSError:
+        return None
+    return (str(path), stat.st_mtime_ns, stat.st_size, *extra)
+
+
+def _ocr_cached(key: tuple | None) -> list[dict] | None:
+    if key is None:
+        return None
+    hit = _OCR_CACHE.get(key)
+    return None if hit is None else [dict(observation) for observation in hit]
+
+
+def _ocr_remember(key: tuple | None, observations: list[dict]) -> None:
+    if key is None:
+        return
+    if len(_OCR_CACHE) >= _OCR_CACHE_LIMIT:
+        _OCR_CACHE.clear()
+    _OCR_CACHE[key] = [dict(observation) for observation in observations]
+
+
+def recognize_once(path: Path) -> list[dict]:
+    """`macos_ocr.recognize`, paid once per distinct capture.
+
+    A missing file is not cached, so its error still surfaces exactly as it
+    did; the copy returned is the caller's to extend.
+    """
+    key = _shot_key(path)
+    hit = _ocr_cached(key)
+    if hit is not None:
+        return hit
+    observations = macos_ocr.recognize(path)
+    _ocr_remember(key, observations)
+    return [dict(observation) for observation in observations]
+
+
 def _setup_current_value(path: Path, bounds: tuple[int, int, int, int],
                          name: str) -> tuple[str, tuple[int, int]] | None:
     """Read a closed setup dropdown's value and exact screen position.
@@ -1337,7 +1418,7 @@ def _setup_current_value(path: Path, bounds: tuple[int, int, int, int],
         _normalized_label(_setup_option_label(option)): option
         for option in OPTIONS[name]
     }
-    observations = macos_ocr.recognize(path)
+    observations = recognize_once(path)
     observations.extend(_menu_crop_ocr(path, bounds))
 
     left, right = SETUP_COLUMN
@@ -1385,7 +1466,8 @@ def _setup_current_value(path: Path, bounds: tuple[int, int, int, int],
 
 
 def set_dropdown(bounds: tuple[int, int, int, int], name: str, value: str,
-                 run_dir: Path | None = None) -> bool:
+                 run_dir: Path | None = None, panel: Path | None = None,
+                 panel_out: dict | None = None) -> bool:
     """Select and read back one visible Create Game dropdown value.
 
     The setup panel reflowed in a live 756x480 window: the rendered Prince box
@@ -1394,16 +1476,40 @@ def set_dropdown(bounds: tuple[int, int, int, int], name: str, value: str,
     coordinate could never recover.  Read the current value, click that exact
     rendered row, then read and click the requested option from the opened list.
     No option position is assumed, and success requires a final OCR readback.
+
+    ``panel`` is a capture of this same closed panel that another row has
+    already read; the first read comes from it instead of a fresh capture, and
+    `recognize_once` makes the second read of a file free, so a row that is
+    already right costs neither a capture nor a recognizer pass. ``panel_out``
+    receives the latest closed-panel capture this call proved on (``"shot"``)
+    for the next row to start from.
+
+    ★ The readback is taken TWICE before a selection is called failed. The
+    list closes with a short animation, and on the ladder the speed row's
+    first readback missed on most games ("selection did not read back
+    (attempt 1)", run civvis-20260819T102855Z) and then succeeded on the
+    retry -- which re-opened the list, re-clicked the option and paid the
+    whole cycle again; on civvis-20260818T083043Z both attempts missed and
+    the game was lost. A second look a second later costs one capture and
+    one pass, and does not click anything.
     """
     if value not in OPTIONS[name]:
         return False
     shots = run_dir if run_dir is not None else Path(tempfile.gettempdir())
-    before = shots / f"dropdown-{name}-closed.png"
     after = shots / f"dropdown-{name}-open.png"
     verified = shots / f"dropdown-{name}-selected.png"
+    again = shots / f"dropdown-{name}-selected-again.png"
+
+    def proved_on(shot: Path) -> None:
+        if panel_out is not None:
+            panel_out["shot"] = shot
 
     for attempt in (1, 2):
-        screenshot(before)
+        if attempt == 1 and panel is not None and panel.is_file():
+            before = panel
+        else:
+            before = shots / f"dropdown-{name}-closed.png"
+            screenshot(before)
         current = _setup_current_value(before, bounds, name)
         if current is None:
             print(f"[setup] {name}: current value was not readable (attempt {attempt})",
@@ -1411,6 +1517,7 @@ def set_dropdown(bounds: tuple[int, int, int, int], name: str, value: str,
             continue
         current_value, current_point = current
         if current_value == value:
+            proved_on(before)
             print(f"[setup] {name}: already verified {_setup_option_label(value)}",
                   flush=True)
             return True
@@ -1429,8 +1536,17 @@ def set_dropdown(bounds: tuple[int, int, int, int], name: str, value: str,
         screenshot(verified)
         selected = _setup_current_value(verified, bounds, name)
         if selected is not None and selected[0] == value:
+            proved_on(verified)
             print(f"[setup] {name}: selected and verified {_setup_option_label(value)}",
                   flush=True)
+            return True
+        time.sleep(1.0)
+        screenshot(again)
+        selected = _setup_current_value(again, bounds, name)
+        if selected is not None and selected[0] == value:
+            proved_on(again)
+            print(f"[setup] {name}: selected and verified {_setup_option_label(value)} "
+                  "on the second look", flush=True)
             return True
         print(f"[setup] {name}: selection did not read back (attempt {attempt})",
               flush=True)
@@ -1504,7 +1620,7 @@ def _setup_current_leader(path: Path, bounds: tuple[int, int, int, int]
 
     screen_w, screen_h = screen
     x, y, w, h = bounds
-    observations = macos_ocr.recognize(path)
+    observations = recognize_once(path)
     observations.extend(_menu_crop_ocr(path, bounds))
     headings: dict[str, int] = {}
     for observation in observations:
@@ -1572,6 +1688,10 @@ def _menu_crop_ocr(path: Path, bounds: tuple[int, int, int, int],
     the default is the band the main-menu columns occupy. ``tag`` keeps each
     caller's debug crop distinguishable on disk.
     """
+    key = _shot_key(path, "crop", bounds, strip)
+    hit = _ocr_cached(key)
+    if hit is not None:
+        return hit
     try:
         from PIL import Image
 
@@ -1612,6 +1732,7 @@ def _menu_crop_ocr(path: Path, bounds: tuple[int, int, int, int],
         except (KeyError, TypeError, ValueError):
             continue
         mapped.append(item)
+    _ocr_remember(key, mapped)
     return mapped
 
 
@@ -1841,9 +1962,47 @@ def advance_leader_intro(bounds: tuple[int, int, int, int],
     return False
 
 
+def read_leader_hint(hint_dir: Path | None, leader: str | None) -> int:
+    """The scroll step the picker found ``leader`` at last game, or 0."""
+    if hint_dir is None or leader is None:
+        return 0
+    try:
+        data = json.loads((hint_dir / LEADER_HINT_FILE).read_text())
+        step = int(data[leader])
+    except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
+        return 0
+    return step if 0 < step < LEADER_SCROLL_STEPS else 0
+
+
+def write_leader_hint(hint_dir: Path | None, leader: str | None, step: int) -> None:
+    if hint_dir is None or leader is None:
+        return
+    path = hint_dir / LEADER_HINT_FILE
+    try:
+        data = json.loads(path.read_text())
+        if not isinstance(data, dict):
+            data = {}
+    except (OSError, ValueError, json.JSONDecodeError):
+        data = {}
+    data[leader] = step
+    try:
+        hint_dir.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")
+    except OSError as error:
+        print(f"[setup] leader: could not remember the picker step: {error}", flush=True)
+
+
 def select_requested_leader(bounds: tuple[int, int, int, int], leader: str | None,
-                            run_dir: Path) -> bool:
-    """Select and visually verify a leader from Firaxis's DLC-dependent list."""
+                            run_dir: Path, panel: Path | None = None,
+                            panel_out: dict | None = None,
+                            hint_dir: Path | None = None) -> bool:
+    """Select and visually verify a leader from Firaxis's DLC-dependent list.
+
+    ``panel`` and ``panel_out`` are `set_dropdown`'s: the first read of the
+    closed picker comes from a capture another row already proved on.
+    ``hint_dir`` holds `LEADER_HINT_FILE`; without one the whole roster is
+    walked from the top, as it always was.
+    """
     if leader is None:
         return True
     label = leader_display_name(leader)
@@ -1852,14 +2011,20 @@ def select_requested_leader(bounds: tuple[int, int, int, int], leader: str | Non
     open_shot = run_dir / "leader-picker-open.png"
 
     for attempt in (1, 2):
-        screenshot(closed_shot)
-        current = _setup_current_leader(closed_shot, bounds)
+        if attempt == 1 and panel is not None and panel.is_file():
+            closed = panel
+        else:
+            closed = closed_shot
+            screenshot(closed)
+        current = _setup_current_leader(closed, bounds)
         if current is None:
             print(f"[setup] leader value was not readable (attempt {attempt})",
                   flush=True)
             continue
         current_label, current_point = current
         if _normalized_label(current_label) == _normalized_label(label):
+            if panel_out is not None:
+                panel_out["shot"] = closed
             print(f"[setup] leader: already verified {label} ({leader})", flush=True)
             return True
         click_at(*current_point)
@@ -1871,37 +2036,67 @@ def select_requested_leader(bounds: tuple[int, int, int, int], leader: str | Non
     else:
         return False
 
-    # Firaxis retains the list's scroll position between openings. Reset to A
-    # first; otherwise a retry can begin at Victoria and never encounter
-    # Jadwiga. Thirteen -30 wheel ticks only reached Harald on this install, so
-    # retain that overlapping step but cover the entire installed roster.
-    macos_input.move(int(x + w * SETUP_X), int(y + h * 0.55))
-    macos_input.scroll(LEADER_SCROLL_RESET)
-    time.sleep(1.0)
-    for scroll_step in range(LEADER_SCROLL_STEPS):
-        shot = run_dir / f"leader-picker-{scroll_step:02d}.png"
-        screenshot(shot)
-        observations = _leader_ocr(shot, bounds)
-        match = _leader_observation(observations, label, bounds)
-        if match is not None:
-            point = _observation_point(match)
-            screen = desktop_size()
-            if point is None or screen is None:
-                return False
-            # Use the stable centre of the picker column and only OCR's row.
-            click_at(int(x + w * SETUP_X), int(point[1] * screen[1]))
-            time.sleep(1.2)
-            selected_shot = run_dir / "leader-selected.png"
-            screenshot(selected_shot)
-            selected = _leader_ocr(selected_shot, bounds, top=0.20, bottom=0.36)
-            if _leader_observation(selected, label, bounds, selected=True) is not None:
-                print(f"[setup] leader: selected and verified {label} ({leader})", flush=True)
-                return True
-            print(f"[setup] leader click did not select {label}", flush=True)
-            return False
+    def reset_wheel() -> None:
+        # Firaxis retains the list's scroll position between openings. Reset
+        # to A first; otherwise a retry can begin at Victoria and never
+        # encounter Jadwiga. Thirteen -30 wheel ticks only reached Harald on
+        # this install, so retain that overlapping step but cover the entire
+        # installed roster.
+        macos_input.move(int(x + w * SETUP_X), int(y + h * 0.55))
+        macos_input.scroll(LEADER_SCROLL_RESET)
+        time.sleep(1.0)
+
+    def step_wheel() -> None:
         macos_input.move(int(x + w * SETUP_X), int(y + h * 0.55))
         macos_input.scroll(LEADER_SCROLL_AMOUNT)
         time.sleep(0.8)
+
+    def scan(first: int, last: int) -> bool | None:
+        """Photograph steps ``first``..``last-1``; None when the leader is not there."""
+        for scroll_step in range(first, last):
+            shot = run_dir / f"leader-picker-{scroll_step:02d}.png"
+            screenshot(shot)
+            observations = _leader_ocr(shot, bounds)
+            match = _leader_observation(observations, label, bounds)
+            if match is not None:
+                point = _observation_point(match)
+                screen = desktop_size()
+                if point is None or screen is None:
+                    return False
+                # Use the stable centre of the picker column and only OCR's row.
+                click_at(int(x + w * SETUP_X), int(point[1] * screen[1]))
+                time.sleep(1.2)
+                selected_shot = run_dir / "leader-selected.png"
+                screenshot(selected_shot)
+                selected = _leader_ocr(selected_shot, bounds, top=0.20, bottom=0.36)
+                if _leader_observation(selected, label, bounds, selected=True) is not None:
+                    write_leader_hint(hint_dir, leader, scroll_step)
+                    if panel_out is not None:
+                        panel_out["shot"] = selected_shot
+                    print(f"[setup] leader: selected and verified {label} ({leader})",
+                          flush=True)
+                    return True
+                print(f"[setup] leader click did not select {label}", flush=True)
+                return False
+            step_wheel()
+        return None
+
+    reset_wheel()
+    hinted = read_leader_hint(hint_dir, leader)
+    if hinted:
+        for _ in range(hinted):
+            step_wheel()
+        print(f"[setup] leader: wheel walked to step {hinted}, where the last game "
+              f"found {label}", flush=True)
+        result = scan(hinted, min(hinted + LEADER_HINT_WINDOW, LEADER_SCROLL_STEPS))
+        if result is not None:
+            return result
+        print(f"[setup] leader: {label} is not at step {hinted} any more; walking the "
+              "whole roster", flush=True)
+        reset_wheel()
+    result = scan(0, LEADER_SCROLL_STEPS)
+    if result is not None:
+        return result
 
     press_escape(1)
     print(f"[setup] requested leader {label} ({leader}) was not in the picker", flush=True)
@@ -1954,7 +2149,7 @@ def _observed_label_points(path: Path, label: str,
                 found.append((px, py))
         return found
 
-    points = collect(macos_ocr.recognize(path))
+    points = collect(recognize_once(path))
     if not points:
         points = collect(_menu_crop_ocr(path, bounds))
     if not points and strip is not None:
@@ -2051,14 +2246,20 @@ def configure_and_start(bounds: tuple[int, int, int, int], args: argparse.Namesp
     toggle -- see `set_dropdown`, which now verifies the list opened and declines to
     click at all rather than click blind.
     """
+    # Each row starts from the capture the previous row proved on, and the OCR
+    # of one capture is paid once, so a row that is already right costs neither
+    # a capture nor a recognizer pass. The first row takes its own capture.
+    panel: dict = {"shot": None}
     for name, value in (("difficulty", args.difficulty),
                         ("map_size", args.map_size),
                         ("speed", args.speed)):
-        if not set_dropdown(bounds, name, value, run_dir):
+        if not set_dropdown(bounds, name, value, run_dir, panel=panel["shot"],
+                            panel_out=panel):
             print(f"[setup] {name} was NOT set; refusing to start an unverified game",
                   flush=True)
             return False
-    if not select_requested_leader(bounds, args.leader, run_dir):
+    if not select_requested_leader(bounds, args.leader, run_dir, panel=panel["shot"],
+                                   panel_out=panel, hint_dir=run_dir.parent):
         print("[setup] requested leader was NOT selected; refusing to start", flush=True)
         return False
     # The map has to be chosen HERE. `MapScript` in the baked config is ignored,
@@ -2179,9 +2380,15 @@ def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
         # the submenu as "Resume"). The fixed fraction stays as the fallback
         # when the read fails, so a vision-less host behaves exactly as before.
         menushot = run_dir / f"menu-attempt{attempt}.png"
-        screenshot(menushot)
-        menu_point = _main_menu_point(menushot, bounds)
-        toprows = vision.menu_rows(menushot, bounds) if vision.available() else []
+
+        def read_top_menu():
+            screenshot(menushot)
+            point = _main_menu_point(menushot, bounds)
+            rows = vision.menu_rows(menushot, bounds) if vision.available() else []
+            return (point, rows) if point is not None or len(rows) >= 4 else None
+
+        top = _poll_screen(read_top_menu)
+        menu_point, toprows = top if top is not None else (None, [])
         sp_y = MENU["single_player"][1]
         pitch = 0.029
         if menu_point is not None:
@@ -2208,8 +2415,8 @@ def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
                 click_at(int(x + w * 0.723), int(y + h * 0.177))
                 blind_strikes = 0
                 time.sleep(3.0)
-            else:
-                time.sleep(20.0)
+            # Otherwise the poll above has already spent this attempt's budget
+            # looking; go straight to the next attempt's focus and click.
             continue
         click_at(*menu_point)
         time.sleep(2.5)
@@ -2218,10 +2425,16 @@ def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
         # "Create Game" lands moves between runs. The crop follows the read
         # menu position for the same reason the aim does.
         submenu = run_dir / f"submenu-attempt{attempt}.png"
-        screenshot(submenu)
-        target = _observed_label_point(submenu, "Create Game", bounds)
-        rows = (vision.submenu_rows(submenu, bounds, near=sp_y, pitch=pitch)
-                if vision.available() else [])
+
+        def read_submenu():
+            screenshot(submenu)
+            found = _observed_label_point(submenu, "Create Game", bounds)
+            seen = (vision.submenu_rows(submenu, bounds, near=sp_y, pitch=pitch)
+                    if vision.available() else [])
+            return (found, seen) if found is not None or len(seen) >= 3 else None
+
+        sub = _poll_screen(read_submenu)
+        target, rows = sub if sub is not None else (None, [])
         if target is None and len(rows) < 3:
             blind_strikes = blind_strikes + 1 if len(toprows) < 4 else 0
             print(f"attempt {attempt}: no submenu ({len(rows)} rows) -- "
@@ -2236,8 +2449,7 @@ def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
                 click_at(int(x + w * 0.723), int(y + h * 0.177))
                 blind_strikes = 0
                 time.sleep(3.0)
-            else:
-                time.sleep(20.0)
+            # The poll above already spent this attempt's budget looking.
             continue
         blind_strikes = 0
         if len(rows) > 6:
