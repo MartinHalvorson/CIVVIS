@@ -501,7 +501,7 @@ both the actuation question ("does it build one at all") and a mechanism
 behind its score share. ⚠ Read it as a census, never as a lever — within one
 arm wonders track score share, and so do cities, and wonders track cities;
 only the on−off contrast says which way the causation runs
-(`docs/eval/2026-08-24-the-wonder-lane-is-already-open-and-widening-it-costs-cities.md`).
+(`docs/eval/2026-08-24-the-wonder-lane-is-already-open-in-both-regimes.md`).
 
 ## Per-civilization effects — `--by-civ <tag>`
 

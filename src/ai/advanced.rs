@@ -2452,15 +2452,25 @@ pub struct AdvancedAi {
     /// confined it to Firaxis on the argument that "CIVVIS-vs-CIVVIS wonders
     /// are the contested race the stock gate was written for".
     ///
-    /// ⚠⚠ WHAT THE SCREEN THEN SAID, AND IT IS NOT WHAT THIS COMMENT FIRST
-    /// CLAIMED. The brief that motivated the gene held that four of six stock
-    /// civilizations structurally never build a wonder. They do:
-    /// `docs/eval/2026-08-24-the-wonder-lane-is-already-open-and-widening-it-costs-cities.md`
-    /// has the census off the deployment genome itself, because `assess` moves
-    /// any empire into the Culture lane on its own progress and `lane_opens`
-    /// opens whenever it does. The gene is kept, off, with its measurement
-    /// recorded — a reachability repair to a lane that turned out already
-    /// reachable, and the arm it was aimed at is the LIVE seat's.
+    /// ⚠⚠ WHAT THE MEASUREMENT THEN SAID, AND IT IS NOT WHAT THIS COMMENT
+    /// FIRST CLAIMED. The brief that motivated the gene held that four of six
+    /// stock civilizations structurally never build a wonder, and that the live
+    /// seat finishes none. Both are false, and
+    /// `docs/eval/2026-08-24-the-wonder-lane-is-already-open-in-both-regimes.md`
+    /// has the numbers: **91.6% of deployment-genome seats finish a wonder,
+    /// 6.54 a seat** (237 seats), and Egypt and China — the two civilizations
+    /// this clause names — average **4.88 a seat against 6.60 for the other
+    /// forty-eight**. The disjunct that opens the lane is the Culture one, and
+    /// `assess` awards that lane on progress, so any empire enters it. On the
+    /// live seat the recorded corpus reads **91% of full-length runs finishing
+    /// at least one wonder, mean 7.05 a run** (64 runs) — the same lane open in
+    /// the same way, not a regime gap.
+    ///
+    /// So this gene is a reachability repair to a lane that was already
+    /// reachable. It is kept, OFF, because the row is where the next standard
+    /// screen will price it for free; its own 462-seat batch reads win Δ
+    /// +0.43 pp (95% CI [−6.8, +7.6]) and share Δ −0.23 pp (z −0.41), which is
+    /// `~` on both axes.
     ///
     /// With this on, a developed city — three cities in the empire, three
     /// buildings in this one, at most one concurrent wonder per six cities —

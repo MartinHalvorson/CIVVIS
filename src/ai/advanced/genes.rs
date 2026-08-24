@@ -973,10 +973,13 @@ pub const GENES: &[Gene] = &[
     // with no flat lane bonus, so it still loses to a Settler or a district
     // worth more per turn.
     // ⚠ MEASURED AND OFF. The premise that four of six civilizations never
-    // build a wonder is false — the Culture plan is dynamic and every empire
-    // enters it — and widening the lane costs cities. The numbers are in
-    // `docs/eval/2026-08-24-the-wonder-lane-is-already-open-and-widening-it-costs-cities.md`;
-    // the row is kept so the reading stays attached to the code it prices.
+    // build a wonder is false — 91.6% of deployment seats finish one, 6.54 a
+    // seat, and the Culture disjunct beside the identity clause is what opens
+    // the lane — and the gene's own 462-seat batch is `~` on both axes. The
+    // numbers, and the live corpus that says the same lane is open there too,
+    // are in
+    // `docs/eval/2026-08-24-the-wonder-lane-is-already-open-in-both-regimes.md`;
+    // the row is kept so the next standard screen prices it for free.
     // Appended at the END so a running screen keeps its positional genome. See
     // `AdvancedAi::wonder_score_tally`.
     Gene { tag: "wonder-score-tally", field: "wonder_score_tally", kind: Kind::OptIn, enable: AdvancedAi::enable_wonder_score_tally, disable: AdvancedAi::disable_wonder_score_tally },
