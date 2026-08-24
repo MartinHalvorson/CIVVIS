@@ -73,6 +73,37 @@ jobs:
       RUSTFLAGS: -C link-arg=-fuse-ld=lld
     steps:
       - uses: actions/checkout@v4
+      - name: Fetch clean source revisions for ledger checks
+        # `tools/genes.py check` reads the exact commit a stamped screen ran.
+        # Keep this large test job shallow, but make its provenance decision
+        # from the ledger's clean, independently verifiable source commits.
+        run: |
+          python3 - <<'PY'
+          import json
+          import re
+          import subprocess
+          from pathlib import Path
+
+          ledger = json.loads(Path("docs/gene_ledger.json").read_text())
+          commits = set()
+          for group in ("sources", "reporting_batches"):
+              for entry in ledger.get(group, []):
+                  if entry.get("unverified"):
+                      continue
+                  commit = (entry.get("build") or {}).get("commit", "")
+                  if not commit:
+                      continue
+                  if not re.fullmatch(r"[0-9a-f]{40}", commit):
+                      raise SystemExit(
+                          f"{entry.get('path', group)} has an invalid build commit: {commit!r}"
+                      )
+                  commits.add(commit)
+          for commit in sorted(commits):
+              subprocess.run(
+                  ["git", "fetch", "--no-tags", "--depth=1", "origin", commit],
+                  check=True,
+              )
+          PY
       - uses: dtolnay/rust-toolchain@stable
       - name: Install lld with a resilient Ubuntu mirror
         run: bash .github/scripts/install-apt-packages.sh lld
