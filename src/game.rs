@@ -16006,7 +16006,7 @@ impl Game {
         hash
     }
 
-    fn promotion_effect(&self, unit: &Unit, effect: &str) -> f64 {
+    pub(crate) fn promotion_effect(&self, unit: &Unit, effect: &str) -> f64 {
         unit.promotions
             .iter()
             .filter_map(|name| {
@@ -22180,7 +22180,7 @@ impl Game {
     /// The line-of-sight test `do_ranged` applies, asked of a unit that may
     /// fire from `from`. This preserves a Ranger's `see_through_woods` rule
     /// while also letting threat readers inspect a legal future firing tile.
-    fn unit_has_line_of_sight_from(&self, uid: u32, from: Pos, to: Pos) -> bool {
+    pub(crate) fn unit_has_line_of_sight_from(&self, uid: u32, from: Pos, to: Pos) -> bool {
         let unit = &self.units[&uid];
         if self.unit_effect(unit, "see_through_woods") > 0.0 && self.wdist(from, to) == 2 {
             let attacker_height = self.see_from_level(from);
@@ -24141,7 +24141,7 @@ impl Game {
         })
     }
 
-    fn exerts_zoc(&self, u: &Unit) -> bool {
+    pub(crate) fn exerts_zoc(&self, u: &Unit) -> bool {
         let spec = &self.rules.units[u.kind];
         // Embarkation does not remove a land unit's ZOC. Its native domain
         // still limits projection to land tiles, which is handled by the
@@ -24152,7 +24152,7 @@ impl Game {
     /// Cavalry, Naval Raiders, the Viking Longship, and air units ignore
     /// incoming ZOC. Civilian/support passengers inherit that ability from
     /// an escort, matching linked-formation behavior in Civ VI.
-    fn unit_ignores_zoc(&self, uid: u32) -> bool {
+    pub(crate) fn unit_ignores_zoc(&self, uid: u32) -> bool {
         let Some(unit) = self.units.get(&uid) else {
             return false;
         };
