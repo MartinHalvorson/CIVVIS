@@ -200,6 +200,18 @@ local function resolveActions()
 		"UNITOPERATION_EVANGELIZE_BELIEF",
 		-- These entries have no InterfaceMode in Firaxis' UnitOperations table,
 		-- so UnitPanel requests each directly with no parameters, like spreading.
+		--
+		-- Read off the installed game, not recalled. In
+		-- `Base/Assets/Gameplay/Data/UnitOperations.xml`:
+		--   :24 / :83   UNITOPERATION_LAUNCH_INQUISITION
+		--   :36 / :95   UNITOPERATION_REMOVE_HERESY
+		--   :62 / :121  UNITOPERATION_RELIGIOUS_HEAL
+		--   :12 / :71   UNITOPERATION_CONVERT_BARBARIANS
+		-- none of which carries an `InterfaceMode` attribute; the shipped
+		-- `Base/Assets/UI/Panels/UnitPanel.lua:2518-2535` then takes its
+		-- "No mode needed, just do the operation" branch and calls
+		-- `UnitManager.RequestOperation(pSelectedUnit, actionHash)` with no
+		-- parameter table at all. That is why `{}` below is the whole request.
 		"UNITOPERATION_LAUNCH_INQUISITION", "UNITOPERATION_REMOVE_HERESY",
 		"UNITOPERATION_RELIGIOUS_HEAL", "UNITOPERATION_CONVERT_BARBARIANS",
 		-- ★★★ ESPIONAGE, WHICH THE ENGINE MODELS IN FULL AND THE BRIDGE COULD
@@ -224,6 +236,15 @@ local function resolveActions()
 		"UNITCOMMAND_UPGRADE", "UNITCOMMAND_DELETE",
 		"UNITCOMMAND_ACTIVATE_GREAT_PERSON", "UNITCOMMAND_ENTER_FORMATION",
 		"UNITCOMMAND_EXIT_FORMATION",
+		-- ★★★ CORPS AND ARMY, THE OTHER CONSOLIDATION AND THE ONLY ONE NEVER
+		-- WIRED. `ENTER_FORMATION` above links an ESCORT (a support unit riding
+		-- with a combat unit); merging two identical units into one stronger one
+		-- is a different pair of commands entirely, and CIVVIS decided it 10,015
+		-- times across the live archive without a verb to send. Read off the
+		-- installed game at `Base/Assets/Gameplay/Data/UnitCommands.xml`:
+		--   :20 / :44  UNITCOMMAND_FORM_CORPS (PrereqCivic CIVIC_NATIONALISM)
+		--   :21 / :45  UNITCOMMAND_FORM_ARMY  (PrereqCivic CIVIC_MOBILIZATION)
+		"UNITCOMMAND_FORM_CORPS", "UNITCOMMAND_FORM_ARMY",
 		-- ★★★ THE ONLY WAY A SOLDIER TOUCHES A MISSIONARY. Religious units are
 		-- excluded from ordinary combat by design -- they cannot be attacked,
 		-- captured, or run over -- so an enemy Apostle standing in our land was
@@ -723,6 +744,111 @@ local function unitClass(name)
 	if row == nil then return nil; end
 	return try(function() return row.PromotionClass; end);
 end
+
+-- ★★★ THE MILITARY FORMATION TIER, WITHOUT WHICH ARMY IS UNREACHABLE LIVE.
+--
+-- #2373 wired `Action::CombineUnits` to Firaxis' TWO merge commands --
+-- `UNITCOMMAND_FORM_CORPS` and `UNITCOMMAND_FORM_ARMY` -- and `civvis_orders`
+-- picks which one to send from the MIRROR's `Unit::formation`. But the live seat
+-- runs `--fresh-board`: the mirror is rebuilt from this export every turn, this
+-- export carried no tier at all, so every unit read back as STANDARD and the
+-- seat could only ever ask for FORM_CORPS. The Army half of the whole
+-- unit-consolidation layer was unreachable live for exactly that reason.
+--
+-- ⚠ NOT `GetFormationUnitCount`, which this file also exports as
+-- `formation_count`. That is Firaxis' ESCORT stack size -- a Settler riding with
+-- a Warrior reports 2 -- and it is what `LinkUnits` reconstructs. A Corps is ONE
+-- unit and reports a count of 1. Two different mechanisms, both exported.
+--
+-- Read off the installed game, not recalled. The accessor is
+-- `Unit:GetMilitaryFormation()`, which the shipped UI calls at
+-- `Base/Assets/UI/WorldTracker.lua:507`,
+-- `Base/Assets/UI/Panels/UnitPanel.lua:2259` and `:4018`, and
+-- `Base/Assets/UI/Screens/ReportScreen.lua:314`. It is a real binding on this
+-- build, not just a Windows one: the name is present in
+-- `Civ6.app/Contents/MacOS/GameCore_Base.dll`, and the Win64 map for the same
+-- build names its Lua binding at
+-- `Assets/DLC/Expansion2/Binaries/Win64/GameCore_XP2_FinalRelease.map:50977`
+-- (`?lGetMilitaryFormation@IUnit@Lua@GameCore@@`).
+--
+-- ⚠⚠⚠ THE ENUM IS REGISTERED TWICE, UNDER ONE NAME, WITH DIFFERENT MEMBERS.
+-- Civilization VI builds two Lua virtual machines and each contributes globals
+-- to this script. Both register a table called `MilitaryFormationTypes`, and the
+-- member names DO NOT MATCH. Read straight off the installed binaries, as
+-- `strings -a -t d` byte offsets:
+--
+--   Civ6.app/Contents/MacOS/GameCore_Base.dll   (gameplay bindings: Unit,
+--   Players, UnitManager, DefenseTypes, UnitCommandTypes -- the 75 gameplay
+--   enum reads in this file)
+--     12606080  MilitaryFormationTypes
+--     12606103  STANDARD_FORMATION
+--     12606122  CORPS_FORMATION
+--     12606138  ARMY_FORMATION
+--
+--   Civ6.app/Contents/MacOS/Civ6_Exe_Child     (the UI framework: ContextPtr,
+--   LuaEvents, UIManager -- this script is an `AddUserInterfaces` context)
+--     26900226  MilitaryFormationTypes
+--     26900271  STANDARD_MILITARY_FORMATION
+--     26900299  CORPS_MILITARY_FORMATION
+--     26900324  ARMY_MILITARY_FORMATION
+--
+-- Neither binary contains the other's spelling, and Firaxis' own shipped UI uses
+-- BOTH: `WorldTracker.lua:512-520`, `ReportScreen.lua:317-321`,
+-- `UnitPanel.lua:4022-4030` and `CitySupport.lua:248-259` compare against the
+-- SHORT names, while `CitySupport.lua:87-89`, `ToolTipHelper.lua:585-593` and
+-- `ProductionPanel.lua:314-456` write the LONG ones. At least one of those two
+-- families is comparing against `nil` in any given context and is dead code.
+--
+-- ⚠ So this asks for BOTH and does not bet on either. Picking one and being
+-- wrong would classify every Corps as "not one of the three" forever, silently
+-- -- the same nil-literal failure family as the guessed operation name #2373
+-- avoided, and unresolvable from here because the ladder is halted and no live
+-- game can be asked which VM wins.
+--
+-- ⚠ THE FAILURE MUST NOT READ AS STANDARD. `try(..., 0)` would hand back
+-- "standard" on a build where the accessor is missing or renamed -- which is
+-- exactly the sentinel trap `GetDefenseStrength` fell into for the whole
+-- project's life (see `cityDefence`), where the fallback was indistinguishable
+-- from an answer. Here it would be worse, because 0 is a LEGAL tier: the board
+-- would assert that every unit is a plain unit and keep asking for a Corps with
+-- nothing anywhere to show it was guessing. An unreadable tier is exported as
+-- -1, and the mirror leaves the board's own value alone. That is the same
+-- three-valued convention `envoys_free` uses: a real reading, or an explicit
+-- "asked, could not answer".
+--
+-- ⚠ HUNG OFF A GLOBAL, NOT DECLARED AS A FILE-SCOPE `local`. The main chunk is
+-- one Lua function and it sits within single digits of Lua's 200-local ceiling;
+-- crossing it is a parse error, and a mod script that fails to parse writes
+-- NOTHING to any log -- the run looks exactly like one where CIVVIS never
+-- decided anything. `test_main_chunk_locals_stay_under_the_limit` refuses the
+-- next file-scope local, and this is the shape it asks for. It doubles as the
+-- offline test's entry point; ⚠ a bare global, never `_G.`, which the UI sandbox
+-- does not expose.
+CivvisMilitaryFormation = function(unit)
+	return try(function()
+		local tier = unit:GetMilitaryFormation();
+		if tier == nil or MilitaryFormationTypes == nil then return -1; end
+		local tiers = MilitaryFormationTypes;
+		-- ⚠ Both spellings, most-specific tier first. A missing member is nil and
+		-- `tier` is a number, so an absent spelling simply never matches.
+		if tier == tiers.ARMY_FORMATION
+				or tier == tiers.ARMY_MILITARY_FORMATION then
+			return 2;
+		end
+		if tier == tiers.CORPS_FORMATION
+				or tier == tiers.CORPS_MILITARY_FORMATION then
+			return 1;
+		end
+		if tier == tiers.STANDARD_FORMATION
+				or tier == tiers.STANDARD_MILITARY_FORMATION then
+			return 0;
+		end
+		-- A tier this build names and CIVVIS does not model, or a table with
+		-- neither spelling. Unknown, not standard: a value we cannot place must
+		-- never become a claim.
+		return -1;
+	end, -1);
+end;
 
 -- Facts that decide what a unit may do next. Reconstructing every live unit from
 -- its type defaults reset Apostles to full charges with no promotion and military
@@ -6230,6 +6356,16 @@ local function exportState(player, pid, turn, frame)
 				return (unit:GetFortifyTurns() or 0) > 0;
 			end, false),
 			fortify_turns = try(function() return unit:GetFortifyTurns(); end, 0),
+			-- ★★★ CORPS AND ARMY. 0 standard, 1 Corps/Fleet, 2 Army/Armada, and
+			-- -1 for "asked, could not answer" -- see `CivvisMilitaryFormation` for the
+			-- accessor's citations, for which spelling of the enum actually
+			-- exists on this build, and for why the sentinel is -1 rather than 0.
+			--
+			-- ⚠ This and `formation_count` below are DIFFERENT MECHANISMS with
+			-- confusingly similar names. This one is the merge tier that
+			-- `FORM_CORPS`/`FORM_ARMY` raise; the count below is the escort stack
+			-- that `ENTER_FORMATION` builds. A Corps reports a count of 1.
+			formation = CivvisMilitaryFormation(unit),
 			-- The count is the public formation state used by the stock Unit Panel.
 			-- Without it, a successfully escorted Settler is reconstructed as two
 			-- loose units and CIVVIS asks to link them again on every turn.
@@ -8851,7 +8987,20 @@ end;
 -- empire lost EIGHT Settlers, two Builders, two Warriors, a Slinger, a Scout
 -- and an Archer to raiders it could not hit back.
 --
+-- ★★★ AND IT IS ALSO THE ONLY ROUTE TO THEOLOGICAL COMBAT. There is no
+-- `UNITOPERATION_THEOLOGICAL_ATTACK` on this build and no `UNITCOMMAND_` for
+-- one: `Base/Assets/Gameplay/Data/UnitOperations.xml` lists 57 operations and
+-- none of them is a religious strike. The shipped Civilopedia says why, at
+-- `Base/Assets/Text/en_US/Civilopedia_Concepts_Text.xml:636` — "Theological
+-- combat works just like combat with military units, just attack one Religious
+-- unit with another." An Apostle or Inquisitor therefore attacks through this
+-- same branch, and `Action::TheologicalAttack` translates to the ordinary
+-- `ATTACK` verb for exactly that reason. Religious units have no ranged
+-- combat, so `RequestMoveOperation`'s `GetRangedCombat() > GetCombat()` test
+-- below is false for them and they take the melee path unchanged.
+--
 -- The reason is one parameter. Firaxis's own `Civ6Common.lua:RequestMoveOperation`
+-- (`Base/Assets/UI/Civ6Common.lua:137-169`, the melee branch at :152-163)
 -- — the shipped path behind every melee attack a human ever makes — sets
 --
 --   tParameters[UnitOperationTypes.PARAM_MODIFIERS] =
@@ -10706,8 +10855,21 @@ local function applyOrder(player, pid, row, turn)
 			-- military command parameter for civilian units. Civilization VI rejects
 			-- Settlers and Builders carrying it even when the city and treasury are
 			-- otherwise valid. Corps and Armies are the only explicit formations.
+			--
+			-- ⚠ BOTH ENUM SPELLINGS, because the same table name is registered by
+			-- two binaries with different members and this script sees globals
+			-- from both -- see `CivvisMilitaryFormation` for the byte offsets.
+			-- These three reads asked only for the LONG spelling, which is the
+			-- one `Civ6_Exe_Child` registers; if the gameplay VM's table wins
+			-- here instead, every one of them is `nil`, the parameter is simply
+			-- never set (assigning nil to a Lua table key is not an assignment),
+			-- and CIVVIS could never buy a Corps or an Army with no error
+			-- anywhere. `or` is free when the first spelling resolves -- the
+			-- values are 0/1/2 and 0 is TRUTHY in Lua, so a real STANDARD is
+			-- never mistaken for a missing member.
 			local formation = tonumber(x) or 0;
-			formationForCost = MilitaryFormationTypes.STANDARD_MILITARY_FORMATION;
+			formationForCost = MilitaryFormationTypes.STANDARD_MILITARY_FORMATION
+				or MilitaryFormationTypes.STANDARD_FORMATION;
 			local unitRow = try(function() return GameInfo.Units[resolved]; end);
 			local militaryFormation = unitRow ~= nil
 				and ((unitRow.Combat or 0) > 0
@@ -10719,10 +10881,12 @@ local function applyOrder(player, pid, row, turn)
 				-- civilian and support units deliberately take the parameter-free path.
 				params[CityCommandTypes.PARAM_MILITARY_FORMATION_TYPE] = formationForCost;
 			elseif formation == 1 then
-				formationForCost = MilitaryFormationTypes.CORPS_MILITARY_FORMATION;
+				formationForCost = MilitaryFormationTypes.CORPS_MILITARY_FORMATION
+					or MilitaryFormationTypes.CORPS_FORMATION;
 				params[CityCommandTypes.PARAM_MILITARY_FORMATION_TYPE] = formationForCost;
 			elseif formation == 2 then
-				formationForCost = MilitaryFormationTypes.ARMY_MILITARY_FORMATION;
+				formationForCost = MilitaryFormationTypes.ARMY_MILITARY_FORMATION
+					or MilitaryFormationTypes.ARMY_FORMATION;
 				params[CityCommandTypes.PARAM_MILITARY_FORMATION_TYPE] = formationForCost;
 			end
 		elseif row2.Kind == "KIND_BUILDING" then
@@ -10940,6 +11104,56 @@ local function applyOrder(player, pid, row, turn)
 		end
 		if verb == "EXIT_FORMATION" then
 			return commandUnit(unit, CMD["UNITCOMMAND_EXIT_FORMATION"]), verb;
+		end
+		-- ★★★ FORM A CORPS OR AN ARMY. Two commands, not one, and the tier is
+		-- the caller's choice: `civvis_orders::translate` picks it from
+		-- `Game::can_combine_units`'s own rule and names it in the verb, so this
+		-- side never guesses which merge was decided.
+		--
+		-- Request shape read off the installed game, not recalled. The shipped
+		-- `Base/Assets/UI/WorldInput.lua` builds both from the OTHER unit's
+		-- owner and id -- `FormCorps` at 2879-2882, `FormArmy` at 2949-2952:
+		--
+		--   tParameters[UnitCommandTypes.PARAM_UNIT_PLAYER] = pUnit:GetOwner();
+		--   tParameters[UnitCommandTypes.PARAM_UNIT_ID]     = pUnit:GetID();
+		--   if (UnitManager.CanStartCommand(pSelectedUnit,
+		--         UnitCommandTypes.FORM_CORPS, tParameters)) then
+		--     UnitManager.RequestCommand(pSelectedUnit,
+		--         UnitCommandTypes.FORM_CORPS, tParameters);
+		--
+		-- which is the identical non-positional owner/id pair ENTER_FORMATION
+		-- already carries in `x`/`y`, so the order shape needs nothing new.
+		--
+		-- ⚠ Both rows DO carry an `InterfaceMode` (INTERFACEMODE_FORM_CORPS /
+		-- _FORM_ARMY, UnitCommands.xml:44-45), unlike CONDEMN_HERETIC. That mode
+		-- exists only so a human can CLICK the partner: the handler above is
+		-- what the mode's click lands in, and it requests the command outright
+		-- once it holds the pair. CIVVIS has already chosen the partner, so
+		-- entering the mode would be asking the UI a question we answered.
+		--
+		-- A refusal is named per tier. `cannot_form_army` against a unit CIVVIS
+		-- believes is already a Corps is precisely the signal that the mirror's
+		-- formation tier and the host's have diverged -- the export carries no
+		-- military formation today, so that divergence has to be observable.
+		if verb == "FORM_CORPS" or verb == "FORM_ARMY" then
+			-- `x`/`y` carry the partner's owner and id, as for ENTER_FORMATION.
+			if x == nil or y == nil then return false, "no_formation_target"; end
+			if liveUnit(x, y) == nil then return false, "formation_target_gone"; end
+			local hash = CMD["UNITCOMMAND_" .. verb];
+			if hash == nil then return false, "unknown_cmd_" .. verb; end
+			local params = {};
+			params[UnitCommandTypes.PARAM_UNIT_PLAYER] = x;
+			params[UnitCommandTypes.PARAM_UNIT_ID] = y;
+			local okCan, can = pcall(function()
+				return UnitManager.CanStartCommand(unit, hash, params);
+			end);
+			if not (okCan and can == true) then
+				return false, "cannot_" .. string.lower(verb);
+			end
+			local ok = pcall(function()
+				UnitManager.RequestCommand(unit, hash, params);
+			end);
+			return ok, ok and verb or "throw";
 		end
 		-- FOUND_CITY, MOVE_TO and RANGE_ATTACK are the three that decide a game.
 		-- ⚠ There is NO attack operation on this build — the resolved list is only
@@ -11690,9 +11904,24 @@ local function applyOrder(player, pid, row, turn)
 		end
 		-- Anything else is a named operation from the resolved table: FORTIFY,
 		-- ALERT, SKIP_TURN, HEAL, AUTOMATE_EXPLORE, BUILD_IMPROVEMENT,
-		-- SPREAD_RELIGION.
+		-- SPREAD_RELIGION, REMOVE_HERESY, RELIGIOUS_HEAL, LAUNCH_INQUISITION,
+		-- CONVERT_BARBARIANS, PILLAGE. All parameterless -- see the citation on
+		-- the `resolveActions` list for why `{}` is the whole request.
 		local hash = OP["UNITOPERATION_" .. verb];
 		if hash == nil then return false, "unknown_op_" .. verb; end
+		-- ⚠ NAME THE REFUSAL, NOT THE VERB. This tail returned `verb` for BOTH
+		-- outcomes, so a REMOVE_HERESY the engine declined and a REMOVE_HERESY
+		-- it accepted reached the queue's `refusals` table under the same key --
+		-- the anonymous-count trap this file names everywhere else, one level
+		-- in. The ledger reads only `why` when `ok` is false, so the two are
+		-- worth telling apart: `cannot_REMOVE_HERESY` is the host declining
+		-- outright (wrong tile, no rival religion present, charges spent), and
+		-- it is a completely different repair from the request raising.
+		--
+		-- `operate` asks `canOperate` again on the line below; that is a cheap
+		-- repeat and deliberately not inlined, so the parameterless request
+		-- stays the single shape every other operation on this tail uses.
+		if not canOperate(unit, hash, {}) then return false, "cannot_" .. verb; end
 		return operate(unit, hash, {}), verb;
 	end
 

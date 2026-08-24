@@ -231,6 +231,42 @@
   ],
   "reporting_batches": [
     {
+      "path": "docs/gene_screens/2026-08-23-standard-gene-screen-41628-total-seats.json",
+      "shape": "standard",
+      "seats": 41628,
+      "complete_pairs": 20814,
+      "family_wise_z": 3.513,
+      "profile": {
+        "players": 6,
+        "map": "continents",
+        "width": 74,
+        "height": 46,
+        "city_states": 9,
+        "speed": "online",
+        "turns": 250,
+        "victories": "science,culture,religious,diplomatic,domination,score",
+        "all_seats": true,
+        "randomize_civs": true,
+        "baseline": "best",
+        "design": "independent",
+        "start_seed": 169000000
+      },
+      "games": 6938,
+      "build": {
+        "commit": "0c7fcb043085fbf91c6c7043e2ccd0cbee3b36af",
+        "commit_source": "build-tree",
+        "dirty": false,
+        "genes_sha256": "ee67b3b391478697d9a73fbab8748136f7eab89d5342d128407e4638ef6d04b7",
+        "binary_sha256": "39b24c39ec3c267757764eb433755232a63c7dad92075c28730d5fae342ab18f"
+      },
+      "batch": {
+        "target_seats": 50004,
+        "complete_seats": 41628,
+        "partial": true
+      },
+      "unverified": "The clean batch binary was stamped with unpublished no-op batch claim 0c7fcb043085; its source tree was verified locally identical to public parent a31b9cff8ae3."
+    },
+    {
       "path": "docs/gene_screens/2026-08-23-standard-gene-screen-10000-total-seats.json",
       "shape": "standard",
       "seats": 10002,
@@ -286,28 +322,6 @@
         "baseline": "best",
         "design": "foldover",
         "start_seed": 141000000
-      }
-    },
-    {
-      "path": "docs/gene_screens/2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
-      "shape": "legacy",
-      "seats": 35148,
-      "complete_pairs": 17574,
-      "family_wise_z": 3.403,
-      "profile": {
-        "players": 6,
-        "map": "pangaea",
-        "width": 60,
-        "height": 38,
-        "city_states": 6,
-        "speed": "online",
-        "turns": 250,
-        "victories": "science,culture,religious,diplomatic,domination,score",
-        "all_seats": true,
-        "randomize_civs": true,
-        "baseline": "best",
-        "design": "foldover",
-        "start_seed": 100000000
       }
     }
   ],
