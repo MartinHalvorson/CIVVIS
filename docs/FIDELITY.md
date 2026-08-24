@@ -207,6 +207,119 @@ need no such chain are Future-era and worth one point each. That leaves the
 congress, at ±2 from the Modern era, as very nearly the whole of a 20-point
 victory — which is why the lane completes about twice in a hundred games.
 
+## The difficulty ladder, table by table (2026-08-23)
+
+The ladder is this project's only **absolute** yardstick. Elo between our own
+bots says one is better than another; "beats Emperor" says what a Civ player
+means by it. That makes `data/difficulties.json` load-bearing in a way no other
+catalogue is, and it had never been audited row by row against the shipped
+data — `tools/civ6_fidelity.py` projects units, buildings, terrain and the
+trees, and **does not touch difficulty at all**. The audit below is by hand
+against `DebugGameplay.sqlite`, and it is complete: every table in that
+database with a cell whose text begins `DIFFICULTY_`.
+
+| shipped source | what it says | CIVVIS |
+|---|---|---|
+| `HIGH_DIFFICULTY_{SCIENCE,CULTURE,FAITH}_SCALING` | `LinearScaleFromDefaultHandicap` +8/rung off Prince | `ai_yield_pct` 8/16/24/32 ✅ |
+| `HIGH_DIFFICULTY_{PRODUCTION,GOLD}_SCALING` | +20/rung | `ai_yield_pct` 20/40/60/80 ✅ |
+| `HIGH_DIFFICULTY_COMBAT_SCALING` | base −1, +1/rung | `ai_combat_strength` 0/1/2/3 ✅ |
+| `HIGH_DIFFICULTY_UNIT_XP_SCALING` | +10/rung | `ai_xp_pct` 10/20/30/40 ✅ |
+| `HIGH_DIFFICULTY_FREE_{TECH,CIVIC}_BOOSTS` | +1/rung, **two** modifiers | `ai_era_boosts` 1/2/3/4, granted as both a Eureka and an Inspiration set ✅ |
+| `LOW_DIFFICULTY_COMBAT_SCALING` | −1/rung below Prince | `human_combat_strength` 1/2/3 ⚠ see below |
+| `LOW_DIFFICULTY_UNIT_XP_SCALING` | −15/rung | `human_xp_pct` 15/30/45 ⚠ |
+| `BARBARIAN_CAMP_GOLD_SCALING` | −5/rung | `human_camp_gold` 5/10/15 ⚠ |
+| `MajorStartingUnits` (25 gated rows) | Warriors +1/rung from King, Builders +0.5, Settlers +0.5 from Emperor | `ai_bonus_units` ✅ exact, truncation and all |
+| `BonusMinorStartingUnits` (8 gated rows) | 2 Warriors, +1/rung from Emperor | ✅ exact, but **in code**, not in the ladder |
+| `BarbarianAttackForces` (12 gated rows) | three bands, split at Chieftain/Warlord and Emperor/Immortal | `barb_force_scale`, `barb_spawn_scale` — bands exact, sizes approximated |
+| `StartingBuildings` (1 gated row) | city-states get Ancient Walls from Immortal | **was the gap; now `starting_buildings`** |
+| `TypeProperties` (24 rows) | `DARK_AGE_CITIES_LOST_PLAYER`, `DARK_AGE_CITIES_LOST_AI`, `FREE_CITY_INFLUENCE` | **not carried** |
+| `{LOW,HIGH}_DIFFICULTY_HUMAN_MARTIAL_LAW` | +7 / −3 Martial Law Loyalty | **not carried** |
+| `STANDARD_DIPLOMACY_RANDOM` | `DifficultyOffset` −1/rung | **not carried** |
+| `AiLists`, `TreeData` (2 rows) | one AI list from Warlord, one behaviour-tree node from Immortal | **not carried**, and both are DLL-side AI plumbing |
+| `Difficulties` | eight rows, `DifficultyType` and a name — **nothing else** | the ladder's shape ✅ |
+
+### The gap that was open: city-states behind walls
+
+The whole of `StartingBuildings` is 24 rows and **exactly one carries a
+`MinDifficulty`**:
+
+    BUILDING_WALLS | ERA_ANCIENT | DISTRICT_CITY_CENTER | MinorOnly=1 | DIFFICULTY_IMMORTAL
+
+Every city-state on Immortal and Deity opens behind completed Ancient Walls.
+`DifficultySpec` had no starting-buildings field at all, so the ladder could
+not say so; the engine granted them anyway, from a rung number written into
+`Game::new_with` in #10 and pinned by
+`city_state_starting_defenses_follow_difficulty` ever since. **The behaviour
+was right and the transcription was missing**, which is the failure mode this
+document exists to catch: an audit reading `difficulties.json` concludes the
+walls are absent, and an audit reading the engine concludes they are present.
+`DifficultySpec::starting_buildings` now carries the row, `validate` checks the
+building exists, and `each_rung_grants_the_starting_buildings_the_shipped_table_gates_on_it`
+pins all eight rungs against the shipped table.
+
+⚠ **Note which way this one runs.** Every other field on the rung hands its
+bonus to the AI *major* seats. This one hardens the *minor* seats — the ones a
+challenger takes a city off. A ladder missing it is not harder than the game,
+it is **easier**, and it flatters every result measured on a high rung. That is
+the direction nobody looks in.
+
+⚠ **The other 23 rows are not a difficulty rule and must not be transcribed as
+one.** They are `MinorOnly = 0` with no `MinDifficulty`, keyed on `Era` from
+Medieval up: a Renaissance start gives a major civilization a finished
+Monument, Granary, Library, Shrine, Walls and Grove, an Information start adds
+a Sewer, Zoo, Ferris Wheel and Aquarium. That is a **start-era** rule, it is a
+real gap — CIVVIS's `open_in_start_era` grants an era's research and upgrades
+its units and deliberately grants no buildings — and it belongs to whoever
+audits Advanced Start, not to the ladder. The shipped table does not say when a
+non-City-Center row is granted (there is no `OnDistrictCreated` column as
+`MajorStartingUnits` has), so transcribing it needs an answer this database
+does not carry.
+
+### What the ladder does not carry
+
+Three shipped difficulty rules have no counterpart in CIVVIS, all of them
+Rise & Fall Loyalty:
+
+| rule | Settler → Deity |
+|---|---|
+| `TypeProperties.FREE_CITY_INFLUENCE` | 1, 2, 2.5, 3, 3.5, 4, 4.5, 5 |
+| `TypeProperties.DARK_AGE_CITIES_LOST_PLAYER` | 5, 10, 15, 20, 25, 30, 35, 40 |
+| `TypeProperties.DARK_AGE_CITIES_LOST_AI` | 30, 30, 25, 20, 15, 15, 10, 10 |
+| `LOW_DIFFICULTY_HUMAN_MARTIAL_LAW` | +7 Martial Law Loyalty, human, below Warlord |
+| `HIGH_DIFFICULTY_HUMAN_MARTIAL_LAW` | −3 Martial Law Loyalty, human, Emperor and up |
+
+CIVVIS has the machinery all five would attach to — `free_city_pressure`
+decides which empire a Free City joins, `garrison_loyalty` is a real Loyalty
+term — so these are wiring, not mechanisms. `FREE_CITY_INFLUENCE` is the one
+worth pricing first: it is monotone across the whole ladder rather than a
+three-band split, and a Deity Free City pulls five times as hard on a
+neighbour's Loyalty as a Settler one. None are invented here; the numbers above
+are the shipped cells and the work is to attach them.
+
+A sixth, `STANDARD_DIPLOMACY_RANDOM`'s `DifficultyOffset` of −1 per rung, is AI
+diplomacy jitter and is listed for completeness rather than as a target.
+
+### ⚠ One ambiguity the database cannot settle: Warlord
+
+The human-side handicaps are gated by `PLAYER_IS_LOW_DIFFICULTY_HUMAN`, which
+is `REQUIREMENT_PLAYER_IS_HUMAN` **and** `REQUIRES_LOW_DIFFICULTY` —
+`REQUIREMENT_PLAYER_HANDICAP_AT_OR_ABOVE`, `Handicap = DIFFICULTY_WARLORD`,
+**`Inverse = 1`**. Read as a strict negation that is "below Warlord", so
+Settler and Chieftain only, and CIVVIS's Warlord row (+1 Combat Strength, +15%
+experience, +5 camp Gold) is a rung too far. Read as "at or below", it is
+exactly right.
+
+The AI side is no help: its gate is `Handicap = DIFFICULTY_PRINCE`,
+`Inverse = 0`, and the linear scale is **zero** at Prince, so a loose gate
+there costs nothing and says nothing about the tight one. The `LinearScale`
+does produce +1 at Warlord, which a strict reading would compute and discard.
+
+**Nothing is changed on this.** Which reading the DLL uses is not in the
+database, and the wiki table that agrees with CIVVIS is exactly the secondary
+source this document opens by distrusting. It is recorded so the next person
+does not re-derive it, and it is answerable from one observed game: play a
+Warlord seat and look at a Warrior's Combat Strength.
+
 ## Where the install is
 
 `python3 tools/civ6_fidelity.py` takes no arguments: `tools/civ6_env.py` is the
@@ -1618,11 +1731,34 @@ Information-era empire still fielded — and still trained — Slingers.
 | No unit ever became obsolete | 33 units carry the shipped `MandatoryObsoleteTech`; researching it removes the unit from every production and purchase menu and from every queue |
 | No unit could ever be upgraded | 52 units carry their shipped `UnitUpgrades` successor, reachable through the new `upgrade_unit` action |
 
-The Gold price is the one number this wave could not read from the database:
-`UPGRADE_BASE_COST` (10) and `UPGRADE_MINIMUM_COST` (15) are shipped
-GlobalParameters, but the per-Production factor lives in the executable. The
-engine charges the community-documented `10 + 2 × Production difference`,
-which reproduces the in-game prices those two parameters bracket.
+⚠ **This paragraph used to say the per-Production factor "lives in the
+executable" and that `10 + 2 × Production difference` was community
+documentation. Corrected 2026-08-23 (#2372): every term is a shipped
+`GlobalParameters` row, and the arithmetic was read out of
+`GameCore_XP2_FinalRelease.dll` rather than guessed at.**
+
+`Rules::Units::Instance::GetUpgradeCost` reads **six** rows, not two:
+
+| parameter | value | role |
+|---|---:|---|
+| `UPGRADE_BASE_COST` | 10 | the constant term |
+| `UPGRADE_NET_PRODUCTION_PERCENT_COST` | **100** | takes *all* of the Production difference (Vanilla ships 75; Expansion2 replaces it) |
+| `GOLD_EQUIVALENT_OTHER_YIELDS` | **2** | converts that Production to Gold — a separate row, and the whole of the "×2" |
+| `PURCHASE_DIVISOR` | **5** | the quote is truncated, then rounded **down** to a multiple of 5 |
+| `UPGRADE_MINIMUM_COST` | 15 | applied *after* the formation multiplier and any discount |
+| `UPGRADE_MINIMUM_COST_LEVY` | 0 | the same floor for a levied unit |
+
+So the familiar `10 + 2 × ΔProduction` is right, and it is right for a reason
+nobody had written down: the percent row and the Gold-equivalent row are
+different things that happen to multiply to 2. Reading it as one fudged
+coefficient is what made it look unsourced — and a "fix" that removed the
+factor of 2 would have halved every upgrade in the game.
+
+⭐ **The transferable part is the method.** "It lives in the DLL" had stood as a
+reason not to check. It is not one: the shipped binary can be disassembled, and
+the `GlobalParameters` initializer names every field by offset, so a value that
+is not in the database can still be *read* instead of inferred. Prefer that over
+community documentation whenever a number is load-bearing.
 
 **Sixth wave (bands, maps, routes, spawns):** `Happinesses`, `Maps`, `WMDs`
 and more of `GlobalParameters` join the audit — 25 tables at zero unwaived
