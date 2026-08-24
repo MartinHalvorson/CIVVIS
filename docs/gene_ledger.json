@@ -32,6 +32,7 @@
       "bounded-recovery",
       "buildings-before-projects",
       "camp-party",
+      "civilian-rescue",
       "competition-victory-points",
       "culture-building-debt",
       "early-contact-window",
@@ -46,6 +47,7 @@
       "lane-great-people",
       "loyalty-rate-alarm",
       "maintenance-aware-deck",
+      "one-launch-pad",
       "opportunistic-war",
       "peacetime-deterrence",
       "price-the-suzerainty",
@@ -75,7 +77,9 @@
       "slot-kind-tiebreak",
       "promote-when-wounded",
       "religion-sues-peace",
-      "lane-great-people"
+      "lane-great-people",
+      "one-launch-pad",
+      "civilian-rescue"
     ],
     "posterior_shapes": [
       "standard",
@@ -431,7 +435,7 @@
     "helps": 17,
     "hurts": 11,
     "unresolved": 90,
-    "default_on": 43
+    "default_on": 45
   },
   "genes": [
     {
@@ -1382,7 +1386,7 @@
     {
       "tag": "civilian-rescue",
       "verdict": "unresolved",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 0,
       "wins_prior_10k": -1,
       "wins_third_10k": -6,
@@ -3591,7 +3595,7 @@
     {
       "tag": "one-launch-pad",
       "verdict": "unresolved",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 19,
       "wins_prior_10k": -11,
       "wins_third_10k": 15,

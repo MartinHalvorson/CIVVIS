@@ -1,6 +1,6 @@
 # The heuristic gene ranking
 
-**Deployment default:** operator-pinned (43 genes): retains the prior 36 selections and explicitly adds `unit-cost-efficiency`, `unit-objective-memory`, `camp-party`, `slot-kind-tiebreak`, `promote-when-wounded`, `religion-sues-peace`, `lane-great-people`. Screen columns, *Diff*, and posterior values are evidence only; new batches do not automatically change defaults.
+**Deployment default:** operator-pinned (45 genes): retains the prior 36 selections and explicitly adds `unit-cost-efficiency`, `unit-objective-memory`, `camp-party`, `slot-kind-tiebreak`, `promote-when-wounded`, `religion-sues-peace`, `lane-great-people`, `one-launch-pad`, `civilian-rescue`. Screen columns, *Diff*, and posterior values are evidence only; new batches do not automatically change defaults.
 
 | Rank | Gene | Description | Best version | Default | Wins ± /10k total seats — Last Batch (n=38,160 total seats) | Wins ± /10k total seats — Prior Batch (n=41,628 total seats) | Wins ± /10k total seats — Third Batch (n=10,002 total seats) | Total (on) Win rate | Total (off) Win rate | Diff | Posterior (95% CI) | P(>0) | Share Δpp (z) | cost (compute) | cost (time) |
 |---:|---|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|
@@ -34,7 +34,7 @@
 | 28 | `whole-turn-backtrack-guard` | Refuse a step onto any tile this unit has already stood on this turn. | — | off | -11 | +12 | +4 | 16.77% (n=137,111) | 16.51% (n=91,963) | 0.26% | +14 [-1, +30] | 96.8% | -0.23 (z -1.31) ~ | -0.21% ±0.43% | -0.67% ±0.75% |
 | 29 | `apostle-promotion-by-role` | Promote an Apostle for the job the empire has rather than for the largest number on the card. | — | **on** | +9 | +14 | +24 | 16.77% (n=137,140) | 16.51% (n=91,934) | 0.26% | +13 [-6, +33] | 90.7% | +0.14 (z +0.79) ~ | -0.19% ±0.45% | -0.57% ±0.79% |
 | 30 | `barbarian-bargain` | Price a raider's life below a major's. | — | **on** | +16 | +2 | -5 | 16.76% (n=108,458) | 16.51% (n=63,724) | 0.25% | +13 [-5, +31] | 92.1% | +0.02 (z +0.10) ~ | -0.56% ±0.41% | -1.03% ±0.72% |
-| 31 | `one-launch-pad` | Give the 3,000-point first-pad rung to one city at a time. | — | off | +9 | +7 | +8 | 16.79% (n=114,713) | 16.54% (n=114,361) | 0.25% | +12 [-3, +26] | 94.7% | -0.04 (z -0.25) ~ | +0.36% ±0.38% | +0.63% ±0.67% |
+| 31 | `one-launch-pad` | Give the 3,000-point first-pad rung to one city at a time. | — | **on** | +9 | +7 | +8 | 16.79% (n=114,713) | 16.54% (n=114,361) | 0.25% | +12 [-3, +26] | 94.7% | -0.04 (z -0.25) ~ | +0.36% ±0.38% | +0.63% ±0.67% |
 | 32 | `district-planning` | The city plans its districts, sites and tile buys together: wished districts get jointly assigned, reserved plots over rings 1-3, and the tile a very valuable site needs is bought. | — | off | +6 | – | – | 16.79% (n=19,090) | 16.54% (n=19,070) | 0.24% | +12 [-25, +49] | 74.1% | +0.14 (z +1.84) ~ | -0.09% ±0.20% | -0.04% ±0.35% |
 | 33 | `garrison-under-fire` | A city losing hitpoints is besieged, whatever the fog says. | — | off | +15 | -1 | +33 | 16.78% (n=114,417) | 16.55% (n=114,657) | 0.23% | +17 [-9, +43] | 89.6% | +0.41 (z +2.64) helps * | -0.90% ±0.36% | -1.71% ±0.62% |
 | 34 | `slot-kind-tiebreak` | Break a production cost tie by which great-work slots can be filled. | — | **on** | +13 | +10 | -1 | 16.78% (n=114,161) | 16.55% (n=114,913) | 0.23% | +11 [-4, +25] | 92.5% | -0.21 (z -1.37) ~ | -0.45% ±0.39% | -0.60% ±0.70% |
@@ -51,7 +51,7 @@
 | 45 | `blind-objective-strength` | Stop a fogged objective city from reading as an empty tile when the army decides whether it is strong enough to engage. | — | off | -11 | -1 | +3 | 16.74% (n=114,398) | 16.60% (n=114,676) | 0.14% | +8 [-7, +23] | 84.9% | -0.05 (z -0.36) ~ | +0.50% ±0.39% | +1.02% ±0.70% |
 | 46 | `inquisition-on-threat` | A founder under conversion pressure may hold one Apostle for the Inquisition, bought after its Missionaries when the bank covers it. | — | **on** | +3 | +5 | -5 | 16.72% (n=114,438) | 16.58% (n=69,744) | 0.14% | +9 [-8, +26] | 85.5% | -0.04 (z -0.21) ~ | +0.67% ±0.45% | +1.04% ±0.79% |
 | 47 | `army-target-weighs-enemy` | Let the army target account for the enemy it has to beat. | — | off | +0 | +11 | -13 | 16.72% (n=136,711) | 16.59% (n=92,363) | 0.14% | +7 [-11, +25] | 77.0% | -0.06 (z -0.35) ~ | +0.32% ±0.44% | +0.35% ±0.76% |
-| 48 | `civilian-rescue` | Walk onto a capturable civilian within reach, and never decline a settler held by the barbarians. | — | off | +0 | +24 | +4 | 16.73% (n=114,473) | 16.60% (n=114,601) | 0.13% | +6 [-10, +21] | 76.0% | -0.03 (z -0.23) ~ | +0.20% ±0.37% | +0.69% ±0.67% |
+| 48 | `civilian-rescue` | Walk onto a capturable civilian within reach, and never decline a settler held by the barbarians. | — | **on** | +0 | +24 | +4 | 16.73% (n=114,473) | 16.60% (n=114,601) | 0.13% | +6 [-10, +21] | 76.0% | -0.03 (z -0.23) ~ | +0.20% ±0.37% | +0.69% ±0.67% |
 | 49 | `come-ashore` | Keep the land army out of the water. | — | off | -2 | +0 | +15 | 16.72% (n=137,047) | 16.59% (n=92,027) | 0.12% | +7 [-8, +22] | 81.6% | +0.03 (z +0.16) ~ | -0.70% ±0.42% | -0.97% ±0.73% |
 | 50 | `religious-defence-scales` | Size the defensive Missionary corps by the number of cities actually under conversion pressure instead of the shipped constant 2. | — | off | +6 | +2 | +30 | 16.73% (n=68,544) | 16.61% (n=68,490) | 0.12% | +5 [-14, +24] | 69.2% | +0.23 (z +1.53) ~ | -0.21% ±0.39% | -0.22% ±0.73% |
 | 51 | `stranded-settler-discount` | Stop a Settler that has stopped walking from holding the expansion gate shut. | — | off | +16 | -10 | +1 | 16.72% (n=114,210) | 16.61% (n=114,864) | 0.11% | +5 [-9, +20] | 77.2% | +0.11 (z +0.68) ~ | -0.34% ±0.36% | -0.59% ±0.65% |
@@ -254,7 +254,6 @@ Genes priced at both shapes. **A row whose two intervals do not overlap is not a
 | `lane-policy-deck` | +13 [-16, +42] | 80.9% | off | +12.9 | 103,406 |
 | `war-economy` | +13 [-89, +115] | 60.1% | on | +12.4 | 116,162 |
 | `whole-turn-backtrack-guard` | +12 [-8, +31] | 88.2% | off | +11.8 | 96,625 |
-| `one-launch-pad` | +11 [-5, +28] | 91.6% | off | +11.4 | 81,761 |
 | `stranded-settler-discount` | +11 [-5, +27] | 90.8% | off | +11.0 | 93,635 |
 | `barbarian-ranged-answer` | +11 [-10, +32] | 85.1% | off | +10.9 | 126,996 |
 | `blind-objective-strength` | +11 [-10, +31] | 84.9% | off | +10.8 | 131,056 |
@@ -272,6 +271,7 @@ Genes priced at both shapes. **A row whose two intervals do not overlap is not a
 | `holy-site-where-the-threat-is` | -1 [-38, +36] | 47.7% | off | +3.8 | 17,424,370 |
 | `builder-barbarian-safety` | +3 [-16, +23] | 62.9% | off | +3.6 | 1,859,339 |
 | `enhancer-for-the-corps` | +3 [-21, +26] | 58.6% | off | +3.6 | 2,978,891 |
+| `civilian-rescue` | -3 [-20, +13] | 34.5% | on | +3.4 | 1,836,091 |
 | `settler-guard-holds` | +3 [-13, +19] | 65.5% | off | +3.4 | 1,871,682 |
 | `lane-space-race` | +1 [-22, +25] | 54.3% | off | +2.7 | 12,292,990 |
 | `power-the-laboratory` | +1 [-23, +24] | 52.0% | off | +2.2 | 57,902,647 |
@@ -308,7 +308,6 @@ Genes priced at both shapes. **A row whose two intervals do not overlap is not a
 | `congress-banks-decided` | -8 [-31, +16] | 26.2% | off | +0.1 | 321,129 |
 | `naval-recon` | -3 [-19, +13] | 35.6% | off | +0.1 | 2,174,265 |
 | `apostle-promotion-by-role` | +6 [-15, +27] | 71.4% | on | +0.1 | 520,461 |
-| `civilian-rescue` | -3 [-20, +13] | 34.5% | off | +0.1 | 1,836,091 |
 | `culture-coverage` | -8 [-32, +15] | 24.5% | off | +0.1 | 268,265 |
 | `lane-culture-spending` | +9 [-15, +32] | 75.9% | on | +0.1 | 250,826 |
 | `condemn-under-congress` | -9 [-33, +14] | 22.4% | off | +0.1 | 216,182 |
@@ -337,6 +336,7 @@ Genes priced at both shapes. **A row whose two intervals do not overlap is not a
 | `war-patience` | -12 [-29, +5] | 8.8% | off | +0.0 | 81,488 |
 | `amenity-district-path` | +12 [-5, +28] | 91.2% | on | +0.0 | 83,886 |
 | `housing-districts` | -13 [-30, +5] | 7.6% | off | +0.0 | 62,666 |
+| `one-launch-pad` | +11 [-5, +28] | 91.6% | on | +0.0 | 81,761 |
 | `strike-opening` | +12 [-4, +29] | 92.5% | on | +0.0 | 65,525 |
 
 The top 8 that one batch could actually resolve (≤ 60,000 seat pairs each), as an argument list:

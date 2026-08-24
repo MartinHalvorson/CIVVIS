@@ -27,19 +27,21 @@ PLAYERS = gene_ledger.SCREEN["players"]
 
 #: ★★★★ THE OPERATOR-PINNED DEPLOYMENT GENOME, 2026-08-24.
 #: This is the exact list the agent plays. It retains the 36 selections that
-#: were already deployed, then adds the seven explicit operator promotions:
+#: were already deployed, then adds the nine explicit operator promotions:
 #: `unit-cost-efficiency`, `unit-objective-memory`, `camp-party`,
 #: `slot-kind-tiebreak`, `promote-when-wounded`, `religion-sues-peace`, and
-#: `lane-great-people`. Screen results remain evidence; they cannot move this
-#: tuple automatically. Changing it requires an intentional edit and PR note.
+#: `lane-great-people`, `one-launch-pad`, and `civilian-rescue`. Screen
+#: results remain evidence; they cannot move this tuple automatically.
+#: Changing it requires an intentional edit and PR note.
 DEPLOYED_GENOME_20260824 = (
     "air-surge", "amenity-district-path", "apostle-promotion-by-role",
     "barbarian-bargain", "barbarian-scouts-are-scouts", "bounded-recovery",
-    "buildings-before-projects", "camp-party", "competition-victory-points",
+    "buildings-before-projects", "camp-party", "civilian-rescue", "competition-victory-points",
     "culture-building-debt", "early-contact-window", "engine-faith-price",
     "escort-unstick", "founder-temple", "great-person-housing",
     "holy-lane-parity", "idle-faith-patronage", "inquisition-on-threat",
     "lane-culture-spending", "lane-great-people", "loyalty-rate-alarm", "maintenance-aware-deck",
+    "one-launch-pad",
     "opportunistic-war", "peacetime-deterrence", "price-the-suzerainty",
     "promote-when-wounded", "raid-pillage-prizes", "recon-replacement",
     "recorded-tactical-step", "relief-targets-the-siege", "religion-sues-peace",
@@ -549,7 +551,7 @@ class TheOperatorPinnedDeploymentGenome(unittest.TestCase):
             tuple(sorted(g["tag"] for g in ledger["genes"] if g["default_on"])),
             DEPLOYED_GENOME_20260824,
         )
-        self.assertEqual(ledger["counts"]["default_on"], 43)
+        self.assertEqual(ledger["counts"]["default_on"], 45)
         self.assertEqual(tuple(ledger["rules"]["operator_promotions"]),
                          gene_ledger.OPERATOR_PROMOTIONS_20260824)
 

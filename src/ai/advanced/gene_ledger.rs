@@ -14,7 +14,8 @@
 //! Operator directive 2026-08-24: preserve the 36 selections then deployed
 //! and explicitly promote `unit-cost-efficiency`, `unit-objective-memory`,
 //! `camp-party`, `slot-kind-tiebreak`, `promote-when-wounded`,
-//! `religion-sues-peace`, and `lane-great-people`, for 43 enabled genes.
+//! `religion-sues-peace`, `lane-great-people`, `one-launch-pad`, and
+//! `civilian-rescue`, for 45 enabled genes.
 //! `DEPLOYMENT_GENOME` is that exact list. A screen refresh updates evidence,
 //! not the runtime default; changing a default requires an explicit operator
 //! update to the pinned list and regeneration.
@@ -368,13 +369,13 @@ mod tests {
         }
         assert_eq!(on, table::DEPLOYMENT_GENOME.len());
         assert_eq!(
-            on, 43,
+            on, 45,
             "an operator selection changed; update it deliberately"
         );
     }
 
     #[test]
-    fn the_seven_explicit_promotions_are_pinned_on() {
+    fn the_nine_explicit_promotions_are_pinned_on() {
         for tag in [
             "unit-cost-efficiency",
             "unit-objective-memory",
@@ -383,6 +384,8 @@ mod tests {
             "promote-when-wounded",
             "religion-sues-peace",
             "lane-great-people",
+            "one-launch-pad",
+            "civilian-rescue",
         ] {
             assert!(operator_default_on(tag), "{tag} was not pinned on");
         }
