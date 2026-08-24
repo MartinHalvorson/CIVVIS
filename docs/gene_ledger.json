@@ -227,41 +227,6 @@
         "design": "foldover",
         "start_seed": 150000000
       }
-    },
-    {
-      "path": "docs/gene_screens/2026-08-24-fog-honest-family-direct-6p-allseats-414-seats.json",
-      "shape": "standard",
-      "seats": 414,
-      "complete_pairs": 207,
-      "family_wise_z": 2.241,
-      "profile": {
-        "players": 6,
-        "map": "continents",
-        "width": 74,
-        "height": 46,
-        "city_states": 9,
-        "speed": "online",
-        "turns": 250,
-        "victories": "science,culture,religious,diplomatic,domination,score",
-        "all_seats": true,
-        "randomize_civs": true,
-        "baseline": "best",
-        "design": "independent",
-        "start_seed": 955000000
-      },
-      "games": 69,
-      "build": {
-        "commit": "805c2a9b0e90780e3b50225a4f14c715618a3852",
-        "commit_source": "env",
-        "dirty": false,
-        "genes_sha256": "e04ff0accd3638a4a433a43b4d9ea1c614b66a0e53098f31171de97bae330aba",
-        "binary_sha256": "5dae296047675deec407cee455cc6577e7ce43454e57c66916498df1d707b6d7"
-      },
-      "batch": {
-        "target_seats": 1440,
-        "complete_seats": 414,
-        "partial": true
-      }
     }
   ],
   "reporting_batches": [
@@ -362,7 +327,7 @@
   ],
   "counts": {
     "helps": 17,
-    "hurts": 17,
+    "hurts": 15,
     "unresolved": 69,
     "default_on": 33,
     "default_on_under_columns": 33,
@@ -2386,86 +2351,6 @@
           }
         ]
       }
-    },
-    {
-      "tag": "fog-honest",
-      "verdict": "hurts",
-      "default_on": false,
-      "wins_last_10k": -1006,
-      "wins_prior_10k": null,
-      "wins_third_10k": null,
-      "win_diff_pp": -13.526097,
-      "posterior_pp": -676.304827,
-      "posterior_se_pp": 144.664113,
-      "posterior_screens": 1,
-      "posterior_tau_pp": 0.0,
-      "family_wise": true,
-      "conflict": false,
-      "screen": {
-        "seats": 414,
-        "pairs": 207,
-        "n_on": 106,
-        "n_off": 308,
-        "win_delta_pp": -13.526,
-        "win_z": -4.675,
-        "share_delta_pp": -3.436,
-        "share_z": -3.996,
-        "read": "HURTS ** \u00b7 share HURTS **",
-        "source": "2026-08-24-fog-honest-family-direct-6p-allseats-414-seats.json",
-        "win_tranches": [
-          {
-            "position": "latest",
-            "seats": 414,
-            "pairs": 207,
-            "win_delta_pp": -13.526,
-            "win_z": -4.675,
-            "win_se_pp": 2.893
-          }
-        ]
-      },
-      "family": "fog-honest",
-      "version": 1,
-      "family_runner_up": false
-    },
-    {
-      "tag": "fog-honest-2",
-      "verdict": "hurts",
-      "default_on": false,
-      "wins_last_10k": -1574,
-      "wins_prior_10k": null,
-      "wins_third_10k": null,
-      "win_diff_pp": -21.296296,
-      "posterior_pp": -1064.814815,
-      "posterior_se_pp": 74.175396,
-      "posterior_screens": 1,
-      "posterior_tau_pp": 0.0,
-      "family_wise": true,
-      "conflict": false,
-      "screen": {
-        "seats": 414,
-        "pairs": 207,
-        "n_on": 108,
-        "n_off": 306,
-        "win_delta_pp": -21.296,
-        "win_z": -14.355,
-        "share_delta_pp": -6.762,
-        "share_z": -11.482,
-        "read": "HURTS ** \u00b7 share HURTS **",
-        "source": "2026-08-24-fog-honest-family-direct-6p-allseats-414-seats.json",
-        "win_tranches": [
-          {
-            "position": "latest",
-            "seats": 414,
-            "pairs": 207,
-            "win_delta_pp": -21.296,
-            "win_z": -14.355,
-            "win_se_pp": 1.484
-          }
-        ]
-      },
-      "family": "fog-honest",
-      "version": 2,
-      "family_runner_up": false
     },
     {
       "tag": "founder-temple",

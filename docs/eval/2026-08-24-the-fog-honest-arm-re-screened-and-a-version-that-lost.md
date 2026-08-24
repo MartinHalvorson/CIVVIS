@@ -87,9 +87,8 @@ the third time, now with a stated size.
 **`fog-honest-2`: refused by its own family table.** The rule is that an
 improvement improves when its contrast against the version before it is
 positive on the win axis and it also beats off. It is negative on both axes.
-Recorded `hurts` / off in `docs/gene_ledger.json`; it stays in the pool with
-its verdict on its row rather than being deleted, because the mechanism it
-establishes is worth more than the branch.
+It stays in the pool, off and unmeasured, rather than being deleted, because
+the mechanism it establishes is worth more than the branch.
 
 That mechanism: to reach a re-plan at all, version 2 must stop replaying at the
 first refusal, since the tape's own trailing `EndTurn` would otherwise close
@@ -109,6 +108,19 @@ says pays — and it is unexamined. The named third version (skip only the
 refused actor's remaining actions, keep everyone else's, no early `EndTurn`, no
 re-plan) is deliberately left unbuilt here: a version guessed from the
 mechanism of a losing version needs its own row and its own screen.
+
+★★★★ **Not entered as a ledger source, on purpose.** Recording it fails
+`tools/test_genes.py::test_the_band_is_the_columns_own_scale_not_the_differences`,
+and the test is right. The ranking's column is `(win_on − chance) × PER`, which
+equals half the on−off difference only when the two arms are the same size — as
+they are at `p = ½`. A versioned family splits its probability across versions,
+so each version is on for a quarter of seats and off for three quarters, and
+its off arm stops sitting at chance: here `win_on − chance` = −10.07 pp against
+a half-difference of −6.77 pp, and `column / column_se` = −6.96 against a
+`win_z` of −4.68. That is general to every versioned family. The artifact is
+committed and the numbers are published; both genes stay `unmeasured` / off
+until the ranking's column is fixed to be half the on−off difference. See
+`docs/AI_GAPS.md`.
 
 ⚠ Limits. One seed stream, 28.8% of a declared batch, first reading for both
 columns. The −23.9 pp is far outside this instrument's noise. The −5.7 pp

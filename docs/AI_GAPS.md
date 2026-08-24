@@ -1329,8 +1329,8 @@ third time and now for a stated reason.
 the version before it' contrast is positive on the win axis and it also beats
 off."* It is negative on both axes — −5.7 pp on wins (z −2.25) and −2.44 pp on
 share (z −3.10, past the family-wise bar). Version 2 is worse than version 1.
-Both are recorded `hurts` / off in `docs/gene_ledger.json` at the bottom of
-`HEURISTIC_GENE_RANKING.md`.
+Both stay `unmeasured` / off in the ledger — see the note below on why this
+source is not entered.
 
 **Why it is worse, which is the useful part.** The re-plan is not free: to
 reach it, version 2 has to *stop replaying the tape at the first refusal*,
@@ -1350,6 +1350,39 @@ actor's remaining actions and keep everyone else's**, which needs no early
 third version guessed from the mechanism of a second is exactly the kind of
 unpriced iteration this ledger exists to stop; it needs its own row and its own
 screen.
+
+★★★★ **The screen is recorded as an artifact and deliberately NOT entered as
+a ledger source, because entering it exposed a defect in the ranking's own
+arithmetic.** `HEURISTIC_GENE_RANKING.md` builds each gene's column as
+`(win_on − chance) × PER` and its error as `column_se`, and
+`tools/test_genes.py::test_the_band_is_the_columns_own_scale_not_the_differences`
+proves the two are on the same scale by requiring `column / column_se` to
+reproduce the screen's own `win_z`. That identity holds only when a gene's on
+and off arms are the **same size**, which is true at `p = ½`: the two arms then
+straddle chance symmetrically and `win_on − chance` is exactly half the on−off
+difference.
+
+**A versioned family breaks it.** The family is drawn as one level and its
+probability is split across its versions, so each version is on for about a
+quarter of seats and off for about three quarters, and its off arm no longer
+sits at chance. On this batch `fog-honest` reads `win_on − chance` = −10.07 pp
+where half the on−off difference is −6.77 pp, and the identity misses by 49%:
+`column / column_se` = −6.96 against a `win_z` of −4.68. Recording the source
+therefore fails that test — correctly, and for a reason that is general to
+**every** versioned family, not to this one. `escort-unstick` /
+`escort-unstick-2` has not hit it only because version 2 has never been in a
+recorded source.
+
+So the numbers above are published here and in
+`docs/eval/2026-08-24-the-fog-honest-arm-re-screened-and-a-version-that-lost.md`,
+the artifact is committed at
+`docs/gene_screens/2026-08-24-fog-honest-family-direct-6p-allseats-414-seats.json`
+(which is also what proves both genes fire), and both genes stay `unmeasured`
+/ off. Whoever owns the ranking should fix the column to be half the on−off
+difference rather than the distance from chance — the two agree at `p = ½` and
+diverge for every unbalanced draw — and then this source can be entered as it
+stands. Adding an unbalanced-draw source to a ledger whose band arithmetic
+assumes balance is exactly the mis-scaling #2266 removed eight genes over.
 
 ⚠ Honest limits on this screen. It is 28.8% of a pre-registered batch, one seed
 stream, and its `fog-honest` and `fog-honest-2` columns are that stream's first
