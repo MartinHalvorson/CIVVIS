@@ -32263,3 +32263,278 @@ fn a_very_valuable_unowned_site_is_bought_and_a_marginal_one_is_not() {
     let score = ai.district_plan_plot_score(&game, 0, &plan, &counts, city, target, cost, &mut cache);
     assert_eq!(score, None, "two adjacency is not worth Gold");
 }
+
+/// `wonder-score-tally` is a native opt-in, off in both controllers, with a
+/// published row and two working toggles.
+#[test]
+fn wonder_score_tally_is_a_native_opt_in_off_in_both_controllers() {
+    assert!(!AdvancedAi::new().wonder_score_tally);
+    assert!(!AdvancedAi::legacy().wonder_score_tally);
+    let gene = GENES
+        .iter()
+        .find(|gene| gene.tag == "wonder-score-tally")
+        .expect("the gene is published for gene_screen");
+    assert!(gene.opt_in() && gene.screenable() && !gene.live());
+    let mut ai = AdvancedAi::new();
+    (gene.enable)(&mut ai);
+    assert!(ai.wonder_score_tally);
+    (gene.disable)(&mut ai);
+    assert!(!ai.wonder_score_tally);
+}
+
+/// ★ THE CONSTANT IS PINNED TO THE ENGINE. `WONDER_TALLY_SCORE_POINTS` is the
+/// gene's whole premise, so it is asserted against what `Game::score` actually
+/// pays for a finished wonder rather than against the literal in
+/// `score_parts`. A rules change that re-scores a wonder fails here instead of
+/// silently mispricing the production arm.
+#[test]
+fn the_tally_pays_what_the_wonder_gene_prices() {
+    let mut game = Game::new(2, 32, 24, 7_741, 250, 0);
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .expect("starting settler");
+    game.apply(0, &Action::FoundCity { unit: settler })
+        .expect("found city");
+    let city = game.player_city_ids(0)[0];
+    let before = game.score(0);
+    let position = game.cities[&city].pos;
+    game.cities
+        .get_mut(&city)
+        .unwrap()
+        .wonders
+        .insert(crate::name!("great_bath"), position);
+    let after = game.score(0);
+    assert_eq!(
+        (after - before) as f64,
+        WONDER_TALLY_SCORE_POINTS,
+        "the arm prices {WONDER_TALLY_SCORE_POINTS} points a wonder and the tally pays {}",
+        after - before
+    );
+    // And it is the densest line of the tally: a building pays one.
+    let before = game.score(0);
+    game.cities
+        .get_mut(&city)
+        .unwrap()
+        .buildings
+        .push(crate::name!("monument"));
+    assert!(
+        ((game.score(0) - before) as f64) < WONDER_TALLY_SCORE_POINTS,
+        "a wonder must out-score a building"
+    );
+}
+
+/// Build a developed three-city empire whose capital carries three buildings —
+/// the state every wonder gate in the arm asks for — on a seat that is neither
+/// Egypt nor China, with no victory target.
+fn wonder_lane_capital(seed: u64) -> (Game, u32) {
+    // No barbarians: `threatened` in `production_value` folds in
+    // `barbarian_local_alarm`, and a raider beside the capital refuses every
+    // wonder for reasons that have nothing to do with the gate under test.
+    let mut game = Game::new_full(2, 40, 30, seed, 250, 0, false);
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .expect("starting settler");
+    game.apply(0, &Action::FoundCity { unit: settler })
+        .expect("found city");
+    let city = game.player_city_ids(0)[0];
+    game.players[0].civ = "Rome".to_string();
+    for building in ["monument", "granary", "walls"] {
+        game.cities
+            .get_mut(&city)
+            .unwrap()
+            .buildings
+            .push(Name::new(building));
+    }
+    // Two more cities, so `city_count >= 3` without touching the capital.
+    found_test_city(&mut game, 0);
+    found_test_city(&mut game, 0);
+    game.current = 0;
+    assert_eq!(game.player_city_ids(0).len(), 3, "a three-city empire");
+    // A capital that can actually finish a wonder inside the arm's own
+    // completion budget (`turns > remaining_turns * 0.65` refuses otherwise),
+    // so the test is about the lane gate and not about the clock.
+    game.cities.get_mut(&city).unwrap().pop = 10;
+    game.turn = 40;
+    assert!(
+        game.item_remaining_cost_for_city(
+            0,
+            city,
+            &Item::Wonder {
+                wonder: crate::name!("great_bath"),
+                pos: game.cities[&city].pos,
+            },
+        ) / game.city_yields(city).production.max(1.0)
+            <= 0.65 * game.max_turns.saturating_sub(game.turn) as f64,
+        "the fixture capital must be able to finish a 180-production wonder"
+    );
+    (game, city)
+}
+
+/// ★★★★ THE ACTUATION REPAIR, AND THE HALF OF THE SENTINEL IT KEEPS.
+///
+/// With the gene off, a Roman seat with no victory target and an Expansion
+/// plan takes the `-10_000` refusal on a cheap wonder — `lane_opens` is a
+/// civilization check it cannot pass. With the gene on, the same wonder is
+/// priced and reachable. And the density bar is real: the 1 850-production
+/// Sydney Opera House is refused in the same city on the same turn, because
+/// fifteen points do not pay for it.
+#[test]
+fn wonder_score_tally_opens_the_lane_on_merit_and_the_density_bar_still_refuses() {
+    let (game, city) = wonder_lane_capital(7_742);
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Expansion,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 5,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let position = game.cities[&city].pos;
+    let cheap = Item::Wonder {
+        wonder: crate::name!("great_bath"),
+        pos: position,
+    };
+    let dear = Item::Wonder {
+        wonder: crate::name!("sydney_opera_house"),
+        pos: position,
+    };
+
+    let shipped = AdvancedAi::new();
+    let counts = shipped.counts(&game, 0);
+    let refused = shipped.production_value(&game, 0, city, &cheap, &plan, &counts);
+    assert!(
+        refused <= -9_999.0,
+        "the defect: a Roman Expansion seat is refused every wonder ({refused})"
+    );
+
+    let mut treated = AdvancedAi::new();
+    treated.enable_wonder_score_tally();
+    let counts = treated.counts(&game, 0);
+    let opened = treated.production_value(&game, 0, city, &cheap, &plan, &counts);
+    assert!(
+        opened > 0.0,
+        "the repair: the same wonder is reachable on merit ({opened})"
+    );
+
+    let over_bar = treated.production_value(&game, 0, city, &dear, &plan, &counts);
+    assert!(
+        over_bar <= -9_999.0,
+        "the density bar must still refuse an 1 850-production wonder ({over_bar})"
+    );
+
+    // The bar is arithmetic, not a name: the wonder clears it exactly when its
+    // ordinary value plus the tally price covers its cost at the bar's rate.
+    let spec = &game.rules.wonders[&crate::name!("great_bath")];
+    let ordinary = treated.wonder_ordinary_value(spec, plan.strategy);
+    assert!(
+        ordinary + AdvancedAi::wonder_tally_value() >= spec.cost * WONDER_TALLY_MIN_DENSITY,
+        "the Great Bath clears the bar it is asserted to clear"
+    );
+    let dear_spec = &game.rules.wonders[&crate::name!("sydney_opera_house")];
+    assert!(
+        treated.wonder_ordinary_value(dear_spec, plan.strategy) + AdvancedAi::wonder_tally_value()
+            < dear_spec.cost * WONDER_TALLY_MIN_DENSITY,
+        "and the Opera House fails it"
+    );
+}
+
+/// The gene adds a gate; it never removes one, never stacks with a gate that
+/// already paid for the same wonder, and never changes a game it is off in.
+#[test]
+fn wonder_score_tally_never_stacks_and_never_moves_a_gate_it_does_not_own() {
+    let (game, city) = wonder_lane_capital(7_743);
+    let position = game.cities[&city].pos;
+    let cheap = Item::Wonder {
+        wonder: crate::name!("great_bath"),
+        pos: position,
+    };
+    let mut treated = AdvancedAi::new();
+    treated.enable_wonder_score_tally();
+    let shipped = AdvancedAi::new();
+
+    // A Culture plan already opens the lane, so the tally must add nothing.
+    let culture = StrategicPlan {
+        strategy: GrandStrategy::Culture,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 5,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let counts = shipped.counts(&game, 0);
+    let already_open = shipped.production_value(&game, 0, city, &cheap, &culture, &counts);
+    assert!(
+        already_open > 0.0,
+        "⭐ THE GATE ON MAIN IS THE PLAN, NOT THE CIVILIZATION. The same Roman \
+         seat refused every wonder under an Expansion plan and is offered one \
+         under a Culture plan, with no gene and no Egypt: `lane_opens`' \
+         civilization clause is not what decides, because `assess` moves any \
+         empire into the Culture lane on its own progress ({already_open})"
+    );
+    assert_eq!(
+        treated.production_value(&game, 0, city, &cheap, &culture, &counts),
+        already_open,
+        "a lane that was already open must be priced identically"
+    );
+    // ⭐ AND THE EXTRACTION IS FAITHFUL. `wonder_ordinary_value` was lifted out
+    // of the arm so the density bar and the score are one number; this pins
+    // that the arm still returns exactly what it returned before — the five
+    // ordinary terms plus the Culture lane's 320, scaled by the wonder
+    // category gene and normalised by `(7 + turns)` — rather than trusting a
+    // reading of the diff.
+    let spec = &game.rules.wonders[&crate::name!("great_bath")];
+    let production = game.city_yields(city).production.max(1.0);
+    let turns = game.item_remaining_cost_for_city(0, city, &cheap) / production;
+    let expected = (shipped.wonder_ordinary_value(spec, culture.strategy) + 320.0)
+        * shipped.base.w.p_wonder
+        / (7.0 + turns.max(1.0));
+    assert!(
+        (already_open - expected).abs() < 1e-9,
+        "the arm's wonder price is its ordinary value plus the lane bonus: \
+         got {already_open}, expected {expected}"
+    );
+
+    // Recovery is refused whatever the merit, exactly as the other two gates
+    // refuse it: an empire under siege does not buy score.
+    let recovery = StrategicPlan {
+        strategy: GrandStrategy::Recovery,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 5,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    assert!(
+        treated.production_value(&game, 0, city, &cheap, &recovery, &counts) <= -9_999.0,
+        "Recovery closes the tally lane"
+    );
+
+    // And an undeveloped empire is refused: two of the three cities away, the
+    // development guard the live race earned holds.
+    let mut small = game.clone();
+    let extra: Vec<u32> = small.player_city_ids(0).into_iter().skip(1).collect();
+    for other in extra {
+        small.cities.remove(&other);
+    }
+    let expansion = StrategicPlan {
+        strategy: GrandStrategy::Expansion,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 5,
+        assessed_turn: small.turn,
+        rush: false,
+    };
+    let counts = treated.counts(&small, 0);
+    assert!(
+        treated.production_value(&small, 0, city, &cheap, &expansion, &counts) <= -9_999.0,
+        "a one-city empire may not race for a wonder"
+    );
+}
