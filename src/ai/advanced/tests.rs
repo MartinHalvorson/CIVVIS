@@ -32927,3 +32927,300 @@ fn a_religious_unit_steps_out_of_a_raiders_reach_only_with_the_gene() {
     }
     assert!(blind.units.contains_key(&missionary));
 }
+
+// ═══ Defence against a rival religion, to the extent we care (advanced/religious_defence.rs) ═══
+
+#[test]
+fn the_religious_veto_defence_gene_is_a_registered_reversible_opt_in() {
+    let tag = "religious-veto-defence";
+    assert!(
+        GENES
+            .iter()
+            .any(|gene| gene.opt_in() && gene.field == "religious_veto_defence" && gene.tag == tag),
+        "{tag} must be a registered native opt-in"
+    );
+    assert!(crate::ai::advanced::gene_ledger::screenable(tag));
+    assert_eq!(
+        crate::ai::advanced::gene_ledger::ledger_default_on(tag),
+        Some(false),
+        "{tag} ships off until a screen prices it"
+    );
+    let mut ai = AdvancedAi::new();
+    assert!(!ai.religious_veto_defence);
+    ai.enable_religious_veto_defence();
+    assert!(ai.religious_veto_defence);
+    ai.disable_religious_veto_defence();
+    assert!(!ai.religious_veto_defence);
+    assert!(
+        !AdvancedAi::legacy().religious_veto_defence,
+        "the frozen anchor plays the game it always did"
+    );
+}
+
+/// Three capitals: ours (player 0, no religion), the rival founder's (player
+/// 1, "Runaway Faith") and a third civilization's (player 2). Player 2's
+/// capital is the ground the rival's victory needs besides ours.
+fn veto_board(seed: u64) -> (Game, u32, u32) {
+    let mut game = Game::new_full(3, 42, 24, seed, 300, 0, false);
+    for pid in 0..3 {
+        let settler = game
+            .player_unit_ids(pid)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.current = pid;
+        game.apply(pid, &Action::FoundCity { unit: settler })
+            .unwrap();
+    }
+    game.current = 0;
+    game.turn = 150;
+    game.victory_conditions.religious = true;
+    game.players[1].religion = Some("Runaway Faith".to_string());
+    let ours = game.player_city_ids(0)[0];
+    let theirs = game.player_city_ids(2)[0];
+    (game, ours, theirs)
+}
+
+#[test]
+fn the_religious_veto_stakes_read_the_victory_arithmetic() {
+    use super::religious_defence::RELIGIOUS_VETO_STAKE_FLOOR;
+    let (mut game, ours, theirs) = veto_board(7_626);
+    let off = AdvancedAi::new();
+    let mut on = AdvancedAi::new();
+    on.enable_religious_veto_defence();
+
+    // Nobody holds anything: no stakes at all.
+    assert_eq!(on.religious_veto_stakes(&game, 0), None);
+
+    // The rival holds the third civilization and none of ours: half of the
+    // two opponents it needs — exactly the floor.
+    game.cities
+        .get_mut(&theirs)
+        .unwrap()
+        .pressure
+        .insert("Runaway Faith".to_string(), 800.0);
+    let stakes = on
+        .religious_veto_stakes(&game, 0)
+        .expect("a rival holding another civilization is a stake");
+    assert_eq!(stakes.religion, "Runaway Faith");
+    assert_eq!((stakes.founder, stakes.dominated, stakes.others), (1, 1, 1));
+    assert_eq!((stakes.our_cities, stakes.our_converted), (1, 0));
+    assert!((stakes.stake - 0.5).abs() < 1e-9, "stake {}", stakes.stake);
+    assert!(stakes.stake >= RELIGIOUS_VETO_STAKE_FLOOR);
+    assert!(on.religious_veto_engaged(&game, 0).is_some());
+    assert_eq!(
+        AdvancedAi::religious_veto_extra_spreaders(on.religious_veto_engaged(&game, 0).as_ref()),
+        0,
+        "the floor names and targets; it does not spend"
+    );
+    assert_eq!(
+        off.religious_veto_stakes(&game, 0),
+        None,
+        "the gene off reads nothing"
+    );
+
+    // And our own capital too: the victory is whole.
+    game.cities
+        .get_mut(&ours)
+        .unwrap()
+        .pressure
+        .insert("Runaway Faith".to_string(), 800.0);
+    let stakes = on.religious_veto_stakes(&game, 0).unwrap();
+    assert_eq!(stakes.our_converted, 1);
+    assert!((stakes.stake - 1.0).abs() < 1e-9, "stake {}", stakes.stake);
+    assert_eq!(AdvancedAi::religious_veto_extra_spreaders(Some(&stakes)), 2);
+    assert_eq!(
+        AdvancedAi::religious_veto_extra_inquisitors(Some(&stakes)),
+        1
+    );
+
+    // Only our capital, nobody else: below the floor, so nothing engages.
+    game.cities
+        .get_mut(&theirs)
+        .unwrap()
+        .pressure
+        .remove("Runaway Faith");
+    let stakes = on.religious_veto_stakes(&game, 0).unwrap();
+    assert!((stakes.stake - 0.5).abs() < 1e-9);
+    game.cities
+        .get_mut(&ours)
+        .unwrap()
+        .pressure
+        .insert("Runaway Faith".to_string(), 100.0);
+    game.cities.get_mut(&ours).unwrap().atheist_pressure = 900.0;
+    let stakes = on.religious_veto_stakes(&game, 0);
+    assert!(
+        stakes.is_none(),
+        "a faith that holds nobody and none of ours is no stake: {stakes:?}"
+    );
+}
+
+#[test]
+fn a_non_founder_defends_by_the_stakes_only_with_the_gene() {
+    let (mut game, ours, theirs) = veto_board(7_627);
+    // The rival faith at 80% of our capital's strongest pressure, short of
+    // a majority: the shipped early warning.
+    let capital = game.cities.get_mut(&ours).unwrap();
+    capital.pressure.insert("Runaway Faith".to_string(), 400.0);
+    capital.atheist_pressure = 600.0;
+    assert_ne!(
+        game.city_religion(&game.cities[&ours]),
+        Some("Runaway Faith"),
+        "fixture: the capital has not flipped"
+    );
+    let off = AdvancedAi::new();
+    let shipped = off.home_conversion_threat(&game, 0);
+    assert_eq!(
+        shipped.as_deref(),
+        Some("Runaway Faith"),
+        "fixture: the shipped warning fires"
+    );
+
+    // The shipped warning is never withheld, gene or no gene.
+    let mut on = AdvancedAi::new();
+    on.enable_religious_veto_defence();
+    assert_eq!(
+        off.religious_veto_threat(&game, 0, shipped.clone()),
+        shipped,
+        "the gene off passes the shipped answer through"
+    );
+    assert_eq!(
+        on.religious_veto_threat(&game, 0, shipped.clone()),
+        shipped,
+        "the shipped defence is the cheap kind and is never withheld"
+    );
+    assert_eq!(
+        on.religious_veto_threat(&game, 0, None),
+        None,
+        "a faith that holds nobody and the warning silent: nothing to name"
+    );
+
+    // The third civilization falls: the stake is at the floor, and the
+    // stakes faith is named even while the shipped warning is silent —
+    // but nothing is spent yet.
+    game.cities
+        .get_mut(&theirs)
+        .unwrap()
+        .pressure
+        .insert("Runaway Faith".to_string(), 800.0);
+    assert_eq!(
+        on.religious_veto_threat(&game, 0, None).as_deref(),
+        Some("Runaway Faith"),
+        "an engaged stake names the faith even before the shipped warning"
+    );
+    let stakes = on.religious_veto_engaged(&game, 0).unwrap();
+    assert_eq!(AdvancedAi::religious_veto_extra_spreaders(Some(&stakes)), 0);
+    assert!(!AdvancedAi::religious_veto_spends(Some(&stakes)));
+
+    // Our capital flips too: match point and past it, the corps grows.
+    game.cities
+        .get_mut(&ours)
+        .unwrap()
+        .pressure
+        .insert("Runaway Faith".to_string(), 2_000.0);
+    let stakes = on.religious_veto_engaged(&game, 0).unwrap();
+    assert!((stakes.stake - 1.0).abs() < 1e-9);
+    assert!(AdvancedAi::religious_veto_spends(Some(&stakes)));
+    assert_eq!(AdvancedAi::religious_veto_extra_spreaders(Some(&stakes)), 2);
+    game.cities
+        .get_mut(&ours)
+        .unwrap()
+        .pressure
+        .remove("Runaway Faith");
+    game.cities
+        .get_mut(&ours)
+        .unwrap()
+        .pressure
+        .insert("Runaway Faith".to_string(), 400.0);
+    let stakes = on.religious_veto_engaged(&game, 0).unwrap();
+
+    // The spreader's target list: a city the threat faith holds outranks
+    // one it merely presses on, and both outrank an untouched city.
+    let held = game.cities[&theirs].clone();
+    let mut held_ours = held.clone();
+    held_ours.owner = 0;
+    let pressed = game.cities[&ours].clone();
+    let mut untouched = pressed.clone();
+    untouched.pressure.clear();
+    let bonus_held = AdvancedAi::religious_veto_target_bonus(0, &held_ours, Some(&stakes), true);
+    let bonus_pressed = AdvancedAi::religious_veto_target_bonus(0, &pressed, Some(&stakes), false);
+    let bonus_untouched =
+        AdvancedAi::religious_veto_target_bonus(0, &untouched, Some(&stakes), false);
+    assert!(bonus_held > bonus_pressed && bonus_pressed > bonus_untouched);
+    assert_eq!(bonus_untouched, 0);
+    assert_eq!(
+        AdvancedAi::religious_veto_target_bonus(0, &held_ours, None, true),
+        0,
+        "no stakes, no bonus"
+    );
+}
+
+#[test]
+fn the_inquisitor_walks_to_the_heresy_only_with_the_gene() {
+    let mut game = Game::new_full(2, 30, 18, 7_116, 200, 0, false);
+    for pid in 0..2 {
+        let settler = game
+            .player_unit_ids(pid)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.current = pid;
+        game.apply(pid, &Action::FoundCity { unit: settler })
+            .unwrap();
+    }
+    game.current = 0;
+    let home = game.player_city_ids(0)[0];
+    install_test_holy_site(&mut game, home);
+    let slipping = found_test_city(&mut game, 0);
+    game.players[0].religion = Some("Our Faith".to_string());
+    game.players[0].holy_city = Some(home);
+    game.players[0]
+        .counters
+        .insert("inquisition".to_string(), 1);
+    game.players[1].religion = Some("Rival Faith".to_string());
+    game.cities
+        .get_mut(&home)
+        .unwrap()
+        .pressure
+        .insert("Our Faith".to_string(), 1_000.0);
+    let pressure = &mut game.cities.get_mut(&slipping).unwrap().pressure;
+    pressure.insert("Our Faith".to_string(), 300.0);
+    pressure.insert("Rival Faith".to_string(), 600.0);
+    let home_pos = game.cities[&home].pos;
+    let slipping_pos = game.cities[&slipping].pos;
+    let inquisitor = game.spawn_test_unit("inquisitor", 0, home_pos);
+    game.units.get_mut(&inquisitor).unwrap().religion = Some("Our Faith".to_string());
+    let charges = game.units[&inquisitor].charges;
+    assert!(charges > 0, "fixture: the Inquisitor has charges");
+
+    // Off: the charge is spent where the unit stands, in the one city that
+    // has no heresy.
+    let mut spent = game.clone();
+    let off = AdvancedAi::new();
+    assert!(off.advanced_religious_step(&mut spent, 0, inquisitor, false));
+    assert_eq!(spent.units[&inquisitor].charges, charges - 1);
+    assert_eq!(spent.units[&inquisitor].pos, home_pos);
+
+    // On: the unit keeps its charge and walks toward the slipping city.
+    let mut on = AdvancedAi::new();
+    on.enable_religious_veto_defence();
+    let mut walked = game.clone();
+    assert!(on.advanced_religious_step(&mut walked, 0, inquisitor, false));
+    assert_eq!(walked.units[&inquisitor].charges, charges);
+    let after = walked.units[&inquisitor].pos;
+    assert!(
+        walked.wdist(after, slipping_pos) < walked.wdist(home_pos, slipping_pos),
+        "the Inquisitor closes on the heresy"
+    );
+
+    // Standing in the slipping city, the charge is spent there.
+    let mut arrived = game.clone();
+    arrived.relocate(inquisitor, slipping_pos);
+    arrived.units.get_mut(&inquisitor).unwrap().moves_left = 4.0;
+    assert!(on.advanced_religious_step(&mut arrived, 0, inquisitor, false));
+    assert_eq!(arrived.units[&inquisitor].charges, charges - 1);
+    assert!(
+        arrived.cities[&slipping].pressure["Rival Faith"] < 600.0,
+        "the heresy is quartered"
+    );
+}

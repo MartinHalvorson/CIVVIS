@@ -2181,6 +2181,22 @@ impl AdvancedAi {
         self.missionary_evades_raiders = false;
     }
 
+    /// The religious defence grows with how much of a rival's religious
+    /// victory is already done — every civilization is a veto on it — naming
+    /// and targeting the stakes faith from half a victory and spending on it
+    /// from match point; the Inquisitor walks to the heresy instead of
+    /// spending its charges where it was bought. See
+    /// [`AdvancedAi::religious_veto_defence`]. Opt-in gene
+    /// `religious-veto-defence`.
+    pub fn enable_religious_veto_defence(&mut self) {
+        self.religious_veto_defence = true;
+    }
+
+    /// The twin of `enable_religious_veto_defence`.
+    pub fn disable_religious_veto_defence(&mut self) {
+        self.religious_veto_defence = false;
+    }
+
     /// A city-state's place enters the envoy score: up to ninety for one on
     /// our border, two hundred more when its sitting suzerain is at war with
     /// us, amortised over the envoys the flip still needs.
