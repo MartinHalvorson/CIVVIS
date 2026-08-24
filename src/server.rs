@@ -12681,6 +12681,9 @@ fetchpriority=\"high\""
         assert!(style.contains("if (spec.class === \"religious\") return \"religion\";"));
         assert!(style.contains("if (spec.class === \"support\") return \"support\";"));
         assert!(style.contains("if (spec.domain === \"sea\") return \"naval\";"));
+        assert!(style.contains(
+            "if (spec.class === \"civilian\" || spec.class === \"espionage\") return \"civilian\";"
+        ));
         assert!(style.contains("return CIVILIAN_UNITS.has(unit.type) ? \"civilian\" : \"base\";"));
         // Those class names have to be the ones the ruleset actually ships, or
         // every unit would silently fall through to the military flag.

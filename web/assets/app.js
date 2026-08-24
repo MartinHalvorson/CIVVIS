@@ -12775,6 +12775,7 @@ function civ6UnitFlagStyle(unit) {
     if (spec.class === "religious") return "religion";
     if (spec.class === "support") return "support";
     if (spec.domain === "sea") return "naval";
+    if (spec.class === "civilian" || spec.class === "espionage") return "civilian";
   }
   return CIVILIAN_UNITS.has(unit.type) ? "civilian" : "base";
 }
@@ -12960,7 +12961,7 @@ function drawStrategicUnitCounter(x, y, r, style, fill, ink, outline) {
 // narrows toward its point at exactly the rate its sides do, plus the corner
 // radius the offset gives every side.
 function strategicUnitCounterHalfWidth(r, dy, style) {
-  const shape = civ6FlagPlateShape(style);
+  const shape = r > 0 ? civ6FlagPlateShape(style) : null;
   if (shape) {
     const at = Math.round((dy / r - shape.rows[0].y) / shape.pitch);
     const row = shape.rows[Math.max(0, Math.min(shape.rows.length - 1, at))];
