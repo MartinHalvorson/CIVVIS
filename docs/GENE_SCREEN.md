@@ -1662,13 +1662,15 @@ clock — and runs on its own seeds, 94000000..94000023.
 
 | arm | games | score | religious | culture | **diplomatic** | science |
 |---|---:|---:|---:|---:|---:|---:|
-| **A** fieldless — *the standard screen* | 35 | 66% (t250) | 14% (t170) | 11% (t208) | **0%** | 9% (t243) |
-| **B** fieldless + native competitions | 30 | 60% (t250) | 20% (t203) | 13% (t208) | **3%** (t245) | 3% (t247) |
-| **C** contested — two pursuers + competitions | 27 | 37% (t250) | 44% (t198) | 11% (t223) | **4%** (t246) | 4% (t243) |
+| **A** fieldless — *the standard screen* | 35 | 66% (t250) | 14% (t170) | 11% (t224) | **0%** | 9% (t243) |
+| **B** fieldless + native competitions | 30 | 60% (t250) | 20% (t236) | 13% (t224) | **3%** (t245) | 3% (t247) |
+| **C** contested — two pursuers + competitions | 27 | 37% (t250) | 44% (t206) | 11% (t223) | **4%** (t246) | 4% (t243) |
 | **D** contested at a **400**-turn clock | 24 | 0% | 25% (t182) | **25%** (t238) | **8%** (t305) | 42% (t276) |
 
 Games in which **some empire reached the 20 Diplomatic Victory Points** a
-diplomatic victory needs: **A 0 of 35 · B 1 of 30 · C 1 of 27 · D 2 of 24.**
+diplomatic victory needs: **A 0 of 35 · B 1 of 30 · C 1 of 27 · D 2 of 24** — the `endings` block of
+each artifact carries the same counts, so the table can be checked against its
+own evidence rather than trusted.
 The best total any empire reached in arm A was **19**.
 
 Three things fall out of that table, and the third is the one that was not
