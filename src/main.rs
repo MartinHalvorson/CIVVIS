@@ -843,6 +843,11 @@ fn main() {
                         }
                     }
                     let mut g = Game::new_with(options);
+                    // ⚠ Set here rather than carried in `GameOptions`, for the
+                    // reason `simulate` gives above: this is a staged rules
+                    // mechanism, and a soak is how its effect on the victory
+                    // mix is measured before it is promoted.
+                    g.native_competitions = args.iter().any(|a| a == "--native-competitions");
                     let mut ais = AdvancedAi::fleet(&g);
                     let simultaneous = if g.turn_structure == setup::TurnStructure::Simultaneous {
                         // Spread a non-divisible budget across the first live
