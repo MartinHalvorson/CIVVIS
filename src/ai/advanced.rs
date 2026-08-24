@@ -5165,15 +5165,6 @@ mod site_lookahead;
 mod district_planning;
 use district_planning::DistrictPlanCache;
 
-/// The religious corps: the four opt-in genes for what a founder buys with
-/// Faith once its cities start slipping, and what it does with the units
-/// afterwards. See `advanced/religion.rs`.
-mod religion;
-/// Defence against a rival religion, to the extent we care: the veto
-/// arithmetic of the religious victory, scaling the corps, the reserve, the
-/// non-founder's answer and the spreaders' targets by how much of a rival's
-/// win is already done. One opt-in gene; see `advanced/religious_defence.rs`.
-mod religious_defence;
 /// The Missionary in the field: a last-charge Missionary explores the fog,
 /// and a religious unit steps out of a raider's reach. Two opt-in genes; see
 /// `advanced/missionary_field.rs`.
@@ -5183,6 +5174,15 @@ mod missionary_field;
 /// with nothing left in reach. Opt-in gene `one-war-at-a-time`; see
 /// `advanced/one_war.rs`.
 mod one_war;
+/// The religious corps: the four opt-in genes for what a founder buys with
+/// Faith once its cities start slipping, and what it does with the units
+/// afterwards. See `advanced/religion.rs`.
+mod religion;
+/// Defence against a rival religion, to the extent we care: the veto
+/// arithmetic of the religious victory, scaling the corps, the reserve, the
+/// non-founder's answer and the spreaders' targets by how much of a rival's
+/// win is already done. One opt-in gene; see `advanced/religious_defence.rs`.
+mod religious_defence;
 use site_lookahead::{PlotOffer, PlotPurchaseCache};
 
 /// Six opt-in genes for the victory lanes: the race the empire is actually
