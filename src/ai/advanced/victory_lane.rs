@@ -108,8 +108,9 @@
 //!
 //! **`competition-victory-points`.** A scored competition's first place pays
 //! Diplomatic Victory Points: 2 for the Climate Accords, Send Aid and Send
-//! Military Aid, 1 for the World Games, the World's Fair and the
-//! International Space Station (`Game::NATIVE_COMPETITIONS`). Thirteen of
+//! Military Aid, 1 for the World Games, the World's Fair, the International
+//! Space Station and the Nobel Peace Prize (`Game::NATIVE_COMPETITIONS`,
+//! which #2379 completed to all seven). Thirteen of
 //! the twenty points a diplomatic victory needs come from the Congress and
 //! these competitions, and `host_competition_score_value` prices **none of
 //! them** — it prices the competition's own score, at the same rate for a
