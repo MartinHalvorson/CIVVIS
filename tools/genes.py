@@ -936,7 +936,8 @@ def default_from_columns(last: int | None, prior: int | None,
     return default_from_win_columns(last, prior)
 
 
-def default_on_summary(authority: str) -> str:
+def default_on_summary(authority: str,
+                       newest_reporting_is_authoritative: bool = False) -> str:
     """The current deployment rule, short enough to sit above the ranking.
 
     This deliberately renders from the same bars `default_from_columns` uses.
@@ -945,12 +946,17 @@ def default_on_summary(authority: str) -> str:
     """
     if authority != "columns":
         raise ValueError(f"no concise ranking summary for authority {authority!r}")
-    return (
+    summary = (
         "**Default on:** both newest columns >0; or avg "
         f">{AVERAGE_BAR:+.0f} with neither <{COLUMN_FLOOR:.0f}; sole reading "
         f">{SINGLE_COLUMN_BAR:+.0f}; pooled *Diff* <{DIFF_FLOOR:.0f} vetoes. "
-        "These batch columns do not change this deployed default."
-    ).replace("-", "−")
+    )
+    summary += (
+        "The newest displayed batch is an authoritative source."
+        if newest_reporting_is_authoritative
+        else "These batch columns do not change this deployed default."
+    )
+    return summary.replace("-", "−")
 
 
 def profile_of(data: dict) -> dict:
@@ -1210,12 +1216,13 @@ def source_record(path: Path, data: dict) -> dict:
 
 
 def reporting_batches_from_ledger(ledger: dict) -> list[Path]:
-    """The newest-first, report-only batches the ranking displays.
+    """The newest-first, fixed display batches the ranking shows.
 
-    They deliberately stay outside ``sources``: the operator asked for the
-    completed 10k screen to be visible without changing the deployment genome
-    while that result is reviewed.  Their provenance is still re-read by
-    ``check`` so a table cannot quietly point at a different artifact.
+    A batch normally stays report-only while its result is reviewed.  After an
+    explicit promotion it may also be an authoritative ``sources`` entry; it
+    remains here so the table keeps the same three chronological columns.
+    Provenance is always re-read by ``check`` so a table cannot quietly point
+    at a different artifact.
     """
     raw = ledger.get("reporting_batches", [])
     if not isinstance(raw, list):
@@ -1259,7 +1266,7 @@ def latest_reporting_batches(entered: list[Path], recorded: list[Path]) -> list[
 
 def reporting_batch_records(paths: list[Path],
                             build_notes: dict[str, str] | None = None) -> list[dict]:
-    """Validate and record report-only batch artifacts without pricing rules.
+    """Validate and record fixed display-batch artifacts without pricing rules.
 
     A recorded exception follows the same explicit policy as an authoritative
     source's ``--unverified-build`` escape. It is never implicit: a new batch
@@ -2056,12 +2063,12 @@ def load_reporting_batches(ledger: dict) -> list[dict]:
 
 
 def load_display_sources(ledger: dict) -> tuple[dict[str, list[dict]], dict[str, str]]:
-    """Display history: ledger evidence plus any report-only latest batch.
+    """Display history: ledger evidence plus any fixed display batch.
 
     Existing authoritative sources are never counted twice when they also
-    occupy a fixed batch slot.  Report-only data therefore refreshes the table
-    totals and rankings while the deployment ledger stays byte-for-byte tied
-    to its own sources.
+    occupy a fixed batch slot.  A display-only batch therefore refreshes the
+    table totals and rankings while the deployment ledger stays byte-for-byte
+    tied to its own sources.
     """
     history, newest_src = load_sources(ledger)
     authoritative = {str(src["path"]) for src in ledger["sources"]}
@@ -2632,6 +2639,10 @@ def render(ledger: dict) -> str:
     authoritative_measured, _ = load_sources(ledger)
     measured, newest_src = load_display_sources(ledger)
     reporting = load_reporting_batches(ledger)
+    authoritative_paths = {str(src["path"]) for src in ledger["sources"]}
+    newest_reporting_is_authoritative = bool(reporting) and (
+        str(reporting[0]["meta"]["path"]) in authoritative_paths
+    )
     reporting_slots = reporting + [None] * (len(REPORTING_BATCH_LABELS) - len(reporting))
     tags = screenable_tags()
     desc = descriptions()
@@ -2666,11 +2677,10 @@ def render(ledger: dict) -> str:
         "seats, where a six-player chance expectation is 1,667 wins. A dash means that batch "
         "did not screen the gene. The *Total* win-rate columns pool the displayed observations "
         "and retain their real per-gene on/off seat counts in every row. *Diff* is that display "
-        "total's on rate minus off rate, in percentage points. The report-only latest 10k batch "
-        "updates these display statistics but does **not** change the deployment genome: "
-        "*Default* remains the existing ledger call in `docs/gene_ledger.json` until an explicit "
-        "rules decision records the batch as an authoritative source. Screenable genes awaiting "
-        "every displayed measurement are listed separately below without a rank.",
+        "total's on rate minus off rate, in percentage points. *Default* is the ledger's "
+        "authority calculation over authoritative sources: a fixed display batch changes it only "
+        "after an explicit source promotion; otherwise it is trend context only. Screenable genes "
+        "awaiting every displayed measurement are listed separately below without a rank.",
         "",
         "**Versioned genes.** An improvement to a gene is a new gene `<base>-<n>` "
         "(`docs/GENE_SCREEN.md`, *Versioning a gene*), priced on its own row: a version's "
@@ -2689,9 +2699,14 @@ def render(ledger: dict) -> str:
         "",
         "**Batch provenance.** The newest displayed batch is the completed current-standard "
         "6-major Continents screen (74×46, nine city-states, Online speed through turn 250, "
-        "all six victory lanes, shuffled civilizations and best-genome baseline). Older "
-        "displayed batches remain visible for trend context. The deployment ledger's sources "
-        "and default state remain intact while this report-only result is reviewed.",
+        "all six victory lanes, shuffled civilizations and best-genome baseline). "
+        + (
+            "It is also an authoritative ledger source, so its completed seats enter the "
+            "deployment default calculation. "
+            if newest_reporting_is_authoritative
+            else "It is report-only trend context and does not change deployment defaults. "
+        )
+        + "Older displayed batches remain visible for trend context.",
         "",
         "**What each screen resolves.** The median gene’s column standard error "
         f"times {POWER_80} — a two-sided 5% test at 80% power. Judge a column against "
@@ -2751,7 +2766,7 @@ def render(ledger: dict) -> str:
     lines = [
         "# The heuristic gene ranking",
         "",
-        default_on_summary(ledger["rules"]["authority"]),
+        default_on_summary(ledger["rules"]["authority"], newest_reporting_is_authoritative),
         "",
         "| Rank | Gene | Description | Best version | Default | "
         + " | ".join(
