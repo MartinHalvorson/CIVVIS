@@ -12714,38 +12714,260 @@ function strategicResourceUnitPlacement(tile, placement, hexInradius) {
     r: placement.r * RESOURCE_UNIT_CLEARANCE_SCALE,
   };
 }
-// Two counter shapes, and they are the base game's two: a circle for anything
-// that can fight, and Civilization VI's rounded triangle, point down at the
-// tile it stands on, for everything that cannot. The retired civilian capsule
-// was a shape of the viewer's own invention, which is why it read as a second
-// marker set rather than as the same set saying "this one is not an army".
+// The command counter is Civilization VI's own unit flag, cut from the game.
 //
-// Built the way the base game builds a rounded triangle -- and the way this
-// file already builds the three-count yield plate: the hull of three discs at
-// the corners, so `cx.arc` draws each corner and the straight side into it in
-// one call. The corner radius is a share of the seat the counter is given, and
-// the vertices take the rest, so the painted triangle stands exactly inside
-// the circle a fighting unit would have used and can never crowd its hex.
+// Two shapes used to be painted here and both were the viewer's invention: a
+// circle for anything that could fight and a rounded triangle, point *down*,
+// for everything that could not. The base game authors eight silhouettes, its
+// civilian triangle points *up*, a fortified soldier stands on a shield and an
+// embarked one on a boat cut. `tools/civ6_unit_flag_plates.py` takes all eight
+// out of the game's own `BLPs/UI/InWorld.blp` into
+// `/assets/civ6-unit-flag-plates.png`, one row of equal square cells measured
+// across the whole set -- so the flags keep the relative sizes and the
+// deliberately different seats the base game authored, which cropping each
+// shape to its own box would have thrown away.
+//
+// Everything a counter must answer -- where its outline runs, how wide a
+// health bar may be, where the glyph sits -- is measured off that sheet in one
+// pass when it loads, so re-cutting the art can never leave a hand-kept table
+// of shapes stale beside it. Until it loads, and for the production
+// medallion's plain ring, the retired circle and triangle remain as the
+// fallback so a counter is never missing.
 const CIVILIAN_TOKEN_CORNER = .30;
 const CIVILIAN_TOKEN_VERTEX = 1 - CIVILIAN_TOKEN_CORNER;
-function strategicUnitTokenPath(x, y, r, civilian = false) {
+const CIV6_FLAG_PLATE_STYLES = ["base", "civilian", "naval", "support",
+                                "trade", "religion", "fortify", "embark"];
+// Ignore the authored anti-aliased fringe when measuring, and keep it when
+// drawing, exactly as the unit-glyph atlas does.
+const CIV6_FLAG_PLATE_ALPHA_FLOOR = 12;
+// An outline vertex whose perpendicular offset from its neighbours' chord is
+// under this share of the seat is dropped. These flags are mostly long
+// straight sides, and a token rebuilt hundreds of times a frame should not
+// replay one segment per source row to say so.
+const CIV6_FLAG_PLATE_TOLERANCE = .012;
+const CIV6_FLAG_PLATE_ATLAS = new Image();
+const CIV6_FLAG_PLATE_SHAPES = new Map();
+const CIV6_FLAG_PLATE_TINTS = new Map();
+// How far the widest style reaches, in half-cells of the sheet. The sheet is
+// cut with a margin, so a counter of radius r draws the cell at r/this and the
+// widest flag then lands exactly on the seat every counter is measured for.
+let CIV6_FLAG_PLATE_REACH = 1;
+CIV6_FLAG_PLATE_ATLAS.onload = () => {
+  CIV6_FLAG_PLATE_TINTS.clear();
+  measureCiv6FlagPlates();
+  if (state) { draw(); drawMini(); }
+};
+CIV6_FLAG_PLATE_ATLAS.src = "/assets/civ6-unit-flag-plates.png";
+
+// Which flag a unit stands on. Fortified and embarked are states the base game
+// answers before it looks at the unit at all; below that the ruleset's own
+// class is the answer, so a mod's unit takes the right flag without a second
+// roster kept here. A ruleset that has not arrived yet, or a unit it does not
+// describe, falls back to the viewer's one standing answer to "can this
+// fight".
+function civ6UnitFlagStyle(unit) {
+  if (!unit) return "base";
+  if (unit.embarked) return "embark";
+  if (unit.fortified) return "fortify";
+  if (unit.type === "trader") return "trade";
+  const spec = (RULES && RULES.units && RULES.units[unit.type]) || null;
+  if (spec) {
+    if (spec.class === "religious") return "religion";
+    if (spec.class === "support") return "support";
+    if (spec.domain === "sea") return "naval";
+    if (spec.class === "civilian" || spec.class === "espionage") return "civilian";
+  }
+  return CIVILIAN_UNITS.has(unit.type) ? "civilian" : "base";
+}
+
+// One pass over the loaded sheet: per style, the artwork's left and right edge
+// on every row, normalised so the widest style's edge is 1. From those rows
+// come the outline, the health bar's room and the glyph's seat.
+function measureCiv6FlagPlates() {
+  CIV6_FLAG_PLATE_SHAPES.clear();
+  const cell = CIV6_FLAG_PLATE_ATLAS.naturalHeight;
+  const width = CIV6_FLAG_PLATE_ATLAS.naturalWidth;
+  if (!cell || width !== cell * CIV6_FLAG_PLATE_STYLES.length) return;
+  const sheet = document.createElement("canvas");
+  sheet.width = width; sheet.height = cell;
+  const g = sheet.getContext("2d", {willReadFrequently:true});
+  g.drawImage(CIV6_FLAG_PLATE_ATLAS, 0, 0);
+  let pixels;
+  try { pixels = g.getImageData(0, 0, width, cell).data; }
+  catch { return; }                 // a canvas the browser refuses to read
+  const half = cell / 2;
+  const measured = new Map();
+  let reach = 0;
+  for (let index = 0; index < CIV6_FLAG_PLATE_STYLES.length; index++) {
+    const rows = [];
+    for (let y = 0; y < cell; y++) {
+      let left = cell, right = -1;
+      let at = (y * width + index * cell) * 4 + 3;      // the alpha byte
+      for (let x = 0; x < cell; x++, at += 4) {
+        if (pixels[at] < CIV6_FLAG_PLATE_ALPHA_FLOOR) continue;
+        if (x < left) left = x;
+        if (x > right) right = x;
+      }
+      if (right < left) { rows.push(null); continue; }
+      rows.push({y:(y + .5 - half) / half,
+                 left:(left - half) / half, right:(right + 1 - half) / half});
+      reach = Math.max(reach, (half - left) / half, (right + 1 - half) / half,
+                       (half - y) / half, (y + 1 - half) / half);
+    }
+    measured.set(CIV6_FLAG_PLATE_STYLES[index], rows);
+  }
+  if (!(reach > 0)) return;
+  CIV6_FLAG_PLATE_REACH = reach;
+  for (const [style, rows] of measured) {
+    const first = rows.findIndex(Boolean);
+    const last = rows.length - 1 - [...rows].reverse().findIndex(Boolean);
+    // A style whose artwork is not one unbroken run of rows would break the
+    // constant row pitch every lookup below relies on; leave it on the
+    // fallback shape rather than measuring it wrongly.
+    if (first < 0 || last - first < 2
+        || rows.slice(first, last + 1).some(row => !row)) continue;
+    const span = rows.slice(first, last + 1).map(row => ({
+      y:row.y / reach, left:row.left / reach, right:row.right / reach}));
+    CIV6_FLAG_PLATE_SHAPES.set(style, {
+      rows:span,
+      pitch:span[1].y - span[0].y,
+      outline:[...civ6FlagPlateDecimate(span.map(row => ({x:row.right, y:row.y})),
+                                        CIV6_FLAG_PLATE_TOLERANCE),
+               ...civ6FlagPlateDecimate(span.map(row => ({x:row.left, y:row.y}))
+                                            .reverse(),
+                                        CIV6_FLAG_PLATE_TOLERANCE)],
+      seat:civ6FlagPlateSeat(span),
+    });
+  }
+}
+
+// Ramer-Douglas-Peucker: keep the vertex furthest from the chord until every
+// dropped one is within tolerance of the line that replaces it.
+function civ6FlagPlateDecimate(points, tolerance) {
+  if (points.length < 3) return points;
+  const first = points[0], last = points[points.length - 1];
+  const dx = last.x - first.x, dy = last.y - first.y;
+  const length = Math.hypot(dx, dy);
+  let worst = -1, at = 0;
+  for (let i = 1; i < points.length - 1; i++) {
+    const point = points[i];
+    const offset = length > 0
+      ? Math.abs(dy * (point.x - first.x) - dx * (point.y - first.y)) / length
+      : Math.hypot(point.x - first.x, point.y - first.y);
+    if (offset > worst) { worst = offset; at = i; }
+  }
+  if (worst <= tolerance) return [first, last];
+  return [...civ6FlagPlateDecimate(points.slice(0, at + 1), tolerance).slice(0, -1),
+          ...civ6FlagPlateDecimate(points.slice(at), tolerance)];
+}
+
+// The largest square the silhouette holds, centred on the counter's axis. The
+// room a row leaves only ever shrinks as the square grows downward, so each
+// top row is extended until the square it would need no longer fits.
+function civ6FlagPlateSeat(rows) {
+  let best = {y:0, side:0};
+  for (let top = 0; top < rows.length; top++) {
+    let room = Infinity;
+    for (let bottom = top; bottom < rows.length; bottom++) {
+      room = Math.min(room, rows[bottom].right, -rows[bottom].left);
+      const side = rows[bottom].y - rows[top].y;
+      if (side > room * 2) break;
+      if (side > best.side) best = {y:(rows[top].y + rows[bottom].y) / 2, side};
+    }
+  }
+  return best;
+}
+
+function civ6FlagPlateShape(style) {
+  return style ? CIV6_FLAG_PLATE_SHAPES.get(style) || null : null;
+}
+
+// The flag tinted to one owner, cached per style and colour the way the unit
+// glyphs already are. `multiply` keeps the art's authored shading and rim
+// while carrying the colour; `destination-in` puts the silhouette's alpha
+// back, which the full-cell fill would otherwise have made opaque.
+function civ6UnitFlagPlate(style, color) {
+  if (!civ6FlagPlateShape(style)) return null;
+  const key = `${style}|${color}`;
+  const cached = CIV6_FLAG_PLATE_TINTS.get(key);
+  if (cached) return cached;
+  const cell = CIV6_FLAG_PLATE_ATLAS.naturalHeight;
+  const sx = CIV6_FLAG_PLATE_STYLES.indexOf(style) * cell;
+  const plate = document.createElement("canvas");
+  plate.width = plate.height = cell;
+  const g = plate.getContext("2d");
+  g.drawImage(CIV6_FLAG_PLATE_ATLAS, sx, 0, cell, cell, 0, 0, cell, cell);
+  g.globalCompositeOperation = "multiply";
+  g.fillStyle = color;
+  g.fillRect(0, 0, cell, cell);
+  g.globalCompositeOperation = "destination-in";
+  g.drawImage(CIV6_FLAG_PLATE_ATLAS, sx, 0, cell, cell, 0, 0, cell, cell);
+  CIV6_FLAG_PLATE_TINTS.set(key, plate);
+  return plate;
+}
+
+// The counter's outline. The cut silhouette when the sheet has been measured;
+// otherwise the retired circle, and the rounded triangle for a civilian --
+// built the way this file already builds the three-count yield plate, as the
+// hull of three corner discs so `cx.arc` draws each corner and the straight
+// side into it in one call.
+function strategicUnitTokenPath(x, y, r, style = null) {
   cx.beginPath();
-  if (!civilian) { cx.arc(x, y, r, 0, 7); return; }
+  const shape = civ6FlagPlateShape(style);
+  if (shape) {
+    for (let at = 0; at < shape.outline.length; at++) {
+      const point = shape.outline[at];
+      const px = x + point.x * r, py = y + point.y * r;
+      if (at) cx.lineTo(px, py); else cx.moveTo(px, py);
+    }
+    cx.closePath();
+    return;
+  }
+  if (style !== "civilian") { cx.arc(x, y, r, 0, 7); return; }
   const corner = r * CIVILIAN_TOKEN_CORNER, vertex = r * CIVILIAN_TOKEN_VERTEX;
   for (let at = 0; at < 3; at++) {
     // The first vertex is straight down, so the point hangs off the unit the
-    // way the game's own flags do.
+    // way the retired triangle did.
     const out = Math.PI / 2 + at * 2 * Math.PI / 3;
     cx.arc(x + Math.cos(out) * vertex, y + Math.sin(out) * vertex, corner,
            out - Math.PI / 3, out + Math.PI / 3);
   }
   cx.closePath();
 }
-// How wide the counter is, `dy` below its centre. A circle is its own answer;
-// the triangle narrows toward its point at exactly the rate its sides do, plus
-// the corner radius the offset gives every side.
-function strategicUnitCounterHalfWidth(r, dy, civilian) {
-  if (!civilian) return Math.sqrt(Math.max(0, r * r - dy * dy));
+// Paint one whole counter: the base game's flag over a solid fill of the
+// owner's colour, then the outline on the same silhouette the fill used. The
+// fill is not redundant -- it backs the art's soft edge with the owner's
+// colour instead of the map -- and it is what a counter still shows before the
+// sheet loads.
+function drawStrategicUnitCounter(x, y, r, style, fill, ink, outline) {
+  strategicUnitTokenPath(x, y, r, style);
+  cx.fillStyle = fill;
+  cx.fill();
+  const plate = civ6UnitFlagPlate(style, fill);
+  if (plate) {
+    const box = r / CIV6_FLAG_PLATE_REACH;
+    cx.drawImage(plate, x - box, y - box, box * 2, box * 2);
+  }
+  if (outline > 0) {
+    strategicUnitTokenPath(x, y, r, style);
+    cx.strokeStyle = ink;
+    cx.lineWidth = outline;
+    cx.stroke();
+  }
+}
+// How wide the counter is, `dy` below its centre, measured symmetrically
+// because the bar it bounds is centred. The cut flag answers from the row it
+// actually sits on; a circle is its own answer, and the retired triangle
+// narrows toward its point at exactly the rate its sides do, plus the corner
+// radius the offset gives every side.
+function strategicUnitCounterHalfWidth(r, dy, style) {
+  const shape = r > 0 ? civ6FlagPlateShape(style) : null;
+  if (shape) {
+    const at = Math.round((dy / r - shape.rows[0].y) / shape.pitch);
+    const row = shape.rows[Math.max(0, Math.min(shape.rows.length - 1, at))];
+    return Math.max(0, Math.min(row.right, -row.left)) * r;
+  }
+  if (style !== "civilian") return Math.sqrt(Math.max(0, r * r - dy * dy));
   const corner = r * CIVILIAN_TOKEN_CORNER, vertex = r * CIVILIAN_TOKEN_VERTEX;
   return Math.max(0, (vertex - dy) / Math.sqrt(3) + corner * 2 / Math.sqrt(3));
 }
@@ -12765,10 +12987,20 @@ function strategicUnitCounterHalfWidth(r, dy, civilian) {
 // seated a little above centre. Which is the proportion the base game draws
 // too: its civilian flag carries a visibly smaller icon than its military one,
 // because a triangle has less room than a banner, not because anybody chose a
-// second size for it.
+// second size for it. A cut flag is measured rather than solved, by the same
+// rule; the circle's closed form is exactly what that measurement returns for
+// a disc, so nothing about the seat changed when the shapes became real.
 const COMMAND_UNIT_ICON_SHARE = .66;
-function strategicUnitGlyphSeat(x, y, r, civilian = false) {
-  if (!civilian) return {x, y, size:r * 2 * COMMAND_UNIT_ICON_SHARE};
+function strategicUnitGlyphSeat(x, y, r, style = null) {
+  const shape = civ6FlagPlateShape(style);
+  if (shape) {
+    return {
+      x,
+      y: y + shape.seat.y * r,
+      size: shape.seat.side * r * COMMAND_UNIT_ICON_SHARE * 2 / Math.SQRT2,
+    };
+  }
+  if (style !== "civilian") return {x, y, size:r * 2 * COMMAND_UNIT_ICON_SHARE};
   const corner = r * CIVILIAN_TOKEN_CORNER, vertex = r * CIVILIAN_TOKEN_VERTEX;
   const top = -vertex / 2 - corner;
   const side = Math.min((vertex - top + corner * 2) / (1 + Math.sqrt(3) / 2),
@@ -12782,10 +13014,10 @@ function strategicUnitGlyphSeat(x, y, r, civilian = false) {
 // Damage is exceptional state, so a healthy unit keeps its clean command token.
 // When damage exists, its bar is part of the token rather than a floating map
 // label, and it is only ever as wide as the counter is at the line it sits on.
-// A circle is at its widest across the middle and never binds; a triangle is
+// A circle is at its widest across the middle and never binds; a Trade flag is
 // narrowing toward its point there, so a plundered Trader's bar tightens into
 // the shape instead of hanging out over the tile.
-function drawStrategicUnitHealth(x, y, r, hp, now, civilian = false) {
+function drawStrategicUnitHealth(x, y, r, hp, now, style = null) {
   if (!Number.isFinite(hp)) return;
   const health = Math.max(0, Math.min(100, Math.round(hp)));
   if (!(r > 0) || health >= 100) return;
@@ -12795,7 +13027,7 @@ function drawStrategicUnitHealth(x, y, r, hp, now, civilian = false) {
   const by = y + r * 0.24 - bh / 2;
   // Measured at the bar's lower edge, which is the line the counter is
   // narrowest across, and inset by the frame drawn around it.
-  const room = strategicUnitCounterHalfWidth(r, by + bh + frame - y, civilian);
+  const room = strategicUnitCounterHalfWidth(r, by + bh + frame - y, style);
   const bw = Math.min(r * 1.28, Math.max(0, room - frame) * 2);
   const color = frac > 0.5 ? "#4fd45c" : (frac > 0.25 ? "#f0b429" : "#f04f3f");
   cx.fillStyle = "#10151dd8";
@@ -20444,17 +20676,15 @@ function drawPlanetMap() {
     const tokenInk = unitTokenInk(unit.owner);
     cx.save();
     cx.globalAlpha = unitAlpha;
-    cx.fillStyle = pcol(unit.owner); cx.strokeStyle = sel?.id === unit.id ? "#fff2a8" : tokenInk;
-    cx.lineWidth = outline;
     const commandTokenClip = !stack.stacked;
     if (commandTokenClip) { cx.save(); planetPath(cx, cell.points); cx.clip(); }
-    const civilian = CIVILIAN_UNITS.has(unit.type);
-    strategicUnitTokenPath(ux, uy, r, civilian);
-    cx.fill(); cx.stroke();
-    const seat = strategicUnitGlyphSeat(ux, uy, r, civilian);
+    const style = civ6UnitFlagStyle(unit);
+    drawStrategicUnitCounter(ux, uy, r, style, pcol(unit.owner),
+                             sel?.id === unit.id ? "#fff2a8" : tokenInk, outline);
+    const seat = strategicUnitGlyphSeat(ux, uy, r, style);
     drawUnitPictogram(unit.type, seat.x, seat.y, seat.size, tokenInk);
     if (unitHasHealth(unit))
-      drawStrategicUnitHealth(ux, uy, r, unit.hp, now, civilian);
+      drawStrategicUnitHealth(ux, uy, r, unit.hp, now, style);
     if (commandTokenClip) cx.restore();
     cx.restore();
   }
@@ -21480,21 +21710,16 @@ function drawScene() {
     // Spent units recede so the ones that can still act carry the eye.
     cx.globalAlpha = unitAlpha *
       ((u.moves_left !== undefined && u.moves_left <= 0) ? 0.62 : 1);
-    const civilian = CIVILIAN_UNITS.has(u.type);
-    cx.save();
-    cx.fillStyle = pcol(u.owner);
-    strategicUnitTokenPath(x, y, rr, civilian);
-    cx.fill();
-    cx.restore();
+    const style = civ6UnitFlagStyle(u);
     const tokenInk = unitTokenInk(u.owner);
-    cx.strokeStyle = u.fortified ? "#f4f8ff" : tokenInk;
-    cx.lineWidth = tokenOutline;
-    strategicUnitTokenPath(x, y, rr, civilian);
-    cx.stroke();
-    const seat = strategicUnitGlyphSeat(x, y, rr, civilian);
+    cx.save();
+    drawStrategicUnitCounter(x, y, rr, style, pcol(u.owner),
+                             u.fortified ? "#f4f8ff" : tokenInk, tokenOutline);
+    cx.restore();
+    const seat = strategicUnitGlyphSeat(x, y, rr, style);
     drawUnitPictogram(u.type, seat.x, seat.y, seat.size, tokenInk);
     cx.globalAlpha = unitAlpha;
-    if (unitHasHealth(u)) drawStrategicUnitHealth(x, y, rr, u.hp, now, civilian);
+    if (unitHasHealth(u)) drawStrategicUnitHealth(x, y, rr, u.hp, now, style);
     if (u.level > 1) {
       const count = u.level - 1;
       const pipRadius = Math.min(2, rr * .12);
@@ -21518,7 +21743,7 @@ function drawScene() {
       // The strategic selection cue lives inside its token rather than adding
       // another ring outside the stack footprint at survey zoom, and it is the
       // token's own outline so a selected Settler is ringed as a triangle.
-      strategicUnitTokenPath(x, y, Math.max(0, rr - 1.2), civilian);
+      strategicUnitTokenPath(x, y, Math.max(0, rr - 1.2), style);
       cx.stroke();
       cx.setLineDash([]);
     }
@@ -21537,13 +21762,9 @@ function drawScene() {
     cx.translate(-d.x, -d.y);
     const r = 10.5;
     const tokenInk = unitTokenInk(d.owner);
-    cx.fillStyle = pcol(d.owner);
-    cx.strokeStyle = tokenInk;
-    cx.lineWidth = 1.6;
-    const civilian = CIVILIAN_UNITS.has(d.type);
-    strategicUnitTokenPath(d.x, d.y, r, civilian);
-    cx.fill(); cx.stroke();
-    const seat = strategicUnitGlyphSeat(d.x, d.y, r, civilian);
+    const style = civ6UnitFlagStyle(d);
+    drawStrategicUnitCounter(d.x, d.y, r, style, pcol(d.owner), tokenInk, 1.6);
+    const seat = strategicUnitGlyphSeat(d.x, d.y, r, style);
     drawUnitPictogram(d.type, seat.x, seat.y, seat.size, tokenInk);
     cx.restore();
     cx.globalAlpha = 1;

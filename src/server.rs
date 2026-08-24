@@ -447,6 +447,8 @@ const EMBEDDED_ENVIRONMENT_FEATURE_ATLAS: &[u8] =
 const EMBEDDED_HIDDEN_MAP_MONSTERS: &[u8] = include_bytes!("../web/assets/hidden-map-monsters.png");
 const EMBEDDED_CIV6_UNIT_FLAGS: &[u8] = include_bytes!("../web/assets/civ6-unit-flags.png");
 const EMBEDDED_CIV6_YIELD_ICONS: &[u8] = include_bytes!("../web/assets/civ6-yield-icons.png");
+const EMBEDDED_CIV6_UNIT_FLAG_PLATES: &[u8] =
+    include_bytes!("../web/assets/civ6-unit-flag-plates.png");
 
 /// The agents that exist in every build, with a friendly handle each.
 /// `crate::elo::builtin_send_ai` resolves the id, and the auto-play control
@@ -3033,6 +3035,11 @@ fn civ6_yield_icons() -> Vec<u8> {
         .unwrap_or_else(|_| EMBEDDED_CIV6_YIELD_ICONS.to_vec())
 }
 
+fn civ6_unit_flag_plates() -> Vec<u8> {
+    std::fs::read("web/assets/civ6-unit-flag-plates.png")
+        .unwrap_or_else(|_| EMBEDDED_CIV6_UNIT_FLAG_PLATES.to_vec())
+}
+
 /// Where a single-player game keeps its own saves, relative to the process's
 /// working directory. Files are named `*.save.json`, which `.gitignore`
 /// already covers, so a game played inside a checkout leaves the tree clean.
@@ -4136,6 +4143,9 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
         ("GET", "/assets/civ6-yield-icons.png") => {
             respond(stream, "200 OK", "image/png", &civ6_yield_icons());
         }
+        ("GET", "/assets/civ6-unit-flag-plates.png") => {
+            respond(stream, "200 OK", "image/png", &civ6_unit_flag_plates());
+        }
         // A lock-free identity probe for supervised process handoffs. The
         // browser used to fetch the multi-megabyte `/state` document here and
         // could queue behind an AI step for its entire three-second timeout.
@@ -4756,8 +4766,9 @@ mod tests {
         tile_mark, valid_between_game_countdown_ms, viewer_path, ChronicleSnapshot, ChronicleState,
         FrameDelivery, Params, Session, Shared, SpectatorFrame, BETWEEN_GAME_COUNTDOWN_OPTIONS_MS,
         DEFAULT_BETWEEN_GAME_COUNTDOWN_MS, EMBEDDED_APP_JS, EMBEDDED_APP_SETUP_JS,
-        EMBEDDED_CIV6_UNIT_FLAGS, EMBEDDED_CIV6_YIELD_ICONS, EMBEDDED_HIDDEN_MAP_MONSTERS,
-        EMBEDDED_INDEX, MAX_EXACT_JAVASCRIPT_INTEGER, SAVE_DIR, STATE_LONG_POLL, VIEWER_ACTIVE,
+        EMBEDDED_CIV6_UNIT_FLAGS, EMBEDDED_CIV6_UNIT_FLAG_PLATES, EMBEDDED_CIV6_YIELD_ICONS,
+        EMBEDDED_HIDDEN_MAP_MONSTERS, EMBEDDED_INDEX, MAX_EXACT_JAVASCRIPT_INTEGER, SAVE_DIR,
+        STATE_LONG_POLL, VIEWER_ACTIVE,
     };
     use crate::game::{Action, Game, LeaderPool, PlayOnMode, VictoryConditions, CIV6_LEADER_POOL};
     use crate::server::{
@@ -12532,8 +12543,10 @@ fetchpriority=\"high\""
         assert!(EMBEDDED_INDEX.contains("const COMMAND_UNIT_ICON_SHARE = .66;"));
         assert_eq!(
             EMBEDDED_INDEX.matches("COMMAND_UNIT_ICON_SHARE").count(),
-            3,
-            "the one share is declared once and spent only by the seat routine"
+            4,
+            "the one share is declared once and spent only by the seat \
+             routine -- once for the cut flag and once for each retired \
+             fallback shape"
         );
         assert_eq!(
             EMBEDDED_INDEX.matches("strategicUnitGlyphSeat(").count(),
@@ -12570,60 +12583,147 @@ fetchpriority=\"high\""
         }
     }
 
-    /// Two counter shapes, and they are the base game's two: a circle for a
-    /// unit that can fight and Civilization VI's rounded triangle, point down,
-    /// for one that cannot. The retired civilian capsule was a shape of the
-    /// viewer's own invention, which is why it read as a second marker set
-    /// instead of as the same set saying "this one is not an army".
+    /// The command counter is Civilization VI's own unit flag, not a shape of
+    /// this viewer's. Both retired shapes -- the circle and the rounded
+    /// triangle, point *down* -- were invented here; the base game authors
+    /// eight silhouettes, points its civilian triangle *up*, stands a
+    /// fortified soldier on a shield and an embarked one on a boat cut. This
+    /// is the same contract the yield signs already keep: the sheet is cut off
+    /// the installed game, and every question the counter answers is measured
+    /// from that one sheet rather than restated beside it.
     #[test]
-    fn a_civilian_counter_is_the_base_games_rounded_triangle() {
-        assert!(!EMBEDDED_INDEX.contains("cx.roundRect(x - r, y - h / 2, r * 2, h, h / 2)"));
-        assert!(EMBEDDED_INDEX.contains("const CIVILIAN_TOKEN_CORNER = .30;"));
-        assert!(EMBEDDED_INDEX.contains("const CIVILIAN_TOKEN_VERTEX = 1 - CIVILIAN_TOKEN_CORNER;"));
-        let token = EMBEDDED_INDEX
-            .split("function strategicUnitTokenPath(x, y, r, civilian = false) {")
-            .nth(1)
-            .and_then(|tail| tail.split("function strategicUnitCounterHalfWidth").next())
-            .expect("strategic unit counter outline");
-        assert!(token.contains("if (!civilian) { cx.arc(x, y, r, 0, 7); return; }"));
-        // The corners are three discs and `cx.arc` draws the side into each,
-        // which is how the three-count yield plate already makes the base
-        // game's rounded triangle. The first vertex points straight down.
-        assert!(token.contains("const out = Math.PI / 2 + at * 2 * Math.PI / 3;"));
-        assert!(token.contains(
-            "cx.arc(x + Math.cos(out) * vertex, y + Math.sin(out) * vertex, corner,\n           out - Math.PI / 3, out + Math.PI / 3);"
+    fn a_unit_counter_is_the_base_games_own_flag() {
+        assert!(EMBEDDED_CIV6_UNIT_FLAG_PLATES.starts_with(b"\x89PNG\r\n\x1a\n"));
+        assert!(EMBEDDED_CIV6_UNIT_FLAG_PLATES.len() > 5_000);
+        // Cut, not imitated, and the cutter says where from.
+        let cutter = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tools/civ6_unit_flag_plates.py"),
+        )
+        .expect("the flag-plate cutter");
+        assert!(cutter.contains("Base/Platforms/Windows/BLPs/UI/InWorld.blp"));
+        assert!(
+            cutter.contains("import civ6_env as env"),
+            "the install is resolved by the one module allowed to look for it"
+        );
+        assert!(EMBEDDED_INDEX
+            .contains("CIV6_FLAG_PLATE_ATLAS.src = \"/assets/civ6-unit-flag-plates.png\""));
+        assert!(EMBEDDED_INDEX.contains(
+            "const CIV6_FLAG_PLATE_STYLES = [\"base\", \"civilian\", \"naval\", \"support\",\n                                \"trade\", \"religion\", \"fortify\", \"embark\"];"
         ));
 
-        // The triangle stands inside the circle its seat was measured for, so
-        // a civilian can no more crowd its hex than a soldier can.
-        assert!(EMBEDDED_INDEX.contains("strategicUnitTokenPath(ux, uy, r, civilian);"));
-        assert!(EMBEDDED_INDEX.contains("strategicUnitTokenPath(x, y, rr, civilian);"));
-        assert!(EMBEDDED_INDEX.contains("strategicUnitTokenPath(d.x, d.y, r, civilian);"));
-        // And the selection ring is the counter's own outline, not a circle
-        // drawn over a triangle.
+        // The sheet really carries those eight styles, in that order, as
+        // square cells -- the one fact a re-cut could break silently.
+        let cell = usize::from(u32::from_be_bytes(
+            EMBEDDED_CIV6_UNIT_FLAG_PLATES[20..24].try_into().unwrap(),
+        ) as u16);
+        let width =
+            u32::from_be_bytes(EMBEDDED_CIV6_UNIT_FLAG_PLATES[16..20].try_into().unwrap()) as usize;
+        assert!(cell > 0, "the plate sheet has a height");
+        assert_eq!(
+            width,
+            cell * 8,
+            "eight square style cells in one row, {cell}px each"
+        );
+
+        // The silhouette is measured off the sheet, once, and everything the
+        // counter has to answer comes from that measurement. A hand-kept table
+        // of shapes beside it is exactly what this replaces.
+        assert!(EMBEDDED_INDEX.contains("function measureCiv6FlagPlates() {"));
+        assert!(EMBEDDED_INDEX.contains("CIV6_FLAG_PLATE_ATLAS.onload = () => {"));
+        let token = EMBEDDED_INDEX
+            .split("function strategicUnitTokenPath(x, y, r, style = null) {")
+            .nth(1)
+            .and_then(|tail| tail.split("// Paint one whole counter").next())
+            .expect("strategic unit counter outline");
+        assert!(token.contains("const shape = civ6FlagPlateShape(style);"));
+        assert!(token.contains("for (let at = 0; at < shape.outline.length; at++) {"));
+
+        // The tint keeps the flag's authored shading instead of flattening it
+        // to the owner's colour, and puts the silhouette's alpha back after.
+        let plate = EMBEDDED_INDEX
+            .split("function civ6UnitFlagPlate(style, color) {")
+            .nth(1)
+            .and_then(|tail| tail.split("// The counter's outline").next())
+            .expect("flag plate tint");
+        assert!(plate.contains("g.globalCompositeOperation = \"multiply\";"));
+        assert!(plate.contains("g.globalCompositeOperation = \"destination-in\";"));
+
+        // One counter routine paints the flat map, the globe and the casualty,
+        // so no surface can quietly keep drawing a circle.
         assert!(EMBEDDED_INDEX
-            .contains("strategicUnitTokenPath(x, y, Math.max(0, rr - 1.2), civilian);"));
+            .contains("function drawStrategicUnitCounter(x, y, r, style, fill, ink, outline) {"));
+        assert_eq!(
+            EMBEDDED_INDEX.matches("drawStrategicUnitCounter(").count(),
+            4,
+            "the flat map, the globe and the casualty all paint the one counter"
+        );
+        // And the selection ring is still the counter's own outline, not a
+        // circle drawn over a flag.
+        assert!(
+            EMBEDDED_INDEX.contains("strategicUnitTokenPath(x, y, Math.max(0, rr - 1.2), style);")
+        );
         assert_eq!(
             EMBEDDED_INDEX.matches("strategicUnitTokenPath(").count(),
-            6,
-            "the flat map fill, outline and selection ring, the globe and the \
-             casualty all take the one token path"
+            4,
+            "the counter routine's fill and outline, the selection ring, and \
+             the one declaration"
         );
 
-        // Which unit gets which counter is the viewer's one answer to "can
-        // this fight", not a second list kept beside it.
-        assert!(EMBEDDED_INDEX.contains("const civilian = CIVILIAN_UNITS.has(u.type);"));
-        assert!(EMBEDDED_INDEX.contains("const civilian = CIVILIAN_UNITS.has(unit.type);"));
-        assert!(EMBEDDED_INDEX.contains("const civilian = CIVILIAN_UNITS.has(d.type);"));
+        // Which flag a unit stands on is the ruleset's own answer, so a mod's
+        // unit takes the right silhouette without a second roster kept here.
+        let style = EMBEDDED_INDEX
+            .split("function civ6UnitFlagStyle(unit) {")
+            .nth(1)
+            .and_then(|tail| tail.split("function measureCiv6FlagPlates").next())
+            .expect("unit flag style");
+        assert!(style.contains("if (unit.embarked) return \"embark\";"));
+        assert!(style.contains("if (unit.fortified) return \"fortify\";"));
+        assert!(style.contains("if (spec.class === \"religious\") return \"religion\";"));
+        assert!(style.contains("if (spec.class === \"support\") return \"support\";"));
+        assert!(style.contains("if (spec.domain === \"sea\") return \"naval\";"));
+        assert!(style.contains(
+            "if (spec.class === \"civilian\" || spec.class === \"espionage\") return \"civilian\";"
+        ));
+        assert!(style.contains("return CIVILIAN_UNITS.has(unit.type) ? \"civilian\" : \"base\";"));
+        // Those class names have to be the ones the ruleset actually ships, or
+        // every unit would silently fall through to the military flag.
+        let rules = crate::rules::Rules::embedded();
+        for (unit, class) in [
+            ("missionary", "religious"),
+            ("battering_ram", "support"),
+            ("settler", "civilian"),
+        ] {
+            assert_eq!(
+                rules.units.get(unit).map(|spec| spec.class.as_str()),
+                Some(class),
+                "{unit} must still be class {class} for the flag it stands on"
+            );
+        }
+        assert_eq!(
+            rules
+                .units
+                .get("galley")
+                .and_then(|spec| spec.domain.clone()),
+            Some("sea".into()),
+            "a Galley must still be a sea unit for the naval flag"
+        );
+        assert!(
+            rules.units.contains_key("trader"),
+            "the Trade flag is named for a real unit"
+        );
+
+        // The retired shapes stay as the pre-load fallback, and only as that.
+        assert!(EMBEDDED_INDEX.contains("const CIVILIAN_TOKEN_CORNER = .30;"));
+        assert!(token.contains("if (style !== \"civilian\") { cx.arc(x, y, r, 0, 7); return; }"));
+        assert!(!EMBEDDED_INDEX.contains("cx.roundRect(x - r, y - h / 2, r * 2, h, h / 2)"));
+        assert!(!EMBEDDED_INDEX.contains("CIVILIAN_UNITS.has(u.type);"));
 
         // A health bar is only ever as wide as the counter is where it sits,
-        // so a plundered Trader's bar tightens into the point instead of
-        // hanging out over the tile.
-        assert!(
-            EMBEDDED_INDEX.contains("function strategicUnitCounterHalfWidth(r, dy, civilian) {")
-        );
+        // so a plundered Trader's bar tightens into the flag's point instead
+        // of hanging out over the tile -- now read off the real silhouette.
+        assert!(EMBEDDED_INDEX.contains("function strategicUnitCounterHalfWidth(r, dy, style) {"));
         assert!(EMBEDDED_INDEX.contains(
-            "const room = strategicUnitCounterHalfWidth(r, by + bh + frame - y, civilian);"
+            "const room = strategicUnitCounterHalfWidth(r, by + bh + frame - y, style);"
         ));
         assert!(EMBEDDED_INDEX
             .contains("const bw = Math.min(r * 1.28, Math.max(0, room - frame) * 2);"));

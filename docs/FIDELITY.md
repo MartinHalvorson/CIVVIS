@@ -1749,11 +1749,34 @@ Information-era empire still fielded — and still trained — Slingers.
 | No unit ever became obsolete | 33 units carry the shipped `MandatoryObsoleteTech`; researching it removes the unit from every production and purchase menu and from every queue |
 | No unit could ever be upgraded | 52 units carry their shipped `UnitUpgrades` successor, reachable through the new `upgrade_unit` action |
 
-The Gold price is the one number this wave could not read from the database:
-`UPGRADE_BASE_COST` (10) and `UPGRADE_MINIMUM_COST` (15) are shipped
-GlobalParameters, but the per-Production factor lives in the executable. The
-engine charges the community-documented `10 + 2 × Production difference`,
-which reproduces the in-game prices those two parameters bracket.
+⚠ **This paragraph used to say the per-Production factor "lives in the
+executable" and that `10 + 2 × Production difference` was community
+documentation. Corrected 2026-08-23 (#2372): every term is a shipped
+`GlobalParameters` row, and the arithmetic was read out of
+`GameCore_XP2_FinalRelease.dll` rather than guessed at.**
+
+`Rules::Units::Instance::GetUpgradeCost` reads **six** rows, not two:
+
+| parameter | value | role |
+|---|---:|---|
+| `UPGRADE_BASE_COST` | 10 | the constant term |
+| `UPGRADE_NET_PRODUCTION_PERCENT_COST` | **100** | takes *all* of the Production difference (Vanilla ships 75; Expansion2 replaces it) |
+| `GOLD_EQUIVALENT_OTHER_YIELDS` | **2** | converts that Production to Gold — a separate row, and the whole of the "×2" |
+| `PURCHASE_DIVISOR` | **5** | the quote is truncated, then rounded **down** to a multiple of 5 |
+| `UPGRADE_MINIMUM_COST` | 15 | applied *after* the formation multiplier and any discount |
+| `UPGRADE_MINIMUM_COST_LEVY` | 0 | the same floor for a levied unit |
+
+So the familiar `10 + 2 × ΔProduction` is right, and it is right for a reason
+nobody had written down: the percent row and the Gold-equivalent row are
+different things that happen to multiply to 2. Reading it as one fudged
+coefficient is what made it look unsourced — and a "fix" that removed the
+factor of 2 would have halved every upgrade in the game.
+
+⭐ **The transferable part is the method.** "It lives in the DLL" had stood as a
+reason not to check. It is not one: the shipped binary can be disassembled, and
+the `GlobalParameters` initializer names every field by offset, so a value that
+is not in the database can still be *read* instead of inferred. Prefer that over
+community documentation whenever a number is load-bearing.
 
 **Sixth wave (bands, maps, routes, spawns):** `Happinesses`, `Maps`, `WMDs`
 and more of `GlobalParameters` join the audit — 25 tables at zero unwaived

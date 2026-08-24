@@ -65,21 +65,51 @@ effects**:
 The tail is long: 32 effects reach half the rows and the other half needs 666
 more. See [MODIFIERS.md](MODIFIERS.md) for the ranked backlog.
 
-### Half the difficulty ladder cannot be transcribed at all
+### The difficulty ladder is transcribed, and "it's in the DLL" was never a reason not to look
 
-[FIDELITY.md](FIDELITY.md) audits `data/difficulties.json` against the shipped
-database. The transcribable half is **exact** — `MajorStartingUnits` bonus
-units match cell for cell at every rung, and the barbarian raid switch matches
-Civ 6's own threshold and directions.
+⚠ **This section first said the larger half of the ladder "does not exist in
+shipped data" and was "designed here, not transcribed". That was wrong, and two
+PRs on 2026-08-23 disproved it independently.** It is kept as written-down
+evidence of how easily an unchecked "it lives in the executable" propagates.
 
-The other half does not exist in shipped data. `ai_yield_pct`,
-`ai_combat_strength`, `ai_xp_pct` and `ai_era_boosts` — the larger effect by
-far — live in the compiled GameCore DLL. So do city-state quest selection and
-the shipped AI itself. Those numbers are **designed here, not transcribed**.
+`data/difficulties.json` audits against the shipped database as **exact**, on
+both halves. `MajorStartingUnits`, `BonusMinorStartingUnits` and the
+`BarbarianAttackForces` bands match cell for cell at every rung — and so do the
+handicaps that were supposed to be unverifiable, because they are ordinary
+shipped `Modifiers` rows (#2375):
 
-> ⚠ Therefore "the agent wins 0/200 at Deity" is a statement about **CIVVIS'
-> Deity**, not about Civ 6's. Only [CIV6_LADDER.md](CIV6_LADDER.md), which
-> plays the actual game, can settle the other question.
+| shipped modifier | CIVVIS |
+|---|---|
+| `HIGH_DIFFICULTY_{SCIENCE,CULTURE,FAITH}_SCALING`, +8/rung off Prince | `ai_yield_pct` 8/16/24/32 ✅ |
+| `HIGH_DIFFICULTY_{PRODUCTION,GOLD}_SCALING`, +20/rung | `ai_yield_pct` 20/40/60/80 ✅ |
+| `HIGH_DIFFICULTY_COMBAT_SCALING`, base −1 then +1/rung | `ai_combat_strength` 0/1/2/3 ✅ |
+| `HIGH_DIFFICULTY_UNIT_XP_SCALING`, +10/rung | `ai_xp_pct` 10/20/30/40 ✅ |
+| `HIGH_DIFFICULTY_FREE_{TECH,CIVIC}_BOOSTS`, +1/rung, **two** modifiers | `ai_era_boosts` 1/2/3/4, as both a Eureka and an Inspiration set ✅ |
+
+And where a number genuinely is not in the database, the binary can still be
+**read**: #2372 disassembled `Rules::Units::Instance::GetUpgradeCost` in
+`GameCore_XP2_FinalRelease.dll` and named every `GlobalParameters` field by
+offset, settling a formula that had stood on community documentation for the
+project's whole life — and finding two real divergences in the process
+(a missing `PURCHASE_DIVISOR` round-down, and a minimum applied before the
+formation multiplier instead of after).
+
+> ⭐ **The rule this replaces the old caveat with:** "it lives in the compiled
+> DLL" is a statement about *effort*, not about *knowability*. Before writing a
+> number down as designed-here, check the shipped modifier rows, then the
+> binary. Both were cheaper than the caveat.
+
+What is genuinely DLL-side and not transcribed: the shipped AI's own
+decision-making, and the `AiLists`/`TreeData` plumbing that gates it by
+difficulty. Five shipped Rise & Fall Loyalty difficulty rows are known and
+simply not carried yet (`FREE_CITY_INFLUENCE`, the two `DARK_AGE_CITIES_LOST_*`
+rows, and the two `*_DIFFICULTY_HUMAN_MARTIAL_LAW` rows) — wiring, not
+mechanism.
+
+> ⚠ A Deity result here is still a statement about **CIVVIS' Deity** until the
+> real game is played at that rung — but now because CIVVIS' *opponent* is not
+> Firaxis' AI, not because the handicap numbers are invented. Only
+> [CIV6_LADDER.md](CIV6_LADDER.md) settles the other question.
 
 ### Dynamics are barely measured
 

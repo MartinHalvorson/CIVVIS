@@ -1443,6 +1443,16 @@ class TheTableIsDerived(unittest.TestCase):
         self.assertEqual(ranking.diff_cell(arms(0.17, 0.15)), "2.00%")
         self.assertEqual(ranking.diff_cell(arms(0.15, 0.17)), "-2.00%")
 
+    def test_rows_rank_by_descending_pooled_diff(self):
+        """The rendered Rank column follows its displayed pooled Diff column."""
+        ledger = json.loads(ranking.LEDGER_JSON.read_text())
+        measured, _ = ranking.load_display_sources(ledger)
+        shown = []
+        for cells in self._ranked_rows():
+            tag = cell(cells, "Gene").strip("`")
+            shown.append((tag, ranking.pooled_win_diff_pp(measured[tag])))
+        self.assertEqual(shown, sorted(shown, key=lambda row: (-row[1], row[0])))
+
     def test_the_printed_diff_includes_the_display_batch_but_not_the_default(self):
         """The completed 10k report refreshes display statistics only.
 
