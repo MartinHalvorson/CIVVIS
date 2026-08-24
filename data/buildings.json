@@ -1215,9 +1215,11 @@
       "production": 2
     },
     "maintenance": 1,
+    "modifiers": [
+      "hangar_bonus_air_slots"
+    ],
     "effects": {
-      "air_unit_xp_pct": 25,
-      "air_slots": 1
+      "air_unit_xp_pct": 25
     }
   },
   "airport": {
@@ -1232,10 +1234,12 @@
     },
     "maintenance": 2,
     "power": 1,
+    "modifiers": [
+      "airport_bonus_air_slots"
+    ],
     "effects": {
       "powered_production": 2,
       "air_unit_xp_pct": 50,
-      "air_slots": 1,
       "airlift": 1
     }
   },

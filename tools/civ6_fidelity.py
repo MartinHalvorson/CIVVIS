@@ -275,6 +275,39 @@ class Database:
             fields[child.tag] = (child.text or "").strip()
         return fields
 
+    def _delete_types(self, node) -> None:
+        """Retire every row whose key names a type the ruleset just deleted.
+
+        ⚠ `Types` IS THE PARENT TABLE OF THE WHOLE GAMEPLAY DATABASE. Every
+        `<Policies>`-style row's key column is declared
+        ``REFERENCES Types(Type) ON DELETE CASCADE``, so a single
+        ``<Types><Delete Type="POLICY_MERITOCRACY"/>`` removes the policy, its
+        modifiers and its Civilopedia page at once — and a pack that retires
+        content this way ships **no** `<Policies><Delete>` beside it.
+
+        Without this the audit read those rows as content CIVVIS was missing.
+        Five of them were sitting in the "only in Civ VI" column on 2026-08-23:
+        Gathering Storm deletes `POLICY_MERITOCRACY` and `POLICY_SACK` (both
+        expansions retire them), and `Expansion2_Projects.xml` deletes
+        `PROJECT_LAUNCH_MARS_HABITATION`, `_HYDROPONICS` and `_REACTOR` when it
+        replaces the Mars space race with the Exoplanet Expedition. Four
+        Beliefs and Genghis Khan are retired the same way. CIVVIS is correct
+        not to carry any of them, and an agent closing the coverage gap by
+        reading that column would have modelled content the shipped game does
+        not have — the exact failure the `RemoveData` comment in
+        `load_database` records twice already.
+        """
+        doomed = {
+            child.attrib["Type"]
+            for child in node
+            if child.tag == "Delete" and child.attrib.get("Type")
+        }
+        if not doomed:
+            return
+        for rows in self.tables.values():
+            for key in [key for key in rows if doomed.intersection(key)]:
+                del rows[key]
+
     def apply_file(self, path: Path) -> None:
         try:
             root = ET.parse(path).getroot()
@@ -285,6 +318,9 @@ class Database:
             return
         for table_node in root:
             table = table_node.tag
+            if table == "Types":
+                self._delete_types(table_node)
+                continue
             if table not in TABLE_KEYS:
                 continue
             rows = self.tables.setdefault(table, {})
@@ -530,6 +566,13 @@ ALIASES = {
     "mongolian_keshig": "keshig",
     "polish_hussar": "winged_hussar",
     "chinese_crouching_tiger": "crouching_tiger",
+    # Four more of the same shape, found by reading the two "only in" columns
+    # together: each of these was reported missing from CIVVIS *and* extra in
+    # CIVVIS at the same time, which is what an unresolved rename looks like.
+    "portuguese_nau": "nau",
+    "maori_toa": "toa",
+    "ethiopian_oromo_cavalry": "oromo_cavalry",
+    "lahore_nihang": "nihang",
     "antiair_gun": "anti_air_gun",
     # Warrior Monk promotions carry a MONK_ prefix in the shipped table, and
     # three more differ by a word. Same blind spot as the unique units.
@@ -540,6 +583,27 @@ ALIASES = {
     "monk_sweeping_wind": "sweeping_wind",
     "monk_dancing_crane": "dancing_crane",
     "monk_cobra_strike": "cobra_strike",
+    # Spy promotions carry a SPY_ prefix in the shipped table; CIVVIS names them
+    # the way the promotion screen does, and the espionage engine has always
+    # spelled them that way. `guerilla` is Firaxis' spelling, not a second
+    # promotion — `civ6_unit_promotion_name` already translates that one letter.
+    "spy_ace_driver": "ace_driver",
+    "spy_cat_burglar": "cat_burglar",
+    "spy_con_artist": "con_artist",
+    "spy_covert_action": "covert_action",
+    "spy_demolitions": "demolitions",
+    "spy_disguise": "disguise",
+    "spy_guerilla_leader": "guerrilla_leader",
+    "spy_license_to_kill": "license_to_kill",
+    "spy_linguist": "linguist",
+    "spy_polygraph": "polygraph",
+    "spy_quartermaster": "quartermaster",
+    "spy_rocket_scientist": "rocket_scientist",
+    "spy_satchel_charges": "satchel_charges",
+    "spy_seduction": "seduction",
+    "spy_smear_campaign": "smear_campaign",
+    "spy_surveillance": "surveillance",
+    "spy_technologist": "technologist",
     "surf_rock": "surf_band",
     "goes_to": "goes_to_11",
     "pop": "pop_star",
@@ -1951,6 +2015,10 @@ PROMOTION_CLASSES = {
     "PROMOTION_CLASS_ROCK_BAND": "rock_band",
     "PROMOTION_CLASS_GIANT_DEATH_ROBOT": "giant_death_robot",
     "PROMOTION_CLASS_SUPPORT": "support",
+    # The Spy's tree is the one promotion class the off-map espionage engine
+    # resolves rather than the map-unit XP path, and CIVVIS names the class
+    # after the unit class it belongs to.
+    "PROMOTION_CLASS_SPY": "espionage",
 }
 
 

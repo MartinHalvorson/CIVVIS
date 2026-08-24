@@ -41,6 +41,12 @@ const RELIGIOUS_HOME_WATCH: i32 = 4;
 /// from reading the unseen objective as empty terrain.
 const UNKNOWN_OBJECTIVE_WALL_HP: i32 = 100;
 const UNKNOWN_OBJECTIVE_STRENGTH: f64 = 100.0;
+/// How many times a `fog_honest_2` major re-plans the rest of its turn after
+/// the authoritative board refuses one of its orders. One retry buys back the
+/// turn a single hidden blocker used to void; an unbounded loop would let a
+/// seat that cannot act at all re-plan its whole turn every turn, and the
+/// fog-honest plan is already the most expensive thing this controller does.
+const FOG_REPLAN_LIMIT: u32 = 1;
 /// What one point of health already stripped from a breached city is worth to
 /// [`AdvancedAi::campaign_city_value`], as a reason to finish that city rather
 /// than re-aim.
@@ -184,6 +190,58 @@ const LIVE_WONDER_RACE_BONUS: f64 = 1_500.0;
 /// Cities per additional concurrent wonder in the live race: a second lane at
 /// six cities, a third at twelve. See `AdvancedAi::live_wonder_race_lanes`.
 const LIVE_WONDER_RACE_CITIES_PER_LANE: usize = 6;
+
+/// ★★★★★ WHAT THE TALLY PAYS FOR A WONDER, READ OFF THE ENGINE.
+///
+/// `Game::score_parts` awards `15 * wonders` — the **densest line in the whole
+/// tally**: a civic is 3, a city 5, a district 2, a building 1, a point of
+/// population 1, a Great Person 5, a tech 2, a point of era score 1. Nothing
+/// else in the build menu pays fifteen.
+///
+/// `wonder_score_tally` is the only thing on a native board that tells the
+/// production queue so. `live_wonder_race` prices the same fifteen points on
+/// the live Civilization VI seat and is `Kind::HostOnly`, so a headless game
+/// never sees it; the four other gates on the `Item::Wonder` arm are keyed to
+/// a Culture plan, a Score target, an untargeted Egypt or China, or a lane
+/// payload `strategic_wonder_value` can price — and none of them is a
+/// statement about what the wonder is worth to a seat playing for score.
+///
+/// The constant is pinned to the engine by
+/// `the_tally_pays_what_the_wonder_gene_prices`, so a rules change that
+/// re-scores a wonder fails the test rather than silently mispricing the gene.
+const WONDER_TALLY_SCORE_POINTS: f64 = 15.0;
+
+/// What one point of the score tally is worth in the raw units
+/// `production_value` normalises by `(7 + turns)`.
+///
+/// Not a new calibration: `LIVE_WONDER_RACE_BONUS` is 1 500 for the same
+/// fifteen points and its comment states the derivation — "Fifteen host score
+/// points at ~100 raw each puts a 220-cost wonder at ~80 in a 20-production
+/// city (above a Library, below a Settler)". CIVVIS's own tally pays the same
+/// fifteen, so the same hundred transfers by construction, and the two genes
+/// price a wonder identically rather than arguing.
+const WONDER_TALLY_POINT_VALUE: f64 = 100.0;
+
+/// The density bar `wonder_score_tally` puts in front of the lane: a wonder
+/// must return at least this much value per point of its production cost
+/// before the arm will consider it at all.
+///
+/// ⚠ This is the line that keeps the repair from becoming "a wonder attractive
+/// to everyone", the failure mode `strategic_wonder_value`'s comment names and
+/// the `-10_000` sentinel exists to prevent. A flat fifteen points buys a
+/// 1 850-production Sydney Opera House exactly as eagerly as a 180-production
+/// Great Bath, which is the mistake `LIVE_WONDER_RACE_BONUS` had to patch with
+/// a late-game ramp. Stated directly instead: an ordinary Library returns
+/// ~960 raw for 90 production, or ~10.7 per point, so 3.0 asks a wonder for
+/// somewhat over a quarter of an ordinary building's density **in tally value
+/// alone**, before any lane payload. Against the 53-wonder roster's quantized
+/// costs (180 · 220 · 290 · 400 · 710 · 920 · 1 060 · 1 240 · 1 450 · 1 620 ·
+/// 1 740 · 1 850) it admits **19 of the 53** under Expansion, Conquest, Science
+/// and Diplomacy — every wonder costing 400 or less — and 20 under Religion,
+/// where one 710-production wonder's own faith carries it over. Everything
+/// dearer is refused, which is the same cut `production_value`'s own
+/// `raw / (7 + turns)` makes, arrived at before the queue is walked.
+const WONDER_TALLY_MIN_DENSITY: f64 = 3.0;
 
 /// What finishing the game outright is worth to [`AdvancedAi::strategic_wonder_value`],
 /// in the raw units `production_value` normalises by `(7 + turns)`. Every
@@ -828,6 +886,79 @@ impl ExpansionCensus {
         self.advanced_late_settler_turns
             .extend(other.advanced_late_settler_turns.iter().copied());
     }
+}
+
+/// What the fog-honest major's private plan actually managed to do on the
+/// authoritative board.
+///
+/// `AdvancedAi::take_turn_fog_honest` plans a whole turn inside a redacted
+/// clone and then replays the resulting action tape against the real game,
+/// where hidden blockers and combat are the legality authority. Until this
+/// census existed, every one of those replays discarded its `Result`
+/// (`let _ = authoritative.apply(..)`), so the one number that says whether
+/// fair-play planning is *executing* — how much of the plan the board
+/// accepted — was recorded nowhere. `docs/AI_GAPS.md` asks for exactly this
+/// ("measure replay refusals and throughput") and nothing measured it.
+///
+/// Telemetry only: nothing here feeds a decision, a score, or an action
+/// choice. Counts are keyed by `crate::action_space::kind_name`, so the
+/// buckets are the engine's own action variants and not a hand-kept list.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct FogPlanCensus {
+    /// Fog-honest major turns taken.
+    pub turns: u32,
+    /// Actions the private planning world produced, by action kind.
+    pub planned: BTreeMap<&'static str, u32>,
+    /// Actions the authoritative board accepted, by action kind.
+    pub applied: BTreeMap<&'static str, u32>,
+    /// Actions the authoritative board refused, by action kind. A refusal is
+    /// an order the seat believed was legal and the real world was not.
+    pub refused: BTreeMap<&'static str, u32>,
+    /// Turns whose tape stopped early because the seat lost the turn cursor
+    /// (`authoritative.current != seat`), abandoning every remaining action.
+    pub truncated_turns: u32,
+    /// Actions abandoned without being offered to the board at all.
+    pub abandoned: u32,
+    /// Turns on which at least one action was refused.
+    pub refused_turns: u32,
+    /// Re-plans performed by `fog_honest_2` after a refusal.
+    pub replans: u32,
+}
+
+impl FogPlanCensus {
+    /// Combine independent seats or games.
+    pub fn merge(&mut self, other: &FogPlanCensus) {
+        self.turns += other.turns;
+        self.truncated_turns += other.truncated_turns;
+        self.abandoned += other.abandoned;
+        self.refused_turns += other.refused_turns;
+        self.replans += other.replans;
+        for (bucket, source) in [
+            (&mut self.planned, &other.planned),
+            (&mut self.applied, &other.applied),
+            (&mut self.refused, &other.refused),
+        ] {
+            for (kind, count) in source {
+                *bucket.entry(kind).or_default() += count;
+            }
+        }
+    }
+
+    fn count(bucket: &mut BTreeMap<&'static str, u32>, action: &Action) {
+        *bucket
+            .entry(crate::action_space::kind_name(action))
+            .or_default() += 1;
+    }
+}
+
+/// What one replay of a fog-honest tape did to the authoritative board.
+#[derive(Clone, Copy, Debug, Default)]
+struct FogReplayOutcome {
+    /// Actions the board refused.
+    refused: u32,
+    /// The seat's turn is closed, or the cursor left it: nothing more can be
+    /// planned for it this turn.
+    finished: bool,
 }
 
 /// A concrete game-ending objective. Unlike `GrandStrategy`, which may
@@ -1486,6 +1617,25 @@ pub struct AdvancedAi {
     /// the first end-to-end fair-play controller; the incumbent remains on the
     /// historical direct-game path until the mode clears a strength screen.
     pub fog_honest: bool,
+    /// Version 2 of the fog-honest major (`fog-honest-2`): the same redacted
+    /// planning world and the same replay, plus a re-plan when the
+    /// authoritative board refuses an order.
+    ///
+    /// ★★★★★ THE THING VERSION 1 DOES NOT DO AT ALL. A fog-honest turn is one
+    /// plan made against a world with no hidden units in it, replayed against
+    /// a world that has them. When the board refuses an order, every later
+    /// order on that tape was planned on the assumption it succeeded, and
+    /// version 1 applies them anyway and then ends the turn on the tape's own
+    /// `EndTurn`. With this on, the seat drops the rest of the stale tape and
+    /// crosses the fog boundary again from the board as it now stands — which
+    /// already contains whatever the refusal revealed — at most
+    /// [`FOG_REPLAN_LIMIT`] times a turn. What the boundary actually does is
+    /// in [`FogPlanCensus`]; the measurement is in `docs/AI_GAPS.md`.
+    ///
+    /// One version of a family plays: turning this on turns
+    /// [`Self::fog_honest`] OFF, and `take_turn` admits either flag into the
+    /// fog-honest turn. Native, off-by-default gene.
+    pub fog_honest_2: bool,
     /// Adapt a live Firaxis Trader's zero walking movement to its distinct
     /// route-start action.  This stays off for every native game and is enabled
     /// only by the Civ VI order bridge.
@@ -2153,6 +2303,10 @@ pub struct AdvancedAi {
     /// Factual mechanism telemetry for the two flags above. It never feeds a
     /// decision, score, or action selection.
     expansion_census: ExpansionCensus,
+    /// Factual telemetry for the fog-honest replay boundary. It never feeds a
+    /// decision, score, or action selection. Only a `fog_honest` turn writes
+    /// to it, so a stock controller's copy stays empty.
+    fog_plan_census: FogPlanCensus,
     /// Let the city-pressure/recovery path use decaying last-seen hostile
     /// military strength after the contact passes back into fog. This is a
     /// default-off evaluator arm; it does not claim to make the broader
@@ -2371,6 +2525,72 @@ pub struct AdvancedAi {
     ///
     /// See `AdvancedAi::strategic_wonder_value` for the derivation.
     pub strategic_wonders: bool,
+    /// ★★★★★ A WONDER LANE ANY CIVILIZATION CAN REACH ON MERIT.
+    ///
+    /// The `Item::Wonder` arm of [`AdvancedAi::production_value`] returns the
+    /// `-10_000` refusal sentinel unless one of three gates opens, and on a
+    /// native board none of them is a statement about what a wonder is worth:
+    ///
+    /// * `lane_opens` — a Culture plan, a Score target, or an **untargeted
+    ///   Egypt or China**. The civilization clause is an identity check rather
+    ///   than a merit check; the Culture clause is a merit check on the wrong
+    ///   quantity, since it asks what lane the empire is playing rather than
+    ///   what the wonder is worth.
+    /// * `live_race_opens` — `live_wonder_race`, which is `Kind::HostOnly`.
+    ///   Inert in every headless game; it exists for the Civilization VI seat.
+    /// * `strategic_opens` — `strategic_wonders`, which prices `spec.effects`
+    ///   **in the lane's own currency** and returns exactly zero for
+    ///   `Conquest`, `Expansion` and `Recovery` by construction. Those are the
+    ///   plans a seat with no assigned victory target spends most of its game
+    ///   in, which is one reading of its +0.05 pp win Δ (z +0.06, 10,002 seats,
+    ///   `docs/eval/2026-08-23-standard-gene-screen-10000-total-seats.md`).
+    ///
+    /// So the queue never learns the one thing about a wonder that is true for
+    /// everybody. `Game::score_parts` pays **15 points a wonder** — the densest
+    /// line of the tally, against 1 for a building and 2 for a district — and
+    /// three quarters of the games the standard screen plays end on that tally
+    /// at turn 250. The live seat's own note already did this arithmetic
+    /// ("13.6 points per 100 production against 2.2 for a Library") and then
+    /// confined it to Firaxis on the argument that "CIVVIS-vs-CIVVIS wonders
+    /// are the contested race the stock gate was written for".
+    ///
+    /// ⚠⚠ WHAT THE MEASUREMENT THEN SAID, AND IT IS NOT WHAT THIS COMMENT
+    /// FIRST CLAIMED. The brief that motivated the gene held that four of six
+    /// stock civilizations structurally never build a wonder, and that the live
+    /// seat finishes none. Both are false, and
+    /// `docs/eval/2026-08-24-the-wonder-lane-is-already-open-in-both-regimes.md`
+    /// has the numbers: **91.6% of deployment-genome seats finish a wonder,
+    /// 6.54 a seat** (237 seats), and Egypt and China — the two civilizations
+    /// this clause names — average **4.88 a seat against 6.60 for the other
+    /// forty-eight**. The disjunct that opens the lane is the Culture one, and
+    /// `assess` awards that lane on progress, so any empire enters it. On the
+    /// live seat the recorded corpus reads **91% of full-length runs finishing
+    /// at least one wonder, mean 7.05 a run** (64 runs) — the same lane open in
+    /// the same way, not a regime gap.
+    ///
+    /// So this gene is a reachability repair to a lane that was already
+    /// reachable. It is kept, OFF, because the row is where the next standard
+    /// screen will price it for free; its own 462-seat batch reads win Δ
+    /// +0.43 pp (95% CI [−6.8, +7.6]) and share Δ −0.23 pp (z −0.41), which is
+    /// `~` on both axes.
+    ///
+    /// With this on, a developed city — three cities in the empire, three
+    /// buildings in this one, at most one concurrent wonder per six cities —
+    /// may take a wonder whose ordinary value plus its fifteen tally points
+    /// clears `WONDER_TALLY_MIN_DENSITY` per point of production cost. It adds
+    /// **no flat lane bonus**: the wonder enters the ranking at exactly the
+    /// value it was measured at and still loses to a Settler or a district
+    /// worth more per turn, which is the half of the sentinel worth keeping.
+    ///
+    /// ⚠ Deliberately WITHOUT the live race's `wonder_era + 2 >= world_era`
+    /// staleness guard. That guard prices a Firaxis catalogue the rivals have
+    /// already eaten; on a native board the engine's own `built_wonders` menu
+    /// is the only contest there is, so an unbuilt ancient wonder is still
+    /// standing at turn 200 — and by then 400 production is seven turns, which
+    /// is the best fifteen points on the board rather than the worst.
+    ///
+    /// Off by default. See `WONDER_TALLY_SCORE_POINTS`.
+    pub wonder_score_tally: bool,
     /// Let the third city come before the Prophet on the live seat.
     ///
     /// ★★★★ EVERY LIVE GAME READS `Grand strategy: religion` FROM TURN 19–26.
@@ -5415,6 +5635,7 @@ impl AdvancedAi {
             belief: BeliefState::new(),
             battlefront_observation: true,
             fog_honest: false,
+            fog_honest_2: false,
             live_trader_route_adapter: false,
             solvent_faith_army: false,
             battlefront_frame: None,
@@ -5470,6 +5691,7 @@ impl AdvancedAi {
             late_expansion: false,
             expansion_dispatch: false,
             expansion_census: ExpansionCensus::default(),
+            fog_plan_census: FogPlanCensus::default(),
             belief_pressure: false,
             city_target_floor: 3,
             plan_city_target: false,
@@ -5482,6 +5704,7 @@ impl AdvancedAi {
             settlement_gap_reads_city_target: false,
             live_wonder_race: false,
             strategic_wonders: false,
+            wonder_score_tally: false,
             expansion_before_prophet: false,
             no_elective_war: false,
             naval_production_policy: false,
@@ -5887,6 +6110,12 @@ impl AdvancedAi {
     /// Snapshot expansion-treatment telemetry for an evaluator or census.
     pub fn expansion_census(&self) -> ExpansionCensus {
         self.expansion_census.clone()
+    }
+
+    /// Snapshot the fog-honest replay boundary's telemetry. Empty unless this
+    /// controller took at least one `fog_honest` turn.
+    pub fn fog_plan_census(&self) -> FogPlanCensus {
+        self.fog_plan_census.clone()
     }
 
     /// Whether the default-off dispatcher exposes Advanced production for this
@@ -9432,6 +9661,34 @@ impl AdvancedAi {
     /// one per `LIVE_WONDER_RACE_CITIES_PER_LANE` cities. See `live_wonder_race`.
     fn live_wonder_race_lanes(city_count: usize) -> usize {
         1 + city_count / LIVE_WONDER_RACE_CITIES_PER_LANE
+    }
+
+    /// What a wonder is worth to this city before any lane opinion of it: the
+    /// yields, housing, Amenities, Great Work slots and Great Person points
+    /// `spec` declares, in the raw units `production_value` normalises by
+    /// `(7 + turns)`.
+    ///
+    /// Lifted verbatim out of the `Item::Wonder` arm so `wonder_score_tally`'s
+    /// density bar and the arm's own score are the **same number** rather than
+    /// two expressions that can drift apart. It reads nothing off the board, so
+    /// it is safe to call inside a short-circuited gate on the hottest function
+    /// in the controller.
+    fn wonder_ordinary_value(
+        &self,
+        spec: &crate::rules::WonderSpec,
+        strategy: GrandStrategy,
+    ) -> f64 {
+        self.yield_value(spec.yields, strategy) * 45.0
+            + spec.housing * 30.0
+            + spec.amenity * 50.0
+            + spec.great_work_slots.values().sum::<i32>() as f64 * 40.0
+            + spec.great_person_points.values().sum::<f64>() * 18.0
+    }
+
+    /// The score tally's own price for a finished wonder, in the arm's raw
+    /// units. See `WONDER_TALLY_SCORE_POINTS` and `wonder_score_tally`.
+    fn wonder_tally_value() -> f64 {
+        WONDER_TALLY_SCORE_POINTS * WONDER_TALLY_POINT_VALUE
     }
 
     /// ★★★★★ THE WONDERS THE CHOSEN VICTORY ACTUALLY NEEDS.
@@ -21337,20 +21594,39 @@ impl AdvancedAi {
                     && city_count >= 3
                     && city.buildings.len() >= 3
                     && wonders_in_flight < Self::live_wonder_race_lanes(city_count);
+                // See `wonder_score_tally`. The fourth gate, and the only one
+                // any civilization can pass on merit: the fifteen points
+                // `Game::score_parts` pays for a finished wonder, against the
+                // production it costs. `&&` short-circuits on the flag, so
+                // with the gene off nothing below the first conjunct is
+                // evaluated and the arm is byte-identical.
+                //
+                // ⚠ It never stacks. `!lane_opens` and `!live_race_opens` mean
+                // the tally price is added exactly where no other gate already
+                // paid for the same wonder, so the Potala Palace cannot be
+                // refused by one bar and handed a bonus by another — the
+                // mistake the `strategic_value` comment above records.
+                let tally_opens = self.wonder_score_tally
+                    && !lane_opens
+                    && !live_race_opens
+                    && plan.strategy != GrandStrategy::Recovery
+                    && city_count >= 3
+                    && city.buildings.len() >= 3
+                    && wonders_in_flight < Self::live_wonder_race_lanes(city_count)
+                    && Self::wonder_tally_value()
+                        + strategic_value
+                        + self.wonder_ordinary_value(spec, plan.strategy)
+                        >= spec.cost * WONDER_TALLY_MIN_DENSITY;
                 if already_queued
                     || threatened
                     || spent_religion_founding_site
                     || city.buildings.len() < 2
                     || turns > remaining_turns * 0.65
-                    || !(lane_opens || live_race_opens || strategic_opens)
+                    || !(lane_opens || live_race_opens || strategic_opens || tally_opens)
                 {
                     -10_000.0
                 } else {
-                    self.yield_value(spec.yields, plan.strategy) * 45.0
-                        + spec.housing * 30.0
-                        + spec.amenity * 50.0
-                        + spec.great_work_slots.values().sum::<i32>() as f64 * 40.0
-                        + spec.great_person_points.values().sum::<f64>() * 18.0
+                    self.wonder_ordinary_value(spec, plan.strategy)
                         + if live_race_opens {
                             // Priced in the same units as the rest of this
                             // function, which is normalised by (7 + build
@@ -21384,6 +21660,14 @@ impl AdvancedAi {
                             // most of what is left) still refuse.
                             LIVE_WONDER_RACE_BONUS
                                 * Self::live_wonder_race_scale(g)
+                        } else if tally_opens {
+                            // The fifteen points, and nothing else. No lane
+                            // ramp and no flat sweetener: the density bar in
+                            // `tally_opens` has already established that this
+                            // wonder is worth its production, so the ranking's
+                            // own `raw / (7 + turns)` is left to decide whether
+                            // it beats the Settler or the district beside it.
+                            Self::wonder_tally_value()
                         } else if plan.strategy == GrandStrategy::Culture {
                             320.0
                         } else if self.victory_target == Some(VictoryTarget::Score) {
@@ -31350,12 +31634,13 @@ impl AdvancedAi {
     /// the private view was not entitled to know, and treating that refusal as
     /// a new observation is safer than manufacturing a replacement order from
     /// omniscient state.
-    fn take_turn_fog_honest(&mut self, g: &mut Game, pid: usize) {
-        // Headless runs normally disable the engine's large remembered-map
-        // snapshots.  This mode explicitly opts back in: terrain and borders
-        // seen on an earlier turn are part of the player's knowledge and are
-        // the map half of the same information boundary as BeliefState.
-        g.set_fog_memory(true);
+    /// Plan one whole turn inside a redacted clone of `g` and return the
+    /// action tape it produced. Split out of [`Self::take_turn_fog_honest`]
+    /// so the same fair-play boundary can be crossed more than once in a
+    /// turn: `fog_honest_2` re-enters it after the authoritative board
+    /// refuses a planned order, with the board's answer already folded into
+    /// what the seat can see.
+    fn fog_honest_plan(&mut self, g: &mut Game, pid: usize) -> Vec<(usize, Action)> {
         // A controller can be attached to a loaded game after the engine has
         // already accumulated City Center snapshots.  Seed only the public
         // fields from that memory (the saved snapshot has no combat-strength
@@ -31404,31 +31689,126 @@ impl AdvancedAi {
         private.with_deferred_visibility_pool(pool.as_deref(), |private| {
             self.take_turn_inner(private, pid)
         });
-        let actions: Vec<(usize, Action)> = private
+        private
             .log
             .since(start)
             .map(|(seat, action)| (*seat, action.clone()))
-            .collect();
+            .collect()
+    }
 
+    fn take_turn_fog_honest(&mut self, g: &mut Game, pid: usize) {
+        // Headless runs normally disable the engine's large remembered-map
+        // snapshots.  This mode explicitly opts back in: terrain and borders
+        // seen on an earlier turn are part of the player's knowledge and are
+        // the map half of the same information boundary as BeliefState.
+        g.set_fog_memory(true);
+        self.fog_plan_census.turns += 1;
+        let mut actions = self.fog_honest_plan(g, pid);
+        let mut replans = 0;
+        let mut refused_this_turn = false;
+        // ⚠ Version 1 closes the turn inside the SAME deferred-visibility
+        // scope as the replay, exactly as it always has, so adding this
+        // census and this version cannot move the arm they measure.
+        let close_inside = !self.fog_honest_2;
+        loop {
+            let outcome = self.replay_fog_plan(g, pid, actions, !close_inside, close_inside);
+            refused_this_turn |= outcome.refused > 0;
+            // ★★★★★ A REFUSED ORDER USED TO VOID THE REST OF THE TURN. The
+            // tape was planned against a world with no hidden units in it, so
+            // every later order on it assumed the refused one had happened —
+            // the settler that could not step still tries to found where it
+            // is not; the escort still marches to a tile its charge never
+            // reached. Version 1 applies the rest of that stale tape and then
+            // ends the turn on the tape's own `EndTurn`. Nothing re-planned,
+            // and until `FogPlanCensus` nothing counted the loss.
+            //
+            // `fog_honest_2` crosses the fog boundary again instead, from the
+            // board as it now stands — which already contains whatever the
+            // refusal just revealed — and spends the rest of the turn on a
+            // plan that is true. Bounded by `FOG_REPLAN_LIMIT` so a seat that
+            // cannot act at all pays for one retry, not for a loop.
+            if !self.fog_honest_2
+                || outcome.finished
+                || outcome.refused == 0
+                || replans >= FOG_REPLAN_LIMIT
+                || g.winner.is_some()
+                || g.current != pid
+            {
+                break;
+            }
+            replans += 1;
+            self.fog_plan_census.replans += 1;
+            actions = self.fog_honest_plan(g, pid);
+            if actions.is_empty() {
+                break;
+            }
+        }
+        if refused_this_turn {
+            self.fog_plan_census.refused_turns += 1;
+        }
+        // A hidden blocker can make a private EndTurn arrive before the
+        // authoritative action tape is ready. Keep the ordinary driver
+        // contract: return with the acting seat closed whenever possible.
+        if !close_inside && g.winner.is_none() && g.current == pid {
+            let pool = self.work_pool.clone();
+            g.with_deferred_visibility_pool(pool.as_deref(), |authoritative| {
+                let _ = authoritative.apply(pid, &Action::EndTurn);
+            });
+        }
+    }
+
+    /// Replay one fog-honest action tape against the authoritative board,
+    /// counting what it accepted and what it refused.
+    ///
+    /// `stop_on_refusal` drops the rest of the tape at the first refusal,
+    /// because everything after it was planned on the assumption that the
+    /// refused order succeeded — and because the tape's own trailing
+    /// `EndTurn` would otherwise close the seat's turn before anything could
+    /// be re-planned. `close_turn` closes the seat inside this same deferred
+    /// visibility scope, which is what version 1 has always done.
+    fn replay_fog_plan(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        actions: Vec<(usize, Action)>,
+        stop_on_refusal: bool,
+        close_turn: bool,
+    ) -> FogReplayOutcome {
+        let mut outcome = FogReplayOutcome::default();
         let pool = self.work_pool.clone();
+        let census = &mut self.fog_plan_census;
         g.with_deferred_visibility_pool(pool.as_deref(), |authoritative| {
-            for (seat, action) in actions {
+            let mut remaining = actions.into_iter();
+            for (seat, action) in remaining.by_ref() {
+                FogPlanCensus::count(&mut census.planned, &action);
                 if authoritative.current != seat {
+                    census.truncated_turns += 1;
+                    outcome.finished = true;
                     break;
                 }
                 let end_turn = matches!(&action, Action::EndTurn);
-                let _ = authoritative.apply(seat, &action);
+                if authoritative.apply(seat, &action).is_ok() {
+                    FogPlanCensus::count(&mut census.applied, &action);
+                } else {
+                    FogPlanCensus::count(&mut census.refused, &action);
+                    outcome.refused += 1;
+                    if stop_on_refusal && !end_turn {
+                        break;
+                    }
+                }
                 if end_turn {
+                    outcome.finished = true;
                     break;
                 }
             }
-            // A hidden blocker can make a private EndTurn arrive before the
-            // authoritative action tape is ready. Keep the ordinary driver
-            // contract: return with the acting seat closed whenever possible.
-            if authoritative.winner.is_none() && authoritative.current == pid {
+            census.abandoned += remaining
+                .inspect(|(_, action)| FogPlanCensus::count(&mut census.planned, action))
+                .count() as u32;
+            if close_turn && authoritative.winner.is_none() && authoritative.current == pid {
                 let _ = authoritative.apply(pid, &Action::EndTurn);
             }
         });
+        outcome
     }
 }
 
@@ -31524,7 +31904,7 @@ impl Ai for AdvancedAi {
         // Stamp the context once, for every layer. Nothing below repeats the
         // turn number or the acting civilization.
         self.journal().begin_turn(g.turn, pid);
-        if self.fog_honest {
+        if self.fog_honest || self.fog_honest_2 {
             self.take_turn_fog_honest(g, pid);
             return;
         }

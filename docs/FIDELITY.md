@@ -67,97 +67,142 @@ is the only check on these amounts, and it exists because it caught that
 mistake. **Tree-node effects are an unaudited surface** — the audit's zero
 divergences say nothing about them.
 
-### And three competition sources, which CIVVIS does not have natively
+### And three competition awards, which a native game now has
+
+Gathering Storm pays a Diplomatic Victory Point to the **first-place** finisher
+of a scored competition, and those recur for the whole second half of a game.
+Three modifiers do it, and joining `EmergencyRewards` to `ModifierArguments` on
+the installed ruleset gives the whole list:
 
 | award | amount | competitions |
 |---|---:|---|
-| `NON_EMERGENCY_FIRST_PLACE_VICTORY_POINT` | 1 | Nobel Peace, World's Fair, Space Station, World Games |
+| `NON_EMERGENCY_FIRST_PLACE_VICTORY_POINT` | 1 | Nobel **Peace**, World's Fair, Space Station, World Games |
 | `AID_REQUEST_FIRST_PLACE_VICTORY_POINT` | 2 | Send Aid, Send Military Aid |
 | `CLIMATE_ACCORDS_FIRST_PLACE_VICTORY_POINT` | 2 | Climate Accords |
 
-Gathering Storm pays these to the *first-place* finisher, and they recur for
-the whole second half of a game. **A native CIVVIS game has none of them**: a
-competition exists only while a live host names one
-(`Game::replace_host_competitions`, and every competition project in
-`projects.json` is gated on `host_competition`).
+**Seven competitions, and all seven are modelled** (`Game::NATIVE_COMPETITIONS`).
+Until #2379 a competition existed only while a live host named one
+(`Game::replace_host_competitions`), then in stages — #2169 seated the first
+two, #2171 gave them a switch, #2173 added the World's Fair, #2177 the World
+Games and the era gates, #2181 the aid requests — and #2379 added the last,
+Nobel Peace.
 
-The live bridge is unaffected — it mirrors the host's own `dvp`. But every
-*evaluation* runs natively, and there the arithmetic does not close:
+⚠ **Nobel Literature and Nobel Physics are absent and that is not a gap.** They
+are scored competitions like the rest, but `EmergencyRewards` gives neither a
+victory-point row at all: Literature's first place takes cheaper Rock Bands and
+Physics' a technology boost. Peace is the only Nobel that pays a point. (An
+earlier note here said the other two were "commented out of `EmergencyRewards`";
+they are not — they have rows, and none of those rows is a victory point.)
 
-| native source | points |
-|---|---:|
-| congress resolution, ±2 from the Modern era | ~8 across the congresses a 250-turn game reaches |
-| three wonders | 7, and **31 of 32** diplomatic games finish none |
-| one civic, one technology | 1 each, Future era |
+### What each one is, off the install
 
-**41 of 209 terminal live games end in a rival's diplomatic victory — 19.6%.
-The contested screen produces 2 in 120 — 1.7%.** That twelvefold gap is
-structural, not tactical: a native empire has no route to 20 and no treatment
-can give it one, so every native measurement of a diplomatic-denial treatment
-has been measuring a lane that cannot complete.
+Every field below is read from
+`~/Library/Application Support/Sid Meier's Civilization VI/Cache/DebugGameplay.sqlite`
+and the shipped `DLC/Expansion2/Data/Expansion2_Emergencies.xml`:
+`EmergencyAlliances` for the trigger, `Duration` and `LockoutTime`; that row's
+`TargetRequirementSet` for the era window; `EmergencyScoreSources` for what
+counts; `EmergencyRewards` joined to `ModifierArguments` for the award.
 
-### The mechanism, off by default
+| competition | era gate | scores | first place |
+|---|---|---|---|
+| World's Fair | `ERA_MODERN` only (at-least **and** at-most) | Great Person **Points** per turn | 1 point, 50 Favor |
+| World Games | `ERA_ATOMIC`+ | athletes project (50), Stadiums and Aquatics Centers 1/turn | 1 point, 50 Favor |
+| Climate Accords | `ERA_INFORMATION`+ | the three decommissioning projects (100 each) | 2 points, 100 Favor |
+| International Space Station | `ERA_FUTURE`+ | astronauts project (30), Spaceports 5/turn, Campuses 1/turn | 1 point, 50 Favor |
+| Nobel Peace Prize | `ERA_INDUSTRIAL`+ **and Sweden in the game** | Diplomatic Favor per turn | 1 point |
+| Send Aid | none | the aid project (200) | 2 points, 100 Favor |
+| Send Military Aid | none | the aid project (200) | 2 points, 100 Favor |
 
-`Game::native_competitions` runs them. A congress seats one
-(`EMERGENCY_TRIGGER_WORLD_CONGRESS`, not a clock of its own), a completed
-scoring project adds the `competition_score` it declares, and the clock running
-out pays first place its Diplomatic Victory Point and 25 Favor. A native
-competition presents through the same accessor a mirrored one does, so the
-production catalog and the AI's valuation needed no change at all.
+⚠ **The Nobel prizes need Sweden.** `NOBEL_PRIZE_TARGET_REQUIREMENTS` tests
+`REQUIREMENT_GAME_HAS_CIVILIZATION_OR_LEADER_TRAIT` for
+`TRAIT_CIVILIZATION_NOBEL_PRIZE`, and `CivilizationTraits` gives that trait to
+`CIVILIZATION_SWEDEN` and to nothing else. A game with no Sweden on the board
+never sees a Nobel prize. That makes Peace the rarest of the seven rather than a
+route every empire has, and loosening it because the lane needs points would be
+inventing a rule.
 
-⚠ **Two of the seven, and the two are not a preference.** A competition is
-offered only where our own data says an empire could score in it, and the
-scoring project is what says so — Space Station needs a Spaceport, Climate
-Accords an Industrial Zone. World Games' project declares *no* prerequisite, so
-nothing in the data says when it may start and choosing an era would be
-inventing one; World's Fair and the Nobel prizes score from Great People rather
-than a project; the two aid requests trigger on a random event and on a war,
-not on the congress.
+⚠ **The World's Fair counts points, not people, and that was wrong here until
+#2379.** All eight rows are `WORLDS_FAIR_SCORE_GPP_<class>` with
+`ScoreAmount="1"`, and their shared description is `LOC_EMERGENCY_SCORE_GPP_DESC`
+— "Generating [ICON_GREATPERSON] Great People Points **Per Turn**". The two
+Nobel `FromGreatPerson` groups are described the same way ("Generating Great
+Writer, Artist, and Musician **Points**"), so `FromGreatPerson` is a point, not a
+recruit. #2173 read it as one point per Great Person recruited; over a 29-turn
+competition that is two orders of magnitude too small, and it decides the race
+on whether two empires each happened to claim one person — which is a tie, and a
+tie pays nobody.
 
-⚠ **Ties pay nobody.** A tie has no first place and inventing a tiebreak would
-be inventing a rule.
+⚠ **`FromDistrict` and `FromBuilding` pay for *maintaining*, so they accrue
+every turn.** "Maintaining Spaceport Districts", "Maintaining Stadiums". Without
+them a competition seated over ground nobody then spends production on closes
+with an empty score table, which is exactly what the first native trace of
+Climate Accords recorded (#2171).
 
-⚠ **Nothing is paid on the mirrored path** — a host has already counted its own.
+⚠ **Four shipped score rows stay unmodelled, and each is a rule the data does
+not state.** `CLIMATE_ACCORDS_SCORE_CO2` pays for "emissions much lower than the
+biggest CO2 polluter" and never says how much lower. `SEND_AID_SCORE_FROM_GOLD`
+counts gifts of Gold to the target, a diplomatic action CIVVIS has no equivalent
+of. The two `FROM_AT_WAR` penalties (-30 and -200) do not say whether they are
+charged once or every turn. Choosing a number for any of them is the #2049
+mistake.
 
-### What it does, measured
+⚠ **The congress's choice among eligible competitions is not in the data.**
+`Emergencies_XP2` says which competitions exist and when; how one is picked lives
+in the compiled engine. `NATIVE_COMPETITIONS` is therefore ordered
+newest-era-first and takes the first eligible entry, so the latest competition an
+era has unlocked takes the seat. That is a stated simplification, not a shipped
+rule.
 
-`civvis simulate --native-competitions`, seed 41000, 6 players, 250 turns:
+⚠ **Ties pay nobody.** `SCORED_COMPETITION_FIRST_PLACE_REQUIREMENTS` is one
+requirement, `REQUIREMENT_PLAYER_GOT_FIRST_PLACE_IN_EMERGENCY`, and nothing says
+how the engine breaks a tie for it. A tie has no first place and inventing a
+tiebreak would be inventing a rule.
 
-| | competitions seated | scored | Diplomatic Victory Points paid |
-|---|---:|---:|---:|
-| first cut | 2 | 1 of 2 | 1 |
-| after the two repairs below | 2 | **2 of 2** | **3** |
+⚠ **Nothing is paid on the mirrored path** — a live host has already counted its
+own. A native competition lives in `Game::competition`; a mirrored one in
+`Game::host_competitions`, which nothing native reads or writes.
+`a_mirrored_competition_pays_nothing_natively` pins it.
 
-The first cut had two defects that only a trace showed. **Eligibility asked for
-the district and not what the project consumes**, so Climate Accords was seated
-on turn 100 for an empire with an Industrial Zone and no power plant, closed on
-119 with an empty score table, and spent its lockout for nothing. And **the
-lockout was global**, so that empty competition blocked every other kind for
-sixty turns — but the shipped `LockoutTime` is a column on the emergency row,
-so it is per kind.
+### The mechanism
 
-### The one that recurs
+`Game::native_competitions` runs them, and a native competition presents through
+the same accessor a mirrored one does — so the production catalog and the AI's
+valuation needed no change at all. A congress seats one
+(`EMERGENCY_TRIGGER_WORLD_CONGRESS`, not a clock of its own); a completed
+scoring project adds the `competition_score` it declares; the per-turn sources
+add theirs at the same point in the turn as the yields they count; and the clock
+running out pays first place.
 
-The World's Fair scores **one point per Great Person an empire recruits** — the
-shipped `EmergencyScoreSources` rows give every class `ScoreAmount="1"` — so it
-needs no ground to hold and every empire can enter it from the first congress.
-On seed 41000 it closes at turn 99 (scores `{0:1, 4:1, 5:2}`) and again at 159
-(`{0:2, 1:1, 3:1, 4:1}`), paying a point each time. That midgame recurrence is
-what the other two cannot give, and it is why this one matters more than its
-single point suggests.
+⚠ **The lockout is per kind**, because the shipped `LockoutTime` is a column on
+the emergency row. #2171 made it global, and one empty competition then blocked
+every other kind for sixty turns.
 
-⚠ A competition can still close empty: the same trace has Climate Accords
-closing at 199 with no score at all. Eligibility asks whether an empire *could*
-score — it held an Industrial Zone and a power plant when the competition was
-seated — not whether it will build the project. That is the right bar and it
-pays nobody, but the lockout is spent.
+### The Favor beside the point
 
-⚠ **Favor is not modelled and the Nobel Peace prize therefore is not.** It
-scores `FromFavor="true"`, and favor accrues at seven sites in this engine
-including congress *refunds*; deciding which of those count as favor "earned" is
-a rule the shipped data does not state, and inventing one is the #2049 mistake.
-It is also the only Nobel that pays a point at all — Literature and Physics are
-commented out of `EmergencyRewards`.
+Favor is not a first-place row at all — it is the competition's **top tier**
+row, and first place is read as being in it. The shipped strings name the bands
+"Gold Tier Rewards (for highest score)", "Silver Tier Rewards (for the top 25%
+of scores)", "Bronze Tier Rewards (for the next 25% of scores)" and "Members
+with no score, or who are in the bottom 50% of scores, will receive nothing",
+and a separate string, `LOC_SCORED_COMPETITION_SILVER_TIER_CHILD`, exists to say
+"All Silver Tier Rewards". The highest score is in the top 25% of scores, so the
+winner takes both. The amounts are per competition — 100 for the aid requests
+and the Climate Accords, 50 for the World's Fair, World Games and the ISS, none
+for the Nobel prizes, whose tiers pay Great People instead.
+
+⚠ **This one is a reading, and it is the weakest link in this section.** The
+band predicates are `REQUIREMENT_PLAYER_GOT_FIRST_PLACE_IN_EMERGENCY`,
+`..._HIGH_TIER_SCORE_...` and `..._LOW_TIER_SCORE_...`, all three compiled into
+the engine, and `LOC_SCORED_COMPETITION_SILVER_TIER_CHILD` is referenced by no
+shipped Lua — it lives only in the text tables. The alternative reading is that
+the bands are disjoint, under which the Climate Accords' winner would take 2
+points and no Favor while second place took 100. The strings are the only
+evidence either way and they favour the inclusive reading.
+
+⚠ CIVVIS paid a flat **25** to every winner until #2379, which is a number that
+appears nowhere in the shipped data. The two lower bands are still not paid,
+because where a 25% cut falls among five or six scoring empires is a rounding
+rule the data does not state.
 
 ### The target, with the number that was missing
 
@@ -181,21 +226,67 @@ games near 250 turns, not more games of any length.
 count with no window beside it is what four iterations of work on this lane were
 aimed at.
 
-⚠ **Three to five points a game is not twenty.** The two project-scored competitions need
-late prerequisites — a Spaceport, a power plant to decommission — so they land
-around turn 180 and 200 and the lane still does not complete. The recurrence
-that would make it complete is in the five types not modelled: World's Fair and
-the three Nobel prizes score from Great People rather than a project, and the
-two aid requests trigger on a random event and on a war. **That is the next
-work, and it is what the single protocol bump should wait for.**
+### The census, and why the default stays off
 
-**It is off by default and that is the point.** Turning it on changes what every
-participant faces, which moves the frozen rating anchor; with the flag off the
-anchor is unchanged at 17,482 decisions. Promoting it is a protocol event and
-should happen **once**, with the remaining five competitions in place, rather
-than twice. What that needs next: a `--native-competitions` switch on
-`simulate`, and an evaluator arm, so the rule can be priced before it is
-promoted. Until then only an embedder that sets the field can reach it.
+`soak` now takes the `--native-competitions` switch `simulate` already had,
+so the rule can be priced instead of argued about. Both arms run the standard
+screen's own shape — 6 majors, 74×46 continents, nine city-states, Online
+speed, 250 turns — **on the same seeds**, so every pair of rows is one world
+played with and without the rule:
+
+```
+civvis soak --games N --start-seed 41000 --players 6 --width 74 --height 46 \
+  --city-states 9 --map continents --speed online --turns 250 [--native-competitions]
+```
+
+**n = 150 paired seeds per arm** (41000–41149), 300 games.
+
+| ending | off | on |
+|---|---:|---:|
+| score | 57 (38.0%) | 61 (40.7%) |
+| religious | 58 (38.7%) | 62 (41.3%) |
+| culture | 15 (10.0%) | 17 (11.3%) |
+| science | 17 (11.3%) | 10 (6.7%) |
+| diplomatic | 3 (2.0%) | 0 (0.0%) |
+
+The diplomatic share is **3/150 off (95% Wilson 0.7–5.7%)**
+against **0/150 on (0.0–2.5%)**. Those intervals overlap
+almost completely: at this sample the census cannot distinguish the two arms on
+endings at all, and it is not a null result dressed up — it is a sample size.
+
+The Diplomatic Victory Points themselves resolve much better, because every game
+reports one number rather than a rare event. `soak` now prints `DVP best=N/20`,
+the highest total any major reached:
+
+| | median | mean | max | reached 20 |
+|---|---:|---:|---:|---:|
+| off | 13 | 11.6 | 21 | 3/150 |
+| on | 13 | 12.0 | 19 | 0/150 |
+
+Paired, the rule is worth **+0.35 Diplomatic Victory Points to the leading
+empire per game** (95% CI +0.05 to +0.64, n=150 paired seeds). The effect
+is real and it is small, and the reason is arithmetic rather than a defect. A
+competition pays **one** empire, and a 250-turn Online game reaches the Modern
+era around turn 150 and the Information era at the end, so it can seat perhaps
+three or four congress competitions before the clock; the four or five points
+those pay are shared among six empires, and the leader keeps a fraction of them.
+
+⚠ **The framing this section carried was wrong, and the census is what corrects
+it.** "A native empire has no route to 20" is not what a native game does. Off,
+the leading empire finishes on a median of **13** of the 20 a Diplomatic
+victory needs, and 3 of 150 games crossed the line without any competition at
+all — the congress resolution at ±2 from the Modern era does most of that work.
+The lane is not unreachable; it is short by about a third, and seven competitions
+close a small fraction of that gap rather than the whole of it.
+
+**So the flag ships off, with the census recorded.** Turning it on would move
+every native number this repository has recorded — the frozen rating anchor, the
+gene ledger's columns, every screen filed against them — and it would buy a third
+of a Diplomatic Victory Point for the leader and no measurable change in what
+ends a game. That is not the trade a protocol event is for. What it does buy is
+available to anything that asks: `simulate --native-competitions`,
+`soak --native-competitions`, and one line in a screen that wants a contested
+field where a rival can actually pursue the lane.
 
 ### The content sources are not the problem
 
@@ -508,6 +599,108 @@ Nothing enumerates *individuals* anywhere, which is why adding 82 of them is a
 data change. Adding a **class** is not: `comandante_general` would need the
 `WATCHED_CLASSES` entry, a `great_person_remedy` arm, and a
 `GreatPersonClasses`-derived district for its points.
+
+## The "only in Civ VI" column, and what is actually left in it
+
+The audit's divergence count answers "is every number CIVVIS carries right?".
+Its `Only in Civ VI` column answers a different question — "what does the
+shipped game have that CIVVIS does not model at all?" — and that column is the
+one that still has entries. This section is the standing triage of it for
+Units, Promotions, Projects and Policies, so the next agent inherits the
+worklist rather than re-deriving it from the install.
+
+⚠ **Three things in that column are not gaps at all**, and each cost real time
+to discover:
+
+1. **A row Gathering Storm deletes.** `Types` is the parent table of the whole
+   gameplay database; every content row's key column is declared
+   `REFERENCES Types(Type) ON DELETE CASCADE`. A pack that retires content
+   therefore ships a single `<Types><Delete Type="…"/>` and **no**
+   `<Policies><Delete>` beside it. The loader now applies that cascade, which
+   took five rows out of the column at once: `POLICY_MERITOCRACY` and
+   `POLICY_SACK` (retired by both expansions), and the three Mars projects
+   `PROJECT_LAUNCH_MARS_HABITATION`, `_HYDROPONICS` and `_REACTOR`, which
+   `Expansion2_Projects.xml` deletes when it replaces the Mars space race with
+   the Exoplanet Expedition. CIVVIS is right not to carry any of them. Four
+   Beliefs and Genghis Khan leave the column the same way.
+2. **A row CIVVIS spells differently.** A rename shows up as the *same content*
+   appearing in both "only in" columns at once, and the two rows then compare
+   against nothing at all. Read the two columns together before modelling
+   anything: that check is what found the Nau, Toa, Oromo Cavalry and Nihang.
+3. **A pseudo-row the game keeps for its own UI.** The nine `POLICY_GOV_*` rows
+   carry `RequiresGovernmentUnlock="True"` and a `LOC_GOVT_INHERENT_BONUS_*`
+   description. They are how the government screen renders each government's
+   inherent bonus as a card; they are not slottable policies, and CIVVIS models
+   those bonuses in `data/governments.json`. **Policy coverage is complete.**
+
+### Units
+
+Fifty-four rows, in five groups that need five different decisions.
+
+| group | rows | what it needs |
+|---|---:|---|
+| Great Person units | 9 | a decision, not content: CIVVIS models Great People as `data/great_people.json` entries with charges, not as map units, so `UNIT_GREAT_GENERAL` and its eight siblings have no `units.json` shape to take. Owned by the Great People roster, not by `units.json`. |
+| Barbarian-only units | 2 | a roster flag. `barbarian_horseman` (Combat 20, 3 Movement, cost 40) and `barbarian_horse_archer` (Combat 10, Ranged 15, Range 1, 3 Movement, cost 35) are the horse camps' raiders. `Game::barbarian_unit_pool` selects on `spec.buildable && spec.unique_to.is_none()`, so a unit no major can build is excluded from the pool that is supposed to contain it. Add a `barbarian_only` field to `UnitSpec` and admit it in both `barbarian_unit_pool` and `barbarian_naval_unit_pool`. ⚠ This changes what every camp spawns, so it moves every recorded barbarian screen. |
+| Alternate-leader uniques | 6 | leader-gated content. The Hetairoi (Alexander), Longship (Hardrada), Black Army (Matthias Corvinus), Janissary (Suleiman), Rough Rider (Teddy Roosevelt) and Redcoat (Victoria) hang off a `LeaderTraits` row, not a `CivilizationTraits` one. `unique_to` names a civilization, so these need a leader-scoped gate first. |
+| Civilization uniques, civ shipped | 36 | ordinary content work, and the largest reachable block. Each needs a `units.json` row with `unique_to` and `replaces`, its numbers from `Units`, and its ability expressed with a **live** effect key. ⚠ The ability is the whole risk: a unique unit added with correct stats and a silent ability is a build option that does nothing. Check the key against the ninety live promotion/unit effect keys before adding the row, and ship a test that the effect fires. |
+| Unresolved trait | 1 | `babylonian_sabum_kibittum` hangs off a trait that does not resolve to a plain `CivilizationTraits` row, so which gate it needs has to be settled before it is modelled. |
+
+Of the 36 reachable uniques, the ones whose whole ability is already a live
+effect key are the place to start — the Samurai's `NO_REDUCTION_DAMAGE` is
+`no_wounded_penalty`, de Zeven Provincien's +7 against districts is
+`ranged_vs_district`, the Domrey's move-and-shoot is `attack_after_move`. The
+ones to leave alone are the abilities with no key at all: a home-continent
+bonus (Redcoat, Garde Impériale, Rough Rider), remaining-movement scaling
+(Carolean), and cheaper corps and armies (Impi).
+
+### Promotions
+
+Nine rows, and neither group should be added as it stands.
+
+- **Four Giant Death Robot promotions.** `PROMOTION_GDR_AA_DEFENSE` (+40
+  anti-air), `_SIEGE_LASER` (ignores the ranged-vs-district penalty, +30
+  strength), `_BONUS_MOVEMENT` (+3 Movement, jump 5) and `_ARMOR_UPGRADE` (+10
+  strength) are **granted by technologies**, not chosen: `Expansion2_Technologies`
+  attaches each one to a tech through a `GRANT_PROMOTION` modifier. CIVVIS
+  offers promotions through the XP tree only, and `giant_death_robot` carries
+  `earns_xp: false`, so all four would be unreachable the day they landed.
+  They need a `granted_by_tech` surface first, and the GDR's `promotion_class`
+  would have to move from `melee` to its own class.
+- **Five Nihang promotions.** These are already modelled, under CIVVIS' own
+  Punjabi names: `tegh` is `NIHANG_FLANKED_BONUS`, `trehsool_mukh` is
+  `_FAITH_FOR_VICTORIES`, `jangi_mojeh` is `_MOVEMENT_BONUS`, `sanjo` is
+  `_NO_WOUNDED_PENALTY` and `jangi_kara` is `_SUZERAIN_COMBAT_BONUS`. They are
+  deliberately **not** aliased: CIVVIS gives the class a seven-node tree with
+  two nodes of its own (`chakram`, `dumalla`) and tiers that do not match the
+  shipped five-node graph, so aliasing them would trade a coverage entry for
+  five divergences. Aliasing is for a rename, not for a redesign.
+
+### Projects
+
+Eight rows, all of them unique-district or unique-civilization projects.
+
+- `water_bread_and_circuses` is **already modelled**. CIVVIS represents the two
+  shipped rows — one for the Entertainment Complex, one for the Water Park — as
+  a single `bread_and_circuses` with `alternate_districts: ["water_park"]`. The
+  audit cannot see a two-rows-to-one-row merge, so it will keep reporting this
+  one; that is the audit's limit, not a gap.
+- `carnival` and `water_carnival` are the genuine gap of the eight, and the
+  cheapest: CIVVIS already has both the `street_carnival` and `copacabana`
+  districts, so only the project is missing. Each grants `AmenitiesWhileActive
+  = 1`, and no project effect key carries an amenity today — `ProjectSpec` has
+  `ongoing_yields`, `completion_gpp`, `full_power_while_active` and a small
+  `effects` map, none of which reaches the amenity balance. One new effect key
+  wired into the city amenity sum closes both rows.
+- `court_festival` and the three `lijia_*` projects carry
+  `UnlocksFromEffect="true"` — they become available through a civilization's
+  own modifier rather than a tech or civic gate, which is a project-availability
+  surface CIVVIS does not have.
+- `cothon_capital_move` needs the capital to be movable at all.
+
+### Policies
+
+Complete. All nine remaining rows are the `POLICY_GOV_*` pseudo-rows described
+above.
 
 ## Running the audit without an install
 
@@ -1392,6 +1585,127 @@ Prophet class exhausted every one of those points is Faith. Now in
   met by the district's adjacency before the percentage cards, so the clause
   now sums the adjacency sources without the `adjacency_bonus` line.
 
+### The pantheon is a complete class, and three more rows said the opposite of the game (2026-08-24)
+
+The twelve pantheons the improvement socket could not express are modelled,
+and `beliefs.json` now carries **all 23 of Civilization VI's pantheons**.
+`civ6_fidelity.py` still reports **0 divergent fields across 27 tables**, and
+the Beliefs table's *only in Civ VI* column falls from 22 to 5 — `holy_waters`,
+`monastic_isolation`, `papal_primacy`, `stewardship` and `warrior_monks`, every
+one of them a Follower, Enhancer or Worship belief. **No pantheon is missing.**
+
+Each one needed engine surface, and the standard the five improvement
+pantheons set — *one predicate rather than five* — is what decided the shape:
+
+| pantheon | Gathering Storm | engine surface |
+|---|---|---|
+| Desert Folklore | Holy Sites +1 Faith per adjacent Desert | `PANTHEON_HOLY_SITE_ADJACENCY`, one loop in `district_adjacency` |
+| Dance of the Aurora | …per adjacent Tundra | same predicate, second row |
+| Sacred Path | …per adjacent Rainforest | same predicate, third row |
+| God of War | Faith = 50% of a combat unit's strength, killed within 8 of a Holy Site | `kill_rewards`, beside the identical promotion arm |
+| God of Healing | +30 healing on and beside your own Holy Site | `pantheon_holy_site_heal`, added to every branch of `unit_heal_rate` |
+| River Goddess | +2 Amenities **and** +2 Housing from a Holy Site on a river | `pantheon_river_holy_site`, one plot test, two callers |
+| City Patron Goddess | +25% district Production while the city has no specialty district | `item_prod_mult`, District arm |
+| Monument to the Gods | +15% Production toward Ancient/Classical wonders | `item_prod_mult`, Wonder arm — the same `era <= 1` window two policy cards already use |
+| Initiation Rites | +50 Faith per camp cleared, **and the clearing unit heals 100 HP** | `clear_barbarian_camp` |
+| Lady of the Reeds and Marshes | +2 Production from Marsh, Oasis, Desert Floodplains | `player_tile_yields`, one plot predicate |
+| Goddess of Fire | +2 Faith from Geothermal Fissure and Volcanic Soil | same predicate, second row |
+| Earth Goddess | +1 Faith from Breathtaking Appeal | same predicate, third row |
+
+Three families, three predicates. The three adjacency beliefs are one shipped
+modifier over three plot tests (`MODIFIER_ALL_CITIES_TERRAIN_ADJACENCY` twice
+and `..._FEATURE_ADJACENCY` once, each `DISTRICT_HOLY_SITE` / `YIELD_FAITH` /
+Amount 1), so the engine counts the ring once and the belief names the plot; a
+fourth row of that shape is data. The three plot beliefs are one
+`MODIFIER_CITY_PLOT_YIELDS_ADJUST_PLOT_YIELD` each over a
+`REQUIREMENTSET_TEST_ANY`, so the tile is asked once. River Goddess's two
+halves share one requirement set and therefore one predicate.
+
+⚠ **Desert Folklore and Dance of the Aurora each ship TWO rows** —
+`TERRAIN_DESERT` and `TERRAIN_DESERT_HILLS` — which is one terrain here,
+because CIVVIS carries hills as a flag on the plot rather than as a terrain of
+its own. The test asserts both.
+
+**★★★ Three more of the twelve are cases where a base-game row states the
+opposite of the shipped rule**, which brings the running count to five. Every
+id was checked against `Expansion2_RemoveData.xml` before being modelled, and
+the compiled cache was confirmed to be a Gathering Storm cache first
+(`GOD_OF_CRAFTSMEN_STRATEGIC_MINE_PRODUCTION` absent, `..._IMPROVED_*` and
+`RIVER_GODDESS_HOLY_SITE_AMENITIES` present) rather than trusted:
+
+| belief | base game | **Gathering Storm** |
+|---|---|---|
+| Earth Goddess | `PLOT_CHARMING_APPEAL`, `MinimumAppeal 2` | expansion **deletes** `EARTH_GODDESS_APPEAL_FAITH{,_MODIFIER}` and re-adds them on `PLOT_BREATHTAKING_APPEAL`, `MinimumAppeal 4` |
+| River Goddess | `RIVER_GODDESS_HOLY_SITE_AMENITY`, +1 Amenity, no Housing | **deleted**; `..._AMENITIES` +2 and `..._HOUSING` +2 replace it |
+| Lady of the Reeds | `LADY_OF_THE_REEDS_PRODUCTION`, +1 | dropped from `BeliefModifiers`; `..._PRODUCTION2` pays **+2** |
+
+The Earth Goddess case is the sharpest: the id is deleted *and re-added under
+the same name*, so a grep for the id in `Expansion2_RemoveData.xml` finds it
+and a grep for the id in `Expansion2_Beliefs.xml` finds it too. Only reading
+both, in load order, gives the shipped requirement set — and modelling the
+base-game one would have paid this on roughly twice the map. Initiation Rites
+is a fourth shape again: nothing is deleted, and Gathering Storm *adds* a
+second modifier (`INITIATION_RITES_HEALING_DISPERSAL`, +100 HP) the base game
+does not have, so a base-game reading is not wrong, merely half the belief.
+
+⚠ **`FEATURE_FLOODPLAINS` is not "floodplains".** `PLOT_HAS_REEDS_REQUIREMENTS`
+names `FEATURE_FLOODPLAINS`, `FEATURE_MARSH` and `FEATURE_OASIS` and does NOT
+name Gathering Storm's own `FEATURE_FLOODPLAINS_GRASSLAND` or
+`..._FLOODPLAINS_PLAINS`, and the shipped text says so out loud: "Marsh, Oasis,
+and **Desert** Floodplains". A grassland floodplain pays nothing.
+
+⚠ **The shipped text settles what the requirement sets leave open.** God of
+Healing's `PLOT_ADJACENT_INCLUDE_HOLY_SITE` names no owner, but the string says
+"in **your** Holy Site district, or any adjacent tiles", so a rival's Holy Site
+does not heal our army. God of War's `PLOT_EIGHT_INCLUDE_HOLY_SITE` names no
+owner *and neither does its string* — "within 8 tiles of a Holy Site district"
+— so a rival's Holy Site does pay, and the test asserts that asymmetry rather
+than assuming the two beliefs agree. God of War's string also ends "(on
+Standard Speed)", Civilization VI's marker for a one-off yield that scales with
+game speed, so it goes through `GameSpeed::scale`.
+
+**The chooser did not need changing, which is the point of the last change to
+it.** It has been a preference prefix over a roster read from the rules since
+the five improvement pantheons landed, so twelve more names were reachable the
+moment the data carried them;
+`every_major_can_found_a_pantheon_when_there_are_more_majors_than_favourites`
+still holds, and a new test asserts the stronger property directly — all 23
+can actually be founded, one at a time, through `do_choose_pantheon`. The one
+AI edit is `pantheon_effect_reach`, which prices the three new *per-worked-tile*
+beliefs for the default-off `pantheon_reads_the_board` gene. The three Holy
+Site adjacency beliefs are deliberately **not** priced there and the comment
+says why: everything that function counts is paid on every qualifying tile the
+empire owns, but an adjacency is paid on at most six plots around one district,
+so multiplying by "desert tiles owned" would price Desert Folklore at ten times
+what it can pay. Reading those honestly means ranking candidate Holy Site
+plots, which is the district calculator's job.
+
+⚠ **One measured arm did change, and it is written down rather than absorbed.**
+`PANTHEON_PRIOR_STEP` makes a place on the shipped order worth one yield a
+turn, so the prior spans the WHOLE ROSTER and a board read only overrules the
+order when it pays more than that spread. The spread was eleven when
+`pantheon_reads_the_board` was screened and it is twenty-three now, so the bar
+a board read has to clear has roughly doubled. That is the stated design
+holding rather than drifting — but it is a real change to what the gene does,
+and the arithmetic was deliberately **not** rescaled to compensate: the arm has
+a recorded screen (`docs/eval/2026-08-18-…-not-from-a-fixed-list.md`, parity
+over 60 pairs), and quietly re-weighting a measured treatment inside a content
+change would price an arm nobody re-measured. The gene is default-off, so
+nothing shipped moves; `the_pantheon_is_a_constant_until_it_is_priced_against_the_land`
+now asks for however many Deer the roster takes instead of a literal six, so
+completing a class cannot silently retune the assertion again.
+
+⚠ **The frozen anchor does not move, and this was checked by playing it rather
+than argued.** `advanced_v1_plays_the_same_game_it_always_did` passes unchanged
+— the same 18,596 decisions and the same `ANCHOR_BEHAVIOUR_FNV` across all five
+profiles. It cannot move, for two reasons that hold together: the profiles seat
+at most six majors, and `do_choose_pantheon` refuses every minor outright, so
+only six pantheons are ever taken and the six-name prefix answers all of them;
+and `legacy()` leaves `pantheon_reads_the_board` off, so the roster growing from
+11 names to 23 shifts every prior by the same constant and reorders nothing.
+`Rules::shipped().source_fingerprint()` moves, as the data changing should, and
+is re-pinned with the reasons above.
+
 ### The rules data is at parity and the gap is coverage (2026-08-18)
 
 `tools/civ6_fidelity.py --civ6 <install>` against the real Gathering Storm
@@ -1454,6 +1768,8 @@ Goddess), first-district production (City Patron Goddess), wonder-era
 production (Monument to the Gods), barbarian-camp dispersal faith (Initiation
 Rites), feature yields (Lady of the Reeds and Marshes, Goddess of Fire) and
 appeal (Earth Goddess). Their authoritative definitions are in the install.
+→ All twelve landed on 2026-08-24; see **The pantheon is a complete class**
+below.
 
 ### The Founder beliefs were already right, and a compiled cache said otherwise (2026-08-18)
 
@@ -1913,10 +2229,11 @@ and the per-ring unit damage is the one number the database does not carry).
 ## Phase 2 (measured): the modifier engine
 
 The size of this phase is no longer a guess. `tools/civ6_modifiers.py`
-censuses the shipped `Modifiers` tables and reports 3,405 rows across 698
-distinct effects, of which CIVVIS covers 825 rows. Crucially the tail is long:
-32 effects reach half the rows, and the other half needs 666 more. See
-[MODIFIERS.md](MODIFIERS.md) for the ranked backlog and the order of work.
+censuses the shipped `Modifiers` tables and reports 2,908 rows across 637
+distinct effects, of which CIVVIS covers 1,620 rows — every one of them verified
+row by row. Crucially the tail is long: 29 effects reach half the rows, and the
+other half needs 608 more. See [MODIFIERS.md](MODIFIERS.md) for the ranked
+backlog and the order of work.
 
 ### Why an interpreter
 
@@ -1941,9 +2258,18 @@ The first runtime slice is now checked in: `ModifierSpec` carries an explicit
 `all`/`any`/`none` requirement set. The collector evaluates those predicates
 against the current player facts without cloning state, and static rules-object
 attachments reject contextual bundles rather than applying them unconditionally.
-This is interpreter infrastructure, not a claim that the 698 effects are done;
-the shipped modifier catalog stays empty until rows are imported from the
-compiled database.
+The catalog is now imported rather than empty. `tools/civ6_modifiers.py
+--emit-catalog` reads the shipped `Modifiers`, `DynamicModifiers`,
+`ModifierArguments` and requirement tables through the census' own loader and
+baseline exclusions, and writes `data/modifiers.json`; the CIVVIS ruleset object
+the game says owns each row attaches its bundle by name, and the loader folds
+the game's number into that object's effect map. The import refuses what it
+cannot say exactly — an effect it declares no translation for, a row carrying a
+requirement set the runtime predicates cannot express, and any collection other
+than the owner's own — so a refused row stays in the census as backlog instead
+of executing as a guess. This is interpreter infrastructure and a first slice of
+content, not a claim that the 637 effects are done: see
+[MODIFIERS.md](MODIFIERS.md) for what is imported and what the next slice is.
 
 ## Phase 3: the ground-truth bridge
 

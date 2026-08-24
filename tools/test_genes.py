@@ -253,6 +253,47 @@ class OneShape(unittest.TestCase):
         self.assertEqual(len(self.sources(analysis([{"tag": "a"}], map="pangaea"),
                                           legacy_shape=True)), 1)
 
+    def test_a_contested_field_batch_is_refused_as_a_source(self):
+        """⚠⚠ The one refusal the map legs cannot make.
+
+        `gene_screen --contested` pins rival seats to pursue a victory lane and
+        seats native scored competitions; it changes NO map leg, so without
+        `FIELDLESS` a contested batch reads `standard` and pools with every
+        recorded column. A gene priced against a board racing for a diplomatic
+        victory is not the same number as the same gene priced fieldless -- that
+        is the entire reason the mode exists -- and the ledger must never hold
+        both under one name."""
+        contested = analysis([{"tag": "a"}], contested_field="diplomatic,culture",
+                             native_competitions=True)
+        self.assertEqual(gene_ledger.shape_of(gene_ledger.profile_of(contested)), "legacy")
+        with self.assertRaises(SystemExit):
+            self.sources(contested)
+        # Each leg refuses on its own: a fieldless batch that still seats
+        # competitions is not the world the ledger holds either.
+        for leg in ({"contested_field": "diplomatic"}, {"native_competitions": True}):
+            with self.subTest(leg=leg):
+                probe = analysis([{"tag": "a"}], **leg)
+                self.assertEqual(gene_ledger.shape_of(gene_ledger.profile_of(probe)), "legacy")
+                self.assertIn(next(iter(leg)), gene_ledger.shape_gap(gene_ledger.profile_of(probe)))
+
+    def test_the_retired_paired_field_is_not_a_contested_board(self):
+        """⚠ `field` was already taken. Every header the paired designs wrote
+        carries `field: "advanced"` -- the agent the treated seat played
+        against -- and nine of them are recorded sources. Naming the new leg
+        `field` reclassified all nine and `check` reported drift on the
+        ledger's own history; this holds the two names apart."""
+        legacy = analysis([{"tag": "a"}], field="advanced")
+        profile = gene_ledger.profile_of(legacy)
+        self.assertEqual(profile.get("contested_field", ""), "")
+        self.assertEqual(gene_ledger.shape_of(profile), "standard")
+
+    def test_a_source_written_before_the_leg_existed_records_no_leg(self):
+        """The legs are recorded only when set, which is what keeps every
+        record written before them byte-stable through `check`."""
+        profile = gene_ledger.profile_of(analysis([{"tag": "a"}]))
+        self.assertNotIn("contested_field", profile)
+        self.assertNotIn("native_competitions", profile)
+
     def test_the_tool_and_the_binary_name_the_same_screen(self):
         """`gene_screen`'s bare defaults ARE this shape; if one side moves, the
         ledger would silently accept a batch the binary no longer plays."""
@@ -265,6 +306,12 @@ class OneShape(unittest.TestCase):
         ):
             self.assertIn(f"const {constant} = {value};", rs, constant)
         self.assertIn("const SCREEN_MAP: MapScript = MapScript::Continents;", rs)
+        # And the two legs that are NOT map legs: the binary writes them into
+        # every header and this tool refuses on them, so a rename on one side
+        # would silently stop refusing rather than fail anything.
+        for field in gene_ledger.FIELDLESS:
+            self.assertIn(f"{field}: ", rs, field)
+            self.assertIn(f"header.{field}", rs, field)
 
 
 class TheDefaultRule(unittest.TestCase):

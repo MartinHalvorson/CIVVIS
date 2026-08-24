@@ -238,11 +238,11 @@
   "nau": {
     "class": "military",
     "cost": 240,
-    "maintenance": 4,
+    "maintenance": 2,
     "charges": 2,
     "moves": 4,
     "strength": 55,
-    "sight": 2,
+    "sight": 3,
     "domain": "sea",
     "tech": "cartography",
     "unique_to": "Portugal",
@@ -479,11 +479,11 @@
   },
   "toa": {
     "class": "military",
-    "cost": 110,
-    "maintenance": 2,
+    "cost": 120,
+    "maintenance": 0,
     "charges": 1,
     "moves": 2,
-    "strength": 36,
+    "strength": 38,
     "tech": "iron_working",
     "requires_resource": "iron",
     "resource_cost": 10,
@@ -861,7 +861,7 @@
     "buildable": false, "promotion_class": "warrior_monk", "zone_of_control": true
   },
   "nihang": {
-    "class": "military", "cost": 100, "maintenance": 0, "moves": 2, "strength": 25,
+    "class": "military", "cost": 100, "maintenance": 2, "moves": 2, "strength": 25,
     "buildable": false, "promotion_class": "nihang", "zone_of_control": true
   },
   "naturalist": {

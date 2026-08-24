@@ -2779,6 +2779,33 @@ impl Rules {
             .collect()
     }
 
+    /// The shipped ruleset files with extra bundles merged into the imported
+    /// modifier catalog.
+    ///
+    /// Tests used to hand `Rules::from_values` a `modifiers` map containing
+    /// only their own fixture. That was harmless while `data/modifiers.json`
+    /// was empty and is not now: the catalog is imported from the shipped
+    /// `Modifiers` tables, and civics, technologies, wonders, districts,
+    /// buildings, governments, promotions and Great People attach its bundles
+    /// by name. Replacing it outright leaves every one of those references
+    /// dangling, so the ruleset refuses to build and the fixture's own subject
+    /// is never reached.
+    #[cfg(test)]
+    pub(crate) fn shipped_values_with(
+        bundles: serde_json::Value,
+    ) -> BTreeMap<String, serde_json::Value> {
+        let mut files = Rules::shipped_values();
+        let catalog = files
+            .get_mut("modifiers")
+            .and_then(serde_json::Value::as_object_mut)
+            .expect("the shipped modifier catalog is an object");
+        let serde_json::Value::Object(bundles) = bundles else {
+            panic!("test bundles must be a JSON object");
+        };
+        catalog.extend(bundles);
+        files
+    }
+
     /// Install a ruleset as the active one. Fails if a game has already read
     /// the ruleset, because half a game on one set of rules and half on
     /// another is not a state worth supporting.
@@ -3450,9 +3477,60 @@ mod tests {
         // Musician and Prophet. Class, era, cost and charges again come from
         // `GreatPersonIndividuals`, `Eras` and `GreatWorks`, and the audit
         // again reports zero divergent fields over all 147.
+        //
+        // Moved again by the LAST TWELVE PANTHEONS, which completes the class:
+        // Desert Folklore, Dance of the Aurora and Sacred Path (Holy Site
+        // terrain and feature adjacency), God of War (post-combat Faith), God
+        // of Healing, River Goddess (district Amenities and Housing on a
+        // river), City Patron Goddess (first-district Production), Monument to
+        // the Gods (Ancient/Classical wonder Production), Initiation Rites
+        // (barbarian-camp Faith and healing), Lady of the Reeds and Marshes,
+        // Goddess of Fire (feature yields) and Earth Goddess (Appeal). The
+        // roster goes from 11 of the game's 23 pantheons to all 23, and the
+        // pantheon is the earliest religious choice every civilization makes.
+        //
+        // ⚠ Read from the **install**'s `Expansion*/Data/*.xml` with
+        // `Expansion2_RemoveData.xml` checked for every id. Three of these
+        // twelve are cases where a base-game row states the opposite of the
+        // shipped rule: the expansion deletes `EARTH_GODDESS_APPEAL_FAITH`
+        // (Charming, MinimumAppeal 2) and re-adds it at Breathtaking
+        // (MinimumAppeal 4), deletes `RIVER_GODDESS_HOLY_SITE_AMENITY` (+1
+        // Amenity, no Housing) for a +2/+2 pair, and drops
+        // `LADY_OF_THE_REEDS_PRODUCTION` (+1) for `..._PRODUCTION2` (+2).
+        // Initiation Rites gains a second, Gathering-Storm-only half. See
+        // `docs/FIDELITY.md`.
+        // Moved again by the seventeen espionage promotions. The engine has
+        // always resolved them by name out of `Game::SPY_PROMOTIONS`, so the
+        // Spy was the one unit class whose promotions were absent from
+        // `data/promotions.json` and invisible to the pedia, the mod overlay
+        // and the fidelity audit alike. Class, tier and prerequisites come
+        // from `UnitPromotions` (all seventeen are `Level = 1` with no
+        // `UnitPromotionPrereqs`), and each magnitude from the promotion's own
+        // `UnitPromotionModifiers` row, so the audit reports zero divergent
+        // fields with them in.
+        //
+        // Moved again by four unit stats the audit could not see. The Nau, Toa
+        // and Nihang carry their civilization's name in the shipped table
+        // (`UNIT_PORTUGUESE_NAU`) and their Civilopedia name in CIVVIS, so all
+        // four unique units were reported missing *and* extra at once and
+        // compared against nothing. Aliasing them surfaced six wrong numbers:
+        // the Nau's Maintenance (4 to 2) and sight (2 to 3), the Toa's cost
+        // (110 to 120), Maintenance (2 to 0) and Combat (36 to 38), and the
+        // Nihang's Maintenance (0 to 2).
+        // Moved again by the imported modifier catalog. `data/modifiers.json`
+        // is no longer empty: `tools/civ6_modifiers.py --emit-catalog` writes
+        // one bundle per shipped `Modifiers` row of a declared effect, and the
+        // ruleset object the game says owns that row attaches it by name. Most
+        // of the fold restores the number CIVVIS already carried, so the
+        // fingerprint moves without the ruleset changing; four rows do change
+        // it. Eleven civics now award the Envoys `GRANT_INFLUENCE_TOKEN` gives
+        // them (CIVVIS carried two of the thirteen), Jakob Fugger awards his
+        // two, Sweeping Wind gains the `MOD_MOVE_AFTER_ATTACKING` it shares
+        // with Elite Guard and Breakthrough, and Computers multiplies Tourism
+        // by the +25% `COMPUTERS_BOOST_ALL_TOURISM` states instead of +100%.
         assert_eq!(
             Rules::shipped().source_fingerprint(),
-            "fnv1a64:8294e9e5c1f78734"
+            "fnv1a64:3197ea74e7b50a8d"
         );
     }
 
@@ -3585,31 +3663,30 @@ mod tests {
 
     #[test]
     fn named_modifiers_compose_and_attach_to_any_effect_bearing_spec() {
-        let mut files = Rules::shipped_values();
-        files.insert(
-            "modifiers".to_string(),
-            json!({
-                "production_seed": {
-                    "effects": {"city_production": 2, "builder_production_pct": 12},
-                    "building_yields": {"library": {"science": 2}},
-                    "unit_purchase_discount_pct": {"builder": 15},
-                    "abilities": ["public_engineering"]
-                },
-                "production_bundle": {
-                    "effects": {"builder_production_pct": 8},
-                    "building_yields": {"library": {"science": 1}},
-                    "unit_purchase_discount_pct": {"builder": 5},
-                    "modifiers": ["production_seed"]
-                }
-            }),
-        );
+        let mut files = Rules::shipped_values_with(json!({
+            "production_seed": {
+                "effects": {"city_production": 2, "builder_production_pct": 12},
+                "building_yields": {"library": {"science": 2}},
+                "unit_purchase_discount_pct": {"builder": 15},
+                "abilities": ["public_engineering"]
+            },
+            "production_bundle": {
+                "effects": {"builder_production_pct": 8},
+                "building_yields": {"library": {"science": 1}},
+                "unit_purchase_discount_pct": {"builder": 5},
+                "modifiers": ["production_seed"]
+            }
+        }));
         files.get_mut("policies").unwrap()["urban_planning"]["modifiers"] =
             json!(["production_bundle"]);
 
         let rules = Rules::from_values(files).unwrap();
         // Urban Planning already carries one city Production. Attached values
         // add to local values rather than silently replacing them.
-        assert_eq!(rules.policies["urban_planning"].effects["city_production"], 3.0);
+        assert_eq!(
+            rules.policies["urban_planning"].effects["city_production"],
+            3.0
+        );
         assert_eq!(
             rules.policies["urban_planning"].effects["builder_production_pct"],
             20.0
@@ -3683,17 +3760,13 @@ mod tests {
         };
         assert!(!requirements.matches(&dark));
 
-        let mut files = Rules::shipped_values();
-        files.insert(
-            "modifiers".to_string(),
-            json!({
-                "city_bundle": {
-                    "collection": "player_cities",
-                    "requirements": {"all": [{"government": "democracy"}]},
-                    "effects": {"city_production": 4}
-                }
-            }),
-        );
+        let files = Rules::shipped_values_with(json!({
+            "city_bundle": {
+                "collection": "player_cities",
+                "requirements": {"all": [{"government": "democracy"}]},
+                "effects": {"city_production": 4}
+            }
+        }));
         let rules = Rules::from_values(files).unwrap();
         assert_eq!(
             rules.modifiers["city_bundle"].collection,
@@ -3709,16 +3782,12 @@ mod tests {
 
     #[test]
     fn contextual_modifier_attachments_are_not_flattened_into_static_rules() {
-        let mut files = Rules::shipped_values();
-        files.insert(
-            "modifiers".to_string(),
-            json!({
-                "conditional": {
-                    "requirements": {"all": [{"government": "democracy"}]},
-                    "effects": {"city_production": 4}
-                }
-            }),
-        );
+        let mut files = Rules::shipped_values_with(json!({
+            "conditional": {
+                "requirements": {"all": [{"government": "democracy"}]},
+                "effects": {"city_production": 4}
+            }
+        }));
         files.get_mut("policies").unwrap()["urban_planning"]["modifiers"] = json!(["conditional"]);
         let error = Rules::from_values(files).err().unwrap();
         assert!(
@@ -3726,11 +3795,7 @@ mod tests {
             "{error}"
         );
 
-        let mut invalid = Rules::shipped_values();
-        invalid.insert(
-            "modifiers".to_string(),
-            json!({"bad": {"requirements": {"all": [{}]}}}),
-        );
+        let invalid = Rules::shipped_values_with(json!({"bad": {"requirements": {"all": [{}]}}}));
         let error = Rules::from_values(invalid).err().unwrap();
         assert!(error.contains("empty all requirement"), "{error}");
     }
@@ -4564,8 +4629,15 @@ mod tests {
             .iter()
             .map(|class| promotion_count(class))
             .sum::<usize>();
+        // The espionage class is counted separately below: it is a flat list of
+        // seventeen, not a seven-node XP tree, so it cannot be folded into the
+        // per-class totals this assertion sums.
         assert_eq!(
-            rules.promotions.len(),
+            rules
+                .promotions
+                .values()
+                .filter(|promotion| promotion.class != "espionage")
+                .count(),
             expected_promotions,
             "modeled promotion classes: {classes:?}"
         );
@@ -4595,6 +4667,29 @@ mod tests {
                     "{name} has no prerequisite from an earlier tier"
                 );
             }
+        }
+    }
+
+    /// The Spy's tree is flat, and Civ VI says so.
+    ///
+    /// `UnitPromotions` gives all seventeen `PROMOTION_CLASS_SPY` rows
+    /// `Level = 1` and ships no `UnitPromotionPrereqs` for any of them: a Spy
+    /// picks three of the seventeen in any order as it levels, which is why the
+    /// tier/prerequisite assertions above cannot describe it. Guarding the
+    /// shape here keeps that difference deliberate rather than an omission.
+    #[test]
+    fn espionage_promotions_are_a_flat_seventeen_node_class() {
+        let rules = Rules::embedded();
+        let nodes: Vec<_> = rules
+            .promotions
+            .iter()
+            .filter(|(_, promotion)| promotion.class == "espionage")
+            .collect();
+        assert_eq!(nodes.len(), 17, "espionage promotion class");
+        for (name, promotion) in nodes {
+            assert_eq!(promotion.tier, 1, "{name} tier");
+            assert!(promotion.requires.is_empty(), "{name} prerequisites");
+            assert!(!promotion.effects.is_empty(), "{name} has no effect");
         }
     }
 

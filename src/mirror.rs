@@ -7843,6 +7843,31 @@ mod tests {
             civvis_unit_promotion_name("PROMOTION_SURF_ROCK"),
             "surf_band"
         );
+        assert_eq!(
+            civvis_unit_promotion_name("PROMOTION_SPY_ACE_DRIVER"),
+            "ace_driver"
+        );
+        assert_eq!(
+            civvis_unit_promotion_name("PROMOTION_SPY_GUERILLA_LEADER"),
+            "guerrilla_leader"
+        );
+        // Every espionage promotion the bridge writes out has to come back in
+        // under the name the ruleset actually holds, or an observed Spy loses
+        // its promotions to `unmapped`.
+        let rules = crate::rules::Rules::embedded();
+        for promotion in crate::game::Game::SPY_PROMOTIONS {
+            let host = if promotion == "guerrilla_leader" {
+                "PROMOTION_SPY_GUERILLA_LEADER".to_string()
+            } else {
+                format!("PROMOTION_SPY_{}", promotion.to_ascii_uppercase())
+            };
+            let name = civvis_unit_promotion_name(&host);
+            assert_eq!(name, promotion, "{host} does not round-trip");
+            assert!(
+                rules.promotions.contains_key(&name),
+                "{name} is not in the ruleset"
+            );
+        }
     }
 
     #[test]
@@ -9897,6 +9922,33 @@ pub struct StateUnit {
     pub fortified: bool,
     #[serde(default)]
     pub fortify_turns: i32,
+    /// ★★★★★ THE MERGE TIER, AND WHY `FORM_ARMY` COULD NEVER BE SENT LIVE.
+    ///
+    /// 0 = standard, 1 = Corps/Fleet, 2 = Army/Armada — Firaxis's own
+    /// `Unit:GetMilitaryFormation()`, mapped through the shipped
+    /// `MilitaryFormationTypes` enum by the mod's `CivvisMilitaryFormation`.
+    ///
+    /// #2373 wired `Action::CombineUnits` to `UNITCOMMAND_FORM_CORPS` and
+    /// `UNITCOMMAND_FORM_ARMY` and picks between them from the mirror's
+    /// [`crate::game::Unit::formation`]. The live seat runs `--fresh-board`, so
+    /// the mirror is rebuilt from this export every turn — and the export
+    /// carried no tier, so every unit was reconstructed as STANDARD and the seat
+    /// could only ever ask for a Corps. Exporting this is what makes the Army
+    /// half of the unit-consolidation layer reachable at all.
+    ///
+    /// ⚠ `None` — an older export that never carried the field — and the mod's
+    /// own `-1` ("asked, could not answer") both mean UNKNOWN, and neither may
+    /// be read as standard. [`apply_unit_observation`] accepts only 0..=2 and
+    /// otherwise leaves the board's own tier alone; a fallback that read as
+    /// standard is precisely the `GetDefenseStrength` sentinel trap, which
+    /// answered −1 for the project's entire life without anyone being able to
+    /// tell it from an answer.
+    ///
+    /// ⚠ NOT [`StateUnit::formation_count`] below. That is the ESCORT stack size
+    /// (`GetFormationUnitCount`), which `LinkUnits` reconstructs; a Corps is one
+    /// unit and reports a count of 1. Same word, different mechanism.
+    #[serde(default)]
+    pub formation: Option<i32>,
     /// Number of members in Firaxis's escort/support formation. The stock Unit
     /// Panel exposes this value, and it distinguishes two units sharing a plot from
     /// two units that move as one formation.
@@ -12268,6 +12320,7 @@ const UNIT_KEYS: &[&str] = &[
     "religion",
     "fortified",
     "fortify_turns",
+    "formation",
     "formation_count",
     "great_person",
     "queued_dest",
@@ -15187,6 +15240,19 @@ fn civvis_unit_promotion_name(civ6: &str) -> String {
     if let Some(monk) = lower.strip_prefix("monk_") {
         return monk.to_string();
     }
+    // The Spy's tree carries a SPY_ prefix on the host, the same way the
+    // Warrior Monk's carries MONK_. `civ6_unit_promotion_name` has written
+    // that prefix outbound since the espionage promotions were the seat's
+    // largest refusal category; without the matching strip inbound, every
+    // promotion on an observed Spy lands in `unmapped` instead.
+    if let Some(spy) = lower.strip_prefix("spy_") {
+        // Firaxis spells this one with a single `r`.
+        return if spy == "guerilla_leader" {
+            "guerrilla_leader".to_string()
+        } else {
+            spy.to_string()
+        };
+    }
     match lower.as_str() {
         "super_carrier" => "supercarrier".to_string(),
         "goes_to" => "goes_to_11".to_string(),
@@ -15267,6 +15333,30 @@ fn apply_unit_observation(
     }
     live.fortified = state.fortified;
     live.fortify_turns = state.fortify_turns.clamp(0, 2);
+    // ★★★★★ THE LINE THAT MAKES `FORM_ARMY` REACHABLE ON THE LIVE SEAT.
+    //
+    // `civvis_orders::translate` chooses between `UNITCOMMAND_FORM_CORPS` and
+    // `UNITCOMMAND_FORM_ARMY` by reading this unit's `formation` off the mirror
+    // (#2373). Nothing ever wrote it, and the live seat rebuilds the mirror from
+    // the host export every turn, so every unit was reconstructed at tier 0 and
+    // an existing Corps was asked to form another Corps. Firaxis models the two
+    // merges as different commands behind different civics — Nationalism and
+    // Mobilization — so that is not a near miss, it is the wrong order.
+    //
+    // ⚠ ONLY A REAL READING WRITES. `None` (an older export) and the mod's `-1`
+    // ("asked, could not answer") are unknown, and unknown must not flatten a
+    // board that already knows better — a mirror carried across turns may hold a
+    // tier CIVVIS itself raised. Accepting the sentinel here is how
+    // `GetDefenseStrength` read −1 for the project's whole life unnoticed.
+    if let Some(tier) = state.formation.filter(|tier| (0..=2).contains(tier)) {
+        live.formation = tier as u8;
+    }
+    // ⚠ `production_cost` is deliberately NOT rescaled by the tier here.
+    // `Game::set_unit_formation` multiplies it by 1.0/1.5/2.0, but that is
+    // lifetime accounting only (`unit_accounting_cost`, damage-per-cost) and this
+    // function runs on every observation, including repeat syncs of a unit that
+    // already carries the tier — so scaling here would compound on each turn
+    // rather than converge.
 }
 
 /// Seat 0's UNSPENT envoys, from Firaxis's own `GetTokensToGive`.
@@ -20276,6 +20366,148 @@ mod host_fact_tests {
 
         assert_eq!(rebuilt.game.units[&settler].linked_to, Some(warrior));
         assert_eq!(rebuilt.game.units[&warrior].linked_to, Some(settler));
+    }
+
+    /// ★★★★★ A CORPS EXPORTED BY THE HOST HAS TO ARRIVE AS A CORPS.
+    ///
+    /// #2373 wired `Action::CombineUnits` to Firaxis's two merge commands and
+    /// chooses between them by reading this exact field off the mirror:
+    /// `UNITCOMMAND_FORM_CORPS` for two standard units, `UNITCOMMAND_FORM_ARMY`
+    /// for a standard unit joining a Corps. The live seat runs `--fresh-board`,
+    /// so the mirror is rebuilt from the host export every turn — and until this
+    /// change the export said nothing about the tier, every unit was
+    /// reconstructed at 0, and the seat could only ever ask for a Corps. That is
+    /// not a near miss: the two are different commands behind different civics
+    /// (Nationalism and Mobilization), so an existing Corps was being sent an
+    /// order the host must refuse.
+    ///
+    /// The escort count rides alongside and is a DIFFERENT mechanism: a Corps is
+    /// one unit and reports `formation_count` 1, so it must not be linked to
+    /// anything by the escort reconstruction directly below.
+    #[test]
+    fn a_host_corps_and_army_survive_the_fresh_board_rebuild() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 140,
+            width: 12,
+            height: 12,
+            chunk: 1,
+            plots: vec![
+                host_grass(3, 3),
+                host_grass(4, 3),
+                host_grass(5, 3),
+                host_grass(6, 3),
+            ],
+        }]);
+        let swordsman = |id: i64, x: i32, formation: Option<i32>| StateUnit {
+            id,
+            kind: "UNIT_SWORDSMAN".to_string(),
+            x,
+            y: 3,
+            hp: 100.0,
+            formation,
+            ..StateUnit::default()
+        };
+        let state = StateSnapshot {
+            turn: 140,
+            units: vec![
+                swordsman(601, 3, Some(1)),
+                swordsman(602, 4, Some(2)),
+                swordsman(603, 5, Some(0)),
+                // The mod's "asked, could not answer". Unknown, never standard.
+                swordsman(604, 6, Some(-1)),
+            ],
+            ..StateSnapshot::default()
+        };
+
+        let rebuilt = rebuild_from_state(&snapshot, &state, 4, 1, 250, 0);
+        let uid_for = |host| {
+            rebuilt
+                .unit_ids
+                .iter()
+                .find_map(|(uid, observed)| (*observed == host).then_some(*uid))
+                .expect("host unit crosses into the mirror")
+        };
+
+        assert_eq!(
+            rebuilt.game.units[&uid_for(601)].formation,
+            1,
+            "a host Corps must arrive as a Corps, or CombineUnits sends FORM_CORPS \
+             at a unit that already is one"
+        );
+        assert_eq!(rebuilt.game.units[&uid_for(602)].formation, 2);
+        assert_eq!(rebuilt.game.units[&uid_for(603)].formation, 0);
+
+        // A Corps is ONE unit. The escort reconstruction reads `formation_count`,
+        // which stays 1 here, so nothing may be linked — the two mechanisms share
+        // a word and nothing else.
+        for host in [601, 602, 603, 604] {
+            assert_eq!(
+                rebuilt.game.units[&uid_for(host)].linked_to,
+                None,
+                "the merge tier must not be mistaken for an escort stack"
+            );
+        }
+    }
+
+    /// ⚠ THE SENTINEL MUST NOT READ AS STANDARD.
+    ///
+    /// `GetDefenseStrength` answered −1 for the whole project's life because its
+    /// fallback was indistinguishable from an answer. The formation tier is the
+    /// same shape of risk with a worse failure: 0 is a legal tier, so a fallback
+    /// of 0 would silently claim every unit is standard on any build where the
+    /// accessor is missing — and the board would keep asking for a Corps forever
+    /// with nothing to show it was guessing. Only 0..=2 is a reading; the mod's
+    /// −1, an absent field, and anything out of range leave the board alone.
+    #[test]
+    fn an_unreadable_formation_tier_never_flattens_a_corps_to_standard() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 140,
+            width: 8,
+            height: 8,
+            chunk: 1,
+            plots: vec![host_grass(3, 3)],
+        }]);
+        let state = StateSnapshot {
+            turn: 140,
+            units: vec![StateUnit {
+                id: 701,
+                kind: "UNIT_SWORDSMAN".to_string(),
+                x: 3,
+                y: 3,
+                hp: 100.0,
+                formation: Some(2),
+                ..StateUnit::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let mut rebuilt = rebuild_from_state(&snapshot, &state, 4, 1, 250, 0);
+        let uid = *rebuilt
+            .unit_ids
+            .keys()
+            .next()
+            .expect("the host unit crosses into the mirror");
+        assert_eq!(rebuilt.game.units[&uid].formation, 2);
+
+        for unknown in [None, Some(-1), Some(3), Some(i32::MIN)] {
+            let observed = StateUnit {
+                formation: unknown,
+                ..state.units[0].clone()
+            };
+            let unit = rebuilt.game.units.get_mut(&uid).expect("addressable");
+            apply_unit_observation(
+                unit,
+                &observed,
+                ObservedUnitProgress {
+                    promotions: None,
+                    religion: None,
+                },
+            );
+            assert_eq!(
+                rebuilt.game.units[&uid].formation, 2,
+                "{unknown:?} is an unknown tier, not a claim that the Army is a \
+                 plain unit"
+            );
+        }
     }
 
     #[test]

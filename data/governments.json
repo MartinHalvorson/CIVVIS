@@ -115,7 +115,8 @@
     "influence_threshold": 250,
     "envoys_per_threshold": 4,
     "diplomatic_favor_per_turn": 4,
-    "effects": {"power_per_city": 3, "project_production_pct": 30, "tourism_pct": -10},
+    "modifiers": ["synthetic_technocracy_tourism_penalty"],
+    "effects": {"power_per_city": 3, "project_production_pct": 30},
     "slots": {"military": 1, "economic": 3, "diplomatic": 1, "wildcard": 5}
   }
 }
