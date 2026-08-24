@@ -3339,13 +3339,19 @@ struct NativeCompetitionSpec {
     /// The Diplomatic Favor first place takes beside the point.
     ///
     /// ⚠ This is the emergency's **top tier** award, not a separate first-place
-    /// one, and first place is entitled to it: the shipped UI names the bands
-    /// "Gold Tier Rewards (for highest score)", "Silver Tier Rewards (for the
-    /// top 25% of scores)" and "Bronze Tier Rewards (for the next 25%)", and
-    /// `LOC_SCORED_COMPETITION_SILVER_TIER_CHILD` lists "All Silver Tier
-    /// Rewards" under Gold. The two lower bands are not paid here, because
-    /// where a 25% cut falls among five or six scoring empires is a rounding
-    /// rule the data does not state.
+    /// one, and first place is read as being in that tier: the shipped strings
+    /// name the bands "Gold Tier Rewards (for highest score)", "Silver Tier
+    /// Rewards (for the top 25% of scores)" and "Bronze Tier Rewards (for the
+    /// next 25% of scores)", and `LOC_SCORED_COMPETITION_SILVER_TIER_CHILD`
+    /// exists to say "All Silver Tier Rewards". The highest score is in the top
+    /// 25% of scores, so the winner takes both.
+    ///
+    /// ⚠ That is a **reading**: the three band predicates
+    /// (`REQUIREMENT_PLAYER_GOT_FIRST_PLACE_IN_EMERGENCY`, `..._HIGH_TIER_...`,
+    /// `..._LOW_TIER_...`) are compiled into the engine, and the child string is
+    /// referenced by no shipped Lua. The two lower bands are not paid at all,
+    /// because where a 25% cut falls among five or six scoring empires is a
+    /// rounding rule the data does not state.
     first_place_favor: f64,
     scoring: &'static [CompetitionScoreSource],
     trigger: NativeCompetitionTrigger,

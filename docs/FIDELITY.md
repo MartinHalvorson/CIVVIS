@@ -179,13 +179,25 @@ every other kind for sixty turns.
 
 ### The Favor beside the point
 
-First place also takes the competition's **top tier** Favor, and it is entitled
-to it: the shipped UI names the bands "Gold Tier Rewards (for highest score)",
-"Silver Tier Rewards (for the top 25% of scores)" and "Bronze Tier Rewards (for
-the next 25%)", and `LOC_SCORED_COMPETITION_SILVER_TIER_CHILD` lists "All Silver
-Tier Rewards" under Gold. The amounts are per competition — 100 for the aid
-requests and the Climate Accords, 50 for the World's Fair, World Games and the
-ISS, none for the Nobel prizes, whose tiers pay Great People instead.
+Favor is not a first-place row at all — it is the competition's **top tier**
+row, and first place is read as being in it. The shipped strings name the bands
+"Gold Tier Rewards (for highest score)", "Silver Tier Rewards (for the top 25%
+of scores)", "Bronze Tier Rewards (for the next 25% of scores)" and "Members
+with no score, or who are in the bottom 50% of scores, will receive nothing",
+and a separate string, `LOC_SCORED_COMPETITION_SILVER_TIER_CHILD`, exists to say
+"All Silver Tier Rewards". The highest score is in the top 25% of scores, so the
+winner takes both. The amounts are per competition — 100 for the aid requests
+and the Climate Accords, 50 for the World's Fair, World Games and the ISS, none
+for the Nobel prizes, whose tiers pay Great People instead.
+
+⚠ **This one is a reading, and it is the weakest link in this section.** The
+band predicates are `REQUIREMENT_PLAYER_GOT_FIRST_PLACE_IN_EMERGENCY`,
+`..._HIGH_TIER_SCORE_...` and `..._LOW_TIER_SCORE_...`, all three compiled into
+the engine, and `LOC_SCORED_COMPETITION_SILVER_TIER_CHILD` is referenced by no
+shipped Lua — it lives only in the text tables. The alternative reading is that
+the bands are disjoint, under which the Climate Accords' winner would take 2
+points and no Favor while second place took 100. The strings are the only
+evidence either way and they favour the inclusive reading.
 
 ⚠ CIVVIS paid a flat **25** to every winner until #2379, which is a number that
 appears nowhere in the shipped data. The two lower bands are still not paid,
