@@ -35,11 +35,14 @@
 //!    — `shoot-and-scoot`: a ranged unit whose tile a hostile melee body can
 //!    reach steps to a firing tile inside strictly fewer hostile envelopes
 //!    (the engine's own `attack_reach`, which already carries every one of
-//!    those facts), then fires at that body. Movement it had to spend to
-//!    shoot at all; the shot it was going to take; no counter-blow
-//!    (`do_ranged` has none); and `None` in the open field, where no such
-//!    tile exists. The barbarian regime gets the same step from the
-//!    peacetime path.
+//!    those facts) from which that body is still a shot — and, in a war,
+//!    leaves the shot itself to the attack scan next pass, which prices the
+//!    kill, the siege and the reply from the new tile; a siege city in range
+//!    now stays in range. Movement it had to spend to shoot at all; no
+//!    counter-blow (`do_ranged` has none); and `None` in the open field,
+//!    where no such tile exists. The barbarian regime gets the same step
+//!    from the peacetime path, firing at the raider directly because no scan
+//!    follows on that path.
 //!
 //! 2. **The same fact, from the other side of the line.** If our melee unit
 //!    stands beside our archer, every tile it touches is a stop sign, and the
@@ -212,14 +215,24 @@ impl AdvancedAi {
     // ------------------------------------------------------------------
 
     /// The gene: a ranged unit inside a hostile melee body's reach steps to a
-    /// firing tile inside fewer hostile envelopes and fires at that body.
-    /// `None` leaves the unit to the ordinary scan and march.
+    /// firing tile inside fewer hostile envelopes from which that body is
+    /// still a shot. `None` leaves the unit to the ordinary scan and march.
+    ///
+    /// `keep` is a target the unit must not step out of range of — the
+    /// campaign's siege city, when it is in range now — so a sally beside a
+    /// bombarding archer cannot pull the archer off the walls. `fire` takes
+    /// the shot at the body here and now; off, the ordinary attack scan
+    /// runs next pass from the new tile and picks the best target there,
+    /// which is the war branch's choice (the scan prices kills, the siege
+    /// and the reply; this step only chooses the ground).
     pub(super) fn shoot_and_scoot_step(
         &mut self,
         g: &mut Game,
         pid: usize,
         uid: u32,
         enemies: &[usize],
+        keep: Option<Pos>,
+        fire: bool,
     ) -> Option<bool> {
         if !self.shoot_and_scoot || !self.field_craft_unit(g, pid, uid) {
             return None;
@@ -237,6 +250,9 @@ impl AdvancedAi {
         }
         let here = unit.pos;
         let range = g.unit_attack_range(uid).max(1);
+        // A siege target in range now stays in range: the walls are what the
+        // unit is here for.
+        let keep = keep.filter(|target| g.wdist(here, *target) <= range);
         let envelopes = self.base.enemy_attack_envelopes(g, pid);
         // The bodies that can reach us and pay no counter for being shot:
         // hostile melee units. An unanswerable shooter is `contact-posture`'s
@@ -273,7 +289,9 @@ impl AdvancedAi {
                 continue;
             }
             let tile_covered = covered(tile);
-            if tile_covered >= here_covered {
+            if tile_covered >= here_covered
+                || keep.is_some_and(|target| g.wdist(*tile, target) > range)
+            {
                 continue;
             }
             for (eid, epos, ehp) in &bodies {
@@ -310,15 +328,16 @@ impl AdvancedAi {
                 .is_some_and(|unit| unit.pos != here)
                 .then_some(true);
         }
-        let fired = g
-            .apply(
-                pid,
-                &Action::Ranged {
-                    unit: uid,
-                    target: epos,
-                },
-            )
-            .is_ok();
+        let fired = fire
+            && g
+                .apply(
+                    pid,
+                    &Action::Ranged {
+                        unit: uid,
+                        target: epos,
+                    },
+                )
+                .is_ok();
         self.force_groups_dirty |= fired;
         if self.journal().wants(crate::reasoning::Level::Detail) {
             let body = g
@@ -327,10 +346,9 @@ impl AdvancedAi {
                 .map(|enemy| crate::reasoning::plain(&enemy.kind))
                 .unwrap_or_else(|| "the body".to_string());
             think!(self.journal(), Military, Detail,
-                   "Scoots to {tile:?} and {} {body}", if fired { "shoots" } else { "aims at" };
+                   "Scoots to {tile:?} and {} {body}", if fired { "shoots" } else { "has a shot at" };
                    "the firing tile is inside {tile_covered} hostile envelope(s) against \
-                    {here_covered} here; a melee body that walks up to us stops in our \
-                    zone of control and swings only next turn";
+                    {here_covered} here; the body has to walk up again to swing";
                    tile);
         }
         Some(true)
@@ -854,7 +872,7 @@ mod tests {
         let mut scooting = AdvancedAi::new();
         scooting.enable_shoot_and_scoot();
         assert_eq!(
-            scooting.shoot_and_scoot_step(&mut game, 0, archer, &[1]),
+            scooting.shoot_and_scoot_step(&mut game, 0, archer, &[1], None, false),
             None,
             "alone in the open there is no safer firing tile"
         );
@@ -862,21 +880,46 @@ mod tests {
 
         let _friend = game.spawn_test_unit("warrior", 0, screen);
         let mut stock = AdvancedAi::new();
-        assert_eq!(stock.shoot_and_scoot_step(&mut game, 0, archer, &[1]), None);
+        assert_eq!(
+            stock.shoot_and_scoot_step(&mut game, 0, archer, &[1], None, false),
+            None
+        );
         assert_eq!(game.units[&archer].pos, beside);
         assert_eq!(game.units[&warrior].hp, warrior_hp);
 
+        // A siege target the step is not allowed to leave the range of:
+        // the far side of the body is out of range from `behind`, so the
+        // scoot is declined rather than taken at the walls' expense.
+        let walls = game
+            .wring(field, 2)
+            .into_iter()
+            .filter(|position| game.wdist(*position, behind) > 2 && game.wdist(*position, beside) <= 2)
+            .min()
+            .expect("a tile in range from beside and out of range from behind");
         assert_eq!(
-            scooting.shoot_and_scoot_step(&mut game, 0, archer, &[1]),
+            scooting.shoot_and_scoot_step(&mut game, 0, archer, &[1], Some(walls), false),
+            None,
+            "the step keeps the siege target in range or does not happen"
+        );
+        assert_eq!(game.units[&archer].pos, beside);
+
+        // The war branch's shape: choose the ground, leave the shot to the
+        // attack scan next pass — the body is still a legal shot from there.
+        assert_eq!(
+            scooting.shoot_and_scoot_step(&mut game, 0, archer, &[1], None, false),
             Some(true)
         );
         let now = game.units[&archer].pos;
         assert_eq!(now, behind, "the archer stands one step back, at its range");
-        assert!(game.units[&warrior].hp < warrior_hp, "and it fired");
+        assert_eq!(game.units[&warrior].hp, warrior_hp, "the scan owns the shot");
+        assert!(game.units[&archer].moves_left > 0.0, "with movement left to fire");
         assert!(
             game.attack_reach(warrior).binary_search(&now).is_err(),
             "the body can no longer reach the archer next turn"
         );
+        game.apply(0, &Action::Ranged { unit: archer, target: field })
+            .expect("the body is a legal shot from the new tile");
+        assert!(game.units[&warrior].hp < warrior_hp);
         assert_eq!(game.units[&archer].hp, 100, "a shot pays no counter");
     }
 
@@ -936,7 +979,7 @@ mod tests {
         let mut scooting = AdvancedAi::new();
         scooting.enable_shoot_and_scoot();
         assert_eq!(
-            scooting.shoot_and_scoot_step(&mut game, 0, archer, &[barb]),
+            scooting.shoot_and_scoot_step(&mut game, 0, archer, &[barb], None, true),
             Some(true)
         );
         assert_eq!(game.units[&archer].pos, behind, "the archer left the raider's side");

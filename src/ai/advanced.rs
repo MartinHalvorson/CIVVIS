@@ -29571,7 +29571,9 @@ impl AdvancedAi {
             // `advanced/field_craft.rs`.
             if let Some(barb) = g.barb_pid {
                 if !unwanted_settler_adjacent {
-                    if let Some(acted) = self.shoot_and_scoot_step(g, pid, uid, &[barb]) {
+                    if let Some(acted) =
+                        self.shoot_and_scoot_step(g, pid, uid, &[barb], None, true)
+                    {
                         return acted;
                     }
                 }
@@ -29742,7 +29744,11 @@ impl AdvancedAi {
         // `shoot_and_scoot`: BEFORE the posture and the scan, because the one
         // thing the scan cannot do is fire from a different tile than the one
         // the unit stands on. See `advanced/field_craft.rs`.
-        if let Some(acted) = self.shoot_and_scoot_step(g, pid, uid, &enemies) {
+        let siege = plan
+            .target_city
+            .and_then(|cid| g.cities.get(&cid))
+            .map(|city| city.pos);
+        if let Some(acted) = self.shoot_and_scoot_step(g, pid, uid, &enemies, siege, false) {
             self.force_groups_dirty |= acted;
             return acted;
         }
