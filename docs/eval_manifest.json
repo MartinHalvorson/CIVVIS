@@ -1,21 +1,21 @@
 {
   "coverage": {
-    "named": 49,
+    "named": 48,
     "never_named": 0,
     "never_named_treatments": [],
-    "withholdable": 49
+    "withholdable": 48
   },
   "derived": {
     "firaxis_only_count": 30,
-    "live_bridge_count": 79,
-    "native_engine_repair_count": 49,
-    "withholdable_live_count": 49
+    "live_bridge_count": 78,
+    "native_engine_repair_count": 48,
+    "withholdable_live_count": 48
   },
   "genome_coverage": {
-    "capability_toggles": 189,
-    "measured_by_a_screen": 117,
-    "reachable_as_a_gene": 137,
-    "resolved_by_a_screen": 27,
+    "capability_toggles": 186,
+    "measured_by_a_screen": 114,
+    "reachable_as_a_gene": 134,
+    "resolved_by_a_screen": 25,
     "unreachable_by_any_screen": 52,
     "unreachable_toggles": [
       "adjacent_camp_clear",
@@ -137,7 +137,7 @@
       ]
     },
     "ENGINE_REPAIR_ECONOMY_TREATMENTS": {
-      "declared_count": 21,
+      "declared_count": 20,
       "items": [
         "escort-unstick",
         "buildings-before-projects",
@@ -149,7 +149,6 @@
         "housing-districts",
         "amenity-project-preemption",
         "amenity-district-path",
-        "governor-every-lane",
         "housing-research",
         "district-coverage",
         "slot-kind-tiebreak",
@@ -163,7 +162,7 @@
       ]
     },
     "ENGINE_REPAIR_TREATMENTS": {
-      "declared_count": 49,
+      "declared_count": 48,
       "items": [
         "war-reinforcement",
         "come-ashore",
@@ -203,7 +202,6 @@
         "housing-districts",
         "amenity-project-preemption",
         "amenity-district-path",
-        "governor-every-lane",
         "housing-research",
         "district-coverage",
         "slot-kind-tiebreak",
@@ -285,7 +283,7 @@
       ]
     },
     "LIVE_BRIDGE_TREATMENTS": {
-      "declared_count": 79,
+      "declared_count": 78,
       "items": [
         "war-reinforcement",
         "come-ashore",
@@ -325,7 +323,6 @@
         "housing-districts",
         "amenity-project-preemption",
         "amenity-district-path",
-        "governor-every-lane",
         "housing-research",
         "district-coverage",
         "slot-kind-tiebreak",

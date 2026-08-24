@@ -1392,12 +1392,14 @@ written.
    directive. Being hard to measure is not a reason to keep a gene; it is the
    reason its lane needs a clock it can finish on.
 
-⭐ The genome's own worst row is the case for this. `governor-victory-lanes`
-read win z **+2.46** and share z **−15.92** on `p10` — a recorded `conflict` —
-and #2294's single-column clause promoted it on the +46 win column because the
-rule reads the win axis only. The first standard-shape screen's **win** axis
-reads it at z **−15.37**, within half a sigma of what the legacy **share** axis
-had already said. `docs/gene_ranking_notes.md` carries the numbers.
+⭐ The former genome's own worst row is the case for this.
+`governor-victory-lanes` read win z **+2.46** and share z **−15.92** on `p10`
+— a recorded `conflict` — and #2294's single-column clause promoted it on the
++46 win column because the rule reads the win axis only. The first
+standard-shape screen's **win** axis reads it at z **−15.37**, within half a
+sigma of what the legacy **share** axis had already said. The 2026-08-24 cull
+subsequently removed the gene under the explicit negative-Diff threshold;
+`docs/gene_ranking_notes.md` carries the historical numbers.
 
 
 ## ⭐ THE CONTESTED FIELD (2026-08-24): a screen with something to deny

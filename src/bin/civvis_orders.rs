@@ -5651,11 +5651,6 @@ mod tests {
             "the named amenity-path control must hold it off"
         );
 
-        assert!(ai.governor_every_lane);
-        withhold_live_treatment(&mut ai, "governor-every-lane")
-            .expect("the every-lane governor's control arm is registered");
-        assert!(!ai.governor_every_lane, "the named every-lane control must hold it off");
-
         assert!(ai.expansion_before_prophet);
         withhold_live_treatment(&mut ai, "expansion-before-prophet")
             .expect("the Prophet deferral's control arm is registered");
@@ -5812,13 +5807,13 @@ mod tests {
     #[test]
     fn a_live_arm_can_force_only_a_ledger_held_live_treatment() {
         let forced = super::forced_live_treatments(&[
-            "governor-every-lane".to_string(),
-            "governor-every-lane".to_string(),
+            "settler-guard-holds".to_string(),
+            "settler-guard-holds".to_string(),
         ])
         .expect("a named ledger-held gene is a valid live arm");
         assert_eq!(
             forced,
-            vec!["governor-every-lane"],
+            vec!["settler-guard-holds"],
             "the arm is deduplicated"
         );
 
@@ -5827,11 +5822,11 @@ mod tests {
             .expect("the validated arm configures the live controller");
         assert!(
             civvis::ai::gene_ledger::deployment_treatments_with_forced_live(&forced)
-                .contains(&"governor-every-lane"),
+                .contains(&"settler-guard-holds"),
             "the requested gene is restored in the arm's genome"
         );
         assert!(
-            !ai.war_patience,
+            !ai.blind_objective_strength,
             "another held gene stays off until the experiment names it"
         );
 
@@ -5840,7 +5835,7 @@ mod tests {
         assert!(host_only.contains("already ships"), "{host_only}");
         let unknown = super::forced_live_treatments(&["no-such-treatment".to_string()])
             .expect_err("a typo cannot silently become the deployment arm");
-        assert!(unknown.contains("governor-every-lane"), "{unknown}");
+        assert!(unknown.contains("settler-guard-holds"), "{unknown}");
     }
 
     use super::*;

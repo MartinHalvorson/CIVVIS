@@ -2436,51 +2436,6 @@ pub struct AdvancedAi {
     /// live bridge and the native repair bundle — the engine's own amenity
     /// rules are the ones being under-read.
     pub amenity_district_path: bool,
-    /// Run the strategic governor over the cities under every grand strategy.
-    ///
-    /// ★★★★ THE GOVERNOR THAT CARRIES EVERY VALUATION IN THIS FILE — the wonder
-    /// race, the amenity path, the district and building pricing — runs only
-    /// under Recovery, under Expansion (with `expansion_dispatch`), while a
-    /// timed war plan stands, or under Conquest with `war_economy`. Under
-    /// Science, Culture, Religion and Diplomacy the cities are run by the
-    /// baseline `pick_item` (the "Cities/Decision" route), whose lists know
-    /// nothing of any of it. Measured on run civvis-20260816T054344Z: from
-    /// t131 to t185 every one of Rome's decisions was a "Cities/Decision"
-    /// (repairs, walls, trebuchets, a stock exchange) and no wonder was started
-    /// anywhere between t129 and t186 — the plan read Science from t122 to
-    /// t165, and the six wonders the game did build all fell in Conquest
-    /// stretches. Runs civvis-20260816T030249Z (Science t134–165 inside a
-    /// t112–174 wonder gap) and T011314Z (Science t147–157 inside t128–184)
-    /// have the same shape. Science is where the strong games spend their
-    /// mid-game, so this is exactly where the pricing was absent.
-    ///
-    /// With this on, the strategic governor also runs under the four victory
-    /// lanes — and under Expansion, since 2026-08-16: `expansion_dispatch` is a
-    /// default-off evaluator flag the live bridge never enables, and run
-    /// civvis-20260816T175306Z spent t1–90 and t120–180 in Expansion with 143
-    /// baseline picks to 84 strategic and one wonder all game — after each
-    /// lane's own routine (`science_production`,
-    /// `culture_spending`, `religious_production`) has filled what it wanted:
-    /// a queue those routines committed is kept (the governor's ordinary
-    /// preemption margin), an empty one is priced. Part of the live bridge and
-    /// the native repair bundle — a CIVVIS-vs-CIVVIS empire in a Science lane
-    /// has the same holes. Off for ordinary and frozen controllers.
-    pub governor_every_lane: bool,
-
-    /// The victory half of `governor_every_lane`: Science, Culture, Religion,
-    /// Diplomacy. Set by `enable_governor_every_lane` along with its sibling,
-    /// so the composite behaves exactly as before; separable so the −95 can be
-    /// attributed. Evaluator arm `advanced_governor_victory_lanes`, seed
-    /// 29000000.
-    pub governor_victory_lanes: bool,
-
-    /// The Expansion half of `governor_every_lane`. This is the half that
-    /// replaces `BasicAi::cities`'s Settler gate with `production_value`'s,
-    /// and the composite's fingerprint is a city deficit, so it is the prime
-    /// suspect. Evaluator arm `advanced_governor_expansion_lane`, seed
-    /// 30000000.
-    pub governor_expansion_lane: bool,
-
     /// Let the strategic governor run the cities under an adaptive Recovery
     /// plan — the one lane where it decides production for the SHIPPED agent.
     ///
@@ -5860,9 +5815,6 @@ impl AdvancedAi {
             plan_city_target: false,
             amenity_project_preemption: false,
             amenity_district_path: false,
-            governor_every_lane: false,
-            governor_victory_lanes: false,
-            governor_expansion_lane: false,
             governor_in_recovery: true,
             settlement_gap_reads_city_target: false,
             live_wonder_race: false,
@@ -19496,77 +19448,6 @@ impl AdvancedAi {
                     continue;
                 }
             }
-            // ★★★ `governor_every_lane` REPAIRED 2026-08-19. The composite
-            // measured −62/−95 Elo (PR #1955) and the 4,000-pair native
-            // screen −2.8 pp wins with −4.5 pp score share (z −3.7 / −35,
-            // seeds 40000000..), and the recorded census fingerprint says
-            // where the loss lives: under this routing the empire ends with
-            // traders at 0.70× of control, gold at 0.71×, buildings at
-            // 0.81×, while districts hold 0.94×. The mechanism: the baseline
-            // governor orders a Trader as a hard branch before any building
-            // (`economic_recovery_item`'s shape), while this scorer only
-            // PRICES one (~300–400) — and the district asks outbid it every
-            // time. So the lane routing now keeps the baseline's trader
-            // reservation as a preemption: an idle city fills an open,
-            // safe trade-route slot before the strategic argmax runs.
-            // Scoped to the every-lane routing so victory-targeted seats,
-            // war plans and Recovery keep their measured behaviour.
-            let every_lane_routing = (self.governor_victory_lanes
-                && matches!(
-                    plan.strategy,
-                    GrandStrategy::Science
-                        | GrandStrategy::Culture
-                        | GrandStrategy::Religion
-                        | GrandStrategy::Diplomacy
-                ))
-                || (self.governor_expansion_lane && plan.strategy == GrandStrategy::Expansion);
-            if committed.is_none()
-                && every_lane_routing
-                && self
-                    .base
-                    .should_add_trader_for_controller(g, pid, counts.traders)
-            {
-                let trader = Item::Unit {
-                    unit: crate::name!("trader"),
-                };
-                if g.can_produce(pid, cid, &trader)
-                    && g.apply(
-                        pid,
-                        &Action::Produce {
-                            city: cid,
-                            item: trader.clone(),
-                        },
-                    )
-                    .is_ok()
-                {
-                    if self.journal().wants(crate::reasoning::Level::Decision) {
-                        let city_name = g.cities[&cid].name.clone();
-                        think!(self.journal(), Economy, Decision,
-                            "{} starts a Trader before the lane's strategic pick", city_name;
-                            "an open trade-route slot compounds; the district ask can wait one build");
-                    }
-                    counts.add_item(g, &trader);
-                    continue;
-                }
-            }
-            // ★★★ `governor_every_lane`, second cut, MEASURED AND REVERTED
-            // (2026-08-20). The trader preemption above repaired the win axis
-            // (−2.8 → +0.8 over 2,000 pairs, seeds 45000000..) and left the
-            // score-share drag whole (−4.63, z −33); the census fingerprint
-            // named buildings at 0.81× of control, so the second cut had the
-            // routing order the cheapest FIRST building of any specialty
-            // district before the strategic argmax. Re-priced on 2,000
-            // disjoint pairs (seeds 47000000..): win Δ fell to **−3.6
-            // [−5.6, −1.6]** and share to −5.39 (z −37) — worse than either
-            // cycle on both axes. The preemption was removed the same day;
-            // this note stays so the next reader does not retry the naive
-            // form. The 0.81× fingerprint is real but the answer is not "a
-            // building before every argmax": the lanes' district asks and
-            // the buildings compete for the same production, and a hard
-            // preemption starved whatever the argmax would have compounded.
-            // Next lever, unmeasured: scope the completion to the district
-            // the routing itself just raised, or price (never preempt) the
-            // first building into the strategic table.
             let best: Option<(f64, String, Item)> = {
                 let _memo = g.query_memo();
                 let mut items =
@@ -21156,25 +21037,6 @@ impl AdvancedAi {
                             + if wonder_civ { 120.0 } else { 0.0 }
                     }
                 } else {
-                    // ★★★ `governor_every_lane`, third cut, MEASURED AND
-                    // REVERTED (2026-08-20) — like the second. The census
-                    // fingerprint (buildings 0.81× of control under the
-                    // lanes) suggested completing a held district's first
-                    // building; the second cut PREEMPTED it and re-measured
-                    // −3.6 pp wins; this cut PRICED it (+120 in this table,
-                    // competing in the argmax) and re-measured **−2.9
-                    // [−4.8, −0.9] wins, share −4.52 (z −34)** over 2,000
-                    // pairs (seeds 51000000..) against the trader-only
-                    // +0.8 / −4.63 (seeds 45000000..). Building-first is
-                    // wrong for the lanes in either form: the win axis pays
-                    // for every production the districts and traders lose.
-                    // What stands after three levers: the trader preemption
-                    // (kept — it repaired the win axis), and the recorded
-                    // fact that the −4.5 pp share drag survives every
-                    // building-side lever. The remaining question for the
-                    // gate is the one the 2026-08-18 bisect priced: whether
-                    // the victory-lanes half of the composite carries its
-                    // weight at all (−70..−80 Elo there; PR #1955).
                     let housing_need = (city.pop as f64 + 1.0 - g.city_housing(city)).max(0.0);
                     let amenity_need = (-g.city_amenity_surplus(city)).max(0) as f64;
                     let great_work_slots =
@@ -32626,39 +32488,10 @@ impl AdvancedAi {
             // Scout as a weak Warrior. Same claim discipline as the naval eye:
             // one idle, safe queue, only while `recon_is_the_missing_arm`.
             self.reserve_idle_land_recon(g, pid, &plan);
-            // ★★★★ And under every victory lane on the treated seat: see
-            // `governor_every_lane` — the pricing was absent exactly where the
-            // strong games spend their mid-game.
-            // ★★★★ AND EXPANSION, where the live seat spends most of its game.
-            // `expansion_dispatch` is a default-off evaluator flag that the live
-            // bridge never enables, so under Expansion the baseline ran the
-            // cities: run civvis-20260816T175306Z, plan Expansion t1–t90 and
-            // t120–t180 (the era-paced cadence keeps the lane open longer),
-            // 143 baseline "Cities/Decision" picks against 84 strategic ones,
-            // ONE wonder all game — every valuation this file carries (the
-            // wonder race, the tally price of culture, the amenity path, the
-            // district table) absent exactly when the empire was growing.
-            // ⚠ Split into its two halves 2026-08-17 so the composite can be
-            // bisected. `enable_governor_every_lane` sets both, so every
-            // existing arm and the live bridge are unchanged; the halves exist
-            // because the composite measured −95 Elo and a composite bounds
-            // only its net. The city-deficit fingerprint (5× the control's
-            // boundary events, cities 5.11 vs 6.62) points at the Expansion
-            // half, where this route replaces the baseline Settler gate.
-            let every_lane = (self.governor_victory_lanes
-                && matches!(
-                    plan.strategy,
-                    GrandStrategy::Science
-                        | GrandStrategy::Culture
-                        | GrandStrategy::Religion
-                        | GrandStrategy::Diplomacy
-                ))
-                || (self.governor_expansion_lane && plan.strategy == GrandStrategy::Expansion);
             if (self.governor_in_recovery && plan.strategy == GrandStrategy::Recovery)
                 || active_victory_target.is_some()
                 || adaptive_expansion_dispatch
                 || self.war_plan.is_some()
-                || every_lane
             // ★★★★★ `war_economy`'s CONQUEST ROUTING WAS REMOVED
             // 2026-08-20, by its own numbers, after three repairs in
             // three cycles. Unrepaired it measured −7.2 pp wins over

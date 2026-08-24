@@ -1350,67 +1350,6 @@ fn the_war_economy_conquest_routing_is_gone_from_the_dispatch() {
     );
 }
 
-/// The strategic governor runs under the Science lane on the treated seat:
-/// civvis-20260816T054344Z ran Rome on the baseline picker for the whole
-/// of a Science stretch and started no wonder in 57 turns. See
-/// `governor_every_lane`.
-/// The strategic governor runs under the Science lane on the treated seat:
-/// civvis-20260816T054344Z ran Rome on the baseline picker for the whole
-/// of a Science stretch and started no wonder in 57 turns. See
-/// `governor_every_lane`. Same source-pinned shape as
-/// `the_war_economy_routes_an_adaptive_conquest_plan_to_war_production`:
-/// the routing block is the only place the choice is made.
-#[test]
-fn the_strategic_governor_runs_under_every_lane_on_the_treated_seat() {
-    let src = include_str!("../advanced.rs");
-    let block = src
-        .split("|| adaptive_expansion_dispatch")
-        .nth(1)
-        .expect("the production routing condition exists")
-        .split("self.advanced_production(g, pid, &plan, adaptive_expansion_dispatch);")
-        .next()
-        .expect("the routing block ends at the production call");
-    assert!(
-        block.contains("|| every_lane"),
-        "the every-lane arm reaches the same production call"
-    );
-    // The arm is two flags since the bisect: the composite still covers the
-    // same five lanes, but each half can be measured on its own.
-    let arm = src
-        .split("let every_lane = (self.governor_victory_lanes")
-        .nth(1)
-        .expect("the arm is gated by the flags")
-        .split(';')
-        .next()
-        .expect("the arm ends");
-    for lane in ["Science", "Culture", "Religion", "Diplomacy", "Expansion"] {
-        assert!(
-            arm.contains(&format!("GrandStrategy::{lane}")),
-            "the {lane} lane is covered"
-        );
-    }
-    assert!(
-        arm.contains("self.governor_expansion_lane"),
-        "the Expansion lane hangs off its own half"
-    );
-    assert!(
-        !arm.contains("GrandStrategy::Conquest") && !arm.contains("GrandStrategy::Recovery"),
-        "war lanes keep their own routing"
-    );
-    // Off by default, set only by the live bridge and the native repair
-    // bundle, holdable off on its own.
-    assert!(!AdvancedAi::new().governor_every_lane);
-    assert!(!AdvancedAi::legacy().governor_every_lane);
-    let mut live = AdvancedAi::new();
-    live.enable_live_bridge_universe();
-    assert!(live.governor_every_lane);
-    live.disable_governor_every_lane();
-    assert!(!live.governor_every_lane);
-    let mut repaired = AdvancedAi::new();
-    repaired.enable_engine_repairs_economy();
-    assert!(repaired.governor_every_lane);
-}
-
 /// War patience measures a campaign, not ordinary expansion.
 ///
 /// On live run `civvis-20260816T003229Z`, Rome was at war with Indonesia
