@@ -33225,6 +33225,224 @@ fn the_inquisitor_walks_to_the_heresy_only_with_the_gene() {
     );
 }
 
+// ═══ Trade deals: three leaks, one gene each (BasicAi::deals_*, no_free_passage) ═══
+
+#[test]
+fn the_trade_deal_genes_are_registered_reversible_opt_ins() {
+    for (field, tag) in [
+        ("deals_for_our_gain", "deals-for-our-gain"),
+        ("deals_at_the_ceiling", "deals-at-the-ceiling"),
+        ("no_free_passage", "no-free-passage"),
+    ] {
+        assert!(
+            GENES
+                .iter()
+                .any(|gene| gene.opt_in() && gene.field == field && gene.tag == tag),
+            "{tag} must be a registered native opt-in"
+        );
+        assert!(crate::ai::advanced::gene_ledger::screenable(tag));
+        assert_eq!(
+            crate::ai::advanced::gene_ledger::ledger_default_on(tag),
+            Some(false),
+            "{tag} ships off until a screen prices it"
+        );
+    }
+    let mut ai = AdvancedAi::new();
+    assert!(
+        !ai.base.deals_for_our_gain && !ai.base.deals_at_the_ceiling && !ai.base.no_free_passage
+    );
+    ai.enable_deals_for_our_gain();
+    ai.enable_deals_at_the_ceiling();
+    ai.enable_no_free_passage();
+    assert!(ai.base.deals_for_our_gain && ai.base.deals_at_the_ceiling && ai.base.no_free_passage);
+    ai.disable_deals_for_our_gain();
+    ai.disable_deals_at_the_ceiling();
+    ai.disable_no_free_passage();
+    assert!(
+        !ai.base.deals_for_our_gain && !ai.base.deals_at_the_ceiling && !ai.base.no_free_passage
+    );
+    let legacy = AdvancedAi::legacy();
+    assert!(
+        !legacy.base.deals_for_our_gain
+            && !legacy.base.deals_at_the_ceiling
+            && !legacy.base.no_free_passage,
+        "the frozen anchor plays the game it always did"
+    );
+}
+
+/// Two met capitals with a surplus luxury each, Gold and Favor to trade
+/// with, and Early Empire on both sides: the engine's own trade fixture.
+fn deal_board() -> Game {
+    let mut game = Game::new_full(2, 24, 16, 7_711, 120, 0, false);
+    game.record_contact(0, 1);
+    for pid in 0..2 {
+        let settler = game
+            .player_unit_ids(pid)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.found_city_for(pid, game.units[&settler].pos, None);
+        game.players[pid].gold = 500.0;
+        game.players[pid].diplomatic_favor = 100.0;
+        game.players[pid]
+            .civics
+            .insert(crate::name!("early_empire"));
+        for city in game.player_city_ids(pid) {
+            for position in game.cities[&city].owned_tiles.clone() {
+                let tile = game.map.tiles.get_mut(&position).unwrap();
+                tile.resource = None;
+                tile.improvement = None;
+                tile.pillaged = false;
+            }
+        }
+    }
+    for (pid, resource) in [(0, "silk"), (1, "wine")] {
+        let positions: Vec<Pos> = game
+            .player_city_ids(pid)
+            .into_iter()
+            .flat_map(|city| game.cities[&city].owned_tiles.clone())
+            .filter(|position| game.city_at(*position).is_none())
+            .take(2)
+            .collect();
+        assert_eq!(positions.len(), 2);
+        for position in positions {
+            let tile = game.map.tiles.get_mut(&position).unwrap();
+            tile.resource = Some(crate::name::Name::new(resource));
+            tile.improvement = Some(crate::name!("plantation"));
+        }
+    }
+    game.current = 0;
+    game
+}
+
+#[test]
+fn a_quote_is_chosen_by_our_gain_only_with_the_gene() {
+    use crate::game::{DealItems, QuickDeal};
+    let quote = |my_value: f64, partner_value: f64| QuickDeal {
+        partner: 1,
+        category: "resource".to_string(),
+        item: "silk".to_string(),
+        direction: "sell".to_string(),
+        offer: DealItems::default(),
+        request: DealItems::default(),
+        my_value,
+        partner_value,
+    };
+    // The lopsided quote is worth more to us; the balanced one is fairer.
+    let lopsided = quote(10.0, 3.0);
+    let balanced = quote(6.0, 6.0);
+    let off = AdvancedAi::new();
+    assert!(
+        off.base.deal_objective(&balanced) > off.base.deal_objective(&lopsided),
+        "shipped: the most balanced exchange wins"
+    );
+    let mut on = AdvancedAi::new();
+    on.enable_deals_for_our_gain();
+    assert!(
+        on.base.deal_objective(&lopsided) > on.base.deal_objective(&balanced),
+        "the gene: the exchange worth most to us wins"
+    );
+    assert_eq!(on.base.deal_objective(&lopsided), 10.0);
+}
+
+#[test]
+fn a_sale_is_priced_at_the_counterpartys_ceiling_only_with_the_gene() {
+    let game = deal_board();
+    let quotes = game.quick_deals(0);
+    let sale = quotes
+        .iter()
+        .find(|deal| deal.direction == "sell" && deal.item == "silk")
+        .cloned()
+        .expect("fixture: a luxury to sell");
+    let purchase = quotes
+        .iter()
+        .find(|deal| deal.direction == "buy" && deal.item == "wine")
+        .cloned()
+        .expect("fixture: a luxury to buy");
+
+    let off = AdvancedAi::new();
+    assert_eq!(
+        off.base.deal_at_the_ceiling(&game, 0, &sale),
+        None,
+        "the gene off leaves the midpoint quote alone"
+    );
+
+    let mut on = AdvancedAi::new();
+    on.enable_deals_at_the_ceiling();
+    let sharp = on
+        .base
+        .deal_at_the_ceiling(&game, 0, &sale)
+        .expect("a midpoint quote has surplus to move");
+    assert!(
+        sharp.request.gold > sale.request.gold,
+        "the sale asks for more: {} over {}",
+        sharp.request.gold,
+        sale.request.gold
+    );
+    assert!(sharp.my_value > sale.my_value);
+    let (_, theirs) = game.trade_utilities(0, 1, &sharp.offer, &sharp.request);
+    assert!(
+        theirs > 0.25 && theirs <= sale.partner_value,
+        "the counterparty still gains, by the margin: {theirs}"
+    );
+    let cheaper = on
+        .base
+        .deal_at_the_ceiling(&game, 0, &purchase)
+        .expect("a purchase has surplus to keep");
+    assert!(
+        cheaper.offer.gold < purchase.offer.gold,
+        "the purchase pays less: {} under {}",
+        cheaper.offer.gold,
+        purchase.offer.gold
+    );
+
+    // And the sharpened sale closes: the engine accepts it and the Gold
+    // lands, more of it than the midpoint would have brought.
+    let mut closed = game.clone();
+    let before = closed.players[0].gold;
+    assert!(on.base.close_quick_deal(&mut closed, 0, sale.clone()));
+    let banked = closed.players[0].gold - before;
+    assert!(
+        banked >= sharp.request.gold - 1e-6 && banked > sale.request.gold,
+        "banked {banked} against the sharpened {} and the midpoint {}",
+        sharp.request.gold,
+        sale.request.gold
+    );
+    // The shipped close banks the midpoint (and the first instalment of any
+    // Gold-per-turn rider `do_trade` settles at signing), which is less.
+    let mut shipped = game.clone();
+    let before = shipped.players[0].gold;
+    assert!(off.base.close_quick_deal(&mut shipped, 0, sale.clone()));
+    let midpoint = shipped.players[0].gold - before;
+    assert!(
+        midpoint >= sale.request.gold - 1e-6 && midpoint < banked,
+        "the midpoint banks {midpoint}, the ceiling {banked}"
+    );
+}
+
+#[test]
+fn a_friendship_ask_carries_no_passage_only_with_the_gene() {
+    let proposal = |gene: bool| -> bool {
+        let mut game = deal_board();
+        game.turn = 20;
+        let mut ai = AdvancedAi::new();
+        if gene {
+            ai.enable_no_free_passage();
+        }
+        ai.base.diplomacy(&mut game, 0);
+        game.pending_deals
+            .iter()
+            .find(|deal| deal.from == 0 && deal.to == 1 && deal.friendship)
+            .map(|deal| deal.open_borders)
+            .expect("fixture: the friendship ask is made at turn 20")
+    };
+    assert!(
+        proposal(false),
+        "shipped: passage rides on the friendship ask"
+    );
+    assert!(!proposal(true), "the gene: the ask carries no passage");
+}
+
 // ═══ One war at a time (advanced/one_war.rs) ═══
 
 #[test]
