@@ -84,9 +84,19 @@
       "range": 1
     }
   },
+  "greatperson_ana_nzinga_active": {
+    "effects": {
+      "envoys": 1
+    }
+  },
   "greatperson_influence_tokens_medium": {
     "effects": {
       "envoys": 2
+    }
+  },
+  "greatperson_influence_tokens_small": {
+    "effects": {
+      "envoys": 1
     }
   },
   "hangar_bonus_air_slots": {

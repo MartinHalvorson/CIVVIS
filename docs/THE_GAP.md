@@ -33,7 +33,7 @@ game ships and CIVVIS does not model at all:
 
 | table | only in Civ VI |
 |---|---:|
-| GreatPeople | 184 |
+| GreatPeople | 184 → **66** (#2142 took the roster 29→65, #2377 65→147 of 213, completing Writers, Artists, Musicians and Prophets) |
 | Units | 58 |
 | Promotions | 26 (16 of them spy promotions) |
 | Beliefs | 22 |
