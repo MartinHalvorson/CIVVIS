@@ -1064,6 +1064,22 @@ same shape of mistake as the one this section's own history records —
 `governor-victory-lanes` shipped on a single +46 column and cost −237 wins per
 10,000 on-arm seats (95% CI [−267, −206], 23,622 pairs).
 
+**The arm was run anyway, and it is `~`.** A pre-registered single-gene arm at
+the deployment shape — `gene_screen --genes siege-commitment --games 600
+--target-games 600 --start-seed 191000000 --jobs 4`, seeds 191000000+, disjoint
+from every window in the ledger (141M whole-genome, 150M `g1`, 168M 10k, 169M
+41,628) — was stopped by the operator at **28 of 600 games, 168 of 3,600
+pre-registered seats (4.7%)**, and the tool labels it `⚠⚠ PARTIAL SCREEN`
+accordingly. It reads **+6.8 pp (91 on / 77 off), win z +1.23, 95% CI
+[−4.1, +17.6]**, share +1.33 pp at z +1.65 — **`~`, unresolved**, on a run that
+resolves only ±15.5 pp at 80% power. That interval contains **both**
+deployment-shape readings above (+0.119 and −0.199) and discriminates neither;
+it is consistent with every number in the table and with zero. ⚠ It was stopped
+because the box was running at a load average of 78–150 on 18 cores with up to
+13 concurrent `gene_screen` processes; win and share figures are counts and are
+unaffected by that, but no wall-clock or per-game cost figure from this run is
+quotable and none is published.
+
 ⚠ **A direct arm cannot settle this gene.** `python3 tools/genes.py boundary`
 sizes it at **788,779 seat pairs** before the interval clears zero. This
 binary prints its own 80%-power resolution per run — ±34.8 pp on 6 games — and
