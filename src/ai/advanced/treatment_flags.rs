@@ -2182,9 +2182,9 @@ impl AdvancedAi {
     }
 
     /// From the midpoint of the game an adaptive seat commits to the victory
-    /// lane it can land before the clock and plays for it everywhere the
-    /// operator's `victory_target` is read — Score when no lane lands in
-    /// time. See [`AdvancedAi::maintain_lane_commit`]. Opt-in gene
+    /// lane it leads the field in and plays for it wherever a decider
+    /// resolves which lane the empire is playing for. See
+    /// [`AdvancedAi::maintain_lane_commit`]. Opt-in gene
     /// `lane-commit`. (Filed here rather than under a marker: the
     /// append-point check reads a line's first identifier.)
     pub fn enable_lane_commit(&mut self) {

@@ -677,7 +677,7 @@ That is the right rule for a behaviour that was already off and the wrong one
 for one carrying +61 Elo-equivalent (200 pairs, seed 8700000, CI +21..+109, PASS on the corrected-gate matrix; see `AdvancedAi::promoted_policy_envoy`). `docs/GENE_SCREEN.md` §"The toggles no screen
 can reach" has the group-by-group account.
 
-## 10. `lane-commit`: from the midpoint, the empire plays for the victory it can land
+## 10. `lane-commit`: from the midpoint, the empire plays for the victory it leads
 
 Operator, 2026-08-24: *"add some logic or some heuristic for steering us
 towards our best victory condition harder. From the midpoint of the game, we
@@ -692,47 +692,57 @@ adaptive seat has none. `assess` puts an adaptive seat on a lane only at
 `victory_focus` re-decides every turn from raw progress.
 
 **The gene** (`AdvancedAi::lane_commit`, `advanced/lane_commit.rs`,
-`Kind::OptIn`, off in both controllers):
+`Kind::OptIn`, off in both controllers, byte-identical when off):
 
 - **At the midpoint** — half the turn cap, turn 125 on the 250-turn Online
   standard; `LANE_COMMIT_MIDPOINT_STANDARD` standard turns with no cap — the
   seat commits to one lane.
-- **The lane that lands, not the lane that leads.** Each lane's progress
-  (`lane_progress_table`: the same four readings `victory_focus` ranks, minus
-  the civilization preferences) is sampled every `LANE_COMMIT_SAMPLE_EVERY`
-  standard turns; its rate over the last `LANE_COMMIT_RATE_WINDOW` (50
-  standard turns) projects the turn it reaches 100. The earliest projection
-  inside the cap wins. Under the standing regime science lands at a median
-  t283 and diplomacy at t285 (`docs/GENE_SCREEN.md`), so at a 250-turn cap a
-  seat at 45% science is not racing science — and when no lane lands in time
-  the commitment is **Score**, which is a victory condition. Domination is
-  never chosen (0% at every map and clock).
-- **It reaches every decider.** `AdvancedAi::raced_target` answers the
-  operator's `victory_target` or the commitment, and the twenty-one deciders
-  that read the field directly — the tech beeline, government, policy deck,
-  space race, the Congress abstention, Great Works, the wonder lane, the
-  missionary veto, the Culture routing — read it now. `assess` follows the
-  commitment after the postures that must come first (a home city under
-  threat, an emergency objective, a rival at the wire, a war already making
-  progress). City dispositions follow it too.
-- **It holds.** Reviewed every `LANE_COMMIT_REVIEW` standard turns; a
-  challenger takes over only when projected to land `LANE_COMMIT_SWITCH_MARGIN`
-  (20) standard turns sooner, or when the committed lane has stopped moving
-  and another still lands; a Score fallback yields to the first lane that
-  starts landing. The committed lane's rate is also read since the
-  commitment, so a lane that converted a rival at the start of the window and
-  is working on the next is not read as stalled.
+- **The lane we lead.** Winning is relative — every rival runs this planner —
+  so each lane is read for the seat *and for every living major* on one
+  table (`lane_progress_table`: the four readings `victory_focus` ranks,
+  minus the civilization preferences). Among the lanes the seat leads, the
+  one furthest along; leading none, the furthest along of all — what
+  `victory_focus` would have said, made sticky. Domination is never chosen
+  (0% at every map and clock).
+- **It reaches the objectives.** `AdvancedAi::raced_target` answers the
+  operator's `victory_target` or the commitment, and the deciders that
+  resolve *which lane the empire plays for* read it: the tech beeline, the
+  society and government, the policy deck, the Culture routing, the wonder
+  lane's strategic value, the space-race projects and Spaceports, the
+  Culture/Religion routing. `assess` follows it in place of `victory_focus`'s
+  per-turn pick, after every posture that comes first today (a threatened
+  city, an emergency, a rival at the wire, a war in progress, a neighbour
+  weak enough to take, a Prophet on the table). City dispositions follow it.
+- **It holds.** Reviewed every `LANE_COMMIT_REVIEW` (10) standard turns; a
+  challenger takes over only when the committed lane's lead is gone and the
+  challenger leads, or when it is `LANE_COMMIT_SWITCH_MARGIN` (20) points
+  further along at the same standing.
 
-**What it does not touch.** `active_victory_target` stays the operator's:
-victory denial keeps its adaptive form (a committed seat still counters a
-rival at the wire), `pursue_religion` and the expansion dispatcher read the
-assignment as before, and the census `victory_target` still reports the
-operator's target. On the live bridge, which always passes `--victory <lane>`,
-the gene is inert by construction.
+**What it does not touch — and the first draft's probe that decided it.**
+The first draft projected each lane's landing turn from its rate over a
+window, fell back to Score, and routed *every* read of `victory_target`
+through the commitment — the vetoes included. Its 24-game fires probe (seeds
+26083100..26083123) read **−8.3 pp ± 5.4** on wins, and the seat comparison
+said why: science victories landed in **7 of 24** games (turns 220–250), six
+of them by *off* seats — a linear projection of the science reading (25 +
+30 × techs/77, then discrete project steps) says science cannot land by 250,
+and the seats it moved to Religion, Culture and Score finished with **five
+fewer techs** (51.9 against 56.8); committed seats held **a third of the
+DVP** (3.7 against 9.6 — the Congress abstention for non-diplomatic targets),
+fewer cities (5.5 against 6.3) and a smaller army (the commitment sat above
+the elective war `opportunistic-war` is priced `helps` for). So this version
+keeps `victory_target` on every veto — the Congress abstention, the
+missionary and Great Work vetoes, the space-race block, the assigned
+expansion cutoff, the wonder-civ clause — keeps `active_victory_target` the
+operator's (victory denial stays adaptive, `pursue_religion` and the
+expansion dispatcher unchanged, the census still tells an adaptive seat from
+a targeted one), and sits below the war and Prophet branches. On the live
+bridge, which always passes `--victory <lane>`, the gene is inert by
+construction.
 
-**Prediction to read on the next standard screen.** Under the 250-turn regime
-the typical commitment is Religion for a founder that is converting, Diplomacy
-for a seat near 20 DVP, and Score otherwise — so the effect should show on
-the **religious** ending share and on score share, not on science or diplomacy
-wins (§8 and `docs/GENE_SCREEN.md`: those lanes pay through share at 250).
-The levers for a version 2 are the four constants and the Score fallback.
+**Prediction to read on the next standard screen.** The commitment mostly
+makes the post-window Science plan sticky and routes the objectives; the
+change is at seats that lead the religion or diplomacy field at the
+midpoint. Expect a small effect on the religious/diplomatic ending share and
+score share, not a large win-rate move. The levers for a version 2 are the
+review cadence, the switch margin, and the ranking key.

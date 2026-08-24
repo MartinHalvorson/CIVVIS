@@ -1023,13 +1023,14 @@ pub const GENES: &[Gene] = &[
     // victory in mind and be optimizing towards winning that." An adaptive
     // seat is on a victory lane for 52% of its turns and the lane never
     // reaches the deciders keyed on `victory_target` (`docs/VICTORY_GENES.md`).
-    // From half the turn cap the seat commits to the lane its sampled rate
-    // projects to land before the clock — Score when none does, never
-    // Domination — reviews it every ten standard turns behind a twenty-turn
-    // switch margin, and every decider that read the operator's target reads
-    // the commitment. Appended at the END so a running screen keeps its
-    // positional genome. See `AdvancedAi::lane_commit` /
-    // `advanced/lane_commit.rs`.
+    // From half the turn cap the seat commits to the lane it leads the field
+    // in — every lane read for the seat and for every living major on one
+    // table, never Domination — reviews it every ten standard turns behind a
+    // twenty-point switch margin, and the deciders that resolve which lane the
+    // empire plays for read the commitment; the vetoes an assigned lane
+    // carries do not (the first draft inherited them and lost 8 pp on its
+    // probe). Appended at the END so a running screen keeps its positional
+    // genome. See `AdvancedAi::lane_commit` / `advanced/lane_commit.rs`.
     Gene { tag: "lane-commit", field: "lane_commit", kind: Kind::OptIn, enable: AdvancedAi::enable_lane_commit, disable: AdvancedAi::disable_lane_commit },
 ];
 

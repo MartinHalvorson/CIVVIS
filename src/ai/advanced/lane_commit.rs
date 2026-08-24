@@ -1,5 +1,5 @@
 //! `lane-commit`: from the midpoint of the game an adaptive seat plays for
-//! the victory it can land.
+//! the victory it leads the field in.
 //!
 //! Operator, 2026-08-24: *"add some logic or some heuristic for steering us
 //! towards our best victory condition harder. From the midpoint of the game,
@@ -11,17 +11,14 @@
 //! `assess` puts an adaptive seat — no `--victory`, which is what production
 //! ships and what every measured seat in a `gene_screen` game is — on a
 //! victory lane only when `victory_focus` reads that lane at **65% or more**,
-//! or when nothing else claims the plan. Everything else claims it first:
-//! a city short of the target with land still open, a neighbour weak enough
-//! to raid, a Prophet still on the table. `docs/VICTORY_GENES.md` measured
-//! the result at the deployment shape: the adaptive seat spends **48% of its
-//! seat-turns** under Expansion, Conquest or Recovery, and the lane it is
-//! racing never reaches the deciders keyed on `victory_target` — the tech
-//! beeline, the government, the policy deck, the space race, the wonder
-//! lane, the Congress ballot — because those read the operator's assignment
-//! and an adaptive seat has none. `victory_focus` itself re-decides every
-//! turn from raw progress, so a seat at 50% religion and 48% science can
-//! alternate plans on a single conversion.
+//! or when nothing else claims the plan; and `victory_focus` re-decides
+//! every turn from raw progress, so a seat at 50% religion and 48% science
+//! alternates plans on a single conversion. The deciders keyed on
+//! `victory_target` — the tech beeline, the government, the policy deck, the
+//! Culture routing, the wonder lane's strategic value, the space race — read
+//! the operator's assignment, and an adaptive seat has none
+//! (`docs/VICTORY_GENES.md` §2: the adaptive seat is on a lane for 52% of
+//! its seat-turns).
 //!
 //! ## What the gene does
 //!
@@ -29,55 +26,65 @@
 //! Online standard (`docs/GENE_SCREEN.md`, *One screen*), or
 //! [`super::LANE_COMMIT_MIDPOINT_STANDARD`] standard turns when there is no
 //! cap — the seat **commits** to one lane, and from then on
-//! [`AdvancedAi::raced_target`] answers with it wherever the operator's
-//! `victory_target` used to be read alone. The assessment follows it as it
-//! follows an assigned lane, after the postures that must come first (a home
-//! city under threat, an emergency, a rival at the wire, a war already
-//! making progress).
+//! [`AdvancedAi::raced_target`] answers with it wherever a decider resolves
+//! *which lane the empire is playing for*. The assessment follows it in
+//! place of `victory_focus`'s per-turn pick, after every posture that comes
+//! first today: a home city under threat, an emergency, a rival at the wire,
+//! a war in progress, a neighbour weak enough to take, a Prophet still on
+//! the table.
 //!
-//! The lane is not the one with the most progress. It is the one that
-//! **lands before the clock**: each lane's progress is sampled every
-//! `LANE_COMMIT_SAMPLE_EVERY` standard turns, its rate is read over the last
-//! `LANE_COMMIT_RATE_WINDOW`, and the turn it reaches 100 is projected. The
-//! earliest projection that falls inside the cap wins. Under the operator's
-//! standing regime (`docs/GENE_SCREEN.md`: *a game that reaches the clock is
-//! a SCORE VICTORY*) science lands at a median turn 283 and diplomacy at 285
-//! — past a 250-turn cap — so a seat at 45% science with 125 turns left is
-//! not racing science, whatever `victory_focus` says; and when no lane lands
-//! in time the commitment is **Score**, which is a victory condition, not a
-//! consolation. The domination lane is never chosen: it has landed in 0% of
-//! screen games at every map and clock
-//! ([`super::victory_lane`] and `docs/VICTORY_GENES.md`).
+//! **The lane is the one we lead.** Winning is relative — every rival on the
+//! board runs this same planner — so each lane is read for the seat *and for
+//! every living major* on one table (`lane_progress_table`: the four
+//! readings `victory_focus` ranks, minus the civilization preferences), and
+//! the seat commits to the lane it leads that is closest to landing;
+//! leading none, the lane it is furthest along in, which is what
+//! `victory_focus` would have said, made sticky. Progress is the one scale
+//! the lanes share; the size of a lead is not (religion moves twelve points
+//! a converted rival, science under one a tech), so it only breaks ties.
+//! Domination is never chosen: it has landed in 0% of screen games at every
+//! map and clock (`docs/VICTORY_GENES.md`).
 //!
 //! The commitment is reviewed every `LANE_COMMIT_REVIEW` standard turns and
 //! holds against a marginal challenger: a different lane takes over only
-//! when it is projected to land `LANE_COMMIT_SWITCH_MARGIN` standard turns
-//! sooner, or when the committed lane has stopped moving and another still
-//! lands. The districts, policies and Great People already bought for a lane
-//! are the reason a projection a few turns better is not a reason to leave.
+//! when the seat has lost the lead in the committed lane and holds it in the
+//! challenger, or when the challenger is `LANE_COMMIT_SWITCH_MARGIN` points
+//! further along at the same standing. The districts, policies and Great
+//! People already bought for a lane are the reason a reading a few points
+//! better is not a reason to leave.
 //!
-//! ## What it does not touch
+//! ## What it does not touch, and why: the first draft's probe
 //!
-//! `active_victory_target` stays the operator's: victory denial keeps its
-//! adaptive form (a committed seat still counters a rival at the wire —
-//! `deny_while_targeted` is about assigned seats), the expansion dispatcher
-//! and `pursue_religion` read the assignment as before, and the census field
-//! `victory_target` still reports the operator's target so an adaptive seat
-//! can be told from a targeted one. On the live bridge, which always passes
-//! `--victory <lane>`, the gene is inert by construction.
+//! The first draft projected each lane's landing turn from its rate and
+//! inherited the whole of an assigned lane's semantics — the Congress
+//! abstention for non-diplomatic targets, the missionary and Great Work
+//! vetoes, the space-race block, the expansion cutoff — and its 24-game
+//! fires probe (seeds 26083100..26083123) read **−8.3 pp ± 5.4** on wins.
+//! Science victories landed in 7 of those 24 games, at turns 220–250, six of
+//! them by *off* seats: a linear projection of the science reading (25 + 30
+//! × techs, then discrete project steps) says science cannot land by 250,
+//! and the seats it moved to Religion, Culture and Score finished with five
+//! fewer techs. Committed seats also held a third of the off seats' Diplomatic
+//! Victory Points (3.7 against 9.6 — the abstention), fewer cities and a
+//! smaller army (the commitment sat above the elective war `opportunistic-war`
+//! is priced `helps` for). So this version keeps `victory_target` — the
+//! operator's assignment — on every veto, keeps `active_victory_target` the
+//! operator's (victory denial stays adaptive, `pursue_religion` and the
+//! expansion dispatcher unchanged, the census still tells an adaptive seat
+//! from a targeted one), and routes only the objective resolutions through
+//! `raced_target`. On the live bridge, which always passes `--victory
+//! <lane>`, the gene is inert by construction.
 //!
 //! Opt-in, off in both controllers, byte-identical when off; priced by
 //! `gene_screen` like every other row of the registry.
 
 use super::{
-    AdvancedAi, LaneCommitment, LaneSample, VictoryTarget, LANE_COMMIT_RATE_WINDOW,
-    LANE_COMMIT_REVIEW, LANE_COMMIT_SAMPLES, LANE_COMMIT_SAMPLE_EVERY, LANE_COMMIT_SWITCH_MARGIN,
+    AdvancedAi, LaneCommitment, VictoryTarget, LANE_COMMIT_REVIEW, LANE_COMMIT_SWITCH_MARGIN,
 };
 use crate::game::Game;
 
 /// The lanes a seat can commit to, in the order `lane_progress_table`
-/// reports them. Domination is deliberately absent (see the module doc) and
-/// Score is the fallback rather than a raced lane.
+/// reports them. Domination is deliberately absent (see the module doc).
 pub(super) const LANE_COMMIT_LANES: [VictoryTarget; 4] = [
     VictoryTarget::Science,
     VictoryTarget::Culture,
@@ -85,27 +92,31 @@ pub(super) const LANE_COMMIT_LANES: [VictoryTarget; 4] = [
     VictoryTarget::Diplomacy,
 ];
 
-/// One lane's reading at a review: where it stands and when it lands.
+/// One lane's reading at a review: where the seat stands and how far ahead
+/// of the best rival it is on the same table.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct LaneReading {
     pub lane: VictoryTarget,
     pub progress: i32,
-    /// The turn the lane is projected to reach 100, if it is moving at all.
-    pub projected: Option<u32>,
+    /// Own progress less the best living major rival's; positive is a lead.
+    pub lead: i32,
 }
 
 impl LaneReading {
-    /// Lands inside the cap — or, with no cap, lands at all.
-    fn lands(&self, g: &Game) -> bool {
-        self.projected
-            .is_some_and(|turn| g.turn_limit().is_none_or(|limit| turn <= limit))
+    /// The order a review prefers: a lead over no lead, then the further
+    /// progress (the scale the lanes share), then the larger lead, then the
+    /// table's order (the caller iterates in table order and keeps the first
+    /// maximum).
+    fn key(&self) -> (bool, i32, i32) {
+        (self.lead >= 0, self.progress, self.lead)
     }
 }
 
 impl AdvancedAi {
     /// The lane this seat is playing for: the operator's assignment, or the
-    /// lane `lane_commit` committed to. Every decider that used to read
-    /// `victory_target` alone reads this.
+    /// lane `lane_commit` committed to. The deciders that resolve an
+    /// objective read this; the vetoes an assigned lane carries keep reading
+    /// `victory_target` (see the module doc).
     pub(super) fn raced_target(&self) -> Option<VictoryTarget> {
         self.victory_target.or(self.committed_lane())
     }
@@ -128,42 +139,15 @@ impl AdvancedAi {
             .unwrap_or_else(|| g.standard_duration(super::LANE_COMMIT_MIDPOINT_STANDARD))
     }
 
-    /// Sample the lanes, and at the midpoint commit — then review on the
-    /// cadence. Exact no-op while the gene is off or the operator assigned a
-    /// lane. Called once a turn from `take_turn_inner`, before the plan is
-    /// assessed, so a fresh commitment is assessed the same turn.
+    /// At the midpoint commit, then review on the cadence. Exact no-op while
+    /// the gene is off or the operator assigned a lane. Called once a turn
+    /// from `take_turn_inner`, before the plan is assessed, so a fresh
+    /// commitment is assessed the same turn.
     pub(super) fn maintain_lane_commit(&mut self, g: &Game, pid: usize) {
         if !self.lane_commit || self.victory_target.is_some() {
             return;
         }
-        let midpoint = Self::lane_commit_midpoint(g);
-        let window = g.standard_duration(LANE_COMMIT_RATE_WINDOW).max(1);
-        // Nothing to read until the rate window can reach the midpoint.
-        if g.turn.saturating_add(window) < midpoint {
-            return;
-        }
-        let sample_every = g.standard_duration(LANE_COMMIT_SAMPLE_EVERY).max(1);
-        let due = self
-            .lane_samples
-            .back()
-            .is_none_or(|last| g.turn.saturating_sub(last.turn) >= sample_every);
-        let progress = if due {
-            let progress = self.lane_progress_table(g, pid);
-            self.lane_samples.push_back(LaneSample {
-                turn: g.turn,
-                progress,
-            });
-            while self.lane_samples.len() > LANE_COMMIT_SAMPLES {
-                self.lane_samples.pop_front();
-            }
-            progress
-        } else {
-            match self.lane_samples.back() {
-                Some(last) => last.progress,
-                None => return,
-            }
-        };
-        if g.turn < midpoint {
+        if g.turn < Self::lane_commit_midpoint(g) {
             return;
         }
         let review_due = self.lane_commitment.is_none_or(|commitment| {
@@ -173,50 +157,66 @@ impl AdvancedAi {
         if !review_due {
             return;
         }
-        self.review_lane_commitment(g, progress);
+        let readings = self.lane_readings(g, pid);
+        self.review_lane_commitment(g, &readings);
     }
 
-    /// Read every lane, pick the one that lands, and commit or switch.
-    pub(super) fn review_lane_commitment(&mut self, g: &Game, progress: [i32; 4]) {
-        let readings = self.lane_readings(g, progress);
-        let choice = Self::lane_commit_choice(g, &readings);
+    /// Every enabled lane, read for the seat and for the best living major
+    /// rival on the same table.
+    pub(super) fn lane_readings(&self, g: &Game, pid: usize) -> Vec<LaneReading> {
+        let own = self.lane_progress_table(g, pid);
+        let mut best_rival = [0; 4];
+        for rival in g
+            .players
+            .iter()
+            .filter(|p| p.id != pid && p.alive && !p.is_minor && !p.is_barbarian)
+        {
+            let theirs = self.lane_progress_table(g, rival.id);
+            for (best, reading) in best_rival.iter_mut().zip(theirs) {
+                *best = (*best).max(reading);
+            }
+        }
+        LANE_COMMIT_LANES
+            .iter()
+            .enumerate()
+            .filter(|(_, lane)| g.victory_conditions.is_enabled(lane.as_str()))
+            .map(|(index, lane)| LaneReading {
+                lane: *lane,
+                progress: own[index],
+                lead: own[index].saturating_sub(best_rival[index]),
+            })
+            .collect()
+    }
+
+    /// Pick the lane to play for and commit or switch. Visible to the parent
+    /// module so tests can drive a review from a fabricated table.
+    pub(super) fn review_lane_commitment(&mut self, g: &Game, readings: &[LaneReading]) {
+        let Some(choice) = Self::lane_commit_choice(readings) else {
+            return;
+        };
         let current = self.lane_commitment;
-        let (next, because) = match current {
-            None => (choice, "the midpoint"),
-            Some(held) if held.lane == choice.lane => (choice, ""),
-            Some(held) => {
-                let held_reading = readings
-                    .iter()
-                    .copied()
-                    .find(|reading| reading.lane == held.lane)
-                    .unwrap_or(LaneReading {
-                        lane: held.lane,
-                        progress: 0,
-                        projected: None,
-                    });
-                let margin = g.standard_duration(LANE_COMMIT_SWITCH_MARGIN);
-                if held.lane == VictoryTarget::Score {
-                    // Score was the fallback; any lane that lands beats it.
-                    (choice, "a lane now lands before the clock")
-                } else if !held_reading.lands(g) {
-                    (choice, "the committed lane has stopped landing in time")
-                } else if choice.lands(g)
-                    && choice.projected.is_some_and(|turn| {
-                        held_reading
-                            .projected
-                            .is_some_and(|held_turn| turn.saturating_add(margin) <= held_turn)
-                    })
+        let held_reading = current.and_then(|held| {
+            readings
+                .iter()
+                .copied()
+                .find(|reading| reading.lane == held.lane)
+        });
+        let (next, because) = match (current, held_reading) {
+            (None, _) => (choice, "the midpoint"),
+            (Some(_), None) => (choice, "the committed lane is no longer on the board"),
+            (Some(_), Some(held)) if held.lane == choice.lane => (held, ""),
+            (Some(_), Some(held)) => {
+                if held.lead < 0 && choice.lead >= 0 {
+                    (choice, "the lead in the committed lane is gone")
+                } else if (held.lead >= 0) == (choice.lead >= 0)
+                    && choice.progress >= held.progress.saturating_add(LANE_COMMIT_SWITCH_MARGIN)
                 {
-                    (choice, "another lane lands well sooner")
-                } else {
                     (
-                        LaneReading {
-                            lane: held.lane,
-                            progress: held_reading.progress,
-                            projected: held_reading.projected,
-                        },
-                        "",
+                        choice,
+                        "another lane is well further along at the same standing",
                     )
+                } else {
+                    (held, "")
                 }
             }
         };
@@ -229,133 +229,46 @@ impl AdvancedAi {
                 current.map_or(g.turn, |held| held.since)
             },
             reviewed: g.turn,
-            progress_at_commit: if changed {
-                next.progress
-            } else {
-                current.map_or(next.progress, |held| held.progress_at_commit)
-            },
-            projected: next.projected,
+            progress: next.progress,
+            lead: next.lead,
         });
         if changed {
             // The plan was assessed for a seat with no lane; re-assess now.
             self.plan = None;
-            let landing = match next.projected {
-                Some(turn) => format!("projected to land on turn {turn}"),
-                None => "not projected to land before the clock".to_string(),
-            };
-            let clock = match g.turn_limit() {
-                Some(limit) => format!("the clock runs out on turn {limit}"),
-                None => "there is no clock".to_string(),
-            };
             let field: Vec<String> = readings
                 .iter()
                 .map(|reading| {
                     format!(
-                        "{} {}%{}",
+                        "{} {}% ({:+} on the field)",
                         reading.lane.as_str(),
                         reading.progress,
-                        reading
-                            .projected
-                            .map_or(String::new(), |turn| format!(" (turn {turn})"))
+                        reading.lead
                     )
                 })
                 .collect();
+            let standing = if next.lead >= 0 {
+                format!("leading the field by {} points", next.lead)
+            } else {
+                format!("{} points behind the leader", -next.lead)
+            };
             crate::think!(self.journal(), Strategy, Strategy,
                    "Committing to the {} victory", next.lane.as_str();
-                   "{because}: {}% along, {landing}; {clock}; the lanes read {}",
+                   "{because}: {}% along, {standing}; the lanes read {}",
                    next.progress, field.join(", "));
         }
     }
 
-    /// Every raced lane's progress and projected landing turn.
-    fn lane_readings(&self, g: &Game, progress: [i32; 4]) -> Vec<LaneReading> {
-        LANE_COMMIT_LANES
-            .iter()
-            .enumerate()
-            .filter(|(_, lane)| g.victory_conditions.is_enabled(lane.as_str()))
-            .map(|(index, lane)| LaneReading {
-                lane: *lane,
-                progress: progress[index],
-                projected: self.lane_projection(g, index, progress[index]),
-            })
-            .collect()
-    }
-
-    /// The turn a lane reaches 100 at its recent rate: the rise over the
-    /// oldest sample inside the rate window, or — for the committed lane —
-    /// since the commitment, whichever is faster, so a lane that converted a
-    /// rival thirty turns ago and is working on the next is not read as
-    /// stalled. `None` when the lane is not moving.
-    fn lane_projection(&self, g: &Game, index: usize, now: i32) -> Option<u32> {
-        if now >= 100 {
-            return Some(g.turn);
+    /// The lane to play for: among the lanes the seat leads, the furthest
+    /// along; leading none, the furthest along of all; the lead, then the
+    /// table's order, break what is left. `None` only when no raced lane is
+    /// a victory condition on this board.
+    fn lane_commit_choice(readings: &[LaneReading]) -> Option<LaneReading> {
+        let mut best: Option<LaneReading> = None;
+        for reading in readings {
+            if best.is_none_or(|held| reading.key() > held.key()) {
+                best = Some(*reading);
+            }
         }
-        let window = g.standard_duration(LANE_COMMIT_RATE_WINDOW).max(1);
-        let floor = g.turn.saturating_sub(window);
-        let window_rate = self
-            .lane_samples
-            .iter()
-            .find(|sample| sample.turn >= floor && sample.turn < g.turn)
-            .map(|sample| {
-                f64::from(now - sample.progress[index]) / f64::from(g.turn - sample.turn)
-            });
-        let commit_rate = self
-            .lane_commitment
-            .filter(|commitment| {
-                commitment.lane == LANE_COMMIT_LANES[index] && commitment.since < g.turn
-            })
-            .map(|commitment| {
-                f64::from(now - commitment.progress_at_commit)
-                    / f64::from(g.turn - commitment.since)
-            });
-        let rate = match (window_rate, commit_rate) {
-            (Some(a), Some(b)) => a.max(b),
-            (Some(a), None) | (None, Some(a)) => a,
-            (None, None) => return None,
-        };
-        if rate <= 0.0 {
-            return None;
-        }
-        let remaining = (f64::from(100 - now) / rate).ceil();
-        Some(
-            g.turn
-                .saturating_add(remaining.min(f64::from(u32::MAX / 2)) as u32),
-        )
-    }
-
-    /// The lane to play for: the earliest landing inside the cap (higher
-    /// progress breaks a tie, then the table's order); Score when nothing
-    /// lands and score is a victory; otherwise the most advanced lane, so a
-    /// board with no score victory still races something.
-    fn lane_commit_choice(g: &Game, readings: &[LaneReading]) -> LaneReading {
-        let landing = readings
-            .iter()
-            .copied()
-            .filter(|reading| reading.lands(g))
-            .min_by(|a, b| {
-                a.projected
-                    .cmp(&b.projected)
-                    .then(b.progress.cmp(&a.progress))
-            });
-        if let Some(reading) = landing {
-            return reading;
-        }
-        if g.victory_conditions.score {
-            return LaneReading {
-                lane: VictoryTarget::Score,
-                progress: 0,
-                projected: g.turn_limit(),
-            };
-        }
-        readings
-            .iter()
-            .copied()
-            .rev()
-            .max_by(|a, b| a.progress.cmp(&b.progress))
-            .unwrap_or(LaneReading {
-                lane: VictoryTarget::Score,
-                progress: 0,
-                projected: None,
-            })
+        best
     }
 }

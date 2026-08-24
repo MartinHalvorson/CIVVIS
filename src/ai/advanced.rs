@@ -20,7 +20,7 @@ use crate::think;
 use crate::world::TileBits;
 use crate::Pos;
 use std::cell::RefCell;
-use std::collections::{BTreeMap, BTreeSet, HashSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::sync::Arc;
 
 /// Local strength ratio a force group needs before it will advance or press an
@@ -1308,14 +1308,6 @@ struct VictoryFocus {
     progress: i32,
 }
 
-/// `lane_commit`: one sampled reading of the four raced lanes' progress, in
-/// the order of `lane_commit::LANE_COMMIT_LANES`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct LaneSample {
-    turn: u32,
-    progress: [i32; 4],
-}
-
 /// `lane_commit`: the lane an adaptive seat plays for from the midpoint.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct LaneCommitment {
@@ -1324,12 +1316,11 @@ pub struct LaneCommitment {
     pub since: u32,
     /// The turn the commitment was last reviewed.
     pub reviewed: u32,
-    /// The lane's progress when it was committed to; with `since`, the rate
-    /// the review reads when the sample window is too short.
-    pub progress_at_commit: i32,
-    /// The turn the lane was projected to land on at the last review, if it
-    /// was moving.
-    pub projected: Option<u32>,
+    /// The lane's progress at the last review, 0..=100.
+    pub progress: i32,
+    /// Own progress less the best living major rival's at the last review;
+    /// positive is a lead on the field.
+    pub lead: i32,
 }
 
 impl EmpireCounts {
@@ -1467,25 +1458,17 @@ const SETTLE_PLAN_AHEAD_FUTURE_MIN: f64 = 12.0;
 /// Online standard (`docs/GENE_SCREEN.md`, *One screen*); this stands in
 /// when no clock is set: half of Standard's own 500.
 const LANE_COMMIT_MIDPOINT_STANDARD: u32 = 250;
-/// `lane_commit`: how far back a lane's rate of progress is read, in
-/// standard turns (about 33 turns at Online). Religion moves twelve points a
-/// converted rival and diplomacy five a Congress session, so a shorter
-/// window reads one event as a trend and none as a stall.
-const LANE_COMMIT_RATE_WINDOW: u32 = 50;
-/// `lane_commit`: how often the lanes' progress is sampled, in standard
-/// turns. `lane_progress_table` is a whole-world tourism and conversion
-/// scan, and every five turns is ten readings a window.
-const LANE_COMMIT_SAMPLE_EVERY: u32 = 5;
-/// `lane_commit`: how many samples the history keeps — the window at every
-/// speed, with room to spare.
-const LANE_COMMIT_SAMPLES: usize = 16;
 /// `lane_commit`: how often a commitment is reviewed, in standard turns.
+/// `lane_readings` is a whole-world tourism and conversion scan for every
+/// living major, and ten turns is the plan's own era-scale cadence twice.
 const LANE_COMMIT_REVIEW: u32 = 10;
-/// `lane_commit`: how many standard turns sooner a challenger lane must be
-/// projected to land before the seat leaves the lane it committed to. The
-/// districts, policies and Great People are already bought for that lane; a
-/// projection a few turns better is noise.
-const LANE_COMMIT_SWITCH_MARGIN: u32 = 20;
+/// `lane_commit`: how many progress points further along a challenger lane
+/// must read, at the same standing on the field, before the seat leaves the
+/// lane it committed to. Religion moves twelve points a converted rival and
+/// science under one a tech; the districts, policies and Great People are
+/// already bought for the committed lane, and a reading a few points better
+/// is noise.
+const LANE_COMMIT_SWITCH_MARGIN: i32 = 20;
 
 /// Route-scoring is exact for the valuable prefix, then falls back to the
 /// existing reachability scan if that prefix is disconnected. This bounds the
@@ -4895,23 +4878,19 @@ pub struct AdvancedAi {
     /// `missionary-evades-raiders`; see `advanced/missionary_field.rs`.
     missionary_evades_raiders: bool,
     /// From the midpoint of the game an adaptive seat commits to the victory
-    /// lane it can land before the clock — each lane's progress and its rate
-    /// over `LANE_COMMIT_RATE_WINDOW` project a landing turn, the earliest
-    /// inside the cap wins, Score when none does — and every decider that
-    /// read the operator's `victory_target` alone reads the commitment
-    /// through `raced_target`. Reviewed every `LANE_COMMIT_REVIEW` standard
-    /// turns behind a `LANE_COMMIT_SWITCH_MARGIN`. Operator, 2026-08-24:
-    /// "from midpoint of the game, we should have the victory in mind and be
-    /// optimizing towards winning that". Opt-in gene `lane-commit`; see
-    /// `advanced/lane_commit.rs`.
+    /// lane it leads the field in — every lane read for the seat and for
+    /// every living major on one table, the furthest along of the lanes it
+    /// leads, or of all when it leads none — and the deciders that resolve which lane
+    /// the empire plays for read the commitment through `raced_target`; the
+    /// vetoes an assigned lane carries keep reading `victory_target`.
+    /// Reviewed every `LANE_COMMIT_REVIEW` standard turns behind a
+    /// `LANE_COMMIT_SWITCH_MARGIN`. Operator, 2026-08-24: "from midpoint of
+    /// the game, we should have the victory in mind and be optimizing towards
+    /// winning that". Opt-in gene `lane-commit`; see `advanced/lane_commit.rs`.
     lane_commit: bool,
     /// `lane_commit`'s commitment: the lane, when it was made and last
-    /// reviewed, the progress it had then, and its projected landing.
+    /// reviewed, and its progress and lead on the field at that review.
     lane_commitment: Option<LaneCommitment>,
-    /// `lane_commit`'s sampled history of the four lanes' progress, one
-    /// reading every `LANE_COMMIT_SAMPLE_EVERY` standard turns, from which
-    /// each lane's rate is read.
-    lane_samples: VecDeque<LaneSample>,
 
     // ---- append: p-r ------------------------------------------------
 
@@ -5233,8 +5212,8 @@ use site_lookahead::{PlotOffer, PlotPurchaseCache};
 mod victory_lane;
 
 /// `lane-commit`: from the midpoint of the game an adaptive seat commits to
-/// the victory lane it can land before the clock, and every decider keyed on
-/// the operator's `victory_target` reads the commitment too. One opt-in
+/// the victory lane it leads the field in, and the deciders that resolve
+/// which lane the empire plays for read the commitment too. One opt-in
 /// gene; see `advanced/lane_commit.rs`.
 mod lane_commit;
 
@@ -5943,7 +5922,6 @@ impl AdvancedAi {
             missionary_evades_raiders: false,
             lane_commit: false,
             lane_commitment: None,
-            lane_samples: VecDeque::new(),
 
             // ---- append: p-r ----------------------------------------
 
@@ -8122,7 +8100,7 @@ impl AdvancedAi {
     }
 
     fn diplomatic_science_backup(&self, g: &Game, pid: usize, plan: &StrategicPlan) -> bool {
-        self.raced_target().is_none()
+        self.victory_target.is_none()
             && g.victory_conditions.science
             && plan.strategy == GrandStrategy::Diplomacy
             && g.turn >= g.standard_duration(220)
@@ -9056,11 +9034,6 @@ impl AdvancedAi {
             (counter, "countering a rival close to winning")
         } else if at_war && !stalemate && !raid_only_war {
             (GrandStrategy::Conquest, "already at war")
-        } else if let Some(lane) = self.committed_lane() {
-            // `lane_commit`: from the midpoint the seat plays for the victory
-            // it can land, after the postures above that must come first.
-            // See `advanced/lane_commit.rs`.
-            (lane.strategy(), "committed to the victory it can land")
         } else if !stalemate
             // ★★★★ Not on the live seat: see `no_elective_war` — eight games,
             // no city ever taken, sixteen lost.
@@ -9102,6 +9075,11 @@ impl AdvancedAi {
                 GrandStrategy::Religion,
                 "a Prophet is a finite race worth entering now",
             )
+        } else if let Some(lane) = self.committed_lane() {
+            // `lane_commit`: from the midpoint the seat plays for the victory
+            // it leads the field in, in place of `victory_focus`'s per-turn
+            // pick, after every posture above. See `advanced/lane_commit.rs`.
+            (lane.strategy(), "committed to the victory it leads the field in")
         } else if victory.progress >= 65 {
             (
                 victory.strategy,
@@ -9574,7 +9552,7 @@ impl AdvancedAi {
         // run T104654Z then read "7 cities of 8..11 wanted" for 130 turns.
         if self.land_grab || self.expansion_pays_back {
             self.expansion_pays_back_for(g, pid, cid)
-        } else if self.raced_target().is_some() {
+        } else if self.victory_target.is_some() {
             // Assigned lanes have always carried a distinct cutoff. Neither
             // adaptive experiment is allowed to widen it.
             g.turn < g.standard_duration(175)
@@ -14770,8 +14748,8 @@ impl AdvancedAi {
                 // Aid, so repeated participation can end a healthy science or
                 // culture race with the wrong victory. Explicit non-diplomatic
                 // targets abstain; adaptive agents still participate normally.
-                if self.raced_target().is_some()
-                    && self.raced_target() != Some(VictoryTarget::Diplomacy)
+                if self.victory_target.is_some()
+                    && self.victory_target != Some(VictoryTarget::Diplomacy)
                     && g.emergency_proposal_for_resolution(&resolution.id)
                         .is_none()
                 {
@@ -15112,7 +15090,7 @@ impl AdvancedAi {
                     .iter()
                     .any(|cid| g.wdist(g.cities[cid].pos, target_city.pos) <= 18)
             });
-        let committed_domination = self.raced_target() == Some(VictoryTarget::Domination);
+        let committed_domination = self.victory_target == Some(VictoryTarget::Domination);
         // An army that has reached the enemy border is the only practical
         // answer to a rival's terminal clock.  Keep the normal power margin
         // for elective wars, but do not discard a staged denial force merely
@@ -20580,8 +20558,8 @@ impl AdvancedAi {
                 }
             }
             Item::Unit { unit } if unit == "missionary" => {
-                if self.raced_target().is_some()
-                    && self.raced_target() != Some(VictoryTarget::Religion)
+                if self.victory_target.is_some()
+                    && self.victory_target != Some(VictoryTarget::Religion)
                 {
                     -10_000.0
                 } else if g.players[pid].religion.is_some() && counts.missionaries < 2 {
@@ -20909,8 +20887,8 @@ impl AdvancedAi {
                                     .keys()
                                     .any(|built| g.district_family(*built) == family)
                         });
-                if self.raced_target().is_some()
-                    && self.raced_target() != Some(VictoryTarget::Culture)
+                if self.victory_target.is_some()
+                    && self.victory_target != Some(VictoryTarget::Culture)
                     && great_work_vetoed
                     && !chain_family_held
                 {
@@ -21610,8 +21588,8 @@ impl AdvancedAi {
                     )
                 });
                 let lane_opens = plan.strategy == GrandStrategy::Culture
-                    || self.raced_target() == Some(VictoryTarget::Score)
-                    || (wonder_civ && self.raced_target().is_none());
+                    || self.victory_target == Some(VictoryTarget::Score)
+                    || (wonder_civ && self.victory_target.is_none());
                 // `religion_founding_site` is the data-level marker for a
                 // Stonehenge-like wonder, rather than a name check. Once this
                 // civilization has founded its religion, that site and its
@@ -21822,8 +21800,8 @@ impl AdvancedAi {
                 if strategic_land_force_gap && repeatable_economic_project {
                     -10_000.0
                 } else if (space_race
-                    && self.raced_target().is_some()
-                    && self.raced_target() != Some(VictoryTarget::Science))
+                    && self.victory_target.is_some()
+                    && self.victory_target != Some(VictoryTarget::Science))
                     || turns > remaining_turns * 0.8
                 {
                     -10_000.0
@@ -32093,9 +32071,8 @@ impl AdvancedAi {
             self.belief.observe(g, pid);
         }
         let rush_routes_frozen = self.freeze_rush_route_targets(g, pid);
-        // `lane_commit`: sample the lanes and, from the midpoint, commit to
-        // the one that lands. Exact no-op while off. See
-        // `advanced/lane_commit.rs`.
+        // `lane_commit`: from the midpoint, commit to the lane the seat leads
+        // the field in. Exact no-op while off. See `advanced/lane_commit.rs`.
         self.maintain_lane_commit(g, pid);
         let disposition_strategy = active_victory_target
             .or_else(|| self.committed_lane())
