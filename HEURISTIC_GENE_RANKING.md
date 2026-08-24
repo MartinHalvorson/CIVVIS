@@ -371,7 +371,7 @@ These screenable genes have no on/off result, so they receive no rank or promoti
 |---|---|---|---:|
 | `fog-honest` | off (unmeasured) | Put this controller behind the turn-level fog boundary. | — |
 | `fog-honest-2` | off (unmeasured) | Version 2 of `fog_honest`: the same fair-play boundary and the same information contract, plus one re-plan when the authoritative board refuses a planned order. | — |
-| `lane-commit` | off (unmeasured) | From the midpoint of the game an adaptive seat commits to the victory lane it can land before the clock and plays for it everywhere the operator's `victory_target` is read — Score when no lane lands in time. | — |
+| `lane-commit` | off (unmeasured) | From the midpoint of the game an adaptive seat commits to the victory lane it leads the field in and holds that plan, in place of the per-turn best-progress pick. | — |
 | `missionary-evades-raiders` | off (unmeasured) | A religious unit steps out of the tiles a visible barbarian raider can reach next turn, and never steps into them on the way to anything, holding when no safe step makes progress. | — |
 | `missionary-last-charge-explores` | off (unmeasured) | A Missionary on its last charge explores the fog within ten tiles for up to twelve turns before spending it, unless a city of ours is slipping or an untouched city stands beside it. | — |
 | `wonder-score-tally` | off (unmeasured) | A wonder lane any civilization can reach on merit: the `Item::Wonder` arm learns the fifteen points `Game::score_parts` pays for a finished wonder, under a density bar and the live race's own development guards. | — |
