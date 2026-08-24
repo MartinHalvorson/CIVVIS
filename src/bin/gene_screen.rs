@@ -123,13 +123,19 @@ const SCREEN_HEIGHT: i32 = 46;
 const SCREEN_CITY_STATES: usize = 9;
 const SCREEN_MAP: MapScript = MapScript::Continents;
 
-/// ⭐ THE DRAW (operator, 2026-08-23). Every screened gene is on with
-/// probability one half — except a gene the deployment genome already ships
-/// on, which is on three quarters of the time, so the batch plays mostly the
-/// genome people actually get while every gene still has both arms well
-/// populated. Each seat's genome is drawn independently of every other seat
-/// and every other game; nothing is paired or complemented.
-const P_ON: f64 = 0.5;
+/// ⭐ THE DRAW (operator, 2026-08-24). Every tournament genome STARTS FROM
+/// THE DEFAULT GENOME: a gene the deployment ships on stays on with
+/// probability three quarters (a one-in-four chance of turning off), and a
+/// gene it ships off stays off with probability three quarters (a one-in-four
+/// chance of turning on). The batch is deliberately biased toward the genome
+/// people actually get — *"we want high level tournament competition and want
+/// to select for genes that improve upon this performance, not some baseline
+/// performance"* — while every gene still has both arms populated. A gene
+/// that is on then picks its version: the top version 60% of the time, one of
+/// the others 40% (`BEST_VERSION_SHARE`). Each seat's genome is drawn
+/// independently of every other seat and every other game; nothing is paired
+/// or complemented. (Until 2026-08-24 a default-off gene was on at one half.)
+const P_ON: f64 = 0.25;
 const P_DEFAULT_ON: f64 = 0.75;
 
 /// Genes the screen holds at their default unless `--genes` asks for them by
@@ -952,13 +958,36 @@ fn present(args: &[String], flag: &str) -> bool {
     args.iter().any(|arg| arg == flag)
 }
 
-/// How many shares of a family's on-probability the best version takes to
-/// every other version's one. Two: the best version plays twice as often as
-/// each challenger, so the batch mostly plays what would ship, and the
-/// head-to-head loses only ~6% of its precision against an equal split at two
-/// versions (error² ∝ 1/p_a + 1/p_b: 4.5/p against 4/p). A challenger is
-/// still priced against off and against the best on every screen it sits in.
-const BEST_VERSION_WEIGHT: f64 = 2.0;
+/// ⭐ THE VERSION PICK (operator, 2026-08-24). A gene that is on plays its
+/// TOP version 60% of the time and one of its other versions — drawn
+/// uniformly among the rest — the other 40%; a gene with one version plays
+/// that version. So the batch mostly plays what would ship, while every
+/// challenger is still priced against off and against the best on every
+/// screen it sits in. At two versions the head-to-head loses ~4% of its
+/// precision against an equal split (error² ∝ 1/p_a + 1/p_b: 4.17/p against
+/// 4/p). A family with no measured top version (see `best_version`) shares
+/// equally instead.
+const BEST_VERSION_SHARE: f64 = 0.6;
+
+/// The share of a family's on-probability each drawable version takes:
+/// `BEST_VERSION_SHARE` to the best, the remainder split evenly among the
+/// rest; a lone version takes everything; with no best known, even shares.
+fn version_shares(candidates: &[usize], best: Option<usize>) -> Vec<f64> {
+    let count = candidates.len();
+    match best {
+        Some(best) if count > 1 => candidates
+            .iter()
+            .map(|&i| {
+                if i == best {
+                    BEST_VERSION_SHARE
+                } else {
+                    (1.0 - BEST_VERSION_SHARE) / (count - 1) as f64
+                }
+            })
+            .collect(),
+        _ => vec![1.0 / count as f64; count],
+    }
+}
 
 /// ⭐ THE BEST VERSION of a family, among the given drawable members: the
 /// version the pinned ledger ships if any, else the priced
@@ -993,11 +1022,12 @@ fn best_version(genes: &[Gene], candidates: &[usize]) -> Option<usize> {
 /// its members' probabilities here are MARGINALS: the family is on with the
 /// probability its deployment state says (`p_default_on` if any version ships
 /// on, else `p_on`), shared among the screened versions with the BEST version
-/// taking `BEST_VERSION_WEIGHT` shares to every other version's one (operator,
-/// 2026-08-23: *"regularly swap between different versions of the genes,
-/// biasing towards the best versions"* — see `best_version`). A version held
-/// ON at its default forces its siblings off; a version held off simply takes
-/// no share. The draw reads the family back off these marginals.
+/// taking `BEST_VERSION_SHARE` of it and the rest splitting the remainder
+/// evenly (`version_shares`; operator, 2026-08-24: *"a 60% chance of using the
+/// top version of the gene and a 40% chance of using a different gene
+/// version (randomly pick among the rest)"* — see `best_version`). A version
+/// held ON at its default forces its siblings off; a version held off simply
+/// takes no share. The draw reads the family back off these marginals.
 fn on_probabilities(
     genes: &[Gene],
     screened: &[bool],
@@ -1038,16 +1068,8 @@ fn on_probabilities(
             .map(|&i| probabilities[i])
             .fold(0.0, f64::max);
         let best = best_version(genes, &candidates);
-        let weight = |i: usize| {
-            if best == Some(i) {
-                BEST_VERSION_WEIGHT
-            } else {
-                1.0
-            }
-        };
-        let total: f64 = candidates.iter().map(|&i| weight(i)).sum();
-        for &i in &candidates {
-            probabilities[i] = family_p * weight(i) / total;
+        for (&i, share) in candidates.iter().zip(version_shares(&candidates, best)) {
+            probabilities[i] = family_p * share;
         }
     }
     probabilities
@@ -1061,8 +1083,9 @@ fn on_probabilities(
 ///
 /// A family is then drawn as ONE level over its drawable versions: on with
 /// the family's probability (the sum of its members' marginals), and if on,
-/// one version in proportion to the marginals — the best version's share is
-/// `BEST_VERSION_WEIGHT` times each other's — never two versions on one seat.
+/// one version in proportion to the marginals — the best version takes
+/// `BEST_VERSION_SHARE`, the rest split the remainder — never two versions on
+/// one seat.
 fn draw_genome(
     start_seed: u64,
     game: usize,
