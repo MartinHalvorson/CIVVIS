@@ -3689,6 +3689,13 @@ fn a_native_competition_pays_its_winner_a_diplomatic_victory_point() {
 }
 
 /// And none of it happens unless the game asked for it.
+///
+/// ⚠ This is the whole safety argument for an off-by-default rules mechanism,
+/// so it checks the scorers too, not only the seating. Every path #2379 adds
+/// runs off `Game::competition`, and nothing but `open_native_competition` and
+/// `open_native_aid_request` can set it — both of which return immediately with
+/// the flag off. A default game therefore faces exactly the board it always
+/// did, and the frozen rating anchor does not move.
 #[test]
 fn native_competitions_are_off_unless_a_game_turns_them_on() {
     let mut game = game_with_capitals(3, 61_001, 400);
@@ -3708,6 +3715,31 @@ fn native_competitions_are_off_unless_a_game_turns_them_on() {
          board it always did, or the frozen rating anchor moves without a \
          protocol bump"
     );
+
+    // And the three per-turn scorers, which run in `begin_turn` for every
+    // player of every game whether the flag is on or not.
+    let dvp: Vec<i64> = game.players.iter().map(|player| player.dvp).collect();
+    let favor: Vec<f64> = game
+        .players
+        .iter()
+        .map(|player| player.diplomatic_favor)
+        .collect();
+    for pid in 0..game.players.len() {
+        game.score_great_person_point_competition(pid, 100.0);
+        game.score_favor_competition(pid, 100.0);
+        game.score_competition_holdings(pid);
+    }
+    assert!(
+        game.competition.is_none(),
+        "no score table appears out of nothing"
+    );
+    game.turn += 40;
+    game.close_native_competition();
+    for player in &game.players {
+        assert_eq!(player.dvp, dvp[player.id]);
+        assert_eq!(player.diplomatic_favor, favor[player.id]);
+    }
+    assert!(game.competition_lockout_until.is_empty());
 }
 
 /// A competition nobody can score in is not offered.

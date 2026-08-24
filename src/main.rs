@@ -1041,6 +1041,21 @@ fn main() {
                             g.siege.depleted_with_a_taker_ready,
                             g.siege.reduced_with_melee_adjacent,
                         ));
+                        // ⚠ The diplomatic lane is the one that steals most
+                        // live games and the one a native game has never been
+                        // able to finish, and the victory column alone cannot
+                        // say whether it came close or was nowhere near.
+                        // `DIPLOMATIC_VICTORY_POINTS` is 20; this is how far
+                        // the best empire actually got.
+                        let best_dvp = majors.iter().map(|p| p.dvp).max().unwrap_or(0);
+                        flags.push_str(&format!(
+                            " DVP best={best_dvp}/{} reached={}",
+                            civvis::game::DIPLOMATIC_VICTORY_POINTS,
+                            majors
+                                .iter()
+                                .filter(|p| p.dvp >= civvis::game::DIPLOMATIC_VICTORY_POINTS)
+                                .count(),
+                        ));
                         let held = (census.hold_threatened + census.hold_weak).max(1);
                         flags.push_str(&format!(
                             " HELD_BY threatened_city={}% locally_weak={}%",
