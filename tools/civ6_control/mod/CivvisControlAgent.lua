@@ -765,8 +765,11 @@ end
 -- `Base/Assets/UI/WorldTracker.lua:507`,
 -- `Base/Assets/UI/Panels/UnitPanel.lua:2259` and `:4018`, and
 -- `Base/Assets/UI/Screens/ReportScreen.lua:314`. It is a real binding on this
--- build, not just a Windows one: `GetMilitaryFormation` is an exported symbol of
--- `Civ6.app/Contents/MacOS/GameCore_Base.dll`.
+-- build, not just a Windows one: the name is present in
+-- `Civ6.app/Contents/MacOS/GameCore_Base.dll`, and the Win64 map for the same
+-- build names its Lua binding at
+-- `Assets/DLC/Expansion2/Binaries/Win64/GameCore_XP2_FinalRelease.map:50977`
+-- (`?lGetMilitaryFormation@IUnit@Lua@GameCore@@`).
 --
 -- ⚠⚠⚠ THE ENUM IS REGISTERED TWICE, UNDER ONE NAME, WITH DIFFERENT MEMBERS.
 -- Civilization VI builds two Lua virtual machines and each contributes globals
