@@ -2180,6 +2180,21 @@ impl AdvancedAi {
     pub fn disable_missionary_evades_raiders(&mut self) {
         self.missionary_evades_raiders = false;
     }
+
+    /// The religious defence scales with how much of a rival's religious
+    /// victory is already done — every civilization is a veto on it — and a
+    /// non-founder spends no Faith repelling a faith that threatens nobody;
+    /// the Inquisitor walks to the heresy instead of spending its charges
+    /// where it was bought. See [`AdvancedAi::religious_veto_defence`].
+    /// Opt-in gene `religious-veto-defence`.
+    pub fn enable_religious_veto_defence(&mut self) {
+        self.religious_veto_defence = true;
+    }
+
+    /// The twin of `enable_religious_veto_defence`.
+    pub fn disable_religious_veto_defence(&mut self) {
+        self.religious_veto_defence = false;
+    }
     // Append points, one per name range: a new treatment goes under the range
     // its own name falls in, so that two of them do not append to one line.
     // The rule, the measurement behind it and the check that enforces it are
