@@ -230,9 +230,10 @@ const WONDER_TALLY_POINT_VALUE: f64 = 100.0;
 /// somewhat over a quarter of an ordinary building's density **in tally value
 /// alone**, before any lane payload. Against the 53-wonder roster's quantized
 /// costs (180 · 220 · 290 · 400 · 710 · 920 · 1 060 · 1 240 · 1 450 · 1 620 ·
-/// 1 740 · 1 850) that admits the nineteen wonders at 400 or under, leaves the
-/// 710 tier reachable only for a wonder whose own yields carry it, and refuses
-/// the rest — which is the same cut `production_value`'s own
+/// 1 740 · 1 850) it admits **19 of the 53** under Expansion, Conquest, Science
+/// and Diplomacy — every wonder costing 400 or less — and 20 under Religion,
+/// where one 710-production wonder's own faith carries it over. Everything
+/// dearer is refused, which is the same cut `production_value`'s own
 /// `raw / (7 + turns)` makes, arrived at before the queue is walked.
 const WONDER_TALLY_MIN_DENSITY: f64 = 3.0;
 
