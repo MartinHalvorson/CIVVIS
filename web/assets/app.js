@@ -24273,6 +24273,21 @@ victoryHudRibbon.addEventListener("click", ev => {
   if (target) runHudAction(target);
 });
 
+// The diplomacy ribbon is rewritten on every turn its figures move, so it
+// needs the same rule the standings do: act on the press, which always lands
+// on what was under the cursor, and keep click for keyboard activation.
+const diploRibbon = document.getElementById("diploribbon");
+diploRibbon.addEventListener("mousedown", ev => {
+  if (ev.button !== 0) return;
+  const target = ev.target.closest?.("[data-hud-action]");
+  if (target) runHudAction(target);
+});
+diploRibbon.addEventListener("click", ev => {
+  if (ev.detail !== 0) return;
+  const target = ev.target.closest?.("[data-hud-action]");
+  if (target) runHudAction(target);
+});
+
 const dossierWindows = document.getElementById("dossier-windows");
 dossierWindows.addEventListener("mousedown", ev => {
   if (ev.button !== 0) return;
@@ -24755,9 +24770,23 @@ function setLaunchBadge(id, count, name) {
 function drawLaunchBar() {
   const bar = document.getElementById("launchbar");
   if (!bar) return;
-  if (!state || SPEC) { bar.classList.remove("on"); return; }
+  if (!state) { bar.classList.remove("on"); return; }
   bar.classList.add("on");
   const tabs = document.getElementById("launchtabs");
+  // A spectator holds no seat, so every empire screen behind this bar refuses
+  // it — `openEmpire` returns on SPEC — and none of them is drawn rather than
+  // being offered and going dead under the hand. What a watcher can actually
+  // use is what stays: the two trees of the civilization it is following, in
+  // `LaunchBar.xml`'s own leading position, and the rankings report. The
+  // foreign-affairs pair is hidden by the stylesheet, which is where the rest
+  // of the arrangement's visibility already lives.
+  if (SPEC) {
+    if (tabs) tabs.innerHTML = arrangementSeat() !== null && worldStandingsInPlay()
+      ? launchTreeHook("science") + launchTreeHook("culture") : "";
+    const report = document.getElementById("rankingsbtn");
+    if (report) report.setAttribute("aria-pressed", rankingsReportOpen ? "true" : "false");
+    return;
+  }
   // Civilization VI's launch bar leads with the two trees, each ringed by the
   // meter of what it is studying, and only then reaches the empire's standing
   // screens (`LaunchBar.xml`: Science, Culture, Government, Religion, Great
@@ -24782,7 +24811,7 @@ function drawLaunchBar() {
   setLaunchBadge("tradebtn", Array.isArray(state.quick_deals) ? state.quick_deals.length : 0,
     "Quick Deals — every mutually acceptable offer");
   const rankings = document.getElementById("rankingsbtn");
-  if (rankings) rankings.setAttribute("aria-pressed", soloRankingsOpen ? "true" : "false");
+  if (rankings) rankings.setAttribute("aria-pressed", rankingsReportOpen ? "true" : "false");
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -24823,6 +24852,33 @@ function drawLaunchBar() {
 // engine's own answer, so this cannot drift from what the server thinks.
 function playingSolo() { return !!state && !SPEC; }
 
+// A simulation is being watched. The other way into the same arrangement, off
+// the same engine flag: nobody holds a seat, so the corner that ends a turn
+// takes the transport instead, and the rivals arrive as `DiplomacyRibbon.xml`'s
+// leader stack rather than as a table across the sky.
+function watchingWorld() { return !!state && SPEC; }
+
+// The arrangement is in force. What separates the two seats is which controls
+// the lower-right corner holds and where the rivals are read, not where
+// anything stands.
+function civ6Frame() { return playingSolo() || watchingWorld(); }
+
+// The empire the frame is describing, or null when there is not one.
+//
+//   * a played game — seat 0, whose whole `me` block the observation carries;
+//   * Watch as — `view_player` names one civilization and
+//     `observation_player_view` builds the same `me` block for it, fog and
+//     all, so every reading below is that civilization's;
+//   * the omniscient spectator — there is no single empire. `me` above the
+//     world is whichever major happens to be acting (`summary_pid` in
+//     `Session::state`), so a strip fed from it would print a different
+//     civilization's treasury every few frames. It reports none instead.
+function arrangementSeat() {
+  if (!state) return null;
+  if (!SPEC) return state.player ?? 0;
+  return Number.isInteger(state.view_player) ? state.view_player : null;
+}
+
 // The End Turn button and the auto-play controls are markup in the command
 // deck, because that is where they were born. Civilization VI puts them in
 // the bottom-right corner, so they move there once — a node move rather than
@@ -24837,6 +24893,22 @@ function arrangeSoloHud() {
   buildAutoplayDisclosure(panel, footer);
   watchSoloCornerHeights(panel);
   soloArranged = true;
+}
+// The spectator's half of the same move. A watched world has no turn to end,
+// so the corner `ActionPanel.xml` anchors takes the control that decides
+// whether the world moves at all — `#specbar`, the pause and the restart —
+// moved rather than copied, so the handlers already bound to both keep
+// working. `spectate` is fixed for the life of a page, so this and
+// `arrangeSoloHud` never both run.
+let watchArranged = false;
+function arrangeWatchHud() {
+  if (watchArranged) return;
+  const panel = document.getElementById("actionpanel");
+  const bar = document.getElementById("specbar");
+  if (!panel || !bar) return;
+  panel.appendChild(bar);
+  watchSoloCornerHeights(panel);
+  watchArranged = true;
 }
 // Civilization VI's corner holds one control. Auto-play is this project's own
 // addition to it — handing your seat to a named league strategy is the whole
@@ -24968,22 +25040,27 @@ let civTopHtml = "";
 function drawCivTop() {
   const bar = document.getElementById("civtop");
   if (!bar) return;
-  if (!playingSolo()) { bar.innerHTML = ""; civTopHtml = ""; return; }
-  const me = state.me || {};
+  if (!civ6Frame()) { bar.innerHTML = ""; civTopHtml = ""; return; }
+  // The strip reads one empire, and a spectator above the world has none. Its
+  // left half is empty there — which is exactly what `TopPanel.xml` shows with
+  // no local player — while the turn and the era stay on the right, where that
+  // file's `RightContents` stack keeps them. Both are facts a world has.
+  const watched = arrangementSeat();
+  const me = watched === null ? {} : (state.me || {});
   const y = me.yields || {};
   // An arena has no empire behind it: the economy is a fixed grant, nothing is
   // built or worshipped, and no city-state offers a suzerain. The strip keeps
   // the turn and the era, which a battle does have, and drops the rest rather
   // than printing six zeroes about a civilization that is not there. Same test
   // the standings columns use.
-  const empire = worldStandingsInPlay();
+  const empire = watched !== null && worldStandingsInPlay();
   const routes = (me.routes || []).length;
   const capacity = Math.round(Number(me.trade_capacity) || 0);
   const envoys = Math.round(Number(me.envoys_free) || 0);
   // Civ 6's Tourism chip is a *rate* — `GetStats():GetTourism()` — and it is
   // hidden until there is one. `me.tourism` is the accumulated pressure, so
   // reading it here printed a lifetime total in the per-turn column.
-  const seat = (state.players || [])[state.player ?? 0] || {};
+  const seat = (state.players || [])[watched ?? -1] || {};
   const tourism = Math.round(Number(seat.tourism_per_turn) || 0);
   const favor = Math.round(Number(me.diplomatic_favor) || 0);
   const yields = !empire ? "" :
@@ -25079,7 +25156,10 @@ let worldTrackerHtml = "";
 function drawWorldTracker() {
   const tracker = document.getElementById("worldtracker");
   if (!tracker) return;
-  if (!playingSolo() || !RULES || !worldStandingsInPlay()) {
+  // One empire's laboratory. The omniscient spectator has no single one, and
+  // a battlefield has none at all, so both leave the column off rather than
+  // reporting whichever seat the summary happens to be following.
+  if (arrangementSeat() === null || !RULES || !worldStandingsInPlay()) {
     tracker.innerHTML = ""; worldTrackerHtml = ""; return;
   }
   const html = soloTrackerCard("science") + soloTrackerCard("culture");
@@ -25088,23 +25168,162 @@ function drawWorldTracker() {
   tracker.innerHTML = html;
 }
 
+// -------------------------------------------------------- the diplomacy ribbon
+//
+// `DiplomacyRibbon.xml`: `<Container ID="RibbonContainer" Size="auto,60"
+// Anchor="R,T" Offset="0,27">` holding `<Stack ID="LeaderStack" Anchor="R,T"
+// StackGrowth="Left">` — a row of leader discs immediately under the 29px top
+// strip, growing leftward from the right edge, one 63px cell each
+// (`SIZE_LEADER` in `DiplomacyRibbon.lua`). Under each disc that file's
+// `LeaderInstance` stacks six figures, and `UpdateStatValues` says exactly
+// which and in what order:
+//
+//   Score     GetScore()
+//   Military  GetStats():GetMilitaryStrengthWithoutTreasury()
+//   Science   GetTechs():GetScienceYield()
+//   Culture   GetCulture():GetCultureYield()
+//   Gold      GetTreasury():GetGoldBalance()
+//   Faith     GetReligion():GetFaithBalance()
+//
+// The observation already carries all six per seat, so this is a relabelling
+// of facts the page had, not a new question of the engine.
+//
+// This is the spectator's and not the player's. #2275 put a played game's
+// rivals behind the rankings report and that judgement stands; a watcher has
+// no seat of its own, and this row is also how it takes one — a disc posts the
+// same `spectatePlayer` the standings table's "Watch as" button posts.
+//
+// `Options.lua`'s `ribbon_options` offers the stats three ways — always hide,
+// on mouse-over, always show. This takes the middle one, which is what makes a
+// six-figure column affordable beside a map: the followed civilization keeps
+// its stats open, and any other opens on hover.
+const RIBBON_FIGURES = [
+  {key:"score", icon:"♜", name:"Score",
+   read: p => Math.round(Number(p.score) || 0)},
+  {key:"military", icon:"⚔", name:"Military strength",
+   read: p => Math.round(Number(p.military) || 0)},
+  {key:"science", icon:"⌬", name:"Science per turn",
+   read: p => soloRate((p.yields || {}).science)},
+  {key:"culture", icon:"❦", name:"Culture per turn",
+   read: p => soloRate((p.yields || {}).culture)},
+  {key:"gold", icon:"⛁", name:"Gold in the treasury",
+   read: p => soloStock(p.gold)},
+  {key:"faith", icon:"☼", name:"Faith saved",
+   read: p => soloStock(p.faith)},
+];
+// The two letters a disc can hold. Civ 6 puts a leader's portrait there; this
+// client has none, so it uses the civilization's own initials over its jersey,
+// which is the identity every other surface on this page already uses.
+function ribbonInitials(name) {
+  const words = String(name || "?").split(/[\s-]+/).filter(Boolean);
+  return (words.length > 1
+    ? words[0][0] + words[1][0]
+    : String(name || "?").slice(0, 2)).toUpperCase();
+}
+let diploRibbonHtml = "";
+function drawDiploRibbon() {
+  const ribbon = document.getElementById("diploribbon");
+  if (!ribbon) return;
+  // An arena has no diplomacy and no empires to rank; the same test the
+  // standings columns and the yield strip already use answers for it.
+  if (!watchingWorld() || !worldStandingsInPlay()) {
+    ribbon.innerHTML = ""; diploRibbonHtml = "";
+    publishSoloHeight(ribbon, "--solo-ribbon-height");
+    return;
+  }
+  const followed = arrangementSeat();
+  // Civ 6's ribbon holds the leaders you have met (`m_leadersMet`), so a
+  // Watch-as view shows what that civilization knows and no more. The leader
+  // is at the right end, where the stack begins.
+  const majors = (state.players || [])
+    .filter(p => p && !p.is_minor && !p.is_barbarian && p.alive !== false && metPlayer(p))
+    .sort((a, b) => (Number(b.score) || 0) - (Number(a.score) || 0) || a.id - b.id);
+  const cell = p => {
+    const on = p.id === followed;
+    const figures = RIBBON_FIGURES.map(figure =>
+      `<span class="ribbon-figure ribbon-${figure.key}" ` +
+      `title="${escapeAttr(`${figure.name} — ${figure.read(p)}`)}">` +
+      `<i>${figure.icon}</i><b>${escapeAttr(String(figure.read(p)))}</b></span>`).join("");
+    const detail = `${p.civ}${p.leader ? ` · ${p.leader}` : ""} — ` +
+      (on ? "the civilization on screen" : "watch this civilization");
+    return `<button class="ribbon-leader${on ? " on" : ""}" type="button" ` +
+      `data-hud-action="watch" data-hud-civ="${p.id}" aria-pressed="${on}" ` +
+      `title="${escapeAttr(detail)}" aria-label="${escapeAttr(detail)}" ` +
+      `style="--jersey:${pcol(p.id)};--trim:${pcol2(p.id)}">` +
+      `<span class="ribbon-disc">${escapeAttr(ribbonInitials(p.civ))}</span>` +
+      `<span class="ribbon-name">${escapeAttr(p.civ)}</span>` +
+      `<span class="ribbon-stats">${figures}</span></button>`;
+  };
+  // The way back out of one civilization's view. It closes the row on the left
+  // because the stack grows that way, and it is the same action the standings
+  // table's own spectator button posts.
+  const world = `<button class="ribbon-leader ribbon-world${followed === null ? " on" : ""}" ` +
+    `type="button" data-hud-action="spectator" aria-pressed="${followed === null}" ` +
+    `title="Watch the whole world — every civilization at once" ` +
+    `aria-label="Watch the whole world">` +
+    `<span class="ribbon-disc">◉</span><span class="ribbon-name">World</span></button>`;
+  const html = majors.map(cell).join("") + world;
+  if (html !== diploRibbonHtml) {
+    diploRibbonHtml = html;
+    ribbon.innerHTML = html;
+  }
+  // Published from here, not only from an observer: the row is `display: none`
+  // in a played game and under a narrow window, and an element with no CSS box
+  // gives a `ResizeObserver` nothing to report. The report that stands below it
+  // needs the number in both states.
+  publishSoloHeight(ribbon, "--solo-ribbon-height");
+}
+// A window that crosses the ribbon's own breakpoint resizes the row without
+// changing a word of it, and the media query never reaches the pass above.
+// The stat panel hangs off each cell rather than growing it, so this observer
+// cannot feed itself by opening one.
+if (typeof ResizeObserver === "function") {
+  new ResizeObserver(() => {
+    const ribbon = document.getElementById("diploribbon");
+    if (ribbon) publishSoloHeight(ribbon, "--solo-ribbon-height");
+  }).observe(document.getElementById("diploribbon"));
+}
+
 // ------------------------------------------------------------- the rankings
 //
 // Civ 6 has no permanent table of rivals on the map; it has a Rankings report
-// you open. The standings masthead and the arena rail are exactly that report,
-// so in a played game they are behind a button rather than across the sky.
-// The toggle is a class of its own so the spectator's saved overlay
-// preferences are never written by somebody sitting down to play.
-let soloRankingsOpen = false;
-function toggleSoloRankings(open) {
-  soloRankingsOpen = open === undefined ? !soloRankingsOpen : !!open;
-  document.body.classList.toggle("solo-rankings", soloRankingsOpen);
+// you open. `InGame.xml` says so literally — `<LuaContext ID="WorldRankings"
+// FileName="WorldRankings" Hidden="1"/>` — and the standings masthead and the
+// arena rail are exactly that report, so in a played game and over a watched
+// one alike they are behind a button rather than across the sky.
+//
+// One report, one class, and two remembered answers that never touch each
+// other or the shared map-overlay preferences. That separation is the whole
+// reason this is a class of its own: a person sitting down to play must not
+// write over what a spectator chose to keep on screen, and neither of them
+// may write `civvis-map-overlays-v1`.
+const WATCH_RANKINGS_KEY = "civvis-watch-rankings-v1";
+let rankingsReportOpen = false;
+function toggleRankingsReport(open) {
+  rankingsReportOpen = open === undefined ? !rankingsReportOpen : !!open;
+  document.body.classList.toggle("rankings-open", rankingsReportOpen);
+  // A watched exhibition rebuilds its page between worlds, so the watcher's
+  // answer is kept; a played game's is not, exactly as #2275 shipped it.
+  if (watchingWorld()) {
+    try { localStorage.setItem(WATCH_RANKINGS_KEY, rankingsReportOpen ? "1" : "0"); }
+    catch (_) {}
+  }
   // Written here as well as in `drawLaunchBar`: a button whose pressed state
   // waits for the next observation reads as a button that did not work.
   const button = document.getElementById("rankingsbtn");
-  if (button) button.setAttribute("aria-pressed", soloRankingsOpen ? "true" : "false");
+  if (button) button.setAttribute("aria-pressed", rankingsReportOpen ? "true" : "false");
   refitMapAreaToChrome();
   if (state) drawPlayerHud();
+}
+// The watcher's kept answer, read once per page. Default closed: the point of
+// the arrangement is that the map is the thing on screen.
+let watchRankingsSettled = false;
+function settleWatchRankings() {
+  if (watchRankingsSettled) return;
+  watchRankingsSettled = true;
+  let chosen = null;
+  try { chosen = localStorage.getItem(WATCH_RANKINGS_KEY); } catch (_) {}
+  if (chosen === "1") toggleRankingsReport(true);
 }
 
 // The deck is the laboratory, and a played game opens without it — the same
@@ -25112,32 +25331,46 @@ function toggleSoloRankings(open) {
 // A person who opens it has said what they want, so that choice is kept and
 // never overridden on a later world.
 const SOLO_DECK_CHOICE_KEY = "civvis-solo-deck-v1";
+// The watcher's own answer to the same question, under a key of its own. The
+// two are never written from the other's path — a spectator that folded the
+// deck away has not decided anything about a game somebody sits down to play.
+const WATCH_DECK_CHOICE_KEY = "civvis-watch-deck-v1";
+function deckChoiceKey() {
+  return watchingWorld() ? WATCH_DECK_CHOICE_KEY : SOLO_DECK_CHOICE_KEY;
+}
 let soloDeckSettled = false;
 function settleSoloDeck() {
   if (soloDeckSettled) return;
   soloDeckSettled = true;
   let chosen = null;
-  try { chosen = localStorage.getItem(SOLO_DECK_CHOICE_KEY); } catch (_) {}
+  try { chosen = localStorage.getItem(deckChoiceKey()); } catch (_) {}
   if (chosen === "open") { togglePanel(false, false); return; }
   togglePanel(true, false);
 }
 
 function drawSoloHud() {
   const solo = playingSolo();
-  const changed = document.body.classList.contains("playing-solo") !== solo;
+  const watching = watchingWorld();
+  const frame = solo || watching;
+  const changed = document.body.classList.contains("playing-solo") !== solo ||
+    document.body.classList.contains("watching-world") !== watching;
   document.body.classList.toggle("playing-solo", solo);
+  document.body.classList.toggle("watching-world", watching);
+  document.body.classList.toggle("civ6-frame", frame);
   // The arrangement hands the standings masthead's band and the arena rail's
   // column back to the world. A fitted map area follows chrome that moves,
   // and this is the largest move it ever makes.
   if (changed) refitMapAreaToChrome();
-  if (!solo) {
-    if (soloRankingsOpen) toggleSoloRankings(false);
+  if (!frame) {
+    if (rankingsReportOpen) toggleRankingsReport(false);
     return;
   }
-  arrangeSoloHud();
+  if (solo) arrangeSoloHud();
+  else { arrangeWatchHud(); settleWatchRankings(); }
   settleSoloDeck();
   drawCivTop();
   drawWorldTracker();
+  drawDiploRibbon();
 }
 function openEmpire(tab) {
   if (SPEC) return;
@@ -31389,11 +31622,13 @@ function togglePanel(force, persist = true) {
   if (persist) {
     try { localStorage.setItem(SIDEBAR_COLLAPSED_STATE_KEY, hide ? "1" : "0"); }
     catch (_) {}
-    // A played game opens without the deck, so the only way this runs while
-    // `playing-solo` is that the player asked for it one way or the other.
-    // Keep that answer: `settleSoloDeck` must not overrule it next world.
-    if (document.body.classList.contains("playing-solo")) {
-      try { localStorage.setItem(SOLO_DECK_CHOICE_KEY, hide ? "closed" : "open"); }
+    // A world wearing the arrangement opens without the deck, so the only way
+    // this runs there is that somebody asked for it one way or the other.
+    // Keep that answer: `settleSoloDeck` must not overrule it next world. The
+    // key is the current seat's, so a spectator's answer and a player's never
+    // overwrite each other.
+    if (document.body.classList.contains("civ6-frame")) {
+      try { localStorage.setItem(deckChoiceKey(), hide ? "closed" : "open"); }
       catch (_) {}
     }
   }
@@ -31796,7 +32031,7 @@ const CIVVIS_SHORTCUTS = [
   {id: "ToggleEspionage", key: "F3", run: () => openEmpire("spies")},
   {id: "ToggleTradeRoutes", key: "F4", run: () => openEmpire("trade")},
   {id: "ToggleReports", key: "F8", run: () => openEmpire("cities")},
-  {id: "ToggleRankings", key: "F1", spectator: true, run: () => toggleSoloRankings()},
+  {id: "ToggleRankings", key: "F1", spectator: true, run: () => toggleRankingsReport()},
   {id: "OpenCivilopedia", key: "F9", spectator: true, run: () => openPedia()},
   // ---- what is drawn over the board ------------------------------------
   {id: "ToggleYield", key: "y", spectator: true, run: () => setShowYields(!SHOW_YIELDS)},

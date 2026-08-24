@@ -3445,6 +3445,11 @@ mod tests {
         // into `Game::new_with`; what moved here is that the ladder now
         // *says* which rungs grant what, so a rung is transcribed data like
         // every other line of this file rather than a constant in setup code.
+        // Moved again by 82 more Great People, taking the roster to 147 of 213
+        // and completing four classes outright -- every shipped Writer, Artist,
+        // Musician and Prophet. Class, era, cost and charges again come from
+        // `GreatPersonIndividuals`, `Eras` and `GreatWorks`, and the audit
+        // again reports zero divergent fields over all 147.
         //
         // Moved again by the LAST TWELVE PANTHEONS, which completes the class:
         // Desert Folklore, Dance of the Aurora and Sacred Path (Holy Site
@@ -3469,7 +3474,7 @@ mod tests {
         // `docs/FIDELITY.md`.
         assert_eq!(
             Rules::shipped().source_fingerprint(),
-            "fnv1a64:8980d020c5aa9581"
+            "fnv1a64:9f3ddd1602755cfc"
         );
     }
 

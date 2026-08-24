@@ -16849,6 +16849,11 @@ mod tests {
             .insert(crate::name!("campus"), campus);
         let cost = game.gp_cost(0, "scientist");
         game.players[0].gpp.insert("scientist".to_string(), cost);
+        let offered_scientist = game
+            .current_great_person("scientist")
+            .expect("the roster offers a Great Scientist")
+            .0
+            .to_string();
         assert!(game.legal_actions(0).iter().any(
             |action| matches!(action, Action::RecruitGreatPerson { kind } if kind == "scientist")
         ));
@@ -16886,7 +16891,13 @@ mod tests {
 
         assert_eq!(BasicAi::claim_free_great_people(&mut game, 0), 1);
         assert_eq!(game.players[0].gp_claimed["scientist"], 1);
-        assert!(game.players[0].great_people.iter().any(|person| person == "hypatia"));
+        // Whoever the market is offering, not a name: #2377 put Gathering
+        // Storm's other Classical Scientists in front of Hypatia, and the
+        // claim this test is about is "the offered person", not "her".
+        assert_eq!(
+            game.players[0].great_people.last().map(String::as_str),
+            Some(offered_scientist.as_str())
+        );
     }
 
     #[test]
