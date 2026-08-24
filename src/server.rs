@@ -16439,8 +16439,7 @@ fetchpriority=\"high\""
         ));
         assert!(EMBEDDED_INDEX.contains("function toggleRankingsReport(open)"));
         assert!(EMBEDDED_INDEX.contains("toggleRankingsReport(chosen !== \"0\");"));
-        assert!(EMBEDDED_INDEX
-            .contains("const SOLO_RANKINGS_KEY = \"civvis-solo-rankings-v1\";"));
+        assert!(EMBEDDED_INDEX.contains("const SOLO_RANKINGS_KEY = \"civvis-solo-rankings-v1\";"));
         assert!(!EMBEDDED_INDEX.contains("civvis-map-overlays-v1\", rankings"));
 
         // The button says what is blocking it in that game's own words —
@@ -16615,8 +16614,12 @@ fetchpriority=\"high\""
             .split_once("<div class=\"side-actions\" aria-label=\"Simulation controls\">")
             .expect("the deck's action area")
             .1;
-        let footer = deck.find("id=\"humanfooter\"").expect("End Turn in the deck");
-        let transport = deck.find("id=\"specbar\"").expect("the transport in the deck");
+        let footer = deck
+            .find("id=\"humanfooter\"")
+            .expect("End Turn in the deck");
+        let transport = deck
+            .find("id=\"specbar\"")
+            .expect("the transport in the deck");
         let close = deck.find("</div>\n  </div>").unwrap_or(deck.len());
         assert!(
             footer < close && transport < close,
