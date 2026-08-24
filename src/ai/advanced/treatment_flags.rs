@@ -1363,6 +1363,23 @@ impl AdvancedAi {
         self.fog_honest = false;
     }
 
+    /// Version 2 of `fog_honest`: the same fair-play boundary, plus one
+    /// re-plan when the authoritative board refuses a planned order. One
+    /// version of a family plays, and this one *is* the fog-honest major, so
+    /// it turns the mode on rather than off. Opt-in gene `fog-honest-2`.
+    /// See [`AdvancedAi::fog_honest_2`].
+    pub fn enable_fog_honest_2(&mut self) {
+        self.enable_fog_honest();
+        self.fog_honest_2 = true;
+    }
+
+    /// The twin of `enable_fog_honest_2`. It leaves version 1's mode where it
+    /// found it, exactly as `disable_fog_honest` leaves the four flags
+    /// `enable_fog_honest` sets.
+    pub fn disable_fog_honest_2(&mut self) {
+        self.fog_honest_2 = false;
+    }
+
     /// Rank district families by how much of the empire still lacks them.
     ///
     /// ⚠ `d_theater` is the lowest of the four district weights in all 51 league
