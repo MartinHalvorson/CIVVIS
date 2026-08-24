@@ -1277,15 +1277,21 @@ cancellation to buy:
 
 | instrument | `win_se_pp × √pairs` |
 |---|---:|
-| direct arm, from `g1` (the conservative/widest measured) | **46.9** |
+| direct arm, from `g1` — `boundary`'s conservative/widest bound | **46.9** |
 | this gene on the 23,622-pair whole-genome foldover | **47.8** |
 | this gene on the 41,628-seat independent screen | 60.2 |
 
-**The direct-arm pairing gain for this gene is 1.02×**, against `s7`'s
-3.32× and `h1`'s 1.28× (#2302). `buildings-before-projects` fires in nearly
-every game, so a foldover cancels almost nothing when that is the gene left
-flipping, and stage two buys nothing over stage one. What a standalone arm
-therefore needs, at 46.9:
+⚠ **This gene's own cancellation gain is unmeasured**, and 46.9 is a bound
+rather than a reading: `direct_arm_constant` takes the *widest* single-gene arm
+the repository has run, because a rarely-firing gene cancels more and resolves
+tighter. So the pairs below are an **upper bound on n**, and the honest range
+is wide — at `h1`'s 1.28× (#2302) 80% power against the unselected estimate is
+15,064 games, at `p10`'s 1.09× it is 20,774, and at `s7`'s 3.32× — the best
+this repository has measured — it falls to 2,239. Structurally this gene is at
+the `h1` end: it is a production-queue rule that applies in every city holding
+a district and a buildable building, so the two arms of a foldover diverge in
+nearly every game and there is little to cancel. That is an argument, not a
+measurement, and the sizing below deliberately uses the bound `boundary` uses:
 
 | target effect | z ≥ 1.96 | 80% power | vs one standard batch |
 |---|---:|---:|---:|
@@ -1307,8 +1313,16 @@ A 600-game arm is 4.4× wider than the effect and moves the standing interval
 by 2.3%. The confirmation is, again, a weaker instrument than its own source.
 And even at the *pooled* effect size, 80% power needs 18,897 games — nearly
 two whole standard batches, about four times what #2385's arm was sized at.
-**Nothing runnable settles this gene on its own, and the three
-deployment-shape screens already in the repository settle it together.**
+
+⭐ **The part that does not depend on the unmeasured cancellation gain**: there
+is nothing left for an arm to resolve at *any* size. The three deployment-shape
+screens already pool to z +3.88, the ranking's all-screen posterior already
+excludes zero, and the gene already ships on — so the only thing an arm can buy
+is the chance of a reversal, which is what `buys +0.0` says. Even if this gene
+turned out to cancel like `s7` and a 2,239-game arm reached 80% power, it would
+be 2,239 games spent to re-confirm a call no rule in the repository disputes.
+**Nothing runnable settles this gene on its own, and the three deployment-shape
+screens already in the repository settle it together.**
 
 ### ⚠ `boundary`'s `needs` column read without its `buys` column is a trap
 
