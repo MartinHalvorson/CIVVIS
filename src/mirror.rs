@@ -20391,7 +20391,8 @@ mod host_fact_tests {
         };
 
         assert_eq!(
-            rebuilt.game.units[&uid_for(601)].formation, 1,
+            rebuilt.game.units[&uid_for(601)].formation,
+            1,
             "a host Corps must arrive as a Corps, or CombineUnits sends FORM_CORPS \
              at a unit that already is one"
         );
@@ -20403,7 +20404,8 @@ mod host_fact_tests {
         // a word and nothing else.
         for host in [601, 602, 603, 604] {
             assert_eq!(
-                rebuilt.game.units[&uid_for(host)].linked_to, None,
+                rebuilt.game.units[&uid_for(host)].linked_to,
+                None,
                 "the merge tier must not be mistaken for an escort stack"
             );
         }
