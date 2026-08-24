@@ -1325,7 +1325,7 @@ And what an affordable arm resolves, against an effect of about +0.5 pp:
 A 600-game arm is 4.4× wider than the effect and moves the standing interval
 by 2.3%. The confirmation is, again, a weaker instrument than its own source.
 And even at the *pooled* effect size, 80% power needs 18,897 games — nearly
-two whole standard batches, about four times what #2385's arm was sized at.
+two whole standard batches, and 31× the 600-game arm #2385 pre-registered.
 
 ⭐ **The part that does not depend on the unmeasured cancellation gain**: there
 is nothing left for an arm to resolve at *any* size. The three deployment-shape
