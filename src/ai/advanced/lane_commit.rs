@@ -71,8 +71,7 @@
 
 use super::{
     AdvancedAi, LaneCommitment, LaneSample, VictoryTarget, LANE_COMMIT_RATE_WINDOW,
-    LANE_COMMIT_REVIEW, LANE_COMMIT_SAMPLES, LANE_COMMIT_SAMPLE_EVERY,
-    LANE_COMMIT_SWITCH_MARGIN,
+    LANE_COMMIT_REVIEW, LANE_COMMIT_SAMPLES, LANE_COMMIT_SAMPLE_EVERY, LANE_COMMIT_SWITCH_MARGIN,
 };
 use crate::game::Game;
 
@@ -318,7 +317,10 @@ impl AdvancedAi {
             return None;
         }
         let remaining = (f64::from(100 - now) / rate).ceil();
-        Some(g.turn.saturating_add(remaining.min(f64::from(u32::MAX / 2)) as u32))
+        Some(
+            g.turn
+                .saturating_add(remaining.min(f64::from(u32::MAX / 2)) as u32),
+        )
     }
 
     /// The lane to play for: the earliest landing inside the cap (higher

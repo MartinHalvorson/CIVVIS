@@ -32978,7 +32978,10 @@ fn lane_commit_waits_for_the_midpoint_and_yields_to_an_assignment() {
     ai.maintain_lane_commit(&early, 0);
     assert_eq!(ai.lane_commitment(), None);
     assert_eq!(ai.raced_target(), None);
-    assert!(ai.lane_samples.len() >= 2, "the window before the midpoint is sampled");
+    assert!(
+        ai.lane_samples.len() >= 2,
+        "the window before the midpoint is sampled"
+    );
 
     let midpoint = lane_commit_board(125);
     let mut off = AdvancedAi::new();
@@ -33009,7 +33012,10 @@ fn lane_commit_picks_the_lane_that_lands_before_the_clock() {
     assert_eq!(commitment.projected, Some(195));
     assert_eq!(ai.raced_target(), Some(VictoryTarget::Religion));
     assert_eq!(ai.committed_lane(), Some(VictoryTarget::Religion));
-    assert!(ai.plan.is_none(), "a fresh commitment is assessed the same turn");
+    assert!(
+        ai.plan.is_none(),
+        "a fresh commitment is assessed the same turn"
+    );
     let plan = ai.assess(&g, 0);
     assert_eq!(plan.strategy, GrandStrategy::Religion);
 }
@@ -33135,7 +33141,10 @@ fn lane_progress_table_matches_victory_focus() {
     let mut religion = Game::new(2, 24, 16, 74, 80, 0);
     religion.players[0].religion = Some("Test Faith".to_string());
     let table = ai.lane_progress_table(&religion, 0);
-    assert_eq!(table[2], 40, "a founder with no foreign convert stands at 40");
+    assert_eq!(
+        table[2], 40,
+        "a founder with no foreign convert stands at 40"
+    );
     let focus = ai.victory_focus(&religion, 0);
     assert_eq!(focus.strategy, GrandStrategy::Religion);
     assert_eq!(focus.progress, table[2]);
@@ -33143,6 +33152,9 @@ fn lane_progress_table_matches_victory_focus() {
     let mut china = Game::new(2, 24, 16, 77, 80, 0);
     china.players[0].civ = "China".to_string();
     let table = ai.lane_progress_table(&china, 0);
-    assert!(table[0] < 45, "the table carries no civilization preference");
+    assert!(
+        table[0] < 45,
+        "the table carries no civilization preference"
+    );
     assert_eq!(ai.victory_focus(&china, 0).progress, 45);
 }
