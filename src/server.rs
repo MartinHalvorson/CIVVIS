@@ -12513,6 +12513,53 @@ fetchpriority=\"high\""
                 "unit {unit} has no Civilization VI icon cell"
             );
         }
+        // Naming every unit is not enough: `nihang` was named here, and its
+        // cell held a duplicate of `warrior_monk`'s picture because the cutter
+        // never learned about it. What follows is the rest of that contract --
+        // the sheet is the ruleset's roster, in the ruleset's order, and every
+        // cell of it has ink.
+        let manifest = civ6_unit_glyph_manifest();
+        let cut: Vec<&str> = manifest["units"]
+            .as_array()
+            .expect("the glyph manifest's unit rows")
+            .iter()
+            .map(|row| row["type"].as_str().expect("a unit id"))
+            .collect();
+        let roster: Vec<&str> = rules.units.keys().map(|name| name.as_str()).collect();
+        assert_eq!(
+            cut, roster,
+            "the cut sheet is the ruleset's units in the ruleset's order"
+        );
+        let named: Vec<&str> = ids
+            .split('"')
+            .skip(1)
+            .step_by(2)
+            .collect();
+        assert_eq!(
+            named, roster,
+            "the renderer's roster is the same list in the same order, so a \
+             cell index is a unit's place in it"
+        );
+        for (seat, row) in manifest["units"].as_array().unwrap().iter().enumerate() {
+            let unit = row["type"].as_str().unwrap();
+            assert_eq!(
+                row["index"].as_u64(),
+                Some(seat as u64),
+                "{unit} does not sit in its own cell"
+            );
+            assert!(
+                row["ink"].as_u64().unwrap_or(0) > 0,
+                "{unit} was cut from a blank cell"
+            );
+            let cell = manifest["cell_size"].as_u64().unwrap();
+            let box_ = row["box"].as_array().expect("a measured silhouette");
+            let (x, y) = (box_[0].as_u64().unwrap(), box_[1].as_u64().unwrap());
+            let (w, h) = (box_[2].as_u64().unwrap(), box_[3].as_u64().unwrap());
+            assert!(
+                w > 0 && h > 0 && x + w <= cell && y + h <= cell,
+                "{unit}'s silhouette does not fit its own cell"
+            );
+        }
 
         let renderer = EMBEDDED_INDEX
             .split("function drawUnitPictogram")
@@ -12581,6 +12628,120 @@ fetchpriority=\"high\""
                 "{religious} has no Civilization VI icon cell"
             );
         }
+    }
+
+    /// A repository file, read at test time rather than embedded in the binary.
+    fn repository_file(path: &str) -> String {
+        std::fs::read_to_string(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(path))
+            .unwrap_or_else(|error| panic!("{path}: {error}"))
+    }
+
+    /// What `tools/civ6_unit_glyphs.py` recorded about the sheet it cut.
+    fn civ6_unit_glyph_manifest() -> serde_json::Value {
+        serde_json::from_str(&repository_file("web/assets/civ6-unit-flags.json"))
+            .expect("the unit glyph manifest is JSON")
+    }
+
+    /// FNV-1a, the change detector `rules.rs` already uses for the ruleset.
+    fn fnv1a64(bytes: &[u8]) -> u64 {
+        bytes.iter().fold(0xcbf2_9ce4_8422_2325, |hash, byte| {
+            (hash ^ u64::from(*byte)).wrapping_mul(0x100_0000_01b3)
+        })
+    }
+
+    /// The unit glyphs are cut off the installed game, not scraped from an
+    /// archive of it.
+    ///
+    /// They were the last CIVVIS art that was not. `tools/civ6_unit_flags.swift`
+    /// downloaded 89 Civilopedia cards from the Civilization Wiki and recovered
+    /// the white symbols by subtracting a per-pixel percentile of the set --
+    /// which worked, and which meant the spectator's unit markers depended on a
+    /// third party's copy of a file sitting on the same disk. The cards are
+    /// gone; `tools/civ6_unit_glyphs.py` reads
+    /// `Base/Platforms/Windows/BLPs/UI/Icons.blp` and its DLC siblings.
+    ///
+    /// The point of this test is the *chain*: which Civilization VI unit a
+    /// CIVVIS unit is, which icon that unit's flag asks for, and which cell of
+    /// which atlas that icon is. A roster written down beside the renderer
+    /// instead is what put a Warrior Monk's picture on every Nihang.
+    #[test]
+    fn the_unit_glyphs_are_cut_from_the_installed_game() {
+        let cutter = repository_file("tools/civ6_unit_glyphs.py");
+        assert!(
+            cutter.contains("import civ6_env as env"),
+            "the install is resolved by the one module allowed to look for it"
+        );
+        assert!(
+            cutter.contains("import civ6_unit_flag_plates as blp"),
+            "one parser reads the package format, not two"
+        );
+        assert!(cutter.contains("assets.rglob(\"Icons.blp\")"));
+        assert!(cutter.contains("ICON_ATLAS_UNITS"));
+        // The scrape is retired, not merely unused: a fallback nothing runs is
+        // a fallback nobody notices has rotted.
+        assert!(
+            !std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("tools/civ6_unit_flags.swift")
+                .exists(),
+            "the Civilization Wiki scraper is gone"
+        );
+        assert!(!EMBEDDED_INDEX.contains("civ6_unit_flags.swift"));
+
+        // The manifest describes the sheet committed beside it and no other.
+        let manifest = civ6_unit_glyph_manifest();
+        assert_eq!(
+            manifest["png_bytes"].as_u64(),
+            Some(EMBEDDED_CIV6_UNIT_FLAGS.len() as u64)
+        );
+        assert_eq!(
+            manifest["png_fnv1a64"].as_str(),
+            Some(format!("{:#018x}", fnv1a64(EMBEDDED_CIV6_UNIT_FLAGS)).as_str()),
+            "the manifest was written for a different atlas than the one here"
+        );
+        let cell = manifest["cell_size"].as_u64().unwrap();
+        let columns = manifest["columns"].as_u64().unwrap();
+        let width = u32::from_be_bytes(EMBEDDED_CIV6_UNIT_FLAGS[16..20].try_into().unwrap());
+        let height = u32::from_be_bytes(EMBEDDED_CIV6_UNIT_FLAGS[20..24].try_into().unwrap());
+        assert_eq!(u64::from(width), columns * cell);
+        assert_eq!(u64::from(height), manifest["rows"].as_u64().unwrap() * cell);
+        assert!(EMBEDDED_INDEX.contains(&format!(
+            "const CIV6_UNIT_ICON_CELL = {cell}, CIV6_UNIT_ICON_COLUMNS = {columns};"
+        )));
+
+        // Every Civilization VI name the cut resolved is a name Civilization VI
+        // actually ships. `tools/civ6_type_names.py` harvests that list off the
+        // install for the live order channel, which learned the hard way that a
+        // name the game does not have is discarded in silence.
+        let shipped: std::collections::BTreeSet<String> =
+            serde_json::from_str(&repository_file("data/civ6_type_names.json"))
+                .expect("the harvested Civilization VI type names");
+        let rules = crate::rules::Rules::embedded();
+        let mut borrowed = 0;
+        for row in manifest["units"].as_array().unwrap() {
+            let unit = row["type"].as_str().unwrap();
+            let kind = row["civ6_type"].as_str().expect("a Civilization VI type");
+            assert!(
+                shipped.contains(kind),
+                "{unit} is cut as {kind}, which Civilization VI does not ship"
+            );
+            assert!(row["icon"].as_str().unwrap().starts_with("ICON_UNIT_"));
+            assert!(row["package"].as_str().unwrap().ends_with("Icons.blp"));
+            // A unit with no symbol icon of its own borrows one, and only from
+            // the unit the ruleset says it replaces -- never from a default.
+            if let Some(stand_in) = row["via"].as_str() {
+                borrowed += 1;
+                assert_eq!(
+                    rules.units[unit].replaces.as_deref(),
+                    Some(stand_in),
+                    "{unit} borrows {stand_in}'s glyph without replacing it"
+                );
+            }
+        }
+        assert_eq!(
+            borrowed, 1,
+            "Civilization VI defines a symbol icon for every unit of this \
+             ruleset but the Oromo Cavalry, which stands on the Courser's"
+        );
     }
 
     /// The command counter is Civilization VI's own unit flag, not a shape of
