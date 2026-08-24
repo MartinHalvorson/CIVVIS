@@ -223,17 +223,14 @@ struct Gene {
     /// On after `enable_engine_repairs_universe` — the genome's universe.
     after_setup_on: bool,
     stock_on: bool,
-    /// On in the deployment genome: the ledger's `helps`, or — for a gene the
-    /// ledger has not measured — the universe state. See `gene_ledger.rs`.
+    /// On in the explicit deployment genome, or the universe state for a tag
+    /// the native screen cannot price. See `gene_ledger.rs`.
     default_on: bool,
     /// The ledger's pooled on−off win difference in points — the gene's
     /// tracked wins over every screen that priced it (`win_diff_pp`).
     /// `None` for an unmeasured gene. Decides which version of a family is
     /// the best; see `best_version`.
     tracked_wins: Option<f64>,
-    /// A version the ledger's rule passes but does not ship, because its
-    /// family's head is another version (`family_runner_up`).
-    runner_up: bool,
     flip: fn(&mut AdvancedAi),
 }
 
@@ -258,7 +255,6 @@ fn gene_table() -> Vec<Gene> {
             stock_on: gene.stock_on(),
             default_on: ledger_default(gene.tag, gene.universe_on()),
             tracked_wins: civvis::ai::ledger_verdict(gene.tag).and_then(|row| row.win_diff_pp),
-            runner_up: civvis::ai::ledger_verdict(gene.tag).is_some_and(|row| row.family_runner_up),
             flip: if gene.universe_on() {
                 gene.disable
             } else {
@@ -965,17 +961,15 @@ fn present(args: &[String], flag: &str) -> bool {
 const BEST_VERSION_WEIGHT: f64 = 2.0;
 
 /// ⭐ THE BEST VERSION of a family, among the given drawable members: the
-/// version the ledger ships (on and not a runner-up) if any, else the priced
+/// version the pinned ledger ships if any, else the priced
 /// version with the highest tracked wins (the ledger's pooled on−off win
 /// difference), ties to the higher version; `None` when nothing is priced,
 /// so an unmeasured family shares its probability equally. The same reading
-/// `tools/genes.py::choose_family_heads` takes when it decides what ships:
-/// the best version by tracked wins is what plays, and what plays most.
+/// ranks a screen's display when no version is pinned. `tools/genes.py`
+/// validates the explicit deployment selection separately: it permits at most
+/// one selected family member and never changes that selection from scores.
 fn best_version(genes: &[Gene], candidates: &[usize]) -> Option<usize> {
-    if let Some(&shipping) = candidates
-        .iter()
-        .find(|&&i| genes[i].default_on && !genes[i].runner_up)
-    {
+    if let Some(&shipping) = candidates.iter().find(|&&i| genes[i].default_on) {
         return Some(shipping);
     }
     candidates
@@ -4913,17 +4907,13 @@ mod tests {
     /// forces its siblings off.
     #[test]
     fn family_marginals_share_the_family_probability() {
-        let synthetic = |tag: &'static str,
-                         default_on: bool,
-                         tracked_wins: Option<f64>,
-                         runner_up: bool| Gene {
+        let synthetic = |tag: &'static str, default_on: bool, tracked_wins: Option<f64>| Gene {
             field: tag,
             tag,
             after_setup_on: false,
             stock_on: false,
             default_on,
             tracked_wins,
-            runner_up,
             flip: |_| {},
         };
         let close = |p: &[f64], want: &[f64]| {
@@ -4934,9 +4924,9 @@ mod tests {
         };
         // An unmeasured family shares equally.
         let genes = vec![
-            synthetic("g", false, None, false),
-            synthetic("g-2", false, None, false),
-            synthetic("g-3", false, None, false),
+            synthetic("g", false, None),
+            synthetic("g-2", false, None),
+            synthetic("g-3", false, None),
         ];
         let families = vec![vec![0, 1, 2]];
         let p = on_probabilities(&genes, &[true, true, true], 0.5, 0.75, &families);
@@ -4944,8 +4934,8 @@ mod tests {
         // The shipping version is the best and takes two shares of three;
         // the family is on at p_default_on because a version ships.
         let genes = vec![
-            synthetic("g", true, Some(0.4), false),
-            synthetic("g-2", false, Some(0.9), false),
+            synthetic("g", true, Some(0.4)),
+            synthetic("g-2", false, Some(0.9)),
         ];
         let families = vec![vec![0, 1]];
         let p = on_probabilities(&genes, &[true, true], 0.5, 0.75, &families);
@@ -4953,24 +4943,17 @@ mod tests {
         // With nothing shipping, tracked wins decide, ties to the higher
         // version.
         let genes = vec![
-            synthetic("g", false, Some(0.4), false),
-            synthetic("g-2", false, Some(0.9), false),
-            synthetic("g-3", false, Some(0.9), false),
+            synthetic("g", false, Some(0.4)),
+            synthetic("g-2", false, Some(0.9)),
+            synthetic("g-3", false, Some(0.9)),
         ];
         let p = on_probabilities(&genes, &[true, true, true], 0.5, 0.75, &[vec![0, 1, 2]]);
         close(&p, &[0.125, 0.125, 0.25]);
-        // A runner-up the rule passes is not the best; the head is.
-        let genes = vec![
-            synthetic("g", false, Some(0.9), true),
-            synthetic("g-2", true, Some(0.6), false),
-        ];
-        let p = on_probabilities(&genes, &[true, true], 0.5, 0.75, &[vec![0, 1]]);
-        close(&p, &[0.25, 0.5]);
         // Hold a version at its default: on → its siblings are forced off;
         // off → it takes no share and the rest of the family carries on.
         let genes = vec![
-            synthetic("g", true, Some(0.4), false),
-            synthetic("g-2", false, Some(0.9), false),
+            synthetic("g", true, Some(0.4)),
+            synthetic("g-2", false, Some(0.9)),
         ];
         let held = on_probabilities(&genes, &[false, true], 0.5, 0.75, &[vec![0, 1]]);
         assert_eq!(held, vec![1.0, 0.0]);
@@ -5194,7 +5177,6 @@ mod tests {
                 stock_on: false,
                 default_on: false,
                 tracked_wins: None,
-                runner_up: false,
                 flip: |_| {},
             },
             Gene {
@@ -5204,7 +5186,6 @@ mod tests {
                 stock_on: false,
                 default_on: false,
                 tracked_wins: None,
-                runner_up: false,
                 flip: |_| {},
             },
         ];

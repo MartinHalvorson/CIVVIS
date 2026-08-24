@@ -15911,15 +15911,14 @@ fn idle_faith_buys_a_great_person_outright_only_for_a_seat_with_no_religion() {
 /// so nothing ships on anything but a measurement.
 ///
 /// ⭐ AND THEY HAVE NOW BEEN MEASURED (2026-08-23). The 23,622-paired-seat
-/// standard screen priced all three, which is exactly what this test was
-/// written waiting for: `culture-building-debt` reads +24 and defaults **on**
-/// under the one-column clause, `culture-coverage` -14 and
-/// `district-building-chain` -1 stay off. So the second half is no longer
-/// "unmeasured means off" — it is "the ledger's call, whatever it is", and
-/// each tag is asserted against `ledger_default_on` rather than against a
-/// constant `false`. The half that must never move is the first one: a tag the
-/// universe does not carry is off in BOTH arms and prints a zero-width
-/// interval that reads like a null.
+/// standard screen priced all three. Their values are now evidence beside the
+/// operator-pinned deployment selection: `culture-building-debt` is pinned
+/// on, while `culture-coverage` and `district-building-chain` are pinned off.
+/// So the second half is no longer "unmeasured means off" — it is "the
+/// ledger's explicit call", and each tag is asserted against
+/// `ledger_default_on` rather than against a constant `false`. The half that
+/// must never move is the first one: a tag the universe does not carry is off
+/// in BOTH arms and prints a zero-width interval that reads like a null.
 #[test]
 fn the_culture_economy_is_in_the_native_universe_and_the_ledger_decides_deployment() {
     let mut universe = AdvancedAi::new();
@@ -15955,8 +15954,7 @@ fn the_culture_economy_is_in_the_native_universe_and_the_ledger_decides_deployme
     }
     assert!(
         deployed.culture_building_debt,
-        "the standard screen priced culture-building-debt at +24 and the one-column \
-         clause promoted it; if this fails, a regeneration moved it"
+        "culture-building-debt is in the explicit deployment selection"
     );
     assert!(
         !deployed.culture_coverage && !deployed.district_building_chain,

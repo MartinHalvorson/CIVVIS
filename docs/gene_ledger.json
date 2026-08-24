@@ -18,16 +18,70 @@
     "helps": "win z >= 2 with share z > -2, or share z >= 2 with win z > -2",
     "hurts": "the mirror image",
     "shape": "one screen: a source whose profile is not `screen` above is marked legacy and kept as history; new ones are refused",
-    "win_column": "wins added per 10,000 on-arm seats at the gene's measured on-rate in one screen, (win_on - 1/players) * 10000; last, prior and third are the three most recent screens that priced the gene, newest first, so a new screen shifts last to prior and prior to third; only last and prior decide default_on",
+    "win_column": "wins added per 10,000 on-arm seats at the gene's measured on-rate in one screen, (win_on - 1/players) * 10000; last, prior and third are the three most recent screens that priced the gene, newest first, so a new screen shifts last to prior and prior to third; they are published evidence and do not automatically decide default_on",
     "win_diff": "the pooled on rate minus the pooled off rate in percentage points, over every screen that priced the gene, each weighted by its on-arm seats - the ranking's `Diff`, the whole on-off difference",
-    "default_on": "both win columns positive, or their average above +15 with neither below -10; with exactly one populated column, on when it is above +20; unmeasured is off; and off whatever the columns say when win_diff_pp is below 0",
+    "default_on": "operator-pinned: exactly the tags in deployment_genome are on; every other screenable tag is off. Screen observations do not automatically alter the selection",
     "posterior": "random-effects (DerSimonian-Laird) inverse-variance pool of every screen's on-off difference on the win column's scale, each weighted by its own standard error and the between-screen variance carried in the interval; posterior_pp is the pooled effect and posterior_se_pp its standard error, both in wins per 10,000 on-arm seats",
-    "authority": "columns",
+    "deployment_policy": "operator-pinned",
+    "deployment_genome": [
+      "air-surge",
+      "amenity-district-path",
+      "apostle-promotion-by-role",
+      "barbarian-bargain",
+      "barbarian-scouts-are-scouts",
+      "bounded-recovery",
+      "buildings-before-projects",
+      "camp-party",
+      "competition-victory-points",
+      "culture-building-debt",
+      "early-contact-window",
+      "engine-faith-price",
+      "escort-unstick",
+      "founder-temple",
+      "great-person-housing",
+      "holy-lane-parity",
+      "idle-faith-patronage",
+      "inquisition-on-threat",
+      "lane-culture-spending",
+      "lane-great-people",
+      "loyalty-rate-alarm",
+      "maintenance-aware-deck",
+      "opportunistic-war",
+      "peacetime-deterrence",
+      "price-the-suzerainty",
+      "promote-when-wounded",
+      "raid-pillage-prizes",
+      "recon-replacement",
+      "recorded-tactical-step",
+      "relief-targets-the-siege",
+      "religion-sues-peace",
+      "religious-units-heal-first",
+      "score-horizon",
+      "settle-sooner",
+      "settler-threat-detour",
+      "slot-kind-tiebreak",
+      "strike-opening",
+      "theology-for-founders",
+      "unit-cost-efficiency",
+      "unit-objective-memory",
+      "war-economy",
+      "war-reinforcement",
+      "wide-map-capacity"
+    ],
+    "operator_promotions": [
+      "unit-cost-efficiency",
+      "unit-objective-memory",
+      "camp-party",
+      "slot-kind-tiebreak",
+      "promote-when-wounded",
+      "religion-sues-peace",
+      "lane-great-people"
+    ],
     "posterior_shapes": [
       "standard",
       "legacy"
     ],
-    "authority_meaning": "which rule decided default_on. `columns` is the operator's threshold rule above. `posterior-veto` keeps those columns but fires the veto only on a resolved negative record - the posterior's 95% interval wholly below zero - instead of on the bare sign of a difference with no error. `posterior` decides wherever the interval excludes zero and falls back to `posterior-veto` where it straddles. AUTHORITY in tools/genes.py is the switch and src/ai/advanced/gene_ledger.rs mirrors it"
+    "deployment_policy_meaning": "the operator-pinned list decides default_on. `tools/genes.py` writes the list into the ledger and the generated Rust table; source refreshes preserve it until an explicit operator edit changes the list"
   },
   "sources": [
     {
@@ -377,13 +431,7 @@
     "helps": 17,
     "hurts": 11,
     "unresolved": 90,
-    "default_on": 36,
-    "default_on_under_columns": 36,
-    "moved_by_columns": 0,
-    "default_on_under_posterior-veto": 37,
-    "moved_by_posterior-veto": 1,
-    "default_on_under_posterior": 37,
-    "moved_by_posterior": 1
+    "default_on": 43
   },
   "genes": [
     {
@@ -1154,7 +1202,7 @@
     {
       "tag": "camp-party",
       "verdict": "unresolved",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 28,
       "wins_prior_10k": -15,
       "wins_third_10k": 13,
@@ -2276,8 +2324,7 @@
         ]
       },
       "family": "escort-unstick",
-      "version": 1,
-      "family_runner_up": false
+      "version": 1
     },
     {
       "tag": "escort-unstick-2",
@@ -2324,8 +2371,7 @@
         ]
       },
       "family": "escort-unstick",
-      "version": 2,
-      "family_runner_up": false
+      "version": 2
     },
     {
       "tag": "fifteenth-citizen",
@@ -3230,7 +3276,7 @@
     {
       "tag": "lane-great-people",
       "verdict": "unresolved",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 33,
       "wins_prior_10k": -3,
       "wins_third_10k": null,
@@ -3905,7 +3951,7 @@
     {
       "tag": "promote-when-wounded",
       "verdict": "unresolved",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 7,
       "wins_prior_10k": null,
       "wins_third_10k": null,
@@ -4130,7 +4176,7 @@
     {
       "tag": "religion-sues-peace",
       "verdict": "unresolved",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 5,
       "wins_prior_10k": -18,
       "wins_third_10k": 6,
@@ -4985,7 +5031,7 @@
     {
       "tag": "slot-kind-tiebreak",
       "verdict": "unresolved",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 25,
       "wins_prior_10k": -1,
       "wins_third_10k": -12,
@@ -5327,7 +5373,7 @@
     {
       "tag": "unit-cost-efficiency",
       "verdict": "helps",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 17,
       "wins_prior_10k": null,
       "wins_third_10k": null,
@@ -5372,7 +5418,7 @@
     {
       "tag": "unit-objective-memory",
       "verdict": "unresolved",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 10,
       "wins_prior_10k": null,
       "wins_third_10k": null,
