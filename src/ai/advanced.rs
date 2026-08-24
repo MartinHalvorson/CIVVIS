@@ -4847,11 +4847,12 @@ pub struct AdvancedAi {
     missionary_evades_raiders: bool,
 
     // ---- append: p-r ------------------------------------------------
-    /// The religious defence scales with how much of a rival's religious
+    /// The religious defence grows with how much of a rival's religious
     /// victory is already done — the civilizations it holds and how close
-    /// it is to half of ours — and a non-founder spends nothing repelling a
-    /// faith that threatens nobody. Also sends the Inquisitor to the heresy
-    /// instead of spending its charges where it was bought. Opt-in gene
+    /// it is to half of ours — naming and targeting that faith from half a
+    /// victory and spending on it from match point, never withholding the
+    /// shipped defence. Also sends the Inquisitor to the heresy instead of
+    /// spending its charges where it was bought. Opt-in gene
     /// `religious-veto-defence`; see `advanced/religious_defence.rs`.
     religious_veto_defence: bool,
 
@@ -16550,6 +16551,21 @@ impl AdvancedAi {
                             && g.city_religion(city) != Some(religion.as_str())
                     })
                     .count();
+        // See `inquisition_on_threat`: the one Apostle that unlocks the
+        // Inquisitors, bought once the Missionary corps stands and the bank
+        // covers it — never instead of the Missionaries (the first cut did
+        // that and lost the pressure race they had been holding).
+        let defend_with_inquisition =
+            self.inquisition_on_threat && home_under_pressure && !inquisition_launched;
+        // `religious_veto_defence`: the stake's extra spreaders wait while the
+        // Apostle slot is open — every extra Missionary bought first is 250
+        // Faith the 400-Faith Apostle waits for, and the first probe of this
+        // gene read fewer Inquisitions per founder for exactly that reason.
+        let veto_spreaders = if defend_with_inquisition {
+            0
+        } else {
+            Self::religious_veto_extra_spreaders(veto.as_ref())
+        };
         // A small circulating corps is enough: every Missionary has several
         // spreads, and replacements can be bought as charges are consumed.
         // Scaling gently with live targets preserves a religious push without
@@ -16564,14 +16580,8 @@ impl AdvancedAi {
             self.defensive_missionary_cap(
                 defensive_targets,
                 (1 + defensive_targets.div_ceil(2)).min(2),
-            ) + Self::religious_veto_extra_spreaders(veto.as_ref())
+            ) + veto_spreaders
         };
-        // See `inquisition_on_threat`: the one Apostle that unlocks the
-        // Inquisitors, bought once the Missionary corps stands and the bank
-        // covers it — never instead of the Missionaries (the first cut did
-        // that and lost the pressure race they had been holding).
-        let defend_with_inquisition =
-            self.inquisition_on_threat && home_under_pressure && !inquisition_launched;
         let apostle_cap = if offensive {
             2
         } else if defend_with_inquisition {
@@ -16590,10 +16600,9 @@ impl AdvancedAi {
         // A cap nothing asks for is not a cap. The two defensive orders never
         // named the Guru, so `guru_cap` alone could not buy one; with the gene
         // on they name it last, behind the spread and the Inquisition.
-        let priorities: &[&str] = if home_under_pressure
-            && inquisition_launched
-            && inquisitors < inquisitor_cap
-        {
+        let inquisitor_corps_short =
+            home_under_pressure && inquisition_launched && inquisitors < inquisitor_cap;
+        let priorities: &[&str] = if inquisitor_corps_short {
             &["inquisitor", "apostle", "missionary", "guru"]
         } else if defend_with_inquisition && apostles == 0 {
             if guru_defends {
@@ -16636,7 +16645,10 @@ impl AdvancedAi {
             // victory, but it must not block the last affordable defender at
             // match point or when one of our cities is already losing its
             // religious majority.
-            let reserve = if match_point_defense || home_under_pressure || veto.is_some() {
+            let reserve = if match_point_defense
+                || home_under_pressure
+                || Self::religious_veto_spends(veto.as_ref())
+            {
                 0.0
             } else {
                 ordinary_reserve
@@ -32215,8 +32227,8 @@ impl AdvancedAi {
                 // religious victory needs a majority in every living major,
                 // and before this pass non-religion civilizations never spent
                 // a point of Faith resisting conversion.
-                // `religious_veto_defence`: the threat is the faith nearest a
-                // victory we are a veto on, and nothing below the stakes floor.
+                // `religious_veto_defence`: when the shipped warning is silent,
+                // the threat is the faith nearest a victory we are a veto on.
                 let shipped = self.home_conversion_threat(g, pid);
                 if let Some(threat) = self.religious_veto_threat(g, pid, shipped) {
                     self.religious_defense(g, pid, &threat);

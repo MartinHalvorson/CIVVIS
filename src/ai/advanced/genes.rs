@@ -1022,10 +1022,10 @@ pub const GENES: &[Gene] = &[
     // the extent we care about that". A religious victory needs more than
     // half of EVERY living major's cities, so each civilization is a veto;
     // the gene reads how much of a rival's victory is done (civs held +
-    // progress toward half of ours) and scales the defensive corps, the
-    // reserve, the non-founder's purchase and the spreaders' targets by it,
-    // withholding a non-founder's Faith below the floor; the Inquisitor goes
-    // to the heresy. See `AdvancedAi::religious_veto_defence`.
+    // progress toward half of ours), names and targets that faith from half
+    // a victory and scales the defensive corps and the reserve by it from
+    // match point, never withholding the shipped defence; the Inquisitor
+    // goes to the heresy. See `AdvancedAi::religious_veto_defence`.
     Gene { tag: "religious-veto-defence", field: "religious_veto_defence", kind: Kind::OptIn, enable: AdvancedAi::enable_religious_veto_defence, disable: AdvancedAi::disable_religious_veto_defence },
 ];
 

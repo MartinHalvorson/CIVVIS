@@ -21,21 +21,30 @@
 //! founder and us) and how many of them it already dominates, plus how far
 //! it is toward half of our own cities. The stake is the share of that
 //! requirement already met, `(dominated + our_progress) / (others + 1)`,
-//! in `[0, 1]`; the rival with the highest stake is the threat. Below
-//! [`RELIGIOUS_VETO_STAKE_FLOOR`] the gene does nothing a founder's shipped
-//! defence does not, and withholds a non-founder's adopted-faith purchase —
-//! Faith spent repelling a faith that threatens nobody buys nothing, and
-//! `idle-faith-patronage` has a use for it. At and above the floor every
-//! lever scales with the stake:
+//! in `[0, 1]`; the rival with the highest stake is the threat. The shipped
+//! defence is never withheld: the 60k founder study priced defence at about
+//! a point, but early defence is the cheap kind — a city held costs a
+//! Missionary, a city flipped back later costs the pressure that has piled
+//! up since — so the gene only ever adds. Below
+//! [`RELIGIOUS_VETO_STAKE_FLOOR`] it adds nothing. From the floor the free
+//! levers engage:
 //!
-//! - the defensive spreader cap grows by `ceil(stake × 2)`, the Inquisitor
-//!   cap by one at `stake ≥ 0.75`, and the purchase reserve is zero;
-//! - a non-founder's threat is the stakes faith itself, not merely the first
-//!   rival faith at 60% of a city's pressure, and its two-Missionary cap grows
-//!   the same way;
+//! - a non-founder's threat is the stakes faith when the shipped warning
+//!   (the first rival faith at 60% of a city's pressure) is silent;
 //! - a spreader's target list scores our cities by the veto arithmetic: a
 //!   city already in the threat faith is worth `stake × 160` (cheapest flip
 //!   first), one the threat faith is closing on `stake × 100`.
+//!
+//! From [`RELIGIOUS_VETO_SPEND_STAKE`] — match point, the rival needs only
+//! us or has most of our half — the levers that spend Faith scale in: the
+//! defensive spreader cap grows by `ceil((stake − 0.5) × 4)` (one at 0.75,
+//! two at 1.0), a non-founder's two-Missionary cap the same way, the
+//! Inquisitor cap by one, and the purchase reserve is zero. The extra
+//! spreaders wait while a founder's Apostle slot is still open
+//! (`inquisition_on_threat`): every extra Missionary bought first is Faith
+//! the 400-Faith Apostle waits for. The first probe of this gene spent the
+//! extras from the floor, read fewer Inquisitions per founder and −9 pp on
+//! 144 seats, and is the reason the spending levers start at match point.
 //!
 //! ## The Inquisitor repair, on with the gene at any stake
 //!
@@ -68,12 +77,13 @@ use crate::Pos;
 /// fallen and the rival has not yet reached our cities".
 pub(super) const RELIGIOUS_VETO_STAKE_FLOOR: f64 = 0.5;
 
-/// Extra defensive spreaders at a stake of one; scaled by the stake and
-/// rounded up, so any engaged stake buys at least one.
-pub(super) const RELIGIOUS_VETO_EXTRA_SPREADERS: f64 = 2.0;
+/// The stake from which the levers that spend Faith engage: match point.
+pub(super) const RELIGIOUS_VETO_SPEND_STAKE: f64 = 0.75;
 
-/// The stake at which the Inquisitor cap grows by one.
-pub(super) const RELIGIOUS_VETO_INQUISITOR_STAKE: f64 = 0.75;
+/// Extra defensive spreaders at a stake of one; the extras grow linearly
+/// from the floor and round up, so match point buys one and a whole
+/// victory two.
+pub(super) const RELIGIOUS_VETO_EXTRA_SPREADERS: f64 = 2.0;
 
 /// A rival faith worth a `RemoveHeresy` charge holds at least this share of
 /// the city's strongest pressure. `RemoveHeresy` quarters every foreign
@@ -192,28 +202,39 @@ impl AdvancedAi {
             .filter(|stakes| stakes.stake >= RELIGIOUS_VETO_STAKE_FLOOR)
     }
 
-    /// The defensive spreaders the stake buys on top of the shipped cap.
+    /// Whether the stake is high enough to spend Faith on.
+    pub(super) fn religious_veto_spends(stakes: Option<&ReligiousStakes>) -> bool {
+        stakes.is_some_and(|stakes| stakes.stake >= RELIGIOUS_VETO_SPEND_STAKE)
+    }
+
+    /// The defensive spreaders the stake buys on top of the shipped cap:
+    /// none below match point, one there, two for a whole victory.
     pub(super) fn religious_veto_extra_spreaders(stakes: Option<&ReligiousStakes>) -> usize {
-        stakes.map_or(0, |stakes| {
-            (stakes.stake * RELIGIOUS_VETO_EXTRA_SPREADERS).ceil() as usize
-        })
+        if !Self::religious_veto_spends(stakes) {
+            return 0;
+        }
+        let stake = stakes.map_or(0.0, |stakes| stakes.stake);
+        ((stake - RELIGIOUS_VETO_STAKE_FLOOR) / (1.0 - RELIGIOUS_VETO_STAKE_FLOOR)
+            * RELIGIOUS_VETO_EXTRA_SPREADERS)
+            .ceil()
+            .max(0.0) as usize
     }
 
-    /// The extra Inquisitor a high stake buys once the Inquisition is launched.
+    /// The extra Inquisitor match point buys once the Inquisition is launched.
     pub(super) fn religious_veto_extra_inquisitors(stakes: Option<&ReligiousStakes>) -> usize {
-        usize::from(stakes.is_some_and(|stakes| stakes.stake >= RELIGIOUS_VETO_INQUISITOR_STAKE))
+        usize::from(Self::religious_veto_spends(stakes))
     }
 
-    /// A non-founder's threat, with the gene: the stakes faith when the veto
-    /// is engaged, and nothing — the adopted-faith purchase withheld — when
-    /// it is not. The shipped answer untouched when the gene is off.
+    /// A non-founder's threat, with the gene: the shipped warning when it
+    /// fires, else the stakes faith when the veto is engaged. Never less
+    /// than the shipped answer.
     pub(super) fn religious_veto_threat(
         &self,
         g: &Game,
         pid: usize,
         shipped: Option<String>,
     ) -> Option<String> {
-        if !self.religious_veto_defence {
+        if !self.religious_veto_defence || shipped.is_some() {
             return shipped;
         }
         self.religious_veto_engaged(g, pid)
