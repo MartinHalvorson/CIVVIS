@@ -10498,7 +10498,6 @@ fetchpriority=\"high\""
         // Heat is a setting about climate, not about whether two ice caps
         // exist, so it is named for what it decides.
         assert!(EMBEDDED_INDEX.contains("Thermal distribution<select id=\"mappoles\""));
-        assert!(EMBEDDED_INDEX.contains("<option value=\"randomized\">Randomized</option>"));
         assert!(!EMBEDDED_INDEX.contains("Poles<select id=\"mappoles\""));
         // And it offers two worlds, not three: heat either follows latitude or
         // it doesn't. The world with no cold end at all is retired, so it is
@@ -10522,6 +10521,18 @@ fetchpriority=\"high\""
                 thermal_options.contains(&format!("value=\"{}\"", spec.id)),
                 "the lobby is missing {}",
                 spec.id
+            );
+            // The label as well as the id, so a world cannot be offered under
+            // the wrong name. Which of the two carries `selected` is the stock
+            // world's business and belongs to
+            // `the_lobby_markup_agrees_with_the_stock_opening_setup`; matching
+            // a whole option element here instead would fail this test every
+            // time that default moved, which is exactly what it did.
+            assert!(
+                thermal_options.contains(&format!(">{}</option>", spec.name)),
+                "the lobby does not name {} as {:?}",
+                spec.id,
+                spec.name
             );
         }
 
