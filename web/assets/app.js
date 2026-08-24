@@ -12714,38 +12714,260 @@ function strategicResourceUnitPlacement(tile, placement, hexInradius) {
     r: placement.r * RESOURCE_UNIT_CLEARANCE_SCALE,
   };
 }
-// Two counter shapes, and they are the base game's two: a circle for anything
-// that can fight, and Civilization VI's rounded triangle, point down at the
-// tile it stands on, for everything that cannot. The retired civilian capsule
-// was a shape of the viewer's own invention, which is why it read as a second
-// marker set rather than as the same set saying "this one is not an army".
+// The command counter is Civilization VI's own unit flag, cut from the game.
 //
-// Built the way the base game builds a rounded triangle -- and the way this
-// file already builds the three-count yield plate: the hull of three discs at
-// the corners, so `cx.arc` draws each corner and the straight side into it in
-// one call. The corner radius is a share of the seat the counter is given, and
-// the vertices take the rest, so the painted triangle stands exactly inside
-// the circle a fighting unit would have used and can never crowd its hex.
+// Two shapes used to be painted here and both were the viewer's invention: a
+// circle for anything that could fight and a rounded triangle, point *down*,
+// for everything that could not. The base game authors eight silhouettes, its
+// civilian triangle points *up*, a fortified soldier stands on a shield and an
+// embarked one on a boat cut. `tools/civ6_unit_flag_plates.py` takes all eight
+// out of the game's own `BLPs/UI/InWorld.blp` into
+// `/assets/civ6-unit-flag-plates.png`, one row of equal square cells measured
+// across the whole set -- so the flags keep the relative sizes and the
+// deliberately different seats the base game authored, which cropping each
+// shape to its own box would have thrown away.
+//
+// Everything a counter must answer -- where its outline runs, how wide a
+// health bar may be, where the glyph sits -- is measured off that sheet in one
+// pass when it loads, so re-cutting the art can never leave a hand-kept table
+// of shapes stale beside it. Until it loads, and for the production
+// medallion's plain ring, the retired circle and triangle remain as the
+// fallback so a counter is never missing.
 const CIVILIAN_TOKEN_CORNER = .30;
 const CIVILIAN_TOKEN_VERTEX = 1 - CIVILIAN_TOKEN_CORNER;
-function strategicUnitTokenPath(x, y, r, civilian = false) {
+const CIV6_FLAG_PLATE_STYLES = ["base", "civilian", "naval", "support",
+                                "trade", "religion", "fortify", "embark"];
+// Ignore the authored anti-aliased fringe when measuring, and keep it when
+// drawing, exactly as the unit-glyph atlas does.
+const CIV6_FLAG_PLATE_ALPHA_FLOOR = 12;
+// An outline vertex whose perpendicular offset from its neighbours' chord is
+// under this share of the seat is dropped. These flags are mostly long
+// straight sides, and a token rebuilt hundreds of times a frame should not
+// replay one segment per source row to say so.
+const CIV6_FLAG_PLATE_TOLERANCE = .012;
+const CIV6_FLAG_PLATE_ATLAS = new Image();
+const CIV6_FLAG_PLATE_SHAPES = new Map();
+const CIV6_FLAG_PLATE_TINTS = new Map();
+// How far the widest style reaches, in half-cells of the sheet. The sheet is
+// cut with a margin, so a counter of radius r draws the cell at r/this and the
+// widest flag then lands exactly on the seat every counter is measured for.
+let CIV6_FLAG_PLATE_REACH = 1;
+CIV6_FLAG_PLATE_ATLAS.onload = () => {
+  CIV6_FLAG_PLATE_TINTS.clear();
+  measureCiv6FlagPlates();
+  if (state) { draw(); drawMini(); }
+};
+CIV6_FLAG_PLATE_ATLAS.src = "/assets/civ6-unit-flag-plates.png";
+
+// Which flag a unit stands on. Fortified and embarked are states the base game
+// answers before it looks at the unit at all; below that the ruleset's own
+// class is the answer, so a mod's unit takes the right flag without a second
+// roster kept here. A ruleset that has not arrived yet, or a unit it does not
+// describe, falls back to the viewer's one standing answer to "can this
+// fight".
+function civ6UnitFlagStyle(unit) {
+  if (!unit) return "base";
+  if (unit.embarked) return "embark";
+  if (unit.fortified) return "fortify";
+  if (unit.type === "trader") return "trade";
+  const spec = (RULES && RULES.units && RULES.units[unit.type]) || null;
+  if (spec) {
+    if (spec.class === "religious") return "religion";
+    if (spec.class === "support") return "support";
+    if (spec.domain === "sea") return "naval";
+    if (spec.class === "civilian" || spec.class === "espionage") return "civilian";
+  }
+  return CIVILIAN_UNITS.has(unit.type) ? "civilian" : "base";
+}
+
+// One pass over the loaded sheet: per style, the artwork's left and right edge
+// on every row, normalised so the widest style's edge is 1. From those rows
+// come the outline, the health bar's room and the glyph's seat.
+function measureCiv6FlagPlates() {
+  CIV6_FLAG_PLATE_SHAPES.clear();
+  const cell = CIV6_FLAG_PLATE_ATLAS.naturalHeight;
+  const width = CIV6_FLAG_PLATE_ATLAS.naturalWidth;
+  if (!cell || width !== cell * CIV6_FLAG_PLATE_STYLES.length) return;
+  const sheet = document.createElement("canvas");
+  sheet.width = width; sheet.height = cell;
+  const g = sheet.getContext("2d", {willReadFrequently:true});
+  g.drawImage(CIV6_FLAG_PLATE_ATLAS, 0, 0);
+  let pixels;
+  try { pixels = g.getImageData(0, 0, width, cell).data; }
+  catch { return; }                 // a canvas the browser refuses to read
+  const half = cell / 2;
+  const measured = new Map();
+  let reach = 0;
+  for (let index = 0; index < CIV6_FLAG_PLATE_STYLES.length; index++) {
+    const rows = [];
+    for (let y = 0; y < cell; y++) {
+      let left = cell, right = -1;
+      let at = (y * width + index * cell) * 4 + 3;      // the alpha byte
+      for (let x = 0; x < cell; x++, at += 4) {
+        if (pixels[at] < CIV6_FLAG_PLATE_ALPHA_FLOOR) continue;
+        if (x < left) left = x;
+        if (x > right) right = x;
+      }
+      if (right < left) { rows.push(null); continue; }
+      rows.push({y:(y + .5 - half) / half,
+                 left:(left - half) / half, right:(right + 1 - half) / half});
+      reach = Math.max(reach, (half - left) / half, (right + 1 - half) / half,
+                       (half - y) / half, (y + 1 - half) / half);
+    }
+    measured.set(CIV6_FLAG_PLATE_STYLES[index], rows);
+  }
+  if (!(reach > 0)) return;
+  CIV6_FLAG_PLATE_REACH = reach;
+  for (const [style, rows] of measured) {
+    const first = rows.findIndex(Boolean);
+    const last = rows.length - 1 - [...rows].reverse().findIndex(Boolean);
+    // A style whose artwork is not one unbroken run of rows would break the
+    // constant row pitch every lookup below relies on; leave it on the
+    // fallback shape rather than measuring it wrongly.
+    if (first < 0 || last - first < 2
+        || rows.slice(first, last + 1).some(row => !row)) continue;
+    const span = rows.slice(first, last + 1).map(row => ({
+      y:row.y / reach, left:row.left / reach, right:row.right / reach}));
+    CIV6_FLAG_PLATE_SHAPES.set(style, {
+      rows:span,
+      pitch:span[1].y - span[0].y,
+      outline:[...civ6FlagPlateDecimate(span.map(row => ({x:row.right, y:row.y})),
+                                        CIV6_FLAG_PLATE_TOLERANCE),
+               ...civ6FlagPlateDecimate(span.map(row => ({x:row.left, y:row.y}))
+                                            .reverse(),
+                                        CIV6_FLAG_PLATE_TOLERANCE)],
+      seat:civ6FlagPlateSeat(span),
+    });
+  }
+}
+
+// Ramer-Douglas-Peucker: keep the vertex furthest from the chord until every
+// dropped one is within tolerance of the line that replaces it.
+function civ6FlagPlateDecimate(points, tolerance) {
+  if (points.length < 3) return points;
+  const first = points[0], last = points[points.length - 1];
+  const dx = last.x - first.x, dy = last.y - first.y;
+  const length = Math.hypot(dx, dy);
+  let worst = -1, at = 0;
+  for (let i = 1; i < points.length - 1; i++) {
+    const point = points[i];
+    const offset = length > 0
+      ? Math.abs(dy * (point.x - first.x) - dx * (point.y - first.y)) / length
+      : Math.hypot(point.x - first.x, point.y - first.y);
+    if (offset > worst) { worst = offset; at = i; }
+  }
+  if (worst <= tolerance) return [first, last];
+  return [...civ6FlagPlateDecimate(points.slice(0, at + 1), tolerance).slice(0, -1),
+          ...civ6FlagPlateDecimate(points.slice(at), tolerance)];
+}
+
+// The largest square the silhouette holds, centred on the counter's axis. The
+// room a row leaves only ever shrinks as the square grows downward, so each
+// top row is extended until the square it would need no longer fits.
+function civ6FlagPlateSeat(rows) {
+  let best = {y:0, side:0};
+  for (let top = 0; top < rows.length; top++) {
+    let room = Infinity;
+    for (let bottom = top; bottom < rows.length; bottom++) {
+      room = Math.min(room, rows[bottom].right, -rows[bottom].left);
+      const side = rows[bottom].y - rows[top].y;
+      if (side > room * 2) break;
+      if (side > best.side) best = {y:(rows[top].y + rows[bottom].y) / 2, side};
+    }
+  }
+  return best;
+}
+
+function civ6FlagPlateShape(style) {
+  return style ? CIV6_FLAG_PLATE_SHAPES.get(style) || null : null;
+}
+
+// The flag tinted to one owner, cached per style and colour the way the unit
+// glyphs already are. `multiply` keeps the art's authored shading and rim
+// while carrying the colour; `destination-in` puts the silhouette's alpha
+// back, which the full-cell fill would otherwise have made opaque.
+function civ6UnitFlagPlate(style, color) {
+  if (!civ6FlagPlateShape(style)) return null;
+  const key = `${style}|${color}`;
+  const cached = CIV6_FLAG_PLATE_TINTS.get(key);
+  if (cached) return cached;
+  const cell = CIV6_FLAG_PLATE_ATLAS.naturalHeight;
+  const sx = CIV6_FLAG_PLATE_STYLES.indexOf(style) * cell;
+  const plate = document.createElement("canvas");
+  plate.width = plate.height = cell;
+  const g = plate.getContext("2d");
+  g.drawImage(CIV6_FLAG_PLATE_ATLAS, sx, 0, cell, cell, 0, 0, cell, cell);
+  g.globalCompositeOperation = "multiply";
+  g.fillStyle = color;
+  g.fillRect(0, 0, cell, cell);
+  g.globalCompositeOperation = "destination-in";
+  g.drawImage(CIV6_FLAG_PLATE_ATLAS, sx, 0, cell, cell, 0, 0, cell, cell);
+  CIV6_FLAG_PLATE_TINTS.set(key, plate);
+  return plate;
+}
+
+// The counter's outline. The cut silhouette when the sheet has been measured;
+// otherwise the retired circle, and the rounded triangle for a civilian --
+// built the way this file already builds the three-count yield plate, as the
+// hull of three corner discs so `cx.arc` draws each corner and the straight
+// side into it in one call.
+function strategicUnitTokenPath(x, y, r, style = null) {
   cx.beginPath();
-  if (!civilian) { cx.arc(x, y, r, 0, 7); return; }
+  const shape = civ6FlagPlateShape(style);
+  if (shape) {
+    for (let at = 0; at < shape.outline.length; at++) {
+      const point = shape.outline[at];
+      const px = x + point.x * r, py = y + point.y * r;
+      if (at) cx.lineTo(px, py); else cx.moveTo(px, py);
+    }
+    cx.closePath();
+    return;
+  }
+  if (style !== "civilian") { cx.arc(x, y, r, 0, 7); return; }
   const corner = r * CIVILIAN_TOKEN_CORNER, vertex = r * CIVILIAN_TOKEN_VERTEX;
   for (let at = 0; at < 3; at++) {
     // The first vertex is straight down, so the point hangs off the unit the
-    // way the game's own flags do.
+    // way the retired triangle did.
     const out = Math.PI / 2 + at * 2 * Math.PI / 3;
     cx.arc(x + Math.cos(out) * vertex, y + Math.sin(out) * vertex, corner,
            out - Math.PI / 3, out + Math.PI / 3);
   }
   cx.closePath();
 }
-// How wide the counter is, `dy` below its centre. A circle is its own answer;
-// the triangle narrows toward its point at exactly the rate its sides do, plus
-// the corner radius the offset gives every side.
-function strategicUnitCounterHalfWidth(r, dy, civilian) {
-  if (!civilian) return Math.sqrt(Math.max(0, r * r - dy * dy));
+// Paint one whole counter: the base game's flag over a solid fill of the
+// owner's colour, then the outline on the same silhouette the fill used. The
+// fill is not redundant -- it backs the art's soft edge with the owner's
+// colour instead of the map -- and it is what a counter still shows before the
+// sheet loads.
+function drawStrategicUnitCounter(x, y, r, style, fill, ink, outline) {
+  strategicUnitTokenPath(x, y, r, style);
+  cx.fillStyle = fill;
+  cx.fill();
+  const plate = civ6UnitFlagPlate(style, fill);
+  if (plate) {
+    const box = r / CIV6_FLAG_PLATE_REACH;
+    cx.drawImage(plate, x - box, y - box, box * 2, box * 2);
+  }
+  if (outline > 0) {
+    strategicUnitTokenPath(x, y, r, style);
+    cx.strokeStyle = ink;
+    cx.lineWidth = outline;
+    cx.stroke();
+  }
+}
+// How wide the counter is, `dy` below its centre, measured symmetrically
+// because the bar it bounds is centred. The cut flag answers from the row it
+// actually sits on; a circle is its own answer, and the retired triangle
+// narrows toward its point at exactly the rate its sides do, plus the corner
+// radius the offset gives every side.
+function strategicUnitCounterHalfWidth(r, dy, style) {
+  const shape = r > 0 ? civ6FlagPlateShape(style) : null;
+  if (shape) {
+    const at = Math.round((dy / r - shape.rows[0].y) / shape.pitch);
+    const row = shape.rows[Math.max(0, Math.min(shape.rows.length - 1, at))];
+    return Math.max(0, Math.min(row.right, -row.left)) * r;
+  }
+  if (style !== "civilian") return Math.sqrt(Math.max(0, r * r - dy * dy));
   const corner = r * CIVILIAN_TOKEN_CORNER, vertex = r * CIVILIAN_TOKEN_VERTEX;
   return Math.max(0, (vertex - dy) / Math.sqrt(3) + corner * 2 / Math.sqrt(3));
 }
@@ -12765,10 +12987,20 @@ function strategicUnitCounterHalfWidth(r, dy, civilian) {
 // seated a little above centre. Which is the proportion the base game draws
 // too: its civilian flag carries a visibly smaller icon than its military one,
 // because a triangle has less room than a banner, not because anybody chose a
-// second size for it.
+// second size for it. A cut flag is measured rather than solved, by the same
+// rule; the circle's closed form is exactly what that measurement returns for
+// a disc, so nothing about the seat changed when the shapes became real.
 const COMMAND_UNIT_ICON_SHARE = .66;
-function strategicUnitGlyphSeat(x, y, r, civilian = false) {
-  if (!civilian) return {x, y, size:r * 2 * COMMAND_UNIT_ICON_SHARE};
+function strategicUnitGlyphSeat(x, y, r, style = null) {
+  const shape = civ6FlagPlateShape(style);
+  if (shape) {
+    return {
+      x,
+      y: y + shape.seat.y * r,
+      size: shape.seat.side * r * COMMAND_UNIT_ICON_SHARE * 2 / Math.SQRT2,
+    };
+  }
+  if (style !== "civilian") return {x, y, size:r * 2 * COMMAND_UNIT_ICON_SHARE};
   const corner = r * CIVILIAN_TOKEN_CORNER, vertex = r * CIVILIAN_TOKEN_VERTEX;
   const top = -vertex / 2 - corner;
   const side = Math.min((vertex - top + corner * 2) / (1 + Math.sqrt(3) / 2),
@@ -12782,10 +13014,10 @@ function strategicUnitGlyphSeat(x, y, r, civilian = false) {
 // Damage is exceptional state, so a healthy unit keeps its clean command token.
 // When damage exists, its bar is part of the token rather than a floating map
 // label, and it is only ever as wide as the counter is at the line it sits on.
-// A circle is at its widest across the middle and never binds; a triangle is
+// A circle is at its widest across the middle and never binds; a Trade flag is
 // narrowing toward its point there, so a plundered Trader's bar tightens into
 // the shape instead of hanging out over the tile.
-function drawStrategicUnitHealth(x, y, r, hp, now, civilian = false) {
+function drawStrategicUnitHealth(x, y, r, hp, now, style = null) {
   if (!Number.isFinite(hp)) return;
   const health = Math.max(0, Math.min(100, Math.round(hp)));
   if (!(r > 0) || health >= 100) return;
@@ -12795,7 +13027,7 @@ function drawStrategicUnitHealth(x, y, r, hp, now, civilian = false) {
   const by = y + r * 0.24 - bh / 2;
   // Measured at the bar's lower edge, which is the line the counter is
   // narrowest across, and inset by the frame drawn around it.
-  const room = strategicUnitCounterHalfWidth(r, by + bh + frame - y, civilian);
+  const room = strategicUnitCounterHalfWidth(r, by + bh + frame - y, style);
   const bw = Math.min(r * 1.28, Math.max(0, room - frame) * 2);
   const color = frac > 0.5 ? "#4fd45c" : (frac > 0.25 ? "#f0b429" : "#f04f3f");
   cx.fillStyle = "#10151dd8";
@@ -20444,17 +20676,15 @@ function drawPlanetMap() {
     const tokenInk = unitTokenInk(unit.owner);
     cx.save();
     cx.globalAlpha = unitAlpha;
-    cx.fillStyle = pcol(unit.owner); cx.strokeStyle = sel?.id === unit.id ? "#fff2a8" : tokenInk;
-    cx.lineWidth = outline;
     const commandTokenClip = !stack.stacked;
     if (commandTokenClip) { cx.save(); planetPath(cx, cell.points); cx.clip(); }
-    const civilian = CIVILIAN_UNITS.has(unit.type);
-    strategicUnitTokenPath(ux, uy, r, civilian);
-    cx.fill(); cx.stroke();
-    const seat = strategicUnitGlyphSeat(ux, uy, r, civilian);
+    const style = civ6UnitFlagStyle(unit);
+    drawStrategicUnitCounter(ux, uy, r, style, pcol(unit.owner),
+                             sel?.id === unit.id ? "#fff2a8" : tokenInk, outline);
+    const seat = strategicUnitGlyphSeat(ux, uy, r, style);
     drawUnitPictogram(unit.type, seat.x, seat.y, seat.size, tokenInk);
     if (unitHasHealth(unit))
-      drawStrategicUnitHealth(ux, uy, r, unit.hp, now, civilian);
+      drawStrategicUnitHealth(ux, uy, r, unit.hp, now, style);
     if (commandTokenClip) cx.restore();
     cx.restore();
   }
@@ -21480,21 +21710,16 @@ function drawScene() {
     // Spent units recede so the ones that can still act carry the eye.
     cx.globalAlpha = unitAlpha *
       ((u.moves_left !== undefined && u.moves_left <= 0) ? 0.62 : 1);
-    const civilian = CIVILIAN_UNITS.has(u.type);
-    cx.save();
-    cx.fillStyle = pcol(u.owner);
-    strategicUnitTokenPath(x, y, rr, civilian);
-    cx.fill();
-    cx.restore();
+    const style = civ6UnitFlagStyle(u);
     const tokenInk = unitTokenInk(u.owner);
-    cx.strokeStyle = u.fortified ? "#f4f8ff" : tokenInk;
-    cx.lineWidth = tokenOutline;
-    strategicUnitTokenPath(x, y, rr, civilian);
-    cx.stroke();
-    const seat = strategicUnitGlyphSeat(x, y, rr, civilian);
+    cx.save();
+    drawStrategicUnitCounter(x, y, rr, style, pcol(u.owner),
+                             u.fortified ? "#f4f8ff" : tokenInk, tokenOutline);
+    cx.restore();
+    const seat = strategicUnitGlyphSeat(x, y, rr, style);
     drawUnitPictogram(u.type, seat.x, seat.y, seat.size, tokenInk);
     cx.globalAlpha = unitAlpha;
-    if (unitHasHealth(u)) drawStrategicUnitHealth(x, y, rr, u.hp, now, civilian);
+    if (unitHasHealth(u)) drawStrategicUnitHealth(x, y, rr, u.hp, now, style);
     if (u.level > 1) {
       const count = u.level - 1;
       const pipRadius = Math.min(2, rr * .12);
@@ -21518,7 +21743,7 @@ function drawScene() {
       // The strategic selection cue lives inside its token rather than adding
       // another ring outside the stack footprint at survey zoom, and it is the
       // token's own outline so a selected Settler is ringed as a triangle.
-      strategicUnitTokenPath(x, y, Math.max(0, rr - 1.2), civilian);
+      strategicUnitTokenPath(x, y, Math.max(0, rr - 1.2), style);
       cx.stroke();
       cx.setLineDash([]);
     }
@@ -21537,13 +21762,9 @@ function drawScene() {
     cx.translate(-d.x, -d.y);
     const r = 10.5;
     const tokenInk = unitTokenInk(d.owner);
-    cx.fillStyle = pcol(d.owner);
-    cx.strokeStyle = tokenInk;
-    cx.lineWidth = 1.6;
-    const civilian = CIVILIAN_UNITS.has(d.type);
-    strategicUnitTokenPath(d.x, d.y, r, civilian);
-    cx.fill(); cx.stroke();
-    const seat = strategicUnitGlyphSeat(d.x, d.y, r, civilian);
+    const style = civ6UnitFlagStyle(d);
+    drawStrategicUnitCounter(d.x, d.y, r, style, pcol(d.owner), tokenInk, 1.6);
+    const seat = strategicUnitGlyphSeat(d.x, d.y, r, style);
     drawUnitPictogram(d.type, seat.x, seat.y, seat.size, tokenInk);
     cx.restore();
     cx.globalAlpha = 1;
@@ -24052,6 +24273,21 @@ victoryHudRibbon.addEventListener("click", ev => {
   if (target) runHudAction(target);
 });
 
+// The diplomacy ribbon is rewritten on every turn its figures move, so it
+// needs the same rule the standings do: act on the press, which always lands
+// on what was under the cursor, and keep click for keyboard activation.
+const diploRibbon = document.getElementById("diploribbon");
+diploRibbon.addEventListener("mousedown", ev => {
+  if (ev.button !== 0) return;
+  const target = ev.target.closest?.("[data-hud-action]");
+  if (target) runHudAction(target);
+});
+diploRibbon.addEventListener("click", ev => {
+  if (ev.detail !== 0) return;
+  const target = ev.target.closest?.("[data-hud-action]");
+  if (target) runHudAction(target);
+});
+
 const dossierWindows = document.getElementById("dossier-windows");
 dossierWindows.addEventListener("mousedown", ev => {
   if (ev.button !== 0) return;
@@ -24534,9 +24770,23 @@ function setLaunchBadge(id, count, name) {
 function drawLaunchBar() {
   const bar = document.getElementById("launchbar");
   if (!bar) return;
-  if (!state || SPEC) { bar.classList.remove("on"); return; }
+  if (!state) { bar.classList.remove("on"); return; }
   bar.classList.add("on");
   const tabs = document.getElementById("launchtabs");
+  // A spectator holds no seat, so every empire screen behind this bar refuses
+  // it — `openEmpire` returns on SPEC — and none of them is drawn rather than
+  // being offered and going dead under the hand. What a watcher can actually
+  // use is what stays: the two trees of the civilization it is following, in
+  // `LaunchBar.xml`'s own leading position, and the rankings report. The
+  // foreign-affairs pair is hidden by the stylesheet, which is where the rest
+  // of the arrangement's visibility already lives.
+  if (SPEC) {
+    if (tabs) tabs.innerHTML = arrangementSeat() !== null && worldStandingsInPlay()
+      ? launchTreeHook("science") + launchTreeHook("culture") : "";
+    const report = document.getElementById("rankingsbtn");
+    if (report) report.setAttribute("aria-pressed", rankingsReportOpen ? "true" : "false");
+    return;
+  }
   // Civilization VI's launch bar leads with the two trees, each ringed by the
   // meter of what it is studying, and only then reaches the empire's standing
   // screens (`LaunchBar.xml`: Science, Culture, Government, Religion, Great
@@ -24561,7 +24811,7 @@ function drawLaunchBar() {
   setLaunchBadge("tradebtn", Array.isArray(state.quick_deals) ? state.quick_deals.length : 0,
     "Quick Deals — every mutually acceptable offer");
   const rankings = document.getElementById("rankingsbtn");
-  if (rankings) rankings.setAttribute("aria-pressed", soloRankingsOpen ? "true" : "false");
+  if (rankings) rankings.setAttribute("aria-pressed", rankingsReportOpen ? "true" : "false");
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -24602,6 +24852,33 @@ function drawLaunchBar() {
 // engine's own answer, so this cannot drift from what the server thinks.
 function playingSolo() { return !!state && !SPEC; }
 
+// A simulation is being watched. The other way into the same arrangement, off
+// the same engine flag: nobody holds a seat, so the corner that ends a turn
+// takes the transport instead, and the rivals arrive as `DiplomacyRibbon.xml`'s
+// leader stack rather than as a table across the sky.
+function watchingWorld() { return !!state && SPEC; }
+
+// The arrangement is in force. What separates the two seats is which controls
+// the lower-right corner holds and where the rivals are read, not where
+// anything stands.
+function civ6Frame() { return playingSolo() || watchingWorld(); }
+
+// The empire the frame is describing, or null when there is not one.
+//
+//   * a played game — seat 0, whose whole `me` block the observation carries;
+//   * Watch as — `view_player` names one civilization and
+//     `observation_player_view` builds the same `me` block for it, fog and
+//     all, so every reading below is that civilization's;
+//   * the omniscient spectator — there is no single empire. `me` above the
+//     world is whichever major happens to be acting (`summary_pid` in
+//     `Session::state`), so a strip fed from it would print a different
+//     civilization's treasury every few frames. It reports none instead.
+function arrangementSeat() {
+  if (!state) return null;
+  if (!SPEC) return state.player ?? 0;
+  return Number.isInteger(state.view_player) ? state.view_player : null;
+}
+
 // The End Turn button and the auto-play controls are markup in the command
 // deck, because that is where they were born. Civilization VI puts them in
 // the bottom-right corner, so they move there once — a node move rather than
@@ -24616,6 +24893,22 @@ function arrangeSoloHud() {
   buildAutoplayDisclosure(panel, footer);
   watchSoloCornerHeights(panel);
   soloArranged = true;
+}
+// The spectator's half of the same move. A watched world has no turn to end,
+// so the corner `ActionPanel.xml` anchors takes the control that decides
+// whether the world moves at all — `#specbar`, the pause and the restart —
+// moved rather than copied, so the handlers already bound to both keep
+// working. `spectate` is fixed for the life of a page, so this and
+// `arrangeSoloHud` never both run.
+let watchArranged = false;
+function arrangeWatchHud() {
+  if (watchArranged) return;
+  const panel = document.getElementById("actionpanel");
+  const bar = document.getElementById("specbar");
+  if (!panel || !bar) return;
+  panel.appendChild(bar);
+  watchSoloCornerHeights(panel);
+  watchArranged = true;
 }
 // Civilization VI's corner holds one control. Auto-play is this project's own
 // addition to it — handing your seat to a named league strategy is the whole
@@ -24747,22 +25040,27 @@ let civTopHtml = "";
 function drawCivTop() {
   const bar = document.getElementById("civtop");
   if (!bar) return;
-  if (!playingSolo()) { bar.innerHTML = ""; civTopHtml = ""; return; }
-  const me = state.me || {};
+  if (!civ6Frame()) { bar.innerHTML = ""; civTopHtml = ""; return; }
+  // The strip reads one empire, and a spectator above the world has none. Its
+  // left half is empty there — which is exactly what `TopPanel.xml` shows with
+  // no local player — while the turn and the era stay on the right, where that
+  // file's `RightContents` stack keeps them. Both are facts a world has.
+  const watched = arrangementSeat();
+  const me = watched === null ? {} : (state.me || {});
   const y = me.yields || {};
   // An arena has no empire behind it: the economy is a fixed grant, nothing is
   // built or worshipped, and no city-state offers a suzerain. The strip keeps
   // the turn and the era, which a battle does have, and drops the rest rather
   // than printing six zeroes about a civilization that is not there. Same test
   // the standings columns use.
-  const empire = worldStandingsInPlay();
+  const empire = watched !== null && worldStandingsInPlay();
   const routes = (me.routes || []).length;
   const capacity = Math.round(Number(me.trade_capacity) || 0);
   const envoys = Math.round(Number(me.envoys_free) || 0);
   // Civ 6's Tourism chip is a *rate* — `GetStats():GetTourism()` — and it is
   // hidden until there is one. `me.tourism` is the accumulated pressure, so
   // reading it here printed a lifetime total in the per-turn column.
-  const seat = (state.players || [])[state.player ?? 0] || {};
+  const seat = (state.players || [])[watched ?? -1] || {};
   const tourism = Math.round(Number(seat.tourism_per_turn) || 0);
   const favor = Math.round(Number(me.diplomatic_favor) || 0);
   const yields = !empire ? "" :
@@ -24858,7 +25156,10 @@ let worldTrackerHtml = "";
 function drawWorldTracker() {
   const tracker = document.getElementById("worldtracker");
   if (!tracker) return;
-  if (!playingSolo() || !RULES || !worldStandingsInPlay()) {
+  // One empire's laboratory. The omniscient spectator has no single one, and
+  // a battlefield has none at all, so both leave the column off rather than
+  // reporting whichever seat the summary happens to be following.
+  if (arrangementSeat() === null || !RULES || !worldStandingsInPlay()) {
     tracker.innerHTML = ""; worldTrackerHtml = ""; return;
   }
   const html = soloTrackerCard("science") + soloTrackerCard("culture");
@@ -24867,23 +25168,162 @@ function drawWorldTracker() {
   tracker.innerHTML = html;
 }
 
+// -------------------------------------------------------- the diplomacy ribbon
+//
+// `DiplomacyRibbon.xml`: `<Container ID="RibbonContainer" Size="auto,60"
+// Anchor="R,T" Offset="0,27">` holding `<Stack ID="LeaderStack" Anchor="R,T"
+// StackGrowth="Left">` — a row of leader discs immediately under the 29px top
+// strip, growing leftward from the right edge, one 63px cell each
+// (`SIZE_LEADER` in `DiplomacyRibbon.lua`). Under each disc that file's
+// `LeaderInstance` stacks six figures, and `UpdateStatValues` says exactly
+// which and in what order:
+//
+//   Score     GetScore()
+//   Military  GetStats():GetMilitaryStrengthWithoutTreasury()
+//   Science   GetTechs():GetScienceYield()
+//   Culture   GetCulture():GetCultureYield()
+//   Gold      GetTreasury():GetGoldBalance()
+//   Faith     GetReligion():GetFaithBalance()
+//
+// The observation already carries all six per seat, so this is a relabelling
+// of facts the page had, not a new question of the engine.
+//
+// This is the spectator's and not the player's. #2275 put a played game's
+// rivals behind the rankings report and that judgement stands; a watcher has
+// no seat of its own, and this row is also how it takes one — a disc posts the
+// same `spectatePlayer` the standings table's "Watch as" button posts.
+//
+// `Options.lua`'s `ribbon_options` offers the stats three ways — always hide,
+// on mouse-over, always show. This takes the middle one, which is what makes a
+// six-figure column affordable beside a map: the followed civilization keeps
+// its stats open, and any other opens on hover.
+const RIBBON_FIGURES = [
+  {key:"score", icon:"♜", name:"Score",
+   read: p => Math.round(Number(p.score) || 0)},
+  {key:"military", icon:"⚔", name:"Military strength",
+   read: p => Math.round(Number(p.military) || 0)},
+  {key:"science", icon:"⌬", name:"Science per turn",
+   read: p => soloRate((p.yields || {}).science)},
+  {key:"culture", icon:"❦", name:"Culture per turn",
+   read: p => soloRate((p.yields || {}).culture)},
+  {key:"gold", icon:"⛁", name:"Gold in the treasury",
+   read: p => soloStock(p.gold)},
+  {key:"faith", icon:"☼", name:"Faith saved",
+   read: p => soloStock(p.faith)},
+];
+// The two letters a disc can hold. Civ 6 puts a leader's portrait there; this
+// client has none, so it uses the civilization's own initials over its jersey,
+// which is the identity every other surface on this page already uses.
+function ribbonInitials(name) {
+  const words = String(name || "?").split(/[\s-]+/).filter(Boolean);
+  return (words.length > 1
+    ? words[0][0] + words[1][0]
+    : String(name || "?").slice(0, 2)).toUpperCase();
+}
+let diploRibbonHtml = "";
+function drawDiploRibbon() {
+  const ribbon = document.getElementById("diploribbon");
+  if (!ribbon) return;
+  // An arena has no diplomacy and no empires to rank; the same test the
+  // standings columns and the yield strip already use answers for it.
+  if (!watchingWorld() || !worldStandingsInPlay()) {
+    ribbon.innerHTML = ""; diploRibbonHtml = "";
+    publishSoloHeight(ribbon, "--solo-ribbon-height");
+    return;
+  }
+  const followed = arrangementSeat();
+  // Civ 6's ribbon holds the leaders you have met (`m_leadersMet`), so a
+  // Watch-as view shows what that civilization knows and no more. The leader
+  // is at the right end, where the stack begins.
+  const majors = (state.players || [])
+    .filter(p => p && !p.is_minor && !p.is_barbarian && p.alive !== false && metPlayer(p))
+    .sort((a, b) => (Number(b.score) || 0) - (Number(a.score) || 0) || a.id - b.id);
+  const cell = p => {
+    const on = p.id === followed;
+    const figures = RIBBON_FIGURES.map(figure =>
+      `<span class="ribbon-figure ribbon-${figure.key}" ` +
+      `title="${escapeAttr(`${figure.name} — ${figure.read(p)}`)}">` +
+      `<i>${figure.icon}</i><b>${escapeAttr(String(figure.read(p)))}</b></span>`).join("");
+    const detail = `${p.civ}${p.leader ? ` · ${p.leader}` : ""} — ` +
+      (on ? "the civilization on screen" : "watch this civilization");
+    return `<button class="ribbon-leader${on ? " on" : ""}" type="button" ` +
+      `data-hud-action="watch" data-hud-civ="${p.id}" aria-pressed="${on}" ` +
+      `title="${escapeAttr(detail)}" aria-label="${escapeAttr(detail)}" ` +
+      `style="--jersey:${pcol(p.id)};--trim:${pcol2(p.id)}">` +
+      `<span class="ribbon-disc">${escapeAttr(ribbonInitials(p.civ))}</span>` +
+      `<span class="ribbon-name">${escapeAttr(p.civ)}</span>` +
+      `<span class="ribbon-stats">${figures}</span></button>`;
+  };
+  // The way back out of one civilization's view. It closes the row on the left
+  // because the stack grows that way, and it is the same action the standings
+  // table's own spectator button posts.
+  const world = `<button class="ribbon-leader ribbon-world${followed === null ? " on" : ""}" ` +
+    `type="button" data-hud-action="spectator" aria-pressed="${followed === null}" ` +
+    `title="Watch the whole world — every civilization at once" ` +
+    `aria-label="Watch the whole world">` +
+    `<span class="ribbon-disc">◉</span><span class="ribbon-name">World</span></button>`;
+  const html = majors.map(cell).join("") + world;
+  if (html !== diploRibbonHtml) {
+    diploRibbonHtml = html;
+    ribbon.innerHTML = html;
+  }
+  // Published from here, not only from an observer: the row is `display: none`
+  // in a played game and under a narrow window, and an element with no CSS box
+  // gives a `ResizeObserver` nothing to report. The report that stands below it
+  // needs the number in both states.
+  publishSoloHeight(ribbon, "--solo-ribbon-height");
+}
+// A window that crosses the ribbon's own breakpoint resizes the row without
+// changing a word of it, and the media query never reaches the pass above.
+// The stat panel hangs off each cell rather than growing it, so this observer
+// cannot feed itself by opening one.
+if (typeof ResizeObserver === "function") {
+  new ResizeObserver(() => {
+    const ribbon = document.getElementById("diploribbon");
+    if (ribbon) publishSoloHeight(ribbon, "--solo-ribbon-height");
+  }).observe(document.getElementById("diploribbon"));
+}
+
 // ------------------------------------------------------------- the rankings
 //
 // Civ 6 has no permanent table of rivals on the map; it has a Rankings report
-// you open. The standings masthead and the arena rail are exactly that report,
-// so in a played game they are behind a button rather than across the sky.
-// The toggle is a class of its own so the spectator's saved overlay
-// preferences are never written by somebody sitting down to play.
-let soloRankingsOpen = false;
-function toggleSoloRankings(open) {
-  soloRankingsOpen = open === undefined ? !soloRankingsOpen : !!open;
-  document.body.classList.toggle("solo-rankings", soloRankingsOpen);
+// you open. `InGame.xml` says so literally — `<LuaContext ID="WorldRankings"
+// FileName="WorldRankings" Hidden="1"/>` — and the standings masthead and the
+// arena rail are exactly that report, so in a played game and over a watched
+// one alike they are behind a button rather than across the sky.
+//
+// One report, one class, and two remembered answers that never touch each
+// other or the shared map-overlay preferences. That separation is the whole
+// reason this is a class of its own: a person sitting down to play must not
+// write over what a spectator chose to keep on screen, and neither of them
+// may write `civvis-map-overlays-v1`.
+const WATCH_RANKINGS_KEY = "civvis-watch-rankings-v1";
+let rankingsReportOpen = false;
+function toggleRankingsReport(open) {
+  rankingsReportOpen = open === undefined ? !rankingsReportOpen : !!open;
+  document.body.classList.toggle("rankings-open", rankingsReportOpen);
+  // A watched exhibition rebuilds its page between worlds, so the watcher's
+  // answer is kept; a played game's is not, exactly as #2275 shipped it.
+  if (watchingWorld()) {
+    try { localStorage.setItem(WATCH_RANKINGS_KEY, rankingsReportOpen ? "1" : "0"); }
+    catch (_) {}
+  }
   // Written here as well as in `drawLaunchBar`: a button whose pressed state
   // waits for the next observation reads as a button that did not work.
   const button = document.getElementById("rankingsbtn");
-  if (button) button.setAttribute("aria-pressed", soloRankingsOpen ? "true" : "false");
+  if (button) button.setAttribute("aria-pressed", rankingsReportOpen ? "true" : "false");
   refitMapAreaToChrome();
   if (state) drawPlayerHud();
+}
+// The watcher's kept answer, read once per page. Default closed: the point of
+// the arrangement is that the map is the thing on screen.
+let watchRankingsSettled = false;
+function settleWatchRankings() {
+  if (watchRankingsSettled) return;
+  watchRankingsSettled = true;
+  let chosen = null;
+  try { chosen = localStorage.getItem(WATCH_RANKINGS_KEY); } catch (_) {}
+  if (chosen === "1") toggleRankingsReport(true);
 }
 
 // The deck is the laboratory, and a played game opens without it — the same
@@ -24891,32 +25331,46 @@ function toggleSoloRankings(open) {
 // A person who opens it has said what they want, so that choice is kept and
 // never overridden on a later world.
 const SOLO_DECK_CHOICE_KEY = "civvis-solo-deck-v1";
+// The watcher's own answer to the same question, under a key of its own. The
+// two are never written from the other's path — a spectator that folded the
+// deck away has not decided anything about a game somebody sits down to play.
+const WATCH_DECK_CHOICE_KEY = "civvis-watch-deck-v1";
+function deckChoiceKey() {
+  return watchingWorld() ? WATCH_DECK_CHOICE_KEY : SOLO_DECK_CHOICE_KEY;
+}
 let soloDeckSettled = false;
 function settleSoloDeck() {
   if (soloDeckSettled) return;
   soloDeckSettled = true;
   let chosen = null;
-  try { chosen = localStorage.getItem(SOLO_DECK_CHOICE_KEY); } catch (_) {}
+  try { chosen = localStorage.getItem(deckChoiceKey()); } catch (_) {}
   if (chosen === "open") { togglePanel(false, false); return; }
   togglePanel(true, false);
 }
 
 function drawSoloHud() {
   const solo = playingSolo();
-  const changed = document.body.classList.contains("playing-solo") !== solo;
+  const watching = watchingWorld();
+  const frame = solo || watching;
+  const changed = document.body.classList.contains("playing-solo") !== solo ||
+    document.body.classList.contains("watching-world") !== watching;
   document.body.classList.toggle("playing-solo", solo);
+  document.body.classList.toggle("watching-world", watching);
+  document.body.classList.toggle("civ6-frame", frame);
   // The arrangement hands the standings masthead's band and the arena rail's
   // column back to the world. A fitted map area follows chrome that moves,
   // and this is the largest move it ever makes.
   if (changed) refitMapAreaToChrome();
-  if (!solo) {
-    if (soloRankingsOpen) toggleSoloRankings(false);
+  if (!frame) {
+    if (rankingsReportOpen) toggleRankingsReport(false);
     return;
   }
-  arrangeSoloHud();
+  if (solo) arrangeSoloHud();
+  else { arrangeWatchHud(); settleWatchRankings(); }
   settleSoloDeck();
   drawCivTop();
   drawWorldTracker();
+  drawDiploRibbon();
 }
 function openEmpire(tab) {
   if (SPEC) return;
@@ -31168,11 +31622,13 @@ function togglePanel(force, persist = true) {
   if (persist) {
     try { localStorage.setItem(SIDEBAR_COLLAPSED_STATE_KEY, hide ? "1" : "0"); }
     catch (_) {}
-    // A played game opens without the deck, so the only way this runs while
-    // `playing-solo` is that the player asked for it one way or the other.
-    // Keep that answer: `settleSoloDeck` must not overrule it next world.
-    if (document.body.classList.contains("playing-solo")) {
-      try { localStorage.setItem(SOLO_DECK_CHOICE_KEY, hide ? "closed" : "open"); }
+    // A world wearing the arrangement opens without the deck, so the only way
+    // this runs there is that somebody asked for it one way or the other.
+    // Keep that answer: `settleSoloDeck` must not overrule it next world. The
+    // key is the current seat's, so a spectator's answer and a player's never
+    // overwrite each other.
+    if (document.body.classList.contains("civ6-frame")) {
+      try { localStorage.setItem(deckChoiceKey(), hide ? "closed" : "open"); }
       catch (_) {}
     }
   }
@@ -31575,7 +32031,7 @@ const CIVVIS_SHORTCUTS = [
   {id: "ToggleEspionage", key: "F3", run: () => openEmpire("spies")},
   {id: "ToggleTradeRoutes", key: "F4", run: () => openEmpire("trade")},
   {id: "ToggleReports", key: "F8", run: () => openEmpire("cities")},
-  {id: "ToggleRankings", key: "F1", spectator: true, run: () => toggleSoloRankings()},
+  {id: "ToggleRankings", key: "F1", spectator: true, run: () => toggleRankingsReport()},
   {id: "OpenCivilopedia", key: "F9", spectator: true, run: () => openPedia()},
   // ---- what is drawn over the board ------------------------------------
   {id: "ToggleYield", key: "y", spectator: true, run: () => setShowYields(!SHOW_YIELDS)},

@@ -207,6 +207,119 @@ need no such chain are Future-era and worth one point each. That leaves the
 congress, at ±2 from the Modern era, as very nearly the whole of a 20-point
 victory — which is why the lane completes about twice in a hundred games.
 
+## The difficulty ladder, table by table (2026-08-23)
+
+The ladder is this project's only **absolute** yardstick. Elo between our own
+bots says one is better than another; "beats Emperor" says what a Civ player
+means by it. That makes `data/difficulties.json` load-bearing in a way no other
+catalogue is, and it had never been audited row by row against the shipped
+data — `tools/civ6_fidelity.py` projects units, buildings, terrain and the
+trees, and **does not touch difficulty at all**. The audit below is by hand
+against `DebugGameplay.sqlite`, and it is complete: every table in that
+database with a cell whose text begins `DIFFICULTY_`.
+
+| shipped source | what it says | CIVVIS |
+|---|---|---|
+| `HIGH_DIFFICULTY_{SCIENCE,CULTURE,FAITH}_SCALING` | `LinearScaleFromDefaultHandicap` +8/rung off Prince | `ai_yield_pct` 8/16/24/32 ✅ |
+| `HIGH_DIFFICULTY_{PRODUCTION,GOLD}_SCALING` | +20/rung | `ai_yield_pct` 20/40/60/80 ✅ |
+| `HIGH_DIFFICULTY_COMBAT_SCALING` | base −1, +1/rung | `ai_combat_strength` 0/1/2/3 ✅ |
+| `HIGH_DIFFICULTY_UNIT_XP_SCALING` | +10/rung | `ai_xp_pct` 10/20/30/40 ✅ |
+| `HIGH_DIFFICULTY_FREE_{TECH,CIVIC}_BOOSTS` | +1/rung, **two** modifiers | `ai_era_boosts` 1/2/3/4, granted as both a Eureka and an Inspiration set ✅ |
+| `LOW_DIFFICULTY_COMBAT_SCALING` | −1/rung below Prince | `human_combat_strength` 1/2/3 ⚠ see below |
+| `LOW_DIFFICULTY_UNIT_XP_SCALING` | −15/rung | `human_xp_pct` 15/30/45 ⚠ |
+| `BARBARIAN_CAMP_GOLD_SCALING` | −5/rung | `human_camp_gold` 5/10/15 ⚠ |
+| `MajorStartingUnits` (25 gated rows) | Warriors +1/rung from King, Builders +0.5, Settlers +0.5 from Emperor | `ai_bonus_units` ✅ exact, truncation and all |
+| `BonusMinorStartingUnits` (8 gated rows) | 2 Warriors, +1/rung from Emperor | ✅ exact, but **in code**, not in the ladder |
+| `BarbarianAttackForces` (12 gated rows) | three bands, split at Chieftain/Warlord and Emperor/Immortal | `barb_force_scale`, `barb_spawn_scale` — bands exact, sizes approximated |
+| `StartingBuildings` (1 gated row) | city-states get Ancient Walls from Immortal | **was the gap; now `starting_buildings`** |
+| `TypeProperties` (24 rows) | `DARK_AGE_CITIES_LOST_PLAYER`, `DARK_AGE_CITIES_LOST_AI`, `FREE_CITY_INFLUENCE` | **not carried** |
+| `{LOW,HIGH}_DIFFICULTY_HUMAN_MARTIAL_LAW` | +7 / −3 Martial Law Loyalty | **not carried** |
+| `STANDARD_DIPLOMACY_RANDOM` | `DifficultyOffset` −1/rung | **not carried** |
+| `AiLists`, `TreeData` (2 rows) | one AI list from Warlord, one behaviour-tree node from Immortal | **not carried**, and both are DLL-side AI plumbing |
+| `Difficulties` | eight rows, `DifficultyType` and a name — **nothing else** | the ladder's shape ✅ |
+
+### The gap that was open: city-states behind walls
+
+The whole of `StartingBuildings` is 24 rows and **exactly one carries a
+`MinDifficulty`**:
+
+    BUILDING_WALLS | ERA_ANCIENT | DISTRICT_CITY_CENTER | MinorOnly=1 | DIFFICULTY_IMMORTAL
+
+Every city-state on Immortal and Deity opens behind completed Ancient Walls.
+`DifficultySpec` had no starting-buildings field at all, so the ladder could
+not say so; the engine granted them anyway, from a rung number written into
+`Game::new_with` in #10 and pinned by
+`city_state_starting_defenses_follow_difficulty` ever since. **The behaviour
+was right and the transcription was missing**, which is the failure mode this
+document exists to catch: an audit reading `difficulties.json` concludes the
+walls are absent, and an audit reading the engine concludes they are present.
+`DifficultySpec::starting_buildings` now carries the row, `validate` checks the
+building exists, and `each_rung_grants_the_starting_buildings_the_shipped_table_gates_on_it`
+pins all eight rungs against the shipped table.
+
+⚠ **Note which way this one runs.** Every other field on the rung hands its
+bonus to the AI *major* seats. This one hardens the *minor* seats — the ones a
+challenger takes a city off. A ladder missing it is not harder than the game,
+it is **easier**, and it flatters every result measured on a high rung. That is
+the direction nobody looks in.
+
+⚠ **The other 23 rows are not a difficulty rule and must not be transcribed as
+one.** They are `MinorOnly = 0` with no `MinDifficulty`, keyed on `Era` from
+Medieval up: a Renaissance start gives a major civilization a finished
+Monument, Granary, Library, Shrine, Walls and Grove, an Information start adds
+a Sewer, Zoo, Ferris Wheel and Aquarium. That is a **start-era** rule, it is a
+real gap — CIVVIS's `open_in_start_era` grants an era's research and upgrades
+its units and deliberately grants no buildings — and it belongs to whoever
+audits Advanced Start, not to the ladder. The shipped table does not say when a
+non-City-Center row is granted (there is no `OnDistrictCreated` column as
+`MajorStartingUnits` has), so transcribing it needs an answer this database
+does not carry.
+
+### What the ladder does not carry
+
+Three shipped difficulty rules have no counterpart in CIVVIS, all of them
+Rise & Fall Loyalty:
+
+| rule | Settler → Deity |
+|---|---|
+| `TypeProperties.FREE_CITY_INFLUENCE` | 1, 2, 2.5, 3, 3.5, 4, 4.5, 5 |
+| `TypeProperties.DARK_AGE_CITIES_LOST_PLAYER` | 5, 10, 15, 20, 25, 30, 35, 40 |
+| `TypeProperties.DARK_AGE_CITIES_LOST_AI` | 30, 30, 25, 20, 15, 15, 10, 10 |
+| `LOW_DIFFICULTY_HUMAN_MARTIAL_LAW` | +7 Martial Law Loyalty, human, below Warlord |
+| `HIGH_DIFFICULTY_HUMAN_MARTIAL_LAW` | −3 Martial Law Loyalty, human, Emperor and up |
+
+CIVVIS has the machinery all five would attach to — `free_city_pressure`
+decides which empire a Free City joins, `garrison_loyalty` is a real Loyalty
+term — so these are wiring, not mechanisms. `FREE_CITY_INFLUENCE` is the one
+worth pricing first: it is monotone across the whole ladder rather than a
+three-band split, and a Deity Free City pulls five times as hard on a
+neighbour's Loyalty as a Settler one. None are invented here; the numbers above
+are the shipped cells and the work is to attach them.
+
+A sixth, `STANDARD_DIPLOMACY_RANDOM`'s `DifficultyOffset` of −1 per rung, is AI
+diplomacy jitter and is listed for completeness rather than as a target.
+
+### ⚠ One ambiguity the database cannot settle: Warlord
+
+The human-side handicaps are gated by `PLAYER_IS_LOW_DIFFICULTY_HUMAN`, which
+is `REQUIREMENT_PLAYER_IS_HUMAN` **and** `REQUIRES_LOW_DIFFICULTY` —
+`REQUIREMENT_PLAYER_HANDICAP_AT_OR_ABOVE`, `Handicap = DIFFICULTY_WARLORD`,
+**`Inverse = 1`**. Read as a strict negation that is "below Warlord", so
+Settler and Chieftain only, and CIVVIS's Warlord row (+1 Combat Strength, +15%
+experience, +5 camp Gold) is a rung too far. Read as "at or below", it is
+exactly right.
+
+The AI side is no help: its gate is `Handicap = DIFFICULTY_PRINCE`,
+`Inverse = 0`, and the linear scale is **zero** at Prince, so a loose gate
+there costs nothing and says nothing about the tight one. The `LinearScale`
+does produce +1 at Warlord, which a strict reading would compute and discard.
+
+**Nothing is changed on this.** Which reading the DLL uses is not in the
+database, and the wiki table that agrees with CIVVIS is exactly the secondary
+source this document opens by distrusting. It is recorded so the next person
+does not re-derive it, and it is answerable from one observed game: play a
+Warlord seat and look at a Warrior's Combat Strength.
+
 ## Where the install is
 
 `python3 tools/civ6_fidelity.py` takes no arguments: `tools/civ6_env.py` is the
@@ -231,29 +344,170 @@ values as Gathering Storm. #2050 retracted them the next day.
 
 ## The Great Person roster
 
-`data/great_people.json` holds 65 of Gathering Storm's 213 individuals. That is
-a deliberate subset, but the shape of the subset matters more than its size:
-until 2026-08-19 it held 29 and **stopped at the Atomic era**, with 26
-(class, era) slots empty that the shipped game fills. Because
+`data/great_people.json` holds **147 of Gathering Storm's 213 individuals**
+(65 before #2377, 29 before #2142). The shape of the subset matters more than
+its size: until 2026-08-19 it held 29 and **stopped at the Atomic era**, with
+26 (class, era) slots empty that the shipped game fills. Because
 `Game::unused_great_person_faith` correctly models
 `GetFaithFromUnusedGreatPeoplePoints`, a class with nobody left to recruit pays
 its points out as Faith — so an empty late-game slot did not read as missing
 content, it read as an empire that had chosen Faith. Measured over eight
 6-player 200-turn games, **26.6% of all non-prophet Great Person points** were
 being converted that way, seven of eight classes running dry, writers by median
-turn 106.
+turn 106; at 65 the same measurement reported 5.4%.
 
-`every_great_person_class_is_recruitable_to_the_information_era` now pins the
+Four classes are now **complete**: every Writer (29), Artist (23), Musician
+(18) and Prophet (16) the shipped game has. Those four are complete because
+their whole shipped effect is the Great Works they create, and CIVVIS already
+creates Great Works — the per-individual work count comes from the `GreatWorks`
+table, which is why Dimitrie Cantemir and Scott Joplin carry three works where
+every other Musician carries two.
+
+`every_great_person_class_is_recruitable_to_the_information_era` pins the
 invariant: no class may have a hole between its first era and the Information
 era. Prophet is exempt, and is the one class that must be — Civilization VI
 stops offering Prophets once the map's religions are claimed.
 
-⚠ Class, era, cost and charges come from `GreatPersonIndividuals` and `Eras` and
-are audited. **Effects are not audited and are not a translation of each
-Firaxis ability** — they use only keys the engine already prices, in magnitudes
-matching the same class's existing entries. Translating each individual's real
-ability would mean new engine keys per person; adding a person to keep the
-class alive does not.
+### What decides whether an individual can be added
+
+⚠ Class, era, cost and charges come from `GreatPersonIndividuals` and `Eras`
+and **are** audited — the audit reports 0 divergent fields over all 147.
+Effects are **not** audited, and the rule that governs them is:
+
+> An individual is added when at least one of their shipped effects maps onto
+> an effect key `Game::named_great_person_effect` already prices, at the
+> magnitude the game ships. An individual whose shipped effects CIVVIS can
+> express **none** of is left out, because a Great Person that grants nothing
+> is worse than absent — they consume the recruitment slot their class would
+> otherwise advance past.
+
+Depth is worth more than per-individual completeness *because* of the Faith
+conversion above: an individual who delivers half their kit still keeps the
+class earning Great People, while a missing one turns the whole class's output
+into Faith. Where only part of a kit is modelled, the missing part is a row in
+the triage table below — Douglas MacArthur pays his 1 Oil per turn but not his
+free Tank; Ferdinand Magellan pays his 300 Gold but not the luxury under his
+feet; Alfred Nobel grants his Modern/Atomic Eureka but not his 100 Great
+Person points.
+
+Two approximations are deliberate and apply to whole groups:
+
+- **Eureka era windows are not modelled.** Eight Scientists carry
+  `tech_boosts: N`, which grants N random un-boosted Eurekas from anywhere in
+  the tree; the shipped action is N Eurekas drawn from a named era window
+  (Aryabhata's three are Classical–Medieval, Emilie du Chatelet's three
+  Renaissance–Industrial). The count is exact; the window is not.
+  `Game::grant_random_tech_boosts_in_eras` is the primitive that would close it
+  — only `modern_tech_boosts` (5–5) and `modern_atomic_tech_boosts` (5–6) are
+  reachable from data today, and Alfred Nobel uses the second exactly.
+- **A specific tech's Eureka becomes a random one**, and is counted in the same
+  `tech_boosts` total: Euclid's Mathematics, Mendeleev's Chemistry, Turing's
+  Computers, and all three of Zhang Heng's — whose shipped modifier also grants
+  the technology outright when its Eureka is already earned, which nothing here
+  reproduces.
+
+### ⚠ Gathering Storm deletes two individuals and then re-adds them
+
+`Expansion2_RemoveData.xml` carries
+`<Delete GreatPersonIndividualType="GREAT_PERSON_INDIVIDUAL_TOGO_HEIHACHIRO"/>`
+and the same for `SUDIRMAN`, together with 25 `<Delete>` rows against
+`GreatPersonIndividualActionModifiers`. Read on its own that says CIVVIS should
+**drop** `togo_heihachiro`, which it has shipped correctly for months.
+
+It does not. The expansion's `.modinfo` loads `Expansion2_RemoveData.xml` at
+`Priority="1"` — before its own default-priority files — and Gathering Storm
+re-ships Rise and Fall's `Expansion1_GreatPeople_Admirals.xml` and
+`Expansion1_GreatPeople_Generals.xml` inside `DLC/Expansion2/Data`. Those
+copies re-declare both rows *after* the delete, with
+`ActionNameTextOverride="LOC_GREATPERSON_ACTION_NAME_RETIRE"` and a rewritten
+active modifier. Delete-then-replace is how the expansion **rebalances** a
+person, not how it retires one. `tools/civ6_fidelity.py` already applies
+`RemoveData` first for exactly this reason, which is why its report is the
+authority here and a hand-read of the delete list is not.
+
+The same load order is why **34 of the 213 rows exist only once the content
+packs in `CONTENT_PACKS` are in** — the base game plus both expansions carry
+179. Gran Colombia's ten `comandante_general` individuals are the largest
+block; Trung Trac, Tupac Amaru, Hanno the Navigator, Zhou Daguan, Dimitrie
+Cantemir and Scott Joplin are among the rest. Auditing against base +
+expansions alone would report those 34 as content CIVVIS invented.
+
+### The 66 that still need engine surface
+
+Grouped by the one thing each would need. This is the follow-up work; the
+count in each row is how many individuals that one predicate would unlock.
+
+| engine surface still needed | n | individuals |
+|---|---:|---|
+| **The whole `comandante_general` class** — Gran Colombia's unique Great General | 10 | Jose Antonio Paez (com), Antonio Jose de Sucre (com), Gregor MacGregor (com), Santiago Marino (com), Mariano Montilla (com), Antonio Narino (com), Francisco de Paula Santander (com), Manuel Piar (com), Jose Felix Ribas (com), Rafael Urdaneta (com) |
+| A free unit of a named type, placed on the person's tile or in a city | 9 | Gustavus Adolphus (gen), Rani Lakshmibai (gen), Samori Toure (gen), Dandara (gen), Tupac Amaru (gen), Francis Drake (adm), Yi Sun-sin (adm), Franz von Hipper (adm), Hanno the Navigator (adm) |
+| Tourism: per district, per trade route, or per Great Work | 5 | Jamsetji Tata (mer), Masaru Ibuka (mer), Sarah Breedlove (mer), Kenzo Tange (eng), Mary Leakey (sci) |
+| A named unit ability or aura (flanking, plunder, healing, ocean travel, capture) | 4 | Georgy Zhukov (gen), Rajendra Chola (adm), Leif Erikson (adm), Boudica (gen) |
+| One free promotion for a **naval** unit (`land_unit_promotion_level` has no sea counterpart) | 4 | Artemisia (adm), Himerios (adm), Laskarina Bouboulina (adm), Sergei Gorshkov (adm) |
+| A free building outside the Library/University families | 3 | James of St. George (eng), James Watt (eng), Giovanni de' Medici (mer) |
+| A one-off yield that is not Gold (Faith, Science, Culture) | 3 | Colaeus (mer), Hildegard of Bingen (sci), Margaret Mead (sci) |
+| An extra district slot, or extra regional-building range | 3 | Bi Sheng (eng), Ada Lovelace (eng), Joseph Paxton (eng) |
+| City Loyalty per turn | 3 | Aethelflaed (gen), Jose de San Martin (gen), Sudirman (gen) |
+| Space-race project production | 3 | Robert Goddard (eng), Stephanie Kwolek (sci), Sergei Korolev (eng) |
+| A Corporation product granted to a city — `resources.json` already carries Toys, Cosmetics, Jeans and Perfume as virtual luxuries, so this is the grant, not the resource | 2 | John Spilsbury (mer), Helena Rubinstein (mer) |
+| An adjacent-terrain or adjacent-feature yield paid on activation | 2 | Galileo Galilei (sci), Janaki Ammal (sci) |
+| City Appeal | 2 | Alvar Aalto (eng), Charles Correa (eng) |
+| Every Eureka in one era, or a free technology | 2 | Abdus Salam (sci), Grace Hopper (adm) |
+| Suzerainty over, or absorption of, a city-state | 2 | Matthew Perry (adm), Stamford Raffles (mer) |
+| War weariness | 2 | Trung Trac (gen), Joaquim Marques Lisboa (adm) |
+| A culture bomb trigger | 1 | Mimar Sinan (eng) |
+| Aerodrome air slots | 1 | Marina Raskova (gen) |
+| Buying out the wonder under construction | 1 | Shah Jahan (eng) |
+| Diplomatic visibility | 1 | Mary Katherine Goddard (mer) |
+| Governor titles | 1 | Irene of Athens (mer) |
+| Housing and Amenities from a Great Person in one city | 1 | Jane Drew (eng) |
+| Yields scaled by a city's Happiness, and district Housing/Amenities | 1 | Ibn Khaldun (sci) |
+
+Two entries in that table would also **correct** individuals CIVVIS already
+ships under a substituted effect: Jane Drew's row is the housing/amenity
+primitive John Roebling actually has in Gathering Storm (CIVVIS pays him
+`wonder_production: 1000`), and the regional-range row is Nikola Tesla's real
+ability (CIVVIS pays him `wonder_production: 750`). Building either predicate
+should re-check the incumbent at the same time.
+
+### The roster is drawn by (era, id), and adding rows moves two draws
+
+`Game::current_great_person` offers `min_by_key(|(id, spec)| (spec.era, *id))`
+over everyone of that class not yet retired — lowest era first, then
+**alphabetical by id**. Nothing is drawn by index or by JSON order, so the
+order of the file is free; what is not free is that a new id sorting before the
+incumbent in an occupied (class, era) cell takes its place.
+
+Adding 82 rows moves exactly two first draws:
+
+| class | was offered first | now | why |
+|---|---|---|---|
+| scientist | `hypatia` (classical) | `aryabhata` | `aryabhata` < `euclid` < `hypatia` < `zhang_heng`, all four Classical |
+| artist | `donatello` (renaissance) | `andrey_rublev` | `andrey_rublev` < `donatello`, both Renaissance |
+
+Every other class keeps its opening pick: `bhasa` (writer), `confucius`
+(prophet), `hannibal_barca` (general), `gaius_duilius` (admiral), `imhotep`
+(engineer), `marcus_licinius_crassus` (merchant), `antonio_vivaldi`
+(musician). No ordering keeps all draws stable — a longer queue is the point of
+the change — and there is no tie-break available that would preserve them
+without inventing a rule Firaxis does not ship.
+
+### ⚠ The recruitment choosers, and the belief-chooser shape
+
+The trap `beliefs.json` hit — an AI chooser that enumerated exactly what
+existed, so extra seats got nothing — is present in this subsystem in two
+places, and in neither is it currently biting:
+
+| site | shape | status |
+|---|---|---|
+| `Game::legal_actions` | derives the class set from `rules.great_people` | already roster-driven |
+| `AdvancedAi::advanced_great_people` (patronage) | was a 9-name array literal | **now roster-driven** |
+| `great_person_housing::WATCHED_CLASSES` | 9-name array, deliberately ordered — it is the gene's tie-break order | left as an array; a test now fails if the roster gains a class it does not list |
+
+Nothing enumerates *individuals* anywhere, which is why adding 82 of them is a
+data change. Adding a **class** is not: `comandante_general` would need the
+`WATCHED_CLASSES` entry, a `great_person_remedy` arm, and a
+`GreatPersonClasses`-derived district for its points.
 
 ## Running the audit without an install
 
@@ -1147,7 +1401,7 @@ column — content the game has and CIVVIS does not model at all:
 
 | table | only in Civ VI |
 |---|---:|
-| GreatPeople | 184 |
+| GreatPeople | 184 → **66** after #2142 and #2377 |
 | Units | 58 |
 | Promotions | 26 (16 of them spy promotions) |
 | Beliefs | 22 |
@@ -1495,11 +1749,34 @@ Information-era empire still fielded — and still trained — Slingers.
 | No unit ever became obsolete | 33 units carry the shipped `MandatoryObsoleteTech`; researching it removes the unit from every production and purchase menu and from every queue |
 | No unit could ever be upgraded | 52 units carry their shipped `UnitUpgrades` successor, reachable through the new `upgrade_unit` action |
 
-The Gold price is the one number this wave could not read from the database:
-`UPGRADE_BASE_COST` (10) and `UPGRADE_MINIMUM_COST` (15) are shipped
-GlobalParameters, but the per-Production factor lives in the executable. The
-engine charges the community-documented `10 + 2 × Production difference`,
-which reproduces the in-game prices those two parameters bracket.
+⚠ **This paragraph used to say the per-Production factor "lives in the
+executable" and that `10 + 2 × Production difference` was community
+documentation. Corrected 2026-08-23 (#2372): every term is a shipped
+`GlobalParameters` row, and the arithmetic was read out of
+`GameCore_XP2_FinalRelease.dll` rather than guessed at.**
+
+`Rules::Units::Instance::GetUpgradeCost` reads **six** rows, not two:
+
+| parameter | value | role |
+|---|---:|---|
+| `UPGRADE_BASE_COST` | 10 | the constant term |
+| `UPGRADE_NET_PRODUCTION_PERCENT_COST` | **100** | takes *all* of the Production difference (Vanilla ships 75; Expansion2 replaces it) |
+| `GOLD_EQUIVALENT_OTHER_YIELDS` | **2** | converts that Production to Gold — a separate row, and the whole of the "×2" |
+| `PURCHASE_DIVISOR` | **5** | the quote is truncated, then rounded **down** to a multiple of 5 |
+| `UPGRADE_MINIMUM_COST` | 15 | applied *after* the formation multiplier and any discount |
+| `UPGRADE_MINIMUM_COST_LEVY` | 0 | the same floor for a levied unit |
+
+So the familiar `10 + 2 × ΔProduction` is right, and it is right for a reason
+nobody had written down: the percent row and the Gold-equivalent row are
+different things that happen to multiply to 2. Reading it as one fudged
+coefficient is what made it look unsourced — and a "fix" that removed the
+factor of 2 would have halved every upgrade in the game.
+
+⭐ **The transferable part is the method.** "It lives in the DLL" had stood as a
+reason not to check. It is not one: the shipped binary can be disassembled, and
+the `GlobalParameters` initializer names every field by offset, so a value that
+is not in the database can still be *read* instead of inferred. Prefer that over
+community documentation whenever a number is load-bearing.
 
 **Sixth wave (bands, maps, routes, spawns):** `Happinesses`, `Maps`, `WMDs`
 and more of `GlobalParameters` join the audit — 25 tables at zero unwaived
