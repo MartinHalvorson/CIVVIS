@@ -32437,8 +32437,7 @@ fn wonder_score_tally_opens_the_lane_on_merit_and_the_density_bar_still_refuses(
     );
     let dear_spec = &game.rules.wonders[&crate::name!("sydney_opera_house")];
     assert!(
-        treated.wonder_ordinary_value(dear_spec, plan.strategy)
-            + AdvancedAi::wonder_tally_value()
+        treated.wonder_ordinary_value(dear_spec, plan.strategy) + AdvancedAi::wonder_tally_value()
             < dear_spec.cost * WONDER_TALLY_MIN_DENSITY,
         "and the Opera House fails it"
     );
