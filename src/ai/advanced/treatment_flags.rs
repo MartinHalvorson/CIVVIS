@@ -2235,6 +2235,7 @@ impl AdvancedAi {
     /// The twin of `enable_no_free_passage`.
     pub fn disable_no_free_passage(&mut self) {
         self.base.no_free_passage = false;
+    }
     /// From the midpoint of the game an adaptive seat commits to the victory
     /// lane it leads the field in and holds that plan, in place of the
     /// per-turn best-progress pick. See
@@ -2248,7 +2249,6 @@ impl AdvancedAi {
     /// The twin of `enable_lane_commit`.
     pub fn disable_lane_commit(&mut self) {
         self.lane_commit = false;
-||||||| a5a2352b
     }
     // Append points, one per name range: a new treatment goes under the range
     // its own name falls in, so that two of them do not append to one line.

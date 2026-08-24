@@ -33441,6 +33441,8 @@ fn a_friendship_ask_carries_no_passage_only_with_the_gene() {
         "shipped: passage rides on the friendship ask"
     );
     assert!(!proposal(true), "the gene: the ask carries no passage");
+}
+
 // ── `lane-commit`: from the midpoint, the empire plays for the victory it
 // leads the field in. See `advanced/lane_commit.rs`. ──────────────────────
 
@@ -33696,5 +33698,4 @@ fn lane_progress_table_matches_victory_focus() {
         "the table carries no civilization preference"
     );
     assert_eq!(ai.victory_focus(&china, 0).progress, 45);
-||||||| a5a2352b
 }
