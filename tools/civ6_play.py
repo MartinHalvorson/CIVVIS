@@ -3658,6 +3658,12 @@ def _play(args: argparse.Namespace) -> int:
         standing = civ6_ladder.final_standing(run_dir / "events.jsonl")
         if standing:
             summary["rival_best"] = standing[1]
+        # The deal lane, on the ledger: sessions asked and answered, deals
+        # closed, and what the peace offers got. Absent when the run wrote
+        # no deal event, so an old mod reads as silence rather than zeros.
+        deals = civ6_ladder.deal_totals(run_dir / "events.jsonl")
+        if deals:
+            summary["deals"] = deals
         # Which code actually decided this run: the brain's start row plus
         # every mid-game origin/main handoff. On the ledger, so "was the
         # verification game testing the latest code" is a column, not a log

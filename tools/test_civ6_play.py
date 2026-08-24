@@ -1898,6 +1898,9 @@ class AnAbandonedGameIsOneTheLadderChoseNotToPlayOut(unittest.TestCase):
         self.assertIn("abandon_reading(state, event, args.abandon_below_win_rate)",
                       source)
         self.assertIn("behind_all_metrics_reading(", source)
+        # The deal lane's tally rides the summary beside the orders totals.
+        self.assertIn('deals = civ6_ladder.deal_totals(run_dir / "events.jsonl")', source)
+        self.assertIn('summary["deals"] = deals', source)
 
 
 class AThreeSignalRestartDoesNotTreatScoreAsEnough(unittest.TestCase):

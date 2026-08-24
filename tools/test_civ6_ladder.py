@@ -72,6 +72,43 @@ class LedgerCase(unittest.TestCase):
 
 
 class RecordsItself(LedgerCase):
+    def test_the_deal_lane_is_summed_onto_the_ledger(self):
+        events = self.runs / "civvis-20260824T230000Z" / "events.jsonl"
+        events.parent.mkdir(parents=True, exist_ok=True)
+        lines = [
+            {"kind": "turn", "ctx": "agent", "turn": 5},
+            {"kind": "deal_session", "phase": "opening", "target": 3},
+            {"kind": "deal_session", "phase": "asked", "target": 3},
+            {"kind": "deal_session", "phase": "answered", "target": 3},
+            {"kind": "deal_closed", "target": 3, "gold": 90},
+            {"kind": "deal_session", "phase": "closed", "target": 3},
+            {"kind": "deal_session", "phase": "opening", "target": 4},
+            {"kind": "deal_session", "phase": "unanswered", "target": 4},
+            {"kind": "deal_expired", "target": 4},
+            {"kind": "deal_session", "phase": "opening", "target": 5},
+            {"kind": "deal_session", "phase": "answered", "target": 5},
+            {"kind": "deal_declined", "target": 5, "worth": 20},
+            {"kind": "peace_response", "target": 6, "accepted": True},
+            {"kind": "peace_response", "target": 7, "accepted": False},
+            {"kind": "deal_sessions_stood_down", "unanswered": 3},
+        ]
+        with events.open("w") as handle:
+            for line in lines:
+                handle.write(json.dumps(line) + "\n")
+            handle.write('{"kind": "deal_closed", "tru')  # a torn tail line
+        self.assertEqual(civ6_ladder.deal_totals(events), {
+            "sessions_opened": 3, "sessions_answered": 2,
+            "sessions_unanswered": 1, "stood_down": True,
+            "closed": 1, "declined": 1, "expired": 1,
+            "peace_accepted": 1, "peace_refused": 1,
+        })
+        # A run that wrote no deal event reads as silence, not zeros.
+        quiet = self.runs / "civvis-20260824T230100Z" / "events.jsonl"
+        quiet.parent.mkdir(parents=True, exist_ok=True)
+        quiet.write_text('{"kind": "turn", "ctx": "agent", "turn": 5}\n')
+        self.assertIsNone(civ6_ladder.deal_totals(quiet))
+        self.assertIsNone(civ6_ladder.deal_totals(self.runs / "missing" / "events.jsonl"))
+
     def test_the_ledger_lives_beside_the_runs_it_records(self):
         path = write_run(self.runs, summary("civvis-1"))
         self.assertTrue(civ6_ladder.record_summary(path))
