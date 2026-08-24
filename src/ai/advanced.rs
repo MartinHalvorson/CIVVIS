@@ -12860,7 +12860,9 @@ impl AdvancedAi {
                     request_gold: 0.0,
                     // `no_free_passage`: passage is sold, not bundled.
                     open_borders: !self.base.no_free_passage
-                        && g.players[pid].civics.contains(&crate::name!("early_empire")),
+                        && g.players[pid]
+                            .civics
+                            .contains(&crate::name!("early_empire")),
                     friendship: true,
                     peace: false,
                     alliance: Some(kind.to_string()),

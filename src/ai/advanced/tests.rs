@@ -32951,7 +32951,9 @@ fn the_trade_deal_genes_are_registered_reversible_opt_ins() {
         );
     }
     let mut ai = AdvancedAi::new();
-    assert!(!ai.base.deals_for_our_gain && !ai.base.deals_at_the_ceiling && !ai.base.no_free_passage);
+    assert!(
+        !ai.base.deals_for_our_gain && !ai.base.deals_at_the_ceiling && !ai.base.no_free_passage
+    );
     ai.enable_deals_for_our_gain();
     ai.enable_deals_at_the_ceiling();
     ai.enable_no_free_passage();
@@ -32959,7 +32961,9 @@ fn the_trade_deal_genes_are_registered_reversible_opt_ins() {
     ai.disable_deals_for_our_gain();
     ai.disable_deals_at_the_ceiling();
     ai.disable_no_free_passage();
-    assert!(!ai.base.deals_for_our_gain && !ai.base.deals_at_the_ceiling && !ai.base.no_free_passage);
+    assert!(
+        !ai.base.deals_for_our_gain && !ai.base.deals_at_the_ceiling && !ai.base.no_free_passage
+    );
     let legacy = AdvancedAi::legacy();
     assert!(
         !legacy.base.deals_for_our_gain
@@ -32983,7 +32987,9 @@ fn deal_board() -> Game {
         game.found_city_for(pid, game.units[&settler].pos, None);
         game.players[pid].gold = 500.0;
         game.players[pid].diplomatic_favor = 100.0;
-        game.players[pid].civics.insert(crate::name!("early_empire"));
+        game.players[pid]
+            .civics
+            .insert(crate::name!("early_empire"));
         for city in game.player_city_ids(pid) {
             for position in game.cities[&city].owned_tiles.clone() {
                 let tile = game.map.tiles.get_mut(&position).unwrap();
@@ -33133,6 +33139,9 @@ fn a_friendship_ask_carries_no_passage_only_with_the_gene() {
             .map(|deal| deal.open_borders)
             .expect("fixture: the friendship ask is made at turn 20")
     };
-    assert!(proposal(false), "shipped: passage rides on the friendship ask");
+    assert!(
+        proposal(false),
+        "shipped: passage rides on the friendship ask"
+    );
     assert!(!proposal(true), "the gene: the ask carries no passage");
 }
