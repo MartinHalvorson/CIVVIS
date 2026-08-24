@@ -16507,6 +16507,21 @@ fetchpriority=\"high\""
              that decides whether it has a box, not from an observer alone"
         );
 
+        // A compact map area stacks the report into one band with rules
+        // carrying two ids (`#maparea.player-hud-compact #playerhud`), which
+        // outrank the arrangement's own one-id selectors however far down
+        // they are written. The report is placed again at that weight, or it
+        // opens over the yield strip.
+        for piece in [
+            "body.civ6-frame.rankings-open #maparea.player-hud-compact #playerhud {",
+            "body.civ6-frame.rankings-open #maparea.player-hud-compact #victoryhud {",
+        ] {
+            assert!(
+                EMBEDDED_INDEX.contains(piece),
+                "the compact report must be placed at the compact HUD's own weight: {piece}"
+            );
+        }
+
         // Custom properties composing `--panel-edge` are declared on
         // `#maparea`, where that gutter lives. On `body` the `calc()` is
         // invalid at computed-value time and the offset silently falls back.
