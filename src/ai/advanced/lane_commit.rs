@@ -58,39 +58,52 @@
 //! People already bought for a lane are the reason a reading a few points
 //! better is not a reason to leave.
 //!
-//! ## What it does not touch, and why: the first draft's probe
+//! ## What it does not touch, and why: four probes on the same maps
 //!
-//! The first draft projected each lane's landing turn from its rate and
-//! inherited the whole of an assigned lane's semantics — the Congress
-//! abstention for non-diplomatic targets, the missionary and Great Work
-//! vetoes, the space-race block, the expansion cutoff — and its 24-game
-//! fires probe (seeds 26083100..26083123) read **−8.3 pp ± 5.4** on wins.
-//! Science victories landed in 7 of those 24 games, at turns 220–250, six of
-//! them by *off* seats: a linear projection of the science reading (25 + 30
-//! × techs, then discrete project steps) says science cannot land by 250,
-//! and the seats it moved to Religion, Culture and Score finished with five
-//! fewer techs. Committed seats also held a third of the off seats' Diplomatic
-//! Victory Points (3.7 against 9.6 — the abstention), fewer cities and a
-//! smaller army (the commitment sat above the elective war `opportunistic-war`
-//! is priced `helps` for). So this version keeps `victory_target` — the
-//! operator's assignment — on every veto, keeps `active_victory_target` the
-//! operator's (victory denial stays adaptive, `pursue_religion` and the
-//! expansion dispatcher unchanged, the census still tells an adaptive seat
-//! from a targeted one), and routes only the objective resolutions through
-//! `raced_target` — and, for the beeline, society, government, policies,
-//! Culture routing and wonder value, through [`AdvancedAi::raced_objective`],
-//! which keeps a Conquest or Recovery plan's own objective: the third draft
-//! routed those to the lane under a war posture too and its committed seats
-//! ended with a fifth less army and died more often (−2.8 pp ± 5.4). On the
-//! live bridge, which always passes `--victory <lane>`, the gene is inert by
-//! construction.
+//! Each draft was probed on the same 24 maps (`--genes lane-commit`, seeds
+//! 26083100..26083123, 72 on / 72 off seats), so the drafts can be read
+//! against each other even though none resolves anything on its own.
+//!
+//! 1. Project each lane's landing turn from its rate, fall back to Score,
+//!    and route *every* read of `victory_target` through the commitment —
+//!    the Congress abstention, the missionary and Great Work vetoes, the
+//!    space-race block, the expansion cutoff: **−8.3 pp ± 5.4** on wins.
+//!    Science landed in 7 of the 24 games, at turns 220–250, six of them by
+//!    *off* seats — a linear projection of the science reading (25 + 30 ×
+//!    techs, then discrete project steps) says it cannot land — and the
+//!    committed seats finished five techs short, with a third of the off
+//!    seats' Diplomatic Victory Points (3.7 against 9.6, the abstention),
+//!    fewer cities and a smaller army (the commitment sat above the elective
+//!    war `opportunistic-war` is priced `helps` for).
+//! 2. Commit to the lane we lead; every veto back on `victory_target`; below
+//!    the war and Prophet arms: **−5.6 ± 5.8**, share −1.8 ± 1.3. A city and
+//!    a half fewer (5.4 against 6.8), three times the deaths: the
+//!    commitment sat above the adaptive expansion arm, whose stock window
+//!    (`stock_expansion_deadline`) runs to about turn 200 at Online.
+//! 3. Below the expansion arm, the lane preempting cities only at 65%:
+//!    **−2.8 ± 5.4**, share −1.2 ± 1.4. A fifth less army and more deaths:
+//!    the beeline, society, government, policies and Culture routing served
+//!    the lane under Conquest and Recovery too.
+//! 4. War postures keep their own objective: wins **+5.6 ± 6.1**, share
+//!    **−2.2 ± 1.2** — and the cities gap back at 5.4 against 6.8 with the
+//!    branch order unchanged. Routing the objectives to the lane under an
+//!    *Expansion* plan is what costs the cities: the government and policy
+//!    deck stop serving the settling the plan is doing.
+//!
+//! So this version routes no objective at all for an adaptive seat. The
+//! commitment is the plan's lane pick, made field-relative and sticky, the
+//! city dispositions, and the two science keys an assigned Science seat has
+//! (the rocketry-path tech value, the space-race projects and Spaceports).
+//! `active_victory_target` stays the operator's (victory denial adaptive,
+//! `pursue_religion` and the expansion dispatcher unchanged, the census still
+//! telling an adaptive seat from a targeted one). On the live bridge, which
+//! always passes `--victory <lane>`, the gene is inert by construction.
 //!
 //! Opt-in, off in both controllers, byte-identical when off; priced by
 //! `gene_screen` like every other row of the registry.
 
 use super::{
-    AdvancedAi, GrandStrategy, LaneCommitment, VictoryTarget, LANE_COMMIT_REVIEW,
-    LANE_COMMIT_SWITCH_MARGIN,
+    AdvancedAi, LaneCommitment, VictoryTarget, LANE_COMMIT_REVIEW, LANE_COMMIT_SWITCH_MARGIN,
 };
 use crate::game::Game;
 
@@ -125,30 +138,13 @@ impl LaneReading {
 
 impl AdvancedAi {
     /// The lane this seat is playing for: the operator's assignment, or the
-    /// lane `lane_commit` committed to. The deciders that resolve an
-    /// objective read this; the vetoes an assigned lane carries keep reading
-    /// `victory_target` (see the module doc).
+    /// lane `lane_commit` committed to. Only the science keys read this —
+    /// the rocketry-path tech value and the space-race projects and
+    /// Spaceports; every other read of an assigned lane, the objective
+    /// resolutions included, keeps reading `victory_target` (the module doc
+    /// has the probes that decided it).
     pub(super) fn raced_target(&self) -> Option<VictoryTarget> {
         self.victory_target.or(self.committed_lane())
-    }
-
-    /// The objective a decider serves under `strategy`: the operator's
-    /// assignment whatever the plan (an assigned seat swung to Conquest is
-    /// still playing for its target); otherwise the plan's own strategy
-    /// under a war posture — Conquest and Recovery are a deliberate refusal
-    /// of the economic lanes, and the third draft, which routed the beeline,
-    /// government and policies to the lane through them, ended with a fifth
-    /// less army — and the committed lane under any other.
-    pub(super) fn raced_objective(&self, strategy: GrandStrategy) -> GrandStrategy {
-        if let Some(target) = self.victory_target {
-            return target.strategy();
-        }
-        if matches!(strategy, GrandStrategy::Conquest | GrandStrategy::Recovery) {
-            return strategy;
-        }
-        self.committed_lane()
-            .map(VictoryTarget::strategy)
-            .unwrap_or(strategy)
     }
 
     /// The lane `lane_commit` has committed this seat to, if any.

@@ -4880,9 +4880,10 @@ pub struct AdvancedAi {
     /// From the midpoint of the game an adaptive seat commits to the victory
     /// lane it leads the field in — every lane read for the seat and for
     /// every living major on one table, the furthest along of the lanes it
-    /// leads, or of all when it leads none — and the deciders that resolve which lane
-    /// the empire plays for read the commitment through `raced_target`; the
-    /// vetoes an assigned lane carries keep reading `victory_target`.
+    /// leads, or of all when it leads none — in place of `victory_focus`'s
+    /// per-turn pick, below every posture and the expansion arm; the science
+    /// keys (tech value, Spaceports) read it through `raced_target`, and
+    /// nothing else an assigned lane carries does.
     /// Reviewed every `LANE_COMMIT_REVIEW` standard turns behind a
     /// `LANE_COMMIT_SWITCH_MARGIN`. Operator, 2026-08-24: "from midpoint of
     /// the game, we should have the victory in mind and be optimizing towards
@@ -11150,7 +11151,10 @@ impl AdvancedAi {
         // same prerequisite search.  Previously only `victory_target` enabled
         // milestone routing, so a normal spectator AI could correctly assess
         // Science or Culture yet wander through generic unlocks indefinitely.
-        let objective = self.raced_objective(plan.strategy);
+        let objective = self
+            .victory_target
+            .map(VictoryTarget::strategy)
+            .unwrap_or(plan.strategy);
         if g.players[pid].research.is_none() {
             let available = g.available_techs(pid);
             let science_commitment =
@@ -11427,7 +11431,10 @@ impl AdvancedAi {
         {
             return;
         }
-        let long_term = self.raced_objective(strategy);
+        let long_term = self
+            .victory_target
+            .map(VictoryTarget::strategy)
+            .unwrap_or(strategy);
         let society = match long_term {
             GrandStrategy::Science => "hermetic_order",
             GrandStrategy::Culture | GrandStrategy::Religion => "voidsingers",
@@ -11445,7 +11452,10 @@ impl AdvancedAi {
     }
 
     fn strategic_government(&self, g: &mut Game, pid: usize, strategy: GrandStrategy) {
-        let objective = self.raced_objective(strategy);
+        let objective = self
+            .victory_target
+            .map(VictoryTarget::strategy)
+            .unwrap_or(strategy);
         let unlocked = |government: &str| {
             g.rules.governments.get(government).is_some_and(|spec| {
                 spec.civic
@@ -11655,7 +11665,10 @@ impl AdvancedAi {
     /// Typed cards preferentially replace cards of their own type so wildcard
     /// capacity remains useful.
     fn strategic_policies(&self, g: &mut Game, pid: usize, strategy: GrandStrategy) {
-        let objective = self.raced_objective(strategy);
+        let objective = self
+            .victory_target
+            .map(VictoryTarget::strategy)
+            .unwrap_or(strategy);
 
         // A successor card removes its predecessor from the policy menu.  An
         // already slotted predecessor used to survive forever, which is how
@@ -12481,7 +12494,7 @@ impl AdvancedAi {
                 None
             };
             if milestone.is_some_and(|milestone| self.tech_leads_to(g, tech, milestone)) {
-                value += if self.raced_target() == Some(VictoryTarget::Domination) {
+                value += if self.victory_target == Some(VictoryTarget::Domination) {
                     900.0
                 } else {
                     260.0
@@ -12709,7 +12722,10 @@ impl AdvancedAi {
         excluded_partner: Option<usize>,
         strategy: GrandStrategy,
     ) {
-        let objective = self.raced_objective(strategy);
+        let objective = self
+            .victory_target
+            .map(VictoryTarget::strategy)
+            .unwrap_or(strategy);
         if objective == GrandStrategy::Culture && g.turn % 6 == pid as u32 % 6 {
             let best = g
                 .quick_deals(pid)
@@ -21656,7 +21672,10 @@ impl AdvancedAi {
                 // strategy when it does not — a targeted agent whose plan has
                 // swung to Conquest under pressure is still playing for the
                 // target, and `Recovery` refuses the lane outright below.
-                let strategic_lane = self.raced_objective(plan.strategy);
+                let strategic_lane = self
+                    .victory_target
+                    .map(VictoryTarget::strategy)
+                    .unwrap_or(plan.strategy);
                 // ⚠ THE BARS GATE THE VALUE, NOT ONLY THE LANE. An earlier draft
                 // applied them to `strategic_opens` alone and still added the
                 // raw figure to the score, so a wonder the bars had just
@@ -21766,7 +21785,7 @@ impl AdvancedAi {
                             Self::wonder_tally_value()
                         } else if plan.strategy == GrandStrategy::Culture {
                             320.0
-                        } else if self.raced_target() == Some(VictoryTarget::Score) {
+                        } else if self.victory_target == Some(VictoryTarget::Score) {
                             180.0
                         } else {
                             0.0
@@ -26225,7 +26244,10 @@ impl AdvancedAi {
                 value += 18.0;
             }
         }
-        let objective = self.raced_objective(strategy);
+        let objective = self
+            .victory_target
+            .map(VictoryTarget::strategy)
+            .unwrap_or(strategy);
         // One route unlocks the entire empire's +25% Tourism pressure against
         // that civilization (+75% with Online Communities). Duplicate routes
         // do not stack, so Culture agents connect every rival before
@@ -26369,7 +26391,7 @@ impl AdvancedAi {
             let objective = if g.has_ability(pid, "taxis") {
                 GrandStrategy::Conquest
             } else {
-                self.raced_target()
+                self.victory_target
                     .map(VictoryTarget::strategy)
                     .unwrap_or(GrandStrategy::Religion)
             };

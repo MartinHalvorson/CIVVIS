@@ -1026,10 +1026,10 @@ pub const GENES: &[Gene] = &[
     // From half the turn cap the seat commits to the lane it leads the field
     // in — every lane read for the seat and for every living major on one
     // table, never Domination — reviews it every ten standard turns behind a
-    // twenty-point switch margin, and the deciders that resolve which lane the
-    // empire plays for read the commitment; the vetoes an assigned lane
-    // carries do not (the first draft inherited them and lost 8 pp on its
-    // probe). Appended at the END so a running screen keeps its positional
+    // twenty-point switch margin, in place of `victory_focus`'s per-turn pick
+    // and below every posture and the expansion arm; only the science keys
+    // read it, nothing else an assigned lane carries (four probes on the same
+    // maps priced the rest: docs/VICTORY_GENES.md §10). Appended at the END so a running screen keeps its positional
     // genome. See `AdvancedAi::lane_commit` / `advanced/lane_commit.rs`.
     Gene { tag: "lane-commit", field: "lane_commit", kind: Kind::OptIn, enable: AdvancedAi::enable_lane_commit, disable: AdvancedAi::disable_lane_commit },
 ];

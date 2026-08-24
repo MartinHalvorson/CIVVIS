@@ -704,54 +704,52 @@ adaptive seat has none. `assess` puts an adaptive seat on a lane only at
   one furthest along; leading none, the furthest along of all — what
   `victory_focus` would have said, made sticky. Domination is never chosen
   (0% at every map and clock).
-- **It reaches the objectives.** `AdvancedAi::raced_target` answers the
-  operator's `victory_target` or the commitment, and the deciders that
-  resolve *which lane the empire plays for* read it: the tech beeline, the
-  society and government, the policy deck, the Culture routing, the wonder
-  lane's strategic value, the space-race projects and Spaceports, the
-  Culture/Religion routing — through `raced_objective`, which keeps a
-  Conquest or Recovery plan's own objective (the third draft routed those
-  to the lane under a war posture too; its committed seats ended with a
-  fifth less army and read −2.8 pp ± 5.4). `assess` follows it in place of `victory_focus`'s
-  per-turn pick, after every posture that comes first today (a threatened
-  city, an emergency, a rival at the wire, a war in progress, a neighbour
-  weak enough to take, a Prophet on the table) **and after the adaptive
-  expansion arm** — a seat short of cities with land still open keeps
-  settling until the stock window shuts (about t200 at Online); the lane
-  comes before more cities only once it is 65% along, stock's own bar. The
-  second draft sat above that arm and its probe (−5.6 pp ± 5.8) ended with
-  a city and a half fewer (5.4 against 6.8) and three times the deaths.
-  City dispositions follow it.
+- **It is the plan's lane pick, not an assigned lane.** `assess` follows the
+  commitment in place of `victory_focus`'s per-turn fallback pick, *below*
+  every posture that comes first today (a threatened city, an emergency, a
+  rival at the wire, a war in progress, a neighbour weak enough to take, a
+  Prophet on the table) **and below the adaptive expansion arm** — a seat
+  short of cities with land still open keeps settling until the stock window
+  shuts (about t200 at Online); the lane comes before more cities only once
+  it is 65% along, stock's own bar. City dispositions follow it. The two
+  science keys an assigned Science seat has — the rocketry-path tech value
+  and the space-race projects and Spaceports — read the commitment through
+  `raced_target`. **Nothing else an assigned lane carries does**: not the
+  objective resolutions (beeline, society, government, policy deck, Culture
+  routing, wonder value), not the vetoes (Congress abstention, missionary and
+  Great Work vetoes, space-race block, assigned expansion cutoff), and
+  `active_victory_target` stays the operator's (victory denial adaptive,
+  `pursue_religion` and the expansion dispatcher unchanged, the census still
+  telling an adaptive seat from a targeted one).
 - **It holds.** Reviewed every `LANE_COMMIT_REVIEW` (10) standard turns; a
   challenger takes over only when the committed lane's lead is gone and the
   challenger leads, or when it is `LANE_COMMIT_SWITCH_MARGIN` (20) points
   further along at the same standing.
 
-**What it does not touch — and the first draft's probe that decided it.**
-The first draft projected each lane's landing turn from its rate over a
-window, fell back to Score, and routed *every* read of `victory_target`
-through the commitment — the vetoes included. Its 24-game fires probe (seeds
-26083100..26083123) read **−8.3 pp ± 5.4** on wins, and the seat comparison
-said why: science victories landed in **7 of 24** games (turns 220–250), six
-of them by *off* seats — a linear projection of the science reading (25 +
-30 × techs/77, then discrete project steps) says science cannot land by 250,
-and the seats it moved to Religion, Culture and Score finished with **five
-fewer techs** (51.9 against 56.8); committed seats held **a third of the
-DVP** (3.7 against 9.6 — the Congress abstention for non-diplomatic targets),
-fewer cities (5.5 against 6.3) and a smaller army (the commitment sat above
-the elective war `opportunistic-war` is priced `helps` for). So this version
-keeps `victory_target` on every veto — the Congress abstention, the
-missionary and Great Work vetoes, the space-race block, the assigned
-expansion cutoff, the wonder-civ clause — keeps `active_victory_target` the
-operator's (victory denial stays adaptive, `pursue_religion` and the
-expansion dispatcher unchanged, the census still tells an adaptive seat from
-a targeted one), and sits below the war and Prophet branches. On the live
-bridge, which always passes `--victory <lane>`, the gene is inert by
-construction.
+**Four probes on the same maps decided what it does not touch.** Every draft
+was probed on the same 24 maps (`gene_screen --games 24 --genes lane-commit
+--start-seed 26083100`, 72 on / 72 off seats), so the drafts read against
+each other even though none resolves anything alone (±5–6 pp on wins, ±1.2–1.4
+on share):
 
-**Prediction to read on the next standard screen.** The commitment mostly
-makes the post-window Science plan sticky and routes the objectives; the
-change is at seats that lead the religion or diplomacy field at the
-midpoint. Expect a small effect on the religious/diplomatic ending share and
-score share, not a large win-rate move. The levers for a version 2 are the
-review cadence, the switch margin, and the ranking key.
+| draft | wins Δ | share Δ | the seat comparison |
+|---|---:|---:|---|
+| 1 — project each lane's landing turn from its rate, Score fallback, every `victory_target` read routed | **−8.3 ± 5.4** | −1.0 ± 1.2 | science landed in **7 of 24** games (t220–250), six by *off* seats — a linear projection of the science reading (25 + 30 × techs/77, then discrete project steps) says it cannot land; committed seats: five fewer techs (51.9 v 56.8), **a third of the DVP** (3.7 v 9.6 — the Congress abstention), fewer cities, a smaller army (sat above the elective war `opportunistic-war` is priced `helps` for) |
+| 2 — the lane we lead; vetoes back on `victory_target`; below the war and Prophet arms | **−5.6 ± 5.8** | −1.8 ± 1.3 | cities **5.4 v 6.8**, deaths 11% v 3%: sat above the adaptive expansion arm, whose stock window (`stock_expansion_deadline`) runs to ~t200 at Online |
+| 3 — below the expansion arm; the lane preempts cities only at 65% | **−2.8 ± 5.4** | −1.2 ± 1.4 | army 1020 v 1298, deaths 10% v 6%: the beeline, government and policies served the lane under Conquest and Recovery too |
+| 4 — war postures keep their own objective | +5.6 ± 6.1 | **−2.2 ± 1.2** | cities back at **5.4 v 6.8** with the branch order unchanged: routing the objectives to the lane under an *Expansion* plan is what costs the cities — the deck stops serving the settling |
+| 5 — no objective routing at all (this version) | see `docs/gene_screens/fires/lane-commit.json` | | |
+
+The pattern is the one #2403 recorded for its first drafts: a delta that
+makes the seat *spend more* on its lane loses share on the probe. What
+survives is the part that costs nothing — the lane pick made field-relative
+and sticky, and the science keys — and on the live bridge, which always
+passes `--victory <lane>`, the gene is inert by construction.
+
+**Prediction to read on the next standard screen.** The commitment makes the
+post-window lane plan sticky and field-relative; the change is at seats that
+lead the religion or diplomacy field at the midpoint, and at Science seats
+through the two keys. Expect a small effect on the religious/diplomatic
+ending share and on score share, not a large win-rate move. The levers for a
+version 2 are the review cadence, the switch margin and the ranking key —
+not more reach, which four probes priced.

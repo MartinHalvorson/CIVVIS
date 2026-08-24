@@ -2182,8 +2182,8 @@ impl AdvancedAi {
     }
 
     /// From the midpoint of the game an adaptive seat commits to the victory
-    /// lane it leads the field in and plays for it wherever a decider
-    /// resolves which lane the empire is playing for. See
+    /// lane it leads the field in and holds that plan, in place of the
+    /// per-turn best-progress pick. See
     /// [`AdvancedAi::maintain_lane_commit`]. Opt-in gene
     /// `lane-commit`. (Filed here rather than under a marker: the
     /// append-point check reads a line's first identifier.)
