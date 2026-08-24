@@ -2817,6 +2817,13 @@ pub struct BasicAi {
     /// no other ranking moves. Entrant `advanced_maintenance_deck`; off in
     /// production pending its screen.
     pub(crate) maintenance_aware_deck: bool,
+    /// Reserve the first usable empty trade slot before ordinary production
+    /// and judge safety at the city that can actually start the route. The
+    /// old gate vetoes every Trader when any city in the empire has a local
+    /// barbarian alarm, so one Galley beside a remote coast can leave a safe
+    /// capital's route capacity empty through insolvency. Entrant
+    /// `solvency-first-trade-slot`; off pending its screen.
+    pub(crate) solvency_first_trade_slot: bool,
     /// The same round trip spread over two turns instead of one, which nothing
     /// inside a single turn's reasoning can see. Each unit's recent
     /// whereabouts are remembered here, and a unit found circling is priced
@@ -4498,6 +4505,7 @@ impl BasicAi {
             barbarian_ranged_answer: false,
             camp_bounty_claims: BTreeMap::new(),
             maintenance_aware_deck: false,
+            solvency_first_trade_slot: false,
             explore_goal: RefCell::new(HashMap::new()),
             unit_motion: BTreeMap::new(),
             rush_military_floor: 0,
@@ -4835,6 +4843,7 @@ impl BasicAi {
             barbarian_ranged_answer: false,
             camp_bounty_claims: BTreeMap::new(),
             maintenance_aware_deck: false,
+            solvency_first_trade_slot: false,
             explore_goal: RefCell::new(HashMap::new()),
             unit_motion: BTreeMap::new(),
             rush_military_floor: 0,
@@ -9140,6 +9149,13 @@ impl BasicAi {
             let item = Item::Unit {
                 unit: Name::new(unit),
             };
+            if unit == "trader"
+                && self.barbarian_tactics
+                && self.solvency_first_trade_slot
+                && !Self::safe_trade_origin(g, pid, *cid)
+            {
+                continue;
+            }
             // `can_produce` answers "can this city BUILD it"; a host purchase
             // refusal is a different set. Both must pass before spending gold.
             if !g.can_produce(pid, *cid, &item) || g.purchase_is_blocked(*cid, &item) {
@@ -9545,11 +9561,52 @@ impl BasicAi {
                 .all(|cid| Self::barbarian_threat_pressure(g, pid, cid) == 0)
     }
 
+    /// Whether this city can turn a completed Trader straight into a route
+    /// without exposing it inside a live barbarian ring. Safety belongs to
+    /// the origin, not to every city in the empire: native routes complete
+    /// immediately there and the live bridge starts the same host action.
+    pub(crate) fn safe_trade_origin(g: &Game, pid: usize, cid: u32) -> bool {
+        g.cities.get(&cid).is_some_and(|city| city.owner == pid)
+            && !Self::barbarian_local_alarm(g, pid, cid)
+            && Self::barbarian_threat_pressure(g, pid, cid) == 0
+            && g.cities
+                .keys()
+                .any(|destination| g.can_establish_trade_route(pid, cid, *destination))
+    }
+
+    fn has_safe_trade_origin(g: &Game, pid: usize) -> bool {
+        g.player_city_ids(pid)
+            .into_iter()
+            .any(|cid| Self::safe_trade_origin(g, pid, cid))
+    }
+
     fn should_add_trader_for_controller(&self, g: &Game, pid: usize, traders: usize) -> bool {
         if self.barbarian_tactics {
-            Self::should_add_trader_safely(g, pid, traders)
+            if self.solvency_first_trade_slot {
+                Self::should_add_trader(g, pid, traders) && Self::has_safe_trade_origin(g, pid)
+            } else {
+                Self::should_add_trader_safely(g, pid, traders)
+            }
         } else {
             Self::should_add_trader(g, pid, traders)
+        }
+    }
+
+    /// City-local counterpart used by production. With the gene off this is
+    /// the old empire-wide decision; with it on, a threatened frontier cannot
+    /// veto a safe origin or cause an unsafe city to build a Trader that then
+    /// has to walk elsewhere.
+    pub(crate) fn should_add_trader_in_city_for_controller(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        traders: usize,
+    ) -> bool {
+        if self.barbarian_tactics && self.solvency_first_trade_slot {
+            Self::should_add_trader(g, pid, traders) && Self::safe_trade_origin(g, pid, cid)
+        } else {
+            self.should_add_trader_for_controller(g, pid, traders)
         }
     }
 
@@ -9563,7 +9620,7 @@ impl BasicAi {
         if let Some(defence) = self.barbarian_defense_item(g, pid, cid) {
             return Some(defence);
         }
-        if self.should_add_trader_for_controller(g, pid, traders) {
+        if self.should_add_trader_in_city_for_controller(g, pid, cid, traders) {
             let trader = Item::Unit {
                 unit: crate::name!("trader"),
             };
@@ -10548,7 +10605,7 @@ impl BasicAi {
             });
         }
         if !self.minor
-            && self.should_add_trader_for_controller(g, pid, traders)
+            && self.should_add_trader_in_city_for_controller(g, pid, cid, traders)
             && g.can_produce(
                 pid,
                 cid,

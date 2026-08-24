@@ -2322,6 +2322,21 @@ impl AdvancedAi {
         self.lane_commit = false;
     }
 
+    /// Reserve the first usable empty trade slot before ordinary production
+    /// in a city that can start a locally safe route. A barbarian alarm at a
+    /// remote city no longer vetoes the whole empire. See
+    /// `BasicAi::solvency_first_trade_slot`; opt-in gene
+    /// `solvency-first-trade-slot`. Filed here rather than under a marker:
+    /// the append-point check reads a method line's first identifier.
+    pub fn enable_solvency_first_trade_slot(&mut self) {
+        self.base.solvency_first_trade_slot = true;
+    }
+
+    /// The twin of `enable_solvency_first_trade_slot`.
+    pub fn disable_solvency_first_trade_slot(&mut self) {
+        self.base.solvency_first_trade_slot = false;
+    }
+
     /// A seen rival Settler near our cities is screened: up to four of our
     /// nearby land units, recon first, take the stands that add the most
     /// expected steps to its likeliest walks — a tile a foreign unit holds
