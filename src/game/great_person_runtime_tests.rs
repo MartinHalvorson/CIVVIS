@@ -863,9 +863,7 @@ fn great_person_eras_offer_prices_and_patronage_follow_stock_rules() {
         .rules
         .great_people
         .iter()
-        .filter(|(id, spec)| {
-            spec.kind == "scientist" && spec.era == 1 && id.as_str() != "hypatia"
-        })
+        .filter(|(id, spec)| spec.kind == "scientist" && spec.era == 1 && id.as_str() != "hypatia")
         .map(|(id, _)| id.to_string())
         .collect();
     game.retired_great_people.extend(classical_bench);
@@ -963,7 +961,9 @@ fn every_effect_key_in_the_roster_is_read_by_the_engine() {
         );
         // `ancient_classical_wonder_multiplier` only scales `wonder_production`.
         assert!(
-            !spec.effects.contains_key("ancient_classical_wonder_multiplier")
+            !spec
+                .effects
+                .contains_key("ancient_classical_wonder_multiplier")
                 || spec.effects.contains_key("wonder_production"),
             "{id} scales a wonder grant it does not make"
         );

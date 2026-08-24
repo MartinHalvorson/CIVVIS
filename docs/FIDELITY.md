@@ -232,7 +232,7 @@ values as Gathering Storm. #2050 retracted them the next day.
 ## The Great Person roster
 
 `data/great_people.json` holds **147 of Gathering Storm's 213 individuals**
-(65 before #2377, 29 before #2265). The shape of the subset matters more than
+(65 before #2377, 29 before #2142). The shape of the subset matters more than
 its size: until 2026-08-19 it held 29 and **stopped at the Atomic era**, with
 26 (class, era) slots empty that the shipped game fills. Because
 `Game::unused_great_person_faith` correctly models
@@ -279,7 +279,7 @@ Person points.
 
 Two approximations are deliberate and apply to whole groups:
 
-- **Eureka era windows are not modelled.** Nine Scientists whose action is
+- **Eureka era windows are not modelled.** Eight Scientists whose action is
   "N random Eurekas from eras X–Y" are modelled with `tech_boosts: N`, which
   grants N random un-boosted Eurekas from anywhere in the tree. The count is
   exact; the window is not. `Game::grant_random_tech_boosts_in_eras` is the
@@ -329,7 +329,7 @@ count in each row is how many individuals that one predicate would unlock.
 | An extra district slot, or extra regional-building range | 3 | Bi Sheng (eng), Ada Lovelace (eng), Joseph Paxton (eng) |
 | City Loyalty per turn | 3 | Aethelflaed (gen), Jose de San Martin (gen), Sudirman (gen) |
 | Space-race project production | 3 | Robert Goddard (eng), Stephanie Kwolek (sci), Sergei Korolev (eng) |
-| A Corporation product granted to a city | 2 | John Spilsbury (mer), Helena Rubinstein (mer) |
+| A Corporation product granted to a city — `resources.json` already carries Toys, Cosmetics, Jeans and Perfume as virtual luxuries, so this is the grant, not the resource | 2 | John Spilsbury (mer), Helena Rubinstein (mer) |
 | An adjacent-terrain or adjacent-feature yield paid on activation | 2 | Galileo Galilei (sci), Janaki Ammal (sci) |
 | City Appeal | 2 | Alvar Aalto (eng), Charles Correa (eng) |
 | Every Eureka in one era, or a free technology | 2 | Abdus Salam (sci), Grace Hopper (adm) |
@@ -1281,7 +1281,7 @@ column — content the game has and CIVVIS does not model at all:
 
 | table | only in Civ VI |
 |---|---:|
-| GreatPeople | 184 → **66** after #2265 and #2377 |
+| GreatPeople | 184 → **66** after #2142 and #2377 |
 | Units | 58 |
 | Promotions | 26 (16 of them spy promotions) |
 | Beliefs | 22 |
