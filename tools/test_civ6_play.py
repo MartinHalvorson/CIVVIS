@@ -2237,4 +2237,3 @@ class TheSetupScreenIsReadOnceAndLookedAtNotSleptThrough(unittest.TestCase):
             self.assertEqual(civ6_play.read_leader_hint(Path(temporary), "LEADER_TRAJAN"), 0)
             civ6_play.write_leader_hint(Path(temporary), "LEADER_TRAJAN", 99)  # out of range
             self.assertEqual(civ6_play.read_leader_hint(Path(temporary), "LEADER_TRAJAN"), 0)
-
