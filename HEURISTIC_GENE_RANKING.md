@@ -373,6 +373,7 @@ These screenable genes have no on/off result, so they receive no rank or promoti
 | `fog-honest-2` | off (unmeasured) | Version 2 of `fog_honest`: the same fair-play boundary and the same information contract, plus one re-plan when the authoritative board refuses a planned order. | — |
 | `missionary-evades-raiders` | off (unmeasured) | A religious unit steps out of the tiles a visible barbarian raider can reach next turn, and never steps into them on the way to anything, holding when no safe step makes progress. | — |
 | `missionary-last-charge-explores` | off (unmeasured) | A Missionary on its last charge explores the fog within ten tiles for up to twelve turns before spending it, unless a city of ours is slipping or an untouched city stands beside it. | — |
+| `one-war-at-a-time` | off (unmeasured) | Fight one war at a time: keep one campaign front and sue every other major for peace, hold a fresh declaration while a war is on, press the front while a city is breaking or tiles are in reach to pillage, and offer peace once the exchange has run against us for long enough with nothing left to take. | — |
 | `wonder-score-tally` | off (unmeasured) | A wonder lane any civilization can reach on merit: the `Item::Wonder` arm learns the fifteen points `Game::score_parts` pays for a finished wonder, under a density bar and the live race's own development guards. | — |
 
 ## Removed from the code
