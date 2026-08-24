@@ -10591,12 +10591,11 @@ impl AdvancedAi {
         // immediate host payoff must remain outside the normal "build the
         // Library first" cap: a competition that ends before the building is
         // complete cannot be resumed later.
-        let value = value
+        value
             + host_competition_gpp_scores
                 .into_iter()
                 .map(|(kind, score)| self.host_competition_score_value(g, pid, kind, score, turns))
-                .sum::<f64>();
-        value
+                .sum::<f64>()
     }
 
     /// Firaxis's EmergencyScoreSources award one score per Great Person point:
