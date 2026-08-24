@@ -73,9 +73,9 @@ the importer's translation and, more importantly, its refusals.
 
 `tools/modifier_coverage.json` holds those judgements with a reason each.
 They are seeded by reading the engine for each effect family. **Every covered
-row is now verified row by row** — all 1,250 of them, against the shipped
-`Modifiers` tables read from the compiled gameplay database. Each entry's note
-records what was checked and what it found. Anything absent from the file
+row is verified row by row** — all 1,620 of them, against the shipped
+`Modifiers` tables. Each entry's note records what was checked and what it
+found. Anything absent from the file
 counts as unmodelled, so newly shipped content raises the backlog rather than
 hiding.
 
