@@ -2668,6 +2668,41 @@ def dismiss_world_congress_between_turns() -> bool:
     return True
 
 
+def apply_verification_options() -> dict[str, dict[str, tuple]]:
+    """Turn off what a verification game never needs, right before launching it.
+
+    The intro video (the black window every first bootstrap attempt used to
+    fire into, then sleep twenty seconds), the historic-moment animation and
+    two shadow passes: `civ6_setup.VERIFICATION_OPTIONS`, all cosmetic. This
+    runs in the one place the game is known to be closed -- the harness is
+    about to launch it -- because the game rewrites its options files on
+    launch and on exit, and a change written while it runs is lost. Never
+    blocks a launch: a game already running is left alone (its files are not
+    ours to edit at that moment), and any other failure is reported and
+    skipped, since a shadow pass is not worth a lost attempt.
+    """
+    if env.game_pids():
+        print("[options] the game is already running; leaving its options alone",
+              flush=True)
+        return {}
+    try:
+        import civ6_setup
+        applied = civ6_setup.apply_verification(env.user_dir())
+    except Exception as error:  # noqa: BLE001 - a cosmetic cut must never cost a launch
+        print(f"[options] could not apply verification options: {error}", flush=True)
+        return {}
+    for name, changes in applied.items():
+        for key, (old, new) in changes.items():
+            if old is None:
+                print(f"[options] {name}: {key} not defined by this version; skipped",
+                      flush=True)
+            else:
+                print(f"[options] {name}: {key} {old} -> {new}", flush=True)
+    if not applied:
+        print("[options] verification options already in place", flush=True)
+    return applied
+
+
 def play(args: argparse.Namespace) -> int:
     # One run at a time against this installation. Two harnesses share one mod
     # directory, one log and one process; the second one's install lands in the
@@ -2886,6 +2921,8 @@ def _play(args: argparse.Namespace) -> int:
 
     signal.signal(signal.SIGTERM, _terminate)
 
+    if not args.keep_game_options:
+        apply_verification_options()
     launcher.clear_run_logs()
     launcher.launch(stdout=run_dir / "stdout.log")
     if not launcher.wait_for_main_menu(args.startup_timeout):
@@ -3778,6 +3815,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--start-delay-frames", type=int, default=240)
     ap.add_argument("--tick-frames", type=int, default=12)
     ap.add_argument("--startup-timeout", type=float, default=420.0)
+    ap.add_argument("--keep-game-options", action="store_true",
+                    help="do not turn off the intro video, moment animation and "
+                         "shadows before launching (see civ6_setup.VERIFICATION_OPTIONS)")
     ap.add_argument("--host-timeout", type=float, default=300.0)
     ap.add_argument("--load-wait", type=float, default=90.0)
     ap.add_argument("--load-save", default=None,
