@@ -4108,28 +4108,41 @@
   /* ═══════════════════════════════════════════════════════════════════════
      THE CIVILIZATION VI ARRANGEMENT
 
-     Everything below applies only to `body.playing-solo` — a world with a
-     person in seat 0 — and it is placed last on purpose: this stylesheet
+     Everything below applies to `body.civ6-frame` — a world wearing that
+     game's arrangement — and it is placed last on purpose: this stylesheet
      repeats several selectors at identical specificity, so the rule that
      paints is the one written furthest down.
+
+     Two seats reach it and each keeps a class of its own for the parts that
+     are genuinely theirs:
+
+       body.playing-solo    a person is holding seat 0. The action corner
+                            holds End Turn and the auto-play disclosure.
+       body.watching-world  a simulation is being watched. The same corner
+                            holds the transport, because there is no turn to
+                            end, and the diplomacy ribbon carries the rivals
+                            the standings masthead used to.
 
      The geometry is Firaxis's, read off the installed game's own interface
      definitions rather than remembered (see the header over `drawSoloHud`
      in app.js): one yield strip across the top, a horizontal launch bar and
      the world tracker down the upper left, the minimap in the lower left,
-     the selected unit and End Turn in the lower right, and the notification
-     rail climbing out of that corner.
+     the selected unit and the corner control in the lower right, and the
+     notification rail climbing out of that corner.
+
+     `--solo-*` names the arrangement rather than the seat: those properties
+     were born with the played game and are the frame's, whoever is in it.
 
      Nothing here is a decision. Every control still posts the action it
      posted in the laboratory layout; this only puts it where the hand of
      somebody who has played Civilization VI already goes. */
-  #civtop, #worldtracker, #actionpanel { display: none; }
+  #civtop, #worldtracker, #actionpanel, #diploribbon { display: none; }
   /* The seat is a guess until an observation lands, and an End Turn button
      that appears before the client knows whose turn it is is worse than one
      that arrives a frame late. Same rule as `.side-actions` had when this
      lived in the command deck. */
   html:not(.seat-known) #actionpanel { display: none !important; }
-  body.playing-solo #maparea {
+  body.civ6-frame #maparea {
     --civtop-height: 38px;
     --solo-launch-height: 60px;
     --solo-track-width: clamp(196px, 18vw, 262px);
@@ -4138,11 +4151,18 @@
        only what the first paint stands on. */
     --solo-action-height: 96px;
     --solo-unit-height: 0px;
+    /* Republished by `drawDiploRibbon` from the pass that decides whether the
+       ribbon has a box at all — a `display: none` element gives a
+       ResizeObserver nothing to report, and a report standing off a row that
+       is not there hangs in the middle of the sky. */
+    --solo-ribbon-height: 0px;
     --solo-corner-clearance: calc(var(--panel-edge) + var(--solo-action-height) + var(--panel-gap));
+    --solo-ribbon-clearance: calc(var(--civtop-height) + var(--solo-ribbon-height)
+      + 2 * var(--panel-gap));
   }
 
   /* ---- the top panel (TopPanel.xml) --------------------------------- */
-  body.playing-solo #civtop {
+  body.civ6-frame #civtop {
     position: absolute; z-index: 9; inset: 0 0 auto 0; height: var(--civtop-height);
     display: flex; align-items: center; justify-content: space-between; gap: 10px;
     padding: 0 9px; overflow: hidden;
@@ -4151,12 +4171,12 @@
     background: linear-gradient(180deg, #08120fF7, #0a1512e8 60%, #0a1512c4);
     box-shadow: 0 10px 26px #0007; backdrop-filter: blur(14px);
   }
-  body.playing-solo .civtop-left,
-  body.playing-solo .civtop-right {
+  body.civ6-frame .civtop-left,
+  body.civ6-frame .civtop-right {
     display: flex; align-items: center; gap: 6px; min-width: 0;
   }
-  body.playing-solo .civtop-left { overflow: hidden; }
-  body.playing-solo .civtop-right { flex: none; }
+  body.civ6-frame .civtop-left { overflow: hidden; }
+  body.civ6-frame .civtop-right { flex: none; }
   /* Civ 6 divides these two ways and so does this: Science and Culture are a
      rate alone, Faith and Gold a stock with its rate beside it. */
   .civtop-yield, .civtop-meter {
@@ -4183,7 +4203,7 @@
   /* A treasury draining is the one reading on this strip that has to shout. */
   .civtop-gold .civtop-rate { color: var(--gold-bright); }
   .civtop-yield .civtop-rate[data-negative] { color: var(--danger); }
-  body.playing-solo .civtop-resources {
+  body.civ6-frame .civtop-resources {
     display: flex; align-items: center; gap: 4px; min-width: 0; overflow: hidden;
     padding-left: 6px; margin-left: 2px; border-left: 1px solid #ffffff14;
   }
@@ -4226,7 +4246,7 @@
   .civtop-btn:hover { border-color: var(--gold); background: #12201c; transform: none; }
 
   /* ---- the launch bar (LaunchBar.xml) ------------------------------- */
-  body.playing-solo #launchbar {
+  body.civ6-frame #launchbar {
     left: max(var(--panel-edge), var(--player-hud-left, 0px));
     top: calc(var(--civtop-height) + var(--panel-gap)); right: auto; bottom: auto;
     max-width: calc(100% - 2 * var(--panel-edge));
@@ -4236,36 +4256,43 @@
     box-shadow: 0 12px 30px #0008; backdrop-filter: blur(12px);
     overflow: auto hidden;
   }
-  body.playing-solo #launchtabs { flex-direction: row; gap: 4px; }
+  body.civ6-frame #launchtabs { flex-direction: row; gap: 4px; }
   /* Civ 6's hooks are discs on a rail. Inside a bar of their own the chips no
      longer each need a card. */
-  body.playing-solo .launch {
+  body.civ6-frame .launch {
     border-radius: 50%; background: #ffffff0a; border-color: #ffffff14;
     box-shadow: none; backdrop-filter: none;
   }
-  body.playing-solo .launch:hover {
+  body.civ6-frame .launch:hover {
     transform: translateY(-2px); border-color: var(--gold); background: #17261f;
   }
-  body.playing-solo .launch-rule {
+  body.civ6-frame .launch-rule {
     width: 1px; height: 26px; margin: 0 4px;
     background: linear-gradient(180deg, transparent, #77978b, transparent);
   }
   /* The ring is the fraction of the current study that is done — Civ 6 draws
      exactly this around its Science and Culture hooks. */
-  body.playing-solo .launch-tree { --ring-color: #76cde4; overflow: visible; }
-  body.playing-solo .launch-culture { --ring-color: #c49be8; }
-  body.playing-solo .launch-tree::after {
+  body.civ6-frame .launch-tree { --ring-color: #76cde4; overflow: visible; }
+  body.civ6-frame .launch-culture { --ring-color: #c49be8; }
+  body.civ6-frame .launch-tree::after {
     content: ""; position: absolute; inset: -4px; border-radius: 50%; pointer-events: none;
     background: conic-gradient(from 180deg, var(--ring-color) 0 var(--ring, 0%), #ffffff1c var(--ring, 0%) 100%);
     -webkit-mask: radial-gradient(closest-side, #0000 calc(100% - 3px), #000 calc(100% - 2.5px));
     mask: radial-gradient(closest-side, #0000 calc(100% - 3px), #000 calc(100% - 2.5px));
   }
-  body.playing-solo .launch-rankings[aria-pressed="true"] {
+  body.civ6-frame .launch-rankings[aria-pressed="true"] {
     color: #17160f; background: var(--gold-bright); border-color: var(--gold-bright);
   }
+  /* A watcher holds no seat, so the two foreign-affairs hooks have nobody to
+     negotiate for — `openDiplomacy` and `openTrade` both refuse a spectator.
+     A bar that offers a control which goes dead under the hand is worse than
+     one that does not offer it, and with no empire tabs beside them the rule
+     between the two groups has nothing to separate. */
+  body.watching-world #diplomacybtn, body.watching-world #tradebtn { display: none; }
+  body.watching-world #launchtabs:empty + .launch-rule { display: none; }
 
   /* ---- the world tracker (WorldTracker.xml) ------------------------- */
-  body.playing-solo #worldtracker {
+  body.civ6-frame #worldtracker {
     position: absolute; z-index: 8;
     left: max(var(--panel-edge), var(--player-hud-left, 0px));
     top: calc(var(--civtop-height) + var(--solo-launch-height) + 2 * var(--panel-gap));
@@ -4326,8 +4353,73 @@
   .wt-card.wt-empty .wt-name { color: var(--gold-bright); }
   .wt-card.wt-empty .wt-turns { color: var(--gold-bright); font-size: 14px; }
 
+  /* ---- the diplomacy ribbon (DiplomacyRibbon.xml) ------------------- */
+  /* `RibbonContainer Anchor="R,T" Offset="0,27"` — immediately under the top
+     strip, on the right; `LeaderStack StackGrowth="Left"`, which is what the
+     row-reverse gives: the leader sits under the turn plate and the rest of
+     the world runs away to the left. Cells are `SIZE_LEADER` = 63px wide. */
+  body.watching-world #diploribbon {
+    position: absolute; z-index: 8;
+    right: var(--panel-edge); top: calc(var(--civtop-height) + var(--panel-gap));
+    display: flex; flex-direction: row-reverse; align-items: flex-start; gap: 2px;
+    max-width: calc(100% - 2 * var(--panel-edge)); pointer-events: auto;
+  }
+  .ribbon-leader {
+    position: relative; width: 63px; flex: none; margin: 0; padding: 4px 2px 3px;
+    display: grid; justify-items: center; gap: 3px; border-radius: 12px;
+    border: 1px solid transparent; background: #0a1512b8; backdrop-filter: blur(12px);
+    box-shadow: 0 10px 26px #0007;
+  }
+  .ribbon-leader:hover, .ribbon-leader.on {
+    border-color: var(--gold-deep); background: #12201cf0; transform: none;
+  }
+  .ribbon-leader.on { border-color: var(--gold-bright); }
+  .ribbon-disc {
+    width: 45px; height: 45px; display: grid; place-items: center; border-radius: 50%;
+    color: var(--trim, #f5f2e6); background: var(--jersey, #4d685f);
+    border: 2px solid #0a1512; box-shadow: 0 0 0 1px var(--trim, #77978b);
+    font: 800 16px/1 Georgia, serif; letter-spacing: .02em;
+  }
+  .ribbon-world .ribbon-disc {
+    color: var(--gold-bright); background: #0d1a16; box-shadow: 0 0 0 1px #4d685f;
+  }
+  .ribbon-name {
+    max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    color: var(--muted); font-size: var(--type-label); font-weight: 800;
+    letter-spacing: .04em;
+  }
+  .ribbon-leader.on .ribbon-name { color: var(--gold-bright); }
+  /* `Options.lua`'s middle `RibbonStats` setting: the figures open on
+     mouse-over, and stay open for the civilization actually being watched.
+     They hang off the cell rather than growing it, so the row a report has to
+     clear is one fixed height and does not jump under a moving cursor. */
+  .ribbon-stats {
+    display: none; position: absolute; top: 100%; left: -1px; right: -1px;
+    padding: 4px 5px 5px; border-radius: 0 0 12px 12px;
+    border: 1px solid var(--gold-deep); border-top: 0;
+    background: #0a1512f2; backdrop-filter: blur(12px); box-shadow: 0 12px 26px #0008;
+  }
+  .ribbon-leader:hover .ribbon-stats, .ribbon-leader.on .ribbon-stats { display: grid; gap: 1px; }
+  .ribbon-figure {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 3px;
+    font-size: var(--type-label); font-variant-numeric: tabular-nums;
+  }
+  .ribbon-figure i { font-style: normal; opacity: .75; }
+  .ribbon-figure b { color: var(--text); font-weight: 800; }
+  .ribbon-science i, .ribbon-science b { color: #76cde4; }
+  .ribbon-culture i, .ribbon-culture b { color: #c49be8; }
+  .ribbon-faith i, .ribbon-faith b { color: #eee7cf; }
+  .ribbon-gold i, .ribbon-gold b { color: var(--gold-bright); }
+  .ribbon-military i, .ribbon-military b { color: #e0a19a; }
+  /* Narrow windows drop the ribbon before anything on the strip above it:
+     `DiplomacyRibbon.lua` scrolls its own stack at `g_maxNumLeaders`, and a
+     row that has to scroll to be read is worse here than the report is. */
+  @media (max-width: 1180px) {
+    body.watching-world #diploribbon { display: none; }
+  }
+
   /* ---- the action corner (ActionPanel.xml) -------------------------- */
-  body.playing-solo #actionpanel {
+  body.civ6-frame #actionpanel {
     position: absolute; z-index: 9; right: var(--panel-edge); bottom: var(--panel-edge);
     width: var(--solo-action-width); display: block;
   }
@@ -4361,20 +4453,43 @@
   body.playing-solo #actionpanel .autoplay-field span { font-size: var(--type-label); }
   body.playing-solo #actionpanel .autoplay-note:empty { display: none; }
 
+  /* A watched simulation has no turn to end, so the corner `ActionPanel.xml`
+     anchors holds the one control that does the same job: the thing that
+     decides whether the world moves. Pause is the primary and takes End
+     Turn's size; Restart follows it in the same column rather than beside
+     it, because the corner is narrower than the deck it came from. */
+  body.watching-world #actionpanel #specbar { display: block; }
+  body.watching-world #actionpanel .spec-controls {
+    display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; margin: 0;
+  }
+  body.watching-world #actionpanel #specpause {
+    width: 100%; min-height: 54px; margin: 0; padding: 9px 12px; border-radius: 14px;
+    font: 800 15px/1.15 Georgia, serif; letter-spacing: .05em; text-transform: uppercase;
+    box-shadow: 0 14px 32px #0009, inset 0 1px #ffffff1f;
+  }
+  body.watching-world #actionpanel #restart-sim {
+    width: 100%; margin: 0; padding: 6px 9px; border-radius: 10px;
+    display: grid; gap: 1px; justify-items: center; text-align: center;
+    border: 1px solid #35504780; background: #0a1512d8; backdrop-filter: blur(12px);
+  }
+  body.watching-world #actionpanel #restart-sim:hover {
+    border-color: var(--gold-deep); background: #12201c; transform: none;
+  }
+
   /* ---- the notification rail (NotificationPanel.xml) ---------------- */
   /* Anchored bottom-right and growing up out of the End Turn button, which is
      where a Civ 6 player's eye already is when the turn will not end. */
-  body.playing-solo #notify {
+  body.civ6-frame #notify {
     top: auto; right: var(--panel-edge); bottom: var(--solo-corner-clearance);
     max-height: 52vh;
     flex-direction: column-reverse; justify-content: flex-start; align-items: flex-end;
   }
-  body.playing-solo .notice:hover { transform: translateY(-3px); }
+  body.civ6-frame .notice:hover { transform: translateY(-3px); }
 
   /* ---- the selected unit (UnitPanel.xml) ---------------------------- */
   /* `Anchor="R,B" Offset="172,0"`: inboard of the corner the turn button owns,
      not adrift in the middle of the map. */
-  body.playing-solo #ubar {
+  body.civ6-frame #ubar {
     left: auto; transform: none;
     right: calc(var(--panel-edge) + var(--solo-action-width) + var(--panel-gap));
     bottom: var(--panel-edge); min-width: 0; width: max-content;
@@ -4427,13 +4542,13 @@
      corner. The zoom cluster is this client's version of them, so the chart
      stands on it rather than under it — left where they both are, the corner
      the standings masthead used to make unusable is the one place both fit. */
-  body.playing-solo .minimap-frame {
+  body.civ6-frame .minimap-frame {
     left: var(--panel-edge); right: auto;
     bottom: calc(var(--panel-edge) + var(--panel-control-height) + var(--panel-gap));
   }
   /* The dock reserved the lower-right corner for a minimap that is no longer
      there; in a played game that corner belongs to End Turn. */
-  body.playing-solo #map-controls-dock {
+  body.civ6-frame #map-controls-dock {
     right: calc(var(--solo-action-width) + var(--panel-gap) + var(--panel-edge));
   }
 
@@ -4442,21 +4557,36 @@
      rankings report you open. So does this, now: the standings masthead and
      the arena rail answer the launch bar's ☗ rather than standing across the
      sky of a game somebody is playing. */
-  body.playing-solo:not(.solo-rankings) #playerhud,
-  body.playing-solo:not(.solo-rankings) #victoryhud { display: none; }
-  body.playing-solo.solo-rankings #playerhud {
+  body.civ6-frame:not(.rankings-open) #playerhud,
+  body.civ6-frame:not(.rankings-open) #victoryhud { display: none; }
+  body.civ6-frame.rankings-open #playerhud {
     top: calc(var(--civtop-height) + var(--solo-launch-height) + 2 * var(--panel-gap));
     left: calc(max(var(--panel-edge), var(--player-hud-left, 0px)) + var(--solo-track-width)
       + var(--panel-gap));
   }
-  body.playing-solo.solo-rankings #victoryhud {
+  /* Above the world there is no single laboratory, so the tracker column is
+     not there and the masthead takes the width back rather than standing off
+     a panel that has no box. `:empty` is the pass that decides it —
+     `drawWorldTracker` writes the element's whole contents. */
+  body.civ6-frame.rankings-open:has(#worldtracker:empty) #playerhud {
+    left: max(var(--panel-edge), var(--player-hud-left, 0px));
+  }
+  body.civ6-frame.rankings-open #victoryhud {
     top: calc(var(--civtop-height) + var(--panel-gap));
     bottom: var(--solo-corner-clearance);
+  }
+  /* Over a watched world the report has one more thing to clear: the leader
+     row along the top right. `--solo-ribbon-height` is the live box, so a
+     window too narrow to hold the ribbon hands the band straight back. */
+  body.watching-world.rankings-open #playerhud,
+  body.watching-world.rankings-open #victoryhud {
+    top: max(var(--solo-ribbon-clearance),
+      calc(var(--civtop-height) + var(--solo-launch-height) + 2 * var(--panel-gap)));
   }
   /* An open report takes the right edge back, so the rail steps inboard of it
      rather than climbing through it — the same gutter the spectator layout
      reserves for that rail. */
-  body.playing-solo.solo-rankings #notify {
+  body.civ6-frame.rankings-open #notify {
     right: calc(var(--victory-hud-width) + var(--panel-gap) + var(--panel-edge));
     /* Inboard, the rail stands over the selected unit rather than over End
        Turn, so it clears whichever of the two is taller. */
@@ -4467,7 +4597,7 @@
   /* ---- what a laboratory shows and a game does not ------------------ */
   /* The map controls dock keeps its zoom cluster; the deck's own restore
      handle stays with it, because `☰` on the top strip is the way back. */
-  body.playing-solo #modeline {
+  body.civ6-frame #modeline {
     bottom: calc(var(--panel-edge) + var(--panel-control-height) + var(--minimap-height)
       + 2 * var(--panel-gap));
   }
@@ -4476,12 +4606,12 @@
      go, then the tracker column, which is what Civ 6 does with its own
      world tracker when the screen cannot hold it. */
   @media (max-width: 1180px) {
-    body.playing-solo .civtop-resources { display: none; }
-    body.playing-solo #worldtracker { width: clamp(178px, 22vw, 220px); }
+    body.civ6-frame .civtop-resources { display: none; }
+    body.civ6-frame #worldtracker { width: clamp(178px, 22vw, 220px); }
   }
   @media (max-width: 900px) {
-    body.playing-solo #worldtracker { display: none; }
-    body.playing-solo #ubar {
+    body.civ6-frame #worldtracker { display: none; }
+    body.civ6-frame #ubar {
       max-width: calc(100% - var(--solo-action-width) - 3 * var(--panel-edge));
     }
   }
@@ -4625,6 +4755,12 @@
        chrome buttons from the right. Empty and unpainted in a simulation,
        where there is no single "me" to report. -->
   <div id="civtop" aria-label="Empire yields and turn"></div>
+  <!-- Civ 6's Diplomacy Ribbon, for a watched world: every civilization on
+       screen as a leader disc under the top strip, growing left from the
+       right edge, each carrying the six figures `DiplomacyRibbon.lua` writes.
+       Clicking one watches it. Empty in a played game, where #2275 keeps the
+       rivals behind the rankings report. -->
+  <div id="diploribbon" aria-label="Civilizations in this world"></div>
   <!-- Civ 6's World Tracker: the research panel and the civic panel, under
        the launch bar, each opening its own tree. -->
   <div id="worldtracker" aria-label="Research and civics"></div>
@@ -4642,7 +4778,7 @@
       title="Quick Deals — every mutually acceptable offer" aria-label="Quick Deals">⚖<span
       class="launch-badge" hidden></span></button>
     <button class="launch launch-rankings" id="rankingsbtn" aria-pressed="false"
-      onclick="toggleSoloRankings()"
+      onclick="toggleRankingsReport()"
       title="Rankings — every civilization's standing, the way Civ 6 keeps it behind a report"
       aria-label="Rankings">☗</button>
   </div>

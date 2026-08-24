@@ -3445,6 +3445,11 @@ mod tests {
         // into `Game::new_with`; what moved here is that the ladder now
         // *says* which rungs grant what, so a rung is transcribed data like
         // every other line of this file rather than a constant in setup code.
+        // Moved again by 82 more Great People, taking the roster to 147 of 213
+        // and completing four classes outright -- every shipped Writer, Artist,
+        // Musician and Prophet. Class, era, cost and charges again come from
+        // `GreatPersonIndividuals`, `Eras` and `GreatWorks`, and the audit
+        // again reports zero divergent fields over all 147.
         //
         // Moved again by the seventeen espionage promotions. The engine has
         // always resolved them by name out of `Game::SPY_PROMOTIONS`, so the
@@ -3466,7 +3471,7 @@ mod tests {
         // Nihang's Maintenance (0 to 2).
         assert_eq!(
             Rules::shipped().source_fingerprint(),
-            "fnv1a64:3415b2ada0ba25c2"
+            "fnv1a64:422cfc59b865acab"
         );
     }
 
