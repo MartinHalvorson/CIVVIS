@@ -78,7 +78,8 @@ while (( ! stopping )); do
       --height 54 \
       --city-states 12 \
       --turns 250 \
-      --map continents \
+      --map lakes \
+      --poles randomized \
       --speed online \
       --victories science,culture,domination \
       --no-open
