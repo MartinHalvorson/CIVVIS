@@ -1319,7 +1319,7 @@ And what an affordable arm resolves, against an effect of about +0.5 pp:
 | 172 games (`boundary`'s size, below) | ±4.05 pp | **0.7%** |
 | 600 games (#2385's pre-registered size) | ±2.17 pp | **2.3%** |
 | 3,600 games | ±0.88 pp | 11.6% |
-| 23,959 games (80% power) | ±0.18 pp | 40.9% |
+| 23,789 games (80% power at the bound) | ±0.34 pp | 40.8% |
 
 A 600-game arm is 4.4× wider than the effect and moves the standing interval
 by 2.3%. The confirmation is, again, a weaker instrument than its own source.
