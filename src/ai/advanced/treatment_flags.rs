@@ -230,19 +230,6 @@ impl AdvancedAi {
         self.base.plot_purchase_delegated = false;
     }
 
-    /// Price the science economy on whether it can still repay rather than on
-    /// how much of the game is left. See
-    /// [`AdvancedAi::science_payback_horizon`]. Opt-in gene
-    /// `science-payback-horizon`.
-    pub fn enable_science_payback_horizon(&mut self) {
-        self.science_payback_horizon = true;
-    }
-
-    /// The twin of `enable_science_payback_horizon`.
-    pub fn disable_science_payback_horizon(&mut self) {
-        self.science_payback_horizon = false;
-    }
-
     /// Credit a Campus building the beakers its city's multipliers will
     /// actually pay it. See [`AdvancedAi::science_multiplier_payoff`]. Opt-in
     /// gene `science-multiplier-payoff`.
@@ -314,42 +301,6 @@ impl AdvancedAi {
     /// The twin of `enable_fifteenth_citizen`.
     pub fn disable_fifteenth_citizen(&mut self) {
         self.fifteenth_citizen = false;
-    }
-
-    /// The research goal aims at a Campus rung the empire can BUILD, not only
-    /// one it has already built. See [`AdvancedAi::chain_tech_lookahead`].
-    /// Opt-in gene `chain-tech-lookahead`.
-    pub fn enable_chain_tech_lookahead(&mut self) {
-        self.chain_tech_lookahead = true;
-    }
-
-    /// The twin of `enable_chain_tech_lookahead`.
-    pub fn disable_chain_tech_lookahead(&mut self) {
-        self.chain_tech_lookahead = false;
-    }
-
-    /// A finished research city pays more for its own district's project. See
-    /// [`AdvancedAi::research_grants_first`]. Opt-in gene
-    /// `research-grants-first`.
-    pub fn enable_research_grants_first(&mut self) {
-        self.research_grants_first = true;
-    }
-
-    /// The twin of `enable_research_grants_first`.
-    pub fn disable_research_grants_first(&mut self) {
-        self.research_grants_first = false;
-    }
-
-    /// The citizen tilt and the beaker floor hold while the research can
-    /// still pay. See [`AdvancedAi::research_floor_holds`]. Opt-in gene
-    /// `research-floor-holds`.
-    pub fn enable_research_floor_holds(&mut self) {
-        self.research_floor_holds = true;
-    }
-
-    /// The twin of `enable_research_floor_holds`.
-    pub fn disable_research_floor_holds(&mut self) {
-        self.research_floor_holds = false;
     }
 
     /// A seat with no religion and 600+ Faith patronizes Great People with it

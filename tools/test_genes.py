@@ -1041,9 +1041,10 @@ class GeneratedFiles(unittest.TestCase):
         self.assertFalse(newest["build"]["dirty"])
         self.assertEqual(
             newest["unverified"],
-            "Governor-lane genes were deliberately removed under the 2026-08-24 "
-            "Diff < -0.05 pp / >=30,000-seat cull criterion; this immutable "
-            "historical display batch was compiled before that removal.",
+            "Governor-lane and research-planning genes were deliberately removed "
+            "under the 2026-08-24 Diff < -0.05 pp / >=30,000-seat cull "
+            "criterion; this immutable historical display batch was compiled "
+            "before those removals.",
         )
         self.assertNotIn(newest["path"], {s["path"] for s in current["sources"]})
         authoritative, _ = ranking.load_sources(current)
@@ -1922,6 +1923,27 @@ class TheStandardScreen(unittest.TestCase):
                                                     standard["se"]), "off")
         for phrase in ("-237", "[-267, -206]", "-15.37"):
             self.assertIn(phrase, self.notes, phrase)
+
+    def test_research_cull_keeps_its_historical_rows(self):
+        """The four 38,160-seat research candidates left source, not history."""
+        tags = (
+            "chain-tech-lookahead",
+            "research-floor-holds",
+            "research-grants-first",
+            "science-payback-horizon",
+        )
+        live_tags = {gene["tag"] for gene in self.ledger["genes"]}
+        ranked = ranking.RANKING_MD.read_text()
+        cutoff = json.loads(
+            (gene_ledger.ROOT / "docs" / "gene_screens"
+             / "2026-08-24-standard-continuous-38160-total-seats.json").read_text())
+        cutoff_tags = {gene["tag"] for gene in cutoff["genes"]}
+        for tag in tags:
+            self.assertNotIn(tag, live_tags)
+            self.assertIn(f"| `{tag}` |", ranked)
+            self.assertIn(tag, cutoff_tags)
+        self.assertIn("research-planning genes were deliberately removed",
+                      self.ledger["reporting_batches"][0]["unverified"])
 
     def test_the_legacy_share_axis_already_said_it(self):
         """P10 read this gene win z +2.46 / share z −15.92 — a recorded
