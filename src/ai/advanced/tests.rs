@@ -33799,3 +33799,45 @@ fn one_war_sues_once_the_tide_has_run_against_us_for_long_enough() {
     assert_eq!(front.tide_against_since, None);
     assert_eq!(ai.one_war_peace(&game, 0, 1), None);
 }
+
+// ═══ No gifts: the engine allows one (Civilization VI's rule) and the AI never makes one ═══
+
+/// Two advanced seats through a whole short game: quotes are closed, and not
+/// one of them was a gift or a demand. `gifts_given` is the engine's own
+/// count, so this is a check and not a claim.
+#[test]
+fn the_ai_never_gives_without_receiving() {
+    let mut game = Game::new_full(2, 30, 20, 84_211, 150, 0, false);
+    game.record_contact(0, 1);
+    let mut ais = vec![AdvancedAi::new(), AdvancedAi::new()];
+    ais[0].enable_deals_at_the_ceiling();
+    ais[0].enable_deals_for_our_gain();
+    run_game(&mut game, &mut ais);
+    for pid in 0..2 {
+        assert_eq!(
+            game.players[pid].counters.get("gifts_given"),
+            None,
+            "seat {pid} gave something for nothing"
+        );
+    }
+    // And the quote lane refuses a gift or a demand on its own, whatever
+    // the engine would accept.
+    use crate::game::{DealItems, QuickDeal};
+    let mut board = deal_board();
+    let gift = QuickDeal {
+        partner: 1,
+        category: "resource".to_string(),
+        item: "silk".to_string(),
+        direction: "sell".to_string(),
+        offer: DealItems {
+            gold: 25.0,
+            ..DealItems::default()
+        },
+        request: DealItems::default(),
+        my_value: 1.0,
+        partner_value: 25.0,
+    };
+    let ai = AdvancedAi::new();
+    assert!(!ai.base.close_quick_deal(&mut board, 0, gift));
+    assert_eq!(board.players[0].counters.get("gifts_given"), None);
+}

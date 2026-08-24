@@ -1592,6 +1592,8 @@ pub struct AdvancedAi {
     /// Recorded at the offer site because the internal rival valuation that
     /// answers `ProposeDeal` must not gate a mirrored game's diplomacy.
     peace_offers: BTreeSet<usize>,
+    /// The offers above the planner is routed on; see `AiReport::peace_routed`.
+    peace_routed: BTreeSet<usize>,
     victory_planning: bool,
     victory_target: Option<VictoryTarget>,
     forced_target_player: Option<usize>,
@@ -5691,6 +5693,7 @@ impl AdvancedAi {
             last_city_count: 0,
             peace_until: 0,
             peace_offers: BTreeSet::new(),
+            peace_routed: BTreeSet::new(),
             victory_planning,
             victory_target,
             census: StrategyCensus::default(),
@@ -14882,6 +14885,7 @@ impl AdvancedAi {
             .map(|p| p.id)
             .collect();
         self.peace_offers.clear();
+        self.peace_routed.clear();
         for other in &rivals {
             let appointed_objective = self.war_plan.as_ref().is_some_and(|war| {
                 war.phase == WarPhase::Exploit && war.target_player == *other
@@ -14952,6 +14956,13 @@ impl AdvancedAi {
                     || one_war_peace.is_some())
             {
                 self.peace_offers.insert(*other);
+                // Only a rout licenses a live tribute; every other reason
+                // for the offer is white peace. See `AiReport::peace_routed`.
+                if my_power < g.military_power(*other) * 0.62
+                    || matches!(one_war_peace, Some(one_war::OneWarPeace::Rout))
+                {
+                    self.peace_routed.insert(*other);
+                }
                 if let Some(peace) = one_war_peace {
                     let key = match peace {
                         one_war::OneWarPeace::SecondFront => "one_war:peace:second_front",
@@ -32086,6 +32097,7 @@ impl Ai for AdvancedAi {
             desired_cities: plan.desired_cities,
             assessed_turn: plan.assessed_turn,
             peace_offers: self.peace_offers.iter().copied().collect(),
+            peace_routed: self.peace_routed.iter().copied().collect(),
             forces: self
                 .force_groups
                 .iter()

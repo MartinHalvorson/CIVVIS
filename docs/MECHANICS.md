@@ -93,10 +93,13 @@ Lump Gold, Diplomatic Favor, strategic-resource stockpile quantities, Great
 Works, and captured-Spy releases transfer immediately. Gold per turn, usable Luxury access (including Amenity
 allocation), and directional Open Borders last 30 Standard-speed turns. War terminates those
 ongoing agreements and restores exported Luxury access, but does not reverse
-an already completed strategic transfer. The engine rejects gifts and any
-custom economic exchange for which either side's modeled gain is not positive.
-AI civilizations periodically choose at most one of those same mutually
-favorable offers.
+an already completed strategic transfer. A gift — a deal that only gives — is
+legal and buys nothing, as in Civilization VI, whose own database carries no
+diplomatic modifier for one (`gifts_given` / `gifts_received` count them); a
+deal that only takes is a demand and is refused as a trade; any exchange for
+which either side's modeled gain is not positive is refused. AI civilizations
+periodically choose at most one of those mutually favorable offers and never
+give without receiving.
 
 Which half of that split an agreement falls on is the whole trade on the turn
 a war opens, and both scripted AIs now play it. Immediately before a

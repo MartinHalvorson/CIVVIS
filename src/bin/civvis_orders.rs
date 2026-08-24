@@ -1839,6 +1839,30 @@ fn aid_request_kind(kind: &str) -> bool {
     )
 }
 
+/// The share of the treasury a ROUTED peace offer may carry as tribute on
+/// its retry, and the most it may ever carry. ★ 2026-08-24: over 42 live
+/// runs the seat paid 142 tributes at a median 116 Gold (max 783, ~21,000
+/// Gold in all) because the control mod put three quarters of the treasury
+/// on every retried offer, whatever the planner's reason for offering — a
+/// second front, war fatigue, a religious lane and an envoy reclaim all
+/// paid like a rout. Civilization VI's own database carries no diplomatic
+/// modifier for a gift, so Gold that does not buy the peace buys nothing.
+/// Now the planner's `peace_routed` says whether the front is lost; only
+/// then does the order carry a cap (`x`), and the mod offers at most that.
+/// A white offer carries `x = 0`.
+const PEACE_TRIBUTE_SHARE: f64 = 0.25;
+const PEACE_TRIBUTE_MAX: i64 = 300;
+
+/// The tribute cap a peace order carries: nothing unless the planner is
+/// routed on that front, else a quarter of the treasury up to the maximum.
+fn peace_tribute_cap(state: &civvis::mirror::StateSnapshot, routed: bool) -> i32 {
+    if !routed {
+        return 0;
+    }
+    ((state.gold as f64 * PEACE_TRIBUTE_SHARE).floor() as i64)
+        .clamp(0, PEACE_TRIBUTE_MAX) as i32
+}
+
 /// The smallest integral gift that puts our tracker score strictly above every
 /// finite score Firaxis currently reports.  `None` says the host has not given
 /// an authoritative enough board, or the gap exceeds the bounded fallback.
@@ -3343,13 +3367,18 @@ fn decide(
                     .iter()
                     .any(|o| o.kind == "peace" && o.subject == Some(subject));
                 if rival.at_war && !already {
+                    let routed = report.peace_routed.contains(seat);
+                    let cap = peace_tribute_cap(state, routed);
                     orders.push(Order {
                         kind: "peace",
                         subject: Some(subject),
                         verb: Some("MAKE_PEACE".to_string()),
-                        pos: None,
+                        pos: Some((cap, 0)),
                     });
                     note_bits.push(format!("peace_from_plan={}", rival.player));
+                    if cap > 0 {
+                        note_bits.push(format!("peace_tribute_cap={cap}"));
+                    }
                 }
             }
         }
@@ -9205,6 +9234,31 @@ mod tests {
             &state
         )
         .is_none());
+    }
+
+    #[test]
+    fn a_peace_tribute_rides_only_a_routed_offer_and_is_capped() {
+        let mut state = StateSnapshot {
+            turn: 120,
+            gold: 1_000,
+            ..StateSnapshot::default()
+        };
+        assert_eq!(
+            peace_tribute_cap(&state, false),
+            0,
+            "a second front, fatigue, a religious lane or an envoy reclaim is white peace"
+        );
+        assert_eq!(peace_tribute_cap(&state, true), 250, "a quarter of the treasury");
+        state.gold = 5_000;
+        assert_eq!(
+            peace_tribute_cap(&state, true),
+            PEACE_TRIBUTE_MAX as i32,
+            "and never more than the maximum"
+        );
+        state.gold = 50;
+        assert_eq!(peace_tribute_cap(&state, true), 12);
+        state.gold = 0;
+        assert_eq!(peace_tribute_cap(&state, true), 0);
     }
 
     #[test]

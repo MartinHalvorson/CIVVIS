@@ -9170,7 +9170,7 @@ local function applyOrder(player, pid, row, turn)
 	-- 200-register main-chunk ceiling and make the entire mod fail to compile.
 	-- Returns `(submitted, concession, reason)`.  `submitted` names an actual
 	-- `SendWorkingDeal` call, deliberately not merely a `pcall` that did not throw.
-	local function submitMajorPeaceDeal(subject, asked)
+	local function submitMajorPeaceDeal(subject, asked, cap)
 		if DealManager.HasPendingDeal(pid, subject) then
 			return false, 0, "pending";
 		end
@@ -9190,17 +9190,22 @@ local function applyOrder(player, pid, row, turn)
 		local concession = 0;
 		-- A free peace offer is the right first question.  Once the same rival
 		-- remains at war through the host's retry window, it has already declined
-		-- that exact white deal.  Preserve a quarter of the treasury for emergency
-		-- purchases and offer the rest only on the retry; a rejected deal transfers
-		-- nothing.
-		if asked ~= nil then
+		-- that exact white deal.  A tribute rides the retry only when the planner
+		-- said the front is lost: the order's `x` is the most Gold it may carry
+		-- (Rust: `peace_tribute_cap`, a quarter of the treasury at most), and a
+		-- white offer carries 0.  Until 2026-08-24 every retry put three quarters
+		-- of the treasury on the table whatever the reason for the offer; the
+		-- ledger counted 142 such tributes at a median 116 Gold, and Civilization
+		-- VI prices a gift at nothing.  A rejected deal transfers nothing.
+		cap = math.max(0, math.floor(tonumber(cap) or 0));
+		if asked ~= nil and cap > 0 then
 			local tribute = deal:AddItemOfType(DealItemTypes.GOLD, pid);
 			if tribute ~= nil then
 				tribute:SetDuration(0);
 				local balance = try(function()
 					return player:GetTreasury():GetGoldBalance();
 				end, 0) or 0;
-				local amount = math.min(math.floor(balance * 0.75),
+				local amount = math.min(cap, math.floor(balance * 0.75),
 					tribute:GetMaxAmount() or 0);
 				if amount > 0 then
 					tribute:SetAmount(amount);
@@ -9697,7 +9702,7 @@ local function applyOrder(player, pid, row, turn)
 		local ok, submitted, reason;
 		if major then
 			local ran;
-			ran, submitted, concession, reason = pcall(submitMajorPeaceDeal, subject, asked);
+			ran, submitted, concession, reason = pcall(submitMajorPeaceDeal, subject, asked, x);
 			if not ran then
 				submitted, concession, reason = false, 0, "throw";
 			end
