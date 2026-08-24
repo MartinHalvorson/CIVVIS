@@ -438,7 +438,12 @@ it belongs to a family.
    record grows. The others are recorded `family_runner_up` and ship off —
    the rule's verdict still on their row so the ranking shows what they
    measured — and the Rust mirror re-derives the same choice
-   (`the_default_follows_the_ledgers_authority`).
+   (`the_default_follows_the_ledgers_authority`). `HEURISTIC_GENE_RANKING.md`
+   names the family's best version in its *Best version* column (`1` is the
+   original) on every row of the family, and a versioned row's *Total (on)* /
+   *Total (off)* cells show the best two versions' rates side by side — each
+   version's *on* is the seats that played that version; every other seat is
+   its *off*.
 
 Two consequences worth stating. A version that does not beat the original
 head to head is not an improvement however well it does against `off`, and
