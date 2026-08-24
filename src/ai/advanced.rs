@@ -5287,6 +5287,7 @@ mod field_craft;
 /// Recon disruption: the settler screen and the pass picket. Two opt-in
 /// genes; see `advanced/recon_disruption.rs`.
 mod recon_disruption;
+
 /// City campaign: the neighbour appraised on public power and science, the
 /// take-and-hold plan with units to spare, the launch on the city's own
 /// bill, and pillage with the movement the march does not use. Two opt-in
