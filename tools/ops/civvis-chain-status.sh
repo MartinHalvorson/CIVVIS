@@ -151,7 +151,7 @@ if [[ -n $loop_pid ]] && kill -0 $loop_pid 2>/dev/null; then
   fi
 else
   err "no batch loop is running — nothing advances the runner tree or starts batches"
-  err "  start it: nohup /bin/zsh ~/civvis-batch-loop.sh >> ~/civvis-civ6-runs/batch-loop.nohup.log 2>&1 &"
+  err "  start it: unsetopt BG_NICE; nohup /bin/zsh ~/civvis-batch-loop.sh >> ~/civvis-civ6-runs/batch-loop.nohup.log 2>&1 &"
 fi
 
 print "is it actually playing"
