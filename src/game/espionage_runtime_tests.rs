@@ -775,7 +775,7 @@ fn every_espionage_promotion_changes_an_outcome() {
     let slow = spy_with(&mut game, 0, target, "");
     let quick = spy_with(&mut game, 0, target, "linguist");
     // One operation of a kind runs per city at a time, so these go in turn.
-    let mut clock = |game: &mut Game, spy: u32| {
+    let clock = |game: &mut Game, spy: u32| {
         game.apply(
             0,
             &Action::SpyMission {
