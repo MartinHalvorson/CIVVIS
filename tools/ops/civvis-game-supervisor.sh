@@ -190,6 +190,15 @@ if [[ -n "$REQUESTED_RETIRED_STRATEGY" ]]; then
   say "ignoring retired CIVVIS_STRATEGY=$REQUESTED_RETIRED_STRATEGY; live seat uses deployment genome (no --strategy)"
 fi
 say "supervisor up (genome=deployment, withheld=${WITHHELD:-none}, force_file=$FORCE_FILE, pinfile=$PINFILE)"
+# The game inherits this shell's priority and macOS will not lower a nice once
+# set, so a supervisor that starts demoted plays every game demoted. Say the
+# number on every start; a non-zero one names the launch site to fix.
+OWN_NICE=$(ps -o ni= -p $$ 2>/dev/null | tr -d " ")
+if [[ "${OWN_NICE:-0}" != 0 ]]; then
+  say "WARN supervisor is at nice ${OWN_NICE}: every game it starts will run below ordinary work. The launcher backgrounded it from a zsh with BG_NICE set; put 'unsetopt BG_NICE' before the '&' (see civvis-interactive-host.sh)"
+else
+  say "supervisor priority nice 0"
+fi
 
 # This runner can be started manually or by an interactive host wrapper. Two copies
 # are not harmless: each believes it owns the one Civ VI installation and may
