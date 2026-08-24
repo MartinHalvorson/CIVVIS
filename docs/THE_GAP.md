@@ -170,12 +170,22 @@ Ranked by weight. This is the part that matters most and is the least obvious.
 | `strategic_cheap` | +16 | **−63**, sign p=0.0018 against |
 | `advanced` v `advanced_v1` — **never promoted** | +114 | **+207, gate PASS** |
 
-That last row is what makes the rest interpretable: a profile that resolves
-+207 at gate strength is not an insensitive instrument. It is specifically the
-promoted edges that vanish there. The champion turned out to be a **small-map
-domination genome** — at 96 tiles per player its combat genes cash out; at 567
-tiles per player nobody is reachable, the game is a science/culture race, and
-its tall faith-and-wonder genes are a liability.
+That last row is what makes the rest interpretable: a profile that resolves a
+large effect at gate strength is not an insensitive instrument. It is
+specifically the promoted edges that vanish there. The champion turned out to be
+a **small-map domination genome** — at 96 tiles per player its combat genes cash
+out; at 567 tiles per player nobody is reachable, the game is a science/culture
+race, and its tall faith-and-wonder genes are a liability.
+
+⚠ **Read every figure in that table as an upper bound.**
+[EVAL_INTEGRITY.md](EVAL_INTEGRITY.md) §4 shows why: each is the point estimate
+of the run that promoted it, and conditioning on "passed the gate" conditions on
+the estimate being large, so `E[observed | PASS] > true effect`. Re-measured on
+disjoint seeds at the same profile, the **direction and the significance
+replicate and the size does not** — `+207` came back `+86`, `+114` came back
+`+98`, `+58` came back `+61`, and `strategic_deep`'s promoted `+45` came back
+**−8** (CI −27..+12, 220 maps, PR #482), which *excludes* the promoted effect
+rather than merely failing to reproduce it.
 
 There are at least three regimes, and the eval config picks one:
 
@@ -226,19 +236,32 @@ maps). The strong decision-maker being tuned is partly one that knows things a
 real player cannot. [AI_GAPS.md](AI_GAPS.md) names the successor itself:
 improve fair-play economic planning *before* re-running that gate.
 
-### 3.5 Tuning has never worked here; repairing reachability has
+### 3.5 Tuning has never worked here
 
 [GENOME.md](GENOME.md) closes with the scoreboard: *every* measured attempt to
 make this agent stronger by **tuning parameters** has returned null — the
 policy appetites three ways, the opening book two ways, the war-declaration
-threshold, and about a thousand rounds of whole-genome evolution.
+threshold, and about a thousand rounds of whole-genome evolution. Its scoreboard
+closes every optimization game — policy cards, build order, tech order, civic
+order, city expansion, war timing.
 
-The one gate-passing gain came from the opposite class. `d_holy` 2.0→5.6 was
-**+20 Elo**: the plan wanted religion 23% of turns, the district ranked below
-two others, and the intent never reached the build queue.
+A working prior follows, and it is worth stating in the weaker form the evidence
+actually supports:
 
 > **Ask whether the agent does the thing badly, or does not do it at all.**
-> Re-pricing the first is the perpetual null. The second is where the gains are.
+> Re-pricing the first has been the perpetual null. Repairs to *reachability* —
+> an intent the agent already forms that never arrives at the queue, the unit or
+> the host — are where the exceptions have come from.
+
+⚠ **That is a post-hoc partition and a prior for choosing the next experiment,
+not a law, and the obvious citation for it does not survive contact with the
+record.** `d_holy` 2.0→5.6 is widely quoted here as the actuation repair that
+paid. It measured +20 Elo at 4p 24×16 (52.9%, 95% CI 50.1%–55.7%, 1,200 maps,
+seed 4400000, PR #1469) — and **parity at the shape the exhibition runs** (+2,
+CI −46..+50, 400 maps, seed 5900000). It shipped and was reverted the same day
+in **PR #1491**. So it is not a counterexample to §3.1; it is another instance
+of it. Anyone citing an actuation win should name the run and the profile, or
+say it is a discovery estimate.
 
 ### 3.6 The live instrument itself was starved
 
