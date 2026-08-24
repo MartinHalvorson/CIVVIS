@@ -32646,3 +32646,284 @@ fn wonder_score_tally_never_stacks_and_never_moves_a_gate_it_does_not_own() {
         "a one-city empire may not race for a wonder"
     );
 }
+
+// ═══ The Missionary in the field (advanced/missionary_field.rs) ═══
+
+#[test]
+fn the_missionary_field_genes_are_registered_reversible_opt_ins() {
+    for (field, tag) in [
+        (
+            "missionary_last_charge_explores",
+            "missionary-last-charge-explores",
+        ),
+        ("missionary_evades_raiders", "missionary-evades-raiders"),
+    ] {
+        assert!(
+            GENES
+                .iter()
+                .any(|gene| gene.opt_in() && gene.field == field && gene.tag == tag),
+            "{tag} must be a registered native opt-in"
+        );
+        assert!(
+            crate::ai::advanced::gene_ledger::screenable(tag),
+            "{tag} must be screenable, so the ledger can price it"
+        );
+        assert_eq!(
+            crate::ai::advanced::gene_ledger::ledger_default_on(tag),
+            Some(false),
+            "{tag} ships off until a screen prices it"
+        );
+    }
+    let mut ai = AdvancedAi::new();
+    assert!(!ai.missionary_last_charge_explores && !ai.missionary_evades_raiders);
+    ai.enable_missionary_last_charge_explores();
+    ai.enable_missionary_evades_raiders();
+    assert!(ai.missionary_last_charge_explores && ai.missionary_evades_raiders);
+    ai.disable_missionary_last_charge_explores();
+    ai.disable_missionary_evades_raiders();
+    assert!(!ai.missionary_last_charge_explores && !ai.missionary_evades_raiders);
+    let legacy = AdvancedAi::legacy();
+    assert!(
+        !legacy.missionary_last_charge_explores && !legacy.missionary_evades_raiders,
+        "the frozen anchor plays the game it always did"
+    );
+}
+
+/// The barbarian religious hunt is a controller treatment of the world, not
+/// a gene of one seat: on in every current controller, off on the anchor.
+#[test]
+fn the_barbarian_heretic_hunt_cannot_reach_the_frozen_anchor() {
+    assert!(
+        !AdvancedAi::legacy().barbarian_heretic_hunt(),
+        "the frozen anchor must not hunt heretics"
+    );
+    assert!(AdvancedAi::new().barbarian_heretic_hunt());
+    let mut withheld = AdvancedAi::new();
+    withheld.disable_barbarian_heretic_hunt();
+    assert!(!withheld.barbarian_heretic_hunt());
+    withheld.enable_barbarian_heretic_hunt();
+    assert!(withheld.barbarian_heretic_hunt());
+}
+
+/// A board with a founder, a rival faith holding its own capital, and a
+/// Missionary of ours on its last charge standing beside that capital with
+/// one pass already made on it.
+fn last_charge_board(seed: u64) -> (Game, u32, Pos) {
+    let (mut game, _home) = camp_bounty_board(seed);
+    let home = game.player_city_ids(0)[0];
+    game.players[0].religion = Some("Our Faith".to_string());
+    game.players[0].holy_city = Some(home);
+    game.players[1].religion = Some("Rival Faith".to_string());
+    // Our faith holds the capital comfortably, so the charge is not owed to
+    // the defence unless a test says so.
+    game.cities
+        .get_mut(&home)
+        .unwrap()
+        .pressure
+        .insert("Our Faith".to_string(), 1_000.0);
+    let rival = game.player_city_ids(1)[0];
+    let rival_pos = game.cities[&rival].pos;
+    let pressure = &mut game.cities.get_mut(&rival).unwrap().pressure;
+    pressure.insert("Rival Faith".to_string(), 1_000.0);
+    pressure.insert("Our Faith".to_string(), 200.0);
+    let beside = open_ground_at(&game, rival_pos, 1);
+    let missionary = game.spawn_test_unit("missionary", 0, beside);
+    let unit = game.units.get_mut(&missionary).unwrap();
+    unit.religion = Some("Our Faith".to_string());
+    unit.charges = 1;
+    game.current = 0;
+    assert!(
+        !game.is_at_war(0, 1)
+            && game.city_religion(&game.cities[&rival]) != Some("Our Faith"),
+        "fixture: the rival capital is a spread target"
+    );
+    (game, missionary, beside)
+}
+
+#[test]
+fn a_last_charge_missionary_explores_only_with_the_gene() {
+    use super::missionary_field::{MISSIONARY_EXPLORE_RADIUS, MISSIONARY_EXPLORE_TURNS};
+    let (game, missionary, beside) = last_charge_board(4_401);
+    let fog = game
+        .wdisk(beside, MISSIONARY_EXPLORE_RADIUS)
+        .into_iter()
+        .filter(|position| !game.players[0].explored.contains(position))
+        .count();
+    assert!(fog > 0, "fixture: there must be fog within reach, or the gene is inert");
+
+    // Off: the shipped step spends the last charge on the city beside it,
+    // and `do_spread` removes the unit.
+    let mut spent = game.clone();
+    assert!(AdvancedAi::new().advanced_missionary_step(&mut spent, 0, missionary, true));
+    assert!(
+        !spent.units.contains_key(&missionary),
+        "the gene off spends the last charge where it stands"
+    );
+
+    // On: the unit keeps the charge and walks toward the fog.
+    let mut on = AdvancedAi::new();
+    on.enable_missionary_last_charge_explores();
+    let mut explored = game.clone();
+    assert!(on.advanced_missionary_step(&mut explored, 0, missionary, true));
+    assert!(
+        explored.units.contains_key(&missionary),
+        "the gene on keeps the last charge"
+    );
+    assert_ne!(explored.units[&missionary].pos, beside, "and walks");
+    assert_eq!(explored.units[&missionary].charges, 1);
+    let (goal, turns) = on
+        .missionary_explore_memory(missionary)
+        .expect("the gene remembers the unit");
+    let goal = goal.expect("a fog goal");
+    assert!(!game.players[0].explored.contains(&goal), "the goal is fog");
+    assert_eq!(turns, 1, "one exploring turn spent");
+
+    // The turns spent: the charge is owed to a city, and the ordinary step
+    // takes over.
+    on.set_missionary_explore_turns(missionary, MISSIONARY_EXPLORE_TURNS);
+    let mut done = game.clone();
+    assert!(on.advanced_missionary_step(&mut done, 0, missionary, true));
+    assert!(
+        !done.units.contains_key(&missionary),
+        "with the exploring turns spent the last charge is spent too"
+    );
+
+    // A city of ours slipping: the charge is owed to the defence and the
+    // gene stands aside.
+    let mut slipping = game.clone();
+    let home = slipping.player_city_ids(0)[0];
+    slipping
+        .cities
+        .get_mut(&home)
+        .unwrap()
+        .pressure
+        .insert("Rival Faith".to_string(), 900.0);
+    assert!(AdvancedAi::city_needs_religious_support(
+        &slipping,
+        0,
+        &slipping.cities[&home],
+        "Our Faith"
+    ));
+    let mut defends = AdvancedAi::new();
+    defends.enable_missionary_last_charge_explores();
+    defends.advanced_missionary_step(&mut slipping, 0, missionary, true);
+    assert!(
+        defends.missionary_explore_memory(missionary).is_none(),
+        "a slipping city of ours outranks the fog"
+    );
+
+    // An untouched city beside the unit is the find exploring is for.
+    let mut untouched = game.clone();
+    let rival = untouched.player_city_ids(1)[0];
+    untouched
+        .cities
+        .get_mut(&rival)
+        .unwrap()
+        .pressure
+        .remove("Our Faith");
+    let mut finds = AdvancedAi::new();
+    finds.enable_missionary_last_charge_explores();
+    assert!(finds.advanced_missionary_step(&mut untouched, 0, missionary, true));
+    assert!(
+        !untouched.units.contains_key(&missionary),
+        "a city our faith has never touched takes the charge"
+    );
+}
+
+#[test]
+fn a_religious_unit_steps_out_of_a_raiders_reach_only_with_the_gene() {
+    let (mut game, home) = camp_bounty_board(4_402);
+    let capital = game.player_city_ids(0)[0];
+    game.players[0].religion = Some("Our Faith".to_string());
+    game.players[0].holy_city = Some(capital);
+    game.players[1].religion = Some("Rival Faith".to_string());
+    let barb = game.barb_pid.expect("a barbarian seat");
+    let raider_pos = open_ground_at(&game, home, 5);
+    let raider = game.spawn_test_unit("warrior", barb, raider_pos);
+    let stand = game
+        .nbrs(raider_pos)
+        .into_iter()
+        .filter(|position| {
+            game.map.get(*position).is_some_and(|tile| {
+                game.rules.is_passable(tile) && !game.rules.is_water(tile)
+            }) && game.city_at(*position).is_none()
+                && game.units_at(*position).is_empty()
+        })
+        .max_by_key(|position| (game.wdist(*position, home), *position))
+        .expect("open ground beside the raider");
+    let missionary = game.spawn_test_unit("missionary", 0, stand);
+    game.units.get_mut(&missionary).unwrap().religion = Some("Our Faith".to_string());
+    game.current = 0;
+    assert!(
+        game.threat_reach(raider).contains(&stand),
+        "fixture: the stand is inside the raider's reach"
+    );
+    assert!(
+        game.unit_visible_to(raider, 0),
+        "fixture: the raider is in sight, or the fog-honest gene is inert"
+    );
+
+    let off = AdvancedAi::new();
+    assert_eq!(
+        off.religious_unit_evades_raiders(&mut game.clone(), 0, missionary),
+        None,
+        "the gene off never flees"
+    );
+
+    let mut on = AdvancedAi::new();
+    on.enable_missionary_evades_raiders();
+    let mut fled = game.clone();
+    assert_eq!(
+        on.religious_unit_evades_raiders(&mut fled, 0, missionary),
+        Some(true),
+        "the gene on steps out"
+    );
+    assert_ne!(fled.units[&missionary].pos, stand);
+
+    // The whole turn, through the step the controller runs: it ends out of
+    // the raider's reach, with every charge still in hand.
+    let mut turn = game.clone();
+    for _ in 0..8 {
+        if turn.units[&missionary].moves_left <= 0.0
+            || !on.advanced_missionary_step(&mut turn, 0, missionary, true)
+        {
+            break;
+        }
+    }
+    let rest = turn.units[&missionary].pos;
+    assert!(
+        !turn.threat_reach(raider).contains(&rest),
+        "the turn ends outside the raider's reach"
+    );
+    assert_eq!(turn.units[&missionary].charges, 3);
+
+    // The march never steps back in: from safety, a route whose next tile
+    // the raider reaches is refused for a safe step or a hold.
+    let reach = turn.threat_reach(raider);
+    let mut marched = turn.clone();
+    marched.units.get_mut(&missionary).unwrap().moves_left = 4.0;
+    for _ in 0..8 {
+        if marched.units[&missionary].moves_left <= 0.0
+            || !on.advanced_missionary_step(&mut marched, 0, missionary, true)
+        {
+            break;
+        }
+    }
+    assert!(
+        !reach.contains(&marched.units[&missionary].pos),
+        "the march never re-enters the reach"
+    );
+
+    // Off: the shipped step walks the unit wherever its city is, raider or
+    // not — it never consults the reach at all.
+    let mut blind = game.clone();
+    for _ in 0..8 {
+        if blind.units[&missionary].moves_left <= 0.0
+            || !off.advanced_missionary_step(&mut blind, 0, missionary, true)
+        {
+            break;
+        }
+    }
+    assert!(blind.units.contains_key(&missionary));
+}
+

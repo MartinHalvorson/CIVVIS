@@ -648,6 +648,58 @@ fn barbarians_do_not_heal_passively_but_healing_plunder_still_works() {
 }
 
 #[test]
+fn the_ledger_counts_a_missionary_the_barbarians_condemn() {
+    // `do_condemn_heretic` removes the unit itself — neither `record_kill`
+    // nor `resolve_entered_units` sees it — so the loss has its own counter.
+    let (mut g, center, ring) = controlled_game(3171);
+    g.players[0].is_barbarian = true;
+    g.barb_pid = Some(0);
+    g.players[1].religion = Some("B".to_string());
+    let raider = g.spawn_unit("warrior", 0, center);
+    let missionary = g.spawn_unit("missionary", 1, center);
+    assert!(g.is_at_war(0, 1), "the barbarian seat is at war with everyone");
+    g.apply(
+        0,
+        &Action::CondemnHeretic {
+            unit: raider,
+            target_unit: missionary,
+        },
+    )
+    .unwrap();
+    assert!(!g.units.contains_key(&missionary));
+    assert_eq!(
+        g.players[1].counters.get("religious_lost_to_barbarians"),
+        Some(&1)
+    );
+    assert_eq!(g.players[0].counters.get("condemned:missionary"), Some(&1));
+    assert_eq!(
+        g.players[1].counters.get("lost_to_barbarians"),
+        None,
+        "a condemnation is not a combat kill"
+    );
+
+    // The Free Cities seat also carries `is_barbarian`; its condemnations
+    // stay off the raid ledger.
+    g.players[0].is_free_city = true;
+    g.begin_turn(0);
+    let second = g.spawn_unit("warrior", 0, ring[0]);
+    let heretic = g.spawn_unit("missionary", 1, ring[0]);
+    g.apply(
+        0,
+        &Action::CondemnHeretic {
+            unit: second,
+            target_unit: heretic,
+        },
+    )
+    .unwrap();
+    assert!(!g.units.contains_key(&heretic));
+    assert_eq!(
+        g.players[1].counters.get("religious_lost_to_barbarians"),
+        Some(&1)
+    );
+}
+
+#[test]
 fn the_ledger_counts_what_the_barbarians_take() {
     let (mut g, target, ring) = controlled_game(3105);
     g.players[0].is_barbarian = true;

@@ -366,6 +366,11 @@ struct Row {
     settlers_captured: i64,
     #[serde(default)]
     builders_captured: i64,
+    /// Religious units of this seat condemned by the barbarian seat
+    /// (`religious_lost_to_barbarians`, 2026-08-24): what the barbarian
+    /// heretic hunt takes, and what `missionary-evades-raiders` keeps.
+    #[serde(default)]
+    religious_lost: i64,
     #[serde(default)]
     pillages: i64,
     /// Settlers counted as prizes at the raids' declarations.
@@ -1374,6 +1379,7 @@ fn row_for_seat(
         raid_wars: counter("raid_wars"),
         settlers_captured: counter("captured:settler"),
         builders_captured: counter("captured:builder"),
+        religious_lost: counter("religious_lost_to_barbarians"),
         pillages: counter("pillages"),
         raid_settler_prizes: counter("raid_prize:settler"),
         dvp: game.players[seat].dvp,
@@ -4108,6 +4114,7 @@ mod tests {
             raid_wars: 0,
             settlers_captured: 0,
             builders_captured: 0,
+            religious_lost: 0,
             pillages: 0,
             raid_settler_prizes: 0,
             dvp: 0,
