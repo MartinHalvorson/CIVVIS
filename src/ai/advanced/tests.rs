@@ -33010,9 +33010,14 @@ fn the_religious_veto_stakes_read_the_victory_arithmetic() {
     assert!(on.religious_veto_engaged(&game, 0).is_some());
     assert_eq!(
         AdvancedAi::religious_veto_extra_spreaders(on.religious_veto_engaged(&game, 0).as_ref()),
-        1
+        0,
+        "the floor names and targets; it does not spend"
     );
-    assert_eq!(off.religious_veto_stakes(&game, 0), None, "the gene off reads nothing");
+    assert_eq!(
+        off.religious_veto_stakes(&game, 0),
+        None,
+        "the gene off reads nothing"
+    );
 
     // And our own capital too: the victory is whole.
     game.cities
@@ -33023,11 +33028,11 @@ fn the_religious_veto_stakes_read_the_victory_arithmetic() {
     let stakes = on.religious_veto_stakes(&game, 0).unwrap();
     assert_eq!(stakes.our_converted, 1);
     assert!((stakes.stake - 1.0).abs() < 1e-9, "stake {}", stakes.stake);
+    assert_eq!(AdvancedAi::religious_veto_extra_spreaders(Some(&stakes)), 2);
     assert_eq!(
-        AdvancedAi::religious_veto_extra_spreaders(Some(&stakes)),
-        2
+        AdvancedAi::religious_veto_extra_inquisitors(Some(&stakes)),
+        1
     );
-    assert_eq!(AdvancedAi::religious_veto_extra_inquisitors(Some(&stakes)), 1);
 
     // Only our capital, nobody else: below the floor, so nothing engages.
     game.cities
@@ -33065,9 +33070,13 @@ fn a_non_founder_defends_by_the_stakes_only_with_the_gene() {
     );
     let off = AdvancedAi::new();
     let shipped = off.home_conversion_threat(&game, 0);
-    assert_eq!(shipped.as_deref(), Some("Runaway Faith"), "fixture: the shipped warning fires");
+    assert_eq!(
+        shipped.as_deref(),
+        Some("Runaway Faith"),
+        "fixture: the shipped warning fires"
+    );
 
-    // Nobody else holds the faith: the gene withholds the purchase.
+    // The shipped warning is never withheld, gene or no gene.
     let mut on = AdvancedAi::new();
     on.enable_religious_veto_defence();
     assert_eq!(
@@ -33077,12 +33086,18 @@ fn a_non_founder_defends_by_the_stakes_only_with_the_gene() {
     );
     assert_eq!(
         on.religious_veto_threat(&game, 0, shipped.clone()),
+        shipped,
+        "the shipped defence is the cheap kind and is never withheld"
+    );
+    assert_eq!(
+        on.religious_veto_threat(&game, 0, None),
         None,
-        "a faith that threatens nobody is not worth a point of Faith"
+        "a faith that holds nobody and the warning silent: nothing to name"
     );
 
     // The third civilization falls: the stake is at the floor, and the
-    // threat is the stakes faith with a bigger corps behind it.
+    // stakes faith is named even while the shipped warning is silent —
+    // but nothing is spent yet.
     game.cities
         .get_mut(&theirs)
         .unwrap()
@@ -33094,7 +33109,30 @@ fn a_non_founder_defends_by_the_stakes_only_with_the_gene() {
         "an engaged stake names the faith even before the shipped warning"
     );
     let stakes = on.religious_veto_engaged(&game, 0).unwrap();
-    assert_eq!(AdvancedAi::religious_veto_extra_spreaders(Some(&stakes)), 1);
+    assert_eq!(AdvancedAi::religious_veto_extra_spreaders(Some(&stakes)), 0);
+    assert!(!AdvancedAi::religious_veto_spends(Some(&stakes)));
+
+    // Our capital flips too: match point and past it, the corps grows.
+    game.cities
+        .get_mut(&ours)
+        .unwrap()
+        .pressure
+        .insert("Runaway Faith".to_string(), 2_000.0);
+    let stakes = on.religious_veto_engaged(&game, 0).unwrap();
+    assert!((stakes.stake - 1.0).abs() < 1e-9);
+    assert!(AdvancedAi::religious_veto_spends(Some(&stakes)));
+    assert_eq!(AdvancedAi::religious_veto_extra_spreaders(Some(&stakes)), 2);
+    game.cities
+        .get_mut(&ours)
+        .unwrap()
+        .pressure
+        .remove("Runaway Faith");
+    game.cities
+        .get_mut(&ours)
+        .unwrap()
+        .pressure
+        .insert("Runaway Faith".to_string(), 400.0);
+    let stakes = on.religious_veto_engaged(&game, 0).unwrap();
 
     // The spreader's target list: a city the threat faith holds outranks
     // one it merely presses on, and both outrank an untouched city.
@@ -33136,7 +33174,9 @@ fn the_inquisitor_walks_to_the_heresy_only_with_the_gene() {
     let slipping = found_test_city(&mut game, 0);
     game.players[0].religion = Some("Our Faith".to_string());
     game.players[0].holy_city = Some(home);
-    game.players[0].counters.insert("inquisition".to_string(), 1);
+    game.players[0]
+        .counters
+        .insert("inquisition".to_string(), 1);
     game.players[1].religion = Some("Rival Faith".to_string());
     game.cities
         .get_mut(&home)
