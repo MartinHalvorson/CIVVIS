@@ -1170,6 +1170,7 @@ class GeneratedFiles(unittest.TestCase):
             "complete_seats": 41_628,
             "partial": True,
         })
+        self.assertIn("unpublished no-op batch claim", newest["unverified"])
         self.assertNotIn(newest["path"], {s["path"] for s in current["sources"]})
         authoritative, _ = ranking.load_sources(current)
         displayed, _ = ranking.load_display_sources(current)
