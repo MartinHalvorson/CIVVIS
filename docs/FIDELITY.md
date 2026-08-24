@@ -67,97 +67,130 @@ is the only check on these amounts, and it exists because it caught that
 mistake. **Tree-node effects are an unaudited surface** — the audit's zero
 divergences say nothing about them.
 
-### And three competition sources, which CIVVIS does not have natively
+### And three competition awards, which a native game now has
+
+Gathering Storm pays a Diplomatic Victory Point to the **first-place** finisher
+of a scored competition, and those recur for the whole second half of a game.
+Three modifiers do it, and joining `EmergencyRewards` to `ModifierArguments` on
+the installed ruleset gives the whole list:
 
 | award | amount | competitions |
 |---|---:|---|
-| `NON_EMERGENCY_FIRST_PLACE_VICTORY_POINT` | 1 | Nobel Peace, World's Fair, Space Station, World Games |
+| `NON_EMERGENCY_FIRST_PLACE_VICTORY_POINT` | 1 | Nobel **Peace**, World's Fair, Space Station, World Games |
 | `AID_REQUEST_FIRST_PLACE_VICTORY_POINT` | 2 | Send Aid, Send Military Aid |
 | `CLIMATE_ACCORDS_FIRST_PLACE_VICTORY_POINT` | 2 | Climate Accords |
 
-Gathering Storm pays these to the *first-place* finisher, and they recur for
-the whole second half of a game. **A native CIVVIS game has none of them**: a
-competition exists only while a live host names one
-(`Game::replace_host_competitions`, and every competition project in
-`projects.json` is gated on `host_competition`).
+**Seven competitions, and all seven are modelled** (`Game::NATIVE_COMPETITIONS`).
+Until #2379 a competition existed only while a live host named one
+(`Game::replace_host_competitions`), then in stages — #2169 seated the first
+two, #2171 gave them a switch, #2173 added the World's Fair, #2177 the World
+Games and the era gates, #2181 the aid requests — and #2379 added the last,
+Nobel Peace.
 
-The live bridge is unaffected — it mirrors the host's own `dvp`. But every
-*evaluation* runs natively, and there the arithmetic does not close:
+⚠ **Nobel Literature and Nobel Physics are absent and that is not a gap.** They
+are scored competitions like the rest, but `EmergencyRewards` gives neither a
+victory-point row at all: Literature's first place takes cheaper Rock Bands and
+Physics' a technology boost. Peace is the only Nobel that pays a point. (An
+earlier note here said the other two were "commented out of `EmergencyRewards`";
+they are not — they have rows, and none of those rows is a victory point.)
 
-| native source | points |
-|---|---:|
-| congress resolution, ±2 from the Modern era | ~8 across the congresses a 250-turn game reaches |
-| three wonders | 7, and **31 of 32** diplomatic games finish none |
-| one civic, one technology | 1 each, Future era |
+### What each one is, off the install
 
-**41 of 209 terminal live games end in a rival's diplomatic victory — 19.6%.
-The contested screen produces 2 in 120 — 1.7%.** That twelvefold gap is
-structural, not tactical: a native empire has no route to 20 and no treatment
-can give it one, so every native measurement of a diplomatic-denial treatment
-has been measuring a lane that cannot complete.
+Every field below is read from
+`~/Library/Application Support/Sid Meier's Civilization VI/Cache/DebugGameplay.sqlite`
+and the shipped `DLC/Expansion2/Data/Expansion2_Emergencies.xml`:
+`EmergencyAlliances` for the trigger, `Duration` and `LockoutTime`; that row's
+`TargetRequirementSet` for the era window; `EmergencyScoreSources` for what
+counts; `EmergencyRewards` joined to `ModifierArguments` for the award.
 
-### The mechanism, off by default
+| competition | era gate | scores | first place |
+|---|---|---|---|
+| World's Fair | `ERA_MODERN` only (at-least **and** at-most) | Great Person **Points** per turn | 1 point, 50 Favor |
+| World Games | `ERA_ATOMIC`+ | athletes project (50), Stadiums and Aquatics Centers 1/turn | 1 point, 50 Favor |
+| Climate Accords | `ERA_INFORMATION`+ | the three decommissioning projects (100 each) | 2 points, 100 Favor |
+| International Space Station | `ERA_FUTURE`+ | astronauts project (30), Spaceports 5/turn, Campuses 1/turn | 1 point, 50 Favor |
+| Nobel Peace Prize | `ERA_INDUSTRIAL`+ **and Sweden in the game** | Diplomatic Favor per turn | 1 point |
+| Send Aid | none | the aid project (200) | 2 points, 100 Favor |
+| Send Military Aid | none | the aid project (200) | 2 points, 100 Favor |
 
-`Game::native_competitions` runs them. A congress seats one
-(`EMERGENCY_TRIGGER_WORLD_CONGRESS`, not a clock of its own), a completed
-scoring project adds the `competition_score` it declares, and the clock running
-out pays first place its Diplomatic Victory Point and 25 Favor. A native
-competition presents through the same accessor a mirrored one does, so the
-production catalog and the AI's valuation needed no change at all.
+⚠ **The Nobel prizes need Sweden.** `NOBEL_PRIZE_TARGET_REQUIREMENTS` tests
+`REQUIREMENT_GAME_HAS_CIVILIZATION_OR_LEADER_TRAIT` for
+`TRAIT_CIVILIZATION_NOBEL_PRIZE`, and `CivilizationTraits` gives that trait to
+`CIVILIZATION_SWEDEN` and to nothing else. A game with no Sweden on the board
+never sees a Nobel prize. That makes Peace the rarest of the seven rather than a
+route every empire has, and loosening it because the lane needs points would be
+inventing a rule.
 
-⚠ **Two of the seven, and the two are not a preference.** A competition is
-offered only where our own data says an empire could score in it, and the
-scoring project is what says so — Space Station needs a Spaceport, Climate
-Accords an Industrial Zone. World Games' project declares *no* prerequisite, so
-nothing in the data says when it may start and choosing an era would be
-inventing one; World's Fair and the Nobel prizes score from Great People rather
-than a project; the two aid requests trigger on a random event and on a war,
-not on the congress.
+⚠ **The World's Fair counts points, not people, and that was wrong here until
+#2379.** All eight rows are `WORLDS_FAIR_SCORE_GPP_<class>` with
+`ScoreAmount="1"`, and their shared description is `LOC_EMERGENCY_SCORE_GPP_DESC`
+— "Generating [ICON_GREATPERSON] Great People Points **Per Turn**". The two
+Nobel `FromGreatPerson` groups are described the same way ("Generating Great
+Writer, Artist, and Musician **Points**"), so `FromGreatPerson` is a point, not a
+recruit. #2173 read it as one point per Great Person recruited; over a 29-turn
+competition that is two orders of magnitude too small, and it decides the race
+on whether two empires each happened to claim one person — which is a tie, and a
+tie pays nobody.
 
-⚠ **Ties pay nobody.** A tie has no first place and inventing a tiebreak would
-be inventing a rule.
+⚠ **`FromDistrict` and `FromBuilding` pay for *maintaining*, so they accrue
+every turn.** "Maintaining Spaceport Districts", "Maintaining Stadiums". Without
+them a competition seated over ground nobody then spends production on closes
+with an empty score table, which is exactly what the first native trace of
+Climate Accords recorded (#2171).
 
-⚠ **Nothing is paid on the mirrored path** — a host has already counted its own.
+⚠ **Four shipped score rows stay unmodelled, and each is a rule the data does
+not state.** `CLIMATE_ACCORDS_SCORE_CO2` pays for "emissions much lower than the
+biggest CO2 polluter" and never says how much lower. `SEND_AID_SCORE_FROM_GOLD`
+counts gifts of Gold to the target, a diplomatic action CIVVIS has no equivalent
+of. The two `FROM_AT_WAR` penalties (-30 and -200) do not say whether they are
+charged once or every turn. Choosing a number for any of them is the #2049
+mistake.
 
-### What it does, measured
+⚠ **The congress's choice among eligible competitions is not in the data.**
+`Emergencies_XP2` says which competitions exist and when; how one is picked lives
+in the compiled engine. `NATIVE_COMPETITIONS` is therefore ordered
+newest-era-first and takes the first eligible entry, so the latest competition an
+era has unlocked takes the seat. That is a stated simplification, not a shipped
+rule.
 
-`civvis simulate --native-competitions`, seed 41000, 6 players, 250 turns:
+⚠ **Ties pay nobody.** `SCORED_COMPETITION_FIRST_PLACE_REQUIREMENTS` is one
+requirement, `REQUIREMENT_PLAYER_GOT_FIRST_PLACE_IN_EMERGENCY`, and nothing says
+how the engine breaks a tie for it. A tie has no first place and inventing a
+tiebreak would be inventing a rule.
 
-| | competitions seated | scored | Diplomatic Victory Points paid |
-|---|---:|---:|---:|
-| first cut | 2 | 1 of 2 | 1 |
-| after the two repairs below | 2 | **2 of 2** | **3** |
+⚠ **Nothing is paid on the mirrored path** — a live host has already counted its
+own. A native competition lives in `Game::competition`; a mirrored one in
+`Game::host_competitions`, which nothing native reads or writes.
+`a_mirrored_competition_pays_nothing_natively` pins it.
 
-The first cut had two defects that only a trace showed. **Eligibility asked for
-the district and not what the project consumes**, so Climate Accords was seated
-on turn 100 for an empire with an Industrial Zone and no power plant, closed on
-119 with an empty score table, and spent its lockout for nothing. And **the
-lockout was global**, so that empty competition blocked every other kind for
-sixty turns — but the shipped `LockoutTime` is a column on the emergency row,
-so it is per kind.
+### The mechanism
 
-### The one that recurs
+`Game::native_competitions` runs them, and a native competition presents through
+the same accessor a mirrored one does — so the production catalog and the AI's
+valuation needed no change at all. A congress seats one
+(`EMERGENCY_TRIGGER_WORLD_CONGRESS`, not a clock of its own); a completed
+scoring project adds the `competition_score` it declares; the per-turn sources
+add theirs at the same point in the turn as the yields they count; and the clock
+running out pays first place.
 
-The World's Fair scores **one point per Great Person an empire recruits** — the
-shipped `EmergencyScoreSources` rows give every class `ScoreAmount="1"` — so it
-needs no ground to hold and every empire can enter it from the first congress.
-On seed 41000 it closes at turn 99 (scores `{0:1, 4:1, 5:2}`) and again at 159
-(`{0:2, 1:1, 3:1, 4:1}`), paying a point each time. That midgame recurrence is
-what the other two cannot give, and it is why this one matters more than its
-single point suggests.
+⚠ **The lockout is per kind**, because the shipped `LockoutTime` is a column on
+the emergency row. #2171 made it global, and one empty competition then blocked
+every other kind for sixty turns.
 
-⚠ A competition can still close empty: the same trace has Climate Accords
-closing at 199 with no score at all. Eligibility asks whether an empire *could*
-score — it held an Industrial Zone and a power plant when the competition was
-seated — not whether it will build the project. That is the right bar and it
-pays nobody, but the lockout is spent.
+### The Favor beside the point
 
-⚠ **Favor is not modelled and the Nobel Peace prize therefore is not.** It
-scores `FromFavor="true"`, and favor accrues at seven sites in this engine
-including congress *refunds*; deciding which of those count as favor "earned" is
-a rule the shipped data does not state, and inventing one is the #2049 mistake.
-It is also the only Nobel that pays a point at all — Literature and Physics are
-commented out of `EmergencyRewards`.
+First place also takes the competition's **top tier** Favor, and it is entitled
+to it: the shipped UI names the bands "Gold Tier Rewards (for highest score)",
+"Silver Tier Rewards (for the top 25% of scores)" and "Bronze Tier Rewards (for
+the next 25%)", and `LOC_SCORED_COMPETITION_SILVER_TIER_CHILD` lists "All Silver
+Tier Rewards" under Gold. The amounts are per competition — 100 for the aid
+requests and the Climate Accords, 50 for the World's Fair, World Games and the
+ISS, none for the Nobel prizes, whose tiers pay Great People instead.
+
+⚠ CIVVIS paid a flat **25** to every winner until #2379, which is a number that
+appears nowhere in the shipped data. The two lower bands are still not paid,
+because where a 25% cut falls among five or six scoring empires is a rounding
+rule the data does not state.
 
 ### The target, with the number that was missing
 
@@ -181,21 +214,7 @@ games near 250 turns, not more games of any length.
 count with no window beside it is what four iterations of work on this lane were
 aimed at.
 
-⚠ **Three to five points a game is not twenty.** The two project-scored competitions need
-late prerequisites — a Spaceport, a power plant to decommission — so they land
-around turn 180 and 200 and the lane still does not complete. The recurrence
-that would make it complete is in the five types not modelled: World's Fair and
-the three Nobel prizes score from Great People rather than a project, and the
-two aid requests trigger on a random event and on a war. **That is the next
-work, and it is what the single protocol bump should wait for.**
-
-**It is off by default and that is the point.** Turning it on changes what every
-participant faces, which moves the frozen rating anchor; with the flag off the
-anchor is unchanged at 17,482 decisions. Promoting it is a protocol event and
-should happen **once**, with the remaining five competitions in place, rather
-than twice. What that needs next: a `--native-competitions` switch on
-`simulate`, and an evaluator arm, so the rule can be priced before it is
-promoted. Until then only an embedder that sets the field can reach it.
+CENSUS_BLOCK
 
 ### The content sources are not the problem
 
