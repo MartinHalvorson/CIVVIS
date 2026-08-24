@@ -73,6 +73,14 @@ game share a winner.
 census line, so the actuation question is answered from the batch rather than
 asserted.
 
+The batch is
+`docs/gene_screens/2026-08-24-w1-wonder-score-tally-direct-6p-allseats-462-seats.json`.
+⚠ It sits beside the ledger's sources and is deliberately **not** one of them —
+see *What was decided*. `docs/gene_screens/fires/wonder-score-tally.json` is its
+first twelve games on their own, which is all the fires ratchet asks for and all
+a probe is allowed to be (`test_gene_fires.ProbesAreNotLedgerSources` caps a
+probe at 400 seats precisely so it cannot be mistaken for a screen).
+
 ## What it measured
 
 ### 1. The premise is false: the wonder lane is already open to everybody

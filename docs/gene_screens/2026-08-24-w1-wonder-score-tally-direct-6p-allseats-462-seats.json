@@ -1,17 +1,17 @@
 {
   "batch": {
-    "complete_games": 12,
-    "complete_seats": 72,
-    "completion": 0.03,
+    "complete_games": 77,
+    "complete_seats": 462,
+    "completion": 0.1925,
     "partial": true,
-    "read": "⚠⚠ PARTIAL SCREEN · 72 of 2400 intended seats (3.0%) · seeds 26100000..26100399 reserved — a truncated run, not a completed one",
+    "read": "⚠⚠ PARTIAL SCREEN · 462 of 2400 intended seats (19.2%) · seeds 26100000..26100399 reserved — a truncated run, not a completed one",
     "seed_window": [
       26100000,
       26100399
     ],
     "seed_window_played": [
       26100000,
-      26100011
+      26100076
     ],
     "target_games": 400,
     "target_seats": 2400
@@ -34,8 +34,8 @@
         },
         {
           "label": "escort-unstick",
-          "seats": 72,
-          "share": 0.16666666666666663,
+          "seats": 462,
+          "share": 0.16666666666666666,
           "win": 0.16666666666666666
         },
         {
@@ -84,43 +84,43 @@
     }
   ],
   "family_wise_z": 1.9599628032746734,
-  "games": 12,
+  "games": 77,
   "genes": [
     {
-      "adjusted_pp": -13.003095975232199,
-      "adjusted_se_pp": 9.709275648991426,
-      "compute_cost_pct": null,
-      "compute_cost_se_pct": null,
-      "cost_games": null,
-      "n_off": 34,
-      "n_on": 38,
+      "adjusted_pp": 0.43319268635724345,
+      "adjusted_se_pp": 3.673815145779645,
+      "compute_cost_pct": 1.7889549595048102,
+      "compute_cost_se_pct": 4.88199613149807,
+      "cost_games": 77,
+      "n_off": 237,
+      "n_on": 225,
       "read": "~",
-      "seats": 72,
-      "share_delta_pp": -2.1325279297852457,
-      "share_se_pp": 1.959387177845644,
-      "share_z": -1.0883647468439448,
+      "seats": 462,
+      "share_delta_pp": -0.23101381482230637,
+      "share_se_pp": 0.5638995633763887,
+      "share_z": -0.4096719164652208,
       "tag": "wonder-score-tally",
-      "time_cost_pct": null,
-      "time_cost_se_pct": null,
-      "win_delta_pp": -13.003095975232199,
-      "win_off": 0.23529411764705882,
-      "win_on": 0.10526315789473684,
-      "win_se_pp": 9.709275648991426,
+      "time_cost_pct": 0.22551829958961916,
+      "time_cost_se_pct": 5.616456720729669,
+      "win_delta_pp": 0.43319268635724345,
+      "win_off": 0.16455696202531644,
+      "win_on": 0.1688888888888889,
+      "win_se_pp": 3.673815145779645,
       "win_tranches": [
         {
-          "games": 12,
+          "games": 77,
           "position": "latest",
-          "seats": 72,
-          "win_delta_pp": -13.003095975232199,
-          "win_se_pp": 9.709275648991426,
-          "win_z": -1.3392447022124587
+          "seats": 462,
+          "win_delta_pp": 0.43319268635724345,
+          "win_se_pp": 3.673815145779645,
+          "win_z": 0.1179135773488442
         }
       ],
-      "win_z": -1.3392447022124587
+      "win_z": 0.1179135773488442
     }
   ],
   "kind": "gene_screen_analysis",
-  "overall_share": 0.16666666666666663,
+  "overall_share": 0.16666666666666666,
   "overall_win": 0.16666666666666666,
   "profile": {
     "all_seats": true,
@@ -407,6 +407,6 @@
     "unit": "seats",
     "windows": "newest first; whole games only"
   },
-  "seats": 72,
+  "seats": 462,
   "shape": "standard"
 }
