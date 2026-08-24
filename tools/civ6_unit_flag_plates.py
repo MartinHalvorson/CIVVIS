@@ -69,9 +69,12 @@ itself::
     stripe1_base = table_start - max(off + size for stripe 1)
     stripe0_base = stripe1_base - max(off + size for stripe 0)
 
-The table is found by seeking the one record whose ``dwAllocSize`` is
-``16 * entry_count`` beside a ``dwElementCount`` of ``entry_count`` -- the
-package's ``BLP::Package::EntryMap`` array -- and walking outward by 40 bytes.
+The table is found by seeking the one record reading ``dwOffset = 0``,
+``dwAllocSize = 16 * entry_count``, ``dwElementCount = entry_count`` -- the
+package's ``BLP::Package::EntryMap`` array, which is always allocation 1 and so
+begins the table -- and walking forward by 40 bytes to the terminating zero
+record.  That anchor is what lets one parser read every UI package rather than
+this one file; see ``_find_table``.
 
 ------------------------------------------------------------------ the entries
 
@@ -106,10 +109,16 @@ found by matching that hash.  The blob is a **deduplicated block dictionary**::
                                `bytes per index` wide, padded to 4 bytes
 
 which reproduces every one of the 121 blob sizes exactly -- that identity is
-the parse's oracle and ``_check`` asserts it for all of them.  The 256x256 page
-that carries the one non-BC sprite is a plain ``BLP::TextureEntry``: DXGI
-format 28 (``R8G8B8A8``), 9 mips, 349,524 bytes at big-data offset 0, and the
-mip sum reproducing that byte count is the second oracle.
+the parse's first oracle and ``_check`` asserts it for all of them, beside a
+second one from the other end: no index may name a block the dictionary does
+not hold.  The 256x256 page that carries the one non-BC sprite is a plain
+``BLP::TextureEntry``: DXGI format 28 (``R8G8B8A8``), 9 mips, 349,524 bytes at
+big-data offset 0, and the mip sum reproducing that byte count is the third.
+Most packages have no such page at all and ``page()`` returns ``None``.
+
+Those three predict lengths.  :func:`roundtrip` predicts every byte: the blob
+is a pure function of the image, so re-encoding a decoded sprite reproduces the
+package's own bytes, and a single wrong pixel breaks it.
 
 ⚠ That page is what an earlier attempt decoded at width 256 and read as "the
 military flag".  It is not: it is ``BuilderRecommendation``, 128x128 at (2,2),
@@ -138,6 +147,7 @@ the base game's relative sizes, which is the same mistake the unit-glyph atlas
 had to measure its way out of.  The window is printed on every run.
 """
 
+import array
 import struct
 import sys
 import zlib
@@ -198,18 +208,26 @@ class Package:
         self.allocations = self._read_allocations()
         self._base = self._stripe_bases()
 
-    # The table is located from the one allocation whose size and element count
-    # are the package's own entry count -- the `EntryMap` array -- and then
-    # grown outward. Nothing here depends on a hard-coded address.
+    # The table is located from the one allocation whose offset, size and
+    # element count are `(0, 16 * entry count, entry count)` -- the package's
+    # own `EntryMap` array, which is always allocation **1**, the first record.
+    # Nothing here depends on a hard-coded address.
+    #
+    # ⚠ This used to seek the two-word `(size, count)` pair and then walk
+    # *backwards* while the preceding record looked plausible. That walk is
+    # what limited the first version of this parser to `InWorld.blp`: in a
+    # package whose table is preceded by string data that happens to read as a
+    # plausible record -- `Portugal/.../Icons.blp` is one -- it steps one
+    # record too far, every allocation index shifts by one, and the parse dies
+    # resolving a type name out of range. Anchoring on `dwOffset == 0` instead
+    # needs no walk and no plausibility guess, and it finds the table in 372
+    # of the installed packages including every UI `Icons.blp`.
     def _find_table(self, section, end):
-        needle = struct.pack("<2I", 16 * self.entries, self.entries)
+        needle = struct.pack("<3I", 0, 16 * self.entries, self.entries)
         seed = self.data.find(needle, section, end)
         if seed < 0:
             raise SystemExit("no allocation record for the package entry map")
-        start = seed - 12
-        while start - ALLOCATION >= section and self._plausible(start - ALLOCATION):
-            start -= ALLOCATION
-        return start
+        return seed - 8
 
     def _plausible(self, at):
         record = self.data[at:at + ALLOCATION]
@@ -253,19 +271,26 @@ class Package:
         return self.data[at + 8:at + 8 + length].decode("latin1")
 
     def buffers(self):
-        """{asset name hash: (big-data offset, byte length)}."""
+        """{asset name hash: (big-data offset, byte length)}.
+
+        ⚠ Every ``BLP::TBufferEntry`` allocation contributes. `InWorld.blp`
+        has exactly one and reading only the first was enough for it; a larger
+        package splits its buffer table across several allocations, and
+        stopping at the first leaves the remaining sprites pointing at nothing.
+        """
+        out = {}
         for index in range(1, len(self.allocations)):
             if self.type_name(index) != "BLP::TBufferEntry":
                 continue
             at, _size = self.at(index)
-            out = {}
             for k in range(self.allocations[index][3]):
                 entry = at + BUFFER_ENTRY * k
                 out[struct.unpack_from("<I", self.data, entry + BUFFER_HASH)[0]] = (
                     struct.unpack_from("<I", self.data, entry + BUFFER_OFFSET)[0],
                     struct.unpack_from("<I", self.data, entry + BUFFER_SIZE)[0])
-            return out
-        raise SystemExit("no texture-buffer table in the package")
+        if not out:
+            raise SystemExit("no texture-buffer table in the package")
+        return out
 
     def assets(self):
         """{sprite name: description} for every named entry in the package."""
@@ -284,14 +309,25 @@ class Package:
                           width=u16(ENTRY_WIDTH), height=u16(ENTRY_WIDTH + 2),
                           packed=kind.startswith("ForgeUI::BC"))
             if sprite["packed"]:
+                # ⚠ `blob` is None for an entry the package names but ships no
+                # pixels for -- `XP2_Proposals361` in Expansion2's `Icons.blp`
+                # is one of two. Refusing the whole package over a sprite
+                # nothing asks for is what kept this parser on one file; the
+                # cut fails loudly instead, and only if it wanted that sprite.
                 sprite.update(blocks=u32(ENTRY_BLOCKS), edge=u16(ENTRY_EDGE),
                               index_bytes=u16(ENTRY_INDEX_BYTES),
-                              blob=buffers[u32(ENTRY_HASH)])
+                              blob=buffers.get(u32(ENTRY_HASH)))
             out[name] = sprite
         return out
 
     def page(self):
-        """(format, width, height, mips, offset, size) of the shared RGBA page."""
+        """(format, width, height, mips, offset, size) of the shared RGBA page.
+
+        ``None`` when the package has no shared page at all. Most of the
+        installed packages do not: every sprite in them is its own
+        block-compressed page, and only a package that also carries a loose
+        atlas -- `InWorld.blp` is one -- declares a `BLP::TextureEntry`.
+        """
         for index in range(1, len(self.allocations)):
             if self.type_name(index) != "BLP::TextureEntry":
                 continue
@@ -302,7 +338,7 @@ class Package:
             offset = struct.unpack_from("<I", self.data, at + BUFFER_OFFSET)[0]
             size = struct.unpack_from("<I", self.data, at + BUFFER_SIZE)[0]
             return fmt, width, height, mips, offset, size
-        raise SystemExit("no page texture in the package")
+        return None
 
 
 def decode_sprite(package, sprite):
@@ -313,12 +349,19 @@ def decode_sprite(package, sprite):
     if not sprite["packed"]:
         # The shared page is raw RGBA with its top mip first; the sprite is a
         # window into it.
-        _fmt, page_width, _h, _m, offset, _s = package.page()
+        page = package.page()
+        if page is None:
+            raise SystemExit(f"{sprite['name']} sits on a shared page the "
+                             f"package does not declare")
+        _fmt, page_width, _h, _m, offset, _s = page
         top = package.big + offset
         for y in range(height):
             row = top + ((sprite["y"] + y) * page_width + sprite["x"]) * 4
             pixels[y * width * 4:(y + 1) * width * 4] = data[row:row + width * 4]
         return width, height, pixels
+    if sprite["blob"] is None:
+        raise SystemExit(f"{sprite['name']} is named by the package but no "
+                         f"buffer holds its pixels")
     offset, _size = sprite["blob"]
     dictionary = package.big + offset
     indices = dictionary + sprite["blocks"] * 4
@@ -346,23 +389,93 @@ def decode_sprite(package, sprite):
 
 def _check(package, sprites):
     """Prove the parse by predicting bytes it did not use to build itself."""
-    fmt, width, height, mips, offset, size = package.page()
-    expected = sum(4 * max(1, width >> level) * max(1, height >> level)
-                   for level in range(mips))
-    if fmt != TEXTURE_RGBA or offset or size != expected:
-        raise SystemExit(f"page format {fmt} {width}x{height} mips={mips} at "
-                         f"{offset} is {size} bytes, not the {expected} an RGBA "
-                         f"mip chain needs")
+    page = package.page()
+    if page is not None:
+        fmt, width, height, mips, offset, size = page
+        expected = sum(4 * max(1, width >> level) * max(1, height >> level)
+                       for level in range(mips))
+        if fmt != TEXTURE_RGBA or offset or size != expected:
+            raise SystemExit(f"page format {fmt} {width}x{height} mips={mips} "
+                             f"at {offset} is {size} bytes, not the {expected} "
+                             f"an RGBA mip chain needs")
     for sprite in sprites.values():
-        if not sprite["packed"]:
+        if not sprite["packed"] or sprite["blob"] is None:
             continue
         edge, stride = sprite["edge"], sprite["index_bytes"]
         across = (sprite["width"] + edge - 1) // edge
         down = (sprite["height"] + edge - 1) // edge
-        budget = sprite["blocks"] * 4 + -(-across * down * stride // 4) * 4
+        dictionary = sprite["blocks"] * 4
+        budget = dictionary + -(-across * down * stride // 4) * 4
         if budget != sprite["blob"][1]:
             raise SystemExit(f"{sprite['name']} needs {budget} bytes and its "
                              f"buffer holds {sprite['blob'][1]}")
+        # Second prediction about the same sprite, from the other end: the
+        # dictionary holds `blocks / edge^2` blocks, so no index in the array
+        # may reach that far. The size identity above would survive a wrong
+        # `edge` paired with a compensating `blocks`; this would not.
+        at = package.big + sprite["blob"][0] + dictionary
+        raw = array.array("B" if stride == 1 else "H")
+        raw.frombytes(package.data[at:at + across * down * stride])
+        if sys.byteorder != "little" and stride == 2:
+            raw.byteswap()
+        limit = sprite["blocks"] // (edge * edge)
+        if raw and max(raw) >= limit:
+            raise SystemExit(f"{sprite['name']} indexes block {max(raw)} of a "
+                             f"dictionary holding {limit}")
+
+
+def roundtrip(package, sprite, pixels):
+    """Rebuild a sprite's stored bytes from its decoded pixels, and compare.
+
+    The identities in :func:`_check` predict *lengths*. This predicts every
+    byte. A sprite's whole blob is a pure function of its image: the dictionary
+    is the distinct `edge x edge` blocks in first-occurrence order, and the
+    index array names each block's place in it, row major, padded to four
+    bytes. Re-encoding a decode and getting the package's own bytes back is
+    therefore a per-byte proof -- change one pixel and either its block moves
+    in the dictionary or an index changes, and the comparison fails.
+
+    ⚠ It applies only where `width` and `height` are multiples of `edge`. A
+    ragged sprite was blocked by the encoder over a padded image, and the
+    padding beyond the sprite is not in the decode to re-encode; 7 of
+    `InWorld.blp`'s 23 ragged sprites cannot be reproduced for that reason,
+    while **all 98** of its aligned ones can. Every icon atlas is a whole
+    number of cells whose size is a multiple of every block edge in use, so
+    the cut is verified this way end to end.
+    """
+    if sprite["width"] % sprite["edge"] or sprite["height"] % sprite["edge"]:
+        raise SystemExit(f"{sprite['name']} is {sprite['width']}x"
+                         f"{sprite['height']}, not a whole number of "
+                         f"{sprite['edge']}px blocks, so its stored bytes "
+                         f"cannot be predicted from its pixels")
+    width, height = sprite["width"], sprite["height"]
+    edge, stride = sprite["edge"], sprite["index_bytes"]
+    offset, size = sprite["blob"]
+    original = package.data[package.big + offset:package.big + offset + size]
+    image = bytes(pixels)
+    row, span = width * 4, edge * 4
+    dictionary, order, indices = [], {}, array.array("B" if stride == 1 else "H")
+    for top in range(0, height, edge):
+        bases = [(top + y) * row for y in range(edge)]
+        for left in range(0, row, span):
+            block = b"".join(image[base + left:base + left + span]
+                             for base in bases)
+            place = order.get(block)
+            if place is None:
+                place = order[block] = len(dictionary)
+                dictionary.append(block)
+            indices.append(place)
+    if sys.byteorder != "little" and stride == 2:
+        indices.byteswap()
+    rebuilt = b"".join(dictionary) + indices.tobytes()
+    rebuilt += b"\0" * (-len(rebuilt) % 4)
+    if rebuilt != original:
+        at = next((i for i, (a, b) in enumerate(zip(rebuilt, original)) if a != b),
+                  min(len(rebuilt), size))
+        raise SystemExit(f"{sprite['name']} re-encodes to {len(rebuilt)} bytes "
+                         f"that do not reproduce the {size} the package "
+                         f"stores: they part company at byte {at} of "
+                         f"{len(dictionary)} blocks + {len(indices)} indices")
 
 
 # ---------------------------------------------------------------- the PNG file
