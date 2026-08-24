@@ -210,7 +210,7 @@ fn products_and_corporations_apply_all_economic_effect_families() {
 fn the_imported_catalog_reaches_every_owner_family() {
     let rules = Rules::embedded();
     assert!(
-        rules.modifiers.len() >= 38,
+        rules.modifiers.len() >= 40,
         "the shipped catalog is empty; rerun --emit-catalog"
     );
     // Civics and technologies: Envoys, Diplomatic Victory Points, embarked
