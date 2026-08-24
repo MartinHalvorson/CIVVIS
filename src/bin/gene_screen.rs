@@ -60,7 +60,7 @@
 //!               [--p-on 0.5] [--p-default-on 0.75]
 //!               PROBE ONLY, and a batch using any of them is not a ledger
 //!               source: [--contested] [--contested-field lane,lane]
-//!               [--contested-field-genes tag,tag|none]
+//!               [--contested-field-genes lanes|tag,tag]
 //!               [--native-competitions] [--no-native-competitions]
 //!               [--players N] [--turns N] [--width N] [--height N]
 //!               [--city-states N] [--speed ID] [--map ID] [--victories a,b]
@@ -171,34 +171,36 @@ const HELD_UNLESS_ASKED: &[&str] = &["joint-tactics"];
 /// field is one of each lane the live seat actually loses to.
 const CONTESTED_FIELD: &[&str] = &["diplomatic", "culture"];
 
-/// ⭐ THE GENES A FIELD SEAT PLAYS ON TOP OF THE DEPLOYMENT GENOME, and the
-/// measurement that put them there.
+/// ⭐ THE SEVEN VICTORY-LANE OPT-INS, offered to a field seat by
+/// `--contested-field-genes lanes` — and NOT the default, because it was tried
+/// and measured worse.
 ///
-/// The first cut seated a pursuer with the deployment genome alone. Measured
-/// over **27 contested games** (seeds 92000000..92000026, one diplomatic and
-/// one culture pursuer, native competitions on,
-/// `docs/gene_screens/2026-08-24-contested-field-pursuers-on-the-deployment-genome.json`),
-/// the two pursuers held the board's highest Diplomatic Victory Point total in
-/// **8 of 27** games and the most visiting tourists in **7 of 27** — about what
-/// a third of the chairs takes by chance — and won **0 of 27**. Present in the
-/// lane, never converting, is the cosmetic version of this feature.
-///
-/// The cause is not subtle. `docs/VICTORY_GENES.md`'s six `lane-*` genes and
+/// The reasoning was good and the measurement disagreed.
+/// `docs/VICTORY_GENES.md`'s six `lane-*` genes and
 /// `competition-victory-points` are precisely the deciders that read the raced
 /// lane — the congress ballot and the Favor behind it, Great Person patronage,
 /// the policy deck, the Naturalist and the Rock Bands, the space race, and the
-/// Diplomatic Victory Points a scored competition pays. All seven ship **off**,
-/// because they are opt-ins the ledger has not priced. That is the right
-/// default for the agent and the wrong one for the FIELD, whose entire job is
-/// to race a lane: seating a pursuer without them seats a pursuer with its lane
-/// behaviour switched off.
+/// Diplomatic Victory Points a scored competition pays — and all seven ship
+/// **off**, so a pursuer seated with the deployment genome alone looked like a
+/// pursuer with its lane behaviour switched off.
 ///
-/// So a field seat is the deployment genome **plus these**, and
-/// `--contested-field-genes none` reproduces the weaker field above.
+/// Both fields were then run on the same board and the same seeds (92000000+,
+/// one diplomatic and one culture pursuer, native competitions on; the
+/// artifacts are `docs/gene_screens/2026-08-24-contested-field-*.json`):
 ///
-/// ⚠ This is a property of the FIELD, never of a measured seat. Every drawn
-/// seat still draws these genes exactly as the screen draws any other, so
-/// nothing here touches what the batch is measuring.
+/// | the field's own genome | games | held the board's top DVP | the most visiting tourists | won |
+/// |---|---:|---:|---:|---:|
+/// | the deployment genome | 27 | 8 | 7 | **0** |
+/// | plus these seven | 35 | 4 | 6 | **0** |
+///
+/// The lane genes made the pursuers hold their own lane's lead **less** often,
+/// not more, and neither field ever converted. Two of the seven are among the
+/// genes this same batch priced on its measured seats, at −17.0 pp ± 6.9 and
+/// −15.9 pp ± 7.0 (27 games, 108 seats) — a discovery-sized reading on a small
+/// batch, but pointing the other way from the change. So the default stays the
+/// deployment genome, which is also the rival the agent actually meets, and the
+/// seven are kept behind a flag for whoever wants to try again with n behind
+/// them.
 const CONTESTED_FIELD_GENES: &[&str] = &[
     "lane-congress-ballot",
     "lane-congress-favor",
@@ -1185,9 +1187,10 @@ fn pinned_seats(
 /// used, so the pursuit is the controller's real victory-lane behaviour rather
 /// than a label: `victory_focus` resolves to the assigned lane, and the ballot,
 /// the Great Person race, the policy deck, the culture spending pass and the
-/// space race all read it. `lane_genes` — `CONTESTED_FIELD_GENES` by default —
-/// then switches on the deciders that read that lane and ship off; see the
-/// constant for the seventeen games that measured why.
+/// space race all read it. `lane_genes` is empty by default — the deployment
+/// genome is the whole of a pursuer — and `--contested-field-genes lanes`
+/// switches on the seven lane opt-ins instead; see `CONTESTED_FIELD_GENES` for
+/// the 62 games that chose between them.
 fn field_seat(target: VictoryTarget, lane_genes: &[String]) -> AdvancedAi {
     let mut ai = AdvancedAi::new();
     for gene in civvis::ai::screenable_genes() {
@@ -3449,7 +3452,7 @@ fn usage() -> ! {
          (6 majors, 74x46 continents, 9 city-states, online/250, all six lanes, every seat its own \
          random genome, shuffled civs — the one shape the ledger accepts)\n       \
          probe only, NOT a ledger source: [--contested] [--contested-field lane,lane] \
-         [--contested-field-genes tag,tag|none] [--native-competitions] [--no-native-competitions] \
+         [--contested-field-genes lanes|tag,tag] [--native-competitions] [--no-native-competitions] \
          [--players N] [--turns N] [--width N] \
          [--height N] [--city-states N] [--speed ID] [--map ID] [--victories a,b,...] [--stock-civs]\n       \
          (--contested pins one rival seat per lane to actually pursue it — {} by default — and turns \
@@ -3705,8 +3708,10 @@ fn main() {
         Vec::new()
     } else {
         match text(&args, "--contested-field-genes").as_deref() {
-            Some("none") => Vec::new(),
-            None => CONTESTED_FIELD_GENES
+            // The default and `none` are the same thing: the deployment genome,
+            // for the reason `CONTESTED_FIELD_GENES` records.
+            None | Some("none") => Vec::new(),
+            Some("lanes") => CONTESTED_FIELD_GENES
                 .iter()
                 .map(|tag| (*tag).to_string())
                 .collect(),
@@ -4682,8 +4687,8 @@ mod tests {
     /// seven `lane-*`/`competition-victory-points` opt-ins are the deciders
     /// that read the raced lane and they all ship off, so a field seated with
     /// the deployment genome alone races with its lane behaviour switched off —
-    /// measured, over 27 contested games, as a pursuer that led its own lane
-    /// about as often as chance and won 0 of 27.
+    /// and the seven that read it are kept behind a flag because seating them
+    /// measured WORSE — see `CONTESTED_FIELD_GENES`.
     #[test]
     fn the_field_genes_are_real_genes_and_reach_only_the_field() {
         let tags: Vec<&str> = civvis::ai::screenable_genes()
