@@ -1478,41 +1478,6 @@ impl AdvancedAi {
         self.amenity_district_path = false;
     }
 
-    /// Run the strategic governor under every lane. See `governor_every_lane`.
-    pub fn enable_governor_every_lane(&mut self) {
-        self.governor_every_lane = true;
-        self.governor_victory_lanes = true;
-        self.governor_expansion_lane = true;
-    }
-
-    pub fn disable_governor_every_lane(&mut self) {
-        self.governor_every_lane = false;
-        self.governor_victory_lanes = false;
-        self.governor_expansion_lane = false;
-    }
-
-    /// Half the composite: the governor under the four victory lanes only.
-    /// See `governor_victory_lanes`.
-    pub fn enable_governor_victory_lanes(&mut self) {
-        self.governor_victory_lanes = true;
-    }
-
-    /// The off toggle, so the registry row has both directions.
-    pub fn disable_governor_victory_lanes(&mut self) {
-        self.governor_victory_lanes = false;
-    }
-
-    /// The other half: the governor under Expansion only. See
-    /// `governor_expansion_lane`.
-    pub fn enable_governor_expansion_lane(&mut self) {
-        self.governor_expansion_lane = true;
-    }
-
-    /// The off toggle, so the registry row has both directions.
-    pub fn disable_governor_expansion_lane(&mut self) {
-        self.governor_expansion_lane = false;
-    }
-
     /// Make the settlement-gap redirect and the Settler ranking honour the same
     /// city target the cascade settles toward. See `settlement_target`.
     pub fn enable_settlement_gap_target(&mut self) {

@@ -114,18 +114,15 @@
 | 108 | `barbarian-hunt` | Walk onto a visible, undefended barbarian camp one legal step away — the clear IS the move, so no attack scan ever offers it, and without this a unit ends its turn beside a free 50-gold clear until the camp spawns the archer that kills it. | — | off | +0 | +17 | -5 | 16.52% (n=72,968) | 16.82% (n=72,880) | -0.30% | -13 [-58, +33] | 29.4% | +0.10 (z +0.96) ~ | -1.11% ±0.27% | -1.52% ±0.41% |
 | 109 | `district-lookahead-settle` | A settler scores a site by the districts the plan would build there, each on its own plot. | — | off | +21 | -3 | +5 | 16.51% (n=72,906) | 16.82% (n=72,942) | -0.31% | -15 [-38, +8] | 10.0% | +0.04 (z +0.37) ~ | -0.03% ±0.27% | -0.15% ±0.42% |
 | 110 | `spread-campaign-persists` | Keep a spread campaign that has already converted a foreign city on the offensive between waves, instead of dropping the posture the turn its last charge is spent. | — | off | +23 | -15 | -10 | 16.50% (n=55,385) | 16.84% (n=55,315) | -0.34% | -17 [-38, +4] | 6.1% | -0.11 (z -1.02) ~ | -0.37% ±0.26% | -0.49% ±0.39% |
-| 111 | `governor-expansion-lane` | The other half: the governor under Expansion only. | — | off | +35 | +6 | -11 | 16.48% (n=72,980) | 16.85% (n=72,868) | -0.37% | -18 [-38, +2] | 3.9% | -0.03 (z -0.29) ~ | +0.23% ±0.25% | +0.32% ±0.38% |
-| 112 | `coupled-expansion` | Enable the evaluator-only paid expansion treatment. | — | off | -1 | -18 | -6 | 16.48% (n=31,846) | 16.86% (n=31,610) | -0.38% | -19 [-48, +10] | 10.4% | -0.15 (z -1.44) ~ | -0.20% ±0.26% | -0.14% ±0.40% |
-| 113 | `settle-plan-ahead` | Rank a settle site by the cities it leaves room for as well as its own ground, so a Settler stops taking the one plot in a pocket that would have held two. | — | off | -1 | +1 | -16 | 16.47% (n=31,561) | 16.86% (n=31,895) | -0.39% | -20 [-49, +9] | 9.1% | +0.03 (z +0.25) ~ | +0.46% ±0.26% | +0.73% ±0.39% |
-| 114 | `research-floor-holds` | The citizen tilt and the beaker floor hold while the research can still pay. | — | off | +30 | -7 | -20 | 16.44% (n=55,483) | 16.89% (n=55,217) | -0.45% | -22 [-43, -1] | 2.1% | -0.09 (z -0.85) ~ | -0.09% ±0.26% | -0.08% ±0.40% |
-| 115 | `chain-tech-lookahead` | The research goal aims at a Campus rung the empire can BUILD, not only one it has already built. | — | off | +13 | -23 | -15 | 16.38% (n=55,219) | 16.95% (n=55,481) | -0.57% | -28 [-49, -7] | 0.5% | -0.24 (z -2.27) hurts * | +0.06% ±0.26% | +0.06% ±0.41% |
-| 116 | `builder-reward-survey` | Price Builder production by a survey of the work it would do. | — | off | -94 | -23 | -23 | 16.11% (n=31,811) | 17.23% (n=31,645) | -1.11% | -72 [-130, -14] | 0.7% | -0.28 (z -2.69) hurts * | +1.59% ±0.26% | +1.76% ±0.40% |
-| 117 | `contact-posture` | A unit already inside a hostile's next-turn reach picks a posture: stand and heal where the melee exchange favours holding, close on a shooter it cannot answer, or step out of that shooter's envelope. | — | off | -34 | -31 | -30 | 16.08% (n=55,203) | 17.25% (n=55,497) | -1.17% | -58 [-79, -37] | 0.0% | -0.24 (z -2.36) hurts * | -0.20% ±0.26% | -0.21% ±0.40% |
-| 118 | `naval-production-policy` | Reach for the naval-production discount while hulls are wanted. | — | off | -65 | -66 | -25 | 15.84% (n=31,736) | 17.49% (n=31,720) | -1.65% | -97 [-161, -33] | 0.1% | -0.60 (z -5.71) hurts * | -0.14% ±0.25% | -0.41% ±0.37% |
-| 119 | `governor-every-lane` | Run the strategic governor under every lane. | — | off | -61 | -70 | -86 | 15.56% (n=101,338) | 17.77% (n=101,402) | -2.21% | -102 [-182, -22] | 0.6% | -0.94 (z -8.89) hurts * | +0.06% ±0.26% | +0.35% ±0.41% |
-| 120 | `governor-victory-lanes` | Half the composite: the governor under the four victory lanes only. | — | off | -88 | -85 | -55 | 15.37% (n=76,609) | 17.96% (n=76,439) | -2.59% | -146 [-248, -43] | 0.3% | -1.05 (z -10.15) hurts * | +0.38% ±0.27% | +0.81% ±0.41% |
-| 121 | `fog-honest` | Put this controller behind the turn-level fog boundary. | 1 | off | -145 | -112 | – | v1 12.03% (n=6,393) · v2 4.57% (n=6,328) | v1 18.24% (n=18,903) · v2 20.70% (n=18,968) | -6.21% | -330 [-422, -238] | 0.0% | -1.11 (z -9.73) hurts * | +0.65% ±0.30% | +1.60% ±0.45% |
-| 122 | `fog-honest-2` | Version 2 of `fog_honest`: the same fair-play boundary and the same information contract, plus one re-plan when the authoritative board refuses a planned order. | 1 | off | -275 | -308 | – | v1 12.03% (n=6,393) · v2 4.57% (n=6,328) | v1 18.24% (n=18,903) · v2 20.70% (n=18,968) | -16.14% | -785 [-875, -695] | 0.0% | -4.58 (z -48.06) hurts * | +5.28% ±0.34% | +5.99% ±0.51% |
+| 111 | `coupled-expansion` | Enable the evaluator-only paid expansion treatment. | — | off | -1 | -18 | -6 | 16.48% (n=31,846) | 16.86% (n=31,610) | -0.38% | -19 [-48, +10] | 10.4% | -0.15 (z -1.44) ~ | -0.20% ±0.26% | -0.14% ±0.40% |
+| 112 | `settle-plan-ahead` | Rank a settle site by the cities it leaves room for as well as its own ground, so a Settler stops taking the one plot in a pocket that would have held two. | — | off | -1 | +1 | -16 | 16.47% (n=31,561) | 16.86% (n=31,895) | -0.39% | -20 [-49, +9] | 9.1% | +0.03 (z +0.25) ~ | +0.46% ±0.26% | +0.73% ±0.39% |
+| 113 | `research-floor-holds` | The citizen tilt and the beaker floor hold while the research can still pay. | — | off | +30 | -7 | -20 | 16.44% (n=55,483) | 16.89% (n=55,217) | -0.45% | -22 [-43, -1] | 2.1% | -0.09 (z -0.85) ~ | -0.09% ±0.26% | -0.08% ±0.40% |
+| 114 | `chain-tech-lookahead` | The research goal aims at a Campus rung the empire can BUILD, not only one it has already built. | — | off | +13 | -23 | -15 | 16.38% (n=55,219) | 16.95% (n=55,481) | -0.57% | -28 [-49, -7] | 0.5% | -0.24 (z -2.27) hurts * | +0.06% ±0.26% | +0.06% ±0.41% |
+| 115 | `builder-reward-survey` | Price Builder production by a survey of the work it would do. | — | off | -94 | -23 | -23 | 16.11% (n=31,811) | 17.23% (n=31,645) | -1.11% | -72 [-130, -14] | 0.7% | -0.28 (z -2.69) hurts * | +1.59% ±0.26% | +1.76% ±0.40% |
+| 116 | `contact-posture` | A unit already inside a hostile's next-turn reach picks a posture: stand and heal where the melee exchange favours holding, close on a shooter it cannot answer, or step out of that shooter's envelope. | — | off | -34 | -31 | -30 | 16.08% (n=55,203) | 17.25% (n=55,497) | -1.17% | -58 [-79, -37] | 0.0% | -0.24 (z -2.36) hurts * | -0.20% ±0.26% | -0.21% ±0.40% |
+| 117 | `naval-production-policy` | Reach for the naval-production discount while hulls are wanted. | — | off | -65 | -66 | -25 | 15.84% (n=31,736) | 17.49% (n=31,720) | -1.65% | -97 [-161, -33] | 0.1% | -0.60 (z -5.71) hurts * | -0.14% ±0.25% | -0.41% ±0.37% |
+| 118 | `fog-honest` | Put this controller behind the turn-level fog boundary. | 1 | off | -145 | -112 | – | v1 12.03% (n=6,393) · v2 4.57% (n=6,328) | v1 18.24% (n=18,903) · v2 20.70% (n=18,968) | -6.21% | -330 [-422, -238] | 0.0% | -1.11 (z -9.73) hurts * | +0.65% ±0.30% | +1.60% ±0.45% |
+| 119 | `fog-honest-2` | Version 2 of `fog_honest`: the same fair-play boundary and the same information contract, plus one re-plan when the authoritative board refuses a planned order. | 1 | off | -275 | -308 | – | v1 12.03% (n=6,393) · v2 4.57% (n=6,328) | v1 18.24% (n=18,903) · v2 20.70% (n=18,968) | -16.14% | -785 [-875, -695] | 0.0% | -4.58 (z -48.06) hurts * | +5.28% ±0.34% | +5.99% ±0.51% |
 
 ## Evidence for future operator selections
 
@@ -135,7 +132,7 @@ The deployment genome is explicitly operator-pinned. The win columns, pooled *Di
 
 ### What the posterior resolves
 
-Of 117 priced genes the interval clears zero for **21 upward** and **6 downward**; **90 straddle zero**. Those are evidence states, not automatic deployment calls.
+Of 114 priced genes the interval clears zero for **21 upward** and **5 downward**; **88 straddle zero**. Those are evidence states, not automatic deployment calls.
 
 | Gene | Posterior (95% CI) | P(>0) | Screens | Pinned | Evidence call |
 |---|---:|---:|---:|---|---|
@@ -163,7 +160,6 @@ Of 117 priced genes the interval clears zero for **21 upward** and **6 downward*
 | `builder-reward-survey` | -46 [-83, -9] | 0.8% | 1 | off | **off** |
 | `chain-tech-lookahead` | -26 [-50, -3] | 1.5% | 2 | off | **off** |
 | `contact-posture` | -57 [-80, -33] | 0.0% | 2 | off | **off** |
-| `governor-expansion-lane` | -27 [-47, -7] | 0.4% | 3 | off | **off** |
 | `naval-production-policy` | -51 [-88, -13] | 0.4% | 1 | off | **off** |
 | `research-floor-holds` | -27 [-51, -4] | 1.2% | 2 | off | **off** |
 
@@ -173,8 +169,8 @@ Of 117 priced genes the interval clears zero for **21 upward** and **6 downward*
 
 | Shape | Sources | Player seats | Genes priced |
 |---|---:|---:|---:|
-| standard | 3 | 92,604 | 116 |
-| legacy | 7 | 132,440 | 65 |
+| standard | 3 | 92,604 | 113 |
+| legacy | 7 | 132,440 | 62 |
 
 Genes priced at both shapes. **A row whose two intervals do not overlap is not a gene with one number; it is two instruments disagreeing**, and the pooled column beside it should be read as a warning rather than an answer.
 
@@ -203,9 +199,6 @@ Genes priced at both shapes. **A row whose two intervals do not overlap is not a
 | `escort-unstick` | +27 [-20, +74] | +37 [+13, +61] | +32 [+8, +57] | 21 | yes |
 | `founder-temple` | +29 [-4, +62] | +12 [-13, +38] | +19 [+1, +38] | 0 | yes |
 | `garrison-under-fire` | +26 [-16, +68] | +1 [-56, +58] | +15 [-17, +48] | 32 | yes |
-| `governor-every-lane` | -15 [-54, +23] | -204 [-265, -144] | -92 [-193, +9] | 114 | **no** |
-| `governor-expansion-lane` | -30 [-66, +6] | -25 [-49, -2] | -27 [-47, -7] | 0 | yes |
-| `governor-victory-lanes` | +46 [+9, +82] | -193 [-287, -100] | -134 [-273, +6] | 140 | **no** |
 | `great-person-housing` | +78 [+42, +114] | +87 [+62, +112] | +84 [+64, +105] | 0 | yes |
 | `holy-lane-parity` | +45 [-24, +114] | +16 [-9, +41] | +32 [-6, +71] | 39 | yes |
 | `home-defense` | -13 [-35, +10] | -6 [-34, +22] | -10 [-26, +6] | 0 | yes |
@@ -296,9 +289,7 @@ Genes priced at both shapes. **A row whose two intervals do not overlap is not a
 | `coupled-expansion` | -12 [-49, +26] | 26.9% | off | +0.8 | 136,894 |
 | `settler-site-agreement` | -3 [-24, +18] | 40.5% | off | +0.6 | 3,159,094 |
 | `envoy-infrastructure` | -4 [-28, +20] | 37.3% | off | +0.6 | 1,334,442 |
-| `governor-victory-lanes` | -134 [-273, +6] | 3.0% | off | +0.5 | 96 |
 | `lane-great-people` | +13 [-22, +48] | 77.0% | on | +0.4 | 103,314 |
-| `governor-every-lane` | -92 [-193, +9] | 3.8% | off | +0.4 | 446 |
 | `barbarian-capture-priority` | -6 [-30, +18] | 32.0% | off | +0.3 | 615,022 |
 | `escort-unstick-2` | -22 [-64, +21] | 15.8% | off | +0.3 | 32,838 |
 | `siege-commitment` | -2 [-18, +14] | 40.5% | off | +0.3 | 5,199,392 |
@@ -347,7 +338,7 @@ Genes priced at both shapes. **A row whose two intervals do not overlap is not a
 The top 8 that one batch could actually resolve (≤ 60,000 seat pairs each), as an argument list:
 
 ```sh
-gene_screen --genes barbarian-hunt,governor-victory-lanes,governor-every-lane,escort-unstick-2,unit-cost-efficiency,fortify-idle-units,tactical-strategy,district-lookahead-settle
+gene_screen --genes barbarian-hunt,escort-unstick-2,unit-cost-efficiency,fortify-idle-units,tactical-strategy,district-lookahead-settle,holy-lane-parity,settle-plan-ahead
 ```
 
 `python3 tools/genes.py boundary` prints this list on its own, with `--arm-pairs` and `--max-arm-pairs` to size it.
@@ -395,6 +386,7 @@ Genes whose code has left the repository (operator directive: the bottom of the 
 |---|---:|---:|---:|---|
 | `suzerain-cards` | +42 | 17.09% | 16.25% | `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` |
 | `wonder-prereq-reach` | +29 | 16.96% | 16.38% | `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` |
+| `governor-expansion-lane` | +12 | 16.79% | 16.55% | `2026-08-24-standard-continuous-21030-total-seats.json` |
 | `camp-reach` | +10 | 16.77% | 16.56% | `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` |
 | `housing-buildings` | +8 | 16.75% | 16.59% | `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` |
 | `ranged-line-of-sight` | +4 | 16.71% | 16.63% | `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` |
@@ -411,6 +403,8 @@ Genes whose code has left the repository (operator directive: the bottom of the 
 | `campus-every-city` | -94 | 15.73% | 17.60% | `2026-08-20-p4-native-6p-allseats-13446-pairs.json` |
 | `stacked-escort` | -104 | 15.63% | 17.71% | `2026-08-20-p4-native-6p-allseats-13446-pairs.json` |
 | `settler-stack-discipline` | -116 | 15.51% | 17.83% | `2026-08-20-p4-native-6p-allseats-13446-pairs.json` |
+| `governor-every-lane` | -140 | 15.27% | 18.06% | `2026-08-24-standard-continuous-21030-total-seats.json` |
+| `governor-victory-lanes` | -171 | 14.96% | 18.36% | `2026-08-24-standard-continuous-21030-total-seats.json` |
 
 ## How to read this
 
@@ -453,11 +447,11 @@ The observations below remain useful, but they no longer implement a deployment 
 
 **The first standard-shape screen supplied the clearest evidence that legacy and standard screens are different instruments.** A 74x46 Continents / 9 CS / Online-250 all-seats foldover against the best-genome baseline -- 3,937 complete map pairs, **23,622 matched seat comparisons per gene**, seeds 141000000-141003936, source `b3ad9f00` -- is published in `docs/eval/2026-08-22-standard-gene-screen-23622-paired-seats.md` (PR #2323). It is recorded in `docs/gene_screens/2026-08-22-standard-10k-6p-allseats-23622-pairs.json`. `tools/test_genes.py::TheStandardScreen` checks the historical hand-read figures against that source, so the note and the evidence cannot drift apart. The screen predates the build stamp of #2331, so the ledger records it as `pre-fingerprint`; its gene set was verified by hand against the then-current registry.
 
-**`governor-victory-lanes` is the clearest historical correction.** It had previously been enabled by the retired single-column policy. At the deployment shape the whole-genome screen read **-4.73 pp, z -15.37** -- **-237 wins per 10,000 on-arm seats, 95% CI [-267, -206]** -- and a pre-registered direct arm confirmed **-4.78 pp at win z -6.11**. The legacy and standard readings do not agree, so their random-effects pool widens rather than manufacturing certainty. The current pinned selection keeps this gene off; the evidence explains that operator choice but does not mechanically make it.
+**`governor-victory-lanes` is the clearest historical correction.** It had previously been enabled by the retired single-column policy. At the deployment shape the whole-genome screen read **-4.73 pp, z -15.37** -- **-237 wins per 10,000 on-arm seats, 95% CI [-267, -206]** -- and a pre-registered direct arm confirmed **-4.78 pp at win z -6.11**. The legacy and standard readings do not agree, so their random-effects pool widens rather than manufacturing certainty. On 2026-08-24, this row and its two governor-lane siblings left the code under the explicit `Diff < -0.05 pp` / at-least-30,000-seat cull criterion; their measurements remain in the ranking's **Removed from the code** table.
 
 *The legacy share axis already showed the disagreement.* P10 priced this gene at win z **+2.46** and score-share z **-15.92** -- a recorded `conflict`. The later standard win reading was z -15.37, within half a sigma of that legacy share reading. This is evidence for publishing both axes, not a rule that either axis may silently rewrite a default.
 
-*The composite, decomposed.* `governor-every-lane` (the composite) read **-4.68**, `governor-victory-lanes` (the victory-lane half) **-4.73**, and `governor-expansion-lane` **-0.55**. The victory half carried essentially the whole of the composite's harm. All three are currently pinned off.
+*The composite, decomposed.* `governor-every-lane` (the composite) read **-4.68**, `governor-victory-lanes` (the victory-lane half) **-4.73**, and `governor-expansion-lane` **-0.55**. The victory half carried essentially the whole of the composite's harm. All three were pinned off before the 2026-08-24 cull removed their implementation.
 
 *Why automatic promotion and demotion were retired.* The eight former pooled-*Diff* candidates included two strong standard-shape signals (`governor-victory-lanes` and `war-economy`) and six readings with |z| about one. Standard-only posterior intervals excluded zero for the two signals and straddled it for the other six; the cross-shape pool resolved none because of between-shape disagreement. Those intervals remain decision evidence for a future explicit operator review. They are not a fallback policy.
 

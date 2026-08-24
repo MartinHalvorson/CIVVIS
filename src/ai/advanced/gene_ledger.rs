@@ -485,8 +485,8 @@ mod tests {
 
     #[test]
     fn a_live_arm_can_restore_only_a_named_ledger_held_gene() {
-        let forced = ["governor-every-lane"];
-        assert!(ledger_held_live_treatment("governor-every-lane"));
+        let forced = ["settler-guard-holds"];
+        assert!(ledger_held_live_treatment("settler-guard-holds"));
         assert!(
             !ledger_held_live_treatment("parallel-settlers"),
             "host-only treatments already follow their live-universe default"
@@ -495,16 +495,16 @@ mod tests {
             !ledger_held_live_treatment("founder-temple"),
             "a withheld production opt-in is not a live-universe override"
         );
-        assert!(ledger_held_live_treatments().contains(&"governor-every-lane"));
+        assert!(ledger_held_live_treatments().contains(&"settler-guard-holds"));
 
         let deployed = deployment_treatments();
         let forced_deployment = deployment_treatments_with_forced_live(&forced);
         assert!(
-            !deployed.contains(&"governor-every-lane"),
+            !deployed.contains(&"settler-guard-holds"),
             "the verification override must not change deployment"
         );
         assert!(
-            forced_deployment.contains(&"governor-every-lane"),
+            forced_deployment.contains(&"settler-guard-holds"),
             "the genome event must name the treatment the arm actually restored"
         );
         assert_eq!(
@@ -516,14 +516,14 @@ mod tests {
         let mut ai = AdvancedAi::new();
         ai.enable_live_bridge_universe();
         let applied = ai.apply_gene_ledger_with_forced_live(&forced);
-        assert!(ai.governor_victory_lanes, "the named live treatment stands");
+        assert!(ai.settler_guard_holds, "the named live treatment stands");
         assert!(
-            !ai.war_patience,
+            !ai.blind_objective_strength,
             "another ledger-held treatment stays off unless named too"
         );
-        assert_eq!(applied.forced, vec!["governor-every-lane"]);
+        assert_eq!(applied.forced, vec!["settler-guard-holds"]);
         assert!(
-            !applied.withheld.contains(&"governor-every-lane"),
+            !applied.withheld.contains(&"settler-guard-holds"),
             "an explicit arm cannot report its restored gene as withheld"
         );
     }

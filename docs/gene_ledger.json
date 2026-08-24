@@ -356,7 +356,8 @@
         "target_seats": 10002,
         "complete_seats": 4266,
         "partial": true
-      }
+      },
+      "unverified": "Governor-lane genes were deliberately removed under the 2026-08-24 Diff < -0.05 pp / >=30,000-seat cull criterion; these immutable historical display batches were compiled before that removal."
     },
     {
       "path": "docs/gene_screens/2026-08-24-standard-continuous-21030-total-seats.json",
@@ -391,7 +392,8 @@
         "target_seats": 30006,
         "complete_seats": 21030,
         "partial": true
-      }
+      },
+      "unverified": "Governor-lane genes were deliberately removed under the 2026-08-24 Diff < -0.05 pp / >=30,000-seat cull criterion; these immutable historical display batches were compiled before that removal."
     },
     {
       "path": "docs/gene_screens/2026-08-24-standard-continuous-38160-total-seats.json",
@@ -426,13 +428,14 @@
         "target_seats": 40008,
         "complete_seats": 38160,
         "partial": true
-      }
+      },
+      "unverified": "Governor-lane genes were deliberately removed under the 2026-08-24 Diff < -0.05 pp / >=30,000-seat cull criterion; these immutable historical display batches were compiled before that removal."
     }
   ],
   "counts": {
     "helps": 17,
-    "hurts": 11,
-    "unresolved": 90,
+    "hurts": 9,
+    "unresolved": 89,
     "default_on": 45
   },
   "genes": [
@@ -2550,141 +2553,6 @@
             "pairs": 9081,
             "win_delta_pp": 0.246,
             "win_z": 0.444,
-            "win_se_pp": 0.554
-          }
-        ]
-      }
-    },
-    {
-      "tag": "governor-every-lane",
-      "verdict": "hurts",
-      "default_on": false,
-      "wins_last_10k": -173,
-      "wins_prior_10k": -234,
-      "wins_third_10k": 13,
-      "win_diff_pp": -2.13213,
-      "posterior_pp": -91.791755,
-      "posterior_se_pp": 51.639599,
-      "posterior_screens": 5,
-      "posterior_tau_pp": 113.869534,
-      "family_wise": true,
-      "conflict": false,
-      "screen": {
-        "seats": 38160,
-        "pairs": 19080,
-        "n_on": 18989,
-        "n_off": 19171,
-        "win_delta_pp": -3.447,
-        "win_z": -9.117,
-        "share_delta_pp": -1.325,
-        "share_z": -16.868,
-        "read": "HURTS ** \u00b7 share HURTS **",
-        "source": "2026-08-24-standard-continuous-38160-total-seats.json",
-        "win_tranches": [
-          {
-            "position": "latest",
-            "seats": 19998,
-            "pairs": 9999,
-            "win_delta_pp": -3.597,
-            "win_z": -6.894,
-            "win_se_pp": 0.522
-          },
-          {
-            "position": "previous",
-            "seats": 18162,
-            "pairs": 9081,
-            "win_delta_pp": -3.282,
-            "win_z": -5.981,
-            "win_se_pp": 0.549
-          }
-        ]
-      }
-    },
-    {
-      "tag": "governor-expansion-lane",
-      "verdict": "unresolved",
-      "default_on": false,
-      "wins_last_10k": -22,
-      "wins_prior_10k": -28,
-      "wins_third_10k": -30,
-      "win_diff_pp": -0.533104,
-      "posterior_pp": -26.849468,
-      "posterior_se_pp": 10.130182,
-      "posterior_screens": 3,
-      "posterior_tau_pp": 0.0,
-      "family_wise": false,
-      "conflict": false,
-      "screen": {
-        "seats": 38160,
-        "pairs": 19080,
-        "n_on": 19138,
-        "n_off": 19022,
-        "win_delta_pp": -0.447,
-        "win_z": -1.174,
-        "share_delta_pp": -0.016,
-        "share_z": -0.199,
-        "read": "~",
-        "source": "2026-08-24-standard-continuous-38160-total-seats.json",
-        "win_tranches": [
-          {
-            "position": "latest",
-            "seats": 19998,
-            "pairs": 9999,
-            "win_delta_pp": -0.367,
-            "win_z": -0.694,
-            "win_se_pp": 0.529
-          },
-          {
-            "position": "previous",
-            "seats": 18162,
-            "pairs": 9081,
-            "win_delta_pp": -0.536,
-            "win_z": -0.974,
-            "win_se_pp": 0.55
-          }
-        ]
-      }
-    },
-    {
-      "tag": "governor-victory-lanes",
-      "verdict": "hurts",
-      "default_on": false,
-      "wins_last_10k": -110,
-      "wins_prior_10k": -239,
-      "wins_third_10k": -237,
-      "win_diff_pp": -2.429713,
-      "posterior_pp": -133.822351,
-      "posterior_se_pp": 71.233918,
-      "posterior_screens": 4,
-      "posterior_tau_pp": 140.332932,
-      "family_wise": true,
-      "conflict": false,
-      "screen": {
-        "seats": 38160,
-        "pairs": 19080,
-        "n_on": 19176,
-        "n_off": 18984,
-        "win_delta_pp": -2.212,
-        "win_z": -5.81,
-        "share_delta_pp": -1.277,
-        "share_z": -16.408,
-        "read": "HURTS ** \u00b7 share HURTS **",
-        "source": "2026-08-24-standard-continuous-38160-total-seats.json",
-        "win_tranches": [
-          {
-            "position": "latest",
-            "seats": 19998,
-            "pairs": 9999,
-            "win_delta_pp": -2.58,
-            "win_z": -4.922,
-            "win_se_pp": 0.524
-          },
-          {
-            "position": "previous",
-            "seats": 18162,
-            "pairs": 9081,
-            "win_delta_pp": -1.806,
-            "win_z": -3.262,
             "win_se_pp": 0.554
           }
         ]

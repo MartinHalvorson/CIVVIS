@@ -11149,41 +11149,6 @@ fn the_settling_gates_and_the_cascade_disagree_about_the_city_target() {
 }
 
 #[test]
-fn splitting_the_every_lane_composite_leaves_it_exactly_as_it_was() {
-    // The halves exist to attribute a −95 Elo composite. If enabling the
-    // composite stopped covering a lane it used to cover, the live bridge
-    // would change behaviour and the attribution would be measured against
-    // the wrong incumbent.
-    let mut composite = AdvancedAi::new();
-    composite.enable_governor_every_lane();
-    assert!(composite.governor_victory_lanes && composite.governor_expansion_lane);
-
-    let mut halves = AdvancedAi::new();
-    halves.enable_governor_victory_lanes();
-    halves.enable_governor_expansion_lane();
-    assert_eq!(
-        composite.governor_victory_lanes,
-        halves.governor_victory_lanes
-    );
-    assert_eq!(
-        composite.governor_expansion_lane,
-        halves.governor_expansion_lane
-    );
-
-    // The withhold still clears both, so `live_without_governor_every_lane`
-    // keeps measuring the whole composite.
-    composite.disable_governor_every_lane();
-    assert!(!composite.governor_victory_lanes && !composite.governor_expansion_lane);
-
-    let mut victory_only = AdvancedAi::new();
-    victory_only.enable_governor_victory_lanes();
-    assert!(!victory_only.governor_expansion_lane);
-    let mut expansion_only = AdvancedAi::new();
-    expansion_only.enable_governor_expansion_lane();
-    assert!(!expansion_only.governor_victory_lanes);
-}
-
-#[test]
 fn the_governor_recovery_withhold_changes_who_decides_a_recovery_city() {
     // A pure routing flag can look alive in the struct and be dead in the
     // dispatch, which is how a withhold arm ends up measuring nothing. Pin
@@ -11197,7 +11162,6 @@ fn the_governor_recovery_withhold_changes_who_decides_a_recovery_city() {
     let mut withheld = AdvancedAi::new();
     withheld.disable_governor_in_recovery();
     assert!(!withheld.governor_in_recovery);
-    assert_eq!(shipped.governor_every_lane, withheld.governor_every_lane);
     assert_eq!(shipped.victory_planning, withheld.victory_planning);
 }
 
