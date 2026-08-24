@@ -256,6 +256,16 @@ struct Row {
     inquisition: bool,
     #[serde(default)]
     techs: usize,
+    /// ★ Wonders standing in this seat's cities at the end. `Game::score_parts`
+    /// awards **15 points a wonder** — the densest line of the score tally, six
+    /// times a Library's per-production density — and the `Item::Wonder` arm of
+    /// `production_value` refuses every wonder outside a Culture plan, a Score
+    /// target or an untargeted Egypt/China. Three quarters of the games this
+    /// screen plays end on that tally, so a seat's wonder count is both the
+    /// actuation question ("does it build one at all") and the mechanism behind
+    /// its score share. See `wonder_score_tally`.
+    #[serde(default)]
+    wonders: usize,
     #[serde(default)]
     military: f64,
     /// The civilization this seat played. Empty in files written before the
@@ -1116,6 +1126,12 @@ fn row_for_seat(
             .get("inquisition")
             .is_some_and(|launched| *launched > 0),
         techs: game.players[seat].techs.len(),
+        wonders: game
+            .player_city_ids(seat)
+            .iter()
+            .filter_map(|cid| game.cities.get(cid))
+            .map(|city| city.wonders.len())
+            .sum(),
         military: game.military_power(seat),
         civ: game.players[seat].civ.clone(),
         raid_wars: counter("raid_wars"),
@@ -2257,6 +2273,42 @@ fn print_table(header: &Header, rows: &[Row]) {
             }
         }
     }
+    {
+        // ★ The wonder census. `Game::score_parts` pays 15 points a wonder, the
+        // densest line of a tally that decides three quarters of these games,
+        // and the `Item::Wonder` arm refuses one to four of the six stock civs
+        // outright. This says whether a seat ever built one — the actuation
+        // question — and is printed only when the rows carry the field.
+        let played: Vec<&Row> = rows.iter().filter(|row| row.kind == "game").collect();
+        if played.iter().any(|row| row.wonders > 0) {
+            let n = played.len() as f64;
+            let built = played.iter().filter(|row| row.wonders > 0).count();
+            let total: usize = played.iter().map(|row| row.wonders).sum();
+            let mut by_civ: BTreeMap<&str, (usize, usize)> = BTreeMap::new();
+            for row in &played {
+                let entry = by_civ.entry(row.civ.as_str()).or_default();
+                entry.0 += 1;
+                entry.1 += row.wonders;
+            }
+            let civs = by_civ
+                .iter()
+                .filter(|(civ, _)| !civ.is_empty())
+                .map(|(civ, (seats, wonders))| {
+                    format!("{civ} {:.2}", *wonders as f64 / (*seats).max(1) as f64)
+                })
+                .collect::<Vec<_>>()
+                .join(" · ");
+            println!(
+                "wonder census: {:.1}% of seats finished a wonder · {:.2} per seat ·                  {:.0} tally points a seat",
+                100.0 * built as f64 / n.max(1.0),
+                total as f64 / n.max(1.0),
+                15.0 * total as f64 / n.max(1.0),
+            );
+            if !civs.is_empty() {
+                println!("  wonders per seat by civilization: {civs}");
+            }
+        }
+    }
     let mut genes = estimates.genes;
     if genes.is_empty() {
         println!("no screened genes with seats");
@@ -3371,6 +3423,7 @@ mod tests {
             faith: 0.0,
             inquisition: false,
             techs: 0,
+            wonders: 0,
             military: 0.0,
             civ: String::new(),
             raid_wars: 0,

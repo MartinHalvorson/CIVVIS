@@ -185,6 +185,57 @@ const LIVE_WONDER_RACE_BONUS: f64 = 1_500.0;
 /// six cities, a third at twelve. See `AdvancedAi::live_wonder_race_lanes`.
 const LIVE_WONDER_RACE_CITIES_PER_LANE: usize = 6;
 
+/// ★★★★★ WHAT THE TALLY PAYS FOR A WONDER, READ OFF THE ENGINE.
+///
+/// `Game::score_parts` awards `15 * wonders` — the **densest line in the whole
+/// tally**: a civic is 3, a city 5, a district 2, a building 1, a point of
+/// population 1, a Great Person 5, a tech 2, a point of era score 1. Nothing
+/// else in the build menu pays fifteen.
+///
+/// `wonder_score_tally` is the only thing on a native board that tells the
+/// production queue so. `live_wonder_race` prices the same fifteen points on
+/// the live Civilization VI seat and is `Kind::HostOnly`, so a headless game
+/// never sees it; the four other gates on the `Item::Wonder` arm are keyed to
+/// a Culture plan, a Score target, an untargeted Egypt or China, or a lane
+/// payload `strategic_wonder_value` can price — and none of them is a
+/// statement about what the wonder is worth to a seat playing for score.
+///
+/// The constant is pinned to the engine by
+/// `the_tally_pays_what_the_wonder_gene_prices`, so a rules change that
+/// re-scores a wonder fails the test rather than silently mispricing the gene.
+const WONDER_TALLY_SCORE_POINTS: f64 = 15.0;
+
+/// What one point of the score tally is worth in the raw units
+/// `production_value` normalises by `(7 + turns)`.
+///
+/// Not a new calibration: `LIVE_WONDER_RACE_BONUS` is 1 500 for the same
+/// fifteen points and its comment states the derivation — "Fifteen host score
+/// points at ~100 raw each puts a 220-cost wonder at ~80 in a 20-production
+/// city (above a Library, below a Settler)". CIVVIS's own tally pays the same
+/// fifteen, so the same hundred transfers by construction, and the two genes
+/// price a wonder identically rather than arguing.
+const WONDER_TALLY_POINT_VALUE: f64 = 100.0;
+
+/// The density bar `wonder_score_tally` puts in front of the lane: a wonder
+/// must return at least this much value per point of its production cost
+/// before the arm will consider it at all.
+///
+/// ⚠ This is the line that keeps the repair from becoming "a wonder attractive
+/// to everyone", the failure mode `strategic_wonder_value`'s comment names and
+/// the `-10_000` sentinel exists to prevent. A flat fifteen points buys a
+/// 1 850-production Sydney Opera House exactly as eagerly as a 180-production
+/// Great Bath, which is the mistake `LIVE_WONDER_RACE_BONUS` had to patch with
+/// a late-game ramp. Stated directly instead: an ordinary Library returns
+/// ~960 raw for 90 production, or ~10.7 per point, so 3.0 asks a wonder for
+/// somewhat over a quarter of an ordinary building's density **in tally value
+/// alone**, before any lane payload. Against the 53-wonder roster's quantized
+/// costs (180 · 220 · 290 · 400 · 710 · 920 · 1 060 · 1 240 · 1 450 · 1 620 ·
+/// 1 740 · 1 850) that admits the nineteen wonders at 400 or under, leaves the
+/// 710 tier reachable only for a wonder whose own yields carry it, and refuses
+/// the rest — which is the same cut `production_value`'s own
+/// `raw / (7 + turns)` makes, arrived at before the queue is walked.
+const WONDER_TALLY_MIN_DENSITY: f64 = 3.0;
+
 /// What finishing the game outright is worth to [`AdvancedAi::strategic_wonder_value`],
 /// in the raw units `production_value` normalises by `(7 + turns)`. Every
 /// discrete victory currency is priced as its share of this one number: one of
@@ -2371,6 +2422,55 @@ pub struct AdvancedAi {
     ///
     /// See `AdvancedAi::strategic_wonder_value` for the derivation.
     pub strategic_wonders: bool,
+    /// ★★★★★ A WONDER IS REACHABLE FOR EVERY CIVILIZATION, NOT FOUR OF SIX.
+    ///
+    /// The `Item::Wonder` arm of [`AdvancedAi::production_value`] returns the
+    /// `-10_000` refusal sentinel unless one of three gates opens, and on a
+    /// native board none of them is a statement about what a wonder is worth:
+    ///
+    /// * `lane_opens` — a Culture plan, a Score target, or an **untargeted
+    ///   Egypt or China**. That is an identity check, not a merit check. Four
+    ///   of the six stock civilizations can never satisfy it, so on the
+    ///   standard screen they structurally never build a wonder out of a
+    ///   53-wonder roster.
+    /// * `live_race_opens` — `live_wonder_race`, which is `Kind::HostOnly`.
+    ///   Inert in every headless game; it exists for the Civilization VI seat.
+    /// * `strategic_opens` — `strategic_wonders`, which prices `spec.effects`
+    ///   **in the lane's own currency** and returns exactly zero for
+    ///   `Conquest`, `Expansion` and `Recovery` by construction. Those are the
+    ///   plans a seat with no assigned victory target spends most of its game
+    ///   in, which is why that gene screens at +0.05 pp (z +0.06) over 10,002
+    ///   seats: it is not weak, it is unreachable.
+    ///
+    /// So the queue never learns the one thing about a wonder that is true for
+    /// everybody. `Game::score_parts` pays **15 points a wonder** — the densest
+    /// line of the tally, against 1 for a building and 2 for a district — and
+    /// three quarters of the games the standard screen plays end on that tally
+    /// at turn 250. The live seat's own note already did this arithmetic
+    /// ("13.6 points per 100 production against 2.2 for a Library") and then
+    /// confined it to Firaxis on the argument that "CIVVIS-vs-CIVVIS wonders
+    /// are the contested race the stock gate was written for". Measure that
+    /// argument rather than assume it: when four of six seats are forbidden a
+    /// wonder and the other two need a Culture plan first, the catalogue is
+    /// not contested on a native board either.
+    ///
+    /// With this on, a developed city — three cities in the empire, three
+    /// buildings in this one, at most one concurrent wonder per six cities —
+    /// may take a wonder whose ordinary value plus its fifteen tally points
+    /// clears `WONDER_TALLY_MIN_DENSITY` per point of production cost. It adds
+    /// **no flat lane bonus**: the wonder enters the ranking at exactly the
+    /// value it was measured at and still loses to a Settler or a district
+    /// worth more per turn, which is the half of the sentinel worth keeping.
+    ///
+    /// ⚠ Deliberately WITHOUT the live race's `wonder_era + 2 >= world_era`
+    /// staleness guard. That guard prices a Firaxis catalogue the rivals have
+    /// already eaten; on a native board the engine's own `built_wonders` menu
+    /// is the only contest there is, so an unbuilt ancient wonder is still
+    /// standing at turn 200 — and by then 400 production is seven turns, which
+    /// is the best fifteen points on the board rather than the worst.
+    ///
+    /// Off by default. See `WONDER_TALLY_SCORE_POINTS`.
+    pub wonder_score_tally: bool,
     /// Let the third city come before the Prophet on the live seat.
     ///
     /// ★★★★ EVERY LIVE GAME READS `Grand strategy: religion` FROM TURN 19–26.
@@ -5482,6 +5582,7 @@ impl AdvancedAi {
             settlement_gap_reads_city_target: false,
             live_wonder_race: false,
             strategic_wonders: false,
+            wonder_score_tally: false,
             expansion_before_prophet: false,
             no_elective_war: false,
             naval_production_policy: false,
@@ -9432,6 +9533,34 @@ impl AdvancedAi {
     /// one per `LIVE_WONDER_RACE_CITIES_PER_LANE` cities. See `live_wonder_race`.
     fn live_wonder_race_lanes(city_count: usize) -> usize {
         1 + city_count / LIVE_WONDER_RACE_CITIES_PER_LANE
+    }
+
+    /// What a wonder is worth to this city before any lane opinion of it: the
+    /// yields, housing, Amenities, Great Work slots and Great Person points
+    /// `spec` declares, in the raw units `production_value` normalises by
+    /// `(7 + turns)`.
+    ///
+    /// Lifted verbatim out of the `Item::Wonder` arm so `wonder_score_tally`'s
+    /// density bar and the arm's own score are the **same number** rather than
+    /// two expressions that can drift apart. It reads nothing off the board, so
+    /// it is safe to call inside a short-circuited gate on the hottest function
+    /// in the controller.
+    fn wonder_ordinary_value(
+        &self,
+        spec: &crate::rules::WonderSpec,
+        strategy: GrandStrategy,
+    ) -> f64 {
+        self.yield_value(spec.yields, strategy) * 45.0
+            + spec.housing * 30.0
+            + spec.amenity * 50.0
+            + spec.great_work_slots.values().sum::<i32>() as f64 * 40.0
+            + spec.great_person_points.values().sum::<f64>() * 18.0
+    }
+
+    /// The score tally's own price for a finished wonder, in the arm's raw
+    /// units. See `WONDER_TALLY_SCORE_POINTS` and `wonder_score_tally`.
+    fn wonder_tally_value() -> f64 {
+        WONDER_TALLY_SCORE_POINTS * WONDER_TALLY_POINT_VALUE
     }
 
     /// ★★★★★ THE WONDERS THE CHOSEN VICTORY ACTUALLY NEEDS.
@@ -21331,20 +21460,39 @@ impl AdvancedAi {
                     && city_count >= 3
                     && city.buildings.len() >= 3
                     && wonders_in_flight < Self::live_wonder_race_lanes(city_count);
+                // See `wonder_score_tally`. The fourth gate, and the only one
+                // any civilization can pass on merit: the fifteen points
+                // `Game::score_parts` pays for a finished wonder, against the
+                // production it costs. `&&` short-circuits on the flag, so
+                // with the gene off nothing below the first conjunct is
+                // evaluated and the arm is byte-identical.
+                //
+                // ⚠ It never stacks. `!lane_opens` and `!live_race_opens` mean
+                // the tally price is added exactly where no other gate already
+                // paid for the same wonder, so the Potala Palace cannot be
+                // refused by one bar and handed a bonus by another — the
+                // mistake the `strategic_value` comment above records.
+                let tally_opens = self.wonder_score_tally
+                    && !lane_opens
+                    && !live_race_opens
+                    && plan.strategy != GrandStrategy::Recovery
+                    && city_count >= 3
+                    && city.buildings.len() >= 3
+                    && wonders_in_flight < Self::live_wonder_race_lanes(city_count)
+                    && Self::wonder_tally_value()
+                        + strategic_value
+                        + self.wonder_ordinary_value(spec, plan.strategy)
+                        >= spec.cost * WONDER_TALLY_MIN_DENSITY;
                 if already_queued
                     || threatened
                     || spent_religion_founding_site
                     || city.buildings.len() < 2
                     || turns > remaining_turns * 0.65
-                    || !(lane_opens || live_race_opens || strategic_opens)
+                    || !(lane_opens || live_race_opens || strategic_opens || tally_opens)
                 {
                     -10_000.0
                 } else {
-                    self.yield_value(spec.yields, plan.strategy) * 45.0
-                        + spec.housing * 30.0
-                        + spec.amenity * 50.0
-                        + spec.great_work_slots.values().sum::<i32>() as f64 * 40.0
-                        + spec.great_person_points.values().sum::<f64>() * 18.0
+                    self.wonder_ordinary_value(spec, plan.strategy)
                         + if live_race_opens {
                             // Priced in the same units as the rest of this
                             // function, which is normalised by (7 + build
@@ -21378,6 +21526,14 @@ impl AdvancedAi {
                             // most of what is left) still refuse.
                             LIVE_WONDER_RACE_BONUS
                                 * Self::live_wonder_race_scale(g)
+                        } else if tally_opens {
+                            // The fifteen points, and nothing else. No lane
+                            // ramp and no flat sweetener: the density bar in
+                            // `tally_opens` has already established that this
+                            // wonder is worth its production, so the ranking's
+                            // own `raw / (7 + turns)` is left to decide whether
+                            // it beats the Settler or the district beside it.
+                            Self::wonder_tally_value()
                         } else if plan.strategy == GrandStrategy::Culture {
                             320.0
                         } else if self.victory_target == Some(VictoryTarget::Score) {
