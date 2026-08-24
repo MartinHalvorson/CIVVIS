@@ -257,13 +257,14 @@ struct Row {
     #[serde(default)]
     techs: usize,
     /// ★ Wonders standing in this seat's cities at the end. `Game::score_parts`
-    /// awards **15 points a wonder** — the densest line of the score tally, six
-    /// times a Library's per-production density — and the `Item::Wonder` arm of
-    /// `production_value` refuses every wonder outside a Culture plan, a Score
-    /// target or an untargeted Egypt/China. Three quarters of the games this
-    /// screen plays end on that tally, so a seat's wonder count is both the
-    /// actuation question ("does it build one at all") and the mechanism behind
-    /// its score share. See `wonder_score_tally`.
+    /// awards **15 points a wonder** — the densest line of a score tally that
+    /// decides three quarters of the games this screen plays — and the
+    /// `Item::Wonder` arm of `production_value` refuses every wonder outside a
+    /// Culture plan, a Score target or an untargeted Egypt or China. Whether
+    /// that refusal actually costs the agent a wonder was argued from prose for
+    /// months and never read out of a batch; this field is the reading. ⚠ It is
+    /// a census, not a lever: within one arm wonders track score share and so
+    /// do cities, and only an on−off contrast says which way it runs.
     #[serde(default)]
     wonders: usize,
     #[serde(default)]
@@ -2276,8 +2277,8 @@ fn print_table(header: &Header, rows: &[Row]) {
     {
         // ★ The wonder census. `Game::score_parts` pays 15 points a wonder, the
         // densest line of a tally that decides three quarters of these games,
-        // and the `Item::Wonder` arm refuses one to four of the six stock civs
-        // outright. This says whether a seat ever built one — the actuation
+        // and the `Item::Wonder` arm refuses one unless a narrow set of gates
+        // opens. This says whether a seat ever built one — the actuation
         // question — and is printed only when the rows carry the field.
         let played: Vec<&Row> = rows.iter().filter(|row| row.kind == "game").collect();
         if played.iter().any(|row| row.wonders > 0) {
@@ -2299,7 +2300,7 @@ fn print_table(header: &Header, rows: &[Row]) {
                 .collect::<Vec<_>>()
                 .join(" · ");
             println!(
-                "wonder census: {:.1}% of seats finished a wonder · {:.2} per seat ·                  {:.0} tally points a seat",
+                "wonder census: {:.1}% of seats finished a wonder · {:.2} a seat · {:.0} tally points a seat",
                 100.0 * built as f64 / n.max(1.0),
                 total as f64 / n.max(1.0),
                 15.0 * total as f64 / n.max(1.0),

@@ -2423,25 +2423,25 @@ pub struct AdvancedAi {
     ///
     /// See `AdvancedAi::strategic_wonder_value` for the derivation.
     pub strategic_wonders: bool,
-    /// ★★★★★ A WONDER IS REACHABLE FOR EVERY CIVILIZATION, NOT FOUR OF SIX.
+    /// ★★★★★ A WONDER LANE ANY CIVILIZATION CAN REACH ON MERIT.
     ///
     /// The `Item::Wonder` arm of [`AdvancedAi::production_value`] returns the
     /// `-10_000` refusal sentinel unless one of three gates opens, and on a
     /// native board none of them is a statement about what a wonder is worth:
     ///
     /// * `lane_opens` — a Culture plan, a Score target, or an **untargeted
-    ///   Egypt or China**. That is an identity check, not a merit check. Four
-    ///   of the six stock civilizations can never satisfy it, so on the
-    ///   standard screen they structurally never build a wonder out of a
-    ///   53-wonder roster.
+    ///   Egypt or China**. The civilization clause is an identity check rather
+    ///   than a merit check; the Culture clause is a merit check on the wrong
+    ///   quantity, since it asks what lane the empire is playing rather than
+    ///   what the wonder is worth.
     /// * `live_race_opens` — `live_wonder_race`, which is `Kind::HostOnly`.
     ///   Inert in every headless game; it exists for the Civilization VI seat.
     /// * `strategic_opens` — `strategic_wonders`, which prices `spec.effects`
     ///   **in the lane's own currency** and returns exactly zero for
     ///   `Conquest`, `Expansion` and `Recovery` by construction. Those are the
     ///   plans a seat with no assigned victory target spends most of its game
-    ///   in, which is why that gene screens at +0.05 pp (z +0.06) over 10,002
-    ///   seats: it is not weak, it is unreachable.
+    ///   in, which is one reading of its +0.05 pp win Δ (z +0.06, 10,002 seats,
+    ///   `docs/eval/2026-08-23-standard-gene-screen-10000-total-seats.md`).
     ///
     /// So the queue never learns the one thing about a wonder that is true for
     /// everybody. `Game::score_parts` pays **15 points a wonder** — the densest
@@ -2450,10 +2450,17 @@ pub struct AdvancedAi {
     /// at turn 250. The live seat's own note already did this arithmetic
     /// ("13.6 points per 100 production against 2.2 for a Library") and then
     /// confined it to Firaxis on the argument that "CIVVIS-vs-CIVVIS wonders
-    /// are the contested race the stock gate was written for". Measure that
-    /// argument rather than assume it: when four of six seats are forbidden a
-    /// wonder and the other two need a Culture plan first, the catalogue is
-    /// not contested on a native board either.
+    /// are the contested race the stock gate was written for".
+    ///
+    /// ⚠⚠ WHAT THE SCREEN THEN SAID, AND IT IS NOT WHAT THIS COMMENT FIRST
+    /// CLAIMED. The brief that motivated the gene held that four of six stock
+    /// civilizations structurally never build a wonder. They do:
+    /// `docs/eval/2026-08-24-the-wonder-lane-is-already-open-and-widening-it-costs-cities.md`
+    /// has the census off the deployment genome itself, because `assess` moves
+    /// any empire into the Culture lane on its own progress and `lane_opens`
+    /// opens whenever it does. The gene is kept, off, with its measurement
+    /// recorded — a reachability repair to a lane that turned out already
+    /// reachable, and the arm it was aimed at is the LIVE seat's.
     ///
     /// With this on, a developed city — three cities in the empire, three
     /// buildings in this one, at most one concurrent wonder per six cities —

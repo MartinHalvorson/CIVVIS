@@ -960,21 +960,24 @@ pub const GENES: &[Gene] = &[
     // ledger ships the best (`docs/GENE_SCREEN.md`, *Versioning a gene*).
     // Appended at the END so a running screen keeps its positional genome.
     Gene { tag: "escort-unstick-2", field: "escort_unstick_2", kind: Kind::OptIn, enable: AdvancedAi::enable_escort_unstick_2, disable: AdvancedAi::disable_escort_unstick_2 },
-    // ⭐ ACTUATION, NOT PRICE. The `Item::Wonder` arm refuses every wonder in a
-    // 53-wonder roster unless the plan is Culture, the target is Score, or the
-    // seat is an UNTARGETED EGYPT OR CHINA — an identity check, so four of the
-    // six stock civilizations structurally never build one. The two genes that
-    // could have opened it do not on this board: `live-wonder-race` is
-    // `Kind::HostOnly` and inert headless, and `strategic-wonders` prices only
-    // the lane's own payload, which is zero for Conquest, Expansion and
-    // Recovery — hence its +0.05 pp (z +0.06) over 10,002 seats. Meanwhile
-    // `Game::score_parts` pays 15 points a wonder, the densest line of the
-    // tally, and three quarters of standard-screen games end on that tally.
-    // This gene tells the queue so: a developed city may take a wonder whose
-    // ordinary value plus its fifteen points clears `WONDER_TALLY_MIN_DENSITY`
-    // per point of production cost, with no flat lane bonus, so it still loses
-    // to a Settler or a district worth more per turn. Appended at the END so a
-    // running screen keeps its positional genome. See
+    // ⭐ A WONDER LANE ANY CIVILIZATION CAN REACH ON MERIT. The `Item::Wonder`
+    // arm refuses every wonder in a 53-wonder roster unless the plan is
+    // Culture, the target is Score, or the seat is an UNTARGETED EGYPT OR
+    // CHINA. `Game::score_parts` pays 15 points a wonder — the densest line of
+    // a tally that decides three quarters of standard-screen games — and no
+    // native gate says so: `live-wonder-race` is `Kind::HostOnly` and inert
+    // headless, and `strategic-wonders` prices only the lane's own payload,
+    // zero for Conquest, Expansion and Recovery. This gene tells the queue: a
+    // developed city may take a wonder whose ordinary value plus its fifteen
+    // points clears `WONDER_TALLY_MIN_DENSITY` per point of production cost,
+    // with no flat lane bonus, so it still loses to a Settler or a district
+    // worth more per turn.
+    // ⚠ MEASURED AND OFF. The premise that four of six civilizations never
+    // build a wonder is false — the Culture plan is dynamic and every empire
+    // enters it — and widening the lane costs cities. The numbers are in
+    // `docs/eval/2026-08-24-the-wonder-lane-is-already-open-and-widening-it-costs-cities.md`;
+    // the row is kept so the reading stays attached to the code it prices.
+    // Appended at the END so a running screen keeps its positional genome. See
     // `AdvancedAi::wonder_score_tally`.
     Gene { tag: "wonder-score-tally", field: "wonder_score_tally", kind: Kind::OptIn, enable: AdvancedAi::enable_wonder_score_tally, disable: AdvancedAi::disable_wonder_score_tally },
 ];

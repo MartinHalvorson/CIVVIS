@@ -1698,10 +1698,10 @@ impl AdvancedAi {
         self.settle_plan_ahead = false;
     }
 
-    /// A wonder is reachable for every civilization, not four of six: the
-    /// `Item::Wonder` arm learns the fifteen points `Game::score_parts` pays
-    /// for a finished wonder, under a density bar and the live race's own
-    /// development guards. See `AdvancedAi::wonder_score_tally`.
+    /// A wonder lane any civilization can reach on merit: the `Item::Wonder`
+    /// arm learns the fifteen points `Game::score_parts` pays for a finished
+    /// wonder, under a density bar and the live race's own development guards.
+    /// See `AdvancedAi::wonder_score_tally`.
     pub fn enable_wonder_score_tally(&mut self) {
         self.wonder_score_tally = true;
     }
