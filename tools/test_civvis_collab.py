@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
@@ -462,6 +463,82 @@ class FreshnessTests(unittest.TestCase):
             modified = path.stat().st_mtime_ns
             self.assertFalse(collab.write_managed_service(path, content))
             self.assertEqual(path.stat().st_mtime_ns, modified)
+
+
+class FreshnessLockLivenessTests(unittest.TestCase):
+    """A lock whose holder died must not outlive it by half an hour.
+
+    Measured on 2026-08-23: a `refresh --scheduled` worker hung holding the
+    lock, and every `civvis_collab.py start` on that machine failed with
+    "another refresh is already running" until `FRESHNESS_LOCK_STALE_SECONDS`
+    expired. The lock recorded the holder's PID the whole time.
+    """
+
+    def repo(self, base):
+        """`freshness_dir` resolves through the repository's common git dir."""
+        root = base / "clone"
+        subprocess.run(
+            ("git", "init", "--initial-branch=main", str(root)),
+            check=True,
+            capture_output=True,
+        )
+        return root
+
+    def lock_written_by(self, root, pid):
+        path = collab.freshness_dir(root) / "refresh.lock"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"pid": pid}), encoding="utf-8")
+        return path
+
+    def dead_pid(self):
+        """A PID that is reliably not running: our own child, waited on.
+
+        Spawning and reaping is the only portable way to name a PID that
+        certainly existed and certainly does not now — an arbitrary large
+        integer could belong to a live process on a busy machine.
+        """
+        child = subprocess.Popen(("true",))
+        child.wait()
+        return child.pid
+
+    def test_a_lock_naming_a_dead_process_is_released(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.repo(Path(temporary))
+            path = self.lock_written_by(root, self.dead_pid())
+            self.assertTrue(collab.lock_holder_is_gone(path))
+            with collab.FreshnessLock(root) as acquired:
+                self.assertTrue(acquired)
+
+    def test_a_lock_naming_a_live_process_is_respected(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.repo(Path(temporary))
+            path = self.lock_written_by(root, os.getpid())
+            self.assertFalse(collab.lock_holder_is_gone(path))
+            with collab.FreshnessLock(root) as acquired:
+                self.assertFalse(acquired)
+
+    def test_an_unreadable_lock_is_assumed_live(self):
+        """The file is created O_EXCL and written after, so an empty or
+        malformed one is a holder mid-write, not an orphan. Releasing it would
+        hand two workers the same lock; the age check is the backstop."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.repo(Path(temporary))
+            for content in ("", "{", '{"pid": "not a number"}', "{}", '{"pid": 0}'):
+                path = collab.freshness_dir(root) / "refresh.lock"
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(content, encoding="utf-8")
+                self.assertFalse(collab.lock_holder_is_gone(path), content)
+            path.unlink()
+            self.assertFalse(collab.lock_holder_is_gone(path))
+
+    def test_the_age_backstop_still_releases_a_lock_it_cannot_judge(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.repo(Path(temporary))
+            path = self.lock_written_by(root, os.getpid())
+            stale = time.time() - collab.FRESHNESS_LOCK_STALE_SECONDS - 1
+            os.utime(path, (stale, stale))
+            with collab.FreshnessLock(root) as acquired:
+                self.assertTrue(acquired)
 
 
 class ClaimTests(unittest.TestCase):
