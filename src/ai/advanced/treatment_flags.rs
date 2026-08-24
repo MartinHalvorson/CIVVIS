@@ -2190,16 +2190,69 @@ impl AdvancedAi {
     // ---- append: c-d ------------------------------------------------
 
     // ---- append: e-f ------------------------------------------------
+    /// A city-state's place enters the envoy score: up to ninety for one on
+    /// our border, two hundred more when its sitting suzerain is at war with
+    /// us, amortised over the envoys the flip still needs.
+    /// [`AdvancedAi::flip_nearby_city_states`]. Opt-in gene
+    /// `flip-nearby-city-states`; see `advanced/field_craft.rs`.
+    pub fn enable_flip_nearby_city_states(&mut self) {
+        self.flip_nearby_city_states = true;
+    }
+
+    /// The twin of `enable_flip_nearby_city_states`.
+    pub fn disable_flip_nearby_city_states(&mut self) {
+        self.flip_nearby_city_states = false;
+    }
 
     // ---- append: g-k ------------------------------------------------
 
     // ---- append: l-o ------------------------------------------------
 
     // ---- append: p-r ------------------------------------------------
+    /// A unit at or below 65 health pillages a heal-type improvement it
+    /// stands on, or steps one tile onto one and pillages it, before the
+    /// recovery path walks it home. [`AdvancedAi::pillage_to_heal`]. Opt-in
+    /// gene `pillage-to-heal`; see `advanced/field_craft.rs`.
+    pub fn enable_pillage_to_heal(&mut self) {
+        self.pillage_to_heal = true;
+    }
+
+    /// The twin of `enable_pillage_to_heal`.
+    pub fn disable_pillage_to_heal(&mut self) {
+        self.pillage_to_heal = false;
+    }
 
     // ---- append: s-s ------------------------------------------------
+    /// A ranged unit inside a hostile melee body's reach steps to a firing
+    /// tile inside strictly fewer hostile envelopes and fires at that body,
+    /// in war and against barbarians. Shooters exert no zone of control, so
+    /// the step fires behind a melee friend's zone, across a river or onto
+    /// ground the body cannot enter and swing from — never in the open.
+    /// [`AdvancedAi::shoot_and_scoot`]. Opt-in gene `shoot-and-scoot`; see
+    /// `advanced/field_craft.rs`.
+    pub fn enable_shoot_and_scoot(&mut self) {
+        self.shoot_and_scoot = true;
+    }
+
+    /// The twin of `enable_shoot_and_scoot`.
+    pub fn disable_shoot_and_scoot(&mut self) {
+        self.shoot_and_scoot = false;
+    }
 
     // ---- append: t-z ------------------------------------------------
+    /// A melee unit the attack scan found nothing for stands where its zone
+    /// of control takes the most enemy reaches off our shooters and wounded,
+    /// read exactly off `attack_reach`, and holds only while the stand is
+    /// load-bearing. [`AdvancedAi::zoc_screen`]. Opt-in gene `zoc-screen`;
+    /// see `advanced/field_craft.rs`.
+    pub fn enable_zoc_screen(&mut self) {
+        self.zoc_screen = true;
+    }
+
+    /// The twin of `enable_zoc_screen`.
+    pub fn disable_zoc_screen(&mut self) {
+        self.zoc_screen = false;
+    }
 }
 
 #[cfg(test)]
