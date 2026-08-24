@@ -430,6 +430,30 @@ SCREEN = {
     "randomize_civs": True,
     "baseline": "best",
 }
+#: ⭐ THE LEGS THAT SAY THE BOARD WAS FIELDLESS, and their fieldless values.
+#: Deliberately NOT part of `SCREEN`: `SCREEN` is copied verbatim into
+#: `docs/gene_ledger.json` and its keys are the recorded profile of every
+#: source, so adding one there would rewrite nine historical records that were
+#: written before the leg existed and `check` would report drift on the ledger's
+#: own history.
+#:
+#: `gene_screen --contested` pins rival seats to actually pursue a victory lane
+#: and turns on `Game::native_competitions`, and a batch played that way differs
+#: from the standard screen in NO map leg at all -- same players, map, size,
+#: city-states, speed, clock, lanes and civ shuffle. Without this check it would
+#: read `standard` and pool with the ledger, re-pricing a hundred genes against
+#: a board none of them was measured on. `profile_of` records these two only
+#: when they are set, so every existing record reproduces byte for byte.
+#:
+#: ⚠ `contested_field`, not `field`. Every header the retired paired designs
+#: wrote already carries a `field` -- the name of the agent the treated seat
+#: played against, `"advanced"` -- so calling the new leg `field` rewrote nine
+#: historical source records and `check` reported drift on the ledger's own
+#: history. That is the gate working; the name is the fix.
+FIELDLESS = {
+    "contested_field": "",
+    "native_competitions": False,
+}
 #: The profile keys recorded for every source, whether or not they match. The
 #: draw `design` is recorded and NOT checked: it is how each seat's genome was
 #: sampled (`independent` — every seat its own draw, the screen since
@@ -928,6 +952,13 @@ def profile_of(data: dict) -> dict:
     for key in ("all_seats", "randomize_civs"):
         if profile[key] is None:
             profile[key] = False
+    # A contested board announces itself; a fieldless one says nothing, which
+    # is exactly what its absence has always meant. Recording the leg only when
+    # it is set keeps every record written before the leg existed byte-stable.
+    for key, fieldless in FIELDLESS.items():
+        value = raw.get(key)
+        if value is not None and value != fieldless:
+            profile[key] = value
     return profile
 
 
@@ -937,16 +968,22 @@ def shape_of(profile: dict) -> str:
     A legacy source is history, not a second regime: the Pangaea screens that
     the deployment genome currently stands on. New ones are refused at the
     write path (`--legacy-shape` to record one deliberately), so the ledger
-    cannot quietly acquire a second shape."""
+    cannot quietly acquire a second shape.
+
+    ⚠ `FIELDLESS` is checked beside `SCREEN` and is the only thing standing
+    between the ledger and a contested-field batch, which matches every map leg
+    the screen has."""
+    if any(profile.get(k, v) != v for k, v in FIELDLESS.items()):
+        return "legacy"
     return "standard" if all(profile.get(k) == v for k, v in SCREEN.items()) else "legacy"
 
 
 def shape_gap(profile: dict) -> str:
     """The legs that differ from the screen, for the refusal message."""
     return ", ".join(
-        f"{key}={profile.get(key)!r} (screen: {value!r})"
-        for key, value in SCREEN.items()
-        if profile.get(key) != value
+        f"{key}={profile.get(key, fieldless)!r} (screen: {fieldless!r})"
+        for key, fieldless in {**SCREEN, **FIELDLESS}.items()
+        if profile.get(key, fieldless) != fieldless
     )
 
 
