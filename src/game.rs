@@ -31975,6 +31975,11 @@ impl Game {
         }
         let Some(competition) = Self::NATIVE_COMPETITIONS.iter().find(|competition| {
             competition.trigger == trigger
+                // No aid request carries a civilization requirement today, so
+                // this changes nothing now. It is here because the gate belongs
+                // to the spec rather than to the congress path: a trait-gated
+                // competition added on another trigger must not slip past it.
+                && self.game_meets_competition_trait(competition)
                 && self
                     .competition_lockout_until
                     .get(competition.kind)
