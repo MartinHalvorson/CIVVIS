@@ -1305,4 +1305,3 @@ SCREEN_PLACEHOLDER
 3. **Do not build the recon-steering gene against `beyond_loyalty_reach`
    without first moving `frontier-loyalty` out of `Kind::HostOnly`**, for the
    reason two sections up. It cannot fire on the board the screen plays.
-
