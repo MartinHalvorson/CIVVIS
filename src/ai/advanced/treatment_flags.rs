@@ -2251,7 +2251,6 @@ impl AdvancedAi {
         self.one_war_at_a_time = false;
     }
 
-
     /// A city-state's place enters the envoy score: up to ninety for one on
     /// our border, two hundred more when its sitting suzerain is at war with
     /// us, amortised over the envoys the flip still needs.
