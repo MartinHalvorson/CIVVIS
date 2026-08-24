@@ -309,9 +309,18 @@ const CAPTURE_ONLY_CIVILIAN_UNITS = new Set(["settler", "builder"]);
 function unitHasHealth(unit) {
   return !!unit && !CAPTURE_ONLY_CIVILIAN_UNITS.has(unit.type) && Number.isFinite(unit.hp);
 }
-// The command map uses Civilization VI's own unit glyphs. Their order is the
-// order of the cells in civ6-unit-flags.png and is kept beside the renderer so
-// a missing ruleset unit cannot silently borrow another unit's picture.
+// The command map uses Civilization VI's own unit glyphs, cut off the install
+// by tools/civ6_unit_glyphs.py. A cell is a unit's place in the **sorted**
+// ruleset roster, so the sheet's order is derived rather than chosen and this
+// list is that roster spelled out.
+//
+// ⚠ It is sorted for a reason. This used to be a list somebody appended to,
+// and the cutter's roster was a second list somebody else appended to. They
+// drifted by one: `nihang` was added here, never added there, and took the
+// cell after the last one the cutter wrote -- which held a duplicate of
+// `warrior_monk`'s picture. Every Nihang on the map wore a Warrior Monk's
+// glyph, and nothing failed. Sorted order plus the contract test in
+// `src/server.rs` makes an append that skips the cutter impossible to miss.
 const CIV6_UNIT_ICON_TYPES = [
   "aircraft_carrier", "anti_air_gun", "apostle", "archaeologist", "archer",
   "artillery", "at_crew", "battering_ram", "battleship", "biplane",
@@ -321,32 +330,32 @@ const CIV6_UNIT_ICON_TYPES = [
   "giant_death_robot", "guru", "heavy_chariot", "helicopter", "hoplite",
   "horseman", "infantry", "inquisitor", "ironclad", "jet_bomber",
   "jet_fighter", "keshig", "knight", "kongo_shield_bearer", "legion",
-  "line_infantry", "machine_gun",
-  "man_at_arms", "maryannu_chariot_archer", "mechanized_infantry", "medic",
-  "military_engineer", "missile_cruiser", "missionary", "mobile_sam",
-  "modern_armor", "modern_at", "musketman", "naturalist",
-  "nau", "nuclear_submarine", "observation_balloon", "oromo_cavalry", "pike_and_shot", "pikeman",
-  "pitati_archer", "privateer", "quadrireme", "ranger", "rock_band",
-  "rocket_artillery", "saka_horse_archer", "scout", "settler", "siege_tower",
-  "skirmisher", "slinger", "spearman", "spec_ops", "spy", "submarine",
-  "supply_convoy", "swordsman", "tagma", "tank", "toa", "trader", "trebuchet",
-  "war_cart", "warrior", "winged_hussar", "warrior_monk", "nihang"
+  "line_infantry", "machine_gun", "man_at_arms", "maryannu_chariot_archer",
+  "mechanized_infantry", "medic", "military_engineer", "missile_cruiser",
+  "missionary", "mobile_sam", "modern_armor", "modern_at", "musketman",
+  "naturalist", "nau", "nihang", "nuclear_submarine", "observation_balloon",
+  "oromo_cavalry", "pike_and_shot", "pikeman", "pitati_archer", "privateer",
+  "quadrireme", "ranger", "rock_band", "rocket_artillery",
+  "saka_horse_archer", "scout", "settler", "siege_tower", "skirmisher",
+  "slinger", "spearman", "spec_ops", "spy", "submarine", "supply_convoy",
+  "swordsman", "tagma", "tank", "toa", "trader", "trebuchet", "war_cart",
+  "warrior", "warrior_monk", "winged_hussar"
 ];
 const CIV6_UNIT_ICON_INDEX = new Map(
   CIV6_UNIT_ICON_TYPES.map((type, index) => [type, index]));
 const CIV6_UNIT_ICON_CELL = 64, CIV6_UNIT_ICON_COLUMNS = 12;
 const CIV6_UNIT_ICON_ATLAS = new Image();
 const CIV6_UNIT_ICON_CACHE = new Map();
-// Where each silhouette actually sits inside its cell. The atlas is cut from
-// Civilopedia cards, so the authored margin is per-icon: a Pike and Shot fills
-// 38 of its 64 px, a Spec Ops 59, and the roster averages 49. Drawing whole
-// cells at one box size therefore drew the same command counter at sizes 1.6x
-// apart, which reads as the map keeping two or three classes of unit marker.
-// Measuring the alpha once turns every cell into a silhouette rectangle, and
-// one requested size then means one size.
+// Where each silhouette actually sits inside its cell. Civilization VI authors
+// its icons with a per-icon margin, so the ink runs from 38 of a cell's 64 px
+// to 57 and averages 49. Drawing whole cells at one box size therefore drew the
+// same command counter at sizes 1.5x apart, which reads as the map keeping two
+// or three classes of unit marker. Measuring the alpha once turns every cell
+// into a silhouette rectangle, and one requested size then means one size.
 const CIV6_UNIT_ICON_BOXES = new Map();
-// Ignore the near-transparent fringe the background subtraction leaves behind,
-// so a stray pixel cannot inflate an icon's measured extent.
+// Ignore the near-transparent fringe of the 4:1 downsample, so a stray pixel
+// cannot inflate an icon's measured extent. The cutter measures on this same
+// floor, and civ6-unit-flags.json records what it found.
 const CIV6_UNIT_ICON_ALPHA_FLOOR = 12;
 const CIV6_UNIT_ICON_FULL_CELL = Object.freeze(
   {x:0, y:0, w:CIV6_UNIT_ICON_CELL, h:CIV6_UNIT_ICON_CELL});
@@ -360,7 +369,7 @@ CIV6_UNIT_ICON_ATLAS.onload = () => {
 CIV6_UNIT_ICON_ATLAS.src = "/assets/civ6-unit-flags.png";
 
 // One pass over the loaded atlas rather than a hand-kept table of rectangles:
-// tools/civ6_unit_flags.swift can add or re-cut a cell without a second list
+// tools/civ6_unit_glyphs.py can add or re-cut a cell without a second list
 // going quietly stale beside it. A canvas the browser refuses to read leaves
 // every icon on its full cell, which is exactly the old behaviour.
 function measureCiv6UnitIconBoxes() {
