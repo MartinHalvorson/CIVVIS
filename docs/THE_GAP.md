@@ -153,14 +153,33 @@ host's own Hall of Fame database rather than from our ledger:
 | score (at the clock) | 38–52% | *not in this column — the cap is where our own wins live* |
 | domination | **0%** | 0 |
 
-Diplomatic plus culture are **83% of every early loss on the live seat**.
-Natively they barely happen, and for diplomacy [FIDELITY.md](FIDELITY.md)
-explains why structurally: Gathering Storm pays Diplomatic Victory Points to
-the first-place finisher of scored competitions, recurring through the whole
-second half of a game, and **a native CIVVIS game has none of them**. 41 of 209
-terminal live games end in a rival's diplomatic victory (19.6%); the contested
-native screen produces 2 in 120 (1.7%). *"That twelvefold gap is structural,
-not tactical."*
+Diplomatic plus culture are **83% of every early loss on the live seat**, and
+natively they barely happen: 41 of 209 terminal live games end in a rival's
+diplomatic victory (19.6%) against 1.7–2.0% on the native screen.
+
+⚠ **The explanation this page carried for that gap is now measured and is
+wrong.** It said Gathering Storm pays Diplomatic Victory Points to the winners
+of scored competitions, *"a native CIVVIS game has none of them"*, and therefore
+the twelvefold gap is **structural** — a native empire has no route to 20 and no
+treatment can give it one. Two things have changed since that was written:
+
+- **Six of the seven competitions were already modelled** (#2169, #2171, #2173,
+  #2177, #2181, #2184); #2379 added the seventh (Nobel Peace Prize — gated on
+  `TRAIT_CIVILIZATION_NOBEL_PRIZE`, which only Sweden has, so **a game without
+  Sweden never sees one**).
+- **A native empire already reaches 20 without any of them.** Over 150 paired
+  seeds at the standard shape with competitions **off**: the leading empire's
+  DVP is **median 13, max 21**, and **3 of 150 games crossed 20**. Turning all
+  seven on adds **+0.35 DVP to the leader per game** (95% CI +0.05 to +0.64) and
+  moved diplomatic endings 3/150 → 0/150 — real, and small, because a
+  competition pays *one* empire and six are sharing.
+
+So the native diplomatic lane is **short by roughly a third, not unreachable**,
+and the honest reading of the remaining gap is that it is about *pursuit* — the
+screen's field does not chase a diplomatic victory the way Firaxis' AI does —
+rather than about a missing points source. `native_competitions` ships **off**:
+switching it on would re-price every recorded native number to buy a third of a
+point and no measurable change in endings.
 
 Domination is 0% at every map and every clock — **one** game out of 1,513
 headless ones, on a board that did not exist when the first zero was measured,
