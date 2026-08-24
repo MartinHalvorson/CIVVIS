@@ -33800,6 +33800,263 @@ fn one_war_sues_once_the_tide_has_run_against_us_for_long_enough() {
     assert_eq!(ai.one_war_peace(&game, 0, 1), None);
 }
 
+// ── `lane-commit`: from the midpoint, the empire plays for the victory it
+// leads the field in. See `advanced/lane_commit.rs`. ──────────────────────
+
+#[test]
+fn lane_commit_is_a_native_opt_in_off_in_both_controllers() {
+    assert!(!AdvancedAi::new().lane_commit);
+    assert!(!AdvancedAi::legacy().lane_commit);
+    let gene = GENES
+        .iter()
+        .find(|gene| gene.tag == "lane-commit")
+        .expect("the gene is published for gene_screen");
+    assert!(gene.opt_in() && gene.screenable() && !gene.live());
+    let mut ai = AdvancedAi::new();
+    (gene.enable)(&mut ai);
+    assert!(ai.lane_commit);
+    (gene.disable)(&mut ai);
+    assert!(!ai.lane_commit);
+}
+
+/// A two-player board on a 250-turn clock, at Standard speed so standard
+/// turns are turns: the midpoint is turn 125.
+fn lane_commit_board(turn: u32) -> Game {
+    let mut g = Game::new(2, 24, 16, 74, 250, 0);
+    assert_eq!(g.turn_limit(), Some(250));
+    g.turn = turn;
+    g
+}
+
+fn lane_reading(lane: VictoryTarget, progress: i32, lead: i32) -> lane_commit::LaneReading {
+    lane_commit::LaneReading {
+        lane,
+        progress,
+        lead,
+    }
+}
+
+/// The four lanes as a review reads them: science, culture, religion,
+/// diplomacy, each as (own progress, best rival's progress).
+fn lane_table(table: [(i32, i32); 4]) -> Vec<lane_commit::LaneReading> {
+    lane_commit::LANE_COMMIT_LANES
+        .iter()
+        .zip(table)
+        .map(|(lane, (own, rival))| lane_reading(*lane, own, own - rival))
+        .collect()
+}
+
+/// Nothing is committed before the midpoint; the gene off, or an operator's
+/// assignment, leaves the seat exactly as it was — `raced_target` answers
+/// the assignment alone.
+#[test]
+fn lane_commit_waits_for_the_midpoint_and_yields_to_an_assignment() {
+    let early = lane_commit_board(124);
+    let mut ai = AdvancedAi::new();
+    ai.enable_lane_commit();
+    ai.maintain_lane_commit(&early, 0);
+    assert_eq!(ai.lane_commitment(), None);
+    assert_eq!(ai.raced_target(), None);
+
+    let midpoint = lane_commit_board(125);
+    let mut off = AdvancedAi::new();
+    off.maintain_lane_commit(&midpoint, 0);
+    assert_eq!(off.lane_commitment(), None);
+
+    let mut assigned = AdvancedAi::new();
+    assigned.enable_lane_commit();
+    assigned.retarget(VictoryTarget::Culture);
+    assigned.maintain_lane_commit(&midpoint, 0);
+    assert_eq!(assigned.lane_commitment(), None);
+    assert_eq!(assigned.raced_target(), Some(VictoryTarget::Culture));
+
+    // On a real board the midpoint commits, and the commitment is one of
+    // the raced lanes.
+    let mut live = AdvancedAi::new();
+    live.enable_lane_commit();
+    live.maintain_lane_commit(&midpoint, 0);
+    let commitment = live.lane_commitment().expect("committed at the midpoint");
+    assert!(lane_commit::LANE_COMMIT_LANES.contains(&commitment.lane));
+    assert_eq!(commitment.since, 125);
+    assert_eq!(live.raced_target(), Some(commitment.lane));
+}
+
+/// The lane chosen is the one the seat leads the field in, not the one it
+/// is furthest along in: science at 45% is four points behind the tech
+/// leader, religion at 52% leads every founder by twelve — and the
+/// commitment reaches the assessment and `raced_target`.
+#[test]
+fn lane_commit_picks_the_lane_the_seat_leads() {
+    let g = lane_commit_board(125);
+    let mut ai = AdvancedAi::new();
+    ai.enable_lane_commit();
+    ai.review_lane_commitment(&g, &lane_table([(45, 49), (10, 30), (52, 40), (30, 35)]));
+    let commitment = ai.lane_commitment().expect("committed at the midpoint");
+    assert_eq!(commitment.lane, VictoryTarget::Religion);
+    assert_eq!(commitment.since, 125);
+    assert_eq!(commitment.progress, 52);
+    assert_eq!(commitment.lead, 12);
+    assert_eq!(ai.raced_target(), Some(VictoryTarget::Religion));
+    assert!(
+        ai.plan.is_none(),
+        "a fresh commitment is assessed the same turn"
+    );
+    // Short of cities with land still open, the seat keeps settling; once
+    // the stock window shuts the plan is the committed lane; and a
+    // committed lane 65% along comes before more cities, stock's own bar.
+    assert_eq!(ai.assess(&g, 0).strategy, GrandStrategy::Expansion);
+    let window_shut = lane_commit_board(205);
+    assert_eq!(ai.assess(&window_shut, 0).strategy, GrandStrategy::Religion);
+    let mut far = AdvancedAi::new();
+    far.enable_lane_commit();
+    far.review_lane_commitment(&g, &lane_table([(45, 49), (10, 30), (70, 40), (30, 35)]));
+    assert_eq!(far.assess(&g, 0).strategy, GrandStrategy::Religion);
+
+    // Leading two lanes, the one closer to landing wins; leading none, the
+    // one furthest along — what `victory_focus` would say — made sticky.
+    let mut two = AdvancedAi::new();
+    two.enable_lane_commit();
+    two.review_lane_commitment(&g, &lane_table([(45, 40), (10, 30), (52, 50), (30, 35)]));
+    assert_eq!(two.committed_lane(), Some(VictoryTarget::Religion));
+    let mut none = AdvancedAi::new();
+    none.enable_lane_commit();
+    none.review_lane_commitment(&g, &lane_table([(45, 49), (10, 30), (40, 52), (30, 35)]));
+    assert_eq!(none.committed_lane(), Some(VictoryTarget::Science));
+    assert_eq!(none.lane_commitment().unwrap().lead, -4);
+    assert_eq!(
+        none.assess(&lane_commit_board(205), 0).strategy,
+        GrandStrategy::Science
+    );
+}
+
+/// A commitment holds against a challenger a few points better and yields
+/// to one well further along at the same standing, or to one that leads
+/// once the committed lane's own lead is gone; a lane taken off the board
+/// is left at once.
+#[test]
+fn lane_commit_holds_against_a_marginal_challenger() {
+    let g = lane_commit_board(125);
+    let mut ai = AdvancedAi::new();
+    ai.enable_lane_commit();
+    ai.review_lane_commitment(&g, &lane_table([(45, 49), (10, 30), (52, 40), (30, 35)]));
+    assert_eq!(ai.committed_lane(), Some(VictoryTarget::Religion));
+
+    // Turn 135: diplomacy now leads too and reads 64% against religion's 58
+    // — six points, inside the twenty-point margin. Hold, and record the
+    // review.
+    let later = lane_commit_board(135);
+    ai.review_lane_commitment(
+        &later,
+        &lane_table([(47, 51), (12, 32), (58, 46), (64, 55)]),
+    );
+    let held = ai.lane_commitment().unwrap();
+    assert_eq!(held.lane, VictoryTarget::Religion);
+    assert_eq!((held.since, held.reviewed, held.progress), (125, 135, 58));
+
+    // Turn 145: diplomacy at 80% is twenty-two points further along than
+    // religion at 58 and both lead. Switch.
+    let switch = lane_commit_board(145);
+    ai.review_lane_commitment(
+        &switch,
+        &lane_table([(49, 53), (14, 34), (58, 46), (80, 60)]),
+    );
+    let commitment = ai.lane_commitment().unwrap();
+    assert_eq!(commitment.lane, VictoryTarget::Diplomacy);
+    assert_eq!(
+        (commitment.since, commitment.progress, commitment.lead),
+        (145, 80, 20)
+    );
+
+    // A committed lane whose lead is gone yields to a lane that leads, at
+    // any progress.
+    let mut overtaken = AdvancedAi::new();
+    overtaken.enable_lane_commit();
+    overtaken.review_lane_commitment(&g, &lane_table([(45, 49), (10, 30), (52, 40), (30, 35)]));
+    overtaken.review_lane_commitment(
+        &later,
+        &lane_table([(47, 51), (12, 32), (58, 70), (40, 38)]),
+    );
+    assert_eq!(overtaken.committed_lane(), Some(VictoryTarget::Diplomacy));
+
+    // ...but not to a lane that is merely a little further along while
+    // neither leads.
+    let mut behind = AdvancedAi::new();
+    behind.enable_lane_commit();
+    behind.review_lane_commitment(&g, &lane_table([(45, 49), (10, 30), (40, 52), (30, 35)]));
+    assert_eq!(behind.committed_lane(), Some(VictoryTarget::Science));
+    behind.review_lane_commitment(
+        &later,
+        &lane_table([(47, 53), (12, 32), (55, 70), (30, 35)]),
+    );
+    assert_eq!(behind.committed_lane(), Some(VictoryTarget::Science));
+    behind.review_lane_commitment(
+        &switch,
+        &lane_table([(47, 53), (12, 32), (67, 80), (30, 35)]),
+    );
+    assert_eq!(behind.committed_lane(), Some(VictoryTarget::Religion));
+
+    // A lane the board no longer offers is left at the next review.
+    let mut no_religion = lane_commit_board(135);
+    no_religion.victory_conditions.religious = false;
+    let mut left = AdvancedAi::new();
+    left.enable_lane_commit();
+    left.review_lane_commitment(&g, &lane_table([(45, 49), (10, 30), (52, 40), (30, 35)]));
+    let readings: Vec<_> = lane_table([(47, 51), (12, 32), (58, 46), (30, 35)])
+        .into_iter()
+        .filter(|reading| reading.lane != VictoryTarget::Religion)
+        .collect();
+    left.review_lane_commitment(&no_religion, &readings);
+    assert_eq!(left.committed_lane(), Some(VictoryTarget::Science));
+}
+
+/// The vetoes an assigned lane carries stay the operator's: a committed
+/// seat still votes in Congress, still buys missionaries and Great Works,
+/// still expands on the adaptive cutoff — only the objective resolutions
+/// read the commitment.
+#[test]
+fn lane_commit_reaches_the_objectives_and_not_the_vetoes() {
+    let g = lane_commit_board(125);
+    let mut ai = AdvancedAi::new();
+    ai.enable_lane_commit();
+    ai.review_lane_commitment(&g, &lane_table([(45, 49), (10, 30), (52, 40), (30, 35)]));
+    assert_eq!(ai.raced_target(), Some(VictoryTarget::Religion));
+    assert_eq!(ai.victory_target(), None);
+    assert_eq!(ai.active_victory_target(&g), None);
+    // The rivals' readings come off the same table, so the field is read
+    // for every living major.
+    let readings = ai.lane_readings(&g, 0);
+    assert_eq!(readings.len(), 4);
+    for reading in &readings {
+        assert!((0..=100).contains(&reading.progress));
+    }
+}
+
+/// `victory_focus` is unchanged by the refactor that exposed the lane table:
+/// the civilization preferences stay in the focus and out of the table.
+#[test]
+fn lane_progress_table_matches_victory_focus() {
+    let ai = AdvancedAi::new();
+    let mut religion = Game::new(2, 24, 16, 74, 80, 0);
+    religion.players[0].religion = Some("Test Faith".to_string());
+    let table = ai.lane_progress_table(&religion, 0);
+    assert_eq!(
+        table[2], 40,
+        "a founder with no foreign convert stands at 40"
+    );
+    let focus = ai.victory_focus(&religion, 0);
+    assert_eq!(focus.strategy, GrandStrategy::Religion);
+    assert_eq!(focus.progress, table[2]);
+
+    let mut china = Game::new(2, 24, 16, 77, 80, 0);
+    china.players[0].civ = "China".to_string();
+    let table = ai.lane_progress_table(&china, 0);
+    assert!(
+        table[0] < 45,
+        "the table carries no civilization preference"
+    );
+    assert_eq!(ai.victory_focus(&china, 0).progress, 45);
+}
+
 // ═══ No gifts: the engine allows one (Civilization VI's rule) and the AI never makes one ═══
 
 /// Two advanced seats through a whole short game: quotes are closed, and not
