@@ -665,6 +665,33 @@ pub const TOURISM_PER_VISITOR: f64 = 200.0;
 /// scaled by the game's speed, and using the constant raw is the defect that hid
 /// here for the whole project.
 pub const PANTHEON_FAITH_STANDARD: f64 = 25.0;
+
+/// The pantheons that pay a Holy Site for the ground around it, and the plot
+/// each one is paid for.
+///
+/// Every row is the same shipped modifier — `DISTRICT_HOLY_SITE`,
+/// `YIELD_FAITH`, `Amount 1`, subject `CITY_FOLLOWS_PANTHEON_REQUIREMENTS` —
+/// differing only in its `TerrainType`/`FeatureType`, which is why the engine
+/// carries one predicate and three rows rather than three branches. The plot
+/// name is matched against a terrain OR a feature so both shipped modifier
+/// types (`MODIFIER_ALL_CITIES_TERRAIN_ADJACENCY` and
+/// `MODIFIER_ALL_CITIES_FEATURE_ADJACENCY`) read the same way.
+const PANTHEON_HOLY_SITE_ADJACENCY: [(&str, &str); 3] = [
+    // DESERT_FOLKLORE_FAITHDESERT{,HILLS}ADJACENCY
+    ("holy_site_desert_faith", "desert"),
+    // DANCE_OF_THE_AURORA_FAITHTUNDRA{,HILLS}ADJACENCY
+    ("holy_site_tundra_faith", "tundra"),
+    // SACRED_PATH_FAITHFEATUREADJACENCY, FEATURE_JUNGLE
+    ("holy_site_jungle_faith", "jungle"),
+];
+
+/// How far from a Holy Site a kill still pays God of War.
+/// `PLOT_EIGHT_INCLUDE_HOLY_SITE`: `REQUIREMENT_PLOT_ADJACENT_DISTRICT_TYPE_MATCHES`
+/// with `MinRange 0` and `MaxRange 8`, and the shipped text says the same —
+/// "within 8 tiles of a Holy Site district". The requirement names no owner,
+/// so any Holy Site on the map answers it.
+const GOD_OF_WAR_HOLY_SITE_RANGE: i32 = 8;
+
 const STANDARD_DEAL_TURNS: u32 = 30;
 /// The one-off token costs published for individual diplomatic missions.
 const DELEGATION_GOLD: f64 = 10.0;
@@ -8974,6 +9001,21 @@ impl Game {
             tile.improvement = None;
         }
         self.players[owner].gold += 50.0 + self.human_camp_gold(owner);
+        // Initiation Rites pays for the camp twice, and Gathering Storm's
+        // second half is the one a base-game reading misses:
+        // `INITIATION_RITES_FAITH_DISPERSAL_MODIFIER`
+        // (`EFFECT_ADJUST_PLAYER_FAITH_FROM_DISPERSAL`, Amount 50) is the base
+        // game's, and `INITIATION_RITES_HEALING_DISPERSAL_MODIFIER`
+        // (`EFFECT_ADJUST_PLAYER_HEALING_FROM_DISPERSAL`, Amount 100) is added
+        // by `Expansion2_Beliefs.xml` — "the unit that cleared the Barbarian
+        // Outpost heals +100 HP". Neither id is in `Expansion2_RemoveData.xml`.
+        self.players[owner].faith += self.pantheon_effect(owner, "camp_cleared_faith");
+        let camp_heal = self.pantheon_effect(owner, "camp_cleared_heal");
+        if camp_heal > 0.0 {
+            if let Some(unit) = self.units.get_mut(&uid) {
+                unit.hp = (unit.hp + camp_heal.round() as i32).min(100);
+            }
+        }
         if coastal {
             let loot = self.promotion_effect(&self.units[&uid], "coastal_raid_gold");
             self.players[owner].gold += self.game_speed.scale(loot);
@@ -9898,6 +9940,40 @@ impl Game {
             .is_some_and(|tile| tile.fallout_until > self.turn)
     }
 
+    /// God of Healing: `GOD_OF_HEALING_UNIT_HEALING_MODIFIER`,
+    /// `MODIFIER_PLAYER_UNITS_ADJUST_HEAL_PER_TURN` with `Amount 30` and
+    /// `Type ALL`, over `PLOT_ADJACENT_INCLUDE_HOLY_SITE`
+    /// (`REQUIREMENT_PLOT_ADJACENT_DISTRICT_TYPE_MATCHES`, `DISTRICT_HOLY_SITE`,
+    /// `MinRange 0`) — so the Holy Site's own plot counts as well as the ring
+    /// around it, and every class heals, religious units included.
+    ///
+    /// ⚠ The requirement set names no owner; the shipped text does — "in YOUR
+    /// Holy Site district, or any adjacent tiles" — so a rival's Holy Site does
+    /// not heal this army. No id in this belief appears in
+    /// `Expansion2_RemoveData.xml`.
+    fn pantheon_holy_site_heal(&self, uid: u32) -> i32 {
+        let unit = &self.units[&uid];
+        let amount = self.pantheon_effect(unit.owner, "holy_site_heal");
+        if amount == 0.0 {
+            return 0;
+        }
+        let beside_a_holy_site = self.wdisk(unit.pos, 1).into_iter().any(|position| {
+            self.map.get(position).is_some_and(|tile| {
+                tile.district.is_some_and(|district| {
+                    self.district_is_family(district, crate::name!("holy_site"))
+                }) && tile
+                    .owner_city
+                    .and_then(|city_id| self.cities.get(&city_id))
+                    .is_some_and(|city| city.owner == unit.owner)
+            })
+        });
+        if beside_a_holy_site {
+            amount.round() as i32
+        } else {
+            0
+        }
+    }
+
     pub fn unit_heal_rate(&self, uid: u32) -> i32 {
         let unit = &self.units[&uid];
         let spec = &self.rules.units[unit.kind];
@@ -9929,6 +10005,10 @@ impl Game {
         {
             return 0;
         }
+        // Bound once, below the guards that mean "cannot recover at all" — a
+        // barbarian, an arena, fallout, a grounded aircraft — because a
+        // healing modifier lifts a rate, it does not create one.
+        let holy_site_heal = self.pantheon_holy_site_heal(uid);
         if self
             .map
             .get(unit.pos)
@@ -9993,7 +10073,7 @@ impl Game {
                 .map(|other| self.promotion_effect(&self.units[&other], "adjacent_heal"))
                 .fold(0.0, f64::max);
             best = best.max(chaplain);
-            return best.round() as i32;
+            return best.round() as i32 + holy_site_heal;
         }
         if spec.domain.as_deref() == Some("sea")
             && self
@@ -10040,7 +10120,7 @@ impl Game {
                     city.owner == unit.owner || self.suzerain_of(city.owner) == Some(unit.owner)
                 });
             if friendly {
-                20 + emergency_heal + support_heal
+                20 + emergency_heal + support_heal + holy_site_heal
             } else {
                 // Auxiliary Ships, Supply Fleet and Supercarrier do not heal a
                 // ship as if it were home: they pay 5 in enemy territory and
@@ -10054,12 +10134,10 @@ impl Game {
                     }
                     _ => 0.0,
                 } as i32;
-                promoted + emergency_heal + support_heal
+                promoted + emergency_heal + support_heal + holy_site_heal
             }
         } else {
-            location.rate()
-                + emergency_heal
-                + support_heal
+            location.rate() + emergency_heal + support_heal + holy_site_heal
         }
     }
 
@@ -16233,6 +16311,17 @@ impl Game {
                 let family = self.district_family(*district);
                 bonus += self.governor_effect(pid, cid, "district_production_pct") / 100.0;
                 bonus += self.gov_effects(pid).district_production_pct / 100.0;
+                // City Patron Goddess: CITY_PATRON_GODDESS_DISTRICT_PRODUCTION_MODIFIER,
+                // `EFFECT_ADJUST_ALL_DISTRICT_PRODUCTION_MODIFIER` Amount 25,
+                // subject `CITY_HAS_0_SPECIALTY_DISTRICTS_REQUIREMENTS` — which
+                // is `REQUIREMENT_CITY_HAS_X_SPECIALTY_DISTRICTS` Amount 1 with
+                // Inverse set, i.e. the city has none. `MustBeFunctioning 0`, so
+                // a district that stands but is pillaged still ends the bonus;
+                // one still under construction has not been placed yet and does
+                // not. No id in this belief appears in `Expansion2_RemoveData.xml`.
+                if self.city_specialty_district_count(&self.cities[&cid]) == 0 {
+                    bonus += self.pantheon_effect(pid, "first_district_production_pct") / 100.0;
+                }
                 if matches!(family.as_str(), "encampment" | "harbor") {
                     bonus += self.policy_effect(pid, "military_port_production_pct") / 100.0;
                 }
@@ -16251,6 +16340,15 @@ impl Game {
                 let era = self.wonder_era(wonder);
                 if era <= 1 {
                     bonus += self.policy_effect(pid, "classical_wonder_production_pct") / 100.0;
+                    // Monument to the Gods rides the same window:
+                    // MONUMENT_TO_THE_GODS_ANCIENTCLASSICALWONDER_MODIFIER is
+                    // `MODIFIER_PLAYER_CITIES_ADJUST_WONDER_ERA_PRODUCTION`,
+                    // Amount 15, StartEra ANCIENT, EndEra CLASSICAL, IsWonder 1
+                    // — the identical StartEra/EndEra pair the policy cards
+                    // above already reduce to `era <= 1`. Not in
+                    // `Expansion2_RemoveData.xml`.
+                    bonus += self.pantheon_effect(pid, "ancient_classical_wonder_production_pct")
+                        / 100.0;
                 }
                 if era <= 3 {
                     bonus += self.policy_effect(pid, "renaissance_wonder_production_pct") / 100.0;
@@ -26348,10 +26446,52 @@ impl Game {
         parks
     }
 
+    /// What River Goddess pays a district standing where the belief asks.
+    ///
+    /// ★ One predicate for both halves of the belief: Gathering Storm ships
+    /// `RIVER_GODDESS_HOLY_SITE_AMENITIES` and `RIVER_GODDESS_HOLY_SITE_HOUSING`
+    /// as two modifiers with the SAME subject requirement set,
+    /// `PLOT_HAS_HOLY_SITE_RIVER_REQUIREMENTS` (`REQUIRES_PLOT_HAS_HOLY_SITE`
+    /// and `REQUIRES_PLOT_ADJACENT_TO_RIVER`, tested ALL), so the plot test
+    /// lives here once and the caller names which yield it is collecting.
+    ///
+    /// ⚠ `Expansion2_RemoveData.xml` DELETES the base game's
+    /// `RIVER_GODDESS_HOLY_SITE_AMENITY` — a different id, +1 Amenity through
+    /// `MODIFIER_CITY_DISTRICTS_ADJUST_CITY_AMENITIES_FROM_RELIGION` and no
+    /// Housing at all. Reading the base row would underpay the Amenity and
+    /// miss the Housing outright.
+    fn pantheon_river_holy_site(&self, district: &str, position: Pos, effect: &str) -> f64 {
+        // ⚠ River first, and the district family last. This is asked once per
+        // district per city on every Housing and Amenity read, and
+        // `Name::new` takes a read lock on the global name registry — the
+        // plot's own six river edges settle it for almost every caller
+        // without interning anything.
+        let Some(tile) = self.map.get(position) else {
+            return 0.0;
+        };
+        if !tile.has_river() {
+            return 0.0;
+        }
+        let Some(amount) = tile
+            .owner_city
+            .and_then(|city_id| self.cities.get(&city_id))
+            .map(|city| self.pantheon_effect(city.owner, effect))
+            .filter(|amount| *amount != 0.0)
+        else {
+            return 0.0;
+        };
+        if !self.district_is_family(Name::new(district), crate::name!("holy_site")) {
+            return 0.0;
+        }
+        amount
+    }
+
     pub(crate) fn district_housing(&self, district: &str, position: Pos) -> f64 {
+        let river_goddess =
+            self.pantheon_river_holy_site(district, position, "river_holy_site_housing");
         let spec = &self.rules.districts[district];
         let Some(maximum) = spec.effects.get("appeal_housing_max").copied() else {
-            return spec.housing;
+            return spec.housing + river_goddess;
         };
         let appeal = self.tile_appeal(position);
         let dynamic: f64 = if maximum >= 6.0 {
@@ -26370,10 +26510,12 @@ impl Game {
                 _ => 0.0,
             }
         };
-        spec.housing + dynamic.min(maximum)
+        spec.housing + dynamic.min(maximum) + river_goddess
     }
 
     pub(crate) fn district_amenity(&self, district: &str, position: Pos) -> f64 {
+        let river_goddess =
+            self.pantheon_river_holy_site(district, position, "river_holy_site_amenities");
         let spec = &self.rules.districts[district];
         let geothermal = spec
             .effects
@@ -26381,6 +26523,7 @@ impl Game {
             .copied()
             .unwrap_or(0.0);
         spec.amenity
+            + river_goddess
             + if geothermal > 0.0
                 && self.nbrs(position).into_iter().any(|neighbor| {
                     self.map
@@ -26808,6 +26951,50 @@ impl Game {
                 }
             }
             if family == crate::name!("holy_site") {
+                // ★ Desert Folklore, Dance of the Aurora and Sacred Path are
+                // ONE modifier over three plot tests, so this is one predicate
+                // rather than three special cases:
+                // `MODIFIER_ALL_CITIES_TERRAIN_ADJACENCY` for the first two and
+                // `MODIFIER_ALL_CITIES_FEATURE_ADJACENCY` for the third, each
+                // DistrictType `DISTRICT_HOLY_SITE`, YieldType `YIELD_FAITH`,
+                // Amount 1, subject `CITY_FOLLOWS_PANTHEON_REQUIREMENTS`.
+                // A fourth row of this shape is data, not code.
+                //
+                // ⚠ Desert Folklore and Dance of the Aurora each ship TWO rows
+                // — `..._FAITHDESERTADJACENCY` and `..._FAITHDESERTHILLSADJACENCY`
+                // over `TERRAIN_DESERT` and `TERRAIN_DESERT_HILLS` — which is
+                // one terrain here because CIVVIS carries hills as a flag on
+                // the plot rather than as a terrain of its own. No id in this
+                // family appears in `Expansion2_RemoveData.xml`.
+                if let Some(pid) = owner {
+                    for (effect, plot) in PANTHEON_HOLY_SITE_ADJACENCY {
+                        let amount = self.pantheon_effect(pid, effect);
+                        if amount == 0.0 {
+                            continue;
+                        }
+                        let tiles = neighbors
+                            .iter()
+                            .flatten()
+                            .filter(|t| t.terrain == plot || t.feature.as_deref() == Some(plot))
+                            .count();
+                        let paid = Yields {
+                            faith: tiles as f64 * amount,
+                            ..Yields::default()
+                        };
+                        adj.add(paid);
+                        if let Some(detail) = detail.as_deref_mut() {
+                            if tiles > 0 {
+                                detail.push(AdjacencySource {
+                                    source: format!("pantheon_{plot}"),
+                                    count: tiles,
+                                    percent: 0.0,
+                                    yields: paid,
+                                    raw: paid,
+                                });
+                            }
+                        }
+                    }
+                }
                 if let Some(city) = self
                     .map
                     .get(dpos)
@@ -28526,6 +28713,55 @@ impl Game {
         else {
             return yields;
         };
+        // ★ Lady of the Reeds and Marshes, Goddess of Fire and Earth Goddess
+        // are ONE modifier over three plot tests — every one of them is
+        // `MODIFIER_CITY_PLOT_YIELDS_ADJUST_PLOT_YIELD` with a
+        // `REQUIREMENTSET_TEST_ANY` subject and a `CITY_FOLLOWS_PANTHEON`
+        // owner — so the engine asks the plot once and the belief supplies
+        // the amount. Read from the Gathering Storm install
+        // (`DLC/Expansion2/Data/Expansion2_Beliefs.xml`) with every id checked
+        // against `Expansion2_RemoveData.xml`, because two of these three are
+        // rows the expansion deletes and replaces.
+        let pantheon_plot = |effect: &str, matched: bool| -> f64 {
+            if matched {
+                self.pantheon_effect(pid, effect)
+            } else {
+                0.0
+            }
+        };
+        // ⚠ `LADY_OF_THE_REEDS_PRODUCTION` (+1) is deleted by the expansion and
+        // replaced by `LADY_OF_THE_REEDS_PRODUCTION2` (+2) over the same
+        // `PLOT_HAS_REEDS_REQUIREMENTS`. That set names `FEATURE_FLOODPLAINS`
+        // and NOT the expansion's own `FEATURE_FLOODPLAINS_GRASSLAND` or
+        // `..._PLAINS`, and the shipped text agrees: "Marsh, Oasis, and DESERT
+        // Floodplains". A grassland floodplain pays nothing.
+        yields.production += pantheon_plot(
+            "reeds_production",
+            matches!(
+                tile.feature.as_deref(),
+                Some("marsh" | "oasis" | "floodplains")
+            ),
+        );
+        // Goddess of Fire is a Gathering Storm belief with no base-game row at
+        // all: `GODDESS_OF_FIRE_FEATURES_FAITH_MODIFIER`, +2 Faith over
+        // `FEATURE_GEOTHERMAL_FISSURE` or `FEATURE_VOLCANIC_SOIL`.
+        yields.faith += pantheon_plot(
+            "volcanic_geothermal_faith",
+            matches!(
+                tile.feature.as_deref(),
+                Some("geothermal_fissure" | "volcanic_soil")
+            ),
+        );
+        // ⚠⚠ Earth Goddess is the third case where a base-game row states the
+        // OPPOSITE of the shipped rule. `Expansion2_RemoveData.xml` deletes
+        // `EARTH_GODDESS_APPEAL_FAITH{,_MODIFIER}` and Gathering Storm re-adds
+        // them against `PLOT_BREATHTAKING_APPEAL` (`MinimumAppeal 4`) where the
+        // base game used `PLOT_CHARMING_APPEAL` (`MinimumAppeal 2`) — the
+        // shipped text moves from "Charming or better" to "Breathtaking" with
+        // it. Modelling the cache's requirement set alone would have paid this
+        // on twice the map.
+        yields.faith += pantheon_plot("breathtaking_appeal_faith", self.tile_appeal(pos) >= 4);
+
         let building_effect = |effect: &str| self.city_building_effect(city, effect);
         let is_coast_or_lake = matches!(tile.terrain.as_str(), "coast" | "lake");
         let is_floodplain = matches!(
@@ -35295,7 +35531,13 @@ impl Game {
         (50.0 + (attacker - defender) * 2.5).clamp(0.0, 100.0)
     }
 
-    fn promotion_kill_rewards(&mut self, attacker: &Unit, defeated: &Unit) {
+    /// Everything a defeated unit pays its killer.
+    ///
+    /// ⚠ Named for promotions and never only about them — the policy card
+    /// `earlier_era_kill_gold_pct` and the building `heal_on_unit_kill` were
+    /// already here — and God of War makes the pantheon the third source, so
+    /// the name is now what the function does.
+    fn kill_rewards(&mut self, attacker: &Unit, defeated: &Unit) {
         let defeated_spec = &self.rules.units[defeated.kind];
         let defeated_era = defeated_spec
             .tech
@@ -35315,6 +35557,38 @@ impl Game {
         let faith_pct = self.promotion_effect(attacker, "faith_on_kill_strength_pct");
         if faith_pct > 0.0 {
             self.players[attacker.owner].faith += defeated_spec.strength * faith_pct / 100.0;
+        }
+        // God of War: GOD_OF_WAR_FAITH_KILLS_MODIFIER,
+        // `MODIFIER_PLAYER_UNITS_ADJUST_POST_COMBAT_YIELD` with
+        // `PercentDefeatedStrength 50` and `YieldType YIELD_FAITH`, over
+        // `PLOT_EIGHT_INCLUDE_HOLY_SITE`. The same arithmetic as the promotion
+        // above — a percentage of the dead unit's Combat Strength — with a plot
+        // test instead of a promotion, so the two share this shape rather than
+        // each inventing one. Not in `Expansion2_RemoveData.xml`.
+        //
+        // ⚠ Two things the shipped rows say that a reading from memory does
+        // not. The requirement names no owner, and the text agrees by omission
+        // — "within 8 tiles of a Holy Site district" — so a rival's Holy Site
+        // pays as well as our own. And the text ends "(on Standard Speed)",
+        // Civilization VI's marker for a one-off yield that scales with the
+        // game speed, which `GameSpeed::scale` is.
+        let war_pct = self.pantheon_effect(attacker.owner, "faith_on_kill_near_holy_site_pct");
+        if war_pct > 0.0 && defeated_spec.class == "military" {
+            let strength = defeated_spec.strength;
+            let near_a_holy_site = self
+                .wdisk(defeated.pos, GOD_OF_WAR_HOLY_SITE_RANGE)
+                .into_iter()
+                .any(|position| {
+                    self.map.get(position).is_some_and(|tile| {
+                        tile.district.is_some_and(|district| {
+                            self.district_is_family(district, crate::name!("holy_site"))
+                        })
+                    })
+                });
+            if near_a_holy_site {
+                self.players[attacker.owner].faith +=
+                    self.game_speed.scale(strength * war_pct / 100.0);
+            }
         }
         if self.rules.units[defeated.kind].domain.as_deref() == Some("sea") {
             let pct = self.promotion_effect(attacker, "gold_from_naval_kill_pct");
@@ -35790,7 +36064,7 @@ impl Game {
                 self.note_underdog_kill(pid, &attacker, &d);
                 self.note_great_person_assisted_kill(pid, &attacker);
                 self.record_kill(pid, Some(&attacker.kind), &d);
-                self.promotion_kill_rewards(&attacker, &d);
+                self.kill_rewards(&attacker, &d);
                 self.remove_unit(did);
                 self.on_unit_lost(downer);
                 if captured_as_builder {
@@ -36103,7 +36377,7 @@ impl Game {
                 self.note_underdog_kill(pid, &attacker, &defender);
                 self.note_great_person_assisted_kill(pid, &attacker);
                 self.record_kill(pid, Some(&attacker.kind), &defender);
-                self.promotion_kill_rewards(&attacker, &defender);
+                self.kill_rewards(&attacker, &defender);
                 if self.has_ability(pid, "killer_of_cyrus") {
                     if let Some(attacker) = self.units.get_mut(&uid) {
                         attacker.hp = (attacker.hp + 30).min(100);
