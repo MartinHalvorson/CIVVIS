@@ -12695,24 +12695,15 @@ impl AdvancedAi {
                     g.domestic_tourists(left.partner)
                         .cmp(&g.domestic_tourists(right.partner))
                         .then_with(|| {
-                            left.my_value
-                                .min(left.partner_value)
-                                .partial_cmp(&right.my_value.min(right.partner_value))
+                            self.base
+                                .deal_objective(left)
+                                .partial_cmp(&self.base.deal_objective(right))
                                 .unwrap()
                         })
                         .then_with(|| right.partner.cmp(&left.partner))
                 });
             if let Some(deal) = best {
-                if g.apply(
-                    pid,
-                    &Action::Trade {
-                        player: deal.partner,
-                        offer: Box::new(deal.offer),
-                        request: Box::new(deal.request),
-                    },
-                )
-                .is_ok()
-                {
+                if self.base.close_quick_deal(g, pid, deal) {
                     return;
                 }
             }
@@ -12728,24 +12719,15 @@ impl AdvancedAi {
                         && deal.partner_value >= 2.0
                 })
                 .max_by(|left, right| {
-                    left.my_value
-                        .min(left.partner_value)
-                        .partial_cmp(&right.my_value.min(right.partner_value))
+                    self.base
+                        .deal_objective(left)
+                        .partial_cmp(&self.base.deal_objective(right))
                         .unwrap()
                         .then_with(|| right.partner.cmp(&left.partner))
                         .then_with(|| right.item.cmp(&left.item))
                 });
             if let Some(deal) = best {
-                if g.apply(
-                    pid,
-                    &Action::Trade {
-                        player: deal.partner,
-                        offer: Box::new(deal.offer),
-                        request: Box::new(deal.request),
-                    },
-                )
-                .is_ok()
-                {
+                if self.base.close_quick_deal(g, pid, deal) {
                     return;
                 }
             }
@@ -12764,20 +12746,13 @@ impl AdvancedAi {
                         && deal.partner_value >= 2.0
                 })
                 .max_by(|left, right| {
-                    left.my_value
-                        .min(left.partner_value)
-                        .partial_cmp(&right.my_value.min(right.partner_value))
+                    self.base
+                        .deal_objective(left)
+                        .partial_cmp(&self.base.deal_objective(right))
                         .unwrap()
                 });
             if let Some(deal) = best {
-                let _ = g.apply(
-                    pid,
-                    &Action::Trade {
-                        player: deal.partner,
-                        offer: Box::new(deal.offer),
-                        request: Box::new(deal.request),
-                    },
-                );
+                self.base.close_quick_deal(g, pid, deal);
             }
             return;
         }
@@ -12921,7 +12896,11 @@ impl AdvancedAi {
                     player: partner,
                     give_gold: 0.0,
                     request_gold: 0.0,
-                    open_borders: g.players[pid].civics.contains(&crate::name!("early_empire")),
+                    // `no_free_passage`: passage is sold, not bundled.
+                    open_borders: !self.base.no_free_passage
+                        && g.players[pid]
+                            .civics
+                            .contains(&crate::name!("early_empire")),
                     friendship: true,
                     peace: false,
                     alliance: Some(kind.to_string()),

@@ -369,11 +369,14 @@ These screenable genes have no on/off result, so they receive no rank or promoti
 
 | Gene | Default | Description | Best version |
 |---|---|---|---:|
+| `deals-at-the-ceiling` | off (unmeasured) | The chosen quote's Gold is moved to the counterparty's walk-away less two Gold — a sale asks for more, a purchase pays less — where the shipped quote split the surplus down the middle; the midpoint quote stays the fallback. | — |
+| `deals-for-our-gain` | off (unmeasured) | A quote is chosen by our own net value instead of the most balanced exchange on the board (`min(our gain, their gain)`), which threw away the ordering `Game::quick_deals` already produced by our gain. | — |
 | `flip-nearby-city-states` | off (unmeasured) | A city-state's place enters the envoy score: up to ninety for one on our border, two hundred more when its sitting suzerain is at war with us, amortised over the envoys the flip still needs. | — |
 | `fog-honest` | off (unmeasured) | Put this controller behind the turn-level fog boundary. | — |
 | `fog-honest-2` | off (unmeasured) | Version 2 of `fog_honest`: the same fair-play boundary and the same information contract, plus one re-plan when the authoritative board refuses a planned order. | — |
 | `missionary-evades-raiders` | off (unmeasured) | A religious unit steps out of the tiles a visible barbarian raider can reach next turn, and never steps into them on the way to anything, holding when no safe step makes progress. | — |
 | `missionary-last-charge-explores` | off (unmeasured) | A Missionary on its last charge explores the fog within ten tiles for up to twelve turns before spending it, unless a city of ours is slipping or an untouched city stands beside it. | — |
+| `no-free-passage` | off (unmeasured) | Friendship and alliance proposals no longer bundle one-way Open Borders, which every ask handed out for nothing once Early Empire was in; passage is sold through the quote lane. | — |
 | `pillage-to-heal` | off (unmeasured) | A unit at or below 65 health pillages a heal-type improvement it stands on, or steps one tile onto one and pillages it, before the recovery path walks it home. | — |
 | `religious-veto-defence` | off (unmeasured) | The religious defence grows with how much of a rival's religious victory is already done — every civilization is a veto on it — naming and targeting the stakes faith from half a victory and spending on it from match point; the Inquisitor walks to the heresy instead of spending its charges where it was bought. | — |
 | `shoot-and-scoot` | off (unmeasured) | A ranged unit inside a hostile melee body's reach steps to a firing tile inside strictly fewer hostile envelopes and fires at that body, in war and against barbarians. | — |

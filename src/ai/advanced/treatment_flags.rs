@@ -2197,6 +2197,46 @@ impl AdvancedAi {
         self.religious_veto_defence = false;
     }
 
+    /// A quote is chosen by our own net value instead of the most balanced
+    /// exchange on the board (`min(our gain, their gain)`), which threw away
+    /// the ordering `Game::quick_deals` already produced by our gain. See
+    /// `BasicAi::deals_for_our_gain`. Opt-in gene `deals-for-our-gain`.
+    pub fn enable_deals_for_our_gain(&mut self) {
+        self.base.deals_for_our_gain = true;
+    }
+
+    /// The twin of `enable_deals_for_our_gain`.
+    pub fn disable_deals_for_our_gain(&mut self) {
+        self.base.deals_for_our_gain = false;
+    }
+
+    /// The chosen quote's Gold is moved to the counterparty's walk-away less
+    /// two Gold — a sale asks for more, a purchase pays less — where the
+    /// shipped quote split the surplus down the middle; the midpoint quote
+    /// stays the fallback. See `BasicAi::deals_at_the_ceiling`. Opt-in gene
+    /// `deals-at-the-ceiling`.
+    pub fn enable_deals_at_the_ceiling(&mut self) {
+        self.base.deals_at_the_ceiling = true;
+    }
+
+    /// The twin of `enable_deals_at_the_ceiling`.
+    pub fn disable_deals_at_the_ceiling(&mut self) {
+        self.base.deals_at_the_ceiling = false;
+    }
+
+    /// Friendship and alliance proposals no longer bundle one-way Open
+    /// Borders, which every ask handed out for nothing once Early Empire was
+    /// in; passage is sold through the quote lane. See
+    /// `BasicAi::no_free_passage`. Opt-in gene `no-free-passage`.
+    pub fn enable_no_free_passage(&mut self) {
+        self.base.no_free_passage = true;
+    }
+
+    /// The twin of `enable_no_free_passage`.
+    pub fn disable_no_free_passage(&mut self) {
+        self.base.no_free_passage = false;
+    }
+
     /// A city-state's place enters the envoy score: up to ninety for one on
     /// our border, two hundred more when its sitting suzerain is at war with
     /// us, amortised over the envoys the flip still needs.

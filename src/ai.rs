@@ -2691,6 +2691,38 @@ pub struct BasicAi {
     /// Entrant `advanced_barbarian_hunt`; withheld by the `barbarian-hunt`
     /// treatment.
     pub(crate) barbarian_hunt: bool,
+    /// ★★★ THE TRADE OBJECTIVE WAS FAIRNESS, NOT PROFIT. `bilateral_trade`
+    /// and its Culture-lane twin chose the quote that maximised
+    /// `min(our gain, their gain)` — the most *balanced* exchange on the
+    /// board — and threw away the ordering `Game::quick_deals` had already
+    /// produced by our gain. Operator, 2026-08-24: "very bad deals and just
+    /// giving stuff away when more optimally we'd get more in exchange".
+    /// With this on, a quote is chosen by our own net value; the engine's
+    /// `validate_trade` still refuses anything the counterparty would lose
+    /// on. Opt-in gene `deals-for-our-gain`.
+    pub(crate) deals_for_our_gain: bool,
+    /// ★★★ EVERY PEACETIME QUOTE SPLIT THE SURPLUS DOWN THE MIDDLE.
+    /// `Game::quote_asset_trade` prices an asset at the midpoint between our
+    /// walk-away and the counterparty's, so we never kept more than half of
+    /// what an exchange was worth — while `war_eve_quote` proves the engine
+    /// can price at the buyer's ceiling, and did, only on the eve of a
+    /// declaration. With this on, the chosen quote's Gold is moved to the
+    /// counterparty's walk-away less [`Self::DEAL_CEILING_MARGIN`] — a sale
+    /// asks for more, a purchase pays less — and the shipped midpoint quote
+    /// is the fallback if the sharper one is refused. Opt-in gene
+    /// `deals-at-the-ceiling`.
+    pub(crate) deals_at_the_ceiling: bool,
+    /// ★★ ONE-WAY PASSAGE RODE FREE ON EVERY FRIENDSHIP ASK. Both alliance
+    /// proposals bundled `open_borders` once Early Empire was in, and
+    /// `do_accept_deal` grants borders from the proposer to the recipient —
+    /// so every friendship or alliance ask handed out passage through the
+    /// whole empire, priced at 9–33 Gold by our own book and the tourism
+    /// vector `audit.rs` names as a gift, for nothing in return; a
+    /// counterparty that wants a friendship accepts it without the rider.
+    /// With this on, proposals carry no Open Borders; passage is sold
+    /// through the quote lane like any other asset. Opt-in gene
+    /// `no-free-passage`.
+    pub(crate) no_free_passage: bool,
     /// ★★★★★ WE DO NOT LOSE THE FIGHTS. WE DO NOT TAKE ENOUGH OF THEM.
     ///
     /// MEASURED across every live run since the melee bridge was repaired
@@ -4451,6 +4483,9 @@ impl BasicAi {
             adjacent_camp_clear: true,
             barbarian_heretic_hunt: true,
             barbarian_hunt: false,
+            deals_for_our_gain: false,
+            deals_at_the_ceiling: false,
+            no_free_passage: false,
             barbarian_bargain: false,
             barbarian_ranged_answer: false,
             camp_bounty_claims: BTreeMap::new(),
@@ -4785,6 +4820,9 @@ impl BasicAi {
             adjacent_camp_clear: true,
             barbarian_heretic_hunt: true,
             barbarian_hunt: false,
+            deals_for_our_gain: false,
+            deals_at_the_ceiling: false,
+            no_free_passage: false,
             barbarian_bargain: false,
             barbarian_ranged_answer: false,
             camp_bounty_claims: BTreeMap::new(),
@@ -7607,7 +7645,11 @@ impl BasicAi {
                         player: partner,
                         give_gold: 0.0,
                         request_gold: 0.0,
-                        open_borders: g.players[pid].civics.contains(&crate::name!("early_empire")),
+                        // `no_free_passage`: passage is sold, not bundled.
+                        open_borders: !self.no_free_passage
+                            && g.players[pid]
+                                .civics
+                                .contains(&crate::name!("early_empire")),
                         friendship: true,
                         peace: false,
                         alliance,
@@ -7722,6 +7764,106 @@ impl BasicAi {
         }
     }
 
+    /// What a sharpened quote leaves the counterparty, in Gold above the
+    /// `validate_trade` bar of 0.25: two, like the war-eve lane, so a price
+    /// floored to whole Gold cannot fall through the rounding.
+    const DEAL_CEILING_MARGIN: f64 = 2.0;
+
+    /// The number a quote is chosen by. Shipped: the most balanced quote on
+    /// the board, `min(our gain, their gain)`. `deals_for_our_gain`: ours.
+    pub(crate) fn deal_objective(&self, deal: &crate::game::QuickDeal) -> f64 {
+        if self.deals_for_our_gain {
+            deal.my_value
+        } else {
+            deal.my_value.min(deal.partner_value)
+        }
+    }
+
+    /// `deals_at_the_ceiling`: the same quote with its Gold moved to the
+    /// counterparty's walk-away less the margin. A sale asks for more, as far
+    /// as their treasury (less the reserve `quoted_payment` keeps) goes; a
+    /// purchase pays less, down to nothing in lump Gold. `None` when the gene
+    /// is off or there is less than a whole Gold to move. The values are
+    /// re-read so the caller's own filters still hold.
+    pub(crate) fn deal_at_the_ceiling(
+        &self,
+        g: &Game,
+        pid: usize,
+        deal: &crate::game::QuickDeal,
+    ) -> Option<crate::game::QuickDeal> {
+        if !self.deals_at_the_ceiling {
+            return None;
+        }
+        let (_, partner_net) = g.trade_utilities(pid, deal.partner, &deal.offer, &deal.request);
+        let slack = (partner_net - Self::DEAL_CEILING_MARGIN).floor();
+        if slack < 1.0 {
+            return None;
+        }
+        let mut sharp = deal.clone();
+        if deal.direction == "sell" {
+            let treasury = g.players[deal.partner].gold;
+            let reserve = (treasury * 0.30).min(40.0);
+            let spendable = (treasury - reserve).max(0.0).floor();
+            let extra = slack.min(spendable - deal.request.gold).max(0.0);
+            if extra < 1.0 {
+                return None;
+            }
+            sharp.request.gold += extra;
+        } else {
+            let extra = slack.min(deal.offer.gold.floor());
+            if extra < 1.0 {
+                return None;
+            }
+            sharp.offer.gold -= extra;
+        }
+        let (mine, theirs) = g.trade_utilities(pid, sharp.partner, &sharp.offer, &sharp.request);
+        sharp.my_value = mine;
+        sharp.partner_value = theirs;
+        Some(sharp)
+    }
+
+    /// Close a quote: at the ceiling when the gene sharpens it, else as
+    /// quoted — and as quoted when the sharpened terms are refused, so the
+    /// gene can only ever add to what the shipped exchange would have got.
+    pub(crate) fn close_quick_deal(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        deal: crate::game::QuickDeal,
+    ) -> bool {
+        if let Some(sharp) = self.deal_at_the_ceiling(g, pid, &deal) {
+            let kind = sharp.item.as_str();
+            let direction = sharp.direction.as_str();
+            let gold = sharp.request.gold - sharp.offer.gold;
+            let margin = Self::DEAL_CEILING_MARGIN;
+            think!(self.journal, Diplomacy, Decision,
+                   "{direction} of {kind} priced at the counterparty's ceiling";
+                   "the midpoint quote left half the surplus on the table; this one leaves \
+                    {margin} Gold and nets {gold:.0}");
+            if g.apply(
+                pid,
+                &Action::Trade {
+                    player: sharp.partner,
+                    offer: Box::new(sharp.offer),
+                    request: Box::new(sharp.request),
+                },
+            )
+            .is_ok()
+            {
+                return true;
+            }
+        }
+        g.apply(
+            pid,
+            &Action::Trade {
+                player: deal.partner,
+                offer: Box::new(deal.offer),
+                request: Box::new(deal.request),
+            },
+        )
+        .is_ok()
+    }
+
     /// Execute at most one pre-negotiated exchange on a staggered cadence.
     /// `Game::quick_deals` has already valued both sides, and `Action::Trade`
     /// revalidates the contract atomically, so the AI never relies on gifts,
@@ -7744,23 +7886,15 @@ impl BasicAi {
             .into_iter()
             .filter(|deal| Some(deal.partner) != excluded_partner)
             .max_by(|left, right| {
-                left.my_value
-                    .min(left.partner_value)
-                    .partial_cmp(&right.my_value.min(right.partner_value))
+                self.deal_objective(left)
+                    .partial_cmp(&self.deal_objective(right))
                     .unwrap()
             });
         let Some(deal) = best.filter(|deal| deal.my_value >= 2.0 && deal.partner_value >= 2.0)
         else {
             return;
         };
-        let _ = g.apply(
-            pid,
-            &Action::Trade {
-                player: deal.partner,
-                offer: Box::new(deal.offer),
-                request: Box::new(deal.request),
-            },
-        );
+        self.close_quick_deal(g, pid, deal);
     }
 
     /// The most contracts one declaration will sell into. Every accepted quote
