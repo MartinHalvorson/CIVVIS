@@ -49,8 +49,8 @@ genes"; this is the denominator that direction is measured against.
 
 - Capability toggles on the controller: **171**
 - Reachable as a gene `gene_screen` can vary: **120**
-- Measured by at least one screen: **100**
-- Resolved by the ledger (helps or hurts): **31**
+- Measured by at least one screen: **117**
+- Resolved by the ledger (helps or hurts): **27**
 - **Unreachable by any screen: 51**
 
 ⚠ This is the mirror of the section above and it errs the other way.
