@@ -3528,9 +3528,16 @@ mod tests {
         // two, Sweeping Wind gains the `MOD_MOVE_AFTER_ATTACKING` it shares
         // with Elite Guard and Breakthrough, and Computers multiplies Tourism
         // by the +25% `COMPUTERS_BOOST_ALL_TOURISM` states instead of +100%.
+        // Moved again by deleting `genghis_khan`. Civilization VI ships no
+        // Great General of that name — Genghis Khan is Mongolia's *leader* —
+        // and `tools/civ6_fidelity.py` had begun reporting him as the roster's
+        // one "only in CIVVIS" row. He duplicated `timur`, the real
+        // Classical-era `land_unit_promotion_level` general, at the same era,
+        // cost and effect. This is the audit's `only_ours` column reaching zero
+        // on `GreatPeople`, not a balance change.
         assert_eq!(
             Rules::shipped().source_fingerprint(),
-            "fnv1a64:3197ea74e7b50a8d"
+            "fnv1a64:7f27df2bc649975d"
         );
     }
 

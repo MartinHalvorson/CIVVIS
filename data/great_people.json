@@ -147,7 +147,6 @@
   "melitta_bentz": {"name":"Melitta Bentz","kind":"merchant","era":6,"cost":960,"effects":{"trade_capacity":1}},
 
   "sun_tzu": {"name":"Sun Tzu","kind":"general","era":1,"cost":60,"effects":{"great_work_writing":1}},
-  "genghis_khan": {"name":"Genghis Khan","kind":"general","era":2,"cost":120,"effects":{"land_unit_promotion_level":1}},
   "timur": {"name":"Timur","kind":"general","era":2,"cost":120,"effects":{"land_unit_promotion_level":1}},
   "ana_nzinga": {"name":"Amina","kind":"general","era":3,"cost":240,"modifiers":["greatperson_ana_nzinga_active"]},
   "douglas_macarthur": {"name":"Douglas MacArthur","kind":"general","era":6,"cost":960,"effects":{"oil_per_turn":1}},
