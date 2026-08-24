@@ -6,22 +6,24 @@ The Lv 4 (Prince) is the highest level beat so far, using computer control to br
 
 ## Genetic Algorithm
 
-The CIVVIS AI uses a genetic algorithm that tests and assembles a collection of individual Civ 6 heuristics into a player's overall strategy. An individual Civ 6 heuristic might be some rule like "don't move an unescorted settler next to an enemy barbarian" or "if military strength falls below a given level then build more military units".
+Summary: The CIVVIS AI uses a genetic algorithm that tests and assembles a collection of individual Civ 6 heuristics into a player's overall strategy. An individual Civ 6 heuristic might be some rule like "don't move an unescorted settler next to an enemy barbarian" or "if military strength falls below a given level then build more military units". Collecting hundreds (and probably thousands eventually) of these heuristics together forms an overall player strategy.
 
 - Gene - Each heuristic is represented as a gene. A gene is gated by a flag that can be turned "on" or "off".
 - Gene pool - The collection of all available genes (both "on" and "off" genes).
 - Genome - The set of "on" heuristics for a player, which together form the player's overall strategy.
 - Tournament - A Monte Carlo simulation of many probabilistically-generated player genomes competing in CIVVIS Civ 6 games.
 
-For each free-for-all game, there is one winner. The "on" genes in this players genome are awarded one win.
+For each free-for-all game, there is one winner. The "on" genes in this players genome are awarded one win. All genes across all players (including duplicates if a gene is present on multiple players) are incremented 1 "game played".
 
-After a tournament concludes, win rates are calculated for every gene. In a 6 player match, the expected win rate is 1/6 or 16.67%. Genes with win rates above this are deemed beneficial and have a higher likelihood of defaulting "on" in our best genome. The process looks across the last few tournament too to ensure the gene is consistently demonstrating a beneficial performance.
+After a tournament concludes, win rates are calculated for every gene (wins / games played). In a 6 player match with equal players, the expected win rate is 1/6 or 16.67%. Genes with win rates above this are deemed beneficial and have a higher likelihood of defaulting "on" in our best genome. The process looks across the last few tournament too to ensure a gene is consistently demonstrating a beneficial performance. Inconsistent results between tournaments is a sign to me to run more games per tournament. Right now I typically run 1667 games per tournament with 6 players/seats each, for a total of 10,002 seats.
 
 ## Dev Process
 
-I don't write the lines of code these days but will operate a step higher — suggesting new features to vibecode, asking questions about how code is structured, monitoring verification games, suggesting new heuristics to add as genes, and analyzing CIVVIS tournament results.
+I don't write the lines of code these days but will operate a step higher — suggesting new features to vibecode, asking questions about how code is structured, requesting various refactors or performance optimizations, monitoring verification games, suggesting new heuristics to add as genes, and analyzing CIVVIS tournament results.
 
-I threw some early progress video demos up on [YouTube](https://www.youtube.com/@civvis)
+I threw some early progress video demos up on [YouTube](https://www.youtube.com/@civvis). At this point, I run both verification games and tournaments autonomously and indefinitely. Half the videos are just screen recordings of successful games with no audio but I try to eventually throw some commentary in the video description.
+
+The simulator at civvis.ai[www.civvis.ai] needs some work but should be operational.
 
 Quick simulator UI demo:
 
