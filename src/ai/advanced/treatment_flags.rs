@@ -2321,6 +2321,36 @@ impl AdvancedAi {
     pub fn disable_lane_commit(&mut self) {
         self.lane_commit = false;
     }
+
+    /// A seen rival Settler near our cities is screened: up to four of our
+    /// nearby land units, recon first, take the stands that add the most
+    /// expected steps to its likeliest walks — a tile a foreign unit holds
+    /// cannot be entered at peace — and hold them while the plan names them.
+    /// [`AdvancedAi::settler_screen`]. Opt-in gene `settler-screen`; see
+    /// `advanced/recon_disruption.rs`.
+    pub fn enable_settler_screen(&mut self) {
+        self.settler_screen = true;
+    }
+
+    /// The twin of `enable_settler_screen`.
+    pub fn disable_settler_screen(&mut self) {
+        self.settler_screen = false;
+    }
+
+    /// A recon unit with nothing left to explore holds the pass toward a
+    /// neighbour — the first tile outside their borders whose removal cuts
+    /// the land walk between the two capitals — or, when no single tile cuts
+    /// it, watches the border tile that walk leaves their ground by.
+    /// [`AdvancedAi::pass_picket`]. Opt-in gene `pass-picket`; see
+    /// `advanced/recon_disruption.rs`.
+    pub fn enable_pass_picket(&mut self) {
+        self.pass_picket = true;
+    }
+
+    /// The twin of `enable_pass_picket`.
+    pub fn disable_pass_picket(&mut self) {
+        self.pass_picket = false;
+    }
     // Append points, one per name range: a new treatment goes under the range
     // its own name falls in, so that two of them do not append to one line.
     // The rule, the measurement behind it and the check that enforces it are
