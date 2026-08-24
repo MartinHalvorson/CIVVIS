@@ -2073,6 +2073,22 @@ mod tests {
             (pts - 2.0).abs() < 1e-9,
             "expected 2 scientist gpp, got {pts}"
         );
+        // ⚠ #2377 filled in Gathering Storm's other Classical Great Scientists
+        // (Aryabhata, Euclid, Zhang Heng). `current_great_person` offers the
+        // lowest era first and breaks ties alphabetically, so retire the rest
+        // of the Classical bench: this test is about Hypatia's free Library
+        // being a no-op in a city that has one, and about the market then
+        // stepping to the next *era*, not about her place in the queue.
+        let classical_bench: Vec<String> = g
+            .rules
+            .great_people
+            .iter()
+            .filter(|(id, spec)| {
+                spec.kind == "scientist" && spec.era == 1 && id.as_str() != "hypatia"
+            })
+            .map(|(id, _)| id.to_string())
+            .collect();
+        g.retired_great_people.extend(classical_bench);
         let hypatia_cost = g.gp_cost(0, "scientist");
         assert_eq!(hypatia_cost, 78.0);
         // Reaching the threshold auto-claims Hypatia. Because this Campus
@@ -2088,12 +2104,13 @@ mod tests {
         assert_eq!(g.players[0].boosted_techs, boosts_before);
         assert!((g.city_yields(cid).science - science_before - 1.0).abs() < 1e-9);
         // The global market advances to the next named Scientist rather than
-        // fabricating a generic doubled threshold. Omar Khayyam is the
-        // Medieval Scientist the roster had no entry for until the era chain
-        // was filled in; before that the market skipped an era to Newton.
+        // fabricating a generic doubled threshold, and prices them in their own
+        // era. Abu al-Qasim al-Zahrawi is the first Medieval Scientist the
+        // shipped game offers; before the era chain was filled in the market
+        // skipped an era to Newton.
         assert_eq!(
             g.current_great_person("scientist").unwrap().0,
-            "omar_khayyam"
+            "abu_al_qasim_al_zahrawi"
         );
         assert_eq!(g.gp_cost(0, "scientist"), 307.0);
     }
