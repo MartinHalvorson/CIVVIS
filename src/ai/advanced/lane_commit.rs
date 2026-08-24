@@ -77,14 +77,20 @@
 //! operator's (victory denial stays adaptive, `pursue_religion` and the
 //! expansion dispatcher unchanged, the census still tells an adaptive seat
 //! from a targeted one), and routes only the objective resolutions through
-//! `raced_target`. On the live bridge, which always passes `--victory
-//! <lane>`, the gene is inert by construction.
+//! `raced_target` — and, for the beeline, society, government, policies,
+//! Culture routing and wonder value, through [`AdvancedAi::raced_objective`],
+//! which keeps a Conquest or Recovery plan's own objective: the third draft
+//! routed those to the lane under a war posture too and its committed seats
+//! ended with a fifth less army and died more often (−2.8 pp ± 5.4). On the
+//! live bridge, which always passes `--victory <lane>`, the gene is inert by
+//! construction.
 //!
 //! Opt-in, off in both controllers, byte-identical when off; priced by
 //! `gene_screen` like every other row of the registry.
 
 use super::{
-    AdvancedAi, LaneCommitment, VictoryTarget, LANE_COMMIT_REVIEW, LANE_COMMIT_SWITCH_MARGIN,
+    AdvancedAi, GrandStrategy, LaneCommitment, VictoryTarget, LANE_COMMIT_REVIEW,
+    LANE_COMMIT_SWITCH_MARGIN,
 };
 use crate::game::Game;
 
@@ -124,6 +130,25 @@ impl AdvancedAi {
     /// `victory_target` (see the module doc).
     pub(super) fn raced_target(&self) -> Option<VictoryTarget> {
         self.victory_target.or(self.committed_lane())
+    }
+
+    /// The objective a decider serves under `strategy`: the operator's
+    /// assignment whatever the plan (an assigned seat swung to Conquest is
+    /// still playing for its target); otherwise the plan's own strategy
+    /// under a war posture — Conquest and Recovery are a deliberate refusal
+    /// of the economic lanes, and the third draft, which routed the beeline,
+    /// government and policies to the lane through them, ended with a fifth
+    /// less army — and the committed lane under any other.
+    pub(super) fn raced_objective(&self, strategy: GrandStrategy) -> GrandStrategy {
+        if let Some(target) = self.victory_target {
+            return target.strategy();
+        }
+        if matches!(strategy, GrandStrategy::Conquest | GrandStrategy::Recovery) {
+            return strategy;
+        }
+        self.committed_lane()
+            .map(VictoryTarget::strategy)
+            .unwrap_or(strategy)
     }
 
     /// The lane `lane_commit` has committed this seat to, if any.

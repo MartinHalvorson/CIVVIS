@@ -33150,6 +33150,18 @@ fn lane_commit_reaches_the_objectives_and_not_the_vetoes() {
     assert_eq!(ai.raced_target(), Some(VictoryTarget::Religion));
     assert_eq!(ai.victory_target(), None);
     assert_eq!(ai.active_victory_target(&g), None);
+    // The objective resolutions follow the commitment under an economic
+    // plan and keep a war posture's own objective; an operator's assignment
+    // overrides both, as it always has.
+    assert_eq!(ai.raced_objective(GrandStrategy::Expansion), GrandStrategy::Religion);
+    assert_eq!(ai.raced_objective(GrandStrategy::Science), GrandStrategy::Religion);
+    assert_eq!(ai.raced_objective(GrandStrategy::Conquest), GrandStrategy::Conquest);
+    assert_eq!(ai.raced_objective(GrandStrategy::Recovery), GrandStrategy::Recovery);
+    let mut assigned = AdvancedAi::new();
+    assigned.retarget(VictoryTarget::Culture);
+    assert_eq!(assigned.raced_objective(GrandStrategy::Conquest), GrandStrategy::Culture);
+    let adaptive = AdvancedAi::new();
+    assert_eq!(adaptive.raced_objective(GrandStrategy::Expansion), GrandStrategy::Expansion);
     // The rivals' readings come off the same table, so the field is read
     // for every living major.
     let readings = ai.lane_readings(&g, 0);

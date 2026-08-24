@@ -709,7 +709,10 @@ adaptive seat has none. `assess` puts an adaptive seat on a lane only at
   resolve *which lane the empire plays for* read it: the tech beeline, the
   society and government, the policy deck, the Culture routing, the wonder
   lane's strategic value, the space-race projects and Spaceports, the
-  Culture/Religion routing. `assess` follows it in place of `victory_focus`'s
+  Culture/Religion routing — through `raced_objective`, which keeps a
+  Conquest or Recovery plan's own objective (the third draft routed those
+  to the lane under a war posture too; its committed seats ended with a
+  fifth less army and read −2.8 pp ± 5.4). `assess` follows it in place of `victory_focus`'s
   per-turn pick, after every posture that comes first today (a threatened
   city, an emergency, a rival at the wire, a war in progress, a neighbour
   weak enough to take, a Prophet on the table) **and after the adaptive

@@ -11150,10 +11150,7 @@ impl AdvancedAi {
         // same prerequisite search.  Previously only `victory_target` enabled
         // milestone routing, so a normal spectator AI could correctly assess
         // Science or Culture yet wander through generic unlocks indefinitely.
-        let objective = self
-            .raced_target()
-            .map(VictoryTarget::strategy)
-            .unwrap_or(plan.strategy);
+        let objective = self.raced_objective(plan.strategy);
         if g.players[pid].research.is_none() {
             let available = g.available_techs(pid);
             let science_commitment =
@@ -11430,10 +11427,7 @@ impl AdvancedAi {
         {
             return;
         }
-        let long_term = self
-            .raced_target()
-            .map(VictoryTarget::strategy)
-            .unwrap_or(strategy);
+        let long_term = self.raced_objective(strategy);
         let society = match long_term {
             GrandStrategy::Science => "hermetic_order",
             GrandStrategy::Culture | GrandStrategy::Religion => "voidsingers",
@@ -11451,10 +11445,7 @@ impl AdvancedAi {
     }
 
     fn strategic_government(&self, g: &mut Game, pid: usize, strategy: GrandStrategy) {
-        let objective = self
-            .raced_target()
-            .map(VictoryTarget::strategy)
-            .unwrap_or(strategy);
+        let objective = self.raced_objective(strategy);
         let unlocked = |government: &str| {
             g.rules.governments.get(government).is_some_and(|spec| {
                 spec.civic
@@ -11664,10 +11655,7 @@ impl AdvancedAi {
     /// Typed cards preferentially replace cards of their own type so wildcard
     /// capacity remains useful.
     fn strategic_policies(&self, g: &mut Game, pid: usize, strategy: GrandStrategy) {
-        let objective = self
-            .raced_target()
-            .map(VictoryTarget::strategy)
-            .unwrap_or(strategy);
+        let objective = self.raced_objective(strategy);
 
         // A successor card removes its predecessor from the policy menu.  An
         // already slotted predecessor used to survive forever, which is how
@@ -12721,10 +12709,7 @@ impl AdvancedAi {
         excluded_partner: Option<usize>,
         strategy: GrandStrategy,
     ) {
-        let objective = self
-            .raced_target()
-            .map(VictoryTarget::strategy)
-            .unwrap_or(strategy);
+        let objective = self.raced_objective(strategy);
         if objective == GrandStrategy::Culture && g.turn % 6 == pid as u32 % 6 {
             let best = g
                 .quick_deals(pid)
@@ -21671,10 +21656,7 @@ impl AdvancedAi {
                 // strategy when it does not — a targeted agent whose plan has
                 // swung to Conquest under pressure is still playing for the
                 // target, and `Recovery` refuses the lane outright below.
-                let strategic_lane = self
-                    .raced_target()
-                    .map(VictoryTarget::strategy)
-                    .unwrap_or(plan.strategy);
+                let strategic_lane = self.raced_objective(plan.strategy);
                 // ⚠ THE BARS GATE THE VALUE, NOT ONLY THE LANE. An earlier draft
                 // applied them to `strategic_opens` alone and still added the
                 // raw figure to the score, so a wonder the bars had just
@@ -26243,10 +26225,7 @@ impl AdvancedAi {
                 value += 18.0;
             }
         }
-        let objective = self
-            .raced_target()
-            .map(VictoryTarget::strategy)
-            .unwrap_or(strategy);
+        let objective = self.raced_objective(strategy);
         // One route unlocks the entire empire's +25% Tourism pressure against
         // that civilization (+75% with Online Communities). Duplicate routes
         // do not stack, so Culture agents connect every rival before
