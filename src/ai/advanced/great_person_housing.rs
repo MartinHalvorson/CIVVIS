@@ -638,3 +638,40 @@ impl AdvancedAi {
         true
     }
 }
+
+#[cfg(test)]
+mod watched_class_tests {
+    use super::WATCHED_CLASSES;
+
+    /// The gene watches every class the roster can offer.
+    ///
+    /// ⚠ `WATCHED_CLASSES` is an array literal on purpose — its order is the
+    /// gene's tie-break between two stuck classes, so it cannot be derived from
+    /// the roster without changing which city gets reserved. That leaves it
+    /// exposed to the shape that caught `beliefs.json`: a list written against
+    /// the data of the day, silently short after the data grows. #2377 took the
+    /// roster from 65 individuals to 147 without adding a class; the next
+    /// addition that *does* — Gran Colombia's `comandante_general` is the one
+    /// Gathering Storm ships and CIVVIS does not model — fails here instead of
+    /// quietly never being housed.
+    #[test]
+    fn the_housing_gene_watches_every_class_the_roster_offers() {
+        let rules = crate::rules::Rules::shipped();
+        let mut classes: Vec<&str> = rules
+            .great_people
+            .values()
+            .map(|person| person.kind.as_str())
+            .collect();
+        classes.sort_unstable();
+        classes.dedup();
+        for kind in &classes {
+            assert!(
+                WATCHED_CLASSES.contains(kind),
+                "the roster offers {kind}, which the housing gene never watches; \
+                 add it to WATCHED_CLASSES in the position its tie-break belongs \
+                 and give it a `great_person_remedy` arm"
+            );
+        }
+        assert_eq!(classes.len(), WATCHED_CLASSES.len());
+    }
+}

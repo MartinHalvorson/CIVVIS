@@ -3395,9 +3395,14 @@ mod tests {
         // 6-player 200-turn games. Each addition takes its class, era, cost
         // and charges from `GreatPersonIndividuals` and `Eras`, so the
         // fidelity audit still reports zero divergent fields.
+        // Moved again by 82 more of them, taking the roster to 147 of 213 and
+        // completing four classes outright -- every shipped Writer, Artist,
+        // Musician and Prophet. Class, era, cost and charges again come from
+        // `GreatPersonIndividuals`, `Eras` and `GreatWorks`, and the audit
+        // again reports zero divergent fields over all 147.
         assert_eq!(
             Rules::shipped().source_fingerprint(),
-            "fnv1a64:95f0f5b6c8117d55"
+            "fnv1a64:f302e7e9aa6b1ab0"
         );
     }
 
