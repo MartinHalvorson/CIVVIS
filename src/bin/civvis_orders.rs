@@ -7589,7 +7589,10 @@ mod tests {
         };
         let mut mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
         let first = *mirror.uid_of.get(&41).expect("the first swordsman mirrors");
-        let second = *mirror.uid_of.get(&42).expect("the second swordsman mirrors");
+        let second = *mirror
+            .uid_of
+            .get(&42)
+            .expect("the second swordsman mirrors");
 
         let corps = translate(
             &Action::CombineUnits {

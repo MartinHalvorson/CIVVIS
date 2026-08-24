@@ -11784,12 +11784,15 @@ local function applyOrder(player, pid, row, turn)
 		-- it accepted reached the queue's `refusals` table under the same key --
 		-- the anonymous-count trap this file names everywhere else, one level
 		-- in. The ledger reads only `why` when `ok` is false, so the two are
-		-- worth telling apart: `cannot_REMOVE_HERESY` is "the host said no"
-		-- (wrong tile, no rival religion present, charges spent) and `throw` is
-		-- the request itself raising, which is a different repair entirely.
+		-- worth telling apart: `cannot_REMOVE_HERESY` is the host declining
+		-- outright (wrong tile, no rival religion present, charges spent), and
+		-- it is a completely different repair from the request raising.
+		--
+		-- `operate` asks `canOperate` again on the line below; that is a cheap
+		-- repeat and deliberately not inlined, so the parameterless request
+		-- stays the single shape every other operation on this tail uses.
 		if not canOperate(unit, hash, {}) then return false, "cannot_" .. verb; end
-		local ok = operate(unit, hash, {});
-		return ok, ok and verb or "throw";
+		return operate(unit, hash, {}), verb;
 	end
 
 	return false, "unknown_kind_" .. kind;
