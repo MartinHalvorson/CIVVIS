@@ -9166,11 +9166,7 @@ impl AdvancedAi {
                                 ),
                             )
                         })
-                        .min_by(|a, b| {
-                            a.1.partial_cmp(&b.1)
-                                .unwrap()
-                                .then(a.0.cmp(&b.0))
-                        })
+                        .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap().then(a.0.cmp(&b.0)))
                         .map(|(rival, _)| rival)
                 })
         };
@@ -27108,8 +27104,7 @@ impl AdvancedAi {
         // front only where it stands at a threatened city of ours. Local
         // strength is still measured against every enemy. See
         // `advanced/one_war.rs`.
-        let objective_enemies =
-            self.one_war_objective_enemies(g, plan.threatened_city, &enemies);
+        let objective_enemies = self.one_war_objective_enemies(g, plan.threatened_city, &enemies);
         let visible = self.battlefront_visibility(g, pid);
 
         let mut remaining: BTreeSet<u32> = g
@@ -27161,8 +27156,7 @@ impl AdvancedAi {
             }
             units.sort_unstable();
             let anchor = Self::force_anchor(g, &units);
-            let objective =
-                self.domain_objective(g, pid, plan, domain, anchor, &objective_enemies);
+            let objective = self.domain_objective(g, pid, plan, domain, anchor, &objective_enemies);
             // ⚠ MEASURED AND REJECTED: pinning `focus_target` to the objective
             // city for a rush, on the theory that the first defender met
             // otherwise pulls the column off the capital. It made things
@@ -27170,8 +27164,7 @@ impl AdvancedAi {
             // capture slipped turn 65 to 86 — and the city's own ring still
             // never held more than two. A rush that walks past the defenders
             // to stand on the ring is a rush that gets killed on the ring.
-            let focus_target =
-                self.force_focus_target(g, pid, &units, &objective_enemies, plan);
+            let focus_target = self.force_focus_target(g, pid, &units, &objective_enemies, plan);
             let muster_radius = self.base.w.muster_radius.round().max(1.0) as i32;
             let readiness = units
                 .iter()
