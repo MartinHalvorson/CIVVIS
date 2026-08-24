@@ -509,6 +509,108 @@ data change. Adding a **class** is not: `comandante_general` would need the
 `WATCHED_CLASSES` entry, a `great_person_remedy` arm, and a
 `GreatPersonClasses`-derived district for its points.
 
+## The "only in Civ VI" column, and what is actually left in it
+
+The audit's divergence count answers "is every number CIVVIS carries right?".
+Its `Only in Civ VI` column answers a different question — "what does the
+shipped game have that CIVVIS does not model at all?" — and that column is the
+one that still has entries. This section is the standing triage of it for
+Units, Promotions, Projects and Policies, so the next agent inherits the
+worklist rather than re-deriving it from the install.
+
+⚠ **Three things in that column are not gaps at all**, and each cost real time
+to discover:
+
+1. **A row Gathering Storm deletes.** `Types` is the parent table of the whole
+   gameplay database; every content row's key column is declared
+   `REFERENCES Types(Type) ON DELETE CASCADE`. A pack that retires content
+   therefore ships a single `<Types><Delete Type="…"/>` and **no**
+   `<Policies><Delete>` beside it. The loader now applies that cascade, which
+   took five rows out of the column at once: `POLICY_MERITOCRACY` and
+   `POLICY_SACK` (retired by both expansions), and the three Mars projects
+   `PROJECT_LAUNCH_MARS_HABITATION`, `_HYDROPONICS` and `_REACTOR`, which
+   `Expansion2_Projects.xml` deletes when it replaces the Mars space race with
+   the Exoplanet Expedition. CIVVIS is right not to carry any of them. Four
+   Beliefs and Genghis Khan leave the column the same way.
+2. **A row CIVVIS spells differently.** A rename shows up as the *same content*
+   appearing in both "only in" columns at once, and the two rows then compare
+   against nothing at all. Read the two columns together before modelling
+   anything: that check is what found the Nau, Toa, Oromo Cavalry and Nihang.
+3. **A pseudo-row the game keeps for its own UI.** The nine `POLICY_GOV_*` rows
+   carry `RequiresGovernmentUnlock="True"` and a `LOC_GOVT_INHERENT_BONUS_*`
+   description. They are how the government screen renders each government's
+   inherent bonus as a card; they are not slottable policies, and CIVVIS models
+   those bonuses in `data/governments.json`. **Policy coverage is complete.**
+
+### Units
+
+Fifty-four rows, in five groups that need five different decisions.
+
+| group | rows | what it needs |
+|---|---:|---|
+| Great Person units | 9 | a decision, not content: CIVVIS models Great People as `data/great_people.json` entries with charges, not as map units, so `UNIT_GREAT_GENERAL` and its eight siblings have no `units.json` shape to take. Owned by the Great People roster, not by `units.json`. |
+| Barbarian-only units | 2 | a roster flag. `barbarian_horseman` (Combat 20, 3 Movement, cost 40) and `barbarian_horse_archer` (Combat 10, Ranged 15, Range 1, 3 Movement, cost 35) are the horse camps' raiders. `Game::barbarian_unit_pool` selects on `spec.buildable && spec.unique_to.is_none()`, so a unit no major can build is excluded from the pool that is supposed to contain it. Add a `barbarian_only` field to `UnitSpec` and admit it in both `barbarian_unit_pool` and `barbarian_naval_unit_pool`. ⚠ This changes what every camp spawns, so it moves every recorded barbarian screen. |
+| Alternate-leader uniques | 6 | leader-gated content. The Hetairoi (Alexander), Longship (Hardrada), Black Army (Matthias Corvinus), Janissary (Suleiman), Rough Rider (Teddy Roosevelt) and Redcoat (Victoria) hang off a `LeaderTraits` row, not a `CivilizationTraits` one. `unique_to` names a civilization, so these need a leader-scoped gate first. |
+| Civilization uniques, civ shipped | 36 | ordinary content work, and the largest reachable block. Each needs a `units.json` row with `unique_to` and `replaces`, its numbers from `Units`, and its ability expressed with a **live** effect key. ⚠ The ability is the whole risk: a unique unit added with correct stats and a silent ability is a build option that does nothing. Check the key against the ninety live promotion/unit effect keys before adding the row, and ship a test that the effect fires. |
+| Unresolved trait | 1 | `babylonian_sabum_kibittum` hangs off a trait that does not resolve to a plain `CivilizationTraits` row, so which gate it needs has to be settled before it is modelled. |
+
+Of the 36 reachable uniques, the ones whose whole ability is already a live
+effect key are the place to start — the Samurai's `NO_REDUCTION_DAMAGE` is
+`no_wounded_penalty`, de Zeven Provincien's +7 against districts is
+`ranged_vs_district`, the Domrey's move-and-shoot is `attack_after_move`. The
+ones to leave alone are the abilities with no key at all: a home-continent
+bonus (Redcoat, Garde Impériale, Rough Rider), remaining-movement scaling
+(Carolean), and cheaper corps and armies (Impi).
+
+### Promotions
+
+Nine rows, and neither group should be added as it stands.
+
+- **Four Giant Death Robot promotions.** `PROMOTION_GDR_AA_DEFENSE` (+40
+  anti-air), `_SIEGE_LASER` (ignores the ranged-vs-district penalty, +30
+  strength), `_BONUS_MOVEMENT` (+3 Movement, jump 5) and `_ARMOR_UPGRADE` (+10
+  strength) are **granted by technologies**, not chosen: `Expansion2_Technologies`
+  attaches each one to a tech through a `GRANT_PROMOTION` modifier. CIVVIS
+  offers promotions through the XP tree only, and `giant_death_robot` carries
+  `earns_xp: false`, so all four would be unreachable the day they landed.
+  They need a `granted_by_tech` surface first, and the GDR's `promotion_class`
+  would have to move from `melee` to its own class.
+- **Five Nihang promotions.** These are already modelled, under CIVVIS' own
+  Punjabi names: `tegh` is `NIHANG_FLANKED_BONUS`, `trehsool_mukh` is
+  `_FAITH_FOR_VICTORIES`, `jangi_mojeh` is `_MOVEMENT_BONUS`, `sanjo` is
+  `_NO_WOUNDED_PENALTY` and `jangi_kara` is `_SUZERAIN_COMBAT_BONUS`. They are
+  deliberately **not** aliased: CIVVIS gives the class a seven-node tree with
+  two nodes of its own (`chakram`, `dumalla`) and tiers that do not match the
+  shipped five-node graph, so aliasing them would trade a coverage entry for
+  five divergences. Aliasing is for a rename, not for a redesign.
+
+### Projects
+
+Eight rows, all of them unique-district or unique-civilization projects.
+
+- `water_bread_and_circuses` is **already modelled**. CIVVIS represents the two
+  shipped rows — one for the Entertainment Complex, one for the Water Park — as
+  a single `bread_and_circuses` with `alternate_districts: ["water_park"]`. The
+  audit cannot see a two-rows-to-one-row merge, so it will keep reporting this
+  one; that is the audit's limit, not a gap.
+- `carnival` and `water_carnival` are the genuine gap of the eight, and the
+  cheapest: CIVVIS already has both the `street_carnival` and `copacabana`
+  districts, so only the project is missing. Each grants `AmenitiesWhileActive
+  = 1`, and no project effect key carries an amenity today — `ProjectSpec` has
+  `ongoing_yields`, `completion_gpp`, `full_power_while_active` and a small
+  `effects` map, none of which reaches the amenity balance. One new effect key
+  wired into the city amenity sum closes both rows.
+- `court_festival` and the three `lijia_*` projects carry
+  `UnlocksFromEffect="true"` — they become available through a civilization's
+  own modifier rather than a tech or civic gate, which is a project-availability
+  surface CIVVIS does not have.
+- `cothon_capital_move` needs the capital to be movable at all.
+
+### Policies
+
+Complete. All nine remaining rows are the `POLICY_GOV_*` pseudo-rows described
+above.
+
 ## Running the audit without an install
 
 `tools/civ6_fidelity.py --cache` reads the compiled gameplay database directly
@@ -1392,6 +1494,127 @@ Prophet class exhausted every one of those points is Faith. Now in
   met by the district's adjacency before the percentage cards, so the clause
   now sums the adjacency sources without the `adjacency_bonus` line.
 
+### The pantheon is a complete class, and three more rows said the opposite of the game (2026-08-24)
+
+The twelve pantheons the improvement socket could not express are modelled,
+and `beliefs.json` now carries **all 23 of Civilization VI's pantheons**.
+`civ6_fidelity.py` still reports **0 divergent fields across 27 tables**, and
+the Beliefs table's *only in Civ VI* column falls from 22 to 5 — `holy_waters`,
+`monastic_isolation`, `papal_primacy`, `stewardship` and `warrior_monks`, every
+one of them a Follower, Enhancer or Worship belief. **No pantheon is missing.**
+
+Each one needed engine surface, and the standard the five improvement
+pantheons set — *one predicate rather than five* — is what decided the shape:
+
+| pantheon | Gathering Storm | engine surface |
+|---|---|---|
+| Desert Folklore | Holy Sites +1 Faith per adjacent Desert | `PANTHEON_HOLY_SITE_ADJACENCY`, one loop in `district_adjacency` |
+| Dance of the Aurora | …per adjacent Tundra | same predicate, second row |
+| Sacred Path | …per adjacent Rainforest | same predicate, third row |
+| God of War | Faith = 50% of a combat unit's strength, killed within 8 of a Holy Site | `kill_rewards`, beside the identical promotion arm |
+| God of Healing | +30 healing on and beside your own Holy Site | `pantheon_holy_site_heal`, added to every branch of `unit_heal_rate` |
+| River Goddess | +2 Amenities **and** +2 Housing from a Holy Site on a river | `pantheon_river_holy_site`, one plot test, two callers |
+| City Patron Goddess | +25% district Production while the city has no specialty district | `item_prod_mult`, District arm |
+| Monument to the Gods | +15% Production toward Ancient/Classical wonders | `item_prod_mult`, Wonder arm — the same `era <= 1` window two policy cards already use |
+| Initiation Rites | +50 Faith per camp cleared, **and the clearing unit heals 100 HP** | `clear_barbarian_camp` |
+| Lady of the Reeds and Marshes | +2 Production from Marsh, Oasis, Desert Floodplains | `player_tile_yields`, one plot predicate |
+| Goddess of Fire | +2 Faith from Geothermal Fissure and Volcanic Soil | same predicate, second row |
+| Earth Goddess | +1 Faith from Breathtaking Appeal | same predicate, third row |
+
+Three families, three predicates. The three adjacency beliefs are one shipped
+modifier over three plot tests (`MODIFIER_ALL_CITIES_TERRAIN_ADJACENCY` twice
+and `..._FEATURE_ADJACENCY` once, each `DISTRICT_HOLY_SITE` / `YIELD_FAITH` /
+Amount 1), so the engine counts the ring once and the belief names the plot; a
+fourth row of that shape is data. The three plot beliefs are one
+`MODIFIER_CITY_PLOT_YIELDS_ADJUST_PLOT_YIELD` each over a
+`REQUIREMENTSET_TEST_ANY`, so the tile is asked once. River Goddess's two
+halves share one requirement set and therefore one predicate.
+
+⚠ **Desert Folklore and Dance of the Aurora each ship TWO rows** —
+`TERRAIN_DESERT` and `TERRAIN_DESERT_HILLS` — which is one terrain here,
+because CIVVIS carries hills as a flag on the plot rather than as a terrain of
+its own. The test asserts both.
+
+**★★★ Three more of the twelve are cases where a base-game row states the
+opposite of the shipped rule**, which brings the running count to five. Every
+id was checked against `Expansion2_RemoveData.xml` before being modelled, and
+the compiled cache was confirmed to be a Gathering Storm cache first
+(`GOD_OF_CRAFTSMEN_STRATEGIC_MINE_PRODUCTION` absent, `..._IMPROVED_*` and
+`RIVER_GODDESS_HOLY_SITE_AMENITIES` present) rather than trusted:
+
+| belief | base game | **Gathering Storm** |
+|---|---|---|
+| Earth Goddess | `PLOT_CHARMING_APPEAL`, `MinimumAppeal 2` | expansion **deletes** `EARTH_GODDESS_APPEAL_FAITH{,_MODIFIER}` and re-adds them on `PLOT_BREATHTAKING_APPEAL`, `MinimumAppeal 4` |
+| River Goddess | `RIVER_GODDESS_HOLY_SITE_AMENITY`, +1 Amenity, no Housing | **deleted**; `..._AMENITIES` +2 and `..._HOUSING` +2 replace it |
+| Lady of the Reeds | `LADY_OF_THE_REEDS_PRODUCTION`, +1 | dropped from `BeliefModifiers`; `..._PRODUCTION2` pays **+2** |
+
+The Earth Goddess case is the sharpest: the id is deleted *and re-added under
+the same name*, so a grep for the id in `Expansion2_RemoveData.xml` finds it
+and a grep for the id in `Expansion2_Beliefs.xml` finds it too. Only reading
+both, in load order, gives the shipped requirement set — and modelling the
+base-game one would have paid this on roughly twice the map. Initiation Rites
+is a fourth shape again: nothing is deleted, and Gathering Storm *adds* a
+second modifier (`INITIATION_RITES_HEALING_DISPERSAL`, +100 HP) the base game
+does not have, so a base-game reading is not wrong, merely half the belief.
+
+⚠ **`FEATURE_FLOODPLAINS` is not "floodplains".** `PLOT_HAS_REEDS_REQUIREMENTS`
+names `FEATURE_FLOODPLAINS`, `FEATURE_MARSH` and `FEATURE_OASIS` and does NOT
+name Gathering Storm's own `FEATURE_FLOODPLAINS_GRASSLAND` or
+`..._FLOODPLAINS_PLAINS`, and the shipped text says so out loud: "Marsh, Oasis,
+and **Desert** Floodplains". A grassland floodplain pays nothing.
+
+⚠ **The shipped text settles what the requirement sets leave open.** God of
+Healing's `PLOT_ADJACENT_INCLUDE_HOLY_SITE` names no owner, but the string says
+"in **your** Holy Site district, or any adjacent tiles", so a rival's Holy Site
+does not heal our army. God of War's `PLOT_EIGHT_INCLUDE_HOLY_SITE` names no
+owner *and neither does its string* — "within 8 tiles of a Holy Site district"
+— so a rival's Holy Site does pay, and the test asserts that asymmetry rather
+than assuming the two beliefs agree. God of War's string also ends "(on
+Standard Speed)", Civilization VI's marker for a one-off yield that scales with
+game speed, so it goes through `GameSpeed::scale`.
+
+**The chooser did not need changing, which is the point of the last change to
+it.** It has been a preference prefix over a roster read from the rules since
+the five improvement pantheons landed, so twelve more names were reachable the
+moment the data carried them;
+`every_major_can_found_a_pantheon_when_there_are_more_majors_than_favourites`
+still holds, and a new test asserts the stronger property directly — all 23
+can actually be founded, one at a time, through `do_choose_pantheon`. The one
+AI edit is `pantheon_effect_reach`, which prices the three new *per-worked-tile*
+beliefs for the default-off `pantheon_reads_the_board` gene. The three Holy
+Site adjacency beliefs are deliberately **not** priced there and the comment
+says why: everything that function counts is paid on every qualifying tile the
+empire owns, but an adjacency is paid on at most six plots around one district,
+so multiplying by "desert tiles owned" would price Desert Folklore at ten times
+what it can pay. Reading those honestly means ranking candidate Holy Site
+plots, which is the district calculator's job.
+
+⚠ **One measured arm did change, and it is written down rather than absorbed.**
+`PANTHEON_PRIOR_STEP` makes a place on the shipped order worth one yield a
+turn, so the prior spans the WHOLE ROSTER and a board read only overrules the
+order when it pays more than that spread. The spread was eleven when
+`pantheon_reads_the_board` was screened and it is twenty-three now, so the bar
+a board read has to clear has roughly doubled. That is the stated design
+holding rather than drifting — but it is a real change to what the gene does,
+and the arithmetic was deliberately **not** rescaled to compensate: the arm has
+a recorded screen (`docs/eval/2026-08-18-…-not-from-a-fixed-list.md`, parity
+over 60 pairs), and quietly re-weighting a measured treatment inside a content
+change would price an arm nobody re-measured. The gene is default-off, so
+nothing shipped moves; `the_pantheon_is_a_constant_until_it_is_priced_against_the_land`
+now asks for however many Deer the roster takes instead of a literal six, so
+completing a class cannot silently retune the assertion again.
+
+⚠ **The frozen anchor does not move, and this was checked by playing it rather
+than argued.** `advanced_v1_plays_the_same_game_it_always_did` passes unchanged
+— the same 18,596 decisions and the same `ANCHOR_BEHAVIOUR_FNV` across all five
+profiles. It cannot move, for two reasons that hold together: the profiles seat
+at most six majors, and `do_choose_pantheon` refuses every minor outright, so
+only six pantheons are ever taken and the six-name prefix answers all of them;
+and `legacy()` leaves `pantheon_reads_the_board` off, so the roster growing from
+11 names to 23 shifts every prior by the same constant and reorders nothing.
+`Rules::shipped().source_fingerprint()` moves, as the data changing should, and
+is re-pinned with the reasons above.
+
 ### The rules data is at parity and the gap is coverage (2026-08-18)
 
 `tools/civ6_fidelity.py --civ6 <install>` against the real Gathering Storm
@@ -1454,6 +1677,8 @@ Goddess), first-district production (City Patron Goddess), wonder-era
 production (Monument to the Gods), barbarian-camp dispersal faith (Initiation
 Rites), feature yields (Lady of the Reeds and Marshes, Goddess of Fire) and
 appeal (Earth Goddess). Their authoritative definitions are in the install.
+→ All twelve landed on 2026-08-24; see **The pantheon is a complete class**
+below.
 
 ### The Founder beliefs were already right, and a compiled cache said otherwise (2026-08-18)
 

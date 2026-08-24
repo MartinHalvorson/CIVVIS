@@ -4159,6 +4159,12 @@
     --solo-corner-clearance: calc(var(--panel-edge) + var(--solo-action-height) + var(--panel-gap));
     --solo-ribbon-clearance: calc(var(--civtop-height) + var(--solo-ribbon-height)
       + 2 * var(--panel-gap));
+    /* Where an open rankings report starts: under the strip, the launch bar
+       and — over a watched world — the leader row, whichever reaches lowest.
+       One definition, because three rules place that report and a report that
+       starts at three different heights is three bugs waiting. */
+    --solo-report-top: max(var(--solo-ribbon-clearance),
+      calc(var(--civtop-height) + var(--solo-launch-height) + 2 * var(--panel-gap)));
   }
 
   /* ---- the top panel (TopPanel.xml) --------------------------------- */
@@ -4560,7 +4566,7 @@
   body.civ6-frame:not(.rankings-open) #playerhud,
   body.civ6-frame:not(.rankings-open) #victoryhud { display: none; }
   body.civ6-frame.rankings-open #playerhud {
-    top: calc(var(--civtop-height) + var(--solo-launch-height) + 2 * var(--panel-gap));
+    top: var(--solo-report-top);
     left: calc(max(var(--panel-edge), var(--player-hud-left, 0px)) + var(--solo-track-width)
       + var(--panel-gap));
   }
@@ -4575,13 +4581,28 @@
     top: calc(var(--civtop-height) + var(--panel-gap));
     bottom: var(--solo-corner-clearance);
   }
-  /* Over a watched world the report has one more thing to clear: the leader
+  /* Over a watched world the rail has one more thing to clear: the leader
      row along the top right. `--solo-ribbon-height` is the live box, so a
      window too narrow to hold the ribbon hands the band straight back. */
-  body.watching-world.rankings-open #playerhud,
-  body.watching-world.rankings-open #victoryhud {
-    top: max(var(--solo-ribbon-clearance),
-      calc(var(--civtop-height) + var(--solo-launch-height) + 2 * var(--panel-gap)));
+  body.watching-world.rankings-open #victoryhud { top: var(--solo-report-top); }
+  /* A map area too narrow for the side-by-side HUD stacks the report into one
+     band across the top, and those rules outrank everything above: they are
+     written `#maparea.player-hud-compact #playerhud`, two ids to this block's
+     one, so a later rule at this weight does not reach them and the report
+     opens over the yield strip. Place it again at their weight.
+     `--solo-report-top` rather than a bare `--civtop-height` because compact
+     is a property of the *map area* while the ribbon's breakpoint is a
+     property of the *window*: an open command deck makes the first true while
+     the second is still false, so the leader row is on screen and has to be
+     cleared too — and so does the launch bar, which a narrow band runs
+     straight into. Both are zero or absent whenever they are not there. */
+  body.civ6-frame.rankings-open #maparea.player-hud-compact #playerhud {
+    top: var(--solo-report-top);
+  }
+  body.civ6-frame.rankings-open #maparea.player-hud-compact #victoryhud {
+    top: calc(var(--solo-report-top)
+      + min(var(--player-hud-height, 106px), var(--player-hud-max-height))
+      + var(--panel-gap));
   }
   /* An open report takes the right edge back, so the rail steps inboard of it
      rather than climbing through it — the same gutter the spectator layout

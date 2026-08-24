@@ -1724,6 +1724,19 @@ impl AdvancedAi {
         self.settle_plan_ahead = false;
     }
 
+    /// A wonder lane any civilization can reach on merit: the `Item::Wonder`
+    /// arm learns the fifteen points `Game::score_parts` pays for a finished
+    /// wonder, under a density bar and the live race's own development guards.
+    /// See `AdvancedAi::wonder_score_tally`.
+    pub fn enable_wonder_score_tally(&mut self) {
+        self.wonder_score_tally = true;
+    }
+
+    /// Withhold `enable_wonder_score_tally`.
+    pub fn disable_wonder_score_tally(&mut self) {
+        self.wonder_score_tally = false;
+    }
+
     /// Let banked Faith or gold patronize any Great Person it can pay for on
     /// the tally seat. See `tally_great_people`.
     pub fn enable_tally_great_people(&mut self) {

@@ -3450,9 +3450,49 @@ mod tests {
         // Musician and Prophet. Class, era, cost and charges again come from
         // `GreatPersonIndividuals`, `Eras` and `GreatWorks`, and the audit
         // again reports zero divergent fields over all 147.
+        //
+        // Moved again by the LAST TWELVE PANTHEONS, which completes the class:
+        // Desert Folklore, Dance of the Aurora and Sacred Path (Holy Site
+        // terrain and feature adjacency), God of War (post-combat Faith), God
+        // of Healing, River Goddess (district Amenities and Housing on a
+        // river), City Patron Goddess (first-district Production), Monument to
+        // the Gods (Ancient/Classical wonder Production), Initiation Rites
+        // (barbarian-camp Faith and healing), Lady of the Reeds and Marshes,
+        // Goddess of Fire (feature yields) and Earth Goddess (Appeal). The
+        // roster goes from 11 of the game's 23 pantheons to all 23, and the
+        // pantheon is the earliest religious choice every civilization makes.
+        //
+        // ⚠ Read from the **install**'s `Expansion*/Data/*.xml` with
+        // `Expansion2_RemoveData.xml` checked for every id. Three of these
+        // twelve are cases where a base-game row states the opposite of the
+        // shipped rule: the expansion deletes `EARTH_GODDESS_APPEAL_FAITH`
+        // (Charming, MinimumAppeal 2) and re-adds it at Breathtaking
+        // (MinimumAppeal 4), deletes `RIVER_GODDESS_HOLY_SITE_AMENITY` (+1
+        // Amenity, no Housing) for a +2/+2 pair, and drops
+        // `LADY_OF_THE_REEDS_PRODUCTION` (+1) for `..._PRODUCTION2` (+2).
+        // Initiation Rites gains a second, Gathering-Storm-only half. See
+        // `docs/FIDELITY.md`.
+        // Moved again by the seventeen espionage promotions. The engine has
+        // always resolved them by name out of `Game::SPY_PROMOTIONS`, so the
+        // Spy was the one unit class whose promotions were absent from
+        // `data/promotions.json` and invisible to the pedia, the mod overlay
+        // and the fidelity audit alike. Class, tier and prerequisites come
+        // from `UnitPromotions` (all seventeen are `Level = 1` with no
+        // `UnitPromotionPrereqs`), and each magnitude from the promotion's own
+        // `UnitPromotionModifiers` row, so the audit reports zero divergent
+        // fields with them in.
+        //
+        // Moved again by four unit stats the audit could not see. The Nau, Toa
+        // and Nihang carry their civilization's name in the shipped table
+        // (`UNIT_PORTUGUESE_NAU`) and their Civilopedia name in CIVVIS, so all
+        // four unique units were reported missing *and* extra at once and
+        // compared against nothing. Aliasing them surfaced six wrong numbers:
+        // the Nau's Maintenance (4 to 2) and sight (2 to 3), the Toa's cost
+        // (110 to 120), Maintenance (2 to 0) and Combat (36 to 38), and the
+        // Nihang's Maintenance (0 to 2).
         assert_eq!(
             Rules::shipped().source_fingerprint(),
-            "fnv1a64:8294e9e5c1f78734"
+            "fnv1a64:a39a1c8d232da713"
         );
     }
 
@@ -4564,8 +4604,15 @@ mod tests {
             .iter()
             .map(|class| promotion_count(class))
             .sum::<usize>();
+        // The espionage class is counted separately below: it is a flat list of
+        // seventeen, not a seven-node XP tree, so it cannot be folded into the
+        // per-class totals this assertion sums.
         assert_eq!(
-            rules.promotions.len(),
+            rules
+                .promotions
+                .values()
+                .filter(|promotion| promotion.class != "espionage")
+                .count(),
             expected_promotions,
             "modeled promotion classes: {classes:?}"
         );
@@ -4595,6 +4642,29 @@ mod tests {
                     "{name} has no prerequisite from an earlier tier"
                 );
             }
+        }
+    }
+
+    /// The Spy's tree is flat, and Civ VI says so.
+    ///
+    /// `UnitPromotions` gives all seventeen `PROMOTION_CLASS_SPY` rows
+    /// `Level = 1` and ships no `UnitPromotionPrereqs` for any of them: a Spy
+    /// picks three of the seventeen in any order as it levels, which is why the
+    /// tier/prerequisite assertions above cannot describe it. Guarding the
+    /// shape here keeps that difference deliberate rather than an omission.
+    #[test]
+    fn espionage_promotions_are_a_flat_seventeen_node_class() {
+        let rules = Rules::embedded();
+        let nodes: Vec<_> = rules
+            .promotions
+            .iter()
+            .filter(|(_, promotion)| promotion.class == "espionage")
+            .collect();
+        assert_eq!(nodes.len(), 17, "espionage promotion class");
+        for (name, promotion) in nodes {
+            assert_eq!(promotion.tier, 1, "{name} tier");
+            assert!(promotion.requires.is_empty(), "{name} prerequisites");
+            assert!(!promotion.effects.is_empty(), "{name} has no effect");
         }
     }
 

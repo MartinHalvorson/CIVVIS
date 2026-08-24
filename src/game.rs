@@ -665,6 +665,33 @@ pub const TOURISM_PER_VISITOR: f64 = 200.0;
 /// scaled by the game's speed, and using the constant raw is the defect that hid
 /// here for the whole project.
 pub const PANTHEON_FAITH_STANDARD: f64 = 25.0;
+
+/// The pantheons that pay a Holy Site for the ground around it, and the plot
+/// each one is paid for.
+///
+/// Every row is the same shipped modifier — `DISTRICT_HOLY_SITE`,
+/// `YIELD_FAITH`, `Amount 1`, subject `CITY_FOLLOWS_PANTHEON_REQUIREMENTS` —
+/// differing only in its `TerrainType`/`FeatureType`, which is why the engine
+/// carries one predicate and three rows rather than three branches. The plot
+/// name is matched against a terrain OR a feature so both shipped modifier
+/// types (`MODIFIER_ALL_CITIES_TERRAIN_ADJACENCY` and
+/// `MODIFIER_ALL_CITIES_FEATURE_ADJACENCY`) read the same way.
+const PANTHEON_HOLY_SITE_ADJACENCY: [(&str, &str); 3] = [
+    // DESERT_FOLKLORE_FAITHDESERT{,HILLS}ADJACENCY
+    ("holy_site_desert_faith", "desert"),
+    // DANCE_OF_THE_AURORA_FAITHTUNDRA{,HILLS}ADJACENCY
+    ("holy_site_tundra_faith", "tundra"),
+    // SACRED_PATH_FAITHFEATUREADJACENCY, FEATURE_JUNGLE
+    ("holy_site_jungle_faith", "jungle"),
+];
+
+/// How far from a Holy Site a kill still pays God of War.
+/// `PLOT_EIGHT_INCLUDE_HOLY_SITE`: `REQUIREMENT_PLOT_ADJACENT_DISTRICT_TYPE_MATCHES`
+/// with `MinRange 0` and `MaxRange 8`, and the shipped text says the same —
+/// "within 8 tiles of a Holy Site district". The requirement names no owner,
+/// so any Holy Site on the map answers it.
+const GOD_OF_WAR_HOLY_SITE_RANGE: i32 = 8;
+
 const STANDARD_DEAL_TURNS: u32 = 30;
 /// The one-off token costs published for individual diplomatic missions.
 const DELEGATION_GOLD: f64 = 10.0;
@@ -8974,6 +9001,21 @@ impl Game {
             tile.improvement = None;
         }
         self.players[owner].gold += 50.0 + self.human_camp_gold(owner);
+        // Initiation Rites pays for the camp twice, and Gathering Storm's
+        // second half is the one a base-game reading misses:
+        // `INITIATION_RITES_FAITH_DISPERSAL_MODIFIER`
+        // (`EFFECT_ADJUST_PLAYER_FAITH_FROM_DISPERSAL`, Amount 50) is the base
+        // game's, and `INITIATION_RITES_HEALING_DISPERSAL_MODIFIER`
+        // (`EFFECT_ADJUST_PLAYER_HEALING_FROM_DISPERSAL`, Amount 100) is added
+        // by `Expansion2_Beliefs.xml` — "the unit that cleared the Barbarian
+        // Outpost heals +100 HP". Neither id is in `Expansion2_RemoveData.xml`.
+        self.players[owner].faith += self.pantheon_effect(owner, "camp_cleared_faith");
+        let camp_heal = self.pantheon_effect(owner, "camp_cleared_heal");
+        if camp_heal > 0.0 {
+            if let Some(unit) = self.units.get_mut(&uid) {
+                unit.hp = (unit.hp + camp_heal.round() as i32).min(100);
+            }
+        }
         if coastal {
             let loot = self.promotion_effect(&self.units[&uid], "coastal_raid_gold");
             self.players[owner].gold += self.game_speed.scale(loot);
@@ -9898,6 +9940,40 @@ impl Game {
             .is_some_and(|tile| tile.fallout_until > self.turn)
     }
 
+    /// God of Healing: `GOD_OF_HEALING_UNIT_HEALING_MODIFIER`,
+    /// `MODIFIER_PLAYER_UNITS_ADJUST_HEAL_PER_TURN` with `Amount 30` and
+    /// `Type ALL`, over `PLOT_ADJACENT_INCLUDE_HOLY_SITE`
+    /// (`REQUIREMENT_PLOT_ADJACENT_DISTRICT_TYPE_MATCHES`, `DISTRICT_HOLY_SITE`,
+    /// `MinRange 0`) — so the Holy Site's own plot counts as well as the ring
+    /// around it, and every class heals, religious units included.
+    ///
+    /// ⚠ The requirement set names no owner; the shipped text does — "in YOUR
+    /// Holy Site district, or any adjacent tiles" — so a rival's Holy Site does
+    /// not heal this army. No id in this belief appears in
+    /// `Expansion2_RemoveData.xml`.
+    fn pantheon_holy_site_heal(&self, uid: u32) -> i32 {
+        let unit = &self.units[&uid];
+        let amount = self.pantheon_effect(unit.owner, "holy_site_heal");
+        if amount == 0.0 {
+            return 0;
+        }
+        let beside_a_holy_site = self.wdisk(unit.pos, 1).into_iter().any(|position| {
+            self.map.get(position).is_some_and(|tile| {
+                tile.district.is_some_and(|district| {
+                    self.district_is_family(district, crate::name!("holy_site"))
+                }) && tile
+                    .owner_city
+                    .and_then(|city_id| self.cities.get(&city_id))
+                    .is_some_and(|city| city.owner == unit.owner)
+            })
+        });
+        if beside_a_holy_site {
+            amount.round() as i32
+        } else {
+            0
+        }
+    }
+
     pub fn unit_heal_rate(&self, uid: u32) -> i32 {
         let unit = &self.units[&uid];
         let spec = &self.rules.units[unit.kind];
@@ -9929,6 +10005,10 @@ impl Game {
         {
             return 0;
         }
+        // Bound once, below the guards that mean "cannot recover at all" — a
+        // barbarian, an arena, fallout, a grounded aircraft — because a
+        // healing modifier lifts a rate, it does not create one.
+        let holy_site_heal = self.pantheon_holy_site_heal(uid);
         if self
             .map
             .get(unit.pos)
@@ -9993,7 +10073,7 @@ impl Game {
                 .map(|other| self.promotion_effect(&self.units[&other], "adjacent_heal"))
                 .fold(0.0, f64::max);
             best = best.max(chaplain);
-            return best.round() as i32;
+            return best.round() as i32 + holy_site_heal;
         }
         if spec.domain.as_deref() == Some("sea")
             && self
@@ -10040,7 +10120,7 @@ impl Game {
                     city.owner == unit.owner || self.suzerain_of(city.owner) == Some(unit.owner)
                 });
             if friendly {
-                20 + emergency_heal + support_heal
+                20 + emergency_heal + support_heal + holy_site_heal
             } else {
                 // Auxiliary Ships, Supply Fleet and Supercarrier do not heal a
                 // ship as if it were home: they pay 5 in enemy territory and
@@ -10054,12 +10134,10 @@ impl Game {
                     }
                     _ => 0.0,
                 } as i32;
-                promoted + emergency_heal + support_heal
+                promoted + emergency_heal + support_heal + holy_site_heal
             }
         } else {
-            location.rate()
-                + emergency_heal
-                + support_heal
+            location.rate() + emergency_heal + support_heal + holy_site_heal
         }
     }
 
@@ -11015,12 +11093,20 @@ impl Game {
         }) * spy_level.max(0) as f64
     }
 
-    /// Every promotion a spy can take, in the order the offer generator walks.
+    /// The espionage promotions the live bridge has to spell for the host.
     ///
     /// Public because the live bridge translates these to Civilization VI's own
     /// identifiers and must not keep a second copy: a spy promotion is spelled
     /// `PROMOTION_SPY_<NAME>` on the host, and `civ6_unit_promotion_name` reads
-    /// this list to decide which names take that prefix.
+    /// this list to decide which names take that prefix. That function maps a
+    /// bare `&str` with no ruleset in hand, so the list stays a constant.
+    ///
+    /// ⚠ IT IS NO LONGER THE ROSTER. The offer generator reads
+    /// [`Self::spy_promotion_roster`] out of `data/promotions.json`, because a
+    /// hardcoded roster is how added content becomes unreachable — CIVVIS has
+    /// shipped that bug twice. `espionage_promotions_are_the_shipped_roster`
+    /// asserts this constant still names exactly the ruleset's espionage class,
+    /// so a promotion added to the data cannot silently go out misspelled.
     pub const SPY_PROMOTIONS: [&'static str; 17] = [
         "ace_driver",
         "cat_burglar",
@@ -11041,6 +11127,32 @@ impl Game {
         "technologist",
     ];
 
+    /// Every espionage promotion the ruleset declares, in name order.
+    ///
+    /// `SpecMap` keeps its keys sorted, so this walks the class in exactly the
+    /// order the old constant listed it and the deterministic three-card offer
+    /// below is unchanged.
+    pub(crate) fn spy_promotion_roster(&self) -> impl Iterator<Item = &str> {
+        self.rules
+            .promotions
+            .iter()
+            .filter(|(_, spec)| spec.class == "espionage")
+            .map(|(name, _)| name.as_str())
+    }
+
+    /// What a Spy's own promotions add up to for one espionage effect.
+    ///
+    /// The magnitudes live in `data/promotions.json` beside the promotion that
+    /// grants them, so a value read here is one the fidelity audit compares
+    /// against the shipped game rather than a number buried in this file.
+    pub(crate) fn spy_promotion_effect(&self, spy: &Spy, effect: &str) -> f64 {
+        spy.promotions
+            .iter()
+            .filter_map(|name| self.rules.promotions.get(name.as_str()))
+            .filter_map(|spec| spec.effects.get(effect))
+            .sum()
+    }
+
     fn spy_needs_promotion(spy: &Spy) -> bool {
         spy.level.max(0) as usize > spy.promotions.len() && spy.promotions.len() < 3
     }
@@ -11055,9 +11167,8 @@ impl Game {
         if !Self::spy_needs_promotion(spy) || spy.captured_by.is_some() {
             return Vec::new();
         }
-        let available: Vec<&str> = Self::SPY_PROMOTIONS
-            .iter()
-            .copied()
+        let available: Vec<&str> = self
+            .spy_promotion_roster()
             .filter(|promotion| !spy.promotions.contains(*promotion))
             .collect();
         if self.spy_modifiers(spy.owner).5 {
@@ -11082,20 +11193,26 @@ impl Game {
         }
     }
 
-    fn spy_mission_promotion(kind: &str) -> Option<&'static str> {
-        match kind {
-            "siphon_funds" => Some("con_artist"),
-            "steal_tech_boost" => Some("technologist"),
-            "great_work_heist" => Some("cat_burglar"),
-            "sabotage_production" => Some("demolitions"),
-            "recruit_partisans" => Some("guerrilla_leader"),
-            "foment_unrest" => Some("covert_action"),
-            "neutralize_governor" => Some("license_to_kill"),
-            "disrupt_rocketry" => Some("rocket_scientist"),
-            "breach_dam" => Some("satchel_charges"),
-            "fabricate_scandal" => Some("smear_campaign"),
-            _ => None,
+    /// The levels a Spy's promotions add to one named operation.
+    ///
+    /// Civ VI attaches a `MODIFIER_PLAYER_UNIT_ADJUST_SPY_OPERATION_CHANCE`
+    /// naming an `OperationType` to each of the ten operation promotions, all
+    /// of them worth `Amount = 2`. CIVVIS spells that pairing as an effect key
+    /// `mission_level_<operation>` on the promotion itself, so the mission a
+    /// promotion sharpens is data, not a match arm here: a new espionage
+    /// promotion needs no edit to this file to take effect.
+    ///
+    /// ⚠ THE KEY IS BUILT WITH `format!` ON PURPOSE. `tools/civvis_inert.py`
+    /// credits an effect key to the engine when it appears as a literal or
+    /// when a `format!` template could build it, and nothing else — a
+    /// `strip_prefix("mission_level_")` consumer is invisible to it, so all
+    /// ten keys were reported as data the engine ignores. The allocation is
+    /// on the espionage path, which runs a handful of times a turn.
+    fn spy_mission_promotion_level(&self, spy: &Spy, kind: &str) -> i64 {
+        if spy.promotions.is_empty() {
+            return 0;
         }
+        self.spy_promotion_effect(spy, &format!("mission_level_{kind}")) as i64
     }
 
     fn spy_city_has_stealable_tech(&self, owner: usize, target: usize) -> bool {
@@ -11262,7 +11379,7 @@ impl Game {
         };
         mission.kind == "counterspy"
             && mission.city == city
-            && (counterspy.promotions.contains("surveillance")
+            && (self.spy_promotion_effect(counterspy, "counterspy_entire_city") > 0.0
                 || mission.target == target
                 || self.nbrs(mission.target).contains(&target))
     }
@@ -11278,8 +11395,8 @@ impl Game {
             .max_by_key(|spy| {
                 (
                     spy.level
-                        + i64::from(spy.promotions.contains("seduction")) * 2
-                        + i64::from(spy.promotions.contains("surveillance")),
+                        + self.spy_promotion_effect(spy, "counterspy_defense_level") as i64
+                        + self.spy_promotion_effect(spy, "counterspy_entire_city") as i64,
                     std::cmp::Reverse(spy.id),
                 )
             })
@@ -11299,50 +11416,56 @@ impl Game {
         if spy.sources_city == Some(city.id) && spy.sources_until > self.turn {
             level += 2;
         }
-        if Self::spy_mission_promotion(&mission.kind)
-            .is_some_and(|promotion| spy.promotions.contains(promotion))
-        {
-            level += 2;
-        }
+        level += self.spy_mission_promotion_level(spy, &mission.kind);
         if self.congress_effect_active("espionage_pact", "A", &mission.kind) {
             level += 2;
         }
-        if self.spies.values().any(|other| {
-            other.owner == spy.owner
-                && other.captured_by.is_none()
-                && other.promotions.contains("quartermaster")
-                && other
-                    .mission
-                    .as_ref()
-                    .is_some_and(|active| active.kind == "counterspy")
-        }) {
-            level += 1;
-        }
+        // Quartermaster and Polygraph are Civ VI's two BOOST_ALL_SPIES
+        // promotions: one Counterspy carrying either lifts (or drops) every
+        // other agent by its own magnitude. They do not stack with themselves,
+        // so the strongest one on the board is what applies.
+        level += self.counterspy_promotion_effect(spy.owner, "allied_spy_level") as i64;
         if city.owner == spy.owner {
             return level;
         }
         level += self.spy_modifiers(city.owner).3;
         level += self.governor_effect(city.owner, city.id, "enemy_spy_level") as i64;
         level -= self.spy_defense_level(city.id, mission.target);
-        if self.spies.values().any(|other| {
-            other.owner == city.owner
-                && other.captured_by.is_none()
-                && other.promotions.contains("polygraph")
-                && other
-                    .mission
-                    .as_ref()
-                    .is_some_and(|active| active.kind == "counterspy")
-        }) {
-            level -= 1;
-        }
+        level -= self.counterspy_promotion_effect(city.owner, "enemy_spy_level") as i64;
         if let Some(counterspy) = self.defending_counterspy(city.owner, city.id, mission.target) {
             let defender = &self.spies[&counterspy];
             level -= 1 + defender.level;
-            if defender.promotions.contains("seduction") {
-                level -= 2;
-            }
+            level -= self.spy_promotion_effect(defender, "counterspy_defense_level") as i64;
         }
         level
+    }
+
+    /// The odds a detected Spy gets out of the city it was caught in.
+    ///
+    /// Civ VI's Ace Driver is an `ESCAPE_BOOST` worth four, and it enters here
+    /// exactly where the agent's own level does.
+    pub(crate) fn spy_escape_chance(&self, spy: &Spy) -> f64 {
+        let ace = self.spy_promotion_effect(spy, "escape_level");
+        (0.35 + 0.10 * (spy.level.max(0) as f64 + ace)).min(0.95)
+    }
+
+    /// The strongest value of one effect carried by an active Counterspy of
+    /// this civilization. Civ VI's `BOOST_ALL_SPIES` promotions apply from the
+    /// Counterspy to every other agent, and two Counterspies with the same
+    /// promotion do not stack.
+    fn counterspy_promotion_effect(&self, owner: usize, effect: &str) -> f64 {
+        self.spies
+            .values()
+            .filter(|spy| {
+                spy.owner == owner
+                    && spy.captured_by.is_none()
+                    && spy
+                        .mission
+                        .as_ref()
+                        .is_some_and(|active| active.kind == "counterspy")
+            })
+            .map(|spy| self.spy_promotion_effect(spy, effect))
+            .fold(0.0, f64::max)
     }
 
     pub(crate) fn spy_success_chance(&self, spy_id: u32, mission: &SpyMission) -> f64 {
@@ -11423,8 +11546,9 @@ impl Game {
             .map(|old| self.wdist(old.pos, destination.pos).max(0) as u32)
             .unwrap_or(0);
         let mut travel = (1 + distance / 6).min(5);
-        if destination.owner != pid && spy.promotions.contains("disguise") {
-            travel = travel.min(1);
+        let disguise = self.spy_promotion_effect(&spy, "travel_turns_max");
+        if destination.owner != pid && disguise > 0.0 {
+            travel = travel.min(disguise as u32);
         }
         let ready_turn = self.turn + self.standard_duration(travel);
         let spy = self.spies.get_mut(&spy_id).unwrap();
@@ -11454,11 +11578,7 @@ impl Game {
         let (base_duration, _) =
             Self::spy_mission_spec(kind).ok_or_else(|| "unknown Spy mission".to_string())?;
         let spy = self.spies[&spy_id].clone();
-        let linguist = if spy.promotions.contains("linguist") {
-            0.75
-        } else {
-            1.0
-        };
+        let linguist = 1.0 + self.spy_promotion_effect(&spy, "mission_time_pct") / 100.0;
         let duration = self.standard_duration(
             ((base_duration as f64 * self.spy_modifiers(pid).1 * linguist).ceil() as u32).max(1),
         );
@@ -11767,12 +11887,7 @@ impl Game {
         }
         self.add_grievances(defender, spy.owner, 25.0);
         let counterspy = self.defending_counterspy(defender, mission.city, mission.target);
-        let ace = if spy.promotions.contains("ace_driver") {
-            4.0
-        } else {
-            0.0
-        };
-        let escape = (0.35 + 0.10 * (spy.level.max(0) as f64 + ace)).min(0.95);
+        let escape = self.spy_escape_chance(&spy);
         if self.rng.chance(escape) {
             self.spy_return_home(spy_id, 2);
             return;
@@ -16233,6 +16348,17 @@ impl Game {
                 let family = self.district_family(*district);
                 bonus += self.governor_effect(pid, cid, "district_production_pct") / 100.0;
                 bonus += self.gov_effects(pid).district_production_pct / 100.0;
+                // City Patron Goddess: CITY_PATRON_GODDESS_DISTRICT_PRODUCTION_MODIFIER,
+                // `EFFECT_ADJUST_ALL_DISTRICT_PRODUCTION_MODIFIER` Amount 25,
+                // subject `CITY_HAS_0_SPECIALTY_DISTRICTS_REQUIREMENTS` — which
+                // is `REQUIREMENT_CITY_HAS_X_SPECIALTY_DISTRICTS` Amount 1 with
+                // Inverse set, i.e. the city has none. `MustBeFunctioning 0`, so
+                // a district that stands but is pillaged still ends the bonus;
+                // one still under construction has not been placed yet and does
+                // not. No id in this belief appears in `Expansion2_RemoveData.xml`.
+                if self.city_specialty_district_count(&self.cities[&cid]) == 0 {
+                    bonus += self.pantheon_effect(pid, "first_district_production_pct") / 100.0;
+                }
                 if matches!(family.as_str(), "encampment" | "harbor") {
                     bonus += self.policy_effect(pid, "military_port_production_pct") / 100.0;
                 }
@@ -16251,6 +16377,15 @@ impl Game {
                 let era = self.wonder_era(wonder);
                 if era <= 1 {
                     bonus += self.policy_effect(pid, "classical_wonder_production_pct") / 100.0;
+                    // Monument to the Gods rides the same window:
+                    // MONUMENT_TO_THE_GODS_ANCIENTCLASSICALWONDER_MODIFIER is
+                    // `MODIFIER_PLAYER_CITIES_ADJUST_WONDER_ERA_PRODUCTION`,
+                    // Amount 15, StartEra ANCIENT, EndEra CLASSICAL, IsWonder 1
+                    // — the identical StartEra/EndEra pair the policy cards
+                    // above already reduce to `era <= 1`. Not in
+                    // `Expansion2_RemoveData.xml`.
+                    bonus += self.pantheon_effect(pid, "ancient_classical_wonder_production_pct")
+                        / 100.0;
                 }
                 if era <= 3 {
                     bonus += self.policy_effect(pid, "renaissance_wonder_production_pct") / 100.0;
@@ -26348,10 +26483,52 @@ impl Game {
         parks
     }
 
+    /// What River Goddess pays a district standing where the belief asks.
+    ///
+    /// ★ One predicate for both halves of the belief: Gathering Storm ships
+    /// `RIVER_GODDESS_HOLY_SITE_AMENITIES` and `RIVER_GODDESS_HOLY_SITE_HOUSING`
+    /// as two modifiers with the SAME subject requirement set,
+    /// `PLOT_HAS_HOLY_SITE_RIVER_REQUIREMENTS` (`REQUIRES_PLOT_HAS_HOLY_SITE`
+    /// and `REQUIRES_PLOT_ADJACENT_TO_RIVER`, tested ALL), so the plot test
+    /// lives here once and the caller names which yield it is collecting.
+    ///
+    /// ⚠ `Expansion2_RemoveData.xml` DELETES the base game's
+    /// `RIVER_GODDESS_HOLY_SITE_AMENITY` — a different id, +1 Amenity through
+    /// `MODIFIER_CITY_DISTRICTS_ADJUST_CITY_AMENITIES_FROM_RELIGION` and no
+    /// Housing at all. Reading the base row would underpay the Amenity and
+    /// miss the Housing outright.
+    fn pantheon_river_holy_site(&self, district: &str, position: Pos, effect: &str) -> f64 {
+        // ⚠ River first, and the district family last. This is asked once per
+        // district per city on every Housing and Amenity read, and
+        // `Name::new` takes a read lock on the global name registry — the
+        // plot's own six river edges settle it for almost every caller
+        // without interning anything.
+        let Some(tile) = self.map.get(position) else {
+            return 0.0;
+        };
+        if !tile.has_river() {
+            return 0.0;
+        }
+        let Some(amount) = tile
+            .owner_city
+            .and_then(|city_id| self.cities.get(&city_id))
+            .map(|city| self.pantheon_effect(city.owner, effect))
+            .filter(|amount| *amount != 0.0)
+        else {
+            return 0.0;
+        };
+        if !self.district_is_family(Name::new(district), crate::name!("holy_site")) {
+            return 0.0;
+        }
+        amount
+    }
+
     pub(crate) fn district_housing(&self, district: &str, position: Pos) -> f64 {
+        let river_goddess =
+            self.pantheon_river_holy_site(district, position, "river_holy_site_housing");
         let spec = &self.rules.districts[district];
         let Some(maximum) = spec.effects.get("appeal_housing_max").copied() else {
-            return spec.housing;
+            return spec.housing + river_goddess;
         };
         let appeal = self.tile_appeal(position);
         let dynamic: f64 = if maximum >= 6.0 {
@@ -26370,10 +26547,12 @@ impl Game {
                 _ => 0.0,
             }
         };
-        spec.housing + dynamic.min(maximum)
+        spec.housing + dynamic.min(maximum) + river_goddess
     }
 
     pub(crate) fn district_amenity(&self, district: &str, position: Pos) -> f64 {
+        let river_goddess =
+            self.pantheon_river_holy_site(district, position, "river_holy_site_amenities");
         let spec = &self.rules.districts[district];
         let geothermal = spec
             .effects
@@ -26381,6 +26560,7 @@ impl Game {
             .copied()
             .unwrap_or(0.0);
         spec.amenity
+            + river_goddess
             + if geothermal > 0.0
                 && self.nbrs(position).into_iter().any(|neighbor| {
                     self.map
@@ -26808,6 +26988,50 @@ impl Game {
                 }
             }
             if family == crate::name!("holy_site") {
+                // ★ Desert Folklore, Dance of the Aurora and Sacred Path are
+                // ONE modifier over three plot tests, so this is one predicate
+                // rather than three special cases:
+                // `MODIFIER_ALL_CITIES_TERRAIN_ADJACENCY` for the first two and
+                // `MODIFIER_ALL_CITIES_FEATURE_ADJACENCY` for the third, each
+                // DistrictType `DISTRICT_HOLY_SITE`, YieldType `YIELD_FAITH`,
+                // Amount 1, subject `CITY_FOLLOWS_PANTHEON_REQUIREMENTS`.
+                // A fourth row of this shape is data, not code.
+                //
+                // ⚠ Desert Folklore and Dance of the Aurora each ship TWO rows
+                // — `..._FAITHDESERTADJACENCY` and `..._FAITHDESERTHILLSADJACENCY`
+                // over `TERRAIN_DESERT` and `TERRAIN_DESERT_HILLS` — which is
+                // one terrain here because CIVVIS carries hills as a flag on
+                // the plot rather than as a terrain of its own. No id in this
+                // family appears in `Expansion2_RemoveData.xml`.
+                if let Some(pid) = owner {
+                    for (effect, plot) in PANTHEON_HOLY_SITE_ADJACENCY {
+                        let amount = self.pantheon_effect(pid, effect);
+                        if amount == 0.0 {
+                            continue;
+                        }
+                        let tiles = neighbors
+                            .iter()
+                            .flatten()
+                            .filter(|t| t.terrain == plot || t.feature.as_deref() == Some(plot))
+                            .count();
+                        let paid = Yields {
+                            faith: tiles as f64 * amount,
+                            ..Yields::default()
+                        };
+                        adj.add(paid);
+                        if let Some(detail) = detail.as_deref_mut() {
+                            if tiles > 0 {
+                                detail.push(AdjacencySource {
+                                    source: format!("pantheon_{plot}"),
+                                    count: tiles,
+                                    percent: 0.0,
+                                    yields: paid,
+                                    raw: paid,
+                                });
+                            }
+                        }
+                    }
+                }
                 if let Some(city) = self
                     .map
                     .get(dpos)
@@ -28526,6 +28750,55 @@ impl Game {
         else {
             return yields;
         };
+        // ★ Lady of the Reeds and Marshes, Goddess of Fire and Earth Goddess
+        // are ONE modifier over three plot tests — every one of them is
+        // `MODIFIER_CITY_PLOT_YIELDS_ADJUST_PLOT_YIELD` with a
+        // `REQUIREMENTSET_TEST_ANY` subject and a `CITY_FOLLOWS_PANTHEON`
+        // owner — so the engine asks the plot once and the belief supplies
+        // the amount. Read from the Gathering Storm install
+        // (`DLC/Expansion2/Data/Expansion2_Beliefs.xml`) with every id checked
+        // against `Expansion2_RemoveData.xml`, because two of these three are
+        // rows the expansion deletes and replaces.
+        let pantheon_plot = |effect: &str, matched: bool| -> f64 {
+            if matched {
+                self.pantheon_effect(pid, effect)
+            } else {
+                0.0
+            }
+        };
+        // ⚠ `LADY_OF_THE_REEDS_PRODUCTION` (+1) is deleted by the expansion and
+        // replaced by `LADY_OF_THE_REEDS_PRODUCTION2` (+2) over the same
+        // `PLOT_HAS_REEDS_REQUIREMENTS`. That set names `FEATURE_FLOODPLAINS`
+        // and NOT the expansion's own `FEATURE_FLOODPLAINS_GRASSLAND` or
+        // `..._PLAINS`, and the shipped text agrees: "Marsh, Oasis, and DESERT
+        // Floodplains". A grassland floodplain pays nothing.
+        yields.production += pantheon_plot(
+            "reeds_production",
+            matches!(
+                tile.feature.as_deref(),
+                Some("marsh" | "oasis" | "floodplains")
+            ),
+        );
+        // Goddess of Fire is a Gathering Storm belief with no base-game row at
+        // all: `GODDESS_OF_FIRE_FEATURES_FAITH_MODIFIER`, +2 Faith over
+        // `FEATURE_GEOTHERMAL_FISSURE` or `FEATURE_VOLCANIC_SOIL`.
+        yields.faith += pantheon_plot(
+            "volcanic_geothermal_faith",
+            matches!(
+                tile.feature.as_deref(),
+                Some("geothermal_fissure" | "volcanic_soil")
+            ),
+        );
+        // ⚠⚠ Earth Goddess is the third case where a base-game row states the
+        // OPPOSITE of the shipped rule. `Expansion2_RemoveData.xml` deletes
+        // `EARTH_GODDESS_APPEAL_FAITH{,_MODIFIER}` and Gathering Storm re-adds
+        // them against `PLOT_BREATHTAKING_APPEAL` (`MinimumAppeal 4`) where the
+        // base game used `PLOT_CHARMING_APPEAL` (`MinimumAppeal 2`) — the
+        // shipped text moves from "Charming or better" to "Breathtaking" with
+        // it. Modelling the cache's requirement set alone would have paid this
+        // on twice the map.
+        yields.faith += pantheon_plot("breathtaking_appeal_faith", self.tile_appeal(pos) >= 4);
+
         let building_effect = |effect: &str| self.city_building_effect(city, effect);
         let is_coast_or_lake = matches!(tile.terrain.as_str(), "coast" | "lake");
         let is_floodplain = matches!(
@@ -35295,7 +35568,13 @@ impl Game {
         (50.0 + (attacker - defender) * 2.5).clamp(0.0, 100.0)
     }
 
-    fn promotion_kill_rewards(&mut self, attacker: &Unit, defeated: &Unit) {
+    /// Everything a defeated unit pays its killer.
+    ///
+    /// ⚠ Named for promotions and never only about them — the policy card
+    /// `earlier_era_kill_gold_pct` and the building `heal_on_unit_kill` were
+    /// already here — and God of War makes the pantheon the third source, so
+    /// the name is now what the function does.
+    fn kill_rewards(&mut self, attacker: &Unit, defeated: &Unit) {
         let defeated_spec = &self.rules.units[defeated.kind];
         let defeated_era = defeated_spec
             .tech
@@ -35315,6 +35594,38 @@ impl Game {
         let faith_pct = self.promotion_effect(attacker, "faith_on_kill_strength_pct");
         if faith_pct > 0.0 {
             self.players[attacker.owner].faith += defeated_spec.strength * faith_pct / 100.0;
+        }
+        // God of War: GOD_OF_WAR_FAITH_KILLS_MODIFIER,
+        // `MODIFIER_PLAYER_UNITS_ADJUST_POST_COMBAT_YIELD` with
+        // `PercentDefeatedStrength 50` and `YieldType YIELD_FAITH`, over
+        // `PLOT_EIGHT_INCLUDE_HOLY_SITE`. The same arithmetic as the promotion
+        // above — a percentage of the dead unit's Combat Strength — with a plot
+        // test instead of a promotion, so the two share this shape rather than
+        // each inventing one. Not in `Expansion2_RemoveData.xml`.
+        //
+        // ⚠ Two things the shipped rows say that a reading from memory does
+        // not. The requirement names no owner, and the text agrees by omission
+        // — "within 8 tiles of a Holy Site district" — so a rival's Holy Site
+        // pays as well as our own. And the text ends "(on Standard Speed)",
+        // Civilization VI's marker for a one-off yield that scales with the
+        // game speed, which `GameSpeed::scale` is.
+        let war_pct = self.pantheon_effect(attacker.owner, "faith_on_kill_near_holy_site_pct");
+        if war_pct > 0.0 && defeated_spec.class == "military" {
+            let strength = defeated_spec.strength;
+            let near_a_holy_site = self
+                .wdisk(defeated.pos, GOD_OF_WAR_HOLY_SITE_RANGE)
+                .into_iter()
+                .any(|position| {
+                    self.map.get(position).is_some_and(|tile| {
+                        tile.district.is_some_and(|district| {
+                            self.district_is_family(district, crate::name!("holy_site"))
+                        })
+                    })
+                });
+            if near_a_holy_site {
+                self.players[attacker.owner].faith +=
+                    self.game_speed.scale(strength * war_pct / 100.0);
+            }
         }
         if self.rules.units[defeated.kind].domain.as_deref() == Some("sea") {
             let pct = self.promotion_effect(attacker, "gold_from_naval_kill_pct");
@@ -35790,7 +36101,7 @@ impl Game {
                 self.note_underdog_kill(pid, &attacker, &d);
                 self.note_great_person_assisted_kill(pid, &attacker);
                 self.record_kill(pid, Some(&attacker.kind), &d);
-                self.promotion_kill_rewards(&attacker, &d);
+                self.kill_rewards(&attacker, &d);
                 self.remove_unit(did);
                 self.on_unit_lost(downer);
                 if captured_as_builder {
@@ -36103,7 +36414,7 @@ impl Game {
                 self.note_underdog_kill(pid, &attacker, &defender);
                 self.note_great_person_assisted_kill(pid, &attacker);
                 self.record_kill(pid, Some(&attacker.kind), &defender);
-                self.promotion_kill_rewards(&attacker, &defender);
+                self.kill_rewards(&attacker, &defender);
                 if self.has_ability(pid, "killer_of_cyrus") {
                     if let Some(attacker) = self.units.get_mut(&uid) {
                         attacker.hp = (attacker.hp + 30).min(100);

@@ -493,6 +493,13 @@ fn stock_unit_sight_ranges_match_civilization_vi() {
         "helicopter",
         "giant_death_robot",
         "naturalist",
+        // Two unique units inherit the sight of what they replace: the Nau is
+        // a Caravel and the Oromo Cavalry a Courser with a Scout's eye. The Nau
+        // reached this list late — `data/units.json` gave it 2, so the anchor
+        // agreed with the bug rather than with Civ VI, and the fidelity audit
+        // could not see either because `UNIT_PORTUGUESE_NAU` was compared
+        // against nothing until its alias landed.
+        "nau",
         "oromo_cavalry",
     ]
     .into_iter()
