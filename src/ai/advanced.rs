@@ -41,6 +41,12 @@ const RELIGIOUS_HOME_WATCH: i32 = 4;
 /// from reading the unseen objective as empty terrain.
 const UNKNOWN_OBJECTIVE_WALL_HP: i32 = 100;
 const UNKNOWN_OBJECTIVE_STRENGTH: f64 = 100.0;
+/// How many times a `fog_honest_2` major re-plans the rest of its turn after
+/// the authoritative board refuses one of its orders. One retry buys back the
+/// turn a single hidden blocker used to void; an unbounded loop would let a
+/// seat that cannot act at all re-plan its whole turn every turn, and the
+/// fog-honest plan is already the most expensive thing this controller does.
+const FOG_REPLAN_LIMIT: u32 = 1;
 /// What one point of health already stripped from a breached city is worth to
 /// [`AdvancedAi::campaign_city_value`], as a reason to finish that city rather
 /// than re-aim.
@@ -882,6 +888,79 @@ impl ExpansionCensus {
     }
 }
 
+/// What the fog-honest major's private plan actually managed to do on the
+/// authoritative board.
+///
+/// `AdvancedAi::take_turn_fog_honest` plans a whole turn inside a redacted
+/// clone and then replays the resulting action tape against the real game,
+/// where hidden blockers and combat are the legality authority. Until this
+/// census existed, every one of those replays discarded its `Result`
+/// (`let _ = authoritative.apply(..)`), so the one number that says whether
+/// fair-play planning is *executing* — how much of the plan the board
+/// accepted — was recorded nowhere. `docs/AI_GAPS.md` asks for exactly this
+/// ("measure replay refusals and throughput") and nothing measured it.
+///
+/// Telemetry only: nothing here feeds a decision, a score, or an action
+/// choice. Counts are keyed by `crate::action_space::kind_name`, so the
+/// buckets are the engine's own action variants and not a hand-kept list.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct FogPlanCensus {
+    /// Fog-honest major turns taken.
+    pub turns: u32,
+    /// Actions the private planning world produced, by action kind.
+    pub planned: BTreeMap<&'static str, u32>,
+    /// Actions the authoritative board accepted, by action kind.
+    pub applied: BTreeMap<&'static str, u32>,
+    /// Actions the authoritative board refused, by action kind. A refusal is
+    /// an order the seat believed was legal and the real world was not.
+    pub refused: BTreeMap<&'static str, u32>,
+    /// Turns whose tape stopped early because the seat lost the turn cursor
+    /// (`authoritative.current != seat`), abandoning every remaining action.
+    pub truncated_turns: u32,
+    /// Actions abandoned without being offered to the board at all.
+    pub abandoned: u32,
+    /// Turns on which at least one action was refused.
+    pub refused_turns: u32,
+    /// Re-plans performed by `fog_honest_2` after a refusal.
+    pub replans: u32,
+}
+
+impl FogPlanCensus {
+    /// Combine independent seats or games.
+    pub fn merge(&mut self, other: &FogPlanCensus) {
+        self.turns += other.turns;
+        self.truncated_turns += other.truncated_turns;
+        self.abandoned += other.abandoned;
+        self.refused_turns += other.refused_turns;
+        self.replans += other.replans;
+        for (bucket, source) in [
+            (&mut self.planned, &other.planned),
+            (&mut self.applied, &other.applied),
+            (&mut self.refused, &other.refused),
+        ] {
+            for (kind, count) in source {
+                *bucket.entry(kind).or_default() += count;
+            }
+        }
+    }
+
+    fn count(bucket: &mut BTreeMap<&'static str, u32>, action: &Action) {
+        *bucket
+            .entry(crate::action_space::kind_name(action))
+            .or_default() += 1;
+    }
+}
+
+/// What one replay of a fog-honest tape did to the authoritative board.
+#[derive(Clone, Copy, Debug, Default)]
+struct FogReplayOutcome {
+    /// Actions the board refused.
+    refused: u32,
+    /// The seat's turn is closed, or the cursor left it: nothing more can be
+    /// planned for it this turn.
+    finished: bool,
+}
+
 /// A concrete game-ending objective. Unlike `GrandStrategy`, which may
 /// temporarily become Expansion or Recovery, this remains fixed for the
 /// lifetime of a deliberately targeted AI.
@@ -1538,6 +1617,25 @@ pub struct AdvancedAi {
     /// the first end-to-end fair-play controller; the incumbent remains on the
     /// historical direct-game path until the mode clears a strength screen.
     pub fog_honest: bool,
+    /// Version 2 of the fog-honest major (`fog-honest-2`): the same redacted
+    /// planning world and the same replay, plus a re-plan when the
+    /// authoritative board refuses an order.
+    ///
+    /// ★★★★★ THE THING VERSION 1 DOES NOT DO AT ALL. A fog-honest turn is one
+    /// plan made against a world with no hidden units in it, replayed against
+    /// a world that has them. When the board refuses an order, every later
+    /// order on that tape was planned on the assumption it succeeded, and
+    /// version 1 applies them anyway and then ends the turn on the tape's own
+    /// `EndTurn`. With this on, the seat drops the rest of the stale tape and
+    /// crosses the fog boundary again from the board as it now stands — which
+    /// already contains whatever the refusal revealed — at most
+    /// [`FOG_REPLAN_LIMIT`] times a turn. What the boundary actually does is
+    /// in [`FogPlanCensus`]; the measurement is in `docs/AI_GAPS.md`.
+    ///
+    /// One version of a family plays: turning this on turns
+    /// [`Self::fog_honest`] OFF, and `take_turn` admits either flag into the
+    /// fog-honest turn. Native, off-by-default gene.
+    pub fog_honest_2: bool,
     /// Adapt a live Firaxis Trader's zero walking movement to its distinct
     /// route-start action.  This stays off for every native game and is enabled
     /// only by the Civ VI order bridge.
@@ -2205,6 +2303,10 @@ pub struct AdvancedAi {
     /// Factual mechanism telemetry for the two flags above. It never feeds a
     /// decision, score, or action selection.
     expansion_census: ExpansionCensus,
+    /// Factual telemetry for the fog-honest replay boundary. It never feeds a
+    /// decision, score, or action selection. Only a `fog_honest` turn writes
+    /// to it, so a stock controller's copy stays empty.
+    fog_plan_census: FogPlanCensus,
     /// Let the city-pressure/recovery path use decaying last-seen hostile
     /// military strength after the contact passes back into fog. This is a
     /// default-off evaluator arm; it does not claim to make the broader
@@ -5533,6 +5635,7 @@ impl AdvancedAi {
             belief: BeliefState::new(),
             battlefront_observation: true,
             fog_honest: false,
+            fog_honest_2: false,
             live_trader_route_adapter: false,
             solvent_faith_army: false,
             battlefront_frame: None,
@@ -5588,6 +5691,7 @@ impl AdvancedAi {
             late_expansion: false,
             expansion_dispatch: false,
             expansion_census: ExpansionCensus::default(),
+            fog_plan_census: FogPlanCensus::default(),
             belief_pressure: false,
             city_target_floor: 3,
             plan_city_target: false,
@@ -6006,6 +6110,12 @@ impl AdvancedAi {
     /// Snapshot expansion-treatment telemetry for an evaluator or census.
     pub fn expansion_census(&self) -> ExpansionCensus {
         self.expansion_census.clone()
+    }
+
+    /// Snapshot the fog-honest replay boundary's telemetry. Empty unless this
+    /// controller took at least one `fog_honest` turn.
+    pub fn fog_plan_census(&self) -> FogPlanCensus {
+        self.fog_plan_census.clone()
     }
 
     /// Whether the default-off dispatcher exposes Advanced production for this
@@ -31524,12 +31634,13 @@ impl AdvancedAi {
     /// the private view was not entitled to know, and treating that refusal as
     /// a new observation is safer than manufacturing a replacement order from
     /// omniscient state.
-    fn take_turn_fog_honest(&mut self, g: &mut Game, pid: usize) {
-        // Headless runs normally disable the engine's large remembered-map
-        // snapshots.  This mode explicitly opts back in: terrain and borders
-        // seen on an earlier turn are part of the player's knowledge and are
-        // the map half of the same information boundary as BeliefState.
-        g.set_fog_memory(true);
+    /// Plan one whole turn inside a redacted clone of `g` and return the
+    /// action tape it produced. Split out of [`Self::take_turn_fog_honest`]
+    /// so the same fair-play boundary can be crossed more than once in a
+    /// turn: `fog_honest_2` re-enters it after the authoritative board
+    /// refuses a planned order, with the board's answer already folded into
+    /// what the seat can see.
+    fn fog_honest_plan(&mut self, g: &mut Game, pid: usize) -> Vec<(usize, Action)> {
         // A controller can be attached to a loaded game after the engine has
         // already accumulated City Center snapshots.  Seed only the public
         // fields from that memory (the saved snapshot has no combat-strength
@@ -31578,31 +31689,126 @@ impl AdvancedAi {
         private.with_deferred_visibility_pool(pool.as_deref(), |private| {
             self.take_turn_inner(private, pid)
         });
-        let actions: Vec<(usize, Action)> = private
+        private
             .log
             .since(start)
             .map(|(seat, action)| (*seat, action.clone()))
-            .collect();
+            .collect()
+    }
 
+    fn take_turn_fog_honest(&mut self, g: &mut Game, pid: usize) {
+        // Headless runs normally disable the engine's large remembered-map
+        // snapshots.  This mode explicitly opts back in: terrain and borders
+        // seen on an earlier turn are part of the player's knowledge and are
+        // the map half of the same information boundary as BeliefState.
+        g.set_fog_memory(true);
+        self.fog_plan_census.turns += 1;
+        let mut actions = self.fog_honest_plan(g, pid);
+        let mut replans = 0;
+        let mut refused_this_turn = false;
+        // ⚠ Version 1 closes the turn inside the SAME deferred-visibility
+        // scope as the replay, exactly as it always has, so adding this
+        // census and this version cannot move the arm they measure.
+        let close_inside = !self.fog_honest_2;
+        loop {
+            let outcome = self.replay_fog_plan(g, pid, actions, !close_inside, close_inside);
+            refused_this_turn |= outcome.refused > 0;
+            // ★★★★★ A REFUSED ORDER USED TO VOID THE REST OF THE TURN. The
+            // tape was planned against a world with no hidden units in it, so
+            // every later order on it assumed the refused one had happened —
+            // the settler that could not step still tries to found where it
+            // is not; the escort still marches to a tile its charge never
+            // reached. Version 1 applies the rest of that stale tape and then
+            // ends the turn on the tape's own `EndTurn`. Nothing re-planned,
+            // and until `FogPlanCensus` nothing counted the loss.
+            //
+            // `fog_honest_2` crosses the fog boundary again instead, from the
+            // board as it now stands — which already contains whatever the
+            // refusal just revealed — and spends the rest of the turn on a
+            // plan that is true. Bounded by `FOG_REPLAN_LIMIT` so a seat that
+            // cannot act at all pays for one retry, not for a loop.
+            if !self.fog_honest_2
+                || outcome.finished
+                || outcome.refused == 0
+                || replans >= FOG_REPLAN_LIMIT
+                || g.winner.is_some()
+                || g.current != pid
+            {
+                break;
+            }
+            replans += 1;
+            self.fog_plan_census.replans += 1;
+            actions = self.fog_honest_plan(g, pid);
+            if actions.is_empty() {
+                break;
+            }
+        }
+        if refused_this_turn {
+            self.fog_plan_census.refused_turns += 1;
+        }
+        // A hidden blocker can make a private EndTurn arrive before the
+        // authoritative action tape is ready. Keep the ordinary driver
+        // contract: return with the acting seat closed whenever possible.
+        if !close_inside && g.winner.is_none() && g.current == pid {
+            let pool = self.work_pool.clone();
+            g.with_deferred_visibility_pool(pool.as_deref(), |authoritative| {
+                let _ = authoritative.apply(pid, &Action::EndTurn);
+            });
+        }
+    }
+
+    /// Replay one fog-honest action tape against the authoritative board,
+    /// counting what it accepted and what it refused.
+    ///
+    /// `stop_on_refusal` drops the rest of the tape at the first refusal,
+    /// because everything after it was planned on the assumption that the
+    /// refused order succeeded — and because the tape's own trailing
+    /// `EndTurn` would otherwise close the seat's turn before anything could
+    /// be re-planned. `close_turn` closes the seat inside this same deferred
+    /// visibility scope, which is what version 1 has always done.
+    fn replay_fog_plan(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        actions: Vec<(usize, Action)>,
+        stop_on_refusal: bool,
+        close_turn: bool,
+    ) -> FogReplayOutcome {
+        let mut outcome = FogReplayOutcome::default();
         let pool = self.work_pool.clone();
+        let census = &mut self.fog_plan_census;
         g.with_deferred_visibility_pool(pool.as_deref(), |authoritative| {
-            for (seat, action) in actions {
+            let mut remaining = actions.into_iter();
+            for (seat, action) in remaining.by_ref() {
+                FogPlanCensus::count(&mut census.planned, &action);
                 if authoritative.current != seat {
+                    census.truncated_turns += 1;
+                    outcome.finished = true;
                     break;
                 }
                 let end_turn = matches!(&action, Action::EndTurn);
-                let _ = authoritative.apply(seat, &action);
+                if authoritative.apply(seat, &action).is_ok() {
+                    FogPlanCensus::count(&mut census.applied, &action);
+                } else {
+                    FogPlanCensus::count(&mut census.refused, &action);
+                    outcome.refused += 1;
+                    if stop_on_refusal && !end_turn {
+                        break;
+                    }
+                }
                 if end_turn {
+                    outcome.finished = true;
                     break;
                 }
             }
-            // A hidden blocker can make a private EndTurn arrive before the
-            // authoritative action tape is ready. Keep the ordinary driver
-            // contract: return with the acting seat closed whenever possible.
-            if authoritative.winner.is_none() && authoritative.current == pid {
+            census.abandoned += remaining
+                .inspect(|(_, action)| FogPlanCensus::count(&mut census.planned, action))
+                .count() as u32;
+            if close_turn && authoritative.winner.is_none() && authoritative.current == pid {
                 let _ = authoritative.apply(pid, &Action::EndTurn);
             }
         });
+        outcome
     }
 }
 
@@ -31698,7 +31904,7 @@ impl Ai for AdvancedAi {
         // Stamp the context once, for every layer. Nothing below repeats the
         // turn number or the acting civilization.
         self.journal().begin_turn(g.turn, pid);
-        if self.fog_honest {
+        if self.fog_honest || self.fog_honest_2 {
             self.take_turn_fog_honest(g, pid);
             return;
         }

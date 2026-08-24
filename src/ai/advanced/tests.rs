@@ -455,6 +455,79 @@ fn two_fog_honest_majors_complete_a_short_turn_sequence() {
 }
 
 #[test]
+fn the_fog_plan_census_records_what_the_board_did_with_the_plan() {
+    // The replay boundary used to discard every `apply` result, so the one
+    // number that says whether fair-play planning is executing was recorded
+    // nowhere. A stock controller's copy must stay empty; a fog-honest one
+    // must account for every action it planned.
+    let mut game = Game::new_full(2, 24, 16, 84_203, 30, 0, false);
+    let mut ais = vec![AdvancedAi::fog_honest(), AdvancedAi::new()];
+    run_game(&mut game, &mut ais);
+    let fogged = ais[0].fog_plan_census();
+    assert!(fogged.turns > 0, "the fog-honest seat took turns");
+    let planned: u32 = fogged.planned.values().sum();
+    let applied: u32 = fogged.applied.values().sum();
+    let refused: u32 = fogged.refused.values().sum();
+    assert!(planned > 0, "the private world produced a tape");
+    assert!(applied > 0, "the authoritative board accepted part of it");
+    assert_eq!(
+        planned,
+        applied + refused + fogged.abandoned,
+        "every planned action is applied, refused, or abandoned"
+    );
+    assert_eq!(fogged.replans, 0, "version 1 never re-plans");
+    assert_eq!(
+        ais[1].fog_plan_census(),
+        crate::ai::FogPlanCensus::default(),
+        "a stock controller never crosses the replay boundary"
+    );
+}
+
+#[test]
+fn fog_honest_2_is_a_version_of_the_mode_and_ships_off() {
+    let mut ai = AdvancedAi::new();
+    assert!(!ai.fog_honest_2, "off in the deployment constructor");
+    assert!(!AdvancedAi::fog_honest().fog_honest_2, "off in version 1");
+    ai.enable_fog_honest_2();
+    assert!(ai.fog_honest_2);
+    assert!(
+        !ai.fog_honest,
+        "one version of a family plays: version 2's enable turns version 1 off"
+    );
+    assert!(ai.belief_pressure && ai.blind_objective_strength && ai.blind_objective_units);
+    let mut both = AdvancedAi::fog_honest();
+    both.enable_fog_honest_2();
+    assert!(both.fog_honest_2 && !both.fog_honest);
+    both.enable_fog_honest();
+    assert!(both.fog_honest && !both.fog_honest_2, "and back again");
+    ai.disable_fog_honest_2();
+    assert!(!ai.fog_honest_2 && !ai.fog_honest, "neither version plays");
+}
+
+#[test]
+fn fog_honest_2_re_plans_only_after_the_board_refuses_an_order() {
+    // The re-plan is a response to a refusal, not a second planning pass
+    // every turn pays for: it can never outnumber the turns that had one.
+    let mut game = Game::new_full(2, 24, 16, 84_203, 30, 0, false);
+    let mut ai = AdvancedAi::new();
+    ai.enable_fog_honest_2();
+    let mut fleet = vec![ai, AdvancedAi::new()];
+    run_game(&mut game, &mut fleet);
+    let census = fleet[0].fog_plan_census();
+    assert!(census.turns > 0);
+    assert!(
+        census.replans <= census.refused_turns,
+        "a re-plan needs a refused turn to answer: {} re-plans on {} refused turns",
+        census.replans,
+        census.refused_turns
+    );
+    assert!(
+        census.replans <= census.turns * super::FOG_REPLAN_LIMIT,
+        "the re-plan is bounded per turn"
+    );
+}
+
+#[test]
 fn a_religion_plan_offers_peace_to_unblock_its_spread_lane() {
     // The t200 shape from run civvis-20260807T224914Z: strategy=religion,
     // met two rivals, at war with both, every revealed foreign city

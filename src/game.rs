@@ -3308,24 +3308,38 @@ pub struct HostCompetition {
     pub leader: f64,
 }
 
-/// What a competition counts.
+/// One shipped `EmergencyScoreSources` row, in the vocabulary CIVVIS can
+/// evaluate.
 ///
-/// ⚠ The shipped `EmergencyScoreSources` table names more than these two —
-/// Nobel Peace scores from Favor, and Send Aid from gold, a project, being at
-/// war and a carbon footprint. Favor is not modelled here because it accrues at
-/// seven sites including congress *refunds*, and deciding which of those count
-/// as favor "earned" is a rule this repository does not have — the kind of
-/// invention that put Vanilla belief values into a Gathering Storm ruleset in
-/// #2049. Native aid requests seat from a random-disaster population loss or
-/// a war declared by a civilization the target already has 200 grievances
-/// against, and score their existing project. Their other score sources remain
-/// outside the portion modelled here.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum CompetitionScoring {
-    /// A project completed in a city, worth its `competition_score`.
+/// Each variant is a row rather than a category: the number is that row's
+/// `ScoreAmount`, and the cadence is the one its `Description` states.
+/// `LOC_EMERGENCY_SCORE_GPP_DESC` is "Generating Great People Points **Per
+/// Turn**" and `LOC_EMERGENCY_SCORE_SPACEPORTS_DESC` is "**Maintaining**
+/// Spaceport Districts", so both accrue every turn; a `FromProject` row pays
+/// once, when the project completes.
+///
+/// ⚠ Four shipped rows stay unmodelled because the data does not say what they
+/// measure. `CLIMATE_ACCORDS_SCORE_CO2` pays for "emissions much lower than the
+/// biggest CO2 polluter" and never says how much lower; `SEND_AID_SCORE_FROM_GOLD`
+/// counts gifts of Gold to the target, which is a diplomatic action CIVVIS has
+/// no equivalent of; and the two `FROM_AT_WAR` penalties do not say whether -30
+/// and -200 are charged once or every turn. Choosing a number for any of them
+/// would be inventing a rule, which is the #2049 mistake.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum CompetitionScoreSource {
+    /// `FromProject`: a project completed in a city, worth the
+    /// `competition_score` it declares.
     Project,
-    /// A Great Person recruited, worth one point whatever the class.
-    GreatPeople,
+    /// The eight `WORLDS_FAIR_SCORE_GPP_*` rows, `ScoreAmount="1"` for every
+    /// class: one point per Great Person Point generated, each turn.
+    GreatPersonPointsPerTurn,
+    /// `NOBEL_PRIZE_PEACE_SCORE_FROM_FAVOR`, `FromFavor="true"`
+    /// `ScoreAmount="1"`: one point per Diplomatic Favor generated, each turn.
+    DiplomaticFavorPerTurn,
+    /// `FromDistrict`: `amount` each turn for every city holding the district.
+    DistrictPerTurn { district: &'static str, amount: f64 },
+    /// `FromBuilding`: `amount` each turn for every city holding the building.
+    BuildingPerTurn { building: &'static str, amount: f64 },
 }
 
 /// The event that seats a native scored competition.
@@ -3345,35 +3359,68 @@ enum NativeCompetitionTrigger {
 /// constrain its era. Keeping that source data beside its DVP award prevents a
 /// project prerequisite from accidentally deciding when the congress may offer
 /// the competition.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 struct NativeCompetitionSpec {
     kind: &'static str,
     diplomatic_victory_points: i64,
-    scoring: CompetitionScoring,
+    /// The Diplomatic Favor first place takes beside the point.
+    ///
+    /// ⚠ This is the emergency's **top tier** award, not a separate first-place
+    /// one, and first place is read as being in that tier: the shipped strings
+    /// name the bands "Gold Tier Rewards (for highest score)", "Silver Tier
+    /// Rewards (for the top 25% of scores)" and "Bronze Tier Rewards (for the
+    /// next 25% of scores)", and `LOC_SCORED_COMPETITION_SILVER_TIER_CHILD`
+    /// exists to say "All Silver Tier Rewards". The highest score is in the top
+    /// 25% of scores, so the winner takes both.
+    ///
+    /// ⚠ That is a **reading**: the three band predicates
+    /// (`REQUIREMENT_PLAYER_GOT_FIRST_PLACE_IN_EMERGENCY`, `..._HIGH_TIER_...`,
+    /// `..._LOW_TIER_...`) are compiled into the engine, and the child string is
+    /// referenced by no shipped Lua. The two lower bands are not paid at all,
+    /// because where a 25% cut falls among five or six scoring empires is a
+    /// rounding rule the data does not state.
+    first_place_favor: f64,
+    scoring: &'static [CompetitionScoreSource],
     trigger: NativeCompetitionTrigger,
     duration: u32,
     lockout: u32,
     minimum_world_era: usize,
     maximum_world_era: Option<usize>,
+    /// A civilization ability the game must contain before this competition
+    /// exists at all — the emergency's
+    /// `REQUIREMENT_GAME_HAS_CIVILIZATION_OR_LEADER_TRAIT`.
+    required_civilization_ability: Option<&'static str>,
 }
 
 impl NativeCompetitionSpec {
     fn offered_in_world_era(self, era: usize) -> bool {
         era >= self.minimum_world_era && self.maximum_world_era.is_none_or(|maximum| era <= maximum)
     }
+
+    fn counts(self, source: CompetitionScoreSource) -> bool {
+        self.scoring.contains(&source)
+    }
 }
 
 /// A scored competition CIVVIS runs itself, rather than observing on a host.
 ///
-/// ★★★★★ THE DIPLOMATIC LANE'S LARGEST SOURCE. Gathering Storm pays a
-/// Diplomatic Victory Point to the first-place finisher of a scored
-/// competition, and they recur for the whole second half of a game. Without
-/// them a native empire has no route to the twenty a Diplomatic victory needs:
-/// the congress resolution is ±2 from the Modern era, the three wonders are
-/// worth seven and 31 of 32 diplomatic games finish none, and the civic and
-/// technology are worth one each in the Future era. Live, 19.6% of terminal
-/// games end in a rival's diplomatic victory; on the contested screen CIVVIS
-/// produced 1.7%. See `docs/FIDELITY.md`.
+/// ★★★★★ THE HALF OF THE DIPLOMATIC LANE A NATIVE GAME NEVER HAD. Gathering
+/// Storm pays a Diplomatic Victory Point to the first-place finisher of a
+/// scored competition, and they recur for the whole second half of a game.
+/// Live, 19.6% of terminal games end in a rival's diplomatic victory; on the
+/// contested native screen CIVVIS produced 1.7%.
+///
+/// ⚠ **"Without them a native empire has no route to twenty" is what this
+/// comment said, and #2379's census says otherwise.** At the standard screen's
+/// shape — 6 majors, 74×46 continents, nine city-states, Online, 250 turns,
+/// 150 paired seeds an arm from 41000 — the leading empire finishes on a
+/// **median of 13** of the 20 with competitions off, and 3 of 150 games crossed
+/// the line without one; the congress resolution at ±2 from the Modern era does
+/// most of that. Turning all seven competitions on is worth **+0.35 points to
+/// the leader per game (95% CI +0.05 to +0.64)** and moved the diplomatic
+/// ending share from 3/150 to 0/150. The lane is short by about a third, not
+/// unreachable, and this closes a fraction of the gap rather than the whole of
+/// it — which is why the flag ships off. See `docs/FIDELITY.md`.
 ///
 /// Unlike [`HostCompetition`], which is one mirrored seat's view of a host's
 /// competition, this holds every seat's score because CIVVIS is running it.
@@ -14376,12 +14423,18 @@ impl Game {
         }
         let earn = self.great_person_points_per_turn(pid);
         let anarchy = self.in_anarchy(pid);
+        // The World's Fair scores the points as they are generated, not the
+        // people they eventually buy. Points that pay out as Faith because the
+        // class has run dry were still generated, and Firaxis' `FromGreatPerson`
+        // rows do not ask where they went.
+        let generated: f64 = earn.values().map(|amount| amount.max(0.0)).sum();
         for (t, amt) in earn {
             if !anarchy && !self.great_person_class_earnable(pid, &t) {
                 self.players[pid].faith += amt.max(0.0);
             }
             *self.players[pid].gpp.entry(t).or_insert(0.0) += amt;
         }
+        self.score_great_person_point_competition(pid, generated);
         let due: Vec<String> = self.players[pid]
             .gpp
             .iter()
@@ -14432,7 +14485,6 @@ impl Game {
         self.players[pid].gpp.insert("merchant".to_string(), 0.0);
         self.retired_great_people.insert(id.clone());
         self.players[pid].great_people.push(id);
-        self.score_great_person_competition(pid);
         *self.players[pid]
             .gp_claimed
             .entry("merchant".to_string())
@@ -14718,7 +14770,6 @@ impl Game {
         self.retired_great_people.insert(id.clone());
         self.note(pid, "People", format!("recruited {}", spec.name), None);
         self.players[pid].great_people.push(id);
-        self.score_great_person_competition(pid);
         *self.players[pid]
             .gp_claimed
             .entry(kind.to_string())
@@ -32114,72 +32165,145 @@ impl Game {
     /// The competitions CIVVIS can seat itself, with the Diplomatic Victory
     /// Points Gathering Storm pays their winner.
     ///
-    /// The exact scored competitions whose trigger and score CIVVIS models.
+    /// Every field is read off the installed Gathering Storm ruleset —
+    /// `EmergencyAlliances` for the trigger, `Duration` and `LockoutTime`, that
+    /// row's `TargetRequirementSet` for the era window, `EmergencyScoreSources`
+    /// for what counts, and `EmergencyRewards` joined to `ModifierArguments`
+    /// for the award:
     ///
-    /// The installed Gathering Storm emergency definitions gate World's Fair to
-    /// Modern, World Games to Atomic+, Climate Accords to Information+, and
-    /// International Space Station to Future+. Nobel prizes and the remaining
-    /// aid-request score sources still need rules that CIVVIS does not model.
+    /// | competition | era | scores | first place |
+    /// |---|---|---|---|
+    /// | World's Fair | Modern only | Great Person Points per turn | 1 point, 50 Favor |
+    /// | World Games | Atomic+ | athletes project, Stadiums and Aquatics Centers per turn | 1 point, 50 Favor |
+    /// | Climate Accords | Information+ | the three decommissioning projects | 2 points, 100 Favor |
+    /// | International Space Station | Future+ | astronauts project, Spaceports and Campuses per turn | 1 point, 50 Favor |
+    /// | Nobel Peace Prize | Industrial+, Sweden in the game | Diplomatic Favor per turn | 1 point |
+    /// | Send Aid | any | the aid project | 2 points, 100 Favor |
+    /// | Send Military Aid | any | the aid project | 2 points, 100 Favor |
+    ///
+    /// ⚠ **The Nobel prizes for Literature and Physics are deliberately absent
+    /// and are not a gap.** They are scored competitions like the rest, but
+    /// `EmergencyRewards` gives neither of them a
+    /// `NON_EMERGENCY_FIRST_PLACE_VICTORY_POINT` row — Literature's first place
+    /// takes cheaper Rock Bands and Physics' a technology boost — so neither is
+    /// a source of a Diplomatic Victory Point at all. Only Peace is.
+    ///
+    /// ⚠ **Order is the seating preference**, because the shipped data does not
+    /// say how the congress picks among the competitions it could offer: that
+    /// choice lives in the compiled engine, not in `Emergencies_XP2`. The list
+    /// is newest-era-first, so the latest competition an era has unlocked takes
+    /// the seat and the Nobel Peace Prize — the only one available before the
+    /// Modern era — takes it in the Industrial era and in the gaps another
+    /// competition's per-kind lockout leaves.
     const NATIVE_COMPETITIONS: &'static [NativeCompetitionSpec] = &[
         NativeCompetitionSpec {
             kind: "EMERGENCY_SPACE_STATION",
             diplomatic_victory_points: 1,
-            scoring: CompetitionScoring::Project,
+            first_place_favor: 50.0,
+            scoring: &[
+                CompetitionScoreSource::Project,
+                CompetitionScoreSource::DistrictPerTurn {
+                    district: "spaceport",
+                    amount: 5.0,
+                },
+                CompetitionScoreSource::DistrictPerTurn {
+                    district: "campus",
+                    amount: 1.0,
+                },
+            ],
             trigger: NativeCompetitionTrigger::Congress,
             duration: 29,
             lockout: 60,
             minimum_world_era: 8,
             maximum_world_era: None,
+            required_civilization_ability: None,
         },
         NativeCompetitionSpec {
             kind: "EMERGENCY_CLIMATE_ACCORDS",
             diplomatic_victory_points: 2,
-            scoring: CompetitionScoring::Project,
+            first_place_favor: 100.0,
+            scoring: &[CompetitionScoreSource::Project],
             trigger: NativeCompetitionTrigger::Congress,
             duration: 29,
             lockout: 60,
             minimum_world_era: 7,
             maximum_world_era: None,
-        },
-        NativeCompetitionSpec {
-            kind: "EMERGENCY_WORLDS_FAIR",
-            diplomatic_victory_points: 1,
-            scoring: CompetitionScoring::GreatPeople,
-            trigger: NativeCompetitionTrigger::Congress,
-            duration: 29,
-            lockout: 60,
-            minimum_world_era: 5,
-            maximum_world_era: Some(5),
+            required_civilization_ability: None,
         },
         NativeCompetitionSpec {
             kind: "EMERGENCY_WORLD_GAMES",
             diplomatic_victory_points: 1,
-            scoring: CompetitionScoring::Project,
+            first_place_favor: 50.0,
+            scoring: &[
+                CompetitionScoreSource::Project,
+                CompetitionScoreSource::BuildingPerTurn {
+                    building: "stadium",
+                    amount: 1.0,
+                },
+                CompetitionScoreSource::BuildingPerTurn {
+                    building: "aquatics_center",
+                    amount: 1.0,
+                },
+            ],
             trigger: NativeCompetitionTrigger::Congress,
             duration: 29,
             lockout: 60,
             minimum_world_era: 6,
             maximum_world_era: None,
+            required_civilization_ability: None,
+        },
+        NativeCompetitionSpec {
+            kind: "EMERGENCY_WORLDS_FAIR",
+            diplomatic_victory_points: 1,
+            first_place_favor: 50.0,
+            scoring: &[CompetitionScoreSource::GreatPersonPointsPerTurn],
+            trigger: NativeCompetitionTrigger::Congress,
+            duration: 29,
+            lockout: 60,
+            minimum_world_era: 5,
+            maximum_world_era: Some(5),
+            required_civilization_ability: None,
+        },
+        // Sweden's `TRAIT_CIVILIZATION_NOBEL_PRIZE` is the whole reason the
+        // Nobel prizes exist in a game: `NOBEL_PRIZE_TARGET_REQUIREMENTS` tests
+        // `REQUIREMENT_GAME_HAS_CIVILIZATION_OR_LEADER_TRAIT` for it. Without
+        // Sweden on the board the congress never offers one, which is why this
+        // competition is rare rather than a route every empire has.
+        NativeCompetitionSpec {
+            kind: "EMERGENCY_NOBEL_PRIZE_PEACE",
+            diplomatic_victory_points: 1,
+            first_place_favor: 0.0,
+            scoring: &[CompetitionScoreSource::DiplomaticFavorPerTurn],
+            trigger: NativeCompetitionTrigger::Congress,
+            duration: 29,
+            lockout: 60,
+            minimum_world_era: 4,
+            maximum_world_era: None,
+            required_civilization_ability: Some("nobelinstitution"),
         },
         NativeCompetitionSpec {
             kind: "EMERGENCY_SEND_AID",
             diplomatic_victory_points: 2,
-            scoring: CompetitionScoring::Project,
+            first_place_favor: 100.0,
+            scoring: &[CompetitionScoreSource::Project],
             trigger: NativeCompetitionTrigger::RandomDisasterPopulationLoss,
             duration: 30,
             lockout: 30,
             minimum_world_era: 0,
             maximum_world_era: None,
+            required_civilization_ability: None,
         },
         NativeCompetitionSpec {
             kind: "EMERGENCY_SEND_MILITARY_AID",
             diplomatic_victory_points: 2,
-            scoring: CompetitionScoring::Project,
+            first_place_favor: 100.0,
+            scoring: &[CompetitionScoreSource::Project],
             trigger: NativeCompetitionTrigger::WarWithGrievances,
             duration: 30,
             lockout: 30,
             minimum_world_era: 0,
             maximum_world_era: None,
+            required_civilization_ability: None,
         },
     ];
 
@@ -32213,10 +32337,11 @@ impl Game {
         let Some(competition) = Self::NATIVE_COMPETITIONS.iter().find(|competition| {
             competition.trigger == NativeCompetitionTrigger::Congress
                 && competition.offered_in_world_era(self.world_era)
+                && self.game_meets_competition_trait(competition)
                 && self
                     .competition_lockout_until
                     .get(competition.kind)
-                .is_none_or(|until| self.turn >= *until)
+                    .is_none_or(|until| self.turn >= *until)
                 && majors
                     .iter()
                     .any(|pid| self.can_score_competition(*pid, competition.kind))
@@ -32242,6 +32367,11 @@ impl Game {
         }
         let Some(competition) = Self::NATIVE_COMPETITIONS.iter().find(|competition| {
             competition.trigger == trigger
+                // No aid request carries a civilization requirement today, so
+                // this changes nothing now. It is here because the gate belongs
+                // to the spec rather than to the congress path: a trait-gated
+                // competition added on another trigger must not slip past it.
+                && self.game_meets_competition_trait(competition)
                 && self
                     .competition_lockout_until
                     .get(competition.kind)
@@ -32266,61 +32396,189 @@ impl Game {
         self.query_memo.producible.borrow_mut().clear();
     }
 
-    /// Whether this empire holds the ground a competition's scoring project
-    /// needs, after its exact era gate has selected it.
-    fn can_score_competition(&self, pid: usize, kind: &str) -> bool {
-        if Self::native_competition(kind)
-            .is_some_and(|competition| competition.scoring == CompetitionScoring::GreatPeople)
-        {
-            // Every empire recruits Great People, so there is no ground to
-            // hold and nothing to gate on.
+    /// Whether the game contains the civilization a competition's emergency
+    /// requires before it exists at all.
+    ///
+    /// `NOBEL_PRIZE_TARGET_REQUIREMENTS` tests
+    /// `REQUIREMENT_GAME_HAS_CIVILIZATION_OR_LEADER_TRAIT` for
+    /// `TRAIT_CIVILIZATION_NOBEL_PRIZE`, which `CivilizationTraits` gives to
+    /// `CIVILIZATION_SWEDEN` alone. A game with no Sweden in it never sees a
+    /// Nobel prize, and that is the shipped rule rather than a simplification.
+    fn game_meets_competition_trait(&self, competition: &NativeCompetitionSpec) -> bool {
+        let Some(ability) = competition.required_civilization_ability else {
             return true;
-        }
-        self.rules.projects.iter().any(|(_, spec)| {
-            if spec.competition_score <= 0.0 || !spec.host_competition_kinds().any(|k| k == kind) {
-                return false;
+        };
+        self.players
+            .iter()
+            .any(|player| self.has_ability(player.id, ability))
+    }
+
+    /// Whether this empire could score at all in a competition, after its exact
+    /// era gate has selected it.
+    ///
+    /// Every source the competition declares is asked, because a competition
+    /// nobody can score in pays nobody and still spends its lockout.
+    fn can_score_competition(&self, pid: usize, kind: &str) -> bool {
+        let Some(competition) = Self::native_competition(kind) else {
+            return false;
+        };
+        competition.scoring.iter().any(|source| match source {
+            // Every empire generates Great Person Points and Diplomatic Favor,
+            // so there is no ground to hold and nothing to gate on.
+            CompetitionScoreSource::GreatPersonPointsPerTurn
+            | CompetitionScoreSource::DiplomaticFavorPerTurn => true,
+            CompetitionScoreSource::DistrictPerTurn { district, .. } => {
+                let district = Name::new(district);
+                self.cities
+                    .values()
+                    .any(|city| city.owner == pid && city.districts.contains_key(district))
             }
-            // ⚠ The district is not the whole requirement. A decommissioning
-            // project also eats a power plant, and a competition offered to an
-            // empire that holds none is a competition nobody can score in: the
-            // first trace of this seated Climate Accords on turn 100 and closed
-            // it on 119 with no score at all, having spent the lockout.
-            self.cities.values().any(|city| {
-                city.owner == pid
-                    && spec
-                        .district
-                        .is_none_or(|district| city.districts.contains_key(district))
-                    && spec
-                        .consumes_buildings
-                        .iter()
-                        .all(|building| city.buildings.contains(&Name::new(building)))
-            })
+            CompetitionScoreSource::BuildingPerTurn { building, .. } => {
+                let building = Name::new(building);
+                self.cities
+                    .values()
+                    .any(|city| city.owner == pid && city.buildings.contains(&building))
+            }
+            CompetitionScoreSource::Project => self.rules.projects.iter().any(|(_, spec)| {
+                if spec.competition_score <= 0.0
+                    || !spec.host_competition_kinds().any(|k| k == kind)
+                {
+                    return false;
+                }
+                // ⚠ The district is not the whole requirement. A decommissioning
+                // project also eats a power plant, and a competition offered to an
+                // empire that holds none is a competition nobody can score in: the
+                // first trace of this seated Climate Accords on turn 100 and closed
+                // it on 119 with no score at all, having spent the lockout.
+                self.cities.values().any(|city| {
+                    city.owner == pid
+                        && spec
+                            .district
+                            .is_none_or(|district| city.districts.contains_key(district))
+                        && spec
+                            .consumes_buildings
+                            .iter()
+                            .all(|building| city.buildings.contains(&Name::new(building)))
+                })
+            }),
         })
     }
 
-    /// One point to this empire if a Great-People competition is running.
+    /// Add `amount` to this seat's score, if the running competition counts
+    /// `source`.
     ///
-    /// The shipped `EmergencyScoreSources` rows give the World's Fair one point
-    /// per Great Person of *every* class, so the class does not matter and the
-    /// count does.
-    fn score_great_person_competition(&mut self, pid: usize) {
-        let turn = self.turn;
-        let scoring = self
-            .competition
-            .as_ref()
-            .filter(|running| running.ends > turn)
-            .and_then(|running| {
-                Self::native_competition(&running.kind).map(|competition| competition.scoring)
-            });
-        if scoring != Some(CompetitionScoring::GreatPeople) {
+    /// ⚠ **Nothing is paid on the mirrored path.** `competition` is set only by
+    /// native seating; a mirrored competition lives in `host_competitions`, and
+    /// the host has already counted its own score and paid its own award.
+    fn score_native_competition(
+        &mut self,
+        pid: usize,
+        source: CompetitionScoreSource,
+        amount: f64,
+    ) {
+        if amount <= 0.0 || !self.victory_eligible(pid) {
             return;
         }
-        if let Some(running) = self
+        let turn = self.turn;
+        let counts = self
             .competition
-            .as_mut()
-            .filter(|running| running.target != Some(pid))
-        {
-            *running.scores.entry(pid).or_insert(0.0) += 1.0;
+            .as_ref()
+            .filter(|running| running.ends > turn && running.target != Some(pid))
+            .and_then(|running| Self::native_competition(&running.kind))
+            .is_some_and(|competition| competition.counts(source));
+        if !counts {
+            return;
+        }
+        if let Some(running) = self.competition.as_mut() {
+            *running.scores.entry(pid).or_insert(0.0) += amount;
+        }
+    }
+
+    /// The World's Fair's eight `WORLDS_FAIR_SCORE_GPP_*` rows: one point per
+    /// Great Person Point generated this turn, whatever the class.
+    ///
+    /// ⚠ This counts **points**, not people. Every row is `ScoreAmount="1"`
+    /// against a `FromGreatPerson` class, and their shared description is
+    /// `LOC_EMERGENCY_SCORE_GPP_DESC`, "Generating Great People Points Per
+    /// Turn". Counting recruits instead — which is what CIVVIS did until this
+    /// change — reads the same table two orders of magnitude too small, and
+    /// leaves a 29-turn competition to be decided by whether two empires each
+    /// happened to claim one person, which is a tie, and a tie pays nobody.
+    fn score_great_person_point_competition(&mut self, pid: usize, points: f64) {
+        self.score_native_competition(
+            pid,
+            CompetitionScoreSource::GreatPersonPointsPerTurn,
+            points,
+        );
+    }
+
+    /// `NOBEL_PRIZE_PEACE_SCORE_FROM_FAVOR`: one point per Diplomatic Favor
+    /// generated this turn.
+    ///
+    /// The score source is described "Generating [ICON_Favor] Diplomatic
+    /// Favor", the same "Generating … Per Turn" cadence the World's Fair uses,
+    /// so it is this turn's favor *income* — what `process_diplomacy` computes
+    /// and banks in the `diplomatic_favor` counter. It is deliberately not the
+    /// balance, and deliberately not favor that merely arrives: a congress
+    /// refund, a trade, or an emergency award is not favor the empire
+    /// generated.
+    fn score_favor_competition(&mut self, pid: usize, favor: f64) {
+        self.score_native_competition(pid, CompetitionScoreSource::DiplomaticFavorPerTurn, favor);
+    }
+
+    /// The `FromDistrict` and `FromBuilding` rows, which pay for *maintaining*
+    /// what they name and therefore accrue every turn the competition runs.
+    ///
+    /// The International Space Station counts Spaceports at 5 and Campuses at
+    /// 1; the World Games counts Stadiums and Aquatics Centers at 1. Without
+    /// them a competition seated over ground nobody chooses to spend production
+    /// on closes with an empty score table and pays nobody, which is exactly
+    /// what the first native trace recorded.
+    fn score_competition_holdings(&mut self, pid: usize) {
+        // ⚠ Majors only. `begin_turn` runs for every seat, and a city-state
+        // holds Campuses like anyone else — but an emergency's members are the
+        // majors, and a city-state that outscored them would take a Diplomatic
+        // Victory Point off the board for nobody.
+        if !self.victory_eligible(pid) {
+            return;
+        }
+        let turn = self.turn;
+        let Some(spec) = self
+            .competition
+            .as_ref()
+            .filter(|running| running.ends > turn && running.target != Some(pid))
+            .and_then(|running| Self::native_competition(&running.kind))
+            .copied()
+        else {
+            return;
+        };
+        for source in spec.scoring {
+            let held = match source {
+                CompetitionScoreSource::DistrictPerTurn { district, amount } => {
+                    let district = Name::new(district);
+                    let cities = self
+                        .cities
+                        .values()
+                        .filter(|city| city.owner == pid && city.districts.contains_key(district))
+                        .count();
+                    amount * cities as f64
+                }
+                CompetitionScoreSource::BuildingPerTurn { building, amount } => {
+                    let building = Name::new(building);
+                    let cities = self
+                        .cities
+                        .values()
+                        .filter(|city| city.owner == pid && city.buildings.contains(&building))
+                        .count();
+                    amount * cities as f64
+                }
+                _ => 0.0,
+            };
+            if held > 0.0 {
+                if let Some(running) = self.competition.as_mut() {
+                    *running.scores.entry(pid).or_insert(0.0) += held;
+                }
+            }
         }
     }
 
@@ -32351,9 +32609,12 @@ impl Game {
             .filter(|(_, score)| **score >= best && best > 0.0)
             .map(|(pid, _)| *pid)
             .collect();
+        let favor = spec
+            .map(|competition| competition.first_place_favor)
+            .unwrap_or(0.0);
         if let [winner] = winners[..] {
             self.players[winner].dvp += award;
-            self.players[winner].diplomatic_favor += 25.0;
+            self.players[winner].diplomatic_favor += favor;
             self.add_historic_moment(winner, "MOMENT_PLAYER_EARNED_DIPLOMATIC_VICTORY_POINT");
         }
         self.competition = None;
@@ -43586,6 +43847,7 @@ impl Game {
             .counters
             .entry("diplomatic_favor".to_string())
             .or_insert(0) += favor.max(0.0).floor() as i64;
+        self.score_favor_competition(pid, favor.max(0.0));
     }
 
     fn process_influence(&mut self, pid: usize) {
@@ -47396,6 +47658,9 @@ impl Game {
         self.reconcile_closed_border_units(Some(pid));
         self.process_routes(pid);
         self.process_great_people(pid);
+        // Districts and buildings score a competition for being *maintained*,
+        // so they pay once a turn like the yields above.
+        self.score_competition_holdings(pid);
         self.process_pressure(pid);
         self.process_loyalty(pid);
         self.record_emergency_presence(pid);
@@ -49259,7 +49524,7 @@ impl Game {
                 // The score the project declares only means something while a
                 // competition CIVVIS runs itself is open; a mirrored one is
                 // counted by the host and must not be counted twice.
-                if spec.competition_score > 0.0 {
+                if spec.competition_score > 0.0 && self.victory_eligible(pid) {
                     if let Some(running) = self.competition.as_mut() {
                         if running.ends > self.turn
                             && running.target != Some(pid)

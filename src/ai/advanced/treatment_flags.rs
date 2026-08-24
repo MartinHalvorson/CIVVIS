@@ -1353,6 +1353,12 @@ impl AdvancedAi {
     /// empty tile or a live omniscient unit.
     pub fn enable_fog_honest(&mut self) {
         self.fog_honest = true;
+        self.fog_honest_2 = false;
+        self.enable_fog_honest_belief();
+    }
+
+    /// The information contract both versions of the fog-honest major share.
+    fn enable_fog_honest_belief(&mut self) {
         self.battlefront_observation = true;
         self.belief_pressure = true;
         self.blind_objective_strength = true;
@@ -1361,6 +1367,26 @@ impl AdvancedAi {
 
     pub fn disable_fog_honest(&mut self) {
         self.fog_honest = false;
+    }
+
+    /// Version 2 of `fog_honest`: the same fair-play boundary and the same
+    /// information contract, plus one re-plan when the authoritative board
+    /// refuses a planned order. One version of a family plays, so this turns
+    /// version 1 off (`docs/GENE_SCREEN.md`, *Versioning a gene*: "write it
+    /// so the newer version's enable turns the older one off"); the turn
+    /// entry in `AdvancedAi::take_turn` admits either flag. Opt-in gene
+    /// `fog-honest-2`. See [`AdvancedAi::fog_honest_2`].
+    pub fn enable_fog_honest_2(&mut self) {
+        self.fog_honest = false;
+        self.fog_honest_2 = true;
+        self.enable_fog_honest_belief();
+    }
+
+    /// The twin of `enable_fog_honest_2`. It leaves version 1's mode where it
+    /// found it, exactly as `disable_fog_honest` leaves the four flags
+    /// `enable_fog_honest` sets.
+    pub fn disable_fog_honest_2(&mut self) {
+        self.fog_honest_2 = false;
     }
 
     /// Rank district families by how much of the empire still lacks them.
