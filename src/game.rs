@@ -42473,6 +42473,25 @@ impl Game {
         1.1 + 0.14 * self.world_era as f64 + 0.07 * self.players[pid].dvp.max(0) as f64
     }
 
+    /// What one point of Diplomatic Favor is worth to `pid` in Gold by this
+    /// engine's own book: the live seat's floor for a favor sale, which used
+    /// to be a flat Gold a point.
+    pub fn favor_gold_value(&self, pid: usize) -> f64 {
+        self.favor_unit_value(pid)
+    }
+
+    /// What passage through another empire's territory is worth to
+    /// `receiver` in Gold by this engine's book, read as if it were not yet
+    /// open — a mirrored board can carry the very passage the live seat is
+    /// about to buy. The live seat's ceiling for a passage purchase, which
+    /// used to be whatever the treasury held.
+    pub fn passage_gold_value(&self, receiver: usize) -> f64 {
+        let tourism = (self.players[receiver].tourism_lifetime
+            / self.turn.saturating_sub(1).max(1) as f64)
+            .min(80.0);
+        28.0 + tourism * 0.35
+    }
+
     fn open_borders_receive_value(&self, receiver: usize, grantor: usize) -> f64 {
         if self.has_open_borders(receiver, grantor) {
             return 0.0;
