@@ -307,10 +307,12 @@ person, not how it retires one. `tools/civ6_fidelity.py` already applies
 `RemoveData` first for exactly this reason, which is why its report is the
 authority here and a hand-read of the delete list is not.
 
-The same load order is why 42 of the 213 rows only exist at all once the
-content packs are in: Gran Colombia's ten `comandante_general` individuals,
-Amina (whose type id is still `GREAT_PERSON_INDIVIDUAL_ANA_NZINGA`), Timur,
-Trung Trac and the rest.
+The same load order is why **34 of the 213 rows exist only once the content
+packs in `CONTENT_PACKS` are in** — the base game plus both expansions carry
+179. Gran Colombia's ten `comandante_general` individuals are the largest
+block; Trung Trac, Tupac Amaru, Hanno the Navigator, Zhou Daguan, Dimitrie
+Cantemir and Scott Joplin are among the rest. Auditing against base +
+expansions alone would report those 34 as content CIVVIS invented.
 
 ### The 66 that still need engine surface
 
