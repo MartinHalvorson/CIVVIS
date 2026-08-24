@@ -1242,6 +1242,47 @@ class VersionedGenes(unittest.TestCase):
         self.assertTrue(alone[1]["default_on"])
         self.assertFalse(alone[0]["family_runner_up"])
 
+    def test_the_ranking_names_the_best_version_and_shows_the_best_two_rates(self):
+        """Operator, 2026-08-23: a *Best version* column after *Description*,
+        and a versioned row's on/off cells list the best two versions — each
+        version's on is only that version on; anything else is its off."""
+        tags = ["plain", "g", "g-2", "g-3"]
+        measured = {
+            "plain": [{"win_on": 0.20, "win_off": 0.16, "n_on": 100, "n_off": 300}],
+            "g": [{"win_on": 0.18, "win_off": 0.16, "n_on": 1000, "n_off": 3000}],
+            "g-2": [{"win_on": 0.21, "win_off": 0.16, "n_on": 500, "n_off": 3500}],
+            "g-3": [{"win_on": 0.19, "win_off": 0.16, "n_on": 400, "n_off": 3600}],
+        }
+        verdict = {
+            "g": {"default_on": False, "family_runner_up": True, "win_diff_pp": 2.0},
+            "g-2": {"default_on": True, "family_runner_up": False, "win_diff_pp": 5.0},
+            "g-3": {"default_on": False, "family_runner_up": True, "win_diff_pp": 3.0},
+        }
+        self.assertEqual(gene_ledger.family_of("g-3", tags), ["g", "g-2", "g-3"])
+        self.assertEqual(gene_ledger.family_of("plain", tags), [])
+        self.assertEqual(gene_ledger.best_versions(["g", "g-2", "g-3"], verdict, measured),
+                         ["g-2", "g-3", "g"], "the shipping version leads, then tracked wins")
+        for tag in ("g", "g-2", "g-3"):
+            self.assertEqual(gene_ledger.best_version_cell(tag, tags, verdict, measured), "2", tag)
+        self.assertEqual(gene_ledger.best_version_cell("plain", tags, verdict, measured), "—")
+        self.assertEqual(
+            gene_ledger.family_rate_cells("g", tags, verdict, measured),
+            ("v2 21.00% (n=500) · v3 19.00% (n=400)", "v2 16.00% (n=3,500) · v3 16.00% (n=3,600)"))
+        self.assertIsNone(gene_ledger.family_rate_cells("plain", tags, verdict, measured))
+        # Nothing ships: tracked wins decide, ties to the higher version; a
+        # version the ledger has not recorded is read off its display record.
+        loose = {"g": {"win_diff_pp": 3.0}, "g-2": {"win_diff_pp": 4.0}}
+        self.assertEqual(gene_ledger.best_versions(["g", "g-2", "g-3"], loose, measured),
+                         ["g-2", "g-3", "g"],
+                         "g-3 reads 3.0 off its display record and ties g; the higher version leads")
+        self.assertEqual(gene_ledger.best_version_cell("g", tags, loose, measured), "2")
+        # An unpriced version that ships still leads; an unpriced family with
+        # nothing shipping has no best version yet.
+        fresh = {"g": {"default_on": True, "family_runner_up": False}}
+        self.assertEqual(gene_ledger.best_version_cell("g-2", tags, fresh, {}), "1")
+        self.assertIsNone(gene_ledger.family_rate_cells("g-2", tags, fresh, {}))
+        self.assertEqual(gene_ledger.best_version_cell("g-2", tags, {}, {}), "—")
+
     def test_a_runner_up_ships_off_in_the_generated_table(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "s.json"
@@ -1270,7 +1311,7 @@ class VersionedGenes(unittest.TestCase):
 #: The main table's columns, in order. One definition, read both as the header
 #: assertion and as the name -> index map every cell lookup goes through.
 EXPECTED_COLUMNS = (
-    "| Rank | Gene | Description | Default | "
+    "| Rank | Gene | Description | Best version | Default | "
     "Wins ± /10k total seats — Last Batch (n=10,002 total seats) | "
     "Wins ± /10k total seats — Prior Batch (n=47,244 total seats) | "
     "Wins ± /10k total seats — Third Batch (n=35,148 total seats) | "
@@ -1373,6 +1414,10 @@ class TheTableIsDerived(unittest.TestCase):
             # Taken off the unrounded rates, so it can land a hundredth away
             # from subtracting the two printed cells by eye — 0.01% against a
             # band of half a point. Never further: that would be a real slip.
+            # A versioned row leads with `v<n> `; the first rate is the row's
+            # own only when the gene is the family's best, so read plain rows.
+            if cell(cells, "Best version") != "—":
+                continue
             shown = (float(cell(cells, "Total (on) Win rate").split("%")[0])
                      - float(cell(cells, "Total (off) Win rate").split("%")[0]))
             self.assertAlmostEqual(100 * (on - off), shown, delta=0.011,
@@ -1411,11 +1456,15 @@ class TheTableIsDerived(unittest.TestCase):
         """`n` is per arm, not one pooled figure: the arms are equal only while
         every screen that measured a gene split them evenly, and the row reads
         them from `n_on`/`n_off` separately so an uneven screen shows up."""
+        one = r"\d+\.\d\d% \(n=[\d,]+\)"
         for cells in self._ranked_rows():
+            versioned = cell(cells, "Best version") != "—"
             for rate in (cell(cells, "Total (on) Win rate"),
                          cell(cells, "Total (off) Win rate")):
-                self.assertRegex(rate, r"^\d+\.\d\d% \(n=[\d,]+\)$",
-                                 cell(cells, "Gene"))
+                self.assertRegex(
+                    rate,
+                    rf"^v\d+ {one}( · v\d+ {one})?$" if versioned else rf"^{one}$",
+                    cell(cells, "Gene"))
 
     def test_each_batch_cell_is_scaled_to_10k_with_n_in_the_header_only(self):
         """Each fixed batch has one total-seat `n` header, never row clutter."""
