@@ -1071,7 +1071,12 @@ it falls as 1/√games, so a **600-game arm resolves ±3.5 pp** and even the
 1,200-game equivalent of #2344's 600 *map pairs* resolves **±2.5 pp**. Against
 a gene reading +0.119 pp that is **29× the effect**, and it is **4.0× wider**
 (600 games) or **2.8× wider** (1,200 games) than the 23,622-pair screen already
-in the ledger, whose own band is ±0.88 pp. The confirmation the priority list
+in the ledger, whose own band is **±44 in column units** — the figure the band
+table at the foot of `HEURISTIC_GENE_RANKING.md` prints — i.e. ±0.88 pp on the
+on−off difference. ⚠ Both figures above are quoted on the **difference** scale,
+which is what `gene_screen` prints; a column is half of it (#2300), so the arm
+comparison is ±175 against ±44 in column units and the ratio is the same either
+way. Do not compare one scale to the other. The confirmation the priority list
 asks for is a *weaker* instrument than the source it would supplement. That is
 the arithmetic reason the answer here is "the evidence is already in", not "run
 more games".
