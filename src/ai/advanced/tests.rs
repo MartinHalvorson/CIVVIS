@@ -33025,7 +33025,10 @@ fn lane_commit_picks_the_lane_the_seat_leads() {
     assert_eq!(commitment.progress, 52);
     assert_eq!(commitment.lead, 12);
     assert_eq!(ai.raced_target(), Some(VictoryTarget::Religion));
-    assert!(ai.plan.is_none(), "a fresh commitment is assessed the same turn");
+    assert!(
+        ai.plan.is_none(),
+        "a fresh commitment is assessed the same turn"
+    );
     assert_eq!(ai.assess(&g, 0).strategy, GrandStrategy::Religion);
 
     // Leading two lanes, the one closer to landing wins; leading none, the
@@ -33058,7 +33061,10 @@ fn lane_commit_holds_against_a_marginal_challenger() {
     // — six points, inside the twenty-point margin. Hold, and record the
     // review.
     let later = lane_commit_board(135);
-    ai.review_lane_commitment(&later, &lane_table([(47, 51), (12, 32), (58, 46), (64, 55)]));
+    ai.review_lane_commitment(
+        &later,
+        &lane_table([(47, 51), (12, 32), (58, 46), (64, 55)]),
+    );
     let held = ai.lane_commitment().unwrap();
     assert_eq!(held.lane, VictoryTarget::Religion);
     assert_eq!((held.since, held.reviewed, held.progress), (125, 135, 58));
@@ -33066,17 +33072,26 @@ fn lane_commit_holds_against_a_marginal_challenger() {
     // Turn 145: diplomacy at 80% is twenty-two points further along than
     // religion at 58 and both lead. Switch.
     let switch = lane_commit_board(145);
-    ai.review_lane_commitment(&switch, &lane_table([(49, 53), (14, 34), (58, 46), (80, 60)]));
+    ai.review_lane_commitment(
+        &switch,
+        &lane_table([(49, 53), (14, 34), (58, 46), (80, 60)]),
+    );
     let commitment = ai.lane_commitment().unwrap();
     assert_eq!(commitment.lane, VictoryTarget::Diplomacy);
-    assert_eq!((commitment.since, commitment.progress, commitment.lead), (145, 80, 20));
+    assert_eq!(
+        (commitment.since, commitment.progress, commitment.lead),
+        (145, 80, 20)
+    );
 
     // A committed lane whose lead is gone yields to a lane that leads, at
     // any progress.
     let mut overtaken = AdvancedAi::new();
     overtaken.enable_lane_commit();
     overtaken.review_lane_commitment(&g, &lane_table([(45, 49), (10, 30), (52, 40), (30, 35)]));
-    overtaken.review_lane_commitment(&later, &lane_table([(47, 51), (12, 32), (58, 70), (40, 38)]));
+    overtaken.review_lane_commitment(
+        &later,
+        &lane_table([(47, 51), (12, 32), (58, 70), (40, 38)]),
+    );
     assert_eq!(overtaken.committed_lane(), Some(VictoryTarget::Diplomacy));
 
     // ...but not to a lane that is merely a little further along while
@@ -33085,9 +33100,15 @@ fn lane_commit_holds_against_a_marginal_challenger() {
     behind.enable_lane_commit();
     behind.review_lane_commitment(&g, &lane_table([(45, 49), (10, 30), (40, 52), (30, 35)]));
     assert_eq!(behind.committed_lane(), Some(VictoryTarget::Science));
-    behind.review_lane_commitment(&later, &lane_table([(47, 53), (12, 32), (55, 70), (30, 35)]));
+    behind.review_lane_commitment(
+        &later,
+        &lane_table([(47, 53), (12, 32), (55, 70), (30, 35)]),
+    );
     assert_eq!(behind.committed_lane(), Some(VictoryTarget::Science));
-    behind.review_lane_commitment(&switch, &lane_table([(47, 53), (12, 32), (67, 80), (30, 35)]));
+    behind.review_lane_commitment(
+        &switch,
+        &lane_table([(47, 53), (12, 32), (67, 80), (30, 35)]),
+    );
     assert_eq!(behind.committed_lane(), Some(VictoryTarget::Religion));
 
     // A lane the board no longer offers is left at the next review.
@@ -33134,7 +33155,10 @@ fn lane_progress_table_matches_victory_focus() {
     let mut religion = Game::new(2, 24, 16, 74, 80, 0);
     religion.players[0].religion = Some("Test Faith".to_string());
     let table = ai.lane_progress_table(&religion, 0);
-    assert_eq!(table[2], 40, "a founder with no foreign convert stands at 40");
+    assert_eq!(
+        table[2], 40,
+        "a founder with no foreign convert stands at 40"
+    );
     let focus = ai.victory_focus(&religion, 0);
     assert_eq!(focus.strategy, GrandStrategy::Religion);
     assert_eq!(focus.progress, table[2]);

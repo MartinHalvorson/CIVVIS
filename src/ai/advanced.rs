@@ -9079,7 +9079,10 @@ impl AdvancedAi {
             // `lane_commit`: from the midpoint the seat plays for the victory
             // it leads the field in, in place of `victory_focus`'s per-turn
             // pick, after every posture above. See `advanced/lane_commit.rs`.
-            (lane.strategy(), "committed to the victory it leads the field in")
+            (
+                lane.strategy(),
+                "committed to the victory it leads the field in",
+            )
         } else if victory.progress >= 65 {
             (
                 victory.strategy,
