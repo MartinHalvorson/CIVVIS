@@ -217,12 +217,18 @@ fn the_imported_catalog_reaches_every_owner_family() {
     // Movement and the Tourism multiplier.
     assert_eq!(rules.civics["mysticism"].effects["free_envoys"], 1.0);
     assert_eq!(rules.civics["opera_ballet"].effects["free_envoys"], 2.0);
-    assert_eq!(rules.civics["cultural_heritage"].effects["free_envoys"], 3.0);
+    assert_eq!(
+        rules.civics["cultural_heritage"].effects["free_envoys"],
+        3.0
+    );
     assert_eq!(
         rules.civics["global_warming_mitigation"].effects["diplomatic_victory_points"],
         1.0
     );
-    assert_eq!(rules.civics["environmentalism"].effects["tourism_pct"], 25.0);
+    assert_eq!(
+        rules.civics["environmentalism"].effects["tourism_pct"],
+        25.0
+    );
     assert_eq!(
         rules.techs["seasteads"].effects["diplomatic_victory_points"],
         1.0
@@ -240,7 +246,9 @@ fn the_imported_catalog_reaches_every_owner_family() {
     assert_eq!(rules.buildings["airport"].effects["air_slots"], 1.0);
     assert_eq!(rules.buildings["hangar"].effects["air_slots"], 1.0);
     assert_eq!(
-        rules.governments["synthetic_technocracy"].effects.tourism_pct,
+        rules.governments["synthetic_technocracy"]
+            .effects
+            .tourism_pct,
         -10.0
     );
     assert_eq!(rules.great_people["jakob_fugger"].effects["envoys"], 2.0);
@@ -248,7 +256,10 @@ fn the_imported_catalog_reaches_every_owner_family() {
     assert_eq!(rules.promotions["spyglass"].effects["sight"], 1.0);
     assert_eq!(rules.promotions["long_range"].effects["range"], 2.0);
     assert_eq!(rules.promotions["wolfpack"].effects["extra_attacks"], 1.0);
-    assert_eq!(rules.promotions["flight_deck"].effects["aircraft_slots"], 1.0);
+    assert_eq!(
+        rules.promotions["flight_deck"].effects["aircraft_slots"],
+        1.0
+    );
     // MOD_MOVE_AFTER_ATTACKING is attached to Sweeping Wind as well as to
     // Elite Guard and Breakthrough; CIVVIS carried it for only the latter two.
     assert_eq!(
@@ -365,24 +376,57 @@ fn the_unit_promotion_rows_reach_the_unit() {
         .expect("a starting warrior");
     let sight = game.unit_sight(unit);
     let attacks = game.unit_max_attacks(unit);
-    assert_eq!(game.promotion_effect(&game.units[&unit], "move_after_attack"), 0.0);
+    assert_eq!(
+        game.promotion_effect(&game.units[&unit], "move_after_attack"),
+        0.0
+    );
 
-    game.units.get_mut(&unit).unwrap().promotions.insert(crate::name!("spyglass"));
+    game.units
+        .get_mut(&unit)
+        .unwrap()
+        .promotions
+        .insert(crate::name!("spyglass"));
     assert_eq!(game.unit_sight(unit) - sight, 1);
 
-    game.units.get_mut(&unit).unwrap().promotions.insert(crate::name!("wolfpack"));
+    game.units
+        .get_mut(&unit)
+        .unwrap()
+        .promotions
+        .insert(crate::name!("wolfpack"));
     assert_eq!(game.unit_max_attacks(unit) - attacks, 1);
 
-    game.units.get_mut(&unit).unwrap().promotions.insert(crate::name!("sweeping_wind"));
+    game.units
+        .get_mut(&unit)
+        .unwrap()
+        .promotions
+        .insert(crate::name!("sweeping_wind"));
     assert_eq!(game.unit_max_attacks(unit) - attacks, 2);
-    assert_eq!(game.promotion_effect(&game.units[&unit], "move_after_attack"), 1.0);
+    assert_eq!(
+        game.promotion_effect(&game.units[&unit], "move_after_attack"),
+        1.0
+    );
 
-    game.units.get_mut(&unit).unwrap().promotions.insert(crate::name!("long_range"));
+    game.units
+        .get_mut(&unit)
+        .unwrap()
+        .promotions
+        .insert(crate::name!("long_range"));
     assert_eq!(game.promotion_effect(&game.units[&unit], "range"), 2.0);
 
-    game.units.get_mut(&unit).unwrap().promotions.insert(crate::name!("flight_deck"));
-    game.units.get_mut(&unit).unwrap().promotions.insert(crate::name!("hangar_deck"));
-    assert_eq!(game.promotion_effect(&game.units[&unit], "aircraft_slots"), 2.0);
+    game.units
+        .get_mut(&unit)
+        .unwrap()
+        .promotions
+        .insert(crate::name!("flight_deck"));
+    game.units
+        .get_mut(&unit)
+        .unwrap()
+        .promotions
+        .insert(crate::name!("hangar_deck"));
+    assert_eq!(
+        game.promotion_effect(&game.units[&unit], "aircraft_slots"),
+        2.0
+    );
 }
 
 /// Computers multiplies every Tourism source by the quarter its row states,
@@ -393,7 +437,9 @@ fn the_tourism_rows_multiply_the_empire_total() {
     assert_eq!(game.tree_effect(0, "tourism_pct"), 0.0);
     game.players[0].techs.insert(crate::name!("computers"));
     assert_eq!(game.tree_effect(0, "tourism_pct"), 25.0);
-    game.players[0].civics.insert(crate::name!("environmentalism"));
+    game.players[0]
+        .civics
+        .insert(crate::name!("environmentalism"));
     assert_eq!(game.tree_effect(0, "tourism_pct"), 50.0);
     game.players[0].government = Some("synthetic_technocracy".to_string());
     assert_eq!(game.gov_effects(0).tourism_pct, -10.0);

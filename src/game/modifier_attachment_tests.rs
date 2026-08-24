@@ -135,24 +135,22 @@ fn runtime_modifier_attachments_survive_save_round_trip() {
 fn conditional_collections_follow_player_state_without_leaking_scope() {
     let mut game = game_with_capitals(2, 86_004, 80);
     let city = game.player_city_ids(0)[0];
-    let files = Rules::shipped_values_with(
-        json!({
-            "democracy_cities": {
-                "collection": "player_cities",
-                "requirements": {"all": [{"government": "democracy"}]},
-                "effects": {"city_production": 7}
-            },
-            "democracy_units": {
-                "collection": "player_units",
-                "requirements": {"all": [{"government": "democracy"}]},
-                "effects": {"infantry_production_pct": 11}
-            },
-            "democracy_player": {
-                "requirements": {"all": [{"government": "democracy"}]},
-                "effects": {"city_gold": 3}
-            }
-        }),
-    );
+    let files = Rules::shipped_values_with(json!({
+        "democracy_cities": {
+            "collection": "player_cities",
+            "requirements": {"all": [{"government": "democracy"}]},
+            "effects": {"city_production": 7}
+        },
+        "democracy_units": {
+            "collection": "player_units",
+            "requirements": {"all": [{"government": "democracy"}]},
+            "effects": {"infantry_production_pct": 11}
+        },
+        "democracy_player": {
+            "requirements": {"all": [{"government": "democracy"}]},
+            "effects": {"city_gold": 3}
+        }
+    }));
     let mut rules = (*game.rules).clone();
     rules.modifiers = Rules::from_values(files).unwrap().modifiers;
     game.rules = Arc::new(rules);

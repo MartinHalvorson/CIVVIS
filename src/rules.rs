@@ -3568,29 +3568,30 @@ mod tests {
 
     #[test]
     fn named_modifiers_compose_and_attach_to_any_effect_bearing_spec() {
-        let mut files = Rules::shipped_values_with(
-            json!({
-                "production_seed": {
-                    "effects": {"city_production": 2, "builder_production_pct": 12},
-                    "building_yields": {"library": {"science": 2}},
-                    "unit_purchase_discount_pct": {"builder": 15},
-                    "abilities": ["public_engineering"]
-                },
-                "production_bundle": {
-                    "effects": {"builder_production_pct": 8},
-                    "building_yields": {"library": {"science": 1}},
-                    "unit_purchase_discount_pct": {"builder": 5},
-                    "modifiers": ["production_seed"]
-                }
-            }),
-        );
+        let mut files = Rules::shipped_values_with(json!({
+            "production_seed": {
+                "effects": {"city_production": 2, "builder_production_pct": 12},
+                "building_yields": {"library": {"science": 2}},
+                "unit_purchase_discount_pct": {"builder": 15},
+                "abilities": ["public_engineering"]
+            },
+            "production_bundle": {
+                "effects": {"builder_production_pct": 8},
+                "building_yields": {"library": {"science": 1}},
+                "unit_purchase_discount_pct": {"builder": 5},
+                "modifiers": ["production_seed"]
+            }
+        }));
         files.get_mut("policies").unwrap()["urban_planning"]["modifiers"] =
             json!(["production_bundle"]);
 
         let rules = Rules::from_values(files).unwrap();
         // Urban Planning already carries one city Production. Attached values
         // add to local values rather than silently replacing them.
-        assert_eq!(rules.policies["urban_planning"].effects["city_production"], 3.0);
+        assert_eq!(
+            rules.policies["urban_planning"].effects["city_production"],
+            3.0
+        );
         assert_eq!(
             rules.policies["urban_planning"].effects["builder_production_pct"],
             20.0
@@ -3664,15 +3665,13 @@ mod tests {
         };
         assert!(!requirements.matches(&dark));
 
-        let files = Rules::shipped_values_with(
-            json!({
-                "city_bundle": {
-                    "collection": "player_cities",
-                    "requirements": {"all": [{"government": "democracy"}]},
-                    "effects": {"city_production": 4}
-                }
-            }),
-        );
+        let files = Rules::shipped_values_with(json!({
+            "city_bundle": {
+                "collection": "player_cities",
+                "requirements": {"all": [{"government": "democracy"}]},
+                "effects": {"city_production": 4}
+            }
+        }));
         let rules = Rules::from_values(files).unwrap();
         assert_eq!(
             rules.modifiers["city_bundle"].collection,
@@ -3688,14 +3687,12 @@ mod tests {
 
     #[test]
     fn contextual_modifier_attachments_are_not_flattened_into_static_rules() {
-        let mut files = Rules::shipped_values_with(
-            json!({
-                "conditional": {
-                    "requirements": {"all": [{"government": "democracy"}]},
-                    "effects": {"city_production": 4}
-                }
-            }),
-        );
+        let mut files = Rules::shipped_values_with(json!({
+            "conditional": {
+                "requirements": {"all": [{"government": "democracy"}]},
+                "effects": {"city_production": 4}
+            }
+        }));
         files.get_mut("policies").unwrap()["urban_planning"]["modifiers"] = json!(["conditional"]);
         let error = Rules::from_values(files).err().unwrap();
         assert!(
@@ -3703,8 +3700,7 @@ mod tests {
             "{error}"
         );
 
-        let invalid =
-            Rules::shipped_values_with(json!({"bad": {"requirements": {"all": [{}]}}}));
+        let invalid = Rules::shipped_values_with(json!({"bad": {"requirements": {"all": [{}]}}}));
         let error = Rules::from_values(invalid).err().unwrap();
         assert!(error.contains("empty all requirement"), "{error}");
     }
