@@ -1056,12 +1056,16 @@ same shape of mistake as the one this section's own history records —
 10,000 on-arm seats (95% CI [−267, −206], 23,622 pairs).
 
 ⚠ **A direct arm cannot settle this gene.** `python3 tools/genes.py boundary`
-sizes it at **788,779 seat pairs** before the interval clears zero. A
-#2344-style 600-game arm resolves ±2.5 pp at 80% power — 12× wider than the
-effect and 2.8× wider than the 23,622-pair screen already in the ledger, whose
-own band is ±0.88 pp. The confirmation the priority list asks for is a *weaker*
-instrument than the source it would supplement. That is the arithmetic reason
-the answer here is "the evidence is already in", not "run more games".
+sizes it at **788,779 seat pairs** before the interval clears zero. This
+binary prints its own 80%-power resolution per run — ±34.8 pp on 6 games — and
+it falls as 1/√games, so a **600-game arm resolves ±3.5 pp** and even the
+1,200-game equivalent of #2344's 600 *map pairs* resolves **±2.5 pp**. Against
+a gene reading +0.119 pp that is **29× the effect**, and it is **4.0× wider**
+(600 games) or **2.8× wider** (1,200 games) than the 23,622-pair screen already
+in the ledger, whose own band is ±0.88 pp. The confirmation the priority list
+asks for is a *weaker* instrument than the source it would supplement. That is
+the arithmetic reason the answer here is "the evidence is already in", not "run
+more games".
 
 ### When the switch should be thrown
 
