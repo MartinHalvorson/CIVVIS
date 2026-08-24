@@ -3310,15 +3310,9 @@ pub enum CompetitionScoreSource {
     /// `ScoreAmount="1"`: one point per Diplomatic Favor generated, each turn.
     DiplomaticFavorPerTurn,
     /// `FromDistrict`: `amount` each turn for every city holding the district.
-    DistrictPerTurn {
-        district: &'static str,
-        amount: f64,
-    },
+    DistrictPerTurn { district: &'static str, amount: f64 },
     /// `FromBuilding`: `amount` each turn for every city holding the building.
-    BuildingPerTurn {
-        building: &'static str,
-        amount: f64,
-    },
+    BuildingPerTurn { building: &'static str, amount: f64 },
 }
 
 /// The event that seats a native scored competition.
@@ -32034,7 +32028,7 @@ impl Game {
                 let district = Name::new(district);
                 self.cities
                     .values()
-                    .any(|city| city.owner == pid && city.districts.contains_key(&district))
+                    .any(|city| city.owner == pid && city.districts.contains_key(district))
             }
             CompetitionScoreSource::BuildingPerTurn { building, .. } => {
                 let building = Name::new(building);
@@ -32155,7 +32149,7 @@ impl Game {
                     let cities = self
                         .cities
                         .values()
-                        .filter(|city| city.owner == pid && city.districts.contains_key(&district))
+                        .filter(|city| city.owner == pid && city.districts.contains_key(district))
                         .count();
                     amount * cities as f64
                 }
