@@ -1192,6 +1192,18 @@ def reporting_batch_notes_from_ledger(ledger: dict) -> dict[str, str]:
     }
 
 
+def latest_reporting_batches(entered: list[Path], recorded: list[Path]) -> list[Path]:
+    """Keep the newest three fixed display batches when a new one arrives.
+
+    ``entered`` and ``recorded`` are both newest-first.  The ranking has exactly
+    three fixed report columns, so a newly entered batch must evict the oldest
+    recorded one rather than leaving four inputs for a three-column renderer.
+    """
+    return (entered + [path for path in recorded if path not in entered])[:
+        len(REPORTING_BATCH_LABELS)
+    ]
+
+
 def reporting_batch_records(paths: list[Path],
                             build_notes: dict[str, str] | None = None) -> list[dict]:
     """Validate and record report-only batch artifacts without pricing rules.
@@ -2935,9 +2947,7 @@ def main(argv=None) -> int:
     entered_reporting = [Path(path).resolve() for path in args.reporting_batch]
     if args.reporting_unverified_build and not entered_reporting:
         raise SystemExit("--reporting-unverified-build requires --reporting-batch FILE")
-    reporting = entered_reporting + [
-        path for path in recorded_reporting if path not in entered_reporting
-    ]
+    reporting = latest_reporting_batches(entered_reporting, recorded_reporting)
     reporting_notes = dict(recorded_reporting_notes)
     if args.reporting_unverified_build:
         for path in entered_reporting:
