@@ -1068,7 +1068,7 @@ same shape of mistake as the one this section's own history records —
 the deployment shape — `gene_screen --genes siege-commitment --games 600
 --target-games 600 --start-seed 191000000 --jobs 4`, seeds 191000000+, disjoint
 from every window in the ledger (141M whole-genome, 150M `g1`, 168M 10k, 169M
-41,628) — was stopped by the operator at **28 of 600 games, 168 of 3,600
+41,628) — was stopped at **28 of 600 games, 168 of 3,600
 pre-registered seats (4.7%)**, and the tool labels it `⚠⚠ PARTIAL SCREEN`
 accordingly. It reads **+6.8 pp (91 on / 77 off), win z +1.23, 95% CI
 [−4.1, +17.6]**, share +1.33 pp at z +1.65 — **`~`, unresolved**, on a run that
