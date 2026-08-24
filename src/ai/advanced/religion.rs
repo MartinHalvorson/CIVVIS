@@ -58,10 +58,11 @@
 //! at the deployment shape, where it trades science victories for religious
 //! ones about 1:1. The district ranking is a valuation, and it is closed.
 //!
-//! All four are off everywhere by default, as an unmeasured screenable gene
-//! is: `gene_ledger::ledger_default_on` returns `false` for a tag no screen
-//! has priced. `docs/GENE_SCREEN.md` documents the instrument that prices
-//! them.
+//! The bare controller starts these flags off. Deployment applies the ledger
+//! after construction: `religious-units-heal-first` is currently a measured
+//! on default, while `gene_ledger::ledger_default_on` still returns `false`
+//! for a tag no screen has priced. `docs/GENE_SCREEN.md` documents the
+//! instrument that prices them.
 
 use super::AdvancedAi;
 use crate::game::{Action, Game, Item};

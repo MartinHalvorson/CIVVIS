@@ -1,14 +1,14 @@
 # The heuristic gene ranking
 
-**Default on:** both newest columns >0; or avg >+15 with neither <−10; sole reading >+20; pooled *Diff* <0 vetoes. These batch columns do not change this deployed default.
+**Default on:** both newest columns >0; or avg >+15 with neither <−10; sole reading >+20; pooled *Diff* <0 vetoes. The newest displayed batch is an authoritative source.
 
 | Rank | Gene | Description | Best version | Default | Wins ± /10k total seats — Last Batch (n=38,160 total seats) | Wins ± /10k total seats — Prior Batch (n=41,628 total seats) | Wins ± /10k total seats — Third Batch (n=10,002 total seats) | Total (on) Win rate | Total (off) Win rate | Diff | Posterior (95% CI) | P(>0) | Share Δpp (z) | cost (compute) | cost (time) |
 |---:|---|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|
 | 1 | `air-surge` | Beeline Advanced Flight from three technologies out, raise an Aerodrome and a bomber wing, and take the appointed city with the cavalry behind it. | — | **on** | +33 | +25 | +43 | 17.24% (n=91,046) | 15.53% (n=45,988) | 1.72% | +93 [+73, +113] | 100.0% | +0.70 (z +3.86) helps * | +0.24% ±0.40% | -0.76% ±0.69% |
 | 2 | `great-person-housing` | A class earned and blocked reserves a city for the slot building, district, wonder or soldier that lifts the block, and a due cultural person sells duplicate works to make room. | — | **on** | +28 | +29 | +41 | 17.25% (n=108,390) | 15.68% (n=63,792) | 1.56% | +84 [+66, +102] | 100.0% | +0.64 (z +3.66) helps * | +0.50% ±0.42% | +0.59% ±0.75% |
-| 3 | `maintenance-aware-deck` | Let the deck counterfactual see the unit-maintenance bill. | — | off | +31 | +49 | +9 | 17.40% (n=44,859) | 15.93% (n=44,931) | 1.47% | +68 [+29, +107] | 100.0% | +0.36 (z +2.45) helps * | -0.26% ±0.37% | -0.67% ±0.66% |
-| 4 | `price-the-suzerainty` | Let the envoy scorer see the suzerainty it is walking toward. | — | off | +28 | +49 | +2 | 17.36% (n=44,957) | 15.97% (n=44,833) | 1.40% | +61 [+15, +107] | 99.5% | +0.17 (z +1.09) ~ | -0.30% ±0.38% | -0.43% ±0.70% |
-| 5 | `engine-faith-price` | THE FAITH PRICE THE AI READS IS THE STANDARD-SPEED ONE. | — | off | +31 | +23 | +58 | 17.28% (n=44,925) | 16.05% (n=44,865) | 1.22% | +64 [+33, +95] | 100.0% | +0.38 (z +2.44) helps * | -0.71% ±0.35% | -1.39% ±0.62% |
+| 3 | `maintenance-aware-deck` | Let the deck counterfactual see the unit-maintenance bill. | — | **on** | +31 | +49 | +9 | 17.40% (n=44,859) | 15.93% (n=44,931) | 1.47% | +68 [+29, +107] | 100.0% | +0.36 (z +2.45) helps * | -0.26% ±0.37% | -0.67% ±0.66% |
+| 4 | `price-the-suzerainty` | Let the envoy scorer see the suzerainty it is walking toward. | — | **on** | +28 | +49 | +2 | 17.36% (n=44,957) | 15.97% (n=44,833) | 1.40% | +61 [+15, +107] | 99.5% | +0.17 (z +1.09) ~ | -0.30% ±0.38% | -0.43% ±0.70% |
+| 5 | `engine-faith-price` | THE FAITH PRICE THE AI READS IS THE STANDARD-SPEED ONE. | — | **on** | +31 | +23 | +58 | 17.28% (n=44,925) | 16.05% (n=44,865) | 1.22% | +64 [+33, +95] | 100.0% | +0.38 (z +2.44) helps * | -0.71% ±0.35% | -1.39% ±0.62% |
 | 6 | `wide-map-capacity` | Price the city ceiling off uncontested land. | — | **on** | +41 | +27 | +32 | 17.16% (n=136,857) | 15.94% (n=92,217) | 1.22% | +64 [+39, +89] | 100.0% | +0.67 (z +3.98) helps * | +0.45% ±0.45% | -0.07% ±0.81% |
 | 7 | `opportunistic-war` | Open a surprise war on a neighbour whose unescorted Settlers, Builders or unpillaged tiles lie within a short march of our soldiers, take them, and sue for peace. | — | **on** | +29 | +32 | +27 | 17.06% (n=108,469) | 16.00% (n=63,713) | 1.07% | +58 [+34, +82] | 100.0% | +0.58 (z +3.41) helps * | +0.14% ±0.43% | +0.52% ±0.79% |
 | 8 | `recon-replacement` | Rebuild the recon arm when it is gone and there is ground left to chart. | — | **on** | +27 | +24 | +39 | 17.07% (n=137,269) | 16.06% (n=91,805) | 1.01% | +55 [+37, +73] | 100.0% | +0.18 (z +1.01) ~ | +0.79% ±0.42% | +0.90% ±0.77% |
@@ -29,9 +29,9 @@
 | 23 | `culture-building-debt` | Make the Theater Square owe its buildings. | — | **on** | +11 | +3 | -1 | 16.79% (n=91,009) | 16.43% (n=46,025) | 0.36% | +20 [-1, +40] | 96.7% | +0.03 (z +0.15) ~ | +0.63% ±0.43% | +1.10% ±0.77% |
 | 24 | `camp-party` | The peacetime camp party. | — | off | +14 | +4 | +2 | 16.84% (n=114,458) | 16.50% (n=114,616) | 0.34% | +19 [-0, +37] | 97.3% | -0.07 (z -0.47) ~ | +0.39% ±0.39% | +0.81% ±0.70% |
 | 25 | `war-reinforcement` | March rear units to the campaign objective while the war is on. | — | **on** | +0 | +1 | +16 | 16.79% (n=136,892) | 16.49% (n=92,182) | 0.30% | +16 [-0, +32] | 97.4% | +0.35 (z +1.95) ~ | +0.83% ±0.44% | +1.23% ±0.75% |
-| 26 | `religious-units-heal-first` | Let a wounded spreader standing in its own Holy Site's heal ring hold instead of spending a charge at a fraction of its strength. | — | off | +3 | +10 | +16 | 16.81% (n=68,109) | 16.53% (n=68,925) | 0.28% | +14 [-5, +33] | 92.6% | -0.00 (z -0.02) ~ | +0.23% ±0.38% | +0.72% ±0.70% |
-| 27 | `competition-victory-points` | Price a scored competition's first place by the Diplomatic Victory Points it pays, at the rate `strategic_wonder_value` already pays a wonder's. | — | off | +18 | +4 | +9 | 16.80% (n=68,438) | 16.53% (n=68,596) | 0.27% | +13 [-6, +32] | 90.4% | +0.01 (z +0.06) ~ | -0.25% ±0.37% | -0.21% ±0.66% |
-| 28 | `whole-turn-backtrack-guard` | Refuse a step onto any tile this unit has already stood on this turn. | — | **on** | -11 | +12 | +4 | 16.77% (n=137,111) | 16.51% (n=91,963) | 0.26% | +14 [-1, +30] | 96.8% | -0.23 (z -1.31) ~ | -0.21% ±0.43% | -0.67% ±0.75% |
+| 26 | `religious-units-heal-first` | Let a wounded spreader standing in its own Holy Site's heal ring hold instead of spending a charge at a fraction of its strength. | — | **on** | +3 | +10 | +16 | 16.81% (n=68,109) | 16.53% (n=68,925) | 0.28% | +14 [-5, +33] | 92.6% | -0.00 (z -0.02) ~ | +0.23% ±0.38% | +0.72% ±0.70% |
+| 27 | `competition-victory-points` | Price a scored competition's first place by the Diplomatic Victory Points it pays, at the rate `strategic_wonder_value` already pays a wonder's. | — | **on** | +18 | +4 | +9 | 16.80% (n=68,438) | 16.53% (n=68,596) | 0.27% | +13 [-6, +32] | 90.4% | +0.01 (z +0.06) ~ | -0.25% ±0.37% | -0.21% ±0.66% |
+| 28 | `whole-turn-backtrack-guard` | Refuse a step onto any tile this unit has already stood on this turn. | — | off | -11 | +12 | +4 | 16.77% (n=137,111) | 16.51% (n=91,963) | 0.26% | +14 [-1, +30] | 96.8% | -0.23 (z -1.31) ~ | -0.21% ±0.43% | -0.67% ±0.75% |
 | 29 | `apostle-promotion-by-role` | Promote an Apostle for the job the empire has rather than for the largest number on the card. | — | **on** | +9 | +14 | +24 | 16.77% (n=137,140) | 16.51% (n=91,934) | 0.26% | +13 [-6, +33] | 90.7% | +0.14 (z +0.79) ~ | -0.19% ±0.45% | -0.57% ±0.79% |
 | 30 | `barbarian-bargain` | Price a raider's life below a major's. | — | **on** | +16 | +2 | -5 | 16.76% (n=108,458) | 16.51% (n=63,724) | 0.25% | +13 [-5, +31] | 92.1% | +0.02 (z +0.10) ~ | -0.56% ±0.41% | -1.03% ±0.72% |
 | 31 | `one-launch-pad` | Give the 3,000-point first-pad rung to one city at a time. | — | off | +9 | +7 | +8 | 16.79% (n=114,713) | 16.54% (n=114,361) | 0.25% | +12 [-3, +26] | 94.7% | -0.04 (z -0.25) ~ | +0.36% ±0.38% | +0.63% ±0.67% |
@@ -42,7 +42,7 @@
 | 36 | `score-horizon` | Skip a space race or a bomb that cannot finish before the turn limit. | — | **on** | +4 | +3 | -31 | 16.76% (n=136,923) | 16.53% (n=92,151) | 0.22% | +12 [-5, +29] | 92.2% | -0.28 (z -1.54) ~ | -0.06% ±0.43% | -0.05% ±0.76% |
 | 37 | `strike-opening` | Let movement credit the attack a tile opens. | — | **on** | +1 | +2 | -3 | 16.74% (n=136,923) | 16.55% (n=92,151) | 0.19% | +11 [-5, +26] | 91.5% | -0.02 (z -0.13) ~ | -0.76% ±0.43% | -0.87% ±0.76% |
 | 38 | `peacetime-deterrence` | Let the strongest met major weigh on the army target while at peace, so deterrence exists before a declaration. | — | **on** | +12 | -12 | -2 | 16.74% (n=136,904) | 16.56% (n=92,170) | 0.18% | +10 [-8, +28] | 85.9% | +0.01 (z +0.07) ~ | +0.08% ±0.44% | +0.18% ±0.80% |
-| 39 | `barbarian-ranged-answer` | Answer a ring of shooters with a shooter. | — | **on** | -2 | +0 | +18 | 16.73% (n=108,623) | 16.55% (n=63,559) | 0.18% | +10 [-8, +28] | 87.2% | +0.14 (z +0.78) ~ | +0.04% ±0.48% | +0.13% ±0.87% |
+| 39 | `barbarian-ranged-answer` | Answer a ring of shooters with a shooter. | — | off | -2 | +0 | +18 | 16.73% (n=108,623) | 16.55% (n=63,559) | 0.18% | +10 [-8, +28] | 87.2% | +0.14 (z +0.78) ~ | +0.04% ±0.48% | +0.13% ±0.87% |
 | 40 | `settlement-gap-target` | Make the settlement-gap redirect and the Settler ranking honour the same city target the cascade settles toward. | — | off | +7 | +2 | +1 | 16.75% (n=44,920) | 16.58% (n=44,870) | 0.17% | +8 [-16, +33] | 74.9% | +0.15 (z +0.97) ~ | -0.12% ±0.38% | -0.61% ±0.68% |
 | 41 | `religion-sues-peace` | A Religion strategy offers peace to unblock its spread lane. | — | off | +2 | +6 | +12 | 16.75% (n=114,307) | 16.59% (n=114,767) | 0.16% | +8 [-7, +22] | 85.4% | -0.00 (z -0.02) ~ | +0.21% ±0.36% | +0.47% ±0.64% |
 | 42 | `lane-great-people` | Rank Great Person classes, and the Great Person points a project earns, by the victory the empire is actually racing rather than by a war it is fighting. | — | off | +17 | +1 | -9 | 16.74% (n=68,375) | 16.59% (n=68,659) | 0.15% | +7 [-12, +26] | 75.3% | -0.18 (z -1.18) ~ | +0.45% ±0.37% | +0.57% ±0.67% |
@@ -50,15 +50,15 @@
 | 44 | `founder-temple` | A founder outside the Religion lane still builds its Shrine and Temple. | — | **on** | +8 | -6 | -15 | 16.72% (n=114,762) | 16.58% (n=69,420) | 0.14% | +11 [-8, +30] | 87.1% | +0.05 (z +0.26) ~ | +0.62% ±0.42% | +0.77% ±0.76% |
 | 45 | `blind-objective-strength` | Stop a fogged objective city from reading as an empty tile when the army decides whether it is strong enough to engage. | — | off | -11 | -1 | +3 | 16.74% (n=114,398) | 16.60% (n=114,676) | 0.14% | +8 [-7, +23] | 84.9% | -0.05 (z -0.36) ~ | +0.50% ±0.39% | +1.02% ±0.70% |
 | 46 | `inquisition-on-threat` | A founder under conversion pressure may hold one Apostle for the Inquisition, bought after its Missionaries when the bank covers it. | — | **on** | +3 | +5 | -5 | 16.72% (n=114,438) | 16.58% (n=69,744) | 0.14% | +9 [-8, +26] | 85.5% | -0.04 (z -0.21) ~ | +0.67% ±0.45% | +1.04% ±0.79% |
-| 47 | `army-target-weighs-enemy` | Let the army target account for the enemy it has to beat. | — | **on** | +0 | +11 | -13 | 16.72% (n=136,711) | 16.59% (n=92,363) | 0.14% | +7 [-11, +25] | 77.0% | -0.06 (z -0.35) ~ | +0.32% ±0.44% | +0.35% ±0.76% |
+| 47 | `army-target-weighs-enemy` | Let the army target account for the enemy it has to beat. | — | off | +0 | +11 | -13 | 16.72% (n=136,711) | 16.59% (n=92,363) | 0.14% | +7 [-11, +25] | 77.0% | -0.06 (z -0.35) ~ | +0.32% ±0.44% | +0.35% ±0.76% |
 | 48 | `civilian-rescue` | Walk onto a capturable civilian within reach, and never decline a settler held by the barbarians. | — | off | +0 | +24 | +4 | 16.73% (n=114,473) | 16.60% (n=114,601) | 0.13% | +6 [-10, +21] | 76.0% | -0.03 (z -0.23) ~ | +0.20% ±0.37% | +0.69% ±0.67% |
-| 49 | `come-ashore` | Keep the land army out of the water. | — | **on** | -2 | +0 | +15 | 16.72% (n=137,047) | 16.59% (n=92,027) | 0.12% | +7 [-8, +22] | 81.6% | +0.03 (z +0.16) ~ | -0.70% ±0.42% | -0.97% ±0.73% |
+| 49 | `come-ashore` | Keep the land army out of the water. | — | off | -2 | +0 | +15 | 16.72% (n=137,047) | 16.59% (n=92,027) | 0.12% | +7 [-8, +22] | 81.6% | +0.03 (z +0.16) ~ | -0.70% ±0.42% | -0.97% ±0.73% |
 | 50 | `religious-defence-scales` | Size the defensive Missionary corps by the number of cities actually under conversion pressure instead of the shipped constant 2. | — | off | +6 | +2 | +30 | 16.73% (n=68,544) | 16.61% (n=68,490) | 0.12% | +5 [-14, +24] | 69.2% | +0.23 (z +1.53) ~ | -0.21% ±0.39% | -0.22% ±0.73% |
 | 51 | `stranded-settler-discount` | Stop a Settler that has stopped walking from holding the expansion gate shut. | — | off | +16 | -10 | +1 | 16.72% (n=114,210) | 16.61% (n=114,864) | 0.11% | +5 [-9, +20] | 77.2% | +0.11 (z +0.68) ~ | -0.34% ±0.36% | -0.59% ±0.65% |
 | 52 | `amenity-district-path` | Price an amenity district by the building it will host and a regional amenity building by every city it reaches. | — | **on** | +7 | -8 | -4 | 16.71% (n=136,815) | 16.60% (n=92,259) | 0.11% | +6 [-9, +22] | 79.6% | -0.19 (z -1.11) ~ | -0.49% ±0.41% | -0.95% ±0.73% |
 | 53 | `strategic-wonders` | Build the wonders the chosen victory actually needs. | — | off | +0 | -4 | +1 | 16.72% (n=114,533) | 16.62% (n=114,541) | 0.10% | +6 [-9, +20] | 77.8% | -0.24 (z -1.54) ~ | -0.11% ±0.36% | -0.34% ±0.63% |
 | 54 | `builder-worked-tile-priority` | Prefer existing Builder work that pays on a tile a citizen currently works, while preserving luxury and strategic connections. | — | off | -16 | +9 | +41 | 16.71% (n=86,115) | 16.62% (n=86,067) | 0.09% | +9 [-19, +37] | 73.3% | +0.25 (z +1.63) ~ | +0.28% ±0.38% | +0.40% ±0.69% |
-| 55 | `wonder-ring-settle-value` | Price a revealed natural wonder's ring into the settle scorer. | — | **on** | -10 | -1 | +12 | 16.70% (n=136,905) | 16.62% (n=92,169) | 0.07% | +5 [-11, +20] | 72.4% | +0.11 (z +0.68) ~ | -0.10% ±0.43% | -0.11% ±0.77% |
+| 55 | `wonder-ring-settle-value` | Price a revealed natural wonder's ring into the settle scorer. | — | off | -10 | -1 | +12 | 16.70% (n=136,905) | 16.62% (n=92,169) | 0.07% | +5 [-11, +20] | 72.4% | +0.11 (z +0.68) ~ | -0.10% ±0.43% | -0.11% ±0.77% |
 | 56 | `science-multiplier-payoff` | Credit a Campus building the beakers its city's multipliers will actually pay it. | — | off | +11 | +1 | -5 | 16.70% (n=68,561) | 16.63% (n=68,473) | 0.07% | +3 [-16, +22] | 61.0% | -0.04 (z -0.27) ~ | +0.38% ±0.36% | +0.17% ±0.62% |
 | 57 | `holy-site-where-the-threat-is` | Put a Holy Site in the city that is actually losing its majority, so its defender can be bought there instead of walking from the Holy City. | — | off | +10 | +6 | +3 | 16.70% (n=68,350) | 16.64% (n=68,684) | 0.06% | +2 [-17, +20] | 56.3% | -0.22 (z -1.44) ~ | -0.03% ±0.37% | -0.02% ±0.66% |
 | 58 | `lane-policy-deck` | Choose the policy cards for the victory the empire is actually racing while its plan is still Expansion. | — | off | +15 | -14 | +22 | 16.69% (n=68,688) | 16.64% (n=68,346) | 0.06% | +5 [-24, +34] | 64.0% | +0.20 (z +1.29) ~ | -0.42% ±0.37% | -0.41% ±0.66% |
@@ -68,12 +68,12 @@
 | 62 | `settler-guard-holds` | A stacked guard holds with its settler, and only a guard that can hold counts as protection. | — | off | +12 | -7 | +12 | 16.68% (n=114,550) | 16.65% (n=114,524) | 0.04% | +1 [-13, +16] | 57.6% | -0.02 (z -0.12) ~ | +0.07% ±0.38% | -0.55% ±0.68% |
 | 63 | `naval-recon` | Buy one ship for an empire that has none while unexplored water lies off its coast, and send it exploring. | — | off | +9 | +12 | -14 | 16.68% (n=114,596) | 16.65% (n=114,478) | 0.02% | +0 [-15, +15] | 51.2% | -0.20 (z -1.31) ~ | +0.08% ±0.37% | -0.10% ±0.64% |
 | 64 | `power-the-laboratory` | A power plant is credited the yields it switches on in its city. | — | off | +7 | -2 | +7 | 16.68% (n=68,683) | 16.66% (n=68,351) | 0.02% | +0 [-19, +19] | 51.2% | +0.22 (z +1.41) ~ | -0.25% ±0.37% | -0.34% ±0.67% |
-| 65 | `theology-for-founders` | A founder researches Theology next. | — | off | +1 | -5 | +4 | 16.68% (n=91,950) | 16.66% (n=92,232) | 0.02% | +1 [-15, +17] | 54.8% | -0.05 (z -0.33) ~ | +0.80% ±0.38% | +1.19% ±0.67% |
+| 65 | `theology-for-founders` | A founder researches Theology next. | — | **on** | +1 | -5 | +4 | 16.68% (n=91,950) | 16.66% (n=92,232) | 0.02% | +1 [-15, +17] | 54.8% | -0.05 (z -0.33) ~ | +0.80% ±0.38% | +1.19% ±0.67% |
 | 66 | `guru-heals-the-corps` | Let a founder that is defending its own cities hold one Guru, the only field heal a religious corps has. | — | off | +12 | +3 | +16 | 16.67% (n=68,424) | 16.66% (n=68,610) | 0.01% | +3 [-26, +31] | 57.1% | +0.11 (z +0.69) ~ | +0.15% ±0.37% | +0.30% ±0.66% |
 | 67 | `builder-barbarian-safety` | Keep Builders from entering a visible Barbarian-capture envelope. | — | off | +6 | -6 | +7 | 16.67% (n=86,251) | 16.66% (n=85,931) | 0.01% | +1 [-16, +17] | 52.5% | -0.19 (z -1.26) ~ | -0.02% ±0.40% | +0.12% ±0.69% |
 | 68 | `siege-tracks-wall` | Size the siege train by the wall it has to breach. | — | off | -14 | -4 | -33 | 16.67% (n=114,737) | 16.66% (n=114,337) | 0.01% | +1 [-21, +22] | 53.1% | -0.14 (z -0.94) ~ | +0.64% ±0.37% | +0.77% ±0.66% |
 | 69 | `lane-space-race` | Treat an empire racing Science as a Science seat throughout the space race: the pad count, the city a launch project may claim and the city a pad may be sited in all read the race rather than an explicitly assigned target, and the pass opens at all. | — | off | -6 | +1 | -9 | 16.66% (n=68,403) | 16.67% (n=68,631) | -0.01% | +0 [-19, +19] | 50.7% | -0.11 (z -0.72) ~ | -0.47% ±0.39% | -0.57% ±0.67% |
-| 70 | `lane-culture-spending` | Run the Culture lane's Faith pass — the Naturalist that founds a National Park, the touring Rock Bands — and size its reserve, for an empire racing Culture whose plan has not named the lane. | — | off | +5 | -14 | +18 | 16.66% (n=68,513) | 16.67% (n=68,521) | -0.01% | +0 [-22, +22] | 51.0% | +0.13 (z +0.89) ~ | -0.36% ±0.38% | -1.27% ±0.66% |
+| 70 | `lane-culture-spending` | Run the Culture lane's Faith pass — the Naturalist that founds a National Park, the touring Rock Bands — and size its reserve, for an empire racing Culture whose plan has not named the lane. | — | **on** | +5 | -14 | +18 | 16.66% (n=68,513) | 16.67% (n=68,521) | -0.01% | +0 [-22, +22] | 51.0% | +0.13 (z +0.89) ~ | -0.36% ±0.38% | -1.27% ±0.66% |
 | 71 | `research-grants-first` | A finished research city pays more for its own district's project. | — | off | +2 | +3 | +20 | 16.66% (n=68,446) | 16.67% (n=68,588) | -0.02% | -2 [-21, +17] | 40.8% | +0.05 (z +0.34) ~ | -0.56% ±0.39% | -0.67% ±0.70% |
 | 72 | `lane-congress-ballot` | Score the World Congress ballot — which outcome and target this seat names — for the victory the empire is actually racing rather than for an expansion posture that has no lane. | — | off | -15 | +6 | +4 | 16.66% (n=68,602) | 16.68% (n=68,432) | -0.02% | -1 [-20, +19] | 47.8% | +0.14 (z +0.93) ~ | -0.60% ±0.36% | -1.31% ±0.64% |
 | 73 | `district-coverage` | Rank district families by how much of the empire still lacks them. | — | off | +7 | -7 | +13 | 16.65% (n=114,531) | 16.68% (n=114,543) | -0.02% | -1 [-17, +15] | 43.8% | +0.19 (z +1.25) ~ | +0.38% ±0.36% | +0.50% ±0.64% |
@@ -91,7 +91,7 @@
 | 85 | `joint-tactics` | Plan each engagement's attacks as one joint problem instead of one unit at a time in a fixed class order. | — | off | – | – | – | 16.61% (n=46,020) | 16.72% (n=46,020) | -0.10% | -5 [-28, +17] | 32.6% | +0.25 (z +3.84) helps * | +27.29% ±0.47% | +27.69% ±0.79% |
 | 86 | `blind-objective-units` | Let the army price the enemy units it REMEMBERS around an objective it cannot currently see, instead of reading an unseen approach as empty. | — | off | +1 | -8 | -36 | 16.61% (n=114,489) | 16.72% (n=114,585) | -0.11% | -5 [-19, +9] | 24.1% | -0.32 (z -2.07) hurts * | +0.29% ±0.38% | +0.39% ±0.70% |
 | 87 | `endgame-war-runway` | Keep a fresh direct declaration out of the final campaign reserve. | — | off | +5 | -4 | -13 | 16.61% (n=114,661) | 16.73% (n=114,413) | -0.12% | -6 [-21, +8] | 20.1% | -0.05 (z -0.34) ~ | +0.66% ±0.36% | +0.93% ±0.67% |
-| 88 | `early-contact-window` | Buy the second and third Scout while the world's borders are still open — after Early Empire a city-state cannot be met by land at all. | — | off | +8 | -11 | -34 | 16.61% (n=68,422) | 16.73% (n=68,612) | -0.12% | -8 [-34, +18] | 26.9% | -0.31 (z -2.11) hurts * | +0.10% ±0.37% | -0.04% ±0.67% |
+| 88 | `early-contact-window` | Buy the second and third Scout while the world's borders are still open — after Early Empire a city-state cannot be met by land at all. | — | **on** | +8 | -11 | -34 | 16.61% (n=68,422) | 16.73% (n=68,612) | -0.12% | -8 [-34, +18] | 26.9% | -0.31 (z -2.11) hurts * | +0.10% ±0.37% | -0.04% ±0.67% |
 | 89 | `lane-congress-favor` | Stake the Favor behind a World Congress ballot for the victory the empire is actually racing. | — | off | -5 | +0 | +7 | 16.60% (n=67,888) | 16.73% (n=69,146) | -0.13% | -7 [-26, +12] | 23.8% | +0.09 (z +0.57) ~ | -0.23% ±0.37% | -0.53% ±0.65% |
 | 90 | `culture-coverage` | Pay for the Theater Square the empire has not got. | — | off | +0 | -3 | +0 | 16.60% (n=68,287) | 16.73% (n=68,747) | -0.13% | -7 [-26, +12] | 23.4% | +0.00 (z +0.01) ~ | +0.43% ±0.38% | +0.85% ±0.67% |
 | 91 | `tactical-strategy` | Enable explicit battlefield roles: the land-unit counter cycle, safe ranged standoff, wall-focused siege/support, and cavalry job priority. | — | off | -10 | -4 | +23 | 16.59% (n=44,895) | 16.74% (n=44,895) | -0.14% | -5 [-35, +24] | 36.0% | +0.11 (z +0.71) ~ | +0.10% ±0.37% | +0.24% ±0.66% |
@@ -130,9 +130,9 @@ A threshold in column units is not a threshold in evidence. The screens these co
 
 | Authority | Genes on | Genes moved | What it is |
 |---|---:|---:|---|
-| `columns` **(in force)** | 33 | 0 | the operator's threshold rule, exactly as it ships: both win columns positive, or their average above +15 with neither below −10, or one column above +20 — and off whatever they say when the pooled *Diff* is negative |
-| `posterior-veto` | 34 | 1 | the same columns, with an error bar on the veto: it fires only when the posterior's 95% interval lies **wholly below zero**, instead of on the bare sign of a difference that carries no error at all |
-| `posterior` | 34 | 1 | the pooled estimate decides wherever its interval excludes zero, and `posterior-veto` decides where it straddles |
+| `columns` **(in force)** | 36 | 0 | the operator's threshold rule, exactly as it ships: both win columns positive, or their average above +15 with neither below −10, or one column above +20 — and off whatever they say when the pooled *Diff* is negative |
+| `posterior-veto` | 37 | 1 | the same columns, with an error bar on the veto: it fires only when the posterior's 95% interval lies **wholly below zero**, instead of on the bare sign of a difference that carries no error at all |
+| `posterior` | 37 | 1 | the pooled estimate decides wherever its interval excludes zero, and `posterior-veto` decides where it straddles |
 
 ### The genes that move
 
@@ -142,30 +142,41 @@ Each row is a gene whose shipped default one of the settings above would change.
 
 | Gene | Shipped | `posterior-veto` | `posterior` | Posterior (95% CI) | P(>0) | Pooled *Diff* |
 |---|---|---|---|---:|---:|---:|
-| `siege-commitment` | off | **on** | **on** | -5 [-24, +14] | 30.7% | -0.10% |
+| `siege-commitment` | off | **on** | **on** | -2 [-18, +14] | 40.5% | -0.04% |
 
 ### What the posterior can decide at all
 
-Of 100 priced genes the interval clears zero for **13 upward** and **3 downward**; **84 sit inside the interval either way** and are the boundary set below. A straddling interval is not a null — it is the instrument saying it cannot tell, which is exactly what a fixed ±15 bar cannot say.
+Of 117 priced genes the interval clears zero for **21 upward** and **6 downward**; **90 sit inside the interval either way** and are the boundary set below. A straddling interval is not a null — it is the instrument saying it cannot tell, which is exactly what a fixed ±15 bar cannot say.
 
 | Gene | Posterior (95% CI) | P(>0) | Screens | Shipped | Posterior call |
 |---|---:|---:|---:|---|---|
-| `air-surge` | +108 [+77, +138] | 100.0% | 1 | on | **on** |
-| `barbarian-scouts-are-scouts` | +35 [+11, +59] | 99.8% | 4 | on | **on** |
-| `bounded-recovery` | +28 [+10, +47] | 99.9% | 4 | on | **on** |
-| `great-person-housing` | +87 [+63, +111] | 100.0% | 2 | on | **on** |
-| `idle-faith-patronage` | +29 [+14, +45] | 100.0% | 3 | on | **on** |
-| `loyalty-rate-alarm` | +45 [+27, +63] | 100.0% | 4 | on | **on** |
-| `opportunistic-war` | +38 [+12, +63] | 99.8% | 2 | on | **on** |
-| `raid-pillage-prizes` | +43 [+20, +66] | 100.0% | 2 | on | **on** |
-| `recon-replacement` | +46 [+23, +69] | 100.0% | 4 | on | **on** |
-| `settle-sooner` | +33 [+10, +57] | 99.8% | 2 | on | **on** |
-| `settler-threat-detour` | +33 [+2, +64] | 98.0% | 2 | on | **on** |
-| `whole-turn-backtrack-guard` | +19 [+1, +37] | 97.8% | 4 | on | **on** |
-| `wide-map-capacity` | +49 [+18, +81] | 99.9% | 4 | on | **on** |
-| `contact-posture` | -55 [-85, -24] | 0.0% | 1 | off | **off** |
-| `district-lookahead-settle` | -33 [-56, -10] | 0.3% | 2 | off | **off** |
-| `governor-expansion-lane` | -29 [-52, -5] | 0.8% | 2 | off | **off** |
+| `air-surge` | +101 [+76, +125] | 100.0% | 2 | on | **on** |
+| `barbarian-scouts-are-scouts` | +30 [+8, +51] | 99.6% | 5 | on | **on** |
+| `bounded-recovery` | +31 [+14, +48] | 100.0% | 5 | on | **on** |
+| `buildings-before-projects` | +28 [+5, +51] | 99.2% | 5 | on | **on** |
+| `culture-building-debt` | +26 [+1, +51] | 97.8% | 2 | on | **on** |
+| `engine-faith-price` | +63 [+25, +101] | 99.9% | 1 | on | **on** |
+| `escort-unstick` | +32 [+8, +57] | 99.5% | 5 | on | **on** |
+| `founder-temple` | +19 [+1, +38] | 97.8% | 4 | on | **on** |
+| `great-person-housing` | +84 [+64, +105] | 100.0% | 3 | on | **on** |
+| `idle-faith-patronage` | +26 [+11, +40] | 100.0% | 4 | on | **on** |
+| `loyalty-rate-alarm` | +40 [+22, +58] | 100.0% | 5 | on | **on** |
+| `maintenance-aware-deck` | +61 [+24, +99] | 99.9% | 1 | on | **on** |
+| `opportunistic-war` | +48 [+20, +76] | 100.0% | 3 | on | **on** |
+| `peacetime-deterrence` | +18 [+1, +35] | 98.2% | 5 | on | **on** |
+| `price-the-suzerainty` | +56 [+18, +93] | 99.8% | 1 | on | **on** |
+| `raid-pillage-prizes` | +54 [+25, +83] | 100.0% | 3 | on | **on** |
+| `recon-replacement` | +51 [+30, +72] | 100.0% | 5 | on | **on** |
+| `recorded-tactical-step` | +17 [+0, +33] | 97.5% | 5 | on | **on** |
+| `score-horizon` | +17 [+0, +34] | 97.6% | 5 | on | **on** |
+| `settle-sooner` | +35 [+14, +55] | 100.0% | 3 | on | **on** |
+| `wide-map-capacity` | +61 [+28, +93] | 100.0% | 5 | on | **on** |
+| `builder-reward-survey` | -46 [-83, -9] | 0.8% | 1 | off | **off** |
+| `chain-tech-lookahead` | -26 [-50, -3] | 1.5% | 2 | off | **off** |
+| `contact-posture` | -57 [-80, -33] | 0.0% | 2 | off | **off** |
+| `governor-expansion-lane` | -27 [-47, -7] | 0.4% | 3 | off | **off** |
+| `naval-production-policy` | -51 [-88, -13] | 0.4% | 1 | off | **off** |
+| `research-floor-holds` | -27 [-51, -4] | 1.2% | 2 | off | **off** |
 
 ## The two shapes, apart
 
@@ -173,77 +184,77 @@ Of 100 priced genes the interval clears zero for **13 upward** and **3 downward*
 
 | Shape | Sources | Player seats | Genes priced |
 |---|---:|---:|---:|
-| standard | 2 | 54,444 | 99 |
+| standard | 3 | 92,604 | 116 |
 | legacy | 7 | 132,440 | 65 |
 
 Genes priced at both shapes. **A row whose two intervals do not overlap is not a gene with one number; it is two instruments disagreeing**, and the pooled column beside it should be read as a warning rather than an answer.
 
 | Gene | legacy | standard | pooled | τ | overlap |
 |---|---:|---:|---:|---:|---|
-| `amenity-district-path` | +7 [-15, +29] | +17 [-14, +48] | +11 [-8, +29] | 0 | yes |
-| `amenity-project-preemption` | +3 [-24, +31] | -34 [-65, -3] | -7 [-34, +20] | 20 | yes |
-| `apostle-promotion-by-role` | -4 [-38, +30] | +16 [-15, +47] | +2 [-23, +27] | 17 | yes |
-| `army-target-weighs-enemy` | -1 [-37, +35] | +18 [-13, +49] | +5 [-20, +31] | 18 | yes |
-| `barbarian-bargain` | +5 [-32, +41] | +10 [-20, +41] | +8 [-16, +31] | 0 | yes |
-| `barbarian-hunt` | -86 [-123, -50] | +10 [-21, +41] | -38 [-132, +57] | 66 | **no** |
-| `barbarian-ranged-answer` | +14 [-22, +50] | +17 [-14, +47] | +16 [-8, +39] | 0 | yes |
-| `barbarian-scouts-are-scouts` | +45 [+21, +68] | +12 [-18, +43] | +35 [+11, +59] | 15 | yes |
-| `blind-objective-strength` | +27 [+5, +50] | -0 [-31, +30] | +18 [-0, +36] | 0 | yes |
-| `blind-objective-units` | +0 [-22, +22] | -0 [-30, +29] | +0 [-18, +18] | 0 | yes |
-| `bounded-recovery` | +28 [+6, +51] | +29 [-2, +59] | +28 [+10, +47] | 0 | yes |
-| `builder-barbarian-safety` | +13 [-23, +48] | -10 [-40, +21] | -0 [-24, +23] | 0 | yes |
-| `builder-worked-tile-priority` | +24 [-11, +60] | -8 [-39, +22] | +7 [-25, +39] | 16 | yes |
-| `buildings-before-projects` | +14 [-8, +36] | +61 [+31, +92] | +28 [-0, +57] | 22 | yes |
-| `camp-party` | +35 [+10, +60] | -15 [-46, +16] | +22 [-10, +53] | 26 | yes |
-| `civilian-rescue` | -5 [-28, +17] | -1 [-32, +30] | -4 [-22, +14] | 0 | yes |
-| `come-ashore` | +11 [-18, +40] | +5 [-26, +36] | +9 [-10, +29] | 6 | yes |
-| `district-coverage` | +5 [-23, +34] | -22 [-52, +8] | -3 [-27, +21] | 17 | yes |
-| `district-lookahead-settle` | -22 [-57, +14] | -41 [-71, -11] | -33 [-56, -10] | 0 | yes |
-| `endgame-war-runway` | -4 [-27, +18] | -17 [-47, +14] | -9 [-27, +9] | 0 | yes |
-| `escort-unstick` | +27 [-20, +74] | +36 [+5, +67] | +30 [-1, +62] | 26 | yes |
-| `founder-temple` | +29 [-4, +62] | +7 [-24, +38] | +19 [-3, +42] | 7 | yes |
-| `garrison-under-fire` | +26 [-16, +68] | -27 [-57, +3] | +12 [-28, +51] | 36 | yes |
-| `governor-every-lane` | -15 [-54, +23] | -234 [-264, -204] | -72 [-196, +53] | 126 | **no** |
-| `governor-expansion-lane` | -30 [-66, +6] | -28 [-58, +3] | -29 [-52, -5] | 0 | yes |
-| `governor-victory-lanes` | +46 [+9, +82] | -237 [-265, -209] | -142 [-350, +65] | 182 | **no** |
-| `great-person-housing` | +78 [+42, +114] | +94 [+63, +124] | +87 [+63, +111] | 0 | yes |
-| `holy-lane-parity` | +45 [-24, +114] | +19 [-12, +51] | +38 [-9, +85] | 44 | yes |
-| `home-defense` | -13 [-35, +10] | -18 [-49, +13] | -15 [-33, +3] | 0 | yes |
-| `housing-districts` | -7 [-29, +16] | -37 [-68, -6] | -17 [-36, +1] | 4 | yes |
-| `housing-research` | +10 [-26, +45] | -17 [-48, +13] | +2 [-26, +30] | 22 | yes |
-| `idle-faith-patronage` | +26 [+9, +44] | +39 [+8, +69] | +29 [+14, +45] | 0 | yes |
-| `inquisition-on-threat` | +16 [-16, +47] | +3 [-28, +34] | +9 [-11, +30] | 0 | yes |
-| `loyalty-rate-alarm` | +49 [+25, +73] | +38 [+7, +69] | +45 [+27, +63] | 0 | yes |
-| `naval-recon` | -1 [-23, +21] | -20 [-51, +10] | -8 [-26, +10] | 0 | yes |
-| `one-launch-pad` | +20 [-2, +42] | -11 [-41, +20] | +10 [-8, +28] | 0 | yes |
-| `opportunistic-war` | +23 [-14, +59] | +49 [+18, +80] | +38 [+12, +63] | 7 | yes |
-| `peacetime-deterrence` | +13 [-12, +38] | +21 [-10, +51] | +16 [-3, +34] | 0 | yes |
-| `priced-tile-purchase` | -31 [-66, +5] | -11 [-42, +19] | -20 [-43, +3] | 0 | yes |
-| `raid-pillage-prizes` | +30 [-6, +65] | +53 [+23, +83] | +43 [+20, +66] | 0 | yes |
-| `recon-replacement` | +53 [+25, +82] | +30 [-1, +60] | +46 [+23, +69] | 15 | yes |
-| `recorded-tactical-step` | +15 [-8, +37] | +18 [-13, +48] | +16 [-2, +34] | 0 | yes |
-| `relief-targets-the-siege` | +4 [-18, +27] | +6 [-25, +36] | +5 [-13, +23] | 0 | yes |
-| `religion-sues-peace` | +19 [-3, +41] | -18 [-48, +13] | +8 [-14, +30] | 13 | yes |
-| `score-horizon` | +18 [-4, +41] | +18 [-13, +48] | +18 [-0, +36] | 0 | yes |
-| `settle-sooner` | +41 [+5, +76] | +28 [-3, +59] | +33 [+10, +57] | 0 | yes |
-| `settler-guard-holds` | +2 [-20, +24] | -8 [-39, +23] | -2 [-19, +16] | 0 | yes |
-| `settler-site-agreement` | +10 [-18, +38] | -23 [-53, +8] | +0 [-26, +27] | 19 | yes |
-| `settler-target-hysteresis` | +4 [-18, +26] | -18 [-49, +13] | -4 [-21, +14] | 0 | yes |
-| `settler-threat-detour` | +50 [+14, +86] | +18 [-13, +49] | +33 [+2, +64] | 15 | yes |
-| `siege-commitment` | -11 [-37, +15] | +6 [-25, +37] | -5 [-24, +14] | 7 | yes |
-| `siege-is-progress` | -21 [-64, +21] | -6 [-37, +25] | -17 [-46, +12] | 23 | yes |
-| `siege-tracks-wall` | +21 [-9, +52] | +8 [-23, +38] | +17 [-5, +38] | 11 | yes |
-| `slot-kind-tiebreak` | +10 [-14, +33] | -1 [-31, +30] | +6 [-12, +24] | 0 | yes |
-| `stranded-settler-discount` | +13 [-9, +36] | -8 [-39, +22] | +6 [-12, +24] | 0 | yes |
-| `strategic-wonders` | +11 [-12, +33] | +11 [-19, +42] | +11 [-7, +29] | 0 | yes |
-| `strike-opening` | +19 [-3, +41] | +4 [-26, +35] | +14 [-4, +32] | 0 | yes |
-| `theology-for-founders` | -12 [-40, +16] | +22 [-8, +53] | +3 [-22, +28] | 11 | yes |
-| `war-economy` | -48 [-185, +88] | +118 [+87, +148] | -7 [-130, +117] | 124 | yes |
-| `war-patience` | -0 [-23, +23] | -28 [-58, +3] | -9 [-30, +12] | 11 | yes |
-| `war-reinforcement` | +14 [-17, +46] | +34 [+3, +64] | +20 [-4, +44] | 16 | yes |
-| `whole-turn-backtrack-guard` | +25 [+3, +47] | +6 [-25, +37] | +19 [+1, +37] | 0 | yes |
-| `wide-map-capacity` | +33 [+11, +55] | +91 [+60, +121] | +49 [+18, +81] | 26 | **no** |
-| `wonder-ring-settle-value` | +5 [-18, +27] | +22 [-9, +53] | +11 [-8, +29] | 0 | yes |
+| `amenity-district-path` | +7 [-15, +29] | +17 [-8, +42] | +12 [-5, +28] | 0 | yes |
+| `amenity-project-preemption` | +3 [-24, +31] | -5 [-63, +53] | -1 [-26, +25] | 22 | yes |
+| `apostle-promotion-by-role` | -4 [-38, +30] | +19 [-6, +44] | +6 [-15, +27] | 15 | yes |
+| `army-target-weighs-enemy` | -1 [-37, +35] | +12 [-14, +37] | +5 [-16, +25] | 13 | yes |
+| `barbarian-bargain` | +5 [-32, +41] | +24 [-9, +56] | +16 [-5, +38] | 5 | yes |
+| `barbarian-hunt` | -86 [-123, -50] | +2 [-22, +26] | -28 [-86, +30] | 48 | **no** |
+| `barbarian-ranged-answer` | +14 [-22, +50] | +9 [-16, +34] | +11 [-10, +32] | 0 | yes |
+| `barbarian-scouts-are-scouts` | +45 [+21, +68] | +9 [-16, +34] | +30 [+8, +51] | 16 | yes |
+| `blind-objective-strength` | +27 [+5, +50] | -9 [-33, +14] | +11 [-10, +31] | 14 | yes |
+| `blind-objective-units` | +0 [-22, +22] | +0 [-23, +24] | +0 [-16, +16] | 0 | yes |
+| `bounded-recovery` | +28 [+6, +51] | +34 [+10, +59] | +31 [+14, +48] | 0 | yes |
+| `builder-barbarian-safety` | +13 [-23, +48] | -1 [-24, +23] | +3 [-16, +23] | 0 | yes |
+| `builder-worked-tile-priority` | +24 [-11, +60] | -18 [-42, +6] | -5 [-36, +26] | 21 | yes |
+| `buildings-before-projects` | +14 [-8, +36] | +48 [+14, +81] | +28 [+5, +51] | 18 | yes |
+| `camp-party` | +35 [+10, +60] | +5 [-37, +48] | +22 [-3, +47] | 21 | yes |
+| `civilian-rescue` | -5 [-28, +17] | -1 [-25, +23] | -3 [-20, +13] | 0 | yes |
+| `come-ashore` | +11 [-18, +40] | +1 [-24, +27] | +7 [-10, +24] | 0 | yes |
+| `district-coverage` | +5 [-23, +34] | -6 [-41, +29] | +0 [-20, +20] | 14 | yes |
+| `district-lookahead-settle` | -22 [-57, +14] | -16 [-67, +34] | -19 [-48, +11] | 19 | yes |
+| `endgame-war-runway` | -4 [-27, +18] | -5 [-31, +21] | -5 [-21, +11] | 0 | yes |
+| `escort-unstick` | +27 [-20, +74] | +37 [+13, +61] | +32 [+8, +57] | 21 | yes |
+| `founder-temple` | +29 [-4, +62] | +12 [-13, +38] | +19 [+1, +38] | 0 | yes |
+| `garrison-under-fire` | +26 [-16, +68] | +1 [-56, +58] | +15 [-17, +48] | 32 | yes |
+| `governor-every-lane` | -15 [-54, +23] | -204 [-265, -144] | -92 [-193, +9] | 114 | **no** |
+| `governor-expansion-lane` | -30 [-66, +6] | -25 [-49, -2] | -27 [-47, -7] | 0 | yes |
+| `governor-victory-lanes` | +46 [+9, +82] | -193 [-287, -100] | -134 [-273, +6] | 140 | **no** |
+| `great-person-housing` | +78 [+42, +114] | +87 [+62, +112] | +84 [+64, +105] | 0 | yes |
+| `holy-lane-parity` | +45 [-24, +114] | +16 [-9, +41] | +32 [-6, +71] | 39 | yes |
+| `home-defense` | -13 [-35, +10] | -6 [-34, +22] | -10 [-26, +6] | 0 | yes |
+| `housing-districts` | -7 [-29, +16] | -17 [-59, +26] | -13 [-30, +5] | 6 | yes |
+| `housing-research` | +10 [-26, +45] | -12 [-36, +11] | +0 [-22, +23] | 17 | yes |
+| `idle-faith-patronage` | +26 [+9, +44] | +21 [-19, +61] | +26 [+11, +40] | 0 | yes |
+| `inquisition-on-threat` | +16 [-16, +47] | +5 [-21, +30] | +9 [-9, +28] | 0 | yes |
+| `loyalty-rate-alarm` | +49 [+25, +73] | +28 [+2, +54] | +40 [+22, +58] | 9 | yes |
+| `naval-recon` | -1 [-23, +21] | -3 [-40, +34] | -3 [-19, +13] | 0 | yes |
+| `one-launch-pad` | +20 [-2, +42] | +2 [-26, +30] | +11 [-5, +28] | 0 | yes |
+| `opportunistic-war` | +23 [-14, +59] | +59 [+33, +85] | +48 [+20, +76] | 17 | yes |
+| `peacetime-deterrence` | +13 [-12, +38] | +24 [-1, +49] | +18 [+1, +35] | 0 | yes |
+| `priced-tile-purchase` | -31 [-66, +5] | -7 [-30, +17] | -14 [-34, +5] | 0 | yes |
+| `raid-pillage-prizes` | +30 [-6, +65] | +65 [+35, +96] | +54 [+25, +83] | 18 | yes |
+| `recon-replacement` | +53 [+25, +82] | +49 [+7, +90] | +51 [+30, +72] | 14 | yes |
+| `recorded-tactical-step` | +15 [-8, +37] | +19 [-6, +44] | +17 [+0, +33] | 0 | yes |
+| `relief-targets-the-siege` | +4 [-18, +27] | +17 [-11, +45] | +10 [-7, +26] | 0 | yes |
+| `religion-sues-peace` | +19 [-3, +41] | -9 [-33, +15] | +7 [-11, +24] | 7 | yes |
+| `score-horizon` | +18 [-4, +41] | +15 [-10, +40] | +17 [+0, +34] | 0 | yes |
+| `settle-sooner` | +41 [+5, +76] | +31 [+7, +56] | +35 [+14, +55] | 0 | yes |
+| `settler-guard-holds` | +2 [-20, +24] | +6 [-25, +38] | +3 [-13, +19] | 0 | yes |
+| `settler-site-agreement` | +10 [-18, +38] | -19 [-43, +4] | -3 [-24, +18] | 15 | yes |
+| `settler-target-hysteresis` | +4 [-18, +26] | -2 [-37, +32] | +0 [-16, +16] | 0 | yes |
+| `settler-threat-detour` | +50 [+14, +86] | +12 [-13, +38] | +24 [-2, +51] | 14 | yes |
+| `siege-commitment` | -11 [-37, +15] | +7 [-16, +31] | -2 [-18, +14] | 0 | yes |
+| `siege-is-progress` | -21 [-64, +21] | +6 [-21, +34] | -9 [-36, +18] | 25 | yes |
+| `siege-tracks-wall` | +21 [-9, +52] | -8 [-43, +26] | +9 [-15, +32] | 19 | yes |
+| `slot-kind-tiebreak` | +10 [-14, +33] | +10 [-15, +35] | +9 [-7, +26] | 0 | yes |
+| `stranded-settler-discount` | +13 [-9, +36] | +11 [-30, +51] | +11 [-5, +27] | 0 | yes |
+| `strategic-wonders` | +11 [-12, +33] | +7 [-17, +30] | +9 [-7, +25] | 0 | yes |
+| `strike-opening` | +19 [-3, +41] | +4 [-21, +29] | +12 [-4, +29] | 0 | yes |
+| `theology-for-founders` | -12 [-40, +16] | +14 [-9, +38] | +3 [-15, +22] | 0 | yes |
+| `war-economy` | -48 [-185, +88] | +109 [+84, +134] | +13 [-89, +115] | 115 | yes |
+| `war-patience` | -0 [-23, +23] | -24 [-48, -1] | -12 [-29, +5] | 4 | yes |
+| `war-reinforcement` | +14 [-17, +46] | +21 [-12, +53] | +17 [-4, +37] | 13 | yes |
+| `whole-turn-backtrack-guard` | +25 [+3, +47] | -7 [-41, +26] | +12 [-8, +31] | 11 | yes |
+| `wide-map-capacity` | +33 [+11, +55] | +98 [+73, +122] | +61 [+28, +93] | 32 | **no** |
+| `wonder-ring-settle-value` | +5 [-18, +27] | -1 [-49, +47] | +5 [-12, +22] | 0 | yes |
 
 ## Where a direct arm pays: the boundary genes
 
@@ -253,95 +264,101 @@ Genes priced at both shapes. **A row whose two intervals do not overlap is not a
 
 | Gene | Posterior (95% CI) | P(>0) | Shipped | Buys | Pairs to resolve |
 |---|---:|---:|---|---:|---:|
-| `war-economy` | -7 [-130, +117] | 45.8% | on | +26.5 | 480,419 |
-| `camp-party` | +22 [-10, +53] | 90.8% | off | +21.5 | 24,670 |
-| `blind-objective-strength` | +18 [-0, +36] | 97.3% | off | +17.7 | 2,262 |
-| `siege-tracks-wall` | +17 [-5, +38] | 93.8% | off | +16.6 | 29,423 |
-| `garrison-under-fire` | +12 [-28, +51] | 72.3% | off | +12.9 | 135,744 |
-| `religious-units-heal-first` | +12 [-18, +42] | 78.0% | off | +12.0 | 127,130 |
-| `strategic-wonders` | +11 [-7, +29] | 88.3% | off | +10.9 | 111,562 |
-| `lane-space-race` | +11 [-20, +42] | 74.8% | off | +10.9 | 166,669 |
-| `one-launch-pad` | +10 [-8, +28] | 85.7% | off | +9.8 | 155,622 |
-| `lane-culture-spending` | +8 [-23, +39] | 69.6% | off | +8.6 | 304,266 |
-| `lane-congress-ballot` | +8 [-23, +39] | 69.6% | off | +8.6 | 304,169 |
-| `enhancer-for-the-corps` | +8 [-23, +39] | 68.5% | off | +8.3 | 341,897 |
-| `religion-sues-peace` | +8 [-14, +30] | 75.9% | off | +8.0 | 294,570 |
-| `builder-worked-tile-priority` | +7 [-25, +39] | 66.1% | off | +7.8 | 431,195 |
-| `stranded-settler-discount` | +6 [-12, +24] | 73.6% | off | +5.8 | 561,390 |
-| `slot-kind-tiebreak` | +6 [-12, +24] | 73.6% | off | +5.8 | 567,347 |
-| `campus-finishes-first` | +4 [-27, +34] | 59.7% | off | +5.3 | 1,432,763 |
-| `barbarian-hunt` | -38 [-132, +57] | 21.8% | off | +4.2 | 12,546 |
-| `early-contact-window` | +2 [-29, +32] | 54.3% | off | +4.0 | 7,345,811 |
-| `governor-victory-lanes` | -142 [-350, +65] | 9.0% | off | +3.9 | 553 |
-| `housing-research` | +2 [-26, +30] | 55.6% | off | +3.8 | 5,060,335 |
-| `barbarian-capture-priority` | +1 [-30, +32] | 53.2% | off | +3.8 | 13,077,439 |
-| `theology-for-founders` | +3 [-22, +28] | 58.8% | off | +3.8 | 2,633,862 |
-| `governor-every-lane` | -72 [-196, +53] | 13.0% | off | +3.1 | 2,763 |
-| `lane-policy-deck` | +0 [-31, +31] | 50.0% | off | +3.1 | – |
-| `competition-victory-points` | -0 [-31, +31] | 48.9% | off | +2.9 | 117,874,324 |
-| `district-building-chain` | -1 [-32, +30] | 47.9% | off | +2.7 | 29,451,758 |
-| `settler-site-agreement` | +0 [-26, +27] | 51.0% | off | +2.5 | 185,035,961 |
-| `lane-great-people` | -3 [-33, +27] | 42.4% | off | +1.8 | 2,383,266 |
-| `builder-barbarian-safety` | -0 [-24, +23] | 48.8% | off | +1.7 | 178,691,514 |
-| `apostle-promotion-by-role` | +2 [-23, +27] | 56.6% | on | +1.2 | 4,679,671 |
-| `blind-objective-units` | +0 [-18, +18] | 50.0% | off | +1.1 | 1,851,598,792,308 |
-| `envoy-infrastructure` | -6 [-37, +25] | 35.3% | off | +1.0 | 579,212 |
-| `research-tier-premium` | -6 [-37, +25] | 35.2% | off | +1.0 | 578,983 |
-| `district-coverage` | -3 [-27, +21] | 40.6% | off | +0.9 | 2,356,319 |
-| `condemn-under-congress` | -8 [-38, +23] | 31.2% | off | +0.6 | 341,081 |
-| `science-multiplier-payoff` | -8 [-38, +23] | 31.1% | off | +0.6 | 340,841 |
-| `religious-defence-scales` | -8 [-39, +22] | 29.6% | off | +0.6 | 272,602 |
-| `settler-guard-holds` | -2 [-19, +16] | 43.1% | off | +0.5 | 8,359,065 |
-| `army-target-weighs-enemy` | +5 [-20, +31] | 65.6% | on | +0.5 | 734,908 |
-| `one-shot-recovery` | -8 [-39, +22] | 29.3% | off | +0.5 | 271,910 |
-| `congress-banks-decided` | -8 [-39, +22] | 29.2% | off | +0.5 | 271,842 |
-| `power-the-laboratory` | -8 [-39, +22] | 29.1% | off | +0.5 | 271,495 |
-| `amenity-project-preemption` | -7 [-34, +20] | 29.8% | off | +0.3 | 371,605 |
-| `science-payback-horizon` | -11 [-41, +20] | 24.7% | off | +0.3 | 165,751 |
+| `camp-party` | +22 [-3, +47] | 96.1% | off | +22.4 | 8,154 |
+| `unit-cost-efficiency` | +17 [-20, +55] | 81.7% | off | +17.6 | 55,043 |
+| `garrison-under-fire` | +15 [-17, +48] | 82.6% | off | +15.5 | 68,721 |
+| `settlement-gap-target` | +14 [-23, +52] | 77.5% | off | +14.8 | 87,669 |
+| `lane-great-people` | +13 [-22, +48] | 77.0% | off | +13.6 | 103,314 |
+| `district-planning` | +12 [-25, +49] | 74.1% | off | +12.9 | 125,973 |
+| `lane-policy-deck` | +13 [-16, +42] | 80.9% | off | +12.9 | 103,406 |
+| `war-economy` | +13 [-89, +115] | 60.1% | on | +12.4 | 116,162 |
+| `whole-turn-backtrack-guard` | +12 [-8, +31] | 88.2% | off | +11.8 | 96,625 |
+| `one-launch-pad` | +11 [-5, +28] | 91.6% | off | +11.4 | 81,761 |
+| `stranded-settler-discount` | +11 [-5, +27] | 90.8% | off | +11.0 | 93,635 |
+| `unit-objective-memory` | +10 [-28, +47] | 69.7% | off | +10.9 | 201,764 |
+| `barbarian-ranged-answer` | +11 [-10, +32] | 85.1% | off | +10.9 | 126,996 |
+| `blind-objective-strength` | +11 [-10, +31] | 84.9% | off | +10.8 | 131,056 |
+| `research-tier-premium` | +10 [-24, +43] | 71.2% | off | +10.3 | 208,314 |
+| `slot-kind-tiebreak` | +9 [-7, +26] | 87.4% | off | +9.4 | 156,019 |
+| `promote-when-wounded` | +7 [-31, +45] | 64.5% | off | +8.9 | 396,852 |
+| `strategic-wonders` | +9 [-7, +25] | 85.6% | off | +8.8 | 192,886 |
+| `siege-tracks-wall` | +9 [-15, +32] | 76.1% | off | +8.6 | 251,903 |
+| `pantheon-board` | +5 [-32, +43] | 61.0% | off | +7.5 | 728,917 |
+| `come-ashore` | +7 [-10, +24] | 79.3% | off | +7.0 | 353,593 |
+| `science-multiplier-payoff` | +6 [-24, +35] | 64.5% | off | +6.6 | 639,181 |
+| `religion-sues-peace` | +7 [-11, +24] | 77.2% | off | +6.6 | 421,343 |
+| `guru-heals-the-corps` | -4 [-56, +49] | 44.7% | off | +5.7 | 1,648,811 |
+| `wonder-ring-settle-value` | +5 [-12, +22] | 71.7% | off | +4.9 | 798,478 |
+| `army-target-weighs-enemy` | +5 [-16, +25] | 67.3% | off | +4.9 | 903,207 |
+| `campus-adjacency-threshold` | +0 [-38, +38] | 50.3% | off | +4.5 | 829,756,465 |
+| `coordinated-finish` | -0 [-38, +37] | 49.1% | off | +4.1 | 110,743,705 |
+| `holy-site-where-the-threat-is` | -1 [-38, +36] | 47.7% | off | +3.8 | 17,424,370 |
+| `builder-barbarian-safety` | +3 [-16, +23] | 62.9% | off | +3.6 | 1,859,339 |
+| `enhancer-for-the-corps` | +3 [-21, +26] | 58.6% | off | +3.6 | 2,978,891 |
+| `settler-guard-holds` | +3 [-13, +19] | 65.5% | off | +3.4 | 1,871,682 |
+| `lane-space-race` | +1 [-22, +25] | 54.3% | off | +2.7 | 12,292,990 |
+| `power-the-laboratory` | +1 [-23, +24] | 52.0% | off | +2.2 | 57,902,647 |
+| `housing-research` | +0 [-22, +23] | 51.6% | off | +1.9 | 97,478,820 |
+| `amenity-project-preemption` | -1 [-26, +25] | 48.2% | off | +1.9 | 62,802,848 |
+| `religious-defence-scales` | -0 [-24, +24] | 49.1% | off | +1.8 | 290,353,107 |
+| `district-coverage` | +0 [-20, +20] | 50.8% | off | +1.5 | 558,338,216 |
+| `builder-worked-tile-priority` | -5 [-36, +26] | 37.3% | off | +1.2 | 796,622 |
+| `one-shot-recovery` | -2 [-25, +22] | 43.7% | off | +1.1 | 5,846,162 |
+| `lane-congress-ballot` | -9 [-45, +27] | 31.5% | off | +1.1 | 249,847 |
+| `blind-objective-units` | +0 [-16, +16] | 51.4% | off | +1.1 | 245,127,417 |
+| `settler-target-hysteresis` | +0 [-16, +16] | 50.7% | off | +1.0 | 1,036,197,883 |
+| `barbarian-hunt` | -28 [-86, +30] | 16.9% | off | +0.9 | 20,099 |
+| `campus-finishes-first` | -3 [-26, +21] | 41.0% | off | +0.9 | 2,800,136 |
+| `coupled-expansion` | -12 [-49, +26] | 26.9% | off | +0.8 | 136,894 |
+| `settler-site-agreement` | -3 [-24, +18] | 40.5% | off | +0.6 | 3,159,094 |
+| `envoy-infrastructure` | -4 [-28, +20] | 37.3% | off | +0.6 | 1,334,442 |
+| `governor-victory-lanes` | -134 [-273, +6] | 3.0% | off | +0.5 | 96 |
+| `governor-every-lane` | -92 [-193, +9] | 3.8% | off | +0.4 | 446 |
+| `barbarian-capture-priority` | -6 [-30, +18] | 32.0% | off | +0.3 | 615,022 |
+| `escort-unstick-2` | -22 [-64, +21] | 15.8% | off | +0.3 | 32,838 |
+| `siege-commitment` | -2 [-18, +14] | 40.5% | off | +0.3 | 5,199,392 |
 | `joint-tactics` | -5 [-28, +17] | 32.6% | off | +0.3 | 755,823 |
-| `fifteenth-citizen` | -12 [-42, +19] | 22.4% | off | +0.2 | 127,814 |
-| `settler-target-hysteresis` | -4 [-21, +14] | 34.6% | off | +0.1 | 1,559,209 |
-| `congress-counter-votes` | -13 [-43, +17] | 20.4% | off | +0.1 | 107,748 |
-| `civilian-rescue` | -4 [-22, +14] | 33.2% | off | +0.1 | 1,247,507 |
-| `lane-congress-favor` | -14 [-44, +17] | 18.4% | off | +0.1 | 85,512 |
-| `barbarian-bargain` | +8 [-16, +31] | 74.4% | on | +0.1 | 304,958 |
-| `siege-commitment` | -5 [-24, +14] | 30.7% | off | +0.1 | 788,779 |
-| `culture-coverage` | -14 [-44, +16] | 18.2% | off | +0.1 | 85,100 |
-| `spread-campaign-persists` | -16 [-47, +15] | 16.0% | off | +0.1 | 63,928 |
-| `relief-targets-the-siege` | +5 [-13, +23] | 70.4% | on | +0.1 | 799,683 |
-| `holy-lane-parity` | +38 [-9, +85] | 94.3% | on | +0.0 | 5,154 |
-| `campus-adjacency-threshold` | -18 [-48, +13] | 12.6% | off | +0.0 | 43,930 |
-| `siege-is-progress` | -17 [-46, +12] | 13.0% | off | +0.0 | 49,723 |
-| `research-floor-holds` | -19 [-49, +12] | 11.8% | off | +0.0 | 38,558 |
-| `war-patience` | -9 [-30, +12] | 20.6% | off | +0.0 | 219,110 |
-| `holy-site-where-the-threat-is` | -19 [-49, +12] | 11.4% | off | +0.0 | 37,784 |
-| `inquisition-on-threat` | +9 [-11, +30] | 81.2% | on | +0.0 | 191,257 |
-| `research-grants-first` | -20 [-51, +10] | 9.4% | off | +0.0 | 28,021 |
-| `naval-recon` | -8 [-26, +10] | 19.9% | off | +0.0 | 284,865 |
-| `come-ashore` | +9 [-10, +29] | 82.3% | on | +0.0 | 193,576 |
-| `culture-building-debt` | +24 [-7, +55] | 93.6% | on | +0.0 | 14,374 |
-| `chain-tech-lookahead` | -25 [-56, +6] | 6.0% | off | +0.0 | 12,991 |
-| `endgame-war-runway` | -9 [-27, +9] | 17.4% | off | +0.0 | 217,831 |
-| `barbarian-ranged-answer` | +16 [-8, +39] | 90.3% | on | +0.0 | 48,868 |
-| `guru-heals-the-corps` | -29 [-61, +2] | 3.4% | off | +0.0 | 3,213 |
-| `escort-unstick` | +30 [-1, +62] | 97.0% | on | +0.0 | 1,912 |
-| `wonder-ring-settle-value` | +11 [-8, +29] | 87.3% | on | +0.0 | 124,143 |
-| `amenity-district-path` | +11 [-8, +29] | 87.3% | on | +0.0 | 126,711 |
-| `war-reinforcement` | +20 [-4, +44] | 95.0% | on | +0.0 | 15,775 |
-| `buildings-before-projects` | +28 [-0, +57] | 97.4% | on | +0.0 | 516 |
-| `priced-tile-purchase` | -20 [-43, +3] | 4.7% | off | +0.0 | 14,832 |
-| `founder-temple` | +19 [-3, +42] | 95.2% | on | +0.0 | 16,080 |
-| `strike-opening` | +14 [-4, +32] | 93.5% | on | +0.0 | 44,900 |
-| `home-defense` | -15 [-33, +3] | 5.6% | off | +0.0 | 33,434 |
-| `peacetime-deterrence` | +16 [-3, +34] | 95.4% | on | +0.0 | 22,549 |
-| `recorded-tactical-step` | +16 [-2, +34] | 95.6% | on | +0.0 | 20,937 |
-| `housing-districts` | -17 [-36, +1] | 3.5% | off | +0.0 | 10,738 |
-| `score-horizon` | +18 [-0, +36] | 97.5% | on | +0.0 | 183 |
+| `fortify-idle-units` | -18 [-55, +20] | 17.7% | off | +0.2 | 52,153 |
+| `competition-victory-points` | +16 [-19, +50] | 81.3% | on | +0.2 | 67,501 |
+| `siege-is-progress` | -9 [-36, +18] | 25.3% | off | +0.2 | 222,389 |
+| `theology-for-founders` | +3 [-15, +22] | 64.7% | on | +0.2 | 1,662,178 |
+| `tactical-strategy` | -21 [-58, +17] | 14.0% | off | +0.1 | 34,566 |
+| `early-contact-window` | +8 [-16, +31] | 73.8% | on | +0.1 | 318,670 |
+| `congress-banks-decided` | -8 [-31, +16] | 26.2% | off | +0.1 | 321,129 |
+| `naval-recon` | -3 [-19, +13] | 35.6% | off | +0.1 | 2,174,265 |
+| `apostle-promotion-by-role` | +6 [-15, +27] | 71.4% | on | +0.1 | 520,461 |
+| `civilian-rescue` | -3 [-20, +13] | 34.5% | off | +0.1 | 1,836,091 |
+| `culture-coverage` | -8 [-32, +15] | 24.5% | off | +0.1 | 268,265 |
+| `lane-culture-spending` | +9 [-15, +32] | 75.9% | on | +0.1 | 250,826 |
+| `condemn-under-congress` | -9 [-33, +14] | 22.4% | off | +0.1 | 216,182 |
+| `religious-units-heal-first` | +9 [-14, +33] | 78.0% | on | +0.0 | 208,321 |
+| `district-building-chain` | -13 [-40, +14] | 17.7% | off | +0.0 | 98,805 |
+| `fifteenth-citizen` | -10 [-34, +14] | 20.6% | off | +0.0 | 176,078 |
+| `research-grants-first` | -10 [-34, +14] | 20.0% | off | +0.0 | 160,824 |
+| `endgame-war-runway` | -5 [-21, +11] | 27.5% | off | +0.0 | 778,289 |
+| `science-payback-horizon` | -12 [-35, +12] | 16.9% | off | +0.0 | 121,408 |
+| `district-lookahead-settle` | -19 [-48, +11] | 10.4% | off | +0.0 | 34,720 |
+| `lane-congress-favor` | -12 [-36, +11] | 15.3% | off | +0.0 | 101,961 |
+| `holy-lane-parity` | +32 [-6, +71] | 95.0% | on | +0.0 | 5,971 |
+| `settle-plan-ahead` | -33 [-70, +4] | 4.2% | off | +0.0 | 4,280 |
+| `inquisition-on-threat` | +9 [-9, +28] | 83.2% | on | +0.0 | 189,468 |
+| `congress-counter-votes` | -16 [-40, +7] | 8.5% | off | +0.0 | 39,981 |
+| `spread-campaign-persists` | -17 [-41, +7] | 8.0% | off | +0.0 | 35,582 |
+| `relief-targets-the-siege` | +10 [-7, +26] | 87.0% | on | +0.0 | 153,392 |
+| `settler-threat-detour` | +24 [-2, +51] | 96.4% | on | +0.0 | 5,630 |
+| `barbarian-bargain` | +16 [-5, +38] | 93.3% | on | +0.0 | 32,522 |
+| `priced-tile-purchase` | -14 [-34, +5] | 7.8% | off | +0.0 | 50,051 |
+| `home-defense` | -10 [-26, +6] | 11.7% | off | +0.0 | 137,225 |
+| `war-reinforcement` | +17 [-4, +37] | 94.7% | on | +0.0 | 24,014 |
+| `war-patience` | -12 [-29, +5] | 8.8% | off | +0.0 | 81,488 |
+| `amenity-district-path` | +12 [-5, +28] | 91.2% | on | +0.0 | 83,886 |
+| `housing-districts` | -13 [-30, +5] | 7.6% | off | +0.0 | 62,666 |
+| `strike-opening` | +12 [-4, +29] | 92.5% | on | +0.0 | 65,525 |
 
 The top 8 that one batch could actually resolve (≤ 60,000 seat pairs each), as an argument list:
 
 ```sh
-gene_screen --genes camp-party,blind-objective-strength,siege-tracks-wall,barbarian-hunt,governor-victory-lanes,governor-every-lane,holy-lane-parity,campus-adjacency-threshold
+gene_screen --genes camp-party,unit-cost-efficiency,barbarian-hunt,governor-victory-lanes,governor-every-lane,escort-unstick-2,fortify-idle-units,tactical-strategy
 ```
 
 `python3 tools/genes.py boundary` prints this list on its own, with `--arm-pairs` and `--max-arm-pairs` to size it.
@@ -354,13 +371,13 @@ The set is discovered from the code: every gene whose flag field `src/ai/advance
 
 | Lane gene | Default | ± Wins / 10k seats | Share Δpp (z) | Posterior (95% CI) | Status |
 |---|---|---:|---|---:|---|
-| `lane-congress-ballot` | off | +8 | -0.01 (z -0.21) ~ | +8 [-23, +39] | unresolved |
-| `lane-congress-favor` | off | -14 | -0.09 (z -1.61) ~ | -14 [-44, +17] | unresolved |
-| `lane-great-people` | off | -3 | -0.04 (z -0.66) ~ | -3 [-33, +27] | unresolved |
-| `lane-policy-deck` | off | +0 | -0.04 (z -0.74) ~ | +0 [-31, +31] | unresolved |
-| `lane-culture-spending` | off | +8 | -0.07 (z -1.26) ~ | +8 [-23, +39] | unresolved |
-| `lane-space-race` | off | +11 | -0.01 (z -0.23) ~ | +11 [-20, +42] | unresolved |
-| `competition-victory-points` | off | +0 | -0.07 (z -1.17) ~ | -0 [-31, +31] | unresolved |
+| `lane-congress-ballot` | off | -29 | -0.09 (z -1.17) ~ | -9 [-45, +27] | unresolved |
+| `lane-congress-favor` | off | -10 | +0.08 (z +1.02) ~ | -12 [-36, +11] | unresolved |
+| `lane-great-people` | off | +33 | +0.10 (z +1.26) ~ | +13 [-22, +48] | unresolved |
+| `lane-policy-deck` | off | +29 | +0.08 (z +1.07) ~ | +13 [-16, +42] | unresolved |
+| `lane-culture-spending` | **on** | +9 | -0.01 (z -0.13) ~ | +9 [-15, +32] | unresolved |
+| `lane-space-race` | off | -12 | -0.10 (z -1.32) ~ | +1 [-22, +25] | unresolved |
+| `competition-victory-points` | **on** | +35 | +0.04 (z +0.46) ~ | +16 [-19, +50] | unresolved |
 
 ## Awaiting measurement
 
@@ -399,13 +416,13 @@ Genes whose code has left the repository (operator directive: the bottom of the 
 
 ## How to read this
 
-Every screenable heuristic gene on the Advanced controller, ranked by the displayed pooled *Diff* from highest to lowest (alphabetically by tag on a tie). Each batch header carries its actual player-seat count once; cells show the enabled arm's excess projected to 10,000 **total** player seats, where a six-player chance expectation is 1,667 wins. A dash means that batch did not screen the gene. The *Total* win-rate columns pool the displayed observations and retain their real per-gene on/off seat counts in every row. *Diff* is that display total's on rate minus off rate, in percentage points. The report-only latest 10k batch updates these display statistics but does **not** change the deployment genome: *Default* remains the existing ledger call in `docs/gene_ledger.json` until an explicit rules decision records the batch as an authoritative source. Screenable genes awaiting every displayed measurement are listed separately below without a rank.
+Every screenable heuristic gene on the Advanced controller, ranked by the displayed pooled *Diff* from highest to lowest (alphabetically by tag on a tie). Each batch header carries its actual player-seat count once; cells show the enabled arm's excess projected to 10,000 **total** player seats, where a six-player chance expectation is 1,667 wins. A dash means that batch did not screen the gene. The *Total* win-rate columns pool the displayed observations and retain their real per-gene on/off seat counts in every row. *Diff* is that display total's on rate minus off rate, in percentage points. *Default* is the ledger's authority calculation over authoritative sources: a fixed display batch changes it only after an explicit source promotion; otherwise it is trend context only. Screenable genes awaiting every displayed measurement are listed separately below without a rank.
 
 **Versioned genes.** An improvement to a gene is a new gene `<base>-<n>` (`docs/GENE_SCREEN.md`, *Versioning a gene*), priced on its own row: a version's *on* is the seats that played that version, and every other seat — off, or a sibling version on — is its *off*. *Best version* names the family's best version (`1` is the original) on every row of the family: the version that ships, else the priced version with the highest tracked wins. A versioned row's *Total (on)* and *Total (off)* cells show the best two versions' rates side by side, best first, each with its own `n`; `—` marks a gene with no versions.
 
 **Reading the table.** A six-player seat wins 1-in-6 by chance, so the expected count is 1,667 wins per 10,000 total seats. The batch cells are the enabled arm's excess over that chance rate, scaled from actual completed seats; they do not invent games or seats. The independent latest batch can have unequal on/off arms, which is why the pooled *Total (on)* and *Total (off)* cells retain their own `n` on every row.
 
-**Batch provenance.** The newest displayed batch is the completed current-standard 6-major Continents screen (74×46, nine city-states, Online speed through turn 250, all six victory lanes, shuffled civilizations and best-genome baseline). Older displayed batches remain visible for trend context. The deployment ledger's sources and default state remain intact while this report-only result is reviewed.
+**Batch provenance.** The newest displayed batch is the completed current-standard 6-major Continents screen (74×46, nine city-states, Online speed through turn 250, all six victory lanes, shuffled civilizations and best-genome baseline). It is also an authoritative ledger source, so its completed seats enter the deployment default calculation. Older displayed batches remain visible for trend context.
 
 **What each screen resolves.** The median gene’s column standard error times 2.8 — a two-sided 5% test at 80% power. Judge a column against the band of the screen named beside it, never against a single number for the instrument: these differ by more than three to one.
 
@@ -413,6 +430,7 @@ Every screenable heuristic gene on the Advanced controller, ranked by the displa
 
 | Screen | Shape | Genes | Player seats | 1 SE | ±80% power | Pairing gain |
 |---|---|---:|---:|---:|---:|---:|
+| `2026-08-24-standard-continuous-38160-total-seats.json` | standard | 116 | 38,160 | 19.1 | ±54 | 0.00× |
 | `2026-08-23-g1-governor-victory-lanes-direct-6p-allseats-3600-pairs.json` | standard | 1 | 7,200 | 39.1 | ±109 | 1.12× |
 | `2026-08-22-standard-10k-6p-allseats-23622-pairs.json` | standard | 99 | 47,244 | 15.6 | ±44 | 1.10× |
 | `2026-08-22-h1-holy-lane-parity-direct-6p-allseats-1200-pairs.json` | legacy | 1 | 14,400 | 24.3 | ±68 | 1.28× |
@@ -466,4 +484,4 @@ So the gene stays in the code, `off` and unresolved, and **the cull rule does no
 
 So the rule, for whoever culls next. A cull is not the symmetric opposite of a default. A gene left `off` costs one row in a foldover screen and **no games**, and it can be re-priced by every screen that runs afterwards; a gene removed can never be re-priced by anything, and restoring it costs a dedicated confirmation run (1,200 map pairs for `holy-lane-parity`). So the bar for deleting code is not "the worst reading available" -- `barbarian-hunt`'s -86 was the worst reading in the table and it was still the wrong number. It is **a reading on the instrument the agent is actually being screened on**, and the three questions that establish it: is this column `standard` or `legacy`; is there a screen in flight or unmerged that has already priced this gene (check `batch.source_commit` against the cull date, and check the open pull requests); and does a direct arm against the deployment genome agree. `barbarian-hunt` failed all three.
 
-_Generated by `tools/genes.py` from the ledger's sources: `2026-08-20-p4-native-6p-allseats-13446-pairs.json` (legacy, 26,892 seats), `2026-08-20-s2-step-and-reassess-native-4p-1000-pairs.json` (legacy, 2,000 seats), `2026-08-21-s6-religion-genes-native-6p-allseats-6000-pairs.json` (legacy, 12,000 seats), `2026-08-21-s7-idle-faith-patronage-native-6p-allseats-6000-pairs.json` (legacy, 12,000 seats), `2026-08-21-p7-native-6p-allseats-15000-pairs.json` (legacy, 30,000 seats), `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` (legacy, 35,148 seats), `2026-08-22-h1-holy-lane-parity-direct-6p-allseats-1200-pairs.json` (legacy, 14,400 seats), `2026-08-22-standard-10k-6p-allseats-23622-pairs.json` (standard, 47,244 seats), `2026-08-23-g1-governor-victory-lanes-direct-6p-allseats-3600-pairs.json` (standard, 7,200 seats). The fixed display batches are: `2026-08-24-standard-continuous-38160-total-seats.json` (38,160 seats), `2026-08-23-standard-gene-screen-41628-total-seats.json` (41,628 seats), `2026-08-23-standard-gene-screen-10000-total-seats.json` (10,002 seats). The deployment verdicts live in `docs/gene_ledger.json`; the table's batch cells are the operator's wins-per-ten-thousand-total-seat reporting view._
+_Generated by `tools/genes.py` from the ledger's sources: `2026-08-20-p4-native-6p-allseats-13446-pairs.json` (legacy, 26,892 seats), `2026-08-20-s2-step-and-reassess-native-4p-1000-pairs.json` (legacy, 2,000 seats), `2026-08-21-s6-religion-genes-native-6p-allseats-6000-pairs.json` (legacy, 12,000 seats), `2026-08-21-s7-idle-faith-patronage-native-6p-allseats-6000-pairs.json` (legacy, 12,000 seats), `2026-08-21-p7-native-6p-allseats-15000-pairs.json` (legacy, 30,000 seats), `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` (legacy, 35,148 seats), `2026-08-22-h1-holy-lane-parity-direct-6p-allseats-1200-pairs.json` (legacy, 14,400 seats), `2026-08-22-standard-10k-6p-allseats-23622-pairs.json` (standard, 47,244 seats), `2026-08-23-g1-governor-victory-lanes-direct-6p-allseats-3600-pairs.json` (standard, 7,200 seats), `2026-08-24-standard-continuous-38160-total-seats.json` (standard, 38,160 seats). The fixed display batches are: `2026-08-24-standard-continuous-38160-total-seats.json` (38,160 seats), `2026-08-23-standard-gene-screen-41628-total-seats.json` (41,628 seats), `2026-08-23-standard-gene-screen-10000-total-seats.json` (10,002 seats). The deployment verdicts live in `docs/gene_ledger.json`; the table's batch cells are the operator's wins-per-ten-thousand-total-seat reporting view._

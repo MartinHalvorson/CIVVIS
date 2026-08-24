@@ -31337,22 +31337,36 @@ fn a_second_front_closes_the_surge_window() {
     );
 }
 
-/// The four religious-corps genes are registered, discoverable by name, ship
-/// off, and go back off. See `advanced/religion.rs`.
+/// The religious-corps genes are registered, discoverable by name, and
+/// reversible. The bare controller starts them off; the deployment ledger
+/// currently promotes `religious-units-heal-first`. See `advanced/religion.rs`.
 #[test]
 fn the_religious_corps_genes_are_registered_reversible_opt_ins() {
     let mut ai = AdvancedAi::new();
-    for (field, tag) in [
-        ("religious_defence_scales", "religious-defence-scales"),
-        ("guru_heals_the_corps", "guru-heals-the-corps"),
-        ("religious_units_heal_first", "religious-units-heal-first"),
-        ("condemn_under_congress", "condemn-under-congress"),
-        ("spread_campaign_persists", "spread-campaign-persists"),
+    for (field, tag, default_on) in [
+        (
+            "religious_defence_scales",
+            "religious-defence-scales",
+            false,
+        ),
+        ("guru_heals_the_corps", "guru-heals-the-corps", false),
+        (
+            "religious_units_heal_first",
+            "religious-units-heal-first",
+            true,
+        ),
+        ("condemn_under_congress", "condemn-under-congress", false),
+        (
+            "spread_campaign_persists",
+            "spread-campaign-persists",
+            false,
+        ),
         (
             "holy_site_where_the_threat_is",
             "holy-site-where-the-threat-is",
+            false,
         ),
-        ("enhancer_for_the_corps", "enhancer-for-the-corps"),
+        ("enhancer_for_the_corps", "enhancer-for-the-corps", false),
     ] {
         assert!(
             GENES
@@ -31366,17 +31380,38 @@ fn the_religious_corps_genes_are_registered_reversible_opt_ins() {
         );
         assert_eq!(
             crate::ai::advanced::gene_ledger::ledger_default_on(tag),
-            Some(false),
-            "{tag} is unmeasured, so the deployment genome leaves it off"
+            Some(default_on),
+            "{tag} must match the current deployment genome"
         );
     }
-    assert!(!ai.religious_defence_scales, "production ships it off");
-    assert!(!ai.guru_heals_the_corps, "production ships it off");
-    assert!(!ai.religious_units_heal_first, "production ships it off");
-    assert!(!ai.condemn_under_congress, "production ships it off");
-    assert!(!ai.spread_campaign_persists, "production ships it off");
-    assert!(!ai.holy_site_where_the_threat_is, "production ships it off");
-    assert!(!ai.enhancer_for_the_corps, "production ships it off");
+    assert!(
+        !ai.religious_defence_scales,
+        "the bare controller starts it off"
+    );
+    assert!(
+        !ai.guru_heals_the_corps,
+        "the bare controller starts it off"
+    );
+    assert!(
+        !ai.religious_units_heal_first,
+        "the bare controller starts it off"
+    );
+    assert!(
+        !ai.condemn_under_congress,
+        "the bare controller starts it off"
+    );
+    assert!(
+        !ai.spread_campaign_persists,
+        "the bare controller starts it off"
+    );
+    assert!(
+        !ai.holy_site_where_the_threat_is,
+        "the bare controller starts it off"
+    );
+    assert!(
+        !ai.enhancer_for_the_corps,
+        "the bare controller starts it off"
+    );
     ai.enable_religious_defence_scales();
     ai.enable_guru_heals_the_corps();
     ai.enable_religious_units_heal_first();

@@ -26,7 +26,7 @@ ranking = genes
 
 PLAYERS = gene_ledger.SCREEN["players"]
 
-#: ★★★★ THE DEPLOYMENT GENOME, FROZEN 2026-08-23 (the standard screen).
+#: ★★★★ THE DEPLOYMENT GENOME, FROZEN 2026-08-24 (38,160-seat standard cutoff).
 #: Every gene `docs/gene_ledger.json` defaults on. This is a tripwire, not a
 #: rule: nothing else in the repository pins what the agent actually plays, and
 #: a regeneration that quietly moved a default would otherwise be invisible.
@@ -34,33 +34,32 @@ PLAYERS = gene_ledger.SCREEN["players"]
 #: directive -- and the way to do it is to update this tuple in the same change
 #: and name the gene and the reason in the pull request.
 #:
-#: ⭐ IT MOVED, AND THIS IS WHY. The 23,622-paired-seat standard screen
-#: (`2026-08-22-standard-10k-...`) is the first whole-genome batch played at
-#: the canonical shape, so it became the deciding `last` column for 99 of the
-#: 101 genes at once and took the count from 30 to 33. Twelve entered --
-#: air-surge, apostle-promotion-by-role, army-target-weighs-enemy,
-#: barbarian-bargain, barbarian-ranged-answer, buildings-before-projects,
-#: culture-building-debt, recorded-tactical-step, score-horizon, war-economy,
-#: war-reinforcement, wonder-ring-settle-value -- and nine left:
-#: blind-objective-strength, builder-worked-tile-priority, camp-party,
-#: housing-research, one-launch-pad, religion-sues-peace,
-#: settler-site-agreement, settler-target-hysteresis, stranded-settler-discount.
-#: None of that is a rule change: the rule is the operator's unchanged
-#: threshold on the two newest columns, and one screen re-priced almost every
-#: gene's newest column at a shape the ledger had only ever seen twice before.
-DEPLOYED_GENOME_20260823 = (
+#: ⭐ IT MOVED, AND THIS IS WHY. The operator explicitly promoted the clean,
+#: completed 6,360-game / 38,160-seat standard cutoff as an authoritative
+#: source. Its 95.4%-complete target is recorded in the ledger; the source is
+#: otherwise a complete collection of whole games. Under the unchanged columns
+#: calculation, eight genes entered -- competition-victory-points,
+#: early-contact-window, engine-faith-price, lane-culture-spending,
+#: maintenance-aware-deck, price-the-suzerainty,
+#: religious-units-heal-first, theology-for-founders -- and five left:
+#: army-target-weighs-enemy, barbarian-ranged-answer, come-ashore,
+#: whole-turn-backtrack-guard, wonder-ring-settle-value. The three source-new
+#: entrants were previously unmeasured, hence default-off. This is a
+#: deployment-default update, not a game rule change.
+DEPLOYED_GENOME_20260824 = (
     "air-surge", "amenity-district-path", "apostle-promotion-by-role",
-    "army-target-weighs-enemy", "barbarian-bargain", "barbarian-ranged-answer",
-    "barbarian-scouts-are-scouts", "bounded-recovery",
-    "buildings-before-projects", "come-ashore", "culture-building-debt",
+    "barbarian-bargain", "barbarian-scouts-are-scouts", "bounded-recovery",
+    "buildings-before-projects", "competition-victory-points",
+    "culture-building-debt", "early-contact-window", "engine-faith-price",
     "escort-unstick", "founder-temple", "great-person-housing",
     "holy-lane-parity", "idle-faith-patronage", "inquisition-on-threat",
-    "loyalty-rate-alarm", "opportunistic-war", "peacetime-deterrence",
+    "lane-culture-spending", "loyalty-rate-alarm", "maintenance-aware-deck",
+    "opportunistic-war", "peacetime-deterrence", "price-the-suzerainty",
     "raid-pillage-prizes", "recon-replacement", "recorded-tactical-step",
-    "relief-targets-the-siege", "score-horizon", "settle-sooner",
-    "settler-threat-detour", "strike-opening", "war-economy",
-    "war-reinforcement", "whole-turn-backtrack-guard", "wide-map-capacity",
-    "wonder-ring-settle-value",
+    "relief-targets-the-siege", "religious-units-heal-first", "score-horizon",
+    "settle-sooner", "settler-threat-detour", "strike-opening",
+    "theology-for-founders", "war-economy", "war-reinforcement",
+    "wide-map-capacity",
 )
 
 
@@ -651,24 +650,21 @@ class TheDeploymentAuthority(unittest.TestCase):
     ledger records it, and the Rust mirror re-derives under the recorded one.
     This PR publishes the posterior and does NOT throw the switch."""
 
-    def test_the_shipped_genome_is_unchanged_and_the_threshold_rule_wrote_it(self):
-        """★★★★ THE GENOME THIS PR DID NOT MOVE.
+    def test_the_shipped_genome_matches_the_approved_standard_cutoff(self):
+        """★★★★ THE GENOME THIS PR MOVES.
 
-        The 31 tags below are `docs/gene_ledger.json`'s `default_on` set as it
-        stood on 2026-08-23, before the posterior existed. A change here is a
-        change to what the agent plays in every verification game, and it is
-        the operator's call: if you are moving a default deliberately -- a new
-        screen, a new directive -- update this tuple in the same change and
-        say which gene moved and why in the pull request. If you did not mean
-        to move one, this test has just caught a regeneration that did."""
+        These 36 tags are `docs/gene_ledger.json`'s `default_on` set after the
+        operator promoted the 38,160-seat standard cutoff. A change here is a
+        change to what the agent plays in every verification game, so it must
+        name its new evidence and reason in the pull request."""
         ledger = json.loads(gene_ledger.LEDGER_JSON.read_text())
         self.assertEqual(gene_ledger.authority_of(ledger), "columns")
         self.assertEqual(gene_ledger.AUTHORITY, "columns")
         self.assertEqual(
             tuple(sorted(g["tag"] for g in ledger["genes"] if g["default_on"])),
-            DEPLOYED_GENOME_20260823,
+            DEPLOYED_GENOME_20260824,
         )
-        self.assertEqual(ledger["counts"]["default_on"], len(DEPLOYED_GENOME_20260823))
+        self.assertEqual(ledger["counts"]["default_on"], len(DEPLOYED_GENOME_20260824))
         # And every one of them is the threshold rule's own call, so the
         # posterior beside it has touched nothing.
         for gene in ledger["genes"]:
@@ -703,15 +699,11 @@ class TheDeploymentAuthority(unittest.TestCase):
         # re-admit whatever the sign-of-Diff veto removed without a resolved
         # negative record.
         #
-        # ⭐ THE DELTA SHRANK 3 -> 1 ON THE STANDARD SCREEN, and that is the
-        # useful reading of it. The gap between the two rules is genes whose
-        # columns like them and whose pooled record is negative-but-unresolved,
-        # which is a shortage of evidence, not a disagreement about method. A
-        # 23,622-paired-seat screen resolved two of the three: `war-economy`
-        # and `apostle-promotion-by-role` now clear the sign veto outright and
-        # ship under BOTH rules. Only `siege-commitment` still divides them.
-        self.assertEqual(counts["default_on_under_posterior-veto"], 34)
-        self.assertEqual(counts["default_on_under_posterior"], 34)
+        # The 38,160-seat cutoff changes the shipped columns call, but this
+        # authority comparison still has one unresolved sign-veto exception:
+        # only `siege-commitment` divides the columns and posterior calls.
+        self.assertEqual(counts["default_on_under_posterior-veto"], 37)
+        self.assertEqual(counts["default_on_under_posterior"], 37)
         self.assertEqual(counts["moved_by_posterior-veto"], 1)
         self.assertEqual(counts["moved_by_posterior"], 1)
 
@@ -1091,17 +1083,25 @@ class PreFingerprintSources(unittest.TestCase):
         self.assertIn("pre-fingerprint", printed.getvalue())
         self.assertIn("predate the build stamp", printed.getvalue())
 
-    def test_every_source_the_ledger_records_today_is_pre_fingerprint(self):
-        """⚠ This is the boundary. Everything already in the ledger predates
-        the stamp; the moment a stamped source is recorded it is checked, and
-        it cannot become history by having its block removed without that
-        removal showing up here."""
+    def test_recorded_sources_keep_their_build_provenance(self):
+        """⚠ This is the boundary. The 38,160-seat cutoff is the first stamped
+        source; older history stays visibly pre-fingerprint. A stamped source
+        cannot become history by having its block removed without that removal
+        showing up here."""
         current = json.loads(gene_ledger.LEDGER_JSON.read_text())
+        stamped = []
         for source in current["sources"]:
             data = gene_ledger.load_source(gene_ledger.ROOT / source["path"])
-            self.assertEqual(gene_ledger.build_state(data), "pre-fingerprint",
-                             source["path"])
-            self.assertNotIn("build", source, source["path"])
+            if gene_ledger.build_state(data) == "stamped":
+                stamped.append(source["path"])
+                self.assertIn("build", source, source["path"])
+            else:
+                self.assertEqual(gene_ledger.build_state(data), "pre-fingerprint",
+                                 source["path"])
+                self.assertNotIn("build", source, source["path"])
+        self.assertEqual(stamped, [
+            "docs/gene_screens/2026-08-24-standard-continuous-38160-total-seats.json"
+        ])
 
     def test_a_stamped_source_cannot_be_grandfathered_by_a_blank_stamp(self):
         data = analysis([{"tag": "a"}])
@@ -1192,8 +1192,9 @@ class GeneratedFiles(unittest.TestCase):
         self.assertEqual(genes.render(ledger), genes.RANKING_MD.read_text(),
                          "HEURISTIC_GENE_RANKING.md is stale: run tools/genes.py write")
 
-    def test_reporting_batches_refresh_the_table_but_not_the_deployment_genome(self):
-        """A display-only screen must never re-price a game default."""
+    def test_display_batches_do_not_change_deployment_beyond_sources(self):
+        """A display-only screen cannot re-price a default, even if the newest
+        slot is also an explicitly promoted authoritative source."""
         current = json.loads(gene_ledger.LEDGER_JSON.read_text())
         authority = gene_ledger.authority_of(current)
         deployment_only = gene_ledger.build_ledger(
@@ -1221,10 +1222,10 @@ class GeneratedFiles(unittest.TestCase):
                          "e385d263853e0f9e94b738036e44136978fc10f1")
         self.assertFalse(newest["build"]["dirty"])
         self.assertNotIn("unverified", newest)
-        self.assertNotIn(newest["path"], {s["path"] for s in current["sources"]})
+        self.assertIn(newest["path"], {s["path"] for s in current["sources"]})
         authoritative, _ = ranking.load_sources(current)
         displayed, _ = ranking.load_display_sources(current)
-        self.assertNotIn("engine-faith-price", authoritative)
+        self.assertIn("engine-faith-price", authoritative)
         self.assertIn("engine-faith-price", displayed)
 
     def test_the_verdict_block_sits_under_the_rows_and_names_every_gene_once(self):
@@ -1628,16 +1629,16 @@ class TheTableIsDerived(unittest.TestCase):
         removed eight genes calling readings up to that "inside the noise".
         """
         self.assertAlmostEqual(ranking.column_se(1.0), ranking.PER / 200.0)
-        # Proved from a screen's own numbers rather than asserted: a foldover
-        # holds the arms symmetric about chance, so `column / column_se` must
-        # reproduce the screen's `win_z` exactly, which it can only do if the
-        # column and its error are on the same (halved) scale.
+        # Proved from a screen's own numbers rather than asserted: the
+        # resolution column is half the on-off difference, so `column /
+        # column_se` must reproduce `win_z` exactly. An independent screen's
+        # arms need not be symmetric about chance, which is why this uses the
+        # measured difference instead of `win_on - chance`.
         ledger = json.loads(ranking.LEDGER_JSON.read_text())
         source = ledger["sources"][-1]
         data = json.loads((ranking.ROOT / source["path"]).read_text())
-        chance = 1.0 / int(data["profile"]["players"])
         for gene in data["genes"]:
-            column = (float(gene["win_on"]) - chance) * ranking.PER
+            column = float(gene["win_delta_pp"]) * ranking.PER / 200.0
             se = ranking.column_se(float(gene["win_se_pp"]))
             self.assertAlmostEqual(column / se, float(gene["win_z"]), places=6, msg=gene["tag"])
 
@@ -1690,11 +1691,17 @@ class TheTableIsDerived(unittest.TestCase):
         The long reference remains below the tables; this is the operator's
         requested at-a-glance explanation of the *Default* column.
         """
+        ledger = json.loads(ranking.LEDGER_JSON.read_text())
+        reporting = ranking.load_reporting_batches(ledger)
+        authoritative = {source["path"] for source in ledger["sources"]}
+        newest_is_authoritative = bool(reporting) and (
+            reporting[0]["meta"]["path"] in authoritative
+        )
         lines = ranking.RANKING_MD.read_text().splitlines()
         self.assertEqual(lines[0], "# The heuristic gene ranking")
         self.assertEqual(lines[1], "")
         self.assertEqual(
-            lines[2], ranking.default_on_summary("columns"),
+            lines[2], ranking.default_on_summary("columns", newest_is_authoritative),
             "the heading summary must derive from the deployment thresholds",
         )
         self.assertEqual(lines[3], "")
@@ -2064,41 +2071,40 @@ class TheStandardScreen(unittest.TestCase):
             self.assertAlmostEqual(by_tag[tag]["win_z"], z, places=2, msg=tag)
 
     def test_governor_victory_lanes_is_the_largest_correctable_defect(self):
-        """RESOLVED 2026-08-23. It shipped ON, promoted on P10's single +46
-        column; the deployment shape read it at −237 [−267, −206]; and the
-        pre-registered direct arm `g1` (600 map pairs, seeds 150000000+,
-        disjoint from the whole-genome screen's maps) confirmed −4.78 pp at
-        win z −6.11. The threshold rule then wrote it **off** — both clauses
-        agreeing, so it does not rest on the marginal Diff veto.
+        """RESOLVED. It shipped ON, promoted on P10's single +46 column; the
+        23,622-seat deployment shape read it at −237, and the pre-registered
+        direct arm `g1` confirmed −4.78 pp at win z −6.11. The newly promoted
+        38,160-seat cutoff independently reads −2.21 pp at z −5.81, so the
+        threshold rule remains **off** without relying on the marginal Diff
+        veto.
 
-        ⭐ AND THE THREE WINDOWS NOW TELL THE WHOLE STORY IN ONE ROW: g1 at
-        −239, the whole-genome standard screen at −237, and behind them the
-        legacy +46 that promoted the gene in the first place. Under two
-        columns the promotion simply disappeared from the table; the third
-        window is where a reader can still see it."""
+        ⭐ THE THREE DEPLOYMENT WINDOWS NOW TELL THE CURRENT STORY IN ONE ROW:
+        the cutoff at −110, g1 at −239, and the whole-genome standard screen
+        at −237. The legacy +46 remains in the pooled record as the original
+        promotion, even though it has now fallen beyond the printed third
+        window."""
         row = next(g for g in self.ledger["genes"]
                    if g["tag"] == "governor-victory-lanes")
         self.assertFalse(row["default_on"], "g1 resolved it off")
         self.assertEqual(row["verdict"], "hurts")
-        self.assertEqual(row["wins_last_10k"], -239, "g1, the direct arm")
-        self.assertEqual(row["wins_prior_10k"], -237, "the whole-genome standard screen")
-        self.assertEqual(row["wins_third_10k"], 46, "the column that promoted it")
+        self.assertEqual(row["wins_last_10k"], -110, "the 38,160-seat cutoff")
+        self.assertEqual(row["wins_prior_10k"], -239, "g1, the direct arm")
+        self.assertEqual(row["wins_third_10k"], -237, "the whole-genome standard screen")
         legacy, standard, pooled = self.pools("governor-victory-lanes")
         self.assertEqual((round(legacy["effect"]), round(legacy["lo"]),
                           round(legacy["hi"])), (46, 9, 82))
-        # ⭐ THE TWO STANDARD READINGS AGREE TO WITHIN 0.05 pp, so the
-        # random-effects pool of them carries tau = 0 — no between-screen
-        # disagreement at all, on two independent seed windows.
+        # The third standard window is still strongly harmful but smaller, so
+        # the random-effects pool carries its between-window disagreement.
         self.assertEqual((round(standard["effect"]), round(standard["lo"]),
-                          round(standard["hi"])), (-237, -265, -209))
-        self.assertEqual(round(standard["tau"]), 0)
-        self.assertEqual(standard["screens"], 2)
+                          round(standard["hi"])), (-193, -287, -100))
+        self.assertEqual(round(standard["tau"]), 78)
+        self.assertEqual(standard["screens"], 3)
         # The two instruments do not merely disagree, they do not come close.
-        self.assertGreater(legacy["lo"] - standard["hi"], 200)
+        self.assertGreater(legacy["lo"] - standard["hi"], 100)
         # So the pool across shapes is a warning, not an answer, and it is the
-        # figure the LEDGER publishes over all three screens.
+        # figure the LEDGER publishes over all four screens.
         self.assertEqual(round(row["posterior_tau_pp"]), round(pooled["tau"]))
-        self.assertEqual(row["posterior_screens"], 3)
+        self.assertEqual(row["posterior_screens"], 4)
         self.assertEqual(gene_ledger.posterior_call(pooled["effect"], pooled["se"]),
                          "unresolved")
         self.assertEqual(gene_ledger.posterior_call(standard["effect"],
@@ -2113,10 +2119,10 @@ class TheStandardScreen(unittest.TestCase):
         agrees on BOTH axes, so the conflict is gone."""
         row = next(g for g in self.ledger["genes"]
                    if g["tag"] == "governor-victory-lanes")
-        # g1 is the current screen: both axes negative, no conflict left.
+        # The current cutoff has both axes negative, so no conflict remains.
         self.assertFalse(row["conflict"], "both axes now agree")
-        self.assertAlmostEqual(row["screen"]["win_z"], -6.11, places=2)
-        self.assertAlmostEqual(row["screen"]["share_z"], -23.76, places=2)
+        self.assertAlmostEqual(row["screen"]["win_z"], -5.81, places=2)
+        self.assertAlmostEqual(row["screen"]["share_z"], -16.41, places=2)
         # P10's share axis (−15.92) landed within half a sigma of what the
         # deployment shape's WIN axis said a day later (−15.37).
         self.assertLess(abs(15.92 - abs(self.STANDARD["governor-victory-lanes"][1])),
