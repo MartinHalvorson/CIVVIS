@@ -121,7 +121,11 @@ mod tests {
         assert_eq!(prince.barbarian_spec().order, 6);
         assert_eq!(prince.barbarian_spec().barb_force_scale, 1.5);
         assert_eq!(prince.barbarian_spec().barb_spawn_scale, 0.5);
-        assert_eq!(prince.difficulty_spec().order, 3, "the majors' rung is untouched");
+        assert_eq!(
+            prince.difficulty_spec().order,
+            3,
+            "the majors' rung is untouched"
+        );
         assert_eq!(prince.handicap_combat_strength(1), 0.0);
 
         // The rung can be set to any ladder key, and to nothing else.
@@ -133,7 +137,10 @@ mod tests {
 
         // A save without the field plays Immortal barbarians too.
         let mut value = serde_json::to_value(&prince).unwrap();
-        value.as_object_mut().unwrap().remove("barbarian_difficulty");
+        value
+            .as_object_mut()
+            .unwrap()
+            .remove("barbarian_difficulty");
         let old: Game = serde_json::from_value(value).unwrap();
         assert_eq!(old.barbarian_difficulty, "immortal");
     }
