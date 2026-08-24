@@ -1,5 +1,7 @@
 # CIVVIS
 
+> **Note (2026-08-24) — how tournament genomes are drawn.** Every tournament genome starts from our default genome, so the tournament selects for genes that improve on high-level play rather than on some baseline. From that default, each default-"on" gene has a ¼ chance of turning off and each default-"off" gene has a ¼ chance of turning on. A gene that is on then plays its top version 60% of the time and one of its other versions (picked at random among the rest) 40% of the time; a gene with only one version plays that version.
+
 Try CIVVIS yourself at [civvis.ai](https://www.civvis.ai)
 
 The Lv 4 (Prince) is the highest level beat so far, using computer control to bridge the gap between CIVVIS and Firaxis Civ 6. I try to keep the [YouTube](https://www.youtube.com/@civvis) channel somewhat up to date with the latest progress.

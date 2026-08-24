@@ -2181,6 +2181,60 @@ impl AdvancedAi {
         self.missionary_evades_raiders = false;
     }
 
+    /// The religious defence grows with how much of a rival's religious
+    /// victory is already done — every civilization is a veto on it — naming
+    /// and targeting the stakes faith from half a victory and spending on it
+    /// from match point; the Inquisitor walks to the heresy instead of
+    /// spending its charges where it was bought. See
+    /// [`AdvancedAi::religious_veto_defence`]. Opt-in gene
+    /// `religious-veto-defence`.
+    pub fn enable_religious_veto_defence(&mut self) {
+        self.religious_veto_defence = true;
+    }
+
+    /// The twin of `enable_religious_veto_defence`.
+    pub fn disable_religious_veto_defence(&mut self) {
+        self.religious_veto_defence = false;
+    }
+
+    /// A quote is chosen by our own net value instead of the most balanced
+    /// exchange on the board (`min(our gain, their gain)`), which threw away
+    /// the ordering `Game::quick_deals` already produced by our gain. See
+    /// `BasicAi::deals_for_our_gain`. Opt-in gene `deals-for-our-gain`.
+    pub fn enable_deals_for_our_gain(&mut self) {
+        self.base.deals_for_our_gain = true;
+    }
+
+    /// The twin of `enable_deals_for_our_gain`.
+    pub fn disable_deals_for_our_gain(&mut self) {
+        self.base.deals_for_our_gain = false;
+    }
+
+    /// The chosen quote's Gold is moved to the counterparty's walk-away less
+    /// two Gold — a sale asks for more, a purchase pays less — where the
+    /// shipped quote split the surplus down the middle; the midpoint quote
+    /// stays the fallback. See `BasicAi::deals_at_the_ceiling`. Opt-in gene
+    /// `deals-at-the-ceiling`.
+    pub fn enable_deals_at_the_ceiling(&mut self) {
+        self.base.deals_at_the_ceiling = true;
+    }
+
+    /// The twin of `enable_deals_at_the_ceiling`.
+    pub fn disable_deals_at_the_ceiling(&mut self) {
+        self.base.deals_at_the_ceiling = false;
+    }
+
+    /// Friendship and alliance proposals no longer bundle one-way Open
+    /// Borders, which every ask handed out for nothing once Early Empire was
+    /// in; passage is sold through the quote lane. See
+    /// `BasicAi::no_free_passage`. Opt-in gene `no-free-passage`.
+    pub fn enable_no_free_passage(&mut self) {
+        self.base.no_free_passage = true;
+    }
+
+    /// The twin of `enable_no_free_passage`.
+    pub fn disable_no_free_passage(&mut self) {
+        self.base.no_free_passage = false;
     /// From the midpoint of the game an adaptive seat commits to the victory
     /// lane it leads the field in and holds that plan, in place of the
     /// per-turn best-progress pick. See
@@ -2194,6 +2248,7 @@ impl AdvancedAi {
     /// The twin of `enable_lane_commit`.
     pub fn disable_lane_commit(&mut self) {
         self.lane_commit = false;
+||||||| a5a2352b
     }
     // Append points, one per name range: a new treatment goes under the range
     // its own name falls in, so that two of them do not append to one line.
