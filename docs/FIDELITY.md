@@ -226,7 +226,67 @@ games near 250 turns, not more games of any length.
 count with no window beside it is what four iterations of work on this lane were
 aimed at.
 
-CENSUS_BLOCK
+### The census, and why the default stays off
+
+`soak` now takes the `--native-competitions` switch `simulate` already had,
+so the rule can be priced instead of argued about. Both arms run the standard
+screen's own shape — 6 majors, 74×46 continents, nine city-states, Online
+speed, 250 turns — **on the same seeds**, so every pair of rows is one world
+played with and without the rule:
+
+```
+civvis soak --games N --start-seed 41000 --players 6 --width 74 --height 46 \
+  --city-states 9 --map continents --speed online --turns 250 [--native-competitions]
+```
+
+**n = 150 paired seeds per arm** (41000–41149), 300 games.
+
+| ending | off | on |
+|---|---:|---:|
+| score | 57 (38.0%) | 61 (40.7%) |
+| religious | 58 (38.7%) | 62 (41.3%) |
+| culture | 15 (10.0%) | 17 (11.3%) |
+| science | 17 (11.3%) | 10 (6.7%) |
+| diplomatic | 3 (2.0%) | 0 (0.0%) |
+
+The diplomatic share is **3/150 off (95% Wilson 0.7–5.7%)**
+against **0/150 on (0.0–2.5%)**. Those intervals overlap
+almost completely: at this sample the census cannot distinguish the two arms on
+endings at all, and it is not a null result dressed up — it is a sample size.
+
+The Diplomatic Victory Points themselves resolve much better, because every game
+reports one number rather than a rare event. `soak` now prints `DVP best=N/20`,
+the highest total any major reached:
+
+| | median | mean | max | reached 20 |
+|---|---:|---:|---:|---:|
+| off | 13 | 11.6 | 21 | 3/150 |
+| on | 13 | 12.0 | 19 | 0/150 |
+
+Paired, the rule is worth **+0.35 Diplomatic Victory Points to the leading
+empire per game** (95% CI +0.05 to +0.64, n=150 paired seeds). The effect
+is real and it is small, and the reason is arithmetic rather than a defect. A
+competition pays **one** empire, and a 250-turn Online game reaches the Modern
+era around turn 150 and the Information era at the end, so it can seat perhaps
+three or four congress competitions before the clock; the four or five points
+those pay are shared among six empires, and the leader keeps a fraction of them.
+
+⚠ **The framing this section carried was wrong, and the census is what corrects
+it.** "A native empire has no route to 20" is not what a native game does. Off,
+the leading empire finishes on a median of **13** of the 20 a Diplomatic
+victory needs, and 3 of 150 games crossed the line without any competition at
+all — the congress resolution at ±2 from the Modern era does most of that work.
+The lane is not unreachable; it is short by about a third, and seven competitions
+close a small fraction of that gap rather than the whole of it.
+
+**So the flag ships off, with the census recorded.** Turning it on would move
+every native number this repository has recorded — the frozen rating anchor, the
+gene ledger's columns, every screen filed against them — and it would buy a third
+of a Diplomatic Victory Point for the leader and no measurable change in what
+ends a game. That is not the trade a protocol event is for. What it does buy is
+available to anything that asks: `simulate --native-competitions`,
+`soak --native-competitions`, and one line in a screen that wants a contested
+field where a rival can actually pursue the lane.
 
 ### The content sources are not the problem
 

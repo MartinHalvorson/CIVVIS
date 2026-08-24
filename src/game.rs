@@ -3377,15 +3377,23 @@ impl NativeCompetitionSpec {
 
 /// A scored competition CIVVIS runs itself, rather than observing on a host.
 ///
-/// ★★★★★ THE DIPLOMATIC LANE'S LARGEST SOURCE. Gathering Storm pays a
-/// Diplomatic Victory Point to the first-place finisher of a scored
-/// competition, and they recur for the whole second half of a game. Without
-/// them a native empire has no route to the twenty a Diplomatic victory needs:
-/// the congress resolution is ±2 from the Modern era, the three wonders are
-/// worth seven and 31 of 32 diplomatic games finish none, and the civic and
-/// technology are worth one each in the Future era. Live, 19.6% of terminal
-/// games end in a rival's diplomatic victory; on the contested screen CIVVIS
-/// produced 1.7%. See `docs/FIDELITY.md`.
+/// ★★★★★ THE HALF OF THE DIPLOMATIC LANE A NATIVE GAME NEVER HAD. Gathering
+/// Storm pays a Diplomatic Victory Point to the first-place finisher of a
+/// scored competition, and they recur for the whole second half of a game.
+/// Live, 19.6% of terminal games end in a rival's diplomatic victory; on the
+/// contested native screen CIVVIS produced 1.7%.
+///
+/// ⚠ **"Without them a native empire has no route to twenty" is what this
+/// comment said, and #2379's census says otherwise.** At the standard screen's
+/// shape — 6 majors, 74×46 continents, nine city-states, Online, 250 turns,
+/// 150 paired seeds an arm from 41000 — the leading empire finishes on a
+/// **median of 13** of the 20 with competitions off, and 3 of 150 games crossed
+/// the line without one; the congress resolution at ±2 from the Modern era does
+/// most of that. Turning all seven competitions on is worth **+0.35 points to
+/// the leader per game (95% CI +0.05 to +0.64)** and moved the diplomatic
+/// ending share from 3/150 to 0/150. The lane is short by about a third, not
+/// unreachable, and this closes a fraction of the gap rather than the whole of
+/// it — which is why the flag ships off. See `docs/FIDELITY.md`.
 ///
 /// Unlike [`HostCompetition`], which is one mirrored seat's view of a host's
 /// competition, this holds every seat's score because CIVVIS is running it.
