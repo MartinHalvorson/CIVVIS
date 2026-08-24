@@ -2737,6 +2737,33 @@ impl Rules {
             .collect()
     }
 
+    /// The shipped ruleset files with extra bundles merged into the imported
+    /// modifier catalog.
+    ///
+    /// Tests used to hand `Rules::from_values` a `modifiers` map containing
+    /// only their own fixture. That was harmless while `data/modifiers.json`
+    /// was empty and is not now: the catalog is imported from the shipped
+    /// `Modifiers` tables, and civics, technologies, wonders, districts,
+    /// buildings, governments, promotions and Great People attach its bundles
+    /// by name. Replacing it outright leaves every one of those references
+    /// dangling, so the ruleset refuses to build and the fixture's own subject
+    /// is never reached.
+    #[cfg(test)]
+    pub(crate) fn shipped_values_with(
+        bundles: serde_json::Value,
+    ) -> BTreeMap<String, serde_json::Value> {
+        let mut files = Rules::shipped_values();
+        let catalog = files
+            .get_mut("modifiers")
+            .and_then(serde_json::Value::as_object_mut)
+            .expect("the shipped modifier catalog is an object");
+        let serde_json::Value::Object(bundles) = bundles else {
+            panic!("test bundles must be a JSON object");
+        };
+        catalog.extend(bundles);
+        files
+    }
+
     /// Install a ruleset as the active one. Fails if a game has already read
     /// the ruleset, because half a game on one set of rules and half on
     /// another is not a state worth supporting.
@@ -3395,9 +3422,20 @@ mod tests {
         // 6-player 200-turn games. Each addition takes its class, era, cost
         // and charges from `GreatPersonIndividuals` and `Eras`, so the
         // fidelity audit still reports zero divergent fields.
+        // Moved again by the imported modifier catalog. `data/modifiers.json`
+        // is no longer empty: `tools/civ6_modifiers.py --emit-catalog` writes
+        // one bundle per shipped `Modifiers` row of a declared effect, and the
+        // ruleset object the game says owns that row attaches it by name. Most
+        // of the fold restores the number CIVVIS already carried, so the
+        // fingerprint moves without the ruleset changing; four rows do change
+        // it. Eleven civics now award the Envoys `GRANT_INFLUENCE_TOKEN` gives
+        // them (CIVVIS carried two of the thirteen), Jakob Fugger awards his
+        // two, Sweeping Wind gains the `MOD_MOVE_AFTER_ATTACKING` it shares
+        // with Elite Guard and Breakthrough, and Computers multiplies Tourism
+        // by the +25% `COMPUTERS_BOOST_ALL_TOURISM` states instead of +100%.
         assert_eq!(
             Rules::shipped().source_fingerprint(),
-            "fnv1a64:95f0f5b6c8117d55"
+            "fnv1a64:d98cbaa5295c3e34"
         );
     }
 
@@ -3530,9 +3568,7 @@ mod tests {
 
     #[test]
     fn named_modifiers_compose_and_attach_to_any_effect_bearing_spec() {
-        let mut files = Rules::shipped_values();
-        files.insert(
-            "modifiers".to_string(),
+        let mut files = Rules::shipped_values_with(
             json!({
                 "production_seed": {
                     "effects": {"city_production": 2, "builder_production_pct": 12},
@@ -3628,9 +3664,7 @@ mod tests {
         };
         assert!(!requirements.matches(&dark));
 
-        let mut files = Rules::shipped_values();
-        files.insert(
-            "modifiers".to_string(),
+        let files = Rules::shipped_values_with(
             json!({
                 "city_bundle": {
                     "collection": "player_cities",
@@ -3654,9 +3688,7 @@ mod tests {
 
     #[test]
     fn contextual_modifier_attachments_are_not_flattened_into_static_rules() {
-        let mut files = Rules::shipped_values();
-        files.insert(
-            "modifiers".to_string(),
+        let mut files = Rules::shipped_values_with(
             json!({
                 "conditional": {
                     "requirements": {"all": [{"government": "democracy"}]},
@@ -3671,11 +3703,8 @@ mod tests {
             "{error}"
         );
 
-        let mut invalid = Rules::shipped_values();
-        invalid.insert(
-            "modifiers".to_string(),
-            json!({"bad": {"requirements": {"all": [{}]}}}),
-        );
+        let invalid =
+            Rules::shipped_values_with(json!({"bad": {"requirements": {"all": [{}]}}}));
         let error = Rules::from_values(invalid).err().unwrap();
         assert!(error.contains("empty all requirement"), "{error}");
     }

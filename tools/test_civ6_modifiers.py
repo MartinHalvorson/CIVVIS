@@ -185,5 +185,180 @@ class ActiveModifiers(unittest.TestCase):
         self.assertEqual(modifiers.active_modifier_ids(), set())
 
 
+class CatalogImport(unittest.TestCase):
+    """The refusals, because a wrongly imported row is worse than a missing one.
+
+    These run on hermetic fixtures rather than the game database, so they gate
+    the translation rules on a CI runner that has no Civilization VI install.
+    """
+
+    def build(self, xml: str):
+        modifiers = civ6_modifiers.Modifiers()
+        apply_xml(modifiers, xml)
+        return civ6_modifiers.build_catalog(modifiers, civ6_modifiers.REPO / "data")
+
+    def test_a_declared_effect_on_a_modelled_owner_is_translated(self):
+        catalog, wiring, skipped = self.build("""\
+<GameInfo>
+  <DynamicModifiers>
+    <Row ModifierType="SIGHT_TYPE" CollectionType="COLLECTION_OWNER"
+         EffectType="EFFECT_ADJUST_UNIT_SIGHT" />
+  </DynamicModifiers>
+  <Modifiers>
+    <Row ModifierId="fixture_sight" ModifierType="SIGHT_TYPE" />
+  </Modifiers>
+  <ModifierArguments>
+    <Row ModifierId="fixture_sight" Name="Amount" Value="2" />
+  </ModifierArguments>
+  <UnitPromotionModifiers>
+    <Row UnitPromotionType="PROMOTION_SPYGLASS" ModifierId="fixture_sight" />
+  </UnitPromotionModifiers>
+</GameInfo>
+""")
+        self.assertEqual(catalog, {"fixture_sight": {"effects": {"sight": 2}}})
+        self.assertEqual(wiring, {"promotions": {"spyglass": ["fixture_sight"]}})
+        self.assertEqual(skipped, [])
+
+    def test_a_row_with_a_requirement_set_is_refused(self):
+        catalog, _, skipped = self.build("""\
+<GameInfo>
+  <DynamicModifiers>
+    <Row ModifierType="SIGHT_TYPE" CollectionType="COLLECTION_OWNER"
+         EffectType="EFFECT_ADJUST_UNIT_SIGHT" />
+  </DynamicModifiers>
+  <Modifiers>
+    <Row ModifierId="fixture_sight" ModifierType="SIGHT_TYPE"
+         SubjectRequirementSetId="WHEN_EMBARKED" />
+  </Modifiers>
+  <ModifierArguments>
+    <Row ModifierId="fixture_sight" Name="Amount" Value="2" />
+  </ModifierArguments>
+  <RequirementSets>
+    <Row RequirementSetId="WHEN_EMBARKED" RequirementSetType="REQUIREMENTSET_TEST_ALL" />
+  </RequirementSets>
+  <RequirementSetRequirements>
+    <Row RequirementSetId="WHEN_EMBARKED" RequirementId="UNIT_EMBARKED" />
+  </RequirementSetRequirements>
+  <Requirements>
+    <Row RequirementId="UNIT_EMBARKED" RequirementType="REQUIREMENT_UNIT_EMBARKED" />
+  </Requirements>
+  <UnitPromotionModifiers>
+    <Row UnitPromotionType="PROMOTION_SPYGLASS" ModifierId="fixture_sight" />
+  </UnitPromotionModifiers>
+</GameInfo>
+""")
+        self.assertEqual(catalog, {})
+        self.assertEqual(len(skipped), 1)
+        self.assertIn("requirement set cannot express", skipped[0])
+
+    def test_a_collection_the_static_fold_cannot_scope_is_refused(self):
+        catalog, _, skipped = self.build("""\
+<GameInfo>
+  <DynamicModifiers>
+    <Row ModifierType="SIGHT_TYPE" CollectionType="COLLECTION_PLAYER_UNITS"
+         EffectType="EFFECT_ADJUST_UNIT_SIGHT" />
+  </DynamicModifiers>
+  <Modifiers>
+    <Row ModifierId="fixture_sight" ModifierType="SIGHT_TYPE" />
+  </Modifiers>
+  <ModifierArguments>
+    <Row ModifierId="fixture_sight" Name="Amount" Value="2" />
+  </ModifierArguments>
+  <UnitPromotionModifiers>
+    <Row UnitPromotionType="PROMOTION_SPYGLASS" ModifierId="fixture_sight" />
+  </UnitPromotionModifiers>
+</GameInfo>
+""")
+        self.assertEqual(catalog, {})
+        self.assertIn("not a flattenable collection", skipped[0])
+
+    def test_an_undeclared_effect_is_left_in_the_backlog(self):
+        catalog, wiring, skipped = self.build("""\
+<GameInfo>
+  <DynamicModifiers>
+    <Row ModifierType="MYSTERY_TYPE" CollectionType="COLLECTION_OWNER"
+         EffectType="EFFECT_SOMETHING_CIVVIS_DOES_NOT_MODEL" />
+  </DynamicModifiers>
+  <Modifiers>
+    <Row ModifierId="fixture_mystery" ModifierType="MYSTERY_TYPE" />
+  </Modifiers>
+  <UnitPromotionModifiers>
+    <Row UnitPromotionType="PROMOTION_SPYGLASS" ModifierId="fixture_mystery" />
+  </UnitPromotionModifiers>
+</GameInfo>
+""")
+        self.assertEqual((catalog, wiring, skipped), ({}, {}, []))
+
+    def test_an_owner_civvis_does_not_model_emits_nothing(self):
+        catalog, wiring, _ = self.build("""\
+<GameInfo>
+  <DynamicModifiers>
+    <Row ModifierType="SIGHT_TYPE" CollectionType="COLLECTION_OWNER"
+         EffectType="EFFECT_ADJUST_UNIT_SIGHT" />
+  </DynamicModifiers>
+  <Modifiers>
+    <Row ModifierId="fixture_sight" ModifierType="SIGHT_TYPE" />
+  </Modifiers>
+  <ModifierArguments>
+    <Row ModifierId="fixture_sight" Name="Amount" Value="2" />
+  </ModifierArguments>
+  <UnitPromotionModifiers>
+    <Row UnitPromotionType="PROMOTION_NOT_IN_CIVVIS" ModifierId="fixture_sight" />
+  </UnitPromotionModifiers>
+</GameInfo>
+""")
+        self.assertEqual((catalog, wiring), ({}, {}))
+
+    def test_one_row_two_consumer_keys_becomes_two_bundles(self):
+        # GRANT_INFLUENCE_TOKEN's single-Envoy award is attached to five civics
+        # and to the Greek Acropolis. A tree node reads `free_envoys` and a
+        # district reads `envoys`, so one bundle carrying both would put a key
+        # on each owner that the other's consumer reads.
+        catalog, wiring, _ = self.build("""\
+<GameInfo>
+  <DynamicModifiers>
+    <Row ModifierType="ENVOY_TYPE" CollectionType="COLLECTION_OWNER"
+         EffectType="EFFECT_GRANT_INFLUENCE_TOKEN" />
+  </DynamicModifiers>
+  <Modifiers>
+    <Row ModifierId="fixture_envoy" ModifierType="ENVOY_TYPE" />
+  </Modifiers>
+  <ModifierArguments>
+    <Row ModifierId="fixture_envoy" Name="Amount" Value="1" />
+  </ModifierArguments>
+  <CivicModifiers>
+    <Row CivicType="CIVIC_MYSTICISM" ModifierId="fixture_envoy" />
+  </CivicModifiers>
+  <DistrictModifiers>
+    <Row DistrictType="DISTRICT_ACROPOLIS" ModifierId="fixture_envoy" />
+  </DistrictModifiers>
+</GameInfo>
+""")
+        self.assertEqual(
+            catalog,
+            {
+                "fixture_envoy__envoys": {"effects": {"envoys": 1}},
+                "fixture_envoy__free_envoys": {"effects": {"free_envoys": 1}},
+            },
+        )
+        self.assertEqual(
+            wiring,
+            {
+                "civics": {"mysticism": ["fixture_envoy__free_envoys"]},
+                "districts": {"acropolis": ["fixture_envoy__envoys"]},
+            },
+        )
+
+    def test_the_catalog_text_is_byte_stable_and_integral(self):
+        text = civ6_modifiers.catalog_json(
+            {"b": {"effects": {"z": 2.0, "a": 1.0}}, "a": {"effects": {"m": -3.0}}}
+        )
+        self.assertEqual(
+            text,
+            '{\n  "a": {\n    "effects": {\n      "m": -3\n    }\n  },\n'
+            '  "b": {\n    "effects": {\n      "a": 1,\n      "z": 2\n    }\n  }\n}\n',
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

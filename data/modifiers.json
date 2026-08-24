@@ -1,1 +1,192 @@
-{}
+{
+  "airport_bonus_air_slots": {
+    "effects": {
+      "air_slots": 1
+    }
+  },
+  "breakthrough_additional_attack": {
+    "effects": {
+      "extra_attacks": 1
+    }
+  },
+  "civic_award_one_influence_token__envoys": {
+    "effects": {
+      "envoys": 1
+    }
+  },
+  "civic_award_one_influence_token__free_envoys": {
+    "effects": {
+      "free_envoys": 1
+    }
+  },
+  "civic_award_three_influence_tokens": {
+    "effects": {
+      "free_envoys": 3
+    }
+  },
+  "civic_award_two_influence_tokens": {
+    "effects": {
+      "free_envoys": 2
+    }
+  },
+  "civic_mitigation_grant_diplovp": {
+    "effects": {
+      "diplomatic_victory_points": 1
+    }
+  },
+  "coincidence_rangefinding_bonus_range": {
+    "effects": {
+      "range": 1
+    }
+  },
+  "combustion_adjust_embarked_movement": {
+    "effects": {
+      "embarked_movement": 1
+    }
+  },
+  "computers_boost_all_tourism": {
+    "effects": {
+      "tourism_pct": 25
+    }
+  },
+  "elite_guard_additional_attack": {
+    "effects": {
+      "extra_attacks": 1
+    }
+  },
+  "environmentalism_boost_all_tourism": {
+    "effects": {
+      "tourism_pct": 25
+    }
+  },
+  "expert_marksman_additional_attack": {
+    "effects": {
+      "extra_attacks": 1
+    }
+  },
+  "fade_bonus_move_after_attacking": {
+    "effects": {
+      "move_after_attack": 1
+    }
+  },
+  "flight_deck_bonus_aircraft_slot": {
+    "effects": {
+      "aircraft_slots": 1
+    }
+  },
+  "folding_wings_bonus_aircraft_slot": {
+    "effects": {
+      "aircraft_slots": 1
+    }
+  },
+  "forward_observers_bonus_range": {
+    "effects": {
+      "range": 1
+    }
+  },
+  "greatperson_influence_tokens_medium": {
+    "effects": {
+      "envoys": 2
+    }
+  },
+  "hangar_bonus_air_slots": {
+    "effects": {
+      "air_slots": 1
+    }
+  },
+  "hangar_deck_bonus_aircraft_slot": {
+    "effects": {
+      "aircraft_slots": 1
+    }
+  },
+  "kilwa_three_influence_tokens": {
+    "effects": {
+      "envoys": 3
+    }
+  },
+  "long_range_bonus_range": {
+    "effects": {
+      "range": 2
+    }
+  },
+  "long_range_escort_bonus_range": {
+    "effects": {
+      "range": 2
+    }
+  },
+  "mahabodhi_diplovp": {
+    "effects": {
+      "diplomatic_victory_points": 2
+    }
+  },
+  "mod_move_after_attacking": {
+    "effects": {
+      "move_after_attack": 1
+    }
+  },
+  "observation_increased_sight_range": {
+    "effects": {
+      "sight": 1
+    }
+  },
+  "potala_diplovp": {
+    "effects": {
+      "diplomatic_victory_points": 1
+    }
+  },
+  "rutter_sight_bonus": {
+    "effects": {
+      "sight": 1
+    }
+  },
+  "scout_planes_bonus_sight": {
+    "effects": {
+      "sight": 1
+    }
+  },
+  "silent_running_move_after_attacking": {
+    "effects": {
+      "move_after_attack": 1
+    }
+  },
+  "spyglass_bonus_sight": {
+    "effects": {
+      "sight": 1
+    }
+  },
+  "square_rigging_adjust_embarked_movement": {
+    "effects": {
+      "embarked_movement": 1
+    }
+  },
+  "statueliberty_diplovp": {
+    "effects": {
+      "diplomatic_victory_points": 4
+    }
+  },
+  "steam_power_adjust_embarked_movement": {
+    "effects": {
+      "embarked_movement": 2
+    }
+  },
+  "sweeping_wind_additional_attack": {
+    "effects": {
+      "extra_attacks": 1
+    }
+  },
+  "synthetic_technocracy_tourism_penalty": {
+    "effects": {
+      "tourism_pct": -10
+    }
+  },
+  "tech_seasteads_diplovp": {
+    "effects": {
+      "diplomatic_victory_points": 1
+    }
+  },
+  "wolfpack_additional_attack": {
+    "effects": {
+      "extra_attacks": 1
+    }
+  }
+}

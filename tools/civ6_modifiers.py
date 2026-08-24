@@ -44,6 +44,7 @@ from civ6_fidelity import (  # noqa: E402
     REMOVE_DATA,
     REPO,
     find_install,
+    slug,
     truthy,
 )
 
@@ -561,6 +562,261 @@ def report(entries: list[dict], modifiers: Modifiers, install: Path, limit: int)
     return "\n".join(lines)
 
 
+# --------------------------------------------------------------- catalog import
+#
+# The census counts what CIVVIS cannot express. This half emits what it can:
+# every shipped modifier row of a declared effect becomes a named
+# ``ModifierSpec`` bundle in ``data/modifiers.json``, and the CIVVIS rules
+# object that the game says owns the row carries a ``modifiers: ["<bundle>"]``
+# reference to it. The engine's loader flattens that reference into the object's
+# ordinary effect map, so an imported row executes through the same consumer a
+# hand-written number used to, with one difference that is the whole point: the
+# number is the game's own.
+#
+# Three rules keep the import from inventing rules the game does not have.
+#
+# 1. AN EFFECT IS IMPORTED ONLY WHEN THIS FILE DECLARES A TRANSLATION. Anything
+#    else is left out and stays in the census as unmodelled. A row emitted with
+#    a key no consumer reads would be inert data counted as fidelity.
+# 2. A ROW CARRYING A REQUIREMENT SET IS REFUSED. `ModifierRequirement` covers
+#    player facts only, and the Diplomatic Quarter's Envoy row is conditional on
+#    plot adjacency. Emitting it unconditionally would hand every Diplomatic
+#    Quarter an Envoy it has not earned -- exactly the silent, everywhere wrong
+#    answer that is worse than no answer.
+# 3. ONLY `COLLECTION_OWNER` AND `COLLECTION_PLAYER` ARE FLATTENED. Those are
+#    the rows whose scope is the owning object's own; a `PLAYER_CITIES` or
+#    `PLAYER_UNITS` row means something the static fold cannot say, and the
+#    engine's `expand_modifier_attachments` rejects it rather than guessing.
+#
+# `--emit-catalog` writes the file and prints the wiring. `--check-catalog`
+# re-derives both from the database and fails on any drift, so the committed
+# catalog cannot quietly stop matching the shipped tables.
+
+# Which CIVVIS ruleset file each owner table names, and the prefix its rows
+# carry. `slug()` (shared with the rules audit) resolves the game's identifier
+# to CIVVIS' own spelling, aliases included.
+OWNER_FILES: dict[str, tuple[tuple[str, str], ...]] = {
+    "BuildingModifiers": (("buildings", "BUILDING_"), ("wonders", "BUILDING_")),
+    "WonderModifiers": (("wonders", "BUILDING_"),),
+    "DistrictModifiers": (("districts", "DISTRICT_"),),
+    "PolicyModifiers": (("policies", "POLICY_"),),
+    "CivicModifiers": (("civics", "CIVIC_"),),
+    "TechnologyModifiers": (("techs", "TECH_"),),
+    "GovernmentModifiers": (("governments", "GOVERNMENT_"),),
+    "UnitPromotionModifiers": (("promotions", "PROMOTION_"),),
+    "GreatPersonIndividualActionModifiers": (
+        ("great_people", "GREAT_PERSON_INDIVIDUAL_"),
+    ),
+}
+
+FLATTENABLE_COLLECTIONS = ("COLLECTION_OWNER", "COLLECTION_PLAYER")
+
+
+def _amount(arguments: dict[str, str], name: str = "Amount") -> int:
+    """A modifier argument as an integer.
+
+    Civ VI's own values are integers, and `docs/FIDELITY.md` requires rules
+    arithmetic to stay integral, so a non-integral argument is a translation
+    this table does not understand rather than something to round.
+    """
+    raw = arguments[name]
+    value = float(raw)
+    if value != int(value):
+        raise ValueError(f"{name}={raw} is not an integer")
+    return int(value)
+
+
+def _influence_token(arguments: dict[str, str], family: str) -> dict[str, float] | None:
+    # One shipped effect, two CIVVIS consumers: a tree node grants its Envoys
+    # from `free_envoys` when the node first completes, while a wonder,
+    # district or Great Person grants them from `envoys` at its own completion.
+    # The amount is the row's either way.
+    if family in ("techs", "civics"):
+        return {"free_envoys": _amount(arguments)}
+    if family in ("wonders", "districts", "buildings", "great_people"):
+        return {"envoys": _amount(arguments)}
+    return None
+
+
+# effect name -> (arguments, CIVVIS owner file) -> CIVVIS effect keys, or None
+# when this effect does not translate for that owner family.
+TRANSLATIONS: dict = {
+    # Diplomatic Victory Points, awarded once by a wonder or a tree node.
+    "ADJUST_PLAYER_DIPLOMATIC_VICTORY_POINTS": lambda arguments, family: (
+        {"diplomatic_victory_points": _amount(arguments)}
+        if family in ("wonders", "buildings", "techs", "civics")
+        else None
+    ),
+    "GRANT_INFLUENCE_TOKEN": _influence_token,
+    # Movement added to an embarked unit. CIVVIS reads it off the trees; the
+    # Great Lighthouse row is carried by that wonder's naval movement, which
+    # its own consumer already applies to embarked units.
+    "ADJUST_PLAYER_EMBARKED_UNIT_MOVEMENT": lambda arguments, family: (
+        {"embarked_movement": _amount(arguments)}
+        if family in ("techs", "civics")
+        else None
+    ),
+    # Percentage added to every Tourism source the empire produces.
+    "ADJUST_PLAYER_TOURISM": lambda arguments, family: (
+        {"tourism_pct": _amount(arguments)}
+        if family in ("techs", "civics", "governments")
+        else None
+    ),
+    # Air unit capacity: a promotion adds slots to its own unit, a building
+    # adds them to the district it sits in.
+    "GRANT_AIR_SLOTS": lambda arguments, family: (
+        {"aircraft_slots": _amount(arguments)} if family == "promotions" else None
+    ),
+    "ADJUST_PLAYER_DISTRICT_AIR_SLOTS": lambda arguments, family: (
+        {"air_slots": _amount(arguments)}
+        if family in ("buildings", "wonders")
+        else None
+    ),
+    # Per-unit combat and vision promotions.
+    "ADJUST_UNIT_SIGHT": lambda arguments, family: (
+        {"sight": _amount(arguments)} if family == "promotions" else None
+    ),
+    "ADJUST_UNIT_ATTACK_RANGE": lambda arguments, family: (
+        {"range": _amount(arguments)} if family == "promotions" else None
+    ),
+    "ADJUST_UNIT_NUM_ATTACKS": lambda arguments, family: (
+        {"extra_attacks": _amount(arguments)} if family == "promotions" else None
+    ),
+    "ADJUST_UNIT_ATTACK_AND_MOVE": lambda arguments, family: (
+        {"move_after_attack": 1}
+        if family == "promotions" and truthy(arguments.get("CanMove"))
+        else None
+    ),
+}
+
+
+def catalog_name(modifier_id: str) -> str:
+    return modifier_id.lower()
+
+
+def build_catalog(modifiers: Modifiers, data: Path) -> tuple[dict, dict, list[str]]:
+    """Translate the shipped rows into bundles plus the wiring they imply.
+
+    Returns ``(catalog, wiring, skipped)``. ``wiring`` maps a CIVVIS ruleset
+    file to the bundle names each of its objects must reference; ``skipped``
+    records every row of a declared effect that was deliberately not emitted,
+    with the reason, so the refusals are visible rather than silent.
+    """
+    owned: dict[str, dict] = {}
+    for name in sorted({file for tables in OWNER_FILES.values() for file, _ in tables}):
+        owned[name] = json.loads((data / f"{name}.json").read_text(encoding="utf-8"))
+
+    catalog: dict[str, dict] = {}
+    wiring: dict[str, dict[str, set[str]]] = collections.defaultdict(
+        lambda: collections.defaultdict(set)
+    )
+    skipped: list[str] = []
+
+    for modifier_id in sorted(modifiers.active_modifier_ids()):
+        effect, collection = modifiers.resolve(modifier_id)
+        translate = TRANSLATIONS.get(short(effect))
+        if translate is None:
+            continue
+        if collection not in FLATTENABLE_COLLECTIONS:
+            skipped.append(f"{modifier_id}: {collection} is not a flattenable collection")
+            continue
+        if modifiers.condition(modifier_id):
+            skipped.append(
+                f"{modifier_id}: carries {modifiers.condition(modifier_id).split(':')[0]}, "
+                "which the runtime requirement set cannot express"
+            )
+            continue
+        arguments = modifiers.arguments.get(modifier_id, {})
+        # Group this row's modelled owners by the effect keys they need. One
+        # row usually needs one key; the Envoy award is attached to both civics
+        # and a district, whose consumers read different keys, so it becomes two
+        # bundles rather than one bundle carrying a key its owner never reads.
+        by_keys: dict[str, list[tuple[str, str]]] = collections.defaultdict(list)
+        unmodelled = 0
+        for table, owner in zip(
+            modifiers.attachments.get(modifier_id, []),
+            modifiers.owners.get(modifier_id, []),
+        ):
+            for file, prefix in OWNER_FILES.get(table, ()):
+                name = slug(owner, prefix)
+                if name not in owned[file]:
+                    continue
+                try:
+                    keys = translate(arguments, file)
+                except (KeyError, ValueError) as error:
+                    skipped.append(f"{modifier_id}: {error}")
+                    keys = None
+                if keys is None:
+                    unmodelled += 1
+                    continue
+                by_keys[json.dumps(keys, sort_keys=True)].append((file, name))
+        if not by_keys:
+            if unmodelled:
+                skipped.append(
+                    f"{modifier_id}: no modelled owner whose family this effect translates for"
+                )
+            continue
+        suffixed = len(by_keys) > 1
+        for encoded, owners in sorted(by_keys.items()):
+            keys = json.loads(encoded)
+            name = catalog_name(modifier_id)
+            if suffixed:
+                name = f"{name}__{'_'.join(sorted(keys))}"
+            catalog[name] = {"effects": keys}
+            for file, obj in owners:
+                wiring[file][obj].add(name)
+
+    return (
+        catalog,
+        {file: {obj: sorted(names) for obj, names in sorted(objs.items())}
+         for file, objs in sorted(wiring.items())},
+        skipped,
+    )
+
+
+def catalog_json(catalog: dict) -> str:
+    """The catalog as the repository stores it: sorted, integral, newline-ended.
+
+    Byte stability matters twice over. `Rules::from_values` fingerprints the
+    ruleset source, and `--check-catalog` compares this text with the committed
+    file, so a re-import that reorders keys would read as drift.
+    """
+    def plain(value):
+        return int(value) if float(value) == int(value) else value
+
+    ordered = {
+        name: {"effects": {key: plain(value) for key, value in sorted(spec["effects"].items())}}
+        for name, spec in sorted(catalog.items())
+    }
+    return json.dumps(ordered, indent=2, sort_keys=True) + "\n"
+
+
+def check_wiring(wiring: dict, data: Path) -> list[str]:
+    """Every imported bundle is referenced by exactly the objects the game says own it."""
+    problems: list[str] = []
+    declared: dict[str, set[str]] = collections.defaultdict(set)
+    for file in sorted({file for tables in OWNER_FILES.values() for file, _ in tables}):
+        entries = json.loads((data / f"{file}.json").read_text(encoding="utf-8"))
+        for name, spec in entries.items():
+            if isinstance(spec, dict) and spec.get("modifiers"):
+                declared[file] |= {f"{name}\t{bundle}" for bundle in spec["modifiers"]}
+    for file, objects in wiring.items():
+        expected = {f"{obj}\t{bundle}" for obj, names in objects.items() for bundle in names}
+        for missing in sorted(expected - declared[file]):
+            obj, bundle = missing.split("\t")
+            problems.append(f"{file}.json: {obj} does not attach {bundle}")
+        for extra in sorted(declared[file] - expected):
+            obj, bundle = extra.split("\t")
+            problems.append(f"{file}.json: {obj} attaches {bundle}, which no shipped row grants it")
+    for file, entries in declared.items():
+        if file in wiring:
+            continue
+        for extra in sorted(entries):
+            obj, bundle = extra.split("\t")
+            problems.append(f"{file}.json: {obj} attaches {bundle}, which no shipped row grants it")
+    return problems
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--civ6", help="path to the Civilization VI install")
@@ -583,6 +839,19 @@ def main() -> int:
         "--describe",
         help="print the shipped descriptions matching this tag fragment, "
         "Gathering Storm wording first, and stop",
+    )
+    parser.add_argument(
+        "--emit-catalog",
+        nargs="?",
+        const=str(REPO / "data" / "modifiers.json"),
+        help="translate every shipped row of a declared effect into "
+        "data/modifiers.json and print the wiring it implies",
+    )
+    parser.add_argument(
+        "--check-catalog",
+        action="store_true",
+        help="re-derive the catalog and its wiring from the database and fail "
+        "on any drift from the committed ruleset",
     )
     parser.add_argument(
         "--max-unmodelled",
@@ -652,6 +921,41 @@ def main() -> int:
             marker = "GS  " if "EXPANSION2" in tag else "base"
             print(f"{marker} {tag}")
             print(f"     {text}")
+        return 0
+
+    if args.emit_catalog or args.check_catalog:
+        data = REPO / "data"
+        catalog, wiring, skipped = build_catalog(modifiers, data)
+        text = catalog_json(catalog)
+        problems = check_wiring(wiring, data)
+        if args.check_catalog:
+            committed = (data / "modifiers.json").read_text(encoding="utf-8")
+            if committed != text:
+                problems.insert(
+                    0,
+                    "data/modifiers.json differs from the database; "
+                    "rerun --emit-catalog",
+                )
+            for problem in problems:
+                print(f"FAIL: {problem}", file=sys.stderr)
+            print(
+                f"{len(catalog)} bundles over {len(TRANSLATIONS)} effects, "
+                f"{sum(len(objects) for objects in wiring.values())} wired objects",
+                file=sys.stderr,
+            )
+            return 1 if problems else 0
+        Path(args.emit_catalog).write_text(text, encoding="utf-8")
+        print(f"# {len(catalog)} bundles written to {args.emit_catalog}")
+        print("#\n# wiring: each object below needs this `modifiers` list")
+        for file, objects in wiring.items():
+            for obj, names in objects.items():
+                print(f"{file}.json  {obj}  {json.dumps(names)}")
+        if skipped:
+            print("#\n# refused rows of declared effects:")
+            for reason in skipped:
+                print(f"#   {reason}")
+        for problem in problems:
+            print(f"# WIRING TODO: {problem}")
         return 0
 
     if args.effect:
