@@ -33029,7 +33029,16 @@ fn lane_commit_picks_the_lane_the_seat_leads() {
         ai.plan.is_none(),
         "a fresh commitment is assessed the same turn"
     );
-    assert_eq!(ai.assess(&g, 0).strategy, GrandStrategy::Religion);
+    // Short of cities with land still open, the seat keeps settling; once
+    // the stock window shuts the plan is the committed lane; and a
+    // committed lane 65% along comes before more cities, stock's own bar.
+    assert_eq!(ai.assess(&g, 0).strategy, GrandStrategy::Expansion);
+    let window_shut = lane_commit_board(205);
+    assert_eq!(ai.assess(&window_shut, 0).strategy, GrandStrategy::Religion);
+    let mut far = AdvancedAi::new();
+    far.enable_lane_commit();
+    far.review_lane_commitment(&g, &lane_table([(45, 49), (10, 30), (70, 40), (30, 35)]));
+    assert_eq!(far.assess(&g, 0).strategy, GrandStrategy::Religion);
 
     // Leading two lanes, the one closer to landing wins; leading none, the
     // one furthest along — what `victory_focus` would say — made sticky.
@@ -33042,7 +33051,10 @@ fn lane_commit_picks_the_lane_the_seat_leads() {
     none.review_lane_commitment(&g, &lane_table([(45, 49), (10, 30), (40, 52), (30, 35)]));
     assert_eq!(none.committed_lane(), Some(VictoryTarget::Science));
     assert_eq!(none.lane_commitment().unwrap().lead, -4);
-    assert_eq!(none.assess(&g, 0).strategy, GrandStrategy::Science);
+    assert_eq!(
+        none.assess(&lane_commit_board(205), 0).strategy,
+        GrandStrategy::Science
+    );
 }
 
 /// A commitment holds against a challenger a few points better and yields

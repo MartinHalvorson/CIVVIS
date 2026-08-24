@@ -9075,15 +9075,15 @@ impl AdvancedAi {
                 GrandStrategy::Religion,
                 "a Prophet is a finite race worth entering now",
             )
-        } else if let Some(lane) = self.committed_lane() {
-            // `lane_commit`: from the midpoint the seat plays for the victory
-            // it leads the field in, in place of `victory_focus`'s per-turn
-            // pick, after every posture above. See `advanced/lane_commit.rs`.
+        } else if let Some(commitment) = self.lane_commitment.filter(|c| c.progress >= 65) {
+            // `lane_commit`: the committed lane, well along, comes before
+            // more cities — the same bar stock sets for its best lane below.
+            // See `advanced/lane_commit.rs`.
             (
-                lane.strategy(),
-                "committed to the victory it leads the field in",
+                commitment.lane.strategy(),
+                "well down the victory it committed to",
             )
-        } else if victory.progress >= 65 {
+        } else if self.lane_commitment.is_none() && victory.progress >= 65 {
             (
                 victory.strategy,
                 "already well down its best victory lane",
@@ -9095,6 +9095,15 @@ impl AdvancedAi {
             (
                 GrandStrategy::Expansion,
                 "short of cities with land still open",
+            )
+        } else if let Some(lane) = self.committed_lane() {
+            // `lane_commit`: from the midpoint the seat plays for the victory
+            // it leads the field in, in place of `victory_focus`'s per-turn
+            // pick. The first two drafts sat above the expansion arm and
+            // ended with a city and a half fewer (`advanced/lane_commit.rs`).
+            (
+                lane.strategy(),
+                "committed to the victory it leads the field in",
             )
         } else {
             (

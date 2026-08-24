@@ -712,7 +712,13 @@ adaptive seat has none. `assess` puts an adaptive seat on a lane only at
   Culture/Religion routing. `assess` follows it in place of `victory_focus`'s
   per-turn pick, after every posture that comes first today (a threatened
   city, an emergency, a rival at the wire, a war in progress, a neighbour
-  weak enough to take, a Prophet on the table). City dispositions follow it.
+  weak enough to take, a Prophet on the table) **and after the adaptive
+  expansion arm** — a seat short of cities with land still open keeps
+  settling until the stock window shuts (about t200 at Online); the lane
+  comes before more cities only once it is 65% along, stock's own bar. The
+  second draft sat above that arm and its probe (−5.6 pp ± 5.8) ended with
+  a city and a half fewer (5.4 against 6.8) and three times the deaths.
+  City dispositions follow it.
 - **It holds.** Reviewed every `LANE_COMMIT_REVIEW` (10) standard turns; a
   challenger takes over only when the committed lane's lead is gone and the
   challenger leads, or when it is `LANE_COMMIT_SWITCH_MARGIN` (20) points

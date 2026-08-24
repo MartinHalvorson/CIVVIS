@@ -31,7 +31,12 @@
 //! place of `victory_focus`'s per-turn pick, after every posture that comes
 //! first today: a home city under threat, an emergency, a rival at the wire,
 //! a war in progress, a neighbour weak enough to take, a Prophet still on
-//! the table.
+//! the table — and a seat short of cities with land still open, which keeps
+//! settling: the stock adaptive window (`stock_expansion_deadline`) runs to
+//! about turn 200 at Online, and the second draft, which sat above it, ended
+//! with a city and a half fewer (5.4 against 6.8) and died three times as
+//! often. Only once the committed lane itself is 65% along does it come
+//! before more cities, the bar stock sets for its best lane.
 //!
 //! **The lane is the one we lead.** Winning is relative — every rival on the
 //! board runs this same planner — so each lane is read for the seat *and for
