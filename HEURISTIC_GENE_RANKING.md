@@ -368,6 +368,7 @@ These screenable genes have no on/off result, so they receive no rank or promoti
 | `district-planning` | off (unmeasured) | The city plans its districts, sites and tile buys together: wished districts get jointly assigned, reserved plots over rings 1-3, and the tile a very valuable site needs is bought. | — |
 | `escort-unstick-2` | off (unmeasured) | Version 2 of `escort_unstick`: the same two-turn release, refused while a visible barbarian raider can reach the settler's tile. | 1 |
 | `settle-plan-ahead` | off (unmeasured) | Rank a settle site by the cities it leaves room for as well as its own ground, so a Settler stops taking the one plot in a pocket that would have held two. | — |
+| `wonder-score-tally` | off (unmeasured) | A wonder is reachable for every civilization, not four of six: the `Item::Wonder` arm learns the fifteen points `Game::score_parts` pays for a finished wonder, under a density bar and the live race's own development guards. | — |
 
 ## Removed from the code
 
