@@ -279,7 +279,7 @@
     },
     "great_person_points": {"writer": 1, "artist": 1, "musician": 1},
     "appeal": 1,
-    "effects": {"envoys": 1}
+    "modifiers": ["civic_award_one_influence_token__envoys"]
   },
   "bath": {
     "plunder_type": "gold",
