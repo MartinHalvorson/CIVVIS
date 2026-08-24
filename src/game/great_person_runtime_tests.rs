@@ -1178,14 +1178,20 @@ fn added_merchants_generals_and_admirals_fire_their_exact_effects() {
         1
     );
 
-    // Genghis Khan promotes exactly one land unit, the strongest.
+    // Timur promotes exactly one land unit, the strongest.
+    //
+    // This exercised Genghis Khan until 2026-08-24. Civilization VI ships no
+    // Great General of that name — he is Mongolia's *leader* — so the entry was
+    // a CIVVIS invention and a duplicate of this one, which is the real
+    // Classical-era `land_unit_promotion_level` general and carries the same
+    // era, cost and effect. The coverage is unchanged; only the name is.
     let position = game.cities[&home].pos;
     let target = game.spawn_unit("swordsman", 0, position);
     let untouched = game.spawn_unit("warrior", 0, position);
-    skip_to_great_person(&mut game, "genghis_khan");
+    skip_to_great_person(&mut game, "timur");
     assert_eq!(
         recruit_current_military_person(&mut game, "general"),
-        "genghis_khan"
+        "timur"
     );
     assert!(game.promotion_pending(target));
     assert_eq!(game.units[&untouched].xp, 0);
