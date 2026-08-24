@@ -12605,9 +12605,8 @@ fetchpriority=\"high\""
             cutter.contains("import civ6_env as env"),
             "the install is resolved by the one module allowed to look for it"
         );
-        assert!(EMBEDDED_INDEX.contains(
-            "CIV6_FLAG_PLATE_ATLAS.src = \"/assets/civ6-unit-flag-plates.png\""
-        ));
+        assert!(EMBEDDED_INDEX
+            .contains("CIV6_FLAG_PLATE_ATLAS.src = \"/assets/civ6-unit-flag-plates.png\""));
         assert!(EMBEDDED_INDEX.contains(
             "const CIV6_FLAG_PLATE_STYLES = [\"base\", \"civilian\", \"naval\", \"support\",\n                                \"trade\", \"religion\", \"fortify\", \"embark\"];"
         ));
@@ -12617,8 +12616,8 @@ fetchpriority=\"high\""
         let cell = usize::from(u32::from_be_bytes(
             EMBEDDED_CIV6_UNIT_FLAG_PLATES[20..24].try_into().unwrap(),
         ) as u16);
-        let width = u32::from_be_bytes(EMBEDDED_CIV6_UNIT_FLAG_PLATES[16..20].try_into().unwrap())
-            as usize;
+        let width =
+            u32::from_be_bytes(EMBEDDED_CIV6_UNIT_FLAG_PLATES[16..20].try_into().unwrap()) as usize;
         assert!(cell > 0, "the plate sheet has a height");
         assert_eq!(
             width,
@@ -12651,9 +12650,8 @@ fetchpriority=\"high\""
 
         // One counter routine paints the flat map, the globe and the casualty,
         // so no surface can quietly keep drawing a circle.
-        assert!(EMBEDDED_INDEX.contains(
-            "function drawStrategicUnitCounter(x, y, r, style, fill, ink, outline) {"
-        ));
+        assert!(EMBEDDED_INDEX
+            .contains("function drawStrategicUnitCounter(x, y, r, style, fill, ink, outline) {"));
         assert_eq!(
             EMBEDDED_INDEX.matches("drawStrategicUnitCounter(").count(),
             4,
@@ -12661,8 +12659,9 @@ fetchpriority=\"high\""
         );
         // And the selection ring is still the counter's own outline, not a
         // circle drawn over a flag.
-        assert!(EMBEDDED_INDEX
-            .contains("strategicUnitTokenPath(x, y, Math.max(0, rr - 1.2), style);"));
+        assert!(
+            EMBEDDED_INDEX.contains("strategicUnitTokenPath(x, y, Math.max(0, rr - 1.2), style);")
+        );
         assert_eq!(
             EMBEDDED_INDEX.matches("strategicUnitTokenPath(").count(),
             4,
@@ -12682,8 +12681,7 @@ fetchpriority=\"high\""
         assert!(style.contains("if (spec.class === \"religious\") return \"religion\";"));
         assert!(style.contains("if (spec.class === \"support\") return \"support\";"));
         assert!(style.contains("if (spec.domain === \"sea\") return \"naval\";"));
-        assert!(style
-            .contains("return CIVILIAN_UNITS.has(unit.type) ? \"civilian\" : \"base\";"));
+        assert!(style.contains("return CIVILIAN_UNITS.has(unit.type) ? \"civilian\" : \"base\";"));
         // Those class names have to be the ones the ruleset actually ships, or
         // every unit would silently fall through to the military flag.
         let rules = crate::rules::Rules::embedded();
@@ -12699,7 +12697,10 @@ fetchpriority=\"high\""
             );
         }
         assert_eq!(
-            rules.units.get("galley").and_then(|spec| spec.domain.clone()),
+            rules
+                .units
+                .get("galley")
+                .and_then(|spec| spec.domain.clone()),
             Some("sea".into()),
             "a Galley must still be a sea unit for the naval flag"
         );
