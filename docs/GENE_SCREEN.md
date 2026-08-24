@@ -993,12 +993,100 @@ cannot drift. Three settings, weakest first, each containing the one before it:
 | `posterior-veto` | the same columns, with an error bar on the veto: it fires only when the posterior's 95% interval lies **wholly below zero** |
 | `posterior` | the pooled estimate decides wherever its interval excludes zero; where it straddles, `posterior-veto` decides |
 
-It says `columns`, and this is deliberate. The threshold rule is an explicit
-operator directive, and **every source in the ledger today is the retired
-`legacy` 60×38 Pangaea shape** — re-deciding the deployment genome now would
-re-decide it on the wrong instrument. The statistic is published, the delta is
-published (*What the posterior would change* in `HEURISTIC_GENE_RANKING.md`),
-and the call is the operator's.
+It says `columns`, and on 2026-08-23 that was re-decided on the numbers rather
+than deferred again. The premise the deferral rested on is gone: two `standard`
+sources are in the ledger — the 23,622-pair whole-genome screen and the `g1`
+direct arm — and 99 of the 101 priced genes now have a deployment-shape
+reading. So the question stopped being "is the instrument right" and became
+"what would the switch actually move".
+
+**It moves one gene, and the deployment shape says that gene is nothing.**
+Rebuilding the ledger under all six combinations of the two dials (#2385):
+
+| `AUTHORITY` | `POSTERIOR_SHAPES` | genes on | moves vs shipped |
+|---|---|---:|---:|
+| `columns` **(in force)** | `standard, legacy` | 33 | – |
+| `columns` | `standard` | 33 | 0 |
+| `posterior-veto` | `standard, legacy` | 34 | 1 |
+| `posterior-veto` | `standard` | 34 | 1 |
+| `posterior` | `standard, legacy` | 34 | 1 |
+| `posterior` | `standard` | 34 | 1 |
+
+Two things fall out of that grid and neither was obvious in advance.
+
+**`POSTERIOR_SHAPES` decides nothing today.** Standard-only and pooled ship the
+identical genome under every authority — 0 moves in both rows. The scope dial
+changes *how 15 genes read*, and for `war-economy` it changes the reading
+completely (standard-only +118 ± 16 on the 23,622-pair screen, against −7 ± 63
+pooled with the retired Pangaea screens, τ ≈ 124), but the columns rule already
+ships that gene on, so nothing moves. **The whole delta between the two
+authorities is the veto**, and `posterior-veto` produces it on its own: the
+pooled estimate never overrides a column call it did not already agree with.
+
+**The one gene the veto re-admits is `siege-commitment`, and it is the ledger's
+clearest null.** Five screens have priced it, 180,912 seats, every one `~`:
+
+| screen | shape | seats | win Δ pp | win z | share z |
+|---|---|---:|---:|---:|---:|
+| `p4` 2026-08-20 | legacy | 26,892 | −0.803 | −1.87 | +0.27 |
+| `p7` 2026-08-21 | legacy | 30,000 | +0.053 | +0.13 | +0.92 |
+| `p10` 2026-08-22 | legacy | 35,148 | +0.011 | +0.03 | +0.73 |
+| standard 10k 2026-08-22 | **standard** | 47,244 | +0.119 | **+0.38** | −0.08 |
+| standard 41,628 (#2374, report-only) | **standard** | 41,628 | −0.199 | **−0.55** | +0.61 |
+
+The two deployment-shape readings straddle zero with opposite signs, and the
+23,622-pair screen's own three replication tranches flip sign inside one run:
++0.20 (z +0.42), −0.26 (z −0.54), +0.94 (z +1.19). Its pooled `Diff` is
+negative in every source combination (−0.10% today, −0.12% with the 41,628-seat
+screen added), which is what the shipped veto fires on.
+
+⚠ **The flip is an artifact of which screens are in the ledger this week.**
+Enter the 41,628-seat standard screen as a *source* rather than report-only and
+`columns` ships 36, `posterior` + standard-only ships 36, and **the flip table
+is empty** — `siege-commitment` reads −10 in the last win column and both rules
+hold it off. So throwing the switch today would ship one default ON that the
+next screen takes straight back off.
+
+**The rule that decided: a negative pooled `Diff` vetoes a default-on.** The
+only thing either posterior authority does today is override that veto for a
+gene whose deployment-shape record is +0.38σ and −0.55σ across 88,872
+standard-shape seats. That is a default the numbers do not carry, and it is the
+same shape of mistake as the one this section's own history records —
+`governor-victory-lanes` shipped on a single +46 column and cost −237 wins per
+10,000 on-arm seats (95% CI [−267, −206], 23,622 pairs).
+
+⚠ **A direct arm cannot settle this gene.** `python3 tools/genes.py boundary`
+sizes it at **788,779 seat pairs** before the interval clears zero. A
+#2344-style 600-game arm resolves ±2.5 pp at 80% power — 12× wider than the
+effect and 2.8× wider than the 23,622-pair screen already in the ledger, whose
+own band is ±0.88 pp. The confirmation the priority list asks for is a *weaker*
+instrument than the source it would supplement. That is the arithmetic reason
+the answer here is "the evidence is already in", not "run more games".
+
+### When the switch should be thrown
+
+Both dials are still the right destination; neither is carried by today's
+sources. The conditions are checkable, so the next agent does not have to
+re-litigate the question:
+
+1. **`POSTERIOR_SHAPES = ("standard",)`** when every priced gene has a
+   `standard` reading. Two do not (`joint-tactics`, `step-and-reassess`), and
+   under standard-only their posterior becomes `–` rather than narrower — the
+   scope dial would delete evidence, not sharpen it. It is genome-neutral the
+   day it lands (0 moves, measured above), so it costs nothing to wait.
+2. **`AUTHORITY = "posterior"`** when its delta against `columns` contains a
+   gene whose standard-only interval **excludes zero**. Today the delta is one
+   gene whose interval is +6 [−25, +37], P(>0) 64.8% — the posterior is not
+   saying it helps, it is saying the veto could not tell, and re-admitting on
+   "could not tell" is how a null ships.
+
+⚠ And when it is thrown, read `docs/EVAL_INTEGRITY.md` §4 first. Every figure
+the posterior would decide on is the point estimate of one screen, so
+`E[observed | promoted] > true effect`; the repository's own re-measurements
+put `+207` at `+86` and `strategic_deep`'s `+45` at −8 (CI −27..+12, 220 maps,
+PR #482). A posterior built from single-screen point estimates inherits that
+bias — it prices the uncertainty *between* screens honestly and the selection
+*within* one not at all.
 
 ⚠ Where the interval straddles zero, the `posterior` setting inherits the
 column rule's answer. That is forced, not chosen: `default_on` has to be a pure
