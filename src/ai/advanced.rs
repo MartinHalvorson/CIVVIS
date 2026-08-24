@@ -19460,6 +19460,42 @@ impl AdvancedAi {
                     }
                 }
             }
+            // The first usable empty trade slot is an income-producing asset,
+            // not an ordinary low-value unit bid. Once immediate local defence
+            // is covered, reserve it in a city that can start a safe route now.
+            // `counts.add_item` closes the reservation before the next city is
+            // visited, so parallel governors cannot all answer the same debt.
+            if committed.is_none()
+                && self.base.solvency_first_trade_slot
+                && counts.traders == 0
+                && self
+                    .base
+                    .should_add_trader_in_city_for_controller(g, pid, cid, counts.traders)
+            {
+                let trader = Item::Unit {
+                    unit: crate::name!("trader"),
+                };
+                if g.can_produce(pid, cid, &trader)
+                    && g.apply(
+                        pid,
+                        &Action::Produce {
+                            city: cid,
+                            item: trader.clone(),
+                        },
+                    )
+                    .is_ok()
+                {
+                    if self.journal().wants(crate::reasoning::Level::Decision) {
+                        let city_name = g.cities[&cid].name.clone();
+                        let gold_per_turn = g.players[pid].gold_per_turn;
+                        think!(self.journal(), Economy, Decision,
+                            "{} reserves the first safe empty trade slot", city_name;
+                            "{gold_per_turn:.1} Gold/turn; a route-ready Trader compounds before ordinary production");
+                    }
+                    counts.add_item(g, &trader);
+                    continue;
+                }
+            }
             // ★★★ `governor_every_lane` REPAIRED 2026-08-19. The composite
             // measured −62/−95 Elo (PR #1955) and the 4,000-pair native
             // screen −2.8 pp wins with −4.5 pp score share (z −3.7 / −35,
@@ -20501,10 +20537,14 @@ impl AdvancedAi {
             || plan.threatened_city == Some(cid)
             || (city.last_attacked > 0 && g.turn.saturating_sub(city.last_attacked) <= 4);
         let barbarian_trade_safe = !barbarian_tactics
-            || (!BasicAi::barbarian_trade_risk(g, pid)
-                && g.player_city_ids(pid)
-                    .into_iter()
-                    .all(|city| BasicAi::barbarian_threat_pressure(g, pid, city) == 0));
+            || if self.base.solvency_first_trade_slot {
+                BasicAi::safe_trade_origin(g, pid, cid)
+            } else {
+                !BasicAi::barbarian_trade_risk(g, pid)
+                    && g.player_city_ids(pid)
+                        .into_iter()
+                        .all(|city| BasicAi::barbarian_threat_pressure(g, pid, city) == 0)
+            };
         // A Conquest label is also used while the planner is merely strong
         // enough to contemplate a neighbour. Until a concrete city exists in
         // the plan, that label must not buy an offensive army: the live

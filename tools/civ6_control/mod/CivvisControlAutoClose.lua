@@ -550,6 +550,28 @@ else
 	local reported = false;
 	local desktopReported = false;
 
+	-- ★★★★★ A DEAL SESSION CIVVIS OPENED IS NOT A SCREEN TO REFUSE. The
+	-- agent's sale, passage and peace arms now ask inside a `MAKE_DEAL`
+	-- session (the only place a rival evaluates a working deal — see
+	-- `CivvisTrade.ask` in CivvisControlAgent.lua), and the diplomacy views
+	-- come up for it. `LuaEvents.CivvisDealSession(subject, open, seconds)`
+	-- says the agent owns the session for at most `seconds`; the ladder below
+	-- waits that long and then runs exactly as before, so an unanswered
+	-- session is refused and closed the way every other screen is. Contexts
+	-- do not share globals; LuaEvents are the one channel there is.
+	local dealHold = 0;
+	local holdReported = false;
+	pcall(function()
+		LuaEvents.CivvisDealSession.Add(function(subject, open, seconds)
+			if open then
+				dealHold = tonumber(seconds) or 4;
+				holdReported = false;
+			else
+				dealHold = 0;
+			end
+		end);
+	end);
+
 	-- How long to leave a screen alone once it has refused GIVE_UP_AFTER times.
 	-- Long enough not to hammer it, short enough that the map comes back on its
 	-- own if whatever held it goes away.
@@ -579,6 +601,14 @@ else
 			shown = 0;
 		end
 		local dt = tonumber(fDTime) or 0;
+		if dealHold > 0 and (NAME == "DiplomacyActionView" or NAME == "DiplomacyDealView") then
+			dealHold = dealHold - dt;
+			if not holdReported then
+				holdReported = true;
+				report("autoclose_hold", string.format(',"seconds":%.2f', dealHold));
+			end
+			return;
+		end
 		remaining = remaining - dt;
 		shown = shown + dt;
 		if remaining > 0 then return; end

@@ -18194,6 +18194,121 @@ fn trader_production_requires_an_open_route_and_respects_idle_supply() {
     assert!(ai.production_value(&game, 0, city, &item, &plan, &counts) < -9_000.0);
 }
 
+fn remote_barbarian_trade_board() -> (Game, u32, u32) {
+    let mut game = Game::new_full(2, 74, 46, 79_005, 200, 0, true);
+    game.current = 0;
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .expect("a starting Settler");
+    game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+    let safe = game.player_city_ids(0)[0];
+    let safe_pos = game.cities[&safe].pos;
+    let remote_pos = game
+        .map
+        .tiles
+        .iter()
+        .filter(|(_, tile)| {
+            tile.owner_city.is_none() && game.rules.is_passable(tile) && !game.rules.is_water(tile)
+        })
+        .map(|(position, _)| *position)
+        .find(|position| {
+            (10..=13).contains(&game.wdist(safe_pos, *position))
+                && game
+                    .cities
+                    .values()
+                    .all(|city| game.wdist(city.pos, *position) >= 4)
+        })
+        .expect("room for a remote second city inside trade range");
+    let remote = game.found_city_for(0, remote_pos, None);
+    game.players[0].civics.insert(crate::name!("foreign_trade"));
+
+    let barb = game.barb_pid.expect("a barbarian-seated test game");
+    for unit in game.player_unit_ids(barb) {
+        game.remove_unit(unit);
+    }
+    game.barb_camps.clear();
+    let camp =
+        game.nbrs(remote_pos)
+            .into_iter()
+            .find(|position| {
+                game.wdist(safe_pos, *position) > crate::ai::BARBARIAN_TRADE_RISK_RADIUS
+                    && game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+            })
+            .expect("a camp tile beside only the remote city");
+    game.barb_camps.insert(camp, game.turn + 1_000);
+    game.map.tiles.get_mut(&camp).unwrap().improvement = Some(crate::name!("barbarian_camp"));
+    (game, safe, remote)
+}
+
+/// The live failure this gene answers: a raider ring around one frontier
+/// city must not leave a safe capital's first route slot empty while the
+/// empire runs a deficit. The untreated arm keeps the old empire-wide veto.
+#[test]
+fn solvency_first_trade_slot_reserves_a_locally_safe_origin() {
+    let (mut game, safe, remote) = remote_barbarian_trade_board();
+    game.players[0].gold_per_turn = -6.0;
+    let trader = Item::Unit {
+        unit: crate::name!("trader"),
+    };
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Expansion,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 2,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+
+    assert!(BasicAi::barbarian_local_alarm(&game, 0, remote));
+    assert!(!BasicAi::barbarian_local_alarm(&game, 0, safe));
+    assert!(BasicAi::barbarian_trade_risk(&game, 0));
+    assert!(!BasicAi::should_add_trader_safely(&game, 0, 0));
+    assert!(BasicAi::safe_trade_origin(&game, 0, safe));
+    assert!(!BasicAi::safe_trade_origin(&game, 0, remote));
+
+    let control = AdvancedAi::new();
+    let control_counts = control.counts(&game, 0);
+    assert!(
+        control.production_value(&game, 0, safe, &trader, &plan, &control_counts) < -9_000.0,
+        "the frozen global veto remains the untreated arm"
+    );
+
+    let mut treated = AdvancedAi::new();
+    treated.enable_solvency_first_trade_slot();
+    let counts = treated.counts(&game, 0);
+    assert!(
+        treated.production_value(&game, 0, safe, &trader, &plan, &counts) > 0.0,
+        "the safe capital can service the slot"
+    );
+    assert!(
+        treated.production_value(&game, 0, remote, &trader, &plan, &counts) < -9_000.0,
+        "the threatened city cannot build an exposed Trader"
+    );
+
+    treated.advanced_production(&mut game, 0, &plan, false);
+    assert_eq!(
+        game.cities[&safe].queue.first(),
+        Some(&trader),
+        "the first safe empty slot preempts ordinary production"
+    );
+    assert_ne!(
+        game.cities[&remote].queue.first(),
+        Some(&trader),
+        "the remote alarm receives no Trader order"
+    );
+
+    assert!(!AdvancedAi::new().base.solvency_first_trade_slot);
+    assert!(!AdvancedAi::legacy().base.solvency_first_trade_slot);
+    let gene = crate::ai::gene("solvency-first-trade-slot").expect("registered gene");
+    assert!(gene.opt_in());
+    assert!(gene.screenable());
+}
+
 #[test]
 fn strategic_governments_use_late_tiers_and_match_the_culture_holdout() {
     let mut culture = Game::new_full(3, 18, 10, 79_002, 200, 0, false);
@@ -31337,16 +31452,13 @@ fn a_second_front_closes_the_surge_window() {
 
 /// The religious-corps genes are registered, discoverable by name, and
 /// reversible. The bare controller starts them off; the deployment ledger
-/// currently promotes `religious-units-heal-first`. See `advanced/religion.rs`.
+/// currently promotes `religious-defence-scales` and
+/// `religious-units-heal-first`. See `advanced/religion.rs`.
 #[test]
 fn the_religious_corps_genes_are_registered_reversible_opt_ins() {
     let mut ai = AdvancedAi::new();
     for (field, tag, default_on) in [
-        (
-            "religious_defence_scales",
-            "religious-defence-scales",
-            false,
-        ),
+        ("religious_defence_scales", "religious-defence-scales", true),
         ("guru_heals_the_corps", "guru-heals-the-corps", false),
         (
             "religious_units_heal_first",
@@ -32649,12 +32761,17 @@ fn wonder_score_tally_never_stacks_and_never_moves_a_gate_it_does_not_own() {
 
 #[test]
 fn the_missionary_field_genes_are_registered_reversible_opt_ins() {
-    for (field, tag) in [
+    for (field, tag, default_on) in [
         (
             "missionary_last_charge_explores",
             "missionary-last-charge-explores",
+            true,
         ),
-        ("missionary_evades_raiders", "missionary-evades-raiders"),
+        (
+            "missionary_evades_raiders",
+            "missionary-evades-raiders",
+            true,
+        ),
     ] {
         assert!(
             GENES
@@ -32668,8 +32785,8 @@ fn the_missionary_field_genes_are_registered_reversible_opt_ins() {
         );
         assert_eq!(
             crate::ai::advanced::gene_ledger::ledger_default_on(tag),
-            Some(false),
-            "{tag} ships off until a screen prices it"
+            Some(default_on),
+            "{tag} must match the current deployment genome"
         );
     }
     let mut ai = AdvancedAi::new();
