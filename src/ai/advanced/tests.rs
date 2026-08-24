@@ -31344,7 +31344,11 @@ fn a_second_front_closes_the_surge_window() {
 fn the_religious_corps_genes_are_registered_reversible_opt_ins() {
     let mut ai = AdvancedAi::new();
     for (field, tag, default_on) in [
-        ("religious_defence_scales", "religious-defence-scales", false),
+        (
+            "religious_defence_scales",
+            "religious-defence-scales",
+            false,
+        ),
         ("guru_heals_the_corps", "guru-heals-the-corps", false),
         (
             "religious_units_heal_first",
@@ -31352,7 +31356,11 @@ fn the_religious_corps_genes_are_registered_reversible_opt_ins() {
             true,
         ),
         ("condemn_under_congress", "condemn-under-congress", false),
-        ("spread_campaign_persists", "spread-campaign-persists", false),
+        (
+            "spread_campaign_persists",
+            "spread-campaign-persists",
+            false,
+        ),
         (
             "holy_site_where_the_threat_is",
             "holy-site-where-the-threat-is",
@@ -31376,13 +31384,22 @@ fn the_religious_corps_genes_are_registered_reversible_opt_ins() {
             "{tag} must match the current deployment genome"
         );
     }
-    assert!(!ai.religious_defence_scales, "the bare controller starts it off");
-    assert!(!ai.guru_heals_the_corps, "the bare controller starts it off");
+    assert!(
+        !ai.religious_defence_scales,
+        "the bare controller starts it off"
+    );
+    assert!(
+        !ai.guru_heals_the_corps,
+        "the bare controller starts it off"
+    );
     assert!(
         !ai.religious_units_heal_first,
         "the bare controller starts it off"
     );
-    assert!(!ai.condemn_under_congress, "the bare controller starts it off");
+    assert!(
+        !ai.condemn_under_congress,
+        "the bare controller starts it off"
+    );
     assert!(
         !ai.spread_campaign_persists,
         "the bare controller starts it off"
@@ -31391,7 +31408,10 @@ fn the_religious_corps_genes_are_registered_reversible_opt_ins() {
         !ai.holy_site_where_the_threat_is,
         "the bare controller starts it off"
     );
-    assert!(!ai.enhancer_for_the_corps, "the bare controller starts it off");
+    assert!(
+        !ai.enhancer_for_the_corps,
+        "the bare controller starts it off"
+    );
     ai.enable_religious_defence_scales();
     ai.enable_guru_heals_the_corps();
     ai.enable_religious_units_heal_first();
