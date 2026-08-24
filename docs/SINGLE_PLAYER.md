@@ -305,7 +305,15 @@ rankings report.
 
 **Nothing is deleted; the laboratory is one click away.** ☗ (or `F1`) opens
 the standings masthead and the arena rail over the map, and ☰ on the strip
-brings the command deck back. Both answers are kept, under keys of their own:
+brings the command deck back. `F1` is not this project's choice: it is the key
+Civ 6 binds to its own `ToggleRankings` action, which
+`PartialScreenHooks.lua` reads with `Input.GetActionId("ToggleRankings")` to
+drive `WorldRankingsButton` — the first hook in `PartialScreenHooks.xml`'s
+upper-right bar (`RootContainer Anchor="R,T"`). That bar is where the shipped
+game keeps the button; here it stays on the launch bar where #2275 put it,
+because the upper-right band is the ribbon's and a third cluster in one corner
+buys nothing. The evidence still settles the question the button answers:
+rankings is a hook you press, not scenery. Both answers are kept, under keys of their own:
 `civvis-watch-rankings-v1` and `civvis-watch-deck-v1`. Neither is ever written
 from a played game's path, neither is ever written by the other, and neither
 touches `civvis-map-overlays-v1` — a person sitting down to play must not

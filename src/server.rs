@@ -16190,7 +16190,9 @@ fetchpriority=\"high\""
         // A battlefield has no empire behind it, so the strip keeps the turn
         // and the era and drops the rest, and neither the world tracker nor
         // the two tree hooks are painted at all.
-        assert!(EMBEDDED_INDEX.contains("const empire = watched !== null && worldStandingsInPlay();"));
+        assert!(
+            EMBEDDED_INDEX.contains("const empire = watched !== null && worldStandingsInPlay();")
+        );
         assert!(EMBEDDED_INDEX.contains("const yields = !empire ? \"\" :"));
         assert!(EMBEDDED_INDEX.contains("const meters = !empire ? \"\" :"));
         assert!(EMBEDDED_INDEX
@@ -16350,9 +16352,8 @@ fetchpriority=\"high\""
         assert!(EMBEDDED_INDEX.contains("display: flex; flex-direction: row-reverse;"));
         // Civ 6's ribbon holds the leaders you have met, so a Watch-as view
         // shows what that civilization knows and no more.
-        assert!(EMBEDDED_INDEX.contains(
-            "!p.is_minor && !p.is_barbarian && p.alive !== false && metPlayer(p))"
-        ));
+        assert!(EMBEDDED_INDEX
+            .contains("!p.is_minor && !p.is_barbarian && p.alive !== false && metPlayer(p))"));
         // Clicking a disc is the standings table's own "Watch as", not a new
         // action: a spectator has no seat, so the row is also how it takes one.
         assert!(EMBEDDED_INDEX.contains("data-hud-action=\"watch\" data-hud-civ=\"${p.id}\""));
@@ -16402,13 +16403,10 @@ fetchpriority=\"high\""
         // written from the other's path, and neither may touch the shared
         // map-overlay preferences — that separation is the whole reason the
         // report has a class rather than an overlay flag.
+        assert!(EMBEDDED_INDEX.contains("const WATCH_RANKINGS_KEY = \"civvis-watch-rankings-v1\";"));
+        assert!(EMBEDDED_INDEX.contains("const WATCH_DECK_CHOICE_KEY = \"civvis-watch-deck-v1\";"));
         assert!(EMBEDDED_INDEX
-            .contains("const WATCH_RANKINGS_KEY = \"civvis-watch-rankings-v1\";"));
-        assert!(EMBEDDED_INDEX
-            .contains("const WATCH_DECK_CHOICE_KEY = \"civvis-watch-deck-v1\";"));
-        assert!(EMBEDDED_INDEX.contains(
-            "  return watchingWorld() ? WATCH_DECK_CHOICE_KEY : SOLO_DECK_CHOICE_KEY;"
-        ));
+            .contains("  return watchingWorld() ? WATCH_DECK_CHOICE_KEY : SOLO_DECK_CHOICE_KEY;"));
         assert!(EMBEDDED_INDEX.contains("      try { localStorage.setItem(deckChoiceKey(),"));
         let rankings = EMBEDDED_INDEX
             .split_once("function toggleRankingsReport(open) {")
