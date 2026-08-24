@@ -877,6 +877,7 @@ fn agendas(check: &mut Check) {
 fn setup(check: &mut Check) {
     let difficulties = check.rules.difficulties.clone();
     let units = check.rules.units.clone();
+    let buildings = check.rules.buildings.clone();
     let mut orders: Vec<usize> = difficulties.values().map(|spec| spec.order).collect();
     orders.sort_unstable();
     if orders != (0..difficulties.len()).collect::<Vec<_>>() {
@@ -892,6 +893,7 @@ fn setup(check: &mut Check) {
                 && spec.human_combat_strength == 0.0
                 && spec.ai_era_boosts == 0
                 && spec.ai_bonus_units.is_empty()
+                && spec.starting_buildings.is_empty()
         })
         .count();
     if neutral != 1 {
@@ -910,6 +912,17 @@ fn setup(check: &mut Check) {
                 check.error(
                     &subject,
                     format!("grants bonus unit {unit:?}, which is not a known unit"),
+                );
+            }
+        }
+        for row in &spec.starting_buildings {
+            if !buildings.contains_key(&row.building) {
+                check.error(
+                    &subject,
+                    format!(
+                        "grants starting building {:?}, which is not a known building",
+                        row.building
+                    ),
                 );
             }
         }

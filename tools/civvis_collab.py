@@ -2377,6 +2377,42 @@ def atomic_write(path: Path, data: bytes, *, executable: bool = False) -> None:
         temporary.unlink(missing_ok=True)
 
 
+def lock_holder_is_gone(path: Path) -> bool:
+    """True when the lock names a process that is no longer running.
+
+    The lock has always recorded its holder's PID and never read it back, so a
+    worker that died holding it kept every `start` on the machine waiting out
+    `FRESHNESS_LOCK_STALE_SECONDS`. Checking the PID turns that half hour into
+    one syscall.
+
+    Deliberately conservative — every uncertain answer is *False*, i.e. "assume
+    the holder is alive and keep waiting", so the age-based expiry stays the
+    backstop and this can only ever release a lock it is sure about:
+
+    - an unreadable or malformed lock: another process is mid-write, since the
+      file is created `O_EXCL` and written immediately after;
+    - a PID from a different boot that has since been recycled onto a live
+      process: indistinguishable from the real holder, and the age check
+      already covers it;
+    - `PermissionError` from `kill(pid, 0)`: the PID exists but belongs to
+      another user, so something is running.
+    """
+    try:
+        holder = json.loads(path.read_text(encoding="utf-8"))
+        pid = int(holder["pid"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return False
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return True
+    except (PermissionError, OSError):
+        return False
+    return False
+
+
 class FreshnessLock:
     """A tiny cross-platform exclusion lock for overlapping timer runs."""
 
@@ -2399,7 +2435,9 @@ class FreshnessLock:
                     age = time.time() - self.path.stat().st_mtime
                 except FileNotFoundError:
                     continue
-                if age > FRESHNESS_LOCK_STALE_SECONDS:
+                if age > FRESHNESS_LOCK_STALE_SECONDS or lock_holder_is_gone(
+                    self.path
+                ):
                     self.path.unlink(missing_ok=True)
                     continue
                 if time.monotonic() >= self.deadline:

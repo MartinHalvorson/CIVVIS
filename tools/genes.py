@@ -219,12 +219,22 @@ the interval. Every gene gets `posterior_pp`, `posterior_se_pp` and, in
 It is **published, not in force**. `AUTHORITY` above is the whole switch and
 it says `columns`; the ledger records which rule decided, and
 `src/ai/advanced/gene_ledger.rs::deployment_default_on` re-derives under the
-recorded one, so the two derivations cannot drift. Two reasons it is not
-flipped here, neither of them arithmetic: the threshold rule is an explicit
-operator directive, and every source in the ledger today is the retired
-`legacy` 60x38 Pangaea shape - re-deciding the deployment genome now would
-re-decide it on the wrong instrument. The ranking publishes the delta and the
-operator takes the call.
+recorded one, so the two derivations cannot drift.
+
+⭐ It stays `columns` because of what the switch MOVES, not because the
+instrument is unready - that was the old reason and it expired when the
+`standard` sources landed. Measured under all six combinations of the two
+dials (#2385): `POSTERIOR_SHAPES` moves nothing at all (standard-only and
+pooled ship the identical genome under every authority), and both posterior
+authorities move exactly one gene, `siege-commitment` off -> on, purely by
+relaxing the veto. Five screens and 180,912 seats have priced that gene and
+every one reads `~`; its two deployment-shape readings are +0.119 pp (z +0.38,
+23,622 pairs) and -0.199 pp (z -0.55, 41,628 seats, #2374), and the 23,622-pair
+screen's own three tranches flip sign inside one run. Its pooled `Diff` is
+negative in every source combination, which is what the shipped veto fires on.
+Enter the 41,628-seat screen as a source and the flip table is EMPTY. See
+`docs/GENE_SCREEN.md`, "The switch, and why it is not thrown", for the grid,
+the per-screen table and the two checkable conditions for throwing it.
 
 ──────────────────────────────────────────────────────────────────────────────
 THE RANKING (formerly tools/genes.py)
@@ -503,12 +513,18 @@ DIFF_PLACES = 6
 #: which authority decided, so `--check` and the Rust re-derivation read the
 #: same rule the file was written under and neither can drift.
 #:
-#: It is deliberately NOT flipped. Two reasons, both about evidence rather
-#: than arithmetic: the threshold rule is an explicit operator directive
-#: (2026-08-22), and every source in the ledger today is the retired `legacy`
-#: 60x38 Pangaea shape, so re-deciding the genome now would re-decide it on
-#: the wrong instrument. `HEURISTIC_GENE_RANKING.md` publishes the delta
-#: instead, and the operator takes the call.
+#: It is deliberately NOT flipped, and since #2385 that is a measured call
+#: rather than a deferral. Rebuilt under all six combinations of this constant
+#: and `POSTERIOR_SHAPES`, the switch moves exactly ONE gene -
+#: `siege-commitment` off -> on - and it moves it by relaxing the veto, not by
+#: the pooled estimate overriding anything. That gene reads `~` on all five
+#: screens that priced it (180,912 seats); at the deployment shape it reads
+#: +0.119 pp / z +0.38 on 23,622 pairs and -0.199 pp / z -0.55 on 41,628 seats
+#: (#2374). `boundary` sizes a resolving arm at 788,779 seat pairs, so no
+#: feasible direct arm settles it. A negative pooled `Diff` vetoes a
+#: default-on; overriding that veto for a gene the deployment shape cannot
+#: distinguish from zero is how a null ships. `docs/GENE_SCREEN.md` carries the
+#: grid and the two conditions under which this constant should change.
 AUTHORITY = "columns"
 #: The three settings, weakest first. Each contains the one before it:
 #:
@@ -1227,6 +1243,18 @@ def reporting_batch_notes_from_ledger(ledger: dict) -> dict[str, str]:
         for batch in ledger.get("reporting_batches", [])
         if batch.get("unverified")
     }
+
+
+def latest_reporting_batches(entered: list[Path], recorded: list[Path]) -> list[Path]:
+    """Keep the newest three fixed display batches when a new one arrives.
+
+    ``entered`` and ``recorded`` are both newest-first.  The ranking has exactly
+    three fixed report columns, so a newly entered batch must evict the oldest
+    recorded one rather than leaving four inputs for a three-column renderer.
+    """
+    return (entered + [path for path in recorded if path not in entered])[:
+        len(REPORTING_BATCH_LABELS)
+    ]
 
 
 def reporting_batch_records(paths: list[Path],
@@ -2617,13 +2645,10 @@ def render(ledger: dict) -> str:
         if not history:
             unmeasured.append(tag)
             continue
-        score = next(
-            (total_seat_batch_wins(batch["rows"][tag])
-             for batch in reporting_slots
-             if batch is not None and tag in batch["rows"]),
-            total_seat_batch_wins(history[-1]),
-        )
-        rows.append((score, tag, history))
+        # Keep the visual ranking tied to the displayed pooled difference,
+        # rather than to one screen's projected win total.  This is the same
+        # quantity `diff_cell` prints below.
+        rows.append((pooled_win_diff_pp(history), tag, history))
     rows.sort(key=lambda r: (-r[0], r[1]))
 
     removed = sorted(tag for tag in measured if tag not in reg)
@@ -2634,8 +2659,9 @@ def render(ledger: dict) -> str:
     # between the file and its first row. Carried under the table instead, so
     # nothing derived is lost and nothing derived is in the way.
     reference = [
-        "Every screenable heuristic gene on the Advanced controller, ranked most beneficial "
-        "to least by the latest fixed batch. Each batch header carries its actual player-seat "
+        "Every screenable heuristic gene on the Advanced controller, ranked by the displayed "
+        "pooled *Diff* from highest to lowest (alphabetically by tag on a tie). Each batch "
+        "header carries its actual player-seat "
         "count once; cells show the enabled arm's excess projected to 10,000 **total** player "
         "seats, where a six-player chance expectation is 1,667 wins. A dash means that batch "
         "did not screen the gene. The *Total* win-rate columns pool the displayed observations "
@@ -2736,7 +2762,7 @@ def render(ledger: dict) -> str:
         "P(>0) | Share Δpp (z) | cost (compute) | cost (time) |",
         "|---:|---|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|",
     ]
-    for rank, (wins, tag, history) in enumerate(rows, 1):
+    for rank, (_diff, tag, history) in enumerate(rows, 1):
         v = verdict.get(tag, {})
         default = "**on**" if v.get("default_on") else "off"
         # Fixed report batches put `n` in the headers once, while each total
@@ -2972,9 +2998,7 @@ def main(argv=None) -> int:
     entered_reporting = [Path(path).resolve() for path in args.reporting_batch]
     if args.reporting_unverified_build and not entered_reporting:
         raise SystemExit("--reporting-unverified-build requires --reporting-batch FILE")
-    reporting = entered_reporting + [
-        path for path in recorded_reporting if path not in entered_reporting
-    ]
+    reporting = latest_reporting_batches(entered_reporting, recorded_reporting)
     reporting_notes = dict(recorded_reporting_notes)
     if args.reporting_unverified_build:
         for path in entered_reporting:

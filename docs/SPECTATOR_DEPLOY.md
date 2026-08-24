@@ -216,7 +216,8 @@ that cannot put a frame on a screen should not be holding a turn open waiting to
 
 ## Tuning
 
-`--players --width --height --city-states --turns --map --speed` size the game.
+`--players --width --height --city-states --turns --map --shape --poles --speed`
+size the game.
 A finished result stays on screen for **ten seconds**, and that is not a
 setting: it is the countdown the server shows the viewer, so anything able to
 disagree with it is a way for the screen to be wrong. `--cooldown` is still
