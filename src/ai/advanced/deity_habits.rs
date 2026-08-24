@@ -147,12 +147,14 @@ impl AdvancedAi {
         if remaining <= 0.0 {
             return None;
         }
-        let operation = g
-            .builder_operations(pid, pos)
-            .into_iter()
-            .find(|op| matches!(op.as_str(), "chop_woods" | "chop_rainforest" | "clear_marsh"))?;
-        let scale = (g.world_era as f64 + 1.0)
-            * (1.0 + g.governor_effect(pid, cid, "harvest_pct") / 100.0);
+        let operation = g.builder_operations(pid, pos).into_iter().find(|op| {
+            matches!(
+                op.as_str(),
+                "chop_woods" | "chop_rainforest" | "clear_marsh"
+            )
+        })?;
+        let scale =
+            (g.world_era as f64 + 1.0) * (1.0 + g.governor_effect(pid, cid, "harvest_pct") / 100.0);
         let mut lump = Yields::default();
         for (kind, base) in &g.rules.features[feature].chop {
             let amount = base * scale;
@@ -338,8 +340,7 @@ impl AdvancedAi {
             .filter(|chase| {
                 if let Some(named) = chase.trigger.strip_prefix("improvement:") {
                     named == improvement
-                } else if let Some(named) = chase.trigger.strip_prefix("improvement_on_resource:")
-                {
+                } else if let Some(named) = chase.trigger.strip_prefix("improvement_on_resource:") {
                     named == improvement && tile.resource.is_some()
                 } else if let Some(resource) = chase.trigger.strip_prefix("improve_resource:") {
                     tile.resource.as_deref() == Some(resource)
@@ -388,7 +389,10 @@ mod tests {
 
     fn opt_in_off_in_both_controllers(tag: &str, read: fn(&AdvancedAi) -> bool) {
         assert!(!read(&AdvancedAi::new()), "{tag} must be off in new()");
-        assert!(!read(&AdvancedAi::legacy()), "{tag} must be off in legacy()");
+        assert!(
+            !read(&AdvancedAi::legacy()),
+            "{tag} must be off in legacy()"
+        );
         let gene = GENES
             .iter()
             .find(|gene| gene.tag == tag)
@@ -453,7 +457,9 @@ mod tests {
             })
             .collect();
         ring.sort_unstable();
-        ring.into_iter().next().expect("an owned land tile beside the capital")
+        ring.into_iter()
+            .next()
+            .expect("an owned land tile beside the capital")
     }
 
     fn forest_beside_the_capital(seed: u64) -> (Game, u32, Pos) {
@@ -466,7 +472,9 @@ mod tests {
         tile.hills = false;
         game.players[0].techs.insert(name!("mining"));
         assert!(
-            game.builder_operations(0, pos).iter().any(|op| op == "chop_woods"),
+            game.builder_operations(0, pos)
+                .iter()
+                .any(|op| op == "chop_woods"),
             "Mining opens the chop on a forest the capital owns"
         );
         (game, cid, pos)
@@ -497,9 +505,15 @@ mod tests {
         };
         let (chopped, lump) = run(true);
         assert!(chopped, "the gene chops the forest into the Settler");
-        assert!(lump >= 20.0 - f64::EPSILON, "an Ancient forest pays 20 production, got {lump}");
+        assert!(
+            lump >= 20.0 - f64::EPSILON,
+            "an Ancient forest pays 20 production, got {lump}"
+        );
         let (chopped, lump) = run(false);
-        assert!(!chopped && lump == 0.0, "off, the forest stands and the stock is untouched");
+        assert!(
+            !chopped && lump == 0.0,
+            "off, the forest stands and the stock is untouched"
+        );
     }
 
     /// Not every queue is worth a tile's feature: a Monument at the front
@@ -512,7 +526,10 @@ mod tests {
         game.cities.get_mut(&cid).unwrap().queue = vec![Item::Building {
             building: name!("monument"),
         }];
-        assert_eq!(ai.chop_into_the_queue_value(&game, 0, pos, GrandStrategy::Expansion, false), None);
+        assert_eq!(
+            ai.chop_into_the_queue_value(&game, 0, pos, GrandStrategy::Expansion, false),
+            None
+        );
         game.cities.get_mut(&cid).unwrap().queue = vec![Item::Unit {
             unit: name!("settler"),
         }];
@@ -523,7 +540,10 @@ mod tests {
         let (_, worked) = ai
             .chop_into_the_queue_value(&game, 0, pos, GrandStrategy::Expansion, true)
             .unwrap();
-        assert!(idle > 0.0 && worked < idle, "a worked tile chops for less: {worked} < {idle}");
+        assert!(
+            idle > 0.0 && worked < idle,
+            "a worked tile chops for less: {worked} < {idle}"
+        );
         assert!(
             idle > ai.improvement_value(&game, pos, "farm", GrandStrategy::Expansion),
             "the Settler's lump outbids a plain farm on the same tile"
@@ -548,14 +568,19 @@ mod tests {
         let expected = game.game_speed.scale(game.rules.techs["masonry"].cost) * 0.4;
         assert!((masonry.research - expected).abs() < 1e-9);
         assert!(
-            chases.iter().all(|chase| game.rules.techs.get(&chase.node).map_or(true, |spec| spec
-                .era
-                <= game.world_era + EUREKA_CHASE_ERA_REACH)),
+            chases.iter().all(|chase| game
+                .rules
+                .techs
+                .get(&chase.node)
+                .is_none_or(|spec| spec.era <= game.world_era + EUREKA_CHASE_ERA_REACH)),
             "nothing past the era reach is chased"
         );
         game.players[0].boosted_techs.insert(name!("masonry"));
         game.turn += 1;
-        assert!(ai.eureka_chases(&game, 0).iter().all(|chase| chase.node != "masonry"));
+        assert!(ai
+            .eureka_chases(&game, 0)
+            .iter()
+            .all(|chase| chase.node != "masonry"));
     }
 
     /// The Builder's half: a quarry on stone is worth Masonry's boost more
@@ -579,7 +604,8 @@ mod tests {
         chasing.enable_eureka_chasing_builder();
         let off = plain.improvement_value(&game, pos, "quarry", strategy);
         let on = chasing.improvement_value(&game, pos, "quarry", strategy);
-        let expected = game.game_speed.scale(game.rules.techs["masonry"].cost) * 0.4
+        let expected = game.game_speed.scale(game.rules.techs["masonry"].cost)
+            * 0.4
             * EUREKA_BUILDER_VALUE_PER_POINT;
         assert!(
             (on - off - expected).abs() < 1e-9,
@@ -623,9 +649,15 @@ mod tests {
         let expected = game.game_speed.scale(game.rules.techs["machinery"].cost) * 0.4 / 3.0
             * EUREKA_PRODUCTION_VALUE_PER_POINT;
         let premium = ai.eureka_production_premium(&game, 0, &archer);
-        assert!((premium - expected).abs() < 1e-9, "one of three Archers: {premium} v {expected}");
+        assert!(
+            (premium - expected).abs() < 1e-9,
+            "one of three Archers: {premium} v {expected}"
+        );
         assert_eq!(ai.eureka_production_premium(&game, 0, &warrior), 0.0);
-        assert_eq!(AdvancedAi::new().eureka_production_premium(&game, 0, &archer), 0.0);
+        assert_eq!(
+            AdvancedAi::new().eureka_production_premium(&game, 0, &archer),
+            0.0
+        );
         for _ in 0..3 {
             game.spawn_unit("archer", 0, home);
         }
