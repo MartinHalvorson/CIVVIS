@@ -6,16 +6,16 @@ The Lv 4 (Prince) is the highest level beat so far, using computer control to br
 
 ## Genetic Algorithm
 
-The CIVVIS AI uses a genetic algorithm that tests and assembles a collection of heuristics into a player's strategy.
+The CIVVIS AI uses a genetic algorithm that tests and assembles a collection of individual Civ 6 heuristics into a player's overall strategy. An individual Civ 6 heuristic might be some rule like "don't move an unescorted settler next to an enemy barbarian" or "if military strength falls below a given level then build more military units".
 
 - Gene - Each heuristic is represented as a gene. A gene is gated by a flag that can be turned "on" or "off".
 - Gene pool - The collection of all available genes (both "on" and "off" genes).
-- Genome - The set of "on" heuristics for a player, together forming the player's overall strategy.
-- Tournament - A Monte Carlo simulation of many probabilistically generated player genomes competing in CIVVIS Civ 6 games.
+- Genome - The set of "on" heuristics for a player, which together form the player's overall strategy.
+- Tournament - A Monte Carlo simulation of many probabilistically-generated player genomes competing in CIVVIS Civ 6 games.
 
-For each free-for-all game, there is one winner. The "on" genes in this players genome are awarded one win. After a tournament concludes, win rates are calculated for every gene.
+For each free-for-all game, there is one winner. The "on" genes in this players genome are awarded one win.
 
-Genes with positive win rates are deemed beneficial and have a higher likelihood of defaulting "on" in our best genome. 
+After a tournament concludes, win rates are calculated for every gene. In a 6 player match, the expected win rate is 1/6 or 16.67%. Genes with win rates above this are deemed beneficial and have a higher likelihood of defaulting "on" in our best genome. The process looks across the last few tournament too to ensure the gene is consistently demonstrating a beneficial performance.
 
 ## Dev Process
 
