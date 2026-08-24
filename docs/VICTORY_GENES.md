@@ -676,3 +676,80 @@ gene row switches the behaviour off at deployment while its first screen runs.
 That is the right rule for a behaviour that was already off and the wrong one
 for one carrying +61 Elo-equivalent (200 pairs, seed 8700000, CI +21..+109, PASS on the corrected-gate matrix; see `AdvancedAi::promoted_policy_envoy`). `docs/GENE_SCREEN.md` §"The toggles no screen
 can reach" has the group-by-group account.
+
+## 10. `lane-commit`: from the midpoint, the empire plays for the victory it leads
+
+Operator, 2026-08-24: *"add some logic or some heuristic for steering us
+towards our best victory condition harder. From the midpoint of the game, we
+should have the victory in mind and be optimizing towards winning that."*
+
+§2 measured the defect this answers: an adaptive seat — production, and every
+measured seat in a `gene_screen` game — is on a victory lane for **52% of its
+seat-turns**, and the lane it is racing never reaches the deciders keyed on
+`victory_target`, because those read the operator's assignment and an
+adaptive seat has none. `assess` puts an adaptive seat on a lane only at
+`victory_focus` ≥ 65%, or when nothing else claims the plan; and
+`victory_focus` re-decides every turn from raw progress.
+
+**The gene** (`AdvancedAi::lane_commit`, `advanced/lane_commit.rs`,
+`Kind::OptIn`, off in both controllers, byte-identical when off):
+
+- **At the midpoint** — half the turn cap, turn 125 on the 250-turn Online
+  standard; `LANE_COMMIT_MIDPOINT_STANDARD` standard turns with no cap — the
+  seat commits to one lane.
+- **The lane we lead.** Winning is relative — every rival runs this planner —
+  so each lane is read for the seat *and for every living major* on one
+  table (`lane_progress_table`: the four readings `victory_focus` ranks,
+  minus the civilization preferences). Among the lanes the seat leads, the
+  one furthest along; leading none, the furthest along of all — what
+  `victory_focus` would have said, made sticky. Domination is never chosen
+  (0% at every map and clock).
+- **It is the plan's lane pick, not an assigned lane.** `assess` follows the
+  commitment in place of `victory_focus`'s per-turn fallback pick, *below*
+  every posture that comes first today (a threatened city, an emergency, a
+  rival at the wire, a war in progress, a neighbour weak enough to take, a
+  Prophet on the table) **and below the adaptive expansion arm** — a seat
+  short of cities with land still open keeps settling until the stock window
+  shuts (about t200 at Online); the lane comes before more cities only once
+  it is 65% along, stock's own bar. City dispositions follow it. The two
+  science keys an assigned Science seat has — the rocketry-path tech value
+  and the space-race projects and Spaceports — read the commitment through
+  `raced_target`. **Nothing else an assigned lane carries does**: not the
+  objective resolutions (beeline, society, government, policy deck, Culture
+  routing, wonder value), not the vetoes (Congress abstention, missionary and
+  Great Work vetoes, space-race block, assigned expansion cutoff), and
+  `active_victory_target` stays the operator's (victory denial adaptive,
+  `pursue_religion` and the expansion dispatcher unchanged, the census still
+  telling an adaptive seat from a targeted one).
+- **It holds.** Reviewed every `LANE_COMMIT_REVIEW` (10) standard turns; a
+  challenger takes over only when the committed lane's lead is gone and the
+  challenger leads, or when it is `LANE_COMMIT_SWITCH_MARGIN` (20) points
+  further along at the same standing.
+
+**Four probes on the same maps decided what it does not touch.** Every draft
+was probed on the same 24 maps (`gene_screen --games 24 --genes lane-commit
+--start-seed 26083100`, 72 on / 72 off seats), so the drafts read against
+each other even though none resolves anything alone (±5–6 pp on wins, ±1.2–1.4
+on share):
+
+| draft | wins Δ | share Δ | the seat comparison |
+|---|---:|---:|---|
+| 1 — project each lane's landing turn from its rate, Score fallback, every `victory_target` read routed | **−8.3 ± 5.4** | −1.0 ± 1.2 | science landed in **7 of 24** games (t220–250), six by *off* seats — a linear projection of the science reading (25 + 30 × techs/77, then discrete project steps) says it cannot land; committed seats: five fewer techs (51.9 v 56.8), **a third of the DVP** (3.7 v 9.6 — the Congress abstention), fewer cities, a smaller army (sat above the elective war `opportunistic-war` is priced `helps` for) |
+| 2 — the lane we lead; vetoes back on `victory_target`; below the war and Prophet arms | **−5.6 ± 5.8** | −1.8 ± 1.3 | cities **5.4 v 6.8**, deaths 11% v 3%: sat above the adaptive expansion arm, whose stock window (`stock_expansion_deadline`) runs to ~t200 at Online |
+| 3 — below the expansion arm; the lane preempts cities only at 65% | **−2.8 ± 5.4** | −1.2 ± 1.4 | army 1020 v 1298, deaths 10% v 6%: the beeline, government and policies served the lane under Conquest and Recovery too |
+| 4 — war postures keep their own objective | +5.6 ± 6.1 | **−2.2 ± 1.2** | cities back at **5.4 v 6.8** with the branch order unchanged: routing the objectives to the lane under an *Expansion* plan is what costs the cities — the deck stops serving the settling |
+| 5 — no objective routing at all (this version) | see `docs/gene_screens/fires/lane-commit.json` | | |
+
+The pattern is the one #2403 recorded for its first drafts: a delta that
+makes the seat *spend more* on its lane loses share on the probe. What
+survives is the part that costs nothing — the lane pick made field-relative
+and sticky, and the science keys — and on the live bridge, which always
+passes `--victory <lane>`, the gene is inert by construction.
+
+**Prediction to read on the next standard screen.** The commitment makes the
+post-window lane plan sticky and field-relative; the change is at seats that
+lead the religion or diplomacy field at the midpoint, and at Science seats
+through the two keys. Expect a small effect on the religious/diplomatic
+ending share and on score share, not a large win-rate move. The levers for a
+version 2 are the review cadence, the switch margin and the ranking key —
+not more reach, which four probes priced.
