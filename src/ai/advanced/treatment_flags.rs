@@ -2180,16 +2180,7 @@ impl AdvancedAi {
     pub fn disable_missionary_evades_raiders(&mut self) {
         self.missionary_evades_raiders = false;
     }
-    // Append points, one per name range: a new treatment goes under the range
-    // its own name falls in, so that two of them do not append to one line.
-    // The rule, the measurement behind it and the check that enforces it are
-    // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
 
-    // ---- append: a-b ------------------------------------------------
-
-    // ---- append: c-d ------------------------------------------------
-
-    // ---- append: e-f ------------------------------------------------
     /// A city-state's place enters the envoy score: up to ninety for one on
     /// our border, two hundred more when its sitting suzerain is at war with
     /// us, amortised over the envoys the flip still needs.
@@ -2204,11 +2195,6 @@ impl AdvancedAi {
         self.flip_nearby_city_states = false;
     }
 
-    // ---- append: g-k ------------------------------------------------
-
-    // ---- append: l-o ------------------------------------------------
-
-    // ---- append: p-r ------------------------------------------------
     /// A unit at or below 65 health pillages a heal-type improvement it
     /// stands on, or steps one tile onto one and pillages it, before the
     /// recovery path walks it home. [`AdvancedAi::pillage_to_heal`]. Opt-in
@@ -2222,7 +2208,6 @@ impl AdvancedAi {
         self.pillage_to_heal = false;
     }
 
-    // ---- append: s-s ------------------------------------------------
     /// A ranged unit inside a hostile melee body's reach steps to a firing
     /// tile inside strictly fewer hostile envelopes and fires at that body,
     /// in war and against barbarians. Shooters exert no zone of control, so
@@ -2239,7 +2224,6 @@ impl AdvancedAi {
         self.shoot_and_scoot = false;
     }
 
-    // ---- append: t-z ------------------------------------------------
     /// A melee unit the attack scan found nothing for stands where its zone
     /// of control takes the most enemy reaches off our shooters and wounded,
     /// read exactly off `attack_reach`, and holds only while the stand is
@@ -2253,6 +2237,26 @@ impl AdvancedAi {
     pub fn disable_zoc_screen(&mut self) {
         self.zoc_screen = false;
     }
+    // Append points, one per name range: a new treatment goes under the range
+    // its own name falls in, so that two of them do not append to one line.
+    // The rule, the measurement behind it and the check that enforces it are
+    // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
+
+    // ---- append: a-b ------------------------------------------------
+
+    // ---- append: c-d ------------------------------------------------
+
+    // ---- append: e-f ------------------------------------------------
+
+    // ---- append: g-k ------------------------------------------------
+
+    // ---- append: l-o ------------------------------------------------
+
+    // ---- append: p-r ------------------------------------------------
+
+    // ---- append: s-s ------------------------------------------------
+
+    // ---- append: t-z ------------------------------------------------
 }
 
 #[cfg(test)]
