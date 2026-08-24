@@ -2236,6 +2236,21 @@ impl AdvancedAi {
     pub fn disable_no_free_passage(&mut self) {
         self.base.no_free_passage = false;
     }
+    /// Fight one war at a time: keep one campaign front and sue every other
+    /// major for peace, hold a fresh declaration while a war is on, press the
+    /// front while a city is breaking or tiles are in reach to pillage, and
+    /// offer peace once the exchange has run against us for long enough with
+    /// nothing left to take. See [`AdvancedAi::one_war_observe`]. Opt-in
+    /// gene `one-war-at-a-time`.
+    pub fn enable_one_war_at_a_time(&mut self) {
+        self.one_war_at_a_time = true;
+    }
+
+    /// The twin of `enable_one_war_at_a_time`.
+    pub fn disable_one_war_at_a_time(&mut self) {
+        self.one_war_at_a_time = false;
+    }
+
     // Append points, one per name range: a new treatment goes under the range
     // its own name falls in, so that two of them do not append to one line.
     // The rule, the measurement behind it and the check that enforces it are

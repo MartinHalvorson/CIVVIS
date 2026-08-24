@@ -33442,3 +33442,360 @@ fn a_friendship_ask_carries_no_passage_only_with_the_gene() {
     );
     assert!(!proposal(true), "the gene: the ask carries no passage");
 }
+
+// ═══ One war at a time (advanced/one_war.rs) ═══
+
+#[test]
+fn one_war_at_a_time_is_a_registered_reversible_opt_in() {
+    assert!(
+        GENES.iter().any(|gene| gene.opt_in()
+            && gene.field == "one_war_at_a_time"
+            && gene.tag == "one-war-at-a-time"),
+        "one-war-at-a-time must be a registered native opt-in"
+    );
+    assert!(
+        crate::ai::advanced::gene_ledger::screenable("one-war-at-a-time"),
+        "the ledger must be able to price it"
+    );
+    assert_eq!(
+        crate::ai::advanced::gene_ledger::ledger_default_on("one-war-at-a-time"),
+        Some(false),
+        "it ships off until a screen prices it"
+    );
+    let mut ai = AdvancedAi::new();
+    assert!(!ai.one_war_at_a_time && ai.one_war.is_none());
+    ai.enable_one_war_at_a_time();
+    assert!(ai.one_war_at_a_time);
+    ai.disable_one_war_at_a_time();
+    assert!(!ai.one_war_at_a_time);
+    assert!(
+        !AdvancedAi::legacy().one_war_at_a_time,
+        "the frozen anchor plays the game it always did"
+    );
+}
+
+/// Three majors, cities founded, two armoured bodies each; player 0 at war
+/// with both neighbours and a Conquest plan on player 1.
+fn one_war_board() -> (Game, StrategicPlan) {
+    let mut game = Game::new_full(3, 24, 16, 7_923, 300, 0, false);
+    for pid in 0..3 {
+        let settler = game
+            .player_unit_ids(pid)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .expect("every major starts with a settler");
+        game.found_city_for(pid, game.units[&settler].pos, None);
+        game.remove_unit(settler);
+    }
+    for pid in 0..3 {
+        let home = game.cities[&game.player_city_ids(pid)[0]].pos;
+        for _ in 0..2 {
+            game.spawn_test_unit("modern_armor", pid, home);
+        }
+    }
+    for enemy in [1, 2] {
+        game.record_contact(0, enemy);
+        game.at_war.insert((0, enemy));
+    }
+    game.turn = 60;
+    game.current = 0;
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Conquest,
+        target_player: Some(1),
+        target_city: Some(game.player_city_ids(1)[0]),
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    (game, plan)
+}
+
+fn one_war_peace_deal(game: &Game, from: usize, joint_war_target: Option<usize>) -> DiplomaticDeal {
+    DiplomaticDeal {
+        id: 1,
+        from,
+        to: 0,
+        give_gold: 0.0,
+        request_gold: 0.0,
+        open_borders: false,
+        friendship: false,
+        peace: joint_war_target.is_none(),
+        alliance: None,
+        defensive_pact: false,
+        joint_war_target,
+        promise: None,
+        demand: false,
+        expires: game.turn + 10,
+    }
+}
+
+#[test]
+fn one_war_offers_peace_on_the_second_front_and_keeps_the_campaign() {
+    let (mut game, plan) = one_war_board();
+    assert!(
+        game.military_power(0) >= game.military_power(1) * 0.62
+            && game.military_power(0) >= game.military_power(2) * 0.62,
+        "precondition: neither front trips the ordinary outmatched clause"
+    );
+
+    let mut off = AdvancedAi::new();
+    let mut off_board = game.clone();
+    off.one_war_observe(&off_board, 0);
+    off.advanced_diplomacy(&mut off_board, 0, &plan);
+    assert!(
+        off.peace_offers.is_empty(),
+        "with the gene off a balanced two-front war offers nobody peace: {:?}",
+        off.peace_offers
+    );
+
+    let mut ai = AdvancedAi::new();
+    ai.enable_one_war_at_a_time();
+    // The plan of the previous turn is what the observation reads.
+    ai.plan = Some(plan.clone());
+    ai.one_war_observe(&game, 0);
+    assert_eq!(
+        ai.one_war_front(),
+        Some(1),
+        "the plan's target is the front"
+    );
+    assert_eq!(
+        ai.one_war_objective_enemies(&game, None, &[1, 2]),
+        vec![1],
+        "the force planner aims at the front alone"
+    );
+    ai.advanced_diplomacy(&mut game, 0, &plan);
+    assert!(
+        ai.peace_offers.contains(&2) && !ai.peace_offers.contains(&1),
+        "the second front is offered peace and the front is not: {:?}",
+        ai.peace_offers
+    );
+    assert!(
+        game.pending_deals
+            .iter()
+            .any(|deal| deal.from == 0 && deal.to == 2 && deal.peace),
+        "the offer is an outbound peace deal"
+    );
+    assert_eq!(
+        game.players[0].counters.get("one_war:peace:second_front"),
+        Some(&1)
+    );
+    assert!(
+        ai.incoming_deal_value(&game, 0, &one_war_peace_deal(&game, 2, None), &plan) >= 320.0,
+        "the second front's white peace is taken"
+    );
+    assert!(
+        ai.incoming_deal_value(&game, 0, &one_war_peace_deal(&game, 1, None), &plan) < 0.0,
+        "the front's white peace is still refused while the tide is not against us"
+    );
+    assert!(
+        ai.incoming_deal_value(&game, 0, &one_war_peace_deal(&game, 2, Some(1)), &plan) <= -1_000.0,
+        "a Joint War while a war burns is a second front by treaty"
+    );
+    // Peace with the second front concluded: the front is unchanged.
+    game.at_war.remove(&(0, 2));
+    ai.one_war_observe(&game, 0);
+    assert_eq!(ai.one_war_front(), Some(1));
+    assert_eq!(ai.one_war_objective_enemies(&game, None, &[1]), vec![1]);
+}
+
+#[test]
+fn one_war_holds_a_declaration_while_another_war_burns() {
+    let (mut game, _) = one_war_board();
+    game.at_war.remove(&(0, 2));
+    let mut ai = AdvancedAi::new();
+    assert!(
+        !ai.one_war_holds_declaration(&game, 0, 2),
+        "the gene off holds nothing"
+    );
+    ai.enable_one_war_at_a_time();
+    ai.one_war_observe(&game, 0);
+    assert!(
+        ai.one_war_holds_declaration(&game, 0, 2),
+        "a war on 1 holds the declaration on 2"
+    );
+    assert!(
+        !ai.one_war_holds_declaration(&game, 0, 1),
+        "the war already being fought is never held"
+    );
+    game.at_war.remove(&(0, 1));
+    ai.one_war_observe(&game, 0);
+    assert!(ai.one_war.is_none(), "no war, no front");
+    assert!(
+        !ai.one_war_holds_declaration(&game, 0, 2),
+        "at peace nothing is held"
+    );
+}
+
+#[test]
+fn one_war_presses_a_breaking_city_and_sues_on_a_rout() {
+    let (mut game, plan) = one_war_board();
+    game.at_war.remove(&(0, 2));
+    let front_city = game.player_city_ids(1)[0];
+    let siege_pos = game
+        .wdisk(game.cities[&front_city].pos, 2)
+        .into_iter()
+        .find(|pos| {
+            *pos != game.cities[&front_city].pos
+                && game.city_at(*pos).is_none()
+                && game
+                    .map
+                    .get(*pos)
+                    .is_some_and(|tile| !game.rules.is_water(tile))
+        })
+        .expect("a land tile beside the front city");
+    game.spawn_test_unit("modern_armor", 0, siege_pos);
+
+    // A stalled war by the fatigue clause's own clock.
+    let mut ai = AdvancedAi::new();
+    ai.enable_one_war_at_a_time();
+    ai.major_war_since = Some(20);
+    ai.last_campaign_progress = 20;
+    let mut off = AdvancedAi::new();
+    off.major_war_since = Some(20);
+    off.last_campaign_progress = 20;
+    assert!(
+        off.incoming_deal_value(&game, 0, &one_war_peace_deal(&game, 1, None), &plan) >= 0.0,
+        "gene off: the fatigued war accepts the front's white peace"
+    );
+
+    ai.one_war_observe(&game, 0);
+    game.cities.get_mut(&front_city).unwrap().hp = 140;
+    game.turn += 1;
+    ai.one_war_observe(&game, 0);
+    assert!(
+        ai.one_war_prizes_in_reach(&game, 0),
+        "a front city whose health fell under our soldier is a prize in reach"
+    );
+    assert!(ai.one_war_presses(&game, 0, 1));
+    assert_eq!(ai.one_war_peace(&game, 0, 1), None);
+    assert!(
+        ai.incoming_deal_value(&game, 0, &one_war_peace_deal(&game, 1, None), &plan) < 0.0,
+        "gene on: the front's white peace is refused while its city is breaking"
+    );
+    ai.advanced_diplomacy(&mut game, 0, &plan);
+    assert!(
+        !ai.peace_offers.contains(&1),
+        "the fatigue clause stands down while the city is breaking"
+    );
+
+    // Five of ours lost for none of theirs since the last observation: a rout.
+    let key = (0usize, 1usize);
+    let mut record = crate::game::WarRecord {
+        conflict: 1,
+        declarer: 0,
+        target: 1,
+        casus_belli: None,
+        joint_war_until: None,
+        aggressor: 0,
+        defender: 1,
+        started: 20,
+        ended: None,
+        losses: BTreeMap::new(),
+        participants: Vec::new(),
+        peace_terms: Vec::new(),
+        highlights: Vec::new(),
+        theater: Vec::new(),
+    };
+    record.losses.insert(
+        0,
+        crate::game::WarLosses {
+            units: 5,
+            ..Default::default()
+        },
+    );
+    game.wars.insert(key, record);
+    game.turn += 1;
+    ai.one_war_observe(&game, 0);
+    let front = ai.one_war.as_ref().expect("the front persists");
+    assert_eq!(front.window_net(), -5);
+    assert_eq!(
+        ai.one_war_peace(&game, 0, 1),
+        Some(super::one_war::OneWarPeace::Rout)
+    );
+    assert!(
+        ai.incoming_deal_value(&game, 0, &one_war_peace_deal(&game, 1, None), &plan) >= 320.0,
+        "a rout takes the white peace"
+    );
+    ai.advanced_diplomacy(&mut game, 0, &plan);
+    assert!(
+        ai.peace_offers.contains(&1),
+        "a rout offers peace on the front"
+    );
+    assert_eq!(game.players[0].counters.get("one_war:peace:rout"), Some(&1));
+}
+
+#[test]
+fn one_war_sues_once_the_tide_has_run_against_us_for_long_enough() {
+    let (mut game, _) = one_war_board();
+    game.at_war.remove(&(0, 2));
+    let mut ai = AdvancedAi::new();
+    ai.enable_one_war_at_a_time();
+    ai.one_war_observe(&game, 0);
+    assert_eq!(
+        ai.one_war_peace(&game, 0, 1),
+        None,
+        "an even exchange is no reason"
+    );
+
+    let key = (0usize, 1usize);
+    let mut record = crate::game::WarRecord {
+        conflict: 1,
+        declarer: 0,
+        target: 1,
+        casus_belli: None,
+        joint_war_until: None,
+        aggressor: 0,
+        defender: 1,
+        started: 20,
+        ended: None,
+        losses: BTreeMap::new(),
+        participants: Vec::new(),
+        peace_terms: Vec::new(),
+        highlights: Vec::new(),
+        theater: Vec::new(),
+    };
+    record.losses.insert(
+        0,
+        crate::game::WarLosses {
+            units: 1,
+            ..Default::default()
+        },
+    );
+    game.wars.insert(key, record);
+    game.turn += 1;
+    ai.one_war_observe(&game, 0);
+    let front = ai.one_war.as_ref().unwrap();
+    assert_eq!(front.window_net(), -1);
+    assert_eq!(front.tide_against_since, Some(game.turn));
+    assert_eq!(
+        ai.one_war_peace(&game, 0, 1),
+        None,
+        "one bad turn is not the tide turning"
+    );
+
+    // Patience runs out with nothing in reach: our soldiers are at home,
+    // far from any city of theirs.
+    game.turn += game.standard_duration(super::one_war::ONE_WAR_TIDE_PATIENCE);
+    ai.one_war_observe(&game, 0);
+    assert!(!ai.one_war_prizes_in_reach(&game, 0));
+    assert_eq!(
+        ai.one_war_peace(&game, 0, 1),
+        Some(super::one_war::OneWarPeace::TideTurned)
+    );
+
+    // Two of theirs fall: the window turns, and the clock stops.
+    game.wars.get_mut(&key).unwrap().losses.insert(
+        1,
+        crate::game::WarLosses {
+            units: 2,
+            ..Default::default()
+        },
+    );
+    game.turn += 1;
+    ai.one_war_observe(&game, 0);
+    let front = ai.one_war.as_ref().unwrap();
+    assert!(front.window_net() > 0);
+    assert_eq!(front.tide_against_since, None);
+    assert_eq!(ai.one_war_peace(&game, 0, 1), None);
+}
