@@ -714,6 +714,9 @@ impl AdvancedAi {
             return None;
         }
         let pillaged = g.apply(pid, &Action::Pillage { unit: uid }).is_ok();
+        if pillaged {
+            Self::campaign_count(g, pid, "campaign:pillaged", 1);
+        }
         if pillaged && self.journal().wants(crate::reasoning::Level::Detail) {
             let why = if waiting {
                 "the force is waiting here"
@@ -1143,6 +1146,7 @@ mod tests {
         );
         assert!(game.map.tiles[&farms[0]].pillaged);
         assert_eq!(game.units[&warrior].moves_left, 0.0);
+        assert_eq!(game.players[0].counters.get("campaign:pillaged"), Some(&1));
 
         // Half a move left cannot pay a step and is spent on the pillage.
         let stuck = game.spawn_test_unit("warrior", 0, farms[1]);

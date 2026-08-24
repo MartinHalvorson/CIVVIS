@@ -372,6 +372,8 @@ These screenable genes have no on/off result, so they receive no rank or promoti
 
 | Gene | Default | Description | Best version |
 |---|---|---|---:|
+| `campaign-pillage` | off (unmeasured) | A soldier at war standing on a tile it may pillage spends the movement its march does not use on the pillage — waiting with its force, unable to move on, or in the siege ring with its blow declined — and never a tile of advance. | — |
+| `city-campaign` | off (unmeasured) | Appraise the neighbours on public military power and tech count, plan the holdable city — or two, or three — of a weaker one that the field army can take with units to spare, and launch when the staging ring carries that bill. | — |
 | `deals-at-the-ceiling` | off (unmeasured) | The chosen quote's Gold is moved to the counterparty's walk-away less two Gold — a sale asks for more, a purchase pays less — where the shipped quote split the surplus down the middle; the midpoint quote stays the fallback. | — |
 | `deals-for-our-gain` | off (unmeasured) | A quote is chosen by our own net value instead of the most balanced exchange on the board (`min(our gain, their gain)`), which threw away the ordering `Game::quick_deals` already produced by our gain. | — |
 | `flip-nearby-city-states` | off (unmeasured) | A city-state's place enters the envoy score: up to ninety for one on our border, two hundred more when its sitting suzerain is at war with us, amortised over the envoys the flip still needs. | — |
