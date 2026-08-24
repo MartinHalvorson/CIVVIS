@@ -369,6 +369,9 @@ These screenable genes have no on/off result, so they receive no rank or promoti
 
 | Gene | Default | Description | Best version |
 |---|---|---|---:|
+| `chop-into-the-queue` | off (unmeasured) | A Builder chops woods, rainforest or marsh into the Settler, district or wonder at the front of the owning city's queue, priced as a one-off lump against the per-turn jobs. | — |
+| `eureka-chasing-builder` | off (unmeasured) | An improvement that completes an unresearched technology's or civic's boost is worth the research the boost grants, spread over the steps the trigger still needs. | — |
+| `eureka-chasing-production` | off (unmeasured) | A unit, building or district that completes an unresearched technology's or civic's boost is worth the research the boost grants, spread over the steps the trigger still needs. | — |
 | `fog-honest` | off (unmeasured) | Put this controller behind the turn-level fog boundary. | — |
 | `fog-honest-2` | off (unmeasured) | Version 2 of `fog_honest`: the same fair-play boundary and the same information contract, plus one re-plan when the authoritative board refuses a planned order. | — |
 | `missionary-evades-raiders` | off (unmeasured) | A religious unit steps out of the tiles a visible barbarian raider can reach next turn, and never steps into them on the way to anything, holding when no safe step makes progress. | — |
