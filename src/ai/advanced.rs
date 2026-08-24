@@ -4808,20 +4808,6 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
-
-    // ---- append: c-d ------------------------------------------------
-
-    /// The city plans its districts, sites and tile buys together: wished
-    /// districts are jointly assigned reserved plots over rings 1-3 at the
-    /// lane's weights, net of the worked tile a site destroys; the plan's
-    /// sites join the production menu; and the tile a very valuable site
-    /// needs is bought. Off everywhere by default; opt-in gene
-    /// `district-planning`. See `advanced/district_planning.rs`.
-    /// (Filed name-first, without `pub`, so the append-point check can read
-    /// the name; the toggles and child modules are the whole interface.)
-    district_planning: bool,
-
-    // ---- append: a-d ------------------------------------------------
     /// Version 2 of `amenity_project_preemption`: the same crisis trigger and
     /// the same choice of repair, but an amenity BUILDING is bought with Gold
     /// when the treasury covers it, and only otherwise pauses the repeatable
@@ -4832,6 +4818,12 @@ pub struct AdvancedAi {
     /// still goes through production. Implies version 1; its enable turns
     /// version 1 off. Opt-in gene `amenity-project-preemption-2`.
     amenity_project_preemption_2: bool,
+
+    // ---- append: c-d ------------------------------------------------
+    /// The at-war cities an own unit has already reached this campaign;
+    /// state for `siege_is_progress_2`, rebuilt from the at-war set each
+    /// observation like `campaign_city_health`.
+    campaign_cities_reached: BTreeSet<u32>,
     /// Version 2 of `campus_adjacency_threshold`: the same district pricing,
     /// plus the lever the gene's own survey said was missing — CITY SITING.
     /// The best legal Campus plot of a founded city never reached the
@@ -4842,6 +4834,16 @@ pub struct AdvancedAi {
     /// raw Science adjacency ≥ 4. Implies version 1; its enable turns
     /// version 1 off. Opt-in gene `campus-adjacency-threshold-2`.
     campus_adjacency_threshold_2: bool,
+
+    /// The city plans its districts, sites and tile buys together: wished
+    /// districts are jointly assigned reserved plots over rings 1-3 at the
+    /// lane's weights, net of the worked tile a site destroys; the plan's
+    /// sites join the production menu; and the tile a very valuable site
+    /// needs is bought. Off everywhere by default; opt-in gene
+    /// `district-planning`. See `advanced/district_planning.rs`.
+    /// (Filed name-first, without `pub`, so the append-point check can read
+    /// the name; the toggles and child modules are the whole interface.)
+    district_planning: bool,
 
     // ---- append: e-f ------------------------------------------------
     /// Version 2 of `escort_unstick`: the same two-turn release, refused
@@ -4908,10 +4910,6 @@ pub struct AdvancedAi {
     /// version 1; its enable turns version 1 off. Opt-in gene
     /// `siege-is-progress-2`.
     siege_is_progress_2: bool,
-    /// The at-war cities an own unit has already reached this campaign;
-    /// state for `siege_is_progress_2`, rebuilt from the at-war set each
-    /// observation like `campaign_city_health`.
-    campaign_cities_reached: BTreeSet<u32>,
 
     // ---- append: t-z ------------------------------------------------
 }
@@ -5908,15 +5906,16 @@ impl AdvancedAi {
             // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
 
             // ---- append: a-b ----------------------------------------
+            amenity_project_preemption_2: false,
 
             // ---- append: c-d ----------------------------------------
+            campaign_cities_reached: BTreeSet::new(),
+            campus_adjacency_threshold_2: false,
 
             district_planning: false,
 
             // ---- append: e-f ----------------------------------------
             escort_unstick_2: false,
-            amenity_project_preemption_2: false,
-            campus_adjacency_threshold_2: false,
 
             // ---- append: g-k ----------------------------------------
             guru_heals_the_corps_2: false,
@@ -5931,7 +5930,6 @@ impl AdvancedAi {
             settler_guard_holds_2: false,
             settler_target_hysteresis_2: false,
             siege_is_progress_2: false,
-            campaign_cities_reached: BTreeSet::new(),
 
             // ---- append: t-z ----------------------------------------
         }
