@@ -60,6 +60,7 @@
 //!               [--p-on 0.5] [--p-default-on 0.75]
 //!               PROBE ONLY, and a batch using any of them is not a ledger
 //!               source: [--contested] [--contested-field lane,lane]
+//!               [--contested-field-genes tag,tag|none]
 //!               [--native-competitions] [--no-native-competitions]
 //!               [--players N] [--turns N] [--width N] [--height N]
 //!               [--city-states N] [--speed ID] [--map ID] [--victories a,b]
@@ -71,10 +72,10 @@
 //! ⭐ THE CONTESTED FIELD (`--contested`, 2026-08-24) is an ADDED MODE, never a
 //! redefinition. The standard screen above is untouched and every recorded
 //! column keeps comparing; a contested batch changes two legs of the header
-//! (`field`, `native_competitions`), `shape_of` reads it as `legacy`, and
-//! `tools/genes.py` refuses it as a ledger source. What it adds is an
-//! opponent: `field.len()` major seats are PINNED to pursue a victory lane and
-//! are not measured, the rest draw genomes as usual, and a drawn seat that
+//! (`contested_field`, `native_competitions`), `shape_of` reads it as `legacy`,
+//! and `tools/genes.py` refuses it as a ledger source. What it adds is an
+//! opponent: some major seats are PINNED to pursue a victory lane and are
+//! not measured, the rest draw genomes as usual, and a drawn seat that
 //! does not deny the pursuer loses to it. It exists because the fieldless
 //! screen ends 0-1% of its games diplomatically while the live seat loses
 //! 19.6% of its games that way — so every denial gene in the tables has been
@@ -169,6 +170,44 @@ const HELD_UNLESS_ASKED: &[&str] = &["joint-tactics"];
 /// game, and a seat that does not deny the pursuer loses to it. The default
 /// field is one of each lane the live seat actually loses to.
 const CONTESTED_FIELD: &[&str] = &["diplomatic", "culture"];
+
+/// ⭐ THE GENES A FIELD SEAT PLAYS ON TOP OF THE DEPLOYMENT GENOME, and the
+/// measurement that put them there.
+///
+/// The first cut seated a pursuer with the deployment genome alone. Measured
+/// over **27 contested games** (seeds 92000000..92000026, one diplomatic and
+/// one culture pursuer, native competitions on,
+/// `docs/gene_screens/2026-08-24-contested-field-pursuers-on-the-deployment-genome.json`),
+/// the two pursuers held the board's highest Diplomatic Victory Point total in
+/// **8 of 27** games and the most visiting tourists in **7 of 27** — about what
+/// a third of the chairs takes by chance — and won **0 of 27**. Present in the
+/// lane, never converting, is the cosmetic version of this feature.
+///
+/// The cause is not subtle. `docs/VICTORY_GENES.md`'s six `lane-*` genes and
+/// `competition-victory-points` are precisely the deciders that read the raced
+/// lane — the congress ballot and the Favor behind it, Great Person patronage,
+/// the policy deck, the Naturalist and the Rock Bands, the space race, and the
+/// Diplomatic Victory Points a scored competition pays. All seven ship **off**,
+/// because they are opt-ins the ledger has not priced. That is the right
+/// default for the agent and the wrong one for the FIELD, whose entire job is
+/// to race a lane: seating a pursuer without them seats a pursuer with its lane
+/// behaviour switched off.
+///
+/// So a field seat is the deployment genome **plus these**, and
+/// `--contested-field-genes none` reproduces the weaker field above.
+///
+/// ⚠ This is a property of the FIELD, never of a measured seat. Every drawn
+/// seat still draws these genes exactly as the screen draws any other, so
+/// nothing here touches what the batch is measuring.
+const CONTESTED_FIELD_GENES: &[&str] = &[
+    "lane-congress-ballot",
+    "lane-congress-favor",
+    "lane-great-people",
+    "lane-policy-deck",
+    "lane-culture-spending",
+    "lane-space-race",
+    "competition-victory-points",
+];
 
 /// One boolean treatment flag read as a gene.
 ///
@@ -782,6 +821,14 @@ struct Header {
     /// of the shape and another reason such a batch is not a ledger source.
     #[serde(default)]
     native_competitions: bool,
+    /// The genes a FIELD seat played on top of the deployment genome, comma
+    /// separated (`CONTESTED_FIELD_GENES`). Provenance, not a shape leg — a
+    /// batch that has a field is already refused as a source by
+    /// `contested_field` — but a reader of the file cannot reconstruct what the
+    /// pursuers were without it. Empty in a fieldless batch and in every file
+    /// written before 2026-08-24.
+    #[serde(default)]
+    contested_field_genes: String,
     /// ⭐ The binary that played these games. Absent in files written before
     /// 2026-08-23, which `tools/genes.py` grandfathers as history and
     /// marks `pre-fingerprint` rather than accepting silently.
@@ -1098,6 +1145,9 @@ struct Profile {
     field: Vec<VictoryTarget>,
     /// `Game::native_competitions`.
     native_competitions: bool,
+    /// Genes switched on for a field seat over the deployment genome
+    /// (`CONTESTED_FIELD_GENES`). Never applied to a measured seat.
+    field_genes: Vec<String>,
 }
 
 /// ⭐ WHICH MAJOR SEATS THE FIELD PINS, AND TO WHAT — one entry per major
@@ -1124,19 +1174,27 @@ fn pinned_seats(
     pinned
 }
 
-/// A field seat: the DEPLOYMENT genome, pinned to one victory lane.
+/// A field seat: the deployment genome plus `lane_genes`, pinned to one victory
+/// lane.
 ///
-/// Not a drawn genome and not the repair universe. The field is the rival the
-/// agent actually meets — `AdvancedAi::new()` is exactly the genome the ledger
-/// ships — and it is held CONSTANT across the batch so it contributes no
-/// variance of its own to any gene's contrast. `retarget` is the same call the
-/// rollout planner and the retired `live_target_<lane>` arms used, so the
-/// pursuit is the controller's real victory-lane behaviour rather than a label:
-/// `victory_focus` resolves to the assigned lane, and the ballot, the Great
-/// Person race, the policy deck, the culture spending pass and the space race
-/// all read it.
-fn field_seat(target: VictoryTarget) -> AdvancedAi {
+/// Not a drawn genome and not the repair universe. It starts from
+/// `AdvancedAi::new()` — exactly the genome the ledger ships, the rival the
+/// agent actually meets — and is held CONSTANT across the batch, so it
+/// contributes no variance of its own to any gene's contrast. `retarget` is the
+/// same call the rollout planner and the retired `live_target_<lane>` arms
+/// used, so the pursuit is the controller's real victory-lane behaviour rather
+/// than a label: `victory_focus` resolves to the assigned lane, and the ballot,
+/// the Great Person race, the policy deck, the culture spending pass and the
+/// space race all read it. `lane_genes` — `CONTESTED_FIELD_GENES` by default —
+/// then switches on the deciders that read that lane and ship off; see the
+/// constant for the seventeen games that measured why.
+fn field_seat(target: VictoryTarget, lane_genes: &[String]) -> AdvancedAi {
     let mut ai = AdvancedAi::new();
+    for gene in civvis::ai::screenable_genes() {
+        if lane_genes.iter().any(|tag| tag == gene.tag) {
+            (gene.enable)(&mut ai);
+        }
+    }
     ai.retarget(target);
     ai
 }
@@ -1194,7 +1252,7 @@ fn play_game(
                 let index = majors.len();
                 majors.push(pid);
                 match pinned.get(index).copied().flatten() {
-                    Some(target) => field_seat(target),
+                    Some(target) => field_seat(target, &profile.field_genes),
                     None => seat_with_genome(genes, &genomes[index]),
                 }
             }
@@ -2854,6 +2912,7 @@ fn write_json_summary(path: &str, header: &Header, rows: &[Row]) {
         },
         "seats": estimates.seats,
         "games": estimates.games,
+        "endings": ending_census(rows),
         "overall_win": estimates.overall_win,
         "overall_share": estimates.overall_share,
         "family_wise_z": family_z,
@@ -3056,6 +3115,95 @@ fn shape_of(header: &Header) -> &'static str {
     }
 }
 
+/// ⭐ HOW THE GAMES ENDED, INTO THE ARTEFACT AND NOT ONLY THE TERMINAL.
+///
+/// A gene column is a claim about code and the header already proves which
+/// code. The census is a claim about the BOARD, and until now it existed only
+/// in a run's stdout: `docs/gene_screens/*.json` carried no record of what
+/// decided its games. That is exactly the evidence a contested batch stands on
+/// — "the diplomatic lane now completes" is a count, and a count belongs in the
+/// file — so it is written for every batch, contested or not.
+///
+/// `won_by_field` is the count of games whose winner is not one of the measured
+/// seats. Fieldless that is always zero; contested it is how often the pinned
+/// pursuer converted, which is the difference between a threat and a label.
+fn ending_census(rows: &[Row]) -> serde_json::Value {
+    let played: Vec<&Row> = rows.iter().filter(|row| row.kind == "game").collect();
+    if played.is_empty() {
+        return serde_json::Value::Null;
+    }
+    let mut seats_of_game: BTreeMap<GameKey, Vec<&Row>> = BTreeMap::new();
+    for row in &played {
+        seats_of_game.entry(row.game_key()).or_default().push(row);
+    }
+    let games = seats_of_game.len();
+    let mut endings: BTreeMap<&str, (usize, usize, usize, Vec<u32>)> = BTreeMap::new();
+    for seats in seats_of_game.values() {
+        let first = seats[0];
+        let kind = if first.victory.is_empty() {
+            "unfinished"
+        } else {
+            first.victory.as_str()
+        };
+        let measured: Vec<usize> = seats.iter().map(|row| row.seat).collect();
+        let entry = endings.entry(kind).or_insert((0, 0, 0, Vec::new()));
+        entry.0 += 1;
+        entry.1 += seats.len();
+        if first
+            .winner
+            .is_some_and(|winner| !measured.contains(&winner))
+        {
+            entry.2 += 1;
+        }
+        entry.3.push(first.turn);
+    }
+    let by_kind: serde_json::Map<String, serde_json::Value> = endings
+        .into_iter()
+        .map(|(kind, (game_count, seat_count, field_wins, mut turns))| {
+            turns.sort_unstable();
+            (
+                kind.to_string(),
+                serde_json::json!({
+                    "games": game_count,
+                    "seats": seat_count,
+                    "share": game_count as f64 / games as f64,
+                    "median_turn": turns[turns.len() / 2],
+                    "won_by_field": field_wins,
+                }),
+            )
+        })
+        .collect();
+    let n = played.len() as f64;
+    let mean = |f: fn(&Row) -> i64| played.iter().map(|row| f(row) as f64).sum::<f64>() / n;
+    let share = |f: fn(&Row) -> bool| played.iter().filter(|row| f(row)).count() as f64 / n;
+    serde_json::json!({
+        "unit": "games, and the seats of those games",
+        "games": games,
+        "by_kind": by_kind,
+        "won_by_field": played
+            .iter()
+            .filter(|row| row.winner.is_some_and(|winner| winner != row.seat))
+            .count(),
+        "lanes": {
+            "dvp_mean": mean(|row| row.dvp),
+            "rival_dvp_mean": mean(|row| row.rival_dvp),
+            "dvp_required": DIPLOMATIC_VICTORY_POINTS,
+            "seats_where_somebody_reached_the_threshold": share(|row| {
+                row.dvp >= DIPLOMATIC_VICTORY_POINTS || row.rival_dvp >= DIPLOMATIC_VICTORY_POINTS
+            }),
+            "tourists_mean": mean(|row| row.tourists),
+            "rival_tourists_mean": mean(|row| row.rival_tourists),
+            "domestic_mean": mean(|row| row.domestic),
+        },
+        "lost_to": {
+            "diplomatic": share(|row| lost_to(row, "diplomatic")),
+            "culture": share(|row| lost_to(row, "culture")),
+            "religious": share(|row| lost_to(row, "religious")),
+            "science": share(|row| lost_to(row, "science")),
+        },
+    })
+}
+
 /// ⭐ THE DENIAL TABLE: per gene, the change in how often this seat LOST the
 /// game to a rival's victory of each kind.
 ///
@@ -3213,7 +3361,14 @@ fn field_line(header: &Header) -> String {
         } else {
             "⚠ OFF — the diplomatic lane has no recurring route to 20 points"
         }
-    )
+    ) + &if header.contested_field_genes.is_empty() {
+        " · pursuers play the deployment genome alone".to_string()
+    } else {
+        format!(
+            " · pursuers also play {}",
+            header.contested_field_genes.replace(',', ", ")
+        )
+    }
 }
 
 /// One line naming the binary a batch was played by, printed before the first
@@ -3294,7 +3449,8 @@ fn usage() -> ! {
          (6 majors, 74x46 continents, 9 city-states, online/250, all six lanes, every seat its own \
          random genome, shuffled civs — the one shape the ledger accepts)\n       \
          probe only, NOT a ledger source: [--contested] [--contested-field lane,lane] \
-         [--native-competitions] [--no-native-competitions] [--players N] [--turns N] [--width N] \
+         [--contested-field-genes tag,tag|none] [--native-competitions] [--no-native-competitions] \
+         [--players N] [--turns N] [--width N] \
          [--height N] [--city-states N] [--speed ID] [--map ID] [--victories a,b,...] [--stock-civs]\n       \
          (--contested pins one rival seat per lane to actually pursue it — {} by default — and turns \
          on native scored competitions, the only recurring native route to the {DIPLOMATIC_VICTORY_POINTS} \
@@ -3543,6 +3699,33 @@ fn main() {
             std::process::exit(2);
         }
     }
+    // The pursuers' own genome over the deployment one. `none` reproduces the
+    // weaker deployment-genome-only field the constant's doc measured.
+    let field_genes: Vec<String> = if field.is_empty() {
+        Vec::new()
+    } else {
+        match text(&args, "--contested-field-genes").as_deref() {
+            Some("none") => Vec::new(),
+            None => CONTESTED_FIELD_GENES
+                .iter()
+                .map(|tag| (*tag).to_string())
+                .collect(),
+            Some(list) => list
+                .split(',')
+                .map(str::trim)
+                .filter(|tag| !tag.is_empty())
+                .map(|tag| {
+                    if !genes.iter().any(|gene| gene.tag == tag) {
+                        eprintln!(
+                            "--contested-field-genes: unknown gene {tag:?}; `gene_screen --list` names them"
+                        );
+                        std::process::exit(2);
+                    }
+                    tag.to_string()
+                })
+                .collect(),
+        }
+    };
     // ⚠ THE DIPLOMATIC LANE NEEDS A ROUTE TO 20 POINTS TO EXIST AT ALL.
     // `docs/FIDELITY.md` is blunt about it: the competition sources that pay
     // Diplomatic Victory Points through the whole second half of a real game
@@ -3687,6 +3870,7 @@ fn main() {
             .collect::<Vec<_>>()
             .join(","),
         native_competitions,
+        contested_field_genes: field_genes.join(","),
         design: "independent".to_string(),
         prior: probabilities.clone(),
         families: families
@@ -3732,6 +3916,7 @@ fn main() {
         victories,
         field: field.clone(),
         native_competitions,
+        field_genes: field_genes.clone(),
     };
     println!(
         "gene screen: {games_to_play} games ({} measured seats of {} chairs, every drawn seat its own genome, on at p={p_on} / {p_default_on} default-on) · {} of {} genes screened · {players}p {width}x{height} {} · {} · {turns} turns · {city_states} city-states · {} civs · seeds {start_seed}..{} · {jobs} jobs · rows → {out_path}",
@@ -3824,6 +4009,7 @@ mod tests {
             all_seats: true,
             contested_field: String::new(),
             native_competitions: false,
+            contested_field_genes: String::new(),
             design: "independent".into(),
             prior: vec![0.5; genes.len()],
             p_on: 0.5,
@@ -4480,7 +4666,7 @@ mod tests {
     #[test]
     fn only_the_field_carries_a_pinned_lane() {
         for target in VictoryTarget::ALL {
-            assert_eq!(field_seat(target).victory_target(), Some(target));
+            assert_eq!(field_seat(target, &[]).victory_target(), Some(target));
         }
         let genes = gene_table();
         for bits in [vec![false; genes.len()], vec![true; genes.len()]] {
@@ -4490,6 +4676,37 @@ mod tests {
                 "a drawn seat plays the adaptive victory planner, on any genome"
             );
         }
+    }
+
+    /// ⭐ A PURSUER PLAYS ITS LANE'S GENES; A MEASURED SEAT NEVER DOES. The
+    /// seven `lane-*`/`competition-victory-points` opt-ins are the deciders
+    /// that read the raced lane and they all ship off, so a field seated with
+    /// the deployment genome alone races with its lane behaviour switched off —
+    /// measured, over 27 contested games, as a pursuer that led its own lane
+    /// about as often as chance and won 0 of 27.
+    #[test]
+    fn the_field_genes_are_real_genes_and_reach_only_the_field() {
+        let tags: Vec<&str> = civvis::ai::screenable_genes()
+            .into_iter()
+            .map(|gene| gene.tag)
+            .collect();
+        for tag in CONTESTED_FIELD_GENES {
+            assert!(tags.contains(tag), "{tag} is not a registered gene");
+        }
+        let lane_genes: Vec<String> = CONTESTED_FIELD_GENES
+            .iter()
+            .map(|tag| (*tag).to_string())
+            .collect();
+        // The pursuit survives the extra genes, and the bare form is still
+        // reachable for the comparison the constant's doc records.
+        assert_eq!(
+            field_seat(VictoryTarget::Diplomacy, &lane_genes).victory_target(),
+            Some(VictoryTarget::Diplomacy)
+        );
+        assert_eq!(
+            field_seat(VictoryTarget::Culture, &[]).victory_target(),
+            Some(VictoryTarget::Culture)
+        );
     }
 
     /// The denial axis reads the outcome the win column cannot see: losing the
