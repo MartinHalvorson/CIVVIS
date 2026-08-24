@@ -22,6 +22,14 @@
 # looking healthy and every attempt will die at "NO GAME" with a modal-free menu,
 # because a dead synthetic click is silent. The guard below refuses instead.
 set -u
+# zsh sets BG_NICE by default: every `&` job starts at nice +5 and the whole
+# subtree inherits it. On 2026-08-11 that put Civilization VI -- the one process
+# the live ladder depends on -- underneath every nice-0 cargo build on the box
+# (9-11 s/turn quiet, ~18 s/turn under fleet load), and macOS refuses to lower a
+# nice once set, so a demoted game stays demoted for its whole run.
+# civvis-keeper.sh had already found and fixed this for the exhibition lane; the
+# live lane kept paying it. tools/test_ops_background_priority.py holds the line.
+unsetopt BG_NICE
 
 WRAPPER=${1:-$HOME/civvis-verification-launch.command}
 LOG=${CIVVIS_LADDER_LOG:-$HOME/Library/Logs/civvis-ladder.log}

@@ -303,7 +303,7 @@ else
   say "   Verify with: zsh ~/civvis-tcc-probe.sh   — it tests a REAL launchd job,"
   say "   which a terminal cannot do (your prompt already holds the grant)."
   say "   Meanwhile run this loop from a terminal instead:"
-  say "     nohup /bin/zsh ~/civvis-batch-loop.sh >> ~/civvis-civ6-runs/batch-loop.nohup.log 2>&1 &"
+  say "     unsetopt BG_NICE; nohup /bin/zsh ~/civvis-batch-loop.sh >> ~/civvis-civ6-runs/batch-loop.nohup.log 2>&1 &"
 fi
 
 while true; do

@@ -6,6 +6,14 @@
 # shell open (the Terminal window may be hidden) so its children retain the
 # necessary App Management and Accessibility responsibility.
 set -u
+# zsh sets BG_NICE by default: every `&` job starts at nice +5 and the whole
+# subtree inherits it. On 2026-08-11 that put Civilization VI -- the one process
+# the live ladder depends on -- underneath every nice-0 cargo build on the box
+# (9-11 s/turn quiet, ~18 s/turn under fleet load), and macOS refuses to lower a
+# nice once set, so a demoted game stays demoted for its whole run.
+# civvis-keeper.sh had already found and fixed this for the exhibition lane; the
+# live lane kept paying it. tools/test_ops_background_priority.py holds the line.
+unsetopt BG_NICE
 
 # Keep every helper beside this source-owned entry point. A previous copy in
 # $HOME restarted an older supervisor after recovery, so the live loop and its
