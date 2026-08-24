@@ -3451,6 +3451,27 @@ mod tests {
         // `GreatPersonIndividuals`, `Eras` and `GreatWorks`, and the audit
         // again reports zero divergent fields over all 147.
         //
+        // Moved again by the LAST TWELVE PANTHEONS, which completes the class:
+        // Desert Folklore, Dance of the Aurora and Sacred Path (Holy Site
+        // terrain and feature adjacency), God of War (post-combat Faith), God
+        // of Healing, River Goddess (district Amenities and Housing on a
+        // river), City Patron Goddess (first-district Production), Monument to
+        // the Gods (Ancient/Classical wonder Production), Initiation Rites
+        // (barbarian-camp Faith and healing), Lady of the Reeds and Marshes,
+        // Goddess of Fire (feature yields) and Earth Goddess (Appeal). The
+        // roster goes from 11 of the game's 23 pantheons to all 23, and the
+        // pantheon is the earliest religious choice every civilization makes.
+        //
+        // ⚠ Read from the **install**'s `Expansion*/Data/*.xml` with
+        // `Expansion2_RemoveData.xml` checked for every id. Three of these
+        // twelve are cases where a base-game row states the opposite of the
+        // shipped rule: the expansion deletes `EARTH_GODDESS_APPEAL_FAITH`
+        // (Charming, MinimumAppeal 2) and re-adds it at Breathtaking
+        // (MinimumAppeal 4), deletes `RIVER_GODDESS_HOLY_SITE_AMENITY` (+1
+        // Amenity, no Housing) for a +2/+2 pair, and drops
+        // `LADY_OF_THE_REEDS_PRODUCTION` (+1) for `..._PRODUCTION2` (+2).
+        // Initiation Rites gains a second, Gathering-Storm-only half. See
+        // `docs/FIDELITY.md`.
         // Moved again by the seventeen espionage promotions. The engine has
         // always resolved them by name out of `Game::SPY_PROMOTIONS`, so the
         // Spy was the one unit class whose promotions were absent from
@@ -3471,7 +3492,7 @@ mod tests {
         // Nihang's Maintenance (0 to 2).
         assert_eq!(
             Rules::shipped().source_fingerprint(),
-            "fnv1a64:422cfc59b865acab"
+            "fnv1a64:a39a1c8d232da713"
         );
     }
 

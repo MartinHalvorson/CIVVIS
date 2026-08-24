@@ -1494,6 +1494,127 @@ Prophet class exhausted every one of those points is Faith. Now in
   met by the district's adjacency before the percentage cards, so the clause
   now sums the adjacency sources without the `adjacency_bonus` line.
 
+### The pantheon is a complete class, and three more rows said the opposite of the game (2026-08-24)
+
+The twelve pantheons the improvement socket could not express are modelled,
+and `beliefs.json` now carries **all 23 of Civilization VI's pantheons**.
+`civ6_fidelity.py` still reports **0 divergent fields across 27 tables**, and
+the Beliefs table's *only in Civ VI* column falls from 22 to 5 — `holy_waters`,
+`monastic_isolation`, `papal_primacy`, `stewardship` and `warrior_monks`, every
+one of them a Follower, Enhancer or Worship belief. **No pantheon is missing.**
+
+Each one needed engine surface, and the standard the five improvement
+pantheons set — *one predicate rather than five* — is what decided the shape:
+
+| pantheon | Gathering Storm | engine surface |
+|---|---|---|
+| Desert Folklore | Holy Sites +1 Faith per adjacent Desert | `PANTHEON_HOLY_SITE_ADJACENCY`, one loop in `district_adjacency` |
+| Dance of the Aurora | …per adjacent Tundra | same predicate, second row |
+| Sacred Path | …per adjacent Rainforest | same predicate, third row |
+| God of War | Faith = 50% of a combat unit's strength, killed within 8 of a Holy Site | `kill_rewards`, beside the identical promotion arm |
+| God of Healing | +30 healing on and beside your own Holy Site | `pantheon_holy_site_heal`, added to every branch of `unit_heal_rate` |
+| River Goddess | +2 Amenities **and** +2 Housing from a Holy Site on a river | `pantheon_river_holy_site`, one plot test, two callers |
+| City Patron Goddess | +25% district Production while the city has no specialty district | `item_prod_mult`, District arm |
+| Monument to the Gods | +15% Production toward Ancient/Classical wonders | `item_prod_mult`, Wonder arm — the same `era <= 1` window two policy cards already use |
+| Initiation Rites | +50 Faith per camp cleared, **and the clearing unit heals 100 HP** | `clear_barbarian_camp` |
+| Lady of the Reeds and Marshes | +2 Production from Marsh, Oasis, Desert Floodplains | `player_tile_yields`, one plot predicate |
+| Goddess of Fire | +2 Faith from Geothermal Fissure and Volcanic Soil | same predicate, second row |
+| Earth Goddess | +1 Faith from Breathtaking Appeal | same predicate, third row |
+
+Three families, three predicates. The three adjacency beliefs are one shipped
+modifier over three plot tests (`MODIFIER_ALL_CITIES_TERRAIN_ADJACENCY` twice
+and `..._FEATURE_ADJACENCY` once, each `DISTRICT_HOLY_SITE` / `YIELD_FAITH` /
+Amount 1), so the engine counts the ring once and the belief names the plot; a
+fourth row of that shape is data. The three plot beliefs are one
+`MODIFIER_CITY_PLOT_YIELDS_ADJUST_PLOT_YIELD` each over a
+`REQUIREMENTSET_TEST_ANY`, so the tile is asked once. River Goddess's two
+halves share one requirement set and therefore one predicate.
+
+⚠ **Desert Folklore and Dance of the Aurora each ship TWO rows** —
+`TERRAIN_DESERT` and `TERRAIN_DESERT_HILLS` — which is one terrain here,
+because CIVVIS carries hills as a flag on the plot rather than as a terrain of
+its own. The test asserts both.
+
+**★★★ Three more of the twelve are cases where a base-game row states the
+opposite of the shipped rule**, which brings the running count to five. Every
+id was checked against `Expansion2_RemoveData.xml` before being modelled, and
+the compiled cache was confirmed to be a Gathering Storm cache first
+(`GOD_OF_CRAFTSMEN_STRATEGIC_MINE_PRODUCTION` absent, `..._IMPROVED_*` and
+`RIVER_GODDESS_HOLY_SITE_AMENITIES` present) rather than trusted:
+
+| belief | base game | **Gathering Storm** |
+|---|---|---|
+| Earth Goddess | `PLOT_CHARMING_APPEAL`, `MinimumAppeal 2` | expansion **deletes** `EARTH_GODDESS_APPEAL_FAITH{,_MODIFIER}` and re-adds them on `PLOT_BREATHTAKING_APPEAL`, `MinimumAppeal 4` |
+| River Goddess | `RIVER_GODDESS_HOLY_SITE_AMENITY`, +1 Amenity, no Housing | **deleted**; `..._AMENITIES` +2 and `..._HOUSING` +2 replace it |
+| Lady of the Reeds | `LADY_OF_THE_REEDS_PRODUCTION`, +1 | dropped from `BeliefModifiers`; `..._PRODUCTION2` pays **+2** |
+
+The Earth Goddess case is the sharpest: the id is deleted *and re-added under
+the same name*, so a grep for the id in `Expansion2_RemoveData.xml` finds it
+and a grep for the id in `Expansion2_Beliefs.xml` finds it too. Only reading
+both, in load order, gives the shipped requirement set — and modelling the
+base-game one would have paid this on roughly twice the map. Initiation Rites
+is a fourth shape again: nothing is deleted, and Gathering Storm *adds* a
+second modifier (`INITIATION_RITES_HEALING_DISPERSAL`, +100 HP) the base game
+does not have, so a base-game reading is not wrong, merely half the belief.
+
+⚠ **`FEATURE_FLOODPLAINS` is not "floodplains".** `PLOT_HAS_REEDS_REQUIREMENTS`
+names `FEATURE_FLOODPLAINS`, `FEATURE_MARSH` and `FEATURE_OASIS` and does NOT
+name Gathering Storm's own `FEATURE_FLOODPLAINS_GRASSLAND` or
+`..._FLOODPLAINS_PLAINS`, and the shipped text says so out loud: "Marsh, Oasis,
+and **Desert** Floodplains". A grassland floodplain pays nothing.
+
+⚠ **The shipped text settles what the requirement sets leave open.** God of
+Healing's `PLOT_ADJACENT_INCLUDE_HOLY_SITE` names no owner, but the string says
+"in **your** Holy Site district, or any adjacent tiles", so a rival's Holy Site
+does not heal our army. God of War's `PLOT_EIGHT_INCLUDE_HOLY_SITE` names no
+owner *and neither does its string* — "within 8 tiles of a Holy Site district"
+— so a rival's Holy Site does pay, and the test asserts that asymmetry rather
+than assuming the two beliefs agree. God of War's string also ends "(on
+Standard Speed)", Civilization VI's marker for a one-off yield that scales with
+game speed, so it goes through `GameSpeed::scale`.
+
+**The chooser did not need changing, which is the point of the last change to
+it.** It has been a preference prefix over a roster read from the rules since
+the five improvement pantheons landed, so twelve more names were reachable the
+moment the data carried them;
+`every_major_can_found_a_pantheon_when_there_are_more_majors_than_favourites`
+still holds, and a new test asserts the stronger property directly — all 23
+can actually be founded, one at a time, through `do_choose_pantheon`. The one
+AI edit is `pantheon_effect_reach`, which prices the three new *per-worked-tile*
+beliefs for the default-off `pantheon_reads_the_board` gene. The three Holy
+Site adjacency beliefs are deliberately **not** priced there and the comment
+says why: everything that function counts is paid on every qualifying tile the
+empire owns, but an adjacency is paid on at most six plots around one district,
+so multiplying by "desert tiles owned" would price Desert Folklore at ten times
+what it can pay. Reading those honestly means ranking candidate Holy Site
+plots, which is the district calculator's job.
+
+⚠ **One measured arm did change, and it is written down rather than absorbed.**
+`PANTHEON_PRIOR_STEP` makes a place on the shipped order worth one yield a
+turn, so the prior spans the WHOLE ROSTER and a board read only overrules the
+order when it pays more than that spread. The spread was eleven when
+`pantheon_reads_the_board` was screened and it is twenty-three now, so the bar
+a board read has to clear has roughly doubled. That is the stated design
+holding rather than drifting — but it is a real change to what the gene does,
+and the arithmetic was deliberately **not** rescaled to compensate: the arm has
+a recorded screen (`docs/eval/2026-08-18-…-not-from-a-fixed-list.md`, parity
+over 60 pairs), and quietly re-weighting a measured treatment inside a content
+change would price an arm nobody re-measured. The gene is default-off, so
+nothing shipped moves; `the_pantheon_is_a_constant_until_it_is_priced_against_the_land`
+now asks for however many Deer the roster takes instead of a literal six, so
+completing a class cannot silently retune the assertion again.
+
+⚠ **The frozen anchor does not move, and this was checked by playing it rather
+than argued.** `advanced_v1_plays_the_same_game_it_always_did` passes unchanged
+— the same 18,596 decisions and the same `ANCHOR_BEHAVIOUR_FNV` across all five
+profiles. It cannot move, for two reasons that hold together: the profiles seat
+at most six majors, and `do_choose_pantheon` refuses every minor outright, so
+only six pantheons are ever taken and the six-name prefix answers all of them;
+and `legacy()` leaves `pantheon_reads_the_board` off, so the roster growing from
+11 names to 23 shifts every prior by the same constant and reorders nothing.
+`Rules::shipped().source_fingerprint()` moves, as the data changing should, and
+is re-pinned with the reasons above.
+
 ### The rules data is at parity and the gap is coverage (2026-08-18)
 
 `tools/civ6_fidelity.py --civ6 <install>` against the real Gathering Storm
@@ -1556,6 +1677,8 @@ Goddess), first-district production (City Patron Goddess), wonder-era
 production (Monument to the Gods), barbarian-camp dispersal faith (Initiation
 Rites), feature yields (Lady of the Reeds and Marshes, Goddess of Fire) and
 appeal (Earth Goddess). Their authoritative definitions are in the install.
+→ All twelve landed on 2026-08-24; see **The pantheon is a complete class**
+below.
 
 ### The Founder beliefs were already right, and a compiled cache said otherwise (2026-08-18)
 
