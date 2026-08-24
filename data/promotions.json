@@ -140,5 +140,23 @@
   "sanjo": {"class":"nihang","tier":2,"requires":["tegh","trehsool_mukh"],"effects":{"no_wounded_penalty":1},"note":"No Combat Strength penalty when damaged."},
   "jangi_kara": {"class":"nihang","tier":3,"requires":["jangi_mojeh","sanjo"],"effects":{"lahore_suzerain_combat":10},"note":"+10 Combat Strength while Suzerain of Lahore."},
   "chakram": {"class":"nihang","tier":3,"requires":["jangi_mojeh","sanjo"],"effects":{"extra_attacks":1},"note":"May attack twice a turn."},
-  "dumalla": {"class":"nihang","tier":4,"requires":["jangi_kara","chakram"],"effects":{"combat_all":15},"note":"+15 Combat Strength."}
+  "dumalla": {"class":"nihang","tier":4,"requires":["jangi_kara","chakram"],"effects":{"combat_all":15},"note":"+15 Combat Strength."},
+
+  "ace_driver": {"class":"espionage","tier":1,"effects":{"escape_level":4},"note":"Escapes as though four levels higher after a detected operation."},
+  "cat_burglar": {"class":"espionage","tier":1,"effects":{"mission_level_great_work_heist":2},"note":"+2 levels when stealing a Great Work."},
+  "con_artist": {"class":"espionage","tier":1,"effects":{"mission_level_siphon_funds":2},"note":"+2 levels when siphoning funds."},
+  "covert_action": {"class":"espionage","tier":1,"effects":{"mission_level_foment_unrest":2},"note":"+2 levels when fomenting unrest."},
+  "demolitions": {"class":"espionage","tier":1,"effects":{"mission_level_sabotage_production":2},"note":"+2 levels when sabotaging production."},
+  "disguise": {"class":"espionage","tier":1,"effects":{"travel_turns_max":1},"note":"Reaches a foreign city in one turn."},
+  "guerrilla_leader": {"class":"espionage","tier":1,"effects":{"mission_level_recruit_partisans":2},"note":"+2 levels when recruiting partisans."},
+  "license_to_kill": {"class":"espionage","tier":1,"effects":{"mission_level_neutralize_governor":2},"note":"+2 levels when neutralizing a Governor."},
+  "linguist": {"class":"espionage","tier":1,"effects":{"mission_time_pct":-25},"note":"Operations take 25% less time."},
+  "polygraph": {"class":"espionage","tier":1,"effects":{"enemy_spy_level":1},"note":"While on Counterspy, enemy Spies in this city operate one level lower."},
+  "quartermaster": {"class":"espionage","tier":1,"effects":{"allied_spy_level":1},"note":"While on Counterspy, this civilization's other Spies operate one level higher."},
+  "rocket_scientist": {"class":"espionage","tier":1,"effects":{"mission_level_disrupt_rocketry":2},"note":"+2 levels when disrupting rocketry."},
+  "satchel_charges": {"class":"espionage","tier":1,"effects":{"mission_level_breach_dam":2},"note":"+2 levels when breaching a Dam."},
+  "seduction": {"class":"espionage","tier":1,"effects":{"counterspy_defense_level":2},"note":"+2 levels while defending as a Counterspy."},
+  "smear_campaign": {"class":"espionage","tier":1,"effects":{"mission_level_fabricate_scandal":2},"note":"+2 levels when fabricating a scandal."},
+  "surveillance": {"class":"espionage","tier":1,"effects":{"counterspy_entire_city":1},"note":"Counterspy defends every district of its city."},
+  "technologist": {"class":"espionage","tier":1,"effects":{"mission_level_steal_tech_boost":2},"note":"+2 levels when stealing a technology boost."}
 }
