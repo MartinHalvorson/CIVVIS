@@ -376,6 +376,7 @@ These screenable genes have no on/off result, so they receive no rank or promoti
 | `religious-veto-defence` | off (unmeasured) | The religious defence grows with how much of a rival's religious victory is already done — every civilization is a veto on it — naming and targeting the stakes faith from half a victory and spending on it from match point; the Inquisitor walks to the heresy instead of spending its charges where it was bought. | — |
 | `settler-screen` | off (unmeasured) | A seen rival Settler near our cities is screened: up to four of our nearby land units, recon first, take the stands that add the most expected steps to its likeliest walks — a tile a foreign unit holds cannot be entered at peace — and hold them while the plan names them. | — |
 | `shoot-and-scoot` | off (unmeasured) | A ranged unit inside a hostile melee body's reach steps to a firing tile inside strictly fewer hostile envelopes and fires at that body, in war and against barbarians. | — |
+| `solvency-first-trade-slot` | off (unmeasured) | Reserve the first usable empty trade slot before ordinary production in a city that can start a locally safe route. | — |
 | `zoc-screen` | off (unmeasured) | A melee unit the attack scan found nothing for stands where its zone of control takes the most enemy reaches off our shooters and wounded, read exactly off `attack_reach`, and holds only while the stand is load-bearing. | — |
 
 ## Removed from the code

@@ -576,7 +576,8 @@ class Civ6PlayTest(unittest.TestCase):
 
         self.assertFalse(started)
         setter.assert_called_once_with(
-            (100, 33, 756, 480), "difficulty", "DIFFICULTY_SETTLER", Path(temporary)
+            (100, 33, 756, 480), "difficulty", "DIFFICULTY_SETTLER", Path(temporary),
+            panel=None, panel_out=mock.ANY,
         )
         screenshot.assert_not_called()
         leader.assert_not_called()
@@ -594,16 +595,24 @@ class Civ6PlayTest(unittest.TestCase):
             started = civ6_play.configure_and_start((100, 33, 756, 480), args(), Path(temporary))
 
         self.assertTrue(started)
+        # Every row is handed the capture the previous row proved on (the mocks
+        # prove on nothing, so it stays None) and the same dict to prove into.
         self.assertEqual(
             setter.call_args_list,
             [
-                call((100, 33, 756, 480), "difficulty", "DIFFICULTY_SETTLER", Path(temporary)),
-                call((100, 33, 756, 480), "map_size", "MAPSIZE_SMALL", Path(temporary)),
-                call((100, 33, 756, 480), "speed", "GAMESPEED_ONLINE", Path(temporary)),
+                call((100, 33, 756, 480), "difficulty", "DIFFICULTY_SETTLER", Path(temporary),
+                     panel=None, panel_out=mock.ANY),
+                call((100, 33, 756, 480), "map_size", "MAPSIZE_SMALL", Path(temporary),
+                     panel=None, panel_out=mock.ANY),
+                call((100, 33, 756, 480), "speed", "GAMESPEED_ONLINE", Path(temporary),
+                     panel=None, panel_out=mock.ANY),
             ],
         )
+        shared = setter.call_args_list[0].kwargs["panel_out"]
+        self.assertTrue(all(c.kwargs["panel_out"] is shared for c in setter.call_args_list))
         leader.assert_called_once_with(
-            (100, 33, 756, 480), "LEADER_TRAJAN", Path(temporary)
+            (100, 33, 756, 480), "LEADER_TRAJAN", Path(temporary),
+            panel=None, panel_out=shared, hint_dir=Path(temporary).parent,
         )
         screenshot.assert_called_once_with(Path(temporary) / "setup.png")
         observed.assert_called_once_with(
@@ -2034,3 +2043,197 @@ class AResumeStagesTheAutosaveWhereTheListShowsIt(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TheSetupScreenIsReadOnceAndLookedAtNotSleptThrough(unittest.TestCase):
+    """The setup levers of 2026-08-24: no flat sleeps, one OCR pass per capture."""
+
+    def setUp(self) -> None:
+        civ6_play._OCR_CACHE.clear()
+
+    def test_poll_screen_returns_the_moment_the_screen_answers(self) -> None:
+        clock = {"now": 0.0}
+        reads = iter([None, None, ("point", ["a", "b", "c", "d"])])
+        slept = []
+
+        def sleep(seconds: float) -> None:
+            slept.append(seconds)
+            clock["now"] += seconds
+
+        with patch.object(civ6_play.time, "monotonic", lambda: clock["now"]), \
+             patch.object(civ6_play.time, "sleep", sleep):
+            result = civ6_play._poll_screen(lambda: next(reads), budget_s=20.0, poll_s=3.0)
+
+        self.assertEqual(result, ("point", ["a", "b", "c", "d"]))
+        self.assertEqual(slept, [3.0, 3.0])
+
+    def test_poll_screen_gives_up_after_its_budget_without_a_flat_sleep(self) -> None:
+        clock = {"now": 0.0}
+        looks = []
+
+        def sleep(seconds: float) -> None:
+            clock["now"] += seconds
+
+        with patch.object(civ6_play.time, "monotonic", lambda: clock["now"]), \
+             patch.object(civ6_play.time, "sleep", sleep):
+            result = civ6_play._poll_screen(lambda: looks.append(1), budget_s=20.0, poll_s=3.0)
+
+        self.assertIsNone(result)
+        # Looks at 0, 3, 6, 9, 12, 15 and 18 s, and one last look once the
+        # budget has run out at 21 s -- eight, where one flat sleep gave one.
+        self.assertEqual(len(looks), 8)
+
+    def test_the_bootstrap_polls_the_menu_instead_of_sleeping_twenty_seconds(self) -> None:
+        import inspect
+        source = inspect.getsource(civ6_play.bootstrap_game)
+        self.assertIn("_poll_screen(read_top_menu)", source)
+        self.assertIn("_poll_screen(read_submenu)", source)
+        # Two flat waits remain and neither is on the path every game takes:
+        # no game WINDOW yet (the launcher has already seen the menu in the
+        # log by then), and a submenu that read rows but no Create Game label.
+        # The unreadable-menu and no-submenu branches -- the ones the ledger's
+        # first attempt of every game hit -- sleep nothing after the poll.
+        self.assertEqual(source.count("time.sleep(20.0)"), 2)
+        unreadable = source.split("refusing a blind menu click")[1].split("click_at(*menu_point)")[0]
+        self.assertNotIn("time.sleep(20.0)", unreadable)
+        no_submenu = source.split("the menu is not ready yet")[1].split("blind_strikes = 0\n        if len(rows) > 6")[0]
+        self.assertNotIn("time.sleep(20.0)", no_submenu)
+
+    def test_a_capture_is_recognized_once_until_it_changes(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            shot = Path(temporary) / "panel.png"
+            shot.write_bytes(b"first capture")
+            with patch.object(civ6_play.macos_ocr, "recognize",
+                              return_value=[{"text": "Settler"}]) as recognize:
+                first = civ6_play.recognize_once(shot)
+                second = civ6_play.recognize_once(shot)
+                first.append({"text": "mutated by the caller"})
+                third = civ6_play.recognize_once(shot)
+                shot.write_bytes(b"a fresh capture under the same name!")
+                fourth = civ6_play.recognize_once(shot)
+
+        self.assertEqual(recognize.call_count, 2)
+        self.assertEqual(second, [{"text": "Settler"}])
+        self.assertEqual(third, [{"text": "Settler"}])
+        self.assertEqual(fourth, [{"text": "Settler"}])
+
+    def test_a_missing_capture_is_not_cached_and_still_raises(self) -> None:
+        with patch.object(civ6_play.macos_ocr, "recognize",
+                          side_effect=OSError("no such file")):
+            with self.assertRaises(OSError):
+                civ6_play.recognize_once(Path("/nowhere/at/all.png"))
+        self.assertEqual(civ6_play._OCR_CACHE, {})
+
+    def test_a_dropdown_starts_from_the_capture_another_row_proved_on(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            proved = Path(temporary) / "dropdown-difficulty-selected.png"
+            proved.write_bytes(b"x")
+            out: dict = {}
+            with patch.object(civ6_play, "screenshot") as screenshot, \
+                 patch.object(civ6_play, "_setup_current_value",
+                              return_value=("MAPSIZE_SMALL", (10, 20))) as read, \
+                 patch.object(civ6_play, "click_at") as click:
+                ok = civ6_play.set_dropdown((0, 0, 756, 480), "map_size", "MAPSIZE_SMALL",
+                                            Path(temporary), panel=proved, panel_out=out)
+
+        self.assertTrue(ok)
+        screenshot.assert_not_called()
+        read.assert_called_once_with(proved, (0, 0, 756, 480), "map_size")
+        click.assert_not_called()
+        self.assertEqual(out["shot"], proved)
+
+    def test_a_selection_is_read_back_twice_before_the_list_is_reopened(self) -> None:
+        reads = iter([
+            ("GAMESPEED_STANDARD", (700, 300)),   # closed panel: not yet Online
+            None,                                  # first readback: list still closing
+            ("GAMESPEED_ONLINE", (700, 300)),     # second look: it took
+        ])
+        out: dict = {}
+        with tempfile.TemporaryDirectory() as temporary, \
+             patch.object(civ6_play, "screenshot") as screenshot, \
+             patch.object(civ6_play, "_setup_current_value", side_effect=lambda *a: next(reads)), \
+             patch.object(civ6_play, "_observed_label_point", return_value=(700, 340)), \
+             patch.object(civ6_play, "click_at") as click, \
+             patch.object(civ6_play.time, "sleep"):
+            ok = civ6_play.set_dropdown((0, 0, 756, 480), "speed", "GAMESPEED_ONLINE",
+                                        Path(temporary), panel_out=out)
+            again = Path(temporary) / "dropdown-speed-selected-again.png"
+
+        self.assertTrue(ok)
+        # One click on the closed row, one on the option -- the list was NOT reopened.
+        self.assertEqual(click.call_args_list, [call(700, 300), call(700, 340)])
+        self.assertEqual(screenshot.call_args_list[-1], call(again))
+        self.assertEqual(out["shot"], again)
+
+    def test_the_leader_picker_walks_straight_to_where_it_found_the_leader_last_game(self) -> None:
+        bounds = (756, 33, 756, 480)
+        row = {"text": "Jadwiga", "x": 0.73, "y": 0.30, "width": 0.04, "height": 0.02}
+        selected = {"text": "Jadwiga", "x": 0.73, "y": 0.155, "width": 0.04, "height": 0.02}
+        with tempfile.TemporaryDirectory() as temporary:
+            hint_dir = Path(temporary) / "control"
+            hint_dir.mkdir()
+            civ6_play.write_leader_hint(hint_dir, "LEADER_JADWIGA", 15)
+            run_dir = hint_dir / "run"
+            run_dir.mkdir()
+            with patch.object(civ6_play, "screenshot",
+                              side_effect=lambda p: Path(p).write_bytes(b"x") or True) as shots, \
+                 patch.object(civ6_play, "_leader_picker_open", return_value=True), \
+                 patch.object(civ6_play, "_setup_current_leader",
+                              return_value=("Random Leader", (1134, 140))), \
+                 patch.object(civ6_play, "desktop_size", return_value=(1512, 982)), \
+                 patch.object(civ6_play, "_leader_ocr", side_effect=[[row], [selected]]), \
+                 patch.object(civ6_play.macos_input, "move"), \
+                 patch.object(civ6_play.macos_input, "scroll") as scroll, \
+                 patch.object(civ6_play, "click_at") as click, \
+                 patch.object(civ6_play.time, "sleep"):
+                found = civ6_play.select_requested_leader(bounds, "LEADER_JADWIGA", run_dir,
+                                                          hint_dir=hint_dir)
+
+            self.assertTrue(found)
+            # One reset, fifteen wheel steps with no photograph, then ONE picker capture.
+            self.assertEqual(scroll.call_args_list[0], call(civ6_play.LEADER_SCROLL_RESET))
+            self.assertEqual(scroll.call_count, 16)
+            picker_shots = [c for c in shots.call_args_list
+                            if "leader-picker-" in str(c.args[0]) and "-1" in str(c.args[0])]
+            self.assertEqual([Path(c.args[0]).name for c in picker_shots], ["leader-picker-15.png"])
+            self.assertEqual(click.call_count, 2)
+            self.assertEqual(civ6_play.read_leader_hint(hint_dir, "LEADER_JADWIGA"), 15)
+
+    def test_a_stale_hint_falls_back_to_the_whole_roster(self) -> None:
+        bounds = (756, 33, 756, 480)
+        row = {"text": "Jadwiga", "x": 0.73, "y": 0.30, "width": 0.04, "height": 0.02}
+        selected = {"text": "Jadwiga", "x": 0.73, "y": 0.155, "width": 0.04, "height": 0.02}
+        # Three hinted looks miss, then the roster walk finds it at step 2.
+        looks = [[], [], [], [], [], [row], [selected]]
+        with tempfile.TemporaryDirectory() as temporary:
+            hint_dir = Path(temporary)
+            civ6_play.write_leader_hint(hint_dir, "LEADER_JADWIGA", 15)
+            run_dir = hint_dir / "run"
+            run_dir.mkdir()
+            with patch.object(civ6_play, "screenshot",
+                              side_effect=lambda p: Path(p).write_bytes(b"x") or True), \
+                 patch.object(civ6_play, "_leader_picker_open", return_value=True), \
+                 patch.object(civ6_play, "_setup_current_leader",
+                              return_value=("Random Leader", (1134, 140))), \
+                 patch.object(civ6_play, "desktop_size", return_value=(1512, 982)), \
+                 patch.object(civ6_play, "_leader_ocr", side_effect=looks), \
+                 patch.object(civ6_play.macos_input, "move"), \
+                 patch.object(civ6_play.macos_input, "scroll") as scroll, \
+                 patch.object(civ6_play, "click_at"), \
+                 patch.object(civ6_play.time, "sleep"):
+                found = civ6_play.select_requested_leader(bounds, "LEADER_JADWIGA", run_dir,
+                                                          hint_dir=hint_dir)
+
+            self.assertTrue(found)
+            resets = [c for c in scroll.call_args_list if c == call(civ6_play.LEADER_SCROLL_RESET)]
+            self.assertEqual(len(resets), 2)
+            self.assertEqual(civ6_play.read_leader_hint(hint_dir, "LEADER_JADWIGA"), 2)
+
+    def test_without_a_hint_directory_nothing_is_remembered(self) -> None:
+        self.assertEqual(civ6_play.read_leader_hint(None, "LEADER_TRAJAN"), 0)
+        civ6_play.write_leader_hint(None, "LEADER_TRAJAN", 4)  # must not raise
+        with tempfile.TemporaryDirectory() as temporary:
+            (Path(temporary) / civ6_play.LEADER_HINT_FILE).write_text("not json")
+            self.assertEqual(civ6_play.read_leader_hint(Path(temporary), "LEADER_TRAJAN"), 0)
+            civ6_play.write_leader_hint(Path(temporary), "LEADER_TRAJAN", 99)  # out of range
+            self.assertEqual(civ6_play.read_leader_hint(Path(temporary), "LEADER_TRAJAN"), 0)

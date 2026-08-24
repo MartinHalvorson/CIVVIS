@@ -28,7 +28,7 @@ end })
 -- The agent snapshots this installer-provided table into a file-local `cfg`
 -- while loading.  Give the exercised retry guard its real numeric default;
 -- otherwise the permissive dummy would be truthy and mask the cooldown path.
-CivvisControlConfig = { PeaceRetryTurns = 5 }
+CivvisControlConfig = { PeaceRetryTurns = 5, DealSessions = false }
 
 local chunk, err = loadfile(here .. "/CivvisControlAgent.lua")
 assert(chunk, "could not load agent: " .. tostring(err))
