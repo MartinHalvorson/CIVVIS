@@ -1407,16 +1407,18 @@ fn sale_verb(offer: &civvis::game::DealItems) -> Option<String> {
     (!parts.is_empty()).then(|| parts.join(","))
 }
 
-/// The gold-equivalent below which the host must NOT close the sale, from what
-/// CIVVIS asked: lump gold plus per-turn gold at CIVVIS's own 25× factor
-/// (`Game::receive_items_value`), at a discount — the rival prices by its own
-/// book, and a surplus copy the plan was going to let go for 90 is still worth
-/// letting go for 50 — but never below `SALE_FLOOR_MIN`, so a valuation gap
-/// cannot become a gift.
-const SALE_FLOOR_SHARE: f64 = 0.5;
+/// The gold-equivalent below which the host must NOT close the sale: what
+/// the asset is worth to US by the engine's own book — the ask (lump gold
+/// plus per-turn gold at the 25× factor of `Game::receive_items_value`) less
+/// our net gain on the quote, i.e. `give_items_cost` — never below
+/// `SALE_FLOOR_MIN`. ★ Until 2026-08-24 this was HALF the ask: a surplus copy
+/// the book priced at 90 was let go for 45, on the argument that the rival
+/// prices by its own book. It does — and the floor is still the price below
+/// which the sale loses us value, which no discount changes. (Whether a
+/// rival ever meets it is what the ledger's `deal_response` now records.)
 const SALE_FLOOR_MIN: i32 = 10;
 
-fn sale_floor(request: &civvis::game::DealItems) -> Option<i32> {
+fn sale_floor(request: &civvis::game::DealItems, my_value: f64) -> Option<i32> {
     if !request.resources.is_empty()
         || request.diplomatic_favor != 0.0
         || !request.great_works.is_empty()
@@ -1431,21 +1433,26 @@ fn sale_floor(request: &civvis::game::DealItems) -> Option<i32> {
         return None;
     }
     let asked = request.gold + 25.0 * request.gold_per_turn;
-    Some(((asked * SALE_FLOOR_SHARE).ceil() as i32).max(SALE_FLOOR_MIN))
+    let walk_away = if my_value.is_finite() {
+        asked - my_value
+    } else {
+        asked
+    };
+    Some((walk_away.ceil() as i32).max(SALE_FLOOR_MIN))
 }
 
 /// The gold-equivalent ABOVE which the host must NOT close a passage
-/// purchase, from what CIVVIS offered: lump gold plus per-turn gold at the
-/// same 25× factor, with headroom — the rival prices by its own book, and a
-/// passage the plan budgeted 60 for is still worth taking at 90 — but never
-/// above `BORDER_BUY_CEILING_MAX`, so a valuation gap cannot hand a rival the
-/// treasury. `None` unless the trade is exactly the shape this arm buys:
+/// purchase: what the passage is worth to US by the engine's own book
+/// (`Game::passage_gold_value`; the offer when the book is silent) — never
+/// above `BORDER_BUY_CEILING_MAX`. ★ Until 2026-08-24 this was the offer and half
+/// again, "headroom because the rival prices by its own book"; a purchase
+/// above what the passage is worth to us is a loss whatever the rival's
+/// book says. `None` unless the trade is exactly the shape this arm buys:
 /// their Open Borders, our gold, nothing else on either side.
-const BUY_CEILING_SHARE: f64 = 1.5;
-
 fn border_buy_ceiling(
     offer: &civvis::game::DealItems,
     request: &civvis::game::DealItems,
+    worth: f64,
 ) -> Option<i32> {
     if !request.open_borders
         || request.gold != 0.0
@@ -1472,7 +1479,12 @@ fn border_buy_ceiling(
     if offered <= 0.0 {
         return None;
     }
-    Some(((offered * BUY_CEILING_SHARE).ceil() as i32).min(BORDER_BUY_CEILING_MAX))
+    let worth = if worth.is_finite() && worth > 0.0 {
+        worth
+    } else {
+        offered
+    };
+    Some((worth.ceil() as i32).clamp(1, BORDER_BUY_CEILING_MAX))
 }
 
 // ★★★★★ PASSAGE BOUGHT WHERE THE MAP IS SEALED. `Game::sealed_border_owners`
@@ -1513,6 +1525,7 @@ fn append_border_buy_order(
     sealed_by: &std::collections::BTreeMap<usize, u32>,
     state: &civvis::mirror::StateSnapshot,
     orders: &mut Vec<Order>,
+    passage_value: &dyn Fn(usize) -> f64,
 ) -> Option<&'static str> {
     let worst = sealed_by
         .iter()
@@ -1521,11 +1534,11 @@ fn append_border_buy_order(
             state
                 .rivals
                 .get(seat.saturating_sub(1))
-                .map(|rival| (rival, *count))
+                .map(|rival| (*seat, rival, *count))
         })
-        .filter(|(rival, _)| !rival.at_war && rival.open_borders != Some(true))
-        .max_by_key(|(rival, count)| (*count, std::cmp::Reverse(rival.player)));
-    let Some((rival, _)) = worst else {
+        .filter(|(_, rival, _)| !rival.at_war && rival.open_borders != Some(true))
+        .max_by_key(|(_, rival, count)| (*count, std::cmp::Reverse(rival.player)));
+    let Some((seat, rival, _)) = worst else {
         return Some("border_buy_hold:no_seal");
     };
     if state.turn % BORDER_BUY_CADENCE != BORDER_BUY_PHASE {
@@ -1542,7 +1555,18 @@ fn append_border_buy_order(
     {
         return Some("border_buy_hold:no_civic");
     }
-    let ceiling = (state.gold - BORDER_BUY_GOLD_RESERVE).min(BORDER_BUY_CEILING_MAX as i64) as i32;
+    // ★ Until 2026-08-24 the ceiling was the treasury less the reserve — the
+    // price was what we could afford, not what passage is worth. It is now
+    // the engine's own book for this passage (`Game::passage_gold_value`),
+    // still bounded by the treasury and the cap.
+    let book = passage_value(seat);
+    let affordable =
+        (state.gold - BORDER_BUY_GOLD_RESERVE).min(BORDER_BUY_CEILING_MAX as i64) as i32;
+    let ceiling = if book.is_finite() && book > 0.0 {
+        (book.ceil() as i32).min(affordable)
+    } else {
+        affordable
+    };
     if ceiling < BORDER_BUY_CEILING_MIN {
         return Some("border_buy_hold:treasury");
     }
@@ -1582,6 +1606,9 @@ const FAVOR_SALE_MAX: f64 = 150.0;
 const FAVOR_SALE_CADENCE: u32 = 6;
 const FAVOR_SALE_PHASE: u32 = 3;
 const FAVOR_BUYER_DVP_MAX: i64 = 12;
+/// ★ Until 2026-08-24 the floor was a flat Gold a point; the engine's own
+/// book (`Game::favor_gold_value`, `1.1 + 0.14·era + 0.07·dvp`) says 1.7–3.0
+/// over a game, and the caller now passes it. Kept as the floor of floors.
 const FAVOR_GOLD_FLOOR_PER_POINT: i32 = 1;
 
 /// Whether the plan in force can still spend its favor. Only a seat with no
@@ -1636,6 +1663,7 @@ fn append_favor_sale_order(
     plan: Option<(&str, Option<&str>)>,
     state: &civvis::mirror::StateSnapshot,
     orders: &mut Vec<Order>,
+    favor_value: f64,
 ) -> Option<&'static str> {
     // `plan_keeps_favor` now answers only this, so the diplomacy branch that
     // stood here is gone with it — it could never be reached past this line.
@@ -1684,11 +1712,16 @@ fn append_favor_sale_order(
         return Some("favor_hold:no_buyer");
     };
     let amount = surplus.min(FAVOR_SALE_MAX).floor() as i32;
+    let per_point = if favor_value.is_finite() {
+        favor_value.max(FAVOR_GOLD_FLOOR_PER_POINT as f64)
+    } else {
+        FAVOR_GOLD_FLOOR_PER_POINT as f64
+    };
     orders.push(Order {
         kind: "sell",
         subject: Some(buyer.player as i64),
         verb: Some(format!("FAVOR={amount}")),
-        pos: Some((amount * FAVOR_GOLD_FLOOR_PER_POINT, 0)),
+        pos: Some(((amount as f64 * per_point).ceil() as i32, 0)),
     });
     None
 }
@@ -1708,7 +1741,11 @@ fn append_favor_sale_order(
 // exactly as favor does; the mod's cooldowns meter refusals.
 const WORK_SALE_CADENCE: u32 = 6;
 const WORK_SALE_PHASE: u32 = 5;
-const WORK_SALE_FLOOR: i32 = 50;
+/// ★ Until 2026-08-24 this was 50 against an engine book of 150–400
+/// (`great_work_receive_value`: 60 + 32·tourism + 18·culture + 12·faith). The
+/// sale exists to free a slot, so the floor stays below the book — but not
+/// at a third of its bottom.
+const WORK_SALE_FLOOR: i32 = 120;
 
 /// The Great Work object types a slot-consuming class produces — the Rust
 /// copy of the control mod's `CivvisGreatWorks.CLASS_OBJECTS` (there is no
@@ -3237,7 +3274,8 @@ fn decide(
             "favor_hold:planner_sales_dropped={held_favor_sales}"
         ));
     }
-    match append_favor_sale_order(plan_facts, state, &mut orders) {
+    let favor_value = mirror_state.game.favor_gold_value(0);
+    match append_favor_sale_order(plan_facts, state, &mut orders, favor_value) {
         None => note_bits.push("favor_sale=1".to_string()),
         Some(why) => {
             // Only the holds worth a glance in the ledger: a bank sitting on
@@ -3247,7 +3285,13 @@ fn decide(
             }
         }
     }
-    match append_border_buy_order(&mirror_state.game.sealed_border_owners, state, &mut orders) {
+    let passage_value = |_seat: usize| mirror_state.game.passage_gold_value(0);
+    match append_border_buy_order(
+        &mirror_state.game.sealed_border_owners,
+        state,
+        &mut orders,
+        &passage_value,
+    ) {
         None => note_bits.push("border_buy=1".to_string()),
         Some(why) => {
             // Only the holds that mean something is wrong on the ground: a
@@ -4393,8 +4437,14 @@ fn translate(
             offer,
             request,
         } => {
+            // Our own book value of the quote, read off the mirrored board:
+            // the seat is 0, majors take seats 1.. in export order.
+            let my_value = mirror_state
+                .game
+                .trade_utilities(0, *player, offer, request)
+                .0;
             if let Some(verb) = sale_verb(offer) {
-                let floor = sale_floor(request)?;
+                let floor = sale_floor(request, my_value)?;
                 Some(Order {
                     kind: "sell",
                     subject: host_player_target(mirror_state, state, *player),
@@ -4402,7 +4452,8 @@ fn translate(
                     pos: Some((floor, 0)),
                 })
             } else {
-                let ceiling = border_buy_ceiling(offer, request)?;
+                let worth = mirror_state.game.passage_gold_value(0);
+                let ceiling = border_buy_ceiling(offer, request, worth)?;
                 Some(Order {
                     kind: "buy",
                     subject: host_player_target(mirror_state, state, *player),
@@ -8963,6 +9014,7 @@ mod tests {
             gold_per_turn: 1.1,
             ..DealItems::default()
         };
+        let (offer_copy, request_copy) = (offer.clone(), request.clone());
         let sale = translate(
             &Action::Trade {
                 player: 1,
@@ -8976,8 +9028,22 @@ mod tests {
         assert_eq!(sale.kind, "sell");
         assert_eq!(sale.subject, Some(4));
         assert_eq!(sale.verb.as_deref(), Some("RESOURCE_DYES=1"));
-        // Half of 84 + 25 × 1.1 = 55.75, rounded up.
-        assert_eq!(sale.pos, Some((56, 0)));
+        // The floor is our own walk-away by the mirrored board's book: the
+        // ask (84 + 25 × 1.1) less our net gain on the quote — not half the
+        // ask, which is what it was until 2026-08-24.
+        let (my_value, _) = mirror
+            .game
+            .trade_utilities(0, 1, &offer_copy, &request_copy);
+        let asked = 84.0 + 25.0 * 1.1;
+        // A mirrored board that cannot price the copy answers non-finite,
+        // and the floor is then the whole ask.
+        let net = if my_value.is_finite() { my_value } else { 0.0 };
+        let walk_away = ((asked - net).ceil() as i32).max(SALE_FLOOR_MIN);
+        assert_eq!(sale.pos, Some((walk_away, 0)));
+        assert!(
+            walk_away > 56,
+            "the old half-ask floor of 56 undercut our own book: {walk_away}"
+        );
 
         // A favor block and a strategic block ride the same verb, favor last,
         // and a tiny ask still carries the minimum floor.
@@ -9002,7 +9068,9 @@ mod tests {
             sale.verb.as_deref(),
             Some("RESOURCE_DYES=1,RESOURCE_IRON=10,FAVOR=10")
         );
-        assert_eq!(sale.pos, Some((SALE_FLOOR_MIN, 0)));
+        // A tiny ask carries our walk-away, never less than the minimum.
+        let floor = sale.pos.unwrap().0;
+        assert!((SALE_FLOOR_MIN..=18).contains(&floor), "floor {floor}");
 
         // An unmapped seat still crosses for the ledger, subject-less, like
         // the delegation arm: the Lua side names it `sell_target_unmapped`.
@@ -9069,8 +9137,16 @@ mod tests {
         assert_eq!(buy.kind, "buy");
         assert_eq!(buy.subject, Some(4));
         assert_eq!(buy.verb.as_deref(), Some("OPEN_BORDERS"));
-        // 60 offered, headroom of half again: the rival prices by its own book.
-        assert_eq!(buy.pos, Some((90, 0)));
+        // The ceiling is what the passage is worth to us by the mirrored
+        // board's book: the offer plus our net gain on the quote — not the
+        // offer and half again, which is what it was until 2026-08-24.
+        let worth =
+            (mirror.game.passage_gold_value(0).ceil() as i32).clamp(1, BORDER_BUY_CEILING_MAX);
+        assert_eq!(buy.pos, Some((worth, 0)));
+        assert!(
+            (28..90).contains(&worth),
+            "the book, not the offer and half again: {worth}"
+        );
 
         // Per-turn gold rides the same 25× book, and the ceiling never
         // crosses the cap however rich the offer.
@@ -9091,7 +9167,10 @@ mod tests {
             &state,
         )
         .expect("a rich passage purchase still translates");
-        assert_eq!(rich.pos, Some((BORDER_BUY_CEILING_MAX, 0)));
+        // A rich offer does not raise the ceiling: passage is worth what the
+        // book says, and never more than the cap.
+        assert_eq!(rich.pos, buy.pos);
+        assert!(rich.pos.unwrap().0 <= BORDER_BUY_CEILING_MAX);
 
         // A mutual swap is a different agreement and stays skipped, named.
         assert!(translate(
@@ -9298,7 +9377,10 @@ mod tests {
         let science = Some(("science", None));
 
         let mut orders = Vec::new();
-        assert_eq!(append_favor_sale_order(science, &state, &mut orders), None);
+        assert_eq!(
+            append_favor_sale_order(science, &state, &mut orders, 2.0),
+            None
+        );
         assert_eq!(orders.len(), 1);
         assert_eq!(orders[0].kind, "sell");
         // Not the richest (Persia at 17 DVP would spend it on the win), not
@@ -9307,7 +9389,8 @@ mod tests {
         // 300 − 120 reserve = 180 surplus, capped at one block of 150, at a
         // floor of a gold a point.
         assert_eq!(orders[0].verb.as_deref(), Some("FAVOR=150"));
-        assert_eq!(orders[0].pos, Some((150, 0)));
+        // ... at the engine's own book per point (2.0 here), not a flat Gold.
+        assert_eq!(orders[0].pos, Some((300, 0)));
 
         // A Diplomacy plan sells its surplus too: the favor it was holding
         // buys only EXTRA votes, and those never register. Run
@@ -9319,7 +9402,7 @@ mod tests {
         ] {
             let mut sold = Vec::new();
             assert_eq!(
-                append_favor_sale_order(diplomatic, &state, &mut sold),
+                append_favor_sale_order(diplomatic, &state, &mut sold, 2.0),
                 None,
                 "the diplomatic lane no longer banks what it cannot cast"
             );
@@ -9330,7 +9413,7 @@ mod tests {
         // No plan report still holds: an unknown intent is not licence to sell.
         let mut held = Vec::new();
         assert_eq!(
-            append_favor_sale_order(None, &state, &mut held),
+            append_favor_sale_order(None, &state, &mut held, 2.0),
             Some("favor_hold:no_plan")
         );
         assert!(held.is_empty());
@@ -9339,19 +9422,22 @@ mod tests {
         let mut off_cadence = state.clone();
         off_cadence.turn = 142;
         assert_eq!(
-            append_favor_sale_order(science, &off_cadence, &mut held),
+            append_favor_sale_order(science, &off_cadence, &mut held, 2.0),
             Some("favor_hold:cadence")
         );
         let mut small = state.clone();
         small.favor = Some(139.0);
         assert_eq!(
-            append_favor_sale_order(science, &small, &mut held),
+            append_favor_sale_order(science, &small, &mut held, 2.0),
             Some("favor_hold:reserve")
         );
         // The last twenty above the reserve still sell, in a smaller block.
         let mut tail = state.clone();
         tail.favor = Some(140.0);
-        assert_eq!(append_favor_sale_order(science, &tail, &mut held), None);
+        assert_eq!(
+            append_favor_sale_order(science, &tail, &mut held, 2.0),
+            None
+        );
         assert_eq!(
             held.pop().and_then(|order| order.verb),
             Some("FAVOR=20".to_string())
@@ -9365,7 +9451,7 @@ mod tests {
             pos: Some((10, 0)),
         }];
         assert_eq!(
-            append_favor_sale_order(science, &state, &mut planned),
+            append_favor_sale_order(science, &state, &mut planned, 2.0),
             Some("favor_hold:planner_sale")
         );
         assert_eq!(planned.len(), 1);
@@ -9405,7 +9491,7 @@ mod tests {
         let mut nobody = state.clone();
         nobody.rivals.remove(0);
         assert_eq!(
-            append_favor_sale_order(science, &nobody, &mut held),
+            append_favor_sale_order(science, &nobody, &mut held, 2.0),
             Some("favor_hold:no_buyer")
         );
         assert!(held.is_empty());
@@ -9772,7 +9858,7 @@ mod tests {
 
         let mut orders = Vec::new();
         assert_eq!(
-            append_border_buy_order(&sealed_by, &state, &mut orders),
+            append_border_buy_order(&sealed_by, &state, &mut orders, &|_| 40.0),
             None
         );
         assert_eq!(orders.len(), 1);
@@ -9781,8 +9867,9 @@ mod tests {
         // itself. Seat 2 (host player 4) is the worst peaceful seal.
         assert_eq!(orders[0].subject, Some(4));
         assert_eq!(orders[0].verb.as_deref(), Some("OPEN_BORDERS"));
-        // 200 gold − 60 reserve = 140, inside the cap.
-        assert_eq!(orders[0].pos, Some((140, 0)));
+        // The engine's book for this passage (40 here) under the treasury's
+        // 200 − 60 = 140 and the cap: the price is what passage is worth.
+        assert_eq!(orders[0].pos, Some((40, 0)));
 
         // A grant already in hand retires the trigger; the next-worst seal
         // takes over.
@@ -9790,7 +9877,7 @@ mod tests {
         granted.rivals[1].open_borders = Some(true);
         let mut next = Vec::new();
         assert_eq!(
-            append_border_buy_order(&sealed_by, &granted, &mut next),
+            append_border_buy_order(&sealed_by, &granted, &mut next, &|_| 40.0),
             None
         );
         assert_eq!(next[0].subject, Some(2));
@@ -9800,11 +9887,11 @@ mod tests {
             [(1, BORDER_BUY_MIN_SEALED - 1)].into_iter().collect();
         let mut held = Vec::new();
         assert_eq!(
-            append_border_buy_order(&trivial, &state, &mut held),
+            append_border_buy_order(&trivial, &state, &mut held, &|_| 40.0),
             Some("border_buy_hold:no_seal")
         );
         assert_eq!(
-            append_border_buy_order(&Default::default(), &state, &mut held),
+            append_border_buy_order(&Default::default(), &state, &mut held, &|_| 40.0),
             Some("border_buy_hold:no_seal")
         );
 
@@ -9813,19 +9900,19 @@ mod tests {
         let mut off_cadence = state.clone();
         off_cadence.turn = 92;
         assert_eq!(
-            append_border_buy_order(&sealed_by, &off_cadence, &mut held),
+            append_border_buy_order(&sealed_by, &off_cadence, &mut held, &|_| 40.0),
             Some("border_buy_hold:cadence")
         );
         let mut no_civic = state.clone();
         no_civic.civics = vec!["CIVIC_CODE_OF_LAWS".to_string()];
         assert_eq!(
-            append_border_buy_order(&sealed_by, &no_civic, &mut held),
+            append_border_buy_order(&sealed_by, &no_civic, &mut held, &|_| 40.0),
             Some("border_buy_hold:no_civic")
         );
         let mut poor = state.clone();
         poor.gold = 89; // 89 − 60 reserve = 29, one short of the minimum
         assert_eq!(
-            append_border_buy_order(&sealed_by, &poor, &mut held),
+            append_border_buy_order(&sealed_by, &poor, &mut held, &|_| 40.0),
             Some("border_buy_hold:treasury")
         );
         assert!(held.is_empty());
@@ -9839,7 +9926,7 @@ mod tests {
             pos: Some((10, 0)),
         }];
         assert_eq!(
-            append_border_buy_order(&sealed_by, &state, &mut in_flight),
+            append_border_buy_order(&sealed_by, &state, &mut in_flight, &|_| 40.0),
             Some("border_buy_hold:deal_in_flight")
         );
         assert_eq!(in_flight.len(), 1);

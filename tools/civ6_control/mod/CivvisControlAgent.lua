@@ -8727,7 +8727,134 @@ end
 --
 -- Bare globals, both: the main chunk sits at Lua's 200-register ceiling, and
 -- the offline regression (`deal_sale_test.lua`) reads them.
-CivvisTrade = { pending = {}, asked = {} };
+CivvisTrade = { pending = {}, asked = {}, sessions = {}, unanswered = 0, disabled = false };
+
+-- ★★★★★ THE ANSWER ONLY EVER COMES INSIDE A SESSION. Over 42 live runs this
+-- lane sent 636 EQUALIZE asks and the peace arm 253 proposals, and not ONE
+-- `DiplomacyIncomingDeal` arrived — the handler above never ran. The shipped
+-- screens show why: a rival evaluates a working deal as a diplomacy
+-- STATEMENT inside a `MAKE_DEAL` session (DiplomacyActionView.lua
+-- `MakeDeal_ApplyStatement`: "The AI will send, ACCEPT, REJECT, etc. as the
+-- automatic evaluation of the deal occurs" — it arrives through
+-- `Events.DiplomacyStatement` with a `DealAction`, and the view relays it as
+-- `DiploPopup_DealUpdated`). A `SendWorkingDeal` with no session open is
+-- never evaluated. Firaxis's own peace flow builds the locked working deal
+-- FIRST and then `RequestSession(..., "MAKE_DEAL")` — the session does not
+-- clear it — so every arm here now builds its deal as before and then asks
+-- through `CivvisTrade.ask`: the session opens, our own opening statement
+-- says it is live, the question goes out, the rival's statement carries the
+-- verdict, the existing closer accepts or walks away, and the session is
+-- closed by us. `CivvisControlAutoClose` is told to hold its hand for
+-- `DealSessionHoldSeconds` through `LuaEvents.CivvisDealSession`; a session
+-- the rival never answers is closed by that ladder as before and counted,
+-- and after `DealSessionStandDown` of those the lane stands down for the
+-- run rather than opening a screen a fourth time. `DealSessions = false`
+-- restores the direct send.
+CivvisTrade.ask = function(pid, subject, action, kind, turn)
+	local trade = CivvisTrade;
+	if cfg.DealSessions == false or trade.disabled then
+		DealManager.SendWorkingDeal(DealProposalAction[action], pid, subject);
+		return "direct";
+	end
+	trade.sessions[subject] = { kind = kind, action = action, turn = turn, sent = false };
+	pcall(function() LuaEvents.CivvisDealSession(subject, true, cfg.DealSessionHoldSeconds or 4); end);
+	DiplomacyManager.RequestSession(pid, subject, "MAKE_DEAL");
+	emit("deal_session", { turn = turn, target = subject, kind = kind, action = action, phase = "opening" });
+	return "session";
+end;
+
+CivvisTrade.close = function(pid, subject, why)
+	local trade = CivvisTrade;
+	local session = trade.sessions[subject];
+	trade.sessions[subject] = nil;
+	if session ~= nil and session.sessionID ~= nil then
+		pcall(function() DiplomacyManager.CloseSession(session.sessionID); end);
+	end
+	pcall(function() LuaEvents.CivvisDealSession(subject, false, 0); end);
+	emit("deal_session", {
+		turn = try(function() return Game.GetCurrentGameTurn(); end, -1),
+		target = subject, phase = "closed", why = why,
+		kind = session and session.kind or nil,
+	});
+end;
+
+-- A session the rival never answered: the ask is dead, and a third such
+-- session in a run stands the lane down. Called from the closed-session
+-- event and from the arms' own response-window expiry.
+CivvisTrade.abandon = function(subject, why)
+	local trade = CivvisTrade;
+	local session = trade.sessions[subject];
+	if session == nil then return false; end
+	trade.sessions[subject] = nil;
+	trade.pending[subject] = nil;
+	trade.unanswered = trade.unanswered + 1;
+	pcall(function() LuaEvents.CivvisDealSession(subject, false, 0); end);
+	local turn = try(function() return Game.GetCurrentGameTurn(); end, -1);
+	emit("deal_session", { turn = turn, target = subject, phase = "unanswered", why = why,
+		kind = session.kind, unanswered = trade.unanswered });
+	if not trade.disabled and trade.unanswered >= (cfg.DealSessionStandDown or 3) then
+		trade.disabled = true;
+		emit("deal_sessions_stood_down", { turn = turn, unanswered = trade.unanswered });
+	end
+	return true;
+end;
+
+-- Every diplomacy statement that touches the local seat. Ours opens the
+-- question; the rival's carries the verdict. Bare global for the offline
+-- regression (`deal_session_test.lua`).
+CivvisOnDiplomacyStatement = function(fromPlayer, toPlayer, kVariants)
+	local pid = try(function() return Game.GetLocalPlayer(); end, -1);
+	if pid == nil or pid < 0 or (fromPlayer ~= pid and toPlayer ~= pid) then return; end
+	local other = (fromPlayer == pid) and toPlayer or fromPlayer;
+	local trade = CivvisTrade;
+	local session = trade.sessions[other];
+	if session == nil then return; end
+	local turn = try(function() return Game.GetCurrentGameTurn(); end, -1);
+	local sessionID = type(kVariants) == "table" and kVariants.SessionID or nil;
+	if session.sessionID == nil and sessionID ~= nil then session.sessionID = sessionID; end
+	if not session.sent then
+		-- The session is live: put the question. `sent` goes first so an
+		-- answer delivered from inside the send is read as the answer.
+		session.sent = true;
+		local ok = pcall(function()
+			DealManager.SendWorkingDeal(DealProposalAction[session.action], pid, other);
+		end);
+		emit("deal_session", { turn = turn, target = other, kind = session.kind,
+			action = session.action, session = sessionID or -1, phase = "asked", sent = ok });
+		if not ok then CivvisTrade.close(pid, other, "send_threw"); end
+		return;
+	end
+	if fromPlayer ~= other then return; end
+	local dealAction = type(kVariants) == "table" and kVariants.DealAction or nil;
+	trade.unanswered = 0;
+	emit("deal_session", { turn = turn, target = other, kind = session.kind, phase = "answered",
+		session = session.sessionID or -1, deal_action = tostring(dealAction) });
+	if session.kind == "peace" then
+		-- The rival's ACCEPTED is its verdict; the send back is what enacts
+		-- the peace, exactly as the shipped screen's accept button does.
+		local accepted = dealAction == DealProposalAction.ACCEPTED;
+		local enacted = false;
+		if accepted then
+			enacted = pcall(function()
+				DealManager.SendWorkingDeal(DealProposalAction.ACCEPTED, pid, other);
+			end);
+		end
+		emit("peace_response", { turn = turn, target = other, accepted = accepted,
+			enacted = enacted and true or false, deal_action = tostring(dealAction) });
+	else
+		CivvisOnIncomingDeal(other, pid, dealAction);
+	end
+	CivvisTrade.close(pid, other, "answered");
+end;
+
+CivvisOnDealSessionClosed = function(sessionID)
+	for subject, session in pairs(CivvisTrade.sessions) do
+		if session.sessionID == sessionID or (session.sessionID == nil and sessionID == nil) then
+			CivvisTrade.abandon(subject, "session_closed");
+			return;
+		end
+	end
+end;
 
 CivvisOnIncomingDeal = function(fromPlayer, toPlayer, action)
 	local pid = try(function() return Game.GetLocalPlayer(); end, -1);
@@ -9224,10 +9351,12 @@ local function applyOrder(player, pid, row, turn)
 		deal:Validate();
 		if not deal:IsValid() then return false, 0, "invalid_deal"; end
 
-		-- This is the exact normal-offer call in shipped DiplomacyDealView.lua.
-		-- Unlike `RequestSession(..., "MAKE_DEAL")`, it does not route through the
-		-- anti-stall closer that must refuse every on-screen deal.
-		DealManager.SendWorkingDeal(DealProposalAction.PROPOSED, pid, subject);
+		-- `CivvisTrade.ask`: the offer goes out inside a MAKE_DEAL session, the
+		-- way the shipped CHOICE_MAKE_PEACE does (locked deal first, then the
+		-- session), because a session-less PROPOSED is never evaluated — 253 of
+		-- them were submitted over 42 runs without one answer. With
+		-- `DealSessions = false` this is the direct send it used to be.
+		CivvisTrade.ask(pid, subject, "PROPOSED", "peace", turn);
 		return true, concession, "submitted";
 	end
 
@@ -9868,6 +9997,7 @@ local function applyOrder(player, pid, row, turn)
 				return false, "sell_pending";
 			end
 			trade.pending[subject] = nil;
+			CivvisTrade.abandon(subject, "expired");
 			pcall(function() DealManager.ClearWorkingDeal(DealDirection.OUTGOING, pid, subject); end);
 			emit("deal_expired", { turn = turn, target = subject, asked_turn = pending.turn });
 		end
@@ -9999,7 +10129,7 @@ local function applyOrder(player, pid, row, turn)
 			trade.pending[subject] = {
 				turn = turn, floor = floor, gave = gave, verb = table.concat(text, ","),
 			};
-			DealManager.SendWorkingDeal(DealProposalAction.EQUALIZE, pid, subject);
+			CivvisTrade.ask(pid, subject, "EQUALIZE", "sell", turn);
 			return true, "asked", gave, table.concat(text, ",");
 		end);
 		if not ran then
@@ -10064,6 +10194,7 @@ local function applyOrder(player, pid, row, turn)
 				return false, "buy_pending";
 			end
 			trade.pending[subject] = nil;
+			CivvisTrade.abandon(subject, "expired");
 			pcall(function() DealManager.ClearWorkingDeal(DealDirection.OUTGOING, pid, subject); end);
 			emit("deal_expired", { turn = turn, target = subject, asked_turn = pending.turn });
 		end
@@ -10099,7 +10230,7 @@ local function applyOrder(player, pid, row, turn)
 			trade.pending[subject] = {
 				turn = turn, ceiling = ceiling, direction = "buy", verb = "OPEN_BORDERS",
 			};
-			DealManager.SendWorkingDeal(DealProposalAction.EQUALIZE, pid, subject);
+			CivvisTrade.ask(pid, subject, "EQUALIZE", "buy", turn);
 			return true, "asked";
 		end);
 		if not ran then
@@ -15078,6 +15209,8 @@ function Initialize()
 		CityProductionCompleted = onGameCoreTick,
 		GovernorAppointed = onGovernorAppointed,
 		DiplomacyIncomingDeal = CivvisOnIncomingDeal,
+		DiplomacyStatement = CivvisOnDiplomacyStatement,
+		DiplomacySessionClosed = CivvisOnDealSessionClosed,
 		EmergencyAvailable = CivvisOnAidEmergencyAvailable,
 		LoadGameViewStateDone = ensureStarted,
 		TeamVictory = onTeamVictory,
