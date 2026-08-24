@@ -4682,8 +4682,8 @@ mod tests {
     #[test]
     fn the_field_rotates_so_no_seat_is_always_pinned() {
         let field = [VictoryTarget::Diplomacy, VictoryTarget::Culture];
-        let mut pinned_count = vec![0usize; 6];
-        let mut measured_count = vec![0usize; 6];
+        let mut pinned_count = [0usize; 6];
+        let mut measured_count = [0usize; 6];
         for game in 0..60 {
             let pinned = pinned_seats(6, game, &field);
             assert_eq!(pinned.iter().filter(|seat| seat.is_some()).count(), 2);
