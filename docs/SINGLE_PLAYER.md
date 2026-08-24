@@ -147,8 +147,7 @@ comes from:
 | `LaunchBar.xml` | horizontal, upper left: tech tree, civics tree, Government, Religion, Great People, Great Works | `#launchbar` |
 | `WorldTracker.xml` | under the launch bar: research, then civics | `#worldtracker` |
 | `MinimapPanel.xml` | `Anchor="L,B"` | `.minimap-frame` |
-| `UnitPanel.xml` | `Anchor="R,B" Offset="172,0"` | `#ubar` |
-| `ActionPanel.xml` | `Anchor="R,B"` | `#actionpanel` |
+| `UnitPanel.xml` | `Anchor="R,B"` | `#ubar` |
 | `NotificationPanel.xml` | `Anchor="R,B"`, stack growth up | `#notify` |
 
 The switch is one class, `body.civ6-frame`, set from the engine's own
@@ -157,10 +156,8 @@ else is stylesheet. Nothing in the layer decides anything — every control
 posts exactly the action it posted before, so the rule that no screen
 constructs an action of its own still holds.
 
-Two classes name the two ways into it, and only the parts that are genuinely
-one seat's hang off them: `body.playing-solo` for a person holding seat 0, and
-`body.watching-world` for a simulation being watched. The section below this
-one is the second of those.
+One seat reaches it: `body.playing-solo`, a person holding seat 0. A watched
+simulation keeps the laboratory — the section below this one is why.
 
 Four choices in it are worth their reasons.
 
@@ -179,14 +176,21 @@ had no hook for at all: research was a `<select>` in a settings drawer. The
 ring is the fraction of the current study that is done, so a glance at the bar
 answers "how far into this tech am I" without opening anything.
 
-**The rankings are a report, not scenery.** Civilization VI has no permanent
-table of rivals over the map, and neither does a played game here: the
-standings masthead and the arena rail answer the launch bar's ☗ instead. That
-is a class of its own rather than the shared overlay preferences, so a person
-sitting down to play never writes over what a spectator chose to keep on
-screen. The same judgement puts the command deck away on the first played
-world — one menu button brings it back, and once somebody has asked for it
-either way, that answer is kept.
+**What the played seat does *not* take from Civilization VI is the deck.**
+#2275 took Civ 6's judgement whole: the standings masthead and the arena rail
+went behind the launch bar's ☗, the command deck folded away, and End Turn
+moved out to `ActionPanel.xml`'s bottom-right corner. That is right for the
+game Civ 6 is and wrong for what this one is — the standings and the arena's
+figures are this client's own instrument, and a game here is played next to
+them. So a played world opens with the masthead across the sky, the rail down
+the right, the deck open on the left, and End Turn, the auto-play controls and
+the transport all still inside it. `#actionpanel` is gone; the lower-right
+corner is `UnitPanel.xml`'s alone.
+
+☗ still folds the report away for a look at the map, and ☰ still folds the
+deck. Both answers are kept, under keys of their own — `civvis-solo-rankings-v1`
+and `civvis-solo-deck-v1` — and neither may touch `civvis-map-overlays-v1`,
+which is the whole reason the report is a class rather than an overlay flag.
 
 **End Turn says what is blocking it, in Civ 6's words.** The blocker priority
 table above has always been right; what the button said about it was this
@@ -233,100 +237,33 @@ player reaches for every turn, and Civ 6's corner holds one control. It opens
 by itself while an agent is playing, because the controls that take the seat
 back cannot be the ones folded away.
 
-## The watched world wears it too
+## The watched world keeps the laboratory
 
-The laboratory the section above describes was never the *player's* laboratory.
-It was the spectator's, and a played game had merely inherited it. So the
-operator watching a simulation kept the whole of it: an Elo table across the
-sky, the arena's stats down the right, simulation settings down the left, and
-the world reduced to whatever rectangle those three left over. That is why a
-CIVVIS game reads as an experiment rather than as a game, and it is the same
-diagnosis with the same fix.
+The arrangement above is a *seat's*. A simulation being watched does not get
+it, and #2382 — which gave the watcher the same frame and put the standings
+masthead and the arena rail behind ☗ with it — is reverted.
 
-Everything in the table above now applies to a watched world as well. What
-changes is what the corner holds and where the rivals are read.
+The reason is what the two seats are for. A person holding seat 0 is playing a
+game, and Civilization VI's answer to where the controls go is the right one
+for them. Somebody watching a simulation is reading an experiment: the
+standings table, the victory tracker and the arena's records *are* what they
+opened the page for. Putting them behind a button did not tidy the screen; it
+hid the instrument, and the map it made room for is the one thing on that page
+that was never in short supply.
 
-| Civ 6 | Its anchor | Watching |
-|-------|-----------|----------|
-| `DiplomacyRibbon.xml` | `RibbonContainer Anchor="R,T" Offset="0,27"` over `LeaderStack StackGrowth="Left"`, `SIZE_LEADER`=63px per civilization | `#diploribbon` |
-| `ActionPanel.xml` | `Anchor="R,B"` | `#actionpanel`, holding the transport |
-| `InGame.xml` | `<LuaContext ID="WorldRankings" … Hidden="1"/>` | the ☗ report |
+So a watched world wears what it wore before: the standings masthead across
+the top, the arena stats and victory tracker down the right, the command deck
+open on the left with the transport in it, and the map in what those three
+leave. `civ6Frame()` is `playingSolo()`, and everything that was the watcher's
+alone has gone with the class it hung off — `#diploribbon` and its leader
+discs, `arrangeWatchHud`, and the two remembered answers under
+`civvis-watch-*`. `a_watched_simulation_keeps_the_laboratory` is the test, and
+what it asserts is absence: a spectator-only element that nothing paints is
+worse than no element, because it reads as a feature to whoever finds it next.
 
-**The corner holds the transport, because there is no turn to end.** A watcher
-never fortifies anything and never presses Next Turn; the one control that
-does the same job — decides whether the world moves — is Pause, with Restart
-under it. `#specbar` is *moved* into `#actionpanel`, not copied, exactly as
-the played game moves `#humanfooter`, so the pause handler and the restart
-chooser keep working untouched. A played game's corner is unchanged: it still
-holds End Turn and the auto-play disclosure, and Restart stays in the deck.
-
-**The rivals arrive as Civilization VI's own leader ribbon.** This is the
-piece that makes putting the standings table away affordable rather than
-lossy. `DiplomacyRibbon.xml` anchors a row of leader discs at `R,T` with
-`Offset="0,27"` — immediately under the 29px strip — growing left, and under
-each disc `DiplomacyRibbon.lua`'s `UpdateStatValues` writes six figures in a
-fixed order: Score, Military, Science, Culture, Gold, Faith. The observation
-already carries all six per seat, so the ribbon is a relabelling of facts this
-page had, not a new question of the engine. `Options.lua`'s `ribbon_options`
-offers those figures three ways — always hide, on mouse-over, always show —
-and this takes the middle one, which is what makes a six-figure column
-affordable beside a map: the civilization being watched keeps its stats open,
-any other opens on hover.
-
-It is also how a watcher takes a seat. A spectator has none of its own, and
-clicking a disc posts exactly the `spectatePlayer` the standings table's
-"Watch as" button posts; a `◉ World` disc closes the row and goes back to the
-omniscient view. The ribbon holds the civilizations that view has *met*, the
-way `m_leadersMet` does, so Watch-as stays as fog-honest as the observation it
-is drawn from.
-
-The ribbon is the spectator's and not the player's. A played game's rivals
-stay behind the rankings report, for the reason the section above gives, and
-a player has a seat already.
-
-**One empire or none.** A played seat has an empire; so does Watch-as, because
-`observation_player_view` builds the whole `me` block for the civilization
-being followed, fog and all — its yields, its treasury, its research and its
-civic are that civilization's. Above the world there is no single empire:
-`me` there is whichever major happens to be acting (`summary_pid` in
-`Session::state`), so a strip fed from it would print a different
-civilization's treasury every few frames. `arrangementSeat()` is the one test
-all of it answers to — the yield chips, the world tracker and the two tree
-hooks are absent above the world, and the strip keeps the turn and the era,
-which a world does have. That is the same shape the battlefield rule already
-had, one level up.
-
-**The empire screens are not offered.** `openEmpire` refuses a spectator, so
-the launch bar draws no empire tabs and the stylesheet hides Diplomacy and
-Quick Deals: a bar that offers a control which goes dead under the hand is
-worse than one that does not offer it. What remains is what a watcher can use
-— the two ringed tree hooks of the civilization it is following, and the
-rankings report.
-
-**Nothing is deleted; the laboratory is one click away.** ☗ (or `F1`) opens
-the standings masthead and the arena rail over the map, and ☰ on the strip
-brings the command deck back. `F1` is not this project's choice: it is the key
-Civ 6 binds to its own `ToggleRankings` action, which
-`PartialScreenHooks.lua` reads with `Input.GetActionId("ToggleRankings")` to
-drive `WorldRankingsButton` — the first hook in `PartialScreenHooks.xml`'s
-upper-right bar (`RootContainer Anchor="R,T"`). That bar is where the shipped
-game keeps the button; here it stays on the launch bar where #2275 put it,
-because the upper-right band is the ribbon's and a third cluster in one corner
-buys nothing. The evidence still settles the question the button answers:
-rankings is a hook you press, not scenery. Both answers are kept, under keys of their own:
-`civvis-watch-rankings-v1` and `civvis-watch-deck-v1`. Neither is ever written
-from a played game's path, neither is ever written by the other, and neither
-touches `civvis-map-overlays-v1` — a person sitting down to play must not
-write over what a spectator chose to keep on screen, which is the whole reason
-the report is a class rather than an overlay flag.
-
-Two things a watched world genuinely does not get. The notification rail is
-placed but stays empty: `drawTurnLoop` returns on `SPEC`, because every chip
-it builds is a blocker or a standing order belonging to a seat, and a watcher
-holds none. The unit panel is the same — `drawUbar` returns on `SPEC` — so
-`UnitPanel.xml`'s inboard corner is left to the transport. Both anchors are in
-the stylesheet already, so a future frame that does publish something lands
-where Civ 6 puts it rather than in the middle of the map.
+One thing the ribbon did that the masthead had better keep doing: it was how a
+watcher took a seat. It still is — the standings table's own **Watch as**
+button on each row, which is the action the discs were posting.
 
 ## The Empire panel
 
