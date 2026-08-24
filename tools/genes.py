@@ -452,7 +452,7 @@ DIFF_PLACES = 6
 #: rows.
 DEPLOYMENT_POLICY = "operator-pinned"
 
-#: The seven explicit 2026-08-24 promotions. They supplement the exact
+#: The nine explicit 2026-08-24 promotions. They supplement the exact
 #: 36-gene selection already shipped at the 38,160-seat standard cutoff.
 OPERATOR_PROMOTIONS_20260824 = (
     "unit-cost-efficiency",
@@ -462,11 +462,13 @@ OPERATOR_PROMOTIONS_20260824 = (
     "promote-when-wounded",
     "religion-sues-peace",
     "lane-great-people",
+    "one-launch-pad",
+    "civilian-rescue",
 )
 
 #: The complete pinned deployment genome, in stable tag order. Every other
 #: screenable gene defaults off unless an explicit operator update changes this
-#: selection. Keep the seven promotions above named separately so the policy
+#: selection. Keep the nine promotions above named separately so the policy
 #: change is auditable without re-deriving it from screen statistics.
 OPERATOR_DEFAULT_ON = (
     "air-surge",
@@ -477,6 +479,7 @@ OPERATOR_DEFAULT_ON = (
     "bounded-recovery",
     "buildings-before-projects",
     "camp-party",
+    "civilian-rescue",
     "competition-victory-points",
     "culture-building-debt",
     "early-contact-window",
@@ -491,6 +494,7 @@ OPERATOR_DEFAULT_ON = (
     "lane-great-people",
     "loyalty-rate-alarm",
     "maintenance-aware-deck",
+    "one-launch-pad",
     "opportunistic-war",
     "peacetime-deterrence",
     "price-the-suzerainty",

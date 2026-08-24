@@ -560,10 +560,11 @@ background.
 ## The gene ledger: the deployment genome is explicitly pinned
 
 As of 2026-08-24, deployment is an explicit operator selection rather than a
-rule inferred from screen statistics. The 43-gene set retains the prior 36
+rule inferred from screen statistics. The 45-gene set retains the prior 36
 on/off selections and explicitly turns on `unit-cost-efficiency`,
 `unit-objective-memory`, `camp-party`, `slot-kind-tiebreak`,
-`promote-when-wounded`, `religion-sues-peace`, and `lane-great-people`.
+`promote-when-wounded`, `religion-sues-peace`, `lane-great-people`,
+`one-launch-pad`, and `civilian-rescue`.
 
 The former column thresholds, pooled-*Diff* veto, and posterior alternatives
 are retired as deployment rules. Win columns, *Diff*, posterior intervals,
