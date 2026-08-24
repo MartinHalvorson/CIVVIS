@@ -1,7 +1,9 @@
 //! Scripted AIs (mirrors civvis/ai/). BasicAi reads full state (no fog) —
 //! sparring partner, not a fair-play agent.
 use crate::name::{AsName, Name};
-use crate::game::{effective_strength, Action, ActionFamilies, Game, Item, TraversalClass};
+use crate::game::{
+    effective_strength, expected_damage, Action, ActionFamilies, Game, Item, TraversalClass,
+};
 use crate::parallel::WorkPool;
 use crate::reasoning::{plain, Journal};
 use crate::rng::Rng;
@@ -27,6 +29,12 @@ const TACTICAL_COUNTER_ASSIGNMENT: f64 = 12.0;
 /// This is deliberately smaller than a kill or a class counter: safety breaks
 /// close choices without making a ranged unit ignore a decisive target.
 const SAFE_RANGED_FIRE: f64 = 10.0;
+
+/// A projected naval blow below ten hit points is nuisance fire rather than a
+/// reason to recall the army or preempt a city's queue. The threshold is read
+/// only by the opt-in `naval-threat-triage` treatment; every historical
+/// controller continues to count every nearby raider.
+const SERIOUS_NAVAL_DAMAGE: f64 = 10.0;
 
 /// Standing walls are the siege arm's job. Melee can still attack them, but
 /// it should wait for the ram/tower that makes the blow useful when possible.
@@ -2824,6 +2832,13 @@ pub struct BasicAi {
     /// capital's route capacity empty through insolvency. Entrant
     /// `solvency-first-trade-slot`; off pending its screen.
     pub(crate) solvency_first_trade_slot: bool,
+    /// Count a nearby barbarian ship as a home emergency only when its
+    /// terrain-accurate next-turn attack envelope reaches one of our assets
+    /// for a meaningful blow. Harmless ships remain legal ranged targets so
+    /// shooters can collect combat experience without recruiting the army or
+    /// displacing civilian production. Entrant `naval-threat-triage`; off
+    /// pending its screen.
+    pub(crate) naval_threat_triage: bool,
     /// The same round trip spread over two turns instead of one, which nothing
     /// inside a single turn's reasoning can see. Each unit's recent
     /// whereabouts are remembered here, and a unit found circling is priced
@@ -3908,7 +3923,90 @@ impl BasicAi {
     /// Pressure is intentionally a small integer rather than a combat score:
     /// production needs to answer "one defender or two?", while tactical
     /// movement uses the full exchange evaluator below.
-    pub(crate) fn barbarian_threat_pressure(g: &Game, pid: usize, cid: u32) -> usize {
+    fn naval_raider_can_deal_serious_damage(
+        g: &Game,
+        pid: usize,
+        raider: &crate::game::Unit,
+    ) -> bool {
+        let spec = &g.rules.units[raider.kind];
+        if spec.domain.as_deref() != Some("sea") {
+            return true;
+        }
+        let reach = g.attack_reach(raider.id);
+        if reach.is_empty() {
+            return false;
+        }
+        let reaches = |position: Pos| reach.binary_search(&position).is_ok();
+
+        for city in g.cities.values().filter(|city| city.owner == pid) {
+            if !reaches(city.pos) {
+                continue;
+            }
+            let mut projected = 0.0_f64;
+            if spec.is_melee_capable() {
+                let attack = effective_strength(g.unit_strength(raider, false), raider.hp);
+                projected = projected.max(expected_damage(attack, g.city_strength(city.id)));
+            }
+            if spec.has_ranged_attack() {
+                let attack = effective_strength(g.unit_ranged_attack_strength(raider), raider.hp);
+                let wall_share = if spec.siege { 1.0 } else { 0.5 };
+                projected =
+                    projected.max(expected_damage(attack, g.city_strength(city.id)) * wall_share);
+            }
+            if projected + f64::EPSILON >= SERIOUS_NAVAL_DAMAGE {
+                return true;
+            }
+        }
+
+        for defender in g
+            .units
+            .values()
+            .filter(|unit| unit.owner == pid && reaches(unit.pos))
+        {
+            let defender_spec = &g.rules.units[defender.kind];
+            if defender_spec.class != "military" {
+                // A melee ship whose domain-valid envelope reaches an embarked
+                // civilian can take it outright; that is serious at any HP.
+                if spec.is_melee_capable() {
+                    return true;
+                }
+                continue;
+            }
+            let mut projected = 0.0_f64;
+            if spec.has_ranged_attack() {
+                if let Some((attack, defence)) =
+                    g.ranged_strike_strengths(raider.id, defender.id, defender.pos)
+                {
+                    projected = projected.max(expected_damage(attack, defence));
+                }
+            }
+            if spec.is_melee_capable() {
+                let attack = effective_strength(g.unit_strength(raider, false), raider.hp);
+                let defence = effective_strength(g.unit_strength(defender, true), defender.hp);
+                projected = projected.max(expected_damage(attack, defence));
+            }
+            if projected + f64::EPSILON >= SERIOUS_NAVAL_DAMAGE {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn barbarian_raider_counts_as_threat(
+        &self,
+        g: &Game,
+        pid: usize,
+        raider: &crate::game::Unit,
+    ) -> bool {
+        !self.naval_threat_triage || Self::naval_raider_can_deal_serious_damage(g, pid, raider)
+    }
+
+    fn barbarian_threat_pressure_inner(
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        naval_threat_triage: bool,
+    ) -> usize {
         let Some(city) = g.cities.get(&cid).filter(|city| city.owner == pid) else {
             return 0;
         };
@@ -3919,6 +4017,9 @@ impl BasicAi {
             .units
             .values()
             .filter(|unit| Self::is_barbarian_raider(g, unit))
+            .filter(|unit| {
+                !naval_threat_triage || Self::naval_raider_can_deal_serious_damage(g, pid, unit)
+            })
             .filter(|unit| g.wdist(unit.pos, city.pos) <= HOME_THREAT_RADIUS)
             .count();
         let camps = g
@@ -3932,12 +4033,31 @@ impl BasicAi {
         raiders.min(3) + camps.min(1)
     }
 
+    #[cfg(test)]
+    pub(crate) fn barbarian_threat_pressure(g: &Game, pid: usize, cid: u32) -> usize {
+        Self::barbarian_threat_pressure_inner(g, pid, cid, false)
+    }
+
+    pub(crate) fn barbarian_threat_pressure_for_controller(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+    ) -> usize {
+        Self::barbarian_threat_pressure_inner(g, pid, cid, self.naval_threat_triage)
+    }
+
     /// Immediate production alarm: a live raider in the home ring or a camp
     /// close enough that a new raider can reach the city before a fresh unit
     /// finishes. A camp farther out still informs the bounded camp party and
     /// trader caution, but should not displace an unrelated culture or science
     /// build by itself.
-    pub(crate) fn barbarian_local_alarm(g: &Game, pid: usize, cid: u32) -> bool {
+    fn barbarian_local_alarm_inner(
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        naval_threat_triage: bool,
+    ) -> bool {
         let Some(city) = g.cities.get(&cid).filter(|city| city.owner == pid) else {
             return false;
         };
@@ -3945,17 +4065,35 @@ impl BasicAi {
             return false;
         }
         g.units.values().any(|unit| {
-            Self::is_barbarian_raider(g, unit) && g.wdist(unit.pos, city.pos) <= HOME_THREAT_RADIUS
+            Self::is_barbarian_raider(g, unit)
+                && (!naval_threat_triage
+                    || Self::naval_raider_can_deal_serious_damage(g, pid, unit))
+                && g.wdist(unit.pos, city.pos) <= HOME_THREAT_RADIUS
         }) || g
             .barb_camps
             .keys()
             .any(|camp| g.wdist(*camp, city.pos) <= BARBARIAN_TRADE_RISK_RADIUS)
     }
 
+    #[cfg(test)]
+    pub(crate) fn barbarian_local_alarm(g: &Game, pid: usize, cid: u32) -> bool {
+        Self::barbarian_local_alarm_inner(g, pid, cid, false)
+    }
+
+    pub(crate) fn barbarian_local_alarm_for_controller(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+    ) -> bool {
+        Self::barbarian_local_alarm_inner(g, pid, cid, self.naval_threat_triage)
+    }
+
     /// A Trader is safe to start once the local barbarian ring is quiet. Native
     /// routes complete immediately from a city, while the live bridge may have
     /// to walk the unit to its origin, so the conservative gate protects both
     /// representations and keeps the early queue on military/repair work.
+    #[cfg(test)]
     pub(crate) fn barbarian_trade_risk(g: &Game, pid: usize) -> bool {
         if g.barb_pid.is_none() || g.player_city_ids(pid).is_empty() {
             return false;
@@ -3963,6 +4101,15 @@ impl BasicAi {
         g.player_city_ids(pid)
             .into_iter()
             .any(|cid| Self::barbarian_local_alarm(g, pid, cid))
+    }
+
+    pub(crate) fn barbarian_trade_risk_for_controller(&self, g: &Game, pid: usize) -> bool {
+        if g.barb_pid.is_none() || g.player_city_ids(pid).is_empty() {
+            return false;
+        }
+        g.player_city_ids(pid)
+            .into_iter()
+            .any(|cid| self.barbarian_local_alarm_for_controller(g, pid, cid))
     }
 
     fn minor_enemy_near_home(g: &Game, pid: usize, enemy: usize) -> bool {
@@ -4506,6 +4653,7 @@ impl BasicAi {
             camp_bounty_claims: BTreeMap::new(),
             maintenance_aware_deck: false,
             solvency_first_trade_slot: false,
+            naval_threat_triage: false,
             explore_goal: RefCell::new(HashMap::new()),
             unit_motion: BTreeMap::new(),
             rush_military_floor: 0,
@@ -4844,6 +4992,7 @@ impl BasicAi {
             camp_bounty_claims: BTreeMap::new(),
             maintenance_aware_deck: false,
             solvency_first_trade_slot: false,
+            naval_threat_triage: false,
             explore_goal: RefCell::new(HashMap::new()),
             unit_motion: BTreeMap::new(),
             rush_military_floor: 0,
@@ -9152,7 +9301,7 @@ impl BasicAi {
             if unit == "trader"
                 && self.barbarian_tactics
                 && self.solvency_first_trade_slot
-                && !Self::safe_trade_origin(g, pid, *cid)
+                && !self.safe_trade_origin_for_controller(g, pid, *cid)
             {
                 continue;
             }
@@ -9468,7 +9617,7 @@ impl BasicAi {
         let barbarian_cities: Vec<u32> = city_ids
             .iter()
             .copied()
-            .filter(|cid| self.barbarian_tactics && Self::barbarian_defense_gap(g, pid, *cid) > 0)
+            .filter(|cid| self.barbarian_tactics && self.barbarian_defense_gap(g, pid, *cid) > 0)
             .collect();
         if !self.minor
             && !self.barb
@@ -9553,6 +9702,7 @@ impl BasicAi {
             && traders < Self::open_trade_destinations(g, pid)
     }
 
+    #[cfg(test)]
     fn should_add_trader_safely(g: &Game, pid: usize, traders: usize) -> bool {
         Self::should_add_trader(g, pid, traders)
             && !Self::barbarian_trade_risk(g, pid)
@@ -9561,10 +9711,24 @@ impl BasicAi {
                 .all(|cid| Self::barbarian_threat_pressure(g, pid, cid) == 0)
     }
 
+    fn should_add_trader_safely_for_controller(
+        &self,
+        g: &Game,
+        pid: usize,
+        traders: usize,
+    ) -> bool {
+        Self::should_add_trader(g, pid, traders)
+            && !self.barbarian_trade_risk_for_controller(g, pid)
+            && g.player_city_ids(pid)
+                .into_iter()
+                .all(|cid| self.barbarian_threat_pressure_for_controller(g, pid, cid) == 0)
+    }
+
     /// Whether this city can turn a completed Trader straight into a route
     /// without exposing it inside a live barbarian ring. Safety belongs to
     /// the origin, not to every city in the empire: native routes complete
     /// immediately there and the live bridge starts the same host action.
+    #[cfg(test)]
     pub(crate) fn safe_trade_origin(g: &Game, pid: usize, cid: u32) -> bool {
         g.cities.get(&cid).is_some_and(|city| city.owner == pid)
             && !Self::barbarian_local_alarm(g, pid, cid)
@@ -9574,18 +9738,27 @@ impl BasicAi {
                 .any(|destination| g.can_establish_trade_route(pid, cid, *destination))
     }
 
-    fn has_safe_trade_origin(g: &Game, pid: usize) -> bool {
+    pub(crate) fn safe_trade_origin_for_controller(&self, g: &Game, pid: usize, cid: u32) -> bool {
+        g.cities.get(&cid).is_some_and(|city| city.owner == pid)
+            && !self.barbarian_local_alarm_for_controller(g, pid, cid)
+            && self.barbarian_threat_pressure_for_controller(g, pid, cid) == 0
+            && g.cities
+                .keys()
+                .any(|destination| g.can_establish_trade_route(pid, cid, *destination))
+    }
+
+    fn has_safe_trade_origin(&self, g: &Game, pid: usize) -> bool {
         g.player_city_ids(pid)
             .into_iter()
-            .any(|cid| Self::safe_trade_origin(g, pid, cid))
+            .any(|cid| self.safe_trade_origin_for_controller(g, pid, cid))
     }
 
     fn should_add_trader_for_controller(&self, g: &Game, pid: usize, traders: usize) -> bool {
         if self.barbarian_tactics {
             if self.solvency_first_trade_slot {
-                Self::should_add_trader(g, pid, traders) && Self::has_safe_trade_origin(g, pid)
+                Self::should_add_trader(g, pid, traders) && self.has_safe_trade_origin(g, pid)
             } else {
-                Self::should_add_trader_safely(g, pid, traders)
+                self.should_add_trader_safely_for_controller(g, pid, traders)
             }
         } else {
             Self::should_add_trader(g, pid, traders)
@@ -9604,7 +9777,8 @@ impl BasicAi {
         traders: usize,
     ) -> bool {
         if self.barbarian_tactics && self.solvency_first_trade_slot {
-            Self::should_add_trader(g, pid, traders) && Self::safe_trade_origin(g, pid, cid)
+            Self::should_add_trader(g, pid, traders)
+                && self.safe_trade_origin_for_controller(g, pid, cid)
         } else {
             self.should_add_trader_for_controller(g, pid, traders)
         }
@@ -9890,14 +10064,16 @@ impl BasicAi {
     /// that shoot. Strictly more shooters than melee, so an even ring keeps the
     /// historical melee answer and only a genuinely ranged siege changes it.
     /// See `barbarian_ranged_answer`.
-    fn barbarian_ring_is_mostly_ranged(g: &Game, pid: usize, cid: u32) -> bool {
+    fn barbarian_ring_is_mostly_ranged(&self, g: &Game, pid: usize, cid: u32) -> bool {
         let Some(city) = g.cities.get(&cid).filter(|city| city.owner == pid) else {
             return false;
         };
         let mut ranged = 0usize;
         let mut melee = 0usize;
         for unit in g.units.values().filter(|unit| {
-            Self::is_barbarian_raider(g, unit) && g.wdist(unit.pos, city.pos) <= HOME_THREAT_RADIUS
+            Self::is_barbarian_raider(g, unit)
+                && self.barbarian_raider_counts_as_threat(g, pid, unit)
+                && g.wdist(unit.pos, city.pos) <= HOME_THREAT_RADIUS
         }) {
             if g.rules.units[unit.kind].has_ranged_attack() {
                 ranged += 1;
@@ -9912,17 +10088,18 @@ impl BasicAi {
     /// camp or lone raider; two hold a city against a small early raiding party
     /// while the field army closes the camp. This is deliberately bounded so a
     /// crowded map does not turn every camp into an unbounded production sink.
-    fn barbarian_defense_gap(g: &Game, pid: usize, cid: u32) -> usize {
+    pub(crate) fn barbarian_defense_gap(&self, g: &Game, pid: usize, cid: u32) -> usize {
         let Some(city) = g.cities.get(&cid).filter(|city| city.owner == pid) else {
             return 0;
         };
-        if !Self::barbarian_local_alarm(g, pid, cid) {
+        if !self.barbarian_local_alarm_for_controller(g, pid, cid) {
             return 0;
         }
         let raiders = g
             .units
             .values()
             .filter(|unit| Self::is_barbarian_raider(g, unit))
+            .filter(|unit| self.barbarian_raider_counts_as_threat(g, pid, unit))
             .filter(|unit| g.wdist(unit.pos, city.pos) <= HOME_THREAT_RADIUS)
             .count();
         let wanted: usize = if raiders >= 2 { 2 } else { 1 };
@@ -9937,15 +10114,15 @@ impl BasicAi {
         if self.minor
             || self.barb
             || !self.barbarian_tactics
-            || !Self::barbarian_local_alarm(g, pid, cid)
+            || !self.barbarian_local_alarm_for_controller(g, pid, cid)
         {
             return None;
         }
-        if Self::barbarian_defense_gap(g, pid, cid) > 0 {
+        if self.barbarian_defense_gap(g, pid, cid) > 0 {
             // A ring of shooters wants a shooter back. See
             // `barbarian_ranged_answer`.
             let want = if self.barbarian_ranged_answer
-                && Self::barbarian_ring_is_mostly_ranged(g, pid, cid)
+                && self.barbarian_ring_is_mostly_ranged(g, pid, cid)
             {
                 Some(true)
             } else {
@@ -10304,7 +10481,7 @@ impl BasicAi {
             && g.players[pid].gold_per_turn < -0.5
             && g.players[pid].gold < recovery_reserve;
         let emergency_defense = (at_major_war
-            || (self.barbarian_tactics && Self::barbarian_local_alarm(g, pid, cid)))
+            || (self.barbarian_tactics && self.barbarian_local_alarm_for_controller(g, pid, cid)))
             && military < n_cities.max(1);
         if self.minor && !emergency_defense {
             for building in ["walls", "medieval_walls", "renaissance_walls"] {
@@ -11963,7 +12140,7 @@ impl BasicAi {
         // alert, retreat it to a friendly city first; once it is on the city
         // tile, native route creation is immediate and safe to attempt.
         if self.barbarian_tactics
-            && Self::barbarian_trade_risk(g, pid)
+            && self.barbarian_trade_risk_for_controller(g, pid)
             && g.city_at(upos)
                 .is_none_or(|cid| g.cities[&cid].owner != pid)
         {
@@ -12751,6 +12928,10 @@ impl BasicAi {
                 .filter(|enemy| enemy_ids.contains(&enemy.owner))
                 .filter(|enemy| g.rules.units[enemy.kind].class == "military")
                 .filter(|enemy| !Self::is_barbarian_scout(g, enemy.id))
+                .filter(|enemy| {
+                    Some(enemy.owner) != g.barb_pid
+                        || self.barbarian_raider_counts_as_threat(g, pid, enemy)
+                })
                 .filter(|enemy| g.wdist(enemy.pos, city.pos) <= GARRISON_ALERT_RADIUS)
                 .map(|enemy| effective_strength(g.unit_strength(enemy, true), enemy.hp))
                 .sum();
@@ -12876,10 +13057,20 @@ impl BasicAi {
     /// `barbarian_presence_at_home` with the camp radius chosen by the caller:
     /// raiders always count within `HOME_THREAT_RADIUS`, camps within
     /// `camp_radius`. See `camp_reach`.
+    #[cfg(test)]
     pub(crate) fn barbarian_presence_at_home_with_camp_radius(
         g: &Game,
         pid: usize,
         camp_radius: i32,
+    ) -> bool {
+        Self::barbarian_presence_at_home_inner(g, pid, camp_radius, false)
+    }
+
+    fn barbarian_presence_at_home_inner(
+        g: &Game,
+        pid: usize,
+        camp_radius: i32,
+        naval_threat_triage: bool,
     ) -> bool {
         let Some(_barb) = g.barb_pid else {
             return false;
@@ -12896,11 +13087,74 @@ impl BasicAi {
         let near_home =
             |pos: Pos, radius: i32| my_cities.iter().any(|city| g.wdist(pos, *city) <= radius);
         g.units.values().any(|unit| {
-            Self::is_barbarian_raider(g, unit) && near_home(unit.pos, HOME_THREAT_RADIUS)
+            Self::is_barbarian_raider(g, unit)
+                && (!naval_threat_triage
+                    || Self::naval_raider_can_deal_serious_damage(g, pid, unit))
+                && near_home(unit.pos, HOME_THREAT_RADIUS)
         }) || g
             .barb_camps
             .keys()
             .any(|camp| near_home(*camp, camp_radius))
+    }
+
+    pub(crate) fn barbarian_presence_at_home_for_controller(
+        &self,
+        g: &Game,
+        pid: usize,
+        camp_radius: i32,
+    ) -> bool {
+        Self::barbarian_presence_at_home_inner(g, pid, camp_radius, self.naval_threat_triage)
+    }
+
+    /// A harmless ship is not a strategic alarm, but a legal shot into it is
+    /// still a useful three-XP drill for a ranged unit already in position.
+    /// This never creates a chase: admission requires a shot legal right now.
+    pub(crate) fn has_harmless_naval_xp_shot(&self, g: &Game, pid: usize, uid: u32) -> bool {
+        if !self.naval_threat_triage {
+            return false;
+        }
+        let Some(shooter) = g.units.get(&uid).filter(|unit| unit.owner == pid) else {
+            return false;
+        };
+        if !g.rules.units[shooter.kind].has_ranged_attack() {
+            return false;
+        }
+        let frames = (g.player_vision_now(pid), g.visibility_viewers(pid));
+        g.units.values().any(|target| {
+            Some(target.owner) == g.barb_pid
+                && Self::is_barbarian_raider(g, target)
+                && g.rules.units[target.kind].domain.as_deref() == Some("sea")
+                && !Self::naval_raider_can_deal_serious_damage(g, pid, target)
+                && g.ranged_order_is_legal(pid, uid, target.pos, &frames.0, &frames.1)
+        })
+    }
+
+    /// A bounded credit makes a one-damage but experience-bearing shot clear
+    /// the ordinary strength threshold. Kills and serious targets remain worth
+    /// orders of magnitude more in the exact tactical evaluator.
+    pub(crate) fn harmless_naval_xp_bonus(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        target: Pos,
+        ranged: bool,
+    ) -> f64 {
+        if !self.naval_threat_triage || !ranged {
+            return 0.0;
+        }
+        let harmless_ship = g.units_at(target).into_iter().any(|other| {
+            let unit = &g.units[&other];
+            Some(unit.owner) == g.barb_pid
+                && Self::is_barbarian_raider(g, unit)
+                && g.rules.units[unit.kind].domain.as_deref() == Some("sea")
+                && !Self::naval_raider_can_deal_serious_damage(g, pid, unit)
+        });
+        if harmless_ship && g.units.get(&uid).is_some_and(|unit| unit.owner == pid) {
+            10.0
+        } else {
+            0.0
+        }
     }
 
     /// ★★★★★ THE ESCORT THAT GUARDED THE SETTLER AND NEVER SWUNG.
@@ -13087,7 +13341,16 @@ impl BasicAi {
     /// Every barbarian MILITARY unit counts, Scouts included — see the
     /// `barbarian_hunt` note on why that does not contradict
     /// `barbarian_scouts_are_scouts`.
+    #[cfg(test)]
     pub(crate) fn barbarian_threatens_our_field_civilians(g: &Game, pid: usize) -> bool {
+        Self::barbarian_threatens_field_civilians_inner(g, pid, false)
+    }
+
+    fn barbarian_threatens_field_civilians_inner(
+        g: &Game,
+        pid: usize,
+        naval_threat_triage: bool,
+    ) -> bool {
         let Some(barb) = g.barb_pid else {
             return false;
         };
@@ -13112,11 +13375,22 @@ impl BasicAi {
             .values()
             .filter(|unit| unit.owner == barb)
             .filter(|unit| g.rules.units[unit.kind].class == "military")
+            .filter(|unit| {
+                !naval_threat_triage || Self::naval_raider_can_deal_serious_damage(g, pid, unit)
+            })
             .any(|raider| {
                 exposed
                     .iter()
                     .any(|civilian| g.wdist(raider.pos, *civilian) <= HOME_THREAT_RADIUS)
             })
+    }
+
+    pub(crate) fn barbarian_threatens_our_field_civilians_for_controller(
+        &self,
+        g: &Game,
+        pid: usize,
+    ) -> bool {
+        Self::barbarian_threatens_field_civilians_inner(g, pid, self.naval_threat_triage)
     }
 
     /// measured threat *to our own cities*. This does, and answers the worst
@@ -13169,6 +13443,8 @@ impl BasicAi {
             if !enemy_ids.contains(&enemy.owner)
                 || g.rules.units[enemy.kind].class != "military"
                 || Self::is_barbarian_scout(g, enemy.id)
+                || (Some(enemy.owner) == g.barb_pid
+                    && !self.barbarian_raider_counts_as_threat(g, pid, enemy))
             {
                 continue;
             }
@@ -13395,7 +13671,7 @@ impl BasicAi {
         let Some(barb) = g.barb_pid else {
             return false;
         };
-        if !Self::barbarian_presence_at_home_with_camp_radius(g, pid, HOME_CAMP_RADIUS) {
+        if !self.barbarian_presence_at_home_for_controller(g, pid, HOME_CAMP_RADIUS) {
             return false;
         }
         let enemies = [barb];
@@ -13489,6 +13765,10 @@ impl BasicAi {
                         .is_some_and(|home| g.wdist(home, u.pos) <= MINOR_DEFENSE_RADIUS))
                 && self.barbarian_target_allowed_for_controller(g, uid, u.pos)
             {
+                if Some(u.owner) == g.barb_pid && !self.barbarian_raider_counts_as_threat(g, pid, u)
+                {
+                    continue;
+                }
                 if Some(u.owner) == g.barb_pid
                     && (!near_home(u.pos)
                         || self.exchange_score(g, uid, u.pos, ranged)
@@ -14624,9 +14904,10 @@ impl BasicAi {
                 // outside every ring the presence test measures, and eight
                 // Settlers were taken in one 104-turn run inside that gap.
                 if self.barbarian_tactics
-                    && (Self::barbarian_presence_at_home_with_camp_radius(g, pid, HOME_CAMP_RADIUS)
+                    && (self.barbarian_presence_at_home_for_controller(g, pid, HOME_CAMP_RADIUS)
+                        || self.has_harmless_naval_xp_shot(g, pid, uid)
                         || (self.barbarian_hunt
-                            && Self::barbarian_threatens_our_field_civilians(g, pid)))
+                            && self.barbarian_threatens_our_field_civilians_for_controller(g, pid)))
                     && !enemy_ids.contains(&barb)
                 {
                     enemy_ids.push(barb);
@@ -14675,7 +14956,7 @@ impl BasicAi {
                 // the historical candidates (see the field's note).
                 if spec.has_ranged_attack()
                     && distance <= g.unit_attack_range(uid)
-                    && (!self.legal_tactical_candidates || {
+                    && (!(self.legal_tactical_candidates || self.naval_threat_triage) || {
                         let frames = vision_frames.get_or_insert_with(|| {
                             (g.player_vision_now(pid), g.visibility_viewers(pid))
                         });
@@ -14731,6 +15012,7 @@ impl BasicAi {
                         self.exchange_score(g, uid, pos, ranged)
                             - self.attack_threshold(g, uid, pos)
                             + self.tactical_action_bonus(g, uid, pos, ranged)
+                            + self.harmless_naval_xp_bonus(g, pid, uid, pos, ranged)
                             + if capture { 500.0 } else { 0.0 }
                     };
                     if best
