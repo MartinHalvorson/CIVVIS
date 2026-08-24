@@ -153,20 +153,25 @@ pub(super) struct ReconPlan {
     posts: BTreeMap<usize, PicketPost>,
     /// Post assignments by recon unit.
     pickets: BTreeMap<u32, Pos>,
+    /// Units the screens have spoken for this turn.
+    sent: BTreeSet<u32>,
 }
 
 impl ReconPlan {
     /// The screen order drawn for a unit this turn, for explainers and tests.
+    #[cfg(test)]
     pub(super) fn screen(&self, uid: u32) -> Option<&ScreenOrder> {
         self.screens.get(&uid)
     }
 
     /// The post drawn for a neighbour, for explainers and tests.
+    #[cfg(test)]
     pub(super) fn post(&self, rival: usize) -> Option<&PicketPost> {
         self.posts.get(&rival)
     }
 
     /// The post a recon unit was sent to, for explainers and tests.
+    #[cfg(test)]
     pub(super) fn picket(&self, uid: u32) -> Option<Pos> {
         self.pickets.get(&uid).copied()
     }
@@ -184,6 +189,7 @@ pub(super) enum ScreenOrder {
 
 impl ScreenOrder {
     /// The tile the order walks to.
+    #[cfg(test)]
     pub(super) fn tile(&self) -> Pos {
         match self {
             ScreenOrder::Stand { at, .. } => *at,
@@ -335,7 +341,6 @@ impl AdvancedAi {
             })
             .map(|(uid, seen)| (*uid, *seen))
             .collect();
-        let mut taken: BTreeSet<u32> = BTreeSet::new();
         for (_, sid) in settlers {
             let settler = &g.units[&sid];
             let previous = sightings.insert(sid, (settler.pos, g.turn));
@@ -343,7 +348,7 @@ impl AdvancedAi {
             if sites.is_empty() {
                 continue;
             }
-            self.screen_one_settler(g, pid, settler, &sites, major_war, &mut taken, plan);
+            self.screen_one_settler(g, pid, settler, &sites, major_war, plan);
         }
         plan.sightings = sightings;
     }
@@ -548,7 +553,6 @@ impl AdvancedAi {
         settler: &Unit,
         sites: &[(Pos, f64)],
         major_war: bool,
-        taken: &mut BTreeSet<u32>,
         plan: &mut ReconPlan,
     ) {
         let rival = settler.owner;
@@ -567,7 +571,7 @@ impl AdvancedAi {
         let mut units: Vec<(bool, i32, u32)> = g
             .player_unit_ids(pid)
             .into_iter()
-            .filter(|uid| !taken.contains(uid))
+            .filter(|uid| !plan.sent.contains(uid))
             .filter_map(|uid| {
                 let recon = self.disruption_unit(g, pid, uid)?;
                 if !recon && major_war {
@@ -669,7 +673,7 @@ impl AdvancedAi {
                 },
             );
             sent.insert(uid);
-            taken.insert(uid);
+            plan.sent.insert(uid);
             held.insert(stand);
             assigned += 1;
             if !recon {
@@ -710,7 +714,7 @@ impl AdvancedAi {
                 },
             );
             sent.insert(*uid);
-            taken.insert(*uid);
+            plan.sent.insert(*uid);
             assigned += 1;
         }
     }
