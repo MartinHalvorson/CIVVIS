@@ -56,6 +56,20 @@ played on. The paragraph above had said otherwise since the fix landed.
 
 The gate could not have caught it: see below.
 
+⚠ **It was still not fully converted after that, and it happened the same way
+twice.** `tennis_ball_seam_point` was routed through `trig` on 2026-08-18;
+`tennis_ball_seam_proximity`, the function immediately below it in the same
+file, kept its `atan2` and went on reading a longitude off the platform's own
+library. `src/city_states.rs` was never mentioned by this page at all, and its
+`direction` — which decides which city-states a seed seats, and on a true-start
+map where they stand — computed a unit vector with `f64::sin`/`cos`. Both were
+converted on 2026-08-23 (#2383).
+
+The lesson is not "look harder next time". A conversion is done per *call site*
+and reviewed per *function*, so the call two lines below the one being fixed is
+exactly what survives. That is a test now rather than a habit: see
+`a_file_that_uses_trig_uses_nothing_else` below.
+
 Deliberately **not** converted, so their platform behaviour is a recorded
 decision rather than an accident:
 
@@ -80,20 +94,59 @@ decision rather than an accident:
 
 ## What enforces it
 
-`the_same_seed_generates_the_same_world_on_every_platform` in `src/mapgen.rs`
-pins the digest of the world several fixed seeds generate — globe seeds that
-demonstrably diverged before the fix, plus flat controls.
+Three tests, and they answer three different questions.
 
-⚠ **It pinned `MapScript::Continents` and nothing else for its first year.** The
-CLI defaults to `tennis_ball`, so the gate that exists to stop a platform-trig
-call reaching mapgen could not see the script most games use, and ten such calls
-sat in it. The cases now cover both scripts; a new script needs a row here or it
-is unguarded in exactly the same way. The values were
-computed once, on one platform; every platform that runs the suite must
-reproduce them bit for bit, so a reintroduced platform-trig call fails CI on
-the first runner that rounds differently. If mapgen changes deliberately, the
-test's failure message prints the new digests to pin — from one platform
-only, so the others keep verifying rather than being pasted over.
+**`the_same_seed_generates_the_same_world_on_every_platform`** (`src/mapgen.rs`)
+pins the digest of the world a fixed table of seeds generates. Every platform
+that runs the suite must reproduce those bits, so a reintroduced platform-trig
+call fails CI on the first runner that rounds differently. If mapgen changes
+deliberately, the failure message prints the digests the current code produces —
+paste them in from **one** platform only, so the others keep verifying rather
+than being pasted over.
+
+**`every_rolled_map_script_has_a_pinned_world`** (`src/mapgen.rs`) is the gate on
+that gate. The digest table used to pin `MapScript::Continents` and nothing else
+while the CLI defaulted to `tennis_ball`, so the check that exists to keep
+platform trig out of mapgen could not see the map most games are played on, and
+ten such calls sat in it for a year (#1950). Adding a `tennis_ball` row fixed
+that instance and left the class open — this page said so, in the form of a note
+asking the next author to remember. When the requirement was finally made
+mechanical (#2383), **ten of the twelve rolled scripts turned out to have no
+pinned digest at all**: `land_only`, `lakes`, `inland_sea`, `grand_canals`,
+`grand_canals_2`, `pangaea`, `small_continents`, `fjords`, `islands` and
+`water_world`. A platform-trig call in any of them could not have failed a test.
+All twelve are pinned now, on both shapes, and a new `MapScript` variant does not
+compile until it is classified as rolling a world or laying out a fixed board —
+and if it rolls one, it does not pass until it has a digest.
+
+**`a_file_that_uses_trig_uses_nothing_else`** (`src/sphere.rs`) enforces the rule
+structurally instead of by review: **a file that calls `trig::` anywhere must not
+call a platform transcendental anywhere.** Opting in is all-or-nothing. It walks
+`src/` rather than consulting a list, so a new module joins the check by
+existing, and the recorded exclusions below are untouched because they never opt
+in — the day one of them is converted it inherits the guarantee automatically.
+This is the check that catches the failure mode the two ⚠ notes above describe
+and neither digest gate could: a partial conversion changes nothing about what
+native generates, so the pinned digests — computed on native — still match.
+
+⚠ **None of the three can run on `wasm32-unknown-unknown`,** and that is
+structural rather than an oversight: `cargo test` needs a host that can execute
+the target, and the wasm module is executed by a browser or by Node. Every digest
+on this page is therefore pinned by a *native* build and verified by *other
+native* builds. The only continuous check that the shipped wasm bundle agrees is
+the alternating build-parity loop (`tools/simloop/`), which builds both arms and
+plays the same seed on each. `tools/simloop/mapcheck.mjs` is the same question
+asked of the map alone, and can be run by hand against any module.
+
+⚠ **That loop is a process on one Mac, and it can stop.** It did: it wedged on
+2026-08-07 holding its own `.running` lock, and reported nothing for the next
+sixteen days while `main` advanced past a thousand commits. The lock is
+deliberately cleared by hand so a crash stays visible — which only works if
+somebody looks. **A ledger row is evidence about the revision it names and
+nothing else.** Before treating one as a live defect, check its `sha` against
+`origin/main` and check that the loop has run since: in August 2026 a row from
+iteration 27, recorded at `28438c9` *before* the #1061 fix, was still being read
+as a current report of the bug that commit fixed.
 
 ## What the fix cost
 
@@ -110,3 +163,20 @@ world written by one build loads bit-identically into another. Flat worlds
 from the standard scripts are unchanged. The wasm bundle grew 0.09%; wasm
 already linked these exact implementations, so its output only changed where
 native's did — they now agree.
+
+**The 2026-08-23 completion (#2383) cost nothing, and that was measured rather
+than assumed.** Converting `tennis_ball_seam_proximity` and
+`city_states::direction` changed **0 of 305 seeds** on each of five
+configurations — globe/continents, flat/continents, globe/tennis-ball,
+true-start Earth, and the city-state seating draw itself: 1,525 generated
+worlds, every digest identical to the native build before the change. All thirty
+pinned digests, the ten pre-existing ones included, are byte-identical across the
+change. **No globe seed stops reproducing, no save is affected, and no recorded
+result is invalidated by that commit.**
+
+That is the exception rather than the rule, and it is worth saying why: these two
+sites fed a comparison with a wide margin — a seam cutoff, a farthest-point
+argmax — rather than a threshold tiles sit an ULP away from, so Apple's rounding
+and `libm`'s never disagreed by enough to change an answer. A conversion is
+normally expected to move worlds: #1061 moved 6 of 6 globe seeds and #1950 moved
+2 of 6. Measure before promising anything.

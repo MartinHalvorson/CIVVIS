@@ -11093,12 +11093,20 @@ impl Game {
         }) * spy_level.max(0) as f64
     }
 
-    /// Every promotion a spy can take, in the order the offer generator walks.
+    /// The espionage promotions the live bridge has to spell for the host.
     ///
     /// Public because the live bridge translates these to Civilization VI's own
     /// identifiers and must not keep a second copy: a spy promotion is spelled
     /// `PROMOTION_SPY_<NAME>` on the host, and `civ6_unit_promotion_name` reads
-    /// this list to decide which names take that prefix.
+    /// this list to decide which names take that prefix. That function maps a
+    /// bare `&str` with no ruleset in hand, so the list stays a constant.
+    ///
+    /// ⚠ IT IS NO LONGER THE ROSTER. The offer generator reads
+    /// [`Self::spy_promotion_roster`] out of `data/promotions.json`, because a
+    /// hardcoded roster is how added content becomes unreachable — CIVVIS has
+    /// shipped that bug twice. `espionage_promotions_are_the_shipped_roster`
+    /// asserts this constant still names exactly the ruleset's espionage class,
+    /// so a promotion added to the data cannot silently go out misspelled.
     pub const SPY_PROMOTIONS: [&'static str; 17] = [
         "ace_driver",
         "cat_burglar",
@@ -11119,6 +11127,32 @@ impl Game {
         "technologist",
     ];
 
+    /// Every espionage promotion the ruleset declares, in name order.
+    ///
+    /// `SpecMap` keeps its keys sorted, so this walks the class in exactly the
+    /// order the old constant listed it and the deterministic three-card offer
+    /// below is unchanged.
+    pub(crate) fn spy_promotion_roster(&self) -> impl Iterator<Item = &str> {
+        self.rules
+            .promotions
+            .iter()
+            .filter(|(_, spec)| spec.class == "espionage")
+            .map(|(name, _)| name.as_str())
+    }
+
+    /// What a Spy's own promotions add up to for one espionage effect.
+    ///
+    /// The magnitudes live in `data/promotions.json` beside the promotion that
+    /// grants them, so a value read here is one the fidelity audit compares
+    /// against the shipped game rather than a number buried in this file.
+    pub(crate) fn spy_promotion_effect(&self, spy: &Spy, effect: &str) -> f64 {
+        spy.promotions
+            .iter()
+            .filter_map(|name| self.rules.promotions.get(name.as_str()))
+            .filter_map(|spec| spec.effects.get(effect))
+            .sum()
+    }
+
     fn spy_needs_promotion(spy: &Spy) -> bool {
         spy.level.max(0) as usize > spy.promotions.len() && spy.promotions.len() < 3
     }
@@ -11133,9 +11167,8 @@ impl Game {
         if !Self::spy_needs_promotion(spy) || spy.captured_by.is_some() {
             return Vec::new();
         }
-        let available: Vec<&str> = Self::SPY_PROMOTIONS
-            .iter()
-            .copied()
+        let available: Vec<&str> = self
+            .spy_promotion_roster()
             .filter(|promotion| !spy.promotions.contains(*promotion))
             .collect();
         if self.spy_modifiers(spy.owner).5 {
@@ -11160,20 +11193,26 @@ impl Game {
         }
     }
 
-    fn spy_mission_promotion(kind: &str) -> Option<&'static str> {
-        match kind {
-            "siphon_funds" => Some("con_artist"),
-            "steal_tech_boost" => Some("technologist"),
-            "great_work_heist" => Some("cat_burglar"),
-            "sabotage_production" => Some("demolitions"),
-            "recruit_partisans" => Some("guerrilla_leader"),
-            "foment_unrest" => Some("covert_action"),
-            "neutralize_governor" => Some("license_to_kill"),
-            "disrupt_rocketry" => Some("rocket_scientist"),
-            "breach_dam" => Some("satchel_charges"),
-            "fabricate_scandal" => Some("smear_campaign"),
-            _ => None,
+    /// The levels a Spy's promotions add to one named operation.
+    ///
+    /// Civ VI attaches a `MODIFIER_PLAYER_UNIT_ADJUST_SPY_OPERATION_CHANCE`
+    /// naming an `OperationType` to each of the ten operation promotions, all
+    /// of them worth `Amount = 2`. CIVVIS spells that pairing as an effect key
+    /// `mission_level_<operation>` on the promotion itself, so the mission a
+    /// promotion sharpens is data, not a match arm here: a new espionage
+    /// promotion needs no edit to this file to take effect.
+    ///
+    /// ⚠ THE KEY IS BUILT WITH `format!` ON PURPOSE. `tools/civvis_inert.py`
+    /// credits an effect key to the engine when it appears as a literal or
+    /// when a `format!` template could build it, and nothing else — a
+    /// `strip_prefix("mission_level_")` consumer is invisible to it, so all
+    /// ten keys were reported as data the engine ignores. The allocation is
+    /// on the espionage path, which runs a handful of times a turn.
+    fn spy_mission_promotion_level(&self, spy: &Spy, kind: &str) -> i64 {
+        if spy.promotions.is_empty() {
+            return 0;
         }
+        self.spy_promotion_effect(spy, &format!("mission_level_{kind}")) as i64
     }
 
     fn spy_city_has_stealable_tech(&self, owner: usize, target: usize) -> bool {
@@ -11340,7 +11379,7 @@ impl Game {
         };
         mission.kind == "counterspy"
             && mission.city == city
-            && (counterspy.promotions.contains("surveillance")
+            && (self.spy_promotion_effect(counterspy, "counterspy_entire_city") > 0.0
                 || mission.target == target
                 || self.nbrs(mission.target).contains(&target))
     }
@@ -11356,8 +11395,8 @@ impl Game {
             .max_by_key(|spy| {
                 (
                     spy.level
-                        + i64::from(spy.promotions.contains("seduction")) * 2
-                        + i64::from(spy.promotions.contains("surveillance")),
+                        + self.spy_promotion_effect(spy, "counterspy_defense_level") as i64
+                        + self.spy_promotion_effect(spy, "counterspy_entire_city") as i64,
                     std::cmp::Reverse(spy.id),
                 )
             })
@@ -11377,50 +11416,56 @@ impl Game {
         if spy.sources_city == Some(city.id) && spy.sources_until > self.turn {
             level += 2;
         }
-        if Self::spy_mission_promotion(&mission.kind)
-            .is_some_and(|promotion| spy.promotions.contains(promotion))
-        {
-            level += 2;
-        }
+        level += self.spy_mission_promotion_level(spy, &mission.kind);
         if self.congress_effect_active("espionage_pact", "A", &mission.kind) {
             level += 2;
         }
-        if self.spies.values().any(|other| {
-            other.owner == spy.owner
-                && other.captured_by.is_none()
-                && other.promotions.contains("quartermaster")
-                && other
-                    .mission
-                    .as_ref()
-                    .is_some_and(|active| active.kind == "counterspy")
-        }) {
-            level += 1;
-        }
+        // Quartermaster and Polygraph are Civ VI's two BOOST_ALL_SPIES
+        // promotions: one Counterspy carrying either lifts (or drops) every
+        // other agent by its own magnitude. They do not stack with themselves,
+        // so the strongest one on the board is what applies.
+        level += self.counterspy_promotion_effect(spy.owner, "allied_spy_level") as i64;
         if city.owner == spy.owner {
             return level;
         }
         level += self.spy_modifiers(city.owner).3;
         level += self.governor_effect(city.owner, city.id, "enemy_spy_level") as i64;
         level -= self.spy_defense_level(city.id, mission.target);
-        if self.spies.values().any(|other| {
-            other.owner == city.owner
-                && other.captured_by.is_none()
-                && other.promotions.contains("polygraph")
-                && other
-                    .mission
-                    .as_ref()
-                    .is_some_and(|active| active.kind == "counterspy")
-        }) {
-            level -= 1;
-        }
+        level -= self.counterspy_promotion_effect(city.owner, "enemy_spy_level") as i64;
         if let Some(counterspy) = self.defending_counterspy(city.owner, city.id, mission.target) {
             let defender = &self.spies[&counterspy];
             level -= 1 + defender.level;
-            if defender.promotions.contains("seduction") {
-                level -= 2;
-            }
+            level -= self.spy_promotion_effect(defender, "counterspy_defense_level") as i64;
         }
         level
+    }
+
+    /// The odds a detected Spy gets out of the city it was caught in.
+    ///
+    /// Civ VI's Ace Driver is an `ESCAPE_BOOST` worth four, and it enters here
+    /// exactly where the agent's own level does.
+    pub(crate) fn spy_escape_chance(&self, spy: &Spy) -> f64 {
+        let ace = self.spy_promotion_effect(spy, "escape_level");
+        (0.35 + 0.10 * (spy.level.max(0) as f64 + ace)).min(0.95)
+    }
+
+    /// The strongest value of one effect carried by an active Counterspy of
+    /// this civilization. Civ VI's `BOOST_ALL_SPIES` promotions apply from the
+    /// Counterspy to every other agent, and two Counterspies with the same
+    /// promotion do not stack.
+    fn counterspy_promotion_effect(&self, owner: usize, effect: &str) -> f64 {
+        self.spies
+            .values()
+            .filter(|spy| {
+                spy.owner == owner
+                    && spy.captured_by.is_none()
+                    && spy
+                        .mission
+                        .as_ref()
+                        .is_some_and(|active| active.kind == "counterspy")
+            })
+            .map(|spy| self.spy_promotion_effect(spy, effect))
+            .fold(0.0, f64::max)
     }
 
     pub(crate) fn spy_success_chance(&self, spy_id: u32, mission: &SpyMission) -> f64 {
@@ -11501,8 +11546,9 @@ impl Game {
             .map(|old| self.wdist(old.pos, destination.pos).max(0) as u32)
             .unwrap_or(0);
         let mut travel = (1 + distance / 6).min(5);
-        if destination.owner != pid && spy.promotions.contains("disguise") {
-            travel = travel.min(1);
+        let disguise = self.spy_promotion_effect(&spy, "travel_turns_max");
+        if destination.owner != pid && disguise > 0.0 {
+            travel = travel.min(disguise as u32);
         }
         let ready_turn = self.turn + self.standard_duration(travel);
         let spy = self.spies.get_mut(&spy_id).unwrap();
@@ -11532,11 +11578,7 @@ impl Game {
         let (base_duration, _) =
             Self::spy_mission_spec(kind).ok_or_else(|| "unknown Spy mission".to_string())?;
         let spy = self.spies[&spy_id].clone();
-        let linguist = if spy.promotions.contains("linguist") {
-            0.75
-        } else {
-            1.0
-        };
+        let linguist = 1.0 + self.spy_promotion_effect(&spy, "mission_time_pct") / 100.0;
         let duration = self.standard_duration(
             ((base_duration as f64 * self.spy_modifiers(pid).1 * linguist).ceil() as u32).max(1),
         );
@@ -11845,12 +11887,7 @@ impl Game {
         }
         self.add_grievances(defender, spy.owner, 25.0);
         let counterspy = self.defending_counterspy(defender, mission.city, mission.target);
-        let ace = if spy.promotions.contains("ace_driver") {
-            4.0
-        } else {
-            0.0
-        };
-        let escape = (0.35 + 0.10 * (spy.level.max(0) as f64 + ace)).min(0.95);
+        let escape = self.spy_escape_chance(&spy);
         if self.rng.chance(escape) {
             self.spy_return_home(spy_id, 2);
             return;
