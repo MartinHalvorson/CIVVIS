@@ -25,6 +25,10 @@
       "group": "live-bridge-row",
       "reason": "Screenable would mean WITHHELD. It has a `LIVE_TREATMENTS` row, so a `PRODUCTION_OPT_INS` row flips `ledger_default_on` from `None` to `Some(false)` and `apply_gene_ledger` would then take it out of the live bridge. That is a deployment change wearing an instrument's clothes. The move it wants is the door `culture-coverage` went through: out of `FIRAXIS_ONLY_TREATMENTS` and into an `ENGINE_REPAIR_*` half, taken deliberately with the bridge change owned and priced. What it does: the baseline envoy pass must not overwrite a deliberate bank. Its host-only classification is an argument about which rivals the weights were bred against, not a claim the code cannot fire natively."
     },
+    "barbarian_heretic_hunt": {
+      "group": "already-on",
+      "reason": "On by default in `BasicAi::new` (the barbarian seat hunts religious units, operator directive 2026-08-24), so an `enable_*` opt-in row would be on in BOTH arms of every pair and screen as exactly inert. It is a treatment of the WORLD \u2014 the barbarian seat's controller, not a major's genome \u2014 withheld on the `legacy()` anchor exactly as `adjacent_camp_clear` is; the two seat genes it motivates (`missionary-evades-raiders`, `missionary-last-charge-explores`) are the rows the screen prices."
+    },
     "battlefront_observation": {
       "group": "configured-on",
       "reason": "On in `AdvancedAi::configured` but NOT in `promoted_policy_envoy`, so `production_and_opt_in_rows_are_real` rejects a `PRODUCTION_TREATMENTS` row for it as written. Moving the assignment is a controller change owned by whoever owns the behaviour, and it carries the same deployment hazard as the group above. What it does: plan campaigns and battlefronts from player-visible observations only."

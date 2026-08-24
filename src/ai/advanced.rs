@@ -4832,6 +4832,19 @@ pub struct AdvancedAi {
     // ---- append: g-k ------------------------------------------------
 
     // ---- append: l-o ------------------------------------------------
+    /// A Missionary on its last charge explores the fog within
+    /// `MISSIONARY_EXPLORE_RADIUS` for up to `MISSIONARY_EXPLORE_TURNS` turns
+    /// before spending it — unless a city of ours is slipping or an untouched
+    /// city stands beside it. Opt-in gene `missionary-last-charge-explores`;
+    /// see `advanced/missionary_field.rs`.
+    missionary_last_charge_explores: bool,
+    /// The exploring gene's memory of each Missionary: its fog goal and the
+    /// turns it has spent.
+    missionary_explore: RefCell<BTreeMap<u32, missionary_field::MissionaryExplore>>,
+    /// A religious unit steps out of, and never steps into, the tiles a
+    /// visible barbarian raider can reach next turn. Opt-in gene
+    /// `missionary-evades-raiders`; see `advanced/missionary_field.rs`.
+    missionary_evades_raiders: bool,
 
     // ---- append: p-r ------------------------------------------------
 
@@ -5141,6 +5154,10 @@ use district_planning::DistrictPlanCache;
 /// Faith once its cities start slipping, and what it does with the units
 /// afterwards. See `advanced/religion.rs`.
 mod religion;
+/// The Missionary in the field: a last-charge Missionary explores the fog,
+/// and a religious unit steps out of a raider's reach. Two opt-in genes; see
+/// `advanced/missionary_field.rs`.
+mod missionary_field;
 use site_lookahead::{PlotOffer, PlotPurchaseCache};
 
 /// Six opt-in genes for the victory lanes: the race the empire is actually
@@ -5502,6 +5519,7 @@ impl AdvancedAi {
         self.settler_walk_started.clear();
         self.settler_closest.clear();
         self.builder_targets.clear();
+        self.forget_missionary_explore();
         self.force_groups.clear();
         self.force_groups_dirty = true;
     }
@@ -5518,6 +5536,7 @@ impl AdvancedAi {
         };
         self.settler_targets = remap(&self.settler_targets);
         self.builder_targets = remap(&self.builder_targets);
+        self.remap_missionary_explore(map);
         self.settler_stalls = self
             .settler_stalls
             .iter()
@@ -5597,6 +5616,9 @@ impl AdvancedAi {
         // `advanced_v1_plays_the_same_game_it_always_did`). A shared world
         // rule may still own a protocol bump separately.
         ai.base.adjacent_camp_clear = false;
+        // The same gate for the barbarian religious hunt (2026-08-24): on in
+        // every current controller, off on the anchor.
+        ai.base.barbarian_heretic_hunt = false;
         ai.battlefront_observation = false;
         ai.settlement_safety = false;
         ai
@@ -5843,6 +5865,9 @@ impl AdvancedAi {
             // ---- append: g-k ----------------------------------------
 
             // ---- append: l-o ----------------------------------------
+            missionary_last_charge_explores: false,
+            missionary_explore: RefCell::new(BTreeMap::new()),
+            missionary_evades_raiders: false,
 
             // ---- append: p-r ----------------------------------------
 
@@ -5948,6 +5973,12 @@ impl AdvancedAi {
     /// `BasicAi::adjacent_camp_clear`.
     pub fn adjacent_camp_clear(&self) -> bool {
         self.base.adjacent_camp_clear
+    }
+
+    /// Whether the barbarian seat hunts religious units. See
+    /// `BasicAi::barbarian_heretic_hunt`.
+    pub fn barbarian_heretic_hunt(&self) -> bool {
+        self.base.barbarian_heretic_hunt
     }
 
     /// Whether the field-civilian reading is on. See `BasicAi::barbarian_hunt`.
@@ -26162,6 +26193,12 @@ impl AdvancedAi {
         // 40% of a charge's pressure. Standing in an own Holy Site's ring is
         // the only recovery a Missionary has, and taking no action is the only
         // way to collect it.
+        // `missionary_evades_raiders`: a spreader inside a visible raider's
+        // reach leaves it before anything else, the heal included — a
+        // condemned unit heals nothing.
+        if let Some(acted) = self.religious_unit_evades_raiders(g, pid, uid) {
+            return acted;
+        }
         if self.religious_unit_holds_to_heal(g, pid, uid) {
             return false;
         }
@@ -26204,11 +26241,17 @@ impl AdvancedAi {
             })
             .collect();
         targets.sort_by(|left, right| right.cmp(left));
+        // `missionary_last_charge_explores`: the third charge is the unit's
+        // life, and the fog is worth more than a third pass at the same city.
+        let sites: Vec<Pos> = targets.iter().map(|(_, _, target)| *target).collect();
+        if let Some(acted) = self.last_charge_missionary_explores(g, pid, uid, &religion, &sites) {
+            return acted;
+        }
         for (_, _, target) in targets {
             if g.wdist(current, target) <= 1 {
                 return g.apply(pid, &Action::Spread { unit: uid }).is_ok();
             }
-            if self.base.step_toward_range(g, pid, uid, target, 1) {
+            if self.religious_step_toward_range(g, pid, uid, target, 1) {
                 return true;
             }
         }
@@ -26216,6 +26259,11 @@ impl AdvancedAi {
     }
 
     fn advanced_religious_step(&self, g: &mut Game, pid: usize, uid: u32, offensive: bool) -> bool {
+        // `missionary_evades_raiders` covers the whole corps: an Apostle or a
+        // Guru inside a raider's reach leaves it before it does anything else.
+        if let Some(acted) = self.religious_unit_evades_raiders(g, pid, uid) {
+            return acted;
+        }
         let unit = g.units[&uid].clone();
         let religion = unit
             .religion
@@ -26251,7 +26299,7 @@ impl AdvancedAi {
                 .holy_city
                 .and_then(|city| g.cities.get(&city).map(|city| city.pos))
             {
-                return self.base.step_toward(g, pid, uid, target);
+                return self.religious_step_toward_range(g, pid, uid, target, 0);
             }
         }
 
@@ -26366,7 +26414,7 @@ impl AdvancedAi {
                     .holy_city
                     .and_then(|cid| g.cities.get(&cid).map(|city| city.pos))
             });
-        target.is_some_and(|target| self.base.step_toward(g, pid, uid, target))
+        target.is_some_and(|target| self.religious_step_toward_range(g, pid, uid, target, 0))
     }
 
     fn force_domain(g: &Game, uid: u32) -> ForceDomain {

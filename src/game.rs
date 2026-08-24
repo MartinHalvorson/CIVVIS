@@ -13408,6 +13408,21 @@ impl Game {
             .clone()
             .ok_or_else(|| "target has no religion".to_string())?;
         self.remove_unit(target_id);
+        // The loss side of the raid ledger. A condemned Missionary is removed
+        // here rather than through `record_kill` or `resolve_entered_units`,
+        // so until 2026-08-24 the barbarians could wipe a whole religious
+        // corps and no counter said so. Free Cities also carry
+        // `is_barbarian`; only the true barbarian seat's blows count.
+        if self.players[pid].is_barbarian && !self.players[pid].is_free_city {
+            bump(
+                &mut self.players[target.owner],
+                "religious_lost_to_barbarians",
+            );
+        }
+        bump(
+            &mut self.players[pid],
+            &format!("condemned:{}", target.kind),
+        );
         self.religious_combat_pressure(None, &religion, target.pos, 6, 125.0);
         if self.congress_effect_active("world_religion", "B", &religion) {
             self.players[pid].diplomatic_favor += 25.0;

@@ -2,7 +2,24 @@
 
 Try CIVVIS yourself at [civvis.ai](https://www.civvis.ai)
 
-For the AI, I've been adding my personal heuristics to the algorithm as "genes" and employing a genetic algorithm to test/compete various genomes against one another. Each gene can switch on or off. The simulator can run 100,000s of simulations and we can measure at scale the win rates of various genes. The process of writing the code is mostly AI these days. This all continues to be a work in progress, particularly with improving the AI decision-making.
+The Lv 4 (Prince) is the highest level beat so far, using computer control to bridge the gap between CIVVIS and Firaxis Civ 6. I try to keep the [YouTube](https://www.youtube.com/@civvis) channel somewhat up to date with the latest progress.
+
+## Genetic Algorithm
+
+The CIVVIS AI uses a genetic algorithm that tests and assembles a collection of heuristics into a player's strategy.
+
+- Gene - Each heuristic is represented as a gene. A gene is gated by a flag that can be turned "on" or "off".
+- Gene pool - The collection of all available genes (both "on" and "off" genes).
+- Genome - The set of "on" heuristics for a player, together forming the player's overall strategy.
+- Tournament - A Monte Carlo simulation of many probabilistically generated player genomes competing in CIVVIS Civ 6 games.
+
+For each free-for-all game, there is one winner. The "on" genes in this players genome are awarded one win. After a tournament concludes, win rates are calculated for every gene.
+
+Genes with positive win rates are deemed beneficial and have a higher likelihood of defaulting "on" in our best genome. 
+
+## Dev Process
+
+I don't write the lines of code these days but will operate a step higher — suggesting new features to vibecode, asking questions about how code is structured, monitoring verification games, suggesting new heuristics to add as genes, and analyzing CIVVIS tournament results.
 
 I threw some early progress video demos up on [YouTube](https://www.youtube.com/@civvis)
 
