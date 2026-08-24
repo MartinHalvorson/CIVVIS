@@ -4807,6 +4807,23 @@ pub struct AdvancedAi {
     /// the name; the toggles and child modules are the whole interface.)
     district_planning: bool,
 
+    /// Appraise the neighbours on public military power and tech count,
+    /// plan the holdable city — or two, or three — of a weaker one that the
+    /// field army can take with units to spare, and launch when the staging
+    /// ring carries that bill. Opt-in gene `city-campaign`; see
+    /// `advanced/city_campaign.rs`.
+    city_campaign: bool,
+    /// The campaign `city_campaign` has drawn, if any.
+    campaign: Option<city_campaign::CampaignPlan>,
+    /// A soldier at war pillages the tile it stands on with the movement its
+    /// march does not use. Opt-in gene `campaign-pillage`; see
+    /// `advanced/city_campaign.rs`.
+    campaign_pillage: bool,
+    /// No campaign plan before this turn: set when a plan expires unlaunched
+    /// or its war closes, so the Conquest posture cannot be redrawn every
+    /// turn. See `advanced/city_campaign.rs`.
+    campaign_retry_after: u32,
+
     // ---- append: e-f ------------------------------------------------
     /// A city-state's place enters the envoy score: proximity to our
     /// cities, and the sitting suzerain the envoys would unseat. Opt-in gene
@@ -5225,6 +5242,12 @@ mod field_craft;
 /// Recon disruption: the settler screen and the pass picket. Two opt-in
 /// genes; see `advanced/recon_disruption.rs`.
 mod recon_disruption;
+
+/// City campaign: the neighbour appraised on public power and science, the
+/// take-and-hold plan with units to spare, the launch on the city's own
+/// bill, and pillage with the movement the march does not use. Two opt-in
+/// genes; see `advanced/city_campaign.rs`.
+mod city_campaign;
 
 /// Six opt-in genes for the victory lanes: the race the empire is actually
 /// in, reaching the deciders that read the expansion posture instead. See
@@ -5928,6 +5951,11 @@ impl AdvancedAi {
             // ---- append: c-d ----------------------------------------
 
             district_planning: false,
+
+            city_campaign: false,
+            campaign: None,
+            campaign_pillage: false,
+            campaign_retry_after: 0,
 
             // ---- append: e-f ----------------------------------------
             flip_nearby_city_states: false,
@@ -9066,6 +9094,18 @@ impl AdvancedAi {
         } else if at_war && !stalemate && !raid_only_war {
             (GrandStrategy::Conquest, "already at war")
         } else if !stalemate
+            && !self.no_elective_war
+            && cities.len() >= 2
+            && self.city_campaign_stands(g, pid)
+        {
+            // `city_campaign`: a weaker neighbour appraised on public power
+            // and science, and a holdable city priced with the spare. See
+            // `advanced/city_campaign.rs`.
+            (
+                GrandStrategy::Conquest,
+                "a city campaign is planned against a weaker neighbour",
+            )
+        } else if !stalemate
             // ★★★★ Not on the live seat: see `no_elective_war` — eight games,
             // no city ever taken, sixteen lost.
             && !self.no_elective_war
@@ -9176,48 +9216,47 @@ impl AdvancedAi {
             // generic value sort would happily re-aim the column at a richer
             // rival two weeks' march away.
             rush_victim.map(|(target, _)| target).or_else(|| {
-            forced_target.or_else(|| {
-                actionable_denial
-                    .filter(|(rival, _)| self.campaign_target_legal(g, pid, *rival))
-                    .map(|(rival, _)| rival)
-                    .or_else(|| {
-                        let mut candidates: Vec<_> = major_rivals
-                            .iter()
-                            .copied()
-                            .filter(|rival| self.campaign_target_legal(g, pid, *rival))
-                            .collect();
-                        if strategy == GrandStrategy::Conquest {
-                            candidates.extend(
-                                g.players
-                                    .iter()
-                                    .filter(|player| player.is_minor)
-                                    .filter(|player| {
-                                        self.campaign_target_legal(g, pid, player.id)
-                                    })
-                                    .map(|player| player.id),
-                            );
-                        }
-                        candidates
-                            .into_iter()
-                            .map(|rival| {
-                                (
-                                    rival,
-                                    self.campaign_target_value_with_culture(
-                                        g,
-                                        pid,
+                forced_target.or_else(|| {
+                    actionable_denial
+                        .filter(|(rival, _)| self.campaign_target_legal(g, pid, *rival))
+                        .map(|(rival, _)| rival)
+                        // `city_campaign`: the plan's rival before the generic
+                        // value sort. See `advanced/city_campaign.rs`.
+                        .or_else(|| self.campaign_target(g, pid))
+                        .or_else(|| {
+                            let mut candidates: Vec<_> = major_rivals
+                                .iter()
+                                .copied()
+                                .filter(|rival| self.campaign_target_legal(g, pid, *rival))
+                                .collect();
+                            if strategy == GrandStrategy::Conquest {
+                                candidates.extend(
+                                    g.players
+                                        .iter()
+                                        .filter(|player| player.is_minor)
+                                        .filter(|player| {
+                                            self.campaign_target_legal(g, pid, player.id)
+                                        })
+                                        .map(|player| player.id),
+                                );
+                            }
+                            candidates
+                                .into_iter()
+                                .map(|rival| {
+                                    (
                                         rival,
-                                        rival_culture_pressures.get(&rival).copied(),
-                                    ),
-                                )
-                            })
-                            .min_by(|a, b| {
-                                a.1.partial_cmp(&b.1)
-                                    .unwrap()
-                                    .then(a.0.cmp(&b.0))
-                            })
-                            .map(|(rival, _)| rival)
-                    })
-            })
+                                        self.campaign_target_value_with_culture(
+                                            g,
+                                            pid,
+                                            rival,
+                                            rival_culture_pressures.get(&rival).copied(),
+                                        ),
+                                    )
+                                })
+                                .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap().then(a.0.cmp(&b.0)))
+                                .map(|(rival, _)| rival)
+                        })
+                })
             })
         } else {
             // A suzerained city-state joins its major's war, but it is not a
@@ -9234,6 +9273,12 @@ impl AdvancedAi {
             // desk agree on which war this is. See `advanced/one_war.rs`.
             self.one_war_front()
                 .filter(|front| active_fronts.contains(front))
+                // `city_campaign`: the war the plan opened stays the front
+                // while it is being fought. See `advanced/city_campaign.rs`.
+                .or_else(|| {
+                    self.campaign_target(g, pid)
+                        .filter(|front| active_fronts.contains(front))
+                })
                 .or_else(|| {
                     active_fronts
                         .iter()
@@ -9279,6 +9324,9 @@ impl AdvancedAi {
                     .map(|(_, capital)| capital)
             })
             .or(suppression_target_city)
+            // `city_campaign`: the plan's first city still in the rival's
+            // hands. See `advanced/city_campaign.rs`.
+            .or_else(|| self.campaign_objective_city(g, pid, target_player))
             .or_else(|| {
                 domination_capital
                     .filter(|(target, _)| target_player == Some(*target))
@@ -15091,6 +15139,10 @@ impl AdvancedAi {
         if self.opportunistic_war_diplomacy(g, pid, plan) {
             return;
         }
+        // `city_campaign`: a campaign whose every city is ours offers peace,
+        // the way the raid closes when it has paid. See
+        // `advanced/city_campaign.rs`.
+        self.city_campaign_diplomacy(g, pid);
         let Some(target) = plan.target_player else {
             return;
         };
@@ -15183,6 +15235,11 @@ impl AdvancedAi {
                 plan.target_city
                     .and_then(|city| g.cities.get(&city))
                     .is_some_and(|city| self.early_rush_stack_ready(g, pid, target, city.id))
+            } else if let Some(campaign) = self.campaign_launch_ready(g, pid, target, plan) {
+                // `city_campaign`: the city's own bill on the staging ring,
+                // spare included, in place of the empire ratio. See
+                // `advanced/city_campaign.rs`.
+                campaign
             } else if committed_domination {
                 my_power >= target_power * 0.85 && my_power >= 30.0
             } else {
@@ -30205,6 +30262,13 @@ impl AdvancedAi {
             }
         }
 
+        // `campaign_pillage`: the blow above came first, and a unit that
+        // struck has no movement left. This spends only movement the march
+        // below would not use. See `advanced/city_campaign.rs`.
+        if let Some(acted) = self.campaign_pillage_step(g, pid, uid, plan, group.as_ref()) {
+            return acted;
+        }
+
         if let Some(action) = self.base.heavy_cavalry_pillage_action(g, pid, uid) {
             if g.apply(pid, &action).is_ok() {
                 return true;
@@ -32193,6 +32257,10 @@ impl AdvancedAi {
             .unwrap_or_else(|| self.victory_focus(g, pid).strategy);
         self.resolve_city_dispositions(g, pid, disposition_strategy);
         self.observe_campaign(g, pid);
+        // `city_campaign`: drop the cities the plan has taken, expire one
+        // never launched, draw or refresh one at peace. See
+        // `advanced/city_campaign.rs`.
+        self.maintain_city_campaign(g, pid);
         // One stock-pressure sample per rival per turn, before anything reads
         // urgency this turn. See `projected_stock_denial`.
         self.record_stock_pressures(g, pid);

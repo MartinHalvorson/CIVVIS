@@ -2272,6 +2272,38 @@ impl AdvancedAi {
     pub fn disable_zoc_screen(&mut self) {
         self.zoc_screen = false;
     }
+
+    /// Appraise the neighbours on public military power and tech count,
+    /// plan the holdable city — or two, or three — of a weaker one that the
+    /// field army can take with units to spare, and launch when the staging
+    /// ring carries that bill. The plan aims the campaign, replaces the
+    /// empire ratio at the declaration with the city's own requirement,
+    /// and offers peace once every planned city is taken.
+    /// [`AdvancedAi::city_campaign`]. Opt-in gene `city-campaign`; see
+    /// `advanced/city_campaign.rs`.
+    pub fn enable_city_campaign(&mut self) {
+        self.city_campaign = true;
+    }
+
+    /// The twin of `enable_city_campaign`.
+    pub fn disable_city_campaign(&mut self) {
+        self.city_campaign = false;
+    }
+
+    /// A soldier at war standing on a tile it may pillage spends the
+    /// movement its march does not use on the pillage — waiting with its
+    /// force, unable to move on, or in the siege ring with its blow declined
+    /// — and never a tile of advance. [`AdvancedAi::campaign_pillage`].
+    /// Opt-in gene `campaign-pillage`; see `advanced/city_campaign.rs`.
+    pub fn enable_campaign_pillage(&mut self) {
+        self.campaign_pillage = true;
+    }
+
+    /// The twin of `enable_campaign_pillage`.
+    pub fn disable_campaign_pillage(&mut self) {
+        self.campaign_pillage = false;
+    }
+
     /// From the midpoint of the game an adaptive seat commits to the victory
     /// lane it leads the field in and holds that plan, in place of the
     /// per-turn best-progress pick. See

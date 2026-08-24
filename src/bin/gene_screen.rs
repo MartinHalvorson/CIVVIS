@@ -364,6 +364,17 @@ struct Row {
     /// nothing — these say whether it fired.
     #[serde(default)]
     raid_wars: i64,
+    /// The `city-campaign` gene's plans drawn, wars found open under a plan,
+    /// and planned cities taken, and the `campaign-pillage` gene's pillages
+    /// (`campaign:*`, 2026-08-24).
+    #[serde(default)]
+    campaign_plans: i64,
+    #[serde(default)]
+    campaign_wars: i64,
+    #[serde(default)]
+    campaign_captures: i64,
+    #[serde(default)]
+    campaign_pillages: i64,
     #[serde(default)]
     settlers_captured: i64,
     #[serde(default)]
@@ -1394,6 +1405,10 @@ fn row_for_seat(
         military: game.military_power(seat),
         civ: game.players[seat].civ.clone(),
         raid_wars: counter("raid_wars"),
+        campaign_plans: counter("campaign:planned"),
+        campaign_wars: counter("campaign:declared"),
+        campaign_captures: counter("campaign:taken"),
+        campaign_pillages: counter("campaign:pillaged"),
         settlers_captured: counter("captured:settler"),
         builders_captured: counter("captured:builder"),
         religious_lost: counter("religious_lost_to_barbarians"),
@@ -4130,6 +4145,10 @@ mod tests {
             military: 0.0,
             civ: String::new(),
             raid_wars: 0,
+            campaign_plans: 0,
+            campaign_wars: 0,
+            campaign_captures: 0,
+            campaign_pillages: 0,
             settlers_captured: 0,
             builders_captured: 0,
             religious_lost: 0,
