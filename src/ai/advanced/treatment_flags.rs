@@ -2180,14 +2180,6 @@ impl AdvancedAi {
     pub fn disable_missionary_evades_raiders(&mut self) {
         self.missionary_evades_raiders = false;
     }
-    // Append points, one per name range: a new treatment goes under the range
-    // its own name falls in, so that two of them do not append to one line.
-    // The rule, the measurement behind it and the check that enforces it are
-    // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
-
-    // ---- append: a-b ------------------------------------------------
-
-    // ---- append: c-d ------------------------------------------------
     /// A Builder chops woods, rainforest or marsh into the Settler, district
     /// or wonder at the front of the owning city's queue, priced as a one-off
     /// lump against the per-turn jobs. See
@@ -2202,7 +2194,6 @@ impl AdvancedAi {
         self.chop_into_the_queue = false;
     }
 
-    // ---- append: e-f ------------------------------------------------
     /// An improvement that completes an unresearched technology's or civic's
     /// boost is worth the research the boost grants, spread over the steps
     /// the trigger still needs. See [`AdvancedAi::eureka_builder_premium`].
@@ -2229,6 +2220,17 @@ impl AdvancedAi {
     pub fn disable_eureka_chasing_production(&mut self) {
         self.eureka_chasing_production = false;
     }
+
+    // Append points, one per name range: a new treatment goes under the range
+    // its own name falls in, so that two of them do not append to one line.
+    // The rule, the measurement behind it and the check that enforces it are
+    // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
+
+    // ---- append: a-b ------------------------------------------------
+
+    // ---- append: c-d ------------------------------------------------
+
+    // ---- append: e-f ------------------------------------------------
 
     // ---- append: g-k ------------------------------------------------
 
