@@ -993,12 +993,134 @@ cannot drift. Three settings, weakest first, each containing the one before it:
 | `posterior-veto` | the same columns, with an error bar on the veto: it fires only when the posterior's 95% interval lies **wholly below zero** |
 | `posterior` | the pooled estimate decides wherever its interval excludes zero; where it straddles, `posterior-veto` decides |
 
-It says `columns`, and this is deliberate. The threshold rule is an explicit
-operator directive, and **every source in the ledger today is the retired
-`legacy` 60×38 Pangaea shape** — re-deciding the deployment genome now would
-re-decide it on the wrong instrument. The statistic is published, the delta is
-published (*What the posterior would change* in `HEURISTIC_GENE_RANKING.md`),
-and the call is the operator's.
+It says `columns`, and on 2026-08-23 that was re-decided on the numbers rather
+than deferred again. The premise the deferral rested on is gone: two `standard`
+sources are in the ledger — the 23,622-pair whole-genome screen and the `g1`
+direct arm — and 99 of the 101 priced genes now have a deployment-shape
+reading. So the question stopped being "is the instrument right" and became
+"what would the switch actually move".
+
+⭐ **First, the thing the switch is not.** The columns rule reads the *newest*
+screen that priced each gene, so the moment the standard sources landed the
+deployment shape became the deciding instrument — **99 of 101 priced genes, and
+33 of the 33 that ship ON, are decided by a `standard`-shape screen today.**
+The genome is already chosen by the shape the game ships in. `AUTHORITY` and
+`POSTERIOR_SHAPES` choose which *estimator summarises* those screens, not which
+*shape decides*; the deployment-shape question this section used to defer has
+already been answered by the sources, quietly, through the win columns.
+
+**It moves one gene, and the deployment shape says that gene is nothing.**
+Rebuilding the ledger under all six combinations of the two dials (#2385):
+
+| `AUTHORITY` | `POSTERIOR_SHAPES` | genes on | moves vs shipped |
+|---|---|---:|---:|
+| `columns` **(in force)** | `standard, legacy` | 33 | – |
+| `columns` | `standard` | 33 | 0 |
+| `posterior-veto` | `standard, legacy` | 34 | 1 |
+| `posterior-veto` | `standard` | 34 | 1 |
+| `posterior` | `standard, legacy` | 34 | 1 |
+| `posterior` | `standard` | 34 | 1 |
+
+Two things fall out of that grid and neither was obvious in advance.
+
+**`POSTERIOR_SHAPES` decides nothing today.** Standard-only and pooled ship the
+identical genome under every authority — 0 moves in both rows. The scope dial
+changes *how 15 genes read*, and for `war-economy` it changes the reading
+completely (standard-only +118 ± 16 on the 23,622-pair screen, against −7 ± 63
+pooled with the retired Pangaea screens, τ ≈ 124), but the columns rule already
+ships that gene on, so nothing moves. **The whole delta between the two
+authorities is the veto**, and `posterior-veto` produces it on its own: the
+pooled estimate never overrides a column call it did not already agree with.
+
+**The one gene the veto re-admits is `siege-commitment`, and it is the ledger's
+clearest null.** Five screens have priced it, 180,912 seats, every one `~`:
+
+| screen | shape | seats | win Δ pp | win z | share z |
+|---|---|---:|---:|---:|---:|
+| `p4` 2026-08-20 | legacy | 26,892 | −0.803 | −1.87 | +0.27 |
+| `p7` 2026-08-21 | legacy | 30,000 | +0.053 | +0.13 | +0.92 |
+| `p10` 2026-08-22 | legacy | 35,148 | +0.011 | +0.03 | +0.73 |
+| standard 10k 2026-08-22 | **standard** | 47,244 | +0.119 | **+0.38** | −0.08 |
+| standard 41,628 (#2374, report-only) | **standard** | 41,628 | −0.199 | **−0.55** | +0.61 |
+
+The two deployment-shape readings straddle zero with opposite signs, and the
+23,622-pair screen's own three replication tranches flip sign inside one run:
++0.20 (z +0.42), −0.26 (z −0.54), +0.94 (z +1.19). Its pooled `Diff` is
+negative in every source combination (−0.10% today, −0.12% with the 41,628-seat
+screen added), which is what the shipped veto fires on.
+
+⚠ **The flip is an artifact of which screens are in the ledger this week.**
+Enter the 41,628-seat standard screen as a *source* rather than report-only and
+`columns` ships 36, `posterior` + standard-only ships 36, and **the flip table
+is empty** — `siege-commitment` reads −10 in the last win column and both rules
+hold it off. So throwing the switch today would ship one default ON that the
+next screen takes straight back off.
+
+**The rule that decided: a negative pooled `Diff` vetoes a default-on.** The
+only thing either posterior authority does today is override that veto for a
+gene whose deployment-shape record is +0.38σ and −0.55σ across 88,872
+standard-shape seats. That is a default the numbers do not carry, and it is the
+same shape of mistake as the one this section's own history records —
+`governor-victory-lanes` shipped on a single +46 column and cost −237 wins per
+10,000 on-arm seats (95% CI [−267, −206], 23,622 pairs).
+
+**The arm was run anyway, and it is `~`.** A pre-registered single-gene arm at
+the deployment shape — `gene_screen --genes siege-commitment --games 600
+--target-games 600 --start-seed 191000000 --jobs 4`, seeds 191000000+, disjoint
+from every window in the ledger (141M whole-genome, 150M `g1`, 168M 10k, 169M
+41,628) — was stopped at **28 of 600 games, 168 of 3,600
+pre-registered seats (4.7%)**, and the tool labels it `⚠⚠ PARTIAL SCREEN`
+accordingly. It reads **+6.8 pp (91 on / 77 off), win z +1.23, 95% CI
+[−4.1, +17.6]**, share +1.33 pp at z +1.65 — **`~`, unresolved**, on a run that
+resolves only ±15.5 pp at 80% power. That interval contains **both**
+deployment-shape readings above (+0.119 and −0.199) and discriminates neither;
+it is consistent with every number in the table and with zero. ⚠ It was stopped
+because the box was running at a load average of 78–150 on 18 cores with up to
+13 concurrent `gene_screen` processes; win and share figures are counts and are
+unaffected by that, but no wall-clock or per-game cost figure from this run is
+quotable and none is published.
+
+⚠ **A direct arm cannot settle this gene.** `python3 tools/genes.py boundary`
+sizes it at **788,779 seat pairs** before the interval clears zero. This
+binary prints its own 80%-power resolution per run — ±34.8 pp on 6 games — and
+it falls as 1/√games, so a **600-game arm resolves ±3.5 pp** and even the
+1,200-game equivalent of #2344's 600 *map pairs* resolves **±2.5 pp**. Against
+a gene reading +0.119 pp that is **29× the effect**, and it is **4.0× wider**
+(600 games) or **2.8× wider** (1,200 games) than the 23,622-pair screen already
+in the ledger, whose own band is **±44 in column units** — the figure the band
+table at the foot of `HEURISTIC_GENE_RANKING.md` prints — i.e. ±0.88 pp on the
+on−off difference. ⚠ Both figures above are quoted on the **difference** scale,
+which is what `gene_screen` prints; a column is half of it (#2300), so the arm
+comparison is ±175 against ±44 in column units and the ratio is the same either
+way. Do not compare one scale to the other. The confirmation the priority list
+asks for is a *weaker* instrument than the source it would supplement. That is
+the arithmetic reason the answer here is "the evidence is already in", not "run
+more games".
+
+### When the switch should be thrown
+
+Both dials are still the right destination; neither is carried by today's
+sources. The conditions are checkable, so the next agent does not have to
+re-litigate the question:
+
+1. **`POSTERIOR_SHAPES = ("standard",)`** when every priced gene has a
+   `standard` reading. Two do not (`joint-tactics`, `step-and-reassess`), and
+   under standard-only their posterior becomes `–` rather than narrower — the
+   scope dial would delete evidence, not sharpen it. It is genome-neutral the
+   day it lands (0 moves, measured above), so it costs nothing to wait.
+2. **`AUTHORITY = "posterior"`** when its delta against `columns` contains a
+   gene whose standard-only interval **excludes zero**. Today the delta is one
+   gene whose interval is +6 [−25, +37], P(>0) 64.8% — the posterior is not
+   saying it helps, it is saying the veto could not tell, and re-admitting on
+   "could not tell" is how a null ships.
+
+⚠ And when it is thrown, read `docs/EVAL_INTEGRITY.md` §4 first. Every figure
+the posterior would decide on is the point estimate of one screen, so
+`E[observed | promoted] > true effect`; the repository's own re-measurements
+put `+207` at `+86` and `strategic_deep`'s `+45` at −8 (CI −27..+12, 220 maps,
+PR #482). A posterior built from single-screen point estimates inherits that
+bias — it prices the uncertainty *between* screens honestly and the selection
+*within* one not at all.
 
 ⚠ Where the interval straddles zero, the `posterior` setting inherits the
 column rule's answer. That is forced, not chosen: `default_on` has to be a pure
@@ -1055,6 +1177,220 @@ because the arms still differ in many genes. `s6` is the measured example: four
 genes over 6,000 pairs resolves ±64, *wider* than one gene over 7,200 (`h1`,
 ±68) is close to and far wider than one gene over 6,000 (`s7`, ±29). Rank with
 everything or resolve with one; the middle is the expensive place.
+
+## A `~` on a later screen is not a refutation: `buildings-before-projects`
+
+#2385's disjoint-seed replication pass flagged three genes that the standard
+screen had just promoted. Two shrank and held; the third stopped clearing the
+bar:
+
+| gene | 23,622-pair screen | 41,628-seat screen (disjoint) | #2385's read |
+|---|---:|---:|---|
+| `war-economy` | +2.354 pp, z +7.50 | +1.560 pp, z +3.76 | replicates, smaller |
+| `air-surge` | +2.151 pp, z +6.99 | +1.315 pp, z +3.17 | replicates, smaller |
+| `buildings-before-projects` | +1.228 pp, z +3.95 | +0.385 pp, z +0.92 | **`~`** |
+
+That third row was called out as *"a `columns`-rule promotion worth a direct
+arm"* on a gene that ships **on**. It was followed up in #2393, and the answer
+is that **no arm is owed, the default is right, and the flag was a statement
+about the second screen's power rather than about the gene.** The general rule
+it establishes is at the bottom of this section; the arithmetic is why.
+
+### What the whole record says
+
+Six six-player whole-genome screens have priced this gene — the four ledger
+sources plus the two `standard` batches #2374 entered as *reporting* batches
+(seeds 168000000–168001666 and 169000000–169006937, disjoint from each other
+and from the 141000000 discovery window):
+
+| screen | shape | seats | win Δ pp | win z | share Δ pp | share z |
+|---|---|---:|---:|---:|---:|---:|
+| `p4` 2026-08-20 | legacy | 26,892 | +0.461 | +1.07 | +0.232 | +3.37 |
+| `p7` 2026-08-21 | legacy | 30,000 | +0.520 | +1.33 | +0.141 | +2.12 |
+| `p10` 2026-08-22 | legacy | 35,148 | −0.046 | −0.13 | +0.161 | +2.52 |
+| standard 10k 2026-08-22 | **standard** | 47,244 | +1.228 | +3.95 | +0.282 | +4.89 |
+| standard 10,002 (#2374) | **standard** | 10,002 | +0.919 | +1.10 | +0.159 | +0.93 |
+| standard 41,628 (#2374) | **standard** | 41,628 | +0.385 | +0.92 | +0.060 | +0.70 |
+
+**Five of six positive on the win axis, six of six positive on share.** The
+two disjoint deployment-shape replications both read positive. Nothing in the
+record points down.
+
+### The replication does not contradict the discovery — it lacked the power
+
+Two numbers settle it, and both are one line of arithmetic on figures already
+in the artefacts:
+
+- **The two readings are not distinguishable.** +1.228 ± 0.311 against
+  +0.385 ± 0.417 is a difference of **+0.843 ± 0.520, z +1.62, p = 0.105**.
+  The shrinkage is inside noise, and it is the winner's-curse signature
+  `docs/EVAL_INTEGRITY.md` §4 predicts for a figure selected on promotion.
+- **The 41,628-seat screen's power against the effect it was testing was
+  22–26%.** At `win_se_pp` 0.417 it had 84% power against the discovery
+  estimate (+1.228 pp) — which is why its failure to reproduce that *size* is
+  informative — but only **26%** against the six-screen pooled difference
+  (+0.552 pp) and **22%** against the post-discovery estimate (+0.492 pp).
+  A `~` at 22% power is the expected outcome of a true positive effect, not
+  evidence against one.
+
+### The ranking already prints the resolved answer
+
+`HEURISTIC_GENE_RANKING.md`'s main table pools **every** screen that priced a
+gene, reporting batches included. Its row for this gene reads on 16.91%
+(n = 108,278 on-arm seats) against off 16.35% (n = 82,636), *Diff* +0.55%,
+posterior **+28 [+7, +49]** wins per 10,000 on-arm seats, **P(>0) = 99.6%** —
+an interval that **excludes zero**.
+
+⚠ **The ranking prints two different posteriors for the same gene, and the
+distinction is what made this look like an open question.** The main table
+pools `load_display_sources` — ledger sources *plus* the report-only batches,
+six screens here — while the authority table, the shapes-apart table and
+`boundary` all pool `load_sources`, the four authoritative sources alone. That
+is deliberate: the deployment ledger stays byte-for-byte tied to its own
+sources, and report-only data refreshes the display without moving a default.
+The consequence for a reader is that the same generated file says
+**`+28 [+7, +49]`, 99.6%** on one line and **`+28 [−0, +57]`, 97.4%** on
+another, and the second is the one printed beside every decision. Read the
+main table's posterior for *what the evidence says* and the authority table's
+for *what the ledger's sources say*; for this gene the gap between them is
+precisely the two disjoint standard screens #2374 held back.
+
+Pooled over the three deployment-shape screens alone (98,874 seats), the gene
+reads **+0.926 ± 0.239 pp, z +3.88, 95% CI [+0.458, +1.394]**, with
+heterogeneity Q = 2.63 on 2 df — the three screens agree. The unselected half
+on its own (the two #2374 batches, 51,630 seats, neither run to price this
+gene) reads **+0.492 ± 0.373 pp, 95% CI [−0.239, +1.223]**: positive,
+unresolved alone, and containing both the pooled figure and the discovery
+estimate. Share pools to **+0.209 ± 0.046 pp, z +4.54** over the three
+standard screens.
+
+### The default is on under every rule and every source combination
+
+Rebuilt from the ledger's own recorded sources, with no file edited:
+
+| sources | `wins_last_10k` | `wins_prior_10k` | pooled *Diff* | `columns` |
+|---|---:|---:|---:|---|
+| as it ships (4 sources) | +61 | −2 | +0.606% | **on** |
+| + the 41,628-seat screen entered | +10 | +61 | +0.540% | **on** |
+| + both #2374 batches entered | +10 | +24 | +0.552% | **on** |
+
+The pooled *Diff* is positive in all three, so the veto never fires; and the
+posterior over all six screens excludes zero **above**, so `posterior` and
+`posterior-veto` ship it on as well. There is no rule in the repository, and
+no combination of the recorded sources, under which this gene ships off.
+
+### Sizing: nothing affordable resolves it on its own
+
+This is the same question #2385 asked of `siege-commitment`, and the answer
+has the same shape for a different reason. There, a 600-game arm was **4×
+wider** than the screen already in the ledger, so the confirmation would have
+been a weaker instrument than its own source. Here the arm is not wider — on
+the bound `boundary` sizes from it is the *same* instrument — and the effect
+is simply smaller than one batch of it resolves:
+
+| instrument | `win_se_pp × √pairs` |
+|---|---:|
+| direct arm, from `g1` — `boundary`'s conservative/widest bound | **46.9** |
+| this gene on the 23,622-pair whole-genome foldover | **47.8** |
+| this gene on the 41,628-seat independent screen | 60.2 |
+
+⚠ **This gene's own cancellation gain is unmeasured**, and 46.9 is a bound
+rather than a reading: `direct_arm_constant` takes the *widest* single-gene arm
+the repository has run, because a rarely-firing gene cancels more and resolves
+tighter. So the pairs below are an **upper bound on n**, and the honest range
+is wide — at `h1`'s 1.28× (#2302) 80% power against the unselected estimate is
+15,064 games, at `p10`'s 1.09× it is 20,774, and at `s7`'s 3.32× — the best
+this repository has measured — it falls to 2,239. Structurally this gene is at
+the `h1` end: it is a production-queue rule that applies in every city holding
+a district and a buildable building, so the two arms of a foldover diverge in
+nearly every game and there is little to cancel. That is an argument, not a
+measurement, and the sizing below deliberately uses the bound `boundary` uses:
+
+| target effect | z ≥ 1.96 | 80% power | vs one standard batch |
+|---|---:|---:|---:|
+| discovery +1.228 pp | 1,869 games | 3,819 games | 0.4× |
+| standard-shape pool +0.926 pp | 3,286 games | 6,714 games | 0.7× |
+| six-screen *Diff* +0.552 pp | 9,249 games | 18,897 games | 1.9× |
+| unselected +0.492 pp | 11,643 games | 23,789 games | **2.4×** |
+
+And what an affordable arm resolves, against an effect of about +0.5 pp:
+
+| arm | 95% half-width | narrowing of the pooled standard-shape interval |
+|---|---:|---:|
+| 172 games (`boundary`'s size, below) | ±4.05 pp | **0.7%** |
+| 600 games (#2385's pre-registered size) | ±2.17 pp | **2.3%** |
+| 3,600 games | ±0.88 pp | 11.6% |
+| 23,789 games (80% power at the bound) | ±0.34 pp | 40.8% |
+
+A 600-game arm is 4.4× wider than the effect and moves the standing interval
+by 2.3%. The confirmation is, again, a weaker instrument than its own source.
+And even at the *pooled* effect size, 80% power needs 18,897 games — nearly
+two whole standard batches, and 31× the 600-game arm #2385 pre-registered.
+
+⭐ **The part that does not depend on the unmeasured cancellation gain**: there
+is nothing left for an arm to resolve at *any* size. The three deployment-shape
+screens already pool to z +3.88, the ranking's all-screen posterior already
+excludes zero, and the gene already ships on — so the only thing an arm can buy
+is the chance of a reversal, which is what `buys +0.0` says. Even if this gene
+turned out to cancel like `s7` and a 2,239-game arm reached 80% power, it would
+be 2,239 games spent to re-confirm a call no rule in the repository disputes.
+**Nothing runnable settles this gene on its own, and the three deployment-shape
+screens already in the repository settle it together.**
+
+### ⚠ `boundary`'s `needs` column read without its `buys` column is a trap
+
+`python3 tools/genes.py boundary` prints **516 seat pairs — 172 games — for
+this gene**, the smallest number in the table. That is not a cheap
+confirmation. `arm_pairs_to_resolve` answers "how big an arm tips the
+*combined* interval **if the arm reproduces the current pooled mean**", and
+this gene's ledger posterior sits at z = 1.94, a hair under the line, so
+almost any positive reading tips it. An arm of that size resolves **±4.05 pp**
+— **8× the effect it would be used to certify**. Running it and reporting the
+combined interval would be manufacturing a significance, with a tool's
+blessing, out of 172 games of noise.
+
+The tool already says so in the next column: **`buys +0.0`**. `--boundary`
+sorts on the expected value of the arm against the gene's *shipped* state, and
+a gene the evidence already likes that the genome already plays has only a
+reversal to buy. `buildings-before-projects` sits 76th of 84 on that ordering.
+**Read `buys` first; `needs` is only meaningful for a row `buys` has already
+put near the top.**
+
+### What did change: the size, not the sign
+
+The +61 win column is a **discovery estimate**: it is the reading that
+flipped this gene on, so it is selected on having passed, and §4's
+`E[observed | gate PASS] > true effect` applies to it in full. The honest
+deployment-shape figure is **+45 [+16, +73]** per 10,000 on-arm seats pooled
+over the three standard screens, and the honest *unselected* figure is
+**+25 [−12, +61]**. The +61 should not be quoted as this gene's effect size,
+and §4's corollary — a replication that refutes a documented *size* must land
+in the document that carries the size — is discharged by this paragraph.
+
+### The rule, so the next agent does not repeat the pass
+
+> **A single later screen reading `~` refutes nothing until its power against
+> the pooled effect is stated.** Before calling a gene a failed replication,
+> compute three things from artefacts that already exist: whether the two
+> readings differ by more than their errors, the later screen's power against
+> the *pooled* effect rather than against the discovery estimate, and the
+> pooled reading over every screen that priced the gene. Only when those
+> disagree with the shipped default is an arm owed — and then size the arm
+> against the pooled effect, never against the discovery estimate, because
+> sizing on the number selected for being large is how a confirmation ends up
+> too small to confirm anything.
+
+The two-line check for any gene, costing no games:
+
+```sh
+python3 tools/genes.py boundary | grep '<tag>'      # read `buys`, then `needs`
+grep '`<tag>`' HEURISTIC_GENE_RANKING.md      # all-screen posterior, P(>0)
+```
+
+⚠ Applied to #2385's other two rows: `war-economy` and `air-surge` both
+replicate at significance on the disjoint window, so neither was ever in
+question. This section is only about the row that did not, and its conclusion
+is that the row was mis-read, not that the gene was mis-shipped.
 
 ## Pre-registered: how a lane gene is judged
 

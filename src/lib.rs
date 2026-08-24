@@ -144,6 +144,107 @@ mod tests {
         assert_eq!(headless.handicap_combat_strength(0), 0.0);
     }
 
+    /// The other shipped table the ladder is transcribed from, and the one
+    /// that runs the opposite way. `StartingBuildings` gates exactly one of
+    /// its 24 rows on difficulty — `BUILDING_WALLS`, `ERA_ANCIENT`,
+    /// `DISTRICT_CITY_CENTER`, `MinorOnly = 1`,
+    /// `MinDifficulty = DIFFICULTY_IMMORTAL` — so from Immortal upward it is
+    /// the *city-states* that harden, not the AI majors. Every other row is
+    /// `MinorOnly = 0` with no `MinDifficulty` at all, which is why no rung
+    /// grants a major civilization anything.
+    #[test]
+    fn each_rung_grants_the_starting_buildings_the_shipped_table_gates_on_it() {
+        let rules = Rules::embedded();
+        let none: Vec<&str> = Vec::new();
+        for (difficulty, city_states) in [
+            ("settler", &[][..]),
+            ("chieftain", &[][..]),
+            ("warlord", &[][..]),
+            ("prince", &[][..]),
+            ("king", &[][..]),
+            ("emperor", &[][..]),
+            ("immortal", &["walls"][..]),
+            ("deity", &["walls"][..]),
+        ] {
+            let spec = &rules.difficulties[difficulty];
+            let granted = |minor_only: bool| -> Vec<&str> {
+                spec.starting_buildings
+                    .iter()
+                    .filter(|row| row.minor_only == minor_only)
+                    .map(|row| row.building.as_str())
+                    .collect()
+            };
+            assert_eq!(granted(true), city_states, "{difficulty} city-states");
+            assert_eq!(granted(false), none, "{difficulty} majors");
+        }
+    }
+
+    /// And the rung reaches the field. A Deity city-state stands behind
+    /// completed Ancient Walls that an attacker has to shoot through; an
+    /// Emperor one stands behind nothing.
+    #[test]
+    fn a_high_difficulty_city_state_opens_behind_walls_that_fight() {
+        let walls = crate::name!("walls");
+        let game = |difficulty: &str| {
+            Game::new_with(GameOptions {
+                difficulty: difficulty.to_string(),
+                barbarians: false,
+                ..GameOptions::new(2, 40, 26, 4_171, 200, 3)
+            })
+        };
+        for (difficulty, walled) in [("emperor", false), ("immortal", true), ("deity", true)] {
+            let g = game(difficulty);
+            let minors: Vec<usize> = (0..g.players.len())
+                .filter(|pid| g.players[*pid].is_minor && !g.players[*pid].is_free_city)
+                .collect();
+            assert!(!minors.is_empty(), "{difficulty} seated no city-state");
+            for pid in minors {
+                for cid in g.player_city_ids(pid) {
+                    let city = &g.cities[&cid];
+                    assert_eq!(
+                        city.buildings.contains(&walls),
+                        walled,
+                        "{difficulty}: the building itself"
+                    );
+                    // Not merely recorded. The wall pool is filled from the
+                    // building's own `outer_defense`, so there is a wall to
+                    // shoot at rather than a note saying there is one.
+                    let pool = if walled { 100 } else { 0 };
+                    assert_eq!(g.city_max_wall_hp(city), pool, "{difficulty}: wall pool");
+                    assert_eq!(city.wall_hp, pool, "{difficulty}: standing wall");
+                    // And it fights: Civ 6 gives a city +3 Combat Strength per
+                    // standing wall tier, which is exactly what taking the
+                    // walls back out of this city costs it.
+                    let mut razed = g.clone();
+                    let breached = razed.cities.get_mut(&cid).unwrap();
+                    breached.buildings.retain(|building| *building != walls);
+                    breached.wall_hp = 0;
+                    assert_eq!(
+                        g.city_strength(cid) - razed.city_strength(cid),
+                        if walled { 3.0 } else { 0.0 },
+                        "{difficulty}: defence"
+                    );
+                }
+            }
+        }
+        // Majors are untouched at every rung, so a Deity capital is founded
+        // as bare as a Prince's.
+        for difficulty in ["prince", "deity"] {
+            let mut g = game(difficulty);
+            let settler = g
+                .player_unit_ids(0)
+                .into_iter()
+                .find(|uid| g.units[uid].kind == "settler")
+                .unwrap();
+            let pos = g.units[&settler].pos;
+            let cid = g.found_city_for(0, pos, None);
+            assert!(
+                !g.cities[&cid].buildings.contains(&walls),
+                "{difficulty}: a major capital"
+            );
+        }
+    }
+
     /// A difficulty bonus reaches the yields a city actually reports, and the
     /// strength an opponent actually has to fight through.
     #[test]
@@ -1972,6 +2073,22 @@ mod tests {
             (pts - 2.0).abs() < 1e-9,
             "expected 2 scientist gpp, got {pts}"
         );
+        // ⚠ #2377 filled in Gathering Storm's other Classical Great Scientists
+        // (Aryabhata, Euclid, Zhang Heng). `current_great_person` offers the
+        // lowest era first and breaks ties alphabetically, so retire the rest
+        // of the Classical bench: this test is about Hypatia's free Library
+        // being a no-op in a city that has one, and about the market then
+        // stepping to the next *era*, not about her place in the queue.
+        let classical_bench: Vec<String> = g
+            .rules
+            .great_people
+            .iter()
+            .filter(|(id, spec)| {
+                spec.kind == "scientist" && spec.era == 1 && id.as_str() != "hypatia"
+            })
+            .map(|(id, _)| id.to_string())
+            .collect();
+        g.retired_great_people.extend(classical_bench);
         let hypatia_cost = g.gp_cost(0, "scientist");
         assert_eq!(hypatia_cost, 78.0);
         // Reaching the threshold auto-claims Hypatia. Because this Campus
@@ -1987,12 +2104,13 @@ mod tests {
         assert_eq!(g.players[0].boosted_techs, boosts_before);
         assert!((g.city_yields(cid).science - science_before - 1.0).abs() < 1e-9);
         // The global market advances to the next named Scientist rather than
-        // fabricating a generic doubled threshold. Omar Khayyam is the
-        // Medieval Scientist the roster had no entry for until the era chain
-        // was filled in; before that the market skipped an era to Newton.
+        // fabricating a generic doubled threshold, and prices them in their own
+        // era. Abu al-Qasim al-Zahrawi is the first Medieval Scientist the
+        // shipped game offers; before the era chain was filled in the market
+        // skipped an era to Newton.
         assert_eq!(
             g.current_great_person("scientist").unwrap().0,
-            "omar_khayyam"
+            "abu_al_qasim_al_zahrawi"
         );
         assert_eq!(g.gp_cost(0, "scientist"), 307.0);
     }

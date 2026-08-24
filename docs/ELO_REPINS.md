@@ -1547,3 +1547,58 @@ each priced at 13,446 pairs against a barbarian that did not hunt civilians.
 That family needs re-pricing under v18: `home-defense`, `camp-reach`,
 `camp-party`, `civilian-rescue`, `settler-guard-holds`, `stacked-escort`,
 `escort-unstick`, `stranded-settler-discount`.
+
+---
+
+## v19 (2026-08-23) — the Great Person roster completes four classes
+
+v17 took the roster from 29 of Gathering Storm's 213 individuals to 65, which
+stopped every class running dry mid-game. It did not close the content gap:
+`tools/civ6_fidelity.py` still reported **148 individuals the game has and
+CIVVIS does not model at all** — by a wide margin the largest *only in Civ VI*
+row of the 27 audited tables, ahead of Units at 58 and Promotions at 26.
+
+82 more are added here, taking the roster to **147 of 213**. Four classes are
+now complete against the shipped game: every Writer (29), Artist (23), Musician
+(18) and Prophet (16). Those four complete because their whole shipped effect
+is the Great Works they create, and the per-individual count comes from the
+`GreatWorks` table rather than a class constant — which is why Dimitrie
+Cantemir and Scott Joplin leave three works where the other sixteen Musicians
+leave two.
+
+Class, era, cost and charges again come from `GreatPersonIndividuals`, `Eras`
+and `GreatWorks` in the installed Gathering Storm load order, so
+`tools/civ6_fidelity.py` still reports zero divergent fields; the roster row
+goes from 65/0/0/148 to **147/0/0/66**. `tools/civvis_inert.py` still reports
+zero effect keys with no consumer, and
+`every_effect_key_in_the_roster_is_read_by_the_engine` now pins that from the
+data side as well: every key in all 147 rows is checked against the 34 the
+engine branches on, and no row may be effect-less. A Great Person who grants
+nothing is worse than an absent one — `current_great_person` offers one
+individual per class at a time, so an unread key does not merely grant nothing,
+it holds the class at its price.
+
+⚠ The roster is drawn by `min_by_key((era, id))` — era first, then
+alphabetically by id — so a new individual can take an opening draw. Two of the
+nine move: **Aryabhata replaces Hypatia** as the first Great Scientist and
+**Andrei Rublev replaces Donatello** as the first Great Artist, both because
+Gathering Storm's Classical Scientists and Renaissance Artists sort ahead of
+CIVVIS's incumbent. `the_opening_offer_of_every_class_is_pinned` now names all
+nine so the next roster change reports this rather than a recorded game
+discovering it.
+
+This is a shared native-world rule with no controller gate: the recruitment
+market is the same one every participant draws from. The v18 anchor was 18,596
+decisions and `0xf78a_2b10_c0e3_5945`; with this content it is **18,599
+decisions** and `0xf412_82b3_5376_9723` across the five anchor profiles.
+
+⚠ Rows before and after v19 are not comparable for the three genes keyed on
+which individual is offered — `great-person-housing` (ranked 4, on),
+`idle-faith-patronage` (10, on) and `tally-great-people`. Every column in those
+`HEURISTIC_GENE_RANKING.md` rows was measured against 65 individuals; a batch
+whose `batch.source_commit` predates this must not be pooled with one after it
+for them. `docs/eval/2026-08-21-great-people-never-pile-up.md` and
+`docs/eval/2026-08-21-idle-faith-buys-great-people.md` are likewise measured on
+the old roster: the first counts Engineer blocked seat-turns when five of six
+Engineers were wonder-gated (now seven of eight), the second reasons from three
+Great Prophets existing (now sixteen).
