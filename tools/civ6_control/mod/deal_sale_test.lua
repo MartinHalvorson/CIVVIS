@@ -26,7 +26,9 @@ setmetatable(_G, { __index = function(_, key)
 	return stub()
 end })
 
-CivvisControlConfig = { TradeRetryTurns = 3, TradeResponseTurns = 2 }
+-- The direct (session-less) path is what these cases pin; the session lane
+-- has its own regression in `deal_session_test.lua`.
+CivvisControlConfig = { TradeRetryTurns = 3, TradeResponseTurns = 2, DealSessions = false }
 
 -- Capture the agent's ledger lines so the events the lane writes can be
 -- asserted on, not just its return values.
@@ -731,7 +733,11 @@ local sellAt = assert(src:find('if kind == "sell" then', 1, true))
 local envoyAt = assert(src:find('if kind == "envoy" then', sellAt, true))
 local sellArm = src:sub(sellAt, envoyAt - 1)
 check("sell arm asks with EQUALIZE",
-	sellArm:find("DealManager.SendWorkingDeal(DealProposalAction.EQUALIZE, pid, subject);", 1, true) ~= nil, true)
+	sellArm:find('CivvisTrade.ask(pid, subject, "EQUALIZE", "sell", turn);', 1, true) ~= nil, true)
+check("the ask helper sends EQUALIZE directly when sessions are off",
+	src:find("DealManager.SendWorkingDeal(DealProposalAction[action], pid, subject);", 1, true) ~= nil, true)
+check("the ask helper opens a MAKE_DEAL session otherwise",
+	src:find('DiplomacyManager.RequestSession(pid, subject, "MAKE_DEAL");', 1, true) ~= nil, true)
 check("sell arm never proposes blind",
 	sellArm:find("DealProposalAction.PROPOSED", 1, true) == nil, true)
 check("sell arm never opens a session",
