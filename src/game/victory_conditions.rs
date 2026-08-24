@@ -3634,19 +3634,30 @@ fn a_native_competition_pays_its_winner_a_diplomatic_victory_point() {
         "the score the project declares is the score it pays"
     );
 
-    // ⚠ And a Great Person scores nothing here. The Space Station counts a
-    // project; only the World's Fair counts people, and a scorer that ignored
-    // which competition was running would pay the wrong race.
+    // ⚠ And Great Person Points score nothing here. The Space Station counts a
+    // project and the districts an empire maintains; only the World's Fair
+    // counts Great Person Points, and a scorer that ignored which competition
+    // was running would pay the wrong race.
     let project_only = game.competition.as_ref().unwrap().scores[&owner];
-    game.score_great_person_competition(owner);
+    game.score_great_person_point_competition(owner, 40.0);
     assert_eq!(
         game.competition.as_ref().unwrap().scores[&owner],
         project_only,
-        "recruiting a Great Person must not score a project-scored competition"
+        "Great Person Points must not score a project-scored competition"
+    );
+
+    // The Spaceport it holds scores 5 a turn on its own, which is
+    // `SPACE_STATION_SCORE_SPACEPORTS` — "Maintaining Spaceport Districts".
+    game.score_competition_holdings(owner);
+    assert_eq!(
+        game.competition.as_ref().unwrap().scores[&owner] - project_only,
+        5.0,
+        "a maintained Spaceport scores 5 a turn"
     );
 
     // And the clock running out pays first place.
     let before = game.players[owner].dvp;
+    let favor = game.players[owner].diplomatic_favor;
     game.turn = ends;
     game.close_native_competition();
     assert!(
@@ -3657,6 +3668,11 @@ fn a_native_competition_pays_its_winner_a_diplomatic_victory_point() {
         game.players[owner].dvp - before,
         1,
         "Gathering Storm pays the Space Station's winner one Diplomatic Victory Point"
+    );
+    assert_eq!(
+        game.players[owner].diplomatic_favor - favor,
+        50.0,
+        "and `ISS_TOP_TIER_FAVOR` beside it: Gold Tier takes all Silver Tier rewards"
     );
     assert!(
         game.competition_lockout_until["EMERGENCY_SPACE_STATION"] > game.turn,
@@ -3673,6 +3689,13 @@ fn a_native_competition_pays_its_winner_a_diplomatic_victory_point() {
 }
 
 /// And none of it happens unless the game asked for it.
+///
+/// ⚠ This is the whole safety argument for an off-by-default rules mechanism,
+/// so it checks the scorers too, not only the seating. Every path #2379 adds
+/// runs off `Game::competition`, and nothing but `open_native_competition` and
+/// `open_native_aid_request` can set it — both of which return immediately with
+/// the flag off. A default game therefore faces exactly the board it always
+/// did, and the frozen rating anchor does not move.
 #[test]
 fn native_competitions_are_off_unless_a_game_turns_them_on() {
     let mut game = game_with_capitals(3, 61_001, 400);
@@ -3692,6 +3715,31 @@ fn native_competitions_are_off_unless_a_game_turns_them_on() {
          board it always did, or the frozen rating anchor moves without a \
          protocol bump"
     );
+
+    // And the three per-turn scorers, which run in `begin_turn` for every
+    // player of every game whether the flag is on or not.
+    let dvp: Vec<i64> = game.players.iter().map(|player| player.dvp).collect();
+    let favor: Vec<f64> = game
+        .players
+        .iter()
+        .map(|player| player.diplomatic_favor)
+        .collect();
+    for pid in 0..game.players.len() {
+        game.score_great_person_point_competition(pid, 100.0);
+        game.score_favor_competition(pid, 100.0);
+        game.score_competition_holdings(pid);
+    }
+    assert!(
+        game.competition.is_none(),
+        "no score table appears out of nothing"
+    );
+    game.turn += 40;
+    game.close_native_competition();
+    for player in &game.players {
+        assert_eq!(player.dvp, dvp[player.id]);
+        assert_eq!(player.diplomatic_favor, favor[player.id]);
+    }
+    assert!(game.competition_lockout_until.is_empty());
 }
 
 /// A competition nobody can score in is not offered.
@@ -3748,10 +3796,18 @@ fn a_competition_is_offered_only_where_its_project_could_be_built() {
     );
 }
 
-/// The World's Fair counts Great People, and it is the one an empire can
-/// always enter.
+/// The World's Fair counts Great Person **Points**, and it is the one an empire
+/// can always enter.
+///
+/// ⚠ It counted recruited *people* until this change, and the difference is not
+/// cosmetic. All eight shipped rows are `WORLDS_FAIR_SCORE_GPP_<class>` with
+/// `ScoreAmount="1"`, described `LOC_EMERGENCY_SCORE_GPP_DESC` — "Generating
+/// [ICON_GREATPERSON] Great People Points Per Turn". A 29-turn competition
+/// therefore scores in the hundreds rather than in ones and twos, which is what
+/// makes it produce a first place at all: on a count of recruits, two empires
+/// claiming one person each is a tie, and a tie pays nobody.
 #[test]
-fn the_worlds_fair_scores_every_great_person_an_empire_recruits() {
+fn the_worlds_fair_scores_the_great_person_points_an_empire_generates() {
     let mut game = game_with_capitals(3, 63_000, 400);
     game.native_competitions = true;
     game.world_era = 5;
@@ -3771,19 +3827,24 @@ fn the_worlds_fair_scores_every_great_person_an_empire_recruits() {
     let before = running.scores.get(&owner).copied();
     assert_eq!(before, None, "nobody has scored yet");
 
-    // Recruiting one scores one, whatever the class: the shipped
-    // `EmergencyScoreSources` rows give every class `ScoreAmount="1"`.
-    game.score_great_person_competition(owner);
-    game.score_great_person_competition(owner);
-    assert_eq!(game.competition.as_ref().unwrap().scores[&owner], 2.0);
+    // One point per point generated, whatever the class.
+    game.score_great_person_point_competition(owner, 6.5);
+    game.score_great_person_point_competition(owner, 3.5);
+    assert_eq!(game.competition.as_ref().unwrap().scores[&owner], 10.0);
 
     let dvp = game.players[owner].dvp;
+    let favor = game.players[owner].diplomatic_favor;
     game.turn = game.competition.as_ref().unwrap().ends;
     game.close_native_competition();
     assert_eq!(
         game.players[owner].dvp - dvp,
         1,
         "Gathering Storm pays the World's Fair winner one Diplomatic Victory Point"
+    );
+    assert_eq!(
+        game.players[owner].diplomatic_favor - favor,
+        50.0,
+        "and `WORLD_FAIR_TOP_TIER_FAVOR`"
     );
 }
 
@@ -3801,11 +3862,18 @@ fn native_competitions_honor_era_windows_and_world_games_pays_its_winner() {
     city.districts.insert(crate::name!("industrial_zone"), pos);
     city.buildings.push(crate::name!("coal_power_plant"));
 
+    // No Sweden on this board, so the Nobel Peace Prize does not exist and the
+    // Industrial era has nothing else to offer.
+    for player in game.players.iter_mut() {
+        if player.civ == "Sweden" {
+            player.civ = "Rome".to_string();
+        }
+    }
     game.world_era = 4;
     game.open_native_competition();
     assert!(
         game.competition.is_none(),
-        "none of the modelled congress competitions is available before Modern"
+        "without Sweden, no congress competition is available before Modern"
     );
 
     game.world_era = 5;
@@ -3869,5 +3937,321 @@ fn native_competitions_honor_era_windows_and_world_games_pays_its_winner() {
             .map(|competition| competition.kind.as_str()),
         Some("EMERGENCY_SPACE_STATION"),
         "International Space Station begins in Future"
+    );
+}
+
+/// The seventh competition: Sweden's Nobel Peace Prize, scored from Favor.
+///
+/// ★★★★★ THE LAST DIPLOMATIC VICTORY POINT SOURCE GATHERING STORM HAS.
+/// `EmergencyRewards` gives a `NON_EMERGENCY_FIRST_PLACE_VICTORY_POINT` to four
+/// competitions — the World's Fair, the World Games, the International Space
+/// Station and **the Nobel Peace Prize** — and the aid requests and the Climate
+/// Accords take the other two modifiers. Peace is the only Nobel that pays a
+/// point: Literature's first place takes cheaper Rock Bands and Physics' a
+/// technology boost, so neither belongs in this table at all.
+///
+/// Two shipped rules decide when it can run, and both are read off the install
+/// rather than chosen here:
+///
+/// - `NOBEL_PRIZE_TARGET_REQUIREMENTS` requires the game era to be at least
+///   `ERA_INDUSTRIAL`, which is the earliest era any scored competition opens
+///   in; and
+/// - the same set requires `REQUIREMENT_GAME_HAS_CIVILIZATION_OR_LEADER_TRAIT`
+///   for `TRAIT_CIVILIZATION_NOBEL_PRIZE`, which `CivilizationTraits` gives to
+///   `CIVILIZATION_SWEDEN` and to nothing else. **A game without Sweden in it
+///   never sees a Nobel prize.** That makes this the rarest of the seven rather
+///   than a route every empire has, and it is the shipped rule; loosening it so
+///   the lane completes more often would be inventing one.
+///
+/// `NOBEL_PRIZE_PEACE_SCORE_FROM_FAVOR` is `FromFavor="true" ScoreAmount="1"`,
+/// described "Generating [ICON_Favor] Diplomatic Favor" — the same "Generating
+/// … Per Turn" cadence the World's Fair uses, so it counts the favor an empire
+/// *generates*, which is what `process_diplomacy` computes each turn. It is not
+/// the balance, and a congress refund, a trade or an emergency award is not
+/// favor the empire generated.
+#[test]
+fn the_nobel_peace_prize_needs_sweden_and_scores_the_favor_an_empire_generates() {
+    let mut game = game_with_capitals(3, 64_000, 400);
+    game.native_competitions = true;
+    game.world_era = 4;
+    for player in game.players.iter_mut() {
+        if player.civ == "Sweden" {
+            player.civ = "Rome".to_string();
+        }
+    }
+
+    game.open_native_competition();
+    assert!(
+        game.competition.is_none(),
+        "no Sweden, no Nobel prize: the emergency requires \
+         TRAIT_CIVILIZATION_NOBEL_PRIZE to be in the game at all"
+    );
+
+    game.players[1].civ = "Sweden".to_string();
+    assert!(
+        game.has_ability(1, "nobelinstitution"),
+        "Sweden carries the Nobel Institution in civs.json"
+    );
+    game.world_era = 3;
+    game.open_native_competition();
+    assert!(
+        game.competition.is_none(),
+        "and not before the Industrial era, whoever is playing"
+    );
+
+    game.world_era = 4;
+    game.open_native_competition();
+    assert_eq!(
+        game.competition.as_ref().map(|c| c.kind.as_str()),
+        Some("EMERGENCY_NOBEL_PRIZE_PEACE"),
+        "with Sweden on the board the Industrial era can seat one"
+    );
+
+    // Favor generated scores; the class of every other source does not.
+    game.score_favor_competition(0, 7.0);
+    game.score_great_person_point_competition(0, 30.0);
+    assert_eq!(
+        game.competition.as_ref().unwrap().scores[&0],
+        7.0,
+        "Peace counts Favor, and Great Person Points score the World's Fair"
+    );
+
+    let dvp = game.players[0].dvp;
+    let favor = game.players[0].diplomatic_favor;
+    game.turn = game.competition.as_ref().unwrap().ends;
+    game.close_native_competition();
+    assert_eq!(
+        game.players[0].dvp - dvp,
+        1,
+        "NON_EMERGENCY_FIRST_PLACE_VICTORY_POINT is worth one point"
+    );
+    assert_eq!(
+        game.players[0].diplomatic_favor, favor,
+        "and no Favor: the Nobel prizes pay their tiers in Great People, not \
+         Favor, so EmergencyRewards has no favor row for this one"
+    );
+}
+
+/// A tie pays nobody.
+///
+/// ⚠ `SCORED_COMPETITION_FIRST_PLACE_REQUIREMENTS` is a single requirement,
+/// `REQUIREMENT_PLAYER_GOT_FIRST_PLACE_IN_EMERGENCY`, and nothing in the
+/// shipped data says how the engine breaks a tie for it. Paying both, paying
+/// the lower player id, or paying whoever scored first would each be a rule
+/// this repository invented — the #2049 mistake — so a tie pays nobody and
+/// spends the lockout.
+#[test]
+fn a_tied_competition_pays_nobody_and_still_spends_its_lockout() {
+    let mut game = game_with_capitals(3, 64_001, 400);
+    game.native_competitions = true;
+    game.world_era = 5;
+    game.open_native_competition();
+    assert_eq!(
+        game.competition.as_ref().map(|c| c.kind.as_str()),
+        Some("EMERGENCY_WORLDS_FAIR")
+    );
+
+    game.score_great_person_point_competition(0, 12.0);
+    game.score_great_person_point_competition(1, 12.0);
+    let dvp: Vec<i64> = game.players.iter().map(|player| player.dvp).collect();
+    let favor: Vec<f64> = game
+        .players
+        .iter()
+        .map(|player| player.diplomatic_favor)
+        .collect();
+
+    game.turn = game.competition.as_ref().unwrap().ends;
+    game.close_native_competition();
+    for player in &game.players {
+        assert_eq!(
+            player.dvp, dvp[player.id],
+            "a tie has no first place, so nobody is paid a Diplomatic Victory Point"
+        );
+        assert_eq!(
+            player.diplomatic_favor, favor[player.id],
+            "and nobody is paid the Favor either"
+        );
+    }
+    assert!(
+        game.competition_lockout_until["EMERGENCY_WORLDS_FAIR"] > game.turn,
+        "the competition still ran, so its lockout is still spent"
+    );
+
+    // ⚠ And only a seat that could win the game scores at all. `begin_turn`
+    // runs for every seat including city-states and eliminated empires, and a
+    // city-state holds Campuses and generates Great Person Points like anyone
+    // else — but an emergency's members are the majors, so a non-member that
+    // outscored them would take the point off the board for nobody.
+    game.competition_lockout_until.clear();
+    game.turn += 1;
+    game.open_native_competition();
+    game.players[2].alive = false;
+    game.score_great_person_point_competition(2, 500.0);
+    game.score_favor_competition(2, 500.0);
+    game.score_competition_holdings(2);
+    assert!(
+        !game.competition.as_ref().unwrap().scores.contains_key(&2),
+        "a seat that is not in the victory race cannot score a competition"
+    );
+
+    // One clear leader is paid.
+    game.competition_lockout_until.clear();
+    game.turn += 1;
+    game.open_native_competition();
+    game.score_great_person_point_competition(0, 12.0);
+    game.score_great_person_point_competition(1, 11.0);
+    game.turn = game.competition.as_ref().unwrap().ends;
+    game.close_native_competition();
+    assert_eq!(
+        game.players[0].dvp - dvp[0],
+        1,
+        "a single highest score is a first place"
+    );
+    assert_eq!(game.players[1].dvp, dvp[1]);
+}
+
+/// Nothing is paid on the mirrored path.
+///
+/// ★★★★★ THE INVARIANT THAT KEEPS THE LIVE BRIDGE HONEST. A mirrored seat's
+/// competition is the live host's, and the host has already scored it and
+/// already paid its own Diplomatic Victory Points; `dvp` on that path is
+/// mirrored from the host, not accumulated here. So a host competition must
+/// never reach the native scorer or the native award — including in a game that
+/// has `native_competitions` switched on, because the mirror sets the same
+/// fields on the same `Game`.
+#[test]
+fn a_mirrored_competition_pays_nothing_natively() {
+    let mut game = game_with_capitals(3, 64_002, 400);
+    game.native_competitions = true;
+    game.world_era = 5;
+    game.replace_host_competitions(vec![crate::game::HostCompetition {
+        kind: "EMERGENCY_WORLDS_FAIR".to_string(),
+        ends: game.turn + 20,
+        ours: 40.0,
+        leader: 40.0,
+    }]);
+    assert!(
+        game.host_competition(0, "EMERGENCY_WORLDS_FAIR").is_some(),
+        "the mirrored seat can see the host's competition"
+    );
+    assert!(
+        game.competition.is_none(),
+        "and it is not a native competition: a host one lives in \
+         `host_competitions`, which nothing native reads or writes"
+    );
+
+    let dvp: Vec<i64> = game.players.iter().map(|player| player.dvp).collect();
+    let favor: Vec<f64> = game
+        .players
+        .iter()
+        .map(|player| player.diplomatic_favor)
+        .collect();
+    game.score_great_person_point_competition(0, 40.0);
+    game.score_favor_competition(0, 40.0);
+    game.score_competition_holdings(0);
+    assert!(
+        game.competition.is_none(),
+        "no native score table is created for a host competition"
+    );
+
+    game.turn += 25;
+    game.close_native_competition();
+    for player in &game.players {
+        assert_eq!(
+            player.dvp, dvp[player.id],
+            "the host has already counted its own Diplomatic Victory Points"
+        );
+        assert_eq!(player.diplomatic_favor, favor[player.id]);
+    }
+    assert!(
+        game.competition_lockout_until.is_empty(),
+        "and a host competition does not lock out a native one either"
+    );
+}
+
+/// Every competition Gathering Storm pays a Diplomatic Victory Point for, and
+/// nothing else.
+///
+/// ★★★★★ THE OTHER HALF OF THE TWENTY. The content sources above are worth
+/// about nine points across a 250-turn game and the congress resolution ±2 from
+/// the Modern era; the rest of a Diplomatic victory is meant to come from
+/// competitions, which recur for the whole second half. Joining the shipped
+/// `EmergencyRewards` to `ModifierArguments` names exactly seven of them:
+///
+/// | modifier | Amount | emergencies |
+/// |---|---|---|
+/// | `NON_EMERGENCY_FIRST_PLACE_VICTORY_POINT` | 1 | Nobel Peace, World's Fair, Space Station, World Games |
+/// | `AID_REQUEST_FIRST_PLACE_VICTORY_POINT` | 2 | Send Aid, Send Military Aid |
+/// | `CLIMATE_ACCORDS_FIRST_PLACE_VICTORY_POINT` | 2 | Climate Accords |
+///
+/// ⚠ Nobel **Literature** and Nobel **Physics** are scored competitions and are
+/// deliberately not here: `EmergencyRewards` gives neither a victory-point row
+/// at all. Adding them because they look like their sibling would invent two
+/// points a game.
+///
+/// ⚠ The Favor is the emergency's own top-tier amount, not a shared constant. A
+/// flat 25 shipped here until #2379 and appears in no shipped table.
+#[test]
+fn every_competition_that_pays_a_diplomatic_victory_point_is_seated_natively() {
+    let table: Vec<(&str, i64, f64)> = Game::NATIVE_COMPETITIONS
+        .iter()
+        .map(|competition| {
+            (
+                competition.kind,
+                competition.diplomatic_victory_points,
+                competition.first_place_favor,
+            )
+        })
+        .collect();
+    let mut sorted = table.clone();
+    sorted.sort_by(|left, right| left.0.cmp(right.0));
+    assert_eq!(
+        sorted,
+        vec![
+            ("EMERGENCY_CLIMATE_ACCORDS", 2, 100.0),
+            ("EMERGENCY_NOBEL_PRIZE_PEACE", 1, 0.0),
+            ("EMERGENCY_SEND_AID", 2, 100.0),
+            ("EMERGENCY_SEND_MILITARY_AID", 2, 100.0),
+            ("EMERGENCY_SPACE_STATION", 1, 50.0),
+            ("EMERGENCY_WORLDS_FAIR", 1, 50.0),
+            ("EMERGENCY_WORLD_GAMES", 1, 50.0),
+        ],
+        "a competition added or dropped here, or an award changed, is a change \
+         to how a Diplomatic victory is won"
+    );
+    for (kind, points, _) in &table {
+        assert_eq!(
+            Game::competition_victory_points(kind),
+            *points,
+            "the AI prices a competition from this table and must not carry its own copy"
+        );
+    }
+
+    // The seating order is the simplification this file owes the reader: the
+    // shipped data says which competitions exist and when, and nothing about
+    // which the congress picks among them.
+    let congress: Vec<(&str, usize, Option<usize>)> = Game::NATIVE_COMPETITIONS
+        .iter()
+        .filter(|competition| competition.trigger == NativeCompetitionTrigger::Congress)
+        .map(|competition| {
+            (
+                competition.kind,
+                competition.minimum_world_era,
+                competition.maximum_world_era,
+            )
+        })
+        .collect();
+    assert_eq!(
+        congress,
+        vec![
+            ("EMERGENCY_SPACE_STATION", 8, None),
+            ("EMERGENCY_CLIMATE_ACCORDS", 7, None),
+            ("EMERGENCY_WORLD_GAMES", 6, None),
+            ("EMERGENCY_WORLDS_FAIR", 5, Some(5)),
+            ("EMERGENCY_NOBEL_PRIZE_PEACE", 4, None),
+        ],
+        "newest era first, so the latest competition an era has unlocked takes \
+         the seat and the Nobel Peace Prize takes the Industrial era and the \
+         gaps another kind's lockout leaves"
     );
 }
