@@ -225,12 +225,22 @@ const RECON_CITY_STATE_SWEEP_UNMET_MIN: usize = 3;
 /// How much one place on the shipped pantheon order is worth, in the same
 /// yield-per-turn units the board score is measured in.
 ///
-/// ⚠ One yield a turn per place, so an eleven-name roster spans eleven — which
+/// ⚠ One yield a turn per place, so the prior spans the WHOLE ROSTER — which
 /// means the board only overrules the order when it is paying more than the
-/// whole spread of the order itself. That is deliberately a high bar: the
-/// order encodes real judgement about the pantheons whose value is not per
-/// tile, and this treatment exists to be measured against it, not to assume it
-/// is wrong.
+/// spread of the order itself. That is deliberately a high bar: the order
+/// encodes real judgement about the pantheons whose value is not per tile, and
+/// this treatment exists to be measured against it, not to assume it is wrong.
+///
+/// ⚠⚠ THE BAR THEREFORE MOVES WITH THE ROSTER, and the roster has changed
+/// under it. This was written against eleven names and spanned eleven; the
+/// last twelve pantheons landed on 2026-08-24 and it spans twenty-three, so a
+/// board read now has to pay roughly twice as much to overrule the order.
+/// That is the stated design holding, not drifting — but it is a real change
+/// to what `pantheon_reads_the_board` does, and the arithmetic was
+/// deliberately left alone rather than rescaled, because the gene has a
+/// recorded screen (`docs/eval/2026-08-18-the-pantheon-is-chosen-from-the-land-not-from-a-fixed-list.md`,
+/// parity at 60 pairs) and re-weighting it silently would price a measured arm
+/// nobody re-measured.
 const PANTHEON_PRIOR_STEP: f64 = 1.0;
 
 const NAVAL_RECON_MIN_WATERWAY_TILES: usize = 4;
@@ -6738,6 +6748,28 @@ impl BasicAi {
                 })
                 .count() as f64
         };
+        // The plot pantheons ask the ground itself rather than a resource:
+        // Lady of the Reeds and Marshes, Goddess of Fire and Earth Goddess are
+        // one `MODIFIER_CITY_PLOT_YIELDS_ADJUST_PLOT_YIELD` each over a plot
+        // test, so one closure answers all three.
+        let owned_plots = |test: &dyn Fn(&crate::world::Tile, Pos) -> bool| -> f64 {
+            g.player_city_ids(pid)
+                .into_iter()
+                .flat_map(|cid| g.cities[&cid].owned_tiles.clone())
+                .filter(|position| {
+                    g.map
+                        .get(*position)
+                        .is_some_and(|tile| !tile.pillaged && test(tile, *position))
+                })
+                .count() as f64
+        };
+        let feature_is = |names: &'static [&'static str]| {
+            move |tile: &crate::world::Tile, _: Pos| {
+                tile.feature
+                    .as_deref()
+                    .is_some_and(|feature| names.contains(&feature))
+            }
+        };
         match effect {
             "camp_food" | "camp_production" | "camp_gold" => worked_by("camp", &[]),
             "quarry_faith" | "quarry_production" => worked_by("quarry", &[]),
@@ -6752,6 +6784,22 @@ impl BasicAi {
             "strategic_improved_production" | "strategic_improved_faith" => {
                 any_improved(&["strategic"])
             }
+            "reeds_production" => owned_plots(&feature_is(&["marsh", "oasis", "floodplains"])),
+            "volcanic_geothermal_faith" => {
+                owned_plots(&feature_is(&["geothermal_fissure", "volcanic_soil"]))
+            }
+            "breathtaking_appeal_faith" => owned_plots(&|_, position| g.tile_appeal(position) >= 4),
+            // ⚠ The three Holy Site adjacency pantheons — Desert Folklore,
+            // Dance of the Aurora, Sacred Path — are deliberately NOT priced
+            // here, and the reason is the shape of this function rather than
+            // laziness. Everything above is paid on every qualifying tile the
+            // empire owns, so counting them IS the payout. An adjacency is paid
+            // on at most the six plots around one district, so multiplying the
+            // amount by "desert tiles owned" would price Desert Folklore at ten
+            // times what it can ever pay on a desert start, which is exactly
+            // the invented weight the doc comment above refuses. Reading them
+            // honestly means ranking candidate Holy Site plots, which is the
+            // district calculator's job and not this one's.
             _ => 0.0,
         }
     }
@@ -15058,9 +15106,36 @@ mod tests {
             game.players[0].faith = 200.0;
             game
         };
-        let salt_with_camps = |game: &mut Game, count: usize| {
+        // ⚠ The bar a board read has to clear is the ROSTER, not a constant:
+        // one place on the order is worth `PANTHEON_PRIOR_STEP`, so the prior
+        // spans every name. This test asked for six Deer against an
+        // eleven-name roster; the class was completed to twenty-three on
+        // 2026-08-24 and six Deer (two yields each, twelve) no longer clear
+        // twenty-three. It now asks for however many Deer the roster takes,
+        // so completing a class does not silently retune the assertion —
+        // and a city opens owning only its first ring, so the borders have to
+        // grow before there is anywhere to put them.
+        let salt_with_camps = |game: &mut Game| {
             let city = game.player_city_ids(0)[0];
             let centre = game.cities[&city].pos;
+            for position in game.wdisk(centre, 2) {
+                let owned = game.map.tiles[&position].owner_city;
+                if owned.is_none() {
+                    game.map.tiles.get_mut(&position).unwrap().owner_city = Some(city);
+                    game.cities
+                        .get_mut(&city)
+                        .unwrap()
+                        .owned_tiles
+                        .push(position);
+                }
+            }
+            // Goddess of the Hunt pays a Deer two yields — `camp_food` and
+            // `camp_production` — so this is the spread divided by two, plus
+            // one to be over rather than level with it.
+            let per_deer = 2.0;
+            let count = (game.rules.beliefs.pantheon.len() as f64 * PANTHEON_PRIOR_STEP / per_deer)
+                .ceil() as usize
+                + 1;
             let tiles: Vec<_> = game.cities[&city]
                 .owned_tiles
                 .iter()
@@ -15071,7 +15146,7 @@ mod tests {
             assert_eq!(
                 tiles.len(),
                 count,
-                "the capital must own enough tiles to salt"
+                "the capital must own enough tiles to outweigh the order"
             );
             for position in tiles {
                 let tile = game.map.tiles.get_mut(&position).unwrap();
@@ -15086,7 +15161,7 @@ mod tests {
         let mut bare = camp_board(6_101);
         shipped.research_with_government(&mut bare, 0, false, None);
         let mut salted = camp_board(6_101);
-        salt_with_camps(&mut salted, 6);
+        salt_with_camps(&mut salted);
         shipped.research_with_government(&mut salted, 0, false, None);
         assert_eq!(bare.players[0].pantheon, salted.players[0].pantheon);
         assert_eq!(bare.players[0].pantheon.as_deref(), Some("divine_spark"));
@@ -15096,12 +15171,12 @@ mod tests {
         treated_ai.pursue_religion = true;
         treated_ai.pantheon_reads_the_board = true;
         let mut treated = camp_board(6_101);
-        salt_with_camps(&mut treated, 6);
+        salt_with_camps(&mut treated);
         treated_ai.research_with_government(&mut treated, 0, false, None);
         assert_eq!(
             treated.players[0].pantheon.as_deref(),
             Some("goddess_of_the_hunt"),
-            "six Deer pay two yields each; the prior spans eleven"
+            "enough Deer to pay more than the whole spread of the order"
         );
 
         // And on a board with nothing to work it still chooses what it always
