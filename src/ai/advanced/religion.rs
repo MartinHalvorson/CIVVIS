@@ -121,7 +121,8 @@ impl AdvancedAi {
         pid: usize,
         home_under_pressure: bool,
     ) -> bool {
-        if !self.guru_heals_the_corps || !home_under_pressure {
+        // See `guru_heals_the_corps_2`: a damaged corps anywhere is enough.
+        if !(self.guru_heals_the_corps && home_under_pressure) && !self.guru_heals_the_corps_2 {
             return false;
         }
         g.units.values().any(|unit| {
@@ -237,7 +238,7 @@ impl AdvancedAi {
     /// no ranking: it is a conditional claim in a city that is losing its
     /// majority right now, which is the case that ranking never priced.
     pub(super) fn holy_site_where_the_threat_is(&self, g: &mut Game, pid: usize) {
-        if !self.holy_site_where_the_threat_is {
+        if !self.holy_site_where_the_threat_is && !self.holy_site_where_the_threat_is_2 {
             return;
         }
         let Some(religion) = g.players[pid].religion.clone() else {

@@ -32646,3 +32646,124 @@ fn wonder_score_tally_never_stacks_and_never_moves_a_gate_it_does_not_own() {
         "a one-city empire may not race for a wonder"
     );
 }
+
+/// The ten version-2 genes of 2026-08-24: each is a native opt-in, off in
+/// both controllers, published for `gene_screen` as `<base>-2`, and its
+/// enable turns version 1 off so a seat plays one version of the family.
+#[test]
+fn version_two_genes_of_0824_are_opt_in_and_turn_version_one_off() {
+    let families = [
+        "amenity-project-preemption",
+        "settler-guard-holds",
+        "guru-heals-the-corps",
+        "siege-is-progress",
+        "campus-adjacency-threshold",
+        "holy-site-where-the-threat-is",
+        "naval-recon",
+        "settler-target-hysteresis",
+        "district-coverage",
+        "power-the-laboratory",
+    ];
+    fn reads(ai: &AdvancedAi) -> Vec<(bool, bool)> {
+        vec![
+            (ai.amenity_project_preemption, ai.amenity_project_preemption_2),
+            (ai.settler_guard_holds, ai.settler_guard_holds_2),
+            (ai.guru_heals_the_corps, ai.guru_heals_the_corps_2),
+            (ai.siege_is_progress, ai.siege_is_progress_2),
+            (ai.campus_adjacency_threshold, ai.campus_adjacency_threshold_2),
+            (ai.holy_site_where_the_threat_is, ai.holy_site_where_the_threat_is_2),
+            (ai.base.naval_recon, ai.base.naval_recon_2),
+            (ai.settler_target_hysteresis, ai.settler_target_hysteresis_2),
+            (ai.base.district_coverage, ai.base.district_coverage_2),
+            (ai.power_the_laboratory, ai.power_the_laboratory_2),
+        ]
+    }
+    for (i, base) in families.iter().enumerate() {
+        let tag = format!("{base}-2");
+        let v1 = GENES.iter().find(|gene| gene.tag == *base).expect("version 1 is published");
+        let v2 = GENES.iter().find(|gene| gene.tag == tag).expect("version 2 is published");
+        assert!(v2.opt_in() && v2.screenable() && !v2.live(), "{tag}");
+        // Version 1 may be a Repair gene the native bundle turns on; only
+        // version 2 must be off in both constructors.
+        let mut ai = AdvancedAi::new();
+        assert!(!reads(&ai)[i].1, "{tag} off in new()");
+        assert!(!reads(&AdvancedAi::legacy())[i].1, "{tag} off in legacy()");
+        (v1.enable)(&mut ai);
+        assert_eq!(reads(&ai)[i], (true, false), "{tag}: version 1 alone");
+        (v2.enable)(&mut ai);
+        assert_eq!(reads(&ai)[i], (false, true), "{tag}: version 2 turns version 1 off");
+        (v2.disable)(&mut ai);
+        assert_eq!(reads(&ai)[i], (false, false), "{tag}: disabled");
+    }
+}
+
+/// `power_the_laboratory_2`: a building's powered half is credited only in a
+/// city whose supply covers its demand with the building's own added; a dark
+/// city or one the building would leave short pays nothing, and a building
+/// with no powered half is always zero.
+#[test]
+fn power_the_laboratory_2_credits_the_powered_half_only_where_it_is_on() {
+    let (mut game, _) = camp_bounty_board(93_602);
+    let cid = game.player_city_ids(0)[0];
+    let (lab_name, lab) = game
+        .rules
+        .buildings
+        .iter()
+        .filter(|(_, spec)| spec.effects.get("powered_science").copied().unwrap_or(0.0) > 0.0)
+        .max_by(|a, b| {
+            a.1.effects["powered_science"]
+                .partial_cmp(&b.1.effects["powered_science"])
+                .unwrap()
+        })
+        .map(|(name, spec)| (name.clone(), spec.clone()))
+        .expect("a building pays powered science");
+    let plain = game
+        .rules
+        .buildings
+        .values()
+        .find(|spec| !spec.effects.keys().any(|key| key.starts_with("powered_")))
+        .cloned()
+        .expect("a building with no powered half");
+    let city = game.cities[&cid].clone();
+    assert_eq!(AdvancedAi::powered_yields_if_powered(&game, &city, &plain).total(), 0.0);
+    // Dark: the city holds no supply, so the Lab's own demand is unmet.
+    game.players[0].city_power.insert(cid, 0.0);
+    assert_eq!(AdvancedAi::powered_yields_if_powered(&game, &city, &lab).total(), 0.0);
+    // Powered with room for the Lab's demand: its half is credited.
+    let demand = game.city_power_demand(&city);
+    game.players[0].city_power.insert(cid, demand + lab.power + 1.0);
+    let credited = AdvancedAi::powered_yields_if_powered(&game, &city, &lab);
+    assert_eq!(credited.science, lab.effects["powered_science"], "{lab_name}");
+    // Powered, but the Lab would tip the city short: nothing.
+    if lab.power > 0.0 {
+        game.players[0].city_power.insert(cid, demand + lab.power * 0.5);
+        assert_eq!(AdvancedAi::powered_yields_if_powered(&game, &city, &lab).total(), 0.0);
+    }
+}
+
+/// `campus_adjacency_threshold_2`: the settle rerank never lowers a site,
+/// raises a site by exactly its share when a threshold Campus plot lies in
+/// its rings, and keeps the ranking sorted.
+#[test]
+fn campus_adjacency_threshold_2_credits_only_sites_with_a_threshold_plot() {
+    let (game, home) = camp_bounty_board(93_604);
+    let off = AdvancedAi::new();
+    let mut on = AdvancedAi::new();
+    on.enable_campus_adjacency_threshold_2();
+    assert!(!on.campus_adjacency_threshold && on.campus_adjacency_threshold_2);
+    let before = off.settle_ranking(&game, 0, home, 8);
+    let after = on.settle_ranking(&game, 0, home, 8);
+    assert!(!before.is_empty(), "the board has sites to rank");
+    let before_values: BTreeMap<Pos, f64> = before.iter().copied().collect();
+    for (pos, value) in &after {
+        let was = before_values[pos];
+        let near = AdvancedAi::campus_threshold_plot_near(&game, *pos);
+        if near && before.iter().position(|(p, _)| p == pos).unwrap() < SETTLE_PLAN_AHEAD_CANDIDATES
+        {
+            assert!((value - was * (1.0 + CAMPUS_THRESHOLD_SETTLE_SHARE)).abs() < 1e-6, "{pos:?}");
+        } else {
+            assert!((value - was).abs() < 1e-6 || *value > was, "{pos:?} fell from {was} to {value}");
+        }
+    }
+    assert!(after.windows(2).all(|pair| pair[0].1 >= pair[1].1), "sorted");
+}
