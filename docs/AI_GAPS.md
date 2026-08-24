@@ -77,8 +77,11 @@ Answered, and therefore **not** carried forward:
   last section): at matched states the fog-honest planner's economic
   *decisions* are within 5% of the omniscient controller's, and what it loses
   is execution — one production order in four is refused by the authoritative
-  board, and two trades in three. The arm is also screenable again for the
-  first time since `ai_eval` was deleted in #2351.
+  board, and two trades in three. The arm is screenable again for the first
+  time since `ai_eval` was deleted in #2351, and its re-run says 6.6% against
+  stock's 30.5% (z −7.83): the 15.0% did not move, it merely stopped being
+  compatible with parity. One repair aimed at the refusals was screened and
+  lost 5.7 pp.
 - **Policy-deck transfer confirmation** (2026-07-30 #4) — resolved against the
   treatment by the full-prefix follow-through below; it survives only as the
   first component of item 1.
@@ -1090,7 +1093,7 @@ embedded, no default AI loads it, and the incumbent remains scripted. A future
 fresh external screen and mirrored gameplay A/B must earn promotion; the
 rejected historical Q corpora remain closed.
 
-## 2026-08-24 the fog-honest gap is not economic — it is movement and policy churn
+## 2026-08-24 the fog-honest gap is execution, not economic judgement — and a repair that lost
 
 ★★★★★ **The premise this work started from is refuted by its own first
 measurement.** The section above closes the fog-honest screen by naming its
@@ -1284,10 +1287,77 @@ Three things, none of them a strength claim:
    refusal did not happen and then ends the turn on that tape's own `EndTurn`.
    Version 2 drops the stale remainder and crosses the fog boundary again from
    the board as it now stands, at most `FOG_REPLAN_LIMIT` times a turn.
+   **It was screened and it lost** — see the section below. It ships off, with
+   its verdict on its row, because a priced negative with a mechanism is worth
+   more to the next agent than a deleted branch.
 
-### The screen this could not buy
+### The screen, and a version that lost
 
-SCREEN_PLACEHOLDER
+The re-run of the 15.0% is done, and the repair is refused by it.
+
+`gene_screen --genes fog-honest,fog-honest-2`, standard shape, seeds
+`955000000..955000068`. ⚠ **PARTIAL: 414 of 1,440 pre-registered seats
+(28.8%)** — the batch was declared at 240 games and cut at 69 because the box
+was carrying about fourteen agents at load 130-150; the artifact says so on its
+own first line. It resolves a win Δ of ±8.1 pp (share Δ ±2.41 pp) at 80% power,
+and the family-wise 5% bar for two genes is |z| ≥ 2.24.
+
+| level | seats | win | score share |
+|---|---:|---:|---:|
+| off (stock `advanced`) | 200 | **30.5%** | 20.7% |
+| `fog-honest` (version 1) | 106 | **6.6%** | 14.1% |
+| `fog-honest-2` (version 2) | 108 | **0.9%** | 11.7% |
+
+| contrast | win Δ | share Δ |
+|---|---:|---:|
+| `fog-honest` − off | **−23.9 pp ± 3.1 (z −7.83)** | −6.61 pp (z −7.31) |
+| `fog-honest-2` − off | −29.6 pp ± 1.8 (z −16.87) | −9.05 pp (z −13.41) |
+| `fog-honest-2` − `fog-honest` | **−5.7 pp ± 2.5 (z −2.25)** | −2.44 pp (z −3.10) |
+
+**Did the 15.0% move? No — and it is now resolved instead of merely
+suspected.** The 2026-08-17 reading was a paired-map score of 15.0% with a
+Wilson interval from 5.2% to 36.0%, wide enough to contain parity. This is a
+different statistic on a different instrument — a seat's win rate in a
+random-genome batch, against a 16.7% chance baseline — so the two numbers are
+not the same quantity and must not be subtracted. What they agree on is the
+direction and now the size: the fog-honest arm wins **6.6%** where stock wins
+30.5%, at z −7.83, past the family-wise bar. The old screen could not exclude
+parity; this one excludes it by a mile. The incumbent keeps the gate, for the
+third time and now for a stated reason.
+
+**And `fog-honest-2` is refused.** *"An improvement improves when its 'against
+the version before it' contrast is positive on the win axis and it also beats
+off."* It is negative on both axes — −5.7 pp on wins (z −2.25) and −2.44 pp on
+share (z −3.10, past the family-wise bar). Version 2 is worse than version 1.
+Both are recorded `hurts` / off in `docs/gene_ledger.json` at the bottom of
+`HEURISTIC_GENE_RANKING.md`.
+
+**Why it is worse, which is the useful part.** The re-plan is not free: to
+reach it, version 2 has to *stop replaying the tape at the first refusal*,
+because the tape's own trailing `EndTurn` would otherwise close the seat's turn
+before anything could be re-planned. That treats the tape as one dependent
+chain. It is not — it is many units' and cities' independent plans
+concatenated, and a refused Settler move says nothing about a Builder's
+`improve` twelve actions later. With a refusal on 37.8% of turns and only
+`FOG_REPLAN_LIMIT` = 1 re-plan to recover with, version 2 discards more good
+orders than it replaces. Its own compute column agrees: −0.15 ± 5.82% per
+enabled seat, where a genuinely extra planning pass should have cost more —
+the turns are ending early.
+
+The version that is worth building is therefore **v3: skip only the refused
+actor's remaining actions and keep everyone else's**, which needs no early
+`EndTurn` and no re-plan at all. This writeup does not build it, because a
+third version guessed from the mechanism of a second is exactly the kind of
+unpriced iteration this ledger exists to stop; it needs its own row and its own
+screen.
+
+⚠ Honest limits on this screen. It is 28.8% of a pre-registered batch, one seed
+stream, and its `fog-honest` and `fog-honest-2` columns are that stream's first
+and only reading. The −23.9 pp is far outside anything this instrument's noise
+produces and is safe; the −5.7 pp version contrast sits just past |z| 2 on wins
+and is the number a confirmation run on disjoint seeds should re-read before
+anyone treats the mechanism above as established. A full 240-game batch would
+have resolved ±6.7 pp, and ~440 games are needed for ±5 pp before clustering.
 
 ### What the next agent should do, in order
 
@@ -1298,7 +1368,9 @@ SCREEN_PLACEHOLDER
    diffing `Game::fogged_clone`'s treatment of the *acting seat's own* cities,
    treasury, stockpiles and queues against the authoritative game; a redaction
    that touches the seat's own economy is a bug, not a fair-play boundary.
-   `trade` at 67.3% is the same question with a louder answer.
+   `trade` at 67.3% is the same question with a louder answer. Fixing the
+   refusals is a better lever than reacting to them — which is what
+   `fog-honest-2` measured, and it lost 5.7 pp doing it.
 2. **Take the movement and policy-churn question**, not the settle question:
    164 of 280 first divergences are `move`, and the policy deck slots and
    unslots a quarter more often behind the boundary.

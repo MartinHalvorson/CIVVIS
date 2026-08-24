@@ -118,6 +118,8 @@
 | 112 | `war-patience` | Keep prosecuting a war the empire overwhelmingly outweighs instead of suing it out as stalled. | — | off | -64 | -14 | -10 | 16.49% (n=74,722) | 16.84% (n=74,564) | -0.34% | -22 [-56, +12] | 10.2% | -0.50 (z -3.17) hurts * | +0.19% ±0.38% | +0.42% ±0.65% |
 | 113 | `governor-victory-lanes` | Half the composite: the governor under the four victory lanes only. | — | off | -82 | -118 | +23 | 15.37% (n=49,837) | 17.97% (n=49,757) | -2.60% | -148 [-312, +16] | 3.9% | -1.41 (z -9.27) hurts * | +0.08% ±0.39% | +0.35% ±0.67% |
 | 114 | `governor-every-lane` | Run the strategic governor under every lane. | — | off | -108 | -117 | +7 | 15.69% (n=74,655) | 17.64% (n=74,631) | -1.94% | -99 [-210, +11] | 3.9% | -1.42 (z -9.25) hurts * | +0.06% ±0.36% | +0.56% ±0.64% |
+| 115 | `fog-honest` | Put this controller behind the turn-level fog boundary. | 1 | off | – | – | – | v1 6.60% (n=106) · v2 0.93% (n=108) | v1 20.13% (n=308) · v2 22.22% (n=306) | -13.53% | -676 [-960, -393] | 0.0% | -3.44 (z -4.00) hurts * | +3.50% ±6.08% | +7.35% ±7.12% |
+| 116 | `fog-honest-2` | Version 2 of `fog_honest`: the same fair-play boundary and the same information contract, plus one re-plan when the authoritative board refuses a planned order. | 1 | off | – | – | – | v1 6.60% (n=106) · v2 0.93% (n=108) | v1 20.13% (n=308) · v2 22.22% (n=306) | -21.30% | -1065 [-1210, -919] | 0.0% | -6.76 (z -11.48) hurts * | -0.15% ±5.82% | +0.78% ±6.44% |
 
 ## What the posterior would change
 
@@ -143,7 +145,7 @@ Each row is a gene whose shipped default one of the settings above would change.
 
 ### What the posterior can decide at all
 
-Of 100 priced genes the interval clears zero for **13 upward** and **3 downward**; **84 sit inside the interval either way** and are the boundary set below. A straddling interval is not a null — it is the instrument saying it cannot tell, which is exactly what a fixed ±15 bar cannot say.
+Of 102 priced genes the interval clears zero for **13 upward** and **5 downward**; **84 sit inside the interval either way** and are the boundary set below. A straddling interval is not a null — it is the instrument saying it cannot tell, which is exactly what a fixed ±15 bar cannot say.
 
 | Gene | Posterior (95% CI) | P(>0) | Screens | Shipped | Posterior call |
 |---|---:|---:|---:|---|---|
@@ -162,6 +164,8 @@ Of 100 priced genes the interval clears zero for **13 upward** and **3 downward*
 | `wide-map-capacity` | +49 [+18, +81] | 99.9% | 4 | on | **on** |
 | `contact-posture` | -55 [-85, -24] | 0.0% | 1 | off | **off** |
 | `district-lookahead-settle` | -33 [-56, -10] | 0.3% | 2 | off | **off** |
+| `fog-honest` | -676 [-960, -393] | 0.0% | 1 | off | **off** |
+| `fog-honest-2` | -1065 [-1210, -919] | 0.0% | 1 | off | **off** |
 | `governor-expansion-lane` | -29 [-52, -5] | 0.8% | 2 | off | **off** |
 
 ## The two shapes, apart
@@ -170,7 +174,7 @@ Of 100 priced genes the interval clears zero for **13 upward** and **3 downward*
 
 | Shape | Sources | Player seats | Genes priced |
 |---|---:|---:|---:|
-| standard | 2 | 54,444 | 99 |
+| standard | 3 | 54,858 | 101 |
 | legacy | 7 | 132,440 | 65 |
 
 Genes priced at both shapes. **A row whose two intervals do not overlap is not a gene with one number; it is two instruments disagreeing**, and the pooled column beside it should be read as a warning rather than an answer.
@@ -367,8 +371,6 @@ These screenable genes have no on/off result, so they receive no rank or promoti
 |---|---|---|---:|
 | `district-planning` | off (unmeasured) | The city plans its districts, sites and tile buys together: wished districts get jointly assigned, reserved plots over rings 1-3, and the tile a very valuable site needs is bought. | — |
 | `escort-unstick-2` | off (unmeasured) | Version 2 of `escort_unstick`: the same two-turn release, refused while a visible barbarian raider can reach the settler's tile. | 1 |
-| `fog-honest` | off (unmeasured) | Put this controller behind the turn-level fog boundary. | — |
-| `fog-honest-2` | off (unmeasured) | Version 2 of `fog_honest`: the same fair-play boundary and the same information contract, plus one re-plan when the authoritative board refuses a planned order. | — |
 | `settle-plan-ahead` | off (unmeasured) | Rank a settle site by the cities it leaves room for as well as its own ground, so a Settler stops taking the one plot in a pocket that would have held two. | — |
 
 ## Removed from the code
@@ -412,6 +414,7 @@ Every screenable heuristic gene on the Advanced controller, ranked most benefici
 
 | Screen | Shape | Genes | Player seats | 1 SE | ±80% power | Pairing gain |
 |---|---|---:|---:|---:|---:|---:|
+| `2026-08-24-fog-honest-family-direct-6p-allseats-414-seats.json` | standard | 2 | 414 | 144.7 | ±405 | 0.00× |
 | `2026-08-23-g1-governor-victory-lanes-direct-6p-allseats-3600-pairs.json` | standard | 1 | 7,200 | 39.1 | ±109 | 1.12× |
 | `2026-08-22-standard-10k-6p-allseats-23622-pairs.json` | standard | 99 | 47,244 | 15.6 | ±44 | 1.10× |
 | `2026-08-22-h1-holy-lane-parity-direct-6p-allseats-1200-pairs.json` | legacy | 1 | 14,400 | 24.3 | ±68 | 1.28× |
@@ -465,4 +468,4 @@ So the gene stays in the code, `off` and unresolved, and **the cull rule does no
 
 So the rule, for whoever culls next. A cull is not the symmetric opposite of a default. A gene left `off` costs one row in a foldover screen and **no games**, and it can be re-priced by every screen that runs afterwards; a gene removed can never be re-priced by anything, and restoring it costs a dedicated confirmation run (1,200 map pairs for `holy-lane-parity`). So the bar for deleting code is not "the worst reading available" -- `barbarian-hunt`'s -86 was the worst reading in the table and it was still the wrong number. It is **a reading on the instrument the agent is actually being screened on**, and the three questions that establish it: is this column `standard` or `legacy`; is there a screen in flight or unmerged that has already priced this gene (check `batch.source_commit` against the cull date, and check the open pull requests); and does a direct arm against the deployment genome agree. `barbarian-hunt` failed all three.
 
-_Generated by `tools/genes.py` from the ledger's sources: `2026-08-20-p4-native-6p-allseats-13446-pairs.json` (legacy, 26,892 seats), `2026-08-20-s2-step-and-reassess-native-4p-1000-pairs.json` (legacy, 2,000 seats), `2026-08-21-s6-religion-genes-native-6p-allseats-6000-pairs.json` (legacy, 12,000 seats), `2026-08-21-s7-idle-faith-patronage-native-6p-allseats-6000-pairs.json` (legacy, 12,000 seats), `2026-08-21-p7-native-6p-allseats-15000-pairs.json` (legacy, 30,000 seats), `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` (legacy, 35,148 seats), `2026-08-22-h1-holy-lane-parity-direct-6p-allseats-1200-pairs.json` (legacy, 14,400 seats), `2026-08-22-standard-10k-6p-allseats-23622-pairs.json` (standard, 47,244 seats), `2026-08-23-g1-governor-victory-lanes-direct-6p-allseats-3600-pairs.json` (standard, 7,200 seats). The fixed display batches are: `2026-08-23-standard-gene-screen-10000-total-seats.json` (10,002 seats), `2026-08-22-standard-10k-6p-allseats-23622-pairs.json` (47,244 seats), `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` (35,148 seats). The deployment verdicts live in `docs/gene_ledger.json`; the table's batch cells are the operator's wins-per-ten-thousand-total-seat reporting view._
+_Generated by `tools/genes.py` from the ledger's sources: `2026-08-20-p4-native-6p-allseats-13446-pairs.json` (legacy, 26,892 seats), `2026-08-20-s2-step-and-reassess-native-4p-1000-pairs.json` (legacy, 2,000 seats), `2026-08-21-s6-religion-genes-native-6p-allseats-6000-pairs.json` (legacy, 12,000 seats), `2026-08-21-s7-idle-faith-patronage-native-6p-allseats-6000-pairs.json` (legacy, 12,000 seats), `2026-08-21-p7-native-6p-allseats-15000-pairs.json` (legacy, 30,000 seats), `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` (legacy, 35,148 seats), `2026-08-22-h1-holy-lane-parity-direct-6p-allseats-1200-pairs.json` (legacy, 14,400 seats), `2026-08-22-standard-10k-6p-allseats-23622-pairs.json` (standard, 47,244 seats), `2026-08-23-g1-governor-victory-lanes-direct-6p-allseats-3600-pairs.json` (standard, 7,200 seats), `2026-08-24-fog-honest-family-direct-6p-allseats-414-seats.json` (standard, 414 seats). The fixed display batches are: `2026-08-23-standard-gene-screen-10000-total-seats.json` (10,002 seats), `2026-08-22-standard-10k-6p-allseats-23622-pairs.json` (47,244 seats), `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` (35,148 seats). The deployment verdicts live in `docs/gene_ledger.json`; the table's batch cells are the operator's wins-per-ten-thousand-total-seat reporting view._
