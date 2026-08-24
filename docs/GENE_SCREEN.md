@@ -1226,7 +1226,7 @@ in the artefacts:
   The shrinkage is inside noise, and it is the winner's-curse signature
   `docs/EVAL_INTEGRITY.md` §4 predicts for a figure selected on promotion.
 - **The 41,628-seat screen's power against the effect it was testing was
-  22–30%.** At `win_se_pp` 0.417 it had 84% power against the discovery
+  22–26%.** At `win_se_pp` 0.417 it had 84% power against the discovery
   estimate (+1.228 pp) — which is why its failure to reproduce that *size* is
   informative — but only **26%** against the six-screen pooled difference
   (+0.552 pp) and **22%** against the post-discovery estimate (+0.492 pp).
@@ -1279,13 +1279,14 @@ posterior over all six screens excludes zero **above**, so `posterior` and
 `posterior-veto` ship it on as well. There is no rule in the repository, and
 no combination of the recorded sources, under which this gene ships off.
 
-### Sizing: nothing affordable resolves it, and an arm is not even sharper
+### Sizing: nothing affordable resolves it on its own
 
-This is the same question #2385 asked of `siege-commitment`, and it has a
-different answer for a different reason. There, a 600-game arm was **4×
-wider** than the screen already in the ledger. Here the arm is not wider — it
-is *the same instrument*, which is worse, because it means there is no
-cancellation to buy:
+This is the same question #2385 asked of `siege-commitment`, and the answer
+has the same shape for a different reason. There, a 600-game arm was **4×
+wider** than the screen already in the ledger, so the confirmation would have
+been a weaker instrument than its own source. Here the arm is not wider — on
+the bound `boundary` sizes from it is the *same* instrument — and the effect
+is simply smaller than one batch of it resolves:
 
 | instrument | `win_se_pp × √pairs` |
 |---|---:|
