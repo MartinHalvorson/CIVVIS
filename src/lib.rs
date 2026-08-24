@@ -109,6 +109,35 @@ mod tests {
         }
     }
 
+    /// The barbarian seat plays by its own rung — Immortal by default, the
+    /// band where the game's `BarbarianAttackForces` doubles the spawn
+    /// cadence and raises the party to three melee and two ranged — whatever
+    /// rung the majors play at. A save that predates the field plays the
+    /// same, and the seat's rung still governs everything else.
+    #[test]
+    fn barbarians_play_at_their_own_difficulty() {
+        let prince = Game::new_with(options("prince", "standard", &[0]));
+        assert_eq!(prince.barbarian_difficulty, "immortal");
+        assert_eq!(prince.barbarian_spec().order, 6);
+        assert_eq!(prince.barbarian_spec().barb_force_scale, 1.5);
+        assert_eq!(prince.barbarian_spec().barb_spawn_scale, 0.5);
+        assert_eq!(prince.difficulty_spec().order, 3, "the majors' rung is untouched");
+        assert_eq!(prince.handicap_combat_strength(1), 0.0);
+
+        // The rung can be set to any ladder key, and to nothing else.
+        let mut standard = Game::new_with(options("prince", "standard", &[0]));
+        standard.set_barbarian_difficulty("king").unwrap();
+        assert_eq!(standard.barbarian_spec().barb_force_scale, 1.0);
+        assert_eq!(standard.barbarian_spec().barb_spawn_scale, 1.0);
+        assert!(standard.set_barbarian_difficulty("olympian").is_err());
+
+        // A save without the field plays Immortal barbarians too.
+        let mut value = serde_json::to_value(&prince).unwrap();
+        value.as_object_mut().unwrap().remove("barbarian_difficulty");
+        let old: Game = serde_json::from_value(value).unwrap();
+        assert_eq!(old.barbarian_difficulty, "immortal");
+    }
+
     /// Above Prince the handicaps land on the AI seats: better yields, a
     /// stronger army, and extra units already on the map at turn one.
     #[test]
