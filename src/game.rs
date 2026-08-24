@@ -7011,16 +7011,11 @@ impl Game {
             for _ in 0..warriors {
                 g.place_city_state_starting_unit("warrior", pid, pos);
             }
-            // The shipped starting-building table grants completed Ancient
-            // Walls to every city-state on Immortal and Deity. They exist even
-            // before that state researches Masonry, just like other start-era
-            // buildings granted by setup.
-            if g.difficulty_spec().order >= 6 {
-                let state = g.cities.get_mut(&city).unwrap();
-                state.buildings.push(crate::name!("walls"));
-                state.building_eras.insert(crate::name!("walls"), 0);
-                state.wall_hp = 100;
-            }
+            // The shipped `StartingBuildings` table grants completed Ancient
+            // Walls to every city-state from Immortal upward. Which rungs and
+            // which building is `difficulties.json`'s to say now, rather than
+            // a rung number and a wall pool written into the setup code.
+            g.grant_starting_buildings(city);
         }
         // Rise & Fall always reserves a non-playable Free Cities seat. It is
         // dormant until the first Loyalty revolt, so it neither receives a
@@ -7051,6 +7046,55 @@ impl Game {
         g.refresh_great_person_offers();
         g.refresh_all_visibility();
         g
+    }
+
+    /// Give a city the completed buildings the shipped `StartingBuildings`
+    /// table grants a city of its owner's kind at this difficulty.
+    ///
+    /// *Completed* is the whole of it. These are not a production head start
+    /// and not a discount: they are standing when the game opens, with no
+    /// technology behind them and nothing left to build. So the building goes
+    /// into `buildings`, which is the list every yield, adjacency, tourism
+    /// and defence rule in the engine reads, rather than into a counter of
+    /// its own — a city-state at Deity is one the challenger has to breach,
+    /// not one carrying a note that says it has walls.
+    ///
+    /// Anything with an outer defence tops the wall pool up exactly the way
+    /// finishing it in a city does, through `city_max_wall_hp`, so a second
+    /// tier or a mod's own walls need no arithmetic here.
+    ///
+    /// ⚠ `MinorOnly` is a partition, not a permission: a row is granted to
+    /// city-states or to majors, never to both, which is why one flag decides
+    /// each side. Every major-side row of the shipped table is keyed on the
+    /// start era and carries no `MinDifficulty` at all, so with the shipped
+    /// ladder this reaches only city-states.
+    fn grant_starting_buildings(&mut self, cid: u32) {
+        let minor = self.players[self.cities[&cid].owner].is_minor;
+        let granted: Vec<Name> = self
+            .difficulty_spec()
+            .starting_buildings
+            .iter()
+            .filter(|row| row.minor_only == minor)
+            .map(|row| Name::new(&row.building))
+            .collect();
+        for building in granted {
+            if self.cities[&cid].buildings.contains(&building) {
+                continue;
+            }
+            let outer_defense = self.rules.buildings[&building].outer_defense;
+            // Setup runs before `open_in_start_era` moves the world era, so a
+            // start-era grant is stamped with the Ancient era the shipped row
+            // itself names.
+            let era = self.world_era;
+            let city = self.cities.get_mut(&cid).unwrap();
+            city.buildings.push(building);
+            city.building_eras.insert(building, era);
+            if outer_defense > 0 {
+                let pool = self.city_max_wall_hp(&self.cities[&cid]);
+                let city = self.cities.get_mut(&cid).unwrap();
+                city.wall_hp = (city.wall_hp + outer_defense).min(pool);
+            }
+        }
     }
 
     /// Civilization VI's Advanced Start: a game set to open past the first age
