@@ -4090,12 +4090,7 @@ fn a_tied_competition_pays_nobody_and_still_spends_its_lockout() {
     game.score_favor_competition(2, 500.0);
     game.score_competition_holdings(2);
     assert!(
-        !game
-            .competition
-            .as_ref()
-            .unwrap()
-            .scores
-            .contains_key(&2),
+        !game.competition.as_ref().unwrap().scores.contains_key(&2),
         "a seat that is not in the victory race cannot score a competition"
     );
 
