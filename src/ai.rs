@@ -9569,8 +9569,7 @@ impl BasicAi {
         g.cities.get(&cid).is_some_and(|city| city.owner == pid)
             && !Self::barbarian_local_alarm(g, pid, cid)
             && Self::barbarian_threat_pressure(g, pid, cid) == 0
-            && g
-                .cities
+            && g.cities
                 .keys()
                 .any(|destination| g.can_establish_trade_route(pid, cid, *destination))
     }

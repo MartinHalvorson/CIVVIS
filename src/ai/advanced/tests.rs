@@ -18210,9 +18210,7 @@ fn remote_barbarian_trade_board() -> (Game, u32, u32) {
         .tiles
         .iter()
         .filter(|(_, tile)| {
-            tile.owner_city.is_none()
-                && game.rules.is_passable(tile)
-                && !game.rules.is_water(tile)
+            tile.owner_city.is_none() && game.rules.is_passable(tile) && !game.rules.is_water(tile)
         })
         .map(|(position, _)| *position)
         .find(|position| {
@@ -18231,16 +18229,16 @@ fn remote_barbarian_trade_board() -> (Game, u32, u32) {
         game.remove_unit(unit);
     }
     game.barb_camps.clear();
-    let camp = game
-        .nbrs(remote_pos)
-        .into_iter()
-        .find(|position| {
-            game.wdist(safe_pos, *position) > crate::ai::BARBARIAN_TRADE_RISK_RADIUS
-                && game.map.get(*position).is_some_and(|tile| {
-                    game.rules.is_passable(tile) && !game.rules.is_water(tile)
-                })
-        })
-        .expect("a camp tile beside only the remote city");
+    let camp =
+        game.nbrs(remote_pos)
+            .into_iter()
+            .find(|position| {
+                game.wdist(safe_pos, *position) > crate::ai::BARBARIAN_TRADE_RISK_RADIUS
+                    && game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+            })
+            .expect("a camp tile beside only the remote city");
     game.barb_camps.insert(camp, game.turn + 1_000);
     game.map.tiles.get_mut(&camp).unwrap().improvement = Some(crate::name!("barbarian_camp"));
     (game, safe, remote)
