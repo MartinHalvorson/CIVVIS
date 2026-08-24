@@ -4849,6 +4849,13 @@ pub struct AdvancedAi {
     /// visible barbarian raider can reach next turn. Opt-in gene
     /// `missionary-evades-raiders`; see `advanced/missionary_field.rs`.
     missionary_evades_raiders: bool,
+    /// One war at a time: one campaign front, peace on every other, and
+    /// peace on the front once the tide has run against us for long enough.
+    /// Opt-in gene `one-war-at-a-time`; see `advanced/one_war.rs`.
+    one_war_at_a_time: bool,
+    /// The gene's chosen front and its tide clock; `None` at peace or with
+    /// the gene off.
+    one_war: Option<one_war::OneWarFront>,
 
     // ---- append: p-r ------------------------------------------------
     /// The religious defence grows with how much of a rival's religious
@@ -5174,6 +5181,15 @@ mod site_lookahead;
 mod district_planning;
 use district_planning::DistrictPlanCache;
 
+/// The Missionary in the field: a last-charge Missionary explores the fog,
+/// and a religious unit steps out of a raider's reach. Two opt-in genes; see
+/// `advanced/missionary_field.rs`.
+mod missionary_field;
+/// One war at a time: one campaign front, peace on every other front, and
+/// peace on the front once the tide has run against us for long enough
+/// with nothing left in reach. Opt-in gene `one-war-at-a-time`; see
+/// `advanced/one_war.rs`.
+mod one_war;
 /// The religious corps: the four opt-in genes for what a founder buys with
 /// Faith once its cities start slipping, and what it does with the units
 /// afterwards. See `advanced/religion.rs`.
@@ -5183,10 +5199,6 @@ mod religion;
 /// non-founder's answer and the spreaders' targets by how much of a rival's
 /// win is already done. One opt-in gene; see `advanced/religious_defence.rs`.
 mod religious_defence;
-/// The Missionary in the field: a last-charge Missionary explores the fog,
-/// and a religious unit steps out of a raider's reach. Two opt-in genes; see
-/// `advanced/missionary_field.rs`.
-mod missionary_field;
 use site_lookahead::{PlotOffer, PlotPurchaseCache};
 /// Field craft: shoot-and-scoot, the zone-of-control screen, pillage-to-heal
 /// and flipping nearby city-states. Four opt-in genes; see
@@ -5902,6 +5914,8 @@ impl AdvancedAi {
             missionary_last_charge_explores: false,
             missionary_explore: RefCell::new(BTreeMap::new()),
             missionary_evades_raiders: false,
+            one_war_at_a_time: false,
+            one_war: None,
 
             // ---- append: p-r ----------------------------------------
             religious_veto_defence: false,
@@ -6334,6 +6348,9 @@ impl AdvancedAi {
         } else {
             self.major_war_since = None;
         }
+        // The front and its tide clock; exact no-op with the gene off. See
+        // `advanced/one_war.rs`.
+        self.one_war_observe(g, pid);
     }
 
     fn plan_stale(&self, g: &Game, pid: usize) -> bool {
@@ -9153,26 +9170,29 @@ impl AdvancedAi {
             } else {
                 &wartime_majors
             };
-            active_fronts
-                .iter()
-                .copied()
-                .map(|rival| {
-                    (
-                        rival,
-                        self.rival_value_with_culture(
-                            g,
-                            pid,
-                            rival,
-                            rival_culture_pressures.get(&rival).copied(),
-                        ),
-                    )
+            // `one_war_at_a_time`: the front already chosen stays the plan's
+            // target while it is at war with us, so the army and the peace
+            // desk agree on which war this is. See `advanced/one_war.rs`.
+            self.one_war_front()
+                .filter(|front| active_fronts.contains(front))
+                .or_else(|| {
+                    active_fronts
+                        .iter()
+                        .copied()
+                        .map(|rival| {
+                            (
+                                rival,
+                                self.rival_value_with_culture(
+                                    g,
+                                    pid,
+                                    rival,
+                                    rival_culture_pressures.get(&rival).copied(),
+                                ),
+                            )
+                        })
+                        .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap().then(a.0.cmp(&b.0)))
+                        .map(|(rival, _)| rival)
                 })
-                .min_by(|a, b| {
-                    a.1.partial_cmp(&b.1)
-                        .unwrap()
-                        .then(a.0.cmp(&b.0))
-                })
-                .map(|(rival, _)| rival)
         };
         let suppression_target_city = actionable_denial
             .filter(|(rival, counter)| {
@@ -12590,6 +12610,15 @@ impl AdvancedAi {
                 g.turn.saturating_sub(started) >= 24
                     && g.turn.saturating_sub(self.last_campaign_progress) >= 12
             });
+        // `one_war_at_a_time`: a Joint War while any war burns is a second
+        // front by treaty; the fatigue acceptance stands down while the
+        // front still has something to take; the peace the gene wants is a
+        // white peace. See `advanced/one_war.rs`.
+        if self.one_war_refuses_joint_war(g, pid, deal) {
+            return -1_000.0;
+        }
+        let fatigued = fatigued && !self.one_war_presses(g, pid, partner);
+        let one_war_peace = self.one_war_peace(g, pid, partner).is_some();
         let denied_partner = plan.target_player == Some(partner)
             && (plan.strategy == GrandStrategy::Conquest
                 || g.is_at_war(pid, partner)
@@ -12597,7 +12626,7 @@ impl AdvancedAi {
 
         let mut value = deal.give_gold - deal.request_gold;
         if deal.peace {
-            value += if my_power < partner_power * 0.85 || fatigued {
+            value += if my_power < partner_power * 0.85 || fatigued || one_war_peace {
                 320.0
             } else if denied_partner {
                 // Recovery is a temporary battlefield posture, not an order
@@ -14898,6 +14927,12 @@ impl AdvancedAi {
                     && deal.expires >= g.turn
             });
             let envoy_reclaim = self.banked_envoy_reclaim_after_peace(g, pid, *other, plan);
+            // `one_war_at_a_time`: peace on every second front, and on the
+            // front once the tide has turned; the fatigue clause stands down
+            // while the front still has something to take. See
+            // `advanced/one_war.rs`.
+            let one_war_peace = self.one_war_peace(g, pid, *other);
+            let one_war_presses = self.one_war_presses(g, pid, *other);
             if g.is_at_war(pid, *other)
                 && !g.emergency_war_pair(pid, *other)
                 && !g.players[*other].is_minor
@@ -14911,13 +14946,25 @@ impl AdvancedAi {
                         && !appointed_objective)
                     || (!appointed_objective
                         && fatigued
+                        && !one_war_presses
                         && g.player_city_ids(*other).len() > 1)
-                    || envoy_reclaim.is_some())
+                    || envoy_reclaim.is_some()
+                    || one_war_peace.is_some())
             {
                 self.peace_offers.insert(*other);
+                if let Some(peace) = one_war_peace {
+                    let key = match peace {
+                        one_war::OneWarPeace::SecondFront => "one_war:peace:second_front",
+                        one_war::OneWarPeace::TideTurned => "one_war:peace:tide",
+                        one_war::OneWarPeace::Rout => "one_war:peace:rout",
+                    };
+                    *g.players[pid].counters.entry(key.to_string()).or_insert(0) += 1;
+                }
                 if self.journal().wants(crate::reasoning::Level::Decision) {
                     let their_power = g.military_power(*other);
-                    let because = if let Some((minor, needed)) = envoy_reclaim {
+                    let because = if let Some(peace) = one_war_peace {
+                        peace.reason().to_string()
+                    } else if let Some((minor, needed)) = envoy_reclaim {
                         format!(
                             "the plan has no campaign there and {needed} banked Envoy{} can immediately take {} after the Suzerain war ends",
                             if needed == 1 { "" } else { "s" },
@@ -14980,6 +15027,21 @@ impl AdvancedAi {
         let Some(target) = plan.target_player else {
             return;
         };
+        // `one_war_at_a_time`: the appointment and the surge refuse a second
+        // front when they are made; this refuses it at the declaration, for
+        // the war that arrived in between. See `advanced/one_war.rs`.
+        if self.one_war_holds_declaration(g, pid, target) {
+            *g.players[pid]
+                .counters
+                .entry("one_war:held_declarations".to_string())
+                .or_insert(0) += 1;
+            if self.journal().wants(crate::reasoning::Level::Strategy) {
+                think!(self.journal(), Military, Strategy,
+                       "Holding off war with {}", g.players[target].civ;
+                       "one war at a time, and a major war is already being fought");
+            }
+            return;
+        }
         if self.timed_war_opening(g, pid, target) {
             return;
         }
@@ -27045,6 +27107,11 @@ impl AdvancedAi {
         if enemies.is_empty() {
             return;
         }
+        // `one_war_at_a_time`: a group is aimed at the front, and at a second
+        // front only where it stands at a threatened city of ours. Local
+        // strength is still measured against every enemy. See
+        // `advanced/one_war.rs`.
+        let objective_enemies = self.one_war_objective_enemies(g, plan.threatened_city, &enemies);
         let visible = self.battlefront_visibility(g, pid);
 
         let mut remaining: BTreeSet<u32> = g
@@ -27096,7 +27163,7 @@ impl AdvancedAi {
             }
             units.sort_unstable();
             let anchor = Self::force_anchor(g, &units);
-            let objective = self.domain_objective(g, pid, plan, domain, anchor, &enemies);
+            let objective = self.domain_objective(g, pid, plan, domain, anchor, &objective_enemies);
             // ⚠ MEASURED AND REJECTED: pinning `focus_target` to the objective
             // city for a rush, on the theory that the first defender met
             // otherwise pulls the column off the capital. It made things
@@ -27104,7 +27171,7 @@ impl AdvancedAi {
             // capture slipped turn 65 to 86 — and the city's own ring still
             // never held more than two. A rush that walks past the defenders
             // to stand on the ring is a rush that gets killed on the ring.
-            let focus_target = self.force_focus_target(g, pid, &units, &enemies, plan);
+            let focus_target = self.force_focus_target(g, pid, &units, &objective_enemies, plan);
             let muster_radius = self.base.w.muster_radius.round().max(1.0) as i32;
             let readiness = units
                 .iter()
