@@ -1980,13 +1980,17 @@ class TheStandardScreen(unittest.TestCase):
         for phrase in ("-237", "[-267, -206]", "-15.37"):
             self.assertIn(phrase, self.notes, phrase)
 
-    def test_research_cull_keeps_its_historical_rows(self):
-        """The four 38,160-seat research candidates left source, not history."""
+    def test_cull_batches_keep_their_historical_rows(self):
+        """The eight 38,160-seat cull candidates left source, not history."""
         tags = (
             "chain-tech-lookahead",
             "research-floor-holds",
             "research-grants-first",
             "science-payback-horizon",
+            "builder-reward-survey",
+            "contact-posture",
+            "naval-production-policy",
+            "settle-plan-ahead",
         )
         live_tags = {gene["tag"] for gene in self.ledger["genes"]}
         ranked = ranking.RANKING_MD.read_text()
@@ -2002,7 +2006,8 @@ class TheStandardScreen(unittest.TestCase):
             str(batch.get("unverified", ""))
             for batch in self.ledger["reporting_batches"]
         )
-        self.assertIn("research-planning genes were deliberately removed",
+        self.assertIn("research-planning", reporting_notes)
+        self.assertIn("high-signal negative genes were deliberately removed",
                       reporting_notes)
 
     def test_the_legacy_share_axis_already_said_it(self):
