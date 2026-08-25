@@ -75,11 +75,6 @@ path = "experiments/closed/fog_census.rs"
 required-features = ["closed-experiments"]
 
 [[bin]]
-name = "fog_planning"
-path = "experiments/closed/fog_planning.rs"
-required-features = ["closed-experiments"]
-
-[[bin]]
 name = "expansion_investment"
 path = "experiments/closed/expansion_investment.rs"
 required-features = ["closed-experiments"]

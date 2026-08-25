@@ -9,8 +9,7 @@ use super::{
 };
 use crate::belief::{BeliefState, CitySighting};
 use crate::game::{
-    Action, ActionFamilies, CityDirective, CityRole, CongressResolution, DiplomaticDeal, Game,
-    Item,
+    Action, ActionFamilies, CityDirective, CityRole, CongressResolution, DiplomaticDeal, Game, Item,
 };
 use crate::name::Name;
 use crate::parallel::WorkPool;
