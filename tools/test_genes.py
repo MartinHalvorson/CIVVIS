@@ -1437,9 +1437,17 @@ class TheTableIsDerived(unittest.TestCase):
     def _versioned_tags(self) -> set[str]:
         """The ranked tags that belong to a versioned family — read from the
         tags themselves, not from the *Best version* cell, which reads `1`
-        for an unversioned gene as well as for a family whose original leads."""
-        tags = [cell(cells, "Gene").strip("`") for cells in self._ranked_rows()]
-        return {tag for family in gene_ledger.families_of(tags) for tag in family}
+        for an unversioned gene as well as for a family whose original leads.
+
+        ⚠ READ THE REGISTRY, NOT THE RANKED ROWS. `render()` decides a row is
+        versioned from `screenable_tags()`, and an unpriced version has no row
+        of its own — so a family whose `-2` has not been screened yet is
+        versioned in the table and unversioned here, and every rate cell in it
+        reads `v1 ...` against a pattern expecting none. Ten such families
+        arrived at once with the version-2 batch.
+        """
+        return {tag for family in gene_ledger.families_of(ranking.screenable_tags())
+                for tag in family}
 
     def test_diff_is_the_on_rate_minus_the_off_rate(self):
         """The column that replaced the pooled seat count (operator, 2026-08-22).

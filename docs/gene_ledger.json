@@ -100,6 +100,33 @@
     ],
     "versions": "a pinned version pins its family; the family head - the priced version with the highest tracked wins (win_diff), ties to the higher version - is what ships and what deployment_genome records; a family holds at most 3 versions, the third-best leaves before a fourth is added",
     "family_heads": {
+      "amenity-project-preemption": {
+        "pinned": "amenity-project-preemption",
+        "head": "amenity-project-preemption",
+        "ships": "amenity-project-preemption",
+        "versions": {
+          "amenity-project-preemption": -0.037946,
+          "amenity-project-preemption-2": null
+        }
+      },
+      "campus-adjacency-threshold": {
+        "pinned": null,
+        "head": "campus-adjacency-threshold",
+        "ships": null,
+        "versions": {
+          "campus-adjacency-threshold": -0.007025,
+          "campus-adjacency-threshold-2": null
+        }
+      },
+      "district-coverage": {
+        "pinned": null,
+        "head": "district-coverage",
+        "ships": null,
+        "versions": {
+          "district-coverage": 0.008266,
+          "district-coverage-2": null
+        }
+      },
       "fog-honest": {
         "pinned": null,
         "head": null,
@@ -107,6 +134,69 @@
         "versions": {
           "fog-honest": null,
           "fog-honest-2": null
+        }
+      },
+      "guru-heals-the-corps": {
+        "pinned": "guru-heals-the-corps",
+        "head": "guru-heals-the-corps",
+        "ships": "guru-heals-the-corps",
+        "versions": {
+          "guru-heals-the-corps": -0.107723,
+          "guru-heals-the-corps-2": null
+        }
+      },
+      "holy-site-where-the-threat-is": {
+        "pinned": null,
+        "head": "holy-site-where-the-threat-is",
+        "ships": null,
+        "versions": {
+          "holy-site-where-the-threat-is": -0.031224,
+          "holy-site-where-the-threat-is-2": null
+        }
+      },
+      "naval-recon": {
+        "pinned": "naval-recon",
+        "head": "naval-recon",
+        "ships": "naval-recon",
+        "versions": {
+          "naval-recon": -0.045836,
+          "naval-recon-2": null
+        }
+      },
+      "power-the-laboratory": {
+        "pinned": null,
+        "head": "power-the-laboratory",
+        "ships": null,
+        "versions": {
+          "power-the-laboratory": 0.035908,
+          "power-the-laboratory-2": null
+        }
+      },
+      "settler-guard-holds": {
+        "pinned": null,
+        "head": "settler-guard-holds",
+        "ships": null,
+        "versions": {
+          "settler-guard-holds": 0.080401,
+          "settler-guard-holds-2": null
+        }
+      },
+      "settler-target-hysteresis": {
+        "pinned": "settler-target-hysteresis",
+        "head": "settler-target-hysteresis",
+        "ships": "settler-target-hysteresis",
+        "versions": {
+          "settler-target-hysteresis": 0.011271,
+          "settler-target-hysteresis-2": null
+        }
+      },
+      "siege-is-progress": {
+        "pinned": null,
+        "head": "siege-is-progress",
+        "ships": null,
+        "versions": {
+          "siege-is-progress": -0.144271,
+          "siege-is-progress-2": null
         }
       }
     },

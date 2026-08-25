@@ -1354,6 +1354,17 @@ const LANE_COMMIT_REVIEW: u32 = 10;
 /// is noise.
 const LANE_COMMIT_SWITCH_MARGIN: i32 = 20;
 
+/// `campus_adjacency_threshold_2`: how many of the best-ranked settle sites
+/// are re-ranked by whether their rings could host a threshold Campus. The
+/// site value is the expensive half of a ranking scan and the re-rank spends
+/// none of it, so twelve stays trivially cheap while covering every site a
+/// Settler could realistically be sent to. (Was `CAMPUS_THRESHOLD_SETTLE_CANDIDATES`
+/// until that gene was culled; this gene is the remaining reader.)
+const CAMPUS_THRESHOLD_SETTLE_CANDIDATES: usize = 12;
+/// The share of a settle site's own value `campus_adjacency_threshold_2`
+/// adds when a plot in its rings could host a threshold Campus.
+const CAMPUS_THRESHOLD_SETTLE_SHARE: f64 = 0.15;
+
 /// Route-scoring is exact for the valuable prefix, then falls back to the
 /// existing reachability scan if that prefix is disconnected. This bounds the
 /// cost of asking the pathfinder about every site on a large map while keeping
@@ -4515,12 +4526,36 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// Version 2 of `amenity_project_preemption`: the same crisis trigger and
+    /// the same choice of repair, but an amenity BUILDING is bought with Gold
+    /// when the treasury covers it, and only otherwise pauses the repeatable
+    /// project. Version 1 paid for every repair out of the one queue the
+    /// Science plan was using; the fires probe of a version that merely fired
+    /// earlier (severe at −2) lost 3.7 points of score share on 29 seats, so
+    /// the cost of the repair is the production, not the trigger. A district
+    /// still goes through production. Implies version 1; its enable turns
+    /// version 1 off. Opt-in gene `amenity-project-preemption-2`.
+    amenity_project_preemption_2: bool,
 
     // ---- append: c-d ------------------------------------------------
     /// A Builder chops woods, rainforest or marsh into a Settler, a district
     /// or a wonder at the front of the owning city's queue. Opt-in gene
     /// `chop-into-the-queue`; see `advanced/deity_habits.rs`.
     chop_into_the_queue: bool,
+    /// The at-war cities an own unit has already reached this campaign;
+    /// state for `siege_is_progress_2`, rebuilt from the at-war set each
+    /// observation like `campaign_city_health`.
+    campaign_cities_reached: BTreeSet<u32>,
+    /// Version 2 of `campus_adjacency_threshold`: the same district pricing,
+    /// plus the lever the gene's own survey said was missing — CITY SITING.
+    /// The best legal Campus plot of a founded city never reached the
+    /// multiplier's raw adjacency of 4, because that decision was made when
+    /// the city was placed. With this on, the top `CAMPUS_THRESHOLD_SETTLE_CANDIDATES`
+    /// settle sites are credited `CAMPUS_THRESHOLD_SETTLE_SHARE` of their own
+    /// value when a plot in their first three rings could host a Campus at
+    /// raw Science adjacency ≥ 4. Implies version 1; its enable turns
+    /// version 1 off. Opt-in gene `campus-adjacency-threshold-2`.
+    campus_adjacency_threshold_2: bool,
 
     /// Opt-in gene `coalition-before-war`; see `advanced/coalition.rs`.
     coalition_before_war: bool,
@@ -4587,6 +4622,22 @@ pub struct AdvancedAi {
     /// the citizens work food. Opt-in gene `growth-to-settle`; see
     /// `advanced/growth_to_settle.rs`.
     growth_to_settle: bool,
+    /// Version 2 of `guru_heals_the_corps`: the founder may hold one Guru
+    /// whenever a religious unit of its own is damaged — not only while the
+    /// home is under conversion pressure. The corps that is damaged is the
+    /// one out spreading, and version 1's home-pressure gate kept the heal
+    /// from it. Implies version 1; its enable turns version 1 off. Opt-in
+    /// gene `guru-heals-the-corps-2`.
+    guru_heals_the_corps_2: bool,
+    /// Version 2 of `holy_site_where_the_threat_is`: the same claim in the
+    /// same slipping city, bought with Gold or not made at all. Version 1
+    /// fell back to the front of the city's own queue, and a Holy Site takes
+    /// longer to raise than a city takes to flip — the queue paid and the
+    /// counter arrived late; a probe of an EARLIER trigger with the same
+    /// queue fallback lost 2.3 points of score share. Implies version 1; its
+    /// enable turns version 1 off. Opt-in gene
+    /// `holy-site-where-the-threat-is-2`.
+    holy_site_where_the_threat_is_2: bool,
 
     // ---- append: l-o ------------------------------------------------
     /// A refused order falls through to the next-best candidate the planner
@@ -4656,6 +4707,16 @@ pub struct AdvancedAi {
     /// once per turn from the start-of-turn board so units planned in
     /// parallel agree on them. See `advanced/recon_disruption.rs`.
     recon_disruption: recon_disruption::ReconPlan,
+    /// Version 2 of `power_the_laboratory`: the plant credit of version 1,
+    /// plus the other side of the switch — a building whose `powered_*`
+    /// yields are already switched on, because this city is powered and
+    /// stays powered with the building's own demand added, is worth those
+    /// yields. Version 1 found nothing to buy because the plants were
+    /// already built for production; the Lab, Stock Exchange, Factory and
+    /// Broadcast Centre standing in those powered cities were still priced
+    /// without their larger half. Implies version 1; its enable turns
+    /// version 1 off. Opt-in gene `power-the-laboratory-2`.
+    power_the_laboratory_2: bool,
 
     // ---- append: s-s ------------------------------------------------
     /// A ranged unit inside a hostile melee body's reach steps to a firing
@@ -4680,6 +4741,27 @@ pub struct AdvancedAi {
     /// `science_victory_drive`'s state while the seat is driving: since
     /// when, the last reading of the field, and the launch city.
     science_drive: Option<ScienceDrive>,
+    /// Version 2 of `settler_guard_holds`: the "could hold" bar also fails
+    /// when TWO visible hostiles that can reach the tile each match the
+    /// guard's strength. Version 1 asked only whether one hostile was 1.5×
+    /// the guard; the settlers of civvis-20260819T025840Z were taken beside
+    /// three horsemen, none of them 1.5× a Warrior. Implies version 1; its
+    /// enable turns version 1 off. Opt-in gene `settler-guard-holds-2`.
+    settler_guard_holds_2: bool,
+    /// Version 2 of `settler_target_hysteresis`: a site one settler drops
+    /// for danger is set aside for EVERY own settler for the same window
+    /// (`settler_dead_sites`), so a second settler does not march to the
+    /// tile the first just fled. Implies version 1; its enable turns
+    /// version 1 off. Opt-in gene `settler-target-hysteresis-2`.
+    settler_target_hysteresis_2: bool,
+    /// Version 2 of `siege_is_progress`: arriving counts too. The first
+    /// turn an own land military unit stands within two tiles of an at-war
+    /// city resets the fatigue clock once for that city, because the walk
+    /// to a rival's city routinely takes longer than the twelve-turn stall
+    /// window and version 1 could only see damage already landing. Implies
+    /// version 1; its enable turns version 1 off. Opt-in gene
+    /// `siege-is-progress-2`.
+    siege_is_progress_2: bool,
 
     // ---- append: t-z ------------------------------------------------
     /// A melee unit with nothing to hit stands where its zone of control
@@ -5642,9 +5724,12 @@ impl AdvancedAi {
             // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
 
             // ---- append: a-b ----------------------------------------
+            amenity_project_preemption_2: false,
 
             // ---- append: c-d ----------------------------------------
             chop_into_the_queue: false,
+            campaign_cities_reached: BTreeSet::new(),
+            campus_adjacency_threshold_2: false,
 
             coalition_before_war: false,
             coalition: None,
@@ -5666,6 +5751,8 @@ impl AdvancedAi {
 
             // ---- append: g-k ----------------------------------------
             growth_to_settle: false,
+            guru_heals_the_corps_2: false,
+            holy_site_where_the_threat_is_2: false,
 
             // ---- append: l-o ----------------------------------------
             order_retry: false,
@@ -5683,6 +5770,7 @@ impl AdvancedAi {
             pillage_to_heal: false,
             pass_picket: false,
             recon_disruption: recon_disruption::ReconPlan::default(),
+            power_the_laboratory_2: false,
 
             // ---- append: s-s ----------------------------------------
             shoot_and_scoot: false,
@@ -5690,6 +5778,9 @@ impl AdvancedAi {
             settler_second_look: false,
             science_victory_drive: false,
             science_drive: None,
+            settler_guard_holds_2: false,
+            settler_target_hysteresis_2: false,
+            siege_is_progress_2: false,
 
             // ---- append: t-z ----------------------------------------
             zoc_screen: false,
@@ -5784,7 +5875,7 @@ impl AdvancedAi {
 
     /// Whether the sea's recon arm is on. See `BasicAi::naval_recon`.
     pub fn naval_recon(&self) -> bool {
-        self.base.naval_recon
+        self.base.naval_recon_on()
     }
 
     /// Whether the adjacent camp clear is on. See
@@ -6014,12 +6105,32 @@ impl AdvancedAi {
         // stalled. The map is rebuilt from the current at-war set each
         // observation, so peace forgets a city and a later war starts a fresh
         // baseline instead of inheriting one from the last campaign.
-        if self.siege_is_progress {
+        if self.siege_is_progress_on() {
             let mut health_now = BTreeMap::new();
             let mut siege_advanced = false;
+            // See `siege_is_progress_2`: the first own land unit within two
+            // tiles of an at-war city is the campaign arriving.
+            let mut reached_now = BTreeSet::new();
             for (city, observed) in &g.cities {
                 if observed.owner == pid || !g.is_at_war(pid, observed.owner) {
                     continue;
+                }
+                if self.siege_is_progress_2 {
+                    let arrived = g.units.values().any(|unit| {
+                        unit.owner == pid
+                            && g.rules.units[unit.kind].class == "military"
+                            && !matches!(
+                                g.rules.units[unit.kind].domain.as_deref(),
+                                Some("sea" | "air")
+                            )
+                            && g.wdist(unit.pos, observed.pos) <= 2
+                    });
+                    if arrived {
+                        if !self.campaign_cities_reached.contains(city) {
+                            siege_advanced = true;
+                        }
+                        reached_now.insert(*city);
+                    }
                 }
                 let health = (observed.hp, observed.wall_hp);
                 if self
@@ -6035,6 +6146,7 @@ impl AdvancedAi {
                 self.last_campaign_progress = g.turn;
             }
             self.campaign_city_health = health_now;
+            self.campaign_cities_reached = reached_now;
         }
         let major_war = g.players.iter().any(|p| {
             p.id != pid && p.alive && !p.is_minor && !p.is_barbarian && g.is_at_war(pid, p.id)
@@ -10273,6 +10385,37 @@ impl AdvancedAi {
         switched
     }
 
+    /// The `powered_*` yields `spec` would pay from the turn it stands, if
+    /// this city's supply covers its demand with the building's own added.
+    /// See `power_the_laboratory_2`; zero for a building with no powered half,
+    /// a regional building (powered by its own city's count, as
+    /// `power_switched_on` already skips) or a city the building would leave
+    /// dark.
+    fn powered_yields_if_powered(
+        g: &Game,
+        city: &crate::game::City,
+        spec: &crate::rules::BuildingSpec,
+    ) -> Yields {
+        let of = |key: &str| spec.effects.get(key).copied().unwrap_or(0.0);
+        let powered = Yields {
+            food: of("powered_food"),
+            production: of("powered_production"),
+            gold: of("powered_gold"),
+            science: of("powered_science"),
+            culture: of("powered_culture"),
+            faith: of("powered_faith"),
+        };
+        if powered.total() <= 0.0 || spec.regional_range > 0 {
+            return Yields::default();
+        }
+        let demand = g.city_power_demand(city) + spec.power;
+        if demand <= 0.0 || g.city_power_supply(city) + 1e-9 >= demand {
+            powered
+        } else {
+            Yields::default()
+        }
+    }
+
     /// How much more this Campus building is owed than the chain's first
     /// rung. See `research_tier_premium`; 1.0 when the gene is off, so the
     /// shipped flat debt is recovered exactly.
@@ -10342,7 +10485,7 @@ impl AdvancedAi {
 
     /// Cache ruleset constants for the adjacency threshold once per decision.
     fn refresh_campus_multiplier_constants(&mut self, g: &Game) {
-        if !self.campus_adjacency_threshold {
+        if !self.campus_adjacency_threshold_on() {
             self.campus_multiplier_half = 0.0;
             self.campus_chain_science = 0.0;
             return;
@@ -10369,7 +10512,7 @@ impl AdvancedAi {
     /// The extra beakers a Campus plot at or above the multiplier's adjacency
     /// threshold will earn this city. See `campus_adjacency_threshold`.
     fn campus_threshold_bonus(&self, g: &Game, family: Name, pos: Pos) -> f64 {
-        if !self.campus_adjacency_threshold
+        if !self.campus_adjacency_threshold_on()
             || family != crate::name!("campus")
             || self.campus_multiplier_half <= 0.0
         {
@@ -11875,7 +12018,7 @@ impl AdvancedAi {
         // This shares the live-only crisis arm with the concrete repair chain:
         // normal and frozen controller decks return before reading city
         // Amenities at all.
-        if self.amenity_project_preemption
+        if self.amenity_project_preemption_on()
             && city_ids
                 .iter()
                 .filter(|cid| {
@@ -18362,7 +18505,7 @@ impl AdvancedAi {
                 && !player.is_barbarian
                 && g.is_at_war(pid, player.id)
         });
-        if !self.amenity_project_preemption || plan.strategy == GrandStrategy::Recovery {
+        if !self.amenity_project_preemption_on() || plan.strategy == GrandStrategy::Recovery {
             return;
         }
 
@@ -18500,6 +18643,29 @@ impl AdvancedAi {
         let Some((_, _, _, city, _, item)) = best else {
             return;
         };
+        // See `amenity_project_preemption_2`: the treasury pays for a
+        // building when it can, and the queue keeps its project. The engine
+        // prices the purchase and refuses it when Gold cannot cover it.
+        if self.amenity_project_preemption_2 {
+            if let Item::Building { building } = &item {
+                if g.apply(
+                    pid,
+                    &Action::BuyBuilding {
+                        city,
+                        building: *building,
+                        currency: "gold".to_string(),
+                    },
+                )
+                .is_ok()
+                {
+                    think!(self.journal(), Economy, Decision,
+                           "{} buys {} for an amenity crisis", g.cities[&city].name, building;
+                           "the treasury covers the repair, so the queue keeps its project";
+                           g.cities[&city].pos);
+                    return;
+                }
+            }
+        }
         let prior = g.cities[&city].queue.first().cloned();
         let city_name = g.cities[&city].name.clone();
         if g
@@ -18550,7 +18716,7 @@ impl AdvancedAi {
         pid: usize,
         plan: &StrategicPlan,
     ) {
-        if !self.amenity_project_preemption {
+        if !self.amenity_project_preemption_on() {
             return;
         }
 
@@ -20862,9 +21028,19 @@ impl AdvancedAi {
                     // price of a beaker.
                     // See `power_the_laboratory`: the Research Lab's larger
                     // half is switched off until something generates power.
-                    let power_unlock = if self.power_the_laboratory && !spec.wonder {
+                    let power_unlock = if self.power_the_laboratory_on() && !spec.wonder {
                         self.yield_value(Self::power_switched_on(g, city, spec), plan.strategy)
                             * 42.0
+                    } else {
+                        0.0
+                    };
+                    // See `power_the_laboratory_2`: a building whose powered
+                    // half would be on the day it stands is worth that half.
+                    let powered_now = if self.power_the_laboratory_2 && !spec.wonder {
+                        self.yield_value(
+                            Self::powered_yields_if_powered(g, city, spec),
+                            plan.strategy,
+                        ) * 42.0
                     } else {
                         0.0
                     };
@@ -20882,6 +21058,7 @@ impl AdvancedAi {
                     };
                     self.yield_value(spec.yields, plan.strategy) * 42.0
                         + power_unlock
+                        + powered_now
                         + multiplied_science
                         + culture_debt
                         + research_debt
@@ -22237,6 +22414,33 @@ impl AdvancedAi {
     /// `settlement_unit_step_toward_safe` applies to a formation leader:
     /// a reachable attacker at more than one and a half times the guard's
     /// effective strength. See `settler_guard_holds`.
+    /// The version-2 genes of 2026-08-24 each imply their version 1, and a
+    /// seat plays one version of a family (the newer enable turns the older
+    /// off), so shared code reads the family through these.
+    fn amenity_project_preemption_on(&self) -> bool {
+        self.amenity_project_preemption || self.amenity_project_preemption_2
+    }
+
+    fn campus_adjacency_threshold_on(&self) -> bool {
+        self.campus_adjacency_threshold || self.campus_adjacency_threshold_2
+    }
+
+    fn power_the_laboratory_on(&self) -> bool {
+        self.power_the_laboratory || self.power_the_laboratory_2
+    }
+
+    fn settler_guard_holds_on(&self) -> bool {
+        self.settler_guard_holds || self.settler_guard_holds_2
+    }
+
+    fn settler_target_hysteresis_on(&self) -> bool {
+        self.settler_target_hysteresis || self.settler_target_hysteresis_2
+    }
+
+    fn siege_is_progress_on(&self) -> bool {
+        self.siege_is_progress || self.siege_is_progress_2
+    }
+
     fn guard_outmatched_at(
         &self,
         g: &Game,
@@ -22246,6 +22450,9 @@ impl AdvancedAi {
         visible: &TileBits,
     ) -> bool {
         let defender = crate::game::effective_strength(g.unit_strength(guard, false), guard.hp);
+        // See `settler_guard_holds_2`: two matching hostiles in reach break a
+        // guard as surely as one at 1.5×.
+        let mut matching = 0;
         g.units.values().any(|unit| {
             if unit.owner == pid
                 || !g.is_at_war(pid, unit.owner)
@@ -22271,7 +22478,13 @@ impl AdvancedAi {
             };
             let attack_reach = attack_range + spec.moves.ceil() as i32;
             let attacker = crate::game::effective_strength(g.unit_strength(unit, false), unit.hp);
-            g.wdist(unit.pos, pos) <= attack_reach && attacker > defender * 1.5
+            if g.wdist(unit.pos, pos) > attack_reach {
+                return false;
+            }
+            if self.settler_guard_holds_2 && attacker >= defender {
+                matching += 1;
+            }
+            attacker > defender * 1.5 || matching >= 2
         })
     }
 
@@ -22321,7 +22534,7 @@ impl AdvancedAi {
                             // settler's step from its tile, or already stands
                             // on the destination and holds there.
                             && (guard.pos == settler_pos
-                                || (self.settler_guard_holds && guard.pos == pos))
+                                || (self.settler_guard_holds_on() && guard.pos == pos))
                             && guard.hp >= STACKED_GUARD_MIN_HP
                             && g.rules.units[guard.kind].class == "military"
                             && !matches!(
@@ -22330,7 +22543,7 @@ impl AdvancedAi {
                             )
                             // See `settler_guard_holds`: a guard the first
                             // hostile in reach would break is no protection.
-                            && (!self.settler_guard_holds
+                            && (!self.settler_guard_holds_on()
                                 || !self.guard_outmatched_at(g, pid, guard, pos, visible))
                     })
                 })
@@ -22341,7 +22554,7 @@ impl AdvancedAi {
         // taken one tile outside their own capital.
         let nearby_escort = discount_support
             && (stacked_guard
-                || ((!civilian_mover || !self.settler_guard_holds)
+                || ((!civilian_mover || !self.settler_guard_holds_on())
                     && g.units.values().any(|unit| {
                         unit.owner == pid
                             && g.rules.units[unit.kind].class == "military"
@@ -23244,8 +23457,70 @@ impl AdvancedAi {
         if sites.is_empty() {
             sites = emergency_sites;
         }
+        if self.campus_adjacency_threshold_2 && !stop_at_first && sites.len() > 1 {
+            self.campus_threshold_settle_rerank(g, &mut sites);
+        }
         sites.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap().then(a.0.cmp(&b.0)));
         sites
+    }
+
+    /// `campus_adjacency_threshold_2`: credit each of the best
+    /// `CAMPUS_THRESHOLD_SETTLE_CANDIDATES` sites `CAMPUS_THRESHOLD_SETTLE_SHARE` of
+    /// its own value when a plot in its first three rings could host a Campus
+    /// at raw Science adjacency of `CAMPUS_MULTIPLIER_ADJACENCY_THRESHOLD` —
+    /// the plot the district pricing later finds or does not find. Never
+    /// lowers a site.
+    fn campus_threshold_settle_rerank(&self, g: &Game, sites: &mut [(Pos, f64)]) {
+        sites.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap().then(a.0.cmp(&b.0)));
+        let top = sites.len().min(CAMPUS_THRESHOLD_SETTLE_CANDIDATES);
+        for site in sites.iter_mut().take(top) {
+            if site.1 > 0.0 && Self::campus_threshold_plot_near(g, site.0) {
+                site.1 += site.1 * CAMPUS_THRESHOLD_SETTLE_SHARE;
+            }
+        }
+    }
+
+    /// Whether a plot within three tiles of `site` (not the site itself)
+    /// could carry a Campus at the multiplier's raw adjacency. The plot test
+    /// is the city-free half of `Game::district_sites`: land, passable, no
+    /// district, wonder, district-blocking feature or non-bonus resource.
+    fn campus_threshold_plot_near(g: &Game, site: Pos) -> bool {
+        let campus = crate::name!("campus");
+        g.wdisk(site, 3).into_iter().any(|pos| {
+            if pos == site {
+                return false;
+            }
+            let Some(tile) = g.map.get(pos) else {
+                return false;
+            };
+            if g.rules.is_water(tile)
+                || !g.rules.is_passable(tile)
+                || tile.district.is_some()
+                || tile.district_foundation.is_some()
+                || tile.wonder.is_some()
+                || tile.feature.as_ref().is_some_and(|feature| {
+                    g.rules
+                        .features
+                        .get(feature.as_str())
+                        .is_some_and(|feature| feature.natural_wonder || feature.blocks_district)
+                })
+                || tile.resource.as_ref().is_some_and(|resource| {
+                    !matches!(
+                        g.rules.resources[resource].class.as_str(),
+                        "bonus" | "artifact"
+                    )
+                })
+            {
+                return false;
+            }
+            let mut raw = 0.0;
+            for source in g.district_adjacency_sources(campus, pos) {
+                if source.source != "adjacency_bonus" {
+                    raw += source.yields.science;
+                }
+            }
+            raw >= CAMPUS_MULTIPLIER_ADJACENCY_THRESHOLD
+        })
     }
 
     fn best_settle_site(&self, g: &Game, pid: usize, from: Pos, radius: i32) -> Option<(Pos, f64)> {
@@ -23981,7 +24256,7 @@ impl AdvancedAi {
                                 // guard is held here, and only while it could
                                 // hold. Anyone else walks off; an outmatched
                                 // guard is broken and the settler taken.
-                                && (!self.settler_guard_holds
+                                && (!self.settler_guard_holds_on()
                                     || (self.settler_guards.get(&uid) == Some(&other)
                                         && unit.hp >= STACKED_GUARD_MIN_HP
                                         && !self.guard_outmatched_at(
@@ -24270,7 +24545,7 @@ impl AdvancedAi {
         // See `settler_target_hysteresis`: a cached site the validation just
         // dropped stays out of the next picks, so a threat flickering at the
         // edge of sight cannot flip the settler between two sites every frame.
-        if self.settler_target_hysteresis && valid_target.is_none() {
+        if self.settler_target_hysteresis_on() && valid_target.is_none() {
             if let Some(dropped) = self.settler_targets.get(&uid).copied() {
                 if Some(dropped) != avoid {
                     self.settler_avoid.insert(
@@ -24284,10 +24559,27 @@ impl AdvancedAi {
                             next picks for {SETTLER_TARGET_HYSTERESIS_TURNS} standard turns so a \
                             threat flickering at the edge of sight cannot flip the march every frame";
                            dropped);
+                    // See `settler_target_hysteresis_2`: the danger is the
+                    // site's, not this settler's, so every other own settler
+                    // sets it aside for the same window.
+                    if self.settler_target_hysteresis_2 {
+                        let until = g.turn + g.standard_duration(SETTLER_TARGET_HYSTERESIS_TURNS);
+                        let others: Vec<u32> = g
+                            .player_unit_ids(pid)
+                            .into_iter()
+                            .filter(|other| *other != uid && g.units[other].kind == "settler")
+                            .collect();
+                        for other in others {
+                            self.settler_dead_sites
+                                .entry(other)
+                                .or_default()
+                                .insert(dropped, until);
+                        }
+                    }
                 }
             }
         }
-        let avoid = if self.settler_target_hysteresis {
+        let avoid = if self.settler_target_hysteresis_on() {
             self.settler_avoid.get(&uid).map(|(position, _)| *position)
         } else {
             avoid
@@ -28856,7 +29148,7 @@ impl AdvancedAi {
         // See `settler_guard_holds`: a bound guard sharing its settler's tile
         // holds there before it heals or retreats — leaving is what exposes
         // the civilian, and the settler's own step decides for the pair.
-        if self.settler_guard_holds
+        if self.settler_guard_holds_on()
             && self.formationless_settler_escort()
             && spec.class == "military"
             && self.settler_guards.iter().any(|(settler, guard)| {
@@ -30485,7 +30777,7 @@ impl AdvancedAi {
     /// arm still buys only the first ship; this merely lets a spare hull open
     /// a distinct frontier instead of standing down. See `BasicAi::naval_recon`.
     fn naval_explorer(&self, g: &Game, pid: usize) -> Vec<u32> {
-        if !self.base.naval_recon || !BasicAi::unseen_water_remains(g, pid) {
+        if !self.base.naval_recon_on() || !BasicAi::unseen_water_remains(g, pid) {
             return Vec::new();
         }
         let mut ships = g
