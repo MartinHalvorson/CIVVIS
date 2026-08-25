@@ -243,16 +243,18 @@ impl AdvancedAi {
             .filter_map(|front| {
                 let to_rival = g.wdist(pos, front.their_city);
                 let to_us = g.wdist(pos, front.our_city);
-                if to_rival > CONTESTED_LAND_RADIUS || to_rival >= front.gap || to_us >= front.gap
-                {
+                if to_rival > CONTESTED_LAND_RADIUS || to_rival >= front.gap || to_us >= front.gap {
                     return None;
                 }
                 let closed = f64::from(front.gap - to_rival);
-                let credit =
-                    (CONTESTED_LAND_BASE + closed * CONTESTED_LAND_PER_TILE).min(CONTESTED_LAND_CAP);
+                let credit = (CONTESTED_LAND_BASE + closed * CONTESTED_LAND_PER_TILE)
+                    .min(CONTESTED_LAND_CAP);
                 Some((*front, credit))
             })
-            .max_by(|a, b| a.1.total_cmp(&b.1).then(b.0.their_city.cmp(&a.0.their_city)))
+            .max_by(|a, b| {
+                a.1.total_cmp(&b.1)
+                    .then(b.0.their_city.cmp(&a.0.their_city))
+            })
     }
 
     /// The credit alone. Zero wherever `contested_land_front` is `None`.
@@ -290,7 +292,11 @@ impl BasicAi {
     /// distance from `city` to the nearest city of a met, living major that
     /// is not a team-mate, when that is within
     /// [`CONTESTED_LAND_FRONTIER_RADIUS`].
-    pub(crate) fn contested_frontier_distance_inner(g: &Game, pid: usize, city: Pos) -> Option<i32> {
+    pub(crate) fn contested_frontier_distance_inner(
+        g: &Game,
+        pid: usize,
+        city: Pos,
+    ) -> Option<i32> {
         g.cities
             .values()
             .filter(|other| other.owner != pid)
@@ -310,7 +316,12 @@ impl BasicAi {
     /// `contested_land_first`: how far `city` stands from the nearest
     /// neighbour's city when it is a frontier city, `None` otherwise or with
     /// the gene off. Never for a minor or the barbarian seat.
-    pub(crate) fn contested_frontier_distance(&self, g: &Game, pid: usize, city: Pos) -> Option<i32> {
+    pub(crate) fn contested_frontier_distance(
+        &self,
+        g: &Game,
+        pid: usize,
+        city: Pos,
+    ) -> Option<i32> {
         if !self.contested_land_first || self.minor || self.barb {
             return None;
         }

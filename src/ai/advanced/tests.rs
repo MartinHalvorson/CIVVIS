@@ -34709,9 +34709,7 @@ fn a_neighbour_twelve_tiles_east(met: bool) -> Game {
 /// the ring their Settlers reach — and it reaches the site value.
 #[test]
 fn contested_land_credit_pays_the_ground_between_us_and_a_met_neighbour() {
-    use super::contested_land::{
-        CONTESTED_LAND_BASE, CONTESTED_LAND_CAP, CONTESTED_LAND_PER_TILE,
-    };
+    use super::contested_land::{CONTESTED_LAND_BASE, CONTESTED_LAND_CAP, CONTESTED_LAND_PER_TILE};
     let game = a_neighbour_twelve_tiles_east(true);
     let shipped = AdvancedAi::new();
     let mut ai = AdvancedAi::new();
@@ -34767,7 +34765,10 @@ fn contested_land_credit_needs_a_decent_army() {
     let between = (16, 10);
     let mut ai = AdvancedAi::new();
     ai.enable_contested_land_first();
-    assert!(ai.contested_land_credit(&game, 0, between) > 0.0, "two on one is decent");
+    assert!(
+        ai.contested_land_credit(&game, 0, between) > 0.0,
+        "two on one is decent"
+    );
 
     // The neighbour raises four more Warriors: 40 against 100.
     for step in 0..4 {
@@ -34784,15 +34785,28 @@ fn contested_land_credit_needs_a_decent_army() {
         game.spawn_unit("warrior", 0, (9, 11 + step));
     }
     assert!(game.military_power(0) >= CONTESTED_LAND_POWER_RATIO * game.military_power(1));
-    assert!(ai.contested_land_credit(&game, 0, between) > 0.0, "a decent army claims");
+    assert!(
+        ai.contested_land_credit(&game, 0, between) > 0.0,
+        "a decent army claims"
+    );
 
     // One body is not an army, whatever the ratio says.
     let mut lone = a_neighbour_twelve_tiles_east(true);
-    let ours: Vec<u32> = lone.units.values().filter(|u| u.owner == 0).map(|u| u.id).collect();
+    let ours: Vec<u32> = lone
+        .units
+        .values()
+        .filter(|u| u.owner == 0)
+        .map(|u| u.id)
+        .collect();
     for uid in &ours[1..] {
         lone.remove_unit(*uid);
     }
-    let theirs: Vec<u32> = lone.units.values().filter(|u| u.owner == 1).map(|u| u.id).collect();
+    let theirs: Vec<u32> = lone
+        .units
+        .values()
+        .filter(|u| u.owner == 1)
+        .map(|u| u.id)
+        .collect();
     for uid in theirs {
         lone.remove_unit(uid);
     }
@@ -34883,7 +34897,10 @@ fn a_frontier_city_is_walled_and_garrisoned_under_contested_land_first() {
     ai.enable_home_defense();
     ai.enable_contested_land_first();
 
-    assert_eq!(shipped.contested_land_walls_value(&game, 0, (16, 10), "walls"), 0.0);
+    assert_eq!(
+        shipped.contested_land_walls_value(&game, 0, (16, 10), "walls"),
+        0.0
+    );
     assert_eq!(
         ai.contested_land_walls_value(&game, 0, (16, 10), "walls"),
         CONTESTED_LAND_FRONTIER_WALLS
@@ -34910,7 +34927,10 @@ fn a_frontier_city_is_walled_and_garrisoned_under_contested_land_first() {
         "one Warrior walks to the frontier city; the other stays free"
     );
     assert!(
-        ai.base.garrison_assignments(&game, 0, &[]).iter().all(|(_, city)| *city != (10, 10)),
+        ai.base
+            .garrison_assignments(&game, 0, &[])
+            .iter()
+            .all(|(_, city)| *city != (10, 10)),
         "the capital wants none"
     );
 }

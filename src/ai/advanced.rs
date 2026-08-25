@@ -23414,13 +23414,12 @@ impl AdvancedAi {
         // `contested_land_first`: pressing a neighbour's border is the point
         // where the ground is contested and the army can hold it. See
         // `advanced/contested_land.rs`.
-        let provocation = if self.settlement_safety
-            && !self.contested_land_waives_provocation(g, pid, pos)
-        {
-            self.foreign_border_pressure(g, pid, pos)
-        } else {
-            0.0
-        };
+        let provocation =
+            if self.settlement_safety && !self.contested_land_waives_provocation(g, pid, pos) {
+                self.foreign_border_pressure(g, pid, pos)
+            } else {
+                0.0
+            };
         self.settlement_tile_risk(g, pid, None, pos, visible) + isolation + provocation
     }
 
