@@ -817,6 +817,51 @@ class PolicyTests(unittest.TestCase):
         )
         self.assertTrue(any("collide with PR #5" in error for error in errors), errors)
 
+    def test_a_live_game_pr_without_a_citation_gets_a_notice_not_an_error(self):
+        advisories = []
+        errors = collab.validate_pr(
+            pr(self.branch, body(paths="`tools/civ6_control/mod/**`"), draft=False),
+            files=["tools/civ6_control/mod/CivvisControl.lua"],
+            commit_subjects=[],
+            advisories=advisories,
+        )
+        self.assertEqual(errors, [])
+        self.assertTrue(any("quotes no shipped source" in note for note in advisories), advisories)
+
+    def test_a_citation_in_the_body_satisfies_the_live_game_rule(self):
+        for citation in (
+            "modelled on `Base/Assets/UI/DiplomacyActionView.lua:2545`",
+            "bands from `GameplayDB.BarbarianAttackForces`",
+            "read from Civ6.app/Contents/Assets",
+        ):
+            with self.subTest(citation=citation):
+                advisories = []
+                collab.validate_pr(
+                    pr(self.branch, body(paths="`tools/civ6_control/mod/**`") + "\n" + citation),
+                    files=["tools/civ6_control/mod/CivvisControl.lua"],
+                    commit_subjects=[],
+                    advisories=advisories,
+                )
+                self.assertFalse(any("quotes no shipped source" in note for note in advisories))
+
+    def test_game_rs_counts_only_when_the_added_lines_touch_the_live_game_code(self):
+        for line, expected in (
+            ("    fn barbarian_raid_force_size(&self) -> usize {", True),
+            ("    let offer = self.quick_deal_value(pid, other);", True),
+            ("    let yields = self.city_yields(city);", False),
+        ):
+            with self.subTest(line=line):
+                advisories = []
+                collab.validate_pr(
+                    pr(self.branch, body()),
+                    files=["src/game.rs"],
+                    commit_subjects=[],
+                    advisories=advisories,
+                    added_lines={"src/game.rs": [line]},
+                )
+                self.assertEqual(
+                    any("quotes no shipped source" in note for note in advisories), expected)
+
     def test_a_draft_reports_collisions_without_failing(self):
         advisories = []
         errors = collab.validate_pr(
