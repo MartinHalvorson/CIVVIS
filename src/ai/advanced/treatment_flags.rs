@@ -2263,6 +2263,26 @@ impl AdvancedAi {
         self.base.builder_tries_the_next_tile = false;
     }
 
+    /// Recruit the target's neighbours before an elective war: alliances,
+    /// envoys to its city-states and joint-war invitations at the strike. From
+    /// the turn the war desk holds a target we are at peace with, one alliance
+    /// a turn is proposed to the target's best neighbour (`military` when free
+    /// on both sides), the envoy scorer gains a term for a city-state near the
+    /// target — most for one the target holds — and the turn the desk would
+    /// declare, every eligible neighbour is sent `ProposeJointWar` and the
+    /// declaration is held while an answer is due. See
+    /// [`AdvancedAi::coalition_observe`]. Opt-in gene `coalition-before-war`.
+    /// Filed above the markers: the append-point check reads a method line's
+    /// first identifier.
+    pub fn enable_coalition_before_war(&mut self) {
+        self.coalition_before_war = true;
+    }
+
+    /// The twin of `enable_coalition_before_war`.
+    pub fn disable_coalition_before_war(&mut self) {
+        self.coalition_before_war = false;
+    }
+
     // Append points, one per name range: a new treatment goes under the range
     // its own name falls in, so that two of them do not append to one line.
     // The rule, the measurement behind it and the check that enforces it are
