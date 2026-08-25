@@ -285,15 +285,24 @@ mod tests {
         let (mut g, city) = board();
         g.players[0].policies.insert(crate::name!("colonization"));
         let off = AdvancedAi::new();
-        assert_eq!(off.card_boosted_value(&g, 0, city, &settler(), 100.0), 100.0);
+        assert_eq!(
+            off.card_boosted_value(&g, 0, city, &settler(), 100.0),
+            100.0
+        );
         let mut on = AdvancedAi::new();
         on.enable_build_what_cards_boost();
         assert!(
             (on.card_boosted_value(&g, 0, city, &settler(), 100.0) - 125.0).abs() < 1e-9,
             "half of a +50% card"
         );
-        assert_eq!(on.card_boosted_value(&g, 0, city, &monument(), 100.0), 100.0);
-        assert_eq!(on.card_boosted_value(&g, 0, city, &settler(), -100.0), -100.0);
+        assert_eq!(
+            on.card_boosted_value(&g, 0, city, &monument(), 100.0),
+            100.0
+        );
+        assert_eq!(
+            on.card_boosted_value(&g, 0, city, &settler(), -100.0),
+            -100.0
+        );
         assert_eq!(on.card_boosted_value(&g, 0, city, &settler(), 0.0), 0.0);
     }
 
@@ -303,13 +312,21 @@ mod tests {
         assert_eq!(young_city_premium_from(12.0, 10.0), 1.0, "never below one");
         assert!((young_city_premium_from(5.0, 10.0) - 1.25).abs() < 1e-9);
         assert!((young_city_premium_from(0.0, 10.0) - 1.5).abs() < 1e-9);
-        assert_eq!(young_city_premium_from(0.0, 0.0), 1.0, "no producer, no premium");
+        assert_eq!(
+            young_city_premium_from(0.0, 0.0),
+            1.0,
+            "no producer, no premium"
+        );
         let (g, city) = board();
         let off = AdvancedAi::new();
         assert_eq!(off.young_city_premium(&g, 0, city), 1.0);
         let mut on = AdvancedAi::new();
         on.enable_gold_for_the_young_city();
-        assert_eq!(on.young_city_premium(&g, 0, city), 1.0, "the only city is the best city");
+        assert_eq!(
+            on.young_city_premium(&g, 0, city),
+            1.0,
+            "the only city is the best city"
+        );
     }
 
     #[test]
@@ -321,9 +338,9 @@ mod tests {
             .into_iter()
             .find(|position| {
                 *position != home
-                    && g.map.get(*position).is_some_and(|tile| {
-                        g.rules.is_passable(tile) && !g.rules.is_water(tile)
-                    })
+                    && g.map
+                        .get(*position)
+                        .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
                     && g.units_at(*position).is_empty()
             })
             .expect("open ground beside the capital");
@@ -337,7 +354,10 @@ mod tests {
 
         let mut on = AdvancedAi::new();
         on.enable_native_emergency_purchase();
-        assert!(!on.native_city_emergency(&g, 0, city), "an unhurt city is not an emergency");
+        assert!(
+            !on.native_city_emergency(&g, 0, city),
+            "an unhurt city is not an emergency"
+        );
 
         let state = g.cities.get_mut(&city).unwrap();
         state.hp = 120;
@@ -356,11 +376,17 @@ mod tests {
         assert!(off.native_emergency_item(&g, 0, city).is_none());
 
         g.cities.get_mut(&city).unwrap().last_attacked = 20;
-        assert!(!on.native_city_emergency(&g, 0, city), "the strike is stale");
+        assert!(
+            !on.native_city_emergency(&g, 0, city),
+            "the strike is stale"
+        );
         g.cities.get_mut(&city).unwrap().last_attacked = 29;
         for unit in g.player_unit_ids(barbarians) {
             g.remove_unit(unit);
         }
-        assert!(!on.native_city_emergency(&g, 0, city), "no hostile near, no emergency");
+        assert!(
+            !on.native_city_emergency(&g, 0, city),
+            "no hostile near, no emergency"
+        );
     }
 }

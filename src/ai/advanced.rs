@@ -19144,14 +19144,15 @@ impl AdvancedAi {
             // What this city is already committed to, and what that is worth
             // *now*. Without preemption a non-empty queue is skipped outright,
             // so `production_value` is only ever consulted on an idle city.
-            let committed: Option<(f64, Item)> = g.cities[&cid].queue.first().cloned().map(|item| {
-                let value = self.production_value(g, pid, cid, &item, plan, &counts);
-                // `build_what_cards_boost`: the same lean the menu gets below,
-                // so a committed boosted item is not preempted by its own
-                // unboosted twin. Unchanged with the gene off.
-                let value = self.card_boosted_value(g, pid, cid, &item, value);
-                (value, item)
-            });
+            let committed: Option<(f64, Item)> =
+                g.cities[&cid].queue.first().cloned().map(|item| {
+                    let value = self.production_value(g, pid, cid, &item, plan, &counts);
+                    // `build_what_cards_boost`: the same lean the menu gets below,
+                    // so a committed boosted item is not preempted by its own
+                    // unboosted twin. Unchanged with the gene off.
+                    let value = self.card_boosted_value(g, pid, cid, &item, value);
+                    (value, item)
+                });
             // The ordinary governor's recovery path only receives empty
             // queues. Preserve that contract even when an experimental
             // preemption margin is active: a banked unit can finish, but no

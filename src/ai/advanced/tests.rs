@@ -34307,7 +34307,9 @@ fn a_card_boosted_item_loses_gold_purchase_priority_only_with_the_gene_on() {
     game.map.tiles.get_mut(&campus).unwrap().district = Some(crate::name!("campus"));
     let state = game.cities.get_mut(&city).unwrap();
     state.districts.insert(crate::name!("campus"), campus);
-    state.buildings.extend([crate::name!("monument"), crate::name!("granary")]);
+    state
+        .buildings
+        .extend([crate::name!("monument"), crate::name!("granary")]);
     game.turn = 30;
     game.players[0].gold = 5_000.0;
     let plan = StrategicPlan {
@@ -34354,12 +34356,13 @@ fn a_card_boosted_item_loses_gold_purchase_priority_only_with_the_gene_on() {
         "no card, no change: the gene on is bit-equal to the gene off"
     );
 
-    game.active_congress_effects.push(crate::game::CongressEffect {
-        resolution: "urban_development_treaty".to_string(),
-        outcome: "A".to_string(),
-        target: "campus".to_string(),
-        expires: game.turn + 10,
-    });
+    game.active_congress_effects
+        .push(crate::game::CongressEffect {
+            resolution: "urban_development_treaty".to_string(),
+            outcome: "A".to_string(),
+            target: "campus".to_string(),
+            expires: game.turn + 10,
+        });
     assert!(
         (game.item_prod_mult(0, city, Some(&library)) - 2.0).abs() < 1e-9,
         "the engine prices the treaty at +100%"
@@ -34393,20 +34396,23 @@ fn the_native_emergency_purchase_spends_through_the_reserve() {
         .iter()
         .position(|player| player.is_barbarian)
         .expect("a barbarian seat");
-    let raiders: Vec<Pos> = game
-        .wdisk(home, 2)
-        .into_iter()
-        .filter(|position| {
-            *position != home
-                && game
-                    .map
-                    .get(*position)
-                    .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
-                && game.units_at(*position).is_empty()
-        })
-        .take(2)
-        .collect();
-    assert_eq!(raiders.len(), 2, "fixture needs two raiders beside the capital");
+    let raiders: Vec<Pos> =
+        game.wdisk(home, 2)
+            .into_iter()
+            .filter(|position| {
+                *position != home
+                    && game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+                    && game.units_at(*position).is_empty()
+            })
+            .take(2)
+            .collect();
+    assert_eq!(
+        raiders.len(),
+        2,
+        "fixture needs two raiders beside the capital"
+    );
     for position in raiders {
         game.spawn_test_unit("warrior", barbarians, position);
     }
@@ -34442,7 +34448,10 @@ fn the_native_emergency_purchase_spends_through_the_reserve() {
     let before_quote = quote.players[0].gold;
     quote.apply(0, &action).expect("the defender quote applies");
     let cost = before_quote - quote.players[0].gold;
-    assert!(cost > 0.0 && cost < 300.0, "fixture must sit below the reserve: {cost}");
+    assert!(
+        cost > 0.0 && cost < 300.0,
+        "fixture must sit below the reserve: {cost}"
+    );
     game.players[0].gold = cost;
 
     let stock = AdvancedAi::new();
@@ -34461,5 +34470,8 @@ fn the_native_emergency_purchase_spends_through_the_reserve() {
     let bought = game.player_unit_ids(0);
     assert_eq!(bought.len(), 1, "one defender, bought through the reserve");
     assert_eq!(game.units[&bought[0]].kind, wanted);
-    assert!(game.players[0].gold < 1.0, "the whole treasury went to the defence");
+    assert!(
+        game.players[0].gold < 1.0,
+        "the whole treasury went to the defence"
+    );
 }
