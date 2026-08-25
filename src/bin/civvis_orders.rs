@@ -6746,14 +6746,6 @@ mod tests {
             !ai.culture_building_debt,
             "the named culture-building-debt control must hold it off"
         );
-        assert!(ai.culture_coverage);
-        withhold_live_treatment(&mut ai, "culture-coverage")
-            .expect("the culture-coverage control arm is registered");
-        assert!(
-            !ai.culture_coverage,
-            "the named culture-coverage control must hold it off"
-        );
-
         assert!(ai.frontier_loyalty);
         withhold_live_treatment(&mut ai, "frontier-loyalty")
             .expect("the frontier-loyalty control arm is registered");

@@ -234,19 +234,6 @@ impl AdvancedAi {
         self.research_tier_premium = false;
     }
 
-    /// Scale the Campus coverage bonus by how complete the empire's existing
-    /// Campuses are, so Labs come before new Campuses. See
-    /// [`AdvancedAi::campus_finishes_first`]. Opt-in gene
-    /// `campus-finishes-first`.
-    pub fn enable_campus_finishes_first(&mut self) {
-        self.campus_finishes_first = true;
-    }
-
-    /// The twin of `enable_campus_finishes_first`.
-    pub fn disable_campus_finishes_first(&mut self) {
-        self.campus_finishes_first = false;
-    }
-
     /// Credit a power plant the powered yields it switches on, above all the
     /// Research Lab's extra science. See [`AdvancedAi::power_the_laboratory`].
     /// Opt-in gene `power-the-laboratory`.
@@ -1432,19 +1419,6 @@ impl AdvancedAi {
         self.base.slot_kind_tiebreak = false;
     }
 
-    /// Let the baseline governor build the Aqueduct and Neighborhood districts
-    /// that raise the housing ceiling. See `BasicAi::housing_districts`: 78.4%
-    /// of live city-turns are growth- throttled by housing, the median headroom
-    /// is 0, and the Aqueduct and Neighborhood together take 1.6% of district
-    /// orders.
-    pub fn enable_housing_districts(&mut self) {
-        self.base.housing_districts = true;
-    }
-
-    pub fn disable_housing_districts(&mut self) {
-        self.base.housing_districts = false;
-    }
-
     /// Hold the stranded-Settler discount off, for the controlled arm.
     ///
     /// ⚠ Every `enable_*` in `enable_live_bridge` needs this counterpart or the
@@ -1621,16 +1595,6 @@ impl AdvancedAi {
     /// deployment comparison prices this distinction.
     pub fn enable_great_work_veto_by_district(&mut self) {
         self.great_work_veto_by_district = true;
-    }
-
-    /// Pay a coverage bonus for a Theater Square in every city that lacks one,
-    /// as the Campus already gets. See `culture_coverage`.
-    pub fn enable_culture_coverage(&mut self) {
-        self.culture_coverage = true;
-    }
-
-    pub fn disable_culture_coverage(&mut self) {
-        self.culture_coverage = false;
     }
 
     /// Bank an envoy instead of spending it on a placement whose score is
@@ -1965,21 +1929,6 @@ impl AdvancedAi {
     /// The twin of `enable_competition_victory_points`.
     pub fn disable_competition_victory_points(&mut self) {
         self.competition_victory_points = false;
-    }
-
-    /// Value the Consulate, Chancery and Diplomatic Quarter by the envoys their
-    /// influence can produce before the turn limit. Value the infrastructure
-    /// that produces city-state influence: the Consulate and Chancery's
-    /// per-turn influence becomes the envoys it can produce before the turn
-    /// limit, and a first Diplomatic Quarter sees part of the Consulate stream
-    /// it unlocks. Gene `envoy-infrastructure`.
-    pub fn enable_envoy_infrastructure(&mut self) {
-        self.envoy_infrastructure = true;
-    }
-
-    /// The twin of `enable_envoy_infrastructure`.
-    pub fn disable_envoy_infrastructure(&mut self) {
-        self.envoy_infrastructure = false;
     }
 
     /// Beeline Advanced Flight, build an Aerodrome and bombers, and take the
