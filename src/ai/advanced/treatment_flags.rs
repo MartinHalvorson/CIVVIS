@@ -2372,6 +2372,23 @@ impl AdvancedAi {
         self.coalition_before_war = false;
     }
 
+    /// Buy the plot a Barbarian Outpost stands on for the city inside whose
+    /// three rings it sits, when being rid of the outpost is worth more than
+    /// the plot's quote. The outpost must be one we can see and one a soldier
+    /// of ours can reach and disperse — Civilization VI removes an outpost on
+    /// entry, never because the ground changed hands. See
+    /// [`AdvancedAi::camp_buyout_plot_score`]. Opt-in gene `camp-tile-buyout`.
+    /// Filed above the markers: the append-point check reads a method line's
+    /// first identifier.
+    pub fn enable_camp_tile_buyout(&mut self) {
+        self.camp_tile_buyout = true;
+    }
+
+    /// The twin of `enable_camp_tile_buyout`.
+    pub fn disable_camp_tile_buyout(&mut self) {
+        self.camp_tile_buyout = false;
+    }
+
     // Append points, one per name range: a new treatment goes under the range
     // its own name falls in, so that two of them do not append to one line.
     // The rule, the measurement behind it and the check that enforces it are

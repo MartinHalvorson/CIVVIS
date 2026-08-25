@@ -4577,6 +4577,12 @@ pub struct AdvancedAi {
     // ---- append: a-b ------------------------------------------------
 
     // ---- append: c-d ------------------------------------------------
+    /// The plot a Barbarian Outpost stands on is bought for the city inside
+    /// whose three rings it sits, when being rid of the outpost is worth more
+    /// than the plot's quote. Opt-in gene `camp-tile-buyout`; see
+    /// `advanced/camp_buyout.rs`.
+    camp_tile_buyout: bool,
+
     /// A Builder chops woods, rainforest or marsh into a Settler, a district
     /// or a wonder at the front of the owning city's queue. Opt-in gene
     /// `chop-into-the-queue`; see `advanced/deity_habits.rs`.
@@ -5069,6 +5075,12 @@ pub use gene_ledger::{
     deployment_treatments, gene_ledger as gene_ledger_rows, ledger_default_on, ledger_verdict,
     GeneLedgerApplied, GeneVerdict, Measure, Verdict,
 };
+
+/// `camp-tile-buyout`: the plot a Barbarian Outpost stands on is bought for
+/// the city that has to live beside it when being rid of the outpost is worth
+/// more than the plot's quote. One opt-in gene; see
+/// `advanced/camp_buyout.rs`.
+mod camp_buyout;
 
 
 impl AdvancedAi {
@@ -5711,6 +5723,8 @@ impl AdvancedAi {
             // ---- append: a-b ----------------------------------------
 
             // ---- append: c-d ----------------------------------------
+            camp_tile_buyout: false,
+
             chop_into_the_queue: false,
 
             coalition_before_war: false,
@@ -15489,6 +15503,15 @@ impl AdvancedAi {
         } else {
             reserve
         };
+        // `camp_tile_buyout`: an outpost inside a city's own rings costs
+        // that city something no yield in the ranking below can express, and
+        // every plot there is a surplus purchase that a unit or a building
+        // outbids by an order of magnitude. The operator's rule is a
+        // threshold, so it is answered before the shopping and out of the
+        // same reserve. See `advanced/camp_buyout.rs`.
+        if self.camp_tile_buyout && self.camp_tile_buyout_purchase(g, pid, reserve) {
+            return true;
+        }
         let purchase_limit = city_count.clamp(1, 4);
         let unit_purchase_limit = if g.players[pid].gold > reserve + 1_000.0 {
             2
