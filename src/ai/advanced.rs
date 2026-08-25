@@ -4344,6 +4344,52 @@ pub struct AdvancedAi {
     /// `AdvancedAi::diplomatic_opening_score`.
     pub diplomatic_opening: bool,
 
+    /// Whether a war this empire did NOT declare may take over its grand
+    /// strategy while no city of ours is threatened and our own lane is live.
+    ///
+    /// ⚠ THE LARGEST SINGLE BRANCH IN THE GRAND-STRATEGY CASCADE, AND IT HAS
+    /// NO RELEASE. `at_war && !stalemate && !raid_only_war` pins the plan on
+    /// Conquest for the whole duration of ANY war — including one a rival
+    /// declared on us that the Recovery branches above have already found is
+    /// not hurting us, since a threatened city and an adverse power ratio are
+    /// both caught before this branch is reached. A rival can therefore take
+    /// our entire economy off its victory track for the price of a
+    /// declaration, and keep it there until it agrees to peace.
+    ///
+    /// `audit` over twelve games at the ladder's profile reads **conquest 40%
+    /// and recovery 6% of the planner-turns** — the largest share on the
+    /// board, against expansion 24%, religion 19%, culture 5%, science 2% and
+    /// diplomacy 0%. `victory_eval` finishes domination **2/16** even when
+    /// every major is ordered to play it, and `docs/EVAL_STATUS.md` records
+    /// **1** of 107 rival victories as conquest. And the one release that
+    /// exists, `war_patience`, ships **off** — it sits at rank 110 of the
+    /// ranking with negative readings in all three windows — so in the
+    /// deployment genome this branch has no exit at all.
+    ///
+    /// ⚠⚠ THIS GENE WAS WITHDRAWN ONCE ON A NUMBER THAT WAS NOT REAL. Its
+    /// first probe read -22.2 pp wins (z -13.2) with 0 of 9 treated seats
+    /// winning, and it held at -22.2 to the hundredth when the fall-through
+    /// was corrected from Expansion to the empire's own lane. That invariance
+    /// was read as confirmation; it was the opposite. #2452 later showed that
+    /// a single-gene probe plays both arms as the same game when the gene does
+    /// not fire, and that a block where no winner drew the gene collapses the
+    /// clustered error — a predicate edited to `return false` reproduced that
+    /// exact reading. The conclusion drawn from it, that "war is existential
+    /// here", was retracted with it. This gene is measured again here on the
+    /// repaired instrument, and the numbers below are the first real ones it
+    /// has ever had.
+    ///
+    /// It changes nothing about how the fighting is answered. The Recovery
+    /// branches still outrank it, so a threatened city or a losing power ratio
+    /// keeps the war posture; the elective-war branches below still run, so an
+    /// empire genuinely strong enough to profit still goes; and the plan it
+    /// hands back is the empire's own victory lane rather than a fall-through
+    /// to Expansion, which is what walking Settlers into somebody else's war
+    /// would be. What it removes is the automatic pin.
+    ///
+    /// **Off by default.** Screenable.
+    pub unchosen_war_keeps_the_lane: bool,
+
     /// Whether a rival's city-state suzerainties count toward the Diplomatic
     /// threat it presents, as they already count toward our own lane.
     ///
@@ -4981,6 +5027,16 @@ const HOLY_LANE_PARITY: f64 = 850.0;
 /// `AdvancedAi::diplomatic_opening_score` for why a mirrored number is the
 /// point and a tuned one would not be.
 const DIPLOMATIC_OPENING: i64 = 46;
+
+/// What a victory lane must read before it is worth defending against a war
+/// somebody else started.
+///
+/// The same mirrored figure as `DIPLOMATIC_OPENING`, and for the same reason:
+/// 46 is Religion's own commitment floor — the number this planner already
+/// treats as "real enough to organise an empire around" the moment
+/// `religious_opening_viable` says a Prophet is still gettable. Copied rather
+/// than chosen; see `unchosen_war_keeps_the_lane`.
+const LIVE_LANE_FLOOR: i32 = 46;
 
 const RESEARCH_FLOOR_EARLY: f64 = 3.0;
 const RESEARCH_FLOOR_LATE: f64 = 1.0;
@@ -5957,6 +6013,7 @@ impl AdvancedAi {
             air_surge_census: AirSurgeCensus::default(),
             air_surge_cooldown_until: 0,
             diplomatic_opening: false,
+            unchosen_war_keeps_the_lane: false,
             rival_suzerainty_alarm: false,
             science_chain_alarm: false,
             conversion_majority_alarm: false,
@@ -8378,6 +8435,49 @@ impl AdvancedAi {
         ((100.0 * ours / bar).round() as i64).clamp(0, 100) as i32
     }
 
+    /// Whether every live major war against `pid` was opened by the other
+    /// side.
+    ///
+    /// A war we declared is one we chose and must pay for. A war declared on
+    /// us is a rival's move, and `WarRecord::declarer` is the engine's own
+    /// record of which is which — the same field the warmonger and grievance
+    /// accounting reads, so this cannot disagree with the rest of the game
+    /// about who started it. False when we are not at war with a major at all,
+    /// so the caller can use it as the whole condition.
+    fn every_major_war_was_declared_on_us(&self, g: &Game, pid: usize) -> bool {
+        let mut any = false;
+        for other in g.players.iter().filter(|other| {
+            other.id != pid
+                && other.alive
+                && !other.is_minor
+                && !other.is_barbarian
+                && g.is_at_war(pid, other.id)
+        }) {
+            any = true;
+            let key = (pid.min(other.id), pid.max(other.id));
+            match g.wars.get(&key) {
+                // No record is no evidence, and this gene only stands down on
+                // evidence: an unrecorded front counts as ours.
+                None => return false,
+                Some(war) if war.declarer == pid => return false,
+                Some(_) => {}
+            }
+        }
+        any
+    }
+
+    /// Whether a war nobody here chose should keep the empire's own victory
+    /// lane instead of taking the grand strategy from it.
+    ///
+    /// See [`Self::unchosen_war_keeps_the_lane`]. Every condition is a gate,
+    /// and the caller sits below the Recovery branches, so by the time this is
+    /// asked no city of ours is threatened and we are not losing ground.
+    fn unchosen_war_holds_the_lane(&self, g: &Game, pid: usize) -> bool {
+        self.unchosen_war_keeps_the_lane
+            && self.every_major_war_was_declared_on_us(g, pid)
+            && self.victory_focus(g, pid).progress >= LIVE_LANE_FLOOR
+    }
+
     fn religious_opening_viable(&self, g: &Game, pid: usize) -> bool {
         let player = &g.players[pid];
         if player.religion.is_some() {
@@ -9452,7 +9552,20 @@ impl AdvancedAi {
         } else if let Some((_, counter)) = actionable_denial {
             (counter, "countering a rival close to winning")
         } else if at_war && !stalemate && !raid_only_war {
-            (GrandStrategy::Conquest, "already at war")
+            // ⚠ `unchosen_war_keeps_the_lane`: a war a rival opened on us,
+            // which the Recovery branches above have already found is not
+            // hurting us, hands the plan to the lane the empire is racing
+            // instead of to the war. It NAMES that lane here rather than
+            // falling through, because the ladder below lands on Expansion —
+            // an empire walking Settlers into somebody else's war.
+            if self.unchosen_war_holds_the_lane(g, pid) {
+                (
+                    self.victory_focus(g, pid).strategy,
+                    "a war we did not declare, and a lane that is live",
+                )
+            } else {
+                (GrandStrategy::Conquest, "already at war")
+            }
         } else if !stalemate
             && !self.no_elective_war
             && cities.len() >= 2
