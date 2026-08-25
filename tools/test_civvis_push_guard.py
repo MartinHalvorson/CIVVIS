@@ -36,6 +36,22 @@ class PushGuardTests(unittest.TestCase):
         error, _ = self.validate("refs/heads/main", local_sha=ZERO, remote_sha=OLD)
         self.assertIn("main", error)
 
+    def test_ledger_branch_is_append_only(self):
+        # Created once, fast-forwarded thereafter; never deleted or rewound.
+        error, calls = self.validate("refs/heads/ledger")
+        self.assertIsNone(error)
+        self.assertEqual(calls, [])
+        error, calls = self.validate("refs/heads/ledger", remote_sha=OLD)
+        self.assertIsNone(error)
+        self.assertEqual(calls, [(OLD, NEW)])
+        error, _ = self.validate("refs/heads/ledger", remote_sha=OLD, ancestor=False)
+        self.assertIn("append-only", error)
+        error, _ = self.validate("refs/heads/ledger", local_sha=ZERO, remote_sha=OLD)
+        self.assertIn("append-only", error)
+        # The allowance is the one exact ref, not a prefix.
+        error, _ = self.validate("refs/heads/ledger-2")
+        self.assertIn("development branch", error)
+
     def test_valid_new_task_branch_is_allowed(self):
         error, calls = self.validate(f"refs/heads/{BRANCH}")
         self.assertIsNone(error)

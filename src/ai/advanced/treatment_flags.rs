@@ -2442,6 +2442,21 @@ impl AdvancedAi {
     pub fn disable_pass_picket(&mut self) {
         self.pass_picket = false;
     }
+
+    /// Convert the first six Standard-speed turns after a surprise war is
+    /// declared against us into a bounded defensive mobilization. Off
+    /// everywhere by default; opt-in gene `surprise-war-mobilization`. Filed
+    /// here rather than under a marker: the append-point check reads a method
+    /// line's first identifier.
+    pub fn enable_surprise_war_mobilization(&mut self) {
+        self.surprise_war_mobilization = true;
+    }
+
+    /// The twin of `enable_surprise_war_mobilization`.
+    pub fn disable_surprise_war_mobilization(&mut self) {
+        self.surprise_war_mobilization = false;
+    }
+
     /// When the empire leads the field in science, beeline the space-race chain,
     /// build launch-city production and race two pads early.
     /// Opt-in gene `science-victory-drive`; see `advanced/science_victory_drive.rs`

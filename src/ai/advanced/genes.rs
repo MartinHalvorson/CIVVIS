@@ -1099,6 +1099,17 @@ pub const GENES: &[Gene] = &[
     // but a ranged unit already holding a legal shot gets a bounded XP credit.
     // Appended at the END so a running screen keeps its positional genome.
     Gene { tag: "naval-threat-triage", field: "naval_threat_triage", kind: Kind::OptIn, enable: AdvancedAi::enable_naval_threat_triage, disable: AdvancedAi::disable_naval_threat_triage },
+    // A surprise declaration arrives after the aggressor has chosen the
+    // timing, while the target still carries peaceful queues, policies and
+    // old units. For six Standard-speed turns, buy one frontline land body,
+    // modernize, prioritize land-unit production cards, and redirect at most
+    // half the empire's unfinished non-Settler queues toward the fastest
+    // credible defenders until live plus queued land force reaches two per
+    // city. The declaration direction and hard expiry keep this distinct from
+    // the removed permanent war-economy routing. See
+    // `advanced/surprise_defense.rs`.
+    // Appended at the END so a running screen keeps its positional genome.
+    Gene { tag: "surprise-war-mobilization", field: "surprise_war_mobilization", kind: Kind::OptIn, enable: AdvancedAi::enable_surprise_war_mobilization, disable: AdvancedAi::disable_surprise_war_mobilization },
     // Operator 2026-08-24: the live seat led the field in science (334 a turn,
     // 71 techs) and never ran a launch project — the stock horizon refused
     // the race from t150 at the city's raw production, ignoring the engine's

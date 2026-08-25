@@ -1757,6 +1757,14 @@ pub struct AdvancedAi {
     /// front fights with whatever staged on declaration day. **Off by
     /// default, live-bridge only.**
     pub war_reinforcement: bool,
+    /// Convert the opening turns of a surprise war declared against this
+    /// empire into a bounded defensive mobilization: buy one frontline land
+    /// unit before ordinary spending, modernize the standing army, prefer the
+    /// available land-unit production cards, and pause unfinished economic
+    /// queues for fast defenders. Settlers and nearly finished work keep their
+    /// queues, and the response expires after six Standard-speed turns so it
+    /// cannot become a permanent war economy. **Off by default.**
+    pub surprise_war_mobilization: bool,
     /// Do not let the stall clause of the peace rules end a war the empire is
     /// overwhelmingly winning. Fatigue (war age ≥ 24, no campaign progress in
     /// 12) both offers peace and accepts any white peace at +320; while this
@@ -5014,6 +5022,9 @@ mod great_person_housing;
 /// unescorted Settlers and Builders, unpillaged tiles — taken by movement
 /// and closed by peace. See `advanced/opportunistic_war.rs`.
 mod opportunistic_war;
+/// A short, defender-only declaration shock. See
+/// `advanced/surprise_defense.rs`.
+mod surprise_defense;
 
 /// The contact posture: standing to receive a melee attack and heal, closing
 /// on a shooter, or leaving its envelope. See `advanced/contact_posture.rs`.
@@ -5592,6 +5603,7 @@ impl AdvancedAi {
             blind_objective_strength: false,
             war_economy: false,
             war_reinforcement: false,
+            surprise_war_mobilization: false,
             war_patience: false,
             endgame_war_runway: false,
             siege_commitment: false,
@@ -11632,6 +11644,11 @@ impl AdvancedAi {
                 "public_works",
             ],
         };
+
+        // For the short defender-only declaration window, let military
+        // production and maintenance cards displace the peaceful portfolio.
+        // The helper is an exact no-op when its opt-in gene is off.
+        self.prioritize_surprise_defense_policies(g, pid, &mut desired);
 
         // ⚠ FRONT of the list, not appended: these portfolios are preference
         // ordered and the military slot is contested from the ancient era, which is
@@ -32294,10 +32311,20 @@ impl AdvancedAi {
         // emergency spends at most one action and suppresses that later
         // generic pass for this turn.
         let emergency_city_defense = self.emergency_city_defense_purchase(g, pid, &plan);
+        // A surprise declaration is itself a timing attack. Before the
+        // peaceful purchase portfolio can spend the treasury, put one body in
+        // the city nearest the declarer. An already executed city-saving
+        // purchase owns this lane for the turn.
+        let surprise_defense_purchase =
+            !emergency_city_defense && self.surprise_defense_purchase(g, pid);
         // Once a city-saving purchase has had its one action, the turn a
         // breakthrough arrives still upgrades appointed predecessors before
         // Great Person patronage, ordinary purchases, diplomacy, or movement.
         self.execute_war_upgrades(g, pid);
+        // Modernization normally waits until after every purchase and is
+        // suppressed by an appointed war package. A defender that did not
+        // choose the declaration timing gets the wartime upgrade pass now.
+        self.surprise_defense_modernize(g, pid);
         if self.victory_planning {
             let denied_rival = plan
                 .target_player
@@ -32340,7 +32367,7 @@ impl AdvancedAi {
         // purchase pass; otherwise the adaptive agents are limited to the
         // baseline building/unit buyer and can carry thousands of Gold past
         // an immediately affordable plan-critical district.
-        if self.victory_planning && !emergency_city_defense {
+        if self.victory_planning && !emergency_city_defense && !surprise_defense_purchase {
             self.advanced_gold_spending(g, pid, &plan);
         }
         // See `lane_policy_deck`: the cards a completed Culture game seats
@@ -32521,7 +32548,13 @@ impl AdvancedAi {
                 self.delegated_cities(g, pid, &plan);
             }
         }
-        if active_victory_target.is_some() && self.war_plan.is_none() {
+        // Make the declaration response the final authority over queues this
+        // turn. Earlier governors can continue to express their peaceful
+        // plan; switching banks that progress and this bounded pass reclaims
+        // only the still-missing defensive wave.
+        self.mobilize_surprise_defense_production(g, pid);
+        if active_victory_target.is_some() && self.war_plan.is_none() && !surprise_defense_purchase
+        {
             let counts = self.counts(g, pid);
             let cities = g.player_city_ids(pid);
             self.base.spend_gold(
