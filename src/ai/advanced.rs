@@ -4399,6 +4399,48 @@ pub struct AdvancedAi {
     /// `AdvancedAi::diplomatic_opening_score`.
     pub diplomatic_opening: bool,
 
+    /// Whether a rival's religious clock is read from the CITIES it has
+    /// converted rather than from the count of whole civilizations it has
+    /// already taken.
+    ///
+    /// ⚠ THE DOMINANT WIN CONDITION ON THIS BOARD IS READ THROUGH A FIVE-STEP
+    /// STAIRCASE. `wide_map_capacity`'s note records that "two thirds of
+    /// native games end by RELIGIOUS conversion", and a fresh four-game run at
+    /// the ladder's profile ends three of four the same way. But
+    /// `religious_conversion_tally` scores a rival by
+    ///
+    /// ```text
+    /// converted = majors whose MAJORITY of cities follow that faith
+    /// religion  = 100 * converted / living rivals
+    /// ```
+    ///
+    /// which is a boolean per civilization. A leader holding **45% of every
+    /// rival's cities** — one missionary short of the game everywhere at once
+    /// — reads **zero**. The turn three of those majorities tip, it reads
+    /// sixty. On a six-player board the whole signal has five values, each
+    /// twenty points apart, and `denial_response_for_pressure`'s early-warning
+    /// bar sits at 66 with match point at 83: two of the five steps.
+    ///
+    /// The victory rule itself is not a staircase. It is a majority in every
+    /// rival empire, which is a count of cities, and counting them is both
+    /// smooth and exact. This gene reads the same condition continuously —
+    /// what share of the cities the victory actually requires the leader has
+    /// already taken — so a rival at 45% everywhere reads 45 instead of 0 and
+    /// the alarm arrives while a Missionary can still answer it.
+    ///
+    /// Why it matters more than the count of civs suggests: the seat this
+    /// costs is usually the one that is winning on everything else.
+    /// `docs/EVAL_STATUS.md` records 15 of 107 rival victories landing while
+    /// our own score was the highest on the board, and the same run above
+    /// finished a seat on 974 score — nearly double the field — into a
+    /// religious victory at t227.
+    ///
+    /// Folded in with `max`, so it can only ever RAISE a reading and a seat
+    /// whose staircase already reads higher keeps its number.
+    ///
+    /// **Off by default.** Screenable.
+    pub conversion_majority_alarm: bool,
+
     /// Whether the Diplomacy lane is scored by WHEN twenty Diplomatic Victory
     /// Points arrive rather than by how many are already banked.
     ///
@@ -5806,6 +5848,7 @@ impl AdvancedAi {
             air_surge_census: AirSurgeCensus::default(),
             air_surge_cooldown_until: 0,
             diplomatic_opening: false,
+            conversion_majority_alarm: false,
             diplomatic_lane_forecast: false,
             envoy_priority: false,
             joint_tactics: false,
@@ -8157,6 +8200,50 @@ impl AdvancedAi {
             && self.rocketry_readiness(g, pid) >= 45
     }
 
+    /// `pid`'s progress toward a Religious Victory measured in the cities the
+    /// victory actually asks for, as a percentage.
+    ///
+    /// See [`Self::conversion_majority_alarm`]. The rule is a majority of the
+    /// cities in every other living major, so the denominator is the sum of
+    /// those majorities and the numerator is how much of it is already held.
+    /// Nothing here is a model: it is the victory condition, counted instead
+    /// of rounded.
+    fn conversion_majority_pressure(&self, g: &Game, pid: usize) -> i32 {
+        if !self.conversion_majority_alarm {
+            return 0;
+        }
+        let Some(faith) = g.players[pid].religion.as_deref() else {
+            return 0;
+        };
+        let mut required = 0_usize;
+        let mut held = 0_usize;
+        for other in g.players.iter().filter(|other| {
+            other.id != pid && other.alive && !other.is_minor && !other.is_barbarian
+        }) {
+            let cities = g.player_city_ids(other.id);
+            if cities.is_empty() {
+                continue;
+            }
+            // The engine's own test is `following * 2 > cities.len()`, so the
+            // majority a rival must lose is one more than half, floored.
+            let majority = cities.len() / 2 + 1;
+            let following = cities
+                .iter()
+                .filter(|city| {
+                    g.cities
+                        .get(city)
+                        .is_some_and(|city| g.city_religion(city) == Some(faith))
+                })
+                .count();
+            required += majority;
+            held += following.min(majority);
+        }
+        if required == 0 {
+            return 0;
+        }
+        (100 * held / required) as i32
+    }
+
     fn religious_conversion_tally(&self, g: &Game, pid: usize) -> (usize, usize) {
         let living_majors: Vec<usize> = g
             .players
@@ -8412,7 +8499,10 @@ impl AdvancedAi {
 
         let (converted, living_religious_rivals) = self.religious_conversion_tally(g, pid);
         let religion = if player.religion.is_some() {
-            (100 * converted / living_religious_rivals.max(1)) as i32
+            // `conversion_majority_alarm` reads the same condition without the
+            // five-step staircase, and can only raise the number.
+            ((100 * converted / living_religious_rivals.max(1)) as i32)
+                .max(self.conversion_majority_pressure(g, pid))
         } else {
             0
         };
