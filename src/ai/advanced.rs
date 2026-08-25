@@ -30224,12 +30224,8 @@ impl AdvancedAi {
         // The ordinary order gives Settlers priority. While the first city is
         // still unfounded, this opt-in deliberately gives one nearby Warrior a
         // full turn first, then makes the Settler choose from its fresh sight.
-        // Clear only for this early military action: the ordinary clearing
-        // below stays where it was when the gene is off.
         let opening_recon_warrior = self.opening_recon_warrior(g, pid);
         if let Some(warrior) = opening_recon_warrior {
-            self.tactics_resolved.clear();
-            self.tactics_withdrawn.clear();
             let before = g.units[&warrior].pos;
             let explored_before = g.players[pid].explored.len();
             let took_a_turn = self.advance_unit_serial(
@@ -30251,14 +30247,14 @@ impl AdvancedAi {
                 explored_before,
             );
         }
-        // ★★★★ SETTLERS DECIDE BEFORE THE ENGAGEMENT. See
-        // `settler_stack_discipline`: the joint plan below kills raiders on
-        // the board and walks guards into their tiles, and a settler that
-        // reads the board afterwards steps beside a raider the host may not
-        // have touched (t60 of civvis-20260816T200454Z, `planned_risk 0.0`
-        // beside a live slinger). Apart from `opening-warrior-recon` above,
-        // Settlers lead the unit order; this only moves them ahead of the one
-        // thing that used to run first.
+        // ★★★★ SETTLERS DECIDE BEFORE THE MILITARY PRE-PASS. See
+        // `settler_stack_discipline`: the immediate-kill pass below can kill
+        // raiders on the board, and a settler that reads the board afterwards
+        // steps beside a raider the host may not have touched (t60 of
+        // civvis-20260816T200454Z, `planned_risk 0.0` beside a live slinger).
+        // Apart from `opening-warrior-recon` above, Settlers lead the unit
+        // order; this only moves them ahead of the one thing that used to run
+        // first.
         let mut settled_first: Vec<u32> = Vec::new();
         if self.live_formationless_settler_shadow {
             let mut settlers: Vec<u32> = g
