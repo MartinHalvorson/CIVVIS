@@ -309,6 +309,7 @@ These screenable genes have no on/off result, so they receive no rank or promoti
 |---|---|---|---:|
 | `builder-tries-the-next-tile` | off (unmeasured) | Let a Builder whose nearest improvable tile cannot be routed to try the next-nearest instead of standing still for the rest of the game. | — |
 | `chop-into-the-queue` | off (unmeasured) | A Builder chops woods, rainforest or marsh into the Settler, district or wonder at the front of the owning city's queue, priced as a one-off lump against the per-turn jobs. | — |
+| `civilian-out-of-reach` | off (unmeasured) | Settlers and builders stay out of a barbarian's one-turn reach: flee it, never step into it alone, and summon a guard onto the settler's tile when they must cross it. | — |
 | `congress-counter-leader` | off (unmeasured) | Point the three targeted World Congress penalties at the empire the denial layer names. | — |
 | `conversion-majority-alarm` | off (unmeasured) | Read a rival's religious clock from the cities it has converted rather than from whole civilizations already lost. | — |
 | `culture-lane-forecast` | off (unmeasured) | Score the Culture lane by where the two tourist curves are when the clock stops. | — |
@@ -323,6 +324,7 @@ These screenable genes have no on/off result, so they receive no rank or promoti
 | `growth-to-settle` | off (unmeasured) | Work food while the opening is behind the pace and no city has reached the population a Settler needs. | — |
 | `opening-warrior-recon` | off (unmeasured) | Before the first city, move a nearby Warrior before the Settler and choose the city site from the terrain the Warrior has now revealed. | — |
 | `order-retry` | off (unmeasured) | Fall through to the next-best candidate the planner already ranked when an order is refused, instead of losing the turn. | — |
+| `recovery-reads-the-war` | off (unmeasured) | Measure the Recovery power gap against the war we are actually fighting. | — |
 | `rival-suzerainty-alarm` | off (unmeasured) | Count a rival's city-state suzerainties toward the Diplomatic threat it presents. | — |
 | `science-chain-alarm` | off (unmeasured) | Read a rival's Science clock from the prerequisite chain it has climbed, not only from the launches it has made. | — |
 | `settler-second-look` | off (unmeasured) | After a Settler's first move, discard only its disposable cached site while movement remains, so the next leg can use its new sight. | — |

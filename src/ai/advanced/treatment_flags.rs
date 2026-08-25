@@ -861,6 +861,16 @@ impl AdvancedAi {
         self.defensible_sites = false;
     }
 
+    /// Measure the Recovery power gap against the war we are actually
+    /// fighting. See [`Self::recovery_reads_the_war`].
+    pub fn enable_recovery_reads_the_war(&mut self) {
+        self.recovery_reads_the_war = true;
+    }
+
+    pub fn disable_recovery_reads_the_war(&mut self) {
+        self.recovery_reads_the_war = false;
+    }
+
     /// Raise the Culture and Diplomacy denial alarms early, since countering an
     /// accumulated stock takes many turns. See
     /// [`Self::stock_denial_lead_time`].
@@ -2275,6 +2285,20 @@ impl AdvancedAi {
     /// The twin of `enable_builder_tries_the_next_tile`.
     pub fn disable_builder_tries_the_next_tile(&mut self) {
         self.base.builder_tries_the_next_tile = false;
+    }
+
+    /// Settlers and builders stay out of a barbarian's one-turn reach: flee
+    /// it, never step into it alone, and summon a guard onto the settler's
+    /// tile when they must cross it. See
+    /// [`AdvancedAi::civilian_out_of_reach`]. Opt-in gene
+    /// `civilian-out-of-reach`.
+    pub fn enable_civilian_out_of_reach(&mut self) {
+        self.civilian_out_of_reach = true;
+    }
+
+    /// The twin of `enable_civilian_out_of_reach`.
+    pub fn disable_civilian_out_of_reach(&mut self) {
+        self.civilian_out_of_reach = false;
     }
 
     /// A Builder chops woods, rainforest or marsh into the Settler, district
