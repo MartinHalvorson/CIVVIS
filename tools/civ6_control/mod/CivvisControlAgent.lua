@@ -10876,6 +10876,27 @@ local function applyOrder(player, pid, row, turn)
 		end
 		verb = resolved;
 		local cityId = tonumber(subject) or -1;
+		-- The first expansion Settler is a commitment, not a provisional queue
+		-- suggestion.  CIVVIS receives a fresh board every turn and can otherwise
+		-- replace it with a newly preferred Scout before either item completes.
+		-- Keep that one-city opening intact; later cities and a repeated Settler
+		-- request retain the ordinary ability to change production.
+		local currentOpening = try(function()
+			local q = city:GetBuildQueue();
+			return q and q:GetCurrentProductionTypeHash() or 0;
+		end, 0) or 0;
+		local settlerRow = GameInfo.Types["UNIT_SETTLER"];
+		if currentOpening ~= 0 and settlerRow ~= nil
+				and currentOpening == settlerRow.Hash and resolved ~= "UNIT_SETTLER" then
+			local cityCount = 0;
+			eachCity(player, function() cityCount = cityCount + 1; end);
+			if cityCount == 1 then
+				emit("opening_settler_preserved", {
+					turn = turn, city = cityId, requested = resolved,
+				});
+				return false, "opening_settler_in_progress";
+			end
+		end
 		civvisBuild[cityId] = resolved;
 		-- A live city can go from healthy to lost between two CIVVIS boards.  If
 		-- the engine says an unwalled city is already damaged or has a visible
