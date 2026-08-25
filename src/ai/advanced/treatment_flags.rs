@@ -2372,11 +2372,12 @@ impl AdvancedAi {
         self.coalition_before_war = false;
     }
 
-    /// Credit a boost already in hand with the turns of research it saves,
-    /// instead of one flat bonus for every boost in the tree. The saving is
-    /// `frac * cost` over the empire's own science or culture per turn, and it
-    /// never pays less than the flat 28 it replaces. See
-    /// [`AdvancedAi::boost_research_value`]. Opt-in gene
+    /// Scale a node whose boost is already in hand by what the discount buys
+    /// under the value function's own cost divisor. `tech_value` and
+    /// `civic_value` both end `(value + k) / cost.sqrt()`, so a node costing
+    /// `1 - frac` of its printed price scores `1 / (1 - frac).sqrt()` times as
+    /// much — 1.29 at the shipped 40%, capped. See
+    /// [`AdvancedAi::boost_in_hand_scale`]. Opt-in gene
     /// `boost-first-research`. Filed above the markers: the append-point check
     /// reads a method line's first identifier.
     pub fn enable_boost_first_research(&mut self) {

@@ -12479,7 +12479,13 @@ impl AdvancedAi {
         // Discount by opportunity cost so a flashy late-era unlock does not
         // stall several cheaper advances. Square root still lets a genuinely
         // transformative breakthrough win the comparison.
+        //
+        // A boost in hand is a discount on THIS divisor, not a term above it:
+        // the node costs `1 - frac` of its printed price, so the score it buys
+        // is this one times `1 / (1 - frac).sqrt()`. One with
+        // `boost_first_research` off. See `advanced/boost_research.rs`.
         (value + 35.0) / spec.cost.max(10.0).sqrt()
+            * self.boost_in_hand_scale(g, pid, tech, true)
     }
 
     fn civic_value(&self, g: &Game, pid: usize, civic: &str, strategy: GrandStrategy) -> f64 {
@@ -12548,7 +12554,9 @@ impl AdvancedAi {
             "drama_poetry" => 55.0,
             _ => 0.0,
         };
+        // The civic half of the same discount; see `advanced/boost_research.rs`.
         (value + 32.0) / spec.cost.max(10.0).sqrt()
+            * self.boost_in_hand_scale(g, pid, civic, false)
     }
 
     fn incoming_deal_value(

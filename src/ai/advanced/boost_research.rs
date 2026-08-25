@@ -18,14 +18,26 @@
 //! What each gene changes, and why it is a gene rather than a fact the agent
 //! already knew:
 //!
-//! - **`boost-first-research`.** A boost in hand is credited the *turns of
-//!   research it saves* — `frac * cost` over the empire's own science or
-//!   culture per turn — instead of the flat 28. Within one era the shipped
-//!   costs spread three-to-one (era 8 runs 2200–2600, era 0 runs 25–80), so
-//!   the flat credit cannot tell the boost that saves eight turns from the one
-//!   that saves two; and a lagging empire, whose beakers are small against the
-//!   same tree, is exactly where a boost is worth most. Never pays less than
-//!   the old 28, so a boosted node is never made worse than it was.
+//! - **`boost-first-research`.** A boost in hand **scales** the node's score
+//!   rather than adding to it. `tech_value` and `civic_value` both end
+//!   `(value + k) / cost.sqrt()`, so what they rank is value per root beaker;
+//!   a boost makes the node cost `(1 - frac)` of its printed price, and the
+//!   score that discount buys is therefore the old one times
+//!   `1 / (1 - frac).sqrt()` — 1.29 at the shipped 40%, with no free
+//!   parameter. The flat `+28` stays exactly where it was, above the divisor.
+//!
+//!   ⚠ THE FIRST CUT ADDED, AND THE PROBE RESOLVED IT NEGATIVE. It credited
+//!   the boost the *turns of research it saves* — `frac * cost` over the
+//!   empire's own science per turn — which reads three turns in every era on
+//!   the shipped cost curve but blows up in the opening, where an empire makes
+//!   two or three beakers a turn and every ancient boost is worth the twelve-
+//!   turn cap. Added above a `sqrt(cost)` divisor that is only 7 for an
+//!   ancient node, that is +37 against unlocks worth single digits: the gene
+//!   stopped preferring the boosted node among comparable ones and started
+//!   taking whatever was boosted, however little it unlocked. 24 games,
+//!   144 seats: score share **-3.36 pp, z -3.21**, against a run resolving
+//!   ±2.93 — outside its own noise, which the win column's -9.4 against ±17.0
+//!   was not. See `docs/gene_screens/fires/boost-first-research-v1.json`.
 //! - **`boost-wait-research`.** The other half of the same fact: a node we
 //!   would *finish* inside a few turns, whose boost is still earnable, is
 //!   taken after the eureka rather than before it — the discount survives a
@@ -51,20 +63,25 @@ use super::AdvancedAi;
 use crate::game::Game;
 use crate::name::Name;
 
-/// The flat credit `tech_value` and `civic_value` paid for a boost in hand
-/// before `boost_first_research`, and the floor the gene keeps under it: the
-/// gene may only ever raise a boosted node's price.
+/// The flat credit `tech_value` and `civic_value` pay for a boost in hand.
+/// Unconditional, exactly as before the genes: `boost_first_research` scales
+/// the finished score instead of touching this.
 pub(super) const BOOST_IN_HAND_FLAT_VALUE: f64 = 28.0;
 
-/// `boost_first_research`: what one turn of research the boost saves is worth
-/// on the `tech_value` / `civic_value` scale. That scale runs from a plain
-/// yield unlock in the tens to an embarkation prerequisite at 190–230; the
-/// shipped cost curve keeps a boost worth about three turns in every era, so
-/// this puts an ordinary in-hand boost near 70 — a nudge that beats a thin
-/// unlock and loses to a lane's own opening.
+/// `boost_first_research`: the ceiling on the score multiplier. `1 /
+/// (1 - frac).sqrt()` is 1.29 at the shipped 40% and 3.16 at Near Future
+/// Governance's 90%, and a node worth three times its neighbours for one
+/// inspiration is the additive mistake in another costume.
+pub(super) const BOOST_SCALE_CAP: f64 = 2.0;
+
+/// `boost_wait_research` / `boost_unlock_research`: what one turn of research
+/// is worth on the `tech_value` / `civic_value` scale, above the `sqrt(cost)`
+/// divisor. Both of those genes price something the node does for the rest of
+/// the tree — a boost lost, a permission bought — which is an ordinary
+/// addition like a building unlock, not a discount on this node.
 pub(super) const BOOST_TURN_VALUE: f64 = 22.0;
 
-/// `boost_first_research` / `boost_wait_research`: the ceiling on how many
+/// `boost_wait_research` / `boost_unlock_research`: the ceiling on how many
 /// turns of research one boost is allowed to be worth. An empire whose science
 /// has collapsed against a mid-game tree can price a single boost at forty
 /// turns, which would dictate the tree rather than order it.
@@ -114,16 +131,34 @@ impl AdvancedAi {
         node: &str,
         techs: bool,
     ) -> f64 {
-        let held = Self::boost_in_hand(g, pid, node, techs);
-        let mut value = if held {
-            self.boost_in_hand_value(g, pid, node, techs)
+        let value = if Self::boost_in_hand(g, pid, node, techs) {
+            // Held: nothing left to wait for, and the discount itself is
+            // `boost_in_hand_scale`'s business, below the divisor.
+            BOOST_IN_HAND_FLAT_VALUE
         } else {
-            0.0
+            -self.boost_wait_penalty(g, pid, node, techs)
         };
-        if !held {
-            value -= self.boost_wait_penalty(g, pid, node, techs);
-        }
         value + self.boost_unlock_credit(g, pid, node, techs)
+    }
+
+    /// `boost_first_research`: what to multiply a finished `tech_value` /
+    /// `civic_value` by. Both end `(value + k) / cost.sqrt()`, so they rank
+    /// value per root beaker; a boost in hand makes this node cost `1 - frac`
+    /// of its printed price, and the score that buys is the old one times
+    /// `1 / (1 - frac).sqrt()`. One with the gene off, and one for a node
+    /// whose boost is not in hand — so nothing else in the tree moves.
+    pub(super) fn boost_in_hand_scale(
+        &self,
+        g: &Game,
+        pid: usize,
+        node: &str,
+        techs: bool,
+    ) -> f64 {
+        if !self.boost_first_research || !Self::boost_in_hand(g, pid, node, techs) {
+            return 1.0;
+        }
+        let frac = Self::boost_frac(g, node, techs).clamp(0.0, 0.99);
+        (1.0 / (1.0 - frac).sqrt()).min(BOOST_SCALE_CAP)
     }
 
     /// Is this node's boost already banked?
@@ -137,16 +172,17 @@ impl AdvancedAi {
         }
     }
 
-    /// `boost_first_research`: what a boost already in hand is worth. The flat
-    /// 28 with the gene off; with it on, the turns of research the discount
-    /// saves, floored at that 28 so the gene never lowers a boosted node.
-    fn boost_in_hand_value(&self, g: &Game, pid: usize, node: &str, techs: bool) -> f64 {
-        if !self.boost_first_research {
-            return BOOST_IN_HAND_FLAT_VALUE;
-        }
-        let granted = Self::boost_grant(g, node, techs);
-        let turns = Self::boost_turns(g, pid, granted, techs);
-        (turns * BOOST_TURN_VALUE).max(BOOST_IN_HAND_FLAT_VALUE)
+    /// The fraction of a node's cost its boost pays, read the way
+    /// `Game::node_boost_frac` reads it: the row's own percentage, or the
+    /// shipped 40 for a node with no boost row that was granted one anyway (a
+    /// goody hut, a Great Scientist, a stolen boost).
+    fn boost_frac(g: &Game, node: &str, techs: bool) -> f64 {
+        let percent = if techs {
+            g.rules.techs[node].boost.as_ref().and_then(|b| b.percent)
+        } else {
+            g.rules.civics[node].boost.as_ref().and_then(|b| b.percent)
+        };
+        percent.unwrap_or(40.0) / 100.0
     }
 
     /// `boost_wait_research`: what to subtract from a node whose boost is
@@ -157,6 +193,25 @@ impl AdvancedAi {
         if !self.boost_wait_research {
             return 0.0;
         }
+        // ⚠ THE RISK TEST COMES FIRST, AND IT IS THE CHEAP ONE. How likely the
+        // node is to beat its own trigger home depends on nothing but its cost
+        // and the empire's rate: full weight on one that finishes next turn,
+        // nothing on one still running when the engine's mid-research credit
+        // could reach it. In the opening every node is a long node, so this
+        // returns before the chase table is touched — and the table is a clone
+        // of every boost in reach, taken once per candidate in the argmax. The
+        // first cut looked the node up first and the probe measured the gene
+        // at +10.4% compute a seat.
+        let rate = Self::research_rate(g, pid, techs);
+        let cost = if techs {
+            g.tech_cost(node)
+        } else {
+            g.civic_cost(node)
+        };
+        let risk = (1.0 - (cost / rate) / BOOST_WAIT_HORIZON_TURNS).clamp(0.0, 1.0);
+        if risk <= 0.0 {
+            return 0.0;
+        }
         let chases = self.eureka_chases(g, pid);
         let Some(chase) = chases
             .iter()
@@ -164,19 +219,6 @@ impl AdvancedAi {
         else {
             return 0.0;
         };
-        let rate = Self::research_rate(g, pid, techs);
-        let cost = if techs {
-            g.tech_cost(node)
-        } else {
-            g.civic_cost(node)
-        };
-        // How likely the node is to beat its own trigger home: full weight on
-        // one that finishes next turn, nothing on one still running when the
-        // engine's mid-research credit could reach it.
-        let risk = (1.0 - (cost / rate) / BOOST_WAIT_HORIZON_TURNS).clamp(0.0, 1.0);
-        if risk <= 0.0 {
-            return 0.0;
-        }
         let turns = (chase.research / rate).min(BOOST_TURNS_CAP);
         turns * BOOST_TURN_VALUE * BOOST_WAIT_FACTOR * risk
     }
@@ -236,30 +278,6 @@ impl AdvancedAi {
                     self.civic_leads_to(g, node, gate.as_str())
                 }
             })
-    }
-
-    /// The research a boost on `node` grants at this game speed, read the way
-    /// `Game::node_boost_frac` reads it: the row's own percentage, or the
-    /// shipped 40 for a node with no boost row that was granted one anyway (a
-    /// goody hut, a Great Scientist, a stolen boost).
-    fn boost_grant(g: &Game, node: &str, techs: bool) -> f64 {
-        let (cost, percent) = if techs {
-            (
-                g.tech_cost(node),
-                g.rules.techs[node].boost.as_ref().and_then(|b| b.percent),
-            )
-        } else {
-            (
-                g.civic_cost(node),
-                g.rules.civics[node].boost.as_ref().and_then(|b| b.percent),
-            )
-        };
-        cost * percent.unwrap_or(40.0) / 100.0
-    }
-
-    /// `granted` research points as turns of the empire's own output, capped.
-    fn boost_turns(g: &Game, pid: usize, granted: f64, techs: bool) -> f64 {
-        (granted / Self::research_rate(g, pid, techs)).min(BOOST_TURNS_CAP)
     }
 
     /// The empire's science (`techs`) or culture per turn, read from the same
@@ -448,8 +466,7 @@ mod tests {
             .max(1.0)
     }
 
-    /// Put the capital on a science rate large enough that an ancient boost
-    /// is worth a few turns rather than the opening's capped dozen.
+    /// Put the capital on a chosen research rate.
     fn set_science(game: &mut Game, science: f64) {
         let cid = game.player_city_ids(0)[0];
         game.observed_city_yield_adjustments.insert(
@@ -461,58 +478,121 @@ mod tests {
         );
     }
 
-    /// `boost-first-research` prices the boost in hand as the turns of
-    /// research it saves, so the dearer of two boosted nodes is worth more.
+    /// `boost-first-research` multiplies the finished score by exactly what
+    /// the discount buys under the function's own `sqrt(cost)` divisor, and
+    /// leaves an unboosted node alone.
     #[test]
-    fn a_boost_in_hand_is_worth_the_turns_it_saves() {
+    fn a_boost_in_hand_scales_the_score_by_what_the_discount_buys() {
         let mut game = capital_board(53_002);
-        set_science(&mut game, 8.0);
         game.players[0].boosted_techs.insert(name!("masonry"));
-        game.players[0].boosted_techs.insert(name!("irrigation"));
+        game.players[0].boosted_civics.insert(name!("craftsmanship"));
+        let plain = AdvancedAi::new();
         let mut ai = AdvancedAi::new();
         ai.enable_boost_first_research();
-        let rate = science_rate(&game);
-        let expect = |node: &str| {
-            (game.tech_cost(node) * 0.4 / rate * BOOST_TURN_VALUE)
-                .min(BOOST_TURNS_CAP * BOOST_TURN_VALUE)
-                .max(BOOST_IN_HAND_FLAT_VALUE)
-        };
-        let dear = ai.boost_research_value(&game, 0, "masonry", true);
-        let cheap = ai.boost_research_value(&game, 0, "irrigation", true);
+        let strategy = GrandStrategy::Expansion;
+        let expected = 1.0 / (1.0f64 - 0.4).sqrt();
+        for (node, techs) in [("masonry", true), ("craftsmanship", false)] {
+            let off = if techs {
+                plain.tech_value(&game, 0, node, strategy)
+            } else {
+                plain.civic_value(&game, 0, node, strategy)
+            };
+            let on = if techs {
+                ai.tech_value(&game, 0, node, strategy)
+            } else {
+                ai.civic_value(&game, 0, node, strategy)
+            };
+            assert!(off > 0.0);
+            assert!(
+                (on / off - expected).abs() < 1e-9,
+                "{node} scaled by {} where the 40% discount buys {expected}",
+                on / off
+            );
+        }
+        // A node whose boost is not in hand is untouched, whatever its cost.
+        for node in ["pottery", "mining", "irrigation"] {
+            assert_eq!(
+                ai.tech_value(&game, 0, node, strategy),
+                plain.tech_value(&game, 0, node, strategy),
+                "{node} has no boost in hand and must not move"
+            );
+        }
+    }
+
+    /// The multiplier is a ratio, not a lump: a boosted node that unlocks
+    /// nothing still loses to an unboosted node that unlocks something. This
+    /// is the property the additive first cut did not have, and the reason its
+    /// probe resolved a score-share loss.
+    #[test]
+    fn a_boosted_node_that_unlocks_nothing_does_not_outrank_a_useful_one() {
+        let mut game = capital_board(53_011);
+        set_science(&mut game, 3.0);
+        let strategy = GrandStrategy::Expansion;
+        let plain = AdvancedAi::new();
+        let mut ai = AdvancedAi::new();
+        ai.enable_boost_first_research();
+        // The two ends of the opening tree by plain merit.
+        let available = game.available_techs(0);
+        let best = available
+            .iter()
+            .max_by(|a, b| {
+                plain
+                    .tech_value(&game, 0, a, strategy)
+                    .total_cmp(&plain.tech_value(&game, 0, b, strategy))
+            })
+            .expect("the opening tree offers something")
+            .clone();
+        let worst = available
+            .iter()
+            .filter(|tech| **tech != best)
+            .min_by(|a, b| {
+                plain
+                    .tech_value(&game, 0, a, strategy)
+                    .total_cmp(&plain.tech_value(&game, 0, b, strategy))
+            })
+            .expect("and something else")
+            .clone();
+        let gap = plain.tech_value(&game, 0, &best, strategy)
+            / plain.tech_value(&game, 0, &worst, strategy);
         assert!(
-            (dear - expect("masonry")).abs() < 1e-9,
-            "masonry's boost is {dear}, the turns it saves are worth {}",
-            expect("masonry")
+            gap > BOOST_SCALE_CAP,
+            "the opening tree spreads wider than the cap ({gap} > {BOOST_SCALE_CAP}), \
+             so this test can tell a ratio from a lump"
         );
+        game.players[0].boosted_techs.insert(Name::new(&worst));
         assert!(
-            dear > cheap && cheap > BOOST_IN_HAND_FLAT_VALUE,
-            "the dearer node's boost saves more turns: {dear} vs {cheap}, \
-             and both beat the flat {BOOST_IN_HAND_FLAT_VALUE}"
-        );
-        assert!(
-            game.tech_cost("masonry") > game.tech_cost("irrigation"),
-            "the ordering is the shipped cost ordering, not a coincidence"
+            ai.tech_value(&game, 0, &best, strategy) > ai.tech_value(&game, 0, &worst, strategy),
+            "boosting {worst} must not lift it over {best}"
         );
     }
 
-    /// The floor: a boost that saves less than a turn or two is still worth
-    /// what it was worth before the gene, never less.
+    /// The cap: no inspiration is allowed to make a node worth several of its
+    /// neighbours, which is the additive mistake in another costume.
     #[test]
-    fn the_gene_never_lowers_a_boosted_node() {
+    fn the_scale_is_capped() {
         let mut game = capital_board(53_003);
-        game.players[0].boosted_techs.insert(name!("pottery"));
         let mut ai = AdvancedAi::new();
         ai.enable_boost_first_research();
-        // A capital with an enormous science rate makes the saving trivial.
-        game.observed_city_yield_adjustments.insert(
-            game.player_city_ids(0)[0],
-            crate::rules::Yields {
-                science: 500.0,
-                ..Default::default()
-            },
-        );
-        let value = ai.boost_research_value(&game, 0, "pottery", true);
-        assert_eq!(value, BOOST_IN_HAND_FLAT_VALUE);
+        for tech in game.rules.techs.keys().copied().collect::<Vec<_>>() {
+            game.players[0].boosted_techs.insert(tech);
+        }
+        for civic in game.rules.civics.keys().copied().collect::<Vec<_>>() {
+            game.players[0].boosted_civics.insert(civic);
+        }
+        for tech in game.rules.techs.keys() {
+            let scale = ai.boost_in_hand_scale(&game, 0, tech.as_str(), true);
+            assert!(
+                (1.0..=BOOST_SCALE_CAP).contains(&scale),
+                "{tech} scales by {scale}"
+            );
+        }
+        for civic in game.rules.civics.keys() {
+            let scale = ai.boost_in_hand_scale(&game, 0, civic.as_str(), false);
+            assert!(
+                (1.0..=BOOST_SCALE_CAP).contains(&scale),
+                "{civic} scales by {scale}"
+            );
+        }
     }
 
     /// `boost-wait-research` docks a node the empire would finish before the
@@ -663,53 +743,90 @@ mod tests {
         }
     }
 
-    /// A civic's inspiration is priced against culture, not science: the two
-    /// rates are different and the trees must not be crossed.
+    /// A civic chase is priced against culture and a technology chase against
+    /// science: the two rates differ and the trees must not be crossed.
     #[test]
-    fn a_civic_is_priced_against_culture() {
+    fn the_two_trees_are_priced_against_their_own_rate() {
         let mut game = capital_board(53_008);
-        game.players[0].boosted_civics.insert(name!("early_empire"));
-        let mut ai = AdvancedAi::new();
-        ai.enable_boost_first_research();
+        set_science(&mut game, 400.0);
+        let mut opening = AdvancedAi::new();
+        opening.enable_boost_unlock_research();
+        let science = science_rate(&game);
         let culture: f64 = game
             .player_city_ids(0)
             .into_iter()
             .map(|cid| game.city_yields(cid).culture)
             .sum::<f64>()
             .max(1.0);
-        let saved = game.civic_cost("early_empire") * 0.4;
-        let expected = (saved / culture * BOOST_TURN_VALUE).max(BOOST_IN_HAND_FLAT_VALUE);
-        let value = ai.boost_research_value(&game, 0, "early_empire", false);
         assert!(
-            (value - expected).abs() < 1e-9,
-            "the inspiration is worth {value}, culture says {expected}"
+            science > culture * 10.0,
+            "the capital's science is far ahead of its culture: {science} vs {culture}"
         );
+        // Every chase this board offers is a technology's, so a credit priced
+        // against culture instead of science would be an order out.
+        let chases = opening.eureka_chases(&game, 0);
+        assert!(!chases.is_empty());
+        for chase in &chases {
+            let is_tech = game.rules.techs.contains_key(&chase.node);
+            assert_eq!(
+                is_tech,
+                !game.rules.civics.contains_key(&chase.node),
+                "{} belongs to exactly one tree",
+                chase.node
+            );
+        }
     }
 
-    /// The whole point, on the real argmax: with two boosts in hand the
-    /// research pick is one of them.
+    /// The whole point, on the real argmax: among nodes the plain function
+    /// ranks within the multiplier of each other, the boosted one wins.
     #[test]
-    fn the_research_pick_takes_a_boost_it_already_holds() {
+    fn the_research_pick_prefers_a_boost_it_already_holds() {
         let mut game = capital_board(53_009);
-        let boosted = name!("mining");
-        game.players[0].boosted_techs.insert(boosted);
+        let strategy = GrandStrategy::Expansion;
+        let plain = AdvancedAi::new();
         let mut ai = AdvancedAi::new();
         ai.enable_boost_first_research();
-        let strategy = GrandStrategy::Expansion;
-        let best = game
+        let argmax = |ai: &AdvancedAi, game: &Game| {
+            game.available_techs(0)
+                .into_iter()
+                .max_by(|a, b| {
+                    ai.tech_value(game, 0, a, strategy)
+                        .partial_cmp(&ai.tech_value(game, 0, b, strategy))
+                        .unwrap()
+                        .then_with(|| b.cmp(a))
+                })
+                .expect("the opening tree offers something")
+        };
+        let before = argmax(&plain, &game);
+        // The runner-up, boosted, takes the slot: it is inside the ratio.
+        let runner_up = game
             .available_techs(0)
             .into_iter()
+            .filter(|tech| *tech != before)
             .max_by(|a, b| {
-                ai.tech_value(&game, 0, a, strategy)
-                    .partial_cmp(&ai.tech_value(&game, 0, b, strategy))
+                plain
+                    .tech_value(&game, 0, a, strategy)
+                    .partial_cmp(&plain.tech_value(&game, 0, b, strategy))
                     .unwrap()
                     .then_with(|| b.cmp(a))
             })
-            .expect("the opening tree offers something");
+            .expect("and a runner-up");
+        let ratio = plain.tech_value(&game, 0, &before, strategy)
+            / plain.tech_value(&game, 0, &runner_up, strategy);
+        assert!(
+            ratio < 1.0 / (1.0f64 - 0.4).sqrt(),
+            "the runner-up is within the discount ({ratio}), so boosting it should win"
+        );
+        game.players[0].boosted_techs.insert(runner_up);
         assert_eq!(
-            best.as_str(),
-            "mining",
-            "the boost in hand wins the opening argmax"
+            argmax(&ai, &game),
+            runner_up,
+            "the boost in hand takes the slot from {before}"
+        );
+        assert_eq!(
+            argmax(&plain, &game),
+            before,
+            "and the gene off leaves the old pick alone"
         );
     }
 }

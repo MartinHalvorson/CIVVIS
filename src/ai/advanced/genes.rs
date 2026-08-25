@@ -1200,13 +1200,19 @@ pub const GENES: &[Gene] = &[
 
     // Sixty-two technologies and fifty-three civics carry a boost worth 40% of
     // their cost, and the whole of the agent's opinion about the order they
-    // are taken in was one flat `+28` in `tech_value` and `civic_value` -- the
-    // same credit for a boost saving eight turns and one saving two, in an era
-    // whose shipped costs already spread three-to-one. This gene credits a
-    // boost in hand the turns of research it actually saves, `frac * cost`
-    // over the empire's own science or culture per turn, floored at the old 28
-    // so a boosted node is never made worse. Operator request, 2026-08-25.
-    // Appended at the END so a running screen keeps its positional genome. See
+    // are taken in was one flat `+28` in `tech_value` and `civic_value`. Both
+    // functions end `(value + k) / cost.sqrt()` -- they rank value per root
+    // beaker -- and a boost makes the node cost `1 - frac` of its printed
+    // price, so the score it buys is the old one times `1 / (1 - frac).sqrt()`,
+    // 1.29 at the shipped 40%, with no free parameter. Operator request,
+    // 2026-08-25. ⚠ The first cut ADDED the turns of research the boost saves
+    // and its own probe resolved a score-share loss of -3.36 pp (z -3.21, run
+    // resolves ±2.93): above a `sqrt(cost)` divisor of 7 for an ancient node,
+    // an opening empire's two beakers a turn made every boost worth the
+    // twelve-turn cap, and the gene took whatever was boosted rather than the
+    // boosted one among comparable nodes. See
+    // `docs/gene_screens/fires/boost-first-research-v1.json`. Appended at the
+    // END so a running screen keeps its positional genome. See
     // `advanced/boost_research.rs`.
     Gene { tag: "boost-first-research", field: "boost_first_research", kind: Kind::OptIn, enable: AdvancedAi::enable_boost_first_research, disable: AdvancedAi::disable_boost_first_research },
     // The other half of the same fact: `Game`'s boost loop credits a boost
