@@ -438,6 +438,9 @@ fn a_live_settler_refuses_a_loyalty_doomed_target_before_walking_there() {
 
     let mut live = AdvancedAi::new();
     live.enable_live_bridge();
+    // The loyalty forecast under test rides on `loyalty-rate-alarm`, which the
+    // batch rule holds off as of the 2026-08-25 batches; the arm turns it on.
+    live.enable_loyalty_rate_alarm();
     assert!(live.base.loyalty_rate_alarm);
     let _ = live.advanced_settler_step(&mut game, 0, settler);
     let retired = live
@@ -566,6 +569,9 @@ fn a_live_settler_rechecks_cached_loyalty_when_it_arrives() {
 
     let mut live = AdvancedAi::new();
     live.enable_live_bridge();
+    // The loyalty forecast under test rides on `loyalty-rate-alarm`, which the
+    // batch rule holds off as of the 2026-08-25 batches; the arm turns it on.
+    live.enable_loyalty_rate_alarm();
     live.settler_targets.insert(settler, target);
     assert!(
         !live.advanced_settler_step(&mut game, 0, settler),
@@ -665,6 +671,9 @@ fn a_live_settler_holds_when_every_new_target_is_loyalty_doomed() {
 
     let mut live = AdvancedAi::new();
     live.enable_live_bridge();
+    // The loyalty forecast under test rides on `loyalty-rate-alarm`, which the
+    // batch rule holds off as of the 2026-08-25 batches; the arm turns it on.
+    live.enable_loyalty_rate_alarm();
     assert!(
         !game.blocked_city_sites.contains(&doomed),
         "the lone candidate must remain available to the target picker"
