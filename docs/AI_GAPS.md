@@ -1351,6 +1351,18 @@ third version guessed from the mechanism of a second is exactly the kind of
 unpriced iteration this ledger exists to stop; it needs its own row and its own
 screen.
 
+**2026-08-25 — that row now exists, natively: `order-retry`**
+(`src/ai/advanced/order_retry.rs`, `Kind::OptIn`, off). It is the v3 shape
+taken on the native board rather than on the live tape, which is what lets it
+be screened: nothing is re-planned, no turn is ended early, and one refused
+decision costs only that decision. It acts at the three places a ranked list of
+alternatives *already exists*, so the next-best candidate is free — the city
+production governor (the `produce` 24.9% above), the gold purchase loop (where
+a single refusal used to `break` out of the **entire remaining purchase budget
+for the turn**), and the builder's `worthwhile_improvements`, whose ranked
+vector was only ever read at `.first()`. Bounded at `ORDER_RETRY_LIMIT`
+alternatives per decision, and byte-identical when off.
+
 ★★★★ **The screen is recorded as an artifact and deliberately NOT entered as
 a ledger source, because entering it exposed a defect in the ranking's own
 arithmetic.** `HEURISTIC_GENE_RANKING.md` builds each gene's column as

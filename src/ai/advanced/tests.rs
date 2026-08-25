@@ -1675,60 +1675,66 @@ fn the_land_grab_wants_the_land_not_a_rung() {
 /// constructor and the frozen anchor keep the one-at-a-time gate.
 #[test]
 fn the_land_grab_pipeline_widens_with_the_empire() {
+    // The pipeline reads the board only for `expansion_schedule`'s pace,
+    // which is off here; every answer below is the land grab's own.
+    let game = Game::new(2, 24, 16, 71, 250, 0);
     let mut ai = AdvancedAi::new();
     assert_eq!(
-        ai.settler_in_flight_allowed(16, 1, 0),
+        ai.settler_in_flight_allowed(&game, 16, 1, 0),
         1,
         "off unless the bridge asks"
     );
     ai.enable_land_grab();
     assert_eq!(
-        ai.settler_in_flight_allowed(16, 1, 0),
+        ai.settler_in_flight_allowed(&game, 16, 1, 0),
         2,
         "one city: two walkers"
     );
     assert_eq!(
-        ai.settler_in_flight_allowed(16, 1, 1),
+        ai.settler_in_flight_allowed(&game, 16, 1, 1),
         2,
         "the second may start while the first walks"
     );
-    assert_eq!(ai.settler_in_flight_allowed(16, 2, 1), 2);
+    assert_eq!(ai.settler_in_flight_allowed(&game, 16, 2, 1), 2);
     assert_eq!(
-        ai.settler_in_flight_allowed(16, 3, 0),
+        ai.settler_in_flight_allowed(&game, 16, 3, 0),
         3,
         "three cities: three walkers"
     );
     assert_eq!(
-        ai.settler_in_flight_allowed(16, 6, 2),
+        ai.settler_in_flight_allowed(&game, 16, 6, 2),
         4,
         "six cities: four"
     );
     assert_eq!(
-        ai.settler_in_flight_allowed(16, 9, 0),
+        ai.settler_in_flight_allowed(&game, 16, 9, 0),
         5,
         "nine cities: five"
     );
     assert_eq!(
-        ai.settler_in_flight_allowed(16, 14, 0),
+        ai.settler_in_flight_allowed(&game, 16, 14, 0),
         2,
         "two seats short: two walkers"
     );
     assert_eq!(
-        ai.settler_in_flight_allowed(16, 15, 0),
+        ai.settler_in_flight_allowed(&game, 16, 15, 0),
         1,
         "one seat short: one walker"
     );
     assert_eq!(
-        ai.settler_in_flight_allowed(16, 15, 1),
+        ai.settler_in_flight_allowed(&game, 16, 15, 1),
         1,
         "the walker covers the last seat; the target stays the hard cap"
     );
     assert_eq!(
-        ai.settler_in_flight_allowed(16, 16, 0),
+        ai.settler_in_flight_allowed(&game, 16, 16, 0),
         1,
         "at the target the arm's own gate refuses"
     );
-    assert_eq!(AdvancedAi::legacy().settler_in_flight_allowed(16, 3, 0), 1);
+    assert_eq!(
+        AdvancedAi::legacy().settler_in_flight_allowed(&game, 16, 3, 0),
+        1
+    );
 }
 
 /// The land grab's window: a Settler must still repay before the turn
@@ -9079,12 +9085,14 @@ fn a_retarget_does_not_resolve_a_settler_delay() {
 /// frozen anchor keep the one-at-a-time gate in both settler routes.
 #[test]
 fn parallel_settlers_open_a_second_pipeline_slot() {
+    // As above: the board is read only by `expansion_schedule`, which is off.
+    let game = Game::new(2, 24, 16, 71, 250, 0);
     let mut ai = AdvancedAi::new();
     assert!(
         !ai.parallel_settlers && !ai.base.parallel_settlers,
         "off unless the bridge asks"
     );
-    assert_eq!(ai.settler_in_flight_allowed(8, 3, 1), 1);
+    assert_eq!(ai.settler_in_flight_allowed(&game, 8, 3, 1), 1);
     assert!(!AdvancedAi::legacy().parallel_settlers);
     assert!(!AdvancedAi::legacy().base.parallel_settlers);
 
@@ -9094,31 +9102,31 @@ fn parallel_settlers_open_a_second_pipeline_slot() {
         "both routes see the flag"
     );
     assert_eq!(
-        ai.settler_in_flight_allowed(8, 3, 1),
+        ai.settler_in_flight_allowed(&game, 8, 3, 1),
         2,
         "three cities, one walker, five short"
     );
     assert_eq!(
-        ai.settler_in_flight_allowed(8, 2, 0),
+        ai.settler_in_flight_allowed(&game, 8, 2, 0),
         2,
         "two cities open the second slot"
     );
     assert_eq!(
-        ai.settler_in_flight_allowed(8, 1, 1),
+        ai.settler_in_flight_allowed(&game, 8, 1, 1),
         1,
         "one city keeps a single walker"
     );
     assert_eq!(
-        ai.settler_in_flight_allowed(3, 2, 0),
+        ai.settler_in_flight_allowed(&game, 3, 2, 0),
         1,
         "one seat short: one walker covers it"
     );
     assert_eq!(
-        ai.settler_in_flight_allowed(4, 2, 1),
+        ai.settler_in_flight_allowed(&game, 4, 2, 1),
         1,
         "the walker already covers the seat but one"
     );
-    assert_eq!(ai.settler_in_flight_allowed(5, 2, 1), 2);
+    assert_eq!(ai.settler_in_flight_allowed(&game, 5, 2, 1), 2);
 }
 
 #[test]
@@ -9178,7 +9186,7 @@ fn settler_factory_coordination_keeps_the_fast_pair_and_gives_them_distinct_site
     ai.enable_settler_factory_coordination();
     let counts = ai.counts(&game, 0);
     assert_eq!(
-        ai.settler_in_flight_allowed(plan.desired_cities, 3, counts.settlers),
+        ai.settler_in_flight_allowed(&game, plan.desired_cities, 3, counts.settlers),
         3,
         "coordination must preserve the widened early pipeline"
     );
@@ -9286,20 +9294,22 @@ fn settler_factory_coordination_requires_a_route_but_accepts_shipbuilding() {
 
 #[test]
 fn a_repeatedly_blocked_settler_releases_only_the_next_missing_slot() {
+    // The board is read only by `expansion_schedule`, which is off here.
+    let game = Game::new(2, 24, 16, 71, 250, 0);
     let mut ai = AdvancedAi::new();
     ai.settler_blocked_turns.insert(41, 2);
-    assert_eq!(ai.settler_in_flight_allowed(3, 1, 1), 1);
+    assert_eq!(ai.settler_in_flight_allowed(&game, 3, 1, 1), 1);
     ai.settler_blocked_turns.insert(41, 3);
-    assert_eq!(ai.settler_in_flight_allowed(3, 1, 1), 2);
+    assert_eq!(ai.settler_in_flight_allowed(&game, 3, 1, 1), 2);
     assert_eq!(
-        ai.settler_in_flight_allowed(2, 1, 1),
+        ai.settler_in_flight_allowed(&game, 2, 1, 1),
         1,
         "a Settler already covers the final missing city"
     );
 
     let mut legacy = AdvancedAi::legacy();
     legacy.settler_blocked_turns.insert(41, 99);
-    assert_eq!(legacy.settler_in_flight_allowed(4, 1, 1), 1);
+    assert_eq!(legacy.settler_in_flight_allowed(&game, 4, 1, 1), 1);
 }
 
 #[test]

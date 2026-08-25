@@ -2499,6 +2499,44 @@ impl AdvancedAi {
         self.surprise_war_mobilization = false;
     }
 
+    /// Open the settler pipeline by the shortfall while the opening is behind
+    /// the four-cities-by-turn-sixty pace every recorded win came from.
+    /// Opt-in gene `expansion-schedule`; see
+    /// `advanced/expansion_schedule.rs` for the corpus table. Filed above the
+    /// markers: the append-point check reads a method line's first identifier.
+    pub fn enable_expansion_schedule(&mut self) {
+        self.expansion_schedule = true;
+    }
+
+    /// The twin of `enable_expansion_schedule`.
+    pub fn disable_expansion_schedule(&mut self) {
+        self.expansion_schedule = false;
+    }
+
+    /// Work food while the opening is behind the pace and no city has reached
+    /// the population a Settler needs. Opt-in gene `growth-to-settle`; see
+    /// `advanced/growth_to_settle.rs`.
+    pub fn enable_growth_to_settle(&mut self) {
+        self.growth_to_settle = true;
+    }
+
+    /// The twin of `enable_growth_to_settle`.
+    pub fn disable_growth_to_settle(&mut self) {
+        self.growth_to_settle = false;
+    }
+
+    /// Fall through to the next-best candidate the planner already ranked when
+    /// an order is refused, instead of losing the turn. Opt-in gene
+    /// `order-retry`; see `advanced/order_retry.rs`.
+    pub fn enable_order_retry(&mut self) {
+        self.order_retry = true;
+    }
+
+    /// The twin of `enable_order_retry`.
+    pub fn disable_order_retry(&mut self) {
+        self.order_retry = false;
+    }
+
     /// When the empire leads the field in science, beeline the space-race chain,
     /// build launch-city production and race two pads early.
     /// Opt-in gene `science-victory-drive`; see `advanced/science_victory_drive.rs`

@@ -4943,6 +4943,10 @@ pub struct AdvancedAi {
     campaign_retry_after: u32,
 
     // ---- append: e-f ------------------------------------------------
+    /// While the opening is behind the pace every recorded win came from,
+    /// open the settler pipeline by the shortfall. Opt-in gene
+    /// `expansion-schedule`; see `advanced/expansion_schedule.rs`.
+    expansion_schedule: bool,
     /// A city-state's place enters the envoy score: proximity to our
     /// cities, and the sitting suzerain the envoys would unseat. Opt-in gene
     /// `flip-nearby-city-states`; see `advanced/field_craft.rs`.
@@ -4958,8 +4962,16 @@ pub struct AdvancedAi {
     escort_unstick_2: bool,
 
     // ---- append: g-k ------------------------------------------------
+    /// While the opening is behind the pace and no city can build a Settler,
+    /// the citizens work food. Opt-in gene `growth-to-settle`; see
+    /// `advanced/growth_to_settle.rs`.
+    growth_to_settle: bool,
 
     // ---- append: l-o ------------------------------------------------
+    /// A refused order falls through to the next-best candidate the planner
+    /// already ranked, instead of losing the turn. Opt-in gene `order-retry`;
+    /// see `advanced/order_retry.rs`.
+    order_retry: bool,
     /// A Missionary on its last charge explores the fog within
     /// `MISSIONARY_EXPLORE_RADIUS` for up to `MISSIONARY_EXPLORE_TURNS` turns
     /// before spending it — unless a city of ours is slipping or an untouched
@@ -5389,10 +5401,25 @@ mod victory_lane;
 /// gene; see `advanced/lane_commit.rs`.
 mod lane_commit;
 
+/// `expansion-schedule`: while the opening is behind the pace every recorded
+/// win came from, open the settler pipeline by the shortfall. One opt-in
+/// gene; see `advanced/expansion_schedule.rs`.
 /// `science-victory-drive`: an empire that dominates science drives the
 /// space race — the chain beeline, the launch city's production, a horizon
 /// priced as the engine runs the race, two pads by the Earth Satellite. One
 /// opt-in gene; see `advanced/science_victory_drive.rs`.
+mod expansion_schedule;
+
+/// `growth-to-settle`: while the opening is behind the pace and no city can
+/// build a Settler, the citizens work food. One opt-in gene; see
+/// `advanced/growth_to_settle.rs`.
+mod growth_to_settle;
+
+/// `order-retry`: a refused order falls through to the next-best candidate
+/// the planner already ranked. One opt-in gene; see
+/// `advanced/order_retry.rs`.
+mod order_retry;
+
 mod science_victory_drive;
 pub use science_victory_drive::ScienceDrive;
 
@@ -6096,12 +6123,15 @@ impl AdvancedAi {
             campaign_retry_after: 0,
 
             // ---- append: e-f ----------------------------------------
+            expansion_schedule: false,
             flip_nearby_city_states: false,
             escort_unstick_2: false,
 
             // ---- append: g-k ----------------------------------------
+            growth_to_settle: false,
 
             // ---- append: l-o ----------------------------------------
+            order_retry: false,
             missionary_last_charge_explores: false,
             missionary_explore: RefCell::new(BTreeMap::new()),
             missionary_evades_raiders: false,
@@ -16574,17 +16604,44 @@ impl AdvancedAi {
                 }
             }
             drop(memo);
-            let best = candidates.into_iter().max_by(|left, right| {
-                left.0
-                    .total_cmp(&right.0)
-                    .then_with(|| left.1.cmp(&right.1))
-            });
-            let Some((score, _, action)) = best else { break };
-            let is_unit = matches!(action, Action::Buy { .. });
-            let before = g.players[pid].gold;
-            if g.apply(pid, &action).is_err() {
-                break;
+            // `order_retry`: this loop used to `break` on a refusal, which
+            // abandoned the ENTIRE remaining purchase budget for the turn
+            // rather than the one item the treasury could not buy. Walk the
+            // ranked candidates instead; with the gene off exactly the argmax
+            // is tried, and a refusal ends the turn's spending as before.
+            let keep = 1 + self.order_retry_budget();
+            let mut ranked: Vec<(f64, std::cmp::Reverse<String>, Action)> = if keep > 1 {
+                candidates.sort_by(|left, right| {
+                    right
+                        .0
+                        .total_cmp(&left.0)
+                        .then_with(|| right.1.cmp(&left.1))
+                });
+                candidates.truncate(keep);
+                candidates
+            } else {
+                candidates
+                    .into_iter()
+                    .max_by(|left, right| {
+                        left.0
+                            .total_cmp(&right.0)
+                            .then_with(|| left.1.cmp(&right.1))
+                    })
+                    .into_iter()
+                    .collect()
+            };
+            let mut applied = None;
+            for (score, _, action) in ranked.drain(..) {
+                let before = g.players[pid].gold;
+                if g.apply(pid, &action).is_ok() {
+                    applied = Some((score, action, before));
+                    break;
+                }
             }
+            let Some((score, action, before)) = applied else {
+                break;
+            };
+            let is_unit = matches!(action, Action::Buy { .. });
             if self.journal().wants(crate::reasoning::Level::Decision) {
                 let spent = (before - g.players[pid].gold).max(0.0);
                 let (city, what) = match &action {
@@ -19208,7 +19265,7 @@ impl AdvancedAi {
         let desired = self.settlement_target(plan);
         if city_count + counts.settlers >= desired
             || counts.settlers
-                >= self.settler_in_flight_allowed(desired, city_count, counts.settlers)
+                >= self.settler_in_flight_allowed(g, desired, city_count, counts.settlers)
         {
             return;
         }
@@ -19888,7 +19945,11 @@ impl AdvancedAi {
                     continue;
                 }
             }
-            let best: Option<(f64, String, Item)> = {
+            // `order_retry`: the menu is RANKED rather than reduced to its
+            // argmax, so a refused item falls through to the next-best without
+            // scoring anything a second time. With the gene off only the argmax
+            // is ever kept and the choice is the shipped one, item for item.
+            let ranked: Vec<(f64, String, Item)> = {
                 let _memo = g.query_memo();
                 let mut items =
                     g.producible_items(pid, cid)
@@ -19906,8 +19967,8 @@ impl AdvancedAi {
                                         Some(Item::Project { project: queued }) if queued == project
                                     )
                             })
-                    })
-                    .collect::<Vec<_>>();
+                        })
+                        .collect::<Vec<_>>();
                 // See `district_planning`: the plan's sites join the menu
                 // and a reserved plot is withdrawn from a rival district —
                 // the argmax below is untouched, it only sees better.
@@ -19915,36 +19976,62 @@ impl AdvancedAi {
                     self.district_plan_shape_menu(g, pid, plan, cid, &mut items);
                 }
                 let scores = self.production_values(g, pid, cid, &items, plan, counts);
-                let mut best = None;
-                for (item, score) in items.into_iter().zip(scores) {
-                    let key = format!("{item:?}");
-                    let replace = best
-                        .as_ref()
-                        .map(|(old, old_key, _): &(f64, String, Item)| {
-                            score > *old + 1e-9
-                                || ((score - *old).abs() < 1e-9 && key < *old_key)
-                        })
-                        .unwrap_or(true);
-                    if replace {
-                        best = Some((score, key, item));
+                let menu = items
+                    .into_iter()
+                    .zip(scores)
+                    .map(|(item, score)| (score, format!("{item:?}"), item));
+                let keep = 1 + self.order_retry_budget();
+                if keep > 1 {
+                    let mut menu: Vec<(f64, String, Item)> = menu.collect();
+                    menu.sort_by(|left, right| {
+                        right
+                            .0
+                            .total_cmp(&left.0)
+                            .then_with(|| left.1.cmp(&right.1))
+                    });
+                    menu.truncate(keep);
+                    menu
+                } else {
+                    let mut best: Option<(f64, String, Item)> = None;
+                    for (score, key, item) in menu {
+                        let replace = best
+                            .as_ref()
+                            .map(|(old, old_key, _): &(f64, String, Item)| {
+                                score > *old + 1e-9
+                                    || ((score - *old).abs() < 1e-9 && key < *old_key)
+                            })
+                            .unwrap_or(true);
+                        if replace {
+                            best = Some((score, key, item));
+                        }
                     }
+                    best.into_iter().collect()
                 }
-                best
             };
-            if let Some((score, _, item)) = best {
-                // Switching is close to free in this engine: `City::production_progress`
-                // banks a paused build's progress by item key, so an abandoned
-                // item resumes where it stopped. The margin is what stops a
-                // city oscillating between two nearly equal candidates.
-                let displaces_commitment = match &committed {
-                    Some((current, current_item)) => {
-                        *current_item != item && score > *current * self.preempt_margin
+            // The item this city actually started, which is the one the census
+            // and the journal below have to name — a retry that landed a
+            // different item must not be recorded as the one that was refused.
+            let chosen = {
+                let mut chosen: Option<(f64, Item)> = None;
+                for (score, _, item) in ranked {
+                    // Switching is close to free in this engine:
+                    // `City::production_progress` banks a paused build's
+                    // progress by item key, so an abandoned item resumes where
+                    // it stopped. The margin is what stops a city oscillating
+                    // between two nearly equal candidates.
+                    let displaces_commitment = match &committed {
+                        Some((current, current_item)) => {
+                            *current_item != item && score > *current * self.preempt_margin
+                        }
+                        None => true,
+                    };
+                    // Ordering, not legality: the menu descends, so a candidate
+                    // that cannot displace the commitment rules out every
+                    // candidate under it as well.
+                    if !(displaces_commitment && score > -1_000.0) {
+                        break;
                     }
-                    None => true,
-                };
-                if displaces_commitment
-                    && score > -1_000.0
-                    && g.apply(
+                    if g.apply(
                         pid,
                         &Action::Produce {
                             city: cid,
@@ -19952,6 +20039,14 @@ impl AdvancedAi {
                         },
                     )
                     .is_ok()
+                    {
+                        chosen = Some((score, item));
+                        break;
+                    }
+                }
+                chosen
+            };
+            if let Some((score, item)) = chosen {
                 {
                     // What this city was told to build. `BasicAi::production`
                     // has recorded its own choice since it was written, but
@@ -20747,10 +20842,19 @@ impl AdvancedAi {
 
     fn settler_in_flight_allowed(
         &self,
+        g: &Game,
         desired_cities: usize,
         city_count: usize,
         settlers: usize,
     ) -> usize {
+        // `expansion_schedule`: the opening's own pace answers first, and
+        // only while the empire is behind it. See
+        // `advanced/expansion_schedule.rs`.
+        if let Some(width) =
+            self.expansion_schedule_pipeline(g, desired_cities, city_count, settlers)
+        {
+            return width;
+        }
         let stalled_expansion = self.settlement_safety
             && self
                 .settler_blocked_turns
@@ -20810,7 +20914,7 @@ impl AdvancedAi {
         }
         let city_count = g.player_city_ids(pid).len();
         let desired = self.settlement_target(plan);
-        let allowed = self.settler_in_flight_allowed(desired, city_count, counts.settlers);
+        let allowed = self.settler_in_flight_allowed(g, desired, city_count, counts.settlers);
         let open_slots = allowed.saturating_sub(counts.settlers);
         if open_slots == 0 {
             return false;
@@ -21191,8 +21295,12 @@ impl AdvancedAi {
             }
             Item::Unit { unit } if unit == "settler" => {
                 let settlement_target = self.settlement_target(plan);
-                let in_flight_allowed =
-                    self.settler_in_flight_allowed(settlement_target, city_count, counts.settlers);
+                let in_flight_allowed = self.settler_in_flight_allowed(
+                    g,
+                    settlement_target,
+                    city_count,
+                    counts.settlers,
+                );
                 // ★★★★ ASK THE CHEAP QUESTIONS FIRST. The site scan below is
                 // the most expensive question in this arm — a valued sweep of
                 // a radius-11 disk, and once Shipbuilding is in, of the whole
@@ -26421,22 +26529,31 @@ impl AdvancedAi {
                 .is_ok();
         }
         let here = self.worthwhile_improvements(g, pid, current, strategy);
-        if let Some(improvement) = here.first() {
+        if !here.is_empty() {
             self.builder_targets.remove(&uid);
-            think!(self.journal(), Expansion, Detail,
-                   "Building a {} at {current:?}", plain(improvement);
-                   "worth {:.1} to the {} plan, best of {} that fit this tile",
-                   self.improvement_value(g, current, improvement, strategy),
-                   strategy.as_str(), here.len(); current);
-            return g
-                .apply(
+            // `order_retry`: `worthwhile_improvements` is already ranked and
+            // only its head was ever attempted, so a tile that refuses the
+            // best improvement spent the Builder's whole turn. With the gene
+            // off this tries the head alone, exactly as before.
+            for improvement in here.iter().take(1 + self.order_retry_budget()) {
+                think!(self.journal(), Expansion, Detail,
+                       "Building a {} at {current:?}", plain(improvement);
+                       "worth {:.1} to the {} plan, best of {} that fit this tile",
+                       self.improvement_value(g, current, improvement, strategy),
+                       strategy.as_str(), here.len(); current);
+                if g.apply(
                     pid,
                     &Action::Improve {
                         unit: uid,
                         improvement: Name::new(improvement),
                     },
                 )
-                .is_ok();
+                .is_ok()
+                {
+                    return true;
+                }
+            }
+            return false;
         }
         let reserved: HashSet<Pos> = self
             .builder_targets
@@ -32620,6 +32737,10 @@ impl AdvancedAi {
         // seat drives the space race this turn. Exact no-op while off. See
         // `advanced/science_victory_drive.rs`.
         self.maintain_science_drive(g, pid);
+        // `growth_to_settle`: hand the citizen governor this turn's food
+        // appetite. Exact no-op while off. See
+        // `advanced/growth_to_settle.rs`.
+        self.maintain_growth_to_settle(g, pid);
         let disposition_strategy = active_victory_target
             .or_else(|| self.committed_lane())
             .map(VictoryTarget::strategy)
