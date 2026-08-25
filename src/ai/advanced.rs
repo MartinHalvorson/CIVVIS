@@ -4869,6 +4869,11 @@ mod surprise_defense;
 mod air_surge;
 use air_surge::{AirSurge, AirSurgeCensus, AirSurgeStatus};
 
+/// Three Deity habits: chop into the queue, chase eurekas with Builders and
+/// with the production queue. Three opt-in genes; see
+/// `advanced/deity_habits.rs`.
+mod deity_habits;
+
 mod site_lookahead;
 
 /// The standing city's district plan: which districts, on which reserved
@@ -4895,10 +4900,6 @@ mod religion;
 /// non-founder's answer and the spreaders' targets by how much of a rival's
 /// win is already done. One opt-in gene; see `advanced/religious_defence.rs`.
 mod religious_defence;
-/// Three Deity habits: chop into the queue, chase eurekas with Builders and
-/// with the production queue. Three opt-in genes; see
-/// `advanced/deity_habits.rs`.
-mod deity_habits;
 /// Field craft: shoot-and-scoot, the zone-of-control screen, pillage-to-heal
 /// and flipping nearby city-states. Four opt-in genes; see
 /// `advanced/field_craft.rs`.
