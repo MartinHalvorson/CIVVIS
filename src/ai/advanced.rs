@@ -4344,6 +4344,47 @@ pub struct AdvancedAi {
     /// `AdvancedAi::diplomatic_opening_score`.
     pub diplomatic_opening: bool,
 
+    /// Whether a rival's conquests are read from the cities it has taken, or
+    /// only from the capitals.
+    ///
+    /// ⚠ THE LAST BLIND LANE IN THE THREAT MODEL, AND IT IS A STAIRCASE ON TOP
+    /// OF BEING BLIND. `rival_victory_pressure_with_culture` scores the
+    /// Domination race as
+    ///
+    /// ```text
+    /// 100 * foreign CAPITALS held / foreign capitals
+    /// ```
+    ///
+    /// which on a six-player board is five values twenty points apart, and is
+    /// **zero** for a rival that has taken any number of ordinary cities. An
+    /// empire that has eaten half a neighbour, is fielding the largest army on
+    /// the board and is two turns from the palace reads exactly what a
+    /// pacifist reads.
+    ///
+    /// The four other lanes have all been given a continuous reading —
+    /// `conversion-majority-alarm` counted the cities a religious victory
+    /// requires instead of the whole civilizations already lost,
+    /// `science-chain-alarm` gave the Science race a reading before its first
+    /// launch, `rival-suzerainty-alarm` put the Favor engine behind the
+    /// Diplomatic points, and Culture was a ratio already. This is the one
+    /// that was left.
+    ///
+    /// ⚠ It is worth reading even though nobody wins this way. `victory_eval`
+    /// finishes domination 2/16 and `docs/EVAL_STATUS.md` records 1 of 107
+    /// rival victories as conquest, so the point is **not** to deny a
+    /// Domination Victory. It is that captured cities are production,
+    /// population, districts and techs — the currency of every other lane —
+    /// and the empire accumulating them fastest is the most dangerous on the
+    /// board however it eventually wins. Reading that as nothing is the
+    /// blindness; the capital count is merely where the blindness ends.
+    ///
+    /// The reading is the same expression with one filter removed: the share
+    /// of the world's foreign cities this empire has taken from somebody.
+    /// Folded in with `max`, so a rival that has actually taken capitals keeps
+    /// the higher number, and a rival that has taken nothing reads zero.
+    ///
+    /// **Off by default.** Screenable.
+    pub domination_city_count: bool,
     /// Whether a war this empire did NOT declare may take over its grand
     /// strategy while no city of ours is threatened and our own lane is live.
     ///
@@ -6040,6 +6081,7 @@ impl AdvancedAi {
             air_surge_census: AirSurgeCensus::default(),
             air_surge_cooldown_until: 0,
             diplomatic_opening: false,
+            domination_city_count: false,
             unchosen_war_keeps_the_lane: false,
             rival_suzerainty_alarm: false,
             science_chain_alarm: false,
@@ -8920,9 +8962,36 @@ impl AdvancedAi {
             .values()
             .filter(|city| city.is_capital && city.original_owner != pid && city.owner == pid)
             .count();
-        let domination = (100 * controlled_capitals)
+        // `domination_city_count`: the same question asked of cities rather
+        // than capitals. Numerator is what this empire has taken from
+        // somebody; denominator is every city on the board that did not
+        // originate with it, so the reading is the share of the foreign world
+        // it holds. Folded in with `max`, so it can only raise.
+        let conquered = if self.domination_city_count {
+            let mut held = 0_usize;
+            let mut foreign = 0_usize;
+            for city in g.cities.values() {
+                let born_elsewhere = city.original_owner != pid;
+                let owner_is_major = g
+                    .players
+                    .get(city.original_owner)
+                    .is_some_and(|owner| !owner.is_minor && !owner.is_barbarian);
+                if !born_elsewhere || !owner_is_major {
+                    continue;
+                }
+                foreign += 1;
+                if city.owner == pid {
+                    held += 1;
+                }
+            }
+            (100 * held).checked_div(foreign).unwrap_or(0) as i32
+        } else {
+            0
+        };
+        let domination = ((100 * controlled_capitals)
             .checked_div(foreign_capitals)
-            .unwrap_or(0) as i32;
+            .unwrap_or(0) as i32)
+            .max(conquered);
 
         // The shipped score term is a clock, not an observation: it fires only
         // in the last quarter of the game, so at the recorded large map size --

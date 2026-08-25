@@ -789,6 +789,14 @@ pub const GENES: &[Gene] = &[
     // already settled, ~1.4 free Diplomatic Victory Points a seat a game).
     Gene { tag: "congress-banks-decided", field: "congress_banks_a_decided_vote", kind: Kind::OptIn, enable: AdvancedAi::enable_congress_banks_a_decided_vote, disable: AdvancedAi::disable_congress_banks_a_decided_vote },
     Gene { tag: "congress-counter-votes", field: "congress_counter_votes", kind: Kind::OptIn, enable: AdvancedAi::enable_congress_counter_votes, disable: AdvancedAi::disable_congress_counter_votes },
+    // ⚠ The last blind lane in the threat model: Domination is read as
+    // `100 * foreign CAPITALS held / foreign capitals`, five values twenty
+    // points apart, and ZERO for a rival that has taken any number of ordinary
+    // cities. Captured cities are production, population, districts and techs
+    // -- the currency of every other lane -- so the empire eating the board
+    // reads as a pacifist right up to the first palace. See
+    // `domination_city_count`.
+    Gene { tag: "domination-city-count", field: "domination_city_count", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_city_count, disable: AdvancedAi::disable_domination_city_count },
     // ⚠ The largest branch in the grand-strategy cascade and it has no exit:
     // any war at all pins the plan on Conquest for its whole duration, and
     // `war-patience`, the one release, ships off. Conquest takes 40% of the
