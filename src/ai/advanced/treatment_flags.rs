@@ -2285,6 +2285,20 @@ impl AdvancedAi {
 
     // ---- append: c-d ------------------------------------------------
 
+    /// Price the cheap rung of a district chain by payback and leave the whole
+    /// district on the clock. See `AdvancedAi::chain_payback_window_2`; opt-in
+    /// gene `chain-payback-window-2`, version two of `chain-payback-window`.
+    /// Filed here rather than under a marker: the append-point check reads a
+    /// method line's first identifier.
+    pub fn enable_chain_payback_window_2(&mut self) {
+        self.chain_payback_window_2 = true;
+    }
+
+    /// The twin of `enable_chain_payback_window_2`.
+    pub fn disable_chain_payback_window_2(&mut self) {
+        self.chain_payback_window_2 = false;
+    }
+
     /// Price the science and culture chain debts by whether the building can
     /// still repay, not by how much of the clock is left. See
     /// `AdvancedAi::chain_payback_window`; opt-in gene `chain-payback-window`.

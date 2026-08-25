@@ -4570,6 +4570,26 @@ pub struct AdvancedAi {
 
     // ---- append: c-d ------------------------------------------------
 
+    /// Version 2 of `chain-payback-window`: price the cheap rung of the chain
+    /// by payback and leave the expensive rung on the clock.
+    ///
+    /// Version one moves all three terms to `campus_payback_horizon`, and its
+    /// 24-game fires probe came back negative on both axes. The mechanism that
+    /// would explain it is that the three terms are not the same purchase.
+    /// `research_debt` and `culture_debt` are a Library and an Amphitheater
+    /// owed to a district the empire has ALREADY paid for — a few turns of
+    /// production that then pay every turn, which is exactly the case
+    /// `RESEARCH_CAMPUS_PAYBACK` was written for. `research_coverage` is 300
+    /// points for a whole Campus in a city that has none, and a district begun
+    /// late may not repay at all; holding it at full value to within forty
+    /// turns of the end lets it outbid the Spaceport and the space-race
+    /// projects that actually end the game in this regime.
+    ///
+    /// So version two takes the repaired horizon for the cheap rung and leaves
+    /// the expensive one exactly as it ships. Opt-in gene
+    /// `chain-payback-window-2`.
+    pub chain_payback_window_2: bool,
+
     /// Price the science and culture chains by whether the building can still
     /// repay, not by how much of the clock is left.
     ///
@@ -4949,6 +4969,21 @@ const RESEARCH_CAMPUS_COVERAGE: f64 = 300.0;
 /// zero so a Campus begun at turn 245 still does not outbid a defender — which
 /// is the reason the original horizon was there.
 const RESEARCH_CAMPUS_PAYBACK: f64 = 0.16;
+
+/// Which rung of a district chain a debt is being priced for. The two are
+/// separated because they are not the same purchase: the cheap rung is a
+/// Library or an Amphitheater, which costs a handful of turns and pays every
+/// turn after, while the expensive rung is the district itself, which the
+/// empire may not recover before the clock stops. See `chain_payback_window`
+/// and `chain_payback_window_2`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum ChainRung {
+    /// A Campus building owed to a standing Campus, or a Theater Square
+    /// building owed to a standing Theater Square.
+    Building,
+    /// A whole district owed to a city that has none.
+    District,
+}
 
 /// What a Builder is worth to a city that still has land to improve, under
 /// `builder_supply_floor`. The shipped 260 sits below a monument's flat 240
@@ -5859,6 +5894,7 @@ impl AdvancedAi {
             builder_supply_floor: false,
 
             // ---- append: c-d ----------------------------------------
+            chain_payback_window_2: false,
             chain_payback_window: false,
 
             district_planning: false,
@@ -10497,11 +10533,17 @@ impl AdvancedAi {
     ///
     /// `research_horizon` is a game fraction and reaches zero at the turn
     /// limit; `campus_payback_horizon` asks the question the constant beside it
-    /// says the code means to ask — whether the building can still repay.
-    /// `chain_payback_window` chooses between them. See that flag for why only
-    /// one of the four terms that wanted the repaired shape ever got it.
-    fn chain_horizon(&self, g: &Game) -> f64 {
-        if self.chain_payback_window {
+    /// says the code means to ask — whether the thing can still repay.
+    /// `chain_payback_window` chooses between them for both rungs;
+    /// `chain_payback_window_2` chooses it for the cheap rung only. See those
+    /// flags for why only one of the four terms that wanted the repaired shape
+    /// ever got it, and why the two rungs may not want the same window.
+    fn chain_horizon(&self, g: &Game, rung: ChainRung) -> f64 {
+        let payback = match rung {
+            ChainRung::Building => self.chain_payback_window || self.chain_payback_window_2,
+            ChainRung::District => self.chain_payback_window,
+        };
+        if payback {
             Self::campus_payback_horizon(g)
         } else {
             Self::research_horizon(g)
@@ -21101,7 +21143,7 @@ impl AdvancedAi {
                         // chain are 2, 4 and 3-plus-5, and the debt is flat.
                         RESEARCH_BUILDING_DEBT
                             * self.research_tier_weight(g, city, spec)
-                            * self.chain_horizon(g)
+                            * self.chain_horizon(g, ChainRung::Building)
                     } else {
                         0.0
                     };
@@ -21117,7 +21159,7 @@ impl AdvancedAi {
                         && city.districts.keys().any(|built| {
                             g.district_family(*built) == crate::name!("theater_square")
                         }) {
-                        CULTURE_BUILDING_DEBT * self.chain_horizon(g)
+                        CULTURE_BUILDING_DEBT * self.chain_horizon(g, ChainRung::Building)
                     } else {
                         0.0
                     };
@@ -21498,7 +21540,7 @@ impl AdvancedAi {
                     // `RESEARCH_CAMPUS_PAYBACK`: the old scaling priced this at
                     // 0.40 with a hundred turns of compounding left, while every
                     // rival term is a flat constant that never decays.
-                    RESEARCH_CAMPUS_COVERAGE * self.chain_horizon(g)
+                    RESEARCH_CAMPUS_COVERAGE * self.chain_horizon(g, ChainRung::District)
                 } else {
                     0.0
                 };
