@@ -8,14 +8,12 @@
 //! territory for maximum healing rates, utilize support bonuses, zone of
 //! control and whatever else you can think of."*
 //!
-//! ⚠ READ `contact-posture`'s PRICE BEFORE ADDING A STAND. The one tactical
-//! gene that already answers "do not swing" — dig in and receive the melee —
-//! reads **hurts** on 38,160 seats (pooled Diff −1.14, posterior 0% helps):
-//! a unit that stands still in a major war is a unit that is not at the
-//! siege, and the whole regime is decided by tempo. So none of the four genes
-//! below adds a stand. Each is a piece of *actuation* the controller could
-//! not take before, priced on the engine's own arithmetic, and each spends
-//! at most the movement the unit was going to spend anyway.
+//! A stand-still posture screened negatively at 38,160 seats: a unit that
+//! stands still in a major war is a unit that is not at the siege, and the
+//! whole regime is decided by tempo. So none of the four genes below adds a
+//! stand. Each is a piece of *actuation* the controller could not take
+//! before, priced on the engine's own arithmetic, and each spends at most the
+//! movement the unit was going to spend anyway.
 //!
 //! ## The four engine facts, and the gene that reads each one
 //!
@@ -107,8 +105,8 @@
 //!
 //! - `pillage_to_heal_step`: before `healing_step`, both regimes — the wound
 //!   is the trigger and the recovery path is what it pre-empts.
-//! - `shoot_and_scoot_step`: inside the war branch before `contact_posture`
-//!   and the attack scan, and at the top of the empty-enemies branch against
+//! - `shoot_and_scoot_step`: inside the war branch before the attack scan,
+//!   and at the top of the empty-enemies branch against
 //!   the barbarian seat — a raider in contact is the most urgent thing on
 //!   that path and nothing below it shoots before it marches.
 //! - `zoc_screen_step`: after the attack scan has declined, before the
@@ -269,8 +267,8 @@ impl AdvancedAi {
         let keep = keep.filter(|target| g.wdist(here, *target) <= range);
         let envelopes = self.base.enemy_attack_envelopes(g, pid);
         // The bodies that can reach us and pay no counter for being shot:
-        // hostile melee units. An unanswerable shooter is `contact-posture`'s
-        // question and is left to it.
+        // hostile melee units. An unanswerable shooter is left to the
+        // ordinary tactical movement path.
         let bodies: Vec<(u32, Pos, i32)> = envelopes
             .iter()
             .filter(|(_, reach)| reach.contains(&here))
