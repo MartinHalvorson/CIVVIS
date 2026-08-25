@@ -191,11 +191,10 @@ mod power_probe {
     use super::*;
     /// Does the decision a gene prices ever actually ARISE?
     ///
-    /// ★★★★★ THE CHECK THAT WOULD HAVE SAVED TWO GENES. `campus-finishes-first`
-    /// and `power-the-laboratory` both came back byte-identical to control —
-    /// the second over TWELVE seeds — and in both cases the code was correct,
-    /// wired, and reachable. What was missing was a board where the choice it
-    /// changes is ever offered.
+    /// ★★★★★ THE CHECK THAT WOULD HAVE SAVED TWO SCIENCE PROBES. Both
+    /// came back byte-identical to control even though the code was correct,
+    /// wired, and reachable. What was missing was a board where the choice
+    /// they changed was ever offered.
     ///
     /// For the power gene this probe answers it in one game: **10 cities, 4
     /// with an Industrial Zone, 4 drawing power, 3 ALREADY HOLDING A PLANT,

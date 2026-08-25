@@ -3100,7 +3100,6 @@ fn the_default_controller_keeps_the_faith_army_ungated() {
 /// |---|---|
 /// | `bounded_recovery` | **NULL over 600 maps** on two disjoint seeds; removed from production 2026-08-17. The live bridge and explicit evaluator treatments retain the flag. |
 /// | `city_target_floor = 6` | **REMOVED 2026-08-10.** Withholding it passed the promotion matrix — deployment-online 55.9%, Elo +41 (CI +7..+76), p=0.0000; compact-standard flat. Its solo axis had already measured null (49.6%, Elo −3, p=0.9007) before it shipped inside this composite. |
-/// | `envoy_infrastructure` | **NULL at 800 games** (matrix RETAIN, 1/2 profiles); removed from production 2026-08-17. The explicit evaluator arm retains the valuation for future decomposition. |
 /// | `envoy_priority`, `adjacency_site_planning`, `settler_commit`, `research_economy`, `plan_city_target`, `amenity_districts`, `siege_muster`, `home_defense`, `tactical_strategy`, `unit_objective_memory` | no individual outcome number located in `docs/EVAL.md`. |
 ///
 /// A composite may legitimately pass a gate while a component is null on
@@ -3228,10 +3227,9 @@ fn the_withholdable_defaults_are_off_on_the_anchor_and_on_in_production() {
 }
 
 #[test]
-fn production_advanced_omits_measured_null_arms_but_controls_retain_them() {
+fn production_advanced_omits_measured_null_arms() {
     let production = AdvancedAi::new();
     assert!(!production.bounded_recovery);
-    assert!(!production.envoy_infrastructure);
     assert!(production.envoy_priority);
 
     let mut live_bridge = AdvancedAi::new();
@@ -3239,13 +3237,6 @@ fn production_advanced_omits_measured_null_arms_but_controls_retain_them() {
     assert!(
         live_bridge.bounded_recovery,
         "the live bridge must keep its explicit repair capability"
-    );
-
-    let mut infrastructure = AdvancedAi::pre_policy_envoy();
-    infrastructure.envoy_infrastructure = true;
-    assert!(
-        infrastructure.envoy_infrastructure,
-        "the evaluator control must keep the measured valuation reachable"
     );
 }
 
@@ -3556,18 +3547,15 @@ fn production_policy_envoy_default_is_distinct_from_evaluator_and_legacy_control
         PolicyDeck::Legacy,
         "the withhold must actually withhold, or its number measures nothing"
     );
-    assert!(!production.envoy_infrastructure);
     assert!(production.envoy_priority);
 
     let pre_promotion = AdvancedAi::pre_policy_envoy();
     assert_eq!(pre_promotion.weights().policy_deck, PolicyDeck::Legacy);
-    assert!(!pre_promotion.envoy_infrastructure);
     assert!(!pre_promotion.envoy_priority);
     assert!(pre_promotion.victory_planning);
 
     let legacy = AdvancedAi::legacy();
     assert_eq!(legacy.weights().policy_deck, PolicyDeck::Legacy);
-    assert!(!legacy.envoy_infrastructure);
     assert!(!legacy.envoy_priority);
     assert!(!legacy.victory_planning);
 
@@ -11203,65 +11191,6 @@ fn the_civs_own_unique_unit_earns_its_window() {
 }
 
 #[test]
-fn envoy_infrastructure_prices_only_reachable_future_envoys() {
-    let mut game = Game::new_full(1, 20, 14, 71_004, 200, 1, false);
-    let settler = game
-        .player_unit_ids(0)
-        .into_iter()
-        .find(|unit| game.units[unit].kind == "settler")
-        .unwrap();
-    game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
-    let city = game.player_city_ids(0)[0];
-    game.players[0].government = Some("chiefdom".to_string());
-    game.turn = 30;
-    install_ai_test_district(&mut game, city, "diplomatic_quarter");
-
-    let consulate = Item::Building {
-        building: crate::name!("consulate"),
-    };
-    let plan = StrategicPlan {
-        strategy: GrandStrategy::Science,
-        target_player: None,
-        target_city: None,
-        threatened_city: None,
-        desired_cities: 3,
-        assessed_turn: game.turn,
-        rush: false,
-    };
-    let stock = AdvancedAi::pre_policy_envoy();
-    let mut treatment = AdvancedAi::pre_policy_envoy();
-    treatment.envoy_infrastructure = true;
-    let counts = stock.counts(&game, 0);
-    let unseen = treatment.production_value(&game, 0, city, &consulate, &plan, &counts);
-    let stock_value = stock.production_value(&game, 0, city, &consulate, &plan, &counts);
-    assert_eq!(
-        unseen, stock_value,
-        "an unmet city-state must not leak into production valuation"
-    );
-
-    let minor = game
-        .players
-        .iter()
-        .find(|player| player.is_minor && !player.is_barbarian && !player.is_free_city)
-        .map(|player| player.id)
-        .expect("fixture needs a city-state");
-    game.record_contact(0, minor);
-    let reachable = treatment.production_value(&game, 0, city, &consulate, &plan, &counts);
-    assert!(
-        reachable > stock_value,
-        "a met, uncontrolled city-state must make Consulate influence valuable"
-    );
-
-    game.turn = game.max_turns;
-    let expired = treatment.production_value(&game, 0, city, &consulate, &plan, &counts);
-    let expired_stock = stock.production_value(&game, 0, city, &consulate, &plan, &counts);
-    assert_eq!(
-        expired, expired_stock,
-        "income that begins after the game ends has no envoy value"
-    );
-}
-
-#[test]
 fn envoy_priority_reaches_adaptive_production_and_obeys_safety_gates() {
     let mut game = Game::new_full(2, 20, 14, 71_005, 500, 1, false);
     let settler = game
@@ -12211,97 +12140,6 @@ fn a_culture_target_reaches_the_theater_building_debt() {
     assert!(
         owed > unowed,
         "a Culture-targeted seat reaches the debt instead of the non-Culture veto: {owed} vs {unowed}"
-    );
-}
-
-/// ★★★★ `tally_culture` fixed the PRICE of culture and left the COVERAGE
-/// alone, and over 204 cities in 25 live games the coverage is the gap:
-/// Campus 82% of cities, Theater Square 27%; Library 72%, Amphitheater 21%;
-/// University 53%, Museum 7%; Research Lab 23%, Broadcast Center 1%. Two
-/// terms belong to the Campus alone — `research_coverage` and the
-/// `campus_every_city` exemption from `balanced_core`'s half-the-empire
-/// cliff. See `culture_coverage`: the tally seat gives the Theater Square
-/// both, once a specialty district already stands in the city, and stock
-/// and frozen controllers are unchanged.
-#[test]
-fn a_city_without_a_theater_square_is_a_culture_hole_on_the_tally_seat() {
-    let (mut game, capital, _home) = empire_with_a_capital(71_113);
-    game.players[0].techs.insert(crate::name!("writing"));
-    game.players[0].civics.insert(crate::name!("drama_poetry"));
-    let theater_site = game
-        .district_sites(capital, crate::name!("theater_square"))
-        .into_iter()
-        .next()
-        .expect("the capital has a plot for a Theater Square");
-    let theater = Item::District {
-        district: crate::name!("theater_square"),
-        pos: theater_site,
-    };
-    let plan = StrategicPlan {
-        strategy: GrandStrategy::Science,
-        target_player: None,
-        target_city: None,
-        threatened_city: None,
-        desired_cities: 3,
-        assessed_turn: game.turn,
-        rush: false,
-    };
-    let counts = EmpireCounts::default();
-
-    let mut live = AdvancedAi::new();
-    live.enable_live_bridge_universe();
-    assert!(live.culture_coverage, "the live seat carries the treatment");
-    live.refresh_research_weight(&game);
-    let mut withheld = AdvancedAi::new();
-    withheld.enable_live_bridge_universe();
-    withheld.disable_culture_coverage();
-    withheld.refresh_research_weight(&game);
-
-    // A city with no specialty district yet keeps the Campus first: the
-    // hole is not paid until the city has somewhere to put the rest.
-    assert_eq!(
-        game.city_specialty_district_count(&game.cities[&capital]),
-        0,
-        "the fresh capital carries no specialty district"
-    );
-    assert_eq!(
-        live.production_value(&game, 0, capital, &theater, &plan, &counts),
-        withheld.production_value(&game, 0, capital, &theater, &plan, &counts),
-        "a one-district town is not handed a Theater Square instead of its Campus"
-    );
-
-    // With a Campus standing the hole is real and the treated seat pays it.
-    install_ai_test_district(&mut game, capital, "campus");
-    let hole = live.production_value(&game, 0, capital, &theater, &plan, &counts)
-        - withheld.production_value(&game, 0, capital, &theater, &plan, &counts);
-    assert!(
-        hole > 0.0,
-        "the culture hole is priced on the tally seat: {hole}"
-    );
-
-    // Once the Theater Square stands the coverage payment stops — it buys
-    // the first one, not a second. What is left of the gap is the other
-    // half of the treatment: this one-city empire is now past
-    // `balanced_core`'s half-the-empire cliff, and only the treated seat
-    // keeps asking. The Campus has had exactly that exemption since
-    // `campus_every_city`, and it is why Campus coverage reached 82% of
-    // cities while the Theater Square stopped at 27%.
-    install_ai_test_district(&mut game, capital, "theater_square");
-    let cliff = live.production_value(&game, 0, capital, &theater, &plan, &counts)
-        - withheld.production_value(&game, 0, capital, &theater, &plan, &counts);
-    assert!(
-        cliff > 0.0 && cliff < hole,
-        "coverage stops at the first Theater Square and the cliff exemption \
-             remains: {cliff} left of {hole}"
-    );
-    assert!(!AdvancedAi::new().culture_coverage);
-    assert!(!AdvancedAi::legacy().culture_coverage);
-    // Both are consts, so clippy folds the comparison to a literal; the
-    // ordering is the thing under test, so assert on values it cannot fold.
-    assert!(
-        std::hint::black_box(CULTURE_THEATER_COVERAGE)
-            < std::hint::black_box(RESEARCH_CAMPUS_COVERAGE),
-        "the culture hole is held one rung under the research hole"
     );
 }
 
@@ -15076,66 +14914,29 @@ fn idle_faith_buys_a_great_person_outright_only_for_a_seat_with_no_religion() {
     assert_eq!(claimed(&rich), 0, "gold does not buy a 40% race");
 }
 
-/// ★★★★ A ZERO-WIDTH CONFIDENCE INTERVAL IS NOT A NULL. `gene_screen` builds
-/// its treated seat from `enable_engine_repairs_universe` and flips only the
-/// genes whose drawn bit differs from `Gene::after_setup_on`, which the gene
-/// table asserts is `true` for every `ENGINE_REPAIR_TREATMENTS` tag. A repair
-/// the universe never turns on is off in BOTH arms, the arms play identical
-/// games, and the screen prints `Δ +0.0 [+0.0, +0.0] z +0.00` — which reads
-/// like a measured null and is not one. The culture economy's two tags
-/// reached the tables before their enables did and burned 30 games saying
-/// nothing.
-///
-/// This pins the two halves of the contract for them: the universe carries
-/// them, so the screen can vary them, and the ledger decides the deployment,
-/// so nothing ships on anything but a measurement.
-///
-/// ⭐ AND THEY HAVE NOW BEEN MEASURED (2026-08-23). The 23,622-paired-seat
-/// standard screen priced both. Their values are now evidence beside the
-/// operator-pinned deployment selection: `culture-building-debt` is pinned
-/// on, while `culture-coverage` is pinned off.
-/// So the second half is no longer "unmeasured means off" — it is "the
-/// ledger's explicit call", and each tag is asserted against
-/// `ledger_default_on` rather than against a constant `false`. The half that
-/// must never move is the first one: a tag the universe does not carry is off
-/// in BOTH arms and prints a zero-width interval that reads like a null.
 #[test]
-fn the_culture_economy_is_in_the_native_universe_and_the_ledger_decides_deployment() {
+fn culture_building_debt_is_in_native_universe_and_ledger_decides_deployment() {
     let mut universe = AdvancedAi::new();
     universe.enable_engine_repairs_universe();
     assert!(
-        universe.culture_coverage && universe.culture_building_debt,
-        "the native repair universe must carry every repair gene, \
-         or the screen varies nothing"
+        universe.culture_building_debt,
+        "the native repair universe must carry every repair gene, or the screen varies nothing"
     );
 
     let mut deployed = AdvancedAi::new();
     deployed.enable_engine_repairs();
-    for (tag, shipped) in [
-        ("culture-coverage", deployed.culture_coverage),
-        ("culture-building-debt", deployed.culture_building_debt),
-    ] {
-        let row = crate::ai::gene(tag).expect("registered");
-        assert!(row.repair(), "{tag} is a native repair");
-        assert!(!row.host_only(), "{tag} left the host-only list");
-        let ledger = crate::ai::ledger_default_on(tag);
-        assert!(
-            ledger.is_some(),
-            "{tag}: screenable, so the ledger must have a row for it either way"
-        );
-        assert_eq!(
-            Some(shipped),
-            ledger,
-            "{tag}: `enable_engine_repairs` must ship exactly what the ledger says"
-        );
-    }
+    let tag = "culture-building-debt";
+    let row = crate::ai::gene(tag).expect("registered");
+    assert!(row.repair(), "{tag} is a native repair");
+    assert!(!row.host_only(), "{tag} left the host-only list");
+    assert_eq!(
+        Some(deployed.culture_building_debt),
+        crate::ai::ledger_default_on(tag),
+        "{tag}: deployment must follow the ledger"
+    );
     assert!(
         deployed.culture_building_debt,
         "culture-building-debt is in the explicit deployment selection"
-    );
-    assert!(
-        !deployed.culture_coverage,
-        "culture-coverage reads negative on that screen and stays withheld"
     );
 }
 
