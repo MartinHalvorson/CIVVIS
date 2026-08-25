@@ -12,18 +12,18 @@ page is the current inventory and live-bridge snapshot.
 | inventory | count |
 |---|---:|
 | Built-in agents | 8 |
-| Live-bridge treatments | 73 |
+| Live-bridge treatments | 71 |
 | Firaxis-only treatments | 30 |
-| Native engine-repair treatments | 43 |
-| Withholdable live treatments | 43 |
+| Native engine-repair treatments | 41 |
+| Withholdable live treatments | 41 |
 
 ## Bundle coverage
 
 How much of the shipped live-bridge bundle the evaluation evidence has
 ever *named* — `docs/EVAL.md` plus every round under `docs/eval/`.
 
-- Withholdable live treatments: **43**
-- Named somewhere in the evidence: **43**
+- Withholdable live treatments: **41**
+- Named somewhere in the evidence: **41**
 - **Never named in any round: 0**
 
 ⚠ This is deliberately the weaker half of the question. Whether a
@@ -47,9 +47,9 @@ How much of the controller the genome instrument can vary at all.
 `docs/GENE_SCREEN.md` names the growth direction as "hundreds of
 genes"; this is the denominator that direction is measured against.
 
-- Capability toggles on the controller: **180**
-- Reachable as a gene `gene_screen` can vary: **128**
-- Measured by at least one screen: **90**
+- Capability toggles on the controller: **176**
+- Reachable as a gene `gene_screen` can vary: **124**
+- Measured by at least one screen: **86**
 - Resolved by the ledger (helps or hurts): **17**
 - **Unreachable by any screen: 52**
 

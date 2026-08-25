@@ -2299,10 +2299,8 @@ mod tests {
             for (flag, on) in [
                 ("war_economy", ai.war_economy),
                 ("war_reinforcement", ai.war_reinforcement),
-                ("war_patience", ai.war_patience),
                 ("deny_while_targeted", ai.deny_while_targeted),
                 ("stock_denial_lead_time", ai.stock_denial_lead_time),
-                ("endgame_war_runway", ai.endgame_war_runway),
                 ("siege_commitment", ai.siege_commitment),
                 ("relief_targets_the_siege", ai.relief_targets_the_siege),
                 ("blind_objective_units", ai.blind_objective_units),

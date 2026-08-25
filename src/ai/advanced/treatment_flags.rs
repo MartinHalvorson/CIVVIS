@@ -535,18 +535,6 @@ impl AdvancedAi {
     pub fn disable_escort_unstick(&mut self) {
         self.escort_unstick = false;
     }
-    /// Version 2 of escort-unstick: release a stalled settler's escort after
-    /// two turns unless a visible barbarian raider can reach it. One version of
-    /// a family plays, so this turns version 1 off. Opt-in gene
-    /// `escort-unstick-2`. See [`AdvancedAi::escort_unstick_2`].
-    pub fn enable_escort_unstick_2(&mut self) {
-        self.escort_unstick = false;
-        self.escort_unstick_2 = true;
-    }
-
-    pub fn disable_escort_unstick_2(&mut self) {
-        self.escort_unstick_2 = false;
-    }
     /// Escort live settlers by shadowing with ordinary moves instead of
     /// Civilization VI's formation channel, which stalls.
     ///
@@ -583,16 +571,6 @@ impl AdvancedAi {
 
     pub fn disable_religion_sues_peace(&mut self) {
         self.religion_sues_peace = false;
-    }
-
-    /// Assign explicit battlefield roles: counter cycle, ranged standoff, siege
-    /// against walls, escorts and cavalry jobs. Production Advanced enabled
-    /// this at construction until 2026-08-14, when the war-half withhold passed
-    /// the promotion matrix (+38, CI +10..+66, seed stream 18000000; see
-    /// `promoted_policy_envoy`); now only the `advanced_war_half` re-addition
-    /// arm and focused evaluator controls set it.
-    pub fn enable_tactical_strategy(&mut self) {
-        self.base.tactical_strategy = true;
     }
 
     /// Withhold the tribal-village pickup that production Advanced carries by
@@ -761,13 +739,6 @@ impl AdvancedAi {
     /// disabled so their recorded ladders stay comparable.
     pub fn enable_war_reinforcement(&mut self) {
         self.war_reinforcement = true;
-    }
-
-    /// Keep fighting a war the empire overwhelmingly outweighs instead of
-    /// offering peace because it reads as stalled. Native tournament games
-    /// leave this disabled so their recorded ladders stay comparable.
-    pub fn enable_war_patience(&mut self) {
-        self.war_patience = true;
     }
 
     /// Let a seat with an assigned victory target still counter a rival at
@@ -954,13 +925,6 @@ impl AdvancedAi {
 
     pub fn disable_stock_denial_lead_time(&mut self) {
         self.stock_denial_lead_time = false;
-    }
-
-    /// Refuse a fresh direct war declaration once the endgame reserve leaves
-    /// too few turns to capture a city. Native tournament games leave this
-    /// disabled so their recorded ladders stay comparable.
-    pub fn enable_endgame_war_runway(&mut self) {
-        self.endgame_war_runway = true;
     }
 
     /// Keep the campaign aimed at a city it has already damaged instead of
@@ -1158,15 +1122,6 @@ impl AdvancedAi {
     pub fn disable_solvent_faith_army(&mut self) {
         self.solvent_faith_army = false;
     }
-    /// Hold one of the historical production flags off so an evaluator can
-    /// price it. The original `promoted_policy_envoy` bundle had thirteen
-    /// behaviours and several lacked a `disable_*`; the measured-null cleanup
-    /// removed the two confirmed nulls from production, but the explicit
-    /// evaluator controls remain available for reproducible decomposition.
-    pub fn disable_tactical_strategy(&mut self) {
-        self.base.tactical_strategy = false;
-    }
-
     pub fn disable_unit_objective_memory(&mut self) {
         self.base.unit_objective_memory = false;
     }
@@ -1812,14 +1767,6 @@ impl AdvancedAi {
         self.war_reinforcement = false;
     }
 
-    pub fn disable_war_patience(&mut self) {
-        self.war_patience = false;
-    }
-
-    pub fn disable_endgame_war_runway(&mut self) {
-        self.endgame_war_runway = false;
-    }
-
     pub fn disable_siege_commitment(&mut self) {
         self.siege_commitment = false;
     }
@@ -1956,7 +1903,7 @@ impl AdvancedAi {
     }
 
     /// Let a force finish a defender together with a friendly volley, without
-    /// the rest of the tactical-strategy bundle. See
+    /// reopening the closed war-half bundle. See
     /// [`AdvancedAi::coordinated_finish`].
     ///
     /// ⭐ THIS PAIR EXISTS SO THE FLAG IS COUNTED AT ALL. `docs/EVAL_STATUS.md`
