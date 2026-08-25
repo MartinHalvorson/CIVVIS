@@ -1,4 +1,16 @@
-# A Ranking of all Gene Heuristics by On/Off Win Rate Difference in Tournaments
+## A Ranking of all Gene Heuristics by On/Off Win Rate Difference in Tournaments
+- Ranking
+- Gene Name
+- A short Gene Description
+- The highest performing version of the gene, which is also the default version if the gene defaults "on"
+- Default "on" of "off". Default "on" genes are a part of our best genome.
+- Estimated probability that this gene is beneficial to our performance
+- (3 cols) win rate from the last tournament / prior tournament / tournament prior to that, scaled to n=10k total seats (n=actual number of seats listed too)
+- Total recorded win rate when gene is on
+- Total recorded win rate when gene is off
+- Difference between the previous 2 cols
+- Estimated change to compute cost when gene is "on"
+- Estimated change to time cost when gene is "off"
 
 | Rank | Gene | Description | Best version | Default | P(>0) | Wins ± /10k total seats — Last Batch (n=30,000 total seats; games/min=not recorded) | Wins ± /10k total seats — Prior Batch (n=4,476 total seats; games/min=not recorded) | Wins ± /10k total seats — Third Batch (n=5,988 total seats; games/min=not recorded) | Total (on) Win rate | Total (off) Win rate | Diff | cost (compute) | cost (time) |
 |---:|---|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
