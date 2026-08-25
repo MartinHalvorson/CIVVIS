@@ -438,12 +438,7 @@ impl AdvancedAi {
 
     /// Steps from `from` to every tile it reaches over `member` ground
     /// without using `avoid`, no further than [`WINDOW`] tiles from `avoid`.
-    fn flood(
-        g: &Game,
-        from: Pos,
-        avoid: Pos,
-        member: &dyn Fn(Pos) -> bool,
-    ) -> BTreeMap<Pos, i32> {
+    fn flood(g: &Game, from: Pos, avoid: Pos, member: &dyn Fn(Pos) -> bool) -> BTreeMap<Pos, i32> {
         let mut seen = BTreeMap::new();
         if !member(from) {
             return seen;
@@ -1127,7 +1122,9 @@ mod tests {
         // the post is decided by the tie-break: the end nearest home.
         let gate = gap;
         assert_eq!(
-            AdvancedAi::new().narrows_at(&game, 0, at(&game, 13, 9)).land,
+            AdvancedAi::new()
+                .narrows_at(&game, 0, at(&game, 13, 9))
+                .land,
             CUT_DETOUR,
             "the corridor is more than one tile long"
         );
