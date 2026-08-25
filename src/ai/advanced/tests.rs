@@ -34666,3 +34666,134 @@ fn the_weakest_empire_on_the_board_is_not_a_neighbour() {
     lonely.found_city_for(1, (10 + CAMPAIGN_REACH * 3, 20), None);
     assert!(!ai.rival_is_in_campaign_reach(&lonely, 0, 1));
 }
+
+// ═══ A site that cannot be held (`defensible_sites`) ═══
+
+#[test]
+fn defensible_sites_is_a_registered_reversible_opt_in() {
+    assert!(
+        GENES.iter().any(|gene| gene.opt_in()
+            && gene.field == "defensible_sites"
+            && gene.tag == "defensible-sites"),
+        "defensible-sites must be a registered native opt-in"
+    );
+    assert!(
+        crate::ai::advanced::gene_ledger::screenable("defensible-sites"),
+        "the ledger must be able to price it"
+    );
+    assert_eq!(
+        crate::ai::advanced::gene_ledger::ledger_default_on("defensible-sites"),
+        Some(false),
+        "it ships off until a screen prices it"
+    );
+    let mut ai = AdvancedAi::new();
+    assert!(!ai.defensible_sites, "off in the stock agent");
+    assert!(
+        !AdvancedAi::legacy().defensible_sites,
+        "off in the legacy agent"
+    );
+    ai.enable_defensible_sites();
+    assert!(ai.defensible_sites);
+    ai.disable_defensible_sites();
+    assert!(!ai.defensible_sites, "reversible");
+}
+
+/// ⚠⚠ A BARBARIAN CAMP TWO TILES AWAY CHANGES THE SHIPPED SITE SCORE BY
+/// EXACTLY NOTHING — while barbarians take 65% of every city a major loses,
+/// at a median city age of ten turns.
+///
+/// `settle_value` penalises proximity to a rival *major* and filters
+/// barbarians out of that penalty, and no other term in it prices a camp.
+/// Measured here rather than quoted: the same site, the same everything, one
+/// camp added two tiles away.
+#[test]
+fn a_barbarian_camp_two_tiles_away_changes_the_shipped_score_by_nothing() {
+    let mut game = Game::new(2, 60, 40, 6_301, 250, 0);
+    game.found_city_for(0, (10, 20), None);
+    let site = (24, 20);
+    let mut with_camp = game.clone();
+    with_camp.barb_camps.insert((26, 21), 0);
+
+    let shipped = AdvancedAi::new();
+    assert_eq!(
+        shipped.settle_value(&game, 0, site),
+        shipped.settle_value(&with_camp, 0, site),
+        "the shipped site score cannot see a barbarian camp at all"
+    );
+
+    let mut ai = AdvancedAi::new();
+    ai.enable_defensible_sites();
+    assert!(
+        ai.settle_value(&with_camp, 0, site) < ai.settle_value(&game, 0, site),
+        "the gene charges the site for the camp beside it"
+    );
+    // And charges nothing where there is no camp: the two agents agree on a
+    // quiet site once its isolation is the same.
+    assert_eq!(
+        ai.defensibility(&game, 0, (14, 20)),
+        0.0,
+        "a site inside the empire with no camp near it is not penalised"
+    );
+}
+
+/// The other half, and the larger one: the shipped score has no isolation
+/// term at all, so a site far from every friendly city scores BETTER than one
+/// inside the empire — 148.3 against 62.7 on this board.
+#[test]
+fn the_shipped_score_prefers_a_site_it_cannot_support() {
+    let mut game = Game::new(2, 60, 40, 6_301, 250, 0);
+    game.found_city_for(0, (10, 20), None);
+    let shipped = AdvancedAi::new();
+
+    let inside = shipped.settle_value(&game, 0, (14, 20));
+    let stranded = shipped.settle_value(&game, 0, (40, 20));
+    assert!(
+        stranded > inside,
+        "fixture: the far site is the better land ({stranded} vs {inside})"
+    );
+
+    // The gene does not forbid it; it charges for it, and the charge is
+    // capped, so a distant site can still win on its merits.
+    let mut ai = AdvancedAi::new();
+    ai.enable_defensible_sites();
+    let charged = ai.settle_value(&game, 0, (40, 20));
+    assert!(
+        charged < stranded,
+        "the isolation is priced ({charged} vs {stranded})"
+    );
+    assert!(
+        ai.defensibility(&game, 0, (40, 20)) == ai.defensibility(&game, 0, (24, 20)),
+        "and the charge stops growing past its cap, so this is a tiebreak on \
+         holdability and not a leash"
+    );
+}
+
+
+
+/// The other half: a site with no friendly city within reach. The shipped
+/// score treats an isolated site exactly like one inside the empire.
+#[test]
+fn an_isolated_site_is_penalised_and_the_penalty_is_bounded() {
+    let mut ai = AdvancedAi::new();
+    ai.enable_defensible_sites();
+    let mut game = Game::new(2, 60, 40, 6_102, 250, 0);
+    game.found_city_for(0, (10, 20), None);
+
+    // Inside the empire: no isolation penalty at all.
+    assert_eq!(ai.defensibility(&game, 0, (14, 20)), 0.0);
+
+    // Just outside the six-tile support radius, and further still.
+    let near = ai.defensibility(&game, 0, (18, 20));
+    let far = ai.defensibility(&game, 0, (24, 20));
+    assert!(near < 0.0, "eight tiles out is isolated ({near})");
+    assert!(far < near, "fourteen tiles out is worse ({far} vs {near})");
+
+    // ⚠ And the penalty is capped, so a site across the map is not scored as
+    // infinitely bad — the term is a tiebreak on holdability, not a leash.
+    let further = ai.defensibility(&game, 0, (40, 20));
+    assert_eq!(
+        further, far,
+        "the isolation term stops growing past its cap ({further} vs {far})"
+    );
+}
+

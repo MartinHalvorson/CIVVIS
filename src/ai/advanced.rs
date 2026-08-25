@@ -1890,6 +1890,29 @@ pub struct AdvancedAi {
     /// is only 42-30, so treat the rank effect as weak. **Wins did not move:
     /// 35-37.** Shipped off with the measurement recorded, so the retention
     /// result can be re-derived rather than re-discovered.
+    ///
+    /// ⚠⚠ AND THEN NOTHING COULD SET IT FOR A MONTH. Whatever arm reached this
+    /// flag belonged to the evaluator, and the evaluator was deleted; `genes.rs`
+    /// records that "the `treatment` vocabulary went with them". No registry
+    /// row replaced it, so from that commit until 2026-08-25 `defensible_sites`
+    /// was `false` in every configuration this repository could produce, and
+    /// the retention result above could not be re-derived by anything — the
+    /// exact outcome the last sentence was written to prevent. It is one of the
+    /// fourteen unreachable controller flags catalogued in #2457.
+    ///
+    /// ⚠ Re-read the "wins did not move" line before treating it as a null.
+    /// **35-37 over 72 games** is a win count, and a run that size resolves
+    /// almost nothing: the same instrument that produced it produced +22.2 pp
+    /// readings for genes that measure +0.2 pp at 1,500 seats (#2465). The
+    /// intermediate effects are the resolved ones — cities held **+1.09** at
+    /// p = 0.0001 and cities lost to barbarians **-0.48** at p < 0.0001, both
+    /// **replicated on a fresh seed set** — and they point the same way as
+    /// `r = +0.89` between cities held and final score. A gene whose mechanism
+    /// replicates and whose win reading is underpowered is exactly what a
+    /// standard screen is for.
+    ///
+    /// `defensible-sites` is now a registered `Kind::OptIn` gene so one can
+    /// price it. It ships off, like every entrant.
     pub defensible_sites: bool,
     /// Use the live, visible-threat settlement safety model in the shipped scorer.
     ///

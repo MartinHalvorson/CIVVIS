@@ -959,6 +959,17 @@ impl AdvancedAi {
         self.elective_war_in_reach = false;
     }
 
+    /// Weigh whether a settle site can be held — barbarian exposure and
+    /// distance from our own cities — not only what it yields. See
+    /// [`Self::defensible_sites`].
+    pub fn enable_defensible_sites(&mut self) {
+        self.defensible_sites = true;
+    }
+
+    pub fn disable_defensible_sites(&mut self) {
+        self.defensible_sites = false;
+    }
+
     /// Raise the Culture and Diplomacy denial alarms early, since countering an
     /// accumulated stock takes many turns. See
     /// [`Self::stock_denial_lead_time`].
