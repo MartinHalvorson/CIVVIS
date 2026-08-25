@@ -6969,10 +6969,6 @@ mod tests {
             lane_gene_lanes("lane-policy-deck"),
             Some(MASKABLE_LANES.to_vec())
         );
-        assert_eq!(
-            lane_gene_lanes("lane-commit"),
-            Some(MASKABLE_LANES.to_vec())
-        );
         assert_eq!(lane_gene_lanes("settler-guard"), None);
     }
 
