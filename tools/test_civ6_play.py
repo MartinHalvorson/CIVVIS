@@ -1240,6 +1240,42 @@ class EndGameScreenHoldTests(unittest.TestCase):
                         lua.index("if END_SCREENS[NAME] then"))
 
 
+class DialogueCloseConfigTests(unittest.TestCase):
+    @staticmethod
+    def _config(dialogue_seconds):
+        class Defaults(SimpleNamespace):
+            def __getattr__(self, name):
+                return None
+
+        return civ6_play.build_config(
+            Defaults(tag="t", game_mode=[], dialogue_seconds=dialogue_seconds,
+                     difficulty="DIFFICULTY_SETTLER", map_size="MAPSIZE_SMALL",
+                     speed="GAMESPEED_ONLINE", map="Continents.lua",
+                     leader="LEADER_TRAJAN"))
+
+    def test_dialogue_timer_reaches_the_baked_config(self):
+        self.assertEqual(self._config(0.25)["DialogueSeconds"], 0.25)
+
+    def test_dialogue_timer_cannot_be_configured_past_two_seconds(self):
+        self.assertEqual(self._config(9.0)["DialogueSeconds"], 2.0)
+        self.assertEqual(self._config(-1.0)["DialogueSeconds"], 0.0)
+
+    def test_the_shim_waits_for_fade_in_without_spending_close_attempts(self):
+        lua = (Path(__file__).resolve().parent / "civ6_control" / "mod"
+               / "CivvisControlAutoClose.lua").read_text()
+        launcher = (Path(__file__).resolve().parent / "civ6_play.py").read_text()
+        self.assertIn('"--dialogue-seconds", type=float, default=0.25', launcher)
+        self.assertIn("local MAX_DIALOGUE_SECONDS = 2.0;", lua)
+        self.assertIn("local DIALOGUE_READY_RETRY_SECONDS = 0.05;", lua)
+        self.assertIn("Controls.BlackFadeAnim:IsStopped()", lua)
+        self.assertIn("Controls.TradePanelFade:IsStopped()", lua)
+        self.assertIn("and not dialogueReady()", lua)
+        self.assertIn(
+            "math.min(SECONDS, math.max(0, DIALOGUE_SECONDS), MAX_DIALOGUE_SECONDS)",
+            lua,
+        )
+
+
 class CounterResolutionConfigTests(unittest.TestCase):
     """⚠ A flag the mod never receives is a flag that does nothing."""
 
