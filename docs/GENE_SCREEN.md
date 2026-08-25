@@ -153,6 +153,28 @@ Those genes pay through **score share**. Read a lane gene's share column and
 its `share helps` verdict before calling it inert; this evidence informs an
 explicit operator selection rather than an automatic default rule.
 
+⚠⚠⚠ **THAT IS NO LONGER TRUE, AND THE CORRECTION IS LARGE (2026-08-25).** The
+paragraph above was measured on `d713b019` in August. On the current binary the
+science lane lands *inside* the clock, and at the documented Emperor rung it is
+now what ends most games:
+
+| rung | games | science | religious | culture | diplomatic | score at the clock |
+|---|---:|---:|---:|---:|---:|---:|
+| Prince | 24 | 33% (median t238) | 8% | 4% | 0% | 54% |
+| **Emperor** | **600** | **88% (median t193)** | 8% | 3% | 0% | **0%** |
+
+Emperor: `docs/gene_screens/2026-08-25-emperor-600-games-3600-seats.json`
+(600 games, 3,600 seats, `--difficulty emperor`); Prince:
+`docs/gene_screens/fires/science-victory-drive.json`. **At Emperor no game
+reaches turn 250 at all** — every one of the 600 ended on a victory.
+
+So a science gene *can* now pay through the win axis, and the standing advice
+to read only its share column would have thrown away the one measurement that
+mattered: `science-victory-drive` reads **+3.6 pp on wins (z +2.69) and −0.60
+pp on share (z −2.48)** on that Emperor batch — a gene that helps where the
+retired premise says it cannot, and hurts on the axis the premise says to read.
+Read **both** columns, and read them at the rung the batch names.
+
 ### One gene is held out of the default screened set
 
 `HELD_UNLESS_ASKED` in `gene_screen.rs` is `["joint-tactics"]`, and it is a
