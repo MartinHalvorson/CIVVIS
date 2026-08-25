@@ -9286,6 +9286,67 @@ CivvisLedger.onCityOccupationChanged = function(player, cityId)
 	});
 end;
 
+-- ★★★★★ THE RECEIVING SIDE OF THE BRIDGE. `applied = true` below means an arm's
+-- request did not throw, and that has never meant the host did anything: a
+-- Settler was requested on 83 consecutive turns with `applied = true` and
+-- nothing built, a purchase whose `pcall` did not throw bought nothing, and a
+-- `MOVE_TO (14,11)` ended at (12,9). `civvis_orders` now checks every order it
+-- issued against the NEXT `state` frame and sends the verdicts back through the
+-- orders channel as rows of kind `order_verified` / `order_failed` /
+-- `turn_verified`. This file is the ledger's only writer, so it re-emits them
+-- as events. They are not orders: `applyOrders` keeps them out of
+-- `orders_seen` and `orders_applied`, and `turn_verified` lays this file's own
+-- return-code count for the verified turn (`orders_reported`) beside the
+-- decider's verified count (`orders_applied`) on one line of the ledger.
+--
+-- Hung on a global table, not file-scope locals: the main chunk sits at Lua's
+-- 200-register ceiling.
+CivvisVerify = { reported = {} };
+CivvisVerify.isVerdict = function(kind)
+	return kind == "order_verified" or kind == "order_failed" or kind == "turn_verified";
+end;
+-- What this file counted for a turn, kept until the decider's verdict for that
+-- turn arrives with the next turn's orders.
+CivvisVerify.remember = function(turn, seen, applied)
+	CivvisVerify.reported[tostring(turn)] = { seen = seen, applied = applied };
+end;
+-- Re-emit one verdict row as a ledger event. The order row has no spare
+-- column, so the verified turn rides in `x` for a per-order verdict and in
+-- `subject` for the tally; the tally's counts ride in `verb` as `name=N`.
+CivvisVerify.record = function(kind, subject, verb, x, turn)
+	if kind == "turn_verified" then
+		local counted = CivvisVerify.reported[tostring(subject)] or {};
+		CivvisVerify.reported[tostring(subject)] = nil;
+		local function count(name)
+			return tonumber(string.match(verb, name .. "=(%d+)")) or 0;
+		end
+		emit("turn_verified", {
+			turn = subject, checked_on = turn,
+			orders_issued = count("issued"),
+			orders_applied = count("verified"),
+			orders_failed = count("failed"),
+			orders_unverifiable = count("unverifiable"),
+			orders_seen = counted.seen,
+			orders_reported = counted.applied,
+		});
+		return true, "verdict";
+	end
+	local label, reason = string.match(verb, "^(%S+)%s*(.*)$");
+	local orderKind, orderVerb = string.match(label or verb, "^([^:]*):?(.*)$");
+	-- `kind` is the event's own name in every ledger record, so the order's
+	-- kind travels as `order_kind`.
+	local payload = {
+		turn = x, checked_on = turn, order_kind = orderKind,
+		verb = (orderVerb ~= nil and orderVerb ~= "") and orderVerb or nil,
+		subject = (subject ~= nil and subject >= 0) and subject or nil,
+	};
+	if kind == "order_failed" then
+		payload.reason = (reason ~= nil and reason ~= "") and reason or "unknown";
+	end
+	emit(kind, payload);
+	return true, "verdict";
+end;
+
 local function applyOrder(player, pid, row, turn)
 	-- Build and submit a major-civilization peace proposal without opening a
 	-- diplomacy session.  A session displays `DiplomacyDealView`, whose only safe
@@ -9546,6 +9607,11 @@ local function applyOrder(player, pid, row, turn)
 	local verb = tostring(row.verb or "");
 	local subject = tonumber(row.subject) or -1;
 	local x, y = tonumber(row.x), tonumber(row.y);
+
+	-- A verdict on an earlier turn's order, for the ledger. See CivvisVerify.
+	if CivvisVerify.isVerdict(kind) then
+		return CivvisVerify.record(kind, subject, verb, x, turn);
+	end
 
 	if kind == "governor_appoint" or kind == "governor_assign" then
 		local governor, resolved = resolveType(GameInfo.Governors, verb);
@@ -13022,7 +13088,7 @@ CivvisFrames.begin = function(player, pid, turn)
 end;
 
 local function applyOrders(player, pid, turn, rows)
-	local applied, refused, deferred = 0, 0, 0;
+	local applied, refused, deferred, verdicts = 0, 0, 0, 0;
 	local byKind, whyNot = {}, {};
 	-- Per kind, beside the per-turn totals: how many orders of each kind were
 	-- counted, and each kind's refusal reasons. `by` is applied-only and
@@ -13118,11 +13184,17 @@ local function applyOrders(player, pid, turn, rows)
 				-- mutated the host. Keep it out of the host applied-rate numerator
 				-- and denominator; the later `build` event is the actuation proof.
 				deferred = deferred + 1;
+			elseif CivvisVerify.isVerdict(kind) then
+				-- A verdict on an earlier turn is the ledger's, not the host's:
+				-- neither seen nor applied.
+				verdicts = verdicts + 1;
 			else
 				applied = applied + 1;
 			end
-			byKind[kind] = (byKind[kind] or 0) + 1;
-			seenByKind[kind] = (seenByKind[kind] or 0) + 1;
+			if not CivvisVerify.isVerdict(kind) then
+				byKind[kind] = (byKind[kind] or 0) + 1;
+				seenByKind[kind] = (seenByKind[kind] or 0) + 1;
+			end
 			if watched and fromX ~= nil then
 				local unit = liveUnit(pid, subject);
 				-- A unit that no longer exists was consumed or lost, which is not a
@@ -13299,10 +13371,14 @@ local function applyOrders(player, pid, turn, rows)
 	end
 
 	emit("orders", {
-		turn = turn, frame = awaiting.frame or 0, source = "civvis", seen = #rows - deferred,
+		turn = turn, frame = awaiting.frame or 0, source = "civvis",
+		seen = #rows - deferred - verdicts,
 		applied = applied, refused = refused, by = byKind, refusals = whyNot,
 		seen_by = seenByKind, refused_by = refusedByKind,
 		deferred = deferred,
+		-- Verdict rows on an earlier turn's orders, re-emitted as events; see
+		-- CivvisVerify. Not orders, so not in `seen`.
+		verdicts = verdicts,
 		-- Not part of `applied`: these are units CIVVIS said nothing about.
 		explored = explored,
 		-- Unmentioned combat units kept off the explore automation because a
@@ -13361,6 +13437,9 @@ local function applyOrders(player, pid, turn, rows)
 	local ourScore = try(function() return player:GetScore(); end, -1);
 	local cityCount = 0;
 	eachCity(player, function() cityCount = cityCount + 1; end);
+	-- Kept for the decider's verdict on this turn, which arrives with the next
+	-- turn's orders and is emitted as `turn_verified`; see CivvisVerify.
+	CivvisVerify.remember(turn, #rows - deferred - verdicts, applied);
 	emit("turn", {
 		turn = turn,
 		score = ourScore,
@@ -13372,8 +13451,15 @@ local function applyOrders(player, pid, turn, rows)
 		army = counts.military,
 		gold = try(function() return math.floor(player:GetTreasury():GetGoldBalance()); end, -1),
 		orders_source = awaiting.source,
-		orders_seen = #rows - deferred,
+		orders_seen = #rows - deferred - verdicts,
+		-- ⚠ `orders_applied` here is the RETURN-CODE count — arms whose request
+		-- did not throw — kept under its old name for the readers that clock on
+		-- this record. `orders_reported` is the same number under its honest
+		-- name; the verified count for this turn lands in the next turn's
+		-- `turn_verified` event, and `civ6_ladder.orders_totals` sums that one
+		-- as the summary's `orders_applied`.
 		orders_applied = applied,
+		orders_reported = applied,
 		orders_refused = refused,
 		orders_deferred = deferred,
 		orders_polls = awaiting.polls,

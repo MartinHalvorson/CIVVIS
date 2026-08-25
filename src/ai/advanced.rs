@@ -4399,6 +4399,91 @@ pub struct AdvancedAi {
     /// `AdvancedAi::diplomatic_opening_score`.
     pub diplomatic_opening: bool,
 
+    /// Whether the Diplomacy lane is scored by WHEN twenty Diplomatic Victory
+    /// Points arrive rather than by how many are already banked.
+    ///
+    /// ⚠ THE BOARD DOES NOT CONTEST THIS LANE AT ALL, and it is the lane this
+    /// engine finishes most often. `src/bin/victory_eval.rs` measures the five
+    /// named conditions at the ladder's own profile and ranks them
+    /// **diplomatic 14/16 > culture 12/16 > religious 8/16 > domination 2/16 >
+    /// science 0/16**. `src/bin/audit.rs` counts what the adaptive planner
+    /// actually chooses over the same profile and reports **diplomacy 0% of
+    /// 1,500 planner-turns**, culture 2%, science 10%, religion 9% — against
+    /// conquest 43%. The planner spends nearly half the game on the lane that
+    /// completes 2/16 and none of it on the lane that completes 14/16.
+    ///
+    /// The reason is arithmetic in [`Self::lane_progress_table`], where the
+    /// four lanes are compared on scales that are not commensurable. Science
+    /// reads [`Self::rocketry_readiness`], a **readiness ramp** that starts at
+    /// 25 and climbs with the prerequisite techs — added, in that function's
+    /// own words, "so adaptive agents can make the initial commitment instead
+    /// of remaining stuck at the old 25% floor forever". Religion reads a
+    /// **commitment floor** of 46, or 55 once a rival has founded, from
+    /// [`Self::religious_opening_viable`] — before a single Prophet exists.
+    /// Diplomacy reads `dvp * 5 + suzerain * 6`: a tally of a victory already
+    /// half-won. It cannot reach Religion's standing 46 until the empire holds
+    /// eight suzerainties or nine of the twenty points, and it earns neither
+    /// without having played the lane for a hundred turns first. The lane's
+    /// score only rises once it is chosen, and it is never chosen because its
+    /// score is zero — the same lock Science and Religion were each let out of
+    /// and Diplomacy was not. The one key that was cut for it,
+    /// [`Self::diplomatic_opening_score`]'s flat `DIPLOMATIC_OPENING`, hangs
+    /// on `diplomatic_opening`: a flag no registry row, no bundle and no
+    /// command line has set since the evaluator that named it was deleted.
+    ///
+    /// A flat floor is also the weak answer, because it fires whenever any met
+    /// city-state is unclaimed — which is nearly always, in nearly every game,
+    /// however poor the empire's Congress position. This gene prices the lane
+    /// the way the lane is actually won instead. A regular session opens every
+    /// `standard_duration(30)` turns from the Medieval era and seats two
+    /// resolutions, joined by `world_leader` from the Industrial; naming a
+    /// winning outcome and target exactly pays +1, and `world_leader` moves
+    /// ±2. So the question a planner at turn 60 can answer, and the banked
+    /// tally cannot, is: **how many of the sessions left before the clock will
+    /// this empire carry, and does that reach twenty?**
+    ///
+    /// **Off by default.** Screenable: the native board convenes the same
+    /// Congress, banks the same Favor and awards the same points.
+    pub diplomatic_lane_forecast: bool,
+    /// Whether a major we are NOT at war with, whose army is parked inside
+    /// reach of one of our cities, counts toward that city's danger.
+    ///
+    /// ⚠ THE THREAT MODEL IS BLIND UNTIL THE DECLARATION ARRIVES.
+    /// [`Self::city_pressure_with_visibility`] -- the one number
+    /// [`Self::threatened_city`] reads, which is in turn the first branch of
+    /// the whole grand-strategy cascade -- sums hostile strength through
+    /// `unit.owner != pid && g.is_at_war(pid, unit.owner)`. A rival that has
+    /// walked six Knights onto our border while at peace contributes
+    /// **exactly zero**. The city is not threatened, Recovery does not fire,
+    /// no defender is queued, and the stacks are already adjacent when the
+    /// declaration lands.
+    ///
+    /// What that costs was measured on this branch, by the gene that used to
+    /// live here. `unchosen-war-keeps-the-lane` asked the opposite question --
+    /// whether an empire could keep running its victory lane through a war a
+    /// rival declared, instead of converting to Conquest for the duration --
+    /// and its six-game probe answered **-22.2 pp wins (z -13.2), -6.41 pp
+    /// score share, 0 of 9 treated seats winning a game**. Releasing the war
+    /// posture during somebody else's war is close to fatal on this board, and
+    /// it stayed fatal when the fall-through was corrected from Expansion to
+    /// the empire's own lane: the number did not move by a hundredth. War is
+    /// existential here, so the turns before one starts are the valuable ones,
+    /// and they are exactly the turns this filter throws away.
+    ///
+    /// The alarm reuses the shipped pressure expression unchanged -- same six
+    /// tiles, same visibility gates, same `effective_strength`, same friendly
+    /// denominator -- and widens only the ownership filter, with two
+    /// conditions that keep it a build-up signal rather than a census of every
+    /// neighbour's garrison: the rival must not be held by a peace treaty, and
+    /// its units must have left their own territory. The one modelled term is
+    /// the weight: a stack that has not declared is counted at **half** what
+    /// the same stack counts for once it has, because it is a threat with a
+    /// probability attached and not a battle.
+    ///
+    /// **Off by default.** Screenable, and inert when off: the term is added
+    /// to the shipped sum, so a disabled gene contributes 0.0 exactly.
+    pub frontier_massing_alarm: bool,
+
     /// Reserve one empty city's next build for reachable envoy infrastructure.
     ///
     /// `envoy_infrastructure` teaches `advanced_production` what the Diplomatic
@@ -4736,6 +4821,14 @@ pub struct AdvancedAi {
     /// expected steps to its likeliest walks, and hold them. Opt-in gene
     /// `settler-screen`; see `advanced/recon_disruption.rs`.
     settler_screen: bool,
+    /// An empire that dominates science drives the space race: the chain
+    /// beeline, the launch city's production, a horizon priced as the engine
+    /// runs the race, two pads by the Earth Satellite. Opt-in gene
+    /// `science-victory-drive`; see `advanced/science_victory_drive.rs`.
+    science_victory_drive: bool,
+    /// `science_victory_drive`'s state while the seat is driving: since
+    /// when, the last reading of the field, and the launch city.
+    science_drive: Option<ScienceDrive>,
 
     // ---- append: t-z ------------------------------------------------
     /// A melee unit with nothing to hit stands where its zone of control
@@ -5081,6 +5174,13 @@ mod victory_lane;
 /// which lane the empire plays for read the commitment too. One opt-in
 /// gene; see `advanced/lane_commit.rs`.
 mod lane_commit;
+
+/// `science-victory-drive`: an empire that dominates science drives the
+/// space race — the chain beeline, the launch city's production, a horizon
+/// priced as the engine runs the race, two pads by the Earth Satellite. One
+/// opt-in gene; see `advanced/science_victory_drive.rs`.
+mod science_victory_drive;
+pub use science_victory_drive::ScienceDrive;
 
 /// Victory lanes are target contracts: their beelines and campaign objectives
 /// stay attached to the condition that can actually end (or deny) the game.
@@ -5744,6 +5844,8 @@ impl AdvancedAi {
             air_surge_census: AirSurgeCensus::default(),
             air_surge_cooldown_until: 0,
             diplomatic_opening: false,
+            diplomatic_lane_forecast: false,
+            frontier_massing_alarm: false,
             envoy_priority: false,
             joint_tactics: false,
             joint_tactics_forced_off: false,
@@ -5801,6 +5903,8 @@ impl AdvancedAi {
             // ---- append: s-s ----------------------------------------
             shoot_and_scoot: false,
             settler_screen: false,
+            science_victory_drive: false,
+            science_drive: None,
 
             // ---- append: t-z ----------------------------------------
             zoc_screen: false,
@@ -7405,6 +7509,59 @@ impl AdvancedAi {
         hostile / Self::city_friendly_strength(g, pid, cid).max(1.0)
     }
 
+    /// Strength a major we are at PEACE with has parked within reach of `cid`,
+    /// weighted for the fact that it has not declared.
+    ///
+    /// See [`Self::frontier_massing_alarm`]. Deliberately the same expression
+    /// as [`Self::city_pressure_with_visibility`] with one filter widened, so
+    /// the two cannot drift apart about what "within reach" or "military"
+    /// means; the extra conditions are the two that separate a build-up from
+    /// a neighbour minding its own garrison.
+    fn frontier_massing_pressure(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        visible: &crate::world::TileBits,
+    ) -> f64 {
+        if !self.frontier_massing_alarm {
+            return 0.0;
+        }
+        let Some(city) = g.cities.get(&cid) else {
+            return 0.0;
+        };
+        let owner_of = |pos| {
+            g.map
+                .get(pos)
+                .and_then(|tile| tile.owner_city)
+                .and_then(|owner| g.cities.get(&owner))
+                .map(|owner| owner.owner)
+        };
+        let massed: f64 = g
+            .units
+            .values()
+            .filter(|unit| unit.owner != pid && !g.is_at_war(pid, unit.owner))
+            .filter(|unit| {
+                let owner = &g.players[unit.owner];
+                owner.alive && !owner.is_minor && !owner.is_barbarian
+            })
+            // A treaty is a hard block on `start_war`, so a rival still bound
+            // by one cannot be massing for anything this turn.
+            .filter(|unit| g.peace_treaty_until(pid, unit.owner).is_none())
+            .filter(|unit| g.sees(visible, unit.pos) && g.unit_visible_to(unit.id, pid))
+            .filter(|unit| g.wdist(city.pos, unit.pos) <= 6)
+            .filter(|unit| g.rules.units[unit.kind].class == "military")
+            // In their own borders it is a garrison. Out of them, and this
+            // close to one of our cities, it is a staging area.
+            .filter(|unit| owner_of(unit.pos).is_none_or(|owner| owner == pid))
+            .map(|unit| crate::game::effective_strength(g.unit_strength(unit, false), unit.hp))
+            .sum();
+        if massed <= 0.0 {
+            return 0.0;
+        }
+        0.5 * massed / Self::city_friendly_strength(g, pid, cid).max(1.0)
+    }
+
     fn city_friendly_strength(g: &Game, pid: usize, cid: u32) -> f64 {
         let Some(city) = g.cities.get(&cid) else {
             return 0.0;
@@ -7490,6 +7647,8 @@ impl AdvancedAi {
     ) -> f64 {
         Self::city_pressure_with_visibility(g, pid, cid, visible)
             + self.remembered_city_pressure(g, pid, cid)
+            // `frontier_massing_alarm`: contributes 0.0 exactly when off.
+            + self.frontier_massing_pressure(g, pid, cid, visible)
     }
 
     #[cfg(test)]
@@ -7915,6 +8074,113 @@ impl AdvancedAi {
         }
     }
 
+    /// How close the Diplomacy lane is to **closing**, forecast forward along
+    /// the Congress calendar, in the same 0-100 currency the other three lanes
+    /// report. Zero when the gene is off, so the shipped tally is untouched.
+    ///
+    /// See [`Self::diplomatic_lane_forecast`] for why the banked tally cannot
+    /// answer this. The forecast is built only from state the engine already
+    /// publishes, and every term is the one the Congress itself reads:
+    ///
+    /// - **Sessions left.** `process_congress` opens a regular session every
+    ///   `standard_duration(30)` turns from `world_era >= 2`. Count the ones
+    ///   that will still sit before `max_turns`; a session after the clock
+    ///   cannot pay.
+    /// - **Ballots a session pays.** `convene_congress` seats two regular
+    ///   resolutions, and adds `world_leader` from `world_era >= 5`. An exact
+    ///   prediction pays +1 and `world_leader` moves ±2, so a session is worth
+    ///   two points before the Industrial era and four after it.
+    /// - **The share this empire carries.** Only the ballot whose outcome
+    ///   *and* target the empire named exactly pays -- but `resolve_congress`
+    ///   pays it to *every* voter that named the pair, so it is a prediction
+    ///   reward and not a prize. A ballot is therefore carried by chance or by
+    ///   force: one target in the eligible majors blind, rising toward
+    ///   certainty with the seat's share of the Favor on the floor.
+    /// - **Favor still to come.** At turn 60 every seat's stock is near zero
+    ///   and the shares would all read one half — a forecast made of nothing.
+    ///   Suzerainties are the engine that fills the stock: each pays
+    ///   `suzerain_diplomatic_favor_per_turn` every turn, so carry that income
+    ///   one full session forward and price both sides on what they will bring
+    ///   to the *next* ballot, not on what they hold between ballots. This is
+    ///   what makes the reading move for an empire that is buying envoys
+    ///   before it has banked a single point.
+    ///
+    /// Reported as `100 * forecast / points still needed`, clamped: 100 says
+    /// the calendar closes the lane with room, 50 says it arrives at half the
+    /// points, and 0 says it does not arrive. A seat already at twenty reads
+    /// 100 without any of the arithmetic.
+    fn diplomatic_lane_forecast_score(&self, g: &Game, pid: usize) -> i32 {
+        if !self.diplomatic_lane_forecast || !g.victory_conditions.diplomatic {
+            return 0;
+        }
+        let needed = crate::game::DIPLOMATIC_VICTORY_POINTS - g.players[pid].dvp;
+        if needed <= 0 {
+            return 100;
+        }
+        // No clock is no forecast: the ratio below has no denominator, and a
+        // game that never ends cannot make a session scarce.
+        if g.max_turns == 0 {
+            return 0;
+        }
+        let period = g.standard_duration(30).max(1);
+        let sessions = g.max_turns.saturating_sub(g.turn) / period;
+        if sessions == 0 {
+            return 0;
+        }
+        // Two regular resolutions a session, plus `world_leader`'s own +/-2
+        // once the world reaches the Industrial era.
+        let per_session = if g.world_era >= 5 { 4.0 } else { 2.0 };
+
+        // Favor a seat will bring to the next ballot: what it can already
+        // spend, plus one session of suzerainty income expressed the same way.
+        let power = |seat: usize| {
+            let suzerainties = g
+                .players
+                .iter()
+                .filter(|minor| minor.alive && minor.is_minor && !minor.is_barbarian)
+                .filter(|minor| g.suzerain_of(minor.id) == Some(seat))
+                .count() as f64;
+            let income =
+                suzerainties * g.suzerain_diplomatic_favor_per_turn(seat) * f64::from(period);
+            f64::from(g.congress_affordable_votes(seat)) + income
+        };
+        let own = power(pid);
+        let seats: Vec<usize> = g
+            .players
+            .iter()
+            .filter(|player| player.alive && !player.is_minor && !player.is_barbarian)
+            .map(|player| player.id)
+            .collect();
+        let table: f64 = seats.iter().map(|seat| power(*seat)).sum();
+        // `own` is one of the summands, so the table is never smaller than it
+        // and the share is a genuine fraction.
+        let share = if table > f64::EPSILON {
+            own / table
+        } else {
+            0.0
+        };
+
+        // ⚠ THE POINT IS NOT A PRIZE ONE EMPIRE TAKES. `resolve_congress`
+        // pays +1 to EVERY voter that named the winning outcome and target --
+        // it is a prediction reward, not a contest -- so a seat banks points
+        // by agreeing with the floor as readily as by owning it. That is why
+        // `victory_eval` finishes this lane 14 times in 16 while the seat
+        // holds no special position: showing up is most of it.
+        //
+        // So a ballot is carried either by chance or by force. The blind half
+        // is one target in however many the resolution could name, which for
+        // the targeted resolutions that pay this lane is the eligible majors;
+        // the forced half is the share of the floor above. This is the one
+        // modelled term in the function and it is deliberately the pessimistic
+        // reading: it makes an empire with no Congress position at all read
+        // BELOW Religion's standing 46, so the lane still has to be earned.
+        let blind = 1.0 / (seats.len().max(1) as f64);
+        let carry = blind + (1.0 - blind) * share;
+
+        let forecast = f64::from(sessions) * per_session * carry;
+        ((100.0 * forecast / f64::from(needed as i32)).round() as i64).clamp(0, 100) as i32
+    }
+
     fn religious_opening_viable(&self, g: &Game, pid: usize) -> bool {
         let player = &g.players[pid];
         if player.religion.is_some() {
@@ -8094,9 +8360,15 @@ impl AdvancedAi {
                     && g.suzerain_of(minor.id) == Some(pid)
             })
             .count() as i64;
+        // The forecast can only RAISE the reading -- it is folded in with the
+        // banked tally's own `max`, exactly as `diplomatic_opening_score` is,
+        // so a seat that has already earned a higher number keeps it and the
+        // gene's effect stays one-directional and analysable. See
+        // `diplomatic_lane_forecast_score`.
         let diplomacy = (player.dvp * 5 + suzerain * 6)
             .clamp(0, 100)
             .max(self.diplomatic_opening_score(g, pid))
+            .max(i64::from(self.diplomatic_lane_forecast_score(g, pid)))
             as i32;
 
         [science, culture, religion, diplomacy]
@@ -10968,8 +11240,9 @@ impl AdvancedAi {
             .unwrap_or(plan.strategy);
         if g.players[pid].research.is_none() {
             let available = g.available_techs(pid);
-            let science_commitment =
-                objective == GrandStrategy::Science || self.diplomatic_science_backup(g, pid, plan);
+            let science_commitment = objective == GrandStrategy::Science
+                || self.diplomatic_science_backup(g, pid, plan)
+                || (self.science_drive_active() && plan.strategy != GrandStrategy::Recovery);
             let science_victory_goal = Self::science_victory_tech_goal(g, pid, objective);
             let great_person_goal = BasicAi::live_great_person_tech_goal(g, pid);
             let forced_goal = match objective {
@@ -12258,31 +12531,38 @@ impl AdvancedAi {
                 };
             }
         }
-        if strategy == GrandStrategy::Science {
-            let milestone = if !g.players[pid]
+        if strategy == GrandStrategy::Science || self.science_drive_active() {
+            // `science_victory_drive`: a driving seat keys the beeline on
+            // the next UNKNOWN chain tech, whatever its plan, so research
+            // holds the chain while a project is being built; stock keys it
+            // on the next unbuilt project, and while the Earth Satellite is
+            // building nothing leads to the known Rocketry any more.
+            let milestone = if self.science_drive_active() {
+                Self::science_drive_milestone(g, pid)
+            } else if !g.players[pid]
                 .science_projects
                 .contains("launch_earth_satellite")
             {
-                "rocketry"
+                Some("rocketry")
             } else if !g.players[pid]
                 .science_projects
                 .contains("launch_moon_landing")
             {
-                "satellites"
+                Some("satellites")
             } else if !g.players[pid]
                 .science_projects
                 .contains("launch_mars_colony")
             {
-                "nanotechnology"
+                Some("nanotechnology")
             } else if !g.players[pid]
                 .science_projects
                 .contains("exoplanet_expedition")
             {
-                "smart_materials"
+                Some("smart_materials")
             } else {
-                "offworld_mission"
+                Some("offworld_mission")
             };
-            if self.tech_leads_to(g, tech, milestone) {
+            if milestone.is_some_and(|milestone| self.tech_leads_to(g, tech, milestone)) {
                 value += if self.raced_target() == Some(VictoryTarget::Science) {
                     900.0
                 } else {
@@ -12290,6 +12570,7 @@ impl AdvancedAi {
                 };
             }
         }
+        value += self.science_drive_tech_bonus(g, pid, tech);
         // The nuclear lane used to carry a terminal reward and no
         // instrumental one: a Conquest empire prices a finished device at
         // 2,600 but the technology that permits one at barely two points, so
@@ -15641,6 +15922,14 @@ impl AdvancedAi {
             }
         }
         .max(self.war_treasury_floor(g, pid));
+        // `science_victory_drive`: with Rocketry known the race's pad and
+        // its buildings are what the Gold is for.
+        let reserve = if self.science_drive_spends(g, pid) {
+            let (flat, per_city) = science_victory_drive::SCIENCE_DRIVE_GOLD_RESERVE;
+            reserve.min(flat + per_city * city_count as f64)
+        } else {
+            reserve
+        };
         let purchase_limit = city_count.clamp(1, 4);
         let unit_purchase_limit = if g.players[pid].gold > reserve + 1_000.0 {
             2
@@ -16902,7 +17191,10 @@ impl AdvancedAi {
                 };
                 base + match governor {
                     "pingala" => {
-                        city.pop as f64 * 14.0 + yields.science * 9.0 + yields.culture * 9.0
+                        city.pop as f64 * 14.0
+                            + yields.science * 9.0
+                            + yields.culture * 9.0
+                            + self.science_drive_governor_bonus(g, governor, city_id)
                     }
                     "magnus" => {
                         city.pop as f64 * 5.0
@@ -17347,6 +17639,13 @@ impl AdvancedAi {
         if g.max_turns == 0 {
             return true;
         }
+        // `science_victory_drive`: a driving seat prices the race as the
+        // engine runs it (the project multiplier, the zone chain it is about
+        // to build, a flight with laser stations) and attempts it inside a
+        // stretch of the turns left. See `science_drive_race_fits`.
+        if self.science_drive_active() {
+            return self.science_drive_race_fits(g, pid);
+        }
         let remaining_turns = g.max_turns.saturating_sub(g.turn) as f64;
         let player = &g.players[pid];
         let completed = &player.science_projects;
@@ -17586,19 +17885,22 @@ impl AdvancedAi {
         // second can prepare Mars while the first launches, and up to three
         // let the post-Exoplanet laser race run in parallel. Separate cities
         // matter; duplicate Spaceports in one production queue do not.
-        let desired_spaceports =
-            if races_science || self.raced_target() == Some(VictoryTarget::Science) {
-                if completed.contains("launch_mars_colony") {
-                    3
-                } else if completed.contains("launch_moon_landing") {
-                    2
-                } else {
-                    1
-                }
+        let desired_spaceports = if self.science_drive_active() {
+            // `science_victory_drive`: the second pad by the Earth
+            // Satellite, so it stands when the expedition launches.
+            Self::science_drive_desired_pads(&completed)
+        } else if races_science || self.raced_target() == Some(VictoryTarget::Science) {
+            if completed.contains("launch_mars_colony") {
+                3
+            } else if completed.contains("launch_moon_landing") {
+                2
             } else {
                 1
             }
-            .min(city_ids.len());
+        } else {
+            1
+        }
+        .min(city_ids.len());
         if built_spaceports + queued_spaceports >= desired_spaceports {
             return;
         }
@@ -21242,6 +21544,7 @@ impl AdvancedAi {
                         } else {
                             0.0
                         }
+                        + self.science_drive_production_bonus(g, pid, cid, item)
                 }
             }
             Item::District { district, pos } => {
@@ -21610,6 +21913,7 @@ impl AdvancedAi {
                     + development_penalty
                     + research_coverage
                     + culture_coverage
+                    + self.science_drive_production_bonus(g, pid, cid, item)
             }
             Item::Repair { repair, .. } => {
                 if repair == "district" {
@@ -32208,6 +32512,10 @@ impl AdvancedAi {
         // `lane_commit`: from the midpoint, commit to the lane the seat leads
         // the field in. Exact no-op while off. See `advanced/lane_commit.rs`.
         self.maintain_lane_commit(g, pid);
+        // `science_victory_drive`: read the field and decide whether the
+        // seat drives the space race this turn. Exact no-op while off. See
+        // `advanced/science_victory_drive.rs`.
+        self.maintain_science_drive(g, pid);
         let disposition_strategy = active_victory_target
             .or_else(|| self.committed_lane())
             .map(VictoryTarget::strategy)
@@ -32421,7 +32729,8 @@ impl AdvancedAi {
             if self.victory_planning
                 && (plan.strategy == GrandStrategy::Science
                     || self.diplomatic_science_backup(g, pid, &plan)
-                    || self.space_race_lane_opens(g, pid, &plan))
+                    || self.space_race_lane_opens(g, pid, &plan)
+                    || self.science_drive_opens(plan.strategy))
             {
                 self.space_race_production(g, pid);
             }

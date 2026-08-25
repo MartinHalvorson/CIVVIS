@@ -900,6 +900,27 @@ impl AdvancedAi {
         self.projected_stock_denial = false;
     }
 
+    /// Score the Diplomacy lane by when twenty Diplomatic Victory Points
+    /// arrive along the Congress calendar, not by how many are banked. See
+    /// [`Self::diplomatic_lane_forecast`].
+    pub fn enable_diplomatic_lane_forecast(&mut self) {
+        self.diplomatic_lane_forecast = true;
+    }
+
+    pub fn disable_diplomatic_lane_forecast(&mut self) {
+        self.diplomatic_lane_forecast = false;
+    }
+
+    /// Count a peacetime major's army massed near one of our cities toward
+    /// that city's danger. See [`Self::frontier_massing_alarm`].
+    pub fn enable_frontier_massing_alarm(&mut self) {
+        self.frontier_massing_alarm = true;
+    }
+
+    pub fn disable_frontier_massing_alarm(&mut self) {
+        self.frontier_massing_alarm = false;
+    }
+
     /// Raise the Culture and Diplomacy denial alarms early, since countering an
     /// accumulated stock takes many turns. See
     /// [`Self::stock_denial_lead_time`].
@@ -2455,6 +2476,21 @@ impl AdvancedAi {
     /// The twin of `enable_surprise_war_mobilization`.
     pub fn disable_surprise_war_mobilization(&mut self) {
         self.surprise_war_mobilization = false;
+    }
+
+    /// When the empire leads the field in science, beeline the space-race chain,
+    /// build launch-city production and race two pads early.
+    /// Opt-in gene `science-victory-drive`; see `advanced/science_victory_drive.rs`
+    /// for the live runs that led science and never launched, and what each
+    /// lever does. Filed above the markers: the append-point check reads a
+    /// method line's first identifier.
+    pub fn enable_science_victory_drive(&mut self) {
+        self.science_victory_drive = true;
+    }
+
+    /// The twin of `enable_science_victory_drive`.
+    pub fn disable_science_victory_drive(&mut self) {
+        self.science_victory_drive = false;
     }
 
     // Append points, one per name range: a new treatment goes under the range
