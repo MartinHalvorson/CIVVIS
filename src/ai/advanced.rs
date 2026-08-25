@@ -4,8 +4,8 @@
 //! agent adds a shared strategic model so research, production, diplomacy,
 //! civilian work, and military movement pursue the same medium-term goal.
 use super::{
-    Ai, BasicAi, BasicUnitPlanState, ForceReport, PlanReport, PolicyDeck, UnitDoctrine,
-    UnitMemory, WarPlanReport, Weights,
+    Ai, BasicAi, BasicUnitPlanState, ForceReport, PlanReport, PolicyDeck, UnitDoctrine, UnitMemory,
+    WarPlanReport, Weights, BUILDER_ROUTE_ATTEMPTS,
 };
 use crate::belief::{BeliefState, CitySighting};
 use crate::game::{
@@ -25118,6 +25118,9 @@ impl AdvancedAi {
         // empire-wide questions each tile asks are answered once for the whole
         // sweep rather than once per tile. The borrow checker rejects the
         // guard the moment anything in here starts mutating the game.
+        if self.base.builder_tries_the_next_tile {
+            return self.builder_step_to_the_first_reachable_job(g, pid, uid, strategy, &reserved);
+        }
         let best = {
             let _memo = g.query_memo();
             let current_target = self.builder_targets.get(&uid).copied().filter(|pos| {
@@ -25159,6 +25162,145 @@ impl AdvancedAi {
             }),
         };
         target.is_some_and(|pos| self.builder_step_toward_barbarian_safe(g, pid, uid, pos))
+    }
+
+    /// Every job this Builder could take, best first, under the same score the
+    /// untreated branch of [`Self::advanced_builder_step`] maximises.
+    ///
+    /// Reading every tile the empire owns: one memo scope so the empire-wide
+    /// questions each tile asks are answered once for the whole sweep rather
+    /// than once per tile. The borrow checker rejects the guard the moment
+    /// anything in here starts mutating the game.
+    fn builder_jobs_ranked(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        strategy: GrandStrategy,
+        reserved: &HashSet<Pos>,
+    ) -> Vec<Pos> {
+        let current = g.units[&uid].pos;
+        let _memo = g.query_memo();
+        let mut scored: Vec<(f64, Pos)> = Vec::new();
+        for cid in g.player_city_ids(pid) {
+            for pos in &g.cities[&cid].owned_tiles {
+                if reserved.contains(pos) {
+                    continue;
+                }
+                let mut here: Option<f64> = None;
+                for improvement in self.worthwhile_improvements(g, pid, *pos, strategy) {
+                    let score = self.improvement_value(g, *pos, &improvement, strategy)
+                        - g.wdist(current, *pos) as f64 * 0.7;
+                    if here.is_none_or(|old| score > old) {
+                        here = Some(score);
+                    }
+                }
+                if let Some(score) = here {
+                    scored.push((score, *pos));
+                }
+            }
+        }
+        // Descending by score, position as the tiebreak: exactly the order the
+        // untreated branch's running `best` would have settled on.
+        scored.sort_by(|(a, ap), (b, bp)| {
+            b.partial_cmp(a)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then(ap.cmp(bp))
+        });
+        scored.into_iter().map(|(_, pos)| pos).collect()
+    }
+
+    /// Walk toward the best job this Builder can actually reach, rather than
+    /// toward the best job and nowhere otherwise. Opt-in gene
+    /// `builder-tries-the-next-tile`.
+    ///
+    /// ⚠⚠ THE BEST-SCORING TILE IS NOT ALWAYS A REACHABLE ONE, AND THE
+    /// UNTREATED BRANCH ABOVE HAD NO SECOND CHOICE. It scores every owned tile,
+    /// pins the winner in `builder_targets`, hands that one position to
+    /// `builder_step_toward_barbarian_safe`, and returns whatever that says.
+    /// The distance term is `wdist` — a straight line across the map — so a
+    /// ridge, a zone of control, a peer standing in the doorway or a tile on
+    /// the far side of a bay all score exactly as if the Builder could walk
+    /// there. When the step is refused the turn ends; worse, the pin survives,
+    /// and the hysteresis at the head of the untreated branch re-selects the
+    /// same unreachable tile next turn, and every turn after that.
+    ///
+    /// Measured at the deployment genome (seed 21000000): 22 Builders stood
+    /// still for 25+ turns across eight games, Builders were 25.4% of all major
+    /// idle and 24.9% of their own turns, and at t180 there were 25 Builders
+    /// alive holding 73 charges with NOT ONE of them in an empire that had run
+    /// out of improvable tiles. One caught in the act — builder 312 of seat 5,
+    /// thirty turns at (10, 29), three charges, improvable work five tiles away
+    /// on its own landmass.
+    ///
+    /// So: rank every candidate, keep the pin at the head so a Builder already
+    /// walking somewhere does not re-shuffle for a tie, and take the first one
+    /// the unit can actually start toward. A refused tile is *unpinned* — that
+    /// is the half that ends the stall, because a pin that survives its own
+    /// refusal is the loop. Bounded to `BUILDER_ROUTE_ATTEMPTS` so a sweep that
+    /// finds a hundred jobs cannot become a hundred pathfinds; ordinary turns
+    /// succeed on the first and pay nothing.
+    fn builder_step_to_the_first_reachable_job(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+        strategy: GrandStrategy,
+        reserved: &HashSet<Pos>,
+    ) -> bool {
+        // ⚠ THE FAST PATH IS THE WHOLE COST STORY. A Builder already walking to
+        // a job it can still do takes one `worthwhile_improvements` call and
+        // one step, exactly as the untreated branch does; the empire-wide sweep
+        // below is never reached. Ranking every owned tile unconditionally
+        // instead — the first draft of this — measured **+11.1 ± 5.2% wall
+        // seconds per completed turn** over 24 games, because a pinned Builder
+        // paid one sweep of the whole empire per turn to re-derive an answer it
+        // already had.
+        let pinned = {
+            let _memo = g.query_memo();
+            self.builder_targets.get(&uid).copied().filter(|pos| {
+                !reserved.contains(pos)
+                    && !self
+                        .worthwhile_improvements(g, pid, *pos, strategy)
+                        .is_empty()
+            })
+        };
+        let mut attempts = BUILDER_ROUTE_ATTEMPTS;
+        if let Some(pos) = pinned {
+            if self.builder_step_toward_barbarian_safe(g, pid, uid, pos) {
+                return true;
+            }
+            // ⚠ A Builder with nothing left to spend refuses EVERY tile, and
+            // that is not the failure this gene is for. Stop before paying for
+            // a second route and keep the pin: the unit is mid-journey and next
+            // turn it should carry on, not re-shuffle. Without this the
+            // treatment would drop hysteresis on any turn a Builder ran its
+            // movement out.
+            if g.units[&uid].moves_left <= 0.0 {
+                return false;
+            }
+            // Refused with movement in hand: this tile cannot be routed to.
+            // Drop the pin so it never becomes next turn's answer either — a
+            // pin that survives its own refusal is the loop that produced the
+            // thirty-turn stall.
+            self.builder_targets.remove(&uid);
+            attempts -= 1;
+        }
+        let ranked = self.builder_jobs_ranked(g, pid, uid, strategy, reserved);
+        for pos in ranked
+            .into_iter()
+            .filter(|pos| Some(*pos) != pinned)
+            .take(attempts)
+        {
+            if self.builder_step_toward_barbarian_safe(g, pid, uid, pos) {
+                self.builder_targets.insert(uid, pos);
+                return true;
+            }
+            if g.units[&uid].moves_left <= 0.0 {
+                return false;
+            }
+        }
+        false
     }
 
     fn advanced_trader_step(
