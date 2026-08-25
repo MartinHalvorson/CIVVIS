@@ -1731,7 +1731,10 @@ fn the_land_grab_pipeline_widens_with_the_empire() {
         1,
         "at the target the arm's own gate refuses"
     );
-    assert_eq!(AdvancedAi::legacy().settler_in_flight_allowed(&game, 16, 3, 0), 1);
+    assert_eq!(
+        AdvancedAi::legacy().settler_in_flight_allowed(&game, 16, 3, 0),
+        1
+    );
 }
 
 /// The land grab's window: a Settler must still repay before the turn

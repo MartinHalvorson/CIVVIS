@@ -229,7 +229,11 @@ mod tests {
         let mut ai = AdvancedAi::new();
         ai.enable_expansion_schedule();
         g.turn = 60;
-        assert_eq!(ai.expansion_pace_shortfall(&g, 1, 0), 3, "the band turn still counts");
+        assert_eq!(
+            ai.expansion_pace_shortfall(&g, 1, 0),
+            3,
+            "the band turn still counts"
+        );
         g.turn = 61;
         assert_eq!(ai.expansion_pace_shortfall(&g, 1, 0), 0, "past it, inert");
         assert_eq!(ai.expansion_schedule_pipeline(&g, 7, 1, 0), None);

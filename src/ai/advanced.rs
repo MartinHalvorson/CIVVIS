@@ -16541,7 +16541,10 @@ impl AdvancedAi {
             let keep = 1 + self.order_retry_budget();
             let mut ranked: Vec<(f64, std::cmp::Reverse<String>, Action)> = if keep > 1 {
                 candidates.sort_by(|left, right| {
-                    right.0.total_cmp(&left.0).then_with(|| right.1.cmp(&left.1))
+                    right
+                        .0
+                        .total_cmp(&left.0)
+                        .then_with(|| right.1.cmp(&left.1))
                 });
                 candidates.truncate(keep);
                 candidates
@@ -16549,7 +16552,9 @@ impl AdvancedAi {
                 candidates
                     .into_iter()
                     .max_by(|left, right| {
-                        left.0.total_cmp(&right.0).then_with(|| left.1.cmp(&right.1))
+                        left.0
+                            .total_cmp(&right.0)
+                            .then_with(|| left.1.cmp(&right.1))
                     })
                     .into_iter()
                     .collect()
@@ -16562,7 +16567,9 @@ impl AdvancedAi {
                     break;
                 }
             }
-            let Some((score, action, before)) = applied else { break };
+            let Some((score, action, before)) = applied else {
+                break;
+            };
             let is_unit = matches!(action, Action::Buy { .. });
             if self.journal().wants(crate::reasoning::Level::Decision) {
                 let spent = (before - g.players[pid].gold).max(0.0);
@@ -19889,8 +19896,8 @@ impl AdvancedAi {
                                         Some(Item::Project { project: queued }) if queued == project
                                     )
                             })
-                    })
-                    .collect::<Vec<_>>();
+                        })
+                        .collect::<Vec<_>>();
                 // See `district_planning`: the plan's sites join the menu
                 // and a reserved plot is withdrawn from a rival district —
                 // the argmax below is untouched, it only sees better.
@@ -19906,7 +19913,10 @@ impl AdvancedAi {
                 if keep > 1 {
                     let mut menu: Vec<(f64, String, Item)> = menu.collect();
                     menu.sort_by(|left, right| {
-                        right.0.total_cmp(&left.0).then_with(|| left.1.cmp(&right.1))
+                        right
+                            .0
+                            .total_cmp(&left.0)
+                            .then_with(|| left.1.cmp(&right.1))
                     });
                     menu.truncate(keep);
                     menu
@@ -19950,15 +19960,14 @@ impl AdvancedAi {
                     if !(displaces_commitment && score > -1_000.0) {
                         break;
                     }
-                    if g
-                        .apply(
-                            pid,
-                            &Action::Produce {
-                                city: cid,
-                                item: item.clone(),
-                            },
-                        )
-                        .is_ok()
+                    if g.apply(
+                        pid,
+                        &Action::Produce {
+                            city: cid,
+                            item: item.clone(),
+                        },
+                    )
+                    .is_ok()
                     {
                         chosen = Some((score, item));
                         break;
@@ -21215,8 +21224,12 @@ impl AdvancedAi {
             }
             Item::Unit { unit } if unit == "settler" => {
                 let settlement_target = self.settlement_target(plan);
-                let in_flight_allowed =
-                    self.settler_in_flight_allowed(g, settlement_target, city_count, counts.settlers);
+                let in_flight_allowed = self.settler_in_flight_allowed(
+                    g,
+                    settlement_target,
+                    city_count,
+                    counts.settlers,
+                );
                 // ★★★★ ASK THE CHEAP QUESTIONS FIRST. The site scan below is
                 // the most expensive question in this arm — a valued sweep of
                 // a radius-11 disk, and once Shipbuilding is in, of the whole
@@ -26746,15 +26759,14 @@ impl AdvancedAi {
                        "worth {:.1} to the {} plan, best of {} that fit this tile",
                        self.improvement_value(g, current, improvement, strategy),
                        strategy.as_str(), here.len(); current);
-                if g
-                    .apply(
-                        pid,
-                        &Action::Improve {
-                            unit: uid,
-                            improvement: Name::new(improvement),
-                        },
-                    )
-                    .is_ok()
+                if g.apply(
+                    pid,
+                    &Action::Improve {
+                        unit: uid,
+                        improvement: Name::new(improvement),
+                    },
+                )
+                .is_ok()
                 {
                     return true;
                 }
