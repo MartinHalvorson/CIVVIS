@@ -118,6 +118,15 @@
           "campus-adjacency-threshold-2": null
         }
       },
+      "chain-payback-window": {
+        "pinned": null,
+        "head": null,
+        "ships": null,
+        "versions": {
+          "chain-payback-window": null,
+          "chain-payback-window-2": null
+        }
+      },
       "district-coverage": {
         "pinned": null,
         "head": "district-coverage",
@@ -163,6 +172,15 @@
           "naval-recon-2": null
         }
       },
+      "never-an-empty-queue": {
+        "pinned": null,
+        "head": null,
+        "ships": null,
+        "versions": {
+          "never-an-empty-queue": null,
+          "never-an-empty-queue-2": null
+        }
+      },
       "power-the-laboratory": {
         "pinned": null,
         "head": "power-the-laboratory",
@@ -197,6 +215,15 @@
         "versions": {
           "siege-is-progress": -0.144271,
           "siege-is-progress-2": null
+        }
+      },
+      "solvency-first-trade-slot": {
+        "pinned": "solvency-first-trade-slot",
+        "head": null,
+        "ships": "solvency-first-trade-slot",
+        "versions": {
+          "solvency-first-trade-slot": null,
+          "solvency-first-trade-slot-2": null
         }
       }
     },
