@@ -794,6 +794,14 @@ pub const GENES: &[Gene] = &[
     // already settled, ~1.4 free Diplomatic Victory Points a seat a game).
     Gene { tag: "congress-banks-decided", field: "congress_banks_a_decided_vote", kind: Kind::OptIn, enable: AdvancedAi::enable_congress_banks_a_decided_vote, disable: AdvancedAi::disable_congress_banks_a_decided_vote },
     Gene { tag: "congress-counter-votes", field: "congress_counter_votes", kind: Kind::OptIn, enable: AdvancedAi::enable_congress_counter_votes, disable: AdvancedAi::disable_congress_counter_votes },
+    // ⚠ The planner judges its OWN diplomatic position by `dvp * 5 +
+    // suzerain * 6` and a RIVAL's by `dvp * 5`. A rival holding every
+    // city-state -- the whole Favor engine that manufactures the points --
+    // contributes nothing to its threat reading until the points land, and
+    // diplomatic victories are 58 of the 107 recorded losses to a rival. The
+    // missing term is the one the file already has. See
+    // `rival_suzerainty_alarm`.
+    Gene { tag: "rival-suzerainty-alarm", field: "rival_suzerainty_alarm", kind: Kind::OptIn, enable: AdvancedAi::enable_rival_suzerainty_alarm, disable: AdvancedAi::disable_rival_suzerainty_alarm },
     // ⚠ Eighteen of 32 screened games today ended on a Science Victory, and
     // the threat model reads that race as a five-step ladder off launches
     // already made: a rival one tech from Rocketry with a Spaceport standing
