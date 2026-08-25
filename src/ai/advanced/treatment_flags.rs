@@ -885,6 +885,17 @@ impl AdvancedAi {
         self.projected_stock_denial = false;
     }
 
+    /// Score the Diplomacy lane by when twenty Diplomatic Victory Points
+    /// arrive along the Congress calendar, not by how many are banked. See
+    /// [`Self::diplomatic_lane_forecast`].
+    pub fn enable_diplomatic_lane_forecast(&mut self) {
+        self.diplomatic_lane_forecast = true;
+    }
+
+    pub fn disable_diplomatic_lane_forecast(&mut self) {
+        self.diplomatic_lane_forecast = false;
+    }
+
     /// Raise the Culture and Diplomacy denial alarms early, since countering an
     /// accumulated stock takes many turns. See
     /// [`Self::stock_denial_lead_time`].

@@ -4301,6 +4301,53 @@ pub struct AdvancedAi {
     /// `AdvancedAi::diplomatic_opening_score`.
     pub diplomatic_opening: bool,
 
+    /// Whether the Diplomacy lane is scored by WHEN twenty Diplomatic Victory
+    /// Points arrive rather than by how many are already banked.
+    ///
+    /// ⚠ THE BOARD DOES NOT CONTEST THIS LANE AT ALL, and it is the lane this
+    /// engine finishes most often. `src/bin/victory_eval.rs` measures the five
+    /// named conditions at the ladder's own profile and ranks them
+    /// **diplomatic 14/16 > culture 12/16 > religious 8/16 > domination 2/16 >
+    /// science 0/16**. `src/bin/audit.rs` counts what the adaptive planner
+    /// actually chooses over the same profile and reports **diplomacy 0% of
+    /// 1,500 planner-turns**, culture 2%, science 10%, religion 9% — against
+    /// conquest 43%. The planner spends nearly half the game on the lane that
+    /// completes 2/16 and none of it on the lane that completes 14/16.
+    ///
+    /// The reason is arithmetic in [`Self::lane_progress_table`], where the
+    /// four lanes are compared on scales that are not commensurable. Science
+    /// reads [`Self::rocketry_readiness`], a **readiness ramp** that starts at
+    /// 25 and climbs with the prerequisite techs — added, in that function's
+    /// own words, "so adaptive agents can make the initial commitment instead
+    /// of remaining stuck at the old 25% floor forever". Religion reads a
+    /// **commitment floor** of 46, or 55 once a rival has founded, from
+    /// [`Self::religious_opening_viable`] — before a single Prophet exists.
+    /// Diplomacy reads `dvp * 5 + suzerain * 6`: a tally of a victory already
+    /// half-won. It cannot reach Religion's standing 46 until the empire holds
+    /// eight suzerainties or nine of the twenty points, and it earns neither
+    /// without having played the lane for a hundred turns first. The lane's
+    /// score only rises once it is chosen, and it is never chosen because its
+    /// score is zero — the same lock Science and Religion were each let out of
+    /// and Diplomacy was not. The one key that was cut for it,
+    /// [`Self::diplomatic_opening_score`]'s flat `DIPLOMATIC_OPENING`, hangs
+    /// on `diplomatic_opening`: a flag no registry row, no bundle and no
+    /// command line has set since the evaluator that named it was deleted.
+    ///
+    /// A flat floor is also the weak answer, because it fires whenever any met
+    /// city-state is unclaimed — which is nearly always, in nearly every game,
+    /// however poor the empire's Congress position. This gene prices the lane
+    /// the way the lane is actually won instead. A regular session opens every
+    /// `standard_duration(30)` turns from the Medieval era and seats two
+    /// resolutions, joined by `world_leader` from the Industrial; naming a
+    /// winning outcome and target exactly pays +1, and `world_leader` moves
+    /// ±2. So the question a planner at turn 60 can answer, and the banked
+    /// tally cannot, is: **how many of the sessions left before the clock will
+    /// this empire carry, and does that reach twenty?**
+    ///
+    /// **Off by default.** Screenable: the native board convenes the same
+    /// Congress, banks the same Favor and awards the same points.
+    pub diplomatic_lane_forecast: bool,
+
     /// Reserve one empty city's next build for reachable envoy infrastructure.
     ///
     /// `envoy_infrastructure` teaches `advanced_production` what the Diplomatic
@@ -5653,6 +5700,7 @@ impl AdvancedAi {
             air_surge_census: AirSurgeCensus::default(),
             air_surge_cooldown_until: 0,
             diplomatic_opening: false,
+            diplomatic_lane_forecast: false,
             envoy_priority: false,
             joint_tactics: false,
             joint_tactics_forced_off: false,
@@ -7826,6 +7874,113 @@ impl AdvancedAi {
         }
     }
 
+    /// How close the Diplomacy lane is to **closing**, forecast forward along
+    /// the Congress calendar, in the same 0-100 currency the other three lanes
+    /// report. Zero when the gene is off, so the shipped tally is untouched.
+    ///
+    /// See [`Self::diplomatic_lane_forecast`] for why the banked tally cannot
+    /// answer this. The forecast is built only from state the engine already
+    /// publishes, and every term is the one the Congress itself reads:
+    ///
+    /// - **Sessions left.** `process_congress` opens a regular session every
+    ///   `standard_duration(30)` turns from `world_era >= 2`. Count the ones
+    ///   that will still sit before `max_turns`; a session after the clock
+    ///   cannot pay.
+    /// - **Ballots a session pays.** `convene_congress` seats two regular
+    ///   resolutions, and adds `world_leader` from `world_era >= 5`. An exact
+    ///   prediction pays +1 and `world_leader` moves ±2, so a session is worth
+    ///   two points before the Industrial era and four after it.
+    /// - **The share this empire carries.** Only the ballot whose outcome
+    ///   *and* target the empire named exactly pays -- but `resolve_congress`
+    ///   pays it to *every* voter that named the pair, so it is a prediction
+    ///   reward and not a prize. A ballot is therefore carried by chance or by
+    ///   force: one target in the eligible majors blind, rising toward
+    ///   certainty with the seat's share of the Favor on the floor.
+    /// - **Favor still to come.** At turn 60 every seat's stock is near zero
+    ///   and the shares would all read one half — a forecast made of nothing.
+    ///   Suzerainties are the engine that fills the stock: each pays
+    ///   `suzerain_diplomatic_favor_per_turn` every turn, so carry that income
+    ///   one full session forward and price both sides on what they will bring
+    ///   to the *next* ballot, not on what they hold between ballots. This is
+    ///   what makes the reading move for an empire that is buying envoys
+    ///   before it has banked a single point.
+    ///
+    /// Reported as `100 * forecast / points still needed`, clamped: 100 says
+    /// the calendar closes the lane with room, 50 says it arrives at half the
+    /// points, and 0 says it does not arrive. A seat already at twenty reads
+    /// 100 without any of the arithmetic.
+    fn diplomatic_lane_forecast_score(&self, g: &Game, pid: usize) -> i32 {
+        if !self.diplomatic_lane_forecast || !g.victory_conditions.diplomatic {
+            return 0;
+        }
+        let needed = crate::game::DIPLOMATIC_VICTORY_POINTS - g.players[pid].dvp;
+        if needed <= 0 {
+            return 100;
+        }
+        // No clock is no forecast: the ratio below has no denominator, and a
+        // game that never ends cannot make a session scarce.
+        if g.max_turns == 0 {
+            return 0;
+        }
+        let period = g.standard_duration(30).max(1);
+        let sessions = g.max_turns.saturating_sub(g.turn) / period;
+        if sessions == 0 {
+            return 0;
+        }
+        // Two regular resolutions a session, plus `world_leader`'s own +/-2
+        // once the world reaches the Industrial era.
+        let per_session = if g.world_era >= 5 { 4.0 } else { 2.0 };
+
+        // Favor a seat will bring to the next ballot: what it can already
+        // spend, plus one session of suzerainty income expressed the same way.
+        let power = |seat: usize| {
+            let suzerainties = g
+                .players
+                .iter()
+                .filter(|minor| minor.alive && minor.is_minor && !minor.is_barbarian)
+                .filter(|minor| g.suzerain_of(minor.id) == Some(seat))
+                .count() as f64;
+            let income =
+                suzerainties * g.suzerain_diplomatic_favor_per_turn(seat) * f64::from(period);
+            f64::from(g.congress_affordable_votes(seat)) + income
+        };
+        let own = power(pid);
+        let seats: Vec<usize> = g
+            .players
+            .iter()
+            .filter(|player| player.alive && !player.is_minor && !player.is_barbarian)
+            .map(|player| player.id)
+            .collect();
+        let table: f64 = seats.iter().map(|seat| power(*seat)).sum();
+        // `own` is one of the summands, so the table is never smaller than it
+        // and the share is a genuine fraction.
+        let share = if table > f64::EPSILON {
+            own / table
+        } else {
+            0.0
+        };
+
+        // ⚠ THE POINT IS NOT A PRIZE ONE EMPIRE TAKES. `resolve_congress`
+        // pays +1 to EVERY voter that named the winning outcome and target --
+        // it is a prediction reward, not a contest -- so a seat banks points
+        // by agreeing with the floor as readily as by owning it. That is why
+        // `victory_eval` finishes this lane 14 times in 16 while the seat
+        // holds no special position: showing up is most of it.
+        //
+        // So a ballot is carried either by chance or by force. The blind half
+        // is one target in however many the resolution could name, which for
+        // the targeted resolutions that pay this lane is the eligible majors;
+        // the forced half is the share of the floor above. This is the one
+        // modelled term in the function and it is deliberately the pessimistic
+        // reading: it makes an empire with no Congress position at all read
+        // BELOW Religion's standing 46, so the lane still has to be earned.
+        let blind = 1.0 / (seats.len().max(1) as f64);
+        let carry = blind + (1.0 - blind) * share;
+
+        let forecast = f64::from(sessions) * per_session * carry;
+        ((100.0 * forecast / f64::from(needed as i32)).round() as i64).clamp(0, 100) as i32
+    }
+
     fn religious_opening_viable(&self, g: &Game, pid: usize) -> bool {
         let player = &g.players[pid];
         if player.religion.is_some() {
@@ -8005,9 +8160,15 @@ impl AdvancedAi {
                     && g.suzerain_of(minor.id) == Some(pid)
             })
             .count() as i64;
+        // The forecast can only RAISE the reading -- it is folded in with the
+        // banked tally's own `max`, exactly as `diplomatic_opening_score` is,
+        // so a seat that has already earned a higher number keeps it and the
+        // gene's effect stays one-directional and analysable. See
+        // `diplomatic_lane_forecast_score`.
         let diplomacy = (player.dvp * 5 + suzerain * 6)
             .clamp(0, 100)
             .max(self.diplomatic_opening_score(g, pid))
+            .max(i64::from(self.diplomatic_lane_forecast_score(g, pid)))
             as i32;
 
         [science, culture, religion, diplomacy]

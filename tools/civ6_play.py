@@ -856,6 +856,14 @@ SETUP_X = 0.500
 # once this strip is cropped and enlarged. Left/top/right/bottom, as fractions
 # of the game window.
 START_GAME_STRIP = (0.25, 0.86, 0.80, 1.0)
+# The saved-game action button occupies the same bottom edge, but only the
+# left-hand button is Load Game (Delete sits beside it).  The live t181
+# recovery on 2026-08-24 proved the failure mode: the full-screen pass and the
+# general 0.22..0.72 menu crop both missed a plainly rendered Load Game label,
+# so the harness closed a recoverable leading game.  Restrict the enlarged
+# pass to the lower-left controls; the label still has to be read before any
+# click is licensed.
+LOAD_GAME_ACTION_STRIP = (0.25, 0.86, 0.55, 1.0)
 
 # The civilization control is one fixed Firaxis setup row above difficulty.
 # Expressing that relationship keeps it aligned when a different window height
@@ -2528,26 +2536,31 @@ AUTOSAVE_DIR = (Path.home() / "Library" / "Application Support"
                 / "Saves" / "Single" / "auto")
 
 
-def latest_autosave(directory: Path = AUTOSAVE_DIR,
-                    newer_than: float | None = None) -> Path | None:
-    """The most recently written autosave, or None.
+def recent_autosaves(directory: Path = AUTOSAVE_DIR,
+                     newer_than: float | None = None) -> list[Path]:
+    """Autosaves newest first, optionally limited to the current attempt.
 
     ⚠ By modification time, not by number: the numbering wraps and the newest
-    file after a rotation can carry a lower number than an older one. Bounded
-    below by ``newer_than`` (a POSIX timestamp) so a resume never loads a save
-    from some earlier game that happens to be the newest file on disk.
+    file after a rotation can carry a lower number than an older one.  Keeping
+    the ordered list lets a second freeze recovery step back one turn instead
+    of deterministically loading the same hanging save again.
     """
     try:
         candidates = [path for path in directory.glob("AutoSave_*.Civ6Save")
                       if path.is_file()]
     except OSError:
-        return None
+        return []
     if newer_than is not None:
         candidates = [path for path in candidates
                       if path.stat().st_mtime >= newer_than]
-    if not candidates:
-        return None
-    return max(candidates, key=lambda path: path.stat().st_mtime)
+    return sorted(candidates, key=lambda path: path.stat().st_mtime, reverse=True)
+
+
+def latest_autosave(directory: Path = AUTOSAVE_DIR,
+                    newer_than: float | None = None) -> Path | None:
+    """The most recently written autosave, or None."""
+    candidates = recent_autosaves(directory, newer_than)
+    return candidates[0] if candidates else None
 
 
 # The staged-resume stem. One fixed name: at most one staged file ever exists,
@@ -2677,7 +2690,9 @@ def bootstrap_saved_game(tail: watch.LogTail, on_event, run_dir: Path,
         # The screen contains a LOAD GAME heading and a lower action button.
         # The button is the lowest matching label; selecting the first match
         # would click the inert heading and wait forever.
-        action_points = _observed_label_points(selected, "Load Game", bounds)
+        action_points = _observed_label_points(
+            selected, "Load Game", bounds, strip=LOAD_GAME_ACTION_STRIP,
+        )
         if not action_points:
             print("the saved-game action button is not visible", file=sys.stderr)
             return False
