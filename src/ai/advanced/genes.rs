@@ -720,6 +720,15 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "lane-culture-spending", field: "lane_culture_spending", kind: Kind::OptIn, enable: AdvancedAi::enable_lane_culture_spending, disable: AdvancedAi::disable_lane_culture_spending },
     Gene { tag: "lane-space-race", field: "lane_space_race", kind: Kind::OptIn, enable: AdvancedAi::enable_lane_space_race, disable: AdvancedAi::disable_lane_space_race },
     Gene { tag: "competition-victory-points", field: "competition_victory_points", kind: Kind::OptIn, enable: AdvancedAi::enable_competition_victory_points, disable: AdvancedAi::disable_competition_victory_points },
+    // ⚠ Barbarians take 7.0 major cities a game -- 65% of everything a major
+    // loses -- at a median city age of TEN TURNS, and `settle_value`
+    // explicitly filters barbarians out of its proximity penalty, so a site
+    // beside a barbarian city scores exactly as well as an empty one. Cities
+    // held correlate with final score at r = +0.89; cities FOUNDED at -0.03.
+    // The A/B moved cities held +1.09 (p = 0.0001) and barbarian losses -0.48
+    // (p < 0.0001), both replicated; its 35-37 win count over 72 games is
+    // underpowered, not a null. See `defensible_sites`.
+    Gene { tag: "defensible-sites", field: "defensible_sites", kind: Kind::OptIn, enable: AdvancedAi::enable_defensible_sites, disable: AdvancedAi::disable_defensible_sites },
     // ⚠ "Strong enough to take what a neighbour has" never asks WHICH
     // neighbour: `weakest_rival` is the minimum power over every met major
     // with no proximity test, so the branch really asks "am I 1.8x the
