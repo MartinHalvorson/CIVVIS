@@ -33743,9 +33743,10 @@ fn barbarian_field(seed: u64) -> (Game, u32, Pos) {
 fn open_land(game: &Game, pos: Pos) -> bool {
     game.city_at(pos).is_none()
         && game.units_at(pos).is_empty()
-        && game.map.get(pos).is_some_and(|tile| {
-            game.rules.is_passable(tile) && !game.rules.is_water(tile)
-        })
+        && game
+            .map
+            .get(pos)
+            .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
 }
 
 /// A settler two tiles from home with a Warrior two tiles away flees to a
@@ -33807,16 +33808,13 @@ fn a_settler_never_steps_into_a_raiders_reach_alone() {
         .filter(|pos| game.wdist(*pos, start) == 4 && open_land(&game, *pos))
         .find_map(|target| {
             let next = game.route_step(settler, target, 0)?;
-            let raider_at = game
-                .wdisk(next, 2)
-                .into_iter()
-                .find(|pos| {
-                    game.wdist(*pos, next) == 2
-                        && game.wdist(*pos, start) >= 3
-                        && game.wdist(*pos, home) <= 3
-                        && *pos != target
-                        && open_land(&game, *pos)
-                })?;
+            let raider_at = game.wdisk(next, 2).into_iter().find(|pos| {
+                game.wdist(*pos, next) == 2
+                    && game.wdist(*pos, start) >= 3
+                    && game.wdist(*pos, home) <= 3
+                    && *pos != target
+                    && open_land(&game, *pos)
+            })?;
             Some((target, next, raider_at))
         })
         .expect("a target whose first step a raider can reach while the start is safe");
@@ -33866,7 +33864,11 @@ fn a_settler_founds_on_a_doorstep_inside_the_reach_when_it_can_found_this_turn()
         .nbrs(start)
         .into_iter()
         .find(|pos| *pos != site && open_land(&game, *pos) && game.wdist(*pos, raider_at) <= 2)
-        .or_else(|| game.nbrs(start).into_iter().find(|pos| *pos != site && open_land(&game, *pos)))
+        .or_else(|| {
+            game.nbrs(start)
+                .into_iter()
+                .find(|pos| *pos != site && open_land(&game, *pos))
+        })
         .expect("room for a watcher");
     let _watcher = game.spawn_test_unit("scout", 0, watcher_at);
     let _raider = game.spawn_test_unit("warrior", 1, raider_at);
@@ -33875,7 +33877,10 @@ fn a_settler_founds_on_a_doorstep_inside_the_reach_when_it_can_found_this_turn()
     ai.settlement_safety = false;
     ai.settler_targets.insert(settler, site);
     let reach = ai.barbarian_reach(&game, 0, start, 10);
-    assert!(reach.covers(&game, site), "the site is inside the raider's reach");
+    assert!(
+        reach.covers(&game, site),
+        "the site is inside the raider's reach"
+    );
     assert!(game.can_found_city(settler) || game.units[&settler].pos != site);
     assert!(ai.settler_step_out_of_reach(&mut game, 0, settler, site));
     assert_eq!(game.units[&settler].pos, site, "the doorstep step is taken");
@@ -33885,7 +33890,10 @@ fn a_settler_founds_on_a_doorstep_inside_the_reach_when_it_can_found_this_turn()
     );
     assert!(game.can_found_city(settler));
     assert!(ai.advanced_settler_step(&mut game, 0, settler));
-    assert!(game.city_at(site).is_some(), "the city stands before the raider moves");
+    assert!(
+        game.city_at(site).is_some(),
+        "the city stands before the raider moves"
+    );
 }
 
 /// A threatened settler with a Warrior of ours one tile away summons it
@@ -33926,14 +33934,19 @@ fn a_threatened_settler_summons_a_guard_onto_its_tile() {
         "the nearest healthy land unit is bound as the guard"
     );
     assert_eq!(
-        game.units[&guard].pos,
-        game.units[&settler].pos,
+        game.units[&guard].pos, game.units[&settler].pos,
         "the guard shares the settler's tile — a stacked civilian cannot be taken"
     );
     let stacked_at = game.units[&settler].pos;
     let acted = ai.stacked_guard_step(&mut game, 0, guard);
-    assert!(acted.is_some(), "the bound guard's own step is decided for it");
-    assert_eq!(game.units[&guard].pos, stacked_at, "the guard keeps the tile");
+    assert!(
+        acted.is_some(),
+        "the bound guard's own step is decided for it"
+    );
+    assert_eq!(
+        game.units[&guard].pos, stacked_at,
+        "the guard keeps the tile"
+    );
 }
 
 /// A builder's only job sits inside a raider's reach: with the gene it is
@@ -33958,7 +33971,9 @@ fn a_builder_refuses_a_job_inside_a_raiders_reach() {
             .wdisk(target, 1)
             .into_iter()
             .find(|pos| {
-                game.wdist(*pos, target) == 1 && game.wdist(*pos, home) > 1 && open_land(&game, *pos)
+                game.wdist(*pos, target) == 1
+                    && game.wdist(*pos, home) > 1
+                    && open_land(&game, *pos)
             })
             .expect("an open raider tile one step from the job");
         let raider = game.spawn_test_unit("warrior", 1, raider_at);
@@ -33969,11 +33984,20 @@ fn a_builder_refuses_a_job_inside_a_raiders_reach() {
     let builder = stock_game.spawn_test_unit("builder", 0, home);
     let mut stock = AdvancedAi::new();
     assert!(stock.advanced_builder_step(&mut stock_game, 0, builder, GrandStrategy::Expansion));
-    assert_ne!(stock_game.units[&builder].pos, home, "the untreated builder walks out");
+    assert_ne!(
+        stock_game.units[&builder].pos, home,
+        "the untreated builder walks out"
+    );
     stock_game.current = 1;
     if stock_game.can_move(raider, target) && stock_game.units[&builder].pos == target {
         stock_game
-            .apply(1, &Action::Move { unit: raider, to: target })
+            .apply(
+                1,
+                &Action::Move {
+                    unit: raider,
+                    to: target,
+                },
+            )
             .expect("the raider takes the exposed builder");
         assert_eq!(stock_game.units[&builder].owner, 1);
     }
@@ -33983,7 +34007,10 @@ fn a_builder_refuses_a_job_inside_a_raiders_reach() {
     let mut safe = AdvancedAi::new();
     safe.enable_civilian_out_of_reach();
     let reach = safe.barbarian_reach(&safe_game, 0, home, 10);
-    assert!(reach.covers(&safe_game, target), "the only job is inside the reach");
+    assert!(
+        reach.covers(&safe_game, target),
+        "the only job is inside the reach"
+    );
     let _ = safe.advanced_builder_step(&mut safe_game, 0, builder, GrandStrategy::Expansion);
     assert_eq!(
         safe_game.units[&builder].pos, home,
@@ -33991,4 +34018,3 @@ fn a_builder_refuses_a_job_inside_a_raiders_reach() {
     );
     assert_ne!(safe.builder_targets.get(&builder), Some(&target));
 }
-

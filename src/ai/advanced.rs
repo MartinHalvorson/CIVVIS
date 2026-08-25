@@ -4853,6 +4853,11 @@ mod surprise_defense;
 mod air_surge;
 use air_surge::{AirSurge, AirSurgeCensus, AirSurgeStatus};
 
+/// Settlers and builders out of a barbarian's reach: flee it, never step
+/// into it, stack with a summoned guard when they must. Opt-in gene
+/// `civilian-out-of-reach`. See `advanced/civilian_safety.rs`.
+mod civilian_safety;
+
 mod site_lookahead;
 
 /// The standing city's district plan: which districts, on which reserved
@@ -4870,11 +4875,6 @@ mod missionary_field;
 /// with nothing left in reach. Opt-in gene `one-war-at-a-time`; see
 /// `advanced/one_war.rs`.
 mod one_war;
-/// Settlers and builders out of a barbarian's reach: flee it, never step
-/// into it, stack with a summoned guard when they must. Opt-in gene
-/// `civilian-out-of-reach`. See `advanced/civilian_safety.rs`.
-mod civilian_safety;
-
 /// The religious corps: the four opt-in genes for what a founder buys with
 /// Faith once its cities start slipping, and what it does with the units
 /// afterwards. See `advanced/religion.rs`.
