@@ -6,17 +6,17 @@
     "withholdable": 39
   },
   "derived": {
-    "firaxis_only_count": 30,
-    "live_bridge_count": 69,
+    "firaxis_only_count": 29,
+    "live_bridge_count": 68,
     "native_engine_repair_count": 39,
     "withholdable_live_count": 39
   },
   "genome_coverage": {
-    "capability_toggles": 183,
+    "capability_toggles": 182,
     "measured_by_a_screen": 81,
     "reachable_as_a_gene": 131,
     "resolved_by_a_screen": 17,
-    "unreachable_by_any_screen": 52,
+    "unreachable_by_any_screen": 51,
     "unreachable_toggles": [
       "adjacent_camp_clear",
       "amenity_districts",
@@ -65,7 +65,6 @@
       "settler_founds_when_stalled",
       "solvent_faith_army",
       "spy_mission_patience",
-      "step_and_reassess",
       "stock_denial_lead_time",
       "tally_culture",
       "tally_great_people",
@@ -230,13 +229,12 @@
       ]
     },
     "FIRAXIS_ONLY_TREATMENTS": {
-      "declared_count": 30,
+      "declared_count": 29,
       "items": [
         "joint-reach-lines",
         "live-trader-route",
         "live-religious-purchase",
         "live-motion-turn-accounting",
-        "step-and-reassess",
         "solvent-faith-army",
         "live-formationless-settler-shadow",
         "live-wonder-race",
@@ -265,7 +263,7 @@
       ]
     },
     "LIVE_BRIDGE_TREATMENTS": {
-      "declared_count": 69,
+      "declared_count": 68,
       "items": [
         "war-reinforcement",
         "come-ashore",
@@ -310,7 +308,6 @@
         "live-trader-route",
         "live-religious-purchase",
         "live-motion-turn-accounting",
-        "step-and-reassess",
         "solvent-faith-army",
         "live-formationless-settler-shadow",
         "live-wonder-race",

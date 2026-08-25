@@ -4,9 +4,9 @@
 ★★★★ THE SIGNATURE WAS ALREADY WRITTEN DOWN; NOTHING CHECKED FOR IT.
 
 `docs/GENE_SCREEN.md` records it in a section of its own -- *"A Δ of exactly
-zero is a gene that never fired, not a null"*. `step-and-reassess` screened
+zero is a gene that never fired, not a null"*. A retired host-only flag screened
 **+0.0 [+0.0, +0.0]** on both axes over 204 pairs because its only code path
-lived on a parallel unit planner no evaluator installs, so every pair's two
+lived on a parallel unit planner no evaluator installed, so every pair's two
 games ended identically. `treatment_flags.rs` carries the same warning from the
 other direction: a repair gene whose enable is missing from
 the bundle is off in BOTH arms, "the two arms play byte-identical games", and

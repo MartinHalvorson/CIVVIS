@@ -480,11 +480,14 @@ it belongs to a family.
    one level — off, or exactly one version — on with the family's
    probability (`P_DEFAULT_ON` if any version ships on, else `P_ON`), and
    within it **the best version takes 60% and the other versions split the
-   remaining 40% evenly** (`BEST_VERSION_SHARE`; the best is the version the
-   ledger ships, else the priced version with the highest tracked wins —
+   remaining 40% evenly** (`BEST_VERSION_SHARE`; the best is the family
+   **head** — the priced version with the highest tracked wins, ties to the
+   higher version; with nothing priced, the version the ledger ships —
    *"a 60% chance of using the top version of the gene and a 40% chance of
    using a different gene version (randomly pick among the rest)"*; a family
-   with one drawable version plays that version). So `war-economy` and
+   with one drawable version plays that version). Every version keeps being
+   drawn on every screen, so a challenger that overtakes the head on the
+   pooled record takes the 60% — and ships — from the next `genes.py write`. So `war-economy` and
    `war-economy-2` are never on the same
    seat, each is priced against the same "off", the two are priced against
    each other, and the batch mostly plays what would ship. ⚠ A version named
@@ -498,16 +501,37 @@ it belongs to a family.
    "against the version before it" contrast is positive on the win axis and
    it also beats `off`.** Every version also has its own row in the main
    table and its own row in the ledger, read by the same rule as any gene.
-5. The pinned deployment genome may name **at most one version of a family**.
-   It is an explicit operator choice, never the version with the highest
-   tracked wins; a newer screen cannot replace a selected sibling. Every
-   version keeps being priced on its own row. `HEURISTIC_GENE_RANKING.md`
-   names the family's best *display* version in its *Best version* column
-   (`1` is the original): the pinned version if one exists, otherwise the
-   priced version with the highest tracked wins. A versioned row's *Total (on)* /
-   *Total (off)* cells show the best two versions' rates side by side — each
-   version's *on* is the seats that played that version; every other seat is
-   its *off*.
+5. **A pinned family ships its head.** The pinned deployment genome
+   (`OPERATOR_DEFAULT_ON`) may name **at most one version of a family**, and
+   naming any version pins the *family* on — whether the gene defaults on is
+   the operator's call. *Which* version plays is not: it is the family head,
+   the priced version with the highest tracked wins (the ledger's pooled
+   *Diff* over every screen that priced it; ties to the higher version), and
+   `genes.py write` records the head — not the name the operator wrote — in
+   `deployment_genome`, the generated `DEPLOYMENT_GENOME` and the *Default*
+   column, saying on stderr when the two differ (operator, 2026-08-23: *"always
+   use the best version for our real games, whatever the best version is"*;
+   2026-08-25: *"our highest performing version should be shown in the table
+   and should be the gene default, if the gene does default on"*). A family
+   none of whose versions a ledger source has priced ships the version named.
+   `docs/gene_ledger.json` keeps every family's pin, head and each version's
+   tracked wins under `rules.family_heads`; `genes.py check` reads the pinned
+   list *as families*, so a head that moved is not drift. Every version keeps
+   being priced on its own row. `HEURISTIC_GENE_RANKING.md` names the head in
+   its *Best version* column (`1` is the original) on every row of the
+   family, and a versioned row's *Total (on)* / *Total (off)* cells show the
+   best two versions' rates side by side — each version's *on* is the seats
+   that played that version; every other seat is its *off*.
+6. **At most three versions at a time** (`MAX_VERSIONS`, operator,
+   2026-08-25). A family is the head plus at most two challengers still being
+   priced. Before a fourth version is added, the **third-best by tracked
+   wins** leaves the code — a cull PR like any other (row, toggles, code
+   path; its rows in past screens stay as played) — and only then does the
+   new `<base>-<n>` land, with the next unused number. `python3
+   tools/genes.py versions` prints every family ranked, and `versions --add
+   <base>` names the version to drop and exits 1 while the family is full;
+   the ledger tool and a `gene_screen` test refuse a registry with a larger
+   family.
 
 Two consequences worth stating. A version that does not beat the original
 head to head is not an improvement however well it does against `off`, and
@@ -867,7 +891,7 @@ including a first reading above +20.
 
 ## A Δ of exactly zero is a gene that never fired, not a null
 
-`step-and-reassess` (2026-08-20, `docs/LIVE_TACTICS.md` §11) first screened
+A now-retired host-only gene (2026-08-20) first screened
 **+0.0 [+0.0, +0.0]** on both axes over 204 pairs: every pair's two games
 ended identically. That is not "no effect" — a gene with any reach at all
 moves at least the score share of some game — it is the signature of a gene
@@ -1095,7 +1119,7 @@ gate above refused four on their own probes. What the remaining 52 are:
 | group | n | why not a gene |
 |---|---:|---|
 | `bundle` | 6 | It turns a group of other genes on. `gene_screen` already builds its treated seat from `enable_engine_repairs_universe`; a row would vary everything inside it and file the sum under one tag. |
-| `host-only` | 12 | Cannot fire on a native board, each with its reason already recorded beside its row in the registry (`Kind::HostOnly`). `step-and-reassess` is the founding example of the paragraph above. |
+| `host-only` | 11 | Cannot fire on a native board, each with its reason already recorded beside its row in the registry (`Kind::HostOnly`). A now-retired host-only gene is the founding example of the paragraph above. |
 | `live-bridge-row` | 16 | **Screenable would mean withheld.** It is a live gene, so an opt-in row flips `ledger_default_on` from `None` to `Some(false)` and `apply_gene_ledger` takes it out of the live bridge. Its host-only classification is an argument about which rivals the weights were bred against, not a claim it cannot fire — so the move it wants is the one `culture-coverage` made, out of `FIRAXIS_ONLY_TREATMENTS` into an `ENGINE_REPAIR_*` half, taken deliberately with the bridge change owned. |
 | `production-on` | 6 | Production ships it ON, so its door is `Kind::Production` — and that row is **not** neutral: `apply_gene_ledger` disables every production treatment whose `ledger_default_on` is `Some(false)`, which is exactly a screenable tag with no ledger row. Adding it would switch a shipped behaviour off; `open_water_navy` alone was promoted at +61 Elo-equivalent (200 pairs, seed 8700000, CI +21..+109, PASS on the corrected-gate matrix; see `AdvancedAi::promoted_policy_envoy`). It needs its first screen row before it can have a gene row. |
 | `configured-on` | 5 | On in `AdvancedAi::configured` but not in `promoted_policy_envoy`, so `production_and_opt_in_rows_are_real` rejects the row as written, and it carries the same hazard as the group above. |
@@ -1581,9 +1605,10 @@ written.
    below promotes anything automatically. `docs/GENOME.md` records what
    happened the one time selection ran on a correlate, and
    `docs/eval/README.md`'s rule stands: a screen's `*` is where to point an arm.
-2. **The secondary axis is score share**, printed for every gene as
-   *Share Δpp (z)* in `HEURISTIC_GENE_RANKING.md` and listed again for the lane
-   genes alone. Its verdict is the screen's own `*` convention on that axis:
+2. **The secondary axis is score share**, printed as *Share Δpp (z)* in
+   `HEURISTIC_GENE_RANKING.md`'s lane table (the main ranking table keeps only
+   `P(>0)` of the pooled columns). Its verdict is the screen's own `*`
+   convention on that axis:
    `helps *` at share z ≥ 2, `hurts *` at ≤ −2, `~` otherwise.
 3. **A lane gene whose share reading is `hurts *` is a removal candidate even
    with a positive win column.** The share axis is continuous and resolves an

@@ -6164,18 +6164,6 @@ impl BasicAi {
         self.patrol_posts.extend(state.patrol_posts);
     }
 
-    /// Remember the hops a unit actually took this turn, so a continuation
-    /// from live state (`step_and_reassess`) keeps the reversal guard's
-    /// memory of them. Replaces this turn's record; an older turn's is gone.
-    pub(crate) fn record_walked_steps(&mut self, uid: u32, turn: u32, from_tiles: Vec<Pos>) {
-        let mut trails = self.last_path_step_from.borrow_mut();
-        let entry = trails.entry(uid).or_insert((turn, Vec::new()));
-        if entry.0 != turn {
-            *entry = (turn, Vec::new());
-        }
-        entry.1.extend(from_tiles);
-    }
-
     pub(crate) fn clear_prepared_patrol_posts(&mut self) {
         self.patrol_posts_by_class.clear();
     }
