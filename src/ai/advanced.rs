@@ -8375,8 +8375,7 @@ impl AdvancedAi {
     /// deliberately no other condition: the difference between the two genes
     /// is which branch asks, not what is asked.
     fn elective_war_yields(&self, g: &Game, pid: usize) -> bool {
-        self.elective_war_yields_to_a_lane
-            && self.victory_focus(g, pid).progress >= LIVE_LANE_FLOOR
+        self.elective_war_yields_to_a_lane && self.victory_focus(g, pid).progress >= LIVE_LANE_FLOOR
     }
 
     fn unchosen_war_holds_the_lane(&self, g: &Game, pid: usize) -> bool {
