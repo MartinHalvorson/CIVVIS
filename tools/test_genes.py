@@ -51,7 +51,7 @@ DEPLOYED_GENOME_20260824 = (
     "promote-when-wounded", "raid-pillage-prizes", "recon-replacement",
     "recorded-tactical-step", "relief-targets-the-siege", "religion-sues-peace",
     "religious-defence-scales", "religious-units-heal-first", "science-multiplier-payoff",
-    "score-horizon", "settle-sooner", "settlement-gap-target", "settler-threat-detour", "slot-kind-tiebreak", "strike-opening",
+    "science-victory-drive", "score-horizon", "settle-sooner", "settlement-gap-target", "settler-threat-detour", "slot-kind-tiebreak", "strike-opening",
     "theology-for-founders", "unit-cost-efficiency", "unit-objective-memory",
     "war-economy", "war-reinforcement",
     "wide-map-capacity",
@@ -591,7 +591,7 @@ class TheOperatorPinnedDeploymentGenome(unittest.TestCase):
             {g["tag"] for g in ledger["genes"] if g["default_on"]},
             selected & measured,
         )
-        self.assertEqual(ledger["counts"]["default_on"], 52)
+        self.assertEqual(ledger["counts"]["default_on"], 53)
         self.assertEqual(tuple(ledger["rules"]["operator_promotions"]),
                          gene_ledger.OPERATOR_PROMOTIONS_20260824)
 
@@ -1269,7 +1269,11 @@ class TheTableIsDerived(unittest.TestCase):
                 self.assertIn(f"`{tag}`", text, tag)
             else:
                 self.assertIn("## Awaiting measurement", text)
-                self.assertIn(f"| `{tag}` | off (unmeasured) |", text, tag)
+                # An operator-pinned gene is on before its first screen
+                # (`science-victory-drive`, 2026-08-24); every other
+                # unmeasured gene is off.
+                default = "**on**" if tag in ranking.OPERATOR_DEFAULT_ON else "off"
+                self.assertIn(f"| `{tag}` | {default} (unmeasured) |", text, tag)
         self.assertNotIn("`step-and-reassess` | ", text, "a host-only flag is not ranked")
 
     def test_descriptions_come_from_the_toggle_docs(self):
