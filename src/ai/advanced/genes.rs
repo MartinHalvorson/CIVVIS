@@ -731,6 +731,15 @@ pub const GENES: &[Gene] = &[
     // was a degenerate-block artifact; measured here on the repaired
     // instrument. See `unchosen_war_keeps_the_lane`.
     Gene { tag: "unchosen-war-keeps-the-lane", field: "unchosen_war_keeps_the_lane", kind: Kind::OptIn, enable: AdvancedAi::enable_unchosen_war_keeps_the_lane, disable: AdvancedAi::disable_unchosen_war_keeps_the_lane },
+    // ⚠ The row above's construction, applied to the two branches below it in
+    // the cascade. That gene is the only one of eleven written this week with
+    // persistent signal (+4.7 pp, z +2.09 over 271 games) and what it does is
+    // refuse to let a war a RIVAL started take the plan from a live lane.
+    // These branches take the plan for a war WE choose, and `no_elective_war`
+    // records that they never converted in eight live runs -- 0 cities taken,
+    // 16 lost -- while being Firaxis-only, so the native board runs them bare.
+    // See `elective_war_yields_to_a_lane`.
+    Gene { tag: "elective-war-yields-to-a-lane", field: "elective_war_yields_to_a_lane", kind: Kind::OptIn, enable: AdvancedAi::enable_elective_war_yields_to_a_lane, disable: AdvancedAi::disable_elective_war_yields_to_a_lane },
     // ⚠ The planner judges its OWN diplomatic position by `dvp * 5 +
     // suzerain * 6` and a RIVAL's by `dvp * 5`. A rival holding every
     // city-state -- the whole Favor engine that manufactures the points --
