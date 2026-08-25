@@ -70,8 +70,9 @@
 //!
 //! ## Where each hook sits
 //!
-//! - `recon_disruption_plan`: `advanced_units`, after the joint engagement
-//!   and before the unit loop — once per turn, from the start-of-turn board.
+//! - `recon_disruption_plan`: `advanced_units`, after the once-per-turn
+//!   tactical passes and before the unit loop — once per turn, from the
+//!   start-of-turn board.
 //! - `recon_disruption_step`: the peacetime tail of
 //!   `advanced_military_step_with_decline`, immediately before
 //!   `BasicAi::military_step` — after every raider, camp, village, staging
@@ -249,9 +250,8 @@ impl AdvancedAi {
     }
 
     /// Whether this is a unit either gene may send, and whether it is recon.
-    /// The seat's own land military unit, not spoken for by the joint plan
-    /// or a settler guard; a unit that is not recon stays in the city it
-    /// garrisons.
+    /// The seat's own land military unit, except a settler guard; a unit that
+    /// is not recon stays in the city it garrisons.
     fn disruption_unit(&self, g: &Game, pid: usize, uid: u32) -> Option<bool> {
         let unit = g.units.get(&uid)?;
         let spec = &g.rules.units[unit.kind];
@@ -262,10 +262,7 @@ impl AdvancedAi {
         {
             return None;
         }
-        if self.tactics_resolved.contains(&uid)
-            || self.tactics_withdrawn.contains(&uid)
-            || self.settler_guards.values().any(|guard| *guard == uid)
-        {
+        if self.settler_guards.values().any(|guard| *guard == uid) {
             return None;
         }
         let recon = spec.promotion_class == "recon";

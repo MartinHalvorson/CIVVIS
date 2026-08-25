@@ -275,8 +275,7 @@ impl AdvancedAi {
         let mut applied = GeneLedgerApplied::default();
         // What the bundle had on — every live gene and the production genes —
         // the ledger may hold off; what it had off — the opt-ins — the ledger
-        // may turn on. `joint-tactics` is both live and an opt-in: as a live
-        // gene it is withheld or kept like any other.
+        // may turn on.
         for gene in super::GENES
             .iter()
             .filter(|gene| gene.live() || gene.production())

@@ -100,6 +100,33 @@
     ],
     "versions": "a pinned version pins its family; the family head - the priced version with the highest tracked wins (win_diff), ties to the higher version - is what ships and what deployment_genome records; a family holds at most 3 versions, the third-best leaves before a fourth is added",
     "family_heads": {
+      "amenity-project-preemption": {
+        "pinned": "amenity-project-preemption",
+        "head": "amenity-project-preemption",
+        "ships": "amenity-project-preemption",
+        "versions": {
+          "amenity-project-preemption": -0.037946,
+          "amenity-project-preemption-2": null
+        }
+      },
+      "campus-adjacency-threshold": {
+        "pinned": null,
+        "head": "campus-adjacency-threshold",
+        "ships": null,
+        "versions": {
+          "campus-adjacency-threshold": -0.007025,
+          "campus-adjacency-threshold-2": null
+        }
+      },
+      "district-coverage": {
+        "pinned": null,
+        "head": "district-coverage",
+        "ships": null,
+        "versions": {
+          "district-coverage": 0.008266,
+          "district-coverage-2": null
+        }
+      },
       "fog-honest": {
         "pinned": null,
         "head": null,
@@ -107,6 +134,69 @@
         "versions": {
           "fog-honest": null,
           "fog-honest-2": null
+        }
+      },
+      "guru-heals-the-corps": {
+        "pinned": "guru-heals-the-corps",
+        "head": "guru-heals-the-corps",
+        "ships": "guru-heals-the-corps",
+        "versions": {
+          "guru-heals-the-corps": -0.107723,
+          "guru-heals-the-corps-2": null
+        }
+      },
+      "holy-site-where-the-threat-is": {
+        "pinned": null,
+        "head": "holy-site-where-the-threat-is",
+        "ships": null,
+        "versions": {
+          "holy-site-where-the-threat-is": -0.031224,
+          "holy-site-where-the-threat-is-2": null
+        }
+      },
+      "naval-recon": {
+        "pinned": "naval-recon",
+        "head": "naval-recon",
+        "ships": "naval-recon",
+        "versions": {
+          "naval-recon": -0.045836,
+          "naval-recon-2": null
+        }
+      },
+      "power-the-laboratory": {
+        "pinned": null,
+        "head": "power-the-laboratory",
+        "ships": null,
+        "versions": {
+          "power-the-laboratory": 0.035908,
+          "power-the-laboratory-2": null
+        }
+      },
+      "settler-guard-holds": {
+        "pinned": null,
+        "head": "settler-guard-holds",
+        "ships": null,
+        "versions": {
+          "settler-guard-holds": 0.080401,
+          "settler-guard-holds-2": null
+        }
+      },
+      "settler-target-hysteresis": {
+        "pinned": "settler-target-hysteresis",
+        "head": "settler-target-hysteresis",
+        "ships": "settler-target-hysteresis",
+        "versions": {
+          "settler-target-hysteresis": 0.011271,
+          "settler-target-hysteresis-2": null
+        }
+      },
+      "siege-is-progress": {
+        "pinned": null,
+        "head": "siege-is-progress",
+        "ships": null,
+        "versions": {
+          "siege-is-progress": -0.144271,
+          "siege-is-progress-2": null
         }
       }
     },
@@ -502,7 +592,7 @@
     }
   ],
   "counts": {
-    "helps": 17,
+    "helps": 16,
     "hurts": 0,
     "unresolved": 64,
     "default_on": 73
@@ -2124,51 +2214,6 @@
             "win_delta_pp": 0.588,
             "win_z": 0.918,
             "win_se_pp": 0.641
-          }
-        ]
-      }
-    },
-    {
-      "tag": "joint-tactics",
-      "verdict": "helps",
-      "default_on": false,
-      "wins_last_10k": 3,
-      "wins_prior_10k": -4,
-      "wins_third_10k": -18,
-      "win_diff_pp": -0.104302,
-      "posterior_pp": -5.145492,
-      "posterior_se_pp": 11.41702,
-      "posterior_screens": 3,
-      "posterior_tau_pp": 0.0,
-      "family_wise": true,
-      "conflict": false,
-      "screen": {
-        "seats": 35148,
-        "pairs": 17574,
-        "n_on": 17574,
-        "n_off": 17574,
-        "win_delta_pp": 0.068,
-        "win_z": 0.186,
-        "share_delta_pp": 0.248,
-        "share_z": 3.838,
-        "read": "share HELPS **",
-        "source": "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
-        "win_tranches": [
-          {
-            "position": "latest",
-            "seats": 20004,
-            "pairs": 10002,
-            "win_delta_pp": 0.2,
-            "win_z": 0.412,
-            "win_se_pp": 0.485
-          },
-          {
-            "position": "previous",
-            "seats": 15144,
-            "pairs": 7572,
-            "win_delta_pp": -0.106,
-            "win_z": -0.188,
-            "win_se_pp": 0.563
           }
         ]
       }

@@ -49,7 +49,6 @@ The kinds are the registry's own (`Kind` in `genes.rs`):
 |-----------------|------|-----------|--------|------------|--------|------------|
 | `Repair(axis)`  | yes  | no        | yes    | no         | no     | yes        |
 | `HostOnly`      | yes  | yes       | no     | no         | no     | no         |
-| `HostOnlyOptIn` | yes  | yes       | no     | no         | yes    | yes        |
 | `Production`    | no   | no        | no     | yes        | no     | yes        |
 | `OptIn`         | no   | no        | no     | no         | yes    | yes        |
 
@@ -241,6 +240,7 @@ keeps the current selection stable.
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import hashlib
 import json
 import math
@@ -285,11 +285,11 @@ class Gene:
 
     @property
     def live(self) -> bool:
-        return self.kind.startswith("Kind::Repair") or self.kind in ("Kind::HostOnly", "Kind::HostOnlyOptIn")
+        return self.kind.startswith("Kind::Repair") or self.kind == "Kind::HostOnly"
 
     @property
     def host_only(self) -> bool:
-        return self.kind in ("Kind::HostOnly", "Kind::HostOnlyOptIn")
+        return self.kind == "Kind::HostOnly"
 
     @property
     def repair(self) -> bool:
@@ -301,7 +301,7 @@ class Gene:
 
     @property
     def opt_in(self) -> bool:
-        return self.kind in ("Kind::OptIn", "Kind::HostOnlyOptIn")
+        return self.kind == "Kind::OptIn"
 
     @property
     def universe_on(self) -> bool:
@@ -1194,6 +1194,66 @@ def load_source(path: Path) -> dict:
 
 
 REPORTING_BATCH_LABELS = ("Last Batch", "Prior Batch", "Third Batch")
+CONTINUOUS_BATCH_TIMING_SCHEMA = "continuous_batch_timing/v1"
+
+
+def continuous_batch_timing_of(data: dict) -> dict | None:
+    """Validate scheduler-owned whole-batch timing on a report artifact.
+
+    Analyzer artifacts are intentionally silent about wall-clock duration: a
+    continuous batch can contain resumed, non-overlapping segments.  The
+    scheduler stamps the *published copy* with the one interval the table
+    needs.  Historical reports predate that stamp and remain honest rather
+    than receiving a reconstructed rate from rows or file timestamps.
+    """
+    raw = data.get("continuous_batch_timing")
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise SystemExit("continuous_batch_timing must be an object")
+    if raw.get("schema") != CONTINUOUS_BATCH_TIMING_SCHEMA:
+        raise SystemExit(
+            "continuous_batch_timing has unknown schema "
+            f"{raw.get('schema')!r}; expected {CONTINUOUS_BATCH_TIMING_SCHEMA}")
+
+    def timestamp(key: str) -> dt.datetime:
+        value = raw.get(key)
+        if not isinstance(value, str) or not value:
+            raise SystemExit(f"continuous_batch_timing.{key} must be a UTC timestamp")
+        try:
+            parsed = dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError as error:
+            raise SystemExit(
+                f"continuous_batch_timing.{key} is not ISO-8601: {value!r}") from error
+        if parsed.tzinfo is None:
+            raise SystemExit(
+                f"continuous_batch_timing.{key} must name its timezone: {value!r}")
+        return parsed.astimezone(dt.timezone.utc)
+
+    completed_games = raw.get("completed_games")
+    elapsed_seconds = raw.get("elapsed_seconds")
+    if (isinstance(completed_games, bool) or not isinstance(completed_games, int)
+            or completed_games < 1):
+        raise SystemExit("continuous_batch_timing.completed_games must be a positive integer")
+    if (isinstance(elapsed_seconds, bool) or not isinstance(elapsed_seconds, int)
+            or elapsed_seconds < 1):
+        raise SystemExit("continuous_batch_timing.elapsed_seconds must be a positive integer")
+    games = data.get("games")
+    if isinstance(games, bool) or not isinstance(games, int) or games != completed_games:
+        raise SystemExit(
+            "continuous_batch_timing.completed_games must exactly match analysis games")
+    started = timestamp("started_at")
+    completed = timestamp("completed_at")
+    if int((completed - started).total_seconds()) != elapsed_seconds:
+        raise SystemExit(
+            "continuous_batch_timing.elapsed_seconds does not match its start/end interval")
+    return {
+        "schema": CONTINUOUS_BATCH_TIMING_SCHEMA,
+        "started_at": raw["started_at"],
+        "completed_at": raw["completed_at"],
+        "elapsed_seconds": elapsed_seconds,
+        "completed_games": completed_games,
+    }
 
 
 def source_record(path: Path, data: dict) -> dict:
@@ -1215,6 +1275,9 @@ def source_record(path: Path, data: dict) -> dict:
     }
     if data.get("games") is not None:
         entry["games"] = int(data["games"])
+    timing = continuous_batch_timing_of(data)
+    if timing is not None:
+        entry["continuous_batch_timing"] = timing
     build = build_of(data)
     if build:
         entry["build"] = build
@@ -2252,9 +2315,16 @@ def reporting_batch_cell(batch: dict | None, tag: str) -> str:
 
 def reporting_batch_header(label: str, batch: dict | None) -> str:
     if batch is None:
-        return f"Wins ± /10k total seats — {label} (n=not recorded)"
+        return (f"Wins ± /10k total seats — {label} "
+                "(n=not recorded; games/min=not recorded)")
+    timing = batch["meta"].get("continuous_batch_timing")
+    if not isinstance(timing, dict):
+        rate = "games/min=not recorded"
+    else:
+        rate = (f"{timing['completed_games'] * 60 / timing['elapsed_seconds']:.1f} "
+                "games/min")
     return (f"Wins ± /10k total seats — {label} "
-            f"(n={fmt_int(batch['meta']['seats'])} total seats)")
+            f"(n={fmt_int(batch['meta']['seats'])} total seats; {rate})")
 
 
 def diff_cell(history: list[dict]) -> str:
@@ -2712,8 +2782,9 @@ def render(ledger: dict) -> str:
     reference = [
         "Every screenable heuristic gene on the Advanced controller, ranked by the displayed "
         "pooled *Diff* from highest to lowest (alphabetically by tag on a tie). Each batch "
-        "header carries its actual player-seat "
-        "count once; cells show the enabled arm's excess projected to 10,000 **total** player "
+        "header carries its actual player-seat count and whole-batch average games/minute "
+        "once; a historical artifact without scheduler timing says `not recorded` rather "
+        "than guessing from its rows. Cells show the enabled arm's excess projected to 10,000 **total** player "
         "seats, where a six-player chance expectation is 1,667 wins. A dash means that batch "
         "did not screen the gene. The *Total* win-rate columns pool the displayed observations "
         "and retain their real per-gene on/off seat counts in every row. *Diff* is that display "

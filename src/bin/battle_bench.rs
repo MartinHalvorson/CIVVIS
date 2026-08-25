@@ -6,7 +6,7 @@
 //! does not license.
 //!
 //! ```bash
-//! cargo run --release --bin battle_bench -- --a advanced_joint_tactics --b advanced --games 200
+//! cargo run --release --bin battle_bench -- --a advanced --b basic --games 200
 //! cargo run --release --bin battle_bench -- --a advanced --b advanced --games 60   # control
 //! cargo run --release --bin battle_bench -- --army warrior,warrior,archer,archer --turns 30
 //! ```
@@ -125,15 +125,12 @@ fn erfc(x: f64) -> f64 {
     }
 }
 
-/// What a joint-planning seat costs, measured the way `turn_cost` measures a
-/// searching one: **as a ratio, on interleaved runs, in the configuration that
-/// would actually ship.**
+/// What a treated seat costs, measured **as a ratio, on interleaved runs, in
+/// the configuration that would actually ship.**
 ///
 /// A league entry is one strategy among five opponents, so the price of
-/// admitting the search is `(5a + s) / 6a`, not `s / a`. `docs/EVAL.md` records
-/// that measuring only the all-searching fleet once read 29x for a change that
-/// costs 6.4x seated, and would have redirected the whole line of work. The
-/// same trap applies here, so the default is one treated seat among five.
+/// admitting a treatment is `(5a + s) / 6a`, not `s / a`. The default is one
+/// treated seat among five.
 fn measure_cost(args: &[String], name: &str) {
     let games = number(args, "--games", 3).max(1) as usize;
     let seats = number(args, "--players", 6).max(2) as usize;
@@ -152,7 +149,6 @@ fn measure_cost(args: &[String], name: &str) {
 
     let mut stock = (0.0f64, 0u32);
     let mut mixed = (0.0f64, 0u32);
-    let mut fired = (0usize, 0usize);
     for index in 0..games {
         let gseed = seed + index as u64;
         // Interleaved: the two fleets play the same seed back to back.
@@ -179,14 +175,6 @@ fn measure_cost(args: &[String], name: &str) {
             if treatment {
                 mixed.0 += elapsed;
                 mixed.1 += played;
-                // The deployment-scale fires-check. A whole-game null means
-                // something quite different depending on this number.
-                for seat in fleet.iter().take(treated) {
-                    if let Some((plans, decisions)) = seat.joint_tactics_census() {
-                        fired.0 += plans;
-                        fired.1 += decisions;
-                    }
-                }
             } else {
                 stock.0 += elapsed;
                 stock.1 += played;
@@ -201,14 +189,6 @@ fn measure_cost(args: &[String], name: &str) {
     println!("all advanced          {a:.2} ms a game-turn   ({} turns)", stock.1);
     println!("{treated} seat(s) treated     {b:.2} ms a game-turn   ({} turns)", mixed.1);
     println!("ratio                 {:.2}x", b / a.max(1e-9));
-    println!();
-    println!(
-        "fires-check: the search planned on {} turns, reaching {} unit decisions, \
-         over {} treated seat-turns",
-        fired.0,
-        fired.1,
-        mixed.1 as usize * treated
-    );
 }
 
 /// Print the evidence the aggregate exchange score cannot provide: what each
@@ -250,7 +230,7 @@ fn print_unit_lifetimes<'a>(
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    let name_a = text(&args, "--a", "advanced_joint_tactics");
+    let name_a = text(&args, "--a", "advanced");
     let name_b = text(&args, "--b", "advanced");
     for name in [&name_a, &name_b] {
         if !known_ai(name) {

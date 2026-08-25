@@ -403,19 +403,6 @@ const POWER_FACTOR: f64 = 280.0;
 const P_ON: f64 = 0.25;
 const P_DEFAULT_ON: f64 = 0.75;
 
-/// Genes the screen holds at their default unless `--genes` asks for them by
-/// name. This is a COST list, not a verdict: `joint-tactics` costs +27.3%
-/// compute per enabled major seat (P10, 17,574 seat pairs) against ±1.6% for
-/// every other gene, and screening it multiplies the whole batch by 2.52x —
-/// a 10,000-game screen goes from 8.8 hours to 22.2.
-///
-/// ⚠ Do not read this as "it does nothing". Its win columns are +3/-4, inside
-/// any band this instrument has printed, but P10 reads `share HELPS **` at
-/// share z +3.84 — past that screen's family-wise bar. What it is owed is a
-/// deliberate run (`--genes joint-tactics`), not a seat on every batch at
-/// 2.5x the bill.
-const HELD_UNLESS_ASKED: &[&str] = &["joint-tactics"];
-
 /// ⭐ THE CONTESTED FIELD, and why it exists (2026-08-24).
 ///
 /// The standard screen draws every seat's genome from one controller and reads
@@ -5121,8 +5108,7 @@ fn main() {
     if present(&args, "--list") {
         println!(
             "{} genes (bit order) · default = the deployment genome (docs/gene_ledger.json) · \
-             p = on-probability in the screen ({P_ON} / {P_DEFAULT_ON} for a default-on gene) · \
-             HELD = out of the default screened set on cost, ask for it by name",
+             p = on-probability in the screen ({P_ON} / {P_DEFAULT_ON} for a default-on gene)",
             genes.len()
         );
         let tags: Vec<String> = genes.iter().map(|gene| gene.tag.to_string()).collect();
@@ -5142,7 +5128,7 @@ fn main() {
                 .map(|row| row.verdict.as_str())
                 .unwrap_or("unmeasured");
             println!(
-                "{i:>3}  {:<28} {:<32} universe:{} stock:{} default:{} ledger:{:<10} p:{:.2}{}",
+                "{i:>3}  {:<28} {:<32} universe:{} stock:{} default:{} ledger:{:<10} p:{:.2}",
                 gene.tag,
                 gene.field,
                 if gene.after_setup_on { "on " } else { "off" },
@@ -5150,11 +5136,6 @@ fn main() {
                 if gene.default_on { "on " } else { "off" },
                 verdict,
                 if gene.default_on { P_DEFAULT_ON } else { P_ON },
-                if HELD_UNLESS_ASKED.contains(&gene.tag) {
-                    "  HELD"
-                } else {
-                    ""
-                }
             );
         }
         return;
@@ -5465,11 +5446,7 @@ fn main() {
         }
     }
     let screened: Vec<bool> = match text(&args, "--genes") {
-        // Everything but the cost list, which `--genes` can still ask for.
-        None => genes
-            .iter()
-            .map(|gene| !HELD_UNLESS_ASKED.contains(&gene.tag))
-            .collect(),
+        None => vec![true; genes.len()],
         Some(list) => {
             let wanted: Vec<&str> = list
                 .split(',')
@@ -5892,14 +5869,12 @@ mod tests {
         tags.sort_unstable();
         tags.dedup();
         assert_eq!(tags.len(), genes.len(), "a gene tag is repeated");
-        // Host-only flags are excluded by construction, not by luck — unless
-        // the registry says the flag also acts on a native board
-        // (`Kind::HostOnlyOptIn`: `joint-tactics`, whose search runs
-        // headless). A plain `HostOnly` row never reaches the genome.
+        // Host-only flags are excluded by construction, not by luck. A
+        // `HostOnly` row never reaches the genome.
         for gene in &genes {
             let row = civvis::ai::gene(gene.tag).expect("registered");
             assert!(
-                !row.host_only() || row.opt_in(),
+                !row.host_only(),
                 "{} is host-only and would screen as noise",
                 gene.tag
             );
