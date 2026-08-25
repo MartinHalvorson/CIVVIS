@@ -2070,7 +2070,10 @@ def sources_from_ledger(ledger: dict) -> list[Path]:
 #: The ranking's short name for the win column.
 wins_per = wins_per_10k
 
-RANKING_MD = ROOT / "HEURISTIC_GENE_RANKING.md"
+# ⚠ Renamed upstream on 2026-08-25 (9ad09f7d) without updating this constant,
+# which left `genes.py write` creating the OLD file and every ranking test
+# reading a path that no longer exists — 28 errors on a clean `origin/main`.
+RANKING_MD = ROOT / "GENE_HEURISTIC_RANKING.md"
 NOTES_MD = ROOT / "docs" / "gene_ranking_notes.md"
 
 #: How much of a gene's sentence the Description column carries. Widened
@@ -2874,8 +2877,29 @@ def render(ledger: dict) -> str:
         "file is older than the ledger's sources.",
     ]
 
+    # ⚠ THE TITLE AND THE COLUMN LEGEND ARE THE OPERATOR'S, AND THIS FILE IS
+    # GENERATED — so they have to live HERE or every `genes.py write` erases
+    # them. They were hand-written straight into `GENE_HEURISTIC_RANKING.md` on
+    # 2026-08-25 (fb64960c, 76f50229) and the next regeneration would have
+    # thrown them away silently, which is how a generated file quietly loses an
+    # edit nobody notices is missing.
     lines = [
-        "# The heuristic gene ranking",
+        "## A Ranking of all Gene Heuristics by On/Off Win Rate Difference in Tournaments",
+        "- Ranking",
+        "- Gene Name",
+        "- A short Gene Description",
+        "- The highest performing version of the gene, which is also the default"
+        " version if the gene defaults \"on\"",
+        "- Default \"on\" of \"off\". Default \"on\" genes are a part of our best genome.",
+        "- Estimated probability that this gene is beneficial to our performance",
+        "- (3 cols) win rate from the last tournament / prior tournament /"
+        " tournament prior to that, scaled to n=10k total seats (n=actual number"
+        " of seats listed too)",
+        "- Total recorded win rate when gene is on",
+        "- Total recorded win rate when gene is off",
+        "- [Sort key] Difference between the previous 2 cols",
+        "- Estimated change to compute cost when gene is \"on\"",
+        "- Estimated change to time cost when gene is \"off\"",
         "",
         default_on_summary(ledger),
         "",
