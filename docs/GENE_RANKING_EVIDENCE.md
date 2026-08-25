@@ -201,6 +201,7 @@ These screenable genes have no on/off result, so they receive no rank or promoti
 | `chop-into-the-queue` | off (unmeasured) | A Builder chops woods, rainforest or marsh into the Settler, district or wonder at the front of the owning city's queue, priced as a one-off lump against the per-turn jobs. | 1 |
 | `civilian-out-of-reach` | off (unmeasured) | Settlers and builders stay out of a barbarian's one-turn reach: flee it, never step into it alone, and summon a guard onto the settler's tile when they must cross it. | 1 |
 | `coalition-before-war` | off (unmeasured) | Recruit the target's neighbours before an elective war: alliances, envoys to its city-states and joint-war invitations at the strike. | 1 |
+| `contested-land-first` | off (unmeasured) | Claim the ground between us and the nearest neighbours first while the army can hold it, waive the border provocation there, and wall and garrison the frontier. | 1 |
 | `district-coverage-2` | off (unmeasured) | The district coverage term falls to a quarter of the bred weight for a family every city already holds, not half, pushing the lever further in the direction that paid score share. | 1 |
 | `elective-war-yields-to-a-lane` | off (unmeasured) | Stop a war we choose from taking the grand strategy while our own victory lane is live. | 1 |
 | `enemy-of-my-enemy` | off (unmeasured) | Leaves barbarian camps that raid a rival rather than us, and courts the city-states and majors beyond that rival. | 1 |

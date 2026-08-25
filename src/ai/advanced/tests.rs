@@ -34067,6 +34067,7 @@ fn the_spender_buys_the_outposts_ground_only_with_the_gene_on() {
     );
 }
 
+<<<<<<< HEAD
 // ---- gold_and_cards: which currency pays for an item ---------------------
 
 /// `buy-what-cards-cannot-boost`: the same Library in the same city scores
@@ -34254,5 +34255,291 @@ fn the_native_emergency_purchase_spends_through_the_reserve() {
     assert!(
         game.players[0].gold < 1.0,
         "the whole treasury went to the defence"
+||||||| 79d99bb8
+=======
+// ── contested-land-first ──────────────────────────────────────────────────
+
+/// `contested-land-first` is a registered opt-in gene, off in both agents
+/// and reversible; its flag lives on the base controller, which owns the
+/// peacetime garrison.
+#[test]
+fn contested_land_first_is_a_registered_reversible_opt_in() {
+    assert!(
+        GENES.iter().any(|gene| gene.opt_in()
+            && gene.field == "contested_land_first"
+            && gene.tag == "contested-land-first"),
+        "contested-land-first must be a registered native opt-in"
+    );
+    assert!(
+        crate::ai::advanced::gene_ledger::screenable("contested-land-first"),
+        "the ledger must be able to price it"
+    );
+    assert_eq!(
+        crate::ai::advanced::gene_ledger::ledger_default_on("contested-land-first"),
+        Some(false),
+        "it ships off until a screen prices it"
+    );
+    let mut ai = AdvancedAi::new();
+    assert!(!ai.contested_land_first(), "off in the stock agent");
+    assert!(
+        !AdvancedAi::legacy().contested_land_first(),
+        "off in the legacy agent"
+    );
+    ai.enable_contested_land_first();
+    assert!(ai.contested_land_first());
+    ai.disable_contested_land_first();
+    assert!(!ai.contested_land_first(), "reversible");
+}
+
+/// Our capital at (10, 10) and a neighbour's at (22, 10), twelve tiles
+/// east; the neighbour is met when `met` says so. Two Warriors of ours,
+/// one of theirs, and nothing else on the board.
+fn a_neighbour_twelve_tiles_east(met: bool) -> Game {
+    let mut game = Game::new_full(3, 40, 20, 7_802, 250, 0, false);
+    game.current = 0;
+    for uid in game.units.keys().copied().collect::<Vec<_>>() {
+        game.remove_unit(uid);
+    }
+    game.found_city_for(0, (10, 10), None);
+    game.found_city_for(1, (22, 10), None);
+    if met {
+        game.record_contact(0, 1);
+    }
+    game.spawn_unit("warrior", 0, (10, 11));
+    game.spawn_unit("warrior", 0, (11, 10));
+    game.spawn_unit("warrior", 1, (22, 11));
+    assert_eq!(game.wdist((10, 10), (22, 10)), 12, "fixture: the gap");
+    game
+}
+
+/// The credit pays the ground BETWEEN us and a met neighbour, more the
+/// nearer the neighbour, and nothing behind us, beyond them, or outside
+/// the ring their Settlers reach — and it reaches the site value.
+#[test]
+fn contested_land_credit_pays_the_ground_between_us_and_a_met_neighbour() {
+    use super::contested_land::{CONTESTED_LAND_BASE, CONTESTED_LAND_CAP, CONTESTED_LAND_PER_TILE};
+    let game = a_neighbour_twelve_tiles_east(true);
+    let shipped = AdvancedAi::new();
+    let mut ai = AdvancedAi::new();
+    ai.enable_contested_land_first();
+
+    let between = (16, 10); // six from each capital
+    let behind = (4, 10); // six from ours, eighteen from theirs
+    let beyond = (28, 10); // six from theirs, eighteen from ours
+    assert_eq!(
+        shipped.contested_land_credit(&game, 0, between),
+        0.0,
+        "the shipped agent pays nothing"
+    );
+    let credit = ai.contested_land_credit(&game, 0, between);
+    let expected = (CONTESTED_LAND_BASE + 6.0 * CONTESTED_LAND_PER_TILE).min(CONTESTED_LAND_CAP);
+    assert!((credit - expected).abs() < 1e-9, "{credit} vs {expected}");
+    assert_eq!(
+        ai.contested_land_credit(&game, 0, behind),
+        0.0,
+        "the land at our back waits"
+    );
+    assert_eq!(
+        ai.contested_land_credit(&game, 0, beyond),
+        0.0,
+        "the far side of the neighbour is not between us"
+    );
+    assert!(
+        ai.contested_land_credit(&game, 0, (17, 10)) > ai.contested_land_credit(&game, 0, (15, 10)),
+        "the nearer the neighbour, the more contested"
+    );
+    assert_eq!(
+        ai.contested_land_credit(&game, 0, (13, 10)),
+        0.0,
+        "nine tiles from their city is outside the ring their Settlers reach"
+    );
+    assert!(
+        ai.settle_value(&game, 0, between) > shipped.settle_value(&game, 0, between),
+        "the credit reaches the site value"
+    );
+    assert_eq!(
+        ai.settle_value(&game, 0, behind),
+        shipped.settle_value(&game, 0, behind),
+        "and only where the ground is contested"
+    );
+}
+
+/// "So long as we have a decent military": outmatched, or with a single
+/// body, the gene is silent and the shipped terms keep the Settler home.
+#[test]
+fn contested_land_credit_needs_a_decent_army() {
+    use super::contested_land::{CONTESTED_LAND_MIN_DEFENDERS, CONTESTED_LAND_POWER_RATIO};
+    let mut game = a_neighbour_twelve_tiles_east(true);
+    let between = (16, 10);
+    let mut ai = AdvancedAi::new();
+    ai.enable_contested_land_first();
+    assert!(
+        ai.contested_land_credit(&game, 0, between) > 0.0,
+        "two on one is decent"
+    );
+
+    // The neighbour raises four more Warriors: 40 against 100.
+    for step in 0..4 {
+        game.spawn_unit("warrior", 1, (23, 11 + step));
+    }
+    assert!(game.military_power(0) < CONTESTED_LAND_POWER_RATIO * game.military_power(1));
+    assert_eq!(
+        ai.contested_land_credit(&game, 0, between),
+        0.0,
+        "outmatched, the Settler stays home"
+    );
+    // Parity restored.
+    for step in 0..4 {
+        game.spawn_unit("warrior", 0, (9, 11 + step));
+    }
+    assert!(game.military_power(0) >= CONTESTED_LAND_POWER_RATIO * game.military_power(1));
+    assert!(
+        ai.contested_land_credit(&game, 0, between) > 0.0,
+        "a decent army claims"
+    );
+
+    // One body is not an army, whatever the ratio says.
+    let mut lone = a_neighbour_twelve_tiles_east(true);
+    let ours: Vec<u32> = lone
+        .units
+        .values()
+        .filter(|u| u.owner == 0)
+        .map(|u| u.id)
+        .collect();
+    for uid in &ours[1..] {
+        lone.remove_unit(*uid);
+    }
+    let theirs: Vec<u32> = lone
+        .units
+        .values()
+        .filter(|u| u.owner == 1)
+        .map(|u| u.id)
+        .collect();
+    for uid in theirs {
+        lone.remove_unit(uid);
+    }
+    assert!(lone.military_power(0) >= CONTESTED_LAND_POWER_RATIO * lone.military_power(1));
+    let mut ai = AdvancedAi::new();
+    ai.enable_contested_land_first();
+    assert_eq!(
+        ai.contested_land_credit(&lone, 0, between),
+        0.0,
+        "fewer than {CONTESTED_LAND_MIN_DEFENDERS} defenders is no posture"
+    );
+}
+
+/// Fog stays honest and the war planner keeps its ground: an unmet major
+/// and a major we are at war with are no front.
+#[test]
+fn contested_land_reads_only_met_neighbours_at_peace() {
+    let between = (16, 10);
+    let unmet = a_neighbour_twelve_tiles_east(false);
+    let mut ai = AdvancedAi::new();
+    ai.enable_contested_land_first();
+    assert_eq!(
+        ai.contested_land_credit(&unmet, 0, between),
+        0.0,
+        "a neighbour we have never met cannot be settled toward"
+    );
+
+    let mut war = a_neighbour_twelve_tiles_east(true);
+    war.apply(0, &Action::DeclareWar { player: 1 })
+        .expect("fixture: the declaration is legal");
+    assert!(war.is_at_war(0, 1), "fixture");
+    let mut ai = AdvancedAi::new();
+    ai.enable_contested_land_first();
+    assert_eq!(
+        ai.contested_land_credit(&war, 0, between),
+        0.0,
+        "the ground between us and an enemy is the war planner's, not the Settler's"
+    );
+}
+
+/// The provocation is waived where the ground is contested, and stands
+/// everywhere else.
+#[test]
+fn contested_land_first_waives_the_provocation_only_on_contested_ground() {
+    let mut game = a_neighbour_twelve_tiles_east(true);
+    let theirs = game.player_city_ids(1)[0];
+    let between = (16, 10);
+    let behind = (4, 10);
+    for site in [between, behind] {
+        for near in game.wdisk(site, 1) {
+            if near != site {
+                if let Some(tile) = game.map.tiles.get_mut(&near) {
+                    tile.owner_city = Some(theirs);
+                }
+            }
+        }
+    }
+    let shipped = AdvancedAi::new();
+    let mut ai = AdvancedAi::new();
+    ai.enable_contested_land_first();
+    let visible = game.player_vision_now(0);
+    let pressure = shipped.foreign_border_pressure(&game, 0, between);
+    assert!(pressure > 0.0, "fixture: their ground rings the site");
+    let waived = shipped.settlement_safety_penalty(&game, 0, between, &visible)
+        - ai.settlement_safety_penalty(&game, 0, between, &visible);
+    assert!(
+        (waived - pressure).abs() < 1e-9,
+        "the provocation ({pressure}) is waived where the ground is contested, got {waived}"
+    );
+    assert_eq!(
+        shipped.settlement_safety_penalty(&game, 0, behind, &visible),
+        ai.settlement_safety_penalty(&game, 0, behind, &visible),
+        "and stands everywhere else"
+    );
+}
+
+/// The frontier holds: a city within eight of a met neighbour's prices its
+/// first Walls higher and, with nothing hostile in sight, still wants a
+/// garrison — the capital twelve tiles out does neither.
+#[test]
+fn a_frontier_city_is_walled_and_garrisoned_under_contested_land_first() {
+    use super::contested_land::CONTESTED_LAND_FRONTIER_WALLS;
+    let mut game = a_neighbour_twelve_tiles_east(true);
+    game.found_city_for(0, (16, 10), None);
+    let mut shipped = AdvancedAi::new();
+    shipped.enable_home_defense();
+    let mut ai = AdvancedAi::new();
+    ai.enable_home_defense();
+    ai.enable_contested_land_first();
+
+    assert_eq!(
+        shipped.contested_land_walls_value(&game, 0, (16, 10), "walls"),
+        0.0
+    );
+    assert_eq!(
+        ai.contested_land_walls_value(&game, 0, (16, 10), "walls"),
+        CONTESTED_LAND_FRONTIER_WALLS
+    );
+    assert_eq!(
+        ai.contested_land_walls_value(&game, 0, (16, 10), "medieval_walls"),
+        0.0,
+        "the first Walls only"
+    );
+    assert_eq!(
+        ai.contested_land_walls_value(&game, 0, (10, 10), "walls"),
+        0.0,
+        "the capital, twelve tiles out, is no frontier"
+    );
+
+    assert!(
+        shipped.base.garrison_assignments(&game, 0, &[]).is_empty(),
+        "the shipped garrison answers live pressure only"
+    );
+    let assigned = ai.base.garrison_assignments(&game, 0, &[]);
+    assert_eq!(
+        assigned.iter().map(|(_, city)| *city).collect::<Vec<_>>(),
+        vec![(16, 10)],
+        "one Warrior walks to the frontier city; the other stays free"
+    );
+    assert!(
+        ai.base
+            .garrison_assignments(&game, 0, &[])
+            .iter()
+            .all(|(_, city)| *city != (10, 10)),
+        "the capital wants none"
+>>>>>>> origin/main
     );
 }

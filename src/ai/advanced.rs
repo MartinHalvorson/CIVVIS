@@ -4415,6 +4415,10 @@ pub struct AdvancedAi {
     /// than the plot's quote. Opt-in gene `camp-tile-buyout`; see
     /// `advanced/camp_buyout.rs`.
     camp_tile_buyout: bool,
+    /// This turn's contested-land fronts and posture, built on first use:
+    /// state for `contested_land_first`, whose flag is on `BasicAi`. See
+    /// `advanced/contested_land.rs`.
+    contested_land_frame: RefCell<contested_land::ContestedLandFrame>,
 
     /// A Builder chops woods, rainforest or marsh into a Settler, a district
     /// or a wonder at the front of the owning city's queue. Opt-in gene
@@ -5196,6 +5200,13 @@ use coalition::Coalition;
 /// which owns the camp clears.
 pub(crate) mod enemy_of_my_enemy;
 
+/// Opt-in gene `contested-land-first`: while the army can hold it, the
+/// ground between us and the nearest neighbours is settled before the ground
+/// behind us, the border provocation is waived there, and the frontier
+/// cities are walled and garrisoned. The flag lives on `BasicAi`, which owns
+/// the peacetime garrison.
+pub(crate) mod contested_land;
+
 /// The Missionary in the field: a last-charge Missionary explores the fog,
 /// and a religious unit steps out of a raider's reach. Two opt-in genes; see
 /// `advanced/missionary_field.rs`.
@@ -5907,6 +5918,7 @@ impl AdvancedAi {
 
             // ---- append: c-d ----------------------------------------
             camp_tile_buyout: false,
+            contested_land_frame: RefCell::new(contested_land::ContestedLandFrame::default()),
 
             chop_into_the_queue: false,
             campaign_cities_reached: BTreeSet::new(),
@@ -21680,6 +21692,7 @@ impl AdvancedAi {
                         } else {
                             0.0
                         }
+                        + self.contested_land_walls_value(g, pid, city.pos, building)
                         + self.science_drive_production_bonus(g, pid, cid, item)
                 }
             }
@@ -22973,6 +22986,9 @@ impl AdvancedAi {
             self.settlement_static_value_uncached(g, pid, pos)
         };
         value -= self.settlement_safety_penalty(g, pid, pos, visible);
+        // `contested_land_first`: the ground between us and a neighbour,
+        // while the army can hold it. Zero with the gene off.
+        value += self.contested_land_credit(g, pid, pos);
         if self.defensible_sites {
             value += self.defensibility(g, pid, pos);
         }
@@ -23315,11 +23331,15 @@ impl AdvancedAi {
         // value knew a border was there — the loyalty forecast asks about
         // cities, and the cities were in fog. The border is visible ground.
         // Behind `settlement_safety`, the live seat's settler-survival gate.
-        let provocation = if self.settlement_safety {
-            self.foreign_border_pressure(g, pid, pos)
-        } else {
-            0.0
-        };
+        // `contested_land_first`: pressing a neighbour's border is the point
+        // where the ground is contested and the army can hold it. See
+        // `advanced/contested_land.rs`.
+        let provocation =
+            if self.settlement_safety && !self.contested_land_waives_provocation(g, pid, pos) {
+                self.foreign_border_pressure(g, pid, pos)
+            } else {
+                0.0
+            };
         self.settlement_tile_risk(g, pid, None, pos, visible) + isolation + provocation
     }
 
@@ -23929,7 +23949,12 @@ impl AdvancedAi {
                     return None;
                 }
                 let prefilter_score = prefilter_limit
-                    .map(|_| self.settlement_prefilter_score_for(g, pos))
+                    .map(|_| {
+                        // `contested_land_first`: a contested site is never
+                        // cut before it is priced.
+                        self.settlement_prefilter_score_for(g, pos)
+                            + self.contested_land_credit(g, pid, pos)
+                    })
                     .unwrap_or(0.0);
                 Some((pos, prefilter_score))
             })
@@ -25287,8 +25312,24 @@ impl AdvancedAi {
             // The APPLY still gates the line — see the capital branch: a
             // Decision asserts an applied action, never an intention.
             let worth = self.settle_value(g, pid, current);
+            // `contested_land_first`: read the front before the apply as
+            // well — founding here makes this city our nearest, and the gap
+            // it closed is gone.
+            let contested = self.contested_land_front(g, pid, current);
             let founded = g.apply(pid, &Action::FoundCity { unit: uid }).is_ok();
             if founded {
+                if let Some((front, credit)) = contested {
+                    *g.players[pid]
+                        .counters
+                        .entry("contested_land:founded".to_string())
+                        .or_insert(0) += 1;
+                    think!(self.journal(), Expansion, Detail, "The city claims contested ground";
+                           "{current:?} lies {} tiles from {}'s city at {:?}, worth {credit:.1} \
+                            for the gap it closes",
+                           g.wdist(current, front.their_city),
+                           g.players[front.rival].civ,
+                           front.their_city; current);
+                }
                 think!(self.journal(), Expansion, Decision, "Founding a city at {current:?}";
                        "the site is worth {:.1}; the empire holds {} cities and wants {}",
                        worth,
