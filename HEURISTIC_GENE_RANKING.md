@@ -373,6 +373,7 @@ These screenable genes have no on/off result, so they receive no rank or promoti
 
 | Gene | Default | Description | Best version |
 |---|---|---|---:|
+| `conversion-majority-alarm` | off (unmeasured) | Read a rival's religious clock from the cities it has converted rather than from whole civilizations already lost. | — |
 | `diplomatic-lane-forecast` | off (unmeasured) | Score the Diplomacy lane by when twenty Diplomatic Victory Points arrive along the Congress calendar, not by how many are banked. | — |
 | `frontier-massing-alarm` | off (unmeasured) | Count a peacetime major's army massed near one of our cities toward that city's danger. | — |
 | `naval-threat-triage` | off (unmeasured) | Ignore nearby barbarian ships that cannot land a meaningful blow, while still allowing ranged shots at them. | — |
