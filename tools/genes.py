@@ -422,7 +422,11 @@ FIELDLESS = {
 #: batch is the standard shape and pools with the ledger. The mask is written
 #: onto the source so a reader can see it, exactly as `FIELDLESS` is recorded
 #: only when set, and `shape_of` never reads it.
-RECORDED_WHEN_SET = ("victory_mask",)
+#: `difficulty` / `difficulty_rotate` are the majors' rung (`--difficulty`,
+#: `--difficulty-rotate king:1,emperor:2,immortal:1`), recorded the same way:
+#: every screen before 2026-08-25 played the engine's Prince default and
+#: wrote nothing, and a batch that names its rung says so on the source.
+RECORDED_WHEN_SET = ("victory_mask", "difficulty", "difficulty_rotate")
 #: The profile keys recorded for every source, whether or not they match. The
 #: draw `design` is recorded and NOT checked: it is how each seat's genome was
 #: sampled (`independent` — every seat its own draw, the screen since
