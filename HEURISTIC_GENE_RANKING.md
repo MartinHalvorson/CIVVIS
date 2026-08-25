@@ -96,17 +96,16 @@
 | 90 | `deals-at-the-ceiling` | Price a trade quote at the counterparty's walk-away point less two Gold, falling back to the midpoint if refused. | — | off | -5 | -1 | – | 16.55% (n=2,622) | 16.70% (n=7,842) | -0.15% | -8 [-90, +74] | 42.6% | +0.09 (z +0.42) ~ | -1.03% ±0.87% | -1.88% ±1.25% |
 | 91 | `city-campaign` | Appraise weaker neighbours, plan to take one to three holdable cities the army can afford, and launch when staged. | — | off | -3 | – | – | 16.53% (n=1,113) | 16.71% (n=3,363) | -0.18% | -9 [-136, +118] | 44.5% | +0.04 (z +0.15) ~ | +0.92% ±0.97% | +1.48% ±1.41% |
 | 92 | `home-defense` | Let hostile units inside our own territory claim defenders before the offensive campaign takes them. | — | off | -3 | +11 | -22 | 16.57% (n=93,816) | 16.76% (n=98,358) | -0.18% | -10 [-25, +6] | 11.6% | -0.19 (z -0.83) ~ | +0.04% ±0.65% | +1.03% ±0.99% |
-| 93 | `coupled-expansion` | Price a Settler as an investment, subtracting production, population, escort, route and safety costs from the site's payback. | — | off | -66 | +40 | -1 | 16.55% (n=24,010) | 16.77% (n=28,880) | -0.22% | -19 [-108, +70] | 33.9% | +0.22 (z +0.94) ~ | +0.26% ±0.63% | +0.86% ±0.88% |
-| 94 | `spread-campaign-persists` | Keep a spread campaign on the offensive between waves once it has converted a foreign city. | — | off | -39 | +16 | +23 | 16.52% (n=47,476) | 16.80% (n=52,658) | -0.29% | -15 [-40, +10] | 12.6% | +0.04 (z +0.16) ~ | -0.94% ±0.63% | -0.66% ±0.93% |
-| 95 | `deals-for-our-gain` | Pick the trade quote with the best net value to us instead of the most balanced exchange. | — | off | -32 | +6 | – | 16.27% (n=2,655) | 16.80% (n=7,809) | -0.53% | -30 [-127, +68] | 27.7% | -0.26 (z -1.17) ~ | -1.15% ±0.87% | -1.94% ±1.14% |
-| 96 | `campaign-pillage` | Let a soldier at war pillage the tile it stands on with movement its march does not use. | — | off | -12 | – | – | 16.21% (n=1,178) | 16.83% (n=3,298) | -0.61% | -31 [-154, +92] | 31.2% | -0.29 (z -1.24) ~ | +1.83% ±1.02% | +2.83% ±1.41% |
-| 97 | `lane-commit` | From mid-game commit an adaptive seat to the victory lane it leads the field in, instead of re-picking each turn. | — | off | -21 | -6 | – | 16.17% (n=2,622) | 16.83% (n=7,842) | -0.66% | -34 [-116, +47] | 20.3% | +0.12 (z +0.56) ~ | -0.70% ±0.88% | -0.65% ±1.24% |
-| 98 | `no-free-passage` | Stop bundling free one-way Open Borders into friendship and alliance proposals; sell passage through the quote lane. | — | off | +12 | -36 | – | 16.05% (n=2,641) | 16.87% (n=7,823) | -0.82% | -37 [-162, +88] | 28.3% | -0.38 (z -1.78) ~ | -0.09% ±0.87% | -0.21% ±1.18% |
-| 99 | `pass-picket` | Station an idle recon unit on the chokepoint tile of the land route toward a neighbour, or watch their border. | — | off | -20 | – | – | 15.82% (n=1,068) | 16.93% (n=3,408) | -1.11% | -55 [-181, +71] | 19.4% | +0.18 (z +0.76) ~ | +0.30% ±0.93% | +0.35% ±1.35% |
-| 100 | `zoc-screen` | Stand an idle melee unit where its zone of control shields our shooters and wounded from the most enemy reaches. | — | off | -19 | -26 | – | 15.75% (n=2,641) | 16.98% (n=7,823) | -1.22% | -61 [-142, +19] | 6.8% | -0.36 (z -1.66) ~ | +1.52% ±0.87% | +2.33% ±1.21% |
-| 101 | `settler-screen` | Block a seen rival Settler with up to four nearby units standing on its likeliest paths to slow its founding. | — | off | -48 | – | – | 14.77% (n=1,124) | 17.30% (n=3,352) | -2.53% | -127 [-247, -6] | 2.0% | -0.24 (z -0.98) ~ | -0.84% ±0.98% | -0.73% ±1.45% |
-| 102 | `fog-honest` | Plan the whole turn against a fog-redacted world and replay only the resulting orders on the real game. | 1 | off | -77 | -95 | -145 | v1 9.97% (n=2,296) · v2 3.35% (n=2,331) | v1 17.90% (n=12,434) · v2 19.17% (n=12,399) | -7.93% | -409 [-478, -339] | 0.0% | -1.27 (z -5.47) hurts * | -1.05% ±0.75% | -1.20% ±1.16% |
-| 103 | `fog-honest-2` | Version 2 of fog-honest: the same redacted planning plus one re-plan from the real board when an order is refused. | 1 | off | -181 | -187 | -275 | v1 9.97% (n=2,296) · v2 3.35% (n=2,331) | v1 17.90% (n=12,434) · v2 19.17% (n=12,399) | -15.82% | -835 [-909, -760] | 0.0% | -4.32 (z -18.92) hurts * | +5.82% ±0.86% | +6.94% ±1.21% |
+| 93 | `spread-campaign-persists` | Keep a spread campaign on the offensive between waves once it has converted a foreign city. | — | off | -39 | +16 | +23 | 16.52% (n=47,476) | 16.80% (n=52,658) | -0.29% | -15 [-40, +10] | 12.6% | +0.04 (z +0.16) ~ | -0.94% ±0.63% | -0.66% ±0.93% |
+| 94 | `deals-for-our-gain` | Pick the trade quote with the best net value to us instead of the most balanced exchange. | — | off | -32 | +6 | – | 16.27% (n=2,655) | 16.80% (n=7,809) | -0.53% | -30 [-127, +68] | 27.7% | -0.26 (z -1.17) ~ | -1.15% ±0.87% | -1.94% ±1.14% |
+| 95 | `campaign-pillage` | Let a soldier at war pillage the tile it stands on with movement its march does not use. | — | off | -12 | – | – | 16.21% (n=1,178) | 16.83% (n=3,298) | -0.61% | -31 [-154, +92] | 31.2% | -0.29 (z -1.24) ~ | +1.83% ±1.02% | +2.83% ±1.41% |
+| 96 | `lane-commit` | From mid-game commit an adaptive seat to the victory lane it leads the field in, instead of re-picking each turn. | — | off | -21 | -6 | – | 16.17% (n=2,622) | 16.83% (n=7,842) | -0.66% | -34 [-116, +47] | 20.3% | +0.12 (z +0.56) ~ | -0.70% ±0.88% | -0.65% ±1.24% |
+| 97 | `no-free-passage` | Stop bundling free one-way Open Borders into friendship and alliance proposals; sell passage through the quote lane. | — | off | +12 | -36 | – | 16.05% (n=2,641) | 16.87% (n=7,823) | -0.82% | -37 [-162, +88] | 28.3% | -0.38 (z -1.78) ~ | -0.09% ±0.87% | -0.21% ±1.18% |
+| 98 | `pass-picket` | Station an idle recon unit on the chokepoint tile of the land route toward a neighbour, or watch their border. | — | off | -20 | – | – | 15.82% (n=1,068) | 16.93% (n=3,408) | -1.11% | -55 [-181, +71] | 19.4% | +0.18 (z +0.76) ~ | +0.30% ±0.93% | +0.35% ±1.35% |
+| 99 | `zoc-screen` | Stand an idle melee unit where its zone of control shields our shooters and wounded from the most enemy reaches. | — | off | -19 | -26 | – | 15.75% (n=2,641) | 16.98% (n=7,823) | -1.22% | -61 [-142, +19] | 6.8% | -0.36 (z -1.66) ~ | +1.52% ±0.87% | +2.33% ±1.21% |
+| 100 | `settler-screen` | Block a seen rival Settler with up to four nearby units standing on its likeliest paths to slow its founding. | — | off | -48 | – | – | 14.77% (n=1,124) | 17.30% (n=3,352) | -2.53% | -127 [-247, -6] | 2.0% | -0.24 (z -0.98) ~ | -0.84% ±0.98% | -0.73% ±1.45% |
+| 101 | `fog-honest` | Plan the whole turn against a fog-redacted world and replay only the resulting orders on the real game. | 1 | off | -77 | -95 | -145 | v1 9.97% (n=2,296) · v2 3.35% (n=2,331) | v1 17.90% (n=12,434) · v2 19.17% (n=12,399) | -7.93% | -409 [-478, -339] | 0.0% | -1.27 (z -5.47) hurts * | -1.05% ±0.75% | -1.20% ±1.16% |
+| 102 | `fog-honest-2` | Version 2 of fog-honest: the same redacted planning plus one re-plan from the real board when an order is refused. | 1 | off | -181 | -187 | -275 | v1 9.97% (n=2,296) · v2 3.35% (n=2,331) | v1 17.90% (n=12,434) · v2 19.17% (n=12,399) | -15.82% | -835 [-909, -760] | 0.0% | -4.32 (z -18.92) hurts * | +5.82% ±0.86% | +6.94% ±1.21% |
 
 ## Evidence for future operator selections
 
@@ -116,7 +115,7 @@ The deployment genome is explicitly operator-pinned. The win columns, pooled *Di
 
 ### What the posterior resolves
 
-Of 82 priced genes the interval clears zero for **21 upward** and **0 downward**; **61 straddle zero**. Those are evidence states, not automatic deployment calls.
+Of 81 priced genes the interval clears zero for **21 upward** and **0 downward**; **60 straddle zero**. Those are evidence states, not automatic deployment calls.
 
 | Gene | Posterior (95% CI) | P(>0) | Screens | Pinned | Evidence call |
 |---|---:|---:|---:|---|---|
@@ -148,7 +147,7 @@ Of 82 priced genes the interval clears zero for **21 upward** and **0 downward**
 
 | Shape | Sources | Player seats | Genes priced |
 |---|---:|---:|---:|
-| standard | 3 | 92,604 | 81 |
+| standard | 3 | 92,604 | 80 |
 | legacy | 7 | 132,440 | 52 |
 
 Genes priced at both shapes. **A row whose two intervals do not overlap is not a gene with one number; it is two instruments disagreeing**, and the pooled column beside it should be read as a warning rather than an answer.
@@ -246,7 +245,6 @@ Genes priced at both shapes. **A row whose two intervals do not overlap is not a
 | `unit-objective-memory` | +10 [-28, +47] | 69.7% | on | +1.1 | 201,764 |
 | `settler-target-hysteresis` | +0 [-16, +16] | 50.7% | off | +1.0 | 1,036,197,883 |
 | `science-multiplier-payoff` | +6 [-24, +35] | 64.5% | on | +0.9 | 639,181 |
-| `coupled-expansion` | -12 [-49, +26] | 26.9% | off | +0.8 | 136,894 |
 | `district-planning` | +12 [-25, +49] | 74.1% | on | +0.7 | 125,973 |
 | `settlement-gap-target` | +14 [-23, +52] | 77.5% | on | +0.5 | 87,669 |
 | `lane-great-people` | +13 [-22, +48] | 77.0% | on | +0.4 | 103,314 |
@@ -353,6 +351,7 @@ Genes whose code has left the repository (operator directive: the bottom of the 
 | `barbarian-hunt` | +0 | 16.67% | 16.67% | `2026-08-24-standard-continuous-4266-total-seats.json` |
 | `recon-flight` | -1 | 16.66% | 16.67% | `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` |
 | `campus-finishes-first` | -2 | 16.64% | 16.69% | `2026-08-24-standard-continuous-4266-total-seats.json` |
+| `coupled-expansion` | -2 | 16.65% | 16.68% | `2026-08-24-standard-continuous-4266-total-seats.json` |
 | `settle-plan-ahead` | -2 | 16.64% | 16.69% | `2026-08-24-standard-continuous-4266-total-seats.json` |
 | `housing-cards` | -4 | 16.62% | 16.71% | `2026-08-20-p4-native-6p-allseats-13446-pairs.json` |
 | `arrival-waves` | -7 | 16.59% | 16.74% | `2026-08-20-p4-native-6p-allseats-13446-pairs.json` |
