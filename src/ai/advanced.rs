@@ -4651,6 +4651,48 @@ pub struct AdvancedAi {
     campaign_retry_after: u32,
 
     // ---- append: e-f ------------------------------------------------
+
+    /// Reserve the FIRST Builder ahead of ordinary production, the way
+    /// `solvency-first-trade-slot` reserves the first trade slot.
+    ///
+    /// ★★★★ THE MEASURED PATTERN, APPLIED WHERE IT SHOULD ALSO HOLD. The
+    /// 2026-08-25 King-rung screen priced `solvency-first-trade-slot` at
+    /// **+4.04 pp wins (z +3.02, CI +1.42..+6.65)** and **+1.09 pp share
+    /// (z +4.65)** — it helps on both axes. Its own version two, which fills
+    /// EVERY empty trade slot instead of the first, measured −1.93 pp on the
+    /// same games. So the win is not "more of this asset": it is buying ONE
+    /// compounding asset ahead of an argmax that will never choose it.
+    ///
+    /// A Builder is exactly that asset. `production_value` prices it at 260
+    /// against a Settler's 920-plus-site and a district's yields-times-sixty,
+    /// so it loses the queue to almost everything; on the live King seat
+    /// Builders took 3% of city production before turn 104 and 13% of owned
+    /// land was improved by turn 100. And `builder-supply-floor`, which raised
+    /// the QUOTA to one per city and the price to 420, measured −3.48 pp wins
+    /// on this very screen — the same over-application that cost the trade
+    /// gene's version two. This buys one, once, and only while
+    /// `has_builder_work` says there is still land to improve.
+    /// Opt-in gene `first-builder-reserve`.
+    pub first_builder_reserve: bool,
+
+    /// Reserve the first Campus building a city owes ahead of ordinary
+    /// production, on the same measured pattern as `first_builder_reserve`.
+    ///
+    /// A Library the live journal reports "worth 74" carries a raw of about
+    /// 960 against a Settler's 1,560, and a replay of the live seat with the
+    /// candidate table printed found it legal on 133 city-turns at a median
+    /// value of 23 while the winner of the queue stood a median 55 higher.
+    /// Measured on the live King seat, 2026-08-25: only 40% of cities holding
+    /// a Campus had a Library by turn 100 and 8% had a University — the empire
+    /// buying the expensive half of a research city and declining the cheap
+    /// half. In a regime where 91% of games end on a science victory that is
+    /// the win condition itself.
+    ///
+    /// Deliberately the CHEAPEST owed building and only in a city that already
+    /// holds the Campus, so it is one purchase in a city that has already paid
+    /// for the district, not a research programme. Opt-in gene
+    /// `first-research-building-reserve`.
+    pub first_research_building_reserve: bool,
     /// While the opening is behind the pace every recorded win came from,
     /// open the settler pipeline by the shortfall. Opt-in gene
     /// `expansion-schedule`; see `advanced/expansion_schedule.rs`.
@@ -5926,6 +5968,8 @@ impl AdvancedAi {
             campaign_retry_after: 0,
 
             // ---- append: e-f ----------------------------------------
+            first_builder_reserve: false,
+            first_research_building_reserve: false,
             expansion_schedule: false,
             flip_nearby_city_states: false,
 
@@ -10560,6 +10604,40 @@ impl AdvancedAi {
     /// `chain_payback_window_2` chooses it for the cheap rung only. See those
     /// flags for why only one of the four terms that wanted the repaired shape
     /// ever got it, and why the two rungs may not want the same window.
+    /// The cheapest Campus-family building this city owes: it holds a Campus
+    /// and does not hold this building. `None` when the city has no Campus or
+    /// owes nothing. See `first_research_building_reserve`.
+    fn first_owed_campus_building(g: &Game, pid: usize, cid: u32) -> Option<Name> {
+        let city = g.cities.get(&cid).filter(|city| city.owner == pid)?;
+        let campus = crate::name!("campus");
+        if !city
+            .districts
+            .keys()
+            .any(|built| g.district_family(*built) == campus)
+        {
+            return None;
+        }
+        g.rules
+            .buildings
+            .iter()
+            .filter(|(_, spec)| {
+                !spec.wonder
+                    && spec
+                        .district
+                        .map(|district| g.district_family(district))
+                        .is_some_and(|family| family == campus)
+            })
+            .map(|(name, spec)| (spec.cost, name))
+            .filter(|(_, name)| {
+                !city
+                    .buildings
+                    .iter()
+                    .any(|built| g.building_is_family(*built, *name))
+            })
+            .min_by(|left, right| left.0.total_cmp(&right.0).then_with(|| left.1.cmp(&right.1)))
+            .map(|(_, name)| *name)
+    }
+
     fn chain_horizon(&self, g: &Game, rung: ChainRung) -> f64 {
         let payback = match rung {
             ChainRung::Building => self.chain_payback_window || self.chain_payback_window_2,
@@ -19245,6 +19323,55 @@ impl AdvancedAi {
                         .base
                         .should_add_trader_in_city_for_controller(g, pid, cid, counts.traders)
             };
+            // The same sentence for the other two assets the argmax
+            // chronically under-buys. See `first_builder_reserve` and
+            // `first_research_building_reserve`: `solvency_first_trade_slot`
+            // measured +4.04 pp wins by reserving ONE Trader ahead of ordinary
+            // production, and its own version two measured WORSE by reserving
+            // every slot -- so the win is buying one compounding asset early,
+            // not buying more of it. A Builder is priced at 260 and a Library
+            // at about 960 against a Settler's 1,560 by the same argmax, for
+            // the same reason.
+            if committed.is_none() && self.first_builder_reserve && counts.builders == 0 {
+                let builder = Item::Unit {
+                    unit: crate::name!("builder"),
+                };
+                if BasicAi::has_builder_work(g, pid)
+                    && g.can_produce(pid, cid, &builder)
+                    && g
+                        .apply(
+                            pid,
+                            &Action::Produce {
+                                city: cid,
+                                item: builder.clone(),
+                            },
+                        )
+                        .is_ok()
+                {
+                    counts.add_item(g, &builder);
+                    continue;
+                }
+            }
+            if committed.is_none() && self.first_research_building_reserve {
+                let owed = Self::first_owed_campus_building(g, pid, cid);
+                if let Some(building) = owed {
+                    let item = Item::Building { building };
+                    if g.can_produce(pid, cid, &item)
+                        && g
+                            .apply(
+                                pid,
+                                &Action::Produce {
+                                    city: cid,
+                                    item: item.clone(),
+                                },
+                            )
+                            .is_ok()
+                    {
+                        counts.add_item(g, &item);
+                        continue;
+                    }
+                }
+            }
             if committed.is_none() && reserve_a_trade_slot {
                 let trader = Item::Unit {
                     unit: crate::name!("trader"),

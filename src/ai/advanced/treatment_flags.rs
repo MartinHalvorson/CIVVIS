@@ -2315,6 +2315,33 @@ impl AdvancedAi {
 
     // ---- append: e-f ------------------------------------------------
 
+    /// Reserve the first Builder ahead of ordinary production, the way
+    /// `solvency-first-trade-slot` reserves the first trade slot. See
+    /// `AdvancedAi::first_builder_reserve`; opt-in gene `first-builder-reserve`.
+    /// Filed here rather than under a marker: the append-point check reads a
+    /// method line's first identifier.
+    pub fn enable_first_builder_reserve(&mut self) {
+        self.first_builder_reserve = true;
+    }
+
+    /// The twin of `enable_first_builder_reserve`.
+    pub fn disable_first_builder_reserve(&mut self) {
+        self.first_builder_reserve = false;
+    }
+
+    /// Reserve the cheapest Campus building a city owes ahead of ordinary
+    /// production. See `AdvancedAi::first_research_building_reserve`; opt-in
+    /// gene `first-research-building-reserve`. Filed here rather than under a
+    /// marker: the append-point check reads a method line's first identifier.
+    pub fn enable_first_research_building_reserve(&mut self) {
+        self.first_research_building_reserve = true;
+    }
+
+    /// The twin of `enable_first_research_building_reserve`.
+    pub fn disable_first_research_building_reserve(&mut self) {
+        self.first_research_building_reserve = false;
+    }
+
     // ---- append: g-k ------------------------------------------------
 
     /// Let the Builder see the Housing an improvement carries, the way the
