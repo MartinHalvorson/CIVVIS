@@ -35352,6 +35352,127 @@ fn the_chain_ramp_starts_at_zero_and_yields_to_the_launch_ladder() {
     assert!(with >= 45, "two launches still read the ladder ({with})");
 }
 
+// ═══ A rival's Congress machine (`rival_suzerainty_alarm`) ═══
+
+#[test]
+fn rival_suzerainty_alarm_is_a_registered_reversible_opt_in() {
+    assert!(
+        GENES.iter().any(|gene| gene.opt_in()
+            && gene.field == "rival_suzerainty_alarm"
+            && gene.tag == "rival-suzerainty-alarm"),
+        "rival-suzerainty-alarm must be a registered native opt-in"
+    );
+    assert!(
+        crate::ai::advanced::gene_ledger::screenable("rival-suzerainty-alarm"),
+        "the ledger must be able to price it"
+    );
+    assert_eq!(
+        crate::ai::advanced::gene_ledger::ledger_default_on("rival-suzerainty-alarm"),
+        Some(false),
+        "it ships off until a screen prices it"
+    );
+    let mut ai = AdvancedAi::new();
+    assert!(!ai.rival_suzerainty_alarm, "off in the stock agent");
+    assert!(
+        !AdvancedAi::legacy().rival_suzerainty_alarm,
+        "off in the legacy agent"
+    );
+    ai.enable_rival_suzerainty_alarm();
+    assert!(ai.rival_suzerainty_alarm);
+    ai.disable_rival_suzerainty_alarm();
+    assert!(!ai.rival_suzerainty_alarm, "reversible");
+}
+
+/// The asymmetry itself: the same empire, the same city-states, read once as
+/// ourselves and once as a rival.
+#[test]
+fn the_same_position_reads_differently_as_ours_and_as_theirs() {
+    // Six majors so the board has room, and city-states to be suzerain of.
+    let mut game = Game::new(3, 46, 30, 9_301, 250, 6);
+    let minors: Vec<usize> = game
+        .players
+        .iter()
+        .filter(|player| player.alive && player.is_minor && !player.is_barbarian)
+        .map(|player| player.id)
+        .collect();
+    assert!(
+        minors.len() >= 5,
+        "fixture needs city-states: {}",
+        minors.len()
+    );
+    // Player 1 is suzerain of five of them. `suzerain_of` wants three envoys
+    // and strictly more than anybody else.
+    for minor in minors.iter().take(5) {
+        game.players[1].envoys.push((*minor, 4));
+    }
+    assert_eq!(
+        minors
+            .iter()
+            .filter(|minor| game.suzerain_of(**minor) == Some(1))
+            .count(),
+        5,
+        "fixture: player 1 holds five suzerainties"
+    );
+    assert_eq!(game.players[1].dvp, 0, "fixture: no points banked");
+
+    let shipped = AdvancedAi::new();
+    let mut ai = AdvancedAi::new();
+    ai.enable_rival_suzerainty_alarm();
+
+    // Read as OUR OWN lane, five city-states are worth thirty points.
+    assert_eq!(
+        shipped.lane_progress_table(&game, 1)[3],
+        30,
+        "the own-lane reading already counts them"
+    );
+    // Read as a RIVAL's threat, they are worth nothing at all.
+    assert_eq!(
+        shipped.rival_pressure(&game, 1).1,
+        0,
+        "and the shipped threat reading counts none of them"
+    );
+    assert_eq!(
+        ai.rival_pressure(&game, 1).1,
+        30,
+        "the gene makes the two readings agree"
+    );
+}
+
+/// Zero suzerainties reads exactly what it read before, and the gene can only
+/// raise.
+#[test]
+fn the_suzerainty_term_starts_at_zero_and_never_lowers() {
+    let mut ai = AdvancedAi::new();
+    ai.enable_rival_suzerainty_alarm();
+    let shipped = AdvancedAi::new();
+
+    let mut game = Game::new(3, 46, 30, 9_302, 250, 6);
+    assert_eq!(
+        ai.rival_pressure(&game, 1).1,
+        shipped.rival_pressure(&game, 1).1,
+        "a rival with no city-states reads what it always read"
+    );
+
+    // Points already banked: the term adds to them and stays in range.
+    game.players[1].dvp = 12;
+    let minors: Vec<usize> = game
+        .players
+        .iter()
+        .filter(|player| player.alive && player.is_minor && !player.is_barbarian)
+        .map(|player| player.id)
+        .collect();
+    for minor in &minors {
+        game.players[1].envoys.push((*minor, 4));
+    }
+    let with = ai.rival_pressure(&game, 1).1;
+    let without = shipped.rival_pressure(&game, 1).1;
+    assert!(
+        with >= without,
+        "the term lowered the reading ({with} < {without})"
+    );
+    assert!((0..=100).contains(&with), "{with} out of range");
+}
+
 // ═══ The score race read as a margin (`early_score_alarm`) ═══
 
 #[test]

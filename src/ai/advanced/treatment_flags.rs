@@ -953,6 +953,16 @@ impl AdvancedAi {
         self.science_chain_alarm = false;
     }
 
+    /// Count a rival's city-state suzerainties toward the Diplomatic threat it
+    /// presents. See [`Self::rival_suzerainty_alarm`].
+    pub fn enable_rival_suzerainty_alarm(&mut self) {
+        self.rival_suzerainty_alarm = true;
+    }
+
+    pub fn disable_rival_suzerainty_alarm(&mut self) {
+        self.rival_suzerainty_alarm = false;
+    }
+
     /// Point the three targeted World Congress penalties at the empire the
     /// denial layer names. See [`Self::congress_counter_leader`].
     pub fn enable_congress_counter_leader(&mut self) {
