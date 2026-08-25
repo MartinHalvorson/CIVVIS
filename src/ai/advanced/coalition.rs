@@ -257,7 +257,11 @@ impl AdvancedAi {
                 .unwrap_or(0.0)
         };
         let score = |partner: usize| {
-            let friendship = if g.are_friends(pid, partner) { 180.0 } else { 0.0 };
+            let friendship = if g.are_friends(pid, partner) {
+                180.0
+            } else {
+                0.0
+            };
             let unbound = if g.are_friends(partner, target) || g.are_allied(partner, target) {
                 0.0
             } else {
@@ -391,7 +395,13 @@ impl AdvancedAi {
     /// Whether a neighbour can be invited to a joint war against the target:
     /// the engine's `joint_war_available`, read from this side so that no
     /// refused order is issued.
-    fn coalition_joint_war_partner(&self, g: &Game, pid: usize, partner: usize, target: usize) -> bool {
+    fn coalition_joint_war_partner(
+        &self,
+        g: &Game,
+        pid: usize,
+        partner: usize,
+        target: usize,
+    ) -> bool {
         let foreign_trade = |who: usize| {
             g.players[who]
                 .civics
@@ -447,23 +457,31 @@ impl AdvancedAi {
                 return false;
             }
         }
-        let partners: Vec<usize> = self
-            .coalition_neighbours(g, pid, target)
-            .into_iter()
-            .filter(|partner| {
-                self.coalition_joint_war_partner(g, pid, *partner, target)
-                    && !coalition
-                        .joint_war_asked
-                        .get(partner)
-                        .is_some_and(|asked| turn < asked + COALITION_REASK_TURNS)
-                    && !g.pending_deals.iter().any(|deal| {
-                        deal.expires >= turn && deal.from == pid && deal.to == *partner
-                    })
-            })
-            .collect();
+        let partners: Vec<usize> =
+            self.coalition_neighbours(g, pid, target)
+                .into_iter()
+                .filter(|partner| {
+                    self.coalition_joint_war_partner(g, pid, *partner, target)
+                        && !coalition
+                            .joint_war_asked
+                            .get(partner)
+                            .is_some_and(|asked| turn < asked + COALITION_REASK_TURNS)
+                        && !g.pending_deals.iter().any(|deal| {
+                            deal.expires >= turn && deal.from == pid && deal.to == *partner
+                        })
+                })
+                .collect();
         let mut invited = 0;
         for partner in partners {
-            if g.apply(pid, &Action::ProposeJointWar { player: partner, target }).is_err() {
+            if g.apply(
+                pid,
+                &Action::ProposeJointWar {
+                    player: partner,
+                    target,
+                },
+            )
+            .is_err()
+            {
                 continue;
             }
             invited += 1;
@@ -504,7 +522,10 @@ mod tests {
 
     fn opt_in_off_in_both_controllers(tag: &str, read: fn(&AdvancedAi) -> bool) {
         assert!(!read(&AdvancedAi::new()), "{tag} must be off in new()");
-        assert!(!read(&AdvancedAi::legacy()), "{tag} must be off in legacy()");
+        assert!(
+            !read(&AdvancedAi::legacy()),
+            "{tag} must be off in legacy()"
+        );
         let gene = GENES
             .iter()
             .find(|gene| gene.tag == tag)
@@ -673,8 +694,12 @@ mod tests {
         let mut ai = coalition_ai();
         ai.coalition_observe(&mut game, 0, &plan);
         ai.coalition_alliance_step(&mut game, 0);
-        let proposals: Vec<_> =
-            game.pending_deals.iter().filter(|deal| deal.from == 0).cloned().collect();
+        let proposals: Vec<_> = game
+            .pending_deals
+            .iter()
+            .filter(|deal| deal.from == 0)
+            .cloned()
+            .collect();
         assert_eq!(proposals.len(), 1);
         let proposal = &proposals[0];
         assert_eq!(proposal.to, 2);
@@ -690,7 +715,13 @@ mod tests {
         );
         // Pending: no second proposal this turn.
         ai.coalition_alliance_step(&mut game, 0);
-        assert_eq!(game.pending_deals.iter().filter(|deal| deal.from == 0).count(), 1);
+        assert_eq!(
+            game.pending_deals
+                .iter()
+                .filter(|deal| deal.from == 0)
+                .count(),
+            1
+        );
 
         // The neighbour accepts: friendship and a military alliance stand,
         // and the desk asks for nothing more of them.
@@ -700,7 +731,8 @@ mod tests {
             .expect("the neighbour accepts");
         game.current = 0;
         assert_eq!(
-            game.alliance_with(0, 2).map(|alliance| alliance.kind.as_str()),
+            game.alliance_with(0, 2)
+                .map(|alliance| alliance.kind.as_str()),
             Some("military")
         );
         assert!(game.are_friends(0, 2));
@@ -717,9 +749,15 @@ mod tests {
         let mut ai = coalition_ai();
         ai.coalition_observe(&mut game, 0, &plan);
         ai.coalition_alliance_step(&mut game, 0);
-        let id = game.pending_deals.iter().find(|deal| deal.from == 0).unwrap().id;
+        let id = game
+            .pending_deals
+            .iter()
+            .find(|deal| deal.from == 0)
+            .unwrap()
+            .id;
         game.current = 2;
-        game.apply(2, &Action::RejectDeal { deal: id }).expect("refused");
+        game.apply(2, &Action::RejectDeal { deal: id })
+            .expect("refused");
         game.current = 0;
         assert!(game.pending_deals.iter().all(|deal| deal.from != 0));
         game.turn = 60 + COALITION_REASK_TURNS - 1;
@@ -738,7 +776,11 @@ mod tests {
         );
         game.turn = 60 + COALITION_REASK_TURNS;
         ai.coalition_alliance_step(&mut game, 0);
-        let proposal = game.pending_deals.iter().find(|deal| deal.from == 0).unwrap();
+        let proposal = game
+            .pending_deals
+            .iter()
+            .find(|deal| deal.from == 0)
+            .unwrap();
         assert_eq!(proposal.to, 2);
         assert_eq!(proposal.alliance.as_deref(), Some("economic"));
     }
@@ -784,7 +826,10 @@ mod tests {
                 / 2
         );
         // Amortised over the envoys still needed.
-        assert_eq!(ai.coalition_city_state_bonus(&game, 0, near, 4), client * 2 / 4);
+        assert_eq!(
+            ai.coalition_city_state_bonus(&game, 0, near, 4),
+            client * 2 / 4
+        );
 
         // A third party's client is proximity only.
         game.players[2].envoys_free = 4;
@@ -824,25 +869,44 @@ mod tests {
         assert_eq!(invitations[0].to, 2);
         let id = invitations[0].id;
         assert_eq!(
-            game.players[0].counters.get("coalition:joint_wars_proposed"),
+            game.players[0]
+                .counters
+                .get("coalition:joint_wars_proposed"),
             Some(&1)
         );
-        assert_eq!(game.players[0].counters.get("coalition:held_declarations"), Some(&1));
+        assert_eq!(
+            game.players[0].counters.get("coalition:held_declarations"),
+            Some(&1)
+        );
         // Still unanswered next turn: held once more, no second invitation.
         game.turn = 61;
         assert!(ai.coalition_invites_before_declaring(&mut game, 0, 1));
-        assert_eq!(game.pending_deals.iter().filter(|deal| deal.from == 0).count(), 1);
-        assert_eq!(game.players[0].counters.get("coalition:held_declarations"), Some(&2));
+        assert_eq!(
+            game.pending_deals
+                .iter()
+                .filter(|deal| deal.from == 0)
+                .count(),
+            1
+        );
+        assert_eq!(
+            game.players[0].counters.get("coalition:held_declarations"),
+            Some(&2)
+        );
         // Refused: the desk declares alone, and does not ask again yet.
         game.current = 2;
-        game.apply(2, &Action::RejectDeal { deal: id }).expect("refused");
+        game.apply(2, &Action::RejectDeal { deal: id })
+            .expect("refused");
         game.current = 0;
         assert!(!ai.coalition_invites_before_declaring(&mut game, 0, 1));
         assert!(game.pending_deals.iter().all(|deal| deal.from != 0));
         // Patience runs out on an unanswered invitation too.
         game.turn = 60 + COALITION_REASK_TURNS;
         assert!(ai.coalition_invites_before_declaring(&mut game, 0, 1));
-        let again = game.pending_deals.iter().find(|deal| deal.from == 0).unwrap();
+        let again = game
+            .pending_deals
+            .iter()
+            .find(|deal| deal.from == 0)
+            .unwrap();
         assert_eq!(again.joint_war_target, Some(1));
         game.turn += COALITION_JOINT_WAR_PATIENCE;
         assert!(!ai.coalition_invites_before_declaring(&mut game, 0, 1));
@@ -861,7 +925,12 @@ mod tests {
         let mut ai = coalition_ai();
         ai.coalition_observe(&mut game, 0, &plan);
         assert!(ai.coalition_invites_before_declaring(&mut game, 0, 1));
-        let id = game.pending_deals.iter().find(|deal| deal.from == 0).unwrap().id;
+        let id = game
+            .pending_deals
+            .iter()
+            .find(|deal| deal.from == 0)
+            .unwrap()
+            .id;
         game.current = 2;
         game.apply(2, &Action::AcceptDeal { deal: id })
             .expect("the neighbour accepts the joint war");

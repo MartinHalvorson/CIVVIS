@@ -4543,7 +4543,7 @@ pub struct AdvancedAi {
     coalition_before_war: bool,
     /// The coalition being built for the coming war, while the window is
     /// open; `None` with the gene off.
-    coalition: Option<coalition::Coalition>,
+    coalition: Option<Coalition>,
 
     /// The city plans its districts, sites and tile buys together: wished
     /// districts are jointly assigned reserved plots over rings 1-3 at the
@@ -4898,6 +4898,11 @@ mod site_lookahead;
 /// `district-planning`. See `advanced/district_planning.rs`.
 mod district_planning;
 use district_planning::DistrictPlanCache;
+/// Coalition before war: alliances with the target's neighbours, envoys to
+/// its city-states and joint-war invitations before the declaration. Opt-in
+/// gene `coalition-before-war`; see `advanced/coalition.rs`.
+mod coalition;
+use coalition::Coalition;
 
 /// The Missionary in the field: a last-charge Missionary explores the fog,
 /// and a religious unit steps out of a raider's reach. Two opt-in genes; see
@@ -4908,10 +4913,6 @@ mod missionary_field;
 /// with nothing left in reach. Opt-in gene `one-war-at-a-time`; see
 /// `advanced/one_war.rs`.
 mod one_war;
-/// Coalition before war: alliances with the target's neighbours, envoys to
-/// its city-states and joint-war invitations before the declaration. Opt-in
-/// gene `coalition-before-war`; see `advanced/coalition.rs`.
-mod coalition;
 /// The religious corps: the four opt-in genes for what a founder buys with
 /// Faith once its cities start slipping, and what it does with the units
 /// afterwards. See `advanced/religion.rs`.
@@ -5623,9 +5624,9 @@ impl AdvancedAi {
             // ---- append: a-b ----------------------------------------
 
             // ---- append: c-d ----------------------------------------
-
             coalition_before_war: false,
             coalition: None,
+
             district_planning: false,
 
             city_campaign: false,
