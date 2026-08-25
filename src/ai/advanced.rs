@@ -4957,7 +4957,6 @@ impl Default for AdvancedAi {
 ///
 /// The table derives withholding arms from registered treatments, so every
 /// shipped treatment stays independently ablatable.
-
 /// ⚠ THREE NAMES ARE NOT THE FLAG'S NAME, AND THAT IS DELIBERATE. The tag is
 /// the identity `docs/EVAL.md` records results under; `live-trader-route`,
 /// `live-religious-purchase` and `ranged-line-of-sight` were published shorter
@@ -10603,7 +10602,6 @@ impl AdvancedAi {
     }
 
     /// Cache ruleset constants for the adjacency threshold once per decision.
-
     fn refresh_campus_multiplier_constants(&mut self, g: &Game) {
         if !self.campus_adjacency_threshold {
             self.campus_multiplier_half = 0.0;
