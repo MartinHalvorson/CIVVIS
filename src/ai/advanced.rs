@@ -3640,12 +3640,38 @@ pub struct AdvancedAi {
     /// the margin: 78 at 20% ahead of the next empire, 100 at 50% ahead, from
     /// the first turn an early game has enough history to mean anything.
     ///
-    /// Reachable as `advanced_early_score_alarm`, and as
-    /// `advanced_early_score_build` paired with [`Self::counter_in_lane`] so
-    /// the earlier alarm asks for a build rather than a war. Every
-    /// response-side change in that document measured null, so this is the
-    /// instrument change those nulls point at — and it is entirely possible
-    /// that an earlier alarm feeding a response worth zero is also worth zero.
+    /// ⚠⚠ AND UNTIL 2026-08-25 NOTHING COULD SET IT. The two arms this
+    /// paragraph named — `advanced_early_score_alarm` and
+    /// `advanced_early_score_build` — belonged to the evaluator, and the
+    /// evaluator was deleted; see `genes.rs`, which records that "the
+    /// `treatment` vocabulary went with them". No registry row replaced them,
+    /// so for every configuration this repository can produce, the branch
+    /// below was dead code and the score race was read as a clock.
+    ///
+    /// A sweep of the controller on the day this row was added found it was
+    /// not alone: of **152 boolean behaviours on `AdvancedAi`, 108 are
+    /// registered genes, and 14 default `false` with no toggle, no registry
+    /// row and nothing anywhere in `src/`, `tools/`, `beta/` or `mods/` that
+    /// sets them true outside a test.** `diplomatic_opening` was one, and
+    /// `diplomatic-lane-forecast` was written because of it. The others are
+    /// listed in `docs/COUNTERING_LEADERS.md`.
+    ///
+    /// Every response-side change in that document measured null, so this is
+    /// the instrument change those nulls point at — and it is entirely
+    /// possible that an earlier alarm feeding a response worth zero is also
+    /// worth zero.
+    ///
+    /// ⚠ IT WAS TRIED AND IT IS STILL NOT REGISTERED. Registered temporarily
+    /// on 2026-08-25 and probed at two disjoint twelve-game blocks: seeds
+    /// 107000000 read **-12.6 pp wins (z -1.54)** with score share +0.07, and
+    /// seeds 108000000 read **-7.4 pp (z -0.76)** with share -0.42. Neither
+    /// resolves, both lean the same way, and they agree with the prior above
+    /// and with its stated mechanism — an earlier alarm feeds the Conquest
+    /// counter and takes plan mix from 25% to 35% conquest, "the direction
+    /// that costs seats". The row was withdrawn rather than shipped: a
+    /// registered gene is drawn at `P_ON` in every screen, and this one has
+    /// no case to spend those games on. Reinstating it needs a reason the two
+    /// blocks above do not already answer.
     pub early_score_alarm: bool,
 
     /// Whether the player-targeted World Congress resolutions aim at the empire
@@ -3678,7 +3704,24 @@ pub struct AdvancedAi {
     /// finds that veto already lands 95–98.5% of the time with no diplomatic
     /// victory in 40 games. There is no headroom there to take.
     ///
-    /// Reachable as `advanced_congress_counter`.
+    /// ⚠⚠ `advanced_congress_counter` WAS AN EVALUATOR ARM AND THE EVALUATOR IS
+    /// GONE, so from that deletion until 2026-08-25 nothing in this repository
+    /// could set this flag: the ballot aimed at the diplomatic leader in every
+    /// configuration, and the note above about `migration_treaty` scoring 0.0
+    /// against any rival described a penalty that could never be aimed at
+    /// anybody. `congress-counter-leader` is now a registered `Kind::OptIn`
+    /// gene, which also completes the deliberately-split pair: its other half,
+    /// `congress-counter-votes`, has been screenable all along, and the note
+    /// below on `congress_counter_votes` records that splitting them left this
+    /// half unmeasurable alone — "the same failure from the other side".
+    ///
+    /// It is also better aimed than when it was written. `victory_denial`
+    /// reads `rival_victory_pressure`, and two genes merged the same day
+    /// sharpened exactly that: `conversion-majority-alarm` replaced the
+    /// religious clock's five-step staircase with a count of the cities the
+    /// victory requires, and `science-chain-alarm` gave the Science race a
+    /// reading before its first launch. The empire this ballot points at is
+    /// chosen by a better instrument than the one the flag was built against.
     pub congress_counter_leader: bool,
 
     /// Whether the ballot the counter actually cast is backed with bought

@@ -963,6 +963,16 @@ impl AdvancedAi {
         self.rival_suzerainty_alarm = false;
     }
 
+    /// Point the three targeted World Congress penalties at the empire the
+    /// denial layer names. See [`Self::congress_counter_leader`].
+    pub fn enable_congress_counter_leader(&mut self) {
+        self.congress_counter_leader = true;
+    }
+
+    pub fn disable_congress_counter_leader(&mut self) {
+        self.congress_counter_leader = false;
+    }
+
     /// Stop a war we did not declare from taking the grand strategy while our
     /// own victory lane is live. See [`Self::unchosen_war_keeps_the_lane`].
     pub fn enable_unchosen_war_keeps_the_lane(&mut self) {
