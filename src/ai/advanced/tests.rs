@@ -33329,6 +33329,106 @@ fn the_payback_test_prices_the_city_that_would_build_the_settler() {
     endless.turn = 0;
     assert!(!ai.expansion_pays_back_for(&endless, 0, city));
 }
+
+// ═══ A war we choose (`elective_war_yields_to_a_lane`) ═══
+
+#[test]
+fn elective_war_yields_to_a_lane_is_a_registered_reversible_opt_in() {
+    assert!(
+        GENES.iter().any(|gene| gene.opt_in()
+            && gene.field == "elective_war_yields_to_a_lane"
+            && gene.tag == "elective-war-yields-to-a-lane"),
+        "elective-war-yields-to-a-lane must be a registered native opt-in"
+    );
+    assert!(
+        crate::ai::advanced::gene_ledger::screenable("elective-war-yields-to-a-lane"),
+        "the ledger must be able to price it"
+    );
+    assert_eq!(
+        crate::ai::advanced::gene_ledger::ledger_default_on("elective-war-yields-to-a-lane"),
+        Some(false),
+        "it ships off until a screen prices it"
+    );
+    let mut ai = AdvancedAi::new();
+    assert!(!ai.elective_war_yields_to_a_lane, "off in the stock agent");
+    assert!(
+        !AdvancedAi::legacy().elective_war_yields_to_a_lane,
+        "off in the legacy agent"
+    );
+    ai.enable_elective_war_yields_to_a_lane();
+    assert!(ai.elective_war_yields_to_a_lane);
+    ai.disable_elective_war_yields_to_a_lane();
+    assert!(!ai.elective_war_yields_to_a_lane, "reversible");
+}
+
+/// ⚠ THIS IS THE CONDITIONAL VERSION, NOT `no_elective_war` UNDER ANOTHER
+/// NAME. An empire with no lane worth protecting still goes — which is
+/// exactly the empire for which taking a neighbour's city IS the plan.
+#[test]
+fn an_empire_with_no_live_lane_still_takes_its_elective_war() {
+    let mut game = Game::new(3, 46, 30, 6_501, 250, 3);
+    game.turn = 90;
+    game.current = 0;
+
+    let mut ai = AdvancedAi::new();
+    ai.enable_elective_war_yields_to_a_lane();
+
+    // Nothing banked in any lane: `victory_focus` reads below the floor and
+    // the gate does not fire.
+    let lane = ai.victory_focus(&game, 0).progress;
+    assert!(lane < 46, "fixture: no live lane ({lane})");
+    assert!(
+        !ai.elective_war_yields(&game, 0),
+        "an empire with no lane to protect does not yield its war"
+    );
+
+    // Ten of the twenty Diplomatic Victory Points reads 50, above the floor.
+    let mut racing = game.clone();
+    racing.players[0].dvp = 10;
+    assert!(racing.players[0].dvp * 5 >= 46);
+    assert!(
+        ai.elective_war_yields(&racing, 0),
+        "an empire already racing does"
+    );
+}
+
+/// The gate is the same `LIVE_LANE_FLOOR` test the unchosen-war gene uses:
+/// the difference between the two genes is which branch asks, not what is
+/// asked. And the gene off asks nothing at all.
+#[test]
+fn both_war_genes_ask_the_same_question_of_the_lane() {
+    let mut game = Game::new(3, 46, 30, 6_502, 250, 3);
+    game.turn = 90;
+    game.players[0].dvp = 10;
+
+    let shipped = AdvancedAi::new();
+    assert!(
+        !shipped.elective_war_yields(&game, 0),
+        "with the gene off the branch is untouched"
+    );
+
+    let mut elective = AdvancedAi::new();
+    elective.enable_elective_war_yields_to_a_lane();
+    let mut unchosen = AdvancedAi::new();
+    unchosen.enable_unchosen_war_keeps_the_lane();
+
+    // The lane reading is the same object for both, so the two gates agree
+    // about the lane and differ only in what else they require — the
+    // unchosen-war gate also wants the war to have been declared on us.
+    assert!(elective.elective_war_yields(&game, 0));
+    assert!(
+        !unchosen.unchosen_war_holds_the_lane(&game, 0),
+        "no war has been declared on us, so that gate stays shut"
+    );
+    let mut theirs = game.clone();
+    install_surprise_war(&mut theirs, 1, 0, 60);
+    assert!(unchosen.unchosen_war_holds_the_lane(&theirs, 0));
+    assert!(
+        elective.elective_war_yields(&theirs, 0),
+        "and the elective gate reads the lane the same way either way"
+    );
+}
+
 // ═══ A site that cannot be held (`defensible_sites`) ═══
 
 #[test]
