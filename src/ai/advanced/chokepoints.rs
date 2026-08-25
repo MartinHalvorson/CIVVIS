@@ -349,18 +349,26 @@ impl AdvancedAi {
                     .get(at)
                     .is_some_and(|tile| !g.rules.is_water(tile) && g.rules.is_passable(tile))
         };
+        // ⚠ Water a ship cannot enter is not sea. `data/features.json` marks
+        // `ice` impassable and it sits on ocean, so a sea membership that
+        // asked only `is_water` would read the polar cap as open water and
+        // call every gap in it a strait.
         let sea = |at: Pos| {
-            explored.contains(&at) && g.map.get(at).is_some_and(|tile| g.rules.is_water(tile))
+            explored.contains(&at)
+                && g.map
+                    .get(at)
+                    .is_some_and(|tile| g.rules.is_water(tile) && g.rules.is_passable(tile))
         };
+        if !g.rules.is_passable(tile) {
+            // Ground nothing may enter — a mountain, the ice — is what MAKES
+            // the narrows beside it. It is never one itself.
+            return Narrows::default();
+        }
         if g.rules.is_water(tile) {
             return Narrows {
                 sea: Self::gate_detour(g, pos, &sea),
                 ..Narrows::default()
             };
-        }
-        if !g.rules.is_passable(tile) {
-            // A mountain is what MAKES the pass beside it; it is not one.
-            return Narrows::default();
         }
         Narrows {
             land: Self::gate_detour(g, pos, &land),
@@ -998,6 +1006,31 @@ mod tests {
         // because the way round is longer than the window.
         let ai = AdvancedAi::new();
         assert_eq!(ai.narrows_at(&game, 0, at(&game, 9, 6)).canal, CUT_DETOUR);
+    }
+
+    #[test]
+    fn the_ice_is_a_wall_and_not_a_sea() {
+        let mut game = two_seas(717_013, 6);
+        let bridge = at(&game, 9, 6);
+        assert_eq!(
+            AdvancedAi::new().narrows_at(&game, 0, bridge).canal,
+            CUT_DETOUR
+        );
+        // Freeze the northern sea. Ice is water the engine refuses to any
+        // hull (`data/features.json`), so there is no longer a second sea to
+        // join, and the ice tiles themselves gate nothing.
+        for pos in game.map.tiles.keys().copied().collect::<Vec<_>>() {
+            if pos.1 < 6 {
+                game.map.tiles.get_mut(&pos).unwrap().feature = Some(name!("ice"));
+            }
+        }
+        let frozen = AdvancedAi::new();
+        assert_eq!(frozen.narrows_at(&game, 0, bridge), Narrows::default());
+        assert_eq!(
+            frozen.narrows_at(&game, 0, at(&game, 9, 3)),
+            Narrows::default(),
+            "a tile nothing may enter is never itself a narrows"
+        );
     }
 
     #[test]
