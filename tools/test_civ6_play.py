@@ -858,6 +858,29 @@ class Civ6PlayTest(unittest.TestCase):
         self.assertEqual(point, (1156, 309))
         crop.assert_called_once_with(Path("submenu.png"), (756, 33, 756, 480))
 
+    def test_load_action_retries_with_its_enlarged_bottom_strip(self) -> None:
+        observation = {
+            "text": "Load Game", "x": 0.70, "y": 0.49,
+            "width": 0.04, "height": 0.02,
+        }
+        bounds = (756, 33, 756, 480)
+        with patch.object(civ6_play, "desktop_size", return_value=(1512, 982)), \
+             patch.object(civ6_play, "recognize_once", return_value=[]), \
+             patch.object(civ6_play, "_menu_crop_ocr",
+                          side_effect=[[], [observation]]) as crop:
+            points = civ6_play._observed_label_points(
+                Path("load-selected.png"), "Load Game", bounds,
+                strip=civ6_play.LOAD_GAME_ACTION_STRIP,
+            )
+
+        self.assertEqual(points, [(1088, 491)])
+        self.assertEqual(
+            crop.call_args_list,
+            [call(Path("load-selected.png"), bounds),
+             call(Path("load-selected.png"), bounds,
+                  strip=civ6_play.LOAD_GAME_ACTION_STRIP, tag="strip")],
+        )
+
     def test_setup_value_readback_distinguishes_standard_speed_from_map_size(self) -> None:
         observations = [
             {"text": "Standard", "x": 0.74, "y": 0.185,
@@ -938,6 +961,7 @@ class Civ6PlayTest(unittest.TestCase):
             os.utime(newer, (2_000, 2_000))
             os.utime(stray, (3_000, 3_000))
             self.assertEqual(civ6_play.latest_autosave(folder), newer)
+            self.assertEqual(civ6_play.recent_autosaves(folder), [newer, older])
             self.assertEqual(civ6_play.latest_autosave(folder, newer_than=1_500), newer)
             self.assertIsNone(civ6_play.latest_autosave(folder, newer_than=2_500),
                               "nothing written since the attempt began")
