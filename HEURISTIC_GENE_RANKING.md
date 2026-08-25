@@ -357,6 +357,7 @@ Genes whose code has left the repository (operator directive: the bottom of the 
 | `muster-at-command-radius` | -12 | 16.55% | 16.79% | `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` |
 | `barbarian-walls-one-tier` | -13 | 16.54% | 16.80% | `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` |
 | `siege-muster` | -26 | 16.41% | 16.93% | `2026-08-20-p4-native-6p-allseats-13446-pairs.json` |
+| `step-and-reassess` | -27 | 16.40% | 16.93% | `2026-08-21-p7-native-6p-allseats-15000-pairs.json` |
 | `wonder-ring-settle-value` | -28 | 16.39% | 16.76% | `2026-08-24-standard-continuous-5988-total-seats.json` |
 | `builder-worked-tile-priority` | -31 | 16.36% | 16.77% | `2026-08-24-standard-continuous-5988-total-seats.json` |
 | `war-patience` | -38 | 16.28% | 16.79% | `2026-08-24-standard-continuous-5988-total-seats.json` |

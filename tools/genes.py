@@ -2314,10 +2314,9 @@ def posterior_of(history: list[dict]) -> dict | None:
 
 def evidence_table(ledger: dict, measured: dict[str, list[dict]]) -> list[dict]:
     """Every measured, screenable gene's pinned state and posterior evidence."""
-    # The screen's own universe only. A host-only flag can carry a ledger row
-    # from a retired native stand-in (`step-and-reassess`) and the ledger never
-    # governs it, so it is not ranked and must not appear in this evidence table
-    # either.
+    # The screen's own universe only. Host-only flags are governed by their
+    # bundles rather than the ledger, so they are not ranked and must not
+    # appear in this evidence table.
     screenable = set(screenable_tags())
     rows = []
     for gene in ledger["genes"]:

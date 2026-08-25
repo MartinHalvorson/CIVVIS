@@ -891,7 +891,7 @@ including a first reading above +20.
 
 ## A Δ of exactly zero is a gene that never fired, not a null
 
-`step-and-reassess` (2026-08-20, `docs/LIVE_TACTICS.md` §11) first screened
+A now-retired host-only gene (2026-08-20) first screened
 **+0.0 [+0.0, +0.0]** on both axes over 204 pairs: every pair's two games
 ended identically. That is not "no effect" — a gene with any reach at all
 moves at least the score share of some game — it is the signature of a gene
@@ -1119,7 +1119,7 @@ gate above refused four on their own probes. What the remaining 52 are:
 | group | n | why not a gene |
 |---|---:|---|
 | `bundle` | 6 | It turns a group of other genes on. `gene_screen` already builds its treated seat from `enable_engine_repairs_universe`; a row would vary everything inside it and file the sum under one tag. |
-| `host-only` | 12 | Cannot fire on a native board, each with its reason already recorded beside its row in the registry (`Kind::HostOnly`). `step-and-reassess` is the founding example of the paragraph above. |
+| `host-only` | 11 | Cannot fire on a native board, each with its reason already recorded beside its row in the registry (`Kind::HostOnly`). A now-retired host-only gene is the founding example of the paragraph above. |
 | `live-bridge-row` | 16 | **Screenable would mean withheld.** It is a live gene, so an opt-in row flips `ledger_default_on` from `None` to `Some(false)` and `apply_gene_ledger` takes it out of the live bridge. Its host-only classification is an argument about which rivals the weights were bred against, not a claim it cannot fire — so the move it wants is the one `culture-coverage` made, out of `FIRAXIS_ONLY_TREATMENTS` into an `ENGINE_REPAIR_*` half, taken deliberately with the bridge change owned. |
 | `production-on` | 6 | Production ships it ON, so its door is `Kind::Production` — and that row is **not** neutral: `apply_gene_ledger` disables every production treatment whose `ledger_default_on` is `Some(false)`, which is exactly a screenable tag with no ledger row. Adding it would switch a shipped behaviour off; `open_water_navy` alone was promoted at +61 Elo-equivalent (200 pairs, seed 8700000, CI +21..+109, PASS on the corrected-gate matrix; see `AdvancedAi::promoted_policy_envoy`). It needs its first screen row before it can have a gene row. |
 | `configured-on` | 5 | On in `AdvancedAi::configured` but not in `promoted_policy_envoy`, so `production_and_opt_in_rows_are_real` rejects the row as written, and it carries the same hazard as the group above. |

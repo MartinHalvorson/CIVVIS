@@ -582,9 +582,6 @@ class ThePrecisionWeightedPosterior(unittest.TestCase):
         self.assertIn("g1-governor-victory-lanes-direct", name)
         # g1: 3,600 seat pairs at a 39.09 per-column standard error.
         self.assertAlmostEqual(constant / math.sqrt(3600), 39.09, places=2)
-        # The four-player single-gene probe is not eligible: a 1-in-4 chance
-        # base is not the screen's instrument.
-        self.assertNotIn("s2-step-and-reassess", name)
 
 
 class TheOperatorPinnedDeploymentGenome(unittest.TestCase):
@@ -1401,7 +1398,6 @@ class TheTableIsDerived(unittest.TestCase):
                 # unmeasured gene is off.
                 default = "**on**" if tag in ranking.OPERATOR_DEFAULT_ON else "off"
                 self.assertIn(f"| `{tag}` | {default} (unmeasured) |", text, tag)
-        self.assertNotIn("`step-and-reassess` | ", text, "a host-only flag is not ranked")
 
     def test_descriptions_come_from_the_toggle_docs(self):
         desc = ranking.descriptions()
@@ -1806,9 +1802,6 @@ class ThePosteriorIsPublishedAsEvidence(unittest.TestCase):
         for row in rows:
             if row["call"] != "unresolved":
                 self.assertIn(f"| `{row['tag']}` |", self.text, row["tag"])
-        # A host-only flag carries a ledger row from a retired native
-        # stand-in and the ledger never governs it, so it is in no table here.
-        self.assertNotIn("step-and-reassess", {r["tag"] for r in rows})
 
     def test_the_shapes_are_published_apart(self):
         self.assertIn("## The two shapes, apart", self.text)
