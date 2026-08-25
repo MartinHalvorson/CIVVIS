@@ -816,165 +816,6 @@ fn a_stalled_escort_is_released_and_the_settler_walks_itself() {
     );
 }
 
-/// ⭐ THE FIRST VERSIONED GENE, `escort-unstick-2`. Watched live 2026-08-23:
-/// a settler and its escort stalled beside a barbarian raider, the two-turn
-/// release (`escort_unstick`) handed the warrior back to the army, and the
-/// raider took the settler the next turn. Version 2 is the same release
-/// refused while a visible raider can reach the settler's tile — at the
-/// settler's unstick and at the escort's route abandonment — and the release
-/// unchanged once nothing can reach it. One version plays: enabling 2 turns
-/// 1 off.
-#[test]
-fn a_threatened_settler_keeps_its_escort_under_version_two() {
-    fn fixture() -> (Game, u32, u32, Pos, Pos) {
-        let mut game = Game::new_full(2, 28, 18, 3, 1_000, 0, false);
-        let first = game
-            .player_unit_ids(0)
-            .into_iter()
-            .find(|unit| game.units[unit].kind == "settler")
-            .expect("seat starts with a settler");
-        let capital_pos = game.units[&first].pos;
-        game.found_city_for(0, capital_pos, None);
-        game.remove_unit(first);
-        let land_at = |game: &Game, want: &dyn Fn(Pos) -> bool| {
-            game.map
-                .tiles
-                .iter()
-                .filter(|(pos, tile)| {
-                    game.rules.is_passable(tile)
-                        && !game.rules.is_water(tile)
-                        && game.units_at(**pos).is_empty()
-                        && want(**pos)
-                })
-                .map(|(pos, _)| *pos)
-                .next()
-        };
-        let start = land_at(&game, &|pos| {
-            game.wdist(pos, capital_pos) >= 5 && game.wdist(pos, capital_pos) <= 7
-        })
-        .expect("fixture offers ground away from the capital");
-        let settler = game.spawn_test_unit("settler", 0, start);
-        let escort = game.spawn_test_unit("warrior", 0, start);
-        game.apply(
-            0,
-            &Action::LinkUnits {
-                unit: settler,
-                with: escort,
-            },
-        )
-        .expect("test pair must link");
-        let target = land_at(&game, &|pos| {
-            game.wdist(pos, start) >= 6
-                && game.wdist(pos, start) <= 10
-                && game.wdist(pos, capital_pos) >= 4
-        })
-        .expect("fixture offers a distant land target");
-        // Seat 1 is the barbarian seat, at war with us, with a raider on
-        // the tile beside the pair.
-        game.players[1].is_barbarian = true;
-        game.barb_pid = Some(1);
-        game.at_war.insert((0, 1));
-        game.at_war.insert((1, 0));
-        let beside = land_at(&game, &|pos| game.wdist(pos, start) == 1)
-            .expect("fixture offers ground beside the pair");
-        game.spawn_test_unit("warrior", 1, beside);
-        (game, settler, escort, start, target)
-    }
-    let plan_at = |turn: u32| StrategicPlan {
-        strategy: GrandStrategy::Science,
-        target_player: None,
-        target_city: None,
-        threatened_city: None,
-        desired_cities: 3,
-        assessed_turn: turn,
-        rush: false,
-    };
-
-    // Version 2 keeps the link at the settler's release point...
-    let (mut game, settler, escort, start, target) = fixture();
-    let mut two = AdvancedAi::new();
-    two.enable_escort_unstick_2();
-    assert!(
-        two.escort_unstick_2 && !two.escort_unstick,
-        "one version of the family plays: enabling version 2 turns version 1 off"
-    );
-    assert!(
-        two.settler_in_barbarian_reach(&game, 0, start),
-        "the fixture's raider can reach the settler's tile"
-    );
-    for _ in 0..4 {
-        two.settler_targets.insert(settler, target);
-        two.advanced_settler_step(&mut game, 0, settler);
-    }
-    assert_eq!(
-        game.units[&settler].linked_to,
-        Some(escort),
-        "version 2 keeps the escort while a raider can reach the settler"
-    );
-    // ...and at the escort's: three stalled turns abandon the route and
-    // unlink under version 1; version 2 holds the pair beside the raider.
-    let plan = plan_at(game.turn);
-    two.settler_stalls.insert(settler, SETTLER_STALL_LIMIT - 1);
-    game.units.get_mut(&escort).unwrap().moves_left = 0.0;
-    two.settler_escort_step(&mut game, 0, escort, &plan);
-    assert_eq!(
-        game.units[&settler].linked_to,
-        Some(escort),
-        "version 2 does not abandon a threatened settler's route"
-    );
-    assert!(two.settler_targets.contains_key(&settler));
-
-    // Version 1 on the same board releases at both points.
-    let (mut game, settler, _escort, _start, target) = fixture();
-    let mut one = AdvancedAi::new();
-    one.enable_escort_unstick();
-    for _ in 0..4 {
-        one.settler_targets.insert(settler, target);
-        one.advanced_settler_step(&mut game, 0, settler);
-        if game.units[&settler].linked_to.is_none() {
-            break;
-        }
-    }
-    assert!(
-        game.units[&settler].linked_to.is_none(),
-        "version 1 releases a stalled escort whatever stands beside it"
-    );
-    let (mut game, settler, escort, _start, target) = fixture();
-    let plan = plan_at(game.turn);
-    let mut one = AdvancedAi::new();
-    one.enable_escort_unstick();
-    one.settler_targets.insert(settler, target);
-    one.settler_stalls.insert(settler, SETTLER_STALL_LIMIT - 1);
-    game.units.get_mut(&escort).unwrap().moves_left = 0.0;
-    one.settler_escort_step(&mut game, 0, escort, &plan);
-    assert!(
-        game.units[&settler].linked_to.is_none(),
-        "version 1 abandons a stalled route beside a raider"
-    );
-
-    // With nothing in reach — the barbarian seat emptied, its own starting
-    // units included — version 2 is version 1: the stalled escort is
-    // released and the settler walks itself.
-    let (mut game, settler, _escort, start, target) = fixture();
-    for unit in game.player_unit_ids(1) {
-        game.remove_unit(unit);
-    }
-    let mut two = AdvancedAi::new();
-    two.enable_escort_unstick_2();
-    assert!(!two.settler_in_barbarian_reach(&game, 0, start));
-    for _ in 0..4 {
-        two.settler_targets.insert(settler, target);
-        two.advanced_settler_step(&mut game, 0, settler);
-        if game.units[&settler].linked_to.is_none() {
-            break;
-        }
-    }
-    assert!(
-        game.units[&settler].linked_to.is_none(),
-        "with no raider in reach version 2 releases like version 1"
-    );
-}
-
 #[test]
 fn a_bleeding_city_is_besieged_whatever_the_fog_says() {
     // The t115 shape from run civvis-20260807T181839Z: city under fire,
@@ -2497,20 +2338,7 @@ fn legacy_controller_keeps_battlefront_observation_off() {
 }
 
 #[test]
-fn production_controller_enables_tactics_without_moving_the_legacy_anchor() {
-    // Since the 2026-08-14 war-half removal, production no longer enables
-    // tactics either — the opt-in path is `enable_tactical_strategy`
-    // (the `advanced_war_half` arm and the evaluator controls). The
-    // anchor stays off, as it always was.
-    assert!(!AdvancedAi::new().base.tactical_strategy);
-    assert!(!AdvancedAi::legacy().base.tactical_strategy);
-    let mut opted_in = AdvancedAi::new();
-    opted_in.enable_tactical_strategy();
-    assert!(opted_in.base.tactical_strategy);
-}
-
-#[test]
-fn advanced_formations_link_breach_support_to_a_compatible_escort() {
+fn advanced_formations_link_breach_support_to_a_military_escort() {
     let mut game = Game::new_full(1, 20, 14, 71_001, 30, 0, false);
     for unit in game.units.keys().copied().collect::<Vec<_>>() {
         game.remove_unit(unit);
@@ -2526,15 +2354,19 @@ fn advanced_formations_link_breach_support_to_a_compatible_escort() {
     let cavalry = game.spawn_test_unit("heavy_chariot", 0, position);
     let spear = game.spawn_test_unit("spearman", 0, position);
 
-    // Opt into the formation logic under test: `tactical_strategy` left
-    // the production defaults on 2026-08-14 (the war-half removal).
-    let mut ai = AdvancedAi::new();
-    ai.enable_tactical_strategy();
+    let ai = AdvancedAi::new();
     ai.advanced_formations(&mut game, 0);
 
-    assert_eq!(game.units[&ram].linked_to, Some(spear));
-    assert_eq!(game.units[&spear].linked_to, Some(ram));
-    assert_eq!(game.units[&cavalry].linked_to, None);
+    let escort = game.units[&ram]
+        .linked_to
+        .expect("the support unit is paired with an available military escort");
+    assert!(
+        [cavalry, spear].contains(&escort),
+        "the generic support rule selects one of the available military escorts"
+    );
+    assert_eq!(game.units[&escort].linked_to, Some(ram));
+    let unpaired = if escort == cavalry { spear } else { cavalry };
+    assert_eq!(game.units[&unpaired].linked_to, None);
 }
 
 /// The same separation applies on land, where the current live game was
@@ -2558,7 +2390,6 @@ fn deployed_live_shadow_does_not_link_a_land_settler_after_the_native_gene_is_wi
     let escort = game.spawn_test_unit("heavy_chariot", 0, land);
 
     let mut historical = AdvancedAi::new();
-    historical.enable_tactical_strategy();
     historical.settlement_safety = true;
     historical.settler_targets.insert(settler, land);
     historical.settler_blocked_turns.insert(settler, 1);
@@ -3100,7 +2931,7 @@ fn the_default_controller_keeps_the_faith_army_ungated() {
 /// |---|---|
 /// | `bounded_recovery` | **NULL over 600 maps** on two disjoint seeds; removed from production 2026-08-17. The live bridge and explicit evaluator treatments retain the flag. |
 /// | `city_target_floor = 6` | **REMOVED 2026-08-10.** Withholding it passed the promotion matrix — deployment-online 55.9%, Elo +41 (CI +7..+76), p=0.0000; compact-standard flat. Its solo axis had already measured null (49.6%, Elo −3, p=0.9007) before it shipped inside this composite. |
-/// | `envoy_priority`, `adjacency_site_planning`, `settler_commit`, `research_economy`, `plan_city_target`, `amenity_districts`, `siege_muster`, `home_defense`, `tactical_strategy`, `unit_objective_memory` | no individual outcome number located in `docs/EVAL.md`. |
+/// | `envoy_priority`, `adjacency_site_planning`, `settler_commit`, `research_economy`, `plan_city_target`, `amenity_districts`, `siege_muster`, `home_defense`, `unit_objective_memory` | no individual outcome number located in `docs/EVAL.md`. |
 ///
 /// A composite may legitimately pass a gate while a component is null on
 /// its own, and the 2026-08-01 promotion was such a composite. The two
@@ -3203,11 +3034,6 @@ fn the_withholdable_defaults_are_off_on_the_anchor_and_on_in_production() {
             "home_defense",
             frozen.base.home_defense,
             production.base.home_defense,
-        ),
-        (
-            "tactical_strategy",
-            frozen.base.tactical_strategy,
-            production.base.tactical_strategy,
         ),
         (
             "unit_objective_memory",
@@ -6378,90 +6204,6 @@ fn outmatched_major_must_negotiate_peace_with_the_winning_campaign() {
 }
 
 #[test]
-fn overwhelmed_multi_front_recovery_offers_peace_to_its_campaign_target() {
-    // Live run civvis-20260816T070212Z at t180: Rome entered Recovery at
-    // 646 power against Zulu's 1,436 and Nubia's 420. The plan asked Zulu
-    // for peace, but kept Nubia exempt because it was the current target;
-    // Rome and Mediolanum fell before the war ended. A coalition that far
-    // beyond the empire's army must be able to negotiate every front.
-    let mut game = Game::new_full(3, 24, 16, 7_923, 300, 0, false);
-    for pid in 0..3 {
-        let settler = game
-            .player_unit_ids(pid)
-            .into_iter()
-            .find(|unit| game.units[unit].kind == "settler")
-            .expect("every major starts with a settler");
-        game.found_city_for(pid, game.units[&settler].pos, None);
-        game.remove_unit(settler);
-    }
-    let home = game.cities[&game.player_city_ids(0)[0]].pos;
-    for _ in 0..2 {
-        game.spawn_test_unit("modern_armor", 0, home);
-    }
-    for enemy in [1, 2] {
-        let staging = game.cities[&game.player_city_ids(enemy)[0]].pos;
-        let bodies = if enemy == 1 { 1 } else { 5 };
-        for _ in 0..bodies {
-            game.spawn_test_unit("modern_armor", enemy, staging);
-        }
-        game.record_contact(0, enemy);
-        game.at_war.insert((0, enemy));
-    }
-    game.turn = 60;
-    game.current = 0;
-    assert!(
-        game.military_power(1) + game.military_power(2)
-            > game.military_power(0) * MULTI_FRONT_RECOVERY_PEACE_RATIO,
-        "precondition: the two major fronts overwhelm the recovery army"
-    );
-    assert!(
-        game.military_power(0) >= game.military_power(1) * 0.62,
-        "precondition: the campaign target alone does not trigger ordinary outmatched peace"
-    );
-    let recovery = StrategicPlan {
-        strategy: GrandStrategy::Recovery,
-        target_player: Some(1),
-        target_city: Some(game.player_city_ids(1)[0]),
-        threatened_city: None,
-        desired_cities: 3,
-        assessed_turn: game.turn,
-        rush: false,
-    };
-
-    let mut single_front = game.clone();
-    single_front.at_war.remove(&(0, 2));
-    let mut single_front_ai = AdvancedAi::new();
-    single_front_ai.enable_live_bridge_universe();
-    single_front_ai.advanced_diplomacy(&mut single_front, 0, &recovery);
-    assert!(
-        !single_front_ai.peace_offers.contains(&1),
-        "a live single-front recovery still protects its active campaign target"
-    );
-
-    let mut ai = AdvancedAi::new();
-    ai.enable_live_bridge_universe();
-    ai.major_war_since = Some(40);
-    ai.advanced_diplomacy(&mut game, 0, &recovery);
-
-    assert!(
-        ai.peace_offers.contains(&1),
-        "the recovery target joins the peace negotiation in a catastrophic multi-front war"
-    );
-    assert!(
-        ai.peace_offers.contains(&2),
-        "the other major front remains eligible for the same negotiation"
-    );
-    for enemy in [1, 2] {
-        assert!(
-            game.pending_deals
-                .iter()
-                .any(|deal| deal.from == 0 && deal.to == enemy && deal.peace),
-            "the eligible peace offer becomes an outbound deal for player {enemy}"
-        );
-    }
-}
-
-#[test]
 fn advanced_ai_proposes_the_alliance_for_its_victory_plan() {
     let mut game = Game::new_full(3, 24, 16, 782, 300, 0, false);
     game.turn = 12;
@@ -7776,22 +7518,6 @@ fn conquest_army_stages_before_diplomacy_opens_the_war() {
     assert!(
         game.military_power(0) <= game.military_power(1) * 1.32 + 12.0,
         "the usual elective-war margin must reject this outnumbered army"
-    );
-
-    // The live bridge must not spend its final campaign window on the
-    // same urgent fallback. Timed attacks already reserve this scaled
-    // runway, so the direct path must hold even though urgency normally
-    // waives the power gate.
-    let mut endgame = game.clone();
-    let reserve = endgame.standard_duration(TIMED_WAR_ENDGAME_RESERVE);
-    endgame.turn = endgame.max_turns.saturating_sub(reserve);
-    let mut guarded = AdvancedAi::targeting(VictoryTarget::Domination);
-    guarded.enable_live_bridge_universe();
-    assert!(guarded.urgent_victory_threat(&endgame, 1));
-    guarded.advanced_diplomacy(&mut endgame, 0, &plan);
-    assert!(
-        !endgame.is_at_war(0, 1),
-        "the live direct fallback must reserve enough turns to turn a declaration into a capture"
     );
 
     ai.advanced_diplomacy(&mut game, 0, &plan);
@@ -20759,10 +20485,9 @@ fn friendly_volley_reprices_a_two_unit_kill_after_the_finisher() {
         readiness: 1.0,
         local_strength_ratio: 1.0,
     };
-    // Opt into the tactical extension under test: `tactical_strategy`
-    // left the production defaults on 2026-08-14 (the war-half removal).
+    // Opt into the friendly-volley extension under test.
     let mut ai = AdvancedAi::new();
-    ai.enable_tactical_strategy();
+    ai.coordinated_finish = true;
     let first_reply = ai.forcing_reply_penalty(&game, 0, opener, &opening);
     let (bonus, paired_reply) = ai
         .friendly_volley_extension(&game, 0, opener, &opening, &group, &plan)
@@ -20789,7 +20514,6 @@ fn friendly_volley_reprices_a_two_unit_kill_after_the_finisher() {
     let attack_value = ai.tactical_attack_value(&game, 0, opener, &opening, &plan);
     let threshold = ai.base.attack_threshold(&game, opener, target);
     let static_score = attack_value - threshold
-        + ai.base.tactical_action_bonus(&game, opener, target, true)
         + ai.base.w.focus_fire * 10.0
         + if game
             .units_at(target)
@@ -20808,7 +20532,7 @@ fn friendly_volley_reprices_a_two_unit_kill_after_the_finisher() {
         })
         .expect("the friendly kill must be distinguishable from its interrupted reply");
     let mut live = AdvancedAi::new();
-    live.enable_tactical_strategy();
+    live.coordinated_finish = true;
     live.base.w.trade_caution = trade_caution;
     live.force_groups = vec![group.clone()];
     let mut played = game.clone();
@@ -20932,14 +20656,6 @@ fn friendly_volley_chains_two_finishers_onto_a_three_blow_kill() {
         ai.base.w.kill_bonus * TACTICAL_VOLLEY_KILL_BONUS_SCALE
     );
     assert!(reply.is_finite());
-    let mut chained = AdvancedAi::new();
-    chained.enable_tactical_strategy();
-    assert!(
-        chained
-            .friendly_volley_extension(&game, 0, opener, &opening, &group, &plan)
-            .is_some(),
-        "the chain also reaches the historical tactical_strategy route"
-    );
     let mut withheld = AdvancedAi::new();
     withheld.coordinated_finish = true;
     withheld.volley_chain = false;

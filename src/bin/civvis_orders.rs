@@ -6800,8 +6800,8 @@ mod tests {
     /// ⚠⚠ ELEVEN SHIPPED TREATMENTS HAD NO CONTROL ARM ON THE ONLY HARNESS
     /// WHERE THEY FIRE, and nothing said so: this binary matched 57
     /// hand-written names against a 68-row table, and its usage string was a
-    /// third, shorter copy again. `deny_while_targeted`, `endgame_war_runway`,
-    /// `joint_tactics`, `live_religious_purchase`, `live_trader_route`,
+    /// third, shorter copy again. `deny_while_targeted`, `joint_tactics`,
+    /// `live_religious_purchase`, `live_trader_route`,
     /// `loyalty_policy_defence`, `peacetime_deterrence`, `ranged_line_of_sight`,
     /// `recorded_tactical_step`, `slot_kind_tiebreak` and `strike_opening` were
     /// unwithholdable — including the religious-purchase repair, on the lane

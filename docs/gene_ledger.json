@@ -459,7 +459,7 @@
   "counts": {
     "helps": 17,
     "hurts": 1,
-    "unresolved": 73,
+    "unresolved": 69,
     "default_on": 57
   },
   "genes": [
@@ -1634,51 +1634,6 @@
       }
     },
     {
-      "tag": "endgame-war-runway",
-      "verdict": "unresolved",
-      "default_on": false,
-      "wins_last_10k": 11,
-      "wins_prior_10k": -17,
-      "wins_third_10k": -5,
-      "win_diff_pp": -0.087164,
-      "posterior_pp": -4.961399,
-      "posterior_se_pp": 8.289106,
-      "posterior_screens": 5,
-      "posterior_tau_pp": 0.0,
-      "family_wise": false,
-      "conflict": false,
-      "screen": {
-        "seats": 38160,
-        "pairs": 19080,
-        "n_on": 19114,
-        "n_off": 19046,
-        "win_delta_pp": 0.213,
-        "win_z": 0.562,
-        "share_delta_pp": -0.026,
-        "share_z": -0.334,
-        "read": "~",
-        "source": "2026-08-24-standard-continuous-38160-total-seats.json",
-        "win_tranches": [
-          {
-            "position": "latest",
-            "seats": 19998,
-            "pairs": 9999,
-            "win_delta_pp": 0.4,
-            "win_z": 0.763,
-            "win_se_pp": 0.524
-          },
-          {
-            "position": "previous",
-            "seats": 18162,
-            "pairs": 9081,
-            "win_delta_pp": 0.007,
-            "win_z": 0.013,
-            "win_se_pp": 0.55
-          }
-        ]
-      }
-    },
-    {
       "tag": "engine-faith-price",
       "verdict": "helps",
       "default_on": true,
@@ -1811,56 +1766,7 @@
             "win_se_pp": 0.549
           }
         ]
-      },
-      "family": "escort-unstick",
-      "version": 1
-    },
-    {
-      "tag": "escort-unstick-2",
-      "verdict": "unresolved",
-      "default_on": false,
-      "wins_last_10k": -33,
-      "wins_prior_10k": null,
-      "wins_third_10k": null,
-      "win_diff_pp": -0.435928,
-      "posterior_pp": -21.796406,
-      "posterior_se_pp": 21.741647,
-      "posterior_screens": 1,
-      "posterior_tau_pp": 0.0,
-      "family_wise": false,
-      "conflict": false,
-      "screen": {
-        "seats": 38160,
-        "pairs": 19080,
-        "n_on": 9529,
-        "n_off": 28631,
-        "win_delta_pp": -0.436,
-        "win_z": -1.003,
-        "share_delta_pp": -0.064,
-        "share_z": -0.699,
-        "read": "~",
-        "source": "2026-08-24-standard-continuous-38160-total-seats.json",
-        "win_tranches": [
-          {
-            "position": "latest",
-            "seats": 19998,
-            "pairs": 9999,
-            "win_delta_pp": -0.351,
-            "win_z": -0.583,
-            "win_se_pp": 0.602
-          },
-          {
-            "position": "previous",
-            "seats": 18162,
-            "pairs": 9081,
-            "win_delta_pp": -0.53,
-            "win_z": -0.843,
-            "win_se_pp": 0.629
-          }
-        ]
-      },
-      "family": "escort-unstick",
-      "version": 2
+      }
     },
     {
       "tag": "founder-temple",
@@ -4140,51 +4046,6 @@
       }
     },
     {
-      "tag": "tactical-strategy",
-      "verdict": "unresolved",
-      "default_on": false,
-      "wins_last_10k": -21,
-      "wins_prior_10k": null,
-      "wins_third_10k": null,
-      "win_diff_pp": -0.412304,
-      "posterior_pp": -20.615216,
-      "posterior_se_pp": 19.053832,
-      "posterior_screens": 1,
-      "posterior_tau_pp": 0.0,
-      "family_wise": false,
-      "conflict": false,
-      "screen": {
-        "seats": 38160,
-        "pairs": 19080,
-        "n_on": 19148,
-        "n_off": 19012,
-        "win_delta_pp": -0.412,
-        "win_z": -1.082,
-        "share_delta_pp": -0.009,
-        "share_z": -0.11,
-        "read": "~",
-        "source": "2026-08-24-standard-continuous-38160-total-seats.json",
-        "win_tranches": [
-          {
-            "position": "latest",
-            "seats": 19998,
-            "pairs": 9999,
-            "win_delta_pp": -0.443,
-            "win_z": -0.843,
-            "win_se_pp": 0.526
-          },
-          {
-            "position": "previous",
-            "seats": 18162,
-            "pairs": 9081,
-            "win_delta_pp": -0.378,
-            "win_z": -0.684,
-            "win_se_pp": 0.553
-          }
-        ]
-      }
-    },
-    {
       "tag": "theology-for-founders",
       "verdict": "unresolved",
       "default_on": true,
@@ -4360,51 +4221,6 @@
             "win_delta_pp": 1.653,
             "win_z": 2.643,
             "win_se_pp": 0.625
-          }
-        ]
-      }
-    },
-    {
-      "tag": "war-patience",
-      "verdict": "unresolved",
-      "default_on": false,
-      "wins_last_10k": -19,
-      "wins_prior_10k": -28,
-      "wins_third_10k": -19,
-      "win_diff_pp": -0.229556,
-      "posterior_pp": -11.646946,
-      "posterior_se_pp": 8.605712,
-      "posterior_screens": 5,
-      "posterior_tau_pp": 4.490129,
-      "family_wise": false,
-      "conflict": false,
-      "screen": {
-        "seats": 38160,
-        "pairs": 19080,
-        "n_on": 19133,
-        "n_off": 19027,
-        "win_delta_pp": -0.386,
-        "win_z": -1.015,
-        "share_delta_pp": -0.131,
-        "share_z": -1.641,
-        "read": "~",
-        "source": "2026-08-24-standard-continuous-38160-total-seats.json",
-        "win_tranches": [
-          {
-            "position": "latest",
-            "seats": 19998,
-            "pairs": 9999,
-            "win_delta_pp": -0.59,
-            "win_z": -1.118,
-            "win_se_pp": 0.528
-          },
-          {
-            "position": "previous",
-            "seats": 18162,
-            "pairs": 9081,
-            "win_delta_pp": -0.162,
-            "win_z": -0.294,
-            "win_se_pp": 0.549
           }
         ]
       }
