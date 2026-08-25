@@ -188,6 +188,31 @@ class PublicationRecovery(unittest.TestCase):
             persisted = json.loads((root / "scheduler-state.json").read_text(encoding="utf-8"))
             self.assertEqual(persisted["current"]["publication"]["stage"], "merged")
 
+    def test_claimed_publication_merged_by_an_operator_skips_regeneration(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            state, batch, _worktree = self.pushed_publication(root)
+            batch["publication"]["stage"] = "claimed"
+
+            def run(command, **_kwargs):
+                self.assertEqual(command[:3], ["gh", "pr", "view"])
+                return SimpleNamespace(stdout=json.dumps({
+                    "state": "MERGED",
+                    "mergedAt": "2026-08-25T13:37:00Z",
+                    "mergeCommit": {"oid": "c" * 40},
+                }))
+
+            with mock.patch.object(scheduler, "refresh_status", return_value={"complete_games": 1}), \
+                    mock.patch.object(scheduler, "validate_analysis"), \
+                    mock.patch.object(scheduler, "run_checked", side_effect=run):
+                scheduler.publish_batch(
+                    root, root / "scheduler-state.json", state, repo=root,
+                    machine="test-machine", agent="continuous-batch")
+
+            self.assertEqual(batch["phase"], "published")
+            self.assertEqual(batch["publication"]["stage"], "merged")
+            self.assertEqual(batch["publication"]["merge_commit"], "c" * 40)
+
     def test_merge_race_after_lookup_is_recovered_before_propagating_ship_error(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -245,6 +270,29 @@ class PublicationMetadata(unittest.TestCase):
         self.assertIn("changes no game rules or default genes", body)
         self.assertIn("Computer: `Test Mac`", body)
         self.assertIn("Coordinated with: #1234", body)
+        self.assertIn("publish validated 5,000-completed-game", body)
+        self.assertIn("overwrite-guard: allow this report deliberately regenerates", body)
+
+    def test_publication_claim_and_guard_include_every_generated_ranking_artifact(self):
+        self.assertEqual(
+            scheduler.PUBLICATION_GENERATED_FILES,
+            (
+                "docs/gene_ledger.json",
+                "GENE_HEURISTIC_RANKING.md",
+                "docs/GENE_RANKING_EVIDENCE.md",
+            ),
+        )
+        batch = scheduler.new_batch(1, 1, ident="publication-artifacts")
+        batch.update({
+            "complete_games": 1,
+            "complete_seats": 6,
+            "wins": 1,
+            "source": {"commit": "a" * 40, "binary_sha256": "b" * 64},
+        })
+        body = scheduler.publication_body(
+            batch, "docs/gene_screens/example.json", machine="test-machine",
+            agent="continuous-batch", coordinated="none", computer="Test Mac")
+        self.assertIn("`docs/GENE_RANKING_EVIDENCE.md`", body)
 
 
 class PublicationTiming(unittest.TestCase):
