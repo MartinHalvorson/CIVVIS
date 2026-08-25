@@ -953,6 +953,16 @@ impl AdvancedAi {
         self.science_chain_alarm = false;
     }
 
+    /// Count a rival's city-state suzerainties toward the Diplomatic threat it
+    /// presents. See [`Self::rival_suzerainty_alarm`].
+    pub fn enable_rival_suzerainty_alarm(&mut self) {
+        self.rival_suzerainty_alarm = true;
+    }
+
+    pub fn disable_rival_suzerainty_alarm(&mut self) {
+        self.rival_suzerainty_alarm = false;
+    }
+
     /// Raise the Culture and Diplomacy denial alarms early, since countering an
     /// accumulated stock takes many turns. See
     /// [`Self::stock_denial_lead_time`].
