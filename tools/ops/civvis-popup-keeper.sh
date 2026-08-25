@@ -14,7 +14,6 @@ set -u
 # live lane kept paying it. tools/test_ops_background_priority.py holds the line.
 unsetopt BG_NICE
 
-PYTHON=/opt/homebrew/opt/python@3.14/bin/python3.14
 CLEARER=$HOME/CIVVIS/tools/civ6_control/popup_clear.py
 RUNS=$HOME/civvis-civ6-runs/control
 ACTIVITY_LOG=$HOME/civvis-civ6-runs/popup_clear.log
@@ -23,6 +22,42 @@ LOCK=${CIVVIS_POPUP_KEEPER_LOCK:-$HOME/.civvis-popup-keeper.lock}
 PID_FILE=$LOCK/pid
 
 say() { print -r -- "[popup-keeper] $(date -u +%FT%TZ) $*" >> "$KEEPER_LOG" }
+
+# The keeper used to assume that a locally installed Homebrew Python 3.14
+# existed. On a host whose active Civ VI harness uses the system Python instead,
+# that made the clearer exit 127 every three seconds while the interactive host
+# respawned the keeper every five. Prefer the fleet's usual Homebrew interpreter
+# when it is actually installed, then fall back to an executable on PATH. An
+# explicit override is deliberately strict: a misspelled deployment setting must
+# fail loudly instead of silently selecting a different runtime.
+resolve_python() {
+  local candidate="" resolved=""
+  if [[ -n "${CIVVIS_POPUP_PYTHON:-}" ]]; then
+    resolved=$(command -v "$CIVVIS_POPUP_PYTHON" 2>/dev/null || true)
+    [[ -n "$resolved" && -x "$resolved" ]] || return 1
+    print -r -- "$resolved"
+    return 0
+  fi
+  for candidate in /opt/homebrew/opt/python@3.14/bin/python3.14 \
+      /opt/homebrew/bin/python3 python3; do
+    resolved=$(command -v "$candidate" 2>/dev/null || true)
+    [[ -n "$resolved" && -x "$resolved" ]] || continue
+    print -r -- "$resolved"
+    return 0
+  done
+  return 1
+}
+
+PYTHON=$(resolve_python) || {
+  print -u2 -- "civvis popup keeper: no usable Python found; set CIVVIS_POPUP_PYTHON"
+  exit 70
+}
+# A side-effect-free probe keeps the deployment claim testable: it must name an
+# interpreter which can load the real clearer, not merely a plausible pathname.
+if [[ "${1:-}" == "--print-python" ]]; then
+  print -r -- "$PYTHON"
+  exit 0
+fi
 
 release_lock() {
   local holder=""
