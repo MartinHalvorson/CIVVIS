@@ -1813,9 +1813,13 @@ class TheLaneGenes(unittest.TestCase):
 
     def test_the_lane_set_is_read_off_victory_lane_rs(self):
         tags = ranking.lane_tags()
-        self.assertGreaterEqual(len(tags), 6)
-        for tag in ("lane-congress-ballot", "lane-great-people", "lane-policy-deck",
-                    "lane-space-race", "lane-culture-spending", "lane-congress-favor"):
+        self.assertGreaterEqual(len(tags), 4)
+        for tag in (
+            "lane-great-people",
+            "lane-policy-deck",
+            "lane-space-race",
+            "lane-culture-spending",
+        ):
             self.assertIn(tag, tags, tag)
         # Discovered, not listed: a gene joins by being read in the module.
         reg = ranking.registry()

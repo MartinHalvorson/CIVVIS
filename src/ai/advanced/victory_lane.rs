@@ -1,18 +1,18 @@
-//! Six genes for the victory lanes: the race the empire is actually in,
+//! Four genes for the victory lanes: the race the empire is actually in,
 //! reaching the deciders that still read the expansion posture instead.
 //!
-//! All six are opt-in (`Kind::OptIn` in `genes.rs`), ship off, and are priced by
+//! All four are opt-in (`Kind::OptIn` in `genes.rs`), ship off, and are priced by
 //! `gene_screen` before any promotion question is asked — see
 //! `docs/GENE_SCREEN.md` and `docs/VICTORY_GENES.md`. They live in their own
 //! file because they are one sentence each and `src/ai/advanced.rs` is the
 //! most contended file in the repository (`tools/conflict_hotspots.py`).
 //!
-//! ## The measurement all five lane genes come from
+//! ## The measurement all four lane genes come from
 //!
 //! `assess` returns one `StrategicPlan::strategy`, and `take_turn_inner`
-//! hands it to every lane-shaped subsystem in the turn: the World Congress
-//! ballot, Great Person patronage, the policy deck, the Culture faith pass,
-//! the space race. That is right for a plan that carries victory content.
+//! hands it to every lane-shaped subsystem in the turn: Great Person patronage,
+//! the policy deck, the Culture faith pass and the space race. That is right
+//! for a plan that carries victory content.
 //! It is not what the plan carries while the empire is still settling:
 //! `assess` returns **`Expansion`** — for an assigned lane explicitly
 //! ("the assigned lane can still afford to expand first"), and for an
@@ -44,8 +44,8 @@
 //!
 //! ## Two scopes, because there are two kinds of decider
 //!
-//! **A choice among options the empire is making anyway** — the ballot, the
-//! patronage ranking, the policy deck — only needs the lane when the plan has
+//! **A choice among options the empire is making anyway** — the patronage
+//! ranking and the policy deck — only needs the lane when the plan has
 //! none. [`AdvancedAi::raced_lane`] therefore answers `None` for every plan
 //! that is not `Expansion`: a `Conquest` or `Recovery` plan is a *deliberate*
 //! refusal of the economic lanes, and overriding it is a different and much
@@ -69,16 +69,6 @@
 //! Diplomacy.
 //!
 //! ## The genes
-//!
-//! **`lane-congress-ballot`.** The World Congress ballot is scored, and
-//! backed with Favor, by `plan.strategy`. A Diplomacy seat still settling
-//! therefore scores `world_leader` as an expansion problem — the 1,000-point
-//! "nominate ourselves" branch is keyed on `GrandStrategy::Diplomacy` — and
-//! casts the free single vote instead of `congress_affordable_votes`. An
-//! exact prediction of a resolution's winning outcome *and* target is +1
-//! Diplomatic Victory Point, one twentieth of that victory, and a losing
-//! ballot is refunded in full. With this on the ballot and its weight read
-//! the raced lane.
 //!
 //! **`lane-great-people`.** `advanced_great_people` ranks the classes by
 //! `(strategy, kind)` affinity — Scientist 2.5 to Science, the three writer
@@ -178,50 +168,6 @@ impl AdvancedAi {
         } else {
             plan.strategy
         }
-    }
-
-    /// `lane-congress-ballot`: the lane the World Congress ballot is **scored**
-    /// by — which outcome and target this seat names.
-    ///
-    /// ⚠ **The Favor stake is a separate gene, and the screen is why.** These
-    /// were one gene, and in the lane's own regime
-    /// (`--victories diplomatic,score`, 120 pairs) the composite read −0.61 pp
-    /// of score share at z −2.33 — a screen flag *against* the combined arm.
-    ///
-    /// ★★★ **THE SPLIT WAS RIGHT AND THE REASON GIVEN FOR IT WAS WRONG.** The
-    /// argument for splitting was that the harm had to be on the staking
-    /// side: `congress_affordable_votes` empties a treasury that a **winning**
-    /// ballot does not refund, while naming the right outcome costs nothing.
-    /// Priced apart (`docs/VICTORY_GENES.md` §8.5, 570 pairs, ±2.8 pp), the
-    /// stake is the **positive** half in all four windows (+3.7, +4.2, +2.0,
-    /// +1.4) and **this** gene — naming the ballot for the raced lane — is the
-    /// one carrying the negative (−1.9, +0.0, −2.0, −1.8). Nothing is
-    /// resolved either way, so the ordering is a suggestion; but the
-    /// mechanism that motivated the split is not the one the split found.
-    ///
-    /// What the ordering suggests instead is that a seat still settling has
-    /// different interests in a resolution than the diplomat it intends to
-    /// become, and voting as that diplomat costs it the Favor refund a losing
-    /// ballot would have paid.
-    pub(super) fn congress_lane(
-        &self,
-        g: &Game,
-        pid: usize,
-        plan: &StrategicPlan,
-    ) -> GrandStrategy {
-        self.lane_or_plan(self.lane_congress_ballot, g, pid, plan)
-    }
-
-    /// `lane-congress-favor`: the lane the Favor **stake** behind a ballot is
-    /// decided by. The staking half of what `congress_lane` used to be; see
-    /// its doc for the reading that split them.
-    pub(super) fn congress_favor_lane(
-        &self,
-        g: &Game,
-        pid: usize,
-        plan: &StrategicPlan,
-    ) -> GrandStrategy {
-        self.lane_or_plan(self.lane_congress_favor, g, pid, plan)
     }
 
     /// `lane-great-people`: the lane Great Person patronage and the Great
@@ -418,42 +364,32 @@ mod tests {
         }
     }
 
-    /// Every one of the six is off in production and comes back off.
+    /// Every one of the five is off in production and comes back off.
     #[test]
-    fn the_seven_victory_lane_genes_are_native_opt_ins() {
+    fn the_five_victory_lane_genes_are_native_opt_ins() {
         let mut ai = AdvancedAi::new();
-        assert!(!ai.lane_congress_ballot);
-        assert!(!ai.lane_congress_favor);
         assert!(!ai.lane_great_people);
         assert!(!ai.lane_policy_deck);
         assert!(!ai.lane_culture_spending);
         assert!(!ai.lane_space_race);
         assert!(!ai.competition_victory_points);
 
-        ai.enable_lane_congress_ballot();
-        ai.enable_lane_congress_favor();
         ai.enable_lane_great_people();
         ai.enable_lane_policy_deck();
         ai.enable_lane_culture_spending();
         ai.enable_lane_space_race();
         ai.enable_competition_victory_points();
-        assert!(ai.lane_congress_ballot);
-        assert!(ai.lane_congress_favor);
         assert!(ai.lane_great_people);
         assert!(ai.lane_policy_deck);
         assert!(ai.lane_culture_spending);
         assert!(ai.lane_space_race);
         assert!(ai.competition_victory_points);
 
-        ai.disable_lane_congress_ballot();
-        ai.disable_lane_congress_favor();
         ai.disable_lane_great_people();
         ai.disable_lane_policy_deck();
         ai.disable_lane_culture_spending();
         ai.disable_lane_space_race();
         ai.disable_competition_victory_points();
-        assert!(!ai.lane_congress_ballot);
-        assert!(!ai.lane_congress_favor);
         assert!(!ai.lane_great_people);
         assert!(!ai.lane_policy_deck);
         assert!(!ai.lane_culture_spending);
@@ -461,38 +397,8 @@ mod tests {
         assert!(!ai.competition_victory_points);
     }
 
-    /// The two halves of what used to be one ballot gene answer separately.
-    #[test]
-    fn the_ballot_score_and_the_favor_stake_are_two_genes() {
-        let g = game();
-        let plan = expansion_plan();
-        let mut scoring = AdvancedAi::targeting(VictoryTarget::Diplomacy);
-        scoring.enable_lane_congress_ballot();
-        assert_eq!(
-            scoring.congress_lane(&g, 0, &plan),
-            GrandStrategy::Diplomacy,
-            "the ballot is scored for the raced lane"
-        );
-        assert_eq!(
-            scoring.congress_favor_lane(&g, 0, &plan),
-            GrandStrategy::Expansion,
-            "and the treasury is not staked on it"
-        );
-
-        let mut staking = AdvancedAi::targeting(VictoryTarget::Diplomacy);
-        staking.enable_lane_congress_favor();
-        assert_eq!(
-            staking.congress_lane(&g, 0, &plan),
-            GrandStrategy::Expansion
-        );
-        assert_eq!(
-            staking.congress_favor_lane(&g, 0, &plan),
-            GrandStrategy::Diplomacy
-        );
-    }
-
     /// The premise, stated as a test: a seat told to play for Culture and
-    /// still settling hands every lane decider `Expansion`, and the raced
+    /// still settling hands every remaining lane decider `Expansion`, and the raced
     /// lane is `Culture` the whole time.
     #[test]
     fn an_assigned_lane_is_invisible_to_the_deciders_while_the_empire_settles() {
@@ -504,17 +410,10 @@ mod tests {
             Some(GrandStrategy::Culture),
             "the assigned lane is what the empire is racing whatever the plan says"
         );
-        assert_eq!(
-            ai.congress_lane(&g, 0, &plan),
-            GrandStrategy::Expansion,
-            "off, the ballot still reads the expansion posture"
-        );
         let mut armed = AdvancedAi::targeting(VictoryTarget::Culture);
-        armed.enable_lane_congress_ballot();
         armed.enable_lane_great_people();
         armed.enable_lane_policy_deck();
         armed.enable_lane_culture_spending();
-        assert_eq!(armed.congress_lane(&g, 0, &plan), GrandStrategy::Culture);
         assert_eq!(
             armed.great_person_lane(&g, 0, &plan),
             GrandStrategy::Culture
@@ -526,22 +425,19 @@ mod tests {
         );
     }
 
-    /// A war posture is a decision, not a gap: the three genes that choose
-    /// between options the empire is picking anyway leave it alone.
+    /// A war posture is a decision, not a gap: the policy-deck gene leaves it
+    /// alone.
     #[test]
-    fn a_war_plan_keeps_its_own_strategy_under_the_three_choice_genes() {
+    fn a_war_plan_keeps_its_own_strategy_under_the_policy_gene() {
         let g = game();
         let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
-        ai.enable_lane_congress_ballot();
         ai.enable_lane_policy_deck();
-        ai.enable_lane_culture_spending();
         for strategy in [GrandStrategy::Conquest, GrandStrategy::Recovery] {
             let plan = StrategicPlan {
                 strategy,
                 ..expansion_plan()
             };
             assert_eq!(ai.raced_lane(&g, 0, &plan), None, "{strategy:?}");
-            assert_eq!(ai.congress_lane(&g, 0, &plan), strategy);
             assert_eq!(ai.policy_lane(&g, 0, &plan), strategy);
         }
     }
@@ -608,33 +504,6 @@ mod tests {
             !culture.culture_lane_spends(&g, 0, &losing),
             "nor buy a Rock Band"
         );
-    }
-
-    /// A plan that already carries its own victory lane is left alone: the
-    /// genes fill in an absent lane, they do not re-aim a present one.
-    #[test]
-    fn a_plan_that_already_names_a_lane_is_unchanged() {
-        let g = game();
-        let mut ai = AdvancedAi::targeting(VictoryTarget::Culture);
-        ai.enable_lane_congress_ballot();
-        let plan = StrategicPlan {
-            strategy: GrandStrategy::Religion,
-            ..expansion_plan()
-        };
-        assert_eq!(ai.raced_lane(&g, 0, &plan), None);
-        assert_eq!(ai.congress_lane(&g, 0, &plan), GrandStrategy::Religion);
-    }
-
-    /// A seat racing the score tally or a conquest has no economic lane to
-    /// substitute, so `Expansion` stands.
-    #[test]
-    fn a_seat_racing_the_tally_keeps_the_expansion_posture() {
-        let g = game();
-        let mut ai = AdvancedAi::targeting(VictoryTarget::Score);
-        ai.enable_lane_congress_ballot();
-        let plan = expansion_plan();
-        assert_eq!(ai.raced_lane(&g, 0, &plan), None);
-        assert_eq!(ai.congress_lane(&g, 0, &plan), GrandStrategy::Expansion);
     }
 
     /// The space race gene opens the pass for a Science racer and for nobody

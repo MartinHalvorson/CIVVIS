@@ -8034,132 +8034,6 @@ fn recovery_requires_material_local_danger_and_ends_when_it_clears() {
     assert_eq!(ai.assess(&game, 0).strategy, GrandStrategy::Conquest);
 }
 
-/// ⚠⚠ THE BALLOT AND THE VOTES BEHIND IT NAME THE SAME EMPIRE.
-///
-/// `congress_choice` aimed a targeted penalty at one empire while `take_turn`
-/// decided whether to buy votes behind it by asking `victory_denial` for
-/// another. They coincide only when `congress_counter_leader` is on, so
-/// `congress_counter_votes` could not fire alone — measured on the contested
-/// profile at 60 pairs (seed 33000000, #2042): target-only broke 3 maps,
-/// both-flags broke 7, votes-only broke **zero** in 120 games.
-///
-/// This board is the disagreeing configuration: empire 1 is the one
-/// `victory_denial` names, and a *different* empire holds the Diplomatic
-/// Victory Points. The assertions below would not distinguish anything on a
-/// board where those are the same empire, so the fixture is checked first.
-#[test]
-fn the_counter_ballot_and_the_votes_behind_it_name_the_same_empire() {
-    let mut game = Game::new_full(4, 30, 18, 7_215, 300, 0, false);
-    for pid in 0..4 {
-        game.current = pid;
-        let settler = game
-            .player_unit_ids(pid)
-            .into_iter()
-            .find(|unit| game.units[unit].kind == "settler")
-            .unwrap();
-        game.apply(pid, &Action::FoundCity { unit: settler })
-            .unwrap();
-    }
-    game.current = 0;
-    // Empire 1 is about to win on religion, which is what `victory_denial`
-    // answers to.
-    game.players[1].religion = Some("Rival Faith".to_string());
-    for owner in [1, 2, 3] {
-        let city = game.player_city_ids(owner)[0];
-        game.cities
-            .get_mut(&city)
-            .unwrap()
-            .pressure
-            .insert("Rival Faith".to_string(), 1_000.0);
-    }
-    // And empire 2 holds the Diplomatic Victory Points, which is what the
-    // `world_leader` veto answers to.
-    game.players[2].dvp = 15;
-
-    let plain = AdvancedAi::new();
-    let mut targeted = AdvancedAi::new();
-    targeted.congress_counter_leader = true;
-
-    // The fixture really does disagree with itself, or nothing below bites.
-    assert_eq!(AdvancedAi::congress_diplomatic_leader(&game), Some(2));
-    assert_eq!(
-        plain.victory_denial(&game, 0).map(|(rival, _)| rival),
-        Some(1)
-    );
-    assert_eq!(plain.congress_denial_target(&game, 0), None);
-    assert_eq!(targeted.congress_denial_target(&game, 0), Some(1));
-    assert_eq!(plain.congress_counter_target(&game, 0), Some(2));
-    assert_eq!(targeted.congress_counter_target(&game, 0), Some(1));
-    // The defect, stated as an assertion: the empire the old weight test asked
-    // for is not the empire the shipped counter points at, so the condition
-    // could never be true with `congress_counter_leader` off.
-    assert_ne!(
-        plain.victory_denial(&game, 0).map(|(rival, _)| rival),
-        plain.congress_counter_target(&game, 0),
-        "this board must separate the two concepts for the rest of the test to mean anything"
-    );
-
-    let outcome_resolution = |id: &str| CongressResolution {
-        id: id.to_string(),
-        title: id.to_string(),
-        choices: ["A", "B"]
-            .into_iter()
-            .flat_map(|outcome| {
-                ["0", "1", "2", "3"]
-                    .iter()
-                    .map(move |target| format!("{outcome}:{target}"))
-            })
-            .collect(),
-        ballots: BTreeMap::new(),
-    };
-
-    // Each configuration counters on a different resolution — `world_leader`
-    // moves Diplomatic Victory Points and nothing else, so it keeps aiming at
-    // the leader, while the resolutions that cost real yields follow the denial
-    // layer. In both cases the ballot's target is what
-    // `congress_counter_target` returns, which is the function the vote weight
-    // now asks.
-    for (label, ai, id) in [
-        ("votes-only", &plain, "world_leader"),
-        ("target-and-votes", &targeted, "trade_policy"),
-    ] {
-        let choice = ai
-            .congress_choice(&game, 0, &outcome_resolution(id), GrandStrategy::Science)
-            .unwrap_or_else(|| panic!("{label} abstained on {id}"));
-        let (outcome, target) = Game::congress_choice_parts(&choice);
-        assert_eq!(outcome, "B", "{label} on {id}: {choice}");
-        assert_eq!(
-            target,
-            ai.congress_counter_target(&game, 0).unwrap().to_string(),
-            "{label} on {id} cast {choice}, which the vote weight would not recognize"
-        );
-        // ⚠ AND THE WEIGHT AGREES. This is the assertion the defect would have
-        // failed: the predicate `take_turn` uses must recognise the ballot
-        // `congress_choice` just cast. Asserting only the two lines above would
-        // have passed against the broken code, because the ballot was always
-        // aimed correctly — it was the weight that looked elsewhere.
-        assert!(
-            ai.congress_ballot_opposes_the_counter_target(&game, 0, id, &choice),
-            "{label}: the counter cast {choice} on {id} and the vote weight did not \
-             recognize it as opposing anybody"
-        );
-    }
-
-    // A ballot aimed at somebody else's empire is not this counter's, and a
-    // ballot aimed at *us* is never worth buying votes for — without that
-    // guard, an empire holding the most Diplomatic Victory Points is its own
-    // counter target and would pay to strip its own points.
-    assert!(!plain.congress_ballot_opposes_the_counter_target(&game, 0, "world_leader", "B:3"));
-    assert!(!plain.congress_ballot_opposes_the_counter_target(&game, 0, "world_leader", "A:2"));
-    let mut we_lead = game.clone();
-    we_lead.players[0].dvp = 30;
-    assert_eq!(AdvancedAi::congress_diplomatic_leader(&we_lead), Some(0));
-    assert!(!plain.congress_ballot_opposes_the_counter_target(&we_lead, 0, "world_leader", "B:0"));
-    // `public_relations` is the one resolution whose penalty is outcome A.
-    assert!(plain.congress_ballot_opposes_the_counter_target(&game, 0, "public_relations", "A:2"));
-    assert!(!plain.congress_ballot_opposes_the_counter_target(&game, 0, "public_relations", "B:2"));
-}
-
 #[test]
 fn religious_denial_triggers_with_one_unconverted_civilization() {
     let mut game = Game::new_full(4, 30, 18, 7_215, 300, 0, false);
@@ -30463,7 +30337,6 @@ fn the_religious_corps_genes_are_registered_reversible_opt_ins() {
             "religious-units-heal-first",
             true,
         ),
-        ("condemn_under_congress", "condemn-under-congress", false),
         (
             "spread_campaign_persists",
             "spread-campaign-persists",
@@ -30505,10 +30378,6 @@ fn the_religious_corps_genes_are_registered_reversible_opt_ins() {
         "the bare controller starts it off"
     );
     assert!(
-        !ai.condemn_under_congress,
-        "the bare controller starts it off"
-    );
-    assert!(
         !ai.spread_campaign_persists,
         "the bare controller starts it off"
     );
@@ -30523,28 +30392,24 @@ fn the_religious_corps_genes_are_registered_reversible_opt_ins() {
     ai.enable_religious_defence_scales();
     ai.enable_guru_heals_the_corps();
     ai.enable_religious_units_heal_first();
-    ai.enable_condemn_under_congress();
     ai.enable_spread_campaign_persists();
     ai.enable_holy_site_where_the_threat_is();
     ai.enable_enhancer_for_the_corps();
     assert!(ai.religious_defence_scales);
     assert!(ai.guru_heals_the_corps);
     assert!(ai.religious_units_heal_first);
-    assert!(ai.condemn_under_congress);
     assert!(ai.spread_campaign_persists);
     assert!(ai.holy_site_where_the_threat_is);
     assert!(ai.enhancer_for_the_corps);
     ai.disable_religious_defence_scales();
     ai.disable_guru_heals_the_corps();
     ai.disable_religious_units_heal_first();
-    ai.disable_condemn_under_congress();
     ai.disable_spread_campaign_persists();
     ai.disable_holy_site_where_the_threat_is();
     ai.disable_enhancer_for_the_corps();
     assert!(!ai.religious_defence_scales);
     assert!(!ai.guru_heals_the_corps);
     assert!(!ai.religious_units_heal_first);
-    assert!(!ai.condemn_under_congress);
     assert!(!ai.spread_campaign_persists);
     assert!(!ai.holy_site_where_the_threat_is);
     assert!(!ai.enhancer_for_the_corps);
@@ -30798,72 +30663,6 @@ fn a_wounded_spreader_holds_to_heal_only_with_the_gene() {
         !on.religious_unit_holds_to_heal(&stranded, 0, wounded),
         "the hold never strands a unit somewhere it would not recover"
     );
-}
-
-/// `condemn_under_congress`: `do_condemn_heretic` licenses the blow at peace
-/// when the World Congress has condemned the target's religion, and
-/// `condemn_step` has only ever asked whether we are at war. War alone with the
-/// gene off; war or the Congress with it on.
-#[test]
-fn a_congress_condemnation_reaches_the_carrier_only_with_the_gene() {
-    let mut game = Game::new_full(2, 30, 18, 7_116, 200, 0, false);
-    for pid in 0..2 {
-        let settler = game
-            .player_unit_ids(pid)
-            .into_iter()
-            .find(|unit| game.units[unit].kind == "settler")
-            .unwrap();
-        game.current = pid;
-        game.apply(pid, &Action::FoundCity { unit: settler })
-            .unwrap();
-    }
-    game.current = 0;
-    game.players[1].religion = Some("Rival Faith".to_string());
-    let at = game.cities[&game.player_city_ids(0)[0]].pos;
-    let heretic = game.spawn_test_unit("missionary", 1, at);
-    game.units.get_mut(&heretic).unwrap().religion = Some("Rival Faith".to_string());
-    assert!(!game.is_at_war(0, 1), "the fixture is a peacetime sighting");
-
-    let off = AdvancedAi::new();
-    let mut on = AdvancedAi::new();
-    on.enable_condemn_under_congress();
-    assert_eq!(off.condemnable_heretic(&game, 0, at), None);
-    assert_eq!(
-        on.condemnable_heretic(&game, 0, at),
-        None,
-        "the gene alone licenses nothing — the Congress has said nothing yet"
-    );
-
-    let mut condemned = game.clone();
-    condemned
-        .active_congress_effects
-        .push(crate::game::CongressEffect {
-            resolution: "world_religion".to_string(),
-            outcome: "B".to_string(),
-            target: "Rival Faith".to_string(),
-            expires: condemned.turn + 20,
-        });
-    assert!(condemned.congress_effect_active("world_religion", "B", "Rival Faith"));
-    assert_eq!(
-        off.condemnable_heretic(&condemned, 0, at),
-        None,
-        "the shipped predicate asks only about war"
-    );
-    assert_eq!(
-        on.condemnable_heretic(&condemned, 0, at),
-        Some(heretic),
-        "the licence the engine already grants is finally used"
-    );
-    // A different religion's condemnation is not this unit's.
-    let mut other = condemned.clone();
-    other.active_congress_effects[0].target = "Some Other Faith".to_string();
-    assert_eq!(on.condemnable_heretic(&other, 0, at), None);
-    // And war still reaches it with the gene off, unchanged.
-    let mut war = game.clone();
-    war.current = 0;
-    war.apply(0, &Action::DeclareWar { player: 1 }).unwrap();
-    assert!(war.is_at_war(0, 1));
-    assert_eq!(off.condemnable_heretic(&war, 0, at), Some(heretic));
 }
 
 /// `spread_campaign_persists`: the shipped offensive test is
@@ -34216,18 +34015,6 @@ fn congress_counter_leader_is_a_registered_reversible_opt_in() {
     assert!(ai.congress_counter_leader);
     ai.disable_congress_counter_leader();
     assert!(!ai.congress_counter_leader, "reversible");
-}
-
-/// The split pair: the votes half has always been screenable, and until this
-/// row the targeting half was not, so only one of the two could be priced.
-#[test]
-fn both_halves_of_the_congress_counter_are_now_screenable() {
-    for tag in ["congress-counter-votes", "congress-counter-leader"] {
-        assert!(
-            crate::ai::advanced::gene_ledger::screenable(tag),
-            "{tag} must be screenable"
-        );
-    }
 }
 
 /// The record of a flag that was registered, probed, and taken back out again,
