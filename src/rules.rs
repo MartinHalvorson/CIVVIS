@@ -3538,9 +3538,19 @@ mod tests {
         // Classical-era `land_unit_promotion_level` general, at the same era,
         // cost and effect. This is the audit's `only_ours` column reaching zero
         // on `GreatPeople`, not a balance change.
+        // Moved again by wiring `tools/civ6_fidelity.py --check --max 0` into
+        // CI, whose first run found ten divergences nothing had reported
+        // because nothing ran it: the Tagma cost 180 and upgraded to a Tank
+        // (shipped: 220, Cuirassier, 4 Gold upkeep), the Pike and Shot paid 3
+        // upkeep (4), the Prasat held two Relics at +4 Faith (one, +6), the
+        // Sukiennice paid +3 Gold (+2), the Tlachtli +1 Culture (+2), and
+        // Eyjafjallajökull's neighbours took +2 Food (+1). The new
+        // `Difficulties` projection added the human's camp Gold above Prince,
+        // which `BARBARIAN_CAMP_GOLD_SCALING` runs to -20 at Deity and the
+        // data had stopped transcribing at Warlord's +5.
         assert_eq!(
             Rules::shipped().source_fingerprint(),
-            "fnv1a64:7f27df2bc649975d"
+            "fnv1a64:dd2560d44eea3238"
         );
     }
 
@@ -4094,7 +4104,7 @@ mod tests {
             ("cavalry", "helicopter"),
             ("heavy_chariot", "knight"),
             ("knight", "cuirassier"),
-            ("tagma", "tank"),
+            ("tagma", "cuirassier"),
             ("cuirassier", "tank"),
             ("tank", "modern_armor"),
             ("catapult", "trebuchet"),
