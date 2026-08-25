@@ -373,6 +373,7 @@ These screenable genes have no on/off result, so they receive no rank or promoti
 
 | Gene | Default | Description | Best version |
 |---|---|---|---:|
+| `diplomatic-lane-forecast` | off (unmeasured) | Score the Diplomacy lane by when twenty Diplomatic Victory Points arrive along the Congress calendar, not by how many are banked. | — |
 | `naval-threat-triage` | off (unmeasured) | Ignore nearby barbarian ships that cannot land a meaningful blow, while still allowing ranged shots at them. | — |
 | `science-victory-drive` | **on** (unmeasured) | When the empire leads the field in science, beeline the space-race chain, build launch-city production and race two pads early. | — |
 | `surprise-war-mobilization` | off (unmeasured) | Convert the first six Standard-speed turns after a surprise war is declared against us into a bounded defensive mobilization. | — |

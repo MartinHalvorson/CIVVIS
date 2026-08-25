@@ -34500,6 +34500,151 @@ fn the_ai_never_gives_without_receiving() {
     assert_eq!(board.players[0].counters.get("gifts_given"), None);
 }
 
+// ═══ The Diplomacy lane the planner never picks (`diplomatic_lane_forecast`) ═══
+
+#[test]
+fn diplomatic_lane_forecast_is_a_registered_reversible_opt_in() {
+    assert!(
+        GENES.iter().any(|gene| gene.opt_in()
+            && gene.field == "diplomatic_lane_forecast"
+            && gene.tag == "diplomatic-lane-forecast"),
+        "diplomatic-lane-forecast must be a registered native opt-in"
+    );
+    assert!(
+        crate::ai::advanced::gene_ledger::screenable("diplomatic-lane-forecast"),
+        "the ledger must be able to price it"
+    );
+    assert_eq!(
+        crate::ai::advanced::gene_ledger::ledger_default_on("diplomatic-lane-forecast"),
+        Some(false),
+        "it ships off until a screen prices it"
+    );
+    let mut ai = AdvancedAi::new();
+    assert!(!ai.diplomatic_lane_forecast, "off in the stock agent");
+    assert!(
+        !AdvancedAi::legacy().diplomatic_lane_forecast,
+        "off in the legacy agent"
+    );
+    ai.enable_diplomatic_lane_forecast();
+    assert!(ai.diplomatic_lane_forecast);
+    ai.disable_diplomatic_lane_forecast();
+    assert!(!ai.diplomatic_lane_forecast, "reversible");
+}
+
+/// The lock the gene exists to open: with nothing banked the shipped tally
+/// reads the Diplomacy lane at zero, so the argmax in `victory_focus` can
+/// never land on it however many Congresses are still to sit.
+#[test]
+fn the_shipped_diplomacy_lane_reads_zero_until_it_has_already_been_played() {
+    let game = Game::new(6, 40, 26, 5_101, 250, 9);
+    let shipped = AdvancedAi::new();
+    let table = shipped.lane_progress_table(&game, 0);
+    assert_eq!(table[3], 0, "no points, no suzerainties, no reading");
+    assert_ne!(
+        shipped.victory_focus(&game, 0).strategy,
+        GrandStrategy::Diplomacy,
+        "and so the lane cannot be chosen"
+    );
+    // The one key cut for this lock is unreachable: `diplomatic_opening` has
+    // no registry row, so nothing in the tree can set it.
+    assert!(
+        !GENES.iter().any(|gene| gene.field == "diplomatic_opening"),
+        "diplomatic_opening is an orphaned flag, not a gene"
+    );
+}
+
+/// The forecast reads the Congress calendar: an empire holding the floor is
+/// told the lane closes, and the same empire with one Congress left is not.
+#[test]
+fn diplomatic_lane_forecast_prices_the_calendar_not_the_tally() {
+    let mut ai = AdvancedAi::new();
+    ai.enable_diplomatic_lane_forecast();
+
+    // Six majors, nine city-states, the ladder's own board. Give seat 0 the
+    // Favor floor and leave its point tally empty.
+    let mut game = Game::new(6, 40, 26, 5_102, 250, 9);
+    game.turn = 60;
+    game.players[0].diplomatic_favor = 900.0;
+    assert_eq!(game.players[0].dvp, 0, "nothing banked");
+
+    let early = ai.lane_progress_table(&game, 0)[3];
+    assert!(
+        early > 0,
+        "twelve sessions and the floor: the lane has a reading ({early})"
+    );
+    assert_eq!(
+        AdvancedAi::new().lane_progress_table(&game, 0)[3],
+        0,
+        "and the shipped agent still reads nothing there"
+    );
+
+    // Wind the clock to the last session. The same floor, the same empty
+    // tally, and now the calendar cannot pay twenty points.
+    let mut late = game.clone();
+    late.turn = 240;
+    let late_reading = ai.lane_progress_table(&late, 0)[3];
+    assert!(
+        late_reading < early,
+        "one session left must read below twelve ({late_reading} vs {early})"
+    );
+
+    // Past the clock there is no session at all.
+    let mut over = game.clone();
+    over.turn = 250;
+    assert_eq!(
+        ai.lane_progress_table(&over, 0)[3],
+        0,
+        "no sessions left, no forecast"
+    );
+}
+
+/// The forecast only ever RAISES the lane's reading, so the gene cannot make
+/// the planner abandon a Diplomacy race it is already winning.
+#[test]
+fn diplomatic_lane_forecast_never_lowers_the_banked_reading() {
+    let mut ai = AdvancedAi::new();
+    ai.enable_diplomatic_lane_forecast();
+    let shipped = AdvancedAi::new();
+    for (seed, turn, dvp) in [(6_001u64, 40u32, 0i64), (6_002, 150, 9), (6_003, 240, 18)] {
+        let mut game = Game::new(6, 40, 26, seed, 250, 9);
+        game.turn = turn;
+        game.players[0].dvp = dvp;
+        let with = ai.lane_progress_table(&game, 0)[3];
+        let without = shipped.lane_progress_table(&game, 0)[3];
+        assert!(
+            with >= without,
+            "seed {seed}: the forecast lowered the reading ({with} < {without})"
+        );
+        assert!(
+            (0..=100).contains(&with),
+            "seed {seed}: {with} out of range"
+        );
+    }
+}
+
+/// A seat with no Congress position at all must still read BELOW Religion's
+/// standing commitment floor, or the gene is the flat floor it replaces.
+#[test]
+fn diplomatic_lane_forecast_still_has_to_be_earned() {
+    let mut ai = AdvancedAi::new();
+    ai.enable_diplomatic_lane_forecast();
+    let mut game = Game::new(6, 40, 26, 5_103, 250, 9);
+    game.turn = 30;
+    let barren = ai.lane_progress_table(&game, 0)[3];
+    assert!(
+        barren < 46,
+        "an empire with nothing must not out-read a viable Religion ({barren})"
+    );
+
+    // Give the same seat the whole Favor floor and it does clear that bar.
+    game.players[0].diplomatic_favor = 2_000.0;
+    let armed = ai.lane_progress_table(&game, 0)[3];
+    assert!(
+        armed > barren,
+        "the floor has to move the reading ({armed} vs {barren})"
+    );
+}
+
 // ═══ Surprise-war mobilization: violent opening, structural off-ramp ═══
 
 fn install_surprise_war(game: &mut Game, attacker: usize, defender: usize, started: u32) {
