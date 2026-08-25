@@ -2196,7 +2196,7 @@ the number is in the log even before it is in the file.
 constants read out of the source. That is deliberate: an artefact and its
 source drifting apart is the defect that put `main` red the same morning this
 landed — `17a27004` was pushed with no pull request and left the generated
-`HEURISTIC_GENE_RANKING.md` out of step with its generator, failing six tests
+`GENE_HEURISTIC_RANKING.md` out of step with its generator, failing six tests
 every PR inherits (fixed by #2336). An absolute cost recorded at one shape
 while the gate runs another is that defect with the drift line calling the
 difference a regression.
