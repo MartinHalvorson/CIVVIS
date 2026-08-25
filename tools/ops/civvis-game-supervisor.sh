@@ -162,9 +162,12 @@ ABANDON_BELOW=${CIVVIS_ABANDON_BELOW_WIN_RATE:-}
 # A stricter restart rule for a position that is bad on all three strategic
 # standings, not merely on score: below this share of the score leader AND
 # behind the visible science and culture leaders for five turns after turn 100.
-# Unset keeps the policy off. The operator's requested 70 % lives in the
-# inherited login shell as CIVVIS_RESTART_BELOW_LEADER_RATIO=0.70.
-RESTART_BELOW_LEADER_RATIO=${CIVVIS_RESTART_BELOW_LEADER_RATIO:-}
+# This is a deployment policy, so it must not depend on an interactive login
+# shell being inherited by the GUI host or launchd.  A named environment value
+# still overrides it for a deliberately configured batch (including 0 to turn
+# the player-level rule off), but every ordinary fresh-head verification game
+# receives the operator-requested 70 % threshold.
+RESTART_BELOW_LEADER_RATIO=${CIVVIS_RESTART_BELOW_LEADER_RATIO:-0.70}
 # Optional live-host wall-clock budget. The climb's defaults remain the source
 # of truth when these are absent; the operator can raise them for a GUI host
 # whose healthy 250-turn games take longer. Run civvis-20260822T020434Z was

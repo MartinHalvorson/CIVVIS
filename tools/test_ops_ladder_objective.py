@@ -114,7 +114,7 @@ class NoOperationalScriptHoldsALaneOfItsOwn(unittest.TestCase):
         source = (OPS / "civvis-game-supervisor.sh").read_text()
         self.assertIn("VICTORY=${CIVVIS_VICTORY:-}", source)
         self.assertIn('${VICTORY:+--victory} ${VICTORY:+"$VICTORY"}', source)
-        self.assertIn("RESTART_BELOW_LEADER_RATIO=${CIVVIS_RESTART_BELOW_LEADER_RATIO:-}",
+        self.assertIn("RESTART_BELOW_LEADER_RATIO=${CIVVIS_RESTART_BELOW_LEADER_RATIO:-0.70}",
                       source)
 
     def test_the_supervisors_optional_flags_reach_the_climb_as_words(self):
@@ -122,9 +122,11 @@ class NoOperationalScriptHoldsALaneOfItsOwn(unittest.TestCase):
         it reached the climb as ONE argument, `--victory science`, which
         argparse rejects as unrecognized. The victory form had never been
         exercised; the abandon floor was, 2026-08-19 17:00Z, and four starts
-        in a row played nothing. Run the script's OWN knob lines and the
-        optional-flag lines of its climb invocation under zsh, with and
-        without the knobs, and read the words that come out."""
+        in a row played nothing. The three-axis score restart is different:
+        it is a required deployment policy at 0.70, even when a GUI host did
+        not inherit a login-shell environment. Run the script's OWN knob lines
+        and the flag lines of its climb invocation under zsh, with and without
+        operator overrides, and read the words that come out."""
         if shutil.which("zsh") is None:
             # The supervisor is a zsh script and only ever runs on the macOS
             # hosts that have it; the literal pin above is the guard on a
@@ -142,12 +144,16 @@ class NoOperationalScriptHoldsALaneOfItsOwn(unittest.TestCase):
         script = "\n".join(knob_lines) + (
             "\nfor w in " + " ".join(flag_lines) + "; do print -r -- \"$w\"; done\n")
         for knobs, expected in (
-            ({}, []),
-            ({"CIVVIS_VICTORY": "science"}, ["--victory", "science"]),
+            ({}, ["--restart-below-leader-ratio", "0.70"]),
+            ({"CIVVIS_VICTORY": "science"},
+             ["--victory", "science", "--restart-below-leader-ratio", "0.70"]),
             ({"CIVVIS_ABANDON_BELOW_WIN_RATE": "0.05"},
-             ["--abandon-below-win-rate", "0.05"]),
+             ["--abandon-below-win-rate", "0.05",
+              "--restart-below-leader-ratio", "0.70"]),
             ({"CIVVIS_RESTART_BELOW_LEADER_RATIO": "0.70"},
              ["--restart-below-leader-ratio", "0.70"]),
+            ({"CIVVIS_RESTART_BELOW_LEADER_RATIO": "0"},
+             ["--restart-below-leader-ratio", "0"]),
             ({"CIVVIS_VICTORY": "culture", "CIVVIS_ABANDON_BELOW_WIN_RATE": "0.1",
               "CIVVIS_RESTART_BELOW_LEADER_RATIO": "0.70"},
              ["--victory", "culture", "--abandon-below-win-rate", "0.1",
