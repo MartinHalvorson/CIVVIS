@@ -725,8 +725,8 @@ class TheGeneSetDerivation(unittest.TestCase):
                 ("strategic_wonders", "strategic-wonders", AdvancedAi::disable),
             ];
             pub const PRODUCTION_OPT_INS: &[LiveTreatment] = &[
-                // The joint search: "decoy-four".
-                ("joint_tactics", "joint-tactics", AdvancedAi::enable),
+                // A second version: "decoy-four".
+                ("war_economy_2", "war-economy-2", AdvancedAi::enable),
             ];
         '''
         read = {"src/elo.rs": elo, "src/ai/advanced/treatments.rs": treatments}
@@ -738,7 +738,7 @@ class TheGeneSetDerivation(unittest.TestCase):
             return read[path]
         self.assertEqual(
             gene_ledger.gene_tags_from_sources(reader),
-            ["war-reinforcement", "come-ashore", "strategic-wonders", "joint-tactics"],
+            ["war-reinforcement", "come-ashore", "strategic-wonders", "war-economy-2"],
         )
 
     def test_the_registry_is_read_in_order_and_host_only_rows_stay_out(self):
@@ -750,7 +750,6 @@ class TheGeneSetDerivation(unittest.TestCase):
                 Gene { tag: "war-reinforcement", field: "war_reinforcement", kind: Kind::Repair(Axis::War), enable: AdvancedAi::enable_war_reinforcement, disable: AdvancedAi::disable_war_reinforcement },
                 Gene { tag: "land-grab", field: "land_grab", kind: Kind::HostOnly, enable: AdvancedAi::enable_land_grab, disable: AdvancedAi::disable_land_grab },
                 Gene { tag: "strategic-wonders", field: "strategic_wonders", kind: Kind::Production, enable: AdvancedAi::enable_strategic_wonders, disable: AdvancedAi::disable_strategic_wonders },
-                Gene { tag: "joint-tactics", field: "joint_tactics", kind: Kind::HostOnlyOptIn, enable: AdvancedAi::enable_joint_tactics, disable: AdvancedAi::disable_joint_tactics },
                 Gene { tag: "war-economy-2", field: "war_economy_2", kind: Kind::OptIn, enable: AdvancedAi::enable_war_economy_2, disable: AdvancedAi::disable_war_economy_2 },
             ];
         '''
@@ -762,7 +761,7 @@ class TheGeneSetDerivation(unittest.TestCase):
             return read[path]
         self.assertEqual(
             gene_ledger.gene_tags_from_sources(reader),
-            ["war-reinforcement", "strategic-wonders", "joint-tactics", "war-economy-2"],
+            ["war-reinforcement", "strategic-wonders", "war-economy-2"],
         )
 
     def test_the_fingerprint_is_the_tags_newline_terminated(self):
@@ -784,7 +783,7 @@ class TheGeneSetDerivation(unittest.TestCase):
         # a gene under review would make this test a hostage to the next cull.
         self.assertIn("war-reinforcement", tags, "Kind::Repair")
         self.assertIn("strategic-wonders", tags, "Kind::Production")
-        self.assertIn("joint-tactics", tags, "Kind::HostOnlyOptIn")
+        self.assertIn("builder-barbarian-safety", tags, "Kind::OptIn")
         self.assertNotIn("land-grab", tags, "a plain host-only gene is never screened")
 
 

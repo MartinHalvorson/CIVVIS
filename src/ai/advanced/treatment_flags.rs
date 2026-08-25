@@ -37,7 +37,6 @@
 //! hotspot; it does not claim to have removed the others.
 
 use super::AdvancedAi;
-use crate::game::Game;
 
 impl AdvancedAi {
     /// Size the defensive Missionary corps by cities actually under conversion
@@ -1148,7 +1147,6 @@ impl AdvancedAi {
     /// | `live_trader_route_adapter` | adapts a live Trader's zero walking movement to a distinct route-start action; no native game has that action |
     /// | `live_religious_purchase_guard` | enforces Firaxis' city-majority purchase rule, which is not a CIVVIS rule |
     /// | `solvent_faith_army` | prices a faith-bought soldier's GOLD upkeep under Firaxis' economy |
-    /// | `joint_tactics` | not a semantics adapter but an evidence exclusion: the whole-game gate is inconclusive, and the deployment-profile run split **every** map at +0 Elo (95% −148..+148) while evaluating 28 branches against the sequential policy's 11 (`docs/AI_GAPS.md` §7) |
     ///
     /// `enable_live_bridge` is therefore this function plus the host-only
     /// genes (`Kind::HostOnly` in `genes.rs`). Both bundles are loops over the
@@ -1192,46 +1190,11 @@ impl AdvancedAi {
         }
     }
 
-    /// Plan an engagement's attacks jointly across all units by search instead
-    /// of one unit at a time in class order. Measured on `battle_bench` (1000
-    /// paired fresh seeds a cell, seats swapped): combined arms +275,
-    /// ranged-heavy +363, siege +206, melee-only within noise, all against the
-    /// production controller the bridge extends. The whole-game gate stays
-    /// inconclusive (`docs/TACTICS.md` §6), so the tournament `advanced`
-    /// entrant keeps the greedy commitment rule and the deployed bridge — where
-    /// the operator asked for the strongest battlefield play, not a rating —
-    /// takes the search.
-    pub fn enable_joint_tactics(&mut self) {
-        self.joint_tactics = true;
-        self.joint_tactics_forced_off = false;
-        self.joint_reach_lines = true;
-    }
-
     /// Hold ONE live-bridge flag off so an arm can price it. These exist for
     /// `live_without_*` in `builtin_ai` and nothing else — the deployment never
     /// turns a repair back off.
     pub fn disable_home_defense(&mut self) {
         self.base.home_defense = false;
-    }
-
-    pub fn disable_joint_tactics(&mut self) {
-        self.joint_tactics = false;
-        self.joint_tactics_forced_off = true;
-    }
-
-    /// Give the joint tactics search approach lines from the engine's exact
-    /// reach flood, not only adjacent steps. On by default wherever the joint
-    /// search runs; this pair exists so the live bridge can price the lines by
-    /// taking them out (`live_without_joint_reach_lines`) and the bench can
-    /// seat the geometric portfolio by name
-    /// (`advanced_joint_tactics_geometric`).
-    pub fn enable_joint_reach_lines(&mut self) {
-        self.joint_reach_lines = true;
-    }
-
-    /// See [`AdvancedAi::enable_joint_reach_lines`].
-    pub fn disable_joint_reach_lines(&mut self) {
-        self.joint_reach_lines = false;
     }
 
     pub fn disable_solvent_faith_army(&mut self) {
@@ -1893,20 +1856,6 @@ impl AdvancedAi {
         self.solvent_faith_army = true;
     }
 
-    // `pub(super)` rather than private, the one line of this file that is not
-    // code motion: this is the only toggle `advanced.rs` itself calls, and a
-    // child module's private item is not visible to its parent. Widened by
-    // exactly one module, not to the crate.
-    /// The Battlefield map is a bounded combat controller, not a Civ-world
-    /// deployment profile. Route the already-measured portfolio search there
-    /// for promoted controllers, while preserving the frozen anchor and any
-    /// explicit evaluator withholding. The flag is set on the controller so
-    /// telemetry and `Ai::joint_tactics_census` describe what actually ran.
-    pub(super) fn enable_arena_joint_tactics(&mut self, g: &Game) {
-        if self.victory_planning && g.is_arena() && !self.joint_tactics_forced_off {
-            self.joint_tactics = true;
-        }
-    }
     /// Choose the pantheon by what it would pay on the tiles the empire owns,
     /// not from a fixed order. Reachable as `advanced_pantheon_board`; see
     /// `BasicAi::pantheon_reads_the_board`.
