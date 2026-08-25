@@ -2361,6 +2361,62 @@ impl AdvancedAi {
         self.camp_tile_buyout = false;
     }
 
+    /// Price a Gold purchase at the build's card-boosted rate, so items a
+    /// slotted card discounts lose purchase priority to items no card touches.
+    /// Opt-in gene `buy-what-cards-cannot-boost`; see
+    /// `advanced/gold_and_cards.rs`. Filed above the markers: the append-point
+    /// check reads a method line's first identifier.
+    pub fn enable_buy_what_cards_cannot_boost(&mut self) {
+        self.buy_what_cards_cannot_boost = true;
+    }
+
+    /// The twin of `enable_buy_what_cards_cannot_boost`.
+    pub fn disable_buy_what_cards_cannot_boost(&mut self) {
+        self.buy_what_cards_cannot_boost = false;
+    }
+
+    /// Lean the city production governor toward items the slotted policy deck
+    /// makes cheap, by half the card's bonus. Opt-in gene
+    /// `build-what-cards-boost`; see `advanced/gold_and_cards.rs`. Filed above
+    /// the markers: the append-point check reads a method line's first
+    /// identifier.
+    pub fn enable_build_what_cards_boost(&mut self) {
+        self.build_what_cards_boost = true;
+    }
+
+    /// The twin of `enable_build_what_cards_boost`.
+    pub fn disable_build_what_cards_boost(&mut self) {
+        self.build_what_cards_boost = false;
+    }
+
+    /// Pay a Gold purchase premium in a city producing less than the empire's
+    /// best city, proportional to the deficit. Opt-in gene
+    /// `gold-for-the-young-city`; see `advanced/gold_and_cards.rs`. Filed
+    /// above the markers: the append-point check reads a method line's first
+    /// identifier.
+    pub fn enable_gold_for_the_young_city(&mut self) {
+        self.gold_for_the_young_city = true;
+    }
+
+    /// The twin of `enable_gold_for_the_young_city`.
+    pub fn disable_gold_for_the_young_city(&mut self) {
+        self.gold_for_the_young_city = false;
+    }
+
+    /// Buy Walls or a land defender for a city that lost health to a strike
+    /// within four turns with a hostile unit near, spending through the
+    /// reserve. Opt-in gene `native-emergency-purchase`; see
+    /// `advanced/gold_and_cards.rs`. Filed above the markers: the append-point
+    /// check reads a method line's first identifier.
+    pub fn enable_native_emergency_purchase(&mut self) {
+        self.native_emergency_purchase = true;
+    }
+
+    /// The twin of `enable_native_emergency_purchase`.
+    pub fn disable_native_emergency_purchase(&mut self) {
+        self.native_emergency_purchase = false;
+    }
+
     // Append points, one per name range: a new treatment goes under the range
     // its own name falls in, so that two of them do not append to one line.
     // The rule, the measurement behind it and the check that enforces it are

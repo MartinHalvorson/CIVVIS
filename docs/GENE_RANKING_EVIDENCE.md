@@ -191,7 +191,9 @@ These screenable genes have no on/off result, so they receive no rank, and the b
 | Gene | Default | Description | Best version |
 |---|---|---|---:|
 | `amenity-project-preemption-2` | off (unmeasured) | An amenity crisis repair is bought with Gold when the treasury covers it, so the Science plan's repeatable project keeps its queue; only a district or an unaffordable building still pauses the project. | 1 |
+| `build-what-cards-boost` | off (unmeasured) | Lean the city production governor toward items the slotted policy deck makes cheap, by half the card's bonus. | 1 |
 | `builder-supply-floor` | off (unmeasured) | Keep one Builder per city while there is still land to improve, priced where it can win the queue. | 1 |
+| `buy-what-cards-cannot-boost` | off (unmeasured) | Price a Gold purchase at the build's card-boosted rate, so items a slotted card discounts lose purchase priority to items no card touches. | 1 |
 | `camp-tile-buyout` | off (unmeasured) | Buy the plot a Barbarian Outpost stands on for the city inside whose three rings it sits, when being rid of the outpost is worth more than the plot's quote. | 1 |
 | `campus-adjacency-threshold-2` | off (unmeasured) | A settle site with a plot in its first three rings that could host a Campus at raw Science adjacency 4 is worth 15% more, so the multiplier's threshold is bought where it is decided — at city siting — and not only priced at the district. | 1 |
 | `chain-payback-window` | off (unmeasured) | Price the science and culture chain debts by whether the building can still repay, not by how much of the clock is left. | — |
@@ -207,10 +209,12 @@ These screenable genes have no on/off result, so they receive no rank, and the b
 | `eureka-chasing-production` | off (unmeasured) | A unit, building or district that completes an unresearched technology's or civic's boost is worth the research the boost grants, spread over the steps the trigger still needs. | 1 |
 | `first-builder-reserve` | off (unmeasured) | Reserve the first Builder ahead of ordinary production, the way `solvency-first-trade-slot` reserves the first trade slot. | 1 |
 | `first-research-building-reserve` | off (unmeasured) | Reserve the cheapest Campus building a city owes ahead of ordinary production. | 1 |
+| `gold-for-the-young-city` | off (unmeasured) | Pay a Gold purchase premium in a city producing less than the empire's best city, proportional to the deficit. | 1 |
 | `government-ladder` | off (unmeasured) | Climb to a tier-2 government once Political Philosophy lands, instead of playing the whole game on four policy slots. | 1 |
 | `guru-heals-the-corps-2` | off (unmeasured) | A founder may hold one Guru whenever any of its religious units is damaged, not only while the home is under conversion pressure, so the corps out spreading gets the heal too. | 1 |
 | `holy-site-where-the-threat-is-2` | off (unmeasured) | A slipping city with no Holy Site claims one only when Gold can buy it; the district is never put at the front of the city's own queue. | 1 |
 | `improvement-housing-value` | off (unmeasured) | Let the Builder see the Housing an improvement carries, the way the baseline chooser already does. | 1 |
+| `native-emergency-purchase` | off (unmeasured) | Buy Walls or a land defender for a city that lost health to a strike within four turns with a hostile unit near, spending through the reserve. | 1 |
 | `naval-recon-2` | off (unmeasured) | Two peacetime naval eyes instead of one while unseen water remains, so the second coast is charted while the first Galley is still out. | 1 |
 | `never-an-empty-queue` | off (unmeasured) | Build the best real candidate instead of standing idle when nothing clears the ordinary production bar. | — |
 | `never-an-empty-queue-2` | off (unmeasured) | Fill an idle turn with something that is not a soldier, or leave it idle. | — |

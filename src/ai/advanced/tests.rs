@@ -34332,3 +34332,193 @@ fn a_frontier_city_is_walled_and_garrisoned_under_contested_land_first() {
         "the capital wants none"
     );
 }
+
+// ---- gold_and_cards: which currency pays for an item ---------------------
+
+/// `buy-what-cards-cannot-boost`: the same Library in the same city scores
+/// bit-equal with the gene on while no card touches it, and strictly lower
+/// the moment the engine prices a boost on it — here the Urban Development
+/// Treaty's +100% on Campus buildings, which `Game::item_prod_mult` carries
+/// exactly as it carries Agoge or Colonization. The gene-off score never
+/// moves, which is the defect: the shipped scorer cannot see the boost.
+#[test]
+fn a_card_boosted_item_loses_gold_purchase_priority_only_with_the_gene_on() {
+    let (mut game, city, _home) = empire_with_a_capital(71_131);
+    game.players[0].techs.insert(crate::name!("writing"));
+    let campus = game.cities[&city]
+        .owned_tiles
+        .iter()
+        .copied()
+        .find(|position| *position != game.cities[&city].pos)
+        .unwrap();
+    game.map.tiles.get_mut(&campus).unwrap().district = Some(crate::name!("campus"));
+    let state = game.cities.get_mut(&city).unwrap();
+    state.districts.insert(crate::name!("campus"), campus);
+    state
+        .buildings
+        .extend([crate::name!("monument"), crate::name!("granary")]);
+    game.turn = 30;
+    game.players[0].gold = 5_000.0;
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Science,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 1,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let off = AdvancedAi::targeting(VictoryTarget::Science);
+    let mut on = AdvancedAi::targeting(VictoryTarget::Science);
+    on.enable_buy_what_cards_cannot_boost();
+    let library = Item::Building {
+        building: crate::name!("library"),
+    };
+    let action = off
+        .legal_purchase_actions(&game, 0)
+        .into_iter()
+        .find(|action| {
+            matches!(action, Action::BuyBuilding { city: where_, building, currency }
+                if *where_ == city && building == "library" && currency == "gold")
+        })
+        .expect("the Library has a Gold purchase action");
+    let score = |ai: &AdvancedAi, game: &Game| {
+        let counts = ai.counts(game, 0);
+        let context = PurchaseScoreContext {
+            g: game,
+            pid: 0,
+            plan: &plan,
+            counts: &counts,
+            bank: game.players[0].gold,
+            reserve: 0.0,
+        };
+        ai.gold_purchase_score(context, &action, city, &library)
+    };
+
+    assert_eq!(game.item_prod_mult(0, city, Some(&library)), 1.0);
+    let plain = score(&off, &game).expect("a Science empire buys its Library");
+    assert_eq!(
+        score(&on, &game),
+        Some(plain),
+        "no card, no change: the gene on is bit-equal to the gene off"
+    );
+
+    game.active_congress_effects
+        .push(crate::game::CongressEffect {
+            resolution: "urban_development_treaty".to_string(),
+            outcome: "A".to_string(),
+            target: "campus".to_string(),
+            expires: game.turn + 10,
+        });
+    assert!(
+        (game.item_prod_mult(0, city, Some(&library)) - 2.0).abs() < 1e-9,
+        "the engine prices the treaty at +100%"
+    );
+    assert_eq!(
+        score(&off, &game),
+        Some(plain),
+        "the shipped scorer cannot see the boost at all"
+    );
+    let boosted = score(&on, &game);
+    assert!(
+        boosted.is_none_or(|boosted| boosted < plain),
+        "a boosted build loses purchase priority: {plain:.1} -> {boosted:?}"
+    );
+}
+
+/// `native-emergency-purchase`: the frozen controller leaves a bleeding city
+/// to the reserve arithmetic; the gene buys the defender the live doctrine
+/// would, with the treasury below the ordinary reserve.
+#[test]
+fn the_native_emergency_purchase_spends_through_the_reserve() {
+    let (mut game, city, home) = empire_with_a_capital(71_121);
+    let state = game.cities.get_mut(&city).expect("capital exists");
+    state.buildings.push(crate::name!("walls"));
+    state.wall_hp = 100;
+    state.hp = 29;
+    game.turn = 30;
+    game.cities.get_mut(&city).unwrap().last_attacked = 29;
+    let barbarians = game
+        .players
+        .iter()
+        .position(|player| player.is_barbarian)
+        .expect("a barbarian seat");
+    let raiders: Vec<Pos> =
+        game.wdisk(home, 2)
+            .into_iter()
+            .filter(|position| {
+                *position != home
+                    && game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+                    && game.units_at(*position).is_empty()
+            })
+            .take(2)
+            .collect();
+    assert_eq!(
+        raiders.len(),
+        2,
+        "fixture needs two raiders beside the capital"
+    );
+    for position in raiders {
+        game.spawn_test_unit("warrior", barbarians, position);
+    }
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Science,
+        target_player: None,
+        target_city: None,
+        threatened_city: Some(city),
+        desired_cities: 1,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    game.players[0].gold = 1_000.0;
+    let mut native = AdvancedAi::new();
+    native.enable_native_emergency_purchase();
+    let Some(Item::Unit { unit: wanted }) = native.native_emergency_item(&game, 0, city) else {
+        panic!("walls already stand, so the emergency must ask for a defender");
+    };
+    let action = native
+        .legal_purchase_actions(&game, 0)
+        .into_iter()
+        .find(|action| match action {
+            Action::Buy {
+                city: where_,
+                unit,
+                formation,
+                currency,
+            } => *where_ == city && unit == &wanted && *formation == 0 && currency == "gold",
+            _ => false,
+        })
+        .expect("the local defender has a Gold purchase action");
+    let mut quote = game.clone();
+    let before_quote = quote.players[0].gold;
+    quote.apply(0, &action).expect("the defender quote applies");
+    let cost = before_quote - quote.players[0].gold;
+    assert!(
+        cost > 0.0 && cost < 300.0,
+        "fixture must sit below the reserve: {cost}"
+    );
+    game.players[0].gold = cost;
+
+    let stock = AdvancedAi::new();
+    let mut stock_game = game.clone();
+    assert!(
+        !stock.emergency_city_defense_purchase(&mut stock_game, 0, &plan),
+        "off, the native signal is not consulted"
+    );
+    assert!(
+        !stock.advanced_gold_spending(&mut stock_game, 0, &plan),
+        "off, the reserve holds the treasury"
+    );
+    assert_eq!(stock_game.players[0].gold, cost);
+
+    assert!(native.advanced_gold_spending(&mut game, 0, &plan));
+    let bought = game.player_unit_ids(0);
+    assert_eq!(bought.len(), 1, "one defender, bought through the reserve");
+    assert_eq!(game.units[&bought[0]].kind, wanted);
+    assert!(
+        game.players[0].gold < 1.0,
+        "the whole treasury went to the defence"
+    );
+}
