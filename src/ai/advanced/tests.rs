@@ -34499,3 +34499,220 @@ fn the_ai_never_gives_without_receiving() {
     assert!(!ai.base.close_quick_deal(&mut board, 0, gift));
     assert_eq!(board.players[0].counters.get("gifts_given"), None);
 }
+
+// ═══ Surprise-war mobilization: violent opening, structural off-ramp ═══
+
+fn install_surprise_war(game: &mut Game, attacker: usize, defender: usize, started: u32) {
+    game.turn = started;
+    game.current = defender;
+    game.at_war.insert((attacker, defender));
+    game.at_war.insert((defender, attacker));
+    game.wars.insert(
+        (attacker.min(defender), attacker.max(defender)),
+        crate::game::WarRecord {
+            conflict: 1,
+            declarer: attacker,
+            target: defender,
+            casus_belli: Some("surprise_war".to_string()),
+            joint_war_until: None,
+            aggressor: attacker,
+            defender,
+            started,
+            ended: None,
+            losses: BTreeMap::new(),
+            participants: Vec::new(),
+            peace_terms: Vec::new(),
+            highlights: Vec::new(),
+            theater: Vec::new(),
+        },
+    );
+}
+
+fn surprise_mobilization_board(own_cities: usize) -> Game {
+    let mut game = Game::new_full(2, 40, 24, 94_311, 200, 0, false);
+    for pid in 0..2 {
+        let settler = game
+            .player_unit_ids(pid)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .expect("each player begins with a Settler");
+        game.current = pid;
+        game.apply(pid, &Action::FoundCity { unit: settler })
+            .expect("found the fixture capital");
+    }
+    for _ in 1..own_cities {
+        found_test_city(&mut game, 0);
+    }
+    // Keep the declarer's Warrior as a real frontier reference; clear our
+    // starting force so the response has an unambiguous land-force gap.
+    for unit in game.player_unit_ids(0) {
+        game.remove_unit(unit);
+    }
+    install_surprise_war(&mut game, 1, 0, 40);
+    game
+}
+
+#[test]
+fn surprise_mobilization_requires_the_exact_declaration_direction_and_expires() {
+    let mut game = surprise_mobilization_board(1);
+    let mut ai = AdvancedAi::new();
+    ai.enable_surprise_war_mobilization();
+    let active = ai
+        .surprise_defense_window(&game, 0)
+        .expect("a new surprise declaration against us opens the response");
+    assert_eq!(active.attacker, 1);
+    assert_eq!(active.declared, 40);
+
+    game.wars.values_mut().next().unwrap().casus_belli = None;
+    assert_eq!(ai.surprise_defense_window(&game, 0), None);
+    game.wars.values_mut().next().unwrap().casus_belli = Some("surprise_war".to_string());
+    game.wars.values_mut().next().unwrap().target = 1;
+    assert_eq!(
+        ai.surprise_defense_window(&game, 0),
+        None,
+        "a war we declared, or an allied front not declared against us, is inert"
+    );
+    game.wars.values_mut().next().unwrap().target = 0;
+    game.turn = active.ends;
+    assert_eq!(
+        ai.surprise_defense_window(&game, 0),
+        None,
+        "the declaration shock has a hard time limit"
+    );
+    assert_eq!(
+        AdvancedAi::new().surprise_defense_window(&game, 0),
+        None,
+        "the production controller ships the gene off"
+    );
+}
+
+#[test]
+fn surprise_mobilization_keeps_settlers_and_finishing_work_but_raises_a_fast_wave() {
+    let mut game = surprise_mobilization_board(4);
+    let cities = game.player_city_ids(0);
+    let settler = Item::Unit {
+        unit: crate::name!("settler"),
+    };
+    let finishing_builder = Item::Unit {
+        unit: crate::name!("builder"),
+    };
+    let monument = Item::Building {
+        building: crate::name!("monument"),
+    };
+    let granary = Item::Building {
+        building: crate::name!("granary"),
+    };
+    game.cities.get_mut(&cities[0]).unwrap().queue = vec![settler.clone()];
+    game.cities.get_mut(&cities[1]).unwrap().queue = vec![finishing_builder.clone()];
+    let builder_cost = game.item_cost_for_city(0, cities[1], &finishing_builder);
+    let one_turn = game.city_yields(cities[1]).production.max(0.1);
+    game.cities.get_mut(&cities[1]).unwrap().production = (builder_cost - one_turn * 0.5).max(0.0);
+    game.cities.get_mut(&cities[2]).unwrap().queue = vec![monument.clone()];
+    game.cities.get_mut(&cities[3]).unwrap().queue = vec![granary.clone()];
+
+    let original = game.clone();
+    assert_eq!(
+        AdvancedAi::new().mobilize_surprise_defense_production(&mut game.clone(), 0),
+        0,
+        "gene off is an exact no-op"
+    );
+
+    let mut ai = AdvancedAi::new();
+    ai.enable_surprise_war_mobilization();
+    assert_eq!(
+        ai.mobilize_surprise_defense_production(&mut game, 0),
+        2,
+        "four cities may redirect only half their queues in the first wave"
+    );
+    assert_eq!(game.cities[&cities[0]].queue.first(), Some(&settler));
+    assert_eq!(
+        game.cities[&cities[1]].queue.first(),
+        Some(&finishing_builder),
+        "work finishing this turn is cheaper to complete than to interrupt"
+    );
+    for city in [cities[2], cities[3]] {
+        let Item::Unit { unit } = game.cities[&city]
+            .queue
+            .first()
+            .expect("the unfinished economic queue becomes a defender")
+        else {
+            panic!("the declaration response must queue a unit");
+        };
+        let spec = &game.rules.units[unit];
+        assert_eq!(spec.class, "military");
+        assert!(!spec.siege);
+        assert!(!matches!(spec.domain.as_deref(), Some("sea" | "air")));
+    }
+
+    let mut expired = original;
+    expired.turn =
+        40 + expired.standard_duration(super::surprise_defense::SURPRISE_MOBILIZATION_TURNS);
+    assert_eq!(
+        ai.mobilize_surprise_defense_production(&mut expired, 0),
+        0,
+        "an old war cannot keep converting queues"
+    );
+    assert_eq!(expired.cities[&cities[2]].queue.first(), Some(&monument));
+    assert_eq!(expired.cities[&cities[3]].queue.first(), Some(&granary));
+}
+
+#[test]
+fn surprise_mobilization_buys_exactly_one_immediate_land_defender() {
+    let mut game = surprise_mobilization_board(1);
+    game.players[0].gold = 1_000.0;
+    let before_gold = game.players[0].gold;
+    let mut off = game.clone();
+    assert!(!AdvancedAi::new().surprise_defense_purchase(&mut off, 0));
+    assert_eq!(off.players[0].gold, before_gold);
+
+    let mut ai = AdvancedAi::new();
+    ai.enable_surprise_war_mobilization();
+    assert!(ai.surprise_defense_purchase(&mut game, 0));
+    let land_defenders = game
+        .player_unit_ids(0)
+        .into_iter()
+        .filter(|unit| {
+            let spec = &game.rules.units[game.units[unit].kind];
+            spec.class == "military" && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+        })
+        .count();
+    assert_eq!(
+        land_defenders, 1,
+        "the bounded purchase pass adds one body, not a spending loop"
+    );
+    assert!(game.players[0].gold < before_gold);
+    let defender = game
+        .player_unit_ids(0)
+        .into_iter()
+        .next()
+        .expect("the purchased defender exists");
+    let spec = &game.rules.units[game.units[&defender].kind];
+    assert_eq!(spec.class, "military");
+    assert!(!matches!(spec.domain.as_deref(), Some("sea" | "air")));
+}
+
+#[test]
+fn surprise_mobilization_slots_the_available_land_production_card() {
+    let build = |enabled: bool| {
+        let mut game = surprise_mobilization_board(1);
+        game.players[0].government = Some("chiefdom".to_string());
+        game.players[0].civics.insert(crate::name!("craftsmanship"));
+        game.players[0]
+            .policies
+            .extend([crate::name!("discipline"), crate::name!("urban_planning")]);
+        let mut ai = AdvancedAi::new();
+        if enabled {
+            ai.enable_surprise_war_mobilization();
+        }
+        ai.strategic_policies(&mut game, 0, GrandStrategy::Science);
+        game.players[0].policies.clone()
+    };
+
+    assert!(!build(false).contains(&crate::name!("agoge")));
+    let mobilized = build(true);
+    assert!(mobilized.contains(&crate::name!("agoge")));
+    assert!(
+        !mobilized.contains(&crate::name!("discipline")),
+        "the production card takes the early military slot during the shock"
+    );
+}
