@@ -25,7 +25,7 @@ ranking = genes
 
 PLAYERS = gene_ledger.SCREEN["players"]
 
-#: ★★★★ THE OPERATOR-PINNED DEPLOYMENT GENOME, 2026-08-24.
+#: ★★★★ THE OPERATOR-PINNED DEPLOYMENT GENOME, 2026-08-25.
 #: This is the exact list the agent plays. It retains the 36 selections that
 #: were already deployed, then adds the sixteen explicit operator promotions:
 #: `unit-cost-efficiency`, `unit-objective-memory`, `camp-party`,
@@ -34,10 +34,13 @@ PLAYERS = gene_ledger.SCREEN["players"]
 #: `missionary-evades-raiders`, `district-planning`,
 #: `missionary-last-charge-explores`, `settlement-gap-target`,
 #: `religious-defence-scales`, `lane-policy-deck`, and
-#: `science-multiplier-payoff`. Screen results remain evidence; they cannot
-#: move this tuple automatically.
+#: `science-multiplier-payoff`; then `science-victory-drive` and the four
+#: displayed-Diff promotions at or above +0.85%: `solvency-first-trade-slot`,
+#: `settler-factory-coordination`, `one-war-at-a-time`, and
+#: `religious-veto-defence`. Screen results remain evidence; they cannot move
+#: this tuple automatically.
 #: Changing it requires an intentional edit and PR note.
-DEPLOYED_GENOME_20260824 = (
+DEPLOYED_GENOME_20260825 = (
     "air-surge", "amenity-district-path", "apostle-promotion-by-role",
     "barbarian-bargain", "barbarian-scouts-are-scouts", "bounded-recovery",
     "buildings-before-projects", "camp-party", "civilian-rescue", "competition-victory-points",
@@ -46,12 +49,14 @@ DEPLOYED_GENOME_20260824 = (
     "holy-lane-parity", "idle-faith-patronage", "inquisition-on-threat",
     "lane-culture-spending", "lane-great-people", "lane-policy-deck", "loyalty-rate-alarm", "maintenance-aware-deck",
     "missionary-evades-raiders", "missionary-last-charge-explores",
-    "one-launch-pad",
+    "one-launch-pad", "one-war-at-a-time",
     "opportunistic-war", "peacetime-deterrence", "price-the-suzerainty",
     "promote-when-wounded", "raid-pillage-prizes", "recon-replacement",
     "recorded-tactical-step", "relief-targets-the-siege", "religion-sues-peace",
-    "religious-defence-scales", "religious-units-heal-first", "science-multiplier-payoff",
-    "science-victory-drive", "score-horizon", "settle-sooner", "settlement-gap-target", "settler-threat-detour", "slot-kind-tiebreak", "strike-opening",
+    "religious-defence-scales", "religious-units-heal-first", "religious-veto-defence",
+    "science-multiplier-payoff", "science-victory-drive", "score-horizon", "settle-sooner",
+    "settlement-gap-target", "settler-factory-coordination", "settler-threat-detour",
+    "slot-kind-tiebreak", "solvency-first-trade-slot", "strike-opening",
     "theology-for-founders", "unit-cost-efficiency", "unit-objective-memory",
     "war-economy", "war-reinforcement",
     "wide-map-capacity",
@@ -590,16 +595,17 @@ class TheOperatorPinnedDeploymentGenome(unittest.TestCase):
         ledger = json.loads(gene_ledger.LEDGER_JSON.read_text())
         self.assertEqual(ledger["rules"]["deployment_policy"], "operator-pinned")
         self.assertEqual(tuple(ledger["rules"]["deployment_genome"]),
-                         DEPLOYED_GENOME_20260824)
-        selected = set(DEPLOYED_GENOME_20260824)
+                         DEPLOYED_GENOME_20260825)
+        selected = set(DEPLOYED_GENOME_20260825)
         measured = {g["tag"] for g in ledger["genes"]}
         self.assertEqual(
             {g["tag"] for g in ledger["genes"] if g["default_on"]},
             selected & measured,
         )
-        self.assertEqual(ledger["counts"]["default_on"], 53)
+        self.assertEqual(ledger["counts"]["default_on"], 57)
         self.assertEqual(tuple(ledger["rules"]["operator_promotions"]),
-                         gene_ledger.OPERATOR_PROMOTIONS_20260824)
+                         gene_ledger.OPERATOR_PROMOTIONS_20260824
+                         + gene_ledger.OPERATOR_PROMOTIONS_20260825)
 
     def test_the_ledger_records_evidence_without_redeciding_the_list(self):
         ledger = json.loads(gene_ledger.LEDGER_JSON.read_text())
@@ -1974,13 +1980,17 @@ class TheStandardScreen(unittest.TestCase):
         for phrase in ("-237", "[-267, -206]", "-15.37"):
             self.assertIn(phrase, self.notes, phrase)
 
-    def test_research_cull_keeps_its_historical_rows(self):
-        """The four 38,160-seat research candidates left source, not history."""
+    def test_cull_batches_keep_their_historical_rows(self):
+        """The eight 38,160-seat cull candidates left source, not history."""
         tags = (
             "chain-tech-lookahead",
             "research-floor-holds",
             "research-grants-first",
             "science-payback-horizon",
+            "builder-reward-survey",
+            "contact-posture",
+            "naval-production-policy",
+            "settle-plan-ahead",
         )
         live_tags = {gene["tag"] for gene in self.ledger["genes"]}
         ranked = ranking.RANKING_MD.read_text()
@@ -1996,7 +2006,8 @@ class TheStandardScreen(unittest.TestCase):
             str(batch.get("unverified", ""))
             for batch in self.ledger["reporting_batches"]
         )
-        self.assertIn("research-planning genes were deliberately removed",
+        self.assertIn("research-planning", reporting_notes)
+        self.assertIn("high-signal negative genes were deliberately removed",
                       reporting_notes)
 
     def test_the_legacy_share_axis_already_said_it(self):

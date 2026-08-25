@@ -193,21 +193,6 @@ impl AdvancedAi {
         self.theology_for_founders = false;
     }
 
-    /// Let a unit inside enemy reach choose to hold and heal, close on a
-    /// shooter, or step out of range. A unit already inside a hostile's
-    /// next-turn reach picks a posture: stand and heal where the melee exchange
-    /// favours holding, close on a shooter it cannot answer, or step out of
-    /// that shooter's envelope. See [`AdvancedAi::contact_posture`]. Opt-in
-    /// gene `contact-posture`.
-    pub fn enable_contact_posture(&mut self) {
-        self.contact_posture = true;
-    }
-
-    /// The twin of `enable_contact_posture`.
-    pub fn disable_contact_posture(&mut self) {
-        self.contact_posture = false;
-    }
-
     /// Score a settle site by the districts the lane would actually build
     /// there, each on its own plot. See
     /// [`AdvancedAi::district_lookahead_settle`]. Opt-in gene
@@ -963,6 +948,26 @@ impl AdvancedAi {
         self.rival_suzerainty_alarm = false;
     }
 
+    /// Point the three targeted World Congress penalties at the empire the
+    /// denial layer names. See [`Self::congress_counter_leader`].
+    pub fn enable_congress_counter_leader(&mut self) {
+        self.congress_counter_leader = true;
+    }
+
+    pub fn disable_congress_counter_leader(&mut self) {
+        self.congress_counter_leader = false;
+    }
+
+    /// Stop a war we did not declare from taking the grand strategy while our
+    /// own victory lane is live. See [`Self::unchosen_war_keeps_the_lane`].
+    pub fn enable_unchosen_war_keeps_the_lane(&mut self) {
+        self.unchosen_war_keeps_the_lane = true;
+    }
+
+    pub fn disable_unchosen_war_keeps_the_lane(&mut self) {
+        self.unchosen_war_keeps_the_lane = false;
+    }
+
     /// Raise the Culture and Diplomacy denial alarms early, since countering an
     /// accumulated stock takes many turns. See
     /// [`Self::stock_denial_lead_time`].
@@ -1218,18 +1223,6 @@ impl AdvancedAi {
         self.production_settler_deadline = false;
     }
 
-    /// Price a Builder by surveying the improvement jobs it would actually do,
-    /// not by a city-count quota. Evaluator arm `advanced_builder_survey`; off
-    /// in production.
-    pub fn enable_builder_reward_survey(&mut self) {
-        self.builder_reward_survey = true;
-    }
-
-    /// The off toggle, so the registry row has both directions.
-    pub fn disable_builder_reward_survey(&mut self) {
-        self.builder_reward_survey = false;
-    }
-
     /// Prefer Builder jobs on tiles citizens currently work, keeping luxury and
     /// strategic resource connections at full priority. Native opt-in gene
     /// `builder-worked-tile-priority`; off in production.
@@ -1302,18 +1295,6 @@ impl AdvancedAi {
     /// still be priced out of the bundle. See `LIVE_TREATMENTS`.
     pub fn disable_open_water_navy(&mut self) {
         self.base.open_water_navy = false;
-    }
-
-    /// Slot the naval-production policy card while a coastal empire wants hulls
-    /// it does not have. See `naval_production_policy`; entrant
-    /// `advanced_maritime_splice`.
-    pub fn enable_naval_production_policy(&mut self) {
-        self.naval_production_policy = true;
-    }
-
-    /// The off toggle, so the registry row has both directions.
-    pub fn disable_naval_production_policy(&mut self) {
-        self.naval_production_policy = false;
     }
 
     /// Sea threats get sea answers. See `BasicAi::sea_answers`; entrant
@@ -1761,18 +1742,6 @@ impl AdvancedAi {
 
     pub fn disable_settle_sooner(&mut self) {
         self.settle_sooner = false;
-    }
-
-    /// Rank a settle site by the future city sites it leaves room for as well
-    /// as its own ground. Rank a settle site by the cities it leaves room for
-    /// as well as its own ground, so a Settler stops taking the one plot in a
-    /// pocket that would have held two. See `settle_plan_ahead`.
-    pub fn enable_settle_plan_ahead(&mut self) {
-        self.settle_plan_ahead = true;
-    }
-
-    pub fn disable_settle_plan_ahead(&mut self) {
-        self.settle_plan_ahead = false;
     }
 
     /// Let any civilization build wonders on merit by pricing the fifteen score
