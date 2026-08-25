@@ -445,21 +445,6 @@ impl AdvancedAi {
         self.base.parallel_settlers = false;
     }
 
-    /// Price a Settler as an investment, subtracting production, population,
-    /// escort, route and safety costs from the site's payback. It also routes
-    /// the adaptive Expansion plan through `advanced_production`; otherwise the
-    /// ordinary Cities governor would never consult the coupled scorer.
-    pub fn enable_coupled_expansion(&mut self) {
-        self.coupled_expansion = true;
-        self.expansion_dispatch = true;
-    }
-
-    /// Withhold the coupled expansion treatment, preserving the stock
-    /// production score and the ordinary adaptive dispatcher setting.
-    pub fn disable_coupled_expansion(&mut self) {
-        self.coupled_expansion = false;
-    }
-
     /// Start a Settler at Civilization VI's own population floor of 2 instead
     /// of the genome's higher figure. Set by the Civilization VI bridge only;
     /// native constructors and the frozen anchor keep the genome's figure.
