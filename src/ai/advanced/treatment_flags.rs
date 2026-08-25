@@ -2550,6 +2550,20 @@ impl AdvancedAi {
     pub fn disable_upgrade_the_garrison(&mut self) {
         self.upgrade_the_garrison = false;
     }
+    /// Claim the ground between us and the nearest neighbours first while
+    /// the army can hold it, waive the border provocation there, and wall
+    /// and garrison the frontier. See `advanced/contested_land.rs`; opt-in
+    /// gene `contested-land-first`. The flag lives on `BasicAi`, which owns
+    /// the peacetime garrison. Filed here rather than under a marker: the
+    /// append-point check reads a method line's first identifier.
+    pub fn enable_contested_land_first(&mut self) {
+        self.base.contested_land_first = true;
+    }
+
+    /// The twin of `enable_contested_land_first`.
+    pub fn disable_contested_land_first(&mut self) {
+        self.base.contested_land_first = false;
+    }
 
     // ---- append: a-b ------------------------------------------------
 
