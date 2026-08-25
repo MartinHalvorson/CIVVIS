@@ -1011,6 +1011,16 @@ impl AdvancedAi {
         self.defensible_sites = false;
     }
 
+    /// Measure the Recovery power gap against the war we are actually
+    /// fighting. See [`Self::recovery_reads_the_war`].
+    pub fn enable_recovery_reads_the_war(&mut self) {
+        self.recovery_reads_the_war = true;
+    }
+
+    pub fn disable_recovery_reads_the_war(&mut self) {
+        self.recovery_reads_the_war = false;
+    }
+
     /// Raise the Culture and Diplomacy denial alarms early, since countering an
     /// accumulated stock takes many turns. See
     /// [`Self::stock_denial_lead_time`].
@@ -2427,6 +2437,19 @@ impl AdvancedAi {
         self.base.builder_tries_the_next_tile = false;
     }
 
+    /// Settlers and builders stay out of a barbarian's one-turn reach: flee
+    /// it, never step into it alone, and summon a guard onto the settler's
+    /// tile when they must cross it. See
+    /// [`AdvancedAi::civilian_out_of_reach`]. Opt-in gene
+    /// `civilian-out-of-reach`.
+    pub fn enable_civilian_out_of_reach(&mut self) {
+        self.civilian_out_of_reach = true;
+    }
+
+    /// The twin of `enable_civilian_out_of_reach`.
+    pub fn disable_civilian_out_of_reach(&mut self) {
+        self.civilian_out_of_reach = false;
+    }
     // Append points, one per name range: a new treatment goes under the range
     // its own name falls in, so that two of them do not append to one line.
     // The rule, the measurement behind it and the check that enforces it are
