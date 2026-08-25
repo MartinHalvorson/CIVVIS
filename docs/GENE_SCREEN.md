@@ -958,6 +958,38 @@ probe worth reading. **Two disjoint blocks that agree beat one that does not**,
 and a standard screen beats both. If two implementations with different
 semantics give the same number, the number belongs to the block, not the gene.
 
+### ⚠⚠ A starred verdict needs the power to back it
+
+The `read` column's bars are **significance** bars — `|z| ≥ 2` for a flag, the
+family-wise bar for a starred one, both at α = 0.05. A run's **resolving power**
+is a different quantity: 2.8 standard errors, which is `|z| = 2.8`. Whenever a
+single gene is screened the family-wise bar is 1.96, so the significance bar is
+*below* the power bar and a row could be starred while sitting under the
+smallest effect its run could find — the regime where a significant estimate is
+most likely to be inflated.
+
+`docs/gene_screens/fires/defensible-sites.json` is the exhibit, written on
+2026-08-25:
+
+```text
+win_delta_pp +42.9   win_resolves_pp 57.1   read "HELPS **"
+```
+
+A forty-three point difference, a family-wise verdict, and a run that cannot
+resolve anything under fifty-seven.
+
+Readings in `2.0 ≤ |z| < 2.8` now keep their flag and gain a word — `helps *
+(thin)` — and `**` is reserved for readings that clear both bars. **Nothing is
+suppressed**: the difference is still computed and still printed. Seven
+committed rows lose a star under the new rule, six of them six-game fires
+probes, which is the point. No ledger number moves (`tools/genes.py check` is
+clean), because the ledger reads the estimates rather than this string.
+
+⚠ `tools/genes.py`'s own `share_verdict` still flags at a plain `|z| ≥ 2` with
+no star and no power term. It is a different and milder convention on one axis,
+it feeds the generated ranking, and it is left alone here rather than moved in a
+PR that claims neither that file nor the tables it writes.
+
 ### ⚠⚠ A twelve-game probe resolves ±28.6 pp. Read that number first.
 
 `--analyze` prints a `resolution:` line, and it is the first thing to read:
