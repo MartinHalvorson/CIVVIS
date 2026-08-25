@@ -139,11 +139,6 @@ fn the_gene_registry_is_well_formed() {
         live > 50 && repairs > 30 && host_only > 10,
         "{live}/{host_only}/{repairs}"
     );
-    assert_eq!(
-        super::gene("joint-tactics").map(|gene| gene.kind),
-        Some(Kind::HostOnlyOptIn),
-        "the one host-only gene that is also a native opt-in"
-    );
     // Every toggle runs on a live controller without panicking.
     let mut ai = AdvancedAi::new();
     ai.enable_live_bridge_universe();
@@ -21020,47 +21015,6 @@ fn force_replans_focus_after_each_battlefield_action() {
         "unexpected replanned action log: {:?}",
         g.log
     );
-}
-
-#[test]
-fn battlefield_routes_joint_tactics_to_promoted_controllers_only() {
-    let arena = |seed| {
-        let mut options = GameOptions::new(2, 20, 20, seed, 250, 0);
-        options.map_script = crate::setup::MapScript::Battlefield;
-        Game::new_with(options)
-    };
-
-    // The production controller starts with the world-game default off,
-    // then opts into the bounded search at the real movement seam.
-    let mut promoted_game = arena(79_101);
-    let mut promoted = AdvancedAi::new();
-    assert!(!promoted.joint_tactics);
-    promoted.take_turn(&mut promoted_game, 0);
-    assert!(promoted.joint_tactics);
-    assert!(
-        <AdvancedAi as Ai>::joint_tactics_census(&promoted).is_some(),
-        "arena activation must remain visible to the telemetry seam"
-    );
-
-    // The arena route must not alter the native-world controller.
-    let world = Game::new_full(2, 20, 20, 79_102, 250, 0, false);
-    let mut world_ai = AdvancedAi::new();
-    world_ai.enable_arena_joint_tactics(&world);
-    assert!(!world_ai.joint_tactics);
-
-    // `advanced_v1` remains the frozen greedy anchor.
-    let anchor_game = arena(79_103);
-    let mut anchor = AdvancedAi::legacy();
-    anchor.enable_arena_joint_tactics(&anchor_game);
-    assert!(!anchor.joint_tactics);
-
-    // Explicit withholds still win over the arena default, so the live
-    // paired arm really measures the absence of the search.
-    let withheld_game = arena(79_104);
-    let mut withheld = AdvancedAi::new();
-    withheld.disable_joint_tactics();
-    withheld.enable_arena_joint_tactics(&withheld_game);
-    assert!(!withheld.joint_tactics);
 }
 
 #[test]

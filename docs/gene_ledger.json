@@ -592,7 +592,7 @@
     }
   ],
   "counts": {
-    "helps": 17,
+    "helps": 16,
     "hurts": 0,
     "unresolved": 64,
     "default_on": 73
@@ -2214,51 +2214,6 @@
             "win_delta_pp": 0.588,
             "win_z": 0.918,
             "win_se_pp": 0.641
-          }
-        ]
-      }
-    },
-    {
-      "tag": "joint-tactics",
-      "verdict": "helps",
-      "default_on": false,
-      "wins_last_10k": 3,
-      "wins_prior_10k": -4,
-      "wins_third_10k": -18,
-      "win_diff_pp": -0.104302,
-      "posterior_pp": -5.145492,
-      "posterior_se_pp": 11.41702,
-      "posterior_screens": 3,
-      "posterior_tau_pp": 0.0,
-      "family_wise": true,
-      "conflict": false,
-      "screen": {
-        "seats": 35148,
-        "pairs": 17574,
-        "n_on": 17574,
-        "n_off": 17574,
-        "win_delta_pp": 0.068,
-        "win_z": 0.186,
-        "share_delta_pp": 0.248,
-        "share_z": 3.838,
-        "read": "share HELPS **",
-        "source": "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json",
-        "win_tranches": [
-          {
-            "position": "latest",
-            "seats": 20004,
-            "pairs": 10002,
-            "win_delta_pp": 0.2,
-            "win_z": 0.412,
-            "win_se_pp": 0.485
-          },
-          {
-            "position": "previous",
-            "seats": 15144,
-            "pairs": 7572,
-            "win_delta_pp": -0.106,
-            "win_z": -0.188,
-            "win_se_pp": 0.563
           }
         ]
       }

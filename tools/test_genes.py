@@ -725,8 +725,8 @@ class TheGeneSetDerivation(unittest.TestCase):
                 ("strategic_wonders", "strategic-wonders", AdvancedAi::disable),
             ];
             pub const PRODUCTION_OPT_INS: &[LiveTreatment] = &[
-                // The joint search: "decoy-four".
-                ("joint_tactics", "joint-tactics", AdvancedAi::enable),
+                // A second version: "decoy-four".
+                ("war_economy_2", "war-economy-2", AdvancedAi::enable),
             ];
         '''
         read = {"src/elo.rs": elo, "src/ai/advanced/treatments.rs": treatments}
@@ -738,7 +738,7 @@ class TheGeneSetDerivation(unittest.TestCase):
             return read[path]
         self.assertEqual(
             gene_ledger.gene_tags_from_sources(reader),
-            ["war-reinforcement", "come-ashore", "strategic-wonders", "joint-tactics"],
+            ["war-reinforcement", "come-ashore", "strategic-wonders", "war-economy-2"],
         )
 
     def test_the_registry_is_read_in_order_and_host_only_rows_stay_out(self):
@@ -750,7 +750,6 @@ class TheGeneSetDerivation(unittest.TestCase):
                 Gene { tag: "war-reinforcement", field: "war_reinforcement", kind: Kind::Repair(Axis::War), enable: AdvancedAi::enable_war_reinforcement, disable: AdvancedAi::disable_war_reinforcement },
                 Gene { tag: "land-grab", field: "land_grab", kind: Kind::HostOnly, enable: AdvancedAi::enable_land_grab, disable: AdvancedAi::disable_land_grab },
                 Gene { tag: "strategic-wonders", field: "strategic_wonders", kind: Kind::Production, enable: AdvancedAi::enable_strategic_wonders, disable: AdvancedAi::disable_strategic_wonders },
-                Gene { tag: "joint-tactics", field: "joint_tactics", kind: Kind::HostOnlyOptIn, enable: AdvancedAi::enable_joint_tactics, disable: AdvancedAi::disable_joint_tactics },
                 Gene { tag: "war-economy-2", field: "war_economy_2", kind: Kind::OptIn, enable: AdvancedAi::enable_war_economy_2, disable: AdvancedAi::disable_war_economy_2 },
             ];
         '''
@@ -762,7 +761,7 @@ class TheGeneSetDerivation(unittest.TestCase):
             return read[path]
         self.assertEqual(
             gene_ledger.gene_tags_from_sources(reader),
-            ["war-reinforcement", "strategic-wonders", "joint-tactics", "war-economy-2"],
+            ["war-reinforcement", "strategic-wonders", "war-economy-2"],
         )
 
     def test_the_fingerprint_is_the_tags_newline_terminated(self):
@@ -784,7 +783,7 @@ class TheGeneSetDerivation(unittest.TestCase):
         # a gene under review would make this test a hostage to the next cull.
         self.assertIn("war-reinforcement", tags, "Kind::Repair")
         self.assertIn("strategic-wonders", tags, "Kind::Production")
-        self.assertIn("joint-tactics", tags, "Kind::HostOnlyOptIn")
+        self.assertIn("builder-barbarian-safety", tags, "Kind::OptIn")
         self.assertNotIn("land-grab", tags, "a plain host-only gene is never screened")
 
 
@@ -931,6 +930,51 @@ class TheBuildGuard(unittest.TestCase):
             gene_ledger.latest_reporting_batches([Path("new.json")], existing),
             [Path("new.json"), Path("last.json"), Path("prior.json")],
         )
+
+
+class ContinuousBatchTiming(unittest.TestCase):
+    """Reporting headers use scheduler time, never inferred row timing."""
+
+    @staticmethod
+    def report() -> dict:
+        data = analysis([{"tag": "a"}])
+        data.update({"games": 3_000, "seats": 18_000})
+        data["continuous_batch_timing"] = {
+            "schema": "continuous_batch_timing/v1",
+            "started_at": "2026-08-25T10:00:00Z",
+            "completed_at": "2026-08-25T10:25:00Z",
+            "elapsed_seconds": 1_500,
+            "completed_games": 3_000,
+        }
+        return data
+
+    def test_reporting_record_preserves_verified_whole_batch_timing(self):
+        record = gene_ledger.source_record(Path("timed.json"), self.report())
+        self.assertEqual(record["continuous_batch_timing"], {
+            "schema": "continuous_batch_timing/v1",
+            "started_at": "2026-08-25T10:00:00Z",
+            "completed_at": "2026-08-25T10:25:00Z",
+            "elapsed_seconds": 1_500,
+            "completed_games": 3_000,
+        })
+        header = ranking.reporting_batch_header("Last Batch", {"meta": record, "rows": {}})
+        self.assertEqual(
+            header,
+            "Wins ± /10k total seats — Last Batch (n=18,000 total seats; 120.0 games/min)")
+
+    def test_timing_refuses_a_duration_that_disagrees_with_its_timestamps(self):
+        data = self.report()
+        data["continuous_batch_timing"]["elapsed_seconds"] = 1_499
+        with self.assertRaisesRegex(SystemExit, "does not match"):
+            gene_ledger.continuous_batch_timing_of(data)
+
+    def test_historical_batch_says_rate_not_recorded_instead_of_estimated(self):
+        header = ranking.reporting_batch_header(
+            "Prior Batch", {"meta": {"seats": 30_000}, "rows": {}})
+        self.assertEqual(
+            header,
+            "Wins ± /10k total seats — Prior Batch "
+            "(n=30,000 total seats; games/min=not recorded)")
 
 
 class PreFingerprintSources(unittest.TestCase):

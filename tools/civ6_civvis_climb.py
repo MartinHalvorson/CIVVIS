@@ -371,6 +371,52 @@ def _detach(cmd: list[str], log_path: Path, what: str) -> None:
         print(f"[{what}] could not start: {exc}", flush=True)
 
 
+POPUP_KEEPER_LOCK = Path(os.environ.get(
+    "CIVVIS_POPUP_KEEPER_LOCK", str(Path.home() / ".civvis-popup-keeper.lock")))
+
+
+def popup_clearer_pids() -> list[int]:
+    """Return the short-lived clearer children currently visible on this seat."""
+    return [int(pid) for pid in run(["pgrep", "-f", "popup_clear.py"]).split()
+            if pid.isdecimal()]
+
+
+def interactive_popup_keeper_pid() -> int | None:
+    """Return the interactive host's keeper only when its lock holder is genuine."""
+    try:
+        raw = (POPUP_KEEPER_LOCK / "pid").read_text().strip()
+    except OSError:
+        return None
+    if not raw.isdecimal():
+        return None
+    pid = int(raw)
+    if not process_running(pid):
+        return None
+    command = run(["ps", "-p", str(pid), "-o", "command="])
+    return pid if "civvis-popup-keeper.sh" in command else None
+
+
+def popup_clearer_children(pid: int) -> set[int]:
+    """Return a keeper's current clearer child, if it has started one yet."""
+    return {int(child) for child in run(
+        ["pgrep", "-P", str(pid), "-f", "popup_clear.py"]).split()
+            if child.isdecimal()}
+
+
+def retire_popup_clearers(pids: list[int], reason: str) -> None:
+    if not pids:
+        return
+    print(f"[popups] retiring {len(pids)} {reason}", flush=True)
+    for pid in pids:
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except (ProcessLookupError, PermissionError):
+            pass
+    deadline = time.monotonic() + 10.0
+    while any(process_running(pid) for pid in pids) and time.monotonic() < deadline:
+        time.sleep(0.25)
+
+
 def ensure_popup_clear() -> None:
     """Back the mod's autoclose shim with the out-of-game clearer.
 
@@ -400,22 +446,24 @@ def ensure_popup_clear() -> None:
     # Measured 2026-08-15: one clearer started 2026-08-14T22:46 guarded twelve
     # later batches with day-old code, so two shipped leader-scene stall fixes
     # (#1595, #1631) never reached a live game and the outer watchdog kept
-    # spending attempts on screens the current build already handles. Same
-    # invariant as `retire_mirror` above: a fresh batch retires the helper and
-    # starts its own from this checkout.
-    stale = [int(pid) for pid in run(["pgrep", "-f", "popup_clear.py"]).split()
-             if pid.isdecimal()]
-    if stale:
-        print(f"[popups] retiring {len(stale)} inherited clearer(s) so this "
-              "batch gets the current build", flush=True)
-        for pid in stale:
-            try:
-                os.kill(pid, signal.SIGTERM)
-            except (ProcessLookupError, PermissionError):
-                pass
-        deadline = time.monotonic() + 10.0
-        while any(process_running(pid) for pid in stale) and time.monotonic() < deadline:
-            time.sleep(0.25)
+    # spending attempts on screens the current build already handles. An
+    # interactive host, however, owns a keeper for this exact purpose. Killing
+    # its child causes the host to revive it while this batch starts another,
+    # leaving two clearers to capture and click one UI. Preserve that owned
+    # child, retire only unowned batch leftovers, and let the keeper be the one
+    # durable owner.
+    keeper_pid = interactive_popup_keeper_pid()
+    if keeper_pid is not None:
+        owned = popup_clearer_children(keeper_pid)
+        stale = [pid for pid in popup_clearer_pids() if pid not in owned]
+        retire_popup_clearers(stale, "unowned popup clearer(s); the interactive "
+                              "keeper already owns this seat")
+        print(f"[popups] interactive popup keeper pid {keeper_pid} owns this "
+              "batch; not starting a duplicate", flush=True)
+        return
+
+    retire_popup_clearers(popup_clearer_pids(), "inherited clearer(s) so this "
+                          "batch gets the current build")
     clearer = HERE / "civ6_control" / "popup_clear.py"
     if not clearer.exists():
         print(f"[popups] no clearer at {clearer}; stuck screens will sit on the map",

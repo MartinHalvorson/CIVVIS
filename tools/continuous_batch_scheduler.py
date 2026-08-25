@@ -31,7 +31,6 @@ import json
 import os
 import re
 import secrets
-import shutil
 import subprocess
 import sys
 import time
@@ -43,6 +42,7 @@ from continuous_screen_status import LedgerError, summarize, validate_analysis
 
 ROOT = Path(__file__).resolve().parent.parent
 SCHEMA = "continuous_batch_scheduler/v1"
+CONTINUOUS_BATCH_TIMING_SCHEMA = "continuous_batch_timing/v1"
 STANDARD_PLAYERS = 6
 DEFAULT_GOAL_GAMES = 5_000
 DEFAULT_POLL_SECONDS = 300.0
@@ -424,7 +424,73 @@ def run_segment(state_root: Path, batch: dict[str, Any], reservation: dict[str, 
     return returncode
 
 
-def freeze_analysis(state_root: Path, state: dict[str, Any]) -> None:
+def parse_utc_timestamp(value: Any, *, name: str) -> dt.datetime:
+    """Read one scheduler timestamp without accepting a local-time guess."""
+    if not isinstance(value, str) or not value:
+        raise SchedulerError(f"{name} must be a non-empty UTC timestamp")
+    try:
+        parsed = dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as error:
+        raise SchedulerError(f"{name} is not an ISO-8601 timestamp: {value!r}") from error
+    if parsed.tzinfo is None:
+        raise SchedulerError(f"{name} must name its timezone: {value!r}")
+    return parsed.astimezone(dt.timezone.utc)
+
+
+def continuous_batch_timing(batch: dict[str, Any]) -> dict[str, Any] | None:
+    """Return the immutable whole-batch wall-clock measure when it is known.
+
+    A pre-timing scheduler state may already be frozen when this code lands.
+    Keep that historical publication viable, but never invent a rate: reports
+    without both ends of the interval simply retain ``games/min=not recorded``.
+    New batches always receive ``completed_at`` before their analyzer runs.
+    """
+    started_at = batch.get("created_at")
+    completed_at = batch.get("completed_at") or batch.get("frozen_at")
+    if started_at is None or completed_at is None:
+        return None
+    started = parse_utc_timestamp(started_at, name="batch created_at")
+    completed = parse_utc_timestamp(completed_at, name="batch completed_at")
+    elapsed_seconds = int((completed - started).total_seconds())
+    if elapsed_seconds < 1:
+        raise SchedulerError("batch timing must span at least one wall-clock second")
+    return {
+        "schema": CONTINUOUS_BATCH_TIMING_SCHEMA,
+        "started_at": str(started_at),
+        "completed_at": str(completed_at),
+        "elapsed_seconds": elapsed_seconds,
+        "completed_games": positive_int(batch.get("complete_games"), name="completed games"),
+    }
+
+
+def write_reporting_artifact(source: Path, target: Path, batch: dict[str, Any]) -> None:
+    """Copy a frozen analysis and add scheduler-owned batch timing provenance.
+
+    The analyzer output remains immutable under the run state.  The report copy
+    is where the publication pipeline records the scheduler interval that the
+    analyzer cannot know: one batch can contain several non-overlapping
+    resumed segments, while its rate is deliberately the whole batch's games
+    divided by its whole wall-clock duration.
+    """
+    try:
+        analysis = json.loads(source.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise SchedulerError(f"cannot read frozen analysis {source}: {error}") from error
+    if analysis.get("kind") != "gene_screen_analysis":
+        raise SchedulerError(f"frozen analysis {source} is not a gene-screen analysis")
+    games = positive_int(analysis.get("games"), name="frozen analysis games")
+    expected_games = positive_int(batch.get("complete_games"), name="completed games")
+    if games != expected_games:
+        raise SchedulerError(
+            f"frozen analysis says {games:,} games but batch says {expected_games:,}")
+    timing = continuous_batch_timing(batch)
+    if timing is not None:
+        analysis["continuous_batch_timing"] = timing
+    atomic_json(target, analysis)
+
+
+def freeze_analysis(state_root: Path, state: dict[str, Any], *,
+                    state_pathname: Path | None = None) -> None:
     """Freeze only the exact validated completed-game boundary into an artifact."""
     batch = state["current"]
     status = refresh_status(state_root, state)
@@ -433,6 +499,14 @@ def freeze_analysis(state_root: Path, state: dict[str, Any]) -> None:
     source = batch.get("source")
     if not isinstance(source, dict):
         raise SchedulerError("cannot analyze without a pinned batch source")
+    # Capture the boundary before analysis starts.  A failed analyzer retry
+    # must not make a completed tournament look slower just because its
+    # reporting work took longer. Persist it immediately when a durable state
+    # path is available so an interruption cannot lose the real endpoint.
+    if batch.get("completed_at") is None:
+        batch["completed_at"] = utc_now()
+        if state_pathname is not None:
+            atomic_json(state_pathname, state)
     binary = Path(str(source.get("binary", "")))
     rows = rows_path(state_root, batch)
     analysis = analysis_path(state_root, batch)
@@ -652,7 +726,7 @@ def publish_batch(state_root: Path, state_pathname: Path, state: dict[str, Any],
     if stage == "claimed":
         target = worktree / report
         target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(analysis_path(state_root, batch), target)
+        write_reporting_artifact(analysis_path(state_root, batch), target, batch)
         generated = ["docs/gene_ledger.json", "HEURISTIC_GENE_RANKING.md"]
         write = [sys.executable, "tools/genes.py", "write", "--reporting-batch", report]
         first = subprocess.run(write, cwd=worktree, text=True, capture_output=True, check=False)
@@ -774,7 +848,7 @@ def tick(state_root: Path, state_pathname: Path, state: dict[str, Any], *, repo:
     phase = batch["phase"]
     if phase == "running":
         if status["complete_games"] == batch["goal_completed_games"]:
-            freeze_analysis(state_root, state)
+            freeze_analysis(state_root, state, state_pathname=state_pathname)
             atomic_json(state_pathname, state)
             return "frozen"
         source = ensure_source(state_root, state, repo)
@@ -787,7 +861,7 @@ def tick(state_root: Path, state_pathname: Path, state: dict[str, Any], *, repo:
         latest = refresh_status(state_root, state)
         atomic_json(state_pathname, state)
         if latest["complete_games"] == batch["goal_completed_games"]:
-            freeze_analysis(state_root, state)
+            freeze_analysis(state_root, state, state_pathname=state_pathname)
             atomic_json(state_pathname, state)
             return "frozen"
         if returncode == 0:
