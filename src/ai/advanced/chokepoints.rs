@@ -72,11 +72,14 @@
 //! are a **canal** — the sea detour a city center standing there would save
 //! us and no one else.
 //!
-//! ⚠ **Fog-honest.** A tile whose own ring is not fully explored is not
-//! classified at all: unknown ground reads as a wall, so without that rule
-//! every fog edge is a mountain pass. The values are cached per turn in
-//! [`NarrowsAtlas`], keyed like `SettlementAtlas` on turn, map epoch and
-//! player, and a controller clone starts empty.
+//! ⚠ **Fog-honest, and passability-honest.** A tile whose own ring is not
+//! fully explored is not classified at all: unknown ground reads as a wall,
+//! so without that rule every fog edge is a mountain pass. And membership in
+//! both domains asks `is_passable`, because `ice` is water the engine refuses
+//! to a hull (`data/features.json`) — a sea membership that asked only
+//! `is_water` would read the polar cap as open ocean and call every gap in it
+//! a strait. The values are cached per turn in [`NarrowsAtlas`]; a controller
+//! clone starts empty.
 //!
 //! ## The five genes
 //!
