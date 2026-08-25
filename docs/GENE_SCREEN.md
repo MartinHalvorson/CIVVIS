@@ -518,8 +518,8 @@ it belongs to a family.
    tracked wins under `rules.family_heads`; `genes.py check` reads the pinned
    list *as families*, so a head that moved is not drift. Every version keeps
    being priced on its own row. `HEURISTIC_GENE_RANKING.md` names the head in
-   its *Best version* column (`1` is the original) on every row of the
-   family, and a versioned row's *Total (on)* / *Total (off)* cells show the
+   its *Best version* column (`1` is the original, so a gene with no
+   versions reads `1`) on every row of the family, and a versioned row's *Total (on)* / *Total (off)* cells show the
    best two versions' rates side by side — each version's *on* is the seats
    that played that version; every other seat is its *off*.
 6. **At most three versions at a time** (`MAX_VERSIONS`, operator,
