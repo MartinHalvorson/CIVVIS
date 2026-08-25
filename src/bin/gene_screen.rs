@@ -127,7 +127,13 @@ const SCREEN_MAP: MapScript = MapScript::Continents;
 /// The five conditions a victory mask may close. Score is never among them:
 /// it is the clock, the ending that turns a game the 250-turn limit reaches
 /// into a decided one rather than a truncation.
-const MASKABLE_LANES: [&str; 5] = ["science", "culture", "religious", "diplomatic", "domination"];
+const MASKABLE_LANES: [&str; 5] = [
+    "science",
+    "culture",
+    "religious",
+    "diplomatic",
+    "domination",
+];
 
 /// ⭐ THE ROTATING VICTORY MASK (`--victory-mask rotate:N`, 2026-08-25).
 ///
@@ -158,7 +164,9 @@ struct VictoryMask {
 impl VictoryMask {
     fn parse(text: &str) -> Result<VictoryMask, String> {
         let Some(n) = text.strip_prefix("rotate:") else {
-            return Err(format!("unknown victory mask {text:?}; the form is rotate:N"));
+            return Err(format!(
+                "unknown victory mask {text:?}; the form is rotate:N"
+            ));
         };
         let rotate: usize = n
             .trim()
@@ -272,7 +280,11 @@ fn mask_key<S: AsRef<str>>(closed: &[S]) -> String {
     if closed.is_empty() {
         "none".to_string()
     } else {
-        closed.iter().map(AsRef::as_ref).collect::<Vec<_>>().join("+")
+        closed
+            .iter()
+            .map(AsRef::as_ref)
+            .collect::<Vec<_>>()
+            .join("+")
     }
 }
 
@@ -1456,9 +1468,9 @@ fn play_game(
                 .collect()
         })
         .unwrap_or_default();
-    let victories = profile
-        .victory_mask
-        .map_or(profile.victories, |mask| mask.apply(seed, profile.victories));
+    let victories = profile.victory_mask.map_or(profile.victories, |mask| {
+        mask.apply(seed, profile.victories)
+    });
     let mut world = Game::new_with(GameOptions {
         speed: profile.speed.id().to_string(),
         map_script: profile.map,
@@ -5225,12 +5237,19 @@ mod tests {
         let mut closed_per_lane: BTreeMap<&str, usize> = BTreeMap::new();
         for seed in 26_081_900u64..26_082_900 {
             let closed = mask.closed(seed, all);
-            assert_eq!(closed, mask.closed(seed, all), "the same seed, the same mask");
+            assert_eq!(
+                closed,
+                mask.closed(seed, all),
+                "the same seed, the same mask"
+            );
             assert_eq!(closed.len(), 2);
             let mut sorted = closed.clone();
             sorted.sort_unstable();
             assert_eq!(closed, sorted, "closed lanes are sorted");
-            assert!(!closed.contains(&"score"), "score is the clock and never closes");
+            assert!(
+                !closed.contains(&"score"),
+                "score is the clock and never closes"
+            );
             for lane in &closed {
                 *closed_per_lane.entry(lane).or_default() += 1;
             }
@@ -5238,13 +5257,20 @@ mod tests {
             let applied = mask.apply(seed, all);
             assert!(applied.score);
             for lane in MASKABLE_LANES {
-                assert_eq!(applied.is_enabled(lane), !closed.contains(&lane), "{lane} at {seed}");
+                assert_eq!(
+                    applied.is_enabled(lane),
+                    !closed.contains(&lane),
+                    "{lane} at {seed}"
+                );
             }
         }
         assert_eq!(counts.len(), 10);
         assert!(counts.values().all(|&n| n == 100), "{counts:?}");
         assert_eq!(closed_per_lane.len(), 5);
-        assert!(closed_per_lane.values().all(|&n| n == 400), "{closed_per_lane:?}");
+        assert!(
+            closed_per_lane.values().all(|&n| n == 400),
+            "{closed_per_lane:?}"
+        );
         assert_eq!(
             mask.games_by_mask(26_081_900, 1000, all),
             counts,
@@ -5279,12 +5305,18 @@ mod tests {
     fn rows_carry_the_lanes_their_game_closed() {
         let mut row = test_row(3, 1, "01", false);
         let text = serde_json::to_string(&row).expect("serializes");
-        assert!(!text.contains("victories_off"), "an unmasked row is unchanged: {text}");
+        assert!(
+            !text.contains("victories_off"),
+            "an unmasked row is unchanged: {text}"
+        );
         let back: Row = serde_json::from_str(&text).expect("parses");
         assert!(back.victories_off.is_empty());
         row.victories_off = vec!["culture".into(), "science".into()];
         let text = serde_json::to_string(&row).expect("serializes");
-        assert!(text.contains(r#""victories_off":["culture","science"]"#), "{text}");
+        assert!(
+            text.contains(r#""victories_off":["culture","science"]"#),
+            "{text}"
+        );
         let back: Row = serde_json::from_str(&text).expect("parses");
         assert_eq!(back.victories_off, row.victories_off);
     }
@@ -5298,9 +5330,17 @@ mod tests {
         assert_eq!(shape_of(&header), "standard");
         header.victory_mask = "rotate:2".into();
         header.victory_mask_games = BTreeMap::from([("culture+science".to_string(), 1)]);
-        assert_eq!(shape_of(&header), "standard", "every lane is live across the batch");
+        assert_eq!(
+            shape_of(&header),
+            "standard",
+            "every lane is live across the batch"
+        );
         header.victories = "domination,score".into();
-        assert_eq!(shape_of(&header), "legacy", "a restricted batch-level set is a probe");
+        assert_eq!(
+            shape_of(&header),
+            "legacy",
+            "a restricted batch-level set is a probe"
+        );
     }
 
     /// The analyze split on a synthetic masked batch: a lane gene that pays
@@ -5317,7 +5357,11 @@ mod tests {
         let games = 400;
         for game in 0..games {
             let seed = 500_000 + game as u64;
-            let closed: Vec<String> = mask.closed(seed, all).iter().map(|s| s.to_string()).collect();
+            let closed: Vec<String> = mask
+                .closed(seed, all)
+                .iter()
+                .map(|s| s.to_string())
+                .collect();
             let science_open = !closed.iter().any(|lane| lane == "science");
             // Six seats; the winner is the lowest seat with the space-race gene
             // on when science is open, else a fixed rotation independent of it.
@@ -5339,13 +5383,34 @@ mod tests {
         let report = mask_report(&header, &rows).expect("a masked batch reports");
         assert_eq!(report.games, games);
         assert_eq!(report.by_mask.len(), 10);
-        assert!(report.by_mask.values().all(|&n| n == 40), "{:?}", report.by_mask);
-        let science = report.lanes.iter().find(|(lane, _, _)| *lane == "science").expect("science");
+        assert!(
+            report.by_mask.values().all(|&n| n == 40),
+            "{:?}",
+            report.by_mask
+        );
+        let science = report
+            .lanes
+            .iter()
+            .find(|(lane, _, _)| *lane == "science")
+            .expect("science");
         assert_eq!((science.1, science.2), (240, 160));
         // One split for the space race (science), five for the policy deck,
         // none for settler-guard.
-        assert_eq!(report.splits.len(), 6, "{:?}", report.splits.iter().map(|s| (&s.tag, s.lane)).collect::<Vec<_>>());
-        let race = report.splits.iter().find(|s| s.tag == "lane-space-race").expect("space race");
+        assert_eq!(
+            report.splits.len(),
+            6,
+            "{:?}",
+            report
+                .splits
+                .iter()
+                .map(|s| (&s.tag, s.lane))
+                .collect::<Vec<_>>()
+        );
+        let race = report
+            .splits
+            .iter()
+            .find(|s| s.tag == "lane-space-race")
+            .expect("space race");
         assert_eq!(race.lane, "science");
         assert!(race.open.0 > 0.3, "open Δ {:+.3}", race.open.0);
         assert!(race.closed.0.abs() < 0.1, "closed Δ {:+.3}", race.closed.0);
@@ -5365,12 +5430,27 @@ mod tests {
     /// read as its base; a gene of no lane has no split.
     #[test]
     fn lane_genes_map_to_their_lanes() {
-        assert_eq!(lane_gene_lanes("lane-congress-favor"), Some(vec!["diplomatic"]));
-        assert_eq!(lane_gene_lanes("lane-culture-spending-2"), Some(vec!["culture"]));
+        assert_eq!(
+            lane_gene_lanes("lane-congress-favor"),
+            Some(vec!["diplomatic"])
+        );
+        assert_eq!(
+            lane_gene_lanes("lane-culture-spending-2"),
+            Some(vec!["culture"])
+        );
         assert_eq!(lane_gene_lanes("holy-lane-parity"), Some(vec!["religious"]));
-        assert_eq!(lane_gene_lanes("competition-victory-points"), Some(vec!["diplomatic"]));
-        assert_eq!(lane_gene_lanes("lane-policy-deck"), Some(MASKABLE_LANES.to_vec()));
-        assert_eq!(lane_gene_lanes("lane-commit"), Some(MASKABLE_LANES.to_vec()));
+        assert_eq!(
+            lane_gene_lanes("competition-victory-points"),
+            Some(vec!["diplomatic"])
+        );
+        assert_eq!(
+            lane_gene_lanes("lane-policy-deck"),
+            Some(MASKABLE_LANES.to_vec())
+        );
+        assert_eq!(
+            lane_gene_lanes("lane-commit"),
+            Some(MASKABLE_LANES.to_vec())
+        );
         assert_eq!(lane_gene_lanes("settler-guard"), None);
     }
 
