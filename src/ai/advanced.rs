@@ -4582,6 +4582,12 @@ pub struct AdvancedAi {
     /// `chop-into-the-queue`; see `advanced/deity_habits.rs`.
     chop_into_the_queue: bool,
 
+    /// Opt-in gene `coalition-before-war`; see `advanced/coalition.rs`.
+    coalition_before_war: bool,
+    /// The coalition being built for the coming war, while the window is
+    /// open; `None` with the gene off.
+    coalition: Option<Coalition>,
+
     /// The city plans its districts, sites and tile buys together: wished
     /// districts are jointly assigned reserved plots over rings 1-3 at the
     /// lane's weights, net of the worked tile a site destroys; the plan's
@@ -4972,6 +4978,11 @@ mod site_lookahead;
 /// `district-planning`. See `advanced/district_planning.rs`.
 mod district_planning;
 use district_planning::DistrictPlanCache;
+/// Coalition before war: alliances with the target's neighbours, envoys to
+/// its city-states and joint-war invitations before the declaration. Opt-in
+/// gene `coalition-before-war`; see `advanced/coalition.rs`.
+mod coalition;
+use coalition::Coalition;
 
 /// The Missionary in the field: a last-charge Missionary explores the fog,
 /// and a religious unit steps out of a raider's reach. Two opt-in genes; see
@@ -5701,6 +5712,9 @@ impl AdvancedAi {
 
             // ---- append: c-d ----------------------------------------
             chop_into_the_queue: false,
+
+            coalition_before_war: false,
+            coalition: None,
 
             district_planning: false,
             civilian_out_of_reach: false,
@@ -14296,6 +14310,12 @@ impl AdvancedAi {
             // The launch gate is repeated immediately before the declaration.
             return true;
         }
+        // `coalition_before_war`: the package is complete; invite the
+        // target's neighbours to a joint war and hold for the answer. See
+        // `advanced/coalition.rs`.
+        if self.coalition_invites_before_declaring(g, pid, target) {
+            return true;
+        }
         let Some(action) = self.preferred_war_opening(g, pid, target) else {
             return true;
         };
@@ -14513,6 +14533,10 @@ impl AdvancedAi {
         if self.war_plan.is_none() {
             self.strategic_bilateral_trade(g, pid, denied_trade_partner, plan.strategy);
         }
+        // `coalition_before_war`: an alliance with a neighbour of the war
+        // desk's target, ahead of the stock cadence. See
+        // `advanced/coalition.rs`.
+        self.coalition_alliance_step(g, pid);
         self.propose_strategic_alliance(g, pid, plan, denied_partner);
         // Relationship mechanics must be part of a strategic AI turn too.
         // Send one mission to the best non-hostile major, preferring the
@@ -14796,6 +14820,12 @@ impl AdvancedAi {
                 )
             });
         if close_enough && ready && staged {
+            // `coalition_before_war`: invite the target's neighbours to a
+            // joint war first, and hold while an answer is due. See
+            // `advanced/coalition.rs`.
+            if self.coalition_invites_before_declaring(g, pid, target) {
+                return;
+            }
             if let Some(action) = self.preferred_war_opening(g, pid, target) {
                 if self.journal().wants(crate::reasoning::Level::Strategy) {
                     let casus = match &action {
@@ -15032,12 +15062,16 @@ impl AdvancedAi {
                     // `flip_nearby_city_states`: where the city-state is, and
                     // whose it is. See `advanced/field_craft.rs`.
                     let place = self.flip_nearby_city_state_bonus(g, pid, minor.id, needed);
+                    // `coalition_before_war`: the city-state's place next to
+                    // the war desk's target. See `advanced/coalition.rs`.
+                    let coalition = self.coalition_city_state_bonus(g, pid, minor.id, needed);
                     let score = (alignment + unique_alignment) * 10
                         + type_bonus_value
                         + denial
                         + suzerain_prize
                         + nobel_peace_suzerain_prize
                         + place
+                        + coalition
                         - needed * 7
                         - if overfunded_uncontested {
                             UNCONTESTED_POST_TIER_ENVOY_PENALTY
@@ -15093,6 +15127,12 @@ impl AdvancedAi {
             }
             if g.apply(pid, &Action::SendEnvoy { player: target }).is_err() {
                 break;
+            }
+            if self.coalition_city_state_bonus(g, pid, target, 1) > 0 {
+                *g.players[pid]
+                    .counters
+                    .entry("coalition:envoys".to_string())
+                    .or_insert(0) += 1;
             }
         }
     }
@@ -31593,6 +31633,10 @@ impl AdvancedAi {
             self.plan = Some(current);
         }
         let plan = self.plan.clone().unwrap();
+        // `coalition_before_war`: open, keep or close the coalition window
+        // for this turn's target, before envoys and diplomacy read it. Exact
+        // no-op with the gene off. See `advanced/coalition.rs`.
+        self.coalition_observe(g, pid, &plan);
         // Production for a Conquest plan without an assigned victory target
         // runs through `BasicAi::cities`, not `advanced_production`, so the
         // rush has to raise the standing-army floor there or it plans a war it
