@@ -2675,6 +2675,14 @@ pub struct BasicAi {
     /// `barbarian-ranged-answer`.
     pub(crate) barbarian_ranged_answer: bool,
     pub(crate) adjacent_camp_clear: bool,
+    /// Leave a barbarian camp standing when it is a neighbour's problem
+    /// more than ours: a living major we are not allied with has a city
+    /// strictly nearer the camp than any of ours, and the camp is outside
+    /// our own worked ring. Every deliberate clear consults
+    /// `camp_is_a_neighbours_problem`; raiders that reach home are still
+    /// answered. Opt-in gene `enemy-of-my-enemy`; see
+    /// `advanced/enemy_of_my_enemy.rs`.
+    pub(crate) enemy_of_my_enemy: bool,
     /// ★ THE BARBARIANS HUNT THE RELIGIOUS CORPS TOO. A Missionary beside a
     /// city it is converting stands still for three turns at zero movement,
     /// and in Civilization VI a raider that reaches it condemns it. Here the
@@ -4362,6 +4370,7 @@ impl BasicAi {
             sea_answers: false,
             camp_bounty: false,
             adjacent_camp_clear: true,
+            enemy_of_my_enemy: false,
             barbarian_heretic_hunt: true,
             deals_for_our_gain: false,
             deals_at_the_ceiling: false,
@@ -4573,6 +4582,10 @@ impl BasicAi {
             if my_cities.iter().map(|c| g.wdist(*camp, *c)).min().unwrap() > camp_radius {
                 continue;
             }
+            // `enemy_of_my_enemy`: the neighbour's camp is not our errand.
+            if self.camp_is_a_neighbours_problem(g, pid, *camp) {
+                continue;
+            }
             let d = g.wdist(upos, *camp);
             if d > HOME_DEFENSE_RECALL_RANGE {
                 continue;
@@ -4587,6 +4600,52 @@ impl BasicAi {
         let (_, camp) = best?;
         self.camp_bounty_claims.insert(camp, (turn, uid));
         Some(camp)
+    }
+
+    /// `enemy_of_my_enemy`: whether this camp is a neighbour's problem more
+    /// than ours, so that every deliberate clear leaves it standing. A
+    /// camp's Scout reports the nearest major settlement it sees and the
+    /// camp raises its party against that report, so the camp whose nearest
+    /// major city is a rival's raids the rival: the test is that a living
+    /// major we are not allied with has a city strictly nearer the camp than
+    /// any of ours, and that the camp is outside our own worked ring
+    /// (`ENEMY_OF_MY_ENEMY_HOME_RING`), inside which its raiders pillage us
+    /// whoever they were raised against. Always false with the gene off and
+    /// for minors and barbarians. See `advanced/enemy_of_my_enemy.rs`.
+    pub(crate) fn camp_is_a_neighbours_problem(&self, g: &Game, pid: usize, camp: Pos) -> bool {
+        if !self.enemy_of_my_enemy || self.minor || self.barb {
+            return false;
+        }
+        Self::camp_is_a_neighbours_problem_inner(g, pid, camp)
+    }
+
+    /// The geometry of `camp_is_a_neighbours_problem`, without the flag.
+    pub(crate) fn camp_is_a_neighbours_problem_inner(g: &Game, pid: usize, camp: Pos) -> bool {
+        let Some(ours) = g
+            .cities
+            .values()
+            .filter(|city| city.owner == pid)
+            .map(|city| g.wdist(city.pos, camp))
+            .min()
+        else {
+            return false;
+        };
+        if ours <= crate::ai::advanced::enemy_of_my_enemy::ENEMY_OF_MY_ENEMY_HOME_RING {
+            return false;
+        }
+        g.cities
+            .values()
+            .filter(|city| city.owner != pid)
+            .filter(|city| {
+                let owner = &g.players[city.owner];
+                owner.alive
+                    && !owner.is_minor
+                    && !owner.is_barbarian
+                    && !g.are_allied(pid, city.owner)
+            })
+            .map(|city| g.wdist(city.pos, camp))
+            .min()
+            .is_some_and(|theirs| theirs < ours)
     }
 
     /// Enter a visible, undefended barbarian camp that is one legal step
@@ -4618,7 +4677,7 @@ impl BasicAi {
         {
             return false;
         }
-        let camp = g
+        let clearable: Vec<Pos> = g
             .nbrs(unit.pos)
             .into_iter()
             .filter(|position| g.barb_camps.contains_key(position))
@@ -4628,7 +4687,20 @@ impl BasicAi {
             .filter(|position| g.player_can_see(pid, *position))
             .filter(|position| g.units_at(*position).is_empty())
             .filter(|position| g.can_move(uid, *position))
+            .collect();
+        // `enemy_of_my_enemy`: a camp that raids the neighbour is left to it.
+        let camp = clearable
+            .iter()
+            .copied()
+            .filter(|position| !self.camp_is_a_neighbours_problem(g, pid, *position))
             .min();
+        if camp.is_none() && !clearable.is_empty() {
+            *g.players[pid]
+                .counters
+                .entry("eoe:camps_left".to_string())
+                .or_insert(0) += 1;
+            return false;
+        }
         camp.is_some_and(|to| g.apply(pid, &Action::Move { unit: uid, to }).is_ok())
     }
 
@@ -4687,6 +4759,7 @@ impl BasicAi {
             sea_answers: false,
             camp_bounty: false,
             adjacent_camp_clear: true,
+            enemy_of_my_enemy: false,
             barbarian_heretic_hunt: true,
             deals_for_our_gain: false,
             deals_at_the_ceiling: false,
@@ -12714,14 +12787,18 @@ impl BasicAi {
         pid: usize,
         camp_radius: i32,
     ) -> bool {
-        Self::barbarian_presence_at_home_inner(g, pid, camp_radius, false)
+        Self::barbarian_presence_at_home_inner(g, pid, camp_radius, false, false)
     }
 
+    /// `leave_neighbours_camps` is `enemy_of_my_enemy`'s reading: a camp
+    /// that is a neighbour's problem (`camp_is_a_neighbours_problem_inner`)
+    /// raises no alarm at home; a raider inside the ring still does.
     fn barbarian_presence_at_home_inner(
         g: &Game,
         pid: usize,
         camp_radius: i32,
         naval_threat_triage: bool,
+        leave_neighbours_camps: bool,
     ) -> bool {
         let Some(_barb) = g.barb_pid else {
             return false;
@@ -12742,10 +12819,11 @@ impl BasicAi {
                 && (!naval_threat_triage
                     || Self::naval_raider_can_deal_serious_damage(g, pid, unit))
                 && near_home(unit.pos, HOME_THREAT_RADIUS)
-        }) || g
-            .barb_camps
-            .keys()
-            .any(|camp| near_home(*camp, camp_radius))
+        }) || g.barb_camps.keys().any(|camp| {
+            near_home(*camp, camp_radius)
+                && !(leave_neighbours_camps
+                    && Self::camp_is_a_neighbours_problem_inner(g, pid, *camp))
+        })
     }
 
     pub(crate) fn barbarian_presence_at_home_for_controller(
@@ -12754,7 +12832,13 @@ impl BasicAi {
         pid: usize,
         camp_radius: i32,
     ) -> bool {
-        Self::barbarian_presence_at_home_inner(g, pid, camp_radius, self.naval_threat_triage)
+        Self::barbarian_presence_at_home_inner(
+            g,
+            pid,
+            camp_radius,
+            self.naval_threat_triage,
+            self.enemy_of_my_enemy && !self.minor && !self.barb,
+        )
     }
 
     /// A harmless ship is not a strategic alarm, but a legal shot into it is
@@ -12892,6 +12976,11 @@ impl BasicAi {
                 for camp in g.barb_camps.keys() {
                     let distance = home_distance(*camp);
                     if distance > camp_radius {
+                        continue;
+                    }
+                    // `enemy_of_my_enemy`: the neighbour's camp is no threat
+                    // of ours to answer; its raiders are, when they arrive.
+                    if self.camp_is_a_neighbours_problem(g, pid, *camp) {
                         continue;
                     }
                     if peacetime {
@@ -13210,6 +13299,8 @@ impl BasicAi {
                     };
                     for cpos in g.barb_camps.keys() {
                         if camp_near_home(*cpos)
+                            // `enemy_of_my_enemy`: not the neighbour's camp.
+                            && !self.camp_is_a_neighbours_problem(g, pid, *cpos)
                             && self.exchange_score(g, uid, *cpos, ranged)
                                 > self.attack_threshold(g, uid, *cpos)
                         {
