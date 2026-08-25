@@ -958,6 +958,47 @@ probe worth reading. **Two disjoint blocks that agree beat one that does not**,
 and a standard screen beats both. If two implementations with different
 semantics give the same number, the number belongs to the block, not the gene.
 
+### ⚠⚠ A twelve-game probe resolves ±28.6 pp. Read that number first.
+
+`--analyze` prints a `resolution:` line, and it is the first thing to read:
+
+```text
+12-game, 1 gene   resolution: this run resolves a win Δ of ±28.6 pp at 80% power
+90-game, 9 genes  resolution: this run resolves a win Δ of ±10.3 pp at 80% power
+```
+
+**A Δ smaller than its own run's resolving power is inside that run's noise**,
+whatever its sign, and however many blocks agree on that sign. Sign agreement
+across three small samples of a null is ordinary.
+
+This is not hypothetical. Nine genes were written between 2026-08-24 and -25,
+each probed at one to three twelve-game blocks, and each shipped quoting its
+probe's Δ. Every one of those readings — from +22.2 pp to −21.1 pp — was inside
+±28.6. Re-measured together on one ninety-game screen, 540 seats, ~135 on-seats
+each:
+
+| gene | probe said | 540-seat screen |
+|---|---:|---:|
+| `conversion-majority-alarm` | +22.2 pp (z +2.03) | **+0.2 pp** (z +0.04) |
+| `diplomatic-lane-forecast` | +18.5 pp | **−0.8 pp** (z −0.22) |
+| `unchosen-war-keeps-the-lane` | +12.6 / +1.1 / +7.4 | +2.5 pp (z +0.64) |
+| `domination-city-count` | +2.7 / +8.9 / +5.9 | +3.8 pp (z +0.91) |
+| `rival-suzerainty-alarm` | +12.5 / −2.3 | +2.8 pp (z +0.78) |
+| `science-chain-alarm` | +2.7 / +13.1 | +1.4 pp (z +0.38) |
+| `culture-lane-forecast` | −5.4 / +4.4 | −2.1 pp (z −0.58) |
+| `congress-counter-leader` | −21.1 / +24.4 | −0.9 pp (z −0.25) |
+| `frontier-massing-alarm` | share +3.79 / +3.46 | **−9.0 pp (z −2.98)** |
+
+Eight of nine came back indistinguishable from zero, and the one that resolved
+did so negative. **The probes were not measuring these genes.**
+
+The `resolution:` figure now travels with the artifact as well as the terminal:
+`--json` writes a top-level `resolution` block and a per-gene `win_resolves_pp`
+and `share_resolves_pp` beside each Δ, so a committed
+`docs/gene_screens/fires/*.json` can be read honestly on its own.
+`a_reading_carries_the_smallest_delta_its_run_could_resolve` holds the
+arithmetic against the printed line.
+
 ### ⚠⚠ Do not read a probe's win Δ as a measurement of the gene
 
 The question a probe answers is *did it fire*. Its win column answers nothing,

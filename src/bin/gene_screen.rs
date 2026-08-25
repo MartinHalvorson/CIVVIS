@@ -395,6 +395,11 @@ fn mask_key<S: AsRef<str>>(closed: &[S]) -> String {
 /// the others 40% (`BEST_VERSION_SHARE`). Each seat's genome is drawn
 /// independently of every other seat and every other game; nothing is paired
 /// or complemented. (Until 2026-08-24 a default-off gene was on at one half.)
+/// Percentage points per unit of standard error at 80% power, α = 0.05,
+/// two-sided: 2.8 standard errors, and 100 to carry a proportion into points.
+/// See [`resolving_power`].
+const POWER_FACTOR: f64 = 280.0;
+
 const P_ON: f64 = 0.25;
 const P_DEFAULT_ON: f64 = 0.75;
 
@@ -3244,8 +3249,8 @@ fn print_table(header: &Header, rows: &[Row]) {
         "resolution: {} genes; this run resolves a win Δ of ±{:.1} pp (share Δ ±{:.2} pp) at 80% power; \
          |z|≥2 flags ~{:.1} genes by chance, family-wise 5% bar is |z|≥{:.2}",
         k,
-        280.0 * median_se,
-        280.0 * median_share_se,
+        POWER_FACTOR * median_se,
+        POWER_FACTOR * median_share_se,
         k as f64 * 0.0455,
         family_z
     );
@@ -3493,6 +3498,46 @@ fn print_by_civ(header: &Header, rows: &[Row], tag: &str) {
 /// table prints, plus the profile. `tools/genes.py` reads this to
 /// build `docs/gene_ledger.json` and the generated Rust table, so the
 /// deployment genome is derived from the screens rather than typed in.
+/// Two-sided 80% power at α = 0.05 needs about 2.8 standard errors, and the
+/// estimates here are proportions, so a percentage-point figure is 280 × SE.
+///
+/// ⚠⚠ THIS NUMBER IS WHY A SIX-GAME PROBE CANNOT PRICE A GENE, AND UNTIL
+/// 2026-08-25 IT LIVED ONLY IN THE TERMINAL. A twelve-game single-gene probe
+/// resolves a win Δ of about **±28.6 pp**; the ninety-game nine-gene screen
+/// beside it resolves **±10.3 pp**. Nine genes probed at twelve games read
+/// between +22.2 and −21.1 pp and every one of those readings was inside its
+/// own run's noise. Re-measured together at 540 seats, eight of the nine came
+/// back indistinguishable from zero — `conversion-majority-alarm` from +22.2
+/// to +0.2, `diplomatic-lane-forecast` from +18.5 to −0.8.
+///
+/// `docs/gene_screens/fires/*.json` recorded the point estimates and not this,
+/// so a committed probe carried a Δ with nothing beside it saying whether the
+/// run could have resolved it. Now it carries both.
+fn resolving_power(standard_error: f64) -> Option<f64> {
+    standard_error
+        .is_finite()
+        .then_some(POWER_FACTOR * standard_error)
+}
+
+/// The median standard error across the screened genes, which is what the
+/// printed `resolution:` line reports for the run as a whole.
+fn median_win_se(genes: &[GeneEstimate]) -> f64 {
+    median_se(genes.iter().map(|gene| gene.win_se))
+}
+
+fn median_share_se(genes: &[GeneEstimate]) -> f64 {
+    median_se(genes.iter().map(|gene| gene.share_se))
+}
+
+fn median_se(values: impl Iterator<Item = f64>) -> f64 {
+    let mut finite: Vec<f64> = values.filter(|se| se.is_finite()).collect();
+    finite.sort_by(|left, right| left.total_cmp(right));
+    finite
+        .get(finite.len() / 2)
+        .copied()
+        .unwrap_or(f64::INFINITY)
+}
+
 fn write_json_summary(path: &str, header: &Header, rows: &[Row]) {
     let estimates = estimate(header, rows);
     let costs = estimate_costs(header, rows);
@@ -3532,9 +3577,17 @@ fn write_json_summary(path: &str, header: &Header, rows: &[Row]) {
                 "win_delta_pp": 100.0 * e.win_delta,
                 "win_se_pp": 100.0 * e.win_se,
                 "win_z": e.win_z(),
+                // ⚠⚠ THE POINT ESTIMATE ABOVE MUST NOT TRAVEL WITHOUT THIS.
+                // The smallest win Δ this row could have resolved at 80%
+                // power. A `win_delta_pp` smaller than its own
+                // `win_resolves_pp` is inside the noise of the run that
+                // produced it, whatever its sign and however many blocks
+                // agree on that sign. See `POWER_FACTOR`.
+                "win_resolves_pp": resolving_power(e.win_se),
                 "share_delta_pp": 100.0 * e.share_delta,
                 "share_se_pp": 100.0 * e.share_se,
                 "share_z": e.share_z(),
+                "share_resolves_pp": resolving_power(e.share_se),
                 "adjusted_pp": e.adjusted.map(|(b, _)| 100.0 * b),
                 "adjusted_se_pp": e.adjusted.map(|(_, se)| 100.0 * se),
                 "read": read_column(e.win_z(), e.share_z(), family_z),
@@ -3582,6 +3635,19 @@ fn write_json_summary(path: &str, header: &Header, rows: &[Row]) {
         "overall_win": estimates.overall_win,
         "overall_share": estimates.overall_share,
         "family_wise_z": family_z,
+        // The `resolution:` line this run prints, kept rather than left in the
+        // terminal. Everything an artifact needs to be read honestly on its
+        // own is now in the artifact.
+        "resolution": {
+            "genes": estimates.genes.len(),
+            "win_pp": resolving_power(median_win_se(&estimates.genes)),
+            "share_pp": resolving_power(median_share_se(&estimates.genes)),
+            "power": 0.8,
+            "alpha": 0.05,
+            "expected_flags_by_chance": estimates.genes.len() as f64 * 0.0455,
+            "read": "the smallest Δ this run could resolve at 80% power; a Δ \
+                     below it is inside the run's own noise",
+        },
         "reproducibility": {
             "unit": "seats",
             "target_seats_per_window": REPRO_WINDOW_SEATS,
@@ -7620,6 +7686,60 @@ mod tests {
             (delta / se).abs() > 2.0,
             "and it must still read significant (z {})",
             delta / se
+        );
+    }
+
+    /// ⚠⚠ A POINT ESTIMATE MUST NOT TRAVEL WITHOUT THE POWER THAT PRODUCED IT.
+    ///
+    /// `resolving_power` is the figure the `resolution:` line prints, and the
+    /// two must be the same arithmetic or an artifact and its terminal output
+    /// disagree about whether a reading means anything. See `POWER_FACTOR`.
+    #[test]
+    fn a_reading_carries_the_smallest_delta_its_run_could_resolve() {
+        // A twelve-game single-gene probe's standard error, in proportion
+        // units: the `+2.7 pp [-17.3, +22.7]` row this was taken from.
+        let probe_se = 0.102;
+        assert!(
+            (resolving_power(probe_se).expect("finite") - 28.6).abs() < 0.1,
+            "a twelve-game probe resolves about ±28.6 pp, not {:?}",
+            resolving_power(probe_se)
+        );
+        // Which is the whole point: that run's own +2.7 pp reading is inside
+        // its own noise, and so was every probe reading in this series.
+        assert!(2.7 < resolving_power(probe_se).expect("finite"));
+        assert!(22.2 < resolving_power(probe_se).expect("finite"));
+
+        // A ninety-game nine-gene screen resolves about ±10.3 pp.
+        let screen_se = 0.0368;
+        assert!(
+            (resolving_power(screen_se).expect("finite") - 10.3).abs() < 0.1,
+            "{:?}",
+            resolving_power(screen_se)
+        );
+
+        // An infinite error -- the empty-arm case #2452 widened -- has no
+        // resolving power to report, and says so rather than inventing one.
+        assert_eq!(resolving_power(f64::INFINITY), None);
+
+        // The median is what the run-level figure reports, so a single
+        // un-resolvable row cannot drag the whole run's number to infinity.
+        let se = |win: f64| GeneEstimate {
+            tag: "t".into(),
+            n_on: 1,
+            n_off: 1,
+            win_on: 0.0,
+            win_off: 0.0,
+            win_delta: 0.0,
+            win_se: win,
+            share_delta: 0.0,
+            share_se: win,
+            adjusted: None,
+        };
+        let genes = vec![se(0.05), se(0.10), se(f64::INFINITY)];
+        assert!(
+            (median_win_se(&genes) - 0.10).abs() < 1e-9,
+            "{}",
+            median_win_se(&genes)
         );
     }
 
