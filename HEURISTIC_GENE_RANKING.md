@@ -369,6 +369,7 @@ These screenable genes have no on/off result, so they receive no rank or promoti
 |---|---|---|---:|
 | `campaign-pillage` | off (unmeasured) | Let a soldier at war pillage the tile it stands on with movement its march does not use. | — |
 | `city-campaign` | off (unmeasured) | Appraise weaker neighbours, plan to take one to three holdable cities the army can afford, and launch when staged. | — |
+| `diplomatic-lane-forecast` | off (unmeasured) | Score the Diplomacy lane by when twenty Diplomatic Victory Points arrive along the Congress calendar, not by how many are banked. | — |
 | `naval-threat-triage` | off (unmeasured) | Ignore nearby barbarian ships that cannot land a meaningful blow, while still allowing ranged shots at them. | — |
 | `pass-picket` | off (unmeasured) | Station an idle recon unit on the chokepoint tile of the land route toward a neighbour, or watch their border. | — |
 | `settler-factory-coordination` | off (unmeasured) | Give early Settler pipeline slots to cities that finish fastest and hold distinct reachable claim sites. | — |
