@@ -794,6 +794,15 @@ pub const GENES: &[Gene] = &[
     // already settled, ~1.4 free Diplomatic Victory Points a seat a game).
     Gene { tag: "congress-banks-decided", field: "congress_banks_a_decided_vote", kind: Kind::OptIn, enable: AdvancedAi::enable_congress_banks_a_decided_vote, disable: AdvancedAi::disable_congress_banks_a_decided_vote },
     Gene { tag: "congress-counter-votes", field: "congress_counter_votes", kind: Kind::OptIn, enable: AdvancedAi::enable_congress_counter_votes, disable: AdvancedAi::disable_congress_counter_votes },
+    // ⚠ The lane this engine finishes most often is the lane the planner never
+    // picks. `victory_eval` at the ladder's profile: diplomatic 14/16, culture
+    // 12/16, religious 8/16, domination 2/16, science 0/16. `audit` over the
+    // same profile: diplomacy 0% of 14,376 planner-turns in 12 of 12 games,
+    // culture 2% -- against conquest 43%. Science reads a readiness ramp and
+    // Religion a 46-point commitment floor; Diplomacy reads points already
+    // banked and so cannot be chosen until it has already been played. See
+    // `diplomatic_lane_forecast`.
+    Gene { tag: "diplomatic-lane-forecast", field: "diplomatic_lane_forecast", kind: Kind::OptIn, enable: AdvancedAi::enable_diplomatic_lane_forecast, disable: AdvancedAi::disable_diplomatic_lane_forecast },
     Gene { tag: "envoy-infrastructure", field: "envoy_infrastructure", kind: Kind::OptIn, enable: AdvancedAi::enable_envoy_infrastructure, disable: AdvancedAi::disable_envoy_infrastructure },
     // Nothing in this controller reaches the air layer: the melee package
     // skips `domain == "air"` and ranks its unlocks by cheapest remaining
