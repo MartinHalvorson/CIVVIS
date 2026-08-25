@@ -921,6 +921,17 @@ impl AdvancedAi {
         self.frontier_massing_alarm = false;
     }
 
+    /// Read a rival's religious clock from the cities it has converted rather
+    /// than from whole civilizations already lost. See
+    /// [`Self::conversion_majority_alarm`].
+    pub fn enable_conversion_majority_alarm(&mut self) {
+        self.conversion_majority_alarm = true;
+    }
+
+    pub fn disable_conversion_majority_alarm(&mut self) {
+        self.conversion_majority_alarm = false;
+    }
+
     /// Score the Culture lane by where the two tourist curves are when the
     /// clock stops. See [`Self::culture_lane_forecast`].
     pub fn enable_culture_lane_forecast(&mut self) {

@@ -794,6 +794,12 @@ pub const GENES: &[Gene] = &[
     // already settled, ~1.4 free Diplomatic Victory Points a seat a game).
     Gene { tag: "congress-banks-decided", field: "congress_banks_a_decided_vote", kind: Kind::OptIn, enable: AdvancedAi::enable_congress_banks_a_decided_vote, disable: AdvancedAi::disable_congress_banks_a_decided_vote },
     Gene { tag: "congress-counter-votes", field: "congress_counter_votes", kind: Kind::OptIn, enable: AdvancedAi::enable_congress_counter_votes, disable: AdvancedAi::disable_congress_counter_votes },
+    // ⚠ Two thirds of native games end by religious conversion, and the alarm
+    // for it has five values twenty points apart: `religious_conversion_tally`
+    // counts whole civilizations already lost, so a rival holding 45% of every
+    // rival's cities reads zero. The victory rule is a count of cities and
+    // counting them is smooth. See `conversion_majority_alarm`.
+    Gene { tag: "conversion-majority-alarm", field: "conversion_majority_alarm", kind: Kind::OptIn, enable: AdvancedAi::enable_conversion_majority_alarm, disable: AdvancedAi::disable_conversion_majority_alarm },
     // ⚠ The same lock `diplomatic-lane-forecast` opened, on the second-best
     // lane this engine has: `victory_eval` finishes culture 12/16 and `audit`
     // gives it 2% of 14,376 planner-turns, below a twentieth of the board's
