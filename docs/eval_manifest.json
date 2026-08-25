@@ -1,20 +1,20 @@
 {
   "coverage": {
-    "named": 39,
+    "named": 38,
     "never_named": 0,
     "never_named_treatments": [],
-    "withholdable": 39
+    "withholdable": 38
   },
   "derived": {
     "firaxis_only_count": 27,
-    "live_bridge_count": 66,
-    "native_engine_repair_count": 39,
-    "withholdable_live_count": 39
+    "live_bridge_count": 65,
+    "native_engine_repair_count": 38,
+    "withholdable_live_count": 38
   },
   "genome_coverage": {
-    "capability_toggles": 206,
-    "measured_by_a_screen": 80,
-    "reachable_as_a_gene": 156,
+    "capability_toggles": 196,
+    "measured_by_a_screen": 76,
+    "reachable_as_a_gene": 146,
     "resolved_by_a_screen": 16,
     "unreachable_by_any_screen": 50,
     "unreachable_toggles": [
@@ -155,7 +155,7 @@
       ]
     },
     "ENGINE_REPAIR_TREATMENTS": {
-      "declared_count": 39,
+      "declared_count": 38,
       "items": [
         "war-reinforcement",
         "come-ashore",
@@ -177,7 +177,6 @@
         "barbarian-scouts-are-scouts",
         "barbarian-bargain",
         "barbarian-ranged-answer",
-        "civilian-rescue",
         "naval-recon",
         "camp-party",
         "religion-sues-peace",
@@ -199,7 +198,7 @@
       ]
     },
     "ENGINE_REPAIR_WAR_TREATMENTS": {
-      "declared_count": 24,
+      "declared_count": 23,
       "items": [
         "war-reinforcement",
         "come-ashore",
@@ -221,7 +220,6 @@
         "barbarian-scouts-are-scouts",
         "barbarian-bargain",
         "barbarian-ranged-answer",
-        "civilian-rescue",
         "naval-recon",
         "camp-party",
         "religion-sues-peace"
@@ -260,7 +258,7 @@
       ]
     },
     "LIVE_BRIDGE_TREATMENTS": {
-      "declared_count": 66,
+      "declared_count": 65,
       "items": [
         "war-reinforcement",
         "come-ashore",
@@ -282,7 +280,6 @@
         "barbarian-scouts-are-scouts",
         "barbarian-bargain",
         "barbarian-ranged-answer",
-        "civilian-rescue",
         "naval-recon",
         "camp-party",
         "religion-sues-peace",

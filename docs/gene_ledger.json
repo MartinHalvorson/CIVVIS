@@ -27,7 +27,6 @@
       "air-surge",
       "amenity-district-path",
       "amenity-project-preemption",
-      "apostle-promotion-by-role",
       "army-target-weighs-enemy",
       "barbarian-bargain",
       "barbarian-ranged-answer",
@@ -35,12 +34,10 @@
       "bounded-recovery",
       "buildings-before-projects",
       "camp-party",
-      "civilian-rescue",
       "competition-victory-points",
       "culture-building-debt",
       "deals-for-our-gain",
       "diplomatic-lane-forecast",
-      "district-planning",
       "early-contact-window",
       "engine-faith-price",
       "enhancer-for-the-corps",
@@ -52,7 +49,6 @@
       "holy-lane-parity",
       "home-defense",
       "idle-faith-patronage",
-      "inquisition-on-threat",
       "lane-culture-spending",
       "lane-great-people",
       "lane-policy-deck",
@@ -64,22 +60,18 @@
       "naval-recon",
       "naval-threat-triage",
       "no-free-passage",
-      "one-launch-pad",
       "one-war-at-a-time",
       "opportunistic-war",
       "peacetime-deterrence",
       "price-the-suzerainty",
-      "promote-when-wounded",
       "raid-pillage-prizes",
       "recon-replacement",
       "recorded-tactical-step",
-      "relief-targets-the-siege",
       "religion-sues-peace",
       "religious-defence-scales",
       "religious-units-heal-first",
       "religious-veto-defence",
       "research-tier-premium",
-      "science-multiplier-payoff",
       "science-victory-drive",
       "score-horizon",
       "settle-sooner",
@@ -91,7 +83,6 @@
       "slot-kind-tiebreak",
       "solvency-first-trade-slot",
       "strike-opening",
-      "theology-for-founders",
       "unit-cost-efficiency",
       "unit-objective-memory",
       "war-economy",
@@ -134,15 +125,6 @@
         "versions": {
           "district-coverage": 0.008266,
           "district-coverage-2": null
-        }
-      },
-      "fog-honest": {
-        "pinned": null,
-        "head": null,
-        "ships": null,
-        "versions": {
-          "fog-honest": null,
-          "fog-honest-2": null
         }
       },
       "guru-heals-the-corps": {
@@ -638,8 +620,8 @@
   "counts": {
     "helps": 16,
     "hurts": 0,
-    "unresolved": 64,
-    "default_on": 73
+    "unresolved": 60,
+    "default_on": 64
   },
   "genes": [
     {
@@ -780,7 +762,7 @@
     {
       "tag": "apostle-promotion-by-role",
       "verdict": "unresolved",
-      "default_on": true,
+      "default_on": false,
       "wins_last_10k": 12,
       "wins_prior_10k": 16,
       "wins_third_10k": 14,
@@ -1318,51 +1300,6 @@
       }
     },
     {
-      "tag": "civilian-rescue",
-      "verdict": "unresolved",
-      "default_on": true,
-      "wins_last_10k": 0,
-      "wins_prior_10k": -1,
-      "wins_third_10k": -6,
-      "win_diff_pp": -0.064622,
-      "posterior_pp": -3.321054,
-      "posterior_se_pp": 8.314957,
-      "posterior_screens": 5,
-      "posterior_tau_pp": 0.0,
-      "family_wise": false,
-      "conflict": false,
-      "screen": {
-        "seats": 38160,
-        "pairs": 19080,
-        "n_on": 18910,
-        "n_off": 19250,
-        "win_delta_pp": -0.007,
-        "win_z": -0.018,
-        "share_delta_pp": 0.04,
-        "share_z": 0.503,
-        "read": "~",
-        "source": "2026-08-24-standard-continuous-38160-total-seats.json",
-        "win_tranches": [
-          {
-            "position": "latest",
-            "seats": 19998,
-            "pairs": 9999,
-            "win_delta_pp": 0.31,
-            "win_z": 0.586,
-            "win_se_pp": 0.529
-          },
-          {
-            "position": "previous",
-            "seats": 18162,
-            "pairs": 9081,
-            "win_delta_pp": -0.356,
-            "win_z": -0.642,
-            "win_se_pp": 0.554
-          }
-        ]
-      }
-    },
-    {
       "tag": "come-ashore",
       "verdict": "unresolved",
       "default_on": false,
@@ -1590,7 +1527,7 @@
     {
       "tag": "district-planning",
       "verdict": "unresolved",
-      "default_on": true,
+      "default_on": false,
       "wins_last_10k": 12,
       "wins_prior_10k": null,
       "wins_third_10k": null,
@@ -2218,51 +2155,6 @@
       }
     },
     {
-      "tag": "inquisition-on-threat",
-      "verdict": "unresolved",
-      "default_on": true,
-      "wins_last_10k": 4,
-      "wins_prior_10k": 3,
-      "wins_third_10k": 2,
-      "win_diff_pp": 0.132531,
-      "posterior_pp": 9.194169,
-      "posterior_se_pp": 9.536619,
-      "posterior_screens": 4,
-      "posterior_tau_pp": 0.0,
-      "family_wise": false,
-      "conflict": false,
-      "screen": {
-        "seats": 38160,
-        "pairs": 19080,
-        "n_on": 28662,
-        "n_off": 9498,
-        "win_delta_pp": 0.168,
-        "win_z": 0.381,
-        "share_delta_pp": -0.001,
-        "share_z": -0.01,
-        "read": "~",
-        "source": "2026-08-24-standard-continuous-38160-total-seats.json",
-        "win_tranches": [
-          {
-            "position": "latest",
-            "seats": 19998,
-            "pairs": 9999,
-            "win_delta_pp": -0.208,
-            "win_z": -0.342,
-            "win_se_pp": 0.609
-          },
-          {
-            "position": "previous",
-            "seats": 18162,
-            "pairs": 9081,
-            "win_delta_pp": 0.588,
-            "win_z": 0.918,
-            "win_se_pp": 0.641
-          }
-        ]
-      }
-    },
-    {
       "tag": "lane-culture-spending",
       "verdict": "unresolved",
       "default_on": true,
@@ -2580,7 +2472,7 @@
     {
       "tag": "one-launch-pad",
       "verdict": "unresolved",
-      "default_on": true,
+      "default_on": false,
       "wins_last_10k": 19,
       "wins_prior_10k": -11,
       "wins_third_10k": 15,
@@ -2895,7 +2787,7 @@
     {
       "tag": "promote-when-wounded",
       "verdict": "unresolved",
-      "default_on": true,
+      "default_on": false,
       "wins_last_10k": 7,
       "wins_prior_10k": null,
       "wins_third_10k": null,
@@ -3075,7 +2967,7 @@
     {
       "tag": "relief-targets-the-siege",
       "verdict": "unresolved",
-      "default_on": true,
+      "default_on": false,
       "wins_last_10k": 18,
       "wins_prior_10k": 6,
       "wins_third_10k": 14,
@@ -3300,7 +3192,7 @@
     {
       "tag": "science-multiplier-payoff",
       "verdict": "unresolved",
-      "default_on": true,
+      "default_on": false,
       "wins_last_10k": 23,
       "wins_prior_10k": -8,
       "wins_third_10k": null,
@@ -3748,51 +3640,6 @@
       }
     },
     {
-      "tag": "spread-campaign-persists",
-      "verdict": "unresolved",
-      "default_on": false,
-      "wins_last_10k": -19,
-      "wins_prior_10k": -16,
-      "wins_third_10k": null,
-      "win_diff_pp": -0.343466,
-      "posterior_pp": -17.030395,
-      "posterior_se_pp": 12.148556,
-      "posterior_screens": 2,
-      "posterior_tau_pp": 0.0,
-      "family_wise": false,
-      "conflict": false,
-      "screen": {
-        "seats": 38160,
-        "pairs": 19080,
-        "n_on": 19106,
-        "n_off": 19054,
-        "win_delta_pp": -0.381,
-        "win_z": -0.997,
-        "share_delta_pp": -0.007,
-        "share_z": -0.086,
-        "read": "~",
-        "source": "2026-08-24-standard-continuous-38160-total-seats.json",
-        "win_tranches": [
-          {
-            "position": "latest",
-            "seats": 19998,
-            "pairs": 9999,
-            "win_delta_pp": -0.117,
-            "win_z": -0.22,
-            "win_se_pp": 0.531
-          },
-          {
-            "position": "previous",
-            "seats": 18162,
-            "pairs": 9081,
-            "win_delta_pp": -0.672,
-            "win_z": -1.221,
-            "win_se_pp": 0.55
-          }
-        ]
-      }
-    },
-    {
       "tag": "stranded-settler-discount",
       "verdict": "unresolved",
       "default_on": false,
@@ -3923,51 +3770,6 @@
             "win_delta_pp": 0.623,
             "win_z": 0.974,
             "win_se_pp": 0.64
-          }
-        ]
-      }
-    },
-    {
-      "tag": "theology-for-founders",
-      "verdict": "unresolved",
-      "default_on": true,
-      "wins_last_10k": 2,
-      "wins_prior_10k": 22,
-      "wins_third_10k": -16,
-      "win_diff_pp": 0.080472,
-      "posterior_pp": 3.498211,
-      "posterior_se_pp": 9.244893,
-      "posterior_screens": 4,
-      "posterior_tau_pp": 0.0,
-      "family_wise": false,
-      "conflict": false,
-      "screen": {
-        "seats": 38160,
-        "pairs": 19080,
-        "n_on": 18944,
-        "n_off": 19216,
-        "win_delta_pp": 0.049,
-        "win_z": 0.128,
-        "share_delta_pp": 0.025,
-        "share_z": 0.321,
-        "read": "~",
-        "source": "2026-08-24-standard-continuous-38160-total-seats.json",
-        "win_tranches": [
-          {
-            "position": "latest",
-            "seats": 19998,
-            "pairs": 9999,
-            "win_delta_pp": 0.31,
-            "win_z": 0.594,
-            "win_se_pp": 0.522
-          },
-          {
-            "position": "previous",
-            "seats": 18162,
-            "pairs": 9081,
-            "win_delta_pp": -0.239,
-            "win_z": -0.429,
-            "win_se_pp": 0.557
           }
         ]
       }
