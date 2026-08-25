@@ -308,6 +308,10 @@ These screenable genes have no on/off result, so they receive no rank or promoti
 | Gene | Default | Description | Best version |
 |---|---|---|---:|
 | `builder-tries-the-next-tile` | off (unmeasured) | Let a Builder whose nearest improvable tile cannot be routed to try the next-nearest instead of standing still for the rest of the game. | 1 |
+| `canal-city` | off (unmeasured) | Value a settle site on a one-tile land bridge by the sea detour its city center would save. | 1 |
+| `chokepoint-claim` | off (unmeasured) | Buy the plot that closes a passage a rival could walk or sail through. | 1 |
+| `chokepoint-garrison` | off (unmeasured) | Hold the gate on the approach to one of our cities with a surplus soldier or hull. | 1 |
+| `chokepoint-siting` | off (unmeasured) | Value a settle site by the passes and straits its own borders would cover. | 1 |
 | `chop-into-the-queue` | off (unmeasured) | A Builder chops woods, rainforest or marsh into the Settler, district or wonder at the front of the owning city's queue, priced as a one-off lump against the per-turn jobs. | 1 |
 | `civilian-out-of-reach` | off (unmeasured) | Settlers and builders stay out of a barbarian's one-turn reach: flee it, never step into it alone, and summon a guard onto the settler's tile when they must cross it. | 1 |
 | `coalition-before-war` | off (unmeasured) | Recruit the target's neighbours before an elective war: alliances, envoys to its city-states and joint-war invitations at the strike. | 1 |
@@ -318,6 +322,7 @@ These screenable genes have no on/off result, so they receive no rank or promoti
 | `domination-city-count` | off (unmeasured) | Read a rival's conquests from the cities it has taken rather than only from the capitals. | 1 |
 | `elective-war-in-reach` | off (unmeasured) | Measure the elective war against the weakest rival we can reach rather than the weakest on the board. | 1 |
 | `elective-war-yields-to-a-lane` | off (unmeasured) | Stop a war we choose from taking the grand strategy while our own victory lane is live. | 1 |
+| `encampment-seals-the-pass` | off (unmeasured) | Site the Encampment on the pass, a tile no foreign unit may ever enter. | 1 |
 | `eureka-chasing-builder` | off (unmeasured) | An improvement that completes an unresearched technology's or civic's boost is worth the research the boost grants, spread over the steps the trigger still needs. | 1 |
 | `eureka-chasing-production` | off (unmeasured) | A unit, building or district that completes an unresearched technology's or civic's boost is worth the research the boost grants, spread over the steps the trigger still needs. | 1 |
 | `expansion-pays-back` | off (unmeasured) | Shut the settler window on whether the city would pay the settler back before the game ends, rather than on a deadline. | 1 |

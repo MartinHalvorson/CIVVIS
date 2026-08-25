@@ -229,15 +229,21 @@ pub(super) struct Narrows {
 
 /// Every chokepoint reading taken this turn.
 ///
-/// Keyed exactly like `SettlementAtlas`: one turn, one map epoch, one player.
-/// The values depend on the map and on what the player has explored, and
-/// exploration grows within a turn — a tile refused for fog stays refused
-/// until the next turn, which is conservative in the safe direction and
-/// keeps one acting turn's answers consistent with each other.
+/// Modelled on `SettlementAtlas` and keyed on the turn and the player — but
+/// deliberately NOT on `map.tiles.epoch()`, which `SettlementAtlas` does use.
+/// That counter rises on every write to any tile, so an atlas keyed on it is
+/// cleared several times inside one acting turn, and a reading here is a
+/// flood rather than a lookup. Nothing this controller does in a turn can
+/// change what a reading depends on: [`AdvancedAi::read_narrows`] asks for
+/// terrain passability, water, and what the player has explored, and an
+/// improvement, a border, a district or a unit moves none of them. ⚠ The one
+/// thing that does — a disaster closing a tile — is therefore seen on the
+/// next turn rather than this one, and exploration inside a turn is likewise
+/// only picked up next turn, which is conservative in the safe direction (an
+/// uncharted ring is refused, never called a pass).
 #[derive(Default)]
 pub(super) struct NarrowsAtlas {
     turn: Option<u32>,
-    map_epoch: u64,
     pid: usize,
     tiles: BTreeMap<Pos, Narrows>,
 }
@@ -251,12 +257,11 @@ impl Clone for NarrowsAtlas {
 
 impl NarrowsAtlas {
     fn matches(&self, g: &Game, pid: usize) -> bool {
-        self.turn == Some(g.turn) && self.map_epoch == g.map.tiles.epoch() && self.pid == pid
+        self.turn == Some(g.turn) && self.pid == pid
     }
 
     fn start(&mut self, g: &Game, pid: usize) {
         self.turn = Some(g.turn);
-        self.map_epoch = g.map.tiles.epoch();
         self.pid = pid;
         self.tiles.clear();
     }

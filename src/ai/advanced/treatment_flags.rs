@@ -2393,9 +2393,11 @@ impl AdvancedAi {
 
     // ---- append: t-z ------------------------------------------------
 
-    /// Value a settle site by the mountain passes, isthmus necks and straits
-    /// its own borders would cover. Off in production; opted into by name.
-    /// See [`AdvancedAi::chokepoint_site_bonus`].
+    /// Value a settle site by the passes and straits its own borders would
+    /// cover. A border refuses entry to anyone without Open Borders, so the
+    /// ground a city claims is ground a rival cannot cross. Off in
+    /// production; opted into by name. See
+    /// [`AdvancedAi::chokepoint_site_bonus`].
     pub fn enable_chokepoint_siting(&mut self) {
         self.chokepoint_siting = true;
     }
@@ -2405,10 +2407,10 @@ impl AdvancedAi {
         self.chokepoint_siting = false;
     }
 
-    /// Value a settle site on the strip of land between two seas by the naval
-    /// detour the city center saves, because a city center is a naval passage
-    /// its owner alone may use. Off in production; opted into by name. See
-    /// [`AdvancedAi::canal_city_bonus`].
+    /// Value a settle site on a one-tile land bridge by the sea detour its
+    /// city center would save. A city center is a naval passage no foreign
+    /// hull may enter, at peace or at war. Off in production; opted into by
+    /// name. See [`AdvancedAi::canal_city_bonus`].
     pub fn enable_canal_city(&mut self) {
         self.canal_city = true;
     }
@@ -2418,9 +2420,10 @@ impl AdvancedAi {
         self.canal_city = false;
     }
 
-    /// Buy the plot that closes a passage a rival could use, because a border
-    /// refuses entry to anyone without Open Borders. Off in production; opted
-    /// into by name. See [`AdvancedAi::chokepoint_plot_bonus`].
+    /// Buy the plot that closes a passage a rival could walk or sail through.
+    /// `expand_borders` is the engine's own influence picker and takes no
+    /// advice, so the buy is the whole lever. Off in production; opted into by
+    /// name. See [`AdvancedAi::chokepoint_plot_bonus`].
     pub fn enable_chokepoint_claim(&mut self) {
         self.chokepoint_claim = true;
     }
@@ -2430,9 +2433,10 @@ impl AdvancedAi {
         self.chokepoint_claim = false;
     }
 
-    /// Site the Encampment on the pass, which no foreign unit may ever enter.
-    /// Off in production; opted into by name. See
-    /// [`AdvancedAi::encampment_seal_bonus`].
+    /// Site the Encampment on the pass, a tile no foreign unit may ever
+    /// enter. `can_enter_past` refuses an unpillaged foreign Encampment with
+    /// no war, alliance or Open Borders exception. Off in production; opted
+    /// into by name. See [`AdvancedAi::encampment_seal_bonus`].
     pub fn enable_encampment_seals_the_pass(&mut self) {
         self.encampment_seals_the_pass = true;
     }
@@ -2443,8 +2447,9 @@ impl AdvancedAi {
     }
 
     /// Hold the gate on the approach to one of our cities with a surplus
-    /// soldier, or a strait with a hull. Off in production; opted into by
-    /// name. See [`AdvancedAi::chokepoint_garrison_step`].
+    /// soldier or hull. Nothing foreign may enter a tile one of our military
+    /// units stands on. Off in production; opted into by name. See
+    /// [`AdvancedAi::chokepoint_garrison_step`].
     pub fn enable_chokepoint_garrison(&mut self) {
         self.chokepoint_garrison = true;
     }
