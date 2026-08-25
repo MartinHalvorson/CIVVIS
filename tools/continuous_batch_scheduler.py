@@ -43,6 +43,17 @@ from continuous_screen_status import LedgerError, summarize, validate_analysis
 ROOT = Path(__file__).resolve().parent.parent
 SCHEMA = "continuous_batch_scheduler/v1"
 CONTINUOUS_BATCH_TIMING_SCHEMA = "continuous_batch_timing/v1"
+
+# ``tools/genes.py write`` deliberately updates the ranking table together
+# with its supporting evidence.  Keep this one explicit list shared by the
+# ownership claim, changed-path guard, and staging command: a new generated
+# artifact must be reviewed here instead of being silently swept into a
+# publication.
+PUBLICATION_GENERATED_FILES = (
+    "docs/gene_ledger.json",
+    "GENE_HEURISTIC_RANKING.md",
+    "docs/GENE_RANKING_EVIDENCE.md",
+)
 STANDARD_PLAYERS = 6
 DEFAULT_GOAL_GAMES = 5_000
 DEFAULT_POLL_SECONDS = 300.0
@@ -581,8 +592,9 @@ def publication_body(batch: dict[str, Any], report: str, *, machine: str, agent:
         f"- Computer: `{computer}`",
         f"- Agent/session ID: `{agent}`",
         f"- Task: publish validated 5,000-completed-game continuous batch `{batch['id']}`",
-        "- Claimed paths: `" + report + "`, `docs/gene_ledger.json`, "
-        "`GENE_HEURISTIC_RANKING.md`, `tools/test_genes.py`",
+        "- Claimed paths: `" + report + "`, "
+        + ", ".join(f"`{path}`" for path in PUBLICATION_GENERATED_FILES)
+        + ", `tools/test_genes.py`",
         f"- Coordinated with: {coordinated or 'none'}",
         "- Related issue/request: operator-directed automatic 5,000-game rotation",
         "",
@@ -688,8 +700,9 @@ def publish_batch(state_root: Path, state_pathname: Path, state: dict[str, Any],
         command = [
             sys.executable, str(repo / "tools" / "civvis_collab.py"), "start",
             "publish-continuous-batch", "--machine", machine, "--agent", agent,
-            "--path", report, "--path", "docs/gene_ledger.json",
-            "--path", "GENE_HEURISTIC_RANKING.md", "--path", "tools/test_genes.py",
+            "--path", report,
+            *(item for path in PUBLICATION_GENERATED_FILES for item in ("--path", path)),
+            "--path", "tools/test_genes.py",
             "--title", title,
         ]
         result = run_checked(command, cwd=repo, description="create batch publication task")
@@ -727,7 +740,7 @@ def publish_batch(state_root: Path, state_pathname: Path, state: dict[str, Any],
         target = worktree / report
         target.parent.mkdir(parents=True, exist_ok=True)
         write_reporting_artifact(analysis_path(state_root, batch), target, batch)
-        generated = ["docs/gene_ledger.json", "GENE_HEURISTIC_RANKING.md"]
+        generated = list(PUBLICATION_GENERATED_FILES)
         write = [sys.executable, "tools/genes.py", "write", "--reporting-batch", report]
         first = subprocess.run(write, cwd=worktree, text=True, capture_output=True, check=False)
         if first.returncode != 0:
@@ -765,7 +778,7 @@ def publish_batch(state_root: Path, state_pathname: Path, state: dict[str, Any],
     if stage == "prepared":
         computer = computer_name()
         run_checked(
-            ["git", "add", "--", report, "docs/gene_ledger.json", "GENE_HEURISTIC_RANKING.md"],
+            ["git", "add", "--", report, *PUBLICATION_GENERATED_FILES],
             cwd=worktree,
             description="stage publication",
         )

@@ -246,6 +246,27 @@ class PublicationMetadata(unittest.TestCase):
         self.assertIn("Computer: `Test Mac`", body)
         self.assertIn("Coordinated with: #1234", body)
 
+    def test_publication_claim_and_guard_include_every_generated_ranking_artifact(self):
+        self.assertEqual(
+            scheduler.PUBLICATION_GENERATED_FILES,
+            (
+                "docs/gene_ledger.json",
+                "GENE_HEURISTIC_RANKING.md",
+                "docs/GENE_RANKING_EVIDENCE.md",
+            ),
+        )
+        batch = scheduler.new_batch(1, 1, ident="publication-artifacts")
+        batch.update({
+            "complete_games": 1,
+            "complete_seats": 6,
+            "wins": 1,
+            "source": {"commit": "a" * 40, "binary_sha256": "b" * 64},
+        })
+        body = scheduler.publication_body(
+            batch, "docs/gene_screens/example.json", machine="test-machine",
+            agent="continuous-batch", coordinated="none", computer="Test Mac")
+        self.assertIn("`docs/GENE_RANKING_EVIDENCE.md`", body)
+
 
 class PublicationTiming(unittest.TestCase):
     def test_freeze_persists_the_completion_timestamp_before_analyzer_work(self):
