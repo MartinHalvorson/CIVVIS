@@ -963,6 +963,16 @@ impl AdvancedAi {
         self.rival_suzerainty_alarm = false;
     }
 
+    /// Stop a war we did not declare from taking the grand strategy while our
+    /// own victory lane is live. See [`Self::unchosen_war_keeps_the_lane`].
+    pub fn enable_unchosen_war_keeps_the_lane(&mut self) {
+        self.unchosen_war_keeps_the_lane = true;
+    }
+
+    pub fn disable_unchosen_war_keeps_the_lane(&mut self) {
+        self.unchosen_war_keeps_the_lane = false;
+    }
+
     /// Raise the Culture and Diplomacy denial alarms early, since countering an
     /// accumulated stock takes many turns. See
     /// [`Self::stock_denial_lead_time`].
