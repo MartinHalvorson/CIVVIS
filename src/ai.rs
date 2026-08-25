@@ -2830,7 +2830,8 @@ pub struct BasicAi {
     /// old gate vetoes every Trader when any city in the empire has a local
     /// barbarian alarm, so one Galley beside a remote coast can leave a safe
     /// capital's route capacity empty through insolvency. Entrant
-    /// `solvency-first-trade-slot`; off pending its screen.
+    /// `solvency-first-trade-slot`; deployment-on after its +8.07 pp displayed
+    /// pooled Diff.
     pub(crate) solvency_first_trade_slot: bool,
     /// Count a nearby barbarian ship as a home emergency only when its
     /// terrain-accurate next-turn attack envelope reaches one of our assets

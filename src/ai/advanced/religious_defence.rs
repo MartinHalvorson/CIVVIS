@@ -65,8 +65,8 @@
 //! who lose them are the weaker empires — and its first cut lost 8 pp by
 //! starving the steady Missionary corps for a late Apostle. This gene never
 //! changes the purchase order and adds spreaders only in proportion to the
-//! stake; it ships off and is priced by the standard screen like every
-//! other opt-in.
+//! stake; the deployment genome pins it on after its +0.93 pp displayed pooled
+//! Diff, while the standard screen can still price it like every other opt-in.
 
 use super::AdvancedAi;
 use crate::game::{Action, City, Game};

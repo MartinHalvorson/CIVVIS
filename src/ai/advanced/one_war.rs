@@ -55,8 +55,9 @@
 //!    peace is offered every turn and a white peace accepted. A capture or a
 //!    favourable window stops the clock.
 //!
-//! Off by default: registry row `one-war-at-a-time` (`Kind::OptIn`);
-//! `gene_screen --genes one-war-at-a-time` prices it.
+//! The deployment genome pins `one-war-at-a-time` on after its +1.00 pp
+//! displayed pooled Diff; the registry row stays a reversible `Kind::OptIn`
+//! so `gene_screen --genes one-war-at-a-time` can still price it.
 
 use std::collections::{BTreeMap, VecDeque};
 
