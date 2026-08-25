@@ -213,6 +213,35 @@ class PublicationRecovery(unittest.TestCase):
             self.assertEqual(batch["publication"]["stage"], "merged")
             self.assertEqual(batch["publication"]["merge_commit"], "c" * 40)
 
+    def test_merged_publication_recovers_after_ship_removed_its_worktree(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            state, batch, worktree = self.pushed_publication(root)
+            batch["publication"]["stage"] = "prepared"
+            worktree.rmdir()
+            queried_from = []
+
+            def run(command, **kwargs):
+                self.assertEqual(command[:3], ["gh", "pr", "view"])
+                queried_from.append(kwargs["cwd"])
+                return SimpleNamespace(stdout=json.dumps({
+                    "state": "MERGED",
+                    "mergedAt": "2026-08-25T13:38:00Z",
+                    "mergeCommit": {"oid": "d" * 40},
+                }))
+
+            with mock.patch.object(scheduler, "refresh_status", return_value={"complete_games": 1}), \
+                    mock.patch.object(scheduler, "validate_analysis"), \
+                    mock.patch.object(scheduler, "run_checked", side_effect=run):
+                scheduler.publish_batch(
+                    root, root / "scheduler-state.json", state, repo=root,
+                    machine="test-machine", agent="continuous-batch")
+
+            self.assertEqual(queried_from, [scheduler.ROOT])
+            self.assertEqual(batch["phase"], "published")
+            self.assertEqual(batch["publication"]["stage"], "merged")
+            self.assertEqual(batch["publication"]["merge_commit"], "d" * 40)
+
     def test_merge_race_after_lookup_is_recovered_before_propagating_ship_error(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
