@@ -1,6 +1,16 @@
-# The heuristic gene ranking
-
-**Deployment default:** operator-pinned (73 genes): retains the prior 36 selections and explicitly promotes `unit-cost-efficiency`, `unit-objective-memory`, `camp-party`, `slot-kind-tiebreak`, `promote-when-wounded`, `religion-sues-peace`, `lane-great-people`, `one-launch-pad`, `civilian-rescue`, `missionary-evades-raiders`, `district-planning`, `missionary-last-charge-explores`, `settlement-gap-target`, `religious-defence-scales`, `lane-policy-deck`, `science-multiplier-payoff`, `science-victory-drive`, `solvency-first-trade-slot`, `settler-factory-coordination`, `one-war-at-a-time`, `religious-veto-defence`, `flip-nearby-city-states`, `diplomatic-lane-forecast`, `barbarian-ranged-answer`, `army-target-weighs-enemy`, `research-tier-premium`, `naval-threat-triage`, `deals-for-our-gain`, `settler-screen`, `lane-space-race`, `enhancer-for-the-corps`, `settler-target-hysteresis`, `amenity-project-preemption`, `guru-heals-the-corps`, `no-free-passage`, `naval-recon`, `home-defense`. Screen columns, *Diff*, and posterior values are evidence only; new batches do not automatically change defaults.
+## A Ranking of all Gene Heuristics by On/Off Win Rate Difference in Tournaments
+- Ranking
+- Gene Name
+- A short Gene Description
+- The highest performing version of the gene, which is also the default version if the gene defaults "on"
+- Default "on" of "off". Default "on" genes are a part of our best genome.
+- Estimated probability that this gene is beneficial to our performance
+- (3 cols) win rate from the last tournament / prior tournament / tournament prior to that, scaled to n=10k total seats (n=actual number of seats listed too)
+- Total recorded win rate when gene is on
+- Total recorded win rate when gene is off
+- [Sort key] Difference between the previous 2 cols
+- Estimated change to compute cost when gene is "on"
+- Estimated change to time cost when gene is "off"
 
 | Rank | Gene | Description | Best version | Default | P(>0) | Wins ± /10k total seats — Last Batch (n=30,000 total seats; games/min=not recorded) | Wins ± /10k total seats — Prior Batch (n=4,476 total seats; games/min=not recorded) | Wins ± /10k total seats — Third Batch (n=5,988 total seats; games/min=not recorded) | Total (on) Win rate | Total (off) Win rate | Diff | cost (compute) | cost (time) |
 |---:|---|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
