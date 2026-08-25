@@ -20,7 +20,11 @@
 //! `religious-defence-scales`, `lane-policy-deck`, and
 //! `science-multiplier-payoff`, for 52 enabled genes; then (2026-08-24,
 //! "default this gene to true initially once you write and merge it")
-//! `science-victory-drive`, pinned on before its first screen, for 53.
+//! `science-victory-drive`, pinned on before its first screen, for 53. The
+//! 2026-08-25 displayed pooled-Diff cutoff of +0.85 pp then explicitly
+//! promotes `solvency-first-trade-slot` (+8.07 pp),
+//! `settler-factory-coordination` (+1.84 pp), `one-war-at-a-time` (+1.00 pp),
+//! and `religious-veto-defence` (+0.93 pp), for 57.
 //! `DEPLOYMENT_GENOME` is that exact list. A screen refresh updates evidence,
 //! not the runtime default; changing a default requires an explicit operator
 //! update to the pinned list and regeneration.
@@ -375,7 +379,7 @@ mod tests {
         }
         assert_eq!(
             table::DEPLOYMENT_GENOME.len(),
-            53,
+            57,
             "an operator selection changed; update it deliberately"
         );
         assert!(
@@ -410,6 +414,19 @@ mod tests {
             "religious-defence-scales",
             "lane-policy-deck",
             "science-multiplier-payoff",
+        ] {
+            assert!(operator_default_on(tag), "{tag} was not pinned on");
+        }
+    }
+
+    #[test]
+    fn the_20260825_explicit_promotions_are_pinned_on() {
+        for tag in [
+            "science-victory-drive",
+            "solvency-first-trade-slot",
+            "settler-factory-coordination",
+            "one-war-at-a-time",
+            "religious-veto-defence",
         ] {
             assert!(operator_default_on(tag), "{tag} was not pinned on");
         }

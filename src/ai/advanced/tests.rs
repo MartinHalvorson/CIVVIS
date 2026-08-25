@@ -9215,6 +9215,11 @@ fn settler_factory_coordination_keeps_the_fast_pair_and_gives_them_distinct_site
 
     assert!(!AdvancedAi::new().settler_factory_coordination);
     assert!(!AdvancedAi::legacy().settler_factory_coordination);
+    assert_eq!(
+        crate::ai::advanced::gene_ledger::ledger_default_on("settler-factory-coordination"),
+        Some(true),
+        "the +1.84 pp displayed-Diff promotion reaches the deployment genome"
+    );
     let gene = GENES
         .iter()
         .find(|gene| gene.tag == "settler-factory-coordination")
@@ -18241,6 +18246,11 @@ fn solvency_first_trade_slot_reserves_a_locally_safe_origin() {
 
     assert!(!AdvancedAi::new().base.solvency_first_trade_slot);
     assert!(!AdvancedAi::legacy().base.solvency_first_trade_slot);
+    assert_eq!(
+        crate::ai::advanced::gene_ledger::ledger_default_on("solvency-first-trade-slot"),
+        Some(true),
+        "the +8.07 pp displayed-Diff promotion reaches the deployment genome"
+    );
     let gene = crate::ai::gene("solvency-first-trade-slot").expect("registered gene");
     assert!(gene.opt_in());
     assert!(gene.screenable());
@@ -32734,8 +32744,8 @@ fn the_religious_veto_defence_gene_is_a_registered_reversible_opt_in() {
     assert!(crate::ai::advanced::gene_ledger::screenable(tag));
     assert_eq!(
         crate::ai::advanced::gene_ledger::ledger_default_on(tag),
-        Some(false),
-        "{tag} ships off until a screen prices it"
+        Some(true),
+        "the +0.93 pp displayed-Diff promotion reaches the deployment genome"
     );
     let mut ai = AdvancedAi::new();
     assert!(!ai.religious_veto_defence);
@@ -33251,8 +33261,8 @@ fn one_war_at_a_time_is_a_registered_reversible_opt_in() {
     );
     assert_eq!(
         crate::ai::advanced::gene_ledger::ledger_default_on("one-war-at-a-time"),
-        Some(false),
-        "it ships off until a screen prices it"
+        Some(true),
+        "the +1.00 pp displayed-Diff promotion reaches the deployment genome"
     );
     let mut ai = AdvancedAi::new();
     assert!(!ai.one_war_at_a_time && ai.one_war.is_none());
