@@ -2347,6 +2347,20 @@ impl AdvancedAi {
 
     // ---- append: l-o ------------------------------------------------
 
+    /// Fill an idle turn with something that is not a soldier, or leave it
+    /// idle. See `AdvancedAi::never_an_empty_queue_2`; opt-in gene
+    /// `never-an-empty-queue-2`, version two of `never-an-empty-queue`. Filed
+    /// here rather than under a marker: the append-point check reads a method
+    /// line's first identifier.
+    pub fn enable_never_an_empty_queue_2(&mut self) {
+        self.never_an_empty_queue_2 = true;
+    }
+
+    /// The twin of `enable_never_an_empty_queue_2`.
+    pub fn disable_never_an_empty_queue_2(&mut self) {
+        self.never_an_empty_queue_2 = false;
+    }
+
     /// Build the best real candidate instead of standing idle when nothing
     /// clears the ordinary production bar. See
     /// `AdvancedAi::never_an_empty_queue`; opt-in gene `never-an-empty-queue`.

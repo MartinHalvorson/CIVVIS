@@ -4732,6 +4732,27 @@ pub struct AdvancedAi {
 
     // ---- append: l-o ------------------------------------------------
 
+    /// Version 2 of `never-an-empty-queue`: fill an idle turn with something
+    /// that is not a soldier, or leave it idle.
+    ///
+    /// Version one takes the best candidate above the hard veto, preferring
+    /// infrastructure. Its 24-game fires probe came back negative on both axes,
+    /// and the preference is the reason it cannot help: the two sentinels are
+    /// -10,000 for a hard veto and -2,000 for a soft one, and the soft refusals
+    /// the scorer actually issues are all UNITS — a saturated domain, a second
+    /// Scout, a body weaker than the best in its role. A city with nothing
+    /// above the ordinary bar therefore has infrastructure at -10,000 and
+    /// soldiers at -2,000, so "prefer infrastructure" never binds and the gene
+    /// answers every idle turn with a surplus soldier the empire then owes Gold
+    /// upkeep on for the rest of the game.
+    ///
+    /// Version two keeps the fallback and drops the military half of it: a
+    /// Builder, a Trader, a Settler, a building, a district or a project may
+    /// answer an idle turn, and a soldier the scorer has already refused may
+    /// not. Where nothing civilian qualifies the city stays idle, which is what
+    /// ships. Opt-in gene `never-an-empty-queue-2`.
+    pub never_an_empty_queue_2: bool,
+
     /// A city with nothing above the ordinary bar builds the best real
     /// candidate instead of standing idle for the turn.
     ///
@@ -5914,6 +5935,7 @@ impl AdvancedAi {
             government_ladder: false,
 
             // ---- append: l-o ----------------------------------------
+            never_an_empty_queue_2: false,
             never_an_empty_queue: false,
             order_retry: false,
             missionary_last_charge_explores: false,
@@ -19355,7 +19377,13 @@ impl AdvancedAi {
             // outright — which is the least-bad build rather than no build.
             let chosen = match chosen {
                 Some(found) => Some(found),
-                None if self.never_an_empty_queue && committed.is_none() => {
+                None if (self.never_an_empty_queue || self.never_an_empty_queue_2)
+                    && committed.is_none() =>
+                {
+                    // See `never_an_empty_queue_2`: version two will not answer
+                    // an idle turn with a soldier the empire did not want and
+                    // then owes upkeep on, and would rather stay idle.
+                    let civilian_only = self.never_an_empty_queue_2;
                     let fallback = {
                         let _memo = g.query_memo();
                         let items = g.producible_items(pid, cid);
@@ -19365,10 +19393,23 @@ impl AdvancedAi {
                         // Gold upkeep on every turn: rank infrastructure above
                         // units before ranking by the score itself.
                         let upkeep_free = |item: &Item| !matches!(item, Item::Unit { .. });
+                        let wanted = |item: &Item| {
+                            !civilian_only
+                                || match item {
+                                    Item::Unit { unit } | Item::Formation { unit, .. } => g
+                                        .rules
+                                        .units
+                                        .get(unit)
+                                        .is_none_or(|spec| spec.class != "military"),
+                                    _ => true,
+                                }
+                        };
                         items
                             .into_iter()
                             .zip(scores)
-                            .filter(|(_, score)| *score > PRODUCTION_VETO_FLOOR)
+                            .filter(|(item, score)| {
+                                *score > PRODUCTION_VETO_FLOOR && wanted(item)
+                            })
                             .max_by(|left, right| {
                                 upkeep_free(&left.0)
                                     .cmp(&upkeep_free(&right.0))
