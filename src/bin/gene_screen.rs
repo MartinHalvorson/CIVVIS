@@ -64,6 +64,7 @@
 //!               [--native-competitions] [--no-native-competitions]
 //!               [--players N] [--turns N] [--width N] [--height N]
 //!               [--city-states N] [--speed ID] [--map ID] [--victories a,b]
+//!               [--victory-mask rotate:N]
 //!               [--stock-civs]
 //!   gene_screen --analyze PATH [PATH ...] [--json OUT] [--interactions]
 //!               [--denial] [--top N] [--by-civ TAG]
@@ -122,6 +123,158 @@ const SCREEN_WIDTH: i32 = 74;
 const SCREEN_HEIGHT: i32 = 46;
 const SCREEN_CITY_STATES: usize = 9;
 const SCREEN_MAP: MapScript = MapScript::Continents;
+
+/// The five conditions a victory mask may close. Score is never among them:
+/// it is the clock, the ending that turns a game the 250-turn limit reaches
+/// into a decided one rather than a truncation.
+const MASKABLE_LANES: [&str; 5] = ["science", "culture", "religious", "diplomatic", "domination"];
+
+/// ⭐ THE ROTATING VICTORY MASK (`--victory-mask rotate:N`, 2026-08-25).
+///
+/// The standard screen leaves all six lanes live in every game, and on this
+/// board science and diplomatic victories land past the clock while religious
+/// conversion decides most of the games that end early — so a gene for a lane
+/// nobody finishes is priced on a board where its lane never decides
+/// anything, and a gene for the lane that does decide is priced against a
+/// board where that lane is always open. The live Civilization VI ladder
+/// loses diplomatic 32 : culture 27 : religious 8 : science 4 : domination 1.
+///
+/// `rotate:N` closes N of the five real conditions per game, deterministically
+/// from the game's seed: the C(5,N) N-subsets of the maskable lanes in one
+/// fixed order, indexed by `seed % count`, so a consecutive seed window plays
+/// every mask an equal number of times and every lane is closed in exactly
+/// N/5 of the games. Score stays on in every game. Across the batch every
+/// lane is live, which is why a rotating batch keeps the standard shape:
+/// `victories` in the header is the batch-level set (all six), `victory_mask`
+/// names the rotation, and each row carries the lanes its own game closed
+/// (`victories_off`) so `--analyze` can read a lane gene with its lane open
+/// against closed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct VictoryMask {
+    /// How many real conditions each game closes.
+    rotate: usize,
+}
+
+impl VictoryMask {
+    fn parse(text: &str) -> Result<VictoryMask, String> {
+        let Some(n) = text.strip_prefix("rotate:") else {
+            return Err(format!("unknown victory mask {text:?}; the form is rotate:N"));
+        };
+        let rotate: usize = n
+            .trim()
+            .parse()
+            .map_err(|_| format!("rotate:{n}: N must be a whole number"))?;
+        if rotate == 0 {
+            return Err("rotate:0 closes nothing; leave --victory-mask off instead".to_string());
+        }
+        Ok(VictoryMask { rotate })
+    }
+
+    fn id(self) -> String {
+        format!("rotate:{}", self.rotate)
+    }
+
+    /// The lanes the rotation draws from: the maskable lanes `victories`
+    /// leaves enabled at the batch level.
+    fn lanes(self, victories: civvis::game::VictoryConditions) -> Vec<&'static str> {
+        MASKABLE_LANES
+            .iter()
+            .copied()
+            .filter(|lane| victories.is_enabled(lane))
+            .collect()
+    }
+
+    /// Every mask the rotation cycles through, in one fixed order: the
+    /// N-subsets of [`VictoryMask::lanes`], lexicographic by lane position,
+    /// each subset sorted by name. Empty when fewer than N lanes are enabled.
+    fn masks(self, victories: civvis::game::VictoryConditions) -> Vec<Vec<&'static str>> {
+        combinations(&self.lanes(victories), self.rotate)
+            .into_iter()
+            .map(|mut mask| {
+                mask.sort_unstable();
+                mask
+            })
+            .collect()
+    }
+
+    /// The lanes closed in the game played on `seed`, sorted by name. The
+    /// seed modulo the mask count: exactly balanced over any seed window
+    /// that is a multiple of the count, never more than one game apart
+    /// otherwise, and the same game reproduces the same mask.
+    fn closed(self, seed: u64, victories: civvis::game::VictoryConditions) -> Vec<&'static str> {
+        let masks = self.masks(victories);
+        if masks.is_empty() {
+            return Vec::new();
+        }
+        masks[(seed % masks.len() as u64) as usize].clone()
+    }
+
+    /// The conditions the game on `seed` is played with. Score is on
+    /// whatever the batch-level set said: the mask must never leave a game
+    /// nobody can win.
+    fn apply(
+        self,
+        seed: u64,
+        victories: civvis::game::VictoryConditions,
+    ) -> civvis::game::VictoryConditions {
+        let mut conditions = victories;
+        for lane in self.closed(seed, victories) {
+            match lane {
+                "science" => conditions.science = false,
+                "culture" => conditions.culture = false,
+                "religious" => conditions.religious = false,
+                "diplomatic" => conditions.diplomatic = false,
+                "domination" => conditions.domination = false,
+                _ => {}
+            }
+        }
+        conditions.score = true;
+        conditions
+    }
+
+    /// Games per mask over `games` consecutive seeds from `start_seed`, keyed
+    /// by the closed lanes joined with `+` — what the header pre-registers.
+    fn games_by_mask(
+        self,
+        start_seed: u64,
+        games: usize,
+        victories: civvis::game::VictoryConditions,
+    ) -> BTreeMap<String, usize> {
+        let mut counts = BTreeMap::new();
+        for game in 0..games {
+            let key = mask_key(&self.closed(start_seed + game as u64, victories));
+            *counts.entry(key).or_default() += 1;
+        }
+        counts
+    }
+}
+
+/// The k-subsets of `items` in lexicographic order of position.
+fn combinations(items: &[&'static str], k: usize) -> Vec<Vec<&'static str>> {
+    if k == 0 {
+        return vec![Vec::new()];
+    }
+    if items.len() < k {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    for (i, &first) in items.iter().enumerate() {
+        for mut rest in combinations(&items[i + 1..], k - 1) {
+            rest.insert(0, first);
+            out.push(rest);
+        }
+    }
+    out
+}
+
+/// One mask's name: its closed lanes joined with `+`, or `none`.
+fn mask_key<S: AsRef<str>>(closed: &[S]) -> String {
+    if closed.is_empty() {
+        "none".to_string()
+    } else {
+        closed.iter().map(AsRef::as_ref).collect::<Vec<_>>().join("+")
+    }
+}
 
 /// ⭐ THE DRAW (operator, 2026-08-24). Every tournament genome STARTS FROM
 /// THE DEFAULT GENOME: a gene the deployment ships on stays on with
@@ -416,6 +569,13 @@ struct Row {
     /// best rival's domestic total and there is no fixed threshold to quote.
     #[serde(default)]
     domestic: i64,
+    /// ⭐ The victory lanes the rotating mask CLOSED in this seat's game,
+    /// sorted by name (`--victory-mask rotate:N`). Every seat of one game
+    /// carries the same list. Empty in an unmasked game and in every file
+    /// written before the mask existed, and not written at all then, so a
+    /// standard row is byte for byte what it was.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    victories_off: Vec<String>,
 }
 
 /// The game a row belongs to. Seats of one game share a winner and a timing,
@@ -860,6 +1020,20 @@ struct Header {
     /// written before 2026-08-24.
     #[serde(default)]
     contested_field_genes: String,
+    /// ⭐ THE ROTATING VICTORY MASK: `rotate:N` when each game closed N of
+    /// the five real conditions from its seed ([`VictoryMask`]), empty when
+    /// every game played the batch-level set. NOT a shape leg: `victories`
+    /// above stays the batch-level set and every lane is live across a
+    /// rotating batch, so `shape_of` reads it as the standard screen. Absent
+    /// in every file written before 2026-08-25.
+    #[serde(default)]
+    victory_mask: String,
+    /// The games this segment pre-registered per mask, keyed by the closed
+    /// lanes joined with `+` — derived from the seed window before the first
+    /// game, so a stopped batch's intended split is on record. Empty when
+    /// there is no mask.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    victory_mask_games: BTreeMap<String, usize>,
     /// ⭐ The binary that played these games. Absent in files written before
     /// 2026-08-23, which `tools/genes.py` grandfathers as history and
     /// marks `pre-fingerprint` rather than accepting silently.
@@ -1194,6 +1368,8 @@ struct Profile {
     /// Genes switched on for a field seat over the deployment genome
     /// (`CONTESTED_FIELD_GENES`). Never applied to a measured seat.
     field_genes: Vec<String>,
+    /// ⭐ The rotating victory mask, `None` for the plain batch-level set.
+    victory_mask: Option<VictoryMask>,
 }
 
 /// ⭐ WHICH MAJOR SEATS THE FIELD PINS, AND TO WHAT — one entry per major
@@ -1269,11 +1445,25 @@ fn play_game(
     genomes: &[Vec<bool>],
 ) -> Vec<Row> {
     let started = Instant::now();
+    // ⭐ THE MASK IS PER GAME, FROM THE SEED: the batch-level set minus the
+    // lanes this game's mask closes, score always on.
+    let closed: Vec<String> = profile
+        .victory_mask
+        .map(|mask| {
+            mask.closed(seed, profile.victories)
+                .into_iter()
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default();
+    let victories = profile
+        .victory_mask
+        .map_or(profile.victories, |mask| mask.apply(seed, profile.victories));
     let mut world = Game::new_with(GameOptions {
         speed: profile.speed.id().to_string(),
         map_script: profile.map,
         randomize_civs: profile.randomize_civs,
-        victory_conditions: profile.victories,
+        victory_conditions: victories,
         ..GameOptions::new(
             profile.players,
             profile.width,
@@ -1312,14 +1502,16 @@ fn play_game(
         .enumerate()
         .filter(|(index, _)| pinned.get(*index).copied().flatten().is_none())
         .map(|(index, &seat)| {
-            row_for_seat(
+            let mut row = row_for_seat(
                 &world,
                 game,
                 seed,
                 seat,
                 genome_string(&genomes[index]),
                 secs,
-            )
+            );
+            row.victories_off = closed.clone();
+            row
         })
         .collect()
 }
@@ -1419,6 +1611,8 @@ fn row_for_seat(
         tourists: game.foreign_tourists(seat),
         rival_tourists: rival(&|pid| game.foreign_tourists(pid)),
         domestic: game.domestic_tourists(seat),
+        // Filled in by `play_game`, which knows the game's mask.
+        victories_off: Vec::new(),
     }
 }
 
@@ -2446,6 +2640,7 @@ fn print_table(header: &Header, rows: &[Row]) {
     );
     println!("{}", build_line(header));
     println!("{}", field_line(header));
+    println!("{}", mask_line(header));
     println!("{}", completeness_line(header, estimates.seats));
     println!(
         "a seat overall: win {:.1}% (chance {:.1}%) · score share {:.1}% (equal share {:.1}%)",
@@ -2758,6 +2953,7 @@ fn print_table(header: &Header, rows: &[Row]) {
          seconds, and positive is slower."
     );
     print_families(header, rows);
+    print_victory_masks(header, rows);
 }
 
 /// The family tables: for every versioned gene, what each level did and
@@ -3008,6 +3204,7 @@ fn write_json_summary(path: &str, header: &Header, rows: &[Row]) {
         "seats": estimates.seats,
         "games": estimates.games,
         "endings": ending_census(rows),
+        "victory_masks": mask_report(header, rows).map(|report| report.json()),
         "overall_win": estimates.overall_win,
         "overall_share": estimates.overall_share,
         "family_wise_z": family_z,
@@ -3107,6 +3304,7 @@ fn read_rows(paths: &[String]) -> (Header, Vec<Row>) {
                                 || first.baseline != found.baseline
                                 || first.randomize_civs != found.randomize_civs
                                 || first.victories != found.victories
+                                || first.victory_mask != found.victory_mask
                                 || first.all_seats != found.all_seats
                                 || first.design != found.design
                                 || first.prior != found.prior
@@ -3181,6 +3379,13 @@ fn played_seed_window(rows: &[Row]) -> Option<(u64, u64)> {
 /// player count decides the chance base the column is measured against. The
 /// draw design is NOT a leg: a foldover file at this shape and an independent
 /// one price the same genes on the same board, and the estimator reads both.
+///
+/// ⭐ Neither is a ROTATING VICTORY MASK (`victory_mask: "rotate:N"`). The
+/// `victories` leg is the batch-level set and a rotating batch leaves all six
+/// live across the batch — every lane open in (5−N)/5 of its games, every game
+/// still ending on score at the clock — so it is accepted as the standard
+/// screen; `tools/genes.py` records the mask on the source and reads the same
+/// way. A `--victories` restriction is a second regime and stays a probe.
 fn shape_of(header: &Header) -> &'static str {
     let all_lanes = header.victories.is_empty()
         || header.victories.split(',').count() == civvis::game::VictoryConditions::NAMES.len();
@@ -3466,6 +3671,271 @@ fn field_line(header: &Header) -> String {
     }
 }
 
+/// One line saying what the rotating victory mask did, or that there was none.
+fn mask_line(header: &Header) -> String {
+    if header.victory_mask.is_empty() {
+        return "victory mask: none — every game plays the batch-level lanes".to_string();
+    }
+    format!(
+        "victory mask: ⭐ {} — each game closes {} of the five real conditions from its seed, score \
+         always on; {} masks pre-registered ({}) · still the standard shape: every lane is live across \
+         the batch",
+        header.victory_mask,
+        header
+            .victory_mask
+            .strip_prefix("rotate:")
+            .unwrap_or("?"),
+        header.victory_mask_games.len(),
+        header
+            .victory_mask_games
+            .iter()
+            .map(|(mask, games)| format!("{mask}×{games}"))
+            .collect::<Vec<_>>()
+            .join(" ")
+    )
+}
+
+/// ⭐ WHICH LANE A LANE GENE IS FOR, so the mask can read it with that lane
+/// open against closed. The registry's own words (`src/ai/advanced/genes.rs`):
+/// the congress genes act on the ballot and favour that pay Diplomatic
+/// Victory Points, `competition-victory-points` prices the points a scored
+/// competition pays, the culture spending pass and the space race are their
+/// lanes by name, and `holy-lane-parity` is the religion race. The remaining
+/// `lane-*` genes — great people, the policy deck, the commit — substitute
+/// WHICHEVER lane the seat is racing at one decider, so they belong to no
+/// single lane and are read on all five.
+const LANE_GENE_LANES: [(&str, &str); 6] = [
+    ("lane-congress-ballot", "diplomatic"),
+    ("lane-congress-favor", "diplomatic"),
+    ("competition-victory-points", "diplomatic"),
+    ("lane-culture-spending", "culture"),
+    ("lane-space-race", "science"),
+    ("holy-lane-parity", "religious"),
+];
+
+/// The lanes a gene is read on by the mask split: one for a gene of one lane,
+/// all five for a `lane-*` gene of no single lane, none for every other gene.
+/// A version (`lane-space-race-2`) is read as its base.
+fn lane_gene_lanes(tag: &str) -> Option<Vec<&'static str>> {
+    let base = match tag.rsplit_once('-') {
+        Some((base, version)) if version.parse::<usize>().is_ok() => base,
+        _ => tag,
+    };
+    if let Some((_, lane)) = LANE_GENE_LANES.iter().find(|(gene, _)| *gene == base) {
+        return Some(vec![lane]);
+    }
+    if base.starts_with("lane-") {
+        return Some(MASKABLE_LANES.to_vec());
+    }
+    None
+}
+
+/// One lane gene's win Δ with one lane open against closed.
+struct MaskSplit {
+    tag: String,
+    lane: &'static str,
+    /// (Δ, standard error, seats) with the lane open.
+    open: (f64, f64, usize),
+    /// The same with the lane closed.
+    closed: (f64, f64, usize),
+}
+
+impl MaskSplit {
+    /// Open minus closed, with the error of a difference of two independent
+    /// estimates — the two subsets share no game.
+    fn difference(&self) -> (f64, f64) {
+        let se = (self.open.1 * self.open.1 + self.closed.1 * self.closed.1).sqrt();
+        (self.open.0 - self.closed.0, se)
+    }
+}
+
+/// ⭐ THE VICTORY MASK READ BACK: how many games each mask took, how often
+/// each lane was open, and every lane gene with its lane open against closed.
+struct MaskReport {
+    mask: String,
+    games: usize,
+    by_mask: BTreeMap<String, usize>,
+    /// Per lane: games with it open, games with it closed.
+    lanes: Vec<(&'static str, usize, usize)>,
+    splits: Vec<MaskSplit>,
+}
+
+impl MaskReport {
+    fn json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "mask": self.mask,
+            "games": self.games,
+            "by_mask": self.by_mask,
+            "lanes": self.lanes.iter().map(|(lane, open, closed)| {
+                serde_json::json!({"lane": lane, "open_games": open, "closed_games": closed})
+            }).collect::<Vec<_>>(),
+            "lane_genes": self.splits.iter().map(|split| {
+                let (delta, se) = split.difference();
+                serde_json::json!({
+                    "tag": split.tag,
+                    "lane": split.lane,
+                    "open_seats": split.open.2,
+                    "open_win_delta_pp": 100.0 * split.open.0,
+                    "open_win_se_pp": 100.0 * split.open.1,
+                    "closed_seats": split.closed.2,
+                    "closed_win_delta_pp": 100.0 * split.closed.0,
+                    "closed_win_se_pp": 100.0 * split.closed.1,
+                    "open_minus_closed_pp": 100.0 * delta,
+                    "open_minus_closed_se_pp": 100.0 * se,
+                })
+            }).collect::<Vec<_>>(),
+        })
+    }
+}
+
+/// A gene's win Δ on the seats `keep` selects, with its clustered error and
+/// the seat count. `None` when the gene is not screened in this header.
+fn subset_win_contrast(
+    header: &Header,
+    rows: &[Row],
+    gene: usize,
+    keep: impl Fn(&Row) -> bool,
+) -> Option<(f64, f64, usize)> {
+    let subset: Vec<Row> = rows.iter().filter(|row| keep(row)).cloned().collect();
+    let seats = Seats::of(header, &subset);
+    let column = seats.columns.iter().position(|&index| index == gene)?;
+    let n = seats.rows.len();
+    if n == 0 {
+        return Some((0.0, f64::INFINITY, 0));
+    }
+    let (delta, se) = seats.contrast(column, &seats.wins);
+    Some((delta, se, n))
+}
+
+/// The report, or `None` for a batch no mask touched (no header mask and no
+/// row with a closed lane).
+fn mask_report(header: &Header, rows: &[Row]) -> Option<MaskReport> {
+    let played: Vec<&Row> = rows.iter().filter(|row| row.kind == "game").collect();
+    if header.victory_mask.is_empty() && played.iter().all(|row| row.victories_off.is_empty()) {
+        return None;
+    }
+    let mut first_of_game: BTreeMap<GameKey, &Row> = BTreeMap::new();
+    for row in &played {
+        first_of_game.entry(row.game_key()).or_insert(row);
+    }
+    let mut by_mask: BTreeMap<String, usize> = BTreeMap::new();
+    for row in first_of_game.values() {
+        *by_mask.entry(mask_key(&row.victories_off)).or_default() += 1;
+    }
+    let lanes = MASKABLE_LANES
+        .iter()
+        .map(|&lane| {
+            let closed = first_of_game
+                .values()
+                .filter(|row| row.victories_off.iter().any(|off| off == lane))
+                .count();
+            (lane, first_of_game.len() - closed, closed)
+        })
+        .collect();
+    let mut splits = Vec::new();
+    for (index, tag) in header.genes.iter().enumerate() {
+        if !header.screened.iter().any(|screened| screened == tag) {
+            continue;
+        }
+        let Some(gene_lanes) = lane_gene_lanes(tag) else {
+            continue;
+        };
+        for lane in gene_lanes {
+            let open = subset_win_contrast(header, rows, index, |row| {
+                !row.victories_off.iter().any(|off| off == lane)
+            });
+            let closed = subset_win_contrast(header, rows, index, |row| {
+                row.victories_off.iter().any(|off| off == lane)
+            });
+            if let (Some(open), Some(closed)) = (open, closed) {
+                splits.push(MaskSplit {
+                    tag: tag.clone(),
+                    lane,
+                    open,
+                    closed,
+                });
+            }
+        }
+    }
+    Some(MaskReport {
+        mask: header.victory_mask.clone(),
+        games: first_of_game.len(),
+        by_mask,
+        lanes,
+        splits,
+    })
+}
+
+/// The "Victory masks" section of `--analyze`: mask counts, lane open/closed
+/// counts, and every lane gene read with its own lane open against closed.
+fn print_victory_masks(header: &Header, rows: &[Row]) {
+    let Some(report) = mask_report(header, rows) else {
+        return;
+    };
+    println!(
+        "\nVictory masks · {} · {} games",
+        if report.mask.is_empty() {
+            "(rows carry closed lanes, header names no mask)".to_string()
+        } else {
+            report.mask.clone()
+        },
+        report.games
+    );
+    println!(
+        "  masks: {}",
+        report
+            .by_mask
+            .iter()
+            .map(|(mask, games)| format!("{mask}×{games}"))
+            .collect::<Vec<_>>()
+            .join(" · ")
+    );
+    println!(
+        "  lanes: {}",
+        report
+            .lanes
+            .iter()
+            .map(|(lane, open, closed)| format!("{lane} open {open} / closed {closed}"))
+            .collect::<Vec<_>>()
+            .join(" · ")
+    );
+    if report.splits.is_empty() {
+        println!("  no lane gene screened, so no open/closed split");
+        return;
+    }
+    println!(
+        "  {:<28} {:<11} {:>22} {:>22} {:>16}",
+        "lane gene", "lane", "lane OPEN winΔ (seats)", "lane CLOSED winΔ (seats)", "open−closed"
+    );
+    let cell = |(delta, se, seats): (f64, f64, usize)| {
+        if se.is_finite() {
+            format!("{:+.1}±{:.1}pp ({seats})", 100.0 * delta, 100.0 * se)
+        } else {
+            format!("{:+.1}pp ({seats})", 100.0 * delta)
+        }
+    };
+    for split in &report.splits {
+        let (delta, se) = split.difference();
+        println!(
+            "  {:<28} {:<11} {:>22} {:>22} {:>16}",
+            split.tag,
+            split.lane,
+            cell(split.open),
+            cell(split.closed),
+            if se.is_finite() {
+                format!("{:+.1}±{:.1}pp", 100.0 * delta, 100.0 * se)
+            } else {
+                format!("{:+.1}pp", 100.0 * delta)
+            }
+        );
+    }
+    println!(
+        "  a lane gene pays through its lane: a Δ that is larger with the lane open than closed is \
+         the lane paying, one that is the same either way is the gene paying through score share or \
+         not at all. Errors are clustered by game; the two subsets share no game."
+    );
+}
+
 /// One line naming the binary a batch was played by, printed before the first
 /// game and again by `--analyze`.
 ///
@@ -3547,6 +4017,8 @@ fn usage() -> ! {
          [--contested-field-genes lanes|tag,tag] [--native-competitions] [--no-native-competitions] \
          [--players N] [--turns N] [--width N] \
          [--height N] [--city-states N] [--speed ID] [--map ID] [--victories a,b,...] [--stock-civs]\n       \
+         still the screen (all lanes live across the batch): [--victory-mask rotate:N] closes N of the \
+         five real conditions per game from its seed, score always on, C(5,N) masks at equal shares\n       \
          (--contested pins one rival seat per lane to actually pursue it — {} by default — and turns \
          on native scored competitions, the only recurring native route to the {DIPLOMATIC_VICTORY_POINTS} \
          Diplomatic Victory Points that lane needs)\n       \
@@ -3721,6 +4193,26 @@ fn main() {
             std::process::exit(2);
         }),
     };
+    // ⭐ THE ROTATING VICTORY MASK. Per game, from the seed, N of the five
+    // real conditions are closed and score stays on; every lane is live
+    // across the batch, so this is still the standard shape (`shape_of`).
+    let victory_mask = text(&args, "--victory-mask").map(|spec| {
+        let mask = VictoryMask::parse(&spec).unwrap_or_else(|why| {
+            eprintln!("--victory-mask: {why}");
+            std::process::exit(2);
+        });
+        let lanes = mask.lanes(victories);
+        if lanes.len() <= mask.rotate {
+            eprintln!(
+                "--victory-mask {spec}: only {} real conditions are enabled ({}); a rotation must \
+                 leave at least one open every game (a fixed restriction is --victories)",
+                lanes.len(),
+                lanes.join(",")
+            );
+            std::process::exit(2);
+        }
+        mask
+    });
     let speed = match text(&args, "--speed") {
         None => GameSpeed::Online,
         Some(id) => GameSpeed::from_id(&id).unwrap_or_else(|| {
@@ -3793,6 +4285,13 @@ fn main() {
             );
             std::process::exit(2);
         }
+    }
+    if victory_mask.is_some() && !field.is_empty() {
+        eprintln!(
+            "--victory-mask cannot be combined with a contested field: the mask would close the \
+             pinned pursuer's lane in some games and it would chase a victory the game cannot award"
+        );
+        std::process::exit(2);
     }
     // The pursuers' own genome over the deployment one. `none` reproduces the
     // weaker deployment-genome-only field the constant's doc measured.
@@ -3968,6 +4467,10 @@ fn main() {
             .join(","),
         native_competitions,
         contested_field_genes: field_genes.join(","),
+        victory_mask: victory_mask.map(VictoryMask::id).unwrap_or_default(),
+        victory_mask_games: victory_mask
+            .map(|mask| mask.games_by_mask(start_seed, games_to_play, victories))
+            .unwrap_or_default(),
         design: "independent".to_string(),
         prior: probabilities.clone(),
         families: families
@@ -3994,6 +4497,7 @@ fn main() {
     // the operator can see that in the first line instead of at the end.
     println!("{}", build_line(&header));
     println!("{}", field_line(&header));
+    println!("{}", mask_line(&header));
     writeln!(
         out,
         "{}",
@@ -4014,6 +4518,7 @@ fn main() {
         field: field.clone(),
         native_competitions,
         field_genes: field_genes.clone(),
+        victory_mask,
     };
     println!(
         "gene screen: {games_to_play} games ({} measured seats of {} chairs, every drawn seat its own genome, on at p={p_on} / {p_default_on} default-on) · {} of {} genes screened · {players}p {width}x{height} {} · {} · {turns} turns · {city_states} city-states · {} civs · seeds {start_seed}..{} · {jobs} jobs · rows → {out_path}",
@@ -4107,6 +4612,8 @@ mod tests {
             contested_field: String::new(),
             native_competitions: false,
             contested_field_genes: String::new(),
+            victory_mask: String::new(),
+            victory_mask_games: BTreeMap::new(),
             design: "independent".into(),
             prior: vec![0.5; genes.len()],
             p_on: 0.5,
@@ -4159,6 +4666,7 @@ mod tests {
             tourists: 0,
             rival_tourists: 0,
             domestic: 0,
+            victories_off: Vec::new(),
         }
     }
 
@@ -4690,6 +5198,180 @@ mod tests {
         assert!(header.contested_field.is_empty());
         assert!(!header.native_competitions);
         assert_eq!(shape_of(&header), "standard");
+    }
+
+    fn screen_header(genes: &[&str]) -> Header {
+        let mut header = test_header(genes);
+        header.players = SCREEN_PLAYERS;
+        header.width = SCREEN_WIDTH;
+        header.height = SCREEN_HEIGHT;
+        header.city_states = SCREEN_CITY_STATES;
+        header.map = SCREEN_MAP.id().to_string();
+        header.speed = GameSpeed::Online.id().to_string();
+        header.turns = GameSpeed::Online.turn_limit();
+        header.randomize_civs = true;
+        header
+    }
+
+    /// ⭐ `rotate:2` is ten masks, each seed always the same one, every mask
+    /// exactly a tenth of a thousand consecutive seeds, every lane closed in
+    /// exactly two fifths of them — and score never.
+    #[test]
+    fn the_victory_mask_is_deterministic_and_balanced() {
+        let mask = VictoryMask::parse("rotate:2").expect("parses");
+        let all = civvis::game::VictoryConditions::default();
+        assert_eq!(mask.masks(all).len(), 10, "C(5,2)");
+        let mut counts: BTreeMap<String, usize> = BTreeMap::new();
+        let mut closed_per_lane: BTreeMap<&str, usize> = BTreeMap::new();
+        for seed in 26_081_900u64..26_082_900 {
+            let closed = mask.closed(seed, all);
+            assert_eq!(closed, mask.closed(seed, all), "the same seed, the same mask");
+            assert_eq!(closed.len(), 2);
+            let mut sorted = closed.clone();
+            sorted.sort_unstable();
+            assert_eq!(closed, sorted, "closed lanes are sorted");
+            assert!(!closed.contains(&"score"), "score is the clock and never closes");
+            for lane in &closed {
+                *closed_per_lane.entry(lane).or_default() += 1;
+            }
+            *counts.entry(mask_key(&closed)).or_default() += 1;
+            let applied = mask.apply(seed, all);
+            assert!(applied.score);
+            for lane in MASKABLE_LANES {
+                assert_eq!(applied.is_enabled(lane), !closed.contains(&lane), "{lane} at {seed}");
+            }
+        }
+        assert_eq!(counts.len(), 10);
+        assert!(counts.values().all(|&n| n == 100), "{counts:?}");
+        assert_eq!(closed_per_lane.len(), 5);
+        assert!(closed_per_lane.values().all(|&n| n == 400), "{closed_per_lane:?}");
+        assert_eq!(
+            mask.games_by_mask(26_081_900, 1000, all),
+            counts,
+            "the header pre-registers exactly what the seeds play"
+        );
+    }
+
+    /// Score stays on for every N, and a rotation must leave a real lane open.
+    #[test]
+    fn the_victory_mask_never_closes_score_at_any_width() {
+        let all = civvis::game::VictoryConditions::default();
+        for n in 1..=4 {
+            let mask = VictoryMask::parse(&format!("rotate:{n}")).expect("parses");
+            for seed in 0..64u64 {
+                assert!(mask.apply(seed, all).score);
+                assert!(!mask.closed(seed, all).contains(&"score"));
+            }
+        }
+        // A batch-level restriction narrows what the rotation draws from.
+        let two = civvis::game::VictoryConditions::parse("science,culture,score").expect("parses");
+        let mask = VictoryMask::parse("rotate:1").expect("parses");
+        assert_eq!(mask.lanes(two), vec!["science", "culture"]);
+        assert_eq!(mask.masks(two), vec![vec!["science"], vec!["culture"]]);
+        assert!(VictoryMask::parse("rotate:0").is_err());
+        assert!(VictoryMask::parse("random:2").is_err());
+        assert!(VictoryMask::parse("rotate:x").is_err());
+    }
+
+    /// A row carries the lanes its game closed, sorted; an unmasked row writes
+    /// nothing and a file written before the field reads as unmasked.
+    #[test]
+    fn rows_carry_the_lanes_their_game_closed() {
+        let mut row = test_row(3, 1, "01", false);
+        let text = serde_json::to_string(&row).expect("serializes");
+        assert!(!text.contains("victories_off"), "an unmasked row is unchanged: {text}");
+        let back: Row = serde_json::from_str(&text).expect("parses");
+        assert!(back.victories_off.is_empty());
+        row.victories_off = vec!["culture".into(), "science".into()];
+        let text = serde_json::to_string(&row).expect("serializes");
+        assert!(text.contains(r#""victories_off":["culture","science"]"#), "{text}");
+        let back: Row = serde_json::from_str(&text).expect("parses");
+        assert_eq!(back.victories_off, row.victories_off);
+    }
+
+    /// ⭐ A rotating batch IS the standard screen: `victories` is the batch-level
+    /// set and every lane is live across the batch. A `--victories`
+    /// restriction stays a probe.
+    #[test]
+    fn a_rotating_mask_batch_is_the_standard_screen() {
+        let mut header = screen_header(&["a"]);
+        assert_eq!(shape_of(&header), "standard");
+        header.victory_mask = "rotate:2".into();
+        header.victory_mask_games = BTreeMap::from([("culture+science".to_string(), 1)]);
+        assert_eq!(shape_of(&header), "standard", "every lane is live across the batch");
+        header.victories = "domination,score".into();
+        assert_eq!(shape_of(&header), "legacy", "a restricted batch-level set is a probe");
+    }
+
+    /// The analyze split on a synthetic masked batch: a lane gene that pays
+    /// only when its lane is open reads larger open than closed, the mask
+    /// counts come back from the rows, and the report lands in the JSON.
+    #[test]
+    fn the_mask_split_reads_a_lane_gene_open_against_closed() {
+        let mask = VictoryMask::parse("rotate:2").expect("parses");
+        let all = civvis::game::VictoryConditions::default();
+        let mut header = screen_header(&["lane-space-race", "lane-policy-deck", "settler-guard"]);
+        header.victory_mask = mask.id();
+        let probabilities = vec![0.5; 3];
+        let mut rows = Vec::new();
+        let games = 400;
+        for game in 0..games {
+            let seed = 500_000 + game as u64;
+            let closed: Vec<String> = mask.closed(seed, all).iter().map(|s| s.to_string()).collect();
+            let science_open = !closed.iter().any(|lane| lane == "science");
+            // Six seats; the winner is the lowest seat with the space-race gene
+            // on when science is open, else a fixed rotation independent of it.
+            let genomes: Vec<Vec<bool>> = (0..6)
+                .map(|seat| draw_genome(7, game, 6, seat, &probabilities, &[]))
+                .collect();
+            let winner = if science_open {
+                genomes.iter().position(|bits| bits[0]).unwrap_or(game % 6)
+            } else {
+                game % 6
+            };
+            for (seat, bits) in genomes.iter().enumerate() {
+                let mut row = test_row(game, seat, &genome_string(bits), seat == winner);
+                row.seed = seed;
+                row.victories_off = closed.clone();
+                rows.push(row);
+            }
+        }
+        let report = mask_report(&header, &rows).expect("a masked batch reports");
+        assert_eq!(report.games, games);
+        assert_eq!(report.by_mask.len(), 10);
+        assert!(report.by_mask.values().all(|&n| n == 40), "{:?}", report.by_mask);
+        let science = report.lanes.iter().find(|(lane, _, _)| *lane == "science").expect("science");
+        assert_eq!((science.1, science.2), (240, 160));
+        // One split for the space race (science), five for the policy deck,
+        // none for settler-guard.
+        assert_eq!(report.splits.len(), 6, "{:?}", report.splits.iter().map(|s| (&s.tag, s.lane)).collect::<Vec<_>>());
+        let race = report.splits.iter().find(|s| s.tag == "lane-space-race").expect("space race");
+        assert_eq!(race.lane, "science");
+        assert!(race.open.0 > 0.3, "open Δ {:+.3}", race.open.0);
+        assert!(race.closed.0.abs() < 0.1, "closed Δ {:+.3}", race.closed.0);
+        assert!(race.difference().0 > 0.3);
+        assert!(report.splits.iter().all(|s| s.tag != "settler-guard"));
+        let json = report.json();
+        assert_eq!(json["mask"], "rotate:2");
+        assert_eq!(json["lane_genes"].as_array().expect("array").len(), 6);
+        // And an unmasked batch reports nothing at all.
+        let plain = screen_header(&["lane-space-race"]);
+        let plain_rows = vec![test_row(0, 0, "1", true), test_row(0, 1, "0", false)];
+        assert!(mask_report(&plain, &plain_rows).is_none());
+        print_victory_masks(&header, &rows);
+    }
+
+    /// A lane gene's lane is read off the registry's own words; a version is
+    /// read as its base; a gene of no lane has no split.
+    #[test]
+    fn lane_genes_map_to_their_lanes() {
+        assert_eq!(lane_gene_lanes("lane-congress-favor"), Some(vec!["diplomatic"]));
+        assert_eq!(lane_gene_lanes("lane-culture-spending-2"), Some(vec!["culture"]));
+        assert_eq!(lane_gene_lanes("holy-lane-parity"), Some(vec!["religious"]));
+        assert_eq!(lane_gene_lanes("competition-victory-points"), Some(vec!["diplomatic"]));
+        assert_eq!(lane_gene_lanes("lane-policy-deck"), Some(MASKABLE_LANES.to_vec()));
+        assert_eq!(lane_gene_lanes("lane-commit"), Some(MASKABLE_LANES.to_vec()));
+        assert_eq!(lane_gene_lanes("settler-guard"), None);
     }
 
     /// The pinned positions rotate with the game index, because seat position

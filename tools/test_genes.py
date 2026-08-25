@@ -288,6 +288,24 @@ class OneShape(unittest.TestCase):
         self.assertNotIn("contested_field", profile)
         self.assertNotIn("native_competitions", profile)
 
+    def test_a_rotating_victory_mask_is_recorded_and_stays_the_standard_shape(self):
+        """⭐ `--victory-mask rotate:N` closes N real conditions per game from
+        the seed; `victories` stays the batch-level set and every lane is live
+        across the batch, so the batch pools with the ledger, and the mask is
+        written onto the source as provenance. An unmasked source records
+        nothing, so every older record stays byte-stable."""
+        masked = analysis([{"tag": "a"}], victory_mask="rotate:2")
+        profile = gene_ledger.profile_of(masked)
+        self.assertEqual(profile["victory_mask"], "rotate:2")
+        self.assertEqual(profile["victories"], gene_ledger.SCREEN["victories"])
+        self.assertEqual(gene_ledger.shape_of(profile), "standard")
+        self.assertEqual(gene_ledger.shape_gap(profile), "")
+        self.assertEqual(len(self.sources(masked)), 1, "accepted as a source")
+        self.assertNotIn("victory_mask", gene_ledger.profile_of(analysis([{"tag": "a"}])))
+        # A restricted batch-level set is still a probe, mask or no mask.
+        probe = analysis([{"tag": "a"}], victories="domination,score", victory_mask="rotate:1")
+        self.assertEqual(gene_ledger.shape_of(gene_ledger.profile_of(probe)), "legacy")
+
     def test_the_tool_and_the_binary_name_the_same_screen(self):
         """`gene_screen`'s bare defaults ARE this shape; if one side moves, the
         ledger would silently accept a batch the binary no longer plays."""
