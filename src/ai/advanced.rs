@@ -4586,6 +4586,15 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// The Gold purchase scorer prices a build at its card-boosted rate, so
+    /// items a slotted card discounts lose purchase priority to items no card
+    /// touches. Opt-in gene `buy-what-cards-cannot-boost`; see
+    /// `advanced/gold_and_cards.rs`.
+    buy_what_cards_cannot_boost: bool,
+    /// The production governor leans toward items the slotted deck makes
+    /// cheap. Opt-in gene `build-what-cards-boost`; see
+    /// `advanced/gold_and_cards.rs`.
+    build_what_cards_boost: bool,
     /// Version 2 of `amenity_project_preemption`: the same crisis trigger and
     /// the same choice of repair, but an amenity BUILDING is bought with Gold
     /// when the treasury covers it, and only otherwise pauses the repeatable
@@ -4678,6 +4687,10 @@ pub struct AdvancedAi {
     /// The per-turn memo both eureka genes read.
     eureka_chase_cache: deity_habits::EurekaChaseCache,
     // ---- append: g-k ------------------------------------------------
+    /// A Gold purchase in a city producing less than the empire's best city
+    /// earns a premium proportional to the deficit. Opt-in gene
+    /// `gold-for-the-young-city`; see `advanced/gold_and_cards.rs`.
+    gold_for_the_young_city: bool,
     /// While the opening is behind the pace and no city can build a Settler,
     /// the citizens work food. Opt-in gene `growth-to-settle`; see
     /// `advanced/growth_to_settle.rs`.
@@ -4700,6 +4713,11 @@ pub struct AdvancedAi {
     holy_site_where_the_threat_is_2: bool,
 
     // ---- append: l-o ------------------------------------------------
+    /// The emergency defence purchase fires on a native signal: a city that
+    /// lost health, was struck within four turns, and has a hostile near.
+    /// Opt-in gene `native-emergency-purchase`; see
+    /// `advanced/gold_and_cards.rs`.
+    native_emergency_purchase: bool,
     /// A refused order falls through to the next-best candidate the planner
     /// already ranked, instead of losing the turn. Opt-in gene `order-retry`;
     /// see `advanced/order_retry.rs`.
@@ -5127,6 +5145,12 @@ mod growth_to_settle;
 /// the planner already ranked. One opt-in gene; see
 /// `advanced/order_retry.rs`.
 mod order_retry;
+
+/// `buy-what-cards-cannot-boost`, `build-what-cards-boost`,
+/// `gold-for-the-young-city`, `native-emergency-purchase`: which currency
+/// pays for an item, from the operator's Gold-versus-production heuristic.
+/// Four opt-in genes; see `advanced/gold_and_cards.rs`.
+mod gold_and_cards;
 
 /// `opening-warrior-recon` gives the starting Warrior the first move before
 /// the capital is founded; `settler-second-look` refreshes a Settler's cached
@@ -5791,6 +5815,8 @@ impl AdvancedAi {
             // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
 
             // ---- append: a-b ----------------------------------------
+            buy_what_cards_cannot_boost: false,
+            build_what_cards_boost: false,
             amenity_project_preemption_2: false,
 
             // ---- append: c-d ----------------------------------------
@@ -5817,11 +5843,13 @@ impl AdvancedAi {
             eureka_chase_cache: deity_habits::EurekaChaseCache::default(),
 
             // ---- append: g-k ----------------------------------------
+            gold_for_the_young_city: false,
             growth_to_settle: false,
             guru_heals_the_corps_2: false,
             holy_site_where_the_threat_is_2: false,
 
             // ---- append: l-o ----------------------------------------
+            native_emergency_purchase: false,
             order_retry: false,
             opening_warrior_recon: false,
             missionary_last_charge_explores: false,
@@ -15514,7 +15542,10 @@ impl AdvancedAi {
         pid: usize,
         plan: &StrategicPlan,
     ) -> bool {
-        if !self.base.garrison_under_fire {
+        // `native_emergency_purchase`: the live gate stays as it is; the gene
+        // adds a native signal (a bleeding, recently struck city with a
+        // hostile near) that a headless board can see.
+        if !self.base.garrison_under_fire && !self.native_emergency_purchase {
             return false;
         }
 
@@ -15525,7 +15556,11 @@ impl AdvancedAi {
             Item,
         )> = Vec::new();
         for city_id in g.player_city_ids(pid) {
-            let Some(defence) = self.base.besieged_city_item(g, pid, city_id) else {
+            let Some(defence) = self
+                .base
+                .besieged_city_item(g, pid, city_id)
+                .or_else(|| self.native_emergency_item(g, pid, city_id))
+            else {
                 continue;
             };
             let city = &g.cities[&city_id];
@@ -15929,7 +15964,12 @@ impl AdvancedAi {
             reserve,
         } = context;
         let production = g.city_yields(city).production.max(1.0);
-        let turns = g.item_remaining_cost_for_city(pid, city, item) / production;
+        // `buy_what_cards_cannot_boost`: the turns a build would take are
+        // priced at the card-boosted rate, and each Gold is charged at the
+        // same multiplier because it replaces that much less Production.
+        // Exactly 1.0 with the gene off, which leaves every score bit-equal.
+        let card = self.purchase_card_multiplier(g, pid, city, item);
+        let turns = g.item_remaining_cost_for_city(pid, city, item) / (production * card);
         let production_score = self.production_value(g, pid, city, item, plan, counts);
         if production_score <= -1_000.0 {
             return None;
@@ -15948,7 +15988,10 @@ impl AdvancedAi {
             return None;
         }
         let positional = production_score * (7.0 + turns.max(1.0));
-        let score = positional + turns.clamp(0.0, 20.0) * 6.0 - cost * 0.30;
+        let score = positional + turns.clamp(0.0, 20.0) * 6.0 - cost * 0.30 * card;
+        // `gold_for_the_young_city`: the same money buys more turns where
+        // the Production is not. Exactly 1.0 with the gene off.
+        let score = score * self.young_city_premium(g, pid, city);
         (score >= 120.0).then_some(score)
     }
 
@@ -19103,6 +19146,10 @@ impl AdvancedAi {
             // so `production_value` is only ever consulted on an idle city.
             let committed: Option<(f64, Item)> = g.cities[&cid].queue.first().cloned().map(|item| {
                 let value = self.production_value(g, pid, cid, &item, plan, &counts);
+                // `build_what_cards_boost`: the same lean the menu gets below,
+                // so a committed boosted item is not preempted by its own
+                // unboosted twin. Unchanged with the gene off.
+                let value = self.card_boosted_value(g, pid, cid, &item, value);
                 (value, item)
             });
             // The ordinary governor's recovery path only receives empty
@@ -19661,7 +19708,12 @@ impl AdvancedAi {
         let _memo = g.query_memo();
         items
             .iter()
-            .map(|item| self.production_value(g, pid, cid, item, plan, &counts))
+            .map(|item| {
+                let value = self.production_value(g, pid, cid, item, plan, &counts);
+                // `build_what_cards_boost`: a positive value leans toward what
+                // the slotted deck makes cheap. Unchanged with the gene off.
+                self.card_boosted_value(g, pid, cid, item, value)
+            })
             .collect()
     }
 
