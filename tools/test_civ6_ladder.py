@@ -330,6 +330,65 @@ class BridgeHealth(LedgerCase):
         events.write_text("\n".join(lines))
         self.assertEqual(civ6_ladder.orders_totals(events), (10, 7))
 
+    def test_applied_counts_verified_orders_and_reported_keeps_the_return_codes(self):
+        # Three turns: t1 verified 3 of 4 reported ok; t2 verified 1 of 3; t3
+        # is the last turn and never gets a verdict, so it keeps its reported
+        # count. A legacy `turn` row (no `orders_reported`) reads its
+        # `orders_applied` as the reported count.
+        events = self.runs / "events.jsonl"
+        lines = [
+            json.dumps({"kind": "turn", "ctx": "agent", "turn": 1,
+                        "orders_seen": 5, "orders_applied": 4, "orders_reported": 4}),
+            json.dumps({"kind": "turn_verified", "ctx": "agent", "turn": 1,
+                        "checked_on": 2, "orders_issued": 5, "orders_applied": 3,
+                        "orders_failed": 2, "orders_unverifiable": 0,
+                        "orders_seen": 5, "orders_reported": 4}),
+            json.dumps({"kind": "turn", "ctx": "agent", "turn": 2,
+                        "orders_seen": 3, "orders_applied": 3}),
+            json.dumps({"kind": "turn_verified", "ctx": "agent", "turn": 2,
+                        "checked_on": 3, "orders_applied": 1}),
+            json.dumps({"kind": "turn", "ctx": "agent", "turn": 3,
+                        "orders_seen": 2, "orders_applied": 2, "orders_reported": 2}),
+            # Verdict events are the ledger's; a UI-context copy must not count.
+            json.dumps({"kind": "turn_verified", "ctx": "ui", "turn": 3,
+                        "orders_applied": 9}),
+        ]
+        events.write_text("\n".join(lines) + "\n")
+        self.assertEqual(civ6_ladder.orders_ledger(events), {
+            "orders_seen": 10, "orders_reported": 9, "orders_applied": 6,
+            "orders_verified_turns": 2, "orders_unverified_turns": 1})
+        self.assertEqual(civ6_ladder.orders_totals(events), (10, 6))
+
+    def test_the_summary_carries_both_counts_and_both_rates(self):
+        events_lines = [
+            json.dumps({"kind": "turn", "ctx": "agent", "turn": 1,
+                        "orders_seen": 10, "orders_applied": 10, "orders_reported": 10}),
+            json.dumps({"kind": "turn_verified", "ctx": "agent", "turn": 1,
+                        "orders_applied": 6}),
+        ]
+        # A summary the harness wrote with totals but before `orders_reported`
+        # existed gets the reported count filled in; the totals stay its own.
+        path = write_run(self.runs, summary("verified", orders_seen=10, orders_applied=6))
+        (path.parent / "events.jsonl").write_text("\n".join(events_lines) + "\n")
+        civ6_ladder.record_summary(path)
+        attempt = self.state()["attempts"][0]
+        self.assertEqual(attempt["applied_pct"], 60.0)
+        self.assertEqual(attempt["reported_pct"], 100.0)
+        enriched = civ6_ladder.with_bridge_health(json.loads(path.read_text()), path)
+        self.assertEqual(enriched["orders_applied"], 6)
+        self.assertEqual(enriched["orders_reported"], 10)
+        self.assertEqual(enriched["orders_unverified_turns"], 0)
+        # A summary with no totals at all is filled from the events, verified
+        # count and reported count both.
+        bare = write_run(self.runs, summary("bare"))
+        (bare.parent / "events.jsonl").write_text("\n".join(events_lines) + "\n")
+        filled = civ6_ladder.with_bridge_health(json.loads(bare.read_text()), bare)
+        self.assertEqual((filled["orders_seen"], filled["orders_applied"],
+                          filled["orders_reported"]), (10, 6, 10))
+        # A summary that already carries everything is returned as it is.
+        full = {"orders_seen": 1, "orders_applied": 1, "orders_reported": 1}
+        self.assertIs(civ6_ladder.with_bridge_health(full, bare), full)
+
     def test_the_rate_is_recorded_on_the_attempt(self):
         civ6_ladder.record_summary(write_run(
             self.runs, summary("measured", orders_seen=200, orders_applied=194)))
