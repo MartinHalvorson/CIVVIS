@@ -26,8 +26,11 @@
     "deployment_genome": [
       "air-surge",
       "amenity-district-path",
+      "amenity-project-preemption",
       "apostle-promotion-by-role",
+      "army-target-weighs-enemy",
       "barbarian-bargain",
+      "barbarian-ranged-answer",
       "barbarian-scouts-are-scouts",
       "bounded-recovery",
       "buildings-before-projects",
@@ -35,22 +38,32 @@
       "civilian-rescue",
       "competition-victory-points",
       "culture-building-debt",
+      "deals-for-our-gain",
+      "diplomatic-lane-forecast",
       "district-planning",
       "early-contact-window",
       "engine-faith-price",
+      "enhancer-for-the-corps",
       "escort-unstick",
+      "flip-nearby-city-states",
       "founder-temple",
       "great-person-housing",
+      "guru-heals-the-corps",
       "holy-lane-parity",
+      "home-defense",
       "idle-faith-patronage",
       "inquisition-on-threat",
       "lane-culture-spending",
       "lane-great-people",
       "lane-policy-deck",
+      "lane-space-race",
       "loyalty-rate-alarm",
       "maintenance-aware-deck",
       "missionary-evades-raiders",
       "missionary-last-charge-explores",
+      "naval-recon",
+      "naval-threat-triage",
+      "no-free-passage",
       "one-launch-pad",
       "one-war-at-a-time",
       "opportunistic-war",
@@ -65,12 +78,15 @@
       "religious-defence-scales",
       "religious-units-heal-first",
       "religious-veto-defence",
+      "research-tier-premium",
       "science-multiplier-payoff",
       "science-victory-drive",
       "score-horizon",
       "settle-sooner",
       "settlement-gap-target",
       "settler-factory-coordination",
+      "settler-screen",
+      "settler-target-hysteresis",
       "settler-threat-detour",
       "slot-kind-tiebreak",
       "solvency-first-trade-slot",
@@ -85,9 +101,9 @@
     "versions": "a pinned version pins its family; the family head - the priced version with the highest tracked wins (win_diff), ties to the higher version - is what ships and what deployment_genome records; a family holds at most 3 versions, the third-best leaves before a fourth is added",
     "family_heads": {
       "amenity-project-preemption": {
-        "pinned": null,
+        "pinned": "amenity-project-preemption",
         "head": "amenity-project-preemption",
-        "ships": null,
+        "ships": "amenity-project-preemption",
         "versions": {
           "amenity-project-preemption": -0.037946,
           "amenity-project-preemption-2": null
@@ -121,9 +137,9 @@
         }
       },
       "guru-heals-the-corps": {
-        "pinned": null,
+        "pinned": "guru-heals-the-corps",
         "head": "guru-heals-the-corps",
-        "ships": null,
+        "ships": "guru-heals-the-corps",
         "versions": {
           "guru-heals-the-corps": -0.107723,
           "guru-heals-the-corps-2": null
@@ -139,9 +155,9 @@
         }
       },
       "naval-recon": {
-        "pinned": null,
+        "pinned": "naval-recon",
         "head": "naval-recon",
-        "ships": null,
+        "ships": "naval-recon",
         "versions": {
           "naval-recon": -0.045836,
           "naval-recon-2": null
@@ -166,9 +182,9 @@
         }
       },
       "settler-target-hysteresis": {
-        "pinned": null,
+        "pinned": "settler-target-hysteresis",
         "head": "settler-target-hysteresis",
-        "ships": null,
+        "ships": "settler-target-hysteresis",
         "versions": {
           "settler-target-hysteresis": 0.011271,
           "settler-target-hysteresis-2": null
@@ -205,7 +221,23 @@
       "solvency-first-trade-slot",
       "settler-factory-coordination",
       "one-war-at-a-time",
-      "religious-veto-defence"
+      "religious-veto-defence",
+      "flip-nearby-city-states",
+      "diplomatic-lane-forecast",
+      "barbarian-ranged-answer",
+      "army-target-weighs-enemy",
+      "research-tier-premium",
+      "naval-threat-triage",
+      "deals-for-our-gain",
+      "settler-screen",
+      "lane-space-race",
+      "enhancer-for-the-corps",
+      "settler-target-hysteresis",
+      "amenity-project-preemption",
+      "guru-heals-the-corps",
+      "no-free-passage",
+      "naval-recon",
+      "home-defense"
     ],
     "posterior_shapes": [
       "standard",
@@ -563,7 +595,7 @@
     "helps": 17,
     "hurts": 0,
     "unresolved": 64,
-    "default_on": 57
+    "default_on": 73
   },
   "genes": [
     {
@@ -659,7 +691,7 @@
     {
       "tag": "amenity-project-preemption",
       "verdict": "unresolved",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 26,
       "wins_prior_10k": -34,
       "wins_third_10k": -14,
@@ -749,7 +781,7 @@
     {
       "tag": "army-target-weighs-enemy",
       "verdict": "unresolved",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": -1,
       "wins_prior_10k": 18,
       "wins_third_10k": 30,
@@ -839,7 +871,7 @@
     {
       "tag": "barbarian-ranged-answer",
       "verdict": "unresolved",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": -2,
       "wins_prior_10k": 17,
       "wins_third_10k": 14,
@@ -1649,7 +1681,7 @@
     {
       "tag": "enhancer-for-the-corps",
       "verdict": "unresolved",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": -5,
       "wins_prior_10k": 8,
       "wins_third_10k": null,
@@ -1874,7 +1906,7 @@
     {
       "tag": "guru-heals-the-corps",
       "verdict": "unresolved",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 24,
       "wins_prior_10k": -29,
       "wins_third_10k": null,
@@ -2009,7 +2041,7 @@
     {
       "tag": "home-defense",
       "verdict": "unresolved",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 10,
       "wins_prior_10k": -18,
       "wins_third_10k": -15,
@@ -2369,7 +2401,7 @@
     {
       "tag": "lane-space-race",
       "verdict": "unresolved",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": -12,
       "wins_prior_10k": 11,
       "wins_third_10k": null,
@@ -2504,7 +2536,7 @@
     {
       "tag": "naval-recon",
       "verdict": "unresolved",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 17,
       "wins_prior_10k": -20,
       "wins_third_10k": 16,
@@ -3224,7 +3256,7 @@
     {
       "tag": "research-tier-premium",
       "verdict": "unresolved",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 29,
       "wins_prior_10k": -6,
       "wins_third_10k": null,
@@ -3494,7 +3526,7 @@
     {
       "tag": "settler-target-hysteresis",
       "verdict": "unresolved",
-      "default_on": false,
+      "default_on": true,
       "wins_last_10k": 17,
       "wins_prior_10k": -18,
       "wins_third_10k": 15,
