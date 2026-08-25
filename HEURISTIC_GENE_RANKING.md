@@ -120,15 +120,11 @@
 | 114 | `spread-campaign-persists` | Keep a spread campaign that has already converted a foreign city on the offensive between waves, instead of dropping the posture the turn its last charge is spent. | — | off | +16 | +23 | -15 | 16.52% (n=56,901) | 16.81% (n=59,787) | -0.29% | -15 [-36, +6] | 8.3% | -0.11 (z -1.02) ~ | -0.37% ±0.26% | -0.49% ±0.39% |
 | 115 | `district-building-chain` | Make every specialty district owe its own buildings, whatever the lane. | — | off | -20 | -6 | -6 | 16.52% (n=56,725) | 16.81% (n=59,963) | -0.29% | -14 [-35, +7] | 9.6% | -0.04 (z -0.37) ~ | -0.34% ±0.25% | -0.61% ±0.39% |
 | 116 | `lane-commit` | From the midpoint of the game an adaptive seat commits to the victory lane it leads the field in and holds that plan, in place of the per-turn best-progress pick. | — | off | -6 | – | – | 16.42% (n=1,510) | 16.75% (n=4,478) | -0.32% | -16 [-126, +94] | 38.6% | +0.12 (z +0.56) ~ | -0.70% ±0.88% | -0.65% ±1.24% |
-| 117 | `settle-plan-ahead` | Rank a settle site by the cities it leaves room for as well as its own ground, so a Settler stops taking the one plot in a pocket that would have held two. | — | off | -17 | -1 | +1 | 16.45% (n=33,099) | 16.87% (n=36,345) | -0.42% | -21 [-49, +7] | 6.7% | +0.03 (z +0.25) ~ | +0.46% ±0.26% | +0.73% ±0.39% |
-| 118 | `builder-reward-survey` | Price Builder production by a survey of the work it would do. | — | off | -21 | -94 | -23 | 16.10% (n=33,309) | 17.19% (n=36,135) | -1.09% | -66 [-112, -20] | 0.2% | -0.28 (z -2.69) hurts * | +1.59% ±0.26% | +1.76% ±0.40% |
-| 119 | `contact-posture` | A unit already inside a hostile's next-turn reach picks a posture: stand and heal where the melee exchange favours holding, close on a shooter it cannot answer, or step out of that shooter's envelope. | — | off | -17 | -34 | -31 | 16.08% (n=56,753) | 17.22% (n=59,935) | -1.15% | -58 [-78, -37] | 0.0% | -0.24 (z -2.36) hurts * | -0.20% ±0.26% | -0.21% ±0.40% |
-| 120 | `pillage-to-heal` | A unit at or below 65 health pillages a heal-type improvement it stands on, or steps one tile onto one and pillages it, before the recovery path walks it home. | — | off | -23 | – | – | 15.79% (n=1,545) | 16.97% (n=4,443) | -1.18% | -59 [-165, +47] | 13.8% | +0.02 (z +0.11) ~ | +0.75% ±0.90% | +1.68% ±1.19% |
-| 121 | `zoc-screen` | A melee unit the attack scan found nothing for stands where its zone of control takes the most enemy reaches off our shooters and wounded, read exactly off `attack_reach`, and holds only while the stand is load-bearing. | — | off | -26 | – | – | 15.61% (n=1,505) | 17.02% (n=4,483) | -1.41% | -70 [-176, +35] | 9.6% | -0.36 (z -1.66) ~ | +1.52% ±0.87% | +2.33% ±1.21% |
-| 122 | `naval-production-policy` | Reach for the naval-production discount while hulls are wanted. | — | off | -80 | -65 | -66 | 15.73% (n=33,235) | 17.52% (n=36,209) | -1.79% | -121 [-189, -53] | 0.0% | -0.60 (z -5.71) hurts * | -0.14% ±0.25% | -0.41% ±0.37% |
-| 123 | `no-free-passage` | Friendship and alliance proposals no longer bundle one-way Open Borders, which every ask handed out for nothing once Early Empire was in; passage is sold through the quote lane. | — | off | -36 | – | – | 15.25% (n=1,534) | 17.15% (n=4,454) | -1.90% | -95 [-199, +9] | 3.7% | -0.38 (z -1.78) ~ | -0.09% ±0.87% | -0.21% ±1.18% |
-| 124 | `fog-honest` | Put this controller behind the turn-level fog boundary. | 1 | off | -95 | -145 | -112 | v1 11.70% (n=7,126) · v2 4.22% (n=7,054) | v1 18.13% (n=24,158) · v2 20.29% (n=24,230) | -6.43% | -366 [-464, -269] | 0.0% | -1.11 (z -9.73) hurts * | +0.65% ±0.30% | +1.60% ±0.45% |
-| 125 | `fog-honest-2` | Version 2 of `fog_honest`: the same fair-play boundary and the same information contract, plus one re-plan when the authoritative board refuses a planned order. | 1 | off | -187 | -275 | -308 | v1 11.70% (n=7,126) · v2 4.22% (n=7,054) | v1 18.13% (n=24,158) · v2 20.29% (n=24,230) | -16.06% | -820 [-885, -755] | 0.0% | -4.58 (z -48.06) hurts * | +5.28% ±0.34% | +5.99% ±0.51% |
+| 117 | `pillage-to-heal` | A unit at or below 65 health pillages a heal-type improvement it stands on, or steps one tile onto one and pillages it, before the recovery path walks it home. | — | off | -23 | – | – | 15.79% (n=1,545) | 16.97% (n=4,443) | -1.18% | -59 [-165, +47] | 13.8% | +0.02 (z +0.11) ~ | +0.75% ±0.90% | +1.68% ±1.19% |
+| 118 | `zoc-screen` | A melee unit the attack scan found nothing for stands where its zone of control takes the most enemy reaches off our shooters and wounded, read exactly off `attack_reach`, and holds only while the stand is load-bearing. | — | off | -26 | – | – | 15.61% (n=1,505) | 17.02% (n=4,483) | -1.41% | -70 [-176, +35] | 9.6% | -0.36 (z -1.66) ~ | +1.52% ±0.87% | +2.33% ±1.21% |
+| 119 | `no-free-passage` | Friendship and alliance proposals no longer bundle one-way Open Borders, which every ask handed out for nothing once Early Empire was in; passage is sold through the quote lane. | — | off | -36 | – | – | 15.25% (n=1,534) | 17.15% (n=4,454) | -1.90% | -95 [-199, +9] | 3.7% | -0.38 (z -1.78) ~ | -0.09% ±0.87% | -0.21% ±1.18% |
+| 120 | `fog-honest` | Put this controller behind the turn-level fog boundary. | 1 | off | -95 | -145 | -112 | v1 11.70% (n=7,126) · v2 4.22% (n=7,054) | v1 18.13% (n=24,158) · v2 20.29% (n=24,230) | -6.43% | -366 [-464, -269] | 0.0% | -1.11 (z -9.73) hurts * | +0.65% ±0.30% | +1.60% ±0.45% |
+| 121 | `fog-honest-2` | Version 2 of `fog_honest`: the same fair-play boundary and the same information contract, plus one re-plan when the authoritative board refuses a planned order. | 1 | off | -187 | -275 | -308 | v1 11.70% (n=7,126) · v2 4.22% (n=7,054) | v1 18.13% (n=24,158) · v2 20.29% (n=24,230) | -16.06% | -820 [-885, -755] | 0.0% | -4.58 (z -48.06) hurts * | +5.28% ±0.34% | +5.99% ±0.51% |
 
 ## Evidence for future operator selections
 
@@ -138,7 +134,7 @@ The deployment genome is explicitly operator-pinned. The win columns, pooled *Di
 
 ### What the posterior resolves
 
-Of 110 priced genes the interval clears zero for **21 upward** and **3 downward**; **86 straddle zero**. Those are evidence states, not automatic deployment calls.
+Of 106 priced genes the interval clears zero for **21 upward** and **0 downward**; **85 straddle zero**. Those are evidence states, not automatic deployment calls.
 
 | Gene | Posterior (95% CI) | P(>0) | Screens | Pinned | Evidence call |
 |---|---:|---:|---:|---|---|
@@ -163,9 +159,6 @@ Of 110 priced genes the interval clears zero for **21 upward** and **3 downward*
 | `score-horizon` | +17 [+0, +34] | 97.6% | 5 | on | **on** |
 | `settle-sooner` | +35 [+14, +55] | 100.0% | 3 | on | **on** |
 | `wide-map-capacity` | +61 [+28, +93] | 100.0% | 5 | on | **on** |
-| `builder-reward-survey` | -46 [-83, -9] | 0.8% | 1 | off | **off** |
-| `contact-posture` | -57 [-80, -33] | 0.0% | 2 | off | **off** |
-| `naval-production-policy` | -51 [-88, -13] | 0.4% | 1 | off | **off** |
 
 ## The two shapes, apart
 
@@ -173,7 +166,7 @@ Of 110 priced genes the interval clears zero for **21 upward** and **3 downward*
 
 | Shape | Sources | Player seats | Genes priced |
 |---|---:|---:|---:|
-| standard | 3 | 92,604 | 109 |
+| standard | 3 | 92,604 | 105 |
 | legacy | 7 | 132,440 | 62 |
 
 Genes priced at both shapes. **A row whose two intervals do not overlap is not a gene with one number; it is two instruments disagreeing**, and the pooled column beside it should be read as a warning rather than an answer.
@@ -319,7 +312,6 @@ Genes priced at both shapes. **A row whose two intervals do not overlap is not a
 | `lane-congress-favor` | -12 [-36, +11] | 15.3% | off | +0.0 | 101,961 |
 | `holy-lane-parity` | +32 [-6, +71] | 95.0% | on | +0.0 | 5,971 |
 | `religion-sues-peace` | +7 [-11, +24] | 77.2% | on | +0.0 | 421,343 |
-| `settle-plan-ahead` | -33 [-70, +4] | 4.2% | off | +0.0 | 4,280 |
 | `inquisition-on-threat` | +9 [-9, +28] | 83.2% | on | +0.0 | 189,468 |
 | `congress-counter-votes` | -16 [-40, +7] | 8.5% | off | +0.0 | 39,981 |
 | `spread-campaign-persists` | -17 [-41, +7] | 8.0% | off | +0.0 | 35,582 |
@@ -340,7 +332,7 @@ Genes priced at both shapes. **A row whose two intervals do not overlap is not a
 The top 8 that one batch could actually resolve (≤ 60,000 seat pairs each), as an argument list:
 
 ```sh
-gene_screen --genes barbarian-hunt,escort-unstick-2,unit-cost-efficiency,fortify-idle-units,tactical-strategy,district-lookahead-settle,holy-lane-parity,settle-plan-ahead
+gene_screen --genes barbarian-hunt,escort-unstick-2,unit-cost-efficiency,fortify-idle-units,tactical-strategy,district-lookahead-settle,holy-lane-parity,congress-counter-votes
 ```
 
 `python3 tools/genes.py boundary` prints this list on its own, with `--arm-pairs` and `--max-arm-pairs` to size it.
@@ -388,6 +380,7 @@ Genes whose code has left the repository (operator directive: the bottom of the 
 | `research-grants-first` | +9 | 16.76% | 16.57% | `2026-08-24-standard-continuous-21030-total-seats.json` |
 | `housing-buildings` | +8 | 16.75% | 16.59% | `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` |
 | `ranged-line-of-sight` | +4 | 16.71% | 16.63% | `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` |
+| `settle-plan-ahead` | +1 | 16.68% | 16.66% | `2026-08-24-standard-continuous-21030-total-seats.json` |
 | `recon-flight` | -1 | 16.66% | 16.67% | `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` |
 | `housing-cards` | -4 | 16.62% | 16.71% | `2026-08-20-p4-native-6p-allseats-13446-pairs.json` |
 | `arrival-waves` | -7 | 16.59% | 16.74% | `2026-08-20-p4-native-6p-allseats-13446-pairs.json` |
@@ -398,12 +391,15 @@ Genes whose code has left the repository (operator directive: the bottom of the 
 | `science-payback-horizon` | -25 | 16.41% | 16.92% | `2026-08-24-standard-continuous-21030-total-seats.json` |
 | `siege-muster` | -26 | 16.41% | 16.93% | `2026-08-20-p4-native-6p-allseats-13446-pairs.json` |
 | `siege-role` | -39 | 16.27% | 17.06% | `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` |
+| `builder-reward-survey` | -47 | 16.20% | 17.13% | `2026-08-24-standard-continuous-21030-total-seats.json` |
 | `chain-tech-lookahead` | -47 | 16.19% | 17.13% | `2026-08-24-standard-continuous-21030-total-seats.json` |
 | `garrison-walls` | -54 | 16.12% | 17.21% | `2026-08-20-p4-native-6p-allseats-13446-pairs.json` |
 | `loyalty-policy-defence` | -54 | 16.13% | 17.20% | `2026-08-20-p4-native-6p-allseats-13446-pairs.json` |
+| `contact-posture` | -62 | 16.04% | 17.28% | `2026-08-24-standard-continuous-21030-total-seats.json` |
 | `campus-every-city` | -94 | 15.73% | 17.60% | `2026-08-20-p4-native-6p-allseats-13446-pairs.json` |
 | `stacked-escort` | -104 | 15.63% | 17.71% | `2026-08-20-p4-native-6p-allseats-13446-pairs.json` |
 | `settler-stack-discipline` | -116 | 15.51% | 17.83% | `2026-08-20-p4-native-6p-allseats-13446-pairs.json` |
+| `naval-production-policy` | -131 | 15.36% | 17.98% | `2026-08-24-standard-continuous-21030-total-seats.json` |
 | `governor-every-lane` | -140 | 15.27% | 18.06% | `2026-08-24-standard-continuous-21030-total-seats.json` |
 | `governor-victory-lanes` | -171 | 14.96% | 18.36% | `2026-08-24-standard-continuous-21030-total-seats.json` |
 

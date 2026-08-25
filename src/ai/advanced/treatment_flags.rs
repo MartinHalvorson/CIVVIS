@@ -191,19 +191,6 @@ impl AdvancedAi {
         self.theology_for_founders = false;
     }
 
-    /// A unit already inside a hostile's next-turn reach picks a posture:
-    /// stand and heal where the melee exchange favours holding, close on a
-    /// shooter it cannot answer, or step out of that shooter's envelope. See
-    /// [`AdvancedAi::contact_posture`]. Opt-in gene `contact-posture`.
-    pub fn enable_contact_posture(&mut self) {
-        self.contact_posture = true;
-    }
-
-    /// The twin of `enable_contact_posture`.
-    pub fn disable_contact_posture(&mut self) {
-        self.contact_posture = false;
-    }
-
     /// A settler scores a site by the districts the plan would build there,
     /// each on its own plot. See [`AdvancedAi::district_lookahead_settle`].
     /// Opt-in gene `district-lookahead-settle`.
@@ -1116,17 +1103,6 @@ impl AdvancedAi {
         self.production_settler_deadline = false;
     }
 
-    /// Price Builder production by a survey of the work it would do.
-    /// Evaluator arm `advanced_builder_survey`; off in production.
-    pub fn enable_builder_reward_survey(&mut self) {
-        self.builder_reward_survey = true;
-    }
-
-    /// The off toggle, so the registry row has both directions.
-    pub fn disable_builder_reward_survey(&mut self) {
-        self.builder_reward_survey = false;
-    }
-
     /// Prefer existing Builder work that pays on a tile a citizen currently
     /// works, while preserving luxury and strategic connections. Native
     /// opt-in gene `builder-worked-tile-priority`; off in production.
@@ -1197,17 +1173,6 @@ impl AdvancedAi {
     /// still be priced out of the bundle. See `LIVE_TREATMENTS`.
     pub fn disable_open_water_navy(&mut self) {
         self.base.open_water_navy = false;
-    }
-
-    /// Reach for the naval-production discount while hulls are wanted. See
-    /// `naval_production_policy`; entrant `advanced_maritime_splice`.
-    pub fn enable_naval_production_policy(&mut self) {
-        self.naval_production_policy = true;
-    }
-
-    /// The off toggle, so the registry row has both directions.
-    pub fn disable_naval_production_policy(&mut self) {
-        self.naval_production_policy = false;
     }
 
     /// Sea threats get sea answers. See `BasicAi::sea_answers`; entrant
@@ -1639,17 +1604,6 @@ impl AdvancedAi {
 
     pub fn disable_settle_sooner(&mut self) {
         self.settle_sooner = false;
-    }
-
-    /// Rank a settle site by the cities it leaves room for as well as its
-    /// own ground, so a Settler stops taking the one plot in a pocket that
-    /// would have held two. See `settle_plan_ahead`.
-    pub fn enable_settle_plan_ahead(&mut self) {
-        self.settle_plan_ahead = true;
-    }
-
-    pub fn disable_settle_plan_ahead(&mut self) {
-        self.settle_plan_ahead = false;
     }
 
     /// A wonder lane any civilization can reach on merit: the `Item::Wonder`

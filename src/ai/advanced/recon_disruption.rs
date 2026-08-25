@@ -64,11 +64,9 @@
 //!   Exploration and the upgrade walk still come first; the post replaces
 //!   only the patrol and the fortify the idle Scout took before.
 //!
-//! ⚠ `contact-posture` — the one gene that already makes a unit stand still
-//! in a major war — reads **hurts** on 38,160 seats. Neither gene here holds
-//! ground in a war: the step sits on the peacetime tail alone, a Settler is
-//! screened only at peace with its owner, and a post is held only by a unit
-//! whose alternative was a patrol.
+//! Neither gene here holds ground in a war: the step sits on the peacetime
+//! tail alone, a Settler is screened only at peace with its owner, and a post
+//! is held only by a unit whose alternative was a patrol.
 //!
 //! ## Where each hook sits
 //!

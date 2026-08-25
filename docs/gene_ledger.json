@@ -371,7 +371,7 @@
         "complete_seats": 5988,
         "partial": true
       },
-      "unverified": "Governor-lane and research-planning genes were deliberately removed under the 2026-08-24 Diff < -0.05 pp / >=30,000-seat cull criterion; this immutable historical display batch was compiled before those removals."
+      "unverified": "Governor-lane, research-planning, and high-signal negative genes were deliberately removed under the 2026-08-24 Diff < -0.05 pp / >=30,000-seat cull criterion; this immutable historical display batch was compiled before those removals."
     },
     {
       "path": "docs/gene_screens/2026-08-24-standard-continuous-4266-total-seats.json",
@@ -407,7 +407,7 @@
         "complete_seats": 4266,
         "partial": true
       },
-      "unverified": "Governor-lane and research-planning genes were deliberately removed under the 2026-08-24 Diff < -0.05 pp / >=30,000-seat cull criterion; these immutable historical display batches were compiled before those removals."
+      "unverified": "Governor-lane, research-planning, and high-signal negative genes were deliberately removed under the 2026-08-24 Diff < -0.05 pp / >=30,000-seat cull criterion; these immutable historical display batches were compiled before those removals."
     },
     {
       "path": "docs/gene_screens/2026-08-24-standard-continuous-21030-total-seats.json",
@@ -443,12 +443,12 @@
         "complete_seats": 21030,
         "partial": true
       },
-      "unverified": "Governor-lane and research-planning genes were deliberately removed under the 2026-08-24 Diff < -0.05 pp / >=30,000-seat cull criterion; these immutable historical display batches were compiled before those removals."
+      "unverified": "Governor-lane, research-planning, and high-signal negative genes were deliberately removed under the 2026-08-24 Diff < -0.05 pp / >=30,000-seat cull criterion; these immutable historical display batches were compiled before those removals."
     }
   ],
   "counts": {
     "helps": 17,
-    "hurts": 6,
+    "hurts": 2,
     "unresolved": 88,
     "default_on": 52
   },
@@ -1084,51 +1084,6 @@
       }
     },
     {
-      "tag": "builder-reward-survey",
-      "verdict": "hurts",
-      "default_on": false,
-      "wins_last_10k": -46,
-      "wins_prior_10k": null,
-      "wins_third_10k": null,
-      "win_diff_pp": -0.918946,
-      "posterior_pp": -45.947315,
-      "posterior_se_pp": 19.066424,
-      "posterior_screens": 1,
-      "posterior_tau_pp": 0.0,
-      "family_wise": false,
-      "conflict": false,
-      "screen": {
-        "seats": 38160,
-        "pairs": 19080,
-        "n_on": 19138,
-        "n_off": 19022,
-        "win_delta_pp": -0.919,
-        "win_z": -2.41,
-        "share_delta_pp": -0.157,
-        "share_z": -1.991,
-        "read": "hurts *",
-        "source": "2026-08-24-standard-continuous-38160-total-seats.json",
-        "win_tranches": [
-          {
-            "position": "latest",
-            "seats": 19998,
-            "pairs": 9999,
-            "win_delta_pp": -0.89,
-            "win_z": -1.681,
-            "win_se_pp": 0.53
-          },
-          {
-            "position": "previous",
-            "seats": 18162,
-            "pairs": 9081,
-            "win_delta_pp": -0.951,
-            "win_z": -1.73,
-            "win_se_pp": 0.55
-          }
-        ]
-      }
-    },
-    {
       "tag": "builder-worked-tile-priority",
       "verdict": "unresolved",
       "default_on": false,
@@ -1619,51 +1574,6 @@
             "win_delta_pp": -1.123,
             "win_z": -2.02,
             "win_se_pp": 0.556
-          }
-        ]
-      }
-    },
-    {
-      "tag": "contact-posture",
-      "verdict": "hurts",
-      "default_on": false,
-      "wins_last_10k": -60,
-      "wins_prior_10k": -55,
-      "wins_third_10k": null,
-      "win_diff_pp": -1.141243,
-      "posterior_pp": -56.755727,
-      "posterior_se_pp": 12.017095,
-      "posterior_screens": 2,
-      "posterior_tau_pp": 0.0,
-      "family_wise": false,
-      "conflict": false,
-      "screen": {
-        "seats": 38160,
-        "pairs": 19080,
-        "n_on": 19048,
-        "n_off": 19112,
-        "win_delta_pp": -1.202,
-        "win_z": -3.127,
-        "share_delta_pp": -0.271,
-        "share_z": -3.428,
-        "read": "hurts * \u00b7 share hurts *",
-        "source": "2026-08-24-standard-continuous-38160-total-seats.json",
-        "win_tranches": [
-          {
-            "position": "latest",
-            "seats": 19998,
-            "pairs": 9999,
-            "win_delta_pp": -1.283,
-            "win_z": -2.425,
-            "win_se_pp": 0.529
-          },
-          {
-            "position": "previous",
-            "seats": 18162,
-            "pairs": 9081,
-            "win_delta_pp": -1.112,
-            "win_z": -1.989,
-            "win_se_pp": 0.559
           }
         ]
       }
@@ -3338,51 +3248,6 @@
       }
     },
     {
-      "tag": "naval-production-policy",
-      "verdict": "hurts",
-      "default_on": false,
-      "wins_last_10k": -51,
-      "wins_prior_10k": null,
-      "wins_third_10k": null,
-      "win_diff_pp": -1.011539,
-      "posterior_pp": -50.576971,
-      "posterior_se_pp": 19.222628,
-      "posterior_screens": 1,
-      "posterior_tau_pp": 0.0,
-      "family_wise": true,
-      "conflict": false,
-      "screen": {
-        "seats": 38160,
-        "pairs": 19080,
-        "n_on": 19023,
-        "n_off": 19137,
-        "win_delta_pp": -1.012,
-        "win_z": -2.631,
-        "share_delta_pp": -0.44,
-        "share_z": -5.583,
-        "read": "hurts * \u00b7 share HURTS **",
-        "source": "2026-08-24-standard-continuous-38160-total-seats.json",
-        "win_tranches": [
-          {
-            "position": "latest",
-            "seats": 19998,
-            "pairs": 9999,
-            "win_delta_pp": -0.91,
-            "win_z": -1.715,
-            "win_se_pp": 0.531
-          },
-          {
-            "position": "previous",
-            "seats": 18162,
-            "pairs": 9081,
-            "win_delta_pp": -1.123,
-            "win_z": -2.013,
-            "win_se_pp": 0.558
-          }
-        ]
-      }
-    },
-    {
       "tag": "naval-recon",
       "verdict": "unresolved",
       "default_on": false,
@@ -4278,51 +4143,6 @@
             "win_delta_pp": 0.971,
             "win_z": 1.538,
             "win_se_pp": 0.631
-          }
-        ]
-      }
-    },
-    {
-      "tag": "settle-plan-ahead",
-      "verdict": "hurts",
-      "default_on": false,
-      "wins_last_10k": -33,
-      "wins_prior_10k": null,
-      "wins_third_10k": null,
-      "win_diff_pp": -0.658654,
-      "posterior_pp": -32.932713,
-      "posterior_se_pp": 19.021303,
-      "posterior_screens": 1,
-      "posterior_tau_pp": 0.0,
-      "family_wise": false,
-      "conflict": false,
-      "screen": {
-        "seats": 38160,
-        "pairs": 19080,
-        "n_on": 18965,
-        "n_off": 19195,
-        "win_delta_pp": -0.659,
-        "win_z": -1.731,
-        "share_delta_pp": -0.271,
-        "share_z": -3.447,
-        "read": "share hurts *",
-        "source": "2026-08-24-standard-continuous-38160-total-seats.json",
-        "win_tranches": [
-          {
-            "position": "latest",
-            "seats": 19998,
-            "pairs": 9999,
-            "win_delta_pp": -0.857,
-            "win_z": -1.624,
-            "win_se_pp": 0.528
-          },
-          {
-            "position": "previous",
-            "seats": 18162,
-            "pairs": 9081,
-            "win_delta_pp": -0.44,
-            "win_z": -0.802,
-            "win_se_pp": 0.549
           }
         ]
       }

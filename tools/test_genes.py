@@ -1041,7 +1041,7 @@ class GeneratedFiles(unittest.TestCase):
         self.assertFalse(newest["build"]["dirty"])
         self.assertEqual(
             newest["unverified"],
-            "Governor-lane and research-planning genes were deliberately removed "
+            "Governor-lane, research-planning, and high-signal negative genes were deliberately removed "
             "under the 2026-08-24 Diff < -0.05 pp / >=30,000-seat cull "
             "criterion; this immutable historical display batch was compiled "
             "before those removals.",
@@ -1924,13 +1924,17 @@ class TheStandardScreen(unittest.TestCase):
         for phrase in ("-237", "[-267, -206]", "-15.37"):
             self.assertIn(phrase, self.notes, phrase)
 
-    def test_research_cull_keeps_its_historical_rows(self):
-        """The four 38,160-seat research candidates left source, not history."""
+    def test_cull_batches_keep_their_historical_rows(self):
+        """The eight 38,160-seat cull candidates left source, not history."""
         tags = (
             "chain-tech-lookahead",
             "research-floor-holds",
             "research-grants-first",
             "science-payback-horizon",
+            "builder-reward-survey",
+            "contact-posture",
+            "naval-production-policy",
+            "settle-plan-ahead",
         )
         live_tags = {gene["tag"] for gene in self.ledger["genes"]}
         ranked = ranking.RANKING_MD.read_text()
@@ -1942,7 +1946,7 @@ class TheStandardScreen(unittest.TestCase):
             self.assertNotIn(tag, live_tags)
             self.assertIn(f"| `{tag}` |", ranked)
             self.assertIn(tag, cutoff_tags)
-        self.assertIn("research-planning genes were deliberately removed",
+        self.assertIn("high-signal negative genes were deliberately removed",
                       self.ledger["reporting_batches"][0]["unverified"])
 
     def test_the_legacy_share_axis_already_said_it(self):
