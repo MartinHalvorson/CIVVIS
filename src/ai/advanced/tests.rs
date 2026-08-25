@@ -34492,3 +34492,183 @@ fn campus_adjacency_threshold_2_credits_only_sites_with_a_threshold_plot() {
         "sorted"
     );
 }
+
+/// The ladder supplies the goal the civic chooser is missing, and stops as
+/// soon as any tier-2 gate is owned. See `AdvancedAi::government_ladder`.
+#[test]
+fn the_government_ladder_aims_at_the_tier_two_civic_its_lane_would_adopt() {
+    let (mut game, _capital, _home) = empire_with_a_capital(71_401);
+    let mut ai = AdvancedAi::new();
+    ai.enable_government_ladder();
+
+    // Rung one is not owned yet, so the ladder has nothing to climb and the
+    // shipped `first_government` arm keeps the field to itself.
+    assert_eq!(
+        ai.government_ladder_goal(&game, 0, GrandStrategy::Expansion),
+        None,
+        "before Political Philosophy the ladder stands down"
+    );
+
+    game.players[0]
+        .civics
+        .insert(crate::name!("political_philosophy"));
+
+    // Every lane but Conquest and Religion takes the government
+    // `strategic_government` ranks first among the three: Merchant Republic.
+    assert_eq!(
+        ai.government_ladder_goal(&game, 0, GrandStrategy::Expansion),
+        Some("exploration"),
+        "the economic lanes climb toward Merchant Republic"
+    );
+    assert_eq!(
+        ai.government_ladder_goal(&game, 0, GrandStrategy::Science),
+        Some("exploration"),
+        "so does Science"
+    );
+    assert_eq!(
+        ai.government_ladder_goal(&game, 0, GrandStrategy::Conquest),
+        Some("divine_right"),
+        "Conquest climbs toward Monarchy, which its own priority list prefers"
+    );
+    assert_eq!(
+        ai.government_ladder_goal(&game, 0, GrandStrategy::Religion),
+        Some("reformed_church"),
+        "Religion climbs toward Theocracy"
+    );
+
+    // A lateral move between two six-slot governments is not worth a second
+    // 340-to-440-cost detour, so one tier-2 gate closes the ladder.
+    game.players[0].civics.insert(crate::name!("divine_right"));
+    assert_eq!(
+        ai.government_ladder_goal(&game, 0, GrandStrategy::Science),
+        None,
+        "a tier-2 gate already owned ends the climb"
+    );
+
+    // And the climb does not start in the back half of the game, where a
+    // policy slot has almost nothing left to pay back.
+    game.players[0].civics.remove(&crate::name!("divine_right"));
+    game.turn = game.max_turns / 2 + 1;
+    assert_eq!(
+        ai.government_ladder_goal(&game, 0, GrandStrategy::Science),
+        None,
+        "past the halfway turn the detour is the cost the shipped ratio avoids"
+    );
+
+    // Off, it is an exact no-op.
+    game.turn = 1;
+    ai.disable_government_ladder();
+    assert_eq!(
+        ai.government_ladder_goal(&game, 0, GrandStrategy::Science),
+        None,
+        "the gene is the whole behaviour"
+    );
+}
+
+/// The chain debts are priced through a payback window rather than a game
+/// fraction, and the difference is largest exactly where the science race is
+/// decided. See `AdvancedAi::chain_payback_window`.
+#[test]
+fn the_chain_payback_window_stops_the_science_debt_decaying_to_nothing() {
+    let (mut game, capital, _home) = empire_with_a_capital(71_402);
+    game.players[0].techs.insert(crate::name!("writing"));
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Science,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let counts = EmpireCounts::default();
+    let library = Item::Building {
+        building: crate::name!("library"),
+    };
+    install_ai_test_district(&mut game, capital, "campus");
+
+    let mut priced = AdvancedAi::new();
+    priced.enable_live_bridge_universe();
+    priced.enable_chain_payback_window();
+    priced.refresh_research_weight(&game);
+    let mut shipped = AdvancedAi::new();
+    shipped.enable_live_bridge_universe();
+    shipped.disable_chain_payback_window();
+    shipped.refresh_research_weight(&game);
+
+    // The two horizons are the whole gene, so pin them where the difference
+    // decides the race. Turn 193 of 250 is the median turn a standard Emperor
+    // game ends on a science victory: the game fraction has fallen to 0.23,
+    // while the payback window still has more than its 40-turn span to run and
+    // therefore pays in full.
+    game.max_turns = 250;
+    game.turn = 193;
+    let fraction = AdvancedAi::research_horizon(&game);
+    assert!(
+        (fraction - 0.228).abs() < 0.005,
+        "the shipped horizon is a game fraction and is nearly spent: {fraction}"
+    );
+    assert_eq!(
+        AdvancedAi::campus_payback_horizon(&game),
+        1.0,
+        "a Library begun with 57 turns left repays many times over"
+    );
+
+    // And the debt that reaches the build order follows it. Priced at a turn
+    // where the capital can still finish a Library inside the clock, so the
+    // comparison is the horizon rather than `production_value`'s
+    // cannot-finish-in-time sentinel.
+    game.turn = 120;
+    let with_window = priced.production_value(&game, 0, capital, &library, &plan, &counts);
+    let with_fraction = shipped.production_value(&game, 0, capital, &library, &plan, &counts);
+    assert!(
+        with_window > with_fraction,
+        "the Campus owes its Library at full price, not at the clock's: \
+         {with_window} vs {with_fraction}"
+    );
+
+    // The reason the original horizon existed is preserved: at the very end
+    // the debt is gone either way, so a Campus building begun at turn 249
+    // still does not outbid a defender.
+    game.turn = game.max_turns;
+    assert_eq!(
+        AdvancedAi::campus_payback_horizon(&game),
+        0.0,
+        "the payback window still closes at the turn limit"
+    );
+}
+
+/// A Builder that can see the Housing it lays outranks one that cannot, and
+/// only where the improvement actually carries Housing. See
+/// `AdvancedAi::improvement_housing_value`.
+#[test]
+fn the_builder_sees_the_housing_an_improvement_carries() {
+    let (game, _capital, _home) = empire_with_a_capital(71_403);
+    let farm = "farm";
+    let mine = "mine";
+    assert!(
+        game.rules.improvements[farm].housing > 0.0,
+        "the Farm is one of the seventeen improvements that carry Housing"
+    );
+    assert_eq!(
+        game.rules.improvements[mine].housing, 0.0,
+        "the Mine carries none, which is what makes it the control"
+    );
+
+    let pos = game.map.tiles.keys().copied().next().expect("a tile");
+    let mut seeing = AdvancedAi::new();
+    seeing.enable_improvement_housing_value();
+    let blind = AdvancedAi::new();
+
+    let seen = seeing.improvement_value(&game, pos, farm, GrandStrategy::Expansion);
+    let unseen = blind.improvement_value(&game, pos, farm, GrandStrategy::Expansion);
+    assert!(
+        seen > unseen,
+        "the Farm's Housing is a yield the shipped chooser cannot see: {seen} vs {unseen}"
+    );
+    assert_eq!(
+        seeing.improvement_value(&game, pos, mine, GrandStrategy::Expansion),
+        blind.improvement_value(&game, pos, mine, GrandStrategy::Expansion),
+        "an improvement with no Housing is priced identically by both"
+    );
+}
