@@ -34523,6 +34523,117 @@ fn the_score_margin_reads_the_lead_and_not_the_turn() {
     );
 }
 
+// ═══ The conqueror nobody scores (`domination_city_count`) ═══
+
+#[test]
+fn domination_city_count_is_a_registered_reversible_opt_in() {
+    assert!(
+        GENES.iter().any(|gene| gene.opt_in()
+            && gene.field == "domination_city_count"
+            && gene.tag == "domination-city-count"),
+        "domination-city-count must be a registered native opt-in"
+    );
+    assert!(
+        crate::ai::advanced::gene_ledger::screenable("domination-city-count"),
+        "the ledger must be able to price it"
+    );
+    assert_eq!(
+        crate::ai::advanced::gene_ledger::ledger_default_on("domination-city-count"),
+        Some(false),
+        "it ships off until a screen prices it"
+    );
+    let mut ai = AdvancedAi::new();
+    assert!(!ai.domination_city_count, "off in the stock agent");
+    assert!(
+        !AdvancedAi::legacy().domination_city_count,
+        "off in the legacy agent"
+    );
+    ai.enable_domination_city_count();
+    assert!(ai.domination_city_count);
+    ai.disable_domination_city_count();
+    assert!(!ai.domination_city_count, "reversible");
+}
+
+/// The blind spot: an empire that has eaten most of a neighbour, but not the
+/// palace, reads exactly what a pacifist reads.
+#[test]
+fn an_empire_eating_the_board_reads_as_a_pacifist_until_the_palace() {
+    let mut game = Game::new(3, 46, 30, 9_701, 250, 0);
+    // Player 1 founds a capital and four more cities; player 2 founds one.
+    game.found_city_for(1, (12, 10), None);
+    // Player 2's FIRST city is its palace and stays with it; the four after it
+    // are the ones player 1 eats.
+    game.found_city_for(2, (16, 10), None);
+    let mut spot = (20, 10);
+    let mut taken = Vec::new();
+    for _ in 0..4 {
+        taken.push(game.found_city_for(2, spot, None));
+        spot = (spot.0 + 4, spot.1);
+    }
+    game.found_city_for(0, (12, 22), None);
+    // Player 1 has captured every one of them except the palace.
+    for city in &taken {
+        game.cities.get_mut(city).unwrap().owner = 1;
+    }
+    assert!(
+        !game
+            .cities
+            .values()
+            .any(|city| city.is_capital && city.original_owner != 1 && city.owner == 1),
+        "fixture: no foreign capital has fallen"
+    );
+
+    let shipped = AdvancedAi::new();
+    let mut ai = AdvancedAi::new();
+    ai.enable_domination_city_count();
+
+    // The shipped reading counts capitals only, so the conqueror scores zero
+    // on this lane and the lane is not what names it.
+    assert_ne!(
+        shipped.rival_pressure(&game, 1).0,
+        GrandStrategy::Conquest,
+        "the shipped model does not see the conquest at all"
+    );
+    let (lane, progress) = ai.rival_pressure(&game, 1);
+    assert_eq!(lane, GrandStrategy::Conquest, "the gene does");
+    assert!(
+        progress >= 50,
+        "four of the board's six foreign cities is most of it ({progress})"
+    );
+}
+
+/// Zero conquests reads zero, a fallen capital still reads through the shipped
+/// term, and the fold can only raise.
+#[test]
+fn the_city_count_starts_at_zero_and_never_lowers_the_capital_count() {
+    let mut ai = AdvancedAi::new();
+    ai.enable_domination_city_count();
+    let shipped = AdvancedAi::new();
+
+    // Nobody has taken anything.
+    let mut game = Game::new(3, 46, 30, 9_702, 250, 0);
+    for pid in 0..3 {
+        game.found_city_for(pid, (12 + 8 * pid as i32, 12), None);
+    }
+    assert_eq!(
+        ai.rival_pressure(&game, 1).1,
+        shipped.rival_pressure(&game, 1).1,
+        "an empire that has conquered nothing reads what it always read"
+    );
+
+    // One foreign capital taken: the shipped term reads 50 of two rivals, and
+    // the city term cannot drag that down.
+    let capital = game.player_city_ids(2)[0];
+    game.cities.get_mut(&capital).unwrap().owner = 1;
+    let with = ai.rival_pressure(&game, 1).1;
+    let without = shipped.rival_pressure(&game, 1).1;
+    assert!(
+        with >= without,
+        "the city count lowered the capital count ({with} < {without})"
+    );
+    assert!((0..=100).contains(&with), "{with} out of range");
+}
+
 // ═══ A war we did not declare (`unchosen_war_keeps_the_lane`) ═══
 
 #[test]
