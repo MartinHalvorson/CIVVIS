@@ -4007,6 +4007,49 @@ pub struct AdvancedAi {
     /// `AdvancedAi::diplomatic_opening_score`.
     pub diplomatic_opening: bool,
 
+    /// Whether the Recovery power gap is measured against the war we are
+    /// actually fighting, or against the strongest empire on the board.
+    ///
+    /// ⚠ THE FILE ALREADY NAMES THIS DEFECT AND EXEMPTS ONE CASE FROM IT. The
+    /// comment above `raid_only_war` says a raid "neither pins the plan on
+    /// Conquest nor drops it into **the power-gap Recovery a strong third
+    /// party would trigger**". A strong third party triggering it is a known
+    /// behaviour, and only the raid is excused: for every other war,
+    ///
+    /// ```text
+    /// at_war && my_power * 1.25 < strongest_rival
+    /// ```
+    ///
+    /// reads `strongest_rival` as the maximum `military_power` over **every
+    /// met major**, at peace or not, next door or on another continent. So an
+    /// empire at war with a weak neighbour, while a distant superpower it has
+    /// never fought exists, is told it is "at war and losing ground at home"
+    /// and takes the defensive posture — against nobody it is fighting.
+    ///
+    /// What that costs is on the record. This arm's own note reports
+    /// `civvis-20260802T205959Z` naming it **160 times, matching all 160
+    /// Recovery turns**, the empire holding the posture from t65 to t229 —
+    /// **72% of the game** — and finishing with one warrior, military 34
+    /// against 1354, score **205 against 1324**. [`Self::bounded_recovery`]
+    /// bounds how long it may last; nothing checks whether it was the right
+    /// reading in the first place.
+    ///
+    /// And Recovery is larger than this repository thought. Re-measured on
+    /// 2026-08-25 with `audit --genome deployment` — the flag added the same
+    /// day, because the binary had been auditing the stock controller —
+    /// Recovery takes **19%** of the board's planner-turns, not the 6% the
+    /// stock reading showed. Conquest and Recovery together are 54%.
+    ///
+    /// The fix is one substitution, using a variable computed twenty lines
+    /// above and never used for this: `wartime_majors`. If we are at war,
+    /// "losing ground" is a question about the empires we are at war with.
+    /// A threatened city still triggers Recovery on its own, untouched, so a
+    /// real siege is answered whatever the power table says — and with no
+    /// major war at all the arm cannot fire, because `at_war` gates it.
+    ///
+    /// **Off by default.** Screenable.
+    pub recovery_reads_the_war: bool,
+
     /// Whether the elective-war branch measures itself against a neighbour it
     /// can reach, or against the weakest empire on the planet.
     ///
@@ -5660,6 +5703,7 @@ impl AdvancedAi {
             air_surge_census: AirSurgeCensus::default(),
             air_surge_cooldown_until: 0,
             diplomatic_opening: false,
+            recovery_reads_the_war: false,
             elective_war_in_reach: false,
             domination_city_count: false,
             unchosen_war_keeps_the_lane: false,
@@ -8943,6 +8987,18 @@ impl AdvancedAi {
             .iter()
             .map(|o| g.military_power(*o))
             .fold(0.0_f64, f64::max);
+        // ⚠ `recovery_reads_the_war`: the strongest empire we are ACTUALLY
+        // FIGHTING, for the power-gap Recovery arm alone. Off, this is the
+        // same board-wide maximum as above, which is what that arm has always
+        // compared itself against. See the flag.
+        let strongest_wartime_rival = if self.recovery_reads_the_war {
+            wartime_majors
+                .iter()
+                .map(|o| g.military_power(*o))
+                .fold(0.0_f64, f64::max)
+        } else {
+            strongest_rival
+        };
         // ⚠ `elective_war_in_reach`: the weakest rival WE CAN REACH, by the
         // reach the campaign planner already requires. Off, this is the
         // weakest empire anywhere on the board, which is what the branch
@@ -9146,7 +9202,9 @@ impl AdvancedAi {
             });
         let (strategy, because) = if at_war
             && (threatened_city.is_some()
-                || (my_power * 1.25 < strongest_rival && !recovery_is_stale && !raid_only_war))
+                || (my_power * 1.25 < strongest_wartime_rival
+                    && !recovery_is_stale
+                    && !raid_only_war))
         {
             (
                 GrandStrategy::Recovery,

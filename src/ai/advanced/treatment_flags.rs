@@ -927,6 +927,16 @@ impl AdvancedAi {
         self.defensible_sites = false;
     }
 
+    /// Measure the Recovery power gap against the war we are actually
+    /// fighting. See [`Self::recovery_reads_the_war`].
+    pub fn enable_recovery_reads_the_war(&mut self) {
+        self.recovery_reads_the_war = true;
+    }
+
+    pub fn disable_recovery_reads_the_war(&mut self) {
+        self.recovery_reads_the_war = false;
+    }
+
     /// Raise the Culture and Diplomacy denial alarms early, since countering an
     /// accumulated stock takes many turns. See
     /// [`Self::stock_denial_lead_time`].
