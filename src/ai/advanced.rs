@@ -5059,6 +5059,23 @@ pub struct AdvancedAi {
     /// happens. This gene asks the plainer question: are we at war with a
     /// major right now. Opt-in gene `upgrade-the-garrison`.
     upgrade_the_garrison: bool,
+    /// A settle site beside a natural wonder is priced the way the engine
+    /// pays it: the wonder's projected yields on every neighbouring work tile
+    /// (`Game::player_tile_yields`' rule, which every site score skipped) and
+    /// a capped footprint credit for the +1 Amenity, +2 Appeal, Holy Site
+    /// adjacency and era score no yield table shows. Off it, the impassable
+    /// wonder tiles are merely lost jobs and the site reads no better than
+    /// bare ground. Opt-in gene `wonder-adjacent-sites`; see
+    /// `advanced/wonder_sites.rs`.
+    wonder_adjacent_sites: bool,
+    /// Version 2 of `wonder_adjacent_sites`: the projection, plus a small
+    /// flat credit per natural-wonder tile in the footprint (capped at a
+    /// river's worth) for the +1 Amenity, appeal, Holy Site adjacency and
+    /// era score the yields never show. Kept apart from version 1 because
+    /// #1419's flat wonder credit lost −0.553 pp at scale (#2464); the batch
+    /// prices the two. Implies version 1; its enable turns version 1 off.
+    /// Opt-in gene `wonder-adjacent-sites-2`.
+    wonder_adjacent_sites_2: bool,
     /// A melee unit with nothing to hit stands where its zone of control
     /// takes the most enemy reaches off our shooters and wounded. Opt-in gene
     /// `zoc-screen`; see `advanced/field_craft.rs`.
@@ -5423,6 +5440,12 @@ mod order_retry;
 /// target after its first movement leg. Two opt-in genes; see
 /// `advanced/opening_settlement.rs`.
 mod opening_settlement;
+
+/// `wonder-adjacent-sites` prices a settle site beside a natural wonder the
+/// way the engine pays it; `wonder-ring-recon` sends an explorer to the
+/// unseen ring of a natural wonder near home before it picks a frontier. Two
+/// opt-in genes; see `advanced/wonder_sites.rs`.
+mod wonder_sites;
 
 mod science_victory_drive;
 pub use science_victory_drive::ScienceDrive;
@@ -6152,6 +6175,8 @@ impl AdvancedAi {
 
             // ---- append: t-z ----------------------------------------
             upgrade_the_garrison: false,
+            wonder_adjacent_sites: false,
+            wonder_adjacent_sites_2: false,
             zoc_screen: false,
         }
     }
@@ -22596,7 +22621,7 @@ impl AdvancedAi {
         pos: Pos,
         positions: &[Pos],
     ) -> SettlementGrowthForecast {
-        let mut center = g.rules.tile_yields(&g.map.tiles[&pos]);
+        let mut center = self.site_work_yields(g, pos, &g.map.tiles[&pos]);
         center.food = center.food.max(2.0);
         center.production = center.production.max(1.0);
 
@@ -22634,7 +22659,7 @@ impl AdvancedAi {
             candidates.push(SettlementWorkTile {
                 pos: work,
                 ring: g.wdist(pos, work),
-                yields: g.rules.tile_yields(tile),
+                yields: self.site_work_yields(g, work, tile),
                 resource_value,
             });
         }
@@ -22934,6 +22959,7 @@ impl AdvancedAi {
         let mut value =
             forecast.score + (housing - 2.0) * 4.0 + growth_readiness + dependable_jobs * 0.75;
         value += self.settlement_adjacency_value_from_positions(g, pid, pos, &positions);
+        value += self.wonder_footprint_value(g, &positions);
         let enemy_distance = g
             .cities
             .values()
@@ -24009,7 +24035,7 @@ impl AdvancedAi {
                     return None;
                 }
                 let prefilter_score = prefilter_limit
-                    .map(|_| Self::settlement_prefilter_score(g, pos))
+                    .map(|_| self.settlement_prefilter_score_for(g, pos))
                     .unwrap_or(0.0);
                 Some((pos, prefilter_score))
             })

@@ -229,6 +229,9 @@ These screenable genes have no on/off result, so they receive no rank or promoti
 | `siege-is-progress-2` | off (unmeasured) | The first turn an own land unit stands within two tiles of an at-war city resets the war-fatigue clock once for that city, so a campaign still walking to its target is not offered away as stalled. | 1 |
 | `solvency-first-trade-slot-2` | off (unmeasured) | Reserve every empty trade route slot the empire can use, not only the first. | 1 |
 | `upgrade-the-garrison` | off (unmeasured) | Modernize the standing army before the discretionary purchase pass spends the treasury, while a major war is being fought. | 1 |
+| `wonder-adjacent-sites` | off (unmeasured) | Price a settle site the way the engine pays it beside a natural wonder: the wonder's projected yields on every neighbouring work tile and a capped credit for the amenity, appeal, Holy Site adjacency and era score no yield table shows. | — |
+| `wonder-adjacent-sites-2` | off (unmeasured) | The projection plus a small flat credit per wonder tile in the footprint, capped at a river's worth. | — |
+| `wonder-ring-recon` | off (unmeasured) | Send an explorer to the unseen ring of a natural wonder within settling range of an own city before it picks a frontier, so a site beside the wonder exists to be priced. | 1 |
 
 ## Removed from the code
 
