@@ -1882,8 +1882,7 @@ FLAGS_RS = ROOT / "src" / "ai" / "advanced" / "treatment_flags.rs"
 def registry() -> dict[str, tuple[str, str]]:
     """Every registered gene: tag → (field, toggle name), from the gene
     registry (`src/ai/advanced/genes.rs`, read by `py`). The
-    toggle name is not always the field name (`siege_tracks_wall` toggles
-    through `enable_siege_tracks_the_wall`)."""
+    toggle names need not exactly match field names."""
     return {row.tag: (row.field, row.toggle) for row in genes()}
 
 

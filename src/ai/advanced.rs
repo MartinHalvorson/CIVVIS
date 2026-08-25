@@ -111,17 +111,6 @@ const WARTIME_ARMY_CEILING: f64 = 2.0;
 /// [`WARTIME_ARMY_CEILING`]'s doubling. 1.5 asks a six-city empire at peace to
 /// hold 9 land units rather than 6 while it is outweighed, and stops there.
 const PEACETIME_DETERRENCE_CEILING: f64 = 1.5;
-/// Points of standing wall that justify one more siege train, used by
-/// [`AdvancedAi::siege_units_wanted`]. A Civ VI wall tier is 100 points and a
-/// fully walled Renaissance city carries 400, so this asks for two trains at
-/// Medieval walls and the cap at Renaissance — the shape Korea used to strip a
-/// 400-point wall off Kwango in six turns while CIVVIS removed 9 points from
-/// Jeonju in fourteen.
-const SIEGE_WALL_PER_UNIT: usize = 150;
-/// Ceiling on the siege train. Past this the production is better spent on the
-/// melee that has to walk in and take the city — ranged and siege units cannot
-/// capture, and an unsealed city heals 20 a turn.
-const SIEGE_UNITS_MAX: usize = 3;
 /// Radius `threatened_city` scores hostiles in. A group already inside it is
 /// part of the defence rather than a column marching to it.
 const THREAT_RELIEF_RADIUS: i32 = 6;
@@ -311,10 +300,6 @@ const FOREIGN_BORDER_RADIUS: i32 = 3;
 const FOREIGN_BORDER_TILE_PENALTY: f64 = 4.0;
 /// The most the border term may take off a site.
 const FOREIGN_BORDER_PENALTY_CAP: f64 = 40.0;
-
-/// The techs that may unlock the first Walls, as the static names the research
-/// goal chain carries. See `AdvancedAi::walls_tech_goal`.
-const WALL_TECH_NAMES: [&str; 1] = ["masonry"];
 
 /// How much of the game's progress the live race adds to its wonder bonus: the
 /// bonus reads ×(1 + this × turn/max_turns), so ×3 at the tally. See
@@ -527,21 +512,6 @@ const SETTLEMENT_FORECAST_POPULATION: usize = 4;
 const SETTLEMENT_FORECAST_HORIZON: u32 = 40;
 const SETTLEMENT_FORECAST_BEAM: usize = 12;
 const SETTLEMENT_SECOND_RING_DELAY: u32 = 5;
-
-/// Each point of a natural wonder's modeled `Features.Appeal`, priced into a
-/// founding site whose work radius holds the wonder. Appeal is what the
-/// unmodeled wonder economics hang from — pantheon faith, appeal districts
-/// and parks, late tourism — none of which the settle scorer can otherwise
-/// see. Three points per appeal puts an ordinary +2 wonder with a one-yield
-/// ring at about 13 points of credit, inside the 10-20 point band issue
-/// #1378 measured a wonder-ring site actually carrying, and lets the +4
-/// Cliffs of Dover and Uluru outbid them without a per-wonder table.
-const NATURAL_WONDER_APPEAL_WEIGHT: f64 = 3.0;
-
-/// A natural wonder projects its modeled `adjacent_yields` onto every
-/// neighbouring tile, and a city founded on the ring can expect to grow into
-/// roughly one full hex ring of them — six tiles.
-const NATURAL_WONDER_RING_TILES: f64 = 6.0;
 
 /// Before Shipbuilding a land Settler may widen its local eight-tile search,
 /// but may not turn a compact expansion problem into a march across the map.
@@ -1690,13 +1660,6 @@ pub struct AdvancedAi {
     /// the collapse this answers: both army targets were blind until the war
     /// started, and the leader declared at nearly two to one.
     pub peacetime_deterrence: bool,
-    /// Size the siege train against the wall standing at the target city,
-    /// instead of asking for exactly one siege unit for any target at all.
-    ///
-    /// **Off by default, live-bridge only**, on the same footing as
-    /// `bounded_recovery`. See [`AdvancedAi::siege_units_wanted`] for the
-    /// engine arithmetic and the 4-units-in-251-turns measurement behind it.
-    pub siege_tracks_the_wall: bool,
     /// Price a fogged objective city from this controller's last sighting of
     /// it, instead of scoring it as absent.
     ///
@@ -1992,16 +1955,6 @@ pub struct AdvancedAi {
     /// **On in production**; the arm withholds. Evaluator arm
     /// `advanced_without_settler_deadline`.
     pub production_settler_deadline: bool,
-
-    /// Prefer Builder work that improves a tile the city is using now.
-    ///
-    /// The target sweep keeps a correctly connected luxury or strategic
-    /// resource at full priority: its Amenity or stockpile pays regardless of
-    /// its citizen assignment. An ordinary idle tile earns only the output it
-    /// would add by replacing the city's least valuable current worker.
-    ///
-    /// Off by default; native opt-in gene `builder-worked-tile-priority`.
-    pub builder_worked_tile_priority: bool,
 
     /// Keep a Builder out of a visible Barbarian-capture envelope.
     ///
@@ -3259,18 +3212,6 @@ pub struct AdvancedAi {
     /// Amphitheaters of the 2026-08-18 07:43 win were all ordered by the
     /// idle-Great-Writer activation path, none by the queue.
     ///
-    /// With this on, a non-wonder building whose district family the city
-    /// already holds is owed `DISTRICT_BUILDING_CHAIN_DEBT`, decaying by
-    /// `DISTRICT_BUILDING_CHAIN_TIER_DECAY` for each building of that family
-    /// the city already has, over `campus_payback_horizon`; and the great-work
-    /// veto yields to a Theater Square the city already stands, so the chain
-    /// treatments can price what they say they price. The district itself is
-    /// not touched, nor is any unit or wonder. Firaxis-only, beside
-    /// `culture_building_debt` and `campus_every_city`: it prices the Settler
-    /// seat's tally (a tech two, a civic three, a building one) against
-    /// rivals who fill every district. Off for ordinary and frozen
-    /// controllers.
-    pub district_building_chain: bool,
     /// Classify the non-Culture great-work-building veto by the building's
     /// district rather than by the presence of a Great Work slot.
     ///
@@ -4070,16 +4011,6 @@ pub struct AdvancedAi {
     /// and the funnel measured over 19 live runs is what that produces:
     /// 50% Campus, 39% Library, **20% University, 3% Research Lab**. Coverage
     /// collapses precisely as the yields grow.
-    ///
-    /// ⚠ THIS IS NOT `DISTRICT_BUILDING_CHAIN_TIER_DECAY`, and the difference
-    /// matters. A first draft of this gene exempted the Campus family from
-    /// that decay — and was a **strict no-op in every screened game**, because
-    /// `chain_family_held` requires `district_building_chain`, which is
-    /// `default:off`, so `--baseline best` never opens the branch. It read
-    /// exactly +0.0 pp on wins across two windows and 252 seat-pairs, which is
-    /// what an inert gene reads. `RESEARCH_BUILDING_DEBT` is the debt that is
-    /// actually live here: it is gated only on `research_economy`, which the
-    /// repairs universe, the economy bundle and the live bridge all turn on.
     ///
     /// With this on, that debt is scaled by the building's own Science against
     /// the chain's first rung — the Library's printed 2, pinned to the ruleset
@@ -5064,15 +4995,6 @@ const RESEARCH_TIER_PREMIUM_CAP: f64 = 4.0;
 /// shape and one rung under the research debt — the same reasoning as
 /// `CULTURE_THEATER_COVERAGE`. See `culture_building_debt`.
 const CULTURE_BUILDING_DEBT: f64 = 190.0;
-/// What a specialty district's next building is owed while the district
-/// stands without it, before the (7 + turns) normalisation. See
-/// `district_building_chain`. Sized to the district arm's own coverage terms
-/// (`balanced_core` 130 + `RESEARCH_CAMPUS_COVERAGE` 300 + the yields at 60 a
-/// point) so the first building lands in the band the district was bought
-/// in — measured on the replay of `civvis-20260819T000800Z`, a Library moves
-/// from a median 23 to the Theater-Square/Campus band (50–90) and stays
-/// under Settlers (92–164), Spies (116–236), repairs and wonders.
-const DISTRICT_BUILDING_CHAIN_DEBT: f64 = 480.0;
 /// What the land grab pays, raw, for a building that gives every newly
 /// founded city a free Builder (`free_builder_new_city`: the Ancestral Hall),
 /// at full seat shortfall. Beside a Settler at ~1500 and a first-chain
@@ -5087,10 +5009,6 @@ const EXPANSION_HALL_SETTLER_VALUE: f64 = 500.0;
 /// The seat shortfall at which the hall is worth its full price; fewer seats
 /// short scale it down linearly. See `AdvancedAi::expansion_hall`.
 const EXPANSION_HALL_FULL_SHORTFALL: f64 = 6.0;
-/// Each building of the family the city already holds discounts the next
-/// one's debt by this factor: the University is owed less than the Library,
-/// the Research Lab less again.
-const DISTRICT_BUILDING_CHAIN_TIER_DECAY: f64 = 0.7;
 /// The most Scouts `early_contact_window` will let an empire hold at once.
 const EARLY_CONTACT_SCOUT_MAX: usize = 3;
 /// What one unmet city-state is worth to a Scout bought while the world's
@@ -5199,8 +5117,8 @@ impl Default for AdvancedAi {
 /// the identity `docs/EVAL.md` records results under; `live-trader-route`,
 /// `live-religious-purchase` and `ranged-line-of-sight` were published shorter
 /// than the methods they call and must stay that way, or a published result
-/// stops being findable. Same for the arm names `army_target_weighs_enemy`,
-/// `siege_tracks_wall` and `suzerain_cards`.
+/// stops being findable. Same for the arm names `army_target_weighs_enemy`
+/// and `suzerain_cards`.
 /// ⭐ THE GENE REGISTRY lives in its own file: every behaviour flag the genome
 /// can carry, declared once with its tag, kind and toggles. It is a single
 /// shared list that every gene PR appends to, kept out of this file because
@@ -5801,7 +5719,6 @@ impl AdvancedAi {
             engine_faith_price: false,
             army_target_weighs_the_enemy: false,
             peacetime_deterrence: false,
-            siege_tracks_the_wall: false,
             blind_objective_strength: false,
             war_economy: false,
             war_reinforcement: false,
@@ -5821,7 +5738,6 @@ impl AdvancedAi {
             settler_founds_when_stalled: false,
             production_builder_floor: true,
             production_settler_deadline: true,
-            builder_worked_tile_priority: false,
             builder_barbarian_safety: false,
             unit_cost_efficiency: false,
             escort_march: BTreeMap::new(),
@@ -5900,7 +5816,6 @@ impl AdvancedAi {
             opening_settler_waits: false,
             tally_culture: false,
             culture_building_debt: false,
-            district_building_chain: false,
             great_work_veto_by_district: false,
             culture_coverage: false,
             bank_envoys: false,
@@ -10738,10 +10653,8 @@ impl AdvancedAi {
     fn refresh_campus_multiplier_constants(&mut self, g: &Game) {
         // ⚠ EITHER GENE, NOT JUST THE FIRST ONE TO NEED THESE. `fifteenth_citizen`
         // reads `campus_multiplier_half` too, and gating the refresh on
-        // `campus_adjacency_threshold` alone left it silently zero — the same
-        // shape as the gene that spent 252 seat-pairs measuring a branch
-        // `district_building_chain` held shut. Its own test caught this one
-        // before any games were spent.
+        // `campus_adjacency_threshold` alone left it silently zero. Its own
+        // test caught this one before any games were spent.
         if !self.campus_adjacency_threshold && !self.fifteenth_citizen {
             self.campus_multiplier_half = 0.0;
             self.campus_chain_science = 0.0;
@@ -21384,8 +21297,7 @@ impl AdvancedAi {
                         } else {
                             0.0
                         }
-                        + if spec.siege
-                            && counts.siege < self.siege_units_wanted(g, pid, plan)
+                        + if spec.siege && counts.siege < usize::from(plan.target_city.is_some())
                         {
                             95.0
                         } else {
@@ -21427,30 +21339,9 @@ impl AdvancedAi {
                 } else {
                     !spec.great_work_slots.is_empty()
                 };
-                // See `district_building_chain`: a Theater Square the city
-                // already stands owes its buildings whatever the lane, so the
-                // veto steps aside for a family the city holds. It still
-                // refuses the chain in a city with no Theater Square, which
-                // is the case it was written for.
-                let chain_family_held = self.district_building_chain
-                    && spec
-                        .district
-                        .map(|district| g.district_family(district))
-                        .is_some_and(|family| {
-                            family != crate::name!("city_center")
-                                && g.rules
-                                    .districts
-                                    .get_interned(family)
-                                    .is_some_and(|d| d.specialty)
-                                && city
-                                    .districts
-                                    .keys()
-                                    .any(|built| g.district_family(*built) == family)
-                        });
                 if self.victory_target.is_some()
                     && self.victory_target != Some(VictoryTarget::Culture)
                     && great_work_vetoed
-                    && !chain_family_held
                 {
                     return -10_000.0;
                 }
@@ -21606,29 +21497,6 @@ impl AdvancedAi {
                     } else {
                         0.0
                     };
-                    // See `district_building_chain`: the district the city
-                    // already stands owes this building, decaying with each
-                    // building of the family it already holds.
-                    let chain_debt = if chain_family_held && !spec.wonder {
-                        let family = spec.district.map(|district| g.district_family(district));
-                        let held = city
-                            .buildings
-                            .iter()
-                            .filter(|built| {
-                                g.rules
-                                    .buildings
-                                    .get_interned(**built)
-                                    .and_then(|other| other.district)
-                                    .map(|district| g.district_family(district))
-                                    == family
-                            })
-                            .count();
-                        DISTRICT_BUILDING_CHAIN_DEBT
-                            * DISTRICT_BUILDING_CHAIN_TIER_DECAY.powi(held as i32)
-                            * Self::campus_payback_horizon(g)
-                    } else {
-                        0.0
-                    };
                     // See `expansion_hall`: the Ancestral Hall's free Builder in
                     // every new city and +50% Settlers, priced while the land
                     // grab is still short of seats.
@@ -21704,7 +21572,6 @@ impl AdvancedAi {
                         + population_gate
                         + power_unlock
                         + multiplied_science
-                        + chain_debt
                         + culture_debt
                         + research_debt
                         + expansion_hall
@@ -22961,8 +22828,6 @@ impl AdvancedAi {
         } else {
             self.settlement_adjacency_value_from_positions(g, pid, pos, &positions)
         };
-        value += self.natural_wonder_ring_value(g, &positions);
-
         let enemy_distance = g
             .cities
             .values()
@@ -23086,62 +22951,6 @@ impl AdvancedAi {
             value += self.defensibility(g, pid, pos);
         }
         value
-    }
-
-    /// Credit a founding site for the natural wonders its work radius holds.
-    ///
-    /// Without this term a revealed wonder reaches the settle scorer only
-    /// through the worked tiles the growth forecast can see — for the
-    /// Matterhorn one +1-culture ring tile, about 1.2 weighted points — plus a
-    /// future Holy Site's `natural_wonder` adjacency, about 0.4 more. All of
-    /// the economics that make a human take the wonder ring (pantheon faith of
-    /// the Earth Goddess class, appeal-fed districts and parks, late tourism)
-    /// are invisible at founding, so a breadbasket outbids any wonder ring by
-    /// construction: live run `civvis-20260807T202450Z` t93 founded a
-    /// 64.6-point site while `FEATURE_MATTERHORN` stood revealed inside the
-    /// candidate radius (issue #1378).
-    ///
-    /// The magnitude is read from the wonder's own modeled sheet
-    /// (`data/features.json`) rather than a flat per-wonder constant: each
-    /// point of modeled appeal at `NATURAL_WONDER_APPEAL_WEIGHT`, plus one
-    /// full hex ring of the yields the wonder projects onto its neighbours at
-    /// the same yield weights every other settlement term uses. A multi-tile
-    /// wonder counts once — the credit is for living beside the wonder, not
-    /// for each of its tiles. Gated behind the live-bridge treatment flag so
-    /// the frozen `advanced_v1` anchor's decision stream is unchanged.
-    fn natural_wonder_ring_value(&self, g: &Game, positions: &[Pos]) -> f64 {
-        if !self.base.wonder_ring_settle_value {
-            return 0.0;
-        }
-        let mut wonders: BTreeSet<&str> = BTreeSet::new();
-        for position in positions {
-            let Some(feature) = g.map.get(*position).and_then(|tile| tile.feature.as_deref())
-            else {
-                continue;
-            };
-            if g.rules
-                .features
-                .get(feature)
-                .is_some_and(|spec| spec.natural_wonder)
-            {
-                wonders.insert(feature);
-            }
-        }
-        wonders
-            .iter()
-            .map(|feature| {
-                let spec = &g.rules.features[*feature];
-                let ring = &spec.adjacent_yields;
-                spec.appeal * NATURAL_WONDER_APPEAL_WEIGHT
-                    + (ring.food * 2.0
-                        + ring.production * 2.2
-                        + ring.gold * 0.7
-                        + ring.science * 1.2
-                        + ring.culture * 1.2
-                        + ring.faith * 0.4)
-                        * NATURAL_WONDER_RING_TILES
-            })
-            .sum()
     }
 
     /// Penalize a site for threats the acting player can actually see. Hidden
@@ -25638,71 +25447,6 @@ impl AdvancedAi {
         self.improvement_value_with_appeal(g, pos, improvement, strategy, appeal)
     }
 
-    /// Does this improvement connect a resource whose empire-wide benefit is
-    /// paid without assigning a citizen to its tile?
-    fn improvement_connects_global_resource(g: &Game, pos: Pos, improvement: &str) -> bool {
-        let Some(resource) = g.map.tiles[&pos].resource.as_ref() else {
-            return false;
-        };
-        matches!(
-            g.rules.resources[resource].class.as_str(),
-            "luxury" | "strategic"
-        ) && g.rules.improvements[improvement]
-            .resources
-            .iter()
-            .any(|entry| entry == resource)
-    }
-
-    /// The score used to choose an existing Builder's destination.
-    ///
-    /// `improvement_value` is intentionally the raw value: it selects the
-    /// improvement that best fits *one tile*. This second score answers the
-    /// empire-level timing question — which job receives this finite charge
-    /// now? A luxury or strategic connection is full value even on an idle
-    /// tile. For any other idle tile, the immediate gain is the prospective
-    /// worked-tile value less the weakest tile the city works today. If no
-    /// citizen can move there, the Builder has not produced output yet.
-    fn builder_worked_tile_value(&self, g: &Game, pos: Pos, strategy: GrandStrategy) -> f64 {
-        self.yield_value(g.rules.worked_tile_yields(&g.map.tiles[&pos]), strategy)
-    }
-
-    fn builder_improved_tile_value(
-        &self,
-        g: &Game,
-        pos: Pos,
-        improvement: &str,
-        strategy: GrandStrategy,
-    ) -> f64 {
-        let mut tile = g.map.tiles[&pos].clone();
-        tile.improvement = Some(Name::new(improvement));
-        tile.pillaged = false;
-        self.yield_value(g.rules.worked_tile_yields(&tile), strategy)
-    }
-
-    fn builder_target_value(
-        &self,
-        g: &Game,
-        pos: Pos,
-        improvement: &str,
-        strategy: GrandStrategy,
-        worked: bool,
-        weakest_worked_value: Option<f64>,
-    ) -> f64 {
-        let value = self.improvement_value(g, pos, improvement, strategy);
-        if !self.builder_worked_tile_priority
-            || Self::improvement_connects_global_resource(g, pos, improvement)
-        {
-            return value;
-        }
-        if worked {
-            value
-        } else {
-            weakest_worked_value.map_or(0.0, |weakest| {
-                (self.builder_improved_tile_value(g, pos, improvement, strategy) - weakest).max(0.0)
-            })
-        }
-    }
-
     fn improvement_value_with_appeal(
         &self,
         g: &Game,
@@ -26279,38 +26023,14 @@ impl AdvancedAi {
                 None => {
                     let mut best: Option<(f64, Pos)> = None;
                     for cid in g.player_city_ids(pid) {
-                        // Computing the citizen plan can inspect every tile in a city.
-                        // Read it once per city, rather than once for every candidate
-                        // improvement in the target sweep.
-                        let (worked_tiles, weakest_worked_value) =
-                            if self.builder_worked_tile_priority {
-                                let plan = g.city_citizen_plan(cid);
-                                let weakest = plan
-                                    .worked_tiles
-                                    .iter()
-                                    .map(|pos| self.builder_worked_tile_value(g, *pos, strategy))
-                                    .reduce(f64::min);
-                                (
-                                    plan.worked_tiles.into_iter().collect::<HashSet<_>>(),
-                                    weakest,
-                                )
-                            } else {
-                                (HashSet::new(), None)
-                            };
                         for pos in &g.cities[&cid].owned_tiles {
                             if reserved.contains(pos) {
                                 continue;
                             }
                             for improvement in self.worthwhile_improvements(g, pid, *pos, strategy)
                             {
-                                let score = self.builder_target_value(
-                                    g,
-                                    *pos,
-                                    &improvement,
-                                    strategy,
-                                    worked_tiles.contains(pos),
-                                    weakest_worked_value,
-                                ) - g.wdist(current, *pos) as f64 * 0.7;
+                                let score = self.improvement_value(g, *pos, &improvement, strategy)
+                                    - g.wdist(current, *pos) as f64 * 0.7;
                                 if best
                                     .map(|(old, bp)| score > old || (score == old && *pos < bp))
                                     .unwrap_or(true)
@@ -27144,81 +26864,6 @@ impl AdvancedAi {
                 .unwrap_or(std::cmp::Ordering::Equal)
                 .then_with(|| b.cmp(a))
         })
-    }
-
-    /// How many siege units the campaign wants, given the wall actually
-    /// standing at the city it means to take.
-    ///
-    /// The shipped rule asks for exactly one — `counts.siege == 0 &&
-    /// plan.target_city.is_some()` — and asks for it whether the target is an
-    /// unwalled frontier town or a capital behind 400 points of Renaissance
-    /// wall. The engine itself says those are not the same problem. In
-    /// `Game::apply`, a shot at a city is scaled by
-    ///
-    /// ```text
-    /// let mult = if spec.siege { 1.0 } else { 0.5 };
-    /// ```
-    ///
-    /// and a non-siege ranged unit additionally eats a flat `att_base -= 17.0`
-    /// for attacking a city at all. So an army without siege pays twice, and
-    /// the shortfall compounds against exactly the targets that matter most.
-    ///
-    /// Measured on live run `civvis-20260803T005930Z` (Kongo vs Korea, 173
-    /// turns of war): **four siege units were owned across 251 turns** — one
-    /// catapult and three trebuchets — held on **53 of 251 turns**, against a
-    /// Korea holding five walled cities. The within-run contrast is the whole
-    /// argument:
-    ///
-    /// | window | siege present | result |
-    /// |---|---|---|
-    /// | Seoul t136-142 (7 turns) | 1 trebuchet | 48 of 400 wall |
-    /// | Jinju + Jeonju t174-200 (27 turns) | none | 12 and 9 of 400 wall |
-    ///
-    /// Over 27 turns in contact with 5 field cannons and 3 heavy chariots the
-    /// army removed 9 points of a 400-point wall. Korea stripped Kwango's 400
-    /// in six turns and Mbuji-Mayi's in three.
-    ///
-    /// Corpus-wide over 111 runs and 19,713 turns, once cities that were ever
-    /// *ours* are excluded from the rival lists: turns holding a siege unit
-    /// inflict **0.12** points of new damage on an enemy city against **0.02**
-    /// without — 5.5x. ⚠ That comparison is observational and confounded:
-    /// holding siege correlates with being on the offensive at all. It is
-    /// offered as consistency, not as the causal claim. The claim this change
-    /// rests on is the engine arithmetic above and the structural defect that
-    /// the appetite is one unit regardless of the wall.
-    ///
-    /// The rule: nothing without a target; nothing for an unwalled target,
-    /// where the shipped `is_melee_capable` preference already wins the city;
-    /// otherwise one train per [`SIEGE_WALL_PER_UNIT`] points of standing wall,
-    /// capped at [`SIEGE_UNITS_MAX`]. A fogged target is read from this
-    /// controller's last sighting, on the same footing as
-    /// [`AdvancedAi::remembered_objective_strength`] — the wall a city had when
-    /// we last looked is the best estimate we are entitled to. A city never
-    /// seen gets the one-tier generic floor when the live fog repair is on.
-    fn siege_units_wanted(&self, g: &Game, pid: usize, plan: &StrategicPlan) -> usize {
-        if !self.siege_tracks_the_wall {
-            return usize::from(plan.target_city.is_some());
-        }
-        let Some(cid) = plan.target_city else {
-            return 0;
-        };
-        let Some(city) = g.cities.get(&cid) else {
-            return 0;
-        };
-        let visible = self.battlefront_visibility(g, pid);
-        let wall = if !self.battlefront_observation || g.sees(&visible, city.pos) {
-            city.wall_hp
-        } else {
-            match self.remembered_city(cid) {
-                Some(sighting) => sighting.wall_hp,
-                None if self.blind_objective_strength => UNKNOWN_OBJECTIVE_WALL_HP,
-                None => return 0,
-            }
-        };
-        if wall <= 0 {
-            return 0;
-        }
-        ((wall as usize).div_ceil(SIEGE_WALL_PER_UNIT)).clamp(1, SIEGE_UNITS_MAX)
     }
 
     fn local_strength_ratio(

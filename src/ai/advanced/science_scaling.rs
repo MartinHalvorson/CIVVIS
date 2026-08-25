@@ -44,16 +44,6 @@
 //! against the chain's first, floored there so nothing is owed less than a
 //! Library and capped so a modded yield cannot take the queue.
 //!
-//! ⚠ A first draft of this gene aimed at `DISTRICT_BUILDING_CHAIN_TIER_DECAY`
-//! instead, exempting the Campus family from the chain's per-tier discount —
-//! and was a **strict no-op in every game screened**, because
-//! `chain_family_held` requires `district_building_chain`, which is
-//! `default:off`, so a `--baseline best` seat never opens that branch. It read
-//! exactly +0.0 pp on wins over two windows and 252 seat-pairs, which is what
-//! an inert gene reads and is why the flat +0.0 was worth chasing rather than
-//! filing as noise. **Check that a gene's branch is reachable under the
-//! baseline the screen runs before spending games on it.**
-//!
 #[cfg(test)]
 mod tests {
     use super::super::*;
