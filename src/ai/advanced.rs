@@ -2250,7 +2250,31 @@ pub struct AdvancedAi {
     /// city's actual production rate, so a strong city may still expand late
     /// and a weak one stops earlier than the flat rule allowed.
     ///
-    /// Reachable as `advanced_expansion_payback`, paired against `advanced`.
+    /// ⚠⚠ AND NOTHING COULD REACH IT. `advanced_expansion_payback` was an
+    /// evaluator arm and the evaluator is gone; `genes.rs` records that "the
+    /// `treatment` vocabulary went with them". No registry row replaced it, so
+    /// from that deletion until 2026-08-25 this flag was `false` in every
+    /// configuration this repository could produce.
+    ///
+    /// The consequence is not that the payback rule was untested — it is that
+    /// **the native board never ran it at all.**
+    /// [`Self::settler_expansion_window_open`] takes the payback branch only
+    /// under [`Self::land_grab`] or this flag, and `land_grab` is
+    /// `Kind::HostOnly`, so a headless game falls through to
+    /// `adaptive_expansion_window_open` — a deadline — every single time. The
+    /// board the ledger prices genes on has only ever shut its settler window
+    /// on a clock.
+    ///
+    /// That matters because of the two numbers above, which are the largest
+    /// this file records anywhere: a free settler while short of the city
+    /// target more than **doubles** the win rate, 23.0% to 52.3% at p=0.0000
+    /// over 300 games, and the shut window is the **sole** blocker on 31.2% of
+    /// the city-turns an empire spends short of its own target. A third of the
+    /// time this agent is below the city count it has itself decided it wants,
+    /// the only thing stopping it is a deadline.
+    ///
+    /// `expansion-pays-back` is now a registered `Kind::OptIn` gene so a screen
+    /// can price it. It ships off, like every entrant.
     pub expansion_pays_back: bool,
     /// Price a Settler as a coupled investment instead of a free city target.
     ///

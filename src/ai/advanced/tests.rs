@@ -34453,3 +34453,100 @@ fn the_weakest_empire_on_the_board_is_not_a_neighbour() {
     lonely.found_city_for(1, (10 + CAMPAIGN_REACH * 3, 20), None);
     assert!(!ai.rival_is_in_campaign_reach(&lonely, 0, 1));
 }
+
+// ═══ The settler window shuts on a clock (`expansion_pays_back`) ═══
+
+#[test]
+fn expansion_pays_back_is_a_registered_reversible_opt_in() {
+    assert!(
+        GENES.iter().any(|gene| gene.opt_in()
+            && gene.field == "expansion_pays_back"
+            && gene.tag == "expansion-pays-back"),
+        "expansion-pays-back must be a registered native opt-in"
+    );
+    assert!(
+        crate::ai::advanced::gene_ledger::screenable("expansion-pays-back"),
+        "the ledger must be able to price it"
+    );
+    assert_eq!(
+        crate::ai::advanced::gene_ledger::ledger_default_on("expansion-pays-back"),
+        Some(false),
+        "it ships off until a screen prices it"
+    );
+    let mut ai = AdvancedAi::new();
+    assert!(!ai.expansion_pays_back, "off in the stock agent");
+    assert!(
+        !AdvancedAi::legacy().expansion_pays_back,
+        "off in the legacy agent"
+    );
+    ai.enable_expansion_pays_back();
+    assert!(ai.expansion_pays_back);
+    ai.disable_expansion_pays_back();
+    assert!(!ai.expansion_pays_back, "reversible");
+}
+
+/// ⚠⚠ THE NATIVE BOARD HAS ONLY EVER SHUT ITS SETTLER WINDOW ON A CLOCK.
+///
+/// `settler_expansion_window_open` takes the payback branch under `land_grab`
+/// or `expansion_pays_back`, and `land_grab` is `Kind::HostOnly` — so with
+/// both off, which is every headless configuration this repository could
+/// produce before this row, the window is a deadline and nothing else.
+#[test]
+fn the_payback_branch_was_unreachable_on_a_native_board() {
+    assert!(
+        GENES
+            .iter()
+            .any(|gene| gene.field == "land_grab" && !gene.screenable()),
+        "land_grab is host-only, so a native board cannot take that branch"
+    );
+    let stock = AdvancedAi::new();
+    assert!(!stock.land_grab && !stock.expansion_pays_back);
+
+    let mut game = Game::new(2, 40, 26, 5_501, 250, 0);
+    let city = game.found_city_for(0, (12, 12), None);
+
+    // Late enough that the deadline has shut, but with turns to spare: the
+    // stock rule refuses on the clock, and the payback rule asks whether the
+    // city would repay the settler and answers for itself.
+    game.turn = 200;
+    let mut paid = AdvancedAi::new();
+    paid.enable_expansion_pays_back();
+    assert_eq!(
+        paid.settler_expansion_window_open(&game, 0, city),
+        paid.expansion_pays_back_for(&game, 0, city),
+        "the gene routes the window through the payback test"
+    );
+    assert_eq!(
+        stock.settler_expansion_window_open(&game, 0, city),
+        stock.adaptive_expansion_window_open(&game),
+        "and without it the window is the deadline, whatever the city can do"
+    );
+}
+
+/// The payback test is a clock about THIS city: build time at its own
+/// production, plus the walk and the repayment interval, against the turns
+/// that are actually left.
+#[test]
+fn the_payback_test_prices_the_city_that_would_build_the_settler() {
+    let mut ai = AdvancedAi::new();
+    ai.enable_expansion_pays_back();
+
+    let mut game = Game::new(2, 40, 26, 5_502, 250, 0);
+    let city = game.found_city_for(0, (12, 12), None);
+
+    // Plenty of game left: a settler can be built, walked and repaid.
+    game.turn = 20;
+    assert!(ai.expansion_pays_back_for(&game, 0, city));
+
+    // At the wire it cannot, and the test says so without consulting any
+    // deadline: the same city, the same production, only the clock moved.
+    game.turn = game.max_turns.saturating_sub(2);
+    assert!(!ai.expansion_pays_back_for(&game, 0, city));
+
+    // And a game with no turn limit always pays back, because nothing can run
+    // out: `remaining` is the whole of `max_turns` minus the turn.
+    let mut endless = game.clone();
+    endless.max_turns = 0;
+    endless.turn = 0;
+    assert!(!ai.expansion_pays_back_for(&endless, 0, city));
+}

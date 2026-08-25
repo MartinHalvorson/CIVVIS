@@ -764,6 +764,15 @@ pub const GENES: &[Gene] = &[
     // declaration's `close_enough` already asks for") and branch nine uses
     // it. See `elective_war_in_reach`.
     Gene { tag: "elective-war-in-reach", field: "elective_war_in_reach", kind: Kind::OptIn, enable: AdvancedAi::enable_elective_war_in_reach, disable: AdvancedAi::disable_elective_war_in_reach },
+    // ⚠⚠ THE BIGGEST NUMBER IN THIS REPOSITORY SITS BEHIND A FLAG NOTHING
+    // COULD SET. #554: a free settler while short of the city target more than
+    // DOUBLES the win rate, 23.0% -> 52.3% at p=0.0000 over 300 games. #559:
+    // the shut expansion window is the SOLE blocker on 31.2% of the city-turns
+    // an empire spends short of its own target. `settler_expansion_window_open`
+    // takes the payback branch only under `land_grab` (HostOnly) or this flag
+    // (an orphaned evaluator arm), so the native board has only ever shut the
+    // window on a clock. See `expansion_pays_back`.
+    Gene { tag: "expansion-pays-back", field: "expansion_pays_back", kind: Kind::OptIn, enable: AdvancedAi::enable_expansion_pays_back, disable: AdvancedAi::disable_expansion_pays_back },
     // ⚠ The last blind lane in the threat model: Domination is read as
     // `100 * foreign CAPITALS held / foreign capitals`, five values twenty
     // points apart, and ZERO for a rival that has taken any number of ordinary
