@@ -1439,6 +1439,27 @@ class ScreenshotFailureTests(unittest.TestCase):
                 "LEADER_TRAJAN")
         self.assertFalse(visible)
 
+    def test_menu_label_probe_survives_an_unavailable_ocr(self) -> None:
+        """A zero-dimensioned menu shot must consume a poll, not the attempt."""
+        civ6_play._OCR_CACHE.clear()
+        with patch.object(civ6_play, "desktop_size", return_value=(1512, 982)), \
+             patch.object(civ6_play, "_menu_crop_ocr", return_value=[]), \
+             patch.object(
+                 civ6_play.macos_ocr, "recognize",
+                 side_effect=civ6_play.macos_ocr.OCRUnavailable("0 x 0")) as recognize:
+            point = civ6_play._observed_label_point(
+                Path("zero-sized-menu.png"), "Single Player", (756, 33, 756, 480))
+        self.assertIsNone(point)
+        recognize.assert_called_once_with(Path("zero-sized-menu.png"))
+
+    def test_main_menu_visibility_survives_an_unavailable_ocr(self) -> None:
+        civ6_play._OCR_CACHE.clear()
+        with patch.object(
+                civ6_play.macos_ocr, "recognize",
+                side_effect=civ6_play.macos_ocr.OCRUnavailable("0 x 0")):
+            visible = civ6_play._main_menu_visible(Path("zero-sized-menu.png"))
+        self.assertFalse(visible)
+
 
 class LiveControlArmTests(unittest.TestCase):
     """The control arm's route to a live game. `civvis_orders --without` has
