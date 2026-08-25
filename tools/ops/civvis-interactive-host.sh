@@ -6,6 +6,14 @@
 # shell open (the Terminal window may be hidden) so its children retain the
 # necessary App Management and Accessibility responsibility.
 set -u
+# zsh sets BG_NICE by default: every `&` job starts at nice +5 and the whole
+# subtree inherits it. On 2026-08-11 that put Civilization VI -- the one process
+# the live ladder depends on -- underneath every nice-0 cargo build on the box
+# (9-11 s/turn quiet, ~18 s/turn under fleet load), and macOS refuses to lower a
+# nice once set, so a demoted game stays demoted for its whole run.
+# civvis-keeper.sh had already found and fixed this for the exhibition lane; the
+# live lane kept paying it. tools/test_ops_background_priority.py holds the line.
+unsetopt BG_NICE
 
 # Keep every helper beside this source-owned entry point. A previous copy in
 # $HOME restarted an older supervisor after recovery, so the live loop and its
@@ -14,6 +22,7 @@ SELF_DIR=${0:A:h}
 SUPERVISOR=${CIVVIS_SUPERVISOR:-${SELF_DIR}/civvis-game-supervisor.sh}
 POPUP_KEEPER=${CIVVIS_POPUP_KEEPER:-${SELF_DIR}/civvis-popup-keeper.sh}
 MIRROR_KEEPER=${CIVVIS_MIRROR_KEEPER:-${SELF_DIR}/civvis-mirror-keeper.sh}
+WEDGE_WATCHDOG=${CIVVIS_WEDGE_WATCHDOG:-${SELF_DIR}/civvis-agent-wedge-watchdog.sh}
 GAMELOCK=${CIVVIS_GAMELOCK:-${SELF_DIR:h}/civ6_control/gamelock.py}
 GAMELOCK_PYTHON=${CIVVIS_GAMELOCK_PYTHON:-python3}
 LOG=${CIVVIS_INTERACTIVE_HOST_LOG:-$HOME/civvis-civ6-runs/interactive_host.log}
@@ -28,6 +37,10 @@ popup_keeper_pid=""
 popup_keeper_owned=0
 mirror_keeper_pid=""
 mirror_keeper_owned=0
+WEDGE_WATCHDOG_LOCK=${CIVVIS_WEDGE_LOCK:-$HOME/.civvis-agent-wedge-watchdog.lock}
+WEDGE_WATCHDOG_PID_FILE=$WEDGE_WATCHDOG_LOCK/pid
+wedge_watchdog_pid=""
+wedge_watchdog_owned=0
 
 say() { print -r -- "[interactive-host] $(date -u +%FT%TZ) $*" >> "$LOG" }
 
@@ -71,6 +84,8 @@ stop_children() {
   # this host did not create it and may otherwise end a healthy game.
   (( mirror_keeper_owned )) && [[ -n "$mirror_keeper_pid" ]] \
       && kill -TERM "$mirror_keeper_pid" 2>/dev/null || true
+  (( wedge_watchdog_owned )) && [[ -n "$wedge_watchdog_pid" ]] \
+      && kill -TERM "$wedge_watchdog_pid" 2>/dev/null || true
   (( popup_keeper_owned )) && [[ -n "$popup_keeper_pid" ]] \
       && kill -TERM "$popup_keeper_pid" 2>/dev/null || true
   (( supervisor_owned )) && [[ -n "$supervisor_pid" ]] \
@@ -169,6 +184,41 @@ start_mirror_keeper() {
   say "started mirror keeper pid $mirror_keeper_pid"
 }
 
+live_wedge_watchdog_pid() {
+  local holder="" command=""
+  [[ -r "$WEDGE_WATCHDOG_PID_FILE" ]] || return 1
+  holder=$(<"$WEDGE_WATCHDOG_PID_FILE")
+  case "$holder" in
+    ''|*[!0-9]*) return 1 ;;
+  esac
+  pid_is_live "$holder" || return 1
+  command=$(ps -p "$holder" -o command= 2>/dev/null)
+  [[ "$command" == *"${WEDGE_WATCHDOG:t}"* ]] || return 1
+  print -r -- "$holder"
+}
+
+start_wedge_watchdog() {
+  local existing=""
+  existing=$(live_wedge_watchdog_pid || true)
+  if [[ -n "$existing" ]]; then
+    wedge_watchdog_pid=$existing
+    wedge_watchdog_owned=0
+    say "adopted live agent wedge watchdog pid $wedge_watchdog_pid"
+    return 0
+  fi
+  if [[ ! -f "$WEDGE_WATCHDOG" ]]; then
+    say "cannot start agent wedge watchdog: missing $WEDGE_WATCHDOG"
+    wedge_watchdog_pid=""
+    wedge_watchdog_owned=0
+    return 1
+  fi
+  /bin/zsh "$WEDGE_WATCHDOG" \
+      >>"$HOME/civvis-civ6-runs/agent_wedge_watchdog.launch.log" 2>&1 &
+  wedge_watchdog_pid=$!
+  wedge_watchdog_owned=1
+  say "started agent wedge watchdog pid $wedge_watchdog_pid"
+}
+
 say "host up (pid $$)"
 if held=$(hold_status); then
   say "operator halt active; exiting before startup: $held"
@@ -177,6 +227,7 @@ elif start_supervisor; then
   if (( supervisor_owned )); then
     start_popup_keeper || true
     start_mirror_keeper || true
+    start_wedge_watchdog || true
   else
     say "external supervisor already owns the live batch; not starting duplicate helpers"
   fi
@@ -192,6 +243,7 @@ while true; do
     if start_supervisor && (( supervisor_owned )); then
       start_popup_keeper || true
       start_mirror_keeper || true
+      start_wedge_watchdog || true
     fi
   fi
   if (( supervisor_owned )); then
@@ -202,6 +254,10 @@ while true; do
     if ! pid_is_live "$mirror_keeper_pid"; then
       say "mirror keeper exited; restarting"
       start_mirror_keeper || true
+    fi
+    if ! pid_is_live "$wedge_watchdog_pid"; then
+      say "agent wedge watchdog exited; restarting"
+      start_wedge_watchdog || true
     fi
   fi
   sleep "$POLL_S"

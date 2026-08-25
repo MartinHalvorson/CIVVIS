@@ -25,26 +25,38 @@ ranking = genes
 
 PLAYERS = gene_ledger.SCREEN["players"]
 
-#: ★★★★ THE OPERATOR-PINNED DEPLOYMENT GENOME, 2026-08-24.
+#: ★★★★ THE OPERATOR-PINNED DEPLOYMENT GENOME, 2026-08-25.
 #: This is the exact list the agent plays. It retains the 36 selections that
-#: were already deployed, then adds the seven explicit operator promotions:
+#: were already deployed, then adds the sixteen explicit operator promotions:
 #: `unit-cost-efficiency`, `unit-objective-memory`, `camp-party`,
 #: `slot-kind-tiebreak`, `promote-when-wounded`, `religion-sues-peace`, and
-#: `lane-great-people`. Screen results remain evidence; they cannot move this
-#: tuple automatically. Changing it requires an intentional edit and PR note.
-DEPLOYED_GENOME_20260824 = (
+#: `lane-great-people`, `one-launch-pad`, `civilian-rescue`,
+#: `missionary-evades-raiders`, `district-planning`,
+#: `missionary-last-charge-explores`, `settlement-gap-target`,
+#: `religious-defence-scales`, `lane-policy-deck`, and
+#: `science-multiplier-payoff`; then `science-victory-drive` and the four
+#: displayed-Diff promotions at or above +0.85%: `solvency-first-trade-slot`,
+#: `settler-factory-coordination`, `one-war-at-a-time`, and
+#: `religious-veto-defence`. Screen results remain evidence; they cannot move
+#: this tuple automatically.
+#: Changing it requires an intentional edit and PR note.
+DEPLOYED_GENOME_20260825 = (
     "air-surge", "amenity-district-path", "apostle-promotion-by-role",
     "barbarian-bargain", "barbarian-scouts-are-scouts", "bounded-recovery",
-    "buildings-before-projects", "camp-party", "competition-victory-points",
-    "culture-building-debt", "early-contact-window", "engine-faith-price",
+    "buildings-before-projects", "camp-party", "civilian-rescue", "competition-victory-points",
+    "culture-building-debt", "district-planning", "early-contact-window", "engine-faith-price",
     "escort-unstick", "founder-temple", "great-person-housing",
     "holy-lane-parity", "idle-faith-patronage", "inquisition-on-threat",
-    "lane-culture-spending", "lane-great-people", "loyalty-rate-alarm", "maintenance-aware-deck",
+    "lane-culture-spending", "lane-great-people", "lane-policy-deck", "loyalty-rate-alarm", "maintenance-aware-deck",
+    "missionary-evades-raiders", "missionary-last-charge-explores",
+    "one-launch-pad", "one-war-at-a-time",
     "opportunistic-war", "peacetime-deterrence", "price-the-suzerainty",
     "promote-when-wounded", "raid-pillage-prizes", "recon-replacement",
     "recorded-tactical-step", "relief-targets-the-siege", "religion-sues-peace",
-    "religious-units-heal-first", "score-horizon", "settle-sooner",
-    "settler-threat-detour", "slot-kind-tiebreak", "strike-opening",
+    "religious-defence-scales", "religious-units-heal-first", "religious-veto-defence",
+    "science-multiplier-payoff", "science-victory-drive", "score-horizon", "settle-sooner",
+    "settlement-gap-target", "settler-factory-coordination", "settler-threat-detour",
+    "slot-kind-tiebreak", "solvency-first-trade-slot", "strike-opening",
     "theology-for-founders", "unit-cost-efficiency", "unit-objective-memory",
     "war-economy", "war-reinforcement",
     "wide-map-capacity",
@@ -106,7 +118,10 @@ class Merging(unittest.TestCase):
                 path = Path(tmp) / f"s{i}.json"
                 path.write_text(json.dumps(data))
                 paths.append(path)
-            return gene_ledger.build_ledger(paths, filter_known=False)
+            # These stand-in tags model evidence only; they deliberately do
+            # not inherit the repository's real pinned deployment selection.
+            return gene_ledger.build_ledger(paths, filter_known=False,
+                                            deployment_genome=())
 
     def test_the_newest_screen_that_priced_a_gene_supplies_its_verdict(self):
         ledger = self.build([
@@ -136,9 +151,7 @@ class Merging(unittest.TestCase):
             {"helps": 2, "hurts": 2, "unresolved": 0, "default_on": 0},
         )
         self.assertEqual(ledger["rules"]["deployment_policy"], "operator-pinned")
-        self.assertEqual(ledger["rules"]["deployment_genome"],
-                         list(gene_ledger.normalize_deployment_genome(
-                             gene_ledger.OPERATOR_DEFAULT_ON)))
+        self.assertEqual(ledger["rules"]["deployment_genome"], [])
 
     def test_a_later_source_overrides_an_earlier_one_per_gene(self):
         ledger = self.build([
@@ -279,6 +292,44 @@ class OneShape(unittest.TestCase):
         profile = gene_ledger.profile_of(analysis([{"tag": "a"}]))
         self.assertNotIn("contested_field", profile)
         self.assertNotIn("native_competitions", profile)
+
+    def test_a_rotating_victory_mask_is_recorded_and_stays_the_standard_shape(self):
+        """⭐ `--victory-mask rotate:N` closes N real conditions per game from
+        the seed; `victories` stays the batch-level set and every lane is live
+        across the batch, so the batch pools with the ledger, and the mask is
+        written onto the source as provenance. An unmasked source records
+        nothing, so every older record stays byte-stable."""
+        masked = analysis([{"tag": "a"}], victory_mask="rotate:2")
+        profile = gene_ledger.profile_of(masked)
+        self.assertEqual(profile["victory_mask"], "rotate:2")
+        self.assertEqual(profile["victories"], gene_ledger.SCREEN["victories"])
+        self.assertEqual(gene_ledger.shape_of(profile), "standard")
+        self.assertEqual(gene_ledger.shape_gap(profile), "")
+        self.assertEqual(len(self.sources(masked)), 1, "accepted as a source")
+        self.assertNotIn("victory_mask", gene_ledger.profile_of(analysis([{"tag": "a"}])))
+        # A restricted batch-level set is still a probe, mask or no mask.
+        probe = analysis([{"tag": "a"}], victories="domination,score", victory_mask="rotate:1")
+        self.assertEqual(gene_ledger.shape_of(gene_ledger.profile_of(probe)), "legacy")
+
+    def test_the_majors_rung_is_recorded_and_stays_the_standard_shape(self):
+        """`--difficulty emperor` and `--difficulty-rotate` are provenance on
+        the source, not a leg: the ladder plays Emperor and above and the
+        screen may follow it without the ledger holding two worlds."""
+        fixed = gene_ledger.profile_of(analysis([{"tag": "a"}], difficulty="emperor"))
+        self.assertEqual(fixed["difficulty"], "emperor")
+        self.assertEqual(gene_ledger.shape_of(fixed), "standard")
+        rotated = gene_ledger.profile_of(
+            analysis([{"tag": "a"}], difficulty="", difficulty_rotate="king:1,emperor:2,immortal:1"))
+        self.assertNotIn("difficulty", rotated, "an empty rung is not recorded")
+        self.assertEqual(rotated["difficulty_rotate"], "king:1,emperor:2,immortal:1")
+        self.assertEqual(gene_ledger.shape_of(rotated), "standard")
+        self.assertNotIn("difficulty", gene_ledger.profile_of(analysis([{"tag": "a"}])))
+
+    def test_the_rival_mix_is_recorded_and_stays_the_standard_shape(self):
+        mixed = gene_ledger.profile_of(analysis([{"tag": "a"}], rivals="firaxis-mix"))
+        self.assertEqual(mixed["rivals"], "firaxis-mix")
+        self.assertEqual(gene_ledger.shape_of(mixed), "standard")
+        self.assertNotIn("rivals", gene_ledger.profile_of(analysis([{"tag": "a"}])))
 
     def test_the_tool_and_the_binary_name_the_same_screen(self):
         """`gene_screen`'s bare defaults ARE this shape; if one side moves, the
@@ -544,14 +595,17 @@ class TheOperatorPinnedDeploymentGenome(unittest.TestCase):
         ledger = json.loads(gene_ledger.LEDGER_JSON.read_text())
         self.assertEqual(ledger["rules"]["deployment_policy"], "operator-pinned")
         self.assertEqual(tuple(ledger["rules"]["deployment_genome"]),
-                         DEPLOYED_GENOME_20260824)
+                         DEPLOYED_GENOME_20260825)
+        selected = set(DEPLOYED_GENOME_20260825)
+        measured = {g["tag"] for g in ledger["genes"]}
         self.assertEqual(
-            tuple(sorted(g["tag"] for g in ledger["genes"] if g["default_on"])),
-            DEPLOYED_GENOME_20260824,
+            {g["tag"] for g in ledger["genes"] if g["default_on"]},
+            selected & measured,
         )
-        self.assertEqual(ledger["counts"]["default_on"], 43)
+        self.assertEqual(ledger["counts"]["default_on"], 57)
         self.assertEqual(tuple(ledger["rules"]["operator_promotions"]),
-                         gene_ledger.OPERATOR_PROMOTIONS_20260824)
+                         gene_ledger.OPERATOR_PROMOTIONS_20260824
+                         + gene_ledger.OPERATOR_PROMOTIONS_20260825)
 
     def test_the_ledger_records_evidence_without_redeciding_the_list(self):
         ledger = json.loads(gene_ledger.LEDGER_JSON.read_text())
@@ -729,8 +783,8 @@ class TheBuildGuard(unittest.TestCase):
     """⚠⚠ A SCREEN MUST NOT PRICE CODE IT DID NOT PLAY. This has happened three
     times: P10 published a `holy-lane-parity` column after #2266 deleted the
     gene (#2299, #2307 restored it at +99); #2307 had to state its build in
-    prose; and on 2026-08-23 a sibling change was minutes from deleting
-    `barbarian-hunt` while the first standard-shape screen re-priced it."""
+    prose; and on 2026-08-23 a sibling change was minutes from culling a
+    gene while the first standard-shape screen re-priced it."""
 
     TAGS = ["alpha", "beta", "gamma"]
 
@@ -775,9 +829,9 @@ class TheBuildGuard(unittest.TestCase):
         """The other direction, which is what an unmeasured gene quietly looks
         like: the code has a gene this screen never compiled in."""
         said = self.refusal(self.screen(),
-                            at={"c" * 40: self.TAGS + ["barbarian-hunt"]})
+                            at={"c" * 40: self.TAGS + ["unmeasured-gene"]})
         self.assertIn("never compiled in", said)
-        self.assertIn("barbarian-hunt", said)
+        self.assertIn("unmeasured-gene", said)
 
     def test_a_reordered_gene_set_is_still_a_different_gene_set(self):
         said = self.refusal(self.screen(), at={"c" * 40: list(reversed(self.TAGS))})
@@ -1018,19 +1072,19 @@ class GeneratedFiles(unittest.TestCase):
         self.assertEqual(gene_ledger.render_rust(deployment_only),
                          gene_ledger.render_rust(with_reporting))
 
-        newest = current["reporting_batches"][0]
-        self.assertEqual(newest["seats"], 38_160)
-        self.assertEqual(newest["games"], 6_360)
-        self.assertEqual(newest["batch"], {
-            "target_seats": 40_008,
-            "complete_seats": 38_160,
-            "partial": True,
-        })
-        self.assertEqual(newest["build"]["commit"],
-                         "e385d263853e0f9e94b738036e44136978fc10f1")
-        self.assertFalse(newest["build"]["dirty"])
-        self.assertNotIn("unverified", newest)
-        self.assertIn(newest["path"], {s["path"] for s in current["sources"]})
+        reporting = ranking.load_reporting_batches(current)
+        self.assertEqual(len(reporting), len(ranking.REPORTING_BATCH_LABELS))
+        for batch in reporting:
+            newest = batch["meta"]
+            artifact = ranking.load_source(ranking.ROOT / newest["path"])
+            self.assertEqual(newest["seats"], artifact["seats"])
+            self.assertEqual(newest["games"], artifact["games"])
+            self.assertEqual(newest["batch"], ranking.batch_of(artifact))
+            self.assertTrue(newest["build"]["commit"])
+            self.assertFalse(newest["build"]["dirty"])
+            if newest.get("unverified"):
+                self.assertGreater(len(newest["unverified"]), 40)
+            self.assertNotIn(newest["path"], {s["path"] for s in current["sources"]})
         authoritative, _ = ranking.load_sources(current)
         displayed, _ = ranking.load_display_sources(current)
         self.assertIn("engine-faith-price", authoritative)
@@ -1159,17 +1213,30 @@ class VersionedGenes(unittest.TestCase):
 
 
 
-#: The main table's columns, in order. One definition, read both as the header
-#: assertion and as the name -> index map every cell lookup goes through.
-EXPECTED_COLUMNS = (
-    "| Rank | Gene | Description | Best version | Default | "
-    "Wins ± /10k total seats — Last Batch (n=38,160 total seats) | "
-    "Wins ± /10k total seats — Prior Batch (n=41,628 total seats) | "
-    "Wins ± /10k total seats — Third Batch (n=10,002 total seats) | "
-    "Total (on) Win rate | Total (off) Win rate | Diff | "
-    "Posterior (95% CI) | P(>0) | Share Δpp (z) | "
-    "cost (compute) | cost (time) |"
-)
+#: The main table's columns, in order. The batch sample sizes are derived from
+#: their immutable reporting artefacts so an automated completed-batch publish
+#: does not require a hand edit to a stale golden number. `rebuild_from_ledger`
+#: above independently re-reads those files and makes the generated ledger and
+#: ranking byte-for-byte current; this helper only gives every cell assertion a
+#: stable, named column to read.
+def expected_columns() -> str:
+    ledger = json.loads(ranking.LEDGER_JSON.read_text())
+    batches = ranking.load_reporting_batches(ledger)
+    slots = batches + [None] * (len(ranking.REPORTING_BATCH_LABELS) - len(batches))
+    reporting = " | ".join(
+        ranking.reporting_batch_header(label, batch)
+        for label, batch in zip(ranking.REPORTING_BATCH_LABELS, slots)
+    )
+    return (
+        "| Rank | Gene | Description | Best version | Default | "
+        + reporting
+        + " | Total (on) Win rate | Total (off) Win rate | Diff | "
+        "Posterior (95% CI) | P(>0) | Share Δpp (z) | "
+        "cost (compute) | cost (time) |"
+    )
+
+
+EXPECTED_COLUMNS = expected_columns()
 
 #: Every column by name, so an assertion says which cell it reads instead of
 #: counting to it.
@@ -1214,7 +1281,11 @@ class TheTableIsDerived(unittest.TestCase):
                 self.assertIn(f"`{tag}`", text, tag)
             else:
                 self.assertIn("## Awaiting measurement", text)
-                self.assertIn(f"| `{tag}` | off (unmeasured) |", text, tag)
+                # An operator-pinned gene is on before its first screen
+                # (`science-victory-drive`, 2026-08-24); every other
+                # unmeasured gene is off.
+                default = "**on**" if tag in ranking.OPERATOR_DEFAULT_ON else "off"
+                self.assertIn(f"| `{tag}` | {default} (unmeasured) |", text, tag)
         self.assertNotIn("`step-and-reassess` | ", text, "a host-only flag is not ranked")
 
     def test_descriptions_come_from_the_toggle_docs(self):
@@ -1332,10 +1403,11 @@ class TheTableIsDerived(unittest.TestCase):
         ledger = json.loads(ranking.LEDGER_JSON.read_text())
         batches = ranking.load_reporting_batches(ledger)
         self.assertEqual(len(batches), 3)
-        columns = (
-            (0, "Wins ± /10k total seats — Last Batch (n=38,160 total seats)"),
-            (1, "Wins ± /10k total seats — Prior Batch (n=41,628 total seats)"),
-            (2, "Wins ± /10k total seats — Third Batch (n=10,002 total seats)"),
+        slots = batches + [None] * (len(ranking.REPORTING_BATCH_LABELS) - len(batches))
+        columns = tuple(
+            (index, ranking.reporting_batch_header(label, batch))
+            for index, (label, batch) in enumerate(
+                zip(ranking.REPORTING_BATCH_LABELS, slots))
         )
         for cells in self._ranked_rows():
             tag = cell(cells, "Gene").strip("`")
@@ -1575,15 +1647,29 @@ class ThePosteriorIsPublishedAsEvidence(unittest.TestCase):
         selected = set(self.ledger["rules"]["deployment_genome"])
         for cells in self._rows():
             tag = cell(cells, "Gene").strip("`")
-            if tag not in recorded:
-                self.assertEqual(cell(cells, "Default"), "off", tag)
-                continue
-            gene = recorded[tag]
             self.assertEqual(
                 cell(cells, "Default"),
-                "**on**" if gene["default_on"] else "off",
+                "**on**" if tag in selected else "off",
                 cell(cells, "Gene"))
-            self.assertEqual(gene["default_on"], tag in selected, cell(cells, "Gene"))
+            if tag in recorded:
+                self.assertEqual(recorded[tag]["default_on"], tag in selected,
+                                 cell(cells, "Gene"))
+
+    def test_unmeasured_pinned_genes_stay_on_in_the_rendered_ranking_and_list(self):
+        """An authoritative row is optional; the explicit selection is not."""
+        recorded = {g["tag"] for g in self.ledger["genes"]}
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            self.assertEqual(ranking.main(["list"]), 0)
+        list_rows = output.getvalue()
+        displayed = {
+            cell(cells, "Gene").strip("`"): cell(cells, "Default")
+            for cells in self._rows()
+        }
+        for tag in ("missionary-evades-raiders", "missionary-last-charge-explores"):
+            self.assertNotIn(tag, recorded, tag)
+            self.assertEqual(displayed[tag], "**on**", tag)
+            self.assertRegex(list_rows, rf"(?m)^{re.escape(tag)}\s+.+\s+on\s+unmeasured$")
 
     def test_the_evidence_section_marks_pinned_state_without_a_counterfactual_rule(self):
         self.assertIn("## Evidence for future operator selections", self.text)
@@ -1727,9 +1813,13 @@ class TheLaneGenes(unittest.TestCase):
 
     def test_the_lane_set_is_read_off_victory_lane_rs(self):
         tags = ranking.lane_tags()
-        self.assertGreaterEqual(len(tags), 6)
-        for tag in ("lane-congress-ballot", "lane-great-people", "lane-policy-deck",
-                    "lane-space-race", "lane-culture-spending", "lane-congress-favor"):
+        self.assertGreaterEqual(len(tags), 4)
+        for tag in (
+            "lane-great-people",
+            "lane-policy-deck",
+            "lane-space-race",
+            "lane-culture-spending",
+        ):
             self.assertIn(tag, tags, tag)
         # Discovered, not listed: a gene joins by being read in the module.
         reg = ranking.registry()
@@ -1790,16 +1880,15 @@ class TheStandardScreen(unittest.TestCase):
         "war-economy": (2.35, 7.50),
         "apostle-promotion-by-role": (0.32, 1.02),
         "theology-for-founders": (0.45, 1.43),
-        "settler-site-agreement": (-0.46, -1.47),
         "settler-target-hysteresis": (-0.36, -1.16),
         "housing-research": (-0.35, -1.10),
         "religion-sues-peace": (-0.36, -1.14),
     }
-    #: The eight historical pooled-*Diff* candidates: two were clear signals
-    #: and six were noise. They now demonstrate why evidence cannot decide a
+    #: The seven historical pooled-*Diff* candidates: two were clear signals
+    #: and five were noise. They now demonstrate why evidence cannot decide a
     #: deployment selection automatically.
     FORMER_VETO_CANDIDATES = ("governor-victory-lanes", "war-economy",
-                              "settler-site-agreement", "settler-target-hysteresis",
+                              "settler-target-hysteresis",
                               "housing-research", "religion-sues-peace",
                               "apostle-promotion-by-role", "theology-for-founders")
 
@@ -1831,6 +1920,11 @@ class TheStandardScreen(unittest.TestCase):
                 gene_ledger.pooled_posterior(history, ("standard",)),
                 gene_ledger.pooled_posterior(history, gene_ledger.POSTERIOR_SHAPES))
 
+    def screen_row(self, filename, tag):
+        source = json.loads(
+            (gene_ledger.ROOT / "docs" / "gene_screens" / filename).read_text())
+        return next(g for g in source["genes"] if g["tag"] == tag)
+
     def test_the_hand_read_note_matches_the_recorded_source(self):
         """★ The join. Every figure the note read out of the published
         document is the figure the recorded analysis JSON carries, to the
@@ -1846,25 +1940,28 @@ class TheStandardScreen(unittest.TestCase):
             self.assertAlmostEqual(by_tag[tag]["win_delta_pp"], delta, places=2, msg=tag)
             self.assertAlmostEqual(by_tag[tag]["win_z"], z, places=2, msg=tag)
 
-    def test_governor_victory_lanes_is_the_largest_correctable_defect(self):
+    def test_governor_victory_lanes_historical_evidence_justifies_the_cull(self):
         """Before the policy was pinned, P10's single +46 column had placed
         it on. The 23,622-seat deployment shape read it at −237, and the
         pre-registered direct arm `g1` confirmed −4.78 pp at win z −6.11.
         The newer 38,160-seat cutoff independently reads −2.21 pp at z −5.81.
-        The explicit pinned deployment selection keeps it **off**.
+        The explicit 2026-08-24 cull then removed its implementation.
 
-        ⭐ THE THREE DEPLOYMENT WINDOWS NOW TELL THE CURRENT STORY IN ONE ROW:
+        ⭐ THE THREE DEPLOYMENT WINDOWS NOW TELL THE HISTORICAL STORY IN ONE ROW:
         the cutoff at −110, g1 at −239, and the whole-genome standard screen
         at −237. The legacy +46 remains in the pooled record as the original
         promotion, even though it has now fallen beyond the printed third
         window."""
-        row = next(g for g in self.ledger["genes"]
-                   if g["tag"] == "governor-victory-lanes")
-        self.assertFalse(row["default_on"], "g1 resolved it off")
-        self.assertEqual(row["verdict"], "hurts")
-        self.assertEqual(row["wins_last_10k"], -110, "the 38,160-seat cutoff")
-        self.assertEqual(row["wins_prior_10k"], -239, "g1, the direct arm")
-        self.assertEqual(row["wins_third_10k"], -237, "the whole-genome standard screen")
+        live_tags = {g["tag"] for g in self.ledger["genes"]}
+        self.assertNotIn("governor-victory-lanes", live_tags)
+        ranked = ranking.RANKING_MD.read_text()
+        self.assertIn("## Removed from the code", ranked)
+        self.assertIn("| `governor-victory-lanes` |", ranked)
+        cutoff = self.screen_row(
+            "2026-08-24-standard-continuous-38160-total-seats.json",
+            "governor-victory-lanes")
+        self.assertAlmostEqual(cutoff["win_delta_pp"], -2.21, places=2)
+        self.assertAlmostEqual(cutoff["win_z"], -5.81, places=2)
         legacy, standard, pooled = self.pools("governor-victory-lanes")
         self.assertEqual((round(legacy["effect"]), round(legacy["lo"]),
                           round(legacy["hi"])), (46, 9, 82))
@@ -1876,10 +1973,9 @@ class TheStandardScreen(unittest.TestCase):
         self.assertEqual(standard["screens"], 3)
         # The two instruments do not merely disagree, they do not come close.
         self.assertGreater(legacy["lo"] - standard["hi"], 100)
-        # So the pool across shapes is a warning, not an answer, and it is the
-        # figure the LEDGER publishes over all four screens.
-        self.assertEqual(round(row["posterior_tau_pp"]), round(pooled["tau"]))
-        self.assertEqual(row["posterior_screens"], 4)
+        # So the pool across shapes is a warning, not an answer, even though
+        # the historical evidence decisively met the explicit cull threshold.
+        self.assertEqual(pooled["screens"], 4)
         self.assertEqual(gene_ledger.posterior_call(pooled["effect"], pooled["se"]),
                          "unresolved")
         self.assertEqual(gene_ledger.posterior_call(standard["effect"],
@@ -1887,17 +1983,50 @@ class TheStandardScreen(unittest.TestCase):
         for phrase in ("-237", "[-267, -206]", "-15.37"):
             self.assertIn(phrase, self.notes, phrase)
 
+    def test_cull_batches_keep_their_historical_rows(self):
+        """The eight 38,160-seat cull candidates left source, not history."""
+        tags = (
+            "chain-tech-lookahead",
+            "research-floor-holds",
+            "research-grants-first",
+            "science-payback-horizon",
+            "builder-reward-survey",
+            "contact-posture",
+            "naval-production-policy",
+            "settle-plan-ahead",
+        )
+        live_tags = {gene["tag"] for gene in self.ledger["genes"]}
+        ranked = ranking.RANKING_MD.read_text()
+        cutoff = json.loads(
+            (gene_ledger.ROOT / "docs" / "gene_screens"
+             / "2026-08-24-standard-continuous-38160-total-seats.json").read_text())
+        cutoff_tags = {gene["tag"] for gene in cutoff["genes"]}
+        for tag in tags:
+            self.assertNotIn(tag, live_tags)
+            self.assertIn(f"| `{tag}` |", ranked)
+            self.assertIn(tag, cutoff_tags)
+        reporting_notes = "\n".join(
+            str(batch.get("unverified", ""))
+            for batch in self.ledger["reporting_batches"]
+        )
+        self.assertIn("research-planning", reporting_notes)
+        self.assertIn("high-signal negative genes were deliberately removed",
+                      reporting_notes)
+
     def test_the_legacy_share_axis_already_said_it(self):
         """P10 read this gene win z +2.46 / share z −15.92 — a recorded
         `conflict`; the former rule looked only at its win axis. The share axis
         was right a day before the win axis caught up, and g1's own arm now
         agrees on BOTH axes, so the conflict is gone."""
-        row = next(g for g in self.ledger["genes"]
-                   if g["tag"] == "governor-victory-lanes")
-        # The current cutoff has both axes negative, so no conflict remains.
-        self.assertFalse(row["conflict"], "both axes now agree")
-        self.assertAlmostEqual(row["screen"]["win_z"], -5.81, places=2)
-        self.assertAlmostEqual(row["screen"]["share_z"], -16.41, places=2)
+        cutoff = self.screen_row(
+            "2026-08-24-standard-continuous-38160-total-seats.json",
+            "governor-victory-lanes")
+        # The cutoff has both axes negative, so no conflict remains in the
+        # historical evidence that justified removal.
+        self.assertAlmostEqual(cutoff["win_z"], -5.81, places=2)
+        self.assertAlmostEqual(cutoff["share_z"], -16.41, places=2)
+        self.assertNotIn("governor-victory-lanes",
+                         {g["tag"] for g in self.ledger["genes"]})
         # P10's share axis (−15.92) landed within half a sigma of what the
         # deployment shape's WIN axis said a day later (−15.37).
         self.assertLess(abs(15.92 - abs(self.STANDARD["governor-victory-lanes"][1])),
@@ -1912,21 +2041,23 @@ class TheStandardScreen(unittest.TestCase):
         self.assertLess(abs(expansion), abs(victory) / 5, "the other half is cheap")
         self.assertLess(abs(victory + expansion - composite), 0.7, "roughly additive")
         # The harmful half was the only one that shipped, until g1 resolved
-        # it off on 2026-08-23. All three governor genes now default off.
-        by_tag = {g["tag"]: g for g in self.ledger["genes"]}
-        self.assertFalse(by_tag["governor-victory-lanes"]["default_on"])
-        self.assertFalse(by_tag["governor-every-lane"]["default_on"])
-        self.assertFalse(by_tag["governor-expansion-lane"]["default_on"])
+        # it off on 2026-08-23. The 2026-08-24 cull removes all three genes.
+        live_tags = {g["tag"] for g in self.ledger["genes"]}
+        ranked = ranking.RANKING_MD.read_text()
+        for tag in ("governor-victory-lanes", "governor-every-lane",
+                    "governor-expansion-lane"):
+            self.assertNotIn(tag, live_tags)
+            self.assertIn(f"| `{tag}` |", ranked)
 
-    def test_six_of_the_eight_former_candidates_are_at_z_about_one(self):
-        """Why the former automatic rule was retired: six of its candidates
+    def test_five_of_the_seven_former_candidates_are_at_z_about_one(self):
+        """Why the former automatic rule was retired: five of its candidates
         were |z| ≈ 1 on the next screen."""
         signal = [tag for tag in self.FORMER_VETO_CANDIDATES
                   if abs(self.STANDARD[tag][1]) >= 3.0]
         noise = [tag for tag in self.FORMER_VETO_CANDIDATES
                  if abs(self.STANDARD[tag][1]) < 2.0]
         self.assertEqual(sorted(signal), ["governor-victory-lanes", "war-economy"])
-        self.assertEqual(len(noise), 6)
+        self.assertEqual(len(noise), 5)
         for tag in noise:
             self.assertLess(abs(self.STANDARD[tag][1]), 1.5, tag)
 
@@ -1950,6 +2081,7 @@ class TheStandardScreen(unittest.TestCase):
         text = ranking.RANKING_MD.read_text()
         self.assertIn("23,622", text)
         self.assertIn("governor-victory-lanes", text)
+        self.assertIn("## Removed from the code", text)
         # ⚠ The note used to say the screen was "not a ledger source". It is
         # one now, and a paragraph that still said otherwise would be the most
         # misleading line in the file.

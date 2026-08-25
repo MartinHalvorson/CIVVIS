@@ -123,10 +123,9 @@ the commit is the load-bearing field:
   (#2307) — found by a careful reader, not by a gate.
 - **#2307's own write-up** stated its source commit and its binary's SHA-256 in
   prose, because the artefact had nowhere to put them.
-- **2026-08-23.** The first standard-shape screen re-priced `barbarian-hunt`
-  from the legacy -1.73 pp to +0.20 pp while a sibling change was minutes from
-  deleting that gene on the legacy reading, which would have made a brand-new
-  screen a source pricing a gene the code no longer had.
+- **2026-08-23.** The first standard-shape screen re-priced a gene while a
+  sibling change was minutes from culling it on a legacy reading, which would
+  have made a brand-new screen a source pricing a gene the code no longer had.
 
 ⚠ The twenty sources recorded before 2026-08-23 carry no build block. They are
 grandfathered — the games are played and the artefacts are history — and they
@@ -415,6 +414,20 @@ FIELDLESS = {
     "contested_field": "",
     "native_competitions": False,
 }
+#: ⭐ PROVENANCE RECORDED WHEN SET, AND NOT A SHAPE LEG. `gene_screen
+#: --victory-mask rotate:N` closes N of the five real conditions per game from
+#: the game's seed, score always on; `victories` in its header is still the
+#: batch-level set (all six) and every lane is live across the batch, so the
+#: batch is the standard shape and pools with the ledger. The mask is written
+#: onto the source so a reader can see it, exactly as `FIELDLESS` is recorded
+#: only when set, and `shape_of` never reads it.
+#: `difficulty` / `difficulty_rotate` are the majors' rung (`--difficulty`,
+#: `--difficulty-rotate king:1,emperor:2,immortal:1`), recorded the same way:
+#: every screen before 2026-08-25 played the engine's Prince default and
+#: wrote nothing, and a batch that names its rung says so on the source.
+#: `rivals` is the rival mix (`--rivals firaxis-mix`): one chair per game
+#: plays a fixed, unmeasured opponent. Recorded the same way.
+RECORDED_WHEN_SET = ("victory_mask", "difficulty", "difficulty_rotate", "rivals")
 #: The profile keys recorded for every source, whether or not they match. The
 #: draw `design` is recorded and NOT checked: it is how each seat's genome was
 #: sampled (`independent` — every seat its own draw, the screen since
@@ -452,8 +465,10 @@ DIFF_PLACES = 6
 #: rows.
 DEPLOYMENT_POLICY = "operator-pinned"
 
-#: The seven explicit 2026-08-24 promotions. They supplement the exact
+#: The sixteen explicit 2026-08-24 promotions. They supplement the exact
 #: 36-gene selection already shipped at the 38,160-seat standard cutoff.
+#: The final seven are the later operator-selected promotions; they remain
+#: explicit here rather than being inferred from screen statistics.
 OPERATOR_PROMOTIONS_20260824 = (
     "unit-cost-efficiency",
     "unit-objective-memory",
@@ -462,12 +477,35 @@ OPERATOR_PROMOTIONS_20260824 = (
     "promote-when-wounded",
     "religion-sues-peace",
     "lane-great-people",
+    "one-launch-pad",
+    "civilian-rescue",
+    "missionary-evades-raiders",
+    "district-planning",
+    "missionary-last-charge-explores",
+    "settlement-gap-target",
+    "religious-defence-scales",
+    "lane-policy-deck",
+    "science-multiplier-payoff",
+)
+
+#: The later 2026-08-25 operator-pinned additions. `science-victory-drive`
+#: was pinned on before its first screen: "default this gene to true initially
+#: once you write and merge it. i'll test it more later." The four following
+#: tags were explicitly promoted from the displayed pooled-Diff ranking at the
+#: +0.85 percentage-point cutoff; this remains a deliberate selection rather
+#: than a rule that lets a later screen rewrite the deployment genome.
+OPERATOR_PROMOTIONS_20260825 = (
+    "science-victory-drive",
+    "solvency-first-trade-slot",
+    "settler-factory-coordination",
+    "one-war-at-a-time",
+    "religious-veto-defence",
 )
 
 #: The complete pinned deployment genome, in stable tag order. Every other
 #: screenable gene defaults off unless an explicit operator update changes this
-#: selection. Keep the seven promotions above named separately so the policy
-#: change is auditable without re-deriving it from screen statistics.
+#: selection. Keep the historical promotion groups above named separately so
+#: the policy change is auditable without re-deriving it from screen statistics.
 OPERATOR_DEFAULT_ON = (
     "air-surge",
     "amenity-district-path",
@@ -477,8 +515,10 @@ OPERATOR_DEFAULT_ON = (
     "bounded-recovery",
     "buildings-before-projects",
     "camp-party",
+    "civilian-rescue",
     "competition-victory-points",
     "culture-building-debt",
+    "district-planning",
     "early-contact-window",
     "engine-faith-price",
     "escort-unstick",
@@ -489,8 +529,13 @@ OPERATOR_DEFAULT_ON = (
     "inquisition-on-threat",
     "lane-culture-spending",
     "lane-great-people",
+    "lane-policy-deck",
     "loyalty-rate-alarm",
     "maintenance-aware-deck",
+    "missionary-evades-raiders",
+    "missionary-last-charge-explores",
+    "one-launch-pad",
+    "one-war-at-a-time",
     "opportunistic-war",
     "peacetime-deterrence",
     "price-the-suzerainty",
@@ -500,11 +545,18 @@ OPERATOR_DEFAULT_ON = (
     "recorded-tactical-step",
     "relief-targets-the-siege",
     "religion-sues-peace",
+    "religious-defence-scales",
     "religious-units-heal-first",
+    "religious-veto-defence",
+    "science-multiplier-payoff",
+    "science-victory-drive",
     "score-horizon",
     "settle-sooner",
+    "settlement-gap-target",
+    "settler-factory-coordination",
     "settler-threat-detour",
     "slot-kind-tiebreak",
+    "solvency-first-trade-slot",
     "strike-opening",
     "theology-for-founders",
     "unit-cost-efficiency",
@@ -846,7 +898,7 @@ def default_on_summary(ledger: dict) -> str:
         raise ValueError("the ranking only renders the operator-pinned deployment policy")
     return (
         f"**Deployment default:** operator-pinned ({len(genome)} genes): retains the prior "
-        f"36 selections and explicitly adds {', '.join(f'`{tag}`' for tag in promotions)}. "
+        f"36 selections and explicitly promotes {', '.join(f'`{tag}`' for tag in promotions)}. "
         "Screen columns, *Diff*, and posterior values are evidence only; new batches do not "
         "automatically change defaults."
     )
@@ -874,6 +926,9 @@ def profile_of(data: dict) -> dict:
         value = raw.get(key)
         if value is not None and value != fieldless:
             profile[key] = value
+    for key in RECORDED_WHEN_SET:
+        if raw.get(key):
+            profile[key] = raw[key]
     return profile
 
 
@@ -1022,8 +1077,8 @@ def build_gap(data: dict, name: str, tags_at=None, tags_now=None) -> str:
     commit does have is what an unmeasured gene quietly looks like. Both have
     happened here: P10 published a `holy-lane-parity` column after the cull
     that deleted it (#2266, #2299, #2307), and on 2026-08-23 a sibling change
-    was minutes from deleting `barbarian-hunt` while the first standard-shape
-    screen was re-pricing it."""
+    was minutes from culling a gene while the first standard-shape screen was
+    re-pricing it."""
     tags_at = tags_at or gene_tags_at
     tags_now = tags_now or gene_tags_now
     build = build_of(data)
@@ -1474,7 +1529,11 @@ def build_ledger(sources: list[Path], filter_known: bool = True,
         "helps": sum(g["verdict"] == "helps" for g in genes),
         "hurts": sum(g["verdict"] == "hurts" for g in genes),
         "unresolved": sum(g["verdict"] == "unresolved" for g in genes),
-        "default_on": sum(g["default_on"] for g in genes),
+        # The pinned selection governs every screenable tag, including one
+        # whose first measurement has not landed yet and therefore has no
+        # `GeneVerdict` row. Counts describe that runtime selection, not only
+        # the measured subset emitted below.
+        "default_on": len(selected),
     }
     return {
         "kind": "gene_ledger",
@@ -1503,7 +1562,9 @@ def build_ledger(sources: list[Path], filter_known: bool = True,
                          "its standard error, both in wins per 10,000 on-arm seats",
             "deployment_policy": DEPLOYMENT_POLICY,
             "deployment_genome": list(selected),
-            "operator_promotions": list(OPERATOR_PROMOTIONS_20260824),
+            "operator_promotions": list(
+                OPERATOR_PROMOTIONS_20260824 + OPERATOR_PROMOTIONS_20260825
+            ),
             "posterior_shapes": list(POSTERIOR_SHAPES),
             "deployment_policy_meaning": "the operator-pinned list decides default_on. "
                                          "`tools/genes.py` writes the list into the ledger and "
@@ -1820,8 +1881,7 @@ FLAGS_RS = ROOT / "src" / "ai" / "advanced" / "treatment_flags.rs"
 def registry() -> dict[str, tuple[str, str]]:
     """Every registered gene: tag → (field, toggle name), from the gene
     registry (`src/ai/advanced/genes.rs`, read by `py`). The
-    toggle name is not always the field name (`siege_tracks_wall` toggles
-    through `enable_siege_tracks_the_wall`)."""
+    toggle names need not exactly match field names."""
     return {row.tag: (row.field, row.toggle) for row in genes()}
 
 
@@ -2357,6 +2417,7 @@ def lane_section(ledger: dict, measured: dict[str, list[dict]],
                  desc: dict[str, str]) -> list[str]:
     """The lane genes, judged on the axis they can actually pay on."""
     tags = lane_tags()
+    selected = set(ledger["rules"]["deployment_genome"])
     verdicts = {g["tag"]: g for g in ledger["genes"]}
     lines = [
         "",
@@ -2382,7 +2443,7 @@ def lane_section(ledger: dict, measured: dict[str, list[dict]],
     for tag in tags:
         gene = verdicts.get(tag, {})
         history = measured.get(tag)
-        default = "**on**" if gene.get("default_on") else "off"
+        default = "**on**" if tag in selected else "off"
         if not history:
             lines.append(
                 f"| `{tag}` | {default} | \u2013 | \u2013 | \u2013 | awaiting its first "
@@ -2394,7 +2455,7 @@ def lane_section(ledger: dict, measured: dict[str, list[dict]],
             f"| `{tag}` | {default} | "
             f"{wins_per(history[-1]['win_on'], history[-1]['players']):+d} | "
             f"{share_cell(history)} | {posterior_cell(posterior)} | "
-            f"{verdicts[tag]['verdict']} |"
+            f"{gene.get('verdict', 'unmeasured')} |"
         )
     return lines
 
@@ -2407,6 +2468,13 @@ def render(ledger: dict) -> str:
     tags = screenable_tags()
     desc = descriptions()
     verdict = {g["tag"]: g for g in ledger["genes"]}
+    selected = set(ledger["rules"]["deployment_genome"])
+    # A reporting batch can already display a screenable gene before an
+    # authoritative source has supplied its GeneVerdict. Preserve its explicit
+    # pinned state in the display and family helpers instead of falling back to
+    # an accidental "off" merely because that row is still unmeasured.
+    for tag in selected:
+        verdict.setdefault(tag, {"default_on": True})
     reg = registry()
 
     rows = []
@@ -2727,10 +2795,13 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
 
     if args.command == "list":
-        ledger_rows = {g["tag"]: g for g in json.loads(LEDGER_JSON.read_text())["genes"]} if LEDGER_JSON.exists() else {}
+        ledger = json.loads(LEDGER_JSON.read_text()) if LEDGER_JSON.exists() else {}
+        ledger_rows = {g["tag"]: g for g in ledger.get("genes", [])}
+        selected = set(ledger.get("rules", {}).get(
+            "deployment_genome", OPERATOR_DEFAULT_ON))
         for row in genes():
             verdict = ledger_rows.get(row.tag, {})
-            print(f"{row.tag:<32} {row.kind:<26} {'on ' if verdict.get('default_on') else 'off'}  "
+            print(f"{row.tag:<32} {row.kind:<26} {'on ' if row.tag in selected else 'off'}  "
                   f"{verdict.get('verdict', 'unmeasured')}")
         return 0
     if args.command == "table":

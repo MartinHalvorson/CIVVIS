@@ -128,6 +128,18 @@ green; something simply asserts a fact that nothing verifies.
   `MapScript::Continents` while the CLI defaults to `tennis_ball`, so the check
   that exists to keep platform trig out of mapgen could not see the map most
   games are played on (#1950).
+- **A live-game interaction is modelled on a quoted line, not on a memory of
+  the game.** A PR that models or drives something the real game does — it
+  touches `tools/civ6_control/mod/`, or the deal, diplomacy, barbarian or
+  religion code in `src/game.rs` — quotes in its body the shipped script line
+  or database row it is modelled on: `Base/Assets/UI/DiplomacyActionView.lua:2545`
+  (`MakeDeal_ApplyStatement`), `GameplayDB.BarbarianAttackForces`. That is
+  how a working deal was found to be evaluated only inside a `MAKE_DEAL`
+  session, a gift to be legal and buy nothing, and the barbarian bands to
+  break at Chieftain/Warlord and Emperor/Immortal — none of which the
+  green rows in `docs/MECHANICS.md` knew. `tools/civ6_scripts.py grep
+  <regex>` finds the line on a fleet Mac; `check-pr` posts a notice, never a
+  block, when such a PR carries no citation.
 - **Discover, never list.** A hand-written list of files to check is complete
   the day it is written and silently shrinks afterwards. It has cost this
   repository three times: twenty-five ungated `tools/` suites, one of `beta/`'s

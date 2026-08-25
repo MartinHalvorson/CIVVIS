@@ -1,6 +1,6 @@
-//! Two late-game science genes, and the tests that pin them.
+//! Opt-in science-pricing genes and the tests that pin them.
 //!
-//! Both are opt-in (`Kind::OptIn` in `genes.rs`), ship off, and are priced by
+//! They are opt-in (`Kind::OptIn` in `genes.rs`), ship off, and are priced by
 //! `gene_screen` before any promotion question is asked — see
 //! `docs/GENE_SCREEN.md`. They live here because they are one sentence each
 //! and `src/ai/advanced.rs` is the most contended file in the repository
@@ -18,26 +18,6 @@
 //! 40% of its price into a table that has not moved, and the empire's research
 //! economy thins exactly where the tech tree stops being a convenience and
 //! starts being Field Cannon against Spearmen.
-//!
-//! **`science-payback-horizon`.** Asks the question the investment actually
-//! poses. A Campus is 54 production and pays a yield every turn afterwards, so
-//! what decides it is whether there is still time to REPAY, not what fraction
-//! of the game is left; `campus_payback_horizon` says exactly that, holds full
-//! value until the last `RESEARCH_CAMPUS_PAYBACK` of the budget, and is already
-//! what `DISTRICT_BUILDING_CHAIN_DEBT` and `CULTURE_THEATER_COVERAGE` are
-//! scaled by. This gene puts the two remaining science terms on it.
-//!
-//! ⚠ The Campus coverage term's own comment has claimed "**A PAYBACK horizon,
-//! not a game-fraction one**" since #1095 — the branch that made it true
-//! belonged to `campus_every_city`, and #2235 removed that gene with the
-//! bottom of the ranking, reverting the line under the comment without
-//! touching the comment. `campus-every-city` was culled on a **war-regime**
-//! screen (`--victories domination,score`, four players, 299 of 300 games
-//! decided by the score tally at the clock), which is the one regime a
-//! research treatment cannot be priced in. This is that repair measured on its
-//! own, in the native six-player regime, under its own name — and only that
-//! half: the culled gene's other sentence, a Campus in *every* city whatever
-//! the coverage, is deliberately not here.
 //!
 //! **`science-multiplier-payoff`.** A building's whole worth in
 //! `production_value` is `yield_value(spec.yields) * 42` off the **printed**
@@ -64,33 +44,6 @@
 //! against the chain's first, floored there so nothing is owed less than a
 //! Library and capped so a modded yield cannot take the queue.
 //!
-//! ⚠ A first draft of this gene aimed at `DISTRICT_BUILDING_CHAIN_TIER_DECAY`
-//! instead, exempting the Campus family from the chain's per-tier discount —
-//! and was a **strict no-op in every game screened**, because
-//! `chain_family_held` requires `district_building_chain`, which is
-//! `default:off`, so a `--baseline best` seat never opens that branch. It read
-//! exactly +0.0 pp on wins over two windows and 252 seat-pairs, which is what
-//! an inert gene reads and is why the flat +0.0 was worth chasing rather than
-//! filing as noise. **Check that a gene's branch is reachable under the
-//! baseline the screen runs before spending games on it.**
-//!
-//! **`research-floor-holds`.** The citizen half of the taper.
-//! `RESEARCH_CITIZEN_TILT` and `refresh_research_weight` — the standing tilt
-//! toward beakers in every lane's emphasis, and the floor under a beaker's
-//! price sliding `RESEARCH_FLOOR_EARLY` **3.0** to `RESEARCH_FLOOR_LATE`
-//! **1.0** — ride the same `research_horizon`, so at t150/250 a beaker is
-//! floored at **1.8** and the tilt is at 40%, and by t220 they are **1.24** and
-//! 12%. The empire builds the laboratory and then declines to staff it. Both
-//! move to the payback horizon. Separate from `science-payback-horizon`
-//! because that gene moves what the empire BUYS and this one moves what it
-//! then WORKS.
-//!
-//! The four are separate genes because they are separate claims: the taper is
-//! the wrong shape; the number being tapered was measured off the wrong yield;
-//! the debt is flat across rungs that are not; and the citizens who make the
-//! beakers are tapered too. Any can be right without the others, and the
-//! foldover screen prices all four from the same games at no extra cost.
-
 #[cfg(test)]
 mod tests {
     use super::super::*;
@@ -121,36 +74,20 @@ mod tests {
     }
 
     #[test]
-    fn both_science_genes_are_native_opt_ins_that_ship_off() {
+    fn retained_science_genes_are_native_opt_ins_that_ship_off() {
         for (tag, read) in [
             (
-                "science-payback-horizon",
-                (|ai: &AdvancedAi| ai.science_payback_horizon) as fn(&AdvancedAi) -> bool,
+                "science-multiplier-payoff",
+                (|ai: &AdvancedAi| ai.science_multiplier_payoff) as fn(&AdvancedAi) -> bool,
             ),
-            ("science-multiplier-payoff", |ai: &AdvancedAi| {
-                ai.science_multiplier_payoff
-            }),
             ("research-tier-premium", |ai: &AdvancedAi| {
                 ai.research_tier_premium
-            }),
-            ("research-floor-holds", |ai: &AdvancedAi| {
-                ai.research_floor_holds
-            }),
-            ("campus-finishes-first", |ai: &AdvancedAi| {
-                ai.campus_finishes_first
             }),
             ("power-the-laboratory", |ai: &AdvancedAi| {
                 ai.power_the_laboratory
             }),
             ("campus-adjacency-threshold", |ai: &AdvancedAi| {
                 ai.campus_adjacency_threshold
-            }),
-            ("fifteenth-citizen", |ai: &AdvancedAi| ai.fifteenth_citizen),
-            ("chain-tech-lookahead", |ai: &AdvancedAi| {
-                ai.chain_tech_lookahead
-            }),
-            ("research-grants-first", |ai: &AdvancedAi| {
-                ai.research_grants_first
             }),
         ] {
             let mut ai = AdvancedAi::new();
@@ -165,78 +102,33 @@ mod tests {
             assert!(read(&ai), "{tag} turns on");
         }
         let mut ai = AdvancedAi::new();
-        ai.enable_science_payback_horizon();
         ai.enable_science_multiplier_payoff();
         ai.enable_research_tier_premium();
-        ai.enable_research_floor_holds();
-        ai.enable_campus_finishes_first();
         ai.enable_power_the_laboratory();
         ai.enable_campus_adjacency_threshold();
-        ai.enable_fifteenth_citizen();
-        ai.enable_chain_tech_lookahead();
-        ai.enable_research_grants_first();
-        ai.disable_science_payback_horizon();
         ai.disable_science_multiplier_payoff();
         ai.disable_research_tier_premium();
-        ai.disable_research_floor_holds();
-        ai.disable_campus_finishes_first();
         ai.disable_power_the_laboratory();
         ai.disable_campus_adjacency_threshold();
-        ai.disable_fifteenth_citizen();
-        ai.disable_chain_tech_lookahead();
-        ai.disable_research_grants_first();
-        assert!(!ai.science_payback_horizon);
         assert!(!ai.science_multiplier_payoff);
         assert!(!ai.research_tier_premium);
-        assert!(!ai.research_floor_holds);
-        assert!(!ai.campus_finishes_first);
         assert!(!ai.power_the_laboratory);
         assert!(!ai.campus_adjacency_threshold);
-        assert!(!ai.fifteenth_citizen);
-        assert!(!ai.chain_tech_lookahead);
-        assert!(!ai.research_grants_first);
     }
 
-    /// The citizen half of the taper, and the proof it is a separate gene:
-    /// `science-payback-horizon` does not move it and this does not move
-    /// what `science-payback-horizon` moves.
     #[test]
-    fn the_staffing_horizon_is_a_second_and_separate_taper() {
+    fn the_science_economy_uses_the_standard_taper() {
         let mut g = Game::new_full(2, 28, 18, 91_779, 250, 0, false);
         g.turn = 150;
-        let shipped = AdvancedAi::new();
-        let mut production_only = AdvancedAi::new();
-        production_only.enable_science_payback_horizon();
-        let mut staffing_only = AdvancedAi::new();
-        staffing_only.enable_research_floor_holds();
+        assert!((AdvancedAi::research_horizon(&g) - 0.4).abs() < 1e-9);
 
-        // At t150/250 the shipped taper has written off 60% of both halves.
-        assert!((shipped.research_payback(&g) - 0.4).abs() < 1e-9);
-        assert!((shipped.research_staffing_horizon(&g) - 0.4).abs() < 1e-9);
-
-        // Each gene moves its own half and only its own half.
-        assert!((production_only.research_payback(&g) - 1.0).abs() < 1e-9);
-        assert!((production_only.research_staffing_horizon(&g) - 0.4).abs() < 1e-9);
-        assert!((staffing_only.research_staffing_horizon(&g) - 1.0).abs() < 1e-9);
-        assert!((staffing_only.research_payback(&g) - 0.4).abs() < 1e-9);
-
-        // And what the staffing half actually sets: the floor under a beaker
-        // in every lane, which the shipped slide has already halved.
-        let floor = |ai: &mut AdvancedAi| {
-            ai.research_economy = true;
-            ai.refresh_research_weight(&g);
+        let mut ai = AdvancedAi::new();
+        ai.research_economy = true;
+        ai.refresh_research_weight(&g);
+        assert!(
+            (ai.research_weight - 1.8).abs() < 1e-9,
+            "the standard floor at t150/250: {}",
             ai.research_weight
-        };
-        let mut shipped = shipped;
-        let shipped_floor = floor(&mut shipped);
-        let held_floor = floor(&mut staffing_only);
-        assert!(
-            (shipped_floor - 1.8).abs() < 1e-9,
-            "the shipped floor at t150/250: {shipped_floor}"
-        );
-        assert!(
-            (held_floor - 3.0).abs() < 1e-9,
-            "a beaker is still worth its early price while it can pay: {held_floor}"
         );
     }
 
@@ -303,92 +195,6 @@ mod tests {
             treated.research_tier_weight(&game, &game.cities[&city], &runaway),
             super::super::RESEARCH_TIER_PREMIUM_CAP
         );
-    }
-
-    /// The brake only brakes where there is something unfinished to brake
-    /// for. Both no-op cases are the point: an empire with no Campus is not
-    /// being told to want research less, and neither is one that has finished
-    /// every Campus it owns.
-    #[test]
-    fn the_campus_brake_reads_one_until_a_campus_stands_empty() {
-        let mut game = Game::new_full(1, 24, 16, 91_989, 200, 0, false);
-        let city = found_capital(&mut game, 0);
-        let mut ai = AdvancedAi::new();
-        ai.research_economy = true;
-        ai.enable_campus_finishes_first();
-
-        // No Campus anywhere: nothing to finish, so the term is untouched and
-        // the first research city is bought at the shipped price.
-        ai.refresh_research_chain_completion(&game, 0);
-        assert_eq!(ai.research_chain_completion, 1.0, "no Campus, no brake");
-
-        // ⚠ A Campus alone is still not a brake, and that is deliberate: a
-        // city that cannot yet PRODUCE any Campus building has nothing
-        // unfinished to answer for. The Library is gated on `writing`, so the
-        // fixture has to grant it — a first draft did not and read 1.0 with an
-        // empty Campus, which is the same fixture trap that once made a
-        // purchase-ranking test pass vacuously because its only rival was not
-        // producible.
-        game.players[0].techs.insert(crate::name!("writing"));
-
-        // A Campus with every building it can currently produce still missing
-        // is what the census measured being bought over and over.
-        let site = game.cities[&city]
-            .owned_tiles
-            .iter()
-            .copied()
-            .find(|position| *position != game.cities[&city].pos)
-            .unwrap();
-        set_district(&mut game, city, site, "campus");
-        ai.refresh_research_chain_completion(&game, 0);
-        let empty = ai.research_chain_completion;
-        assert!(
-            empty < 1.0,
-            "a Campus standing without its chain brakes the next one: {empty}"
-        );
-        assert!(
-            empty >= super::super::RESEARCH_COVERAGE_UNFINISHED_FLOOR,
-            "and never below the floor, so a real research hole can still be \
-             filled: {empty}"
-        );
-
-        // Filling what it can produce releases the brake completely.
-        let producible: Vec<Name> = game
-            .rules
-            .buildings
-            .iter()
-            .filter(|(_, spec)| {
-                !spec.wonder
-                    && spec.district.map(|d| game.district_family(d))
-                        == Some(crate::name!("campus"))
-            })
-            .map(|(name, _)| Name::new(name))
-            .filter(|building| {
-                game.can_produce(
-                    0,
-                    city,
-                    &crate::game::Item::Building {
-                        building: *building,
-                    },
-                )
-            })
-            .collect();
-        assert!(!producible.is_empty(), "the fixture can build its chain");
-        for building in producible {
-            game.cities.get_mut(&city).unwrap().buildings.push(building);
-        }
-        ai.refresh_research_chain_completion(&game, 0);
-        assert_eq!(
-            ai.research_chain_completion, 1.0,
-            "a finished Campus is not a reason to want research less"
-        );
-
-        // And with the gene off it is 1.0 whatever the board looks like.
-        let mut shipped = AdvancedAi::new();
-        shipped.research_economy = true;
-        game.cities.get_mut(&city).unwrap().buildings.clear();
-        shipped.refresh_research_chain_completion(&game, 0);
-        assert_eq!(shipped.research_chain_completion, 1.0);
     }
 
     /// The switch, and the three cities where flipping it buys nothing.
@@ -571,122 +377,9 @@ mod tests {
         }
     }
 
-    /// The gate, pinned to the engine, and the four cities it must not pay.
+    /// A research detour requires its prerequisite buildings to stand.
     #[test]
-    fn the_population_gate_pays_only_where_crossing_it_would_buy_something() {
-        let mut game = Game::new_full(1, 24, 16, 91_989, 200, 0, false);
-        let city = found_capital(&mut game, 0);
-        let site = game.cities[&city]
-            .owned_tiles
-            .iter()
-            .copied()
-            .find(|position| *position != game.cities[&city].pos)
-            .unwrap();
-        set_district(&mut game, city, site, "campus");
-        game.players[0].techs.insert(crate::name!("writing"));
-        game.players[0].policies = [crate::name!("rationalism")].into_iter().collect();
-        // ⚠ THE FIXTURE'S HOUSING CAPS AT 6, AND THE GATE IS 15. A city cannot
-        // be "one citizen short and still growing" without room to grow, so a
-        // first draft of this test asserted the positive case on a city the
-        // gene was correctly refusing. `observed_city_housing_adjustments` is
-        // the mirror's own host-minus-model channel and the cheapest honest
-        // way to give the fixture a ceiling worth testing against.
-        game.observed_city_housing_adjustments.insert(city, 14.0);
-        assert!(game.city_housing(&game.cities[&city]) > 15.0);
-
-        let mut ai = AdvancedAi::new();
-        ai.research_economy = true;
-        ai.enable_fifteenth_citizen();
-        ai.refresh_campus_multiplier_constants(&game);
-        let prize =
-            |ai: &AdvancedAi, game: &Game| ai.population_gate_prize(game, &game.cities[&city]);
-
-        // ⭐ THE GATE IS THE ENGINE'S, NOT A NUMBER TYPED TWICE. Walk the city
-        // up one citizen at a time and find where `city_yields` starts paying
-        // the half; that turn is the constant.
-        game.cities
-            .get_mut(&city)
-            .unwrap()
-            .buildings
-            .push(crate::name!("library"));
-        let mut engine_gate = None;
-        for pop in 1..=20 {
-            game.cities.get_mut(&city).unwrap().pop = pop;
-            let with = game.city_yields(city).science;
-            game.players[0].policies.clear();
-            let without = game.city_yields(city).science;
-            game.players[0].policies = [crate::name!("rationalism")].into_iter().collect();
-            if with > without && engine_gate.is_none() {
-                engine_gate = Some(pop as f64);
-            }
-        }
-        assert_eq!(
-            engine_gate,
-            Some(super::super::CAMPUS_POPULATION_GATE),
-            "the constant and city_yields must name the same threshold"
-        );
-
-        // A city one citizen short, holding a Library, growing: the whole point.
-        game.cities.get_mut(&city).unwrap().pop = 14;
-        let (beakers, closeness) = prize(&ai, &game).expect("one short is within reach");
-        assert!(beakers > 0.0 && closeness > 0.8, "{beakers} {closeness}");
-        // The prize is the HELD chain times the half, not a hoped-for chain.
-        assert!(
-            (beakers
-                - game.rules.buildings["library"].yields.science * ai.campus_multiplier_half
-                    / 100.0)
-                .abs()
-                < 1e-9
-        );
-
-        // Past the gate: nothing left to buy.
-        game.cities.get_mut(&city).unwrap().pop = 15;
-        assert!(prize(&ai, &game).is_none(), "already earned");
-
-        // Too far short: it will not arrive before the clock.
-        game.cities.get_mut(&city).unwrap().pop = 4;
-        assert!(prize(&ai, &game).is_none(), "out of reach");
-
-        // Near, but nothing standing to multiply.
-        game.cities.get_mut(&city).unwrap().pop = 14;
-        game.cities.get_mut(&city).unwrap().buildings.clear();
-        assert!(prize(&ai, &game).is_none(), "no Campus building to double");
-        game.cities
-            .get_mut(&city)
-            .unwrap()
-            .buildings
-            .push(crate::name!("library"));
-
-        // ⚠ And near, but CAPPED. One of the six cities the census found was
-        // housing-stopped; paying for its next Granary buys a threshold it
-        // will never cross.
-        assert!(prize(&ai, &game).is_some(), "the fixture can still grow");
-        game.observed_city_housing_adjustments.remove(&city);
-        assert!(
-            game.city_housing_headroom(&game.cities[&city]) <= 0.0,
-            "and without the ceiling it is housing-stopped"
-        );
-        assert!(
-            prize(&ai, &game).is_none(),
-            "a city that cannot grow is not near the gate, however few citizens \
-             separate it"
-        );
-        game.observed_city_housing_adjustments.insert(city, 14.0);
-
-        // With the gene off the term is dead whatever the board says.
-        let mut shipped = AdvancedAi::new();
-        shipped.research_economy = true;
-        shipped.refresh_campus_multiplier_constants(&game);
-        game.cities.get_mut(&city).unwrap().pop = 14;
-        assert!(shipped
-            .population_gate_prize(&game, &game.cities[&city])
-            .is_none());
-    }
-
-    /// The goal starts one construction earlier, and only for a rung the
-    /// empire can actually build.
-    #[test]
-    fn the_chain_goal_aims_at_a_rung_the_empire_can_build() {
+    fn the_chain_goal_requires_held_prerequisites() {
         let mut game = Game::new_full(1, 24, 16, 91_989, 200, 0, false);
         let city = found_capital(&mut game, 0);
         let site = game.cities[&city]
@@ -698,26 +391,15 @@ mod tests {
         set_district(&mut game, city, site, "campus");
         let mut shipped = AdvancedAi::new();
         shipped.research_economy = true;
-        let mut treated = AdvancedAi::new();
-        treated.research_economy = true;
-        treated.enable_chain_tech_lookahead();
-
-        // A Campus and nothing else: both arms aim at the Library's tech,
-        // because the Library requires no building at all.
+        // A Campus and nothing else aims at the Library's tech, because the
+        // Library requires no building at all.
         assert_eq!(
             shipped.unreachable_science_building_tech(&game, 0),
             Some("writing")
         );
-        assert_eq!(
-            treated.unreachable_science_building_tech(&game, 0),
-            Some("writing")
-        );
-
-        // ⭐ THE DIFFERENCE. With Writing held and a Library PRODUCIBLE but
-        // not yet standing, the shipped goal still cannot see Education —
-        // the University's prerequisite has not been built — while the
-        // treated one can. That gap is one Library's construction, and it is
-        // added to every rung after it.
+        // With Writing held and a Library producible but not yet standing,
+        // Education remains unavailable because its prerequisite has not
+        // been built.
         game.players[0].techs.insert(crate::name!("writing"));
         assert!(game.can_produce(
             0,
@@ -734,14 +416,8 @@ mod tests {
             None,
             "the shipped goal waits for the Library to stand"
         );
-        assert_eq!(
-            treated.unreachable_science_building_tech(&game, 0),
-            Some("education"),
-            "the treated goal aims at the rung it can build toward"
-        );
-
-        // Once the Library stands the two agree again: this is strictly the
-        // same set plus the mid-build case, never a different answer.
+        // Once the Library stands the next science building becomes a valid
+        // goal.
         game.cities
             .get_mut(&city)
             .unwrap()
@@ -749,109 +425,12 @@ mod tests {
             .push(crate::name!("library"));
         assert_eq!(
             shipped.unreachable_science_building_tech(&game, 0),
-            treated.unreachable_science_building_tech(&game, 0)
+            Some("education")
         );
 
-        // ⚠ And a rung whose prerequisite the empire cannot even produce is
-        // still refused by BOTH — the check that keeps this from becoming a
-        // beeline to anything expensive. Strip the Campus and the whole goal
-        // goes away, producible or not.
+        // Strip the Campus and the whole goal goes away.
         game.cities.get_mut(&city).unwrap().districts.clear();
         assert_eq!(shipped.unreachable_science_building_tech(&game, 0), None);
-        assert_eq!(treated.unreachable_science_building_tech(&game, 0), None);
-    }
-
-    /// The premium reaches exactly one project, in exactly one state.
-    #[test]
-    fn only_a_finished_research_city_pays_more_for_its_own_project() {
-        let mut game = Game::new_full(1, 24, 16, 91_989, 200, 0, false);
-        let city = found_capital(&mut game, 0);
-        let site = game.cities[&city]
-            .owned_tiles
-            .iter()
-            .copied()
-            .find(|position| *position != game.cities[&city].pos)
-            .unwrap();
-        set_district(&mut game, city, site, "campus");
-        game.players[0].techs.insert(crate::name!("writing"));
-        let mut ai = AdvancedAi::new();
-        ai.enable_research_grants_first();
-        let grants = game.rules.projects["campus_research_grants"].clone();
-        let festival = game.rules.projects["theater_square_festival"].clone();
-
-        // A Campus with a Library still to build is a city that should build
-        // the Library. No premium.
-        assert!(game.can_produce(
-            0,
-            city,
-            &crate::game::Item::Building {
-                building: crate::name!("library"),
-            },
-        ));
-        assert_eq!(ai.research_grants_premium(&game, city, &grants), 0.0);
-
-        // ⚠ A Library alone is NOT finished, even though the University
-        // cannot be produced without Education. `can_produce` is false while
-        // the tech is out, and a first draft read that as finished — the
-        // census then measured the empire swapping Research Labs for Grants,
-        // 40 against 55. A rung the empire cannot yet reach is a rung it WILL
-        // reach.
-        game.cities
-            .get_mut(&city)
-            .unwrap()
-            .buildings
-            .push(crate::name!("library"));
-        assert!(!game.can_produce(
-            0,
-            city,
-            &crate::game::Item::Building {
-                building: crate::name!("university"),
-            },
-        ));
-        assert_eq!(
-            ai.research_grants_premium(&game, city, &grants),
-            0.0,
-            "cannot-build-yet is not finished"
-        );
-
-        // ⚠ Nor is "every rung the ruleset defines" the test: the Campus
-        // family holds madrasa, navigation_school and alchemical_society as
-        // civ-unique replacements for the University, so no city can hold them
-        // all. What finishes the chain is the DEEPEST rung — the one no other
-        // Campus building is built on top of.
-        for rung in ["university", "research_lab"] {
-            game.cities
-                .get_mut(&city)
-                .unwrap()
-                .buildings
-                .push(Name::new(rung));
-        }
-        assert_eq!(
-            ai.research_grants_premium(&game, city, &grants),
-            super::super::RESEARCH_GRANTS_COMPOUNDING_PREMIUM
-        );
-
-        // ⚠ And it is the CAMPUS project only. The other six district projects
-        // are identical in the ruleset — cost 25, repeatable, 10 Great Person
-        // points, an ongoing percent of Production — and none of them moves.
-        assert_eq!(ai.research_grants_premium(&game, city, &festival), 0.0);
-        for other in [
-            "commercial_hub_investment",
-            "holy_site_prayers",
-            "industrial_zone_logistics",
-            "harbor_shipping",
-        ] {
-            let spec = game.rules.projects[other].clone();
-            assert_eq!(
-                ai.research_grants_premium(&game, city, &spec),
-                0.0,
-                "{other} is not the Campus project"
-            );
-        }
-
-        // With the gene off nothing is paid, in any state.
-        let shipped = AdvancedAi::new();
-        assert_eq!(shipped.research_grants_premium(&game, city, &grants), 0.0);
     }
 
     /// A constant standing in for a ruleset value has to be pinned to the

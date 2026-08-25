@@ -4755,6 +4755,28 @@ pub fn default_difficulty() -> String {
     "prince".to_string()
 }
 
+/// ★★★ THE BARBARIANS PLAY AT THEIR OWN DIFFICULTY — IMMORTAL, NOT THE SEAT'S.
+///
+/// Operator directive 2026-08-24: *"We need to make the barbarians in civvis
+/// more aggressive. Should still roughly match the Civ 6 behavior. But weak
+/// barbarians in civvis leads us to weak training and favoring the slightly
+/// wrong genes … we are playing on level 5 and higher in Civ 6 verification
+/// games. Let's make the barbarians level 6 barbarians in civvis for now."*
+///
+/// Level 6 on the ladder is Immortal, and Immortal is exactly where the
+/// game's own `BarbarianAttackForces` switches band: `HighDifficultyStandardRaid`
+/// assembles three melee and two ranged units (against two and one) at a
+/// `SpawnRate` of 1 (against 2), i.e. twice as often — the rows
+/// `data/difficulties.json` already transcribes as `barb_force_scale 1.5` and
+/// `barb_spawn_scale 0.5`. Until now the barbarian seat read those from the
+/// *seat's* difficulty, and every native screen runs at the Prince default,
+/// so every gene ever priced was priced against the Standard band. This key
+/// is what the barbarian seat plays by, whatever the majors' rung is; the
+/// seat difficulty still governs the human's camp Gold and the AI handicaps.
+pub fn default_barbarian_difficulty() -> String {
+    "immortal".to_string()
+}
+
 pub fn default_speed() -> String {
     "standard".to_string()
 }
@@ -4791,6 +4813,10 @@ pub struct GameOptions {
     /// world is warm from edge to edge.
     pub map_poles: MapPoles,
     pub difficulty: String,
+    /// The difficulty the BARBARIAN seat plays by — its raid band and spawn
+    /// cadence — independent of `difficulty`. See
+    /// [`default_barbarian_difficulty`].
+    pub barbarian_difficulty: String,
     pub speed: String,
     pub human_seats: BTreeSet<usize>,
     /// Optional pre-game team assignment for each major seat. An empty vector
@@ -4875,6 +4901,7 @@ impl GameOptions {
             map_topology: MapTopology::default(),
             map_poles: MapPoles::default(),
             difficulty: default_difficulty(),
+            barbarian_difficulty: default_barbarian_difficulty(),
             speed: default_speed(),
             human_seats: BTreeSet::new(),
             teams: Vec::new(),
@@ -5315,6 +5342,11 @@ pub struct Game {
     pub seed: u64,
     /// Key into `rules.difficulties`. Prince is the unhandicapped reference.
     pub difficulty: String,
+    /// Key into `rules.difficulties` for the barbarian seat's raid band and
+    /// spawn cadence, independent of the seat's rung; a save without it
+    /// plays Immortal barbarians. See [`default_barbarian_difficulty`].
+    #[serde(default = "default_barbarian_difficulty")]
+    pub barbarian_difficulty: String,
     /// Key into `rules.speeds`. Scales everything bought with a yield.
     pub speed: String,
     /// Mods this game was created under. A save carries them so a mismatched
@@ -5992,6 +6024,8 @@ struct GameSer {
     visibility_memory_version: u8,
     #[serde(default = "default_difficulty")]
     difficulty: String,
+    #[serde(default = "default_barbarian_difficulty")]
+    barbarian_difficulty: String,
     #[serde(default = "default_speed")]
     speed: String,
     #[serde(default)]
@@ -6220,6 +6254,7 @@ impl From<GameSer> for Game {
             rng: s.rng,
             seed: s.seed,
             difficulty: s.difficulty,
+            barbarian_difficulty: s.barbarian_difficulty,
             speed,
             human_seats: s.human_seats,
             mods: s.mods,
@@ -6428,6 +6463,7 @@ impl From<Game> for GameSer {
             future_tree_layout: Some(g.rules.future_tree_layout()),
             visibility_memory_version: 1,
             difficulty: g.difficulty,
+            barbarian_difficulty: g.barbarian_difficulty,
             // `game_speed` is the live, typed setting used by every rules
             // calculation.  Keep the compatibility string in lockstep so a
             // save cannot preserve two conflicting speeds.
@@ -6695,6 +6731,7 @@ impl Game {
             map_topology,
             map_poles,
             difficulty,
+            barbarian_difficulty,
             speed,
             human_seats,
             teams,
@@ -6741,6 +6778,10 @@ impl Game {
         assert!(
             rules.difficulties.contains_key(&difficulty),
             "unknown difficulty {difficulty}"
+        );
+        assert!(
+            rules.difficulties.contains_key(&barbarian_difficulty),
+            "unknown barbarian difficulty {barbarian_difficulty}"
         );
         assert!(rules.speeds.contains_key(&speed), "unknown game speed {speed}");
         let mut known_civs = rules.civs.keys().cloned().collect::<BTreeSet<_>>();
@@ -6830,6 +6871,7 @@ impl Game {
             rng,
             seed,
             difficulty,
+            barbarian_difficulty,
             speed,
             human_seats,
             base_ruleset,
@@ -7609,6 +7651,25 @@ impl Game {
         &self.rules.difficulties[&self.difficulty]
     }
 
+    /// The rung the barbarian seat plays by: its raid band and spawn cadence.
+    /// See [`default_barbarian_difficulty`]. Falls back to the seat's rung if
+    /// a save names a rung this ruleset does not have.
+    pub fn barbarian_spec(&self) -> &DifficultySpec {
+        self.rules
+            .difficulties
+            .get(&self.barbarian_difficulty)
+            .unwrap_or_else(|| self.difficulty_spec())
+    }
+
+    /// Set the barbarian seat's rung; refused for a key the ruleset lacks.
+    pub fn set_barbarian_difficulty(&mut self, key: &str) -> Result<(), String> {
+        if !self.rules.difficulties.contains_key(key) {
+            return Err(format!("unknown barbarian difficulty {key}"));
+        }
+        self.barbarian_difficulty = key.to_string();
+        Ok(())
+    }
+
     pub fn speed_spec(&self) -> &SpeedSpec {
         &self.rules.speeds[&self.speed]
     }
@@ -8305,9 +8366,10 @@ impl Game {
     /// `BarbarianAttackForces` supplies one melee attacker below Warlord,
     /// two melee plus one ranged unit through Emperor, and three melee plus
     /// two ranged units at Immortal and Deity. The difficulty data carries
-    /// those three force bands as 0.5, 1.0, and 1.5 respectively.
+    /// those three force bands as 0.5, 1.0, and 1.5 respectively — read from
+    /// the barbarian seat's own rung (`barbarian_spec`), not the majors'.
     fn barbarian_raid_force_size(&self) -> usize {
-        match self.difficulty_spec().barb_force_scale {
+        match self.barbarian_spec().barb_force_scale {
             scale if scale <= 0.5 => 1,
             scale if scale <= 1.0 => 3,
             _ => 5,
@@ -8685,7 +8747,7 @@ impl Game {
         // units after the party was already complete.
         let force_size = self.barbarian_raid_force_size();
         let ranged_size = self.barbarian_raid_ranged_size();
-        let spawn_scale = self.difficulty_spec().barb_spawn_scale;
+        let spawn_scale = self.barbarian_spec().barb_spawn_scale;
         let land_pool = self.barbarian_unit_pool();
         let naval_pool = self.barbarian_naval_unit_pool();
         let camps: Vec<(Pos, u32)> = self.barb_camps.iter().map(|(p, n)| (*p, *n)).collect();
@@ -13408,6 +13470,21 @@ impl Game {
             .clone()
             .ok_or_else(|| "target has no religion".to_string())?;
         self.remove_unit(target_id);
+        // The loss side of the raid ledger. A condemned Missionary is removed
+        // here rather than through `record_kill` or `resolve_entered_units`,
+        // so until 2026-08-24 the barbarians could wipe a whole religious
+        // corps and no counter said so. Free Cities also carry
+        // `is_barbarian`; only the true barbarian seat's blows count.
+        if self.players[pid].is_barbarian && !self.players[pid].is_free_city {
+            bump(
+                &mut self.players[target.owner],
+                "religious_lost_to_barbarians",
+            );
+        }
+        bump(
+            &mut self.players[pid],
+            &format!("condemned:{}", target.kind),
+        );
         self.religious_combat_pressure(None, &religion, target.pos, 6, 125.0);
         if self.congress_effect_active("world_religion", "B", &religion) {
             self.players[pid].diplomatic_favor += 25.0;
@@ -15991,7 +16068,7 @@ impl Game {
         hash
     }
 
-    fn promotion_effect(&self, unit: &Unit, effect: &str) -> f64 {
+    pub(crate) fn promotion_effect(&self, unit: &Unit, effect: &str) -> f64 {
         unit.promotions
             .iter()
             .filter_map(|name| {
@@ -22165,7 +22242,7 @@ impl Game {
     /// The line-of-sight test `do_ranged` applies, asked of a unit that may
     /// fire from `from`. This preserves a Ranger's `see_through_woods` rule
     /// while also letting threat readers inspect a legal future firing tile.
-    fn unit_has_line_of_sight_from(&self, uid: u32, from: Pos, to: Pos) -> bool {
+    pub(crate) fn unit_has_line_of_sight_from(&self, uid: u32, from: Pos, to: Pos) -> bool {
         let unit = &self.units[&uid];
         if self.unit_effect(unit, "see_through_woods") > 0.0 && self.wdist(from, to) == 2 {
             let attacker_height = self.see_from_level(from);
@@ -24126,7 +24203,7 @@ impl Game {
         })
     }
 
-    fn exerts_zoc(&self, u: &Unit) -> bool {
+    pub(crate) fn exerts_zoc(&self, u: &Unit) -> bool {
         let spec = &self.rules.units[u.kind];
         // Embarkation does not remove a land unit's ZOC. Its native domain
         // still limits projection to land tiles, which is handled by the
@@ -24137,7 +24214,7 @@ impl Game {
     /// Cavalry, Naval Raiders, the Viking Longship, and air units ignore
     /// incoming ZOC. Civilian/support passengers inherit that ability from
     /// an escort, matching linked-formation behavior in Civ VI.
-    fn unit_ignores_zoc(&self, uid: u32) -> bool {
+    pub(crate) fn unit_ignores_zoc(&self, uid: u32) -> bool {
         let Some(unit) = self.units.get(&uid) else {
             return false;
         };
@@ -41621,7 +41698,12 @@ impl Game {
                 return Err("alliance is unavailable".into());
             }
         }
-        if !open_borders && !friendship && !peace && alliance.is_none() {
+        // A proposal that only gives Gold is a gift (legal, buys nothing —
+        // see `validate_trade`); one that only asks is a demand and goes
+        // through `Action::DemandGold`; an exchange goes through the trade
+        // lane, where both sides must gain.
+        let gift = give_gold > 0.0 && request_gold <= 0.0;
+        if !open_borders && !friendship && !peace && alliance.is_none() && !gift {
             return Err("economic exchanges must use mutually favorable trade terms".into());
         }
         let id = self.next_deal_id;
@@ -41941,6 +42023,9 @@ impl Game {
         }
         self.players[deal.from].gold += deal.request_gold - deal.give_gold;
         self.players[deal.to].gold += deal.give_gold - deal.request_gold;
+        if Self::diplomatic_deal_is_gift(&deal) {
+            self.record_gift(deal.from, deal.to);
+        }
         if deal.peace {
             self.conclude_peace(deal.from, deal.to, peace_terms);
         }
@@ -42450,6 +42535,25 @@ impl Game {
         1.1 + 0.14 * self.world_era as f64 + 0.07 * self.players[pid].dvp.max(0) as f64
     }
 
+    /// What one point of Diplomatic Favor is worth to `pid` in Gold by this
+    /// engine's own book: the live seat's floor for a favor sale, which used
+    /// to be a flat Gold a point.
+    pub fn favor_gold_value(&self, pid: usize) -> f64 {
+        self.favor_unit_value(pid)
+    }
+
+    /// What passage through another empire's territory is worth to
+    /// `receiver` in Gold by this engine's book, read as if it were not yet
+    /// open — a mirrored board can carry the very passage the live seat is
+    /// about to buy. The live seat's ceiling for a passage purchase, which
+    /// used to be whatever the treasury held.
+    pub fn passage_gold_value(&self, receiver: usize) -> f64 {
+        let tourism = (self.players[receiver].tourism_lifetime
+            / self.turn.saturating_sub(1).max(1) as f64)
+            .min(80.0);
+        28.0 + tourism * 0.35
+    }
+
     fn open_borders_receive_value(&self, receiver: usize, grantor: usize) -> f64 {
         if self.has_open_borders(receiver, grantor) {
             return 0.0;
@@ -42791,6 +42895,10 @@ impl Game {
             || self.players[to].is_barbarian
             || self.is_at_war(from, to)
             || (offer.is_empty() && request.is_empty())
+            // A one-sided deal that only TAKES is a demand, and a demand is
+            // `Action::DemandGold`: refusable, with a grievance. It never
+            // executes as a trade.
+            || (offer.is_empty() && !request.is_empty())
             || !self.items_are_valid(from, offer)
             || !self.items_are_valid(to, request)
             || offer
@@ -42839,7 +42947,17 @@ impl Game {
             return Err("Open Borders requires Early Empire for both civilizations".into());
         }
         let utilities = self.trade_utilities(from, to, offer, request);
-        if utilities.0 <= 0.25 || utilities.1 <= 0.25 {
+        // ★ A GIFT IS LEGAL, AND IT BUYS NOTHING — Civilization VI's rule, and
+        // since 2026-08-24 this engine's. A one-sided deal that only GIVES
+        // proposes and the recipient accepts; the game's own database carries
+        // no diplomatic modifier for a gift (a delegation and a demand, yes),
+        // so `relationship_opinion` has none either. Until now the engine
+        // refused the gift outright, which was stricter than the game it
+        // mirrors and hid the question the live seat actually faces. An
+        // exchange must still pay both sides; the AI never gives without
+        // receiving (`gifts_given` is the counter that says so).
+        let gift = request.is_empty();
+        if utilities.1 <= 0.25 || (!gift && utilities.0 <= 0.25) {
             return Err("both civilizations must benefit from the trade".into());
         }
         Ok(utilities)
@@ -43075,7 +43193,33 @@ impl Game {
             .counters
             .entry("trades_completed".to_string())
             .or_insert(0) += 1;
+        if request.is_empty() {
+            self.record_gift(from, to);
+        }
         Ok(())
+    }
+
+    /// The gift ledger: what a seat gave for nothing, and what it was given.
+    /// A controller that reads `gifts_given` above zero on its own seat has
+    /// done something no controller here is meant to do.
+    fn record_gift(&mut self, from: usize, to: usize) {
+        bump(&mut self.players[from], "gifts_given");
+        bump(&mut self.players[to], "gifts_received");
+    }
+
+    /// A diplomatic deal that only hands over Gold: legal as a gift, worth
+    /// nothing to the relationship, counted on the ledger.
+    fn diplomatic_deal_is_gift(deal: &DiplomaticDeal) -> bool {
+        deal.give_gold > 0.0
+            && deal.request_gold <= 0.0
+            && !deal.open_borders
+            && !deal.friendship
+            && !deal.peace
+            && deal.alliance.is_none()
+            && !deal.defensive_pact
+            && deal.joint_war_target.is_none()
+            && deal.promise.is_none()
+            && !deal.demand
     }
 
     fn quoted_payment(&self, payer: usize, price: f64) -> Option<DealItems> {

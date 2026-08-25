@@ -74,7 +74,7 @@ case $result in
     print "  System Settings > Privacy & Security > App Management"
     print "  System Settings > Privacy & Security > Full Disk Access > + > Cmd-Shift-G > /bin/zsh"
     print "Then run this again. Until it passes, keep the loop running from a terminal:"
-    print "  nohup /bin/zsh ~/civvis-batch-loop.sh >> ~/civvis-civ6-runs/batch-loop.nohup.log 2>&1 &"
+    print "  unsetopt BG_NICE; nohup /bin/zsh ~/civvis-batch-loop.sh >> ~/civvis-civ6-runs/batch-loop.nohup.log 2>&1 &"
     exit 1 ;;
   *)
     print "the probe job produced no result -- launchd may have refused to load it"

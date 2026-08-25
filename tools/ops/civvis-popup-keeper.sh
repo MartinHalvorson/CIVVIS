@@ -5,6 +5,14 @@
 # can make the process table look healthy while the helper sees no game window, so
 # this intentionally runs as a detached child of the interactive runner instead.
 set -u
+# zsh sets BG_NICE by default: every `&` job starts at nice +5 and the whole
+# subtree inherits it. On 2026-08-11 that put Civilization VI -- the one process
+# the live ladder depends on -- underneath every nice-0 cargo build on the box
+# (9-11 s/turn quiet, ~18 s/turn under fleet load), and macOS refuses to lower a
+# nice once set, so a demoted game stays demoted for its whole run.
+# civvis-keeper.sh had already found and fixed this for the exhibition lane; the
+# live lane kept paying it. tools/test_ops_background_priority.py holds the line.
+unsetopt BG_NICE
 
 PYTHON=/opt/homebrew/opt/python@3.14/bin/python3.14
 CLEARER=$HOME/CIVVIS/tools/civ6_control/popup_clear.py

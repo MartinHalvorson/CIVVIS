@@ -8727,7 +8727,134 @@ end
 --
 -- Bare globals, both: the main chunk sits at Lua's 200-register ceiling, and
 -- the offline regression (`deal_sale_test.lua`) reads them.
-CivvisTrade = { pending = {}, asked = {} };
+CivvisTrade = { pending = {}, asked = {}, sessions = {}, unanswered = 0, disabled = false };
+
+-- ★★★★★ THE ANSWER ONLY EVER COMES INSIDE A SESSION. Over 42 live runs this
+-- lane sent 636 EQUALIZE asks and the peace arm 253 proposals, and not ONE
+-- `DiplomacyIncomingDeal` arrived — the handler above never ran. The shipped
+-- screens show why: a rival evaluates a working deal as a diplomacy
+-- STATEMENT inside a `MAKE_DEAL` session (DiplomacyActionView.lua
+-- `MakeDeal_ApplyStatement`: "The AI will send, ACCEPT, REJECT, etc. as the
+-- automatic evaluation of the deal occurs" — it arrives through
+-- `Events.DiplomacyStatement` with a `DealAction`, and the view relays it as
+-- `DiploPopup_DealUpdated`). A `SendWorkingDeal` with no session open is
+-- never evaluated. Firaxis's own peace flow builds the locked working deal
+-- FIRST and then `RequestSession(..., "MAKE_DEAL")` — the session does not
+-- clear it — so every arm here now builds its deal as before and then asks
+-- through `CivvisTrade.ask`: the session opens, our own opening statement
+-- says it is live, the question goes out, the rival's statement carries the
+-- verdict, the existing closer accepts or walks away, and the session is
+-- closed by us. `CivvisControlAutoClose` is told to hold its hand for
+-- `DealSessionHoldSeconds` through `LuaEvents.CivvisDealSession`; a session
+-- the rival never answers is closed by that ladder as before and counted,
+-- and after `DealSessionStandDown` of those the lane stands down for the
+-- run rather than opening a screen a fourth time. `DealSessions = false`
+-- restores the direct send.
+CivvisTrade.ask = function(pid, subject, action, kind, turn)
+	local trade = CivvisTrade;
+	if cfg.DealSessions == false or trade.disabled then
+		DealManager.SendWorkingDeal(DealProposalAction[action], pid, subject);
+		return "direct";
+	end
+	trade.sessions[subject] = { kind = kind, action = action, turn = turn, sent = false };
+	pcall(function() LuaEvents.CivvisDealSession(subject, true, cfg.DealSessionHoldSeconds or 4); end);
+	DiplomacyManager.RequestSession(pid, subject, "MAKE_DEAL");
+	emit("deal_session", { turn = turn, target = subject, kind = kind, action = action, phase = "opening" });
+	return "session";
+end;
+
+CivvisTrade.close = function(pid, subject, why)
+	local trade = CivvisTrade;
+	local session = trade.sessions[subject];
+	trade.sessions[subject] = nil;
+	if session ~= nil and session.sessionID ~= nil then
+		pcall(function() DiplomacyManager.CloseSession(session.sessionID); end);
+	end
+	pcall(function() LuaEvents.CivvisDealSession(subject, false, 0); end);
+	emit("deal_session", {
+		turn = try(function() return Game.GetCurrentGameTurn(); end, -1),
+		target = subject, phase = "closed", why = why,
+		kind = session and session.kind or nil,
+	});
+end;
+
+-- A session the rival never answered: the ask is dead, and a third such
+-- session in a run stands the lane down. Called from the closed-session
+-- event and from the arms' own response-window expiry.
+CivvisTrade.abandon = function(subject, why)
+	local trade = CivvisTrade;
+	local session = trade.sessions[subject];
+	if session == nil then return false; end
+	trade.sessions[subject] = nil;
+	trade.pending[subject] = nil;
+	trade.unanswered = trade.unanswered + 1;
+	pcall(function() LuaEvents.CivvisDealSession(subject, false, 0); end);
+	local turn = try(function() return Game.GetCurrentGameTurn(); end, -1);
+	emit("deal_session", { turn = turn, target = subject, phase = "unanswered", why = why,
+		kind = session.kind, unanswered = trade.unanswered });
+	if not trade.disabled and trade.unanswered >= (cfg.DealSessionStandDown or 3) then
+		trade.disabled = true;
+		emit("deal_sessions_stood_down", { turn = turn, unanswered = trade.unanswered });
+	end
+	return true;
+end;
+
+-- Every diplomacy statement that touches the local seat. Ours opens the
+-- question; the rival's carries the verdict. Bare global for the offline
+-- regression (`deal_session_test.lua`).
+CivvisOnDiplomacyStatement = function(fromPlayer, toPlayer, kVariants)
+	local pid = try(function() return Game.GetLocalPlayer(); end, -1);
+	if pid == nil or pid < 0 or (fromPlayer ~= pid and toPlayer ~= pid) then return; end
+	local other = (fromPlayer == pid) and toPlayer or fromPlayer;
+	local trade = CivvisTrade;
+	local session = trade.sessions[other];
+	if session == nil then return; end
+	local turn = try(function() return Game.GetCurrentGameTurn(); end, -1);
+	local sessionID = type(kVariants) == "table" and kVariants.SessionID or nil;
+	if session.sessionID == nil and sessionID ~= nil then session.sessionID = sessionID; end
+	if not session.sent then
+		-- The session is live: put the question. `sent` goes first so an
+		-- answer delivered from inside the send is read as the answer.
+		session.sent = true;
+		local ok = pcall(function()
+			DealManager.SendWorkingDeal(DealProposalAction[session.action], pid, other);
+		end);
+		emit("deal_session", { turn = turn, target = other, kind = session.kind,
+			action = session.action, session = sessionID or -1, phase = "asked", sent = ok });
+		if not ok then CivvisTrade.close(pid, other, "send_threw"); end
+		return;
+	end
+	if fromPlayer ~= other then return; end
+	local dealAction = type(kVariants) == "table" and kVariants.DealAction or nil;
+	trade.unanswered = 0;
+	emit("deal_session", { turn = turn, target = other, kind = session.kind, phase = "answered",
+		session = session.sessionID or -1, deal_action = tostring(dealAction) });
+	if session.kind == "peace" then
+		-- The rival's ACCEPTED is its verdict; the send back is what enacts
+		-- the peace, exactly as the shipped screen's accept button does.
+		local accepted = dealAction == DealProposalAction.ACCEPTED;
+		local enacted = false;
+		if accepted then
+			enacted = pcall(function()
+				DealManager.SendWorkingDeal(DealProposalAction.ACCEPTED, pid, other);
+			end);
+		end
+		emit("peace_response", { turn = turn, target = other, accepted = accepted,
+			enacted = enacted and true or false, deal_action = tostring(dealAction) });
+	else
+		CivvisOnIncomingDeal(other, pid, dealAction);
+	end
+	CivvisTrade.close(pid, other, "answered");
+end;
+
+CivvisOnDealSessionClosed = function(sessionID)
+	for subject, session in pairs(CivvisTrade.sessions) do
+		if session.sessionID == sessionID or (session.sessionID == nil and sessionID == nil) then
+			CivvisTrade.abandon(subject, "session_closed");
+			return;
+		end
+	end
+end;
 
 CivvisOnIncomingDeal = function(fromPlayer, toPlayer, action)
 	local pid = try(function() return Game.GetLocalPlayer(); end, -1);
@@ -9159,6 +9286,67 @@ CivvisLedger.onCityOccupationChanged = function(player, cityId)
 	});
 end;
 
+-- ★★★★★ THE RECEIVING SIDE OF THE BRIDGE. `applied = true` below means an arm's
+-- request did not throw, and that has never meant the host did anything: a
+-- Settler was requested on 83 consecutive turns with `applied = true` and
+-- nothing built, a purchase whose `pcall` did not throw bought nothing, and a
+-- `MOVE_TO (14,11)` ended at (12,9). `civvis_orders` now checks every order it
+-- issued against the NEXT `state` frame and sends the verdicts back through the
+-- orders channel as rows of kind `order_verified` / `order_failed` /
+-- `turn_verified`. This file is the ledger's only writer, so it re-emits them
+-- as events. They are not orders: `applyOrders` keeps them out of
+-- `orders_seen` and `orders_applied`, and `turn_verified` lays this file's own
+-- return-code count for the verified turn (`orders_reported`) beside the
+-- decider's verified count (`orders_applied`) on one line of the ledger.
+--
+-- Hung on a global table, not file-scope locals: the main chunk sits at Lua's
+-- 200-register ceiling.
+CivvisVerify = { reported = {} };
+CivvisVerify.isVerdict = function(kind)
+	return kind == "order_verified" or kind == "order_failed" or kind == "turn_verified";
+end;
+-- What this file counted for a turn, kept until the decider's verdict for that
+-- turn arrives with the next turn's orders.
+CivvisVerify.remember = function(turn, seen, applied)
+	CivvisVerify.reported[tostring(turn)] = { seen = seen, applied = applied };
+end;
+-- Re-emit one verdict row as a ledger event. The order row has no spare
+-- column, so the verified turn rides in `x` for a per-order verdict and in
+-- `subject` for the tally; the tally's counts ride in `verb` as `name=N`.
+CivvisVerify.record = function(kind, subject, verb, x, turn)
+	if kind == "turn_verified" then
+		local counted = CivvisVerify.reported[tostring(subject)] or {};
+		CivvisVerify.reported[tostring(subject)] = nil;
+		local function count(name)
+			return tonumber(string.match(verb, name .. "=(%d+)")) or 0;
+		end
+		emit("turn_verified", {
+			turn = subject, checked_on = turn,
+			orders_issued = count("issued"),
+			orders_applied = count("verified"),
+			orders_failed = count("failed"),
+			orders_unverifiable = count("unverifiable"),
+			orders_seen = counted.seen,
+			orders_reported = counted.applied,
+		});
+		return true, "verdict";
+	end
+	local label, reason = string.match(verb, "^(%S+)%s*(.*)$");
+	local orderKind, orderVerb = string.match(label or verb, "^([^:]*):?(.*)$");
+	-- `kind` is the event's own name in every ledger record, so the order's
+	-- kind travels as `order_kind`.
+	local payload = {
+		turn = x, checked_on = turn, order_kind = orderKind,
+		verb = (orderVerb ~= nil and orderVerb ~= "") and orderVerb or nil,
+		subject = (subject ~= nil and subject >= 0) and subject or nil,
+	};
+	if kind == "order_failed" then
+		payload.reason = (reason ~= nil and reason ~= "") and reason or "unknown";
+	end
+	emit(kind, payload);
+	return true, "verdict";
+end;
+
 local function applyOrder(player, pid, row, turn)
 	-- Build and submit a major-civilization peace proposal without opening a
 	-- diplomacy session.  A session displays `DiplomacyDealView`, whose only safe
@@ -9170,7 +9358,7 @@ local function applyOrder(player, pid, row, turn)
 	-- 200-register main-chunk ceiling and make the entire mod fail to compile.
 	-- Returns `(submitted, concession, reason)`.  `submitted` names an actual
 	-- `SendWorkingDeal` call, deliberately not merely a `pcall` that did not throw.
-	local function submitMajorPeaceDeal(subject, asked)
+	local function submitMajorPeaceDeal(subject, asked, cap)
 		if DealManager.HasPendingDeal(pid, subject) then
 			return false, 0, "pending";
 		end
@@ -9190,17 +9378,22 @@ local function applyOrder(player, pid, row, turn)
 		local concession = 0;
 		-- A free peace offer is the right first question.  Once the same rival
 		-- remains at war through the host's retry window, it has already declined
-		-- that exact white deal.  Preserve a quarter of the treasury for emergency
-		-- purchases and offer the rest only on the retry; a rejected deal transfers
-		-- nothing.
-		if asked ~= nil then
+		-- that exact white deal.  A tribute rides the retry only when the planner
+		-- said the front is lost: the order's `x` is the most Gold it may carry
+		-- (Rust: `peace_tribute_cap`, a quarter of the treasury at most), and a
+		-- white offer carries 0.  Until 2026-08-24 every retry put three quarters
+		-- of the treasury on the table whatever the reason for the offer; the
+		-- ledger counted 142 such tributes at a median 116 Gold, and Civilization
+		-- VI prices a gift at nothing.  A rejected deal transfers nothing.
+		cap = math.max(0, math.floor(tonumber(cap) or 0));
+		if asked ~= nil and cap > 0 then
 			local tribute = deal:AddItemOfType(DealItemTypes.GOLD, pid);
 			if tribute ~= nil then
 				tribute:SetDuration(0);
 				local balance = try(function()
 					return player:GetTreasury():GetGoldBalance();
 				end, 0) or 0;
-				local amount = math.min(math.floor(balance * 0.75),
+				local amount = math.min(cap, math.floor(balance * 0.75),
 					tribute:GetMaxAmount() or 0);
 				if amount > 0 then
 					tribute:SetAmount(amount);
@@ -9219,10 +9412,12 @@ local function applyOrder(player, pid, row, turn)
 		deal:Validate();
 		if not deal:IsValid() then return false, 0, "invalid_deal"; end
 
-		-- This is the exact normal-offer call in shipped DiplomacyDealView.lua.
-		-- Unlike `RequestSession(..., "MAKE_DEAL")`, it does not route through the
-		-- anti-stall closer that must refuse every on-screen deal.
-		DealManager.SendWorkingDeal(DealProposalAction.PROPOSED, pid, subject);
+		-- `CivvisTrade.ask`: the offer goes out inside a MAKE_DEAL session, the
+		-- way the shipped CHOICE_MAKE_PEACE does (locked deal first, then the
+		-- session), because a session-less PROPOSED is never evaluated — 253 of
+		-- them were submitted over 42 runs without one answer. With
+		-- `DealSessions = false` this is the direct send it used to be.
+		CivvisTrade.ask(pid, subject, "PROPOSED", "peace", turn);
 		return true, concession, "submitted";
 	end
 
@@ -9412,6 +9607,11 @@ local function applyOrder(player, pid, row, turn)
 	local verb = tostring(row.verb or "");
 	local subject = tonumber(row.subject) or -1;
 	local x, y = tonumber(row.x), tonumber(row.y);
+
+	-- A verdict on an earlier turn's order, for the ledger. See CivvisVerify.
+	if CivvisVerify.isVerdict(kind) then
+		return CivvisVerify.record(kind, subject, verb, x, turn);
+	end
 
 	if kind == "governor_appoint" or kind == "governor_assign" then
 		local governor, resolved = resolveType(GameInfo.Governors, verb);
@@ -9697,7 +9897,7 @@ local function applyOrder(player, pid, row, turn)
 		local ok, submitted, reason;
 		if major then
 			local ran;
-			ran, submitted, concession, reason = pcall(submitMajorPeaceDeal, subject, asked);
+			ran, submitted, concession, reason = pcall(submitMajorPeaceDeal, subject, asked, x);
 			if not ran then
 				submitted, concession, reason = false, 0, "throw";
 			end
@@ -9863,6 +10063,7 @@ local function applyOrder(player, pid, row, turn)
 				return false, "sell_pending";
 			end
 			trade.pending[subject] = nil;
+			CivvisTrade.abandon(subject, "expired");
 			pcall(function() DealManager.ClearWorkingDeal(DealDirection.OUTGOING, pid, subject); end);
 			emit("deal_expired", { turn = turn, target = subject, asked_turn = pending.turn });
 		end
@@ -9994,7 +10195,7 @@ local function applyOrder(player, pid, row, turn)
 			trade.pending[subject] = {
 				turn = turn, floor = floor, gave = gave, verb = table.concat(text, ","),
 			};
-			DealManager.SendWorkingDeal(DealProposalAction.EQUALIZE, pid, subject);
+			CivvisTrade.ask(pid, subject, "EQUALIZE", "sell", turn);
 			return true, "asked", gave, table.concat(text, ",");
 		end);
 		if not ran then
@@ -10059,6 +10260,7 @@ local function applyOrder(player, pid, row, turn)
 				return false, "buy_pending";
 			end
 			trade.pending[subject] = nil;
+			CivvisTrade.abandon(subject, "expired");
 			pcall(function() DealManager.ClearWorkingDeal(DealDirection.OUTGOING, pid, subject); end);
 			emit("deal_expired", { turn = turn, target = subject, asked_turn = pending.turn });
 		end
@@ -10094,7 +10296,7 @@ local function applyOrder(player, pid, row, turn)
 			trade.pending[subject] = {
 				turn = turn, ceiling = ceiling, direction = "buy", verb = "OPEN_BORDERS",
 			};
-			DealManager.SendWorkingDeal(DealProposalAction.EQUALIZE, pid, subject);
+			CivvisTrade.ask(pid, subject, "EQUALIZE", "buy", turn);
 			return true, "asked";
 		end);
 		if not ran then
@@ -12886,8 +13088,24 @@ CivvisFrames.begin = function(player, pid, turn)
 end;
 
 local function applyOrders(player, pid, turn, rows)
-	local applied, refused, deferred = 0, 0, 0;
+	local applied, refused, deferred, verdicts = 0, 0, 0, 0;
 	local byKind, whyNot = {}, {};
+	-- Per kind, beside the per-turn totals: how many orders of each kind were
+	-- counted, and each kind's refusal reasons. `by` is applied-only and
+	-- `refusals` is reason-only, so "which kind is being refused, and why" could
+	-- not be read off the event; `civ6_ladder.orders_by_kind` sums these into
+	-- `summary.orders` and `tools/live_actuation.py` floors them. `seen_by`
+	-- counts accepted `produce_next` leases too (they are deferred out of `seen`),
+	-- so its sum is `seen + deferred`.
+	local seenByKind, refusedByKind = {}, {};
+	local function countRefusal(kind, why)
+		refused = refused + 1;
+		whyNot[why] = (whyNot[why] or 0) + 1;
+		seenByKind[kind] = (seenByKind[kind] or 0) + 1;
+		local perKind = refusedByKind[kind];
+		if perKind == nil then perKind = {}; refusedByKind[kind] = perKind; end
+		perKind[why] = (perKind[why] or 0) + 1;
+	end
 	-- Match the guard to the host-capped settler leg before either row is applied.
 	-- The gate is default-off; with it absent every row remains byte-for-byte on
 	-- the pre-existing path through this function.
@@ -12966,10 +13184,17 @@ local function applyOrders(player, pid, turn, rows)
 				-- mutated the host. Keep it out of the host applied-rate numerator
 				-- and denominator; the later `build` event is the actuation proof.
 				deferred = deferred + 1;
+			elseif CivvisVerify.isVerdict(kind) then
+				-- A verdict on an earlier turn is the ledger's, not the host's:
+				-- neither seen nor applied.
+				verdicts = verdicts + 1;
 			else
 				applied = applied + 1;
 			end
-			byKind[kind] = (byKind[kind] or 0) + 1;
+			if not CivvisVerify.isVerdict(kind) then
+				byKind[kind] = (byKind[kind] or 0) + 1;
+				seenByKind[kind] = (seenByKind[kind] or 0) + 1;
+			end
 			if watched and fromX ~= nil then
 				local unit = liveUnit(pid, subject);
 				-- A unit that no longer exists was consumed or lost, which is not a
@@ -12993,8 +13218,7 @@ local function applyOrders(player, pid, turn, rows)
 				end
 			end
 		else
-			refused = refused + 1;
-			whyNot[tostring(why)] = (whyNot[tostring(why)] or 0) + 1;
+			countRefusal(kind, tostring(why));
 		end
 		ordered[index] = true;
 		return ok, why;
@@ -13056,8 +13280,7 @@ local function applyOrders(player, pid, turn, rows)
 			if queueOn and isUnit and firstRun[subject] then
 				ordered[index] = true;
 				if firstRefused[subject] then
-					refused = refused + 1;
-					whyNot.queue_prior_refused = (whyNot.queue_prior_refused or 0) + 1;
+					countRefusal("unit", "queue_prior_refused");
 				else
 					CivvisQueue.push(subject, row, firstRun[subject].expect);
 				end
@@ -13148,9 +13371,14 @@ local function applyOrders(player, pid, turn, rows)
 	end
 
 	emit("orders", {
-		turn = turn, frame = awaiting.frame or 0, source = "civvis", seen = #rows - deferred,
+		turn = turn, frame = awaiting.frame or 0, source = "civvis",
+		seen = #rows - deferred - verdicts,
 		applied = applied, refused = refused, by = byKind, refusals = whyNot,
+		seen_by = seenByKind, refused_by = refusedByKind,
 		deferred = deferred,
+		-- Verdict rows on an earlier turn's orders, re-emitted as events; see
+		-- CivvisVerify. Not orders, so not in `seen`.
+		verdicts = verdicts,
 		-- Not part of `applied`: these are units CIVVIS said nothing about.
 		explored = explored,
 		-- Unmentioned combat units kept off the explore automation because a
@@ -13209,6 +13437,9 @@ local function applyOrders(player, pid, turn, rows)
 	local ourScore = try(function() return player:GetScore(); end, -1);
 	local cityCount = 0;
 	eachCity(player, function() cityCount = cityCount + 1; end);
+	-- Kept for the decider's verdict on this turn, which arrives with the next
+	-- turn's orders and is emitted as `turn_verified`; see CivvisVerify.
+	CivvisVerify.remember(turn, #rows - deferred - verdicts, applied);
 	emit("turn", {
 		turn = turn,
 		score = ourScore,
@@ -13220,8 +13451,15 @@ local function applyOrders(player, pid, turn, rows)
 		army = counts.military,
 		gold = try(function() return math.floor(player:GetTreasury():GetGoldBalance()); end, -1),
 		orders_source = awaiting.source,
-		orders_seen = #rows - deferred,
+		orders_seen = #rows - deferred - verdicts,
+		-- ⚠ `orders_applied` here is the RETURN-CODE count — arms whose request
+		-- did not throw — kept under its old name for the readers that clock on
+		-- this record. `orders_reported` is the same number under its honest
+		-- name; the verified count for this turn lands in the next turn's
+		-- `turn_verified` event, and `civ6_ladder.orders_totals` sums that one
+		-- as the summary's `orders_applied`.
 		orders_applied = applied,
+		orders_reported = applied,
 		orders_refused = refused,
 		orders_deferred = deferred,
 		orders_polls = awaiting.polls,
@@ -15073,6 +15311,8 @@ function Initialize()
 		CityProductionCompleted = onGameCoreTick,
 		GovernorAppointed = onGovernorAppointed,
 		DiplomacyIncomingDeal = CivvisOnIncomingDeal,
+		DiplomacyStatement = CivvisOnDiplomacyStatement,
+		DiplomacySessionClosed = CivvisOnDealSessionClosed,
 		EmergencyAvailable = CivvisOnAidEmergencyAvailable,
 		LoadGameViewStateDone = ensureStarted,
 		TeamVictory = onTeamVictory,

@@ -57,13 +57,15 @@
 //! Usage:
 //!   gene_screen [--games N] [--start-seed N] [--jobs N] [--out PATH]
 //!               [--genes tag,tag,...] [--target-games N] [--append] [--quiet]
-//!               [--p-on 0.5] [--p-default-on 0.75]
+//!               [--p-on 0.25] [--p-default-on 0.75]
 //!               PROBE ONLY, and a batch using any of them is not a ledger
 //!               source: [--contested] [--contested-field lane,lane]
 //!               [--contested-field-genes lanes|tag,tag]
 //!               [--native-competitions] [--no-native-competitions]
 //!               [--players N] [--turns N] [--width N] [--height N]
 //!               [--city-states N] [--speed ID] [--map ID] [--victories a,b]
+//!               [--victory-mask rotate:N] [--difficulty RUNG]
+//!               [--difficulty-rotate king:1,emperor:2,immortal:1] [--rivals firaxis-mix]
 //!               [--stock-civs]
 //!   gene_screen --analyze PATH [PATH ...] [--json OUT] [--interactions]
 //!               [--denial] [--top N] [--by-civ TAG]
@@ -123,13 +125,282 @@ const SCREEN_HEIGHT: i32 = 46;
 const SCREEN_CITY_STATES: usize = 9;
 const SCREEN_MAP: MapScript = MapScript::Continents;
 
-/// ⭐ THE DRAW (operator, 2026-08-23). Every screened gene is on with
-/// probability one half — except a gene the deployment genome already ships
-/// on, which is on three quarters of the time, so the batch plays mostly the
-/// genome people actually get while every gene still has both arms well
-/// populated. Each seat's genome is drawn independently of every other seat
-/// and every other game; nothing is paired or complemented.
-const P_ON: f64 = 0.5;
+/// The five conditions a victory mask may close. Score is never among them:
+/// it is the clock, the ending that turns a game the 250-turn limit reaches
+/// into a decided one rather than a truncation.
+const MASKABLE_LANES: [&str; 5] = [
+    "science",
+    "culture",
+    "religious",
+    "diplomatic",
+    "domination",
+];
+
+/// ⭐ THE ROTATING VICTORY MASK (`--victory-mask rotate:N`, 2026-08-25).
+///
+/// The standard screen leaves all six lanes live in every game, and on this
+/// board science and diplomatic victories land past the clock while religious
+/// conversion decides most of the games that end early — so a gene for a lane
+/// nobody finishes is priced on a board where its lane never decides
+/// anything, and a gene for the lane that does decide is priced against a
+/// board where that lane is always open. The live Civilization VI ladder
+/// loses diplomatic 32 : culture 27 : religious 8 : science 4 : domination 1.
+///
+/// `rotate:N` closes N of the five real conditions per game, deterministically
+/// from the game's seed: the C(5,N) N-subsets of the maskable lanes in one
+/// fixed order, indexed by `seed % count`, so a consecutive seed window plays
+/// every mask an equal number of times and every lane is closed in exactly
+/// N/5 of the games. Score stays on in every game. Across the batch every
+/// lane is live, which is why a rotating batch keeps the standard shape:
+/// `victories` in the header is the batch-level set (all six), `victory_mask`
+/// names the rotation, and each row carries the lanes its own game closed
+/// (`victories_off`) so `--analyze` can read a lane gene with its lane open
+/// against closed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct VictoryMask {
+    /// How many real conditions each game closes.
+    rotate: usize,
+}
+
+impl VictoryMask {
+    fn parse(text: &str) -> Result<VictoryMask, String> {
+        let Some(n) = text.strip_prefix("rotate:") else {
+            return Err(format!(
+                "unknown victory mask {text:?}; the form is rotate:N"
+            ));
+        };
+        let rotate: usize = n
+            .trim()
+            .parse()
+            .map_err(|_| format!("rotate:{n}: N must be a whole number"))?;
+        if rotate == 0 {
+            return Err("rotate:0 closes nothing; leave --victory-mask off instead".to_string());
+        }
+        Ok(VictoryMask { rotate })
+    }
+
+    fn id(self) -> String {
+        format!("rotate:{}", self.rotate)
+    }
+
+    /// The lanes the rotation draws from: the maskable lanes `victories`
+    /// leaves enabled at the batch level.
+    fn lanes(self, victories: civvis::game::VictoryConditions) -> Vec<&'static str> {
+        MASKABLE_LANES
+            .iter()
+            .copied()
+            .filter(|lane| victories.is_enabled(lane))
+            .collect()
+    }
+
+    /// Every mask the rotation cycles through, in one fixed order: the
+    /// N-subsets of [`VictoryMask::lanes`], lexicographic by lane position,
+    /// each subset sorted by name. Empty when fewer than N lanes are enabled.
+    fn masks(self, victories: civvis::game::VictoryConditions) -> Vec<Vec<&'static str>> {
+        combinations(&self.lanes(victories), self.rotate)
+            .into_iter()
+            .map(|mut mask| {
+                mask.sort_unstable();
+                mask
+            })
+            .collect()
+    }
+
+    /// The lanes closed in the game played on `seed`, sorted by name. The
+    /// seed modulo the mask count: exactly balanced over any seed window
+    /// that is a multiple of the count, never more than one game apart
+    /// otherwise, and the same game reproduces the same mask.
+    fn closed(self, seed: u64, victories: civvis::game::VictoryConditions) -> Vec<&'static str> {
+        let masks = self.masks(victories);
+        if masks.is_empty() {
+            return Vec::new();
+        }
+        masks[(seed % masks.len() as u64) as usize].clone()
+    }
+
+    /// The conditions the game on `seed` is played with. Score is on
+    /// whatever the batch-level set said: the mask must never leave a game
+    /// nobody can win.
+    fn apply(
+        self,
+        seed: u64,
+        victories: civvis::game::VictoryConditions,
+    ) -> civvis::game::VictoryConditions {
+        let mut conditions = victories;
+        for lane in self.closed(seed, victories) {
+            match lane {
+                "science" => conditions.science = false,
+                "culture" => conditions.culture = false,
+                "religious" => conditions.religious = false,
+                "diplomatic" => conditions.diplomatic = false,
+                "domination" => conditions.domination = false,
+                _ => {}
+            }
+        }
+        conditions.score = true;
+        conditions
+    }
+
+    /// Games per mask over `games` consecutive seeds from `start_seed`, keyed
+    /// by the closed lanes joined with `+` — what the header pre-registers.
+    fn games_by_mask(
+        self,
+        start_seed: u64,
+        games: usize,
+        victories: civvis::game::VictoryConditions,
+    ) -> BTreeMap<String, usize> {
+        let mut counts = BTreeMap::new();
+        for game in 0..games {
+            let key = mask_key(&self.closed(start_seed + game as u64, victories));
+            *counts.entry(key).or_default() += 1;
+        }
+        counts
+    }
+}
+
+/// The k-subsets of `items` in lexicographic order of position.
+fn combinations(items: &[&'static str], k: usize) -> Vec<Vec<&'static str>> {
+    if k == 0 {
+        return vec![Vec::new()];
+    }
+    if items.len() < k {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    for (i, &first) in items.iter().enumerate() {
+        for mut rest in combinations(&items[i + 1..], k - 1) {
+            rest.insert(0, first);
+            out.push(rest);
+        }
+    }
+    out
+}
+
+/// ⭐ THE MAJORS' RUNG ROTATION (`--difficulty-rotate king:1,emperor:2,immortal:1`,
+/// 2026-08-25).
+///
+/// The difficulty is the AI handicap every major seat plays with — the yield,
+/// combat, experience and era-boost bonuses of `data/difficulties.json` —
+/// and the live Civilization VI verification ladder plays Emperor and above,
+/// while every screen so far played at the Prince default. A weighted list of
+/// rungs is drawn per game from the seed: the weights are laid end to end
+/// and the game on `seed` takes the rung at `seed % total`, so a consecutive
+/// seed window plays each rung in exactly its share. The barbarian seat keeps
+/// its own rung (`default_barbarian_difficulty`, Immortal) whatever the
+/// majors draw. Rows carry the rung their game played, so `--analyze` can
+/// read a gene per rung.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct DifficultyRotation {
+    /// Rung and weight, in the order given.
+    rungs: Vec<(String, usize)>,
+}
+
+impl DifficultyRotation {
+    /// `king:1,emperor:2,immortal:1`; a rung without a weight counts once.
+    fn parse(text: &str, known: &[&str]) -> Result<DifficultyRotation, String> {
+        let mut rungs = Vec::new();
+        for entry in text.split(',').map(str::trim).filter(|e| !e.is_empty()) {
+            let (rung, weight) = match entry.split_once(':') {
+                Some((rung, weight)) => (
+                    rung.trim(),
+                    weight
+                        .trim()
+                        .parse::<usize>()
+                        .map_err(|_| format!("{entry}: the weight must be a whole number"))?,
+                ),
+                None => (entry, 1),
+            };
+            if !known.contains(&rung) {
+                return Err(format!(
+                    "unknown difficulty {rung:?}; choose from {known:?}"
+                ));
+            }
+            if weight == 0 {
+                return Err(format!(
+                    "{entry}: a rung with weight 0 is never played; leave it out"
+                ));
+            }
+            if rungs.iter().any(|(seen, _): &(String, usize)| seen == rung) {
+                return Err(format!("{rung} is named twice"));
+            }
+            rungs.push((rung.to_string(), weight));
+        }
+        if rungs.len() < 2 {
+            return Err(
+                "a rotation names at least two rungs (a single rung is --difficulty)".to_string(),
+            );
+        }
+        Ok(DifficultyRotation { rungs })
+    }
+
+    fn id(&self) -> String {
+        self.rungs
+            .iter()
+            .map(|(rung, weight)| format!("{rung}:{weight}"))
+            .collect::<Vec<_>>()
+            .join(",")
+    }
+
+    fn total(&self) -> usize {
+        self.rungs.iter().map(|(_, weight)| weight).sum()
+    }
+
+    /// The rung the game on `seed` plays.
+    fn rung(&self, seed: u64) -> &str {
+        let mut slot = (seed % self.total() as u64) as usize;
+        for (rung, weight) in &self.rungs {
+            if slot < *weight {
+                return rung;
+            }
+            slot -= weight;
+        }
+        &self.rungs[0].0
+    }
+
+    /// Games per rung over `games` consecutive seeds from `start_seed` — what
+    /// the header pre-registers.
+    fn games_by_rung(&self, start_seed: u64, games: usize) -> BTreeMap<String, usize> {
+        let mut counts = BTreeMap::new();
+        for game in 0..games {
+            *counts
+                .entry(self.rung(start_seed + game as u64).to_string())
+                .or_default() += 1;
+        }
+        counts
+    }
+}
+
+/// One mask's name: its closed lanes joined with `+`, or `none`.
+fn mask_key<S: AsRef<str>>(closed: &[S]) -> String {
+    if closed.is_empty() {
+        "none".to_string()
+    } else {
+        closed
+            .iter()
+            .map(AsRef::as_ref)
+            .collect::<Vec<_>>()
+            .join("+")
+    }
+}
+
+/// ⭐ THE DRAW (operator, 2026-08-24). Every tournament genome STARTS FROM
+/// THE DEFAULT GENOME: a gene the deployment ships on stays on with
+/// probability three quarters (a one-in-four chance of turning off), and a
+/// gene it ships off stays off with probability three quarters (a one-in-four
+/// chance of turning on). The batch is deliberately biased toward the genome
+/// people actually get — *"we want high level tournament competition and want
+/// to select for genes that improve upon this performance, not some baseline
+/// performance"* — while every gene still has both arms populated. A gene
+/// that is on then picks its version: the top version 60% of the time, one of
+/// the others 40% (`BEST_VERSION_SHARE`). Each seat's genome is drawn
+/// independently of every other seat and every other game; nothing is paired
+/// or complemented. (Until 2026-08-24 a default-off gene was on at one half.)
+/// Percentage points per unit of standard error at 80% power, α = 0.05,
+/// two-sided: 2.8 standard errors, and 100 to carry a proportion into points.
+/// See [`resolving_power`].
+const POWER_FACTOR: f64 = 280.0;
+
+const P_ON: f64 = 0.25;
 const P_DEFAULT_ON: f64 = 0.75;
 
 /// Genes the screen holds at their default unless `--genes` asks for them by
@@ -171,18 +442,18 @@ const HELD_UNLESS_ASKED: &[&str] = &["joint-tactics"];
 /// field is one of each lane the live seat actually loses to.
 const CONTESTED_FIELD: &[&str] = &["diplomatic", "culture"];
 
-/// ⭐ THE SEVEN VICTORY-LANE OPT-INS, offered to a field seat by
+/// ⭐ THE FIVE VICTORY-LANE OPT-INS, offered to a field seat by
 /// `--contested-field-genes lanes` — and NOT the default, because it was tried
 /// and measured worse.
 ///
 /// The reasoning was good and the measurement disagreed.
-/// `docs/VICTORY_GENES.md`'s six `lane-*` genes and
+/// `docs/VICTORY_GENES.md`'s four `lane-*` genes and
 /// `competition-victory-points` are precisely the deciders that read the raced
-/// lane — the congress ballot and the Favor behind it, Great Person patronage,
-/// the policy deck, the Naturalist and the Rock Bands, the space race, and the
-/// Diplomatic Victory Points a scored competition pays — and all seven ship
-/// **off**, so a pursuer seated with the deployment genome alone looked like a
-/// pursuer with its lane behaviour switched off.
+/// lane — Great Person patronage, the policy deck, the Naturalist and the Rock
+/// Bands, the space race, and the Diplomatic Victory Points a scored
+/// competition pays — and all five ship **off**, so a pursuer seated with the
+/// deployment genome alone looked like a pursuer with its lane behaviour
+/// switched off.
 ///
 /// Both fields were then run on the same board and the same seeds (92000000+,
 /// one diplomatic and one culture pursuer, native competitions on; the
@@ -191,19 +462,17 @@ const CONTESTED_FIELD: &[&str] = &["diplomatic", "culture"];
 /// | the field's own genome | games | held the board's top DVP | the most visiting tourists | won |
 /// |---|---:|---:|---:|---:|
 /// | the deployment genome | 27 | 8 | 7 | **0** |
-/// | plus these seven | 35 | 4 | 6 | **0** |
+/// | plus these five | 35 | 4 | 6 | **0** |
 ///
 /// The lane genes made the pursuers hold their own lane's lead **less** often,
-/// not more, and neither field ever converted. Two of the seven are among the
+/// not more, and neither field ever converted. Two of the five are among the
 /// genes this same batch priced on its measured seats, at −17.0 pp ± 6.9 and
 /// −15.9 pp ± 7.0 (27 games, 108 seats) — a discovery-sized reading on a small
 /// batch, but pointing the other way from the change. So the default stays the
 /// deployment genome, which is also the rival the agent actually meets, and the
-/// seven are kept behind a flag for whoever wants to try again with n behind
+/// five are kept behind a flag for whoever wants to try again with n behind
 /// them.
 const CONTESTED_FIELD_GENES: &[&str] = &[
-    "lane-congress-ballot",
-    "lane-congress-favor",
     "lane-great-people",
     "lane-policy-deck",
     "lane-culture-spending",
@@ -270,6 +539,99 @@ fn is_zero_usize(value: &usize) -> bool {
 
 fn is_zero_u8(value: &u8) -> bool {
     *value == 0
+}
+
+/// ⭐ THE RIVAL MIX (`--rivals firaxis-mix`, 2026-08-25).
+///
+/// The standard screen's opposition is the other drawn genomes: every effect
+/// is averaged over random opposing genomes drawn from the same controller,
+/// which is the right instrument for "does this gene help against the
+/// ecosystem" and a blind one for "does it help against a rival that is not
+/// us". With the mix, ONE major seat per game — its chair rotating with the
+/// game index like a contested pin, so no position is always the rival —
+/// plays a fixed opponent instead of a drawn genome, and the kind of opponent
+/// rotates per game from the seed:
+///
+/// - `legacy` — [`AdvancedAi::legacy`], the frozen anchor;
+/// - `firaxis-mix` — the deployment genome, [`AdvancedAi::new`], retargeted
+///   at one victory lane drawn in the shares the live Civilization VI ladder
+///   actually loses to: diplomatic 32 : culture 27 : religious 8 : science 4 :
+///   domination 1 ([`FIRAXIS_MIX_LANES`], the Hall of Fame census in
+///   `docs/eval/2026-08-18-we-screen-against-a-religion-game-and-lose-a-diplomacy-game.md`);
+/// - `random` — a genome with every screened gene on at one half, drawn like
+///   any seat's.
+///
+/// The rival seat is NOT measured: its row is written with `kind: "rival"`
+/// so every estimator — which reads `kind == "game"` — skips it, and every
+/// measured row of the game says `rival_mix: "measured"`. `--analyze` then
+/// reads every gene past the family-wise bar on the three kinds apart and
+/// says whether its sign agrees.
+const RIVAL_KINDS: [&str; 3] = ["legacy", "firaxis-mix", "random"];
+
+/// The lanes a `firaxis-mix` rival pursues, weighted by the live ladder's
+/// losses (diplomatic 32 : culture 27 : religious 8 : science 4 : domination 1).
+const FIRAXIS_MIX_LANES: [(VictoryTarget, u64); 5] = [
+    (VictoryTarget::Diplomacy, 32),
+    (VictoryTarget::Culture, 27),
+    (VictoryTarget::Religion, 8),
+    (VictoryTarget::Science, 4),
+    (VictoryTarget::Domination, 1),
+];
+
+/// The kind of rival the game on `seed` seats: the three kinds in turn.
+fn rival_kind(seed: u64) -> &'static str {
+    RIVAL_KINDS[(seed % RIVAL_KINDS.len() as u64) as usize]
+}
+
+/// The major (by index among the majors) that plays the rival in `game`:
+/// rotates with the game index, for the reason [`pinned_seats`] gives.
+fn rival_index(players: usize, game: usize) -> usize {
+    if players == 0 {
+        0
+    } else {
+        game % players
+    }
+}
+
+/// The lane a `firaxis-mix` rival on `seed` pursues, drawn from
+/// [`FIRAXIS_MIX_LANES`] in their weights: the weights laid end to end and
+/// indexed by `seed / 3` (the kind took `seed % 3`), so 72 consecutive
+/// firaxis-mix games play each lane exactly its share.
+fn firaxis_mix_target(seed: u64) -> VictoryTarget {
+    let total: u64 = FIRAXIS_MIX_LANES.iter().map(|(_, weight)| weight).sum();
+    let mut slot = (seed / RIVAL_KINDS.len() as u64) % total;
+    for &(target, weight) in &FIRAXIS_MIX_LANES {
+        if slot < weight {
+            return target;
+        }
+        slot -= weight;
+    }
+    FIRAXIS_MIX_LANES[0].0
+}
+
+/// Games per rival kind over `games` consecutive seeds from `start_seed`.
+fn rival_games(start_seed: u64, games: usize) -> BTreeMap<String, usize> {
+    let mut counts = BTreeMap::new();
+    for game in 0..games {
+        *counts
+            .entry(rival_kind(start_seed + game as u64).to_string())
+            .or_default() += 1;
+    }
+    counts
+}
+
+/// The rival seat itself. `random_genome` is the drawn genome a `random`
+/// rival plays; the other kinds ignore it.
+fn rival_seat(kind: &str, seed: u64, genes: &[Gene], random_genome: &[bool]) -> AdvancedAi {
+    match kind {
+        "legacy" => AdvancedAi::legacy(),
+        "firaxis-mix" => {
+            let mut ai = AdvancedAi::new();
+            ai.retarget(firaxis_mix_target(seed));
+            ai
+        }
+        _ => seat_with_genome(genes, random_genome),
+    }
 }
 
 /// One seat of one screened game, written to the JSONL file and read back by
@@ -358,10 +720,26 @@ struct Row {
     /// nothing — these say whether it fired.
     #[serde(default)]
     raid_wars: i64,
+    /// The `city-campaign` gene's plans drawn, wars found open under a plan,
+    /// and planned cities taken, and the `campaign-pillage` gene's pillages
+    /// (`campaign:*`, 2026-08-24).
+    #[serde(default)]
+    campaign_plans: i64,
+    #[serde(default)]
+    campaign_wars: i64,
+    #[serde(default)]
+    campaign_captures: i64,
+    #[serde(default)]
+    campaign_pillages: i64,
     #[serde(default)]
     settlers_captured: i64,
     #[serde(default)]
     builders_captured: i64,
+    /// Religious units of this seat condemned by the barbarian seat
+    /// (`religious_lost_to_barbarians`, 2026-08-24): what the barbarian
+    /// heretic hunt takes, and what `missionary-evades-raiders` keeps.
+    #[serde(default)]
+    religious_lost: i64,
     #[serde(default)]
     pillages: i64,
     /// Settlers counted as prizes at the raids' declarations.
@@ -394,6 +772,28 @@ struct Row {
     /// best rival's domestic total and there is no fixed threshold to quote.
     #[serde(default)]
     domestic: i64,
+    /// ⭐ The victory lanes the rotating mask CLOSED in this seat's game,
+    /// sorted by name (`--victory-mask rotate:N`). Every seat of one game
+    /// carries the same list. Empty in an unmasked game and in every file
+    /// written before the mask existed, and not written at all then, so a
+    /// standard row is byte for byte what it was.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    victories_off: Vec<String>,
+    /// ⭐ The difficulty rung the majors played in this seat's game
+    /// (`--difficulty`, or the draw of `--difficulty-rotate`). Every seat of
+    /// one game carries the same rung. Empty in every file written before
+    /// 2026-08-25, which means the Prince default those batches played.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    difficulty: String,
+    /// ⭐ THE RIVAL MIX: `measured` on a measured seat's row; on the fixed
+    /// opponent's own row (`kind: "rival"`, skipped by every estimator) the
+    /// kind it played — `legacy`, `firaxis-mix` or `random`. Empty in a batch
+    /// without the mix and in every file written before 2026-08-25.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    rival_mix: String,
+    /// The lane a `firaxis-mix` rival pursued, on its own row only.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    rival_target: String,
 }
 
 /// The game a row belongs to. Seats of one game share a winner and a timing,
@@ -427,10 +827,10 @@ impl Row {
 ///   careful reader, not from a gate.
 /// - **#2307's own write-up** had to state its source commit and its binary's
 ///   SHA-256 in prose, because the artefact had nowhere to put them.
-/// - **2026-08-23.** The first standard-shape screen re-priced `barbarian-hunt`
-///   from the legacy −1.73 pp to +0.20 pp (z +0.65) while a sibling change was
-///   minutes from deleting that gene on the legacy reading — which would have
-///   made a brand-new screen a source pricing a gene the code no longer had.
+/// - **2026-08-23.** The first standard-shape screen re-priced a gene while a
+///   sibling change was minutes from culling it on a legacy reading — which
+///   would have made a brand-new screen a source pricing a gene the code no
+///   longer had.
 ///
 /// `genes_sha256` is the load-bearing field, and it is the one that cannot go
 /// stale: it is hashed from `gene_table()` **as compiled into this binary**,
@@ -838,6 +1238,44 @@ struct Header {
     /// written before 2026-08-24.
     #[serde(default)]
     contested_field_genes: String,
+    /// ⭐ THE ROTATING VICTORY MASK: `rotate:N` when each game closed N of
+    /// the five real conditions from its seed ([`VictoryMask`]), empty when
+    /// every game played the batch-level set. NOT a shape leg: `victories`
+    /// above stays the batch-level set and every lane is live across a
+    /// rotating batch, so `shape_of` reads it as the standard screen. Absent
+    /// in every file written before 2026-08-25.
+    #[serde(default)]
+    victory_mask: String,
+    /// The games this segment pre-registered per mask, keyed by the closed
+    /// lanes joined with `+` — derived from the seed window before the first
+    /// game, so a stopped batch's intended split is on record. Empty when
+    /// there is no mask.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    victory_mask_games: BTreeMap<String, usize>,
+    /// ⭐ The majors' difficulty rung when every game played one
+    /// (`--difficulty`), or empty under a rotation. Absent in every file
+    /// written before 2026-08-25, which means the Prince default. Provenance,
+    /// not a shape leg: `tools/genes.py` records it on the source.
+    #[serde(default)]
+    difficulty: String,
+    /// ⭐ THE RUNG ROTATION, `king:1,emperor:2,immortal:1`
+    /// ([`DifficultyRotation`]), or empty when every game played `difficulty`.
+    #[serde(default)]
+    difficulty_rotate: String,
+    /// The games this segment pre-registered per rung, from its seed window,
+    /// before the first game. Empty without a rotation.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    difficulty_games: BTreeMap<String, usize>,
+    /// ⭐ THE RIVAL MIX: `firaxis-mix` when one major seat per game played a
+    /// fixed opponent ([`RIVAL_KINDS`], rotating per game from the seed),
+    /// empty when every major drew a genome. Provenance on the source, not a
+    /// shape leg. Absent in every file written before 2026-08-25.
+    #[serde(default)]
+    rivals: String,
+    /// The games this segment pre-registered per rival kind. Empty without
+    /// the mix.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    rival_games: BTreeMap<String, usize>,
     /// ⭐ The binary that played these games. Absent in files written before
     /// 2026-08-23, which `tools/genes.py` grandfathers as history and
     /// marks `pre-fingerprint` rather than accepting silently.
@@ -947,13 +1385,36 @@ fn present(args: &[String], flag: &str) -> bool {
     args.iter().any(|arg| arg == flag)
 }
 
-/// How many shares of a family's on-probability the best version takes to
-/// every other version's one. Two: the best version plays twice as often as
-/// each challenger, so the batch mostly plays what would ship, and the
-/// head-to-head loses only ~6% of its precision against an equal split at two
-/// versions (error² ∝ 1/p_a + 1/p_b: 4.5/p against 4/p). A challenger is
-/// still priced against off and against the best on every screen it sits in.
-const BEST_VERSION_WEIGHT: f64 = 2.0;
+/// ⭐ THE VERSION PICK (operator, 2026-08-24). A gene that is on plays its
+/// TOP version 60% of the time and one of its other versions — drawn
+/// uniformly among the rest — the other 40%; a gene with one version plays
+/// that version. So the batch mostly plays what would ship, while every
+/// challenger is still priced against off and against the best on every
+/// screen it sits in. At two versions the head-to-head loses ~4% of its
+/// precision against an equal split (error² ∝ 1/p_a + 1/p_b: 4.17/p against
+/// 4/p). A family with no measured top version (see `best_version`) shares
+/// equally instead.
+const BEST_VERSION_SHARE: f64 = 0.6;
+
+/// The share of a family's on-probability each drawable version takes:
+/// `BEST_VERSION_SHARE` to the best, the remainder split evenly among the
+/// rest; a lone version takes everything; with no best known, even shares.
+fn version_shares(candidates: &[usize], best: Option<usize>) -> Vec<f64> {
+    let count = candidates.len();
+    match best {
+        Some(best) if count > 1 => candidates
+            .iter()
+            .map(|&i| {
+                if i == best {
+                    BEST_VERSION_SHARE
+                } else {
+                    (1.0 - BEST_VERSION_SHARE) / (count - 1) as f64
+                }
+            })
+            .collect(),
+        _ => vec![1.0 / count as f64; count],
+    }
+}
 
 /// ⭐ THE BEST VERSION of a family, among the given drawable members: the
 /// version the pinned ledger ships if any, else the priced
@@ -988,11 +1449,12 @@ fn best_version(genes: &[Gene], candidates: &[usize]) -> Option<usize> {
 /// its members' probabilities here are MARGINALS: the family is on with the
 /// probability its deployment state says (`p_default_on` if any version ships
 /// on, else `p_on`), shared among the screened versions with the BEST version
-/// taking `BEST_VERSION_WEIGHT` shares to every other version's one (operator,
-/// 2026-08-23: *"regularly swap between different versions of the genes,
-/// biasing towards the best versions"* — see `best_version`). A version held
-/// ON at its default forces its siblings off; a version held off simply takes
-/// no share. The draw reads the family back off these marginals.
+/// taking `BEST_VERSION_SHARE` of it and the rest splitting the remainder
+/// evenly (`version_shares`; operator, 2026-08-24: *"a 60% chance of using the
+/// top version of the gene and a 40% chance of using a different gene
+/// version (randomly pick among the rest)"* — see `best_version`). A version
+/// held ON at its default forces its siblings off; a version held off simply
+/// takes no share. The draw reads the family back off these marginals.
 fn on_probabilities(
     genes: &[Gene],
     screened: &[bool],
@@ -1033,16 +1495,8 @@ fn on_probabilities(
             .map(|&i| probabilities[i])
             .fold(0.0, f64::max);
         let best = best_version(genes, &candidates);
-        let weight = |i: usize| {
-            if best == Some(i) {
-                BEST_VERSION_WEIGHT
-            } else {
-                1.0
-            }
-        };
-        let total: f64 = candidates.iter().map(|&i| weight(i)).sum();
-        for &i in &candidates {
-            probabilities[i] = family_p * weight(i) / total;
+        for (&i, share) in candidates.iter().zip(version_shares(&candidates, best)) {
+            probabilities[i] = family_p * share;
         }
     }
     probabilities
@@ -1056,8 +1510,9 @@ fn on_probabilities(
 ///
 /// A family is then drawn as ONE level over its drawable versions: on with
 /// the family's probability (the sum of its members' marginals), and if on,
-/// one version in proportion to the marginals — the best version's share is
-/// `BEST_VERSION_WEIGHT` times each other's — never two versions on one seat.
+/// one version in proportion to the marginals — the best version takes
+/// `BEST_VERSION_SHARE`, the rest split the remainder — never two versions on
+/// one seat.
 fn draw_genome(
     start_seed: u64,
     game: usize,
@@ -1155,6 +1610,14 @@ struct Profile {
     /// Genes switched on for a field seat over the deployment genome
     /// (`CONTESTED_FIELD_GENES`). Never applied to a measured seat.
     field_genes: Vec<String>,
+    /// ⭐ The rotating victory mask, `None` for the plain batch-level set.
+    victory_mask: Option<VictoryMask>,
+    /// The majors' rung when every game plays one.
+    difficulty: String,
+    /// ⭐ The majors' rung rotation, `None` when every game plays `difficulty`.
+    difficulty_rotate: Option<DifficultyRotation>,
+    /// ⭐ Whether one major seat per game plays a fixed rival ([`RIVAL_KINDS`]).
+    rivals: bool,
 }
 
 /// ⭐ WHICH MAJOR SEATS THE FIELD PINS, AND TO WHAT — one entry per major
@@ -1230,11 +1693,33 @@ fn play_game(
     genomes: &[Vec<bool>],
 ) -> Vec<Row> {
     let started = Instant::now();
+    // ⭐ THE MASK IS PER GAME, FROM THE SEED: the batch-level set minus the
+    // lanes this game's mask closes, score always on.
+    let closed: Vec<String> = profile
+        .victory_mask
+        .map(|mask| {
+            mask.closed(seed, profile.victories)
+                .into_iter()
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default();
+    let victories = profile.victory_mask.map_or(profile.victories, |mask| {
+        mask.apply(seed, profile.victories)
+    });
+    // ⭐ THE MAJORS' RUNG, per game from the seed under a rotation. The
+    // barbarian seat keeps its own rung: `GameOptions::new` sets it.
+    let difficulty = profile
+        .difficulty_rotate
+        .as_ref()
+        .map_or(profile.difficulty.as_str(), |rotation| rotation.rung(seed))
+        .to_string();
     let mut world = Game::new_with(GameOptions {
         speed: profile.speed.id().to_string(),
         map_script: profile.map,
         randomize_civs: profile.randomize_civs,
-        victory_conditions: profile.victories,
+        victory_conditions: victories,
+        difficulty: difficulty.clone(),
         ..GameOptions::new(
             profile.players,
             profile.width,
@@ -1251,6 +1736,11 @@ fn play_game(
     // instrument that could price it.
     world.native_competitions = profile.native_competitions;
     let pinned = pinned_seats(profile.players, game, &profile.field);
+    // ⭐ THE RIVAL MIX: one major plays a fixed opponent of a kind drawn from
+    // the seed, in a chair that rotates with the game index.
+    let rival = profile
+        .rivals
+        .then(|| (rival_index(profile.players, game), rival_kind(seed)));
     let mut majors = Vec::new();
     let mut ais: Vec<AdvancedAi> = (0..world.players.len())
         .map(|pid| {
@@ -1259,9 +1749,12 @@ fn play_game(
             } else {
                 let index = majors.len();
                 majors.push(pid);
-                match pinned.get(index).copied().flatten() {
-                    Some(target) => field_seat(target, &profile.field_genes),
-                    None => seat_with_genome(genes, &genomes[index]),
+                match (pinned.get(index).copied().flatten(), rival) {
+                    (Some(target), _) => field_seat(target, &profile.field_genes),
+                    (None, Some((rival_at, kind))) if rival_at == index => {
+                        rival_seat(kind, seed, genes, &genomes[index])
+                    }
+                    (None, _) => seat_with_genome(genes, &genomes[index]),
                 }
             }
         })
@@ -1273,14 +1766,35 @@ fn play_game(
         .enumerate()
         .filter(|(index, _)| pinned.get(*index).copied().flatten().is_none())
         .map(|(index, &seat)| {
-            row_for_seat(
+            let this_rival = rival.filter(|(rival_at, _)| *rival_at == index);
+            let mut row = row_for_seat(
                 &world,
                 game,
                 seed,
                 seat,
-                genome_string(&genomes[index]),
+                match this_rival {
+                    // Only a random rival has a genome in header order.
+                    Some((_, "random")) | None => genome_string(&genomes[index]),
+                    Some(_) => String::new(),
+                },
                 secs,
-            )
+            );
+            row.victories_off = closed.clone();
+            row.difficulty = difficulty.clone();
+            match this_rival {
+                Some((_, kind)) => {
+                    // ⭐ NOT a measured seat: `kind` is what every estimator
+                    // filters on, so the fixed opponent prices no gene.
+                    row.kind = "rival".to_string();
+                    row.rival_mix = kind.to_string();
+                    if kind == "firaxis-mix" {
+                        row.rival_target = firaxis_mix_target(seed).as_str().to_string();
+                    }
+                }
+                None if rival.is_some() => row.rival_mix = "measured".to_string(),
+                None => {}
+            }
+            row
         })
         .collect()
 }
@@ -1366,8 +1880,13 @@ fn row_for_seat(
         military: game.military_power(seat),
         civ: game.players[seat].civ.clone(),
         raid_wars: counter("raid_wars"),
+        campaign_plans: counter("campaign:planned"),
+        campaign_wars: counter("campaign:declared"),
+        campaign_captures: counter("campaign:taken"),
+        campaign_pillages: counter("campaign:pillaged"),
         settlers_captured: counter("captured:settler"),
         builders_captured: counter("captured:builder"),
+        religious_lost: counter("religious_lost_to_barbarians"),
         pillages: counter("pillages"),
         raid_settler_prizes: counter("raid_prize:settler"),
         dvp: game.players[seat].dvp,
@@ -1375,6 +1894,11 @@ fn row_for_seat(
         tourists: game.foreign_tourists(seat),
         rival_tourists: rival(&|pid| game.foreign_tourists(pid)),
         domestic: game.domestic_tourists(seat),
+        // Filled in by `play_game`, which knows the game's mask and rung.
+        victories_off: Vec::new(),
+        difficulty: String::new(),
+        rival_mix: String::new(),
+        rival_target: String::new(),
     }
 }
 
@@ -1595,7 +2119,10 @@ impl<'a> Seats<'a> {
             .map(|row| vec![1.0, row[column]])
             .collect();
         match ols_clustered(&design, outcome, &self.clusters) {
-            Some(fit) => (2.0 * fit[1].0, 2.0 * fit[1].1),
+            Some(fit) => {
+                let (delta, se) = (2.0 * fit[1].0, 2.0 * fit[1].1);
+                (delta, se.max(self.empty_arm_floor(column, outcome)))
+            }
             None => {
                 // Too few seats for an error: report the raw difference and no
                 // precision, so the row reads as unresolved rather than exact.
@@ -1615,6 +2142,77 @@ impl<'a> Seats<'a> {
         }
     }
 
+    /// A floor under the clustered error for a binary outcome one of whose
+    /// arms has NO EVENTS AT ALL.
+    ///
+    /// ⚠⚠ A GENE THAT CANNOT FIRE ONCE PRINTED `HURTS **` AT z -18.21. With
+    /// `--genes <tag>` only that gene varies, so a gene that does not fire
+    /// plays both arms as the same game; each game still has exactly one
+    /// winner, and whether that winner drew the gene is chance. When none of
+    /// them did, the sandwich estimator answers a two-point interval instead
+    /// of refusing. Reproduced on 2026-08-25 by editing a gene's predicate to
+    /// `return false` unconditionally:
+    ///
+    /// ```text
+    /// gene_screen --games 12 --jobs 6 --genes <tag> --start-seed 99000000
+    ///   16/56  0.0%  21.4%  -21.4pp z-18.21  [-23.7, -19.1]  HURTS **
+    /// ```
+    ///
+    /// The same block had already reported that identical number for two real
+    /// implementations with OPPOSITE semantics, which is what exposed it.
+    ///
+    /// The difference is still real and is still reported; what is not to be
+    /// believed is its precision. So this widens rather than refuses, and
+    /// widens to a figure that is defensible on its own: the ordinary
+    /// difference-of-proportions error, multiplied by the design effect of the
+    /// seats sharing a game (mean cluster size), which is exactly the
+    /// correction clustering exists to apply. It can only ever make a row less
+    /// significant, never more.
+    ///
+    /// Deliberately not a refusal, and deliberately not gated on the event
+    /// count: a gene that wins every game it is drawn into ALSO empties an
+    /// arm, and that one is real. On the planted fixture in this file it keeps
+    /// |z| above ten; on the block above it takes |z| below two.
+    fn empty_arm_floor(&self, column: usize, outcome: &[f64]) -> f64 {
+        if !outcome.iter().all(|value| *value == 0.0 || *value == 1.0) {
+            return 0.0;
+        }
+        let arm = |on: bool| {
+            let mut events = 0.0;
+            let mut seats = 0.0;
+            for (row, value) in self.signs.iter().zip(outcome) {
+                if (row[column] > 0.0) == on {
+                    seats += 1.0;
+                    events += *value;
+                }
+            }
+            (events, seats)
+        };
+        let (on_events, on_seats) = arm(true);
+        let (off_events, off_seats) = arm(false);
+        if on_seats <= 0.0 || off_seats <= 0.0 {
+            return 0.0;
+        }
+        if on_events > 0.0 && off_events > 0.0 {
+            return 0.0;
+        }
+        let variance = |events: f64, seats: f64| {
+            let rate = events / seats;
+            rate * (1.0 - rate) / seats
+        };
+        let clusters = self
+            .clusters
+            .iter()
+            .collect::<std::collections::BTreeSet<_>>()
+            .len()
+            .max(1) as f64;
+        let design_effect = (on_seats + off_seats) / clusters;
+        (variance(on_events, on_seats) + variance(off_events, off_seats))
+            .max(0.0)
+            .sqrt()
+            * design_effect.max(1.0).sqrt()
+    }
+
     /// Every gene's win Δ at once: the regression of the win on an intercept
     /// and every screened sign, so a gene is not credited with the chance
     /// imbalance of its neighbours. `None` until the seats can support it.
@@ -1628,7 +2226,16 @@ impl<'a> Seats<'a> {
         Some(
             fit.into_iter()
                 .skip(1)
-                .map(|(b, se)| (2.0 * b, 2.0 * se))
+                .enumerate()
+                .map(|(column, (b, se))| {
+                    // The adjusted column is the same estimate from a wider
+                    // design and inherits the same defect, so it takes the
+                    // same floor. See `empty_arm_floor`.
+                    (
+                        2.0 * b,
+                        (2.0 * se).max(self.empty_arm_floor(column, outcome)),
+                    )
+                })
                 .collect(),
         )
     }
@@ -2179,19 +2786,67 @@ fn family_wise_z(k: usize) -> f64 {
     normal_quantile_upper(0.025 / k.max(1) as f64)
 }
 
+/// The |z| a reading needs before the run that produced it was powered to
+/// find an effect that size.
+///
+/// [`POWER_FACTOR`] is 2.8 standard errors, so "the smallest Δ this run
+/// resolves at 80% power" and "|z| = 2.8" are the same statement about the
+/// same row. Anything below it is a difference the run could have missed.
+const POWERED_Z: f64 = 2.8;
+
+/// ⚠⚠ A VERDICT MUST NOT OUTRUN THE POWER THAT PRODUCED IT.
+///
+/// The bars below are significance bars: |z| ≥ 2 for a flag, the family-wise
+/// bar for a starred one, both at α = 0.05. The run's own resolving power is a
+/// different quantity — [`POWERED_Z`] standard errors — and it is the LARGER
+/// of the two whenever a single gene is screened, because the family-wise bar
+/// for one gene is 1.96.
+///
+/// So a row could read `HELPS **` while sitting below the smallest effect its
+/// run was powered to detect, which is the regime where a significant estimate
+/// is most likely to be an overestimate. That is not hypothetical:
+/// `docs/gene_screens/fires/defensible-sites.json` was written on 2026-08-25
+/// reading
+///
+/// ```text
+/// win_delta_pp +42.9   win_resolves_pp 57.1   read "HELPS **"
+/// ```
+///
+/// a forty-three point reading, a family-wise verdict, and a run that cannot
+/// resolve anything under fifty-seven. #2465 taught the artifact to carry its
+/// resolving power; this teaches the verdict to consult it.
+///
+/// Underpowered readings keep their flag and gain a word: `helps * (thin)`.
+/// Nothing is suppressed — the difference is still real and still reported —
+/// but no row can now assert a starred verdict the run could not support, and
+/// `**` is reserved for readings that clear both bars.
 fn read_column(win_z: f64, share_z: f64, family_z: f64) -> String {
-    let word = |z: f64| -> Option<&'static str> {
-        if z.abs() >= family_z {
-            Some(if z > 0.0 { "HELPS **" } else { "HURTS **" })
+    let word = |z: f64| -> Option<String> {
+        let thin = z.abs() < POWERED_Z;
+        let verdict = if z.abs() >= family_z && !thin {
+            if z > 0.0 {
+                "HELPS **"
+            } else {
+                "HURTS **"
+            }
         } else if z.abs() >= 2.0 {
-            Some(if z > 0.0 { "helps *" } else { "hurts *" })
+            if z > 0.0 {
+                "helps *"
+            } else {
+                "hurts *"
+            }
         } else {
-            None
-        }
+            return None;
+        };
+        Some(if thin {
+            format!("{verdict} (thin)")
+        } else {
+            verdict.to_string()
+        })
     };
     match (word(win_z), word(share_z)) {
         (None, None) => "~".to_string(),
-        (Some(win), None) => win.to_string(),
+        (Some(win), None) => win,
         (None, Some(share)) => format!("share {share}"),
         (Some(win), Some(share)) => format!("{win} · share {share}"),
     }
@@ -2402,6 +3057,9 @@ fn print_table(header: &Header, rows: &[Row]) {
     );
     println!("{}", build_line(header));
     println!("{}", field_line(header));
+    println!("{}", mask_line(header));
+    println!("{}", difficulty_line(header));
+    println!("{}", rivals_line(header));
     println!("{}", completeness_line(header, estimates.seats));
     println!(
         "a seat overall: win {:.1}% (chance {:.1}%) · score share {:.1}% (equal share {:.1}%)",
@@ -2460,6 +3118,7 @@ fn print_table(header: &Header, rows: &[Row]) {
         if !parts.is_empty() {
             println!("how the games ended (by seat): {}", parts.join(" · "));
         }
+        print_drift_meter(rows);
         // ⭐ THE TWO LANES THE LIVE SEAT ACTUALLY LOSES TO. Printed whenever
         // the rows carry the fields, fieldless or contested, so the standard
         // screen's own answer to "was anybody even racing?" is visible beside
@@ -2636,8 +3295,8 @@ fn print_table(header: &Header, rows: &[Row]) {
         "resolution: {} genes; this run resolves a win Δ of ±{:.1} pp (share Δ ±{:.2} pp) at 80% power; \
          |z|≥2 flags ~{:.1} genes by chance, family-wise 5% bar is |z|≥{:.2}",
         k,
-        280.0 * median_se,
-        280.0 * median_share_se,
+        POWER_FACTOR * median_se,
+        POWER_FACTOR * median_share_se,
         k as f64 * 0.0455,
         family_z
     );
@@ -2714,6 +3373,9 @@ fn print_table(header: &Header, rows: &[Row]) {
          seconds, and positive is slower."
     );
     print_families(header, rows);
+    print_victory_masks(header, rows);
+    print_difficulty_rungs(header, rows);
+    print_rival_mix(header, rows);
 }
 
 /// The family tables: for every versioned gene, what each level did and
@@ -2760,8 +3422,9 @@ fn print_families(header: &Header, rows: &[Row]) {
         "\nan improvement improves when its \"against the version before it\" contrast is \
          positive on the win axis and it also beats off; the ledger keeps one version of a \
          family on — the best by tracked wins — and never two, and the draw plays that best \
-         version {:.0}× as often as each other version",
-        BEST_VERSION_WEIGHT
+         version {:.0}% of the time the family is on, the rest sharing the remaining {:.0}%",
+        100.0 * BEST_VERSION_SHARE,
+        100.0 * (1.0 - BEST_VERSION_SHARE)
     );
 }
 
@@ -2881,6 +3544,46 @@ fn print_by_civ(header: &Header, rows: &[Row], tag: &str) {
 /// table prints, plus the profile. `tools/genes.py` reads this to
 /// build `docs/gene_ledger.json` and the generated Rust table, so the
 /// deployment genome is derived from the screens rather than typed in.
+/// Two-sided 80% power at α = 0.05 needs about 2.8 standard errors, and the
+/// estimates here are proportions, so a percentage-point figure is 280 × SE.
+///
+/// ⚠⚠ THIS NUMBER IS WHY A SIX-GAME PROBE CANNOT PRICE A GENE, AND UNTIL
+/// 2026-08-25 IT LIVED ONLY IN THE TERMINAL. A twelve-game single-gene probe
+/// resolves a win Δ of about **±28.6 pp**; the ninety-game nine-gene screen
+/// beside it resolves **±10.3 pp**. Nine genes probed at twelve games read
+/// between +22.2 and −21.1 pp and every one of those readings was inside its
+/// own run's noise. Re-measured together at 540 seats, eight of the nine came
+/// back indistinguishable from zero — `conversion-majority-alarm` from +22.2
+/// to +0.2, `diplomatic-lane-forecast` from +18.5 to −0.8.
+///
+/// `docs/gene_screens/fires/*.json` recorded the point estimates and not this,
+/// so a committed probe carried a Δ with nothing beside it saying whether the
+/// run could have resolved it. Now it carries both.
+fn resolving_power(standard_error: f64) -> Option<f64> {
+    standard_error
+        .is_finite()
+        .then_some(POWER_FACTOR * standard_error)
+}
+
+/// The median standard error across the screened genes, which is what the
+/// printed `resolution:` line reports for the run as a whole.
+fn median_win_se(genes: &[GeneEstimate]) -> f64 {
+    median_se(genes.iter().map(|gene| gene.win_se))
+}
+
+fn median_share_se(genes: &[GeneEstimate]) -> f64 {
+    median_se(genes.iter().map(|gene| gene.share_se))
+}
+
+fn median_se(values: impl Iterator<Item = f64>) -> f64 {
+    let mut finite: Vec<f64> = values.filter(|se| se.is_finite()).collect();
+    finite.sort_by(|left, right| left.total_cmp(right));
+    finite
+        .get(finite.len() / 2)
+        .copied()
+        .unwrap_or(f64::INFINITY)
+}
+
 fn write_json_summary(path: &str, header: &Header, rows: &[Row]) {
     let estimates = estimate(header, rows);
     let costs = estimate_costs(header, rows);
@@ -2920,9 +3623,17 @@ fn write_json_summary(path: &str, header: &Header, rows: &[Row]) {
                 "win_delta_pp": 100.0 * e.win_delta,
                 "win_se_pp": 100.0 * e.win_se,
                 "win_z": e.win_z(),
+                // ⚠⚠ THE POINT ESTIMATE ABOVE MUST NOT TRAVEL WITHOUT THIS.
+                // The smallest win Δ this row could have resolved at 80%
+                // power. A `win_delta_pp` smaller than its own
+                // `win_resolves_pp` is inside the noise of the run that
+                // produced it, whatever its sign and however many blocks
+                // agree on that sign. See `POWER_FACTOR`.
+                "win_resolves_pp": resolving_power(e.win_se),
                 "share_delta_pp": 100.0 * e.share_delta,
                 "share_se_pp": 100.0 * e.share_se,
                 "share_z": e.share_z(),
+                "share_resolves_pp": resolving_power(e.share_se),
                 "adjusted_pp": e.adjusted.map(|(b, _)| 100.0 * b),
                 "adjusted_se_pp": e.adjusted.map(|(_, se)| 100.0 * se),
                 "read": read_column(e.win_z(), e.share_z(), family_z),
@@ -2963,9 +3674,26 @@ fn write_json_summary(path: &str, header: &Header, rows: &[Row]) {
         "seats": estimates.seats,
         "games": estimates.games,
         "endings": ending_census(rows),
+        "drift": drift_meter(rows).map(|meter| meter.json()),
+        "victory_masks": mask_report(header, rows).map(|report| report.json()),
+        "difficulty": rung_report(header, rows).map(|report| report.json()),
+        "rival_mix": rival_report(header, rows).map(|report| report.json()),
         "overall_win": estimates.overall_win,
         "overall_share": estimates.overall_share,
         "family_wise_z": family_z,
+        // The `resolution:` line this run prints, kept rather than left in the
+        // terminal. Everything an artifact needs to be read honestly on its
+        // own is now in the artifact.
+        "resolution": {
+            "genes": estimates.genes.len(),
+            "win_pp": resolving_power(median_win_se(&estimates.genes)),
+            "share_pp": resolving_power(median_share_se(&estimates.genes)),
+            "power": 0.8,
+            "alpha": 0.05,
+            "expected_flags_by_chance": estimates.genes.len() as f64 * 0.0455,
+            "read": "the smallest Δ this run could resolve at 80% power; a Δ \
+                     below it is inside the run's own noise",
+        },
         "reproducibility": {
             "unit": "seats",
             "target_seats_per_window": REPRO_WINDOW_SEATS,
@@ -3062,6 +3790,10 @@ fn read_rows(paths: &[String]) -> (Header, Vec<Row>) {
                                 || first.baseline != found.baseline
                                 || first.randomize_civs != found.randomize_civs
                                 || first.victories != found.victories
+                                || first.victory_mask != found.victory_mask
+                                || first.difficulty != found.difficulty
+                                || first.difficulty_rotate != found.difficulty_rotate
+                                || first.rivals != found.rivals
                                 || first.all_seats != found.all_seats
                                 || first.design != found.design
                                 || first.prior != found.prior
@@ -3136,6 +3868,13 @@ fn played_seed_window(rows: &[Row]) -> Option<(u64, u64)> {
 /// player count decides the chance base the column is measured against. The
 /// draw design is NOT a leg: a foldover file at this shape and an independent
 /// one price the same genes on the same board, and the estimator reads both.
+///
+/// ⭐ Neither is a ROTATING VICTORY MASK (`victory_mask: "rotate:N"`). The
+/// `victories` leg is the batch-level set and a rotating batch leaves all six
+/// live across the batch — every lane open in (5−N)/5 of its games, every game
+/// still ending on score at the clock — so it is accepted as the standard
+/// screen; `tools/genes.py` records the mask on the source and reads the same
+/// way. A `--victories` restriction is a second regime and stays a probe.
 fn shape_of(header: &Header) -> &'static str {
     let all_lanes = header.victories.is_empty()
         || header.victories.split(',').count() == civvis::game::VictoryConditions::NAMES.len();
@@ -3421,6 +4160,851 @@ fn field_line(header: &Header) -> String {
     }
 }
 
+/// One line saying what the rotating victory mask did, or that there was none.
+fn mask_line(header: &Header) -> String {
+    if header.victory_mask.is_empty() {
+        return "victory mask: none — every game plays the batch-level lanes".to_string();
+    }
+    format!(
+        "victory mask: ⭐ {} — each game closes {} of the five real conditions from its seed, score \
+         always on; {} masks pre-registered ({}) · still the standard shape: every lane is live across \
+         the batch",
+        header.victory_mask,
+        header
+            .victory_mask
+            .strip_prefix("rotate:")
+            .unwrap_or("?"),
+        header.victory_mask_games.len(),
+        header
+            .victory_mask_games
+            .iter()
+            .map(|(mask, games)| format!("{mask}×{games}"))
+            .collect::<Vec<_>>()
+            .join(" ")
+    )
+}
+
+/// ⭐ WHICH LANE A LANE GENE IS FOR, so the mask can read it with that lane
+/// open against closed. The registry's own words (`src/ai/advanced/genes.rs`):
+/// `competition-victory-points` prices the points a scored competition pays,
+/// the culture spending pass and the space race are their lanes by name, and
+/// `holy-lane-parity` is the religion race. The remaining `lane-*` genes —
+/// great people, the policy deck, the commit — substitute WHICHEVER lane the
+/// seat is racing at one decider, so they belong to no single lane and are read
+/// on all five.
+const LANE_GENE_LANES: [(&str, &str); 4] = [
+    ("competition-victory-points", "diplomatic"),
+    ("lane-culture-spending", "culture"),
+    ("lane-space-race", "science"),
+    ("holy-lane-parity", "religious"),
+];
+
+/// The lanes a gene is read on by the mask split: one for a gene of one lane,
+/// all five for a `lane-*` gene of no single lane, none for every other gene.
+/// A version (`lane-space-race-2`) is read as its base.
+fn lane_gene_lanes(tag: &str) -> Option<Vec<&'static str>> {
+    let base = match tag.rsplit_once('-') {
+        Some((base, version)) if version.parse::<usize>().is_ok() => base,
+        _ => tag,
+    };
+    if let Some((_, lane)) = LANE_GENE_LANES.iter().find(|(gene, _)| *gene == base) {
+        return Some(vec![lane]);
+    }
+    if base.starts_with("lane-") {
+        return Some(MASKABLE_LANES.to_vec());
+    }
+    None
+}
+
+/// One lane gene's win Δ with one lane open against closed.
+struct MaskSplit {
+    tag: String,
+    lane: &'static str,
+    /// (Δ, standard error, seats) with the lane open.
+    open: (f64, f64, usize),
+    /// The same with the lane closed.
+    closed: (f64, f64, usize),
+}
+
+impl MaskSplit {
+    /// Open minus closed, with the error of a difference of two independent
+    /// estimates — the two subsets share no game.
+    fn difference(&self) -> (f64, f64) {
+        let se = (self.open.1 * self.open.1 + self.closed.1 * self.closed.1).sqrt();
+        (self.open.0 - self.closed.0, se)
+    }
+}
+
+/// ⭐ THE VICTORY MASK READ BACK: how many games each mask took, how often
+/// each lane was open, and every lane gene with its lane open against closed.
+struct MaskReport {
+    mask: String,
+    games: usize,
+    by_mask: BTreeMap<String, usize>,
+    /// Per lane: games with it open, games with it closed.
+    lanes: Vec<(&'static str, usize, usize)>,
+    splits: Vec<MaskSplit>,
+}
+
+impl MaskReport {
+    fn json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "mask": self.mask,
+            "games": self.games,
+            "by_mask": self.by_mask,
+            "lanes": self.lanes.iter().map(|(lane, open, closed)| {
+                serde_json::json!({"lane": lane, "open_games": open, "closed_games": closed})
+            }).collect::<Vec<_>>(),
+            "lane_genes": self.splits.iter().map(|split| {
+                let (delta, se) = split.difference();
+                serde_json::json!({
+                    "tag": split.tag,
+                    "lane": split.lane,
+                    "open_seats": split.open.2,
+                    "open_win_delta_pp": 100.0 * split.open.0,
+                    "open_win_se_pp": 100.0 * split.open.1,
+                    "closed_seats": split.closed.2,
+                    "closed_win_delta_pp": 100.0 * split.closed.0,
+                    "closed_win_se_pp": 100.0 * split.closed.1,
+                    "open_minus_closed_pp": 100.0 * delta,
+                    "open_minus_closed_se_pp": 100.0 * se,
+                })
+            }).collect::<Vec<_>>(),
+        })
+    }
+}
+
+/// A gene's win Δ on the seats `keep` selects, with its clustered error and
+/// the seat count. `None` when the gene is not screened in this header.
+fn subset_win_contrast(
+    header: &Header,
+    rows: &[Row],
+    gene: usize,
+    keep: impl Fn(&Row) -> bool,
+) -> Option<(f64, f64, usize)> {
+    let subset: Vec<Row> = rows.iter().filter(|row| keep(row)).cloned().collect();
+    let seats = Seats::of(header, &subset);
+    let column = seats.columns.iter().position(|&index| index == gene)?;
+    let n = seats.rows.len();
+    if n == 0 {
+        return Some((0.0, f64::INFINITY, 0));
+    }
+    let (delta, se) = seats.contrast(column, &seats.wins);
+    Some((delta, se, n))
+}
+
+/// The report, or `None` for a batch no mask touched (no header mask and no
+/// row with a closed lane).
+fn mask_report(header: &Header, rows: &[Row]) -> Option<MaskReport> {
+    let played: Vec<&Row> = rows.iter().filter(|row| row.kind == "game").collect();
+    if header.victory_mask.is_empty() && played.iter().all(|row| row.victories_off.is_empty()) {
+        return None;
+    }
+    let mut first_of_game: BTreeMap<GameKey, &Row> = BTreeMap::new();
+    for row in &played {
+        first_of_game.entry(row.game_key()).or_insert(row);
+    }
+    let mut by_mask: BTreeMap<String, usize> = BTreeMap::new();
+    for row in first_of_game.values() {
+        *by_mask.entry(mask_key(&row.victories_off)).or_default() += 1;
+    }
+    let lanes = MASKABLE_LANES
+        .iter()
+        .map(|&lane| {
+            let closed = first_of_game
+                .values()
+                .filter(|row| row.victories_off.iter().any(|off| off == lane))
+                .count();
+            (lane, first_of_game.len() - closed, closed)
+        })
+        .collect();
+    let mut splits = Vec::new();
+    for (index, tag) in header.genes.iter().enumerate() {
+        if !header.screened.iter().any(|screened| screened == tag) {
+            continue;
+        }
+        let Some(gene_lanes) = lane_gene_lanes(tag) else {
+            continue;
+        };
+        for lane in gene_lanes {
+            let open = subset_win_contrast(header, rows, index, |row| {
+                !row.victories_off.iter().any(|off| off == lane)
+            });
+            let closed = subset_win_contrast(header, rows, index, |row| {
+                row.victories_off.iter().any(|off| off == lane)
+            });
+            if let (Some(open), Some(closed)) = (open, closed) {
+                splits.push(MaskSplit {
+                    tag: tag.clone(),
+                    lane,
+                    open,
+                    closed,
+                });
+            }
+        }
+    }
+    Some(MaskReport {
+        mask: header.victory_mask.clone(),
+        games: first_of_game.len(),
+        by_mask,
+        lanes,
+        splits,
+    })
+}
+
+/// The "Victory masks" section of `--analyze`: mask counts, lane open/closed
+/// counts, and every lane gene read with its own lane open against closed.
+fn print_victory_masks(header: &Header, rows: &[Row]) {
+    let Some(report) = mask_report(header, rows) else {
+        return;
+    };
+    println!(
+        "\nVictory masks · {} · {} games",
+        if report.mask.is_empty() {
+            "(rows carry closed lanes, header names no mask)".to_string()
+        } else {
+            report.mask.clone()
+        },
+        report.games
+    );
+    println!(
+        "  masks: {}",
+        report
+            .by_mask
+            .iter()
+            .map(|(mask, games)| format!("{mask}×{games}"))
+            .collect::<Vec<_>>()
+            .join(" · ")
+    );
+    println!(
+        "  lanes: {}",
+        report
+            .lanes
+            .iter()
+            .map(|(lane, open, closed)| format!("{lane} open {open} / closed {closed}"))
+            .collect::<Vec<_>>()
+            .join(" · ")
+    );
+    if report.splits.is_empty() {
+        println!("  no lane gene screened, so no open/closed split");
+        return;
+    }
+    println!(
+        "  {:<28} {:<11} {:>22} {:>22} {:>16}",
+        "lane gene", "lane", "lane OPEN winΔ (seats)", "lane CLOSED winΔ (seats)", "open−closed"
+    );
+    let cell = |(delta, se, seats): (f64, f64, usize)| {
+        if se.is_finite() {
+            format!("{:+.1}±{:.1}pp ({seats})", 100.0 * delta, 100.0 * se)
+        } else {
+            format!("{:+.1}pp ({seats})", 100.0 * delta)
+        }
+    };
+    for split in &report.splits {
+        let (delta, se) = split.difference();
+        println!(
+            "  {:<28} {:<11} {:>22} {:>22} {:>16}",
+            split.tag,
+            split.lane,
+            cell(split.open),
+            cell(split.closed),
+            if se.is_finite() {
+                format!("{:+.1}±{:.1}pp", 100.0 * delta, 100.0 * se)
+            } else {
+                format!("{:+.1}pp", 100.0 * delta)
+            }
+        );
+    }
+    println!(
+        "  a lane gene pays through its lane: a Δ that is larger with the lane open than closed is \
+         the lane paying, one that is the same either way is the gene paying through score share or \
+         not at all. Errors are clustered by game; the two subsets share no game."
+    );
+}
+
+/// One line saying what rung the majors played, or how they rotated.
+fn difficulty_line(header: &Header) -> String {
+    if !header.difficulty_rotate.is_empty() {
+        return format!(
+            "difficulty: ⭐ majors rotate {} per game from the seed ({}) · barbarians at their own rung ({})",
+            header.difficulty_rotate,
+            header
+                .difficulty_games
+                .iter()
+                .map(|(rung, games)| format!("{rung}×{games}"))
+                .collect::<Vec<_>>()
+                .join(" "),
+            civvis::game::default_barbarian_difficulty()
+        );
+    }
+    format!(
+        "difficulty: majors at {} in every game · barbarians at their own rung ({})",
+        if header.difficulty.is_empty() {
+            format!(
+                "{} (the default, unrecorded)",
+                civvis::game::default_difficulty()
+            )
+        } else {
+            header.difficulty.clone()
+        },
+        civvis::game::default_barbarian_difficulty()
+    )
+}
+
+/// The rung a row's game played, with the pre-2026-08-25 default filled in.
+fn row_rung(row: &Row) -> String {
+    if row.difficulty.is_empty() {
+        civvis::game::default_difficulty()
+    } else {
+        row.difficulty.clone()
+    }
+}
+
+/// The ruleset's rungs in ladder order, Settler first and Deity last.
+fn difficulty_ladder(rules: &civvis::rules::Rules) -> Vec<&str> {
+    let mut names: Vec<&str> = rules.difficulties.keys().map(|k| k.as_str()).collect();
+    names.sort_by_key(|name| rules.difficulties[*name].order);
+    names
+}
+
+/// A gene's (win Δ, standard error, seats) on each subset of a batch, in the
+/// report's subset order — one cell per rung, per rival kind, and so on.
+type SubsetCells = Vec<(f64, f64, usize)>;
+
+/// ⭐ THE RUNG ROTATION READ BACK: games per rung, and the top genes by |win Δ|
+/// read on every rung separately.
+struct RungReport {
+    rotation: String,
+    /// Rung, games — in ladder order.
+    games: Vec<(String, usize)>,
+    /// Per gene: tag, whole-batch win Δ, and (Δ, se, seats) per rung in
+    /// `games` order.
+    genes: Vec<(String, f64, SubsetCells)>,
+}
+
+impl RungReport {
+    fn json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "rotation": self.rotation,
+            "games": self.games.iter().map(|(rung, games)| {
+                serde_json::json!({"rung": rung, "games": games})
+            }).collect::<Vec<_>>(),
+            "top_genes": self.genes.iter().map(|(tag, delta, per_rung)| {
+                serde_json::json!({
+                    "tag": tag,
+                    "win_delta_pp": 100.0 * delta,
+                    "by_rung": self.games.iter().zip(per_rung).map(|((rung, _), (d, se, n))| {
+                        serde_json::json!({
+                            "rung": rung,
+                            "seats": n,
+                            "win_delta_pp": 100.0 * d,
+                            "win_se_pp": 100.0 * se,
+                        })
+                    }).collect::<Vec<_>>(),
+                })
+            }).collect::<Vec<_>>(),
+        })
+    }
+}
+
+/// How many genes the rung table shows: the top by |win Δ| over the batch.
+const RUNG_TABLE_GENES: usize = 10;
+
+/// The report, or `None` when every game played one rung and no rotation was
+/// declared.
+fn rung_report(header: &Header, rows: &[Row]) -> Option<RungReport> {
+    let played: Vec<&Row> = rows.iter().filter(|row| row.kind == "game").collect();
+    let mut first_of_game: BTreeMap<GameKey, &Row> = BTreeMap::new();
+    for row in &played {
+        first_of_game.entry(row.game_key()).or_insert(row);
+    }
+    let mut by_rung: BTreeMap<String, usize> = BTreeMap::new();
+    for row in first_of_game.values() {
+        *by_rung.entry(row_rung(row)).or_default() += 1;
+    }
+    if header.difficulty_rotate.is_empty() && by_rung.len() < 2 {
+        return None;
+    }
+    // Ladder order, not alphabetical: settler first, deity last.
+    let rules = civvis::rules::Rules::embedded();
+    let ladder = difficulty_ladder(&rules);
+    let mut games: Vec<(String, usize)> = ladder
+        .iter()
+        .filter_map(|rung| by_rung.get(*rung).map(|&n| ((*rung).to_string(), n)))
+        .collect();
+    for (rung, n) in &by_rung {
+        if !ladder.contains(&rung.as_str()) {
+            games.push((rung.clone(), *n));
+        }
+    }
+    let estimates = estimate(header, rows);
+    let mut top: Vec<&GeneEstimate> = estimates.genes.iter().collect();
+    top.sort_by(|a, b| {
+        b.win_delta
+            .abs()
+            .partial_cmp(&a.win_delta.abs())
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    let genes = top
+        .iter()
+        .take(RUNG_TABLE_GENES)
+        .filter_map(|estimate| {
+            let index = header.genes.iter().position(|tag| *tag == estimate.tag)?;
+            let per_rung = games
+                .iter()
+                .map(|(rung, _)| {
+                    subset_win_contrast(header, rows, index, |row| row_rung(row) == *rung)
+                        .unwrap_or((0.0, f64::INFINITY, 0))
+                })
+                .collect();
+            Some((estimate.tag.clone(), estimate.win_delta, per_rung))
+        })
+        .collect();
+    Some(RungReport {
+        rotation: header.difficulty_rotate.clone(),
+        games,
+        genes,
+    })
+}
+
+/// The "Difficulty rungs" section of `--analyze`: games per rung and the top
+/// genes by |win Δ| read on every rung.
+fn print_difficulty_rungs(header: &Header, rows: &[Row]) {
+    let Some(report) = rung_report(header, rows) else {
+        return;
+    };
+    println!(
+        "\nDifficulty rungs · {} · {}",
+        if report.rotation.is_empty() {
+            "(rows carry more than one rung, header names no rotation)".to_string()
+        } else {
+            report.rotation.clone()
+        },
+        report
+            .games
+            .iter()
+            .map(|(rung, games)| format!("{rung}×{games} games"))
+            .collect::<Vec<_>>()
+            .join(" · ")
+    );
+    if report.genes.is_empty() {
+        return;
+    }
+    let cell = |(delta, se, seats): (f64, f64, usize)| {
+        if se.is_finite() {
+            format!("{:+.1}±{:.1} ({seats})", 100.0 * delta, 100.0 * se)
+        } else {
+            format!("{:+.1} ({seats})", 100.0 * delta)
+        }
+    };
+    let head: Vec<String> = report
+        .games
+        .iter()
+        .map(|(rung, _)| format!("{rung:>20}"))
+        .collect();
+    println!(
+        "  {:<28} {:>9} {}",
+        format!("top {} by |winΔ|", report.genes.len()),
+        "all pp",
+        head.join(" ")
+    );
+    for (tag, delta, per_rung) in &report.genes {
+        println!(
+            "  {:<28} {:>+9.1} {}",
+            tag,
+            100.0 * delta,
+            per_rung
+                .iter()
+                .map(|&cell_value| format!("{:>20}", cell(cell_value)))
+                .collect::<Vec<_>>()
+                .join(" ")
+        );
+    }
+    println!(
+        "  win Δpp ± one clustered standard error (seats) per rung; a gene whose sign holds on every \
+         rung pays at every handicap, one that flips is a gene for one rung. The barbarian seat \
+         plays its own rung throughout."
+    );
+}
+
+/// One line saying whether a fixed rival sat in every game.
+fn rivals_line(header: &Header) -> String {
+    if header.rivals.is_empty() {
+        return "rivals: none — every major draws a genome and is measured".to_string();
+    }
+    format!(
+        "rivals: ⭐ {} — one chair per game plays a fixed opponent, rotating {} from the seed ({}); \
+         that seat is not measured",
+        header.rivals,
+        RIVAL_KINDS.join(" / "),
+        header
+            .rival_games
+            .iter()
+            .map(|(kind, games)| format!("{kind}×{games}"))
+            .collect::<Vec<_>>()
+            .join(" ")
+    )
+}
+
+/// ⭐ THE RIVAL MIX READ BACK: games and rival wins per kind, and every gene
+/// past the family-wise bar read against each kind of rival apart.
+struct RivalReport {
+    rivals: String,
+    /// Kind, games, games the rival itself won — in [`RIVAL_KINDS`] order.
+    kinds: Vec<(String, usize, usize)>,
+    /// Per gene past the bar: tag, whole-batch win Δ, (Δ, se, seats) per
+    /// kind in `kinds` order, and whether every kind's sign agrees with the
+    /// whole batch's.
+    genes: Vec<(String, f64, SubsetCells, bool)>,
+    family_z: f64,
+}
+
+impl RivalReport {
+    fn json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "rivals": self.rivals,
+            "family_wise_z": self.family_z,
+            "kinds": self.kinds.iter().map(|(kind, games, won)| {
+                serde_json::json!({"kind": kind, "games": games, "rival_won": won})
+            }).collect::<Vec<_>>(),
+            "genes_past_the_bar": self.genes.iter().map(|(tag, delta, per_kind, agree)| {
+                serde_json::json!({
+                    "tag": tag,
+                    "win_delta_pp": 100.0 * delta,
+                    "signs_agree": agree,
+                    "by_kind": self.kinds.iter().zip(per_kind).map(|((kind, _, _), (d, se, n))| {
+                        serde_json::json!({
+                            "kind": kind,
+                            "seats": n,
+                            "win_delta_pp": 100.0 * d,
+                            "win_se_pp": 100.0 * se,
+                        })
+                    }).collect::<Vec<_>>(),
+                })
+            }).collect::<Vec<_>>(),
+        })
+    }
+}
+
+/// The report, or `None` for a batch with no rival rows and no mix declared.
+fn rival_report(header: &Header, rows: &[Row]) -> Option<RivalReport> {
+    let mut kind_of_game: BTreeMap<GameKey, (&str, bool)> = BTreeMap::new();
+    for row in rows.iter().filter(|row| row.kind == "rival") {
+        kind_of_game.insert(row.game_key(), (row.rival_mix.as_str(), row.win));
+    }
+    if header.rivals.is_empty() && kind_of_game.is_empty() {
+        return None;
+    }
+    let kinds: Vec<(String, usize, usize)> = RIVAL_KINDS
+        .iter()
+        .map(|&kind| {
+            let games = kind_of_game.values().filter(|(k, _)| *k == kind).count();
+            let won = kind_of_game
+                .values()
+                .filter(|(k, w)| *k == kind && *w)
+                .count();
+            (kind.to_string(), games, won)
+        })
+        .collect();
+    let estimates = estimate(header, rows);
+    let family_z = family_wise_z(estimates.genes.len());
+    let genes = estimates
+        .genes
+        .iter()
+        .filter(|estimate| estimate.win_z().abs() >= family_z)
+        .filter_map(|estimate| {
+            let index = header.genes.iter().position(|tag| *tag == estimate.tag)?;
+            let per_kind: SubsetCells = kinds
+                .iter()
+                .map(|(kind, _, _)| {
+                    subset_win_contrast(header, rows, index, |row| {
+                        kind_of_game
+                            .get(&row.game_key())
+                            .is_some_and(|(k, _)| *k == kind.as_str())
+                    })
+                    .unwrap_or((0.0, f64::INFINITY, 0))
+                })
+                .collect();
+            let agree = per_kind
+                .iter()
+                .filter(|(_, _, n)| *n > 0)
+                .all(|(delta, _, _)| delta.signum() == estimate.win_delta.signum());
+            Some((estimate.tag.clone(), estimate.win_delta, per_kind, agree))
+        })
+        .collect();
+    Some(RivalReport {
+        rivals: header.rivals.clone(),
+        kinds,
+        genes,
+        family_z,
+    })
+}
+
+/// The "Rival mix" section of `--analyze`: games and rival wins per kind, and
+/// every gene past the family-wise bar read per kind with its sign agreement.
+fn print_rival_mix(header: &Header, rows: &[Row]) {
+    let Some(report) = rival_report(header, rows) else {
+        return;
+    };
+    println!(
+        "\nRival mix · {} · {}",
+        if report.rivals.is_empty() {
+            "(rows carry rival seats, header names no mix)".to_string()
+        } else {
+            report.rivals.clone()
+        },
+        report
+            .kinds
+            .iter()
+            .map(|(kind, games, won)| format!("{kind}×{games} games (rival won {won})"))
+            .collect::<Vec<_>>()
+            .join(" · ")
+    );
+    if report.genes.is_empty() {
+        println!(
+            "  no gene past the family-wise bar |z|≥{:.2}, so no sign agreement to read",
+            report.family_z
+        );
+        return;
+    }
+    let cell = |(delta, se, seats): (f64, f64, usize)| {
+        if se.is_finite() {
+            format!("{:+.1}±{:.1} ({seats})", 100.0 * delta, 100.0 * se)
+        } else {
+            format!("{:+.1} ({seats})", 100.0 * delta)
+        }
+    };
+    println!(
+        "  {:<28} {:>9} {} {:>8}",
+        format!("past |z|≥{:.2}", report.family_z),
+        "all pp",
+        report
+            .kinds
+            .iter()
+            .map(|(kind, _, _)| format!("{kind:>20}"))
+            .collect::<Vec<_>>()
+            .join(" "),
+        "signs"
+    );
+    for (tag, delta, per_kind, agree) in &report.genes {
+        println!(
+            "  {:<28} {:>+9.1} {} {:>8}",
+            tag,
+            100.0 * delta,
+            per_kind
+                .iter()
+                .map(|&value| format!("{:>20}", cell(value)))
+                .collect::<Vec<_>>()
+                .join(" "),
+            if *agree { "agree" } else { "SPLIT" }
+        );
+    }
+    println!(
+        "  win Δpp ± one clustered standard error (measured seats) in the games whose fixed rival was \
+         of each kind; `agree` = every kind's sign is the whole batch's, `SPLIT` = a gene that pays \
+         against one rival and not another. The rival seat itself prices no gene."
+    );
+}
+
+/// ⭐ THE LIVE LOSS CENSUS the screen is read against: how the live
+/// Civilization VI verification seat's games ended when a rival won, from
+/// the Hall of Fame census in
+/// `docs/eval/2026-08-18-we-screen-against-a-religion-game-and-lose-a-diplomacy-game.md`
+/// — diplomatic 32 : culture 27 : religious 8 : science 4 : domination 1.
+/// The board the screen plays is not that board (science and diplomatic land
+/// past its clock; conversion decides most of its early endings), and the
+/// drift meter says by how much.
+const LIVE_LOSS_CENSUS: [(&str, usize); 5] = [
+    ("diplomatic", 32),
+    ("culture", 27),
+    ("religious", 8),
+    ("science", 4),
+    ("domination", 1),
+];
+const LIVE_LOSS_CENSUS_SOURCE: &str =
+    "docs/eval/2026-08-18-we-screen-against-a-religion-game-and-lose-a-diplomacy-game.md";
+
+/// Where the live ladder's own record is read from when `--analyze` runs in
+/// a checkout: its `attempts[].victory_type` are the endings of every
+/// finished live game, ours or a rival's.
+const LIVE_LADDER_JSON: &str = "docs/civ6_ladder.json";
+
+/// A live `victory_type` as the screen names the ending, or `None` for a
+/// value that is not an ending (`VICTORY_DEFAULT`, an unfinished game).
+fn live_ending(victory_type: &str) -> Option<&'static str> {
+    match victory_type {
+        "VICTORY_SCORE" => Some("score"),
+        "VICTORY_DIPLOMATIC" => Some("diplomatic"),
+        "VICTORY_CULTURE" => Some("culture"),
+        "VICTORY_RELIGIOUS" => Some("religious"),
+        "VICTORY_TECHNOLOGY" => Some("science"),
+        "VICTORY_CONQUEST" => Some("domination"),
+        _ => None,
+    }
+}
+
+/// The live ladder's endings from `docs/civ6_ladder.json`, if the file is
+/// readable here and carries any: ending → games.
+fn live_ladder_endings(path: &str) -> Option<BTreeMap<&'static str, usize>> {
+    let text = std::fs::read_to_string(path).ok()?;
+    let ladder: serde_json::Value = serde_json::from_str(&text).ok()?;
+    let mut endings: BTreeMap<&'static str, usize> = BTreeMap::new();
+    for attempt in ladder.get("attempts")?.as_array()? {
+        if let Some(ending) = attempt
+            .get("victory_type")
+            .and_then(serde_json::Value::as_str)
+            .and_then(live_ending)
+        {
+            *endings.entry(ending).or_default() += 1;
+        }
+    }
+    (!endings.is_empty()).then_some(endings)
+}
+
+/// ⭐ THE DRIFT METER: the batch's share of games ended by each condition
+/// beside the live seat's, so a reader sees which lanes the screen is not
+/// exercising before reading a lane gene's column.
+struct DriftMeter {
+    /// Games in the batch, and per ending its games.
+    games: usize,
+    batch: BTreeMap<&'static str, usize>,
+    /// The live ladder's own endings, when `LIVE_LADDER_JSON` was readable.
+    ladder: Option<BTreeMap<&'static str, usize>>,
+}
+
+/// The six endings in the lobby's order, then `unfinished`.
+const DRIFT_ENDINGS: [&str; 7] = [
+    "science",
+    "culture",
+    "religious",
+    "diplomatic",
+    "domination",
+    "score",
+    "unfinished",
+];
+
+impl DriftMeter {
+    fn share(count: usize, total: usize) -> f64 {
+        if total == 0 {
+            0.0
+        } else {
+            count as f64 / total as f64
+        }
+    }
+
+    fn json(&self) -> serde_json::Value {
+        let ladder_total: usize = self.ladder.iter().flat_map(|l| l.values()).sum();
+        let census_total: usize = LIVE_LOSS_CENSUS.iter().map(|(_, n)| n).sum();
+        serde_json::json!({
+            "unit": "share of games ended by each condition",
+            "games": self.games,
+            "batch": DRIFT_ENDINGS.iter().map(|ending| {
+                let games = self.batch.get(ending).copied().unwrap_or(0);
+                (ending.to_string(), serde_json::json!(Self::share(games, self.games)))
+            }).collect::<serde_json::Map<_, _>>(),
+            "live_ladder": self.ladder.as_ref().map(|ladder| serde_json::json!({
+                "source": LIVE_LADDER_JSON,
+                "games": ladder_total,
+                "shares": ladder.iter().map(|(ending, n)| {
+                    (ending.to_string(), serde_json::json!(Self::share(*n, ladder_total)))
+                }).collect::<serde_json::Map<_, _>>(),
+            })),
+            "live_loss_census": {
+                "source": LIVE_LOSS_CENSUS_SOURCE,
+                "games": census_total,
+                "shares": LIVE_LOSS_CENSUS.iter().map(|(ending, n)| {
+                    (ending.to_string(), serde_json::json!(Self::share(*n, census_total)))
+                }).collect::<serde_json::Map<_, _>>(),
+            },
+        })
+    }
+}
+
+/// The meter over the batch's games, or `None` for a batch with no games.
+fn drift_meter(rows: &[Row]) -> Option<DriftMeter> {
+    drift_meter_with(rows, LIVE_LADDER_JSON)
+}
+
+fn drift_meter_with(rows: &[Row], ladder_path: &str) -> Option<DriftMeter> {
+    let mut first_of_game: BTreeMap<GameKey, &Row> = BTreeMap::new();
+    for row in rows.iter().filter(|row| row.kind == "game") {
+        first_of_game.entry(row.game_key()).or_insert(row);
+    }
+    if first_of_game.is_empty() {
+        return None;
+    }
+    let mut batch: BTreeMap<&'static str, usize> = BTreeMap::new();
+    for row in first_of_game.values() {
+        let ending = DRIFT_ENDINGS
+            .iter()
+            .copied()
+            .find(|ending| *ending == row.victory)
+            .unwrap_or("unfinished");
+        *batch.entry(ending).or_default() += 1;
+    }
+    Some(DriftMeter {
+        games: first_of_game.len(),
+        batch,
+        ladder: live_ladder_endings(ladder_path),
+    })
+}
+
+/// The drift table: one row per ending, the batch's share beside the live
+/// ladder's (when its JSON is readable here) and the live loss census.
+fn print_drift_meter(rows: &[Row]) {
+    let Some(meter) = drift_meter(rows) else {
+        return;
+    };
+    let ladder_total: usize = meter.ladder.iter().flat_map(|l| l.values()).sum();
+    let census_total: usize = LIVE_LOSS_CENSUS.iter().map(|(_, n)| n).sum();
+    println!(
+        "drift · share of games ended by each condition · {} batch games · live loss census {} rival \
+         wins ({LIVE_LOSS_CENSUS_SOURCE}){}",
+        meter.games,
+        census_total,
+        match &meter.ladder {
+            Some(_) => format!(" · live ladder {ladder_total} finished games ({LIVE_LADDER_JSON})"),
+            None => format!(" · {LIVE_LADDER_JSON} not readable here, ladder column omitted"),
+        }
+    );
+    println!(
+        "  {:<11} {:>9} {:>13}{}",
+        "ending",
+        "batch",
+        "live losses",
+        if meter.ladder.is_some() {
+            format!(" {:>12}", "live ladder")
+        } else {
+            String::new()
+        }
+    );
+    for ending in DRIFT_ENDINGS {
+        let batch = DriftMeter::share(meter.batch.get(ending).copied().unwrap_or(0), meter.games);
+        let census = LIVE_LOSS_CENSUS
+            .iter()
+            .find(|(name, _)| *name == ending)
+            .map(|(_, n)| format!("{:>12.0}%", 100.0 * DriftMeter::share(*n, census_total)))
+            .unwrap_or_else(|| format!("{:>13}", "-"));
+        let ladder = meter
+            .ladder
+            .as_ref()
+            .map(|ladder| {
+                format!(
+                    " {:>11.0}%",
+                    100.0
+                        * DriftMeter::share(ladder.get(ending).copied().unwrap_or(0), ladder_total)
+                )
+            })
+            .unwrap_or_default();
+        println!("  {ending:<11} {:>8.0}% {census}{ladder}", 100.0 * batch);
+    }
+    println!(
+        "  the live loss census is how the live seat's games ended when a RIVAL won; the ladder column \
+         is every finished live game, ours included. A lane the batch never ends on is a lane its \
+         genes cannot pay through on the win axis — read their share column."
+    );
+}
+
 /// One line naming the binary a batch was played by, printed before the first
 /// game and again by `--analyze`.
 ///
@@ -3495,18 +5079,26 @@ fn completeness_line(header: &Header, seats: usize) -> String {
 fn usage() -> ! {
     eprintln!(
         "the screen: gene_screen [--games N] [--start-seed N] [--jobs N] [--genes tag,tag,...] \
-         [--target-games N] [--out PATH] [--append] [--quiet] [--p-on 0.5] [--p-default-on 0.75]\n       \
+         [--target-games N] [--out PATH] [--append] [--quiet] [--p-on 0.25] [--p-default-on 0.75]\n       \
          (6 majors, 74x46 continents, 9 city-states, online/250, all six lanes, every seat its own \
          random genome, shuffled civs — the one shape the ledger accepts)\n       \
          probe only, NOT a ledger source: [--contested] [--contested-field lane,lane] \
          [--contested-field-genes lanes|tag,tag] [--native-competitions] [--no-native-competitions] \
          [--players N] [--turns N] [--width N] \
          [--height N] [--city-states N] [--speed ID] [--map ID] [--victories a,b,...] [--stock-civs]\n       \
+         still the screen (all lanes live across the batch): [--victory-mask rotate:N] closes N of the \
+         five real conditions per game from its seed, score always on, C(5,N) masks at equal shares\n       \
+         the majors' rung: [--difficulty RUNG] (default {}) or [--difficulty-rotate king:1,emperor:2,immortal:1] \
+         drawn per game from the seed in those shares; barbarians stay at {}\n       \
+         the rival mix: [--rivals firaxis-mix] seats one fixed opponent per game — legacy anchor / \
+         deployment genome retargeted at a live-census lane / random genome, in turn — that is not measured\n       \
          (--contested pins one rival seat per lane to actually pursue it — {} by default — and turns \
          on native scored competitions, the only recurring native route to the {DIPLOMATIC_VICTORY_POINTS} \
          Diplomatic Victory Points that lane needs)\n       \
          gene_screen --analyze PATH [PATH ...] [--json OUT] [--interactions] [--denial] [--top N] [--by-civ TAG]\n       \
          gene_screen --list",
+        civvis::game::default_difficulty(),
+        civvis::game::default_barbarian_difficulty(),
         CONTESTED_FIELD.join("+")
     );
     std::process::exit(2)
@@ -3676,6 +5268,56 @@ fn main() {
             std::process::exit(2);
         }),
     };
+    // ⭐ THE ROTATING VICTORY MASK. Per game, from the seed, N of the five
+    // real conditions are closed and score stays on; every lane is live
+    // across the batch, so this is still the standard shape (`shape_of`).
+    let victory_mask = text(&args, "--victory-mask").map(|spec| {
+        let mask = VictoryMask::parse(&spec).unwrap_or_else(|why| {
+            eprintln!("--victory-mask: {why}");
+            std::process::exit(2);
+        });
+        let lanes = mask.lanes(victories);
+        if lanes.len() <= mask.rotate {
+            eprintln!(
+                "--victory-mask {spec}: only {} real conditions are enabled ({}); a rotation must \
+                 leave at least one open every game (a fixed restriction is --victories)",
+                lanes.len(),
+                lanes.join(",")
+            );
+            std::process::exit(2);
+        }
+        mask
+    });
+    // ⭐ THE MAJORS' RUNG. One rung for every game, or a weighted rotation
+    // drawn per game from the seed. Provenance in the header, not a shape
+    // leg; the barbarian seat keeps its own rung either way.
+    let rules = civvis::rules::Rules::embedded();
+    let known_rungs = difficulty_ladder(&rules);
+    let difficulty = text(&args, "--difficulty").unwrap_or_else(civvis::game::default_difficulty);
+    if !known_rungs.contains(&difficulty.as_str()) {
+        eprintln!("unknown --difficulty {difficulty:?}; choose one of {known_rungs:?}");
+        std::process::exit(2);
+    }
+    let difficulty_rotate = text(&args, "--difficulty-rotate").map(|spec| {
+        DifficultyRotation::parse(&spec, &known_rungs).unwrap_or_else(|why| {
+            eprintln!("--difficulty-rotate: {why}");
+            std::process::exit(2);
+        })
+    });
+    if difficulty_rotate.is_some() && present(&args, "--difficulty") {
+        eprintln!("--difficulty and --difficulty-rotate name the majors' rung two ways; pass one");
+        std::process::exit(2);
+    }
+    // ⭐ THE RIVAL MIX. One chair per game plays a fixed opponent that is
+    // never measured; see `RIVAL_KINDS`.
+    let rivals = match text(&args, "--rivals").as_deref() {
+        None | Some("none") => false,
+        Some("firaxis-mix") => true,
+        Some(other) => {
+            eprintln!("unknown --rivals {other:?}; the mix is firaxis-mix (or none)");
+            std::process::exit(2);
+        }
+    };
     let speed = match text(&args, "--speed") {
         None => GameSpeed::Online,
         Some(id) => GameSpeed::from_id(&id).unwrap_or_else(|| {
@@ -3749,6 +5391,21 @@ fn main() {
             std::process::exit(2);
         }
     }
+    if victory_mask.is_some() && !field.is_empty() {
+        eprintln!(
+            "--victory-mask cannot be combined with a contested field: the mask would close the \
+             pinned pursuer's lane in some games and it would chase a victory the game cannot award"
+        );
+        std::process::exit(2);
+    }
+    if rivals && !field.is_empty() {
+        eprintln!("--rivals cannot be combined with a contested field: the field already pins rival seats");
+        std::process::exit(2);
+    }
+    if rivals && players < 3 {
+        eprintln!("--rivals seats one fixed opponent per game and measures the rest; needs --players 3 or more");
+        std::process::exit(2);
+    }
     // The pursuers' own genome over the deployment one. `none` reproduces the
     // weaker deployment-genome-only field the constant's doc measured.
     let field_genes: Vec<String> = if field.is_empty() {
@@ -3791,7 +5448,7 @@ fn main() {
     } else {
         present(&args, "--native-competitions") || !field.is_empty()
     };
-    let drawn = players - field.len();
+    let drawn = players - field.len() - usize::from(rivals);
     let p_on = real(&args, "--p-on", P_ON);
     let p_default_on = real(&args, "--p-default-on", P_DEFAULT_ON);
     for (name, p) in [("--p-on", p_on), ("--p-default-on", p_default_on)] {
@@ -3923,6 +5580,33 @@ fn main() {
             .join(","),
         native_competitions,
         contested_field_genes: field_genes.join(","),
+        victory_mask: victory_mask.map(VictoryMask::id).unwrap_or_default(),
+        victory_mask_games: victory_mask
+            .map(|mask| mask.games_by_mask(start_seed, games_to_play, victories))
+            .unwrap_or_default(),
+        difficulty: if difficulty_rotate.is_some() {
+            String::new()
+        } else {
+            difficulty.clone()
+        },
+        difficulty_rotate: difficulty_rotate
+            .as_ref()
+            .map(DifficultyRotation::id)
+            .unwrap_or_default(),
+        difficulty_games: difficulty_rotate
+            .as_ref()
+            .map(|rotation| rotation.games_by_rung(start_seed, games_to_play))
+            .unwrap_or_default(),
+        rivals: if rivals {
+            "firaxis-mix".to_string()
+        } else {
+            String::new()
+        },
+        rival_games: if rivals {
+            rival_games(start_seed, games_to_play)
+        } else {
+            BTreeMap::new()
+        },
         design: "independent".to_string(),
         prior: probabilities.clone(),
         families: families
@@ -3949,6 +5633,9 @@ fn main() {
     // the operator can see that in the first line instead of at the end.
     println!("{}", build_line(&header));
     println!("{}", field_line(&header));
+    println!("{}", mask_line(&header));
+    println!("{}", difficulty_line(&header));
+    println!("{}", rivals_line(&header));
     writeln!(
         out,
         "{}",
@@ -3969,6 +5656,10 @@ fn main() {
         field: field.clone(),
         native_competitions,
         field_genes: field_genes.clone(),
+        victory_mask,
+        difficulty,
+        difficulty_rotate,
+        rivals,
     };
     println!(
         "gene screen: {games_to_play} games ({} measured seats of {} chairs, every drawn seat its own genome, on at p={p_on} / {p_default_on} default-on) · {} of {} genes screened · {players}p {width}x{height} {} · {} · {turns} turns · {city_states} city-states · {} civs · seeds {start_seed}..{} · {jobs} jobs · rows → {out_path}",
@@ -3985,13 +5676,27 @@ fn main() {
     let started = Instant::now();
     let done = std::sync::atomic::AtomicUsize::new(0);
     let out = std::sync::Mutex::new(out);
+    let uniform: Vec<f64> = probabilities
+        .iter()
+        .zip(&screened)
+        .map(|(&p, &s)| if s { 0.5 } else { p })
+        .collect();
     let played: Vec<Vec<Row>> = civvis::parallel::map_reporting(
         games_to_play,
         jobs,
         |game| {
             let seed = start_seed + game as u64;
             let genomes: Vec<Vec<bool>> = (0..players)
-                .map(|seat| draw_genome(start_seed, game, players, seat, &probabilities, &families))
+                .map(|seat| {
+                    // ⭐ A `random` rival plays every screened gene at one
+                    // half — the draw's own machinery, a flat prior.
+                    if rivals && seat == rival_index(players, game) && rival_kind(seed) == "random"
+                    {
+                        draw_genome(start_seed, game, players, seat, &uniform, &families)
+                    } else {
+                        draw_genome(start_seed, game, players, seat, &probabilities, &families)
+                    }
+                })
                 .collect();
             play_game(&profile, &genes, game, seed, &genomes)
         },
@@ -4062,6 +5767,13 @@ mod tests {
             contested_field: String::new(),
             native_competitions: false,
             contested_field_genes: String::new(),
+            victory_mask: String::new(),
+            victory_mask_games: BTreeMap::new(),
+            difficulty: String::new(),
+            difficulty_rotate: String::new(),
+            difficulty_games: BTreeMap::new(),
+            rivals: String::new(),
+            rival_games: BTreeMap::new(),
             design: "independent".into(),
             prior: vec![0.5; genes.len()],
             p_on: 0.5,
@@ -4100,8 +5812,13 @@ mod tests {
             military: 0.0,
             civ: String::new(),
             raid_wars: 0,
+            campaign_plans: 0,
+            campaign_wars: 0,
+            campaign_captures: 0,
+            campaign_pillages: 0,
             settlers_captured: 0,
             builders_captured: 0,
+            religious_lost: 0,
             pillages: 0,
             raid_settler_prizes: 0,
             dvp: 0,
@@ -4109,6 +5826,10 @@ mod tests {
             tourists: 0,
             rival_tourists: 0,
             domestic: 0,
+            victories_off: Vec::new(),
+            difficulty: String::new(),
+            rival_mix: String::new(),
+            rival_target: String::new(),
         }
     }
 
@@ -4263,41 +5984,43 @@ mod tests {
         assert!(seat_with_genome(&genes, &universe).siege_is_progress);
     }
 
-    /// The harmful `governor-every-lane` composite is deliberately split in
-    /// the controller. These two rows make that split a real genome choice:
-    /// a seat can carry either established predicate while its sibling and
-    /// the historical composite stay off.
-    #[test]
-    fn governor_halves_are_independent_opt_in_genes() {
-        let genes = gene_table();
-        let seat = |tag: &str| {
-            let index = genes
-                .iter()
-                .position(|gene| gene.tag == tag)
-                .unwrap_or_else(|| panic!("{tag} is a screenable gene"));
-            let mut genome = vec![false; genes.len()];
-            genome[index] = true;
-            seat_with_genome(&genes, &genome)
-        };
-
-        let victory = seat("governor-victory-lanes");
-        assert!(victory.governor_victory_lanes);
-        assert!(!victory.governor_expansion_lane);
-        assert!(!victory.governor_every_lane);
-
-        let expansion = seat("governor-expansion-lane");
-        assert!(!expansion.governor_victory_lanes);
-        assert!(expansion.governor_expansion_lane);
-        assert!(!expansion.governor_every_lane);
-    }
-
     #[test]
     fn the_read_column_names_both_axes() {
         assert_eq!(read_column(0.5, -0.3, 3.33), "~");
-        assert_eq!(read_column(2.4, 0.1, 3.33), "helps *");
         assert_eq!(read_column(-0.8, -7.2, 3.33), "share HURTS **");
-        assert_eq!(read_column(2.1, 4.9, 3.33), "helps * · share HELPS **");
         assert_eq!(read_column(-3.5, -1.0, 3.33), "HURTS **");
+        // ⚠ 2.0 <= |z| < 2.8 is a reading the run was not powered to find.
+        // It keeps its flag and says so; see `POWERED_Z`.
+        assert_eq!(read_column(2.4, 0.1, 3.33), "helps * (thin)");
+        assert_eq!(
+            read_column(2.1, 4.9, 3.33),
+            "helps * (thin) · share HELPS **"
+        );
+    }
+
+    /// ⚠⚠ THE ROW THAT PROMPTED THIS. `defensible-sites`' fires artifact was
+    /// written on 2026-08-25 reading `win_delta_pp +42.9` beside
+    /// `win_resolves_pp 57.1` — a forty-three point difference from a run that
+    /// cannot resolve anything under fifty-seven — and the verdict column
+    /// printed `HELPS **` on it, because the family-wise bar for a single gene
+    /// is 1.96 while the run's own 80%-power threshold is `POWERED_Z`.
+    #[test]
+    fn a_starred_verdict_needs_the_power_to_back_it() {
+        // The artifact's own numbers: Δ 42.9 pp against a 57.1 pp resolution
+        // is z = 42.9 / (57.1 / 2.8) ≈ 2.10, and one gene bars at 1.96.
+        let z = 42.9 / (57.1 / POWERED_Z);
+        assert!((2.0..POWERED_Z).contains(&z), "the artifact's z is {z}");
+        assert_eq!(
+            read_column(z, 0.0, 1.96),
+            "helps * (thin)",
+            "a run that cannot resolve the difference must not star it"
+        );
+
+        // Clear of the power bar, the same single-gene screen stars it.
+        assert_eq!(read_column(3.0, 0.0, 1.96), "HELPS **");
+        // And the thin band still reports the difference — nothing is hidden.
+        assert!(read_column(-2.5, 0.0, 1.96).starts_with("hurts *"));
+        assert!(read_column(-2.5, 0.0, 1.96).ends_with("(thin)"));
     }
 
     #[test]
@@ -4670,6 +6393,593 @@ mod tests {
         assert_eq!(shape_of(&header), "standard");
     }
 
+    fn screen_header(genes: &[&str]) -> Header {
+        let mut header = test_header(genes);
+        header.players = SCREEN_PLAYERS;
+        header.width = SCREEN_WIDTH;
+        header.height = SCREEN_HEIGHT;
+        header.city_states = SCREEN_CITY_STATES;
+        header.map = SCREEN_MAP.id().to_string();
+        header.speed = GameSpeed::Online.id().to_string();
+        header.turns = GameSpeed::Online.turn_limit();
+        header.randomize_civs = true;
+        header
+    }
+
+    /// ⭐ `rotate:2` is ten masks, each seed always the same one, every mask
+    /// exactly a tenth of a thousand consecutive seeds, every lane closed in
+    /// exactly two fifths of them — and score never.
+    #[test]
+    fn the_victory_mask_is_deterministic_and_balanced() {
+        let mask = VictoryMask::parse("rotate:2").expect("parses");
+        let all = civvis::game::VictoryConditions::default();
+        assert_eq!(mask.masks(all).len(), 10, "C(5,2)");
+        let mut counts: BTreeMap<String, usize> = BTreeMap::new();
+        let mut closed_per_lane: BTreeMap<&str, usize> = BTreeMap::new();
+        for seed in 26_081_900u64..26_082_900 {
+            let closed = mask.closed(seed, all);
+            assert_eq!(
+                closed,
+                mask.closed(seed, all),
+                "the same seed, the same mask"
+            );
+            assert_eq!(closed.len(), 2);
+            let mut sorted = closed.clone();
+            sorted.sort_unstable();
+            assert_eq!(closed, sorted, "closed lanes are sorted");
+            assert!(
+                !closed.contains(&"score"),
+                "score is the clock and never closes"
+            );
+            for lane in &closed {
+                *closed_per_lane.entry(lane).or_default() += 1;
+            }
+            *counts.entry(mask_key(&closed)).or_default() += 1;
+            let applied = mask.apply(seed, all);
+            assert!(applied.score);
+            for lane in MASKABLE_LANES {
+                assert_eq!(
+                    applied.is_enabled(lane),
+                    !closed.contains(&lane),
+                    "{lane} at {seed}"
+                );
+            }
+        }
+        assert_eq!(counts.len(), 10);
+        assert!(counts.values().all(|&n| n == 100), "{counts:?}");
+        assert_eq!(closed_per_lane.len(), 5);
+        assert!(
+            closed_per_lane.values().all(|&n| n == 400),
+            "{closed_per_lane:?}"
+        );
+        assert_eq!(
+            mask.games_by_mask(26_081_900, 1000, all),
+            counts,
+            "the header pre-registers exactly what the seeds play"
+        );
+    }
+
+    /// Score stays on for every N, and a rotation must leave a real lane open.
+    #[test]
+    fn the_victory_mask_never_closes_score_at_any_width() {
+        let all = civvis::game::VictoryConditions::default();
+        for n in 1..=4 {
+            let mask = VictoryMask::parse(&format!("rotate:{n}")).expect("parses");
+            for seed in 0..64u64 {
+                assert!(mask.apply(seed, all).score);
+                assert!(!mask.closed(seed, all).contains(&"score"));
+            }
+        }
+        // A batch-level restriction narrows what the rotation draws from.
+        let two = civvis::game::VictoryConditions::parse("science,culture,score").expect("parses");
+        let mask = VictoryMask::parse("rotate:1").expect("parses");
+        assert_eq!(mask.lanes(two), vec!["science", "culture"]);
+        assert_eq!(mask.masks(two), vec![vec!["science"], vec!["culture"]]);
+        assert!(VictoryMask::parse("rotate:0").is_err());
+        assert!(VictoryMask::parse("random:2").is_err());
+        assert!(VictoryMask::parse("rotate:x").is_err());
+    }
+
+    /// A row carries the lanes its game closed, sorted; an unmasked row writes
+    /// nothing and a file written before the field reads as unmasked.
+    #[test]
+    fn rows_carry_the_lanes_their_game_closed() {
+        let mut row = test_row(3, 1, "01", false);
+        let text = serde_json::to_string(&row).expect("serializes");
+        assert!(
+            !text.contains("victories_off"),
+            "an unmasked row is unchanged: {text}"
+        );
+        let back: Row = serde_json::from_str(&text).expect("parses");
+        assert!(back.victories_off.is_empty());
+        row.victories_off = vec!["culture".into(), "science".into()];
+        let text = serde_json::to_string(&row).expect("serializes");
+        assert!(
+            text.contains(r#""victories_off":["culture","science"]"#),
+            "{text}"
+        );
+        let back: Row = serde_json::from_str(&text).expect("parses");
+        assert_eq!(back.victories_off, row.victories_off);
+    }
+
+    /// ⭐ A rotating batch IS the standard screen: `victories` is the batch-level
+    /// set and every lane is live across the batch. A `--victories`
+    /// restriction stays a probe.
+    #[test]
+    fn a_rotating_mask_batch_is_the_standard_screen() {
+        let mut header = screen_header(&["a"]);
+        assert_eq!(shape_of(&header), "standard");
+        header.victory_mask = "rotate:2".into();
+        header.victory_mask_games = BTreeMap::from([("culture+science".to_string(), 1)]);
+        assert_eq!(
+            shape_of(&header),
+            "standard",
+            "every lane is live across the batch"
+        );
+        header.victories = "domination,score".into();
+        assert_eq!(
+            shape_of(&header),
+            "legacy",
+            "a restricted batch-level set is a probe"
+        );
+    }
+
+    /// The analyze split on a synthetic masked batch: a lane gene that pays
+    /// only when its lane is open reads larger open than closed, the mask
+    /// counts come back from the rows, and the report lands in the JSON.
+    #[test]
+    fn the_mask_split_reads_a_lane_gene_open_against_closed() {
+        let mask = VictoryMask::parse("rotate:2").expect("parses");
+        let all = civvis::game::VictoryConditions::default();
+        let mut header = screen_header(&["lane-space-race", "lane-policy-deck", "settler-guard"]);
+        header.victory_mask = mask.id();
+        let probabilities = vec![0.5; 3];
+        let mut rows = Vec::new();
+        let games = 400;
+        for game in 0..games {
+            let seed = 500_000 + game as u64;
+            let closed: Vec<String> = mask
+                .closed(seed, all)
+                .iter()
+                .map(|s| s.to_string())
+                .collect();
+            let science_open = !closed.iter().any(|lane| lane == "science");
+            // Six seats; the winner is the lowest seat with the space-race gene
+            // on when science is open, else a fixed rotation independent of it.
+            let genomes: Vec<Vec<bool>> = (0..6)
+                .map(|seat| draw_genome(7, game, 6, seat, &probabilities, &[]))
+                .collect();
+            let winner = if science_open {
+                genomes.iter().position(|bits| bits[0]).unwrap_or(game % 6)
+            } else {
+                game % 6
+            };
+            for (seat, bits) in genomes.iter().enumerate() {
+                let mut row = test_row(game, seat, &genome_string(bits), seat == winner);
+                row.seed = seed;
+                row.victories_off = closed.clone();
+                rows.push(row);
+            }
+        }
+        let report = mask_report(&header, &rows).expect("a masked batch reports");
+        assert_eq!(report.games, games);
+        assert_eq!(report.by_mask.len(), 10);
+        assert!(
+            report.by_mask.values().all(|&n| n == 40),
+            "{:?}",
+            report.by_mask
+        );
+        let science = report
+            .lanes
+            .iter()
+            .find(|(lane, _, _)| *lane == "science")
+            .expect("science");
+        assert_eq!((science.1, science.2), (240, 160));
+        // One split for the space race (science), five for the policy deck,
+        // none for settler-guard.
+        assert_eq!(
+            report.splits.len(),
+            6,
+            "{:?}",
+            report
+                .splits
+                .iter()
+                .map(|s| (&s.tag, s.lane))
+                .collect::<Vec<_>>()
+        );
+        let race = report
+            .splits
+            .iter()
+            .find(|s| s.tag == "lane-space-race")
+            .expect("space race");
+        assert_eq!(race.lane, "science");
+        assert!(race.open.0 > 0.3, "open Δ {:+.3}", race.open.0);
+        assert!(race.closed.0.abs() < 0.1, "closed Δ {:+.3}", race.closed.0);
+        assert!(race.difference().0 > 0.3);
+        assert!(report.splits.iter().all(|s| s.tag != "settler-guard"));
+        let json = report.json();
+        assert_eq!(json["mask"], "rotate:2");
+        assert_eq!(json["lane_genes"].as_array().expect("array").len(), 6);
+        // And an unmasked batch reports nothing at all.
+        let plain = screen_header(&["lane-space-race"]);
+        let plain_rows = vec![test_row(0, 0, "1", true), test_row(0, 1, "0", false)];
+        assert!(mask_report(&plain, &plain_rows).is_none());
+        print_victory_masks(&header, &rows);
+    }
+
+    /// ⭐ `king:1,emperor:2,immortal:1` over a thousand consecutive seeds is
+    /// 250 / 500 / 250 exactly, the same seed always the same rung, and the
+    /// header pre-registers what the seeds play.
+    #[test]
+    fn the_rung_rotation_is_deterministic_and_takes_its_shares() {
+        let known = ["prince", "king", "emperor", "immortal", "deity"];
+        let rotation =
+            DifficultyRotation::parse("king:1,emperor:2,immortal:1", &known).expect("parses");
+        assert_eq!(rotation.id(), "king:1,emperor:2,immortal:1");
+        assert_eq!(rotation.total(), 4);
+        let mut counts: BTreeMap<String, usize> = BTreeMap::new();
+        for seed in 26_081_900u64..26_082_900 {
+            let rung = rotation.rung(seed);
+            assert_eq!(rung, rotation.rung(seed));
+            *counts.entry(rung.to_string()).or_default() += 1;
+        }
+        assert_eq!(
+            counts,
+            BTreeMap::from([
+                ("king".to_string(), 250),
+                ("emperor".to_string(), 500),
+                ("immortal".to_string(), 250)
+            ])
+        );
+        assert_eq!(rotation.games_by_rung(26_081_900, 1000), counts);
+        // A bare rung counts once; the refusals.
+        let bare = DifficultyRotation::parse("king,emperor", &known).expect("parses");
+        assert_eq!(bare.id(), "king:1,emperor:1");
+        assert!(
+            DifficultyRotation::parse("king:1", &known).is_err(),
+            "one rung is --difficulty"
+        );
+        assert!(DifficultyRotation::parse("king:0,emperor:1", &known).is_err());
+        assert!(DifficultyRotation::parse("king:1,king:1", &known).is_err());
+        assert!(DifficultyRotation::parse("king:1,godlike:1", &known).is_err());
+        assert!(DifficultyRotation::parse("king:x,emperor:1", &known).is_err());
+    }
+
+    /// A row carries its game's rung; an old row reads as the Prince default.
+    #[test]
+    fn rows_carry_the_rung_their_game_played() {
+        let mut row = test_row(1, 0, "1", true);
+        let text = serde_json::to_string(&row).expect("serializes");
+        assert!(!text.contains("difficulty"), "{text}");
+        assert_eq!(
+            row_rung(&serde_json::from_str::<Row>(&text).expect("parses")),
+            "prince"
+        );
+        row.difficulty = "emperor".into();
+        let back: Row = serde_json::from_str(&serde_json::to_string(&row).expect("serializes"))
+            .expect("parses");
+        assert_eq!(back.difficulty, "emperor");
+        assert_eq!(row_rung(&back), "emperor");
+    }
+
+    /// A rotating batch at the screen's shape is the standard screen: the
+    /// rung is provenance, not a leg.
+    #[test]
+    fn a_rung_rotation_batch_is_the_standard_screen() {
+        let mut header = screen_header(&["a"]);
+        header.difficulty = "emperor".into();
+        assert_eq!(shape_of(&header), "standard");
+        header.difficulty = String::new();
+        header.difficulty_rotate = "king:1,emperor:2,immortal:1".into();
+        assert_eq!(shape_of(&header), "standard");
+    }
+
+    /// The per-rung table on a synthetic rotating batch: games per rung in
+    /// ladder order, the top genes by |win Δ|, and a gene that pays on one
+    /// rung only reads that way.
+    #[test]
+    fn the_rung_table_reads_a_gene_per_rung() {
+        let known = ["king", "emperor", "immortal"];
+        let rotation =
+            DifficultyRotation::parse("king:1,emperor:2,immortal:1", &known).expect("parses");
+        let mut header = screen_header(&["only-on-immortal", "everywhere", "inert"]);
+        header.difficulty_rotate = rotation.id();
+        let probabilities = vec![0.5; 3];
+        let mut rows = Vec::new();
+        let games = 400;
+        for game in 0..games {
+            let seed = 700_000 + game as u64;
+            let rung = rotation.rung(seed).to_string();
+            let genomes: Vec<Vec<bool>> = (0..6)
+                .map(|seat| draw_genome(9, game, 6, seat, &probabilities, &[]))
+                .collect();
+            // `everywhere` wins on every rung; `only-on-immortal` decides
+            // only immortal games, where it outranks everything.
+            let winner = if rung == "immortal" {
+                genomes.iter().position(|bits| bits[0]).unwrap_or(game % 6)
+            } else {
+                genomes.iter().position(|bits| bits[1]).unwrap_or(game % 6)
+            };
+            for (seat, bits) in genomes.iter().enumerate() {
+                let mut row = test_row(game, seat, &genome_string(bits), seat == winner);
+                row.seed = seed;
+                row.difficulty = rung.clone();
+                rows.push(row);
+            }
+        }
+        let report = rung_report(&header, &rows).expect("a rotating batch reports");
+        assert_eq!(
+            report.games,
+            vec![
+                ("king".to_string(), 100),
+                ("emperor".to_string(), 200),
+                ("immortal".to_string(), 100)
+            ],
+            "ladder order, exact shares"
+        );
+        assert_eq!(report.genes.len(), 3);
+        let immortal_only = report
+            .genes
+            .iter()
+            .find(|(tag, _, _)| tag == "only-on-immortal")
+            .expect("in the table");
+        let per_rung = &immortal_only.2;
+        assert!(per_rung[2].0 > 0.3, "immortal Δ {:+.3}", per_rung[2].0);
+        assert!(per_rung[0].0.abs() < 0.15, "king Δ {:+.3}", per_rung[0].0);
+        assert_eq!(per_rung[0].2 + per_rung[1].2 + per_rung[2].2, 2400);
+        let json = report.json();
+        assert_eq!(json["rotation"], rotation.id());
+        assert_eq!(json["top_genes"].as_array().expect("array").len(), 3);
+        // One rung throughout, no rotation declared: nothing to split.
+        let plain = screen_header(&["a"]);
+        let plain_rows = vec![test_row(0, 0, "1", true), test_row(0, 1, "0", false)];
+        assert!(rung_report(&plain, &plain_rows).is_none());
+        print_difficulty_rungs(&header, &rows);
+    }
+
+    /// ⭐ The rival kind rotates through the three kinds exactly, the chair
+    /// rotates with the game, and a firaxis-mix rival's lane comes in the
+    /// live census's shares over a window of 72 firaxis-mix games.
+    #[test]
+    fn the_rival_mix_rotates_kind_chair_and_lane_deterministically() {
+        let mut kinds: BTreeMap<&str, usize> = BTreeMap::new();
+        for seed in 26_081_900u64..26_082_899 {
+            assert_eq!(rival_kind(seed), rival_kind(seed));
+            *kinds.entry(rival_kind(seed)).or_default() += 1;
+        }
+        assert_eq!(
+            kinds.values().copied().collect::<Vec<_>>(),
+            vec![333, 333, 333]
+        );
+        assert_eq!(
+            rival_games(26_081_900, 999)
+                .values()
+                .copied()
+                .collect::<Vec<_>>(),
+            vec![333, 333, 333]
+        );
+        assert_eq!(
+            (0..12).map(|game| rival_index(6, game)).collect::<Vec<_>>(),
+            [0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5]
+        );
+        // Every third seed is a firaxis-mix game; 72 of them play each lane
+        // in its weight exactly.
+        let mut lanes: BTreeMap<&str, usize> = BTreeMap::new();
+        let mut seen = 0;
+        let mut seed = 0u64;
+        while seen < 72 {
+            if rival_kind(seed) == "firaxis-mix" {
+                *lanes.entry(firaxis_mix_target(seed).as_str()).or_default() += 1;
+                seen += 1;
+            }
+            seed += 1;
+        }
+        assert_eq!(
+            lanes,
+            BTreeMap::from([
+                ("diplomatic", 32),
+                ("culture", 27),
+                ("religious", 8),
+                ("science", 4),
+                ("domination", 1)
+            ])
+        );
+        // The three seats build.
+        let genes = gene_table();
+        let genome = vec![false; genes.len()];
+        assert!(rival_seat("legacy", 1, &genes, &genome)
+            .victory_target()
+            .is_none());
+        assert_eq!(
+            rival_seat("firaxis-mix", 1, &genes, &genome).victory_target(),
+            Some(firaxis_mix_target(1))
+        );
+        assert!(rival_seat("random", 1, &genes, &genome)
+            .victory_target()
+            .is_none());
+    }
+
+    /// A rival's row is `kind: "rival"` and prices nothing; the measured rows
+    /// say `measured`; the split reads a gene per rival kind.
+    #[test]
+    fn the_rival_seat_prices_no_gene_and_the_split_reads_per_kind() {
+        let mut header = screen_header(&["pays-vs-legacy", "everywhere"]);
+        header.rivals = "firaxis-mix".into();
+        let probabilities = vec![0.5; 2];
+        let mut rows = Vec::new();
+        let games = 600;
+        for game in 0..games {
+            let seed = 900_000 + game as u64;
+            let kind = rival_kind(seed);
+            let at = rival_index(6, game);
+            let genomes: Vec<Vec<bool>> = (0..6)
+                .map(|seat| draw_genome(3, game, 6, seat, &probabilities, &[]))
+                .collect();
+            // `everywhere` wins whatever the rival; against the legacy anchor
+            // a seat with `pays-vs-legacy` as well takes precedence.
+            let measured = |wanted: &dyn Fn(&[bool]) -> bool| {
+                genomes
+                    .iter()
+                    .enumerate()
+                    .find(|(seat, bits)| *seat != at && wanted(bits))
+                    .map(|(seat, _)| seat)
+            };
+            let winner = (kind == "legacy")
+                .then(|| measured(&|bits| bits[0] && bits[1]))
+                .flatten()
+                .or_else(|| measured(&|bits| bits[1]))
+                .unwrap_or(at);
+            for (seat, bits) in genomes.iter().enumerate() {
+                let mut row = test_row(game, seat, &genome_string(bits), seat == winner);
+                row.seed = seed;
+                if seat == at {
+                    row.kind = "rival".into();
+                    row.rival_mix = kind.into();
+                    row.genome = String::new();
+                } else {
+                    row.rival_mix = "measured".into();
+                }
+                rows.push(row);
+            }
+        }
+        let estimates = estimate(&header, &rows);
+        assert_eq!(estimates.seats, games * 5, "the rival seat is not a seat");
+        let report = rival_report(&header, &rows).expect("a mixed batch reports");
+        assert_eq!(
+            report
+                .kinds
+                .iter()
+                .map(|(_, games, _)| *games)
+                .collect::<Vec<_>>(),
+            vec![200, 200, 200]
+        );
+        assert!(report
+            .genes
+            .iter()
+            .any(|(tag, _, _, _)| tag == "everywhere"));
+        let everywhere = report
+            .genes
+            .iter()
+            .find(|(tag, _, _, _)| tag == "everywhere")
+            .expect("past the bar");
+        assert!(everywhere.3, "pays against every kind: {:?}", everywhere.2);
+        assert_eq!(
+            everywhere.2.iter().map(|(_, _, n)| *n).sum::<usize>(),
+            games * 5
+        );
+        if let Some(legacy_only) = report
+            .genes
+            .iter()
+            .find(|(tag, _, _, _)| tag == "pays-vs-legacy")
+        {
+            assert!(
+                legacy_only.2[0].0 > legacy_only.2[1].0,
+                "{:?}",
+                legacy_only.2
+            );
+        }
+        let json = report.json();
+        assert_eq!(json["rivals"], "firaxis-mix");
+        assert_eq!(json["kinds"].as_array().expect("array").len(), 3);
+        // Round trip: the rival row keeps its kind and mix.
+        let rival = rows
+            .iter()
+            .find(|row| row.kind == "rival")
+            .expect("a rival row");
+        let back: Row = serde_json::from_str(&serde_json::to_string(rival).expect("serializes"))
+            .expect("parses");
+        assert_eq!(
+            (back.kind.as_str(), back.rival_mix.as_str()),
+            ("rival", rival.rival_mix.as_str())
+        );
+        // No mix, no report; and the mix is not a shape leg.
+        let plain = screen_header(&["a"]);
+        assert!(rival_report(&plain, &[test_row(0, 0, "1", true)]).is_none());
+        assert_eq!(shape_of(&header), "standard");
+        print_rival_mix(&header, &rows);
+    }
+
+    /// ⭐ The drift meter reads the batch by GAME, maps the live ladder's own
+    /// `victory_type`s, and keeps the loss census beside them.
+    #[test]
+    fn the_drift_meter_reads_the_batch_beside_the_live_census() {
+        let mut rows = Vec::new();
+        for game in 0..10 {
+            for seat in 0..3 {
+                let mut row = test_row(game, seat, "1", seat == 0);
+                row.victory = match game % 4 {
+                    0 | 1 => "score".into(),
+                    2 => "religious".into(),
+                    _ => "culture".into(),
+                };
+                rows.push(row);
+            }
+        }
+        let dir = std::env::temp_dir().join(format!("civvis-drift-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let ladder = dir.join("ladder.json");
+        std::fs::write(
+            &ladder,
+            r#"{"attempts":[{"victory_type":"VICTORY_SCORE"},{"victory_type":"VICTORY_DIPLOMATIC"},
+                {"victory_type":"VICTORY_DIPLOMATIC"},{"victory_type":"VICTORY_DEFAULT"},{"won":false}]}"#,
+        )
+        .expect("write");
+        let meter = drift_meter_with(&rows, ladder.to_str().expect("path")).expect("games");
+        assert_eq!(meter.games, 10, "by game, not by seat");
+        assert_eq!(
+            meter.batch,
+            BTreeMap::from([("score", 6), ("religious", 2), ("culture", 2)])
+        );
+        assert_eq!(
+            meter.ladder,
+            Some(BTreeMap::from([("score", 1), ("diplomatic", 2)])),
+            "VICTORY_DEFAULT and an unfinished attempt are not endings"
+        );
+        let json = meter.json();
+        assert!((json["batch"]["score"].as_f64().expect("share") - 0.6).abs() < 1e-9);
+        assert_eq!(json["live_ladder"]["games"], 3);
+        assert_eq!(json["live_loss_census"]["games"], 72);
+        assert_eq!(json["live_loss_census"]["source"], LIVE_LOSS_CENSUS_SOURCE);
+        let _ = std::fs::remove_dir_all(&dir);
+        // Unreadable ladder: the column is omitted, the meter still reads.
+        let without = drift_meter_with(&rows, "/nonexistent/ladder.json").expect("games");
+        assert!(without.ladder.is_none());
+        assert!(drift_meter_with(&[], "/nonexistent").is_none());
+        print_drift_meter(&rows);
+        // The real ledger's record, when this test runs in a checkout, maps.
+        if let Some(live) = live_ladder_endings(LIVE_LADDER_JSON) {
+            assert!(live.values().sum::<usize>() > 0);
+        }
+        assert_eq!(live_ending("VICTORY_TECHNOLOGY"), Some("science"));
+        assert_eq!(live_ending("VICTORY_CONQUEST"), Some("domination"));
+        assert_eq!(live_ending("VICTORY_DEFAULT"), None);
+    }
+
+    /// A lane gene's lane is read off the registry's own words; a version is
+    /// read as its base; a gene of no lane has no split.
+    #[test]
+    fn lane_genes_map_to_their_lanes() {
+        assert_eq!(lane_gene_lanes("lane-space-race"), Some(vec!["science"]));
+        assert_eq!(
+            lane_gene_lanes("lane-culture-spending-2"),
+            Some(vec!["culture"])
+        );
+        assert_eq!(lane_gene_lanes("holy-lane-parity"), Some(vec!["religious"]));
+        assert_eq!(
+            lane_gene_lanes("competition-victory-points"),
+            Some(vec!["diplomatic"])
+        );
+        assert_eq!(
+            lane_gene_lanes("lane-policy-deck"),
+            Some(MASKABLE_LANES.to_vec())
+        );
+        assert_eq!(
+            lane_gene_lanes("lane-commit"),
+            Some(MASKABLE_LANES.to_vec())
+        );
+        assert_eq!(lane_gene_lanes("settler-guard"), None);
+    }
+
     /// The pinned positions rotate with the game index, because seat position
     /// is not neutral on this board: a fixed pin would hand every measured
     /// gene the leftovers of one particular chair for the whole batch.
@@ -4863,11 +7173,11 @@ mod tests {
         );
     }
 
-    /// The best version plays most: with marginals 0.25 / 0.5 the family is
-    /// on three quarters of the time and version 2 takes two thirds of that.
+    /// The best version plays most: with marginals 0.30 / 0.45 the family is
+    /// on three quarters of the time and version 2 takes 60% of that.
     #[test]
-    fn the_best_version_is_drawn_twice_as_often() {
-        let probabilities = [0.5, 0.25, 0.5];
+    fn the_best_version_is_drawn_sixty_percent_of_the_time() {
+        let probabilities = [0.5, 0.30, 0.45];
         let families = vec![vec![1, 2]];
         let seats = 6000;
         let mut on = [0usize; 3];
@@ -4883,21 +7193,76 @@ mod tests {
         }
         let rate = |count: usize| count as f64 / seats as f64;
         assert!(
-            (rate(on[1]) - 0.25).abs() < 0.03,
+            (rate(on[1]) - 0.30).abs() < 0.03,
             "version 1 on {}",
             rate(on[1])
         );
         assert!(
-            (rate(on[2]) - 0.5).abs() < 0.03,
+            (rate(on[2]) - 0.45).abs() < 0.03,
             "version 2 on {}",
             rate(on[2])
         );
         assert!((rate(on[1] + on[2]) - 0.75).abs() < 0.03);
     }
 
+    /// ⭐ The tournament draw starts from the default genome: a default-on
+    /// gene turns off one time in four, a default-off gene turns on one time
+    /// in four, and a gene that is on plays its top version 60% of the time,
+    /// the rest sharing the other 40% evenly. One version takes everything.
+    #[test]
+    fn the_draw_starts_from_the_default_genome() {
+        assert_eq!(P_DEFAULT_ON, 0.75);
+        assert_eq!(P_ON, 0.25);
+        assert_eq!(BEST_VERSION_SHARE, 0.6);
+        let close = |p: &[f64], want: &[f64]| {
+            assert!(
+                p.len() == want.len() && p.iter().zip(want).all(|(a, b)| (a - b).abs() < 1e-12),
+                "{p:?} != {want:?}"
+            );
+        };
+        close(&version_shares(&[4], Some(4)), &[1.0]);
+        close(&version_shares(&[4], None), &[1.0]);
+        close(&version_shares(&[4, 5], Some(5)), &[0.4, 0.6]);
+        close(&version_shares(&[4, 5, 6], Some(4)), &[0.6, 0.2, 0.2]);
+        close(
+            &version_shares(&[4, 5, 6, 7], Some(6)),
+            &[0.4 / 3.0, 0.4 / 3.0, 0.6, 0.4 / 3.0],
+        );
+        close(&version_shares(&[4, 5, 6], None), &[1.0 / 3.0; 3]);
+        // Over the real gene table at the defaults: every screened gene sits at
+        // exactly one of the two levels, or is a family member whose family
+        // sums to one of them.
+        let genes = gene_table();
+        let tags: Vec<String> = genes.iter().map(|gene| gene.tag.to_string()).collect();
+        let families = families_of(&tags);
+        let screened = vec![true; genes.len()];
+        let p = on_probabilities(&genes, &screened, P_ON, P_DEFAULT_ON, &families);
+        let mut in_family = vec![false; genes.len()];
+        for family in &families {
+            let family_p: f64 = family.iter().map(|&i| p[i]).sum();
+            let ships = family.iter().any(|&i| genes[i].default_on);
+            let want = if ships { P_DEFAULT_ON } else { P_ON };
+            assert!(
+                (family_p - want).abs() < 1e-9,
+                "{}: family on at {family_p}, want {want}",
+                genes[family[0]].tag
+            );
+            for &i in family {
+                in_family[i] = true;
+            }
+        }
+        for (i, gene) in genes.iter().enumerate() {
+            if in_family[i] {
+                continue;
+            }
+            let want = if gene.default_on { P_DEFAULT_ON } else { P_ON };
+            assert_eq!(p[i], want, "{}", gene.tag);
+        }
+    }
+
     /// The family's marginals: the family probability shared among the
-    /// screened versions, two shares to the best version; a version held on
-    /// forces its siblings off.
+    /// screened versions, 60% to the best version and the rest split evenly;
+    /// a version held on forces its siblings off.
     #[test]
     fn family_marginals_share_the_family_probability() {
         let synthetic = |tag: &'static str, default_on: bool, tracked_wins: Option<f64>| Gene {
@@ -4924,24 +7289,24 @@ mod tests {
         let families = vec![vec![0, 1, 2]];
         let p = on_probabilities(&genes, &[true, true, true], 0.5, 0.75, &families);
         close(&p, &[0.5 / 3.0, 0.5 / 3.0, 0.5 / 3.0]);
-        // The shipping version is the best and takes two shares of three;
-        // the family is on at p_default_on because a version ships.
+        // The shipping version is the best and takes 60%; the family is on
+        // at p_default_on because a version ships.
         let genes = vec![
             synthetic("g", true, Some(0.4)),
             synthetic("g-2", false, Some(0.9)),
         ];
         let families = vec![vec![0, 1]];
         let p = on_probabilities(&genes, &[true, true], 0.5, 0.75, &families);
-        close(&p, &[0.5, 0.25]);
+        close(&p, &[0.45, 0.30]);
         // With nothing shipping, tracked wins decide, ties to the higher
-        // version.
+        // version; the other two split the remaining 40% evenly.
         let genes = vec![
             synthetic("g", false, Some(0.4)),
             synthetic("g-2", false, Some(0.9)),
             synthetic("g-3", false, Some(0.9)),
         ];
         let p = on_probabilities(&genes, &[true, true, true], 0.5, 0.75, &[vec![0, 1, 2]]);
-        close(&p, &[0.125, 0.125, 0.25]);
+        close(&p, &[0.1, 0.1, 0.3]);
         // Hold a version at its default: on → its siblings are forced off;
         // off → it takes no share and the rest of the family carries on.
         let genes = vec![
@@ -5338,6 +7703,116 @@ mod tests {
 
     /// The seed window the finished games actually cover, which is the half of
     /// "actual against intended" the rows know.
+    /// ⚠⚠ THE BLOCK THAT PRINTED `HURTS **` FOR A GENE THAT COULD NOT FIRE.
+    ///
+    /// See [`Seats::empty_arm_floor`]. Both shapes are held here, because the
+    /// fix is only correct if it separates them: an empty arm with a handful
+    /// of events must lose its precision, and an empty arm under an
+    /// overwhelming effect must keep it.
+    #[test]
+    fn an_empty_arm_loses_its_precision_unless_the_effect_is_overwhelming() {
+        let header = test_header(&["alpha"]);
+
+        // The artifact: twelve games, six seats, one winner each, and no
+        // winner ever drew the gene. The difference is real; the confidence
+        // is not.
+        let mut rows = Vec::new();
+        for game in 0..12 {
+            for seat in 0..6 {
+                rows.push(test_row(
+                    game,
+                    seat,
+                    if seat < 2 { "1" } else { "0" },
+                    seat == 5,
+                ));
+            }
+        }
+        let seats = Seats::of(&header, &rows);
+        let (delta, se) = seats.contrast(0, &seats.wins);
+        assert!(delta < -0.1, "the difference is reported ({delta})");
+        assert!(
+            (delta / se).abs() < 2.0,
+            "but it must not read significant (z {})",
+            delta / se
+        );
+
+        // The real thing: the same empty arm, but the gene wins every game it
+        // is drawn into. That effect is overwhelming and keeps its error.
+        let mut planted = Vec::new();
+        for game in 0..12 {
+            for seat in 0..6 {
+                planted.push(test_row(
+                    game,
+                    seat,
+                    if seat < 2 { "1" } else { "0" },
+                    seat == 0,
+                ));
+            }
+        }
+        let seats = Seats::of(&header, &planted);
+        let (delta, se) = seats.contrast(0, &seats.wins);
+        assert!(delta > 0.1, "the planted effect is reported ({delta})");
+        assert!(
+            (delta / se).abs() > 2.0,
+            "and it must still read significant (z {})",
+            delta / se
+        );
+    }
+
+    /// ⚠⚠ A POINT ESTIMATE MUST NOT TRAVEL WITHOUT THE POWER THAT PRODUCED IT.
+    ///
+    /// `resolving_power` is the figure the `resolution:` line prints, and the
+    /// two must be the same arithmetic or an artifact and its terminal output
+    /// disagree about whether a reading means anything. See `POWER_FACTOR`.
+    #[test]
+    fn a_reading_carries_the_smallest_delta_its_run_could_resolve() {
+        // A twelve-game single-gene probe's standard error, in proportion
+        // units: the `+2.7 pp [-17.3, +22.7]` row this was taken from.
+        let probe_se = 0.102;
+        assert!(
+            (resolving_power(probe_se).expect("finite") - 28.6).abs() < 0.1,
+            "a twelve-game probe resolves about ±28.6 pp, not {:?}",
+            resolving_power(probe_se)
+        );
+        // Which is the whole point: that run's own +2.7 pp reading is inside
+        // its own noise, and so was every probe reading in this series.
+        assert!(2.7 < resolving_power(probe_se).expect("finite"));
+        assert!(22.2 < resolving_power(probe_se).expect("finite"));
+
+        // A ninety-game nine-gene screen resolves about ±10.3 pp.
+        let screen_se = 0.0368;
+        assert!(
+            (resolving_power(screen_se).expect("finite") - 10.3).abs() < 0.1,
+            "{:?}",
+            resolving_power(screen_se)
+        );
+
+        // An infinite error -- the empty-arm case #2452 widened -- has no
+        // resolving power to report, and says so rather than inventing one.
+        assert_eq!(resolving_power(f64::INFINITY), None);
+
+        // The median is what the run-level figure reports, so a single
+        // un-resolvable row cannot drag the whole run's number to infinity.
+        let se = |win: f64| GeneEstimate {
+            tag: "t".into(),
+            n_on: 1,
+            n_off: 1,
+            win_on: 0.0,
+            win_off: 0.0,
+            win_delta: 0.0,
+            win_se: win,
+            share_delta: 0.0,
+            share_se: win,
+            adjusted: None,
+        };
+        let genes = vec![se(0.05), se(0.10), se(f64::INFINITY)];
+        assert!(
+            (median_win_se(&genes) - 0.10).abs() < 1e-9,
+            "{}",
+            median_win_se(&genes)
+        );
+    }
+
     #[test]
     fn the_played_seed_window_is_read_from_the_game_rows() {
         let mut rows = vec![

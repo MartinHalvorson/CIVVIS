@@ -1351,6 +1351,18 @@ third version guessed from the mechanism of a second is exactly the kind of
 unpriced iteration this ledger exists to stop; it needs its own row and its own
 screen.
 
+**2026-08-25 — that row now exists, natively: `order-retry`**
+(`src/ai/advanced/order_retry.rs`, `Kind::OptIn`, off). It is the v3 shape
+taken on the native board rather than on the live tape, which is what lets it
+be screened: nothing is re-planned, no turn is ended early, and one refused
+decision costs only that decision. It acts at the three places a ranked list of
+alternatives *already exists*, so the next-best candidate is free — the city
+production governor (the `produce` 24.9% above), the gold purchase loop (where
+a single refusal used to `break` out of the **entire remaining purchase budget
+for the turn**), and the builder's `worthwhile_improvements`, whose ranked
+vector was only ever read at `.first()`. Bounded at `ORDER_RETRY_LIMIT`
+alternatives per decision, and byte-identical when off.
+
 ★★★★ **The screen is recorded as an artifact and deliberately NOT entered as
 a ledger source, because entering it exposed a defect in the ranking's own
 arithmetic.** `HEURISTIC_GENE_RANKING.md` builds each gene's column as
@@ -1410,3 +1422,13 @@ have resolved ±6.7 pp, and ~440 games are needed for ±5 pp before clustering.
 3. **Do not build the recon-steering gene against `beyond_loyalty_reach`
    without first moving `frontier-loyalty` out of `Kind::HostOnly`**, for the
    reason two sections up. It cannot fire on the board the screen plays.
+
+## Actuation is counted per order kind (2026-08-25)
+
+Every live run's `summary["orders"]` now carries seen, applied and the refusal
+reasons **per order kind** (`civ6_ladder.orders_by_kind`, from the mod's
+`seen_by`/`refused_by` on the `orders` event). `tools/live_actuation.py
+table|check|floors` prints kind × applied % × top reasons over the last runs
+and ratchets a per-kind applied-rate floor in `tools/actuation_floors.json`
+(floors only rise) — read it before calling a lane "decided badly" when it was
+in fact refused.
