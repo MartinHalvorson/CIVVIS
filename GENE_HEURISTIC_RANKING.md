@@ -8,7 +8,7 @@
 - (3 cols) win rate from the last tournament / prior tournament / tournament prior to that, scaled to n=10k total seats (n=actual number of seats listed too)
 - Total recorded win rate when gene is on
 - Total recorded win rate when gene is off
-- Difference between the previous 2 cols
+- [Sort key] Difference between the previous 2 cols
 - Estimated change to compute cost when gene is "on"
 - Estimated change to time cost when gene is "off"
 
