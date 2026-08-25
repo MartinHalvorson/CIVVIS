@@ -34,6 +34,7 @@
   },
   "king": {
     "name": "King",
+    "human_camp_gold": -5,
     "order": 4,
     "ai_yield_pct": {"science": 8, "culture": 8, "production": 20, "gold": 20, "faith": 8},
     "ai_combat_strength": 0,
@@ -45,6 +46,7 @@
   },
   "emperor": {
     "name": "Emperor",
+    "human_camp_gold": -10,
     "order": 5,
     "ai_yield_pct": {"science": 16, "culture": 16, "production": 40, "gold": 40, "faith": 16},
     "ai_combat_strength": 1,
@@ -56,6 +58,7 @@
   },
   "immortal": {
     "name": "Immortal",
+    "human_camp_gold": -15,
     "order": 6,
     "ai_yield_pct": {"science": 24, "culture": 24, "production": 60, "gold": 60, "faith": 24},
     "ai_combat_strength": 2,
@@ -68,6 +71,7 @@
   },
   "deity": {
     "name": "Deity",
+    "human_camp_gold": -20,
     "order": 7,
     "ai_yield_pct": {"science": 32, "culture": 32, "production": 80, "gold": 80, "faith": 32},
     "ai_combat_strength": 3,

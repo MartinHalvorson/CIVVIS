@@ -18,7 +18,9 @@
 //! `civilian-rescue`; then `missionary-evades-raiders`, `district-planning`,
 //! `missionary-last-charge-explores`, `settlement-gap-target`,
 //! `religious-defence-scales`, `lane-policy-deck`, and
-//! `science-multiplier-payoff`, for 52 enabled genes.
+//! `science-multiplier-payoff`, for 52 enabled genes; then (2026-08-24,
+//! "default this gene to true initially once you write and merge it")
+//! `science-victory-drive`, pinned on before its first screen, for 53.
 //! `DEPLOYMENT_GENOME` is that exact list. A screen refresh updates evidence,
 //! not the runtime default; changing a default requires an explicit operator
 //! update to the pinned list and regeneration.
@@ -373,7 +375,7 @@ mod tests {
         }
         assert_eq!(
             table::DEPLOYMENT_GENOME.len(),
-            52,
+            53,
             "an operator selection changed; update it deliberately"
         );
         assert!(

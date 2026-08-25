@@ -422,7 +422,11 @@ FIELDLESS = {
 #: batch is the standard shape and pools with the ledger. The mask is written
 #: onto the source so a reader can see it, exactly as `FIELDLESS` is recorded
 #: only when set, and `shape_of` never reads it.
-RECORDED_WHEN_SET = ("victory_mask",)
+#: `difficulty` / `difficulty_rotate` are the majors' rung (`--difficulty`,
+#: `--difficulty-rotate king:1,emperor:2,immortal:1`), recorded the same way:
+#: every screen before 2026-08-25 played the engine's Prince default and
+#: wrote nothing, and a batch that names its rung says so on the source.
+RECORDED_WHEN_SET = ("victory_mask", "difficulty", "difficulty_rotate")
 #: The profile keys recorded for every source, whether or not they match. The
 #: draw `design` is recorded and NOT checked: it is how each seat's genome was
 #: sampled (`independent` — every seat its own draw, the screen since
@@ -483,6 +487,13 @@ OPERATOR_PROMOTIONS_20260824 = (
     "science-multiplier-payoff",
 )
 
+#: 2026-08-24, the operator's third explicit promotion, pinned on before its
+#: first screen: "default this gene to true initially once you write and
+#: merge it. i'll test it more later."
+OPERATOR_PROMOTIONS_20260825 = (
+    "science-victory-drive",
+)
+
 #: The complete pinned deployment genome, in stable tag order. Every other
 #: screenable gene defaults off unless an explicit operator update changes this
 #: selection. Keep the sixteen promotions above named separately so the policy
@@ -528,6 +539,7 @@ OPERATOR_DEFAULT_ON = (
     "religious-defence-scales",
     "religious-units-heal-first",
     "science-multiplier-payoff",
+    "science-victory-drive",
     "score-horizon",
     "settle-sooner",
     "settlement-gap-target",
