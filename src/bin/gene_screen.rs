@@ -827,10 +827,10 @@ impl Row {
 ///   careful reader, not from a gate.
 /// - **#2307's own write-up** had to state its source commit and its binary's
 ///   SHA-256 in prose, because the artefact had nowhere to put them.
-/// - **2026-08-23.** The first standard-shape screen re-priced `barbarian-hunt`
-///   from the legacy −1.73 pp to +0.20 pp (z +0.65) while a sibling change was
-///   minutes from deleting that gene on the legacy reading — which would have
-///   made a brand-new screen a source pricing a gene the code no longer had.
+/// - **2026-08-23.** The first standard-shape screen re-priced a gene while a
+///   sibling change was minutes from culling it on a legacy reading — which
+///   would have made a brand-new screen a source pricing a gene the code no
+///   longer had.
 ///
 /// `genes_sha256` is the load-bearing field, and it is the one that cannot go
 /// stale: it is hashed from `gene_table()` **as compiled into this binary**,

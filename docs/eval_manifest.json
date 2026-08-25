@@ -1,20 +1,20 @@
 {
   "coverage": {
-    "named": 41,
+    "named": 39,
     "never_named": 0,
     "never_named_treatments": [],
-    "withholdable": 41
+    "withholdable": 39
   },
   "derived": {
     "firaxis_only_count": 30,
-    "live_bridge_count": 71,
-    "native_engine_repair_count": 41,
-    "withholdable_live_count": 41
+    "live_bridge_count": 69,
+    "native_engine_repair_count": 39,
+    "withholdable_live_count": 39
   },
   "genome_coverage": {
-    "capability_toggles": 178,
-    "measured_by_a_screen": 86,
-    "reachable_as_a_gene": 126,
+    "capability_toggles": 174,
+    "measured_by_a_screen": 82,
+    "reachable_as_a_gene": 122,
     "resolved_by_a_screen": 17,
     "unreachable_by_any_screen": 52,
     "unreachable_toggles": [
@@ -137,11 +137,10 @@
       ]
     },
     "ENGINE_REPAIR_ECONOMY_TREATMENTS": {
-      "declared_count": 16,
+      "declared_count": 15,
       "items": [
         "escort-unstick",
         "buildings-before-projects",
-        "settler-site-agreement",
         "settler-guard-holds",
         "stranded-settler-discount",
         "wide-map-capacity",
@@ -158,7 +157,7 @@
       ]
     },
     "ENGINE_REPAIR_TREATMENTS": {
-      "declared_count": 41,
+      "declared_count": 39,
       "items": [
         "war-reinforcement",
         "come-ashore",
@@ -178,7 +177,6 @@
         "strike-opening",
         "recon-replacement",
         "barbarian-scouts-are-scouts",
-        "barbarian-hunt",
         "barbarian-bargain",
         "barbarian-ranged-answer",
         "civilian-rescue",
@@ -187,7 +185,6 @@
         "religion-sues-peace",
         "escort-unstick",
         "buildings-before-projects",
-        "settler-site-agreement",
         "settler-guard-holds",
         "stranded-settler-discount",
         "wide-map-capacity",
@@ -204,7 +201,7 @@
       ]
     },
     "ENGINE_REPAIR_WAR_TREATMENTS": {
-      "declared_count": 25,
+      "declared_count": 24,
       "items": [
         "war-reinforcement",
         "come-ashore",
@@ -224,7 +221,6 @@
         "strike-opening",
         "recon-replacement",
         "barbarian-scouts-are-scouts",
-        "barbarian-hunt",
         "barbarian-bargain",
         "barbarian-ranged-answer",
         "civilian-rescue",
@@ -269,7 +265,7 @@
       ]
     },
     "LIVE_BRIDGE_TREATMENTS": {
-      "declared_count": 71,
+      "declared_count": 69,
       "items": [
         "war-reinforcement",
         "come-ashore",
@@ -289,7 +285,6 @@
         "strike-opening",
         "recon-replacement",
         "barbarian-scouts-are-scouts",
-        "barbarian-hunt",
         "barbarian-bargain",
         "barbarian-ranged-answer",
         "civilian-rescue",
@@ -298,7 +293,6 @@
         "religion-sues-peace",
         "escort-unstick",
         "buildings-before-projects",
-        "settler-site-agreement",
         "settler-guard-holds",
         "stranded-settler-discount",
         "wide-map-capacity",

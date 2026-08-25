@@ -459,7 +459,7 @@
   "counts": {
     "helps": 17,
     "hurts": 1,
-    "unresolved": 69,
+    "unresolved": 65,
     "default_on": 57
   },
   "genes": [
@@ -729,51 +729,6 @@
             "win_delta_pp": 0.987,
             "win_z": 1.561,
             "win_se_pp": 0.632
-          }
-        ]
-      }
-    },
-    {
-      "tag": "barbarian-hunt",
-      "verdict": "unresolved",
-      "default_on": false,
-      "wins_last_10k": -10,
-      "wins_prior_10k": 10,
-      "wins_third_10k": -86,
-      "win_diff_pp": -0.487204,
-      "posterior_pp": -28.274818,
-      "posterior_se_pp": 29.478128,
-      "posterior_screens": 3,
-      "posterior_tau_pp": 47.839183,
-      "family_wise": false,
-      "conflict": false,
-      "screen": {
-        "seats": 38160,
-        "pairs": 19080,
-        "n_on": 19151,
-        "n_off": 19009,
-        "win_delta_pp": -0.197,
-        "win_z": -0.518,
-        "share_delta_pp": -0.154,
-        "share_z": -1.958,
-        "read": "~",
-        "source": "2026-08-24-standard-continuous-38160-total-seats.json",
-        "win_tranches": [
-          {
-            "position": "latest",
-            "seats": 19998,
-            "pairs": 9999,
-            "win_delta_pp": -0.317,
-            "win_z": -0.602,
-            "win_se_pp": 0.526
-          },
-          {
-            "position": "previous",
-            "seats": 18162,
-            "pairs": 9081,
-            "win_delta_pp": -0.066,
-            "win_z": -0.119,
-            "win_se_pp": 0.553
           }
         ]
       }
@@ -1494,51 +1449,6 @@
             "win_delta_pp": -0.004,
             "win_z": -0.007,
             "win_se_pp": 0.551
-          }
-        ]
-      }
-    },
-    {
-      "tag": "district-lookahead-settle",
-      "verdict": "unresolved",
-      "default_on": false,
-      "wins_last_10k": 11,
-      "wins_prior_10k": -41,
-      "wins_third_10k": -22,
-      "win_diff_pp": -0.381025,
-      "posterior_pp": -18.900942,
-      "posterior_se_pp": 15.00683,
-      "posterior_screens": 3,
-      "posterior_tau_pp": 19.237225,
-      "family_wise": false,
-      "conflict": false,
-      "screen": {
-        "seats": 38160,
-        "pairs": 19080,
-        "n_on": 19109,
-        "n_off": 19051,
-        "win_delta_pp": 0.211,
-        "win_z": 0.555,
-        "share_delta_pp": -0.016,
-        "share_z": -0.207,
-        "read": "~",
-        "source": "2026-08-24-standard-continuous-38160-total-seats.json",
-        "win_tranches": [
-          {
-            "position": "latest",
-            "seats": 19998,
-            "pairs": 9999,
-            "win_delta_pp": 0.03,
-            "win_z": 0.057,
-            "win_se_pp": 0.523
-          },
-          {
-            "position": "previous",
-            "seats": 18162,
-            "pairs": 9081,
-            "win_delta_pp": 0.411,
-            "win_z": 0.74,
-            "win_se_pp": 0.556
           }
         ]
       }
@@ -2894,51 +2804,6 @@
       }
     },
     {
-      "tag": "priced-tile-purchase",
-      "verdict": "unresolved",
-      "default_on": false,
-      "wins_last_10k": 0,
-      "wins_prior_10k": -11,
-      "wins_third_10k": -31,
-      "win_diff_pp": -0.265999,
-      "posterior_pp": -14.188834,
-      "posterior_se_pp": 10.009426,
-      "posterior_screens": 3,
-      "posterior_tau_pp": 0.0,
-      "family_wise": false,
-      "conflict": false,
-      "screen": {
-        "seats": 38160,
-        "pairs": 19080,
-        "n_on": 19129,
-        "n_off": 19031,
-        "win_delta_pp": 0.009,
-        "win_z": 0.023,
-        "share_delta_pp": -0.005,
-        "share_z": -0.069,
-        "read": "~",
-        "source": "2026-08-24-standard-continuous-38160-total-seats.json",
-        "win_tranches": [
-          {
-            "position": "latest",
-            "seats": 19998,
-            "pairs": 9999,
-            "win_delta_pp": 0.037,
-            "win_z": 0.068,
-            "win_se_pp": 0.537
-          },
-          {
-            "position": "previous",
-            "seats": 18162,
-            "pairs": 9081,
-            "win_delta_pp": -0.022,
-            "win_z": -0.04,
-            "win_se_pp": 0.551
-          }
-        ]
-      }
-    },
-    {
       "tag": "promote-when-wounded",
       "verdict": "unresolved",
       "default_on": true,
@@ -3564,51 +3429,6 @@
             "win_delta_pp": 0.878,
             "win_z": 1.591,
             "win_se_pp": 0.551
-          }
-        ]
-      }
-    },
-    {
-      "tag": "settler-site-agreement",
-      "verdict": "unresolved",
-      "default_on": false,
-      "wins_last_10k": -14,
-      "wins_prior_10k": -23,
-      "wins_third_10k": 24,
-      "win_diff_pp": -0.069881,
-      "posterior_pp": -2.566636,
-      "posterior_se_pp": 10.683151,
-      "posterior_screens": 5,
-      "posterior_tau_pp": 14.942543,
-      "family_wise": false,
-      "conflict": false,
-      "screen": {
-        "seats": 38160,
-        "pairs": 19080,
-        "n_on": 19122,
-        "n_off": 19038,
-        "win_delta_pp": -0.273,
-        "win_z": -0.718,
-        "share_delta_pp": -0.087,
-        "share_z": -1.126,
-        "read": "~",
-        "source": "2026-08-24-standard-continuous-38160-total-seats.json",
-        "win_tranches": [
-          {
-            "position": "latest",
-            "seats": 19998,
-            "pairs": 9999,
-            "win_delta_pp": 0.023,
-            "win_z": 0.045,
-            "win_se_pp": 0.52
-          },
-          {
-            "position": "previous",
-            "seats": 18162,
-            "pairs": 9081,
-            "win_delta_pp": -0.598,
-            "win_z": -1.079,
-            "win_se_pp": 0.554
           }
         ]
       }
