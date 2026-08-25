@@ -13090,6 +13090,22 @@ end;
 local function applyOrders(player, pid, turn, rows)
 	local applied, refused, deferred, verdicts = 0, 0, 0, 0;
 	local byKind, whyNot = {}, {};
+	-- Per kind, beside the per-turn totals: how many orders of each kind were
+	-- counted, and each kind's refusal reasons. `by` is applied-only and
+	-- `refusals` is reason-only, so "which kind is being refused, and why" could
+	-- not be read off the event; `civ6_ladder.orders_by_kind` sums these into
+	-- `summary.orders` and `tools/live_actuation.py` floors them. `seen_by`
+	-- counts accepted `produce_next` leases too (they are deferred out of `seen`),
+	-- so its sum is `seen + deferred`.
+	local seenByKind, refusedByKind = {}, {};
+	local function countRefusal(kind, why)
+		refused = refused + 1;
+		whyNot[why] = (whyNot[why] or 0) + 1;
+		seenByKind[kind] = (seenByKind[kind] or 0) + 1;
+		local perKind = refusedByKind[kind];
+		if perKind == nil then perKind = {}; refusedByKind[kind] = perKind; end
+		perKind[why] = (perKind[why] or 0) + 1;
+	end
 	-- Match the guard to the host-capped settler leg before either row is applied.
 	-- The gate is default-off; with it absent every row remains byte-for-byte on
 	-- the pre-existing path through this function.
@@ -13177,6 +13193,7 @@ local function applyOrders(player, pid, turn, rows)
 			end
 			if not CivvisVerify.isVerdict(kind) then
 				byKind[kind] = (byKind[kind] or 0) + 1;
+				seenByKind[kind] = (seenByKind[kind] or 0) + 1;
 			end
 			if watched and fromX ~= nil then
 				local unit = liveUnit(pid, subject);
@@ -13201,8 +13218,7 @@ local function applyOrders(player, pid, turn, rows)
 				end
 			end
 		else
-			refused = refused + 1;
-			whyNot[tostring(why)] = (whyNot[tostring(why)] or 0) + 1;
+			countRefusal(kind, tostring(why));
 		end
 		ordered[index] = true;
 		return ok, why;
@@ -13264,8 +13280,7 @@ local function applyOrders(player, pid, turn, rows)
 			if queueOn and isUnit and firstRun[subject] then
 				ordered[index] = true;
 				if firstRefused[subject] then
-					refused = refused + 1;
-					whyNot.queue_prior_refused = (whyNot.queue_prior_refused or 0) + 1;
+					countRefusal("unit", "queue_prior_refused");
 				else
 					CivvisQueue.push(subject, row, firstRun[subject].expect);
 				end
@@ -13359,6 +13374,7 @@ local function applyOrders(player, pid, turn, rows)
 		turn = turn, frame = awaiting.frame or 0, source = "civvis",
 		seen = #rows - deferred - verdicts,
 		applied = applied, refused = refused, by = byKind, refusals = whyNot,
+		seen_by = seenByKind, refused_by = refusedByKind,
 		deferred = deferred,
 		-- Verdict rows on an earlier turn's orders, re-emitted as events; see
 		-- CivvisVerify. Not orders, so not in `seen`.
