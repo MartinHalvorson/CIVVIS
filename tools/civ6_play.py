@@ -1720,7 +1720,7 @@ def _menu_crop_ocr(path: Path, bounds: tuple[int, int, int, int],
         crop = crop.resize((crop.width * 4, crop.height * 4))
         crop_path = path.with_name(f"{path.stem}-{tag}-crop.png")
         crop.save(crop_path)
-        observations = macos_ocr.recognize(crop_path)
+        observations = _menu_ocr_observations(crop_path)
     except (OSError, ValueError):
         return []
 
@@ -2112,8 +2112,25 @@ def _main_menu_visible(path: Path) -> bool:
     """Return whether a screenshot visibly contains Firaxis's Single Player row."""
     return any(
         _menu_label_matches(str(observation.get("text", "")), "Single Player")
-        for observation in macos_ocr.recognize(path)
+        for observation in _menu_ocr_observations(path)
     )
+
+
+def _menu_ocr_observations(path: Path) -> list[dict]:
+    """Return menu OCR observations, treating an unreadable capture as empty.
+
+    Vision occasionally receives a PNG that ``screencapture`` created while the
+    window was resizing, but whose image dimensions are zero.  That is a
+    transient screen-read failure: menu callers already poll when a label is
+    absent, so ending the whole game attempt instead of returning no labels
+    discards a healthy launch before turn one.
+    """
+    try:
+        return recognize_once(path)
+    except macos_ocr.OCRUnavailable as error:
+        print(f"[ocr] menu capture {path.name} is unreadable ({error}); "
+              "treating this poll as empty", flush=True)
+        return []
 
 
 def _observed_label_point(path: Path, label: str,
@@ -2154,7 +2171,7 @@ def _observed_label_points(path: Path, label: str,
                 found.append((px, py))
         return found
 
-    points = collect(recognize_once(path))
+    points = collect(_menu_ocr_observations(path))
     if not points:
         points = collect(_menu_crop_ocr(path, bounds))
     if not points and strip is not None:

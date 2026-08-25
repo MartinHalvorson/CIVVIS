@@ -1540,10 +1540,12 @@ def best_version_cell(tag: str, tags: list[str], verdict: dict[str, dict],
                       measured: dict[str, list[dict]]) -> str:
     """The ranking's *Best version* column: the number of the family's best
     version (`1` = the original, `n` = `<base>-<n>`), the same on every row
-    of the family; `—` for a gene that is not versioned."""
+    of the family. A gene with no versions IS its original, so it reads `1`
+    (operator, 2026-08-25: *"the first version of a gene should be 1, not
+    —"*); `—` only for a family none of whose versions is priced yet."""
     family = family_of(tag, tags)
     if not family:
-        return "—"
+        return "1"
     best = best_versions(family, verdict, measured)
     return str(family.index(best[0]) + 1) if best else "—"
 
@@ -2800,8 +2802,9 @@ def render(ledger: dict) -> str:
         "highest tracked wins (pooled *Diff*), ties to the higher version — and a pinned "
         "family ships its head, so *Default* is **on** on the head's row. A versioned row's "
         "*Total (on)* and *Total (off)* cells show the best two versions' rates side by "
-        "side, best first, each with its own `n`; `—` marks a gene with no versions. A "
-        "family holds at most three versions; before a fourth is added the third-best by "
+        "side, best first, each with its own `n`. A gene with no versions is its own "
+        "original and reads `1`; `—` marks a family none of whose versions is priced "
+        "yet. A family holds at most three versions; before a fourth is added the third-best by "
         "tracked wins leaves the code (`python3 tools/genes.py versions`).",
         "",
         "**Reading the table.** A six-player seat wins 1-in-6 by chance, so the expected "

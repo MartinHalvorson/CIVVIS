@@ -1338,7 +1338,8 @@ class VersionedGenes(unittest.TestCase):
                          ["g-2", "g-3", "g"], "the table shows the best version, not the pin")
         for tag in ("g", "g-2", "g-3"):
             self.assertEqual(gene_ledger.best_version_cell(tag, tags, verdict, measured), "2", tag)
-        self.assertEqual(gene_ledger.best_version_cell("plain", tags, verdict, measured), "—")
+        # A gene with no versions is its own original: version 1, not `—`.
+        self.assertEqual(gene_ledger.best_version_cell("plain", tags, verdict, measured), "1")
         self.assertEqual(
             gene_ledger.family_rate_cells("g", tags, verdict, measured),
             ("v2 21.00% (n=500) · v3 19.00% (n=400)", "v2 16.00% (n=3,500) · v3 16.00% (n=3,600)"))
@@ -1479,6 +1480,13 @@ class TheTableIsDerived(unittest.TestCase):
             rows.append([c.strip() for c in line.strip().strip("|").split(" | ")])
         return rows
 
+    def _versioned_tags(self) -> set[str]:
+        """The ranked tags that belong to a versioned family — read from the
+        tags themselves, not from the *Best version* cell, which reads `1`
+        for an unversioned gene as well as for a family whose original leads."""
+        tags = [cell(cells, "Gene").strip("`") for cells in self._ranked_rows()]
+        return {tag for family in gene_ledger.families_of(tags) for tag in family}
+
     def test_diff_is_the_on_rate_minus_the_off_rate(self):
         """The column that replaced the pooled seat count (operator, 2026-08-22).
 
@@ -1490,8 +1498,10 @@ class TheTableIsDerived(unittest.TestCase):
         measured, _ = ranking.load_display_sources(ledger)
         rows = self._ranked_rows()
         self.assertGreater(len(rows), 50)
+        versioned_tags = self._versioned_tags()
         for cells in rows:
-            history = measured[cell(cells, "Gene").strip("`")]
+            tag = cell(cells, "Gene").strip("`")
+            history = measured[tag]
             on_seats = sum(m["n_on"] for m in history)
             off_seats = sum(m["n_off"] for m in history)
             on = sum(m["win_on"] * m["n_on"] for m in history) / on_seats
@@ -1505,7 +1515,7 @@ class TheTableIsDerived(unittest.TestCase):
             # band of half a point. Never further: that would be a real slip.
             # A versioned row leads with `v<n> `; the first rate is the row's
             # own only when the gene is the family's best, so read plain rows.
-            if cell(cells, "Best version") != "—":
+            if tag in versioned_tags:
                 continue
             shown = (float(cell(cells, "Total (on) Win rate").split("%")[0])
                      - float(cell(cells, "Total (off) Win rate").split("%")[0]))
@@ -1556,8 +1566,9 @@ class TheTableIsDerived(unittest.TestCase):
         every screen that measured a gene split them evenly, and the row reads
         them from `n_on`/`n_off` separately so an uneven screen shows up."""
         one = r"\d+\.\d\d% \(n=[\d,]+\)"
+        versioned_tags = self._versioned_tags()
         for cells in self._ranked_rows():
-            versioned = cell(cells, "Best version") != "—"
+            versioned = cell(cells, "Gene").strip("`") in versioned_tags
             for rate in (cell(cells, "Total (on) Win rate"),
                          cell(cells, "Total (off) Win rate")):
                 self.assertRegex(
