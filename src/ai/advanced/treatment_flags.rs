@@ -958,6 +958,16 @@ impl AdvancedAi {
         self.expansion_pays_back = false;
     }
 
+    /// Stop a war we choose from taking the grand strategy while our own
+    /// victory lane is live. See [`Self::elective_war_yields_to_a_lane`].
+    pub fn enable_elective_war_yields_to_a_lane(&mut self) {
+        self.elective_war_yields_to_a_lane = true;
+    }
+
+    pub fn disable_elective_war_yields_to_a_lane(&mut self) {
+        self.elective_war_yields_to_a_lane = false;
+    }
+
     /// Raise the Culture and Diplomacy denial alarms early, since countering an
     /// accumulated stock takes many turns. See
     /// [`Self::stock_denial_lead_time`].
