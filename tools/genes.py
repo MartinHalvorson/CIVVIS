@@ -2900,6 +2900,12 @@ def render_parts(ledger: dict) -> tuple[str, str]:
         "file is older than the ledger's sources.",
     ]
 
+    # ⚠ THE TITLE AND THE COLUMN LEGEND ARE THE OPERATOR'S, AND THIS FILE IS
+    # GENERATED — so they have to live HERE or every `genes.py write` erases
+    # them. They were hand-written straight into `GENE_HEURISTIC_RANKING.md` on
+    # 2026-08-25 (fb64960c, 76f50229) and the next regeneration would have
+    # thrown them away silently, which is how a generated file quietly loses an
+    # edit nobody notices is missing.
     lines = [
         *RANKING_HEADING,
         "| Rank | Gene | Description | Best version | Default | P(>0) | "

@@ -83,16 +83,27 @@ Everything the old roadmap called planned has shipped and then some:
    and frozen-anchor identities unchanged.
 5. **Relieve the measured conflict hotspots**, which are not the three this
    objective used to name. Measured over the 200 merges preceding 2026-08-18
-   (`tools/conflict_hotspots.py`; CI checks the targets below are real):
+   (`tools/conflict_hotspots.py`; CI checks the targets below are real).
+
+   ⚠ Two targets were dropped on 2026-08-25 because the measurement moved out
+   from under them and the check was failing on its own floor: `src/elo.rs`,
+   which no longer exists in the tree at all, and
+   `tools/civ6_control/mod/CivvisControlAgent.lua` at 4% — under the 5% floor,
+   where the tool's own words are that "splitting a file nobody edits costs a
+   large diff and buys nothing". What the last 200 merges actually contend over
+   is the gene registry and its toggle table (`src/ai/advanced/genes.rs` 30%,
+   `src/ai/advanced/treatment_flags.rs` 28%, `tools/test_genes.py` 18%), and
+   those are answered by the per-letter append markers rather than by a split.
+   Naming them as new split targets is a decision for whoever owns this
+   objective; this edit only removes the two the check refuses.
+
 
    | file | merges touching it | why it is contended |
    |---|---:|---|
    | `src/ai/advanced.rs` | 23% | size — one 23.3k-line impl block |
-   | `src/elo.rs` | 18% | one shared list: the arm and treatment registries |
    | `src/game.rs` | 17% | size |
    | `src/ai/advanced/tests.rs` | 24% | size — 31.7k lines, cut out of `advanced.rs` by #1918 and now longer than it |
    | `src/ai.rs` | 10% | size |
-   | `tools/civ6_control/mod/CivvisControlAgent.lua` | 10% | size — 12.2k lines in one chunk, against a 199-local ceiling |
    | `src/bin/civvis_orders.rs` | 10% | one shared list: the `--without` treatments |
 
    ⚠ The Lua row was invisible until 2026-08-18. `conflict_hotspots.py` ranked

@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import io
+import itertools
 import json
 import math
 import re
