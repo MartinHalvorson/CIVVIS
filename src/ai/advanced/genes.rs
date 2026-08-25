@@ -797,6 +797,15 @@ pub const GENES: &[Gene] = &[
     // missing term is the one the file already has. See
     // `rival_suzerainty_alarm`.
     Gene { tag: "rival-suzerainty-alarm", field: "rival_suzerainty_alarm", kind: Kind::OptIn, enable: AdvancedAi::enable_rival_suzerainty_alarm, disable: AdvancedAi::disable_rival_suzerainty_alarm },
+    // ⚠ The other half of a deliberately-split pair, and the half nothing can
+    // reach. `congress-counter-votes` above decides how hard to vote; this
+    // decides WHO the three targeted penalties are pointed at -- the empire
+    // `victory_denial` names, instead of the diplomatic leader. The Congress
+    // is the only counter in this game not paid for in development
+    // (`resolve_congress` refunds a losing vote in full), which is exactly
+    // what the war-shaped counters in `docs/COUNTERING_LEADERS.md` could not
+    // say. See `congress_counter_leader`.
+    Gene { tag: "congress-counter-leader", field: "congress_counter_leader", kind: Kind::OptIn, enable: AdvancedAi::enable_congress_counter_leader, disable: AdvancedAi::disable_congress_counter_leader },
     // ⚠ Eighteen of 32 screened games today ended on a Science Victory, and
     // the threat model reads that race as a five-step ladder off launches
     // already made: a rival one tech from Rocketry with a Spaceport standing
