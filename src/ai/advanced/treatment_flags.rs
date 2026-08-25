@@ -942,6 +942,17 @@ impl AdvancedAi {
         self.culture_lane_forecast = false;
     }
 
+    /// Read a rival's Science clock from the prerequisite chain it has
+    /// climbed, not only from the launches it has made. See
+    /// [`Self::science_chain_alarm`].
+    pub fn enable_science_chain_alarm(&mut self) {
+        self.science_chain_alarm = true;
+    }
+
+    pub fn disable_science_chain_alarm(&mut self) {
+        self.science_chain_alarm = false;
+    }
+
     /// Raise the Culture and Diplomacy denial alarms early, since countering an
     /// accumulated stock takes many turns. See
     /// [`Self::stock_denial_lead_time`].

@@ -4399,6 +4399,50 @@ pub struct AdvancedAi {
     /// `AdvancedAi::diplomatic_opening_score`.
     pub diplomatic_opening: bool,
 
+    /// Whether a rival's Science clock is read from the prerequisite chain it
+    /// has actually climbed, or only from the launches it has already made.
+    ///
+    /// ⚠ A RIVAL ONE TECH FROM ROCKETRY, WITH A SPACEPORT STANDING, READS
+    /// ZERO. [`Self::rival_victory_pressure_with_culture`] scores the Science
+    /// race as a five-step ladder off `science_projects`:
+    ///
+    /// ```text
+    /// exoplanet launched            78 + up to 22 by distance
+    /// launch_mars_colony            65
+    /// launch_moon_landing           45
+    /// launch_earth_satellite        25
+    /// nothing launched               0
+    /// ```
+    ///
+    /// The engine's own `Game::victory_races` reports the same ladder, so the
+    /// HUD and the planner agree — and both are blind in the same place. Every
+    /// turn of research, every Campus, the whole Spaceport, and the entire
+    /// prerequisite chain up to the first launch score **nothing at all**.
+    /// The rival appears from zero at 25, one launch already made.
+    ///
+    /// This is the lane that most often ends a screened game. Across four
+    /// blocks run today (seeds 94-97M, 32 games) **eighteen ended on a Science
+    /// Victory**. The board's most common finish is the one its threat model
+    /// cannot see coming.
+    ///
+    /// The fix is a quantity this planner already trusts and already computes:
+    /// [`Self::rocketry_readiness`], the share of the chain leading to
+    /// Rocketry that a seat has researched, which `lane_progress_table` uses
+    /// to judge ITSELF. The tech tree is public victory-screen information —
+    /// `tech_progress` says so in as many words — so there is no new
+    /// information here, only the same reading pointed the other way.
+    ///
+    /// ⚠ Its unearned base is dropped. `rocketry_readiness` returns 25 rising
+    /// to 65, and a floor of 25 under every rival from turn one would change
+    /// which lane `rival_victory_pressure` NAMES for a rival that is not
+    /// racing anything, which is a different gene and a worse one. Only the
+    /// earned ramp is taken: 0 with none of the chain, 40 with all of it, and
+    /// the launch ladder takes over above that. Folded in with `max`, so it
+    /// can only ever raise.
+    ///
+    /// **Off by default.** Screenable.
+    pub science_chain_alarm: bool,
+
     /// Whether a rival's religious clock is read from the CITIES it has
     /// converted rather than from the count of whole civilizations it has
     /// already taken.
@@ -5939,6 +5983,7 @@ impl AdvancedAi {
             air_surge_census: AirSurgeCensus::default(),
             air_surge_cooldown_until: 0,
             diplomatic_opening: false,
+            science_chain_alarm: false,
             conversion_majority_alarm: false,
             culture_lane_forecast: false,
             diplomatic_lane_forecast: false,
@@ -8716,7 +8761,16 @@ impl AdvancedAi {
             25
         } else {
             0
-        };
+        }
+        // `science_chain_alarm`: the prerequisite chain a rival has already
+        // climbed, which the launch ladder above scores as nothing. The
+        // unearned 25 base of `rocketry_readiness` is dropped so a rival
+        // racing nothing still reads nothing.
+        .max(if self.science_chain_alarm {
+            (self.rocketry_readiness(g, pid) - 25).max(0)
+        } else {
+            0
+        });
 
         let culture = culture_pressure.unwrap_or_else(|| {
             let culture_target = living_majors
