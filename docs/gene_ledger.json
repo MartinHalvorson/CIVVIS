@@ -509,6 +509,50 @@
   ],
   "reporting_batches": [
     {
+      "path": "docs/gene_screens/2026-08-25-standard-continuous-18000-total-seats-20260825T133620Z-4bda.json",
+      "shape": "standard",
+      "seats": 18000,
+      "complete_pairs": 9000,
+      "family_wise_z": 3.529,
+      "profile": {
+        "players": 6,
+        "map": "continents",
+        "width": 74,
+        "height": 46,
+        "city_states": 9,
+        "speed": "online",
+        "turns": 250,
+        "victories": "science,culture,religious,diplomatic,domination,score",
+        "all_seats": true,
+        "randomize_civs": true,
+        "baseline": "best",
+        "design": "independent",
+        "start_seed": 171026411,
+        "difficulty": "prince"
+      },
+      "games": 3000,
+      "continuous_batch_timing": {
+        "schema": "continuous_batch_timing/v1",
+        "started_at": "2026-08-25T13:36:20Z",
+        "completed_at": "2026-08-25T18:13:03Z",
+        "elapsed_seconds": 16603,
+        "completed_games": 3000
+      },
+      "build": {
+        "commit": "b3b310a05cb2b029c1e587fecf7bc9aea9172b2e",
+        "commit_source": "build-tree",
+        "dirty": false,
+        "genes_sha256": "a5f11d20160bbd8a765d01693722e64e6f4566481de0717e2e5d5481c919400f",
+        "binary_sha256": "899c6bb93af7b5a419aaf7cbcc9783dc8a3f383b9492bc53561ec502c6b9dc41"
+      },
+      "batch": {
+        "target_seats": 52746,
+        "complete_seats": 18000,
+        "partial": true
+      },
+      "unverified": "The immutable 20260825T133620Z-4bda continuous result was built from clean b3b310a05cb2b029c1e587fecf7bc9aea9172b2e; it is a report-only historical display batch, not a source of runtime defaults."
+    },
+    {
       "path": "docs/gene_screens/2026-08-25-standard-continuous-30000-total-seats-20260825T022230Z-d349.json",
       "shape": "standard",
       "seats": 30000,
@@ -580,42 +624,6 @@
         "partial": true
       },
       "unverified": "The immutable 2026-08-25 cutoff was compiled from clean 0c715daa before current main deliberately removed the four research-planning genes it measured; it is a report-only historical batch, not a source of runtime defaults."
-    },
-    {
-      "path": "docs/gene_screens/2026-08-24-standard-continuous-5988-total-seats.json",
-      "shape": "standard",
-      "seats": 5988,
-      "complete_pairs": 2994,
-      "family_wise_z": 3.552,
-      "profile": {
-        "players": 6,
-        "map": "continents",
-        "width": 74,
-        "height": 46,
-        "city_states": 9,
-        "speed": "online",
-        "turns": 250,
-        "victories": "science,culture,religious,diplomatic,domination,score",
-        "all_seats": true,
-        "randomize_civs": true,
-        "baseline": "best",
-        "design": "independent",
-        "start_seed": 171006668
-      },
-      "games": 998,
-      "build": {
-        "commit": "754c5373cfaed0606e564efd079b2123021afba3",
-        "commit_source": "build-tree",
-        "dirty": false,
-        "genes_sha256": "ba9a8a8804f6a824d2f7cfdd929ebda084bb6a97a7a32c3ef23691563eee1cf2",
-        "binary_sha256": "a88b4156d0ef6e3fd527473be4e1e5bfafd430321c324bb1212ac1eda6d1d732"
-      },
-      "batch": {
-        "target_seats": 20004,
-        "complete_seats": 5988,
-        "partial": true
-      },
-      "unverified": "Governor-lane, research-planning, and high-signal negative genes were deliberately removed under the 2026-08-24 Diff < -0.05 pp / >=30,000-seat cull criterion; this immutable historical display batch was compiled before those removals."
     }
   ],
   "counts": {
