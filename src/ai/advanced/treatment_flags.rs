@@ -387,20 +387,6 @@ impl AdvancedAi {
         self.base.whole_turn_backtrack_guard = false;
     }
 
-    /// Stop a blind-planned unit at the first step that reveals new ground and
-    /// finish its movement sighted. A blind-planned unit stops at the first
-    /// step that revealed new ground and finishes its movement sighted; on the
-    /// bridge its walk is cut at the first unrevealed hex so the replan frame
-    /// sees what it uncovered. See [`AdvancedAi::step_and_reassess`].
-    pub fn enable_step_and_reassess(&mut self) {
-        self.step_and_reassess = true;
-    }
-
-    /// Withholding twin for `enable_step_and_reassess`. See `LIVE_TREATMENTS`.
-    pub fn disable_step_and_reassess(&mut self) {
-        self.step_and_reassess = false;
-    }
-
     /// Withholding twin for `enable_recorded_tactical_step`, so the live bundle can be
     /// priced by taking this one treatment out of it. See `LIVE_TREATMENTS`.
     pub fn disable_recorded_tactical_step(&mut self) {
@@ -2232,6 +2218,34 @@ impl AdvancedAi {
     /// The twin of `enable_order_retry`.
     pub fn disable_order_retry(&mut self) {
         self.order_retry = false;
+    }
+
+    /// Before the first city, move a nearby Warrior before the Settler and
+    /// choose the city site from the terrain the Warrior has now revealed.
+    /// Opt-in gene `opening-warrior-recon`; see
+    /// `advanced/opening_settlement.rs`. Filed above the markers: the
+    /// append-point check reads a method line's first identifier.
+    pub fn enable_opening_warrior_recon(&mut self) {
+        self.opening_warrior_recon = true;
+    }
+
+    /// The twin of `enable_opening_warrior_recon`.
+    pub fn disable_opening_warrior_recon(&mut self) {
+        self.opening_warrior_recon = false;
+    }
+
+    /// After a Settler's first move, discard only its disposable cached site
+    /// while movement remains, so the next leg can use its new sight. Opt-in
+    /// gene `settler-second-look`; see `advanced/opening_settlement.rs`.
+    /// Filed above the markers: the append-point check reads a method line's
+    /// first identifier.
+    pub fn enable_settler_second_look(&mut self) {
+        self.settler_second_look = true;
+    }
+
+    /// The twin of `enable_settler_second_look`.
+    pub fn disable_settler_second_look(&mut self) {
+        self.settler_second_look = false;
     }
 
     /// When the empire leads the field in science, beeline the space-race chain,

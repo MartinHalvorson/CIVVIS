@@ -1077,12 +1077,6 @@ fn main() {
                             100 * census.hold_threatened / held,
                             100 * census.hold_weak / held,
                         ));
-                        if census.step_reassessed > 0 {
-                            flags.push_str(&format!(
-                                " REASSESS blind_cuts={}",
-                                census.step_reassessed,
-                            ));
-                        }
                         Some((w.map(|w| w.civ.clone()), format!(
                             "seed {:3}  t{:<4} {:<10} {:<8} majors_alive={}/{} cities={:<2} cs_alive={}/{} [{:.2}s]{}",
                             seed,

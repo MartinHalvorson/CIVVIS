@@ -708,10 +708,6 @@ pub struct StrategyCensus {
     /// can actually reach, counts as `hold_threatened`.
     pub hold_threatened: u32,
     pub hold_weak: u32,
-    /// `step_and_reassess`: blind batch plans cut at the step that revealed
-    /// new ground (the parallel CLI path; no evaluator installs a pool, so
-    /// this is zero in every screen and the gene is priced on the bridge).
-    pub step_reassessed: u32,
 }
 
 impl StrategyCensus {
@@ -771,7 +767,6 @@ impl StrategyCensus {
         self.recover += other.recover;
         self.hold_threatened += other.hold_threatened;
         self.hold_weak += other.hold_weak;
-        self.step_reassessed += other.step_reassessed;
     }
 }
 
@@ -4386,41 +4381,6 @@ pub struct AdvancedAi {
     /// `docs/TACTICS.md` §17 carries the measurement.
     pub joint_reach_lines: bool,
 
-    /// ★★★★ A UNIT THAT SEES SOMETHING NEW STOPS AND THINKS AGAIN.
-    ///
-    /// `advanced_units` plans a batch of general units in parallel, each on a
-    /// `speculative_clone` whose `visibility_suppressed` flag means NO step
-    /// reveals anything: up to eight hexes are planned from turn-start
-    /// knowledge and replayed blind (`apply_unit_intents`). A scout planned
-    /// into the fog therefore walks its whole allowance past the coast, the
-    /// rival border or the barbarian camp its first step uncovered, and only
-    /// next turn does anything react. With this on, the replay of a blind
-    /// plan stops at the first step that enlarged `players[pid].explored`,
-    /// and the unit finishes its movement from the live, revealed board
-    /// (`advance_unit_serial`, which re-decides every step with what it can
-    /// now see). The rest of the batch keeps its plan: another unit's reveal
-    /// is not this unit's new fact unless it also walks into it.
-    ///
-    /// ⚠ A serial leg — a step that brought a hostile into view re-formed the
-    /// force groups — stood in for the gene on the native board (every
-    /// evaluator runs without a pool, so each step is already re-decided
-    /// sighted). The 6p re-rank against the best genome (15,000 seat-pairs,
-    /// 2026-08-21) priced that leg at share −0.15 pp (z −2.3), win −0.5; it
-    /// is removed, and the gene is host-only (`FIRAXIS_ONLY_TREATMENTS`):
-    /// the cut exists because the host executes one coalesced walk per
-    /// unit, a fact of the bridge with no native meaning. The ladder prices
-    /// it; the native screen no longer prices a proxy.
-    ///
-    /// On the live bridge the same gene is the brain half of the mid-turn
-    /// replan frame: `civvis_orders` cuts a unit's coalesced walk at its
-    /// first unrevealed hex when the seat advertises `replan_frames`, so the
-    /// host walks it to the edge of the known, the mod re-exports the board
-    /// it uncovered, and the frame's re-plan spends the remaining movement
-    /// on the new ground. On for the live bridge (host-only, so the ledger
-    /// leaves it as the bundle sets it); off natively. See
-    /// `docs/LIVE_TACTICS.md` §11.
-    pub step_and_reassess: bool,
-
     /// Admit the friendly-volley extension without reopening the closed
     /// war-half bundle. It lets a force finish a defender together. Off by
     /// default and off for the frozen anchors; the
@@ -4586,6 +4546,11 @@ pub struct AdvancedAi {
     /// already ranked, instead of losing the turn. Opt-in gene `order-retry`;
     /// see `advanced/order_retry.rs`.
     order_retry: bool,
+    /// Before the first city, let the starting Warrior reveal ground and then
+    /// choose the Settler's target from the now-observed city footprints.
+    /// Opt-in gene `opening-warrior-recon`; see
+    /// `advanced/opening_settlement.rs`.
+    opening_warrior_recon: bool,
     /// A Missionary on its last charge explores the fog within
     /// `MISSIONARY_EXPLORE_RADIUS` for up to `MISSIONARY_EXPLORE_TURNS` turns
     /// before spending it — unless a city of ours is slipping or an untouched
@@ -4655,6 +4620,11 @@ pub struct AdvancedAi {
     /// expected steps to its likeliest walks, and hold them. Opt-in gene
     /// `settler-screen`; see `advanced/recon_disruption.rs`.
     settler_screen: bool,
+    /// A Settler with movement remaining drops its cached target after its
+    /// first move, so the remaining movement can use what that move revealed.
+    /// Opt-in gene `settler-second-look`; see
+    /// `advanced/opening_settlement.rs`.
+    settler_second_look: bool,
     /// An empire that dominates science drives the space race: the chain
     /// beeline, the launch city's production, a horizon priced as the engine
     /// runs the race, two pads by the Earth Satellite. Opt-in gene
@@ -4954,6 +4924,12 @@ mod growth_to_settle;
 /// the planner already ranked. One opt-in gene; see
 /// `advanced/order_retry.rs`.
 mod order_retry;
+
+/// `opening-warrior-recon` gives the starting Warrior the first move before
+/// the capital is founded; `settler-second-look` refreshes a Settler's cached
+/// target after its first movement leg. Two opt-in genes; see
+/// `advanced/opening_settlement.rs`.
+mod opening_settlement;
 
 mod science_victory_drive;
 pub use science_victory_drive::ScienceDrive;
@@ -5593,7 +5569,6 @@ impl AdvancedAi {
             joint_tactics: false,
             joint_tactics_forced_off: false,
             joint_reach_lines: true,
-            step_and_reassess: false,
             coordinated_finish: false,
             volley_chain: true,
             tactics_resolved: BTreeSet::new(),
@@ -5630,6 +5605,7 @@ impl AdvancedAi {
 
             // ---- append: l-o ----------------------------------------
             order_retry: false,
+            opening_warrior_recon: false,
             missionary_last_charge_explores: false,
             missionary_explore: RefCell::new(BTreeMap::new()),
             missionary_evades_raiders: false,
@@ -5647,6 +5623,7 @@ impl AdvancedAi {
             // ---- append: s-s ----------------------------------------
             shoot_and_scoot: false,
             settler_screen: false,
+            settler_second_look: false,
             science_victory_drive: false,
             science_drive: None,
 
@@ -23018,6 +22995,13 @@ impl AdvancedAi {
                 let Some(tile) = g.map.get(pos) else {
                     return None;
                 };
+                // During the one-city opening the recon gene must not let the
+                // native board's complete map decide a site the player has not
+                // observed. The Warrior moves before this scan and exposes
+                // whole radius-two city footprints for this exact filter.
+                if !self.opening_settlement_footprint_known(g, pid, pos) {
+                    return None;
+                }
                 // A site the HOST engine refused is not settleable however good it looks;
                 // see `Game::blocked_city_sites`, which is empty in an ordinary game.
                 if g.blocked_city_sites.contains(&pos)
@@ -23957,7 +23941,8 @@ impl AdvancedAi {
                 let Some(tile) = g.map.get(*target) else {
                     return false;
                 };
-                !g.rules.is_water(tile)
+                self.opening_settlement_footprint_known(g, pid, *target)
+                    && !g.rules.is_water(tile)
                     && g.rules.is_passable(tile)
                     && !g.cities.values().any(|city| g.wdist(city.pos, *target) < 4)
                     && tile
@@ -23974,7 +23959,11 @@ impl AdvancedAi {
                 self.settler_targets.remove(&uid);
             }
             let target = cached.or_else(|| {
-                let current_value = self.settle_value(g, pid, current);
+                let current_value = if self.opening_settlement_footprint_known(g, pid, current) {
+                    self.settle_value(g, pid, current)
+                } else {
+                    f64::NEG_INFINITY
+                };
                 let local = self.best_reachable_settle_site_except(g, pid, uid, 2, avoid);
                 let target = if g.can_found_city(uid) {
                     Some(
@@ -23999,12 +23988,16 @@ impl AdvancedAi {
                             }
                         })
                         .or_else(|| {
-                            self.base.best_reachable_settle_site(
-                                g,
-                                pid,
-                                uid,
-                                g.map.width + g.map.height,
-                            )
+                            if !self.opening_settlement_recon_active(g, pid) {
+                                self.base.best_reachable_settle_site(
+                                    g,
+                                    pid,
+                                    uid,
+                                    g.map.width + g.map.height,
+                                )
+                            } else {
+                                None
+                            }
                         })
                         .map(|(pos, _)| pos)
                 };
@@ -30069,12 +30062,16 @@ impl AdvancedAi {
         decline_settlers: bool,
     ) -> bool {
         let mut took_a_turn = false;
+        let mut took_settler_second_look = false;
         for _ in 0..8 {
             if !g.units.contains_key(&uid) || g.units[&uid].moves_left <= 0.0 {
                 break;
             }
             let kind = g.units[&uid].kind;
             let class = g.rules.units[kind].class.clone();
+            let first_settler_leg =
+                (kind == "settler" && self.settler_second_look && !took_settler_second_look)
+                    .then(|| g.units[&uid].pos);
             let acted = match kind.as_str() {
                 "settler" => self.advanced_settler_step(g, pid, uid),
                 "builder" => self.advanced_builder_step(g, pid, uid, plan.strategy),
@@ -30100,6 +30097,9 @@ impl AdvancedAi {
             };
             if !acted {
                 break;
+            }
+            if let Some(before) = first_settler_leg {
+                took_settler_second_look = self.reassess_settler_after_first_leg(g, uid, before);
             }
             took_a_turn = true;
         }
@@ -30167,10 +30167,6 @@ impl AdvancedAi {
 
             let mut took_a_turn = false;
             let mut valid = true;
-            // `step_and_reassess`: the blind plan is abandoned at the first
-            // step that uncovered new ground, and the unit finishes sighted.
-            let mut reassess = false;
-            let mut walked: Vec<Pos> = Vec::new();
             for action in &intent.actions {
                 let invalidates_followers = match action {
                     Action::Move { to, .. } => {
@@ -30195,8 +30191,6 @@ impl AdvancedAi {
                     }
                     _ => true,
                 };
-                let explored_before = g.players[pid].explored.len();
-                let from = g.units.get(&uid).map(|unit| unit.pos);
                 if g.apply(pid, action).is_err() {
                     valid = false;
                     break;
@@ -30212,36 +30206,8 @@ impl AdvancedAi {
                     self.force_groups_dirty = true;
                 }
                 snapshot_invalid |= invalidates_followers;
-                if let (Action::Move { .. }, Some(from)) = (action, from) {
-                    walked.push(from);
-                    // ★★★★ THE STEP SHOWED SOMETHING THE PLAN NEVER SAW. The
-                    // plan was made on a clone that reveals nothing, so every
-                    // later step in it was chosen in ignorance of what this
-                    // one uncovered. Stop here and finish from the live board.
-                    if self.step_and_reassess
-                        && g.players[pid].explored.len() > explored_before
-                        && g.units.get(&uid).is_some_and(|unit| unit.moves_left > 0.0)
-                    {
-                        reassess = true;
-                        break;
-                    }
-                }
             }
-            if reassess && g.units.contains_key(&uid) {
-                // The clone's plan state describes a walk the unit did not
-                // finish; the hops it DID take are what the reversal guard
-                // must know before the sighted continuation chooses a step.
-                self.base.record_walked_steps(uid, g.turn, walked);
-                self.census.step_reassessed += 1;
-                took_a_turn |= self.advance_unit_serial(
-                    g,
-                    pid,
-                    uid,
-                    plan,
-                    flags.religious_offensive,
-                    flags.decline_settlers,
-                );
-            } else if valid {
+            if valid {
                 self.base.merge_unit_plan_state(uid, intent.base_state);
                 took_a_turn |= intent.took_a_turn;
             } else if g.units.contains_key(&uid) {
@@ -30391,15 +30357,46 @@ impl AdvancedAi {
         // Settlement feasibility is an empire/map question, not a unit
         // question. It used to rescan the known world and recompute empire
         // counts up to eight times for every military unit in the same turn.
-        let decline_settlers = self.counts(g, pid).settlers > 0
-            || !self.base.has_practical_settle_site(g, pid);
+        let decline_settlers =
+            self.counts(g, pid).settlers > 0 || !self.base.has_practical_settle_site(g, pid);
+        // The ordinary order gives Settlers priority. While the first city is
+        // still unfounded, this opt-in deliberately gives one nearby Warrior a
+        // full turn first, then makes the Settler choose from its fresh sight.
+        // Clear only for this early military action: the ordinary clearing
+        // below stays where it was when the gene is off.
+        let opening_recon_warrior = self.opening_recon_warrior(g, pid);
+        if let Some(warrior) = opening_recon_warrior {
+            self.tactics_resolved.clear();
+            self.tactics_withdrawn.clear();
+            let before = g.units[&warrior].pos;
+            let explored_before = g.players[pid].explored.len();
+            let took_a_turn = self.advance_unit_serial(
+                g,
+                pid,
+                warrior,
+                plan,
+                religious_offensive,
+                decline_settlers,
+            );
+            if !took_a_turn {
+                self.base.hold_stood_down_unit(g, pid, warrior);
+            }
+            self.refresh_opening_settler_targets_after_recon(
+                g,
+                pid,
+                warrior,
+                before,
+                explored_before,
+            );
+        }
         // ★★★★ SETTLERS DECIDE BEFORE THE ENGAGEMENT. See
         // `settler_stack_discipline`: the joint plan below kills raiders on
         // the board and walks guards into their tiles, and a settler that
         // reads the board afterwards steps beside a raider the host may not
         // have touched (t60 of civvis-20260816T200454Z, `planned_risk 0.0`
-        // beside a live slinger). Settlers already lead the unit order; this
-        // only moves them ahead of the one thing that used to run first.
+        // beside a live slinger). Apart from `opening-warrior-recon` above,
+        // Settlers lead the unit order; this only moves them ahead of the one
+        // thing that used to run first.
         let mut settled_first: Vec<u32> = Vec::new();
         if self.live_formationless_settler_shadow {
             let mut settlers: Vec<u32> = g
@@ -30447,7 +30444,7 @@ impl AdvancedAi {
         // `advanced/recon_disruption.rs`.
         self.recon_disruption_plan(g, pid);
         let mut ids = g.player_unit_ids(pid);
-        ids.retain(|uid| !settled_first.contains(uid));
+        ids.retain(|uid| !settled_first.contains(uid) && Some(*uid) != opening_recon_warrior);
         ids.sort_by_key(|uid| {
             let u = &g.units[uid];
             let spec = &g.rules.units[u.kind];
