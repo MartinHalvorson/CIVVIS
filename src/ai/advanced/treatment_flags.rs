@@ -2298,6 +2298,19 @@ impl AdvancedAi {
         self.settler_factory_coordination = false;
     }
 
+    /// Ignore nearby naval raiders that cannot project a meaningful blow,
+    /// while retaining legal ranged shots into them for combat experience.
+    /// Opt-in gene `naval-threat-triage`. Filed here rather than under a
+    /// marker: the append-point check reads a method line's first identifier.
+    pub fn enable_naval_threat_triage(&mut self) {
+        self.base.naval_threat_triage = true;
+    }
+
+    /// The twin of `enable_naval_threat_triage`.
+    pub fn disable_naval_threat_triage(&mut self) {
+        self.base.naval_threat_triage = false;
+    }
+
     /// A seen rival Settler near our cities is screened: up to four of our
     /// nearby land units, recon first, take the stands that add the most
     /// expected steps to its likeliest walks — a tile a foreign unit holds

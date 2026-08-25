@@ -1634,12 +1634,15 @@ pub struct DifficultySpec {
     pub human_xp_pct: f64,
     /// Extra Gold a human receives for clearing a Barbarian camp.
     pub human_camp_gold: f64,
-    /// Scales the size of barbarian raiding parties.
+    /// Scales the size of barbarian raiding parties. Read from the barbarian
+    /// seat's own rung (`Game::barbarian_spec`, Immortal by default), not the
+    /// majors' — see `Game::default_barbarian_difficulty`.
     #[serde(default = "done")]
     pub barb_force_scale: f64,
     /// Scales how long a camp waits between spawns.
     /// `BarbarianAttackForces.SpawnRate` is 2 for every band up to Emperor and
     /// 1 from Immortal, so the top band assembles its forces twice as often.
+    /// Read from the barbarian seat's own rung, like `barb_force_scale`.
     #[serde(default = "done")]
     pub barb_spawn_scale: f64,
 }

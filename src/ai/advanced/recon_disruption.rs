@@ -1390,6 +1390,10 @@ mod tests {
     fn both_genes_draw_orders_in_a_real_game() {
         use crate::ai::Ai;
         let mut game = Game::new_full(4, 44, 28, 26_082_413, 140, 2, true);
+        // This pins the two recon genes on the board they were written
+        // against; the barbarian seat's rung moved to Immortal by default on
+        // 2026-08-24 and is not what is under test here.
+        game.set_barbarian_difficulty("prince").unwrap();
         game.set_fog_memory(false);
         game.set_war_ledger(false);
         let mut ais: Vec<AdvancedAi> = (0..game.players.len())

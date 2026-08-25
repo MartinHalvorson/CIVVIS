@@ -20310,13 +20310,15 @@ impl AdvancedAi {
         let remaining_turns = g.max_turns.saturating_sub(g.turn).max(1) as f64;
         let barbarian_tactics = self.base.barbarian_tactics_enabled();
         let barbarian_pressure = if barbarian_tactics {
-            BasicAi::barbarian_threat_pressure(g, pid, cid)
+            self.base
+                .barbarian_threat_pressure_for_controller(g, pid, cid)
         } else {
             0
         };
-        let barbarian_threat = barbarian_tactics && BasicAi::barbarian_local_alarm(g, pid, cid);
+        let barbarian_threat =
+            barbarian_tactics && self.base.barbarian_local_alarm_for_controller(g, pid, cid);
         let barbarian_defense_gap = if barbarian_tactics {
-            BasicAi::barbarian_defense_gap(g, pid, cid)
+            self.base.barbarian_defense_gap(g, pid, cid)
         } else {
             0
         };
@@ -20325,12 +20327,14 @@ impl AdvancedAi {
             || (city.last_attacked > 0 && g.turn.saturating_sub(city.last_attacked) <= 4);
         let barbarian_trade_safe = !barbarian_tactics
             || if self.base.solvency_first_trade_slot {
-                BasicAi::safe_trade_origin(g, pid, cid)
+                self.base.safe_trade_origin_for_controller(g, pid, cid)
             } else {
-                !BasicAi::barbarian_trade_risk(g, pid)
-                    && g.player_city_ids(pid)
-                        .into_iter()
-                        .all(|city| BasicAi::barbarian_threat_pressure(g, pid, city) == 0)
+                !self.base.barbarian_trade_risk_for_controller(g, pid)
+                    && g.player_city_ids(pid).into_iter().all(|city| {
+                        self.base
+                            .barbarian_threat_pressure_for_controller(g, pid, city)
+                            == 0
+                    })
             };
         // A Conquest label is also used while the planner is merely strong
         // enough to contemplate a neighbour. Until a concrete city exists in
@@ -26090,10 +26094,12 @@ impl AdvancedAi {
         // city before searching for a route. Starting from the city itself is
         // still allowed because route creation is immediate there.
         let barbarian_trade_safe = !self.base.barbarian_tactics_enabled()
-            || (!BasicAi::barbarian_trade_risk(g, pid)
-                && g.player_city_ids(pid)
-                    .into_iter()
-                    .all(|city| BasicAi::barbarian_threat_pressure(g, pid, city) == 0));
+            || (!self.base.barbarian_trade_risk_for_controller(g, pid)
+                && g.player_city_ids(pid).into_iter().all(|city| {
+                    self.base
+                        .barbarian_threat_pressure_for_controller(g, pid, city)
+                        == 0
+                }));
         if !barbarian_trade_safe
             && g.city_at(current)
                 .is_none_or(|city| g.cities[&city].owner != pid)
@@ -29620,18 +29626,21 @@ impl AdvancedAi {
         // "nothing differed: all 24 maps were neutral on wins AND on terminal
         // score". Both readings belong in both places.
         if let Some(barb) = g.barb_pid {
-            let camp_reading = BasicAi::barbarian_presence_at_home_with_camp_radius(
+            let camp_reading = self.base.barbarian_presence_at_home_for_controller(
                 g,
                 pid,
                 crate::ai::HOME_CAMP_RADIUS,
             );
             // A raider standing over a Settler ten tiles out is outside every
             // ring the camp reading measures. See `BasicAi::barbarian_hunt`.
-            let field_reading =
-                self.barbarian_hunt() && BasicAi::barbarian_threatens_our_field_civilians(g, pid);
+            let field_reading = self.barbarian_hunt()
+                && self
+                    .base
+                    .barbarian_threatens_our_field_civilians_for_controller(g, pid);
+            let xp_farm_reading = self.base.has_harmless_naval_xp_shot(g, pid, uid);
             if self.base.barbarian_tactics_enabled()
                 && !enemies.contains(&barb)
-                && (camp_reading || field_reading)
+                && (camp_reading || field_reading || xp_farm_reading)
             {
                 enemies.push(barb);
             }
@@ -29993,6 +30002,7 @@ impl AdvancedAi {
             let ranged = matches!(&action, Action::Ranged { .. });
             let mut score =
                 attack_value - threshold + self.base.tactical_action_bonus(g, uid, pos, ranged);
+            score += self.base.harmless_naval_xp_bonus(g, pid, uid, pos, ranged);
             if plan
                 .target_city
                 .is_some_and(|cid| g.cities.get(&cid).is_some_and(|c| c.pos == pos))
@@ -30258,35 +30268,48 @@ impl AdvancedAi {
         // instead; once the threat is inside this unit's own attack radius
         // the scan above takes the trade on the next pass, and even trades
         // against barbarians are worth taking.
-        if let Some(barb) = g.barb_pid.filter(|barb| enemies.contains(barb)) {
-            let barb_only = [barb];
-            let garrisoned = if self.base.home_defense {
-                self.base.garrison_step(g, pid, uid, &barb_only)
-            } else {
-                self.base.barbarian_garrison_step(g, pid, uid, &barb_only)
-            };
-            if garrisoned {
-                return true;
-            }
-            // `tactical_step` keeps a melee unit at attack range from its
-            // target, but an empty camp has no defender to attack. Once an
-            // actual city garrison has had first claim, enter this free camp
-            // rather than ending the turn beside it.
-            if self.base.clear_adjacent_empty_barbarian_camp(g, pid, uid) {
-                return true;
-            }
-            let threat = if self.base.home_defense {
-                self.base.home_defense_objective(g, pid, uid, &barb_only)
-            } else {
-                self.base
-                    .barbarian_home_defense_objective(g, pid, uid, &barb_only)
-            };
-            if let Some(threat) = threat {
-                if g.wdist(unit.pos, threat) > radius && self.base.step_toward(g, pid, uid, threat)
-                {
+        let strategic_barbarian_response = self.base.barbarian_presence_at_home_for_controller(
+            g,
+            pid,
+            crate::ai::HOME_CAMP_RADIUS,
+        ) || (self.barbarian_hunt()
+            && self
+                .base
+                .barbarian_threatens_our_field_civilians_for_controller(g, pid));
+        if strategic_barbarian_response {
+            if let Some(barb) = g.barb_pid.filter(|barb| enemies.contains(barb)) {
+                let barb_only = [barb];
+                let garrisoned = if self.base.home_defense {
+                    self.base.garrison_step(g, pid, uid, &barb_only)
+                } else {
+                    self.base.barbarian_garrison_step(g, pid, uid, &barb_only)
+                };
+                if garrisoned {
                     return true;
                 }
-                return self.base.tactical_step(g, pid, uid, threat, &barb_only, radius);
+                // `tactical_step` keeps a melee unit at attack range from its
+                // target, but an empty camp has no defender to attack. Once an
+                // actual city garrison has had first claim, enter this free camp
+                // rather than ending the turn beside it.
+                if self.base.clear_adjacent_empty_barbarian_camp(g, pid, uid) {
+                    return true;
+                }
+                let threat = if self.base.home_defense {
+                    self.base.home_defense_objective(g, pid, uid, &barb_only)
+                } else {
+                    self.base
+                        .barbarian_home_defense_objective(g, pid, uid, &barb_only)
+                };
+                if let Some(threat) = threat {
+                    if g.wdist(unit.pos, threat) > radius
+                        && self.base.step_toward(g, pid, uid, threat)
+                    {
+                        return true;
+                    }
+                    return self
+                        .base
+                        .tactical_step(g, pid, uid, threat, &barb_only, radius);
+                }
             }
         }
         // A camp outside the local barbarian-response radius may still be a
