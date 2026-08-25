@@ -34,6 +34,14 @@
 //!   city's own three rings, next to ground we already work, which is why
 //!   the raiders it releases are on our improvements the turn they spawn.
 //!
+//! ★★★★ AND A CAMP DOES STAND. `civvis-20260816T200454Z` kept one for **130
+//! turns** inside a capital's own six-tile ring (see
+//! `in_peacetime_the_whole_field_army_answers_and_the_camp_outranks_the_countryside`):
+//! the home guard's recall budget was half the army with the garrison charged
+//! against it, so a three-unit peacetime army had a cap of zero and nobody
+//! went. That is the empire this gene is for — one that lives beside an
+//! outpost for a hundred turns and never takes the hex it sits on.
+//!
 //! And so the gene refuses to buy ground it has no way to make use of: the
 //! outpost must be one we can see, and one a soldier of ours can actually
 //! reach and disperse ([`AdvancedAi::camp_buyout_clearer`]). Buying the deed
@@ -48,8 +56,11 @@
 //! A threat priced into that ranking would never be bought, which is the same
 //! as not writing the gene. The operator's rule is a threshold, so it is
 //! implemented as one: when the outpost costs us more than the quote, the hex
-//! is bought, at most one a turn, and never out of the reserve. A city under
-//! fire still outranks it — `emergency_city_defense_purchase` runs first.
+//! is bought, at most one a turn, and never out of the reserve. It does not
+//! end the turn's spending the way an emergency defence does — a hex bought
+//! out of the surplus above the reserve should not also cost the city the
+//! Settler it was saving for — and a city under fire still outranks it,
+//! because `emergency_city_defense_purchase` runs first.
 //!
 //! Off, `advanced_gold_spending` is byte-identical: one flag is read, and no
 //! outpost is ever priced.
@@ -126,14 +137,18 @@ impl AdvancedAi {
         if !g.barb_camps.contains_key(&pos) {
             return None;
         }
+        let ring = g.wdist(g.cities.get(&city)?.pos, pos);
+        let share = *CAMP_RING_SHARE.get(usize::try_from(ring).ok()?.checked_sub(1)?)?;
+        // One frame for the whole appraisal. `player_can_see` re-derives the
+        // vision input stamp on every call, and the party count below asks it
+        // once per Barbarian on the map.
+        let visible = g.player_vision_frame(pid);
         // `plot_purchase_cost` sells an EXPLORED plot, and an outpost
         // remembered from thirty turns ago may have been dispersed by
         // somebody else since. Buy only ground we are looking at.
-        if !g.player_can_see(pid, pos) {
+        if !g.sees(&visible, pos) {
             return None;
         }
-        let ring = g.wdist(g.cities.get(&city)?.pos, pos);
-        let share = *CAMP_RING_SHARE.get(usize::try_from(ring).ok()?.checked_sub(1)?)?;
         // Ground under an outpost nobody of ours can reach is a hole in the
         // border with a deed attached.
         if !self.camp_buyout_clearer(g, pid, pos) {
@@ -145,7 +160,7 @@ impl AdvancedAi {
             .filter(|unit| {
                 Some(unit.owner) == g.barb_pid
                     && g.wdist(unit.pos, pos) <= CAMP_PARTY_RADIUS
-                    && g.player_can_see(pid, unit.pos)
+                    && g.sees(&visible, unit.pos)
             })
             .count()
             .min(CAMP_PARTY_CAP) as f64
@@ -161,12 +176,7 @@ impl AdvancedAi {
     /// `barb_camps` holds a couple of dozen entries on a full world, so this
     /// asks `plot_purchase_cost` a few hundred times at worst and never
     /// enumerates the legal-action space.
-    pub(super) fn camp_tile_buyout_purchase(
-        &self,
-        g: &mut Game,
-        pid: usize,
-        reserve: f64,
-    ) -> bool {
+    pub(super) fn camp_tile_buyout_purchase(&self, g: &mut Game, pid: usize, reserve: f64) -> bool {
         let bank = g.players[pid].gold;
         let camps: Vec<Pos> = g.barb_camps.keys().copied().collect();
         let mut best: Option<(f64, f64, u32, Pos)> = None;

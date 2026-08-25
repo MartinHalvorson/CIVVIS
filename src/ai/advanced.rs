@@ -15508,17 +15508,19 @@ impl AdvancedAi {
         // every plot there is a surplus purchase that a unit or a building
         // outbids by an order of magnitude. The operator's rule is a
         // threshold, so it is answered before the shopping and out of the
-        // same reserve. See `advanced/camp_buyout.rs`.
-        if self.camp_tile_buyout && self.camp_tile_buyout_purchase(g, pid, reserve) {
-            return true;
-        }
+        // same reserve. It does NOT end the turn's spending the way an
+        // emergency defence does: a hex bought out of the surplus above the
+        // reserve should not also cost the city the Settler it was saving
+        // for. See `advanced/camp_buyout.rs`.
+        let bought_out_an_outpost =
+            self.camp_tile_buyout && self.camp_tile_buyout_purchase(g, pid, reserve);
         let purchase_limit = city_count.clamp(1, 4);
         let unit_purchase_limit = if g.players[pid].gold > reserve + 1_000.0 {
             2
         } else {
             1
         };
-        let mut purchased = false;
+        let mut purchased = bought_out_an_outpost;
         let mut purchased_units = 0;
         for _ in 0..purchase_limit {
             let bank = g.players[pid].gold;
