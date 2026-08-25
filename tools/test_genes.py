@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import io
+import itertools
 import json
 import math
 import re
@@ -1731,23 +1732,38 @@ class TheTableIsDerived(unittest.TestCase):
 
 
     def test_the_pinned_default_summary_is_the_only_text_ahead_of_the_table(self):
-        """The title gets one concise, generated policy before the table.
+        """The operator's title and column legend, then one generated policy.
 
-        The long reference remains below the tables; this is the operator's
-        requested at-a-glance explanation of the *Default* column.
+        The long reference remains below the tables; the policy line is the
+        operator's requested at-a-glance explanation of the *Default* column.
+
+        ⚠ The title and the bullet legend above it are the OPERATOR's, written
+        by hand straight into the ranking on 2026-08-25 (fb64960c, 76f50229) —
+        into a GENERATED file, where the next `genes.py write` erased them and
+        this assertion pinned the erasure in place. They live in `render` now,
+        so a regeneration reproduces them; this test moved with them rather
+        than being deleted, because what it is really for is that nothing
+        UNGENERATED accumulates ahead of the table.
         """
         ledger = json.loads(ranking.LEDGER_JSON.read_text())
         lines = ranking.RANKING_MD.read_text().splitlines()
-        self.assertEqual(lines[0], "# The heuristic gene ranking")
-        self.assertEqual(lines[1], "")
         self.assertEqual(
-            lines[2], ranking.default_on_summary(ledger),
+            lines[0],
+            "## A Ranking of all Gene Heuristics by On/Off Win Rate Difference"
+            " in Tournaments",
+        )
+        legend = list(itertools.takewhile(lambda line: line.startswith("- "), lines[1:]))
+        self.assertEqual(len(legend), 12, legend)
+        rest = lines[1 + len(legend):]
+        self.assertEqual(rest[0], "")
+        self.assertEqual(
+            rest[1], ranking.default_on_summary(ledger),
             "the heading summary must derive from the pinned deployment genome",
         )
-        self.assertEqual(lines[3], "")
-        self.assertTrue(lines[4].startswith("| Rank | Gene |"), lines[4])
-        self.assertTrue(lines[5].startswith("|---:|"), lines[5])
-        self.assertTrue(lines[6].startswith("| 1 | `"), lines[6])
+        self.assertEqual(rest[2], "")
+        self.assertTrue(rest[3].startswith("| Rank | Gene |"), rest[3])
+        self.assertTrue(rest[4].startswith("|---:|"), rest[4])
+        self.assertTrue(rest[5].startswith("| 1 | `"), rest[5])
 
     def test_the_reference_is_carried_under_the_tables_not_deleted(self):
         """Moving the preamble must not become dropping it.
