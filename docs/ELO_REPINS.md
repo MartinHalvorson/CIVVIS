@@ -1708,3 +1708,24 @@ Aztec and Polish buildings are priced and produced at their shipped values.
 The ratchet is a real number only on a fleet Mac (a hosted runner has no
 database and the step skips by name), so the number to keep at zero is the
 one `ship` validation prints.
+
+## v23 (2026-08-25) — Monumentality gives its movement to Builders, not Settlers
+
+The live verifier caught a Settler repeatedly held at a river crossing even
+though the host reported two movement points and no blocking unit. CIVVIS had
+modelled Monumentality as +2 movement for both Builders and Settlers, so its
+route planner treated that host Settler as a four-move unit that had already
+spent part of its allowance; it refused to emit the legal final move. The
+shipped database is explicit: `COMMEMORATION_INFRASTRUCTURE_GA_MOVEMENT` uses
+`MODIFIER_PLAYER_UNITS_ADJUST_MOVEMENT` with
+`UNIT_IS_GOLDEN_AGE_BUILDER`, whose requirement is
+`REQUIREMENT_UNIT_IS_BUILDER`. Settlers share Monumentality's faith-purchase
+discount, not its movement modifier.
+
+This is a shared rules correction, not a controller treatment that can be
+hidden behind a gene: every simulated player must use the same movement
+allowance as the host. The anchor therefore moves from v22's 18,796 decisions
+and `0x0b7b_b89a_2d86_c831` to **18,797 and
+`0x728b_8a78_d941_5de3`** across its five profiles. The dedicated age test
+pins both sides of the rule: a golden-age Builder gains two movement and a
+golden-age Settler remains at its shipped base allowance.
