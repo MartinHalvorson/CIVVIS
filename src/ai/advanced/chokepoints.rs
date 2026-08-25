@@ -608,10 +608,15 @@ impl AdvancedAi {
     /// The gates on the approaches to our own cities, best first.
     fn read_gates(&self, g: &Game, pid: usize, plan: &mut GatePlan) {
         let explored = &g.players[pid].explored;
+        // A city-state counts: `is_at_war` derives a client's side from its
+        // suzerain, so the minor on our border is a second army the moment
+        // somebody else's envoys take it. A teammate does not.
         let sources: Vec<Pos> = g
             .cities
             .values()
-            .filter(|city| city.owner != pid && explored.contains(&city.pos))
+            .filter(|city| {
+                city.owner != pid && !g.same_team(pid, city.owner) && explored.contains(&city.pos)
+            })
             .map(|city| city.pos)
             .chain(
                 g.barb_camps
@@ -654,13 +659,15 @@ impl AdvancedAi {
                 }
                 // A corridor is several tiles long and every one of them
                 // cuts it equally. Hold the one nearest home: the same wall,
-                // inside our own reinforcement and healing.
+                // inside our own reinforcement and healing. Two of our cities
+                // can read the same tile, and the reading itself is a
+                // property of the tile — only the distance home differs.
                 let reach = g.wdist(at, home);
                 let gate = Gate { at, detour, sea };
                 gates
                     .entry(at)
                     .and_modify(|(held, held_reach)| {
-                        if gate.detour > held.detour || reach < *held_reach {
+                        if reach < *held_reach {
                             *held = gate;
                             *held_reach = reach;
                         }
