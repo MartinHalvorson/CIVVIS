@@ -180,9 +180,8 @@ pub fn screenable(tag: &str) -> bool {
 /// `None` for a gene the screen cannot price (the Firaxis-only flags),
 /// which the bundle leaves as it set it.
 pub fn ledger_default_on(tag: &str) -> Option<bool> {
-    // A host-only flag is never governed by a screen row — even when one
-    // exists: such a row measured a native stand-in that no longer runs
-    // (`step-and-reassess`, 2026-08-21) and must not govern the bridge.
+    // A host-only flag is never governed by a screen row; the bundle retains
+    // control of its live defaults.
     if !screenable(tag) {
         return None;
     }
@@ -443,13 +442,6 @@ mod tests {
             "Firaxis-only: untouched"
         );
         assert!(!screenable("live-trader-route"));
-        // A host-only flag with a row from its retired native stand-in.
-        assert!(ledger_verdict("step-and-reassess").is_some());
-        assert_eq!(
-            ledger_default_on("step-and-reassess"),
-            None,
-            "a host-only flag is never governed by a screen row"
-        );
         for repair in super::super::genes::repair_tags() {
             assert!(screenable(repair));
             assert!(

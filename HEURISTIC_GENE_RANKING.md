@@ -364,6 +364,7 @@ Genes whose code has left the repository (operator directive: the bottom of the 
 | `research-grants-first` | -20 | 16.46% | 16.87% | `2026-08-24-standard-continuous-4266-total-seats.json` |
 | `barbarian-capture-priority` | -22 | 16.45% | 16.88% | `2026-08-24-standard-continuous-4266-total-seats.json` |
 | `siege-muster` | -26 | 16.41% | 16.93% | `2026-08-20-p4-native-6p-allseats-13446-pairs.json` |
+| `step-and-reassess` | -27 | 16.40% | 16.93% | `2026-08-21-p7-native-6p-allseats-15000-pairs.json` |
 | `siege-role` | -39 | 16.27% | 17.06% | `2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json` |
 | `lane-congress-ballot` | -46 | 16.21% | 17.14% | `2026-08-24-standard-continuous-4266-total-seats.json` |
 | `settler-site-agreement` | -48 | 16.19% | 17.14% | `2026-08-24-standard-continuous-4266-total-seats.json` |
