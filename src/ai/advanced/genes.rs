@@ -766,6 +766,15 @@ pub const GENES: &[Gene] = &[
     // already settled, ~1.4 free Diplomatic Victory Points a seat a game).
     Gene { tag: "congress-banks-decided", field: "congress_banks_a_decided_vote", kind: Kind::OptIn, enable: AdvancedAi::enable_congress_banks_a_decided_vote, disable: AdvancedAi::disable_congress_banks_a_decided_vote },
     Gene { tag: "congress-counter-votes", field: "congress_counter_votes", kind: Kind::OptIn, enable: AdvancedAi::enable_congress_counter_votes, disable: AdvancedAi::disable_congress_counter_votes },
+    // ⚠ "Strong enough to take what a neighbour has" never asks WHICH
+    // neighbour: `weakest_rival` is the minimum power over every met major
+    // with no proximity test, so the branch really asks "am I 1.8x the
+    // feeblest empire in the world?" -- true from t55 onward for anyone doing
+    // well, next door or on another continent. `city_campaign` already has
+    // the reach this wants (`CAMPAIGN_REACH`, "the same reach the
+    // declaration's `close_enough` already asks for") and branch nine uses
+    // it. See `elective_war_in_reach`.
+    Gene { tag: "elective-war-in-reach", field: "elective_war_in_reach", kind: Kind::OptIn, enable: AdvancedAi::enable_elective_war_in_reach, disable: AdvancedAi::disable_elective_war_in_reach },
     // ⚠ The last blind lane in the threat model: Domination is read as
     // `100 * foreign CAPITALS held / foreign capitals`, five values twenty
     // points apart, and ZERO for a rival that has taken any number of ordinary

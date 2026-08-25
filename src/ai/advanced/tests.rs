@@ -34755,3 +34755,108 @@ fn an_unchosen_war_stops_pinning_the_grand_strategy() {
         "we declared it, so the war keeps the plan"
     );
 }
+
+// ═══ The neighbour the elective war never names (`elective_war_in_reach`) ═══
+
+#[test]
+fn elective_war_in_reach_is_a_registered_reversible_opt_in() {
+    assert!(
+        GENES.iter().any(|gene| gene.opt_in()
+            && gene.field == "elective_war_in_reach"
+            && gene.tag == "elective-war-in-reach"),
+        "elective-war-in-reach must be a registered native opt-in"
+    );
+    assert!(
+        crate::ai::advanced::gene_ledger::screenable("elective-war-in-reach"),
+        "the ledger must be able to price it"
+    );
+    assert_eq!(
+        crate::ai::advanced::gene_ledger::ledger_default_on("elective-war-in-reach"),
+        Some(false),
+        "it ships off until a screen prices it"
+    );
+    let mut ai = AdvancedAi::new();
+    assert!(!ai.elective_war_in_reach, "off in the stock agent");
+    assert!(
+        !AdvancedAi::legacy().elective_war_in_reach,
+        "off in the legacy agent"
+    );
+    ai.enable_elective_war_in_reach();
+    assert!(ai.elective_war_in_reach);
+    ai.disable_elective_war_in_reach();
+    assert!(!ai.elective_war_in_reach, "reversible");
+}
+
+/// The reach test is the campaign planner's own constant, asked of the same
+/// distance, so the branch that declares and the planner that has to
+/// prosecute cannot disagree about who counts as a neighbour.
+#[test]
+fn the_elective_war_reach_is_the_campaign_planners_own() {
+    use crate::ai::advanced::city_campaign::CAMPAIGN_REACH;
+    let ai = {
+        let mut ai = AdvancedAi::new();
+        ai.enable_elective_war_in_reach();
+        ai
+    };
+    let mut game = Game::new(3, 80, 40, 9_901, 250, 0);
+    game.found_city_for(0, (10, 20), None);
+    // A neighbour just inside the reach, and a distant empire well outside it.
+    game.found_city_for(1, (10 + CAMPAIGN_REACH, 20), None);
+    game.found_city_for(2, (10 + CAMPAIGN_REACH * 3, 20), None);
+
+    assert!(
+        ai.rival_is_in_campaign_reach(&game, 0, 1),
+        "a city exactly at the reach is in reach"
+    );
+    assert!(
+        !ai.rival_is_in_campaign_reach(&game, 0, 2),
+        "one three times as far is not"
+    );
+    // An empire with no cities at all is nobody's neighbour.
+    assert!(!ai.rival_is_in_campaign_reach(&game, 0, 2 + 0));
+}
+
+/// The defect: a feeble empire on the far side of the map sets the bar the
+/// elective war measures itself against, and the gene takes it out of the
+/// comparison.
+#[test]
+fn the_weakest_empire_on_the_board_is_not_a_neighbour() {
+    use crate::ai::advanced::city_campaign::CAMPAIGN_REACH;
+    let mut game = Game::new(3, 80, 40, 9_902, 250, 0);
+    game.found_city_for(0, (10, 20), None);
+    game.found_city_for(1, (10 + CAMPAIGN_REACH - 1, 20), None);
+    game.found_city_for(2, (10 + CAMPAIGN_REACH * 3, 20), None);
+
+    let mut ai = AdvancedAi::new();
+    ai.enable_elective_war_in_reach();
+
+    // The branch takes `weakest_rival` as the minimum power over the rivals
+    // that survive this filter. Shipped, both rivals survive it; with the
+    // gene, only the neighbour does — so the distant empire can no longer be
+    // the empire an elective war prices itself against.
+    let surviving = |ai: &AdvancedAi| {
+        (1..3)
+            .filter(|rival| {
+                !ai.elective_war_in_reach
+                    || ai.rival_is_in_campaign_reach(&game, 0, *rival)
+            })
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        surviving(&AdvancedAi::new()),
+        vec![1, 2],
+        "shipped, the whole board sets the bar"
+    );
+    assert_eq!(
+        surviving(&ai),
+        vec![1],
+        "with the gene, only the neighbour does"
+    );
+
+    // And an empire alone on the map has nobody in reach, so the branch it
+    // gates cannot fire at all.
+    let mut lonely = Game::new(3, 80, 40, 9_903, 250, 0);
+    lonely.found_city_for(0, (10, 20), None);
+    lonely.found_city_for(1, (10 + CAMPAIGN_REACH * 3, 20), None);
+    assert!(!ai.rival_is_in_campaign_reach(&lonely, 0, 1));
+}
