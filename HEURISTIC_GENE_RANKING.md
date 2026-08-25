@@ -308,7 +308,9 @@ These screenable genes have no on/off result, so they receive no rank or promoti
 | Gene | Default | Description | Best version |
 |---|---|---|---:|
 | `amenity-project-preemption-2` | off (unmeasured) | An amenity crisis repair is bought with Gold when the treasury covers it, so the Science plan's repeatable project keeps its queue; only a district or an unaffordable building still pauses the project. | 1 |
+| `build-what-cards-boost` | off (unmeasured) | Lean the city production governor toward items the slotted policy deck makes cheap, by half the card's bonus. | 1 |
 | `builder-tries-the-next-tile` | off (unmeasured) | Let a Builder whose nearest improvable tile cannot be routed to try the next-nearest instead of standing still for the rest of the game. | 1 |
+| `buy-what-cards-cannot-boost` | off (unmeasured) | Price a Gold purchase at the build's card-boosted rate, so items a slotted card discounts lose purchase priority to items no card touches. | 1 |
 | `campus-adjacency-threshold-2` | off (unmeasured) | A settle site with a plot in its first three rings that could host a Campus at raw Science adjacency 4 is worth 15% more, so the multiplier's threshold is bought where it is decided — at city siting — and not only priced at the district. | 1 |
 | `chop-into-the-queue` | off (unmeasured) | A Builder chops woods, rainforest or marsh into the Settler, district or wonder at the front of the owning city's queue, priced as a one-off lump against the per-turn jobs. | 1 |
 | `civilian-out-of-reach` | off (unmeasured) | Settlers and builders stay out of a barbarian's one-turn reach: flee it, never step into it alone, and summon a guard onto the settler's tile when they must cross it. | 1 |
@@ -326,9 +328,11 @@ These screenable genes have no on/off result, so they receive no rank or promoti
 | `expansion-pays-back` | off (unmeasured) | Shut the settler window on whether the city would pay the settler back before the game ends, rather than on a deadline. | 1 |
 | `expansion-schedule` | off (unmeasured) | Open the settler pipeline by the shortfall while the opening is behind the four-cities-by-turn-sixty pace every recorded win came from. | 1 |
 | `frontier-massing-alarm` | off (unmeasured) | Count a peacetime major's army massed near one of our cities toward that city's danger. | 1 |
+| `gold-for-the-young-city` | off (unmeasured) | Pay a Gold purchase premium in a city producing less than the empire's best city, proportional to the deficit. | 1 |
 | `growth-to-settle` | off (unmeasured) | Work food while the opening is behind the pace and no city has reached the population a Settler needs. | 1 |
 | `guru-heals-the-corps-2` | off (unmeasured) | A founder may hold one Guru whenever any of its religious units is damaged, not only while the home is under conversion pressure, so the corps out spreading gets the heal too. | 1 |
 | `holy-site-where-the-threat-is-2` | off (unmeasured) | A slipping city with no Holy Site claims one only when Gold can buy it; the district is never put at the front of the city's own queue. | 1 |
+| `native-emergency-purchase` | off (unmeasured) | Buy Walls or a land defender for a city that lost health to a strike within four turns with a hostile unit near, spending through the reserve. | 1 |
 | `naval-recon-2` | off (unmeasured) | Two peacetime naval eyes instead of one while unseen water remains, so the second coast is charted while the first Galley is still out. | 1 |
 | `opening-warrior-recon` | off (unmeasured) | Before the first city, move a nearby Warrior before the Settler and choose the city site from the terrain the Warrior has now revealed. | 1 |
 | `order-retry` | off (unmeasured) | Fall through to the next-best candidate the planner already ranked when an order is refused, instead of losing the turn. | 1 |
