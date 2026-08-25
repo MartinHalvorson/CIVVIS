@@ -566,7 +566,7 @@ section and refused twice over.
 
 *The rule did not license it.* "The same rule that culled the bottom of the
 ranking" is a rule about the bottom of the **ranking**, and this gene has no
-rank: it sits in `HEURISTIC_GENE_RANKING.md`'s *Awaiting measurement* list, not
+rank: it sits in `GENE_HEURISTIC_RANKING.md`'s *Awaiting measurement* list, not
 in the table, precisely because no screen had priced it. A gene with no reading
 cannot be at the bottom of a ranking of readings. Nothing here was ever a
 licence to remove code, and the paragraph above should have said what reading
