@@ -2270,19 +2270,116 @@ impl AdvancedAi {
 
     // ---- append: a-b ------------------------------------------------
 
+    /// Keep one Builder per city while there is still land to improve, priced
+    /// where it can win the queue. See `AdvancedAi::builder_supply_floor`;
+    /// opt-in gene `builder-supply-floor`. Filed here rather than under a
+    /// marker: the append-point check reads a method line's first identifier.
+    pub fn enable_builder_supply_floor(&mut self) {
+        self.builder_supply_floor = true;
+    }
+
+    /// The twin of `enable_builder_supply_floor`.
+    pub fn disable_builder_supply_floor(&mut self) {
+        self.builder_supply_floor = false;
+    }
+
     // ---- append: c-d ------------------------------------------------
+
+    /// Price the science and culture chain debts by whether the building can
+    /// still repay, not by how much of the clock is left. See
+    /// `AdvancedAi::chain_payback_window`; opt-in gene `chain-payback-window`.
+    /// Filed here rather than under a marker: the append-point check reads a
+    /// method line's first identifier.
+    pub fn enable_chain_payback_window(&mut self) {
+        self.chain_payback_window = true;
+    }
+
+    /// The twin of `enable_chain_payback_window`.
+    pub fn disable_chain_payback_window(&mut self) {
+        self.chain_payback_window = false;
+    }
 
     // ---- append: e-f ------------------------------------------------
 
     // ---- append: g-k ------------------------------------------------
 
+    /// Let the Builder see the Housing an improvement carries, the way the
+    /// baseline chooser already does. See
+    /// `AdvancedAi::improvement_housing_value`; opt-in gene
+    /// `improvement-housing-value`. Filed here rather than under a marker: the
+    /// append-point check reads a method line's first identifier.
+    pub fn enable_improvement_housing_value(&mut self) {
+        self.improvement_housing_value = true;
+    }
+
+    /// The twin of `enable_improvement_housing_value`.
+    pub fn disable_improvement_housing_value(&mut self) {
+        self.improvement_housing_value = false;
+    }
+
+    /// Climb to a tier-2 government once Political Philosophy lands, instead of
+    /// playing the whole game on four policy slots. See
+    /// `AdvancedAi::government_ladder`; opt-in gene `government-ladder`. Filed
+    /// here rather than under a marker: the append-point check reads a method
+    /// line's first identifier.
+    pub fn enable_government_ladder(&mut self) {
+        self.government_ladder = true;
+    }
+
+    /// The twin of `enable_government_ladder`.
+    pub fn disable_government_ladder(&mut self) {
+        self.government_ladder = false;
+    }
+
     // ---- append: l-o ------------------------------------------------
+
+    /// Build the best real candidate instead of standing idle when nothing
+    /// clears the ordinary production bar. See
+    /// `AdvancedAi::never_an_empty_queue`; opt-in gene `never-an-empty-queue`.
+    /// Filed here rather than under a marker: the append-point check reads a
+    /// method line's first identifier.
+    pub fn enable_never_an_empty_queue(&mut self) {
+        self.never_an_empty_queue = true;
+    }
+
+    /// The twin of `enable_never_an_empty_queue`.
+    pub fn disable_never_an_empty_queue(&mut self) {
+        self.never_an_empty_queue = false;
+    }
 
     // ---- append: p-r ------------------------------------------------
 
     // ---- append: s-s ------------------------------------------------
 
+    /// Reserve every empty trade route slot the empire can use, not only the
+    /// first. See `AdvancedAi::solvency_first_trade_slot_2`; opt-in gene
+    /// `solvency-first-trade-slot-2`, version two of
+    /// `solvency-first-trade-slot`. Filed here rather than under a marker: the
+    /// append-point check reads a method line's first identifier.
+    pub fn enable_solvency_first_trade_slot_2(&mut self) {
+        self.solvency_first_trade_slot_2 = true;
+    }
+
+    /// The twin of `enable_solvency_first_trade_slot_2`.
+    pub fn disable_solvency_first_trade_slot_2(&mut self) {
+        self.solvency_first_trade_slot_2 = false;
+    }
+
     // ---- append: t-z ------------------------------------------------
+
+    /// Modernize the standing army before the discretionary purchase pass
+    /// spends the treasury, while a major war is being fought. See
+    /// `AdvancedAi::upgrade_the_garrison`; opt-in gene `upgrade-the-garrison`.
+    /// Filed here rather than under a marker: the append-point check reads a
+    /// method line's first identifier.
+    pub fn enable_upgrade_the_garrison(&mut self) {
+        self.upgrade_the_garrison = true;
+    }
+
+    /// The twin of `enable_upgrade_the_garrison`.
+    pub fn disable_upgrade_the_garrison(&mut self) {
+        self.upgrade_the_garrison = false;
+    }
 }
 
 #[cfg(test)]

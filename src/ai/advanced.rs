@@ -4537,7 +4537,71 @@ pub struct AdvancedAi {
 
     // ---- append: a-b ------------------------------------------------
 
+    /// Keep one Builder per city while there is still land to improve, and
+    /// price it where it can win the queue.
+    ///
+    /// ★★★★ THE FLOOR THAT BINDS IS NOT THE FLOOR THAT WAS MEASURED. There are
+    /// two Builder quotas. `production_builder_floor` raises the genome's
+    /// 0.5-per-city to 0.75 — but only inside `delegated_cities`, the baseline
+    /// governor, which the strategic path reaches for a city only after
+    /// `advanced_production` has already left it empty. The quota that decides
+    /// almost every Builder is the one hardcoded in `production_value`'s own
+    /// arm, `city_count.div_ceil(2)`, which is 0.5 per city and has never been
+    /// screened at all.
+    ///
+    /// Its price is the other half. The arm pays `260 + 35` per missing
+    /// Builder, against a monument's flat 240 on top of its yields, a
+    /// granary's 180 on top of its, and a specialty district's `balanced_core`
+    /// 130 on top of `yields * 60`. A replay of the live seat with the
+    /// candidate table printed found Builders taking the queue from a Library
+    /// 21 times — but the Builder itself is outbid by everything above it.
+    ///
+    /// MEASURED on the live King seat, 2026-08-25: Builders took 3% of city
+    /// production before turn 104 against Settlers' 22% and military's 23%,
+    /// and by turn 100 only 13% of owned land and 26% of owned luxuries had
+    /// been improved, with about sixteen improvements built per whole game.
+    ///
+    /// The gene asks the engine's own question first — `has_builder_work`, an
+    /// `any()` over owned tiles for a legal improvement or a pillaged repair —
+    /// so an empire that has improved everything it owns keeps the shipped
+    /// quota and does not pay for Builders that would stand still. Opt-in gene
+    /// `builder-supply-floor`.
+    pub builder_supply_floor: bool,
+
     // ---- append: c-d ------------------------------------------------
+
+    /// Price the science and culture chains by whether the building can still
+    /// repay, not by how much of the clock is left.
+    ///
+    /// ★★★★ THE REPAIR WAS WRITTEN, DOCUMENTED, AND HALF-APPLIED. Three terms
+    /// carry the whole chain — `research_debt` (a Campus standing without its
+    /// Library), `culture_debt` (a Theater Square without its Amphitheater)
+    /// and `research_coverage` (a city with no Campus at all) — and every one
+    /// of them is multiplied by `research_horizon`, which is
+    /// `(max_turns - turn) / max_turns`: a straight line to zero at the turn
+    /// limit. `RESEARCH_CAMPUS_PAYBACK` and `campus_payback_horizon` are the
+    /// repaired shape and say so in their own words — *"what matters is
+    /// whether it can REPAY, not what fraction of the game is left"* — and the
+    /// comment above `research_coverage` claims outright that it is *"A
+    /// PAYBACK horizon, not a game-fraction one"*. It is not. Only
+    /// `adjacency_threshold` was ever migrated; the three big terms still
+    /// decay.
+    ///
+    /// What that costs, in the regime the screen plays: 88% of standard
+    /// Emperor games end on a SCIENCE victory at a median turn 193, where
+    /// `research_horizon` is already down to 0.23. The Library that decides
+    /// the race is priced at under a quarter of its debt precisely when the
+    /// race is being decided, while every term it competes against — the
+    /// Settler's 920, the monument's flat 240, `balanced_core`'s 130 — is a
+    /// constant that never decays. A Library repays in a handful of turns and
+    /// then compounds; a payback window says so and a game fraction cannot.
+    ///
+    /// The gene swaps the horizon on those three terms and changes nothing
+    /// else. `campus_payback_horizon` is still zero at the very end, so the
+    /// reason the original horizon existed — a Campus begun at turn 245 must
+    /// not outbid a defender — is preserved. Opt-in gene
+    /// `chain-payback-window`.
+    pub chain_payback_window: bool,
 
     /// The city plans its districts, sites and tile buys together: wished
     /// districts are jointly assigned reserved plots over rings 1-3 at the
@@ -4576,12 +4640,101 @@ pub struct AdvancedAi {
     /// `flip-nearby-city-states`; see `advanced/field_craft.rs`.
     flip_nearby_city_states: bool,
     // ---- append: g-k ------------------------------------------------
+
+    /// Let the Builder see the Housing an improvement carries.
+    ///
+    /// ★★★★ ONE CHOOSER READS IT AND THE OTHER DOES NOT.
+    /// `BasicAi::best_improvement` scores `spec.housing * 2.0` alongside the
+    /// yields. `AdvancedAi::improvement_value_with_appeal` — the one the
+    /// deployed agent actually uses — never reads `spec.housing` at all,
+    /// because `Yields` has no housing member and the field lives on
+    /// `ImprovementSpec`. So the advanced Builder is strictly blinder than the
+    /// basic one about the thing that decides whether a city can grow.
+    ///
+    /// Housing from improvements is real and it is large: seventeen
+    /// improvements carry it, Farm, Pasture and Plantation at 0.5 each and the
+    /// unique terraces and stepwells at 1.0, counted within three tiles of the
+    /// city centre whether or not the tile is worked. A dry city's floor is
+    /// two; four Farms is a whole extra population point of ceiling on top of
+    /// it.
+    ///
+    /// Why it is worth a gene in this regime: 88% of standard Emperor games
+    /// end on a science victory, and Population is the largest single source
+    /// of a city's science — 3.5 of 9.3 beakers per city on the live seat,
+    /// against the Campus district's own 2.1. Housing is the cap on
+    /// Population. MEASURED on the live King seat, 2026-08-25: 58% of cities
+    /// were at or within one of their housing ceiling at turn 100, and only
+    /// 13% of owned land was improved at all.
+    ///
+    /// Under Expansion the lane weights make a Farm worth 2.0 food and a Mine
+    /// 2.2 production, so a Farm loses to a Mine on a bare hill and its half
+    /// point of Housing is invisible. This adds that term and nothing else.
+    /// Opt-in gene `improvement-housing-value`.
+    pub improvement_housing_value: bool,
     /// While the opening is behind the pace and no city can build a Settler,
     /// the citizens work food. Opt-in gene `growth-to-settle`; see
     /// `advanced/growth_to_settle.rs`.
     growth_to_settle: bool,
 
+    /// Climb to a tier-2 government instead of stopping at the tier-1 one
+    /// Political Philosophy hands out.
+    ///
+    /// ★★★★ THE SELECTOR IS CORRECT AND NEVER GETS THE CHANCE. Every tier-2
+    /// government is gated on ONE civic — Monarchy on `divine_right`,
+    /// Merchant Republic on `exploration`, Theocracy on `reformed_church` —
+    /// and `strategic_government` already ranks all three above
+    /// `classical_republic` in every lane's priority list. It would adopt one
+    /// the turn the civic landed. The civic never lands: once
+    /// `political_philosophy` is owned, `advanced_research`'s `forced_goal`
+    /// falls to `_ => None` and the pick becomes the argmax of `civic_value`,
+    /// whose final `(value + 32) / sqrt(cost)` structurally forbids it. A
+    /// tier-2 gate pays `45 + 6*18 = 153` for the one government it unlocks
+    /// over `sqrt(440) = 21.0`; `political_philosophy` pays for THREE
+    /// governments plus a flat +70 over `sqrt(110) = 10.5`. The cheap era-1
+    /// civic wins that ratio forever, so the empire plays the whole game on
+    /// the four policy slots of `classical_republic` — the only tier-1
+    /// government with no military slot at all — instead of six.
+    ///
+    /// MEASURED on the live King seat, 2026-08-25: `CIVIC_EXPLORATION`,
+    /// `CIVIC_DIVINE_RIGHT` and `CIVIC_REFORMED_CHURCH` were reached in **0 of
+    /// 59 games**, and all 24 readable turn-150/200 snapshots were still
+    /// `GOVERNMENT_CLASSICAL_REPUBLIC`. The cost is not only the two slots: a
+    /// tier-2 government also carries 5 influence per turn against 3, two
+    /// envoys per threshold against one, two Diplomatic Favor per turn against
+    /// one, and Merchant Republic's `district_production_pct 15` and
+    /// `trade_route_capacity 2` on top.
+    ///
+    /// The gene supplies the goal the chooser is missing and nothing else:
+    /// `goal_pick` already walks the prerequisite chain to the cheapest
+    /// available ancestor, one civic per turn, and `strategic_government`
+    /// already does the adopting. Opt-in gene `government-ladder`.
+    pub government_ladder: bool,
+
     // ---- append: l-o ------------------------------------------------
+
+    /// A city with nothing above the ordinary bar builds the best real
+    /// candidate instead of standing idle for the turn.
+    ///
+    /// ★★★★ THE BRANCH HAS NO `else`, AND THAT IS THE WHOLE DEFECT.
+    /// `advanced_production` ranks the menu, walks it while `score > -1_000`,
+    /// and assigns `chosen`. When every candidate is priced at a refusal
+    /// sentinel — a saturated military domain, a Trader with no usable
+    /// capacity, a Settler with no site, districts already built — `chosen` is
+    /// `None`, and the `if let Some(..)` that follows simply ends. No journal
+    /// line, no fallback, no second look: the city produces nothing and the
+    /// turn's production is lost. `BasicAi::pick_item` has the same shape from
+    /// the other side, returning `None` out of its economic-recovery arm and
+    /// its tail.
+    ///
+    /// MEASURED on the live King seat, 2026-08-25: 3,094 of 36,975 city-turns
+    /// before turn 104 carried no production item at all — 8.4% of the
+    /// empire's early production, capitals included.
+    ///
+    /// The gene does not re-rank anything. It takes the highest-scoring
+    /// candidate above `PRODUCTION_VETO_FLOOR`, so a hard veto is still a veto
+    /// and the ordinary choice is untouched whenever one exists. Opt-in gene
+    /// `never-an-empty-queue`.
+    pub never_an_empty_queue: bool,
     /// A refused order falls through to the next-best candidate the planner
     /// already ranked, instead of losing the turn. Opt-in gene `order-retry`;
     /// see `advanced/order_retry.rs`.
@@ -4646,6 +4799,33 @@ pub struct AdvancedAi {
     recon_disruption: recon_disruption::ReconPlan,
 
     // ---- append: s-s ------------------------------------------------
+
+    /// Version 2 of `solvency-first-trade-slot`: reserve EVERY empty trade
+    /// slot the empire can actually use, not only the first.
+    ///
+    /// ★★★★ THE BEST GENE IN THE POOL STOPS AFTER ONE TRADER. Version one is
+    /// rank 1 by pooled Diff (+8.07 pp) and its reservation arm is guarded by
+    /// `counts.traders == 0` — it fires at most once per empire, and never
+    /// again while a single Trader is alive. An empire with four capacity and
+    /// one Trader reserves nothing for the rest of the game, and the ordinary
+    /// menu cannot make up the difference: the Trader arm's base is 280
+    /// against a Settler's 920 and a Spy's 1,500, so it loses the argmax to
+    /// almost every district, and capacity simply stays open.
+    ///
+    /// MEASURED on the live King seat, 2026-08-25: 49% of trade-route capacity
+    /// sat unused across 59 games, and science from trade routes was 0.02 per
+    /// city — a route only pays Science when it is INTERNATIONAL and lands on
+    /// a Campus, so an empire that opens one domestic route and stops earns
+    /// none of it.
+    ///
+    /// A second implementation rather than a patch, as the versioning recipe
+    /// requires: it asks the capacity question directly — how many usable
+    /// slots are open against how many Traders exist — and judges barbarian
+    /// safety at the producing city, which is version one's own repair. It
+    /// also carries that repair into `advanced_trader_step`, where a built
+    /// Trader is still sent walking home by the pre-gene empire-wide veto.
+    /// Opt-in gene `solvency-first-trade-slot-2`.
+    pub solvency_first_trade_slot_2: bool,
     /// A ranged unit inside a hostile melee body's reach steps to a firing
     /// tile inside fewer hostile envelopes and fires at that body. Opt-in
     /// gene `shoot-and-scoot`; see `advanced/field_craft.rs`.
@@ -4665,6 +4845,37 @@ pub struct AdvancedAi {
     science_drive: Option<ScienceDrive>,
 
     // ---- append: t-z ------------------------------------------------
+
+    /// Modernize the standing army before the discretionary purchase pass
+    /// spends the treasury, while a war is being fought on our ground.
+    ///
+    /// ★★★★ THE ORDER IS THE BUG, NOT THE FLOOR. `BasicAi::upgrade_units`
+    /// takes upgrades strongest-gain-per-gold first and stops at a treasury
+    /// floor of 30 at war. It is called from `take_turn_inner` LAST — after
+    /// `advanced_gold_spending` has already run a purchase loop that buys
+    /// until the bank reaches its reserve. Whatever survives is by
+    /// construction about equal to that reserve, so only the cheapest upgrades
+    /// can clear `gold - cost >= floor`, and the army never modernizes.
+    ///
+    /// The arithmetic makes the inversion expensive. An upgrade costs
+    /// `UPGRADE_BASE_COST + 2 x (production difference)`; a fresh purchase of
+    /// the same unit costs four times its production. Gold spent on the queue
+    /// is therefore several times less strength than the same gold spent on
+    /// the units already standing — and those units are the ones that fall
+    /// behind, because production only ever replaces losses.
+    ///
+    /// MEASURED on the live King seat, 2026-08-25: about three `UPGRADE`
+    /// orders per whole game, and the commonest unit on the board at turn 100
+    /// AND at turn 150 was still the ancient-era Heavy Chariot, while 28 of 40
+    /// lost cities were lost to conquest.
+    ///
+    /// `surprise_defense_modernize` is the shipped precedent for exactly this
+    /// move and is documented as safe — upgrades are consumed, so the late
+    /// generic pass becomes an exact no-op — but it only fires inside a
+    /// six-turn window after a `surprise_war` casus belli, which almost never
+    /// happens. This gene asks the plainer question: are we at war with a
+    /// major right now. Opt-in gene `upgrade-the-garrison`.
+    pub upgrade_the_garrison: bool,
     /// A melee unit with nothing to hit stands where its zone of control
     /// takes the most enemy reaches off our shooters and wounded. Opt-in gene
     /// `zoc-screen`; see `advanced/field_craft.rs`.
@@ -4738,6 +4949,40 @@ const RESEARCH_CAMPUS_COVERAGE: f64 = 300.0;
 /// zero so a Campus begun at turn 245 still does not outbid a defender — which
 /// is the reason the original horizon was there.
 const RESEARCH_CAMPUS_PAYBACK: f64 = 0.16;
+
+/// What a Builder is worth to a city that still has land to improve, under
+/// `builder_supply_floor`. The shipped 260 sits below a monument's flat 240
+/// plus its yields, below a granary's 180 plus its yields, and far below the
+/// district lane bonuses (`balanced_core` 130 on top of yields x 60), which is
+/// why the Builder loses the argmax; 420 clears that band while still losing
+/// to a Settler's 920 and to every repair.
+const BUILDER_SUPPLY_FLOOR_BASE: f64 = 420.0;
+
+/// What a point of an improvement's Housing is worth to the Builder choosing
+/// it. `BasicAi::best_improvement` already pays `spec.housing * 2.0` on a scale
+/// whose food term is 2.0; this function's food term is the lane weight, 2.0
+/// under Expansion, so the same relative price is 2.0 — doubled to 4.0 because
+/// the improvements that carry Housing carry only 0.5 or 1.0 of it, and a
+/// half-point that decides whether a city can grow at all is worth more than a
+/// half-point of food. See `improvement_housing_value`.
+const IMPROVEMENT_HOUSING_WEIGHT: f64 = 4.0;
+
+/// Below this a `production_value` is a REFUSAL rather than a low preference.
+/// The scorer returns two sentinels for an item it does not want: -10,000 is
+/// the hard veto (no site, no capacity, illegal for this lane) and -2,000 is
+/// the soft one (a saturated domain, a second Scout, a unit weaker than the
+/// best in its role). `never_an_empty_queue` keeps the hard veto and accepts
+/// the soft one, because a soft refusal is still a real build and the
+/// alternative it is being compared against is not a better build but no build
+/// at all.
+const PRODUCTION_VETO_FLOOR: f64 = -9_000.0;
+
+/// The share of the game's turn budget inside which `government_ladder` still
+/// climbs. Half of 250 is turn 125, which leaves a tier-2 government's six
+/// policy slots, two envoys per threshold and district production the larger
+/// half of the game to pay them back; past it the detour is the cost the
+/// shipped `civic_value` ratio was right to avoid.
+const GOVERNMENT_LADDER_WINDOW: f64 = 0.5;
 
 /// A Campus standing without the building that pays for it. The debt is per
 /// missing copy and independent of the lane, unlike `wartime_infrastructure_debt`
@@ -5611,8 +5856,10 @@ impl AdvancedAi {
             // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
 
             // ---- append: a-b ----------------------------------------
+            builder_supply_floor: false,
 
             // ---- append: c-d ----------------------------------------
+            chain_payback_window: false,
 
             district_planning: false,
 
@@ -5626,9 +5873,12 @@ impl AdvancedAi {
             flip_nearby_city_states: false,
 
             // ---- append: g-k ----------------------------------------
+            improvement_housing_value: false,
             growth_to_settle: false,
+            government_ladder: false,
 
             // ---- append: l-o ----------------------------------------
+            never_an_empty_queue: false,
             order_retry: false,
             missionary_last_charge_explores: false,
             missionary_explore: RefCell::new(BTreeMap::new()),
@@ -5645,12 +5895,14 @@ impl AdvancedAi {
             recon_disruption: recon_disruption::ReconPlan::default(),
 
             // ---- append: s-s ----------------------------------------
+            solvency_first_trade_slot_2: false,
             shoot_and_scoot: false,
             settler_screen: false,
             science_victory_drive: false,
             science_drive: None,
 
             // ---- append: t-z ----------------------------------------
+            upgrade_the_garrison: false,
             zoc_screen: false,
         }
     }
@@ -10241,6 +10493,21 @@ impl AdvancedAi {
         ((budget - g.turn as f64) / window).clamp(0.0, 1.0)
     }
 
+    /// The horizon the science and culture chain debts are priced through.
+    ///
+    /// `research_horizon` is a game fraction and reaches zero at the turn
+    /// limit; `campus_payback_horizon` asks the question the constant beside it
+    /// says the code means to ask — whether the building can still repay.
+    /// `chain_payback_window` chooses between them. See that flag for why only
+    /// one of the four terms that wanted the repaired shape ever got it.
+    fn chain_horizon(&self, g: &Game) -> f64 {
+        if self.chain_payback_window {
+            Self::campus_payback_horizon(g)
+        } else {
+            Self::research_horizon(g)
+        }
+    }
+
     /// What a Scout is worth while the world's borders are still open. Zero —
     /// and both historical vetoes stand — when the flag is off, when the arm
     /// is already at `EARLY_CONTACT_SCOUT_MAX`, when this seat has adopted the
@@ -11121,6 +11388,14 @@ impl AdvancedAi {
                 }
                 _ if great_person_goal.is_some() => great_person_goal.as_deref(),
                 _ if first_government => Some("political_philosophy"),
+                // See `government_ladder`: the same sentence one rung up. The
+                // tier-1 arm above exists because "a victory beeline cannot
+                // usefully precede the government's policy capacity"; tier 2
+                // is where two thirds of that capacity actually is, and no
+                // lane ever asks for it.
+                _ if self.government_ladder_goal(g, pid, objective).is_some() => {
+                    self.government_ladder_goal(g, pid, objective)
+                }
                 // See `inquisition_on_threat`: a founder's Temple needs
                 // Theology, and outside the Religion lane nothing asked for
                 // it before turn 100–130 — after the cities were gone.
@@ -11254,6 +11529,53 @@ impl AdvancedAi {
                 society: Name::new(society),
             },
         );
+    }
+
+    /// The civic that unlocks the tier-2 government this lane would adopt, or
+    /// `None` when the ladder has nothing to climb. See `government_ladder`.
+    ///
+    /// The pairs mirror `strategic_government`'s own priority lists, so the
+    /// civic chased is the government that will actually be adopted when it
+    /// lands rather than a second opinion that disagrees with the adopter.
+    ///
+    /// Three guards keep it a rung and not a beeline: rung one has to be owned
+    /// first (every tier-2 chain runs through Political Philosophy anyway);
+    /// once ANY tier-2 gate is owned the empire has left the four-slot
+    /// governments, and a lateral move between two six-slot ones does not
+    /// justify a second 340-to-440-cost detour; and the climb stops after the
+    /// halfway turn, because the reason the shipped horizon exists at all is
+    /// that a policy slot bought at turn 200 has almost nothing left to pay
+    /// back.
+    fn government_ladder_goal(
+        &self,
+        g: &Game,
+        pid: usize,
+        objective: GrandStrategy,
+    ) -> Option<&'static str> {
+        if !self.government_ladder {
+            return None;
+        }
+        if !g.players[pid]
+            .civics
+            .contains(&crate::name!("political_philosophy"))
+        {
+            return None;
+        }
+        if g.turn as f64 > g.max_turns.max(1) as f64 * GOVERNMENT_LADDER_WINDOW {
+            return None;
+        }
+        let ladder: [&str; 3] = match objective {
+            GrandStrategy::Conquest => ["divine_right", "reformed_church", "exploration"],
+            GrandStrategy::Religion => ["reformed_church", "divine_right", "exploration"],
+            _ => ["exploration", "divine_right", "reformed_church"],
+        };
+        if ladder
+            .iter()
+            .any(|civic| g.players[pid].civics.contains(&Name::new(civic)))
+        {
+            return None;
+        }
+        ladder.into_iter().next()
     }
 
     fn strategic_government(&self, g: &mut Game, pid: usize, strategy: GrandStrategy) {
@@ -18841,13 +19163,25 @@ impl AdvancedAi {
             // is covered, reserve it in a city that can start a safe route now.
             // `counts.add_item` closes the reservation before the next city is
             // visited, so parallel governors cannot all answer the same debt.
-            if committed.is_none()
-                && self.base.solvency_first_trade_slot
-                && counts.traders == 0
-                && self
-                    .base
-                    .should_add_trader_in_city_for_controller(g, pid, cid, counts.traders)
-            {
+            // See `solvency_first_trade_slot_2`: version two asks the capacity
+            // question directly instead of stopping at the first Trader, and
+            // judges safety at the producing city the way version one does.
+            let reserve_a_trade_slot = if self.solvency_first_trade_slot_2 {
+                let open = g
+                    .trade_capacity(pid)
+                    .saturating_sub(g.active_routes(pid))
+                    .max(0) as usize;
+                let usable = open.min(self.trade_route_opportunity_count(g, pid));
+                counts.traders < usable
+                    && self.base.safe_trade_origin_for_controller(g, pid, cid)
+            } else {
+                self.base.solvency_first_trade_slot
+                    && counts.traders == 0
+                    && self
+                        .base
+                        .should_add_trader_in_city_for_controller(g, pid, cid, counts.traders)
+            };
+            if committed.is_none() && reserve_a_trade_slot {
                 let trader = Item::Unit {
                     unit: crate::name!("trader"),
                 };
@@ -18972,6 +19306,49 @@ impl AdvancedAi {
                     }
                 }
                 chosen
+            };
+            // See `never_an_empty_queue`: nothing cleared the bar, so this city
+            // is about to spend the turn producing nothing at all. Take the
+            // best REAL candidate instead — anything the scorer did not veto
+            // outright — which is the least-bad build rather than no build.
+            let chosen = match chosen {
+                Some(found) => Some(found),
+                None if self.never_an_empty_queue && committed.is_none() => {
+                    let fallback = {
+                        let _memo = g.query_memo();
+                        let items = g.producible_items(pid, cid);
+                        let scores = self.production_values(g, pid, cid, &items, plan, counts);
+                        // A city with nothing it wants should build something
+                        // that keeps paying, not a surplus soldier it then owes
+                        // Gold upkeep on every turn: rank infrastructure above
+                        // units before ranking by the score itself.
+                        let upkeep_free = |item: &Item| !matches!(item, Item::Unit { .. });
+                        items
+                            .into_iter()
+                            .zip(scores)
+                            .filter(|(_, score)| *score > PRODUCTION_VETO_FLOOR)
+                            .max_by(|left, right| {
+                                upkeep_free(&left.0)
+                                    .cmp(&upkeep_free(&right.0))
+                                    .then_with(|| left.1.total_cmp(&right.1))
+                                    .then_with(|| {
+                                        format!("{:?}", right.0).cmp(&format!("{:?}", left.0))
+                                    })
+                            })
+                    };
+                    fallback.and_then(|(item, score)| {
+                        g.apply(
+                            pid,
+                            &Action::Produce {
+                                city: cid,
+                                item: item.clone(),
+                            },
+                        )
+                        .is_ok()
+                        .then_some((score, item))
+                    })
+                }
+                None => None,
             };
             if let Some((score, item)) = chosen {
                 {
@@ -20245,9 +20622,18 @@ impl AdvancedAi {
                 }
             }
             Item::Unit { unit } if unit == "builder" => {
-                let desired = city_count.div_ceil(2).max(1);
+                // See `builder_supply_floor`: one Builder per two cities is
+                // the quota, and it is a constant that never asks whether
+                // there is any land left to improve.
+                let (desired, base) = if self.builder_supply_floor
+                    && BasicAi::has_builder_work(g, pid)
+                {
+                    (city_count.max(1), BUILDER_SUPPLY_FLOOR_BASE)
+                } else {
+                    (city_count.div_ceil(2).max(1), 260.0)
+                };
                 if counts.builders < desired {
-                    260.0 + 35.0 * (desired - counts.builders) as f64
+                    base + 35.0 * (desired - counts.builders) as f64
                 } else {
                     25.0
                 }
@@ -20715,7 +21101,7 @@ impl AdvancedAi {
                         // chain are 2, 4 and 3-plus-5, and the debt is flat.
                         RESEARCH_BUILDING_DEBT
                             * self.research_tier_weight(g, city, spec)
-                            * Self::research_horizon(g)
+                            * self.chain_horizon(g)
                     } else {
                         0.0
                     };
@@ -20731,7 +21117,7 @@ impl AdvancedAi {
                         && city.districts.keys().any(|built| {
                             g.district_family(*built) == crate::name!("theater_square")
                         }) {
-                        CULTURE_BUILDING_DEBT * Self::research_horizon(g)
+                        CULTURE_BUILDING_DEBT * self.chain_horizon(g)
                     } else {
                         0.0
                     };
@@ -21112,7 +21498,7 @@ impl AdvancedAi {
                     // `RESEARCH_CAMPUS_PAYBACK`: the old scaling priced this at
                     // 0.40 with a hundred turns of compounding left, while every
                     // rival term is a flat constant that never decays.
-                    RESEARCH_CAMPUS_COVERAGE * Self::research_horizon(g)
+                    RESEARCH_CAMPUS_COVERAGE * self.chain_horizon(g)
                 } else {
                     0.0
                 };
@@ -24636,6 +25022,12 @@ impl AdvancedAi {
                 _ => 4.0,
             };
         }
+        // See `improvement_housing_value`: the Housing an improvement carries
+        // is a yield this function cannot see, because `Yields` has no housing
+        // member and `ImprovementSpec::housing` is never read here.
+        if self.improvement_housing_value {
+            value += spec.housing * IMPROVEMENT_HOUSING_WEIGHT;
+        }
         value
     }
 
@@ -25357,13 +25749,26 @@ impl AdvancedAi {
         // camp/raider makes the exposed path a bad trade: return to a friendly
         // city before searching for a route. Starting from the city itself is
         // still allowed because route creation is immediate there.
-        let barbarian_trade_safe = !self.base.barbarian_tactics_enabled()
-            || (!self.base.barbarian_trade_risk_for_controller(g, pid)
-                && g.player_city_ids(pid).into_iter().all(|city| {
-                    self.base
-                        .barbarian_threat_pressure_for_controller(g, pid, city)
-                        == 0
-                }));
+        // See `solvency_first_trade_slot_2`: the empire-wide veto below is the
+        // pre-gene shape, and it is what walks a finished Trader home because
+        // some distant frontier has an alarm. Version two asks the same
+        // city-local question the reservation arm asks.
+        let barbarian_trade_safe = if self.solvency_first_trade_slot_2 {
+            !self.base.barbarian_tactics_enabled()
+                || g.city_at(current).is_some_and(|city| {
+                    g.cities[&city].owner == pid
+                        && self.base.safe_trade_origin_for_controller(g, pid, city)
+                })
+                || !self.base.barbarian_trade_risk_for_controller(g, pid)
+        } else {
+            !self.base.barbarian_tactics_enabled()
+                || (!self.base.barbarian_trade_risk_for_controller(g, pid)
+                    && g.player_city_ids(pid).into_iter().all(|city| {
+                        self.base
+                            .barbarian_threat_pressure_for_controller(g, pid, city)
+                            == 0
+                    }))
+        };
         if !barbarian_trade_safe
             && g.city_at(current)
                 .is_none_or(|city| g.cities[&city].owner != pid)
@@ -31353,6 +31758,23 @@ impl AdvancedAi {
         // suppressed by an appointed war package. A defender that did not
         // choose the declaration timing gets the wartime upgrade pass now.
         self.surprise_defense_modernize(g, pid);
+        // See `upgrade_the_garrison`: the same move as the line above, asked on
+        // the plain condition instead of a six-turn casus-belli window. An
+        // appointed package has its own bill and runs its own pass, so this
+        // stands down for it; the late generic pass below is then a no-op
+        // because the upgrades have already been consumed.
+        if self.upgrade_the_garrison && self.war_plan.is_none() {
+            let at_major_war = g.players.iter().any(|other| {
+                other.id != pid
+                    && other.alive
+                    && !other.is_minor
+                    && !other.is_barbarian
+                    && g.is_at_war(pid, other.id)
+            });
+            if at_major_war {
+                BasicAi::upgrade_units(g, pid);
+            }
+        }
         if self.victory_planning {
             let denied_rival = plan
                 .target_player
