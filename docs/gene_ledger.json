@@ -459,7 +459,7 @@
   "counts": {
     "helps": 17,
     "hurts": 1,
-    "unresolved": 81,
+    "unresolved": 77,
     "default_on": 57
   },
   "genes": [
@@ -1359,96 +1359,6 @@
             "win_delta_pp": 0.907,
             "win_z": 1.636,
             "win_se_pp": 0.554
-          }
-        ]
-      }
-    },
-    {
-      "tag": "condemn-under-congress",
-      "verdict": "unresolved",
-      "default_on": false,
-      "wins_last_10k": -11,
-      "wins_prior_10k": -8,
-      "wins_third_10k": null,
-      "win_diff_pp": -0.185786,
-      "posterior_pp": -9.116664,
-      "posterior_se_pp": 12.026145,
-      "posterior_screens": 2,
-      "posterior_tau_pp": 0.0,
-      "family_wise": false,
-      "conflict": false,
-      "screen": {
-        "seats": 38160,
-        "pairs": 19080,
-        "n_on": 19246,
-        "n_off": 18914,
-        "win_delta_pp": -0.227,
-        "win_z": -0.598,
-        "share_delta_pp": -0.027,
-        "share_z": -0.347,
-        "read": "~",
-        "source": "2026-08-24-standard-continuous-38160-total-seats.json",
-        "win_tranches": [
-          {
-            "position": "latest",
-            "seats": 19998,
-            "pairs": 9999,
-            "win_delta_pp": -0.647,
-            "win_z": -1.224,
-            "win_se_pp": 0.528
-          },
-          {
-            "position": "previous",
-            "seats": 18162,
-            "pairs": 9081,
-            "win_delta_pp": 0.235,
-            "win_z": 0.429,
-            "win_se_pp": 0.547
-          }
-        ]
-      }
-    },
-    {
-      "tag": "congress-counter-votes",
-      "verdict": "unresolved",
-      "default_on": false,
-      "wins_last_10k": -22,
-      "wins_prior_10k": -13,
-      "wins_third_10k": null,
-      "win_diff_pp": -0.338782,
-      "posterior_pp": -16.428664,
-      "posterior_se_pp": 11.983307,
-      "posterior_screens": 2,
-      "posterior_tau_pp": 0.0,
-      "family_wise": false,
-      "conflict": false,
-      "screen": {
-        "seats": 38160,
-        "pairs": 19080,
-        "n_on": 19076,
-        "n_off": 19084,
-        "win_delta_pp": -0.444,
-        "win_z": -1.161,
-        "share_delta_pp": -0.031,
-        "share_z": -0.397,
-        "read": "~",
-        "source": "2026-08-24-standard-continuous-38160-total-seats.json",
-        "win_tranches": [
-          {
-            "position": "latest",
-            "seats": 19998,
-            "pairs": 9999,
-            "win_delta_pp": 0.173,
-            "win_z": 0.329,
-            "win_se_pp": 0.526
-          },
-          {
-            "position": "previous",
-            "seats": 18162,
-            "pairs": 9081,
-            "win_delta_pp": -1.123,
-            "win_z": -2.02,
-            "win_se_pp": 0.556
           }
         ]
       }
@@ -2623,96 +2533,6 @@
             "win_delta_pp": -0.106,
             "win_z": -0.188,
             "win_se_pp": 0.563
-          }
-        ]
-      }
-    },
-    {
-      "tag": "lane-congress-ballot",
-      "verdict": "unresolved",
-      "default_on": false,
-      "wins_last_10k": -29,
-      "wins_prior_10k": 8,
-      "wins_third_10k": null,
-      "win_diff_pp": -0.170954,
-      "posterior_pp": -8.913638,
-      "posterior_se_pp": 18.496425,
-      "posterior_screens": 2,
-      "posterior_tau_pp": 19.602813,
-      "family_wise": false,
-      "conflict": false,
-      "screen": {
-        "seats": 38160,
-        "pairs": 19080,
-        "n_on": 19203,
-        "n_off": 18957,
-        "win_delta_pp": -0.582,
-        "win_z": -1.523,
-        "share_delta_pp": -0.093,
-        "share_z": -1.167,
-        "read": "~",
-        "source": "2026-08-24-standard-continuous-38160-total-seats.json",
-        "win_tranches": [
-          {
-            "position": "latest",
-            "seats": 19998,
-            "pairs": 9999,
-            "win_delta_pp": -0.974,
-            "win_z": -1.85,
-            "win_se_pp": 0.526
-          },
-          {
-            "position": "previous",
-            "seats": 18162,
-            "pairs": 9081,
-            "win_delta_pp": -0.151,
-            "win_z": -0.271,
-            "win_se_pp": 0.556
-          }
-        ]
-      }
-    },
-    {
-      "tag": "lane-congress-favor",
-      "verdict": "unresolved",
-      "default_on": false,
-      "wins_last_10k": -10,
-      "wins_prior_10k": -14,
-      "wins_third_10k": null,
-      "win_diff_pp": -0.24199,
-      "posterior_pp": -12.279537,
-      "posterior_se_pp": 12.005479,
-      "posterior_screens": 2,
-      "posterior_tau_pp": 0.0,
-      "family_wise": false,
-      "conflict": false,
-      "screen": {
-        "seats": 38160,
-        "pairs": 19080,
-        "n_on": 18922,
-        "n_off": 19238,
-        "win_delta_pp": -0.196,
-        "win_z": -0.518,
-        "share_delta_pp": 0.08,
-        "share_z": 1.016,
-        "read": "~",
-        "source": "2026-08-24-standard-continuous-38160-total-seats.json",
-        "win_tranches": [
-          {
-            "position": "latest",
-            "seats": 19998,
-            "pairs": 9999,
-            "win_delta_pp": -0.12,
-            "win_z": -0.231,
-            "win_se_pp": 0.519
-          },
-          {
-            "position": "previous",
-            "seats": 18162,
-            "pairs": 9081,
-            "win_delta_pp": -0.279,
-            "win_z": -0.507,
-            "win_se_pp": 0.551
           }
         ]
       }

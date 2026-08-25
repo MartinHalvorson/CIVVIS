@@ -442,18 +442,18 @@ const HELD_UNLESS_ASKED: &[&str] = &["joint-tactics"];
 /// field is one of each lane the live seat actually loses to.
 const CONTESTED_FIELD: &[&str] = &["diplomatic", "culture"];
 
-/// ⭐ THE SEVEN VICTORY-LANE OPT-INS, offered to a field seat by
+/// ⭐ THE FIVE VICTORY-LANE OPT-INS, offered to a field seat by
 /// `--contested-field-genes lanes` — and NOT the default, because it was tried
 /// and measured worse.
 ///
 /// The reasoning was good and the measurement disagreed.
-/// `docs/VICTORY_GENES.md`'s six `lane-*` genes and
+/// `docs/VICTORY_GENES.md`'s four `lane-*` genes and
 /// `competition-victory-points` are precisely the deciders that read the raced
-/// lane — the congress ballot and the Favor behind it, Great Person patronage,
-/// the policy deck, the Naturalist and the Rock Bands, the space race, and the
-/// Diplomatic Victory Points a scored competition pays — and all seven ship
-/// **off**, so a pursuer seated with the deployment genome alone looked like a
-/// pursuer with its lane behaviour switched off.
+/// lane — Great Person patronage, the policy deck, the Naturalist and the Rock
+/// Bands, the space race, and the Diplomatic Victory Points a scored
+/// competition pays — and all five ship **off**, so a pursuer seated with the
+/// deployment genome alone looked like a pursuer with its lane behaviour
+/// switched off.
 ///
 /// Both fields were then run on the same board and the same seeds (92000000+,
 /// one diplomatic and one culture pursuer, native competitions on; the
@@ -462,19 +462,17 @@ const CONTESTED_FIELD: &[&str] = &["diplomatic", "culture"];
 /// | the field's own genome | games | held the board's top DVP | the most visiting tourists | won |
 /// |---|---:|---:|---:|---:|
 /// | the deployment genome | 27 | 8 | 7 | **0** |
-/// | plus these seven | 35 | 4 | 6 | **0** |
+/// | plus these five | 35 | 4 | 6 | **0** |
 ///
 /// The lane genes made the pursuers hold their own lane's lead **less** often,
-/// not more, and neither field ever converted. Two of the seven are among the
+/// not more, and neither field ever converted. Two of the five are among the
 /// genes this same batch priced on its measured seats, at −17.0 pp ± 6.9 and
 /// −15.9 pp ± 7.0 (27 games, 108 seats) — a discovery-sized reading on a small
 /// batch, but pointing the other way from the change. So the default stays the
 /// deployment genome, which is also the rival the agent actually meets, and the
-/// seven are kept behind a flag for whoever wants to try again with n behind
+/// five are kept behind a flag for whoever wants to try again with n behind
 /// them.
 const CONTESTED_FIELD_GENES: &[&str] = &[
-    "lane-congress-ballot",
-    "lane-congress-favor",
     "lane-great-people",
     "lane-policy-deck",
     "lane-culture-spending",
@@ -4140,16 +4138,13 @@ fn mask_line(header: &Header) -> String {
 
 /// ⭐ WHICH LANE A LANE GENE IS FOR, so the mask can read it with that lane
 /// open against closed. The registry's own words (`src/ai/advanced/genes.rs`):
-/// the congress genes act on the ballot and favour that pay Diplomatic
-/// Victory Points, `competition-victory-points` prices the points a scored
-/// competition pays, the culture spending pass and the space race are their
-/// lanes by name, and `holy-lane-parity` is the religion race. The remaining
-/// `lane-*` genes — great people, the policy deck, the commit — substitute
-/// WHICHEVER lane the seat is racing at one decider, so they belong to no
-/// single lane and are read on all five.
-const LANE_GENE_LANES: [(&str, &str); 6] = [
-    ("lane-congress-ballot", "diplomatic"),
-    ("lane-congress-favor", "diplomatic"),
+/// `competition-victory-points` prices the points a scored competition pays,
+/// the culture spending pass and the space race are their lanes by name, and
+/// `holy-lane-parity` is the religion race. The remaining `lane-*` genes —
+/// great people, the policy deck, the commit — substitute WHICHEVER lane the
+/// seat is racing at one decider, so they belong to no single lane and are read
+/// on all five.
+const LANE_GENE_LANES: [(&str, &str); 4] = [
     ("competition-victory-points", "diplomatic"),
     ("lane-culture-spending", "culture"),
     ("lane-space-race", "science"),
@@ -6886,10 +6881,7 @@ mod tests {
     /// read as its base; a gene of no lane has no split.
     #[test]
     fn lane_genes_map_to_their_lanes() {
-        assert_eq!(
-            lane_gene_lanes("lane-congress-favor"),
-            Some(vec!["diplomatic"])
-        );
+        assert_eq!(lane_gene_lanes("lane-space-race"), Some(vec!["science"]));
         assert_eq!(
             lane_gene_lanes("lane-culture-spending-2"),
             Some(vec!["culture"])

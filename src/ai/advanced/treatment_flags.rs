@@ -76,18 +76,6 @@ impl AdvancedAi {
         self.religious_units_heal_first = false;
     }
 
-    /// Condemn a heretic whose religion the World Congress condemned, not only
-    /// one belonging to a war enemy. Off in production; opted into by name. See
-    /// [`AdvancedAi::condemn_under_congress`].
-    pub fn enable_condemn_under_congress(&mut self) {
-        self.condemn_under_congress = true;
-    }
-
-    /// The twin of `enable_condemn_under_congress`.
-    pub fn disable_condemn_under_congress(&mut self) {
-        self.condemn_under_congress = false;
-    }
-
     /// Keep a spread campaign on the offensive between waves once it has
     /// converted a foreign city. Keep a spread campaign that has already
     /// converted a foreign city on the offensive between waves, instead of
@@ -1916,41 +1904,6 @@ impl AdvancedAi {
         self.base.pantheon_reads_the_board = false;
     }
 
-    /// Score the World Congress ballot for the victory the empire is racing
-    /// while its plan is still Expansion. Score the World Congress ballot —
-    /// which outcome and target this seat names — for the victory the empire is
-    /// actually racing rather than for an expansion posture that has no lane.
-    /// See `advanced/victory_lane.rs`. The Favor stake behind the ballot is
-    /// `lane-congress-favor`, a separate gene. Off everywhere by default;
-    /// opt-in gene `lane-congress-ballot`.
-    pub fn enable_lane_congress_ballot(&mut self) {
-        self.lane_congress_ballot = true;
-    }
-
-    /// The twin of `enable_lane_congress_ballot`.
-    pub fn disable_lane_congress_ballot(&mut self) {
-        self.lane_congress_ballot = false;
-    }
-
-    /// Stake Favor behind a World Congress ballot for the victory the empire is
-    /// racing while its plan is Expansion. The other half of what
-    /// `lane-congress-ballot` used to be, split from it after the lane's own
-    /// regime flagged the composite at −0.61 pp of score share (z −2.33).
-    ///
-    /// ★★★ And priced apart it is the **better** half, not the worse one the
-    /// split predicted: +1.4 pp at 570 pairs against the naming half's
-    /// −1.8, positive in all four windows. See `advanced/victory_lane.rs` and
-    /// `docs/VICTORY_GENES.md` §8.5. Off everywhere by default; opt-in gene
-    /// `lane-congress-favor`.
-    pub fn enable_lane_congress_favor(&mut self) {
-        self.lane_congress_favor = true;
-    }
-
-    /// The twin of `enable_lane_congress_favor`.
-    pub fn disable_lane_congress_favor(&mut self) {
-        self.lane_congress_favor = false;
-    }
-
     /// Rank Great Person classes and project points by the victory the empire
     /// is racing, even during a war. Rank Great Person classes, and the Great
     /// Person points a project earns, by the victory the empire is actually
@@ -2023,20 +1976,6 @@ impl AdvancedAi {
     /// The twin of `enable_competition_victory_points`.
     pub fn disable_competition_victory_points(&mut self) {
         self.competition_victory_points = false;
-    }
-
-    /// Back the counter-victory ballot with every Favor the treasury can spare,
-    /// since a losing vote is refunded. Back a ballot aimed at the empire
-    /// closest to a victory with everything the treasury can spare — a losing
-    /// vote is refunded in full, so an opposition that fails costs no Favor.
-    /// Gene `congress-counter-votes`.
-    pub fn enable_congress_counter_votes(&mut self) {
-        self.congress_counter_votes = true;
-    }
-
-    /// The twin of `enable_congress_counter_votes`.
-    pub fn disable_congress_counter_votes(&mut self) {
-        self.congress_counter_votes = false;
     }
 
     /// Value the Consulate, Chancery and Diplomatic Quarter by the envoys their

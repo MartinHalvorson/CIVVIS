@@ -47,9 +47,9 @@ How much of the controller the genome instrument can vary at all.
 `docs/GENE_SCREEN.md` names the growth direction as "hundreds of
 genes"; this is the denominator that direction is measured against.
 
-- Capability toggles on the controller: **188**
-- Reachable as a gene `gene_screen` can vary: **136**
-- Measured by at least one screen: **98**
+- Capability toggles on the controller: **184**
+- Reachable as a gene `gene_screen` can vary: **132**
+- Measured by at least one screen: **94**
 - Resolved by the ledger (helps or hurts): **17**
 - **Unreachable by any screen: 52**
 
