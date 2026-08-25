@@ -1351,6 +1351,16 @@ pub const GENES: &[Gene] = &[
     // disperse it, since Civilization VI removes an outpost on entry and
     // never because the deed changed hands. Operator request, 2026-08-25.
     Gene { tag: "camp-tile-buyout", field: "camp_tile_buyout", kind: Kind::OptIn, enable: AdvancedAi::enable_camp_tile_buyout, disable: AdvancedAi::disable_camp_tile_buyout },
+    // 2026-08-25, run civvis-20260825T162542Z: Mount Roraima three tiles from
+    // Rome, every Settler walked the other way. The site model read the
+    // wonder as lost jobs and the ground beside it was never scouted. See
+    // `advanced/wonder_sites.rs`.
+    Gene { tag: "wonder-adjacent-sites", field: "wonder_adjacent_sites", kind: Kind::OptIn, enable: AdvancedAi::enable_wonder_adjacent_sites, disable: AdvancedAi::disable_wonder_adjacent_sites },
+    // Version 2 adds a small flat footprint credit on top of the projection;
+    // kept a separate version because #1419's flat wonder credit lost at
+    // scale (#2464), so the batch prices the credit apart from the repair.
+    Gene { tag: "wonder-adjacent-sites-2", field: "wonder_adjacent_sites_2", kind: Kind::OptIn, enable: AdvancedAi::enable_wonder_adjacent_sites_2, disable: AdvancedAi::disable_wonder_adjacent_sites_2 },
+    Gene { tag: "wonder-ring-recon", field: "wonder_ring_recon", kind: Kind::OptIn, enable: AdvancedAi::enable_wonder_ring_recon, disable: AdvancedAi::disable_wonder_ring_recon },
     // Three site terms run from every neighbour (six a tile under six from
     // a foreign city, four a tile for rival ground within three, isolation
     // on top) and nothing pays for the one thing the ground between two
