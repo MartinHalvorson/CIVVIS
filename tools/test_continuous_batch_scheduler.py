@@ -247,5 +247,58 @@ class PublicationMetadata(unittest.TestCase):
         self.assertIn("Coordinated with: #1234", body)
 
 
+class PublicationTiming(unittest.TestCase):
+    def test_freeze_persists_the_completion_timestamp_before_analyzer_work(self):
+        """A failed analyzer retry must not inflate the batch's reported rate."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            state = scheduler.new_state(3_000, 1)
+            batch = state["current"]
+            batch["created_at"] = "2026-08-25T10:00:00Z"
+            reservation = scheduler.reserve_segment(state, scheduler.empty_status())
+            complete_rows(root / batch["rows"], seed_first=reservation["seed_first"],
+                          target_games=1, complete_games=1)
+            batch["source"] = {"binary": "/not-run", "worktree": str(root)}
+            state_path = root / "scheduler-state.json"
+
+            with mock.patch.object(scheduler, "utc_now", return_value="2026-08-25T10:01:00Z"), \
+                    mock.patch.object(scheduler, "run_checked",
+                                      side_effect=scheduler.SchedulerError("analyzer failed")):
+                with self.assertRaisesRegex(scheduler.SchedulerError, "analyzer failed"):
+                    scheduler.freeze_analysis(root, state, state_pathname=state_path)
+
+            self.assertEqual(batch["completed_at"], "2026-08-25T10:01:00Z")
+            persisted = json.loads(state_path.read_text(encoding="utf-8"))
+            self.assertEqual(persisted["current"]["completed_at"], "2026-08-25T10:01:00Z")
+
+    def test_reporting_artifact_carries_exact_whole_batch_rate_inputs(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "analysis.json"
+            target = root / "report.json"
+            source.write_text(json.dumps({
+                "kind": "gene_screen_analysis", "games": 3_000, "seats": 18_000,
+            }), encoding="utf-8")
+            batch = scheduler.new_batch(1, 3_000, ident="timed")
+            batch.update({
+                "complete_games": 3_000,
+                "created_at": "2026-08-25T10:00:00Z",
+                "completed_at": "2026-08-25T10:25:00Z",
+            })
+
+            scheduler.write_reporting_artifact(source, target, batch)
+
+            self.assertNotIn("continuous_batch_timing",
+                             json.loads(source.read_text(encoding="utf-8")))
+            self.assertEqual(json.loads(target.read_text(encoding="utf-8"))[
+                "continuous_batch_timing"], {
+                    "schema": "continuous_batch_timing/v1",
+                    "started_at": "2026-08-25T10:00:00Z",
+                    "completed_at": "2026-08-25T10:25:00Z",
+                    "elapsed_seconds": 1_500,
+                    "completed_games": 3_000,
+                })
+
+
 if __name__ == "__main__":
     unittest.main()
