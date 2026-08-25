@@ -2300,6 +2300,48 @@ impl AdvancedAi {
     pub fn disable_civilian_out_of_reach(&mut self) {
         self.civilian_out_of_reach = false;
     }
+
+    /// A Builder chops woods, rainforest or marsh into the Settler, district
+    /// or wonder at the front of the owning city's queue, priced as a one-off
+    /// lump against the per-turn jobs. See
+    /// [`AdvancedAi::chop_into_the_queue_value`]. Opt-in gene
+    /// `chop-into-the-queue`.
+    pub fn enable_chop_into_the_queue(&mut self) {
+        self.chop_into_the_queue = true;
+    }
+
+    /// The twin of `enable_chop_into_the_queue`.
+    pub fn disable_chop_into_the_queue(&mut self) {
+        self.chop_into_the_queue = false;
+    }
+
+    /// An improvement that completes an unresearched technology's or civic's
+    /// boost is worth the research the boost grants, spread over the steps
+    /// the trigger still needs. See [`AdvancedAi::eureka_builder_premium`].
+    /// Opt-in gene `eureka-chasing-builder`.
+    pub fn enable_eureka_chasing_builder(&mut self) {
+        self.eureka_chasing_builder = true;
+    }
+
+    /// The twin of `enable_eureka_chasing_builder`.
+    pub fn disable_eureka_chasing_builder(&mut self) {
+        self.eureka_chasing_builder = false;
+    }
+
+    /// A unit, building or district that completes an unresearched
+    /// technology's or civic's boost is worth the research the boost grants,
+    /// spread over the steps the trigger still needs. See
+    /// [`AdvancedAi::eureka_production_premium`]. Opt-in gene
+    /// `eureka-chasing-production`.
+    pub fn enable_eureka_chasing_production(&mut self) {
+        self.eureka_chasing_production = true;
+    }
+
+    /// The twin of `enable_eureka_chasing_production`.
+    pub fn disable_eureka_chasing_production(&mut self) {
+        self.eureka_chasing_production = false;
+    }
+
     // Append points, one per name range: a new treatment goes under the range
     // its own name falls in, so that two of them do not append to one line.
     // The rule, the measurement behind it and the check that enforces it are
