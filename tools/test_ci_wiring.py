@@ -50,9 +50,6 @@ HEADER_LINES = 40
 # does not get; if one becomes runnable — a fixture lands, a cache is committed —
 # it belongs in a workflow and out of this list.
 CANNOT_RUN_IN_CI = {
-    "civ6_fidelity.py":
-        "Reads the shipped Civilization VI gameplay database. A runner has no "
-        "install and no compiled cache.",
     "civ6_differential.py":
         "Compares two replay traces produced by a real bridged game and a "
         "headless run; neither artifact exists on a runner.",
