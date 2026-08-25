@@ -92,7 +92,6 @@ mod tests {
             ("campus-adjacency-threshold", |ai: &AdvancedAi| {
                 ai.campus_adjacency_threshold
             }),
-            ("fifteenth-citizen", |ai: &AdvancedAi| ai.fifteenth_citizen),
         ] {
             let mut ai = AdvancedAi::new();
             ai.enable_live_bridge_universe();
@@ -111,19 +110,16 @@ mod tests {
         ai.enable_campus_finishes_first();
         ai.enable_power_the_laboratory();
         ai.enable_campus_adjacency_threshold();
-        ai.enable_fifteenth_citizen();
         ai.disable_science_multiplier_payoff();
         ai.disable_research_tier_premium();
         ai.disable_campus_finishes_first();
         ai.disable_power_the_laboratory();
         ai.disable_campus_adjacency_threshold();
-        ai.disable_fifteenth_citizen();
         assert!(!ai.science_multiplier_payoff);
         assert!(!ai.research_tier_premium);
         assert!(!ai.campus_finishes_first);
         assert!(!ai.power_the_laboratory);
         assert!(!ai.campus_adjacency_threshold);
-        assert!(!ai.fifteenth_citizen);
     }
 
     #[test]
@@ -471,118 +467,6 @@ mod tests {
                 0.0
             );
         }
-    }
-
-    /// The gate, pinned to the engine, and the four cities it must not pay.
-    #[test]
-    fn the_population_gate_pays_only_where_crossing_it_would_buy_something() {
-        let mut game = Game::new_full(1, 24, 16, 91_989, 200, 0, false);
-        let city = found_capital(&mut game, 0);
-        let site = game.cities[&city]
-            .owned_tiles
-            .iter()
-            .copied()
-            .find(|position| *position != game.cities[&city].pos)
-            .unwrap();
-        set_district(&mut game, city, site, "campus");
-        game.players[0].techs.insert(crate::name!("writing"));
-        game.players[0].policies = [crate::name!("rationalism")].into_iter().collect();
-        // ⚠ THE FIXTURE'S HOUSING CAPS AT 6, AND THE GATE IS 15. A city cannot
-        // be "one citizen short and still growing" without room to grow, so a
-        // first draft of this test asserted the positive case on a city the
-        // gene was correctly refusing. `observed_city_housing_adjustments` is
-        // the mirror's own host-minus-model channel and the cheapest honest
-        // way to give the fixture a ceiling worth testing against.
-        game.observed_city_housing_adjustments.insert(city, 14.0);
-        assert!(game.city_housing(&game.cities[&city]) > 15.0);
-
-        let mut ai = AdvancedAi::new();
-        ai.research_economy = true;
-        ai.enable_fifteenth_citizen();
-        ai.refresh_campus_multiplier_constants(&game);
-        let prize =
-            |ai: &AdvancedAi, game: &Game| ai.population_gate_prize(game, &game.cities[&city]);
-
-        // ⭐ THE GATE IS THE ENGINE'S, NOT A NUMBER TYPED TWICE. Walk the city
-        // up one citizen at a time and find where `city_yields` starts paying
-        // the half; that turn is the constant.
-        game.cities
-            .get_mut(&city)
-            .unwrap()
-            .buildings
-            .push(crate::name!("library"));
-        let mut engine_gate = None;
-        for pop in 1..=20 {
-            game.cities.get_mut(&city).unwrap().pop = pop;
-            let with = game.city_yields(city).science;
-            game.players[0].policies.clear();
-            let without = game.city_yields(city).science;
-            game.players[0].policies = [crate::name!("rationalism")].into_iter().collect();
-            if with > without && engine_gate.is_none() {
-                engine_gate = Some(pop as f64);
-            }
-        }
-        assert_eq!(
-            engine_gate,
-            Some(super::super::CAMPUS_POPULATION_GATE),
-            "the constant and city_yields must name the same threshold"
-        );
-
-        // A city one citizen short, holding a Library, growing: the whole point.
-        game.cities.get_mut(&city).unwrap().pop = 14;
-        let (beakers, closeness) = prize(&ai, &game).expect("one short is within reach");
-        assert!(beakers > 0.0 && closeness > 0.8, "{beakers} {closeness}");
-        // The prize is the HELD chain times the half, not a hoped-for chain.
-        assert!(
-            (beakers
-                - game.rules.buildings["library"].yields.science * ai.campus_multiplier_half
-                    / 100.0)
-                .abs()
-                < 1e-9
-        );
-
-        // Past the gate: nothing left to buy.
-        game.cities.get_mut(&city).unwrap().pop = 15;
-        assert!(prize(&ai, &game).is_none(), "already earned");
-
-        // Too far short: it will not arrive before the clock.
-        game.cities.get_mut(&city).unwrap().pop = 4;
-        assert!(prize(&ai, &game).is_none(), "out of reach");
-
-        // Near, but nothing standing to multiply.
-        game.cities.get_mut(&city).unwrap().pop = 14;
-        game.cities.get_mut(&city).unwrap().buildings.clear();
-        assert!(prize(&ai, &game).is_none(), "no Campus building to double");
-        game.cities
-            .get_mut(&city)
-            .unwrap()
-            .buildings
-            .push(crate::name!("library"));
-
-        // ⚠ And near, but CAPPED. One of the six cities the census found was
-        // housing-stopped; paying for its next Granary buys a threshold it
-        // will never cross.
-        assert!(prize(&ai, &game).is_some(), "the fixture can still grow");
-        game.observed_city_housing_adjustments.remove(&city);
-        assert!(
-            game.city_housing_headroom(&game.cities[&city]) <= 0.0,
-            "and without the ceiling it is housing-stopped"
-        );
-        assert!(
-            prize(&ai, &game).is_none(),
-            "a city that cannot grow is not near the gate, however few citizens \
-             separate it"
-        );
-        game.observed_city_housing_adjustments.insert(city, 14.0);
-
-        // With the gene off the term is dead whatever the board says.
-        let mut shipped = AdvancedAi::new();
-        shipped.research_economy = true;
-        shipped.refresh_campus_multiplier_constants(&game);
-        game.cities.get_mut(&city).unwrap().pop = 14;
-        assert!(shipped
-            .population_gate_prize(&game, &game.cities[&city])
-            .is_none());
     }
 
     /// A research detour requires its prerequisite buildings to stand.
