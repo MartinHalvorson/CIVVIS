@@ -284,18 +284,6 @@ impl AdvancedAi {
         self.campus_adjacency_threshold = false;
     }
 
-    /// Credit growth in a Campus city near the Rationalism population gate with
-    /// the science bonus crossing it unlocks. See
-    /// [`AdvancedAi::fifteenth_citizen`]. Opt-in gene `fifteenth-citizen`.
-    pub fn enable_fifteenth_citizen(&mut self) {
-        self.fifteenth_citizen = true;
-    }
-
-    /// The twin of `enable_fifteenth_citizen`.
-    pub fn disable_fifteenth_citizen(&mut self) {
-        self.fifteenth_citizen = false;
-    }
-
     /// Let a seat with no religion and 600+ banked Faith patronize Great People
     /// whatever the points shortfall. See [`AdvancedAi::idle_faith_patronage`].
     /// Opt-in gene.
@@ -961,6 +949,16 @@ impl AdvancedAi {
         self.unchosen_war_keeps_the_lane = false;
     }
 
+    /// Measure the elective war against the weakest rival we can reach rather
+    /// than the weakest on the board. See [`Self::elective_war_in_reach`].
+    pub fn enable_elective_war_in_reach(&mut self) {
+        self.elective_war_in_reach = true;
+    }
+
+    pub fn disable_elective_war_in_reach(&mut self) {
+        self.elective_war_in_reach = false;
+    }
+
     /// Shut the settler window on whether the city would pay the settler back
     /// before the game ends, rather than on a deadline. See
     /// [`Self::expansion_pays_back`].
@@ -1249,18 +1247,6 @@ impl AdvancedAi {
     /// The off toggle, so the registry row has both directions.
     pub fn disable_unit_cost_efficiency(&mut self) {
         self.unit_cost_efficiency = false;
-    }
-
-    /// Fortify any unit the planner gave nothing to do, not only one in a
-    /// stand-down window. Evaluator arm `advanced_fortify_idle_units`; off in
-    /// production.
-    pub fn enable_fortify_idle_units(&mut self) {
-        self.base.fortify_idle_units = true;
-    }
-
-    /// The off toggle, so the registry row has both directions.
-    pub fn disable_fortify_idle_units(&mut self) {
-        self.base.fortify_idle_units = false;
     }
 
     /// ★★★★★ BUILD HULLS ONLY WHERE THEY HAVE OPEN WATER TO SAIL INTO.
@@ -1772,19 +1758,6 @@ impl AdvancedAi {
         self.base.civilian_rescue = false;
     }
 
-    /// Capture a visible barbarian-held Settler or Scout within one-turn reach
-    /// before healing, retreating or any other move. This native opt-in is
-    /// screened as `barbarian-capture-priority`; see
-    /// [`BasicAi::barbarian_capture_priority`](crate::ai::BasicAi::barbarian_capture_priority).
-    pub fn enable_barbarian_capture_priority(&mut self) {
-        self.base.barbarian_capture_priority = true;
-    }
-
-    /// The twin of `enable_barbarian_capture_priority`.
-    pub fn disable_barbarian_capture_priority(&mut self) {
-        self.base.barbarian_capture_priority = false;
-    }
-
     /// Withdraw a unit that one enemy blow could kill to safe healing ground,
     /// and leave when threatened again. See `BasicAi::one_shot_recovery`.
     pub fn enable_one_shot_recovery(&mut self) {
@@ -2050,33 +2023,6 @@ impl AdvancedAi {
     /// The twin of `enable_competition_victory_points`.
     pub fn disable_competition_victory_points(&mut self) {
         self.competition_victory_points = false;
-    }
-
-    /// Cast the free vote on an already-decided resolution's winner to bank the
-    /// Diplomatic Victory Point for predicting it. Answer a World Congress
-    /// resolution that is already decided with the one free vote on its settled
-    /// winner, taking the Diplomatic Victory Point for an exact prediction and
-    /// staking nothing.
-    ///
-    /// Its own field doc records the measurement and it has sat unused: **26
-    /// of 192 ballot decisions already settled, ~1.4 free points a seat a game
-    /// against the twenty a diplomatic victory needs**. Reachable as
-    /// `advanced_congress_banks_decided`; now also as a gene.
-    ///
-    /// ★★★ THIS AND THE TWO BELOW ARE NOT NEW BEHAVIOUR. They already existed,
-    /// off in production and reachable only as named `elo.rs` arms — which
-    /// means `gene_screen` could not see them and the genome instrument has
-    /// never priced any of them. `docs/VICTORY_GENES.md` §9 counts these
-    /// behaviours; these are the three the Diplomacy lane needs, and a toggle
-    /// pair plus a `PRODUCTION_OPT_INS` row is the whole of making one
-    /// screenable.
-    pub fn enable_congress_banks_a_decided_vote(&mut self) {
-        self.congress_banks_a_decided_vote = true;
-    }
-
-    /// The twin of `enable_congress_banks_a_decided_vote`.
-    pub fn disable_congress_banks_a_decided_vote(&mut self) {
-        self.congress_banks_a_decided_vote = false;
     }
 
     /// Back the counter-victory ballot with every Favor the treasury can spare,

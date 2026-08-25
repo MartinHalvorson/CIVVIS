@@ -3637,41 +3637,6 @@ pub struct AdvancedAi {
     /// `advanced_congress_counter_hard` with both flags set.
     pub congress_counter_votes: bool,
 
-    /// Whether a resolution that can no longer move is answered with the free
-    /// vote that predicts it instead of an opposition that cannot land.
-    ///
-    /// ★★★★★ THE POINT THE SHIPPED COMMENT SAYS IS NOT THERE. `take_turn`
-    /// backs its opposition with the treasury and justifies it in writing:
-    /// *"a losing vote is refunded in full ... an opposition that fails costs
-    /// nothing"*. That is true of Favor and false of the tally. `resolve_congress`
-    /// pays **+1 Diplomatic Victory Point** to every eligible voter that named
-    /// the winning outcome *and* the winning target, and `congress_vote_cost`
-    /// makes the first vote on any ballot free. A failed opposition therefore
-    /// costs exactly one Diplomatic Victory Point that a zero-Favor ballot on
-    /// the settled winner would have banked. Twenty points win the game, and
-    /// the live census attributes 41 of 310 losses to a rival's Diplomatic
-    /// victory — the largest single bucket, ahead of Culture at 24.
-    ///
-    /// The same reading fixes the stake. A winning ballot is **not** refunded,
-    /// so `congress_affordable_votes` on a resolution already decided empties
-    /// the treasury to buy an outcome that was going to happen anyway. With
-    /// this on, a decided resolution is always answered with exactly the one
-    /// free vote, whether or not the choice had to change.
-    ///
-    /// Decided is decided against every ballot still outstanding, at both of
-    /// the host's two tally stages. See [`Self::congress_decided_choice`].
-    ///
-    /// Measured before it was wired up, on three 6-player 200-turn Online
-    /// games with all six seats running this arm: **26 of 192 ballot decisions
-    /// were already settled**, 13.5%, or about 1.4 free points per seat per
-    /// game against the 20 a Diplomatic victory needs. The first cut of the
-    /// bound charged this empire's own Favor against *every* rival choice and
-    /// found only 9 of 192 — a third as many, from a test that was not more
-    /// careful, only wrong about where its own votes could land.
-    ///
-    /// Reachable as `advanced_congress_banks_decided`.
-    pub congress_banks_a_decided_vote: bool,
-
     /// Value the infrastructure that produces city-state influence.
     ///
     /// The allocation layer already spends every envoy it earns, while the
@@ -4198,64 +4163,6 @@ pub struct AdvancedAi {
     /// Off everywhere by default; opt-in gene `campus-adjacency-threshold`.
     pub campus_adjacency_threshold: bool,
 
-    /// Grow the Campus city that is a few citizens short of doubling its own
-    /// research.
-    ///
-    /// ★★★★★ THE ONE MULTIPLIER GATE THIS EMPIRE CAN ACTUALLY REACH. A census
-    /// of the seat's own gates finds Rationalism SLOTTED and both of its
-    /// halves unearned: `pop >= 15` in **3 of 9** Campus cities, `adjacency >=
-    /// 4` in **0 of 9**. The adjacency half is not mispriced, it is
-    /// unreachable — across three seeds of the screen's own profile the plots
-    /// a Campus could LEGALLY stand on that clear it number 9, 11 and 6 out of
-    /// ~900 land plots, **under 1% of the map**.
-    ///
-    /// The population half is a different story, and the difference is the
-    /// whole reason this gene exists. Of the six Campus cities under the gate,
-    /// **five still hold housing headroom AND a food surplus** — one is capped
-    /// — and they are **30 Population short between them, five each**. They
-    /// were growing and ran out of turns, against a threshold that doubles
-    /// every Campus building in whichever city crosses it.
-    ///
-    /// Nothing prices that. Growth is valued for its own yields and for the
-    /// housing pressure it relieves; a city at 14 Population with a Library
-    /// and a University is one citizen from earning half of Rationalism on
-    /// both of them, and to `production_value` that citizen looks exactly like
-    /// any other.
-    ///
-    /// ⚠⚠ MEASURED AND NEGATIVE — the opportunity was real and the gene does
-    /// not convert it. Twelve paired census seeds, conditioned to reach the
-    /// clock:
-    ///
-    /// | arm | Research Lab | Science |
-    /// |---|---:|---:|
-    /// | control | 60 | 3512.0 |
-    /// | `fifteenth-citizen` | 59 | **3437.4** (−2.1%) |
-    /// | `premium + payoff` | **64** | **3647.4** (+3.9%) |
-    /// | those two **+ this** | 64 | 3662.4 (+0.4% over the pair) |
-    ///
-    /// Alone it costs Science; added to the pair that works it adds 0.4%,
-    /// which is noise. The census that motivated it was not wrong — five
-    /// Campus cities really were growing and five citizens short — but buying
-    /// their growth trades away something worth more than the half-card it
-    /// wins, and the citizens still do not arrive before the clock.
-    ///
-    /// Kept, off, with the number on it. **This is the fourth science gene in
-    /// this bundle to price a real, measured opportunity and return nothing**;
-    /// the one mechanism that does convert is pricing a Campus BUILDING by
-    /// what it will actually earn (`science-multiplier-payoff`,
-    /// `research-tier-premium`), which has now replicated on four disjoint
-    /// seed ranges.
-    ///
-    /// With this on, a non-wonder building that adds food or housing to a
-    /// Campus city **within reach of the gate and still able to grow** is
-    /// credited a share of the beakers crossing it would unlock — the share
-    /// scaled by how near the city already is, so a city one citizen short
-    /// gets most of it and one six short gets none. A city past the gate, a
-    /// city with no Campus building to multiply, and a city that cannot grow
-    /// at all are each priced exactly as before. Off everywhere by default;
-    /// opt-in gene `fifteenth-citizen`.
-    pub fifteenth_citizen: bool,
-
     /// The six victory-lane genes. Each substitutes the victory the empire is
     /// actually racing (`victory_focus`) for the plan's own strategy at ONE
     /// decider, and only while the plan is `Expansion` — a posture that
@@ -4298,6 +4205,55 @@ pub struct AdvancedAi {
     /// Off by default; evaluator arm `advanced_diplomatic_opening`. See
     /// `AdvancedAi::diplomatic_opening_score`.
     pub diplomatic_opening: bool,
+
+    /// Whether the elective-war branch measures itself against a neighbour it
+    /// can reach, or against the weakest empire on the planet.
+    ///
+    /// ⚠ "STRONG ENOUGH TO TAKE WHAT A NEIGHBOUR HAS" NEVER ASKS WHICH
+    /// NEIGHBOUR. The branch fires on
+    ///
+    /// ```text
+    /// g.turn >= 55 && cities >= 2 && my_power > weakest_rival * 1.80 + 20.0
+    /// ```
+    ///
+    /// and `weakest_rival` is the minimum `military_power` over **every living
+    /// met major**, with no proximity test of any kind. So the question it
+    /// actually asks is *"am I 1.8 times stronger than the feeblest empire in
+    /// the world?"* — which, for any empire that is doing at all well, is true
+    /// from turn 55 to the end of the game, whether that empire is next door
+    /// or on another continent. It then commits the whole grand strategy to
+    /// Conquest, above every victory lane.
+    ///
+    /// The symptom is already written down. [`Self::no_elective_war`] records
+    /// that this branch fired in **every one of the last eight live Settler
+    /// runs**, that **no city was ever captured in any of them**, and that
+    /// sixteen cities were lost across six of the eight — and describes what
+    /// the posture buys instead: "the army marches to a neighbour's border and
+    /// stands there ('Holding off war … the army has not finished staging', 45
+    /// turns on T021044Z)". An army with nowhere to go is what a war declared
+    /// on a distance looks like. That flag answers it by switching the branch
+    /// off entirely, and it is Firaxis-only — "off for ordinary and frozen
+    /// controllers" — so on the native board, which is the board the ledger
+    /// prices on, the branch runs untouched.
+    ///
+    /// ⚠ The reach test is not invented here; it is the one the file already
+    /// uses. `city_campaign`'s `NeighbourAppraisal::weak_enough` requires
+    /// `distance <= CAMPAIGN_REACH`, and that constant's own comment calls it
+    /// "the same reach the declaration's `close_enough` already asks for".
+    /// Branch nine appraises a neighbour with it; branch ten, sitting directly
+    /// below and reaching the same conclusion without a target, does not. This
+    /// gene applies the existing constant to the existing comparison —
+    /// `weakest_rival` becomes the weakest rival with a city within eighteen
+    /// tiles of one of ours — and changes nothing else. With no rival in
+    /// reach, the branch cannot fire, which is the correct reading of "there
+    /// is nobody nearby to take anything from".
+    ///
+    /// Only the power-ratio arm is gated. The `military_civ` arm asks whether
+    /// we out-weigh the STRONGEST rival, which is a claim about the board
+    /// rather than about a neighbour, and it is left exactly as it is.
+    ///
+    /// **Off by default.** Screenable.
+    pub elective_war_in_reach: bool,
 
     /// Whether a rival's conquests are read from the cities it has taken, or
     /// only from the capitals.
@@ -5106,19 +5062,6 @@ const RESEARCH_COVERAGE_UNFINISHED_FLOOR: f64 = 0.25;
 /// REQUIREMENT_CITY_HAS_HIGH_ADJACENCY_DISTRICT Amount=4 and pinned to the
 /// engine by a test. See `campus_adjacency_threshold`.
 const CAMPUS_MULTIPLIER_ADJACENCY_THRESHOLD: f64 = 4.0;
-/// The Population `city_yields` gates the OTHER half of
-/// `campus_building_science_pct` on, pinned to the engine by a test. See
-/// `fifteenth_citizen`.
-const CAMPUS_POPULATION_GATE: f64 = 15.0;
-/// How many citizens short of the gate still counts as within reach. Sized off
-/// the census that motivates the gene: the six Campus cities under the gate
-/// were **five short on average**, so a reach of six covers them and a city
-/// ten short — which will not arrive before the clock — earns nothing.
-const POPULATION_GATE_REACH: f64 = 6.0;
-/// The growth a building has to bring to be credited the whole share. Roughly
-/// what a strong food building of its era provides, so an ordinary +1 Food
-/// earns a third of it rather than all of it.
-const POPULATION_GATE_GROWTH_SPAN: f64 = 3.0;
 const RESEARCH_CHAIN_FIRST_RUNG_SCIENCE: f64 = 2.0;
 /// The most any one rung may be owed against the first, so a modded or
 /// runaway yield cannot take over the queue. The shipped ceiling is the
@@ -5182,36 +5125,6 @@ const CULTURE_BUILDINGS_BEFORE_PROJECTS: [&str; 4] = [
 /// must keep its opening, and the deck is longer than the slot count, so this
 /// only wins a slot that would otherwise have gone to the tail of the list.
 const RESEARCH_DECK_INSERT: usize = 4;
-
-/// Where the two reachable HOUSING cards enter a lane's preference list, on the
-/// same terms as `RESEARCH_DECK_INSERT`: behind the lane's leading cards, never
-/// in front of them.
-///
-/// ⚠⚠ NEITHER IS REACHABLE TODAY, AND HOUSING IS THE DOMINANT GROWTH CAP.
-/// Measured over 13,214 host-exported city-turns: **71.7% are housing-capped**
-/// (headroom < 2) against 62.3% amenity-capped, and the mean housing growth
-/// multiplier is **0.510** against the Amenity band's 0.872. Yet across **107
-/// live runs**:
-///
-/// | card | effect | runs slotted |
-/// |---|---|---|
-/// | `medina_quarter` | +2 Housing at 3+ specialty districts | **0 / 107** |
-/// | `insulae` | +1 Housing at 2+ specialty districts | **1 / 107** |
-/// | `new_deal` | +4 Housing, +2 Amenities at 3+ | 1 / 107 |
-///
-/// `medina_quarter` appears **nowhere in `src/`** — it exists in the ruleset and
-/// no code has ever named it. `insulae` is 8th in `BasicAi`'s `POLICY_PRIORITY`,
-/// behind three economic cards that fill the early economic slots first.
-/// `new_deal` IS in every strategic list but needs `suffrage`, which these games
-/// do not reach — so the two cards an empire can actually unlock are the two it
-/// never plays.
-///
-/// Eligibility is real, not theoretical: **60.3%** of city-turns have 2+
-/// specialty districts and **40.0%** have 3+. Applying each card only to the
-/// cities that qualify, the mean housing growth multiplier moves 0.510 →
-/// **0.609 with Insulae (+19%)**, → **0.638 with Medina Quarter (+25%)**, →
-/// **0.734 with both (+44%)**.
-const HOUSING_DECK_INSERT: usize = 4;
 
 /// The headroom below which a city is worth spending a policy slot on. This is
 /// `BasicAi::HOUSING_HEADROOM_TARGET` — the break-even of the engine's own
@@ -5980,7 +5893,6 @@ impl AdvancedAi {
             early_score_alarm: false,
             congress_counter_leader: false,
             congress_counter_votes: false,
-            congress_banks_a_decided_vote: false,
             envoy_infrastructure: false,
             holy_lane_parity: false,
             inquisition_on_threat: false,
@@ -5993,7 +5905,6 @@ impl AdvancedAi {
             campus_finishes_first: false,
             power_the_laboratory: false,
             campus_adjacency_threshold: false,
-            fifteenth_citizen: false,
             lane_congress_ballot: false,
             lane_congress_favor: false,
             lane_great_people: false,
@@ -6020,6 +5931,7 @@ impl AdvancedAi {
             air_surge_census: AirSurgeCensus::default(),
             air_surge_cooldown_until: 0,
             diplomatic_opening: false,
+            elective_war_in_reach: false,
             domination_city_count: false,
             unchosen_war_keeps_the_lane: false,
             rival_suzerainty_alarm: false,
@@ -6214,12 +6126,6 @@ impl AdvancedAi {
     /// `BasicAi::barbarian_ranged_answer`.
     pub fn barbarian_ranged_answer(&self) -> bool {
         self.base.barbarian_ranged_answer
-    }
-
-    /// Readable so the anchor assertion can check it, since the flag lives on
-    /// the inner `BasicAi` and that field is private outside this module.
-    pub fn fortify_idle_units(&self) -> bool {
-        self.base.fortify_idle_units
     }
 
     /// Redirect an existing agent at a new explicit victory target without
@@ -8489,6 +8395,34 @@ impl AdvancedAi {
             && self.victory_focus(g, pid).progress >= LIVE_LANE_FLOOR
     }
 
+    /// Whether `rival` has a city within the campaign planner's own reach of
+    /// one of ours.
+    ///
+    /// See [`Self::elective_war_in_reach`]. `CAMPAIGN_REACH` is
+    /// `city_campaign`'s constant and its comment calls it "the same reach the
+    /// declaration's `close_enough` already asks for"; this asks the same
+    /// question of the same distance, so the branch that declares and the
+    /// planner that has to prosecute cannot disagree about who is a
+    /// neighbour.
+    fn rival_is_in_campaign_reach(&self, g: &Game, pid: usize, rival: usize) -> bool {
+        let ours = g.player_city_ids(pid);
+        if ours.is_empty() {
+            return false;
+        }
+        let theirs = g.player_city_ids(rival);
+        theirs.iter().any(|their| {
+            let Some(their) = g.cities.get(their) else {
+                return false;
+            };
+            ours.iter().any(|our| {
+                g.cities.get(our).is_some_and(|our| {
+                    g.wdist(our.pos, their.pos)
+                        <= crate::ai::advanced::city_campaign::CAMPAIGN_REACH
+                })
+            })
+        })
+    }
+
     fn religious_opening_viable(&self, g: &Game, pid: usize) -> bool {
         let player = &g.players[pid];
         if player.religion.is_some() {
@@ -9328,8 +9262,17 @@ impl AdvancedAi {
             .iter()
             .map(|o| g.military_power(*o))
             .fold(0.0_f64, f64::max);
+        // ⚠ `elective_war_in_reach`: the weakest rival WE CAN REACH, by the
+        // reach the campaign planner already requires. Off, this is the
+        // weakest empire anywhere on the board, which is what the branch
+        // below has always compared itself against. Infinity when nobody is
+        // in reach, so the branch cannot fire — the correct reading of "there
+        // is nobody nearby to take anything from".
         let weakest_rival = major_rivals
             .iter()
+            .filter(|other| {
+                !self.elective_war_in_reach || self.rival_is_in_campaign_reach(g, pid, **other)
+            })
             .map(|o| g.military_power(*o))
             .fold(f64::INFINITY, f64::min);
 
@@ -10887,11 +10830,7 @@ impl AdvancedAi {
     /// Cached because `production_value` runs per candidate per city per turn
     /// and `docs/` measures that loop work-bound; neither depends on the board.
     fn refresh_campus_multiplier_constants(&mut self, g: &Game) {
-        // ⚠ EITHER GENE, NOT JUST THE FIRST ONE TO NEED THESE. `fifteenth_citizen`
-        // reads `campus_multiplier_half` too, and gating the refresh on
-        // `campus_adjacency_threshold` alone left it silently zero. Its own
-        // test caught this one before any games were spent.
-        if !self.campus_adjacency_threshold && !self.fifteenth_citizen {
+        if !self.campus_adjacency_threshold {
             self.campus_multiplier_half = 0.0;
             self.campus_chain_science = 0.0;
             return;
@@ -10913,46 +10852,6 @@ impl AdvancedAi {
             })
             .map(|spec| spec.yields.science)
             .sum();
-    }
-
-    /// The beakers crossing the Population gate would unlock in this city, and
-    /// how near it already is. `None` when the gate is out of reach, already
-    /// passed, unreachable because the city cannot grow, or worth nothing
-    /// because no Campus building stands here to be multiplied. See
-    /// `fifteenth_citizen`.
-    fn population_gate_prize(&self, g: &Game, city: &crate::game::City) -> Option<(f64, f64)> {
-        if !self.fifteenth_citizen || self.campus_multiplier_half <= 0.0 {
-            return None;
-        }
-        let gap = CAMPUS_POPULATION_GATE - city.pop as f64;
-        if gap <= 0.0 || gap > POPULATION_GATE_REACH {
-            return None;
-        }
-        // ⚠ A city that cannot grow is not near the gate, however few citizens
-        // separate it: one of the six the census found was housing-capped, and
-        // paying for its next Granary buys a threshold it will never cross.
-        if g.city_housing_headroom(city) <= 0.0 {
-            return None;
-        }
-        // Only the Campus buildings ALREADY STANDING are multiplied — the
-        // prize is what this city would begin earning, not what it might one
-        // day hold.
-        let campus = crate::name!("campus");
-        let held: f64 = city
-            .buildings
-            .iter()
-            .filter_map(|held| g.rules.buildings.get_interned(*held))
-            .filter(|spec| {
-                !spec.wonder && spec.district.map(|d| g.district_family(d)) == Some(campus)
-            })
-            .map(|spec| spec.yields.science)
-            .sum();
-        if held <= 0.0 {
-            return None;
-        }
-        let beakers = held * self.campus_multiplier_half / 100.0;
-        let near = (POPULATION_GATE_REACH - gap + 1.0) / POPULATION_GATE_REACH;
-        Some((beakers, near.clamp(0.0, 1.0)))
     }
 
     /// The extra beakers a Campus plot at or above the multiplier's adjacency
@@ -13502,128 +13401,6 @@ impl AdvancedAi {
             }
     }
 
-    /// The ballot this resolution has already settled on, if nothing still to
-    /// be cast can move it.
-    ///
-    /// ★★★★★ WHAT MAKES THE FREE POINT SAFE TO TAKE. Joining a vote is only
-    /// costless if this empire's own ballot could not have changed where it
-    /// lands, so the leader has to beat every alternative by more than the
-    /// votes still outstanding against it — and both of the host's tally
-    /// stages are checked, because `resolve_congress` picks the outcome across
-    /// all targets first and then the target among the ballots that named that
-    /// outcome.
-    ///
-    /// ⚠ *Outstanding against it* is the whole subtlety, and the first cut got
-    /// it wrong. Rivals who have not voted can bring their Favor to any choice,
-    /// so their votes are charged against every alternative. This empire's own
-    /// stake cannot: the counterfactual being ruled out is that it opposed
-    /// instead of joining, and an opposition goes on the one ballot
-    /// `congress_choice` actually returned. Charging it everywhere is not the
-    /// cautious reading of the same question, it is a different and false one —
-    /// it treats this empire as able to fund every rival at once, and it threw
-    /// away two thirds of the free points (9 of 192 settled, against 26 for the
-    /// bound that asks where the votes could really go).
-    ///
-    /// An outcome or target nobody has voted for is still compared, at zero.
-    /// Leaving the empty ones out would call a one-ballot resolution decided
-    /// while the whole field still had Favor to spend, which is the reading
-    /// that makes the join expensive instead of free.
-    ///
-    /// ⚠ Returns the choice string as `resolution.choices` spells it rather
-    /// than a reassembled `"{outcome}:{target}"`. Pre-resolution-variety saves
-    /// store a bare target, which [`Game::congress_choice_parts`] reads as
-    /// outcome A, and a reassembled string would not match the ballot the
-    /// host is expecting.
-    fn congress_decided_choice(
-        &self,
-        g: &Game,
-        pid: usize,
-        resolution: &CongressResolution,
-        preferred: &str,
-    ) -> Option<String> {
-        // Every vote some *other* empire could still bring, counted at the most
-        // the Favor it holds could buy. This empire's own stake is not in here:
-        // it is added below to the one ballot this empire would actually have
-        // cast, which is the only place those votes can land.
-        let slack: u64 = g
-            .players
-            .iter()
-            .filter(|player| {
-                player.alive
-                    && !player.is_minor
-                    && !player.is_barbarian
-                    && player.id != pid
-                    && !resolution.ballots.contains_key(&player.id)
-            })
-            .map(|player| u64::from(g.congress_affordable_votes(player.id)))
-            .sum();
-        let own = u64::from(g.congress_affordable_votes(pid));
-        let (preferred_outcome, preferred_target) = Game::congress_choice_parts(preferred);
-
-        let mut outcome_totals: std::collections::BTreeMap<&str, u64> =
-            std::collections::BTreeMap::new();
-        for choice in &resolution.choices {
-            outcome_totals
-                .entry(Game::congress_choice_parts(choice).0)
-                .or_insert(0);
-        }
-        for (choice, votes) in resolution.ballots.values() {
-            *outcome_totals
-                .entry(Game::congress_choice_parts(choice).0)
-                .or_insert(0) += u64::from(*votes);
-        }
-        let (&leading_outcome, &leading_votes) =
-            outcome_totals.iter().max_by_key(|(_, votes)| **votes)?;
-        if outcome_totals.iter().any(|(outcome, votes)| {
-            let own_stake = if *outcome == preferred_outcome {
-                own
-            } else {
-                0
-            };
-            *outcome != leading_outcome && *votes + slack + own_stake >= leading_votes
-        }) {
-            return None;
-        }
-
-        let mut target_totals: std::collections::BTreeMap<&str, u64> =
-            std::collections::BTreeMap::new();
-        for choice in &resolution.choices {
-            let (outcome, target) = Game::congress_choice_parts(choice);
-            if outcome == leading_outcome {
-                target_totals.entry(target).or_insert(0);
-            }
-        }
-        for (choice, votes) in resolution.ballots.values() {
-            let (outcome, target) = Game::congress_choice_parts(choice);
-            if outcome == leading_outcome {
-                *target_totals.entry(target).or_insert(0) += u64::from(*votes);
-            }
-        }
-        let (&leading_target, &target_votes) =
-            target_totals.iter().max_by_key(|(_, votes)| **votes)?;
-        if target_totals.iter().any(|(target, votes)| {
-            // This empire's votes only reach the target stage at all if the
-            // ballot it would have cast names the outcome that won.
-            let own_stake = if preferred_outcome == leading_outcome && *target == preferred_target {
-                own
-            } else {
-                0
-            };
-            *target != leading_target && *votes + slack + own_stake >= target_votes
-        }) {
-            return None;
-        }
-
-        resolution
-            .choices
-            .iter()
-            .find(|choice| {
-                let (outcome, target) = Game::congress_choice_parts(choice);
-                outcome == leading_outcome && target == leading_target
-            })
-            .cloned()
-    }
-
     /// The living major holding the most Diplomatic Victory Points.
     ///
     /// Its own concept, not a fallback: the `world_leader` ballot aims here
@@ -15224,20 +15001,6 @@ impl AdvancedAi {
                     continue;
                 }
                 if let Some(choice) = self.congress_choice(g, pid, &resolution, congress_lane) {
-                    // Nothing cast now can move a resolution that is already
-                    // settled, so the only thing left on the table is the
-                    // Diplomatic Victory Point the host pays for naming the
-                    // winner exactly -- and the first vote on any ballot is
-                    // free. Take the point, stake nothing, and do not empty
-                    // the treasury behind an outcome that is going to happen
-                    // anyway (a *winning* ballot is not refunded). See
-                    // [`Self::congress_banks_a_decided_vote`].
-                    let settled = if self.congress_banks_a_decided_vote {
-                        self.congress_decided_choice(g, pid, &resolution, &choice)
-                    } else {
-                        None
-                    };
-                    let choice = settled.clone().unwrap_or(choice);
                     // A ballot aimed at the empire closest to a victory is
                     // backed with everything the treasury can spare, because a
                     // losing vote is refunded in full and a right-outcome,
@@ -15251,14 +15014,12 @@ impl AdvancedAi {
                             &resolution.id,
                             &choice,
                         );
-                    let votes = if settled.is_some() {
-                        1
-                    } else if congress_favor_lane == GrandStrategy::Diplomacy || counters_the_leader
-                    {
-                        g.congress_affordable_votes(pid)
-                    } else {
-                        1
-                    };
+                    let votes =
+                        if congress_favor_lane == GrandStrategy::Diplomacy || counters_the_leader {
+                            g.congress_affordable_votes(pid)
+                        } else {
+                            1
+                        };
                     think!(self.journal(), Diplomacy, Decision,
                            "Voting {} on {}", plain(&choice), plain(&resolution.id);
                            "{votes} vote{} behind it, on the {} plan",
@@ -21843,25 +21604,6 @@ impl AdvancedAi {
                     // not what this building will earn. Valued at the same 42 a
                     // point as `spec.yields` above, through the lane's own
                     // price of a beaker.
-                    // See `fifteenth_citizen`: a citizen is a citizen to
-                    // every other term, and to a Campus city one short of the
-                    // gate it is half of Rationalism on the whole chain.
-                    let population_gate = match self.population_gate_prize(g, city) {
-                        Some((prize, closeness)) if !spec.wonder => {
-                            let growth = spec.yields.food + spec.housing * 0.5;
-                            let share = (growth / POPULATION_GATE_GROWTH_SPAN).clamp(0.0, 1.0);
-                            self.yield_value(
-                                Yields {
-                                    science: prize,
-                                    ..Yields::default()
-                                },
-                                plan.strategy,
-                            ) * 42.0
-                                * closeness
-                                * share
-                        }
-                        _ => 0.0,
-                    };
                     // See `power_the_laboratory`: the Research Lab's larger
                     // half is switched off until something generates power.
                     let power_unlock = if self.power_the_laboratory && !spec.wonder {
@@ -21883,7 +21625,6 @@ impl AdvancedAi {
                         0.0
                     };
                     self.yield_value(spec.yields, plan.strategy) * 42.0
-                        + population_gate
                         + power_unlock
                         + multiplied_science
                         + culture_debt

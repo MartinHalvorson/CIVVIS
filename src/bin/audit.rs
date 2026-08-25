@@ -254,22 +254,8 @@ struct Motion {
     /// **+3 combat strength per fortified turn, capped at +6**
     /// (`unit_strength`), about 30% of its base.
     ///
-    /// ⚠⚠ **BUT THIS COLUMN IS NOT A DEFECT, AND THIS COMMENT USED TO SAY IT
-    /// WAS.** "Only this half is a defect" was an argument from the mechanic,
-    /// never a measurement, and the measurement disagrees.
-    /// `advanced_fortify_idle_units` — which does exactly what the column asks
-    /// for, fortifying every unit the planner gave nothing to do — was screened
-    /// on the two-profile matrix at 200 pairs (seed 9300000) and came back
-    /// **RETAIN advanced, 1/2 profiles cleared**: deployment-online 49.8%,
-    /// −2 Elo-equivalent (CI −35..+29); compact-standard 50.0%, +0 (CI −14..+16).
-    /// Both intervals are tight against resolutions of +37 and +35, so that is
-    /// a null and not a short look, and the terminal-score direction agreed
-    /// (p=0.53 and p=0.47).
-    ///
-    /// Read the column as *description*, not as a backlog item. The free
-    /// defensive bonus on 3,307 major unit-turns per three games is real and
-    /// collecting it wins nothing; whatever those units should be doing
-    /// instead, standing still with a fortify order is not it.
+    /// Read the column as *description*, not as a backlog item: it identifies
+    /// idle units without assuming that fortifying them is an outcome win.
     idle_could_fortify: u64,
     /// Stood still in the open, fortified. A picket is legitimate; a
     /// stampede into this column is a livelock fix that only hid the problem.
