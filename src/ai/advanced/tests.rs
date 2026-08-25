@@ -33767,8 +33767,9 @@ fn a_builder_whose_best_job_is_walled_off_walks_to_the_next_one() {
             assert_ne!(pos, home, "the wall must not be the Builder's own tile");
             game.map.tiles.get_mut(&pos).unwrap().terrain = crate::name!("mountain");
         }
+        let wall = game.nbrs(walled)[0];
         assert!(
-            !game.rules.is_passable(&game.map.tiles[&game.nbrs(walled)[0]]),
+            !game.rules.is_passable(&game.map.tiles[&wall]),
             "the ring around the near job is impassable"
         );
         assert!(

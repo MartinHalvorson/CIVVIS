@@ -4,8 +4,8 @@
 //! agent adds a shared strategic model so research, production, diplomacy,
 //! civilian work, and military movement pursue the same medium-term goal.
 use super::{
-    Ai, BasicAi, BasicUnitPlanState, ForceReport, PlanReport, PolicyDeck, UnitDoctrine,
-    UnitMemory, WarPlanReport, Weights, BUILDER_ROUTE_ATTEMPTS,
+    Ai, BasicAi, BasicUnitPlanState, ForceReport, PlanReport, PolicyDeck, UnitDoctrine, UnitMemory,
+    WarPlanReport, Weights, BUILDER_ROUTE_ATTEMPTS,
 };
 use crate::belief::{BeliefState, CitySighting};
 use crate::game::{
@@ -25348,6 +25348,64 @@ impl AdvancedAi {
         target.is_some_and(|pos| self.builder_step_toward_barbarian_safe(g, pid, uid, pos))
     }
 
+    /// Every job this Builder could take, best first, under the same score the
+    /// untreated branch of [`Self::advanced_builder_step`] maximises.
+    ///
+    /// Reading every tile the empire owns: one memo scope so the empire-wide
+    /// questions each tile asks are answered once for the whole sweep rather
+    /// than once per tile. The borrow checker rejects the guard the moment
+    /// anything in here starts mutating the game.
+    fn builder_jobs_ranked(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        strategy: GrandStrategy,
+        reserved: &HashSet<Pos>,
+    ) -> Vec<Pos> {
+        let current = g.units[&uid].pos;
+        let _memo = g.query_memo();
+        let mut scored: Vec<(f64, Pos)> = Vec::new();
+        for cid in g.player_city_ids(pid) {
+            for pos in &g.cities[&cid].owned_tiles {
+                if reserved.contains(pos) {
+                    continue;
+                }
+                let mut here: Option<f64> = None;
+                for improvement in self.worthwhile_improvements(g, pid, *pos, strategy) {
+                    let score = self.improvement_value(g, *pos, &improvement, strategy)
+                        - g.wdist(current, *pos) as f64 * 0.7;
+                    if here.is_none_or(|old| score > old) {
+                        here = Some(score);
+                    }
+                }
+                if let Some(score) = here {
+                    scored.push((score, *pos));
+                }
+            }
+        }
+        // Descending by score, position as the tiebreak: exactly the order the
+        // untreated branch's running `best` would have settled on.
+        scored.sort_by(|(a, ap), (b, bp)| {
+            b.partial_cmp(a)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then(ap.cmp(bp))
+        });
+        let mut ranked: Vec<Pos> = scored.into_iter().map(|(_, pos)| pos).collect();
+        // Hysteresis: a Builder part-way to a job keeps it, unless another
+        // Builder reserved it or the job stopped being worth doing.
+        let pinned = self
+            .builder_targets
+            .get(&uid)
+            .copied()
+            .filter(|pos| ranked.contains(pos));
+        if let Some(pin) = pinned {
+            ranked.retain(|pos| *pos != pin);
+            ranked.insert(0, pin);
+        }
+        ranked
+    }
+
     /// Walk toward the best job this Builder can actually reach, rather than
     /// toward the best job and nowhere otherwise. Opt-in gene
     /// `builder-tries-the-next-tile`.
@@ -25386,46 +25444,7 @@ impl AdvancedAi {
         strategy: GrandStrategy,
         reserved: &HashSet<Pos>,
     ) -> bool {
-        let current = g.units[&uid].pos;
-        let ranked = {
-            let _memo = g.query_memo();
-            let mut scored: Vec<(f64, Pos)> = Vec::new();
-            for cid in g.player_city_ids(pid) {
-                for pos in &g.cities[&cid].owned_tiles {
-                    if reserved.contains(pos) {
-                        continue;
-                    }
-                    let mut here: Option<f64> = None;
-                    for improvement in self.worthwhile_improvements(g, pid, *pos, strategy) {
-                        let score = self.improvement_value(g, *pos, &improvement, strategy)
-                            - g.wdist(current, *pos) as f64 * 0.7;
-                        if here.is_none_or(|old| score > old) {
-                            here = Some(score);
-                        }
-                    }
-                    if let Some(score) = here {
-                        scored.push((score, *pos));
-                    }
-                }
-            }
-            // Descending by score, position as the tiebreak, exactly the order
-            // the untreated branch's running `best` would have settled on.
-            scored.sort_by(|(a, ap), (b, bp)| {
-                b.partial_cmp(a)
-                    .unwrap_or(std::cmp::Ordering::Equal)
-                    .then(ap.cmp(bp))
-            });
-            let mut ranked: Vec<Pos> = scored.into_iter().map(|(_, pos)| pos).collect();
-            // Hysteresis: a Builder part-way to a job keeps it, unless another
-            // Builder reserved it or the job stopped being worth doing.
-            if let Some(pin) = self.builder_targets.get(&uid).copied().filter(|pos| {
-                !reserved.contains(pos) && ranked.iter().any(|other| other == pos)
-            }) {
-                ranked.retain(|pos| *pos != pin);
-                ranked.insert(0, pin);
-            }
-            ranked
-        };
+        let ranked = self.builder_jobs_ranked(g, pid, uid, strategy, reserved);
         for pos in ranked.into_iter().take(BUILDER_ROUTE_ATTEMPTS) {
             if self.builder_step_toward_barbarian_safe(g, pid, uid, pos) {
                 self.builder_targets.insert(uid, pos);
