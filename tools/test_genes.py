@@ -50,31 +50,30 @@ PLAYERS = gene_ledger.SCREEN["players"]
 #: cannot move this tuple automatically.
 #: Then the 2026-08-25 cull-and-demotion directive: ten genes left the code
 #: (three of them pinned on) and six more defaulted off, 73 -> 64; see
-#: `OPERATOR_DEMOTIONS_20260825`.
+#: `OPERATOR_DEMOTIONS_20260825`. Then the fourth directive of the day:
+#: five unscreened genes pinned on and five priced ones demoted, 64 -> 64;
+#: see `OPERATOR_PROMOTIONS_20260825_THIRD` / `OPERATOR_DEMOTIONS_20260825_SECOND`.
 #: Changing it requires an intentional edit and PR note.
 DEPLOYED_GENOME_20260825 = (
     "air-surge", "amenity-district-path", "amenity-project-preemption",
-    "army-target-weighs-enemy", "barbarian-bargain",
-    "barbarian-ranged-answer", "barbarian-scouts-are-scouts", "bounded-recovery",
-    "buildings-before-projects", "camp-party", "competition-victory-points",
+    "army-target-weighs-enemy", "barbarian-bargain", "barbarian-ranged-answer",
+    "barbarian-scouts-are-scouts", "builder-tries-the-next-tile", "buildings-before-projects",
+    "camp-party", "competition-victory-points", "congress-counter-leader",
     "culture-building-debt", "deals-for-our-gain", "diplomatic-lane-forecast",
-    "early-contact-window", "engine-faith-price", "enhancer-for-the-corps",
-    "escort-unstick", "flip-nearby-city-states", "founder-temple", "great-person-housing",
-    "guru-heals-the-corps", "holy-lane-parity", "home-defense", "idle-faith-patronage",
-    "lane-culture-spending", "lane-great-people", "lane-policy-deck",
-    "lane-space-race", "loyalty-rate-alarm", "maintenance-aware-deck",
+    "domination-city-count", "early-contact-window", "elective-war-in-reach",
+    "engine-faith-price", "enhancer-for-the-corps", "escort-unstick", "flip-nearby-city-states",
+    "founder-temple", "frontier-massing-alarm", "great-person-housing", "guru-heals-the-corps",
+    "home-defense", "idle-faith-patronage", "lane-culture-spending", "lane-great-people",
+    "lane-policy-deck", "lane-space-race", "loyalty-rate-alarm", "maintenance-aware-deck",
     "missionary-evades-raiders", "missionary-last-charge-explores", "naval-recon",
-    "naval-threat-triage", "no-free-passage", "one-war-at-a-time",
-    "opportunistic-war", "peacetime-deterrence", "price-the-suzerainty",
-    "raid-pillage-prizes", "recon-replacement", "recorded-tactical-step",
-    "religion-sues-peace", "religious-defence-scales",
+    "naval-threat-triage", "no-free-passage", "one-war-at-a-time", "opportunistic-war",
+    "peacetime-deterrence", "price-the-suzerainty", "raid-pillage-prizes",
+    "recorded-tactical-step", "religion-sues-peace", "religious-defence-scales",
     "religious-units-heal-first", "religious-veto-defence", "research-tier-premium",
-    "science-victory-drive", "score-horizon", "settle-sooner",
-    "settlement-gap-target", "settler-factory-coordination", "settler-screen",
-    "settler-target-hysteresis", "settler-threat-detour", "slot-kind-tiebreak",
-    "solvency-first-trade-slot", "strike-opening",
-    "unit-cost-efficiency", "unit-objective-memory", "war-economy", "war-reinforcement",
-    "wide-map-capacity",
+    "science-victory-drive", "score-horizon", "settle-sooner", "settlement-gap-target",
+    "settler-factory-coordination", "settler-screen", "settler-target-hysteresis",
+    "slot-kind-tiebreak", "solvency-first-trade-slot", "strike-opening", "unit-cost-efficiency",
+    "unit-objective-memory", "war-reinforcement", "wide-map-capacity",
 )
 
 
@@ -615,12 +614,16 @@ class TheOperatorPinnedDeploymentGenome(unittest.TestCase):
             selected & measured,
         )
         self.assertEqual(ledger["counts"]["default_on"], 64)
-        for tag in gene_ledger.OPERATOR_DEMOTIONS_20260825:
+        for tag in (gene_ledger.OPERATOR_DEMOTIONS_20260825
+                    + gene_ledger.OPERATOR_DEMOTIONS_20260825_SECOND):
             self.assertNotIn(tag, selected, f"{tag} was demoted on 2026-08-25")
+        for tag in gene_ledger.OPERATOR_PROMOTIONS_20260825_THIRD:
+            self.assertIn(tag, selected, f"{tag} was pinned on on 2026-08-25")
         self.assertEqual(tuple(ledger["rules"]["operator_promotions"]),
                          gene_ledger.OPERATOR_PROMOTIONS_20260824
                          + gene_ledger.OPERATOR_PROMOTIONS_20260825
-                         + gene_ledger.OPERATOR_PROMOTIONS_20260825_SECOND)
+                         + gene_ledger.OPERATOR_PROMOTIONS_20260825_SECOND
+                         + gene_ledger.OPERATOR_PROMOTIONS_20260825_THIRD)
 
     def test_the_ledger_records_evidence_without_redeciding_the_list(self):
         ledger = json.loads(gene_ledger.LEDGER_JSON.read_text())

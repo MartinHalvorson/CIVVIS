@@ -16,7 +16,7 @@ Of 76 priced genes the interval clears zero for **21 upward** and **0 downward**
 |---|---:|---:|---:|---|---|
 | `air-surge` | +101 [+76, +125] | 100.0% | 2 | on | **on** |
 | `barbarian-scouts-are-scouts` | +30 [+8, +51] | 99.6% | 5 | on | **on** |
-| `bounded-recovery` | +31 [+14, +48] | 100.0% | 5 | on | **on** |
+| `bounded-recovery` | +31 [+14, +48] | 100.0% | 5 | off | **on** |
 | `buildings-before-projects` | +28 [+5, +51] | 99.2% | 5 | on | **on** |
 | `culture-building-debt` | +26 [+1, +51] | 97.8% | 2 | on | **on** |
 | `engine-faith-price` | +63 [+25, +101] | 99.9% | 1 | on | **on** |
@@ -30,7 +30,7 @@ Of 76 priced genes the interval clears zero for **21 upward** and **0 downward**
 | `peacetime-deterrence` | +18 [+1, +35] | 98.2% | 5 | on | **on** |
 | `price-the-suzerainty` | +56 [+18, +93] | 99.8% | 1 | on | **on** |
 | `raid-pillage-prizes` | +54 [+25, +83] | 100.0% | 3 | on | **on** |
-| `recon-replacement` | +51 [+30, +72] | 100.0% | 5 | on | **on** |
+| `recon-replacement` | +51 [+30, +72] | 100.0% | 5 | off | **on** |
 | `recorded-tactical-step` | +17 [+0, +33] | 97.5% | 5 | on | **on** |
 | `score-horizon` | +17 [+0, +34] | 97.6% | 5 | on | **on** |
 | `settle-sooner` | +35 [+14, +55] | 100.0% | 3 | on | **on** |
@@ -106,9 +106,11 @@ Genes priced at both shapes. **A row whose two intervals do not overlap is not a
 
 | Gene | Posterior (95% CI) | P(>0) | Pinned | Buys | Pairs to resolve |
 |---|---:|---:|---|---:|---:|
+| `holy-lane-parity` | +32 [-6, +71] | 95.0% | off | +32.4 | 5,971 |
+| `war-economy` | +13 [-89, +115] | 60.1% | off | +25.8 | 116,162 |
+| `settler-threat-detour` | +24 [-2, +51] | 96.4% | off | +24.3 | 5,630 |
 | `garrison-under-fire` | +15 [-17, +48] | 82.6% | off | +15.5 | 68,721 |
 | `district-planning` | +12 [-25, +49] | 74.1% | off | +12.9 | 125,973 |
-| `war-economy` | +13 [-89, +115] | 60.1% | on | +12.4 | 116,162 |
 | `whole-turn-backtrack-guard` | +12 [-8, +31] | 88.2% | off | +11.8 | 96,625 |
 | `one-launch-pad` | +11 [-5, +28] | 91.6% | off | +11.4 | 81,761 |
 | `stranded-settler-discount` | +11 [-5, +27] | 90.8% | off | +11.0 | 93,635 |
@@ -151,10 +153,8 @@ Genes priced at both shapes. **A row whose two intervals do not overlap is not a
 | `lane-policy-deck` | +13 [-16, +42] | 80.9% | on | +0.1 | 103,406 |
 | `lane-culture-spending` | +9 [-15, +32] | 75.9% | on | +0.1 | 250,826 |
 | `religious-units-heal-first` | +9 [-14, +33] | 78.0% | on | +0.0 | 208,321 |
-| `holy-lane-parity` | +32 [-6, +71] | 95.0% | on | +0.0 | 5,971 |
 | `religion-sues-peace` | +7 [-11, +24] | 77.2% | on | +0.0 | 421,343 |
 | `barbarian-ranged-answer` | +11 [-10, +32] | 85.1% | on | +0.0 | 126,996 |
-| `settler-threat-detour` | +24 [-2, +51] | 96.4% | on | +0.0 | 5,630 |
 | `barbarian-bargain` | +16 [-5, +38] | 93.3% | on | +0.0 | 32,522 |
 | `slot-kind-tiebreak` | +9 [-7, +26] | 87.4% | on | +0.0 | 156,019 |
 | `camp-party` | +22 [-3, +47] | 96.1% | on | +0.0 | 8,154 |
@@ -165,7 +165,7 @@ Genes priced at both shapes. **A row whose two intervals do not overlap is not a
 The top 6 that one batch could actually resolve (≤ 60,000 seat pairs each), as an argument list:
 
 ```sh
-gene_screen --genes unit-cost-efficiency,holy-lane-parity,settler-threat-detour,barbarian-bargain,camp-party,war-reinforcement
+gene_screen --genes holy-lane-parity,settler-threat-detour,unit-cost-efficiency,barbarian-bargain,camp-party,war-reinforcement
 ```
 
 `python3 tools/genes.py boundary` prints this list on its own, with `--arm-pairs` and `--max-arm-pairs` to size it.
