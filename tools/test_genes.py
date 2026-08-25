@@ -1230,7 +1230,11 @@ class TheTableIsDerived(unittest.TestCase):
                 self.assertIn(f"`{tag}`", text, tag)
             else:
                 self.assertIn("## Awaiting measurement", text)
-                self.assertIn(f"| `{tag}` | off (unmeasured) |", text, tag)
+                # An operator-pinned gene is on before its first screen
+                # (`science-victory-drive`, 2026-08-24); every other
+                # unmeasured gene is off.
+                default = "**on**" if tag in ranking.OPERATOR_DEFAULT_ON else "off"
+                self.assertIn(f"| `{tag}` | {default} (unmeasured) |", text, tag)
         self.assertNotIn("`step-and-reassess` | ", text, "a host-only flag is not ranked")
 
     def test_descriptions_come_from_the_toggle_docs(self):

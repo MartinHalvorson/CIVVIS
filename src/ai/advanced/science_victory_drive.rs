@@ -280,7 +280,7 @@ impl AdvancedAi {
         let start = Self::science_drive_start(g);
         let due = match self.science_drive {
             Some(drive) => g.turn.saturating_sub(drive.reviewed) >= review,
-            None => assigned || (g.turn >= start && (g.turn - start) % review == 0),
+            None => assigned || (g.turn >= start && (g.turn - start).is_multiple_of(review)),
         };
         if !due {
             return;
@@ -555,7 +555,7 @@ impl AdvancedAi {
         let mut production_turns = 0.0;
         if pads_standing == 0 && !pad_queued {
             let pad_item = Item::District {
-                district: pad.clone(),
+                district: pad,
                 pos: launch_city.pos,
             };
             let pad_rate = base * g.item_prod_mult(pid, launch, Some(&pad_item)).max(1.0);
@@ -564,7 +564,7 @@ impl AdvancedAi {
         let mut techs_needed: BTreeSet<Name> = BTreeSet::new();
         let mut need_tech = |tech: &Name| {
             if !player.techs.contains(tech) {
-                techs_needed.insert(tech.clone());
+                techs_needed.insert(*tech);
                 if let Some(ancestors) = g.rules.tech_ancestors.get(tech.as_str()) {
                     for ancestor in ancestors {
                         let ancestor = Name::new(ancestor);
@@ -900,7 +900,7 @@ mod tests {
         assert!(ai.science_drive_tech_bonus(&g, 0, "industrialization") >= SCIENCE_DRIVE_PRODUCTION_TECH);
         assert_eq!(ai.science_drive_tech_bonus(&g, 0, "electricity"), SCIENCE_DRIVE_PRODUCTION_TECH);
         assert!(ai.science_drive_tech_bonus(&g, 0, "steam_power") >= SCIENCE_DRIVE_PRODUCTION_TECH, "on the way to electricity");
-        let unrelated = g
+        let unrelated = *g
             .rules
             .techs
             .keys()
@@ -909,8 +909,7 @@ mod tests {
                     *tech == goal || g.rules.tech_ancestors[*goal].contains(tech.as_str())
                 })
             })
-            .expect("a tech off both paths")
-            .clone();
+            .expect("a tech off both paths");
         assert_eq!(ai.science_drive_tech_bonus(&g, 0, &unrelated), 0.0, "{unrelated}");
         assert_eq!(AdvancedAi::new().science_drive_tech_bonus(&g, 0, "industrialization"), 0.0);
     }
