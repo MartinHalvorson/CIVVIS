@@ -3980,6 +3980,42 @@ pub struct AdvancedAi {
     ///
     /// **Off by default.** Screenable.
     pub recovery_reads_the_war: bool,
+    /// Whether an ELECTIVE war may take the grand strategy while the empire's
+    /// own victory lane is live.
+    ///
+    /// This is [`Self::unchosen_war_keeps_the_lane`]'s construction applied to
+    /// the two branches directly below it, and it is here because that gene is
+    /// the only one of eleven written this week that shows persistent signal:
+    /// **+4.7 pp at z +2.09 over 271 games**, holding across four growing
+    /// samples (+2.5, +5.6, +4.5, +4.7), while nine reading genes read null at
+    /// 3,600 seats on the fleet's own screen. What that gene does is refuse to
+    /// let a war a rival started take the plan from a live lane. What these two
+    /// branches do is take the plan for a war **we choose**.
+    ///
+    /// The case against them is not new and it is not mine.
+    /// [`Self::no_elective_war`] records that "strong enough to take what a
+    /// neighbour has" fired in **every one of the last eight live Settler
+    /// runs**, that **no city was ever captured in any of them** — every city
+    /// the seat has ever held came from `found` — and that **sixteen cities
+    /// were lost across six of the eight**. That flag answers it by switching
+    /// both branches off outright, and it is Firaxis-only: "off for ordinary
+    /// and frozen controllers". So on the native board the branches run with
+    /// nothing between them and the plan, and `audit` reads conquest at 40% of
+    /// the planner-turns while `victory_eval` finishes domination 2/16 and
+    /// `docs/EVAL_STATUS.md` records 1 of 107 rival victories as conquest.
+    ///
+    /// ⚠ This is the CONDITIONAL version, not `no_elective_war` by another
+    /// name. An elective war still stands when the empire has no lane worth
+    /// protecting — `victory_focus` below `LIVE_LANE_FLOOR`, the same
+    /// Religion-mirrored 46 the unchosen-war gate uses — which is exactly the
+    /// empire for which taking a neighbour's city IS the plan. What it stops
+    /// is an empire that is already racing something optional-warring its way
+    /// out of the race. And it yields to the lane rather than falling through,
+    /// because the ladder below these branches lands on Expansion, and walking
+    /// Settlers into a war we just started is worse than either.
+    ///
+    /// **Off by default.** Screenable.
+    pub elective_war_yields_to_a_lane: bool,
 
     /// Whether the elective-war branch measures itself against a neighbour it
     /// can reach, or against the weakest empire on the planet.
@@ -5631,6 +5667,7 @@ impl AdvancedAi {
             air_surge_cooldown_until: 0,
             diplomatic_opening: false,
             recovery_reads_the_war: false,
+            elective_war_yields_to_a_lane: false,
             elective_war_in_reach: false,
             domination_city_count: false,
             unchosen_war_keeps_the_lane: false,
@@ -8042,6 +8079,17 @@ impl AdvancedAi {
     /// See [`Self::unchosen_war_keeps_the_lane`]. Every condition is a gate,
     /// and the caller sits below the Recovery branches, so by the time this is
     /// asked no city of ours is threatened and we are not losing ground.
+    /// Whether an elective war should yield the grand strategy to the lane the
+    /// empire is already racing.
+    ///
+    /// See [`Self::elective_war_yields_to_a_lane`]. Deliberately the same
+    /// `LIVE_LANE_FLOOR` test as [`Self::unchosen_war_holds_the_lane`], and
+    /// deliberately no other condition: the difference between the two genes
+    /// is which branch asks, not what is asked.
+    fn elective_war_yields(&self, g: &Game, pid: usize) -> bool {
+        self.elective_war_yields_to_a_lane && self.victory_focus(g, pid).progress >= LIVE_LANE_FLOOR
+    }
+
     fn unchosen_war_holds_the_lane(&self, g: &Game, pid: usize) -> bool {
         self.unchosen_war_keeps_the_lane
             && self.every_major_war_was_declared_on_us(g, pid)
@@ -9192,7 +9240,13 @@ impl AdvancedAi {
             } else {
                 (GrandStrategy::Conquest, "already at war")
             }
-        } else if !self.no_elective_war && cities.len() >= 2 && self.city_campaign_stands(g, pid) {
+        } else if !self.no_elective_war
+            // ⚠ `elective_war_yields_to_a_lane`: a war we CHOOSE does not take
+            // the plan from a lane we are already racing. See that flag.
+            && !self.elective_war_yields(g, pid)
+            && cities.len() >= 2
+            && self.city_campaign_stands(g, pid)
+        {
             // `city_campaign`: a weaker neighbour appraised on public power
             // and science, and a holdable city priced with the spare. See
             // `advanced/city_campaign.rs`.
@@ -9204,6 +9258,7 @@ impl AdvancedAi {
         // ★★★★ Not on the live seat: see `no_elective_war` — eight games,
         // no city ever taken, sixteen lost.
         !self.no_elective_war
+            && !self.elective_war_yields(g, pid)
             && ((g.turn >= 55 && cities.len() >= 2 && my_power > weakest_rival * 1.80 + 20.0)
                 || (military_civ
                     && g.turn >= 35
