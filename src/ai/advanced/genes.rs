@@ -1109,6 +1109,17 @@ pub const GENES: &[Gene] = &[
     // 30 turns at (10, 29), 3 charges, work 5 tiles away on its own landmass.
     // The gene tries the next-nearest candidate instead of the turn.
     Gene { tag: "builder-tries-the-next-tile", field: "builder_tries_the_next_tile", kind: Kind::OptIn, enable: AdvancedAi::enable_builder_tries_the_next_tile, disable: AdvancedAi::disable_builder_tries_the_next_tile },
+    // Before the capital exists, move the starting Warrior before the Settler
+    // and score only city footprints that the player's sight has fully
+    // observed. The target cache is invalidated after that recon turn, so a
+    // later opening turn can improve the choice with new terrain too.
+    // Appended at the END so a running screen keeps its positional genome.
+    Gene { tag: "opening-warrior-recon", field: "opening_warrior_recon", kind: Kind::OptIn, enable: AdvancedAi::enable_opening_warrior_recon, disable: AdvancedAi::disable_opening_warrior_recon },
+    // A Settler normally has two movement points. After its first actual move,
+    // throw away its cached destination and choose the remaining leg from the
+    // newly current board without discarding long-lived safety history.
+    // Appended at the END so a running screen keeps its positional genome.
+    Gene { tag: "settler-second-look", field: "settler_second_look", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_second_look, disable: AdvancedAi::disable_settler_second_look },
     // ⭐ THREE DEITY HABITS (operator, 2026-08-24: "study expert level deity
     // civ 6 tips and tricks and implement the best as heuristics"). The engine
     // has offered `chop_woods` / `chop_rainforest` / `clear_marsh` through
