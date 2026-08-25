@@ -591,12 +591,12 @@ def publication_body(batch: dict[str, Any], report: str, *, machine: str, agent:
         f"- Machine ID: `{machine}`",
         f"- Computer: `{computer}`",
         f"- Agent/session ID: `{agent}`",
-        f"- Task: publish validated 5,000-completed-game continuous batch `{batch['id']}`",
+        f"- Task: publish validated {batch['complete_games']:,}-completed-game continuous batch `{batch['id']}`",
         "- Claimed paths: `" + report + "`, "
         + ", ".join(f"`{path}`" for path in PUBLICATION_GENERATED_FILES)
         + ", `tools/test_genes.py`",
         f"- Coordinated with: {coordinated or 'none'}",
-        "- Related issue/request: operator-directed automatic 5,000-game rotation",
+        "- Related issue/request: operator-directed automatic completed-game rotation",
         "",
         "## What changed",
         "",
@@ -607,6 +607,9 @@ def publication_body(batch: dict[str, Any], report: str, *, machine: str, agent:
         "artifact; raw JSONL records are never treated as games.",
         f"- The games were pinned to clean source `{source['commit']}` / binary "
         f"`{source['binary_sha256']}`. This publication changes no game rules or default genes.",
+        "",
+        "overwrite-guard: allow this report deliberately regenerates the complete ranking snapshot from "
+        "a frozen batch, replacing its current table, ledger, and evidence rows.",
         "",
         "## Validation",
         "",
@@ -735,6 +738,15 @@ def publish_batch(state_root: Path, state_pathname: Path, state: dict[str, Any],
     report = report_value
     if not worktree.is_dir():
         raise SchedulerError(f"publication worktree is missing: {worktree}")
+
+    # An operator may merge the publication while this scheduler is stopped or
+    # while it is retrying a prior stage. Check every durable post-claim stage
+    # before touching the worktree: otherwise a merged ``claimed`` PR would be
+    # regenerated and reach a needless "nothing to commit" failure instead of
+    # permitting the next batch to start.
+    if mark_published_if_already_merged(batch, publication, worktree=worktree, number=number):
+        atomic_json(state_pathname, state)
+        return
 
     if stage == "claimed":
         target = worktree / report
