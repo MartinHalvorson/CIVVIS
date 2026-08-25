@@ -245,7 +245,9 @@ fn the_top_difficulties_also_spawn_barbarians_twice_as_often() {
     // at Prince. An idle camp has no raid to raise at all.
     let rearm = |difficulty: &str| {
         let mut game = Game::new_full(2, 40, 26, 4_172, 200, 0, true);
-        game.difficulty = difficulty.to_string();
+        // The barbarian seat's own rung (2026-08-24): the majors' rung no
+        // longer reaches the camp.
+        game.set_barbarian_difficulty(difficulty).unwrap();
         let camp = *game.barb_camps.keys().next().unwrap();
         let settler = game
             .player_unit_ids(0)
@@ -291,7 +293,7 @@ fn difficulty_scales_one_reported_barbarian_raid_party() {
     // report raises the exact difficulty-sized party at its own outpost.
     let count = |difficulty: &str| {
         let mut game = Game::new_full(2, 40, 26, 4_171, 200, 0, true);
-        game.difficulty = difficulty.to_string();
+        game.set_barbarian_difficulty(difficulty).unwrap();
         let camp = *game.barb_camps.keys().next().unwrap();
         let settler = game
             .player_unit_ids(0)
@@ -327,6 +329,12 @@ fn difficulty_scales_one_reported_barbarian_raid_party() {
     assert_eq!(low, 1, "Settler raises one melee raider");
     assert_eq!(standard, 3, "Prince raises two melee and one ranged raider");
     assert_eq!(high, 5, "Deity raises three melee and two ranged raiders");
+
+    // And the majors' rung is not what decides it any more: a Settler seat
+    // with the default barbarian rung (Immortal) still meets the top band.
+    let mut settler_seat = Game::new_full(2, 40, 26, 4_171, 200, 0, true);
+    settler_seat.difficulty = "settler".to_string();
+    assert_eq!(settler_seat.barbarian_raid_force_size(), 5);
 }
 
 #[test]
