@@ -896,6 +896,16 @@ impl AdvancedAi {
         self.diplomatic_lane_forecast = false;
     }
 
+    /// Count a peacetime major's army massed near one of our cities toward
+    /// that city's danger. See [`Self::frontier_massing_alarm`].
+    pub fn enable_frontier_massing_alarm(&mut self) {
+        self.frontier_massing_alarm = true;
+    }
+
+    pub fn disable_frontier_massing_alarm(&mut self) {
+        self.frontier_massing_alarm = false;
+    }
+
     /// Raise the Culture and Diplomacy denial alarms early, since countering an
     /// accumulated stock takes many turns. See
     /// [`Self::stock_denial_lead_time`].

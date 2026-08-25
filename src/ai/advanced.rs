@@ -4347,6 +4347,44 @@ pub struct AdvancedAi {
     /// **Off by default.** Screenable: the native board convenes the same
     /// Congress, banks the same Favor and awards the same points.
     pub diplomatic_lane_forecast: bool,
+    /// Whether a major we are NOT at war with, whose army is parked inside
+    /// reach of one of our cities, counts toward that city's danger.
+    ///
+    /// ⚠ THE THREAT MODEL IS BLIND UNTIL THE DECLARATION ARRIVES.
+    /// [`Self::city_pressure_with_visibility`] -- the one number
+    /// [`Self::threatened_city`] reads, which is in turn the first branch of
+    /// the whole grand-strategy cascade -- sums hostile strength through
+    /// `unit.owner != pid && g.is_at_war(pid, unit.owner)`. A rival that has
+    /// walked six Knights onto our border while at peace contributes
+    /// **exactly zero**. The city is not threatened, Recovery does not fire,
+    /// no defender is queued, and the stacks are already adjacent when the
+    /// declaration lands.
+    ///
+    /// What that costs was measured on this branch, by the gene that used to
+    /// live here. `unchosen-war-keeps-the-lane` asked the opposite question --
+    /// whether an empire could keep running its victory lane through a war a
+    /// rival declared, instead of converting to Conquest for the duration --
+    /// and its six-game probe answered **-22.2 pp wins (z -13.2), -6.41 pp
+    /// score share, 0 of 9 treated seats winning a game**. Releasing the war
+    /// posture during somebody else's war is close to fatal on this board, and
+    /// it stayed fatal when the fall-through was corrected from Expansion to
+    /// the empire's own lane: the number did not move by a hundredth. War is
+    /// existential here, so the turns before one starts are the valuable ones,
+    /// and they are exactly the turns this filter throws away.
+    ///
+    /// The alarm reuses the shipped pressure expression unchanged -- same six
+    /// tiles, same visibility gates, same `effective_strength`, same friendly
+    /// denominator -- and widens only the ownership filter, with two
+    /// conditions that keep it a build-up signal rather than a census of every
+    /// neighbour's garrison: the rival must not be held by a peace treaty, and
+    /// its units must have left their own territory. The one modelled term is
+    /// the weight: a stack that has not declared is counted at **half** what
+    /// the same stack counts for once it has, because it is a threat with a
+    /// probability attached and not a battle.
+    ///
+    /// **Off by default.** Screenable, and inert when off: the term is added
+    /// to the shipped sum, so a disabled gene contributes 0.0 exactly.
+    pub frontier_massing_alarm: bool,
 
     /// Reserve one empty city's next build for reachable envoy infrastructure.
     ///
@@ -5701,6 +5739,7 @@ impl AdvancedAi {
             air_surge_cooldown_until: 0,
             diplomatic_opening: false,
             diplomatic_lane_forecast: false,
+            frontier_massing_alarm: false,
             envoy_priority: false,
             joint_tactics: false,
             joint_tactics_forced_off: false,
@@ -7364,6 +7403,59 @@ impl AdvancedAi {
         hostile / Self::city_friendly_strength(g, pid, cid).max(1.0)
     }
 
+    /// Strength a major we are at PEACE with has parked within reach of `cid`,
+    /// weighted for the fact that it has not declared.
+    ///
+    /// See [`Self::frontier_massing_alarm`]. Deliberately the same expression
+    /// as [`Self::city_pressure_with_visibility`] with one filter widened, so
+    /// the two cannot drift apart about what "within reach" or "military"
+    /// means; the extra conditions are the two that separate a build-up from
+    /// a neighbour minding its own garrison.
+    fn frontier_massing_pressure(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        visible: &crate::world::TileBits,
+    ) -> f64 {
+        if !self.frontier_massing_alarm {
+            return 0.0;
+        }
+        let Some(city) = g.cities.get(&cid) else {
+            return 0.0;
+        };
+        let owner_of = |pos| {
+            g.map
+                .get(pos)
+                .and_then(|tile| tile.owner_city)
+                .and_then(|owner| g.cities.get(&owner))
+                .map(|owner| owner.owner)
+        };
+        let massed: f64 = g
+            .units
+            .values()
+            .filter(|unit| unit.owner != pid && !g.is_at_war(pid, unit.owner))
+            .filter(|unit| {
+                let owner = &g.players[unit.owner];
+                owner.alive && !owner.is_minor && !owner.is_barbarian
+            })
+            // A treaty is a hard block on `start_war`, so a rival still bound
+            // by one cannot be massing for anything this turn.
+            .filter(|unit| g.peace_treaty_until(pid, unit.owner).is_none())
+            .filter(|unit| g.sees(visible, unit.pos) && g.unit_visible_to(unit.id, pid))
+            .filter(|unit| g.wdist(city.pos, unit.pos) <= 6)
+            .filter(|unit| g.rules.units[unit.kind].class == "military")
+            // In their own borders it is a garrison. Out of them, and this
+            // close to one of our cities, it is a staging area.
+            .filter(|unit| owner_of(unit.pos).is_none_or(|owner| owner == pid))
+            .map(|unit| crate::game::effective_strength(g.unit_strength(unit, false), unit.hp))
+            .sum();
+        if massed <= 0.0 {
+            return 0.0;
+        }
+        0.5 * massed / Self::city_friendly_strength(g, pid, cid).max(1.0)
+    }
+
     fn city_friendly_strength(g: &Game, pid: usize, cid: u32) -> f64 {
         let Some(city) = g.cities.get(&cid) else {
             return 0.0;
@@ -7449,6 +7541,8 @@ impl AdvancedAi {
     ) -> f64 {
         Self::city_pressure_with_visibility(g, pid, cid, visible)
             + self.remembered_city_pressure(g, pid, cid)
+            // `frontier_massing_alarm`: contributes 0.0 exactly when off.
+            + self.frontier_massing_pressure(g, pid, cid, visible)
     }
 
     #[cfg(test)]
