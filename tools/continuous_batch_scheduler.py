@@ -17,7 +17,7 @@ be represented by a silently advancing tournament.
 
 The game command has no profile or game-rule flags.  It only sets the standard
 screen's game count, target count, fresh seed, output path, and worker cap
-(floor 90% of logical cores).  Each batch pins a detached clean ``origin/main``
+(floor 85% of logical cores).  Each batch pins a detached clean ``origin/main``
 source worktree and its release binary; the next batch refreshes that source
 only after the previous table publication has merged.
 """
@@ -114,8 +114,8 @@ def logical_cores() -> int:
 
 
 def workers_for_cores(cores: int) -> int:
-    """Use at most the operator-approved 90% cap, never zero workers."""
-    return max(1, positive_int(cores, name="logical core count") * 9 // 10)
+    """Use at most the operator-approved 85% cap, never zero workers."""
+    return max(1, positive_int(cores, name="logical core count") * 85 // 100)
 
 
 def sha256(path: Path) -> str:
@@ -541,6 +541,43 @@ def publication_body(batch: dict[str, Any], report: str, *, machine: str, agent:
     ))
 
 
+def merged_publication_details(worktree: Path, number: int) -> dict[str, str] | None:
+    """Return durable merge metadata only when GitHub confirms this PR merged.
+
+    A human or a separate integration worker can merge a publication between
+    the scheduler's ``push`` and ``ship`` transitions.  Looking up that state
+    makes the final transition idempotent instead of treating an already
+    successful publication as an error that stalls the next batch.
+    """
+    result = run_checked(
+        ["gh", "pr", "view", str(number), "--json", "state,mergedAt,mergeCommit"],
+        cwd=worktree,
+        description=f"read publication PR #{number} merge state",
+    )
+    try:
+        payload = json.loads(result.stdout)
+    except json.JSONDecodeError as error:
+        raise SchedulerError(f"could not decode publication PR #{number} merge state: {error}") from error
+    if payload.get("state") != "MERGED":
+        return None
+    details = {"merged_at": str(payload.get("mergedAt") or utc_now())}
+    merge_commit = payload.get("mergeCommit")
+    if isinstance(merge_commit, dict) and isinstance(merge_commit.get("oid"), str):
+        details["merge_commit"] = merge_commit["oid"]
+    return details
+
+
+def mark_published_if_already_merged(batch: dict[str, Any], publication: dict[str, Any], *, worktree: Path,
+                                     number: int) -> bool:
+    """Persist an externally completed merge and return whether one was found."""
+    details = merged_publication_details(worktree, number)
+    if details is None:
+        return False
+    publication.update({"stage": "merged", **details})
+    batch["phase"] = "published"
+    return True
+
+
 def publish_batch(state_root: Path, state_pathname: Path, state: dict[str, Any], *, repo: Path,
                   machine: str, agent: str) -> None:
     """Publish a frozen batch via a fresh isolated PR before rotating again.
@@ -689,8 +726,21 @@ def publish_batch(state_root: Path, state_pathname: Path, state: dict[str, Any],
         stage = "pushed"
 
     if stage == "pushed":
-        run_checked([sys.executable, "tools/civvis_collab.py", "ship"], cwd=worktree,
-                    description="ship publication PR")
+        if mark_published_if_already_merged(
+                batch, publication, worktree=worktree, number=number):
+            atomic_json(state_pathname, state)
+            return
+        try:
+            run_checked([sys.executable, "tools/civvis_collab.py", "ship"], cwd=worktree,
+                        description="ship publication PR")
+        except SchedulerError:
+            # The PR may have merged in the narrow interval after the lookup.
+            # Only absorb this error if GitHub now proves that exact outcome.
+            if mark_published_if_already_merged(
+                    batch, publication, worktree=worktree, number=number):
+                atomic_json(state_pathname, state)
+                return
+            raise
         publication["stage"] = "merged"
         publication["merged_at"] = utc_now()
         batch["phase"] = "published"
@@ -789,7 +839,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--goal-games", type=int, default=DEFAULT_GOAL_GAMES,
                         help="validated completed-game rotation boundary (default: 5000)")
     parser.add_argument("--jobs", type=int,
-                        help="game workers; default is floor(90%% of logical cores)")
+                        help="game workers; default is floor(85%% of logical cores)")
     parser.add_argument("--publisher-agent", default="continuous-batch",
                         help="agent id for isolated table-publication tasks")
     parser.add_argument("--machine", help="fleet machine id; defaults to Git config")
