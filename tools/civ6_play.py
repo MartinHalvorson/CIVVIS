@@ -3708,6 +3708,19 @@ def _play(args: argparse.Namespace) -> int:
     except Exception as exc:  # noqa: BLE001 — deliberately broad, see above
         print(f"ladder record failed (summary is on disk; "
               f"`civ6_ladder.py sync` will recover it): {exc}", file=sys.stderr)
+    # And the ledger publishes itself: the summary plus the gzipped events
+    # go onto the append-only `ledger` branch, so a machine that never sits
+    # beside this runs directory can read the live record
+    # (`tools/live_ledger.py pull`). Same rule as recording: a failure here
+    # is a line on stderr, never a failed run; `civ6_ladder.py publish-run
+    # <tag>` recovers it, and the publish is idempotent.
+    try:
+        import civ6_ladder
+        civ6_ladder.publish_run(run_dir.name, run_dir.parent)
+    except Exception as exc:  # noqa: BLE001 — deliberately broad, see above
+        print(f"ledger publish failed (summary is on disk; "
+              f"`civ6_ladder.py publish-run {run_dir.name}` will recover it): "
+              f"{exc}", file=sys.stderr)
 
     if outcome.get("kind") == "victory" and outcome.get("team") == outcome.get("local_team"):
         return 0

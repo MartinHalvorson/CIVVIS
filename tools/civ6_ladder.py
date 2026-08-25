@@ -41,6 +41,7 @@ Usage::
     python tools/civ6_ladder.py render          # redraw the docs markdown only
     python tools/civ6_ladder.py check --stale-hours 12
     python tools/civ6_ladder.py show
+    python tools/civ6_ladder.py publish-run <tag>   # append the run to the `ledger` branch
 
 ``publish`` and ``render`` are not interchangeable. ``publish`` lands run data
 from this machine's live ledger; ``render`` only redraws the committed snapshot
@@ -857,6 +858,137 @@ def record_summary(summary_path: Path, ledger: Path | None = None) -> bool:
     return changed
 
 
+# ---------------------------------------------------------------------------
+# The ledger branch: every run's summary and events, on an append-only orphan
+# branch of the repository, so a machine that never sat beside the runs
+# directory can read the live record. `tools/live_ledger.py pull` is the
+# reader. Built with plumbing only — a temporary index, `write-tree`,
+# `commit-tree`, a plain push — so a finishing game never touches the index
+# or working tree of the management worktree it plays from, and never
+# force-pushes anything.
+LEDGER_BRANCH = "ledger"
+LEDGER_IDENTITY = {
+    "GIT_AUTHOR_NAME": "civvis ladder",
+    "GIT_AUTHOR_EMAIL": "ladder@civvis.invalid",
+    "GIT_COMMITTER_NAME": "civvis ladder",
+    "GIT_COMMITTER_EMAIL": "ladder@civvis.invalid",
+}
+
+
+def _git(repo: Path, *args: str, env: dict | None = None,
+         check: bool = True, stdin: bytes | None = None) -> str:
+    import subprocess
+    result = subprocess.run(["git", "-C", str(repo), *args],
+                            capture_output=True, check=False, input=stdin,
+                            env={**os.environ, **(env or {})})
+    if check and result.returncode != 0:
+        raise RuntimeError(
+            f"git {' '.join(args)} failed ({result.returncode}): "
+            f"{result.stderr.decode(errors='replace').strip()}")
+    return result.stdout.decode(errors="replace").strip()
+
+
+def ledger_run_paths(tag: str) -> tuple[str, str]:
+    """Where one run sits on the ledger branch."""
+    return f"runs/{tag}/summary.json", f"runs/{tag}/events.jsonl.gz"
+
+
+def ledger_tip(repo: Path, remote: str = "origin",
+               branch: str = LEDGER_BRANCH, env: dict | None = None) -> str | None:
+    """Fetch the ledger branch into its remote-tracking ref; its tip, or
+    `None` when the remote has no such branch yet."""
+    tracking = f"refs/remotes/{remote}/{branch}"
+    listed = _git(repo, "ls-remote", "--heads", remote, branch, env=env)
+    if not listed:
+        return None
+    _git(repo, "fetch", "-q", remote, f"+refs/heads/{branch}:{tracking}", env=env)
+    return _git(repo, "rev-parse", tracking, env=env)
+
+
+def ledger_has_run(repo: Path, tip: str | None, tag: str,
+                   env: dict | None = None) -> bool:
+    if tip is None:
+        return False
+    summary_path, _ = ledger_run_paths(tag)
+    return _git(repo, "rev-parse", "-q", "--verify", f"{tip}:{summary_path}",
+                env=env, check=False) != ""
+
+
+def gzip_bytes(data: bytes) -> bytes:
+    """Deterministic gzip (no name, mtime 0), so the same run hashes the same."""
+    import gzip
+    import io
+    buffer = io.BytesIO()
+    with gzip.GzipFile(fileobj=buffer, mode="wb", mtime=0) as handle:
+        handle.write(data)
+    return buffer.getvalue()
+
+
+def publish_run(tag: str, runs_dir: Path | None = None, *,
+                remote: str = "origin", branch: str = LEDGER_BRANCH,
+                repo: Path | None = None, env: dict | None = None,
+                attempts: int = 3) -> str:
+    """Append `<runs>/<tag>/summary.json` (+ gzipped `events.jsonl`) to the
+    ledger branch. Returns "published", or "already" when the branch has it.
+
+    Append-only by construction: the new commit's parent is the fetched tip
+    and the push is a plain fast-forward; a tip that moved between fetch and
+    push (another seat publishing) is re-read and the commit rebuilt, never
+    forced over.
+    """
+    runs_dir = Path(runs_dir or RUNS_DEFAULT)
+    repo = Path(repo or REPO)
+    run_dir = runs_dir / tag
+    summary_path = run_dir / "summary.json"
+    if not summary_path.is_file():
+        raise FileNotFoundError(summary_path)
+    events_path = run_dir / "events.jsonl"
+    env = dict(env or {})
+    # A seat with no git identity (a fresh runner) must still be able to
+    # publish; a configured identity is left alone.
+    if "GIT_COMMITTER_EMAIL" not in {**os.environ, **env} and not _git(
+            repo, "config", "user.email", env=env, check=False):
+        env = {**LEDGER_IDENTITY, **env}
+    ledger_summary, ledger_events = ledger_run_paths(tag)
+    last_error: Exception | None = None
+    for _ in range(max(1, attempts)):
+        tip = ledger_tip(repo, remote, branch, env=env)
+        if ledger_has_run(repo, tip, tag, env=env):
+            return "already"
+        index = run_dir / f".ledger-index-{os.getpid()}"
+        index_env = {**env, "GIT_INDEX_FILE": str(index)}
+        try:
+            if tip:
+                _git(repo, "read-tree", tip, env=index_env)
+            else:
+                _git(repo, "read-tree", "--empty", env=index_env)
+            entries = [(ledger_summary, summary_path.read_bytes())]
+            if events_path.is_file():
+                entries.append((ledger_events, gzip_bytes(events_path.read_bytes())))
+            for path, blob in entries:
+                sha = _git(repo, "hash-object", "-w", "--stdin", env=env, stdin=blob)
+                _git(repo, "update-index", "--add", "--cacheinfo",
+                     f"100644,{sha},{path}", env=index_env)
+            tree = _git(repo, "write-tree", env=index_env)
+        finally:
+            try:
+                index.unlink()
+            except FileNotFoundError:
+                pass
+        parents = ["-p", tip] if tip else []
+        commit = _git(repo, "commit-tree", tree, *parents, "-m",
+                      f"ledger: {tag}", env=env)
+        try:
+            _git(repo, "push", "-q", remote, f"{commit}:refs/heads/{branch}", env=env)
+        except RuntimeError as exc:  # the tip moved under us: re-read, rebuild
+            last_error = exc
+            continue
+        _git(repo, "update-ref", f"refs/remotes/{remote}/{branch}", commit, env=env)
+        return "published"
+    raise RuntimeError(f"ledger push did not land after {attempts} attempts: "
+                       f"{last_error}")
+
+
 def summaries_under(runs_dir: Path) -> list[Path]:
     """Every run summary, oldest first, so a backfill replays history in order."""
     def stamp(path: Path) -> str:
@@ -1539,6 +1671,13 @@ def main(argv: list[str] | None = None) -> int:
                           "error (skipped on machines with no runtime cache)")
     sub.add_parser("show")
     sub.add_parser("next")
+    pub = sub.add_parser(
+        "publish-run",
+        help="append one run's summary.json and events.jsonl.gz to the "
+             "append-only `ledger` branch; a no-op when it is already there")
+    pub.add_argument("tag")
+    pub.add_argument("--remote", default="origin")
+    pub.add_argument("--branch", default=LEDGER_BRANCH)
     args = ap.parse_args(argv)
     ledger = args.ledger or live_ledger_for(args.runs)
 
@@ -1568,6 +1707,10 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "next":
         return next_rung(ledger)
+    if args.command == "publish-run":
+        print(publish_run(args.tag, args.runs, remote=args.remote,
+                          branch=args.branch))
+        return 0
     return show(ledger)
 
 

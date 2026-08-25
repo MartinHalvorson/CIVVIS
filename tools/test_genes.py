@@ -288,6 +288,24 @@ class OneShape(unittest.TestCase):
         self.assertNotIn("contested_field", profile)
         self.assertNotIn("native_competitions", profile)
 
+    def test_a_rotating_victory_mask_is_recorded_and_stays_the_standard_shape(self):
+        """⭐ `--victory-mask rotate:N` closes N real conditions per game from
+        the seed; `victories` stays the batch-level set and every lane is live
+        across the batch, so the batch pools with the ledger, and the mask is
+        written onto the source as provenance. An unmasked source records
+        nothing, so every older record stays byte-stable."""
+        masked = analysis([{"tag": "a"}], victory_mask="rotate:2")
+        profile = gene_ledger.profile_of(masked)
+        self.assertEqual(profile["victory_mask"], "rotate:2")
+        self.assertEqual(profile["victories"], gene_ledger.SCREEN["victories"])
+        self.assertEqual(gene_ledger.shape_of(profile), "standard")
+        self.assertEqual(gene_ledger.shape_gap(profile), "")
+        self.assertEqual(len(self.sources(masked)), 1, "accepted as a source")
+        self.assertNotIn("victory_mask", gene_ledger.profile_of(analysis([{"tag": "a"}])))
+        # A restricted batch-level set is still a probe, mask or no mask.
+        probe = analysis([{"tag": "a"}], victories="domination,score", victory_mask="rotate:1")
+        self.assertEqual(gene_ledger.shape_of(gene_ledger.profile_of(probe)), "legacy")
+
     def test_the_tool_and_the_binary_name_the_same_screen(self):
         """`gene_screen`'s bare defaults ARE this shape; if one side moves, the
         ledger would silently accept a batch the binary no longer plays."""
@@ -1028,25 +1046,19 @@ class GeneratedFiles(unittest.TestCase):
         self.assertEqual(gene_ledger.render_rust(deployment_only),
                          gene_ledger.render_rust(with_reporting))
 
-        newest = current["reporting_batches"][0]
-        self.assertEqual(newest["seats"], 5_988)
-        self.assertEqual(newest["games"], 998)
-        self.assertEqual(newest["batch"], {
-            "target_seats": 20_004,
-            "complete_seats": 5_988,
-            "partial": True,
-        })
-        self.assertEqual(newest["build"]["commit"],
-                         "754c5373cfaed0606e564efd079b2123021afba3")
-        self.assertFalse(newest["build"]["dirty"])
-        self.assertEqual(
-            newest["unverified"],
-            "Governor-lane and research-planning genes were deliberately removed "
-            "under the 2026-08-24 Diff < -0.05 pp / >=30,000-seat cull "
-            "criterion; this immutable historical display batch was compiled "
-            "before those removals.",
-        )
-        self.assertNotIn(newest["path"], {s["path"] for s in current["sources"]})
+        reporting = ranking.load_reporting_batches(current)
+        self.assertEqual(len(reporting), len(ranking.REPORTING_BATCH_LABELS))
+        for batch in reporting:
+            newest = batch["meta"]
+            artifact = ranking.load_source(ranking.ROOT / newest["path"])
+            self.assertEqual(newest["seats"], artifact["seats"])
+            self.assertEqual(newest["games"], artifact["games"])
+            self.assertEqual(newest["batch"], ranking.batch_of(artifact))
+            self.assertTrue(newest["build"]["commit"])
+            self.assertFalse(newest["build"]["dirty"])
+            if newest.get("unverified"):
+                self.assertGreater(len(newest["unverified"]), 40)
+            self.assertNotIn(newest["path"], {s["path"] for s in current["sources"]})
         authoritative, _ = ranking.load_sources(current)
         displayed, _ = ranking.load_display_sources(current)
         self.assertIn("engine-faith-price", authoritative)
@@ -1175,17 +1187,30 @@ class VersionedGenes(unittest.TestCase):
 
 
 
-#: The main table's columns, in order. One definition, read both as the header
-#: assertion and as the name -> index map every cell lookup goes through.
-EXPECTED_COLUMNS = (
-    "| Rank | Gene | Description | Best version | Default | "
-    "Wins ± /10k total seats — Last Batch (n=5,988 total seats) | "
-    "Wins ± /10k total seats — Prior Batch (n=4,266 total seats) | "
-    "Wins ± /10k total seats — Third Batch (n=21,030 total seats) | "
-    "Total (on) Win rate | Total (off) Win rate | Diff | "
-    "Posterior (95% CI) | P(>0) | Share Δpp (z) | "
-    "cost (compute) | cost (time) |"
-)
+#: The main table's columns, in order. The batch sample sizes are derived from
+#: their immutable reporting artefacts so an automated completed-batch publish
+#: does not require a hand edit to a stale golden number. `rebuild_from_ledger`
+#: above independently re-reads those files and makes the generated ledger and
+#: ranking byte-for-byte current; this helper only gives every cell assertion a
+#: stable, named column to read.
+def expected_columns() -> str:
+    ledger = json.loads(ranking.LEDGER_JSON.read_text())
+    batches = ranking.load_reporting_batches(ledger)
+    slots = batches + [None] * (len(ranking.REPORTING_BATCH_LABELS) - len(batches))
+    reporting = " | ".join(
+        ranking.reporting_batch_header(label, batch)
+        for label, batch in zip(ranking.REPORTING_BATCH_LABELS, slots)
+    )
+    return (
+        "| Rank | Gene | Description | Best version | Default | "
+        + reporting
+        + " | Total (on) Win rate | Total (off) Win rate | Diff | "
+        "Posterior (95% CI) | P(>0) | Share Δpp (z) | "
+        "cost (compute) | cost (time) |"
+    )
+
+
+EXPECTED_COLUMNS = expected_columns()
 
 #: Every column by name, so an assertion says which cell it reads instead of
 #: counting to it.
@@ -1348,10 +1373,11 @@ class TheTableIsDerived(unittest.TestCase):
         ledger = json.loads(ranking.LEDGER_JSON.read_text())
         batches = ranking.load_reporting_batches(ledger)
         self.assertEqual(len(batches), 3)
-        columns = (
-            (0, "Wins ± /10k total seats — Last Batch (n=5,988 total seats)"),
-            (1, "Wins ± /10k total seats — Prior Batch (n=4,266 total seats)"),
-            (2, "Wins ± /10k total seats — Third Batch (n=21,030 total seats)"),
+        slots = batches + [None] * (len(ranking.REPORTING_BATCH_LABELS) - len(batches))
+        columns = tuple(
+            (index, ranking.reporting_batch_header(label, batch))
+            for index, (label, batch) in enumerate(
+                zip(ranking.REPORTING_BATCH_LABELS, slots))
         )
         for cells in self._ranked_rows():
             tag = cell(cells, "Gene").strip("`")
@@ -1942,8 +1968,12 @@ class TheStandardScreen(unittest.TestCase):
             self.assertNotIn(tag, live_tags)
             self.assertIn(f"| `{tag}` |", ranked)
             self.assertIn(tag, cutoff_tags)
+        reporting_notes = "\n".join(
+            str(batch.get("unverified", ""))
+            for batch in self.ledger["reporting_batches"]
+        )
         self.assertIn("research-planning genes were deliberately removed",
-                      self.ledger["reporting_batches"][0]["unverified"])
+                      reporting_notes)
 
     def test_the_legacy_share_axis_already_said_it(self):
         """P10 read this gene win z +2.46 / share z −15.92 — a recorded
