@@ -4,8 +4,8 @@
 //! agent adds a shared strategic model so research, production, diplomacy,
 //! civilian work, and military movement pursue the same medium-term goal.
 use super::{
-    Ai, BasicAi, BasicUnitPlanState, ForceReport, PlanReport, PolicyDeck, UnitDoctrine,
-    UnitMemory, WarPlanReport, Weights,
+    Ai, BasicAi, BasicUnitPlanState, ForceReport, PlanReport, PolicyDeck, UnitDoctrine, UnitMemory,
+    WarPlanReport, Weights, BUILDER_ROUTE_ATTEMPTS,
 };
 use crate::belief::{BeliefState, CitySighting};
 use crate::game::{
@@ -442,28 +442,6 @@ const SPY_TRAVEL_ORDER_PATIENCE: u32 = 5;
 /// not ambitious: it is the point where the city has returned the production
 /// and the population the settler cost, not where it has become good.
 const SETTLE_PAYBACK: u32 = 15;
-
-/// The bounded horizon over which a paid expansion has to earn back its
-/// investment. This is deliberately longer than the minimum `SETTLE_PAYBACK`
-/// safety check: a city that merely survives fifteen turns is not necessarily
-/// worth the production and population it consumed.
-const COUPLED_EXPANSION_HORIZON: u32 = 90;
-/// Production points are the first, exact cost of a Settler. Keep the
-/// conversion in the same order of magnitude as the production scores below,
-/// while leaving the evaluator arm's policy decision auditable.
-const COUPLED_EXPANSION_PRODUCTION_VALUE: f64 = 4.0;
-/// A population point is both a lost citizen and a delayed growth threshold.
-/// The threshold is added to the measured yield loss in
-/// `coupled_expansion_value` rather than hidden in the site score.
-const COUPLED_EXPANSION_POPULATION_VALUE: f64 = 90.0;
-/// A military body is needed to escort a civilian through a contested map. A
-/// missing escort is a bounded reservation cost, not a hard veto: the army may
-/// be available by the time the Settler completes.
-const COUPLED_EXPANSION_ESCORT_VALUE: f64 = 90.0;
-/// Approximate Settler route length in turns from observed live paths. The
-/// route planner still owns the actual movement after production; this value
-/// only prices the opportunity cost before a unit exists.
-const COUPLED_EXPANSION_ROUTE_TURNS_PER_TILE: f64 = 1.2;
 
 /// A new city has to become more than a map pin. Forecast the first four
 /// citizens because they decide whether it reaches a useful population in time
@@ -2240,15 +2218,6 @@ pub struct AdvancedAi {
     /// `expansion-pays-back` is now a registered `Kind::OptIn` gene so a screen
     /// can price it. It ships off, like every entrant.
     pub expansion_pays_back: bool,
-    /// Price a Settler as a coupled investment instead of a free city target.
-    ///
-    /// The treatment subtracts the real production points, the population
-    /// recovery cost, escort availability, route time, visible safety cost,
-    /// and the founding lag from the same site's bounded payback value. It is
-    /// **off by default** and reached by `advanced_coupled_expansion`; the
-    /// production controller therefore keeps the historical score until this
-    /// full-cost arm has a replicated outcome screen.
-    pub coupled_expansion: bool,
     /// Remove only the absolute `standard_duration(300)` cap from adaptive
     /// expansion's existing deadline. Default-off evaluator treatment; the
     /// endgame reserve remains unchanged.
@@ -5105,15 +5074,6 @@ impl AdvancedAi {
         ai
     }
 
-    /// Evaluator treatment for the full-cost expansion investment. The
-    /// production controller remains on the historical settler score until a
-    /// replicated screen establishes that this bounded model helps.
-    pub fn coupled_expansion() -> AdvancedAi {
-        let mut ai = Self::new();
-        ai.enable_coupled_expansion();
-        ai
-    }
-
     /// Exact pre-2026-08-01 Advanced configuration used only by evaluator
     /// controls. It intentionally retains the Legacy deck and leaves both
     /// envoy-production flags off; it is not the frozen `advanced_v1` anchor.
@@ -5565,7 +5525,6 @@ impl AdvancedAi {
             settler_factory_coordination: false,
             garrison_loyalty_policy: false,
             expansion_pays_back: false,
-            coupled_expansion: false,
             late_expansion: false,
             expansion_dispatch: false,
             expansion_census: ExpansionCensus::default(),
@@ -9619,104 +9578,6 @@ impl AdvancedAi {
             },
         ) / production;
         remaining > build + g.standard_duration(SETTLE_LAG + SETTLE_PAYBACK) as f64
-    }
-
-    /// Price the population point that a completed Settler consumes. The
-    /// engine applies that cost at completion, so the estimate uses the actual
-    /// post-population city yields and the city's food surplus to model the
-    /// recovery interval rather than charging a second production surrogate.
-    fn coupled_expansion_population_cost(
-        &self,
-        g: &Game,
-        pid: usize,
-        cid: u32,
-        plan: &StrategicPlan,
-    ) -> f64 {
-        if !g.settler_consumes_population(pid, cid) {
-            return 0.0;
-        }
-        let population = g.cities[&cid].pop;
-        if population < 2 {
-            return COUPLED_EXPANSION_POPULATION_VALUE * 4.0;
-        }
-        let before = self.yield_value(g.city_yields(cid), plan.strategy);
-        let mut after = g.speculative_clone();
-        after.cities.get_mut(&cid).unwrap().pop -= 1;
-        let after_value = self.yield_value(after.city_yields(cid), plan.strategy);
-        let lost_per_turn = (before - after_value).max(0.0);
-        let yields = g.city_yields(cid);
-        let surplus = (yields.food - 2.0 * population as f64).max(0.5);
-        let recovery_turns = (g.growth_cost((population - 1).max(1)) / surplus)
-            .min(g.standard_duration(SETTLEMENT_FORECAST_HORIZON) as f64);
-        COUPLED_EXPANSION_POPULATION_VALUE + lost_per_turn * recovery_turns
-    }
-
-    /// Score one legal Settler as a paid, coupled build-settle-payback
-    /// investment. This is intentionally bounded and deterministic: it does
-    /// not clone a terminal game or grant a free city, but it does make every
-    /// material cost visible to the production decision.
-    #[allow(clippy::too_many_arguments)]
-    fn coupled_expansion_value(
-        &self,
-        g: &Game,
-        pid: usize,
-        cid: u32,
-        plan: &StrategicPlan,
-        counts: &EmpireCounts,
-        site: (Pos, f64),
-        build_turns: f64,
-    ) -> f64 {
-        let (site, site_value) = site;
-        let remaining = g.max_turns.saturating_sub(g.turn) as f64;
-        let distance = g.wdist(g.cities[&cid].pos, site) as f64;
-        let travel_turns = (distance * COUPLED_EXPANSION_ROUTE_TURNS_PER_TILE).ceil();
-        let settle_lag = g.standard_duration(SETTLE_LAG) as f64;
-        let delay = build_turns + travel_turns + settle_lag;
-        let payback_turns = remaining - delay;
-        if payback_turns <= g.standard_duration(SETTLE_PAYBACK) as f64 {
-            return -10_000.0;
-        }
-
-        let forecast =
-            self.settlement_growth_forecast_from_positions(g, pid, site, &g.wdisk(site, 2));
-        let horizon = g.standard_duration(COUPLED_EXPANSION_HORIZON).max(1) as f64;
-        let payoff_fraction = (payback_turns / horizon).clamp(0.0, 1.0);
-        // Keep the historical 920/site base as the benefit scale, but make
-        // the forecasted first four jobs contribute to that benefit instead
-        // of treating a legal plot as a free city oracle.
-        let site_quality = (920.0 + site_value * 4.0 + forecast.score.max(0.0) * 5.0).max(0.0);
-        let benefit = site_quality * payoff_fraction;
-
-        let settler_cost = g.item_remaining_cost_for_city(
-            pid,
-            cid,
-            &Item::Unit {
-                unit: "settler".into(),
-            },
-        );
-        let production_cost = settler_cost * COUPLED_EXPANSION_PRODUCTION_VALUE;
-        let population_cost = self.coupled_expansion_population_cost(g, pid, cid, plan);
-        let city_output = self.yield_value(g.city_yields(cid), plan.strategy).max(1.0);
-        let route_cost = travel_turns * city_output * 0.35;
-        let safety_cost = if self.settlement_safety {
-            let visible = self.battlefront_visibility(g, pid);
-            self.settlement_safety_penalty(g, pid, site, &visible) * 1.5
-        } else {
-            0.0
-        };
-        let city_count = g.player_city_ids(pid).len();
-        let escort_cost = if self.settlement_safety && counts.military <= city_count {
-            COUPLED_EXPANSION_ESCORT_VALUE
-        } else {
-            0.0
-        };
-        let net =
-            benefit - production_cost - population_cost - route_cost - safety_cost - escort_cost;
-        if net.is_finite() && net > 0.0 {
-            net
-        } else {
-            -10_000.0
-        }
     }
 
     /// The stock adaptive-expansion deadline: a payoff horizon, bounded by
@@ -20433,11 +20294,7 @@ impl AdvancedAi {
                         })
                     };
                     if let Some(site) = site {
-                        if self.coupled_expansion {
-                            self.coupled_expansion_value(g, pid, cid, plan, counts, site, turns)
-                        } else {
-                            (920.0 + site.1 * 4.0) * self.settler_price
-                        }
+                        (920.0 + site.1 * 4.0) * self.settler_price
                     } else {
                         -10_000.0
                     }
@@ -25360,6 +25217,9 @@ impl AdvancedAi {
         // empire-wide questions each tile asks are answered once for the whole
         // sweep rather than once per tile. The borrow checker rejects the
         // guard the moment anything in here starts mutating the game.
+        if self.base.builder_tries_the_next_tile {
+            return self.builder_step_to_the_first_reachable_job(g, pid, uid, strategy, &reserved);
+        }
         let best = {
             let _memo = g.query_memo();
             let current_target = self.builder_targets.get(&uid).copied().filter(|pos| {
@@ -25401,6 +25261,145 @@ impl AdvancedAi {
             }),
         };
         target.is_some_and(|pos| self.builder_step_toward_barbarian_safe(g, pid, uid, pos))
+    }
+
+    /// Every job this Builder could take, best first, under the same score the
+    /// untreated branch of [`Self::advanced_builder_step`] maximises.
+    ///
+    /// Reading every tile the empire owns: one memo scope so the empire-wide
+    /// questions each tile asks are answered once for the whole sweep rather
+    /// than once per tile. The borrow checker rejects the guard the moment
+    /// anything in here starts mutating the game.
+    fn builder_jobs_ranked(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        strategy: GrandStrategy,
+        reserved: &HashSet<Pos>,
+    ) -> Vec<Pos> {
+        let current = g.units[&uid].pos;
+        let _memo = g.query_memo();
+        let mut scored: Vec<(f64, Pos)> = Vec::new();
+        for cid in g.player_city_ids(pid) {
+            for pos in &g.cities[&cid].owned_tiles {
+                if reserved.contains(pos) {
+                    continue;
+                }
+                let mut here: Option<f64> = None;
+                for improvement in self.worthwhile_improvements(g, pid, *pos, strategy) {
+                    let score = self.improvement_value(g, *pos, &improvement, strategy)
+                        - g.wdist(current, *pos) as f64 * 0.7;
+                    if here.is_none_or(|old| score > old) {
+                        here = Some(score);
+                    }
+                }
+                if let Some(score) = here {
+                    scored.push((score, *pos));
+                }
+            }
+        }
+        // Descending by score, position as the tiebreak: exactly the order the
+        // untreated branch's running `best` would have settled on.
+        scored.sort_by(|(a, ap), (b, bp)| {
+            b.partial_cmp(a)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then(ap.cmp(bp))
+        });
+        scored.into_iter().map(|(_, pos)| pos).collect()
+    }
+
+    /// Walk toward the best job this Builder can actually reach, rather than
+    /// toward the best job and nowhere otherwise. Opt-in gene
+    /// `builder-tries-the-next-tile`.
+    ///
+    /// ⚠⚠ THE BEST-SCORING TILE IS NOT ALWAYS A REACHABLE ONE, AND THE
+    /// UNTREATED BRANCH ABOVE HAD NO SECOND CHOICE. It scores every owned tile,
+    /// pins the winner in `builder_targets`, hands that one position to
+    /// `builder_step_toward_barbarian_safe`, and returns whatever that says.
+    /// The distance term is `wdist` — a straight line across the map — so a
+    /// ridge, a zone of control, a peer standing in the doorway or a tile on
+    /// the far side of a bay all score exactly as if the Builder could walk
+    /// there. When the step is refused the turn ends; worse, the pin survives,
+    /// and the hysteresis at the head of the untreated branch re-selects the
+    /// same unreachable tile next turn, and every turn after that.
+    ///
+    /// Measured at the deployment genome (seed 21000000): 22 Builders stood
+    /// still for 25+ turns across eight games, Builders were 25.4% of all major
+    /// idle and 24.9% of their own turns, and at t180 there were 25 Builders
+    /// alive holding 73 charges with NOT ONE of them in an empire that had run
+    /// out of improvable tiles. One caught in the act — builder 312 of seat 5,
+    /// thirty turns at (10, 29), three charges, improvable work five tiles away
+    /// on its own landmass.
+    ///
+    /// So: rank every candidate, keep the pin at the head so a Builder already
+    /// walking somewhere does not re-shuffle for a tie, and take the first one
+    /// the unit can actually start toward. A refused tile is *unpinned* — that
+    /// is the half that ends the stall, because a pin that survives its own
+    /// refusal is the loop. Bounded to `BUILDER_ROUTE_ATTEMPTS` so a sweep that
+    /// finds a hundred jobs cannot become a hundred pathfinds; ordinary turns
+    /// succeed on the first and pay nothing.
+    fn builder_step_to_the_first_reachable_job(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+        strategy: GrandStrategy,
+        reserved: &HashSet<Pos>,
+    ) -> bool {
+        // ⚠ THE FAST PATH IS THE WHOLE COST STORY. A Builder already walking to
+        // a job it can still do takes one `worthwhile_improvements` call and
+        // one step, exactly as the untreated branch does; the empire-wide sweep
+        // below is never reached. Ranking every owned tile unconditionally
+        // instead — the first draft of this — measured **+11.1 ± 5.2% wall
+        // seconds per completed turn** over 24 games, because a pinned Builder
+        // paid one sweep of the whole empire per turn to re-derive an answer it
+        // already had.
+        let pinned = {
+            let _memo = g.query_memo();
+            self.builder_targets.get(&uid).copied().filter(|pos| {
+                !reserved.contains(pos)
+                    && !self
+                        .worthwhile_improvements(g, pid, *pos, strategy)
+                        .is_empty()
+            })
+        };
+        let mut attempts = BUILDER_ROUTE_ATTEMPTS;
+        if let Some(pos) = pinned {
+            if self.builder_step_toward_barbarian_safe(g, pid, uid, pos) {
+                return true;
+            }
+            // ⚠ A Builder with nothing left to spend refuses EVERY tile, and
+            // that is not the failure this gene is for. Stop before paying for
+            // a second route and keep the pin: the unit is mid-journey and next
+            // turn it should carry on, not re-shuffle. Without this the
+            // treatment would drop hysteresis on any turn a Builder ran its
+            // movement out.
+            if g.units[&uid].moves_left <= 0.0 {
+                return false;
+            }
+            // Refused with movement in hand: this tile cannot be routed to.
+            // Drop the pin so it never becomes next turn's answer either — a
+            // pin that survives its own refusal is the loop that produced the
+            // thirty-turn stall.
+            self.builder_targets.remove(&uid);
+            attempts -= 1;
+        }
+        let ranked = self.builder_jobs_ranked(g, pid, uid, strategy, reserved);
+        for pos in ranked
+            .into_iter()
+            .filter(|pos| Some(*pos) != pinned)
+            .take(attempts)
+        {
+            if self.builder_step_toward_barbarian_safe(g, pid, uid, pos) {
+                self.builder_targets.insert(uid, pos);
+                return true;
+            }
+            if g.units[&uid].moves_left <= 0.0 {
+                return false;
+            }
+        }
+        false
     }
 
     fn advanced_trader_step(

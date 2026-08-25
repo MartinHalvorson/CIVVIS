@@ -6673,87 +6673,6 @@ fn expansion_dispatch_and_late_window_are_independent_on_online() {
 }
 
 #[test]
-fn coupled_expansion_is_opt_in_and_reaches_the_expansion_dispatcher() {
-    let stock = AdvancedAi::new();
-    assert!(!stock.coupled_expansion);
-    assert!(!stock.expansion_dispatch);
-
-    let mut treated = AdvancedAi::new();
-    treated.enable_coupled_expansion();
-    assert!(treated.coupled_expansion);
-    assert!(treated.expansion_dispatch);
-
-    let plan = StrategicPlan {
-        strategy: GrandStrategy::Expansion,
-        target_player: None,
-        target_city: None,
-        threatened_city: None,
-        desired_cities: 4,
-        assessed_turn: 0,
-        rush: false,
-    };
-    assert!(!stock.adaptive_expansion_dispatches(&plan, None));
-    assert!(treated.adaptive_expansion_dispatches(&plan, None));
-}
-
-#[test]
-fn coupled_expansion_charges_the_paid_sequence_and_closes_without_payback() {
-    let mut game = Game::new_full(1, 30, 18, 7_116, 200, 0, false);
-    let settler = game
-        .player_unit_ids(0)
-        .into_iter()
-        .find(|unit| game.units[unit].kind == "settler")
-        .expect("the opening has a Settler");
-    game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
-    for tile in game.map.tiles.values_mut() {
-        tile.terrain = crate::name!("grassland");
-        tile.feature = None;
-    }
-    let city = game.player_city_ids(0)[0];
-    game.cities.get_mut(&city).unwrap().pop = 6;
-    let plan = StrategicPlan {
-        strategy: GrandStrategy::Expansion,
-        target_player: None,
-        target_city: None,
-        threatened_city: None,
-        desired_cities: 3,
-        assessed_turn: 0,
-        rush: false,
-    };
-    let treated = AdvancedAi::coupled_expansion();
-    let site = treated
-        .best_settle_site(&game, 0, game.cities[&city].pos, 11)
-        .expect("the shaped map has an in-reach site");
-    let counts = treated.counts(&game, 0);
-    let settler_item = Item::Unit {
-        unit: crate::name!("settler"),
-    };
-    let build_turns = game.item_remaining_cost_for_city(0, city, &settler_item)
-        / game.city_yields(city).production.max(1.0);
-    let early = treated.coupled_expansion_value(&game, 0, city, &plan, &counts, site, build_turns);
-    assert!(
-        early > -10_000.0,
-        "a healthy early site should remain an auditable paid candidate: {early}"
-    );
-    let forecast =
-        treated.settlement_growth_forecast_from_positions(&game, 0, site.0, &game.wdisk(site.0, 2));
-    let uncoupled_benefit = 920.0 + site.1 * 4.0 + forecast.score.max(0.0) * 5.0;
-    assert!(
-        early < uncoupled_benefit,
-        "the treatment must visibly charge costs (benefit={uncoupled_benefit}, net={early})"
-    );
-
-    game.turn = 195;
-    let late_counts = treated.counts(&game, 0);
-    let late_plan = treated.assess(&game, 0);
-    assert_eq!(
-        treated.production_value(&game, 0, city, &settler_item, &late_plan, &late_counts),
-        -10_000.0,
-        "a Settler that cannot found and repay before the game cap is rejected"
-    );
-}
-
-#[test]
 fn conquest_can_target_an_exposed_city_state_but_preserves_its_suzerain() {
     let mut game = Game::new_full(2, 30, 18, 711, 300, 1, false);
     for pid in 0..2 {
@@ -33714,5 +33633,239 @@ fn an_isolated_site_is_penalised_and_the_penalty_is_bounded() {
     assert_eq!(
         further, far,
         "the isolation term stops growing past its cap ({further} vs {far})"
+    );
+}
+
+/// ⚠⚠ A BUILDER DOES NOT STOP WORKING BECAUSE IT RAN OUT OF JOBS. It stops
+/// because the one job it scored best cannot be walked to — and then it picks
+/// that same job again next turn, and the turn after that, for the rest of the
+/// game. `advanced_builder_step` prices distance with `wdist`, a straight line
+/// across the map, so a walled-in tile scores exactly as if the unit could
+/// stroll there; the refused step ends the turn and the pin in
+/// `builder_targets` survives to re-select it. See
+/// `builder_step_to_the_first_reachable_job`.
+#[test]
+fn a_builder_whose_best_job_is_walled_off_walks_to_the_next_one() {
+    let setup = || {
+        let (mut game, city, home) = empire_with_a_capital(71_141);
+        for uid in game.units.keys().copied().collect::<Vec<_>>() {
+            if game.units[&uid].owner != 0 {
+                game.remove_unit(uid);
+            }
+        }
+        game.barb_camps.clear();
+        game.barb_naval_camps.clear();
+        for tile in game.map.tiles.values_mut() {
+            tile.terrain = crate::name!("grassland");
+            tile.feature = None;
+            tile.hills = false;
+            tile.resource = None;
+            tile.improvement = Some(crate::name!("farm"));
+            tile.pillaged = false;
+        }
+        game.players[0].techs.extend([
+            crate::name!("mining"),
+            crate::name!("bronze_working"),
+            crate::name!("irrigation"),
+        ]);
+        game.players[0]
+            .explored
+            .extend(game.map.tiles.keys().copied());
+        // Two jobs the capital owns, in opposite directions: the near one is
+        // ringed by mountains, the far one is open ground.
+        let walled = (home.0 + 2, home.1);
+        let open = (home.0 - 4, home.1);
+        for pos in [walled, open] {
+            assert!(game.map.tiles.contains_key(&pos), "{pos:?} is on the map");
+            let tile = game.map.tiles.get_mut(&pos).unwrap();
+            tile.improvement = None;
+            tile.owner_city = Some(city);
+            game.cities.get_mut(&city).unwrap().owned_tiles.push(pos);
+        }
+        for pos in game.nbrs(walled) {
+            assert_ne!(pos, home, "the wall must not be the Builder's own tile");
+            game.map.tiles.get_mut(&pos).unwrap().terrain = crate::name!("mountain");
+        }
+        let wall = game.nbrs(walled)[0];
+        assert!(
+            !game.rules.is_passable(&game.map.tiles[&wall]),
+            "the ring around the near job is impassable"
+        );
+        assert!(
+            game.rules.is_passable(&game.map.tiles[&open]),
+            "the far job is open ground"
+        );
+        (game, home, walled, open)
+    };
+
+    // Untreated: the Builder scores the walled tile best because it is nearer,
+    // cannot take a step toward it, and gives the turn up — with the pin left
+    // in place, so the next turn produces the same nothing.
+    let (mut stock_game, home, walled, _open) = setup();
+    let builder = stock_game.spawn_test_unit("builder", 0, home);
+    let mut stock = AdvancedAi::new();
+    assert!(!stock.advanced_builder_step(&mut stock_game, 0, builder, GrandStrategy::Expansion));
+    assert_eq!(
+        stock.builder_targets.get(&builder),
+        Some(&walled),
+        "the untreated Builder pins the job it cannot reach"
+    );
+    assert_eq!(
+        stock_game.units[&builder].pos, home,
+        "and does not move at all"
+    );
+    stock_game.units.get_mut(&builder).unwrap().moved = false;
+    assert!(!stock.advanced_builder_step(&mut stock_game, 0, builder, GrandStrategy::Expansion));
+    assert_eq!(
+        stock_game.units[&builder].pos, home,
+        "the pin re-selects the same unreachable tile next turn: this is the stall"
+    );
+
+    // Treated: the same ranking, the same first choice — and when the step is
+    // refused it unpins that tile and starts toward the job it can reach.
+    let (mut game, home, walled, open) = setup();
+    let builder = game.spawn_test_unit("builder", 0, home);
+    let mut treated = AdvancedAi::new();
+    treated.enable_builder_tries_the_next_tile();
+    assert!(treated.advanced_builder_step(&mut game, 0, builder, GrandStrategy::Expansion));
+    assert_ne!(game.units[&builder].pos, home, "the Builder is working");
+    assert!(
+        game.wdist(game.units[&builder].pos, open) < game.wdist(home, open),
+        "and it is walking toward the reachable job, not the walled one"
+    );
+    assert_eq!(
+        treated.builder_targets.get(&builder),
+        Some(&open),
+        "the pin follows the job it can actually reach"
+    );
+    assert_ne!(treated.builder_targets.get(&builder), Some(&walled));
+}
+
+/// The half of the treatment that is *not* the fix: a Builder that refused
+/// because it had nothing left to spend is mid-journey, not stuck, and must
+/// keep the job it is walking to. Dropping the pin there would re-rank the
+/// whole empire every time a Builder ran its movement out.
+#[test]
+fn a_builder_out_of_movement_keeps_the_job_it_is_walking_to() {
+    let (mut game, city, home) = empire_with_a_capital(71_153);
+    for uid in game.units.keys().copied().collect::<Vec<_>>() {
+        if game.units[&uid].owner != 0 {
+            game.remove_unit(uid);
+        }
+    }
+    game.barb_camps.clear();
+    game.barb_naval_camps.clear();
+    for tile in game.map.tiles.values_mut() {
+        tile.terrain = crate::name!("grassland");
+        tile.feature = None;
+        tile.hills = false;
+        tile.resource = None;
+        tile.improvement = Some(crate::name!("farm"));
+        tile.pillaged = false;
+    }
+    game.players[0].techs.extend([
+        crate::name!("mining"),
+        crate::name!("bronze_working"),
+        crate::name!("irrigation"),
+    ]);
+    game.players[0]
+        .explored
+        .extend(game.map.tiles.keys().copied());
+    let job = (home.0 - 4, home.1);
+    let tile = game.map.tiles.get_mut(&job).unwrap();
+    tile.improvement = None;
+    tile.owner_city = Some(city);
+    game.cities.get_mut(&city).unwrap().owned_tiles.push(job);
+
+    let builder = game.spawn_test_unit("builder", 0, home);
+    let mut ai = AdvancedAi::new();
+    ai.enable_builder_tries_the_next_tile();
+    assert!(ai.advanced_builder_step(&mut game, 0, builder, GrandStrategy::Expansion));
+    assert_eq!(ai.builder_targets.get(&builder), Some(&job));
+
+    // Spent: every tile refuses now, including the one it is walking to.
+    game.units.get_mut(&builder).unwrap().moves_left = 0.0;
+    let waypoint = game.units[&builder].pos;
+    assert!(!ai.advanced_builder_step(&mut game, 0, builder, GrandStrategy::Expansion));
+    assert_eq!(game.units[&builder].pos, waypoint);
+    assert_eq!(
+        ai.builder_targets.get(&builder),
+        Some(&job),
+        "an empty movement bar is not a reason to forget the job"
+    );
+}
+
+/// The gene is off everywhere it has not been switched on.
+#[test]
+fn builder_tries_the_next_tile_is_off_by_default() {
+    assert!(!AdvancedAi::new().base.builder_tries_the_next_tile);
+    assert!(!AdvancedAi::legacy().base.builder_tries_the_next_tile);
+    let mut deployment = AdvancedAi::new();
+    deployment.enable_engine_repairs();
+    assert!(!deployment.base.builder_tries_the_next_tile);
+}
+
+/// The same defect one layer down, where the city-states and the basic ladder
+/// live: `BasicAi::builder_step` ranks every owned job by `wdist`, asks
+/// `step_toward` for the nearest one alone, and returns `false` when that is
+/// refused. See `BasicAi::builder_tries_the_next_tile`.
+#[test]
+fn a_basic_builder_walled_off_from_the_nearest_job_takes_the_next_one() {
+    let setup = || {
+        let (mut game, city, home) = empire_with_a_capital(71_147);
+        for uid in game.units.keys().copied().collect::<Vec<_>>() {
+            if game.units[&uid].owner != 0 {
+                game.remove_unit(uid);
+            }
+        }
+        game.barb_camps.clear();
+        game.barb_naval_camps.clear();
+        for tile in game.map.tiles.values_mut() {
+            tile.terrain = crate::name!("grassland");
+            tile.feature = None;
+            tile.hills = false;
+            tile.resource = None;
+            tile.improvement = Some(crate::name!("farm"));
+            tile.pillaged = false;
+        }
+        game.players[0].techs.extend([
+            crate::name!("mining"),
+            crate::name!("bronze_working"),
+            crate::name!("irrigation"),
+        ]);
+        game.players[0]
+            .explored
+            .extend(game.map.tiles.keys().copied());
+        let walled = (home.0 + 2, home.1);
+        let open = (home.0 - 4, home.1);
+        for pos in [walled, open] {
+            let tile = game.map.tiles.get_mut(&pos).unwrap();
+            tile.improvement = None;
+            tile.owner_city = Some(city);
+            game.cities.get_mut(&city).unwrap().owned_tiles.push(pos);
+        }
+        for pos in game.nbrs(walled) {
+            game.map.tiles.get_mut(&pos).unwrap().terrain = crate::name!("mountain");
+        }
+        (game, home, open)
+    };
+
+    let (mut stock_game, home, _open) = setup();
+    let builder = stock_game.spawn_test_unit("builder", 0, home);
+    let stock = AdvancedAi::new();
+    assert!(
+        !stock.base.builder_step(&mut stock_game, 0, builder),
+        "the untreated Builder gives its turn up at the first refusal"
+    );
+    assert_eq!(stock_game.units[&builder].pos, home);
+
+    let (mut game, home, open) = setup();
+    let builder = game.spawn_test_unit("builder", 0, home);
+    let mut treated = AdvancedAi::new();
+    treated.enable_builder_tries_the_next_tile();
+    assert!(treated.base.builder_step(&mut game, 0, builder));
+    assert!(
+        game.wdist(game.units[&builder].pos, open) < game.wdist(home, open),
+        "it starts toward the job it can reach"
     );
 }

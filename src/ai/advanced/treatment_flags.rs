@@ -445,21 +445,6 @@ impl AdvancedAi {
         self.base.parallel_settlers = false;
     }
 
-    /// Price a Settler as an investment, subtracting production, population,
-    /// escort, route and safety costs from the site's payback. It also routes
-    /// the adaptive Expansion plan through `advanced_production`; otherwise the
-    /// ordinary Cities governor would never consult the coupled scorer.
-    pub fn enable_coupled_expansion(&mut self) {
-        self.coupled_expansion = true;
-        self.expansion_dispatch = true;
-    }
-
-    /// Withhold the coupled expansion treatment, preserving the stock
-    /// production score and the ordinary adaptive dispatcher setting.
-    pub fn disable_coupled_expansion(&mut self) {
-        self.coupled_expansion = false;
-    }
-
     /// Start a Settler at Civilization VI's own population floor of 2 instead
     /// of the genome's higher figure. Set by the Civilization VI bridge only;
     /// native constructors and the frozen anchor keep the genome's figure.
@@ -2272,6 +2257,20 @@ impl AdvancedAi {
     /// The twin of `enable_science_victory_drive`.
     pub fn disable_science_victory_drive(&mut self) {
         self.science_victory_drive = false;
+    }
+
+    /// Let a Builder whose nearest improvable tile cannot be routed to try the
+    /// next-nearest instead of standing still for the rest of the game. See
+    /// `BasicAi::builder_tries_the_next_tile`; opt-in gene
+    /// `builder-tries-the-next-tile`. Filed here rather than under a marker:
+    /// the append-point check reads a method line's first identifier.
+    pub fn enable_builder_tries_the_next_tile(&mut self) {
+        self.base.builder_tries_the_next_tile = true;
+    }
+
+    /// The twin of `enable_builder_tries_the_next_tile`.
+    pub fn disable_builder_tries_the_next_tile(&mut self) {
+        self.base.builder_tries_the_next_tile = false;
     }
 
     // Append points, one per name range: a new treatment goes under the range

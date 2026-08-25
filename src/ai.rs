@@ -2711,6 +2711,10 @@ pub struct BasicAi {
     /// `solvency-first-trade-slot`; deployment-on after its +8.07 pp displayed
     /// pooled Diff.
     pub(crate) solvency_first_trade_slot: bool,
+    /// Whether a Builder whose nearest improvable tile cannot be stepped
+    /// toward tries the next one instead of giving up the turn. Opt-in gene
+    /// `builder-tries-the-next-tile`; see `builder_step`.
+    pub(crate) builder_tries_the_next_tile: bool,
     /// Count a nearby barbarian ship as a home emergency only when its
     /// terrain-accurate next-turn attack envelope reaches one of our assets
     /// for a meaningful blow. Harmless ships remain legal ranged targets so
@@ -2841,6 +2845,20 @@ impl Default for BasicAi {
         Self::new()
     }
 }
+
+/// How many improvable tiles a Builder may try to route to in one turn before
+/// giving the turn up.
+///
+/// ⚠ A REFUSED `step_toward` IS THE MOST EXPENSIVE SHAPE OF TURN IN THE GAME,
+/// not the cheapest. `route_step` returns `None` only after A* has exhausted
+/// everything the unit can reach, so each failed attempt pays a whole-region
+/// search -- and a Builder in a pocket with no reachable job pays it every
+/// turn for the rest of the game. At four attempts a 24-game probe measured
+/// **+11.8 ± 6.3% wall seconds per completed turn**, the most expensive of the
+/// 24 committed fires probes against a median of 1.9%. Two covers the failure
+/// this bounds -- a single unreachable best tile -- and halves that worst case.
+/// An ordinary turn succeeds on the first and pays nothing either way.
+pub(crate) const BUILDER_ROUTE_ATTEMPTS: usize = 2;
 
 impl BasicAi {
     pub(crate) fn unit_doctrine(g: &Game, uid: u32) -> UnitDoctrine {
@@ -4353,6 +4371,7 @@ impl BasicAi {
             camp_bounty_claims: BTreeMap::new(),
             maintenance_aware_deck: false,
             solvency_first_trade_slot: false,
+            builder_tries_the_next_tile: false,
             naval_threat_triage: false,
             explore_goal: RefCell::new(HashMap::new()),
             unit_motion: BTreeMap::new(),
@@ -4675,6 +4694,7 @@ impl BasicAi {
             camp_bounty_claims: BTreeMap::new(),
             maintenance_aware_deck: false,
             solvency_first_trade_slot: false,
+            builder_tries_the_next_tile: false,
             naval_threat_triage: false,
             explore_goal: RefCell::new(HashMap::new()),
             unit_motion: BTreeMap::new(),
@@ -12109,6 +12129,10 @@ impl BasicAi {
         // mined the empire accumulates none of the material that every modern
         // unit costs to train and to upgrade into, so those tiles are taken
         // before anything else regardless of distance.
+        // ⚠ `builder_tries_the_next_tile` keeps every candidate, not only the
+        // nearest, so a target that cannot be stepped toward does not end the
+        // turn. See the tail of this function.
+        let mut candidates: Vec<(bool, i32, Pos)> = Vec::new();
         let mut best: Option<(bool, i32, Pos)> = None;
         {
             // Read-only sweep of the whole empire's tiles: a memo scope makes
@@ -12153,14 +12177,46 @@ impl BasicAi {
                         if best.map(|b| candidate < b).unwrap_or(true) {
                             best = Some(candidate);
                         }
+                        if self.builder_tries_the_next_tile {
+                            candidates.push(candidate);
+                        }
                     }
                 }
             }
         }
-        match best {
-            Some((_, _, pos)) => self.step_toward(g, pid, uid, pos),
-            None => false,
+        if !self.builder_tries_the_next_tile {
+            return match best {
+                Some((_, _, pos)) => self.step_toward(g, pid, uid, pos),
+                None => false,
+            };
         }
+        // ⚠⚠ THE NEAREST TILE IS NOT THE REACHABLE ONE. `wdist` is a straight
+        // line across the map; a ridge, a zone of control or a unit in the way
+        // is enough to make `step_toward` refuse. Shipped, that refusal ends
+        // the turn, and the sweep re-picks the same unreachable tile the next
+        // turn and every turn after: measured at the deployment genome, seed
+        // 21000000, builder 312 of seat 5 stood at (10, 29) for THIRTY TURNS
+        // holding three charges with improvable work five tiles away on its
+        // own landmass. Twenty-two builders across eight games sat still for
+        // 25+ turns.
+        //
+        // So take the next candidate instead of the turn. Bounded: a builder
+        // may ask `step_toward` at most `BUILDER_ROUTE_ATTEMPTS` times, which
+        // keeps a sweep that finds a hundred tiles from becoming a hundred
+        // pathfinds.
+        candidates.sort_unstable();
+        candidates.dedup();
+        for (_, _, pos) in candidates.into_iter().take(BUILDER_ROUTE_ATTEMPTS) {
+            if self.step_toward(g, pid, uid, pos) {
+                return true;
+            }
+            // A Builder with nothing left to spend refuses every tile; that is
+            // not this gene's failure, and re-asking is pure cost.
+            if g.units[&uid].moves_left <= 0.0 {
+                return false;
+            }
+        }
+        false
     }
 
     /// Improvements this particular unit can actually spend one of its own
