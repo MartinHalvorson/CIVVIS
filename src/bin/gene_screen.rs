@@ -2984,6 +2984,7 @@ fn print_table(header: &Header, rows: &[Row]) {
         if !parts.is_empty() {
             println!("how the games ended (by seat): {}", parts.join(" · "));
         }
+        print_drift_meter(rows);
         // ⭐ THE TWO LANES THE LIVE SEAT ACTUALLY LOSES TO. Printed whenever
         // the rows carry the fields, fieldless or contested, so the standard
         // screen's own answer to "was anybody even racing?" is visible beside
@@ -3491,6 +3492,7 @@ fn write_json_summary(path: &str, header: &Header, rows: &[Row]) {
         "seats": estimates.seats,
         "games": estimates.games,
         "endings": ending_census(rows),
+        "drift": drift_meter(rows).map(|meter| meter.json()),
         "victory_masks": mask_report(header, rows).map(|report| report.json()),
         "difficulty": rung_report(header, rows).map(|report| report.json()),
         "rival_mix": rival_report(header, rows).map(|report| report.json()),
@@ -4609,6 +4611,205 @@ fn print_rival_mix(header: &Header, rows: &[Row]) {
         "  win Δpp ± one clustered standard error (measured seats) in the games whose fixed rival was \
          of each kind; `agree` = every kind's sign is the whole batch's, `SPLIT` = a gene that pays \
          against one rival and not another. The rival seat itself prices no gene."
+    );
+}
+
+/// ⭐ THE LIVE LOSS CENSUS the screen is read against: how the live
+/// Civilization VI verification seat's games ended when a rival won, from
+/// the Hall of Fame census in
+/// `docs/eval/2026-08-18-we-screen-against-a-religion-game-and-lose-a-diplomacy-game.md`
+/// — diplomatic 32 : culture 27 : religious 8 : science 4 : domination 1.
+/// The board the screen plays is not that board (science and diplomatic land
+/// past its clock; conversion decides most of its early endings), and the
+/// drift meter says by how much.
+const LIVE_LOSS_CENSUS: [(&str, usize); 5] = [
+    ("diplomatic", 32),
+    ("culture", 27),
+    ("religious", 8),
+    ("science", 4),
+    ("domination", 1),
+];
+const LIVE_LOSS_CENSUS_SOURCE: &str =
+    "docs/eval/2026-08-18-we-screen-against-a-religion-game-and-lose-a-diplomacy-game.md";
+
+/// Where the live ladder's own record is read from when `--analyze` runs in
+/// a checkout: its `attempts[].victory_type` are the endings of every
+/// finished live game, ours or a rival's.
+const LIVE_LADDER_JSON: &str = "docs/civ6_ladder.json";
+
+/// A live `victory_type` as the screen names the ending, or `None` for a
+/// value that is not an ending (`VICTORY_DEFAULT`, an unfinished game).
+fn live_ending(victory_type: &str) -> Option<&'static str> {
+    match victory_type {
+        "VICTORY_SCORE" => Some("score"),
+        "VICTORY_DIPLOMATIC" => Some("diplomatic"),
+        "VICTORY_CULTURE" => Some("culture"),
+        "VICTORY_RELIGIOUS" => Some("religious"),
+        "VICTORY_TECHNOLOGY" => Some("science"),
+        "VICTORY_CONQUEST" => Some("domination"),
+        _ => None,
+    }
+}
+
+/// The live ladder's endings from `docs/civ6_ladder.json`, if the file is
+/// readable here and carries any: ending → games.
+fn live_ladder_endings(path: &str) -> Option<BTreeMap<&'static str, usize>> {
+    let text = std::fs::read_to_string(path).ok()?;
+    let ladder: serde_json::Value = serde_json::from_str(&text).ok()?;
+    let mut endings: BTreeMap<&'static str, usize> = BTreeMap::new();
+    for attempt in ladder.get("attempts")?.as_array()? {
+        if let Some(ending) = attempt
+            .get("victory_type")
+            .and_then(serde_json::Value::as_str)
+            .and_then(live_ending)
+        {
+            *endings.entry(ending).or_default() += 1;
+        }
+    }
+    (!endings.is_empty()).then_some(endings)
+}
+
+/// ⭐ THE DRIFT METER: the batch's share of games ended by each condition
+/// beside the live seat's, so a reader sees which lanes the screen is not
+/// exercising before reading a lane gene's column.
+struct DriftMeter {
+    /// Games in the batch, and per ending its games.
+    games: usize,
+    batch: BTreeMap<&'static str, usize>,
+    /// The live ladder's own endings, when `LIVE_LADDER_JSON` was readable.
+    ladder: Option<BTreeMap<&'static str, usize>>,
+}
+
+/// The six endings in the lobby's order, then `unfinished`.
+const DRIFT_ENDINGS: [&str; 7] = [
+    "science",
+    "culture",
+    "religious",
+    "diplomatic",
+    "domination",
+    "score",
+    "unfinished",
+];
+
+impl DriftMeter {
+    fn share(count: usize, total: usize) -> f64 {
+        if total == 0 {
+            0.0
+        } else {
+            count as f64 / total as f64
+        }
+    }
+
+    fn json(&self) -> serde_json::Value {
+        let ladder_total: usize = self.ladder.iter().flat_map(|l| l.values()).sum();
+        let census_total: usize = LIVE_LOSS_CENSUS.iter().map(|(_, n)| n).sum();
+        serde_json::json!({
+            "unit": "share of games ended by each condition",
+            "games": self.games,
+            "batch": DRIFT_ENDINGS.iter().map(|ending| {
+                let games = self.batch.get(ending).copied().unwrap_or(0);
+                (ending.to_string(), serde_json::json!(Self::share(games, self.games)))
+            }).collect::<serde_json::Map<_, _>>(),
+            "live_ladder": self.ladder.as_ref().map(|ladder| serde_json::json!({
+                "source": LIVE_LADDER_JSON,
+                "games": ladder_total,
+                "shares": ladder.iter().map(|(ending, n)| {
+                    (ending.to_string(), serde_json::json!(Self::share(*n, ladder_total)))
+                }).collect::<serde_json::Map<_, _>>(),
+            })),
+            "live_loss_census": {
+                "source": LIVE_LOSS_CENSUS_SOURCE,
+                "games": census_total,
+                "shares": LIVE_LOSS_CENSUS.iter().map(|(ending, n)| {
+                    (ending.to_string(), serde_json::json!(Self::share(*n, census_total)))
+                }).collect::<serde_json::Map<_, _>>(),
+            },
+        })
+    }
+}
+
+/// The meter over the batch's games, or `None` for a batch with no games.
+fn drift_meter(rows: &[Row]) -> Option<DriftMeter> {
+    drift_meter_with(rows, LIVE_LADDER_JSON)
+}
+
+fn drift_meter_with(rows: &[Row], ladder_path: &str) -> Option<DriftMeter> {
+    let mut first_of_game: BTreeMap<GameKey, &Row> = BTreeMap::new();
+    for row in rows.iter().filter(|row| row.kind == "game") {
+        first_of_game.entry(row.game_key()).or_insert(row);
+    }
+    if first_of_game.is_empty() {
+        return None;
+    }
+    let mut batch: BTreeMap<&'static str, usize> = BTreeMap::new();
+    for row in first_of_game.values() {
+        let ending = DRIFT_ENDINGS
+            .iter()
+            .copied()
+            .find(|ending| *ending == row.victory)
+            .unwrap_or("unfinished");
+        *batch.entry(ending).or_default() += 1;
+    }
+    Some(DriftMeter {
+        games: first_of_game.len(),
+        batch,
+        ladder: live_ladder_endings(ladder_path),
+    })
+}
+
+/// The drift table: one row per ending, the batch's share beside the live
+/// ladder's (when its JSON is readable here) and the live loss census.
+fn print_drift_meter(rows: &[Row]) {
+    let Some(meter) = drift_meter(rows) else {
+        return;
+    };
+    let ladder_total: usize = meter.ladder.iter().flat_map(|l| l.values()).sum();
+    let census_total: usize = LIVE_LOSS_CENSUS.iter().map(|(_, n)| n).sum();
+    println!(
+        "drift · share of games ended by each condition · {} batch games · live loss census {} rival \
+         wins ({LIVE_LOSS_CENSUS_SOURCE}){}",
+        meter.games,
+        census_total,
+        match &meter.ladder {
+            Some(_) => format!(" · live ladder {ladder_total} finished games ({LIVE_LADDER_JSON})"),
+            None => format!(" · {LIVE_LADDER_JSON} not readable here, ladder column omitted"),
+        }
+    );
+    println!(
+        "  {:<11} {:>9} {:>13}{}",
+        "ending",
+        "batch",
+        "live losses",
+        if meter.ladder.is_some() {
+            format!(" {:>12}", "live ladder")
+        } else {
+            String::new()
+        }
+    );
+    for ending in DRIFT_ENDINGS {
+        let batch = DriftMeter::share(meter.batch.get(ending).copied().unwrap_or(0), meter.games);
+        let census = LIVE_LOSS_CENSUS
+            .iter()
+            .find(|(name, _)| *name == ending)
+            .map(|(_, n)| format!("{:>12.0}%", 100.0 * DriftMeter::share(*n, census_total)))
+            .unwrap_or_else(|| format!("{:>13}", "-"));
+        let ladder = meter
+            .ladder
+            .as_ref()
+            .map(|ladder| {
+                format!(
+                    " {:>11.0}%",
+                    100.0
+                        * DriftMeter::share(ladder.get(ending).copied().unwrap_or(0), ladder_total)
+                )
+            })
+            .unwrap_or_default();
+        println!("  {ending:<11} {:>8.0}% {census}{ladder}", 100.0 * batch);
+    }
+    println!(
+        "  the live loss census is how the live seat's games ended when a RIVAL won; the ladder column \
+         is every finished live game, ours included. A lane the batch never ends on is a lane its \
+         genes cannot pay through on the win axis — read their share column."
     );
 }
 
@@ -6474,6 +6675,62 @@ mod tests {
         assert!(rival_report(&plain, &[test_row(0, 0, "1", true)]).is_none());
         assert_eq!(shape_of(&header), "standard");
         print_rival_mix(&header, &rows);
+    }
+
+    /// ⭐ The drift meter reads the batch by GAME, maps the live ladder's own
+    /// `victory_type`s, and keeps the loss census beside them.
+    #[test]
+    fn the_drift_meter_reads_the_batch_beside_the_live_census() {
+        let mut rows = Vec::new();
+        for game in 0..10 {
+            for seat in 0..3 {
+                let mut row = test_row(game, seat, "1", seat == 0);
+                row.victory = match game % 4 {
+                    0 | 1 => "score".into(),
+                    2 => "religious".into(),
+                    _ => "culture".into(),
+                };
+                rows.push(row);
+            }
+        }
+        let dir = std::env::temp_dir().join(format!("civvis-drift-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let ladder = dir.join("ladder.json");
+        std::fs::write(
+            &ladder,
+            r#"{"attempts":[{"victory_type":"VICTORY_SCORE"},{"victory_type":"VICTORY_DIPLOMATIC"},
+                {"victory_type":"VICTORY_DIPLOMATIC"},{"victory_type":"VICTORY_DEFAULT"},{"won":false}]}"#,
+        )
+        .expect("write");
+        let meter = drift_meter_with(&rows, ladder.to_str().expect("path")).expect("games");
+        assert_eq!(meter.games, 10, "by game, not by seat");
+        assert_eq!(
+            meter.batch,
+            BTreeMap::from([("score", 6), ("religious", 2), ("culture", 2)])
+        );
+        assert_eq!(
+            meter.ladder,
+            Some(BTreeMap::from([("score", 1), ("diplomatic", 2)])),
+            "VICTORY_DEFAULT and an unfinished attempt are not endings"
+        );
+        let json = meter.json();
+        assert!((json["batch"]["score"].as_f64().expect("share") - 0.6).abs() < 1e-9);
+        assert_eq!(json["live_ladder"]["games"], 3);
+        assert_eq!(json["live_loss_census"]["games"], 72);
+        assert_eq!(json["live_loss_census"]["source"], LIVE_LOSS_CENSUS_SOURCE);
+        let _ = std::fs::remove_dir_all(&dir);
+        // Unreadable ladder: the column is omitted, the meter still reads.
+        let without = drift_meter_with(&rows, "/nonexistent/ladder.json").expect("games");
+        assert!(without.ladder.is_none());
+        assert!(drift_meter_with(&[], "/nonexistent").is_none());
+        print_drift_meter(&rows);
+        // The real ledger's record, when this test runs in a checkout, maps.
+        if let Some(live) = live_ladder_endings(LIVE_LADDER_JSON) {
+            assert!(live.values().sum::<usize>() > 0);
+        }
+        assert_eq!(live_ending("VICTORY_TECHNOLOGY"), Some("science"));
+        assert_eq!(live_ending("VICTORY_CONQUEST"), Some("domination"));
+        assert_eq!(live_ending("VICTORY_DEFAULT"), None);
     }
 
     /// A lane gene's lane is read off the registry's own words; a version is
