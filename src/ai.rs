@@ -2683,6 +2683,13 @@ pub struct BasicAi {
     /// answered. Opt-in gene `enemy-of-my-enemy`; see
     /// `advanced/enemy_of_my_enemy.rs`.
     pub(crate) enemy_of_my_enemy: bool,
+    /// Claim the ground between us and the nearest neighbours first while
+    /// the army can hold it, waive the border provocation there, and wall
+    /// and garrison the frontier cities. The flag lives here because the
+    /// peacetime garrison (`garrison_assignments_inner`) is this
+    /// controller's. Opt-in gene `contested-land-first`; see
+    /// `advanced/contested_land.rs`.
+    pub(crate) contested_land_first: bool,
     /// ★ THE BARBARIANS HUNT THE RELIGIOUS CORPS TOO. A Missionary beside a
     /// city it is converting stands still for three turns at zero movement,
     /// and in Civilization VI a raider that reaches it condemns it. Here the
@@ -4371,6 +4378,7 @@ impl BasicAi {
             camp_bounty: false,
             adjacent_camp_clear: true,
             enemy_of_my_enemy: false,
+            contested_land_first: false,
             barbarian_heretic_hunt: true,
             deals_for_our_gain: false,
             deals_at_the_ceiling: false,
@@ -4760,6 +4768,7 @@ impl BasicAi {
             camp_bounty: false,
             adjacent_camp_clear: true,
             enemy_of_my_enemy: false,
+            contested_land_first: false,
             barbarian_heretic_hunt: true,
             deals_for_our_gain: false,
             deals_at_the_ceiling: false,
@@ -12660,6 +12669,13 @@ impl BasicAi {
                 .map(|enemy| effective_strength(g.unit_strength(enemy, true), enemy.hp))
                 .sum();
             if pressure <= 0.0 {
+                // `contested_land_first`: a frontier city holds a garrison in
+                // peacetime too — below any live pressure, the city nearest
+                // the neighbour first. See `advanced/contested_land.rs`.
+                if let Some(distance) = self.contested_frontier_distance(g, pid, city.pos) {
+                    let radius = advanced::contested_land::CONTESTED_LAND_FRONTIER_RADIUS;
+                    wanting.push((i64::from(radius - distance), city.pos));
+                }
                 continue;
             }
             wanting.push((pressure as i64 * 1_000 + city.hp.max(0) as i64, city.pos));
