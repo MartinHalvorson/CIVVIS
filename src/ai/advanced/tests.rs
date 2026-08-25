@@ -34417,6 +34417,9 @@ fn the_builder_sees_the_housing_an_improvement_carries() {
         seeing.improvement_value(&game, pos, mine, GrandStrategy::Expansion),
         blind.improvement_value(&game, pos, mine, GrandStrategy::Expansion),
         "an improvement with no Housing is priced identically by both"
+    );
+}
+
 // ---- gold_and_cards: which currency pays for an item ---------------------
 
 /// `buy-what-cards-cannot-boost`: the same Library in the same city scores
