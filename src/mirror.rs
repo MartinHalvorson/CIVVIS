@@ -322,6 +322,19 @@ impl Snapshot {
         self.revealed.get(&pos)
     }
 
+    /// Record a finished improvement (an `improved` event) on an already revealed
+    /// plot. Returns false when the plot is not revealed; the event says nothing
+    /// about terrain, so it cannot reveal one.
+    pub fn set_improvement(&mut self, pos: (i32, i32), im: &str) -> bool {
+        match self.revealed.get_mut(&pos) {
+            Some(plot) => {
+                plot.im = Some(im.to_string());
+                true
+            }
+            None => false,
+        }
+    }
+
     /// Every plot this seat has revealed, in offset coordinates.
     ///
     /// ⚠ Offset, like everything the mod emits — the caller converts. Handing out
@@ -12555,7 +12568,7 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
     gaps.into_iter().collect()
 }
 
-fn state_from_json(line: &str) -> serde_json::Result<StateSnapshot> {
+pub fn state_from_json(line: &str) -> serde_json::Result<StateSnapshot> {
     let value: serde_json::Value = serde_json::from_str(line)?;
     let mut state: StateSnapshot = serde_json::from_value(value.clone())?;
     state.schema_gaps = state_schema_gaps(&value);

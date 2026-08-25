@@ -70,14 +70,14 @@ use civvis::setup::{self, BaseRuleset, GameSpeed, MapPoles, MapScript, MapSize, 
 /// catching everything, which is how it stopped being read. The targeted
 /// `*_cannot_reach_the_frozen_anchor` tests below remain the second line.
 #[cfg(test)]
-const ANCHOR_BEHAVIOUR_FNV: u64 = 0x32d6_ac78_9161_017f;
+const ANCHOR_BEHAVIOUR_FNV: u64 = 0x0b7b_b89a_2d86_c831;
 
 /// How many actions the anchor applies across `ANCHOR_PROFILES`. Pinned beside
 /// the hash because a fingerprint that moved tells you nothing about how far,
 /// and "9,256 decisions rather than 8,959" is a much better first sentence of a
 /// diagnosis than a changed 64-bit number.
 #[cfg(test)]
-const ANCHOR_DECISIONS: usize = 18_790;
+const ANCHOR_DECISIONS: usize = 18_796;
 
 fn arg(args: &[String], key: &str, default: i64) -> i64 {
     args.iter()

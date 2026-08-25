@@ -242,3 +242,205 @@ class PolicyRosterIsStrict(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TheDifficultyLadderIsProjected(unittest.TestCase):
+    """The ladder is modifiers, start-unit rows and raid windows, not a table
+    of numbers; the projection has to evaluate them the way the DLL does."""
+
+    LADDER = [
+        "DIFFICULTY_SETTLER", "DIFFICULTY_CHIEFTAIN", "DIFFICULTY_WARLORD",
+        "DIFFICULTY_PRINCE", "DIFFICULTY_KING", "DIFFICULTY_EMPEROR",
+        "DIFFICULTY_IMMORTAL", "DIFFICULTY_DEITY",
+    ]
+
+    def ladder_database(self) -> civ6_fidelity.Database:
+        return database_with({
+            "Difficulties": [{"DifficultyType": rung} for rung in self.LADDER],
+            "Modifiers": [
+                {"ModifierId": "HIGH_DIFFICULTY_SCIENCE_SCALING",
+                 "OwnerRequirementSetId": "PLAYER_IS_HIGH_DIFFICULTY_AI"},
+                {"ModifierId": "LOW_DIFFICULTY_COMBAT_SCALING",
+                 "OwnerRequirementSetId": "PLAYER_IS_LOW_DIFFICULTY_HUMAN"},
+                {"ModifierId": "BARBARIAN_CAMP_GOLD_SCALING",
+                 "OwnerRequirementSetId": "PLAYER_IS_HUMAN"},
+            ],
+            "ModifierArguments": [
+                {"ModifierId": "HIGH_DIFFICULTY_SCIENCE_SCALING", "Name": "Amount",
+                 "Type": "LinearScaleFromDefaultHandicap", "Value": "0", "Extra": "8"},
+                {"ModifierId": "LOW_DIFFICULTY_COMBAT_SCALING", "Name": "Amount",
+                 "Type": "LinearScaleFromDefaultHandicap", "Value": "0", "Extra": "-1",
+                 "SecondExtra": "DIFFICULTY_PRINCE"},
+                {"ModifierId": "BARBARIAN_CAMP_GOLD_SCALING", "Name": "Amount",
+                 "Type": "LinearScaleFromDefaultHandicap", "Value": "0", "Extra": "-5",
+                 "SecondExtra": "DIFFICULTY_PRINCE"},
+            ],
+            "Requirements": [
+                {"RequirementId": "REQUIRES_HIGH_DIFFICULTY",
+                 "RequirementType": "REQUIREMENT_PLAYER_HANDICAP_AT_OR_ABOVE", "Inverse": "0"},
+                {"RequirementId": "REQUIRES_LOW_DIFFICULTY",
+                 "RequirementType": "REQUIREMENT_PLAYER_HANDICAP_AT_OR_ABOVE", "Inverse": "1"},
+                {"RequirementId": "REQUIRES_PLAYER_IS_AI",
+                 "RequirementType": "REQUIREMENT_PLAYER_IS_AI"},
+            ],
+            "RequirementArguments": [
+                {"RequirementId": "REQUIRES_HIGH_DIFFICULTY", "Name": "Handicap",
+                 "Value": "DIFFICULTY_PRINCE"},
+                {"RequirementId": "REQUIRES_LOW_DIFFICULTY", "Name": "Handicap",
+                 "Value": "DIFFICULTY_WARLORD"},
+            ],
+            "RequirementSetRequirements": [
+                {"RequirementSetId": "PLAYER_IS_HIGH_DIFFICULTY_AI",
+                 "RequirementId": "REQUIRES_PLAYER_IS_AI"},
+                {"RequirementSetId": "PLAYER_IS_HIGH_DIFFICULTY_AI",
+                 "RequirementId": "REQUIRES_HIGH_DIFFICULTY"},
+                {"RequirementSetId": "PLAYER_IS_LOW_DIFFICULTY_HUMAN",
+                 "RequirementId": "REQUIRES_LOW_DIFFICULTY"},
+            ],
+            "MajorStartingUnits": [
+                {"Unit": "UNIT_WARRIOR", "Era": "ERA_ANCIENT", "District": "DISTRICT_CITY_CENTER",
+                 "Quantity": "1", "AiOnly": "1", "MinDifficulty": "DIFFICULTY_KING",
+                 "DifficultyDelta": "1.0"},
+                {"Unit": "UNIT_BUILDER", "Era": "ERA_ANCIENT", "District": "DISTRICT_CITY_CENTER",
+                 "Quantity": "1", "AiOnly": "1", "MinDifficulty": "DIFFICULTY_KING",
+                 "DifficultyDelta": "0.5"},
+                {"Unit": "UNIT_SETTLER", "Era": "ERA_ANCIENT", "District": "DISTRICT_CITY_CENTER",
+                 "Quantity": "1", "AiOnly": "0"},
+            ],
+            "StartingBuildings": [
+                {"Building": "BUILDING_WALLS", "Era": "ERA_ANCIENT",
+                 "District": "DISTRICT_CITY_CENTER", "MinorOnly": "1",
+                 "MinDifficulty": "DIFFICULTY_IMMORTAL"},
+            ],
+            "BarbarianAttackForces": [
+                {"AttackForceType": "LowDifficultyStandardRaid",
+                 "MaxTargetDifficulty": "DIFFICULTY_CHIEFTAIN", "SpawnRate": "2",
+                 "MeleeTag": "CLASS_MELEE", "NumMeleeUnits": "1", "RaidingForce": "1"},
+                {"AttackForceType": "StandardRaid",
+                 "MinTargetDifficulty": "DIFFICULTY_WARLORD",
+                 "MaxTargetDifficulty": "DIFFICULTY_EMPEROR", "SpawnRate": "2",
+                 "MeleeTag": "CLASS_MELEE", "NumMeleeUnits": "2", "NumRangeUnits": "1",
+                 "RaidingForce": "1"},
+                {"AttackForceType": "HighDifficultyStandardRaid",
+                 "MinTargetDifficulty": "DIFFICULTY_IMMORTAL", "SpawnRate": "1",
+                 "MeleeTag": "CLASS_MELEE", "NumMeleeUnits": "3", "NumRangeUnits": "2",
+                 "RaidingForce": "1"},
+                {"AttackForceType": "CavalryRaid",
+                 "MinTargetDifficulty": "DIFFICULTY_WARLORD",
+                 "MaxTargetDifficulty": "DIFFICULTY_EMPEROR", "SpawnRate": "2",
+                 "MeleeTag": "CLASS_LIGHT_CAVALRY", "NumMeleeUnits": "9", "RaidingForce": "1"},
+            ],
+        })
+
+    def test_a_handicap_scales_linearly_off_prince(self):
+        projected = civ6_fidelity.project_difficulties(self.ladder_database())
+        self.assertEqual(projected["prince"]["ai_science_pct"], 0)
+        self.assertEqual(projected["king"]["ai_science_pct"], 8)
+        self.assertEqual(projected["deity"]["ai_science_pct"], 32)
+        # Below the requirement's floor the modifier is not attached at all.
+        self.assertEqual(projected["warlord"]["ai_science_pct"], 0)
+
+    def test_an_inverse_requirement_stops_below_its_rung(self):
+        """`REQUIRES_LOW_DIFFICULTY` is the inverse of at-or-above Warlord, so
+        Settler and Chieftain pass it and Warlord does not."""
+        projected = civ6_fidelity.project_difficulties(self.ladder_database())
+        self.assertEqual(projected["settler"]["human_combat_strength"], 3)
+        self.assertEqual(projected["chieftain"]["human_combat_strength"], 2)
+        self.assertEqual(projected["warlord"]["human_combat_strength"], 0)
+
+    def test_camp_gold_runs_negative_above_prince(self):
+        projected = civ6_fidelity.project_difficulties(self.ladder_database())
+        self.assertEqual(projected["settler"]["human_camp_gold"], 15)
+        self.assertEqual(projected["deity"]["human_camp_gold"], -20)
+
+    def test_start_units_floor_the_per_rung_delta(self):
+        projected = civ6_fidelity.project_difficulties(self.ladder_database())
+        self.assertEqual(projected["prince"]["ai_bonus_warrior"], 0)
+        self.assertEqual(projected["king"]["ai_bonus_warrior"], 1)
+        self.assertEqual(projected["deity"]["ai_bonus_warrior"], 4)
+        self.assertEqual(projected["emperor"]["ai_bonus_builder"], 1, "1.5 Builders is one")
+        self.assertEqual(projected["deity"]["ai_bonus_builder"], 2)
+        self.assertNotIn("ai_bonus_settler", projected["deity"], "not an AI-only grant")
+        self.assertEqual(projected["immortal"]["starting_buildings"], {"walls:minor"})
+        self.assertEqual(projected["emperor"]["starting_buildings"], set())
+
+    def test_the_raid_bands_break_at_warlord_and_immortal(self):
+        projected = civ6_fidelity.project_difficulties(self.ladder_database())
+        bands = {rung: entry["barb_band"] for rung, entry in projected.items()}
+        self.assertEqual(bands["chieftain"], "low")
+        self.assertEqual(bands["warlord"], "standard")
+        self.assertEqual(bands["emperor"], "standard")
+        self.assertEqual(bands["immortal"], "high")
+        self.assertEqual(projected["immortal"]["barb_spawn_rate"], 1)
+        self.assertEqual(projected["immortal"]["barb_raid_units"], 5)
+        self.assertEqual(projected["chieftain"]["barb_raid_units"], 1,
+                         "the cavalry window is not the land raid the engine bands by")
+
+    def test_our_side_spells_the_same_bands(self):
+        """The scales in data/difficulties.json map onto the shipped bands the
+        way game.rs reads them, so the two sides meet on one field."""
+        ours = civ6_fidelity.ours_difficulties()
+        self.assertEqual(ours["chieftain"]["barb_band"], "low")
+        self.assertEqual(ours["warlord"]["barb_band"], "standard")
+        self.assertEqual(ours["immortal"]["barb_band"], "high")
+        self.assertEqual(ours["immortal"]["barb_spawn_rate"], 1)
+        self.assertEqual(ours["deity"]["human_camp_gold"], -20)
+
+
+class EngineConstantsAreDiscovered(unittest.TestCase):
+    def test_a_constant_under_a_shipped_name_is_found_in_the_engine(self):
+        found = civ6_fidelity.ours_engine_constants()
+        self.assertEqual(found["BARBARIAN_CAMP_MINIMUM_DISTANCE_CITY"], {"value": 4})
+        self.assertIn("BARBARIAN_CAMP_ODDS_OF_NEW_CAMP_SPAWNING", found)
+
+    def test_only_shared_names_are_audited(self):
+        database = database_with({"GlobalParameters": [
+            {"Name": "BARBARIAN_CAMP_MINIMUM_DISTANCE_CITY", "Value": "4"},
+            {"Name": "SOMETHING_THE_ENGINE_DOES_NOT_NAME", "Value": "1"},
+        ]})
+        ours, theirs = civ6_fidelity.audit_engine_constants(database)
+        self.assertEqual(set(ours), {"BARBARIAN_CAMP_MINIMUM_DISTANCE_CITY"})
+        self.assertEqual(ours, theirs)
+
+
+class TheCheckFormSkipsByName(unittest.TestCase):
+    """`--check` on a machine with no database passes with a notice that says
+    so; a skipped run must never read as a clean one."""
+
+    def test_the_notice_names_the_tool_and_the_word_skipped(self):
+        notice = civ6_fidelity.skip_notice()
+        self.assertIn("civ6_fidelity", notice)
+        self.assertIn("SKIPPED", notice)
+        self.assertTrue(notice.startswith("::notice title="), "a GitHub annotation")
+
+    def test_check_without_a_database_exits_zero(self):
+        import contextlib
+        import io
+        import unittest.mock as mock
+        stderr = io.StringIO()
+        with mock.patch.object(sys, "argv", ["civ6_fidelity.py", "--check", "--max", "0",
+                                             "--cache", "/nonexistent/DebugGameplay.sqlite"]):
+            with contextlib.redirect_stderr(stderr):
+                self.assertEqual(civ6_fidelity.main(), 0)
+        self.assertIn(civ6_fidelity.SKIP_NOTICE, stderr.getvalue())
+
+
+class TheWaiverFileOnlyShrinks(unittest.TestCase):
+    """Thirteen on the day the ratchet was wired: nine from before, plus the
+    Vampire Castle's mode-only terrain and three difficulty readings the DLL
+    owns (Prince's AI at -1, Warlord's human bonuses under an inverse
+    requirement). A fourteenth is a new accepted divergence, and this number
+    moves only when one is retired or a new one is argued in its own PR."""
+
+    CEILING = 13
+
+    def test_the_waiver_count_does_not_grow(self):
+        waivers = civ6_fidelity.load_waivers()
+        self.assertLessEqual(len(waivers), self.CEILING)
+
+    def test_every_waiver_gives_a_reason(self):
+        import json
+        path = Path(civ6_fidelity.__file__).resolve().parent / "fidelity_waivers.json"
+        for entry in json.loads(path.read_text(encoding="utf-8"))["waivers"]:
+            with self.subTest(entry=(entry["table"], entry["entry"], entry["field"])):
+                self.assertGreater(len(entry.get("reason", "")), 40)

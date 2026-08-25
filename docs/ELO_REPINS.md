@@ -1680,3 +1680,31 @@ raise more later") is a one-word change to `default_barbarian_difficulty`
 — the data carries Deity at the same band, so a further step is a new
 band in the data or a model of the game's `BARBARIAN_LOWER_THROTTLE_PER_
 DIFFICULTY` and boldness, which CIVVIS does not carry.
+
+## v22 (2026-08-25) — the data ratchet runs, and seven shipped numbers replace seven remembered ones
+
+`tools/civ6_fidelity.py` documented `--max-divergences 0 # CI gate` from the
+day it was written and no workflow ran it. Wired in as
+`civ6_fidelity.py --check --max 0` (#2441), its first run against the
+compiled Gathering Storm database reported ten divergences that every
+gate had been green over. Seven are plain transcriptions and are now the
+shipped values: the Tagma costs 220 Production and 4 Gold upkeep and
+upgrades to the Cuirassier (it was 180, 3, and a Tank — the Knight's own
+successor, `UnitUpgrades`); the Pike and Shot pays 4 upkeep (3); the Prasat
+yields +6 Faith and holds one Relic (+4, two); the Sukiennice +2 Gold (+3);
+the Tlachtli +2 Culture (+1); Eyjafjallajökull's neighbours take +1 Food
+(+2); and the human's camp Gold above Prince, which
+`BARBARIAN_CAMP_GOLD_SCALING` runs −5 per rung to −20 at Deity and the data
+had stopped transcribing at Warlord's +5. The Vampire Castle's mode-only
+terrain, Prince's AI at −1 Combat Strength and Warlord's human bonuses
+under an inverse requirement are waived with their reasons in
+`tools/fidelity_waivers.json`, which a test now caps at thirteen.
+
+There is no controller gate for a ruleset transcription: every seat reads
+the same `data/*.json`. The anchor moves from v21's 18,790 decisions and
+`0x32d6_ac78_9161_017f` to **18,796 and `0x0b7b_b89a_2d86_c831`** across its
+five profiles — a handful more decisions, as Byzantium's Tagma and the
+Aztec and Polish buildings are priced and produced at their shipped values.
+The ratchet is a real number only on a fleet Mac (a hosted runner has no
+database and the step skips by name), so the number to keep at zero is the
+one `ship` validation prints.

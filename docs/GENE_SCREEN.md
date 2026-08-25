@@ -320,6 +320,27 @@ such a source and records it.
   off. A seat's chance of winning is `1/players`; the table prints every
   gene's on and off rates against it.
 
+### Live continuous-batch accounting
+
+A continuous JSONL file is **not** one line per game: each segment starts with
+one `header` record, then every completed all-seats game writes one `game`
+record for each major seat — six records per standard game. Never report
+`wc -l`, a nonblank-line count, or a raw JSONL record count as games. Use the
+validated reader instead:
+
+```sh
+python3 tools/continuous_screen_status.py /path/to/rows-continuous.jsonl
+python3 tools/continuous_screen_status.py /path/to/rows-continuous.jsonl \
+  --analysis /path/to/cutoff-analysis.json
+```
+
+It groups records by `(seed, arm)`, requires exactly one record for every seat
+and exactly one winner, and keeps **records**, **games**, and **seats** as
+separate labeled quantities. A partial write, duplicate seat, inconsistent
+winner, undeclared seed, malformed target, or disagreement with the frozen
+`gene_screen --analyze --json` file is an error, not a lower-looking count.
+That reader is the required source for live status and cutoff reporting.
+
 Why not one arm per gene: the repository's older instrument priced one flag
 per batch (`live` against `live_without_<flag>`, forty to two hundred maps
 each) and priced each repair against the background in which every OTHER
