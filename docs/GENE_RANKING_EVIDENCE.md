@@ -200,6 +200,7 @@ These screenable genes have no on/off result, so they receive no rank or promoti
 | `amenity-project-preemption-2` | off (unmeasured) | An amenity crisis repair is bought with Gold when the treasury covers it, so the Science plan's repeatable project keeps its queue; only a district or an unaffordable building still pauses the project. | 1 |
 | `builder-supply-floor` | off (unmeasured) | Keep one Builder per city while there is still land to improve, priced where it can win the queue. | 1 |
 | `builder-tries-the-next-tile` | off (unmeasured) | Let a Builder whose nearest improvable tile cannot be routed to try the next-nearest instead of standing still for the rest of the game. | 1 |
+| `camp-tile-buyout` | off (unmeasured) | Buy the plot a Barbarian Outpost stands on for the city inside whose three rings it sits, when being rid of the outpost is worth more than the plot's quote. | 1 |
 | `campus-adjacency-threshold-2` | off (unmeasured) | A settle site with a plot in its first three rings that could host a Campus at raw Science adjacency 4 is worth 15% more, so the multiplier's threshold is bought where it is decided — at city siting — and not only priced at the district. | 1 |
 | `chain-payback-window` | off (unmeasured) | Price the science and culture chain debts by whether the building can still repay, not by how much of the clock is left. | — |
 | `chain-payback-window-2` | off (unmeasured) | Price the cheap rung of a district chain by payback and leave the whole district on the clock. | — |
