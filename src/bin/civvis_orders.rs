@@ -1048,64 +1048,6 @@ fn coalesce_unit_paths(orders: Vec<Order>, sequenced: bool) -> (Vec<Order>, usiz
     (out, deferred, coalesced)
 }
 
-/// `step_and_reassess` on the bridge: cut each unit's PURE walk (a MOVE_TO
-/// with no later order for the same unit this frame) at its first unrevealed
-/// hex, the one `first_unknown_coalesced_steps` recorded before the walk was
-/// folded. A walk that is all on known ground is left alone — there is
-/// nothing to look at — and a walk with a follow-up (a strike, a found) is
-/// left alone because the follow-up expects the unit where the walk ends.
-/// Returns how many walks were cut.
-fn cut_walks_at_first_unknown(
-    orders: &mut [Order],
-    first_unknown_steps: &std::collections::BTreeMap<i64, (i32, i32)>,
-) -> usize {
-    let mut orders_per_unit: std::collections::BTreeMap<i64, usize> =
-        std::collections::BTreeMap::new();
-    for order in orders.iter() {
-        if order.kind == "unit" {
-            if let Some(unit) = order.subject {
-                *orders_per_unit.entry(unit).or_default() += 1;
-            }
-        }
-    }
-    let mut cut = 0;
-    for order in orders.iter_mut() {
-        if order.kind != "unit" || order.verb.as_deref() != Some("MOVE_TO") {
-            continue;
-        }
-        let Some(unit) = order.subject else {
-            continue;
-        };
-        if orders_per_unit.get(&unit).copied().unwrap_or(0) != 1 {
-            continue;
-        }
-        let Some(&edge) = first_unknown_steps.get(&unit) else {
-            continue;
-        };
-        if order.pos.is_some() && order.pos != Some(edge) {
-            order.pos = Some(edge);
-            cut += 1;
-        }
-    }
-    cut
-}
-
-/// Whether the mod can still open a replan frame after the one this board
-/// belongs to — the only condition under which cutting a walk at the edge of
-/// the known is not throwing its remaining movement away. The opening board
-/// is frame 0; the mod opens at most `ReplanFrames` frames a turn, and the
-/// brain is asked once per frame. On the last frame it will be asked, nobody
-/// re-plans what the cut unit then sees, so its walk keeps its furthest hex.
-/// A seat that advertises `replan_frames` without the count keeps the old
-/// behaviour: cut on every frame.
-fn another_frame_can_open(state: &civvis::mirror::StateSnapshot) -> bool {
-    state.seat.replan_frames
-        && state
-            .seat
-            .replan_frames_max
-            .is_none_or(|cap| state.frame < cap)
-}
-
 /// Put the settler's SITE on every `FOUND_CITY` row: the hex the planned walk
 /// leaves it on, or where it stands when it founds without moving.
 ///
@@ -1160,7 +1102,7 @@ fn stamp_found_sites(orders: &mut [Order], state: &civvis::mirror::StateSnapshot
 }
 
 /// Replay only: decide a recorded journal as a NEWER mod would present it.
-/// `--assume-seat order_queue,moves_at_turn_start,replan_frames=2,tile_delta`
+/// `--assume-seat order_queue,moves_at_turn_start,replan_frames,tile_delta`
 /// sets the named capabilities on every board read from the journal, so the
 /// orders a turn would get from today's bridge can be censused on a run that
 /// was played before those capabilities existed. Never used by the live
@@ -1178,20 +1120,12 @@ fn assume_seat_capabilities(
             "order_queue" => seat.order_queue = true,
             "moves_at_turn_start" => seat.moves_at_turn_start = true,
             "tile_delta" => seat.tile_delta = true,
-            "replan_frames" => {
-                seat.replan_frames = true;
-                if let Some(value) = value {
-                    let cap: u32 = value
-                        .parse()
-                        .map_err(|_| format!("--assume-seat replan_frames={value}: not a count"))?;
-                    seat.replan_frames_max = Some(cap);
-                }
-            }
+            "replan_frames" if value.is_none() => seat.replan_frames = true,
             "" => {}
             other => {
                 return Err(format!(
                     "--assume-seat {other}: unknown capability (order_queue, \
-                     moves_at_turn_start, replan_frames[=N], tile_delta)"
+                     moves_at_turn_start, replan_frames, tile_delta)"
                 ))
             }
         }
@@ -3544,27 +3478,6 @@ fn decide(
         host_move_refusals.cap_pending_frontier_moves(&mut orders, state, &first_unknown_steps);
     if host_frontier_probes > 0 {
         note_bits.push(format!("host_frontier_probes={host_frontier_probes}"));
-    }
-
-    // `step_and_reassess`, bridge half: a pure walk that crosses into the
-    // unknown stops at its first unrevealed hex, so the host walks the unit
-    // to the edge of what the seat knows, the mod re-exports what it saw
-    // (`CivvisTiles.sweep` + a replan frame), and the frame's re-plan spends
-    // the rest of the movement on the new ground. Only when the mod can open
-    // that frame; against an older mod the cut would strand the movement —
-    // and so would a cut on the last frame the mod will open this turn, so
-    // the walk keeps its furthest hex there (`another_frame_can_open`).
-    if ai.step_and_reassess && another_frame_can_open(state) {
-        let cut = cut_walks_at_first_unknown(&mut orders, &first_unknown_steps);
-        if cut > 0 {
-            note_bits.push(format!("frontier_cuts={cut}"));
-        }
-    } else if ai.step_and_reassess && state.seat.replan_frames && !first_unknown_steps.is_empty() {
-        note_bits.push(format!(
-            "frontier_cuts_withheld_last_frame={} frame={}",
-            first_unknown_steps.len(),
-            state.frame
-        ));
     }
 
     // Remember where each move sends which host unit, so next turn's positions
@@ -9456,79 +9369,6 @@ mod tests {
         assert_eq!(orders[2].kind, "research");
     }
 
-    /// `step_and_reassess` on the bridge: a pure walk into the unknown is cut
-    /// at its first unrevealed hex; a walk on known ground, and a walk with a
-    /// follow-up behind it, keep their furthest hex.
-    #[test]
-    fn a_walk_into_the_unknown_is_cut_at_its_first_unrevealed_hex() {
-        let mut orders = vec![
-            // scout 7: walk folded to (12, 11), first unknown hop (11, 10)
-            unit_order(7, "MOVE_TO", Some((12, 11))),
-            // warrior 8: walk entirely on known ground — no unknown hop
-            unit_order(8, "MOVE_TO", Some((3, 3))),
-            // archer 9: walk then strike — the strike expects the far tile
-            unit_order(9, "MOVE_TO", Some((20, 20))),
-            unit_order(9, "RANGE_ATTACK", Some((21, 20))),
-            // settler 10: already exactly at its first unknown hop
-            unit_order(10, "MOVE_TO", Some((5, 5))),
-        ];
-        let mut edges = std::collections::BTreeMap::new();
-        edges.insert(7, (11, 10));
-        edges.insert(9, (19, 20));
-        edges.insert(10, (5, 5));
-
-        assert_eq!(cut_walks_at_first_unknown(&mut orders, &edges), 1);
-        assert_eq!(
-            orders[0].pos,
-            Some((11, 10)),
-            "the scout stops where the known ends"
-        );
-        assert_eq!(orders[1].pos, Some((3, 3)), "known ground: untouched");
-        assert_eq!(
-            orders[2].pos,
-            Some((20, 20)),
-            "a walk with a follow-up: untouched"
-        );
-        assert_eq!(
-            orders[4].pos,
-            Some((5, 5)),
-            "already at the edge: not counted"
-        );
-    }
-
-    /// The cut is made only while the mod can still open a frame to spend
-    /// what the cut unit then sees: never on the last frame of the turn, and
-    /// never against a seat without frames. A seat that advertises frames
-    /// without the count keeps cutting on every frame.
-    #[test]
-    fn the_frontier_cut_is_withheld_on_the_last_frame_the_mod_will_open() {
-        let mut state = civvis::mirror::StateSnapshot::default();
-        assert!(!another_frame_can_open(&state), "no frames: no cut");
-        state.seat.replan_frames = true;
-        assert!(
-            another_frame_can_open(&state),
-            "frames without a count: cut"
-        );
-        state.frame = 7;
-        assert!(another_frame_can_open(&state), "…on every frame");
-        state.seat.replan_frames_max = Some(2);
-        state.frame = 0;
-        assert!(
-            another_frame_can_open(&state),
-            "opening board: frame 1 follows"
-        );
-        state.frame = 1;
-        assert!(another_frame_can_open(&state), "frame 1: frame 2 follows");
-        state.frame = 2;
-        assert!(
-            !another_frame_can_open(&state),
-            "frame 2 of 2: nobody re-plans what the cut would uncover"
-        );
-        state.seat.replan_frames_max = Some(0);
-        state.frame = 0;
-        assert!(!another_frame_can_open(&state), "a cap of zero never cuts");
-    }
-
     /// The found carries the hex the planned walk leaves the settler on —
     /// the last step of its contiguous walk — or, founding without moving,
     /// where the host says it stands. A found that already has a site and a
@@ -9575,27 +9415,21 @@ mod tests {
     }
 
     /// `--assume-seat` names the capabilities a replay should pretend the
-    /// mod advertised, with the frame cap as a count; a typo is an error.
+    /// mod advertised; a typo or non-boolean value is an error.
     #[test]
     fn assumed_seat_capabilities_are_named_and_checked() {
         let mut seat = civvis::mirror::Seat::default();
-        let names: Vec<String> = ["order_queue", "replan_frames=2", " tile_delta "]
+        let names: Vec<String> = ["order_queue", "replan_frames", " tile_delta "]
             .iter()
             .map(|name| name.to_string())
             .collect();
         assume_seat_capabilities(&mut seat, &names).unwrap();
         assert!(seat.order_queue);
         assert!(seat.replan_frames);
-        assert_eq!(seat.replan_frames_max, Some(2));
         assert!(seat.tile_delta);
         assert!(!seat.moves_at_turn_start, "not named: not assumed");
-        let bare = vec!["replan_frames".to_string()];
-        let mut seat = civvis::mirror::Seat::default();
-        assume_seat_capabilities(&mut seat, &bare).unwrap();
-        assert!(seat.replan_frames);
-        assert_eq!(seat.replan_frames_max, None);
         assert!(assume_seat_capabilities(&mut seat, &["order_que".to_string()]).is_err());
-        assert!(assume_seat_capabilities(&mut seat, &["replan_frames=x".to_string()]).is_err());
+        assert!(assume_seat_capabilities(&mut seat, &["replan_frames=2".to_string()]).is_err());
     }
 
     /// A settler with two movement points logs two hex steps; the host must be

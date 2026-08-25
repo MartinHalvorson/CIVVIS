@@ -1,6 +1,6 @@
 -- A unit spends EVERY action it has in the turn, end to end through the
--- shipped mod: the opening walk cut at the edge of the known is followed by
--- a second step on the replan frame; an archer steps and then shoots from
+-- shipped mod: an opening walk can be followed by a second step on the
+-- replan frame; an archer steps and then shoots from
 -- the per-unit queue; a settler steps and settles on the hex the brain
 -- chose — and ONLY on that hex, whether the found ran first (the mod runs
 -- every FOUND_CITY row before the settler's walk) or behind a walk the host
@@ -12,8 +12,7 @@
 -- the ring around where it lands, and whose orders channel the test writes.
 --
 -- What is checked:
---   1. the seat event advertises `replan_frames_max`;
---   2. step, then step: opening `MOVE_TO` to the edge of the known → the
+--   1. step, then step: opening `MOVE_TO` → the
 --      unit arrives with movement left → `settleTurn` opens a replan frame
 --      (`revealed` + a mover) → the frame's answer moves the SAME unit again
 --      and the host takes it (no refusal, no explore hand-off, frame stamped);
@@ -321,13 +320,12 @@ local function openTurn(turn)
 	tiles.sweep(player, PID, turn, 0)
 end
 
--- 1. The seat advertises the frame cap.
+-- 1. The seat advertises replan frames.
 pcall(rawget(_G, "CivvisSurvey"))
-check("seat: replan_frames_max", has(lastEvent("seat"), '"replan_frames_max":2'), true)
 check("seat: replan_frames", has(lastEvent("seat"), '"replan_frames":true'), true)
 
--- 2. Step, then step. A scout at (1,1) with 3 movement; the brain cut its
--- walk at (3,1), the edge of the known. Host: lands at (3,1) with 1 left,
+-- 2. Step, then step. A scout at (1,1) with 3 movement. Host: lands at
+-- (3,1) with 1 left,
 -- reveals the ring → frame 1 → the brain answers MOVE_TO (4,1).
 revealed = {}; reveal(1, 1); reveal(2, 1)
 host.units = { [5] = { id = 5, kind = "UNIT_SCOUT", x = 1, y = 1, moves = 3 } }
