@@ -766,6 +766,15 @@ pub const GENES: &[Gene] = &[
     // already settled, ~1.4 free Diplomatic Victory Points a seat a game).
     Gene { tag: "congress-banks-decided", field: "congress_banks_a_decided_vote", kind: Kind::OptIn, enable: AdvancedAi::enable_congress_banks_a_decided_vote, disable: AdvancedAi::disable_congress_banks_a_decided_vote },
     Gene { tag: "congress-counter-votes", field: "congress_counter_votes", kind: Kind::OptIn, enable: AdvancedAi::enable_congress_counter_votes, disable: AdvancedAi::disable_congress_counter_votes },
+    // ⚠⚠ THE BIGGEST NUMBER IN THIS REPOSITORY SITS BEHIND A FLAG NOTHING
+    // COULD SET. #554: a free settler while short of the city target more than
+    // DOUBLES the win rate, 23.0% -> 52.3% at p=0.0000 over 300 games. #559:
+    // the shut expansion window is the SOLE blocker on 31.2% of the city-turns
+    // an empire spends short of its own target. `settler_expansion_window_open`
+    // takes the payback branch only under `land_grab` (HostOnly) or this flag
+    // (an orphaned evaluator arm), so the native board has only ever shut the
+    // window on a clock. See `expansion_pays_back`.
+    Gene { tag: "expansion-pays-back", field: "expansion_pays_back", kind: Kind::OptIn, enable: AdvancedAi::enable_expansion_pays_back, disable: AdvancedAi::disable_expansion_pays_back },
     // ⚠ The last blind lane in the threat model: Domination is read as
     // `100 * foreign CAPITALS held / foreign capitals`, five values twenty
     // points apart, and ZERO for a rival that has taken any number of ordinary

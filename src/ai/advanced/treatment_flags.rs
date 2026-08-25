@@ -961,6 +961,17 @@ impl AdvancedAi {
         self.unchosen_war_keeps_the_lane = false;
     }
 
+    /// Shut the settler window on whether the city would pay the settler back
+    /// before the game ends, rather than on a deadline. See
+    /// [`Self::expansion_pays_back`].
+    pub fn enable_expansion_pays_back(&mut self) {
+        self.expansion_pays_back = true;
+    }
+
+    pub fn disable_expansion_pays_back(&mut self) {
+        self.expansion_pays_back = false;
+    }
+
     /// Raise the Culture and Diplomacy denial alarms early, since countering an
     /// accumulated stock takes many turns. See
     /// [`Self::stock_denial_lead_time`].
