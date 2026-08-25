@@ -4588,17 +4588,26 @@ pub struct AdvancedAi {
     /// no defender is queued, and the stacks are already adjacent when the
     /// declaration lands.
     ///
-    /// What that costs was measured on this branch, by the gene that used to
-    /// live here. `unchosen-war-keeps-the-lane` asked the opposite question --
-    /// whether an empire could keep running its victory lane through a war a
-    /// rival declared, instead of converting to Conquest for the duration --
-    /// and its six-game probe answered **-22.2 pp wins (z -13.2), -6.41 pp
-    /// score share, 0 of 9 treated seats winning a game**. Releasing the war
-    /// posture during somebody else's war is close to fatal on this board, and
-    /// it stayed fatal when the fall-through was corrected from Expansion to
-    /// the empire's own lane: the number did not move by a hundredth. War is
-    /// existential here, so the turns before one starts are the valuable ones,
-    /// and they are exactly the turns this filter throws away.
+    /// ⚠ RETRACTION (2026-08-25, same day): the number this paragraph used to
+    /// quote was an artifact of the probe, not a measurement. It read
+    /// "`unchosen-war-keeps-the-lane`'s six-game probe answered -22.2 pp wins
+    /// (z -13.2) with 0 of 9 treated seats winning, and it stayed at -22.2 to
+    /// the hundredth when the implementation was corrected" -- and that
+    /// invariance under a changed implementation was the tell, not the
+    /// confirmation it was read as. A single-gene probe plays both arms as the
+    /// same game when the gene does not fire, and a block where no winner drew
+    /// the gene collapses the clustered error toward zero; a predicate edited
+    /// to `return false` reproduces exactly that shape. See
+    /// `docs/GENE_SCREEN.md`, *Do not read a probe's win Δ as a measurement of
+    /// the gene*, and the guard that now makes such a block read `~`.
+    ///
+    /// So the claim that "war is existential here" is withdrawn: it was never
+    /// measured. **This gene does not rest on it.** What it rests on is the
+    /// filter above, which is a fact about the code -- a rival's army parked
+    /// on our border while at peace contributes exactly zero to the one number
+    /// the whole grand-strategy cascade reads first -- and on its own two
+    /// disjoint probe blocks, which moved the score share +3.79 and +3.46
+    /// points with the win half unresolved.
     ///
     /// The alarm reuses the shipped pressure expression unchanged -- same six
     /// tiles, same visibility gates, same `effective_strength`, same friendly

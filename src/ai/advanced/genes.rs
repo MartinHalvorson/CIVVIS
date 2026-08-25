@@ -827,9 +827,10 @@ pub const GENES: &[Gene] = &[
     // ⚠ `city_pressure_with_visibility` counts hostile strength only from
     // civilizations we are ALREADY AT WAR WITH, so a rival massing on our
     // border at peace reads exactly zero and no city is ever "threatened"
-    // before the declaration. The withdrawn `unchosen-war-keeps-the-lane`
-    // probe priced being caught in the wrong posture at -22.2 pp wins
-    // (z -13.2, 0 of 9 seats): the turns before a war are the valuable ones.
+    // before the declaration. (The -22.2 pp this row used to cite from the
+    // withdrawn `unchosen-war-keeps-the-lane` probe is retracted: it was a
+    // degenerate-block artifact, see `docs/GENE_SCREEN.md`. The filter is
+    // still a fact about the code.)
     // See `frontier_massing_alarm`.
     Gene { tag: "frontier-massing-alarm", field: "frontier_massing_alarm", kind: Kind::OptIn, enable: AdvancedAi::enable_frontier_massing_alarm, disable: AdvancedAi::disable_frontier_massing_alarm },
     Gene { tag: "envoy-infrastructure", field: "envoy_infrastructure", kind: Kind::OptIn, enable: AdvancedAi::enable_envoy_infrastructure, disable: AdvancedAi::disable_envoy_infrastructure },
