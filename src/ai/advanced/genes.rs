@@ -1302,6 +1302,19 @@ pub const GENES: &[Gene] = &[
     // was deleted by the 2026-08-23 registry cleanup. Appended at the END so a
     // running screen keeps its positional genome.
     Gene { tag: "rapid-city-expansion", field: "rapid_city_expansion", kind: Kind::OptIn, enable: AdvancedAi::enable_rapid_city_expansion, disable: AdvancedAi::disable_rapid_city_expansion },
+    // Three site terms run from every neighbour (six a tile under six from
+    // a foreign city, four a tile for rival ground within three, isolation
+    // on top) and nothing pays for the one thing the ground between two
+    // empires has that the ground behind us does not: a rival's Settler is
+    // walking toward it. While our military power is at least 0.8 of the
+    // strongest neighbour's and two land units stand, a site between us and
+    // a met neighbour within eight of their city earns 10 plus 3 a tile of
+    // the gap it closes (cap 28) and pays no border provocation; an own city
+    // within eight of a neighbour's is a frontier city whose first Walls are
+    // worth 240 more and which holds a peacetime garrison. When no contested
+    // site is left, the shipped ranking takes the uncontested one. Operator
+    // request, 2026-08-25.
+    Gene { tag: "contested-land-first", field: "contested_land_first", kind: Kind::OptIn, enable: AdvancedAi::enable_contested_land_first, disable: AdvancedAi::disable_contested_land_first },
     // Operator heuristic, 2026-08-25: Production is spent best on what a
     // slotted card boosts; Gold is flexible and immediate, so it belongs on
     // what no card boosts, on the young city that cannot yet build, and on
