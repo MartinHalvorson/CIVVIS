@@ -503,8 +503,9 @@ it belongs to a family.
    tracked wins; a newer screen cannot replace a selected sibling. Every
    version keeps being priced on its own row. `HEURISTIC_GENE_RANKING.md`
    names the family's best *display* version in its *Best version* column
-   (`1` is the original): the pinned version if one exists, otherwise the
-   priced version with the highest tracked wins. A versioned row's *Total (on)* /
+   (`1` is the original, so a gene with no versions reads `1`): the pinned
+   version if one exists, otherwise the priced version with the highest
+   tracked wins. A versioned row's *Total (on)* /
    *Total (off)* cells show the best two versions' rates side by side — each
    version's *on* is the seats that played that version; every other seat is
    its *off*.
