@@ -35026,3 +35026,115 @@ fn the_score_margin_reads_the_lead_and_not_the_turn() {
         "the clock reads the same number for both"
     );
 }
+
+// ═══ A war we did not declare (`unchosen_war_keeps_the_lane`) ═══
+
+#[test]
+fn unchosen_war_keeps_the_lane_is_a_registered_reversible_opt_in() {
+    assert!(
+        GENES.iter().any(|gene| gene.opt_in()
+            && gene.field == "unchosen_war_keeps_the_lane"
+            && gene.tag == "unchosen-war-keeps-the-lane"),
+        "unchosen-war-keeps-the-lane must be a registered native opt-in"
+    );
+    assert!(
+        crate::ai::advanced::gene_ledger::screenable("unchosen-war-keeps-the-lane"),
+        "the ledger must be able to price it"
+    );
+    assert_eq!(
+        crate::ai::advanced::gene_ledger::ledger_default_on("unchosen-war-keeps-the-lane"),
+        Some(false),
+        "it ships off until a screen prices it"
+    );
+    let mut ai = AdvancedAi::new();
+    assert!(!ai.unchosen_war_keeps_the_lane, "off in the stock agent");
+    assert!(
+        !AdvancedAi::legacy().unchosen_war_keeps_the_lane,
+        "off in the legacy agent"
+    );
+    ai.enable_unchosen_war_keeps_the_lane();
+    assert!(ai.unchosen_war_keeps_the_lane);
+    ai.disable_unchosen_war_keeps_the_lane();
+    assert!(!ai.unchosen_war_keeps_the_lane, "reversible");
+}
+
+/// `WarRecord::declarer` is the whole of the ownership test, and it reads the
+/// engine's own record rather than a second opinion about who started it.
+#[test]
+fn a_war_is_ours_when_the_engine_says_we_declared_it() {
+    let ai = AdvancedAi::new();
+    let mut peace = Game::new(3, 30, 20, 7_701, 250, 3);
+    assert!(
+        !ai.every_major_war_was_declared_on_us(&peace, 0),
+        "no war at all is not a war declared on us"
+    );
+
+    let mut theirs = peace.clone();
+    install_surprise_war(&mut theirs, 1, 0, 40);
+    assert!(ai.every_major_war_was_declared_on_us(&theirs, 0));
+    assert!(
+        !ai.every_major_war_was_declared_on_us(&theirs, 1),
+        "player 1 chose its own war"
+    );
+
+    // A second front we opened ourselves makes the picture ours again.
+    let mut mixed = theirs.clone();
+    install_surprise_war(&mut mixed, 0, 2, 44);
+    assert!(!ai.every_major_war_was_declared_on_us(&mixed, 0));
+
+    // An unrecorded front fails closed: no evidence, no stand-down.
+    install_surprise_war(&mut peace, 1, 0, 40);
+    peace.wars.clear();
+    assert!(!ai.every_major_war_was_declared_on_us(&peace, 0));
+}
+
+/// The gene reaches the plan. On a board where a rival opened the war, our own
+/// lane is live and nothing of ours is threatened, the shipped ladder pins
+/// Conquest and the gene hands the plan to the lane.
+#[test]
+fn an_unchosen_war_stops_pinning_the_grand_strategy() {
+    let mut game = Game::new(4, 46, 30, 7_703, 250, 6);
+    game.turn = 90;
+    game.current = 0;
+    // A live Diplomacy lane: ten of the twenty points reads 50, above
+    // `LIVE_LANE_FLOOR`.
+    game.players[0].dvp = 10;
+    install_surprise_war(&mut game, 1, 0, 60);
+    game.current = 0;
+
+    let mut ai = AdvancedAi::new();
+    ai.enable_unchosen_war_keeps_the_lane();
+    let shipped = AdvancedAi::new();
+
+    assert!(ai.every_major_war_was_declared_on_us(&game, 0));
+    let lane = ai.victory_focus(&game, 0).progress;
+    assert!(lane >= 46, "fixture: the lane is live ({lane})");
+
+    assert_eq!(
+        shipped.assess(&game, 0).strategy,
+        GrandStrategy::Conquest,
+        "the shipped ladder pins Conquest on any war"
+    );
+    let kept = ai.assess(&game, 0);
+    assert_ne!(
+        kept.strategy,
+        GrandStrategy::Conquest,
+        "an unchosen war with a live lane must not pin Conquest"
+    );
+    assert_ne!(
+        kept.strategy,
+        GrandStrategy::Expansion,
+        "and it must hand the plan to the LANE, not to settling"
+    );
+
+    // The same board with the declaration the other way round still pins.
+    let mut ours = game.clone();
+    ours.wars.clear();
+    install_surprise_war(&mut ours, 0, 1, 60);
+    ours.current = 0;
+    assert_eq!(
+        ai.assess(&ours, 0).strategy,
+        GrandStrategy::Conquest,
+        "we declared it, so the war keeps the plan"
+    );
+}
