@@ -708,10 +708,6 @@ pub struct StrategyCensus {
     /// can actually reach, counts as `hold_threatened`.
     pub hold_threatened: u32,
     pub hold_weak: u32,
-    /// `step_and_reassess`: blind batch plans cut at the step that revealed
-    /// new ground (the parallel CLI path; no evaluator installs a pool, so
-    /// this is zero in every screen and the gene is priced on the bridge).
-    pub step_reassessed: u32,
 }
 
 impl StrategyCensus {
@@ -771,7 +767,6 @@ impl StrategyCensus {
         self.recover += other.recover;
         self.hold_threatened += other.hold_threatened;
         self.hold_weak += other.hold_weak;
-        self.step_reassessed += other.step_reassessed;
     }
 }
 
@@ -4423,41 +4418,6 @@ pub struct AdvancedAi {
     /// `docs/TACTICS.md` §17 carries the measurement.
     pub joint_reach_lines: bool,
 
-    /// ★★★★ A UNIT THAT SEES SOMETHING NEW STOPS AND THINKS AGAIN.
-    ///
-    /// `advanced_units` plans a batch of general units in parallel, each on a
-    /// `speculative_clone` whose `visibility_suppressed` flag means NO step
-    /// reveals anything: up to eight hexes are planned from turn-start
-    /// knowledge and replayed blind (`apply_unit_intents`). A scout planned
-    /// into the fog therefore walks its whole allowance past the coast, the
-    /// rival border or the barbarian camp its first step uncovered, and only
-    /// next turn does anything react. With this on, the replay of a blind
-    /// plan stops at the first step that enlarged `players[pid].explored`,
-    /// and the unit finishes its movement from the live, revealed board
-    /// (`advance_unit_serial`, which re-decides every step with what it can
-    /// now see). The rest of the batch keeps its plan: another unit's reveal
-    /// is not this unit's new fact unless it also walks into it.
-    ///
-    /// ⚠ A serial leg — a step that brought a hostile into view re-formed the
-    /// force groups — stood in for the gene on the native board (every
-    /// evaluator runs without a pool, so each step is already re-decided
-    /// sighted). The 6p re-rank against the best genome (15,000 seat-pairs,
-    /// 2026-08-21) priced that leg at share −0.15 pp (z −2.3), win −0.5; it
-    /// is removed, and the gene is host-only (`FIRAXIS_ONLY_TREATMENTS`):
-    /// the cut exists because the host executes one coalesced walk per
-    /// unit, a fact of the bridge with no native meaning. The ladder prices
-    /// it; the native screen no longer prices a proxy.
-    ///
-    /// On the live bridge the same gene is the brain half of the mid-turn
-    /// replan frame: `civvis_orders` cuts a unit's coalesced walk at its
-    /// first unrevealed hex when the seat advertises `replan_frames`, so the
-    /// host walks it to the edge of the known, the mod re-exports the board
-    /// it uncovered, and the frame's re-plan spends the remaining movement
-    /// on the new ground. On for the live bridge (host-only, so the ledger
-    /// leaves it as the bundle sets it); off natively. See
-    /// `docs/LIVE_TACTICS.md` §11.
-    pub step_and_reassess: bool,
-
     /// Admit the friendly-volley extension without reopening the closed
     /// war-half bundle. It lets a force finish a defender together. Off by
     /// default and off for the frozen anchors; the
@@ -5631,7 +5591,6 @@ impl AdvancedAi {
             joint_tactics: false,
             joint_tactics_forced_off: false,
             joint_reach_lines: true,
-            step_and_reassess: false,
             coordinated_finish: false,
             volley_chain: true,
             tactics_resolved: BTreeSet::new(),
@@ -30223,10 +30182,6 @@ impl AdvancedAi {
 
             let mut took_a_turn = false;
             let mut valid = true;
-            // `step_and_reassess`: the blind plan is abandoned at the first
-            // step that uncovered new ground, and the unit finishes sighted.
-            let mut reassess = false;
-            let mut walked: Vec<Pos> = Vec::new();
             for action in &intent.actions {
                 let invalidates_followers = match action {
                     Action::Move { to, .. } => {
@@ -30251,8 +30206,6 @@ impl AdvancedAi {
                     }
                     _ => true,
                 };
-                let explored_before = g.players[pid].explored.len();
-                let from = g.units.get(&uid).map(|unit| unit.pos);
                 if g.apply(pid, action).is_err() {
                     valid = false;
                     break;
@@ -30268,36 +30221,8 @@ impl AdvancedAi {
                     self.force_groups_dirty = true;
                 }
                 snapshot_invalid |= invalidates_followers;
-                if let (Action::Move { .. }, Some(from)) = (action, from) {
-                    walked.push(from);
-                    // ★★★★ THE STEP SHOWED SOMETHING THE PLAN NEVER SAW. The
-                    // plan was made on a clone that reveals nothing, so every
-                    // later step in it was chosen in ignorance of what this
-                    // one uncovered. Stop here and finish from the live board.
-                    if self.step_and_reassess
-                        && g.players[pid].explored.len() > explored_before
-                        && g.units.get(&uid).is_some_and(|unit| unit.moves_left > 0.0)
-                    {
-                        reassess = true;
-                        break;
-                    }
-                }
             }
-            if reassess && g.units.contains_key(&uid) {
-                // The clone's plan state describes a walk the unit did not
-                // finish; the hops it DID take are what the reversal guard
-                // must know before the sighted continuation chooses a step.
-                self.base.record_walked_steps(uid, g.turn, walked);
-                self.census.step_reassessed += 1;
-                took_a_turn |= self.advance_unit_serial(
-                    g,
-                    pid,
-                    uid,
-                    plan,
-                    flags.religious_offensive,
-                    flags.decline_settlers,
-                );
-            } else if valid {
+            if valid {
                 self.base.merge_unit_plan_state(uid, intent.base_state);
                 took_a_turn |= intent.took_a_turn;
             } else if g.units.contains_key(&uid) {

@@ -746,11 +746,8 @@ def build_config(args: argparse.Namespace) -> dict:
         # opening orders settle whenever the seat revealed ground since the
         # board went out and a unit still has movement to spend on it (or a
         # strike went out): the revealed plots cross as a `tiles` delta, the
-        # board is exported again, and CIVVIS re-plans the same turn. The
-        # brain's half (`step_and_reassess`) cuts a walk at its first
-        # unrevealed hex so the unit steps to the edge of the known and the
-        # frame spends the rest on what it saw. `TileDelta` sends newly
-        # revealed plots every turn and frame instead of every
+        # board is exported again, and CIVVIS re-plans the same turn.
+        # `TileDelta` sends newly revealed plots every turn and frame instead of every
         # `TileExportEvery` turns. See docs/LIVE_TACTICS.md §11.
         "ReplanFrames": args.replan_frames,
         "TileDelta": args.tile_delta,
