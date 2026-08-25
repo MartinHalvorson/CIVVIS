@@ -29110,7 +29110,7 @@ fn the_religious_corps_genes_are_registered_reversible_opt_ins() {
     let mut ai = AdvancedAi::new();
     for (field, tag, default_on) in [
         ("religious_defence_scales", "religious-defence-scales", true),
-        ("guru_heals_the_corps", "guru-heals-the-corps", false),
+        ("guru_heals_the_corps", "guru-heals-the-corps", true),
         (
             "religious_units_heal_first",
             "religious-units-heal-first",
@@ -29126,7 +29126,7 @@ fn the_religious_corps_genes_are_registered_reversible_opt_ins() {
             "holy-site-where-the-threat-is",
             false,
         ),
-        ("enhancer_for_the_corps", "enhancer-for-the-corps", false),
+        ("enhancer_for_the_corps", "enhancer-for-the-corps", true),
     ] {
         assert!(
             GENES
@@ -30922,10 +30922,10 @@ fn the_inquisitor_walks_to_the_heresy_only_with_the_gene() {
 
 #[test]
 fn the_trade_deal_genes_are_registered_reversible_opt_ins() {
-    for (field, tag) in [
-        ("deals_for_our_gain", "deals-for-our-gain"),
-        ("deals_at_the_ceiling", "deals-at-the-ceiling"),
-        ("no_free_passage", "no-free-passage"),
+    for (field, tag, default_on) in [
+        ("deals_for_our_gain", "deals-for-our-gain", true),
+        ("deals_at_the_ceiling", "deals-at-the-ceiling", false),
+        ("no_free_passage", "no-free-passage", true),
     ] {
         assert!(
             GENES
@@ -30936,8 +30936,8 @@ fn the_trade_deal_genes_are_registered_reversible_opt_ins() {
         assert!(crate::ai::advanced::gene_ledger::screenable(tag));
         assert_eq!(
             crate::ai::advanced::gene_ledger::ledger_default_on(tag),
-            Some(false),
-            "{tag} ships off until a screen prices it"
+            Some(default_on),
+            "{tag} must match the current deployment genome"
         );
     }
     let mut ai = AdvancedAi::new();

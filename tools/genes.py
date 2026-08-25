@@ -516,6 +516,37 @@ OPERATOR_PROMOTIONS_20260825 = (
     "religious-veto-defence",
 )
 
+#: A second 2026-08-25 operator directive, verbatim: "flip
+#: flip-nearby-city-states, diplomatic-lane-forecast, barbarian-ranged-answer,
+#: army-target-weighs-enemy, research-tier-premium, naval-threat-triage,
+#: deals-for-our-gain, settler-screen, lane-space-race, enhancer-for-the-corps,
+#: settler-target-hysteresis, amenity-project-preemption, guru-heals-the-corps,
+#: no-free-passage, naval-recon, home-defense to all default on." Six of the
+#: sixteen (`flip-nearby-city-states`, `diplomatic-lane-forecast`,
+#: `deals-for-our-gain`, `no-free-passage`, `settler-screen`,
+#: `naval-threat-triage`) no screen has priced yet; four of the ten that were
+#: priced read a negative pooled *Diff*. Neither is a bar under
+#: `operator-pinned`: the evidence stays published beside the selection, and
+#: the selection is this list.
+OPERATOR_PROMOTIONS_20260825_SECOND = (
+    "flip-nearby-city-states",
+    "diplomatic-lane-forecast",
+    "barbarian-ranged-answer",
+    "army-target-weighs-enemy",
+    "research-tier-premium",
+    "naval-threat-triage",
+    "deals-for-our-gain",
+    "settler-screen",
+    "lane-space-race",
+    "enhancer-for-the-corps",
+    "settler-target-hysteresis",
+    "amenity-project-preemption",
+    "guru-heals-the-corps",
+    "no-free-passage",
+    "naval-recon",
+    "home-defense",
+)
+
 #: The complete pinned deployment genome, in stable tag order. Every other
 #: screenable gene defaults off unless an explicit operator update changes this
 #: selection. Keep the historical promotion groups above named separately so
@@ -523,8 +554,11 @@ OPERATOR_PROMOTIONS_20260825 = (
 OPERATOR_DEFAULT_ON = (
     "air-surge",
     "amenity-district-path",
+    "amenity-project-preemption",
     "apostle-promotion-by-role",
+    "army-target-weighs-enemy",
     "barbarian-bargain",
+    "barbarian-ranged-answer",
     "barbarian-scouts-are-scouts",
     "bounded-recovery",
     "buildings-before-projects",
@@ -532,22 +566,32 @@ OPERATOR_DEFAULT_ON = (
     "civilian-rescue",
     "competition-victory-points",
     "culture-building-debt",
+    "deals-for-our-gain",
+    "diplomatic-lane-forecast",
     "district-planning",
     "early-contact-window",
     "engine-faith-price",
+    "enhancer-for-the-corps",
     "escort-unstick",
+    "flip-nearby-city-states",
     "founder-temple",
     "great-person-housing",
+    "guru-heals-the-corps",
     "holy-lane-parity",
+    "home-defense",
     "idle-faith-patronage",
     "inquisition-on-threat",
     "lane-culture-spending",
     "lane-great-people",
     "lane-policy-deck",
+    "lane-space-race",
     "loyalty-rate-alarm",
     "maintenance-aware-deck",
     "missionary-evades-raiders",
     "missionary-last-charge-explores",
+    "naval-recon",
+    "naval-threat-triage",
+    "no-free-passage",
     "one-launch-pad",
     "one-war-at-a-time",
     "opportunistic-war",
@@ -562,12 +606,15 @@ OPERATOR_DEFAULT_ON = (
     "religious-defence-scales",
     "religious-units-heal-first",
     "religious-veto-defence",
+    "research-tier-premium",
     "science-multiplier-payoff",
     "science-victory-drive",
     "score-horizon",
     "settle-sooner",
     "settlement-gap-target",
     "settler-factory-coordination",
+    "settler-screen",
+    "settler-target-hysteresis",
     "settler-threat-detour",
     "slot-kind-tiebreak",
     "solvency-first-trade-slot",
@@ -1657,7 +1704,9 @@ def build_ledger(sources: list[Path], filter_known: bool = True,
                         "a fourth is added",
             "family_heads": family_heads,
             "operator_promotions": list(
-                OPERATOR_PROMOTIONS_20260824 + OPERATOR_PROMOTIONS_20260825
+                OPERATOR_PROMOTIONS_20260824
+                + OPERATOR_PROMOTIONS_20260825
+                + OPERATOR_PROMOTIONS_20260825_SECOND
             ),
             "posterior_shapes": list(POSTERIOR_SHAPES),
             "deployment_policy_meaning": "the operator-pinned list decides default_on. "
