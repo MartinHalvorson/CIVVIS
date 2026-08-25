@@ -2359,6 +2359,18 @@ impl AdvancedAi {
 
     // ---- append: s-s ------------------------------------------------
 
+    /// Convert the first six Standard-speed turns after a surprise war is
+    /// declared against us into a bounded defensive mobilization. Off
+    /// everywhere by default; opt-in gene `surprise-war-mobilization`.
+    pub fn enable_surprise_war_mobilization(&mut self) {
+        self.surprise_war_mobilization = true;
+    }
+
+    /// The twin of `enable_surprise_war_mobilization`.
+    pub fn disable_surprise_war_mobilization(&mut self) {
+        self.surprise_war_mobilization = false;
+    }
+
     // ---- append: t-z ------------------------------------------------
 }
 

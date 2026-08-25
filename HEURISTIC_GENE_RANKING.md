@@ -374,6 +374,7 @@ These screenable genes have no on/off result, so they receive no rank or promoti
 | `settler-factory-coordination` | off (unmeasured) | Keep every early Settler pipeline slot, but allocate new slots to competitive factories with distinct reachable claims. | — |
 | `settler-screen` | off (unmeasured) | A seen rival Settler near our cities is screened: up to four of our nearby land units, recon first, take the stands that add the most expected steps to its likeliest walks — a tile a foreign unit holds cannot be entered at peace — and hold them while the plan names them. | — |
 | `solvency-first-trade-slot` | off (unmeasured) | Reserve the first usable empty trade slot before ordinary production in a city that can start a locally safe route. | — |
+| `surprise-war-mobilization` | off (unmeasured) | Convert the first six Standard-speed turns after a surprise war is declared against us into a bounded defensive mobilization. | — |
 
 ## Removed from the code
 
