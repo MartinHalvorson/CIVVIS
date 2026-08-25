@@ -123,10 +123,9 @@ the commit is the load-bearing field:
   (#2307) — found by a careful reader, not by a gate.
 - **#2307's own write-up** stated its source commit and its binary's SHA-256 in
   prose, because the artefact had nowhere to put them.
-- **2026-08-23.** The first standard-shape screen re-priced `barbarian-hunt`
-  from the legacy -1.73 pp to +0.20 pp while a sibling change was minutes from
-  deleting that gene on the legacy reading, which would have made a brand-new
-  screen a source pricing a gene the code no longer had.
+- **2026-08-23.** The first standard-shape screen re-priced a gene while a
+  sibling change was minutes from culling it on a legacy reading, which would
+  have made a brand-new screen a source pricing a gene the code no longer had.
 
 ⚠ The twenty sources recorded before 2026-08-23 carry no build block. They are
 grandfathered — the games are played and the artefacts are history — and they
@@ -1078,8 +1077,8 @@ def build_gap(data: dict, name: str, tags_at=None, tags_now=None) -> str:
     commit does have is what an unmeasured gene quietly looks like. Both have
     happened here: P10 published a `holy-lane-parity` column after the cull
     that deleted it (#2266, #2299, #2307), and on 2026-08-23 a sibling change
-    was minutes from deleting `barbarian-hunt` while the first standard-shape
-    screen was re-pricing it."""
+    was minutes from culling a gene while the first standard-shape screen was
+    re-pricing it."""
     tags_at = tags_at or gene_tags_at
     tags_now = tags_now or gene_tags_now
     build = build_of(data)

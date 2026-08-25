@@ -2769,23 +2769,6 @@ pub struct AdvancedAi {
     /// worst a long Counterspy is re-asked once mid-run, which the host
     /// refuses once instead of every turn.
     pub spy_mission_patience: bool,
-    /// ★★★ THE ORDER AND THE MARCH MUST AGREE ON THE GROUND. The Settler
-    /// production arm prices `best_settle_site`'s answer; the walker then
-    /// asks `settle_site_loyalty_verdict` for the same ground and refuses it.
-    /// Run civvis-20260818T182702Z (the first hostile map after the
-    /// land-grab pipeline, #2027): 19 Settler starts became 8 foundings and
-    /// a six-city empire at score 552, with 153 loyalty refusals (112
-    /// beyond-reach + 41 forecast-drain) and 54 settler capture/loss lines —
-    /// roughly eleven Settlers of production paid for walkers with nowhere
-    /// to land, while the same binary's friendly-map runs landed 17 and 18
-    /// cities. With `settler_site_agreement` the production gate asks the
-    /// walker's own verdict for the chosen site before starting the build;
-    /// a doomed best site usually sits in a doomed frontier
-    /// (`settler_dead_sites`' own observation), so refusing the build is
-    /// the cheap half of the same answer. Natively the verdict is the drain
-    /// forecast alone (`frontier_loyalty` is a live arm), so the repair is
-    /// an engine repair with a wider live reading, not bridge semantics.
-    pub settler_site_agreement: bool,
     /// A stacked guard holds with its settler, and only a guard that can hold
     /// counts as protection.
     ///
@@ -3798,21 +3781,6 @@ pub struct AdvancedAi {
     /// the seats is exactly the kind of cost the Apostle cannot see.
     pub theology_for_founders: bool,
 
-    /// Score a settle site by the districts this city would actually build
-    /// — the lane's first families, each on its own plot, at the lane's
-    /// yield weights — instead of every family's best plot summed
-    /// (`adjacency_site_planning`, which this replaces while on). See
-    /// `advanced/site_lookahead.rs`. Off everywhere by default; opt-in gene
-    /// `district-lookahead-settle`.
-    pub district_lookahead_settle: bool,
-
-    /// Buy a border plot only when its priced benefit — the job it improves,
-    /// the resource it connects, the district plot it unlocks, over a payback
-    /// horizon cut short where culture would claim it anyway — clears the
-    /// Gold at the lane's price by a margin. See `advanced/site_lookahead.rs`.
-    /// Off everywhere by default; opt-in gene `priced-tile-purchase`.
-    pub priced_tile_purchase: bool,
-
     /// Price a Campus building at the science it will ACTUALLY earn, so the
     /// research economy scales up as the multipliers arrive instead of down.
     ///
@@ -3955,8 +3923,7 @@ pub struct AdvancedAi {
     /// half is unreachable here, not mispriced.
     ///
     /// ⭐ So the lever for that half is not district pricing at all — it is
-    /// CITY SITING, where `district-lookahead-settle` already scores a
-    /// settlement by the districts its plan would build. A Campus reaches
+    /// CITY SITING. A Campus reaches
     /// adjacency 4 by founding beside mountains, and that decision is made
     /// long before this term is consulted.
     ///
@@ -4949,8 +4916,6 @@ mod surprise_defense;
 mod air_surge;
 use air_surge::{AirSurge, AirSurgeCensus, AirSurgeStatus};
 
-/// The district look-ahead at settlement and the priced tile purchase: two
-/// opt-in territory genes, one file. See `advanced/site_lookahead.rs`.
 mod site_lookahead;
 
 /// The standing city's district plan: which districts, on which reserved
@@ -4977,7 +4942,6 @@ mod religion;
 /// non-founder's answer and the spreaders' targets by how much of a rival's
 /// win is already done. One opt-in gene; see `advanced/religious_defence.rs`.
 mod religious_defence;
-use site_lookahead::{PlotOffer, PlotPurchaseCache};
 /// Field craft: shoot-and-scoot, the zone-of-control screen, pillage-to-heal
 /// and flipping nearby city-states. Four opt-in genes; see
 /// `advanced/field_craft.rs`.
@@ -5592,7 +5556,6 @@ impl AdvancedAi {
             civ_blind: false,
             deny_leaders: true,
             spy_mission_patience: false,
-            settler_site_agreement: false,
             settler_guard_holds: false,
             spy_orders_until: BTreeMap::new(),
             deny_while_targeted: false,
@@ -5631,8 +5594,6 @@ impl AdvancedAi {
             inquisition_on_threat: false,
             founder_temple: false,
             theology_for_founders: false,
-            district_lookahead_settle: false,
-            priced_tile_purchase: false,
             science_multiplier_payoff: false,
             research_tier_premium: false,
             power_the_laboratory: false,
@@ -5837,11 +5798,6 @@ impl AdvancedAi {
     /// `BasicAi::barbarian_heretic_hunt`.
     pub fn barbarian_heretic_hunt(&self) -> bool {
         self.base.barbarian_heretic_hunt
-    }
-
-    /// Whether the field-civilian reading is on. See `BasicAi::barbarian_hunt`.
-    pub fn barbarian_hunt(&self) -> bool {
-        self.base.barbarian_hunt
     }
 
     /// Whether a raider is priced below a major. See `BasicAi::barbarian_bargain`.
@@ -15519,7 +15475,6 @@ impl AdvancedAi {
             let counts = self.counts(g, pid);
             let mut candidates = Vec::new();
             let mut plot_options = Vec::new();
-            let mut plot_cache = PlotPurchaseCache::default();
             let mut district_plan_cache = DistrictPlanCache::default();
             let mut purchase_options = Vec::new();
             // Every candidate asks its city for the same yields, twice — once
@@ -15553,28 +15508,6 @@ impl AdvancedAi {
                             ));
                             continue;
                         }
-                    }
-                    // See `priced_tile_purchase`: the plot is an investment
-                    // priced against its Gold, not a shortlist hint plus a
-                    // speculative clone. A `None` is a plot not worth its
-                    // price; it is not shortlisted.
-                    if self.priced_tile_purchase {
-                        let offer = PlotOffer {
-                            city: *city,
-                            pos: *pos,
-                            cost: *cost,
-                        };
-                        if let Some(score) =
-                            self.priced_plot_purchase_score(g, pid, plan, offer, &mut plot_cache)
-                        {
-                            plot_options.push((
-                                score,
-                                score,
-                                std::cmp::Reverse(format!("{action:?}")),
-                                action,
-                            ));
-                        }
-                        continue;
                     }
                     let tile = &g.map.tiles[pos];
                     let resource = tile
@@ -15724,18 +15657,8 @@ impl AdvancedAi {
                         .total_cmp(&left.0)
                         .then_with(|| left.2.cmp(&right.2))
                 });
-                // The priced path already holds a final score per plot and
-                // needs no clone, so it keeps every candidate; the shipped
-                // path clones the game per plot and keeps four.
-                let plot_scores = if self.priced_tile_purchase {
-                    plot_options
-                        .iter()
-                        .map(|(_, score, _, _)| Some(*score))
-                        .collect()
-                } else {
-                    plot_options.truncate(4);
-                    self.gold_plot_scores(score_context, &plot_options)
-                };
+                plot_options.truncate(4);
+                let plot_scores = self.gold_plot_scores(score_context, &plot_options);
                 for ((_, _, _, action), score) in plot_options.into_iter().zip(plot_scores) {
                     if let Some(score) = score {
                         candidates.push((
@@ -20134,7 +20057,6 @@ impl AdvancedAi {
                     if reserved
                         .iter()
                         .any(|other| g.wdist(*other, position) < SETTLER_FACTORY_SITE_SPACING)
-                        || !self.settler_site_is_landable(g, pid, position)
                     {
                         return None;
                     }
@@ -20453,21 +20375,7 @@ impl AdvancedAi {
                         })
                     };
                     if let Some(site) = site {
-                        // ★★★ THE ORDER AND THE MARCH MUST AGREE ON THE
-                        // GROUND. This gate priced the site; the walker then
-                        // asks `settle_site_loyalty_verdict` and refuses it —
-                        // and on run civvis-20260818T182702Z that
-                        // disagreement turned 19 Settler starts into 8
-                        // foundings and a six-city empire, with 153 loyalty
-                        // refusals in the why-log while the pipeline kept
-                        // paying for walkers with nowhere to land. Ask the
-                        // walker's own question before starting the Settler;
-                        // a doomed best site usually sits in a doomed
-                        // frontier, so refusing the build is the cheap half
-                        // of the same answer. See `settler_site_agreement`.
-                        if !self.settler_site_is_landable(g, pid, site.0) {
-                            -10_000.0
-                        } else if self.coupled_expansion {
+                        if self.coupled_expansion {
                             self.coupled_expansion_value(g, pid, cid, plan, counts, site, turns)
                         } else {
                             (920.0 + site.1 * 4.0) * self.settler_price
@@ -22234,11 +22142,7 @@ impl AdvancedAi {
             .count() as f64;
         let mut value =
             forecast.score + (housing - 2.0) * 4.0 + growth_readiness + dependable_jobs * 0.75;
-        value += if self.district_lookahead_settle {
-            self.settlement_district_lookahead_value(g, pid, pos, &positions)
-        } else {
-            self.settlement_adjacency_value_from_positions(g, pid, pos, &positions)
-        };
+        value += self.settlement_adjacency_value_from_positions(g, pid, pos, &positions);
         let enemy_distance = g
             .cities
             .values()
@@ -23940,15 +23844,6 @@ impl AdvancedAi {
                "{waited} turn(s) so far; marching alone is how the last two settlers \
                 were captured");
         Some(self.base.fortify_or_stop(g, pid, uid))
-    }
-
-    /// Whether the production gate may pay for a Settler aimed at `site`:
-    /// under `settler_site_agreement` it asks the walker's own
-    /// [`Self::settle_site_loyalty_verdict`], so a build is never started for
-    /// ground the march will refuse. Off, every gate keeps its historical
-    /// answer.
-    fn settler_site_is_landable(&self, g: &Game, pid: usize, site: Pos) -> bool {
-        !self.settler_site_agreement || self.settle_site_loyalty_verdict(g, pid, site).is_none()
     }
 
     /// Would a city founded at `site` right now bleed Loyalty fast enough to
@@ -28800,13 +28695,6 @@ impl AdvancedAi {
             self.force_groups_dirty |= acted && changes_force_picture;
             return acted;
         }
-        // ⚠ BEFORE escort duty, not after. `settler_escort_step` answers
-        // `Some(..)` for every guard it owns, so a unit standing beside the
-        // raider that is about to take its Settler never reaches the attack
-        // scan below. See `BasicAi::barbarian_kill_beside_this_unit`.
-        if self.base.barbarian_kill_beside_this_unit(g, pid, uid) {
-            return true;
-        }
         if let Some(acted) = self.settler_escort_step(g, pid, uid, plan) {
             return acted;
         }
@@ -28858,31 +28746,16 @@ impl AdvancedAi {
         // on several rosters it reads `alive = false` while its raiders are
         // very much on the board. The presence check is the liveness test.
         //
-        // ★★★★★ AND THIS IS THE ADMISSION THE ADVANCED CONTROLLER ACTUALLY
-        // USES. `BasicAi::military_step` holds a second copy of the same rule,
-        // and `barbarian_hunt` was added to that one alone: INSTRUMENTED over
-        // four `ai_eval` pairs, the `BasicAi` block ran **zero** times for the
-        // `live` entrant, because the Advanced controller only falls through to
-        // it when `enemies` is already empty for other reasons. A gene wired
-        // into the copy nobody reaches is a no-op, and the eval said so —
-        // "nothing differed: all 24 maps were neutral on wins AND on terminal
-        // score". Both readings belong in both places.
         if let Some(barb) = g.barb_pid {
             let camp_reading = self.base.barbarian_presence_at_home_for_controller(
                 g,
                 pid,
                 crate::ai::HOME_CAMP_RADIUS,
             );
-            // A raider standing over a Settler ten tiles out is outside every
-            // ring the camp reading measures. See `BasicAi::barbarian_hunt`.
-            let field_reading = self.barbarian_hunt()
-                && self
-                    .base
-                    .barbarian_threatens_our_field_civilians_for_controller(g, pid);
             let xp_farm_reading = self.base.has_harmless_naval_xp_shot(g, pid, uid);
             if self.base.barbarian_tactics_enabled()
                 && !enemies.contains(&barb)
-                && (camp_reading || field_reading || xp_farm_reading)
+                && (camp_reading || xp_farm_reading)
             {
                 enemies.push(barb);
             }
@@ -29497,10 +29370,7 @@ impl AdvancedAi {
             g,
             pid,
             crate::ai::HOME_CAMP_RADIUS,
-        ) || (self.barbarian_hunt()
-            && self
-                .base
-                .barbarian_threatens_our_field_civilians_for_controller(g, pid));
+        );
         if strategic_barbarian_response {
             if let Some(barb) = g.barb_pid.filter(|barb| enemies.contains(barb)) {
                 let barb_only = [barb];
