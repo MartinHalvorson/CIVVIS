@@ -34813,7 +34813,7 @@ fn the_elective_war_reach_is_the_campaign_planners_own() {
         "one three times as far is not"
     );
     // An empire with no cities at all is nobody's neighbour.
-    assert!(!ai.rival_is_in_campaign_reach(&game, 0, 2 + 0));
+    assert!(!ai.rival_is_in_campaign_reach(&game, 0, 2));
 }
 
 /// The defect: a feeble empire on the far side of the map sets the bar the
@@ -34837,8 +34837,7 @@ fn the_weakest_empire_on_the_board_is_not_a_neighbour() {
     let surviving = |ai: &AdvancedAi| {
         (1..3)
             .filter(|rival| {
-                !ai.elective_war_in_reach
-                    || ai.rival_is_in_campaign_reach(&game, 0, *rival)
+                !ai.elective_war_in_reach || ai.rival_is_in_campaign_reach(&game, 0, *rival)
             })
             .collect::<Vec<_>>()
     };
