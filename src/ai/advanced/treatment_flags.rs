@@ -181,33 +181,6 @@ impl AdvancedAi {
         self.theology_for_founders = false;
     }
 
-    /// Score a settle site by the districts the lane would actually build
-    /// there, each on its own plot. See
-    /// [`AdvancedAi::district_lookahead_settle`]. Opt-in gene
-    /// `district-lookahead-settle`.
-    pub fn enable_district_lookahead_settle(&mut self) {
-        self.district_lookahead_settle = true;
-    }
-
-    /// The twin of `enable_district_lookahead_settle`.
-    pub fn disable_district_lookahead_settle(&mut self) {
-        self.district_lookahead_settle = false;
-    }
-
-    /// Buy a border plot only when its priced benefit clears its Gold cost by a
-    /// margin. See [`AdvancedAi::priced_tile_purchase`]. Opt-in gene
-    /// `priced-tile-purchase`.
-    pub fn enable_priced_tile_purchase(&mut self) {
-        self.priced_tile_purchase = true;
-        self.base.plot_purchase_delegated = true;
-    }
-
-    /// The twin of `enable_priced_tile_purchase`.
-    pub fn disable_priced_tile_purchase(&mut self) {
-        self.priced_tile_purchase = false;
-        self.base.plot_purchase_delegated = false;
-    }
-
     /// Credit a Campus building the science its city's multipliers will
     /// actually pay, not its raw spec yield. See
     /// [`AdvancedAi::science_multiplier_payoff`]. Opt-in gene
@@ -761,16 +734,6 @@ impl AdvancedAi {
         self.spy_mission_patience = false;
     }
 
-    /// Ask the walker's own loyalty verdict on the chosen site before building
-    /// a Settler for it. See [`Self::settler_site_agreement`].
-    pub fn enable_settler_site_agreement(&mut self) {
-        self.settler_site_agreement = true;
-    }
-
-    pub fn disable_settler_site_agreement(&mut self) {
-        self.settler_site_agreement = false;
-    }
-
     /// Count a stacked guard as protection only when it can hold, and make it
     /// stay with its settler. See [`Self::settler_guard_holds`].
     pub fn enable_settler_guard_holds(&mut self) {
@@ -1242,17 +1205,6 @@ impl AdvancedAi {
 
     pub fn disable_barbarian_bargain(&mut self) {
         self.base.disable_barbarian_bargain();
-    }
-
-    /// Walk onto a visible, undefended barbarian camp one step away and clear
-    /// it for the gold bounty. See `BasicAi::barbarian_hunt`; withheld by the
-    /// `barbarian-hunt` treatment.
-    pub fn enable_barbarian_hunt(&mut self) {
-        self.base.enable_barbarian_hunt();
-    }
-
-    pub fn disable_barbarian_hunt(&mut self) {
-        self.base.disable_barbarian_hunt();
     }
 
     /// Deliberate camp clearing as a peacetime errand. See
