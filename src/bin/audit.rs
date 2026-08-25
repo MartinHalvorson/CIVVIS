@@ -8,7 +8,33 @@
 //!
 //! Usage: audit [--games N] [--start-seed N] [--players N] [--turns N]
 //!              [--width N] [--height N] [--city-states N] [--speed ID]
-//!              [--quiet]
+//!              [--genome deployment|stock] [--quiet]
+//!
+//! ## ⚠⚠ WHICH AGENT THIS AUDITS, AND WHY THE DEFAULT CHANGED
+//!
+//! `AdvancedAi::fleet` is `AdvancedAi::new()` per seat: the STOCK controller,
+//! no repair bundle, no ledger. The native deployment genome is
+//! `enable_engine_repairs()` — the repair universe, then the ledger's
+//! defaults. Those are different agents, and this binary used the first while
+//! its output read as though it described the second.
+//!
+//! What that cost, measured on 2026-08-25 at this binary's own profile, seed
+//! 21000000, turn 165, summed across the board:
+//!
+//! | configuration | live trade routes | `solvency_first_trade_slot` |
+//! |---|---:|---|
+//! | `fleet()` — what this binary used | **2** | false |
+//! | `enable_engine_repairs()` — deployment | **37** | true |
+//!
+//! `solvency-first-trade-slot` is **rank 1 of `HEURISTIC_GENE_RANKING.md`** at
+//! +8.07% (22.85% against 14.78%, P(>0) 100.0%) and has been `on` in the
+//! deployment default throughout. A census of "the empire uses 3% of its trade
+//! capacity" was therefore a census of an agent nobody runs.
+//!
+//! `--genome deployment` is now the default and every report names the genome
+//! it audited. `--genome stock` keeps the old behaviour for anyone who wants
+//! the bare controller, which is a legitimate question — just not the one the
+//! unqualified word "audit" implies.
 //!
 //! ## What the lane census measured (2026-08-19, 16 games)
 //!
@@ -1253,6 +1279,15 @@ fn main() {
     });
     let turns = number(&args, "--turns", i64::from(speed_turns.turns)).max(1) as u32;
     let quiet = args.iter().any(|arg| arg == "--quiet");
+    // ⚠⚠ WHICH AGENT IS BEING AUDITED. `AdvancedAi::fleet` is
+    // `AdvancedAi::new()` per seat -- the STOCK controller, with no repair
+    // bundle and no ledger. That is not what ships: the native deployment
+    // genome is `enable_engine_repairs()`, which turns the repair universe on
+    // and then applies the ledger's defaults. Until 2026-08-25 this binary
+    // had no way to say so and no output that named it, so every number it
+    // printed described the stock agent while reading as though it described
+    // the agent. See `GENOME_READ` for what that cost.
+    let genome = text(&args, "--genome", "deployment");
 
     let mut totals = Findings::default();
     let mut totals_motion = MotionBreakdown::default();
@@ -1268,6 +1303,11 @@ fn main() {
         options.speed = speed.clone();
         let mut g = Game::new_with(options);
         let mut ais = AdvancedAi::fleet(&g);
+        if genome != "stock" {
+            for ai in ais.iter_mut() {
+                ai.enable_engine_repairs();
+            }
+        }
         let mut history = History::default();
         let mut found = Findings::default();
         let mut motion = MotionBreakdown::default();
@@ -1337,6 +1377,17 @@ fn main() {
     println!(
         "profile   {players}p {width}x{height}, {speed}, {turns} turns, {city_states} city-states, seeds {start}..{}",
         start + games - 1,
+    );
+    // ⚠ A report that does not name its genome reads as though it described
+    // the agent, and for months this one described the stock controller. See
+    // the module header.
+    println!(
+        "genome    {}",
+        if genome == "stock" {
+            "stock — AdvancedAi::new(), no repair bundle, no ledger (--genome stock)"
+        } else {
+            "deployment — enable_engine_repairs(): the repair universe, then the ledger"
+        }
     );
     totals_motion.print("");
     if totals.violations.is_empty() {
