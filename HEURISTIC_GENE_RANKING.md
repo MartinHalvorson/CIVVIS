@@ -310,6 +310,7 @@ These screenable genes have no on/off result, so they receive no rank or promoti
 | `builder-tries-the-next-tile` | off (unmeasured) | Let a Builder whose nearest improvable tile cannot be routed to try the next-nearest instead of standing still for the rest of the game. | 1 |
 | `chop-into-the-queue` | off (unmeasured) | A Builder chops woods, rainforest or marsh into the Settler, district or wonder at the front of the owning city's queue, priced as a one-off lump against the per-turn jobs. | 1 |
 | `civilian-out-of-reach` | off (unmeasured) | Settlers and builders stay out of a barbarian's one-turn reach: flee it, never step into it alone, and summon a guard onto the settler's tile when they must cross it. | 1 |
+| `coalition-before-war` | off (unmeasured) | Recruit the target's neighbours before an elective war: alliances, envoys to its city-states and joint-war invitations at the strike. | 1 |
 | `congress-counter-leader` | off (unmeasured) | Point the three targeted World Congress penalties at the empire the denial layer names. | 1 |
 | `conversion-majority-alarm` | off (unmeasured) | Read a rival's religious clock from the cities it has converted rather than from whole civilizations already lost. | 1 |
 | `culture-lane-forecast` | off (unmeasured) | Score the Culture lane by where the two tourist curves are when the clock stops. | 1 |
