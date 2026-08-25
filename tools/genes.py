@@ -8,7 +8,7 @@ genes, a subset of the pool; the deployment genome is the ledger's defaults.
     python3 tools/genes.py list                 every gene: kind, default, verdict
     python3 tools/genes.py source FILE [...]    enter a `gene_screen --analyze --json` file as a ledger source
     python3 tools/genes.py write                regenerate docs/gene_ledger.json, the verdict block in
-                                                src/ai/advanced/genes.rs, and HEURISTIC_GENE_RANKING.md
+                                                src/ai/advanced/genes.rs, and GENE_HEURISTIC_RANKING.md
     python3 tools/genes.py check                fail if any of the three is stale (the CI gate)
     python3 tools/genes.py boundary [--arm-pairs N] [--max-arm-pairs N]
                                                 the genes one single-gene run would resolve
@@ -21,7 +21,7 @@ together by tests. They are one module now (operator, 2026-08-23: *"is it
 possible to combine this all into one file?"*), and the generated Rust
 verdicts live in `genes.rs` itself, under the rows they judge, so a gene's
 declaration and its standing are one file: `src/ai/advanced/genes.rs` for the
-code, `HEURISTIC_GENE_RANKING.md` for the table, `docs/gene_ledger.json` for
+code, `GENE_HEURISTIC_RANKING.md` for the table, `docs/gene_ledger.json` for
 the machine record of the screens behind them.
 
 The sections below keep the three tools' own doctrine, verbatim where it still
@@ -189,7 +189,7 @@ their baselines and shapes vary, and a pooled record must carry uncertainty.
 on the win column's own scale, each weighted by that screen's own standard
 error, with the between-screen disagreement carried in `tau` and therefore in
 the interval. Every gene gets `posterior_pp`, `posterior_se_pp` and, in
-`HEURISTIC_GENE_RANKING.md`, a 95% interval and `P(effect > 0)`.
+`GENE_HEURISTIC_RANKING.md`, a 95% interval and `P(effect > 0)`.
 
 It is **published, not in force**. The deployment policy is explicitly
 `operator-pinned`: `OPERATOR_DEFAULT_ON` is the whole selection, and the
@@ -203,7 +203,7 @@ alternative authority or a switch for automatic promotion or demotion.
 ──────────────────────────────────────────────────────────────────────────────
 THE RANKING (formerly tools/genes.py)
 ──────────────────────────────────────────────────────────────────────────────
-Regenerate `HEURISTIC_GENE_RANKING.md` — every screenable heuristic gene,
+Regenerate `GENE_HEURISTIC_RANKING.md` — every screenable heuristic gene,
 with a measurement, ranked by wins added per 10,000 six-player on-arm seats, plus the
 screenable genes still awaiting one.
 
@@ -629,7 +629,7 @@ OPERATOR_DEFAULT_ON = (
 #: Which source shapes the published posterior pools. Both today, because every
 #: source is `legacy`; the moment a `standard` source lands this is the dial
 #: that says whether the deployment shape is pooled with the retired one or
-#: reads alone. `HEURISTIC_GENE_RANKING.md` prints all three scopes side by
+#: reads alone. `GENE_HEURISTIC_RANKING.md` prints all three scopes side by
 #: side so the choice is made on the numbers.
 POSTERIOR_SHAPES = ("standard", "legacy")
 #: A two-sided 95% interval, and the standard normal's own constant.
@@ -666,7 +666,7 @@ def wins_per_10k(win_rate: float, players: int) -> int:
 
 def pooled_win_rates(history: list[dict]) -> tuple[float, float]:
     """The on-arm-seat-weighted on and off win rates across every screen that priced
-    the gene — `HEURISTIC_GENE_RANKING.md`'s two *Total* columns. Each entry
+    the gene — `GENE_HEURISTIC_RANKING.md`'s two *Total* columns. Each entry
     carries `win_on`/`win_off` and the seat observations behind each arm.
     `tools/genes.py` imports this, so the printed totals and
     the ledger's published *Diff* are one arithmetic."""
@@ -949,20 +949,29 @@ def arm_information_value(effect: float, se: float, arm_se: float,
     return best - (effect if deployed else 0.0)
 
 
-def default_on_summary(ledger: dict) -> str:
-    """The operator-pinned deployment policy, short enough for the ranking's
-    heading. Measurements remain visible in the table but are not a rewrite
-    trigger for this selection."""
-    genome = ledger["rules"]["deployment_genome"]
-    promotions = ledger["rules"]["operator_promotions"]
-    if ledger["rules"]["deployment_policy"] != DEPLOYMENT_POLICY:
-        raise ValueError("the ranking only renders the operator-pinned deployment policy")
-    return (
-        f"**Deployment default:** operator-pinned ({len(genome)} genes): retains the prior "
-        f"36 selections and explicitly promotes {', '.join(f'`{tag}`' for tag in promotions)}. "
-        "Screen columns, *Diff*, and posterior values are evidence only; new batches do not "
-        "automatically change defaults."
-    )
+#: The operator wrote this heading and column legend by hand on 2026-08-25
+#: (GitHub commits 9ad09f7d, 128cabad, 76f50229, fb64960c), renaming the file
+#: to `GENE_HEURISTIC_RANKING.md` in the same stroke. The generator reproduces
+#: it verbatim so that `write` never overwrites the operator's text and
+#: `check` is comparing like with like. Edit here, not in the rendered file.
+RANKING_HEADING = [
+    "## A Ranking of all Gene Heuristics by On/Off Win Rate Difference in Tournaments",
+    "- Ranking",
+    "- Gene Name",
+    "- A short Gene Description",
+    "- The highest performing version of the gene, which is also the default "
+    "version if the gene defaults \"on\"",
+    "- Default \"on\" of \"off\". Default \"on\" genes are a part of our best genome.",
+    "- Estimated probability that this gene is beneficial to our performance",
+    "- (3 cols) win rate from the last tournament / prior tournament / tournament "
+    "prior to that, scaled to n=10k total seats (n=actual number of seats listed too)",
+    "- Total recorded win rate when gene is on",
+    "- Total recorded win rate when gene is off",
+    "- [Sort key] Difference between the previous 2 cols",
+    "- Estimated change to compute cost when gene is \"on\"",
+    "- Estimated change to time cost when gene is \"off\"",
+    "",
+]
 
 
 def profile_of(data: dict) -> dict:
@@ -2070,7 +2079,7 @@ def sources_from_ledger(ledger: dict) -> list[Path]:
 #: The ranking's short name for the win column.
 wins_per = wins_per_10k
 
-RANKING_MD = ROOT / "HEURISTIC_GENE_RANKING.md"
+RANKING_MD = ROOT / "GENE_HEURISTIC_RANKING.md"
 NOTES_MD = ROOT / "docs" / "gene_ranking_notes.md"
 
 #: How much of a gene's sentence the Description column carries. Widened
@@ -2875,10 +2884,7 @@ def render(ledger: dict) -> str:
     ]
 
     lines = [
-        "# The heuristic gene ranking",
-        "",
-        default_on_summary(ledger),
-        "",
+        *RANKING_HEADING,
         "| Rank | Gene | Description | Best version | Default | P(>0) | "
         + " | ".join(
             reporting_batch_header(label, batch)

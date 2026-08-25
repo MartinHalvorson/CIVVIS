@@ -72,7 +72,7 @@ Everything the old roadmap called planned has shipped and then some:
    fixed background — were retired in favour of the one random-genome
    instrument: `gene_screen` draws every seat's genome independently and
    reads each gene as seats-on against seats-off (`docs/GENE_SCREEN.md`;
-   `HEURISTIC_GENE_RANKING.md` is the ledger). What that instrument cannot
+   `GENE_HEURISTIC_RANKING.md` is the ledger). What that instrument cannot
    see is now the objective: the host-only treatments only the live seat can
    price (`civvis_orders --without` over ladder games), and a contested board
    that produces the diplomatic and culture endings the live seat loses to —

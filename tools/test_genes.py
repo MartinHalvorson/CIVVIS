@@ -1095,7 +1095,7 @@ class TheHeaderFieldsMatch(unittest.TestCase):
 
 class GeneratedFiles(unittest.TestCase):
     """`docs/gene_ledger.json`, the verdict block at the end of
-    `src/ai/advanced/genes.rs` and `HEURISTIC_GENE_RANKING.md` are all derived
+    `src/ai/advanced/genes.rs` and `GENE_HEURISTIC_RANKING.md` are all derived
     from the sources the JSON records; none may drift."""
 
     def test_the_checked_in_ledger_reproduces_from_its_recorded_sources(self):
@@ -1107,7 +1107,7 @@ class GeneratedFiles(unittest.TestCase):
                          genes.rust_block_of(genes.REGISTRY_PATH.read_text()),
                          "the verdict block in genes.rs is stale: run tools/genes.py write")
         self.assertEqual(genes.render(ledger), genes.RANKING_MD.read_text(),
-                         "HEURISTIC_GENE_RANKING.md is stale: run tools/genes.py write")
+                         "GENE_HEURISTIC_RANKING.md is stale: run tools/genes.py write")
 
     def test_display_batches_do_not_change_the_pinned_deployment_selection(self):
         """A display-only screen refreshes evidence but never rewrites defaults."""
@@ -1437,7 +1437,7 @@ class TheTableIsDerived(unittest.TestCase):
         self.assertEqual(
             ranking.render(ledger),
             ranking.RANKING_MD.read_text(),
-            "HEURISTIC_GENE_RANKING.md is stale: run tools/genes.py write",
+            "GENE_HEURISTIC_RANKING.md is stale: run tools/genes.py write",
         )
 
     def test_every_screenable_gene_is_visible(self):
@@ -1730,24 +1730,24 @@ class TheTableIsDerived(unittest.TestCase):
         self.assertIn("Pairing gain", ranking.RANKING_MD.read_text())
 
 
-    def test_the_pinned_default_summary_is_the_only_text_ahead_of_the_table(self):
-        """The title gets one concise, generated policy before the table.
-
-        The long reference remains below the tables; this is the operator's
-        requested at-a-glance explanation of the *Default* column.
+    def test_the_operators_heading_is_the_only_text_ahead_of_the_table(self):
+        """The operator wrote the title and the column legend by hand on
+        2026-08-25 and renamed the file; the generator reproduces that text
+        verbatim so a regeneration never overwrites it. The long reference
+        remains below the tables.
         """
-        ledger = json.loads(ranking.LEDGER_JSON.read_text())
         lines = ranking.RANKING_MD.read_text().splitlines()
-        self.assertEqual(lines[0], "# The heuristic gene ranking")
-        self.assertEqual(lines[1], "")
+        heading = ranking.RANKING_HEADING
+        self.assertEqual(lines[: len(heading)], heading)
         self.assertEqual(
-            lines[2], ranking.default_on_summary(ledger),
-            "the heading summary must derive from the pinned deployment genome",
+            lines[0],
+            "## A Ranking of all Gene Heuristics by On/Off Win Rate Difference in Tournaments",
         )
-        self.assertEqual(lines[3], "")
-        self.assertTrue(lines[4].startswith("| Rank | Gene |"), lines[4])
-        self.assertTrue(lines[5].startswith("|---:|"), lines[5])
-        self.assertTrue(lines[6].startswith("| 1 | `"), lines[6])
+        self.assertNotIn("Deployment default", "\n".join(lines[: len(heading)]))
+        table = len(heading)
+        self.assertTrue(lines[table].startswith("| Rank | Gene |"), lines[table])
+        self.assertTrue(lines[table + 1].startswith("|---:|"), lines[table + 1])
+        self.assertTrue(lines[table + 2].startswith("| 1 | `"), lines[table + 2])
 
     def test_the_reference_is_carried_under_the_tables_not_deleted(self):
         """Moving the preamble must not become dropping it.
