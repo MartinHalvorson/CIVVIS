@@ -4,7 +4,7 @@ Try CIVVIS yourself at [civvis.ai](https://www.civvis.ai)
 
 The Lv 4 (Prince) is the highest level beat so far, using computer control to bridge the gap between CIVVIS and Firaxis Civ 6. I try to keep the [YouTube](https://www.youtube.com/@civvis) channel somewhat up to date with the latest progress.
 
-Check out the ranking of our best Civ 6 heuristics: [GENE_HEURISTIC_RANKING](https://github.com/MartinHalvorson/CIVVIS/main/GENE_HEURISTIC_RANKING.md)
+Check out the ranking of our best Civ 6 heuristics: [GENE_HEURISTIC_RANKING](https://github.com/MartinHalvorson/CIVVIS/blob/main/GENE_HEURISTIC_RANKING.md)
 
 ## Genetic Algorithm
 
