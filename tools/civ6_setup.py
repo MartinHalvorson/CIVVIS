@@ -17,6 +17,7 @@ Usage::
     python tools/civ6_setup.py --apply        # turn the channels on
     python tools/civ6_setup.py --apply --restart
     python tools/civ6_setup.py --revert       # back to shipped defaults
+    python tools/civ6_setup.py --verification # the cosmetic cuts a live game makes
 """
 
 from __future__ import annotations
@@ -58,6 +59,38 @@ USER_OPTIONS = {
     "GameEraMomentsLog": 1,
 }
 
+# What a VERIFICATION game turns off, by file. Every one of these is cosmetic:
+# none changes a rule, an order, a turn or anything the ledger reads, and every
+# one costs wall clock that no game needs. Measured 2026-08-24 on the ladder's
+# own artefacts (run civvis-20260819T102855Z): the first bootstrap attempt of
+# EVERY game fires into a black window -- the intro video -- fails "top menu
+# not readable (0 rows)" and sleeps twenty seconds; the historic-moment
+# animation plays over the board on every era-first; and two shadow passes
+# render terrain no reader ever looks at while the game core takes five rival
+# AI turns on the same cores. `civ6_play.py` applies these before every
+# launch; `--verification` applies them by hand.
+VERIFICATION_OPTIONS = {
+    "AppOptions.txt": {
+        # "Set to 1 play the intro video on startup." The game's own comment.
+        "PlayIntroVideo": 0,
+    },
+    "UserOptions.txt": {
+        "PlayHistoricMomentAnimation": 0,
+    },
+    "GraphicsOptions.txt": {
+        "EnableShadows": 0,
+        "EnableCloudShadows": 0,
+    },
+}
+
+# The game's own values for the same keys, for --revert. ⚠ Keep in step with
+# VERIFICATION_OPTIONS; a test holds the two key sets equal.
+VERIFICATION_DEFAULTS = {
+    "AppOptions.txt": {"PlayIntroVideo": 1},
+    "UserOptions.txt": {"PlayHistoricMomentAnimation": 1},
+    "GraphicsOptions.txt": {"EnableShadows": 1, "EnableCloudShadows": 1},
+}
+
 # Shipped defaults, for --revert.
 DEFAULTS = {
     "EnableTuner": 0,
@@ -82,6 +115,36 @@ def report(user: Path) -> None:
             have = env.read_option(path, key)
             flag = "ok " if have == str(want) else "-> "
             print(f"  {flag}{key:<32} {have!r:<8} want {want!r}")
+    print("\nverification (cosmetic; what a live game turns off)")
+    for name, keys in VERIFICATION_OPTIONS.items():
+        path = user / name
+        for key, want in keys.items():
+            have = env.read_option(path, key)
+            flag = "ok " if have == str(want) else "-> "
+            print(f"  {flag}{name}: {key:<28} {have!r:<8} want {want!r}")
+
+
+def apply_verification(user: Path, wanted: dict[str, dict[str, object]] | None = None
+                       ) -> dict[str, dict[str, tuple]]:
+    """Rewrite the verification options in place; {file: {key: (old, new)}}.
+
+    Only what actually changed is returned, so a second call on a configured
+    install returns nothing and a caller can print exactly what moved. A file
+    the game has not written yet is skipped, not created: these are the game's
+    own files and `env.set_options` only rewrites keys already present, so a
+    key this version does not define is reported with an ``old`` of None and
+    left alone (see that docstring). ⚠ The game rewrites every options file on
+    launch and on exit; call this while it is closed or the change is lost.
+    """
+    applied: dict[str, dict[str, tuple]] = {}
+    for name, keys in (wanted or VERIFICATION_OPTIONS).items():
+        path = user / name
+        if not path.is_file():
+            continue
+        changes = env.set_options(path, keys)
+        if changes:
+            applied[name] = changes
+    return applied
 
 
 def apply(user: Path, values: dict) -> None:
@@ -102,11 +165,13 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--apply", action="store_true", help="turn the channels on")
     ap.add_argument("--revert", action="store_true", help="restore shipped defaults")
+    ap.add_argument("--verification", action="store_true",
+                    help="turn off the intro video, moment animation and shadows")
     ap.add_argument("--restart", action="store_true", help="quit and relaunch around the change")
     args = ap.parse_args(argv)
 
     user = env.user_dir()
-    if not (args.apply or args.revert):
+    if not (args.apply or args.revert or args.verification):
         report(user)
         return 0
 
@@ -123,8 +188,17 @@ def main(argv: list[str] | None = None) -> int:
             print("could not stop the game", file=sys.stderr)
             return 2
 
-    wanted = DEFAULTS if args.revert else {**APP_OPTIONS, **USER_OPTIONS}
-    apply(user, wanted)
+    if args.apply or args.revert:
+        wanted = DEFAULTS if args.revert else {**APP_OPTIONS, **USER_OPTIONS}
+        apply(user, wanted)
+    if args.verification or args.revert:
+        verification = VERIFICATION_DEFAULTS if args.revert else VERIFICATION_OPTIONS
+        for name, changes in apply_verification(user, verification).items():
+            for key, (old, new) in changes.items():
+                if old is None:
+                    print(f"  !! {name}: {key} not defined by this version, skipped")
+                else:
+                    print(f"  {name}: {key} {old} -> {new}")
 
     # The game only scans a Mods directory that exists.
     mods = env.mods_dir()

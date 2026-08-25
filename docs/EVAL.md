@@ -1,5 +1,9 @@
 # Evaluation baselines
 
+⚠ `ai_eval` was removed in #2351 (2026-08-23): the paired evaluator and its arm registry were retired in favour of the gene screen (`docs/GENE_SCREEN.md`). Every `ai_eval` command in this document is kept as the record of how a result was measured — it does not run against this tree.
+
+⚠ `civvis tournament`, `civvis league`, `civvis arena` and `civvis rating` were removed in #2357 (2026-08-23) with the league and the Elo ledgers (`docs/closed/LEAGUE.md`, `docs/closed/RATING.md`). Their commands in this document are likewise the record, not instructions.
+
 > **New rounds go in `docs/eval/`, one file each — not at the end of this**
 > **file.** Every round used to be appended here, and every author queued at
 > the same write point: thirty-two commits touched this file in the seven
@@ -25,7 +29,7 @@ for an understood reason. All commands are deterministic for a given build
 and seed set.
 
 The current machine-readable registry and live-ladder snapshot are generated in
-[`EVAL_STATUS.md`](EVAL_STATUS.md) from `src/elo.rs` and
+[`EVAL_STATUS.md`](EVAL_STATUS.md) from the gene registry and
 `docs/civ6_ladder.json`. Run `python3 tools/eval_manifest.py --write` after a
 registry or ladder update; CI rejects a stale snapshot.
 
@@ -3579,7 +3583,7 @@ the league has rated it. What the change does is make the strongest known agent
 ⚠ A second caution, unmeasured: when the exhibition *does* seat from the roster
 it picks league-bred `Advanced(genome)` entries rated up to 1823 — and the
 best-rated of those, `g20-21` at 1790.8, measured **−98 Elo** when transferred
-into `strategic_deep` (`docs/LEAGUE_GENOME_CHALLENGER.md`). Whether the top of
+into `strategic_deep` (`docs/closed/LEAGUE_GENOME_CHALLENGER.md`). Whether the top of
 this roster is genuinely stronger than the champion is an open question this run
 does not answer, and it is the more valuable one.
 
@@ -3613,7 +3617,7 @@ points *above* `advanced` (1823.3 against 1702.7); the champion, which this
 document just measured at +58 over `advanced`, beats g56-50 by 108.
 
 This is a stronger form of an already-recorded result.
-`docs/LEAGUE_GENOME_CHALLENGER.md` found the second-ranked genome, `g20-21`
+`docs/closed/LEAGUE_GENOME_CHALLENGER.md` found the second-ranked genome, `g20-21`
 (1790.8, 216 games), losing 98 Elo when transferred into `strategic_deep` — but
 that involved a transfer into a different search, which leaves room for the
 transfer to be the problem. **This has no transfer.** Two `AdvancedAi`s, one
@@ -3626,7 +3630,7 @@ Both halves of the pipeline that produced these ratings select on proxies.
 `evolve` breeds on `50·players·score_share + 12·players·combat_share` — a
 continuous statistic with a 24% weight on combat, which this engine converts
 almost never — and the league then rates the survivors under a Glicko-2 pool
-whose confounded era is on record in `docs/RATING.md`. A genome bred on a proxy
+whose confounded era is on record in `docs/closed/RATING.md`. A genome bred on a proxy
 and ranked by a rating fitted over proxy-bred peers is not measured against
 winning at any point in that chain.
 
@@ -3804,7 +3808,7 @@ league plays a faster game.
 What is left, none of it measured here: the league mixes seat counts (2, 4, 6, 8
 and 12 seats appear in `matches.csv`) and maps where this evaluation is 4p
 24×16; ratings are per leader/civ (`leader_elo`) and civ assignment may not be
-symmetric across entrants; and `docs/RATING.md` records an earlier era in which
+symmetric across entrants; and `docs/closed/RATING.md` records an earlier era in which
 this pool carried negative information. **A 227-Elo inversion on two
 well-sampled entries is worth more attention than any AI change currently
 proposed**, because `Session::ai_fleet` seats by this number.

@@ -59,6 +59,90 @@ MANAGED = {
 # that nobody checked.
 LEGACY_DEBT: dict[str, int] = {}
 
+# `$HOME/civvis-x.sh` where `tools/ops/civvis-x.sh` exists is a script shadowing
+# its own tracked self. The home copy is the one an operator hand-edits and the
+# one no CI run has ever seen, so every fix landed in `tools/ops/` reaches a
+# file nothing invokes — "a home copy is a dead ladder".
+#
+# ⚠⚠ IT WAS NOT THEORETICAL. On 2026-08-18 the sweep above emptied LEGACY_DEBT
+# by mechanically replacing `/Users/martin` with `$HOME` across `tools/ops/`.
+# Not one home copy was re-synced. Five days later `civvis-sync.sh` was still
+# logging SCRIPT DRIFT on eleven of them every fifteen minutes, and for those
+# five days `civvis-keeper.sh` — itself one of the eleven — was calling
+# `$HOME/civvis-tabs.sh`, `$HOME/civvis-refresh.sh` and
+# `$HOME/civvis-challenger-guard.sh`: the pre-sweep, unportable copies.
+#
+# A ratchet, for the same reason as LEGACY_DEBT: paying the rest of the debt is
+# a different change from stopping it growing. The one entry left is deliberate
+# and is a behaviour change, not hygiene — `tools/ops/civvis-game-supervisor.sh`
+# is 249 lines different from `$HOME/civvis-game-supervisor.sh`, so pointing the
+# safe-reload at the tracked copy swaps the running loop for another one and
+# must be measured, not tidied.
+HOME_SHADOW_DEBT: dict[str, int] = {
+    "civvis-supervisor-safe-reload.sh": 1,
+}
+
+HOME_SHADOW = re.compile(r"\$HOME/(civvis-[A-Za-z0-9._-]+\.sh)")
+
+
+def home_shadowed_siblings(path: Path) -> list[str]:
+    """`$HOME/<name>` references whose `tools/ops/<name>` exists.
+
+    Only executable lines: a comment may quote the history it is warning about,
+    and this file's own headers do.
+    """
+    found = []
+    for number, line in enumerate(path.read_text(errors="replace").splitlines(), 1):
+        if line.lstrip().startswith("#"):
+            continue
+        for name in HOME_SHADOW.findall(line):
+            if (OPS / name).is_file():
+                found.append(f"{path.name}:{number}: $HOME/{name}")
+    return found
+
+
+class TheTrackedCopyIsTheOneThatRuns(unittest.TestCase):
+    """Discovered by glob, never by a list — the ops directory grows."""
+
+    def _scripts(self) -> list[Path]:
+        scripts = sorted(OPS.glob("*.sh"))
+        self.assertTrue(scripts, "tools/ops/*.sh matched nothing; the glob is wrong")
+        return scripts
+
+    def test_no_script_invokes_the_home_copy_of_a_tracked_sibling(self):
+        for path in self._scripts():
+            allowed = HOME_SHADOW_DEBT.get(path.name, 0)
+            found = home_shadowed_siblings(path)
+            self.assertLessEqual(
+                len(found), allowed,
+                f"{path.name} runs the hand-edited home copy of a script this "
+                f"repository tracks, so fixes to the tracked copy never run. "
+                f"Call the sibling instead — `OPS=${{0:A:h}}` and "
+                f"`$OPS/<name>`, as civvis-keeper.sh does:\n  "
+                + "\n  ".join(found))
+
+    def test_a_fixed_script_lowers_its_recorded_number(self):
+        for name, allowed in sorted(HOME_SHADOW_DEBT.items()):
+            path = OPS / name
+            self.assertTrue(path.is_file(), f"{name} is gone; drop it from "
+                                            f"HOME_SHADOW_DEBT")
+            actual = len(home_shadowed_siblings(path))
+            self.assertEqual(
+                actual, allowed,
+                f"{name} now shadows {actual} tracked sibling(s), not "
+                f"{allowed}. Someone fixed some: set "
+                f"HOME_SHADOW_DEBT['{name}'] = {actual} so the ratchet holds.")
+
+    def test_the_keeper_calls_its_siblings(self):
+        """The three call sites the 2026-08-18 sweep silently orphaned."""
+        source = (OPS / "civvis-keeper.sh").read_text()
+        self.assertIn("OPS=${0:A:h}", source,
+                      "the keeper must derive the tracked ops directory")
+        for name in ("civvis-tabs.sh", "civvis-refresh.sh",
+                     "civvis-challenger-guard.sh"):
+            self.assertIn(f"ops {name}", source,
+                          f"the keeper must run the tracked {name}")
+
 
 def hardcoded_homes(path: Path) -> list[str]:
     """Hardcoded home paths in executable lines. Comments may quote history."""

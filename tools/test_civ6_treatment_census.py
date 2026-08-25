@@ -55,7 +55,18 @@ class ControlReproducibilityTest(unittest.TestCase):
                 for turn in (10, 11, 12)
             )
         )
-        return [str(tmp), "--bin", str(tmp / "fake"), "--max-turns", "3"]
+        (tmp / "why.log").write_text(
+            json.dumps({"kind": "genome", "treatments": ["one"]}) + "\n"
+        )
+        return [
+            str(tmp),
+            "--bin",
+            str(tmp / "fake"),
+            "--max-turns",
+            "3",
+            "--jobs",
+            "1",
+        ]
 
     def test_a_drifting_control_refuses_to_report(self) -> None:
         import tempfile
@@ -87,8 +98,19 @@ class ControlReproducibilityTest(unittest.TestCase):
                 {10: "a", 11: "MOVED", 12: "c"},  # one
                 {10: "a", 11: "b", 12: "c"},  # two
             ]
-            with mock.patch.object(census, "replay", side_effect=passes):
+            with (
+                mock.patch.object(census, "replay", side_effect=passes) as replay,
+                mock.patch.object(
+                    census,
+                    "discover_treatments",
+                    side_effect=[["one", "two"], ["two"]],
+                ),
+            ):
                 self.assertEqual(census.main(argv), 0)
+        self.assertEqual(replay.call_args_list[2].kwargs["without"], "one")
+        self.assertIsNone(replay.call_args_list[2].kwargs["with_treatment"])
+        self.assertIsNone(replay.call_args_list[3].kwargs["without"])
+        self.assertEqual(replay.call_args_list[3].kwargs["with_treatment"], "two")
 
 
 class DiscoveryTest(unittest.TestCase):
@@ -97,12 +119,12 @@ class DiscoveryTest(unittest.TestCase):
     def test_the_binary_enumerates_its_own_treatments(self) -> None:
         stderr = (
             'civvis-orders: unknown --without treatment "__census_probe__"; '
-            "this binary can withhold: come-ashore, siege-role, war-patience"
+            "this binary can withhold: come-ashore, siege-role"
         )
         with mock.patch.object(census.subprocess, "run") as run:
             run.return_value = mock.Mock(stderr=stderr, stdout="", returncode=2)
             found = census.discover_treatments(Path("bin"), Path("mirror"))
-        self.assertEqual(found, ["come-ashore", "siege-role", "war-patience"])
+        self.assertEqual(found, ["come-ashore", "siege-role"])
 
     def test_a_binary_that_will_not_enumerate_is_an_error(self) -> None:
         """Better to refuse than to census a list this file invented."""
@@ -110,6 +132,126 @@ class DiscoveryTest(unittest.TestCase):
             run.return_value = mock.Mock(stderr="something else", stdout="", returncode=2)
             with self.assertRaises(census.CensusError):
                 census.discover_treatments(Path("bin"), Path("mirror"))
+
+    def test_the_binary_enumerates_its_forceable_treatments(self) -> None:
+        stderr = (
+            'civvis-orders: unknown --with treatment "__census_probe__"; '
+            "this binary can force: camp-party, siege-commitment"
+        )
+        with mock.patch.object(census.subprocess, "run") as run:
+            run.return_value = mock.Mock(stderr=stderr, stdout="", returncode=2)
+            found = census.discover_treatments(
+                Path("bin"), Path("mirror"), option="--with", verb="force"
+            )
+        self.assertEqual(found, ["camp-party", "siege-commitment"])
+        self.assertEqual(
+            run.call_args.args[0][-2:], ["--with", "__census_probe__"]
+        )
+
+
+class LiveTreatmentsTest(unittest.TestCase):
+    """The recorded genome, not the binary's superset, selects an arm."""
+
+    def test_reads_the_recorded_active_treatments(self) -> None:
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as raw:
+            tmp = Path(raw)
+            (tmp / "why.log").write_text(
+                "[why] ordinary explanation\n"
+                + json.dumps({"kind": "other", "treatments": ["ignore"]})
+                + "\n"
+                + json.dumps(
+                    {"kind": "genome", "treatments": ["live-one", "live-two"]}
+                )
+                + "\n"
+            )
+            found = census.live_treatments(tmp)
+        self.assertEqual(found, {"live-one", "live-two"})
+
+    def test_missing_or_malformed_genome_refuses_the_census(self) -> None:
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as raw:
+            tmp = Path(raw)
+            with self.assertRaises(census.CensusError):
+                census.live_treatments(tmp)
+            (tmp / "why.log").write_text('{"kind":"genome","treatments":null}\n')
+            with self.assertRaises(census.CensusError):
+                census.live_treatments(tmp)
+
+
+class ArmSelectionTest(unittest.TestCase):
+    """A treatment must be contrasted in the direction its genome permits."""
+
+    def test_active_is_withheld_and_held_is_forced(self) -> None:
+        common = {"active", "held"}
+        self.assertEqual(
+            census.arm_for(
+                "active",
+                active={"active"},
+                withholdable=common,
+                forceable={"held"},
+            ),
+            "without",
+        )
+        self.assertEqual(
+            census.arm_for(
+                "held",
+                active={"active"},
+                withholdable=common,
+                forceable={"held"},
+            ),
+            "with",
+        )
+
+    def test_unarmable_names_are_not_called_inert(self) -> None:
+        with self.assertRaisesRegex(census.CensusError, "no --without arm"):
+            census.arm_for(
+                "active-but-unarmable",
+                active={"active-but-unarmable"},
+                withholdable=set(),
+                forceable=set(),
+            )
+        with self.assertRaisesRegex(census.CensusError, "already off"):
+            census.arm_for(
+                "held-but-unforceable",
+                active=set(),
+                withholdable={"held-but-unforceable"},
+                forceable=set(),
+            )
+
+
+class ReplayArmTest(unittest.TestCase):
+    def test_force_arm_reaches_the_decider_as_with(self) -> None:
+        done = mock.Mock(returncode=0, stdout='{"orders":[]}\n', stderr="")
+        with mock.patch.object(census.subprocess, "run", return_value=done) as run:
+            census.replay(
+                Path("bin"),
+                Path("mirror"),
+                [7],
+                without=None,
+                with_treatment="held",
+                civ="Rome",
+                victory="diplomatic",
+                strategy="g56-48",
+                timeout=5,
+            )
+        self.assertEqual(run.call_args.args[0][-2:], ["--with", "held"])
+
+    def test_a_replay_cannot_both_force_and_withhold(self) -> None:
+        with self.assertRaisesRegex(census.CensusError, "both force and withhold"):
+            census.replay(
+                Path("bin"),
+                Path("mirror"),
+                [7],
+                without="live",
+                with_treatment="held",
+                civ="Rome",
+                victory="diplomatic",
+                strategy="g56-48",
+                timeout=5,
+            )
 
 
 class WindowTest(unittest.TestCase):

@@ -72,6 +72,43 @@ class LedgerCase(unittest.TestCase):
 
 
 class RecordsItself(LedgerCase):
+    def test_the_deal_lane_is_summed_onto_the_ledger(self):
+        events = self.runs / "civvis-20260824T230000Z" / "events.jsonl"
+        events.parent.mkdir(parents=True, exist_ok=True)
+        lines = [
+            {"kind": "turn", "ctx": "agent", "turn": 5},
+            {"kind": "deal_session", "phase": "opening", "target": 3},
+            {"kind": "deal_session", "phase": "asked", "target": 3},
+            {"kind": "deal_session", "phase": "answered", "target": 3},
+            {"kind": "deal_closed", "target": 3, "gold": 90},
+            {"kind": "deal_session", "phase": "closed", "target": 3},
+            {"kind": "deal_session", "phase": "opening", "target": 4},
+            {"kind": "deal_session", "phase": "unanswered", "target": 4},
+            {"kind": "deal_expired", "target": 4},
+            {"kind": "deal_session", "phase": "opening", "target": 5},
+            {"kind": "deal_session", "phase": "answered", "target": 5},
+            {"kind": "deal_declined", "target": 5, "worth": 20},
+            {"kind": "peace_response", "target": 6, "accepted": True},
+            {"kind": "peace_response", "target": 7, "accepted": False},
+            {"kind": "deal_sessions_stood_down", "unanswered": 3},
+        ]
+        with events.open("w") as handle:
+            for line in lines:
+                handle.write(json.dumps(line) + "\n")
+            handle.write('{"kind": "deal_closed", "tru')  # a torn tail line
+        self.assertEqual(civ6_ladder.deal_totals(events), {
+            "sessions_opened": 3, "sessions_answered": 2,
+            "sessions_unanswered": 1, "stood_down": True,
+            "closed": 1, "declined": 1, "expired": 1,
+            "peace_accepted": 1, "peace_refused": 1,
+        })
+        # A run that wrote no deal event reads as silence, not zeros.
+        quiet = self.runs / "civvis-20260824T230100Z" / "events.jsonl"
+        quiet.parent.mkdir(parents=True, exist_ok=True)
+        quiet.write_text('{"kind": "turn", "ctx": "agent", "turn": 5}\n')
+        self.assertIsNone(civ6_ladder.deal_totals(quiet))
+        self.assertIsNone(civ6_ladder.deal_totals(self.runs / "missing" / "events.jsonl"))
+
     def test_the_ledger_lives_beside_the_runs_it_records(self):
         path = write_run(self.runs, summary("civvis-1"))
         self.assertTrue(civ6_ladder.record_summary(path))
@@ -189,6 +226,50 @@ class LiveArmAttributionTests(unittest.TestCase):
         self.assertIsNone(entry["mod_arms"])
         full = civ6_ladder.entry_from({"tag": "new", "last_turn": 250, "withheld": []})
         self.assertEqual(full["withheld"], [])
+class AnAbandonedRowIsALossTheLadderChoseNotToPlayOut(unittest.TestCase):
+    """An early-stop policy is a loss the ladder chose not to play out.
+
+    The verdict must retain whether it was the measured expected-win rule or
+    the operator's all-three-standings restart rule, or the ledger reads a
+    deliberately stopped game as a wedge.
+    """
+
+    def test_the_verdict_rides_the_entry_and_the_outcome_column_names_it(self) -> None:
+        verdict = {"turn": 124, "score": 300, "rival_best": 500,
+                   "expected_win_rate": 0.0278, "floor": 0.05,
+                   "consecutive_turns": 5}
+        entry = civ6_ladder.entry_from({
+            "tag": "civvis-ab", "difficulty": "DIFFICULTY_CHIEFTAIN",
+            "configured": True, "last_turn": 124, "last_score": 300,
+            "reason": "abandoned", "abandoned": verdict,
+        })
+        self.assertEqual(entry["abandoned"], verdict)
+        self.assertEqual(entry["reason"], "abandoned")
+        self.assertFalse(entry["won"])
+        self.assertFalse(entry["defeat"])
+        state = {"attempts": [entry], "wins": {}}
+        text = civ6_ladder.markdown_for(state)
+        self.assertIn("| abandoned |", text)
+        self.assertIn("`abandoned` means the harness stopped under a recorded early-stop", text)
+        self.assertIn("science and culture leaders", text)
+
+    def test_a_three_signal_restart_verdict_is_kept_verbatim(self) -> None:
+        verdict = {"rule": "score_science_culture_deficit", "turn": 104,
+                   "score": 69, "rival_best": 100, "score_ratio": 0.69,
+                   "score_ratio_ceiling": 0.70, "science": 9,
+                   "rival_best_science": 10, "culture": 8,
+                   "rival_best_culture": 10, "consecutive_turns": 5}
+        entry = civ6_ladder.entry_from({
+            "tag": "civvis-restart", "configured": True, "last_turn": 104,
+            "last_score": 69, "reason": "abandoned", "abandoned": verdict,
+        })
+        self.assertEqual(entry["abandoned"], verdict)
+
+    def test_an_ordinary_row_carries_no_verdict(self) -> None:
+        entry = civ6_ladder.entry_from({"tag": "old", "last_turn": 250})
+        self.assertIsNone(entry["abandoned"])
+
+
 class OpeningTempoTests(unittest.TestCase):
     """The ladder's strongest measured correlate, watched instead of
     reconstructed: cities at t60 (r=+0.69 with final lead) and the second
@@ -248,6 +329,65 @@ class BridgeHealth(LedgerCase):
         ]
         events.write_text("\n".join(lines))
         self.assertEqual(civ6_ladder.orders_totals(events), (10, 7))
+
+    def test_applied_counts_verified_orders_and_reported_keeps_the_return_codes(self):
+        # Three turns: t1 verified 3 of 4 reported ok; t2 verified 1 of 3; t3
+        # is the last turn and never gets a verdict, so it keeps its reported
+        # count. A legacy `turn` row (no `orders_reported`) reads its
+        # `orders_applied` as the reported count.
+        events = self.runs / "events.jsonl"
+        lines = [
+            json.dumps({"kind": "turn", "ctx": "agent", "turn": 1,
+                        "orders_seen": 5, "orders_applied": 4, "orders_reported": 4}),
+            json.dumps({"kind": "turn_verified", "ctx": "agent", "turn": 1,
+                        "checked_on": 2, "orders_issued": 5, "orders_applied": 3,
+                        "orders_failed": 2, "orders_unverifiable": 0,
+                        "orders_seen": 5, "orders_reported": 4}),
+            json.dumps({"kind": "turn", "ctx": "agent", "turn": 2,
+                        "orders_seen": 3, "orders_applied": 3}),
+            json.dumps({"kind": "turn_verified", "ctx": "agent", "turn": 2,
+                        "checked_on": 3, "orders_applied": 1}),
+            json.dumps({"kind": "turn", "ctx": "agent", "turn": 3,
+                        "orders_seen": 2, "orders_applied": 2, "orders_reported": 2}),
+            # Verdict events are the ledger's; a UI-context copy must not count.
+            json.dumps({"kind": "turn_verified", "ctx": "ui", "turn": 3,
+                        "orders_applied": 9}),
+        ]
+        events.write_text("\n".join(lines) + "\n")
+        self.assertEqual(civ6_ladder.orders_ledger(events), {
+            "orders_seen": 10, "orders_reported": 9, "orders_applied": 6,
+            "orders_verified_turns": 2, "orders_unverified_turns": 1})
+        self.assertEqual(civ6_ladder.orders_totals(events), (10, 6))
+
+    def test_the_summary_carries_both_counts_and_both_rates(self):
+        events_lines = [
+            json.dumps({"kind": "turn", "ctx": "agent", "turn": 1,
+                        "orders_seen": 10, "orders_applied": 10, "orders_reported": 10}),
+            json.dumps({"kind": "turn_verified", "ctx": "agent", "turn": 1,
+                        "orders_applied": 6}),
+        ]
+        # A summary the harness wrote with totals but before `orders_reported`
+        # existed gets the reported count filled in; the totals stay its own.
+        path = write_run(self.runs, summary("verified", orders_seen=10, orders_applied=6))
+        (path.parent / "events.jsonl").write_text("\n".join(events_lines) + "\n")
+        civ6_ladder.record_summary(path)
+        attempt = self.state()["attempts"][0]
+        self.assertEqual(attempt["applied_pct"], 60.0)
+        self.assertEqual(attempt["reported_pct"], 100.0)
+        enriched = civ6_ladder.with_bridge_health(json.loads(path.read_text()), path)
+        self.assertEqual(enriched["orders_applied"], 6)
+        self.assertEqual(enriched["orders_reported"], 10)
+        self.assertEqual(enriched["orders_unverified_turns"], 0)
+        # A summary with no totals at all is filled from the events, verified
+        # count and reported count both.
+        bare = write_run(self.runs, summary("bare"))
+        (bare.parent / "events.jsonl").write_text("\n".join(events_lines) + "\n")
+        filled = civ6_ladder.with_bridge_health(json.loads(bare.read_text()), bare)
+        self.assertEqual((filled["orders_seen"], filled["orders_applied"],
+                          filled["orders_reported"]), (10, 6, 10))
+        # A summary that already carries everything is returned as it is.
+        full = {"orders_seen": 1, "orders_applied": 1, "orders_reported": 1}
+        self.assertIs(civ6_ladder.with_bridge_health(full, bare), full)
 
     def test_the_rate_is_recorded_on_the_attempt(self):
         civ6_ladder.record_summary(write_run(
@@ -915,6 +1055,219 @@ class ThePublishedPairAgrees(unittest.TestCase):
             "run `python3 tools/civ6_ladder.py publish` and land both files")
 
 
+class TheRecordBelongsToTheFleetNotToOneMachine(LedgerCase):
+    """★★★★★ 76 GAMES WERE PLAYED, RECORDED, AND COULD NEVER REACH THE RECORD.
+
+    `load` seeds a machine with no live ledger from the committed snapshot and
+    then never consults it again, and `publish` wrote that machine's ledger
+    over the shared document. Once a second Civilization VI seat existed, the
+    two records forked from the 255 attempts of #1767 and every publish after
+    that was one seat's copy. On 2026-08-23 the snapshot held 349 attempts and
+    `mbp-m5-max-128` held 331: 255 shared, 94 only published, **76 only on
+    this machine — including nine Settler victories** — and `check` reported
+    "snapshot in step", because it compared the two lengths and 331 is not
+    more than 349.
+    """
+
+    def _rows(self, tags):
+        return [{"tag": tag, "utc": f"2026-08-1{i}T00:00:00Z",
+                 "difficulty": "DIFFICULTY_SETTLER", "configured": True,
+                 "won": False, "turns": 250, "score": 100}
+                for i, tag in enumerate(tags)]
+
+    def _snapshot(self, tags):
+        self.snapshot.write_text(
+            json.dumps({"attempts": self._rows(tags), "wins": {}}))
+
+    def _live(self, tags):
+        """Write the live ledger directly: a seat that forked from the record
+        has rows the snapshot never had, and lacks rows the snapshot gained."""
+        self.ledger.write_text(
+            json.dumps({"attempts": self._rows(tags), "wins": {}}))
+
+    def check(self, **kwargs) -> int:
+        with redirect_stdout(io.StringIO()) as out:
+            code = civ6_ladder.check(self.runs, self.ledger, None,
+                                     self.snapshot, **kwargs)
+        self.last_report = out.getvalue()
+        return code
+
+    def test_publish_keeps_every_row_another_seat_landed(self):
+        self._snapshot(["remote-1", "remote-2"])
+        self._live(["local-1"])
+        with redirect_stdout(io.StringIO()):
+            civ6_ladder.publish(self.ledger, self.snapshot, self.markdown)
+        self.assertEqual(
+            [a["tag"] for a in json.loads(self.snapshot.read_text())["attempts"]],
+            ["remote-1", "remote-2", "local-1"])
+
+    def test_publishing_twice_lands_nothing_the_second_time(self):
+        self._snapshot(["remote-1"])
+        self._live(["local-1"])
+        with redirect_stdout(io.StringIO()):
+            civ6_ladder.publish(self.ledger, self.snapshot, self.markdown)
+            civ6_ladder.publish(self.ledger, self.snapshot, self.markdown)
+        self.assertEqual(
+            [a["tag"] for a in json.loads(self.snapshot.read_text())["attempts"]],
+            ["remote-1", "local-1"])
+
+    def test_a_longer_snapshot_is_not_evidence_the_ledger_was_published(self):
+        """The 2026-08-23 shape exactly: more rows published than recorded
+        here, and two of the recorded ones in no published record at all."""
+        self._snapshot(["shared", "remote-1", "remote-2", "remote-3"])
+        self._live(["shared", "local-1", "local-2"])
+        state = json.loads(self.ledger.read_text())
+        published = json.loads(self.snapshot.read_text())
+        self.assertLess(len(state["attempts"]), len(published["attempts"]),
+                        "the fixture must reproduce the count that hid it")
+        self.assertEqual(self.check(), 1)
+        self.assertIn("2 attempt(s) recorded here are in no published "
+                      "snapshot", self.last_report)
+        self.assertIn("publish", self.last_report)
+
+    def test_the_other_seats_rows_are_a_note_and_not_a_failure(self):
+        self._snapshot(["remote-1"])
+        self._live(["local-1"])
+        with redirect_stdout(io.StringIO()):
+            civ6_ladder.publish(self.ledger, self.snapshot, self.markdown)
+        self.assertEqual(self.check(), 0)
+        self.assertIn("recorded by another seat", self.last_report)
+        self.assertNotIn("LADDER:", self.last_report)
+
+    def test_a_win_that_arrives_only_in_the_merge_claims_its_rung(self):
+        base = {"attempts": [], "wins": {}}
+        incoming = {"attempts": [{
+            "tag": "other-seat-win", "utc": "2026-08-18T18:46:46Z",
+            "difficulty": "DIFFICULTY_CHIEFTAIN", "configured": True,
+            "won": True}], "wins": {}}
+        merged, added = civ6_ladder.merge_state(base, incoming)
+        self.assertEqual([a["tag"] for a in added], ["other-seat-win"])
+        self.assertEqual(merged["wins"]["DIFFICULTY_CHIEFTAIN"]["tag"],
+                         "other-seat-win")
+
+    def test_the_earliest_win_still_stands_across_a_merge(self):
+        """The milestone is when the rung was FIRST climbed, and a merge is
+        exactly the late arrival that rule exists for."""
+        late = {"tag": "late", "utc": "2026-08-18T00:00:00Z",
+                "difficulty": "DIFFICULTY_SETTLER", "configured": True,
+                "won": True}
+        early = {"tag": "early", "utc": "2026-08-16T00:00:00Z",
+                 "difficulty": "DIFFICULTY_SETTLER", "configured": True,
+                 "won": True}
+        merged, _ = civ6_ladder.merge_state(
+            {"attempts": [late], "wins": {"DIFFICULTY_SETTLER": late}},
+            {"attempts": [early], "wins": {}})
+        self.assertEqual(merged["wins"]["DIFFICULTY_SETTLER"]["tag"], "early")
+        back, _ = civ6_ladder.merge_state(
+            {"attempts": [early], "wins": {"DIFFICULTY_SETTLER": early}},
+            {"attempts": [late], "wins": {}})
+        self.assertEqual(back["wins"]["DIFFICULTY_SETTLER"]["tag"], "early")
+
+    def test_an_unconfigured_win_claims_nothing_through_a_merge_either(self):
+        merged, _ = civ6_ladder.merge_state({"attempts": [], "wins": {}}, {
+            "attempts": [{"tag": "menu-defaults", "utc": "2026-08-18T00:00:00Z",
+                          "difficulty": "DIFFICULTY_SETTLER",
+                          "configured": False, "won": True}], "wins": {}})
+        self.assertEqual(merged["wins"], {})
+
+    def _sync(self, quiet=True) -> str:
+        with redirect_stdout(io.StringIO()) as out:
+            civ6_ladder.sync(self.runs, self.ledger, quiet=quiet)
+        return out.getvalue()
+
+    def test_the_backfill_names_a_backlog_no_snapshot_has(self):
+        """The one hook guaranteed to run between games says it out loud.
+
+        `heal_the_ladder` calls `sync` before every attempt. Nothing calls
+        `check`, so until this line existed an unpublished backlog was visible
+        only to somebody who typed a command — and for 76 attempts nobody did.
+        """
+        self._snapshot(["shared"])
+        self._live(["shared"])
+        write_run(self.runs, summary("brand-new"))
+        report = self._sync()
+        self.assertIn("LADDER: 1 recorded attempt(s) are in no published "
+                      "snapshot", report)
+        self.assertIn("brand-new", report)
+
+    def test_it_speaks_even_when_the_backfill_recorded_nothing(self):
+        """The backlog is not created by this run; being quiet about it while
+        nothing new arrives is exactly how it grew to 76."""
+        self._snapshot(["shared"])
+        self._live(["shared", "local-1"])
+        report = self._sync()
+        self.assertIn("local-1", report)
+
+    def test_a_published_ledger_says_nothing(self):
+        self._snapshot(["shared", "local-1"])
+        self._live(["shared", "local-1"])
+        self.assertNotIn("LADDER:", self._sync())
+
+    def test_a_clone_with_no_snapshot_at_all_claims_nothing(self):
+        """Absence of a committed record is not evidence of a backlog."""
+        self._live(["local-1"])
+        self.assertFalse(self.snapshot.exists())
+        self.assertNotIn("LADDER:", self._sync())
+        self.assertIsNone(
+            civ6_ladder.unpublished_tags({"attempts": [{"tag": "x"}]}))
+
+    def test_the_attempt_table_is_the_newest_forty_by_the_clock(self):
+        """Two seats interleave, and `sync` appends old games at the end, so
+        the last forty rows of the file are not the last forty games."""
+        rows = [{"tag": f"remote-{i}", "utc": f"2026-08-2{i}T00:00:00Z",
+                 "difficulty": "DIFFICULTY_SETTLER", "configured": True,
+                 "won": False, "turns": 250, "score": 1}
+                for i in range(3)]
+        backfilled = [{"tag": "old-backfill", "utc": "2026-07-01T00:00:00Z",
+                       "difficulty": "DIFFICULTY_SETTLER", "configured": True,
+                       "won": False, "turns": 250, "score": 1}]
+        table = civ6_ladder.markdown_for(
+            {"attempts": rows + backfilled, "wins": {}})
+        body = table.split("| run | difficulty |", 1)[1]
+        self.assertLess(body.index("`old-backfill`"), body.index("`remote-0`"),
+                        "a row recorded late must not sort as the newest game")
+
+
+class TheCommittedRecordIsInternallyConsistent(unittest.TestCase):
+    """A guard on the real `docs/civ6_ladder.json`, run by CI on every PR.
+
+    The two ways this record can be corrupted are a hand edit and a bad merge,
+    and both show up here: a tag recorded twice (a merge that appended instead
+    of unioning) or a `wins` slot that is not the earliest configured win in
+    `attempts` (a merge that kept one seat's milestone over an earlier one, or
+    a row rewritten by hand). `ThePublishedPairAgrees` proves the markdown is
+    derived from this file; this proves the file itself hangs together.
+    """
+
+    def setUp(self):
+        if not civ6_ladder.DATA.is_file():
+            self.skipTest("no published snapshot yet")
+        self.state = json.loads(civ6_ladder.DATA.read_text())
+
+    def test_no_attempt_is_recorded_twice(self):
+        tags = [a.get("tag") for a in self.state["attempts"] if a.get("tag")]
+        duplicated = sorted({t for t in tags if tags.count(t) > 1})
+        self.assertEqual(duplicated, [],
+                         "the published record holds the same run twice")
+
+    def test_every_rung_names_the_earliest_configured_win_it_holds(self):
+        earliest: dict = {}
+        for attempt in self.state["attempts"]:
+            difficulty = attempt.get("difficulty")
+            if not (attempt.get("won") and attempt.get("configured")
+                    and difficulty in civ6_ladder.NAMES):
+                continue
+            held = earliest.get(difficulty)
+            if held is None or (attempt.get("utc") or "\uffff") < (
+                    held.get("utc") or "\uffff"):
+                earliest[difficulty] = attempt
+        self.assertEqual(
+            {k: v.get("tag") for k, v in self.state["wins"].items()},
+            {k: v.get("tag") for k, v in earliest.items()},
+            "a rung in `wins` is not the earliest configured win the record "
+            "holds at that difficulty; run `civ6_ladder.py publish`")
+
+
 class LatestCodeGuarantee(LedgerCase):
     """The run's revision history reaches the ledger; the watcher's silence
     fails check."""
@@ -936,6 +1289,37 @@ class LatestCodeGuarantee(LedgerCase):
         self.assertEqual(civ6_ladder.decider_revisions(updates),
                          ["aaa", "bbb", "ddd"])
         self.assertIsNone(civ6_ladder.decider_revisions(self.runs / "absent"))
+
+    def test_decider_genome_reads_the_deciders_own_first_record(self):
+        why = self.runs / "why.log"
+        why.write_text(
+            "[genome] no strategy 'WildCard9' in /x/data/league\n"
+            '{"civ":null,"kind":"genome","lane":null,"parallel_settlers":true,'
+            '"per_civ":null,"revision":null,"source":"AdvancedAi::new",'
+            '"strategy":"stock","strength_bound":null,"treatments":["a","b"]}\n'
+            "[why] t1 Strategy/Strategy Grand strategy: expansion | ...\n")
+        self.assertEqual(
+            civ6_ladder.decider_genome(why),
+            {"strategy": "stock", "source": "AdvancedAi::new", "lane": None,
+             "civ": None, "strength_bound": None})
+        resolved = self.runs / "why2.log"
+        resolved.write_text(
+            '{"civ":"Rome","kind":"genome","lane":null,"source":"data/league",'
+            '"strategy":"g56-48","strength_bound":0.51}\n')
+        self.assertEqual(civ6_ladder.decider_genome(resolved)["strategy"], "g56-48")
+        self.assertIsNone(civ6_ladder.decider_genome(self.runs / "absent.log"))
+        # A why.log without the record (an older decider) is not "stock".
+        (self.runs / "why3.log").write_text("[why] t1 nothing\n")
+        self.assertIsNone(civ6_ladder.decider_genome(self.runs / "why3.log"))
+
+    def test_the_genome_played_and_the_name_asked_for_are_recorded_on_the_attempt(self):
+        civ6_ladder.record_summary(write_run(
+            self.runs, summary("genomed",
+                               genome={"strategy": "stock", "source": "AdvancedAi::new"},
+                               strategy_requested="WildCard9")))
+        row = self.state()["attempts"][0]
+        self.assertEqual(row["genome"]["strategy"], "stock")
+        self.assertEqual(row["strategy_requested"], "WildCard9")
 
     def test_the_revision_history_is_recorded_on_the_attempt(self):
         civ6_ladder.record_summary(write_run(
@@ -1106,3 +1490,149 @@ class TheBackfillRecoversBridgeHealth(LedgerCase):
         civ6_ladder.record_summary(path)
         self.assertIsNone(self.state()["attempts"][0]["applied_pct"])
         self.assertEqual(len(self.state()["attempts"]), 1)
+
+
+# ---------------------------------------------------------------------------
+# The ledger branch: append-only, idempotent, and never touching the
+# management worktree's index or working tree.
+
+import subprocess  # noqa: E402
+
+#: A CI runner has no git identity; supplied through the environment so the
+#: suite never writes to any repository's config.
+PROBE = {
+    "GIT_AUTHOR_NAME": "ledger probe",
+    "GIT_AUTHOR_EMAIL": "probe@civvis.invalid",
+    "GIT_COMMITTER_NAME": "ledger probe",
+    "GIT_COMMITTER_EMAIL": "probe@civvis.invalid",
+}
+
+
+def _git(repo: Path, *args: str) -> str:
+    return subprocess.run(["git", "-C", str(repo), *args], capture_output=True,
+                          text=True, check=True,
+                          env={**os.environ, **PROBE}).stdout.strip()
+
+
+class PublishRunTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = TemporaryDirectory()
+        root = Path(self.tmp.name)
+        self.origin = root / "origin.git"
+        subprocess.run(["git", "init", "-q", "--bare", str(self.origin)], check=True)
+        self.work = root / "work"
+        subprocess.run(["git", "init", "-q", str(self.work)], check=True)
+        _git(self.work, "remote", "add", "origin", str(self.origin))
+        # A management worktree has a checked-out tree and a clean index; both
+        # must be exactly as they were after a publish.
+        (self.work / "tracked.txt").write_text("tracked\n")
+        _git(self.work, "add", "--", "tracked.txt")
+        _git(self.work, "commit", "-q", "-m", "seed")
+        self.runs = root / "runs"
+        for tag, finished in (("civvis-1", "2026-08-20T10:00:00Z"),
+                              ("civvis-2", "2026-08-21T10:00:00Z")):
+            run = self.runs / tag
+            run.mkdir(parents=True)
+            (run / "summary.json").write_text(json.dumps(
+                summary(tag, finished=finished)))
+            (run / "events.jsonl").write_text(
+                json.dumps({"kind": "turn", "turn": 1}) + "\n")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def publish(self, tag: str) -> str:
+        return civ6_ladder.publish_run(tag, self.runs, repo=self.work, env=PROBE)
+
+    def ledger_files(self) -> list[str]:
+        return _git(self.origin, "ls-tree", "-r", "--name-only",
+                    "refs/heads/ledger").splitlines()
+
+    def test_append_only_and_idempotent(self):
+        self.assertEqual(self.publish("civvis-1"), "published")
+        first = _git(self.origin, "rev-parse", "refs/heads/ledger")
+        self.assertEqual(self.ledger_files(),
+                         ["runs/civvis-1/events.jsonl.gz", "runs/civvis-1/summary.json"])
+        # Orphan: the ledger's root shares nothing with the code history.
+        self.assertEqual(_git(self.origin, "rev-list", "--count", first), "1")
+
+        self.assertEqual(self.publish("civvis-1"), "already")
+        self.assertEqual(_git(self.origin, "rev-parse", "refs/heads/ledger"), first)
+
+        self.assertEqual(self.publish("civvis-2"), "published")
+        second = _git(self.origin, "rev-parse", "refs/heads/ledger")
+        self.assertEqual(_git(self.origin, "rev-parse", f"{second}^"), first)
+        self.assertEqual(_git(self.origin, "rev-list", "--count", second), "2")
+        self.assertEqual(len(self.ledger_files()), 4)
+        # The payload is what the run wrote, gzipped.
+        import gzip
+        raw = subprocess.run(
+            ["git", "-C", str(self.origin), "show",
+             f"{second}:runs/civvis-2/events.jsonl.gz"],
+            capture_output=True, check=True).stdout
+        self.assertEqual(json.loads(gzip.decompress(raw))["turn"], 1)
+
+    def test_management_worktree_is_untouched(self):
+        before = _git(self.work, "status", "--porcelain")
+        head = _git(self.work, "rev-parse", "HEAD")
+        self.publish("civvis-1")
+        self.assertEqual(_git(self.work, "status", "--porcelain"), before)
+        self.assertEqual(_git(self.work, "rev-parse", "HEAD"), head)
+        self.assertFalse((self.work / "runs").exists())
+        self.assertEqual(_git(self.work, "ls-files"), "tracked.txt")
+        self.assertFalse(list(self.runs.glob("*/.ledger-index-*")))
+
+    def test_a_tip_that_moved_is_appended_to_not_forced(self):
+        # Another seat publishes between this seat's fetch and push; the push
+        # is refused as a non-fast-forward and the commit is rebuilt on the
+        # new tip, so nothing that was on the branch is ever lost.
+        self.publish("civvis-1")
+        other = Path(self.tmp.name) / "other"
+        subprocess.run(["git", "init", "-q", str(other)], check=True)
+        _git(other, "remote", "add", "origin", str(self.origin))
+        stale_tip = civ6_ladder.ledger_tip(self.work, env=PROBE)
+        self.assertEqual(civ6_ladder.publish_run(
+            "civvis-2", self.runs, repo=other, env=PROBE), "published")
+        # Pin the local tracking ref to the stale tip and publish a third run
+        # through a `ledger_tip` that answers stale first, fresh second.
+        calls = []
+        real = civ6_ladder.ledger_tip
+
+        def stale_once(repo, remote="origin", branch="ledger", env=None):
+            calls.append(1)
+            return stale_tip if len(calls) == 1 else real(repo, remote, branch, env=env)
+        run = self.runs / "civvis-3"
+        run.mkdir()
+        (run / "summary.json").write_text(json.dumps(summary("civvis-3")))
+        (run / "events.jsonl").write_text(json.dumps({"kind": "turn"}) + "\n")
+        civ6_ladder.ledger_tip = stale_once
+        try:
+            self.assertEqual(self.publish("civvis-3"), "published")
+        finally:
+            civ6_ladder.ledger_tip = real
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(_git(self.origin, "rev-list", "--count", "refs/heads/ledger"), "3")
+        self.assertEqual(len(self.ledger_files()), 6)
+
+    def test_a_run_without_events_publishes_its_summary(self):
+        (self.runs / "civvis-1" / "events.jsonl").unlink()
+        self.assertEqual(self.publish("civvis-1"), "published")
+        self.assertEqual(self.ledger_files(), ["runs/civvis-1/summary.json"])
+
+    def test_cli(self):
+        real_repo, real_env = civ6_ladder.REPO, dict(os.environ)
+        civ6_ladder.REPO = self.work
+        os.environ.update(PROBE)
+        buffer = io.StringIO()
+        try:
+            with redirect_stdout(buffer):
+                code = civ6_ladder.main(["--runs", str(self.runs),
+                                         "publish-run", "civvis-1"])
+                code2 = civ6_ladder.main(["--runs", str(self.runs),
+                                          "publish-run", "civvis-1"])
+        finally:
+            civ6_ladder.REPO = real_repo
+            os.environ.clear()
+            os.environ.update(real_env)
+        self.assertEqual((code, code2), (0, 0))
+        self.assertEqual(buffer.getvalue().split(), ["published", "already"])

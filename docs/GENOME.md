@@ -1,5 +1,12 @@
 # The genome, and why breeding it has not worked
 
+> ⚠ Vocabulary note (2026-08-23): "genome" in this document means the legacy
+> continuous `Weights` vector searched by `civvis evolve` and the league —
+> not the behaviour-gene genome. In current vocabulary the **gene pool** is
+> the collection of all behaviour genes, on or off (the registry,
+> `src/ai/advanced/genes.rs`), and a **genome** is one player's set of on
+> genes — see `docs/GENE_SCREEN.md`.
+
 `docs/SUPERHUMAN.md` is about the macro search. This is about the other half:
 the 47-gene vector returned by `Weights::to_vec` and searched by `civvis
 evolve` and `civvis league`. It was 40 wide until #1520 brought seven
@@ -23,7 +30,7 @@ measured here.
 
 ## 1. Selection had no signal
 
-`docs/RATING.md`: the deployed Glicko-2 ratings scored **−0.025 nats/game**,
+`docs/closed/RATING.md`: the deployed Glicko-2 ratings scored **−0.025 nats/game**,
 worse than guessing, so evolution selected on noise. Fixed by `civvis rating`.
 
 ## 2. Several genes did not change the sampled games
@@ -496,7 +503,7 @@ same resolution.
 
 ### What this means for breeding
 
-`docs/RATING.md` and every result above say the genome cannot be bred because
+`docs/closed/RATING.md` and every result above say the genome cannot be bred because
 selection either has no signal or reads a correlate. Lane progress is the
 first candidate that is **cheap, discriminating, and causally aligned** at
 once. It does not make the genome worth breeding — the leverage ranking says
@@ -612,7 +619,7 @@ Two qualifications that keep this honest in both directions:
 
 - **The demonstrated direction is downward.** This shows a genome can be made
   *worse*, not that it can be made better. Selecting the highest-*rated* league
-  genome and transferring it is **harmful**, which fits `docs/RATING.md`'s
+  genome and transferring it is **harmful**, which fits `docs/closed/RATING.md`'s
   recorded confound — a rating pool that carried negative information can
   nominate something systematically bad, and the transfer changes the opponent
   anyway. Diagnostics: the transferred genome routes to domination 24 times

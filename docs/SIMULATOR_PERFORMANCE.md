@@ -3,9 +3,294 @@
 This note records the July 2026 simulator profile, the changes kept from that
 work, the production-catalog follow-up, and the next optimization targets.
 
+## 2026-08-23: the 9% BTreeSet row was never the attack envelopes
+
+The section below ranks *"the next target is `AttackEnvelopes = Vec<(u32,
+Arc<BTreeSet<Pos>>)>`"* on the strength of `BTreeSet<Pos>` holding **9.0% of
+the main thread**. The row is real. The attribution was not.
+
+`sample`'s collapsed self-time list gives a symbol, not a caller, and
+`BTreeMap<(i64,i64), SetVal>` is every `BTreeSet<Pos>` in the binary at once.
+Walking the call tree instead of reading the symbol name puts **92% of those
+samples in one line**: the `seen` set of the naval-recon flood fill in
+`BasicAi::naval_recon_can_chart_from`. Same command as that section, `ci`
+profile, `--map continents`:
+
+| symbol, main-thread share | |
+| --- | ---: |
+| `BTreeSet<Pos>::insert` | 9.02% |
+| ├ `naval_recon_ship_can_chart` (via `AdvancedAi::naval_explorer`) | 8.3% |
+| └ everything else, envelopes included | 0.7% |
+| `naval_recon_ship_can_chart`, inclusive | **13.19%** |
+| `evacuation_tile`, inclusive | 1.31% |
+| `incoming_damage`, inclusive | 1.31% |
+
+So the two changes that section ranked first and third were aimed at 0.7% and
+2.6% of the run, and the 13% sitting beside them had no entry in this file at
+all. #2033 gave that walk an early exit and its docstring still says *"building
+it was 13% of the simulator"* — the early exit is exact and it works, but its
+worst case is a fully-charted body with no frontier, which is what a settled
+game mostly has, and that case still has to exhaust the ocean to answer "no".
+What was left after the early exit was the price of the *set*.
+
+**⚠ Read a `sample` self-time row as a symbol, never as a subsystem.** This
+file has now mis-ranked a target that way once; the collapsed list is a lead,
+and the call tree is the finding.
+
+### What was done
+
+Four changes, all exact, all verified by `tools/speed_ab.py` reporting the
+same report digest on every paired seed.
+
+1. **The naval-recon visited set is a dense table.** `TileGrid::index_of` is
+   documented for exactly this — *"callers that keep their own per-tile table
+   index it by this"* — and `seen` is only ever tested and set, never iterated,
+   so the frontier order, the tile count and the early-exit point are the ones
+   a `BTreeSet` gave. `naval_recon_early_exit_agrees_with_the_full_walk` still
+   checks the walk against the reference `naval_recon_waterway`, which keeps
+   its tree.
+
+2. **`incoming_damage` tests its sources before pricing its defender.** It
+   cloned the unit, ran `unit_strength` and read `tile_defense_bonus` first,
+   then discovered on most tiles that no envelope covered them and no walled
+   district could see them — and a garrisoned tile threw away three answers it
+   had already paid for. The empty folds it replaces returned exactly
+   `IncomingDamage::default()`, and `default().merge(default())` is
+   `default()`.
+
+3. **`retreat_step` stops pricing the escape from a tile nothing can reach.**
+   It runs for every military unit of every seat every turn — 87% of that bill
+   is on city-states and barbarians, per the 2026-08-22 section below — and on
+   a quiet tile it priced a heal rate, a City Center's ownership and a suzerain
+   only to read `0.0`, conclude "not lethal" and return `None`. The pre-test is
+   `anything_can_reach`, the same source scan `incoming_damage` performs
+   anyway. `a_tile_nothing_can_reach_prices_at_exactly_zero` asserts the
+   implication the skip rests on over a real board rather than arguing it in a
+   comment.
+
+4. **`AttackEnvelopes` holds a sorted slice.** Decided on counted work; see
+   the section below for the numbers and for why the clock could not decide
+   it. `Game::attack_reach_from_flood` also built the answer twice — a
+   `BTreeSet` that its caller re-collected into a second one — and now builds
+   one `Vec` the envelope adopts.
+
+`safe_healing_step`'s whole-map scan now takes its covered-tile union from a
+cache keyed on the envelope table's own `Arc` — pointer identity is sound as
+the key because the entry holds that `Arc`, so the allocation cannot be freed
+and reused underneath the comparison, and `enemy_attack_envelopes` builds a
+fresh one whenever the envelopes change. ⚠ That one is an argument, not a
+measurement: the set is identical and the cache can only turn several builds
+of it into one — `military_step` reaches `safe_healing_step` up to three times
+for one unit on one board — so it cannot cost more than a mutex and a pointer
+comparison. It is not separately priced and should not be quoted as a number.
+
+### The paired reading
+
+The tree's own harness gained a `--map` option the same day (#2328); this is
+its method at the standard screen shape — 6p 74×46, 9 city-states, 250 turns,
+online — 8 paired games:
+
+| seeds | baseline | candidate | | |
+| --- | ---: | ---: | ---: | --- |
+| 7311001–08, continents | 513.09 s | 492.56 s | **−4.00%** | host load 17–50 |
+| 7311001–08, `tennis_ball` | 411.13 s | 405.71 s | **−1.32%** | host load 30–44 |
+
+**Same game on every paired seed**, which is the correctness proof this change
+needed: three of the four edits skip work and the fourth changes a container,
+and a matching digest on eight 250-turn games says none of them moved a
+decision.
+
+⚠⚠ **THE TWO ROWS ARE THE SAME BINARY PAIR AND THE SAME EIGHT SEEDS.** The
+only difference is the map, and it is worth **three times the answer** — which
+is the point of the subsection below on what the gate could not see. Quote the
+continents row: it is the shape every `gene_screen` batch pays.
+
+⚠ Taken while sibling agents held this host at load 17–95. `speed_ab.py`
+interleaves the arms seed by seed and flips their order, so the *paired delta*
+survives that and the absolute totals do not. The evidence each change was
+actually decided on is load-independent: the `sample` share table above and
+the allocation counts below.
+
+### Rejected, with the number: the envelope union as a membership test
+
+The first version of change 3 answered it from that cached union: one binary
+search instead of one per envelope. `sample` priced the union build at **1.8%
+of the main thread against the 1.2% the skip saves**. Building an 800-tile
+union to answer a single membership question is a loss, and the union earns
+its keep only across `safe_healing_step`'s 3,400-tile scan. Recorded here
+because the reasoning for it was good and the measurement was not.
+
+### The envelope representation: decided by counting, not by the clock
+
+The change that section ranked first was built, measured, reverted and then
+restored, and the round trip is the useful part.
+
+Measured on the clock it reads **+1.17%** and **+0.20%** — paired,
+`tools/speed_ab.py`, 4 seeds each, 6p 60×38 6CS 120t online, reports agreeing
+on every seed, host load 6.5 and 5.6:
+
+| seeds | baseline | candidate | |
+| --- | ---: | ---: | ---: |
+| 7311001–04 | 42.87 s | 43.37 s | +1.17% |
+| 7311010–13 | 38.90 s | 38.98 s | +0.20% (inside the noise floor) |
+
+Both are inside the band #2339 has since shown this fleet cannot resolve the
+*sign* of, so neither is evidence of anything, and no quiet window would have
+made them evidence. Counted instead, with a counting `GlobalAlloc` over one
+250-turn 74×46/9CS continents game at seed 7311001 (deterministic: two runs of
+the same arm differed by 3 allocations in 375 million):
+
+| arm | allocations | bytes |
+| --- | ---: | ---: |
+| `Arc<BTreeSet<Pos>>` | 375,799,768 | 45.13 GB |
+| sorted `Vec<Pos>` | 374,642,802 | 44.87 GB |
+| **difference** | **−1,156,966 (−0.31%)** | −253 MB (−0.56%) |
+
+And the shape of the workload, counted in the same run: **271,484 envelope
+builds against 12,123,375 `contains` calls**, on sets averaging 17.3 tiles —
+44 queries per build. The failure mode a sorted `Vec` has here is a set built
+once and queried rarely, where the sort costs more than incremental inserts;
+this is forty-four times the opposite. Per query, two separately allocated
+nodes and ~7.5 linear comparisons (Rust's `BTreeMap` searches a node linearly)
+become ~4.1 comparisons over 136 contiguous bytes.
+
+At ~45 ns an allocation that is ~0.05 s, and the query side is worth perhaps
+as much again, on a ~43 s game: **an estimated ~0.3%, which no clock on this
+machine can confirm.** It is kept because the counted work is strictly lower
+on both axes that can be counted exactly, not because a percentage said so —
+and **~0.3% is an estimate from counts and must never be quoted as a
+measurement.**
+
+⚠ The counting build is not in the tree. It is a `GlobalAlloc` wrapper in
+`src/main.rs` incrementing two `AtomicU64`s in `src/lib.rs`, printed at the
+end of `ai::run_game`; roughly thirty throwaway lines, and worth rebuilding
+the next time a sub-1% change needs deciding.
+
+### What Part 2's target was actually worth
+
+The same brief expected 5–10% from a zero-incoming pre-test in
+retreat/healing. `evacuation_tile` and `incoming_damage` are **1.31% of the
+main thread each**, so the whole target was ~2.6% before any of it was
+skipped, and the changes above take it to 0.68% and 0.68%. The large
+inclusive shares `healing_step` and `retreat_step` carry — 27.7% and 24.8% on
+this profile, 41.0% and 35.9% on the 2026-08-21 one — are almost entirely
+`enemy_attack_envelopes` (17.6%) and the `flow_past` beneath it, not the
+evacuation pricing. **That is where the next real win in this subsystem is,
+and it is the same problem #2155 left open: the envelope table is rebuilt
+whenever one of the viewer's own units moves.**
+
+### ⚠ The paired harness measured a map no screen ran — closed by #2328
+
+While this work was in flight `tools/speed_ab.py` did not pass `--map`, so it
+timed `civvis simulate`'s default `tennis_ball`, while `gene_screen`'s
+`SCREEN_MAP` is `MapScript::Continents`. Same binary, same 74×46/9CS/250t
+shape, one `sample` each:
+
+| | `tennis_ball` (what the harness timed) | `continents` (what every batch runs) |
+| --- | ---: | ---: |
+| `BTreeSet<Pos>::insert` | 1.29% | **9.02%** |
+| `naval_recon_ship_can_chart` | 1.42% | **13.19%** |
+| **this change, paired, 8 seeds** | **−1.32%** | **−4.00%** |
+
+The hotspot this section is about was **twelve points smaller on the map the
+gate timed than on the map the fleet runs** — invisible to `paired-cost` on
+every pull request. It is the same trap the 2026-08-22 section below records
+for map *size* (*"every row above it was taken at 60×38 / 6 and measures a
+shape no screen runs"*), one axis further in.
+
+**#2328 closed it independently and while this was being written**: the gate's
+shape is now `GATE_SHAPE`, pinned field-by-field against `gene_screen`'s own
+`SCREEN_*` constants, with `map="continents"`. Recorded here anyway because
+the two findings arrived from opposite directions — that one from auditing the
+gate, this one from a hotspot that hid behind it — and because the pair is the
+concrete size of what a default map costs a measurement.
+
+## 2026-08-22: the movement flood stopped rescanning the world (−10.0%)
+
+Two whole-board facts were being recomputed inside the innermost movement
+loop. `flow_past` calls `can_enter_past` once per neighbour of every tile it
+expands, and each call:
+
+1. **walked every unit in the world** looking for an enemy air patrol over the
+   tile being stepped onto — the code said so in a comment and it was still
+   there; and
+2. reached `class_can_traverse`, which asked
+   `improvements[name].effects["passage"]` — a `BTreeMap<String, f64>` descent,
+   `memcmp` per level — for every tile.
+
+Neither answer can change inside a `&self` query, so both moved into the
+existing `QueryMemo` scope: `air_patrols` (almost always empty — a patrol needs
+a fighter) and `passage_improvements` (a `Vec<bool>` indexed by `Name::id`, one
+array read). No invalidation question arises, because the memo is created and
+dropped around the query and the board is immutable inside it.
+
+**Measured with `tools/speed_ab.py`, which refuses a speed claim unless both
+arms played the same game:**
+
+| seed window | baseline | candidate | |
+|---|---:|---:|---|
+| 7311001..7311008 | 269.78s | 245.01s | **−9.18%** (air patrols only) |
+| 7311001..7311008 | 263.85s | 237.16s | −10.11% (both) |
+| 7311020..7311027 | 332.28s | 298.98s | −10.02% (both, quiet host) |
+| 7311040..7311047 | 255.64s | 224.53s | −12.17% (both, against merged `main`) |
+| 7311060..7311067 | 326.39s | 285.51s | −12.52% (both arms rebuilt at `5f2699fd`, after #2308) |
+| **7311080..7311083** | **171.49s** | **152.07s** | **−11.32%** — at the **standard screen shape**, 74×46 / 9 city-states |
+
+⚠ **The last row is the one worth quoting.** #2308 made 74×46 / 9 city-states
+`gene_screen`'s bare default, so that is the shape a batch actually pays; every
+row above it was taken at 60×38 / 6 and measures a shape no screen runs.
+⚠ Rebuild **both** arms at the base the change lands on — `main` moves hourly
+here, and a stale baseline flatters or punishes the reading.
+
+*same game on every seed* in all six. The air-patrol hoist is ~9 points of
+the 10; the passage table is the last one.
+
+⚠ This is an optimization, not a feature, so whole-game wall clock is the right
+measure here — both arms play the identical game, which is exactly the
+condition the 2026-08-21 retraction below says makes it valid.
+
+### The profile that found it, and what is left
+
+`/usr/bin/sample` at 1 ms over `civvis simulate --seed 7311001 --jobs 1
+--players 6 --turns 250 --width 60 --height 38 --city-states 6 --speed online
+--map continents`, self time:
+
+| | before | after |
+|---|---:|---:|
+| `BTreeMap<(i64,i64), SetVal>` — ~~the `BTreeSet<Pos>` envelopes~~ **the naval-recon visited set, corrected 2026-08-23** | 7.6% | **9.0%** |
+| `memcmp` | 5.0% | 6.0% |
+| `free` / `malloc` | 7.3% | ~7% |
+| `memmove` | 5.4% | 5.7% |
+| `tile_has_visibility_line` | 5.1% | 5.5% |
+| `BTreeMap<String, f64>::get` | 3.6% | 4.2% |
+| `can_enter_past` | 3.9% | **gone from the top 16** |
+
+~~**The next target is `AttackEnvelopes = Vec<(u32, Arc<BTreeSet<Pos>>)>`.** Its
+`BTreeSet<Pos>` is queried with `contains` and iterated in sorted order; a
+sorted `Vec<Pos>` with `binary_search` gives the identical iteration order and
+identical answers with no node allocation and contiguous memory, which should
+take a large share of the BTree, malloc and memmove rows at once. Not attempted
+here — it touches ~40 sites and deserves its own change.~~
+
+⚠⚠ **WRONG, AND CORRECTED BY THE 2026-08-23 SECTION AT THE TOP OF THIS FILE.**
+`BTreeMap<(i64,i64), SetVal>` is *every* `BTreeSet<Pos>` in the binary
+collapsed into one symbol, and 92% of that 9.0% is the visited set of the
+naval-recon flood fill in `BasicAi::naval_recon_can_chart_from`, not these
+envelopes. The paragraph above was written from the collapsed self-time list;
+the call tree says otherwise. The envelope conversion was subsequently built and
+kept, but on counted allocations rather than on the clock, and it is worth
+about 0.3% rather than the large share this paragraph expected. The row itself
+is real and is now 0.13%.
+
 ⚠ **Read the last section first.** Each profile here superseded the one above
-it, and the most recent — 2026-08-18 — supersedes the "the profile is now flat"
-conclusion directly above it after a single day.
+it, and the most recent — 2026-08-22 — corrects the 2026-08-21 section directly
+above it, whose whole-game cost figures conflated the feature's cost with the
+game-length change it causes. The 2026-08-21 profile supersedes **two** of the
+tables below:
+the "the profile is now flat" conclusion from 2026-08-17, and the "Largest
+remaining opportunities" table under it, whose top row is now 1.1% of the run.
+(This line itself said "2026-08-18" while four 2026-08-19 sections sat under
+it. A pointer to the newest section is only worth having if it moves.)
 Percentages below are diagnostic signals, not an additive decomposition:
 library routines such as `memcmp` and `memmove` are costs incurred by several
 higher-level systems.
@@ -512,6 +797,12 @@ the next reader does not re-derive them:
 
 ### Largest remaining opportunities, superseding the July table
 
+⚠⚠ **SUPERSEDED 2026-08-21 — see the re-profile at the end of this file.** The
+first two rows below are the ones this table exists for, and they are now
+**1.1%** and **0.6%** of the run. Read them as history: what they record about
+*why* a scan is expensive is still true, and what they say about *where the
+time is* has not been true since the envelope work landed.
+
 | opportunity | current signal | main constraint |
 | --- | --- | --- |
 | Narrow the settlement candidate set | the settler search is 20% of the run and scores ~154 sites to move one unit | breadth is the score's quality; a prefilter that changes the chosen site changes play |
@@ -821,3 +1112,1370 @@ after it lands.** `naval_recon` went from absent to the largest cost in the
 simulator in one week, in code that passed a strength gate — which measures
 Elo, not tiles. Nothing in CI would ever have reported it. Re-profile after a
 batch of merges, not only after a performance change.
+
+## 2026-08-19 one promoted feature made every simulation six times slower
+
+⚠⚠ **THE STANDING RULE ABOVE FIRED WITHIN A DAY, AND NOTHING IN CI SAW IT.**
+`speed_ab.py`'s own shape — one 6-player 74×46 nine-city-state 150-turn Online
+game at `--jobs 1`, `ci` profile, seed 7311001 — measured on this host:
+
+| build | seconds per game |
+| --- | ---: |
+| `d3f624da` (2026-08-18 18:21Z, the commit before #2059) | **16.7** |
+| `b70c689b` (#2059 "Evacuate threatened units to safe healing ground") | **102.7** |
+| head `be44fa63` (2026-08-19 01:00Z) | 119.1 |
+| head with `precise_evacuation` forced off | 24.8 |
+
+So the flag #2059 turned on for `BasicAi::new()` — every city-state,
+barbarian and current `advanced` seat — owns ~95 of head's 119 seconds, and
+the forty other merges of the same evening own the remaining ~8. A `sample` of
+head, main thread, working samples: `retreat_step → enemy_attack_envelopes →
+Game::attack_reach` **33%**, `healing_step → safe_healing_step →
+evacuation_tile → evacuation_incoming_damage` **52%** (summed over every
+call site; the two overlap under `healing_step`).
+
+### What it was doing
+
+- `retreat_step` runs for **every military unit** of the seat on every turn,
+  before any withdrawal threshold, and starts by recomputing
+  `enemy_attack_envelopes` — one `attack_reach` flow field per visible enemy
+  military unit — for that unit alone. `unit_visible_to` answers `true` for
+  every non-stealth unit, so a barbarian seat priced the reach of every army
+  on the map, once per barbarian, every turn.
+- `safe_healing_step`, for every recovering unit, walked **all 3,404 tiles of
+  the map** and priced each with `evacuation_tile`: a defender strength on
+  that tile, the attack strength of every enemy whose envelope covers it, and
+  a scan of every hostile city with `is_at_war` per city per tile.
+  `suzerain_of` — a full envoy count per minor — was asked twice per tile
+  outside any memo scope. That is why `is_at_war`, `suzerain_of`,
+  `envoys_at` and `established_governor_at` were the top self-time leaves.
+
+### The repairs, both exact
+
+1. **Envelopes once per board.** `enemy_attack_envelopes` is memoized behind
+   `(turn, viewer, board fingerprint)`, where the fingerprint is FNV-1a over
+   every unit's identity, owner, place, health, movement and fighting state,
+   every city's identity, owner and place, the map epoch and the war ledger —
+   everything `attack_reach` reads, own units included because an own unit's
+   zone of control ends an enemy's move. A hit therefore returns what a
+   recompute would have, byte for byte. The cache is shared across controller
+   clones (`Arc<Mutex<…>>`), which is the whole win: `plan_general_unit_turn`
+   plans a batch of units on clones of one board, and the first per-clone
+   version of this cache — the obvious `RefCell` — was computed once per unit
+   and dropped with the clone, i.e. it did nothing (profiled, then replaced).
+2. **`safe_healing_step` decides safety by membership.** A tile's incoming
+   damage is zero exactly when it is a garrison district, or lies outside
+   every envelope and out of strike range of every hostile walled city and
+   encampment (each covering source contributes at least the clamp's floor of
+   one) — so the scan tests set membership computed once per call instead of
+   pricing 3,404 tiles, and reads its heal rates under a `query_memo` scope so
+   `suzerain_of` is answered once per minor.
+
+| seed | `main` (913b85d5) | with both repairs | reports |
+| --- | ---: | ---: | --- |
+| 7311000 | 136.2 s | 67.3 s | identical |
+| 7311001 | 147.0 s | 86.9 s | identical |
+
+And on the paired harness itself, `tools/speed_ab.py --seeds 7311000 --games 4`
+against the same `main` binary: **461.75 s → 306.26 s user CPU, −33.7%, reports
+agree on every seed** (the harness interleaves the arms and runs the pair
+concurrently, which is why its per-game figure sits under the serial ones
+above). Between 1.5× and 2×, byte-identical. Measured but **not shipped**: keying the envelope
+cache on enemy state only (own units left out) makes the same games 34 s and
+39 s — the serial paths (city-state and barbarian `military_step`,
+`advance_unit_serial`) then hit as well — but every report differs, because
+an own unit that steps out of an enemy's path widens that enemy's reach and
+the stale envelope does not see it. That is a behaviour change to #2059's
+policy and needs #2059's own gate, which the PR did not run; it is recorded
+here as the next 2× if the owner wants it.
+
+**Gated the same night, and the answer is no — as a shortcut.** The enemy-only
+key is now an evaluator arm, `advanced_envelope_own_moves`
+(`BasicAi::enable_envelope_cache_across_own_moves`, off in production), so
+the trade can be priced instead of argued: `ai_eval
+advanced_envelope_own_moves advanced --matrix --pairs 40 --stop-when-decisive`
+returned **RETAIN advanced**. Compact-standard 50.6 % (INCONCLUSIVE, no
+regression); deployment-online 50.0 %, 9 sweeps each way; deployment-contested
+— the profile with `live_target_*` seats in the field, the one that looks most
+like the ladder — **43.8 %, 11 of 80 games won against 21, twelve maps to two
+by direction, exact sign p = 0.013**. A stale envelope is not free: in a
+contested game the own unit that just moved changes the enemy's reach that
+the next unit's retreat, healing and settling decisions read, and reading the
+old reach loses ground. The 2× stays on the table only through the exact
+algorithmic route above (envelopes for enemies within reach of own units,
+recomputed when *those* enemies or *those* own units move), never through
+staleness. The arm remains so that route can be measured against it.
+
+### What is left, and whose it is
+
+Even exact, the simulator is **four to five times slower than the day before
+#2059**: one full envelope computation per seat-turn is inherent to a design
+that prices the reach of *every* enemy on the map for *every* seat, and
+`retreat_step` runs its evacuation pricing for every unit before any
+threshold. The bounded fix is algorithmic — envelopes only for enemies within
+their maximum reach of any own unit or candidate tile, or the retreat check
+behind a cheap "is any envelope near this unit" test — and it changes which
+tiles a unit reads as threatened only where the answer was already zero, so
+it can be made exact too. It belongs to #2059's lane.
+
+The standing rule stands, sharpened: **a promoted feature is a performance
+event, and this one was a six-fold event that no strength gate could see.**
+`speed_ab.py` costs four minutes; a strength gate on a feature that
+multiplies game cost by six costs a day. Run the paired speed harness before
+promoting anything that adds a per-unit or per-tile pass.
+
+## 2026-08-19 — the envelope key hashed three fields no reach rule reads
+
+`sample` on head, `civvis simulate --seed 7311001 --jobs 1 --players 6 --turns
+150 --width 74 --height 46 --city-states 9 --speed online`, `ci` profile,
+9,053 main-thread samples:
+
+| symbol | samples | share of main thread |
+| --- | ---: | ---: |
+| `healing_step` | 7,034 | 77.7% |
+| `retreat_step` | 6,917 | 76.4% |
+| `enemy_attack_envelopes` | 6,778 | **74.9%** |
+| `attack_reach` (the leaf) | 6,629 | 73.2% |
+| `safe_healing_step` | 130 | 1.4% |
+
+The envelope cache from #2059's repair is exact and does work — `safe_healing_step`,
+which that repair rewrote, is down to noise. What remained was the *key*.
+`attack_envelope_fingerprint` hashed every unit's `hp`, `moves_left`,
+`attacks_left` and `fortified`, and no reach rule reads any of them:
+`attack_reach` flows from `unit_max_moves`, never `moves_left`, and `flow_past`
+relaxes the stacking layer so other units reach it only through
+`in_enemy_zoc_for` — owner, kind, religion, promotions. So every attack, every
+fortify and every spent movement point was a cache miss that recomputed one
+flow field per visible enemy.
+
+The key now hashes id, owner, place, **kind**, formation and `zoc_stopped`.
+`kind` is new and closes a hole rather than opening one: an upgraded unit
+changes the spec `exerts_zoc` reads, at the same tile, and the old key saw that
+only because an upgrade also happens to spend movement.
+
+Paired, `tools/speed_ab.py`, `ci` profile, 6p 74×46 150t online, `--jobs 1`:
+
+| seeds | baseline | candidate | |
+| --- | ---: | ---: | ---: |
+| 7311000–03 | 173.09 s ← noise floor, one binary against itself | 172.95 s | −0.08% |
+| 7311000–03 | 169.77 s | 160.60 s | **−5.40%** |
+| 7311010–13 | 161.71 s | 154.89 s | **−4.21%** |
+
+Reports agree on every paired seed — the harness refuses a speed claim
+otherwise — and `advanced_v1_plays_the_same_game_it_always_did` passes
+unchanged at 17,482 decisions and `0x8162_c919_b83c_40df`, so not one decision
+moved across the five anchor profiles. `the_envelope_key_ignores_state_no_reach_rule_reads`
+pins both halves of the claim.
+
+### What is left, and it is most of it
+
+**This takes 5% of a 75% hotspot.** The key still hashes every unit's *place*,
+correctly — an own unit's zone of control really does end an enemy's move — so
+a serial path that moves a unit between two asks still recomputes every enemy's
+`attack_reach`. Movement is the common case, which is why the remaining cost is
+what it is.
+
+The bounded fix is per-enemy locality, and it has to be built more carefully
+than the note above this section suggested. That note proposed computing
+"envelopes only for enemies within maximum reach of any own unit"; that is
+**not exact**, because `safe_healing_step` unions *every* envelope and scans
+the whole map, so a distant enemy's envelope legitimately excludes a distant
+healing tile. The exact route is to keep computing every enemy's envelope but
+cache each one on a key covering only what can change it — that enemy's own
+state plus the units and cities within its maximum reach — so a move forty
+tiles away is a hit rather than a recompute. Bounding "maximum reach" needs the
+minimum step cost the route rules allow, not one tile per movement point.
+
+⚠ Promotions are still absent from the key and `exerts_zoc` reads
+`promotion_effect(u, "zone_of_control")`. A promotion granting ZOC to a unit
+standing still is invisible to it. Pre-existing, named here rather than
+silently carried.
+
+## 2026-08-19 (later) — an envelope is recomputed only when its own neighbourhood moved
+
+#2148 tightened the board-wide envelope key to what reach reads and took 5%.
+The remaining 70% was the key's *granularity*: it moves whenever any unit
+moves, so a serial path that steps one own unit recomputed an `attack_reach`
+flow field for every visible enemy on the map.
+
+Each envelope now carries its own key, over the units and cities within
+`envelope_reach_bound` of that enemy. The board key stays as the fast path; on
+a board-key miss, each enemy is asked separately and only those whose
+neighbourhood changed are recomputed.
+
+| seeds | baseline | candidate | |
+| --- | ---: | ---: | ---: |
+| 7311000–03 | 166.23 s | 98.02 s | **−41.04%** |
+| 7311010–13 | 156.47 s | 92.07 s | **−41.16%** |
+| 7311020–23 | 148.39 s | 87.95 s | **−40.73%** |
+
+Reports agree on every paired seed, and
+`advanced_v1_plays_the_same_game_it_always_did` passes unchanged at 17,482
+decisions and `0x8162_c919_b83c_40df`.
+
+### The radius, and why it is what it is
+
+`envelope_reach_bound` is `4 × max_moves + 1 + max(1, attack_range)`. The 4 is
+`1 / 0.25`: terrain defaults to 1 MP and every feature that declares a cost
+adds 1, so an off-route step never costs less than 1, and the only discounts
+are the route ladder's — 0.75 Industrial, 0.5 Modern, 0.25 Railroad, the floor.
+`envelope_reach_bound_matches_the_shipped_route_ladder` pins that floor against
+the shipped data, and `the_reach_bound_covers_every_tile_attack_reach_returns`
+runs the real `attack_reach` over every military kind and checks no tile it
+returns lies outside the radius.
+
+⚠ Air units are excluded and always recompute: `attack_reach` centres their
+disk on `air_operation_origin`, not the unit's tile, so a key built around the
+tile would watch the wrong neighbourhood. They are a disk, not a flow field.
+
+### ⚠ What the attempt to test this the obvious way found
+
+A fixture that searches for a tile where moving an own unit changes an enemy's
+envelope **finds none, at any distance, for any shipped unit kind**. A
+two-movement unit's flood is spent by the time zone of control could bite, and
+cavalry ignore incoming zone of control outright. That is a large part of why
+this cache wins as much as it does — and it means no fixture can tell a
+one-tile radius from a ten-tile one, so the radius is defended by the bound
+test above rather than by a placement search. A first draft of the warm-versus-cold
+test passed against a planted radius of 1; it is recorded in the test's own
+comment so the next reader does not repeat it.
+
+### What is left
+
+`enemy_attack_envelopes` should now be well under the 74.9% of main thread it
+held before #2148. **It has not been re-profiled** — the standing rule in this
+file is to re-profile after every landed win, and that is the next step here,
+not a claim this one makes.
+
+## 2026-08-19 (re-profile) — the key that saved the recomputes became the cost
+
+#2151 landed and, per the standing rule at the top of this file, was
+re-profiled. Same workload, `ci` profile, 6,423 main-thread samples:
+
+| symbol | before #2148 | after #2151 |
+| --- | ---: | ---: |
+| `enemy_attack_envelopes` | 74.9% | 55.6% |
+| `attack_reach` | 73.2% | 42.0% |
+| `enemy_envelope_key` | — | **7.1%** |
+| `safe_healing_step` | 1.4% | 2.6% |
+
+The win landed. But hashing each enemy's neighbourhood costs a sweep of every
+unit and city *per enemy, per ask*, and that sweep had become 7.1% of the main
+thread on its own.
+
+Two changes, measured separately against the same merge-base:
+
+1. **Stop sorting a table that is already in order.** `Units` wraps a
+   `BTreeMap` keyed by id and `Game::cities` is one, so `values()` already
+   arrives in id order; the first cut collected each into a `Vec` and sorted it
+   anyway. Hashing in place: **−2.53%**.
+2. **Replace the hash with a board delta.** An enemy's envelope depends on the
+   map, the wars, the cities and the units within its radius. If none of those
+   changed since the previous ask, an envelope that was right then is right
+   now — so the reuse test becomes "did any changed tile land inside my
+   radius", over a change list that is usually one unit long because the caller
+   has stepped one unit and asked again. This removes `enemy_envelope_key`
+   entirely: **−11.03%, −12.01%, −10.39%** on three paired batches.
+
+Reports agree on every paired seed and the anchor passes unchanged at 17,482
+decisions and `0x8162_c919_b83c_40df`.
+
+⚠ The induction only holds while the delta is refreshed on **every** ask, and
+`None` — "assume everything changed" — is what a first ask, a map edit, a war
+or any city change returns.
+
+### Where the tests had to move, and why
+
+`a_warm_envelope_cache_answers_what_a_cold_one_computes` catches a reuse gate
+that always reuses, and **nothing else**. Planted defects that dropped the tile
+a moved unit *left*, that skipped the wholesale fallback, and that ignored a
+removed unit all survived it — because with shipped units an own unit's move
+never changes an enemy's envelope at all, so a whole-board fixture cannot
+reach those paths. `the_board_delta_reports_every_tile_a_change_touched` tests
+`envelope_board_delta` directly and refuses all three.
+
+That is the general lesson from this pair of changes: when the observable
+behaviour is provably unchanged, the test has to move down to the invariant
+that makes it unchanged, not stay at the behaviour.
+
+## 2026-08-19 (third re-profile) — a tighter invalidation set, refused twice
+
+Re-profiled after #2155, as the rule at the top requires. 5,614 main-thread
+samples:
+
+| symbol | after #2151 | after #2155 |
+| --- | ---: | ---: |
+| `enemy_attack_envelopes` | 55.6% | 51.7% |
+| `attack_reach` | 42.0% | 47.9% |
+| `envelope_board_delta` | — | under 1% |
+
+The delta is cheap, so what remains is genuine recomputation. The obvious next
+step is a tighter invalidation set, and the obvious tighter set is exact on
+paper: other units enter `attack_reach` only through `in_enemy_zoc_for`, and
+zone of control only bites on a tile the unit can step onto, so an envelope
+should be sensitive to its own **movement flood dilated by one** — forty-odd
+tiles for a two-movement unit rather than the three hundred in a
+`4 × max_moves` disk.
+
+Implemented, it measured **−26.0% and −21.0%**. It is not shipped, because
+`tools/speed_ab.py` refused it: **ARMS DISAGREE on two of four seeds, in both
+batches.** The flood set is not a complete account of what an envelope reads.
+
+⚠ **The anchor passed throughout.** `advanced_v1_plays_the_same_game_it_always_did`
+reported 17,482 decisions and the same fingerprint at every stage of this
+work, including both refused versions. Its five profiles do not reach the
+divergent path; a 6-player 150-turn game does. The paired report hash is the
+stronger check of the two and neither substitutes for the other.
+
+Two leaks were found and fixed on the way, and both are holes in the **shipped**
+delta rather than in the experiment:
+
+- `can_enter_past` refuses a step onto a tile a hostile fighter is patrolling,
+  and finds that fighter by scanning **every unit in the world** — so the
+  blocker can sit arbitrarily far from the tile it blocks. The delta tracked
+  place, kind and owner, so starting or moving a patrol produced an *empty*
+  delta and every envelope was reused across it.
+- `is_at_war` consults `at_war` and, for a city-state, `suzerain_of`, which is
+  derived from every major's envoys. The stamp carried `wars.len()`, which an
+  envoy changing hands does not move.
+
+Neither fixed the disagreement, so a third leak remains unidentified. What the
+sequence establishes is the shape of the problem: **the delta's field set has
+been incomplete all along, and the generous radius was masking it** — almost
+any nearby unit moving invalidated anyway. That is now bounded rather than
+guessed: the delta tracks exactly the unit fields `attack_envelope_fingerprint`
+hashes, plus the patrol, and
+`the_delta_tracks_every_field_the_board_key_hashes` mutates each field and
+fails if the delta stops noticing one.
+
+### If you pick this up
+
+Do not re-derive the flood argument; it is correct as far as it goes and still
+insufficient. Find the third leak first, and the way to find it is a diverging
+seed: run seed 7311000 under both arms and diff the reports, rather than
+reasoning about what `attack_reach` reads. Two rounds of inspection found two
+real leaks and still missed one.
+
+## 2026-08-19 (fourth) — the leak, found by audit rather than by inspection
+
+The section above records a tighter invalidation set that measured −26%/−21%
+and was refused twice by `tools/speed_ab.py`, with the leak unfound after two
+rounds of reading the code. It said to find it by evidence. That worked, in one
+run.
+
+⚠ **Correction to the record:** commit `d474fa16`'s subject line reads "An
+envelope is invalidated by its own flood, not by a disk around it". That
+describes the approach that PR *refused to ship*; its title was set when the
+worktree opened and never revised when the experiment failed. The body and the
+section above are accurate. The flood approach ships **here**, in #2163.
+
+### The instrument
+
+`CIVVIS_ENVELOPE_AUDIT=1` makes every cache reuse also compute the envelope
+fresh and describe the first six disagreements: the enemy, its state, the tiles
+gained and lost, and every unit within three hexes of them. Reading it took
+seconds. Every report had the same shape — **tiles gained, none lost, around a
+unit whose cached envelope was empty.**
+
+### The leak
+
+`flow_past` returns nothing at all when `formation_movement_locked_by_zoc`
+holds. A sensitivity set built from the flood was therefore **empty**, and an
+empty set is touched by no board change ever — so that envelope froze at empty
+for the rest of the game, long after the lock lifted. The unit kept reading as
+harmless while it stood there able to attack.
+
+Two fixes, and the second came out of reading what the lock depends on:
+
+1. The sensitive set is always seeded with the unit's own tile and its
+   neighbours, and its linked peer's, flood or no flood. The lock is read off
+   that ground.
+2. `started_turn_in_zoc`, `acted` and `moved` are now tracked by the delta.
+   All three move without the unit moving — a unit that acts where it stands
+   loses its whole flood — and none is hashed by the board key, so nothing else
+   would have noticed.
+
+| seeds | baseline | candidate | |
+| --- | ---: | ---: | ---: |
+| 7311000–03 | 93.03 s | 69.05 s | **−25.77%** |
+| 7311010–13 | 80.53 s | 62.80 s | **−22.02%** |
+| 7311020–23 | 79.15 s | 63.04 s | **−20.35%** |
+
+Reports agree on every paired seed — the same harness that refused this twice —
+and the anchor is unchanged at 17,482 decisions.
+
+Cumulative over #2148, #2151, #2155 and this: the same four-game workload has
+gone from **173 s to about 65 s**.
+
+### What this cost, and what it is worth
+
+Three iterations of inspection found two real leaks and missed the one that
+mattered; one audit run found it. The lesson is not that inspection is useless —
+the two leaks it found were genuine holes in shipped code — but that **a cache
+whose invariant spans a large surface should ship with a way to check itself.**
+`CIVVIS_ENVELOPE_AUDIT` stays for that reason, read once through a `OnceLock`
+so it costs nothing when unset.
+
+## 2026-08-21 (fifth) — the sight frame: who asks, and what the asking costs
+
+Re-profiled at HEAD `0f1b04e0`, as the rule at the top requires — the fourth
+profile predates ten landed PRs. The reading was taken by sampling a **live p7
+`gene_screen`** for 40 s rather than a purpose-built run: that is the workload
+that actually burns the core-hours, and sampling a process already running
+costs the host nothing.
+
+The top named CIVVIS symbol is no longer anything in the envelope family:
+
+| symbol | self-samples |
+| --- | ---: |
+| `vision_input_stamp_with_suzerains` | **8,784** |
+| `tile_has_visibility_line` | 3,425 |
+| `hex::disk` | 1,662 |
+| `can_enter_past` | 1,609 |
+| `BasicAi::enemy_attack_envelopes` | 504 |
+
+`enemy_attack_envelopes` — 74.9% of the main thread two profiles ago — is now
+504 samples. That work is finished. Sight replaced it.
+
+### What one headless game spends on sight
+
+A one-off instrumented build counted the asks and what each one walks. The
+measurement code was removed before submission so it adds no branch to this
+hot path. Seed 7311001, 6p 60x38 pangaea online, all six victories, decided
+turn 232:
+
+| | per game |
+| --- | ---: |
+| `vision_frame` asks | 128,826 |
+| …answered from cache | 76,641 (**59.5%**) |
+| world units scanned by the stamp | **25,221,623** |
+| units the scan kept (owner match) | 2,881,751 — **89% discarded** |
+| city owned-tile positions hashed | **8,592,020** |
+
+⚠ **The stamp is computed on every one of the 128,826 asks, hit or miss.** It is
+a content hash by design, and that design is right: hashing only the fields
+`base_player_visibility` reads is what stops a hit-point change from evicting a
+map-sized bitset. The defect is not that it hashes; it is that hashing costs a
+walk of the whole world. `self.units.values().filter(|u| u.owner == viewer)`
+visits every unit on the board to keep roughly one in nine.
+
+### Who asks 128,826 times
+
+Attributed from the sample call tree, by samples in stack:
+
+| caller | share |
+| --- | ---: |
+| `combat_target_visible` | **22,575 (92%)** |
+| `player_can_see` | 1,337 |
+| `refresh_player_visibility_via` | 373 |
+| `player_vision_now` | 190 |
+
+⚠ **This is a trap this document already named and only half-fixed.** The
+2026-08-18 entry records that `combat_target_visible(pid, pos)` recomputes both
+frames per call, and that the fix is `combat_target_visible_at(pid, pos,
+&visible, &viewers)` with the frames hoisted. The tactical picker was converted.
+**The engine's own five call sites never were** — `game.rs` 35375, 37362, 37492,
+39170, 39264, inside `do_ranged`, `do_attack` and `do_city_strike`. Every shot
+the engine applies still asks the unhoisted wrapper.
+
+### Why that is so expensive: the branch started cold
+
+`impl Clone for VisionFrameCache` returned `Self::default()`. Every `Game` clone
+therefore began with **no sight frames at all**. The tactical picker scores a
+candidate by cloning the world and applying the order, and applying a shot calls
+`combat_target_visible` — so each candidate paid a full ray-cast derivation on a
+world discarded microseconds later.
+
+The comment defending it said a branch "is allowed to move its sources before
+its first read, and copying a parent's bitsets would retain work that belongs to
+the parent position." The stamp already refutes that: a frame is reused only
+when `vision_input_stamp_with_suzerains` still matches, and that stamp folds
+every input the derivation reads. A branch that moves a sight source restamps
+and recomputes; a branch that does not would have derived the bitset it
+inherited. The four fields `speculative_clone` changes — `track_fog_memory`,
+`track_war_ledger`, `visibility_suppressed`, `visibility_batch` — are read by
+neither the stamp nor the derivation.
+
+A clone now inherits the frames (an `Arc` bump per seat).
+
+| workload | baseline | candidate | |
+| --- | ---: | ---: | ---: |
+| 6p 74x46 150t online, 6 seeds | 165.32 s | 163.55 s | **−1.07%** |
+| 6p 60x38 250t online, 4 seeds | 183.57 s | 180.17 s | **−1.85%** |
+
+Reports agree on every paired seed. Cache hit rate 59.5% → 63.9%.
+
+⚠ **Read that number as small on purpose.** It converts misses into hits, and a
+hit still pays the stamp. The 25.2 M-visit scan is untouched, which is why a
+change that removed a full ray-cast from most speculative clones is worth under
+two percent. Wall-clock on the shared host said −21% for the same change; the
+paired harness said −1.85%. That gap is the whole reason the harness exists.
+
+### Next, and it is most of the win
+
+Two independent targets remain, in order of expected value:
+
+1. **The 25.2 M-visit unit scan.** `unit_vision_input_stamps()` already walks
+   the units once and stamps *every* player, and `base_vision_input_stamp`
+   already accepts the result as `unit_stamps`. `vision_frame` passes `None`.
+   Memoize the vector on the game behind a units-mutation epoch: `Units::get_mut`
+   and `values_mut` already insert into a branch write-set, so the choke point
+   for the bump exists. ⚠ Over-invalidation is **safe here** in a way it was not
+   for the envelopes — a stale epoch only recomputes the *stamp*, while frame
+   validity still rests on the content hash. Worst case is one pass where there
+   is one pass today; it cannot regress correctness.
+2. **The 8.6 M owned-tile hashes.** Every ask hashes every owned tile of every
+   city of every viewer. Borders move rarely; a per-city tiles counter bumped on
+   mutation would replace the inner loop with one number.
+
+And separately, convert the five engine call sites to `combat_target_visible_at`
+with the frames hoisted once per order, which is what the 2026-08-18 entry
+already told the next reader to do.
+
+
+## 2026-08-21 (re-profile) — the settlement scan is 1.1%, and half the run is threat
+
+The rule at the top of this file says re-profile after every landed win. Four
+landed (#2148, #2151, #2155, #2163) and the last section said the re-profile
+"is the next step here, not a claim this one makes". This is that step, taken
+after 133 further merges, and it moves the target.
+
+`/usr/bin/sample` at 1 ms, `ci` profile, head `cefe73b8`, this file's own
+reference workload — `civvis simulate --seed 7311001 --jobs 1 --players 6
+--turns 150 --width 74 --height 46 --city-states 9 --speed online` — 14,141
+main-thread samples. Inclusive shares, summed over every call site, with a
+symbol never counted inside itself.
+
+| subsystem | % of main thread |
+| --- | ---: |
+| `AdvancedAi::take_turn` — all deliberation | 100% |
+| `BasicAi::military_step` | **50.6%** |
+| ├ `healing_step` | 41.0% |
+| ├ `retreat_step` | 35.9% |
+| ├ `enemy_attack_envelopes` | 29.0% |
+| ├ `attack_reach` | 23.4% |
+| ├ `flow_past` | 21.0% |
+| └ `can_enter_past` | 15.3% |
+| `advanced_units` → `plan_general_unit_turn` | 38.3% → 36.4% |
+| `advance_unit_serial` | 16.9% |
+| `forcing_reply_*` | 11.0% |
+| `explorer_turn` / `explore_step` | 6.1% / 5.7% |
+| `city_yields` | 4.9% |
+| `legal_purchase_actions` | 4.3% |
+| `research_with_government` | 3.3% |
+| **`Game::do_end_turn` — the engine's own turn** | **3.2%** |
+| `policy_card_score` | 2.9% |
+| `refresh_all_visibility` | 2.5% |
+| `production_value` | 1.7% |
+| **`advanced_settler_step`** | **1.1%** |
+| └ `settlement_atlas_values` | 0.5% |
+
+### The table this supersedes
+
+"Largest remaining opportunities, superseding the July table" (2026-08-17)
+ranks *narrow the settlement candidate set* first, on the strength of the
+settler search being **20% of the run**, and *memoize district adjacency per
+plot* second at ~7%. Those two rows are now **1.1%** and **0.6%**. The work
+that moved them is in this file — the four skipped questions (2026-08-17) and
+`settle_site_exists` (#1911) — plus the fact that everything around them got
+more expensive. Neither is worth doing for speed any more, and the
+cost-versus-value paragraph under that table, which asked whether the
+settlement search is worth its breadth, is now a question about **1%**.
+
+⚠ That paragraph is still worth reading for its argument, which was never
+about the percentage: *the single most expensive subsystem in the simulator is
+the one whose decision treatments have most consistently failed to demonstrate
+strength.* It was written about expansion. It is now true of the threat
+machinery, which is why the next section exists.
+
+### The regression is paid off, and the shape changed underneath it
+
+The same command that measured **16.7 s** on `d3f624da` (the commit before
+#2059) and **119.1 s** at the 2026-08-19 head now measures **21.4 s**
+(`real 21.40 / user 20.82`, host load 3.4 before and 2.8 after). Four exact
+caches took a 6x event down to about 1.3x. ⚠ The 16.7 s reading carries no
+recorded host load, so the residual 1.3x is a comparison across days and is
+worth re-taking paired before anyone spends a week on it.
+
+But the profile is not the shape it was before #2059 either. `military_step`
+now holds **half the main thread**, and the engine's own rules — everything
+`do_end_turn` does to advance a turn — hold **3.2%**. The rules are not the
+cost and have not been since July; what changed is which part of the
+controller is.
+
+## 2026-08-21 — the most expensive default in the simulator had never been priced
+
+`precise_evacuation` (#2059) is `true` in `BasicAi::new()` and
+`BasicAi::with_weights()` — every major, every city-state, every barbarian.
+Only `AdvancedAi::legacy()` withholds it, behind the frozen `advanced_v1`
+anchor. `retreat_step` returns `None` immediately when it is false, so one
+flag gates the whole block that owns half the profile above.
+
+`tools/speed_ab.py`, four paired games per row:
+
+| shape | on (head) | off | |
+| --- | ---: | ---: | ---: |
+| 6p 74x46 150t online | 78.22 s | 46.19 s | -41.0% |
+| 6p 60x38 6CS 250t online (the `gene_screen` native shape) | 156.13 s | 80.03 s | -48.7% |
+
+⚠⚠ **THOSE TWO NUMBERS ARE WHOLE-GAME WALL CLOCK AND THEY ARE NOT THE
+FEATURE'S COST. Corrected below, in the section this one is superseded by** —
+they are retained because the retraction is the useful part. The harness
+prints ARMS DISAGREE on every seed, correctly: this is a behaviour flag. What
+was missed is the consequence of that — a different game is a different
+*length*, and this feature changes length. The same change measured **-14.2%**
+on `20bce807` a day later at the identical shape and seeds. A number that
+moves by a factor of three across one day of merges was never measuring what
+the sentence around it claimed.
+
+The profile is unaffected and stands: `healing_step` 41.0% and `retreat_step`
+35.9% of main thread are shares of running time, which no change in game
+length can move.
+
+**What it was worth: nobody knew.** As shipped it had no `LIVE_TREATMENTS` row,
+no `elo.rs` arm, no row in `docs/gene_ledger.json`, and no mention in
+`docs/EVAL.md` or `docs/AI_GAPS.md` — `grep -n 'evacuation|retreat_step|safe_healing'`
+over `src/elo.rs`, `src/bin/ai_eval.rs`, `src/bin/gene_screen.rs`,
+`src/bin/civvis_orders.rs` and `src/ai/advanced/treatment_flags.rs` returned
+nothing. #2059's Validation section lists `cargo test` and a twelve-game crash
+soak. So the single largest consumer of every evaluation batch in the fleet was
+also the one behaviour neither gate could address: not unpriced by oversight,
+**unpriceable**, because a flag that is not an arm is invisible to both
+instruments.
+
+### What was done about it
+
+- A `PRODUCTION_TREATMENTS` row and an `enable_/disable_` pair make it a
+  screenable gene, so `gene_screen` and `ai_eval --without` can both reach it.
+- ⚠ Adding that row also makes `gene_ledger::ledger_default_on` answer
+  `Some(false)` for it — "unmeasured means off at deployment" — so the row and
+  its measurement have to land together or the wiring change silently
+  withholds a shipped behaviour. That is why it is one change and not two.
+- `.github/workflows/speed.yml` runs `tools/speed_ab.py --budget` on every
+  pull request. The standing rule above has now fired twice with nothing in CI
+  watching; four minutes of paired timing per PR is what it costs to stop
+  writing it down again.
+
+### The standing rule, third statement
+
+**A promoted feature is a performance event.** It was written after #2059 and
+the sentence was already there before that. What was missing every time is not
+the sentence: it is that no gate ran it. Prose in this file has now failed to
+prevent the same class of event twice, so the next reader should treat a
+change to this section as a change to `speed.yml` first and a paragraph
+second.
+
+
+## 2026-08-22 — the evacuation cost, per completed turn, and whose seats it is on
+
+Two independent measurements of the same feature disagreed, and the
+disagreement is what located the cost. `docs/EVAL.md`'s own rule — compute the
+headline fact twice and read both — earned itself again here.
+
+`gene_screen --genes precise-evacuation`, 9,000 seat pairs (3,000 games, seeds
+61000000.., the native regime's own shape) reports the compute column as
+**+2.90 ± 0.42% per completed turn, per enabled major seat**. That cannot sit
+beside the section above's "-48.7% when withheld". Measured directly instead,
+four seeds interleaved on one revision, dividing by turns so game length cannot
+confound it:
+
+| arm | CPU s | turns | s/turn | vs on |
+| --- | ---: | ---: | ---: | ---: |
+| on (`main`, `20bce807`) | 160.07 | 745 | 0.2149 | — |
+| off for minors and barbarians only | 110.98 | 729 | 0.1522 | **-29.1%** |
+| off everywhere | 136.28 | 951 | 0.1433 | **-33.3%** |
+
+### 87% of it is on seats no evaluation is measuring
+
+Minors and barbarians are 29.1 of the 33.3 points. The six major seats — the
+only ones any evaluation reads — are the remaining four. `BasicAi::new()` is
+city-states, barbarians and the `basic` entrant, and every one of them runs the
+same per-unit envelope pricing as a major.
+
+⚠ A gene screen structurally cannot see this. It varies major genomes; every
+city-state and barbarian carries the flag ON in both arms of every pair. The
+screen's +2.90% is per *major seat* and is correct; it is simply not the whole
+bill, and nothing in the instrument says so.
+
+### Why the whole-game numbers moved
+
+The turn column is the other half. Withholding the feature makes games run
+**longer** — 745 turns to 951 over the same four seeds, fewer early religious
+victories — so whole-game wall clock measures the length change and the cost
+change together, with opposite signs. That is how the identical change read
+-48.7% on `cefe73b8` and -14.2% on `20bce807`.
+
+**Per completed turn is the metric.** `tools/speed_ab.py` reports whole-game
+user CPU and is right to: for an *optimization*, where the arms play the same
+game by construction, length is held constant and wall clock is exactly the
+answer. The moment the reports disagree — which is every promoted feature —
+whole-game time stops being a cost and starts being a mixture. `gene_screen`
+already separates the two columns for this reason; the paired harness does not,
+and a reader who quotes its number for a behaviour change is quoting a mixture.
+
+## 2026-08-23 — the city half of the sight stamp, and the 11.6 M allocations nobody was counting
+
+The 2026-08-21 (fifth) entry left two vision targets. The first — "the 25.2 M-visit
+unit scan" — shipped as #2295. This is the second:
+
+> 2. **The 8.6 M owned-tile hashes.** Every ask hashes every owned tile of every
+>    city of every viewer. Borders move rarely; a per-city tiles counter bumped
+>    on mutation would replace the inner loop with one number.
+
+It is the right target and the wrong count, because **three** loops walked the
+roster on every ask, not one:
+
+- `base_vision_input_stamp` hashed every owned tile of every city the viewer
+  holds — the 8.6 M, measured here at 7.5 M;
+- `vision_geometry_stamp` hashed every city and every district in the **world**,
+  viewer or not;
+- `world_stamp` hashed the same world roster a third time, on the hotter path of
+  the two: `height_field()` asks for it, and `player_can_see` and
+  `player_vision_frame` build a height field per question.
+
+⚠ **And the expensive part of those two was not the hashing.**
+`impl IntoIterator for &Districts` is `self.iter().collect::<Vec<_>>().into_iter()`,
+so `for (district, position) in &city.districts` **allocates a `Vec` per city per
+ask**. Measured below: **11,616,354 allocations in one game**, from a loop whose
+own arithmetic is a rounding error. The 2026-08-17 profile's largest single block
+was not a function but the allocator at ~18%; this is some of it.
+
+All three now read one number off the roster.
+
+### The measurement that does not need a quiet host
+
+Taken with a deterministic counter, because the host was at load 63–96 with a
+dozen sibling agents building, and this file's own history is full of clocks that
+read a change backwards under exactly that condition. One game, seed 7311001,
+6p 74×46, 9 city-states, 250 turns, online — the shape the newest sections use.
+
+| | per game |
+| --- | ---: |
+| `vision_stamps()` asks | 452,140 |
+| …answered from the fold | 441,886 (**97.7%**) |
+| rebuilds | 10,254 |
+| owned-tile hashes | 7,532,856 → **5,884,334** (−21.9%) |
+| district hashes | 26,083,412 → **790,477** (−97.0%) |
+| city visits, each of which allocated a `Vec` | 11,616,354 → **0** |
+
+Total hash work falls from **45.2 M to about 6.7 M** plus one city-header pass
+per rebuild. The `Vec` allocations go to zero: the fold iterates with
+`Districts::iter()`, which does not collect.
+
+### Read the 21.9% row before copying this shape
+
+The owned-tile row is the weakest of the three and it is worth understanding why:
+a **rebuild folds every owner's tiles**, where the old loop folded only the
+viewer's. At six majors plus nine city-states that is roughly a sixfold larger
+unit of work, and a 97.7% hit rate buys back only 21.9% of it.
+
+The obvious next move is a per-city fold with a dirty set, so that `get_mut(id)`
+refolds one city instead of all of them. **Do not spend a day on it.** The
+residual is 5.88 M hash operations at a few nanoseconds each — about 15 ms on a
+game that costs 54 CPU-seconds, or **0.03%**. The allocations are the whole
+number: 11.6 M at roughly 45 ns is about 0.5 s, or **1.0%**, and that is what the
+paired harness measured.
+
+### The paired harness, and what it proves
+
+`tools/speed_ab.py --seeds 7311001 --games 8 --players 6 --width 74 --height 46
+--city-states 9 --turns 250 --speed online`:
+
+| | user CPU |
+| --- | ---: |
+| baseline (`5205a424`) | 433.82 s |
+| candidate | 429.07 s |
+| | **−1.09%** |
+
+⚠ **Provisional on the timing.** Host load averages were 63–96 on 18 cores
+throughout, with the harness itself reporting three other CIVVIS processes; a
+number taken at that load is not a result, and the agreement with the 1.0%
+allocation estimate above should be read as corroboration, not as confirmation.
+
+**What is not provisional is that the reports agree on every paired seed.** That
+is the correctness proof this change needs and it does not care about load: all
+three stamps changed *value* — they fold the same inputs in a different order —
+and a stamp that reached play rather than staying a cache key would surface here
+as a divergent report. `docs/FLOAT_DETERMINISM.md`'s same-seed-same-world rule is
+the contract, and eight identical paired digests are the evidence.
+
+### Where the invalidation lives, and why it is not an epoch counter
+
+`Units` carries a `u64` epoch bumped inside `get_mut`, and
+`with_unit_vision_input_stamps` keys the unit fan-out on it. Copying that shape
+for cities has a hole the unit version does not: an epoch and the memo it guards
+are two values in two places, and `game.cities = other.cities` moves one without
+the other. Nothing in the tree does that today. Nothing had to.
+
+So the memo is a field of the roster instead:
+
+```rust
+pub struct Cities {
+    map: BTreeMap<u32, City>,
+    vision: RefCell<Option<Arc<CityVisionStamps>>>,
+}
+```
+
+`Deref` — and **deliberately no `DerefMut`** — exposes the whole read API, so
+every read, every `values()`, every `cities[&id]` compiled unchanged. Without
+`DerefMut` nothing in the crate can obtain `&mut BTreeMap<u32, City>`, so the
+only routes to a `&mut City` are six inherent methods, and each drops the memo
+before it returns. Three properties follow, and they are the whole argument:
+
+1. **The compiler enumerates the mutation surface, on every build.** A mutating
+   map method not reimplemented here does not compile. `iter_mut`, `entry`,
+   `retain`, `append`, `drain`, `split_off`, `pop_first` and `pop_last` are
+   absent on purpose — nothing calls them, and an untested accessor is a worse
+   guard than a build error. This is `AGENTS.md`'s "discover, never list"
+   enforced by `rustc` rather than by a grep that was complete the day it was
+   written.
+2. **The memo cannot come apart from the roster.** Assignment, `mem::take` and
+   `mem::swap` move the fold with the cities. `Cities` is declared inside a
+   private `mod city_roster` rather than as a bare type, because a private field
+   is readable by every *descendant* module and `game` has three dozen of them.
+3. **Borrowck forbids reading the memo while a write is outstanding.**
+   `vision_stamps()` needs `&Cities`; every mutable handle borrows `&mut Cities`.
+   Invalidation is eager — it happens when the handle is *issued*, before the
+   caller has written anything — so no ask can fall between the two. The new
+   test needed a `let` hoisted out of `push(along(&branch, …))` for exactly this
+   reason, which is the guarantee showing up as a compile error.
+
+### What the enumeration found
+
+The claim above is worth what the search behind it is worth. Every `.rs` file in
+the repository, single-line **and** line-broken forms — an `rg -U` multiline pass
+found 369 chained-across-lines sites a single-line grep misses. **~972
+mutable-access sites to `Game::cities`**, 852 of them outside `src/game.rs`: 21
+production (14 `mirror.rs`, 3 `ai/advanced.rs`, 2 `bin/civvis_orders.rs`, 2 the
+feature-gated `oracle.rs`) and 831 in tests. **None needed an edit.** Confirmed
+absent, each of which would have been a hole: any `&mut BTreeMap<u32, City>` in a
+signature, any whole-roster assignment in production, any `Game { … }` literal
+outside `game.rs`, any `for … in &mut …cities`, any path that moves a `City` out
+and puts it back, and any `unsafe` or `UnsafeCell` route into the roster.
+
+`owned_tiles` is written from twelve production sites — `found_city_for`,
+`do_buy_plot`, `expand_borders` (twice), `fogged_clone`, six in `mirror.rs` where
+the authoritative host reassigns a worked tile, and `oracle.rs`. Ownership moves
+in `mirror_set_city_owner`, `fogged_clone`, `transfer_city` (capture, cession, and
+the loyalty flip that routes through it) and `do_liberate_city`. Cities appear and
+disappear in `found_city_for`, `do_raze_city`, `mirror_remove_city` and
+`clear_mirror_cities`. Save and load go through `GameSer`, whose `Vec<City>`
+becomes a `Cities` by `FromIterator` with an empty memo. **None of them is named
+in the code.** They are covered because they all go through `get_mut`,
+`values_mut`, `insert`, `remove` or `clear`, and there is no seventh way.
+
+### What was left alone
+
+`memory_world_stamp` walks the roster too, and folds `pop`, `hp`, `wall_hp`,
+`buildings.len()` and every religious pressure. Those change on most turns, so a
+memo behind them would miss more often than it hit, and it would need a second
+invalidation rule for the fields the sight fold does not read. It keeps its loop.
+
+## 2026-08-23 (follow-up) — the city sight-fold's two clocks disagreed in sign
+
+The section above shipped as #2325 with a paired reading of **−1.09%** and a
+warning that host load was 63–96. CI's own `paired-cost` job then read
+**+1.01% overhead** on the same change. Opposite signs, and neither run is
+allowed to be dismissed just because the other is nicer.
+
+| harness | shape | reading |
+| --- | --- | ---: |
+| local, load 63–96 on 18 cores | 6p 74×46, 9CS, 250t, 8 seeds | −1.09% |
+| `speed.yml`, shared 4-core runner | 6p 60×38, 6CS, 100t, 3 seeds | +1.01% |
+
+Both said **"same game on every seed"**, so the correctness proof is doubled and
+only the cost is in question.
+
+### The plausible mechanism, and why it is wrong
+
+The obvious explanation is shape. A 100-turn game is mostly the early game,
+where cities are founded and borders grow every few turns, so the memo should
+hit far less often than over 250 turns — and a rebuild folds *every* owner's
+owned tiles where the old loop folded only the viewer's. A low hit rate at a
+small shape would turn the win into a loss, and that would be a real finding.
+
+It is not what happens. The same deterministic counter, run at both shapes:
+
+| | 60×38 / 6CS / 100t | 74×46 / 9CS / 250t |
+| --- | ---: | ---: |
+| `vision_stamps()` asks | 117,299 | 452,140 |
+| rebuilds | 3,035 | 10,254 |
+| **hit rate** | **97.41%** | **97.73%** |
+| hash operations | 5,113,713 → 973,235 (−81.0%) | 45,232,622 → 7,042,723 (−84.4%) |
+| `Vec` allocations | 2,080,373 → **0** | 11,616,354 → **0** |
+
+**The hit rate is shape-insensitive to within a third of a percentage point.**
+The small shape removes proportionally almost as much work as the large one, and
+2.08 M allocations at roughly 45 ns is about 0.09 s against that job's ~19
+CPU-seconds per game — a predicted saving of about **0.5%**, not a 1% cost.
+
+So the CI reading is host noise, which is exactly what `speed.yml`'s own comment
+says to expect of it: *"A shared 4-core runner cannot resolve five percent and
+this does not try to… It is a smoke alarm."* Three seeds at 100 turns on a
+shared runner is a budget check, and quoting its percentage as a cost is reading
+an instrument past its resolution.
+
+### The rule this is an instance of
+
+`docs/EVAL.md` says to compute the headline fact twice and read both. Both
+clocks here were inside their own noise and they still disagreed in sign,
+because ±1% is *below the resolution of every clock available on this fleet
+under load*. The counter is not a second opinion about the same quantity — it
+measures a different one (work removed, exactly, with no host in the answer),
+and it is the only one of the three instruments that could settle the question.
+
+⚠ For the next reader: at ±1% on a busy fleet, **stop planning to resolve it
+with a clock.** Neither a quiet window on this Mac nor a rerun of `paired-cost`
+would have separated −1.09% from +1.01% with any confidence. Instrument the
+work instead, and quote the clock only for its report-digest verdict.
+
+## 2026-08-23 — the gate measured the wrong game, on the wrong clock, and could not block anything
+
+`speed.yml` shipped on 2026-08-22 (#2289) and closed the hole #2059 fell
+through: nothing in CI could see a promoted feature multiply the fleet's
+compute. It closed it with four measured gaps, all of them named in this file
+already, and this section closes those.
+
+| | #2289 | now |
+| --- | --- | --- |
+| shape | 6p **60x38, 6 city-states**, 100t, the CLI's default **`tennis_ball`** | 6p **74x46, 9 city-states**, 120t, **Continents** — `gene_screen`'s `SCREEN_*` map row |
+| metric | whole-game user CPU | **user CPU per completed turn**, whole game reported beside it |
+| statistic | pooled ratio of two totals | **median of five paired blocks**, with the spread and the run's own resolution printed |
+| budget | +50% | **+8%**, and a second disjoint block before anything fails |
+| absolute | none | `docs/speed_ledger.json`, recorded deliberately, per machine, with its load average |
+| binding | advisory | **required** (`REQUIRED_CHECKS`), with `paired-cost: allow <reason>` as the escape hatch |
+
+### 1. Nine city-states, because the minor seats are the bill
+
+The section above this one measured **87% of `precise_evacuation`'s cost on
+city-states and barbarians** — 29.1 of 33.3 points. Minor-seat cost scales with
+the minor-seat count, and #2289's gate ran six of them against the screen's
+nine on a map two thirds the area. It systematically under-weighted exactly the
+cost that dominates every evaluation batch in the fleet. The map row is now the
+screen's, leg for leg: 6 majors, 74x46, 9 city-states, Continents, Online.
+
+⚠⚠ **The map script was the worst leg of the four, and it was invisible.**
+`speed_ab.py` never passed `--map` at all, so every reading it has ever
+produced was taken on `civvis simulate`'s default `tennis_ball` while the
+screen plays Continents. Found by the envelope-representation work (#2324),
+which measured **the same hotspot at 1.42% on tennis_ball and 13.19% on
+continents**. The other three legs change how much of the code runs; the map
+changes *which code is hot*, so the harness could have waved through a
+regression in a dense-table path and refused to credit the fix for it, with
+the number looking clean either way. `--map` is now a first-class leg of the
+shape and defaults to the screen's, and
+`test_speed_ab.TheWorkflowMeasuresTheScreensShape` reads `SCREEN_PLAYERS`,
+`SCREEN_WIDTH`, `SCREEN_HEIGHT`, `SCREEN_CITY_STATES` and `SCREEN_MAP` out of
+`src/bin/gene_screen.rs` and pins the workflow's arguments, the harness's own
+defaults and the ledger's shape block to them. That test is the durable part;
+`--map` is only today's instance of the divergence it prevents.
+
+⚠ **The turn clock is the one leg still traded**, and the trade is
+one-directional. Measured on `mbp-m5-max-128` (ci profile, quiet, four seeds):
+
+| clock | s/turn | what it is |
+| ---: | ---: | --- |
+| 120 | 0.0878 | the gate |
+| 150 | 0.1150 | |
+| 250 (full games) | 0.1833 | the screen |
+
+Cost per turn rises steeply with the turn number, so the gate reads about half
+the screen's per-turn density and under-weights the late game, where a
+per-unit pass hurts most. That is a runner budget, not a claim: the whole
+paired step has to sit under `cargo-test`'s ~10.5 minutes or it becomes the
+merge path for the entire fleet. Five games at 120 turns costs ~270 s on a
+hosted runner; four at 150 costs ~345 s and would.
+
+⚠ Changing `--turns` changes the **game**, not just how much of it is played:
+seed 900002 wins a religious victory on turn 134 at a 150-turn clock and runs
+to 250 at a 250-turn one. A short-clock run is a different game, not a prefix
+of a long one.
+
+⚠⚠ **So say it plainly, because "the gate measures the screen's shape" will
+otherwise be read as stronger than it is — which is the exact failure this
+whole section is about. THE GATE IS BLIND TO A REGRESSION THAT ONLY APPEARS
+AFTER TURN 120.** Six of the seven legs match; the clock does not, and it is
+the one leg whose difference is not proportional — turn 200 has bigger
+empires, more units per seat, more cities, aircraft and a congress, so its
+profile is not turn 100's scaled up. When a change plausibly touches late-game
+code, `tools/speed_ab.py --turns 250 --games 4` by hand is the reading to
+trust, and a green gate is not a substitute for it.
+
+### 2. Per completed turn, which is what the section above asked for
+
+The 2026-08-22 section ends: *"`gene_screen` already separates the two columns
+for this reason; the paired harness does not, and a reader who quotes its
+number for a behaviour change is quoting a mixture."* It does now. The turn
+count comes from the game's own report — `standings()` prints exactly one of
+`Winner: … on turn N`, `Draw: turn limit reached on turn N`, `No winner: turn N
+of M` — and a report the harness cannot read is a hard error, never a default,
+because a silently-guessed divisor would restore the mixture invisibly.
+
+Whole-game CPU is still printed. When the turn totals match, the two are the
+same number algebraically and the output says so; when they do not, the gap is
+game length and the output says that instead, with both turn totals. For a
+byte-identical optimisation — the four landing beside this section today — the
+two agree exactly, and that agreement is itself the evidence the arms played
+the same game.
+
+### 3. The conditions are half the reading
+
+Measured while twelve sibling agents built concurrently, one binary against
+itself in both arms, so the honest answer is zero:
+
+| shape | 1-min load | absolute s/turn | paired delta | pair IQR |
+| --- | ---: | ---: | ---: | ---: |
+| 5x120t (the gate) | ~6 (4 of 5 seeds) | 0.0878 | — | — |
+| 5x120t (the gate) | 61 → 86 | 0.1436 (**+63%**) | +0.33% | 1.48pp |
+| 3x150t | ~6 | 0.1134 | — | — |
+| 3x150t | 49 | 0.1737 (**+53%**) | -0.56% | — |
+| 3x150t | 94 | 0.1761 (**+55%**) | +0.11% | — |
+
+And the same experiment on the gate's real host, from this change's own CI run
+(`32623627991` — the pull request touches no Rust, so both arms built
+byte-identical binaries and the run is nothing but runner noise):
+
+| host | 1-min load | absolute s/turn | paired median | pair IQR | resolution |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `github-ubuntu-latest` | 3.77 | 0.2389 | +0.84% | **2.37pp** | ±1.57% |
+| `mbp-m5-max-128` | 61 → 86 | 0.1436 | +0.33% | 1.48pp | ±0.52% |
+
+⚠ **The hosted runner's pair-to-pair scatter is WIDER than this Mac's under a
+twelve-agent load** — 2.37pp against 1.48pp — even though its load average is
+3.77 and its absolute is the steadier of the two. Interleaving cancels a
+desktop's slowly-varying contention very well; it does nothing about a cloud
+VM's frequency and co-tenancy jitter, which lands as a burst inside a single
+pair. So **the CI budget is calibrated on the runner row and not on the
+desktop row**, and the two hosts keep separate rows in the ledger precisely so
+nobody averages them.
+
++8% is **9.5x the noise median that run measured and 5.1x the resolution it
+reported**, and a failure needs two *disjoint* seed blocks to agree. +50% was
+not defended by a measurement in either direction; this is.
+
+**The absolute inflates by more than half on a busy fleet host. The
+interleaved paired delta does not move at all.** That single pair of facts is
+what the rest of the design rests on:
+
+- tightening the budget from +50% to +8% is defensible, because the quantity
+  being judged survived a load average of 94 on eighteen cores inside ±0.6%;
+- an absolute with no load average beside it is not comparable to anything, so
+  every ledger row carries load at start, peak and end, and rows are per
+  machine.
+
+What interleaving cannot cancel is a **burst landing on one arm of one pair**.
+So the gate statistic is the median of the per-pair per-turn deltas, not a
+pooled ratio: four clean pairs and one at +150% leave the median at 0.00% and
+move the pooled number past +25%. Beside it the run prints the interquartile
+spread and the smallest change that spread could have resolved (two robust
+standard errors of the median, taking the larger of the MAD- and IQR-based
+sigma so the estimate errs toward *noisier*). When that resolution is wider
+than the budget the line says so outright: a green verdict there is **"not
+seen", not "not there"**.
+
+### 4. The absolute ledger, because a relative gate cannot see drift
+
+Every pull request is measured against the commit before it, so the fleet can
+lose five percent a month and every single run reads green. `docs/census.json`
+already solved this shape — record the reading, let the number move, make the
+*diff* the signal — and `docs/speed_ledger.json` is that device for cost:
+
+```
+tools/speed_ab.py --baseline B --candidate B --record-ledger \
+    --ledger-machine mbp-m5-max-128 --note "why this reading was taken"
+```
+
+Deliberate, never automatic, and never written by CI — a runner cannot commit.
+A reading taken on a runner is transcribed with
+`--ledger-cpu/--ledger-turns/--ledger-load`, which require the same `--note`.
+The gate prints the trunk's absolute cost per turn on every run either way, so
+the number is in the log even before it is in the file.
+
+`tools/test_speed_ab.py` checks the ledger's shape block against the arguments
+`speed.yml` actually passes, and both against `gene_screen.rs`'s `SCREEN_*`
+constants read out of the source. That is deliberate: an artefact and its
+source drifting apart is the defect that put `main` red the same morning this
+landed — `17a27004` was pushed with no pull request and left the generated
+`HEURISTIC_GENE_RANKING.md` out of step with its generator, failing six tests
+every PR inherits (fixed by #2336). An absolute cost recorded at one shape
+while the gate runs another is that defect with the drift line calling the
+difference a regression.
+
+**Host scaling**, kept in the ledger because it is exactly the constant that
+gets re-derived badly later: hosted 4-core `ubuntu-latest` is **2.57x** this
+Mac per single-thread core — 56.23 s user CPU for 3 games at the old shape on
+run 32601426938, against 21.89 s for the identical command on
+`mbp-m5-max-128` at load 5.8 the next day.
+
+### 5. Required, and how to clear one
+
+Advisory, the gate could not do the job it exists for. There is no branch
+protection on this repository — `REQUIRED_CHECKS` in `tools/civvis_collab.py`
+is the only thing that makes a check binding — and `ship` merges on that tuple
+without reading anything else. #2059 would have merged again with a red
+advisory X beside it.
+
+Three properties make requiring it safe, and each is pinned by a test:
+
+1. **It always reports.** No `paths:` filter and no job-level `if:`:
+   `required_check_state` reads an absent required check as *pending* and a
+   skipped one as a *failure*, so either would hang every docs-only PR in the
+   fleet. The scope decision is the job's first step, which always succeeds and
+   costs ~40 s when there is nothing to measure.
+2. **One bad pair cannot fail a merge.** Median statistic, and over budget the
+   harness re-measures on a *disjoint* block of seeds and fails only if both
+   agree. An ordinary run never reaches that code.
+3. **An intended cost can be accepted.** A promoted feature is a performance
+   event by definition, so the gate will fire on honest changes:
+   `paired-cost: allow <reason>` in the pull request body passes the run, the
+   same escape hatch `overwrite-guard: allow` is. The reason is mandatory —
+   that sentence, the number and why it is worth paying, is the one #2059 never
+   wrote.
+
+A false failure is cleared by re-running the job (`gh run rerun --failed
+<run-id>`); `ship` already re-dispatches required checks that end without a
+verdict.
+
+**It costs the merge path nothing.** On this change's own pull request
+`paired-cost` and `cargo-test` both started at 06:42:35 and finished at
+06:53:11 and 06:52:55 — **sixteen seconds apart**. The paired step grew from
+~112 s to 288 s and the job from ~7m32s to 10m36s, which is still inside
+`cargo-test`'s 10-11 minutes, so the two finish together and nothing waits
+longer than it did. That is the whole reason the turn clock is 120 and not
+150: four games at 150 turns would have made this gate the trunk's critical
+path for every merge in the fleet.
+
+### A note on the other instrument the load moves
+
+Measured the same evening: `python3 -m unittest discover -s tools` on plain
+`origin/main` fails **25 tests and errors 6** at load 70 on this host —
+`test_ladder_watchdog`, `test_spectator_supervisor`, `test_ops_portability`,
+`test_conflict_hotspots`, every one of them timing-sensitive. The identical
+suite is green on a hosted runner. That is the same fact this section is
+about, applied to a different instrument: a result taken on a fleet host and
+not labelled with its load is not a result. It is worth fixing on its own
+terms, because a suite that is red on the machine agents actually work on
+trains a fleet to stop reading it — the credibility problem `rust-quality`
+already cost this repository once.
+
+### What is still owed
+
+The `mbp-m5-max-128` row in `docs/speed_ledger.json` was taken at load 61-86
+and is marked PROVISIONAL in its own note. A quiet-host row for that machine,
+and the first `github-ubuntu-latest` row, are both still to be recorded — the
+file is designed so that adding them is one command and the old rows stay as
+history rather than being overwritten.
+
+## 2026-08-23 — the flood stopped re-asking the ruleset what the unit is (−9.9%/turn), and a dense frontier that did not pay
+
+The direct sequel to 2026-08-22 above. That change hoisted the two *whole-board*
+facts out of the movement flood — the air-patrol scan and the passage table.
+The *per-unit* ones were still being asked once per neighbour of every tile
+`flow_past` expands.
+
+### The profile that found it, at the shape a screen actually runs
+
+`/usr/bin/sample` at 1 ms over `civvis simulate --seed 7311001 --jobs 1
+--players 6 --turns 250 --width 74 --height 46 --city-states 9 --speed online
+--map continents` — the #2308 standard screen shape, not the 60×38/6 the
+2026-08-22 profile was taken at. Load average 16 during the sample, so read the
+shares, not any wall clock. Self time, over 32,860 non-idle samples:
+
+| leaf | self |
+| --- | ---: |
+| `BTreeMap<(i64,i64), SetVal>::insert` — the `BTreeSet<Pos>` envelopes | 13.4% |
+| `memcmp` | 3.4% |
+| `memmove` | 3.2% |
+| `BTreeMap<String, f64>::get` | 2.7% |
+| `free` | 2.6% |
+
+and, inclusive, where the flood's own work sits:
+
+| | inclusive |
+| --- | ---: |
+| `BasicAi::enemy_attack_envelopes` | 16.9% |
+| `attack_reach_from_flood` | 12.8% |
+| `flow_past` | 11.0% |
+| `BTreeMap<String, f64>::get` | 4.5% |
+| **`units_at`** | **4.1%** |
+| `can_enter_past` | 3.3% |
+| `formation_enters_enemy_zoc` | 2.3% |
+| `unit_step_cost` | 2.1% |
+
+Attributing the two rows that matter to their callers:
+
+| the work | caller | share |
+| --- | --- | ---: |
+| `units_at` | `unit_max_moves_at` → `adjacent_support_effect` | 1.71% |
+| `units_at` | `in_enemy_zoc_for` ← `flow_past` | 1.00% |
+| `units_at` | `can_enter_past` ← `flow_past` | 0.40% |
+| `BTreeMap<String,f64>::get` | `class_can_traverse` ← **`routing_zones`** | 1.69% |
+| `BTreeMap<String,f64>::get` | `unit_effect` ← `unit_step_cost` | 0.10%+ |
+
+### What changed
+
+**A per-unit movement profile in the existing `QueryMemo` scope.** `flow_past`
+reaches `unit_step_cost`, `unit_max_moves_at` and `formation_enters_enemy_zoc`
+once per neighbour of every tile it expands. Between them they asked, *per
+neighbour*: `unit_effect("woods_move_cost")`, `unit_effect("hills_move_cost")`,
+`promotion_effect("amphibious")`, `promotion_effect("movement")` — each a
+`BTreeMap<String, f64>` descent with a `memcmp` per level — two
+`dedication_active` string tests, and `adjacent_support_effect`, which sweeps
+the occupancy of seven tiles to find a support aura. None of it depends on the
+tile. It is now derived once per unit per memo scope, with the same
+no-invalidation argument `traversal_class`, `air_patrols` and
+`passage_improvements` already make: the guard borrows the world immutably.
+
+**`units_at` reads the occupancy list in place** at the flood's two sites. This
+file already named it — *"`units_at` … 1.08M allocations for 4.5 MB, an average
+of four bytes, because it clones a one- or two-element `Vec<u32>` out of the
+occupancy map"* — and `unit_ids_at` was already there, returning the slice.
+
+### ⚠ The fix from 2026-08-22 was a pessimization on the path with no memo
+
+The 1.69% row above is not the movement flood. It is `build_routing_zones`,
+which maps `class_can_traverse` over **every tile on the map** to label
+connected regions — and it runs with no `QueryMemo` scope open.
+
+`Game::passage_improvements`, added by #2309, builds a `Vec<bool>` over the
+whole improvement list and keeps it for the scope. Its own comment says that
+outside a scope it is rebuilt per call, *"exactly the work the open-coded scan
+did, never more"*. That sentence is true of `air_patrols` and false of this
+one: the code it replaced was a single `improvements[name].effects["passage"]`
+lookup, and rebuilding the table costs one such lookup **per improvement in the
+ruleset**. On the one path with no scope, #2309 turned one string lookup per
+improved tile into one per improvement.
+
+Opening a memo scope over the sweep is the whole fix — one line, with the same
+`&self` argument as everywhere else. **−0.98% measured on its own on a host at
+load 73**, which the table below explains is a floor rather than a figure.
+
+The general lesson outlives the line: **a lazily built table is only "never
+more work" if its miss path is as cheap as what it replaced.** A memo whose
+miss path builds a whole table must not be reachable without a scope.
+`air_patrols` is safe because its miss path is the identical scan;
+`passage_improvements` was not, and nothing said so.
+
+### The measurement
+
+`tools/speed_ab.py`, which pairs the arms seed by seed, flips their order
+between seeds, and **hashes each game report — so a timing difference only
+counts as overhead when both arms played the same game.** Every row below
+reports *same game on every seed*, which is the correctness claim: the play is
+bit-for-bit what it was, the engine simply stopped repeating itself.
+
+Both arms at 6p **74×46, 9 city-states, 250 turns online, Continents** — the
+#2308 standard screen shape, on the screen's own map — over eight paired games
+on seeds 7311001..7311008, **both arms rebuilt at the merged base**:
+
+    seeds 7311001..7311008 (8 games x 1 interleave(s) = 8 pairs),
+    6p 74x46 9CS 250t online continents, --jobs 1
+      load average 17.30 at start, 18.33 peak, 10.70 at end
+      baseline    450.87s user CPU /  1787 turns = 0.252308 s/turn
+      candidate   395.30s user CPU /  1787 turns = 0.221210 s/turn
+      -9.94% per completed turn (median of 8 pairs)
+          — same game on every seed, done faster
+      spread: IQR 11.57pp over [-20.56%, -5.00%]; this run resolves ±6.07%
+      pooled -12.33% per turn; whole game -12.33% over the same 1787 turns
+
+**That is the row to quote: −9.94% median, −12.33% pooled**, both arms built
+from the base this lands on, at the shape *and the map* a screen actually runs.
+The two metrics agreeing exactly is not a coincidence — they must agree when
+both arms play the same game, and the harness prints it as a self-check.
+
+⚠ The median's own resolution on this run is ±6.07%, so **−9.94% is a sign and
+an order of magnitude, not three significant figures.** The pooled figure is
+the tighter of the two here because the arms played identical games.
+
+The earlier readings from this session are kept below because they say
+something the headline cannot. All were taken with the pre-#2328 harness, which
+never passed `--map` and so measured `tennis_ball`, and they report whole-game
+user CPU rather than per turn:
+
+| arm (old harness, `tennis_ball`, whole game) | host load | baseline | candidate | |
+| --- | ---: | ---: | ---: | ---: |
+| both changes | ~25 | 407.20s | 369.94s | −9.15% |
+| per-unit movement profile + in-place occupancy | ~25 | 418.25s | 395.01s | −5.56% |
+| per-unit movement profile + in-place occupancy | ~78 | 432.11s | 412.39s | −4.56% |
+| memo scope over the connectivity sweep, on top of it | ~73 | 401.80s | 397.87s | −0.98% |
+| dense frontier scratch for `flow_past` | ~72 | 399.95s | 403.19s | **+0.81% — rejected** |
+
+⚠⚠ **Those rows do not sum, and that is the reading to take from them, not an
+error in them.** The same change — the movement profile, an unchanged binary,
+the same seeds and shape — reads −4.56% at load 78 and −5.56% at load 25. A
+machine that is already memory- and scheduler-bound returns less of a CPU-work
+saving, so **a loaded host understates an optimization**, and a per-part row
+taken at load 73 is a floor rather than that part's figure at rest. The split
+between the two shipped changes is therefore not known to better than "both are
+real and the profile is the larger"; only the total is quoted as a result.
+
+⚠ A dozen agents share this machine. The pairing and the alternating run order
+are what make any of these worth quoting at all; a single-arm reading at load 78
+would mean nothing. **The digests are not provisional** — 40 paired games across
+five windows, two harnesses and two maps, every one of them *same game on every
+seed*. That is the claim this change actually rests on.
+
+### Rejected: a dense frontier for `flow_past` (+0.81%)
+
+`flow_past`'s `best` was a `BTreeMap<Pos, f64>` keyed on a hex coordinate,
+relaxed once per neighbour of every tile — the classic case for the dense
+per-slot scratch `first_route_step` already uses, indexed by
+`TileGrid::index_of`. `TileGrid` keeps its tiles sorted by `Pos`, so the
+reached set read back in index order reproduces the tree's iteration order
+exactly, and the four callers that turn it straight into a result see no
+change: *same game on every seed*, all eight.
+
+**It measured +0.81%, and was reverted — but the clock is not what decided
+it.** At ±1% on this fleet no available clock resolves a sign, so the verdict
+is a counter. Instrumented over one whole standard-shape game (seed 7311001, 6p
+74×46, 9 city-states, 250 turns), counting every `flow_past` call, every
+relaxation probe, and the size of every reached set:
+
+| | |
+| --- | ---: |
+| `flow_past` calls in one game | **250,000** |
+| relaxation probes | 9,848,274 — **39.4 per flood** |
+| tiles reached | 3,364,457 — **13.5 per flood** |
+
+| reached set | share of floods |
+| --- | ---: |
+| 1 tile | 0.2% |
+| 2–5 | 6.3% |
+| **6–11** | **52.2%** |
+| 12–23 | 30.2% |
+| 24–50 | 9.7% |
+| 51–132 | 1.3% |
+| 133+ | 0.03% |
+
+**Rust's B-tree holds 11 keys in a node, so 58.7% of these floods are a
+`BTreeMap` of exactly one node** — a flat, cache-resident array — and 98.7% are
+at most two levels. There is no tree descent to remove. What the dense version
+adds is real: a `Vec<f64>` sized to all 3,404 tiles (27 KB, written at ~13
+scattered slots) in place of one hot node, plus a sort to rebuild the ordering
+the tree supplied for free. Even if all 9.8M probes were made free, at a
+plausible 20 ns each that is 0.2 s of a ~50 s game — an **0.4% ceiling** against
+a cache cost that is certain.
+
+That is this file's ninth null of the same shape, and the second in this exact
+spot: *"Route-search scratch reuse: rejected"* above measured the same idea 25%
+slower in 2026-07 and diagnosed it identically — *"it replaces cheap dense
+initialization with an extra per-tile generation array … for this map size,
+that additional cache traffic loses to the allocator."* The standing rule it
+produced — *the payer is an expensive derivation that is recomputed, not a
+cheap operation that is frequent* — predicted this one before it was written.
+
+The three changes that *did* pay in this area — #2309's two and the profile
+above — all removed a derivation that was being recomputed. Nothing that merely
+made frequent cheap work cheaper has ever paid here. The count is now nine
+nulls against five wins and it has still never gone the other way.
+
+⚠ The next target is unchanged from 2026-08-22 and is now **13.4% of self
+time**, up from 9.0%: `AttackEnvelopes = Vec<(u32, Arc<BTreeSet<Pos>>)>`, whose
+`BTreeMap<(i64,i64), SetVal>::insert` is the largest single leaf in the
+profile. That set is queried with `contains` and iterated in sorted order, so a
+sorted `Vec<Pos>` with `binary_search` gives identical answers and identical
+order with no node allocation. It touches ~40 sites and deserves its own
+change. Note that this is the *opposite* shape to the rejection above and is
+not evidence against it: those sets hold hundreds of positions and are built
+once and read many times, where the flood's frontier holds tens and is thrown
+away.

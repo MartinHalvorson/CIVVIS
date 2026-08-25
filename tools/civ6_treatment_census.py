@@ -20,8 +20,11 @@ The difference is the regime, and the regime is the point. `docs/AI_GAPS.md`
 `advanced` in native play, and concluded that a repair validated in one engine
 does not transfer to the other. So a native `ai_eval` census would answer a
 question nobody asked. This replays **recorded Civilization VI games** through
-the same decider the seat runs, with one treatment withheld, and counts the
-turns whose orders move.
+the same decider the seat runs, and counts the turns whose orders move. An arm
+that is live in the recorded control is withheld; a gene the recorded genome
+already withholds is instead forced on. Those are different counterfactuals:
+withholding an already-off gene merely replays the control and would falsely
+call a potentially-live gene inert.
 
     python3 tools/civ6_treatment_census.py ~/civvis-civ6-runs/control/civvis-...Z
 
@@ -67,8 +70,14 @@ class CensusError(RuntimeError):
     """A refusal that names its cause, rather than a partial table."""
 
 
-def discover_treatments(binary: Path, mirror: Path) -> list[str]:
-    """Ask the binary which treatments it can withhold.
+def discover_treatments(
+    binary: Path,
+    mirror: Path,
+    *,
+    option: str = "--without",
+    verb: str = "withhold",
+) -> list[str]:
+    """Ask the binary which treatments it can control with ``option``.
 
     Deliberately not a list in this file. A hand-written one is complete the day
     it is written and silently shrinks afterwards -- the repository has paid for
@@ -76,22 +85,61 @@ def discover_treatments(binary: Path, mirror: Path) -> list[str]:
     `civvis_orders` carried 57 hand-written `--without` arms against 68 live
     treatments and eleven shipped with no control at all.
 
-    `--without <unknown>` is a hard error whose message enumerates the real
-    table, so the binary under test is the source of truth.
+    Both `--without <unknown>` and `--with <unknown>` are hard errors whose
+    messages enumerate the real table, so the binary under test is the source
+    of truth. The former names live arms that can be withheld; the latter names
+    ledger-held genes that can be forced back on.
     """
     probe = subprocess.run(
-        [str(binary), "--mirror", str(mirror), "--without", "__census_probe__"],
+        [str(binary), "--mirror", str(mirror), option, "__census_probe__"],
         capture_output=True,
         text=True,
     )
-    match = re.search(r"this binary can withhold:\s*(.+)", probe.stderr, re.S)
+    match = re.search(
+        rf"this binary can {re.escape(verb)}:\s*(.+)", probe.stderr, re.S
+    )
     if not match:
         raise CensusError(
             "the decider did not enumerate its treatments; expected the "
-            f"`--without` error to list them. stderr was:\n{probe.stderr.strip()[:800]}"
+            f"`{option}` error to list the arms it can {verb}. stderr was:\n"
+            f"{probe.stderr.strip()[:800]}"
         )
     names = [name.strip() for name in match.group(1).split(",")]
     return [name for name in names if name]
+
+
+def live_treatments(mirror: Path) -> set[str]:
+    """Read the exact treatments that the recorded control actually enabled.
+
+    The binary's `--without` table is intentionally broader than a particular
+    deployment: it includes names that may be held by the genome ledger. The
+    run's own `genome` row is the authoritative answer to whether a named
+    treatment is on in this replay's control arm.
+    """
+    why = mirror / "why.log"
+    if not why.exists():
+        raise CensusError(
+            f"{why} does not exist; cannot tell whether a treatment was live "
+            "in the recorded control"
+        )
+    with why.open(errors="ignore") as handle:
+        for line in handle:
+            if not line.lstrip().startswith("{"):
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if row.get("kind") != "genome":
+                continue
+            treatments = row.get("treatments")
+            if isinstance(treatments, list) and all(
+                isinstance(name, str) for name in treatments
+            ):
+                return set(treatments)
+    raise CensusError(
+        f"{why} has no usable genome row; cannot choose --with versus --without"
+    )
 
 
 def played_as(mirror: Path) -> dict[str, str]:
@@ -138,6 +186,7 @@ def replay(
     turns: Sequence[int],
     *,
     without: str | None,
+    with_treatment: str | None,
     civ: str,
     victory: str,
     strategy: str,
@@ -161,16 +210,24 @@ def replay(
         "--civ",
         civ,
     ]
+    if without and with_treatment:
+        raise CensusError("a replay arm cannot both force and withhold a treatment")
     if without:
         argv += ["--without", without]
+    if with_treatment:
+        argv += ["--with", with_treatment]
     stdin = "".join(f"{turn}\n" for turn in turns)
     done = subprocess.run(
         argv, input=stdin, capture_output=True, text=True, timeout=timeout
     )
     if done.returncode != 0:
+        arm_label = (
+            f"--without {without}"
+            if without
+            else f"--with {with_treatment}" if with_treatment else "the control"
+        )
         raise CensusError(
-            f"decider exited {done.returncode} for "
-            f"{'--without ' + without if without else 'the control'}: "
+            f"decider exited {done.returncode} for {arm_label}: "
             f"{done.stderr.strip()[-400:]}"
         )
     out: dict[int, str] = {}
@@ -243,6 +300,40 @@ def compare(control: dict[int, str], arm: dict[int, str]) -> dict:
     }
 
 
+def arm_for(
+    name: str,
+    *,
+    active: set[str],
+    withholdable: set[str],
+    forceable: set[str],
+) -> str:
+    """Choose the one meaningful live counterfactual for ``name``.
+
+    An active treatment must be withheld. A ledger-held treatment must be
+    forced; `--without` on that latter case is a double-withhold and exactly
+    reproduces the control. Names that the binary cannot toggle are named as a
+    refusal rather than silently reported inert.
+    """
+    if name in active:
+        if name in withholdable:
+            return "without"
+        raise CensusError(
+            f"{name} is active in the recorded genome but this binary has no "
+            "--without arm for it"
+        )
+    if name in forceable:
+        return "with"
+    if name in withholdable:
+        raise CensusError(
+            f"{name} is already off in the recorded genome and this binary "
+            "has no --with arm for it"
+        )
+    raise CensusError(
+        f"{name} is neither active in the recorded genome nor registered for "
+        "a live --with arm"
+    )
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("mirror", help="a recorded run directory (holds events.jsonl)")
@@ -255,7 +346,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     parser.add_argument(
         "--treatments",
-        help="comma-separated subset; default is every treatment the binary lists",
+        help=(
+            "comma-separated subset; default is every treatment the recorded "
+            "genome and binary can contrast"
+        ),
     )
     parser.add_argument("--bin", default=str(DEFAULT_BIN))
     # Default `None`, not a value: the run's own record is the default, and a
@@ -281,6 +375,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     mirror = Path(args.mirror).expanduser()
     turns = turn_window(mirror, args.turns, args.max_turns)
+    # Fail before paying for two full control replays if the run cannot tell us
+    # which direction would make a real counterfactual.
+    active = live_treatments(mirror)
     # The run's own identity wins over the defaults; an explicit flag wins over
     # both. What was found and what was assumed is printed, because a census run
     # against the wrong seat identity is not distinguishable from a right one in
@@ -304,21 +401,24 @@ def main(argv: Sequence[str] | None = None) -> int:
         file=sys.stderr,
     )
 
-    def run(without: str | None) -> dict[int, str]:
+    def run(
+        *, without: str | None = None, with_treatment: str | None = None
+    ) -> dict[int, str]:
         return replay(
             binary,
             mirror,
             turns,
             without=without,
+            with_treatment=with_treatment,
             civ=seat["civ"],
             victory=seat["victory"],
             strategy=seat["strategy"],
             timeout=args.timeout,
         )
 
-    control = run(None)
+    control = run()
     if not args.skip_control_check:
-        second = run(None)
+        second = run()
         drift = [turn for turn in turns if control.get(turn) != second.get(turn)]
         if drift:
             raise CensusError(
@@ -329,18 +429,43 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         print("control reproduced itself exactly", file=sys.stderr)
 
+    withholdable = set(discover_treatments(binary, mirror))
+    forceable = set(
+        discover_treatments(binary, mirror, option="--with", verb="force")
+    )
     names = (
         [name.strip() for name in args.treatments.split(",") if name.strip()]
         if args.treatments
-        else discover_treatments(binary, mirror)
+        else sorted((active & withholdable) | forceable)
     )
-    print(f"{len(names)} treatments to withhold", file=sys.stderr)
+    unpaired_active = sorted(active - withholdable)
+    print(f"{len(names)} controllable treatment arms", file=sys.stderr)
+    if unpaired_active:
+        print(
+            "active but not registered for --without (skipped by default): "
+            + ", ".join(unpaired_active),
+            file=sys.stderr,
+        )
 
     results: dict[str, dict] = {}
 
     def one(name: str) -> tuple[str, dict]:
         try:
-            return name, compare(control, run(name))
+            arm = arm_for(
+                name,
+                active=active,
+                withholdable=withholdable,
+                forceable=forceable,
+            )
+            row = compare(
+                control,
+                run(
+                    without=name if arm == "without" else None,
+                    with_treatment=name if arm == "with" else None,
+                ),
+            )
+            row["arm"] = f"--{arm}"
+            return name, row
         except (CensusError, subprocess.TimeoutExpired) as exc:
             return name, {"error": str(exc)[:300]}
 
@@ -354,20 +479,24 @@ def main(argv: Sequence[str] | None = None) -> int:
         results.items(),
         key=lambda pair: (-(pair[1].get("share") or 0.0), pair[0]),
     )
-    inert = [name for name, row in ranked if not row.get("error") and row["turns_moved"] == 0]
-    print(f"\n{'treatment':38} {'turns moved':>12} {'share':>7}  first")
+    inert = [
+        name
+        for name, row in ranked
+        if not row.get("error") and row["turns_moved"] == 0
+    ]
+    print(f"\n{'treatment':38} {'arm':>9} {'turns moved':>12} {'share':>7}  first")
     for name, row in ranked:
         if row.get("error"):
-            print(f"{name:38} {'ERROR':>12}          {row['error'][:60]}")
+            print(f"{name:38} {'ERROR':>9} {'':>12}          {row['error'][:60]}")
             continue
         print(
-            f"{name:38} {row['turns_moved']:>5}/{row['turns_compared']:<6} "
+            f"{name:38} {row['arm']:>9} {row['turns_moved']:>5}/{row['turns_compared']:<6} "
             f"{row['share']:>6.1%}  {row['first_moved'] if row['first_moved'] else '-'}"
         )
     print(
         f"\n{len(inert)} of {len(names)} treatments changed no order on this board.\n"
         "That is a screen on ONE recorded game, not a verdict on the treatment: "
-        "re-run on an unlike run before withholding one in a live attempt."
+        "re-run on an unlike run before changing one in a live attempt."
     )
 
     if args.json:
@@ -377,6 +506,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     "mirror": str(mirror),
                     "seat": seat,
                     "turns": turns,
+                    "active_treatments": sorted(active),
                     "results": results,
                 },
                 indent=2,

@@ -14,6 +14,13 @@ none of them is visible from any single machine:
 - **Rescue snapshots.** `civvis_worktree_audit.py --rescue` preserves dirty
   worktrees under `refs/civvis/wip/*` precisely so bytes survive a dead
   session. Preservation without review is a graveyard, not a rescue.
+- **Workflow runs that never end.** A run stuck non-terminal is work GitHub
+  believes is still happening. `release.yml` run 31116714949 — the re-run of
+  the `v0.6.1` tag build — held `queued` with **zero jobs ever allocated** from
+  2026-08-06 until it was cancelled 390 hours later. No `timeout-minutes` can
+  reach that: the timeout clock starts when a runner picks a job up, and this
+  run had no jobs. Nothing in the repository asked whether a run was still
+  alive, so the only bound on it was somebody noticing.
 
 This report upserts a single issue (title below) rather than filing new ones:
 one place to look, no notification pile, and the issue's edit history is the
@@ -50,6 +57,10 @@ ISSUE_TITLE = "Stranded work report"
 ISSUE_LABEL = "stranded-work"
 CLOSE_WINDOW_DAYS = 7
 IDLE_HOURS = 24
+# GitHub cancels a job that has waited 24 hours for a hosted runner, and the
+# longest `timeout-minutes` in this repository is 90. A run still non-terminal
+# past a day is therefore one that cannot finish on its own.
+STUCK_RUN_HOURS = 24
 
 
 def github_url(kind: str, value: str) -> str:
@@ -203,6 +214,40 @@ def rescue_refs() -> list[str]:
     return rows
 
 
+def stuck_runs(now: datetime.datetime) -> list[str]:
+    """Workflow runs GitHub still calls queued or in-progress after a day.
+
+    Asked per status rather than by listing every run and filtering: the
+    repository takes hundreds of runs a day and the two non-terminal states
+    are a handful at any moment, so this is two small pages instead of a
+    paged crawl of the whole history.
+
+    ⚠ Report the run, never cancel it. A long `in_progress` run can be a real
+    build somebody is waiting on; a report that acts on its own findings is
+    how a queue tool becomes the outage.
+    """
+    rows = []
+    for status in ("queued", "in_progress"):
+        try:
+            payload = api(f"/repos/{REPOSITORY}/actions/runs"
+                          f"?status={status}&per_page=100")
+        except Exception:  # noqa: BLE001 - a report that loses one API still reports
+            continue
+        for run in payload.get("workflow_runs", []):
+            started = run.get("run_started_at") or run.get("created_at")
+            if not started:
+                continue
+            age_hours = (now - datetime.datetime.fromisoformat(
+                started.rstrip("Z"))).total_seconds() / 3600
+            if age_hours < STUCK_RUN_HOURS:
+                continue
+            rows.append(
+                f"- [{run.get('name') or 'run'} #{run['id']}]({run['html_url']}) "
+                f"{status} {age_hours / 24:.1f}d on `{run.get('head_branch')}` "
+                f"({run.get('event')}) — {(run.get('display_title') or '')[:70]}")
+    return rows
+
+
 def compose(now: datetime.datetime) -> tuple[str, bool]:
     """The report body, and whether any row actually demands a remedy."""
     sections = [
@@ -214,6 +259,10 @@ def compose(now: datetime.datetime) -> tuple[str, bool]:
         ("Rescue snapshots (`refs/civvis/wip/*`)", rescue_refs(), False,
          "Land what was meant to land; the rest is preserved history and can "
          "stay."),
+        ("Workflow runs that never ended", stuck_runs(now), True,
+         "Check nothing is waiting on it, then `gh run cancel <id>`. Past "
+         "GitHub's own 24-hour queue limit a run will not start on its own, "
+         "and `timeout-minutes` never covered a run with no jobs."),
     ]
     parts = [
         f"_Generated {now.isoformat(timespec='minutes')}Z by "

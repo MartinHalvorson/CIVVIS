@@ -2,8 +2,12 @@
 
 Every change that reached `src/ai.rs` or `src/ai/advanced.rs` under the frozen
 rating anchor, and the argument for why it did not change what the anchor
-plays. This is the paper trail behind `ELO_PROTOCOL_VERSION` and the ledger in
-`docs/EVAL.md`.
+plays. It was the paper trail behind `ELO_PROTOCOL_VERSION` and the ledger in
+`docs/EVAL.md`; the ledgers and the tournament harness were removed on
+2026-08-23 (#2357), and the anchor pin itself stays — `ANCHOR_BEHAVIOUR_FNV`
+in `src/main.rs` still hashes what `AdvancedAi::legacy()` plays, because a
+change that moves it is a change that reached production without a gene in
+front of it. New re-pins still belong here.
 
 ## Why it lives here and not in `src/main.rs`
 
@@ -1402,3 +1406,305 @@ identifiable: **v14 rows are comparable to v12 rows, and v13 rows to neither.**
 `civ6_fidelity.py` had refused a non-Gathering-Storm reference since #1946 and
 the refusal sat in `main`, so three lines of `sqlite3` walked past it. It is in
 `load_cache_database` now.
+
+---
+
+#2078 makes `BasicAi::military_step` drop attack candidates the engine will
+refuse — invisible target, blocked line of sight, wrong melee domain,
+unpayable entry — before scoring, behind `legal_tactical_candidates`: `false`
+in both `BasicAi` constructors, set only by `AdvancedAi::promoted_policy_envoy`
+(production) and withheld by the `advanced_without_legal_candidates` arm. The
+anchor's `legacy()` builds its base from `BasicAi::new()` and never sets the
+flag, and the two new `Game` predicates (`ranged_order_is_legal`,
+`melee_order_is_legal`) are dead code on every frozen path, so `advanced_v1`
+keeps proposing — and having refused — the historical candidates.
+**Verified by playing, not argued**: `advanced_v1_plays_the_same_game_it_always_did`
+passed on this branch at the pre-v15 pin (18,572 decisions,
+`0x3bda_c2f2_b84d_30fc`), and again after merging v15 below at its new pin.
+Production play does change where a refused order previously won the argmax —
+519 authoritative combat-order refusals per censused deployment game, all from
+this loop — see `docs/eval/2026-08-18-the-base-picker-stops-proposing-attacks-the-engine-will-refu.md`.
+
+---
+
+## v15 (2026-08-18) — the Builder can reach the pillaged tile
+
+`has_builder_work` decides whether to *train* a Builder and counts a pillaged
+improvement anywhere in the empire. The Builder's own target sweep tested only
+`valid_improvements`, which a pillaged-but-improved tile fails, and handled
+repair for the tile the Builder already stood on and nowhere else.
+
+Two definitions of "work" that disagreed — the wider one spending the
+production, the narrower one choosing the destination. The empire trained
+Builders for work its Builders could not walk to, and a razed farm went on
+earning nothing until one wandered onto it.
+
+Counted over three 250-turn six-player games: Builders reached a decision with
+no target 3,704 times, and `has_builder_work` said there was work on **508** of
+them.
+
+Unlike almost every entry above, this one is *not* an argument that the change
+was free. It reaches every seat: **18,572 decisions became 18,586** across the
+five anchor profiles.
+
+⚠ Its strength effect is **not measured**. The justification is that two
+definitions of the same thing disagreed and one of them was reachable only by
+accident — a defect repair, not a demonstrated gain. Rows before and after v15
+are not comparable in any game where an improvement was pillaged.
+
+---
+
+## v16 (2026-08-18) — a scout's report raises its own finite raid
+
+Barbarian Scouts now report only cities they can actually see. The reported
+camp then raises one finite, difficulty-shaped raiding party; idle and
+unrelated camps cannot consume that party's slots. Each raider retains the
+camp that raised it, and the report expires after the party has formed.
+
+This is a native-world rule, not an Advanced-AI controller treatment: every
+participant can face the party it creates. The v15 anchor was 18,586 decisions
+and `0x2076_c0d8_5213_9238`; with this correction it is **17,494 decisions**
+and `0x6cf9_b1fa_a854_dcd6` across the five anchor profiles.
+
+Rows before and after v16 are not comparable. This is a rules correction, not
+a compatibility re-pin.
+
+---
+
+## v17 (2026-08-19) — the Great Person roster reaches the Information era
+
+The shipped roster held **29 of Gathering Storm's 213 Great People** and
+stopped at the Atomic era. Every class ran out mid-game, and
+`Game::unused_great_person_faith` — which correctly models Civilization VI's
+`GetFaithFromUnusedGreatPeoplePoints` — then paid the whole Campus, Theatre
+Square and Harbour output out as Faith instead of Great People. The engine was
+right; the content it was reading from was not there.
+
+Measured over eight 6-player 200-turn games, 48 empire-games, paired on the
+same seeds: **26.6% of all non-prophet Great Person points were converted to
+Faith**, and seven of the eight non-prophet classes ran dry — writer by median
+turn 106, artist 139, scientist 159, admiral 160. With 36 individuals added the
+same measurement reports **5.4%**, three classes running dry and none before
+turn 172, and **229 Great People recruited against 125**.
+
+Every addition takes its class, era, cost and charges from the shipped
+`GreatPersonIndividuals` and `Eras` tables, so `tools/civ6_fidelity.py` still
+reports zero divergent fields; the roster row goes from 29/0/0/184 to
+65/0/0/148. Effects use only keys the engine already prices —
+`tools/civvis_inert.py` still reports zero effect keys with no consumer — and
+are class-typical rather than a per-individual translation of each Firaxis
+ability, which would need new engine keys.
+
+This is a shared native-world rule with no controller gate: the recruitment
+market is the same one every participant draws from. The v16 anchor was 17,494
+decisions and `0x6cf9_b1fa_a854_dcd6`; with this correction it is **17,482
+decisions** and `0x8162_c919_b83c_40df` across the five anchor profiles.
+
+Rows before and after v17 are not comparable. This is a rules correction, not a
+compatibility re-pin.
+
+---
+
+## v18 (2026-08-21) — a Barbarian Scout reports the walkers it sees
+
+`Game::barbarian_phase` gates every raid behind a Scout's report, and v16 gave
+each reported outpost a finite, difficulty-shaped party. The report itself
+still accepted **a city alone**, so a camp's whole raid throughput was one
+Scout's round trip to a settlement — and an empire's Settlers, which is what a
+Civilization VI barbarian actually takes, could not start a raid at all. A
+Settler walking past a camp was not a sighting.
+
+MEASURED before the change, `ai_eval live live_without_camp_reach`, 12 pairs /
+72 seat-games an arm at 6p/150t/online on identical seeds: **0.22 civilians
+lost to barbarians per game**. The live Civilization VI seat on the same shape
+(run `civvis-20260821T130446Z`) lost **4 of the 8 Settlers that ever walked,
+in 104 turns**, at a matching city count — 2 cities at t60 against the
+simulation's 2.53. Not an exposure difference; the opponent.
+
+⚠ **CORRECTED 2026-08-21.** This entry first read "8 of 12". The host emits
+`unit_lost` when a Settler **founds a city** — the operation consumes the unit,
+so `CivvisLedger.onUnitRemoved` reports a founding exactly like a capture, and
+counting those events naively doubles the loss. Always subtract the `unit_lost`
+events whose `unit` id also carries a `found` event. Across 89 live runs the
+real settler-loss rate to turn 100 is **23 %**, not the 56 % a naive count
+gives. The conclusion this version rests on is unchanged — the simulation was
+an order of magnitude gentler than the host — but the figure was wrong and is
+corrected here rather than left to propagate.
+
+With the sighting extended, and with the raider pursuit of #2227 that this
+version follows, the same measurement reads **0.61**.
+
+Like v16 this is a **shared native-world rule with no controller gate**: the
+Scout phase runs in the engine and every participant faces the same camps, so
+`AdvancedAi::legacy()` cannot hold it away from the anchor the way
+`barbarian_tactics = false` holds #2227's raider pursuit away. The anchor moves
+from v17's 17,482 decisions and `0x8162_c919_b83c_40df` to **18,596 and
+`0xf78a_2b10_c0e3_5945`** across its five profiles.
+
+⚠ Rows from v17 and earlier are not comparable with v18 — and that includes
+every settler-safety and barbarian-response verdict in `docs/gene_ledger.json`,
+each priced at 13,446 pairs against a barbarian that did not hunt civilians.
+That family needs re-pricing under v18: `home-defense`, `camp-reach`,
+`camp-party`, `civilian-rescue`, `settler-guard-holds`, `stacked-escort`,
+`escort-unstick`, `stranded-settler-discount`.
+
+---
+
+## v19 (2026-08-23) — the Great Person roster completes four classes
+
+v17 took the roster from 29 of Gathering Storm's 213 individuals to 65, which
+stopped every class running dry mid-game. It did not close the content gap:
+`tools/civ6_fidelity.py` still reported **148 individuals the game has and
+CIVVIS does not model at all** — by a wide margin the largest *only in Civ VI*
+row of the 27 audited tables, ahead of Units at 58 and Promotions at 26.
+
+82 more are added here, taking the roster to **147 of 213**. Four classes are
+now complete against the shipped game: every Writer (29), Artist (23), Musician
+(18) and Prophet (16). Those four complete because their whole shipped effect
+is the Great Works they create, and the per-individual count comes from the
+`GreatWorks` table rather than a class constant — which is why Dimitrie
+Cantemir and Scott Joplin leave three works where the other sixteen Musicians
+leave two.
+
+Class, era, cost and charges again come from `GreatPersonIndividuals`, `Eras`
+and `GreatWorks` in the installed Gathering Storm load order, so
+`tools/civ6_fidelity.py` still reports zero divergent fields; the roster row
+goes from 65/0/0/148 to **147/0/0/66**. `tools/civvis_inert.py` still reports
+zero effect keys with no consumer, and
+`every_effect_key_in_the_roster_is_read_by_the_engine` now pins that from the
+data side as well: every key in all 147 rows is checked against the 34 the
+engine branches on, and no row may be effect-less. A Great Person who grants
+nothing is worse than an absent one — `current_great_person` offers one
+individual per class at a time, so an unread key does not merely grant nothing,
+it holds the class at its price.
+
+⚠ The roster is drawn by `min_by_key((era, id))` — era first, then
+alphabetically by id — so a new individual can take an opening draw. Two of the
+nine move: **Aryabhata replaces Hypatia** as the first Great Scientist and
+**Andrei Rublev replaces Donatello** as the first Great Artist, both because
+Gathering Storm's Classical Scientists and Renaissance Artists sort ahead of
+CIVVIS's incumbent. `the_opening_offer_of_every_class_is_pinned` now names all
+nine so the next roster change reports this rather than a recorded game
+discovering it.
+
+This is a shared native-world rule with no controller gate: the recruitment
+market is the same one every participant draws from. The v18 anchor was 18,596
+decisions and `0xf78a_2b10_c0e3_5945`; with this content it is **18,599
+decisions** and `0xf412_82b3_5376_9723` across the five anchor profiles.
+
+⚠ Rows before and after v19 are not comparable for the three genes keyed on
+which individual is offered — `great-person-housing` (ranked 4, on),
+`idle-faith-patronage` (10, on) and `tally-great-people`. Every column in those
+`HEURISTIC_GENE_RANKING.md` rows was measured against 65 individuals; a batch
+whose `batch.source_commit` predates this must not be pooled with one after it
+for them. `docs/eval/2026-08-21-great-people-never-pile-up.md` and
+`docs/eval/2026-08-21-idle-faith-buys-great-people.md` are likewise measured on
+the old roster: the first counts Engineer blocked seat-turns when five of six
+Engineers were wonder-gated (now seven of eight), the second reasons from three
+Great Prophets existing (now sixteen).
+
+## v20 (2026-08-24) — the modifier catalog is imported and four rows change the ruleset
+
+Not an AI change at all: `data/modifiers.json` stopped being `{}`. The catalog
+is now generated by `tools/civ6_modifiers.py --emit-catalog` from the shipped
+`Modifiers`, `DynamicModifiers` and `ModifierArguments` tables, and each CIVVIS
+ruleset object that the game says owns a row attaches its bundle by name, so
+the loader folds the game's own number into that object's effect map. Most of
+the fold restores exactly what CIVVIS already carried and cannot move anything.
+
+Four rows do change the ruleset, and they are why the anchor moves:
+
+- eleven of the thirteen civics that `GRANT_INFLUENCE_TOKEN` pays now award
+  their Envoys. CIVVIS carried Colonialism and Conservation and nothing else,
+  so twenty-one Envoys per game were never handed out. Envoys buy suzerainty,
+  which the AI spends on and plans around, so this is the row that moves the
+  decision stream (#2378);
+- Jakob Fugger awards the two Envoys his row grants. The other four
+  individuals `GRANT_INFLUENCE_TOKEN` reaches — John Jacob Astor, Piero de'
+  Bardi, Raja Todar Mal and Ana Nzinga — arrived with v19's roster already
+  carrying the right amount, so importing them moves the source of the number
+  and not the number;
+- Sweeping Wind gains `MOD_MOVE_AFTER_ATTACKING`, which it shares with Elite
+  Guard and Breakthrough — CIVVIS had given it to the other two only;
+- Computers multiplies Tourism by the +25% `COMPUTERS_BOOST_ALL_TOURISM`
+  states, where CIVVIS carried +100%.
+
+There is no controller gate for any of these: they are ruleset data every
+participant plays under, so `AdvancedAi::legacy()` cannot hold them away from
+the anchor. The anchor moves from v19's 18,599 decisions and
+`0xf412_82b3_5376_9723` to **18,368 and `0x02f8_e0dd_ae0a_d0f2`** across its
+five profiles. Both numbers were re-derived on the merged tree rather than
+carried over: v19 landed while this branch was open, and a constant taken from
+either side alone would match neither ruleset.
+
+## v21 (2026-08-24) — the barbarian seat plays at Immortal whatever the majors' rung
+
+A world rule, by operator directive (2026-08-24): *"We need to make the
+barbarians in civvis more aggressive. Should still roughly match the Civ 6
+behavior. But weak barbarians in civvis leads us to weak training and
+favoring the slightly wrong genes … we are playing on level 5 and higher in
+Civ 6 verification games. Let's make the barbarians level 6 barbarians in
+civvis for now."*
+
+Level 6 on the ladder is Immortal, and Immortal is exactly where the game's
+own `BarbarianAttackForces` changes band: `HighDifficultyStandardRaid` (and
+its cavalry and attack siblings) assembles three melee and two ranged units
+against two and one, at a `SpawnRate` of 1 against 2 — twice as often. Those
+are the rows `data/difficulties.json` has carried since the ladder audit as
+`barb_force_scale 1.5` / `barb_spawn_scale 0.5` (bands exact, sizes
+approximated, `docs/FIDELITY.md`). Until now the barbarian seat read them
+from the *majors'* rung, and every native board — the anchor's five
+profiles, every gene screen, every fires probe — runs at the Prince default,
+so every gene ever priced was priced against the Standard band (two melee
+and one ranged, every other turn). `Game::barbarian_difficulty` is now the
+rung the barbarian seat plays by, `immortal` by default
+(`default_barbarian_difficulty`), settable per game
+(`--barbarian-difficulty`, `Game::set_barbarian_difficulty`); the seat's
+own rung still governs the human's camp Gold and the AI handicaps.
+
+There is no controller gate for this: it is what the world does, and every
+seat in a game meets the same raiders. The anchor moves from v20's 18,368
+decisions and `0x02f8_e0dd_ae0a_d0f2` to **18,790 and `0x32d6_ac78_9161_017f`** across its
+five profiles — more decisions, as more raiders arrive and are answered.
+Two tests that pinned "the majors' rung sizes the raid" now set the
+barbarian rung explicitly and additionally pin that a Settler seat meets the
+Immortal band; the recon-disruption real-game pin holds its board at the
+Standard band, since the barbarians are not what it tests.
+
+What this does to the record: every screen in `docs/gene_screens/` before
+this date, and the ledger's verdicts, measured genes against barbarians
+that raided at half the cadence with three-fifths of the force. The next
+standard screen reprices the pool in the new world; read a gene's newest
+column, not its pooled Diff, until one has landed. Raising further ("we can
+raise more later") is a one-word change to `default_barbarian_difficulty`
+— the data carries Deity at the same band, so a further step is a new
+band in the data or a model of the game's `BARBARIAN_LOWER_THROTTLE_PER_
+DIFFICULTY` and boldness, which CIVVIS does not carry.
+
+## v22 (2026-08-25) — the data ratchet runs, and seven shipped numbers replace seven remembered ones
+
+`tools/civ6_fidelity.py` documented `--max-divergences 0 # CI gate` from the
+day it was written and no workflow ran it. Wired in as
+`civ6_fidelity.py --check --max 0` (#2441), its first run against the
+compiled Gathering Storm database reported ten divergences that every
+gate had been green over. Seven are plain transcriptions and are now the
+shipped values: the Tagma costs 220 Production and 4 Gold upkeep and
+upgrades to the Cuirassier (it was 180, 3, and a Tank — the Knight's own
+successor, `UnitUpgrades`); the Pike and Shot pays 4 upkeep (3); the Prasat
+yields +6 Faith and holds one Relic (+4, two); the Sukiennice +2 Gold (+3);
+the Tlachtli +2 Culture (+1); Eyjafjallajökull's neighbours take +1 Food
+(+2); and the human's camp Gold above Prince, which
+`BARBARIAN_CAMP_GOLD_SCALING` runs −5 per rung to −20 at Deity and the data
+had stopped transcribing at Warlord's +5. The Vampire Castle's mode-only
+terrain, Prince's AI at −1 Combat Strength and Warlord's human bonuses
+under an inverse requirement are waived with their reasons in
+`tools/fidelity_waivers.json`, which a test now caps at thirteen.
+
+There is no controller gate for a ruleset transcription: every seat reads
+the same `data/*.json`. The anchor moves from v21's 18,790 decisions and
+`0x32d6_ac78_9161_017f` to **18,796 and `0x0b7b_b89a_2d86_c831`** across its
+five profiles — a handful more decisions, as Byzantium's Tagma and the
+Aztec and Polish buildings are priced and produced at their shipped values.
+The ratchet is a real number only on a fleet Mac (a hosted runner has no
+database and the step skips by name), so the number to keep at zero is the
+one `ship` validation prints.

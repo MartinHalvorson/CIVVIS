@@ -266,17 +266,28 @@ for home in /Users/martin/civvis-*.sh; do
     say "UNTRACKED SCRIPT: $home has no tools/ops/$name -- it exists only on this disk"
     problems=$((problems+1))
   elif ! cmp -s "$home" "$tracked"; then
-    say "SCRIPT DRIFT: $home differs from tools/ops/$name -- launchd runs the home copy"
+    # ⚠ NOT "launchd runs the home copy", which this line used to say and which
+    # is true of exactly one script: `civvis-sync.sh`, skipped above. Every
+    # other home copy runs because something NAMES it -- `civvis-keeper.sh`
+    # called three of them as `$HOME/...` until 2026-08-23. Say the thing a
+    # reader can act on instead: find the caller, or make the copies match.
+    say "SCRIPT DRIFT: $home differs from tools/ops/$name -- whatever names the home path runs this copy, not the tracked one"
     problems=$((problems+1))
   fi
 done
 
-# --- 4. work that exists only in a worktree ----------------------------------
+# --- 4. work that exists only on this disk -----------------------------------
 # The class every other step here is blind to. Steps 1 and 3 reason about
 # COMMITS; unstaged work has none, so an abandoned tree scores zero on both and
 # passes. This asks the only question that matters — is the content on GitHub —
 # and `--rescue` makes the answer yes for anything dirty, without touching the
 # tree an agent may still be editing.
+#
+# ⚠⚠ IT ALSO LOOKS OUTSIDE THE WORKTREES NOW. On 2026-08-22 the worktree half
+# reported three dirty trees, all three already saved, and was RIGHT — while
+# 2,253 lines of operator scripts and the whole build-parity loop sat in ~ and
+# in the loose non-git ~/civvis-* directories on no git object at all. A
+# `git worktree list` cannot name any of that, so nothing had ever asked.
 audit=$REPO/tools/civvis_worktree_audit.py
 if [[ -x $audit ]]; then
   # --no-fetch: the fetch above already refreshed origin, and re-fetching the
@@ -287,7 +298,15 @@ if [[ -x $audit ]]; then
   while IFS= read -r line; do
     [[ -z $line ]] && continue
     say "$line"
-    [[ $line == DIRTY-ACTIVE:* ]] || problems=$((problems+1))
+    # A rescued line is reported so the sweep log shows what was saved, but it
+    # is not a problem: the bytes are on GitHub. `--quiet` prints only findings,
+    # and the audit appends "; saved <sha> -> ..." to the ones it rescued.
+    # SCAN-BOUNDS is inventory — what the scan declined to open — never a fault.
+    case $line in
+      DIRTY-ACTIVE:*|SCAN-BOUNDS:*) ;;
+      *"; saved "*) ;;
+      *) problems=$((problems+1)) ;;
+    esac
   done < <(python3 "$audit" --repo "$REPO" --rescue --quiet 2>>$LOG)
 else
   say "worktree audit missing at $audit -- cannot say whether work is stranded"

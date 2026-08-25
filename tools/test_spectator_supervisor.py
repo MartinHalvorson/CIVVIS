@@ -6,6 +6,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+import time
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -1240,12 +1241,52 @@ class RecoveryTests(unittest.TestCase):
         idle = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
         spinning = subprocess.Popen([sys.executable, "-c", "while True: pass"])
         try:
-            self.assertGreater(supervisor.process_cpu_percent(spinning.pid), 1.0)
+            # Let interpreter startup finish first. The supervisor measures a
+            # server that has been up and serving, never a process 250ms old,
+            # and startup burn landing inside the sample window is not the
+            # compute this is looking for. Reading it as compute is what made
+            # this test fail on CI with "1.0 not less than 1.0".
+            time.sleep(0.5)
+            self.assertGreater(supervisor.process_cpu_percent(spinning.pid), 50.0)
             self.assertLess(supervisor.process_cpu_percent(idle.pid), 1.0)
         finally:
             for process in (idle, spinning):
                 process.kill()
                 process.wait()
+
+    def test_a_process_that_stopped_computing_stops_reading_as_busy(self):
+        """The reading `process_busy` gates hang recovery on must decay.
+
+        `unavailable_recovery_due` never replaces a busy process unless an
+        operator set `--busy-timeout`, so a measurement that stays high after
+        the work stops leaves a hung game running forever. This is the case
+        the old `ps -o %cpu=` branch got wrong on Linux, where that column is
+        CPU time over the process's whole life.
+        """
+        worked = subprocess.Popen(
+            [sys.executable, "-c",
+             "import time\nend = time.time() + 1.5\n"
+             "while time.time() < end: pass\ntime.sleep(60)"]
+        )
+        try:
+            self.assertGreater(supervisor.process_cpu_percent(worked.pid), 50.0)
+            time.sleep(1.5)
+            self.assertLess(supervisor.process_cpu_percent(worked.pid), 1.0)
+            self.assertFalse(supervisor.process_busy(worked, None))
+        finally:
+            worked.kill()
+            worked.wait()
+
+    def test_cumulative_cpu_column_is_parsed_in_every_shape_ps_prints(self):
+        self.assertAlmostEqual(supervisor.parse_cpu_time("0:00.01"), 0.01)
+        self.assertAlmostEqual(supervisor.parse_cpu_time("  1:30  "), 90.0)
+        self.assertAlmostEqual(supervisor.parse_cpu_time("1:02:03"), 3_723.0)
+        self.assertAlmostEqual(supervisor.parse_cpu_time("2-03:04:05"), 183_845.0)
+        for junk in ("", "   ", "not a time", "1:2:3:4", "-"):
+            self.assertIsNone(supervisor.parse_cpu_time(junk), junk)
+
+    def test_a_zero_window_cannot_yield_a_rate(self):
+        self.assertIsNone(supervisor.process_cpu_percent(os.getpid(), window=0.0))
 
     def test_liveness_probe_reports_truth_without_killing_the_process(self):
         process = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
@@ -2492,103 +2533,6 @@ class RecoveryTests(unittest.TestCase):
             len(started), 2, f"the swap relaunches the server; started {started}"
         )
         self.assertFalse(any("holding it for the next" in m for m in messages))
-
-
-
-class LeagueRosterTests(unittest.TestCase):
-    """The rated exhibition has to move its table without ever rewriting the
-    committed snapshot it started from."""
-
-    def _source(self, directory: str) -> Path:
-        source = Path(directory) / "canonical"
-        snapshot = source / "data" / "league"
-        snapshot.mkdir(parents=True)
-        (snapshot / "league.json").write_text(
-            json.dumps({"round": 3, "strategies": []}), encoding="utf-8"
-        )
-        return source
-
-    def test_auto_records_into_a_runtime_copy_of_the_committed_snapshot(self):
-        with tempfile.TemporaryDirectory() as directory:
-            source = self._source(directory)
-            with (
-                patch.object(supervisor, "SOURCE_ROOT", source),
-                patch.object(supervisor, "LEAGUE_RECORD", True),
-            ):
-                roster, record = supervisor.league_dir("auto")
-                # Resolved again the way every spawn does; the seeded copy is
-                # reused rather than reset back to the snapshot.
-                (roster / "league.json").write_text(
-                    json.dumps({"round": 9, "strategies": []}), encoding="utf-8"
-                )
-                again, _ = supervisor.league_dir("auto")
-
-            self.assertTrue(record)
-            self.assertEqual(roster, source / "league")
-            self.assertEqual(again, roster)
-            snapshot = source / "data" / "league" / "league.json"
-            self.assertEqual(
-                json.loads(snapshot.read_text())["round"],
-                3,
-                "the committed snapshot must stay untouched",
-            )
-            self.assertEqual(json.loads((again / "league.json").read_text())["round"], 9)
-            self.assertTrue(
-                (again / supervisor.MANAGED_ROSTER_MARKER).is_file(),
-                "auto rosters opt into safe controller-family reconciliation",
-            )
-
-    def test_recording_off_seats_from_the_snapshot_and_writes_nothing(self):
-        with tempfile.TemporaryDirectory() as directory:
-            source = self._source(directory)
-            with (
-                patch.object(supervisor, "SOURCE_ROOT", source),
-                patch.object(supervisor, "LEAGUE_RECORD", False),
-            ):
-                roster, record = supervisor.league_dir("auto")
-
-            self.assertFalse(record)
-            self.assertEqual(roster, source / "data" / "league")
-            self.assertFalse((source / "league").exists())
-
-    def test_a_named_roster_is_read_only_unless_recording_is_asked_for(self):
-        with tempfile.TemporaryDirectory() as directory:
-            named = Path(directory) / "roster"
-            named.mkdir()
-            (named / "league.json").write_text("{}", encoding="utf-8")
-            with patch.object(supervisor, "LEAGUE_RECORD", False):
-                self.assertEqual(supervisor.league_dir(str(named))[1], False)
-            with patch.object(supervisor, "LEAGUE_RECORD", True):
-                self.assertEqual(supervisor.league_dir(str(named))[1], True)
-            self.assertFalse(
-                (named / supervisor.MANAGED_ROSTER_MARKER).exists(),
-                "an explicit experimental roster must keep its exact membership",
-            )
-            self.assertIsNone(supervisor.league_dir(str(named / "missing")))
-            self.assertIsNone(supervisor.league_dir("off"))
-
-    def test_the_launch_command_carries_the_roster_and_the_record_flag(self):
-        settings = {
-            "players": 6,
-            "width": 74,
-            "height": 46,
-            "city_states": 9,
-            "turns": 250,
-            "map": "pangaea",
-            "speed": "online",
-        }
-        with tempfile.TemporaryDirectory() as directory:
-            source = self._source(directory)
-            with (
-                patch.object(supervisor, "SOURCE_ROOT", source),
-                patch.object(supervisor, "LEAGUE_RECORD", True),
-                patch.object(supervisor, "LEAGUE_SPEC", "auto"),
-            ):
-                command = supervisor.server_command(8766, settings, False)
-
-        self.assertIn("--league", command)
-        self.assertEqual(command[command.index("--league") + 1], str(source / "league"))
-        self.assertIn("--league-record", command)
 
 
 class LiveRefreshTests(unittest.TestCase):

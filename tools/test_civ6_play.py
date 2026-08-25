@@ -46,6 +46,103 @@ def args(**changes):
     return SimpleNamespace(**values)
 
 
+class TermTakesTheBrainWithIt(unittest.TestCase):
+    """A TERMed harness must not leak the brain that blocks the next game.
+
+    `civ6_play` cleans up through `atexit.register(stop_brain)`, and **atexit
+    does not run on SIGTERM** — CPython's default disposition terminates the
+    process outright. TERM is the ordinary way this harness is stopped (the
+    supervisor's teardown sends it), so every such stop leaked a brain.
+
+    That is not a tidy-up nicety: the climb's `busy()` counts any live
+    `civ6_brain.py` as a running game, so the next attempt dies on "something
+    already holds the game; refusing to stop an unowned run" while the lock file
+    is empty and Civilization VI is down. Measured 2026-08-19 — an orphan sat
+    for 29 minutes and failed every launch in that window.
+    """
+
+    SCRIPT = (
+        "import atexit, os, signal, sys\n"
+        "marker = sys.argv[1]\n"
+        "atexit.register(lambda: open(marker, 'w').write('cleaned'))\n"
+        "{handler}"
+        "os.kill(os.getpid(), signal.SIGTERM)\n"
+        "import time; time.sleep(5)\n"
+    )
+
+    def _run(self, handler: str) -> bool:
+        """Did the atexit cleanup run before the process died to SIGTERM?"""
+        import subprocess
+        with tempfile.TemporaryDirectory() as tmp:
+            marker = os.path.join(tmp, "marker")
+            subprocess.run(
+                [sys.executable, "-c", self.SCRIPT.format(handler=handler), marker],
+                capture_output=True, timeout=30,
+            )
+            return os.path.exists(marker)
+
+    def test_the_default_disposition_skips_atexit(self):
+        """The bug, demonstrated: without a handler the cleanup never runs."""
+        self.assertFalse(
+            self._run(""),
+            "if atexit ran on a default SIGTERM this fix would be unnecessary",
+        )
+
+    def test_raising_systemexit_from_the_handler_runs_atexit(self):
+        """The fix: SystemExit returns to the normal shutdown path."""
+        handler = ("signal.signal(signal.SIGTERM,\n"
+                   "  lambda s, f: (_ for _ in ()).throw(SystemExit(128 + s)))\n")
+        self.assertTrue(
+            self._run(handler),
+            "the handler must let atexit — and so stop_brain — run",
+        )
+
+    def test_term_also_runs_the_finally_that_stops_the_game_and_frees_the_lock(self):
+        """The orphan and the stale lock are ONE bug, and this fix clears both.
+
+        `main` is `try: return _play(args) finally: launcher.stop();
+        gamelock.release()`. A default SIGTERM skips that `finally` as surely as
+        it skips atexit, so a TERMed harness left Civilization VI advancing AND
+        the game lock held AND a brain running. That pair is what blocked the
+        16:46 and 19:00 starts on 2026-08-19: "another run holds the game" with
+        nothing actually playing.
+
+        SystemExit is an exception, so it unwinds through `finally` first and
+        reaches atexit after — game stopped, lock released, brain stopped, in
+        that order. (Raised by the sibling session running the same ladder.)
+        """
+        import subprocess
+        script = (
+            "import atexit, os, signal, sys\n"
+            "d = sys.argv[1]\n"
+            "signal.signal(signal.SIGTERM,\n"
+            "  lambda s, f: (_ for _ in ()).throw(SystemExit(128 + s)))\n"
+            "atexit.register(lambda: open(os.path.join(d, 'brain'), 'w').write('stopped'))\n"
+            "try:\n"
+            "    os.kill(os.getpid(), signal.SIGTERM)\n"
+            "    import time; time.sleep(5)\n"
+            "finally:\n"
+            "    open(os.path.join(d, 'game'), 'w').write('stopped')\n"
+            "    open(os.path.join(d, 'lock'), 'w').write('released')\n"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            subprocess.run([sys.executable, "-c", script, tmp],
+                           capture_output=True, timeout=30)
+            for name, what in (("game", "launcher.stop()"),
+                               ("lock", "gamelock.release()"),
+                               ("brain", "atexit stop_brain")):
+                self.assertTrue(
+                    os.path.exists(os.path.join(tmp, name)),
+                    f"a TERMed harness must still reach {what}")
+
+    def test_the_harness_installs_the_handler(self):
+        source = (Path(__file__).resolve().parent / "civ6_play.py").read_text()
+        self.assertIn("signal.signal(signal.SIGTERM", source,
+                      "civ6_play must catch TERM so its brain is stopped")
+        self.assertIn("atexit.register(stop_brain)", source,
+                      "and the cleanup it returns to must still be registered")
+
+
 class Civ6PlayTest(unittest.TestCase):
     def test_supervised_defaults_are_stock_and_aim_at_a_lane_that_lands(self) -> None:
         """The value itself is argued and pinned in `test_ops_ladder_objective.py`,
@@ -384,6 +481,7 @@ class Civ6PlayTest(unittest.TestCase):
 
     def test_place_game_sizes_before_positioning_the_upper_quadrant(self) -> None:
         with patch.object(civ6_play, "desktop_size", return_value=(1512, 982)), \
+             patch.object(civ6_play, "game_window", return_value=None), \
              patch.object(civ6_play.subprocess, "run") as run:
             civ6_play.place_game("right", 0.5, 0.5)
 
@@ -391,6 +489,14 @@ class Civ6PlayTest(unittest.TestCase):
         self.assertLess(script.index("set size"), script.index("set position"))
         self.assertIn("set size to {756, 480}", script)
         self.assertIn("set position to {756, 33}", script)
+
+    def test_place_game_does_not_rewrite_an_unchanged_frame(self) -> None:
+        with patch.object(civ6_play, "desktop_size", return_value=(1512, 982)), \
+             patch.object(civ6_play, "game_window", return_value=(756, 33, 756, 480)), \
+             patch.object(civ6_play.subprocess, "run") as run:
+            civ6_play.place_game("right", 0.5, 0.5)
+
+        run.assert_not_called()
 
     def test_screen_locked_reads_console_session_state(self) -> None:
         with patch.object(
@@ -470,7 +576,8 @@ class Civ6PlayTest(unittest.TestCase):
 
         self.assertFalse(started)
         setter.assert_called_once_with(
-            (100, 33, 756, 480), "difficulty", "DIFFICULTY_SETTLER", Path(temporary)
+            (100, 33, 756, 480), "difficulty", "DIFFICULTY_SETTLER", Path(temporary),
+            panel=None, panel_out=mock.ANY,
         )
         screenshot.assert_not_called()
         leader.assert_not_called()
@@ -488,16 +595,24 @@ class Civ6PlayTest(unittest.TestCase):
             started = civ6_play.configure_and_start((100, 33, 756, 480), args(), Path(temporary))
 
         self.assertTrue(started)
+        # Every row is handed the capture the previous row proved on (the mocks
+        # prove on nothing, so it stays None) and the same dict to prove into.
         self.assertEqual(
             setter.call_args_list,
             [
-                call((100, 33, 756, 480), "difficulty", "DIFFICULTY_SETTLER", Path(temporary)),
-                call((100, 33, 756, 480), "map_size", "MAPSIZE_SMALL", Path(temporary)),
-                call((100, 33, 756, 480), "speed", "GAMESPEED_ONLINE", Path(temporary)),
+                call((100, 33, 756, 480), "difficulty", "DIFFICULTY_SETTLER", Path(temporary),
+                     panel=None, panel_out=mock.ANY),
+                call((100, 33, 756, 480), "map_size", "MAPSIZE_SMALL", Path(temporary),
+                     panel=None, panel_out=mock.ANY),
+                call((100, 33, 756, 480), "speed", "GAMESPEED_ONLINE", Path(temporary),
+                     panel=None, panel_out=mock.ANY),
             ],
         )
+        shared = setter.call_args_list[0].kwargs["panel_out"]
+        self.assertTrue(all(c.kwargs["panel_out"] is shared for c in setter.call_args_list))
         leader.assert_called_once_with(
-            (100, 33, 756, 480), "LEADER_TRAJAN", Path(temporary)
+            (100, 33, 756, 480), "LEADER_TRAJAN", Path(temporary),
+            panel=None, panel_out=shared, hint_dir=Path(temporary).parent,
         )
         screenshot.assert_called_once_with(Path(temporary) / "setup.png")
         observed.assert_called_once_with(
@@ -743,6 +858,29 @@ class Civ6PlayTest(unittest.TestCase):
         self.assertEqual(point, (1156, 309))
         crop.assert_called_once_with(Path("submenu.png"), (756, 33, 756, 480))
 
+    def test_load_action_retries_with_its_enlarged_bottom_strip(self) -> None:
+        observation = {
+            "text": "Load Game", "x": 0.70, "y": 0.49,
+            "width": 0.04, "height": 0.02,
+        }
+        bounds = (756, 33, 756, 480)
+        with patch.object(civ6_play, "desktop_size", return_value=(1512, 982)), \
+             patch.object(civ6_play, "recognize_once", return_value=[]), \
+             patch.object(civ6_play, "_menu_crop_ocr",
+                          side_effect=[[], [observation]]) as crop:
+            points = civ6_play._observed_label_points(
+                Path("load-selected.png"), "Load Game", bounds,
+                strip=civ6_play.LOAD_GAME_ACTION_STRIP,
+            )
+
+        self.assertEqual(points, [(1088, 491)])
+        self.assertEqual(
+            crop.call_args_list,
+            [call(Path("load-selected.png"), bounds),
+             call(Path("load-selected.png"), bounds,
+                  strip=civ6_play.LOAD_GAME_ACTION_STRIP, tag="strip")],
+        )
+
     def test_setup_value_readback_distinguishes_standard_speed_from_map_size(self) -> None:
         observations = [
             {"text": "Standard", "x": 0.74, "y": 0.185,
@@ -823,6 +961,7 @@ class Civ6PlayTest(unittest.TestCase):
             os.utime(newer, (2_000, 2_000))
             os.utime(stray, (3_000, 3_000))
             self.assertEqual(civ6_play.latest_autosave(folder), newer)
+            self.assertEqual(civ6_play.recent_autosaves(folder), [newer, older])
             self.assertEqual(civ6_play.latest_autosave(folder, newer_than=1_500), newer)
             self.assertIsNone(civ6_play.latest_autosave(folder, newer_than=2_500),
                               "nothing written since the attempt began")
@@ -1162,6 +1301,33 @@ class CounterResolutionConfigTests(unittest.TestCase):
         self.assertIs(cfg["CounterResolutions"], False)
 
 
+class SettlerEscortCapSyncConfigTests(unittest.TestCase):
+    """The cap reconciliation is an explicit host experiment, never a default."""
+
+    @staticmethod
+    def _config(**changes):
+        class Defaults(SimpleNamespace):
+            def __getattr__(self, name):
+                return None
+
+        return civ6_play.build_config(
+            Defaults(tag="t", game_mode=[],
+                     difficulty="DIFFICULTY_SETTLER", map_size="MAPSIZE_SMALL",
+                     speed="GAMESPEED_ONLINE", map="Continents.lua",
+                     leader="LEADER_TRAJAN", **changes))
+
+    def test_only_the_explicit_arm_reaches_the_mod(self) -> None:
+        self.assertIs(self._config(settler_escort_cap_sync=False)
+                      ["SettlerEscortCapSync"], False)
+        self.assertIs(self._config(settler_escort_cap_sync=True)
+                      ["SettlerEscortCapSync"], True)
+
+    def test_the_cli_declares_an_off_default(self) -> None:
+        source = (Path(__file__).resolve().parent / "civ6_play.py").read_text()
+        self.assertIn('ap.add_argument("--settler-escort-cap-sync", action="store_true", '
+                      'default=False,', source)
+
+
 class PeaceDeterrenceConfigTests(unittest.TestCase):
     """⚠ A flag the mod never receives is a flag that does nothing (#1098's
     lesson): the key has to reach the baked config, and the Lua has to read it.
@@ -1209,8 +1375,37 @@ class ScreenshotFailureTests(unittest.TestCase):
              patch.object(civ6_play.time, "sleep") as sleep:
             landed = civ6_play.screenshot(Path(temporary) / "missing.png")
         self.assertFalse(landed)
-        self.assertEqual(run.call_count, 2, "the capture is retried once")
-        sleep.assert_called_once()
+        self.assertEqual(run.call_count, len(civ6_play.SHOT_BACKOFF_SECONDS) + 1,
+                         "every backoff step is spent before giving up")
+        self.assertEqual([call.args[0] for call in sleep.call_args_list],
+                         list(civ6_play.SHOT_BACKOFF_SECONDS),
+                         "and it waits longer each time")
+
+    def test_the_capture_rides_out_a_spike_that_outlasts_one_retry(self) -> None:
+        """The 2026-08-19 failure: two captures a second apart sample one spike
+        twice, and the launch dies. A shot that lands on the third attempt is
+        the whole point of the backoff."""
+        with tempfile.TemporaryDirectory() as temporary, \
+             patch.object(civ6_play.time, "sleep"):
+            path = Path(temporary) / "late.png"
+            attempts = []
+
+            def spike(cmd, **_):
+                attempts.append(1)
+                if len(attempts) >= 3:
+                    path.write_bytes(b"x")
+
+            with patch.object(civ6_play.subprocess, "run", side_effect=spike):
+                self.assertTrue(civ6_play.screenshot(path),
+                                "the shot that lands late still counts")
+        self.assertEqual(len(attempts), 3)
+
+    def test_the_backoff_escalates_and_is_bounded(self) -> None:
+        """Escalating, because a flat retry samples one spike twice; bounded,
+        because a poll that sleeps forever is worse than an unreadable one."""
+        steps = civ6_play.SHOT_BACKOFF_SECONDS
+        self.assertEqual(list(steps), sorted(steps), "each wait is longer")
+        self.assertLess(sum(steps), 10.0, "and the whole schedule stays short")
 
     def test_a_capture_that_lands_is_true_first_try(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -1280,6 +1475,27 @@ class ScreenshotFailureTests(unittest.TestCase):
                 "LEADER_TRAJAN")
         self.assertFalse(visible)
 
+    def test_menu_label_probe_survives_an_unavailable_ocr(self) -> None:
+        """A zero-dimensioned menu shot must consume a poll, not the attempt."""
+        civ6_play._OCR_CACHE.clear()
+        with patch.object(civ6_play, "desktop_size", return_value=(1512, 982)), \
+             patch.object(civ6_play, "_menu_crop_ocr", return_value=[]), \
+             patch.object(
+                 civ6_play.macos_ocr, "recognize",
+                 side_effect=civ6_play.macos_ocr.OCRUnavailable("0 x 0")) as recognize:
+            point = civ6_play._observed_label_point(
+                Path("zero-sized-menu.png"), "Single Player", (756, 33, 756, 480))
+        self.assertIsNone(point)
+        recognize.assert_called_once_with(Path("zero-sized-menu.png"))
+
+    def test_main_menu_visibility_survives_an_unavailable_ocr(self) -> None:
+        civ6_play._OCR_CACHE.clear()
+        with patch.object(
+                civ6_play.macos_ocr, "recognize",
+                side_effect=civ6_play.macos_ocr.OCRUnavailable("0 x 0")):
+            visible = civ6_play._main_menu_visible(Path("zero-sized-menu.png"))
+        self.assertFalse(visible)
+
 
 class LiveControlArmTests(unittest.TestCase):
     """The control arm's route to a live game. `civvis_orders --without` has
@@ -1291,7 +1507,7 @@ class LiveControlArmTests(unittest.TestCase):
         values = {
             "civvis_victory": "science", "civvis_strategy": "auto",
             "civvis_war_from_plan": False, "civvis_refresh_seconds": None,
-            "civvis_without": [], "timeout": 7200.0,
+            "civvis_with": [], "civvis_without": [], "timeout": 7200.0,
         }
         values.update(changes)
         return SimpleNamespace(**values)
@@ -1303,6 +1519,18 @@ class LiveControlArmTests(unittest.TestCase):
 
     def test_the_full_bundle_withholds_nothing(self) -> None:
         self.assertNotIn("--without", self._cmd())
+        self.assertNotIn("--with", self._cmd())
+
+    def test_each_forced_ledger_treatment_reaches_the_decider(self) -> None:
+        cmd = self._cmd(civvis_with=["stacked-escort", "settler-stack-discipline"])
+        pairs = [(cmd[i], cmd[i + 1]) for i, tok in enumerate(cmd)
+                 if tok == "--with"]
+        self.assertEqual(
+            pairs,
+            [("--with", "stacked-escort"),
+             ("--with", "settler-stack-discipline")],
+            "each force-on treatment needs its own flag for an attributable arm",
+        )
 
     def test_each_withheld_treatment_reaches_the_decider(self) -> None:
         cmd = self._cmd(civvis_without=["peacetime-deterrence", "stacked-escort"])
@@ -1342,6 +1570,7 @@ class SupervisedBrainCommandTests(unittest.TestCase):
             "civvis_strategy": "auto",
             "civvis_war_from_plan": False,
             "civvis_refresh_seconds": None,
+            "civvis_with": [],
             "civvis_without": [],
             "timeout": 7200.0,
         }
@@ -1631,5 +1860,464 @@ class VictoryLaneListTests(unittest.TestCase):
                 )
 
 
+
+class AnAbandonedGameIsOneTheLadderChoseNotToPlayOut(unittest.TestCase):
+    """Operator request 2026-08-19: "ok to abandon games early if expected win
+    rate <5%". The rule is a measured table (`ABANDON_CELLS`), the estimate is
+    a Laplace rate so thin evidence never clears the floor, patience guards a
+    one-turn dip, and the ending is filed as its own reason. The fit script, so
+    the table can be re-measured when the ladder climbs::
+
+        for each run with summary.json + events.jsonl that reached a terminal
+        result (victory, our defeat, or `stopped` at max_turns): walk the agent
+        `turn` events; a cell (T, R) FIRES on the first turn >= T whose
+        score/rival_best < R for five consecutive turns; count fired runs and
+        the wins among them. 2026-08-19, 48 runs, 7 wins: (100, 0.60) 0/25,
+        (120, 0.75) 0/34; the wins' low-water marks after t120 were 0.87 and
+        0.88. (120, 0.90) also read 0/38 and was NOT taken — a tenth above a
+        real comeback is no margin at all.
+    """
+
+    def test_the_estimate_is_the_laplace_rate_of_the_best_evidenced_cell(self):
+        # (120, 0.75): 0 of 34 → 1/36
+        self.assertAlmostEqual(civ6_play.expected_win_rate(150, 300, 500), 1 / 36)
+        # (100, 0.60) alone: 0 of 25 → 1/27
+        self.assertAlmostEqual(civ6_play.expected_win_rate(105, 290, 500), 1 / 27)
+        # both match: the thinnest (best-evidenced zero) decides
+        self.assertAlmostEqual(civ6_play.expected_win_rate(130, 290, 500), 1 / 36)
+
+    def test_the_table_does_not_speak_where_it_counted_nothing(self):
+        # level, ahead, or early: no cell, no estimate — and never an abandon
+        self.assertIsNone(civ6_play.expected_win_rate(150, 500, 500))
+        self.assertIsNone(civ6_play.expected_win_rate(150, 400, 500))   # 0.80
+        self.assertIsNone(civ6_play.expected_win_rate(90, 100, 500))    # early
+        # unreadable standing: the mirror has not reported a rival yet
+        self.assertIsNone(civ6_play.expected_win_rate(150, 100, None))
+        self.assertIsNone(civ6_play.expected_win_rate(150, None, 500))
+        self.assertIsNone(civ6_play.expected_win_rate(150, 100, 0))
+
+    def test_every_cell_clears_the_operators_floor_on_its_own_evidence(self):
+        """A cell that could not put its own Laplace rate under 5% would fire
+        on nothing but thin evidence; refuse to carry one."""
+        for floor, ceiling, wins, games in civ6_play.ABANDON_CELLS:
+            with self.subTest(cell=(floor, ceiling)):
+                self.assertLess((wins + 1) / (games + 2), 0.05)
+                self.assertGreaterEqual(games, 20)
+
+    def _turn(self, turn, score, rival, ctx="agent"):
+        return {"kind": "turn", "ctx": ctx, "turn": turn, "score": score,
+                "rival_best": rival}
+
+    def test_five_consecutive_hopeless_turns_abandon_and_one_recovery_resets(self):
+        state = {}
+        for turn in range(120, 124):
+            self.assertIsNone(
+                civ6_play.abandon_reading(state, self._turn(turn, 300, 500), 0.05))
+        # a fifth: the verdict, carrying what it saw
+        verdict = civ6_play.abandon_reading(state, self._turn(124, 300, 500), 0.05)
+        self.assertEqual(verdict["turn"], 124)
+        self.assertEqual(verdict["consecutive_turns"], 5)
+        self.assertEqual((verdict["score"], verdict["rival_best"]), (300, 500))
+        self.assertEqual(verdict["floor"], 0.05)
+        self.assertAlmostEqual(verdict["expected_win_rate"], round(1 / 36, 4))
+        # a readable turn back over the floor resets the count
+        state = {}
+        for turn in range(120, 124):
+            civ6_play.abandon_reading(state, self._turn(turn, 300, 500), 0.05)
+        self.assertIsNone(
+            civ6_play.abandon_reading(state, self._turn(124, 450, 500), 0.05))
+        self.assertEqual(state["abandon_streak"], 0)
+        self.assertIsNone(
+            civ6_play.abandon_reading(state, self._turn(125, 300, 500), 0.05))
+
+    def test_a_repeated_turn_counts_once_and_silence_is_not_recovery(self):
+        state = {}
+        for _ in range(5):   # the agent re-reports one turn five times
+            self.assertIsNone(
+                civ6_play.abandon_reading(state, self._turn(130, 300, 500), 0.05))
+        self.assertEqual(state["abandon_streak"], 1)
+        # a turn with no standing neither counts nor resets
+        self.assertIsNone(
+            civ6_play.abandon_reading(state, self._turn(131, 300, None), 0.05))
+        self.assertEqual(state["abandon_streak"], 1)
+        # a non-agent context is ignored entirely
+        self.assertIsNone(
+            civ6_play.abandon_reading(state, self._turn(132, 300, 500, ctx="x"), 0.05))
+        self.assertEqual(state["abandon_streak"], 1)
+
+    def test_no_floor_means_every_game_is_played_out(self):
+        state = {}
+        for turn in range(120, 140):
+            self.assertIsNone(
+                civ6_play.abandon_reading(state, self._turn(turn, 100, 500), 0.0))
+        self.assertNotIn("abandon_streak", state)
+
+    def test_an_abandoned_game_is_filed_as_abandoned_and_nothing_else_is(self):
+        """`reason` is the only field saying how a game ended. The harness's
+        own stop takes it; a game that exited or stalled in the same poll keeps
+        that ending; a refusal still outranks everything."""
+        abandoned = {"turn": 124, "expected_win_rate": 0.0278, "floor": 0.05}
+        state = {"abandoned": abandoned, "seat": {"x": 1}, "configured": True,
+                 "ruleset_match": True, "mode_mismatch": False}
+        self.assertEqual(civ6_play.summary_reason(state, "stopped"), "abandoned")
+        self.assertEqual(civ6_play.summary_reason(state, "game exited"),
+                         "game exited")
+        self.assertEqual(civ6_play.summary_reason(state, "stalled: no event for 240s"),
+                         "stalled: no event for 240s")
+        state["ruleset_match"] = False
+        self.assertEqual(civ6_play.summary_reason(state, "stopped"), "wrong_ruleset")
+        clean = {"seat": {"x": 1}, "configured": True, "ruleset_match": True,
+                 "mode_mismatch": False}
+        self.assertEqual(civ6_play.summary_reason(clean, "stopped"), "stopped")
+
+    def test_the_flag_and_the_summary_field_exist(self):
+        source = (Path(__file__).resolve().parent / "civ6_play.py").read_text(
+            encoding="utf-8")
+        self.assertIn('"--abandon-below-win-rate"', source)
+        self.assertIn('"--restart-below-leader-ratio"', source)
+        self.assertIn('"abandoned": state.get("abandoned"),', source)
+        self.assertIn("abandon_reading(state, event, args.abandon_below_win_rate)",
+                      source)
+        self.assertIn("behind_all_metrics_reading(", source)
+        # The deal lane's tally rides the summary beside the orders totals.
+        self.assertIn('deals = civ6_ladder.deal_totals(run_dir / "events.jsonl")', source)
+        self.assertIn('summary["deals"] = deals', source)
+
+
+class AThreeSignalRestartDoesNotTreatScoreAsEnough(unittest.TestCase):
+    """The operator's 70 % rule must lose on every named axis, consecutively."""
+
+    @staticmethod
+    def _state(turn, science, culture, rivals, ctx="agent"):
+        return {"kind": "state", "ctx": ctx, "turn": turn,
+                "science": science, "culture": culture, "rivals": rivals}
+
+    @staticmethod
+    def _turn(turn, score, rival_best, ctx="agent"):
+        return {"kind": "turn", "ctx": ctx, "turn": turn,
+                "score": score, "rival_best": rival_best}
+
+    def _reading(self, state, turn, score=69, rival_best=100,
+                 science=9, culture=8, rivals=None):
+        if rivals is None:
+            rivals = [{"science": 10, "culture": 10}]
+        self.assertIsNone(civ6_play.behind_all_metrics_reading(
+            state, self._state(turn, science, culture, rivals), 0.70))
+        return civ6_play.behind_all_metrics_reading(
+            state, self._turn(turn, score, rival_best), 0.70)
+
+    def test_score_science_and_culture_must_all_be_deficits(self):
+        for label, values in (
+            ("score at ceiling", {"score": 70}),
+            ("science tied", {"science": 10}),
+            ("culture tied", {"culture": 10}),
+        ):
+            with self.subTest(label=label):
+                state = {}
+                self.assertIsNone(self._reading(state, 100, **values))
+                self.assertEqual(state["behind_all_metrics_streak"], 0)
+
+    def test_five_current_readings_fire_and_a_recovery_resets(self):
+        state = {}
+        rivals = [{"science": 8, "culture": 10},
+                  {"science": 10, "culture": 8}]
+        for turn in range(100, 104):
+            self.assertIsNone(self._reading(state, turn, rivals=rivals))
+        verdict = self._reading(state, 104, rivals=rivals)
+        self.assertEqual(verdict["rule"], "score_science_culture_deficit")
+        self.assertEqual(verdict["consecutive_turns"], 5)
+        self.assertAlmostEqual(verdict["score_ratio"], 0.69)
+        self.assertEqual((verdict["rival_best_science"],
+                          verdict["rival_best_culture"]), (10, 10))
+        # A current state sample that is no longer behind on culture resets it.
+        self.assertIsNone(self._reading(state, 105, culture=10, rivals=rivals))
+        self.assertEqual(state["behind_all_metrics_streak"], 0)
+        self.assertIsNone(self._reading(state, 106, rivals=rivals))
+        self.assertEqual(state["behind_all_metrics_streak"], 1)
+
+    def test_stale_or_unreadable_standings_never_count(self):
+        state = {}
+        self.assertIsNone(civ6_play.behind_all_metrics_reading(
+            state, self._state(99, 9, 8, [{"science": 10, "culture": 10}]), 0.70))
+        self.assertIsNone(civ6_play.behind_all_metrics_reading(
+            state, self._turn(100, 69, 100), 0.70))
+        self.assertNotIn("behind_all_metrics_streak", state)
+        self.assertIsNone(self._reading(
+            state, 101, rivals=[{"science": -1, "culture": -1}]))
+        self.assertNotIn("behind_all_metrics_streak", state)
+        self.assertIsNone(self._reading(state, 102))
+        self.assertEqual(state["behind_all_metrics_streak"], 1)
+        # Disabled remains a complete no-op, including on a fully bad reading.
+        disabled = {}
+        self.assertIsNone(civ6_play.behind_all_metrics_reading(
+            disabled, self._state(102, 9, 8, [{"science": 10, "culture": 10}]), 0.0))
+        self.assertIsNone(civ6_play.behind_all_metrics_reading(
+            disabled, self._turn(102, 69, 100), 0.0))
+        self.assertNotIn("behind_all_metrics_streak", disabled)
+
+
+class AResumeStagesTheAutosaveWhereTheListShowsIt(unittest.TestCase):
+    """★ The Load Game list opens on the manual saves and hides the autosave
+    rotation behind a filter checkbox the screen reader misses at the operator
+    layout's scale. Both freeze-resumes of 2026-08-19 died there, 0 turns each
+    — one of them costing a live t139 game at 75 % of the leader. The staged
+    copy in ``Saves/Single`` is the row the default list already shows, as the
+    manual recovery of 2026-08-16 (``resume-autosave-0189.Civ6Save``) proved."""
+
+    def _dirs(self, base):
+        single = Path(base) / "Single"
+        (single / "auto").mkdir(parents=True)
+        return single
+
+    def test_an_autosave_is_staged_under_the_constant_stem(self):
+        with tempfile.TemporaryDirectory() as base:
+            single = self._dirs(base)
+            source = single / "auto" / "AutoSave_0062.Civ6Save"
+            source.write_bytes(b"save-bytes")
+            staged = civ6_play.stage_resume_save(source, single_dir=single)
+            self.assertEqual(staged, single / "civvis-resume.Civ6Save")
+            self.assertEqual(staged.read_bytes(), b"save-bytes")
+            # and the source stays where the rotation owns it
+            self.assertTrue(source.is_file())
+
+    def test_a_second_resume_overwrites_rather_than_accumulates(self):
+        with tempfile.TemporaryDirectory() as base:
+            single = self._dirs(base)
+            first = single / "auto" / "AutoSave_0010.Civ6Save"
+            first.write_bytes(b"one")
+            second = single / "auto" / "AutoSave_0020.Civ6Save"
+            second.write_bytes(b"two")
+            civ6_play.stage_resume_save(first, single_dir=single)
+            staged = civ6_play.stage_resume_save(second, single_dir=single)
+            self.assertEqual(staged.read_bytes(), b"two")
+            saves = [p.name for p in single.iterdir() if p.is_file()]
+            self.assertEqual(saves, ["civvis-resume.Civ6Save"])
+
+    def test_a_manual_save_is_the_row_the_caller_meant(self):
+        """A --load-save naming a save outside the rotation is not rewritten:
+        the operator asked for that exact row."""
+        with tempfile.TemporaryDirectory() as base:
+            single = self._dirs(base)
+            manual = single / "my-regression.Civ6Save"
+            manual.write_bytes(b"manual")
+            self.assertEqual(
+                civ6_play.stage_resume_save(manual, single_dir=single), manual)
+            self.assertFalse((single / "civvis-resume.Civ6Save").exists())
+
+    def test_a_failed_copy_falls_back_to_the_filter_path(self):
+        """Weak resume beats no resume: the original path keeps the old
+        Autosaves-filter attempt in force."""
+        with tempfile.TemporaryDirectory() as base:
+            single = self._dirs(base)
+            source = single / "auto" / "AutoSave_0062.Civ6Save"
+            source.write_bytes(b"save-bytes")
+            with mock.patch.object(civ6_play.shutil, "copy2",
+                                   side_effect=OSError("disk full")):
+                self.assertEqual(
+                    civ6_play.stage_resume_save(source, single_dir=single),
+                    source)
+
+    def test_bootstrap_reads_the_staged_stem_not_the_autosave_name(self):
+        source = (Path(__file__).resolve().parent / "civ6_play.py").read_text(
+            encoding="utf-8")
+        self.assertIn("save_path = stage_resume_save(Path(args.load_save))", source)
+        self.assertIn("save_label = save_path.stem", source)
+        self.assertNotIn("save_label = Path(args.load_save).stem", source)
+
+
 if __name__ == "__main__":
     unittest.main()
+
+
+class TheSetupScreenIsReadOnceAndLookedAtNotSleptThrough(unittest.TestCase):
+    """The setup levers of 2026-08-24: no flat sleeps, one OCR pass per capture."""
+
+    def setUp(self) -> None:
+        civ6_play._OCR_CACHE.clear()
+
+    def test_poll_screen_returns_the_moment_the_screen_answers(self) -> None:
+        clock = {"now": 0.0}
+        reads = iter([None, None, ("point", ["a", "b", "c", "d"])])
+        slept = []
+
+        def sleep(seconds: float) -> None:
+            slept.append(seconds)
+            clock["now"] += seconds
+
+        with patch.object(civ6_play.time, "monotonic", lambda: clock["now"]), \
+             patch.object(civ6_play.time, "sleep", sleep):
+            result = civ6_play._poll_screen(lambda: next(reads), budget_s=20.0, poll_s=3.0)
+
+        self.assertEqual(result, ("point", ["a", "b", "c", "d"]))
+        self.assertEqual(slept, [3.0, 3.0])
+
+    def test_poll_screen_gives_up_after_its_budget_without_a_flat_sleep(self) -> None:
+        clock = {"now": 0.0}
+        looks = []
+
+        def sleep(seconds: float) -> None:
+            clock["now"] += seconds
+
+        with patch.object(civ6_play.time, "monotonic", lambda: clock["now"]), \
+             patch.object(civ6_play.time, "sleep", sleep):
+            result = civ6_play._poll_screen(lambda: looks.append(1), budget_s=20.0, poll_s=3.0)
+
+        self.assertIsNone(result)
+        # Looks at 0, 3, 6, 9, 12, 15 and 18 s, and one last look once the
+        # budget has run out at 21 s -- eight, where one flat sleep gave one.
+        self.assertEqual(len(looks), 8)
+
+    def test_the_bootstrap_polls_the_menu_instead_of_sleeping_twenty_seconds(self) -> None:
+        import inspect
+        source = inspect.getsource(civ6_play.bootstrap_game)
+        self.assertIn("_poll_screen(read_top_menu)", source)
+        self.assertIn("_poll_screen(read_submenu)", source)
+        # Two flat waits remain and neither is on the path every game takes:
+        # no game WINDOW yet (the launcher has already seen the menu in the
+        # log by then), and a submenu that read rows but no Create Game label.
+        # The unreadable-menu and no-submenu branches -- the ones the ledger's
+        # first attempt of every game hit -- sleep nothing after the poll.
+        self.assertEqual(source.count("time.sleep(20.0)"), 2)
+        unreadable = source.split("refusing a blind menu click")[1].split("click_at(*menu_point)")[0]
+        self.assertNotIn("time.sleep(20.0)", unreadable)
+        no_submenu = source.split("the menu is not ready yet")[1].split("blind_strikes = 0\n        if len(rows) > 6")[0]
+        self.assertNotIn("time.sleep(20.0)", no_submenu)
+
+    def test_a_capture_is_recognized_once_until_it_changes(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            shot = Path(temporary) / "panel.png"
+            shot.write_bytes(b"first capture")
+            with patch.object(civ6_play.macos_ocr, "recognize",
+                              return_value=[{"text": "Settler"}]) as recognize:
+                first = civ6_play.recognize_once(shot)
+                second = civ6_play.recognize_once(shot)
+                first.append({"text": "mutated by the caller"})
+                third = civ6_play.recognize_once(shot)
+                shot.write_bytes(b"a fresh capture under the same name!")
+                fourth = civ6_play.recognize_once(shot)
+
+        self.assertEqual(recognize.call_count, 2)
+        self.assertEqual(second, [{"text": "Settler"}])
+        self.assertEqual(third, [{"text": "Settler"}])
+        self.assertEqual(fourth, [{"text": "Settler"}])
+
+    def test_a_missing_capture_is_not_cached_and_still_raises(self) -> None:
+        with patch.object(civ6_play.macos_ocr, "recognize",
+                          side_effect=OSError("no such file")):
+            with self.assertRaises(OSError):
+                civ6_play.recognize_once(Path("/nowhere/at/all.png"))
+        self.assertEqual(civ6_play._OCR_CACHE, {})
+
+    def test_a_dropdown_starts_from_the_capture_another_row_proved_on(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            proved = Path(temporary) / "dropdown-difficulty-selected.png"
+            proved.write_bytes(b"x")
+            out: dict = {}
+            with patch.object(civ6_play, "screenshot") as screenshot, \
+                 patch.object(civ6_play, "_setup_current_value",
+                              return_value=("MAPSIZE_SMALL", (10, 20))) as read, \
+                 patch.object(civ6_play, "click_at") as click:
+                ok = civ6_play.set_dropdown((0, 0, 756, 480), "map_size", "MAPSIZE_SMALL",
+                                            Path(temporary), panel=proved, panel_out=out)
+
+        self.assertTrue(ok)
+        screenshot.assert_not_called()
+        read.assert_called_once_with(proved, (0, 0, 756, 480), "map_size")
+        click.assert_not_called()
+        self.assertEqual(out["shot"], proved)
+
+    def test_a_selection_is_read_back_twice_before_the_list_is_reopened(self) -> None:
+        reads = iter([
+            ("GAMESPEED_STANDARD", (700, 300)),   # closed panel: not yet Online
+            None,                                  # first readback: list still closing
+            ("GAMESPEED_ONLINE", (700, 300)),     # second look: it took
+        ])
+        out: dict = {}
+        with tempfile.TemporaryDirectory() as temporary, \
+             patch.object(civ6_play, "screenshot") as screenshot, \
+             patch.object(civ6_play, "_setup_current_value", side_effect=lambda *a: next(reads)), \
+             patch.object(civ6_play, "_observed_label_point", return_value=(700, 340)), \
+             patch.object(civ6_play, "click_at") as click, \
+             patch.object(civ6_play.time, "sleep"):
+            ok = civ6_play.set_dropdown((0, 0, 756, 480), "speed", "GAMESPEED_ONLINE",
+                                        Path(temporary), panel_out=out)
+            again = Path(temporary) / "dropdown-speed-selected-again.png"
+
+        self.assertTrue(ok)
+        # One click on the closed row, one on the option -- the list was NOT reopened.
+        self.assertEqual(click.call_args_list, [call(700, 300), call(700, 340)])
+        self.assertEqual(screenshot.call_args_list[-1], call(again))
+        self.assertEqual(out["shot"], again)
+
+    def test_the_leader_picker_walks_straight_to_where_it_found_the_leader_last_game(self) -> None:
+        bounds = (756, 33, 756, 480)
+        row = {"text": "Jadwiga", "x": 0.73, "y": 0.30, "width": 0.04, "height": 0.02}
+        selected = {"text": "Jadwiga", "x": 0.73, "y": 0.155, "width": 0.04, "height": 0.02}
+        with tempfile.TemporaryDirectory() as temporary:
+            hint_dir = Path(temporary) / "control"
+            hint_dir.mkdir()
+            civ6_play.write_leader_hint(hint_dir, "LEADER_JADWIGA", 15)
+            run_dir = hint_dir / "run"
+            run_dir.mkdir()
+            with patch.object(civ6_play, "screenshot",
+                              side_effect=lambda p: Path(p).write_bytes(b"x") or True) as shots, \
+                 patch.object(civ6_play, "_leader_picker_open", return_value=True), \
+                 patch.object(civ6_play, "_setup_current_leader",
+                              return_value=("Random Leader", (1134, 140))), \
+                 patch.object(civ6_play, "desktop_size", return_value=(1512, 982)), \
+                 patch.object(civ6_play, "_leader_ocr", side_effect=[[row], [selected]]), \
+                 patch.object(civ6_play.macos_input, "move"), \
+                 patch.object(civ6_play.macos_input, "scroll") as scroll, \
+                 patch.object(civ6_play, "click_at") as click, \
+                 patch.object(civ6_play.time, "sleep"):
+                found = civ6_play.select_requested_leader(bounds, "LEADER_JADWIGA", run_dir,
+                                                          hint_dir=hint_dir)
+
+            self.assertTrue(found)
+            # One reset, fifteen wheel steps with no photograph, then ONE picker capture.
+            self.assertEqual(scroll.call_args_list[0], call(civ6_play.LEADER_SCROLL_RESET))
+            self.assertEqual(scroll.call_count, 16)
+            picker_shots = [c for c in shots.call_args_list
+                            if "leader-picker-" in str(c.args[0]) and "-1" in str(c.args[0])]
+            self.assertEqual([Path(c.args[0]).name for c in picker_shots], ["leader-picker-15.png"])
+            self.assertEqual(click.call_count, 2)
+            self.assertEqual(civ6_play.read_leader_hint(hint_dir, "LEADER_JADWIGA"), 15)
+
+    def test_a_stale_hint_falls_back_to_the_whole_roster(self) -> None:
+        bounds = (756, 33, 756, 480)
+        row = {"text": "Jadwiga", "x": 0.73, "y": 0.30, "width": 0.04, "height": 0.02}
+        selected = {"text": "Jadwiga", "x": 0.73, "y": 0.155, "width": 0.04, "height": 0.02}
+        # Three hinted looks miss, then the roster walk finds it at step 2.
+        looks = [[], [], [], [], [], [row], [selected]]
+        with tempfile.TemporaryDirectory() as temporary:
+            hint_dir = Path(temporary)
+            civ6_play.write_leader_hint(hint_dir, "LEADER_JADWIGA", 15)
+            run_dir = hint_dir / "run"
+            run_dir.mkdir()
+            with patch.object(civ6_play, "screenshot",
+                              side_effect=lambda p: Path(p).write_bytes(b"x") or True), \
+                 patch.object(civ6_play, "_leader_picker_open", return_value=True), \
+                 patch.object(civ6_play, "_setup_current_leader",
+                              return_value=("Random Leader", (1134, 140))), \
+                 patch.object(civ6_play, "desktop_size", return_value=(1512, 982)), \
+                 patch.object(civ6_play, "_leader_ocr", side_effect=looks), \
+                 patch.object(civ6_play.macos_input, "move"), \
+                 patch.object(civ6_play.macos_input, "scroll") as scroll, \
+                 patch.object(civ6_play, "click_at"), \
+                 patch.object(civ6_play.time, "sleep"):
+                found = civ6_play.select_requested_leader(bounds, "LEADER_JADWIGA", run_dir,
+                                                          hint_dir=hint_dir)
+
+            self.assertTrue(found)
+            resets = [c for c in scroll.call_args_list if c == call(civ6_play.LEADER_SCROLL_RESET)]
+            self.assertEqual(len(resets), 2)
+            self.assertEqual(civ6_play.read_leader_hint(hint_dir, "LEADER_JADWIGA"), 2)
+
+    def test_without_a_hint_directory_nothing_is_remembered(self) -> None:
+        self.assertEqual(civ6_play.read_leader_hint(None, "LEADER_TRAJAN"), 0)
+        civ6_play.write_leader_hint(None, "LEADER_TRAJAN", 4)  # must not raise
+        with tempfile.TemporaryDirectory() as temporary:
+            (Path(temporary) / civ6_play.LEADER_HINT_FILE).write_text("not json")
+            self.assertEqual(civ6_play.read_leader_hint(Path(temporary), "LEADER_TRAJAN"), 0)
+            civ6_play.write_leader_hint(Path(temporary), "LEADER_TRAJAN", 99)  # out of range
+            self.assertEqual(civ6_play.read_leader_hint(Path(temporary), "LEADER_TRAJAN"), 0)

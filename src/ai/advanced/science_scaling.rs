@@ -1,0 +1,577 @@
+//! Opt-in science-pricing genes and the tests that pin them.
+//!
+//! They are opt-in (`Kind::OptIn` in `genes.rs`), ship off, and are priced by
+//! `gene_screen` before any promotion question is asked — see
+//! `docs/GENE_SCREEN.md`. They live here because they are one sentence each
+//! and `src/ai/advanced.rs` is the most contended file in the repository
+//! (`tools/conflict_hotspots.py` measures it at 23% of the last 200 merges).
+//!
+//! **The shared observation.** Science is the only economy in this controller
+//! that is priced to matter LESS the longer the game runs. Three terms —
+//! `RESEARCH_CAMPUS_COVERAGE`, `RESEARCH_BUILDING_DEBT` and
+//! `RESEARCH_CITIZEN_TILT` — are multiplied by `research_horizon`, which is
+//! `(max_turns - turn) / max_turns` and reaches zero at the turn limit, while
+//! the terms they compete against are flat constants: a Theater Square's
+//! **850** under Culture, the Government Plaza's first copy **420**, a
+//! Diplomatic Quarter's **360**, the Monument's **+240** while `turn < 120`,
+//! Ancient Walls' **+320** under threat. So a Campus at turn 150 of 250 bids
+//! 40% of its price into a table that has not moved, and the empire's research
+//! economy thins exactly where the tech tree stops being a convenience and
+//! starts being Field Cannon against Spearmen.
+//!
+//! **`science-multiplier-payoff`.** A building's whole worth in
+//! `production_value` is `yield_value(spec.yields) * 42` off the **printed**
+//! yield — Library 2, University 4, Research Lab 3. `rationalism` is
+//! `campus_building_science_pct: 100`, and `strategic_policies` already slots
+//! it the moment the empire owns a Campus, so the second Library is routinely
+//! bought at the price of the first while earning twice as much; the Research
+//! Lab's `powered_science` **5**, larger than its own printed yield, is never
+//! counted at all. And the card is paid in halves that arrive LATE and
+//! SEPARATELY — half at 15 Population, half where the Campus already earns 4
+//! Science from its own adjacency — so a Campus building's true price RISES
+//! through the game precisely where `research_horizon` sends it to zero. The
+//! funnel measured over 19 live runs has the shape that predicts: 50% Campus,
+//! 39% Library, **20% University, 3% Research Lab**, thinning hardest at the
+//! tiers whose multiplied yield is largest.
+//!
+//! **`research-tier-premium`.** `RESEARCH_BUILDING_DEBT` pays a Campus building
+//! **240** for standing in a Campus that lacks it, and pays the same 240
+//! whichever rung is missing — the Library (printed **2** Science), the
+//! University (**4**), or the Research Lab (**3**, plus `powered_science`
+//! **5** in a powered city, more than any other Campus building earns). The
+//! empire is told the three rungs are worth the same, and coverage collapses
+//! exactly as the yields grow. This scales the debt by the rung's own Science
+//! against the chain's first, floored there so nothing is owed less than a
+//! Library and capped so a modded yield cannot take the queue.
+//!
+#[cfg(test)]
+mod tests {
+    use super::super::*;
+    use crate::ai::advanced::GENES;
+    use crate::Pos;
+
+    fn found_capital(game: &mut Game, pid: usize) -> u32 {
+        let settler = game
+            .player_unit_ids(pid)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        let city = game.found_city_for(pid, game.units[&settler].pos, None);
+        game.remove_unit(settler);
+        city
+    }
+
+    fn set_district(game: &mut Game, city: u32, position: Pos, district: &str) {
+        let tile = game.map.tiles.get_mut(&position).unwrap();
+        tile.district = Some(Name::new(district));
+        tile.improvement = None;
+        tile.pillaged = false;
+        game.cities
+            .get_mut(&city)
+            .unwrap()
+            .districts
+            .insert(Name::new(district), position);
+    }
+
+    #[test]
+    fn retained_science_genes_are_native_opt_ins_that_ship_off() {
+        for (tag, read) in [
+            (
+                "science-multiplier-payoff",
+                (|ai: &AdvancedAi| ai.science_multiplier_payoff) as fn(&AdvancedAi) -> bool,
+            ),
+            ("research-tier-premium", |ai: &AdvancedAi| {
+                ai.research_tier_premium
+            }),
+            ("power-the-laboratory", |ai: &AdvancedAi| {
+                ai.power_the_laboratory
+            }),
+            ("campus-adjacency-threshold", |ai: &AdvancedAi| {
+                ai.campus_adjacency_threshold
+            }),
+        ] {
+            let mut ai = AdvancedAi::new();
+            ai.enable_live_bridge_universe();
+            assert!(!read(&ai), "{tag} ships off even under the live bridge");
+            let enable = GENES
+                .iter()
+                .find(|gene| gene.tag == tag)
+                .unwrap_or_else(|| panic!("{tag} has an opt-in row"))
+                .enable;
+            enable(&mut ai);
+            assert!(read(&ai), "{tag} turns on");
+        }
+        let mut ai = AdvancedAi::new();
+        ai.enable_science_multiplier_payoff();
+        ai.enable_research_tier_premium();
+        ai.enable_power_the_laboratory();
+        ai.enable_campus_adjacency_threshold();
+        ai.disable_science_multiplier_payoff();
+        ai.disable_research_tier_premium();
+        ai.disable_power_the_laboratory();
+        ai.disable_campus_adjacency_threshold();
+        assert!(!ai.science_multiplier_payoff);
+        assert!(!ai.research_tier_premium);
+        assert!(!ai.power_the_laboratory);
+        assert!(!ai.campus_adjacency_threshold);
+    }
+
+    #[test]
+    fn the_science_economy_uses_the_standard_taper() {
+        let mut g = Game::new_full(2, 28, 18, 91_779, 250, 0, false);
+        g.turn = 150;
+        assert!((AdvancedAi::research_horizon(&g) - 0.4).abs() < 1e-9);
+
+        let mut ai = AdvancedAi::new();
+        ai.research_economy = true;
+        ai.refresh_research_weight(&g);
+        assert!(
+            (ai.research_weight - 1.8).abs() < 1e-9,
+            "the standard floor at t150/250: {}",
+            ai.research_weight
+        );
+    }
+
+    /// The rungs of the research chain are 2, 4 and 3-plus-5, and the debt
+    /// that buys them is flat. This is what the gene changes and what it
+    /// deliberately does not.
+    #[test]
+    fn the_research_debt_follows_the_rung_it_is_buying() {
+        let mut game = Game::new_full(1, 24, 16, 91_989, 200, 0, false);
+        let city = found_capital(&mut game, 0);
+        let site = game.cities[&city]
+            .owned_tiles
+            .iter()
+            .copied()
+            .find(|position| *position != game.cities[&city].pos)
+            .unwrap();
+        set_district(&mut game, city, site, "campus");
+        let shipped = AdvancedAi::new();
+        let mut treated = AdvancedAi::new();
+        treated.enable_research_tier_premium();
+        let weight = |ai: &AdvancedAi, g: &Game, name: &str| {
+            ai.research_tier_weight(g, &g.cities[&city], &g.rules.buildings[name])
+        };
+
+        // Off, the debt is flat: every rung reads 1.0, which is the shipped
+        // `RESEARCH_BUILDING_DEBT * horizon` recovered exactly.
+        for rung in ["library", "university", "research_lab"] {
+            assert_eq!(weight(&shipped, &game, rung), 1.0, "{rung} off");
+        }
+
+        // On, the first rung is still 1.0 — this is not a blanket raise — and
+        // the University is owed twice it, off its own printed 4 against 2.
+        assert_eq!(weight(&treated, &game, "library"), 1.0);
+        assert_eq!(weight(&treated, &game, "university"), 2.0);
+
+        // The Research Lab is the rung the whole gene is about: its printed 3
+        // is the SMALLER half of what it earns, because `powered_science` adds
+        // **5** more than any other Campus building earns at all. The debt has
+        // to see that or the 3%-coverage rung stays last forever.
+        let powered = game.rules.buildings["research_lab"]
+            .effects
+            .get("powered_science")
+            .copied()
+            .unwrap();
+        assert_eq!(powered, 5.0, "the Lab's power yield is what the gene reads");
+        // ⚠ `city_is_powered` is `demand <= 0 || supply >= demand`, so a city
+        // with nothing that CONSUMES power reads powered — and `city_yields`
+        // pays the Lab its 5 there on exactly that test. The gene reads the
+        // same predicate rather than a stricter one of its own, so the price
+        // and the payment agree; a first draft asserted the fixture was
+        // unpowered and was wrong about the model, not about the code.
+        assert!(game.city_is_powered(&game.cities[&city]));
+        assert_eq!(weight(&treated, &game, "research_lab"), 4.0);
+        // (3 + 5) / 2 lands exactly on the cap, which is how the cap was sized.
+        assert_eq!(
+            (game.rules.buildings["research_lab"].yields.science + powered) / 2.0,
+            super::super::RESEARCH_TIER_PREMIUM_CAP
+        );
+        // And the cap really binds rather than merely being met: a rung worth
+        // ten Library-equivalents is still only ever owed four.
+        let mut runaway = game.rules.buildings["research_lab"].clone();
+        runaway.yields.science = 100.0;
+        assert_eq!(
+            treated.research_tier_weight(&game, &game.cities[&city], &runaway),
+            super::super::RESEARCH_TIER_PREMIUM_CAP
+        );
+    }
+
+    /// The switch, and the three cities where flipping it buys nothing.
+    ///
+    /// A Research Lab prints 3 Science and carries `powered_science` 5 — more
+    /// than any other Campus building earns in total — and the model pays that
+    /// 5 only while the city is powered. Nothing in the controller bought the
+    /// switch.
+    #[test]
+    fn a_power_plant_is_worth_the_laboratory_it_switches_on() {
+        let mut game = Game::new_full(1, 24, 16, 91_989, 200, 0, false);
+        let city = found_capital(&mut game, 0);
+        let site = game.cities[&city]
+            .owned_tiles
+            .iter()
+            .copied()
+            .find(|position| *position != game.cities[&city].pos)
+            .unwrap();
+        set_district(&mut game, city, site, "campus");
+        let plant = game.rules.buildings["coal_power_plant"].clone();
+        let generated = plant.effects["power_generated"];
+        assert_eq!(generated, 4.0, "the plant the fixture leans on");
+
+        // A city with nothing that CONSUMES power is already "powered" by
+        // `demand <= 0`, so the plant switches nothing on. Every city before
+        // the Industrial era is this city.
+        assert!(game.city_is_powered(&game.cities[&city]));
+        assert_eq!(
+            AdvancedAi::power_switched_on(&game, &game.cities[&city], &plant).science,
+            0.0,
+            "no demand, nothing to switch"
+        );
+
+        // Now stand the laboratory. It draws power, so the city goes dark and
+        // its 5 Science is off.
+        game.cities
+            .get_mut(&city)
+            .unwrap()
+            .buildings
+            .push(crate::name!("research_lab"));
+        let demand = game.city_power_demand(&game.cities[&city]);
+        assert!(demand > 0.0, "a Research Lab draws power");
+        assert!(
+            !game.city_is_powered(&game.cities[&city]),
+            "and the city is dark"
+        );
+        let switched = AdvancedAi::power_switched_on(&game, &game.cities[&city], &plant);
+        assert_eq!(
+            switched.science, game.rules.buildings["research_lab"].effects["powered_science"],
+            "the plant is worth exactly the beakers it turns on"
+        );
+
+        // A plant too small to meet the demand buys nothing: the yields stay
+        // off and the production is spent for a switch that does not flip.
+        let mut token = plant.clone();
+        token
+            .effects
+            .insert("power_generated".to_string(), demand / 2.0);
+        assert_eq!(
+            AdvancedAi::power_switched_on(&game, &game.cities[&city], &token).science,
+            0.0,
+            "half the demand is not half the yield, it is none of it"
+        );
+
+        // A building that generates no power is never credited, whatever the
+        // city holds.
+        let library = game.rules.buildings["library"].clone();
+        assert_eq!(
+            AdvancedAi::power_switched_on(&game, &game.cities[&city], &library),
+            Yields::default()
+        );
+
+        // And with the gene off nothing above reaches a price: the flag is
+        // what gates the term, and it ships off.
+        let shipped = AdvancedAi::new();
+        assert!(!shipped.power_the_laboratory);
+    }
+
+    /// The threshold, pinned to the engine that enforces it.
+    ///
+    /// A census probe found Rationalism SLOTTED and **not one Campus of nine**
+    /// clearing the adjacency half it pays, while four of the ten cities still
+    /// held a free plot worth exactly 4.0. The price could not see a threshold;
+    /// this is the number it now sees, and the test asserts the engine agrees
+    /// rather than asserting a 4 typed twice.
+    #[test]
+    fn the_campus_threshold_is_the_one_the_engine_actually_gates_on() {
+        let mut game = Game::new_full(1, 24, 16, 91_989, 200, 0, false);
+        let city = found_capital(&mut game, 0);
+        let site = game.cities[&city]
+            .owned_tiles
+            .iter()
+            .copied()
+            .find(|position| *position != game.cities[&city].pos)
+            .unwrap();
+        set_district(&mut game, city, site, "campus");
+        game.cities
+            .get_mut(&city)
+            .unwrap()
+            .buildings
+            .push(crate::name!("library"));
+        game.cities.get_mut(&city).unwrap().pop = 4;
+        game.players[0].policies = [crate::name!("rationalism")].into_iter().collect();
+
+        let raw = |game: &Game| {
+            let mut yields = Yields::default();
+            for source in game.district_adjacency_sources(crate::name!("campus"), site) {
+                if source.source != "adjacency_bonus" {
+                    yields.add(source.yields);
+                }
+            }
+            yields.science
+        };
+
+        // Below the threshold the model pays nothing for the adjacency half,
+        // and neither does the gene: a low-adjacency Campus is priced as it
+        // always was.
+        assert!(raw(&game) < super::super::CAMPUS_MULTIPLIER_ADJACENCY_THRESHOLD);
+        let before = game.city_yields(city).science;
+        let mut ai = AdvancedAi::new();
+        ai.enable_campus_adjacency_threshold();
+        ai.refresh_campus_multiplier_constants(&game);
+        assert_eq!(
+            ai.campus_threshold_bonus(&game, crate::name!("campus"), site),
+            0.0,
+            "adjacency {} is under the gate",
+            raw(&game)
+        );
+
+        // Two mountains beside the Campus lift its RAW adjacency to the gate.
+        let ring: Vec<Pos> = game
+            .nbrs(site)
+            .into_iter()
+            .filter(|position| {
+                *position != game.cities[&city].pos && game.map.get(*position).is_some()
+            })
+            .collect();
+        for position in ring.iter().take(4) {
+            let tile = game.map.tiles.get_mut(position).unwrap();
+            tile.terrain = crate::name!("mountain");
+            tile.feature = None;
+            tile.hills = false;
+            tile.improvement = None;
+            tile.district = None;
+        }
+
+        // ⭐ THE ENGINE IS THE AUTHORITY, NOT THE CONSTANT. Whatever raw
+        // adjacency now stands, the model pays the half exactly when it is at
+        // or above the constant — so the two agree by construction, not by a
+        // number written down twice.
+        let now = raw(&game);
+        let paid_more = game.city_yields(city).science > before;
+        assert_eq!(
+            now >= super::super::CAMPUS_MULTIPLIER_ADJACENCY_THRESHOLD,
+            paid_more,
+            "raw adjacency {now}: the constant and the engine must agree on the gate"
+        );
+
+        if paid_more {
+            let bonus = ai.campus_threshold_bonus(&game, crate::name!("campus"), site);
+            assert!(bonus > 0.0, "a plot at the gate is worth what it unlocks");
+            // The credit is the chain's printed Science times half the card,
+            // which is what the second half will pay once the chain stands.
+            assert!(
+                (bonus - ai.campus_chain_science * ai.campus_multiplier_half / 100.0).abs() < 1e-9
+            );
+            // And no other district is ever credited it.
+            assert_eq!(
+                ai.campus_threshold_bonus(&game, crate::name!("theater_square"), site),
+                0.0
+            );
+            // With the gene off the constants are zeroed and the term is dead.
+            let mut shipped = AdvancedAi::new();
+            shipped.refresh_campus_multiplier_constants(&game);
+            assert_eq!(shipped.campus_multiplier_half, 0.0);
+            assert_eq!(
+                shipped.campus_threshold_bonus(&game, crate::name!("campus"), site),
+                0.0
+            );
+        }
+    }
+
+    /// A research detour requires its prerequisite buildings to stand.
+    #[test]
+    fn the_chain_goal_requires_held_prerequisites() {
+        let mut game = Game::new_full(1, 24, 16, 91_989, 200, 0, false);
+        let city = found_capital(&mut game, 0);
+        let site = game.cities[&city]
+            .owned_tiles
+            .iter()
+            .copied()
+            .find(|position| *position != game.cities[&city].pos)
+            .unwrap();
+        set_district(&mut game, city, site, "campus");
+        let mut shipped = AdvancedAi::new();
+        shipped.research_economy = true;
+        // A Campus and nothing else aims at the Library's tech, because the
+        // Library requires no building at all.
+        assert_eq!(
+            shipped.unreachable_science_building_tech(&game, 0),
+            Some("writing")
+        );
+        // With Writing held and a Library producible but not yet standing,
+        // Education remains unavailable because its prerequisite has not
+        // been built.
+        game.players[0].techs.insert(crate::name!("writing"));
+        assert!(game.can_produce(
+            0,
+            city,
+            &crate::game::Item::Building {
+                building: crate::name!("library"),
+            },
+        ));
+        assert!(!game.cities[&city]
+            .buildings
+            .contains(&crate::name!("library")));
+        assert_eq!(
+            shipped.unreachable_science_building_tech(&game, 0),
+            None,
+            "the shipped goal waits for the Library to stand"
+        );
+        // Once the Library stands the next science building becomes a valid
+        // goal.
+        game.cities
+            .get_mut(&city)
+            .unwrap()
+            .buildings
+            .push(crate::name!("library"));
+        assert_eq!(
+            shipped.unreachable_science_building_tech(&game, 0),
+            Some("education")
+        );
+
+        // Strip the Campus and the whole goal goes away.
+        game.cities.get_mut(&city).unwrap().districts.clear();
+        assert_eq!(shipped.unreachable_science_building_tech(&game, 0), None);
+    }
+
+    /// A constant standing in for a ruleset value has to be pinned to the
+    /// ruleset, or a data change leaves the price quietly wrong.
+    #[test]
+    fn research_tier_premium_is_priced_against_the_shipped_library() {
+        let rules = crate::rules::Rules::embedded();
+        assert_eq!(
+            rules.buildings["library"].yields.science,
+            super::super::RESEARCH_CHAIN_FIRST_RUNG_SCIENCE,
+            "the first rung of the Campus chain"
+        );
+        // And it really is the first rung: nothing in the family is cheaper.
+        let campus_cost = |name: &str| rules.buildings[name].cost;
+        for rung in ["university", "research_lab"] {
+            assert!(
+                campus_cost(rung) > campus_cost("library"),
+                "{rung} comes after the Library"
+            );
+        }
+    }
+
+    /// The helper is checked against `Game::city_yields` itself, not against a
+    /// second copy of the rule: whatever the model pays, the price knows.
+    #[test]
+    fn the_multiplier_credit_is_exactly_what_the_model_pays() {
+        let mut game = Game::new_full(1, 24, 16, 91_989, 200, 0, false);
+        let city = found_capital(&mut game, 0);
+        let site = game.cities[&city]
+            .owned_tiles
+            .iter()
+            .copied()
+            .find(|position| *position != game.cities[&city].pos)
+            .unwrap();
+        set_district(&mut game, city, site, "campus");
+        game.cities
+            .get_mut(&city)
+            .unwrap()
+            .buildings
+            .push(crate::name!("library"));
+        let library = game.rules.buildings["library"].clone();
+
+        // A small city with a low-adjacency Campus qualifies for neither half,
+        // so the gene is a strict no-op there — the price is unchanged for
+        // every city that has not yet earned the card.
+        game.cities.get_mut(&city).unwrap().pop = 4;
+        game.players[0].policies = [crate::name!("rationalism")].into_iter().collect();
+        assert_eq!(
+            AdvancedAi::campus_multiplier_science(&game, &game.cities[&city], &library),
+            0.0,
+            "neither half earned, nothing credited"
+        );
+
+        // Fifteen Population earns one half.
+        //
+        // ⚠ THE TWO NUMBERS ARE AT DIFFERENT ALTITUDES. `city_yields` reports
+        // the city's science after the empire-wide percentages it carries — a
+        // rating sweep on this fixture puts that factor at 0.7, and the
+        // Library's own contribution at 2.8 rather than its printed 2.0
+        // because more is added to it AFTER the card is applied. Meanwhile
+        // `production_value` prices `spec.yields` RAW and scales no building
+        // by anything, so the credit is raw too, deliberately: the model then
+        // applies the same factor to the printed yield and to the credit
+        // alike. A first draft asserted the raw difference and failed at 1.0
+        // against 0.7 — which is that factor, not a pricing error.
+        //
+        // What survives both altitudes is the RATIO. The card's payment is
+        // exactly linear in its rating (measured 0.35 / 0.70 / 1.40 / 2.80 at
+        // ratings 50 / 100 / 200 / 400), so if the credit tracks the model it
+        // must scale by the same factor between any two ratings. That pins
+        // the halves, the gate and the base without asking what the empire's
+        // percentages happen to be on this map.
+        game.cities.get_mut(&city).unwrap().pop = 15;
+        let card_payment = |game: &mut Game, rating: f64| -> f64 {
+            std::sync::Arc::make_mut(&mut game.rules)
+                .policies
+                .get_mut("rationalism")
+                .unwrap()
+                .effects
+                .insert("campus_building_science_pct".to_string(), rating);
+            game.players[0].policies = [crate::name!("rationalism")].into_iter().collect();
+            let with_card = game.city_yields(city).science;
+            game.players[0].policies.clear();
+            with_card - game.city_yields(city).science
+        };
+        let credit = |game: &mut Game, rating: f64| -> f64 {
+            std::sync::Arc::make_mut(&mut game.rules)
+                .policies
+                .get_mut("rationalism")
+                .unwrap()
+                .effects
+                .insert("campus_building_science_pct".to_string(), rating);
+            game.players[0].policies = [crate::name!("rationalism")].into_iter().collect();
+            let credited =
+                AdvancedAi::campus_multiplier_science(game, &game.cities[&city], &library);
+            game.players[0].policies.clear();
+            credited
+        };
+        let (paid_one, paid_two) = (
+            card_payment(&mut game, 100.0),
+            card_payment(&mut game, 200.0),
+        );
+        let (credit_one, credit_two) = (credit(&mut game, 100.0), credit(&mut game, 200.0));
+        assert!(
+            paid_one > 0.0 && credit_one > 0.0,
+            "the Population half pays"
+        );
+        assert!(
+            (paid_two / paid_one - credit_two / credit_one).abs() < 1e-9,
+            "credit {credit_one} -> {credit_two} against payment {paid_one} -> {paid_two}"
+        );
+        // And the raw credit is the printed yield times the qualifying halves,
+        // which is the number `production_value` prices at 42 a point.
+        assert!(
+            (credit_one - library.yields.science * 0.5).abs() < 1e-9,
+            "one half of a 100-rating card on a printed {}: {credit_one}",
+            library.yields.science
+        );
+
+        // The gate is what keeps this honest: a city that has not earned a
+        // half is priced exactly as before, and the model agrees it pays
+        // nothing there.
+        game.cities.get_mut(&city).unwrap().pop = 14;
+        assert_eq!(card_payment(&mut game, 100.0), 0.0);
+        assert_eq!(credit(&mut game, 100.0), 0.0);
+        game.cities.get_mut(&city).unwrap().pop = 15;
+
+        // And with no card at all there is nothing to credit, at any size.
+        game.players[0].policies.clear();
+        assert_eq!(
+            AdvancedAi::campus_multiplier_science(&game, &game.cities[&city], &library),
+            0.0
+        );
+
+        // A building outside the Campus is never touched by a Campus card.
+        let monument = game.rules.buildings["monument"].clone();
+        game.players[0].policies = [crate::name!("rationalism")].into_iter().collect();
+        assert_eq!(
+            AdvancedAi::campus_multiplier_science(&game, &game.cities[&city], &monument),
+            0.0,
+            "the Campus multiplier is a Campus multiplier"
+        );
+    }
+}

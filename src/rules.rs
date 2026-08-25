@@ -877,6 +877,27 @@ pub struct ProjectSpec {
     pub requires: Vec<Name>,
     #[serde(default)]
     pub requires_buildings: Vec<String>,
+    /// Building families this project consumes on completion. Firaxis uses
+    /// this for Climate Accords: every decommissioning project spends the
+    /// matching power plant rather than becoming an infinite score source.
+    #[serde(default)]
+    pub consumes_buildings: Vec<String>,
+    /// A host-tracked competition that must currently be active before this
+    /// project is legal. These projects use Firaxis's `UnlocksFromEffect`
+    /// rather than a normal tech or civic gate, so they must never appear in a
+    /// native CIVVIS production menu.
+    #[serde(default)]
+    pub host_competition: Option<String>,
+    /// Additional host competitions that can grant this same project. Firaxis
+    /// uses one Send Aid project for both ordinary and military Aid Requests.
+    #[serde(default)]
+    pub host_competitions: Vec<String>,
+    /// Competition points the host awards when this project completes.  Kept
+    /// in the rules row beside the exact project cost, rather than in an AI
+    /// name switch, so another host-unlocked competition can use the same
+    /// legal-production and valuation path.
+    #[serde(default)]
+    pub competition_score: f64,
     #[serde(default)]
     pub repeatable: bool,
     /// Per-turn yield conversion percentages while this project is active.
@@ -890,6 +911,22 @@ pub struct ProjectSpec {
     pub full_power_while_active: bool,
     #[serde(default)]
     pub effects: BTreeMap<String, f64>,
+}
+
+impl ProjectSpec {
+    /// Every authoritative host competition that can make this project legal.
+    /// `host_competition` remains the compact, backwards-compatible form for
+    /// the common one-host case.
+    pub fn host_competition_kinds(&self) -> impl Iterator<Item = &str> {
+        self.host_competition
+            .as_deref()
+            .into_iter()
+            .chain(self.host_competitions.iter().map(String::as_str))
+    }
+
+    pub fn requires_host_competition(&self) -> bool {
+        self.host_competition.is_some() || !self.host_competitions.is_empty()
+    }
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -1525,6 +1562,30 @@ pub struct AgendaSpec {
     pub approves_of: String,
 }
 
+/// One row of Civilization VI's `StartingBuildings` table, as it applies to a
+/// rung of the difficulty ladder: a *completed* building a city already holds
+/// the moment the game opens, before anything is produced and regardless of
+/// whether its own technology has been researched.
+///
+/// The shipped table has 24 rows and exactly one of them carries a
+/// `MinDifficulty`, so exactly one is a property of the ladder rather than of
+/// the start era. The other 23 are `MinorOnly = 0` with no `MinDifficulty` at
+/// all: they are what a game *opened past the Ancient era* hands a major
+/// civilization, which is a start-era rule and belongs nowhere near a
+/// handicap. See `docs/FIDELITY.md`.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(default)]
+pub struct StartingBuildingSpec {
+    /// The building's id in `buildings.json` — the shipped `Building` column
+    /// under this engine's spelling.
+    pub building: String,
+    /// `StartingBuildings.MinorOnly`. True grants the building to city-states
+    /// and to nobody else; false grants it to major civilizations only. The
+    /// column is a partition, not a permission, which is why one flag decides
+    /// both sides.
+    pub minor_only: bool,
+}
+
 /// A difficulty level, in the Civ VI sense: a bag of handicaps applied to the
 /// AI seats above Prince and to the human seats below it. Prince is the
 /// reference level and carries no modifiers at all.
@@ -1549,18 +1610,39 @@ pub struct DifficultySpec {
     pub ai_era_boosts: usize,
     /// Extra units each AI receives on its start tile.
     pub ai_bonus_units: BTreeMap<String, usize>,
+    /// Completed buildings a city already holds when a game at this rung
+    /// opens, from the shipped `StartingBuildings` table's `MinDifficulty`
+    /// gate.
+    ///
+    /// That table gates one row on difficulty — `BUILDING_WALLS`,
+    /// `ERA_ANCIENT`, `DISTRICT_CITY_CENTER`, `MinorOnly = 1`,
+    /// `MinDifficulty = DIFFICULTY_IMMORTAL` — so Immortal and Deity
+    /// city-states open behind Ancient Walls and every rung below them opens
+    /// behind none. **This runs the opposite way to every other field here:**
+    /// the rest of the ladder hands its bonuses to the AI *major* seats, and
+    /// this one hardens the minor seats the challenger has to take a city off.
+    /// Leaving it out did not make CIVVIS's Immortal harder than the game's,
+    /// it made it *easier*, which is the direction an audit does not look for.
+    ///
+    /// No rung grants a major civilization anything: every major-side row of
+    /// the shipped table is keyed on the start era instead, and CIVVIS's
+    /// Advanced Start deliberately does not grant them (`open_in_start_era`).
+    pub starting_buildings: Vec<StartingBuildingSpec>,
     /// Flat Combat Strength added to every human unit.
     pub human_combat_strength: f64,
     /// Percentage added to human experience awards.
     pub human_xp_pct: f64,
     /// Extra Gold a human receives for clearing a Barbarian camp.
     pub human_camp_gold: f64,
-    /// Scales the size of barbarian raiding parties.
+    /// Scales the size of barbarian raiding parties. Read from the barbarian
+    /// seat's own rung (`Game::barbarian_spec`, Immortal by default), not the
+    /// majors' — see `Game::default_barbarian_difficulty`.
     #[serde(default = "done")]
     pub barb_force_scale: f64,
     /// Scales how long a camp waits between spawns.
     /// `BarbarianAttackForces.SpawnRate` is 2 for every band up to Emperor and
     /// 1 from Immortal, so the top band assembles its forces twice as often.
+    /// Read from the barbarian seat's own rung, like `barb_force_scale`.
     #[serde(default = "done")]
     pub barb_spawn_scale: f64,
 }
@@ -2700,6 +2782,33 @@ impl Rules {
             .collect()
     }
 
+    /// The shipped ruleset files with extra bundles merged into the imported
+    /// modifier catalog.
+    ///
+    /// Tests used to hand `Rules::from_values` a `modifiers` map containing
+    /// only their own fixture. That was harmless while `data/modifiers.json`
+    /// was empty and is not now: the catalog is imported from the shipped
+    /// `Modifiers` tables, and civics, technologies, wonders, districts,
+    /// buildings, governments, promotions and Great People attach its bundles
+    /// by name. Replacing it outright leaves every one of those references
+    /// dangling, so the ruleset refuses to build and the fixture's own subject
+    /// is never reached.
+    #[cfg(test)]
+    pub(crate) fn shipped_values_with(
+        bundles: serde_json::Value,
+    ) -> BTreeMap<String, serde_json::Value> {
+        let mut files = Rules::shipped_values();
+        let catalog = files
+            .get_mut("modifiers")
+            .and_then(serde_json::Value::as_object_mut)
+            .expect("the shipped modifier catalog is an object");
+        let serde_json::Value::Object(bundles) = bundles else {
+            panic!("test bundles must be a JSON object");
+        };
+        catalog.extend(bundles);
+        files
+    }
+
     /// Install a ruleset as the active one. Fails if a game has already read
     /// the ruleset, because half a game on one set of rules and half on
     /// another is not a state worth supporting.
@@ -3331,9 +3440,117 @@ mod tests {
         // `Expansion2_RemoveData.xml` checked for every id, not from the
         // compiled cache. Two of the five are cases where the cache on a
         // base-game machine states the opposite of the shipped rule.
+        //
+        // Moved again by the real Gathering Storm World Games project.
+        // `PROJECT_TRAIN_ATHLETES` costs 200 Production, grants 50 competition
+        // score, and is unlocked by the host's World Congress effect rather
+        // than a tree node. Native CIVVIS games do not surface it; live
+        // mirrors do only while the authoritative tracker names World Games.
+        // Moved again by the real Gathering Storm International Space Station
+        // project. `PROJECT_TRAIN_ASTRONAUTS` costs 200 Production in a
+        // Spaceport, grants 30 competition score, and follows the same
+        // host-only availability rule while the authoritative tracker names
+        // the Space Station competition.
+        // Moved again by Gathering Storm's Aid Request project.
+        // `PROJECT_SEND_AID` costs 200 Production, grants 200 competition
+        // score, and is available through either the ordinary or military Aid
+        // Request effect instead of any tech or civic gate.
+        // Moved again by the Climate Accords decommissioning projects. Each
+        // costs 400 Production in an Industrial Zone, grants 100 score while
+        // the host tracks Climate Accords, and consumes its coal, oil, or
+        // nuclear power plant rather than being repeatable in one city.
+        // Moved again by 36 Gathering Storm Great People. The roster held 29
+        // of the game's 213 and stopped at the Atomic era, so from the midgame
+        // every class ran out and `unused_great_person_faith` paid the whole
+        // Campus, Theatre Square and Harbour yield out as Faith instead --
+        // 26.6% of all non-prophet Great Person points, measured over eight
+        // 6-player 200-turn games. Each addition takes its class, era, cost
+        // and charges from `GreatPersonIndividuals` and `Eras`, so the
+        // fidelity audit still reports zero divergent fields.
+        // Moved again by the shipped `StartingBuildings` table, whose one
+        // difficulty-gated row — `BUILDING_WALLS`, `ERA_ANCIENT`,
+        // `DISTRICT_CITY_CENTER`, `MinorOnly = 1`, `MinDifficulty =
+        // DIFFICULTY_IMMORTAL` — had no home in `DifficultySpec` at all.
+        // The engine already granted the walls, from a rung number written
+        // into `Game::new_with`; what moved here is that the ladder now
+        // *says* which rungs grant what, so a rung is transcribed data like
+        // every other line of this file rather than a constant in setup code.
+        // Moved again by 82 more Great People, taking the roster to 147 of 213
+        // and completing four classes outright -- every shipped Writer, Artist,
+        // Musician and Prophet. Class, era, cost and charges again come from
+        // `GreatPersonIndividuals`, `Eras` and `GreatWorks`, and the audit
+        // again reports zero divergent fields over all 147.
+        //
+        // Moved again by the LAST TWELVE PANTHEONS, which completes the class:
+        // Desert Folklore, Dance of the Aurora and Sacred Path (Holy Site
+        // terrain and feature adjacency), God of War (post-combat Faith), God
+        // of Healing, River Goddess (district Amenities and Housing on a
+        // river), City Patron Goddess (first-district Production), Monument to
+        // the Gods (Ancient/Classical wonder Production), Initiation Rites
+        // (barbarian-camp Faith and healing), Lady of the Reeds and Marshes,
+        // Goddess of Fire (feature yields) and Earth Goddess (Appeal). The
+        // roster goes from 11 of the game's 23 pantheons to all 23, and the
+        // pantheon is the earliest religious choice every civilization makes.
+        //
+        // ⚠ Read from the **install**'s `Expansion*/Data/*.xml` with
+        // `Expansion2_RemoveData.xml` checked for every id. Three of these
+        // twelve are cases where a base-game row states the opposite of the
+        // shipped rule: the expansion deletes `EARTH_GODDESS_APPEAL_FAITH`
+        // (Charming, MinimumAppeal 2) and re-adds it at Breathtaking
+        // (MinimumAppeal 4), deletes `RIVER_GODDESS_HOLY_SITE_AMENITY` (+1
+        // Amenity, no Housing) for a +2/+2 pair, and drops
+        // `LADY_OF_THE_REEDS_PRODUCTION` (+1) for `..._PRODUCTION2` (+2).
+        // Initiation Rites gains a second, Gathering-Storm-only half. See
+        // `docs/FIDELITY.md`.
+        // Moved again by the seventeen espionage promotions. The engine has
+        // always resolved them by name out of `Game::SPY_PROMOTIONS`, so the
+        // Spy was the one unit class whose promotions were absent from
+        // `data/promotions.json` and invisible to the pedia, the mod overlay
+        // and the fidelity audit alike. Class, tier and prerequisites come
+        // from `UnitPromotions` (all seventeen are `Level = 1` with no
+        // `UnitPromotionPrereqs`), and each magnitude from the promotion's own
+        // `UnitPromotionModifiers` row, so the audit reports zero divergent
+        // fields with them in.
+        //
+        // Moved again by four unit stats the audit could not see. The Nau, Toa
+        // and Nihang carry their civilization's name in the shipped table
+        // (`UNIT_PORTUGUESE_NAU`) and their Civilopedia name in CIVVIS, so all
+        // four unique units were reported missing *and* extra at once and
+        // compared against nothing. Aliasing them surfaced six wrong numbers:
+        // the Nau's Maintenance (4 to 2) and sight (2 to 3), the Toa's cost
+        // (110 to 120), Maintenance (2 to 0) and Combat (36 to 38), and the
+        // Nihang's Maintenance (0 to 2).
+        // Moved again by the imported modifier catalog. `data/modifiers.json`
+        // is no longer empty: `tools/civ6_modifiers.py --emit-catalog` writes
+        // one bundle per shipped `Modifiers` row of a declared effect, and the
+        // ruleset object the game says owns that row attaches it by name. Most
+        // of the fold restores the number CIVVIS already carried, so the
+        // fingerprint moves without the ruleset changing; four rows do change
+        // it. Eleven civics now award the Envoys `GRANT_INFLUENCE_TOKEN` gives
+        // them (CIVVIS carried two of the thirteen), Jakob Fugger awards his
+        // two, Sweeping Wind gains the `MOD_MOVE_AFTER_ATTACKING` it shares
+        // with Elite Guard and Breakthrough, and Computers multiplies Tourism
+        // by the +25% `COMPUTERS_BOOST_ALL_TOURISM` states instead of +100%.
+        // Moved again by deleting `genghis_khan`. Civilization VI ships no
+        // Great General of that name — Genghis Khan is Mongolia's *leader* —
+        // and `tools/civ6_fidelity.py` had begun reporting him as the roster's
+        // one "only in CIVVIS" row. He duplicated `timur`, the real
+        // Classical-era `land_unit_promotion_level` general, at the same era,
+        // cost and effect. This is the audit's `only_ours` column reaching zero
+        // on `GreatPeople`, not a balance change.
+        // Moved again by wiring `tools/civ6_fidelity.py --check --max 0` into
+        // CI, whose first run found ten divergences nothing had reported
+        // because nothing ran it: the Tagma cost 180 and upgraded to a Tank
+        // (shipped: 220, Cuirassier, 4 Gold upkeep), the Pike and Shot paid 3
+        // upkeep (4), the Prasat held two Relics at +4 Faith (one, +6), the
+        // Sukiennice paid +3 Gold (+2), the Tlachtli +1 Culture (+2), and
+        // Eyjafjallajökull's neighbours took +2 Food (+1). The new
+        // `Difficulties` projection added the human's camp Gold above Prince,
+        // which `BARBARIAN_CAMP_GOLD_SCALING` runs to -20 at Deity and the
+        // data had stopped transcribing at Warlord's +5.
         assert_eq!(
             Rules::shipped().source_fingerprint(),
-            "fnv1a64:9539e12040db0e7d"
+            "fnv1a64:dd2560d44eea3238"
         );
     }
 
@@ -3466,31 +3683,30 @@ mod tests {
 
     #[test]
     fn named_modifiers_compose_and_attach_to_any_effect_bearing_spec() {
-        let mut files = Rules::shipped_values();
-        files.insert(
-            "modifiers".to_string(),
-            json!({
-                "production_seed": {
-                    "effects": {"city_production": 2, "builder_production_pct": 12},
-                    "building_yields": {"library": {"science": 2}},
-                    "unit_purchase_discount_pct": {"builder": 15},
-                    "abilities": ["public_engineering"]
-                },
-                "production_bundle": {
-                    "effects": {"builder_production_pct": 8},
-                    "building_yields": {"library": {"science": 1}},
-                    "unit_purchase_discount_pct": {"builder": 5},
-                    "modifiers": ["production_seed"]
-                }
-            }),
-        );
+        let mut files = Rules::shipped_values_with(json!({
+            "production_seed": {
+                "effects": {"city_production": 2, "builder_production_pct": 12},
+                "building_yields": {"library": {"science": 2}},
+                "unit_purchase_discount_pct": {"builder": 15},
+                "abilities": ["public_engineering"]
+            },
+            "production_bundle": {
+                "effects": {"builder_production_pct": 8},
+                "building_yields": {"library": {"science": 1}},
+                "unit_purchase_discount_pct": {"builder": 5},
+                "modifiers": ["production_seed"]
+            }
+        }));
         files.get_mut("policies").unwrap()["urban_planning"]["modifiers"] =
             json!(["production_bundle"]);
 
         let rules = Rules::from_values(files).unwrap();
         // Urban Planning already carries one city Production. Attached values
         // add to local values rather than silently replacing them.
-        assert_eq!(rules.policies["urban_planning"].effects["city_production"], 3.0);
+        assert_eq!(
+            rules.policies["urban_planning"].effects["city_production"],
+            3.0
+        );
         assert_eq!(
             rules.policies["urban_planning"].effects["builder_production_pct"],
             20.0
@@ -3564,17 +3780,13 @@ mod tests {
         };
         assert!(!requirements.matches(&dark));
 
-        let mut files = Rules::shipped_values();
-        files.insert(
-            "modifiers".to_string(),
-            json!({
-                "city_bundle": {
-                    "collection": "player_cities",
-                    "requirements": {"all": [{"government": "democracy"}]},
-                    "effects": {"city_production": 4}
-                }
-            }),
-        );
+        let files = Rules::shipped_values_with(json!({
+            "city_bundle": {
+                "collection": "player_cities",
+                "requirements": {"all": [{"government": "democracy"}]},
+                "effects": {"city_production": 4}
+            }
+        }));
         let rules = Rules::from_values(files).unwrap();
         assert_eq!(
             rules.modifiers["city_bundle"].collection,
@@ -3590,16 +3802,12 @@ mod tests {
 
     #[test]
     fn contextual_modifier_attachments_are_not_flattened_into_static_rules() {
-        let mut files = Rules::shipped_values();
-        files.insert(
-            "modifiers".to_string(),
-            json!({
-                "conditional": {
-                    "requirements": {"all": [{"government": "democracy"}]},
-                    "effects": {"city_production": 4}
-                }
-            }),
-        );
+        let mut files = Rules::shipped_values_with(json!({
+            "conditional": {
+                "requirements": {"all": [{"government": "democracy"}]},
+                "effects": {"city_production": 4}
+            }
+        }));
         files.get_mut("policies").unwrap()["urban_planning"]["modifiers"] = json!(["conditional"]);
         let error = Rules::from_values(files).err().unwrap();
         assert!(
@@ -3607,11 +3815,7 @@ mod tests {
             "{error}"
         );
 
-        let mut invalid = Rules::shipped_values();
-        invalid.insert(
-            "modifiers".to_string(),
-            json!({"bad": {"requirements": {"all": [{}]}}}),
-        );
+        let invalid = Rules::shipped_values_with(json!({"bad": {"requirements": {"all": [{}]}}}));
         let error = Rules::from_values(invalid).err().unwrap();
         assert!(error.contains("empty all requirement"), "{error}");
     }
@@ -3900,7 +4104,7 @@ mod tests {
             ("cavalry", "helicopter"),
             ("heavy_chariot", "knight"),
             ("knight", "cuirassier"),
-            ("tagma", "tank"),
+            ("tagma", "cuirassier"),
             ("cuirassier", "tank"),
             ("tank", "modern_armor"),
             ("catapult", "trebuchet"),
@@ -3978,7 +4182,67 @@ mod tests {
         assert_eq!(rules.wonders.len(), 53);
         assert_eq!(rules.improvements.len(), 76);
         assert_eq!(rules.resources.len(), 52);
-        assert_eq!(rules.projects.len(), 25);
+        assert_eq!(rules.projects.len(), 31);
+        let aid = rules
+            .projects
+            .get(&crate::name!("send_aid"))
+            .expect("the Gathering Storm Aid Request project is modeled");
+        assert_eq!(aid.cost, 200.0);
+        assert_eq!(
+            aid.host_competition_kinds().collect::<Vec<_>>(),
+            ["EMERGENCY_SEND_AID", "EMERGENCY_SEND_MILITARY_AID"]
+        );
+        assert_eq!(aid.competition_score, 200.0);
+        assert!(aid.repeatable);
+        for (project, power_plant) in [
+            ("decommission_coal_power_plant", "coal_power_plant"),
+            ("decommission_oil_power_plant", "oil_power_plant"),
+            ("decommission_nuclear_power_plant", "nuclear_power_plant"),
+        ] {
+            let decommission = rules
+                .projects
+                .get(project)
+                .expect("the Gathering Storm Climate Accords project is modeled");
+            assert_eq!(decommission.cost, 400.0, "{project} costs 400 Production");
+            assert_eq!(decommission.district.as_deref(), Some("industrial_zone"));
+            assert_eq!(
+                decommission.host_competition.as_deref(),
+                Some("EMERGENCY_CLIMATE_ACCORDS")
+            );
+            assert_eq!(
+                decommission
+                    .consumes_buildings
+                    .iter()
+                    .map(String::as_str)
+                    .collect::<Vec<_>>(),
+                [power_plant]
+            );
+            assert_eq!(decommission.competition_score, 100.0);
+            assert!(decommission.repeatable);
+        }
+        let athletes = rules
+            .projects
+            .get(&crate::name!("train_athletes"))
+            .expect("the Gathering Storm World Games project is modeled");
+        assert_eq!(athletes.cost, 200.0);
+        assert_eq!(
+            athletes.host_competition.as_deref(),
+            Some("EMERGENCY_WORLD_GAMES")
+        );
+        assert_eq!(athletes.competition_score, 50.0);
+        assert!(athletes.repeatable);
+        let astronauts = rules
+            .projects
+            .get(&crate::name!("train_astronauts"))
+            .expect("the Gathering Storm International Space Station project is modeled");
+        assert_eq!(astronauts.cost, 200.0);
+        assert_eq!(astronauts.district.as_deref(), Some("spaceport"));
+        assert_eq!(
+            astronauts.host_competition.as_deref(),
+            Some("EMERGENCY_SPACE_STATION")
+        );
+        assert_eq!(astronauts.competition_score, 30.0);
+        assert!(astronauts.repeatable);
         // 118 civic-unlocked cards plus the eleven Dark Age cards
         // (`Policies_XP1` RequiresDarkAge = 1), which no civic unlocks — a
         // Dark Age is what puts them on offer.
@@ -4114,7 +4378,11 @@ mod tests {
                     "{id} requires missing project {prerequisite}"
                 );
             }
-            for building in &spec.requires_buildings {
+            for building in spec
+                .requires_buildings
+                .iter()
+                .chain(&spec.consumes_buildings)
+            {
                 assert!(
                     rules.buildings.contains_key(building),
                     "{id} requires missing building {building}"
@@ -4381,8 +4649,15 @@ mod tests {
             .iter()
             .map(|class| promotion_count(class))
             .sum::<usize>();
+        // The espionage class is counted separately below: it is a flat list of
+        // seventeen, not a seven-node XP tree, so it cannot be folded into the
+        // per-class totals this assertion sums.
         assert_eq!(
-            rules.promotions.len(),
+            rules
+                .promotions
+                .values()
+                .filter(|promotion| promotion.class != "espionage")
+                .count(),
             expected_promotions,
             "modeled promotion classes: {classes:?}"
         );
@@ -4412,6 +4687,29 @@ mod tests {
                     "{name} has no prerequisite from an earlier tier"
                 );
             }
+        }
+    }
+
+    /// The Spy's tree is flat, and Civ VI says so.
+    ///
+    /// `UnitPromotions` gives all seventeen `PROMOTION_CLASS_SPY` rows
+    /// `Level = 1` and ships no `UnitPromotionPrereqs` for any of them: a Spy
+    /// picks three of the seventeen in any order as it levels, which is why the
+    /// tier/prerequisite assertions above cannot describe it. Guarding the
+    /// shape here keeps that difference deliberate rather than an omission.
+    #[test]
+    fn espionage_promotions_are_a_flat_seventeen_node_class() {
+        let rules = Rules::embedded();
+        let nodes: Vec<_> = rules
+            .promotions
+            .iter()
+            .filter(|(_, promotion)| promotion.class == "espionage")
+            .collect();
+        assert_eq!(nodes.len(), 17, "espionage promotion class");
+        for (name, promotion) in nodes {
+            assert_eq!(promotion.tier, 1, "{name} tier");
+            assert!(promotion.requires.is_empty(), "{name} prerequisites");
+            assert!(!promotion.effects.is_empty(), "{name} has no effect");
         }
     }
 

@@ -22,13 +22,13 @@ use crate::ai::{AdvancedAi, Ai, BasicAi};
 use crate::civ6;
 use crate::game::{Action, Game, GameOptions, LeaderPool, PlayOnMode, VictoryConditions};
 use crate::leader_roster;
-use crate::obs::{observation, observation_player_view, observation_spectator};
 use crate::name::Name;
+use crate::obs::{observation, observation_player_view, observation_spectator};
 use crate::rules::Rules;
 use crate::setup::{
     battlefield_sizes, future_era_from_id, future_era_id, start_era_from_id, start_era_id,
-    turn_structure_id, AiPlayerPool, BaseRuleset, FutureEra, GameSpeed, MapPoles, MapScript,
-    MapSize, MapTopology, TacticsEra, TacticsRules, TurnStructure,
+    turn_structure_id, BaseRuleset, FutureEra, GameSpeed, MapPoles, MapScript, MapSize,
+    MapTopology, TacticsEra, TacticsRules, TurnStructure,
 };
 use crate::Pos;
 
@@ -444,15 +444,15 @@ const EMBEDDED_APP_SETUP_JS: &str = include_str!("../web/assets/app_setup.js");
 const EMBEDDED_FEATURE_ATLAS: &[u8] = include_bytes!("../web/assets/feature-atlas.png");
 const EMBEDDED_ENVIRONMENT_FEATURE_ATLAS: &[u8] =
     include_bytes!("../web/assets/environment-feature-atlas.png");
-const EMBEDDED_HIDDEN_MAP_MONSTERS: &[u8] =
-    include_bytes!("../web/assets/hidden-map-monsters.png");
-const EMBEDDED_CIV6_UNIT_FLAGS: &[u8] =
-    include_bytes!("../web/assets/civ6-unit-flags.png");
+const EMBEDDED_HIDDEN_MAP_MONSTERS: &[u8] = include_bytes!("../web/assets/hidden-map-monsters.png");
+const EMBEDDED_CIV6_UNIT_FLAGS: &[u8] = include_bytes!("../web/assets/civ6-unit-flags.png");
+const EMBEDDED_CIV6_YIELD_ICONS: &[u8] = include_bytes!("../web/assets/civ6-yield-icons.png");
+const EMBEDDED_CIV6_UNIT_FLAG_PLATES: &[u8] =
+    include_bytes!("../web/assets/civ6-unit-flag-plates.png");
 
-/// The agents that exist in every build, whether or not a league snapshot is
-/// on disk, with the handle the leaderboards give them. `make_send_ai`
-/// resolves each id, and the auto-play control offers this list when there is
-/// no roster to offer instead.
+/// The agents that exist in every build, with a friendly handle each.
+/// `crate::elo::builtin_send_ai` resolves the id, and the auto-play control
+/// offers this list.
 const BUILTIN_STRATEGIES: [(&str, &str); 4] = [
     ("advanced", "JackOfAllTrades"),
     ("advanced_evolved", "Evolved"),
@@ -512,29 +512,6 @@ pub struct Params {
     /// A lifecycle supervisor, rather than the browser countdown, owns the
     /// transition after a completed spectator game.
     pub supervised: bool,
-    /// League directory to seat major players from (`civvis play --league`):
-    /// each civ samples from the roster's best few live-eligible strategies
-    /// with descending rank weights — `ai_pool` says how deep the pool runs —
-    /// and the HUD shows per-player Elo. `None` still annotates Elo
-    /// when a `league/` dir exists, because the default fleet below IS the
-    /// league's "advanced" entrant — but the AIs themselves are unchanged.
-    pub league_dir: Option<String>,
-    /// How deep the AI player pool runs: which of the rated strategies may be
-    /// seated for the game's AI civilizations. The setup panel's "AI player
-    /// pool" control, read on every world — the full Civvis game and a
-    /// Tactics arena alike. `Best3` is the long-standing stock policy.
-    pub ai_pool: AiPlayerPool,
-    /// Rate the finished game into `league_dir` (`--league-record`). Off by
-    /// default because the shipped `data/league` roster is a committed
-    /// snapshot: a run that seats from it must not rewrite it. Point this at
-    /// a runtime copy and the table moves with every game played.
-    pub league_record: bool,
-    /// Optional match-machine coverage target. When set, this unretired
-    /// strategy owns seat zero for the game; the other seats keep the normal
-    /// rank-weighted exhibition selection. It is deliberately separate from
-    /// world settings so rotating targets cannot trigger a spectator restart
-    /// or alter tournament rules.
-    pub force_strategy: Option<String>,
 }
 
 pub struct Session {
@@ -558,35 +535,13 @@ pub struct Session {
     /// The live queue belongs to `Shared`; this only hands the resumed value
     /// across at construction, and is taken exactly once.
     resumed_next_game_params: Option<Params>,
-    /// League roster used to label seats with player handles and elo (and,
-    /// with `--league`, to choose who plays each civ).
-    league: Option<crate::league::League>,
-    /// Per-seat index into `league.strategies` for rated major seats.
-    seat_strategy: Vec<Option<usize>>,
-    /// Whether the roster above actually *chose* who plays each civ. Without
-    /// `--league` it did not: every major runs the default hierarchical agent
-    /// and each seat points at the entrant the league rates that agent as, so
-    /// the rating is the seat's own but the handle is one name repeated down
-    /// the table. Such a seat keeps its generated per-seat name instead.
-    seat_from_roster: bool,
-    /// The strategies auto-play can hand the human seat to. `league` above is
-    /// the roster this game is *rated* against and is often absent; every
-    /// build ships the committed snapshot under `data/league`, so the choice
-    /// on offer is our bred strategies whether or not anything is being rated.
-    /// Reading it is a labelling concern only: nothing here seats a rival.
-    roster: Option<crate::league::League>,
-    /// The strategy a player handed their own seat to, by roster name. Held
-    /// separately from `seat_strategy[0]` because the roster it came from is
-    /// not always the roster this game is rated against.
+    /// The built-in agent a player handed their own seat to, by name.
     autoplay_strategy: Option<String>,
     /// The last browser batch that borrowed the human seat, and how many
     /// turns it played. A client retries the same id after a dropped socket;
     /// remembering one completed batch makes that retry an acknowledgement,
     /// not a second run.
     last_autoplay_request: Option<(String, usize)>,
-    /// Set once this game's result has been rated, so a winner that is
-    /// stepped past more than once is only ever counted for one game.
-    league_recorded: bool,
     /// Who is playing each human seat: a player registered when this game
     /// began, never one of the agents already in the roster.
     human_players: BTreeMap<usize, SeatPlayer>,
@@ -2055,217 +2010,53 @@ fn automatic_successor_seed(seed: u64) -> u64 {
 }
 
 impl Session {
-    /// Seat AIs plus each seat's league identity. With a roster to seat from,
-    /// each major gets a rank-weighted sample from the best proven winners
-    /// for this table size (`league::seat_by_civ_seeded`) — the AI player
-    /// pool setting says how many are eligible — overall placement
-    /// rating breaking win-bound ties, repeats avoided while possible, and the
-    /// sampled entrants rotated across the table's civilizations by Latin
-    /// square over the league round — never seated by their rating on the civ
-    /// itself, which is the confound documented in docs/RATING.md. Otherwise
-    /// majors run the default hierarchical AI, which the league rates as its
-    /// "advanced" entrant, so a loaded roster can still label those seats with
-    /// an elo.
-    ///
-    /// A seat somebody is playing is never seated from the roster. Whoever is
-    /// at the keyboard is their own player — `register_human_players` gives
-    /// them a new one — and an entrant that had this seat handed to it would
-    /// wear a person's game as its own result.
-    fn ai_fleet(
-        game: &Game,
-        league: Option<&crate::league::League>,
-        seat_from_roster: bool,
-        ai_pool: AiPlayerPool,
-        force_strategy: Option<&str>,
-    ) -> (Vec<Box<dyn Ai + Send>>, Vec<Option<usize>>) {
-        let mut seat_strategy: Vec<Option<usize>> = vec![None; game.players.len()];
-        if let Some(l) = league {
-            let majors: Vec<usize> = game
-                .players
-                .iter()
-                .filter(|p| !p.is_minor && !p.is_barbarian && !game.is_human_seat(p.id))
-                .map(|p| p.id)
-                .collect();
-            if seat_from_roster && !l.exhibition_active().is_empty() {
-                let civs: Vec<String> =
-                    majors.iter().map(|id| game.players[*id].civ.clone()).collect();
-                let table_size = game
-                    .players
-                    .iter()
-                    .filter(|player| !player.is_minor && !player.is_barbarian)
-                    .count();
-                for (id, pick) in majors.iter().zip(crate::league::seat_by_civ_seeded(
-                    l,
-                    &civs,
-                    table_size,
-                    game.seed,
-                    ai_pool.depth(),
-                )) {
-                    seat_strategy[*id] = Some(pick);
-                }
-            } else if let Some(default_entrant) =
-                l.strategies.iter().position(|s| s.name == "advanced")
-            {
-                for id in &majors {
-                    seat_strategy[*id] = Some(default_entrant);
-                }
-            }
-            // The match machine rotates every unretired strategy through a
-            // dedicated seat. This includes an entrant marked `league_only`:
-            // it is still a valid rated strategy, and an explicit coverage
-            // request is the operator's admission decision for this game.
-            // Keep all other seats on the ordinary sampler and swap rather
-            // than duplicate the target when it was already selected.
-            if let Some(name) = force_strategy {
-                if let Some(target) = l.strategies.iter().position(|strategy| {
-                    strategy.name == name && !strategy.retired && !strategy.human
-                }) {
-                    if let Some(seat) = majors.first().copied() {
-                        if let Some(existing) = seat_strategy
-                            .iter()
-                            .position(|strategy| *strategy == Some(target))
-                        {
-                            seat_strategy.swap(seat, existing);
-                        } else {
-                            seat_strategy[seat] = Some(target);
-                        }
-                    }
-                }
-            }
-        }
-        let ais = game
-            .players
+    /// Seat the AIs: every major plays the deployment genome — `AdvancedAi`
+    /// with the gene ledger applied — and minors and barbarians keep the
+    /// cheaper baseline. A seat somebody is playing gets an agent too, so the
+    /// world can be handed to it or watched from it.
+    fn ai_fleet(game: &Game) -> Vec<Box<dyn Ai + Send>> {
+        game.players
             .iter()
             .map(|p| -> Box<dyn Ai + Send> {
                 if p.is_minor || p.is_barbarian {
-                    return Box::new(BasicAi::new());
-                }
-                match (seat_from_roster, league, seat_strategy[p.id]) {
-                    (true, Some(l), Some(si)) => crate::league::make_send_ai(
-                        &l.strategies[si].kind,
-                        game.seed.wrapping_add(p.id as u64),
-                    ),
-                    _ => Box::new(AdvancedAi::new()),
+                    Box::new(BasicAi::new())
+                } else {
+                    Box::new(AdvancedAi::new())
                 }
             })
-            .collect();
-        (ais, seat_strategy)
+            .collect()
     }
 
-    /// The strategies auto-play may offer. Prefer whatever this game is
-    /// already rated against, so the ratings shown are the ones in play; fall
-    /// back to the snapshot every build ships, so the control still names our
-    /// bred strategies in a game that is rating nothing.
-    fn load_roster(league: Option<&crate::league::League>) -> Option<crate::league::League> {
-        match league {
-            Some(l) => Some(l.clone()),
-            None => crate::league::shipped_league(),
-        }
-    }
-
-    /// The roster named by `--league`, else a best-effort load purely for
-    /// elo labels: the runtime `league/` this checkout records into, then the
-    /// snapshot compiled into every build. Only the named roster is ever
-    /// written to, so a labelled game still rates nothing — but it does say
-    /// what the league already knows about the agent in each seat, which used
-    /// to require passing `--league` to see at all.
-    ///
-    /// The last step is `league::shipped_league` rather than a read of
-    /// `data/league`, because a directory is resolved against the working
-    /// directory and a rating must not depend on where the binary was started
-    /// from. Reading that path is what left every seat at a provisional 1500
-    /// anywhere but a checkout root.
-    fn load_params_league(params: &Params) -> (Option<crate::league::League>, bool) {
-        match &params.league_dir {
-            Some(dir) => (crate::league::load_league(dir), true),
-            None => (
-                crate::league::load_league("league").or_else(crate::league::shipped_league),
-                false,
-            ),
-        }
-    }
-
-    /// Register a new player for every seat a person is at, and hand the seat
-    /// that identity.
-    ///
-    /// Sitting down to play does not make you one of the agents on the
-    /// leaderboard. When this game is being rated (`--league --league-record`)
-    /// the new player is written into that roster, so `record_league_result`
-    /// files the result under a name that is the person's own; otherwise
-    /// there is nothing to rate into and the handle is minted against the
-    /// roster in memory purely so the game can say who is playing. Either way
-    /// no existing entrant is reused.
-    fn register_human_players(
-        params: &Params,
-        game: &Game,
-        league: &mut Option<crate::league::League>,
-        seat_strategy: &mut [Option<usize>],
-    ) -> BTreeMap<usize, SeatPlayer> {
+    /// Name every seat a person is at. Sitting down to play does not make you
+    /// one of the agents; the handle is minted for this game so the world can
+    /// say who is playing, and nothing rates it.
+    fn register_human_players(game: &Game) -> BTreeMap<usize, SeatPlayer> {
         let mut players = BTreeMap::new();
-        let rated_dir = params
-            .league_record
-            .then(|| params.league_dir.clone())
-            .flatten();
-        // Handles for an unrated game are drawn against this scratch roster,
-        // so two seats in one game cannot mint the same one.
-        let mut unrated: Option<crate::league::League> = None;
-        for seat in game.human_seats.iter().copied() {
+        for (index, seat) in game.human_seats.iter().copied().enumerate() {
             if game.players.get(seat).is_none() {
                 continue;
             }
-            let registered = rated_dir
-                .as_deref()
-                .and_then(crate::league::register_player);
-            let player = match registered {
-                Some((updated, index)) => {
-                    let entry = &updated.strategies[index];
-                    let player = SeatPlayer {
-                        name: entry.name.clone(),
-                        username: entry.username.clone(),
-                        rated: true,
-                    };
-                    seat_strategy[seat] = Some(index);
-                    *league = Some(updated);
-                    player
-                }
-                None => {
-                    let table = unrated.get_or_insert_with(|| {
-                        league.clone().unwrap_or(crate::league::League {
-                            round: 0,
-                            strategies: Vec::new(),
-                            calibration: Default::default(),
-                        })
-                    });
-                    let index = crate::league::register_new_player(table);
-                    let entry = &table.strategies[index];
-                    SeatPlayer {
-                        name: entry.name.clone(),
-                        username: entry.username.clone(),
-                        rated: false,
-                    }
-                }
+            let (name, username) = if index == 0 {
+                ("player".to_string(), "Player".to_string())
+            } else {
+                (
+                    format!("player{}", index + 1),
+                    format!("Player {}", index + 1),
+                )
             };
-            players.insert(seat, player);
+            players.insert(
+                seat,
+                SeatPlayer {
+                    name,
+                    username,
+                    rated: false,
+                },
+            );
         }
         players
     }
 
     pub fn new(params: Params) -> Session {
-        let (league, seat_from_roster) = Self::load_params_league(&params);
-        Self::new_with_league(params, league, seat_from_roster)
-    }
-
-    /// Construct a world against a roster supplied by its host.
-    ///
-    /// Native sessions normally load from `Params::league_dir`. A browser
-    /// module has no filesystem, so the local desktop host hands it the same
-    /// live roster as the native spectator and asks it to seat directly from
-    /// that snapshot.
-    fn new_with_league(
-        params: Params,
-        mut league: Option<crate::league::League>,
-        seat_from_roster: bool,
-    ) -> Session {
         // Seat 0 is the person at the keyboard, which is what decides who the
         // difficulty hands its bonuses to. A spectated game has nobody there.
         let human_seats = if params.spectate {
@@ -2301,16 +2092,10 @@ impl Session {
         game.victory_conditions = params.victory_conditions;
         game.mercy_rule = params.mercy_rule;
         game.required_victory_types = params.required_victory_types;
-        // The hierarchical agent is the stock major-civilization default when
-        // no league strategy is seated. Minors/barbarians retain the cheaper
-        // baseline because they do not need empire-level planning.
-        let (mut ais, mut seat_strategy) = Self::ai_fleet(
-            &game,
-            league.as_ref(),
-            seat_from_roster,
-            params.ai_pool,
-            params.force_strategy.as_deref(),
-        );
+        // The hierarchical agent is the stock major-civilization default.
+        // Minors/barbarians retain the cheaper baseline because they do not
+        // need empire-level planning.
+        let mut ais = Self::ai_fleet(&game);
         // Only a watched table records its reasoning. Everywhere else the
         // journal is off and every `think!` is one `Option` test.
         let journal = if params.spectate {
@@ -2321,10 +2106,8 @@ impl Session {
         for ai in &mut ais {
             ai.attach_journal(journal.handle());
         }
-        let human_players =
-            Self::register_human_players(&params, &game, &mut league, &mut seat_strategy);
+        let human_players = Self::register_human_players(&game);
         let chronicle = ChronicleState::from_game(&game);
-        let roster = Self::load_roster(league.as_ref());
         Session {
             params,
             game,
@@ -2333,13 +2116,8 @@ impl Session {
             view_player: None,
             chronicle,
             resumed_next_game_params: None,
-            league,
-            seat_strategy,
-            seat_from_roster,
-            roster,
             autoplay_strategy: None,
             last_autoplay_request: None,
-            league_recorded: false,
             human_players,
             journal,
             simultaneous_census: crate::simultaneous::SimultaneousCensus::default(),
@@ -2396,14 +2174,7 @@ impl Session {
         let next_game_params = (simulation_settings(&requested_next)
             != simulation_settings(&params))
         .then_some(requested_next);
-        let (mut league, seat_from_roster) = Self::load_params_league(&params);
-        let (mut ais, mut seat_strategy) = Self::ai_fleet(
-            &game,
-            league.as_ref(),
-            seat_from_roster,
-            params.ai_pool,
-            params.force_strategy.as_deref(),
-        );
+        let mut ais = Self::ai_fleet(&game);
         // A save carries the world, not what anyone was thinking while they
         // played it. The restored table starts a fresh record from the turn it
         // resumes.
@@ -2416,18 +2187,13 @@ impl Session {
             ai.attach_journal(journal.handle());
         }
         let chronicle = ChronicleState::from_game(&game);
-        // A match restored with its winner already decided was rated when it
-        // finished; rating it again on the next step would count it twice.
-        let league_recorded = game.is_finished();
         // A save carries the world, not the person: whoever reloads it is a
-        // new player again, and a decided game has nothing left to rate, so
-        // it registers nobody.
-        let human_players = if league_recorded {
+        // new player again; a decided game names nobody.
+        let human_players = if game.is_finished() {
             BTreeMap::new()
         } else {
-            Self::register_human_players(&params, &game, &mut league, &mut seat_strategy)
+            Self::register_human_players(&game)
         };
-        let roster = Self::load_roster(league.as_ref());
         Session {
             params,
             game,
@@ -2436,13 +2202,8 @@ impl Session {
             view_player: None,
             chronicle,
             resumed_next_game_params: next_game_params,
-            league,
-            seat_strategy,
-            seat_from_roster,
-            roster,
             autoplay_strategy: None,
             last_autoplay_request: None,
-            league_recorded,
             human_players,
             journal,
             simultaneous_census: crate::simultaneous::SimultaneousCensus::default(),
@@ -2687,82 +2448,18 @@ impl Session {
             player["player_name"] = json!(seat.name);
             player["player_username"] = json!(seat.username);
             player["player_rated"] = json!(seat.rated);
-            // Their own row, found by the name they were registered under —
-            // not `seat_entry`, which follows whichever agent is holding the
-            // seat. Handing it to auto-play does not hand over your rating.
-            let entry = self
-                .league
-                .as_ref()
-                .and_then(|league| league.strategies.iter().find(|s| s.name == seat.name));
-            let civ = &self.game.players[id].civ;
-            let shown = crate::league::display_rating(entry, civ);
-            player["player_elo"] = json!(shown.rating.round() as i64);
-            player["player_elo_rd"] = json!(shown.rd.round() as i64);
-            player["player_elo_civ"] = json!(shown.civ_specific);
-            player["player_elo_provisional"] = json!(shown.provisional);
-            player["player_games"] = json!(entry.map_or(0, |entry| entry.games));
         }
     }
 
-    /// The league row backing a seat, if the league has one. `None` is the
-    /// ordinary case for a game running without a roster, and is a seat the
-    /// league has never heard of rather than a seat that cannot be rated:
-    /// `league::display_rating` gives it the provisional base.
-    fn seat_entry(&self, seat: usize) -> Option<&crate::league::Strategy> {
-        let index = self.seat_strategy.get(seat).copied().flatten()?;
-        self.league.as_ref()?.strategies.get(index)
-    }
-
-    /// Give every met major the rating it is defending and both of its odds of
-    /// winning this game: the ones it sat down with, and the ones it holds now.
-    ///
-    /// Every major carries a rating, roster or no roster. Most games run
-    /// without `--league`, and a column of dashes read as "this build cannot
-    /// rate anyone" when the truth was only that nobody at this table has
-    /// finished a rated game yet. An unknown player is a provisional 1500
-    /// that the first result moves. A standing is public the way a chess
-    /// opponent's is, so an *opponent* in an interactive game carries one
-    /// too — subject to the same fog as everything else here: a civ you have
-    /// not met is not annotated at all.
-    ///
-    /// The odds themselves are [`crate::odds`]. This is where the ratings live,
-    /// which is why the model is fed from here: the seat's league number, plus
-    /// its civilization's measured edge where that number is not already
-    /// civ-specific, becomes the prior the difficulty setting and the board then
-    /// correct. A game with no roster still gets both figures — every seat is
-    /// then the same provisional 1500, so the start odds are the difficulty
-    /// bargain and the size of the table, which is exactly what they should be.
-    fn name_seat_ratings(&self, o: &mut Value) {
+    /// Give every met major both of its odds of winning this game: the ones
+    /// it sat down with, and the ones it holds now. The odds themselves are
+    /// [`crate::odds`]; every seat sits down at the same provisional prior,
+    /// so the start odds are the difficulty bargain and the size of the
+    /// table, which is exactly what they should be with nothing rating the
+    /// seats.
+    fn name_seat_odds(&self, o: &mut Value) {
         let g = &self.game;
-        let rating_of = |pid: usize| {
-            crate::league::display_rating(self.seat_entry(pid), &g.players[pid].civ)
-        };
-        // The rating each seat brings to the table, before the world touches
-        // it. A seat the league has never heard of is in here at the
-        // provisional base rather than left out: leaving it out would make the
-        // remaining shares add to one between themselves and quietly claim the
-        // unrated seat cannot win.
-        let odds = crate::odds::table(g, |pid| {
-            let shown = rating_of(pid);
-            let elo = if shown.civ_specific {
-                // Already a measurement of this player as this civilization.
-                shown.rating
-            } else {
-                // Otherwise the roster still knows something about the civ
-                // they drew, even if this player has never played it.
-                shown.rating
-                    + self
-                    .league
-                    .as_ref()
-                    .map_or(0.0, |league| {
-                        crate::odds::civ_edge_elo(league, &g.players[pid].civ)
-                    })
-            };
-            // The midpoint and the uncertainty are both part of a pregame
-            // prediction. A one-game rating must not make the same promise as
-            // a settled one merely because the two badges show the same Elo.
-            crate::odds::PriorRating::new(elo, shown.rd)
-        });
+        let odds = crate::odds::table(g, |_pid| 1500.0f64);
         let Some(players) = o["players"].as_array_mut() else {
             return;
         };
@@ -2778,27 +2475,6 @@ impl Session {
             {
                 continue;
             }
-            let shown = rating_of(id);
-            // A handle names a seat only when the roster picked that seat.
-            // Otherwise the whole table is the same entrant and repeating its
-            // name down every row would hide who is who; the generated
-            // per-seat name from `name_ai_players` reads better and is just
-            // as true.
-            if let (true, Some(s)) = (self.seat_from_roster, self.seat_entry(id)) {
-                // Stable rating identity, distinct from both the friendly
-                // username and the controller's one-word tactical label.
-                // Hosted browser games return this exact value when filing
-                // the terminal result into the persistent league.
-                if !s.human {
-                    player["ai_player_strategy"] = json!(s.name);
-                }
-                player["ai_username"] = json!(s.username);
-                player["ai_strat_label"] = json!(s.label());
-            }
-            player["ai_elo"] = json!(shown.rating.round() as i64);
-            player["ai_elo_rd"] = json!(shown.rd.round() as i64);
-            player["ai_elo_civ"] = json!(shown.civ_specific);
-            player["ai_elo_provisional"] = json!(shown.provisional);
             if let Some(seat) = odds.get(&id) {
                 // Preserve the model's positive probability exactly. Rounding
                 // at the transport boundary can turn a living long shot into
@@ -2917,22 +2593,21 @@ impl Session {
                                 // dozens of strings per seat on a document that
                                 // is already the bottleneck, and the card asks
                                 // one question of it.
-                                player["research_boosted"] = json!(seat
-                                    .research
-                                    .as_ref()
-                                    .is_some_and(|tech| seat.boosted_techs.contains(&Name::new(tech))));
-                                player["civic_boosted"] = json!(seat
-                                    .civic
-                                    .as_ref()
-                                    .is_some_and(|civic| seat.boosted_civics.contains(&Name::new(civic))));
+                                player["research_boosted"] =
+                                    json!(seat.research.as_ref().is_some_and(|tech| seat
+                                        .boosted_techs
+                                        .contains(&Name::new(tech))));
+                                player["civic_boosted"] =
+                                    json!(seat.civic.as_ref().is_some_and(|civic| seat
+                                        .boosted_civics
+                                        .contains(&Name::new(civic))));
                             }
                         }
                     }
                 }
             }
-            // League identity: who is playing each seat and how strong the
-            // league currently believes they are on this civ.
-            self.name_seat_ratings(&mut o);
+            // Who is at each seat and its odds of winning from here.
+            self.name_seat_odds(&mut o);
             self.name_ai_players(&mut o);
             o["spectate"] = json!(true);
             o["supervised"] = json!(self.params.supervised);
@@ -2966,7 +2641,7 @@ impl Session {
         // does, and the HUD has always had a column for it. It used to be
         // empty in every interactive game because only the spectator wrote
         // one. Their plan is still theirs; only the rating is public.
-        self.name_seat_ratings(&mut o);
+        self.name_seat_odds(&mut o);
         self.name_ai_players(&mut o);
         self.name_human_players(&mut o);
         o["spectate"] = json!(false);
@@ -3038,7 +2713,6 @@ impl Session {
                     self.simultaneous_census.summary()
                 );
             }
-            self.record_league_result();
             return pid;
         }
         self.ais[pid].take_turn(g, pid);
@@ -3049,7 +2723,6 @@ impl Session {
         // stepping a batch, the headless pacer running an unattended
         // exhibition, autoplay — so this is the one place a result cannot be
         // missed.
-        self.record_league_result();
         pid
     }
 
@@ -3067,96 +2740,6 @@ impl Session {
             actions,
             world_events,
         }
-    }
-
-    /// Rate a just-decided game into the roster it was seated from. Without
-    /// this a rated exhibition plays hundreds of games against a frozen
-    /// table: the elo on screen is whatever the last offline league run left
-    /// behind, no matter who keeps winning.
-    fn record_league_result(&mut self) {
-        if self.league_recorded || !self.game.is_finished() || !self.params.league_record {
-            return;
-        }
-        // The ratings are a sequential-regime instrument. A simultaneous
-        // game changes every seat's information set, so its results must
-        // never blend into the same Glicko-2 table — the game plays and is
-        // shown, but it rates nobody.
-        if self.game.turn_structure == TurnStructure::Simultaneous {
-            return;
-        }
-        self.league_recorded = true;
-        let (Some(dir), Some(league)) = (self.params.league_dir.clone(), self.league.as_ref())
-        else {
-            return;
-        };
-        // Name every rated seat up front so the roster can be replaced below.
-        let seat_names: Vec<Option<String>> = self
-            .seat_strategy
-            .iter()
-            .enumerate()
-            .map(|(pid, si)| {
-                let p = &self.game.players[pid];
-                match (si, p.is_minor || p.is_barbarian) {
-                    (Some(si), false) => Some(league.strategies[*si].name.clone()),
-                    _ => None,
-                }
-            })
-            .collect();
-        let winner = self.game.winner;
-        let drawn = self.game.is_draw();
-        // Same ordering and competition ranks as a distributed league game:
-        // the declared winner stands alone, while a terminal Tactics draw
-        // gives every rated seat the same rank regardless of material left.
-        let rated: Vec<usize> = (0..seat_names.len())
-            .filter(|pid| seat_names[*pid].is_some())
-            .collect();
-        let (rated, ranks) = crate::league::competition_ranking(
-            rated,
-            winner,
-            |pid| if drawn { 0 } else { self.game.score(pid) },
-        );
-        let seats: Vec<crate::league::LiveGameSeat> = rated
-            .iter()
-            .enumerate()
-            .map(|(place, pid)| {
-                let civilization = self.game.players[*pid].civ.clone();
-                let leader = self
-                    .game
-                    .rules
-                    .civs
-                    .get(&civilization)
-                    .map(|spec| spec.leader.clone())
-                    .unwrap_or_else(|| civilization.clone());
-                crate::league::LiveGameSeat {
-                    strategy: seat_names[*pid].clone().unwrap(),
-                    leader,
-                    civilization,
-                    rank: ranks[place],
-                    won: winner == Some(*pid),
-                }
-            })
-            .collect();
-        let victory = self.game.victory_label().unwrap_or_default();
-        let Some(updated) = crate::league::record_ranked_game(
-            &dir,
-            &seats,
-            self.game.seed,
-            self.game.reported_turn(),
-            &victory,
-        ) else {
-            eprintln!("[league] could not rate this game into {dir}");
-            return;
-        };
-        // Show the new numbers for the rest of the results screen, and let the
-        // next game seat from them.
-        for (pid, slot) in self.seat_strategy.iter_mut().enumerate() {
-            let Some(name) = &seat_names[pid] else {
-                *slot = None;
-                continue;
-            };
-            *slot = updated.strategies.iter().position(|s| &s.name == name);
-        }
-        self.league = Some(updated);
     }
 
     pub fn step_many(&mut self, count: usize) -> Vec<SpectatorStep> {
@@ -3207,45 +2790,25 @@ impl Session {
     /// Hand seat 0 to a named strategy, so auto-play runs *that* agent rather
     /// than whichever one the fleet happened to build for the seat.
     ///
-    /// A name is matched against the live-eligible league roster first — by
-    /// entrant name or by the handle the leaderboards show — and then against
-    /// the built-in agents, so a build with no roster on disk still has
-    /// something to hand the seat to. An unknown or league-only name is an
-    /// error rather than a silent fallback: a player who picked a strategy and
-    /// got a different one has been lied to.
+    /// A name is matched against the built-in agents, by id or by the handle
+    /// the picker shows. An unknown name is an error rather than a silent
+    /// fallback: a player who picked a strategy and got a different one has
+    /// been lied to.
     pub fn seat_strategy_at(&mut self, seat: usize, name: &str) -> Result<(), String> {
         if name.is_empty() || self.autoplay_strategy.as_deref() == Some(name) {
             return Ok(());
         }
         let seed = self.game.seed.wrapping_add(seat as u64);
-        let kind = self
-            .roster
-            .as_ref()
-            .and_then(|roster| {
-                roster
-                    .strategies
-                    .iter()
-                    .find(|s| !s.league_only && (s.name == name || s.username == name))
-                    .map(|s| s.kind.clone())
-            })
-            .or_else(|| {
-                BUILTIN_STRATEGIES.iter().any(|(id, _)| *id == name).then(|| {
-                    crate::league::StrategyKind::Builtin { ai: name.to_string() }
-                })
-            })
+        let id = BUILTIN_STRATEGIES
+            .iter()
+            .find(|(id, username)| *id == name || *username == name)
+            .map(|(id, _)| *id)
             .ok_or_else(|| format!("no strategy named {name}"))?;
-        self.ais[seat] = crate::league::make_send_ai(&kind, seed);
+        self.ais[seat] = crate::elo::builtin_send_ai(id, seed);
         // A newly seated agent joins the same record as the rest of the table;
         // without this the seat a player just handed over goes quiet.
         self.ais[seat].attach_journal(self.journal.handle());
-        // The rated roster and the offered roster can be different rosters, so
-        // only claim a rated identity for the seat when this name is in the
-        // rated one; the name below is what the browser is told either way.
-        self.seat_strategy[seat] = self
-            .league
-            .as_ref()
-            .and_then(|l| l.strategies.iter().position(|s| s.name == name || s.username == name));
-        self.autoplay_strategy = Some(name.to_string());
+        self.autoplay_strategy = Some(id.to_string());
         Ok(())
     }
 
@@ -3263,15 +2826,14 @@ impl Session {
         if let Some(player) = self.human_players.get(&seat) {
             return Some(&player.name);
         }
-        if let (Some(Some(index)), Some(league)) = (self.seat_strategy.get(seat), self.league.as_ref())
-        {
-            return Some(league.strategies[*index].name.as_str());
-        }
-        // No rated identity for the seat. That does not make it nameless: the
-        // fleet built the default agent there, and the roster's name for that
-        // agent is "advanced" — the cheaper baseline for minors.
+        // Nobody has been handed this seat: the fleet built the default agent
+        // there — "advanced", or the cheaper baseline for minors.
         let player = self.game.players.get(seat)?;
-        Some(if player.is_minor || player.is_barbarian { "basic" } else { "advanced" })
+        Some(if player.is_minor || player.is_barbarian {
+            "basic"
+        } else {
+            "advanced"
+        })
     }
 
     /// Read the idempotency receipt for a completed auto-play batch.
@@ -3328,7 +2890,6 @@ impl Session {
                 }
                 guard += 1;
             }
-            self.record_league_result();
             played += 1;
         }
         played
@@ -3387,7 +2948,6 @@ impl Session {
                 }
                 guard += 1;
             }
-            self.record_league_result();
         }
         None
     }
@@ -3468,6 +3028,16 @@ fn hidden_map_monsters() -> Vec<u8> {
 fn civ6_unit_flags() -> Vec<u8> {
     std::fs::read("web/assets/civ6-unit-flags.png")
         .unwrap_or_else(|_| EMBEDDED_CIV6_UNIT_FLAGS.to_vec())
+}
+
+fn civ6_yield_icons() -> Vec<u8> {
+    std::fs::read("web/assets/civ6-yield-icons.png")
+        .unwrap_or_else(|_| EMBEDDED_CIV6_YIELD_ICONS.to_vec())
+}
+
+fn civ6_unit_flag_plates() -> Vec<u8> {
+    std::fs::read("web/assets/civ6-unit-flag-plates.png")
+        .unwrap_or_else(|_| EMBEDDED_CIV6_UNIT_FLAG_PLATES.to_vec())
 }
 
 /// Where a single-player game keeps its own saves, relative to the process's
@@ -3736,7 +3306,8 @@ fn major_teams(game: &Game) -> Vec<Option<usize>> {
 }
 
 /// The stock opening world: four majors playing themselves out on the Tiny
-/// Tennis Ball globe, under simultaneous turns.
+/// Lakes globe, its heat scattered rather than banded by latitude, one seat
+/// at a time.
 ///
 /// This is the one description of "the game nobody has decided anything
 /// about yet". The browser build opens every civvis.ai visit on it (see
@@ -3764,9 +3335,12 @@ fn stock_opening_params(seed: u64) -> Params {
         // `--turn-structure simultaneous`; it is simply not selectable
         // from here.
         turn_structure: TurnStructure::Sequential,
-        map_script: MapScript::TeninsBall,
+        map_script: MapScript::Lakes,
         map_topology,
-        map_poles: MapPoles::Poles,
+        // Heat by noise instead of latitude: the world a first visit opens
+        // on has no ice cap at either end, and its snow, desert and jungle
+        // turn up wherever their own patch of noise puts them.
+        map_poles: MapPoles::Randomized,
         game_speed: GameSpeed::Online,
         max_turns: GameSpeed::Online.turn_limit(),
         victory_conditions: VictoryConditions {
@@ -3793,10 +3367,6 @@ fn stock_opening_params(seed: u64) -> Params {
         leader_pool: LeaderPool::Civ6,
         civs: Vec::new(),
         supervised: false,
-        league_dir: None,
-        league_record: false,
-        ai_pool: AiPlayerPool::Best3,
-        force_strategy: None,
     }
 }
 
@@ -3840,7 +3410,6 @@ pub(crate) fn simulation_settings(params: &Params) -> Value {
         "poles": params.map_poles.id(),
         "speed": params.game_speed.id(),
         "leader_pool": params.leader_pool.id(),
-        "ai_pool": params.ai_pool.id(),
         "teams": params.teams,
         "victories": victories,
         "mercy_rule": params.mercy_rule,
@@ -3848,101 +3417,19 @@ pub(crate) fn simulation_settings(params: &Params) -> Value {
     })
 }
 
-/// The agents a person can hand their seat to, strongest first.
-///
-/// With a league roster on disk this is every live-eligible entrant still
-/// competing, with the rating it is defending, so the choice is between *our*
-/// strategies and not between adjectives. Offline-only entrants stay on the
-/// rating schedule without becoming an offer this server cannot yet afford.
-/// An entrant that has not played a rated game yet is marked provisional
-/// rather than shown as an authoritative 1500. Without a roster the list falls
-/// back to the built-in agents, because a control with nothing in it is worse
-/// than one with four honest entries.
-pub(crate) fn strategy_roster(session: &Session) -> Value {
-    let mut rows: Vec<Value> = Vec::new();
-    if let Some(roster) = session.roster.as_ref() {
-        // Agents only. A person registered in this roster is a player in it,
-        // but a seat cannot be handed to somebody who is not at a keyboard.
-        let mut active: Vec<&crate::league::Strategy> = roster
-            .strategies
-            .iter()
-            .filter(|s| !s.retired && !s.human && !s.league_only)
-            .collect();
-        active.sort_by(|a, b| b.rating.total_cmp(&a.rating));
-        rows.extend(active.into_iter().map(|s| {
-            json!({
-                "name": s.name,
-                "username": s.username,
-                "label": s.label(),
-                "rating": s.rating.round(),
-                "games": s.games,
-                "wins": s.wins,
-                "provisional": s.games == 0,
-            })
-        }));
-    }
-    if rows.is_empty() {
-        rows.extend(BUILTIN_STRATEGIES.iter().map(|(name, username)| {
+/// The agents a person can hand their seat to: the built-in agents, named by
+/// id and by handle. Nothing rates them, so every row is provisional.
+pub(crate) fn strategy_roster(_session: &Session) -> Value {
+    json!(BUILTIN_STRATEGIES
+        .iter()
+        .map(|(name, username)| {
             json!({
                 "name": name,
                 "username": username,
                 "label": name,
                 "provisional": true,
             })
-        }));
-    }
-    json!(rows)
-}
-
-/// The ELO choices the custom setup table may name. Ratings are sparse by
-/// design: a combination only appears after an entrant has actually played
-/// that leader and civilization. Keep the strategy identity beside each
-/// number so a later custom-seat protocol can bind the choice to the exact
-/// entrant instead of treating equal-looking ratings as interchangeable.
-pub(crate) fn leader_elo_options(session: &Session) -> Value {
-    let mut combinations: BTreeMap<(String, String), BTreeMap<i64, BTreeSet<String>>> =
-        BTreeMap::new();
-    let Some(roster) = session.roster.as_ref() else {
-        return json!([]);
-    };
-    for strategy in roster
-        .strategies
-        .iter()
-        .filter(|strategy| !strategy.retired && !strategy.human && !strategy.league_only)
-    {
-        let strategy_name = if strategy.username.is_empty() {
-            strategy.name.clone()
-        } else {
-            strategy.username.clone()
-        };
-        for (leader, civs) in &strategy.leader_elo {
-            for (civ, rating) in civs {
-                if rating.games == 0 || !rating.rating.is_finite() {
-                    continue;
-                }
-                combinations
-                    .entry((civ.clone(), leader.clone()))
-                    .or_default()
-                    .entry(rating.rating.round() as i64)
-                    .or_default()
-                    .insert(strategy_name.clone());
-            }
-        }
-    }
-    json!(combinations
-        .into_iter()
-        .map(|((civ, leader), elos)| json!({
-            "civ": civ,
-            "leader": leader,
-            "elos": elos
-                .into_iter()
-                .rev()
-                .map(|(elo, strategies)| json!({
-                    "elo": elo,
-                    "strategies": strategies.into_iter().collect::<Vec<_>>(),
-                }))
-                .collect::<Vec<_>>(),
-        }))
+        })
         .collect::<Vec<_>>())
 }
 
@@ -4028,8 +3515,10 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
         p.map_poles = v;
     }
     // Heat was a boolean once — poles on or off. Only its `true` still names a
-    // world that exists, and that world is the default anyway, so a client
-    // sending the old boolean is left where it already was rather than being
+    // world that exists, and it names it plainly, so an old client sending it
+    // gets the banded world it asked for. Its `false` asked for the retired
+    // no-cold-end world, which nothing can build now, so that one falls
+    // through to whatever the request otherwise settled on rather than being
     // pushed into the one remaining alternative it never asked for.
     if request["map_poles"].as_bool() == Some(true) {
         p.map_poles = MapPoles::Poles;
@@ -4053,21 +3542,16 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
     if let Some(v) = requested_turn_limit(request) {
         p.max_turns = v;
     }
-    if let Some(v) = request["leader_pool"].as_str().and_then(LeaderPool::from_id) {
-        p.leader_pool = v.available_or_default();
-    }
-    // The AI player pool: how many of the roster's best strategies may be
-    // seated for the AI civilizations. An unknown depth is refused rather
-    // than silently seating a different pool than the panel promised.
-    if let Some(v) = request["ai_player_pool"]
+    if let Some(v) = request["leader_pool"]
         .as_str()
-        .and_then(AiPlayerPool::from_id)
+        .and_then(LeaderPool::from_id)
     {
-        p.ai_pool = v;
+        p.leader_pool = v.available_or_default();
     }
     let selected_pool = p.leader_pool;
     p.civs.retain(|civ| {
-        leader_roster::entry(civ).is_some_and(|entry| entry.available && entry.pool == selected_pool)
+        leader_roster::entry(civ)
+            .is_some_and(|entry| entry.available && entry.pool == selected_pool)
     });
     // The two settings a Civ 6 lobby asks for that this protocol could not
     // carry: how hard the rivals play, and who the player is. Both are
@@ -4655,6 +4139,12 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
         }
         ("GET", "/assets/civ6-unit-flags.png") => {
             respond(stream, "200 OK", "image/png", &civ6_unit_flags());
+        }
+        ("GET", "/assets/civ6-yield-icons.png") => {
+            respond(stream, "200 OK", "image/png", &civ6_yield_icons());
+        }
+        ("GET", "/assets/civ6-unit-flag-plates.png") => {
+            respond(stream, "200 OK", "image/png", &civ6_unit_flag_plates());
         }
         // A lock-free identity probe for supervised process handoffs. The
         // browser used to fetch the multi-megabyte `/state` document here and
@@ -5276,8 +4766,9 @@ mod tests {
         tile_mark, valid_between_game_countdown_ms, viewer_path, ChronicleSnapshot, ChronicleState,
         FrameDelivery, Params, Session, Shared, SpectatorFrame, BETWEEN_GAME_COUNTDOWN_OPTIONS_MS,
         DEFAULT_BETWEEN_GAME_COUNTDOWN_MS, EMBEDDED_APP_JS, EMBEDDED_APP_SETUP_JS,
-        EMBEDDED_CIV6_UNIT_FLAGS, EMBEDDED_HIDDEN_MAP_MONSTERS, EMBEDDED_INDEX,
-        MAX_EXACT_JAVASCRIPT_INTEGER, SAVE_DIR, STATE_LONG_POLL, VIEWER_ACTIVE,
+        EMBEDDED_CIV6_UNIT_FLAGS, EMBEDDED_CIV6_UNIT_FLAG_PLATES, EMBEDDED_CIV6_YIELD_ICONS,
+        EMBEDDED_HIDDEN_MAP_MONSTERS, EMBEDDED_INDEX, MAX_EXACT_JAVASCRIPT_INTEGER, SAVE_DIR,
+        STATE_LONG_POLL, VIEWER_ACTIVE,
     };
     use crate::game::{Action, Game, LeaderPool, PlayOnMode, VictoryConditions, CIV6_LEADER_POOL};
     use crate::server::{
@@ -5285,10 +4776,8 @@ mod tests {
     };
     use crate::setup::{
         battlefield_map_scripts, battlefield_sizes, future_era_from_id, scenario_map_scripts,
-        start_era_from_id, world_map_scripts,
-        AiPlayerPool, TacticsEra, TacticsRules,
-        BaseRuleset, FutureEra, GameSpeed, MapPoles, MapScript, MapSize, MapTopology,
-        TurnStructure, MAP_POLES,
+        start_era_from_id, world_map_scripts, BaseRuleset, FutureEra, GameSpeed, MapPoles,
+        MapScript, MapSize, MapTopology, TacticsEra, TacticsRules, TurnStructure, MAP_POLES,
     };
     use serde_json::{json, Value};
     use std::io::{Read, Write};
@@ -7160,11 +6649,41 @@ mod tests {
                 "{card} must read title, description, actions, tags"
             );
         }
+        // Per row rather than as one chain across both: the old chain read
+        // `battle-picker` < `watch-civ-title`, which is not "a panel sits
+        // below its own cards" at all but "Tactics is the first row", and it
+        // failed the moment the rows swapped. Which row leads is a separate
+        // decision, asserted separately below.
+        for (watch, play, panel) in [
+            ("watch-civ", "play-civ", "game-picker"),
+            ("watch-tactics", "play-tactics", "battle-picker"),
+        ] {
+            assert!(
+                index(&format!("id=\"{watch}-title\"")) < index(&format!("id=\"{play}-title\""))
+                    && index(&format!("id=\"{play}-title\"")) < index(&format!("id=\"{panel}\"")),
+                "{panel} must sit directly below its own row of cards"
+            );
+        }
+        // Operator, 2026-08-22: CIVVIS leads the menu, Tactics follows. The
+        // whole CIVVIS row — its panel included — precedes the first Tactics
+        // card, and the row index above the menu is in that same page order.
         assert!(
-            index("id=\"watch-tactics-title\"") < index("id=\"battle-picker\"")
-                && index("id=\"battle-picker\"") < index("id=\"watch-civ-title\"")
-                && index("id=\"play-civ-title\"") < index("id=\"game-picker\""),
-            "each panel must sit directly below its own row of cards"
+            index("id=\"game-picker\"") < index("id=\"watch-tactics-title\""),
+            "the CIVVIS row must come before the Tactics row"
+        );
+        assert!(
+            index("href=\"#row-civ\"") < index("href=\"#row-tactics\""),
+            "the row index must list CIVVIS before Tactics"
+        );
+        // The LCP hint belongs to the first row's thumbnail, so it moves when
+        // the rows do; left behind it would preload a below-the-fold image.
+        assert!(
+            landing.contains(
+                "src=\"assets/watch-civ.jpg\" alt=\"Watch CIVVIS: a CIVVIS globe at mid-game, \
+AI empires sharing two continents, borders and cities drawn across the planet.\" \
+fetchpriority=\"high\""
+            ),
+            "the first row's thumbnail must carry the LCP hint"
         );
     }
 
@@ -7890,16 +7409,16 @@ mod tests {
         // are inset by the same single pixel. Four pixels of difference read as
         // a head overhanging its own column.
         assert!(EMBEDDED_INDEX.contains("width: calc(100% - 2px); height: 22px; margin: 0 1px;"));
-        assert_eq!(EMBEDDED_INDEX.matches("width: calc(100% - 2px);").count(), 2,
-            "the two controls in the Watch-as column are the same width at every screen size");
-        // And a player with nothing behind them still wears a rating: the
-        // 1500 every player starts from, marked provisional rather than
-        // replaced by a dash that would read as "cannot be rated".
-        assert!(player_hud.contains("const playerElo = eloKnown ? `${eloValue}` : \"—\";"));
-        assert!(player_hud.contains("const playerEloDelta = signedEloDelta(playerHudEloDeltaValue(p));"));
+        assert_eq!(
+            EMBEDDED_INDEX.matches("width: calc(100% - 2px);").count(),
+            2,
+            "the two controls in the Watch-as column are the same width at every screen size"
+        );
+        // Nothing rates a seat; the live odds position beside the name is
+        // the one signed figure the identity block carries.
+        assert!(player_hud
+            .contains("const playerEloDelta = signedEloDelta(playerHudEloDeltaValue(p));"));
         assert!(player_hud.contains("class=\"diplomacy-identity-field diplomacy-elo-delta\""));
-        assert!(player_hud.contains("${eloProvisional ? \" provisional\" : \"\"}"));
-        assert!(EMBEDDED_INDEX.contains(".diplomacy-elo-value.provisional {"));
 
         // The side panel is the one part of a frame that is allowed to skip a
         // repaint, because below a second per turn it changes faster than
@@ -9126,10 +8645,6 @@ mod tests {
             leader_pool: LeaderPool::Civ6,
             civs: Vec::new(),
             supervised: false,
-            league_dir: None,
-            league_record: false,
-            ai_pool: AiPlayerPool::Best3,
-            force_strategy: None,
         }
     }
 
@@ -9166,31 +8681,6 @@ mod tests {
         assert_eq!(majors.len(), 4);
         let unique: std::collections::BTreeSet<&str> = majors.iter().copied().collect();
         assert_eq!(unique.len(), 4, "two majors were seated as {majors:?}");
-    }
-
-    /// The AI player pool travels the whole loop: a request names a depth,
-    /// the params carry it into seating, the published settings hand it back
-    /// to the panel, and a depth nobody offers is refused rather than
-    /// silently seating a different pool than the panel promised.
-    #[test]
-    fn the_ai_player_pool_is_parsed_published_and_nonsense_is_refused() {
-        let current = current();
-        assert_eq!(current.ai_pool, AiPlayerPool::Best3);
-
-        let narrowed = new_game_params(&current, &json!({"ai_player_pool": "best1"}));
-        assert_eq!(narrowed.ai_pool, AiPlayerPool::Best1);
-        assert_eq!(simulation_settings(&narrowed)["ai_pool"], json!("best1"));
-
-        let opened = new_game_params(&current, &json!({"ai_player_pool": "all"}));
-        assert_eq!(opened.ai_pool, AiPlayerPool::All);
-        assert_eq!(opened.ai_pool.depth(), usize::MAX);
-
-        let refused = new_game_params(&narrowed, &json!({"ai_player_pool": "everyone"}));
-        assert_eq!(refused.ai_pool, AiPlayerPool::Best1);
-
-        // The stock lobby names the exhibition's long-standing best-three
-        // policy, so an untouched panel changes nothing about seating.
-        assert_eq!(default_setup_json()["ai_pool"], json!("best3"));
     }
 
     /// A save name becomes a path, so it is checked rather than trusted.
@@ -10196,27 +9686,6 @@ mod tests {
         // because staged settings and saved lobbies already carry it.
         assert!(EMBEDDED_INDEX.contains("<option value=\"civ\" selected>Civvis</option>"));
         assert!(EMBEDDED_INDEX.contains("<option value=\"tactics\">Tactics</option>"));
-        // The AI player pool follows who plays: it says which of the rated
-        // strategies may be seated for the AI civilizations, in the Civvis
-        // game and Tactics alike, and its stock depth is the exhibition's
-        // long-standing best-three policy.
-        assert!(EMBEDDED_INDEX.contains("id=\"aiplayerpool\""));
-        assert!(EMBEDDED_INDEX.contains(">AI player pool<"));
-        assert!(EMBEDDED_INDEX.contains("<option value=\"best1\">Best AI strategy per civ</option>"));
-        assert!(EMBEDDED_INDEX.contains("<option value=\"best2\">Best 2 AI strategies per civ</option>"));
-        assert!(EMBEDDED_INDEX
-            .contains("<option value=\"best3\" selected>Best 3 AI strategies per civ</option>"));
-        assert!(EMBEDDED_INDEX.contains("<option value=\"best5\">Best 5 AI strategies per civ</option>"));
-        assert!(EMBEDDED_INDEX.contains("<option value=\"all\">All AI strategies</option>"));
-        assert!(
-            EMBEDDED_INDEX.find(">Human players<") < EMBEDDED_INDEX.find(">AI player pool<"),
-            "the AI player pool is asked right after who plays"
-        );
-        assert!(
-            EMBEDDED_INDEX.find(">AI player pool<") < EMBEDDED_INDEX.find(">Base game ruleset<"),
-            "the AI player pool belongs to the short setup pass, not the advanced drawer"
-        );
-        assert!(EMBEDDED_INDEX.contains("ai_player_pool: readSetting(\"aiplayerpool\") || \"best3\","));
         // Who plays leads the primary path. The advanced ruleset and the
         // start-era ladder still come from the server, so a new ruleset — or a
         // rung somebody finally builds — never means editing the markup.
@@ -10672,7 +10141,7 @@ mod tests {
         // ahead of the advanced drawer, which strands it above the whole form
         // — the way the endgame rules were stranded until they were nested.
         assert!(EMBEDDED_INDEX.contains(
-            "return [\"gamemode\", \"humanplayers\", \"civ6-status\", \"aiplayerpool\", ...world, \"startera\", \"gamespeed\",\n    \"victory-options\", \"tactics-options\", \"saves-group\"];"
+            "return [\"gamemode\", \"humanplayers\", \"civ6-status\", ...world, \"startera\", \"gamespeed\",\n    \"victory-options\", \"tactics-options\", \"saves-group\"];"
         ));
         // Recomposed on every change of mode, from the same one function.
         assert!(EMBEDDED_INDEX.contains("placeSetupControls(tactics);"));
@@ -11033,8 +10502,6 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("id=\"custom-leader-selection\""));
         assert!(EMBEDDED_INDEX.contains("data-custom-team"));
         assert!(EMBEDDED_INDEX.contains("data-custom-civ"));
-        assert!(EMBEDDED_INDEX.contains("data-custom-elo"));
-        assert!(EMBEDDED_INDEX.contains("RULES?.leader_elo_options"));
         assert!(EMBEDDED_INDEX.contains("id=\"game-mod-settings\""));
         assert!(EMBEDDED_INDEX.contains("id=\"game-mod-summary\""));
         assert!(EMBEDDED_INDEX.contains("teamRuleFromArray(st.teams)"));
@@ -11042,7 +10509,6 @@ mod tests {
         // Heat is a setting about climate, not about whether two ice caps
         // exist, so it is named for what it decides.
         assert!(EMBEDDED_INDEX.contains("Thermal distribution<select id=\"mappoles\""));
-        assert!(EMBEDDED_INDEX.contains("<option value=\"randomized\">Randomized</option>"));
         assert!(!EMBEDDED_INDEX.contains("Poles<select id=\"mappoles\""));
         // And it offers two worlds, not three: heat either follows latitude or
         // it doesn't. The world with no cold end at all is retired, so it is
@@ -11066,6 +10532,18 @@ mod tests {
                 thermal_options.contains(&format!("value=\"{}\"", spec.id)),
                 "the lobby is missing {}",
                 spec.id
+            );
+            // The label as well as the id, so a world cannot be offered under
+            // the wrong name. Which of the two carries `selected` is the stock
+            // world's business and belongs to
+            // `the_lobby_markup_agrees_with_the_stock_opening_setup`; matching
+            // a whole option element here instead would fail this test every
+            // time that default moved, which is exactly what it did.
+            assert!(
+                thermal_options.contains(&format!(">{}</option>", spec.name)),
+                "the lobby does not name {} as {:?}",
+                spec.id,
+                spec.name
             );
         }
 
@@ -11759,34 +11237,57 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("function sortedPlayerHudPlayers(players, statsByPlayer, rankById)"));
         assert!(EMBEDDED_INDEX.contains("function togglePlayerHudSort(key)"));
         assert!(EMBEDDED_INDEX.contains("if (leftValue === null || rightValue === null) {"));
-        assert!(EMBEDDED_INDEX.contains(
-            "if (leftValue !== rightValue) return leftValue === null ? 1 : -1;"
-        ), "unavailable values stay below observed values in either sort direction");
+        assert!(
+            EMBEDDED_INDEX
+                .contains("if (leftValue !== rightValue) return leftValue === null ? 1 : -1;"),
+            "unavailable values stay below observed values in either sort direction"
+        );
         assert!(EMBEDDED_INDEX.contains(
             "if (rawValue === null || rawValue === undefined || rawValue === \"\") return null;"
         ), "a missing statistic is distinct from a numeric zero when sorting");
-        assert!(EMBEDDED_INDEX.contains("if (key === \"win_start\") return oddsValue(player.odds_start);"));
+        assert!(EMBEDDED_INDEX
+            .contains("if (key === \"win_start\") return oddsValue(player.odds_start);"));
         assert!(EMBEDDED_INDEX.contains("if (key === \"win_delta\") {"));
-        assert!(EMBEDDED_INDEX.contains("return playerHudEloDeltaValue(player);"),
-            "Elo delta sorting should use its numeric model value");
-        assert!(EMBEDDED_INDEX.contains("return oddsValue(player.odds_now);"),
-            "the NOW Win heading should order by its current estimate");
-        assert!(EMBEDDED_INDEX.contains("if (delta > .02) return {symbol:\"↗\", direction:\"up\"};"));
-        assert!(EMBEDDED_INDEX.contains("if (delta < -.02) return {symbol:\"↘\", direction:\"down\"};"));
+        assert!(
+            EMBEDDED_INDEX.contains("return playerHudEloDeltaValue(player);"),
+            "Elo delta sorting should use its numeric model value"
+        );
+        assert!(
+            EMBEDDED_INDEX.contains("return oddsValue(player.odds_now);"),
+            "the NOW Win heading should order by its current estimate"
+        );
+        assert!(
+            EMBEDDED_INDEX.contains("if (delta > .02) return {symbol:\"↗\", direction:\"up\"};")
+        );
+        assert!(
+            EMBEDDED_INDEX.contains("if (delta < -.02) return {symbol:\"↘\", direction:\"down\"};")
+        );
         for key in [
-            "rank", "civ", "leader", "player", "elo", "elo_delta", "win_start", "win_delta",
-            "win", "age", "plan",
+            "rank",
+            "civ",
+            "leader",
+            "player",
+            "elo_delta",
+            "win_start",
+            "win_delta",
+            "win",
+            "age",
+            "plan",
         ] {
             assert!(
                 EMBEDDED_INDEX.contains(&format!("{key}:[")),
                 "the {key} heading should carry a sortable label"
             );
         }
-        assert!(EMBEDDED_INDEX.contains(
-            "return playerHudSortHead(column.key, label, title, classes, attrs);"
-        ), "every generated column heading should be sortable");
-        assert!(!EMBEDDED_INDEX.contains("playerHudSortHead(\"watch\""),
-            "Watch-as stays an action instead of a sort target");
+        assert!(
+            EMBEDDED_INDEX
+                .contains("return playerHudSortHead(column.key, label, title, classes, attrs);"),
+            "every generated column heading should be sortable"
+        );
+        assert!(
+            !EMBEDDED_INDEX.contains("playerHudSortHead(\"watch\""),
+            "Watch-as stays an action instead of a sort target"
+        );
         assert!(EMBEDDED_INDEX.contains("class=\"hud-sort-head\" data-hud-sort=\"${key}\""));
         assert!(EMBEDDED_INDEX.contains(
             "rank:[\"RANK\", \"Score rank\"],"
@@ -12536,19 +12037,21 @@ mod tests {
     }
 
     /// The first world a civvis.ai visitor ever waits on is the smallest
-    /// stock one: four majors on the Tiny Tennis Ball globe, sized by the
-    /// shipped table, spectated, at Online speed, under simultaneous turns.
-    /// The browser build's `wasm::opening_params` is this function with the
-    /// page's seed, so the contract is tested here, where the suite actually
-    /// runs.
+    /// stock one: four majors on the Tiny Lakes globe, sized by the shipped
+    /// table, its heat scattered rather than banded by latitude, spectated,
+    /// at Online speed, one seat at a time. The browser build's
+    /// `wasm::opening_params` is this function with the page's seed, so the
+    /// contract is tested here, where the suite actually runs.
     #[test]
-    fn the_stock_opening_world_is_the_tiny_tennis_ball_exhibition() {
+    fn the_stock_opening_world_is_the_tiny_lakes_exhibition() {
         let params = stock_opening_params(7);
         let size = MapSize::for_players(params.num_players);
 
         assert_eq!(params.num_players, 4);
-        assert_eq!(params.map_script, MapScript::TeninsBall);
+        assert_eq!(params.map_script, MapScript::Lakes);
         assert_eq!(params.map_topology, MapTopology::Planet);
+        assert_eq!(params.map_poles, MapPoles::Randomized);
+        assert!(!params.map_poles.has_poles());
         assert_eq!(
             (params.width, params.height),
             size.dimensions(MapTopology::Planet)
@@ -12817,13 +12320,52 @@ mod tests {
     #[test]
     fn browser_key_bindings_match_the_requested_set() {
         for (action, key) in [
-            ("NextAction", "1"),
-            ("SettlerLens", "2"),
-            ("PlaceTack", "3"),
+            // Civilization VI's own defaults, read out of that game's
+            // `InputSettings.json`. The names on the left are Civ 6's action
+            // names, so a row that drifts is a row that stopped matching the
+            // game this client exists to be playable by.
+            ("EndTurn", "1"),
+            ("FoundCity", "b"),
             ("Fortify", "f"),
-            ("Alert", "a"),
+            ("FortifyUntilHeal", "h"),
+            ("SkipTurn", " "),
+            ("Sleep", "z"),
+            ("Alert", "v"),
+            ("AutoExplore", "e"),
+            ("NextUnit", "."),
+            ("PrevUnit", ","),
+            ("NextCity", "]"),
+            ("PrevCity", "["),
+            ("ToggleTechTree", "t"),
+            ("ToggleCivicsTree", "c"),
+            ("ToggleReligion", "l"),
+            ("ToggleGreatPeople", "o"),
+            ("OpenQDPopup", "d"),
+            ("ToggleGovernment", "F7"),
+            ("ToggleGovernors", "F10"),
+            ("ToggleCityStates", "F2"),
+            ("ToggleEspionage", "F3"),
+            ("ToggleTradeRoutes", "F4"),
+            ("ToggleReports", "F8"),
+            ("ToggleRankings", "F1"),
+            ("OpenCivilopedia", "F9"),
+            ("ToggleYield", "y"),
+            ("ToggleGrid", "g"),
+            ("ToggleResources", "q"),
+            ("ToggleFSMap", "End"),
+            ("LensContinent", "2"),
+            ("LensAppeal", "3"),
+            ("LensSettler", "4"),
+            ("LensGovernment", "5"),
+            ("LensPolitical", "6"),
+            ("LensTourism", "7"),
+            ("LensLoyalty", "8"),
+            ("LensEmpire", "9"),
+            ("LensPower", "0"),
+            // This client's own, where Civ 6 has nothing to copy.
+            ("NextAction", "n"),
             ("PreviousCity", "ArrowLeft"),
-            ("NextCity", "ArrowRight"),
+            ("NextCityArrow", "ArrowRight"),
         ] {
             let row = format!("{{id: \"{action}\", key: \"{key}\"");
             assert!(
@@ -12831,23 +12373,70 @@ mod tests {
                 "required {action} is missing from the {key} shortcut"
             );
         }
+        // The two chords that game puts Shift on, and nothing else may.
+        assert!(EMBEDDED_INDEX.contains("{id: \"EndTurnAnyway\", key: \"1\", shift: true"));
+        assert!(EMBEDDED_INDEX.contains("{id: \"AddMapTack\", key: \"a\", shift: true"));
+        // `A` is Attack in Civ 6 and this client attacks by pointing, so it
+        // carries no order of its own — it was Alert here until this table
+        // was reconciled with the game's, and must not quietly become one
+        // again.
+        assert!(!EMBEDDED_INDEX.contains("{id: \"Alert\", key: \"a\""));
+        // Tab is how somebody navigating by keyboard reaches every control on
+        // the page. The board does not take it.
+        assert!(!EMBEDDED_INDEX.contains("key: \"Tab\""));
+        // Neither do the four the browser owns.
+        for taken in ["\"F5\"", "\"F6\"", "\"F11\"", "\"F12\""] {
+            assert!(
+                !EMBEDDED_INDEX.contains(&format!("key: {taken}")),
+                "the browser owns {taken}"
+            );
+        }
         let shortcuts = EMBEDDED_INDEX
             .split_once("const CIVVIS_SHORTCUTS = [")
             .and_then(|(_, tail)| {
-                tail.split_once("];\n// One lookup per key.")
+                tail.split_once("];\n// One lookup per key")
                     .map(|(rows, _)| rows)
             })
             .expect("the closed shortcut table");
-        assert_eq!(shortcuts.matches("{id: \"").count(), 7);
+        assert_eq!(shortcuts.matches("{id: \"").count(), 44);
         assert!(!EMBEDDED_INDEX.contains("const CIV6_BINDINGS = ["));
         assert!(!EMBEDDED_INDEX.contains("let altTap"));
+        // Everything that needs a seat is withheld from a spectator, and
+        // everything that only describes the picture is not.
+        for (action, spectator) in [
+            ("EndTurn", false),
+            ("Fortify", false),
+            ("SkipTurn", false),
+            ("ToggleTechTree", false),
+            ("ToggleGovernment", false),
+            ("ToggleYield", true),
+            ("LensSettler", true),
+            ("ToggleFSMap", true),
+            ("ToggleRankings", true),
+            ("OpenCivilopedia", true),
+        ] {
+            let row = shortcuts
+                .split_once(&format!("{{id: \"{action}\","))
+                .expect("the row")
+                .1
+                .split_once("},")
+                .expect("the row's end")
+                .0;
+            assert_eq!(
+                row.contains("spectator: true"),
+                spectator,
+                "{action} is on the wrong side of the seat"
+            );
+        }
+        // The legend in the deck is the same map, one row per binding.
         let legend = EMBEDDED_INDEX
             .split_once("<summary>Keyboard shortcuts</summary>")
             .and_then(|(_, tail)| tail.split_once("</details>").map(|(panel, _)| panel))
             .expect("the keyboard shortcut legend");
-        assert_eq!(legend.matches("<kbd>").count(), 7);
-        assert_eq!(EMBEDDED_INDEX.matches("<kbd>").count(), 7);
-        assert!(legend.contains("<span><kbd>3</kbd>Add a map tack</span>"));
+        assert_eq!(legend.matches("<kbd>").count(), 47);
+        assert_eq!(EMBEDDED_INDEX.matches("<kbd>").count(), 47);
+        assert!(legend.contains("<span><kbd>Shift</kbd><kbd>A</kbd>Add a map tack</span>"));
+        assert!(legend.contains("<span><kbd>1</kbd>End turn · next blocker</span>"));
         assert!(EMBEDDED_INDEX.contains(
             "return myCities().slice().sort((left, right) => Number(left.id) - Number(right.id));"
         ));
@@ -12885,11 +12474,21 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("else if (ev.button === 1) {"));
         // macOS Control-click is a platform secondary click; Command belongs to
         // the browser, and never becomes a map binding.
+        assert!(EMBEDDED_INDEX.contains("(MAC_POINTER_PLATFORM && ev.button === 0 && ev.ctrlKey)"));
+        // Command, Control and Option belong to the browser and never become
+        // map bindings. Shift does, for the two chords Civ 6 puts it on, so
+        // it is matched from its own table rather than refused outright.
+        assert!(
+            EMBEDDED_INDEX.contains("if (ev.metaKey || ev.ctrlKey || ev.altKey) return undefined;")
+        );
+        assert!(
+            EMBEDDED_INDEX.contains("const table = ev.shiftKey ? SHIFT_KEY_ACTIONS : KEY_ACTIONS;")
+        );
+        assert_eq!(EMBEDDED_INDEX.matches("shift: true").count(), 2);
+        // Space and Enter belong to whichever control has focus, so a person
+        // navigating by keyboard never skips a unit by pressing a button.
         assert!(EMBEDDED_INDEX.contains(
-            "(MAC_POINTER_PLATFORM && ev.button === 0 && ev.ctrlKey)"
-        ));
-        assert!(EMBEDDED_INDEX.contains(
-            "if (ev.metaKey || ev.ctrlKey || ev.altKey || ev.shiftKey) return undefined;"
+            "if ((ev.key === \" \" || ev.key === \"Enter\") && (tag === \"BUTTON\" || tag === \"A\" ||"
         ));
     }
 
@@ -12914,6 +12513,53 @@ mod tests {
                 "unit {unit} has no Civilization VI icon cell"
             );
         }
+        // Naming every unit is not enough: `nihang` was named here, and its
+        // cell held a duplicate of `warrior_monk`'s picture because the cutter
+        // never learned about it. What follows is the rest of that contract --
+        // the sheet is the ruleset's roster, in the ruleset's order, and every
+        // cell of it has ink.
+        let manifest = civ6_unit_glyph_manifest();
+        let cut: Vec<&str> = manifest["units"]
+            .as_array()
+            .expect("the glyph manifest's unit rows")
+            .iter()
+            .map(|row| row["type"].as_str().expect("a unit id"))
+            .collect();
+        let roster: Vec<&str> = rules.units.keys().map(|name| name.as_str()).collect();
+        assert_eq!(
+            cut, roster,
+            "the cut sheet is the ruleset's units in the ruleset's order"
+        );
+        let named: Vec<&str> = ids
+            .split('"')
+            .skip(1)
+            .step_by(2)
+            .collect();
+        assert_eq!(
+            named, roster,
+            "the renderer's roster is the same list in the same order, so a \
+             cell index is a unit's place in it"
+        );
+        for (seat, row) in manifest["units"].as_array().unwrap().iter().enumerate() {
+            let unit = row["type"].as_str().unwrap();
+            assert_eq!(
+                row["index"].as_u64(),
+                Some(seat as u64),
+                "{unit} does not sit in its own cell"
+            );
+            assert!(
+                row["ink"].as_u64().unwrap_or(0) > 0,
+                "{unit} was cut from a blank cell"
+            );
+            let cell = manifest["cell_size"].as_u64().unwrap();
+            let box_ = row["box"].as_array().expect("a measured silhouette");
+            let (x, y) = (box_[0].as_u64().unwrap(), box_[1].as_u64().unwrap());
+            let (w, h) = (box_[2].as_u64().unwrap(), box_[3].as_u64().unwrap());
+            assert!(
+                w > 0 && h > 0 && x + w <= cell && y + h <= cell,
+                "{unit}'s silhouette does not fit its own cell"
+            );
+        }
 
         let renderer = EMBEDDED_INDEX
             .split("function drawUnitPictogram")
@@ -12921,12 +12567,327 @@ mod tests {
             .expect("strategic unit pictogram renderer");
         assert!(renderer.contains("const official = civ6UnitIconSprite(type, color)"));
         assert!(renderer.contains("cx.drawImage(official"));
-        assert!(EMBEDDED_INDEX.contains("const COMMAND_UNIT_ICON_K = () => 1 + .32"));
-        assert!(EMBEDDED_INDEX.contains("drawUnitPictogram(u.type, x, y,"));
-        assert!(EMBEDDED_INDEX.contains("drawUnitPictogram(unit.type, ux, uy,"));
-        assert!(EMBEDDED_INDEX.contains("drawUnitPictogram(d.type, d.x, d.y,"));
         assert!(!EMBEDDED_INDEX.contains("embarked ? \"galley\""));
-        assert!(EMBEDDED_INDEX.contains("rr * 1.45 * COMMAND_UNIT_ICON_K(), tokenInk"));
+
+        // The cells carry a per-icon margin -- 38 to 64 px of silhouette in the
+        // same 64 px cell -- so drawing whole cells at one box size drew the
+        // roster at 1.7x apart. Every icon is measured and then drawn from its
+        // own silhouette rectangle, which is what makes one requested size mean
+        // one size.
+        assert!(EMBEDDED_INDEX.contains("function measureCiv6UnitIconBoxes() {"));
+        assert!(EMBEDDED_INDEX.contains("function civ6UnitIconBox(type) {"));
+        assert!(renderer.contains("const box = civ6UnitIconBox(type)"));
+        assert!(renderer.contains("const k = size / Math.max(box.w, box.h)"));
+        assert!(renderer.contains("cx.drawImage(official, box.x, box.y, box.w, box.h,"));
+        assert!(renderer.contains("x - w / 2, y - h / 2, w, h);"));
+
+        // And one size means one size everywhere: no surface may reintroduce
+        // its own multiplier, and none may make the icon grow with the camera
+        // the way the retired COMMAND_UNIT_ICON_K did. Every surface asks the
+        // one seat routine, which is also what keeps a counter that is not a
+        // circle from being a second, separately chosen size.
+        assert!(!EMBEDDED_INDEX.contains("COMMAND_UNIT_ICON_K"));
+        assert!(EMBEDDED_INDEX.contains("const COMMAND_UNIT_ICON_SHARE = .66;"));
+        assert_eq!(
+            EMBEDDED_INDEX.matches("COMMAND_UNIT_ICON_SHARE").count(),
+            4,
+            "the one share is declared once and spent only by the seat \
+             routine -- once for the cut flag and once for each retired \
+             fallback shape"
+        );
+        assert_eq!(
+            EMBEDDED_INDEX.matches("strategicUnitGlyphSeat(").count(),
+            5,
+            "the flat map, the globe, the casualty and the production medallion \
+             all seat their unit glyph through the one routine"
+        );
+        assert!(EMBEDDED_INDEX
+            .contains("drawUnitPictogram(u.type, seat.x, seat.y, seat.size, tokenInk)"));
+        assert!(EMBEDDED_INDEX
+            .contains("drawUnitPictogram(unit.type, seat.x, seat.y, seat.size, tokenInk)"));
+        assert!(EMBEDDED_INDEX
+            .contains("drawUnitPictogram(d.type, seat.x, seat.y, seat.size, tokenInk)"));
+        assert!(EMBEDDED_INDEX
+            .contains("drawUnitPictogram(it.unit, seat.x, seat.y, seat.size, \"#f0ead8\")"));
+
+        // Religious units are ordinary units of the map: each has its own
+        // Civilization VI cell and rides the same token as everything else.
+        for religious in [
+            "missionary",
+            "apostle",
+            "guru",
+            "inquisitor",
+            "warrior_monk",
+        ] {
+            assert!(
+                rules.units.contains_key(religious),
+                "{religious} must be a real unit of the ruleset"
+            );
+            assert!(
+                ids.contains(&format!("\"{religious}\"")),
+                "{religious} has no Civilization VI icon cell"
+            );
+        }
+    }
+
+    /// A repository file, read at test time rather than embedded in the binary.
+    fn repository_file(path: &str) -> String {
+        std::fs::read_to_string(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(path))
+            .unwrap_or_else(|error| panic!("{path}: {error}"))
+    }
+
+    /// What `tools/civ6_unit_glyphs.py` recorded about the sheet it cut.
+    fn civ6_unit_glyph_manifest() -> serde_json::Value {
+        serde_json::from_str(&repository_file("web/assets/civ6-unit-flags.json"))
+            .expect("the unit glyph manifest is JSON")
+    }
+
+    /// FNV-1a, the change detector `rules.rs` already uses for the ruleset.
+    fn fnv1a64(bytes: &[u8]) -> u64 {
+        bytes.iter().fold(0xcbf2_9ce4_8422_2325, |hash, byte| {
+            (hash ^ u64::from(*byte)).wrapping_mul(0x100_0000_01b3)
+        })
+    }
+
+    /// The unit glyphs are cut off the installed game, not scraped from an
+    /// archive of it.
+    ///
+    /// They were the last CIVVIS art that was not. `tools/civ6_unit_flags.swift`
+    /// downloaded 89 Civilopedia cards from the Civilization Wiki and recovered
+    /// the white symbols by subtracting a per-pixel percentile of the set --
+    /// which worked, and which meant the spectator's unit markers depended on a
+    /// third party's copy of a file sitting on the same disk. The cards are
+    /// gone; `tools/civ6_unit_glyphs.py` reads
+    /// `Base/Platforms/Windows/BLPs/UI/Icons.blp` and its DLC siblings.
+    ///
+    /// The point of this test is the *chain*: which Civilization VI unit a
+    /// CIVVIS unit is, which icon that unit's flag asks for, and which cell of
+    /// which atlas that icon is. A roster written down beside the renderer
+    /// instead is what put a Warrior Monk's picture on every Nihang.
+    #[test]
+    fn the_unit_glyphs_are_cut_from_the_installed_game() {
+        let cutter = repository_file("tools/civ6_unit_glyphs.py");
+        assert!(
+            cutter.contains("import civ6_env as env"),
+            "the install is resolved by the one module allowed to look for it"
+        );
+        assert!(
+            cutter.contains("import civ6_unit_flag_plates as blp"),
+            "one parser reads the package format, not two"
+        );
+        assert!(cutter.contains("assets.rglob(\"Icons.blp\")"));
+        assert!(cutter.contains("ICON_ATLAS_UNITS"));
+        // The scrape is retired, not merely unused: a fallback nothing runs is
+        // a fallback nobody notices has rotted.
+        assert!(
+            !std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("tools/civ6_unit_flags.swift")
+                .exists(),
+            "the Civilization Wiki scraper is gone"
+        );
+        assert!(!EMBEDDED_INDEX.contains("civ6_unit_flags.swift"));
+
+        // The manifest describes the sheet committed beside it and no other.
+        let manifest = civ6_unit_glyph_manifest();
+        assert_eq!(
+            manifest["png_bytes"].as_u64(),
+            Some(EMBEDDED_CIV6_UNIT_FLAGS.len() as u64)
+        );
+        assert_eq!(
+            manifest["png_fnv1a64"].as_str(),
+            Some(format!("{:#018x}", fnv1a64(EMBEDDED_CIV6_UNIT_FLAGS)).as_str()),
+            "the manifest was written for a different atlas than the one here"
+        );
+        let cell = manifest["cell_size"].as_u64().unwrap();
+        let columns = manifest["columns"].as_u64().unwrap();
+        let width = u32::from_be_bytes(EMBEDDED_CIV6_UNIT_FLAGS[16..20].try_into().unwrap());
+        let height = u32::from_be_bytes(EMBEDDED_CIV6_UNIT_FLAGS[20..24].try_into().unwrap());
+        assert_eq!(u64::from(width), columns * cell);
+        assert_eq!(u64::from(height), manifest["rows"].as_u64().unwrap() * cell);
+        assert!(EMBEDDED_INDEX.contains(&format!(
+            "const CIV6_UNIT_ICON_CELL = {cell}, CIV6_UNIT_ICON_COLUMNS = {columns};"
+        )));
+
+        // Every Civilization VI name the cut resolved is a name Civilization VI
+        // actually ships. `tools/civ6_type_names.py` harvests that list off the
+        // install for the live order channel, which learned the hard way that a
+        // name the game does not have is discarded in silence.
+        let shipped: std::collections::BTreeSet<String> =
+            serde_json::from_str(&repository_file("data/civ6_type_names.json"))
+                .expect("the harvested Civilization VI type names");
+        let rules = crate::rules::Rules::embedded();
+        let mut borrowed = 0;
+        for row in manifest["units"].as_array().unwrap() {
+            let unit = row["type"].as_str().unwrap();
+            let kind = row["civ6_type"].as_str().expect("a Civilization VI type");
+            assert!(
+                shipped.contains(kind),
+                "{unit} is cut as {kind}, which Civilization VI does not ship"
+            );
+            assert!(row["icon"].as_str().unwrap().starts_with("ICON_UNIT_"));
+            assert!(row["package"].as_str().unwrap().ends_with("Icons.blp"));
+            // A unit with no symbol icon of its own borrows one, and only from
+            // the unit the ruleset says it replaces -- never from a default.
+            if let Some(stand_in) = row["via"].as_str() {
+                borrowed += 1;
+                assert_eq!(
+                    rules.units[unit].replaces.as_deref(),
+                    Some(stand_in),
+                    "{unit} borrows {stand_in}'s glyph without replacing it"
+                );
+            }
+        }
+        assert_eq!(
+            borrowed, 1,
+            "Civilization VI defines a symbol icon for every unit of this \
+             ruleset but the Oromo Cavalry, which stands on the Courser's"
+        );
+    }
+
+    /// The command counter is Civilization VI's own unit flag, not a shape of
+    /// this viewer's. Both retired shapes -- the circle and the rounded
+    /// triangle, point *down* -- were invented here; the base game authors
+    /// eight silhouettes, points its civilian triangle *up*, stands a
+    /// fortified soldier on a shield and an embarked one on a boat cut. This
+    /// is the same contract the yield signs already keep: the sheet is cut off
+    /// the installed game, and every question the counter answers is measured
+    /// from that one sheet rather than restated beside it.
+    #[test]
+    fn a_unit_counter_is_the_base_games_own_flag() {
+        assert!(EMBEDDED_CIV6_UNIT_FLAG_PLATES.starts_with(b"\x89PNG\r\n\x1a\n"));
+        assert!(EMBEDDED_CIV6_UNIT_FLAG_PLATES.len() > 5_000);
+        // Cut, not imitated, and the cutter says where from.
+        let cutter = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tools/civ6_unit_flag_plates.py"),
+        )
+        .expect("the flag-plate cutter");
+        assert!(cutter.contains("Base/Platforms/Windows/BLPs/UI/InWorld.blp"));
+        assert!(
+            cutter.contains("import civ6_env as env"),
+            "the install is resolved by the one module allowed to look for it"
+        );
+        assert!(EMBEDDED_INDEX
+            .contains("CIV6_FLAG_PLATE_ATLAS.src = \"/assets/civ6-unit-flag-plates.png\""));
+        assert!(EMBEDDED_INDEX.contains(
+            "const CIV6_FLAG_PLATE_STYLES = [\"base\", \"civilian\", \"naval\", \"support\",\n                                \"trade\", \"religion\", \"fortify\", \"embark\"];"
+        ));
+
+        // The sheet really carries those eight styles, in that order, as
+        // square cells -- the one fact a re-cut could break silently.
+        let cell = usize::from(u32::from_be_bytes(
+            EMBEDDED_CIV6_UNIT_FLAG_PLATES[20..24].try_into().unwrap(),
+        ) as u16);
+        let width =
+            u32::from_be_bytes(EMBEDDED_CIV6_UNIT_FLAG_PLATES[16..20].try_into().unwrap()) as usize;
+        assert!(cell > 0, "the plate sheet has a height");
+        assert_eq!(
+            width,
+            cell * 8,
+            "eight square style cells in one row, {cell}px each"
+        );
+
+        // The silhouette is measured off the sheet, once, and everything the
+        // counter has to answer comes from that measurement. A hand-kept table
+        // of shapes beside it is exactly what this replaces.
+        assert!(EMBEDDED_INDEX.contains("function measureCiv6FlagPlates() {"));
+        assert!(EMBEDDED_INDEX.contains("CIV6_FLAG_PLATE_ATLAS.onload = () => {"));
+        let token = EMBEDDED_INDEX
+            .split("function strategicUnitTokenPath(x, y, r, style = null) {")
+            .nth(1)
+            .and_then(|tail| tail.split("// Paint one whole counter").next())
+            .expect("strategic unit counter outline");
+        assert!(token.contains("const shape = civ6FlagPlateShape(style);"));
+        assert!(token.contains("for (let at = 0; at < shape.outline.length; at++) {"));
+
+        // The tint keeps the flag's authored shading instead of flattening it
+        // to the owner's colour, and puts the silhouette's alpha back after.
+        let plate = EMBEDDED_INDEX
+            .split("function civ6UnitFlagPlate(style, color) {")
+            .nth(1)
+            .and_then(|tail| tail.split("// The counter's outline").next())
+            .expect("flag plate tint");
+        assert!(plate.contains("g.globalCompositeOperation = \"multiply\";"));
+        assert!(plate.contains("g.globalCompositeOperation = \"destination-in\";"));
+
+        // One counter routine paints the flat map, the globe and the casualty,
+        // so no surface can quietly keep drawing a circle.
+        assert!(EMBEDDED_INDEX
+            .contains("function drawStrategicUnitCounter(x, y, r, style, fill, ink, outline) {"));
+        assert_eq!(
+            EMBEDDED_INDEX.matches("drawStrategicUnitCounter(").count(),
+            4,
+            "the flat map, the globe and the casualty all paint the one counter"
+        );
+        // And the selection ring is still the counter's own outline, not a
+        // circle drawn over a flag.
+        assert!(
+            EMBEDDED_INDEX.contains("strategicUnitTokenPath(x, y, Math.max(0, rr - 1.2), style);")
+        );
+        assert_eq!(
+            EMBEDDED_INDEX.matches("strategicUnitTokenPath(").count(),
+            4,
+            "the counter routine's fill and outline, the selection ring, and \
+             the one declaration"
+        );
+
+        // Which flag a unit stands on is the ruleset's own answer, so a mod's
+        // unit takes the right silhouette without a second roster kept here.
+        let style = EMBEDDED_INDEX
+            .split("function civ6UnitFlagStyle(unit) {")
+            .nth(1)
+            .and_then(|tail| tail.split("function measureCiv6FlagPlates").next())
+            .expect("unit flag style");
+        assert!(style.contains("if (unit.embarked) return \"embark\";"));
+        assert!(style.contains("if (unit.fortified) return \"fortify\";"));
+        assert!(style.contains("if (spec.class === \"religious\") return \"religion\";"));
+        assert!(style.contains("if (spec.class === \"support\") return \"support\";"));
+        assert!(style.contains("if (spec.domain === \"sea\") return \"naval\";"));
+        assert!(style.contains(
+            "if (spec.class === \"civilian\" || spec.class === \"espionage\") return \"civilian\";"
+        ));
+        assert!(style.contains("return CIVILIAN_UNITS.has(unit.type) ? \"civilian\" : \"base\";"));
+        // Those class names have to be the ones the ruleset actually ships, or
+        // every unit would silently fall through to the military flag.
+        let rules = crate::rules::Rules::embedded();
+        for (unit, class) in [
+            ("missionary", "religious"),
+            ("battering_ram", "support"),
+            ("settler", "civilian"),
+        ] {
+            assert_eq!(
+                rules.units.get(unit).map(|spec| spec.class.as_str()),
+                Some(class),
+                "{unit} must still be class {class} for the flag it stands on"
+            );
+        }
+        assert_eq!(
+            rules
+                .units
+                .get("galley")
+                .and_then(|spec| spec.domain.clone()),
+            Some("sea".into()),
+            "a Galley must still be a sea unit for the naval flag"
+        );
+        assert!(
+            rules.units.contains_key("trader"),
+            "the Trade flag is named for a real unit"
+        );
+
+        // The retired shapes stay as the pre-load fallback, and only as that.
+        assert!(EMBEDDED_INDEX.contains("const CIVILIAN_TOKEN_CORNER = .30;"));
+        assert!(token.contains("if (style !== \"civilian\") { cx.arc(x, y, r, 0, 7); return; }"));
+        assert!(!EMBEDDED_INDEX.contains("cx.roundRect(x - r, y - h / 2, r * 2, h, h / 2)"));
+        assert!(!EMBEDDED_INDEX.contains("CIVILIAN_UNITS.has(u.type);"));
+
+        // A health bar is only ever as wide as the counter is where it sits,
+        // so a plundered Trader's bar tightens into the flag's point instead
+        // of hanging out over the tile -- now read off the real silhouette.
+        assert!(EMBEDDED_INDEX.contains("function strategicUnitCounterHalfWidth(r, dy, style) {"));
+        assert!(EMBEDDED_INDEX.contains(
+            "const room = strategicUnitCounterHalfWidth(r, by + bh + frame - y, style);"
+        ));
+        assert!(EMBEDDED_INDEX
+            .contains("const bw = Math.min(r * 1.28, Math.max(0, room - frame) * 2);"));
     }
 
     #[test]
@@ -12934,7 +12895,7 @@ mod tests {
         let renderer = EMBEDDED_INDEX
             .split("function drawStrategicUnitHealth")
             .nth(1)
-            .and_then(|tail| tail.split("// The Civ VI atlas cells").next())
+            .and_then(|tail| tail.split("// Civ 6 hangs a small flag").next())
             .expect("strategic unit health renderer");
         assert!(EMBEDDED_INDEX.contains(
             "const CAPTURE_ONLY_CIVILIAN_UNITS = new Set([\"settler\", \"builder\"]);"
@@ -12945,9 +12906,12 @@ mod tests {
         assert!(renderer.contains("health >= 100"));
         assert!(renderer.contains("cx.strokeText(String(health), x, by + bh / 2)"));
         assert!(renderer.contains("cx.fillText(String(health), x, by + bh / 2)"));
-        assert!(EMBEDDED_INDEX.contains(
-            "const status = unitHasHealth(u) ? `hp ${u.hp}` : \"capturable\";"
-        ));
+        // The selected-unit plaque asks the same question the map does: a unit
+        // with health gets a bar and a number, and one that is taken rather
+        // than killed says so instead of reading as a unit on full health.
+        assert!(EMBEDDED_INDEX.contains("const health = unitHasHealth(u)"));
+        assert!(EMBEDDED_INDEX.contains("<span class=\"ubar-health\""));
+        assert!(EMBEDDED_INDEX.contains("⚑<b>capturable</b>"));
         assert!(EMBEDDED_INDEX.contains(
             "const unitStatus = unitHasHealth(unit) ? `${fmtYield(unit.hp)} HP` : \"capturable\";"
         ));
@@ -12997,7 +12961,7 @@ mod tests {
     fn undiscovered_ground_is_an_illustrated_fog_safe_chart() {
         assert!(EMBEDDED_HIDDEN_MAP_MONSTERS.starts_with(b"\x89PNG\r\n\x1a\n"));
         assert!(EMBEDDED_HIDDEN_MAP_MONSTERS.len() > 500_000);
-        assert!(EMBEDDED_HIDDEN_MAP_MONSTERS.len() < 1_000_000);
+        assert!(EMBEDDED_HIDDEN_MAP_MONSTERS.len() < 2_000_000);
         assert_eq!(
             u32::from_be_bytes(EMBEDDED_HIDDEN_MAP_MONSTERS[16..20].try_into().unwrap()),
             1536
@@ -13035,15 +12999,35 @@ mod tests {
         assert!(monsters.contains("HIDDEN_MAP_TALE_SIZE_MIN"));
         assert!(monsters.contains("HIDDEN_MAP_TALE_SIZE_RANGE"));
         assert!(monsters.contains("HIDDEN_MAP_MONSTER_VARIANTS"));
-        assert!(monsters.contains(".26"));
+        assert!(monsters.contains(".21"));
+        assert!(EMBEDDED_INDEX.contains("HIDDEN_MAP_TALE_SCALE = 1.7"));
+        assert!(EMBEDDED_INDEX.contains("HIDDEN_MAP_TALE_SPACING_SCALE = .8"));
+        assert!(EMBEDDED_INDEX.contains("HIDDEN_MAP_TALE_SIZE_MIN = 10.6 * HIDDEN_MAP_TALE_SCALE"));
+        assert!(EMBEDDED_INDEX.contains("HIDDEN_MAP_TALE_SIZE_RANGE = 2.1 * HIDDEN_MAP_TALE_SCALE"));
+        assert!(EMBEDDED_INDEX.contains("HIDDEN_MAP_TALE_REACH = S * 9 * HIDDEN_MAP_TALE_SCALE"));
+
+        let seating_radius = EMBEDDED_INDEX
+            .split("function hiddenMapMonsterSeatRadius(q, r, seedA, seedB)")
+            .nth(1)
+            .and_then(|tail| {
+                tail.split("function hiddenMapMonsterSeat(q, r, seedA, seedB)")
+                    .next()
+            })
+            .expect("scaled hidden-map monster seating radius");
+        assert!(seating_radius.contains("HIDDEN_MAP_TALE_SPACING_SCALE *"));
 
         let seating = EMBEDDED_INDEX
-            .split("function hiddenMapMonsterSeat")
+            .split("function hiddenMapMonsterSeat(q, r, seedA, seedB)")
             .nth(1)
             .and_then(|tail| tail.split("function drawHiddenMapMonster").next())
             .expect("minimum-distance hidden-map monster seating");
-        assert!(seating.contains("radius = 8"));
-        assert!(seating.contains("priority >= .04"));
+        assert!(seating.contains("HIDDEN_MAP_TALE_CANDIDATE_RATE"));
+        assert!(seating.contains("hiddenMapMonsterSeatRadius"));
+        assert!(seating.contains("Math.ceil(HIDDEN_MAP_TALE_SPACING_SCALE *"));
+        assert!(seating.contains("HIDDEN_MAP_TALE_MIN_SEPARATION"));
+        assert!(seating.contains("HIDDEN_MAP_TALE_SEPARATION_RANGE"));
+        assert!(EMBEDDED_INDEX.contains("HIDDEN_MAP_TALE_MIN_SEPARATION = 17"));
+        assert!(EMBEDDED_INDEX.contains("HIDDEN_MAP_TALE_SEPARATION_RANGE = 10"));
         assert!(seating.contains("hiddenMapMonsterPriority"));
         assert!(seating.contains("other < priority"));
         let viewport = EMBEDDED_INDEX
@@ -13059,7 +13043,7 @@ mod tests {
             .and_then(|tail| tail.split("function drawPlanetMap").next())
             .expect("pre-globe chart marginalia");
         assert!(planet_tales.contains("candidates.slice(0, 1)"));
-        assert!(planet_tales.contains("const size = 3 *"));
+        assert!(planet_tales.contains("const size = 1.85 * HIDDEN_MAP_TALE_SCALE *"));
         assert!(EMBEDDED_INDEX.contains("drawHiddenMapParchment(hiddenMap);\n  drawHiddenMapMonsters(hiddenMap);"));
         assert!(EMBEDDED_INDEX.contains("drawHiddenMapFrontier(tiles);"));
         assert!(EMBEDDED_INDEX.contains("if (camera.chart && !spectator)"));
@@ -13314,8 +13298,11 @@ mod tests {
     /// A landmark silhouette identifies the class of the thing on a tile, but
     /// viewers need its written name to distinguish the actual world wonder.
     /// The label deliberately follows the resource-word convention: it only
-    /// appears at reading zoom, has terrain-independent outlined ink, and
-    /// turns a measured long name into smaller type before it is width-bound.
+    /// appears at reading zoom and has terrain-independent outlined ink. It
+    /// also stays on the wonder's own tile: it sits just under the art, in the
+    /// band where the hex is still nearly full width, and its lane is the width
+    /// the hex actually has at the bottom of the type — a measured long name
+    /// takes smaller type, then a second line, before it is width-bound.
     #[test]
     fn browser_labels_completed_world_wonders_with_length_aware_type() {
         let label = EMBEDDED_INDEX
@@ -13325,25 +13312,43 @@ mod tests {
             .expect("world wonder word label");
         for contract in [
             "const WORLD_WONDER_LABEL_SCALE = RES_WORD_LABEL_SCALE;",
-            "const WORLD_WONDER_LABEL_FONT_SIZE = 10.4;",
-            "const WORLD_WONDER_LABEL_MIN_FONT_SIZE = 6.2;",
-            "const WORLD_WONDER_LABEL_MAX_WIDTH = S * SQ3 * 1.82;",
-            "const WORLD_WONDER_LABEL_BASELINE = S * YS * .74;",
+            "const WORLD_WONDER_LABEL_FONT_SIZE = 8.8;",
+            "const WORLD_WONDER_LABEL_MIN_FONT_SIZE = 6.4;",
+            "const WORLD_WONDER_LABEL_BASELINE = S * YS * .44;",
+            "const WORLD_WONDER_LABEL_LINE_PITCH = 6.8;",
+            "const WORLD_WONDER_LABEL_MARGIN = 1.6;",
+            "function hexWidthAt(dy) {\n  return 2 * SQ3 * Math.max(0, S - Math.max(S / 2, Math.abs(dy) / YS));\n}",
+            "function worldWonderLabelLane(lineMiddle, fontSize) {\n  return Math.max(1, hexWidthAt(lineMiddle + fontSize * .5) - 2 * WORLD_WONDER_LABEL_MARGIN);\n}",
+            "function worldWonderLabelBreak(label, measure) {",
+            "function worldWonderLabelFit(lines, measure) {",
+            "size = Math.max(WORLD_WONDER_LABEL_MIN_FONT_SIZE, size);",
             "if (cam.scale < WORLD_WONDER_LABEL_SCALE) return;",
             "const label = titleCase(wonder);",
-            "const naturalWidth = Math.max(1, cx.measureText(label).width);",
-            "WORLD_WONDER_LABEL_FONT_SIZE * scale * maxWidth / naturalWidth",
-            "cx.strokeText(label, x, labelY, maxWidth);",
-            "cx.fillText(label, x, labelY, maxWidth);",
+            "let fit = worldWonderLabelFit([label], measure);",
+            "if (twoLines && (twoLines.size > fit.size || twoLines.ease > fit.ease)) fit = twoLines;",
+            "const lane = worldWonderLabelLane(middle, fit.size) * scale;",
+            "cx.strokeText(line, x, lineY, lane);",
+            "cx.fillText(line, x, lineY, lane);",
         ] {
             assert!(
                 EMBEDDED_INDEX.contains(contract),
                 "world wonder word-label contract is missing: {contract}"
             );
         }
+        // The lane must be the tile's own width at the type, not a fixed lane
+        // wider than the tile: the old two-hex reading lane ran into both
+        // neighbours' lower corners and was clipped off on the globe.
         assert!(
-            label.contains("Math.max(WORLD_WONDER_LABEL_MIN_FONT_SIZE * scale,"),
-            "an exceptionally long name needs a legible minimum size"
+            !EMBEDDED_INDEX.contains("WORLD_WONDER_LABEL_MAX_WIDTH"),
+            "the wonder name lane is the hex width at the type, not a fixed lane"
+        );
+        // Under the art and inside the full-width band: the label's centre
+        // must lie between the plinth (six k under the centre, plus outline)
+        // and the point where a pointy-top hex begins to taper (S * YS / 2).
+        let baseline = 36.0 * 0.92 * 0.44;
+        assert!(
+            baseline > 12.0 && baseline < 36.0 * 0.92 / 2.0 + 2.0,
+            "the wonder name sits just under the art, in the tile's wide band; got {baseline:.1}"
         );
         assert!(
             label.contains("cx.strokeStyle = \"rgba(4,8,7,.96)\";"),
@@ -13883,6 +13888,46 @@ mod tests {
         }
     }
 
+    /// The azimuthal chart cannot lay out the antipode: it spreads that one
+    /// point round the whole rim, so a cell reaching it has corners at
+    /// bearings a quarter or half a turn apart, and the straight chords drawn
+    /// between them cut across the middle of the sheet — an empire's wash
+    /// flooding the frame, its frontier ribbon slashed corner to corner, at
+    /// the zoom-out limit where the rim sits in the corners of the stage. The
+    /// chart leaves every cell within a few cell-widths of the antipode off
+    /// the sheet instead, and does so in the one place every painter, hit
+    /// test and overlay gets its cell geometry from.
+    #[test]
+    fn browser_azimuthal_chart_leaves_the_antipode_neighbourhood_off_the_sheet() {
+        // The margin is a bound in cell-widths, measured off the globe once.
+        assert!(EMBEDDED_INDEX.contains("const PLANET_CHART_ANTIPODE_CELLS = 5;"));
+        assert!(EMBEDDED_INDEX.contains(
+            "return {frequency:raw.frequency, corners, cells, reach:planetCellReach(cells, corners)};"
+        ));
+        assert!(EMBEDDED_INDEX.contains("function planetCellReach(cells, corners) {"));
+        assert!(EMBEDDED_INDEX.contains(
+            "function planetChartAntipodeFloor() {\n  return -Math.cos(Math.min(Math.PI / 2, PLANET_CHART_ANTIPODE_CELLS * (PLANET?.reach || 0)));\n}"
+        ));
+        // Applied at the source of every projected cell, on the chart only:
+        // the globe has a limb to fold at and no antipode in view.
+        let geometry = EMBEDDED_INDEX
+            .split("function planetCellGeometry(tile, camera, scale, centerX, centerY) {")
+            .nth(1)
+            .and_then(|tail| tail.split("function planetChartHorizon").next())
+            .expect("planet cell geometry");
+        assert!(geometry.contains(
+            "const center = planetProject(cell.center, camera, scale, centerX, centerY);\n  if (camera.chart && center.z < planetChartAntipodeFloor()) return null;"
+        ));
+        assert!(geometry.contains("return {cell, points, center};"));
+        // Both consumers of cell geometry go through it, so no painter can
+        // project an antipode cell on its own.
+        assert_eq!(
+            EMBEDDED_INDEX.matches("planetCellGeometry(").count(),
+            3,
+            "cell geometry has one definition and two callers"
+        );
+    }
+
     #[test]
     fn browser_planet_minimap_paints_forward_cell_polygons_not_a_per_pixel_raster() {
         // The drag path redraws the minimap on every pointermove, so the
@@ -13917,23 +13962,189 @@ mod tests {
     }
 
     #[test]
-    fn browser_tile_yields_are_numbered_in_centered_semantic_rows() {
+    fn browser_tile_yields_are_compact_electric_and_centered_at_sixty_three_percent() {
         assert!(EMBEDDED_INDEX.contains(
-            "[\"science\", \"culture\", \"faith\"],\n  [\"food\", \"production\", \"gold\"],"
+            "const YPIP = { food:\"#69e64f\", production:\"#ff8b3d\", gold:\"#ffda3b\",\n               science:\"#36cfff\", culture:\"#ca74ff\", faith:\"#f6e5a8\" };"
         ));
+        assert!(EMBEDDED_INDEX.contains("const STRATEGIC_YIELD_CENTER_FRACTION = .63;"));
+        assert!(EMBEDDED_INDEX.contains(
+            "[\"food\", \"production\", \"gold\"],\n  [\"science\", \"culture\", \"faith\"],"
+        ));
+        let parts = EMBEDDED_INDEX
+            .split("function yieldPipParts")
+            .nth(1)
+            .and_then(|tail| tail.split("function tileYieldMarkers").next())
+            .expect("tile-yield pip expansion");
+        assert!(parts.contains("pips.push({kind, portion:1});"));
+        assert!(parts.contains("pips.push({kind, portion:remainder});"));
+        assert!(parts.contains("Math.round(raw * 10) / 10"));
+
+        let formations = EMBEDDED_INDEX
+            .split("function yieldPipOffsets")
+            .nth(1)
+            .and_then(|tail| tail.split("function yieldPipCluster").next())
+            .expect("tile-yield pip formations");
+        assert!(formations.contains("if (count === 2) return [[0, -step / 2], [0, step / 2]];"));
+        assert!(formations.contains("if (count === 3)"));
+        assert!(formations.contains("Math.sqrt(3)"));
+        assert!(formations.contains("if (count === 4) return ["));
+        assert!(formations.contains("const gap = .92 * r / 4.4;"));
+        assert!(formations.contains("const step = r * 2 + gap;"));
+
+        let cluster = EMBEDDED_INDEX
+            .split("function yieldPipCluster")
+            .nth(1)
+            .and_then(|tail| tail.split("function yieldPipRow").next())
+            .expect("tile-yield pip cluster");
+        assert!(cluster.contains("const summary = pips.length >= 5;"));
+        assert!(cluster.contains("const iconR = summary ? r * 1.7 : r;"));
+        assert!(cluster.contains("const label = summary ? fmtYield(Number(amount)) : \"\";"));
+        assert!(cluster.contains("const edge = sign => sign.r * (1 + YIELD_PLATE_PAD);"));
 
         let renderer = EMBEDDED_INDEX
             .split("function drawTileYields")
             .nth(1)
             .and_then(|tail| tail.split("function tri(").next())
             .expect("tile-yield renderer");
-        assert!(renderer.contains(".filter(([, amount]) => amount >= 1)"));
-        assert!(renderer.contains("(i - (entries.length - 1) / 2) * step"));
-        assert!(renderer.contains("cx.fillStyle = YPIP[kind]"));
-        assert!(renderer.contains("cx.fillText(label, px, py + .5)"));
-        assert!(renderer.contains("const label = fmtYield(amount)"));
-        assert!(!renderer.contains("YICON[kind]"));
-        assert!(!renderer.contains("yieldGlyph"));
+        assert!(renderer.contains("const rows = yieldPipLayout(full, r);"));
+        // The plate is painted once per cluster, under that cluster's signs.
+        assert!(renderer.contains("drawYieldPlate(cluster.signs, clusterX, cy);"));
+        assert!(renderer.contains("const visualRows = rows.slice().reverse();"));
+        assert!(renderer.contains(
+            "drawYieldPip(sign.kind, clusterX + sign.x, cy + sign.y,\n          sign.r, sign.portion, sign.label);"
+        ));
+        assert!(renderer.contains("const totalHeight = visualRows.reduce"));
+        assert!(renderer.contains("const centerY = strategicYieldCenterY(y);"));
+        assert!(
+            renderer.contains("const widestRow = Math.max(...visualRows.map(row => row.width));")
+        );
+        assert!(renderer.contains("let top = centerY - totalHeight / 2;"));
+        assert!(renderer
+            .contains("if (worked) drawWorkedYieldRing(x, centerY, widestRow, totalHeight, r);"));
+        assert!(EMBEDDED_INDEX.contains("function drawYieldPipGlyph(kind, x, y, r)"));
+        let placement = EMBEDDED_INDEX
+            .split("function strategicYieldCenterY")
+            .nth(1)
+            .and_then(|tail| tail.split("// The tiny signs borrow").next())
+            .expect("strategic tile-yield vertical placement");
+        assert!(placement.contains("const tileTop = y - S * YS;"));
+        assert!(placement.contains("const tileHeight = S * YS * 2;"));
+        assert!(
+            placement.contains("return tileTop + tileHeight * STRATEGIC_YIELD_CENTER_FRACTION;")
+        );
+        let pip = EMBEDDED_INDEX
+            .split("function drawYieldPip(kind, x, y, r, portion, label = \"\")")
+            .nth(1)
+            .and_then(|tail| tail.split("function drawTileYields").next())
+            .expect("numbered tile-yield pip renderer");
+        assert!(pip.contains("cx.strokeText(label, x, y + r * .04);"));
+        assert!(pip.contains("cx.fillText(label, x, y + r * .04);"));
+        assert!(pip.contains("label.length === 1 ? 1.25"));
+        // A sign on the plate carries no rim, no shadow and no keyline of its
+        // own — every one of those was a per-sign repeat of what the cluster's
+        // plate now says once.
+        assert!(!pip.contains("cx.shadowColor"));
+        assert!(!pip.contains("cx.arc(x, y, r + "));
+        assert!(!EMBEDDED_INDEX.contains("YIELD_PIP_RIM"));
+        assert!(!EMBEDDED_INDEX.contains("function yieldPipLines"));
+        assert!(!EMBEDDED_INDEX.contains("function yieldPipRuns"));
+        assert!(EMBEDDED_INDEX.contains("class=\"tip-yield-group\""));
+        assert!(EMBEDDED_INDEX.contains("--tip-yield-portion:${Math.round(portion * 100)}%"));
+    }
+
+    /// The signs on the plate are Civilization VI's own, cut from the very
+    /// texture the plate geometry was measured against. Each is one finished
+    /// circular icon, so nothing paints a disc under one -- the disc and the
+    /// pictograph are what the viewer drew while it had no sheet to draw.
+    #[test]
+    fn browser_tile_yield_signs_are_the_base_games_own_icons() {
+        assert!(EMBEDDED_CIV6_YIELD_ICONS.starts_with(b"\x89PNG\r\n\x1a\n"));
+        assert!(EMBEDDED_CIV6_YIELD_ICONS.len() > 8_000);
+        assert!(
+            EMBEDDED_INDEX.contains("CIV6_YIELD_ICON_ATLAS.src = \"/assets/civ6-yield-icons.png\"")
+        );
+        assert!(EMBEDDED_INDEX.contains(
+            "const CIV6_YIELD_ICON_KINDS = [\"food\", \"production\", \"gold\",\n                               \"science\", \"culture\", \"faith\"];"
+        ));
+        assert!(EMBEDDED_INDEX.contains("const CIV6_YIELD_ICON_CELL = 80;"));
+
+        let sign = EMBEDDED_INDEX
+            .split("function drawYieldSign(kind, x, y, r, fraction) {")
+            .nth(1)
+            .and_then(|tail| tail.split("function drawYieldPip").next())
+            .expect("tile-yield sign renderer");
+        assert!(sign.contains("if (civ6YieldIconReady(kind)) {"));
+        assert!(EMBEDDED_INDEX
+            .contains("return CIV6_YIELD_ICON_ATLAS_READY && CIV6_YIELD_ICON_INDEX.has(kind);"));
+        assert!(sign.contains("if (fraction >= 1) { drawCiv6YieldIcon(kind, x, y, r); return; }"));
+        // A fractional sign is that same icon twice: a dimmed ghost of all of
+        // it, then the earned part over the top. Never a second kind of mark.
+        assert!(sign.contains("cx.globalAlpha *= .26;"));
+        assert!(sign.contains("cx.rect(x - r, y + r - r * 2 * fraction, r * 2, r * 2 * fraction);"));
+        // And the drawn disc is still there underneath the branch, for the
+        // first frame and for a sheet the browser could not fetch.
+        assert!(sign.contains("cx.fillStyle = YPIP[kind] || \"#cccccc\";"));
+        assert!(sign.contains("drawYieldPipGlyph(kind, x, y, r);"));
+
+        // The tooltip counts with the same six signs off the same sheet, so a
+        // hover is never a second, private vocabulary for the same yield.
+        assert!(EMBEDDED_INDEX.contains("--tip-yield-cell:${cell};"));
+        assert!(EMBEDDED_INDEX.contains(
+            "url(\"/assets/civ6-yield-icons.png\") calc(var(--tip-yield-cell) * 20%) 0 / 600% 100% no-repeat,"
+        ));
+    }
+
+    #[test]
+    fn browser_tile_yield_clusters_stand_on_one_shaded_plate_and_worked_tiles_get_one_ring() {
+        // Measured off the base game's own map overlay atlas rather than
+        // guessed: rgb(8,12,16) at 92%, a 43px sign cell around a 38px icon.
+        assert!(EMBEDDED_INDEX.contains("const YIELD_PLATE_FILL = \"rgba(8,12,16,.92)\";"));
+        assert!(EMBEDDED_INDEX.contains("const YIELD_PLATE_PAD = .13;"));
+        assert!(EMBEDDED_INDEX.contains("const YIELD_PLATE_SOLO_CORNER = .84;"));
+        let hull = EMBEDDED_INDEX
+            .split("function yieldPlateHull")
+            .nth(1)
+            .and_then(|tail| tail.split("function traceYieldPlate").next())
+            .expect("tile-yield plate hull");
+        // The hull is what makes a capsule, a rounded triangle and a rounded
+        // square fall out of one routine instead of three special cases.
+        assert!(hull.contains("if (points.length < 3) return points;"));
+        assert!(hull.contains("(a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x)"));
+        let trace = EMBEDDED_INDEX
+            .split("function traceYieldPlate")
+            .nth(1)
+            .and_then(|tail| tail.split("function drawYieldPlate").next())
+            .expect("tile-yield plate outline");
+        assert!(trace
+            .contains("cx.roundRect(x - r, y - r, r * 2, r * 2, r * YIELD_PLATE_SOLO_CORNER);"));
+        assert!(trace
+            .contains("if (sign.label) { cx.moveTo(x + r, y); cx.arc(x, y, r, 0, 7); return; }"));
+        assert!(trace.contains("Math.atan2(-(next.x - point.x), next.y - point.y)"));
+        assert!(trace.contains("outward[(index + hull.length - 1) % hull.length], outward[index]"));
+        let plate = EMBEDDED_INDEX
+            .split("function drawYieldPlate")
+            .nth(1)
+            .and_then(|tail| tail.split("function drawYieldPip").next())
+            .expect("tile-yield plate renderer");
+        assert!(plate.contains("traceYieldPlate(signs, dx, dy);"));
+        assert!(plate.contains("cx.fillStyle = YIELD_PLATE_FILL;"));
+        assert!(plate.contains("cx.shadowColor = YIELD_PLATE_SHADOW;"));
+        // City assignment is one tile-level fact, not a repeat on every yield
+        // cluster. Its high-contrast ring stays visible over bright terrain.
+        assert!(!plate.contains("YIELD_PLATE_WORKED_EDGE"));
+        assert!(EMBEDDED_INDEX.contains("const WORKED_YIELD_RING = \"rgba(255,255,255,.98)\";"));
+        assert!(EMBEDDED_INDEX.contains("const WORKED_YIELD_RING_OUTLINE = \"rgba(5,8,7,.94)\";"));
+        let ring = EMBEDDED_INDEX
+            .split("function drawWorkedYieldRing")
+            .nth(1)
+            .and_then(|tail| tail.split("function drawYieldSign").next())
+            .expect("worked tile-yield ring renderer");
+        assert!(ring.contains(
+            "const radius = Math.hypot(width / 2, height / 2) + Math.max(1.2, r * .28);"
+        ));
+        assert!(ring.contains("cx.strokeStyle = WORKED_YIELD_RING_OUTLINE;"));
+        assert!(ring.contains("cx.lineWidth = whiteWidth + outlineWidth * 2;"));
+        assert!(ring.contains("cx.strokeStyle = WORKED_YIELD_RING;"));
     }
 
     #[test]
@@ -13977,7 +14188,7 @@ mod tests {
             .nth(1)
             .and_then(|tail| tail.split("function drawFeatureEffects").next())
             .expect("minimal strategic mountain icon renderer");
-        assert!(icon.contains("drawMinimalVolcanoCaldera(x, y, STRATEGIC_MOUNTAIN_ICON_SCALE * size)"));
+        assert!(icon.contains("drawMinimalVolcanoCaldera(x, y, STRATEGIC_MOUNTAIN_ICON_SCALE * size,\n                              false, null, true)"));
         assert!(icon.contains("drawMinimalMountainGlyph(x, y, STRATEGIC_MOUNTAIN_ICON_SCALE * size)"));
         assert!(!icon.contains("Atlas"));
         let mountain = EMBEDDED_INDEX
@@ -13988,17 +14199,43 @@ mod tests {
         assert!(mountain.contains("const silhouette = () =>"));
         assert!(mountain.contains("cx.fillStyle = \"#8c9991\""));
         assert!(mountain.contains("cx.strokeStyle = \"#263a36\""));
-        assert!(EMBEDDED_INDEX.contains("const STRATEGIC_MOUNTAIN_ICON_WIDTH_SCALE = 1.2;"));
-        assert!(EMBEDDED_INDEX.contains("const STRATEGIC_MOUNTAIN_ICON_HEIGHT_SCALE = 1.5;"));
+        // The mountain owns nearly the whole usable face: its feet are derived
+        // from the lower corners and its peak from the upper point, with room
+        // for the outline instead of relying on the flat-map clip.
+        assert!(EMBEDDED_INDEX.contains("const STRATEGIC_MOUNTAIN_TILE_EDGE_INSET = 1.75;"));
+        assert!(EMBEDDED_INDEX.contains("S * SQ3 / 2 - STRATEGIC_MOUNTAIN_TILE_EDGE_INSET"));
+        assert!(EMBEDDED_INDEX.contains("S * YS / 2 - STRATEGIC_MOUNTAIN_TILE_EDGE_INSET"));
+        assert!(EMBEDDED_INDEX.contains("-S * YS + STRATEGIC_MOUNTAIN_TILE_EDGE_INSET"));
+        assert!(EMBEDDED_INDEX
+            .contains("STRATEGIC_MOUNTAIN_FOOT_TARGET_X /\n  (STRATEGIC_MOUNTAIN_ICON_SCALE *"));
+        assert!(EMBEDDED_INDEX
+            .contains("(STRATEGIC_MOUNTAIN_FOOT_TARGET_Y - STRATEGIC_MOUNTAIN_PEAK_TARGET_Y) /"));
         assert!(mountain.contains("cx.scale(k * STRATEGIC_MOUNTAIN_ICON_WIDTH_SCALE,"));
         assert!(mountain.contains("k * STRATEGIC_MOUNTAIN_ICON_HEIGHT_SCALE);"));
+        assert!(mountain.contains("cx.translate(0, STRATEGIC_MOUNTAIN_GLYPH_Y_OFFSET);"));
+        assert!(mountain.contains("STRATEGIC_MOUNTAIN_SHADOW_Y * iconSize"));
+
+        // The volcano uses the matching lower-left/lower-right vertices (the
+        // 8 and 4 o'clock corners) and stops its glowing summit at 90% of the
+        // tile's upper half-height. Its shadow stays in raw tile coordinates
+        // so the taller cone does not rely on clipping to appear contained.
+        assert!(EMBEDDED_INDEX.contains("const STRATEGIC_VOLCANO_FOOT_TARGET_X = S * SQ3 / 2;"));
+        assert!(EMBEDDED_INDEX.contains("const STRATEGIC_VOLCANO_FOOT_TARGET_Y = S * YS / 2;"));
+        assert!(EMBEDDED_INDEX.contains("const STRATEGIC_VOLCANO_TOP_TARGET_Y = -S * YS * .90;"));
         let volcano = EMBEDDED_INDEX
             .split("function drawMinimalVolcanoCaldera")
             .nth(1)
             .and_then(|tail| tail.split("function drawStrategicMountainIcon").next())
             .expect("minimal volcano caldera renderer");
         assert!(volcano.contains("const silhouette = () =>"));
-        assert!(volcano.contains("cx.ellipse(0, -6.2, 5.3, 1.8"));
+        assert!(volcano.contains("cx.scale(k * STRATEGIC_VOLCANO_ICON_WIDTH_SCALE,"));
+        assert!(volcano.contains("k * STRATEGIC_VOLCANO_ICON_HEIGHT_SCALE);"));
+        assert!(volcano.contains("cx.translate(0, STRATEGIC_VOLCANO_GLYPH_Y_OFFSET);"));
+        assert!(volcano.contains("STRATEGIC_VOLCANO_SHADOW_Y * iconSize"));
+        assert!(EMBEDDED_INDEX.contains("const STRATEGIC_VOLCANO_GLYPH_TOP_Y = -73 / 9;"));
+        assert!(EMBEDDED_INDEX.contains("const STRATEGIC_VOLCANO_CALDERA_Y ="));
+        assert!(volcano.contains("const craterY = strategic ? STRATEGIC_VOLCANO_CALDERA_Y : -6.2;"));
+        assert!(volcano.contains("strategic ? \"#ff8a32\" : \"#ed6b35\""));
         assert!(volcano.contains("cx.strokeStyle = \"#e75e31\";"));
         assert!(!volcano.contains("cx.ellipse(0, 1, 9.5, 5.2"));
         assert!(volcano.contains("if (!ice)"));
@@ -14139,7 +14376,6 @@ mod tests {
                 "poles": "poles",
                 "speed": "quick",
                 "leader_pool": "historical",
-                "ai_pool": "best3",
                 "teams": [],
                 "victories": ["science", "religious", "diplomatic", "domination"],
                 "mercy_rule": null,
@@ -14305,7 +14541,6 @@ mod tests {
                 "poles": "poles",
                 "speed": "quick",
                 "leader_pool": "historical",
-                "ai_pool": "best3",
                 "teams": [],
                 "victories": ["science", "religious", "diplomatic", "domination"],
                 "mercy_rule": null,
@@ -14604,6 +14839,7 @@ mod tests {
             desired_cities: 4,
             assessed_turn: 37,
             peace_offers: Vec::new(),
+            peace_routed: Vec::new(),
             forces: Vec::new(),
             war: Some(crate::ai::WarPlanReport {
                 enabled: true,
@@ -15561,10 +15797,13 @@ mod tests {
             .iter()
             .filter_map(|entry| entry["name"].as_str())
             .collect();
-        assert!(names.contains(&"advanced"), "the default agent is offerable");
+        assert!(
+            names.contains(&"advanced"),
+            "the default agent is offerable"
+        );
         assert!(
             !names.contains(&"strategic"),
-            "a league-only search entrant is not a live auto-play offer"
+            "the score-only search is not a live auto-play offer"
         );
         assert!(
             names.len() >= 4,
@@ -15573,7 +15812,9 @@ mod tests {
         // Ratings are shown as ratings, and an entrant that has never played a
         // rated game is marked rather than shown as an authoritative 1500.
         for entry in roster.as_array().expect("a roster") {
-            assert!(entry["username"].as_str().is_some_and(|name| !name.is_empty()));
+            assert!(entry["username"]
+                .as_str()
+                .is_some_and(|name| !name.is_empty()));
             assert!(entry["provisional"].is_boolean());
         }
 
@@ -15608,162 +15849,15 @@ mod tests {
         assert_eq!(session.game.turn, before + 3);
     }
 
+    /// Every major on screen carries its odds of winning, whether or not this
+    /// game rates anybody — and nothing does: every seat sits down at the same
+    /// provisional prior, so the start odds are the table and the difficulty.
     #[test]
-    fn an_explicit_coverage_target_can_include_a_live_excluded_strategy() {
-        let dir = std::env::temp_dir().join(format!(
-            "civvis-server-coverage-{}-{:?}",
-            std::process::id(),
-            std::thread::current().id()
-        ));
-        let dir = dir.to_str().unwrap().to_string();
-        let _ = std::fs::remove_dir_all(&dir);
-        let entrant = |name: &str| {
-            crate::league::Strategy::new(
-                name,
-                crate::league::StrategyKind::Builtin {
-                    ai: name.to_string(),
-                },
-                0,
-            )
-        };
-        let mut excluded = entrant("strategic");
-        assert!(excluded.exclude_from_live("coverage test", "the test ends"));
-        crate::league::save_league(
-            &dir,
-            &crate::league::League {
-                round: 2,
-                strategies: vec![entrant("advanced"), entrant("basic"), excluded],
-                calibration: Default::default(),
-            },
-        );
-
-        let mut params = current();
-        params.num_players = 4;
-        params.spectate = true;
-        params.league_dir = Some(dir.clone());
-        params.force_strategy = Some("strategic".to_string());
-        let session = Session::new(params);
-        let target = session
-            .league
-            .as_ref()
-            .unwrap()
-            .strategies
-            .iter()
-            .position(|strategy| strategy.name == "strategic")
-            .unwrap();
-        assert_eq!(session.seat_strategy[0], Some(target));
-        assert_eq!(session.seat_entry(0).unwrap().name, "strategic");
-        assert_eq!(
-            session.state()["players"][0]["ai_player_strategy"],
-            json!("strategic"),
-            "terminal evidence carries the stable league identity"
-        );
-        std::fs::remove_dir_all(&dir).unwrap();
-    }
-
-    /// Sitting down to play registers a *new* player.
-    ///
-    /// The seat used to be dealt an entrant off the league table like any
-    /// other major, so a person wore an agent's handle and rating, and the
-    /// game they finished was filed as that agent's win. Both halves are the
-    /// same mistake: an identity nobody at the keyboard earned.
-    #[test]
-    fn a_single_player_game_registers_a_new_player() {
-        let dir = std::env::temp_dir().join(format!(
-            "civvis-server-register-{}-{:?}",
-            std::process::id(),
-            std::thread::current().id()
-        ));
-        let dir = dir.to_str().unwrap().to_string();
-        let _ = std::fs::remove_dir_all(&dir);
-        let entrant = |ai: &str| {
-            crate::league::Strategy::new(
-                ai,
-                crate::league::StrategyKind::Builtin { ai: ai.to_string() },
-                0,
-            )
-        };
-        crate::league::save_league(
-            &dir,
-            &crate::league::League {
-                round: 2,
-                strategies: vec![entrant("advanced"), entrant("basic")],
-                calibration: Default::default(),
-            },
-        );
-
-        let mut params = current();
-        params.league_dir = Some(dir.clone());
-        params.league_record = true;
-        let mut session = Session::new(params);
-
-        // Seat 0 is the person: a row of their own, provisional, and not one
-        // of the two agents that were already here.
-        let seated = session.seat_strategy[0].expect("the person is rated");
-        let league = session.league.clone().expect("a rated roster");
-        assert!(league.strategies[seated].human);
-        assert_eq!(league.strategies[seated].username, "Player");
-        assert_eq!(session.seated_strategy_name(0), Some("player"));
-        // The rival is still seated from the roster, and is still an agent.
-        let rival = session.seat_strategy[1].expect("the rival is rated");
-        assert!(!league.strategies[rival].human);
-
-        // The registration reached the roster on disk, so the result has a
-        // name to be filed under.
-        let saved = crate::league::load_league(&dir).expect("roster on disk");
-        assert_eq!(saved.strategies.len(), 3);
-        assert_eq!(saved.humans().len(), 1);
-
-        // And the game says who is playing it.
-        let state = session.state();
-        let me = &state["players"][0];
-        assert_eq!(me["player_username"], json!("Player"));
-        assert_eq!(me["player_rated"], json!(true));
-        assert_eq!(me["player_games"], json!(0));
-        assert!(
-            state["players"][1]["player_username"].is_null(),
-            "only a seat somebody is playing carries a person"
-        );
-
-        // A decided game rates the person, and rates nobody in their place.
-        session.game.winner = Some(0);
-        session.game.victory_type = Some("score".to_string());
-        session.record_league_result();
-        let rated = crate::league::load_league(&dir).expect("roster on disk");
-        let person = rated.strategies.iter().find(|s| s.human).expect("the person");
-        assert_eq!((person.games, person.wins), (1, 1));
-        assert!(person.rating > 1500.0);
-        for agent in rated.strategies.iter().filter(|s| !s.human) {
-            assert_eq!(agent.wins, 0, "{} was credited a person's win", agent.name);
-        }
-        assert_eq!(
-            rated.strategies.iter().filter(|s| s.games > 0).count(),
-            2,
-            "the person and the rival they beat, nobody else"
-        );
-        std::fs::remove_dir_all(&dir).unwrap();
-    }
-
-    /// Every major on screen carries a rating, whether or not this game is
-    /// being rated into anything.
-    ///
-    /// The elo column used to be empty for every seat in every game that was
-    /// not launched with `--league`, which is almost all of them — a table of
-    /// dashes that reads as "this build cannot rate anyone". Two things fix
-    /// it: the snapshot every build ships is loaded for labels, and a seat
-    /// the league has no row for shows the provisional base rather than
-    /// nothing.
-    #[test]
-    fn every_major_carries_a_rating_without_a_named_roster() {
+    fn every_major_carries_odds_without_a_rating() {
         let mut params = current();
         params.spectate = true;
         params.num_players = 4;
         let session = Session::new(params);
-        assert!(
-            session.league.is_some(),
-            "the shipped snapshot labels a game that names no roster"
-        );
-        assert!(!session.seat_from_roster, "and it seats nobody");
 
         let state = session.state();
         let majors: Vec<&Value> = state["players"]
@@ -15776,13 +15870,13 @@ mod tests {
         let mut shares = 0.0;
         let mut now_shares = 0.0;
         for player in &majors {
-            let elo = player["ai_elo"].as_i64().expect("every major has a rating");
-            assert!((800..=2600).contains(&elo), "{elo} is not a rating");
-            assert!(player["ai_elo_rd"].as_i64().is_some());
-            shares += player["odds_start"].as_f64().expect("and start odds");
+            assert!(player["ai_elo"].is_null(), "nothing rates a seat any more");
+            shares += player["odds_start"]
+                .as_f64()
+                .expect("every major has start odds");
             now_shares += player["odds_now"].as_f64().expect("and now odds");
             assert!(player["odds_prior_elo"].as_i64().is_some());
-            // Nobody chose these seats, so the one entrant behind all of them
+            // Nobody chose these seats, so the one agent behind all of them
             // does not get to put its handle on four different civilizations.
             assert!(
                 player["ai_username"].is_null(),
@@ -15798,16 +15892,6 @@ mod tests {
             (now_shares - 1.0).abs() < 0.02,
             "and so does the live answer: now odds summed to {now_shares}"
         );
-        // An earned rating, not the base everybody starts from. The check
-        // above passes on a provisional 1500 too, which is exactly what the
-        // whole table showed while the roster was read from a relative path.
-        for player in &majors {
-            assert_eq!(
-                player["ai_elo_provisional"],
-                json!(false),
-                "the shipped roster has games behind it"
-            );
-        }
     }
 
     /// A seated player is told their own odds, and an unmet rival's are withheld
@@ -15827,7 +15911,8 @@ mod tests {
         let me = state["player"].as_u64().expect("an interactive game has a seat");
         let mut unmet = 0;
         for player in state["players"].as_array().expect("a player list") {
-            let is_major = player["is_minor"] != json!(true) && player["is_barbarian"] != json!(true);
+            let is_major =
+                player["is_minor"] != json!(true) && player["is_barbarian"] != json!(true);
             if !is_major {
                 continue;
             }
@@ -15847,49 +15932,16 @@ mod tests {
                 );
             }
         }
-        assert!(unmet > 0, "a fresh interactive game has civilizations still to meet");
+        assert!(
+            unmet > 0,
+            "a fresh interactive game has civilizations still to meet"
+        );
     }
 
-    /// The roster that labels an ordinary game is compiled in, so the ratings
-    /// on screen are the same wherever the binary was started from.
-    ///
-    /// The label roster ended at a read of `data/league`, a directory resolved
-    /// against the working directory. `cargo test` runs at the crate root and
-    /// a developer is usually standing in a checkout, so the read succeeded
-    /// exactly where anyone would look and failed everywhere the program
-    /// actually ships: the installed binary run from a home directory, a
-    /// launcher that starts it from `/`, and the WASM build, which has no
-    /// filesystem at all. Every seat in those games showed a provisional 1500.
+    /// An interactive game gives the rivals you have met their odds too — and
+    /// never their plan.
     #[test]
-    fn the_label_roster_is_compiled_in_rather_than_read_from_the_working_directory() {
-        let shipped = crate::league::shipped_league().expect("the snapshot is compiled in");
-        let mut params = current();
-        params.league_dir = None;
-        let (league, seats) = Session::load_params_league(&params);
-        let league = league.expect("a game that names no roster is still labelled");
-        assert!(!seats, "a label roster seats nobody and rates nothing");
-        // A checkout that has been recording locally answers from its own
-        // runtime `league/` first, which is the point of that step. With no
-        // such directory — a fresh checkout, and every shipped build — the
-        // chain has to reach the compiled-in snapshot rather than stop at a
-        // path that is not there.
-        if crate::league::load_league("league").is_none() {
-            assert_eq!(
-                league.strategies.len(),
-                shipped.strategies.len(),
-                "the labels come from the shipped roster"
-            );
-        }
-    }
-
-    /// An interactive game rates its rivals on screen too — but only the
-    /// ones you have met, and never their plan.
-    ///
-    /// Only the spectator used to annotate ratings, so the HUD's ELO column
-    /// was empty for every opponent in every game somebody was actually
-    /// playing.
-    #[test]
-    fn an_interactive_game_rates_the_rivals_you_have_met() {
+    fn an_interactive_game_annotates_the_rivals_you_have_met() {
         let mut params = current();
         params.num_players = 3;
         let session = Session::new(params);
@@ -15902,13 +15954,16 @@ mod tests {
             let minor = player["is_minor"] == json!(true) || player["is_barbarian"] == json!(true);
             if unmet || minor {
                 assert!(
-                    player["ai_elo"].is_null(),
+                    player["odds_start"].is_null(),
                     "an unmet or minor seat is not annotated"
                 );
                 continue;
             }
             met += 1;
-            assert!(player["ai_elo"].as_i64().is_some(), "a met major is rated");
+            assert!(
+                player["odds_start"].as_f64().is_some(),
+                "a met major has odds"
+            );
             // Their standing is public; what they intend to do with it is not.
             assert!(player["ai_plan"].is_null());
             assert!(player["ai_strategy"].is_null());
@@ -15916,23 +15971,19 @@ mod tests {
         assert!(met > 0, "the player's own seat is met at the very least");
     }
 
-    /// Most games are rated against nothing at all. The person is still not
-    /// an existing player: they get a handle for this game, and it goes no
-    /// further than this game.
+    /// Nothing rates a game. The person is still not one of the agents: they
+    /// get a handle for this game, and it goes no further than this game.
     #[test]
-    fn an_unrated_single_player_game_still_names_the_person() {
+    fn a_single_player_game_still_names_the_person() {
         let session = Session::new(current());
         assert_eq!(session.seated_strategy_name(0), Some("player"));
-        assert_eq!(session.seat_strategy[0], None, "there is nothing to rate into");
         let state = session.state();
         assert_eq!(state["players"][0]["player_username"], json!("Player"));
         assert_eq!(state["players"][0]["player_rated"], json!(false));
-        // Nothing is being rated, and they have still never finished a game,
-        // so the seat wears the rating everybody starts from and says so.
-        assert_eq!(state["players"][0]["player_elo"], json!(1500));
-        assert_eq!(state["players"][0]["player_elo_rd"], json!(350));
-        assert_eq!(state["players"][0]["player_elo_provisional"], json!(true));
-        assert_eq!(state["players"][0]["player_games"], json!(0));
+        assert!(
+            state["players"][0]["player_elo"].is_null(),
+            "nothing rates the person"
+        );
 
         // A spectated world has nobody at a keyboard and registers nobody.
         let mut params = current();
@@ -16277,6 +16328,341 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("function wakeSleepers()"));
     }
 
+    /// A world wearing Civilization VI's own arrangement, so that a person who
+    /// has played that game can read this one without being told where
+    /// anything is. The geometry below is read off the installed game's
+    /// interface definitions (`Base/Assets/UI`), not remembered:
+    /// `TopPanel.xml` for the yield strip, `LaunchBar.xml` for the two ringed
+    /// tree hooks that lead the bar, `WorldTracker.xml` for the research and
+    /// civic panels under it, `MinimapPanel.xml` (`Anchor="L,B"`) for the
+    /// chart, and `ActionPanel.xml` / `NotificationPanel.xml` (`Anchor="R,B"`)
+    /// for the corner the turn control owns and the rail that climbs out of
+    /// it. One class carries all of it — `body.civ6-frame` — and the two ways
+    /// in keep a class each: `playing-solo` for a seat somebody is holding,
+    /// `watching-world` for a simulation being watched.
+    #[test]
+    fn browser_seats_a_person_in_the_civ_six_arrangement() {
+        for piece in [
+            "id=\"civtop\"",
+            "id=\"worldtracker\"",
+            "id=\"rankingsbtn\"",
+            "function playingSolo() { return !!state && !SPEC; }",
+            "function drawSoloHud()",
+            "function drawCivTop()",
+            "function drawWorldTracker()",
+            "function launchTreeHook(kind)",
+            "document.body.classList.toggle(\"playing-solo\", solo);",
+            "document.body.classList.toggle(\"civ6-frame\", solo);",
+        ] {
+            assert!(
+                EMBEDDED_INDEX.contains(piece),
+                "the single-player arrangement is missing {piece}"
+            );
+        }
+        // The arrangement is settled before the panels that live in it are
+        // drawn; otherwise the first frame of a played game paints the
+        // spectator's masthead and then throws it away.
+        let solo = EMBEDDED_INDEX
+            .find("  drawSoloHud();")
+            .expect("the arrangement must be part of the render pass");
+        let frame = EMBEDDED_INDEX
+            .find("draw(); drawSide(newWorld); drawMini(); drawPlayerHud(); drawUbar();")
+            .expect("the complete frame");
+        assert!(solo < frame);
+
+        // TopPanel.lua's `RefreshYields` runs Science, Culture, Faith, Gold,
+        // Tourism, in that order, and only Faith and Gold carry a balance
+        // beside their rate (`YieldButton_DoubleLabel`).
+        let strip = EMBEDDED_INDEX
+            .split_once("  const yields = !empire ? \"\" :\n")
+            .expect("the yield strip")
+            .1
+            .split_once("  const meters = !empire")
+            .expect("end of the yield strip")
+            .0;
+        let mut previous = 0;
+        for yield_key in [
+            "key:\"science\"",
+            "key:\"culture\"",
+            "key:\"faith\"",
+            "key:\"gold\"",
+            "key:\"tourism\"",
+        ] {
+            let at = strip
+                .find(yield_key)
+                .unwrap_or_else(|| panic!("the top panel is missing {yield_key}"));
+            assert!(
+                at > previous,
+                "the top panel must read in Civ 6's order; {yield_key} is out of place"
+            );
+            previous = at;
+        }
+        assert!(strip.contains("key:\"faith\", icon:\"☼\", stock:"));
+        assert!(strip.contains("key:\"gold\", icon:\"⛁\", stock:"));
+        assert!(!strip.contains("key:\"science\", icon:\"⌬\", stock:"));
+
+        // LaunchBar.xml opens with the tech tree and the civics tree, each
+        // ringed by the meter of what it is studying, and then runs
+        // Government, Religion, Great People.
+        assert!(EMBEDDED_INDEX.contains(
+            "(empireWorld ? launchTreeHook(\"science\") + launchTreeHook(\"culture\") : \"\") +"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "const LAUNCH_BAR_ORDER = [\"government\", \"religion\", \"people\", \"cities\","
+        ));
+        assert!(EMBEDDED_INDEX.contains("style=\"--ring:${pct}%\""));
+
+        // The corners. The selected unit owns the lower right, the
+        // notification rail climbs out of it, and the chart takes the lower
+        // left the standings masthead used to make unusable. There is no
+        // action corner: End Turn, the auto-play controls and the transport
+        // all stay in the command deck, which stays open.
+        assert!(!EMBEDDED_INDEX.contains("id=\"actionpanel\""));
+        assert!(!EMBEDDED_INDEX.contains("panel.appendChild(footer);"));
+        assert!(EMBEDDED_INDEX.contains(
+            "top: auto; right: var(--panel-edge); bottom: var(--solo-corner-clearance);"
+        ));
+        assert!(EMBEDDED_INDEX.contains("flex-direction: column-reverse;"));
+        assert!(EMBEDDED_INDEX.contains("body.civ6-frame .minimap-frame {"));
+        assert!(EMBEDDED_INDEX.contains("left: var(--panel-edge); right: auto;"));
+        // The deck is the seat's own panel and it opens with the world. Only
+        // an explicit fold is remembered, so a first visit cannot inherit one.
+        assert!(EMBEDDED_INDEX.contains("togglePanel(chosen === \"closed\", false);"));
+
+        // The standings masthead and the arena rail are this client's own
+        // instrument, so a played game opens with them on screen — #2275 put
+        // them behind ☗ and that is reverted. The report can still be folded
+        // away, and that answer is kept under a key that is not the shared
+        // map-overlay one.
+        assert!(EMBEDDED_INDEX.contains(
+            "body.civ6-frame:not(.rankings-open) #playerhud,\n  \
+             body.civ6-frame:not(.rankings-open) #victoryhud { display: none; }"
+        ));
+        assert!(EMBEDDED_INDEX.contains("function toggleRankingsReport(open)"));
+        assert!(EMBEDDED_INDEX.contains("toggleRankingsReport(chosen !== \"0\");"));
+        assert!(EMBEDDED_INDEX.contains("const SOLO_RANKINGS_KEY = \"civvis-solo-rankings-v1\";"));
+        assert!(!EMBEDDED_INDEX.contains("civvis-map-overlays-v1\", rankings"));
+
+        // The button says what is blocking it in that game's own words —
+        // `LOC_ACTION_PANEL_*` from `Base/Assets/Text/en_US/InGameText.xml`.
+        for (blocker, phrase) in [
+            ("research", "Choose research"),
+            ("civic", "Choose civic"),
+            ("produce", "Choose production"),
+            ("units", "Unit needs orders"),
+            ("capture", "Keep city?"),
+        ] {
+            assert!(
+                EMBEDDED_INDEX.contains(&format!("button: \"{phrase}\"")),
+                "the {blocker} blocker must read as Civ 6's own button does: {phrase}"
+            );
+        }
+        assert!(EMBEDDED_INDEX.contains(": \"Next turn\";"));
+
+        // The custom properties the arrangement composes are declared where
+        // `--panel-edge` is, or every `calc()` naming both is invalid at
+        // computed-value time and the panel silently falls back to `auto`.
+        let vars = EMBEDDED_INDEX
+            .find("  body.civ6-frame #maparea {")
+            .expect("the arrangement's own custom properties");
+        let edge = EMBEDDED_INDEX
+            .find("--panel-edge: clamp(")
+            .expect("the shared edge gutter");
+        assert!(
+            EMBEDDED_INDEX[vars..].contains("--solo-corner-clearance: calc(var(--panel-edge)"),
+            "the corner clearance must be composed on #maparea"
+        );
+        assert!(edge < vars);
+
+        // A battlefield has no empire behind it, so the strip keeps the turn
+        // and the era and drops the rest, and neither the world tracker nor
+        // the two tree hooks are painted at all.
+        assert!(
+            EMBEDDED_INDEX.contains("const empire = watched !== null && worldStandingsInPlay();")
+        );
+        assert!(EMBEDDED_INDEX.contains("const yields = !empire ? \"\" :"));
+        assert!(EMBEDDED_INDEX.contains("const meters = !empire ? \"\" :"));
+        assert!(EMBEDDED_INDEX
+            .contains("if (arrangementSeat() === null || !RULES || !worldStandingsInPlay()) {"));
+
+        // Civ 6 prints the eureka on every tree node, and the inspiration on
+        // the civic panel. Showing the bolt only once the boost has landed
+        // says it at the one moment it is worthless.
+        assert!(EMBEDDED_INDEX.contains("function boostRequirement(spec) {"));
+        assert!(EMBEDDED_INDEX.contains("const BOOST_PHRASES = {"));
+        assert!(EMBEDDED_INDEX.contains("const BOOST_FAMILIES = ["));
+        assert!(EMBEDDED_INDEX.contains(
+            "const wants = !completed && !boosted.includes(n) ? boostRequirement(s) : \"\";"
+        ));
+        assert!(EMBEDDED_INDEX.contains("const wants = isBoosted ? \"\" : boostRequirement(spec);"));
+        // Every boost the ruleset ships gets a sentence; the generic fallback
+        // exists for a trigger added tomorrow, not for the ones shipped now.
+        {
+            let rules = crate::rules::Rules::embedded();
+            let phrases = EMBEDDED_INDEX
+                .split_once("const BOOST_PHRASES = {")
+                .expect("the bare triggers")
+                .1
+                .split_once("\n};")
+                .expect("the bare trigger table's end")
+                .0;
+            let families = EMBEDDED_INDEX
+                .split_once("const BOOST_FAMILIES = [")
+                .expect("the prefixed triggers")
+                .1
+                .split_once("\n];")
+                .expect("the prefixed trigger table's end")
+                .0;
+            let mut unlabelled: Vec<String> = Vec::new();
+            for (name, boost) in rules
+                .techs
+                .iter()
+                .filter_map(|(name, spec)| spec.boost.as_ref().map(|b| (name, b)))
+                .chain(
+                    rules
+                        .civics
+                        .iter()
+                        .filter_map(|(name, spec)| spec.boost.as_ref().map(|b| (name, b))),
+                )
+            {
+                let trigger = &boost.trigger;
+                let bare = phrases.contains(&format!("\n  {trigger}:"));
+                let prefixed = trigger.split_once(':').is_some_and(|(head, _)| {
+                    families.contains(&format!("[\"{head}:\"")) || head == "unit_and_improve"
+                });
+                if !bare && !prefixed {
+                    unlabelled.push(format!("{name} ({trigger})"));
+                }
+            }
+            assert!(
+                unlabelled.is_empty(),
+                "these boosts would print their raw trigger: {}",
+                unlabelled.join(", ")
+            );
+        }
+
+        // Civilization VI opens a city on what it can build. The plot market
+        // is a fold at the foot of that column, never ahead of it.
+        let build = EMBEDDED_INDEX
+            .split_once("  let build = \"\";")
+            .expect("the city build column")
+            .1
+            .split_once("document.getElementById(\"cityscreen-build\").innerHTML = build;")
+            .expect("end of the city build column")
+            .0;
+        let producing = build
+            .find("city-group-head\">Producing")
+            .expect("the producing group");
+        let categories = build
+            .find("const order = [\"Districts\", \"Buildings\", \"Units\", \"Wonders\", \"Projects\"];")
+            .or_else(|| build.find("for (const category of order) {"))
+            .expect("the production categories");
+        let plots = build
+            .find("city-group-head\">Buy plots")
+            .expect("the plot market");
+        assert!(
+            producing < categories,
+            "a city opens on what it is producing"
+        );
+        assert!(
+            categories < plots,
+            "the plot market comes after the production list"
+        );
+        assert!(build.contains("<details class=\"city-group city-plots\""));
+    }
+
+    /// A watched simulation wears the laboratory, not Civilization VI's
+    /// arrangement.
+    ///
+    /// #2382 gave the spectator the same frame a played seat wears and put the
+    /// standings masthead and the arena rail behind ☗ with it. Over a
+    /// simulation those two *are* the instrument — the thing an operator opened
+    /// the page to read — so hiding them by default hid the experiment. The
+    /// frame is a played seat's again, and this is the test that says so: not
+    /// that the watcher's pieces are placed correctly, but that the watcher has
+    /// none of them.
+    #[test]
+    fn a_watched_simulation_keeps_the_laboratory() {
+        // The frame answers to one predicate, and that predicate is the seat.
+        assert!(EMBEDDED_INDEX.contains("function civ6Frame() { return playingSolo(); }"));
+        assert!(EMBEDDED_INDEX.contains("document.body.classList.toggle(\"civ6-frame\", solo);"));
+
+        // Every piece #2382 added for the watcher is gone, markup, style and
+        // pass alike. A spectator-only element that nothing paints is worse
+        // than no element: it reads as a feature to whoever finds it next.
+        for gone in [
+            "diploribbon",
+            "watching-world",
+            "RIBBON_FIGURES",
+            "arrangeWatchHud",
+            "civvis-watch-rankings-v1",
+            "civvis-watch-deck-v1",
+            "deckChoiceKey",
+            "watchingWorld",
+        ] {
+            assert!(
+                !EMBEDDED_INDEX.contains(gone),
+                "a watched world keeps the laboratory, so {gone} has nothing left to do"
+            );
+        }
+
+        // The transport stays in the deck it is written in. #2382 moved it out
+        // to the action corner by the same node move #2275 used for End Turn;
+        // both are reverted, so neither node is re-parented at all.
+        assert!(!EMBEDDED_INDEX.contains("panel.appendChild(bar);"));
+        assert!(EMBEDDED_INDEX.contains("<div id=\"specbar\" style=\"display:none\">"));
+        let deck = EMBEDDED_INDEX
+            .split_once("<div class=\"side-actions\" aria-label=\"Simulation controls\">")
+            .expect("the deck's action area")
+            .1;
+        let footer = deck
+            .find("id=\"humanfooter\"")
+            .expect("End Turn in the deck");
+        let transport = deck
+            .find("id=\"specbar\"")
+            .expect("the transport in the deck");
+        let close = deck.find("</div>\n  </div>").unwrap_or(deck.len());
+        assert!(
+            footer < close && transport < close,
+            "End Turn and the transport are the deck's, and nothing moves them out of it"
+        );
+
+        // The report's own class still exists — ☗ folds the masthead and the
+        // rail away for a look at the map — but only a played seat ever wears
+        // the frame those rules hang off, so a watched world simply shows them.
+        assert!(EMBEDDED_INDEX.contains(
+            "body.civ6-frame:not(.rankings-open) #playerhud,\n  \
+             body.civ6-frame:not(.rankings-open) #victoryhud { display: none; }"
+        ));
+        let rankings = EMBEDDED_INDEX
+            .split_once("function toggleRankingsReport(open) {")
+            .expect("the rankings report")
+            .1
+            .split_once("\n}")
+            .expect("the end of the rankings report")
+            .0;
+        assert!(
+            !rankings.contains("civvis-map-overlays-v1") && !rankings.contains("OVERLAY_"),
+            "the rankings report must never write the shared overlay preferences"
+        );
+        assert!(rankings.contains("if (playingSolo()) {"));
+
+        // A compact map area stacks the report into one band with rules
+        // carrying two ids (`#maparea.player-hud-compact #playerhud`), which
+        // outrank the arrangement's own one-id selectors however far down
+        // they are written. The report is placed again at that weight, or it
+        // opens over the yield strip.
+        for piece in [
+            "body.civ6-frame.rankings-open #maparea.player-hud-compact #playerhud {",
+            "body.civ6-frame.rankings-open #maparea.player-hud-compact #victoryhud {",
+        ] {
+            assert!(
+                EMBEDDED_INDEX.contains(piece),
+                "the compact report must be placed at the compact HUD's own weight: {piece}"
+            );
+        }
+    }
+
     #[test]
     fn browser_next_action_prefers_nearby_unvisited_units_before_revisiting() {
         let start = EMBEDDED_INDEX
@@ -16318,12 +16704,20 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains(
             "function nextAction() {\n  if (!state || SPEC) return;\n  advanceToNextActionUnit(true);"
         ));
-        // The requested fixed action map invokes the new selector from key 1;
-        // unit roster cycling is no longer a global keyboard shortcut.
+        // Two different passes, two different keys. `.` and `,` are Civ 6's
+        // NextUnit and PrevUnit — a reversible walk of the roster — and `N` is
+        // the nearby-action pass this client has and that game does not. `1`
+        // is EndTurn there, so it can no longer be either of them.
         assert!(EMBEDDED_INDEX.contains("if (step > 0) { advanceToNextUnit(true); return; }"));
-        assert!(EMBEDDED_INDEX.contains(
-            "{id: \"NextAction\", key: \"1\", run: () => nextAction()},"
-        ));
+        assert!(
+            EMBEDDED_INDEX.contains("{id: \"NextAction\", key: \"n\", run: () => nextAction()},")
+        );
+        assert!(EMBEDDED_INDEX.contains("{id: \"NextUnit\", key: \".\", run: () => cycleUnit(1)},"));
+        assert!(
+            EMBEDDED_INDEX.contains("{id: \"PrevUnit\", key: \",\", run: () => cycleUnit(-1)},")
+        );
+        assert!(EMBEDDED_INDEX
+            .contains("{id: \"EndTurn\", key: \"1\", run: () => advanceTurn(false)},"));
         assert!(!EMBEDDED_INDEX.contains("id: \"NextUnitTab\""));
     }
 
@@ -16360,8 +16754,10 @@ mod tests {
             "function tileYieldMarkers(yields)",
             "function tileDetailYieldWords(yields, sign = false)",
             "const TILE_TIP_YIELD_ORDER = [\"food\", \"production\", \"gold\", \"science\", \"culture\", \"faith\"];",
+            "class=\"tip-yield-group\"",
             "class=\"tip-yield-marker\"",
-            "style=\"--tip-yield-fill:${YPIP[kind]};--tip-yield-ink:${YINK[kind]}\"",
+            "--tip-yield-fill:${YPIP[kind]};--tip-yield-cell:${cell};",
+            "--tip-yield-portion:${Math.round(portion * 100)}%",
             "function tileBuiltTipLines(t, city)",
             "function districtTipLines(t)",
             "Base district yields:",
@@ -17339,11 +17735,13 @@ mod tests {
         // Every place a panel or an overlay moves refits a fitted area.
         assert_eq!(
             EMBEDDED_INDEX.matches("refitMapAreaToChrome();").count(),
-            6,
+            8,
             "a fitted map area follows the standings, the overlay switches, \
-             both HUD layout paths, and a HUD section fold — six call sites; \
-             a seventh means a new one belongs in this count, a fifth means \
-             one was dropped"
+             both HUD layout paths, a HUD section fold, and — the two the \
+             Civ 6 arrangement adds — taking that arrangement up or putting \
+             it down, and opening or closing the rankings report behind it: \
+             eight call sites; a ninth means a new one belongs in this count, \
+             a seventh means one was dropped"
         );
     }
 

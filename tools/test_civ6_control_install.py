@@ -739,11 +739,24 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn("wc:GetResolutions(pid)", voter)
         self.assertIn("wc:GetVotesandFavorCost(pid)", voter)
         self.assertIn("GetDiplomaticVictoryPoints()", voter)
-        # Against the leader on the diplomatic-victory resolution, with all the favor affords.
+        # Against the leader on the diplomatic-victory resolution, with what
+        # the favor affords on BOTH cost tables the host might charge: every
+        # ask that saturated the reported Online table was refused whole
+        # (17/17 across four runs), so the walks live in
+        # `CivvisCongressVoteBudget` and the ask takes the smaller.
         self.assertIn('if rtype == "WC_RES_DIPLOVICTORY" then', voter)
         self.assertIn("option = 2;", voter)
-        self.assertIn("costs[n] <= favor", voter)
+        self.assertIn("CivvisCongressVoteBudget(favor, costs, maxVotes)", voter)
+        self.assertIn("CivvisCongressVoteBudget = function(favor, costs, maxVotes)", source)
+        budget = source.split("CivvisCongressVoteBudget = function(favor, costs, maxVotes)", 1)[1].split("\nend", 1)[0]
+        self.assertIn("tonumber(costs[host]) <= bank", budget)
+        self.assertIn("5 * (standard + 1) * standard <= bank", budget)
+        # One operation carries the whole count: #2045's repeated single-vote
+        # experiment came back `votes_sent 20, recorded 1` on run
+        # civvis-20260819T004405Z -- the operation sets the ballot, it does
+        # not accumulate -- so the repeat loop must stay gone.
         self.assertIn("PlayerOperations.WORLD_CONGRESS_RESOLUTION_VOTE", voter)
+        self.assertNotIn("PlayerOperations.PARAM_WORLD_CONGRESS_VOTES] = 1", voter)
         self.assertIn("PlayerOperations.WORLD_CONGRESS_SUBMIT_TURN", voter)
         # Wired into the soft-blocker forfeit path, once per turn, before the dismissal.
         forfeit = source.split('if name == "ENDTURN_BLOCKING_WORLD_CONGRESS_SESSION"', 1)[1].split("local dropped = dismissBlocker(pid, blocker);", 1)[0]
@@ -767,12 +780,12 @@ class ProtectedInstallTest(unittest.TestCase):
         arm = voter.split('if rtype == "WC_RES_DIPLOVICTORY" then', 1)[1].split("elseif r.TargetType", 1)[0]
         self.assertIn("local claim = tonumber(cfg.DiploVictoryClaimVotes) or 12;", arm)
         self.assertIn("if tonumber(t) == pid then ourIdx = idx; end", arm)
-        self.assertIn("if ourIdx ~= nil and affordable >= claim then", arm)
-        claim = arm.index("if ourIdx ~= nil and affordable >= claim then")
+        self.assertIn("if ourIdx ~= nil and budget >= claim then", arm)
+        claim = arm.index("if ourIdx ~= nil and budget >= claim then")
         tail = arm[claim:]
         self.assertIn("option = 1;", tail)
         self.assertIn("selection = ourIdx;", tail)
-        self.assertIn("n = affordable;", tail)
+        self.assertIn("n = budget;", tail)
         self.assertIn('mode = "claim";', tail)
         # The claim overrides the floor rule, so it comes after it and before
         # the votes are committed.
@@ -780,8 +793,10 @@ class ProtectedInstallTest(unittest.TestCase):
         commit = arm.index("votes = n;")
         self.assertLess(gate, claim)
         self.assertLess(claim, commit)
-        # The bank is measured on its own ladder, not the floor-gated one.
-        self.assertIn("costs[affordable] <= favor", arm)
+        # The bank is measured once, against both cost tables, before any gate.
+        self.assertIn("CivvisCongressVoteBudget(favor, costs, maxVotes)", arm)
+        budgetCall = arm.index("CivvisCongressVoteBudget(favor, costs, maxVotes)")
+        self.assertLess(budgetCall, gate)
         # And the mode is reported on every ballot row.
         self.assertIn("return cast, spent, nil, leader, leaderPoints, leaderScore, mode;", voter)
         self.assertGreaterEqual(source.count("mode = mode"), 2)
@@ -798,15 +813,22 @@ class ProtectedInstallTest(unittest.TestCase):
         arm = voter.split('if rtype == "WC_RES_DIPLOVICTORY" then', 1)[1].split("elseif r.TargetType", 1)[0]
         self.assertIn("local floor = cfg.DiploVictoryVoteFloor or 12;", arm)
         self.assertIn("if (tonumber(leaderPoints) or 0) >= floor then", arm)
-        # The paid ladder sits inside the floor gate; the free vote (n = 1) and
-        # the leader selection do not.
+        # The full bank spends inside the floor gate; the free vote (n = 1)
+        # and the leader selection sit before it. Below the floor a
+        # three-vote probe (`CongressVoteProbe`) keeps the purchase path
+        # measured at every session -- three votes fit both cost tables from
+        # the first congress bank on -- without draining what the floor
+        # banks.
         gate = arm.index("if (tonumber(leaderPoints) or 0) >= floor then")
-        ladder = arm.index("costs[n] <= favor")
+        spend = arm.index("n = budget;")
         free = arm.index("local n = 1;")
         selection = arm.index("if tonumber(t) == leader then selection = idx; end")
+        probe = arm.index('elseif cfg.CongressVoteProbe ~= false and budget > 1 then')
         self.assertLess(selection, gate)
         self.assertLess(free, gate)
-        self.assertLess(gate, ladder)
+        self.assertLess(gate, spend)
+        self.assertLess(spend, probe)
+        self.assertIn("n = (budget < 3) and budget or 3;", arm)
 
         self.assertIn("favor = try(function() return player:GetFavor(); end, nil)", source)
         self.assertIn("dvp = try(function() return other:GetStats():GetDiplomaticVictoryPoints(); end, nil)", source)
@@ -967,11 +989,11 @@ class ProtectedInstallTest(unittest.TestCase):
         )
         # And the request cannot report success on its own say-so: a pcall
         # verdict is "did not throw", so the next turn has to check.
-        self.assertIn("pendingReligionFounding", handler)
+        self.assertIn("pendingReligionChoice", handler)
         self.assertIn("religion_founding_failed", source)
         self.assertIn("religion_founded", source)
 
-    def test_religious_units_export_progress_and_actuate_promote_and_spread(self) -> None:
+    def test_religious_units_export_progress_and_actuate_direct_operations(self) -> None:
         source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
         progress = source.split("local function unitProgress", 1)[1].split(
             "-- ⚠⚠ THE pcall GOES INSIDE THE LOOP", 1
@@ -986,7 +1008,14 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn("unit:GetBuildCharges()", progress)
         self.assertIn("unit:GetSpreadCharges()", progress)
         self.assertIn("unit:GetReligionType()", progress)
-        self.assertIn('"UNITOPERATION_SPREAD_RELIGION"', source)
+        for operation in (
+            "UNITOPERATION_SPREAD_RELIGION",
+            "UNITOPERATION_LAUNCH_INQUISITION",
+            "UNITOPERATION_REMOVE_HERESY",
+            "UNITOPERATION_RELIGIOUS_HEAL",
+            "UNITOPERATION_CONVERT_BARBARIANS",
+        ):
+            self.assertIn(f'"{operation}"', source)
         self.assertIn('"^PROMOTE:(.+)$"', handler)
         self.assertIn("results[UnitCommandResults.PROMOTIONS]", handler)
         self.assertIn(
@@ -994,6 +1023,38 @@ class ProtectedInstallTest(unittest.TestCase):
             handler,
         )
         self.assertIn("UnitManager.RequestCommand(unit, hash, params)", handler)
+        self.assertIn('local hash = OP["UNITOPERATION_" .. verb];', handler)
+        self.assertIn("return operate(unit, hash, {}), verb;", handler)
+
+    def test_apostle_belief_choice_uses_native_prompt_and_verifies_the_result(self) -> None:
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        handler = source.split('if kind == "unit" then', 1)[1].split(
+            'return false, "unknown_kind_"', 1
+        )[0]
+        blocker = source.split("local function answerBlocker", 1)[1].split(
+            "-- The hand-written answer", 1
+        )[0]
+        exporter = source.split("local function exportState", 1)[1].split(
+            "local founded_religion = nil;", 1
+        )[0]
+
+        self.assertIn('"UNITOPERATION_EVANGELIZE_BELIEF"', source)
+        self.assertIn('"^EVANGELIZE_BELIEF:(.+)$"', handler)
+        self.assertIn(
+            'operate(unit, OP["UNITOPERATION_EVANGELIZE_BELIEF"], {})', handler
+        )
+        self.assertLess(
+            handler.index('operate(unit, OP["UNITOPERATION_EVANGELIZE_BELIEF"], {})'),
+            handler.index("pendingReligionChoice = {"),
+            "the Apostle operation must create the native prompt before its belief is sent",
+        )
+        self.assertIn("ENDTURN_BLOCKING_BELIEF = true", source)
+        self.assertIn('ENDTURN_BLOCKING_BELIEF = "unit"', source)
+        self.assertIn('name == "ENDTURN_BLOCKING_BELIEF"', blocker)
+        self.assertIn("PlayerOperations.ADD_BELIEF", blocker)
+        self.assertIn("pendingReligionChoice.belief_hash", blocker)
+        self.assertIn("religion_enhanced", exporter)
+        self.assertIn("religion_enhancement_failed", exporter)
 
     def test_civvis_soft_blockers_do_not_invoke_legacy_unit_ai(self) -> None:
         source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
@@ -1016,12 +1077,15 @@ class ProtectedInstallTest(unittest.TestCase):
         handler = source.split("local function answerBlocker", 1)[1].split(
             "local function dismissBlocker", 1
         )[0]
-        completed = handler.index('return "civvis_complete";')
+        generic = handler.split(
+            "-- A CIVVIS pass is a complete decision for the mirrored state it received.", 1
+        )[1]
+        completed = generic.index('return "civvis_complete";')
         residual = handler.index("residualAnswers[name]")
 
-        self.assertLess(completed, residual)
-        self.assertIn("CIVVIS_OWNED_BLOCKERS[name]", handler[:completed])
-        self.assertIn('awaiting.source == "civvis"', handler[:completed])
+        self.assertLess(handler.index(generic) + completed, residual)
+        self.assertIn("CIVVIS_OWNED_BLOCKERS[name]", generic[:completed])
+        self.assertIn('awaiting.source == "civvis"', generic[:completed])
         self.assertIn("driveProduction(player, turn, true)", handler[residual:])
 
     def test_empty_civvis_order_batch_completes_without_legacy_fallback(self) -> None:
@@ -1399,6 +1463,99 @@ class UnitsBlockerForfeitTest(unittest.TestCase):
         """
         self.assertIn("EndTurnBlockingChanged = onEndTurnBlockingChanged", self.source)
         self.assertNotIn("EndTurnBlockingChanged = onGameCoreTick", self.source)
+
+
+class PeacetimeWarFloorsTest(unittest.TestCase):
+    """On a CIVVIS seat, the ladder's war floors require an actual war.
+
+    `warTarget` is "who we would fight" and exists from the first met major, so
+    gating the battering-ram entry and the ranged floor on it alone kept a
+    permanent peacetime war footing on CIVVIS runs (41 ranged orders at peace,
+    zero ever alive, run civvis-20260818T212725Z). The `warFooting` gate keys
+    them on `warPressure`'s at-war read instead; `cfg.PeacetimeWarFloors` is
+    the recorded control arm and legacy no-decider runs keep the old build-up.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        cls.ladder = source.split("local function chooseProduction", 1)[1].split(
+            "THE ECONOMY GOES ABOVE THE OPEN-ENDED ARMY", 1
+        )[0]
+
+    def test_the_war_footing_gate_reads_a_real_war(self) -> None:
+        self.assertIn(
+            "local warFooting = atWar or not cfg.CivvisDecides"
+            " or cfg.PeacetimeWarFloors;",
+            self.ladder,
+        )
+
+    def test_the_ram_entry_and_ranged_floor_sit_behind_the_gate(self) -> None:
+        ram = self.ladder.split('{ "UNIT_BATTERING_RAM", "siege" }', 1)[0]
+        self.assertIn("warTarget ~= nil and warFooting and not losingWar", ram)
+        ranged = self.ladder.split('pushRangedLandUnits("ranged")', 1)[0]
+        self.assertIn(
+            "if warTarget ~= nil and warFooting\n"
+            "\t\t\tand (counts.ranged or 0) < (cfg.RangedFloor or 3) then",
+            ranged,
+        )
+
+
+class MeleeStrikeCarriesTheAttackModifierTest(unittest.TestCase):
+    """A melee ATTACK must be a MOVE_TO *with* the ATTACK modifier.
+
+    ⚠ WITHOUT THE MODIFIER THE ARMY SWINGS AT AIR AND NOTHING SAYS SO.
+    Measured over every control run this repository's seat has recorded:
+    8,828 melee ATTACK orders were issued and 89 combats came back — a 1.0%
+    landing rate — while RANGE_ATTACK, which needs no modifier, landed 520 of
+    841 (61.8%). On run civvis-20260821T130446Z the seat ordered 208 melee
+    attacks across 104 turns and fought ZERO of them; a barbarian Slinger held
+    (65,25) from t36 to t40 under an "attack" order every turn, and the empire
+    lost eight Settlers to raiders it never once hit.
+
+    Firaxis's shipped `Civ6Common.lua:RequestMoveOperation` sets
+    `PARAM_MODIFIERS = ATTACK + MOVE_IGNORE_UNEXPLORED_DESTINATION` before
+    requesting MOVE_TO. Without `ATTACK` the engine reads a plain move, the
+    pathfinder refuses to enter an occupied plot, and the unit walks next to
+    the target and stops -- while `CanStartOperation` answers TRUE, so
+    `operate` reports the order as given and no refusal is ever logged.
+    """
+
+    def _agent_source(self) -> str:
+        return (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+
+    def test_the_attack_verb_sets_param_modifiers_before_requesting_move_to(self) -> None:
+        source = self._agent_source()
+        block = source.split('if verb == "MOVE_TO" or verb == "ATTACK" then', 1)[1]
+        block = block.split('local moved = operate(', 1)[0]
+
+        self.assertIn("CivvisLedger.attackModifiers()", block)
+        self.assertIn("params[UnitOperationTypes.PARAM_MODIFIERS] = modifiers", block)
+        # The modifier belongs to ATTACK alone: a plain MOVE_TO that carried it
+        # would attack whatever happened to be standing on the destination.
+        guard = block.split('if verb == "ATTACK" then', 1)[1]
+        self.assertIn("PARAM_MODIFIERS", guard)
+
+    def test_the_modifier_resolves_the_shipped_pair_and_survives_their_absence(self) -> None:
+        source = self._agent_source()
+        helper = source.split("CivvisLedger.attackModifiers = function()", 1)[1]
+        helper = helper.split("CivvisLedger.strike = function", 1)[0]
+
+        self.assertIn("UnitOperationMoveModifiers.ATTACK", helper)
+        self.assertIn(
+            "UnitOperationMoveModifiers.MOVE_IGNORE_UNEXPLORED_DESTINATION", helper
+        )
+        # An absent enum must send the historical parameter table, not throw on
+        # every attack for the rest of the game.
+        self.assertIn("if attack == nil then return nil; end", helper)
+        self.assertIn("if ignore == nil then return attack; end", helper)
+
+    def test_the_helper_costs_no_main_chunk_local(self) -> None:
+        """See `AgentChunkLocalLimitTest`: the file has no slots to spend."""
+        source = self._agent_source()
+        self.assertIn("CivvisLedger.attackModifiers = function()", source)
+        self.assertNotIn("\nlocal attackModifiers", source)
+        self.assertNotIn("\nlocal function attackModifiers", source)
 
 
 class AgentChunkLocalLimitTest(unittest.TestCase):

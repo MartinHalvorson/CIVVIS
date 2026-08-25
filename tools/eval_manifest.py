@@ -22,10 +22,18 @@ import sys
 from pathlib import Path
 from typing import Any
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import genes  # noqa: E402
 
-REGISTRY_NAMES = (
-    "BUILTIN_AIS",
-    "EVAL_ONLY_AIS",
+
+
+# The one list still read out of `src/elo.rs`: the built-in agents. Every gene
+# list — live, host-only, repair (and its war/economy halves) — is a view of
+# the gene registry (`src/ai/advanced/genes.rs`) read through
+# `genes.py`, and is published under the names the old `elo.rs` lists
+# had so the manifest's shape and the page's rows stay readable.
+REGISTRY_NAMES = ("BUILTIN_AIS",)
+GENE_LISTS = (
     "LIVE_BRIDGE_TREATMENTS",
     "FIRAXIS_ONLY_TREATMENTS",
     "ENGINE_REPAIR_WAR_TREATMENTS",
@@ -89,6 +97,18 @@ def read_registry(repo: Path) -> dict[str, dict[str, Any]]:
     missing = [name for name in REGISTRY_NAMES if name not in found]
     if missing:
         raise ValueError(f"src/elo.rs is missing registry constants: {', '.join(missing)}")
+    rows = genes.genes_from_text(
+        (repo / genes.REGISTRY).read_text(encoding="utf-8"))
+    views = {
+        "LIVE_BRIDGE_TREATMENTS": [g.tag for g in rows if g.live],
+        "FIRAXIS_ONLY_TREATMENTS": [g.tag for g in rows if g.host_only],
+        "ENGINE_REPAIR_WAR_TREATMENTS": [g.tag for g in rows if g.axis == "War"],
+        "ENGINE_REPAIR_ECONOMY_TREATMENTS": [g.tag for g in rows if g.axis == "Economy"],
+        "ENGINE_REPAIR_TREATMENTS": [g.tag for g in rows if g.repair],
+    }
+    for name in GENE_LISTS:
+        items = views[name]
+        found[name] = {"declared_count": len(items), "items": items}
     return found
 
 
@@ -191,6 +211,7 @@ def ladder_endings(attempts: list[dict[str, Any]]) -> dict[str, Any]:
     Reporting it here is how anyone will notice whether they worked.
     """
     stolen: dict[str, int] = {}
+    stolen_turns: dict[str, list[int]] = {}
     stolen_while_ahead = 0
     for attempt in attempts:
         if not attempt.get("configured") or attempt.get("won"):
@@ -205,6 +226,7 @@ def ladder_endings(attempts: list[dict[str, Any]]) -> dict[str, Any]:
             continue
         name = LADDER_VICTORY_NAMES.get(victory, f"type {victory}")
         stolen[name] = stolen.get(name, 0) + 1
+        stolen_turns.setdefault(name, []).append(turns)
         rival = attempt.get("rival_best")
         score = attempt.get("score")
         if (
@@ -215,6 +237,14 @@ def ladder_endings(attempts: list[dict[str, Any]]) -> dict[str, Any]:
             stolen_while_ahead += 1
     return {
         "stolen": dict(sorted(stolen.items(), key=lambda item: (-item[1], item[0]))),
+        "stolen_turns": {
+            name: {
+                "earliest": min(turns),
+                "median": sorted(turns)[len(turns) // 2],
+                "latest": max(turns),
+            }
+            for name, turns in sorted(stolen_turns.items())
+        },
         "stolen_while_ahead": stolen_while_ahead,
     }
 
@@ -248,22 +278,11 @@ def bundle_coverage(live: list[str], firaxis: set[str], evidence: str) -> dict[s
     `never_named` is an under-count of the debt — the number to act on is the
     one that cannot be flattered.
 
-    Why it is worth publishing at all: on 2026-08-18 fifty of the seventy-four
-    live-bridge treatments had never been named in any round, and nobody could
-    see it. `docs/ROADMAP.md` objective 3 asks for exactly this bundle to be
-    priced by withholding, and the inventory above counted the arms that
-    *exist* rather than the ones that have been *used*. The repository has
-    already paid for that blind spot once, in `city_target_floor`: retained on
-    a composite result, and removed from production once it was priced alone.
-
-    ⚠ ALL THREE SPELLINGS, and the third was found by checking the instrument
-    against a treatment already known to be priced. The registry tag is
-    hyphenated (`bounded-recovery`), the evaluator arm derived from it is
-    `live_without_bounded_recovery`, and rounds routinely write the flag itself
-    in Rust spelling — `bounded_recovery` — which is how the confirmed-null
-    result that got it deleted from production is recorded. Searching only the
-    first two called it never-named and would have overstated the debt by a
-    fifth on the first run.
+    Three spellings: the registry tag (`bounded-recovery`), the flag in Rust
+    spelling (`bounded_recovery`) that rounds routinely write, and the
+    `live_without_*` arm name the retired paired evaluator used until
+    2026-08-23 — rounds recorded before then name treatments that way, and the
+    history still counts as having named them.
     """
     withholdable = [item for item in live if item not in firaxis]
     named, never = [], []
@@ -280,19 +299,93 @@ def bundle_coverage(live: list[str], firaxis: set[str], evidence: str) -> dict[s
     }
 
 
+def genome_coverage(repo: Path) -> dict[str, Any]:
+    """How much of the controller the genome instrument can actually see.
+
+    ⚠⚠ THE MIRROR OF `bundle_coverage`, AND IT ERRS THE OTHER WAY ON PURPOSE.
+    That function publishes an UNDER-count of the debt, because a tag it cannot
+    find in the evidence certainly has no result. This one publishes an
+    OVER-count: some capability toggles are host-only plumbing that no native
+    screen could ever price, and this makes no attempt to tell those apart. So
+    the number below is a ceiling on the debt, not a floor.
+
+    Both are the same discipline. A count that can only be wrong in the
+    direction of *more work than there really is* cannot be flattered either,
+    and it is the only kind of count a regex is entitled to publish.
+
+    Why it is worth publishing: `precise_evacuation` reached `main` in #2059
+    ON for every major, city-state and barbarian, holding roughly half of the
+    simulator's main thread — and with no gene row and no mention in any
+    recorded round. No gate could address it, and nothing
+    said so. `docs/GENE_SCREEN.md` names the growth direction as "hundreds of
+    genes"; this is the denominator that direction is measured against.
+
+    Three sources, none of them a hand-maintained list:
+
+    * `treatment_flags.rs` — every `enable_*`/`disable_*` capability toggle.
+      The file's own guard keeps them all there and nothing else there.
+    * the gene registry (`src/ai/advanced/genes.rs`) — every screenable row
+      carries its field and its toggle. This is exactly what
+      `gene_screen::gene_table` walks, so "reachable" here means reachable
+      by the binary rather than by a list somebody kept in step.
+    * `docs/gene_ledger.json` — which of those genes a screen has measured.
+    """
+    flags_source = _strip_comments(
+        (repo / "src" / "ai" / "advanced" / "treatment_flags.rs").read_text(
+            encoding="utf-8"))
+    toggles = set(re.findall(r"pub fn (?:enable|disable)_([a-z0-9_]+)\s*\(",
+                             flags_source))
+    if not toggles:
+        raise ValueError(
+            "src/ai/advanced/treatment_flags.rs yielded no capability toggles; "
+            "the scrape broke rather than finding an empty file")
+
+    # ⚠⚠ A ROW'S FIELD AND ITS TOGGLE'S NAME ARE NOT ALWAYS THE SAME WORD, and
+    # joining on the wrong one invents debt: `army-target-weighs-enemy` is the
+    # field `army_target_weighs_enemy` toggled through
+    # `disable_army_target_weighs_the_enemy` — note "the" — so matching the
+    # toggle set against the field alone reported a measured gene as
+    # unreachable on this function's first run. A toggle counts as reachable
+    # under EITHER spelling.
+    rows = genes.genes_from_text(
+        (repo / genes.REGISTRY).read_text(encoding="utf-8"))
+    screenable_tags = {g.tag for g in rows if g.screenable}
+    screenable_spellings: set[str] = set()
+    for g in rows:
+        if g.screenable:
+            screenable_spellings |= {g.field, g.toggle}
+
+    ledger = json.loads(
+        (repo / "docs" / "gene_ledger.json").read_text(encoding="utf-8"))
+    measured = {row["tag"] for row in ledger["genes"]}
+    resolved = {row["tag"] for row in ledger["genes"]
+                if row.get("verdict") in ("helps", "hurts")}
+
+    unreachable = sorted(toggles - screenable_spellings)
+    return {
+        "capability_toggles": len(toggles),
+        "reachable_as_a_gene": len(screenable_tags),
+        "measured_by_a_screen": len(screenable_tags & measured),
+        "resolved_by_a_screen": len(screenable_tags & resolved),
+        "unreachable_by_any_screen": len(unreachable),
+        "unreachable_toggles": unreachable,
+    }
+
+
 def build_manifest(repo: Path) -> dict[str, Any]:
     registry = read_registry(repo)
     live = registry["LIVE_BRIDGE_TREATMENTS"]["items"]
     firaxis = set(registry["FIRAXIS_ONLY_TREATMENTS"]["items"])
     return {
         "schema_version": 1,
+        "genome_coverage": genome_coverage(repo),
         "source": {
-            "registry": "src/elo.rs",
+            "registry": "src/ai/advanced/genes.rs",
+            "agents": "src/elo.rs",
             "ladder": "docs/civ6_ladder.json",
         },
         "registry": registry,
         "derived": {
-            "eval_only_count": len(registry["EVAL_ONLY_AIS"]["items"]),
             "live_bridge_count": len(live),
             "firaxis_only_count": len(firaxis),
             "native_engine_repair_count": len(
@@ -338,6 +431,18 @@ def _ladder_distance_lines(ladder: dict[str, Any]) -> list[str]:
             f"({detail}), of which **{ladder['stolen_while_ahead']}** while our "
             "own score was the highest on the board"
         )
+    windows = ladder.get("stolen_turns") or {}
+    if windows:
+        # ⚠ The count says which lane to work on; only the turn says whether a
+        # simulated lane is behaving like the real one. A rival's diplomatic
+        # victory has never landed before turn 202 on this ladder, so a native
+        # game that produces none before then is not necessarily wrong, and one
+        # that ends at the turn limit has not had the chance to be.
+        detail = ", ".join(
+            f"{name} {edge['earliest']}\u2013{edge['latest']} (median {edge['median']})"
+            for name, edge in windows.items()
+        )
+        lines.append(f"- The turns those landed on: {detail}")
     return lines
 
 
@@ -347,7 +452,6 @@ def render_status(manifest: dict[str, Any]) -> str:
     registry = manifest["registry"]
     rows = [
         ("Built-in agents", len(registry["BUILTIN_AIS"]["items"])),
-        ("Evaluator-only agents", derived["eval_only_count"]),
         ("Live-bridge treatments", derived["live_bridge_count"]),
         ("Firaxis-only treatments", derived["firaxis_only_count"]),
         ("Native engine-repair treatments", derived["native_engine_repair_count"]),
@@ -358,7 +462,8 @@ def render_status(manifest: dict[str, Any]) -> str:
         "",
         "<!-- GENERATED FILE: python3 tools/eval_manifest.py --write -->",
         "",
-        "This page is generated from `src/elo.rs` and `docs/civ6_ladder.json`.",
+        "This page is generated from the gene registry (`src/ai/advanced/genes.rs`),",
+        "`src/elo.rs` (the built-in agents) and `docs/civ6_ladder.json`.",
         "The append-only experiment evidence remains in `docs/EVAL.md`; this",
         "page is the current inventory and live-bridge snapshot.",
         "",
@@ -386,21 +491,55 @@ def render_status(manifest: dict[str, Any]) -> str:
         "mechanical. So the middle number over-counts coverage and the last one",
         "under-counts the debt — act on the last one, which cannot be flattered.",
         "",
-        "`docs/ROADMAP.md` objective 3 asks for this bundle to be priced by",
-        "withholding, *before the next effect hides inside a composite the way",
-        "`city_target_floor` did*. The inventory above counts the arms that",
-        "exist; this counts the ones that have been used, and the gap between",
-        "them is what stayed invisible.",
+        "The native half of this bundle is priced by the gene screen",
+        "(`docs/GENE_SCREEN.md`, `HEURISTIC_GENE_RANKING.md`); the host-only",
+        "half can only be priced on the live seat, by `civvis_orders --without`",
+        "over ladder games. This list is the debt neither has touched.",
         "",
         "Never named:",
         "",
     ]
     if coverage["never_named_treatments"]:
-        lines.append("".join(
-            f"`{tag}`, " for tag in coverage["never_named_treatments"]
-        ).rstrip(", "))
+        lines.append(", ".join(f"`{tag}`" for tag in coverage["never_named_treatments"]))
     else:
         lines.append("_None — every withholdable treatment has been named._")
+    genome = manifest["genome_coverage"]
+    lines += [
+        "",
+        "## Genome coverage",
+        "",
+        "How much of the controller the genome instrument can vary at all.",
+        "`docs/GENE_SCREEN.md` names the growth direction as \"hundreds of",
+        "genes\"; this is the denominator that direction is measured against.",
+        "",
+        f"- Capability toggles on the controller: **{genome['capability_toggles']}**",
+        f"- Reachable as a gene `gene_screen` can vary: **{genome['reachable_as_a_gene']}**",
+        f"- Measured by at least one screen: **{genome['measured_by_a_screen']}**",
+        f"- Resolved by the ledger (helps or hurts): **{genome['resolved_by_a_screen']}**",
+        f"- **Unreachable by any screen: {genome['unreachable_by_any_screen']}**",
+        "",
+        "⚠ This is the mirror of the section above and it errs the other way.",
+        "`Never named` under-counts the live-bundle debt; this OVER-counts the",
+        "genome debt, because some toggles are host-only or bundle plumbing",
+        "that no native screen could price and nothing here tries to tell them",
+        "apart. So the last number is a ceiling on the work, not a floor — and",
+        "a count that can only be wrong in the direction of more work cannot be",
+        "flattered either.",
+        "",
+        "Why it is published: `precise_evacuation` shipped in #2059 ON for",
+        "every major, city-state and barbarian, holding roughly half of the",
+        "simulator's main thread, with no gene row and no",
+        "mention in any recorded round. Neither gate could address it and",
+        "nothing said so.",
+        "",
+        "Unreachable:",
+        "",
+    ]
+    if genome["unreachable_toggles"]:
+        lines.append("".join(
+            f"`{flag}`, " for flag in genome["unreachable_toggles"]).rstrip(", "))
+    else:
+        lines.append("_None — every capability toggle is a gene._")
     lines += [
         "",
         "## Live ladder",
@@ -422,37 +561,48 @@ def render_status(manifest: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+#: The artifacts this tool owns, relative to the repository root.
+#:
+#: One definition rather than two string literals per function, because
+#: `tools/civvis_collab.py` resolves a merge conflict in these files by
+#: regenerating them and has to be reading the same list the generator writes.
+#: A path added here reaches both the writer and the checker, or neither.
+GENERATED_OUTPUTS: tuple[str, ...] = (
+    "docs/eval_manifest.json",
+    "docs/EVAL_STATUS.md",
+)
+
+
 def canonical_json(value: Any) -> str:
     return json.dumps(value, indent=2, sort_keys=True) + "\n"
 
 
+def rendered_outputs(manifest: dict[str, Any]) -> dict[str, str]:
+    """Every generated artifact's exact content, keyed by repo-relative path."""
+    return {
+        "docs/eval_manifest.json": canonical_json(manifest),
+        "docs/EVAL_STATUS.md": render_status(manifest),
+    }
+
+
 def write_outputs(repo: Path, manifest: dict[str, Any]) -> None:
-    (repo / "docs" / "eval_manifest.json").write_text(
-        canonical_json(manifest), encoding="utf-8"
-    )
-    (repo / "docs" / "EVAL_STATUS.md").write_text(
-        render_status(manifest), encoding="utf-8"
-    )
+    for name, content in rendered_outputs(manifest).items():
+        (repo / name).write_text(content, encoding="utf-8")
 
 
 def check_outputs(repo: Path, manifest: dict[str, Any]) -> int:
-    expected_json = canonical_json(manifest)
-    expected_status = render_status(manifest)
-    actual_json = (repo / "docs" / "eval_manifest.json").read_text(encoding="utf-8") \
-        if (repo / "docs" / "eval_manifest.json").exists() else None
-    actual_status = (repo / "docs" / "EVAL_STATUS.md").read_text(encoding="utf-8") \
-        if (repo / "docs" / "EVAL_STATUS.md").exists() else None
     failures = []
-    if actual_json != expected_json:
-        failures.append("docs/eval_manifest.json")
-    if actual_status != expected_status:
-        failures.append("docs/EVAL_STATUS.md")
+    for name, expected in rendered_outputs(manifest).items():
+        path = repo / name
+        actual = path.read_text(encoding="utf-8") if path.exists() else None
+        if actual != expected:
+            failures.append(name)
     if failures:
         print("stale generated evaluation outputs: " + ", ".join(failures), file=sys.stderr)
         print("run: python3 tools/eval_manifest.py --write", file=sys.stderr)
         return 1
     print(
-        f"evaluation manifest current: {manifest['derived']['eval_only_count']} evaluator arms, "
+        f"evaluation manifest current: {manifest['derived']['live_bridge_count']} live-bridge treatments, "
         f"{manifest['ladder']['attempts']} ladder attempts"
     )
     return 0
@@ -471,7 +621,7 @@ def main(argv: list[str] | None = None) -> int:
             write_outputs(args.repo, manifest)
             print(
                 f"wrote docs/eval_manifest.json and docs/EVAL_STATUS.md "
-                f"({manifest['derived']['eval_only_count']} evaluator arms)"
+                f"({manifest['derived']['live_bridge_count']} live-bridge treatments)"
             )
             return 0
         return check_outputs(args.repo, manifest)

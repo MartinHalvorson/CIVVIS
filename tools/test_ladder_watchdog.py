@@ -467,7 +467,7 @@ class InteractiveHostOwnership(unittest.TestCase):
             gamelock = tmp / "gamelock.py"
             gamelock.write_text(
                 "import sys\n"
-                "if '--hold-status' in sys.argv:\n"
+                "if '--halt-status' in sys.argv:\n"
                 "    print('the game is explicitly halted for this test')\n"
                 "    raise SystemExit(0)\n"
                 "raise SystemExit(1)\n")
@@ -497,6 +497,75 @@ class InteractiveHostOwnership(unittest.TestCase):
                         loop.index('if ! pid_is_live "$supervisor_pid"; then'))
         self.assertIn('operator halt active; stopping owned children and exiting',
                       loop)
+
+    def test_the_host_stops_only_for_the_explicit_halt_never_a_standing_hold(self):
+        """A live lock holder that drives no run is a report, not a halt.
+
+        Between one attempt's exit and the next attempt's launch the batch loop
+        holds the game lock under a tag no process yet carries, so
+        `gamelock.py --hold-status` answers "held … no harness is driving that
+        tag" for a few seconds. The host polls every five. When it acted on
+        that answer it stopped its own supervisor and the game under it: four
+        games on 2026-08-18/19 ended as `game exited` at t18/t44/t72/t83 within
+        seconds of such a line. The host must ask `--halt-status` — the durable
+        operator marker and nothing else — and a fake lock helper that answers
+        yes to `--hold-status` and no to `--halt-status` must not stop the
+        supervisor it started.
+        """
+        source = self.HOST.read_text()
+        helper = source[source.index("hold_status() {"):source.index("release_lock() {")]
+        self.assertIn('"$GAMELOCK" --halt-status', helper)
+        self.assertNotIn('"$GAMELOCK" --hold-status', helper,
+                         "the host must not act on the standing (transient) hold")
+        with TemporaryDirectory() as raw:
+            tmp = Path(raw)
+            log = tmp / "host.log"
+            started = tmp / "supervisor.started"
+            lock = tmp / "host.lock"
+            supervisor_lock = tmp / "supervisor.lock"
+            supervisor = tmp / "civvis-game-supervisor.sh"
+            supervisor.write_text(
+                "#!/bin/zsh\n"
+                f"print -r -- started > {started}\n"
+                "sleep 30\n")
+            supervisor.chmod(0o755)
+            gamelock = tmp / "gamelock.py"
+            gamelock.write_text(
+                "import sys\n"
+                "if '--hold-status' in sys.argv:\n"
+                "    print('the game is held by pid 1 under tag x since now, "
+                "and no harness is driving that tag')\n"
+                "    raise SystemExit(0)\n"
+                "raise SystemExit(1)\n")
+            with subprocess.Popen(
+                ["/bin/zsh", str(self.HOST)],
+                env={
+                    **os.environ,
+                    "CIVVIS_SUPERVISOR": str(supervisor),
+                    "CIVVIS_GAMELOCK": str(gamelock),
+                    "CIVVIS_INTERACTIVE_HOST_LOG": str(log),
+                    "CIVVIS_INTERACTIVE_HOST_LOCK": str(lock),
+                    "CIVVIS_SUPERVISOR_LOCK": str(supervisor_lock),
+                    "CIVVIS_INTERACTIVE_HOST_POLL_S": "0.2",
+                    "CIVVIS_POPUP_KEEPER": str(tmp / "absent-popup-keeper.sh"),
+                    "CIVVIS_MIRROR_KEEPER": str(tmp / "absent-mirror-keeper.sh"),
+                },
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            ) as host:
+                try:
+                    deadline = time.monotonic() + 5.0
+                    while time.monotonic() < deadline and not started.exists():
+                        time.sleep(0.05)
+                    self.assertTrue(started.exists(), "the host must start its supervisor")
+                    time.sleep(1.5)
+                    self.assertIsNone(host.poll(),
+                                      "a standing hold must not make the host exit")
+                    text = log.read_text()
+                    self.assertNotIn("operator halt active", text)
+                    self.assertNotIn("stopping owned children", text)
+                finally:
+                    host.terminate()
+                    host.wait(timeout=5)
 
     def test_an_adopted_supervisor_survives_the_host(self):
         with TemporaryDirectory() as raw:
@@ -683,10 +752,6 @@ class OvernightAuditRecovery(unittest.TestCase):
             self.assertEqual(result.returncode, expected, result.stderr)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class WhenTheGameIsDeliberatelyHeld(KeeperTestCase):
     """A restart is this keeper's only remedy, so a cause no restart can reach
     has to stop it acting.
@@ -716,6 +781,29 @@ class WhenTheGameIsDeliberatelyHeld(KeeperTestCase):
             self.assertEqual(code, 2)
             self.assertEqual(self.starts, [],
                              "started a loop that cannot take the game")
+
+    def test_a_held_game_is_not_started_against_on_a_fresh_ledger_either(self):
+        """The arm a halt actually lands on.
+
+        A halt arrives while the ledger is still FRESH, so for the first
+        `--stale-hours` after one it is the no-supervisor arm that runs, not
+        the stale arm that owned this guard. It asked nothing, so it opened a
+        Terminal host every cooldown that read the halt and exited having
+        played no turn — nine on 2026-08-19, two more on 2026-08-20.
+        """
+        with TemporaryDirectory() as raw, self.held():
+            tmp = Path(raw)
+            runs = ledger_with(tmp, [0.2])
+            code = ladder_watchdog.main([
+                "--runs", str(runs), "--stale-hours", "3",
+                "--lock", str(tmp / "absent"),
+                "--supervisor", "/x/supervisor.sh",
+                "--state", str(tmp / "state.json"), "--log", str(tmp / "log")])
+            self.assertEqual(code, 2)
+            self.assertEqual(self.starts, [],
+                             "opened a window that cannot take the game")
+            self.assertIn("HELD no supervisor is running",
+                          (tmp / "log").read_text())
 
     def test_a_held_game_does_not_get_the_live_supervisor_killed_either(self):
         """The other arm: alive, not playing. Stopping it is disruptive and
@@ -768,3 +856,7 @@ class WhenTheGameIsDeliberatelyHeld(KeeperTestCase):
                                lambda: {"pid": os.getpid(), "tag": "whatever",
                                         "since": "2026-08-02T20:03:01Z"}):
             self.assertIsNone(ladder_watchdog.gamelock.standing_hold())
+
+
+if __name__ == "__main__":
+    unittest.main()

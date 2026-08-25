@@ -461,6 +461,7 @@ pub(crate) fn vacate_land_combat_purchase_slot(game: &mut Game, player: usize, c
 }
 
 pub mod adjacency;
+pub mod border_forecast;
 pub mod quests;
 
 #[cfg(test)]
@@ -664,6 +665,33 @@ pub const TOURISM_PER_VISITOR: f64 = 200.0;
 /// scaled by the game's speed, and using the constant raw is the defect that hid
 /// here for the whole project.
 pub const PANTHEON_FAITH_STANDARD: f64 = 25.0;
+
+/// The pantheons that pay a Holy Site for the ground around it, and the plot
+/// each one is paid for.
+///
+/// Every row is the same shipped modifier — `DISTRICT_HOLY_SITE`,
+/// `YIELD_FAITH`, `Amount 1`, subject `CITY_FOLLOWS_PANTHEON_REQUIREMENTS` —
+/// differing only in its `TerrainType`/`FeatureType`, which is why the engine
+/// carries one predicate and three rows rather than three branches. The plot
+/// name is matched against a terrain OR a feature so both shipped modifier
+/// types (`MODIFIER_ALL_CITIES_TERRAIN_ADJACENCY` and
+/// `MODIFIER_ALL_CITIES_FEATURE_ADJACENCY`) read the same way.
+const PANTHEON_HOLY_SITE_ADJACENCY: [(&str, &str); 3] = [
+    // DESERT_FOLKLORE_FAITHDESERT{,HILLS}ADJACENCY
+    ("holy_site_desert_faith", "desert"),
+    // DANCE_OF_THE_AURORA_FAITHTUNDRA{,HILLS}ADJACENCY
+    ("holy_site_tundra_faith", "tundra"),
+    // SACRED_PATH_FAITHFEATUREADJACENCY, FEATURE_JUNGLE
+    ("holy_site_jungle_faith", "jungle"),
+];
+
+/// How far from a Holy Site a kill still pays God of War.
+/// `PLOT_EIGHT_INCLUDE_HOLY_SITE`: `REQUIREMENT_PLOT_ADJACENT_DISTRICT_TYPE_MATCHES`
+/// with `MinRange 0` and `MaxRange 8`, and the shipped text says the same —
+/// "within 8 tiles of a Holy Site district". The requirement names no owner,
+/// so any Holy Site on the map answers it.
+const GOD_OF_WAR_HOLY_SITE_RANGE: i32 = 8;
+
 const STANDARD_DEAL_TURNS: u32 = 30;
 /// The one-off token costs published for individual diplomatic missions.
 const DELEGATION_GOLD: f64 = 10.0;
@@ -682,6 +710,8 @@ const REQUEST_REFUSAL_FIRST_GRIEVANCES: f64 = 25.0;
 const REQUEST_REFUSAL_REPEAT_GRIEVANCES: f64 = 25.0;
 const PROMISE_BROKEN_FIRST_GRIEVANCES: f64 = 100.0;
 const PROMISE_BROKEN_REPEAT_GRIEVANCES: f64 = 25.0;
+/// Gathering Storm's `WORLD_CONGRESS_REQUEST_FOR_MILITARY_AID_GRIEVANCES_MIN`.
+const MILITARY_AID_REQUEST_GRIEVANCES_MIN: f64 = 200.0;
 
 /// The grievance share a third party acquires from its relationship with the
 /// directly aggrieved civilization.  These are intentionally applied once at
@@ -826,6 +856,10 @@ const BARBARIAN_CAMP_ODDS_OF_NEW_CAMP_SPAWNING: usize = 2;
 /// Shipped `BARBARIAN_CAMP_COASTAL_SPAWN_ROLL`: one in six eligible coastal
 /// camps is a naval outpost. The classification persists for the camp's life.
 const BARBARIAN_CAMP_COASTAL_SPAWN_ROLL: usize = 6;
+/// A Scout that successfully returns home opens a finite raid window. During
+/// it the outpost raises the difficulty-shaped party it was told to send;
+/// after it expires the Scout goes back to looking for a new target.
+const BARBARIAN_SCOUT_ALERT_TURNS: u32 = 15;
 
 pub fn effective_strength(base: f64, hp: i32) -> f64 {
     let wounded_penalty = (10.0 - hp.clamp(0, 100) as f64 / 10.0).round();
@@ -835,6 +869,14 @@ pub fn effective_strength(base: f64, hp: i32) -> f64 {
 pub fn damage(att: f64, def: f64, rng: &mut Rng) -> i32 {
     let d = 30.0 * ((att - def) / 25.0).exp() * rng.uniform(0.8, 1.2);
     (d.round() as i32).clamp(1, 100)
+}
+
+/// [`damage`] with its uniform factor taken at its mean: the blow a
+/// controller should expect without consuming the game RNG or rounding to a
+/// particular roll. Stated here, beside the roll it is the centre of, so the
+/// two cannot drift.
+pub fn expected_damage(att: f64, def: f64) -> f64 {
+    (30.0 * ((att - def) / 25.0).exp()).clamp(1.0, 100.0)
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
@@ -991,10 +1033,11 @@ struct VisionFrame {
     visible: Arc<TileBits>,
 }
 
-/// Runtime-only per-seat visibility frames.  A cloned game starts with no
-/// frames: a search branch is allowed to move its sources before its first
-/// read, and copying a parent's bitsets would retain work that belongs to the
-/// parent position.  The cache is deliberately separate from [`VisionCache`],
+/// Runtime-only per-seat visibility frames.  A cloned game inherits its
+/// parent's, because each frame carries the stamp of every input the
+/// derivation reads: a branch that moves its sight sources before its first
+/// read restamps and recomputes, and one that does not would have derived the
+/// same bitset.  The cache is deliberately separate from [`VisionCache`],
 /// whose entries are per-unit ray answers and are merged from worker worlds.
 #[derive(Default)]
 struct VisionFrameCache {
@@ -1004,11 +1047,36 @@ struct VisionFrameCache {
     /// once per map epoch so those unrelated writes do not evict every seat's
     /// frame.
     map_geometry: std::cell::RefCell<Option<(u64, u64)>>,
+    /// One full roster walk yields every viewer's unit-source stamp.  Frame
+    /// lookups are far more frequent than unit writes, so retain that fan-out
+    /// until a mutable unit access can have changed one of its inputs.
+    unit_stamps: std::cell::RefCell<Option<(u64, Vec<u64>)>>,
 }
 
 impl Clone for VisionFrameCache {
+    /// A branch inherits its parent's sight frames rather than starting cold.
+    ///
+    /// This is exact by construction, and the reason is the stamp: a frame is
+    /// reused only when `vision_input_stamp_with_suzerains` still matches, and
+    /// that stamp folds every input `player_vision` reads — map geometry, the
+    /// viewer set, and each viewer's units, cities, suzerained city-states and
+    /// spies. A branch that moves a sight source restamps and recomputes; one
+    /// that does not would have derived the bitset it inherited. The fields
+    /// `speculative_clone` changes — `track_fog_memory`, `track_war_ledger`,
+    /// `visibility_suppressed`, `visibility_batch` — are read by neither the
+    /// stamp nor the derivation.
+    ///
+    /// ⚠ Returning `Self::default()` here, as this did, made every speculative
+    /// clone pay a cold cache. The tactical picker scores a candidate by
+    /// cloning and applying, and `do_ranged`/`do_attack`/`do_city_strike` each
+    /// ask `combat_target_visible` — so one full ray-cast per candidate, on a
+    /// world discarded immediately afterwards.
     fn clone(&self) -> Self {
-        Self::default()
+        Self {
+            frames: std::cell::RefCell::new(self.frames.borrow().clone()),
+            map_geometry: std::cell::RefCell::new(*self.map_geometry.borrow()),
+            unit_stamps: std::cell::RefCell::new(self.unit_stamps.borrow().clone()),
+        }
     }
 }
 
@@ -1133,6 +1201,38 @@ pub struct QueryCache {
     // turn -- 34 evaluations per tile per turn, of which one was new.
     appeal: std::cell::RefCell<Option<BTreeMap<Pos, i32>>>,
     traversal: std::cell::RefCell<Option<BTreeMap<u32, TraversalClass>>>,
+    /// Every unit currently flying a patrol, as `(owner, tile)`.
+    ///
+    /// ★★★★ A WHOLE-BOARD FACT ASKED ONCE PER NEIGHBOUR. `can_enter_past`
+    /// walked `units` in full to find out whether an enemy fighter was
+    /// patrolling the tile being stepped onto — and `flow_past` asks it for
+    /// every neighbour of every tile it expands, so a single unit's movement
+    /// flood scanned the world hundreds of times. The answer cannot change
+    /// inside a `&self` query, so it is computed once per memo scope. Almost
+    /// always empty: a patrol needs a fighter, and Flight is deep enough
+    /// that most games never see one.
+    air_patrols: std::cell::RefCell<Option<AirPatrols>>,
+    /// Which improvements let a unit pass, indexed by [`Name::id`].
+    ///
+    /// ★★★★ A RULESET FACT ASKED PER TILE, BY STRING. `class_can_traverse`
+    /// read `improvements[name].effects["passage"]` — a `BTreeMap<String,
+    /// f64>` descent, so `memcmp` per level — for every tile of every
+    /// movement flood. The rules do not change inside a game, let alone
+    /// inside a query, so the answer is a table built once per memo scope
+    /// and read with one array index.
+    passage_improvements: std::cell::RefCell<Option<PassageTable>>,
+    /// What each unit's movement costs before the tile is even named.
+    ///
+    /// ★★★★ A UNIT-WIDE FACT ASKED PER NEIGHBOUR, BY STRING. `flow_past`
+    /// reaches `unit_step_cost`, `unit_max_moves_at` and
+    /// `formation_enters_enemy_zoc` once for every neighbour of every tile it
+    /// expands, and each of those descended a `BTreeMap<String, f64>` — one
+    /// `memcmp` per level — for `woods_move_cost`, `hills_move_cost`,
+    /// `amphibious`, `movement` and the rest, plus a seven-tile occupancy
+    /// sweep for the support aura. None of it depends on the tile, so a flood
+    /// over three hundred tiles asked the same questions three hundred times.
+    /// The answers are computed once per unit per memo scope instead.
+    movement: std::cell::RefCell<Option<BTreeMap<u32, MovementProfile>>>,
     amenities: std::cell::RefCell<Option<BTreeMap<u32, i64>>>,
     // Ownership-filtered ids are requested throughout AI evaluation. A
     // 100-seat game otherwise rescans every world entity for each request,
@@ -1202,6 +1302,75 @@ impl Clone for QueryCache {
 /// Scope over which `Game::city_yields`, `Game::traversal_class`, and the
 /// empire-wide read aggregates answer from a cache. Dropping the outermost
 /// guard clears it.
+/// Every unit flying a patrol, as `(owner, tile)` — see `Game::air_patrols`.
+type AirPatrols = Arc<Vec<(usize, Pos)>>;
+/// `true` at `Name::id` for improvements that grant passage — see
+/// `Game::passage_improvements`.
+type PassageTable = Arc<Vec<bool>>;
+
+/// What a movement flood asks about one unit and gets the same answer for at
+/// every tile it considers — see [`Game::step_terms`], [`Game::move_terms`]
+/// and [`Game::naval_move_terms`].
+///
+/// The three groups are filled independently, because the code they come from
+/// asks for them independently: a step cost never needs the support aura, and
+/// a land unit standing on land never needs the naval unlocks. Deriving a
+/// group its caller did not ask for would charge a one-off caller for work the
+/// open-coded version skipped, which is how a memo becomes a pessimization.
+///
+/// Each field is the *value* the open-coded expression produced, not a
+/// simplification of it, so the arithmetic that reads them adds the same terms
+/// in the same order and lands on the same bits.
+#[derive(Clone, Copy, Default)]
+struct MovementProfile {
+    step: Option<StepTerms>,
+    moves: Option<MoveTerms>,
+    naval: Option<NavalMoveTerms>,
+}
+
+/// The unit's half of `Game::unit_step_cost`.
+#[derive(Clone, Copy)]
+struct StepTerms {
+    /// A religious unit whose religion flattens every step to 1 MP.
+    religious_flat_movement: bool,
+    /// `unit_effect(unit, "woods_move_cost")`.
+    woods_move_cost: f64,
+    /// `unit_effect(unit, "hills_move_cost")`.
+    hills_move_cost: f64,
+    /// `promotion_effect(unit, "amphibious")`.
+    amphibious: f64,
+}
+
+/// The terms of `Game::unit_base_max_moves_at` that do not read the tile.
+#[derive(Clone, Copy)]
+struct MoveTerms {
+    /// `promotion_effect(unit, "movement")`.
+    promotion_movement: f64,
+    /// A religious unit standing beside a Guru of its own religion. The wonder
+    /// effect that pays for it stays at the call site: it is this seven-tile
+    /// occupancy scan, not the lookup, that costs anything.
+    guru_adjacent: bool,
+    /// Monumentality is active and this unit is a Builder or a Settler.
+    monumentality_civilian: bool,
+    /// Exodus of the Evangelists is active and this unit is religious.
+    exodus_religious: bool,
+    /// `adjacent_support_effect(unit, "adjacent_movement")`.
+    adjacent_movement: f64,
+}
+
+/// The movement unlocks only a naval or embarked unit is charged for.
+#[derive(Clone, Copy)]
+struct NavalMoveTerms {
+    /// `tree_effect(unit.owner, "naval_movement")`.
+    naval_movement_tree: f64,
+    /// `tree_effect(unit.owner, "embarked_movement")`.
+    embarked_movement_tree: f64,
+    /// `has_ability(unit.owner, "mana")`.
+    mana: bool,
+    /// `empire_wonder_effect(unit.owner, "naval_movement")`.
+    naval_movement_wonder: f64,
+}
+
 pub struct QueryMemo<'a> {
     game: &'a Game,
     outermost: bool,
@@ -1213,6 +1382,9 @@ impl Drop for QueryMemo<'_> {
             *self.game.query_memo.yields.borrow_mut() = None;
             *self.game.query_memo.appeal.borrow_mut() = None;
             *self.game.query_memo.traversal.borrow_mut() = None;
+            *self.game.query_memo.air_patrols.borrow_mut() = None;
+            *self.game.query_memo.passage_improvements.borrow_mut() = None;
+            *self.game.query_memo.movement.borrow_mut() = None;
             *self.game.query_memo.amenities.borrow_mut() = None;
             *self.game.query_memo.unit_ids.borrow_mut() = None;
             *self.game.query_memo.unit_territory_access.borrow_mut() = None;
@@ -1778,17 +1950,30 @@ pub struct Unit {
 /// with the extra per-unit indirection making combat lookahead proportional to
 /// the units it actually touches rather than to the whole army.
 #[derive(Default)]
-pub struct Units(Arc<BTreeMap<u32, Arc<Unit>>>, BTreeSet<u32>);
+pub struct Units(Arc<BTreeMap<u32, Arc<Unit>>>, BTreeSet<u32>, u64);
 
 impl Clone for Units {
     fn clone(&self) -> Self {
         // A game clone starts a new branch. The immutable map is shared, but
         // its write set belongs only to that branch and therefore starts empty.
-        Self(Arc::clone(&self.0), BTreeSet::new())
+        Self(Arc::clone(&self.0), BTreeSet::new(), self.2)
     }
 }
 
 impl Units {
+    /// Bump the cache epoch before exposing a mutable unit.  The vision stamp
+    /// itself still folds only sight-relevant fields, so a combat-only write
+    /// recomputes the small stamp but keeps an otherwise matching frame.
+    #[inline]
+    fn mark_mutated(&mut self) {
+        self.2 = self.2.wrapping_add(1);
+    }
+
+    #[inline]
+    fn vision_epoch(&self) -> u64 {
+        self.2
+    }
+
     /// Borrow one unit from the immutable snapshot.
     #[inline]
     pub fn get(&self, id: &u32) -> Option<&Unit> {
@@ -1802,6 +1987,7 @@ impl Units {
     pub fn get_mut(&mut self, id: &u32) -> Option<&mut Unit> {
         if self.0.contains_key(id) {
             self.1.insert(*id);
+            self.mark_mutated();
         }
         Arc::make_mut(&mut self.0)
             .get_mut(id)
@@ -1844,6 +2030,7 @@ impl Units {
     /// deliberately explicit rather than making ordinary reads pay for it.
     pub fn values_mut(&mut self) -> impl DoubleEndedIterator<Item = &mut Unit> + ExactSizeIterator {
         self.1.extend(self.0.keys().copied());
+        self.mark_mutated();
         Arc::make_mut(&mut self.0)
             .values_mut()
             .map(Arc::make_mut)
@@ -1853,6 +2040,7 @@ impl Units {
         &mut self,
     ) -> impl DoubleEndedIterator<Item = (&u32, &mut Unit)> + ExactSizeIterator {
         self.1.extend(self.0.keys().copied());
+        self.mark_mutated();
         Arc::make_mut(&mut self.0)
             .iter_mut()
             .map(|(id, unit)| (id, Arc::make_mut(unit)))
@@ -1861,6 +2049,7 @@ impl Units {
     /// Insert a unit, returning the previous value just like `BTreeMap`.
     pub fn insert(&mut self, id: u32, unit: Unit) -> Option<Unit> {
         self.1.insert(id);
+        self.mark_mutated();
         Arc::make_mut(&mut self.0)
             .insert(id, Arc::new(unit))
             .map(arc_into_unit)
@@ -1869,6 +2058,7 @@ impl Units {
     /// Remove a unit, returning the owned value just like `BTreeMap`.
     pub fn remove(&mut self, id: &u32) -> Option<Unit> {
         self.1.insert(*id);
+        self.mark_mutated();
         Arc::make_mut(&mut self.0)
             .remove(id)
             .map(arc_into_unit)
@@ -1876,6 +2066,7 @@ impl Units {
 
     pub fn clear(&mut self) {
         self.1.extend(self.0.keys().copied());
+        self.mark_mutated();
         Arc::make_mut(&mut self.0).clear();
     }
 
@@ -1886,6 +2077,7 @@ impl Units {
         F: FnMut(&u32, &Unit) -> bool,
     {
         self.1.extend(self.0.keys().copied());
+        self.mark_mutated();
         Arc::make_mut(&mut self.0).retain(|id, unit| keep(id, unit));
     }
 
@@ -1984,6 +2176,7 @@ impl<'a> IntoIterator for &'a mut Units {
     >;
 
     fn into_iter(self) -> Self::IntoIter {
+        self.mark_mutated();
         self.1.extend(self.0.keys().copied());
         Arc::make_mut(&mut self.0)
             .iter_mut()
@@ -2012,12 +2205,16 @@ impl IntoIterator for Units {
 
 impl FromIterator<(u32, Unit)> for Units {
     fn from_iter<I: IntoIterator<Item = (u32, Unit)>>(items: I) -> Self {
-        Self(Arc::new(
-            items
-                .into_iter()
-                .map(|(id, unit)| (id, Arc::new(unit)))
-                .collect(),
-        ), BTreeSet::new())
+        Self(
+            Arc::new(
+                items
+                    .into_iter()
+                    .map(|(id, unit)| (id, Arc::new(unit)))
+                    .collect(),
+            ),
+            BTreeSet::new(),
+            0,
+        )
     }
 }
 
@@ -2026,6 +2223,267 @@ impl From<BTreeMap<u32, Unit>> for Units {
         map.into_iter().collect()
     }
 }
+
+/// The world's cities, and the sight inputs folded out of them.
+///
+/// This is a module rather than a bare type so that `Cities::map` is private
+/// to *these* lines and not merely to `game`. A private field is readable by
+/// every descendant module of the one that declares it, and `game` has three
+/// dozen of them; declaring the roster here means no other file in the crate
+/// can reach past the accessors, whatever it is a child of.
+mod city_roster {
+    use super::{vision_key, Arc, BTreeMap, City};
+
+    /// Every city fact the visibility derivation reads, folded once per
+    /// roster state instead of once per sight ask.
+    ///
+    /// Three folds, because sight asks the roster three different questions.
+    /// `Game::see_from_level` reads the whole world's city geometry; a seat's
+    /// own borders are an unconditional sight source; and a suzerain is shown
+    /// a fixed ring around each of its city-states' centres. Every chain walks
+    /// the roster in city-id order, exactly as the `BTreeMap::values()` loops
+    /// it replaces did, so a fold is a pure function of the roster.
+    #[derive(Default)]
+    pub(super) struct CityVisionStamps {
+        /// The city half of `Game::vision_geometry_stamp`: identity, centre,
+        /// encampment damage and every district placement, for every city in
+        /// the world regardless of owner.
+        pub(super) geometry: u64,
+        /// Per owner: identity, centre and every owned tile — the border
+        /// reveal `Game::base_player_visibility` unions for a seat's own
+        /// cities.
+        owned: BTreeMap<usize, u64>,
+        /// Per owner: identity and centre only — all that a suzerain's
+        /// three-tile reveal around a city-state's cities can depend on.
+        centres: BTreeMap<usize, u64>,
+    }
+
+    impl CityVisionStamps {
+        const GEOMETRY_BASE: u64 = 0x67;
+        const OWNED_BASE: u64 = 0x68;
+        const CENTRE_BASE: u64 = 0x69;
+
+        /// The empty chain for one owner. An owner with no cities and an owner
+        /// whose cities were all folded in must not share a value, and this is
+        /// also what that owner's chain starts from.
+        fn owner_seed(base: u64, owner: usize) -> u64 {
+            vision_key(&[base, owner as u64])
+        }
+
+        pub(super) fn owned(&self, owner: usize) -> u64 {
+            self.owned
+                .get(&owner)
+                .copied()
+                .unwrap_or_else(|| Self::owner_seed(Self::OWNED_BASE, owner))
+        }
+
+        pub(super) fn centres(&self, owner: usize) -> u64 {
+            self.centres
+                .get(&owner)
+                .copied()
+                .unwrap_or_else(|| Self::owner_seed(Self::CENTRE_BASE, owner))
+        }
+
+        fn build(map: &BTreeMap<u32, City>) -> Self {
+            let mut stamps = Self {
+                geometry: vision_key(&[Self::GEOMETRY_BASE, map.len() as u64]),
+                owned: BTreeMap::new(),
+                centres: BTreeMap::new(),
+            };
+            for city in map.values() {
+                stamps.geometry = vision_key(&[
+                    stamps.geometry,
+                    city.id as u64,
+                    city.pos.0 as i64 as u64,
+                    city.pos.1 as i64 as u64,
+                    city.encampment_pillaged as u64,
+                    city.districts.len() as u64,
+                    city.wonders.len() as u64,
+                ]);
+                for (district, position) in city.districts.iter() {
+                    stamps.geometry = vision_key(&[
+                        stamps.geometry,
+                        district.id() as u64,
+                        position.0 as i64 as u64,
+                        position.1 as i64 as u64,
+                    ]);
+                }
+                let owned = stamps
+                    .owned
+                    .entry(city.owner)
+                    .or_insert_with(|| Self::owner_seed(Self::OWNED_BASE, city.owner));
+                *owned = vision_key(&[
+                    *owned,
+                    3,
+                    city.id as u64,
+                    city.pos.0 as i64 as u64,
+                    city.pos.1 as i64 as u64,
+                    city.owned_tiles.len() as u64,
+                ]);
+                for position in &city.owned_tiles {
+                    *owned =
+                        vision_key(&[*owned, position.0 as i64 as u64, position.1 as i64 as u64]);
+                }
+                let centres = stamps
+                    .centres
+                    .entry(city.owner)
+                    .or_insert_with(|| Self::owner_seed(Self::CENTRE_BASE, city.owner));
+                *centres = vision_key(&[
+                    *centres,
+                    city.id as u64,
+                    city.pos.0 as i64 as u64,
+                    city.pos.1 as i64 as u64,
+                ]);
+            }
+            stamps
+        }
+    }
+
+    /// The world's cities, wrapped so that every route which can change one is
+    /// a method on this type.
+    ///
+    /// Reads reach the whole `BTreeMap` API through `Deref`, so borrowing,
+    /// iterating, indexing and looking a city up are unchanged — 589 existing
+    /// `cities.get_mut` call sites and every read compiled against this
+    /// without an edit. **`DerefMut` is deliberately absent, and adding one
+    /// would undo the whole guarantee.** Without it nothing can obtain
+    /// `&mut BTreeMap<u32, City>`, so the only ways to reach a `&mut City`, or
+    /// to add, drop or replace one, are the inherent methods below — and each
+    /// clears the memo before it hands the caller anything.
+    ///
+    /// A mutating map method that is not reimplemented here does not compile
+    /// at all. That is what makes the invalidation exhaustive rather than
+    /// remembered: `cargo check` re-enumerates the whole mutation surface of
+    /// every file in the crate on every build, and a mutation route added
+    /// years from now is a build error rather than a stale sight frame. Only
+    /// the routes the crate actually uses are here, deliberately — `iter_mut`,
+    /// `entry`, `retain`, `append`, `drain`, `split_off`, `pop_first` and
+    /// `pop_last` are all absent because nothing calls them, and an untested
+    /// accessor is a worse guard than a compile error. If you need one, add it
+    /// here with an `invalidate()` first; never reach for `DerefMut`.
+    ///
+    /// The memo is a field of the roster rather than an epoch counter beside
+    /// it in `VisionFrameCache`, because a counter can be desynchronized by
+    /// assigning or swapping a whole roster: the counter would travel with the
+    /// new cities while the memo stayed with the old. A memo that *is* part of
+    /// the value cannot come apart from it, and `mem::take`, `mem::swap` and
+    /// whole-field assignment are all safe for the same reason.
+    ///
+    /// Reading the memo needs `&Cities` and every mutable handle borrows
+    /// `&mut Cities`, so the borrow checker already forbids a sight ask from
+    /// observing the memo while a write to any city is outstanding.
+    /// Invalidation is therefore eager — it happens when the handle is issued,
+    /// before the caller has written anything — and no ask can fall between
+    /// the two.
+    #[derive(Default)]
+    pub struct Cities {
+        map: BTreeMap<u32, City>,
+        vision: std::cell::RefCell<Option<Arc<CityVisionStamps>>>,
+    }
+
+    impl Cities {
+        /// Drop the folded sight inputs. Every mutable accessor calls this
+        /// before it returns, so a caller cannot forget it.
+        #[inline]
+        fn invalidate(&mut self) {
+            *self.vision.get_mut() = None;
+        }
+
+        /// The folded city inputs to sight, rebuilt only after a mutation.
+        ///
+        /// The cached `Arc` is cloned out before the build so the shared
+        /// borrow is released first; the fold reads only `self.map` and can
+        /// therefore never re-enter this cell.
+        pub(super) fn vision_stamps(&self) -> Arc<CityVisionStamps> {
+            let cached = self.vision.borrow().clone();
+            cached.unwrap_or_else(|| {
+                let stamps = Arc::new(CityVisionStamps::build(&self.map));
+                *self.vision.borrow_mut() = Some(Arc::clone(&stamps));
+                stamps
+            })
+        }
+
+        /// Whether the folded sight inputs are currently installed. Only the
+        /// visibility tests read this; it is how they assert that a border
+        /// change actually evicted the memo rather than merely producing a
+        /// different answer.
+        #[cfg(test)]
+        pub(super) fn vision_stamps_cached(&self) -> bool {
+            self.vision.borrow().is_some()
+        }
+
+        #[inline]
+        pub fn get_mut(&mut self, id: &u32) -> Option<&mut City> {
+            self.invalidate();
+            self.map.get_mut(id)
+        }
+
+        pub fn values_mut(&mut self) -> std::collections::btree_map::ValuesMut<'_, u32, City> {
+            self.invalidate();
+            self.map.values_mut()
+        }
+
+        pub fn insert(&mut self, id: u32, city: City) -> Option<City> {
+            self.invalidate();
+            self.map.insert(id, city)
+        }
+
+        pub fn remove(&mut self, id: &u32) -> Option<City> {
+            self.invalidate();
+            self.map.remove(id)
+        }
+
+        pub fn clear(&mut self) {
+            self.invalidate();
+            self.map.clear();
+        }
+
+        pub fn into_values(self) -> std::collections::btree_map::IntoValues<u32, City> {
+            self.map.into_values()
+        }
+    }
+
+    impl Clone for Cities {
+        /// A clone inherits the memo, which describes exactly the roster being
+        /// cloned with it. The two cells are independent from then on, so a
+        /// branch that moves a border restamps only its own copy — the same
+        /// reasoning `VisionFrameCache::clone` records for the sight frames.
+        fn clone(&self) -> Self {
+            Self {
+                map: self.map.clone(),
+                vision: std::cell::RefCell::new(self.vision.borrow().clone()),
+            }
+        }
+    }
+
+    impl std::ops::Deref for Cities {
+        type Target = BTreeMap<u32, City>;
+
+        fn deref(&self) -> &Self::Target {
+            &self.map
+        }
+    }
+
+    impl<'a> IntoIterator for &'a Cities {
+        type Item = (&'a u32, &'a City);
+        type IntoIter = std::collections::btree_map::Iter<'a, u32, City>;
+
+        fn into_iter(self) -> Self::IntoIter {
+            self.map.iter()
+        }
+    }
+
+    impl FromIterator<(u32, City)> for Cities {
+        fn from_iter<I: IntoIterator<Item = (u32, City)>>(items: I) -> Self {
+            Self {
+                map: items.into_iter().collect(),
+                vision: std::cell::RefCell::new(None),
+            }
+        }
+    }
+}
+
+pub use city_roster::Cities;
 
 /// An immutable unit roster captured before a speculative branch runs.
 #[derive(Clone)]
@@ -2833,6 +3291,154 @@ pub struct Emergency {
     pub contributions: BTreeMap<usize, i64>,
     pub started: u32,
     pub ends: u32,
+}
+
+/// A scored World Congress competition observed from the live Civilization VI
+/// host. It remains separate from [`Emergency`], which models CIVVIS's native
+/// city-capture emergencies rather than a host-granted production opportunity.
+#[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
+pub struct HostCompetition {
+    /// Firaxis emergency type, for example `EMERGENCY_WORLD_GAMES`.
+    pub kind: String,
+    /// First CIVVIS turn on which the host opportunity is no longer current.
+    pub ends: u32,
+    /// The mirrored seat's current competition score.
+    pub ours: f64,
+    /// The highest score any member currently holds, including ours.
+    pub leader: f64,
+}
+
+/// One shipped `EmergencyScoreSources` row, in the vocabulary CIVVIS can
+/// evaluate.
+///
+/// Each variant is a row rather than a category: the number is that row's
+/// `ScoreAmount`, and the cadence is the one its `Description` states.
+/// `LOC_EMERGENCY_SCORE_GPP_DESC` is "Generating Great People Points **Per
+/// Turn**" and `LOC_EMERGENCY_SCORE_SPACEPORTS_DESC` is "**Maintaining**
+/// Spaceport Districts", so both accrue every turn; a `FromProject` row pays
+/// once, when the project completes.
+///
+/// ⚠ Four shipped rows stay unmodelled because the data does not say what they
+/// measure. `CLIMATE_ACCORDS_SCORE_CO2` pays for "emissions much lower than the
+/// biggest CO2 polluter" and never says how much lower; `SEND_AID_SCORE_FROM_GOLD`
+/// counts gifts of Gold to the target, which is a diplomatic action CIVVIS has
+/// no equivalent of; and the two `FROM_AT_WAR` penalties do not say whether -30
+/// and -200 are charged once or every turn. Choosing a number for any of them
+/// would be inventing a rule, which is the #2049 mistake.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum CompetitionScoreSource {
+    /// `FromProject`: a project completed in a city, worth the
+    /// `competition_score` it declares.
+    Project,
+    /// The eight `WORLDS_FAIR_SCORE_GPP_*` rows, `ScoreAmount="1"` for every
+    /// class: one point per Great Person Point generated, each turn.
+    GreatPersonPointsPerTurn,
+    /// `NOBEL_PRIZE_PEACE_SCORE_FROM_FAVOR`, `FromFavor="true"`
+    /// `ScoreAmount="1"`: one point per Diplomatic Favor generated, each turn.
+    DiplomaticFavorPerTurn,
+    /// `FromDistrict`: `amount` each turn for every city holding the district.
+    DistrictPerTurn { district: &'static str, amount: f64 },
+    /// `FromBuilding`: `amount` each turn for every city holding the building.
+    BuildingPerTurn { building: &'static str, amount: f64 },
+}
+
+/// The event that seats a native scored competition.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum NativeCompetitionTrigger {
+    /// The regular World Congress selects a scored competition.
+    Congress,
+    /// A player lost population to a random disaster.
+    RandomDisasterPopulationLoss,
+    /// A civilization the target already has 200 grievances against declares war.
+    WarWithGrievances,
+}
+
+/// The portion of a scored competition CIVVIS can faithfully seat itself.
+///
+/// The World Congress trigger is shared, but each emergency's requirements
+/// constrain its era. Keeping that source data beside its DVP award prevents a
+/// project prerequisite from accidentally deciding when the congress may offer
+/// the competition.
+#[derive(Clone, Copy, PartialEq, Debug)]
+struct NativeCompetitionSpec {
+    kind: &'static str,
+    diplomatic_victory_points: i64,
+    /// The Diplomatic Favor first place takes beside the point.
+    ///
+    /// ⚠ This is the emergency's **top tier** award, not a separate first-place
+    /// one, and first place is read as being in that tier: the shipped strings
+    /// name the bands "Gold Tier Rewards (for highest score)", "Silver Tier
+    /// Rewards (for the top 25% of scores)" and "Bronze Tier Rewards (for the
+    /// next 25% of scores)", and `LOC_SCORED_COMPETITION_SILVER_TIER_CHILD`
+    /// exists to say "All Silver Tier Rewards". The highest score is in the top
+    /// 25% of scores, so the winner takes both.
+    ///
+    /// ⚠ That is a **reading**: the three band predicates
+    /// (`REQUIREMENT_PLAYER_GOT_FIRST_PLACE_IN_EMERGENCY`, `..._HIGH_TIER_...`,
+    /// `..._LOW_TIER_...`) are compiled into the engine, and the child string is
+    /// referenced by no shipped Lua. The two lower bands are not paid at all,
+    /// because where a 25% cut falls among five or six scoring empires is a
+    /// rounding rule the data does not state.
+    first_place_favor: f64,
+    scoring: &'static [CompetitionScoreSource],
+    trigger: NativeCompetitionTrigger,
+    duration: u32,
+    lockout: u32,
+    minimum_world_era: usize,
+    maximum_world_era: Option<usize>,
+    /// A civilization ability the game must contain before this competition
+    /// exists at all — the emergency's
+    /// `REQUIREMENT_GAME_HAS_CIVILIZATION_OR_LEADER_TRAIT`.
+    required_civilization_ability: Option<&'static str>,
+}
+
+impl NativeCompetitionSpec {
+    fn offered_in_world_era(self, era: usize) -> bool {
+        era >= self.minimum_world_era && self.maximum_world_era.is_none_or(|maximum| era <= maximum)
+    }
+
+    fn counts(self, source: CompetitionScoreSource) -> bool {
+        self.scoring.contains(&source)
+    }
+}
+
+/// A scored competition CIVVIS runs itself, rather than observing on a host.
+///
+/// ★★★★★ THE HALF OF THE DIPLOMATIC LANE A NATIVE GAME NEVER HAD. Gathering
+/// Storm pays a Diplomatic Victory Point to the first-place finisher of a
+/// scored competition, and they recur for the whole second half of a game.
+/// Live, 19.6% of terminal games end in a rival's diplomatic victory; on the
+/// contested native screen CIVVIS produced 1.7%.
+///
+/// ⚠ **"Without them a native empire has no route to twenty" is what this
+/// comment said, and #2379's census says otherwise.** At the standard screen's
+/// shape — 6 majors, 74×46 continents, nine city-states, Online, 250 turns,
+/// 150 paired seeds an arm from 41000 — the leading empire finishes on a
+/// **median of 13** of the 20 with competitions off, and 3 of 150 games crossed
+/// the line without one; the congress resolution at ±2 from the Modern era does
+/// most of that. Turning all seven competitions on is worth **+0.35 points to
+/// the leader per game (95% CI +0.05 to +0.64)** and moved the diplomatic
+/// ending share from 3/150 to 0/150. The lane is short by about a third, not
+/// unreachable, and this closes a fraction of the gap rather than the whole of
+/// it — which is why the flag ships off. See `docs/FIDELITY.md`.
+///
+/// Unlike [`HostCompetition`], which is one mirrored seat's view of a host's
+/// competition, this holds every seat's score because CIVVIS is running it.
+#[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
+pub struct Competition {
+    /// Firaxis emergency type, so a seat cannot tell this from a host one.
+    pub kind: String,
+    /// First turn on which the competition is no longer current.
+    pub ends: u32,
+    /// The player a targeted aid request is helping, if it has one.
+    ///
+    /// A target is not an emergency member and therefore cannot access the
+    /// request's scoring project. Older saves held only no-target congress
+    /// competitions, so they deserialize as no target.
+    #[serde(default)]
+    pub target: Option<usize>,
+    /// Score by player id. A seat that has scored nothing is absent.
+    pub scores: BTreeMap<usize, f64>,
 }
 
 /// Every blow that has landed on a city this game.
@@ -4149,6 +4755,28 @@ pub fn default_difficulty() -> String {
     "prince".to_string()
 }
 
+/// ★★★ THE BARBARIANS PLAY AT THEIR OWN DIFFICULTY — IMMORTAL, NOT THE SEAT'S.
+///
+/// Operator directive 2026-08-24: *"We need to make the barbarians in civvis
+/// more aggressive. Should still roughly match the Civ 6 behavior. But weak
+/// barbarians in civvis leads us to weak training and favoring the slightly
+/// wrong genes … we are playing on level 5 and higher in Civ 6 verification
+/// games. Let's make the barbarians level 6 barbarians in civvis for now."*
+///
+/// Level 6 on the ladder is Immortal, and Immortal is exactly where the
+/// game's own `BarbarianAttackForces` switches band: `HighDifficultyStandardRaid`
+/// assembles three melee and two ranged units (against two and one) at a
+/// `SpawnRate` of 1 (against 2), i.e. twice as often — the rows
+/// `data/difficulties.json` already transcribes as `barb_force_scale 1.5` and
+/// `barb_spawn_scale 0.5`. Until now the barbarian seat read those from the
+/// *seat's* difficulty, and every native screen runs at the Prince default,
+/// so every gene ever priced was priced against the Standard band. This key
+/// is what the barbarian seat plays by, whatever the majors' rung is; the
+/// seat difficulty still governs the human's camp Gold and the AI handicaps.
+pub fn default_barbarian_difficulty() -> String {
+    "immortal".to_string()
+}
+
 pub fn default_speed() -> String {
     "standard".to_string()
 }
@@ -4185,6 +4813,10 @@ pub struct GameOptions {
     /// world is warm from edge to edge.
     pub map_poles: MapPoles,
     pub difficulty: String,
+    /// The difficulty the BARBARIAN seat plays by — its raid band and spawn
+    /// cadence — independent of `difficulty`. See
+    /// [`default_barbarian_difficulty`].
+    pub barbarian_difficulty: String,
     pub speed: String,
     pub human_seats: BTreeSet<usize>,
     /// Optional pre-game team assignment for each major seat. An empty vector
@@ -4269,6 +4901,7 @@ impl GameOptions {
             map_topology: MapTopology::default(),
             map_poles: MapPoles::default(),
             difficulty: default_difficulty(),
+            barbarian_difficulty: default_barbarian_difficulty(),
             speed: default_speed(),
             human_seats: BTreeSet::new(),
             teams: Vec::new(),
@@ -4497,7 +5130,7 @@ impl Decided {
 pub const MERCY_VICTORY: &str = "mercy";
 /// Terminal result recorded when a Tactics deadline expires with both sides
 /// still alive. It is a result label, not a victory lane: `winner` remains
-/// `None`, and match/league consumers record a draw.
+/// `None`, and match consumers record a draw.
 pub const DRAW_RESULT: &str = "draw";
 /// The victory type a capture-the-flag battle is recorded under. Like the
 /// Mercy Rule it answers to its own setup option rather than the victory
@@ -4514,11 +5147,10 @@ pub const FLAG_VICTORY: &str = "flag";
 /// A seat that crossed on standing alone, with no progress in any open lane,
 /// keeps the bare rule.
 ///
-/// The joiner is deliberately not a comma. This exact string is written into
-/// the `victory` column of the league's `matches.csv`, and both readers of
-/// that file split its rows on commas (`league::backfill_win_profiles` and
-/// [`crate::rating::parse_matches_csv`]), so a comma here would shift every
-/// later column and make the whole history unparseable.
+/// The joiner is deliberately not a comma. This exact string was written into
+/// the `victory` column of the retired league's `matches.csv`, whose readers
+/// split rows on commas; the recorded histories still parse only while no
+/// comma ever appears here.
 pub fn mercy_label(lanes: &[String]) -> String {
     if lanes.is_empty() {
         return "Mercy Rule".to_string();
@@ -4710,6 +5342,11 @@ pub struct Game {
     pub seed: u64,
     /// Key into `rules.difficulties`. Prince is the unhandicapped reference.
     pub difficulty: String,
+    /// Key into `rules.difficulties` for the barbarian seat's raid band and
+    /// spawn cadence, independent of the seat's rung; a save without it
+    /// plays Immortal barbarians. See [`default_barbarian_difficulty`].
+    #[serde(default = "default_barbarian_difficulty")]
+    pub barbarian_difficulty: String,
     /// Key into `rules.speeds`. Scales everything bought with a yield.
     pub speed: String,
     /// Mods this game was created under. A save carries them so a mismatched
@@ -4811,7 +5448,7 @@ pub struct Game {
     pub players: Players,
     pub units: Units,
     pub spies: BTreeMap<u32, Spy>,
-    pub cities: BTreeMap<u32, City>,
+    pub cities: Cities,
     pub at_war: BTreeSet<(usize, usize)>,
     /// Military scores reported by an authoritative host, keyed by CIVVIS seat.
     ///
@@ -5012,6 +5649,22 @@ pub struct Game {
     /// empty, so nothing about simulated play changes.
     #[serde(default)]
     pub blocked_policies: BTreeSet<Name>,
+    /// Pantheon beliefs a HOST has already granted to another player, for the same
+    /// reasons and with the same emptiness in an ordinary game as
+    /// [`Game::blocked_city_sites`].
+    ///
+    /// The mirror seats no rival pantheons — the export lists founded religions
+    /// only (`Game.GetReligion():GetReligions()` minus the pantheon rows), so
+    /// `do_choose_pantheon`'s "belief already taken" check sees only our own. A
+    /// first choice a rival holds is refused by the mod as `taken_BELIEF_<X>`, and
+    /// nothing carried that back: the same belief would be re-derived from the same
+    /// board next turn, and after two sightings the mod's own blocker fallback
+    /// picks the FIRST untaken pantheon in database order (Dance of the Aurora on
+    /// the recorded runs). Harvested from the refusal stream by the mirror
+    /// (`refused_pantheons`); an ordinary CIVVIS game leaves it empty. See
+    /// `AdvancedAi::expansion_pantheon` for the choice this protects.
+    #[serde(default)]
+    pub blocked_pantheons: BTreeSet<Name>,
     /// Districts a HOST ruleset will not place, per city, for the same reasons and
     /// with the same emptiness in an ordinary game as [`Game::blocked_city_sites`].
     ///
@@ -5057,6 +5710,18 @@ pub struct Game {
     /// no ground for. `HANGING_GARDENS` 159, `GREAT_BATH` 129, `TEMPLE_ARTEMIS` 45.
     #[serde(default)]
     pub blocked_wonders: BTreeMap<u32, BTreeSet<Name>>,
+    /// World-unique wonders the live host has ruled out everywhere.
+    ///
+    /// `blocked_wonders` is deliberately city-local: an ordinary zero-site answer
+    /// can mean this city lacks a river or floodplain. But the control bridge also
+    /// records the host's number of offered locations. An explicit `offered: 0` for
+    /// a model-legal wonder means Firaxis has no target anywhere, most commonly
+    /// because an unseen rival already completed that world unique. Carry that
+    /// stronger, permanent live-only fact separately so the next developed city
+    /// does not spend a production decision rediscovering it. Native games leave
+    /// the set empty.
+    #[serde(default)]
+    pub host_unavailable_wonders: BTreeSet<Name>,
     /// Production choices a HOST ruleset has refused in a particular city.
     ///
     /// The bridge keeps these blocks on a short cooldown: a missing prerequisite or
@@ -5157,6 +5822,14 @@ pub struct Game {
     /// first export and lost it at t63. See `AdvancedAi::frontier_loyalty`.
     #[serde(default)]
     pub unseen_major_borders: BTreeSet<Pos>,
+    /// How much sealed ground each MAJOR seat accounts for — the mirrored seat
+    /// id against its tile count in [`Game::closed_borders`]. The set alone
+    /// cannot answer the one question the passage-purchase lane asks: WHO to
+    /// buy Open Borders from. Written fresh beside `closed_borders` on a live
+    /// mirror and empty everywhere else; minors seal ground too but are never
+    /// recorded here, because their passage is suzerainty, not a deal.
+    #[serde(default)]
+    pub sealed_border_owners: BTreeMap<usize, u32>,
     /// The turn each peace treaty runs until, keyed by signatory pair. War
     /// cannot be declared again before it expires — the shipped
     /// `DIPLOMACY_PEACE_MIN_TURNS`.
@@ -5190,6 +5863,10 @@ pub struct Game {
     #[serde(default)]
     pub barb_camp_guards: BTreeMap<Pos, u32>,
     pub barb_scout_homes: BTreeMap<u32, Pos>,
+    /// Raiders remember the outpost that raised them. A nearby second camp
+    /// must not silently redirect a party that was sent somewhere else.
+    #[serde(default)]
+    pub barb_raider_homes: BTreeMap<u32, Pos>,
     pub barb_scout_targets: BTreeMap<u32, Pos>,
     pub barb_camp_targets: BTreeMap<Pos, Pos>,
     pub barb_alerted_until: BTreeMap<Pos, u32>,
@@ -5231,6 +5908,31 @@ pub struct Game {
     pub next_deal_id: u32,
     pub congress: Option<CongressSession>,
     pub active_congress_effects: Vec<CongressEffect>,
+    /// Active scored competitions supplied by a live Civilization VI host.
+    /// Native games leave this empty, so host-only projects cannot leak into
+    /// offline production menus.
+    #[serde(default)]
+    pub host_competitions: Vec<HostCompetition>,
+    /// The scored competition CIVVIS is running itself, if any. Off unless
+    /// `native_competitions` is set. See [`Competition`].
+    #[serde(default)]
+    pub competition: Option<Competition>,
+    /// First turn each competition kind may be seated again.
+    ///
+    /// ⚠ Per kind, because the shipped `LockoutTime` is a column on the
+    /// emergency row rather than a global clock. A single lockout let one
+    /// competition block every other for sixty turns, and a 250-turn game
+    /// seated two.
+    #[serde(default)]
+    pub competition_lockout_until: BTreeMap<String, u32>,
+    /// Whether this game runs its own scored competitions.
+    ///
+    /// ⚠ Off by default and deliberately so. Turning it on changes what every
+    /// participant faces, which moves the frozen rating anchor — so it ships
+    /// as an arm to be priced first, not as a silent rules change. See
+    /// `docs/ELO_REPINS.md` for what promoting it costs.
+    #[serde(default)]
+    pub native_competitions: bool,
     /// Turn the last Special Session was seated. Shipped
     /// `WORLD_CONGRESS_MIN_TIME_BETWEEN_SPECIAL_SESSIONS` holds the next one
     /// off for 15 standard-scaled turns. Saves from before this field start
@@ -5322,6 +6024,8 @@ struct GameSer {
     visibility_memory_version: u8,
     #[serde(default = "default_difficulty")]
     difficulty: String,
+    #[serde(default = "default_barbarian_difficulty")]
+    barbarian_difficulty: String,
     #[serde(default = "default_speed")]
     speed: String,
     #[serde(default)]
@@ -5440,6 +6144,8 @@ struct GameSer {
     #[serde(default)]
     barb_scout_homes: BTreeMap<u32, Pos>,
     #[serde(default)]
+    barb_raider_homes: BTreeMap<u32, Pos>,
+    #[serde(default)]
     barb_scout_targets: BTreeMap<u32, Pos>,
     #[serde(default)]
     barb_camp_targets: Vec<(Pos, Pos)>,
@@ -5479,6 +6185,14 @@ struct GameSer {
     congress: Option<CongressSession>,
     #[serde(default)]
     active_congress_effects: Vec<CongressEffect>,
+    #[serde(default)]
+    host_competitions: Vec<HostCompetition>,
+    #[serde(default)]
+    competition: Option<Competition>,
+    #[serde(default)]
+    competition_lockout_until: BTreeMap<String, u32>,
+    #[serde(default)]
+    native_competitions: bool,
     #[serde(default)]
     last_special_session: u32,
     #[serde(default)]
@@ -5540,6 +6254,7 @@ impl From<GameSer> for Game {
             rng: s.rng,
             seed: s.seed,
             difficulty: s.difficulty,
+            barbarian_difficulty: s.barbarian_difficulty,
             speed,
             human_seats: s.human_seats,
             mods: s.mods,
@@ -5597,15 +6312,18 @@ impl From<GameSer> for Game {
             host_observed: BTreeSet::new(),
             closed_borders: BTreeSet::new(),
             unseen_major_borders: BTreeSet::new(),
+            sealed_border_owners: BTreeMap::new(),
             blocked_improvement_sites: BTreeSet::new(),
             great_person_plots: BTreeMap::new(),
             blocked_promotions: BTreeMap::new(),
             blocked_trade_routes: BTreeSet::new(),
             blocked_policies: BTreeSet::new(),
+            blocked_pantheons: BTreeSet::new(),
             blocked_districts: BTreeMap::new(),
             host_district_sites: BTreeMap::new(),
             host_wonder_sites: BTreeMap::new(),
             blocked_wonders: BTreeMap::new(),
+            host_unavailable_wonders: BTreeSet::new(),
             blocked_production: BTreeMap::new(),
             blocked_purchases: BTreeMap::new(),
             peace_treaties: s.peace_treaties.into_iter().collect(),
@@ -5619,6 +6337,7 @@ impl From<GameSer> for Game {
             barb_naval_camps: s.barb_naval_camps.into_iter().collect(),
             barb_camp_guards: s.barb_camp_guards.into_iter().collect(),
             barb_scout_homes: s.barb_scout_homes,
+            barb_raider_homes: s.barb_raider_homes,
             barb_scout_targets: s.barb_scout_targets,
             barb_camp_targets: s.barb_camp_targets.into_iter().collect(),
             barb_alerted_until: s.barb_alerted_until.into_iter().collect(),
@@ -5639,6 +6358,10 @@ impl From<GameSer> for Game {
             next_deal_id: s.next_deal_id,
             congress: s.congress,
             active_congress_effects: s.active_congress_effects,
+            host_competitions: s.host_competitions,
+            competition: s.competition,
+            competition_lockout_until: s.competition_lockout_until,
+            native_competitions: s.native_competitions,
             last_special_session: s.last_special_session,
             pending_emergencies: s.pending_emergencies,
             active_emergencies: s.active_emergencies,
@@ -5740,6 +6463,7 @@ impl From<Game> for GameSer {
             future_tree_layout: Some(g.rules.future_tree_layout()),
             visibility_memory_version: 1,
             difficulty: g.difficulty,
+            barbarian_difficulty: g.barbarian_difficulty,
             // `game_speed` is the live, typed setting used by every rules
             // calculation.  Keep the compatibility string in lockstep so a
             // save cannot preserve two conflicting speeds.
@@ -5800,6 +6524,7 @@ impl From<Game> for GameSer {
             barb_naval_camps: g.barb_naval_camps.into_iter().collect(),
             barb_camp_guards: g.barb_camp_guards.into_iter().collect(),
             barb_scout_homes: g.barb_scout_homes,
+            barb_raider_homes: g.barb_raider_homes,
             barb_scout_targets: g.barb_scout_targets,
             barb_camp_targets: g.barb_camp_targets.into_iter().collect(),
             barb_alerted_until: g.barb_alerted_until.into_iter().collect(),
@@ -5820,6 +6545,10 @@ impl From<Game> for GameSer {
             next_deal_id: g.next_deal_id,
             congress: g.congress,
             active_congress_effects: g.active_congress_effects,
+            host_competitions: g.host_competitions,
+            competition: g.competition,
+            competition_lockout_until: g.competition_lockout_until,
+            native_competitions: g.native_competitions,
             last_special_session: g.last_special_session,
             pending_emergencies: g.pending_emergencies,
             active_emergencies: g.active_emergencies,
@@ -6002,6 +6731,7 @@ impl Game {
             map_topology,
             map_poles,
             difficulty,
+            barbarian_difficulty,
             speed,
             human_seats,
             teams,
@@ -6048,6 +6778,10 @@ impl Game {
         assert!(
             rules.difficulties.contains_key(&difficulty),
             "unknown difficulty {difficulty}"
+        );
+        assert!(
+            rules.difficulties.contains_key(&barbarian_difficulty),
+            "unknown barbarian difficulty {barbarian_difficulty}"
         );
         assert!(rules.speeds.contains_key(&speed), "unknown game speed {speed}");
         let mut known_civs = rules.civs.keys().cloned().collect::<BTreeSet<_>>();
@@ -6137,6 +6871,7 @@ impl Game {
             rng,
             seed,
             difficulty,
+            barbarian_difficulty,
             speed,
             human_seats,
             base_ruleset,
@@ -6167,7 +6902,7 @@ impl Game {
             players: Players::default(),
             units: Units::default(),
             spies: BTreeMap::new(),
-            cities: BTreeMap::new(),
+            cities: Cities::default(),
             at_war: BTreeSet::new(),
             observed_military_power: BTreeMap::new(),
             observed_score: BTreeMap::new(),
@@ -6191,15 +6926,18 @@ impl Game {
             host_observed: BTreeSet::new(),
             closed_borders: BTreeSet::new(),
             unseen_major_borders: BTreeSet::new(),
+            sealed_border_owners: BTreeMap::new(),
             blocked_improvement_sites: BTreeSet::new(),
             great_person_plots: BTreeMap::new(),
             blocked_promotions: BTreeMap::new(),
             blocked_trade_routes: BTreeSet::new(),
             blocked_policies: BTreeSet::new(),
+            blocked_pantheons: BTreeSet::new(),
             blocked_districts: BTreeMap::new(),
             host_district_sites: BTreeMap::new(),
             host_wonder_sites: BTreeMap::new(),
             blocked_wonders: BTreeMap::new(),
+            host_unavailable_wonders: BTreeSet::new(),
             blocked_production: BTreeMap::new(),
             blocked_purchases: BTreeMap::new(),
             peace_treaties: BTreeMap::new(),
@@ -6213,6 +6951,7 @@ impl Game {
             barb_naval_camps: BTreeSet::new(),
             barb_camp_guards: BTreeMap::new(),
             barb_scout_homes: BTreeMap::new(),
+            barb_raider_homes: BTreeMap::new(),
             barb_scout_targets: BTreeMap::new(),
             barb_camp_targets: BTreeMap::new(),
             barb_alerted_until: BTreeMap::new(),
@@ -6233,6 +6972,10 @@ impl Game {
             next_deal_id: 1,
             congress: None,
             active_congress_effects: Vec::new(),
+            host_competitions: Vec::new(),
+            competition: None,
+            competition_lockout_until: BTreeMap::new(),
+            native_competitions: false,
             last_special_session: 0,
             pending_emergencies: Vec::new(),
             active_emergencies: Vec::new(),
@@ -6384,16 +7127,11 @@ impl Game {
             for _ in 0..warriors {
                 g.place_city_state_starting_unit("warrior", pid, pos);
             }
-            // The shipped starting-building table grants completed Ancient
-            // Walls to every city-state on Immortal and Deity. They exist even
-            // before that state researches Masonry, just like other start-era
-            // buildings granted by setup.
-            if g.difficulty_spec().order >= 6 {
-                let state = g.cities.get_mut(&city).unwrap();
-                state.buildings.push(crate::name!("walls"));
-                state.building_eras.insert(crate::name!("walls"), 0);
-                state.wall_hp = 100;
-            }
+            // The shipped `StartingBuildings` table grants completed Ancient
+            // Walls to every city-state from Immortal upward. Which rungs and
+            // which building is `difficulties.json`'s to say now, rather than
+            // a rung number and a wall pool written into the setup code.
+            g.grant_starting_buildings(city);
         }
         // Rise & Fall always reserves a non-playable Free Cities seat. It is
         // dormant until the first Loyalty revolt, so it neither receives a
@@ -6424,6 +7162,55 @@ impl Game {
         g.refresh_great_person_offers();
         g.refresh_all_visibility();
         g
+    }
+
+    /// Give a city the completed buildings the shipped `StartingBuildings`
+    /// table grants a city of its owner's kind at this difficulty.
+    ///
+    /// *Completed* is the whole of it. These are not a production head start
+    /// and not a discount: they are standing when the game opens, with no
+    /// technology behind them and nothing left to build. So the building goes
+    /// into `buildings`, which is the list every yield, adjacency, tourism
+    /// and defence rule in the engine reads, rather than into a counter of
+    /// its own — a city-state at Deity is one the challenger has to breach,
+    /// not one carrying a note that says it has walls.
+    ///
+    /// Anything with an outer defence tops the wall pool up exactly the way
+    /// finishing it in a city does, through `city_max_wall_hp`, so a second
+    /// tier or a mod's own walls need no arithmetic here.
+    ///
+    /// ⚠ `MinorOnly` is a partition, not a permission: a row is granted to
+    /// city-states or to majors, never to both, which is why one flag decides
+    /// each side. Every major-side row of the shipped table is keyed on the
+    /// start era and carries no `MinDifficulty` at all, so with the shipped
+    /// ladder this reaches only city-states.
+    fn grant_starting_buildings(&mut self, cid: u32) {
+        let minor = self.players[self.cities[&cid].owner].is_minor;
+        let granted: Vec<Name> = self
+            .difficulty_spec()
+            .starting_buildings
+            .iter()
+            .filter(|row| row.minor_only == minor)
+            .map(|row| Name::new(&row.building))
+            .collect();
+        for building in granted {
+            if self.cities[&cid].buildings.contains(&building) {
+                continue;
+            }
+            let outer_defense = self.rules.buildings[&building].outer_defense;
+            // Setup runs before `open_in_start_era` moves the world era, so a
+            // start-era grant is stamped with the Ancient era the shipped row
+            // itself names.
+            let era = self.world_era;
+            let city = self.cities.get_mut(&cid).unwrap();
+            city.buildings.push(building);
+            city.building_eras.insert(building, era);
+            if outer_defense > 0 {
+                let pool = self.city_max_wall_hp(&self.cities[&cid]);
+                let city = self.cities.get_mut(&cid).unwrap();
+                city.wall_hp = (city.wall_hp + outer_defense).min(pool);
+            }
+        }
     }
 
     /// Civilization VI's Advanced Start: a game set to open past the first age
@@ -6862,6 +7649,25 @@ impl Game {
 
     pub fn difficulty_spec(&self) -> &DifficultySpec {
         &self.rules.difficulties[&self.difficulty]
+    }
+
+    /// The rung the barbarian seat plays by: its raid band and spawn cadence.
+    /// See [`default_barbarian_difficulty`]. Falls back to the seat's rung if
+    /// a save names a rung this ruleset does not have.
+    pub fn barbarian_spec(&self) -> &DifficultySpec {
+        self.rules
+            .difficulties
+            .get(&self.barbarian_difficulty)
+            .unwrap_or_else(|| self.difficulty_spec())
+    }
+
+    /// Set the barbarian seat's rung; refused for a key the ruleset lacks.
+    pub fn set_barbarian_difficulty(&mut self, key: &str) -> Result<(), String> {
+        if !self.rules.difficulties.contains_key(key) {
+            return Err(format!("unknown barbarian difficulty {key}"));
+        }
+        self.barbarian_difficulty = key.to_string();
+        Ok(())
     }
 
     pub fn speed_spec(&self) -> &SpeedSpec {
@@ -7545,6 +8351,35 @@ impl Game {
         self.spawn_barbarian_camp_units(pos);
     }
 
+    /// The outpost assignment held by a barbarian unit. Scouts, standing
+    /// guards, and raiders all use the same durable home relationship; callers
+    /// may still supply a legacy nearest-camp fallback for an old save that
+    /// predates raider assignments.
+    pub(crate) fn barbarian_unit_home(&self, uid: u32) -> Option<Pos> {
+        self.barb_camp_guards
+            .iter()
+            .find_map(|(camp, guard)| (*guard == uid).then_some(*camp))
+            .or_else(|| self.barb_scout_homes.get(&uid).copied())
+            .or_else(|| self.barb_raider_homes.get(&uid).copied())
+    }
+
+    /// `BarbarianAttackForces` supplies one melee attacker below Warlord,
+    /// two melee plus one ranged unit through Emperor, and three melee plus
+    /// two ranged units at Immortal and Deity. The difficulty data carries
+    /// those three force bands as 0.5, 1.0, and 1.5 respectively — read from
+    /// the barbarian seat's own rung (`barbarian_spec`), not the majors'.
+    fn barbarian_raid_force_size(&self) -> usize {
+        match self.barbarian_spec().barb_force_scale {
+            scale if scale <= 0.5 => 1,
+            scale if scale <= 1.0 => 3,
+            _ => 5,
+        }
+    }
+
+    fn barbarian_raid_ranged_size(&self) -> usize {
+        self.barbarian_raid_force_size() / 2
+    }
+
     fn barbarian_scout_phase(&mut self, bpid: usize) {
         self.barb_scout_homes.retain(|unit, camp| {
             self.units
@@ -7569,24 +8404,76 @@ impl Game {
                 continue;
             };
             self.barb_scout_homes.insert(unit, home);
+            // A reported target is one raid, not a permanent alarm. The Scout
+            // waits beside its camp while that party is raised, then goes back
+            // out after the alert has expired. Without this hold it could see
+            // the same city again on the next turn and renew the wave forever.
+            if self
+                .barb_alerted_until
+                .get(&home)
+                .is_some_and(|until| *until > self.turn)
+            {
+                self.barb_scout_targets.remove(&unit);
+                if self.wdist(position, home) > 1 {
+                    if let Some(step) = self.route_step(unit, home, 1) {
+                        self.relocate(unit, step);
+                    }
+                }
+                continue;
+            }
             if !self.barb_scout_targets.contains_key(&unit) {
-                let sight = self.unit_sight(unit);
-                if let Some(city) = self
+                let visible = self.unit_visible_tiles(unit);
+                // ★★★★★ A SETTLER WALKING PAST A CAMP WAS NOT A SIGHTING, SO
+                // NOTHING A CAMP EVER DID WAS TRIGGERED BY THE THING WORTH
+                // RAIDING.
+                //
+                // Only a CITY could be reported, so a camp's entire raid
+                // throughput was one Scout's round trip to a settlement and
+                // back — and an empire's walkers, which is what a
+                // Civilization VI barbarian actually takes, were invisible to
+                // the pipeline that decides whether a camp raises anybody at
+                // all. MEASURED with the report as cities-only, `ai_eval`
+                // 72 seat-games an arm at 6p/150t/online: 0.47 civilians lost
+                // to barbarians per game, against 8 Settlers in 104 turns on
+                // the live Civilization VI seat — a seventeen-fold gap that
+                // no tuning value inside the alert window can close, because
+                // the window mostly never opens near an expanding empire.
+                //
+                // A Civilization VI Scout reports what it SEES. So does this
+                // one now: the nearest visible major settlement or unit,
+                // whichever is closer. Everything downstream is unchanged —
+                // the Scout still has to walk home before the camp is
+                // alerted, the alert still expires, and the party size still
+                // comes from the difficulty band.
+                let city = self
                     .cities
                     .values()
                     .filter(|city| {
                         let owner = &self.players[city.owner];
                         owner.alive && !owner.is_minor && !owner.is_barbarian
                     })
-                    .filter(|city| self.wdist(position, city.pos) <= sight)
-                    .min_by_key(|city| (self.wdist(position, city.pos), city.id))
-                {
-                    self.barb_scout_targets.insert(unit, city.pos);
+                    .filter(|city| visible.contains(&city.pos))
+                    .map(|city| (self.wdist(position, city.pos), city.pos));
+                // A Scout that has to walk home before anything happens cannot
+                // chase; the sighting is a REPORT, and the position it carries
+                // is where our people were standing when it saw them.
+                let quarry = self
+                    .units
+                    .values()
+                    .filter(|other| {
+                        let owner = &self.players[other.owner];
+                        owner.alive && !owner.is_minor && !owner.is_barbarian
+                    })
+                    .filter(|other| visible.contains(&other.pos))
+                    .map(|other| (self.wdist(position, other.pos), other.pos));
+                if let Some((_, target)) = city.chain(quarry).min() {
+                    self.barb_scout_targets.insert(unit, target);
                 }
             }
             if let Some(target) = self.barb_scout_targets.get(&unit).copied() {
                 if self.wdist(position, home) <= 1 {
-                    self.barb_alerted_until.insert(home, self.turn + 15);
+                    self.barb_alerted_until
+                        .insert(home, self.turn + BARBARIAN_SCOUT_ALERT_TURNS);
                     self.barb_camp_targets.insert(home, target);
                     self.barb_camps.insert(home, self.turn + 1);
                     self.barb_scout_targets.remove(&unit);
@@ -7747,6 +8634,23 @@ impl Game {
             })
     }
 
+    /// Build the documented melee/ranged mix of a reported raid where the
+    /// current pool permits it. A coastal camp may not have a ranged ship at
+    /// this technology, so it falls back to an otherwise legal hull instead
+    /// of stalling the entire party.
+    fn choose_barbarian_raid_unit(&mut self, pool: &[Name], want_ranged: bool) -> Option<Name> {
+        let role_pool: Vec<Name> = pool
+            .iter()
+            .copied()
+            .filter(|kind| self.rules.units[kind].has_ranged_attack() == want_ranged)
+            .collect();
+        self.choose_barbarian_unit(if role_pool.is_empty() {
+            pool
+        } else {
+            &role_pool
+        })
+    }
+
     fn spawn_barbarian_camp_recon(&mut self, kind: &str, owner: usize, camp: Pos) -> Option<u32> {
         let want_sea = self.rules.units[kind].domain.as_deref() == Some("sea");
         self.nbrs(camp).into_iter().find_map(|position| {
@@ -7805,7 +8709,7 @@ impl Game {
         self.barb_alerted_until
             .retain(|camp, until| self.barb_camps.contains_key(camp) && *until > self.turn);
         self.barb_camp_targets
-            .retain(|camp, _| self.barb_camps.contains_key(camp));
+            .retain(|camp, _| self.barb_alerted_until.contains_key(camp));
         self.barb_naval_camps
             .retain(|camp| self.barb_camps.contains_key(camp));
         self.barb_camp_guards.retain(|camp, guard| {
@@ -7814,6 +8718,13 @@ impl Game {
                     .units
                     .get(guard)
                     .is_some_and(|unit| unit.owner == bpid && unit.pos == *camp)
+        });
+        self.barb_raider_homes.retain(|unit, camp| {
+            self.barb_camps.contains_key(camp)
+                && self
+                    .units
+                    .get(unit)
+                    .is_some_and(|raider| raider.owner == bpid)
         });
         self.barbarian_scout_phase(bpid);
         // Setup puts a third of the target on the map before turn one
@@ -7830,44 +8741,57 @@ impl Game {
         {
             self.spawn_camp();
         }
-        let alerted = self.barb_alerted_until.len();
-        // BarbarianAttackForces bands its force sizes on difficulty: at or
-        // below Chieftain a raid is one melee unit, from Warlord to Emperor
-        // two melee and a ranged, and at Immortal or above three and two. The
-        // Attack forces widen the same way. `barb_force_scale` carries those
-        // three bands as 0.5, 1.0 and 1.5, and the standing barbarian
-        // population is where a force size lives in this engine.
-        let scale = self.difficulty_spec().barb_force_scale;
-        let spawn_scale = self.difficulty_spec().barb_spawn_scale;
-        let cap = (((2 + 2 * self.barb_camps.len() + 2 * alerted) as f64) * scale).round() as usize;
-        let mut n_barb = self.player_unit_ids(bpid).len();
+        // A reported camp raises exactly its own party. The old global cap
+        // let distant, unrelated camps consume the slots that a Scout had just
+        // earned for this target, then let the successful camp continue adding
+        // units after the party was already complete.
+        let force_size = self.barbarian_raid_force_size();
+        let ranged_size = self.barbarian_raid_ranged_size();
+        let spawn_scale = self.barbarian_spec().barb_spawn_scale;
         let land_pool = self.barbarian_unit_pool();
         let naval_pool = self.barbarian_naval_unit_pool();
         let camps: Vec<(Pos, u32)> = self.barb_camps.iter().map(|(p, n)| (*p, *n)).collect();
         for (pos, nxt) in camps {
-            if self.turn < nxt || n_barb >= cap {
+            let alerted = self
+                .barb_alerted_until
+                .get(&pos)
+                .is_some_and(|until| *until > self.turn)
+                && self.barb_camp_targets.contains_key(&pos);
+            if self.turn < nxt || !alerted {
                 continue;
             }
+            let party: Vec<u32> = self
+                .barb_raider_homes
+                .iter()
+                .filter_map(|(unit, home)| (*home == pos).then_some(*unit))
+                .collect();
+            if party.len() >= force_size {
+                continue;
+            }
+            let ranged = party
+                .iter()
+                .filter(|unit| {
+                    self.units
+                        .get(unit)
+                        .is_some_and(|raider| self.rules.units[raider.kind].has_ranged_attack())
+                })
+                .count();
+            let melee = party.len().saturating_sub(ranged);
+            let want_ranged = ranged < ranged_size && melee >= force_size - ranged_size;
             let pool = if self.barb_naval_camps.contains(&pos) {
                 &naval_pool
             } else {
                 &land_pool
             };
-            let Some(utype) = self.choose_barbarian_unit(pool) else {
+            let Some(utype) = self.choose_barbarian_raid_unit(pool, want_ranged) else {
                 continue;
             };
-            if let Some(_unit) = self.place_new_unit(utype.as_str(), bpid, pos) {
-                n_barb += 1;
-                let rapid = self
-                    .barb_alerted_until
-                    .get(&pos)
-                    .is_some_and(|until| *until > self.turn);
+            if let Some(unit) = self.place_new_unit(utype.as_str(), bpid, pos) {
+                self.barb_raider_homes.insert(unit, pos);
                 // BarbarianAttackForces.SpawnRate is 2 up to Emperor and 1
                 // from Immortal, so the top band assembles forces twice as
                 // often as well as fielding bigger ones.
-                let wait = (f64::from(if rapid { 2 } else { 6 }) * spawn_scale)
-                    .round()
-                    .max(1.0) as u32;
+                let wait = (2.0 * spawn_scale).round().max(1.0) as u32;
                 self.barb_camps.insert(pos, self.turn + wait);
             }
         }
@@ -8180,11 +9104,27 @@ impl Game {
         self.barb_alerted_until.remove(&pos);
         self.barb_camp_targets.remove(&pos);
         self.barb_scout_homes.retain(|_, camp| *camp != pos);
+        self.barb_raider_homes.retain(|_, camp| *camp != pos);
         let tile = self.map.tiles.get_mut(&pos).unwrap();
         if tile.improvement.as_deref() == Some("barbarian_camp") {
             tile.improvement = None;
         }
         self.players[owner].gold += 50.0 + self.human_camp_gold(owner);
+        // Initiation Rites pays for the camp twice, and Gathering Storm's
+        // second half is the one a base-game reading misses:
+        // `INITIATION_RITES_FAITH_DISPERSAL_MODIFIER`
+        // (`EFFECT_ADJUST_PLAYER_FAITH_FROM_DISPERSAL`, Amount 50) is the base
+        // game's, and `INITIATION_RITES_HEALING_DISPERSAL_MODIFIER`
+        // (`EFFECT_ADJUST_PLAYER_HEALING_FROM_DISPERSAL`, Amount 100) is added
+        // by `Expansion2_Beliefs.xml` — "the unit that cleared the Barbarian
+        // Outpost heals +100 HP". Neither id is in `Expansion2_RemoveData.xml`.
+        self.players[owner].faith += self.pantheon_effect(owner, "camp_cleared_faith");
+        let camp_heal = self.pantheon_effect(owner, "camp_cleared_heal");
+        if camp_heal > 0.0 {
+            if let Some(unit) = self.units.get_mut(&uid) {
+                unit.hp = (unit.hp + camp_heal.round() as i32).min(100);
+            }
+        }
         if coastal {
             let loot = self.promotion_effect(&self.units[&uid], "coastal_raid_gold");
             self.players[owner].gold += self.game_speed.scale(loot);
@@ -9109,6 +10049,40 @@ impl Game {
             .is_some_and(|tile| tile.fallout_until > self.turn)
     }
 
+    /// God of Healing: `GOD_OF_HEALING_UNIT_HEALING_MODIFIER`,
+    /// `MODIFIER_PLAYER_UNITS_ADJUST_HEAL_PER_TURN` with `Amount 30` and
+    /// `Type ALL`, over `PLOT_ADJACENT_INCLUDE_HOLY_SITE`
+    /// (`REQUIREMENT_PLOT_ADJACENT_DISTRICT_TYPE_MATCHES`, `DISTRICT_HOLY_SITE`,
+    /// `MinRange 0`) — so the Holy Site's own plot counts as well as the ring
+    /// around it, and every class heals, religious units included.
+    ///
+    /// ⚠ The requirement set names no owner; the shipped text does — "in YOUR
+    /// Holy Site district, or any adjacent tiles" — so a rival's Holy Site does
+    /// not heal this army. No id in this belief appears in
+    /// `Expansion2_RemoveData.xml`.
+    fn pantheon_holy_site_heal(&self, uid: u32) -> i32 {
+        let unit = &self.units[&uid];
+        let amount = self.pantheon_effect(unit.owner, "holy_site_heal");
+        if amount == 0.0 {
+            return 0;
+        }
+        let beside_a_holy_site = self.wdisk(unit.pos, 1).into_iter().any(|position| {
+            self.map.get(position).is_some_and(|tile| {
+                tile.district.is_some_and(|district| {
+                    self.district_is_family(district, crate::name!("holy_site"))
+                }) && tile
+                    .owner_city
+                    .and_then(|city_id| self.cities.get(&city_id))
+                    .is_some_and(|city| city.owner == unit.owner)
+            })
+        });
+        if beside_a_holy_site {
+            amount.round() as i32
+        } else {
+            0
+        }
+    }
+
     pub fn unit_heal_rate(&self, uid: u32) -> i32 {
         let unit = &self.units[&uid];
         let spec = &self.rules.units[unit.kind];
@@ -9140,6 +10114,10 @@ impl Game {
         {
             return 0;
         }
+        // Bound once, below the guards that mean "cannot recover at all" — a
+        // barbarian, an arena, fallout, a grounded aircraft — because a
+        // healing modifier lifts a rate, it does not create one.
+        let holy_site_heal = self.pantheon_holy_site_heal(uid);
         if self
             .map
             .get(unit.pos)
@@ -9204,7 +10182,7 @@ impl Game {
                 .map(|other| self.promotion_effect(&self.units[&other], "adjacent_heal"))
                 .fold(0.0, f64::max);
             best = best.max(chaplain);
-            return best.round() as i32;
+            return best.round() as i32 + holy_site_heal;
         }
         if spec.domain.as_deref() == Some("sea")
             && self
@@ -9251,7 +10229,7 @@ impl Game {
                     city.owner == unit.owner || self.suzerain_of(city.owner) == Some(unit.owner)
                 });
             if friendly {
-                20 + emergency_heal + support_heal
+                20 + emergency_heal + support_heal + holy_site_heal
             } else {
                 // Auxiliary Ships, Supply Fleet and Supercarrier do not heal a
                 // ship as if it were home: they pay 5 in enemy territory and
@@ -9265,12 +10243,10 @@ impl Game {
                     }
                     _ => 0.0,
                 } as i32;
-                promoted + emergency_heal + support_heal
+                promoted + emergency_heal + support_heal + holy_site_heal
             }
         } else {
-            location.rate()
-                + emergency_heal
-                + support_heal
+            location.rate() + emergency_heal + support_heal + holy_site_heal
         }
     }
 
@@ -9746,12 +10722,40 @@ impl Game {
             .is_none_or(|resource| self.strategic_stockpile(pid, resource) > 0.0)
     }
 
-    /// Gold and strategic material to upgrade one `kind` into its successor.
+    /// Every number in the upgrade bill, as a named shipped row.
     ///
-    /// `UPGRADE_BASE_COST` (10) and `UPGRADE_MINIMUM_COST` (15) come from the
-    /// shipped GlobalParameters. The per-Production factor does not: the
-    /// game applies it inside its own executable, and the observed in-game
-    /// prices are twice the Production difference on top of the base cost.
+    /// All five are `GlobalParameters` rows read from the host's own compiled
+    /// database (`Cache/DebugGameplay.sqlite`, table `GlobalParameters`) and
+    /// confirmed against `Rules::Units::Instance::GetUpgradeCost` in the
+    /// shipped `GameCore_XP2_FinalRelease.dll`, which reads exactly these:
+    ///
+    /// ```text
+    /// UPGRADE_BASE_COST                    10
+    /// UPGRADE_MINIMUM_COST                 15
+    /// UPGRADE_NET_PRODUCTION_PERCENT_COST 100   Vanilla ships 75; Gathering
+    ///                                           Storm replaces it with 100
+    /// GOLD_EQUIVALENT_OTHER_YIELDS          2
+    /// PURCHASE_DIVISOR                      5
+    /// ```
+    const UPGRADE_BASE_COST: f64 = 10.0;
+    const UPGRADE_MINIMUM_COST: f64 = 15.0;
+    const UPGRADE_NET_PRODUCTION_PERCENT_COST: f64 = 100.0;
+    const GOLD_EQUIVALENT_OTHER_YIELDS: f64 = 2.0;
+    const PURCHASE_DIVISOR: f64 = 5.0;
+
+    /// Gold and strategic material to upgrade one `kind` into its successor,
+    /// priced as a Standard (uncombined) unit.
+    ///
+    /// ★★★ THE PER-PRODUCTION FACTOR OF TWO IS A SHIPPED ROW, NOT A FUDGE.
+    ///
+    /// This doc used to say that factor "does not come from GlobalParameters"
+    /// and had been inferred from in-game prices being twice the Production
+    /// difference. The host disagrees only about where it lives, not about the
+    /// number: `GetUpgradeCost` multiplies the net Production difference by
+    /// `UPGRADE_NET_PRODUCTION_PERCENT_COST` (100, so all of it) and then by
+    /// `GOLD_EQUIVALENT_OTHER_YIELDS` (2), the same Production-to-Gold
+    /// conversion the rest of the host uses. Two is the shipped coefficient.
+    /// Charging one would halve every upgrade in the game.
     pub fn unit_upgrade_price(&self, pid: usize, kind: &str) -> Option<(Name, f64, f64)> {
         let target = self.unit_upgrade_target(pid, Name::new(kind))?;
         self.unit_upgrade_price_to(pid, Name::new(kind), target)
@@ -9770,6 +10774,23 @@ impl Game {
         kind: impl AsName,
         target: impl AsName,
     ) -> Option<(f64, f64)> {
+        self.unit_upgrade_price_in_formation(pid, kind, target, 0)
+    }
+
+    /// The same quote for a unit that is already a Corps or an Army.
+    ///
+    /// `GetUpgradeCost` multiplies the whole bill by 2 for
+    /// `CORPS_MILITARY_FORMATION` and by 3 for `ARMY_MILITARY_FORMATION` --
+    /// two or three bodies are being re-equipped -- and it does so *before*
+    /// the minimum and the rounding, so a combined unit cannot be priced by
+    /// scaling a finished Standard quote.
+    pub fn unit_upgrade_price_in_formation(
+        &self,
+        pid: usize,
+        kind: impl AsName,
+        target: impl AsName,
+        formation: u8,
+    ) -> Option<(f64, f64)> {
         let kind = kind.as_name();
         let target = target.as_name();
         let generic = self.rules.units.get_interned(kind)?.upgrade_to?;
@@ -9778,11 +10799,39 @@ impl Game {
         }
         let from = self.rules.units.get_interned(kind)?.cost;
         let spec = self.rules.units.get_interned(target)?;
-        let gold = self
-            .game_speed
-            .scale((10.0 + 2.0 * (spec.cost - from).max(0.0)).max(15.0));
-        let (gold, resources) = self.upgrade_costs(pid, gold, spec.resource_cost);
-        Some((gold, resources))
+        // BASE + NET_PRODUCTION_PERCENT / 100 * GOLD_EQUIVALENT * max(0, dProd).
+        // The host differences two already speed-scaled Production costs and
+        // speed-scales its base separately; scaling the sum is the same linear
+        // map, and `units.json` holds the Standard-speed costs.
+        let net = (spec.cost - from).max(0.0)
+            * (Self::UPGRADE_NET_PRODUCTION_PERCENT_COST / 100.0)
+            * Self::GOLD_EQUIVALENT_OTHER_YIELDS;
+        let bodies = match formation {
+            0 => 1.0,
+            1 => 2.0,
+            _ => 3.0,
+        };
+        let gold = self.game_speed.scale(Self::UPGRADE_BASE_COST + net) * bodies;
+        let (gold, resources) = self.upgrade_costs(pid, gold, spec.resource_cost * bodies);
+        Some((self.upgrade_bill_floor(gold), resources))
+    }
+
+    /// The last two steps of `GetUpgradeCost`, which run *after* the formation
+    /// multiplier and the player's upgrade discount, not before them.
+    ///
+    /// The minimum is asymmetric in the shipped code and that is copied here
+    /// deliberately: it *compares* against the raw `UPGRADE_MINIMUM_COST` and
+    /// *assigns* the game-speed scaled one, so a cheap upgrade on a fast speed
+    /// settles below 15 Gold rather than at it. The bill is then truncated to
+    /// whole Gold and rounded DOWN to a multiple of `PURCHASE_DIVISOR`, which
+    /// is why the host never quotes 73 Gold for anything.
+    fn upgrade_bill_floor(&self, gold: f64) -> f64 {
+        let gold = if gold < Self::UPGRADE_MINIMUM_COST {
+            self.game_speed.scale(Self::UPGRADE_MINIMUM_COST)
+        } else {
+            gold
+        };
+        gold - gold.rem_euclid(Self::PURCHASE_DIVISOR)
     }
 
     /// Civ VI upgrades happen in friendly territory, before the unit has done
@@ -9830,21 +10879,15 @@ impl Game {
         if !friendly {
             return Err("foreign territory");
         }
-        let (target, base_gold, base_resources) = self
-            .unit_upgrade_price(pid, &unit.kind)
+        let target = self
+            .unit_upgrade_target(pid, unit.kind)
             .ok_or("no unlocked successor")?;
-        let gold = base_gold
-            * match unit.formation {
-                0 => 1.0,
-                1 => 2.0,
-                _ => 3.0,
-            };
-        let resources = base_resources
-            * match unit.formation {
-                0 => 1.0,
-                1 => 2.0,
-                _ => 3.0,
-            };
+        // A Corps or an Army is priced as one bill, not as a Standard quote
+        // multiplied afterwards: the host applies the body count before the
+        // minimum and the `PURCHASE_DIVISOR` rounding.
+        let (gold, resources) = self
+            .unit_upgrade_price_in_formation(pid, unit.kind, target, unit.formation)
+            .ok_or("no unlocked successor")?;
         if self.players[pid].gold + f64::EPSILON < gold {
             return Err("not enough gold");
         }
@@ -10159,12 +11202,20 @@ impl Game {
         }) * spy_level.max(0) as f64
     }
 
-    /// Every promotion a spy can take, in the order the offer generator walks.
+    /// The espionage promotions the live bridge has to spell for the host.
     ///
     /// Public because the live bridge translates these to Civilization VI's own
     /// identifiers and must not keep a second copy: a spy promotion is spelled
     /// `PROMOTION_SPY_<NAME>` on the host, and `civ6_unit_promotion_name` reads
-    /// this list to decide which names take that prefix.
+    /// this list to decide which names take that prefix. That function maps a
+    /// bare `&str` with no ruleset in hand, so the list stays a constant.
+    ///
+    /// ⚠ IT IS NO LONGER THE ROSTER. The offer generator reads
+    /// [`Self::spy_promotion_roster`] out of `data/promotions.json`, because a
+    /// hardcoded roster is how added content becomes unreachable — CIVVIS has
+    /// shipped that bug twice. `espionage_promotions_are_the_shipped_roster`
+    /// asserts this constant still names exactly the ruleset's espionage class,
+    /// so a promotion added to the data cannot silently go out misspelled.
     pub const SPY_PROMOTIONS: [&'static str; 17] = [
         "ace_driver",
         "cat_burglar",
@@ -10185,6 +11236,32 @@ impl Game {
         "technologist",
     ];
 
+    /// Every espionage promotion the ruleset declares, in name order.
+    ///
+    /// `SpecMap` keeps its keys sorted, so this walks the class in exactly the
+    /// order the old constant listed it and the deterministic three-card offer
+    /// below is unchanged.
+    pub(crate) fn spy_promotion_roster(&self) -> impl Iterator<Item = &str> {
+        self.rules
+            .promotions
+            .iter()
+            .filter(|(_, spec)| spec.class == "espionage")
+            .map(|(name, _)| name.as_str())
+    }
+
+    /// What a Spy's own promotions add up to for one espionage effect.
+    ///
+    /// The magnitudes live in `data/promotions.json` beside the promotion that
+    /// grants them, so a value read here is one the fidelity audit compares
+    /// against the shipped game rather than a number buried in this file.
+    pub(crate) fn spy_promotion_effect(&self, spy: &Spy, effect: &str) -> f64 {
+        spy.promotions
+            .iter()
+            .filter_map(|name| self.rules.promotions.get(name.as_str()))
+            .filter_map(|spec| spec.effects.get(effect))
+            .sum()
+    }
+
     fn spy_needs_promotion(spy: &Spy) -> bool {
         spy.level.max(0) as usize > spy.promotions.len() && spy.promotions.len() < 3
     }
@@ -10199,9 +11276,8 @@ impl Game {
         if !Self::spy_needs_promotion(spy) || spy.captured_by.is_some() {
             return Vec::new();
         }
-        let available: Vec<&str> = Self::SPY_PROMOTIONS
-            .iter()
-            .copied()
+        let available: Vec<&str> = self
+            .spy_promotion_roster()
             .filter(|promotion| !spy.promotions.contains(*promotion))
             .collect();
         if self.spy_modifiers(spy.owner).5 {
@@ -10226,20 +11302,26 @@ impl Game {
         }
     }
 
-    fn spy_mission_promotion(kind: &str) -> Option<&'static str> {
-        match kind {
-            "siphon_funds" => Some("con_artist"),
-            "steal_tech_boost" => Some("technologist"),
-            "great_work_heist" => Some("cat_burglar"),
-            "sabotage_production" => Some("demolitions"),
-            "recruit_partisans" => Some("guerrilla_leader"),
-            "foment_unrest" => Some("covert_action"),
-            "neutralize_governor" => Some("license_to_kill"),
-            "disrupt_rocketry" => Some("rocket_scientist"),
-            "breach_dam" => Some("satchel_charges"),
-            "fabricate_scandal" => Some("smear_campaign"),
-            _ => None,
+    /// The levels a Spy's promotions add to one named operation.
+    ///
+    /// Civ VI attaches a `MODIFIER_PLAYER_UNIT_ADJUST_SPY_OPERATION_CHANCE`
+    /// naming an `OperationType` to each of the ten operation promotions, all
+    /// of them worth `Amount = 2`. CIVVIS spells that pairing as an effect key
+    /// `mission_level_<operation>` on the promotion itself, so the mission a
+    /// promotion sharpens is data, not a match arm here: a new espionage
+    /// promotion needs no edit to this file to take effect.
+    ///
+    /// ⚠ THE KEY IS BUILT WITH `format!` ON PURPOSE. `tools/civvis_inert.py`
+    /// credits an effect key to the engine when it appears as a literal or
+    /// when a `format!` template could build it, and nothing else — a
+    /// `strip_prefix("mission_level_")` consumer is invisible to it, so all
+    /// ten keys were reported as data the engine ignores. The allocation is
+    /// on the espionage path, which runs a handful of times a turn.
+    fn spy_mission_promotion_level(&self, spy: &Spy, kind: &str) -> i64 {
+        if spy.promotions.is_empty() {
+            return 0;
         }
+        self.spy_promotion_effect(spy, &format!("mission_level_{kind}")) as i64
     }
 
     fn spy_city_has_stealable_tech(&self, owner: usize, target: usize) -> bool {
@@ -10406,7 +11488,7 @@ impl Game {
         };
         mission.kind == "counterspy"
             && mission.city == city
-            && (counterspy.promotions.contains("surveillance")
+            && (self.spy_promotion_effect(counterspy, "counterspy_entire_city") > 0.0
                 || mission.target == target
                 || self.nbrs(mission.target).contains(&target))
     }
@@ -10422,8 +11504,8 @@ impl Game {
             .max_by_key(|spy| {
                 (
                     spy.level
-                        + i64::from(spy.promotions.contains("seduction")) * 2
-                        + i64::from(spy.promotions.contains("surveillance")),
+                        + self.spy_promotion_effect(spy, "counterspy_defense_level") as i64
+                        + self.spy_promotion_effect(spy, "counterspy_entire_city") as i64,
                     std::cmp::Reverse(spy.id),
                 )
             })
@@ -10443,50 +11525,56 @@ impl Game {
         if spy.sources_city == Some(city.id) && spy.sources_until > self.turn {
             level += 2;
         }
-        if Self::spy_mission_promotion(&mission.kind)
-            .is_some_and(|promotion| spy.promotions.contains(promotion))
-        {
-            level += 2;
-        }
+        level += self.spy_mission_promotion_level(spy, &mission.kind);
         if self.congress_effect_active("espionage_pact", "A", &mission.kind) {
             level += 2;
         }
-        if self.spies.values().any(|other| {
-            other.owner == spy.owner
-                && other.captured_by.is_none()
-                && other.promotions.contains("quartermaster")
-                && other
-                    .mission
-                    .as_ref()
-                    .is_some_and(|active| active.kind == "counterspy")
-        }) {
-            level += 1;
-        }
+        // Quartermaster and Polygraph are Civ VI's two BOOST_ALL_SPIES
+        // promotions: one Counterspy carrying either lifts (or drops) every
+        // other agent by its own magnitude. They do not stack with themselves,
+        // so the strongest one on the board is what applies.
+        level += self.counterspy_promotion_effect(spy.owner, "allied_spy_level") as i64;
         if city.owner == spy.owner {
             return level;
         }
         level += self.spy_modifiers(city.owner).3;
         level += self.governor_effect(city.owner, city.id, "enemy_spy_level") as i64;
         level -= self.spy_defense_level(city.id, mission.target);
-        if self.spies.values().any(|other| {
-            other.owner == city.owner
-                && other.captured_by.is_none()
-                && other.promotions.contains("polygraph")
-                && other
-                    .mission
-                    .as_ref()
-                    .is_some_and(|active| active.kind == "counterspy")
-        }) {
-            level -= 1;
-        }
+        level -= self.counterspy_promotion_effect(city.owner, "enemy_spy_level") as i64;
         if let Some(counterspy) = self.defending_counterspy(city.owner, city.id, mission.target) {
             let defender = &self.spies[&counterspy];
             level -= 1 + defender.level;
-            if defender.promotions.contains("seduction") {
-                level -= 2;
-            }
+            level -= self.spy_promotion_effect(defender, "counterspy_defense_level") as i64;
         }
         level
+    }
+
+    /// The odds a detected Spy gets out of the city it was caught in.
+    ///
+    /// Civ VI's Ace Driver is an `ESCAPE_BOOST` worth four, and it enters here
+    /// exactly where the agent's own level does.
+    pub(crate) fn spy_escape_chance(&self, spy: &Spy) -> f64 {
+        let ace = self.spy_promotion_effect(spy, "escape_level");
+        (0.35 + 0.10 * (spy.level.max(0) as f64 + ace)).min(0.95)
+    }
+
+    /// The strongest value of one effect carried by an active Counterspy of
+    /// this civilization. Civ VI's `BOOST_ALL_SPIES` promotions apply from the
+    /// Counterspy to every other agent, and two Counterspies with the same
+    /// promotion do not stack.
+    fn counterspy_promotion_effect(&self, owner: usize, effect: &str) -> f64 {
+        self.spies
+            .values()
+            .filter(|spy| {
+                spy.owner == owner
+                    && spy.captured_by.is_none()
+                    && spy
+                        .mission
+                        .as_ref()
+                        .is_some_and(|active| active.kind == "counterspy")
+            })
+            .map(|spy| self.spy_promotion_effect(spy, effect))
+            .fold(0.0, f64::max)
     }
 
     pub(crate) fn spy_success_chance(&self, spy_id: u32, mission: &SpyMission) -> f64 {
@@ -10567,8 +11655,9 @@ impl Game {
             .map(|old| self.wdist(old.pos, destination.pos).max(0) as u32)
             .unwrap_or(0);
         let mut travel = (1 + distance / 6).min(5);
-        if destination.owner != pid && spy.promotions.contains("disguise") {
-            travel = travel.min(1);
+        let disguise = self.spy_promotion_effect(&spy, "travel_turns_max");
+        if destination.owner != pid && disguise > 0.0 {
+            travel = travel.min(disguise as u32);
         }
         let ready_turn = self.turn + self.standard_duration(travel);
         let spy = self.spies.get_mut(&spy_id).unwrap();
@@ -10598,11 +11687,7 @@ impl Game {
         let (base_duration, _) =
             Self::spy_mission_spec(kind).ok_or_else(|| "unknown Spy mission".to_string())?;
         let spy = self.spies[&spy_id].clone();
-        let linguist = if spy.promotions.contains("linguist") {
-            0.75
-        } else {
-            1.0
-        };
+        let linguist = 1.0 + self.spy_promotion_effect(&spy, "mission_time_pct") / 100.0;
         let duration = self.standard_duration(
             ((base_duration as f64 * self.spy_modifiers(pid).1 * linguist).ceil() as u32).max(1),
         );
@@ -10911,12 +11996,7 @@ impl Game {
         }
         self.add_grievances(defender, spy.owner, 25.0);
         let counterspy = self.defending_counterspy(defender, mission.city, mission.target);
-        let ace = if spy.promotions.contains("ace_driver") {
-            4.0
-        } else {
-            0.0
-        };
-        let escape = (0.35 + 0.10 * (spy.level.max(0) as f64 + ace)).min(0.95);
+        let escape = self.spy_escape_chance(&spy);
         if self.rng.chance(escape) {
             self.spy_return_home(spy_id, 2);
             return;
@@ -11953,6 +13033,7 @@ impl Game {
             .players
             .iter()
             .any(|p| p.pantheon.as_deref() == Some(belief))
+            || self.blocked_pantheons.contains(&Name::new(belief))
         {
             return Err("belief already taken".into());
         }
@@ -12389,6 +13470,21 @@ impl Game {
             .clone()
             .ok_or_else(|| "target has no religion".to_string())?;
         self.remove_unit(target_id);
+        // The loss side of the raid ledger. A condemned Missionary is removed
+        // here rather than through `record_kill` or `resolve_entered_units`,
+        // so until 2026-08-24 the barbarians could wipe a whole religious
+        // corps and no counter said so. Free Cities also carry
+        // `is_barbarian`; only the true barbarian seat's blows count.
+        if self.players[pid].is_barbarian && !self.players[pid].is_free_city {
+            bump(
+                &mut self.players[target.owner],
+                "religious_lost_to_barbarians",
+            );
+        }
+        bump(
+            &mut self.players[pid],
+            &format!("condemned:{}", target.kind),
+        );
         self.religious_combat_pressure(None, &religion, target.pos, 6, 125.0);
         if self.congress_effect_active("world_religion", "B", &religion) {
             self.players[pid].diplomatic_favor += 25.0;
@@ -13404,12 +14500,18 @@ impl Game {
         }
         let earn = self.great_person_points_per_turn(pid);
         let anarchy = self.in_anarchy(pid);
+        // The World's Fair scores the points as they are generated, not the
+        // people they eventually buy. Points that pay out as Faith because the
+        // class has run dry were still generated, and Firaxis' `FromGreatPerson`
+        // rows do not ask where they went.
+        let generated: f64 = earn.values().map(|amount| amount.max(0.0)).sum();
         for (t, amt) in earn {
             if !anarchy && !self.great_person_class_earnable(pid, &t) {
                 self.players[pid].faith += amt.max(0.0);
             }
             *self.players[pid].gpp.entry(t).or_insert(0.0) += amt;
         }
+        self.score_great_person_point_competition(pid, generated);
         let due: Vec<String> = self.players[pid]
             .gpp
             .iter()
@@ -14966,7 +16068,7 @@ impl Game {
         hash
     }
 
-    fn promotion_effect(&self, unit: &Unit, effect: &str) -> f64 {
+    pub(crate) fn promotion_effect(&self, unit: &Unit, effect: &str) -> f64 {
         unit.promotions
             .iter()
             .filter_map(|name| {
@@ -15374,6 +16476,17 @@ impl Game {
                 let family = self.district_family(*district);
                 bonus += self.governor_effect(pid, cid, "district_production_pct") / 100.0;
                 bonus += self.gov_effects(pid).district_production_pct / 100.0;
+                // City Patron Goddess: CITY_PATRON_GODDESS_DISTRICT_PRODUCTION_MODIFIER,
+                // `EFFECT_ADJUST_ALL_DISTRICT_PRODUCTION_MODIFIER` Amount 25,
+                // subject `CITY_HAS_0_SPECIALTY_DISTRICTS_REQUIREMENTS` — which
+                // is `REQUIREMENT_CITY_HAS_X_SPECIALTY_DISTRICTS` Amount 1 with
+                // Inverse set, i.e. the city has none. `MustBeFunctioning 0`, so
+                // a district that stands but is pillaged still ends the bonus;
+                // one still under construction has not been placed yet and does
+                // not. No id in this belief appears in `Expansion2_RemoveData.xml`.
+                if self.city_specialty_district_count(&self.cities[&cid]) == 0 {
+                    bonus += self.pantheon_effect(pid, "first_district_production_pct") / 100.0;
+                }
                 if matches!(family.as_str(), "encampment" | "harbor") {
                     bonus += self.policy_effect(pid, "military_port_production_pct") / 100.0;
                 }
@@ -15392,6 +16505,15 @@ impl Game {
                 let era = self.wonder_era(wonder);
                 if era <= 1 {
                     bonus += self.policy_effect(pid, "classical_wonder_production_pct") / 100.0;
+                    // Monument to the Gods rides the same window:
+                    // MONUMENT_TO_THE_GODS_ANCIENTCLASSICALWONDER_MODIFIER is
+                    // `MODIFIER_PLAYER_CITIES_ADJUST_WONDER_ERA_PRODUCTION`,
+                    // Amount 15, StartEra ANCIENT, EndEra CLASSICAL, IsWonder 1
+                    // — the identical StartEra/EndEra pair the policy cards
+                    // above already reduce to `era <= 1`. Not in
+                    // `Expansion2_RemoveData.xml`.
+                    bonus += self.pantheon_effect(pid, "ancient_classical_wonder_production_pct")
+                        / 100.0;
                 }
                 if era <= 3 {
                     bonus += self.policy_effect(pid, "renaissance_wonder_production_pct") / 100.0;
@@ -15708,6 +16830,167 @@ impl Game {
         class
     }
 
+    /// Every unit flying a patrol right now, as `(owner, tile)`.
+    ///
+    /// The open-coded scan this replaces sat in `can_enter_past`, which
+    /// `flow_past` calls once per neighbour of every tile it expands — so one
+    /// unit's movement flood walked `units` hundreds of times to learn a fact
+    /// about the whole board. Inside a `&self` query the board cannot change,
+    /// so the answer is computed once per memo scope and shared.
+    ///
+    /// Outside a memo scope there is nothing to hold it against, so it is
+    /// rebuilt per call — exactly the work the open-coded scan did, never
+    /// more. `query_memo.yields` is the discriminator for "a scope is live",
+    /// the same one `query_memo()` itself uses.
+    fn air_patrols(&self) -> AirPatrols {
+        if let Some(cached) = self.query_memo.air_patrols.borrow().as_ref() {
+            return Arc::clone(cached);
+        }
+        let patrols: AirPatrols = Arc::new(
+            self.units
+                .values()
+                .filter(|unit| unit.air_patrol)
+                .filter_map(|unit| unit.air_patrol_pos.map(|pos| (unit.owner, pos)))
+                .collect(),
+        );
+        if self.query_memo.yields.borrow().is_some() {
+            *self.query_memo.air_patrols.borrow_mut() = Some(Arc::clone(&patrols));
+        }
+        patrols
+    }
+
+    /// `true` at `Name::id` for every improvement whose `passage` effect is
+    /// positive — the test `class_can_traverse` makes per tile.
+    ///
+    /// Sized to the largest improvement id, so an id past the end simply names
+    /// something that is not an improvement and reads `false`, which is what
+    /// the `BTreeMap` miss it replaces returned.
+    fn passage_improvements(&self) -> PassageTable {
+        if let Some(cached) = self.query_memo.passage_improvements.borrow().as_ref() {
+            return Arc::clone(cached);
+        }
+        let span = self
+            .rules
+            .improvements
+            .keys()
+            .map(|name| name.id() as usize + 1)
+            .max()
+            .unwrap_or(0);
+        let mut table = vec![false; span];
+        for (name, spec) in self.rules.improvements.iter() {
+            table[name.id() as usize] = spec.effects.get("passage").copied().unwrap_or(0.0) > 0.0;
+        }
+        let table = Arc::new(table);
+        if self.query_memo.yields.borrow().is_some() {
+            *self.query_memo.passage_improvements.borrow_mut() = Some(Arc::clone(&table));
+        }
+        table
+    }
+
+    /// The unit's half of a step cost, from the memo when a scope is live.
+    ///
+    /// `flow_past` calls `unit_step_cost` once per neighbour of every tile it
+    /// expands, and three of that function's five tests name only the unit —
+    /// each one a `BTreeMap<String, f64>` descent, a `memcmp` per level, for
+    /// an answer the flood cannot change. So, exactly as
+    /// [`Game::traversal_class`] already does for the same reason, they are
+    /// derived once per unit per memo scope.
+    ///
+    /// Outside a memo scope there is nothing to hold the answer against, so it
+    /// is rebuilt per call — precisely the work the open-coded version did,
+    /// never more. That "never more" is why the three groups of
+    /// [`MovementProfile`] are separate: see its documentation.
+    fn step_terms(&self, unit: &Unit) -> StepTerms {
+        if let Some(terms) = self
+            .query_memo
+            .movement
+            .borrow()
+            .as_ref()
+            .and_then(|memo| memo.get(&unit.id))
+            .and_then(|profile| profile.step)
+        {
+            return terms;
+        }
+        let spec = &self.rules.units[unit.kind];
+        let terms = StepTerms {
+            religious_flat_movement: spec.class == "religious"
+                && unit.religion.as_deref().is_some_and(|religion| {
+                    self.religion_belief_effect(religion, "religious_flat_movement") > 0.0
+                }),
+            woods_move_cost: self.unit_effect(unit, "woods_move_cost"),
+            hills_move_cost: self.unit_effect(unit, "hills_move_cost"),
+            amphibious: self.promotion_effect(unit, "amphibious"),
+        };
+        if let Some(memo) = self.query_memo.movement.borrow_mut().as_mut() {
+            memo.entry(unit.id).or_default().step = Some(terms);
+        }
+        terms
+    }
+
+    /// The tile-independent terms of a unit's movement allowance.
+    ///
+    /// `flow_past` re-derives the allowance at every neighbour it relaxes, and
+    /// the support aura alone sweeps the occupancy of seven tiles to find out
+    /// whether anything is standing next to a unit that has not moved.
+    fn move_terms(&self, unit: &Unit) -> MoveTerms {
+        if let Some(terms) = self
+            .query_memo
+            .movement
+            .borrow()
+            .as_ref()
+            .and_then(|memo| memo.get(&unit.id))
+            .and_then(|profile| profile.moves)
+        {
+            return terms;
+        }
+        let spec = &self.rules.units[unit.kind];
+        let terms = MoveTerms {
+            promotion_movement: self.promotion_effect(unit, "movement"),
+            guru_adjacent: spec.class == "religious"
+                && self.wdisk(unit.pos, 1).into_iter().any(|position| {
+                    self.unit_ids_at(position).iter().any(|other| {
+                        self.units[other].owner == unit.owner
+                            && self.units[other].kind == "guru"
+                            && self.units[other].religion == unit.religion
+                    })
+                }),
+            monumentality_civilian: self.dedication_active(unit.owner, "monumentality")
+                && matches!(unit.kind.as_str(), "builder" | "settler"),
+            exodus_religious: self.dedication_active(unit.owner, "exodus_of_the_evangelists")
+                && spec.class == "religious",
+            adjacent_movement: self.adjacent_support_effect(unit, "adjacent_movement"),
+        };
+        if let Some(memo) = self.query_memo.movement.borrow_mut().as_mut() {
+            memo.entry(unit.id).or_default().moves = Some(terms);
+        }
+        terms
+    }
+
+    /// The movement unlocks a naval or embarked unit adds. Derived only from
+    /// inside that branch, so a land unit on land never pays for it.
+    fn naval_move_terms(&self, unit: &Unit) -> NavalMoveTerms {
+        if let Some(terms) = self
+            .query_memo
+            .movement
+            .borrow()
+            .as_ref()
+            .and_then(|memo| memo.get(&unit.id))
+            .and_then(|profile| profile.naval)
+        {
+            return terms;
+        }
+        let terms = NavalMoveTerms {
+            naval_movement_tree: self.tree_effect(unit.owner, "naval_movement"),
+            embarked_movement_tree: self.tree_effect(unit.owner, "embarked_movement"),
+            mana: self.has_ability(unit.owner, "mana"),
+            naval_movement_wonder: self.empire_wonder_effect(unit.owner, "naval_movement"),
+        };
+        if let Some(memo) = self.query_memo.movement.borrow_mut().as_mut() {
+            memo.entry(unit.id).or_default().naval = Some(terms);
+        }
+        terms
+    }
+
     /// A unit's traversal class costs a ruleset effect sum over every tech
     /// and civic it owns plus two improvement unlocks, and a route search
     /// asks for it once per tile it examines — hence the memo above.
@@ -15761,23 +17044,31 @@ impl Game {
     fn class_can_traverse(&self, class: TraversalClass, tile: &Tile) -> bool {
         let mountain_worker = tile.terrain == "mountain" && class.mountain;
         let improvement_passage = !tile.pillaged
-            && tile.improvement.as_deref().is_some_and(|improvement| {
-                self.rules.improvements[improvement]
-                    .effects
-                    .get("passage")
+            && tile.improvement.is_some_and(|improvement| {
+                self.passage_improvements()
+                    .get(improvement.id() as usize)
                     .copied()
-                    .unwrap_or(0.0)
-                    > 0.0
+                    .unwrap_or(false)
             });
-        if !self.rules.is_passable(tile) && !mountain_worker && !improvement_passage {
-            return false;
-        }
         // A mirror frontier is an invitation to discover the tile, not a claim
         // that it is land or water. Until the host reveals it, either movement
         // domain may plan toward it; the next authoritative sync replaces the
         // unknown with its real terrain before subsequent orders are chosen.
+        //
+        // The land prior (`assumed_traversable`) is grown from revealed land
+        // and read by every domain — it is what `is_passable` answers for an
+        // unknown tile; the sea prior (`assumed_navigable`) is grown from
+        // revealed water and read by ships alone, here, ahead of the
+        // passability test that would otherwise refuse it. Without the second
+        // one a coast revealed to the horizon walls the fleet in: the fog
+        // beyond it is reached from no land tile, so no ship can plan toward
+        // it, and the empire's naval eye has nowhere to look. See
+        // `mirror::grow_frontier`.
         if self.rules.is_unknown(tile) {
-            return tile.assumed_traversable;
+            return tile.assumed_traversable || (class.sea && tile.assumed_navigable);
+        }
+        if !self.rules.is_passable(tile) && !mountain_worker && !improvement_passage {
+            return false;
         }
         let water = self.rules.is_water(tile);
         if water && tile.terrain == "ocean" && !class.ocean {
@@ -16455,6 +17746,13 @@ impl Game {
             .expect("a wonder aggregate is built only inside a memo scope")
             .insert(pid, aggregate);
         value
+    }
+
+    /// Favor one active city-state suzerainty generates at the start of a
+    /// major civilization's turn. Országház multiplies this source, so every
+    /// consumer of a prospective suzerainty reads the same rate as upkeep.
+    pub(crate) fn suzerain_diplomatic_favor_per_turn(&self, pid: usize) -> f64 {
+        1.0 + self.empire_wonder_effect(pid, "suzerain_diplomatic_favor_pct") / 100.0
     }
 
     #[cfg(test)]
@@ -17423,8 +18721,16 @@ impl Game {
         if self.governor_effect(self.cities[&city_id].owner, city_id, "disaster_immunity") > 0.0 {
             return;
         }
+        let owner = self.cities[&city_id].owner;
         let city = self.cities.get_mut(&city_id).unwrap();
+        let before = city.pop;
         city.pop = (city.pop - loss).max(1);
+        if city.pop < before {
+            self.open_native_aid_request(
+                owner,
+                NativeCompetitionTrigger::RandomDisasterPopulationLoss,
+            );
+        }
     }
 
     /// Tell whoever has something at stake on the tile what just happened to
@@ -20163,6 +21469,7 @@ impl Game {
 
     fn remove_unit_recording_lifetime(&mut self, uid: u32, record_lifetime: bool) {
         self.barb_scout_homes.remove(&uid);
+        self.barb_raider_homes.remove(&uid);
         self.barb_scout_targets.remove(&uid);
         self.barb_camp_guards.retain(|_, guard| *guard != uid);
         let carried_aircraft: Vec<u32> = self
@@ -20406,6 +21713,9 @@ impl Game {
     fn unit_step_cost(&self, uid: u32, from: Pos, to: Pos) -> f64 {
         let unit = &self.units[&uid];
         let tile = &self.map.tiles[&to];
+        // Three of the tests below name the unit, not the tile, and a flood
+        // asks all three once per neighbour of every tile it expands.
+        let terms = self.step_terms(unit);
         // Medieval and later routes bridge rivers (SupportsBridges); Ancient
         // roads leave the crossing penalty in place. Bridging has to withhold
         // the surcharge rather than refund it afterwards: the route ladder
@@ -20437,28 +21747,24 @@ impl Game {
             }
             cost = cost.min(route);
         }
-        if self.rules.units[unit.kind].class == "religious"
-            && unit.religion.as_deref().is_some_and(|religion| {
-                self.religion_belief_effect(religion, "religious_flat_movement") > 0.0
-            })
-        {
+        if terms.religious_flat_movement {
             cost = 1.0;
         }
-        if self.unit_effect(unit, "woods_move_cost") > 0.0
+        if terms.woods_move_cost > 0.0
             && matches!(tile.feature.as_deref(), Some("forest" | "jungle"))
         {
             cost = 1.0;
         }
-        if self.unit_effect(unit, "hills_move_cost") > 0.0 && tile.hills {
+        if terms.hills_move_cost > 0.0 && tile.hills {
             cost = 1.0;
         }
-        if self.promotion_effect(unit, "amphibious") > 0.0 && self.crosses_river(from, to) {
+        if terms.amphibious > 0.0 && self.crosses_river(from, to) {
             cost = self.rules.move_cost(tile);
         }
         let changes_embarkation =
             self.unit_is_embarked_at(unit, from) != self.unit_is_embarked_at(unit, to);
         if changes_embarkation
-            && self.promotion_effect(unit, "amphibious") <= 0.0
+            && terms.amphibious <= 0.0
             && !self.has_ability(unit.owner, "knarr")
             && !self.embarkation_facility_at(from)
             && !self.embarkation_facility_at(to)
@@ -20925,10 +22231,28 @@ impl Game {
     /// asked of a tile the unit is only *considering*. Movement scoring needs
     /// it because line of sight binds at exactly range 2 — adjacent fire is
     /// unconditional and range 3+ lobs — which is precisely where a Field
-    /// Cannon parks. See `AdvancedAi::ranged_tile_is_blind`.
+    /// Cannon parks.
     pub fn line_of_sight_from(&self, from: Pos, to: Pos) -> bool {
         if !self.map.tiles.contains_key(&from) || !self.map.tiles.contains_key(&to) {
             return false;
+        }
+        self.has_line_of_sight(from, to, true)
+    }
+
+    /// The line-of-sight test `do_ranged` applies, asked of a unit that may
+    /// fire from `from`. This preserves a Ranger's `see_through_woods` rule
+    /// while also letting threat readers inspect a legal future firing tile.
+    pub(crate) fn unit_has_line_of_sight_from(&self, uid: u32, from: Pos, to: Pos) -> bool {
+        let unit = &self.units[&uid];
+        if self.unit_effect(unit, "see_through_woods") > 0.0 && self.wdist(from, to) == 2 {
+            let attacker_height = self.see_from_level(from);
+            return self.tile_has_visibility_line(
+                &mut HeightField::none(),
+                from,
+                to,
+                attacker_height,
+                true,
+            );
         }
         self.has_line_of_sight(from, to, true)
     }
@@ -20939,24 +22263,17 @@ impl Game {
     /// the firing unit's own `see_through_woods`. Gating a candidate shot with
     /// the tile version would refuse a Ranger the engine would have allowed.
     pub(crate) fn unit_has_line_of_sight(&self, uid: u32, to: Pos) -> bool {
-        let unit = &self.units[&uid];
-        if self.unit_effect(unit, "see_through_woods") > 0.0 && self.wdist(unit.pos, to) == 2 {
-            let attacker_height = self.see_from_level(unit.pos);
-            return self.tile_has_visibility_line(
-                &mut HeightField::none(),
-                unit.pos,
-                to,
-                attacker_height,
-                true,
-            );
-        }
-        self.has_line_of_sight(unit.pos, to, true)
+        self.unit_has_line_of_sight_from(uid, self.units[&uid].pos, to)
     }
 
     fn unit_base_max_moves_at(&self, uid: u32, pos: Pos) -> f64 {
         let u = &self.units[&uid];
         let spec = &self.rules.units[u.kind];
         let tile = &self.map.tiles[&pos];
+        // Only the terrain terms and the emergency below read `pos`; the rest
+        // is a property of the unit, and `flow_past` re-derives the allowance
+        // at every neighbour it relaxes.
+        let terms = self.move_terms(u);
         let embarked = self.unit_is_embarked_at(u, pos);
         let mut moves = if embarked {
             2.0
@@ -20968,28 +22285,23 @@ impl Game {
         } else {
             spec.moves
         };
-        moves += self.promotion_effect(u, "movement") + u.bonus_moves;
-        if spec.domain.as_deref() == Some("sea") || embarked {
-            moves += self.tree_effect(u.owner, "naval_movement");
-        }
-        if embarked {
-            moves += self.tree_effect(u.owner, "embarked_movement");
-            if self.has_ability(u.owner, "mana") {
-                moves += 2.0;
-            }
-        }
-        if spec.domain.as_deref() == Some("sea") || embarked {
-            moves += self.empire_wonder_effect(u.owner, "naval_movement");
-        }
-        if spec.class == "religious"
-            && self.wdisk(u.pos, 1).into_iter().any(|position| {
-                self.units_at(position).into_iter().any(|other| {
-                    self.units[&other].owner == u.owner
-                        && self.units[&other].kind == "guru"
-                        && self.units[&other].religion == u.religion
-                })
-            })
+        moves += terms.promotion_movement + u.bonus_moves;
+        // The three naval unlocks are added in the order they always were —
+        // `embarked` implies this branch, so nesting changes which terms are
+        // summed for no unit and their sequence for none either.
+        if let Some(naval) =
+            (spec.domain.as_deref() == Some("sea") || embarked).then(|| self.naval_move_terms(u))
         {
+            moves += naval.naval_movement_tree;
+            if embarked {
+                moves += naval.embarked_movement_tree;
+                if naval.mana {
+                    moves += 2.0;
+                }
+            }
+            moves += naval.naval_movement_wonder;
+        }
+        if terms.guru_adjacent {
             moves += self.empire_wonder_effect(u.owner, "guru_adjacent_religious_movement");
         }
         if u.kind == "giant_death_robot" {
@@ -21005,13 +22317,10 @@ impl Game {
         {
             moves += spec.clear_terrain_start_movement;
         }
-        if self.dedication_active(u.owner, "monumentality")
-            && matches!(u.kind.as_str(), "builder" | "settler")
-        {
+        if terms.monumentality_civilian {
             moves += 2.0;
         }
-        if self.dedication_active(u.owner, "exodus_of_the_evangelists") && spec.class == "religious"
-        {
+        if terms.exodus_religious {
             moves += 2.0;
         }
         let territory_owner = tile
@@ -21025,7 +22334,7 @@ impl Game {
         }) {
             moves += 1.0;
         }
-        moves += self.adjacent_support_effect(u, "adjacent_movement");
+        moves += terms.adjacent_movement;
         moves
     }
 
@@ -21226,27 +22535,17 @@ impl Game {
     /// changed: the map itself, and the cities whose centers and Encampments
     /// look out over it.
     fn world_stamp(&self) -> u64 {
-        let mut stamp = vision_key(&[self.map.tiles.epoch(), self.turn as u64]);
-        for city in self.cities.values() {
-            stamp = vision_key(&[
-                stamp,
-                city.id as u64,
-                city.pos.0 as u64,
-                city.pos.1 as u64,
-                city.encampment_pillaged as u64,
-                city.districts.len() as u64,
-                city.wonders.len() as u64,
-            ]);
-            for (district, position) in &city.districts {
-                stamp = vision_key(&[
-                    stamp,
-                    district.id() as u64,
-                    position.0 as i64 as u64,
-                    position.1 as i64 as u64,
-                ]);
-            }
-        }
-        stamp
+        // Same roster walk as [`Self::vision_geometry_stamp`], and on the
+        // hotter path of the two: `height_field()` asks for this, and
+        // `player_can_see` builds a height field per question.  Every ask used
+        // to rewalk every city and every district — allocating a `Vec` per
+        // city on the way, because `&Districts` collects before it iterates —
+        // so it reads the roster's own fold instead.
+        vision_key(&[
+            self.map.tiles.epoch(),
+            self.turn as u64,
+            self.cities.vision_stamps().geometry,
+        ])
     }
 
     /// Fold only map fields that a sight ray reads.  Roads, improvements,
@@ -21289,7 +22588,7 @@ impl Game {
                 2_u64.wrapping_add(frequency as i64 as u64)
             }
         };
-        let mut stamp = vision_key(&[
+        let stamp = vision_key(&[
             self.map_vision_geometry_stamp(),
             self.map.width as i64 as u64,
             self.map.height as i64 as u64,
@@ -21300,27 +22599,11 @@ impl Game {
         // `see_from_level` reads exactly these city facts in addition to the
         // map.  Keep the geometry stamp in lockstep with the unit-ray cache's
         // existing world stamp, but leave the turn counter out as explained
-        // above.
-        for city in self.cities.values() {
-            stamp = vision_key(&[
-                stamp,
-                city.id as u64,
-                city.pos.0 as i64 as u64,
-                city.pos.1 as i64 as u64,
-                city.encampment_pillaged as u64,
-                city.districts.len() as u64,
-                city.wonders.len() as u64,
-            ]);
-            for (district, position) in &city.districts {
-                stamp = vision_key(&[
-                    stamp,
-                    district.id() as u64,
-                    position.0 as i64 as u64,
-                    position.1 as i64 as u64,
-                ]);
-            }
-        }
-        stamp
+        // above.  The walk itself lives on [`Cities`], which re-folds it only
+        // after a city has been exposed mutably; every sight ask used to pay
+        // for it, districts included, and iterating `&city.districts`
+        // allocated a `Vec` per city per ask on the way.
+        vision_key(&[stamp, self.cities.vision_stamps().geometry])
     }
 
     /// Hash one viewer's sight sources into a compact, position-independent
@@ -21332,51 +22615,18 @@ impl Game {
         &self,
         viewer: usize,
         suzerains: &BTreeMap<usize, Option<usize>>,
-        unit_stamps: Option<&[u64]>,
+        unit_stamps: &[u64],
     ) -> u64 {
         let mut stamp = unit_stamps
-            .and_then(|stamps| stamps.get(viewer).copied())
-            .unwrap_or_else(|| {
-                let mut stamp = vision_key(&[viewer as u64]);
-                for unit in self.units.values().filter(|unit| unit.owner == viewer) {
-                    stamp = vision_key(&[
-                        stamp,
-                        1,
-                        unit.id as u64,
-                        unit.kind.id() as u64,
-                        unit.pos.0 as i64 as u64,
-                        unit.pos.1 as i64 as u64,
-                        unit.air_patrol_pos.is_some() as u64,
-                        unit.air_patrol_pos
-                            .map(|pos| pos.0 as i64 as u64)
-                            .unwrap_or_default(),
-                        unit.air_patrol_pos
-                            .map(|pos| pos.1 as i64 as u64)
-                            .unwrap_or_default(),
-                    ]);
-                    for promotion in &unit.promotions {
-                        stamp = vision_key(&[stamp, 2, promotion.id() as u64]);
-                    }
-                }
-                stamp
-            });
-        for city in self.cities.values().filter(|city| city.owner == viewer) {
-            stamp = vision_key(&[
-                stamp,
-                3,
-                city.id as u64,
-                city.pos.0 as i64 as u64,
-                city.pos.1 as i64 as u64,
-                city.owned_tiles.len() as u64,
-            ]);
-            for position in &city.owned_tiles {
-                stamp = vision_key(&[
-                    stamp,
-                    position.0 as i64 as u64,
-                    position.1 as i64 as u64,
-                ]);
-            }
-        }
+            .get(viewer)
+            .copied()
+            .unwrap_or_else(|| vision_key(&[viewer as u64]));
+        // A seat's own borders are the widest input here: one ask used to
+        // hash every tile of every city it owns, roughly 8.6 M tile hashes
+        // over a game.  Borders move rarely, so [`Cities`] folds them once per
+        // roster state and this reads the owner's number.
+        let city_stamps = self.cities.vision_stamps();
+        stamp = vision_key(&[stamp, city_stamps.owned(viewer)]);
         // A suzerain's city-state ring is a sight source.  Hash only the
         // relationships that actually reveal ground; changes to envoys that
         // leave the same city-state under the same suzerain do not force a
@@ -21388,15 +22638,7 @@ impl Game {
                 && !minor.is_barbarian
                 && suzerains.get(&minor.id).copied().flatten() == Some(viewer)
         }) {
-            stamp = vision_key(&[stamp, 4, minor.id as u64]);
-            for city in self.cities.values().filter(|city| city.owner == minor.id) {
-                stamp = vision_key(&[
-                    stamp,
-                    city.id as u64,
-                    city.pos.0 as i64 as u64,
-                    city.pos.1 as i64 as u64,
-                ]);
-            }
+            stamp = vision_key(&[stamp, 4, minor.id as u64, city_stamps.centres(minor.id)]);
         }
         for spy in self.spies.values().filter(|spy| {
             spy.owner == viewer && spy.captured_by.is_none() && spy.ready_turn <= self.turn
@@ -21421,7 +22663,7 @@ impl Game {
         stamp
     }
 
-    fn unit_vision_input_stamps(&self) -> Vec<u64> {
+    fn collect_unit_vision_input_stamps(&self) -> Vec<u64> {
         let mut stamps: Vec<u64> = (0..self.players.len())
             .map(|viewer| vision_key(&[viewer as u64]))
             .collect();
@@ -21451,6 +22693,31 @@ impl Game {
         stamps
     }
 
+    /// Reuse the all-viewer unit stamp fan-out until any unit has been
+    /// exposed mutably.  The epoch intentionally over-invalidates: a hitpoint
+    /// write does not alter sight, but it is always safer to recompute the
+    /// small signature than to miss a moved, promoted, transferred, or
+    /// patrolling unit.  The signature still keeps the existing frame when
+    /// the actual sight inputs are unchanged.
+    fn with_unit_vision_input_stamps<R>(&self, read: impl FnOnce(&[u64]) -> R) -> R {
+        let epoch = self.units.vision_epoch();
+        let stale = match self.vision_frames.unit_stamps.borrow().as_ref() {
+            Some((cached_epoch, stamps)) => {
+                *cached_epoch != epoch || stamps.len() != self.players.len()
+            }
+            None => true,
+        };
+        if stale {
+            let stamps = self.collect_unit_vision_input_stamps();
+            *self.vision_frames.unit_stamps.borrow_mut() = Some((epoch, stamps));
+        }
+        let cache = self.vision_frames.unit_stamps.borrow();
+        let (_, stamps) = cache
+            .as_ref()
+            .expect("unit vision stamps are installed before use");
+        read(stamps)
+    }
+
     /// Stamp every input to one player's current sight.  The result is small
     /// enough to carry beside a cached [`TileBits`] frame, while the fields it
     /// folds are the exact source identities and positions the visibility
@@ -21469,7 +22736,7 @@ impl Game {
         &self,
         pid: usize,
         suzerains: &BTreeMap<usize, Option<usize>>,
-        unit_stamps: Option<&[u64]>,
+        unit_stamps: &[u64],
     ) -> u64 {
         let mut stamp = vision_key(&[
             self.vision_geometry_stamp(),
@@ -21505,7 +22772,9 @@ impl Game {
     fn vision_input_stamp(&self, pid: usize) -> u64 {
         self.with_suzerain_read_memo(|| {
             let suzerains = self.suzerain_input_map();
-            self.vision_input_stamp_with_suzerains(pid, &suzerains, None)
+            self.with_unit_vision_input_stamps(|unit_stamps| {
+                self.vision_input_stamp_with_suzerains(pid, &suzerains, unit_stamps)
+            })
         })
     }
 
@@ -21516,25 +22785,17 @@ impl Game {
     fn vision_frame(&self, pid: usize, heights: &mut HeightField) -> Arc<TileBits> {
         self.with_suzerain_read_memo(|| {
             let suzerains = self.suzerain_input_map();
-            let input_stamp = self.vision_input_stamp_with_suzerains(pid, &suzerains, None);
-            {
-                let frames = self.vision_frames.frames.borrow();
-                if let Some(Some(frame)) = frames.get(pid) {
-                    if frame.input_stamp == input_stamp {
-                        return Arc::clone(&frame.visible);
-                    }
+            self.with_unit_vision_input_stamps(|unit_stamps| {
+                let input_stamp =
+                    self.vision_input_stamp_with_suzerains(pid, &suzerains, unit_stamps);
+                if let Some(visible) = self.matching_vision_frame(pid, input_stamp) {
+                    visible
+                } else {
+                    let visible = Arc::new(self.player_vision(heights, pid));
+                    self.store_vision_frame(pid, input_stamp, Arc::clone(&visible));
+                    visible
                 }
-            }
-            let visible = Arc::new(self.player_vision(heights, pid));
-            let mut frames = self.vision_frames.frames.borrow_mut();
-            if frames.len() <= pid {
-                frames.resize_with(pid + 1, || None);
-            }
-            frames[pid] = Some(VisionFrame {
-                input_stamp,
-                visible: Arc::clone(&visible),
-            });
-            visible
+            })
         })
     }
 
@@ -22665,18 +23926,16 @@ impl Game {
         let mut pending = Vec::<(usize, u64)>::new();
         self.with_suzerain_read_memo(|| {
             let suzerains = self.suzerain_input_map();
-            let unit_stamps = self.unit_vision_input_stamps();
-            for pid in &players {
-                let input_stamp = self.vision_input_stamp_with_suzerains(
-                    *pid,
-                    &suzerains,
-                    Some(&unit_stamps),
-                );
-                match self.matching_vision_frame(*pid, input_stamp) {
-                    Some(visible) => cached.push((*pid, input_stamp, visible)),
-                    None => pending.push((*pid, input_stamp)),
+            self.with_unit_vision_input_stamps(|unit_stamps| {
+                for pid in &players {
+                    let input_stamp =
+                        self.vision_input_stamp_with_suzerains(*pid, &suzerains, unit_stamps);
+                    match self.matching_vision_frame(*pid, input_stamp) {
+                        Some(visible) => cached.push((*pid, input_stamp, visible)),
+                        None => pending.push((*pid, input_stamp)),
+                    }
                 }
-            }
+            });
         });
 
         let count = pending.len();
@@ -22944,7 +24203,7 @@ impl Game {
         })
     }
 
-    fn exerts_zoc(&self, u: &Unit) -> bool {
+    pub(crate) fn exerts_zoc(&self, u: &Unit) -> bool {
         let spec = &self.rules.units[u.kind];
         // Embarkation does not remove a land unit's ZOC. Its native domain
         // still limits projection to land tiles, which is handled by the
@@ -22955,7 +24214,7 @@ impl Game {
     /// Cavalry, Naval Raiders, the Viking Longship, and air units ignore
     /// incoming ZOC. Civilian/support passengers inherit that ability from
     /// an escort, matching linked-formation behavior in Civ VI.
-    fn unit_ignores_zoc(&self, uid: u32) -> bool {
+    pub(crate) fn unit_ignores_zoc(&self, uid: u32) -> bool {
         let Some(unit) = self.units.get(&uid) else {
             return false;
         };
@@ -23135,16 +24394,20 @@ impl Game {
             return false;
         };
         let water = self.rules.is_water(t);
+        // The mover's half of the religious test is the same at all six
+        // neighbours and for every unit standing on them, and the occupancy
+        // list is read, not kept — `units_at` would copy it into a fresh
+        // `Vec` once per neighbour of every tile a flood expands.
+        let mover_religious = mover_spec.class == "religious" && mover.religion.is_some();
         for n in self.nbrs(pos) {
-            for oid in self.units_at(n) {
-                let other = &self.units[&oid];
+            for oid in self.unit_ids_at(n) {
+                let other = &self.units[oid];
                 if other.owner == mover.owner {
                     continue;
                 }
                 let other_spec = &self.rules.units[other.kind];
-                let religious_zoc = mover_spec.class == "religious"
+                let religious_zoc = mover_religious
                     && other_spec.class == "religious"
-                    && mover.religion.is_some()
                     && other.religion.is_some()
                     && mover.religion != other.religion;
                 let military_zoc =
@@ -23259,18 +24522,18 @@ impl Game {
         if !self.unit_can_traverse(uid, pos) {
             return false;
         }
-        // Ask the two field reads that almost always settle it before asking
-        // diplomacy: this walks every unit in the world, once per neighbour a
-        // route search considers, and only a fighter actually flying a patrol
-        // over this very tile can block the step. Deciding a war is far from
-        // free — a city-state's belligerence follows its Suzerain, which is
-        // derived from every major's envoys.
-        if self.units.values().any(|other| {
-            other.air_patrol
-                && other.air_patrol_pos == Some(pos)
-                && other.owner != u.owner
-                && self.is_at_war(u.owner, other.owner)
-        }) {
+        // Only a fighter actually flying a patrol over this very tile can
+        // block the step, and deciding a war is far from free — a city-state's
+        // belligerence follows its Suzerain, which is derived from every
+        // major's envoys. This used to walk every unit in the world here, once
+        // per neighbour a route search considers; `air_patrols` hoists that
+        // whole-board scan to once per memo scope, and the list is empty in
+        // every game that never fields a fighter.
+        let patrols = self.air_patrols();
+        if patrols
+            .iter()
+            .any(|&(owner, at)| at == pos && owner != u.owner && self.is_at_war(u.owner, owner))
+        {
             return false;
         }
         if !self.unit_can_cross_cliff(uid, from, pos) {
@@ -23324,11 +24587,13 @@ impl Game {
                 }
             }
         }
-        for oid in self.units_at(pos) {
+        // Read the occupancy list in place: `units_at` copies it into a fresh
+        // `Vec`, and `flow_past` asks this once per neighbour of every tile.
+        for oid in self.unit_ids_at(pos) {
             if through_units {
                 break;
             }
-            let o = &self.units[&oid];
+            let o = &self.units[oid];
             let ospec = &self.rules.units[o.kind];
             // Based aircraft occupy a slot, not the land/naval stacking layer.
             // A hostile ground unit may enter the base and subsequently
@@ -23555,6 +24820,86 @@ impl Game {
                     && peer_spec.domain.as_deref() != Some("sea")))
     }
 
+    /// Every tile this unit can end a move on this turn, with the movement it
+    /// keeps THERE for a blow, and the path that gets it there.
+    ///
+    /// The same flood as [`Game::reachable`] with one difference that matters
+    /// to a planner: entering enemy zone of control still stops further
+    /// movement (the flood does not expand past such a tile), but the
+    /// movement the unit keeps on arrival is reported rather than zeroed —
+    /// `flow` writes 0 there, which is right for "can it move on" and wrong
+    /// for "can it still strike", since a unit that stops in a zone of
+    /// control keeps its unused movement for the attack (`do_attack`,
+    /// `do_ranged`, `can_pay_melee_entry`). Paths are the flood's own
+    /// parents, so every step is one the engine will accept in sequence.
+    ///
+    /// A reading for candidate generation, never a permission: the engine
+    /// re-decides every step when the line is played.
+    pub(crate) fn approach_reach(&self, uid: u32) -> BTreeMap<Pos, (f64, Vec<Pos>)> {
+        let mut out = BTreeMap::new();
+        let Some(unit) = self.units.get(&uid) else {
+            return out;
+        };
+        let (start, moves) = (unit.pos, unit.moves_left);
+        let max_moves = self.unit_max_moves(uid);
+        if moves <= 0.0 || self.formation_movement_locked_by_zoc(uid) {
+            return out;
+        }
+        let _memo = self.query_memo();
+        // Per tile: movement kept on arrival, and whether the arrival stopped
+        // the unit (zone of control) so nothing expands from it.
+        let mut best: BTreeMap<Pos, (f64, bool)> = BTreeMap::new();
+        let mut parent: BTreeMap<Pos, Pos> = BTreeMap::new();
+        best.insert(start, (moves, false));
+        let mut queue = vec![start];
+        while let Some(cur) = queue.pop() {
+            let (rem, stopped) = best[&cur];
+            if rem <= 0.0 || stopped {
+                continue;
+            }
+            for n in self.nbrs(cur) {
+                if !self.map.tiles.contains_key(&n) || !self.can_enter(uid, cur, n) {
+                    continue;
+                }
+                let cost = self.unit_step_cost(uid, cur, n);
+                let fresh = cur == start && rem >= max_moves;
+                if rem < cost && !fresh {
+                    continue; // MP paid up front (Civ 6)
+                }
+                let new_rem = (rem - cost).max(0.0).min(self.unit_max_moves_at(uid, n));
+                let stops = self.formation_enters_enemy_zoc(uid, n);
+                if best.get(&n).map(|b| new_rem > b.0).unwrap_or(true) {
+                    best.insert(n, (new_rem, stops));
+                    parent.insert(n, cur);
+                    queue.push(n);
+                }
+            }
+        }
+        for (pos, (rem, _)) in best {
+            if pos == start {
+                continue;
+            }
+            let mut path = vec![pos];
+            let mut cur = pos;
+            while let Some(p) = parent.get(&cur) {
+                if *p == start {
+                    break;
+                }
+                path.push(*p);
+                cur = *p;
+            }
+            path.reverse();
+            out.insert(pos, (rem, path));
+        }
+        out
+    }
+
+    /// The movement a unit would pay to enter `to` from `from` — the exact
+    /// preflight a melee blow needs after a move (`can_pay_melee_entry`).
+    pub(crate) fn step_cost_for(&self, uid: u32, from: Pos, to: Pos) -> f64 {
+        self.unit_step_cost(uid, from, to)
+    }
+
     /// All tiles the unit can reach this turn with its remaining movement
     /// (Dijkstra maximizing leftover MP; every intermediate tile must be
     /// legally enterable, matching repeated single-step moves).
@@ -23596,6 +24941,97 @@ impl Game {
         };
         let best = self.flow_past(uid, start, self.unit_max_moves(uid), true);
         best.into_keys().filter(|p| *p != start).collect()
+    }
+
+    /// Every tile this unit could attack on a fresh turn.
+    ///
+    /// This is the combat counterpart to [`Game::threat_reach`]. It follows
+    /// the same terrain, border, cliff, movement-cost, and zone-of-control
+    /// rules, then reserves the Movement an actual melee attack needs or the
+    /// remaining point a ranged attack needs. Occupying units are deliberately
+    /// read through: callers use this as an enemy threat envelope, where a
+    /// blocker may move away before the threatened unit's next turn.
+    ///
+    /// The result is a potential envelope rather than a permission: it does
+    /// not require a current target, visibility, or a declaration of war.
+    /// Those facts belong to the controller deciding which visible enemies
+    /// matter. The returned order is stable for explainers and tests.
+    pub fn attack_reach(&self, uid: u32) -> Vec<Pos> {
+        self.attack_reach_from_flood(uid).0
+    }
+
+    /// `attack_reach`, and the tiles the unit walked to get there.
+    pub(crate) fn attack_reach_from_flood(&self, uid: u32) -> (Vec<Pos>, Vec<Pos>) {
+        let Some(unit) = self.units.get(&uid) else {
+            return (vec![], vec![]);
+        };
+        let spec = &self.rules.units[unit.kind];
+        if spec.class != "military" || (!spec.is_melee_capable() && !spec.has_ranged_attack()) {
+            return (vec![], vec![]);
+        }
+
+        if spec.domain.as_deref() == Some("air") {
+            let origin = self.air_operation_origin(uid);
+            return (
+                self.wdisk(origin, self.unit_attack_range(uid))
+                    .into_iter()
+                    .filter(|target| *target != origin && self.map.tiles.contains_key(target))
+                    .collect(),
+                vec![],
+            );
+        }
+
+        let start = unit.pos;
+        let max_moves = self.unit_max_moves(uid);
+        let positions = self.flow_past(uid, start, max_moves, true);
+        let flood: Vec<Pos> = positions.keys().copied().collect();
+        // ⚠ THIS WAS A `BTreeSet` AND IT ALLOCATED ONE NODE PER CANDIDATE.
+        // A ranged unit offers the same tile from every stride it can shoot
+        // from, so the set spent most of its work absorbing duplicates a node
+        // at a time, and its caller then re-collected the result into a
+        // second set. A `Vec` sorted once produces the identical ascending,
+        // distinct sequence this function's contract promises, from one
+        // buffer, and `BasicAi`'s envelope adopts it without copying.
+        let mut targets: Vec<Pos> = Vec::new();
+        for (from, remaining) in positions {
+            if remaining <= 0.0 {
+                continue;
+            }
+
+            if spec.has_ranged_attack()
+                && !self.unit_is_embarked_at(unit, from)
+                && (!spec.siege
+                    || from == start
+                    || self.promotion_effect(unit, "attack_after_move") > 0.0)
+            {
+                for target in self.wdisk(from, self.unit_attack_range(uid)) {
+                    if target != from
+                        && self.map.tiles.contains_key(&target)
+                        && self.unit_has_line_of_sight_from(uid, from, target)
+                    {
+                        targets.push(target);
+                    }
+                }
+            }
+
+            if spec.is_melee_capable() {
+                for target in self.nbrs(from) {
+                    if !self.map.tiles.contains_key(&target)
+                        || !self.unit_can_melee_target_domain(uid, target)
+                        || !self.unit_can_cross_cliff(uid, from, target)
+                    {
+                        continue;
+                    }
+                    let fresh = from == start && remaining >= max_moves;
+                    if fresh || remaining >= self.unit_step_cost(uid, from, target) {
+                        targets.push(target);
+                    }
+                }
+            }
+        }
+        targets.sort_unstable();
+        targets.dedup();
+        (targets, flood)
     }
 
     /// Every legal single step inside this turn's remaining movement, as
@@ -24017,6 +25453,17 @@ impl Game {
     /// impassable. A breadth-first flood in map order keeps labels
     /// deterministic, though only label *equality* ever matters.
     fn build_routing_zones(&self, class: TraversalClass) -> Vec<u32> {
+        // ⚠ #2309 moved `improvements[name].effects["passage"]` behind
+        // `Game::passage_improvements`, which builds a table over the whole
+        // improvement list and keeps it for the memo scope — and *rebuilds it
+        // per call* when there is no scope to keep it in. That is the right
+        // trade for the movement flood, which always has one, and the wrong
+        // one here: this sweep asks `class_can_traverse` for every tile on the
+        // map with no scope open, so an improved tile paid a lookup per
+        // improvement in the ruleset instead of one. Opening a scope over the
+        // sweep is all it needs; the guard borrows the world immutably, so the
+        // flood below cannot see a table it did not build.
+        let _memo = self.query_memo();
         let mut zones = vec![0u32; self.map.tiles.len()];
         // The flood visits a tile once as a seed or neighbor and may inspect
         // it many more times from adjacent frontier tiles. Evaluate the
@@ -25164,10 +26611,52 @@ impl Game {
         parks
     }
 
+    /// What River Goddess pays a district standing where the belief asks.
+    ///
+    /// ★ One predicate for both halves of the belief: Gathering Storm ships
+    /// `RIVER_GODDESS_HOLY_SITE_AMENITIES` and `RIVER_GODDESS_HOLY_SITE_HOUSING`
+    /// as two modifiers with the SAME subject requirement set,
+    /// `PLOT_HAS_HOLY_SITE_RIVER_REQUIREMENTS` (`REQUIRES_PLOT_HAS_HOLY_SITE`
+    /// and `REQUIRES_PLOT_ADJACENT_TO_RIVER`, tested ALL), so the plot test
+    /// lives here once and the caller names which yield it is collecting.
+    ///
+    /// ⚠ `Expansion2_RemoveData.xml` DELETES the base game's
+    /// `RIVER_GODDESS_HOLY_SITE_AMENITY` — a different id, +1 Amenity through
+    /// `MODIFIER_CITY_DISTRICTS_ADJUST_CITY_AMENITIES_FROM_RELIGION` and no
+    /// Housing at all. Reading the base row would underpay the Amenity and
+    /// miss the Housing outright.
+    fn pantheon_river_holy_site(&self, district: &str, position: Pos, effect: &str) -> f64 {
+        // ⚠ River first, and the district family last. This is asked once per
+        // district per city on every Housing and Amenity read, and
+        // `Name::new` takes a read lock on the global name registry — the
+        // plot's own six river edges settle it for almost every caller
+        // without interning anything.
+        let Some(tile) = self.map.get(position) else {
+            return 0.0;
+        };
+        if !tile.has_river() {
+            return 0.0;
+        }
+        let Some(amount) = tile
+            .owner_city
+            .and_then(|city_id| self.cities.get(&city_id))
+            .map(|city| self.pantheon_effect(city.owner, effect))
+            .filter(|amount| *amount != 0.0)
+        else {
+            return 0.0;
+        };
+        if !self.district_is_family(Name::new(district), crate::name!("holy_site")) {
+            return 0.0;
+        }
+        amount
+    }
+
     pub(crate) fn district_housing(&self, district: &str, position: Pos) -> f64 {
+        let river_goddess =
+            self.pantheon_river_holy_site(district, position, "river_holy_site_housing");
         let spec = &self.rules.districts[district];
         let Some(maximum) = spec.effects.get("appeal_housing_max").copied() else {
-            return spec.housing;
+            return spec.housing + river_goddess;
         };
         let appeal = self.tile_appeal(position);
         let dynamic: f64 = if maximum >= 6.0 {
@@ -25186,10 +26675,12 @@ impl Game {
                 _ => 0.0,
             }
         };
-        spec.housing + dynamic.min(maximum)
+        spec.housing + dynamic.min(maximum) + river_goddess
     }
 
     pub(crate) fn district_amenity(&self, district: &str, position: Pos) -> f64 {
+        let river_goddess =
+            self.pantheon_river_holy_site(district, position, "river_holy_site_amenities");
         let spec = &self.rules.districts[district];
         let geothermal = spec
             .effects
@@ -25197,6 +26688,7 @@ impl Game {
             .copied()
             .unwrap_or(0.0);
         spec.amenity
+            + river_goddess
             + if geothermal > 0.0
                 && self.nbrs(position).into_iter().any(|neighbor| {
                     self.map
@@ -25624,6 +27116,50 @@ impl Game {
                 }
             }
             if family == crate::name!("holy_site") {
+                // ★ Desert Folklore, Dance of the Aurora and Sacred Path are
+                // ONE modifier over three plot tests, so this is one predicate
+                // rather than three special cases:
+                // `MODIFIER_ALL_CITIES_TERRAIN_ADJACENCY` for the first two and
+                // `MODIFIER_ALL_CITIES_FEATURE_ADJACENCY` for the third, each
+                // DistrictType `DISTRICT_HOLY_SITE`, YieldType `YIELD_FAITH`,
+                // Amount 1, subject `CITY_FOLLOWS_PANTHEON_REQUIREMENTS`.
+                // A fourth row of this shape is data, not code.
+                //
+                // ⚠ Desert Folklore and Dance of the Aurora each ship TWO rows
+                // — `..._FAITHDESERTADJACENCY` and `..._FAITHDESERTHILLSADJACENCY`
+                // over `TERRAIN_DESERT` and `TERRAIN_DESERT_HILLS` — which is
+                // one terrain here because CIVVIS carries hills as a flag on
+                // the plot rather than as a terrain of its own. No id in this
+                // family appears in `Expansion2_RemoveData.xml`.
+                if let Some(pid) = owner {
+                    for (effect, plot) in PANTHEON_HOLY_SITE_ADJACENCY {
+                        let amount = self.pantheon_effect(pid, effect);
+                        if amount == 0.0 {
+                            continue;
+                        }
+                        let tiles = neighbors
+                            .iter()
+                            .flatten()
+                            .filter(|t| t.terrain == plot || t.feature.as_deref() == Some(plot))
+                            .count();
+                        let paid = Yields {
+                            faith: tiles as f64 * amount,
+                            ..Yields::default()
+                        };
+                        adj.add(paid);
+                        if let Some(detail) = detail.as_deref_mut() {
+                            if tiles > 0 {
+                                detail.push(AdjacencySource {
+                                    source: format!("pantheon_{plot}"),
+                                    count: tiles,
+                                    percent: 0.0,
+                                    yields: paid,
+                                    raw: paid,
+                                });
+                            }
+                        }
+                    }
+                }
                 if let Some(city) = self
                     .map
                     .get(dpos)
@@ -27342,6 +28878,55 @@ impl Game {
         else {
             return yields;
         };
+        // ★ Lady of the Reeds and Marshes, Goddess of Fire and Earth Goddess
+        // are ONE modifier over three plot tests — every one of them is
+        // `MODIFIER_CITY_PLOT_YIELDS_ADJUST_PLOT_YIELD` with a
+        // `REQUIREMENTSET_TEST_ANY` subject and a `CITY_FOLLOWS_PANTHEON`
+        // owner — so the engine asks the plot once and the belief supplies
+        // the amount. Read from the Gathering Storm install
+        // (`DLC/Expansion2/Data/Expansion2_Beliefs.xml`) with every id checked
+        // against `Expansion2_RemoveData.xml`, because two of these three are
+        // rows the expansion deletes and replaces.
+        let pantheon_plot = |effect: &str, matched: bool| -> f64 {
+            if matched {
+                self.pantheon_effect(pid, effect)
+            } else {
+                0.0
+            }
+        };
+        // ⚠ `LADY_OF_THE_REEDS_PRODUCTION` (+1) is deleted by the expansion and
+        // replaced by `LADY_OF_THE_REEDS_PRODUCTION2` (+2) over the same
+        // `PLOT_HAS_REEDS_REQUIREMENTS`. That set names `FEATURE_FLOODPLAINS`
+        // and NOT the expansion's own `FEATURE_FLOODPLAINS_GRASSLAND` or
+        // `..._PLAINS`, and the shipped text agrees: "Marsh, Oasis, and DESERT
+        // Floodplains". A grassland floodplain pays nothing.
+        yields.production += pantheon_plot(
+            "reeds_production",
+            matches!(
+                tile.feature.as_deref(),
+                Some("marsh" | "oasis" | "floodplains")
+            ),
+        );
+        // Goddess of Fire is a Gathering Storm belief with no base-game row at
+        // all: `GODDESS_OF_FIRE_FEATURES_FAITH_MODIFIER`, +2 Faith over
+        // `FEATURE_GEOTHERMAL_FISSURE` or `FEATURE_VOLCANIC_SOIL`.
+        yields.faith += pantheon_plot(
+            "volcanic_geothermal_faith",
+            matches!(
+                tile.feature.as_deref(),
+                Some("geothermal_fissure" | "volcanic_soil")
+            ),
+        );
+        // ⚠⚠ Earth Goddess is the third case where a base-game row states the
+        // OPPOSITE of the shipped rule. `Expansion2_RemoveData.xml` deletes
+        // `EARTH_GODDESS_APPEAL_FAITH{,_MODIFIER}` and Gathering Storm re-adds
+        // them against `PLOT_BREATHTAKING_APPEAL` (`MinimumAppeal 4`) where the
+        // base game used `PLOT_CHARMING_APPEAL` (`MinimumAppeal 2`) — the
+        // shipped text moves from "Charming or better" to "Breathtaking" with
+        // it. Modelling the cache's requirement set alone would have paid this
+        // on twice the map.
+        yields.faith += pantheon_plot("breathtaking_appeal_faith", self.tile_appeal(pos) >= 4);
+
         let building_effect = |effect: &str| self.city_building_effect(city, effect);
         let is_coast_or_lake = matches!(tile.terrain.as_str(), "coast" | "lake");
         let is_floodplain = matches!(
@@ -27572,6 +29157,9 @@ impl Game {
             *self.query_memo.yields.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.appeal.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.traversal.borrow_mut() = Some(BTreeMap::new());
+            *self.query_memo.air_patrols.borrow_mut() = None;
+            *self.query_memo.passage_improvements.borrow_mut() = None;
+            *self.query_memo.movement.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.amenities.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.unit_ids.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.unit_territory_access.borrow_mut() = Some(BTreeMap::new());
@@ -29444,48 +31032,14 @@ impl Game {
         false
     }
 
-    pub fn district_sites(&self, cid: u32, dname: impl AsName) -> Vec<Pos> {
-        let dname = dname.as_name();
-        // A positive answer from the host is stronger than our reconstructed
-        // placement model. These coordinates are kept only for the short refusal
-        // window and only when their tile is on the mirrored board; if the export
-        // did not reveal one, retain the ordinary fallback below.
-        if let Some(sites) = self
-            .host_district_sites
-            .get(&cid)
-            .and_then(|by_district| by_district.get(&dname))
-        {
-            let sites: Vec<Pos> = sites
-                .iter()
-                .copied()
-                .filter(|position| self.map.tiles.contains_key(position))
-                .collect();
-            if !sites.is_empty() {
-                return sites;
-            }
-        }
-        // A district the HOST refused to place IN THIS CITY. Empty in an ordinary
-        // game; see `blocked_districts` for why this is per city and not global.
-        if self
-            .blocked_districts
-            .get(&cid)
-            .is_some_and(|blocked| blocked.contains(&dname))
-        {
-            return vec![];
-        }
-        let city = &self.cities[&cid];
+    /// The city-level gates a new district site must pass before any tile
+    /// is looked at: the family caps, the exclusion list, and the specialty
+    /// capacity. Split out of `district_sites` unchanged so a planner can
+    /// ask whether owning one more plot could open a site at all — when
+    /// these refuse, no plot purchase can help
+    /// (`ai/advanced/district_planning.rs`).
+    pub(crate) fn city_accepts_new_district_site(&self, city: &City, dname: Name) -> bool {
         let spec = &self.rules.districts[dname];
-        let mut out: Vec<Pos> = city
-            .owned_tiles
-            .iter()
-            .copied()
-            .filter(|position| {
-                self.map.tiles[position]
-                    .district_foundation
-                    .as_ref()
-                    .is_some_and(|foundation| foundation.district == dname)
-            })
-            .collect();
         let city_family_count = city
             .districts
             .keys()
@@ -29535,7 +31089,52 @@ impl Game {
         } else {
             false
         };
-        if blocked_new_site || specialty_capacity_full {
+        !(blocked_new_site || specialty_capacity_full)
+    }
+
+    pub fn district_sites(&self, cid: u32, dname: impl AsName) -> Vec<Pos> {
+        let dname = dname.as_name();
+        // A positive answer from the host is stronger than our reconstructed
+        // placement model. These coordinates are kept only for the short refusal
+        // window and only when their tile is on the mirrored board; if the export
+        // did not reveal one, retain the ordinary fallback below.
+        if let Some(sites) = self
+            .host_district_sites
+            .get(&cid)
+            .and_then(|by_district| by_district.get(&dname))
+        {
+            let sites: Vec<Pos> = sites
+                .iter()
+                .copied()
+                .filter(|position| self.map.tiles.contains_key(position))
+                .collect();
+            if !sites.is_empty() {
+                return sites;
+            }
+        }
+        // A district the HOST refused to place IN THIS CITY. Empty in an ordinary
+        // game; see `blocked_districts` for why this is per city and not global.
+        if self
+            .blocked_districts
+            .get(&cid)
+            .is_some_and(|blocked| blocked.contains(&dname))
+        {
+            return vec![];
+        }
+        let city = &self.cities[&cid];
+        let spec = &self.rules.districts[dname];
+        let mut out: Vec<Pos> = city
+            .owned_tiles
+            .iter()
+            .copied()
+            .filter(|position| {
+                self.map.tiles[position]
+                    .district_foundation
+                    .as_ref()
+                    .is_some_and(|foundation| foundation.district == dname)
+            })
+            .collect();
+        if !self.city_accepts_new_district_site(city, dname) {
             out.sort();
             return out;
         }
@@ -29698,6 +31297,9 @@ impl Game {
     pub fn wonder_sites(&self, cid: u32, wname: &str) -> Vec<Pos> {
         let city = &self.cities[&cid];
         let spec = &self.rules.wonders[wname];
+        if self.host_unavailable_wonders.contains(&Name::new(wname)) {
+            return Vec::new();
+        }
         // A positive host answer is stronger than our reconstructed placement
         // model. Keep only fresh mirrored tiles; an incomplete map must retain
         // the ordinary fallback rather than fabricate a wonder site.
@@ -30591,6 +32193,512 @@ impl Game {
         self.query_memo.producible.borrow_mut().clear();
     }
 
+    /// Replace the current live-host competition snapshot. The production
+    /// catalog persists beyond an ordinary read-only memo scope, so a host
+    /// competition starting or ending must explicitly retire any menu cached
+    /// before the new snapshot arrived.
+    pub(crate) fn replace_host_competitions(&mut self, competitions: Vec<HostCompetition>) {
+        if self.host_competitions != competitions {
+            self.host_competitions = competitions;
+            self.query_memo.producible.borrow_mut().clear();
+        }
+    }
+
+    /// The current host competition of this mirrored seat, if it is still
+    /// active. Host player ids do not match generated CIVVIS seats, so the
+    /// mirror intentionally supplies opportunities for seat zero only.
+    pub fn host_competition(&self, pid: usize, kind: &str) -> Option<HostCompetition> {
+        // A competition CIVVIS is running itself answers for every seat, and
+        // presents in the same shape a mirrored one does — so the production
+        // catalog and the AI's valuation cannot tell them apart and neither
+        // needed changing.
+        if let Some(native) = self
+            .competition
+            .as_ref()
+            .filter(|running| running.kind == kind && running.ends > self.turn)
+        {
+            if native.target == Some(pid) {
+                return None;
+            }
+            let ours = native.scores.get(&pid).copied().unwrap_or(0.0);
+            let leader = native.scores.values().copied().fold(0.0, f64::max);
+            return Some(HostCompetition {
+                kind: native.kind.clone(),
+                ends: native.ends,
+                ours,
+                leader,
+            });
+        }
+        (pid == 0)
+            .then(|| {
+                self.host_competitions
+                    .iter()
+                    .find(|competition| competition.kind == kind && competition.ends > self.turn)
+                    .cloned()
+            })
+            .flatten()
+    }
+
+    /// The competitions CIVVIS can seat itself, with the Diplomatic Victory
+    /// Points Gathering Storm pays their winner.
+    ///
+    /// Every field is read off the installed Gathering Storm ruleset —
+    /// `EmergencyAlliances` for the trigger, `Duration` and `LockoutTime`, that
+    /// row's `TargetRequirementSet` for the era window, `EmergencyScoreSources`
+    /// for what counts, and `EmergencyRewards` joined to `ModifierArguments`
+    /// for the award:
+    ///
+    /// | competition | era | scores | first place |
+    /// |---|---|---|---|
+    /// | World's Fair | Modern only | Great Person Points per turn | 1 point, 50 Favor |
+    /// | World Games | Atomic+ | athletes project, Stadiums and Aquatics Centers per turn | 1 point, 50 Favor |
+    /// | Climate Accords | Information+ | the three decommissioning projects | 2 points, 100 Favor |
+    /// | International Space Station | Future+ | astronauts project, Spaceports and Campuses per turn | 1 point, 50 Favor |
+    /// | Nobel Peace Prize | Industrial+, Sweden in the game | Diplomatic Favor per turn | 1 point |
+    /// | Send Aid | any | the aid project | 2 points, 100 Favor |
+    /// | Send Military Aid | any | the aid project | 2 points, 100 Favor |
+    ///
+    /// ⚠ **The Nobel prizes for Literature and Physics are deliberately absent
+    /// and are not a gap.** They are scored competitions like the rest, but
+    /// `EmergencyRewards` gives neither of them a
+    /// `NON_EMERGENCY_FIRST_PLACE_VICTORY_POINT` row — Literature's first place
+    /// takes cheaper Rock Bands and Physics' a technology boost — so neither is
+    /// a source of a Diplomatic Victory Point at all. Only Peace is.
+    ///
+    /// ⚠ **Order is the seating preference**, because the shipped data does not
+    /// say how the congress picks among the competitions it could offer: that
+    /// choice lives in the compiled engine, not in `Emergencies_XP2`. The list
+    /// is newest-era-first, so the latest competition an era has unlocked takes
+    /// the seat and the Nobel Peace Prize — the only one available before the
+    /// Modern era — takes it in the Industrial era and in the gaps another
+    /// competition's per-kind lockout leaves.
+    const NATIVE_COMPETITIONS: &'static [NativeCompetitionSpec] = &[
+        NativeCompetitionSpec {
+            kind: "EMERGENCY_SPACE_STATION",
+            diplomatic_victory_points: 1,
+            first_place_favor: 50.0,
+            scoring: &[
+                CompetitionScoreSource::Project,
+                CompetitionScoreSource::DistrictPerTurn {
+                    district: "spaceport",
+                    amount: 5.0,
+                },
+                CompetitionScoreSource::DistrictPerTurn {
+                    district: "campus",
+                    amount: 1.0,
+                },
+            ],
+            trigger: NativeCompetitionTrigger::Congress,
+            duration: 29,
+            lockout: 60,
+            minimum_world_era: 8,
+            maximum_world_era: None,
+            required_civilization_ability: None,
+        },
+        NativeCompetitionSpec {
+            kind: "EMERGENCY_CLIMATE_ACCORDS",
+            diplomatic_victory_points: 2,
+            first_place_favor: 100.0,
+            scoring: &[CompetitionScoreSource::Project],
+            trigger: NativeCompetitionTrigger::Congress,
+            duration: 29,
+            lockout: 60,
+            minimum_world_era: 7,
+            maximum_world_era: None,
+            required_civilization_ability: None,
+        },
+        NativeCompetitionSpec {
+            kind: "EMERGENCY_WORLD_GAMES",
+            diplomatic_victory_points: 1,
+            first_place_favor: 50.0,
+            scoring: &[
+                CompetitionScoreSource::Project,
+                CompetitionScoreSource::BuildingPerTurn {
+                    building: "stadium",
+                    amount: 1.0,
+                },
+                CompetitionScoreSource::BuildingPerTurn {
+                    building: "aquatics_center",
+                    amount: 1.0,
+                },
+            ],
+            trigger: NativeCompetitionTrigger::Congress,
+            duration: 29,
+            lockout: 60,
+            minimum_world_era: 6,
+            maximum_world_era: None,
+            required_civilization_ability: None,
+        },
+        NativeCompetitionSpec {
+            kind: "EMERGENCY_WORLDS_FAIR",
+            diplomatic_victory_points: 1,
+            first_place_favor: 50.0,
+            scoring: &[CompetitionScoreSource::GreatPersonPointsPerTurn],
+            trigger: NativeCompetitionTrigger::Congress,
+            duration: 29,
+            lockout: 60,
+            minimum_world_era: 5,
+            maximum_world_era: Some(5),
+            required_civilization_ability: None,
+        },
+        // Sweden's `TRAIT_CIVILIZATION_NOBEL_PRIZE` is the whole reason the
+        // Nobel prizes exist in a game: `NOBEL_PRIZE_TARGET_REQUIREMENTS` tests
+        // `REQUIREMENT_GAME_HAS_CIVILIZATION_OR_LEADER_TRAIT` for it. Without
+        // Sweden on the board the congress never offers one, which is why this
+        // competition is rare rather than a route every empire has.
+        NativeCompetitionSpec {
+            kind: "EMERGENCY_NOBEL_PRIZE_PEACE",
+            diplomatic_victory_points: 1,
+            first_place_favor: 0.0,
+            scoring: &[CompetitionScoreSource::DiplomaticFavorPerTurn],
+            trigger: NativeCompetitionTrigger::Congress,
+            duration: 29,
+            lockout: 60,
+            minimum_world_era: 4,
+            maximum_world_era: None,
+            required_civilization_ability: Some("nobelinstitution"),
+        },
+        NativeCompetitionSpec {
+            kind: "EMERGENCY_SEND_AID",
+            diplomatic_victory_points: 2,
+            first_place_favor: 100.0,
+            scoring: &[CompetitionScoreSource::Project],
+            trigger: NativeCompetitionTrigger::RandomDisasterPopulationLoss,
+            duration: 30,
+            lockout: 30,
+            minimum_world_era: 0,
+            maximum_world_era: None,
+            required_civilization_ability: None,
+        },
+        NativeCompetitionSpec {
+            kind: "EMERGENCY_SEND_MILITARY_AID",
+            diplomatic_victory_points: 2,
+            first_place_favor: 100.0,
+            scoring: &[CompetitionScoreSource::Project],
+            trigger: NativeCompetitionTrigger::WarWithGrievances,
+            duration: 30,
+            lockout: 30,
+            minimum_world_era: 0,
+            maximum_world_era: None,
+            required_civilization_ability: None,
+        },
+    ];
+
+    fn native_competition(kind: &str) -> Option<&'static NativeCompetitionSpec> {
+        Self::NATIVE_COMPETITIONS
+            .iter()
+            .find(|competition| competition.kind == kind)
+    }
+
+    /// The Diplomatic Victory Points this competition's first place pays, or
+    /// zero for a competition CIVVIS does not seat itself.
+    ///
+    /// The table above is the authority on what a competition is worth to the
+    /// diplomatic race; a planner that wants to price those points must not
+    /// carry its own copy of it. See `AdvancedAi::competition_victory_point_value`.
+    pub fn competition_victory_points(kind: &str) -> i64 {
+        Self::native_competition(kind).map_or(0, |spec| spec.diplomatic_victory_points)
+    }
+
+    /// Seat a competition if one may run and an empire could score in it.
+    fn open_native_competition(&mut self) {
+        if !self.native_competitions || self.competition.is_some() {
+            return;
+        }
+        let majors: Vec<usize> = self
+            .players
+            .iter()
+            .filter(|player| self.victory_eligible(player.id))
+            .map(|player| player.id)
+            .collect();
+        let Some(competition) = Self::NATIVE_COMPETITIONS.iter().find(|competition| {
+            competition.trigger == NativeCompetitionTrigger::Congress
+                && competition.offered_in_world_era(self.world_era)
+                && self.game_meets_competition_trait(competition)
+                && self
+                    .competition_lockout_until
+                    .get(competition.kind)
+                    .is_none_or(|until| self.turn >= *until)
+                && majors
+                    .iter()
+                    .any(|pid| self.can_score_competition(*pid, competition.kind))
+        }) else {
+            return;
+        };
+        self.competition = Some(Competition {
+            kind: competition.kind.to_string(),
+            ends: self.turn + self.standard_duration(competition.duration),
+            target: None,
+            scores: BTreeMap::new(),
+        });
+        self.query_memo.producible.borrow_mut().clear();
+    }
+
+    /// Seat Gathering Storm's targeted aid request at its native trigger.
+    /// Unlike congress competitions the affected empire receives aid and
+    /// cannot score in its own request.
+    fn open_native_aid_request(&mut self, target: usize, trigger: NativeCompetitionTrigger) {
+        if !self.native_competitions || self.competition.is_some() || !self.victory_eligible(target)
+        {
+            return;
+        }
+        let Some(competition) = Self::NATIVE_COMPETITIONS.iter().find(|competition| {
+            competition.trigger == trigger
+                // No aid request carries a civilization requirement today, so
+                // this changes nothing now. It is here because the gate belongs
+                // to the spec rather than to the congress path: a trait-gated
+                // competition added on another trigger must not slip past it.
+                && self.game_meets_competition_trait(competition)
+                && self
+                    .competition_lockout_until
+                    .get(competition.kind)
+                    .is_none_or(|until| self.turn >= *until)
+        }) else {
+            return;
+        };
+        let any_member_can_score = self
+            .players
+            .iter()
+            .filter(|player| player.id != target && self.victory_eligible(player.id))
+            .any(|player| self.can_score_competition(player.id, competition.kind));
+        if !any_member_can_score {
+            return;
+        }
+        self.competition = Some(Competition {
+            kind: competition.kind.to_string(),
+            ends: self.turn + self.standard_duration(competition.duration),
+            target: Some(target),
+            scores: BTreeMap::new(),
+        });
+        self.query_memo.producible.borrow_mut().clear();
+    }
+
+    /// Whether the game contains the civilization a competition's emergency
+    /// requires before it exists at all.
+    ///
+    /// `NOBEL_PRIZE_TARGET_REQUIREMENTS` tests
+    /// `REQUIREMENT_GAME_HAS_CIVILIZATION_OR_LEADER_TRAIT` for
+    /// `TRAIT_CIVILIZATION_NOBEL_PRIZE`, which `CivilizationTraits` gives to
+    /// `CIVILIZATION_SWEDEN` alone. A game with no Sweden in it never sees a
+    /// Nobel prize, and that is the shipped rule rather than a simplification.
+    fn game_meets_competition_trait(&self, competition: &NativeCompetitionSpec) -> bool {
+        let Some(ability) = competition.required_civilization_ability else {
+            return true;
+        };
+        self.players
+            .iter()
+            .any(|player| self.has_ability(player.id, ability))
+    }
+
+    /// Whether this empire could score at all in a competition, after its exact
+    /// era gate has selected it.
+    ///
+    /// Every source the competition declares is asked, because a competition
+    /// nobody can score in pays nobody and still spends its lockout.
+    fn can_score_competition(&self, pid: usize, kind: &str) -> bool {
+        let Some(competition) = Self::native_competition(kind) else {
+            return false;
+        };
+        competition.scoring.iter().any(|source| match source {
+            // Every empire generates Great Person Points and Diplomatic Favor,
+            // so there is no ground to hold and nothing to gate on.
+            CompetitionScoreSource::GreatPersonPointsPerTurn
+            | CompetitionScoreSource::DiplomaticFavorPerTurn => true,
+            CompetitionScoreSource::DistrictPerTurn { district, .. } => {
+                let district = Name::new(district);
+                self.cities
+                    .values()
+                    .any(|city| city.owner == pid && city.districts.contains_key(district))
+            }
+            CompetitionScoreSource::BuildingPerTurn { building, .. } => {
+                let building = Name::new(building);
+                self.cities
+                    .values()
+                    .any(|city| city.owner == pid && city.buildings.contains(&building))
+            }
+            CompetitionScoreSource::Project => self.rules.projects.iter().any(|(_, spec)| {
+                if spec.competition_score <= 0.0
+                    || !spec.host_competition_kinds().any(|k| k == kind)
+                {
+                    return false;
+                }
+                // ⚠ The district is not the whole requirement. A decommissioning
+                // project also eats a power plant, and a competition offered to an
+                // empire that holds none is a competition nobody can score in: the
+                // first trace of this seated Climate Accords on turn 100 and closed
+                // it on 119 with no score at all, having spent the lockout.
+                self.cities.values().any(|city| {
+                    city.owner == pid
+                        && spec
+                            .district
+                            .is_none_or(|district| city.districts.contains_key(district))
+                        && spec
+                            .consumes_buildings
+                            .iter()
+                            .all(|building| city.buildings.contains(&Name::new(building)))
+                })
+            }),
+        })
+    }
+
+    /// Add `amount` to this seat's score, if the running competition counts
+    /// `source`.
+    ///
+    /// ⚠ **Nothing is paid on the mirrored path.** `competition` is set only by
+    /// native seating; a mirrored competition lives in `host_competitions`, and
+    /// the host has already counted its own score and paid its own award.
+    fn score_native_competition(
+        &mut self,
+        pid: usize,
+        source: CompetitionScoreSource,
+        amount: f64,
+    ) {
+        if amount <= 0.0 || !self.victory_eligible(pid) {
+            return;
+        }
+        let turn = self.turn;
+        let counts = self
+            .competition
+            .as_ref()
+            .filter(|running| running.ends > turn && running.target != Some(pid))
+            .and_then(|running| Self::native_competition(&running.kind))
+            .is_some_and(|competition| competition.counts(source));
+        if !counts {
+            return;
+        }
+        if let Some(running) = self.competition.as_mut() {
+            *running.scores.entry(pid).or_insert(0.0) += amount;
+        }
+    }
+
+    /// The World's Fair's eight `WORLDS_FAIR_SCORE_GPP_*` rows: one point per
+    /// Great Person Point generated this turn, whatever the class.
+    ///
+    /// ⚠ This counts **points**, not people. Every row is `ScoreAmount="1"`
+    /// against a `FromGreatPerson` class, and their shared description is
+    /// `LOC_EMERGENCY_SCORE_GPP_DESC`, "Generating Great People Points Per
+    /// Turn". Counting recruits instead — which is what CIVVIS did until this
+    /// change — reads the same table two orders of magnitude too small, and
+    /// leaves a 29-turn competition to be decided by whether two empires each
+    /// happened to claim one person, which is a tie, and a tie pays nobody.
+    fn score_great_person_point_competition(&mut self, pid: usize, points: f64) {
+        self.score_native_competition(
+            pid,
+            CompetitionScoreSource::GreatPersonPointsPerTurn,
+            points,
+        );
+    }
+
+    /// `NOBEL_PRIZE_PEACE_SCORE_FROM_FAVOR`: one point per Diplomatic Favor
+    /// generated this turn.
+    ///
+    /// The score source is described "Generating [ICON_Favor] Diplomatic
+    /// Favor", the same "Generating … Per Turn" cadence the World's Fair uses,
+    /// so it is this turn's favor *income* — what `process_diplomacy` computes
+    /// and banks in the `diplomatic_favor` counter. It is deliberately not the
+    /// balance, and deliberately not favor that merely arrives: a congress
+    /// refund, a trade, or an emergency award is not favor the empire
+    /// generated.
+    fn score_favor_competition(&mut self, pid: usize, favor: f64) {
+        self.score_native_competition(pid, CompetitionScoreSource::DiplomaticFavorPerTurn, favor);
+    }
+
+    /// The `FromDistrict` and `FromBuilding` rows, which pay for *maintaining*
+    /// what they name and therefore accrue every turn the competition runs.
+    ///
+    /// The International Space Station counts Spaceports at 5 and Campuses at
+    /// 1; the World Games counts Stadiums and Aquatics Centers at 1. Without
+    /// them a competition seated over ground nobody chooses to spend production
+    /// on closes with an empty score table and pays nobody, which is exactly
+    /// what the first native trace recorded.
+    fn score_competition_holdings(&mut self, pid: usize) {
+        // ⚠ Majors only. `begin_turn` runs for every seat, and a city-state
+        // holds Campuses like anyone else — but an emergency's members are the
+        // majors, and a city-state that outscored them would take a Diplomatic
+        // Victory Point off the board for nobody.
+        if !self.victory_eligible(pid) {
+            return;
+        }
+        let turn = self.turn;
+        let Some(spec) = self
+            .competition
+            .as_ref()
+            .filter(|running| running.ends > turn && running.target != Some(pid))
+            .and_then(|running| Self::native_competition(&running.kind))
+            .copied()
+        else {
+            return;
+        };
+        for source in spec.scoring {
+            let held = match source {
+                CompetitionScoreSource::DistrictPerTurn { district, amount } => {
+                    let district = Name::new(district);
+                    let cities = self
+                        .cities
+                        .values()
+                        .filter(|city| city.owner == pid && city.districts.contains_key(district))
+                        .count();
+                    amount * cities as f64
+                }
+                CompetitionScoreSource::BuildingPerTurn { building, amount } => {
+                    let building = Name::new(building);
+                    let cities = self
+                        .cities
+                        .values()
+                        .filter(|city| city.owner == pid && city.buildings.contains(&building))
+                        .count();
+                    amount * cities as f64
+                }
+                _ => 0.0,
+            };
+            if held > 0.0 {
+                if let Some(running) = self.competition.as_mut() {
+                    *running.scores.entry(pid).or_insert(0.0) += held;
+                }
+            }
+        }
+    }
+
+    /// Close a finished competition, paying its winner what Gathering Storm
+    /// pays: the Diplomatic Victory Point, and the Favor beside it.
+    ///
+    /// ⚠ First place only, and ties pay nobody — a tie has no first place, and
+    /// inventing a tiebreak here would be inventing a rule. Nothing is paid on
+    /// the mirrored path either: a host has already counted its own.
+    fn close_native_competition(&mut self) {
+        let Some(running) = self.competition.as_ref() else {
+            return;
+        };
+        if self.turn < running.ends {
+            return;
+        }
+        let spec = Self::native_competition(&running.kind).copied();
+        let award = spec
+            .map(|competition| competition.diplomatic_victory_points)
+            .unwrap_or(0);
+        let kind = running.kind.clone();
+        let until = self.turn
+            + self.standard_duration(spec.map(|competition| competition.lockout).unwrap_or(60));
+        let best = running.scores.values().copied().fold(0.0, f64::max);
+        let winners: Vec<usize> = running
+            .scores
+            .iter()
+            .filter(|(_, score)| **score >= best && best > 0.0)
+            .map(|(pid, _)| *pid)
+            .collect();
+        let favor = spec
+            .map(|competition| competition.first_place_favor)
+            .unwrap_or(0.0);
+        if let [winner] = winners[..] {
+            self.players[winner].dvp += award;
+            self.players[winner].diplomatic_favor += favor;
+            self.add_historic_moment(winner, "MOMENT_PLAYER_EARNED_DIPLOMATIC_VICTORY_POINT");
+        }
+        self.competition = None;
+        self.competition_lockout_until.insert(kind, until);
+        self.query_memo.producible.borrow_mut().clear();
+    }
+
     pub(crate) fn replace_blocked_purchases(&mut self, blocked: BTreeMap<u32, BTreeSet<String>>) {
         self.blocked_purchases = blocked;
     }
@@ -30958,6 +33066,13 @@ impl Game {
                 if self.players[pid].is_barbarian {
                     return false;
                 }
+                if spec.requires_host_competition()
+                    && !spec
+                        .host_competition_kinds()
+                        .any(|kind| self.host_competition(pid, kind).is_some())
+                {
+                    return false;
+                }
                 if spec
                     .tech
                     .as_ref()
@@ -30992,6 +33107,7 @@ impl Game {
                 if !spec
                     .requires_buildings
                     .iter()
+                    .chain(&spec.consumes_buildings)
                     .all(|building| self.city_has_building_family(city, Name::new(building)))
                 {
                     return false;
@@ -32570,13 +34686,7 @@ impl Game {
                 .as_ref()
                 .filter(|session| self.turn < session.closes)
             {
-                let max_votes = if p.diplomatic_favor >= 30.0 {
-                    3
-                } else if p.diplomatic_favor >= 10.0 {
-                    2
-                } else {
-                    1
-                };
+                let max_votes = self.congress_affordable_votes(pid);
                 for resolution in &congress.resolutions {
                     if resolution.ballots.contains_key(&pid) {
                         continue;
@@ -32841,6 +34951,169 @@ impl Game {
             })
     }
 
+    /// Whether the engine will accept `Ranged { unit: uid, target }` right
+    /// now. These are the predicates `legal_actions_within` applies before it
+    /// enumerates a Ranged order and `do_ranged` re-applies before executing
+    /// one — asked here in `do_ranged`'s own order, not re-derived, so the
+    /// answer cannot drift from the refusal.
+    ///
+    /// A controller that proposes ranged candidates on distance alone is
+    /// proposing orders the engine will refuse: a census of one 150-turn
+    /// six-player deployment game (seed 7700000, 2026-08-18) counted 503
+    /// authoritative Ranged refusals, every one from `BasicAi::military_step`
+    /// — 281 "target is not visible", 195 "line of sight blocked", 26
+    /// "nothing to attack" — and each refused winner also shadowed whatever
+    /// legal shot came second. `AdvancedAi`'s tactical picker asks the same
+    /// predicates inline for the same reason.
+    ///
+    /// ⚠ The caller hoists `player_vision_now` and `visibility_viewers` once
+    /// per unit and passes them in. The convenience path rebuilds a whole
+    /// `TileBits` per call and measured **+6.43%** when a picker paid it per
+    /// candidate tile (see `combat_target_visible`'s note).
+    pub(crate) fn ranged_order_is_legal(
+        &self,
+        pid: usize,
+        uid: u32,
+        target: Pos,
+        visible: &TileBits,
+        viewers: &BTreeSet<usize>,
+    ) -> bool {
+        let Some(unit) = self.units.get(&uid) else {
+            return false;
+        };
+        let spec = &self.rules.units[unit.kind];
+        spec.has_ranged_attack()
+            && !self.is_embarked(unit)
+            && (!spec.siege
+                || !unit.moved
+                || self.promotion_effect(unit, "attack_after_move") > 0.0)
+            && unit.moves_left > 0.0
+            && unit.attacks_left > 0
+            && self.wdist(unit.pos, target) <= self.unit_attack_range(uid)
+            && self.enemy_ranged_target_at(pid, target)
+            && self.combat_target_visible_at(pid, target, visible, viewers)
+            && self.unit_has_line_of_sight(uid, target)
+    }
+
+    /// Whether the engine will accept `Attack { unit: uid, target }` right
+    /// now — `legal_actions_within`'s own melee predicates plus the hostile
+    /// target check, exactly as `do_attack` applies them. See
+    /// `ranged_order_is_legal` for why a picker asks before proposing; the
+    /// same census counted 17 authoritative melee refusals ("unit cannot
+    /// attack into that domain", "not enough movement to attack", "no combat
+    /// target"), all from the same candidate loop.
+    pub(crate) fn melee_order_is_legal(&self, pid: usize, uid: u32, target: Pos) -> bool {
+        let Some(unit) = self.units.get(&uid) else {
+            return false;
+        };
+        self.rules.units[unit.kind].is_melee_capable()
+            && !self.is_embarked(unit)
+            && unit.moves_left > 0.0
+            && unit.attacks_left > 0
+            && self.wdist(unit.pos, target) == 1
+            && self.enemy_combat_target_at(pid, target)
+            && self.unit_can_melee_target_domain(uid, target)
+            && self.can_pay_melee_entry(uid, target)
+    }
+
+    /// The two strengths `do_attack` resolves a melee blow with, `(attacker,
+    /// defender)`, each already through [`effective_strength`]. `None` when
+    /// either unit is gone.
+    ///
+    /// ★★★★ THIS IS THE ENGINE'S OWN ARITHMETIC, EXPOSED — NOT A COPY OF IT.
+    /// `do_attack` calls it, so a controller that prices a melee exchange
+    /// *before* it happens cannot drift from the exchange the engine will
+    /// actually resolve. That matters here more than for an attack scan,
+    /// because the terms this function carries and a strength-only estimate
+    /// does not — matchup, flanking, the amphibious and river penalties,
+    /// terrain, adjacent support, and fortification — are exactly the ones
+    /// that decide whether standing still beats swinging. See
+    /// `ranged_order_is_legal` for the same argument about the predicates.
+    ///
+    /// Feed both halves to [`expected_damage`] to get the two blows of one
+    /// melee round at the engine's unrandomized centre: the defender takes
+    /// `expected_damage(att, def)` and the attacker takes
+    /// `expected_damage(def, att)`.
+    pub(crate) fn melee_exchange_strengths(&self, uid: u32, did: u32) -> Option<(f64, f64)> {
+        let attacker = self.units.get(&uid)?;
+        let defender = self.units.get(&did)?;
+        let target = defender.pos;
+        let unamphibious = self.promotion_effect(attacker, "amphibious") == 0.0;
+        let mut att_base = self.unit_unembarked_strength(attacker)
+            + self.matchup_bonus(uid, defender, true)
+            + self.flanking_bonus(uid, target)
+            + self.vs_bonus(attacker.owner, defender.owner);
+        if self.is_embarked(attacker) && unamphibious {
+            att_base -= 10.0;
+        }
+        let mut def_base = self.unit_strength(defender, true)
+            + self.matchup_bonus(did, attacker, false)
+            + self.tile_defense_bonus(target)
+            + self.support_bonus(defender)
+            + self.vs_bonus(defender.owner, attacker.owner);
+        if self.crosses_river(attacker.pos, target) && unamphibious {
+            def_base += 5.0;
+        }
+        Some((
+            effective_strength(att_base, attacker.hp),
+            effective_strength(def_base, defender.hp),
+        ))
+    }
+
+    /// The two strengths `do_ranged` resolves a shot with, `(shooter,
+    /// defender)`, each already through [`effective_strength`]. `target` is
+    /// the tile fired at, which is the defender's own tile except for an air
+    /// unit answered on patrol. `None` when either unit is gone.
+    ///
+    /// The companion of [`melee_exchange_strengths`], and the asymmetry
+    /// between them is the whole point: a shot returns *nothing*. There is no
+    /// second blow in `do_ranged` for a controller to price, which is why
+    /// standing under one is a straight loss and standing under a melee
+    /// attack need not be.
+    pub(crate) fn ranged_strike_strengths(
+        &self,
+        uid: u32,
+        did: u32,
+        target: Pos,
+    ) -> Option<(f64, f64)> {
+        let shooter = self.units.get(&uid)?;
+        let defender = self.units.get(&did)?;
+        let spec = &self.rules.units[shooter.kind];
+        let defender_spec = &self.rules.units[defender.kind];
+        let defender_is_sea = defender_spec.domain.as_deref() == Some("sea");
+        let mut att_base = self.unit_ranged_attack_strength(shooter)
+            + self.matchup_bonus(uid, defender, true)
+            + if defender_is_sea {
+                self.promotion_effect(shooter, "ranged_vs_units")
+                    + self.promotion_effect(shooter, "ranged_vs_naval")
+                    + self.promotion_effect(shooter, "siege_vs_naval")
+            } else {
+                self.promotion_effect(shooter, "ranged_vs_land")
+                    + self.promotion_effect(shooter, "ranged_vs_units")
+                    + self.promotion_effect(shooter, "siege_vs_land")
+            }
+            + self.vs_bonus(shooter.owner, defender.owner);
+        if (spec.bombard_strength > 0.0 && !defender_is_sea)
+            || (spec.ranged_strength > 0.0
+                && spec.domain.as_deref() != Some("sea")
+                && defender_is_sea)
+        {
+            att_base -= 17.0;
+        }
+        let def_base = self.unit_strength(defender, true)
+            + self.ranged_defense_bonus(defender, false)
+            + if defender_spec.domain.as_deref() == Some("air") {
+                0.0
+            } else {
+                self.tile_defense_bonus(target)
+            }
+            + self.vs_bonus(defender.owner, shooter.owner);
+        Some((
+            effective_strength(att_base, shooter.hp),
+            effective_strength(def_base, defender.hp),
+        ))
+    }
+
     /// A ranged target must be in current shared vision, and a stealthed unit
     /// on that tile must be detected by at least one of the direct viewers.
     /// Range-three indirect fire ignores terrain along the shooter's ray, but
@@ -32849,7 +35122,7 @@ impl Game {
     /// frames the caller already holds. `do_ranged`, `do_attack` and
     /// `do_city_strike` each apply exactly this before a shot, so a controller
     /// that proposes a target without asking is proposing an order the engine
-    /// will refuse. Hoist `player_vision_now` and `visibility_viewers` once per
+    /// will refuse. Hoist `player_vision_frame` and `visibility_viewers` once per
     /// unit and pass them in; the frames cannot move while no action is applied.
     pub(crate) fn combat_target_visible_at(
         &self,
@@ -32878,17 +35151,6 @@ impl Game {
                         .iter()
                         .any(|viewer| self.unit_visible_to(unit.id, *viewer))
             })
-    }
-
-    /// ⚠ Recomputes both frames on every call, and `player_vision_now` clones
-    /// a whole `TileBits` to do it. Fine once per action; a caller testing a
-    /// disk of candidate tiles must hoist the two frames and use
-    /// [`Game::combat_target_visible_at`] instead. Measured: doing this per
-    /// candidate tile cost +6.4% of simulator CPU.
-    fn combat_target_visible(&self, pid: usize, pos: Pos) -> bool {
-        let visible = self.player_vision_now(pid);
-        let viewers = self.visibility_viewers(pid);
-        self.combat_target_visible_at(pid, pos, &visible, &viewers)
     }
 
     fn unit_currently_visible_to(&self, uid: u32, pid: usize) -> bool {
@@ -33644,7 +35906,13 @@ impl Game {
         (50.0 + (attacker - defender) * 2.5).clamp(0.0, 100.0)
     }
 
-    fn promotion_kill_rewards(&mut self, attacker: &Unit, defeated: &Unit) {
+    /// Everything a defeated unit pays its killer.
+    ///
+    /// ⚠ Named for promotions and never only about them — the policy card
+    /// `earlier_era_kill_gold_pct` and the building `heal_on_unit_kill` were
+    /// already here — and God of War makes the pantheon the third source, so
+    /// the name is now what the function does.
+    fn kill_rewards(&mut self, attacker: &Unit, defeated: &Unit) {
         let defeated_spec = &self.rules.units[defeated.kind];
         let defeated_era = defeated_spec
             .tech
@@ -33664,6 +35932,38 @@ impl Game {
         let faith_pct = self.promotion_effect(attacker, "faith_on_kill_strength_pct");
         if faith_pct > 0.0 {
             self.players[attacker.owner].faith += defeated_spec.strength * faith_pct / 100.0;
+        }
+        // God of War: GOD_OF_WAR_FAITH_KILLS_MODIFIER,
+        // `MODIFIER_PLAYER_UNITS_ADJUST_POST_COMBAT_YIELD` with
+        // `PercentDefeatedStrength 50` and `YieldType YIELD_FAITH`, over
+        // `PLOT_EIGHT_INCLUDE_HOLY_SITE`. The same arithmetic as the promotion
+        // above — a percentage of the dead unit's Combat Strength — with a plot
+        // test instead of a promotion, so the two share this shape rather than
+        // each inventing one. Not in `Expansion2_RemoveData.xml`.
+        //
+        // ⚠ Two things the shipped rows say that a reading from memory does
+        // not. The requirement names no owner, and the text agrees by omission
+        // — "within 8 tiles of a Holy Site district" — so a rival's Holy Site
+        // pays as well as our own. And the text ends "(on Standard Speed)",
+        // Civilization VI's marker for a one-off yield that scales with the
+        // game speed, which `GameSpeed::scale` is.
+        let war_pct = self.pantheon_effect(attacker.owner, "faith_on_kill_near_holy_site_pct");
+        if war_pct > 0.0 && defeated_spec.class == "military" {
+            let strength = defeated_spec.strength;
+            let near_a_holy_site = self
+                .wdisk(defeated.pos, GOD_OF_WAR_HOLY_SITE_RANGE)
+                .into_iter()
+                .any(|position| {
+                    self.map.get(position).is_some_and(|tile| {
+                        tile.district.is_some_and(|district| {
+                            self.district_is_family(district, crate::name!("holy_site"))
+                        })
+                    })
+                });
+            if near_a_holy_site {
+                self.players[attacker.owner].faith +=
+                    self.game_speed.scale(strength * war_pct / 100.0);
+            }
         }
         if self.rules.units[defeated.kind].domain.as_deref() == Some("sea") {
             let pct = self.promotion_effect(attacker, "gold_from_naval_kill_pct");
@@ -34073,25 +36373,15 @@ impl Game {
             let attacker = self.units[&uid].clone();
             self.record_war_unit_participation(&attacker, d.owner);
             self.record_war_unit_participation(&d, attacker.owner);
-            let mut att_base = self.unit_unembarked_strength(&attacker)
-                + self.matchup_bonus(uid, &d, true)
-                + self.flanking_bonus(uid, target)
-                + self.vs_bonus(pid, d.owner);
-            if amphibious && self.promotion_effect(&attacker, "amphibious") == 0.0 {
-                att_base -= 10.0;
-            }
-            let mut def_base = self.unit_strength(&d, true)
-                + self.matchup_bonus(did, &attacker, false)
-                + self.tile_defense_bonus(target)
-                + self.support_bonus(&d)
-                + self.vs_bonus(d.owner, pid);
-            if self.crosses_river(u.pos, target)
-                && self.promotion_effect(&attacker, "amphibious") == 0.0
-            {
-                def_base += 5.0;
-            }
-            let att = effective_strength(att_base, attacker.hp);
-            let ds = effective_strength(def_base, d.hp);
+            // The strengths live in `melee_exchange_strengths` so a controller
+            // can price this exact exchange before choosing to take it. The
+            // unit has been consumed above, but nothing `consume_melee_attack`
+            // touches (attacks, movement, fortification) enters an attacker's
+            // strength, and it does not move the unit — so the shared reading
+            // is the reading this line always had.
+            let (att, ds) = self
+                .melee_exchange_strengths(uid, did)
+                .expect("both combatants exist at the blow");
             let dmg_out = damage(att, ds, &mut self.rng);
             let dmg_in = damage(ds, att, &mut self.rng);
             self.apply_unit_damage(uid, did, dmg_out);
@@ -34149,7 +36439,7 @@ impl Game {
                 self.note_underdog_kill(pid, &attacker, &d);
                 self.note_great_person_assisted_kill(pid, &attacker);
                 self.record_kill(pid, Some(&attacker.kind), &d);
-                self.promotion_kill_rewards(&attacker, &d);
+                self.kill_rewards(&attacker, &d);
                 self.remove_unit(did);
                 self.on_unit_lost(downer);
                 if captured_as_builder {
@@ -34321,6 +36611,18 @@ impl Game {
                 if mover_is_barbarian {
                     bump(&mut self.players[old], "civilians_lost_to_barbarians");
                 }
+                // `captured:settler` / `captured:builder`: how many of each
+                // this seat has taken from a rival by entering their tile;
+                // `rescued:*` is the same take from a barbarian that had
+                // taken it first. An evaluator row can say whether a raid
+                // ever paid, not only that it was declared.
+                let from_barbarian = self.players[old].is_barbarian;
+                let key = if from_barbarian {
+                    "rescued"
+                } else {
+                    "captured"
+                };
+                bump(&mut self.players[owner], &format!("{key}:{kind}"));
                 self.transfer_unit_owner(oid, owner);
             } else if matches!(class, "civilian" | "support") {
                 let old = self.units[&oid].owner;
@@ -34355,7 +36657,9 @@ impl Game {
         if self.wdist(u.pos, target) > range {
             return Err("out of range".into());
         }
-        if !self.combat_target_visible(pid, target) {
+        let visible = self.player_vision_frame(pid);
+        let viewers = self.visibility_viewers(pid);
+        if !self.combat_target_visible_at(pid, target, visible.as_ref(), &viewers) {
             return Err("target is not visible".into());
         }
         if !self.unit_has_line_of_sight(uid, target) {
@@ -34430,38 +36734,12 @@ impl Game {
             let downer = defender.owner;
             self.record_war_unit_participation(&attacker, downer);
             self.record_war_unit_participation(&defender, attacker.owner);
-            let defender_spec = &self.rules.units[defender.kind];
-            let mut att_base = self.unit_ranged_attack_strength(&self.units[&uid])
-                + self.matchup_bonus(uid, &defender, true)
-                + if defender_spec.domain.as_deref() == Some("sea") {
-                    self.promotion_effect(&attacker, "ranged_vs_units")
-                        + self.promotion_effect(&attacker, "ranged_vs_naval")
-                        + self.promotion_effect(&attacker, "siege_vs_naval")
-                } else {
-                    self.promotion_effect(&attacker, "ranged_vs_land")
-                        + self.promotion_effect(&attacker, "ranged_vs_units")
-                        + self.promotion_effect(&attacker, "siege_vs_land")
-                }
-                + self.vs_bonus(pid, downer);
-            if (spec.bombard_strength > 0.0 && defender_spec.domain.as_deref() != Some("sea"))
-                || (spec.ranged_strength > 0.0
-                    && spec.domain.as_deref() != Some("sea")
-                    && defender_spec.domain.as_deref() == Some("sea"))
-            {
-                att_base -= 17.0;
-            }
-            let att = effective_strength(att_base, self.units[&uid].hp);
-            let ds = effective_strength(
-                self.unit_strength(&defender, true)
-                    + self.ranged_defense_bonus(&defender, false)
-                    + if defender_spec.domain.as_deref() == Some("air") {
-                        0.0
-                    } else {
-                        self.tile_defense_bonus(target)
-                    }
-                    + self.vs_bonus(downer, pid),
-                defender.hp,
-            );
+            // As in `do_attack`: the strengths are stated once, in
+            // `ranged_strike_strengths`, so a controller deciding whether to
+            // stand under this shot prices the shot the engine will fire.
+            let (att, ds) = self
+                .ranged_strike_strengths(uid, did, target)
+                .expect("both combatants exist at the shot");
             let dmg = damage(att, ds, &mut self.rng);
             self.apply_unit_damage(uid, did, dmg);
             let defender_dead = self.units[&did].hp <= 0;
@@ -34474,7 +36752,7 @@ impl Game {
                 self.note_underdog_kill(pid, &attacker, &defender);
                 self.note_great_person_assisted_kill(pid, &attacker);
                 self.record_kill(pid, Some(&attacker.kind), &defender);
-                self.promotion_kill_rewards(&attacker, &defender);
+                self.kill_rewards(&attacker, &defender);
                 if self.has_ability(pid, "killer_of_cyrus") {
                     if let Some(attacker) = self.units.get_mut(&uid) {
                         attacker.hp = (attacker.hp + 30).min(100);
@@ -34815,7 +37093,7 @@ impl Game {
         }
     }
 
-    fn builder_operations(&self, pid: usize, pos: Pos) -> Vec<String> {
+    pub(crate) fn builder_operations(&self, pid: usize, pos: Pos) -> Vec<String> {
         let Some(tile) = self.map.get(pos) else {
             return vec![];
         };
@@ -35650,7 +37928,18 @@ impl Game {
         Ok(())
     }
 
-    fn pillageable_at(&self, pid: usize, pos: Pos) -> bool {
+    pub(crate) fn pillageable_at(&self, pid: usize, pos: Pos) -> bool {
+        self.pillageable_at_with(pid, pos, true)
+    }
+
+    /// `pillageable_at` with the state of war assumed: what a declaration on
+    /// the tile's owner would put on the table. The advanced controller's
+    /// opportunistic war prices a surprise war on this before opening it.
+    pub(crate) fn pillageable_after_declaring(&self, pid: usize, pos: Pos) -> bool {
+        self.pillageable_at_with(pid, pos, false)
+    }
+
+    fn pillageable_at_with(&self, pid: usize, pos: Pos, require_war: bool) -> bool {
         let Some(tile) = self.map.get(pos) else {
             return false;
         };
@@ -35663,7 +37952,10 @@ impl Game {
         let Some(city) = self.cities.get(&cid) else {
             return false;
         };
-        if city.owner == pid || !self.is_at_war(pid, city.owner) || self.city_at(pos).is_some() {
+        if city.owner == pid
+            || (require_war && !self.is_at_war(pid, city.owner))
+            || self.city_at(pos).is_some()
+        {
             return false;
         }
         if let Some(improvement) = tile.improvement.as_deref() {
@@ -35803,6 +38095,10 @@ impl Game {
         if !self.pillageable_at(pid, pos) {
             return Err("nothing pillageable there".into());
         }
+        // `pillages`: tiles and district layers this seat has pillaged,
+        // barbarian camps included. The same evaluator reading as the
+        // capture counters above.
+        bump(&mut self.players[pid], "pillages");
         let enemy = self.map.tiles[&pos]
             .owner_city
             .and_then(|city| self.cities.get(&city))
@@ -36350,8 +38646,12 @@ impl Game {
             || attacker.attacks_left <= 0
             || self.wdist(self.air_operation_origin(uid), target) > self.unit_attack_range(uid)
             || !self.enemy_air_strike_target_at(pid, target)
-            || !self.combat_target_visible(pid, target)
         {
+            return Err("invalid air strike".into());
+        }
+        let visible = self.player_vision_frame(pid);
+        let viewers = self.visibility_viewers(pid);
+        if !self.combat_target_visible_at(pid, target, visible.as_ref(), &viewers) {
             return Err("invalid air strike".into());
         }
         let (destroyed, fighter_engaged) = self.resolve_air_interceptions(uid, target);
@@ -36480,8 +38780,12 @@ impl Game {
                 target,
             ) > self.unit_attack_range(uid)
             || (!air && !self.unit_has_line_of_sight(uid, target))
-            || !self.combat_target_visible(pid, target)
         {
+            return Err("unit cannot priority target there".into());
+        }
+        let visible = self.player_vision_frame(pid);
+        let viewers = self.visibility_viewers(pid);
+        if !self.combat_target_visible_at(pid, target, visible.as_ref(), &viewers) {
             return Err("unit cannot priority target there".into());
         }
         let Some(defender_id) = self.priority_support_target_at(pid, target) else {
@@ -38158,7 +40462,9 @@ impl Game {
         if self.city_at(target).is_some() || self.encampment_at(target).is_some() {
             return Err("cities cannot strike defensible districts".into());
         }
-        if !self.combat_target_visible(pid, target) {
+        let visible = self.player_vision_frame(pid);
+        let viewers = self.visibility_viewers(pid);
+        if !self.combat_target_visible_at(pid, target, visible.as_ref(), &viewers) {
             return Err("target is not visible".into());
         }
         if !self.has_line_of_sight(self.cities[&cid].pos, target, true) {
@@ -38252,7 +40558,9 @@ impl Game {
         if self.wdist(position, target) > 2 || !self.has_line_of_sight(position, target, true) {
             return Err("target out of range or sight".into());
         }
-        if !self.combat_target_visible(pid, target) {
+        let visible = self.player_vision_frame(pid);
+        let viewers = self.visibility_viewers(pid);
+        if !self.combat_target_visible_at(pid, target, visible.as_ref(), &viewers) {
             return Err("target is not visible".into());
         }
         if self.city_at(target).is_some() || self.encampment_at(target).is_some() {
@@ -39114,6 +41422,16 @@ impl Game {
             }
             declared_principals.push(partner);
         }
+        // Gathering Storm's `WORLD_CONGRESS_REQUEST_FOR_MILITARY_AID_GRIEVANCES_MIN`
+        // tests the target's grievance ledger when a declarer begins the war.
+        // Capture that pre-declaration state before the war's own grievance
+        // accounting can make an ordinary declaration appear eligible.
+        let military_aid_request = declared_principals.iter().any(|declarer| {
+            self.players[other]
+                .grievances
+                .get(declarer)
+                .is_some_and(|grievances| *grievances >= MILITARY_AID_REQUEST_GRIEVANCES_MIN)
+        });
         let attackers: BTreeSet<usize> = declared_principals
             .iter()
             .flat_map(|principal| self.team_members(*principal))
@@ -39168,8 +41486,9 @@ impl Game {
                 }
             }
         }
+        let declaration_grievances = profile.declaration_grievances();
         for declarer in &declared_principals {
-            self.add_grievances(other, *declarer, profile.declaration_grievances());
+            self.add_grievances(other, *declarer, declaration_grievances);
         }
         if self.players[other].is_minor {
             self.city_state_declaration_grievances(other, &declared_principals);
@@ -39254,6 +41573,9 @@ impl Game {
             }
         }
         self.sync_war_log();
+        if military_aid_request {
+            self.open_native_aid_request(other, NativeCompetitionTrigger::WarWithGrievances);
+        }
         Ok(())
     }
 
@@ -39376,7 +41698,12 @@ impl Game {
                 return Err("alliance is unavailable".into());
             }
         }
-        if !open_borders && !friendship && !peace && alliance.is_none() {
+        // A proposal that only gives Gold is a gift (legal, buys nothing —
+        // see `validate_trade`); one that only asks is a demand and goes
+        // through `Action::DemandGold`; an exchange goes through the trade
+        // lane, where both sides must gain.
+        let gift = give_gold > 0.0 && request_gold <= 0.0;
+        if !open_borders && !friendship && !peace && alliance.is_none() && !gift {
             return Err("economic exchanges must use mutually favorable trade terms".into());
         }
         let id = self.next_deal_id;
@@ -39696,6 +42023,9 @@ impl Game {
         }
         self.players[deal.from].gold += deal.request_gold - deal.give_gold;
         self.players[deal.to].gold += deal.give_gold - deal.request_gold;
+        if Self::diplomatic_deal_is_gift(&deal) {
+            self.record_gift(deal.from, deal.to);
+        }
         if deal.peace {
             self.conclude_peace(deal.from, deal.to, peace_terms);
         }
@@ -40205,6 +42535,25 @@ impl Game {
         1.1 + 0.14 * self.world_era as f64 + 0.07 * self.players[pid].dvp.max(0) as f64
     }
 
+    /// What one point of Diplomatic Favor is worth to `pid` in Gold by this
+    /// engine's own book: the live seat's floor for a favor sale, which used
+    /// to be a flat Gold a point.
+    pub fn favor_gold_value(&self, pid: usize) -> f64 {
+        self.favor_unit_value(pid)
+    }
+
+    /// What passage through another empire's territory is worth to
+    /// `receiver` in Gold by this engine's book, read as if it were not yet
+    /// open — a mirrored board can carry the very passage the live seat is
+    /// about to buy. The live seat's ceiling for a passage purchase, which
+    /// used to be whatever the treasury held.
+    pub fn passage_gold_value(&self, receiver: usize) -> f64 {
+        let tourism = (self.players[receiver].tourism_lifetime
+            / self.turn.saturating_sub(1).max(1) as f64)
+            .min(80.0);
+        28.0 + tourism * 0.35
+    }
+
     fn open_borders_receive_value(&self, receiver: usize, grantor: usize) -> f64 {
         if self.has_open_borders(receiver, grantor) {
             return 0.0;
@@ -40546,6 +42895,10 @@ impl Game {
             || self.players[to].is_barbarian
             || self.is_at_war(from, to)
             || (offer.is_empty() && request.is_empty())
+            // A one-sided deal that only TAKES is a demand, and a demand is
+            // `Action::DemandGold`: refusable, with a grievance. It never
+            // executes as a trade.
+            || (offer.is_empty() && !request.is_empty())
             || !self.items_are_valid(from, offer)
             || !self.items_are_valid(to, request)
             || offer
@@ -40594,7 +42947,17 @@ impl Game {
             return Err("Open Borders requires Early Empire for both civilizations".into());
         }
         let utilities = self.trade_utilities(from, to, offer, request);
-        if utilities.0 <= 0.25 || utilities.1 <= 0.25 {
+        // ★ A GIFT IS LEGAL, AND IT BUYS NOTHING — Civilization VI's rule, and
+        // since 2026-08-24 this engine's. A one-sided deal that only GIVES
+        // proposes and the recipient accepts; the game's own database carries
+        // no diplomatic modifier for a gift (a delegation and a demand, yes),
+        // so `relationship_opinion` has none either. Until now the engine
+        // refused the gift outright, which was stricter than the game it
+        // mirrors and hid the question the live seat actually faces. An
+        // exchange must still pay both sides; the AI never gives without
+        // receiving (`gifts_given` is the counter that says so).
+        let gift = request.is_empty();
+        if utilities.1 <= 0.25 || (!gift && utilities.0 <= 0.25) {
             return Err("both civilizations must benefit from the trade".into());
         }
         Ok(utilities)
@@ -40830,7 +43193,33 @@ impl Game {
             .counters
             .entry("trades_completed".to_string())
             .or_insert(0) += 1;
+        if request.is_empty() {
+            self.record_gift(from, to);
+        }
         Ok(())
+    }
+
+    /// The gift ledger: what a seat gave for nothing, and what it was given.
+    /// A controller that reads `gifts_given` above zero on its own seat has
+    /// done something no controller here is meant to do.
+    fn record_gift(&mut self, from: usize, to: usize) {
+        bump(&mut self.players[from], "gifts_given");
+        bump(&mut self.players[to], "gifts_received");
+    }
+
+    /// A diplomatic deal that only hands over Gold: legal as a gift, worth
+    /// nothing to the relationship, counted on the ledger.
+    fn diplomatic_deal_is_gift(deal: &DiplomaticDeal) -> bool {
+        deal.give_gold > 0.0
+            && deal.request_gold <= 0.0
+            && !deal.open_borders
+            && !deal.friendship
+            && !deal.peace
+            && deal.alliance.is_none()
+            && !deal.defensive_pact
+            && deal.joint_war_target.is_none()
+            && deal.promise.is_none()
+            && !deal.demand
     }
 
     fn quoted_payment(&self, payer: usize, price: f64) -> Option<DealItems> {
@@ -41546,8 +43935,7 @@ impl Game {
             .filter(|alliance| alliance.ends > turn)
             .map(|alliance| alliance.level as f64)
             .sum::<f64>();
-        let suzerain_multiplier =
-            1.0 + self.empire_wonder_effect(pid, "suzerain_diplomatic_favor_pct") / 100.0;
+        let suzerain_multiplier = self.suzerain_diplomatic_favor_per_turn(pid);
         let buildings = self.empire_building_sum(pid, |building| {
             building
                 .effects
@@ -41603,6 +43991,7 @@ impl Game {
             .counters
             .entry("diplomatic_favor".to_string())
             .or_insert(0) += favor.max(0.0).floor() as i64;
+        self.score_favor_competition(pid, favor.max(0.0));
     }
 
     fn process_influence(&mut self, pid: usize) {
@@ -41929,7 +44318,7 @@ impl Game {
             .then_some((city_id, city.owner))
     }
 
-    fn governor_effect(&self, pid: usize, cid: u32, effect: &str) -> f64 {
+    pub(crate) fn governor_effect(&self, pid: usize, cid: u32, effect: &str) -> f64 {
         // Deciding whether a Governor is established walks the roster and the
         // city; no title or promotion granting this makes that moot.
         if !self.rules.effect_index.governors(effect) {
@@ -42536,9 +44925,36 @@ impl Game {
         choice.split_once(':').unwrap_or(("A", choice))
     }
 
-    fn congress_vote_cost(votes: u32) -> f64 {
+    /// The host's Online-speed ballot table is (2k(k + 1)), where (k)
+    /// counts paid votes: a thirteen-vote ballot costs 312 Favor. That is
+    /// deliberately not the generic 50%-of-Standard curve (which would be
+    /// 390), so keep the observed live rule explicit rather than silently
+    /// treating it as ordinary production scaling.
+    fn congress_paid_vote_cost_factor(&self) -> f64 {
+        match self.game_speed {
+            GameSpeed::Online => 2.0,
+            _ => 5.0,
+        }
+    }
+
+    fn congress_vote_cost(&self, votes: u32) -> f64 {
         let paid_votes = votes.saturating_sub(1) as f64;
-        5.0 * paid_votes * (paid_votes + 1.0)
+        self.congress_paid_vote_cost_factor() * paid_votes * (paid_votes + 1.0)
+    }
+
+    /// The most votes a player can purchase with its present Favor. One vote
+    /// is free, and the quadratic inversion keeps the action-space boundary
+    /// identical to the spend/refund curve above.
+    pub(crate) fn congress_affordable_votes(&self, pid: usize) -> u32 {
+        let favor = self
+            .players
+            .get(pid)
+            .map(|player| player.diplomatic_favor)
+            .unwrap_or_default()
+            .max(0.0);
+        let factor = self.congress_paid_vote_cost_factor();
+        let paid_votes = ((1.0 + 4.0 * favor / factor).sqrt() - 1.0) / 2.0;
+        paid_votes.floor().clamp(0.0, (u32::MAX - 1) as f64) as u32 + 1
     }
 
     fn emergency_resolution_id(id: u32) -> String {
@@ -42823,6 +45239,7 @@ impl Game {
         if votes == 0 {
             return Err("at least one vote is required".into());
         }
+        let favor_cost = self.congress_vote_cost(votes);
         let emergency_voters = self
             .emergency_proposal_for_resolution(resolution)
             .map(|proposal| (proposal.target, proposal.eligible.clone()));
@@ -42858,9 +45275,7 @@ impl Game {
         }
 
         // Every civilization receives its first vote; additional votes cost
-        // 10, then 20, then 30 Favor, matching Gathering Storm's escalating
-        // diplomatic-vote cost.
-        let favor_cost = Self::congress_vote_cost(votes);
+        // an escalating amount of Favor on the active game-speed curve.
         if self.players[pid].diplomatic_favor + f64::EPSILON < favor_cost {
             return Err("not enough Diplomatic Favor".into());
         }
@@ -42890,7 +45305,7 @@ impl Game {
                     .resolutions
                     .iter()
                     .filter_map(|resolution| resolution.ballots.get(&player.id))
-                    .map(|(_, votes)| Self::congress_vote_cost(*votes))
+                    .map(|(_, votes)| self.congress_vote_cost(*votes))
                     .sum::<f64>();
                 (player.id, player.diplomatic_favor + committed)
             })
@@ -42909,7 +45324,7 @@ impl Game {
                         if available <= f64::EPSILON {
                             0.0
                         } else {
-                            Self::congress_vote_cost(*votes) / available
+                            self.congress_vote_cost(*votes) / available
                         }
                     })
                     .max_by(f64::total_cmp)
@@ -42954,7 +45369,7 @@ impl Game {
             // Exact predictions earn the stock +1 Diplomatic Victory Point.
             for (voter, (choice, votes)) in &resolution.ballots {
                 let (outcome, target) = Self::congress_choice_parts(choice);
-                let cost = Self::congress_vote_cost(*votes);
+                let cost = self.congress_vote_cost(*votes);
                 if outcome != winning_outcome {
                     self.players[*voter].diplomatic_favor += cost;
                 } else if target != winning_target {
@@ -43094,6 +45509,9 @@ impl Game {
             closes: self.turn + self.standard_duration(5),
             resolutions,
         });
+        // Gathering Storm seats a scored competition from the congress
+        // (`EMERGENCY_TRIGGER_WORLD_CONGRESS`), not on its own clock.
+        self.open_native_competition();
     }
 
     /// From the Medieval era, regular sessions open every 30 turns. Voting
@@ -43103,6 +45521,7 @@ impl Game {
         if self.is_finished() {
             return;
         }
+        self.close_native_competition();
         self.active_congress_effects
             .retain(|effect| effect.expires > self.turn);
         if self
@@ -43277,7 +45696,7 @@ impl Game {
         for (voter, (choice, votes)) in &resolution.ballots {
             let supported = Self::congress_choice_parts(choice) == ("A", "support");
             if supported != passed {
-                self.players[*voter].diplomatic_favor += Self::congress_vote_cost(*votes);
+                self.players[*voter].diplomatic_favor += self.congress_vote_cost(*votes);
             }
         }
         if !passed
@@ -45305,8 +47724,8 @@ impl Game {
                 if let Some(threshold) = self.mercy_rule {
                     if let Some(leader) = crate::odds::mercy_leader(self, threshold) {
                         // The lanes go on before the crown, not after it: the
-                        // verdict note, the league record and the finish
-                        // screen all read the composed label, and the board
+                        // verdict note and the finish screen read the
+                        // composed label, and the board
                         // they are describing is the one standing at this
                         // crossing. Cleared again if the crown is refused —
                         // a play-on extension can decline this very result —
@@ -45383,6 +47802,9 @@ impl Game {
         self.reconcile_closed_border_units(Some(pid));
         self.process_routes(pid);
         self.process_great_people(pid);
+        // Districts and buildings score a competition for being *maintained*,
+        // so they pay once a turn like the yields above.
+        self.score_competition_holdings(pid);
         self.process_pressure(pid);
         self.process_loyalty(pid);
         self.record_emergency_presence(pid);
@@ -47243,6 +49665,21 @@ impl Game {
                     return true;
                 }
                 let spec = self.rules.projects[project].clone();
+                // The score the project declares only means something while a
+                // competition CIVVIS runs itself is open; a mirrored one is
+                // counted by the host and must not be counted twice.
+                if spec.competition_score > 0.0 && self.victory_eligible(pid) {
+                    if let Some(running) = self.competition.as_mut() {
+                        if running.ends > self.turn
+                            && running.target != Some(pid)
+                            && spec
+                                .host_competition_kinds()
+                                .any(|kind| kind == running.kind)
+                        {
+                            *running.scores.entry(pid).or_insert(0.0) += spec.competition_score;
+                        }
+                    }
+                }
                 if !spec.repeatable && self.players[pid].science_projects.contains(project.as_str()) {
                     // Another city won this internal project race.
                     return true;
@@ -47284,6 +49721,31 @@ impl Game {
                     > 0.0
                 {
                     self.cities.get_mut(&cid).unwrap().reactor_age = 0;
+                }
+                let consumed_buildings: Vec<Name> = self.cities[&cid]
+                    .buildings
+                    .iter()
+                    .copied()
+                    .filter(|building| {
+                        spec.consumes_buildings
+                            .iter()
+                            .any(|family| self.building_is_family(*building, Name::new(family)))
+                    })
+                    .collect();
+                let consumed_nuclear_plant = consumed_buildings.iter().any(|building| {
+                    self.building_is_family(*building, crate::name!("nuclear_power_plant"))
+                });
+                if !consumed_buildings.is_empty() {
+                    let city = self.cities.get_mut(&cid).unwrap();
+                    city.buildings
+                        .retain(|building| !consumed_buildings.contains(building));
+                    city.pillaged_buildings
+                        .retain(|building| !consumed_buildings.contains(building));
+                    city.building_eras
+                        .retain(|building, _| !consumed_buildings.contains(building));
+                    if consumed_nuclear_plant {
+                        city.reactor_age = 0;
+                    }
                 }
                 if let Some(target) = Self::converted_power_plant(project) {
                     let plants = ["coal_power_plant", "oil_power_plant", "nuclear_power_plant"];
@@ -49013,6 +51475,9 @@ mod world_lap_tests;
 
 #[cfg(test)]
 mod purchase_gate_tests;
+
+#[cfg(test)]
+mod unit_upgrade_price_tests;
 
 #[cfg(test)]
 mod wonder_effect_cache_tests;

@@ -38,7 +38,87 @@ PINFILE=${CIVVIS_PINFILE:-$HOME/.civvis-play-pin}
 # up. Resolved ONCE here, before the loop's `cd`, and overridable for a test.
 HEAD_REPO=${CIVVIS_HEAD_REPO:-${0:A:h:h:h}}
 LOGS=$HOME/civvis-climb-logs
-STRATEGY=${CIVVIS_STRATEGY:-WildCard9}
+# Named league genomes were retired in #2357.  The live decider now selects
+# `AdvancedAi::new()` with the gene ledger applied when --strategy is ABSENT;
+# that deployment genome has all and only its default-on genes.  civvis-orders
+# deliberately rejects every --strategy value rather than silently running a
+# different agent, so an inherited pre-retirement CIVVIS_STRATEGY must never be
+# forwarded into a verification game.  Keep it only long enough to make the
+# override visible in the supervisor log below.
+REQUESTED_RETIRED_STRATEGY=${CIVVIS_STRATEGY:-}
+# `CIVVIS_WITHOUT` is the explicit LIVE A/B gate for already registered
+# treatments.  It is deliberately empty by default: a comma-separated value
+# (for example `war-economy`) changes this batch's controller, and
+# `civ6_play.py` writes the resolved withheld list into every summary.  Do not
+# turn a native screen result into a deployment change here; name the arm,
+# run its comparable control, and let the ladder read both.
+WITHHELD=${CIVVIS_WITHOUT:-}
+WITHOUT_ARGS=()
+if [[ -n "$WITHHELD" ]]; then
+  for treatment in ${(s:,:)WITHHELD}; do
+    [[ -n "$treatment" ]] || continue
+    WITHOUT_ARGS+=(--without "$treatment")
+  done
+fi
+# `CIVVIS_WITH` is the matching explicit verification gate for a ledger-held
+# live treatment.  Unlike `CIVVIS_WITHOUT`, it cannot change deployment: the
+# decider accepts only a named treatment that the gene ledger has withheld,
+# and records the forced list in every run's genome event and ladder row.
+# Keep it empty in ordinary operation; a comma-separated value (for example
+# `amenity-project-preemption`) is a labeled force-on arm, not a promotion.
+FORCED_ENV=${CIVVIS_WITH:-}
+# A GUI-capable interactive host cannot acquire a new environment variable
+# after it has started, so an authorized operator otherwise has to restart the
+# host merely to schedule a labeled arm.  Read this file only between batches:
+# its absence (or an empty file) is exactly the ordinary deployment genome;
+# its one comma-separated line is the same explicit `CIVVIS_WITH` value.  The
+# per-batch read is deliberate: editing the file can never alter a game that is
+# already running, and one three-attempt batch retains one recorded identity.
+FORCE_FILE=${CIVVIS_WITH_FILE:-$HOME/.civvis-live-force-on}
+FORCED=""
+FORCE_SOURCE="none"
+WITH_ARGS=()
+
+# Resolve the force-on selection once at the no-game batch boundary.  A bad or
+# conflicting operator request must stop before build/launch rather than fall
+# through to an unlabelled control, because that would file the wrong arm under
+# a plausible-looking ladder row.  Whitespace also rejects accidental multi-line
+# files: treatment names are hyphenated tokens and the decider receives every
+# comma member as its own quoted `--with` word below.
+resolve_forced_arm() {
+  local from_file=""
+  FORCED="$FORCED_ENV"
+  FORCE_SOURCE="environment"
+  [[ -n "$FORCED" ]] || FORCE_SOURCE="none"
+
+  if [[ -e "$FORCE_FILE" ]]; then
+    if [[ ! -r "$FORCE_FILE" ]]; then
+      say "force-on file exists but is unreadable ($FORCE_FILE); refusing batch"
+      return 1
+    fi
+    from_file=$(<"$FORCE_FILE")
+    if [[ "$from_file" == *[[:space:]]* ]]; then
+      say "force-on file contains whitespace ($FORCE_FILE); refusing batch"
+      return 1
+    fi
+    if [[ -n "$from_file" ]]; then
+      if [[ -n "$FORCED" && "$FORCED" != "$from_file" ]]; then
+        say "force-on file conflicts with CIVVIS_WITH; refusing batch"
+        return 1
+      fi
+      FORCED="$from_file"
+      FORCE_SOURCE="file:$FORCE_FILE"
+    fi
+  fi
+
+  WITH_ARGS=()
+  if [[ -n "$FORCED" ]]; then
+    for treatment in ${(s:,:)FORCED}; do
+      [[ -n "$treatment" ]] || continue
+      WITH_ARGS+=(--with "$treatment")
+    done
+  fi
+}
 # Attempts per cycle. One game per source revision cannot establish
 # repeatability; the policy below advances only after a comparable trailing
 # batch. Three is the smallest useful default and can be raised or lowered for
@@ -61,6 +141,42 @@ EXPLICIT_DIFFICULTY=${CIVVIS_DIFFICULTY:-}
 # when this knob is set, so the default has exactly one home and this file does
 # not become another copy of it. Set `CIVVIS_VICTORY` to pin a different lane.
 VICTORY=${CIVVIS_VICTORY:-}
+# ⚠⚠ ONE EXPANSION PER WORD IN THE INVOCATION BELOW. zsh does not word-split an
+# unquoted `${VAR:+--flag "$VAR"}`: with the knob set it reaches the climb as
+# ONE argument, `--victory science`, which argparse rejects as "unrecognized
+# arguments" and the cycle plays no turns. The victory form had never been
+# exercised (no host had set the knob); the abandon floor was, on 2026-08-19
+# at 17:00Z, and four starts in a row played nothing. So the flag and its
+# value are two expansions, `${VAR:+--flag} ${VAR:+"$VAR"}`, each one word or
+# none; `tools/test_ops_ladder_objective.py` runs these lines under zsh.
+# The floor under a game's expected win rate, below which the harness stops
+# playing it out (`civ6_play.ABANDON_CELLS`: the ladder's own measured table;
+# 0/34 of the live games that were under three quarters of the best rival's
+# score for five turns past turn 120 ever won). Unset means every game is
+# played to its end. Operator request 2026-08-19: "ok to abandon games early
+# if expected win rate <5%" — set `CIVVIS_ABANDON_BELOW_WIN_RATE=0.05` in the
+# login shell the launcher inherits (~/.zprofile on this host, beside
+# CIVVIS_DIFFICULTY), and an abandoned game is filed as `abandoned`, never as
+# a stall or a defeat.
+ABANDON_BELOW=${CIVVIS_ABANDON_BELOW_WIN_RATE:-}
+# A stricter restart rule for a position that is bad on all three strategic
+# standings, not merely on score: below this share of the score leader AND
+# behind the visible science and culture leaders for five turns after turn 100.
+# Unset keeps the policy off. The operator's requested 70 % lives in the
+# inherited login shell as CIVVIS_RESTART_BELOW_LEADER_RATIO=0.70.
+RESTART_BELOW_LEADER_RATIO=${CIVVIS_RESTART_BELOW_LEADER_RATIO:-}
+# Optional live-host wall-clock budget. The climb's defaults remain the source
+# of truth when these are absent; the operator can raise them for a GUI host
+# whose healthy 250-turn games take longer. Run civvis-20260822T020434Z was
+# still advancing and leading at turn 246 when the default 8,100-second ceiling
+# stopped it, four turns before its autosave continuation won 1458-990. Keep
+# each flag/value as argv words so a decimal setting reaches argparse intact.
+PLAY_TIMEOUT=${CIVVIS_PLAY_TIMEOUT:-}
+PLAY_TIMEOUT_CEILING=${CIVVIS_PLAY_TIMEOUT_CEILING:-}
+TIMEOUT_ARGS=()
+[[ -n "$PLAY_TIMEOUT" ]] && TIMEOUT_ARGS+=(--timeout "$PLAY_TIMEOUT")
+[[ -n "$PLAY_TIMEOUT_CEILING" ]] \
+    && TIMEOUT_ARGS+=(--timeout-ceiling "$PLAY_TIMEOUT_CEILING")
 SUP=$LOGS/supervisor.log
 MIRROR_HOME=$HOME/civvis-civ6-mirror
 FOLLOW_LOG=$MIRROR_HOME/follow-nohup.log
@@ -70,7 +186,19 @@ FOLLOW_REVISION_FILE=$MIRROR_HOME/follower-runtime-revision
 say() { print -r -- "[$(date -u +%FT%TZ)] $*" >> "$SUP" }
 
 mkdir -p "$LOGS"
-say "supervisor up (strategy=$STRATEGY, pinfile=$PINFILE)"
+if [[ -n "$REQUESTED_RETIRED_STRATEGY" ]]; then
+  say "ignoring retired CIVVIS_STRATEGY=$REQUESTED_RETIRED_STRATEGY; live seat uses deployment genome (no --strategy)"
+fi
+say "supervisor up (genome=deployment, withheld=${WITHHELD:-none}, force_file=$FORCE_FILE, pinfile=$PINFILE)"
+# The game inherits this shell's priority and macOS will not lower a nice once
+# set, so a supervisor that starts demoted plays every game demoted. Say the
+# number on every start; a non-zero one names the launch site to fix.
+OWN_NICE=$(ps -o ni= -p $$ 2>/dev/null | tr -d " ")
+if [[ "${OWN_NICE:-0}" != 0 ]]; then
+  say "WARN supervisor is at nice ${OWN_NICE}: every game it starts will run below ordinary work. The launcher backgrounded it from a zsh with BG_NICE set; put 'unsetopt BG_NICE' before the '&' (see civvis-interactive-host.sh)"
+else
+  say "supervisor priority nice 0"
+fi
 
 # This runner can be started manually or by an interactive host wrapper. Two copies
 # are not harmless: each believes it owns the one Civ VI installation and may
@@ -313,6 +441,10 @@ while true; do
       continue
     fi
   fi
+  if ! resolve_forced_arm; then
+    sleep 60
+    continue
+  fi
   HEAD_SHA=${HEAD_SHA:0:7}
   if ! cargo build --release --bin civvis_orders --bin civvis >>"$SUP" 2>&1; then
     say "build FAILED at $HEAD_SHA; retrying in 120s"
@@ -373,7 +505,7 @@ while true; do
   fi
 
   TAG=$(date -u +%Y%m%dT%H%M%SZ)
-  say "starting $ATTEMPTS attempt(s) on $HEAD_SHA at $DIFFICULTY (log climb-$TAG.log)"
+  say "starting $ATTEMPTS attempt(s) on $HEAD_SHA at $DIFFICULTY (forced=${FORCED:-none}, source=$FORCE_SOURCE, log climb-$TAG.log)"
   # The success check below must not read a PREVIOUS cycle's play log. A climb
   # that exits before creating one — 2026-08-15T11:07:31Z: "something already
   # holds the game; refusing to stop an unowned run", gone in under a second —
@@ -385,8 +517,13 @@ while true; do
   CYCLE_MARK=$LOGS/.cycle-start
   : > "$CYCLE_MARK"
   python3 -u tools/civ6_civvis_climb.py --attempts "$ATTEMPTS" \
-      --difficulty "$DIFFICULTY" --strategy "$STRATEGY" \
-      ${VICTORY:+--victory "$VICTORY"} \
+      --difficulty "$DIFFICULTY" \
+      "${WITHOUT_ARGS[@]}" \
+      "${WITH_ARGS[@]}" \
+      "${TIMEOUT_ARGS[@]}" \
+      ${VICTORY:+--victory} ${VICTORY:+"$VICTORY"} \
+      ${ABANDON_BELOW:+--abandon-below-win-rate} ${ABANDON_BELOW:+"$ABANDON_BELOW"} \
+      ${RESTART_BELOW_LEADER_RATIO:+--restart-below-leader-ratio} ${RESTART_BELOW_LEADER_RATIO:+"$RESTART_BELOW_LEADER_RATIO"} \
       --logs "$LOGS" > "$LOGS/climb-$TAG.log" 2>&1
 
   # "Played a turn" is the only honest success test: a run can reach the map,

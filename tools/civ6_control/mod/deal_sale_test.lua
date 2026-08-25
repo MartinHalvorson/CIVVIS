@@ -26,7 +26,9 @@ setmetatable(_G, { __index = function(_, key)
 	return stub()
 end })
 
-CivvisControlConfig = { TradeRetryTurns = 3, TradeResponseTurns = 2 }
+-- The direct (session-less) path is what these cases pin; the session lane
+-- has its own regression in `deal_session_test.lua`.
+CivvisControlConfig = { TradeRetryTurns = 3, TradeResponseTurns = 2, DealSessions = false }
 
 -- Capture the agent's ledger lines so the events the lane writes can be
 -- asserted on, not just its return values.
@@ -75,7 +77,11 @@ local function eventField(line, key)
 end
 
 DealDirection = { OUTGOING = "outgoing", INCOMING = "incoming" }
-DealItemTypes = { RESOURCES = "resources", FAVOR = "favor", GOLD = "gold", AGREEMENTS = "agreements" }
+DealItemTypes = { RESOURCES = "resources", FAVOR = "favor", GOLD = "gold", AGREEMENTS = "agreements", GREATWORK = "greatwork" }
+-- Real values, not the _G stub: the buy arm compares an incoming item's
+-- subtype against `DealAgreementTypes.OPEN_BORDERS`, and the stub would hand
+-- back a fresh table on every read so nothing could ever match.
+DealAgreementTypes = { MAKE_PEACE = "make_peace", OPEN_BORDERS = "open_borders" }
 DealProposalAction = {
 	PENDING = "pending", PROPOSED = "proposed", ACCEPTED = "accepted", REJECTED = "rejected",
 	ADJUSTED = "adjusted", EQUALIZE = "equalize", EQUALIZE_FAILED = "equalize_failed",
@@ -96,6 +102,13 @@ GameInfo = {
 		return resourceRows[key]
 	end }),
 	Resource_Consumption = { RESOURCE_IRON = { Accumulate = true } },
+	-- Indexable by NAME (the sell arm's `want.name` lookup) and by the
+	-- description id a possible-items entry carries (`ForTypeDescriptionID`),
+	-- the way the shipped deal screen reads the same table both ways.
+	GreatWorks = (function()
+		local poe = { GreatWorkType = "GREATWORK_POE_1", Index = 61 }
+		return { GREATWORK_POE_1 = poe, [61] = poe }
+	end)(),
 }
 Game = {
 	GetLocalPlayer = function() return 7 end,
@@ -119,6 +132,8 @@ local function fixture(opts)
 		local item = { kind = kind, id = nextId }
 		nextId = nextId + 1
 		function item:SetValueType(v) self.valueType = v; call("value_type") end
+		function item:SetSubType(v) self.subType = v; call("sub_type") end
+		function item:GetSubType() return self.subType end
 		function item:SetDuration(v) self.duration = v; call("duration") end
 		function item:SetAmount(v) self.amount = v; call("amount") end
 		function item:GetMaxAmount()
@@ -160,6 +175,7 @@ local function fixture(opts)
 				GetDuration = function() return spec.duration or 0 end,
 				GetAmount = function() return spec.amount or 0 end,
 				GetValueType = function() return spec.valueType end,
+				GetSubType = function() return spec.subType end,
 			}
 		end
 	end
@@ -185,6 +201,16 @@ local function fixture(opts)
 		GetPossibleDealItems = function(pid, subject, kind, deal)
 			call("possible")
 			local out = {}
+			if kind == DealItemTypes.GREATWORK then
+				-- `opts.possibleWorks` is a list of {ForType = instance,
+				-- ForTypeDescriptionID = GameInfo.GreatWorks index}.
+				for _, entry in ipairs(opts.possibleWorks or {}) do
+					out[#out + 1] = { ForType = entry.ForType,
+						ForTypeDescriptionID = entry.ForTypeDescriptionID,
+						IsValid = entry.IsValid ~= false }
+				end
+				return out
+			end
 			for name, max in pairs(opts.possible or {}) do
 				out[#out + 1] = { ForType = resourceRows[name].Index, MaxAmount = max, IsValid = true }
 			end
@@ -219,6 +245,7 @@ local function fixture(opts)
 			return {
 				HasMet = function(_, subject) return opts.met ~= false end,
 				IsAtWarWith = function(_, subject) return opts.atWar == true end,
+				HasOpenBordersFrom = function(_, subject) return opts.alreadyOpen == true end,
 			}
 		end,
 	}
@@ -481,6 +508,78 @@ check("an invalid package is refused", ok, false)
 check("an invalid package is named", why, "invalid_deal")
 check("an invalid package sends nothing", invalid.sends, nil)
 
+-- ─── the work sale ──────────────────────────────────────────────────────────
+-- A placed Great Work goes into the deal the way the shipped screen's own
+-- click puts it there (`OnClickAvailableGreatWork`): SubType carries the
+-- `GameInfo.GreatWorks` row, ValueType the work INSTANCE, no amount and no
+-- duration. The ask registers the instance under a `GREATWORK:` key and the
+-- handler counts the item's PRESENCE as its quantity — a work's GetAmount is
+-- zero, and matching that zero against the offered 1 declined every sale in
+-- the first draft of this arm.
+reset()
+local workAsk, workAskPlayer = fixture({
+	possibleWorks = { { ForType = 4009, ForTypeDescriptionID = 61 } },
+})
+ok, why = sellOrder(7, 3, workAskPlayer, 70, "GREATWORK_POE_1=1", 50)
+check("a work ask is submitted", ok, true)
+check("a work ask says asked", why, "sell_asked")
+local workItem = itemOfKind(workAsk, DealItemTypes.GREATWORK)
+check("the work item is ours", workItem and workItem.owner, 7)
+check("the work item carries the instance", workItem and workItem.valueType, 4009)
+check("the work item carries its database row", workItem and workItem.subType, 61)
+check("the pending ask keys the instance", trade.pending[3].gave["GREATWORK:4009"], 1)
+check("the work offer names the work", eventField(lastEvent("deal_offer"), "gave"), "GREATWORK_POE_1=1")
+
+-- The rival returns exactly the work — amount 0, as the engine reports items
+-- with no quantity — against gold at the floor: accepted.
+local workAnswer = fixture({ incoming = {
+	{ kind = DealItemTypes.GREATWORK, from = 7, duration = 0, amount = 0, valueType = 4009 },
+	{ kind = DealItemTypes.GOLD, from = 3, duration = 0, amount = 140 },
+} })
+onIncoming(3, 7, DealProposalAction.ADJUSTED)
+check("a fair work answer is accepted", workAnswer.sends and workAnswer.sends[1][1], "accepted")
+check("the work close is in the ledger", eventField(lastEvent("deal_closed"), "gold"), "140")
+
+-- Below the floor the work stays home.
+reset()
+local workLowAsk, workLowAskPlayer = fixture({
+	possibleWorks = { { ForType = 4009, ForTypeDescriptionID = 61 } },
+})
+sellOrder(7, 3, workLowAskPlayer, 80, "GREATWORK_POE_1=1", 50)
+local workLow = fixture({ incoming = {
+	{ kind = DealItemTypes.GREATWORK, from = 7, duration = 0, amount = 0, valueType = 4009 },
+	{ kind = DealItemTypes.GOLD, from = 3, duration = 0, amount = 20 },
+} })
+onIncoming(3, 7, DealProposalAction.ADJUSTED)
+check("a lowball on a work is not accepted", workLow.sends, nil)
+check("a lowball on a work settles the ask", trade.pending[3], nil)
+
+-- A different work instance on our side is not what was offered.
+reset()
+local workSwapAsk, workSwapAskPlayer = fixture({
+	possibleWorks = { { ForType = 4009, ForTypeDescriptionID = 61 } },
+})
+sellOrder(7, 3, workSwapAskPlayer, 90, "GREATWORK_POE_1=1", 50)
+local workSwap = fixture({ incoming = {
+	{ kind = DealItemTypes.GREATWORK, from = 7, duration = 0, amount = 0, valueType = 4010 },
+	{ kind = DealItemTypes.GOLD, from = 3, duration = 0, amount = 140 },
+} })
+onIncoming(3, 7, DealProposalAction.ADJUSTED)
+check("a swapped work is declined", workSwap.sends, nil)
+check("the swap mismatch is in the ledger", eventField(lastEvent("deal_declined"), "matches"), "false")
+
+-- A work the database does not know is a named refusal; one the engine will
+-- not put in a deal right now is nothing tradeable.
+reset()
+local workUnknown, workUnknownPlayer = fixture({})
+ok, why = sellOrder(7, 3, workUnknownPlayer, 90, "GREATWORK_NOT_A_WORK=1", 50)
+check("an unknown work is refused", ok, false)
+check("an unknown work is named", why, "unknown_great_work:GREATWORK_NOT_A_WORK")
+reset()
+local workNone, workNonePlayer = fixture({ possibleWorks = {} })
+ok, why = sellOrder(7, 3, workNonePlayer, 90, "GREATWORK_POE_1=1", 50)
+check("a work the engine withholds is nothing tradeable", why, "nothing_tradeable")
+
 -- ─── guards ─────────────────────────────────────────────────────────────────
 reset()
 local unmet, unmetPlayer = fixture({ met = false })
@@ -500,13 +599,145 @@ ok, why = sellOrder(7, 3, hostPendingPlayer, 70, "FAVOR=10", 10)
 check("an engine-pending deal is refused", why, "sell_host_pending")
 check("no guard opened a session", rawget(_G, "SESSION_OPENED"), nil)
 
+-- ─── the passage purchase ───────────────────────────────────────────────────
+-- The buy arm is the sale's mirror image: one AGREEMENTS item FROM the rival,
+-- subtype OPEN_BORDERS, thirty turns, EQUALIZE — and the handler closes only
+-- when the answer holds exactly that agreement against our gold at or under
+-- the ceiling the order carried.
+local function buyOrder(pid, subject, player, turn, ceiling)
+	return applyOrder(player, pid, {
+		kind = "buy", subject = tostring(subject), verb = "OPEN_BORDERS", x = ceiling, y = 0,
+	}, turn)
+end
+
+reset()
+local basks, basksPlayer = fixture({})
+ok, why = buyOrder(7, 3, basksPlayer, 90, 80)
+check("buy ask is submitted", ok, true)
+check("buy ask says asked", why, "buy_asked")
+local agreement = itemOfKind(basks, DealItemTypes.AGREEMENTS)
+check("the agreement is THEIRS to grant", agreement and agreement.owner, 3)
+check("the agreement is open borders", agreement and agreement.subType, "open_borders")
+check("the agreement runs thirty turns", agreement and agreement.duration, 30)
+check("buy validates before it is sent", callAt(basks, "validate") < callAt(basks, "send_equalize"), true)
+check("the buy ask is EQUALIZE", basks.sends[1][1], "equalize")
+check("no PROPOSED goes out on the buy", callAt(basks, "send_proposed"), nil)
+check("no session opens on the buy", rawget(_G, "SESSION_OPENED"), nil)
+check("the buy is pending", trade.pending[3] ~= nil, true)
+check("the pending buy keeps the ceiling", trade.pending[3].ceiling, 80)
+check("the pending buy knows its direction", trade.pending[3].direction, "buy")
+check("the buy offer is in the ledger", eventField(lastEvent("deal_offer"), "direction"), "buy")
+
+-- A sale to the same rival while the buy is unanswered shares the one
+-- working deal and is refused, not silently clobbered.
+local bblock, bblockPlayer = fixture({ possible = { RESOURCE_DYES = 2 } })
+ok, why = sellOrder(7, 3, bblockPlayer, 91, "RESOURCE_DYES=1", 30)
+check("a pending buy blocks a sale to the same rival", why, "sell_pending")
+
+-- The rival prices the passage at 55 lump: under the ceiling, closed.
+local grant = fixture({ incoming = {
+	{ kind = DealItemTypes.AGREEMENTS, from = 3, duration = 30, subType = "open_borders" },
+	{ kind = DealItemTypes.GOLD, from = 7, duration = 0, amount = 55 },
+} })
+onIncoming(3, 7, DealProposalAction.ADJUSTED)
+check("a fair price is copied over the outgoing deal", grant.copied and grant.copied[2], 3)
+check("a fair price is accepted", grant.sends and grant.sends[1][1], "accepted")
+check("the answer settles the buy", trade.pending[3], nil)
+check("the buy close is in the ledger", eventField(lastEvent("deal_closed"), "pay"), "55")
+check("the buy close knows its direction", eventField(lastEvent("deal_closed"), "direction"), "buy")
+
+-- Above the ceiling: declined, cleared, settled.
+reset()
+local pricedAsk, pricedAskPlayer = fixture({})
+buyOrder(7, 3, pricedAskPlayer, 96, 80)
+local priced = fixture({ incoming = {
+	{ kind = DealItemTypes.AGREEMENTS, from = 3, duration = 30, subType = "open_borders" },
+	{ kind = DealItemTypes.GOLD, from = 7, duration = 0, amount = 200 },
+} })
+onIncoming(3, 7, DealProposalAction.ADJUSTED)
+check("a price above the ceiling is declined", priced.sends, nil)
+check("the decline clears the outgoing deal", priced.clearArgs and priced.clearArgs[1], "outgoing")
+check("the decline settles the buy", trade.pending[3], nil)
+check("the overask is in the ledger", eventField(lastEvent("deal_declined"), "pay"), "200")
+
+-- Our per-turn gold is priced at the same 25× book as theirs: 3 a turn is 75.
+reset()
+local gptBuyAsk, gptBuyAskPlayer = fixture({})
+buyOrder(7, 3, gptBuyAskPlayer, 102, 80)
+local gptBuy = fixture({ incoming = {
+	{ kind = DealItemTypes.AGREEMENTS, from = 3, duration = 30, subType = "open_borders" },
+	{ kind = DealItemTypes.GOLD, from = 7, duration = 30, amount = 3 },
+} })
+onIncoming(3, 7, DealProposalAction.ACCEPTED)
+check("our per-turn gold is priced at 25 a point", gptBuy.sends and gptBuy.sends[1][1], "accepted")
+
+-- Their own gold inside a buy answer is foreign, whatever else it holds.
+reset()
+local oddAsk, oddAskPlayer = fixture({})
+buyOrder(7, 3, oddAskPlayer, 108, 80)
+local odd = fixture({ incoming = {
+	{ kind = DealItemTypes.AGREEMENTS, from = 3, duration = 30, subType = "open_borders" },
+	{ kind = DealItemTypes.GOLD, from = 3, duration = 0, amount = 10 },
+	{ kind = DealItemTypes.GOLD, from = 7, duration = 0, amount = 20 },
+} })
+onIncoming(3, 7, DealProposalAction.ADJUSTED)
+check("their gold in a buy answer is foreign", odd.sends, nil)
+check("the foreign gold is counted", eventField(lastEvent("deal_declined"), "foreign"), "1")
+
+-- An answer that keeps the agreement off the table is not a purchase.
+reset()
+local bareAsk, bareAskPlayer = fixture({})
+buyOrder(7, 3, bareAskPlayer, 114, 80)
+local bare = fixture({ incoming = {
+	{ kind = DealItemTypes.GOLD, from = 7, duration = 0, amount = 20 },
+} })
+onIncoming(3, 7, DealProposalAction.ADJUSTED)
+check("no agreement, no purchase", bare.sends, nil)
+check("the missing agreement is a mismatch", eventField(lastEvent("deal_declined"), "matches"), "false")
+
+-- An answer that takes more than gold from us is walked away from.
+reset()
+local grabAsk, grabAskPlayer = fixture({})
+buyOrder(7, 3, grabAskPlayer, 120, 80)
+local grab = fixture({ incoming = {
+	{ kind = DealItemTypes.AGREEMENTS, from = 3, duration = 30, subType = "open_borders" },
+	{ kind = DealItemTypes.GOLD, from = 7, duration = 0, amount = 20 },
+	{ kind = DealItemTypes.RESOURCES, from = 7, duration = 30, amount = 1, valueType = 30 },
+} })
+onIncoming(3, 7, DealProposalAction.ADJUSTED)
+check("an answer that takes our luxury is declined", grab.sends, nil)
+
+-- ─── buy guards ─────────────────────────────────────────────────────────────
+reset()
+local already, alreadyPlayer = fixture({ alreadyOpen = true })
+ok, why = buyOrder(7, 3, alreadyPlayer, 126, 80)
+check("borders already open are not bought twice", why, "buy_already_open")
+local bwar, bwarPlayer = fixture({ atWar = true })
+ok, why = buyOrder(7, 3, bwarPlayer, 126, 80)
+check("a rival at war sells no passage", why, "buy_at_war")
+local bminor, bminorPlayer = fixture({ major = false })
+ok, why = buyOrder(7, 3, bminorPlayer, 126, 80)
+check("a city-state's passage is not a deal", why, "buy_not_major")
+local bitem, bitemPlayer = fixture({})
+ok, why = applyOrder(bitemPlayer, 7, { kind = "buy", subject = "3", verb = "AMBER", x = 80 }, 126)
+check("only open borders is bought", why, "buy_unknown_item")
+local binvalid, binvalidPlayer = fixture({ dealValid = false })
+ok, why = buyOrder(7, 4, binvalidPlayer, 126, 80)
+check("an invalid buy package is refused", why, "invalid_deal")
+check("an invalid buy starts the cooldown", trade.asked[4], 126)
+check("no buy guard opened a session", rawget(_G, "SESSION_OPENED"), nil)
+
 -- ─── wiring ─────────────────────────────────────────────────────────────────
 local src = assert(io.open(here .. "/CivvisControlAgent.lua")):read("*a")
 local sellAt = assert(src:find('if kind == "sell" then', 1, true))
 local envoyAt = assert(src:find('if kind == "envoy" then', sellAt, true))
 local sellArm = src:sub(sellAt, envoyAt - 1)
 check("sell arm asks with EQUALIZE",
-	sellArm:find("DealManager.SendWorkingDeal(DealProposalAction.EQUALIZE, pid, subject);", 1, true) ~= nil, true)
+	sellArm:find('CivvisTrade.ask(pid, subject, "EQUALIZE", "sell", turn);', 1, true) ~= nil, true)
+check("the ask helper sends EQUALIZE directly when sessions are off",
+	src:find("DealManager.SendWorkingDeal(DealProposalAction[action], pid, subject);", 1, true) ~= nil, true)
+check("the ask helper opens a MAKE_DEAL session otherwise",
+	src:find('DiplomacyManager.RequestSession(pid, subject, "MAKE_DEAL");', 1, true) ~= nil, true)
 check("sell arm never proposes blind",
 	sellArm:find("DealProposalAction.PROPOSED", 1, true) == nil, true)
 check("sell arm never opens a session",
@@ -515,6 +746,10 @@ check("the handler is wired to the engine event",
 	src:find("DiplomacyIncomingDeal = CivvisOnIncomingDeal,", 1, true) ~= nil, true)
 check("the handler accepts with ACCEPTED",
 	src:find("DealManager.SendWorkingDeal(DealProposalAction.ACCEPTED, pid, fromPlayer);", 1, true) ~= nil, true)
+local buyAt = assert(src:find('if kind == "buy" then', 1, true))
+check("the buy arm sits with the deal lanes", buyAt > sellAt and buyAt < envoyAt, true)
+check("the export carries the received-borders fact",
+	src:find("diplomacy:HasOpenBordersFrom(otherId);", 1, true) ~= nil, true)
 
 if failures > 0 then
 	realPrint(string.format("\n%d check(s) failed", failures))

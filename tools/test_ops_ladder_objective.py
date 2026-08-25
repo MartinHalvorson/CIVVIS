@@ -26,8 +26,12 @@ actually carry.
 
 from __future__ import annotations
 
+import os
 import re
+import shutil
+import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -109,7 +113,191 @@ class NoOperationalScriptHoldsALaneOfItsOwn(unittest.TestCase):
         """It could not, which is why its objective was whatever it inherited."""
         source = (OPS / "civvis-game-supervisor.sh").read_text()
         self.assertIn("VICTORY=${CIVVIS_VICTORY:-}", source)
-        self.assertIn('${VICTORY:+--victory "$VICTORY"}', source)
+        self.assertIn('${VICTORY:+--victory} ${VICTORY:+"$VICTORY"}', source)
+        self.assertIn("RESTART_BELOW_LEADER_RATIO=${CIVVIS_RESTART_BELOW_LEADER_RATIO:-}",
+                      source)
+
+    def test_the_supervisors_optional_flags_reach_the_climb_as_words(self):
+        """⚠ zsh does not word-split an unquoted `${VAR:+--flag "$VAR"}`: set,
+        it reached the climb as ONE argument, `--victory science`, which
+        argparse rejects as unrecognized. The victory form had never been
+        exercised; the abandon floor was, 2026-08-19 17:00Z, and four starts
+        in a row played nothing. Run the script's OWN knob lines and the
+        optional-flag lines of its climb invocation under zsh, with and
+        without the knobs, and read the words that come out."""
+        if shutil.which("zsh") is None:
+            # The supervisor is a zsh script and only ever runs on the macOS
+            # hosts that have it; the literal pin above is the guard on a
+            # runner without one.
+            self.skipTest("zsh is not installed here")
+        source = (OPS / "civvis-game-supervisor.sh").read_text()
+        knob_lines = [line for line in source.splitlines()
+                      if re.match(r"^(VICTORY|ABANDON_BELOW|RESTART_BELOW_LEADER_RATIO)=\$\{CIVVIS_", line)]
+        self.assertEqual(len(knob_lines), 3, knob_lines)
+        invocation = EveryLadderLoopCanAskForTheRungAndTheLane._invocation(source)
+        flag_lines = [line.strip().rstrip("\\").strip()
+                      for line in invocation.splitlines()
+                      if ":+--" in line]
+        self.assertEqual(len(flag_lines), 3, invocation)
+        script = "\n".join(knob_lines) + (
+            "\nfor w in " + " ".join(flag_lines) + "; do print -r -- \"$w\"; done\n")
+        for knobs, expected in (
+            ({}, []),
+            ({"CIVVIS_VICTORY": "science"}, ["--victory", "science"]),
+            ({"CIVVIS_ABANDON_BELOW_WIN_RATE": "0.05"},
+             ["--abandon-below-win-rate", "0.05"]),
+            ({"CIVVIS_RESTART_BELOW_LEADER_RATIO": "0.70"},
+             ["--restart-below-leader-ratio", "0.70"]),
+            ({"CIVVIS_VICTORY": "culture", "CIVVIS_ABANDON_BELOW_WIN_RATE": "0.1",
+              "CIVVIS_RESTART_BELOW_LEADER_RATIO": "0.70"},
+             ["--victory", "culture", "--abandon-below-win-rate", "0.1",
+              "--restart-below-leader-ratio", "0.70"]),
+        ):
+            with self.subTest(knobs=knobs):
+                env = {k: v for k, v in os.environ.items()
+                       if not k.startswith("CIVVIS_")}
+                env.update(knobs)
+                done = subprocess.run(["zsh", "-c", script], env=env,
+                                      capture_output=True, text=True,
+                                      check=True)
+                words = [w for w in done.stdout.split("\n") if w != ""]
+                self.assertEqual(words, expected)
+
+    def test_the_installed_supervisor_forwards_a_named_live_withhold_as_words(self):
+        """The live A/B gate is a list of argv words, never one shell string.
+
+        The runner already records `withheld` in each game summary, but this
+        is the only hop that can otherwise lose the operator's named arm.  In
+        particular, zsh does not split a quoted comma-list for us: turn it
+        into repeated `--without TREATMENT` pairs before the climb starts.
+        """
+        if shutil.which("zsh") is None:
+            self.skipTest("zsh is not installed here")
+        source = (OPS / "civvis-game-supervisor.sh").read_text()
+        start = source.index("WITHHELD=${CIVVIS_WITHOUT:-}")
+        end = source.index("# Attempts per cycle.", start)
+        gate = source[start:end]
+        invocation_start = source.index("python3 -u tools/civ6_civvis_climb.py")
+        invocation_end = source.index("# \"Played a turn\"", invocation_start)
+        self.assertIn('"${WITHOUT_ARGS[@]}"', source[invocation_start:invocation_end])
+        script = gate + '\nfor word in "${WITHOUT_ARGS[@]}"; do print -r -- "$word"; done\n'
+        for raw, expected in (
+            (None, []),
+            ("war-economy", ["--without", "war-economy"]),
+            ("war-economy,garrison-walls",
+             ["--without", "war-economy", "--without", "garrison-walls"]),
+        ):
+            with self.subTest(raw=raw):
+                env = {key: value for key, value in os.environ.items()
+                       if not key.startswith("CIVVIS_")}
+                if raw is not None:
+                    env["CIVVIS_WITHOUT"] = raw
+                done = subprocess.run(["zsh", "-c", script], env=env,
+                                      capture_output=True, text=True, check=True)
+                words = [word for word in done.stdout.split("\n") if word]
+                self.assertEqual(words, expected)
+
+    def test_the_installed_supervisor_forwards_live_timeout_budgets_as_words(self):
+        """A slow GUI host can extend both linked watchdog budgets per batch.
+
+        The defaults still belong to ``civ6_civvis_climb.py``; an absent
+        operator knob must therefore add no argument. Values are array words,
+        not a shell fragment, so each number remains one argparse value.
+        """
+        if shutil.which("zsh") is None:
+            self.skipTest("zsh is not installed here")
+        source = (OPS / "civvis-game-supervisor.sh").read_text()
+        start = source.index("PLAY_TIMEOUT=${CIVVIS_PLAY_TIMEOUT:-}")
+        end = source.index("SUP=$LOGS/supervisor.log", start)
+        gate = source[start:end]
+        invocation_start = source.index("python3 -u tools/civ6_civvis_climb.py")
+        invocation_end = source.index("# \"Played a turn\"", invocation_start)
+        self.assertIn('"${TIMEOUT_ARGS[@]}"',
+                      source[invocation_start:invocation_end])
+        script = gate + (
+            '\nfor word in "${TIMEOUT_ARGS[@]}"; do print -r -- "$word"; done\n'
+        )
+        for knobs, expected in (
+            ({}, []),
+            ({"CIVVIS_PLAY_TIMEOUT": "10800"}, ["--timeout", "10800"]),
+            ({"CIVVIS_PLAY_TIMEOUT": "10800",
+              "CIVVIS_PLAY_TIMEOUT_CEILING": "14400"},
+             ["--timeout", "10800", "--timeout-ceiling", "14400"]),
+        ):
+            with self.subTest(knobs=knobs):
+                env = {key: value for key, value in os.environ.items()
+                       if not key.startswith("CIVVIS_")}
+                env.update(knobs)
+                done = subprocess.run(["zsh", "-c", script], env=env,
+                                      capture_output=True, text=True, check=True)
+                words = [word for word in done.stdout.split("\n") if word]
+                self.assertEqual(words, expected)
+
+    def test_the_installed_supervisor_forwards_a_named_ledger_force_on_or_file_as_words(self):
+        """A force-on arm stays explicit through either approved control path.
+
+        The deployment genome withholds an unresolved gene by default.  The
+        supervisor is the only safe owner of this host's Civ VI slot, so it
+        must be able to pass the deliberately named `--with` verification arm
+        through as repeated argv words rather than silently leaving a force-on
+        experiment impossible to schedule.  The GUI host cannot change its
+        inherited environment during a long-running session, so an absent-by-
+        default batch file is the second path; its value must be the same arm
+        and a disagreement fails closed before a game can launch.
+        """
+        if shutil.which("zsh") is None:
+            self.skipTest("zsh is not installed here")
+        source = (OPS / "civvis-game-supervisor.sh").read_text()
+        start = source.index("FORCED_ENV=${CIVVIS_WITH:-}")
+        end = source.index("# Attempts per cycle.", start)
+        gate = source[start:end]
+        invocation_start = source.index("python3 -u tools/civ6_civvis_climb.py")
+        invocation_end = source.index("# \"Played a turn\"", invocation_start)
+        self.assertIn('"${WITH_ARGS[@]}"', source[invocation_start:invocation_end])
+        self.assertIn("resolve_forced_arm", gate)
+        resolve_call = source.index("if ! resolve_forced_arm;")
+        build_call = source.index("if ! cargo build --release --bin civvis_orders")
+        self.assertLess(resolve_call, build_call,
+                        "the arm must be resolved before this batch can build or launch")
+        script = (
+            "say() { :; }\n" + gate
+            + '\nresolve_forced_arm || exit $?\n'
+            + 'for word in "${WITH_ARGS[@]}"; do print -r -- "$word"; done\n'
+        )
+        for env_arm, file_arm, expected in (
+            (None, None, []),
+            (None, "", []),
+            ("amenity-project-preemption", None,
+             ["--with", "amenity-project-preemption"]),
+            (None, "amenity-project-preemption",
+             ["--with", "amenity-project-preemption"]),
+            ("amenity-project-preemption",
+             "amenity-project-preemption,idle-walkers-close-the-pipeline",
+             None),
+            ("amenity-project-preemption,idle-walkers-close-the-pipeline",
+             "amenity-project-preemption,idle-walkers-close-the-pipeline",
+             ["--with", "amenity-project-preemption",
+              "--with", "idle-walkers-close-the-pipeline"]),
+            (None, "amenity-project-preemption\nidle-walkers-close-the-pipeline", None),
+        ):
+            with self.subTest(env_arm=env_arm, file_arm=file_arm):
+                with tempfile.TemporaryDirectory() as directory:
+                    force_file = Path(directory) / "force-on"
+                    if file_arm is not None:
+                        force_file.write_text(file_arm)
+                    env = {key: value for key, value in os.environ.items()
+                           if not key.startswith("CIVVIS_")}
+                    env["CIVVIS_WITH_FILE"] = str(force_file)
+                    if env_arm is not None:
+                        env["CIVVIS_WITH"] = env_arm
+                    done = subprocess.run(["zsh", "-c", script], env=env,
+                                          capture_output=True, text=True)
+                    if expected is None:
+                        self.assertNotEqual(done.returncode, 0, done.stderr)
+                    else:
+                        self.assertEqual(done.returncode, 0, done.stderr)
+                        words = [word for word in done.stdout.split("\n") if word]
+                        self.assertEqual(words, expected)
 
     def test_the_installed_supervisor_uses_the_evidence_gated_rung(self):
         source = (OPS / "civvis-game-supervisor.sh").read_text()
@@ -143,10 +331,6 @@ class NoOperationalScriptHoldsALaneOfItsOwn(unittest.TestCase):
                         sync.index('checkout --quiet --detach origin/main'))
         self.assertLess(sync.index('checkout --quiet --detach origin/main'),
                         sync.index('"$HEAD_SHA" != "$ORIGIN_MAIN_SHA"'))
-
-
-if __name__ == "__main__":
-    unittest.main()
 
 
 class EveryLadderLoopCanAskForTheRungAndTheLane(unittest.TestCase):
@@ -230,3 +414,7 @@ class EveryLadderLoopCanAskForTheRungAndTheLane(unittest.TestCase):
         self.assertEqual(offenders, [], "\n".join(
             ["an ops script pins the rung by hand; take it from the ladder "
              "policy or from CIVVIS_DIFFICULTY:"] + offenders))
+
+
+if __name__ == "__main__":
+    unittest.main()

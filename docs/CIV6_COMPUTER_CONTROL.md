@@ -238,6 +238,92 @@ every decision it is waiting on and publishes it through
    again.
 3. When nothing is blocking, `UI.RequestAction(ActionTypes.ACTION_ENDTURN)`.
 
+### Unit orders are sequenced per unit (2026-08-19)
+
+`UnitManager.RequestOperation` returns before the unit has moved, so a list
+like `MOVE_TO a; RANGE_ATTACK t` applied in one callback aims the shot from
+where the unit *stood*. The bridge answered that for two weeks by sending a
+unit's walk and deferring every later order to the next turn — which turned
+every planned move-then-strike into a move (7 melee attacks against 1,546
+`MOVE_TO` in 188 turns of war on run `civvis-20260803T005930Z`).
+
+The mod now keeps a **per-unit order queue** (`CivvisQueue`). `applyOrders`
+issues the first order for each unit at once and queues the rest; a queued
+order is issued once the earlier one has settled — the unit stands where the
+move was aimed, or has no movement left, or the host's own `UnitMoveComplete`
+/ `UnitOperationDeactivated` fired for it, or a grace period ran out — and
+every one still passes `CanStartOperation`. Refusals are named:
+`queue_no_moves`, `queue_stalled`, `queue_prior_refused`, `unit_gone:<id>`,
+`queue_turn_over`. `settleTurn` holds the turn while a queue is pending,
+bounded by `OrderQueueMaxTicks`; a wedged operation costs decision quality,
+never progress. ⚠ Until 2026-08-21 it did not hold the turn on the tick the
+opening orders went out — that tick returned true and the caller requested
+`ACTION_ENDTURN` at once, so the queue (and any replan frame) lived only
+while the host refused the request; the apply tick now returns false and the
+next tick drains, frames, and releases (`step_turn_actions_test.lua`). The
+queue also *watches* each unit's opening walk (`CivvisQueue.watch`, a
+rows-less entry that settles like any queued order and issues nothing), so
+the frame decision waits for the walk to land. A
+settler's refused `FOUND_CITY` is retried behind its walk, and a `FOUND_CITY`
+row now carries its site: the mod founds only with the settler standing on
+it, and names a miss `found_off_site` (a found on the hex one step short of
+the site is legal far more often than not, and that is where the settler
+stands when the found runs first).
+The `seat` event advertises `order_queue`, and `civvis_orders` sends a unit's
+whole sequence only when it does. `orders` gains `queued` and
+`explore_guarded`; a per-turn `orders_queue` event carries `applied`,
+`refused`, `refusals`, `strikes_planned`, `strikes_landed` and `waited`.
+`--no-order-queue` restores the one-order-per-unit rule for an A/B.
+
+Two related rules: an unmentioned combat unit within `ExploreGuardRadius` of
+a visible hostile combat unit or an at-war city is held rather than handed to
+`UNITOPERATION_AUTOMATE_EXPLORE`, and `UNITOPERATION_PILLAGE` is resolved so
+`Action::Pillage` crosses. See `docs/LIVE_TACTICS.md`.
+
+### A move is this turn's leg (2026-08-19)
+
+`UNITOPERATION_MOVE_TO` takes a destination and the host paths to it across
+as many turns as it needs — and walks the unit along the rest at the start of
+the next turn, before `beginTurn` exports. The board then planned movement
+the unit no longer had. The mod (`CivvisBoard`) now sends every `MOVE_TO` as
+the furthest plot on the host's own path (`GetMoveToPathEx`) that the unit
+reaches this turn, refuses by name a move whose first step is already next
+turn (`move_no_moves_this_turn`), never caps a melee ATTACK, and cancels
+combat units' queued paths at turn start (`UNITCOMMAND_CANCEL`;
+`queued_paths` reports the count). Units export `queued_dest` and
+`embarked`; tiles export `rt` (route type) and `rp` (pillaged). The `seat`
+event advertises `moves_at_turn_start`, and only then does the mirror trust
+the export's `moves`. `--no-cap-moves-to-reach` / `--no-cancel-queued-paths`
+restore the old rules for an A/B. See `docs/LIVE_TACTICS.md` §6.
+
+### A mid-turn combat frame, off by default (2026-08-19)
+
+With `CombatFrames ≥ 1` (`--combat-frames`), once the opening orders and
+their per-unit queue have settled on a turn that issued a strike, the mod
+exports the board again stamped `frame: 1` and waits for the brain to answer
+the same turn on it — its own short poll budget (`CombatFramePolls`), no
+stale answer, no fallback: past the budget `combat_frame_timeout` and the
+turn ends as before. The order channel gained a `frame` column (rows of frame
+N sit at seq 10000·N; one `ready` row per turn names the newest frame; a
+database from before the column is migrated in place); the mod's readers
+select by frame and read a column-less channel as frame 0. On a frame no
+unit is handed to explore automation and no `turn` record is written. Units
+export `attacks_remaining`. Default **off** until one live run has been read
+(`docs/LIVE_TACTICS.md` §8).
+
+### The tactical ledger (2026-08-19)
+
+The mod writes the combat record the host already knows (`CivvisLedger`):
+`strike` before every ATTACK / RANGE_ATTACK with the host's own preview
+(`CombatManager.SimulateAttackInto`, the shipped UnitPanel's combat preview);
+`combat` at `CombatVisEnd` with attacker, defender, hit points read back at
+Begin and End, damage both ways, kills, the `UnitDamageChanged` deltas seen
+while the combat was open, and the strike's preview joined on; `unit_lost`
+for our units leaving the map (last known kind, treasury); `city_occupation`
+when a city changes hands. Hostile and rival units carry the host's unit id.
+`tools/civ6_tactics_ledger.py <run-dir>` turns a run into the arrival,
+combat, roster and hover ledger; see `docs/LIVE_TACTICS.md` §5.
+
 ### Production and envoy handoffs are host-timed
 
 The Rust bridge still sends ordinary `produce` orders immediately. When the
@@ -374,16 +460,59 @@ discarding it.
 context: `PopupDialogInGame` sends every generic dialog through
 `LuaEvents.OnRaisePopupInGame` to the `InGamePopup` context, which calls
 `UIManager:PushModal` and whose input handler eats all input ("popups are
-blocking!"). That context renders both **UNIT CAPTURED**, which has one button
-and asks nothing, and **raze or keep this city**, which has two and asks
-everything. So `InGamePopup` alone arms per *dialog* rather than per context:
-the open is wrapped, the buttons are counted, and the stopwatch runs only when
-there is exactly one. The wrapper has to be re-registered with `LuaEvents`
-rather than merely assigned, because the shipped `Initialize` already handed
-the event its own function; if that swap cannot be made, the dialog is never
-armed and the screen behaves exactly as it ships. Closing goes through the
-shipped Escape handler rather than a bare close, so the one button's own
-callback runs.
+blocking!"). One context renders every generic dialog in the game, so
+`InGamePopup` alone arms per *dialog* rather than per context: the open is
+wrapped, the options are read, and the stopwatch runs only for a dialog that
+may be ended. The wrapper has to be re-registered with `LuaEvents` rather than
+merely assigned, because the shipped `Initialize` already handed the event its
+own function; if that swap cannot be made, the dialog is never armed and the
+screen behaves exactly as it ships. Closing goes through the shipped Escape
+handler rather than a bare close, so the button's own callback runs.
+
+**Which dialogs may be ended, and how that is known.** Two shapes, and the
+answer is read off the data the dialog carries rather than guessed:
+
+- **One button.** An acknowledgement — **UNIT CAPTURED**. Nothing is asked, so
+  nothing is answered by ending it.
+- **Any button tagged `_CMD_CANCEL`.** `PopupDialogInGame:AddCancelButton`
+  writes `PopupDialog.COMMAND_CANCEL` into its option, and the shipped
+  `InGamePopup.InputHandler` maps Escape to
+  `ActivateCommand(COMMAND_CANCEL)` first and `COMMAND_DEFAULT` second. A
+  dialog carrying a CANCEL has an explicit decline path written by its own
+  author, and Escape runs that author's cancel callback — `nil` in every
+  shipped caller, which is what dismissing without consequence means.
+
+A dialog with two buttons and no CANCEL is a forced choice and is left exactly
+as it ships. `tools/civ6_control/mod/dialog_escape_test.lua` pins all three
+cases against option lists in the shape the shipped callers build.
+
+⚠⚠ **The rule used to be the button count alone, and the reason it gave named a
+screen that lives somewhere else.** It cited **raze or keep this city** as the
+two-button danger. Raze/keep is `RazeCity.lua` with its own `RazeCity.xml`,
+queued through `UIManager:QueuePopup` and holding its own input handler; it
+never reaches `PopupDialogInGame`, so nothing here could touch it either way.
+Meanwhile every shipped Ok/Cancel and Yes/No dialog — the ones written to be
+declined — was refused by the count and sat over the map until the desktop
+backstop or the 900-second watchdog. Every `PopupDialogInGame:new` caller with
+a CANCEL is a confirmation of an action a person just took in a panel
+(`UnitPanel`'s delete, `WorldInput`'s WMD launch, `GovernmentScreen`'s anarchy
+switch, `GovernorAssignmentChooser`'s replacement,
+`StrategicView_MapPlacement`'s pin), and this controller takes none of them
+through a panel — it issues the operations directly. A confirmation reaching an
+unattended seat is a dialog nothing was waiting on.
+
+⚠ **And Escape is not a universal exit.** A leader conversation that asks a
+question ignores every in-Lua rung and ignores Escape too — measured,
+`cliclick kp:esc` left Gorgo's embassy request exactly where it was. A question
+needs an answer, and there is nothing for a dismiss to do; that is what
+`popup_clear.py`'s held click on the dialogue button is for. The rule above is
+about generic dialogs, not about every screen.
+
+⚠ **`screen:"InGamePopup"` names nothing on its own**, because one context
+renders them all. The `autoclose` event carries a `buttons` field with the
+dialog's command strings joined by `+`, so which generic dialogs actually reach
+an unattended run is a census rather than an argument from shipped source —
+which is how the old rule came to protect against a screen in another file.
 
 A run's `Automation.log` says which screens armed (`autoclose_armed`, one line
 per screen as the game loads) and every screen it has since closed
@@ -480,7 +609,78 @@ own turn events, so bridge health rides the ledger instead of living only in
 a status tool somebody has to think to run; it sat at 79.9% once for days
 that way.
 
+### An order is applied when the next frame shows it (2026-08-25)
+
+`orders_applied` used to count arms whose request did not throw, and `pcall`
+success is not acceptance: a Settler was requested on 83 consecutive turns
+with `applied = true` and nothing built, a purchase bought nothing, and a
+`MOVE_TO (14,11)` from (13,11) ended at (12,9) with no refusal recorded.
+`civvis_orders` now keeps every order it issued on turn T and checks it
+against the `state` frame of turn T+1 — the unit stands at or closer to the
+ordered tile, the target is damaged or gone (or a `combat` record names the
+attacker), the city's `producing` is the item, the bought unit or building
+exists or the treasury fell, the plot is ours, the city-state's envoy count
+rose, a deal was answered (`deal_closed` / `deal_declined` / `deal_session`
+answered), a `peace_response` arrived and `at_war` agrees with it, `at_war`
+is set after a declaration, the governor holds the seat, the research, civic,
+government, pantheon and policy deck read back, and so on. Kinds the frame
+cannot answer are listed with a reason in `UNVERIFIABLE_ORDER_KINDS` and
+`UNVERIFIABLE_UNIT_VERBS` (`produce_next`, `delegation`, `aid_gift`, `levy`;
+`SKIP_TURN`, `SLEEP`, `ALERT`, `HEAL`, `AUTOMATE_EXPLORE`, `SPY_*`), and a
+test refuses any order kind that is neither checked nor listed.
+
+The verdicts ride back through the orders channel as rows of kind
+`order_verified` / `order_failed` / `turn_verified` — the mod is the ledger's
+only writer — and the mod re-emits them as events: `order_verified {turn,
+order_kind, verb, subject, checked_on}`, `order_failed {…, reason}`, and one
+`turn_verified {turn, orders_issued, orders_applied, orders_failed,
+orders_unverifiable, orders_seen, orders_reported}` per turn, where
+`orders_applied` is the verified count and `orders_seen` / `orders_reported`
+are the mod's own counts for that turn. The `turn` record keeps its
+return-code count under both `orders_applied` (its old name, for the readers
+that clock on it) and `orders_reported`. `civ6_ladder.orders_ledger` sums the
+three: the summary's `orders_applied` is the VERIFIED count wherever a turn
+carries a verdict (a turn without one — the last turn, the turn before a
+decider restart, any run older than the check — keeps its reported count, and
+`orders_unverified_turns` says how many did), `orders_reported` is the return
+codes' count, and the attempt row carries both `applied_pct` and
+`reported_pct`. `civvis_orders --mirror <run> --audit-orders <orders.jsonl>`
+replays a recorded run's orders (exported from its `orders.sqlite`) through
+the same checks.
+
+Measured offline on 256 local runs (654k checkable orders): the arms reported
+91.4% ok while the next frame verified 75.7%. The largest gaps by kind:
+`MOVE_TO` 82% (68k `did_not_move`), `ATTACK` 25%, `RANGE_ATTACK` 40%,
+`city_strike` 29%, `PROMOTE` 39%, `purchase_faith` 37%, `peace` 1% (no
+response), `UPGRADE` and `DELETE` 0% (both refused by the mod itself:
+prophets are retired, never deleted).
+
 See `docs/CIV6_LADDER.md` for the current standing.
+
+### A lost game is stopped, not played out (2026-08-19)
+
+The ladder loses its games early and then plays them to turn 250 anyway: of
+the 48 live games that had reached a terminal result by 2026-08-19 (7 wins),
+34 sat under three quarters of the best rival's score for five consecutive
+turns at or after turn 120, and none of those 34 won — 3,700 game-turns, about
+nine host-hours per batch of twelve, spent on results already written. The
+wins' own low-water marks after turn 120 were 0.87 and 0.88 of the rival's
+score, so the line sits a tenth under the worst comeback the seat has staged.
+
+`civ6_play.py --abandon-below-win-rate 0.05` stops a run once the **measured
+expected win rate** — the Laplace rate `(wins+1)/(games+2)` of the
+best-evidenced matching cell in `civ6_play.ABANDON_CELLS` (`(100, 0.60)`
+0/25, `(120, 0.75)` 0/34) — has sat under the floor for `ABANDON_PATIENCE`
+(5) consecutive agent turns. A readable standing back over the floor resets
+the count; a turn without a standing neither counts nor resets. Off by
+default; `civ6_civvis_climb.py` forwards the same flag and the supervisor
+reads `CIVVIS_ABANDON_BELOW_WIN_RATE` from the login shell (the operator's
+request on 2026-08-19 was "ok to abandon games early if expected win rate
+<5%"). An abandoned run is filed with `reason: "abandoned"` and the verdict
+(turn, standing, estimate, floor) in its summary and ledger row — its own
+ending, never a stall, a wedge or a defeat. The table is measured, not
+chosen: re-fit it when the ladder climbs (the fit is written out in
+`tools/test_civ6_play.py`).
 
 ### The run always tests the latest code
 

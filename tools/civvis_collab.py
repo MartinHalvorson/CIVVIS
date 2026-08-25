@@ -41,7 +41,64 @@ DEFAULT_BRANCH = "main"
 #: format-and-clippy ratchet is scoped to the lines a change touches precisely
 #: so it is always satisfiable; a ratchet nobody has to pass ratchets nothing,
 #: and it trains a fleet at a hundred merges a day to read red as normal.
-REQUIRED_CHECKS = ("cargo-test", "collaboration-policy", "rust-quality")
+#:
+#: `paired-cost` joined on 2026-08-23. Advisory it could not do the one job it
+#: exists for: `ship` waits on this tuple and merges without reading anything
+#: else, so #2059 — six times slower, four PRs and four days to pay back —
+#: would have merged again with a red advisory X beside it. What made it safe
+#: to require is not confidence, it is three properties the check now has:
+#: it always reports (no `paths:` filter and no job-level `if:`, because an
+#: absent required check reads as pending here and a skipped one reads as a
+#: failure); its verdict is the MEDIAN of five paired blocks and it re-measures
+#: on a disjoint block of seeds before failing anything, so one contended pair
+#: cannot fail a merge; and an intended cost is accepted by a
+#: `paired-cost: allow <reason>` line in the pull request body, the same escape
+#: hatch `overwrite-guard: allow` is. A false failure is cleared by re-running
+#: the job — `gh run rerun --failed <run-id>`, which `ship` already does for
+#: itself on a cancelled or timed-out run.
+def _eval_manifest_outputs() -> Tuple[str, ...]:
+    """`eval_manifest.GENERATED_OUTPUTS`, without importing the module eagerly.
+
+    `civvis_collab.py` is copied to machines as a standalone freshness worker,
+    so a hard import would make the launcher depend on a file the worker never
+    ships with. Missing, it simply resolves nothing automatically.
+    """
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from eval_manifest import GENERATED_OUTPUTS  # type: ignore[import-not-found]
+    except Exception:
+        return ()
+    return tuple(GENERATED_OUTPUTS)
+
+
+#: Kept in sorted order: `required_check_state` reports missing checks in
+#: this tuple's order and `test_civvis_collab.py` compares that report
+#: with `sorted(REQUIRED_CHECKS)`.
+REQUIRED_CHECKS = (
+    "cargo-test",
+    "collaboration-policy",
+    "paired-cost",
+    "rust-quality",
+)
+
+#: Generated artifacts a merge conflict may be resolved in by regenerating,
+#: mapped to the command that rebuilds them (argv relative to the repo root,
+#: run with this interpreter).
+#:
+#: A path belongs here only if all three hold: its content is a deterministic
+#: function of tracked source, rebuilding it is cheap, and nothing about it is
+#: measured. `docs/closed/TACTICS_BASELINE.md` looks similar and fails the third —
+#: `tools/tactics_bench.py --write-baseline` runs a benchmark, so its output
+#: depends on the machine that ran it and must never be regenerated to settle
+#: somebody else's merge.
+#:
+#: The eval pair is discovered from the generator rather than spelled again
+#: here, so a third artifact cannot be added to `eval_manifest.py` and quietly
+#: left out of this map.
+REGENERATED_ON_MERGE: Dict[str, Tuple[str, ...]] = {
+    name: ("tools/eval_manifest.py", "--write")
+    for name in _eval_manifest_outputs()
+}
 
 #: Every other check a pull request gets, with the reason it is NOT required.
 #: `test_civvis_collab.py` discovers the checks the workflows actually produce
@@ -94,6 +151,22 @@ BRANCH_RE = re.compile(
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,31}$")
 TASK_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,47}$")
 PUSH_GUARD_MARKER = "CIVVIS managed pre-push guard v1"
+#: How `install_push_guard` recognises a hook it is allowed to replace.
+#:
+#: ⚠ It used to be `PUSH_GUARD_MARKER.encode() not in existing`, a bare
+#: substring over the whole file, so any pre-push hook that merely *named* this
+#: guard — "runs before the CIVVIS managed pre-push guard v1", in a comment or
+#: a docstring — was silently overwritten by a refusal that exists to protect
+#: exactly that file. Same shape as the waiver hole in #2341 and the same fix:
+#: the marker counts when it is a line of its own, either a comment or the
+#: constant assignment the versioned guard actually carries (`civvis_push_guard
+#: .py:12`), which is what every managed copy old or new looks like.
+PUSH_GUARD_SIGNATURE = re.compile(
+    r"^(?:[#;][ \t]*|PUSH_GUARD_MARKER[ \t]*=[ \t]*[\"'])"
+    + re.escape(PUSH_GUARD_MARKER)
+    + r"[\"']?[ \t]*$",
+    re.MULTILINE,
+)
 FRESHNESS_MARKER = "CIVVIS managed Git freshness service v1"
 FRESHNESS_SCHEMA = 2
 FRESHNESS_INTERVAL_SECONDS = 300
@@ -107,6 +180,51 @@ FIELD_LABELS = {
     "coordinated": "Coordinated with",
 }
 PLACEHOLDERS = {"", "todo", "tbd", "fill me", "n/a"}
+
+# --- One idiom: writing about a marker must not be using it -----------------
+#
+# `tools/overwrite_guard.py` and `tools/speed_ab.py` learned this the hard way
+# and spell it the same way (#2341): a policy marker is matched **anchored to a
+# line**, and fenced code blocks are blanked before the search, because
+# documenting a gate means showing its markers and showing one is not using it.
+# The gates in this file read the same pull request bodies and had the same
+# defect in a worse form — `parse_claims` matched an ownership line anywhere,
+# at any indentation, and let the *last* one win, so a body that quoted the
+# template replaced the claim the required check then validated.
+#
+# `FENCE` and `prose` are kept byte-identical to the copies in those two
+# modules; `OneIdiomTests` in `tools/test_civvis_collab.py` fails if they drift.
+# The duplication is forced, not sloppy: `overwrite-guard.yml` copies its tool
+# alone to `/tmp` so a branch cannot audition its own judge, which means that
+# copy cannot import anything from this repository.
+FENCE = re.compile(r"^ {0,3}(```+|~~~+)")
+
+
+def prose(body: str) -> str:
+    """The body with fenced code blocks blanked out, line numbering preserved.
+
+    An unterminated fence swallows the rest of the body. For a *waiver* that
+    fails towards fewer waivers, which is safe. Here it is the same direction:
+    every marker this module looks for either grants something (a claim, a
+    coordination number) or is required to be present (a ticked checkbox), and
+    losing one to a runaway fence produces a refusal, never a silent pass.
+    """
+    kept: List[str] = []
+    fence: Optional[str] = None
+    for line in body.splitlines():
+        mark = FENCE.match(line)
+        if fence is None:
+            if mark:
+                fence = mark.group(1)[:3]
+                kept.append("")
+            else:
+                kept.append(line)
+            continue
+        if mark and mark.group(1).startswith(fence):
+            fence = None
+        kept.append("")
+    return "\n".join(kept)
+
 
 # --- R3: an effect size must carry its evidence into the record -------------
 #
@@ -136,23 +254,50 @@ EFFECT_SIZE_RE = re.compile(
     )
     """
 )
+#: Evidence that *states itself*: a seed, an interval, an evidence base, a
+#: p-value. These are what a measurement looks like written down, so they may
+#: sit anywhere in the surrounding paragraph.
+#:
+#: ⚠ `\bCI\b` used to be one of these on its own, meaning "confidence
+#: interval". In this repository `CI` overwhelmingly means *continuous
+#: integration*, so any sentence mentioning the gate that runs on every pull
+#: request waived the evidence gate for a bare figure beside it. It now has to
+#: be followed by the interval it claims to be — `CI [+51, +147]`, `CI of +51`.
+#: Measured before tightening: across all 158 documents `\bCI\b` is the sole
+#: evidence for **zero** effect sizes, so the loose form was carrying nothing
+#: except the escape.
 EVIDENCE_RE = re.compile(
     r"""(?ix)
     (?: \b seeds? \b
-      | \b CI \b | 95\s*% | ±                  # an interval
+      | 95\s*% | ±                                  # an interval
+      | \b CI \b (?:\s*(?:of|at|is|was|[:=]))? \s*   # ...and CI, only when it
+        [\[\(]? \s* [+−-]? \d                       #    carries one
       | \b\d+\s*(?:maps|pairs|games)\b              # the evidence base
-      | \bPR\s*\#?\d+ | \#\d{2,}                    # where it was measured
       | discovery\s+estimate | confirmed\s+on | disjoint
       | p\s*[=<>]                                   # a reported p-value
     )
     """
 )
 
+#: Evidence *by reference*: the pull request or issue the number was measured
+#: in. This is the repository's real convention — "measured +20 Elo causally
+#: (#1469)", "**−41 Elo** — removed (#1504)" — and it is worth keeping, but it
+#: is also the weakest thing on the list, because `#\d{2,}` matches any issue
+#: reference at all. A citation is provenance only when it is *attached to the
+#: figure*, so it gets its own, much narrower window.
+CITATION_RE = re.compile(r"(?ix) (?: \b PR \s* \#?\d+ | \#\d{2,} )")
 
 #: How much added prose around a figure counts as "beside it". Wide enough to
 #: reach the sentence that sources the number, narrow enough that an unrelated
 #: measurement elsewhere in the same hunk cannot launder a bare claim.
 EVIDENCE_WINDOW_CHARS = 320
+
+#: The same distance for a bare citation, where "beside it" has to mean beside
+#: it. Measured over every effect size in `docs/` and `README.md`: at 320 the
+#: four cases whose nearest `#N` is in a *different sentence* about a
+#: *different* measurement all passed; at 120 those are reported and every one
+#: of the eleven honest "(#1504)"-style citations still passes.
+CITATION_WINDOW_CHARS = 120
 
 
 def unevidenced_effect_sizes(added: Dict[str, Sequence[str]]) -> List[str]:
@@ -173,6 +318,12 @@ def unevidenced_effect_sizes(added: Dict[str, Sequence[str]]) -> List[str]:
             start = max(0, match.start() - EVIDENCE_WINDOW_CHARS)
             window = joined[start : match.end() + EVIDENCE_WINDOW_CHARS]
             if EVIDENCE_RE.search(window):
+                continue
+            cited = joined[
+                max(0, match.start() - CITATION_WINDOW_CHARS)
+                : match.end() + CITATION_WINDOW_CHARS
+            ]
+            if CITATION_RE.search(cited):
                 continue
             quoted = joined[max(0, match.start() - 40) : match.end() + 40].strip()
             problems.append(
@@ -225,17 +376,146 @@ def clean_token(value: str) -> str:
     return value.strip().strip("`").strip()
 
 
-def parse_claims(body: str) -> Dict[str, str]:
+#: The ownership block's heading, which `format_claim_body` writes and every
+#: pull request body in the fleet carries as its *first* heading (checked
+#: against all 23 bodies open or merged on 2026-08-23: 23 of 23, with all five
+#: fields inside the section).
+OWNERSHIP_HEADING = re.compile(r"^#{1,6}[ \t]*Ownership claim[ \t]*$",
+                               re.MULTILINE | re.IGNORECASE)
+ANY_HEADING = re.compile(r"^#{1,6}[ \t]", re.MULTILINE)
+
+#: One ownership line, spelled the way `overwrite_guard.WAIVER` and
+#: `speed_ab.ACKNOWLEDGEMENT` spell their markers: anchored to the start of a
+#: line, case-insensitive, a list bullet permitted because this *is* a bulleted
+#: list. Arbitrary indentation is deliberately **not** permitted — four leading
+#: spaces is a Markdown code block, and showing an ownership block is not
+#: making one.
+CLAIM_LINE = re.compile(
+    r"^(?:[-*+][ \t]+)(?P<label>[^:\n]+):[ \t]*(?P<value>.*)$",
+    re.MULTILINE | re.IGNORECASE,
+)
+
+
+def ownership_section(body: str) -> Tuple[str, bool]:
+    """The `## Ownership claim` section of a body, and whether it was found.
+
+    Scoping the parse to the section is what makes the claim unforgeable by
+    text placed elsewhere. When the heading is absent the whole (unfenced) body
+    is scanned, as before, so a hand-written body still works — but the caller
+    is told, and says so, because "just leave the heading out" must not become
+    the next quiet way around this.
+    """
+    text = prose(body)
+    found = OWNERSHIP_HEADING.search(text)
+    if not found:
+        return text, False
+    rest = text[found.end():]
+    nxt = ANY_HEADING.search(rest)
+    return (rest[: nxt.start()] if nxt else rest), True
+
+
+def scan_claims(body: str) -> Tuple[Dict[str, str], List[str], bool]:
+    """Ownership claims, the labels a later line tried to change, and framing.
+
+    Returns ``(claims, shadowed, has_heading)``.
+
+    ⚠ **First occurrence wins.** It used to be the last: `parse_claims`
+    assigned on every match, so a pull request that quoted the template, showed
+    an example block, or explained the protocol silently *replaced* the
+    `Machine ID`, `Claimed paths` and `Coordinated with` that this file's own
+    required check then validated. Both directions were live. A quoted
+    `- Claimed paths: `src/**`` widened the claim until "changed path is not
+    claimed" could not fire at all; a quoted foreign `- Machine ID:` failed an
+    honest pull request against its own branch name.
+
+    ``shadowed`` carries the labels a later line would have overwritten, so the
+    refusal-by-quotation becomes a visible notice instead of a changed verdict.
+    """
     claims: Dict[str, str] = {}
+    shadowed: List[str] = []
     wanted = {label.lower(): key for key, label in FIELD_LABELS.items()}
-    for raw in body.splitlines():
-        match = re.match(r"^\s*-\s*([^:]+):\s*(.*?)\s*$", raw)
-        if not match:
+    section, has_heading = ownership_section(body)
+    for match in CLAIM_LINE.finditer(section):
+        key = wanted.get(match.group("label").strip().lower())
+        if not key:
             continue
-        key = wanted.get(match.group(1).strip().lower())
-        if key:
-            claims[key] = clean_token(match.group(2))
-    return claims
+        value = clean_token(match.group("value"))
+        if key not in claims:
+            claims[key] = value
+        elif value != claims[key]:
+            shadowed.append(FIELD_LABELS[key])
+    return claims, shadowed, has_heading
+
+
+def parse_claims(body: str) -> Dict[str, str]:
+    return scan_claims(body)[0]
+
+
+VALIDATION_HEADING = re.compile(r"^#{1,6}[ \t]*Validation[ \t]*$",
+                                re.MULTILINE | re.IGNORECASE)
+#: A checklist item. Indentation is allowed here, unlike an ownership line: a
+#: nested checkbox is still a checkbox, and this pattern is used to *require*
+#: items, so being generous about what counts cannot manufacture a pass — it
+#: can only fail to notice one, and the fenced-block blanking is what stops a
+#: quoted template from counting.
+CHECKLIST_ITEM = re.compile(r"^[ \t]*[-*+][ \t]*\[(?P<state>[ xX])\]", re.MULTILINE)
+
+
+def required_validation_items() -> int:
+    """How many checklist items the template asks for. Discovered, not listed.
+
+    AGENTS.md: "Discover, never list." The template in `format_claim_body` is
+    the specification of what validation a task owes, so the count comes from
+    it. Adding or removing an item there moves this gate with it.
+    """
+    template = format_claim_body(
+        machine="m", agent="a", task="t", paths=["p"], coordinated=()
+    )
+    return len(CHECKLIST_ITEM.findall(prose(template)))
+
+
+def validation_errors(body: str) -> List[str]:
+    """Why a ready pull request's validation record is not one.
+
+    ⚠ The gate used to be `re.search(r"^\\s*- \\[ \\]", body)` and nothing else,
+    which asked only "are any boxes unticked?". **A body with no Validation
+    section at all therefore passed both `check-pr` and `ship`** — a gate that
+    checks only unticked boxes rewards deleting the boxes. The section and its
+    items are now required, so removing them is the loud failure that ticking
+    them dishonestly at least has to be written down for.
+
+    What is deliberately *not* required is the item **text**. Nine of the
+    fourteen pull requests merged on 2026-08-23 reworded template items while
+    validating honestly ("`cargo test --profile ci --locked` — not run locally,
+    and it cannot be affected: ..."), so matching text would refuse the
+    fleet's real, correct practice. The count is what says the record exists.
+    """
+    text = prose(body)
+    errors: List[str] = []
+    heading = VALIDATION_HEADING.search(text)
+    required = required_validation_items()
+    if not heading:
+        return [
+            "ready PRs must carry a '## Validation' section listing every check "
+            f"that was run; this body has none. The template writes {required} "
+            "items — omitting them is not the same as passing them"
+        ]
+    rest = text[heading.end():]
+    nxt = ANY_HEADING.search(rest)
+    section = rest[: nxt.start()] if nxt else rest
+    items = CHECKLIST_ITEM.findall(section)
+    if len(items) < required:
+        errors.append(
+            f"the Validation section lists {len(items)} checklist item(s); the "
+            f"template asks for {required}. Restore the missing item(s) and "
+            "record the result, or say why one does not apply — do not delete it"
+        )
+    if any(state == " " for state in CHECKLIST_ITEM.findall(text)):
+        errors.append(
+            "ready PRs must complete every validation checkbox; run each listed "
+            "check, then change its '- [ ]' to '- [x]' in this PR body"
+        )
+    return errors
 
 
 MACHINE_REGISTRY = Path("docs/MACHINES.md")
@@ -467,7 +747,20 @@ def validate_pr(
             "python3 tools/civvis_collab.py start <task-slug> --path <path>"
         )
 
-    claims = parse_claims(body)
+    claims, shadowed, has_ownership_heading = scan_claims(body)
+    notes = advisories if advisories is not None else []
+    if not has_ownership_heading:
+        notes.append(
+            "this body has no '## Ownership claim' heading, so the whole body "
+            "was scanned for the claim. Add the heading: it is what stops an "
+            "example block elsewhere in the body from being read as the claim"
+        )
+    for label in shadowed:
+        notes.append(
+            f"a later line also says '{label}:' with a different value and was "
+            "ignored — the first one in the ownership block is the claim. If "
+            "the later line is the real one, move it into the block"
+        )
     for key, label in FIELD_LABELS.items():
         value = claims.get(key, "").strip().lower()
         if value in PLACEHOLDERS:
@@ -495,10 +788,10 @@ def validate_pr(
             errors.append(f"mutating autosync commit is forbidden: {subject}")
 
     errors.extend(unevidenced_effect_sizes(added_lines or {}))
+    notes.extend(missing_live_game_citation(files, body, added_lines or {}))
 
     coordinated = split_coordination(claims.get("coordinated", ""))
     mine = as_range_map(files, ranges)
-    notes = advisories if advisories is not None else []
     for other_number in sorted({*(other_files or {}), *(other_ranges or {})}):
         if other_ranges and other_number in other_ranges:
             theirs = other_ranges[other_number]
@@ -523,6 +816,26 @@ def validate_pr(
             f"edits collide with PR #{other_number} on the same lines of {preview}"
         )
         if other_number in coordinated:
+            # ⚠ This `continue` is the escape that makes the overlap error
+            # optional: one number on one line, no reason and no agreement from
+            # the other side, silences a refusal that exists to stop two
+            # writers rewriting the same lines. It stays a pass, because the
+            # agreement AGENTS.md asks for is made *in the older PR* — often as
+            # a comment — and requiring the other body to name this PR would
+            # refuse honest work: on 2026-08-23, ready #2337 collided with open
+            # #2326 on `docs/ROADMAP.md` and `tools/conflict_hotspots.py`, said
+            # `Coordinated with: #2326`, and #2326's body said `none`.
+            #
+            # What it no longer is, is silent. An unreciprocated claim is now
+            # recorded on the run, so "I said we coordinated" leaves a trace
+            # somebody can check rather than looking exactly like agreement.
+            if number not in (other_coordination or {}).get(other_number, set()):
+                notes.append(
+                    f"{detail} — silenced by 'Coordinated with: #{other_number}' "
+                    f"in this body alone; PR #{other_number} does not name PR "
+                    f"#{number} back. Coordination is agreed in the older PR, so "
+                    "make sure that agreement exists there"
+                )
             continue
         # A newly started task records its existing neighbours automatically.
         # Its older neighbour cannot have known that future PR number when it
@@ -546,11 +859,8 @@ def validate_pr(
                 "to the 'Coordinated with:' line of this PR body"
             )
 
-    if not draft and re.search(r"^\s*- \[ \]", body, re.MULTILINE):
-        errors.append(
-            "ready PRs must complete every validation checkbox; run each listed "
-            "check, then change its '- [ ]' to '- [x]' in this PR body"
-        )
+    if not draft:
+        errors.extend(validation_errors(body))
 
     return errors
 
@@ -719,6 +1029,53 @@ def pr_added_lines(repository: str, number: int, token: str) -> Dict[str, List[s
 def pr_commit_subjects(repository: str, number: int, token: str) -> List[str]:
     rows = github_json(f"/repos/{repository}/pulls/{number}/commits?per_page=100", token)
     return [str(row["commit"]["message"]).splitlines()[0] for row in rows]
+
+
+# A PR that models or drives a live-game interaction quotes what it is
+# modelled on (AGENTS.md, "A claim is not a check"). Two things make a PR one
+# of those: a path under the control mod, or added lines in `src/game.rs`
+# that touch the deal, diplomacy, barbarian or religion code. Two things count
+# as a citation: a shipped script path or line under the app bundle, or a
+# gameplay-database table. This is a notice on every run and a block on none:
+# the rule is new, the detector is a heuristic, and a false refusal on a
+# fidelity PR would cost more than a missed reminder.
+LIVE_GAME_PATH_PREFIX = "tools/civ6_control/mod/"
+LIVE_GAME_CODE = re.compile(
+    r"(?<![a-z])(deal|diplom|barbarian|religio|pressure|condemn|heresy|inquisit|missionar|apostle)",
+    re.IGNORECASE,
+)
+LIVE_GAME_CITATION = re.compile(
+    r"Civ6\.app|\.lua:\d+|GameplayDB\.|DebugGameplay\.sqlite|(?:Base|DLC)/[A-Za-z0-9_./-]+\.(?:lua|xml)",
+)
+LIVE_GAME_CITATION_NOTICE = (
+    "this PR {why} and its body quotes no shipped source: cite the script "
+    "line (`Base/Assets/UI/File.lua:123`) or the gameplay-database table "
+    "(`GameplayDB.Table`) the change is modelled on. `python3 "
+    "tools/civ6_scripts.py grep <regex>` finds it on a machine with the game. "
+    "A notice, not a block — see AGENTS.md, \"A claim is not a check\"."
+)
+
+
+def models_a_live_game_interaction(
+    files: Sequence[str], added_lines: Dict[str, Sequence[str]]
+) -> Optional[str]:
+    """Why this PR is one that should quote its source, or None."""
+    mod = [path for path in files if path.startswith(LIVE_GAME_PATH_PREFIX)]
+    if mod:
+        return f"touches the control mod ({mod[0]})"
+    for line in added_lines.get("src/game.rs", ()):
+        if LIVE_GAME_CODE.search(line):
+            return "adds to the deal/diplomacy/barbarian/religion code in src/game.rs"
+    return None
+
+
+def missing_live_game_citation(
+    files: Sequence[str], body: str, added_lines: Dict[str, Sequence[str]]
+) -> List[str]:
+    why = models_a_live_game_interaction(files, added_lines)
+    if why is None or LIVE_GAME_CITATION.search(body):
+        return []
+    return [LIVE_GAME_CITATION_NOTICE.format(why=why)]
 
 
 def check_pr_action(event_path: Path, token: str, repository: str) -> int:
@@ -947,11 +1304,13 @@ def ship_pr_errors(pr: Dict[str, Any], branch: str) -> List[str]:
     if str(pr.get("headRefName") or "") != branch:
         errors.append("the current branch does not own the discovered PR")
     body = str(pr.get("body") or "")
-    if re.search(r"^\s*- \[ \]", body, re.MULTILINE):
-        errors.append("complete every PR validation checkbox before shipping")
+    # Same gate as the required check, from the same function: `ship` used to
+    # spell it separately and inherited the same hole — no Validation section
+    # meant nothing to complete, so an unvalidated body shipped.
+    errors.extend(validation_errors(body))
     summary = re.search(
         r"^## What changed\s*(.*?)(?=^## |\Z)",
-        body,
+        prose(body),
         re.MULTILINE | re.DOTALL,
     )
     summary_text = summary.group(1).strip() if summary else ""
@@ -1025,6 +1384,88 @@ def wait_for_pr_head(
         time.sleep(max(0.1, poll_seconds))
 
 
+def regenerable_conflicts(repo: Path) -> List[str]:
+    """The conflicted paths this tool is allowed to resolve by regenerating.
+
+    Empty when nothing is conflicted, and empty when *anything* conflicted is
+    not on the list — a partial automatic resolution is worse than none,
+    because it hands the author a half-merged tree that looks resolved.
+    """
+    unmerged = [
+        line.strip()
+        for line in git(repo, "diff", "--name-only", "--diff-filter=U").splitlines()
+        if line.strip()
+    ]
+    if not unmerged or any(name not in REGENERATED_ON_MERGE for name in unmerged):
+        return []
+    return sorted(unmerged)
+
+
+def resolve_by_regenerating(repo: Path, conflicted: List[str]) -> None:
+    """Rebuild the generated artifacts from the merged sources and stage them.
+
+    ★★★★★ THE ONLY HOT CONFLICT CLASS THAT NEEDS NO JUDGEMENT. On 2026-08-19,
+    35 of the 138 commits main took in a day touched `docs/eval_manifest.json`
+    and 32 touched `docs/EVAL_STATUS.md` — the fourth and fifth most-edited
+    paths in the repository, behind only `advanced.rs`, its tests and
+    `elo.rs`. Both are pure functions of tracked source, both are appended to
+    by every agent registering an evaluator arm, and every conflict in them
+    has exactly one correct resolution: run the generator again. One pull
+    request hit the same conflict on four consecutive ship attempts and
+    resolved it four identical times by hand.
+
+    ⚠ This is sound *because the source merged cleanly*. `regenerable_conflicts`
+    returns nothing unless every conflicted path is generated, so the tree this
+    regenerates from is the real merge of both branches' sources. Regenerating
+    over a conflicted source file would silently publish one side's arms.
+
+    ⚠ And it regenerates rather than choosing a side. `--write` is run, then
+    `--check`, so a resolution that does not match what the merged source
+    implies fails loudly instead of being committed.
+    """
+    commands = []
+    for name in conflicted:
+        command = REGENERATED_ON_MERGE[name]
+        if command not in commands:
+            commands.append(command)
+    for command in commands:
+        run((sys.executable, str(repo / command[0]), *command[1:]), cwd=repo, capture=False)
+        # The generator reporting success is not the same as every artifact it
+        # owns being current; ask it.
+        run(
+            (sys.executable, str(repo / command[0]), "--check"),
+            cwd=repo,
+            capture=False,
+        )
+    git(repo, "add", "--", *conflicted)
+    still = [line for line in git(repo, "diff", "--name-only", "--diff-filter=U").splitlines() if line.strip()]
+    if still:
+        raise CommandError(
+            "regenerating the generated documents left conflicts behind: " + ", ".join(still)
+        )
+
+
+def settle_merge_conflict(repo: Path, detail: str) -> None:
+    """Finish a conflicted merge, or hand it back to the author.
+
+    A conflict confined to generated documents is arithmetic, not a decision:
+    rebuild them from the merged source and commit. Anything else raises, with
+    git's own message, exactly as it did before. See `resolve_by_regenerating`.
+    """
+    conflicted = regenerable_conflicts(repo)
+    if not conflicted:
+        raise CommandError(
+            "latest main did not merge cleanly; resolve this task worktree, "
+            f"revalidate it, and run ship again: {detail or 'merge conflict'}"
+        )
+    print(
+        "main advanced into a generated-document conflict; regenerating "
+        + ", ".join(conflicted)
+    )
+    resolve_by_regenerating(repo, conflicted)
+    git(repo, "commit", "--no-edit")
+
+
 def merge_current_main(repo: Path) -> bool:
     """Integrate a newly advanced main and type-check the merged result.
 
@@ -1047,11 +1488,7 @@ def merge_current_main(repo: Path) -> bool:
         check=False,
     )
     if merged.returncode:
-        detail = (merged.stderr or merged.stdout or "merge conflict").strip()
-        raise CommandError(
-            "latest main did not merge cleanly; resolve this task worktree, "
-            f"revalidate it, and run ship again: {detail}"
-        )
+        settle_merge_conflict(repo, (merged.stderr or merged.stdout or "").strip())
     git(repo, "diff", "--check", "origin/main...")
     run(
         ("cargo", "check", "--locked"),
@@ -1717,6 +2154,14 @@ def push_guard_paths(repo: Path) -> Tuple[Path, Path]:
     return source, target
 
 
+def is_managed_push_guard(data: bytes) -> bool:
+    """Whether an existing pre-push hook is a copy of this repository's guard.
+
+    Naming the guard is not being it. See `PUSH_GUARD_SIGNATURE`.
+    """
+    return bool(PUSH_GUARD_SIGNATURE.search(data.decode("utf-8", errors="replace")))
+
+
 def install_push_guard(repo: Path) -> Path:
     source, target = push_guard_paths(repo)
     if not source.is_file():
@@ -1726,7 +2171,7 @@ def install_push_guard(repo: Path) -> Path:
         raise CommandError(f"refusing to replace symlinked pre-push hook: {target}")
     if target.exists():
         existing = target.read_bytes()
-        if existing != source_bytes and PUSH_GUARD_MARKER.encode() not in existing:
+        if existing != source_bytes and not is_managed_push_guard(existing):
             raise CommandError(
                 f"refusing to overwrite unmanaged pre-push hook: {target}; "
                 "preserve and resolve that hook explicitly before retrying"
@@ -1980,6 +2425,42 @@ def atomic_write(path: Path, data: bytes, *, executable: bool = False) -> None:
         temporary.unlink(missing_ok=True)
 
 
+def lock_holder_is_gone(path: Path) -> bool:
+    """True when the lock names a process that is no longer running.
+
+    The lock has always recorded its holder's PID and never read it back, so a
+    worker that died holding it kept every `start` on the machine waiting out
+    `FRESHNESS_LOCK_STALE_SECONDS`. Checking the PID turns that half hour into
+    one syscall.
+
+    Deliberately conservative — every uncertain answer is *False*, i.e. "assume
+    the holder is alive and keep waiting", so the age-based expiry stays the
+    backstop and this can only ever release a lock it is sure about:
+
+    - an unreadable or malformed lock: another process is mid-write, since the
+      file is created `O_EXCL` and written immediately after;
+    - a PID from a different boot that has since been recycled onto a live
+      process: indistinguishable from the real holder, and the age check
+      already covers it;
+    - `PermissionError` from `kill(pid, 0)`: the PID exists but belongs to
+      another user, so something is running.
+    """
+    try:
+        holder = json.loads(path.read_text(encoding="utf-8"))
+        pid = int(holder["pid"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return False
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return True
+    except (PermissionError, OSError):
+        return False
+    return False
+
+
 class FreshnessLock:
     """A tiny cross-platform exclusion lock for overlapping timer runs."""
 
@@ -2002,7 +2483,9 @@ class FreshnessLock:
                     age = time.time() - self.path.stat().st_mtime
                 except FileNotFoundError:
                     continue
-                if age > FRESHNESS_LOCK_STALE_SECONDS:
+                if age > FRESHNESS_LOCK_STALE_SECONDS or lock_holder_is_gone(
+                    self.path
+                ):
                     self.path.unlink(missing_ok=True)
                     continue
                 if time.monotonic() >= self.deadline:

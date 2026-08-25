@@ -28,7 +28,7 @@ end })
 -- The agent snapshots this installer-provided table into a file-local `cfg`
 -- while loading.  Give the exercised retry guard its real numeric default;
 -- otherwise the permissive dummy would be truthy and mask the cooldown path.
-CivvisControlConfig = { PeaceRetryTurns = 5 }
+CivvisControlConfig = { PeaceRetryTurns = 5, DealSessions = false }
 
 local chunk, err = loadfile(here .. "/CivvisControlAgent.lua")
 assert(chunk, "could not load agent: " .. tostring(err))
@@ -176,9 +176,9 @@ local function callAt(state, wanted)
 	return nil
 end
 
-local function peaceOrder(pid, subject, player, turn)
+local function peaceOrder(pid, subject, player, turn, cap)
 	return applyOrder(player, pid, {
-		kind = "peace", subject = tostring(subject),
+		kind = "peace", subject = tostring(subject), x = cap,
 	}, turn)
 end
 
@@ -199,23 +199,49 @@ check("working deal uses PROPOSED", white.sendArgs[1], "proposed")
 check("proposal keeps players", white.sendArgs[2] .. ":" .. white.sendArgs[3], "7:11")
 check("proposal does not open a UI session", white.openedSession, nil)
 
--- A retry may offer at most three quarters of the treasury.  The locked peace
--- agreement remains and the same direct proposal, not a session, is sent.
+-- A retry without a tribute cap from the planner is white peace again: the
+-- order carries no `x`, so no Gold item is added at all.  Until 2026-08-24
+-- every retry put three quarters of the treasury on the table.
+local whiteRetryFirst, whiteRetryFirstPlayer = fixture()
+peaceOrder(3, 5, whiteRetryFirstPlayer, 40)
+local whiteRetry, whiteRetryPlayer = fixture({ gold = 200 })
+submitted, reason = peaceOrder(3, 5, whiteRetryPlayer, 46)
+check("uncapped retry submits", submitted, true)
+check("uncapped retry says submitted", reason, "peace_submitted")
+check("uncapped retry adds no gold", whiteRetry.goldAmount, nil)
+check("uncapped retry still sends direct proposal", whiteRetry.sendArgs[1], "proposed")
+local zeroRetryFirst, zeroRetryFirstPlayer = fixture()
+peaceOrder(3, 8, zeroRetryFirstPlayer, 40)
+local zeroRetry, zeroRetryPlayer = fixture({ gold = 200 })
+submitted = peaceOrder(3, 8, zeroRetryPlayer, 46, 0)
+check("a zero cap adds no gold", submitted and zeroRetry.goldAmount, nil)
+
+-- A routed retry carries the planner's cap, still bounded by three quarters
+-- of the treasury.  The locked peace agreement remains and the same direct
+-- proposal, not a session, is sent.
 local retryFirst, retryFirstPlayer = fixture()
-peaceOrder(3, 5, retryFirstPlayer, 40)
+peaceOrder(3, 9, retryFirstPlayer, 40)
 local retry, retryPlayer = fixture({ gold = 200 })
-submitted, reason = peaceOrder(3, 5, retryPlayer, 46)
-check("retry submits", submitted, true)
-check("retry says submitted", reason, "peace_submitted")
-check("retry records gold item", retry.goldAmount, 150)
-check("retry gold has no duration", retry.goldDuration, 0)
-check("retry still sends direct proposal", retry.sendArgs[1], "proposed")
-check("retry does not open a UI session", retry.openedSession, nil)
+submitted, reason = peaceOrder(3, 9, retryPlayer, 46, 120)
+check("capped retry submits", submitted, true)
+check("capped retry says submitted", reason, "peace_submitted")
+check("capped retry records the cap", retry.goldAmount, 120)
+check("capped retry gold has no duration", retry.goldDuration, 0)
+check("capped retry still sends direct proposal", retry.sendArgs[1], "proposed")
+check("capped retry does not open a UI session", retry.openedSession, nil)
+local richFirst, richFirstPlayer = fixture()
+peaceOrder(3, 10, richFirstPlayer, 40)
+local rich, richPlayer = fixture({ gold = 100 })
+submitted = peaceOrder(3, 10, richPlayer, 46, 500)
+check("a cap above three quarters of the treasury pays three quarters", submitted and rich.goldAmount, 75)
+local firstAsk, firstAskPlayer = fixture({ gold = 1000 })
+submitted = peaceOrder(3, 12, firstAskPlayer, 10, 250)
+check("the first ask is white even with a cap", submitted and firstAsk.goldAmount, nil)
 
 local cappedFirst, cappedFirstPlayer = fixture()
 peaceOrder(3, 6, cappedFirstPlayer, 60)
 local capped, cappedPlayer = fixture({ gold = 1000, goldMax = 125 })
-submitted = peaceOrder(3, 6, cappedPlayer, 66)
+submitted = peaceOrder(3, 6, cappedPlayer, 66, 300)
 check("retry respects Firaxis gold maximum", submitted and capped.goldAmount, 125)
 check("capped retry sends direct proposal", capped.sendArgs[1], "proposed")
 
@@ -251,7 +277,7 @@ check("invalid package does not send", invalidDeal.sendArgs, nil)
 local invalidGoldFirst, invalidGoldFirstPlayer = fixture()
 peaceOrder(3, 24, invalidGoldFirstPlayer, 40)
 local invalidGold, invalidGoldPlayer = fixture({ gold = 200, goldValid = false })
-submitted, reason = peaceOrder(3, 24, invalidGoldPlayer, 46)
+submitted, reason = peaceOrder(3, 24, invalidGoldPlayer, 46, 120)
 check("invalid tribute keeps peace proposal", submitted, true)
 check("invalid tribute is removed", invalidGold.removed, 88)
 check("invalid tribute says submitted", reason, "peace_submitted")
@@ -264,7 +290,7 @@ local peaceAt = assert(src:find('if kind == "peace" then', 1, true))
 local delegationAt = assert(src:find('if kind == "delegation" then', peaceAt, true))
 local peaceArm = src:sub(peaceAt, delegationAt - 1)
 check("peace arm calls tested submitter", peaceArm:find(
-	"pcall(submitMajorPeaceDeal, subject, asked)", 1, true) ~= nil, true)
+	"pcall(submitMajorPeaceDeal, subject, asked, x)", 1, true) ~= nil, true)
 check("peace arm does not reopen a deal session",
 	peaceArm:find("DiplomacyManager.RequestSession", 1, true) == nil, true)
 check("submitter uses Firaxis normal proposal",

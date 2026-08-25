@@ -8,7 +8,68 @@
 //!
 //! Usage: audit [--games N] [--start-seed N] [--players N] [--turns N]
 //!              [--width N] [--height N] [--city-states N] [--speed ID]
-//!              [--quiet]
+//!              [--genome deployment|stock] [--quiet]
+//!
+//! ## ⚠⚠ WHICH AGENT THIS AUDITS, AND WHY THE DEFAULT CHANGED
+//!
+//! `AdvancedAi::fleet` is `AdvancedAi::new()` per seat: the STOCK controller,
+//! no repair bundle, no ledger. The native deployment genome is
+//! `enable_engine_repairs()` — the repair universe, then the ledger's
+//! defaults. Those are different agents, and this binary used the first while
+//! its output read as though it described the second.
+//!
+//! What that cost, measured on 2026-08-25 at this binary's own profile, seed
+//! 21000000, turn 165, summed across the board:
+//!
+//! | configuration | live trade routes | `solvency_first_trade_slot` |
+//! |---|---:|---|
+//! | `fleet()` — what this binary used | **2** | false |
+//! | `enable_engine_repairs()` — deployment | **37** | true |
+//!
+//! `solvency-first-trade-slot` is **rank 1 of `HEURISTIC_GENE_RANKING.md`** at
+//! +8.07% (22.85% against 14.78%, P(>0) 100.0%) and has been `on` in the
+//! deployment default throughout. A census of "the empire uses 3% of its trade
+//! capacity" was therefore a census of an agent nobody runs.
+//!
+//! `--genome deployment` is now the default and every report names the genome
+//! it audited. `--genome stock` keeps the old behaviour for anyone who wants
+//! the bare controller, which is a legitimate question — just not the one the
+//! unqualified word "audit" implies.
+//!
+//! ## What the lane census measured (2026-08-19, 16 games)
+//!
+//! At the live ladder's profile — `--games 16 --start-seed 21000000
+//! --players 6 --turns 250 --speed online`, which defaults to 74x46 with 9
+//! city-states — the engine finished: **religious 9, score 5, science 1,
+//! culture 1, diplomatic 0**.
+//!
+//! The planner-turn shares behind that:
+//!
+//! | lane | games below a twentieth of the board's planning |
+//! |---|---:|
+//! | diplomacy | **16 of 16** (0% in every game) |
+//! | culture | 11 of 16 |
+//! | science | 2 of 16 |
+//!
+//! `docs/EVAL_STATUS.md` counts how the live ladder actually loses: of 83
+//! attempts ended by a rival's victory, **diplomatic 47 and culture 27** —
+//! 74 of the 83. The two lanes that take three quarters of our losses are
+//! the two this board contests least, and diplomacy it does not contest at
+//! all: zero planner-turns in all sixteen games, with the diplomatic victory
+//! condition enabled the whole time.
+//!
+//! This is a measurement, not a diagnosis. It does not say why the Diplomacy
+//! grand strategy is never adopted, and the fixed-priority fallback in
+//! `AdvancedAi::rival_victory_pressure` is *not* the explanation — stock
+//! agents run with `victory_planning` on, so that branch never executes.
+//!
+//! The tourism half: the board's tourism leader was granted Open Borders by
+//! 15 host-civilizations across the 16 games. In the one native culture
+//! victory, 2 of 5 hosts had granted it and 5 of 5 carried the winner's
+//! Trade Routes — so the +25% a host chooses to hand over is a real but
+//! secondary contributor, and the Trade Route half is the visitor's own move.
+//! A denial treatment aimed at Open Borders should be priced against that,
+//! not against the assumption that consent is what pays for the lane.
 use std::collections::{BTreeMap, HashSet};
 
 use civvis::ai::{AdvancedAi, Ai};
@@ -219,22 +280,8 @@ struct Motion {
     /// **+3 combat strength per fortified turn, capped at +6**
     /// (`unit_strength`), about 30% of its base.
     ///
-    /// ⚠⚠ **BUT THIS COLUMN IS NOT A DEFECT, AND THIS COMMENT USED TO SAY IT
-    /// WAS.** "Only this half is a defect" was an argument from the mechanic,
-    /// never a measurement, and the measurement disagrees.
-    /// `advanced_fortify_idle_units` — which does exactly what the column asks
-    /// for, fortifying every unit the planner gave nothing to do — was screened
-    /// on the two-profile matrix at 200 pairs (seed 9300000) and came back
-    /// **RETAIN advanced, 1/2 profiles cleared**: deployment-online 49.8%,
-    /// −2 Elo-equivalent (CI −35..+29); compact-standard 50.0%, +0 (CI −14..+16).
-    /// Both intervals are tight against resolutions of +37 and +35, so that is
-    /// a null and not a short look, and the terminal-score direction agreed
-    /// (p=0.53 and p=0.47).
-    ///
-    /// Read the column as *description*, not as a backlog item. The free
-    /// defensive bonus on 3,307 major unit-turns per three games is real and
-    /// collecting it wins nothing; whatever those units should be doing
-    /// instead, standing still with a fortify order is not it.
+    /// Read the column as *description*, not as a backlog item: it identifies
+    /// idle units without assuming that fortifying them is an outcome win.
     idle_could_fortify: u64,
     /// Stood still in the open, fortified. A picket is legitimate; a
     /// stampede into this column is a livelock fix that only hid the problem.
@@ -1025,6 +1072,193 @@ fn audit_result(g: &Game, found: &mut Findings) {
             );
         }
     }
+    audit_tourism(g, found);
+}
+
+/// A culture victory is paid in *foreign* tourists, and every one of them is
+/// pulled out of a rival's domestic pool by tourism pressure. Two of the
+/// multipliers in `Game::international_tourism_multiplier` are not earned by
+/// the tourist at all — they are granted by the civilization being toured.
+/// Open Borders is worth +25%, and it is a diplomatic gift the host chooses
+/// to make; a Trade Route into the host is worth another +25%. This census
+/// asks, at the end of every game, how much of the tourism leader's reach was
+/// bought with consent its hosts could have withheld.
+///
+/// It reports rather than judges. Granting Open Borders to the board's
+/// tourism leader is a legal and often correct move — the point is to find
+/// out whether it is a decision anyone is making.
+fn granted_open_borders(g: &Game, source: usize, target: usize) -> bool {
+    g.are_allied(source, target)
+        || g.players[target]
+            .open_borders_until
+            .get(&source)
+            .is_some_and(|until| *until > g.turn)
+        || g.active_trade_deals
+            .iter()
+            .filter(|deal| deal.ends > g.turn)
+            .any(|deal| {
+                (deal.from == target && deal.to == source && deal.offer.open_borders)
+                    || (deal.to == target && deal.from == source && deal.request.open_borders)
+            })
+}
+
+fn tourism_trade_route(g: &Game, source: usize, target: usize) -> bool {
+    g.routes.iter().any(|route| {
+        route.owner == source
+            && route.ends > g.turn
+            && g.cities
+                .get(&route.dest)
+                .is_some_and(|city| city.owner == target)
+    })
+}
+
+/// Which victory lanes the board's planners actually committed to.
+///
+/// `audit_tourism` can report that nobody came near the culture bar without
+/// being able to say why. `AdvancedAi::strategy_census` counts the turns each
+/// agent spent on each grand strategy, so summing it across the majors gives
+/// the board's own answer: a lane nobody adopts is a lane nobody loses, and a
+/// denial experiment run against it measures the arena rather than the agent.
+fn audit_strategy_mix(g: &Game, ais: &[AdvancedAi], found: &mut Findings) {
+    let mut lanes = [
+        ("expansion", 0u32),
+        ("science", 0),
+        ("culture", 0),
+        ("religion", 0),
+        ("diplomacy", 0),
+        ("conquest", 0),
+        ("recovery", 0),
+    ];
+    for player in g
+        .players
+        .iter()
+        .filter(|player| !player.is_minor && !player.is_barbarian)
+    {
+        let Some(census) = ais.get(player.id).map(|ai| ai.strategy_census()) else {
+            continue;
+        };
+        lanes[0].1 += census.expansion;
+        lanes[1].1 += census.science;
+        lanes[2].1 += census.culture;
+        lanes[3].1 += census.religion;
+        lanes[4].1 += census.diplomacy;
+        lanes[5].1 += census.conquest;
+        lanes[6].1 += census.recovery;
+    }
+    let planned: u32 = lanes.iter().map(|(_, turns)| turns).sum();
+    if planned == 0 {
+        found.symptom("no major ever chose a grand strategy", String::new());
+        return;
+    }
+    let mix = lanes
+        .iter()
+        .map(|(name, turns)| format!("{name} {}%", 100 * turns / planned))
+        .collect::<Vec<_>>()
+        .join(", ");
+    // A victory lane that never attracts a twentieth of the board's planning
+    // is not being contested, whatever the agent is capable of when told to
+    // contest it.
+    for (name, turns) in lanes
+        .iter()
+        .filter(|(name, _)| *name != "expansion" && *name != "recovery")
+    {
+        if turns * 20 < planned {
+            found.symptom(
+                format!("the board never contested the {name} lane"),
+                format!(
+                    "{name} took {}% of {planned} planner-turns; the board ran {mix}",
+                    100 * turns / planned
+                ),
+            );
+        }
+    }
+}
+
+fn audit_tourism(g: &Game, found: &mut Findings) {
+    let majors: Vec<usize> = g
+        .players
+        .iter()
+        .filter(|p| p.alive && !p.is_minor && !p.is_barbarian)
+        .map(|p| p.id)
+        .collect();
+    if majors.len() < 2 {
+        return;
+    }
+    let Some(&leader) = majors.iter().max_by_key(|pid| g.foreign_tourists(**pid)) else {
+        return;
+    };
+    let foreign = g.foreign_tourists(leader);
+    if foreign <= 0 {
+        found.symptom(
+            "no civilization attracted a single foreign tourist",
+            format!("best was {} on 0", g.players[leader].civ),
+        );
+        return;
+    }
+    let bar = majors
+        .iter()
+        .filter(|pid| **pid != leader && !g.same_team(leader, **pid))
+        .map(|pid| g.domestic_tourists(*pid))
+        .max()
+        .unwrap_or(0);
+
+    let hosts: Vec<usize> = majors
+        .iter()
+        .copied()
+        .filter(|pid| *pid != leader && !g.same_team(leader, *pid))
+        .collect();
+    let consenting = hosts
+        .iter()
+        .filter(|host| granted_open_borders(g, leader, **host))
+        .count();
+    let routed = hosts
+        .iter()
+        .filter(|host| tourism_trade_route(g, leader, **host))
+        .count();
+
+    for host in &hosts {
+        if granted_open_borders(g, leader, *host) {
+            found.symptom(
+                "the board's tourism leader toured on Open Borders its host granted",
+                format!(
+                    "{} granted {} Open Borders; {} ended on {} foreign tourists against a bar of {}",
+                    g.players[*host].civ,
+                    g.players[leader].civ,
+                    g.players[leader].civ,
+                    foreign,
+                    bar,
+                ),
+            );
+        }
+    }
+
+    // Report which side of the race this game landed on either way. A denial
+    // experiment run in an arena that never produces the lane measures
+    // nothing, and the only way to know that is to say so out loud: a census
+    // that reports only its alarming case reads as quiet when it is blind.
+    if foreign * 4 < bar {
+        found.symptom(
+            "the culture lane went uncontested",
+            format!(
+                "the board's best tourism was {} on {} foreign tourists against a bar of {} ({}%); {} of {} hosts had granted Open Borders",
+                g.players[leader].civ,
+                foreign,
+                bar,
+                if bar > 0 { 100 * foreign / bar } else { 0 },
+                consenting,
+                hosts.len(),
+            ),
+        );
+    }
+    if foreign * 4 >= bar * 3 {
+        found.symptom(
+            "a culture victory came within a quarter of landing",
+            format!(
+                "{} reached {} foreign tourists against a bar of {} ({} of {} hosts granted Open Borders, {} carried its Trade Routes)",
+                g.players[leader].civ, foreign, bar, consenting, hosts.len(), routed,
+            ),
+        );
+    }
 }
 
 fn main() {
@@ -1045,6 +1279,15 @@ fn main() {
     });
     let turns = number(&args, "--turns", i64::from(speed_turns.turns)).max(1) as u32;
     let quiet = args.iter().any(|arg| arg == "--quiet");
+    // ⚠⚠ WHICH AGENT IS BEING AUDITED. `AdvancedAi::fleet` is
+    // `AdvancedAi::new()` per seat -- the STOCK controller, with no repair
+    // bundle and no ledger. That is not what ships: the native deployment
+    // genome is `enable_engine_repairs()`, which turns the repair universe on
+    // and then applies the ledger's defaults. Until 2026-08-25 this binary
+    // had no way to say so and no output that named it, so every number it
+    // printed described the stock agent while reading as though it described
+    // the agent. See `GENOME_READ` for what that cost.
+    let genome = text(&args, "--genome", "deployment");
 
     let mut totals = Findings::default();
     let mut totals_motion = MotionBreakdown::default();
@@ -1060,6 +1303,11 @@ fn main() {
         options.speed = speed.clone();
         let mut g = Game::new_with(options);
         let mut ais = AdvancedAi::fleet(&g);
+        if genome != "stock" {
+            for ai in ais.iter_mut() {
+                ai.enable_engine_repairs();
+            }
+        }
         let mut history = History::default();
         let mut found = Findings::default();
         let mut motion = MotionBreakdown::default();
@@ -1076,6 +1324,7 @@ fn main() {
             }
         }
         audit_result(&g, &mut found);
+        audit_strategy_mix(&g, &ais, &mut found);
         for life in history.lives.values() {
             let entry = motion
                 .major_lives
@@ -1129,6 +1378,17 @@ fn main() {
         "profile   {players}p {width}x{height}, {speed}, {turns} turns, {city_states} city-states, seeds {start}..{}",
         start + games - 1,
     );
+    // ⚠ A report that does not name its genome reads as though it described
+    // the agent, and for months this one described the stock controller. See
+    // the module header.
+    println!(
+        "genome    {}",
+        if genome == "stock" {
+            "stock — AdvancedAi::new(), no repair bundle, no ledger (--genome stock)"
+        } else {
+            "deployment — enable_engine_repairs(): the repair universe, then the ledger"
+        }
+    );
     totals_motion.print("");
     if totals.violations.is_empty() {
         println!("no rule violations");
@@ -1151,11 +1411,12 @@ mod tests {
     use civvis::game::{Item, WarHighlight, WarRecord};
 
     use super::{
-        bounded_minor_idle, city_state_district_family, negotiated_war_ended_early,
-        rapid_recapture_window, redeclared_inside_peace_treaty, track_unit,
-        treasury_looks_hoarded, unit_had_idle_opportunity, History, Motion, LIVELOCK_TURNS,
+        bounded_minor_idle, city_state_district_family, granted_open_borders,
+        negotiated_war_ended_early, rapid_recapture_window, redeclared_inside_peace_treaty,
+        tourism_trade_route, track_unit, treasury_looks_hoarded, unit_had_idle_opportunity,
+        History, Motion, LIVELOCK_TURNS,
     };
-    use civvis::game::Game;
+    use civvis::game::{Action, ActiveTradeDeal, DealItems, Game, TradeRoute};
 
     /// Walk one unit through a scripted sequence of tiles, one per turn, and
     /// report how many livelock episodes the auditor opened.
@@ -1435,5 +1696,127 @@ mod tests {
         assert!(treasury_looks_hoarded(false, 8_797.0, 232.4));
         assert!(!treasury_looks_hoarded(false, 1_409.0, 199.0));
         assert!(treasury_looks_hoarded(true, 1_340.0, 22.3));
+    }
+
+    /// `granted_open_borders` mirrors the private `Game::tourism_open_borders`,
+    /// so pin all three ways the engine reaches that `true` — and both ways it
+    /// expires. A census that silently stops agreeing with the rule it is
+    /// auditing reports zeros and reads like good news.
+    #[test]
+    fn the_census_sees_every_route_to_open_borders() {
+        let mut g = Game::new(2, 24, 16, 11, 300, 0);
+        g.turn = 40;
+        assert!(
+            !granted_open_borders(&g, 0, 1),
+            "a fresh game grants nothing"
+        );
+
+        // The grant is recorded on the *host*, keyed by the visitor.
+        g.players[1].open_borders_until.insert(0, 45);
+        assert!(granted_open_borders(&g, 0, 1), "host 1 let visitor 0 in");
+        assert!(
+            !granted_open_borders(&g, 1, 0),
+            "the grant is one-directional"
+        );
+        g.players[1].open_borders_until.insert(0, 40);
+        assert!(
+            !granted_open_borders(&g, 0, 1),
+            "the grant expires on its turn"
+        );
+        g.players[1].open_borders_until.remove(&0);
+
+        // A standing deal carries the same permission either way round.
+        let offered = DealItems {
+            open_borders: true,
+            ..Default::default()
+        };
+        g.active_trade_deals.push(ActiveTradeDeal {
+            id: 1,
+            from: 1,
+            to: 0,
+            offer: offered,
+            request: DealItems::default(),
+            started: 30,
+            ends: 50,
+        });
+        assert!(
+            granted_open_borders(&g, 0, 1),
+            "host 1 offered it in a deal"
+        );
+        g.active_trade_deals[0].ends = 40;
+        assert!(
+            !granted_open_borders(&g, 0, 1),
+            "an ended deal grants nothing"
+        );
+        g.active_trade_deals.clear();
+
+        let requested = DealItems {
+            open_borders: true,
+            ..Default::default()
+        };
+        g.active_trade_deals.push(ActiveTradeDeal {
+            id: 2,
+            from: 0,
+            to: 1,
+            offer: DealItems::default(),
+            request: requested,
+            started: 30,
+            ends: 50,
+        });
+        assert!(
+            granted_open_borders(&g, 0, 1),
+            "visitor 0 requested it of host 1"
+        );
+    }
+
+    /// The other granted multiplier. A Trade Route only carries tourism while
+    /// it is running and only against the civilization that owns the
+    /// destination city.
+    #[test]
+    fn the_census_counts_only_live_routes_into_the_host() {
+        let mut g = Game::new(2, 24, 16, 11, 300, 0);
+        let settler = *g
+            .units
+            .iter()
+            .find(|(_, unit)| unit.owner == 1 && unit.kind == "settler")
+            .map(|(id, _)| id)
+            .expect("player 1 starts with a settler");
+        g.current = 1;
+        g.apply(1, &Action::FoundCity { unit: settler })
+            .expect("a starting settler can found");
+        let city = *g
+            .cities
+            .iter()
+            .find(|(_, city)| city.owner == 1)
+            .map(|(id, _)| id)
+            .expect("player 1 now holds a city");
+        g.turn = 40;
+
+        assert!(!tourism_trade_route(&g, 0, 1), "no routes yet");
+        g.routes.push(TradeRoute {
+            origin: 0,
+            dest: city,
+            owner: 0,
+            ends: 50,
+        });
+        assert!(
+            tourism_trade_route(&g, 0, 1),
+            "player 0 trades into player 1"
+        );
+        assert!(
+            !tourism_trade_route(&g, 1, 0),
+            "the route is one-directional"
+        );
+        g.routes[0].ends = 40;
+        assert!(
+            !tourism_trade_route(&g, 0, 1),
+            "an expired route carries nothing"
+        );
+        g.routes[0].ends = 50;
+        g.routes[0].dest = city + 9_999;
+        assert!(
+            !tourism_trade_route(&g, 0, 1),
+            "a route to no city carries nothing"
+        );
     }
 }

@@ -1,5 +1,7 @@
 # Generation-14 macro-search budget ablation
 
+⚠ `ai_eval` was removed in #2351 (2026-08-23): the paired evaluator and its arm registry were retired in favour of the gene screen (`docs/GENE_SCREEN.md`). Every `ai_eval` command in this document is kept as the record of how a result was measured — it does not run against this tree.
+
 ## Question
 
 `strategic_deep` reviews every 20 turns and projects every candidate lane for

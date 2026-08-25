@@ -18,7 +18,7 @@
 //! `idle_reserve` is a destructive, sign-reversed ablation. It remains
 //! available explicitly but is deliberately excluded from safe `all`.
 use civvis::ai::{AdvancedAi, Ai, VictoryTarget};
-use civvis::elo::{builtin_ai, builtin_provenance, BUILTIN_AIS, EVAL_ONLY_AIS};
+use civvis::elo::{builtin_ai, builtin_provenance, BUILTIN_AIS};
 use civvis::game::{default_difficulty, Action, Game, GameOptions, VictoryConditions};
 use civvis::oracle::{Grant, Oracle};
 use civvis::rules::Rules;
@@ -42,7 +42,7 @@ fn text(args: &[String], key: &str, default: &str) -> String {
 }
 
 fn known_ai(name: &str) -> bool {
-    BUILTIN_AIS.contains(&name) || EVAL_ONLY_AIS.contains(&name)
+    BUILTIN_AIS.contains(&name)
 }
 
 /// World axes grant mode adds to the historical evaluator profile.

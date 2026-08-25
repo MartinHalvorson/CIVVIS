@@ -99,6 +99,24 @@ KNOWN_MODALS = {
     "UserNotificationCenter": {
         "matches": (),
         "safe_buttons": ("OK", "Cancel", "Close"),
+        # A permission prompt offers only Allow / Don’t Allow, so none of the
+        # buttons above is present.  Measured 2026-08-19: Chrome’s local-network
+        # request sat over a recorded verification game until a human cleared it.
+        # Declining is safe where granting never is — macOS keeps the choice in
+        # System Settings, so a wrong decline is one click to undo.
+        #
+        # But denial is gated on the text rather than applied to every prompt of
+        # this owner: a denied file-access request would cut the lane off from
+        # its own run artifacts and leave nothing on screen to say why.  An
+        # unlisted prompt is censused and kept, which is what puts it in front of
+        # an operator.
+        "deny_buttons": ("Don’t Allow", "Don't Allow"),
+        "deny_matches": (
+            "find devices on local networks",
+            "to use your location",
+            "would like to send you notifications",
+            "wants to use bluetooth",
+        ),
     },
     # The admin-auth sheet ("Finder wants to make changes", Touch ID / password).
     # Measured 2026-08-07: asking Finder to move a SYMLINK into the protected
@@ -162,49 +180,138 @@ def quadrant_frame(quadrant: str, screen_w: int, screen_h: int,
     return (x, y, width, height)
 
 
+def _as(text: "str") -> "str":
+    """`text` as an AppleScript string literal.
+
+    ★★★ NOT `json.dumps`. JSON escapes every non-ASCII character as `\\uXXXX`,
+    and AppleScript has no `\\u` escape — it reads the backslash-u literally and
+    dies with AppleScript error -2741, a syntax error naming an unknown token
+    where it wanted a closing quote.
+    Window titles here are full of characters that trip it: Chrome titles the
+    live viewer `CIVVIS · Civ VI Simulator`, and Terminal separates its title
+    fields with an em dash. So the ONE window the standard layout has to place
+    by title could never be placed on this host, and `layout` reported
+    `placed: false` with a syntax error where the operator expected a mirror
+    beside the game.
+
+    `osascript` reads UTF-8, so the characters go through untouched; only the
+    two that end a literal need escaping.
+    """
+    return '"' + text.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def _process_window_script(process: str, frame: "tuple[int, int, int, int]") -> str:
+    """Build a placement script that selects a process window by its frame.
+
+    macOS's ``window 1`` is an ordering, not an identity.  Terminal keeps
+    every tabbed and hidden window in that ordering, so a later layout pass can
+    otherwise move a different operator window each time.  Choose the visible
+    window already closest to the requested slot; after the first placement
+    that is also the same window on every subsequent pass.
+    """
+    x, y, w, h = frame
+    return f'''on absolute_value(numberValue)
+  if numberValue < 0 then return -numberValue
+  return numberValue
+end absolute_value
+
+tell application "System Events"
+  tell (first process whose name contains {_as(process)})
+    set targetWindow to missing value
+    set bestScore to 100000000
+    repeat with i from 1 to (count of windows)
+      try
+        set candidate to window i
+        set candidateVisible to true
+        try
+          set candidateVisible to visible of candidate
+        end try
+        if candidateVisible then
+          set candidatePosition to position of candidate
+          set candidateSize to size of candidate
+          set candidateScore to (my absolute_value((item 1 of candidatePosition) - {x})) + (my absolute_value((item 2 of candidatePosition) - {y})) + (my absolute_value((item 1 of candidateSize) - {w})) + (my absolute_value((item 2 of candidateSize) - {h}))
+          if candidateScore < bestScore then
+            set bestScore to candidateScore
+            set targetWindow to candidate
+          end if
+        end if
+      end try
+    end repeat
+    if targetWindow is missing value then error number -1719
+    tell targetWindow
+      set size to {{{w}, {h}}}
+      set position to {{{x}, {y}}}
+    end tell
+  end tell
+end tell'''
+
+
 def place_window(frame: "tuple[int, int, int, int]", process: "str | None" = None,
-                 title: "str | None" = None) -> "str | None":
+                 title: "str | None" = None,
+                 skip_owners: "frozenset[str]" = frozenset()) -> "str | None":
     """Move one window into `frame`; returns an error string or None.
 
     Size before position, deliberately: Aspyr's window constrains a requested
     origin against its CURRENT size, so positioning first lands an upper
     quadrant at the bottom (measured in `civ6_play.place_game`, kept here).
+    Process specs select the visible window nearest the requested frame;
+    ``window 1`` is not stable when Terminal has several windows.
     """
     x, y, w, h = frame
     if process and not title:
-        finder = f'first process whose name contains {json.dumps(process)}'
-        window = "window 1"
-    else:
-        # Title match walks every visible process's windows; first match wins.
-        finder = None
-        window = None
-    if finder:
-        script = (f'tell application "System Events" to tell ({finder}) to tell {window}\n'
-                  f'  set size to {{{w}, {h}}}\n'
-                  f'  set position to {{{x}, {y}}}\n'
-                  f'end tell')
-        done = _osascript(script)
+        done = _osascript(_process_window_script(process, frame))
         return None if done.returncode == 0 else (done.stderr or done.stdout).strip()
+    # Title match walks every visible process's windows; first match wins.
     pattern = re.compile(title or "", re.I)
-    listing = _osascript(
-        'tell application "System Events"\n'
-        '  set out to ""\n'
-        '  repeat with proc in (every process whose background only is false)\n'
-        '    repeat with win in (every window of proc)\n'
-        '      set out to out & (name of proc) & "\\t" & (name of win) & "\\n"\n'
-        '    end repeat\n'
-        '  end repeat\n'
-        '  return out\n'
-        'end tell')
-    if listing.returncode != 0:
-        return (listing.stderr or listing.stdout).strip()
+    # ★★★ RETRIED, BECAUSE THIS RACES EXACTLY WHEN IT IS NEEDED. Walking every
+    # visible process's windows fails with `-1719` ("Invalid index") when the
+    # process list changes under the enumeration — and the moment the layout is
+    # wanted is the moment Civilization VI is launching, which is precisely when
+    # processes and windows are appearing and disappearing. Observed twice on
+    # 2026-08-18: `layout` returned `placed: false` for the mirror, and the same
+    # call succeeded seconds later with nothing else changed.
+    #
+    # A transient enumeration failure is not "no window matches", and reporting
+    # it as a placement failure sends the operator looking for a mapping bug
+    # that is not there. Three attempts over roughly a second; a genuine
+    # failure still returns its own message rather than a retry loop's.
+    listing = None
+    for attempt in range(3):
+        listing = _osascript(
+            'tell application "System Events"\n'
+            '  set out to ""\n'
+            '  repeat with proc in (every process whose background only is false)\n'
+            '    repeat with win in (every window of proc)\n'
+            '      set out to out & (name of proc) & "\\t" & (name of win) & "\\n"\n'
+            '    end repeat\n'
+            '  end repeat\n'
+            '  return out\n'
+            'end tell')
+        if listing.returncode == 0:
+            break
+        if attempt < 2:
+            time.sleep(0.4)
+    if listing is None or listing.returncode != 0:
+        return (listing.stderr or listing.stdout).strip() if listing else "no window listing"
     for line in listing.stdout.splitlines():
         owner, _, window_name = line.partition("\t")
         if not window_name or not pattern.search(window_name):
             continue
+        # ★★★ A WINDOW THIS LAYOUT ALREADY PLACED BY PROCESS IS NOT A CANDIDATE.
+        # The title patterns are deliberately loose, and a loose pattern will
+        # eventually match a window that is not the target: the standard
+        # layout's `CIVVIS|127\.0\.0\.1` matched a *Terminal* window on this
+        # host, because the operator had named a shell session "CIVVIS gaps and
+        # priorities" — so the upper-left slot would have been given the
+        # terminal that lower-left had just been given, and the live mirror
+        # would never appear. Terminal is placed by an explicit process spec, so
+        # its windows are spoken for; skip them rather than tighten a pattern
+        # that will drift again.
+        if owner in skip_owners:
+            continue
         script = (f'tell application "System Events" to tell '
-                  f'(first process whose name is {json.dumps(owner)}) to tell '
-                  f'(first window whose name is {json.dumps(window_name)})\n'
+                  f'(first process whose name is {_as(owner)}) to tell '
+                  f'(first window whose name is {_as(window_name)})\n'
                   f'  set size to {{{w}, {h}}}\n'
                   f'  set position to {{{x}, {y}}}\n'
                   f'end tell')
@@ -218,10 +325,16 @@ def layout(assignments=STANDARD_LAYOUT) -> "list[dict]":
     if size is None:
         return [{"error": "desktop size unavailable"}]
     report = []
+    # Processes this layout positions explicitly. A later title match must not
+    # re-claim one of their windows; see `place_window`.
+    claimed = frozenset(
+        spec["process"] for spec in assignments if spec.get("process")
+    )
     for spec in assignments:
         frame = quadrant_frame(spec["quadrant"], *size)
         error = place_window(frame, process=spec.get("process"),
-                             title=spec.get("title"))
+                             title=spec.get("title"),
+                             skip_owners=claimed)
         report.append({"quadrant": spec["quadrant"],
                        "target": spec.get("process") or spec.get("title"),
                        "placed": error is None,
@@ -234,16 +347,16 @@ def modal_census() -> "list[dict]":
     found = []
     for owner, spec in KNOWN_MODALS.items():
         count = _osascript(f'tell application "System Events" to count windows '
-                           f'of process {json.dumps(owner)}')
+                           f'of process {_as(owner)}')
         if count.returncode != 0 or not count.stdout.strip().isdigit():
             continue
         if int(count.stdout.strip()) == 0:
             continue
         texts = _osascript(f'tell application "System Events" to tell process '
-                           f'{json.dumps(owner)} to get value of every static text '
+                           f'{_as(owner)} to get value of every static text '
                            f'of window 1')
         buttons = _osascript(f'tell application "System Events" to tell process '
-                             f'{json.dumps(owner)} to get name of every button '
+                             f'{_as(owner)} to get name of every button '
                              f'of window 1')
         text = texts.stdout.strip() if texts.returncode == 0 else ""
         names = [b.strip() for b in buttons.stdout.split(",")] \
@@ -270,9 +383,16 @@ def choose_dismissal(modal: dict) -> "str | None":
     spec = KNOWN_MODALS.get(modal.get("owner", ""))
     if spec is None:
         return None
+    buttons = modal.get("buttons") or []
     for name in spec["safe_buttons"]:
-        if name in (modal.get("buttons") or []):
+        if name in buttons:
             return name
+    patterns = spec.get("deny_matches") or ()
+    text = (modal.get("text") or "").lower()
+    if patterns and any(p.lower() in text for p in patterns):
+        for name in spec.get("deny_buttons") or ():
+            if name in buttons:
+                return name
     return None
 
 
@@ -284,7 +404,7 @@ def dismiss_modals() -> "list[dict]":
         if button:
             done = _osascript(
                 f'tell application "System Events" to tell process '
-                f'{json.dumps(modal["owner"])} to click button {json.dumps(button)} '
+                f'{_as(modal["owner"])} to click button {_as(button)} '
                 f'of window 1')
             entry["dismissed"] = done.returncode == 0
         report.append(entry)

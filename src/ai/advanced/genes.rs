@@ -1,0 +1,1396 @@
+//! ⭐ THE GENE REGISTRY — the **gene pool**: every gene there is, on or off,
+//! declared once.
+//!
+//! Vocabulary (operator, 2026-08-23): the **gene pool** is the collection of
+//! all genes, whether on or off — this table is it. A **genome** is one
+//! player's set of on genes, a subset of the pool: the deployment genome is
+//! the set the ledger ships on, and a screen seat draws its own.
+//!
+//! A gene is one boolean flag on `AdvancedAi` with a published tag. This table
+//! is the one place a gene is declared — its tag, its flag, what kind of gene
+//! it is, and the two toggles that set it — and everything that needs the
+//! list reads it from here:
+//!
+//! - `AdvancedAi::enable_live_bridge_universe` turns on every `live` gene
+//!   (what the Civilization VI seat ships), `enable_engine_repairs_universe`
+//!   every `Repair` (the native half of that bundle), and the war/economy
+//!   halves filter by `Axis`; `apply_gene_ledger` then sets each gene to the
+//!   deployment default the ledger derived (`gene_ledger.rs`).
+//! - `gene_screen` screens every `screenable()` gene; `civvis_orders --without`
+//!   withholds any `live()` gene on the live seat.
+//! - `tools/genes.py` (the ledger, the ranking) and
+//!   `tools/eval_manifest.py` scrape the rows below, so a row added here is
+//!   priced, ranked and counted without touching them.
+//!
+//! Until 2026-08-23 the same facts were spread over three tuple tables
+//! (`LIVE_TREATMENTS`, `PRODUCTION_TREATMENTS`, `PRODUCTION_OPT_INS`) and
+//! five tag lists in `src/elo.rs` (`LIVE_BRIDGE_TREATMENTS`,
+//! `FIRAXIS_ONLY_TREATMENTS`, `ENGINE_REPAIR_*`), held in step by tests.
+//! They are columns of one row now. The `treatment` vocabulary went with
+//! them: a treatment was a gene seen from the evaluator's side, and the
+//! evaluator is gone.
+//!
+//! ⚠ The tags are published: `docs/gene_ledger.json`, every
+//! `docs/gene_screens/*.json` header and every round under `docs/eval/` file
+//! results under them, so renaming a row silently unfinds a recorded result.
+//! Add rows; do not rewrite them. A tag `<base>-<n>` (`war-economy-2`) is
+//! version `n` of `<base>` — see `docs/GENE_SCREEN.md`, *Versioning a gene*.
+//!
+//! ⚠ Rows are appended at the end of their block and never re-ordered: the
+//! screen writes genes in this order, and `tools/genes.py` re-derives a
+//! batch's gene set from this file at the commit the batch names.
+//!
+//! Every row's comment is the note its old table row or its old bundle line
+//! carried — the reason the gene exists and the measurement that motivated
+//! it — moved here with the row.
+
+use super::AdvancedAi;
+#[allow(unused_imports)]
+use super::{GeneVerdict, Measure, Verdict};
+
+/// Which half of the native repair bundle a `Repair` belongs to. Split so the
+/// bundle's interaction stays measurable: if the whole bundle beats stock by
+/// more than the halves do separately, the repairs compound.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Axis {
+    War,
+    Economy,
+}
+
+/// What kind of gene a row is — the one fact the old tables encoded by which
+/// table a row sat in.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Kind {
+    /// An engine repair the Civilization VI seat ships and a native board can
+    /// play: on in the genome's universe, screenable, withholdable live.
+    Repair(Axis),
+    /// Shipped by the Civilization VI seat but reading host state a native
+    /// board does not have: inert in a headless game, so never screened;
+    /// withholdable live.
+    HostOnly,
+    /// Production ships it on before the ledger says anything (the stock
+    /// agent carries it).
+    Production,
+    /// Off everywhere until the ledger turns it on; screenable.
+    OptIn,
+}
+
+/// One gene, declared once.
+pub struct Gene {
+    /// The published name: the ledger, the screen and every recorded round
+    /// file results under it.
+    pub tag: &'static str,
+    /// The flag on `AdvancedAi` it sets.
+    pub field: &'static str,
+    pub kind: Kind,
+    pub enable: fn(&mut AdvancedAi),
+    pub disable: fn(&mut AdvancedAi),
+}
+
+impl Gene {
+    /// Shipped by the Civilization VI seat (`enable_live_bridge_universe`).
+    pub const fn live(&self) -> bool {
+        matches!(self.kind, Kind::Repair(_) | Kind::HostOnly)
+    }
+    /// Reads host state a native board does not have.
+    pub const fn host_only(&self) -> bool {
+        matches!(self.kind, Kind::HostOnly)
+    }
+    /// A native engine repair in the live bundle.
+    pub const fn repair(&self) -> bool {
+        matches!(self.kind, Kind::Repair(_))
+    }
+    pub const fn repair_axis(&self) -> Option<Axis> {
+        match self.kind {
+            Kind::Repair(axis) => Some(axis),
+            _ => None,
+        }
+    }
+    /// Production ships it on before the ledger.
+    pub const fn production(&self) -> bool {
+        matches!(self.kind, Kind::Production)
+    }
+    /// Off until the ledger turns it on.
+    pub const fn opt_in(&self) -> bool {
+        matches!(self.kind, Kind::OptIn)
+    }
+    /// On after `enable_engine_repairs_universe`: the genome's universe.
+    pub const fn universe_on(&self) -> bool {
+        self.repair() || self.production()
+    }
+    /// On in the production agent alone, before any bundle.
+    pub const fn stock_on(&self) -> bool {
+        self.production()
+    }
+    /// Whether `gene_screen` can price it on a native board.
+    pub const fn screenable(&self) -> bool {
+        self.universe_on() || self.opt_in()
+    }
+}
+
+/// The gene by its published tag.
+pub fn gene(tag: &str) -> Option<&'static Gene> {
+    GENES.iter().find(|gene| gene.tag == tag)
+}
+
+/// Every `live()` tag, in registry order — what the live bundle stamps on a
+/// run so an old binary's list reads as shorter.
+pub fn live_tags() -> Vec<&'static str> {
+    GENES.iter().filter(|g| g.live()).map(|g| g.tag).collect()
+}
+
+/// Every `host_only()` tag, in registry order.
+pub fn host_only_tags() -> Vec<&'static str> {
+    GENES
+        .iter()
+        .filter(|g| g.host_only())
+        .map(|g| g.tag)
+        .collect()
+}
+
+/// Every `repair()` tag, in registry order — the native half of the bundle.
+pub fn repair_tags() -> Vec<&'static str> {
+    GENES.iter().filter(|g| g.repair()).map(|g| g.tag).collect()
+}
+
+/// The repairs of one half, in registry order.
+pub fn repair_tags_on(axis: Axis) -> Vec<&'static str> {
+    GENES
+        .iter()
+        .filter(|g| g.repair_axis() == Some(axis))
+        .map(|g| g.tag)
+        .collect()
+}
+
+/// Every `screenable()` gene, in registry order — the genome `gene_screen`
+/// varies and `tools/genes.py` fingerprints.
+pub fn screenable_genes() -> Vec<&'static Gene> {
+    GENES.iter().filter(|g| g.screenable()).collect()
+}
+
+#[rustfmt::skip]
+pub const GENES: &[Gene] = &[
+    // ── Repairs: the native half of the live bundle, war then economy ──
+    // ⚠ Reinforcements never reach the front. Force groups are cliques at
+    // `command_radius`, so the trickle of fresh and released units forms
+    // one- and two-body groups at home that can never clear
+    // `LOCAL_SUPERIORITY_FLOOR` at the objective. Measured on run
+    // `civvis-20260808T033223Z`, t217-t225: land forces of one, two and
+    // three against the same objective, every one "too weak locally to
+    // advance", while the empire fielded 10-14 units.
+    // Force assembly and movement.
+    Gene { tag: "war-reinforcement", field: "war_reinforcement", kind: Kind::Repair(Axis::War), enable: AdvancedAi::enable_war_reinforcement, disable: AdvancedAi::disable_war_reinforcement },
+    // ⚠ `unit_can_traverse` says yes to open water for every land unit as
+    // soon as embarkation unlocks, so the unexplored ocean becomes a legal
+    // exploration goal for the whole army — and the only rule that brought
+    // a unit back was welded to `modernization_step`, which does nothing
+    // for a unit with no upgrade waiting. Measured across 133 live runs:
+    // land combat units spend a mean 15% of their unit-turns embarked, and
+    // 21.7% while one of our own cities is taking damage (92.8% in the
+    // worst run). An embarked unit cannot attack. On run
+    // `civvis-20260803T130831Z` the capital sat at 179/200 damage for 38
+    // turns while 11 of 12 land combat units swam. The tournament
+    // controller stays frozen.
+    Gene { tag: "come-ashore", field: "come_ashore", kind: Kind::Repair(Axis::War), enable: AdvancedAi::enable_come_ashore, disable: AdvancedAi::disable_come_ashore },
+    Gene { tag: "recorded-tactical-step", field: "recorded_tactical_step", kind: Kind::Repair(Axis::War), enable: AdvancedAi::enable_recorded_tactical_step, disable: AdvancedAi::disable_recorded_tactical_step },
+    // And a three-hop loop back to the start is no better than a two-hop
+    // one. See `whole_turn_backtrack_guard`.
+    // And a three-hop loop back to the start is no better than a two-hop
+    // one. See `whole_turn_backtrack_guard`.
+    Gene { tag: "whole-turn-backtrack-guard", field: "whole_turn_backtrack_guard", kind: Kind::Repair(Axis::War), enable: AdvancedAi::enable_whole_turn_backtrack_guard, disable: AdvancedAi::disable_whole_turn_backtrack_guard },
+    // Reading the enemy. The `3.0` "we dominate here" sentinel fires on
+    // 53.3% of force decisions, and two thirds of those are objectives
+    // that are not cities.
+    Gene { tag: "blind-objective-strength", field: "blind_objective_strength", kind: Kind::Repair(Axis::War), enable: AdvancedAi::enable_blind_objective_strength, disable: AdvancedAi::disable_blind_objective_strength },
+    Gene { tag: "blind-objective-units", field: "blind_objective_units", kind: Kind::Repair(Axis::War), enable: AdvancedAi::enable_blind_objective_units, disable: AdvancedAi::disable_blind_objective_units },
+    Gene { tag: "relief-targets-the-siege", field: "relief_targets_the_siege", kind: Kind::Repair(Axis::War), enable: AdvancedAi::enable_relief_targets_the_siege, disable: AdvancedAi::disable_relief_targets_the_siege },
+    // ⚠ `desired_military` is `2 * city_count` at war — a headcount keyed to
+    // OUR empire that never asks how strong the rival is. Once it is met,
+    // `force_gap` hits zero and the military arm of `production_value` drops
+    // from a 4.0 multiplier to 0.65, so units lose to buildings. Measured on
+    // run `civvis-20260803T005930Z`: 94 of 188 war turns had the target
+    // already satisfied, CIVVIS ordered 17 military units in the whole war
+    // (8 land combat, 2 siege) against Korea's five walled cities, and at t240
+    // the rival fielded 1050 military against our 658 while the target still
+    // read satisfied at 11 against a wanted 10.
+    // Sizing the army against the rival rather than against our own city
+    // count, before as well as during the war.
+    Gene { tag: "army-target-weighs-enemy", field: "army_target_weighs_enemy", kind: Kind::Repair(Axis::War), enable: AdvancedAi::enable_army_target_weighs_the_enemy, disable: AdvancedAi::disable_army_target_weighs_the_enemy },
+    // ⚠ And the wartime repair above still wakes up only once the war has
+    // started. Measured on run `civvis-20260803T220954Z` (Rome, 250 turns):
+    // seven cities founded by t123, Mali declared at t157 holding **894
+    // military against our 481**, and six of the seven were taken at
+    // loyalty 100 — sieges, not revolts — including Rome itself at t225.
+    // We issued zero war orders and sixteen refused peace requests. A
+    // target that asks "who could kill me" only after the declaration is
+    // asking too late; this floor asks it of the strongest MET major in
+    // peacetime, under its own far smaller ceiling.
+    Gene { tag: "peacetime-deterrence", field: "peacetime_deterrence", kind: Kind::Repair(Axis::War), enable: AdvancedAi::enable_peacetime_deterrence, disable: AdvancedAi::disable_peacetime_deterrence },
+    // ⚠⚠ WARS ARE REACHED BUT NEVER CONVERTED. Across the fifteen live
+    // Settler games of 2026-08-07/08 the ledger records four war
+    // declarations and ZERO city captures, and the score losses (639-1317,
+    // 457 at 3 cities on `civvis-20260808T033223Z`) are the direct result:
+    // the games are decided on score at the 250-turn cap, and captures are
+    // the one lever never pulled. Three repairs, separately ablatable,
+    // one causal story — the agent that reaches its own declaration must
+    // also fight the war it declared:
+    // ⚠ An adaptive Conquest plan never reaches `advanced_production` —
+    // it falls through to the Basic governor and an army target of
+    // `mil_per_city * cities` (≈1.4/city on the deployed genome), so the
+    // war is fought on a peacetime economy. `docs/RUSH.md` measured the
+    // routing trap from the other side: raising the army in
+    // `production_value` was twice byte-identical to a no-op.
+    Gene { tag: "war-economy", field: "war_economy", kind: Kind::Repair(Axis::War), enable: AdvancedAi::enable_war_economy, disable: AdvancedAi::disable_war_economy },
+    Gene { tag: "bounded-recovery", field: "bounded_recovery", kind: Kind::Repair(Axis::War), enable: AdvancedAi::enable_bounded_recovery, disable: AdvancedAi::disable_bounded_recovery },
+    // ⚠ And the war it keeps prosecuting still has to end on a captured
+    // city. The campaign re-picks its objective from scratch every turn and
+    // prices fifteen turns of siege at ~37 points, less than the distance
+    // terms swing; the army walks off a city at 25 hp with its walls down
+    // and Civ 6 heals it back at 20 hp a turn. Live run
+    // `civvis-20260808T142724Z` dealt 338 hp of city damage over t73-t105,
+    // handed 200 of it back, and took nothing — the shape behind 25 live
+    // games and 0 captures on 7.7x the field's military.
+    Gene { tag: "siege-commitment", field: "siege_commitment", kind: Kind::Repair(Axis::War), enable: AdvancedAi::enable_siege_commitment, disable: AdvancedAi::disable_siege_commitment },
+    // ⚠ And the fatigue clock must not offer away a siege that is landing
+    // net damage — Chennai at 190/200, "the war has stalled: 1180 power
+    // against their 82". See `siege_is_progress`.
+    // And a siege landing net damage resets the fatigue clock, so the
+    // peace desk cannot offer away a war one hit from a capture. See
+    // `siege_is_progress`.
+    Gene { tag: "siege-is-progress", field: "siege_is_progress", kind: Kind::Repair(Axis::War), enable: AdvancedAi::enable_siege_is_progress, disable: AdvancedAi::disable_siege_is_progress },
+    // ⚠ Barbarians are excluded from `at_major_war` by design, so every defensive
+    // escalation in the production picker reads a barbarian siege as no threat at
+    // all: a one-city empire's standing-army floor stays at `mil_per_city` (1.0)
+    // and it cannot want a third defender while horsemen stand on its doorstep.
+    // Measured on run `civvis-20260802T202501Z` — four settlers built into that
+    // siege and captured, two on the capital tile without ever moving, one city
+    // until t80, score 140 against a best rival's 416. The tournament controller
+    // stays frozen so its recorded ladders remain comparable.
+    // ⚠ And once it CAN want the defenders, something has to send them. Measured
+    // on run `civvis-20260803T005930Z` (Kongo, 154 turns): **116 of 154 turns had
+    // a hostile standing inside or beside our own territory**, including a
+    // full-health Crossbowman parked four tiles from two cities, unmoved and
+    // unengaged, for 21 consecutive turns, while the whole seven-unit army stood
+    // eight tiles away on a war front that had taken nothing in 75 turns. The
+    // cause is `nearest_enemy` ranking targets by distance FROM THE ASKING UNIT,
+    // which for a deployed army is always the enemy's cities. The tournament
+    // controller stays frozen so its recorded ladders remain comparable.
+    // Holding one. Barbarians take 7.0 major cities a game, 65% of
+    // everything a major loses.
+    Gene { tag: "home-defense", field: "home_defense", kind: Kind::Repair(Axis::War), enable: AdvancedAi::enable_home_defense, disable: AdvancedAi::disable_home_defense },
+    // The other half of the same three-defeat measurement: the capital that
+    // fell bleeding with an empty hostile list. See garrison_under_fire.
+    Gene { tag: "garrison-under-fire", field: "garrison_under_fire", kind: Kind::Repair(Axis::War), enable: AdvancedAi::enable_garrison_under_fire, disable: AdvancedAi::disable_garrison_under_fire },
+    // ⚠ `local_strength_ratio` prices an objective city only while it is
+    // currently in sight, and returns its `hostile <= 0.0` sentinel of 3.0 —
+    // the maximum — otherwise. Under live fog that makes a walled enemy
+    // capital score identically to an empty meadow, four times over the
+    // superiority floor, so the army engages. Measured on run
+    // `civvis-20260803T005930Z`: Seoul (walled, 22 pop, defense 101) was the
+    // objective of 426 force-group decisions from t65 to t231 and 294 of them
+    // read exactly 3.00, 108 with a force of one. No Korean city ever passed
+    // 27% damage in 173 turns of war. The repair reads only this controller's
+    // own last sighting, which the defensive half already trusts.
+    // ⚠ And once the army is sent, something has to make it close. The
+    // movement score charges `mv_threat * threat_caution * 30.0` for
+    // standing where an enemy can reach — -15.0 at parity for a Vanguard —
+    // and credits the attack that position buys with nothing, while
+    // closing one hex is worth +2.9. Measured on run
+    // `civvis-20260803T005930Z`: **7 melee ATTACK orders in 188 turns of
+    // war** against 1546 MOVE_TO, with 622 military unit-turns sitting 2-4
+    // hexes from a target and 52% of those under an Engage posture. The
+    // tournament controller stays frozen so its recorded ladders remain
+    // comparable.
+    // Tactical quality on the tile the unit actually stands on.
+    Gene { tag: "strike-opening", field: "strike_opening", kind: Kind::Repair(Axis::War), enable: AdvancedAi::enable_strike_opening, disable: AdvancedAi::disable_strike_opening },
+    // ⚠ The empire goes blind and the build order never notices. Recon is
+    // not among the counts `pick_item` receives, and `OPENING_MENU` is the
+    // only place a scout is named, so once the openers die nothing replaces
+    // them. Live run `civvis-20260808T142724Z`: zero recon units from turn
+    // ~100 to 251 while the army grew to 22, 77% of the map never seen, and
+    // the eventual winner first met on turn 215 already holding 927 points.
+    Gene { tag: "recon-replacement", field: "recon_replacement", kind: Kind::Repair(Axis::War), enable: AdvancedAi::enable_recon_replacement, disable: AdvancedAi::disable_recon_replacement },
+    // And a barbarian scout does not pin the opening. See
+    // `barbarian_scouts_are_scouts`.
+    // And a barbarian scout is a scout in both regimes — it can neither
+    // attack nor capture, so nothing retreats from one. See
+    // `barbarian_scouts_are_scouts`.
+    Gene { tag: "barbarian-scouts-are-scouts", field: "barbarian_scouts_are_scouts", kind: Kind::Repair(Axis::War), enable: AdvancedAi::enable_barbarian_scouts_are_scouts, disable: AdvancedAi::disable_barbarian_scouts_are_scouts },
+    // And a raider is cheaper to kill than a major: over the repaired
+    // bridge our 225 melee attacks killed 119 and cost 6 attackers, while
+    // the barbarians attacked us 867 times to our 290. See
+    // `BasicAi::barbarian_bargain`.
+    // And a raider is cheaper to kill than a major: 225 melee attacks over
+    // the repaired bridge killed 119 and cost 6 attackers, while the
+    // barbarians attacked us 867 times to our 290. See
+    // `BasicAi::barbarian_bargain`.
+    Gene { tag: "barbarian-bargain", field: "barbarian_bargain", kind: Kind::Repair(Axis::War), enable: AdvancedAi::enable_barbarian_bargain, disable: AdvancedAi::disable_barbarian_bargain },
+    // And a ring of shooters is answered by a shooter: they field 45 % of
+    // their attacks ranged to our 22 %, and our ranged attacks have never
+    // lost the attacker. See `BasicAi::barbarian_ranged_answer`.
+    // And a ring of shooters is answered by a shooter: they field 45 % of
+    // their attacks ranged to our 22 %, and our ranged attacks have never
+    // lost the attacker. See `BasicAi::barbarian_ranged_answer`.
+    Gene { tag: "barbarian-ranged-answer", field: "barbarian_ranged_answer", kind: Kind::Repair(Axis::War), enable: AdvancedAi::enable_barbarian_ranged_answer, disable: AdvancedAi::disable_barbarian_ranged_answer },
+    // And a capturable civilian within reach is walked onto, never
+    // watched from adjacency — and a settler in the barbarians' hands is
+    // never declined. Run `civvis-20260818T222844Z` t27–t33: our own
+    // captured settler passed four units unguarded and was lost to a
+    // camp. See `BasicAi::civilian_rescue`.
+    // And a capturable civilian within reach is walked onto — a settler
+    // taken back from the barbarians repays its whole production. See
+    // `BasicAi::civilian_rescue`.
+    Gene { tag: "civilian-rescue", field: "civilian_rescue", kind: Kind::Repair(Axis::War), enable: AdvancedAi::enable_civilian_rescue, disable: AdvancedAi::disable_civilian_rescue },
+    // And the sea gets one eye of its own. See `BasicAi::naval_recon`.
+    // And the sea gets one eye of its own. See `BasicAi::naval_recon`.
+    Gene { tag: "naval-recon", field: "naval_recon", kind: Kind::Repair(Axis::War), enable: AdvancedAi::enable_naval_recon, disable: AdvancedAi::disable_naval_recon },
+    // And in peacetime the whole field army clears it. See
+    // `BasicAi::camp_party`.
+    // And in peacetime the whole field army clears it. See
+    // `BasicAi::camp_party`.
+    Gene { tag: "camp-party", field: "camp_party", kind: Kind::Repair(Axis::War), enable: AdvancedAi::enable_camp_party, disable: AdvancedAi::disable_camp_party },
+    // And the settler decides on the real board, prices capture as
+    // capture and trusts only a guard on its tile; see
+    // settler_stack_discipline.
+    // The religion lane was structurally blocked by its own wars; see
+    // religion_sues_peace.
+    // A Religion plan that keeps its wars blockades its own lane.
+    Gene { tag: "religion-sues-peace", field: "religion_sues_peace", kind: Kind::Repair(Axis::War), enable: AdvancedAi::enable_religion_sues_peace, disable: AdvancedAi::disable_religion_sues_peace },
+    // The other half of that same capital's diagnosis: garrison_under_fire
+    // reacts to a city already bleeding, but the capital that fell had
+    // NEVER ORDERED WALLS — max_wall_damage 0 at t115 with production on
+    // the culture lane and the fog hiding every attacker until adjacency.
+    // See BasicAi::garrison_walls_item.
+    // Settler conversion is the score frontier the first seven live games
+    // isolated; see escort_unstick.
+    // Getting a settler to a site it can keep.
+    Gene { tag: "escort-unstick", field: "escort_unstick", kind: Kind::Repair(Axis::Economy), enable: AdvancedAi::enable_escort_unstick, disable: AdvancedAi::disable_escort_unstick },
+    // And the Library and University come before the Great Merchant race.
+    // See `buildings_before_projects`.
+    // The cheap half of a research city before the race in it. See
+    // `buildings_before_projects`.
+    Gene { tag: "buildings-before-projects", field: "buildings_before_projects", kind: Kind::Repair(Axis::Economy), enable: AdvancedAi::enable_buildings_before_projects, disable: AdvancedAi::disable_buildings_before_projects },
+    // And the guard on the settler's tile holds there, and only a guard
+    // that can hold counts — both settlers of civvis-20260819T025840Z were
+    // taken one tile outside Rome from a tile a warrior had just left.
+    // See `settler_guard_holds`.
+    // And a stacked guard holds, and only one that can hold counts. See
+    // `settler_guard_holds`.
+    Gene { tag: "settler-guard-holds", field: "settler_guard_holds", kind: Kind::Repair(Axis::Economy), enable: AdvancedAi::enable_settler_guard_holds, disable: AdvancedAi::disable_settler_guard_holds },
+    // ⚠ THE EXPANSION GATE ASKS `settlers == 0`, so a settler that never
+    // founds anything answers "one is already in flight" for the rest of
+    // the game. Across the 25 live runs of 2026-08-07/08 that reason is
+    // 86% of every refusal to build a settler (1,548 of 1,767), the median
+    // game's longest-lived single settler survives 86 turns of 250 without
+    // founding, and nine runs carried one alive for 82-171 turns having
+    // moved five times or fewer. Those empires finished on a median of 5
+    // cities against a `city_target` of 7.8 with the window open to turn
+    // 198 — neither was binding, this was — and lost all 21 completed
+    // games at a median score 0.46x the leader's, with final score
+    // tracking city count at r = 0.81. The mod's fallback ladder already
+    // made this repair; under `--civvis-decides` it is not the decider.
+    Gene { tag: "stranded-settler-discount", field: "stranded_settler_discount", kind: Kind::Repair(Axis::Economy), enable: AdvancedAi::enable_stranded_settler_discount, disable: AdvancedAi::disable_stranded_settler_discount },
+    // Three straight Settler losses were an eight-city empire against
+    // ten- and eleven-city rivals; the stock nine-ceiling was the binding
+    // constant. See `wide_map_capacity`.
+    Gene { tag: "wide-map-capacity", field: "wide_map_capacity", kind: Kind::Repair(Axis::Economy), enable: AdvancedAi::enable_wide_map_capacity, disable: AdvancedAi::disable_wide_map_capacity },
+    // ⚠⚠ AND THE EMPIRE STOPS BUILDING CAMPUSES AT HALF ITS CITIES.
+    // `balanced_core` pays a Campus +130 only while `district_count * 2 <
+    // city_count`, so the term switches off at half coverage — and measured
+    // over 19 live runs, end-of-game Campus coverage is **exactly 50 of 100
+    // cities**. The counterweight #958 added is per-city and lane-
+    // independent, but it is scaled by a GAME-FRACTION horizon while every
+    // term it competes against is a flat constant, so it decays to 120 by
+    // turn 150 against a Theatre Square's 850. The cities that never get a
+    // Campus are the late-founded ones, and the science funnel cascades
+    // from it: 50% Campus, 39% Library, 20% University, 3% Research Lab.
+    // ⚠⚠ AND THE TWO HOUSING CARDS THE EMPIRE CAN REACH ARE NEVER PLAYED.
+    // `medina_quarter` (+2 Housing at 3+ specialty districts) is slotted in
+    // **0 of 107 live runs** and appears nowhere in `src/`; `insulae` (+1 at
+    // 2+) in **1**. Housing is the dominant growth cap — 71.7% of 13,214
+    // host-exported city-turns sit under it at a mean multiplier of 0.510,
+    // against the Amenity band's 0.872 — and 60.3% / 40.0% of city-turns
+    // already carry the 2 / 3 specialty districts these cards need.
+    // ⚠⚠ THE SCIENCE PROJECT LOOP CAN MAKE THE AMENITY REPAIR UNREACHABLE.
+    // On live run `civvis-20260815T051714Z`, every one of five cities sat
+    // between -3 and -5 Amenities from t140 onward, costing 10–30% of its
+    // yields, while adaptive Science restarted Campus Research Grants 39
+    // times from t176 to t233. `BasicAi::pick_item` already ranks an
+    // Entertainment Complex above ordinary district lanes, but explicit
+    // Science production bypasses that picker whenever it fills a queue.
+    // The repair pauses one repeatable project only after at least two
+    // cities enter the -3 band; it preserves victory projects, force gaps,
+    // and the rest of the Science queue while the district/building chain
+    // completes.
+    Gene { tag: "amenity-project-preemption", field: "amenity_project_preemption", kind: Kind::Repair(Axis::Economy), enable: AdvancedAi::enable_amenity_project_preemption, disable: AdvancedAi::disable_amenity_project_preemption },
+    Gene { tag: "amenity-district-path", field: "amenity_district_path", kind: Kind::Repair(Axis::Economy), enable: AdvancedAi::enable_amenity_district_path, disable: AdvancedAi::disable_amenity_district_path },
+    // ⚠⚠ AND THE REPAIR IS BEHIND A TECH THE ARGMAX NEVER AIMS AT. Over 94
+    // live runs the median empire ends on **30 techs of 77**, `engineering`
+    // is reached by only **73%** and at a median turn **116** — which is why
+    // the live median Aqueduct order lands at turn 164. Making the district
+    // reachable in the build lists cannot beat the tech that gates it.
+    Gene { tag: "housing-research", field: "housing_research", kind: Kind::Repair(Axis::Economy), enable: AdvancedAi::enable_housing_research, disable: AdvancedAi::disable_housing_research },
+    // ⚠ PENDING MEASUREMENT. First arm at deployment shape (74x46, 9 city-states,
+    // 16 games, 200 turns) read +35 Elo (CI -61..+130), direction 7-2, sign
+    // p=0.1797 — inconclusive, the promotion gate did not fire, terminal score
+    // flat at 23-22. A weak positive is not a result. A 40-game arm is running;
+    // if it does not clear, this call and its `live_without_` arm come back out
+    // rather than sitting here unpriced.
+    //
+    // ⚠ It cannot be parked "off but registered": `each_live_without_arm_holds_
+    // exactly_one_treatment_off` and `live_bridge_treatments_name_every_flag_
+    // the_helper_sets` (#988) require the treatment list, the arms and this
+    // helper to agree exactly. A flag the deployment does not set has no
+    // `live_without_` arm — which is the invariant working, and the reason a
+    // gated-off flag here would be dead code of the `culture_focus` kind.
+    Gene { tag: "district-coverage", field: "district_coverage", kind: Kind::Repair(Axis::Economy), enable: AdvancedAi::enable_district_coverage, disable: AdvancedAi::disable_district_coverage },
+    Gene { tag: "slot-kind-tiebreak", field: "slot_kind_tiebreak", kind: Kind::Repair(Axis::Economy), enable: AdvancedAi::enable_slot_kind_tiebreak, disable: AdvancedAi::disable_slot_kind_tiebreak },
+    // ⚠ Faith buys the soldier; GOLD pays for it every turn forever, and
+    // `military_faith_spending` never asks about gold — it gates on the faith
+    // bank alone. Measured on run `civvis-20260803T014330Z`: faith military
+    // purchases walked down the gold curve (t124 at 60 gold, t141 at 48, t165 at
+    // 51), the treasury hit zero on t168, Civilization VI disbanded the army
+    // from 29 units to 19 by t173, and on t174 — at FIVE gold, one turn after
+    // losing a third of the army — CIVVIS bought another Field Cannon. The
+    // tournament controller stays frozen so its recorded ladders stay
+    // comparable.
+    // ⚠ Loyalty is the LARGEST single cause of city loss and the AI was
+    // reading only the level. Classified over every recorded run, 125 city
+    // losses: 52 (41.6%) below loyalty 50, 37 (29.6%) loyal-and-damaged, and
+    // 36 (28.8%) gone from FULL health and full loyalty in one round. 66 of
+    // the 125 were carrying a negative loyalty rate when last seen, and
+    // `Game::city_loyalty_per_turn` — mirrored from Civilization VI all along
+    // — had zero consumers in the whole AI. The tournament controller stays
+    // frozen so its recorded ladders remain comparable.
+    // Keeping it loyal.
+    Gene { tag: "loyalty-rate-alarm", field: "loyalty_rate_alarm", kind: Kind::Repair(Axis::Economy), enable: AdvancedAi::enable_loyalty_rate_alarm, disable: AdvancedAi::disable_loyalty_rate_alarm },
+    // And the last fifty turns are a tally, not a launch window. See
+    // `score_horizon`.
+    // And the last fifty turns are a tally, not a launch window. See
+    // `score_horizon`.
+    Gene { tag: "score-horizon", field: "score_horizon", kind: Kind::Repair(Axis::Economy), enable: AdvancedAi::enable_score_horizon, disable: AdvancedAi::disable_score_horizon },
+    // And the race that does fit needs one launch pad, not one per city.
+    // See `one_launch_pad`.
+    // And the race that does fit needs one launch pad, not one per city.
+    // See `one_launch_pad`.
+    Gene { tag: "one-launch-pad", field: "one_launch_pad", kind: Kind::Repair(Axis::Economy), enable: AdvancedAi::enable_one_launch_pad, disable: AdvancedAi::disable_one_launch_pad },
+    // And a settler target dropped for danger stays dropped for a while.
+    // See `settler_target_hysteresis`.
+    // And a settler target dropped for danger stays dropped for a while.
+    // See `settler_target_hysteresis`.
+    Gene { tag: "settler-target-hysteresis", field: "settler_target_hysteresis", kind: Kind::Repair(Axis::Economy), enable: AdvancedAi::enable_settler_target_hysteresis, disable: AdvancedAi::disable_settler_target_hysteresis },
+    // And the buildings that chain hangs off. See `culture_building_debt`.
+    // ★★★★ A TAG IN `ENGINE_REPAIR_TREATMENTS` WHOSE ENABLE IS MISSING
+    // HERE SCREENS AS EXACTLY INERT, AND SAYS SO IN A WAY THAT IS EASY TO
+    // READ AS A RESULT. `gene_screen` builds its treated seat from
+    // `enable_engine_repairs_universe` and then flips only the genes whose
+    // drawn bit differs from `Gene::after_setup_on` — which the table
+    // asserts is `true` for every engine repair. A repair this bundle
+    // never turns on is therefore off in BOTH arms of every pair, the two
+    // arms play byte-identical games, and the screen reports `Δ +0.0
+    // [+0.0, +0.0] z +0.00` for the gene. That is the signature: a
+    // zero-width confidence interval is not a null, it is a gene that was
+    // never varied. Three tags reached the tables before this line and
+    // burned 30 games saying nothing.
+    //
+    // The research economy's two counterparts on the culture tree, and the
+    // chain that fills every specialty district. `enable_engine_repairs`
+    // applies the ledger after this, so an unmeasured one is still off at
+    // deployment.
+    Gene { tag: "culture-building-debt", field: "culture_building_debt", kind: Kind::Repair(Axis::Economy), enable: AdvancedAi::enable_culture_building_debt, disable: AdvancedAi::disable_culture_building_debt },
+    // ── Host-only: shipped by the Civilization VI seat, inert headless ──
+    Gene { tag: "live-trader-route", field: "live_trader_route_adapter", kind: Kind::HostOnly, enable: AdvancedAi::enable_live_trader_route_adapter, disable: AdvancedAi::disable_live_trader_route_adapter },
+    Gene { tag: "live-religious-purchase", field: "live_religious_purchase_guard", kind: Kind::HostOnly, enable: AdvancedAi::enable_live_religious_purchase_guard, disable: AdvancedAi::disable_live_religious_purchase_guard },
+    // ⚠ `assess` drops the empire into Recovery whenever it is at war and
+    // `my_power * 1.25 < strongest_rival`, and Recovery does not build an army —
+    // so the test stays true because of the choice it caused. Measured on run
+    // `civvis-20260802T205959Z`: the journal names that arm 160 times, the
+    // posture held from t65 to t229 (72% of the game), and the empire finished
+    // with ONE warrior at military 34 against the Mapuche's 1354. The bound
+    // releases only the power-gap half, and only after the posture has had
+    // `RECOVERY_POSTURE_LIMIT` standard turns to work.
+    // ⚠ A tactical step applied raw records nothing, so when a unit with
+    // movement left is stepped a second time in the same turn, the reversal
+    // guard inside `path_move` cannot see where it came from — and round two
+    // walks straight back onto the tile round one just left. Measured on the
+    // replay of run `civvis-20260801T224944Z`: 217 of 217 refused moves were
+    // exactly that out-and-back pair; self-tile orders fell 43 → 1 with the
+    // steps recorded.
+    Gene { tag: "live-motion-turn-accounting", field: "live_motion_turn_accounting", kind: Kind::HostOnly, enable: AdvancedAi::enable_live_motion_turn_accounting, disable: AdvancedAi::disable_live_motion_turn_accounting },
+    Gene { tag: "solvent-faith-army", field: "solvent_faith_army", kind: Kind::HostOnly, enable: AdvancedAi::enable_solvent_faith_army, disable: AdvancedAi::disable_solvent_faith_army },
+    // And the formation channel that escort depends on went 0-for-7 on
+    // the live bridge while two unescorted settlers were captured one
+    // turn short of founding; see stacked_escort.
+    // The native genome now withholds `stacked_escort`, but that result
+    // does not make the host's formation channel work.  Keep live
+    // settlers on the already-tested ordinary-unit shadow instead.
+    Gene { tag: "live-formationless-settler-shadow", field: "live_formationless_settler_shadow", kind: Kind::HostOnly, enable: AdvancedAi::enable_live_formationless_settler_shadow, disable: AdvancedAi::disable_live_formationless_settler_shadow },
+    // Zero wonder orders in twenty live Settler runs that all ended on the
+    // host's score tally, 15 points a wonder. See `live_wonder_race`.
+    Gene { tag: "live-wonder-race", field: "live_wonder_race", kind: Kind::HostOnly, enable: AdvancedAi::enable_live_wonder_race, disable: AdvancedAi::disable_live_wonder_race },
+    Gene { tag: "expansion-before-prophet", field: "expansion_before_prophet", kind: Kind::HostOnly, enable: AdvancedAi::enable_expansion_before_prophet, disable: AdvancedAi::disable_expansion_before_prophet },
+    Gene { tag: "no-elective-war", field: "no_elective_war", kind: Kind::HostOnly, enable: AdvancedAi::enable_no_elective_war, disable: AdvancedAi::disable_no_elective_war },
+    // And that ceiling was still priced off the revealed quarter of the
+    // map. See `fog_land_capacity`.
+    Gene { tag: "fog-land-capacity", field: "fog_land_capacity", kind: Kind::HostOnly, enable: AdvancedAi::enable_fog_land_capacity, disable: AdvancedAi::disable_fog_land_capacity },
+    // And the last-quarter score-leader alarm asks for a race, not a war.
+    // See `counter_in_lane`.
+    Gene { tag: "counter-in-lane", field: "counter_in_lane", kind: Kind::HostOnly, enable: AdvancedAi::enable_counter_in_lane, disable: AdvancedAi::disable_counter_in_lane },
+    // And the city target climbs at the Settler game's own era pace. See
+    // `era_paced_expansion`.
+    Gene { tag: "era-paced-expansion", field: "era_paced_expansion", kind: Kind::HostOnly, enable: AdvancedAi::enable_era_paced_expansion, disable: AdvancedAi::disable_era_paced_expansion },
+    // And a civic is three points on that tally to a tech's two. See
+    // `tally_culture`.
+    Gene { tag: "tally-culture", field: "tally_culture", kind: Kind::HostOnly, enable: AdvancedAi::enable_tally_culture, disable: AdvancedAi::disable_tally_culture },
+    // And no colony beyond the empire's Loyalty reach on fogged ground.
+    // See `frontier_loyalty`.
+    Gene { tag: "frontier-loyalty", field: "frontier_loyalty", kind: Kind::HostOnly, enable: AdvancedAi::enable_frontier_loyalty, disable: AdvancedAi::disable_frontier_loyalty },
+    // And banked Faith buys the Great People the tally pays five for. See
+    // `tally_great_people`.
+    Gene { tag: "tally-great-people", field: "tally_great_people", kind: Kind::HostOnly, enable: AdvancedAi::enable_tally_great_people, disable: AdvancedAi::disable_tally_great_people },
+    // ⚠ The live seat plays under an assigned lane (`--victory science`),
+    // and `victory_denial` stands down entirely for a targeted seat — so
+    // five of the twelve runs the seat was LEADING on 2026-08-16/17 ended
+    // at t229-245 on a rival's culture, technology or diplomatic victory
+    // with the whole counter apparatus gated off. Match point overrides
+    // the lane's focus; ordinary pressure still never does.
+    Gene { tag: "deny-while-targeted", field: "deny_while_targeted", kind: Kind::HostOnly, enable: AdvancedAi::enable_deny_while_targeted, disable: AdvancedAi::disable_deny_while_targeted },
+    // ⚠ And the alarm must reach the two lanes it cannot answer late.
+    // Four of the five stolen games above were Culture; the general 90
+    // bar had not fired when the game ended. See `STOCK_DENIAL_BAR`.
+    Gene { tag: "stock-denial-lead-time", field: "stock_denial_lead_time", kind: Kind::HostOnly, enable: AdvancedAi::enable_stock_denial_lead_time, disable: AdvancedAi::disable_stock_denial_lead_time },
+    // ⚠ And the stock bar must fire BEFORE the last Congress, not at it.
+    // The first game on the repaired economy (231407Z) crossed the bar at
+    // ~t221; the final Congress sat at t222 with nothing reading urgent
+    // when its ballot was priced, and Egypt won Culture at t232. The
+    // projection carries the recorded slope fifteen turns forward and
+    // feeds the same gate. See `projected_stock_denial`.
+    Gene { tag: "projected-stock-denial", field: "projected_stock_denial", kind: Kind::HostOnly, enable: AdvancedAi::enable_projected_stock_denial, disable: AdvancedAi::disable_projected_stock_denial },
+    // These host-facing controls used to be applied by `civvis_orders`
+    // after this bundle. They belong here: `live` and every
+    // `live_without_*` arm must construct the controller that deployment
+    // actually plays.
+    Gene { tag: "parallel-settlers", field: "parallel_settlers", kind: Kind::HostOnly, enable: AdvancedAi::enable_parallel_settlers, disable: AdvancedAi::disable_parallel_settlers },
+    Gene { tag: "host-settler-pop", field: "host_settler_pop", kind: Kind::HostOnly, enable: AdvancedAi::enable_host_settler_pop, disable: AdvancedAi::disable_host_settler_pop },
+    Gene { tag: "explore-dead-targets", field: "explore_dead_targets", kind: Kind::HostOnly, enable: AdvancedAi::enable_explore_dead_targets, disable: AdvancedAi::disable_explore_dead_targets },
+    Gene { tag: "explore-commit", field: "explore_commit", kind: Kind::HostOnly, enable: AdvancedAi::enable_explore_commit, disable: AdvancedAi::disable_explore_commit },
+    Gene { tag: "bank-envoys", field: "bank_envoys", kind: Kind::HostOnly, enable: AdvancedAi::enable_bank_envoys, disable: AdvancedAi::disable_bank_envoys },
+    // And the rung clock itself: the seat leads the count at t50, loses
+    // it by t150 and stops settling at t116 under an assigned lane. See
+    // `land_grab`.
+    Gene { tag: "land-grab", field: "land_grab", kind: Kind::HostOnly, enable: AdvancedAi::enable_land_grab, disable: AdvancedAi::disable_land_grab },
+    // And a Spy order the host is still running is not re-sent every
+    // turn: the rebuilt mirror cannot see a running operation, so the
+    // first run with a working spy chain (civvis-20260818T155500Z)
+    // re-ordered SPY_GAIN_SOURCES 35 times. See `spy_mission_patience`.
+    Gene { tag: "spy-mission-patience", field: "spy_mission_patience", kind: Kind::HostOnly, enable: AdvancedAi::enable_spy_mission_patience, disable: AdvancedAi::disable_spy_mission_patience },
+    // And the pantheon is the one that founds a city, bought with the
+    // Faith card the portfolio used to throw away at the first civic
+    // swap: Divine Spark 40 of 40 times at median t22 (t108 at worst)
+    // where Religious Settlements is a free Settler at ~t20. See
+    // `expansion_pantheon`.
+    Gene { tag: "expansion-pantheon", field: "expansion_pantheon", kind: Kind::HostOnly, enable: AdvancedAi::enable_expansion_pantheon, disable: AdvancedAi::disable_expansion_pantheon },
+    // And the plaza the seat builds by t29–57 in every game gets the one
+    // building the land grab is made of — a free Builder in every new
+    // city, +50% Settlers — instead of standing empty to turn 250. See
+    // `expansion_hall`.
+    Gene { tag: "expansion-hall", field: "expansion_hall", kind: Kind::HostOnly, enable: AdvancedAi::enable_expansion_hall, disable: AdvancedAi::disable_expansion_hall },
+    // And the book's own Settler slot survives the host's population
+    // floor: half the recorded openings burned it and ordered the first
+    // Settler four turns later. See `opening_settler_waits`.
+    Gene { tag: "opening-settler-waits", field: "opening_settler_waits", kind: Kind::HostOnly, enable: AdvancedAi::enable_opening_settler_waits, disable: AdvancedAi::disable_opening_settler_waits },
+    // ── Production: on before the ledger ──
+    Gene { tag: "strategic-wonders", field: "strategic_wonders", kind: Kind::Production, enable: AdvancedAi::enable_strategic_wonders, disable: AdvancedAi::disable_strategic_wonders },
+    // ── Opt-ins: off until the ledger turns one on ──
+    // A Builder does not walk into a visible Barbarian-capture envelope; its
+    // target and retreat both use the same fog-honest risk model as Settlers.
+    // `gene_screen` discovers this native opt-in directly from this row.
+    Gene { tag: "builder-barbarian-safety", field: "builder_barbarian_safety", kind: Kind::OptIn, enable: AdvancedAi::enable_builder_barbarian_safety, disable: AdvancedAi::disable_builder_barbarian_safety },
+    Gene { tag: "apostle-promotion-by-role", field: "apostle_promotion_by_role", kind: Kind::OptIn, enable: AdvancedAi::enable_apostle_promotion_by_role, disable: AdvancedAi::disable_apostle_promotion_by_role },
+    // Item 4 of `docs/LIVE_TACTICS.md`: rear reinforcements arrive at an
+    // engaged front as a wave rather than one at a time. Off everywhere
+    // until the screen says otherwise; see `AdvancedAi::enable_arrival_waves`.
+    // The religion race decides two thirds of native games, and a founder
+    // that loses its own cities wins as rarely as a seat that never founded
+    // (3.0% v 3.0%, 13,446 seat-pairs). These two are priced against the
+    // deployment genome before either ships; see the fields' docs.
+    Gene { tag: "inquisition-on-threat", field: "inquisition_on_threat", kind: Kind::OptIn, enable: AdvancedAi::enable_inquisition_on_threat, disable: AdvancedAi::disable_inquisition_on_threat },
+    Gene { tag: "founder-temple", field: "founder_temple", kind: Kind::OptIn, enable: AdvancedAi::enable_founder_temple, disable: AdvancedAi::disable_founder_temple },
+    Gene { tag: "theology-for-founders", field: "theology_for_founders", kind: Kind::OptIn, enable: AdvancedAi::enable_theology_for_founders, disable: AdvancedAi::disable_theology_for_founders },
+    Gene { tag: "holy-lane-parity", field: "holy_lane_parity", kind: Kind::OptIn, enable: AdvancedAi::enable_holy_lane_parity, disable: AdvancedAi::disable_holy_lane_parity },
+    // Half the seats never found a religion and bank ~1,000 Faith they
+    // cannot spend; see `AdvancedAi::idle_faith_patronage`.
+    Gene { tag: "idle-faith-patronage", field: "idle_faith_patronage", kind: Kind::OptIn, enable: AdvancedAi::enable_idle_faith_patronage, disable: AdvancedAi::disable_idle_faith_patronage },
+    // The rest of the same chain: the founder's corps cannot answer more than
+    // two cities, cannot heal when it is defending, and spends charges at a
+    // fraction of their strength. See `advanced/religion.rs`.
+    Gene { tag: "religious-defence-scales", field: "religious_defence_scales", kind: Kind::OptIn, enable: AdvancedAi::enable_religious_defence_scales, disable: AdvancedAi::disable_religious_defence_scales },
+    Gene { tag: "guru-heals-the-corps", field: "guru_heals_the_corps", kind: Kind::OptIn, enable: AdvancedAi::enable_guru_heals_the_corps, disable: AdvancedAi::disable_guru_heals_the_corps },
+    Gene { tag: "religious-units-heal-first", field: "religious_units_heal_first", kind: Kind::OptIn, enable: AdvancedAi::enable_religious_units_heal_first, disable: AdvancedAi::disable_religious_units_heal_first },
+    Gene { tag: "spread-campaign-persists", field: "spread_campaign_persists", kind: Kind::OptIn, enable: AdvancedAi::enable_spread_campaign_persists, disable: AdvancedAi::disable_spread_campaign_persists },
+    Gene { tag: "holy-site-where-the-threat-is", field: "holy_site_where_the_threat_is", kind: Kind::OptIn, enable: AdvancedAi::enable_holy_site_where_the_threat_is, disable: AdvancedAi::disable_holy_site_where_the_threat_is },
+    Gene { tag: "enhancer-for-the-corps", field: "enhancer_for_the_corps", kind: Kind::OptIn, enable: AdvancedAi::enable_enhancer_for_the_corps, disable: AdvancedAi::disable_enhancer_for_the_corps },
+    // Every major adopts Early Empire on turns 23-30, and a Scout's sight of 2
+    // cannot see a city-state's seat from outside its border. The land route
+    // to first contact closes once and never reopens; see
+    // `AdvancedAi::early_contact_window`.
+    Gene { tag: "early-contact-window", field: "early_contact_window", kind: Kind::OptIn, enable: AdvancedAi::enable_early_contact_window, disable: AdvancedAi::disable_early_contact_window },
+    // A Great Person earned and blocked is a race forfeited: build the slot
+    // space ahead of the person, sell duplicate works when nothing can be
+    // built; see `AdvancedAi::great_person_housing`.
+    Gene { tag: "great-person-housing", field: "great_person_housing", kind: Kind::OptIn, enable: AdvancedAi::enable_great_person_housing, disable: AdvancedAi::disable_great_person_housing },
+    // A surprise war priced on what the board exposes — an unescorted
+    // Settler or Builder, a cluster of unpillaged tiles — taken by movement
+    // and closed by peace; see `AdvancedAi::opportunistic_war`.
+    Gene { tag: "opportunistic-war", field: "opportunistic_war", kind: Kind::OptIn, enable: AdvancedAi::enable_opportunistic_war, disable: AdvancedAi::disable_opportunistic_war },
+    // The pillage half of the raid, priced apart: inert unless the row
+    // above is on. See `AdvancedAi::raid_pillage_prizes`.
+    Gene { tag: "raid-pillage-prizes", field: "raid_pillage_prizes", kind: Kind::OptIn, enable: AdvancedAi::enable_raid_pillage_prizes, disable: AdvancedAi::disable_raid_pillage_prizes },
+    // A target can be excellent while a visible hostile makes its next route
+    // step unsafe. This holds that corridor aside briefly and sends the
+    // Settler to the best safe runner-up; see `settler_threat_detour`.
+    Gene { tag: "settler-threat-detour", field: "settler_threat_detour", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_threat_detour, disable: AdvancedAi::disable_settler_threat_detour },
+    // The site ranking is indifferent between founding now and founding the
+    // same value later; this prices every turn of the walk, dearer the longer
+    // the Settler has been out. See `settle_sooner`.
+    Gene { tag: "settle-sooner", field: "settle_sooner", kind: Kind::OptIn, enable: AdvancedAi::enable_settle_sooner, disable: AdvancedAi::disable_settle_sooner },
+    // A Library bought after Rationalism earns twice a Library bought before
+    // it, and the price never noticed. See
+    // `AdvancedAi::science_multiplier_payoff`.
+    Gene { tag: "science-multiplier-payoff", field: "science_multiplier_payoff", kind: Kind::OptIn, enable: AdvancedAi::enable_science_multiplier_payoff, disable: AdvancedAi::disable_science_multiplier_payoff },
+    // The chain's rungs are 2, 4 and 3-plus-5 and the debt that buys them is
+    // flat. See `AdvancedAi::research_tier_premium`.
+    Gene { tag: "research-tier-premium", field: "research_tier_premium", kind: Kind::OptIn, enable: AdvancedAi::enable_research_tier_premium, disable: AdvancedAi::disable_research_tier_premium },
+    // `withdraw_hp` is a constant and the enemy's damage is not: a unit the
+    // strongest thing in reach would kill in one blow recovers whatever its
+    // hit points say, and healing ground that comes under a shooter's reach
+    // is left. See `BasicAi::one_shot_recovery`.
+    Gene { tag: "one-shot-recovery", field: "one_shot_recovery", kind: Kind::OptIn, enable: AdvancedAi::enable_one_shot_recovery, disable: AdvancedAi::disable_one_shot_recovery },
+    // The four victory-lane genes (`advanced/victory_lane.rs`,
+    // `docs/VICTORY_GENES.md`) and the competition value they enable. A
+    // targeted seat spends about a fifth of the game — and an adaptive one
+    // 15% — with `Expansion` in its plan, and `take_turn_inner` hands that
+    // to every lane-shaped decider. The first two substitute the victory the
+    // empire is actually racing at one decider; the next two enable the
+    // Culture and Science passes, and the last prices the Diplomatic Victory
+    // Points a scored competition pays, which nothing priced.
+    Gene { tag: "lane-great-people", field: "lane_great_people", kind: Kind::OptIn, enable: AdvancedAi::enable_lane_great_people, disable: AdvancedAi::disable_lane_great_people },
+    Gene { tag: "lane-policy-deck", field: "lane_policy_deck", kind: Kind::OptIn, enable: AdvancedAi::enable_lane_policy_deck, disable: AdvancedAi::disable_lane_policy_deck },
+    Gene { tag: "lane-culture-spending", field: "lane_culture_spending", kind: Kind::OptIn, enable: AdvancedAi::enable_lane_culture_spending, disable: AdvancedAi::disable_lane_culture_spending },
+    Gene { tag: "lane-space-race", field: "lane_space_race", kind: Kind::OptIn, enable: AdvancedAi::enable_lane_space_race, disable: AdvancedAi::disable_lane_space_race },
+    Gene { tag: "competition-victory-points", field: "competition_victory_points", kind: Kind::OptIn, enable: AdvancedAi::enable_competition_victory_points, disable: AdvancedAi::disable_competition_victory_points },
+    // ⚠ Barbarians take 7.0 major cities a game -- 65% of everything a major
+    // loses -- at a median city age of TEN TURNS, and `settle_value`
+    // explicitly filters barbarians out of its proximity penalty, so a site
+    // beside a barbarian city scores exactly as well as an empty one. Cities
+    // held correlate with final score at r = +0.89; cities FOUNDED at -0.03.
+    // The A/B moved cities held +1.09 (p = 0.0001) and barbarian losses -0.48
+    // (p < 0.0001), both replicated; its 35-37 win count over 72 games is
+    // underpowered, not a null. See `defensible_sites`.
+    Gene { tag: "defensible-sites", field: "defensible_sites", kind: Kind::OptIn, enable: AdvancedAi::enable_defensible_sites, disable: AdvancedAi::disable_defensible_sites },
+    // ⚠ "Strong enough to take what a neighbour has" never asks WHICH
+    // neighbour: `weakest_rival` is the minimum power over every met major
+    // with no proximity test, so the branch really asks "am I 1.8x the
+    // feeblest empire in the world?" -- true from t55 onward for anyone doing
+    // well, next door or on another continent. `city_campaign` already has
+    // the reach this wants (`CAMPAIGN_REACH`, "the same reach the
+    // declaration's `close_enough` already asks for") and branch nine uses
+    // it. See `elective_war_in_reach`.
+    Gene { tag: "elective-war-in-reach", field: "elective_war_in_reach", kind: Kind::OptIn, enable: AdvancedAi::enable_elective_war_in_reach, disable: AdvancedAi::disable_elective_war_in_reach },
+    // ⚠ The same shape as the row above, on the branch beside it. Recovery's
+    // power gap reads `strongest_rival` -- the maximum over every MET major,
+    // at peace or not, next door or on another continent -- so an empire at
+    // war with a weak neighbour takes the defensive posture because a distant
+    // superpower exists. The file already names this ("the power-gap Recovery
+    // a strong third party would trigger") and exempts only `raid_only_war`.
+    // Recovery is 19% of the board's planner-turns under
+    // `audit --genome deployment`. See `recovery_reads_the_war`.
+    Gene { tag: "recovery-reads-the-war", field: "recovery_reads_the_war", kind: Kind::OptIn, enable: AdvancedAi::enable_recovery_reads_the_war, disable: AdvancedAi::disable_recovery_reads_the_war },
+    // ⚠⚠ THE BIGGEST NUMBER IN THIS REPOSITORY SITS BEHIND A FLAG NOTHING
+    // COULD SET. #554: a free settler while short of the city target more than
+    // DOUBLES the win rate, 23.0% -> 52.3% at p=0.0000 over 300 games. #559:
+    // the shut expansion window is the SOLE blocker on 31.2% of the city-turns
+    // an empire spends short of its own target. `settler_expansion_window_open`
+    // takes the payback branch only under `land_grab` (HostOnly) or this flag
+    // (an orphaned evaluator arm), so the native board has only ever shut the
+    // window on a clock. See `expansion_pays_back`.
+    Gene { tag: "expansion-pays-back", field: "expansion_pays_back", kind: Kind::OptIn, enable: AdvancedAi::enable_expansion_pays_back, disable: AdvancedAi::disable_expansion_pays_back },
+    // ⚠ The last blind lane in the threat model: Domination is read as
+    // `100 * foreign CAPITALS held / foreign capitals`, five values twenty
+    // points apart, and ZERO for a rival that has taken any number of ordinary
+    // cities. Captured cities are production, population, districts and techs
+    // -- the currency of every other lane -- so the empire eating the board
+    // reads as a pacifist right up to the first palace. See
+    // `domination_city_count`.
+    Gene { tag: "domination-city-count", field: "domination_city_count", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_city_count, disable: AdvancedAi::disable_domination_city_count },
+    // ⚠ The largest branch in the grand-strategy cascade and it has no exit:
+    // any war at all pins the plan on Conquest for its whole duration.
+    // Conquest takes 40% of the planner-turns while domination finishes 2/16
+    // and is 1 of 107 recorded
+    // rival victories. Withdrawn once on a -22.2 pp reading that #2452 proved
+    // was a degenerate-block artifact; measured here on the repaired
+    // instrument. See `unchosen_war_keeps_the_lane`.
+    Gene { tag: "unchosen-war-keeps-the-lane", field: "unchosen_war_keeps_the_lane", kind: Kind::OptIn, enable: AdvancedAi::enable_unchosen_war_keeps_the_lane, disable: AdvancedAi::disable_unchosen_war_keeps_the_lane },
+    // ⚠ The row above's construction, applied to the two branches below it in
+    // the cascade. That gene is the only one of eleven written this week with
+    // persistent signal (+4.7 pp, z +2.09 over 271 games) and what it does is
+    // refuse to let a war a RIVAL started take the plan from a live lane.
+    // These branches take the plan for a war WE choose, and `no_elective_war`
+    // records that they never converted in eight live runs -- 0 cities taken,
+    // 16 lost -- while being Firaxis-only, so the native board runs them bare.
+    // See `elective_war_yields_to_a_lane`.
+    Gene { tag: "elective-war-yields-to-a-lane", field: "elective_war_yields_to_a_lane", kind: Kind::OptIn, enable: AdvancedAi::enable_elective_war_yields_to_a_lane, disable: AdvancedAi::disable_elective_war_yields_to_a_lane },
+    // ⚠ The planner judges its OWN diplomatic position by `dvp * 5 +
+    // suzerain * 6` and a RIVAL's by `dvp * 5`. A rival holding every
+    // city-state -- the whole Favor engine that manufactures the points --
+    // contributes nothing to its threat reading until the points land, and
+    // diplomatic victories are 58 of the 107 recorded losses to a rival. The
+    // missing term is the one the file already has. See
+    // `rival_suzerainty_alarm`.
+    Gene { tag: "rival-suzerainty-alarm", field: "rival_suzerainty_alarm", kind: Kind::OptIn, enable: AdvancedAi::enable_rival_suzerainty_alarm, disable: AdvancedAi::disable_rival_suzerainty_alarm },
+    // ⚠ This decides WHO the three targeted penalties are pointed at -- the empire
+    // `victory_denial` names, instead of the diplomatic leader. The Congress
+    // is the only counter in this game not paid for in development
+    // (`resolve_congress` refunds a losing vote in full), which is exactly
+    // what the war-shaped counters in `docs/COUNTERING_LEADERS.md` could not
+    // say. See `congress_counter_leader`.
+    Gene { tag: "congress-counter-leader", field: "congress_counter_leader", kind: Kind::OptIn, enable: AdvancedAi::enable_congress_counter_leader, disable: AdvancedAi::disable_congress_counter_leader },
+    // ⚠ Eighteen of 32 screened games today ended on a Science Victory, and
+    // the threat model reads that race as a five-step ladder off launches
+    // already made: a rival one tech from Rocketry with a Spaceport standing
+    // reads ZERO. `rocketry_readiness` is the same chain this planner uses to
+    // judge itself, off public tech-screen information. See
+    // `science_chain_alarm`.
+    Gene { tag: "science-chain-alarm", field: "science_chain_alarm", kind: Kind::OptIn, enable: AdvancedAi::enable_science_chain_alarm, disable: AdvancedAi::disable_science_chain_alarm },
+    // ⚠ Two thirds of native games end by religious conversion, and the alarm
+    // for it has five values twenty points apart: `religious_conversion_tally`
+    // counts whole civilizations already lost, so a rival holding 45% of every
+    // rival's cities reads zero. The victory rule is a count of cities and
+    // counting them is smooth. See `conversion_majority_alarm`.
+    Gene { tag: "conversion-majority-alarm", field: "conversion_majority_alarm", kind: Kind::OptIn, enable: AdvancedAi::enable_conversion_majority_alarm, disable: AdvancedAi::disable_conversion_majority_alarm },
+    // ⚠ The same lock `diplomatic-lane-forecast` opened, on the second-best
+    // lane this engine has: `victory_eval` finishes culture 12/16 and `audit`
+    // gives it 2% of 14,376 planner-turns, below a twentieth of the board's
+    // planning in eleven of twelve games. The lane reads a ratio of the
+    // finished race, and foreign tourists are near zero until the Renaissance.
+    // Unlike Diplomacy, both curves move, so this projects both. See
+    // `culture_lane_forecast`.
+    Gene { tag: "culture-lane-forecast", field: "culture_lane_forecast", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_lane_forecast, disable: AdvancedAi::disable_culture_lane_forecast },
+    // ⚠ The lane this engine finishes most often is the lane the planner never
+    // picks. `victory_eval` at the ladder's profile: diplomatic 14/16, culture
+    // 12/16, religious 8/16, domination 2/16, science 0/16. `audit` over the
+    // same profile: diplomacy 0% of 14,376 planner-turns in 12 of 12 games,
+    // culture 2% -- against conquest 43%. Science reads a readiness ramp and
+    // Religion a 46-point commitment floor; Diplomacy reads points already
+    // banked and so cannot be chosen until it has already been played. See
+    // `diplomatic_lane_forecast`.
+    Gene { tag: "diplomatic-lane-forecast", field: "diplomatic_lane_forecast", kind: Kind::OptIn, enable: AdvancedAi::enable_diplomatic_lane_forecast, disable: AdvancedAi::disable_diplomatic_lane_forecast },
+    // ⚠ `city_pressure_with_visibility` counts hostile strength only from
+    // civilizations we are ALREADY AT WAR WITH, so a rival massing on our
+    // border at peace reads exactly zero and no city is ever "threatened"
+    // before the declaration. (The -22.2 pp this row used to cite from the
+    // withdrawn `unchosen-war-keeps-the-lane` probe is retracted: it was a
+    // degenerate-block artifact, see `docs/GENE_SCREEN.md`. The filter is
+    // still a fact about the code.)
+    // See `frontier_massing_alarm`.
+    Gene { tag: "frontier-massing-alarm", field: "frontier_massing_alarm", kind: Kind::OptIn, enable: AdvancedAi::enable_frontier_massing_alarm, disable: AdvancedAi::disable_frontier_massing_alarm },
+    // Nothing in this controller reaches the air layer: the melee package
+    // skips `domain == "air"` and ranks its unlocks by cheapest remaining
+    // research, so it can appoint the next technology and never a chain.
+    // This beelines Advanced Flight from three technologies out, raises an
+    // Aerodrome and a bomber wing, and takes the appointed city with the
+    // cavalry behind it. See `advanced/air_surge.rs`.
+    Gene { tag: "air-surge", field: "air_surge", kind: Kind::OptIn, enable: AdvancedAi::enable_air_surge, disable: AdvancedAi::disable_air_surge },
+    // ⭐ APPENDED AT THE END ON PURPOSE. A gene inserted into the middle of
+    // this table renumbers every row after it, and `gene_screen` writes the
+    // genome as a POSITIONAL bit string — so a screen already running against
+    // an older binary cannot be pooled with one running against this. That
+    // cost the 83,000,000 run its analysis; see
+    // `tools/gene_quantity_contrast.py`.
+    //
+    // The Research Lab's larger half is switched off until something generates
+    // power, and nothing in the controller buys the switch. See
+    // `AdvancedAi::power_the_laboratory`.
+    Gene { tag: "power-the-laboratory", field: "power_the_laboratory", kind: Kind::OptIn, enable: AdvancedAi::enable_power_the_laboratory, disable: AdvancedAi::disable_power_the_laboratory },
+    // Rationalism is slotted and NOT ONE Campus in the empire clears the
+    // adjacency half it pays. Appended at the end, for the reason above. See
+    // `AdvancedAi::campus_adjacency_threshold`.
+    Gene { tag: "campus-adjacency-threshold", field: "campus_adjacency_threshold", kind: Kind::OptIn, enable: AdvancedAi::enable_campus_adjacency_threshold, disable: AdvancedAi::disable_campus_adjacency_threshold },
+    // ★★★★ FOURTEEN BEHAVIOURS THAT NO SCREEN COULD REACH, AND THE COUNT THAT
+    // FOUND THEM. `docs/EVAL_STATUS.md`'s "Genome coverage" section read 165
+    // capability toggles on the controller, 100 reachable as a gene and **65
+    // unreachable by any screen** — a number published because
+    // `precise_evacuation` shipped ON for every seat, held roughly half the
+    // simulator's main thread, and had no gene row, no evaluator arm and no
+    // mention in any round. Neither gate could address it and nothing said so.
+    // These fourteen are the part of that 65 a native screen can honestly
+    // price. Every one is off in `promoted_policy_envoy`, so an opt-in row is
+    // the whole change: `apply_gene_ledger` enables an opt-in only on a
+    // `default_on` ledger row and there is none, so each ships off and
+    // unmeasured and NOTHING about the deployed agent moves.
+    //
+    // ⭐ EIGHTEEN ROWS WERE WRITTEN AND FOUR WERE TAKEN BACK OUT, BY THE GATE
+    // THIS SAME CHANGE ADDS. `camp_bounty`, `great_work_veto_by_district`,
+    // `sea_answers` and `settler_founds_when_stalled` each left both arms of a
+    // single-gene probe byte-identical — win Δ, share Δ and both standard
+    // errors exactly zero — so they would have consumed a genome bit and
+    // returned the zero-width interval `docs/GENE_SCREEN.md` warns about.
+    // `tools/gene_fires.py` is what says so; their probes and their reasons are
+    // in `docs/gene_screens/fires/` and `docs/genome_reach_debt.json`. The rest
+    // of the residual is accounted for one line at a time in
+    // `docs/GENE_SCREEN.md` (§"The toggles no screen can reach"); it is
+    // examined work, not an unexamined ceiling.
+    //
+    // ⭐ APPENDED AT THE END, for the reason four rows up: `gene_screen` writes
+    // the genome as a POSITIONAL bit string.
+    //
+    // ⚠⚠ AND THE TABLE ABOVE IS DELIBERATELY THE ONLY DOOR USED HERE. Six more
+    // of the 65 — `explore_commit`, `open_water_navy`, `amenity_districts`,
+    // `hut_collection`, `village_seeking`, `legal_tactical_candidates` — are
+    // native behaviours production ships ON, whose door is `PRODUCTION_TREATMENTS`.
+    // That row is NOT neutral: `apply_gene_ledger` disables every production
+    // treatment whose `ledger_default_on` is `Some(false)`, and a screenable tag
+    // with no ledger row is exactly that. Adding those six would switch six
+    // shipped behaviours off at deployment — `open_water_navy` alone was
+    // promoted at +61 Elo — which is a genome change wearing an instrument's
+    // clothes. They need their first screen row before they can have a gene row.
+    //
+    // The friendly-volley extension lets a force finish a defender together
+    // without reopening the closed war-half bundle.
+    Gene { tag: "coordinated-finish", field: "coordinated_finish", kind: Kind::OptIn, enable: AdvancedAi::enable_coordinated_finish, disable: AdvancedAi::disable_coordinated_finish },
+    Gene { tag: "unit-objective-memory", field: "unit_objective_memory", kind: Kind::OptIn, enable: AdvancedAi::enable_unit_objective_memory, disable: AdvancedAi::disable_unit_objective_memory },
+    // Choose the pantheon from the land the empire actually holds rather than
+    // from a fixed order.
+    Gene { tag: "pantheon-board", field: "pantheon_board", kind: Kind::OptIn, enable: AdvancedAi::enable_pantheon_board, disable: AdvancedAi::disable_pantheon_board },
+    // The policy counterfactual sees the unit-maintenance bill, so the cards
+    // that pay it stop scoring zero.
+    Gene { tag: "maintenance-aware-deck", field: "maintenance_aware_deck", kind: Kind::OptIn, enable: AdvancedAi::enable_maintenance_aware_deck, disable: AdvancedAi::disable_maintenance_aware_deck },
+    // Credit strength-per-production, and the civilization's unique unit, in
+    // military production.
+    Gene { tag: "unit-cost-efficiency", field: "unit_cost_efficiency", kind: Kind::OptIn, enable: AdvancedAi::enable_unit_cost_efficiency, disable: AdvancedAi::disable_unit_cost_efficiency },
+    // The settlement-gap redirect and the Settler ranking read the same city
+    // target, instead of two that can disagree.
+    Gene { tag: "settlement-gap-target", field: "settlement_gap_target", kind: Kind::OptIn, enable: AdvancedAi::enable_settlement_gap_target, disable: AdvancedAi::disable_settlement_gap_target },
+    // Let the envoy scorer see the suzerainty it is walking toward.
+    Gene { tag: "price-the-suzerainty", field: "price_the_suzerainty", kind: Kind::OptIn, enable: AdvancedAi::enable_price_the_suzerainty, disable: AdvancedAi::disable_price_the_suzerainty },
+    // Read the Faith price from the engine instead of the Standard-speed
+    // literal, which overquotes by 2x at Online — the screen's own speed.
+    Gene { tag: "engine-faith-price", field: "engine_faith_price", kind: Kind::OptIn, enable: AdvancedAi::enable_engine_faith_price, disable: AdvancedAi::disable_engine_faith_price },
+    // A wounded unit may still take its promotion.
+    Gene { tag: "promote-when-wounded", field: "promote_when_wounded", kind: Kind::OptIn, enable: AdvancedAi::enable_promote_when_wounded, disable: AdvancedAi::disable_promote_when_wounded },
+    // ⚠ The production menu offers each district's top TWO fresh sites
+    // ranked by unweighted yield total, districts claim plots independently
+    // with nothing reserving ground between them, and no path buys the plot
+    // a high-adjacency site sits on — while the best legal owned Campus
+    // plot measured ≤2 across three seeds and plots at adjacency ≥4 are
+    // under 1% of the map: the ground worth planning for is almost never
+    // owned ground. The plan assigns the city's wished districts their
+    // plots together over rings 1-3, reserves them, puts its sites on the
+    // menu, and buys the tile a very valuable site needs. Appended at the
+    // END so a running screen keeps its positional genome. See
+    // `AdvancedAi::district_planning` / `advanced/district_planning.rs`.
+    Gene { tag: "district-planning", field: "district_planning", kind: Kind::OptIn, enable: AdvancedAi::enable_district_planning, disable: AdvancedAi::disable_district_planning },
+    // ⭐ A WONDER LANE ANY CIVILIZATION CAN REACH ON MERIT. The `Item::Wonder`
+    // arm refuses every wonder in a 53-wonder roster unless the plan is
+    // Culture, the target is Score, or the seat is an UNTARGETED EGYPT OR
+    // CHINA. `Game::score_parts` pays 15 points a wonder — the densest line of
+    // a tally that decides three quarters of standard-screen games — and no
+    // native gate says so: `live-wonder-race` is `Kind::HostOnly` and inert
+    // headless, and `strategic-wonders` prices only the lane's own payload,
+    // zero for Conquest, Expansion and Recovery. This gene tells the queue: a
+    // developed city may take a wonder whose ordinary value plus its fifteen
+    // points clears `WONDER_TALLY_MIN_DENSITY` per point of production cost,
+    // with no flat lane bonus, so it still loses to a Settler or a district
+    // worth more per turn.
+    // ⚠ MEASURED AND OFF. The premise that four of six civilizations never
+    // build a wonder is false — 91.6% of deployment seats finish one, 6.54 a
+    // seat, and the Culture disjunct beside the identity clause is what opens
+    // the lane — and the gene's own 462-seat batch is `~` on both axes. The
+    // numbers, and the live corpus that says the same lane is open there too,
+    // are in
+    // `docs/eval/2026-08-24-the-wonder-lane-is-already-open-in-both-regimes.md`;
+    // the row is kept so the next standard screen prices it for free.
+    // Appended at the END so a running screen keeps its positional genome. See
+    // `AdvancedAi::wonder_score_tally`.
+    Gene { tag: "wonder-score-tally", field: "wonder_score_tally", kind: Kind::OptIn, enable: AdvancedAi::enable_wonder_score_tally, disable: AdvancedAi::disable_wonder_score_tally },
+    // The end-to-end fair-play major: plan the whole turn inside a
+    // fog-redacted clone, replay only the resulting actions on the real
+    // board. Its one recorded screen was 20 paired maps on the retired
+    // `ai_eval` (15.0%, 95% Wilson 5.2%..36.0%), and `ai_eval` was deleted in
+    // #2351 — so until this row the arm the repository most wants re-screened
+    // had no instrument at all. `docs/genome_reach_debt.json` held it out as
+    // an aggregate over `blind-objective-strength` and `blind-objective-units`;
+    // it still is one, and this column prices the arm AS CONSTRUCTED
+    // (`AdvancedAi::fog_honest()`), which is exactly what the 15.0% priced.
+    // Appended at the END so a running screen keeps its positional genome.
+    // See `AdvancedAi::fog_honest`.
+    Gene { tag: "fog-honest", field: "fog_honest", kind: Kind::OptIn, enable: AdvancedAi::enable_fog_honest, disable: AdvancedAi::disable_fog_honest },
+    // Version 2 of `fog-honest`. Version 1 plans one turn against a world with
+    // no hidden units in it and replays that tape whatever the board says:
+    // when an order is refused, every later order on the tape assumed it had
+    // happened, and version 1 applies them anyway and ends the turn on the
+    // tape's own EndTurn. Version 2 drops the stale remainder and crosses the
+    // fog boundary again from the board as it now stands, at most
+    // `FOG_REPLAN_LIMIT` times a turn. Being a version of that mode, enabling
+    // it enables the mode. See `AdvancedAi::fog_honest_2`.
+    Gene { tag: "fog-honest-2", field: "fog_honest_2", kind: Kind::OptIn, enable: AdvancedAi::enable_fog_honest_2, disable: AdvancedAi::disable_fog_honest_2 },
+    // Operator goal 2026-08-24: "a heuristic for exploring with missionaries
+    // with 1 charge remaining". The third charge deletes the unit, so a
+    // four-move, border-ignoring Missionary explores the fog within ten
+    // tiles for up to twelve turns before spending it — unless a city of ours
+    // is slipping or an untouched city stands beside it. See
+    // `AdvancedAi::missionary_last_charge_explores`.
+    Gene { tag: "missionary-last-charge-explores", field: "missionary_last_charge_explores", kind: Kind::OptIn, enable: AdvancedAi::enable_missionary_last_charge_explores, disable: AdvancedAi::disable_missionary_last_charge_explores },
+    // Same goal: "missionaries should be smart enough to evade barbarians
+    // using their fast movement". Since 2026-08-24 the barbarian seat walks
+    // onto religious units and condemns them (`BasicAi::barbarian_heretic_
+    // hunt`); with this gene a religious unit steps out of, and never steps
+    // into, the exact tiles a visible raider can reach next turn
+    // (`Game::threat_reach`). See `AdvancedAi::missionary_evades_raiders`.
+    Gene { tag: "missionary-evades-raiders", field: "missionary_evades_raiders", kind: Kind::OptIn, enable: AdvancedAi::enable_missionary_evades_raiders, disable: AdvancedAi::disable_missionary_evades_raiders },
+    // Operator goal 2026-08-24: "a gene for defending against religion, to
+    // the extent we care about that". A religious victory needs more than
+    // half of EVERY living major's cities, so each civilization is a veto;
+    // the gene reads how much of a rival's victory is done (civs held +
+    // progress toward half of ours), names and targets that faith from half
+    // a victory and scales the defensive corps and the reserve by it from
+    // match point, never withholding the shipped defence; the Inquisitor
+    // goes to the heresy. See `AdvancedAi::religious_veto_defence`.
+    Gene { tag: "religious-veto-defence", field: "religious_veto_defence", kind: Kind::OptIn, enable: AdvancedAi::enable_religious_veto_defence, disable: AdvancedAi::disable_religious_veto_defence },
+    // Operator 2026-08-24: "very bad deals and just giving stuff away when
+    // more optimally we'd get more in exchange". Three leaks, one gene each.
+    // The trade objective was FAIRNESS: `bilateral_trade` picked the quote
+    // maximising `min(our gain, their gain)`, discarding the ordering
+    // `quick_deals` already produced by our gain. See
+    // `BasicAi::deals_for_our_gain`.
+    Gene { tag: "deals-for-our-gain", field: "deals_for_our_gain", kind: Kind::OptIn, enable: AdvancedAi::enable_deals_for_our_gain, disable: AdvancedAi::disable_deals_for_our_gain },
+    // Every peacetime quote split the surplus down the middle
+    // (`quote_asset_trade`); the war-eve lane prices at the buyer's ceiling
+    // and proves the engine can. The chosen quote's Gold moves to the
+    // counterparty's walk-away less two; the midpoint is the fallback. See
+    // `BasicAi::deals_at_the_ceiling`.
+    Gene { tag: "deals-at-the-ceiling", field: "deals_at_the_ceiling", kind: Kind::OptIn, enable: AdvancedAi::enable_deals_at_the_ceiling, disable: AdvancedAi::disable_deals_at_the_ceiling },
+    // Both alliance proposals bundled one-way Open Borders once Early Empire
+    // was in, and `do_accept_deal` grants them proposer → recipient: passage
+    // through the whole empire for nothing, on every friendship ask. See
+    // `BasicAi::no_free_passage`.
+    Gene { tag: "no-free-passage", field: "no_free_passage", kind: Kind::OptIn, enable: AdvancedAi::enable_no_free_passage, disable: AdvancedAi::disable_no_free_passage },
+    // Operator directive 2026-08-24: "one war at a time — some defences on
+    // the home front, the rest concentrated on a single war; fight while
+    // benefit > cost, sue for peace when the tide is no longer in our
+    // favour consistently". Every offensive opening already refuses a second
+    // front; this decides what happens once a second war ARRIVES — peace on
+    // every front but one, the plan and the force planner held to that one,
+    // the fatigue clause stood down while a city is breaking or tiles are in
+    // reach, and peace sued for once the war ledger's exchange has run
+    // against us for `ONE_WAR_TIDE_PATIENCE` turns. See
+    // `AdvancedAi::one_war_observe` and `advanced/one_war.rs`.
+    Gene { tag: "one-war-at-a-time", field: "one_war_at_a_time", kind: Kind::OptIn, enable: AdvancedAi::enable_one_war_at_a_time, disable: AdvancedAi::disable_one_war_at_a_time },
+    // 2026-08-24 operator goal: "very smart heuristics around unit tactics
+    // in warfare … preserve our units, heal up, use everything to our
+    // advantage: flip nearby city states, defend in our territory, support
+    // bonuses, zone of control". Four genes, `advanced/field_craft.rs`.
+    // A ranged unit beside a melee body steps to a firing tile inside fewer
+    // hostile envelopes and fires — behind a friend's zone of control, across
+    // a river; shooters have no zone of their own, so never in the open.
+    Gene { tag: "shoot-and-scoot", field: "shoot_and_scoot", kind: Kind::OptIn, enable: AdvancedAi::enable_shoot_and_scoot, disable: AdvancedAi::disable_shoot_and_scoot },
+    // A melee unit stands where its zone of control takes enemy reaches off
+    // our shooters and wounded — the doctrine arena's "ranged screened" gap.
+    Gene { tag: "zoc-screen", field: "zoc_screen", kind: Kind::OptIn, enable: AdvancedAi::enable_zoc_screen, disable: AdvancedAi::disable_zoc_screen },
+    // A wounded unit pillages a Farm-type tile for its fifty-point heal
+    // before the recovery path walks it home through ground that heals 0.
+    Gene { tag: "pillage-to-heal", field: "pillage_to_heal", kind: Kind::OptIn, enable: AdvancedAi::enable_pillage_to_heal, disable: AdvancedAi::disable_pillage_to_heal },
+    // The envoy scorer prices where a city-state is and whose it is: a
+    // suzerain's land heals as home and its client fights the suzerain's wars.
+    Gene { tag: "flip-nearby-city-states", field: "flip_nearby_city_states", kind: Kind::OptIn, enable: AdvancedAi::enable_flip_nearby_city_states, disable: AdvancedAi::disable_flip_nearby_city_states },
+    // Operator goal 2026-08-24: "steering us towards our best victory
+    // condition harder. From the midpoint of the game, we should have the
+    // victory in mind and be optimizing towards winning that." An adaptive
+    // seat is on a victory lane for 52% of its turns and the lane never
+    // reaches the deciders keyed on `victory_target` (`docs/VICTORY_GENES.md`).
+    // From half the turn cap the seat commits to the lane it leads the field
+    // in — every lane read for the seat and for every living major on one
+    // table, never Domination — reviews it every ten standard turns behind a
+    // twenty-point switch margin, in place of `victory_focus`'s per-turn pick
+    // and below every posture and the expansion arm; only the science keys
+    // read it, nothing else an assigned lane carries (four probes on the same
+    // maps priced the rest: docs/VICTORY_GENES.md §10). Appended at the END so a running screen keeps its positional
+    // genome. See `AdvancedAi::lane_commit` / `advanced/lane_commit.rs`.
+    Gene { tag: "lane-commit", field: "lane_commit", kind: Kind::OptIn, enable: AdvancedAi::enable_lane_commit, disable: AdvancedAi::disable_lane_commit },
+    Gene { tag: "settler-screen", field: "settler_screen", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_screen, disable: AdvancedAi::disable_settler_screen },
+    Gene { tag: "pass-picket", field: "pass_picket", kind: Kind::OptIn, enable: AdvancedAi::enable_pass_picket, disable: AdvancedAi::disable_pass_picket },
+    // Run civvis-20260824T204654Z opened trade capacity around turn 17 and
+    // still held zero Traders and zero routes at turn 65, by then at -6 Gold
+    // per turn. The safety gate asked whether EVERY city was quiet, so a
+    // remote coastal alarm vetoed a safe capital's route. Reserve the first
+    // usable empty slot after immediate local defence and test the producing
+    // origin itself; ordinary and frozen controllers keep the global veto.
+    // Appended at the END so a running screen keeps its positional genome.
+    Gene { tag: "solvency-first-trade-slot", field: "solvency_first_trade_slot", kind: Kind::OptIn, enable: AdvancedAi::enable_solvency_first_trade_slot, disable: AdvancedAi::disable_solvency_first_trade_slot },
+    // 2026-08-24 operator goal: "much stronger tactical smarts and planning
+    // for taking enemy cities, particularly for weaker enemies … analyze
+    // neighboring enemies' military strength (public information) and their
+    // progress in science … pick a city or two or more that we can likely
+    // take and hold … units to spare … quickly pillage the tiles we can if
+    // we have time". Two genes, `advanced/city_campaign.rs`.
+    // The neighbour appraised on public power and tech count, the holdable
+    // city priced with the spare, the launch on the city's own bill.
+    Gene { tag: "city-campaign", field: "city_campaign", kind: Kind::OptIn, enable: AdvancedAi::enable_city_campaign, disable: AdvancedAi::disable_city_campaign },
+    // A soldier at war pillages with the movement its march does not use.
+    Gene { tag: "campaign-pillage", field: "campaign_pillage", kind: Kind::OptIn, enable: AdvancedAi::enable_campaign_pillage, disable: AdvancedAi::disable_campaign_pillage },
+    // Run civvis-20260824T204654Z had a useful wide early pipeline but offered
+    // its next Settlers from factories finishing in roughly 3, 7 and 29 turns,
+    // while walkers repeatedly held or lost a site to another founding. Keep
+    // `settler_in_flight_allowed` unchanged; admit only competitive factories
+    // and reserve a distinct, lawful route and site for each live or queued
+    // Settler. Appended at the END so a running screen keeps its positional
+    // genome.
+    Gene { tag: "settler-factory-coordination", field: "settler_factory_coordination", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_factory_coordination, disable: AdvancedAi::disable_settler_factory_coordination },
+    // Run civvis-20260824T204654Z let offshore barbarian hulls read as the
+    // same emergency as land raiders: they preempted city queues and recruited
+    // land defenders even where coastline and attack domain gave them no
+    // serious next-turn target. Price the engine's terrain-accurate attack
+    // envelope against actual assets; harmless hulls create no alarm or chase,
+    // but a ranged unit already holding a legal shot gets a bounded XP credit.
+    // Appended at the END so a running screen keeps its positional genome.
+    Gene { tag: "naval-threat-triage", field: "naval_threat_triage", kind: Kind::OptIn, enable: AdvancedAi::enable_naval_threat_triage, disable: AdvancedAi::disable_naval_threat_triage },
+    // A surprise declaration arrives after the aggressor has chosen the
+    // timing, while the target still carries peaceful queues, policies and
+    // old units. For six Standard-speed turns, buy one frontline land body,
+    // modernize, prioritize land-unit production cards, and redirect at most
+    // half the empire's unfinished non-Settler queues toward the fastest
+    // credible defenders until live plus queued land force reaches two per
+    // city. The declaration direction and hard expiry keep this distinct from
+    // the removed permanent war-economy routing. See
+    // `advanced/surprise_defense.rs`.
+    // Appended at the END so a running screen keeps its positional genome.
+    Gene { tag: "surprise-war-mobilization", field: "surprise_war_mobilization", kind: Kind::OptIn, enable: AdvancedAi::enable_surprise_war_mobilization, disable: AdvancedAi::disable_surprise_war_mobilization },
+    // Operator 2026-08-24: the live seat led the field in science (334 a turn,
+    // 71 techs) and never ran a launch project — the stock horizon refused
+    // the race from t150 at the city's raw production, ignoring the engine's
+    // +100% on Spaceport projects, and nothing built production for it. A
+    // seat that dominates science drives the race: the chain beeline, the
+    // launch city's zone chain, a horizon priced as the engine runs it, two
+    // pads by the Earth Satellite. Pinned on by the operator before its
+    // first screen. Appended at the END so a running screen keeps its
+    // positional genome.
+    Gene { tag: "science-victory-drive", field: "science_victory_drive", kind: Kind::OptIn, enable: AdvancedAi::enable_science_victory_drive, disable: AdvancedAi::disable_science_victory_drive },
+    // Over 218 completed live runs every one of the nine wins came from an
+    // empire holding four to six cities at turn 60, and none of the 128 runs
+    // outside that band won (Fisher p = 2.6e-4); the median loss loses the
+    // lead for good at turn 61. The target is not the problem — `assess`
+    // already asks for seven cities by then — and neither is the price, which
+    // a 96-game census settled by scoring the Settler at four times its value
+    // and leaving 97% of games identical. The pipeline is: one walker at a
+    // time, and both flags that widen it are host-only. Appended at the END so
+    // a running screen keeps its positional genome.
+    Gene { tag: "expansion-schedule", field: "expansion_schedule", kind: Kind::OptIn, enable: AdvancedAi::enable_expansion_schedule, disable: AdvancedAi::disable_expansion_schedule },
+    // The other half of the same defect, named in `production_value`'s own
+    // note: a Settler needs a city at population two, and there is none on
+    // 23.8% of seat-turns — "a growth constraint no price can buy past". The
+    // citizen governor reads one empire scalar the engine never writes.
+    // Scoped to the opening, to being behind the pace, and to an empire that
+    // genuinely cannot build, because the unscoped version of this idea
+    // (`city_strategy`) measured Elo -53 by building a smaller empire.
+    Gene { tag: "growth-to-settle", field: "growth_to_settle", kind: Kind::OptIn, enable: AdvancedAi::enable_growth_to_settle, disable: AdvancedAi::disable_growth_to_settle },
+    // 37.8% of recorded turns carry at least one refused order (`produce`
+    // 24.9%, `trade` 67.3%) while the seat's judgement at matched states is
+    // intact — it loses by not landing orders. Of the ~137 sites that discard
+    // an `apply` error, not one tries an alternative. This is the repair
+    // `docs/AI_GAPS.md` names after `fog-honest-2` lost with the ambitious
+    // one: skip only the refused decision, no re-plan and no early EndTurn.
+    Gene { tag: "order-retry", field: "order_retry", kind: Kind::OptIn, enable: AdvancedAi::enable_order_retry, disable: AdvancedAi::disable_order_retry },
+    // The same shape one layer down: `builder_step` ranks every improvable
+    // owned tile by straight-line `wdist`, then asks `step_toward` for the
+    // single nearest one and returns `false` if it refuses. A ridge, a zone of
+    // control or a unit in the way is enough, and the sweep re-picks the same
+    // unreachable tile every turn after. Census at the deployment genome:
+    // 22 Builders stood still 25+ turns across 8 games; at t180, 25 Builders
+    // were alive holding 73 charges with NOT ONE of them in an empire that had
+    // run out of improvable tiles. One caught directly -- builder 312, seat 5,
+    // 30 turns at (10, 29), 3 charges, work 5 tiles away on its own landmass.
+    // The gene tries the next-nearest candidate instead of the turn.
+    Gene { tag: "builder-tries-the-next-tile", field: "builder_tries_the_next_tile", kind: Kind::OptIn, enable: AdvancedAi::enable_builder_tries_the_next_tile, disable: AdvancedAi::disable_builder_tries_the_next_tile },
+    // Before the capital exists, move the starting Warrior before the Settler
+    // and score only city footprints that the player's sight has fully
+    // observed. The target cache is invalidated after that recon turn, so a
+    // later opening turn can improve the choice with new terrain too.
+    // Appended at the END so a running screen keeps its positional genome.
+    Gene { tag: "opening-warrior-recon", field: "opening_warrior_recon", kind: Kind::OptIn, enable: AdvancedAi::enable_opening_warrior_recon, disable: AdvancedAi::disable_opening_warrior_recon },
+    // A Settler normally has two movement points. After its first actual move,
+    // throw away its cached destination and choose the remaining leg from the
+    // newly current board without discarding long-lived safety history.
+    // Appended at the END so a running screen keeps its positional genome.
+    Gene { tag: "settler-second-look", field: "settler_second_look", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_second_look, disable: AdvancedAi::disable_settler_second_look },
+    // ⚠ Settlers are lost by CAPTURE — a raider stepping onto the tile —
+    // and in a native game the settler's capture model is a geometric disk
+    // priced as a soft score under the MILITARY model, its retreat block and
+    // the stacked-guard system both host-only; the builder's exact flood
+    // (`builder-barbarian-safety`) credits no guard and never flees a job.
+    // Eight settlers were taken in 104 turns on civvis-20260821T130446Z,
+    // both of civvis-20260815T081505Z's within a tile of their site, and a
+    // run that loses settlers ends with half the cities. This gene reads
+    // the tiles every visible raider could END its next move on
+    // (`threat_reach`; barbarians move after us in the same world turn), and
+    // a Settler or Builder flees such a tile first, never steps into one
+    // alone, and — the settler — summons the nearest healthy land unit onto
+    // its own tile and walks with it: a stacked civilian cannot be taken.
+    // Appended at the END so a running screen keeps its positional genome.
+    // See `AdvancedAi::civilian_out_of_reach` / `advanced/civilian_safety.rs`.
+    Gene { tag: "civilian-out-of-reach", field: "civilian_out_of_reach", kind: Kind::OptIn, enable: AdvancedAi::enable_civilian_out_of_reach, disable: AdvancedAi::disable_civilian_out_of_reach },
+    // ⭐ THREE DEITY HABITS (operator, 2026-08-24: "study expert level deity
+    // civ 6 tips and tricks and implement the best as heuristics"). The engine
+    // has offered `chop_woods` / `chop_rainforest` / `clear_marsh` through
+    // `Game::builder_operations` since the feature-removal tables shipped,
+    // paying the shipped yield scaled by the world era and Magnus; no agent
+    // ever asked for one. A Deity player chops into the Settler, the district
+    // and the wonder. The chop joins the Builder's job list wherever the
+    // owning city's queue front is one of those, priced as a one-off lump.
+    // Appended at the END so a running screen keeps its positional genome.
+    // See `advanced/deity_habits.rs`.
+    Gene { tag: "chop-into-the-queue", field: "chop_into_the_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_chop_into_the_queue, disable: AdvancedAi::disable_chop_into_the_queue },
+    // Sixty-two technologies and fifty-three civics carry a boost worth 40%
+    // of their cost; `tech_value` pays +28 for a boost in hand and nothing
+    // ever earned one. A Deity player builds the quarry for Masonry, the
+    // pasture for Horseback Riding, the sixth farm for Feudalism. The
+    // improvement that completes a trigger is worth the research it grants,
+    // spread over the steps the trigger still needs. Appended at the END so
+    // a running screen keeps its positional genome. See
+    // `advanced/deity_habits.rs`.
+    Gene { tag: "eureka-chasing-builder", field: "eureka_chasing_builder", kind: Kind::OptIn, enable: AdvancedAi::enable_eureka_chasing_builder, disable: AdvancedAi::disable_eureka_chasing_builder },
+    // The same boost table read by the production queue: two Galleys for
+    // Shipbuilding, three Archers for Machinery, Walls for Engineering, an
+    // Aqueduct for Military Engineering, two Markets for Guilds. The unit,
+    // building or district that completes a trigger is worth the research it
+    // grants on `production_value`'s raw scale. Appended at the END so a
+    // running screen keeps its positional genome. See
+    // `advanced/deity_habits.rs`.
+    Gene { tag: "eureka-chasing-production", field: "eureka_chasing_production", kind: Kind::OptIn, enable: AdvancedAi::enable_eureka_chasing_production, disable: AdvancedAi::disable_eureka_chasing_production },
+
+    // The war desk prepares an army and nothing else: an appointed war spends
+    // its phases on a tech, a package and a march, an elective one waits for
+    // `ready && staged`, and neither spends a turn of the lead on who else
+    // will be fighting the target. `propose_strategic_alliance` picks its
+    // partner from OUR strategy on a 12-turn cadence, the envoy scorer reads
+    // a city-state's place only against our own cities, and
+    // `Action::ProposeJointWar` -- the one action that makes a second empire
+    // declare the turn we do -- is issued by no controller at all. The gene
+    // opens a coalition window from the turn a target is held: an alliance a
+    // turn with the target's neighbours (military first), envoys to the
+    // city-states beside the target (a suzerain's clients fight its wars),
+    // and joint-war invitations the turn the desk would declare, holding the
+    // declaration while an answer is due. Operator request, 2026-08-25.
+    Gene { tag: "coalition-before-war", field: "coalition_before_war", kind: Kind::OptIn, enable: AdvancedAi::enable_coalition_before_war, disable: AdvancedAi::disable_coalition_before_war },
+    // Version 2 of `amenity-project-preemption` (2026-08-24): one gated delta on version 1; the
+    // family draw is biased toward the best version and the ledger ships the
+    // best by pooled Diff. See `AdvancedAi::enable_amenity_project_preemption_2`.
+    Gene { tag: "amenity-project-preemption-2", field: "amenity_project_preemption_2", kind: Kind::OptIn, enable: AdvancedAi::enable_amenity_project_preemption_2, disable: AdvancedAi::disable_amenity_project_preemption_2 },
+    // Version 2 of `campus-adjacency-threshold` (2026-08-24): one gated delta on version 1; the
+    // family draw is biased toward the best version and the ledger ships the
+    // best by pooled Diff. See `AdvancedAi::enable_campus_adjacency_threshold_2`.
+    Gene { tag: "campus-adjacency-threshold-2", field: "campus_adjacency_threshold_2", kind: Kind::OptIn, enable: AdvancedAi::enable_campus_adjacency_threshold_2, disable: AdvancedAi::disable_campus_adjacency_threshold_2 },
+    // Version 2 of `district-coverage` (2026-08-24): one gated delta on version 1; the
+    // family draw is biased toward the best version and the ledger ships the
+    // best by pooled Diff. See `AdvancedAi::enable_district_coverage_2`.
+    Gene { tag: "district-coverage-2", field: "district_coverage_2", kind: Kind::OptIn, enable: AdvancedAi::enable_district_coverage_2, disable: AdvancedAi::disable_district_coverage_2 },
+    // Version 2 of `guru-heals-the-corps` (2026-08-24): one gated delta on version 1; the
+    // family draw is biased toward the best version and the ledger ships the
+    // best by pooled Diff. See `AdvancedAi::enable_guru_heals_the_corps_2`.
+    Gene { tag: "guru-heals-the-corps-2", field: "guru_heals_the_corps_2", kind: Kind::OptIn, enable: AdvancedAi::enable_guru_heals_the_corps_2, disable: AdvancedAi::disable_guru_heals_the_corps_2 },
+    // Version 2 of `holy-site-where-the-threat-is` (2026-08-24): one gated delta on version 1; the
+    // family draw is biased toward the best version and the ledger ships the
+    // best by pooled Diff. See `AdvancedAi::enable_holy_site_where_the_threat_is_2`.
+    Gene { tag: "holy-site-where-the-threat-is-2", field: "holy_site_where_the_threat_is_2", kind: Kind::OptIn, enable: AdvancedAi::enable_holy_site_where_the_threat_is_2, disable: AdvancedAi::disable_holy_site_where_the_threat_is_2 },
+    // Version 2 of `naval-recon` (2026-08-24): one gated delta on version 1; the
+    // family draw is biased toward the best version and the ledger ships the
+    // best by pooled Diff. See `AdvancedAi::enable_naval_recon_2`.
+    Gene { tag: "naval-recon-2", field: "naval_recon_2", kind: Kind::OptIn, enable: AdvancedAi::enable_naval_recon_2, disable: AdvancedAi::disable_naval_recon_2 },
+    // Version 2 of `power-the-laboratory` (2026-08-24): one gated delta on version 1; the
+    // family draw is biased toward the best version and the ledger ships the
+    // best by pooled Diff. See `AdvancedAi::enable_power_the_laboratory_2`.
+    Gene { tag: "power-the-laboratory-2", field: "power_the_laboratory_2", kind: Kind::OptIn, enable: AdvancedAi::enable_power_the_laboratory_2, disable: AdvancedAi::disable_power_the_laboratory_2 },
+    // Version 2 of `settler-guard-holds` (2026-08-24): one gated delta on version 1; the
+    // family draw is biased toward the best version and the ledger ships the
+    // best by pooled Diff. See `AdvancedAi::enable_settler_guard_holds_2`.
+    Gene { tag: "settler-guard-holds-2", field: "settler_guard_holds_2", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_guard_holds_2, disable: AdvancedAi::disable_settler_guard_holds_2 },
+    // Version 2 of `settler-target-hysteresis` (2026-08-24): one gated delta on version 1; the
+    // family draw is biased toward the best version and the ledger ships the
+    // best by pooled Diff. See `AdvancedAi::enable_settler_target_hysteresis_2`.
+    Gene { tag: "settler-target-hysteresis-2", field: "settler_target_hysteresis_2", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_target_hysteresis_2, disable: AdvancedAi::disable_settler_target_hysteresis_2 },
+    // Version 2 of `siege-is-progress` (2026-08-24): one gated delta on version 1; the
+    // family draw is biased toward the best version and the ledger ships the
+    // best by pooled Diff. See `AdvancedAi::enable_siege_is_progress_2`.
+    Gene { tag: "siege-is-progress-2", field: "siege_is_progress_2", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_is_progress_2, disable: AdvancedAi::disable_siege_is_progress_2 },
+];
+
+// ═══ GENERATED BY tools/genes.py — THE VERDICTS. Do not edit below: `python3 tools/genes.py write` ═══
+//
+// Source: docs/gene_ledger.json (the same tool writes both); `genes.py check` holds them
+// together, and `the_default_matches_the_operator_pinned_genome` validates every
+// `default_on` below against `DEPLOYMENT_GENOME`.
+
+/// The explicit policy that supplies every `default_on` below.
+pub(super) const DEPLOYMENT_POLICY: &str = "operator-pinned";
+
+/// The operator-pinned, screenable deployment selection.
+#[rustfmt::skip]
+pub(super) const DEPLOYMENT_GENOME: &[&str] = &[
+    "air-surge",
+    "amenity-district-path",
+    "amenity-project-preemption",
+    "apostle-promotion-by-role",
+    "army-target-weighs-enemy",
+    "barbarian-bargain",
+    "barbarian-ranged-answer",
+    "barbarian-scouts-are-scouts",
+    "bounded-recovery",
+    "buildings-before-projects",
+    "camp-party",
+    "civilian-rescue",
+    "competition-victory-points",
+    "culture-building-debt",
+    "deals-for-our-gain",
+    "diplomatic-lane-forecast",
+    "district-planning",
+    "early-contact-window",
+    "engine-faith-price",
+    "enhancer-for-the-corps",
+    "escort-unstick",
+    "flip-nearby-city-states",
+    "founder-temple",
+    "great-person-housing",
+    "guru-heals-the-corps",
+    "holy-lane-parity",
+    "home-defense",
+    "idle-faith-patronage",
+    "inquisition-on-threat",
+    "lane-culture-spending",
+    "lane-great-people",
+    "lane-policy-deck",
+    "lane-space-race",
+    "loyalty-rate-alarm",
+    "maintenance-aware-deck",
+    "missionary-evades-raiders",
+    "missionary-last-charge-explores",
+    "naval-recon",
+    "naval-threat-triage",
+    "no-free-passage",
+    "one-launch-pad",
+    "one-war-at-a-time",
+    "opportunistic-war",
+    "peacetime-deterrence",
+    "price-the-suzerainty",
+    "promote-when-wounded",
+    "raid-pillage-prizes",
+    "recon-replacement",
+    "recorded-tactical-step",
+    "relief-targets-the-siege",
+    "religion-sues-peace",
+    "religious-defence-scales",
+    "religious-units-heal-first",
+    "religious-veto-defence",
+    "research-tier-premium",
+    "science-multiplier-payoff",
+    "science-victory-drive",
+    "score-horizon",
+    "settle-sooner",
+    "settlement-gap-target",
+    "settler-factory-coordination",
+    "settler-screen",
+    "settler-target-hysteresis",
+    "settler-threat-detour",
+    "slot-kind-tiebreak",
+    "solvency-first-trade-slot",
+    "strike-opening",
+    "theology-for-founders",
+    "unit-cost-efficiency",
+    "unit-objective-memory",
+    "war-economy",
+    "war-reinforcement",
+    "wide-map-capacity",
+];
+
+#[rustfmt::skip]
+pub(super) const VERDICTS: &[GeneVerdict] = &[
+    GeneVerdict { tag: "air-surge", verdict: Verdict::Helps, default_on: true, wins_last_10k: Some(44), wins_prior_10k: Some(108), win_diff_pp: Some(1.868162), posterior_pp: Some(100.730365), posterior_se_pp: Some(12.512909), family_wise: true, screen: Some(Measure { pairs: 19080, win_delta_pp: 1.748, win_z: 4.063, share_delta_pp: 0.523, share_z: 5.915, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "amenity-district-path", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(9), wins_prior_10k: Some(17), win_diff_pp: Some(0.220736), posterior_pp: Some(11.500915), posterior_se_pp: Some(8.515459), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.343, win_z: 0.778, share_delta_pp: 0.086, share_z: 0.944, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "amenity-project-preemption", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(26), wins_prior_10k: Some(-34), win_diff_pp: Some(-0.037946), posterior_pp: Some(-0.579866), posterior_se_pp: Some(12.814024), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.515, win_z: 1.347, share_delta_pp: 0.062, share_z: 0.787, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "apostle-promotion-by-role", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(12), wins_prior_10k: Some(16), win_diff_pp: Some(0.133468), posterior_pp: Some(6.102099), posterior_se_pp: Some(10.821961), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.488, win_z: 1.11, share_delta_pp: 0.009, share_z: 0.1, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "army-target-weighs-enemy", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(-1), wins_prior_10k: Some(18), win_diff_pp: Some(0.098436), posterior_pp: Some(4.708189), posterior_se_pp: Some(10.494744), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: -0.026, win_z: -0.058, share_delta_pp: -0.071, share_z: -0.77, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "barbarian-bargain", verdict: Verdict::Helps, default_on: true, wins_last_10k: Some(22), wins_prior_10k: Some(10), win_diff_pp: Some(0.322761), posterior_pp: Some(16.41034), posterior_se_pp: Some(10.942339), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.879, win_z: 2.013, share_delta_pp: 0.131, share_z: 1.474, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "barbarian-ranged-answer", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(-2), wins_prior_10k: Some(17), win_diff_pp: Some(0.194468), posterior_pp: Some(10.931114), posterior_se_pp: Some(10.506421), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: -0.095, win_z: -0.216, share_delta_pp: -0.008, share_z: -0.093, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "barbarian-scouts-are-scouts", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(1), wins_prior_10k: Some(12), win_diff_pp: Some(0.542033), posterior_pp: Some(29.535753), posterior_se_pp: Some(11.143814), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.037, win_z: 0.085, share_delta_pp: 0.131, share_z: 1.443, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "blind-objective-strength", verdict: Verdict::Unresolved, default_on: false, wins_last_10k: Some(-23), wins_prior_10k: Some(0), win_diff_pp: Some(0.185599), posterior_pp: Some(10.786338), posterior_se_pp: Some(10.431471), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: -0.458, win_z: -1.197, share_delta_pp: 0.042, share_z: 0.546, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "blind-objective-units", verdict: Verdict::Unresolved, default_on: false, wins_last_10k: Some(2), wins_prior_10k: Some(0), win_diff_pp: Some(0.009017), posterior_pp: Some(0.293538), posterior_se_pp: Some(8.178949), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.031, win_z: 0.083, share_delta_pp: -0.095, share_z: -1.209, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "bounded-recovery", verdict: Verdict::Helps, default_on: true, wins_last_10k: Some(23), wins_prior_10k: Some(29), win_diff_pp: Some(0.602307), posterior_pp: Some(31.029126), posterior_se_pp: Some(8.476105), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.904, win_z: 2.094, share_delta_pp: 0.296, share_z: 3.353, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "builder-barbarian-safety", verdict: Verdict::Unresolved, default_on: false, wins_last_10k: Some(13), wins_prior_10k: Some(-10), win_diff_pp: Some(0.077422), posterior_pp: Some(3.322829), posterior_se_pp: Some(10.068339), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.255, win_z: 0.67, share_delta_pp: 0.023, share_z: 0.295, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "buildings-before-projects", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(13), wins_prior_10k: Some(61), win_diff_pp: Some(0.567693), posterior_pp: Some(28.304902), posterior_se_pp: Some(11.64753), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.534, win_z: 1.214, share_delta_pp: 0.059, share_z: 0.654, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "camp-party", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(28), wins_prior_10k: Some(-15), win_diff_pp: Some(0.398999), posterior_pp: Some(22.420326), posterior_se_pp: Some(12.741517), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.566, win_z: 1.481, share_delta_pp: 0.059, share_z: 0.746, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "campus-adjacency-threshold", verdict: Verdict::Unresolved, default_on: false, wins_last_10k: Some(21), wins_prior_10k: Some(-18), win_diff_pp: Some(-0.007025), posterior_pp: Some(0.159571), posterior_se_pp: Some(19.440709), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.425, win_z: 1.115, share_delta_pp: 0.016, share_z: 0.208, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "civilian-rescue", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(0), wins_prior_10k: Some(-1), win_diff_pp: Some(-0.064622), posterior_pp: Some(-3.321054), posterior_se_pp: Some(8.314957), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: -0.007, win_z: -0.018, share_delta_pp: 0.04, share_z: 0.503, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "come-ashore", verdict: Verdict::Unresolved, default_on: false, wins_last_10k: Some(-3), wins_prior_10k: Some(5), win_diff_pp: Some(0.124668), posterior_pp: Some(7.026062), posterior_se_pp: Some(8.597676), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: -0.102, win_z: -0.232, share_delta_pp: -0.035, share_z: -0.381, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "competition-victory-points", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(35), wins_prior_10k: Some(0), win_diff_pp: Some(0.309119), posterior_pp: Some(15.760591), posterior_se_pp: Some(17.698531), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.702, win_z: 1.841, share_delta_pp: 0.037, share_z: 0.463, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "coordinated-finish", verdict: Verdict::Unresolved, default_on: false, wins_last_10k: Some(0), wins_prior_10k: None, win_diff_pp: Some(-0.008735), posterior_pp: Some(-0.436761), posterior_se_pp: Some(19.047677), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: -0.009, win_z: -0.023, share_delta_pp: 0.074, share_z: 0.943, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "culture-building-debt", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(15), wins_prior_10k: Some(24), win_diff_pp: Some(0.486116), posterior_pp: Some(25.813208), posterior_se_pp: Some(12.82409), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.58, win_z: 1.328, share_delta_pp: 0.087, share_z: 0.957, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "district-coverage", verdict: Verdict::Helps, default_on: false, wins_last_10k: Some(14), wins_prior_10k: Some(-22), win_diff_pp: Some(0.008266), posterior_pp: Some(0.19452), posterior_se_pp: Some(10.3006), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.28, win_z: 0.736, share_delta_pp: 0.166, share_z: 2.158, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "district-planning", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(12), wins_prior_10k: None, win_diff_pp: Some(0.244584), posterior_pp: Some(12.229214), posterior_se_pp: Some(18.957561), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.245, win_z: 0.645, share_delta_pp: 0.145, share_z: 1.843, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "early-contact-window", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(17), wins_prior_10k: Some(2), win_diff_pp: Some(0.169393), posterior_pp: Some(7.701146), posterior_se_pp: Some(12.097581), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.337, win_z: 0.877, share_delta_pp: 0.091, share_z: 1.164, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "engine-faith-price", verdict: Verdict::Helps, default_on: true, wins_last_10k: Some(63), wins_prior_10k: None, win_diff_pp: Some(1.259609), posterior_pp: Some(62.980433), posterior_se_pp: Some(19.232589), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 1.26, win_z: 3.275, share_delta_pp: 0.089, share_z: 1.125, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "enhancer-for-the-corps", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(-5), wins_prior_10k: Some(8), win_diff_pp: Some(0.043714), posterior_pp: Some(2.646744), posterior_se_pp: Some(12.161783), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: -0.091, win_z: -0.239, share_delta_pp: 0.096, share_z: 1.239, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "escort-unstick", verdict: Verdict::Helps, default_on: true, wins_last_10k: Some(38), wins_prior_10k: Some(36), win_diff_pp: Some(0.665374), posterior_pp: Some(32.078711), posterior_se_pp: Some(12.520561), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.767, win_z: 2.017, share_delta_pp: 0.197, share_z: 2.463, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "founder-temple", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(11), wins_prior_10k: Some(7), win_diff_pp: Some(0.317732), posterior_pp: Some(19.361508), posterior_se_pp: Some(9.58433), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.455, win_z: 1.028, share_delta_pp: -0.108, share_z: -1.196, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "garrison-under-fire", verdict: Verdict::Unresolved, default_on: false, wins_last_10k: Some(31), wins_prior_10k: Some(-27), win_diff_pp: Some(0.234065), posterior_pp: Some(15.397499), posterior_se_pp: Some(16.420664), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.617, win_z: 1.615, share_delta_pp: 0.118, share_z: 1.499, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "great-person-housing", verdict: Verdict::Helps, default_on: true, wins_last_10k: Some(38), wins_prior_10k: Some(94), win_diff_pp: Some(1.583612), posterior_pp: Some(84.173107), posterior_se_pp: Some(10.509873), family_wise: true, screen: Some(Measure { pairs: 19080, win_delta_pp: 1.499, win_z: 3.464, share_delta_pp: 0.375, share_z: 4.121, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "guru-heals-the-corps", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(24), wins_prior_10k: Some(-29), win_diff_pp: Some(-0.107723), posterior_pp: Some(-3.571326), posterior_se_pp: Some(26.640015), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.482, win_z: 1.264, share_delta_pp: 0.131, share_z: 1.695, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "holy-lane-parity", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(5), wins_prior_10k: Some(19), win_diff_pp: Some(0.623541), posterior_pp: Some(32.349037), posterior_se_pp: Some(19.66726), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.185, win_z: 0.421, share_delta_pp: -0.184, share_z: -1.997, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "holy-site-where-the-threat-is", verdict: Verdict::Unresolved, default_on: false, wins_last_10k: Some(19), wins_prior_10k: Some(-19), win_diff_pp: Some(-0.031224), posterior_pp: Some(-1.100691), posterior_se_pp: Some(19.032158), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.391, win_z: 1.034, share_delta_pp: -0.088, share_z: -1.141, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "home-defense", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(10), wins_prior_10k: Some(-18), win_diff_pp: Some(-0.186727), posterior_pp: Some(-9.870974), posterior_se_pp: Some(8.311435), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.211, win_z: 0.556, share_delta_pp: 0.101, share_z: 1.259, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "housing-research", verdict: Verdict::Unresolved, default_on: false, wins_last_10k: Some(-5), wins_prior_10k: Some(-17), win_diff_pp: Some(-0.009393), posterior_pp: Some(0.465459), posterior_se_pp: Some(11.264612), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: -0.107, win_z: -0.282, share_delta_pp: -0.004, share_z: -0.048, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "idle-faith-patronage", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(-1), wins_prior_10k: Some(39), win_diff_pp: Some(0.505304), posterior_pp: Some(25.778142), posterior_se_pp: Some(7.31643), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: -0.056, win_z: -0.127, share_delta_pp: 0.148, share_z: 1.622, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "inquisition-on-threat", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(4), wins_prior_10k: Some(3), win_diff_pp: Some(0.132531), posterior_pp: Some(9.194169), posterior_se_pp: Some(9.536619), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.168, win_z: 0.381, share_delta_pp: -0.001, share_z: -0.01, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "lane-culture-spending", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(9), wins_prior_10k: Some(8), win_diff_pp: Some(0.172513), posterior_pp: Some(8.564803), posterior_se_pp: Some(12.159394), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.187, win_z: 0.486, share_delta_pp: -0.01, share_z: -0.13, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "lane-great-people", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(33), wins_prior_10k: Some(-3), win_diff_pp: Some(0.262286), posterior_pp: Some(13.24308), posterior_se_pp: Some(17.90329), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.66, win_z: 1.717, share_delta_pp: 0.1, share_z: 1.261, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "lane-policy-deck", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(29), wins_prior_10k: Some(0), win_diff_pp: Some(0.264627), posterior_pp: Some(12.799771), posterior_se_pp: Some(14.670107), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.592, win_z: 1.554, share_delta_pp: 0.083, share_z: 1.067, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "lane-space-race", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(-12), wins_prior_10k: Some(11), win_diff_pp: Some(0.010148), posterior_pp: Some(1.30902), posterior_se_pp: Some(12.141457), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: -0.239, win_z: -0.632, share_delta_pp: -0.104, share_z: -1.317, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "loyalty-rate-alarm", verdict: Verdict::Helps, default_on: true, wins_last_10k: Some(5), wins_prior_10k: Some(38), win_diff_pp: Some(0.752269), posterior_pp: Some(39.929305), posterior_se_pp: Some(9.323774), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.207, win_z: 0.473, share_delta_pp: 0.188, share_z: 2.083, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "maintenance-aware-deck", verdict: Verdict::Helps, default_on: true, wins_last_10k: Some(61), wins_prior_10k: None, win_diff_pp: Some(1.229909), posterior_pp: Some(61.49546), posterior_se_pp: Some(19.045342), family_wise: true, screen: Some(Measure { pairs: 19080, win_delta_pp: 1.23, win_z: 3.229, share_delta_pp: 0.341, share_z: 4.381, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "naval-recon", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(17), wins_prior_10k: Some(-20), win_diff_pp: Some(-0.045836), posterior_pp: Some(-3.061334), posterior_se_pp: Some(8.280916), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.353, win_z: 0.917, share_delta_pp: 0.066, share_z: 0.83, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "one-launch-pad", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(19), wins_prior_10k: Some(-11), win_diff_pp: Some(0.235943), posterior_pp: Some(11.406528), posterior_se_pp: Some(8.259198), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.374, win_z: 0.97, share_delta_pp: 0.031, share_z: 0.395, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "one-shot-recovery", verdict: Verdict::Unresolved, default_on: false, wins_last_10k: Some(8), wins_prior_10k: Some(-8), win_diff_pp: Some(-0.022638), posterior_pp: Some(-1.894908), posterior_se_pp: Some(12.019236), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.159, win_z: 0.418, share_delta_pp: 0.053, share_z: 0.671, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "opportunistic-war", verdict: Verdict::Helps, default_on: true, wins_last_10k: Some(39), wins_prior_10k: Some(49), win_diff_pp: Some(0.904992), posterior_pp: Some(48.055552), posterior_se_pp: Some(14.27792), family_wise: true, screen: Some(Measure { pairs: 19080, win_delta_pp: 1.531, win_z: 3.564, share_delta_pp: 0.482, share_z: 5.452, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "pantheon-board", verdict: Verdict::Unresolved, default_on: false, wins_last_10k: Some(5), wins_prior_10k: None, win_diff_pp: Some(0.106576), posterior_pp: Some(5.328802), posterior_se_pp: Some(19.058715), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.107, win_z: 0.28, share_delta_pp: 0.013, share_z: 0.169, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "peacetime-deterrence", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(16), wins_prior_10k: Some(21), win_diff_pp: Some(0.349649), posterior_pp: Some(18.012148), posterior_se_pp: Some(8.565639), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.617, win_z: 1.413, share_delta_pp: 0.039, share_z: 0.427, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "power-the-laboratory", verdict: Verdict::Unresolved, default_on: false, wins_last_10k: Some(14), wins_prior_10k: Some(-8), win_diff_pp: Some(0.035908), posterior_pp: Some(0.603865), posterior_se_pp: Some(11.964935), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.29, win_z: 0.762, share_delta_pp: 0.054, share_z: 0.695, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "price-the-suzerainty", verdict: Verdict::Helps, default_on: true, wins_last_10k: Some(55), wins_prior_10k: None, win_diff_pp: Some(1.11297), posterior_pp: Some(55.648484), posterior_se_pp: Some(19.144988), family_wise: true, screen: Some(Measure { pairs: 19080, win_delta_pp: 1.113, win_z: 2.907, share_delta_pp: 0.337, share_z: 4.293, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "promote-when-wounded", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(7), wins_prior_10k: None, win_diff_pp: Some(0.143269), posterior_pp: Some(7.163433), posterior_se_pp: Some(19.219865), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.143, win_z: 0.373, share_delta_pp: 0.025, share_z: 0.317, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "raid-pillage-prizes", verdict: Verdict::Helps, default_on: true, wins_last_10k: Some(43), wins_prior_10k: Some(53), win_diff_pp: Some(1.016339), posterior_pp: Some(53.890257), posterior_se_pp: Some(14.608934), family_wise: true, screen: Some(Measure { pairs: 19080, win_delta_pp: 1.698, win_z: 3.94, share_delta_pp: 0.407, share_z: 4.569, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "recon-replacement", verdict: Verdict::Helps, default_on: true, wins_last_10k: Some(36), wins_prior_10k: Some(30), win_diff_pp: Some(0.956553), posterior_pp: Some(50.640837), posterior_se_pp: Some(10.654421), family_wise: true, screen: Some(Measure { pairs: 19080, win_delta_pp: 1.454, win_z: 3.362, share_delta_pp: 0.418, share_z: 4.632, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "recorded-tactical-step", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(11), wins_prior_10k: Some(18), win_diff_pp: Some(0.321794), posterior_pp: Some(16.717609), posterior_se_pp: Some(8.50066), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.444, win_z: 1.021, share_delta_pp: 0.084, share_z: 0.936, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "relief-targets-the-siege", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(18), wins_prior_10k: Some(6), win_diff_pp: Some(0.191188), posterior_pp: Some(9.598962), posterior_se_pp: Some(8.511735), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.71, win_z: 1.628, share_delta_pp: 0.013, share_z: 0.138, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "religion-sues-peace", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(5), wins_prior_10k: Some(-18), win_diff_pp: Some(0.120977), posterior_pp: Some(6.548389), posterior_se_pp: Some(8.778382), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.091, win_z: 0.238, share_delta_pp: -0.006, share_z: -0.074, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "religious-defence-scales", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(12), wins_prior_10k: Some(-8), win_diff_pp: Some(0.01249), posterior_pp: Some(-0.269738), posterior_se_pp: Some(12.17978), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.238, win_z: 0.619, share_delta_pp: -0.063, share_z: -0.802, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "religious-units-heal-first", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(5), wins_prior_10k: Some(12), win_diff_pp: Some(0.177982), posterior_pp: Some(9.256103), posterior_se_pp: Some(11.985282), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.105, win_z: 0.274, share_delta_pp: 0.009, share_z: 0.109, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "research-tier-premium", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(29), wins_prior_10k: Some(-6), win_diff_pp: Some(0.191249), posterior_pp: Some(9.651653), posterior_se_pp: Some(17.243946), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.575, win_z: 1.503, share_delta_pp: 0.079, share_z: 1.01, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "science-multiplier-payoff", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(23), wins_prior_10k: Some(-8), win_diff_pp: Some(0.120995), posterior_pp: Some(5.644704), posterior_se_pp: Some(15.161652), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.459, win_z: 1.206, share_delta_pp: 0.076, share_z: 0.964, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "score-horizon", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(5), wins_prior_10k: Some(18), win_diff_pp: Some(0.322285), posterior_pp: Some(16.89195), posterior_se_pp: Some(8.532299), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.2, win_z: 0.451, share_delta_pp: 0.139, share_z: 1.524, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "settle-sooner", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(19), wins_prior_10k: Some(28), win_diff_pp: Some(0.654906), posterior_pp: Some(34.563276), posterior_se_pp: Some(10.399355), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.764, win_z: 1.748, share_delta_pp: 0.123, share_z: 1.352, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "settlement-gap-target", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(14), wins_prior_10k: None, win_diff_pp: Some(0.286513), posterior_pp: Some(14.32565), posterior_se_pp: Some(18.969806), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.287, win_z: 0.755, share_delta_pp: 0.055, share_z: 0.707, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "settler-guard-holds", verdict: Verdict::Unresolved, default_on: false, wins_last_10k: Some(25), wins_prior_10k: Some(-8), win_diff_pp: Some(0.080401), posterior_pp: Some(3.289281), posterior_se_pp: Some(8.232809), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.489, win_z: 1.285, share_delta_pp: 0.061, share_z: 0.783, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "settler-target-hysteresis", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(17), wins_prior_10k: Some(-18), win_diff_pp: Some(0.011271), posterior_pp: Some(0.142789), posterior_se_pp: Some(8.235122), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.335, win_z: 0.873, share_delta_pp: 0.12, share_z: 1.532, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "settler-threat-detour", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(1), wins_prior_10k: Some(18), win_diff_pp: Some(0.450991), posterior_pp: Some(24.316588), posterior_se_pp: Some(13.516949), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.021, win_z: 0.047, share_delta_pp: 0.044, share_z: 0.493, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "siege-commitment", verdict: Verdict::Unresolved, default_on: false, wins_last_10k: Some(9), wins_prior_10k: Some(6), win_diff_pp: Some(-0.039073), posterior_pp: Some(-2.000626), posterior_se_pp: Some(8.322987), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.185, win_z: 0.485, share_delta_pp: -0.036, share_z: -0.457, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "siege-is-progress", verdict: Verdict::Unresolved, default_on: false, wins_last_10k: Some(23), wins_prior_10k: Some(-6), win_diff_pp: Some(-0.144271), posterior_pp: Some(-9.171286), posterior_se_pp: Some(13.818669), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.451, win_z: 1.171, share_delta_pp: 0.117, share_z: 1.48, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "slot-kind-tiebreak", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(25), wins_prior_10k: Some(-1), win_diff_pp: Some(0.203632), posterior_pp: Some(9.448489), posterior_se_pp: Some(8.258141), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.507, win_z: 1.329, share_delta_pp: 0.12, share_z: 1.526, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "spread-campaign-persists", verdict: Verdict::Unresolved, default_on: false, wins_last_10k: Some(-19), wins_prior_10k: Some(-16), win_diff_pp: Some(-0.343466), posterior_pp: Some(-17.030395), posterior_se_pp: Some(12.148556), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: -0.381, win_z: -0.997, share_delta_pp: -0.007, share_z: -0.086, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "stranded-settler-discount", verdict: Verdict::Unresolved, default_on: false, wins_last_10k: Some(33), wins_prior_10k: Some(-8), win_diff_pp: Some(0.234064), posterior_pp: Some(11.031107), posterior_se_pp: Some(8.29178), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.659, win_z: 1.743, share_delta_pp: 0.007, share_z: 0.085, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "strategic-wonders", verdict: Verdict::Unresolved, default_on: false, wins_last_10k: Some(0), wins_prior_10k: Some(11), win_diff_pp: Some(0.172073), posterior_pp: Some(8.794727), posterior_se_pp: Some(8.277293), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: -0.007, win_z: -0.018, share_delta_pp: -0.044, share_z: -0.559, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "strike-opening", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(1), wins_prior_10k: Some(4), win_diff_pp: Some(0.229561), posterior_pp: Some(12.164275), posterior_se_pp: Some(8.437152), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.051, win_z: 0.116, share_delta_pp: 0.107, share_z: 1.162, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "theology-for-founders", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(2), wins_prior_10k: Some(22), win_diff_pp: Some(0.080472), posterior_pp: Some(3.498211), posterior_se_pp: Some(9.244893), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.049, win_z: 0.128, share_delta_pp: 0.025, share_z: 0.321, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "unit-cost-efficiency", verdict: Verdict::Helps, default_on: true, wins_last_10k: Some(17), wins_prior_10k: None, win_diff_pp: Some(0.347661), posterior_pp: Some(17.383064), posterior_se_pp: Some(19.225877), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.348, win_z: 0.904, share_delta_pp: 0.177, share_z: 2.235, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "unit-objective-memory", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(10), wins_prior_10k: None, win_diff_pp: Some(0.197428), posterior_pp: Some(9.871423), posterior_se_pp: Some(19.11049), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.197, win_z: 0.517, share_delta_pp: 0.138, share_z: 1.788, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "war-economy", verdict: Verdict::Helps, default_on: true, wins_last_10k: Some(46), wins_prior_10k: Some(118), win_diff_pp: Some(0.527307), posterior_pp: Some(13.370014), posterior_se_pp: Some(51.998198), family_wise: true, screen: Some(Measure { pairs: 19080, win_delta_pp: 1.872, win_z: 4.325, share_delta_pp: 1.141, share_z: 12.467, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "war-reinforcement", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(0), wins_prior_10k: Some(34), win_diff_pp: Some(0.326817), posterior_pp: Some(16.756373), posterior_se_pp: Some(10.360862), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.005, win_z: 0.011, share_delta_pp: -0.048, share_z: -0.536, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "whole-turn-backtrack-guard", verdict: Verdict::Unresolved, default_on: false, wins_last_10k: Some(-14), wins_prior_10k: Some(6), win_diff_pp: Some(0.20946), posterior_pp: Some(11.765564), posterior_se_pp: Some(9.909905), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: -0.563, win_z: -1.269, share_delta_pp: -0.124, share_z: -1.37, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+    GeneVerdict { tag: "wide-map-capacity", verdict: Verdict::Helps, default_on: true, wins_last_10k: Some(55), wins_prior_10k: Some(91), win_diff_pp: Some(1.198264), posterior_pp: Some(60.530019), posterior_se_pp: Some(16.598622), family_wise: true, screen: Some(Measure { pairs: 19080, win_delta_pp: 2.223, win_z: 5.21, share_delta_pp: 0.577, share_z: 6.468, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
+];
+// ═══ END GENERATED ═══

@@ -24,6 +24,57 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import civ6_civvis_climb as climb
 
 
+class BusyOnlyCountsARealGame(unittest.TestCase):
+    """`pgrep -f` matches command lines, so anything that NAMES the harness hits.
+
+    Twice on 2026-08-19 the lane stalled on this: a leftover agent shell whose
+    argv carried `civ6_play|civ6_brain` (from a grep) made every attempt die
+    with "something already holds the game; refusing to stop an unowned run",
+    while the lock file was empty, no harness ran and Civ 6 was down. The second
+    time the shell belonged to a DIFFERENT agent session, which this process
+    must not kill. Verify the executable instead, exactly as
+    `civvis-game-supervisor.sh` already does for its own scan.
+    """
+
+    def _lsof(self, path):
+        return f"p1\nftxt\nn{path}\n"
+
+    def test_a_shell_that_merely_names_the_harness_is_not_a_game(self):
+        with mock.patch.object(climb, "run", side_effect=[
+            "4242\n",                       # pgrep hit
+            self._lsof("/bin/zsh"),          # ... but it is a shell
+        ]):
+            self.assertIsNone(climb.busy(),
+                              "a shell carrying the name in its argv is not a game")
+
+    def test_the_python_harness_still_counts(self):
+        with mock.patch.object(climb, "run", side_effect=[
+            "4242\n",
+            self._lsof("/Library/Frameworks/Python.framework/Versions/3.9/.../Python"),
+        ]):
+            self.assertEqual(climb.busy(), "4242")
+
+    def test_the_game_itself_still_counts(self):
+        with mock.patch.object(climb, "run", side_effect=[
+            "77\n",
+            self._lsof("/Users/x/Steam/common/Sid Meier's Civilization VI/Civ6.app/Content"),
+        ]):
+            self.assertEqual(climb.busy(), "77")
+
+    def test_an_unresolvable_pid_is_treated_as_real(self):
+        """Refusing to touch an unproven game is the safe direction."""
+        with mock.patch.object(climb, "run", side_effect=["9\n", ""]):
+            self.assertEqual(climb.busy(), "9")
+
+    def test_a_real_game_survives_a_shell_in_the_same_sweep(self):
+        with mock.patch.object(climb, "run", side_effect=[
+            "4242 77\n",
+            self._lsof("/bin/zsh"),
+            self._lsof("/Users/x/Civ6.app/Contents/MacOS/Civ6_Exe"),
+        ]):
+            self.assertEqual(climb.busy(), "77")
+
+
 class MirrorFreshnessTests(unittest.TestCase):
     def test_follower_output_path_reads_lsof_file_field(self):
         mirror_log = climb.MIRROR_FOLLOW_LOG
@@ -84,10 +135,64 @@ class MirrorFreshnessTests(unittest.TestCase):
         )
 
 
+class PopupClearOwnershipTests(unittest.TestCase):
+    """One interactive host owns one popup clearer for the visible Civ VI seat."""
+
+    def test_keeper_lock_requires_a_live_popup_keeper_command(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            lock = Path(temporary) / "popup.lock"
+            lock.mkdir()
+            (lock / "pid").write_text("401")
+            with mock.patch.object(climb, "POPUP_KEEPER_LOCK", lock), \
+                 mock.patch.object(climb, "process_running", return_value=True), \
+                 mock.patch.object(
+                     climb, "run",
+                     return_value="/bin/zsh /tmp/civvis-popup-keeper.sh\n"):
+                self.assertEqual(climb.interactive_popup_keeper_pid(), 401)
+            with mock.patch.object(climb, "POPUP_KEEPER_LOCK", lock), \
+                 mock.patch.object(climb, "process_running", return_value=True), \
+                 mock.patch.object(climb, "run", return_value="/bin/zsh /tmp/other.sh\n"):
+                self.assertIsNone(climb.interactive_popup_keeper_pid())
+
+    def test_interactive_keeper_preserves_its_child_and_retires_the_batch_copy(self):
+        with mock.patch.object(climb, "interactive_popup_keeper_pid", return_value=401), \
+             mock.patch.object(climb, "popup_clearer_children", return_value={402}), \
+             mock.patch.object(climb, "popup_clearer_pids", return_value=[402, 403]), \
+             mock.patch.object(climb, "process_running", return_value=False), \
+             mock.patch.object(climb.os, "kill") as kill, \
+             mock.patch.object(climb, "_detach") as detach:
+            climb.ensure_popup_clear()
+
+        kill.assert_called_once_with(403, climb.signal.SIGTERM)
+        detach.assert_not_called()
+
+    def test_interactive_keeper_prevents_a_new_batch_clearer_when_no_child_is_ready(self):
+        with mock.patch.object(climb, "interactive_popup_keeper_pid", return_value=401), \
+             mock.patch.object(climb, "popup_clearer_children", return_value=set()), \
+             mock.patch.object(climb, "popup_clearer_pids", return_value=[]), \
+             mock.patch.object(climb, "_detach") as detach:
+            climb.ensure_popup_clear()
+
+        detach.assert_not_called()
+
+    def test_missing_interactive_keeper_keeps_the_batch_fallback(self):
+        with mock.patch.object(climb, "interactive_popup_keeper_pid", return_value=None), \
+             mock.patch.object(climb, "popup_clearer_pids", return_value=[]), \
+             mock.patch.object(climb, "_detach") as detach:
+            climb.ensure_popup_clear()
+
+        detach.assert_called_once_with(
+            [climb.sys.executable, "-u", str(climb.HERE / "civ6_control" / "popup_clear.py"),
+             "--interval", climb.POPUP_CLEAR_INTERVAL, "--runs", str(climb.RUN_ROOT), "--log",
+             str(climb.RUN_ROOT.parent / "popup_clear.log")],
+            climb.RUN_ROOT.parent / "popup_clear.log", "popups",
+        )
+
 class PopupBackstopWiringTests(unittest.TestCase):
     def test_climb_starts_the_popup_backstop_on_a_quarter_second_cadence(self):
+        self.assertEqual(climb.POPUP_CLEAR_INTERVAL, "0.25")
         source = Path(climb.__file__).read_text()
-        self.assertIn('"--interval", "0.25"', source)
+        self.assertIn('"--interval", POPUP_CLEAR_INTERVAL', source)
 
 
 class TeardownOwnershipTests(unittest.TestCase):
@@ -214,14 +319,17 @@ class _Harness:
         root = Path(self.tmp.name)
         self.logs = root / "logs"
         self.logs.mkdir()
+        self.runs = root / "runs"
+        self.runs.mkdir()
         self.ledger = root / "ladder.jsonl"
         self.orders_bin = root / "civvis_orders"
         self.orders_bin.write_text("#!/bin/sh\n")
 
         self.saved = {name: getattr(climb, name) for name in
                       ("LEDGER", "BLOCKED_BACKOFF_S", "teardown", "busy",
-                       "wake_steam", "outcome_of", "code_state")}
+                       "wake_steam", "outcome_of", "code_state", "RUN_ROOT")}
         climb.LEDGER = self.ledger
+        climb.RUN_ROOT = self.runs
         climb.BLOCKED_BACKOFF_S = (0.0, 0.0, 0.0)   # the table, without the waiting
         climb.teardown = lambda *args, **kwargs: None
         climb.busy = lambda: None
@@ -816,6 +924,64 @@ class KilledAttemptSaysSo(unittest.TestCase):
         self.assertIsNone(row.get("reason"))
 
 
+class MissingSummaryExitProvenanceTests(unittest.TestCase):
+    """A child that vanishes after turns must leave more than ``attempt exited``.
+
+    `civvis-20260820T210941Z` reached turn 95 with four cities, then its child
+    exited without `summary.json`. The old row retained the turn but discarded
+    the only remaining OS-level signal: the child's return code.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.saved_root = climb.RUN_ROOT
+        climb.RUN_ROOT = self.root
+
+    def tearDown(self):
+        climb.RUN_ROOT = self.saved_root
+        self.tmp.cleanup()
+
+    def test_an_exit_without_a_summary_preserves_status_and_last_state(self):
+        run = self.root / "civvis-exited"
+        run.mkdir()
+        outcome = {"last_turn": 95, "last_score": 203, "rival_best": 396,
+                   "cities": 4, "army": 7}
+
+        detail = climb.record_unexplained_child_exit(
+            "civvis-exited", "exited", -9, outcome)
+
+        self.assertEqual(detail["returncode"], -9)
+        self.assertEqual(detail["watcher_reason"], "exited")
+        self.assertEqual(detail["last_observed"], outcome)
+        self.assertEqual(
+            json.loads((run / "exit.json").read_text()), detail,
+            "the run-local sidecar survives for a later ledger backfill")
+
+    def test_outcome_of_reloads_the_exit_sidecar(self):
+        run = self.root / "civvis-exited"
+        run.mkdir()
+        (run / "events.jsonl").write_text(
+            json.dumps({"kind": "turn", "turn": 95, "score": 203,
+                        "rival_best": 396, "cities": 4, "army": 7}) + "\n")
+        detail = climb.record_unexplained_child_exit(
+            "civvis-exited", "exited", 137, climb.outcome_of("civvis-exited"))
+
+        self.assertEqual(climb.outcome_of("civvis-exited")["child_exit"], detail)
+
+    def test_a_real_summary_or_a_non_exit_never_gets_the_artifact(self):
+        run = self.root / "civvis-finished"
+        run.mkdir()
+        (run / "summary.json").write_text(json.dumps({"reason": "stopped"}))
+        self.assertIsNone(climb.record_unexplained_child_exit(
+            "civvis-finished", "exited", 0, {}))
+        self.assertFalse((run / "exit.json").exists())
+
+        self.assertIsNone(climb.record_unexplained_child_exit(
+            "civvis-finished", "frozen", -15, {}))
+        self.assertFalse((run / "exit.json").exists())
+
+
 class OuterWatchdogOrdering(unittest.TestCase):
     """⚠⚠⚠ The backstop must sit ABOVE the budget it backs, not underneath it.
 
@@ -1325,6 +1491,28 @@ class ResumeFromAutosaveTests(_Harness, unittest.TestCase):
         self.assertIsNone(climb.resume_from_autosave(frozen, "frozen", 0, args, 0.0,
                                                      latest=lambda newer_than=None: None))
 
+    def test_successive_resumes_step_back_instead_of_reloading_the_same_hang(self):
+        args = self._Args()
+        saves = [
+            Path("/saves/AutoSave_0181.Civ6Save"),
+            Path("/saves/AutoSave_0180.Civ6Save"),
+        ]
+        finder = lambda newer_than=None: saves
+        frozen = {"last_turn": 181}
+
+        self.assertEqual(
+            climb.resume_from_autosave(
+                frozen, "frozen", 0, args, 1234.5, recent=finder,
+            ),
+            saves[0],
+        )
+        self.assertEqual(
+            climb.resume_from_autosave(
+                frozen, "frozen", 1, args, 1234.5, recent=finder,
+            ),
+            saves[1],
+        )
+
     def test_a_frozen_attempt_is_reloaded_under_a_cont_tag_and_scored_from_it(self):
         spawned = []
 
@@ -1335,9 +1523,11 @@ class ResumeFromAutosaveTests(_Harness, unittest.TestCase):
 
         verdicts = ["frozen", "exited"]
         saved_wait = climb.wait_watching_the_turn
-        saved_latest = climb._latest_autosave
+        saved_recent = climb._recent_autosaves
         climb.wait_watching_the_turn = lambda *a, **k: verdicts.pop(0)
-        climb._latest_autosave = lambda newer_than=None: Path("/saves/AutoSave_0102.Civ6Save")
+        climb._recent_autosaves = lambda newer_than=None: [
+            Path("/saves/AutoSave_0102.Civ6Save")
+        ]
         climb.subprocess.Popen = Recording
         try:
             code, rows = self.climb_with(
@@ -1346,7 +1536,7 @@ class ResumeFromAutosaveTests(_Harness, unittest.TestCase):
                 attempts=1)
         finally:
             climb.wait_watching_the_turn = saved_wait
-            climb._latest_autosave = saved_latest
+            climb._recent_autosaves = saved_recent
             climb.subprocess.Popen = FakeProc
 
         self.assertEqual(code, 1, "played out, no win")
@@ -1389,37 +1579,44 @@ class ResumeFromAutosaveTests(_Harness, unittest.TestCase):
     def test_the_resume_budget_is_bounded_and_the_last_freeze_is_the_row(self):
         verdicts = ["frozen", "frozen", "frozen"]
         saved_wait = climb.wait_watching_the_turn
-        saved_latest = climb._latest_autosave
+        saved_recent = climb._recent_autosaves
         climb.wait_watching_the_turn = lambda *a, **k: verdicts.pop(0)
-        climb._latest_autosave = lambda newer_than=None: Path("/saves/AutoSave_0150.Civ6Save")
+        climb._recent_autosaves = lambda newer_than=None: [
+            Path("/saves/AutoSave_0150.Civ6Save"),
+            Path("/saves/AutoSave_0149.Civ6Save"),
+        ]
         try:
             code, rows = self.climb_with(
                 [{"last_turn": 102}, {"last_turn": 140}, {"last_turn": 151}],
                 attempts=1)
         finally:
             climb.wait_watching_the_turn = saved_wait
-            climb._latest_autosave = saved_latest
+            climb._recent_autosaves = saved_recent
 
         self.assertEqual(len(rows), 1)
         row = rows[0]
         self.assertEqual(row["last_turn"], 151)
         self.assertEqual(row["reason"], "attempt frozen", "still frozen after the budget: say so")
         self.assertEqual([r["from_turn"] for r in row["resumes"]], [102, 140])
+        self.assertEqual([r["save"] for r in row["resumes"]],
+                         ["AutoSave_0150.Civ6Save", "AutoSave_0149.Civ6Save"])
         self.assertTrue(row["resumes"][-1]["tag"].endswith("-cont2"))
 
     def test_a_resume_that_never_reaches_a_turn_keeps_the_frozen_row(self):
         verdicts = ["frozen", "exited"]
         saved_wait = climb.wait_watching_the_turn
-        saved_latest = climb._latest_autosave
+        saved_recent = climb._recent_autosaves
         climb.wait_watching_the_turn = lambda *a, **k: verdicts.pop(0)
-        climb._latest_autosave = lambda newer_than=None: Path("/saves/AutoSave_0102.Civ6Save")
+        climb._recent_autosaves = lambda newer_than=None: [
+            Path("/saves/AutoSave_0102.Civ6Save")
+        ]
         try:
             code, rows = self.climb_with(
                 [{"last_turn": 102, "last_score": 340}, {"last_turn": None}],
                 attempts=1)
         finally:
             climb.wait_watching_the_turn = saved_wait
-            climb._latest_autosave = saved_latest
+            climb._recent_autosaves = saved_recent
         self.assertEqual(len(rows), 1, "the frozen game is the row, not a hole")
         row = rows[0]
         self.assertEqual(row["attempt"], 1, "and it spends its rung like any played game")
@@ -1432,15 +1629,17 @@ class ResumeFromAutosaveTests(_Harness, unittest.TestCase):
     def test_resumes_can_be_switched_off(self):
         verdicts = ["frozen"]
         saved_wait = climb.wait_watching_the_turn
-        saved_latest = climb._latest_autosave
+        saved_recent = climb._recent_autosaves
         climb.wait_watching_the_turn = lambda *a, **k: verdicts.pop(0)
-        climb._latest_autosave = lambda newer_than=None: Path("/saves/AutoSave_0102.Civ6Save")
+        climb._recent_autosaves = lambda newer_than=None: [
+            Path("/saves/AutoSave_0102.Civ6Save")
+        ]
         try:
             code, rows = self.climb_with([{"last_turn": 102}], attempts=1,
                                          argv_extra=("--max-resumes", "0"))
         finally:
             climb.wait_watching_the_turn = saved_wait
-            climb._latest_autosave = saved_latest
+            climb._recent_autosaves = saved_recent
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["reason"], "attempt frozen")
         self.assertNotIn("resumes", rows[0])
@@ -1537,11 +1736,62 @@ class BatchRefreshSecondsTests(unittest.TestCase):
             campus_specialist=False, envoys=False, envoy_place=False,
             envoy_levy=False, envoy_consider=False, victory="science",
             strategy="auto", war_from_plan=False, tile_export_every=25,
-            refresh_seconds=None, no_peace_deterrence=False, without=[],
-            no_counter_resolutions=False,
+            refresh_seconds=None, no_peace_deterrence=False, with_=[], without=[],
+            no_counter_resolutions=False, combat_frames=0, replan_frames=2,
+            settler_escort_cap_sync=False, restart_below_leader_ratio=None,
         )
         values.update(changes)
         return SimpleNamespace(**values)
+
+    def test_the_abandon_floor_reaches_the_play_command_only_when_set(self):
+        """Operator request 2026-08-19 — "ok to abandon games early if
+        expected win rate <5%": the floor is forwarded verbatim, and absent it
+        the harness keeps its own default of playing every game out."""
+        cmd = climb.play_command(
+            self._play_args(abandon_below_win_rate=0.05), "t",
+            Path("orders.sqlite"), Path("civvis_orders"))
+        self.assertIn("--abandon-below-win-rate", cmd)
+        self.assertEqual(cmd[cmd.index("--abandon-below-win-rate") + 1], "0.05")
+        self.assertNotIn(
+            "--abandon-below-win-rate",
+            climb.play_command(self._play_args(), "t",
+                               Path("orders.sqlite"), Path("civvis_orders")))
+
+    def test_the_three_signal_restart_ratio_reaches_the_play_command(self):
+        cmd = climb.play_command(
+            self._play_args(restart_below_leader_ratio=0.70), "t",
+            Path("orders.sqlite"), Path("civvis_orders"))
+        self.assertIn("--restart-below-leader-ratio", cmd)
+        self.assertEqual(cmd[cmd.index("--restart-below-leader-ratio") + 1], "0.7")
+        self.assertNotIn(
+            "--restart-below-leader-ratio",
+            climb.play_command(self._play_args(), "t",
+                               Path("orders.sqlite"), Path("civvis_orders")))
+
+    def test_the_mid_turn_frames_reach_the_play_command(self):
+        """The combat frame (#2132) was never forwarded by the climb, so no
+        ladder run ever played it; both frame counts now cross verbatim, the
+        replan frames on by default and withholdable with 0."""
+        cmd = climb.play_command(self._play_args(), "t",
+                                 Path("orders.sqlite"), Path("civvis_orders"))
+        self.assertEqual(cmd[cmd.index("--replan-frames") + 1], "2")
+        self.assertEqual(cmd[cmd.index("--combat-frames") + 1], "0")
+        cmd = climb.play_command(self._play_args(replan_frames=0, combat_frames=1), "t",
+                                 Path("orders.sqlite"), Path("civvis_orders"))
+        self.assertEqual(cmd[cmd.index("--replan-frames") + 1], "0")
+        self.assertEqual(cmd[cmd.index("--combat-frames") + 1], "1")
+
+    def test_the_capped_escort_arm_reaches_play_only_when_enabled(self):
+        cmd = climb.play_command(
+            self._play_args(settler_escort_cap_sync=True), "t",
+            Path("orders.sqlite"), Path("civvis_orders"))
+        self.assertIn("--settler-escort-cap-sync", cmd)
+        self.assertNotIn(
+            "--settler-escort-cap-sync",
+            climb.play_command(self._play_args(), "t",
+                               Path("orders.sqlite"), Path("civvis_orders")),
+            "the experiment must stay off unless the batch names it",
+        )
 
     def test_a_withheld_deterrence_reaches_the_play_command(self):
         cmd = climb.play_command(self._play_args(no_peace_deterrence=True), "t",
@@ -1580,6 +1830,19 @@ class BatchRefreshSecondsTests(unittest.TestCase):
             climb.play_command(self._play_args(), "t",
                                Path("orders.sqlite"), Path("civvis_orders")),
             "the treatment half withholds nothing",
+        )
+
+    def test_a_batch_can_restore_a_ledger_held_live_gene(self):
+        cmd = climb.play_command(
+            self._play_args(with_=["stacked-escort"]), "t",
+            Path("orders.sqlite"), Path("civvis_orders"))
+        at = cmd.index("--civvis-with")
+        self.assertEqual(cmd[at + 1], "stacked-escort")
+        self.assertNotIn(
+            "--civvis-with",
+            climb.play_command(self._play_args(), "t",
+                               Path("orders.sqlite"), Path("civvis_orders")),
+            "the deployment arm must not turn a held gene back on",
         )
 
     def test_the_freeze_reaches_the_play_command(self):

@@ -82,7 +82,7 @@ is a judgement about the whole game, not one lane.
 
 ## The original throughput hypothesis
 
-`docs/FLEET.md` records that 62% of an audited league history ended as score
+`docs/closed/FLEET.md` records that 62% of an audited league history ended as score
 truncations at turn 250 — games whose tails looked like compute spent on a
 settled outcome. The engine already carries a calibrated live win-probability
 model (`src/odds.rs`, Brier- and log-loss-checked at three phases of

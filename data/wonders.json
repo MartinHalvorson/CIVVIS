@@ -207,9 +207,11 @@
     ],
     "adjacent_district": "holy_site",
     "founded_religion": true,
+    "modifiers": [
+      "mahabodhi_diplovp"
+    ],
     "effects": {
-      "apostles": 2,
-      "diplomatic_victory_points": 2
+      "apostles": 2
     }
   },
   "mausoleum_at_halicarnassus": {
@@ -357,8 +359,10 @@
     "tech": "machinery",
     "coast": true,
     "hills": false,
+    "modifiers": [
+      "kilwa_three_influence_tokens"
+    ],
     "effects": {
-      "envoys": 3,
       "suzerain_type_city_bonus_pct": 15,
       "suzerain_type_empire_bonus_pct": 15
     }
@@ -520,9 +524,11 @@
     },
     "hills": true,
     "adjacent_mountain": true,
+    "modifiers": [
+      "potala_diplovp"
+    ],
     "effects": {
-      "diplomatic_policy_slots": 1,
-      "diplomatic_victory_points": 1
+      "diplomatic_policy_slots": 1
     }
   },
   "st_basils_cathedral": {
@@ -643,8 +649,10 @@
     "water": true,
     "coast": true,
     "adjacent_district": "harbor",
+    "modifiers": [
+      "statueliberty_diplovp"
+    ],
     "effects": {
-      "diplomatic_victory_points": 4,
       "regional_full_loyalty_range": 6,
       "free_settlers": 2
     }

@@ -15,9 +15,16 @@ Usage::
 
     python tools/civ6_fidelity.py                     # markdown report
     python tools/civ6_fidelity.py --json out.json     # machine-readable
-    python tools/civ6_fidelity.py --max-divergences 0 # CI gate
+    python tools/civ6_fidelity.py --check --max 0     # CI ratchet
 
-``--civ6`` (or ``$CIV6_DIR``) overrides install auto-detection. Exit status is
+``--check`` reads the compiled cache the game leaves behind and is the form
+the workflow runs: on a machine with no Civilization VI (every hosted runner)
+it prints a named skip notice and passes, so the ratchet is only ever a real
+number on a fleet Mac with the game installed — run it there before ready.
+
+``--civ6`` (or ``$CIV6_INSTALL``/``$CIV6_DIR``) overrides install
+auto-detection, and accepts either the install root or the assets directory
+inside the macOS app bundle. Exit status is
 1 when the divergence count exceeds ``--max-divergences``, so the audit can be
 wired into CI as a ratchet once a table reaches parity.
 """
@@ -33,6 +40,9 @@ import re
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import civ6_env  # noqa: E402
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -91,13 +101,6 @@ PACK_EXCLUDE = re.compile(
 # nothing: the Eye of the Sahara kept Rise and Fall's 1 Production instead of
 # Gathering Storm's 2. These are applied last, after every base table is in.
 CROSS_EXPANSION = re.compile(r"_Expansion[12]\.xml$", re.IGNORECASE)
-
-INSTALL_CANDIDATES = [
-    r"C:\Program Files (x86)\Steam\steamapps\common\Sid Meier's Civilization VI",
-    r"C:\Program Files\Steam\steamapps\common\Sid Meier's Civilization VI",
-    r"D:\SteamLibrary\steamapps\common\Sid Meier's Civilization VI",
-    r"E:\SteamLibrary\steamapps\common\Sid Meier's Civilization VI",
-]
 
 # Tables we project onto CIVVIS' schema, and the primary key of each.
 TABLE_KEYS = {
@@ -173,6 +176,27 @@ TABLE_KEYS = {
     "Projects": "ProjectType",
     "Project_GreatPersonPoints": ("ProjectType", "GreatPersonClassType"),
     "Project_YieldConversions": ("ProjectType", "YieldType"),
+    # The difficulty ladder. The handicaps are ordinary modifiers whose
+    # arguments scale off the rung (`LinearScaleFromDefaultHandicap`) and whose
+    # requirement sets name the rung they start at, so the rung tables alone
+    # say nothing: `Difficulties` is eight names.
+    "Difficulties": "DifficultyType",
+    "Modifiers": "ModifierId",
+    "Requirements": "RequirementId",
+    "RequirementArguments": ("RequirementId", "Name"),
+    "RequirementSetRequirements": ("RequirementSetId", "RequirementId"),
+    "MajorStartingUnits": ("Unit", "Era", "District", "MinDifficulty"),
+    "StartingBuildings": ("Building", "Era", "District", "MinDifficulty"),
+    "BarbarianAttackForces": "AttackForceType",
+}
+
+# Key columns the shipped schema leaves NULL on some rows. `_key` fills them
+# with "" rather than dropping the row: a `MajorStartingUnits` row with no
+# `MinDifficulty` is the grant every rung receives, not a malformed row.
+NULLABLE_KEY_COLUMNS = {
+    "Improvement_BonusYieldChanges": {"PrereqTech", "PrereqCivic"},
+    "MajorStartingUnits": {"MinDifficulty"},
+    "StartingBuildings": {"MinDifficulty"},
 }
 
 # Only parse files that can carry those tables. Parsing every gameplay XML
@@ -185,7 +209,7 @@ FILE_PATTERN = re.compile(
     r"(Units|Technologies|Civics|Buildings|Districts|Terrains|Features|Resources"
     r"|Improvements|Policies|Governments|Beliefs|UnitPromotions|Projects|GreatWorks"
     r"|GoodyHuts|Eras|GreatPeople(?:_[A-Za-z]+)?|GlobalParameters|WMDs|Maps"
-    r"|Happinesses|Routes|Alliances)"
+    r"|Happinesses|Routes|Alliances|Barbarians|Difficulties|Leaders)"
     r"(_Major)?\.xml$",
     re.IGNORECASE,
 )
@@ -207,18 +231,29 @@ ERAS = [
 
 
 def find_install(explicit: str | None) -> Path:
-    for candidate in filter(None, [explicit, os.environ.get("CIV6_DIR")]):
-        path = Path(candidate)
-        if (path / LOAD_ORDER[0]).is_dir():
-            return path
+    """The assets root to audit against, via the one shared resolver.
+
+    ★★★★★ THIS AUDIT COULD NOT FIND AN INSTALL ON ANY MACHINE IN THIS FLEET.
+    The list that stood here held four paths and every one of them began
+    ``C:\`` or ``D:\``. The fleet runs on macOS, where the gameplay database
+    is not at the install root at all but inside the signed app bundle, at
+    ``Civ6.app/Contents/Assets``. So the guard against modelling a *different
+    game* than Civilization VI reported "install not found" and did nothing,
+    unless someone happened to pass the nested path by hand.
+
+    That is not hypothetical damage. It is why #2049 read the compiled
+    ``DebugGameplay.sqlite`` cache directly instead — bypassing this tool's
+    ruleset refusal — and shipped Vanilla belief values as Gathering Storm,
+    retracted the next day in #2050.
+
+    ``civ6_env`` already knew the bundle layout; its ``ASSETS_SUBPATH``
+    constant is documented as the path *this audit wants*. The accommodation
+    was written and never wired up.
+    """
+    path = civ6_env.assets_dir(explicit)
+    if not (path / LOAD_ORDER[0]).is_dir():
         raise SystemExit(f"no Civilization VI gameplay data under {path}")
-    for candidate in INSTALL_CANDIDATES:
-        path = Path(candidate)
-        if (path / LOAD_ORDER[0]).is_dir():
-            return path
-    raise SystemExit(
-        "Civilization VI install not found; pass --civ6 <path> or set $CIV6_DIR"
-    )
+    return path
 
 
 # ---------------------------------------------------------------- game database
@@ -243,14 +278,10 @@ class Database:
             node = row.get("TechnologyType") or row.get("CivicType")
             return (node,) if node else None
         columns = spec if isinstance(spec, tuple) else (spec,)
-        if table == "Improvement_BonusYieldChanges":
-            # One of the two prerequisite columns is always NULL (absent).
-            if not all(column in row for column in columns[:2]):
-                return None
-            return tuple(row.get(column, "") for column in columns)
-        if not all(column in row for column in columns):
+        optional = NULLABLE_KEY_COLUMNS.get(table, set())
+        if not all(column in row for column in columns if column not in optional):
             return None
-        return tuple(row[column] for column in columns)
+        return tuple(row.get(column, "") for column in columns)
 
     @staticmethod
     def _fields(node) -> dict:
@@ -266,6 +297,39 @@ class Database:
             fields[child.tag] = (child.text or "").strip()
         return fields
 
+    def _delete_types(self, node) -> None:
+        """Retire every row whose key names a type the ruleset just deleted.
+
+        ⚠ `Types` IS THE PARENT TABLE OF THE WHOLE GAMEPLAY DATABASE. Every
+        `<Policies>`-style row's key column is declared
+        ``REFERENCES Types(Type) ON DELETE CASCADE``, so a single
+        ``<Types><Delete Type="POLICY_MERITOCRACY"/>`` removes the policy, its
+        modifiers and its Civilopedia page at once — and a pack that retires
+        content this way ships **no** `<Policies><Delete>` beside it.
+
+        Without this the audit read those rows as content CIVVIS was missing.
+        Five of them were sitting in the "only in Civ VI" column on 2026-08-23:
+        Gathering Storm deletes `POLICY_MERITOCRACY` and `POLICY_SACK` (both
+        expansions retire them), and `Expansion2_Projects.xml` deletes
+        `PROJECT_LAUNCH_MARS_HABITATION`, `_HYDROPONICS` and `_REACTOR` when it
+        replaces the Mars space race with the Exoplanet Expedition. Four
+        Beliefs and Genghis Khan are retired the same way. CIVVIS is correct
+        not to carry any of them, and an agent closing the coverage gap by
+        reading that column would have modelled content the shipped game does
+        not have — the exact failure the `RemoveData` comment in
+        `load_database` records twice already.
+        """
+        doomed = {
+            child.attrib["Type"]
+            for child in node
+            if child.tag == "Delete" and child.attrib.get("Type")
+        }
+        if not doomed:
+            return
+        for rows in self.tables.values():
+            for key in [key for key in rows if doomed.intersection(key)]:
+                del rows[key]
+
     def apply_file(self, path: Path) -> None:
         try:
             root = ET.parse(path).getroot()
@@ -276,6 +340,9 @@ class Database:
             return
         for table_node in root:
             table = table_node.tag
+            if table == "Types":
+                self._delete_types(table_node)
+                continue
             if table not in TABLE_KEYS:
                 continue
             rows = self.tables.setdefault(table, {})
@@ -521,6 +588,13 @@ ALIASES = {
     "mongolian_keshig": "keshig",
     "polish_hussar": "winged_hussar",
     "chinese_crouching_tiger": "crouching_tiger",
+    # Four more of the same shape, found by reading the two "only in" columns
+    # together: each of these was reported missing from CIVVIS *and* extra in
+    # CIVVIS at the same time, which is what an unresolved rename looks like.
+    "portuguese_nau": "nau",
+    "maori_toa": "toa",
+    "ethiopian_oromo_cavalry": "oromo_cavalry",
+    "lahore_nihang": "nihang",
     "antiair_gun": "anti_air_gun",
     # Warrior Monk promotions carry a MONK_ prefix in the shipped table, and
     # three more differ by a word. Same blind spot as the unique units.
@@ -531,6 +605,27 @@ ALIASES = {
     "monk_sweeping_wind": "sweeping_wind",
     "monk_dancing_crane": "dancing_crane",
     "monk_cobra_strike": "cobra_strike",
+    # Spy promotions carry a SPY_ prefix in the shipped table; CIVVIS names them
+    # the way the promotion screen does, and the espionage engine has always
+    # spelled them that way. `guerilla` is Firaxis' spelling, not a second
+    # promotion — `civ6_unit_promotion_name` already translates that one letter.
+    "spy_ace_driver": "ace_driver",
+    "spy_cat_burglar": "cat_burglar",
+    "spy_con_artist": "con_artist",
+    "spy_covert_action": "covert_action",
+    "spy_demolitions": "demolitions",
+    "spy_disguise": "disguise",
+    "spy_guerilla_leader": "guerrilla_leader",
+    "spy_license_to_kill": "license_to_kill",
+    "spy_linguist": "linguist",
+    "spy_polygraph": "polygraph",
+    "spy_quartermaster": "quartermaster",
+    "spy_rocket_scientist": "rocket_scientist",
+    "spy_satchel_charges": "satchel_charges",
+    "spy_seduction": "seduction",
+    "spy_smear_campaign": "smear_campaign",
+    "spy_surveillance": "surveillance",
+    "spy_technologist": "technologist",
     "surf_rock": "surf_band",
     "goes_to": "goes_to_11",
     "pop": "pop_star",
@@ -1942,6 +2037,10 @@ PROMOTION_CLASSES = {
     "PROMOTION_CLASS_ROCK_BAND": "rock_band",
     "PROMOTION_CLASS_GIANT_DEATH_ROBOT": "giant_death_robot",
     "PROMOTION_CLASS_SUPPORT": "support",
+    # The Spy's tree is the one promotion class the off-map espionage engine
+    # resolves rather than the map-unit XP path, and CIVVIS names the class
+    # after the unit class it belongs to.
+    "PROMOTION_CLASS_SPY": "espionage",
 }
 
 
@@ -2031,6 +2130,251 @@ UNIT_DEFAULTS = {
     "upgrade_to": None,
     "obsolete_tech": None,
 }
+
+
+# --- The difficulty ladder ---------------------------------------------------
+#
+# `Difficulties` is eight names. Everything a rung does is a modifier in
+# `Leaders.xml` whose `Amount` is `LinearScaleFromDefaultHandicap` and whose
+# owner requirement set names the rung it starts at; the free units are
+# `MajorStartingUnits` rows with a `MinDifficulty` and a per-rung
+# `DifficultyDelta`; the raid bands are `BarbarianAttackForces` windows. This
+# projects all of it onto the flat fields `data/difficulties.json` carries.
+
+DEFAULT_HANDICAP = "DIFFICULTY_PRINCE"
+HANDICAP_AT_OR_ABOVE = "REQUIREMENT_PLAYER_HANDICAP_AT_OR_ABOVE"
+
+# Shipped modifier id -> CIVVIS field. The seat side (AI or human) is fixed by
+# the modifier's own requirement set; only the rung part is evaluated here.
+HANDICAP_MODIFIERS = {
+    "HIGH_DIFFICULTY_SCIENCE_SCALING": "ai_science_pct",
+    "HIGH_DIFFICULTY_CULTURE_SCALING": "ai_culture_pct",
+    "HIGH_DIFFICULTY_PRODUCTION_SCALING": "ai_production_pct",
+    "HIGH_DIFFICULTY_GOLD_SCALING": "ai_gold_pct",
+    "HIGH_DIFFICULTY_FAITH_SCALING": "ai_faith_pct",
+    "HIGH_DIFFICULTY_COMBAT_SCALING": "ai_combat_strength",
+    "HIGH_DIFFICULTY_UNIT_XP_SCALING": "ai_xp_pct",
+    "HIGH_DIFFICULTY_FREE_TECH_BOOSTS": "ai_era_tech_boosts",
+    "HIGH_DIFFICULTY_FREE_CIVIC_BOOSTS": "ai_era_civic_boosts",
+    "LOW_DIFFICULTY_COMBAT_SCALING": "human_combat_strength",
+    "LOW_DIFFICULTY_UNIT_XP_SCALING": "human_xp_pct",
+    "BARBARIAN_CAMP_GOLD_SCALING": "human_camp_gold",
+}
+HANDICAP_YIELDS = ("science", "culture", "production", "gold", "faith")
+
+
+def difficulty_ladder(database: Database) -> list[str]:
+    """Rung types in table order, Settler first: the index the DLL scales by."""
+    return [row["DifficultyType"] for row in database.rows("Difficulties")]
+
+
+def handicap_amount(argument: dict, ladder: list[str], rung: str) -> float:
+    """One `ModifierArguments` row evaluated at a rung.
+
+    `LinearScaleFromDefaultHandicap` is `Value + Extra * distance`, the
+    distance being the rung's steps above the origin: `SecondExtra` when the
+    row names one, Prince otherwise. King's +8% Science is 0 + 8 * 1, Deity's
+    +32% is 0 + 8 * 4, and Settler's +3 Combat Strength is 0 + (-1) * (0 - 3).
+    """
+    value = number(argument.get("Value"))
+    if argument.get("Type") != "LinearScaleFromDefaultHandicap":
+        return value
+    origin = argument.get("SecondExtra") or DEFAULT_HANDICAP
+    return value + number(argument.get("Extra")) * (ladder.index(rung) - ladder.index(origin))
+
+
+def rung_satisfies(database: Database, requirement_set: str | None, ladder: list[str], rung: str) -> bool:
+    """Whether a rung passes every handicap requirement in a set.
+
+    Read literally: `REQUIRES_LOW_DIFFICULTY` is the *inverse* of "at or above
+    Warlord", which is Settler and Chieftain and not Warlord. Requirements
+    about the seat (`REQUIRES_PLAYER_IS_AI`) are the modifier's business, not
+    the rung's, and pass here.
+    """
+    if not requirement_set:
+        return True
+    requirements = {row["RequirementId"]: row for row in database.rows("Requirements")}
+    arguments = {
+        (row["RequirementId"], row["Name"]): row.get("Value")
+        for row in database.rows("RequirementArguments")
+    }
+    for member in database.rows("RequirementSetRequirements"):
+        if member["RequirementSetId"] != requirement_set:
+            continue
+        requirement = requirements.get(member["RequirementId"], {})
+        if requirement.get("RequirementType") != HANDICAP_AT_OR_ABOVE:
+            continue
+        floor = arguments.get((member["RequirementId"], "Handicap"))
+        if floor not in ladder:
+            continue
+        passes = ladder.index(rung) >= ladder.index(floor)
+        if truthy(requirement.get("Inverse")):
+            passes = not passes
+        if not passes:
+            return False
+    return True
+
+
+def attack_force_band(force_type: str) -> str:
+    if force_type.startswith("LowDifficulty"):
+        return "low"
+    if force_type.startswith("HighDifficulty"):
+        return "high"
+    return "standard"
+
+
+def attack_force_units(row: dict) -> int:
+    return sum(
+        int(number(row.get(column)))
+        for column in ("NumMeleeUnits", "NumRangeUnits", "NumSiegeUnits", "NumSupportUnits")
+    )
+
+
+def project_difficulties(database: Database) -> dict[str, dict]:
+    ladder = difficulty_ladder(database)
+    if not ladder:
+        return {}
+    modifiers = {row["ModifierId"]: row for row in database.rows("Modifiers")}
+    amounts = {
+        row["ModifierId"]: row
+        for row in database.rows("ModifierArguments")
+        if row.get("Name") == "Amount"
+    }
+    projected = {
+        slug(rung, "DIFFICULTY_"): {"order": index, "starting_buildings": set()}
+        for index, rung in enumerate(ladder)
+    }
+    for modifier_id, field in HANDICAP_MODIFIERS.items():
+        amount = amounts.get(modifier_id)
+        if amount is None:
+            continue
+        owner = modifiers.get(modifier_id, {})
+        requirement_set = owner.get("OwnerRequirementSetId") or owner.get("SubjectRequirementSetId")
+        for rung in ladder:
+            applies = rung_satisfies(database, requirement_set, ladder, rung)
+            projected[slug(rung, "DIFFICULTY_")][field] = (
+                handicap_amount(amount, ladder, rung) if applies else 0
+            )
+    # The AI's extra start units: `Quantity` at `MinDifficulty`, plus
+    # `DifficultyDelta` per rung above it, floored (Emperor's 1.5 Builders is
+    # one Builder). Only the Ancient rows are a rung's grant; the later eras
+    # are Advanced Start, keyed on the era.
+    for row in database.rows("MajorStartingUnits"):
+        floor = row.get("MinDifficulty")
+        if row.get("Era") != "ERA_ANCIENT" or not truthy(row.get("AiOnly")) or floor not in ladder:
+            continue
+        field = f"ai_bonus_{slug(row['Unit'], 'UNIT_')}"
+        for index, rung in enumerate(ladder):
+            steps = index - ladder.index(floor)
+            count = 0
+            if steps >= 0:
+                count = int(number(row.get("Quantity"), 1) + number(row.get("DifficultyDelta")) * steps)
+            entry = projected[slug(rung, "DIFFICULTY_")]
+            entry[field] = entry.get(field, 0) + count
+    for row in database.rows("StartingBuildings"):
+        floor = row.get("MinDifficulty")
+        if floor not in ladder:
+            continue
+        tag = slug(row["Building"], "BUILDING_") + (":minor" if truthy(row.get("MinorOnly")) else "")
+        for index, rung in enumerate(ladder):
+            if index >= ladder.index(floor):
+                projected[slug(rung, "DIFFICULTY_")]["starting_buildings"].add(tag)
+    # The raid bands: which `BarbarianAttackForces` window a rung falls in,
+    # its cadence and its party size. The land raid (melee-tagged, raiding)
+    # is the row the engine's `barbarian_raid_force_size` bands were read from.
+    for index, rung in enumerate(ladder):
+        for row in database.rows("BarbarianAttackForces"):
+            low, high = row.get("MinTargetDifficulty"), row.get("MaxTargetDifficulty")
+            if low in ladder and index < ladder.index(low):
+                continue
+            if high in ladder and index > ladder.index(high):
+                continue
+            if row.get("MeleeTag") != "CLASS_MELEE":
+                continue
+            entry = projected[slug(rung, "DIFFICULTY_")]
+            if truthy(row.get("RaidingForce")):
+                entry["barb_band"] = attack_force_band(row["AttackForceType"])
+                entry["barb_spawn_rate"] = int(number(row.get("SpawnRate"), 2))
+                entry["barb_raid_units"] = attack_force_units(row)
+            else:
+                entry["barb_attack_units"] = attack_force_units(row)
+    return projected
+
+
+def ours_difficulties() -> dict[str, dict]:
+    specs = load_ours("difficulties")
+    bonus_units = sorted({unit for spec in specs.values() for unit in spec.get("ai_bonus_units") or {}})
+    out = {}
+    for name, spec in specs.items():
+        entry = {"order": spec.get("order", 0)}
+        yields = spec.get("ai_yield_pct") or {}
+        for yield_name in HANDICAP_YIELDS:
+            entry[f"ai_{yield_name}_pct"] = yields.get(yield_name, 0)
+        for field in (
+            "ai_combat_strength", "ai_xp_pct",
+            "human_combat_strength", "human_xp_pct", "human_camp_gold",
+        ):
+            entry[field] = spec.get(field, 0)
+        entry["ai_era_tech_boosts"] = entry["ai_era_civic_boosts"] = spec.get("ai_era_boosts", 0)
+        for unit in bonus_units:
+            entry[f"ai_bonus_{unit}"] = (spec.get("ai_bonus_units") or {}).get(unit, 0)
+        entry["starting_buildings"] = {
+            building["building"] + (":minor" if building.get("minor_only") else "")
+            for building in spec.get("starting_buildings") or []
+        }
+        # The two scales are how `data/difficulties.json` spells the shipped
+        # bands: game.rs `barbarian_raid_force_size` reads 0.5 / 1.0 / 1.5 as
+        # one, three and five raiders, and `barbarian_phase` waits
+        # `round(2 * barb_spawn_scale)` turns between spawns, which is the
+        # table's `SpawnRate` of 2 through Emperor and 1 from Immortal.
+        force = spec.get("barb_force_scale", 1.0)
+        spawn = spec.get("barb_spawn_scale", 1.0)
+        entry["barb_band"] = "low" if force <= 0.5 else "standard" if force <= 1.0 else "high"
+        entry["barb_raid_units"] = 1 if force <= 0.5 else 3 if force <= 1.0 else 5
+        entry["barb_spawn_rate"] = max(1, round(2 * spawn))
+        out[name] = entry
+    return out
+
+
+# --- Engine constants named after GlobalParameters rows ----------------------
+#
+# `ENGINE_PARAMETERS` above is a hand-kept table. This half is discovered: a
+# `const NAME: T = n;` in the engine whose NAME is a shipped `GlobalParameters`
+# row is audited against that row without anyone copying it here, so a
+# constant added under the shipped name (`BARBARIAN_CAMP_MINIMUM_DISTANCE_CITY`,
+# `BARBARIAN_CAMP_COASTAL_SPAWN_ROLL`) cannot drift from it in silence.
+ENGINE_SOURCES = ("src/game.rs",)
+ENGINE_CONSTANT = re.compile(
+    r"^\s*(?:pub(?:\([a-z]+\))?\s+)?const\s+([A-Z][A-Z0-9_]+)\s*:\s*[a-z0-9]+\s*=\s*"
+    r"(-?[0-9][0-9_]*(?:\.[0-9]+)?)\s*;",
+    re.MULTILINE,
+)
+
+
+def ours_engine_constants(sources=ENGINE_SOURCES) -> dict[str, dict]:
+    found = {}
+    for relative in sources:
+        text = (REPO / relative).read_text(encoding="utf-8")
+        for name, raw in ENGINE_CONSTANT.findall(text):
+            found[name] = {"value": number(raw.replace("_", ""))}
+    return found
+
+
+def project_engine_constants(database: Database) -> dict[str, dict]:
+    return {row["Name"]: {"value": number(row.get("Value"))} for row in database.rows("GlobalParameters")}
+
+
+def audit_engine_constants(database: Database) -> tuple[dict, dict]:
+    """Both sides restricted to the names they share: the rest of the engine's
+    constants are not claims about the database, and the rest of the database
+    is not claims about the engine."""
+    ours = ours_engine_constants()
+    theirs = project_engine_constants(database)
+    shared = set(ours) & set(theirs)
+    return (
+        {name: ours[name] for name in shared},
+        {name: theirs[name] for name in shared},
+    )
 
 
 def load_ours(name: str) -> dict[str, dict]:
@@ -2458,6 +2802,21 @@ def report(results: list[dict], install: Path) -> str:
     return "\n".join(lines)
 
 
+SKIP_NOTICE = "civ6_fidelity: SKIPPED, no Civilization VI gameplay database on this machine"
+
+
+def skip_notice() -> str:
+    """What `--check` says when it cannot check.
+
+    Named, so a run that skipped cannot be read as a run that passed: the
+    GitHub annotation form puts it in the job summary, and the plain line
+    is what a terminal shows. A hosted runner has no install and no cache;
+    the ratchet is a real number only on a fleet Mac.
+    """
+    looked = ", ".join(CACHE_DATABASE_PATHS)
+    return f"::notice title=civ6_fidelity skipped::{SKIP_NOTICE} (looked in {looked})\n{SKIP_NOTICE}"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--civ6", help="path to the Civilization VI install")
@@ -2473,7 +2832,17 @@ def main() -> int:
     parser.add_argument("--json", help="write the full result set here")
     parser.add_argument("--out", help="write the markdown report here instead of stdout")
     parser.add_argument(
+        "--check",
+        action="store_true",
+        help=(
+            "the CI form: audit the compiled cache when this machine has one, "
+            "otherwise print a named skip notice and pass"
+        ),
+    )
+    parser.add_argument(
         "--max-divergences",
+        "--max",
+        dest="max_divergences",
         type=int,
         default=None,
         help="exit 1 when the divergence count exceeds this ratchet",
@@ -2481,7 +2850,10 @@ def main() -> int:
     parser.add_argument("--table", action="append", help="limit the audit to these tables")
     args = parser.parse_args()
 
-    if args.cache is not None:
+    if args.check and find_cache_database(args.cache or None) is None:
+        print(skip_notice(), file=sys.stderr)
+        return 0
+    if args.cache is not None or args.check:
         cache = find_cache_database(args.cache or None)
         if cache is None:
             print(
@@ -2514,6 +2886,8 @@ def main() -> int:
         ("Eras", ours_eras(), project_eras(database)),
         ("GreatPeople", ours_great_people(), project_great_people(database)),
         ("GlobalParameters", ours_parameters(), project_parameters(database)),
+        ("EngineConstants", *audit_engine_constants(database)),
+        ("Difficulties", ours_difficulties(), project_difficulties(database)),
         ("Maps", dict(ENGINE_MAP_SIZES), project_maps(database)),
         ("GreatWorkValues", dict(ENGINE_GREAT_WORKS), project_great_works(database)),
         ("Happinesses", dict(ENGINE_HAPPINESS), project_happiness(database)),

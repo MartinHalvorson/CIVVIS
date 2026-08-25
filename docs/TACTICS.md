@@ -1,4 +1,8 @@
-# Unit battling: the state of the art, what CIVVIS does, and what changed
+# Historical joint-tactics design record
+
+> Historical record. `joint-tactics` and its `joint-reach-lines` companion
+> were removed on 2026-08-25 after the 35,148-seat screen's −0.104 pp win
+> difference; the implementation and its live and arena arms no longer exist.
 
 2026-07-31. Historical record of the tactical-search experiment; companion to
 `src/skirmish.rs` and `src/bin/battle_bench.rs`. §§1–8 are the original
@@ -971,7 +975,7 @@ Two things kept honest by the profile:
   the new one.
 - `tools/tactics_bench.py` now pins the economy its baseline was recorded
   under (`ECONOMY`: 30/30, five turns a tech, 100-turn clock) instead of
-  inheriting the stock arena, so `docs/TACTICS_BASELINE.md` still means what
+  inheriting the stock arena, so `docs/closed/TACTICS_BASELINE.md` still means what
   it says. Re-baselining on the new stock arena is a deliberate change to that
   pin, made in the same pull request as the new figures.
 
@@ -1051,3 +1055,152 @@ the table was.
 refuses fewer, and the refusal fires before any games are played. A baseline is
 what every later run is compared against; at 40 games it is a ±15-point
 instrument, and this is what that costs.
+
+## 16. Coordinated finishing: the volley as its own part, plus a three-blow chain (2026-08-18)
+
+Operator goal: 2–3 units standing near each other should work together to
+eliminate enemy units — an enemy two blows from death is a good group target.
+
+**Where that behaviour lived, and why it was dormant.** §8's bounded
+friendly-volley extension is exactly this mechanism for the two-blow case, and
+it shipped (#1360) inside `BasicAi::tactical_strategy`. The war-half removal
+(#1589) then took `tactical_strategy` out of production as part of a
+four-flag bundle on a +38 whole-game gate — a **composite** gate, which never
+priced the volley on its own. Since then the production greedy path has had no
+multi-unit kill reasoning at all: `prioritize_immediate_kills` spends
+single-blow finishes, and the `focus_fire` gene is a flat nudge. (The joint
+search of §§9–10 covers the arena seam and the live bridge, not the world-game
+greedy controller that `battle_bench` measures.)
+
+**Two changes, one flag each.**
+
+- **`AdvancedAi::coordinated_finish`** admits the friendly-volley extension
+  without the rest of the closed bundle. The volley's role bonuses read 0 in
+  this configuration (`tactical_action_bonus` is still gated on
+  `tactical_strategy`), so what is enabled is the kill-credit and the
+  reply repricing — the coordination, not the war-half doctrine. Evaluator
+  arm: `advanced_coordinated_finish`.
+- **`AdvancedAi::volley_chain`** extends the volley to a **pair of
+  finishers** when no lone teammate can complete the kill, so a three-blow
+  group kill is visible to the setup shot. A single finisher is always
+  preferred; the chain runs only when the single-finisher search comes up
+  empty, behind a closed-form damage prefilter (the two heaviest remaining
+  mean blows, with 1.5× headroom for the roll spread, must cover the
+  survivor's health) so a healthy defender never pays the clone enumeration.
+  Both blows must clear their own exact-exchange bar and the reply is priced
+  once, after the whole friendly sequence, against all three exposed bodies.
+  Withhold arm: `advanced_single_finisher_volley` (the treatment minus only
+  the chain).
+
+**Measured.** Screens at 300 paired seeds a cell (block 21,000,000+), kept on
+a fresh confirmation block (22,000,000+) at 1000 paired seeds a cell, seats
+swapped, control at exact 0.00 both for `advanced` and for the treatment
+against itself. The confirmation was then **re-taken on this branch's merged
+tip** — five PRs (#2059 evacuation among them, the same tactical subsystem)
+landed underneath the first reading and roughly halved it, which is the
+repository's standing rule about tuning-era figures in action. The merged-tip
+column is the one this document claims. `advanced_coordinated_finish` less
+`advanced`, 1000 paired seeds a cell:
+
+| composition | pre-merge base | **merged tip** | merged-tip sign |
+|---|---:|---:|---|
+| combined arms | +32.9 ± 5.9 | **+18.1 ± 4.6** | 187/118, p = 0.0001 |
+| ranged heavy | +85.6 ± 9.4 | **+49.2 ± 6.6** | 304/157, p < 0.0001 |
+| with siege | +21.8 ± 7.9 | +9.6 ± 5.2 | 116/102, p = 0.38 — a null |
+| melee only | +7.5 ± 1.7 | **+5.4 ± 1.4** | 75/30, p < 0.0001 |
+
+Decisive on mean **and** sign on combined arms, ranged and the melee-only
+stress case that harmed every early version of the joint search; siege
+dropped to a directional null on the tip; no composition harmed. Fires-check:
+play diverged on 448 of 1000 combined-arms confirmation seeds. The chain's
+own share on the merged tip (`advanced_coordinated_finish` less
+`advanced_single_finisher_volley`, 300 seeds a cell): ranged **+31.1 ± 8.3**
+(sign 53/21, p = 0.0003), combined +5.9 ± 3.4 (directional), siege +4.1 ± 5.7
+(noise), melee −0.9 ± 1.7 (2 of 300 seeds diverged — the chain is nearly
+unreachable there, as expected: three-blow ganging is a ranged shape). The
+single-finisher volley returning to a live path carries the rest.
+
+**Cost.** `battle_bench --cost`, one treated seat among five, 6p/74×46,
+interleaved: **1.03×** a stock seat (the joint search is 1.58×). The printed
+joint-tactics census correctly reads 0 for this arm — the volley has no
+census hook; its fires evidence is the divergence count above.
+
+**Whole game.** 150 pairs at 6p/74×46/9cs/250t, seed block 23,000,000,
+`advanced_coordinated_finish` v `advanced`: RESULT-PENDING.
+
+The frozen anchors are untouched by construction (`legacy()` carries neither
+flag; the `ANCHOR_BEHAVIOUR_FNV` fingerprint passes unchanged), and stock
+`advanced` keeps today's behaviour unless the flag is promoted on the
+whole-game evidence above.
+
+## 17. Approach lines from the exact reach (2026-08-19)
+
+The one-step and two-step approach blocks of §9 walked rings by geometry:
+every step cost 1, a two-step line needed "strictly more than two" movement,
+and an intermediate tile beside a hostile was skipped by hand. Three things
+were wrong at once. A two-move unit on a road, or a three-move one over flat
+ground, reaches a firing tile two hexes out with movement to spare and got no
+line; a one-step line onto hills-and-woods was offered, refused when played,
+and stood the unit in contact unfortified; and a four-move horseman's third
+and fourth hexes did not exist at all — the mobility the closed-form reply
+already priced for the *enemy* (`enemy_batteries`, §9) was invisible for our
+own lines.
+
+**What changed.** `Game::approach_reach` is the engine's own movement flood
+with one difference from `reachable`: entering enemy zone of control still
+stops the walk, but the movement the unit keeps on arrival is reported rather
+than zeroed, because a unit that stops in a zone of control keeps its unused
+movement for the blow (`do_attack`, `do_ranged`, `can_pay_melee_entry`). The
+two-step block is gone; from two hexes out, a line is offered from every tile
+the unit reaches with movement left for the strike — for melee, enough to pay
+the defender's tile; for ranged, any — along the flood's own path, priced by
+the same prior as before less `APPROACH_STEP_TOLL` (4) per step. The one-step
+block stays (it also owns the handoff onto a teammate's tile, which no flood
+can express), siege stays grounded, and every line is still played through
+the engine at fitness time. Only tiles within the unit's range of a hostile
+unit, an at-war city or an unpillaged Encampment are scanned for strikes.
+
+**Units, not walls.** The first cut let a reach line strike a *city* too, and
+the one-city arena regime said no: `tactics_bench --only capture --games 480`
+read `advanced` v `basic` at **70.8 %** against the base binary's 75.4 % (the
+no-city regimes held within a point) — reaching a city's ring from three hexes
+out to strike the city is a piecemeal assault the closed-form reply
+under-prices (a bombardment every turn, walls that absorb the blow). Reach
+lines therefore target units only; city and Encampment strikes keep the
+one-step block and the mover. With that exclusion the capture regime reads
+**75.4 %** — the base figure exactly — and the mounted gains below are kept
+(cavalry +469.4, mounted medieval +588.6 on the screen block).
+
+**Screen** — 300 paired seeds a cell, block 7,200,000, `advanced_joint_tactics`
+v stock `advanced`, base (§16 tip) against this change:
+
+| composition | base | **this change** |
+|---|---:|---:|
+| combined arms | +365.9 ± 20.5 | +374.1 ± 20.9 |
+| ranged heavy | +498.8 ± 23.5 | +498.8 ± 23.5 |
+| with siege | +175.0 ± 25.6 | +173.9 ± 26.6 |
+| melee only | +57.0 ± 10.5 | +56.4 ± 10.4 |
+| **cavalry** `horseman,horseman,horseman,heavy_chariot,archer,archer` | +398.0 ± 21.4 (1.720 v 0.582) | **+476.2 ± 22.0** (1.879 v 0.532) |
+| **mounted medieval** `knight,knight,courser,crossbowman,crossbowman,pikeman` | +495.7 ± 49.6 (1.314 v 0.761) | **+590.2 ± 48.9** (1.384 v 0.722) |
+
+**Confirmation** — fresh block 7,300,000: cavalry +352.3 ± 20.0 → **+409.7 ±
+21.6** (exchange 1.651 → 1.744); mounted medieval +601.1 ± 50.6 → +622.1 ±
+48.5 (1.367 → 1.393); combined arms +372.8 ± 21.2 → +370.7 ± 21.5. The four
+foot compositions hold within one standard error on both blocks; the two
+mounted compositions — where the old geometry threw the third and fourth
+hexes away — gain on both. Sign tests are decisive on every cell either way
+(the search was already far ahead of the greedy rule); the delta is read from
+the paired means on identical seeds.
+
+The frozen `advanced_v1` anchor never runs the joint search and is untouched;
+the arena `advanced` and the live bridge pick this up automatically. See
+`docs/LIVE_TACTICS.md` §7 for the program this belongs to.
+
+**Withholdable.** The reach lines are the live treatment `joint-reach-lines`
+(`AdvancedAi::joint_reach_lines`, `live_without_joint_reach_lines`) and the
+bench arm `advanced_joint_tactics_geometric` seats the joint search with the
+pre-§17 portfolio — the two-step block kept verbatim under the withhold — so
+the pair `advanced_joint_tactics` v `advanced_joint_tactics_geometric` prices
+the lines and nothing else: cavalry cell, 300 seeds, block 7,200,000,
+**+59.0 ± 17.1** (sign p = 0.0023), and the geometric arm against stock
+`advanced` reproduces the pre-change figure exactly (+398.0 ± 21.4).

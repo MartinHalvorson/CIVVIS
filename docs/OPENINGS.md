@@ -1289,3 +1289,55 @@ of the same coverage and win gates may enable the composed policy in the tested
 `strategic_deep` controller. Advanced confirmation cannot rescue a failed
 transfer, pooled seeds cannot rescue either confirmation, and no result here
 authorizes changing the standalone Advanced default.
+
+## 2026-08-25 — the opening the recorded games actually win from
+
+Every study above asks whether a *better* opening exists. This one asks a
+blunter question of the recorded corpus: **what do the games we win have in
+common at turn 60?** Read with `tools/civ6_run_report.py --aggregate` over
+`~/civvis-civ6-runs/control`, 218 completed live runs, 9 of them won:
+
+| cities at turn 60 | runs | wins | rate |
+|---|---:|---:|---:|
+| 1 | 11 | 0 | 0% |
+| 2 | 36 | 0 | 0% |
+| 3 | **80** | **0** | 0% |
+| 4 | 56 | 1 | 2% |
+| 5 | 23 | 4 | 17% |
+| 6 | 10 | 4 | 40% |
+| 7 | 1 | 0 | 0% |
+| **inside 4–6** | **89** | **9** | **10%** |
+| **outside** | **128** | **0** | **0%** |
+
+**Every recorded win came from inside the band.** Independence would predict
+3.7 of the nine; one-sided Fisher exact *p* = 2.6 × 10⁻⁴. The modal run holds
+**three** cities at turn 60 and has never won from there in 80 attempts. The
+same aggregate puts the median crossover — the turn a loss gives up the lead
+for good — at **turn 61**, and 92 of the losses never led at all.
+
+⚠ This is a correlate on completed runs, not an experiment, and the arrow could
+run either way: an empire that was going to win anyway also settles more. What
+makes it worth acting on is that the *causes* of the shortfall are separately
+identifiable, and neither is the one that would be guessed:
+
+- **It is not the target.** `assess` computes `desired_cities` from a floor of
+  `PRODUCTION_CITY_TARGET_FLOOR` = 6 and already asks for **seven cities by
+  turn 60**. The planner wants them; it does not get them.
+- **It is not the price.** `gene_census --gene p_settler --games 96` scored the
+  Settler at **four times** its shipped value and left **97% of games
+  outcome-identical**. The note in `production_value` states the reason: a
+  Settler "is not blocked by losing a ranking, it is blocked before the ranking
+  is consulted".
+- **It is the pipeline and the population floor.**
+  `settler_in_flight_allowed` answers **1** for the ordinary empire — one
+  walker built, marched and founded before the next starts — and the two flags
+  that widen it, `land_grab` and `parallel_settlers`, are both `Kind::HostOnly`
+  and cannot be screened natively at all. Behind that sits the engine's own
+  rule that a Settler needs a city at population two, absent on **23.8% of
+  seat-turns**.
+
+Two opt-in genes address exactly those two causes and nothing else —
+`expansion-schedule` (`src/ai/advanced/expansion_schedule.rs`) and
+`growth-to-settle` (`src/ai/advanced/growth_to_settle.rs`). Both are scoped to
+the opening the table above measures and go inert past it. Both ship **off**;
+the band is a correlate and the genes are the experiment that prices it.

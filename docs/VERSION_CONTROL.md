@@ -279,6 +279,34 @@ Resolve conflicts by intent. Review all three sides with the `zdiff3` context,
 run focused tests, and inspect the final diff. Never accept an entire large file
 as `ours` or `theirs` merely to clear the index.
 
+### Generated documents resolve themselves
+
+`docs/eval_manifest.json` and `docs/EVAL_STATUS.md` are written by
+`tools/eval_manifest.py`, and every agent registering an evaluator arm appends
+to both. On 2026-08-19 they were the **fourth and fifth most-edited paths in
+the repository** — 35 and 32 of the 138 commits main took that day — behind
+only `advanced.rs`, its tests and `elo.rs`. One pull request hit the same
+conflict on four consecutive ship attempts.
+
+Those conflicts have exactly one correct resolution, so `civvis_collab.py ship`
+now performs it: when **every** conflicted path is a generated artifact, it
+reruns the generator over the merged sources, re-checks it, commits, and
+carries on. You do not need to resolve them, and you should not resolve them by
+hand — regenerating is what produces the union of both branches' registrations,
+where picking a side silently drops one.
+
+The automation is deliberately all-or-nothing. If anything else is conflicted —
+including the generator itself — `ship` stops exactly as before and the whole
+merge is yours, because regenerating on top of a conflicted source would
+publish one side's arms and call it a merge.
+
+⚠ `docs/closed/TACTICS_BASELINE.md` looks like it belongs here and does not.
+`tools/tactics_bench.py --write-baseline` runs a benchmark, so its content
+depends on the machine that measured it; it must never be regenerated to settle
+somebody else's merge. The rule for adding a path to `REGENERATED_ON_MERGE` is
+all three of: deterministic in tracked source, cheap to rebuild, and nothing
+about it measured.
+
 Before marking the PR ready:
 
 ```bash

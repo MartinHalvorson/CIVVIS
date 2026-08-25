@@ -8,8 +8,11 @@ separate bugs in the first drafts recorded an empty one while reporting success.
 
 from __future__ import annotations
 
+import collections
+import inspect
 import json
 import sys
+import threading
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -109,7 +112,7 @@ class DriftIsTheSignal(unittest.TestCase):
     def check(self, tmp: Path, now: dict) -> int:
         with mock.patch.object(census, "LEDGER", tmp / "census.json"), \
              mock.patch.object(census, "MARKDOWN", tmp / "CENSUS.md"), \
-             mock.patch.object(census, "take", lambda timeout, only: now):
+             mock.patch.object(census, "take", lambda timeout, only, jobs=1: now):
             return census.main(["--check"])
 
     def test_an_unchanged_reading_passes(self):
@@ -153,10 +156,6 @@ class TheDiscoveryFindsThemAll(unittest.TestCase):
             census.CENSUS_NOTE.search('    #[ignore = "flaky on CI"]'))
         self.assertIsNotNone(
             census.CENSUS_NOTE.search('    #[ignore = "census, not an assertion"]'))
-
-
-if __name__ == "__main__":
-    unittest.main()
 
 
 class ATransientFailureIsRetriedBeforeItIsBelieved(unittest.TestCase):
@@ -212,7 +211,175 @@ class FilteringNarrowsBothSides(unittest.TestCase):
             with mock.patch.object(census, "LEDGER", tmp / "census.json"), \
                  mock.patch.object(census, "MARKDOWN", tmp / "CENSUS.md"), \
                  mock.patch.object(census, "take",
-                                   lambda timeout, only: {"wanted": {"ok": True,
+                                   lambda timeout, only, jobs=1: {"wanted": {"ok": True,
                                                                      "output": ["n = 7"]}}):
                 code = census.main(["--check", "--only", "wanted"])
         self.assertEqual(code, 0)
+
+
+class AStopwatchIsNotADeterminismReading(unittest.TestCase):
+    """The reason the gate could not go green even with a fresh baseline.
+
+    `.github/workflows/census.yml` compares a macOS baseline on Linux and calls
+    a difference a determinism break. `sphere_distance_cache_order_benchmark`
+    prints `median_elapsed_ns` straight off `Instant::elapsed()`, which differs
+    between two runs on one machine. Pinned, it is a red X on every run forever,
+    standing next to twenty-seven that would mean something.
+    """
+
+    TIMED = "preregistered microbenchmark; run explicitly with --nocapture"
+    COUNTED = "census, not an assertion; run explicitly with --nocapture"
+
+    def check(self, tmp: Path, now: dict) -> int:
+        with mock.patch.object(census, "LEDGER", tmp / "census.json"), \
+             mock.patch.object(census, "MARKDOWN", tmp / "CENSUS.md"), \
+             mock.patch.object(census, "take", lambda timeout, only, jobs=1: now):
+            return census.main(["--check"])
+
+    def reading(self, note: str, ns: int, ok: bool = True) -> dict:
+        return {"a": {"ok": ok, "note": note, "file": "src/sphere.rs", "line": 1,
+                      "output": [f"cold_local: median_elapsed_ns={ns}"]}}
+
+    def test_the_note_is_what_says_a_reading_is_a_stopwatch(self):
+        self.assertTrue(census.is_stopwatch(self.TIMED))
+        self.assertFalse(census.is_stopwatch(self.COUNTED))
+        self.assertFalse(census.is_stopwatch(""))
+        self.assertFalse(census.is_stopwatch(None))
+
+    def test_the_live_repository_has_one_and_it_is_the_sphere_benchmark(self):
+        """Pinned on the repository, not on a fixture: if this stops matching,
+        the workflow silently goes back to asserting nanoseconds."""
+        timed = [row["test"] for row in census.censuses()
+                 if census.is_stopwatch(row["note"])]
+        self.assertEqual(timed, ["sphere_distance_cache_order_benchmark"])
+
+    def test_a_timing_reading_that_moved_does_not_fail_the_gate(self):
+        with TemporaryDirectory() as raw:
+            tmp = Path(raw)
+            (tmp / "census.json").write_text(
+                json.dumps(self.reading(self.TIMED, 26_225_791)))
+            self.assertEqual(self.check(tmp, self.reading(self.TIMED, 31_004_112)), 0)
+
+    def test_the_same_movement_in_a_counted_census_still_fails(self):
+        """The exemption is the note, not the shape of the number."""
+        with TemporaryDirectory() as raw:
+            tmp = Path(raw)
+            (tmp / "census.json").write_text(
+                json.dumps(self.reading(self.COUNTED, 26_225_791)))
+            self.assertEqual(self.check(tmp, self.reading(self.COUNTED, 31_004_112)), 1)
+
+    def test_a_timing_census_that_starts_failing_still_fails_the_gate(self):
+        """Its own assertions are the signal that survives. The sphere benchmark
+        asserts that eight distinct long queries admit the reused source row, so
+        the regression it exists to watch still turns this red."""
+        with TemporaryDirectory() as raw:
+            tmp = Path(raw)
+            (tmp / "census.json").write_text(
+                json.dumps(self.reading(self.TIMED, 26_225_791)))
+            self.assertEqual(
+                self.check(tmp, self.reading(self.TIMED, 26_225_791, ok=False)), 1)
+
+    def test_a_timing_census_is_still_recorded_before_it_is_exempt(self):
+        """Skipping the comparison must not become a way to never appear."""
+        with TemporaryDirectory() as raw:
+            tmp = Path(raw)
+            (tmp / "census.json").write_text(json.dumps({}))
+            self.assertEqual(self.check(tmp, self.reading(self.TIMED, 1)), 1)
+
+    def test_the_rendered_page_says_the_numbers_are_not_compared(self):
+        page = census.render(self.reading(self.TIMED, 26_225_791))
+        self.assertIn("26225791", page, "the numbers stay visible")
+        self.assertIn("ran and passed", page)
+        self.assertNotIn(
+            "ran and passed", census.render(self.reading(self.COUNTED, 1)))
+
+
+class RunningThemConcurrentlyChangesNoReading(unittest.TestCase):
+    """The scheduled job outgrew a sequential runner, and the cores were idle.
+
+    22 censuses took 75m43s on the 2026-08-20 hosted runner; six more landed
+    within five days and the 08-19 and 08-22 runs were killed mid-reading at a
+    ceiling that cannot be raised past GitHub's six-hour job cap. What makes
+    concurrency safe here is that each census is a separate process replaying
+    fixed seeds, so a count cannot depend on how many run beside it.
+    """
+
+    def entries(self, n: int) -> list[dict]:
+        return [{"test": f"c{i}", "file": "x.rs", "line": i, "note": "census"}
+                for i in range(n)]
+
+    def run_take(self, n: int, jobs: int):
+        seen = []
+        lock = threading.Lock()
+
+        def one(test, timeout):
+            with lock:
+                seen.append(test)
+            return {"ok": True, "output": [f"reading for {test}"]}
+
+        with mock.patch.object(census, "run_one", one), \
+             mock.patch.object(census, "censuses", lambda: self.entries(n)):
+            return census.take(60, None, jobs), seen
+
+    def test_the_same_readings_come_back_whatever_the_width(self):
+        serial, _ = self.run_take(9, 1)
+        parallel, _ = self.run_take(9, 4)
+        self.assertEqual(serial, parallel)
+
+    def test_every_census_runs_exactly_once(self):
+        readings, seen = self.run_take(9, 4)
+        self.assertEqual(sorted(seen), [f"c{i}" for i in range(9)])
+        self.assertEqual(len(readings), 9)
+
+    def test_a_filter_still_narrows_a_parallel_run(self):
+        with mock.patch.object(census, "run_one",
+                               lambda test, timeout: {"ok": True, "output": [test]}), \
+             mock.patch.object(census, "censuses", lambda: self.entries(9)):
+            readings = census.take(60, "c3", 4)
+        self.assertEqual(list(readings), ["c3"])
+
+    def test_a_failure_is_still_retried_once_when_parallel(self):
+        calls = collections.Counter()
+        lock = threading.Lock()
+
+        def flaky(test, timeout):
+            with lock:
+                calls[test] += 1
+                n = calls[test]
+            return {"ok": n > 1, "output": [f"{test} attempt {n}"]}
+
+        with mock.patch.object(census, "run_one", flaky), \
+             mock.patch.object(census, "censuses", lambda: self.entries(4)):
+            readings = census.take(60, None, 3)
+        self.assertTrue(all(row["ok"] for row in readings.values()))
+        self.assertEqual(set(calls.values()), {2})
+
+    def test_the_default_is_still_one_at_a_time(self):
+        """A local run must behave exactly as it did before."""
+        signature = inspect.signature(census.take)
+        self.assertEqual(signature.parameters["jobs"].default, 1)
+
+    def test_the_heaviest_censuses_are_scheduled_first(self):
+        """The tail of a batch is set by its slowest member.
+
+        Tested on the ordering itself rather than on observed start times: with
+        a pool of workers every early entry starts at once, so a race would be
+        the only thing such a test could measure.
+        """
+        entries = [{"test": "z_small"}, {"test": "a_deployment_scale"},
+                   {"test": "b_small"}, {"test": "y_at_deployment_scale"}]
+        self.assertEqual(
+            [row["test"] for row in census.heaviest_first(entries)],
+            ["a_deployment_scale", "y_at_deployment_scale", "b_small", "z_small"])
+
+    def test_scheduling_order_changes_no_reading(self):
+        with mock.patch.object(census, "run_one",
+                               lambda test, timeout: {"ok": True, "output": [test]}), \
+             mock.patch.object(census, "censuses", lambda: self.entries(6)):
+            serial = census.take(60, None, 1)
+            parallel = census.take(60, None, 3)
+        self.assertEqual(serial, parallel)
+
+
+if __name__ == "__main__":
+    unittest.main()

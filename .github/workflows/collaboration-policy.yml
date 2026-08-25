@@ -27,6 +27,38 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+      - name: Fetch clean source revisions for provenance checks
+        # `tools/genes.py` checks a stamped screen against the exact commit its
+        # binary played. Keep this routine checkout shallow, but fetch each
+        # source the ledger says is independently verifiable; an explicit
+        # `unverified` exception stays an exception instead of a broken fetch.
+        run: |
+          python3 - <<'PY'
+          import json
+          import re
+          import subprocess
+          from pathlib import Path
+
+          ledger = json.loads(Path("docs/gene_ledger.json").read_text())
+          commits = set()
+          for group in ("sources", "reporting_batches"):
+              for entry in ledger.get(group, []):
+                  if entry.get("unverified"):
+                      continue
+                  commit = (entry.get("build") or {}).get("commit", "")
+                  if not commit:
+                      continue
+                  if not re.fullmatch(r"[0-9a-f]{40}", commit):
+                      raise SystemExit(
+                          f"{entry.get('path', group)} has an invalid build commit: {commit!r}"
+                      )
+                  commits.add(commit)
+          for commit in sorted(commits):
+              subprocess.run(
+                  ["git", "fetch", "--no-tags", "--depth=1", "origin", commit],
+                  check=True,
+              )
+          PY
       # ⚠ DISCOVERED, NOT LISTED — THE LIST WAS THE BUG.
       #
       # This step named six suites by hand, so the other twenty-five in

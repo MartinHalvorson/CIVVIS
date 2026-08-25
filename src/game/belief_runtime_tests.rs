@@ -240,15 +240,26 @@ fn the_top_difficulties_also_spawn_barbarians_twice_as_often() {
         assert_eq!(rules.difficulties[difficulty].barb_spawn_scale, 0.5, "{difficulty}");
     }
 
-    // And it reaches the map: a camp that has just spawned waits half as
-    // long to spawn again at Deity as it does at Prince. Read one named
-    // camp immediately after its first post-opening spawn so the standing
-    // guard and recon units do not make the global cap obscure the timer.
+    // And it reaches the map: a Scout report starts a raid, and its camp
+    // waits half as long to raise the next party member at Deity as it does
+    // at Prince. An idle camp has no raid to raise at all.
     let rearm = |difficulty: &str| {
         let mut game = Game::new_full(2, 40, 26, 4_172, 200, 0, true);
-        game.difficulty = difficulty.to_string();
+        // The barbarian seat's own rung (2026-08-24): the majors' rung no
+        // longer reaches the camp.
+        game.set_barbarian_difficulty(difficulty).unwrap();
         let camp = *game.barb_camps.keys().next().unwrap();
-        game.turn = game.barb_camps[&camp];
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        let target = game.units[&settler].pos;
+        game.found_city_for(0, target, None);
+        game.barb_camp_targets.insert(camp, target);
+        game.barb_alerted_until
+            .insert(camp, game.turn + BARBARIAN_SCOUT_ALERT_TURNS);
+        game.barb_camps.insert(camp, game.turn);
         game.barbarian_phase();
         game.barb_camps[&camp]
     };
@@ -258,7 +269,7 @@ fn the_top_difficulties_also_spawn_barbarians_twice_as_often() {
 }
 
 #[test]
-fn difficulty_scales_the_standing_barbarian_force() {
+fn difficulty_scales_one_reported_barbarian_raid_party() {
     // BarbarianAttackForces bands its forces on difficulty and the bands
     // are what barb_force_scale carries: Settler and Chieftain at 0.5,
     // Warlord through Emperor at 1.0, Immortal and Deity at 1.5. Those
@@ -278,24 +289,52 @@ fn difficulty_scales_the_standing_barbarian_force() {
         assert_eq!(rules.difficulties[difficulty].barb_force_scale, scale, "{difficulty}");
     }
 
-    // And the scale reaches the field rather than sitting in the data: the
-    // same world run at three difficulties fields three different numbers
-    // of barbarians.
+    // And the scale reaches the field rather than sitting in the data: one
+    // report raises the exact difficulty-sized party at its own outpost.
     let count = |difficulty: &str| {
         let mut game = Game::new_full(2, 40, 26, 4_171, 200, 0, true);
-        game.difficulty = difficulty.to_string();
-        // Camps re-arm on a turn counter, so the clock has to move.
-        for _ in 0..60 {
-            game.turn += 1;
+        game.set_barbarian_difficulty(difficulty).unwrap();
+        let camp = *game.barb_camps.keys().next().unwrap();
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        let target = game.units[&settler].pos;
+        game.found_city_for(0, target, None);
+        game.barb_camp_targets.insert(camp, target);
+        game.barb_alerted_until
+            .insert(camp, game.turn + BARBARIAN_SCOUT_ALERT_TURNS);
+        game.barb_camps.insert(camp, game.turn);
+        let wanted = game.barbarian_raid_force_size();
+        for _ in 0..20 {
             game.barbarian_phase();
+            if game
+                .barb_raider_homes
+                .values()
+                .filter(|home| **home == camp)
+                .count()
+                == wanted
+            {
+                break;
+            }
+            game.turn += 1;
         }
-        game.barb_pid
-            .map(|bpid| game.player_unit_ids(bpid).len())
-            .unwrap_or(0)
+        game.barb_raider_homes
+            .values()
+            .filter(|home| **home == camp)
+            .count()
     };
     let (low, standard, high) = (count("settler"), count("prince"), count("deity"));
-    assert!(low < standard, "Settler fields fewer than Prince: {low} vs {standard}");
-    assert!(standard < high, "Deity fields more than Prince: {standard} vs {high}");
+    assert_eq!(low, 1, "Settler raises one melee raider");
+    assert_eq!(standard, 3, "Prince raises two melee and one ranged raider");
+    assert_eq!(high, 5, "Deity raises three melee and two ranged raiders");
+
+    // And the majors' rung is not what decides it any more: a Settler seat
+    // with the default barbarian rung (Immortal) still meets the top band.
+    let mut settler_seat = Game::new_full(2, 40, 26, 4_171, 200, 0, true);
+    settler_seat.difficulty = "settler".to_string();
+    assert_eq!(settler_seat.barbarian_raid_force_size(), 5);
 }
 
 #[test]
@@ -1601,4 +1640,512 @@ fn founder_unity_combat_and_loyalty_beliefs_use_runtime_city_state() {
         matching.cities[&target].loyalty - rival.cities[&target].loyalty,
         6.0
     );
+}
+
+/// The twelve pantheons added on 2026-08-24 pay what the install says they
+/// pay, on the plots the install names.
+///
+/// ⚠ Read from the Gathering Storm **install** (`DLC/Expansion2/Data/*.xml`),
+/// with every modifier id checked against `Expansion2_RemoveData.xml`. Three
+/// of these twelve are cases where the base-game row states the opposite of
+/// the shipped rule and the expansion deletes it: Earth Goddess moves from
+/// Charming to Breathtaking, River Goddess from +1 Amenity to +2 Amenities and
+/// +2 Housing, and Lady of the Reeds from +1 Production to +2.
+///
+/// ★ Desert Folklore, Dance of the Aurora and Sacred Path are one predicate
+/// over three rows of `PANTHEON_HOLY_SITE_ADJACENCY`, so this asks all three
+/// the same question. Both shipped rows of the first two are covered: the
+/// terrain pays whether or not the plot is hills, because Civilization VI
+/// spells `TERRAIN_DESERT` and `TERRAIN_DESERT_HILLS` separately and CIVVIS
+/// carries hills as a flag.
+#[test]
+fn the_holy_site_pantheons_pay_the_ring_the_install_names() {
+    // (belief, plot painted around the Holy Site, hills, Faith per plot).
+    type Case = (&'static str, &'static str, bool, f64);
+    let cases: [Case; 6] = [
+        ("desert_folklore", "desert", false, 1.0),
+        ("desert_folklore", "desert", true, 1.0),
+        ("dance_of_the_aurora", "tundra", false, 1.0),
+        ("dance_of_the_aurora", "tundra", true, 1.0),
+        ("sacred_path", "jungle", false, 1.0),
+        // Desert Folklore is silent about a Tundra ring, which is the whole
+        // reason the predicate reads the belief's own plot name.
+        ("desert_folklore", "tundra", false, 0.0),
+    ];
+    for (index, (belief, plot, hills, each)) in cases.into_iter().enumerate() {
+        let (mut game, cities) = game_with_capitals(91_820 + index as u64);
+        let city = cities[0];
+        let holy_site = place_district(&mut game, city, "holy_site");
+        // The whole ring is normalised first, so the count this test asserts
+        // is the count the belief can see — a map that happened to deal a
+        // desert neighbour would otherwise be paid for twice.
+        let ring: Vec<Pos> = game.nbrs(holy_site).to_vec();
+        assert!(ring.len() >= 2, "the Holy Site has a ring to paint");
+        for position in &ring {
+            let tile = game.map.tiles.get_mut(position).unwrap();
+            tile.terrain = crate::name::Name::new("grassland");
+            tile.feature = None;
+            tile.district = None;
+            tile.hills = false;
+        }
+        for position in ring.iter().take(2) {
+            let tile = game.map.tiles.get_mut(position).unwrap();
+            if plot == "jungle" {
+                tile.feature = Some(crate::name::Name::new("jungle"));
+            } else {
+                tile.terrain = crate::name::Name::new(plot);
+                tile.hills = hills;
+            }
+        }
+        let bare = game
+            .district_yields(crate::name!("holy_site"), holy_site)
+            .faith;
+        game.players[0].pantheon = Some(belief.to_string());
+        let paid = game
+            .district_yields(crate::name!("holy_site"), holy_site)
+            .faith
+            - bare;
+        assert_eq!(
+            paid,
+            2.0 * each,
+            "{belief} beside two {plot} plots (hills={hills}) moved Holy Site Faith by {paid}"
+        );
+    }
+}
+
+/// God of War: `PercentDefeatedStrength 50` of the dead unit's Combat
+/// Strength, paid only for a kill within 8 tiles of a Holy Site.
+///
+/// ⚠ The shipped requirement `PLOT_EIGHT_INCLUDE_HOLY_SITE` names no owner and
+/// the shipped text agrees by omission — "within 8 tiles of a Holy Site
+/// district" — so a RIVAL's Holy Site pays too. The third case is that check,
+/// not a duplicate of the first.
+#[test]
+fn god_of_war_pays_half_a_kills_strength_within_eight_of_any_holy_site() {
+    // Where the only Holy Site on the board stands, and whether it pays.
+    for (seed, holy_site, expected) in [
+        (91_840_u64, "ours", true),
+        (91_841, "none", false),
+        (91_842, "a rival's", true),
+    ] {
+        let (mut game, cities) = game_with_capitals(seed);
+        let walkable = |game: &Game, position: Pos| {
+            game.map
+                .get(position)
+                .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
+                && game.units_at(position).is_empty()
+                && game.city_at(position).is_none()
+        };
+        let capital = game.cities[&cities[0]].pos;
+        let ours = game
+            .nbrs(capital)
+            .into_iter()
+            .find(|position| walkable(&game, *position))
+            .expect("a plot beside the capital");
+        let theirs = game
+            .nbrs(ours)
+            .into_iter()
+            .find(|position| *position != capital && walkable(&game, *position))
+            .expect("a plot beside that one");
+
+        match holy_site {
+            "ours" => {
+                let at = place_district(&mut game, cities[0], "holy_site");
+                assert!(game.wdist(at, theirs) <= GOD_OF_WAR_HOLY_SITE_RANGE);
+            }
+            // The rival's own capital is on the other side of the map, so the
+            // check needs a rival Holy Site the kill can actually see.
+            "a rival's" => {
+                let seat = game
+                    .map
+                    .tiles
+                    .keys()
+                    .copied()
+                    .find(|position| {
+                        game.wdist(*position, theirs) == 3 && walkable(&game, *position)
+                    })
+                    .expect("ground for a rival city near the fight");
+                let rival_city = game.found_city_for(1, seat, None);
+                let at = place_district(&mut game, rival_city, "holy_site");
+                assert!(game.wdist(at, theirs) <= GOD_OF_WAR_HOLY_SITE_RANGE);
+            }
+            _ => {}
+        }
+
+        game.at_war.insert((0, 1));
+        let attacker = game.spawn_test_unit("warrior", 0, ours);
+        let victim = game.spawn_test_unit("warrior", 1, theirs);
+        game.units.get_mut(&victim).unwrap().hp = 1;
+        game.players[0].pantheon = Some("god_of_war".to_string());
+        game.current = 0;
+        let before = game.players[0].faith;
+        game.apply(
+            0,
+            &Action::Attack {
+                unit: attacker,
+                target: theirs,
+            },
+        )
+        .unwrap();
+        assert!(!game.units.contains_key(&victim), "the defender died");
+        let paid = game.players[0].faith - before;
+        let want = if expected {
+            game.rules.units["warrior"].strength * 0.5
+        } else {
+            0.0
+        };
+        assert_eq!(
+            paid, want,
+            "God of War with {holy_site} Holy Site paid {paid}"
+        );
+    }
+}
+
+/// God of Healing lifts the rate on the Holy Site's own plot and the ring
+/// around it (`MinRange 0`), and only for the empire that owns the district —
+/// the shipped text says "your Holy Site district", which the requirement set
+/// does not spell out.
+#[test]
+fn god_of_healing_lifts_the_rate_beside_our_own_holy_site() {
+    let (mut game, cities) = game_with_capitals(91_850);
+    let holy_site = place_district(&mut game, cities[0], "holy_site");
+    let beside = game
+        .nbrs(holy_site)
+        .into_iter()
+        .find(|position| game.map.get(*position).is_some() && game.units_at(*position).is_empty())
+        .expect("a plot beside the Holy Site");
+    let far = game
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .find(|position| {
+            game.wdist(*position, holy_site) > 2 && game.units_at(*position).is_empty()
+        })
+        .expect("a plot away from the Holy Site");
+
+    let on = game.spawn_test_unit("warrior", 0, holy_site);
+    let next_to = game.spawn_test_unit("warrior", 0, beside);
+    let away = game.spawn_test_unit("warrior", 0, far);
+    let bare = [on, next_to, away].map(|uid| game.unit_heal_rate(uid));
+    game.players[0].pantheon = Some("god_of_healing".to_string());
+    let healed = [on, next_to, away].map(|uid| game.unit_heal_rate(uid));
+    assert_eq!(healed[0] - bare[0], 30, "the district's own plot counts");
+    assert_eq!(healed[1] - bare[1], 30, "and every plot adjacent to it");
+    assert_eq!(healed[2] - bare[2], 0, "and nothing further out");
+
+    // A rival's Holy Site is not ours, and the belief says "your".
+    let (mut rival, cities) = game_with_capitals(91_851);
+    let theirs = place_district(&mut rival, cities[1], "holy_site");
+    let ours = rival.spawn_test_unit("warrior", 0, theirs);
+    let bare = rival.unit_heal_rate(ours);
+    rival.players[0].pantheon = Some("god_of_healing".to_string());
+    assert_eq!(
+        rival.unit_heal_rate(ours) - bare,
+        0,
+        "a rival's Holy Site does not heal our army"
+    );
+}
+
+/// River Goddess pays a Holy Site standing on a river, +2 Amenities and +2
+/// Housing, and pays neither away from the water.
+///
+/// ⚠ Gathering Storm deletes `RIVER_GODDESS_HOLY_SITE_AMENITY` — the base
+/// game's +1 Amenity with no Housing at all — so both numbers here are
+/// expansion values and a cache read from a base-game machine gets both wrong.
+#[test]
+fn river_goddess_pays_a_holy_site_that_stands_on_a_river() {
+    for (seed, river, amenities, housing) in
+        [(91_860_u64, true, 2.0, 2.0), (91_861, false, 0.0, 0.0)]
+    {
+        let (mut game, cities) = game_with_capitals(seed);
+        let city = cities[0];
+        let holy_site = place_district(&mut game, city, "holy_site");
+        game.map.tiles.get_mut(&holy_site).unwrap().river_edges =
+            [river, false, false, false, false, false];
+
+        let bare_amenity = game.district_amenity("holy_site", holy_site);
+        let bare_housing = game.district_housing("holy_site", holy_site);
+        let city_housing_before = game.city_housing(&game.cities[&city]);
+        game.players[0].pantheon = Some("river_goddess".to_string());
+        assert_eq!(
+            game.district_amenity("holy_site", holy_site) - bare_amenity,
+            amenities,
+            "river={river}"
+        );
+        assert_eq!(
+            game.district_housing("holy_site", holy_site) - bare_housing,
+            housing,
+            "river={river}"
+        );
+        assert_eq!(
+            game.city_housing(&game.cities[&city]) - city_housing_before,
+            housing,
+            "the city's own Housing carries it, river={river}"
+        );
+    }
+}
+
+/// City Patron Goddess pays 25% toward a district only while the city has no
+/// specialty district, and Monument to the Gods pays 15% toward an Ancient or
+/// Classical wonder and nothing later. Both are production windows rather than
+/// yields, so they are asked of the multiplier that decides a build.
+#[test]
+fn the_production_pantheons_open_and_close_their_shipped_windows() {
+    let (mut game, cities) = game_with_capitals(91_870);
+    let city = cities[0];
+    let plot = *game.cities[&city]
+        .owned_tiles
+        .iter()
+        .find(|position| **position != game.cities[&city].pos)
+        .unwrap();
+    let district = Item::District {
+        district: crate::name!("holy_site"),
+        pos: plot,
+    };
+    let bare = game.item_prod_mult(0, city, Some(&district));
+    game.players[0].pantheon = Some("city_patron_goddess".to_string());
+    assert_eq!(
+        game.item_prod_mult(0, city, Some(&district)) - bare,
+        0.25,
+        "a city with no specialty district builds its first one faster"
+    );
+    place_district(&mut game, city, "campus");
+    assert_eq!(
+        game.item_prod_mult(0, city, Some(&district)),
+        bare,
+        "and the window shuts the moment one stands"
+    );
+
+    let (mut game, cities) = game_with_capitals(91_871);
+    let city = cities[0];
+    let plot = *game.cities[&city]
+        .owned_tiles
+        .iter()
+        .find(|position| **position != game.cities[&city].pos)
+        .unwrap();
+    // `StartEra ERA_ANCIENT`, `EndEra ERA_CLASSICAL` — the same window the
+    // Classical Republic-era policy cards use, which the engine reads as
+    // `wonder_era <= 1`.
+    let early = game
+        .rules
+        .wonders
+        .keys()
+        .find(|wonder| game.wonder_era(wonder) <= 1)
+        .copied()
+        .expect("an ancient or classical wonder");
+    let late = game
+        .rules
+        .wonders
+        .keys()
+        .find(|wonder| game.wonder_era(wonder) > 1)
+        .copied()
+        .expect("a later wonder");
+    let item = |wonder: Name| Item::Wonder { wonder, pos: plot };
+    let bare_early = game.item_prod_mult(0, city, Some(&item(early)));
+    let bare_late = game.item_prod_mult(0, city, Some(&item(late)));
+    game.players[0].pantheon = Some("monument_to_the_gods".to_string());
+    let paid_early = game.item_prod_mult(0, city, Some(&item(early))) - bare_early;
+    assert!(
+        (paid_early - 0.15).abs() < 1e-9,
+        "{early} is inside the Ancient-to-Classical window: {paid_early}"
+    );
+    assert_eq!(
+        game.item_prod_mult(0, city, Some(&item(late))) - bare_late,
+        0.0,
+        "{late} is past it"
+    );
+}
+
+/// Initiation Rites pays for a cleared camp twice, and the second payment is
+/// the half a base-game reading misses: `Expansion2_Beliefs.xml` adds
+/// `INITIATION_RITES_HEALING_DISPERSAL` on top of the base game's Faith.
+#[test]
+fn initiation_rites_pays_faith_and_heals_the_unit_that_cleared_the_camp() {
+    let (mut game, cities) = game_with_capitals(91_880);
+    game.barb_pid = Some(1);
+    let capital = game.cities[&cities[0]].pos;
+    let camp = game
+        .nbrs(capital)
+        .into_iter()
+        .find(|position| {
+            game.map
+                .get(*position)
+                .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
+                && game.units_at(*position).is_empty()
+        })
+        .expect("a plot beside the capital for the camp");
+    game.barb_camps.insert(camp, 0);
+    game.map.tiles.get_mut(&camp).unwrap().improvement = Some(crate::name!("barbarian_camp"));
+    let from =
+        game.nbrs(camp)
+            .into_iter()
+            .find(|position| {
+                *position != capital
+                    && game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+                    && game.units_at(*position).is_empty()
+            })
+            .expect("a plot to attack the camp from");
+    let clearer = game.spawn_test_unit("warrior", 0, from);
+    game.units.get_mut(&clearer).unwrap().hp = 40;
+    game.players[0].pantheon = Some("initiation_rites".to_string());
+    let faith = game.players[0].faith;
+    game.current = 0;
+    game.apply(
+        0,
+        &Action::Move {
+            unit: clearer,
+            to: camp,
+        },
+    )
+    .unwrap();
+    assert!(!game.barb_camps.contains_key(&camp), "the camp is cleared");
+    assert_eq!(game.players[0].faith - faith, 50.0);
+    assert_eq!(
+        game.units[&clearer].hp, 100,
+        "+100 HP on a unit at 40 is capped at whole, not 140"
+    );
+}
+
+/// The three plot pantheons — Lady of the Reeds and Marshes, Goddess of Fire,
+/// Earth Goddess — pay the plots the install names and no others. They share
+/// one engine predicate, so this asks all three the same way.
+///
+/// ⚠ Two of the three are RemoveData cases. Lady of the Reeds pays **2**, not
+/// the base game's 1, and its plot set names `FEATURE_FLOODPLAINS` alone —
+/// the shipped text says "Marsh, Oasis, and **Desert** Floodplains", so the
+/// expansion's own grassland and plains floodplains pay nothing. Earth Goddess
+/// pays **Breathtaking** appeal, not the base game's Charming.
+#[test]
+fn the_plot_pantheons_pay_the_features_and_appeal_the_install_names() {
+    // (belief, feature to paint or None for a bare plot, appeal wanted, yield, amount)
+    type Case = (&'static str, Option<&'static str>, i32, &'static str, f64);
+    let cases: [Case; 9] = [
+        (
+            "lady_of_the_reeds_and_marshes",
+            Some("marsh"),
+            0,
+            "production",
+            2.0,
+        ),
+        (
+            "lady_of_the_reeds_and_marshes",
+            Some("oasis"),
+            0,
+            "production",
+            2.0,
+        ),
+        (
+            "lady_of_the_reeds_and_marshes",
+            Some("floodplains"),
+            0,
+            "production",
+            2.0,
+        ),
+        // The expansion's own two extra floodplains are NOT in
+        // `PLOT_HAS_REEDS_REQUIREMENTS`.
+        (
+            "lady_of_the_reeds_and_marshes",
+            Some("grassland_floodplains"),
+            0,
+            "production",
+            0.0,
+        ),
+        (
+            "goddess_of_fire",
+            Some("geothermal_fissure"),
+            0,
+            "faith",
+            2.0,
+        ),
+        ("goddess_of_fire", Some("volcanic_soil"), 0, "faith", 2.0),
+        ("goddess_of_fire", Some("marsh"), 0, "faith", 0.0),
+        ("earth_goddess", None, 4, "faith", 1.0),
+        // Charming is the base game's bar and the expansion deletes it.
+        ("earth_goddess", None, 2, "faith", 0.0),
+    ];
+    for (index, (belief, feature, appeal, read, amount)) in cases.into_iter().enumerate() {
+        let (mut game, cities) = game_with_capitals(91_890 + index as u64);
+        let city = cities[0];
+        let position = *game.cities[&city]
+            .owned_tiles
+            .iter()
+            .find(|position| **position != game.cities[&city].pos)
+            .expect("a capital owns more than its centre");
+        {
+            let tile = game.map.tiles.get_mut(&position).unwrap();
+            tile.feature = feature.map(crate::name::Name::new);
+            tile.improvement = None;
+            tile.pillaged = false;
+        }
+        if appeal > 0 {
+            // Appeal is derived, never stored, so the band is built rather
+            // than asserted about whatever the map dealt: a flat plot with no
+            // river reads 0, and each mountain in the ring is +1.
+            game.map.tiles.get_mut(&position).unwrap().river_edges = [false; 6];
+            let ring: Vec<Pos> = game.nbrs(position).to_vec();
+            assert!(
+                ring.len() >= appeal as usize,
+                "enough ring to build the band"
+            );
+            for (index, neighbor) in ring.into_iter().enumerate() {
+                let tile = game.map.tiles.get_mut(&neighbor).unwrap();
+                tile.terrain = crate::name::Name::new(if index < appeal as usize {
+                    "mountain"
+                } else {
+                    "grassland"
+                });
+                tile.feature = None;
+                tile.district = None;
+                tile.improvement = None;
+                tile.river_edges = [false; 6];
+            }
+            assert_eq!(
+                game.tile_appeal(position),
+                appeal,
+                "the test board has to sit in the band it claims"
+            );
+        }
+        let read_yield = |game: &Game| {
+            let ys = game.player_tile_yields(0, position, &game.map.tiles[&position]);
+            match read {
+                "production" => ys.production,
+                _ => ys.faith,
+            }
+        };
+        let bare = read_yield(&game);
+        game.players[0].pantheon = Some(belief.to_string());
+        let paid = read_yield(&game) - bare;
+        assert_eq!(
+            paid, amount,
+            "{belief} on feature {feature:?} at appeal {appeal}: {read} moved by {paid}"
+        );
+    }
+}
+
+/// Every one of the twenty-three pantheons the game ships is modelled, and
+/// every one of them can actually be founded.
+#[test]
+fn the_pantheon_roster_is_the_whole_shipped_class() {
+    let (mut game, _) = game_with_capitals(91_900);
+    assert_eq!(
+        game.rules.beliefs.pantheon.len(),
+        23,
+        "Civilization VI ships 23 pantheons; the roster is the class, not a sample"
+    );
+    for belief in game
+        .rules
+        .beliefs
+        .pantheon
+        .keys()
+        .cloned()
+        .collect::<Vec<_>>()
+    {
+        game.players[0].pantheon = None;
+        game.players[0].faith = 100.0;
+        game.do_choose_pantheon(0, &belief)
+            .unwrap_or_else(|why| panic!("{belief} cannot be founded: {why}"));
+    }
 }

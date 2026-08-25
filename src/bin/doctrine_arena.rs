@@ -23,7 +23,7 @@ use civvis::doctrine::{
     matched_position, paired, position, DoctrineLedger, DoctrineProfile, MatchedPosition, Position,
     POSITIONS,
 };
-use civvis::elo::{builtin_ai, BUILTIN_AIS, EVAL_ONLY_AIS};
+use civvis::elo::{builtin_ai, BUILTIN_AIS};
 use civvis::parallel::{default_jobs, map};
 
 fn number(args: &[String], key: &str, default: i64) -> i64 {
@@ -43,7 +43,7 @@ fn text(args: &[String], key: &str, default: &str) -> String {
 }
 
 fn known_ai(name: &str) -> bool {
-    BUILTIN_AIS.contains(&name) || EVAL_ONLY_AIS.contains(&name)
+    BUILTIN_AIS.contains(&name)
 }
 
 /// A profile field as a column, or a dash when the engagement gave nothing to
