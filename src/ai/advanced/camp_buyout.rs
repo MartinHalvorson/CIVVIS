@@ -59,8 +59,14 @@
 //! is bought, at most one a turn, and never out of the reserve. It does not
 //! end the turn's spending the way an emergency defence does — a hex bought
 //! out of the surplus above the reserve should not also cost the city the
-//! Settler it was saving for — and a city under fire still outranks it,
-//! because `emergency_city_defense_purchase` runs first.
+//! Settler it was saving for.
+//!
+//! ⚠ It is filed after `emergency_city_defense_purchase` so a city under fire
+//! is answered first, and on a live seat that is what happens. On a native
+//! seat it is a **filing order, not a guarantee**: that pass opens with
+//! `if !self.base.garrison_under_fire`, and `garrison-under-fire` is off in
+//! the shipped genome, so nothing there outranks a buyout today. The reserve
+//! is what actually protects the emergency.
 //!
 //! Off, `advanced_gold_spending` is byte-identical: one flag is read, and no
 //! outpost is ever priced.
