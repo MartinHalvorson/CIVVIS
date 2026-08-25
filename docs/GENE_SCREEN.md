@@ -69,13 +69,18 @@ gene is on and when gene is off."*
 | speed | **Online**, its own **250-turn** clock; a game that reaches it is a score victory, not a truncation |
 | lanes | **all six**; no restricted-lane regime |
 | civs | shuffled per map |
+| majors' rung | **Emperor** — `--difficulty emperor`, the documented invocation since 2026-08-25: the live Civilization VI verification ladder plays Emperor and above, and a screen at the engine's Prince default prices genes against a slower economy than the one they are verified in. ⚠ Provenance, not an enforced leg: the code's default stays Prince (nothing was changed silently), the header records the rung, and the ledger pools both — read `difficulty` on a source before comparing two |
+| barbarians | Immortal, their own rung whatever the majors play |
 
-`gene_screen --games N --out rows.jsonl` — no profile flags — *is* the screen.
-Every profile flag still exists, and every one of them turns a batch into a
-**probe**: `tools/genes.py` refuses a source whose header does not match
-this table, so the ledger cannot quietly hold two worlds in one column. The
-shape lives in `SCREEN_PLAYERS`/`SCREEN_MAP`/… in `src/bin/gene_screen.rs` and
-in `SCREEN` in `tools/genes.py`, and a test fails if the two drift apart.
+`gene_screen --games N --difficulty emperor --out rows.jsonl` *is* the
+screen. Every **map** flag still exists, and every one of them turns a batch
+into a **probe**: `tools/genes.py` refuses a source whose header does not
+match the map legs of this table, so the ledger cannot quietly hold two
+worlds in one column. The shape lives in `SCREEN_PLAYERS`/`SCREEN_MAP`/… in
+`src/bin/gene_screen.rs` and in `SCREEN` in `tools/genes.py`, and a test
+fails if the two drift apart. The three training-regime flags of 2026-08-25
+(`--victory-mask`, `--difficulty`/`--difficulty-rotate`, `--rivals`) are
+recorded on the source and are not legs; each has a section below.
 The draw design is deliberately **not** a leg of the shape: a file written by
 the earlier paired designs at this shape prices the same genes on the same
 board, and the estimator reads both the same way — rows are seats.
@@ -1972,6 +1977,22 @@ lane-pursuer's own win rates are a census of the opposition — and **every gene
 past the family-wise bar read on the three kinds apart**, with `agree` when
 every kind's sign is the whole batch's and `SPLIT` when a gene pays against
 one rival and not another.
+
+## ⭐ The drift meter (2026-08-25)
+
+Every `--analyze` now prints, under *how the games ended*, the batch's share
+of games ended by each condition — **by game**, not by seat — beside two live
+columns: the **live loss census**, how the live Civilization VI seat's games
+ended when a rival won (diplomatic 32 : culture 27 : religious 8 : science 4 :
+domination 1, the Hall of Fame census in
+`docs/eval/2026-08-18-we-screen-against-a-religion-game-and-lose-a-diplomacy-game.md`,
+hard-coded as `LIVE_LOSS_CENSUS`), and the **live ladder** column read from
+`docs/civ6_ladder.json`'s `attempts[].victory_type` when that file is readable
+from the working directory (every finished live game, ours included;
+`VICTORY_DEFAULT` and unfinished attempts are not endings). The same table is
+`drift` in the `--json` summary. A lane the batch never ends on is a lane its
+genes cannot pay through on the win axis; that is the reading the meter is
+for, and `--victory-mask` and `--difficulty` are the two knobs that move it.
 
 ## What it is not
 
