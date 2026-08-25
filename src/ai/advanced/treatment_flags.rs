@@ -2501,6 +2501,8 @@ impl AdvancedAi {
     /// The twin of `enable_camp_tile_buyout`.
     pub fn disable_camp_tile_buyout(&mut self) {
         self.camp_tile_buyout = false;
+    }
+
     /// Price a Gold purchase at the build's card-boosted rate, so items a
     /// slotted card discounts lose purchase priority to items no card touches.
     /// Opt-in gene `buy-what-cards-cannot-boost`; see
