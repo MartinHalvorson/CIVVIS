@@ -12710,64 +12710,181 @@ function strategicResourceUnitPlacement(tile, placement, hexInradius) {
 // was a shape of the viewer's own invention, which is why it read as a second
 // marker set rather than as the same set saying "this one is not an army".
 //
-// Built the way the base game builds a rounded triangle -- and the way this
-// file already builds the three-count yield plate: the hull of three discs at
-// the corners, so `cx.arc` draws each corner and the straight side into it in
-// one call. The corner radius is a share of the seat the counter is given, and
-// the vertices take the rest, so the painted triangle stands exactly inside
-// the circle a fighting unit would have used and can never crowd its hex.
-const CIVILIAN_TOKEN_CORNER = .30;
+// Three corner discs carry the vertices, and the side between each pair is an
+// arc rather than a straight edge -- the base game's flag is a cut gem, not a
+// road sign, and a side that bows outward is also the side that hands the
+// glyph inside it the room a flat one withholds. The corner radius is a share
+// of the seat the counter is given and the vertices take the rest, so the
+// vertices still stand exactly on the circle a fighting unit would have used;
+// the bow is small enough that a side's middle stays well inside it, so the
+// counter can never crowd its hex whichever way it is turned.
+const CIVILIAN_TOKEN_CORNER = .34;
 const CIVILIAN_TOKEN_VERTEX = 1 - CIVILIAN_TOKEN_CORNER;
+const CIVILIAN_TOKEN_BULGE = .07;
+// The outline is the same shape at every size, so it is solved once in units
+// of the counter's radius and scaled at the point of use. Each side arc runs
+// through a centre deep on the far side of the counter and is tangent to both
+// corner discs, so it leaves and rejoins them without a crease; `bulge` is how
+// far past the straight edge its middle stands. Radii shrink and the centres
+// stay put, which walks the whole outline inward by exactly that much all the
+// way round -- which is how the glyph seat below asks for its clearance.
+const CIVILIAN_TOKEN_ARCS = new Map();
+function civilianTokenArcs(corner) {
+  const known = CIVILIAN_TOKEN_ARCS.get(corner);
+  if (known) return known;
+  const vertex = CIVILIAN_TOKEN_VERTEX;
+  // A perfectly straight side would want its centre infinitely far away. The
+  // floor keeps that setting drawing a straight-enough side instead of NaN.
+  const bulge = Math.max(CIVILIAN_TOKEN_BULGE, 1e-3);
+  const chord = vertex * Math.sqrt(3) / 2;
+  const deep = (chord * chord - bulge * bulge) / (2 * bulge);
+  // The first vertex is straight down, so the point hangs off the unit the
+  // way the game's own flags do.
+  const facing = i => Math.PI / 2 + i * 2 * Math.PI / 3;
+  const corners = [0, 1, 2].map(i => ({x: Math.cos(facing(i)) * vertex,
+                                       y: Math.sin(facing(i)) * vertex}));
+  // Side `i` spans corners `i` and `i + 1` and faces a third of a turn on from
+  // corner `i`; its centre sits that far back along the same line.
+  const sides = [0, 1, 2].map(i => {
+    const out = facing(i) + Math.PI / 3;
+    return {x: Math.cos(out) * (vertex / 2 - deep),
+            y: Math.sin(out) * (vertex / 2 - deep), r: deep + bulge + corner};
+  });
+  const away = (from, to) => Math.atan2(to.y - from.y, to.x - from.x);
+  const onward = (a0, a1) => a1 < a0 ? a1 + 2 * Math.PI : a1;
+  const arcs = [];
+  for (let i = 0; i < 3; i++) {
+    // Both arcs meeting at a corner touch it on the line out from that side's
+    // centre, so consecutive arcs share an endpoint exactly and the path needs
+    // no joining segment.
+    const c = corners[i], before = sides[(i + 2) % 3], after = sides[i];
+    const a0 = away(before, c);
+    arcs.push({...c, r: corner, a0, a1: onward(a0, away(after, c))});
+    const t0 = away(after, c);
+    arcs.push({...after, a0: t0, a1: onward(t0, away(after, corners[(i + 1) % 3]))});
+  }
+  CIVILIAN_TOKEN_ARCS.set(corner, arcs);
+  return arcs;
+}
 function strategicUnitTokenPath(x, y, r, civilian = false) {
   cx.beginPath();
   if (!civilian) { cx.arc(x, y, r, 0, 7); return; }
-  const corner = r * CIVILIAN_TOKEN_CORNER, vertex = r * CIVILIAN_TOKEN_VERTEX;
-  for (let at = 0; at < 3; at++) {
-    // The first vertex is straight down, so the point hangs off the unit the
-    // way the game's own flags do.
-    const out = Math.PI / 2 + at * 2 * Math.PI / 3;
-    cx.arc(x + Math.cos(out) * vertex, y + Math.sin(out) * vertex, corner,
-           out - Math.PI / 3, out + Math.PI / 3);
-  }
+  for (const arc of civilianTokenArcs(CIVILIAN_TOKEN_CORNER))
+    cx.arc(x + arc.x * r, y + arc.y * r, arc.r * r, arc.a0, arc.a1);
   cx.closePath();
 }
+// How wide the counter is at each height across it, sampled once per outline.
+// A circle answers that in closed form; a bowed triangle does not, and every
+// caller below wants the same answer, so the outline measures itself rather
+// than each caller re-deriving a shape it would then have to keep in step.
+const CIVILIAN_TOKEN_PROFILE_STEPS = 192;
+const CIVILIAN_TOKEN_PROFILES = new Map();
+function civilianTokenProfile(corner) {
+  const known = CIVILIAN_TOKEN_PROFILES.get(corner);
+  if (known) return known;
+  const points = [];
+  for (const arc of civilianTokenArcs(corner)) {
+    const steps = Math.max(4, Math.ceil((arc.a1 - arc.a0) * 64));
+    for (let k = 0; k <= steps; k++) {
+      const a = arc.a0 + (arc.a1 - arc.a0) * k / steps;
+      points.push([arc.x + Math.cos(a) * arc.r, arc.y + Math.sin(a) * arc.r]);
+    }
+  }
+  let top = Infinity, bottom = -Infinity;
+  for (const [, y] of points) { top = Math.min(top, y); bottom = Math.max(bottom, y); }
+  const steps = CIVILIAN_TOKEN_PROFILE_STEPS, span = bottom - top;
+  const half = new Float64Array(steps + 1);
+  for (let i = 0; i < points.length; i++) {
+    let [x0, y0] = points[i], [x1, y1] = points[(i + 1) % points.length];
+    if (y1 < y0) { const sx = x0, sy = y0; x0 = x1; y0 = y1; x1 = sx; y1 = sy; }
+    const from = Math.max(0, Math.ceil((y0 - top) / span * steps));
+    const to = Math.min(steps, Math.floor((y1 - top) / span * steps));
+    for (let k = from; k <= to; k++) {
+      const y = top + span * k / steps;
+      const x = Math.abs(y1 === y0 ? (Math.abs(x1) > Math.abs(x0) ? x1 : x0)
+                                   : x0 + (x1 - x0) * (y - y0) / (y1 - y0));
+      if (x > half[k]) half[k] = x;
+    }
+  }
+  const profile = {top, span, half};
+  CIVILIAN_TOKEN_PROFILES.set(corner, profile);
+  return profile;
+}
+function civilianTokenProfileHalfWidth(profile, y) {
+  const {top, span, half} = profile;
+  if (!(y > top) || y >= top + span) return 0;
+  const at = (y - top) / span * (half.length - 1), k = Math.floor(at);
+  if (k >= half.length - 1) return half[half.length - 1];
+  // The outline is convex, so reading the straight line between two samples
+  // can only understate the room and never claim room that is not there.
+  return half[k] + (half[k + 1] - half[k]) * (at - k);
+}
 // How wide the counter is, `dy` below its centre. A circle is its own answer;
-// the triangle narrows toward its point at exactly the rate its sides do, plus
-// the corner radius the offset gives every side.
+// the triangle narrows toward its point, and its own profile says by how much.
 function strategicUnitCounterHalfWidth(r, dy, civilian) {
   if (!civilian) return Math.sqrt(Math.max(0, r * r - dy * dy));
-  const corner = r * CIVILIAN_TOKEN_CORNER, vertex = r * CIVILIAN_TOKEN_VERTEX;
-  return Math.max(0, (vertex - dy) / Math.sqrt(3) + corner * 2 / Math.sqrt(3));
+  return r * civilianTokenProfileHalfWidth(
+    civilianTokenProfile(CIVILIAN_TOKEN_CORNER), dy / r);
 }
 // One rule for every counter, on every surface, at every zoom: its glyph is
-// drawn on the largest square the counter's own outline can hold, filling this
-// share of it. The old zoom curve existed to spend each atlas cell's authored
-// margin as the camera closed in, and it could only do that because the margin
-// was there to spend -- the same accident that made the icons uneven.
-// `drawUnitPictogram` measures that margin away once, so an icon simply keeps
-// its proportion of its counter and the counter keeps its proportion of the
-// hex. Sized a little under what the widest silhouettes used to reach, which
-// is what was overflowing the token.
+// drawn on the largest box of the glyph's own proportion the counter's outline
+// can hold, kept this far clear of that outline. The old zoom curve existed to
+// spend each atlas cell's authored margin as the camera closed in, and it could
+// only do that because the margin was there to spend -- the same accident that
+// made the icons uneven. `drawUnitPictogram` measures that margin away once, so
+// an icon simply keeps its proportion of its counter and the counter keeps its
+// proportion of the hex.
 //
-// A circle holds r*sqrt(2) across its middle. A triangle standing in the same
-// seat hangs its square from the flat side -- solving `s/2 = (vertex - top - s
-// + 2*corner) / sqrt(3)` -- and that square is about four fifths as wide,
-// seated a little above centre. Which is the proportion the base game draws
-// too: its civilian flag carries a visibly smaller icon than its military one,
-// because a triangle has less room than a banner, not because anybody chose a
-// second size for it.
+// The circle asks the question once and is done: every proportion fits the same
+// square. A triangle does not -- it is widest across its shoulders and narrows
+// to a point, so a tall Settler and a wide Missionary want boxes of quite
+// different heights, and a square cut to hold the worst of them wastes the room
+// the rest of them had. Cutting each seat for the silhouette that will stand in
+// it is what lets the counter's glyph come back up to the size a round one
+// carries, and it lands the box near the middle of the shape on its own: the
+// biggest box in a point-down triangle is the one that reaches furthest down
+// from the shoulders, so asking for the largest is also what stops the icon
+// riding high the way a fixed square did.
 const COMMAND_UNIT_ICON_SHARE = .66;
-function strategicUnitGlyphSeat(x, y, r, civilian = false) {
-  if (!civilian) return {x, y, size:r * 2 * COMMAND_UNIT_ICON_SHARE};
-  const corner = r * CIVILIAN_TOKEN_CORNER, vertex = r * CIVILIAN_TOKEN_VERTEX;
-  const top = -vertex / 2 - corner;
-  const side = Math.min((vertex - top + corner * 2) / (1 + Math.sqrt(3) / 2),
-                        vertex * Math.sqrt(3));
-  return {
-    x,
-    y: y + top + side / 2,
-    size: side * COMMAND_UNIT_ICON_SHARE * 2 / Math.SQRT2,
-  };
+const CIVILIAN_TOKEN_GLYPH_MARGIN = .06;
+const CIVILIAN_TOKEN_GLYPH_FITS = new Map();
+function civilianTokenGlyphFit(aspect) {
+  const key = Math.round(aspect * 1e3);
+  const known = CIVILIAN_TOKEN_GLYPH_FITS.get(key);
+  if (known) return known;
+  const profile = civilianTokenProfile(
+    CIVILIAN_TOKEN_CORNER - CIVILIAN_TOKEN_GLYPH_MARGIN);
+  const steps = profile.half.length - 1, floor = profile.top + profile.span;
+  let fit = {w: 0, h: 0, y: 0};
+  for (let k = 0; k < steps; k++) {
+    const head = profile.top + profile.span * k / steps, room = profile.half[k];
+    if (!(room > 0)) continue;
+    // Both of a box's near corners sit on the outline or inside it, and the
+    // outline is convex, so the two rows the box ends on decide the whole box.
+    let lo = 0, hi = floor - head;
+    for (let i = 0; i < 40; i++) {
+      const h = (lo + hi) / 2, wide = aspect * h / 2;
+      if (wide <= room && wide <= civilianTokenProfileHalfWidth(profile, head + h)) lo = h;
+      else hi = h;
+    }
+    if (lo > fit.h) fit = {w: aspect * lo, h: lo, y: head + lo / 2};
+  }
+  CIVILIAN_TOKEN_GLYPH_FITS.set(key, fit);
+  return fit;
+}
+// The proportion the seat is cut to. A silhouette the atlas has measured keeps
+// its own; anything the canvas fallbacks draw is drawn on their square grid.
+function unitPictogramAspect(type) {
+  if (!CIV6_UNIT_ICON_ATLAS_READY || !CIV6_UNIT_ICON_INDEX.has(type)) return 1;
+  const box = civ6UnitIconBox(type);
+  return box.h > 0 ? box.w / box.h : 1;
+}
+function strategicUnitGlyphSeat(x, y, r, civilian = false, type = null) {
+  if (!civilian) return {x, y, size: r * 2 * COMMAND_UNIT_ICON_SHARE};
+  const fit = civilianTokenGlyphFit(unitPictogramAspect(type));
+  // `drawUnitPictogram` reads `size` as the glyph's longest side, which is the
+  // side of the box the proportion made longest.
+  return {x, y: y + fit.y * r, size: Math.max(fit.w, fit.h) * r};
 }
 // Damage is exceptional state, so a healthy unit keeps its clean command token.
 // When damage exists, its bar is part of the token rather than a floating map
@@ -20441,7 +20558,7 @@ function drawPlanetMap() {
     const civilian = CIVILIAN_UNITS.has(unit.type);
     strategicUnitTokenPath(ux, uy, r, civilian);
     cx.fill(); cx.stroke();
-    const seat = strategicUnitGlyphSeat(ux, uy, r, civilian);
+    const seat = strategicUnitGlyphSeat(ux, uy, r, civilian, unit.type);
     drawUnitPictogram(unit.type, seat.x, seat.y, seat.size, tokenInk);
     if (unitHasHealth(unit))
       drawStrategicUnitHealth(ux, uy, r, unit.hp, now, civilian);
@@ -21350,7 +21467,7 @@ function drawScene() {
         if (it.unit) {
           // The medallion is a ring, so it seats its glyph the way a round
           // counter does whatever is being built inside it.
-          const seat = strategicUnitGlyphSeat(mx, my, mr);
+          const seat = strategicUnitGlyphSeat(mx, my, mr, false, it.unit);
           drawUnitPictogram(it.unit, seat.x, seat.y, seat.size, "#f0ead8");
         } else if (it.wonder) {
           drawWorldWonderIcon(it.wonder, mx, my + mr * .18, mr / 29);
@@ -21481,7 +21598,7 @@ function drawScene() {
     cx.lineWidth = tokenOutline;
     strategicUnitTokenPath(x, y, rr, civilian);
     cx.stroke();
-    const seat = strategicUnitGlyphSeat(x, y, rr, civilian);
+    const seat = strategicUnitGlyphSeat(x, y, rr, civilian, u.type);
     drawUnitPictogram(u.type, seat.x, seat.y, seat.size, tokenInk);
     cx.globalAlpha = unitAlpha;
     if (unitHasHealth(u)) drawStrategicUnitHealth(x, y, rr, u.hp, now, civilian);
@@ -21533,7 +21650,7 @@ function drawScene() {
     const civilian = CIVILIAN_UNITS.has(d.type);
     strategicUnitTokenPath(d.x, d.y, r, civilian);
     cx.fill(); cx.stroke();
-    const seat = strategicUnitGlyphSeat(d.x, d.y, r, civilian);
+    const seat = strategicUnitGlyphSeat(d.x, d.y, r, civilian, d.type);
     drawUnitPictogram(d.type, seat.x, seat.y, seat.size, tokenInk);
     cx.restore();
     cx.globalAlpha = 1;

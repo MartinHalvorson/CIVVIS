@@ -13047,9 +13047,34 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("const COMMAND_UNIT_ICON_SHARE = .66;"));
         assert_eq!(
             EMBEDDED_INDEX.matches("COMMAND_UNIT_ICON_SHARE").count(),
-            3,
+            2,
             "the one share is declared once and spent only by the seat routine"
         );
+        // A round counter fits every proportion on the same square, so one
+        // share answers it. A triangle does not, so its seat is the largest box
+        // of the glyph's own proportion the outline can hold, kept a fixed
+        // clearance off that outline -- one rule, not a second chosen size.
+        assert!(EMBEDDED_INDEX.contains("const CIVILIAN_TOKEN_GLYPH_MARGIN = .06;"));
+        assert!(EMBEDDED_INDEX.contains("function unitPictogramAspect(type) {"));
+        assert!(EMBEDDED_INDEX.contains("return box.h > 0 ? box.w / box.h : 1;"));
+        let seat = EMBEDDED_INDEX
+            .split("function strategicUnitGlyphSeat(x, y, r, civilian = false, type = null) {")
+            .nth(1)
+            .and_then(|tail| tail.split("\n}").next())
+            .expect("strategic unit glyph seat");
+        assert!(seat.contains("if (!civilian) return {x, y, size: r * 2 * COMMAND_UNIT_ICON_SHARE};"));
+        assert!(seat.contains("const fit = civilianTokenGlyphFit(unitPictogramAspect(type));"));
+        assert!(seat.contains("size: Math.max(fit.w, fit.h) * r"));
+        // Every surface names the unit it is seating, or the seat would be cut
+        // for a square nothing in the roster actually is.
+        for call in [
+            "strategicUnitGlyphSeat(ux, uy, r, civilian, unit.type);",
+            "strategicUnitGlyphSeat(x, y, rr, civilian, u.type);",
+            "strategicUnitGlyphSeat(d.x, d.y, r, civilian, d.type);",
+            "strategicUnitGlyphSeat(mx, my, mr, false, it.unit);",
+        ] {
+            assert!(EMBEDDED_INDEX.contains(call), "{call} must name its unit");
+        }
         assert_eq!(
             EMBEDDED_INDEX.matches("strategicUnitGlyphSeat(").count(),
             5,
@@ -13093,21 +13118,50 @@ mod tests {
     #[test]
     fn a_civilian_counter_is_the_base_games_rounded_triangle() {
         assert!(!EMBEDDED_INDEX.contains("cx.roundRect(x - r, y - h / 2, r * 2, h, h / 2)"));
-        assert!(EMBEDDED_INDEX.contains("const CIVILIAN_TOKEN_CORNER = .30;"));
+        assert!(EMBEDDED_INDEX.contains("const CIVILIAN_TOKEN_CORNER = .34;"));
         assert!(EMBEDDED_INDEX.contains("const CIVILIAN_TOKEN_VERTEX = 1 - CIVILIAN_TOKEN_CORNER;"));
+        assert!(EMBEDDED_INDEX.contains("const CIVILIAN_TOKEN_BULGE = .07;"));
         let token = EMBEDDED_INDEX
             .split("function strategicUnitTokenPath(x, y, r, civilian = false) {")
             .nth(1)
-            .and_then(|tail| tail.split("function strategicUnitCounterHalfWidth").next())
+            .and_then(|tail| tail.split("\n}").next())
             .expect("strategic unit counter outline");
         assert!(token.contains("if (!civilian) { cx.arc(x, y, r, 0, 7); return; }"));
-        // The corners are three discs and `cx.arc` draws the side into each,
-        // which is how the three-count yield plate already makes the base
-        // game's rounded triangle. The first vertex points straight down.
-        assert!(token.contains("const out = Math.PI / 2 + at * 2 * Math.PI / 3;"));
-        assert!(token.contains(
-            "cx.arc(x + Math.cos(out) * vertex, y + Math.sin(out) * vertex, corner,\n           out - Math.PI / 3, out + Math.PI / 3);"
-        ));
+        // The painter takes the outline from the one routine that also measures
+        // it, so the shape cannot be changed in the paint without the geometry
+        // moving with it.
+        assert!(token.contains("for (const arc of civilianTokenArcs(CIVILIAN_TOKEN_CORNER))"));
+        assert!(token.contains("cx.arc(x + arc.x * r, y + arc.y * r, arc.r * r, arc.a0, arc.a1);"));
+        // A corner disc at each vertex, the first pointing straight down, and a
+        // side arc between each pair -- the base game's flag is a cut gem, not
+        // a road sign, so the sides bow outward rather than running flat.
+        let outline = EMBEDDED_INDEX
+            .split("function civilianTokenArcs(corner) {")
+            .nth(1)
+            .and_then(|tail| tail.split("\n}").next())
+            .expect("civilian counter outline");
+        assert!(outline.contains("const facing = i => Math.PI / 2 + i * 2 * Math.PI / 3;"));
+        assert!(outline.contains("arcs.push({...c, r: corner, a0, a1: onward(a0, away(after, c))});"));
+        assert!(outline.contains("r: deep + bulge + corner"));
+        // The vertices stand on the circle a fighting unit would have used and
+        // the bow is small enough that a side's middle stays well inside it, so
+        // a civilian can no more crowd its hex than a soldier can.
+        let js_const = |name: &str| -> f64 {
+            EMBEDDED_INDEX
+                .split(&format!("const {name} = "))
+                .nth(1)
+                .and_then(|tail| tail.split(';').next())
+                .and_then(|text| text.trim().parse::<f64>().ok())
+                .unwrap_or_else(|| panic!("{name} must be a plain number"))
+        };
+        let corner = js_const("CIVILIAN_TOKEN_CORNER");
+        let bulge = js_const("CIVILIAN_TOKEN_BULGE");
+        let vertex = 1.0 - corner;
+        assert!(bulge > 0.0, "a flat-sided counter is not the base game's flag");
+        assert!(
+            vertex / 2.0 + corner + bulge < 1.0,
+            "a bowed side must stay inside the seat the counter was given"
+        );
 
         // The triangle stands inside the circle its seat was measured for, so
         // a civilian can no more crowd its hex than a soldier can.
