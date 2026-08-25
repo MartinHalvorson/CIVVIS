@@ -35395,7 +35395,11 @@ fn the_same_position_reads_differently_as_ours_and_as_theirs() {
         .filter(|player| player.alive && player.is_minor && !player.is_barbarian)
         .map(|player| player.id)
         .collect();
-    assert!(minors.len() >= 5, "fixture needs city-states: {}", minors.len());
+    assert!(
+        minors.len() >= 5,
+        "fixture needs city-states: {}",
+        minors.len()
+    );
     // Player 1 is suzerain of five of them. `suzerain_of` wants three envoys
     // and strictly more than anybody else.
     for minor in minors.iter().take(5) {
