@@ -1450,11 +1450,11 @@ class TheTableIsDerived(unittest.TestCase):
     def test_every_screenable_gene_is_visible(self):
         ledger = json.loads(ranking.LEDGER_JSON.read_text())
         measured, _ = ranking.load_display_sources(ledger)
-        text = ranking.RANKING_MD.read_text()
+        table = ranking.RANKING_MD.read_text()
         evidence = ranking.EVIDENCE_MD.read_text()
         for tag in ranking.screenable_tags():
             if tag in measured:
-                self.assertIn(f"`{tag}`", text, tag)
+                self.assertIn(f"`{tag}`", table, tag)
             else:
                 text = evidence
                 self.assertIn("## Awaiting measurement", text)
@@ -2191,7 +2191,7 @@ class TheStandardScreen(unittest.TestCase):
             "settle-plan-ahead",
         )
         live_tags = {gene["tag"] for gene in self.ledger["genes"]}
-        ranked = ranking.RANKING_MD.read_text()
+        ranked = ranking.EVIDENCE_MD.read_text()
         cutoff = json.loads(
             (gene_ledger.ROOT / "docs" / "gene_screens"
              / "2026-08-24-standard-continuous-38160-total-seats.json").read_text())
@@ -2238,7 +2238,7 @@ class TheStandardScreen(unittest.TestCase):
         # The harmful half was the only one that shipped, until g1 resolved
         # it off on 2026-08-23. The 2026-08-24 cull removes all three genes.
         live_tags = {g["tag"] for g in self.ledger["genes"]}
-        ranked = ranking.RANKING_MD.read_text()
+        ranked = ranking.EVIDENCE_MD.read_text()
         for tag in ("governor-victory-lanes", "governor-every-lane",
                     "governor-expansion-lane"):
             self.assertNotIn(tag, live_tags)
