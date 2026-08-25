@@ -4301,6 +4301,43 @@ pub struct AdvancedAi {
     /// `AdvancedAi::diplomatic_opening_score`.
     pub diplomatic_opening: bool,
 
+    /// Whether a rival's city-state suzerainties count toward the Diplomatic
+    /// threat it presents, as they already count toward our own lane.
+    ///
+    /// ⚠ THE PLANNER JUDGES ITS OWN DIPLOMATIC POSITION BY POINTS **AND**
+    /// CITY-STATES, AND A RIVAL'S BY POINTS ALONE. The two readings sit about
+    /// a hundred and fifty lines apart in this file:
+    ///
+    /// ```text
+    /// lane_progress_table   (ourselves)  dvp * 5 + suzerain * 6
+    /// rival_victory_pressure (a rival)   dvp * 5
+    /// ```
+    ///
+    /// A rival that has bought up every city-state on the map — the entire
+    /// machine that manufactures Diplomatic Victory Points, since a suzerainty
+    /// pays Favor every turn and Favor is the only thing that buys a Congress
+    /// vote — contributes **nothing** to its own threat reading until the
+    /// points actually land. We would score that identical position at 46 if
+    /// it were ours, and at 10 when it is theirs.
+    ///
+    /// Diplomacy is the largest way this agent loses. `docs/EVAL_STATUS.md`
+    /// counts 107 attempts ended by a rival's victory and **58 of them are
+    /// diplomatic**, landing at a median turn 241 of 250 — late, and therefore
+    /// visible for a long time to anything that is looking. The points arrive
+    /// in ones and twos from a Congress that sits every `standard_duration(30)`
+    /// turns; the suzerainties that pay for them are bought over the fifty
+    /// turns before that, in plain sight.
+    ///
+    /// So the gene is the term the file already contains, moved to the side
+    /// that is missing it. Nothing is modelled and nothing is tuned: `* 6` is
+    /// the own-lane weight, copied rather than chosen, exactly as
+    /// `DIPLOMATIC_OPENING` copied Religion's. A rival with no suzerainties
+    /// reads what it read before, so the ramp starts at zero and can only
+    /// raise.
+    ///
+    /// **Off by default.** Screenable.
+    pub rival_suzerainty_alarm: bool,
+
     /// Whether a rival's Science clock is read from the prerequisite chain it
     /// has actually climbed, or only from the launches it has already made.
     ///
@@ -5877,6 +5914,7 @@ impl AdvancedAi {
             air_surge_census: AirSurgeCensus::default(),
             air_surge_cooldown_until: 0,
             diplomatic_opening: false,
+            rival_suzerainty_alarm: false,
             science_chain_alarm: false,
             conversion_majority_alarm: false,
             culture_lane_forecast: false,
@@ -8686,7 +8724,19 @@ impl AdvancedAi {
         } else {
             0
         };
-        let diplomacy = (player.dvp * 5).clamp(0, 100) as i32;
+        // `rival_suzerainty_alarm`: the Favor engine behind the points, which
+        // `lane_progress_table` already reads when the empire is our own. The
+        // weight is that function's, copied rather than chosen.
+        let suzerainties = if self.rival_suzerainty_alarm {
+            g.players
+                .iter()
+                .filter(|minor| minor.alive && minor.is_minor && !minor.is_barbarian)
+                .filter(|minor| g.suzerain_of(minor.id) == Some(pid))
+                .count() as i64
+        } else {
+            0
+        };
+        let diplomacy = (player.dvp * 5 + suzerainties * 6).clamp(0, 100) as i32;
 
         let foreign_capitals = starting_majors
             .iter()
