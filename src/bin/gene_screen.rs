@@ -4127,6 +4127,10 @@ fn difficulty_ladder(rules: &civvis::rules::Rules) -> Vec<&str> {
     names
 }
 
+/// A gene's (win Δ, standard error, seats) on each subset of a batch, in the
+/// report's subset order — one cell per rung, per rival kind, and so on.
+type SubsetCells = Vec<(f64, f64, usize)>;
+
 /// ⭐ THE RUNG ROTATION READ BACK: games per rung, and the top genes by |win Δ|
 /// read on every rung separately.
 struct RungReport {
@@ -4135,7 +4139,7 @@ struct RungReport {
     games: Vec<(String, usize)>,
     /// Per gene: tag, whole-batch win Δ, and (Δ, se, seats) per rung in
     /// `games` order.
-    genes: Vec<(String, f64, Vec<(f64, f64, usize)>)>,
+    genes: Vec<(String, f64, SubsetCells)>,
 }
 
 impl RungReport {
