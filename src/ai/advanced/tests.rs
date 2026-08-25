@@ -31808,8 +31808,8 @@ fn diplomatic_lane_forecast_is_a_registered_reversible_opt_in() {
     );
     assert_eq!(
         crate::ai::advanced::gene_ledger::ledger_default_on("diplomatic-lane-forecast"),
-        Some(false),
-        "it ships off until a screen prices it"
+        Some(true),
+        "the operator pinned it on before any screen priced it"
     );
     let mut ai = AdvancedAi::new();
     assert!(!ai.diplomatic_lane_forecast, "off in the stock agent");
