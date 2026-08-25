@@ -52,6 +52,7 @@
       "missionary-evades-raiders",
       "missionary-last-charge-explores",
       "one-launch-pad",
+      "one-war-at-a-time",
       "opportunistic-war",
       "peacetime-deterrence",
       "price-the-suzerainty",
@@ -63,13 +64,16 @@
       "religion-sues-peace",
       "religious-defence-scales",
       "religious-units-heal-first",
+      "religious-veto-defence",
       "science-multiplier-payoff",
       "science-victory-drive",
       "score-horizon",
       "settle-sooner",
       "settlement-gap-target",
+      "settler-factory-coordination",
       "settler-threat-detour",
       "slot-kind-tiebreak",
+      "solvency-first-trade-slot",
       "strike-opening",
       "theology-for-founders",
       "unit-cost-efficiency",
@@ -94,7 +98,12 @@
       "settlement-gap-target",
       "religious-defence-scales",
       "lane-policy-deck",
-      "science-multiplier-payoff"
+      "science-multiplier-payoff",
+      "science-victory-drive",
+      "solvency-first-trade-slot",
+      "settler-factory-coordination",
+      "one-war-at-a-time",
+      "religious-veto-defence"
     ],
     "posterior_shapes": [
       "standard",
@@ -451,7 +460,7 @@
     "helps": 17,
     "hurts": 6,
     "unresolved": 88,
-    "default_on": 53
+    "default_on": 57
   },
   "genes": [
     {

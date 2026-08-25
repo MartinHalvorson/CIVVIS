@@ -489,17 +489,24 @@ OPERATOR_PROMOTIONS_20260824 = (
     "science-multiplier-payoff",
 )
 
-#: 2026-08-24, the operator's third explicit promotion, pinned on before its
-#: first screen: "default this gene to true initially once you write and
-#: merge it. i'll test it more later."
+#: The later 2026-08-25 operator-pinned additions. `science-victory-drive`
+#: was pinned on before its first screen: "default this gene to true initially
+#: once you write and merge it. i'll test it more later." The four following
+#: tags were explicitly promoted from the displayed pooled-Diff ranking at the
+#: +0.85 percentage-point cutoff; this remains a deliberate selection rather
+#: than a rule that lets a later screen rewrite the deployment genome.
 OPERATOR_PROMOTIONS_20260825 = (
     "science-victory-drive",
+    "solvency-first-trade-slot",
+    "settler-factory-coordination",
+    "one-war-at-a-time",
+    "religious-veto-defence",
 )
 
 #: The complete pinned deployment genome, in stable tag order. Every other
 #: screenable gene defaults off unless an explicit operator update changes this
-#: selection. Keep the sixteen promotions above named separately so the policy
-#: change is auditable without re-deriving it from screen statistics.
+#: selection. Keep the historical promotion groups above named separately so
+#: the policy change is auditable without re-deriving it from screen statistics.
 OPERATOR_DEFAULT_ON = (
     "air-surge",
     "amenity-district-path",
@@ -529,6 +536,7 @@ OPERATOR_DEFAULT_ON = (
     "missionary-evades-raiders",
     "missionary-last-charge-explores",
     "one-launch-pad",
+    "one-war-at-a-time",
     "opportunistic-war",
     "peacetime-deterrence",
     "price-the-suzerainty",
@@ -540,13 +548,16 @@ OPERATOR_DEFAULT_ON = (
     "religion-sues-peace",
     "religious-defence-scales",
     "religious-units-heal-first",
+    "religious-veto-defence",
     "science-multiplier-payoff",
     "science-victory-drive",
     "score-horizon",
     "settle-sooner",
     "settlement-gap-target",
+    "settler-factory-coordination",
     "settler-threat-detour",
     "slot-kind-tiebreak",
+    "solvency-first-trade-slot",
     "strike-opening",
     "theology-for-founders",
     "unit-cost-efficiency",
@@ -1552,7 +1563,9 @@ def build_ledger(sources: list[Path], filter_known: bool = True,
                          "its standard error, both in wins per 10,000 on-arm seats",
             "deployment_policy": DEPLOYMENT_POLICY,
             "deployment_genome": list(selected),
-            "operator_promotions": list(OPERATOR_PROMOTIONS_20260824),
+            "operator_promotions": list(
+                OPERATOR_PROMOTIONS_20260824 + OPERATOR_PROMOTIONS_20260825
+            ),
             "posterior_shapes": list(POSTERIOR_SHAPES),
             "deployment_policy_meaning": "the operator-pinned list decides default_on. "
                                          "`tools/genes.py` writes the list into the ledger and "

@@ -17,6 +17,14 @@ questions get grepped by hand every time:
 * **Did anything the seat asked for actually happen?** Congress ballots are the
   standing example: `wc_vote` reports Favor spent while the host records one
   vote and takes nothing.
+* **Did the empire that led in science ever race for the science victory?**
+  Over the 237 recorded runs that reached turn 200, this seat **led the field
+  in science at the end of 177 of them (75%)** and completed all four launch
+  projects in **none**. It ordered a Spaceport in 55, and the pad actually
+  finished in 30. The `science race` section names which of the four steps
+  stopped — the standing, the pad, the chain, or the decision — because the
+  ending line cannot tell a pad that never finished from a race that was
+  refused every turn, and those are different defects.
 
     python3 tools/civ6_run_report.py ~/civvis-civ6-runs/control/civvis-...Z
     python3 tools/civ6_run_report.py <run> --json report.json
@@ -50,6 +58,33 @@ VICTORY_NAMES = {
 
 #: The band every recorded Settler win has sat in at turn 60.
 WIN_BAND = (4, 6)
+
+#: The four launch projects in the order the engine requires them, under the
+#: host's own identifiers. `src/mirror.rs` maps these to the engine's names;
+#: the Gathering Storm ruleset the ladder plays calls the third MARS_BASE, not
+#: MARS_COLONY, and reading for the engine's spelling finds nothing.
+#: The turn by which a run has had a real chance to launch. The chain needs
+#: the industrial era for the pad's production and Rocketry for the pad; a game
+#: abandoned before this has not failed to race, it has not got there.
+RACE_ENDGAME_TURN = 200
+
+SPACE_CHAIN = (
+    ("PROJECT_LAUNCH_EARTH_SATELLITE", "earth satellite"),
+    ("PROJECT_LAUNCH_MOON_LANDING", "moon landing"),
+    ("PROJECT_LAUNCH_MARS_BASE", "mars colony"),
+    ("PROJECT_LAUNCH_EXOPLANET_EXPEDITION", "exoplanet expedition"),
+)
+
+#: What the seat's own journal says about the race, by the phrase that only
+#: that decision writes. The drive is `science-victory-drive`; the two
+#: refusals are the horizons that can stop the race — the gene's own and the
+#: stock one it replaces.
+RACE_MARKS = {
+    "drive": "Driving for a science victory",
+    "stand_down": "The science drive stands down",
+    "drive_refusal": "The science drive cannot land the race",
+    "stock_refusal": "cannot finish before the turn limit",
+}
 
 
 class ReportError(RuntimeError):
@@ -178,6 +213,105 @@ def settler_holds(run: Path) -> dict:
     return {"holds": holds, "sites": [{"site": s, "holds": n} for s, n in ranked]}
 
 
+def rival_techs(state: dict) -> int:
+    """The best rival's tech count. The seat exports its own `techs` as the
+    LIST of what it knows and a rival's as an integer, so a reader that treats
+    them alike reports either 0 rivals or a rival on one tech."""
+    counts = []
+    for rival in state.get("rivals") or []:
+        known = rival.get("techs")
+        counts.append(len(known) if isinstance(known, list) else (known or 0))
+    return max(counts) if counts else 0
+
+
+def rival_projects(state: dict) -> int:
+    best = 0
+    for rival in state.get("rivals") or []:
+        best = max(best, len(rival.get("science_projects") or []))
+    return best
+
+
+def space_race(rows: Sequence[dict], run: Path) -> dict:
+    """Whether the seat that led in science ever raced for the science victory.
+
+    The operator's standing question about this lane (2026-08-24): *"we have
+    regularly led science and not even attempted a science victory."* Four
+    things have to be true in order for that lane to convert, and only the
+    first was ever in doubt — so this reports all four and where the chain
+    stopped:
+
+    1. **the standing** — our science a turn and techs against the best rival's;
+    2. **the pad** — a Spaceport ordered, and whether it ever COMPLETED (the
+       export marks a district `complete: false` while it is still being
+       built, and a pad under construction launches nothing);
+    3. **the chain** — the turn each of the four launch projects completed,
+       ours against the best rival's count;
+    4. **the decision** — what the seat's own journal said: whether
+       `science-victory-drive` engaged, and how often either horizon refused
+       the race.
+
+    ⚠ Counts only. A run where the pad never finished and one where the race
+    was refused every turn look the same in the ending line and are different
+    defects; naming which of the four stopped is the whole point.
+    """
+    if not rows:
+        return {}
+    last = rows[-1]
+    ours_science = last.get("science") or 0
+    ours_techs = len(last.get("techs") or [])
+    completed: dict[str, int] = {}
+    pad_ordered = pad_standing = None
+    for row in rows:
+        for name in row.get("science_projects") or []:
+            completed.setdefault(name, row["turn"])
+        for city in row.get("cities") or []:
+            for district in city.get("districts") or []:
+                # ⚠ The export has carried districts BOTH ways: older runs
+                # write a bare type string, newer ones an object with the
+                # completion flag. A reader that assumes the object shape dies
+                # on the older corpus, which is most of it.
+                if isinstance(district, str):
+                    kind, complete = district, True
+                else:
+                    kind, complete = district.get("type"), district.get("complete")
+                if kind != "DISTRICT_SPACEPORT":
+                    continue
+                if pad_ordered is None:
+                    pad_ordered = row["turn"]
+                if complete and pad_standing is None:
+                    pad_standing = row["turn"]
+    marks = {key: {"count": 0, "first_turn": None, "last": None}
+             for key in RACE_MARKS}
+    why = run / "why.log"
+    if why.exists():
+        with why.open(errors="ignore") as handle:
+            for line in handle:
+                for key, phrase in RACE_MARKS.items():
+                    if phrase not in line:
+                        continue
+                    seen = marks[key]
+                    seen["count"] += 1
+                    turn = re.search(r"\[why\] t(\d+)", line)
+                    if seen["first_turn"] is None and turn:
+                        seen["first_turn"] = int(turn.group(1))
+                    seen["last"] = line.strip()
+    return {
+        "science": round(ours_science, 1),
+        "best_rival_science": round(max(
+            [(r.get("science") or 0) for r in (last.get("rivals") or [])] or [0]), 1),
+        "techs": ours_techs,
+        "best_rival_techs": rival_techs(last),
+        "pad_ordered_turn": pad_ordered,
+        "pad_standing_turn": pad_standing,
+        "projects": [{"project": name, "label": label,
+                      "turn": completed.get(name)} for name, label in SPACE_CHAIN],
+        "projects_done": sum(1 for name, _ in SPACE_CHAIN if name in completed),
+        "best_rival_projects": rival_projects(last),
+        "journal": marks,
+        "journal_read": why.exists(),
+    }
+
+
 def ending(rows: Sequence[dict], run: Path) -> dict:
     """How the game ended, from the host's own terminal event."""
     result = {"last_turn": rows[-1]["turn"] if rows else 0, "victory": None,
@@ -227,6 +361,7 @@ def report(run: Path, every: int) -> dict:
         "ending": ending(rows, run),
         "ballots": ballots(events),
         "settler": settler_holds(run),
+        "space_race": space_race(rows, run),
     }
 
 
@@ -284,6 +419,57 @@ def render(data: dict) -> str:
                          f"{worst.get('asked')} sent {worst.get('votes_sent')} "
                          f"recorded {worst.get('recorded')} "
                          f"favor {worst.get('favor_at_ballot')}")
+    race = data.get("space_race") or {}
+    if race:
+        lead_sci = race["science"] - race["best_rival_science"]
+        lead_tech = race["techs"] - race["best_rival_techs"]
+        lines.append("")
+        lines.append(f"  science race: {race['science']:.0f}/turn v best rival "
+                     f"{race['best_rival_science']:.0f} ({lead_sci:+.0f}), "
+                     f"{race['techs']} techs v {race['best_rival_techs']} "
+                     f"({lead_tech:+d})")
+        if race["pad_standing_turn"] is not None:
+            pad = f"stood t{race['pad_standing_turn']}"
+            if race["pad_ordered_turn"] != race["pad_standing_turn"]:
+                pad += f" (ordered t{race['pad_ordered_turn']})"
+        elif race["pad_ordered_turn"] is not None:
+            # The distinction the ending line cannot make: a pad ordered and
+            # never finished launches exactly as much as no pad at all.
+            pad = f"ordered t{race['pad_ordered_turn']}, NEVER COMPLETED"
+        else:
+            pad = "none"
+        lines.append(f"    spaceport: {pad}")
+        done = ", ".join(
+            f"{p['label']} t{p['turn']}" for p in race["projects"] if p["turn"])
+        lines.append(f"    launches: {race['projects_done']}/4"
+                     f"{' — ' + done if done else ''}"
+                     f" · best rival {race['best_rival_projects']}/4")
+        journal = race["journal"]
+        if not race["journal_read"]:
+            lines.append("    journal: no why.log beside this run")
+        else:
+            drive, stand = journal["drive"], journal["stand_down"]
+            if drive["count"]:
+                engaged = f"engaged t{drive['first_turn']}"
+                if stand["count"]:
+                    engaged += f", stood down {stand['count']}×"
+                lines.append(f"    science-victory-drive: {engaged}")
+            else:
+                # Not the same as "the gene is off": a run recorded before the
+                # gene merged writes no such line either. Say which is unknown.
+                lines.append("    science-victory-drive: never engaged "
+                             "(or the run predates it)")
+            refused = (journal["drive_refusal"]["count"]
+                       + journal["stock_refusal"]["count"])
+            if refused:
+                which = ("the drive's own horizon"
+                         if journal["drive_refusal"]["count"]
+                         else "the stock horizon")
+                first = (journal["drive_refusal"]["first_turn"]
+                         if journal["drive_refusal"]["count"]
+                         else journal["stock_refusal"]["first_turn"])
+                lines.append(f"    the race was refused on {refused} turns "
+                             f"by {which}, from t{first}")
     settler = data["settler"]
     if settler["holds"]:
         # Parenthesised: a site is "14, 28" and joining bare pairs with a comma
@@ -318,6 +504,13 @@ def aggregate(root: Path, every: int) -> dict:
     crossovers: list[int] = []
     never_led = wins = completed = skipped_unfinished = skipped_short = 0
     ballots_multi = ballots_registered = 0
+    # ⚠ Tallied over runs that REACHED the endgame, not over completed runs:
+    # the launch chain cannot start before the industrial era, so counting a
+    # game abandoned at turn 40 as one that failed to launch would say the
+    # lane is more broken than it is.
+    race_seen = race_led = race_pad = race_pad_stood = race_launched = 0
+    race_launches: dict[int, int] = {}
+    race_rival_launched = race_refused_runs = race_drove = 0
     for run in runs:
         try:
             data = report(run, every)
@@ -326,6 +519,19 @@ def aggregate(root: Path, every: int) -> dict:
             continue
         ballots_multi += data["ballots"]["multi_vote_ballots"]
         ballots_registered += data["ballots"]["multi_vote_registered"]
+        race = data.get("space_race") or {}
+        if race and data["turns"] >= RACE_ENDGAME_TURN:
+            race_seen += 1
+            race_led += race["science"] > race["best_rival_science"]
+            race_pad += race["pad_ordered_turn"] is not None
+            race_pad_stood += race["pad_standing_turn"] is not None
+            race_launched += race["projects_done"] > 0
+            race_launches[race["projects_done"]] = (
+                race_launches.get(race["projects_done"], 0) + 1)
+            race_rival_launched += race["best_rival_projects"] > 0
+            race_drove += race["journal"]["drive"]["count"] > 0
+            race_refused_runs += (race["journal"]["drive_refusal"]["count"]
+                                  + race["journal"]["stock_refusal"]["count"]) > 0
         if data["ending"].get("victory") is None:
             skipped_unfinished += 1
             continue
@@ -362,6 +568,12 @@ def aggregate(root: Path, every: int) -> dict:
         "crossovers": crossovers,
         "crossover_median": crossovers[len(crossovers) // 2] if crossovers else None,
         "crossover_bands": bands,
+        "space_race": {
+            "runs": race_seen, "led": race_led, "pad_ordered": race_pad,
+            "pad_stood": race_pad_stood, "launched": race_launched,
+            "launches": race_launches, "rival_launched": race_rival_launched,
+            "refused": race_refused_runs, "drove": race_drove,
+        },
         "multi_vote_ballots": ballots_multi,
         "multi_vote_registered": ballots_registered,
     }
@@ -372,6 +584,22 @@ def render_aggregate(data: dict) -> str:
              f"({data['skipped_unfinished']} without a terminal event), "
              f"{data['wins']} won"]
     band = f"{WIN_BAND[0]}-{WIN_BAND[1]}"
+    race = data.get("space_race") or {}
+    if race.get("runs"):
+        seen = race["runs"]
+        lines.append("")
+        lines.append(f"  the science race, over the {seen} runs that reached "
+                     f"turn {RACE_ENDGAME_TURN}:")
+        lines.append(f"    led the field in science at the end: {race['led']}")
+        lines.append(f"    ordered a spaceport: {race['pad_ordered']} "
+                     f"(it stood in {race['pad_stood']})")
+        lines.append(f"    launched at least one project: {race['launched']}"
+                     f" — a rival did in {race['rival_launched']}")
+        spread = ", ".join(f"{n}/4 in {count}"
+                           for n, count in sorted(race["launches"].items()))
+        lines.append(f"    launches: {spread}")
+        lines.append(f"    the race was refused at least once in "
+                     f"{race['refused']}; the drive engaged in {race['drove']}")
     lines.append("")
     lines.append(f"  {'cities@60':>9} {'games':>6} {'wins':>5} {'rate':>6}")
     inside = outside = inside_won = outside_won = 0
