@@ -35101,3 +35101,144 @@ fn the_conversion_count_never_lowers_the_staircase() {
     );
     assert!((0..=100).contains(&with), "{with} out of range");
 }
+
+// ═══ The Culture lane's other curve (`culture_lane_forecast`) ═══
+
+#[test]
+fn culture_lane_forecast_is_a_registered_reversible_opt_in() {
+    assert!(
+        GENES.iter().any(|gene| gene.opt_in()
+            && gene.field == "culture_lane_forecast"
+            && gene.tag == "culture-lane-forecast"),
+        "culture-lane-forecast must be a registered native opt-in"
+    );
+    assert!(
+        crate::ai::advanced::gene_ledger::screenable("culture-lane-forecast"),
+        "the ledger must be able to price it"
+    );
+    assert_eq!(
+        crate::ai::advanced::gene_ledger::ledger_default_on("culture-lane-forecast"),
+        Some(false),
+        "it ships off until a screen prices it"
+    );
+    let mut ai = AdvancedAi::new();
+    assert!(!ai.culture_lane_forecast, "off in the stock agent");
+    assert!(
+        !AdvancedAi::legacy().culture_lane_forecast,
+        "off in the legacy agent"
+    );
+    ai.enable_culture_lane_forecast();
+    assert!(ai.culture_lane_forecast);
+    ai.disable_culture_lane_forecast();
+    assert!(!ai.culture_lane_forecast, "reversible");
+}
+
+/// The lock: an empire generating real Tourism reads the Culture lane at zero
+/// on the shipped ratio, because its visitors have not arrived yet.
+#[test]
+fn the_shipped_culture_lane_reads_a_race_that_has_not_finished_as_nothing() {
+    let mut game = Game::new(4, 40, 26, 8_601, 250, 0);
+    game.turn = 90;
+    game.found_city_for(0, (12, 10), None);
+    for rival in 1..4 {
+        game.found_city_for(rival, (12 + 4 * rival as i32, 16), None);
+        game.players[rival].culture_lifetime = 900.0;
+    }
+    // Real tourism output, no visitor banked yet.
+    game.players[0].tourism_lifetime = 400.0;
+
+    let shipped = AdvancedAi::new();
+    assert_eq!(
+        g_foreign(&game, 0),
+        0,
+        "fixture: not one visitor has arrived"
+    );
+    assert_eq!(
+        shipped.lane_progress_table(&game, 0)[1],
+        0,
+        "and so the shipped lane reads nothing at all"
+    );
+}
+
+fn g_foreign(game: &Game, pid: usize) -> i64 {
+    game.foreign_tourists(pid)
+}
+
+/// The forecast projects BOTH curves: the same board reads lower when the
+/// rival's culture is climbing faster, and reads nothing once the clock is
+/// gone.
+#[test]
+fn the_culture_forecast_prices_the_bar_that_is_still_moving() {
+    let mut ai = AdvancedAi::new();
+    ai.enable_culture_lane_forecast();
+
+    let mut game = Game::new(4, 40, 26, 8_602, 250, 0);
+    game.turn = 60;
+    game.found_city_for(0, (12, 10), None);
+    for rival in 1..4 {
+        game.found_city_for(rival, (12 + 4 * rival as i32, 16), None);
+    }
+    // Bank visitors directly so the reading does not depend on the tourism
+    // model: `foreign_tourists` divides accumulated pressure by
+    // starting majors * TOURISM_PER_VISITOR.
+    let per_visitor = 4.0 * crate::game::TOURISM_PER_VISITOR;
+    for rival in 1..4 {
+        game.players[0]
+            .tourism_pressure
+            .insert(rival, per_visitor * 20.0);
+    }
+    game.players[1].culture_lifetime = 4_000.0;
+
+    let ahead = ai.culture_lane_forecast_score(&game, 0);
+    assert!(ahead > 0, "a real tourist stream has a reading ({ahead})");
+    assert_eq!(
+        AdvancedAi::new().culture_lane_forecast_score(&game, 0),
+        0,
+        "the gene is off, so it contributes nothing"
+    );
+
+    // The same board with a much larger bar must read lower.
+    let mut steeper = game.clone();
+    steeper.players[1].culture_lifetime = 400_000.0;
+    let behind = ai.culture_lane_forecast_score(&steeper, 0);
+    assert!(
+        behind < ahead,
+        "a bigger bar must read lower ({behind} vs {ahead})"
+    );
+
+    // Past the clock there is nothing left to project into.
+    let mut over = game.clone();
+    over.turn = 250;
+    let at_the_wire = ai.culture_lane_forecast_score(&over, 0);
+    assert!(
+        at_the_wire <= ahead,
+        "no turns left cannot read higher ({at_the_wire} vs {ahead})"
+    );
+}
+
+/// It can only raise the shipped ratio, never lower it.
+#[test]
+fn the_culture_forecast_never_lowers_the_shipped_ratio() {
+    let mut ai = AdvancedAi::new();
+    ai.enable_culture_lane_forecast();
+    let shipped = AdvancedAi::new();
+    for (seed, turn) in [(8_701_u64, 40_u32), (8_702, 150), (8_703, 240)] {
+        let mut game = Game::new(4, 40, 26, seed, 250, 0);
+        game.turn = turn;
+        game.found_city_for(0, (12, 10), None);
+        for rival in 1..4 {
+            game.found_city_for(rival, (12 + 4 * rival as i32, 16), None);
+            game.players[rival].culture_lifetime = 500.0 * rival as f64;
+        }
+        let with = ai.lane_progress_table(&game, 0)[1];
+        let without = shipped.lane_progress_table(&game, 0)[1];
+        assert!(
+            with >= without,
+            "seed {seed}: the forecast lowered the reading ({with} < {without})"
+        );
+        assert!(
+            (0..=100).contains(&with),
+            "seed {seed}: {with} out of range"
+        );
+    }
+}
