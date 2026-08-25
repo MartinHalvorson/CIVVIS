@@ -63,6 +63,7 @@ OPERATOR_HALT_POLL_SECONDS = 5.0
 
 MAP_TYPES = (
     "land_only",
+    # The stock opening world's own map, and so the default below.
     "lakes",
     "inland_sea",
     "pangaea",
@@ -71,9 +72,8 @@ MAP_TYPES = (
     "islands",
     "water_world",
     "true_start_earth",
-    # The stock opening world's own map, and so the default below. Leaving it
-    # out meant the exhibition could never roll the one world the product
-    # actually opens on.
+    # Listed so the exhibition can roll it at all: leaving a world out of this
+    # tuple is the one way it becomes unreachable from here.
     "tenins_ball",
 )
 MAP_SHAPES = ("flat", "planet")
@@ -1225,57 +1225,6 @@ def result_standings(state: dict[str, Any]) -> str | None:
     return "; ".join(entries)
 
 
-# Supervisor-level policy, set once from --league in main(). Deliberately NOT
-# part of the per-game settings dict: session_settings() and manual restart
-# requests rebuild that dict from the finished game's state, which silently
-# dropped the key and unrated every game after the first victory boundary.
-LEAGUE_SPEC = "auto"
-LEAGUE_RECORD = True
-MANAGED_ROSTER_MARKER = ".civvis-managed-roster"
-
-
-def league_dir(spec: str) -> tuple[Path, bool] | None:
-    """Resolve the --league setting to (directory holding league.json, record).
-
-    Resolved at every spawn, not at startup, because in 'auto' mode the
-    canonical source worktree may only gain data/league once it syncs a
-    commit that ships the snapshot.
-
-    'auto' hands back a *runtime* copy of that snapshot and asks the server to
-    rate its games into it. data/league is a committed file: writing results
-    straight back would leave every checkout permanently dirty, so the shipped
-    roster stays the starting position and the live table accumulates beside
-    it, under the repo-root league/ path .gitignore already reserves for
-    exactly this. Delete that directory to start again from the snapshot.
-    An explicitly named directory is left read-only unless the operator asks
-    for recording, since only they know whether it is disposable.
-    """
-    if spec == "off":
-        return None
-    if spec != "auto":
-        candidate = Path(spec).expanduser().resolve()
-        if not (candidate / "league.json").exists():
-            return None
-        return candidate, LEAGUE_RECORD
-    snapshot = SOURCE_ROOT / "data" / "league" / "league.json"
-    if not snapshot.exists():
-        return None
-    if not LEAGUE_RECORD:
-        return snapshot.parent, False
-    live = SOURCE_ROOT / "league"
-    if not (live / "league.json").exists():
-        live.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(snapshot, live / "league.json")
-        log(f"seeded the live rating table at {live} from {snapshot}")
-    # The marker distinguishes this evolving copy from an explicitly named
-    # experimental pool. The Rust loader may then append newly required
-    # controller families without changing a hand-built comparison roster.
-    marker = live / MANAGED_ROSTER_MARKER
-    if not marker.exists():
-        marker.write_text("managed by spectator --league auto\n", encoding="utf-8")
-    return live, True
-
-
 def server_command(
     port: int,
     settings: dict[str, Any],
@@ -1335,13 +1284,6 @@ def server_command(
         args.extend(("--resume", str(resume)))
     if initially_paused:
         args.append("--paused")
-    roster = league_dir(LEAGUE_SPEC)
-    if roster is not None:
-        directory, record = roster
-        # Absolute path: the server runs from the runtime directory, not ROOT.
-        args.extend(("--league", str(directory)))
-        if record:
-            args.append("--league-record")
     if "victories" in settings:
         args.extend(("--victories", ",".join(settings["victories"])))
     if not open_browser:
@@ -1733,10 +1675,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--map",
         choices=MAP_TYPES,
-        default="tenins_ball",
+        default="lakes",
     )
     parser.add_argument("--shape", choices=MAP_SHAPES, default="planet")
-    parser.add_argument("--poles", choices=MAP_POLES, default="poles")
+    # These defaults are not free choices: `verify_default_contract` in
+    # `civvis_desktop_apps.py` reads `stock_opening_params` out of
+    # `src/server.rs` and fails when `--players`, `--map`, `--shape`, `--poles`
+    # or `--speed` here name a different world. A supervisor started with no
+    # world arguments therefore serves the world the product itself opens on
+    # rather than a third description of it.
+    parser.add_argument("--poles", choices=MAP_POLES, default="randomized")
     parser.add_argument(
         "--speed",
         choices=("online", "quick", "standard", "epic", "marathon"),
@@ -1753,25 +1701,6 @@ def parse_args() -> argparse.Namespace:
         help=(
             "comma-separated enabled victories: science, culture, religious, "
             "diplomatic, domination, score"
-        ),
-    )
-    parser.add_argument(
-        "--league",
-        default="auto",
-        help=(
-            "league directory for rated seating and the elo HUD: 'auto' uses "
-            "the canonical source's data/league when present, 'off' disables, "
-            "anything else is a directory containing league.json"
-        ),
-    )
-    parser.add_argument(
-        "--no-league-record",
-        dest="league_record",
-        action="store_false",
-        help=(
-            "seat rated players but leave their ratings alone. By default "
-            "every finished game is rated: 'auto' accumulates into a runtime "
-            "copy of the shipped roster, a named directory is written in place"
         ),
     )
     parser.add_argument(
@@ -1954,9 +1883,6 @@ def main() -> int:
         settings["poles"] = args.poles
     if getattr(args, "victories", None):
         settings["victories"] = list(args.victories)
-    global LEAGUE_SPEC, LEAGUE_RECORD
-    LEAGUE_SPEC = getattr(args, "league", "auto")
-    LEAGUE_RECORD = getattr(args, "league_record", True)
     process: subprocess.Popen[str] | None = None
     adopted_pid = args.adopt_pid
     adopted_state: dict[str, Any] | None = None

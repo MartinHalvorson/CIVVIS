@@ -135,6 +135,60 @@ class MirrorFreshnessTests(unittest.TestCase):
         )
 
 
+class PopupClearOwnershipTests(unittest.TestCase):
+    """One interactive host owns one popup clearer for the visible Civ VI seat."""
+
+    def test_keeper_lock_requires_a_live_popup_keeper_command(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            lock = Path(temporary) / "popup.lock"
+            lock.mkdir()
+            (lock / "pid").write_text("401")
+            with mock.patch.object(climb, "POPUP_KEEPER_LOCK", lock), \
+                 mock.patch.object(climb, "process_running", return_value=True), \
+                 mock.patch.object(
+                     climb, "run",
+                     return_value="/bin/zsh /tmp/civvis-popup-keeper.sh\n"):
+                self.assertEqual(climb.interactive_popup_keeper_pid(), 401)
+            with mock.patch.object(climb, "POPUP_KEEPER_LOCK", lock), \
+                 mock.patch.object(climb, "process_running", return_value=True), \
+                 mock.patch.object(climb, "run", return_value="/bin/zsh /tmp/other.sh\n"):
+                self.assertIsNone(climb.interactive_popup_keeper_pid())
+
+    def test_interactive_keeper_preserves_its_child_and_retires_the_batch_copy(self):
+        with mock.patch.object(climb, "interactive_popup_keeper_pid", return_value=401), \
+             mock.patch.object(climb, "popup_clearer_children", return_value={402}), \
+             mock.patch.object(climb, "popup_clearer_pids", return_value=[402, 403]), \
+             mock.patch.object(climb, "process_running", return_value=False), \
+             mock.patch.object(climb.os, "kill") as kill, \
+             mock.patch.object(climb, "_detach") as detach:
+            climb.ensure_popup_clear()
+
+        kill.assert_called_once_with(403, climb.signal.SIGTERM)
+        detach.assert_not_called()
+
+    def test_interactive_keeper_prevents_a_new_batch_clearer_when_no_child_is_ready(self):
+        with mock.patch.object(climb, "interactive_popup_keeper_pid", return_value=401), \
+             mock.patch.object(climb, "popup_clearer_children", return_value=set()), \
+             mock.patch.object(climb, "popup_clearer_pids", return_value=[]), \
+             mock.patch.object(climb, "_detach") as detach:
+            climb.ensure_popup_clear()
+
+        detach.assert_not_called()
+
+    def test_missing_interactive_keeper_keeps_the_batch_fallback(self):
+        with mock.patch.object(climb, "interactive_popup_keeper_pid", return_value=None), \
+             mock.patch.object(climb, "popup_clearer_pids", return_value=[]), \
+             mock.patch.object(climb, "_detach") as detach:
+            climb.ensure_popup_clear()
+
+        detach.assert_called_once_with(
+            [climb.sys.executable, "-u", str(climb.HERE / "civ6_control" / "popup_clear.py"),
+             "--interval", "2.5", "--runs", str(climb.RUN_ROOT), "--log",
+             str(climb.RUN_ROOT.parent / "popup_clear.log")],
+            climb.RUN_ROOT.parent / "popup_clear.log", "popups",
+        )
+
+
 class TeardownOwnershipTests(unittest.TestCase):
     """The ladder must never clean up a run whose ownership it cannot prove."""
 
@@ -1431,6 +1485,28 @@ class ResumeFromAutosaveTests(_Harness, unittest.TestCase):
         self.assertIsNone(climb.resume_from_autosave(frozen, "frozen", 0, args, 0.0,
                                                      latest=lambda newer_than=None: None))
 
+    def test_successive_resumes_step_back_instead_of_reloading_the_same_hang(self):
+        args = self._Args()
+        saves = [
+            Path("/saves/AutoSave_0181.Civ6Save"),
+            Path("/saves/AutoSave_0180.Civ6Save"),
+        ]
+        finder = lambda newer_than=None: saves
+        frozen = {"last_turn": 181}
+
+        self.assertEqual(
+            climb.resume_from_autosave(
+                frozen, "frozen", 0, args, 1234.5, recent=finder,
+            ),
+            saves[0],
+        )
+        self.assertEqual(
+            climb.resume_from_autosave(
+                frozen, "frozen", 1, args, 1234.5, recent=finder,
+            ),
+            saves[1],
+        )
+
     def test_a_frozen_attempt_is_reloaded_under_a_cont_tag_and_scored_from_it(self):
         spawned = []
 
@@ -1441,9 +1517,11 @@ class ResumeFromAutosaveTests(_Harness, unittest.TestCase):
 
         verdicts = ["frozen", "exited"]
         saved_wait = climb.wait_watching_the_turn
-        saved_latest = climb._latest_autosave
+        saved_recent = climb._recent_autosaves
         climb.wait_watching_the_turn = lambda *a, **k: verdicts.pop(0)
-        climb._latest_autosave = lambda newer_than=None: Path("/saves/AutoSave_0102.Civ6Save")
+        climb._recent_autosaves = lambda newer_than=None: [
+            Path("/saves/AutoSave_0102.Civ6Save")
+        ]
         climb.subprocess.Popen = Recording
         try:
             code, rows = self.climb_with(
@@ -1452,7 +1530,7 @@ class ResumeFromAutosaveTests(_Harness, unittest.TestCase):
                 attempts=1)
         finally:
             climb.wait_watching_the_turn = saved_wait
-            climb._latest_autosave = saved_latest
+            climb._recent_autosaves = saved_recent
             climb.subprocess.Popen = FakeProc
 
         self.assertEqual(code, 1, "played out, no win")
@@ -1495,37 +1573,44 @@ class ResumeFromAutosaveTests(_Harness, unittest.TestCase):
     def test_the_resume_budget_is_bounded_and_the_last_freeze_is_the_row(self):
         verdicts = ["frozen", "frozen", "frozen"]
         saved_wait = climb.wait_watching_the_turn
-        saved_latest = climb._latest_autosave
+        saved_recent = climb._recent_autosaves
         climb.wait_watching_the_turn = lambda *a, **k: verdicts.pop(0)
-        climb._latest_autosave = lambda newer_than=None: Path("/saves/AutoSave_0150.Civ6Save")
+        climb._recent_autosaves = lambda newer_than=None: [
+            Path("/saves/AutoSave_0150.Civ6Save"),
+            Path("/saves/AutoSave_0149.Civ6Save"),
+        ]
         try:
             code, rows = self.climb_with(
                 [{"last_turn": 102}, {"last_turn": 140}, {"last_turn": 151}],
                 attempts=1)
         finally:
             climb.wait_watching_the_turn = saved_wait
-            climb._latest_autosave = saved_latest
+            climb._recent_autosaves = saved_recent
 
         self.assertEqual(len(rows), 1)
         row = rows[0]
         self.assertEqual(row["last_turn"], 151)
         self.assertEqual(row["reason"], "attempt frozen", "still frozen after the budget: say so")
         self.assertEqual([r["from_turn"] for r in row["resumes"]], [102, 140])
+        self.assertEqual([r["save"] for r in row["resumes"]],
+                         ["AutoSave_0150.Civ6Save", "AutoSave_0149.Civ6Save"])
         self.assertTrue(row["resumes"][-1]["tag"].endswith("-cont2"))
 
     def test_a_resume_that_never_reaches_a_turn_keeps_the_frozen_row(self):
         verdicts = ["frozen", "exited"]
         saved_wait = climb.wait_watching_the_turn
-        saved_latest = climb._latest_autosave
+        saved_recent = climb._recent_autosaves
         climb.wait_watching_the_turn = lambda *a, **k: verdicts.pop(0)
-        climb._latest_autosave = lambda newer_than=None: Path("/saves/AutoSave_0102.Civ6Save")
+        climb._recent_autosaves = lambda newer_than=None: [
+            Path("/saves/AutoSave_0102.Civ6Save")
+        ]
         try:
             code, rows = self.climb_with(
                 [{"last_turn": 102, "last_score": 340}, {"last_turn": None}],
                 attempts=1)
         finally:
             climb.wait_watching_the_turn = saved_wait
-            climb._latest_autosave = saved_latest
+            climb._recent_autosaves = saved_recent
         self.assertEqual(len(rows), 1, "the frozen game is the row, not a hole")
         row = rows[0]
         self.assertEqual(row["attempt"], 1, "and it spends its rung like any played game")
@@ -1538,15 +1623,17 @@ class ResumeFromAutosaveTests(_Harness, unittest.TestCase):
     def test_resumes_can_be_switched_off(self):
         verdicts = ["frozen"]
         saved_wait = climb.wait_watching_the_turn
-        saved_latest = climb._latest_autosave
+        saved_recent = climb._recent_autosaves
         climb.wait_watching_the_turn = lambda *a, **k: verdicts.pop(0)
-        climb._latest_autosave = lambda newer_than=None: Path("/saves/AutoSave_0102.Civ6Save")
+        climb._recent_autosaves = lambda newer_than=None: [
+            Path("/saves/AutoSave_0102.Civ6Save")
+        ]
         try:
             code, rows = self.climb_with([{"last_turn": 102}], attempts=1,
                                          argv_extra=("--max-resumes", "0"))
         finally:
             climb.wait_watching_the_turn = saved_wait
-            climb._latest_autosave = saved_latest
+            climb._recent_autosaves = saved_recent
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["reason"], "attempt frozen")
         self.assertNotIn("resumes", rows[0])
@@ -1645,7 +1732,7 @@ class BatchRefreshSecondsTests(unittest.TestCase):
             strategy="auto", war_from_plan=False, tile_export_every=25,
             refresh_seconds=None, no_peace_deterrence=False, with_=[], without=[],
             no_counter_resolutions=False, combat_frames=0, replan_frames=2,
-            settler_escort_cap_sync=False,
+            settler_escort_cap_sync=False, restart_below_leader_ratio=None,
         )
         values.update(changes)
         return SimpleNamespace(**values)
@@ -1661,6 +1748,17 @@ class BatchRefreshSecondsTests(unittest.TestCase):
         self.assertEqual(cmd[cmd.index("--abandon-below-win-rate") + 1], "0.05")
         self.assertNotIn(
             "--abandon-below-win-rate",
+            climb.play_command(self._play_args(), "t",
+                               Path("orders.sqlite"), Path("civvis_orders")))
+
+    def test_the_three_signal_restart_ratio_reaches_the_play_command(self):
+        cmd = climb.play_command(
+            self._play_args(restart_below_leader_ratio=0.70), "t",
+            Path("orders.sqlite"), Path("civvis_orders"))
+        self.assertIn("--restart-below-leader-ratio", cmd)
+        self.assertEqual(cmd[cmd.index("--restart-below-leader-ratio") + 1], "0.7")
+        self.assertNotIn(
+            "--restart-below-leader-ratio",
             climb.play_command(self._play_args(), "t",
                                Path("orders.sqlite"), Path("civvis_orders")))
 

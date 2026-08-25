@@ -1,0 +1,66 @@
+{
+  "what": "Absolute simulator cost per completed turn at the CI speed gate's shape. The gate itself is RELATIVE \u2014 every pull request is measured against the commit before it \u2014 so it is blind to drift by construction: the fleet can lose five percent a month with every single run reading green. This file is the same device docs/census.json is for the crate's censuses. The number stays free to move; it cannot move without somebody recording it.",
+  "how": "tools/speed_ab.py --baseline B --candidate B --record-ledger --ledger-machine <name> --note '<why>'  (a run against itself, so the baseline arm is just this machine's cost today). A reading taken where this process is not running \u2014 a CI runner, which cannot commit \u2014 is transcribed with --ledger-cpu/--ledger-turns/--ledger-load and the same --note. tools/test_speed_ab.py checks the shape below against the shape .github/workflows/speed.yml actually runs.",
+  "conditions": "A row is a machine-and-load reading, NOT a property of the code. Measured on mbp-m5-max-128 on 2026-08-23: this binary at this shape read 0.0878 s/turn at load average ~6 (four of these five seeds) and 0.1436 at load 86 (all five) \u2014 the absolute inflates over 60% on a busy fleet host, while the interleaved PAIRED delta stayed inside \u00b10.6% across load 6, 49, 61-86 and 94. Compare two rows only when the machine matches and the load averages are close. The github-ubuntu-latest rows are the ones the CI budget is calibrated on; that runner is effectively single-tenant and this desktop, which hosts a dozen concurrent agents, is not.",
+  "why_the_budget_comes_from_the_runner_row": "\u26a0 READ THIS BEFORE CHANGING .github/workflows/speed.yml's --budget. Measured 2026-08-23, byte-identical binaries in both arms on each host: github-ubuntu-latest scattered 2.37pp pair-to-pair at load average 3.77, while mbp-m5-max-128 scattered 1.48pp under twelve concurrent agents at load 61-86. THE SINGLE-TENANT HOSTED RUNNER IS THE NOISIER OF THE TWO, at a tenth of the load and with the steadier absolute. Interleaving the arms seed by seed cancels a desktop's slowly-varying contention almost perfectly and does nothing about a cloud VM's frequency and co-tenancy jitter, which arrives as a burst INSIDE one pair. So the CI budget is derived from the github-ubuntu-latest row and never from a desktop row, however carefully the desktop reading was taken: +8% is 9.5x that run's noise median (+0.84%) and 5.1x the resolution it reported (\u00b11.57%), and a failure needs two disjoint seed blocks to agree. Re-tuning it from the tighter desktop numbers would hand the fleet a flaky required check.",
+  "shape": {
+    "players": 6,
+    "turns": 120,
+    "width": 74,
+    "height": 46,
+    "city_states": 9,
+    "speed": "online",
+    "map": "continents",
+    "seeds": 900001,
+    "games": 5,
+    "interleaves": 1,
+    "profile": "ci",
+    "jobs": 1
+  },
+  "blind_spot": "This shape's clock is 120 turns; the screen's is 250. Six of the seven legs match \u2014 players, width, height, city_states, speed, map \u2014 and the clock does not, so THE GATE IS BLIND TO A REGRESSION THAT ONLY APPEARS AFTER TURN 120. The difference is not proportional: turn 200 has bigger empires, more units per seat, more cities, aircraft and a congress, so its profile is not turn 100's scaled up. When a change plausibly touches late-game code, run a full-clock reading by hand \u2014 tools/speed_ab.py --turns 250 --games 4 \u2014 before believing a green gate. The clock is 120 because the whole paired step has to stay under cargo-test's ~10.5 minutes on the merge path, not because 120 is enough.",
+  "host_scaling": {
+    "github-ubuntu-latest_per_mbp-m5-max-128": 2.57,
+    "note": "Hosted 4-core ubuntu-latest is 2.57x this Mac per single-thread core, derived from the OLD gate shape measured on both hosts within a day: 56.23 s user CPU on the runner (workflow run 32619440593's predecessor 32601426938, 3 games 6p 60x38 6CS 100t online tennis_ball) against 21.89 s for the identical command on mbp-m5-max-128 at load 5.8. Kept here because a scaling constant between two hosts is exactly the thing that gets re-derived badly later; it is what sized this gate's games and turn count against the ~10.5-minute cargo-test on the merge path. \u26a0 That anchor pair was measured on the OLD gate shape, which ran the CLI's default tennis_ball map. It is a host-speed ratio, not a cost, so it transfers; but map script changes WHICH code is hot (a sibling measured one hotspot at 1.42% on tennis_ball and 13.19% on continents, #2324), so re-derive it on the continents shape before trusting it to better than ~10%."
+  },
+  "readings": [
+    {
+      "date": "2026-08-23",
+      "machine": "mbp-m5-max-128",
+      "commit": "b0281de5",
+      "cpu_seconds": 86.14,
+      "turns": 600,
+      "seconds_per_turn": 0.143567,
+      "load_start": 61.0,
+      "load_peak": 86.4,
+      "load_end": 79.3,
+      "pair_spread_pct": 1.484,
+      "note": "PROVISIONAL: taken while twelve sibling agents were building (see load_peak). The quiet-host row for this machine is still owed; the paired delta beside it is load-robust, the absolute is not."
+    },
+    {
+      "date": "2026-08-23",
+      "machine": "github-ubuntu-latest",
+      "commit": "ef51a3cf",
+      "cpu_seconds": 143.32,
+      "turns": 600,
+      "seconds_per_turn": 0.238867,
+      "load_start": 3.77,
+      "load_peak": 3.77,
+      "load_end": 3.77,
+      "pair_spread_pct": 2.37,
+      "note": "Transcribed from PR #2328's own run 32623627991 (2026-08-23), which changes no Rust \u2014 both arms built byte-identical binaries, so it is a pure runner-noise sample: median +0.84% per completed turn over 5 pairs, range [-0.83%, +2.38%], resolution +/-1.57%. This is the row the +8% CI budget is calibrated on, and note the runner's pair scatter is WIDER than this Mac's under a 12-agent load."
+    },
+    {
+      "date": "2026-08-23",
+      "machine": "mbp-m5-max-128",
+      "commit": "c4411812",
+      "cpu_seconds": 51.06,
+      "turns": 600,
+      "seconds_per_turn": 0.0851,
+      "load_start": 3.38,
+      "load_peak": 6.88,
+      "load_end": 6.88,
+      "pair_spread_pct": 3.041,
+      "note": "Quiet-host baseline owed by #2328. The wait loop held until a 1-minute load average under 4.0 with no sibling build or batch running; it started at 3.38 and drifted to 6.88 by the end as the fleet's last two agents resumed, so read load_start/load_peak beside this rather than the word 'quiet'. Two earlier attempts were discarded UNRECORDED: a shell quoting bug defeated the same wait loop and they fired at load 9.8 and 9.2 with sibling processes live, which is the condition this row exists to avoid. Same binary in both arms, so the paired answer is zero by construction and the absolute is the number this row carries. Against the PROVISIONAL row above (0.143567 s/turn at load 86.4) this is -40.7%: that gap is the reason every row records its load."
+    }
+  ]
+}

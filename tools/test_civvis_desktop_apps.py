@@ -76,15 +76,6 @@ class DesktopAppsTests(unittest.TestCase):
             self.assertNotIn(world_flag, rendered["wasm"])
         self.assertIn('readonly civvis_port="8785"', rendered["rust"])
         self.assertIn('readonly civvis_port="8790"', rendered["wasm"])
-        self.assertIn(
-            'readonly rating_binary="${contents_dir}/Resources/civvis-rating-${civvis_commit}"',
-            rendered["wasm"],
-        )
-        self.assertIn(
-            'readonly rating_league="${state_dir}/rust-source/league"',
-            rendered["wasm"],
-        )
-        self.assertIn('"${rating_binary}" "${rating_league}"', rendered["wasm"])
         for launcher in rendered.values():
             self.assertIn(
                 'if status_matches_build "${civvis_status}"; then\n'

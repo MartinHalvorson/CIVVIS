@@ -1831,7 +1831,7 @@ fn tennis_ball_seam_point(longitude: f64) -> [f64; 3] {
 /// seam. Working in cosine space avoids an expensive inverse cosine for every
 /// tile and is exact enough for the whole-tile band the map asks for.
 fn tennis_ball_seam_proximity(point: [f64; 3], samples: usize) -> f64 {
-    let longitude = point[1].atan2(point[0]);
+    let longitude = trig::atan2(point[1], point[0]);
     (0..=samples)
         .map(|sample| {
             let fraction = sample as f64 / samples as f64;
@@ -7752,6 +7752,61 @@ mod river_tests {
         hash
     }
 
+    /// Seed, shape, script and the digest every build must reproduce.
+    ///
+    /// Hoisted out of the test so `every_rolled_map_script_has_a_pinned_world`
+    /// can check the coverage of this very table rather than a copy of it.
+    const PLATFORM_WORLD_CASES: [(u64, MapTopology, MapScript, u64); 30] = [
+        (1013, GLOBE, MapScript::Continents, 0xea69_d8c9_78c9_37d5),
+        (1037, GLOBE, MapScript::Continents, 0x62af_c4f3_e3ca_e62d),
+        (4242, GLOBE, MapScript::Continents, 0x862d_3621_3709_9632),
+        (31337, GLOBE, MapScript::Continents, 0x67ca_377f_e3c0_a0c3),
+        (777, FLAT, MapScript::Continents, 0x74bb_31f1_8a07_85b5),
+        (4242, FLAT, MapScript::Continents, 0x1372_9640_e654_940f),
+        // The default script, on the topology the CLI also defaults to.
+        // Seeds 1013 and 31337 are the two that demonstrably moved when the
+        // seam geometry stopped calling the platform's trig.
+        (1013, GLOBE, MapScript::TeninsBall, 0xc602_acaf_77ab_c55d),
+        (31337, GLOBE, MapScript::TeninsBall, 0x5bfe_42ef_86d1_ad66),
+        (4242, GLOBE, MapScript::TeninsBall, 0x57cc_e70a_852f_ee4c),
+        (777, FLAT, MapScript::TeninsBall, 0xff78_2010_3972_2ed8),
+        // Every other script that rolls ground from a seed. Ten of the
+        // twelve were unpinned until `every_rolled_map_script_has_a_pinned_world`
+        // went looking, so a platform-trig call in any of them could not have
+        // failed anything. A globe row carries the geometry the rule is about;
+        // the flat row is the control that flat generation did not move.
+        (1013, GLOBE, MapScript::LandOnly, 0x4b0e_12e0_65f4_9496),
+        (777, FLAT, MapScript::LandOnly, 0xf2df_569e_4ba0_af30),
+        (1013, GLOBE, MapScript::Lakes, 0x7c43_e4fe_623e_ec59),
+        (777, FLAT, MapScript::Lakes, 0x2bb3_30ce_dfd5_1a2e),
+        (1013, GLOBE, MapScript::InlandSea, 0x33d5_9381_cb5f_6cd0),
+        (777, FLAT, MapScript::InlandSea, 0x2370_4672_c656_04e9),
+        (1013, GLOBE, MapScript::GrandCanals, 0x98d6_a99c_07fd_d00b),
+        (777, FLAT, MapScript::GrandCanals, 0x814b_e768_d684_c5ed),
+        (
+            1013,
+            GLOBE,
+            MapScript::GrandCanalsTwo,
+            0x285d_29d2_3d43_901a,
+        ),
+        (777, FLAT, MapScript::GrandCanalsTwo, 0xaed8_876f_8d24_1977),
+        (1013, GLOBE, MapScript::Pangaea, 0x5202_9742_b17b_8f9c),
+        (777, FLAT, MapScript::Pangaea, 0xe0cd_5773_b902_66fa),
+        (
+            1013,
+            GLOBE,
+            MapScript::SmallContinents,
+            0x2bbe_76f9_e9d5_8c9e,
+        ),
+        (777, FLAT, MapScript::SmallContinents, 0x849c_2e4c_cb4c_6e84),
+        (1013, GLOBE, MapScript::Fjords, 0x9296_7493_3fa9_97a6),
+        (777, FLAT, MapScript::Fjords, 0x37a3_b234_b3fe_5d29),
+        (1013, GLOBE, MapScript::Islands, 0xda42_4f31_5db6_85cf),
+        (777, FLAT, MapScript::Islands, 0xef3b_4e6f_76a7_8034),
+        (1013, GLOBE, MapScript::WaterWorld, 0x8db5_cde1_ca2e_0a7c),
+        (777, FLAT, MapScript::WaterWorld, 0xc6ed_239b_3894_14ef),
+    ];
+
     /// The digest every platform must agree on, per seed and shape.
     ///
     /// This is the regression gate for #1061: the same seed generated a
@@ -7783,21 +7838,7 @@ mod river_tests {
         // routed through `trig`, which is the same signature #1061 had: the
         // native build and the wasm bundle were generating different worlds
         // from the same seed, on the default script.
-        let cases: [(u64, MapTopology, MapScript, u64); 10] = [
-            (1013, GLOBE, MapScript::Continents, 0xea69_d8c9_78c9_37d5),
-            (1037, GLOBE, MapScript::Continents, 0x62af_c4f3_e3ca_e62d),
-            (4242, GLOBE, MapScript::Continents, 0x862d_3621_3709_9632),
-            (31337, GLOBE, MapScript::Continents, 0x67ca_377f_e3c0_a0c3),
-            (777, FLAT, MapScript::Continents, 0x74bb_31f1_8a07_85b5),
-            (4242, FLAT, MapScript::Continents, 0x1372_9640_e654_940f),
-            // The default script, on the topology the CLI also defaults to.
-            // Seeds 1013 and 31337 are the two that demonstrably moved when the
-            // seam geometry stopped calling the platform's trig.
-            (1013, GLOBE, MapScript::TeninsBall, 0xc602_acaf_77ab_c55d),
-            (31337, GLOBE, MapScript::TeninsBall, 0x5bfe_42ef_86d1_ad66),
-            (4242, GLOBE, MapScript::TeninsBall, 0x57cc_e70a_852f_ee4c),
-            (777, FLAT, MapScript::TeninsBall, 0xff78_2010_3972_2ed8),
-        ];
+        let cases = PLATFORM_WORLD_CASES;
         let actual: Vec<String> = cases
             .iter()
             .map(|(seed, topology, script, _)| {
@@ -7818,6 +7859,179 @@ mod river_tests {
              (seeds {:?}); if mapgen changed deliberately, pin the left column \
              — computed on one platform, verified by the rest",
             cases.map(|(seed, _, script, _)| (seed, script))
+        );
+    }
+
+    /// Whether a script rolls a world from a seed, or lays out a fixed board.
+    ///
+    /// The `match` is deliberately exhaustive with no wildcard arm: a new
+    /// `MapScript` variant does not compile until somebody says which of the
+    /// two it is, and saying "rolled" immediately requires a pinned digest
+    /// below. That is the mechanical version of the note this gate used to
+    /// carry — "a new script needs a row here or it is unguarded" — which
+    /// depended on the next author remembering, and which `tennis_ball` is
+    /// the proof nobody did: it was the default script and went a year
+    /// unpinned while ten platform-trig calls sat in it (#1950).
+    fn rolls_a_world(script: MapScript) -> bool {
+        match script {
+            MapScript::LandOnly
+            | MapScript::Lakes
+            | MapScript::InlandSea
+            | MapScript::TeninsBall
+            | MapScript::GrandCanals
+            | MapScript::GrandCanalsTwo
+            | MapScript::Pangaea
+            | MapScript::Continents
+            | MapScript::SmallContinents
+            | MapScript::Fjords
+            | MapScript::Islands
+            | MapScript::WaterWorld => true,
+            // Fixed geography: the ground comes from a stored plan, not from
+            // the seed, so a digest here would pin the data file rather than
+            // the arithmetic this gate is about. Their own tests hold them.
+            MapScript::Earth
+            | MapScript::TrueStartEarth
+            | MapScript::Battlefield
+            | MapScript::TacticsPlanet
+            | MapScript::TacticsOcean
+            | MapScript::Trafalgar
+            | MapScript::Kadesh
+            | MapScript::Marathon
+            | MapScript::Thermopylae
+            | MapScript::Gaugamela
+            | MapScript::Cannae
+            | MapScript::Actium
+            | MapScript::Hastings
+            | MapScript::Hattin
+            | MapScript::Agincourt
+            | MapScript::Constantinople1453
+            | MapScript::Lepanto
+            | MapScript::SpanishArmada
+            | MapScript::Waterloo
+            | MapScript::Gettysburg
+            | MapScript::Stalingrad
+            | MapScript::Normandy
+            | MapScript::Midway
+            | MapScript::Inchon
+            | MapScript::DienBienPhu
+            | MapScript::SixDayWar
+            | MapScript::DesertStorm
+            | MapScript::Fallujah
+            | MapScript::Mosul => false,
+        }
+    }
+
+    /// Every script this test knows about, checked against the enum itself.
+    const EVERY_MAP_SCRIPT: [MapScript; 41] = [
+        MapScript::LandOnly,
+        MapScript::Lakes,
+        MapScript::InlandSea,
+        MapScript::TeninsBall,
+        MapScript::GrandCanals,
+        MapScript::GrandCanalsTwo,
+        MapScript::Pangaea,
+        MapScript::Earth,
+        MapScript::TrueStartEarth,
+        MapScript::Continents,
+        MapScript::SmallContinents,
+        MapScript::Fjords,
+        MapScript::Islands,
+        MapScript::WaterWorld,
+        MapScript::Battlefield,
+        MapScript::TacticsPlanet,
+        MapScript::TacticsOcean,
+        MapScript::Trafalgar,
+        MapScript::Kadesh,
+        MapScript::Marathon,
+        MapScript::Thermopylae,
+        MapScript::Gaugamela,
+        MapScript::Cannae,
+        MapScript::Actium,
+        MapScript::Hastings,
+        MapScript::Hattin,
+        MapScript::Agincourt,
+        MapScript::Constantinople1453,
+        MapScript::Lepanto,
+        MapScript::SpanishArmada,
+        MapScript::Waterloo,
+        MapScript::Gettysburg,
+        MapScript::Stalingrad,
+        MapScript::Normandy,
+        MapScript::Midway,
+        MapScript::Inchon,
+        MapScript::DienBienPhu,
+        MapScript::SixDayWar,
+        MapScript::DesertStorm,
+        MapScript::Fallujah,
+        MapScript::Mosul,
+    ];
+
+    /// The list above is discovered from the source, never trusted.
+    ///
+    /// A hand-written roster is complete the day it is written and shrinks
+    /// silently afterwards, so this reads `MapScript`'s own declaration out of
+    /// `src/setup.rs` and fails when the two disagree. Without it, a new
+    /// variant could be added to the enum, skipped here, and inherit exactly
+    /// the blind spot this pair of tests exists to remove.
+    #[test]
+    fn the_script_roster_matches_the_enum() {
+        let source = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/setup.rs"),
+        )
+        .expect("src/setup.rs is readable");
+        let body = source
+            .split_once("pub enum MapScript {")
+            .expect("MapScript is declared in src/setup.rs")
+            .1
+            .split_once("\n}")
+            .expect("the MapScript declaration ends")
+            .0;
+        let declared: Vec<String> = body
+            .lines()
+            .map(|line| line.trim())
+            .filter(|line| !line.is_empty() && !line.starts_with("//") && !line.starts_with("#["))
+            .map(|line| line.trim_end_matches(',').to_string())
+            .collect();
+        let known: Vec<String> = EVERY_MAP_SCRIPT
+            .iter()
+            .map(|script| format!("{script:?}"))
+            .collect();
+        assert_eq!(
+            declared, known,
+            "src/setup.rs declares a different set of map scripts than this \
+             test enumerates; add the new one to EVERY_MAP_SCRIPT, classify it \
+             in rolls_a_world, and pin a digest for it if it rolls a world"
+        );
+    }
+
+    /// Every script that turns a seed into ground has a pinned world.
+    ///
+    /// This is the gate on the gate. `the_same_seed_generates_the_same_world_
+    /// on_every_platform` can only protect the scripts it happens to list, and
+    /// for its first year it listed `Continents` alone while the CLI defaulted
+    /// to `tennis_ball` — so the check that exists to keep platform trig out of
+    /// mapgen could not see the map most games are played on, and ten such
+    /// calls lived there undisturbed. Requiring a row per rolled script closes
+    /// the class rather than that one instance.
+    #[test]
+    fn every_rolled_map_script_has_a_pinned_world() {
+        let pinned: BTreeSet<String> = PLATFORM_WORLD_CASES
+            .iter()
+            .map(|(_, _, script, _)| format!("{script:?}"))
+            .collect();
+        let missing: Vec<String> = EVERY_MAP_SCRIPT
+            .into_iter()
+            .filter(|script| rolls_a_world(*script))
+            .map(|script| format!("{script:?}"))
+            .filter(|script| !pinned.contains(script))
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "these scripts roll a world from a seed and no digest pins what \
+             they generate, so a platform-trig call in one of them cannot fail \
+             any test: {missing:?}. Add a row to PLATFORM_WORLD_CASES — run \
+             the determinism test, take the digest it prints, and pin it from \
+             one platform only."
         );
     }
 

@@ -38,15 +38,14 @@ PINFILE=${CIVVIS_PINFILE:-$HOME/.civvis-play-pin}
 # up. Resolved ONCE here, before the loop's `cd`, and overridable for a test.
 HEAD_REPO=${CIVVIS_HEAD_REPO:-${0:A:h:h:h}}
 LOGS=$HOME/civvis-climb-logs
-# `CIVVIS_STRATEGY` is the explicit genome gate for this host. Pin the stable
-# internal identity, not a leaderboard display label: Rome's selected
-# `g56-48` bound is 0.510 versus the generic fallback's 0.393, and every row
-# records both this request and the resolved genome. The resolver also accepts
-# a unique display label for compatibility with older launchers, but a `g*-*`
-# pin keeps this batch comparable while the candidate is measured in Civ VI.
-# Set `CIVVIS_STRATEGY=auto` to opt into per-civilization re-selection, or
-# `CIVVIS_STRATEGY=stock` to run the untuned control.
-STRATEGY=${CIVVIS_STRATEGY:-g56-48}
+# Named league genomes were retired in #2357.  The live decider now selects
+# `AdvancedAi::new()` with the gene ledger applied when --strategy is ABSENT;
+# that deployment genome has all and only its default-on genes.  civvis-orders
+# deliberately rejects every --strategy value rather than silently running a
+# different agent, so an inherited pre-retirement CIVVIS_STRATEGY must never be
+# forwarded into a verification game.  Keep it only long enough to make the
+# override visible in the supervisor log below.
+REQUESTED_RETIRED_STRATEGY=${CIVVIS_STRATEGY:-}
 # `CIVVIS_WITHOUT` is the explicit LIVE A/B gate for already registered
 # treatments.  It is deliberately empty by default: a comma-separated value
 # (for example `war-economy`) changes this batch's controller, and
@@ -160,6 +159,12 @@ VICTORY=${CIVVIS_VICTORY:-}
 # CIVVIS_DIFFICULTY), and an abandoned game is filed as `abandoned`, never as
 # a stall or a defeat.
 ABANDON_BELOW=${CIVVIS_ABANDON_BELOW_WIN_RATE:-}
+# A stricter restart rule for a position that is bad on all three strategic
+# standings, not merely on score: below this share of the score leader AND
+# behind the visible science and culture leaders for five turns after turn 100.
+# Unset keeps the policy off. The operator's requested 70 % lives in the
+# inherited login shell as CIVVIS_RESTART_BELOW_LEADER_RATIO=0.70.
+RESTART_BELOW_LEADER_RATIO=${CIVVIS_RESTART_BELOW_LEADER_RATIO:-}
 # Optional live-host wall-clock budget. The climb's defaults remain the source
 # of truth when these are absent; the operator can raise them for a GUI host
 # whose healthy 250-turn games take longer. Run civvis-20260822T020434Z was
@@ -181,7 +186,19 @@ FOLLOW_REVISION_FILE=$MIRROR_HOME/follower-runtime-revision
 say() { print -r -- "[$(date -u +%FT%TZ)] $*" >> "$SUP" }
 
 mkdir -p "$LOGS"
-say "supervisor up (strategy=$STRATEGY, withheld=${WITHHELD:-none}, force_file=$FORCE_FILE, pinfile=$PINFILE)"
+if [[ -n "$REQUESTED_RETIRED_STRATEGY" ]]; then
+  say "ignoring retired CIVVIS_STRATEGY=$REQUESTED_RETIRED_STRATEGY; live seat uses deployment genome (no --strategy)"
+fi
+say "supervisor up (genome=deployment, withheld=${WITHHELD:-none}, force_file=$FORCE_FILE, pinfile=$PINFILE)"
+# The game inherits this shell's priority and macOS will not lower a nice once
+# set, so a supervisor that starts demoted plays every game demoted. Say the
+# number on every start; a non-zero one names the launch site to fix.
+OWN_NICE=$(ps -o ni= -p $$ 2>/dev/null | tr -d " ")
+if [[ "${OWN_NICE:-0}" != 0 ]]; then
+  say "WARN supervisor is at nice ${OWN_NICE}: every game it starts will run below ordinary work. The launcher backgrounded it from a zsh with BG_NICE set; put 'unsetopt BG_NICE' before the '&' (see civvis-interactive-host.sh)"
+else
+  say "supervisor priority nice 0"
+fi
 
 # This runner can be started manually or by an interactive host wrapper. Two copies
 # are not harmless: each believes it owns the one Civ VI installation and may
@@ -500,12 +517,13 @@ while true; do
   CYCLE_MARK=$LOGS/.cycle-start
   : > "$CYCLE_MARK"
   python3 -u tools/civ6_civvis_climb.py --attempts "$ATTEMPTS" \
-      --difficulty "$DIFFICULTY" --strategy "$STRATEGY" \
+      --difficulty "$DIFFICULTY" \
       "${WITHOUT_ARGS[@]}" \
       "${WITH_ARGS[@]}" \
       "${TIMEOUT_ARGS[@]}" \
       ${VICTORY:+--victory} ${VICTORY:+"$VICTORY"} \
       ${ABANDON_BELOW:+--abandon-below-win-rate} ${ABANDON_BELOW:+"$ABANDON_BELOW"} \
+      ${RESTART_BELOW_LEADER_RATIO:+--restart-below-leader-ratio} ${RESTART_BELOW_LEADER_RATIO:+"$RESTART_BELOW_LEADER_RATIO"} \
       --logs "$LOGS" > "$LOGS/climb-$TAG.log" 2>&1
 
   # "Played a turn" is the only honest success test: a run can reach the map,

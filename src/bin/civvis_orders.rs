@@ -986,10 +986,9 @@ fn defer_host_peace_retries(
 /// approach+blow where it has proved the line on a private board.
 ///
 /// ★★★★★ AND THAT DEFERRAL WAS THE PRICE OF EVERY STRIKE THAT FOLLOWS A STEP.
-/// The joint tactical search's lines are `[Move, Attack]` (`src/ai/tactics.rs`),
-/// the friendly volley's are move-then-shoot, and the mover's own step onto a
-/// firing tile is followed by the shot it opened — and every one of those
-/// arrived here as a walk plus a follow-up, and left as a walk. Measured on
+/// A friendly volley is move-then-shoot, and a mover's own step onto a firing
+/// tile is followed by the shot it opened — and every one of those arrived here
+/// as a walk plus a follow-up, and left as a walk. Measured on
 /// run civvis-20260803T005930Z: 7 melee ATTACK orders against 1,546 MOVE_TO
 /// in 188 turns of war; 622 of 1,787 military unit-turns hovering 2–4 hexes
 /// from a target. The unit stepped into contact and stood there, unstruck,
@@ -1048,64 +1047,6 @@ fn coalesce_unit_paths(orders: Vec<Order>, sequenced: bool) -> (Vec<Order>, usiz
     (out, deferred, coalesced)
 }
 
-/// `step_and_reassess` on the bridge: cut each unit's PURE walk (a MOVE_TO
-/// with no later order for the same unit this frame) at its first unrevealed
-/// hex, the one `first_unknown_coalesced_steps` recorded before the walk was
-/// folded. A walk that is all on known ground is left alone — there is
-/// nothing to look at — and a walk with a follow-up (a strike, a found) is
-/// left alone because the follow-up expects the unit where the walk ends.
-/// Returns how many walks were cut.
-fn cut_walks_at_first_unknown(
-    orders: &mut [Order],
-    first_unknown_steps: &std::collections::BTreeMap<i64, (i32, i32)>,
-) -> usize {
-    let mut orders_per_unit: std::collections::BTreeMap<i64, usize> =
-        std::collections::BTreeMap::new();
-    for order in orders.iter() {
-        if order.kind == "unit" {
-            if let Some(unit) = order.subject {
-                *orders_per_unit.entry(unit).or_default() += 1;
-            }
-        }
-    }
-    let mut cut = 0;
-    for order in orders.iter_mut() {
-        if order.kind != "unit" || order.verb.as_deref() != Some("MOVE_TO") {
-            continue;
-        }
-        let Some(unit) = order.subject else {
-            continue;
-        };
-        if orders_per_unit.get(&unit).copied().unwrap_or(0) != 1 {
-            continue;
-        }
-        let Some(&edge) = first_unknown_steps.get(&unit) else {
-            continue;
-        };
-        if order.pos.is_some() && order.pos != Some(edge) {
-            order.pos = Some(edge);
-            cut += 1;
-        }
-    }
-    cut
-}
-
-/// Whether the mod can still open a replan frame after the one this board
-/// belongs to — the only condition under which cutting a walk at the edge of
-/// the known is not throwing its remaining movement away. The opening board
-/// is frame 0; the mod opens at most `ReplanFrames` frames a turn, and the
-/// brain is asked once per frame. On the last frame it will be asked, nobody
-/// re-plans what the cut unit then sees, so its walk keeps its furthest hex.
-/// A seat that advertises `replan_frames` without the count keeps the old
-/// behaviour: cut on every frame.
-fn another_frame_can_open(state: &civvis::mirror::StateSnapshot) -> bool {
-    state.seat.replan_frames
-        && state
-            .seat
-            .replan_frames_max
-            .is_none_or(|cap| state.frame < cap)
-}
-
 /// Put the settler's SITE on every `FOUND_CITY` row: the hex the planned walk
 /// leaves it on, or where it stands when it founds without moving.
 ///
@@ -1160,7 +1101,7 @@ fn stamp_found_sites(orders: &mut [Order], state: &civvis::mirror::StateSnapshot
 }
 
 /// Replay only: decide a recorded journal as a NEWER mod would present it.
-/// `--assume-seat order_queue,moves_at_turn_start,replan_frames=2,tile_delta`
+/// `--assume-seat order_queue,moves_at_turn_start,replan_frames,tile_delta`
 /// sets the named capabilities on every board read from the journal, so the
 /// orders a turn would get from today's bridge can be censused on a run that
 /// was played before those capabilities existed. Never used by the live
@@ -1178,20 +1119,12 @@ fn assume_seat_capabilities(
             "order_queue" => seat.order_queue = true,
             "moves_at_turn_start" => seat.moves_at_turn_start = true,
             "tile_delta" => seat.tile_delta = true,
-            "replan_frames" => {
-                seat.replan_frames = true;
-                if let Some(value) = value {
-                    let cap: u32 = value
-                        .parse()
-                        .map_err(|_| format!("--assume-seat replan_frames={value}: not a count"))?;
-                    seat.replan_frames_max = Some(cap);
-                }
-            }
+            "replan_frames" if value.is_none() => seat.replan_frames = true,
             "" => {}
             other => {
                 return Err(format!(
                     "--assume-seat {other}: unknown capability (order_queue, \
-                     moves_at_turn_start, replan_frames[=N], tile_delta)"
+                     moves_at_turn_start, replan_frames, tile_delta)"
                 ))
             }
         }
@@ -1407,16 +1340,18 @@ fn sale_verb(offer: &civvis::game::DealItems) -> Option<String> {
     (!parts.is_empty()).then(|| parts.join(","))
 }
 
-/// The gold-equivalent below which the host must NOT close the sale, from what
-/// CIVVIS asked: lump gold plus per-turn gold at CIVVIS's own 25× factor
-/// (`Game::receive_items_value`), at a discount — the rival prices by its own
-/// book, and a surplus copy the plan was going to let go for 90 is still worth
-/// letting go for 50 — but never below `SALE_FLOOR_MIN`, so a valuation gap
-/// cannot become a gift.
-const SALE_FLOOR_SHARE: f64 = 0.5;
+/// The gold-equivalent below which the host must NOT close the sale: what
+/// the asset is worth to US by the engine's own book — the ask (lump gold
+/// plus per-turn gold at the 25× factor of `Game::receive_items_value`) less
+/// our net gain on the quote, i.e. `give_items_cost` — never below
+/// `SALE_FLOOR_MIN`. ★ Until 2026-08-24 this was HALF the ask: a surplus copy
+/// the book priced at 90 was let go for 45, on the argument that the rival
+/// prices by its own book. It does — and the floor is still the price below
+/// which the sale loses us value, which no discount changes. (Whether a
+/// rival ever meets it is what the ledger's `deal_response` now records.)
 const SALE_FLOOR_MIN: i32 = 10;
 
-fn sale_floor(request: &civvis::game::DealItems) -> Option<i32> {
+fn sale_floor(request: &civvis::game::DealItems, my_value: f64) -> Option<i32> {
     if !request.resources.is_empty()
         || request.diplomatic_favor != 0.0
         || !request.great_works.is_empty()
@@ -1431,21 +1366,26 @@ fn sale_floor(request: &civvis::game::DealItems) -> Option<i32> {
         return None;
     }
     let asked = request.gold + 25.0 * request.gold_per_turn;
-    Some(((asked * SALE_FLOOR_SHARE).ceil() as i32).max(SALE_FLOOR_MIN))
+    let walk_away = if my_value.is_finite() {
+        asked - my_value
+    } else {
+        asked
+    };
+    Some((walk_away.ceil() as i32).max(SALE_FLOOR_MIN))
 }
 
 /// The gold-equivalent ABOVE which the host must NOT close a passage
-/// purchase, from what CIVVIS offered: lump gold plus per-turn gold at the
-/// same 25× factor, with headroom — the rival prices by its own book, and a
-/// passage the plan budgeted 60 for is still worth taking at 90 — but never
-/// above `BORDER_BUY_CEILING_MAX`, so a valuation gap cannot hand a rival the
-/// treasury. `None` unless the trade is exactly the shape this arm buys:
+/// purchase: what the passage is worth to US by the engine's own book
+/// (`Game::passage_gold_value`; the offer when the book is silent) — never
+/// above `BORDER_BUY_CEILING_MAX`. ★ Until 2026-08-24 this was the offer and half
+/// again, "headroom because the rival prices by its own book"; a purchase
+/// above what the passage is worth to us is a loss whatever the rival's
+/// book says. `None` unless the trade is exactly the shape this arm buys:
 /// their Open Borders, our gold, nothing else on either side.
-const BUY_CEILING_SHARE: f64 = 1.5;
-
 fn border_buy_ceiling(
     offer: &civvis::game::DealItems,
     request: &civvis::game::DealItems,
+    worth: f64,
 ) -> Option<i32> {
     if !request.open_borders
         || request.gold != 0.0
@@ -1472,7 +1412,12 @@ fn border_buy_ceiling(
     if offered <= 0.0 {
         return None;
     }
-    Some(((offered * BUY_CEILING_SHARE).ceil() as i32).min(BORDER_BUY_CEILING_MAX))
+    let worth = if worth.is_finite() && worth > 0.0 {
+        worth
+    } else {
+        offered
+    };
+    Some((worth.ceil() as i32).clamp(1, BORDER_BUY_CEILING_MAX))
 }
 
 // ★★★★★ PASSAGE BOUGHT WHERE THE MAP IS SEALED. `Game::sealed_border_owners`
@@ -1513,6 +1458,7 @@ fn append_border_buy_order(
     sealed_by: &std::collections::BTreeMap<usize, u32>,
     state: &civvis::mirror::StateSnapshot,
     orders: &mut Vec<Order>,
+    passage_value: &dyn Fn(usize) -> f64,
 ) -> Option<&'static str> {
     let worst = sealed_by
         .iter()
@@ -1521,11 +1467,11 @@ fn append_border_buy_order(
             state
                 .rivals
                 .get(seat.saturating_sub(1))
-                .map(|rival| (rival, *count))
+                .map(|rival| (*seat, rival, *count))
         })
-        .filter(|(rival, _)| !rival.at_war && rival.open_borders != Some(true))
-        .max_by_key(|(rival, count)| (*count, std::cmp::Reverse(rival.player)));
-    let Some((rival, _)) = worst else {
+        .filter(|(_, rival, _)| !rival.at_war && rival.open_borders != Some(true))
+        .max_by_key(|(_, rival, count)| (*count, std::cmp::Reverse(rival.player)));
+    let Some((seat, rival, _)) = worst else {
         return Some("border_buy_hold:no_seal");
     };
     if state.turn % BORDER_BUY_CADENCE != BORDER_BUY_PHASE {
@@ -1542,7 +1488,18 @@ fn append_border_buy_order(
     {
         return Some("border_buy_hold:no_civic");
     }
-    let ceiling = (state.gold - BORDER_BUY_GOLD_RESERVE).min(BORDER_BUY_CEILING_MAX as i64) as i32;
+    // ★ Until 2026-08-24 the ceiling was the treasury less the reserve — the
+    // price was what we could afford, not what passage is worth. It is now
+    // the engine's own book for this passage (`Game::passage_gold_value`),
+    // still bounded by the treasury and the cap.
+    let book = passage_value(seat);
+    let affordable =
+        (state.gold - BORDER_BUY_GOLD_RESERVE).min(BORDER_BUY_CEILING_MAX as i64) as i32;
+    let ceiling = if book.is_finite() && book > 0.0 {
+        (book.ceil() as i32).min(affordable)
+    } else {
+        affordable
+    };
     if ceiling < BORDER_BUY_CEILING_MIN {
         return Some("border_buy_hold:treasury");
     }
@@ -1582,6 +1539,9 @@ const FAVOR_SALE_MAX: f64 = 150.0;
 const FAVOR_SALE_CADENCE: u32 = 6;
 const FAVOR_SALE_PHASE: u32 = 3;
 const FAVOR_BUYER_DVP_MAX: i64 = 12;
+/// ★ Until 2026-08-24 the floor was a flat Gold a point; the engine's own
+/// book (`Game::favor_gold_value`, `1.1 + 0.14·era + 0.07·dvp`) says 1.7–3.0
+/// over a game, and the caller now passes it. Kept as the floor of floors.
 const FAVOR_GOLD_FLOOR_PER_POINT: i32 = 1;
 
 /// Whether the plan in force can still spend its favor. Only a seat with no
@@ -1636,6 +1596,7 @@ fn append_favor_sale_order(
     plan: Option<(&str, Option<&str>)>,
     state: &civvis::mirror::StateSnapshot,
     orders: &mut Vec<Order>,
+    favor_value: f64,
 ) -> Option<&'static str> {
     // `plan_keeps_favor` now answers only this, so the diplomacy branch that
     // stood here is gone with it — it could never be reached past this line.
@@ -1684,11 +1645,16 @@ fn append_favor_sale_order(
         return Some("favor_hold:no_buyer");
     };
     let amount = surplus.min(FAVOR_SALE_MAX).floor() as i32;
+    let per_point = if favor_value.is_finite() {
+        favor_value.max(FAVOR_GOLD_FLOOR_PER_POINT as f64)
+    } else {
+        FAVOR_GOLD_FLOOR_PER_POINT as f64
+    };
     orders.push(Order {
         kind: "sell",
         subject: Some(buyer.player as i64),
         verb: Some(format!("FAVOR={amount}")),
-        pos: Some((amount * FAVOR_GOLD_FLOOR_PER_POINT, 0)),
+        pos: Some(((amount as f64 * per_point).ceil() as i32, 0)),
     });
     None
 }
@@ -1708,7 +1674,11 @@ fn append_favor_sale_order(
 // exactly as favor does; the mod's cooldowns meter refusals.
 const WORK_SALE_CADENCE: u32 = 6;
 const WORK_SALE_PHASE: u32 = 5;
-const WORK_SALE_FLOOR: i32 = 50;
+/// ★ Until 2026-08-24 this was 50 against an engine book of 150–400
+/// (`great_work_receive_value`: 60 + 32·tourism + 18·culture + 12·faith). The
+/// sale exists to free a slot, so the floor stays below the book — but not
+/// at a third of its bottom.
+const WORK_SALE_FLOOR: i32 = 120;
 
 /// The Great Work object types a slot-consuming class produces — the Rust
 /// copy of the control mod's `CivvisGreatWorks.CLASS_OBJECTS` (there is no
@@ -1837,6 +1807,29 @@ fn aid_request_kind(kind: &str) -> bool {
         kind.trim(),
         "EMERGENCY_SEND_AID" | "EMERGENCY_SEND_MILITARY_AID"
     )
+}
+
+/// The share of the treasury a ROUTED peace offer may carry as tribute on
+/// its retry, and the most it may ever carry. ★ 2026-08-24: over 42 live
+/// runs the seat paid 142 tributes at a median 116 Gold (max 783, ~21,000
+/// Gold in all) because the control mod put three quarters of the treasury
+/// on every retried offer, whatever the planner's reason for offering — a
+/// second front, war fatigue, a religious lane and an envoy reclaim all
+/// paid like a rout. Civilization VI's own database carries no diplomatic
+/// modifier for a gift, so Gold that does not buy the peace buys nothing.
+/// Now the planner's `peace_routed` says whether the front is lost; only
+/// then does the order carry a cap (`x`), and the mod offers at most that.
+/// A white offer carries `x = 0`.
+const PEACE_TRIBUTE_SHARE: f64 = 0.25;
+const PEACE_TRIBUTE_MAX: i64 = 300;
+
+/// The tribute cap a peace order carries: nothing unless the planner is
+/// routed on that front, else a quarter of the treasury up to the maximum.
+fn peace_tribute_cap(state: &civvis::mirror::StateSnapshot, routed: bool) -> i32 {
+    if !routed {
+        return 0;
+    }
+    ((state.gold as f64 * PEACE_TRIBUTE_SHARE).floor() as i64).clamp(0, PEACE_TRIBUTE_MAX) as i32
 }
 
 /// The smallest integral gift that puts our tracker score strictly above every
@@ -2643,8 +2636,8 @@ fn finish_live_war_units(
 
 /// [`finish_live_war_units`] with `excluded` units left out of the volley
 /// entirely — a settler's bound guard under
-/// `AdvancedAi::settler_stack_discipline`, which the joint engagement
-/// leaves alone for the same reason.
+/// `AdvancedAi::settler_stack_discipline`, which stays out of this pre-pass
+/// for the same reason.
 fn finish_live_war_units_excluding(
     planned_game: &mut civvis::game::Game,
     pid: usize,
@@ -2683,7 +2676,7 @@ fn finish_live_war_units_excluding(
 
         // Prove that a direct volley actually removes the target before taking
         // any unit away from the ordinary AI. Damage-only opportunities remain
-        // the joint tactical planner's decision.
+        // the ordinary tactical path's decision.
         let mut proof = planned_game.clone();
         let mut proof_committed = committed.clone();
         let mut chosen = Vec::new();
@@ -2815,29 +2808,19 @@ fn self_tile_move_key(mirror_state: &civvis::mirror::LiveMirror, unit: u32) -> S
 fn withhold_live_treatment(ai: &mut civvis::ai::AdvancedAi, treatment: &str) -> Result<(), String> {
     // ⚠⚠ THIS WAS A SECOND LIST, AND IT WAS SHORTER THAN THE FIRST.
     //
-    // `civvis::ai::LIVE_TREATMENTS` is the canonical table and it already
-    // carries the disabler for each row — `(field, kebab-name, fn(&mut
-    // AdvancedAi))` — which is why `elo.rs` builds every `live_without_*` arm by
-    // looking a name up in it rather than by writing the names out again. This
-    // binary wrote them out again: 57 hand-written arms against 68 rows, so
-    // ELEVEN SHIPPED LIVE TREATMENTS HAD NO CONTROL on the only harness where
-    // they fire — `deny-while-targeted`, `endgame-war-runway`, `joint-tactics`,
-    // `live-religious-purchase`, `live-trader-route`, `loyalty-policy-defence`,
-    // `peacetime-deterrence`, `ranged-line-of-sight`, `recorded-tactical-step`,
-    // `slot-kind-tiebreak`, `strike-opening`.
-    //
-    // The usage string was a THIRD copy and shorter still, so several names the
-    // match did accept were undiscoverable from the error that listed them.
-    //
-    // A lookup cannot drift from the table by construction, and a treatment
-    // added to `LIVE_TREATMENTS` now reaches this binary and its usage line at
-    // the same moment it reaches the Elo registry.
-    match civvis::ai::LIVE_TREATMENTS
+    // The gene registry (`src/ai/advanced/genes.rs`) carries the disabler for
+    // every `live()` gene. This binary once wrote the names out again: 57
+    // hand-written arms against 68 rows, so ELEVEN SHIPPED LIVE TREATMENTS HAD
+    // NO CONTROL on the only harness where they fire. The usage string was a
+    // THIRD copy and shorter still. A lookup cannot drift from the registry by
+    // construction: a live gene added there reaches this binary and its usage
+    // line at the same moment.
+    match civvis::ai::GENES
         .iter()
-        .find(|(_, name, _)| *name == treatment)
+        .find(|gene| gene.live() && gene.tag == treatment)
     {
-        Some((_, _, disable)) => {
-            disable(ai);
+        Some(gene) => {
+            (gene.disable)(ai);
             Ok(())
         }
         // An unknown name stays a hard error rather than a warning: a typo that
@@ -2852,9 +2835,10 @@ fn withhold_live_treatment(ai: &mut civvis::ai::AdvancedAi, treatment: &str) -> 
 
 /// Every treatment `--without` accepts, in table order, for the usage line.
 fn withholdable_treatments() -> String {
-    civvis::ai::LIVE_TREATMENTS
+    civvis::ai::GENES
         .iter()
-        .map(|(_, name, _)| *name)
+        .filter(|gene| gene.live())
+        .map(|gene| gene.tag)
         .collect::<Vec<_>>()
         .join(", ")
 }
@@ -2866,16 +2850,17 @@ fn withholdable_treatments() -> String {
 fn forced_live_treatments(forced: &[String]) -> Result<Vec<&'static str>, String> {
     let mut selected = Vec::new();
     for treatment in forced {
-        match civvis::ai::LIVE_TREATMENTS
+        match civvis::ai::GENES
             .iter()
-            .find(|(_, name, _)| *name == treatment)
+            .find(|gene| gene.live() && gene.tag == treatment)
+            .map(|gene| gene.tag)
         {
-            Some((_, tag, _)) if civvis::ai::gene_ledger::ledger_held_live_treatment(tag) => {
-                if !selected.contains(tag) {
-                    selected.push(*tag);
+            Some(tag) if civvis::ai::gene_ledger::ledger_held_live_treatment(tag) => {
+                if !selected.contains(&tag) {
+                    selected.push(tag);
                 }
             }
-            Some((_, tag, _)) => {
+            Some(tag) => {
                 return Err(format!(
                     "--with treatment {treatment:?} already ships in the deployment genome \
                      (tag {tag:?}); only ledger-held live treatments form a distinct arm"
@@ -3222,7 +3207,8 @@ fn decide(
             "favor_hold:planner_sales_dropped={held_favor_sales}"
         ));
     }
-    match append_favor_sale_order(plan_facts, state, &mut orders) {
+    let favor_value = mirror_state.game.favor_gold_value(0);
+    match append_favor_sale_order(plan_facts, state, &mut orders, favor_value) {
         None => note_bits.push("favor_sale=1".to_string()),
         Some(why) => {
             // Only the holds worth a glance in the ledger: a bank sitting on
@@ -3232,7 +3218,13 @@ fn decide(
             }
         }
     }
-    match append_border_buy_order(&mirror_state.game.sealed_border_owners, state, &mut orders) {
+    let passage_value = |_seat: usize| mirror_state.game.passage_gold_value(0);
+    match append_border_buy_order(
+        &mirror_state.game.sealed_border_owners,
+        state,
+        &mut orders,
+        &passage_value,
+    ) {
         None => note_bits.push("border_buy=1".to_string()),
         Some(why) => {
             // Only the holds that mean something is wrong on the ground: a
@@ -3351,13 +3343,18 @@ fn decide(
                     .iter()
                     .any(|o| o.kind == "peace" && o.subject == Some(subject));
                 if rival.at_war && !already {
+                    let routed = report.peace_routed.contains(seat);
+                    let cap = peace_tribute_cap(state, routed);
                     orders.push(Order {
                         kind: "peace",
                         subject: Some(subject),
                         verb: Some("MAKE_PEACE".to_string()),
-                        pos: None,
+                        pos: Some((cap, 0)),
                     });
                     note_bits.push(format!("peace_from_plan={}", rival.player));
+                    if cap > 0 {
+                        note_bits.push(format!("peace_tribute_cap={cap}"));
+                    }
                 }
             }
         }
@@ -3480,27 +3477,6 @@ fn decide(
         host_move_refusals.cap_pending_frontier_moves(&mut orders, state, &first_unknown_steps);
     if host_frontier_probes > 0 {
         note_bits.push(format!("host_frontier_probes={host_frontier_probes}"));
-    }
-
-    // `step_and_reassess`, bridge half: a pure walk that crosses into the
-    // unknown stops at its first unrevealed hex, so the host walks the unit
-    // to the edge of what the seat knows, the mod re-exports what it saw
-    // (`CivvisTiles.sweep` + a replan frame), and the frame's re-plan spends
-    // the rest of the movement on the new ground. Only when the mod can open
-    // that frame; against an older mod the cut would strand the movement —
-    // and so would a cut on the last frame the mod will open this turn, so
-    // the walk keeps its furthest hex there (`another_frame_can_open`).
-    if ai.step_and_reassess && another_frame_can_open(state) {
-        let cut = cut_walks_at_first_unknown(&mut orders, &first_unknown_steps);
-        if cut > 0 {
-            note_bits.push(format!("frontier_cuts={cut}"));
-        }
-    } else if ai.step_and_reassess && state.seat.replan_frames && !first_unknown_steps.is_empty() {
-        note_bits.push(format!(
-            "frontier_cuts_withheld_last_frame={} frame={}",
-            first_unknown_steps.len(),
-            state.frame
-        ));
     }
 
     // Remember where each move sends which host unit, so next turn's positions
@@ -3724,6 +3700,23 @@ fn translate(
         // Religious combat uses the same native move-to-attacker route as a
         // melee strike. The target is adjacent by the model's legal-action
         // gate, while the host's MOVE_TO resolves the theological combat.
+        //
+        // ⚠ READ OFF THE INSTALLED GAME, NOT GUESSED: there is NO
+        // `UNITOPERATION_THEOLOGICAL_ATTACK` and no `UNITCOMMAND_` for it
+        // either. `Base/Assets/Gameplay/Data/UnitOperations.xml` lists 57
+        // operations and none of them is a theological strike, and the shipped
+        // Civilopedia says why —
+        // `Base/Assets/Text/en_US/Civilopedia_Concepts_Text.xml:636`:
+        //
+        //   "Theological combat works just like combat with military units,
+        //    just attack one Religious unit with another."
+        //
+        // So the verb is the ordinary `ATTACK` above, and the mod turns it into
+        // the same MOVE_TO-with-the-ATTACK-modifier that Firaxis's own
+        // `Civ6Common.lua:152-163` requests for every melee strike a human
+        // makes. A religious unit has no ranged combat, so it takes exactly
+        // that branch of `RequestMoveOperation`. Inventing a type literal here
+        // would have produced an order that could never fire.
         Action::TheologicalAttack { unit, target } => civ6_of.get(unit).map(|civ6| Order {
             kind: "unit",
             subject: Some(*civ6),
@@ -3749,6 +3742,77 @@ fn translate(
                 verb: Some("ENTER_FORMATION".to_string()),
                 // This command is not positional: x/y are target owner/unit id.
                 pos: Some((state.seat.local_player, *target as i32)),
+            })
+        }),
+        // ★★★ CORPS AND ARMY: 10,015 DECIDED ACROSS THE LIVE ARCHIVE, ZERO SENT.
+        // `CombineUnits` had no arm at all, fell through this match's
+        // `_ => None`, and was counted untranslatable — the largest named class
+        // left in the live skip tally once the religious, policy and formation
+        // repairs had landed, and it is the whole of CIVVIS's unit-consolidation
+        // layer. It is still decided today: 5 skips in the newest recorded run,
+        // `civvis-20260819T115423Z`.
+        //
+        // Firaxis models this as TWO commands and the caller picks the tier.
+        // Both names were read off the installed game, not recalled:
+        //
+        //   UNITCOMMAND_FORM_CORPS  Gameplay/Data/UnitCommands.xml:20 and :44
+        //   UNITCOMMAND_FORM_ARMY   Gameplay/Data/UnitCommands.xml:21 and :45
+        //
+        // and the shipped `WorldInput.lua` builds each one from the OTHER unit's
+        // owner and id — `FormCorps` at WorldInput.lua:2879-2882 and `FormArmy`
+        // at WorldInput.lua:2949-2952:
+        //
+        //   tParameters[UnitCommandTypes.PARAM_UNIT_PLAYER] = pUnit:GetOwner();
+        //   tParameters[UnitCommandTypes.PARAM_UNIT_ID]     = pUnit:GetID();
+        //   UnitManager.RequestCommand(pSelectedUnit,
+        //                              UnitCommandTypes.FORM_CORPS, tParameters);
+        //
+        // That is the same non-positional owner/id pair `LinkUnits` already
+        // rides in `pos`, so the existing convention carries it unchanged.
+        //
+        // The tier is `Game::can_combine_units`'s own rule, restated: two
+        // standard units make a Corps, a standard joining a Corps makes an Army.
+        //
+        // ⚠ THE TIER IS READ OFF THE HOST NOW, WHICH IS WHAT MAKES FORM_ARMY
+        // REACHABLE AT ALL. When #2373 landed this arm, the export carried no
+        // military formation — only `formation_count`, Firaxis's ESCORT stack
+        // size, which is a different mechanism and belongs to `LinkUnits` — and
+        // `mirror.rs` never wrote `Unit::formation`. The live seat runs
+        // `--fresh-board`, so every unit was reconstructed as STANDARD and this
+        // could only ever emit FORM_CORPS; the Army half was unreachable outside
+        // a persistent mirror carrying a tier CIVVIS itself had raised.
+        //
+        // The mod now exports `formation` from Firaxis's own
+        // `Unit:GetMilitaryFormation()` and `mirror.rs` writes it, so this reads
+        // Civilization VI's tier rather than a guess. An unreadable tier crosses
+        // as the mod's −1 and the mirror keeps the board's own value rather than
+        // flattening it to standard — unknown must never read as STANDARD, which
+        // is how `GetDefenseStrength` went unnoticed for the project's life.
+        // A host that still disagrees answers with a NAMED refusal
+        // (`cannot_form_corps` / `cannot_form_army`) rather than a silent no-op,
+        // which is what makes any remaining divergence measurable.
+        Action::CombineUnits { unit, with } => civ6_of.get(unit).and_then(|civ6| {
+            civ6_of.get(with).map(|target| {
+                let tier = |uid: &u32| {
+                    mirror_state
+                        .game
+                        .units
+                        .get(uid)
+                        .map_or(0, |unit| unit.formation)
+                };
+                let verb = if tier(unit) == 0 && tier(with) == 0 {
+                    "FORM_CORPS"
+                } else {
+                    "FORM_ARMY"
+                };
+                Order {
+                    kind: "unit",
+                    subject: Some(*civ6),
+                    verb: Some(verb.to_string()),
+                    // Not positional: x/y are the target's owner and unit id,
+                    // exactly as `LinkUnits` sends them.
+                    pos: Some((state.seat.local_player, *target as i32)),
+                }
             })
         }),
         Action::UnlinkUnits { unit } => civ6_of.get(unit).map(|civ6| Order {
@@ -4017,6 +4081,14 @@ fn translate(
             verb: Some("RELIGIOUS_HEAL".to_string()),
             pos: None,
         }),
+        // `UNITOPERATION_REMOVE_HERESY`, read off the installed game at
+        // `Base/Assets/Gameplay/Data/UnitOperations.xml:36` (the type) and `:95`
+        // (the row). That row carries **no `InterfaceMode`**, and the shipped
+        // `Panels/UnitPanel.lua:2518-2535` shows exactly what that means: with no
+        // mode it takes the "No mode needed, just do the operation" branch and
+        // calls `UnitManager.RequestOperation(pSelectedUnit, actionHash)` with no
+        // parameter table. So nothing but the subject crosses — an Inquisitor
+        // purges the city it is standing in, and the co-location IS the target.
         Action::RemoveHeresy { unit } => civ6_of.get(unit).map(|civ6| Order {
             kind: "unit",
             subject: Some(*civ6),
@@ -4277,8 +4349,14 @@ fn translate(
             offer,
             request,
         } => {
+            // Our own book value of the quote, read off the mirrored board:
+            // the seat is 0, majors take seats 1.. in export order.
+            let my_value = mirror_state
+                .game
+                .trade_utilities(0, *player, offer, request)
+                .0;
             if let Some(verb) = sale_verb(offer) {
-                let floor = sale_floor(request)?;
+                let floor = sale_floor(request, my_value)?;
                 Some(Order {
                     kind: "sell",
                     subject: host_player_target(mirror_state, state, *player),
@@ -4286,7 +4364,8 @@ fn translate(
                     pos: Some((floor, 0)),
                 })
             } else {
-                let ceiling = border_buy_ceiling(offer, request)?;
+                let worth = mirror_state.game.passage_gold_value(0);
+                let ceiling = border_buy_ceiling(offer, request, worth)?;
                 Some(Order {
                     kind: "buy",
                     subject: host_player_target(mirror_state, state, *player),
@@ -4299,169 +4378,1051 @@ fn translate(
     }
 }
 
-/// A league genome this run will play with, and enough provenance to defend it.
-struct ChosenStrategy {
-    name: String,
-    source: String,
-    civ: Option<String>,
-    strength: f64,
-    per_civ: bool,
-    /// The victory lane this genome was bred and rated in, if it has one.
-    ///
-    /// ⚠ Reported because `--victory` stays authoritative and the two can disagree:
-    /// the strongest genome by outright wins is currently a RELIGIOUS one, and the
-    /// harness asks for domination. That is a real mismatch, not a detail — a genome
-    /// tuned for a lane it is not being pointed at is not the thing that was rated.
-    lane: Option<String>,
-    weights: civvis::ai::Weights,
+// ---- order postconditions -----------------------------------------------------
+//
+// ★★★★★ AN ORDER IS APPLIED WHEN THE NEXT FRAME SHOWS IT, NOT WHEN THE MOD'S
+// ARM RETURNED `ok`. Every accounting the bridge had was on the ISSUING side:
+// `orders_applied` counted arms whose `pcall` returned true, and that number ran
+// 95–98% while a Settler was requested on 83 consecutive turns with nothing
+// built, a purchase bought nothing, and a `MOVE_TO (14,11)` from (13,11) ended
+// at (12,9). The receiving side is the next `state` frame, and this is the one
+// place that sees both frames: what left for the host on turn T, and what the
+// host exported at the start of turn T+1.
+//
+// The verdicts travel back through the orders channel as rows of kind
+// `order_verified` / `order_failed` / `turn_verified`; the mod is the ledger's
+// only writer (a second appender interleaves partial lines into
+// `events.jsonl`), so it re-emits them as events. `civ6_ladder.orders_totals`
+// then counts VERIFIED orders as `orders_applied` and keeps the mod's own
+// return-code count beside it as `orders_reported`, so the gap is a number on
+// the ledger instead of a memory note.
+
+/// One order as it left for the host: exactly the shape the brain forwards.
+#[derive(Clone, Debug, PartialEq)]
+struct IssuedOrder {
+    kind: String,
+    subject: Option<i64>,
+    verb: Option<String>,
+    pos: Option<(i32, i32)>,
 }
 
-/// Where `data/league` is, without trusting the working directory.
-///
-/// ⚠ **Never resolve an asset relative to the cwd here.** This binary is launched by
-/// `civ6_brain.py` from whatever directory the harness happened to be in, and every
-/// cwd-relative asset read in this project has eventually resolved to nothing
-/// somewhere real — the champion genome, the league roster, and a value net that has
-/// never once loaded. The executable's own location is stable; the cwd is not.
-fn league_dirs(args: &[String]) -> Vec<std::path::PathBuf> {
-    let mut out = Vec::new();
-    if let Some(dir) = arg_text(args, "--league") {
-        out.push(std::path::PathBuf::from(dir));
+impl IssuedOrder {
+    /// Read the orders out of a `decide` reply, verdict rows excluded.
+    fn from_reply(reply: &str) -> Vec<IssuedOrder> {
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(reply) else {
+            return Vec::new();
+        };
+        value
+            .get("orders")
+            .and_then(|orders| orders.as_array())
+            .map(|orders| {
+                orders
+                    .iter()
+                    .filter_map(|o| {
+                        let kind = o.get("kind")?.as_str()?.to_string();
+                        if VERDICT_ROW_KINDS.contains(&kind.as_str()) {
+                            return None;
+                        }
+                        let x = o.get("x").and_then(|v| v.as_i64());
+                        let y = o.get("y").and_then(|v| v.as_i64());
+                        Some(IssuedOrder {
+                            kind,
+                            subject: o.get("subject").and_then(|v| v.as_i64()),
+                            verb: o.get("verb").and_then(|v| v.as_str()).map(str::to_string),
+                            pos: match (x, y) {
+                                (Some(x), Some(y)) => Some((x as i32, y as i32)),
+                                _ => None,
+                            },
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
     }
-    if let Ok(exe) = std::env::current_exe() {
-        // target/release/civvis_orders -> <repo>/data/league
-        for up in [3usize, 2, 1] {
-            let mut base = exe.clone();
-            for _ in 0..up {
-                base.pop();
-            }
-            out.push(base.join("data").join("league"));
+
+    fn label(&self) -> String {
+        match &self.verb {
+            Some(verb) => format!("{}:{}", self.kind, verb),
+            None => self.kind.clone(),
         }
     }
-    out.push(std::path::PathBuf::from("data/league"));
-    out
 }
 
-/// Resolve an explicit strategy selector against one league snapshot.
-///
-/// Internal strategy names are the durable identity and therefore always win.
-/// A league username is also a useful *explicit* selector for a human-facing
-/// launcher, provided it identifies exactly one entry. That compatibility path
-/// is deliberately here rather than in a caller: every invocation still records
-/// the immutable internal name in its genome record, and an ambiguous display
-/// name refuses loudly instead of selecting whichever row happened to be first.
-fn named_strategy<'a>(
-    league: &'a civvis::league::League,
-    want: &str,
-) -> Result<Option<&'a civvis::league::Strategy>, String> {
-    if let Some(strategy) = league
-        .strategies
-        .iter()
-        .find(|strategy| strategy.name == want)
-    {
-        return Ok(Some(strategy));
-    }
+/// What the next frame said about one order.
+#[derive(Clone, Debug, PartialEq)]
+enum Verdict {
+    Verified,
+    Failed(String),
+    Unverifiable,
+}
 
-    let matches: Vec<_> = league
-        .strategies
-        .iter()
-        .filter(|strategy| !strategy.username.is_empty() && strategy.username == want)
-        .collect();
-    match matches.as_slice() {
-        [] => Ok(None),
-        [strategy] => Ok(Some(*strategy)),
-        _ => Err(format!(
-            "display strategy name {want:?} is ambiguous ({}); use an internal strategy name",
-            matches
+#[derive(Clone, Debug, PartialEq)]
+struct OrderCheck {
+    order: IssuedOrder,
+    verdict: Verdict,
+}
+
+/// Orders sent on one frame, held until a later turn's frame answers them.
+struct PendingOrders {
+    turn: u32,
+    orders: Vec<IssuedOrder>,
+    before: civvis::mirror::StateSnapshot,
+}
+
+/// Row kinds that carry verdicts back to the mod. They are not orders: the mod
+/// emits each one as a ledger event and keeps them out of `orders_seen`.
+const VERDICT_ROW_KINDS: &[&str] = &["order_verified", "order_failed", "turn_verified"];
+
+/// Order kinds the next frame cannot answer, each with the reason. Every kind
+/// `translate` can emit is either checked in `verify_order` or listed here;
+/// `every_issued_order_kind_is_checked_or_declared_unverifiable` enforces it.
+const UNVERIFIABLE_ORDER_KINDS: &[(&str, &str)] = &[
+    // A deferred lease the mod holds until the host queue finishes; the later
+    // `build` event is its actuation proof, and the mod already keeps it out of
+    // the applied count as `orders_deferred`.
+    (
+        "produce_next",
+        "deferred lease; the `build` event is its proof",
+    ),
+    // The frame exports no diplomatic-mission table (delegations, embassies),
+    // and the 25-gold fee is indistinguishable from ordinary spending.
+    ("delegation", "no mission table in the frame"),
+    // Aid is a contribution to an emergency score the host reveals late and
+    // rounds; the frame has no per-turn contribution field to compare.
+    ("aid_gift", "no contribution field in the frame"),
+    // Levied units keep the city-state's ids and the frame does not mark them
+    // as levied, so a levy cannot be told from the minor's own army.
+    ("levy", "levied units are not marked in the frame"),
+];
+
+/// Unit verbs the next frame cannot answer, each with the reason. `SPY_*`
+/// covers every espionage mission: they run for many turns and the frame
+/// carries no mission state.
+const UNVERIFIABLE_UNIT_VERBS: &[(&str, &str)] = &[
+    (
+        "SKIP_TURN",
+        "a skipped turn changes nothing the frame exports",
+    ),
+    ("SLEEP", "sleep is not exported"),
+    ("ALERT", "alert is not exported"),
+    ("HEAL", "healing is indistinguishable from resting"),
+    (
+        "AUTOMATE_EXPLORE",
+        "the host owns the unit's route from here on",
+    ),
+    (
+        "SPY_*",
+        "espionage missions run for many turns and the frame carries none",
+    ),
+];
+
+fn unverifiable_kind(kind: &str) -> bool {
+    UNVERIFIABLE_ORDER_KINDS.iter().any(|(k, _)| *k == kind)
+}
+
+fn unverifiable_unit_verb(op: &str) -> bool {
+    op.starts_with("SPY_") || UNVERIFIABLE_UNIT_VERBS.iter().any(|(v, _)| *v == op)
+}
+
+/// Ledger event kinds the checks read as evidence between two frames.
+const EVIDENCE_KINDS: &[&str] = &[
+    "combat",
+    "deal_closed",
+    "deal_declined",
+    "deal_session",
+    "peace_response",
+    "improved",
+];
+
+/// Ledger events of the evidence kinds stamped with one of `turns`.
+///
+/// A rival answers a deal during its own part of the game turn, so the answer
+/// carries our turn; a callback that lands at the start of the next turn
+/// carries that one. Both are accepted, restricted by subject in the checks.
+///
+/// ⚠ The relay re-encodes every line with `": "` spacing, so the cheap
+/// pre-filter looks for the quoted kind alone (as `state_from_events` does)
+/// and the parsed `kind` decides.
+fn ledger_evidence(path: &Path, turns: &[u32]) -> Vec<serde_json::Value> {
+    let Ok(raw) = std::fs::read_to_string(path) else {
+        return Vec::new();
+    };
+    raw.lines()
+        .filter(|line| {
+            EVIDENCE_KINDS
                 .iter()
-                .map(|strategy| strategy.name.as_str())
-                .collect::<Vec<_>>()
-                .join(", ")
-        )),
+                .any(|k| line.contains(&format!("\"{k}\"")))
+        })
+        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+        .filter(|event| {
+            let kind = event.get("kind").and_then(|k| k.as_str()).unwrap_or("");
+            EVIDENCE_KINDS.contains(&kind)
+                && event
+                    .get("turn")
+                    .and_then(|t| t.as_u64())
+                    .is_some_and(|t| turns.iter().any(|want| u64::from(*want) == t))
+        })
+        .collect()
+}
+
+fn offset_distance(a: (i32, i32), b: (i32, i32)) -> i32 {
+    civvis::hex::distance(
+        civvis::hex::offset_to_axial(a.0, a.1),
+        civvis::hex::offset_to_axial(b.0, b.1),
+    )
+}
+
+fn own_unit(state: &civvis::mirror::StateSnapshot, id: i64) -> Option<&civvis::mirror::StateUnit> {
+    state.units.iter().find(|u| u.id == id)
+}
+
+fn own_city(state: &civvis::mirror::StateSnapshot, id: i64) -> Option<&civvis::mirror::StateCity> {
+    state.cities.iter().find(|c| c.id == id)
+}
+
+fn own_city_at(
+    state: &civvis::mirror::StateSnapshot,
+    pos: (i32, i32),
+) -> Option<&civvis::mirror::StateCity> {
+    state.cities.iter().find(|c| (c.x, c.y) == pos)
+}
+
+fn foreign_units(
+    state: &civvis::mirror::StateSnapshot,
+) -> impl Iterator<Item = &civvis::mirror::StateUnit> {
+    state
+        .rivals
+        .iter()
+        .flat_map(|r| r.units.iter())
+        .chain(state.minors.iter().flat_map(|m| m.units.iter()))
+        .chain(state.hostiles.iter())
+}
+
+fn foreign_city_at(
+    state: &civvis::mirror::StateSnapshot,
+    pos: (i32, i32),
+) -> Option<&civvis::mirror::StateCity> {
+    state
+        .rivals
+        .iter()
+        .flat_map(|r| r.cities.iter())
+        .chain(state.minors.iter().flat_map(|m| m.cities.iter()))
+        .find(|c| (c.x, c.y) == pos)
+}
+
+fn at_war_with(state: &civvis::mirror::StateSnapshot, player: i64) -> Option<bool> {
+    state
+        .rivals
+        .iter()
+        .find(|r| r.player as i64 == player)
+        .map(|r| r.at_war)
+        .or_else(|| {
+            state
+                .minors
+                .iter()
+                .find(|m| m.player as i64 == player)
+                .map(|m| m.at_war)
+        })
+}
+
+/// Whether whatever stood on `pos` before the order is damaged, gone, or ours.
+fn target_harmed(
+    before: &civvis::mirror::StateSnapshot,
+    after: &civvis::mirror::StateSnapshot,
+    pos: (i32, i32),
+) -> bool {
+    let stood: Vec<&civvis::mirror::StateUnit> = foreign_units(before)
+        .filter(|u| (u.x, u.y) == pos)
+        .collect();
+    let unit_harmed = stood.iter().any(|was| {
+        match foreign_units(after).find(|now| now.id == was.id && now.player == was.player) {
+            None => true,
+            Some(now) => now.hp < was.hp,
+        }
+    });
+    if unit_harmed {
+        return true;
+    }
+    match foreign_city_at(before, pos) {
+        Some(was) => match foreign_city_at(after, pos) {
+            None => own_city_at(after, pos).is_some(),
+            Some(now) => now.damage > was.damage || now.wall_damage > was.wall_damage,
+        },
+        None => false,
     }
 }
 
-/// Pick the genome this seat should play, or `None` to keep the shipped default.
+fn combat_evidence(evidence: &[serde_json::Value], turn: u32, attacker: i64) -> bool {
+    evidence.iter().any(|event| {
+        event.get("kind").and_then(|k| k.as_str()) == Some("combat")
+            && event.get("turn").and_then(|t| t.as_u64()) == Some(u64::from(turn))
+            && event
+                .get("attacker")
+                .and_then(|a| a.get("id"))
+                .and_then(|id| id.as_i64())
+                == Some(attacker)
+    })
+}
+
+fn deal_answered(evidence: &[serde_json::Value], subject: Option<i64>) -> bool {
+    evidence.iter().any(|event| {
+        let kind = event.get("kind").and_then(|k| k.as_str()).unwrap_or("");
+        let party = event
+            .get("from")
+            .or_else(|| event.get("target"))
+            .and_then(|p| p.as_i64());
+        let same_party = subject.is_none() || party.is_none() || party == subject;
+        same_party
+            && match kind {
+                "deal_closed" | "deal_declined" => true,
+                "deal_session" => event.get("phase").and_then(|p| p.as_str()) == Some("answered"),
+                _ => false,
+            }
+    })
+}
+
+fn peace_response(evidence: &[serde_json::Value], subject: Option<i64>) -> Option<bool> {
+    evidence.iter().find_map(|event| {
+        if event.get("kind").and_then(|k| k.as_str()) != Some("peace_response") {
+            return None;
+        }
+        let party = event.get("target").and_then(|p| p.as_i64());
+        if subject.is_some() && party.is_some() && party != subject {
+            return None;
+        }
+        Some(
+            event
+                .get("accepted")
+                .and_then(|a| a.as_bool())
+                .unwrap_or(false),
+        )
+    })
+}
+
+/// Whether a city holds `item` as a finished building, district, or wonder.
+fn city_holds(city: &civvis::mirror::StateCity, item: &str) -> bool {
+    city.buildings.iter().any(|b| b == item)
+        || city.districts.iter().any(|d| d.kind == item)
+        || city.wonders.iter().any(|w| w.kind == item)
+}
+
+/// A unit of `kind` within one tile of the city that was not there before.
+fn unit_appeared_at_city(
+    before: &civvis::mirror::StateSnapshot,
+    after: &civvis::mirror::StateSnapshot,
+    city: &civvis::mirror::StateCity,
+    kind: &str,
+) -> bool {
+    after.units.iter().any(|u| {
+        u.kind == kind
+            && offset_distance((u.x, u.y), (city.x, city.y)) <= 1
+            && own_unit(before, u.id).is_none()
+    })
+}
+
+fn verify_unit_order(
+    order: &IssuedOrder,
+    turn: u32,
+    before: &civvis::mirror::StateSnapshot,
+    after: &civvis::mirror::StateSnapshot,
+    tiles: &civvis::mirror::Snapshot,
+    evidence: &[serde_json::Value],
+) -> Verdict {
+    let Some(id) = order.subject else {
+        return Verdict::Failed("no_subject".to_string());
+    };
+    let verb = order.verb.as_deref().unwrap_or("");
+    let (op, arg) = verb.split_once(':').unwrap_or((verb, ""));
+    if unverifiable_unit_verb(op) {
+        return Verdict::Unverifiable;
+    }
+    let was = own_unit(before, id);
+    let now = own_unit(after, id);
+    let gone = || Verdict::Failed("unit_gone".to_string());
+    match op {
+        "MOVE_TO" => {
+            let Some(want) = order.pos else {
+                return Verdict::Failed("no_destination".to_string());
+            };
+            match (was, now) {
+                (_, Some(now)) if (now.x, now.y) == want => Verdict::Verified,
+                // A unit first seen on a combat frame has no baseline to move from.
+                (None, Some(_)) => Verdict::Unverifiable,
+                (Some(was), Some(now)) => {
+                    let start = offset_distance((was.x, was.y), want);
+                    let end = offset_distance((now.x, now.y), want);
+                    if start == 0 || end < start {
+                        Verdict::Verified
+                    } else if end == start {
+                        Verdict::Failed("did_not_move".to_string())
+                    } else {
+                        Verdict::Failed("moved_away".to_string())
+                    }
+                }
+                (Some(_), None) => {
+                    // A settler that walked onto its site and founded is consumed
+                    // by the order it was walking for.
+                    if own_city_at(after, want).is_some() && own_city_at(before, want).is_none() {
+                        Verdict::Verified
+                    } else {
+                        gone()
+                    }
+                }
+                (None, None) => Verdict::Unverifiable,
+            }
+        }
+        "FOUND_CITY" => {
+            let site = order.pos.or_else(|| was.map(|u| (u.x, u.y)));
+            let founded_here = site.is_some_and(|s| {
+                own_city_at(after, s).is_some() && own_city_at(before, s).is_none()
+            });
+            if founded_here || (now.is_none() && after.cities.len() > before.cities.len()) {
+                Verdict::Verified
+            } else {
+                Verdict::Failed("no_city".to_string())
+            }
+        }
+        "ATTACK" | "RANGE_ATTACK" => {
+            let harmed = order.pos.is_some_and(|p| target_harmed(before, after, p));
+            if harmed || combat_evidence(evidence, turn, id) {
+                Verdict::Verified
+            } else {
+                Verdict::Failed("target_unharmed".to_string())
+            }
+        }
+        "FORTIFY" => match now {
+            None => gone(),
+            Some(u) if u.fortified || u.fortify_turns > 0 => Verdict::Verified,
+            Some(_) => Verdict::Failed("not_fortified".to_string()),
+        },
+        "UPGRADE" => match (was, now) {
+            // The host may hand the upgraded unit a new id: a different kind
+            // standing where this one stood, unseen before, is the upgrade.
+            (Some(was), None) => {
+                let replaced = after.units.iter().any(|u| {
+                    (u.x, u.y) == (was.x, was.y)
+                        && u.kind != was.kind
+                        && own_unit(before, u.id).is_none()
+                });
+                if replaced {
+                    Verdict::Verified
+                } else {
+                    gone()
+                }
+            }
+            (None, None) => gone(),
+            (None, Some(_)) => Verdict::Unverifiable,
+            (Some(was), Some(now)) if was.kind != now.kind => Verdict::Verified,
+            _ => Verdict::Failed("same_unit_type".to_string()),
+        },
+        "DELETE" => {
+            if now.is_none() {
+                Verdict::Verified
+            } else {
+                Verdict::Failed("still_exists".to_string())
+            }
+        }
+        "IMPROVE" | "REPAIR" => {
+            let charges_spent = match (
+                was.and_then(|u| u.build_charges),
+                now.and_then(|u| u.build_charges),
+            ) {
+                (Some(before), Some(after)) => after < before,
+                _ => false,
+            };
+            let tile_shows = was.is_some_and(|u| {
+                tiles.plot((u.x, u.y)).is_some_and(|plot| {
+                    (op == "IMPROVE" && !arg.is_empty() && plot.im.as_deref() == Some(arg))
+                        || (op == "REPAIR" && !plot.p)
+                })
+            });
+            let improved_event = was.is_some_and(|u| {
+                evidence.iter().any(|event| {
+                    event.get("kind").and_then(|k| k.as_str()) == Some("improved")
+                        && event.get("turn").and_then(|t| t.as_u64()) == Some(u64::from(turn))
+                        && event.get("x").and_then(|x| x.as_i64()) == Some(i64::from(u.x))
+                        && event.get("y").and_then(|y| y.as_i64()) == Some(i64::from(u.y))
+                })
+            });
+            if now.is_none() || charges_spent || tile_shows || improved_event {
+                Verdict::Verified
+            } else if op == "REPAIR" {
+                // A repair spends no charge and raises no `improved` event: the
+                // tile's pillage bit is its only witness.
+                Verdict::Failed("not_repaired".to_string())
+            } else {
+                Verdict::Failed("no_improvement".to_string())
+            }
+        }
+        "PILLAGE" => {
+            let pillaged = was.is_some_and(|u| tiles.plot((u.x, u.y)).is_some_and(|plot| plot.p));
+            if pillaged {
+                Verdict::Verified
+            } else {
+                Verdict::Failed("not_pillaged".to_string())
+            }
+        }
+        "ENTER_FORMATION" => match now {
+            None => gone(),
+            Some(u) if u.formation_count > 1 => Verdict::Verified,
+            Some(_) => Verdict::Failed("not_in_formation".to_string()),
+        },
+        "EXIT_FORMATION" => match now {
+            None => gone(),
+            Some(u) if u.formation_count <= 1 => Verdict::Verified,
+            Some(_) => Verdict::Failed("still_in_formation".to_string()),
+        },
+        "TRADE_ROUTE" => {
+            if after.trade_routes.iter().any(|route| route.trader == id) {
+                Verdict::Verified
+            } else {
+                Verdict::Failed("no_route".to_string())
+            }
+        }
+        "ACTIVATE_GREAT_PERSON" => {
+            let charges = |u: Option<&civvis::mirror::StateUnit>| {
+                u.and_then(|u| u.great_person.as_ref()).map(|gp| gp.charges)
+            };
+            let spent = matches!((charges(was), charges(now)), (Some(b), Some(a)) if a < b);
+            if now.is_none() || spent {
+                Verdict::Verified
+            } else {
+                Verdict::Failed("not_activated".to_string())
+            }
+        }
+        "SPREAD_RELIGION" | "RELIGIOUS_HEAL" | "REMOVE_HERESY" | "LAUNCH_INQUISITION"
+        | "CONDEMN_HERETIC" | "CONVERT_BARBARIANS" => {
+            let spent = matches!(
+                (was.and_then(|u| u.spread_charges), now.and_then(|u| u.spread_charges)),
+                (Some(b), Some(a)) if a < b
+            );
+            if now.is_none() || spent {
+                Verdict::Verified
+            } else {
+                Verdict::Failed("charge_not_spent".to_string())
+            }
+        }
+        "PROMOTE" => match now {
+            None => gone(),
+            Some(u)
+                if u.promotions
+                    .as_ref()
+                    .is_some_and(|p| p.iter().any(|have| have == arg)) =>
+            {
+                Verdict::Verified
+            }
+            Some(_) => Verdict::Failed("not_promoted".to_string()),
+        },
+        _ => Verdict::Unverifiable,
+    }
+}
+
+/// The next frame's verdict on one order issued on `turn`.
+fn verify_order(
+    order: &IssuedOrder,
+    turn: u32,
+    before: &civvis::mirror::StateSnapshot,
+    after: &civvis::mirror::StateSnapshot,
+    tiles: &civvis::mirror::Snapshot,
+    evidence: &[serde_json::Value],
+) -> Verdict {
+    if unverifiable_kind(&order.kind) {
+        return Verdict::Unverifiable;
+    }
+    let verb = order.verb.as_deref().unwrap_or("");
+    let failed = |why: String| Verdict::Failed(why);
+    match order.kind.as_str() {
+        "unit" => verify_unit_order(order, turn, before, after, tiles, evidence),
+        "produce" => {
+            let Some(city) = order.subject.and_then(|id| own_city(after, id)) else {
+                return failed("city_gone".to_string());
+            };
+            if city.producing.as_deref() == Some(verb)
+                || city_holds(city, verb)
+                || unit_appeared_at_city(before, after, city, verb)
+            {
+                Verdict::Verified
+            } else {
+                failed(format!(
+                    "producing={}",
+                    city.producing.as_deref().unwrap_or("nothing")
+                ))
+            }
+        }
+        "purchase" | "purchase_faith" => {
+            let Some(city) = order.subject.and_then(|id| own_city(after, id)) else {
+                return failed("city_gone".to_string());
+            };
+            let present =
+                city_holds(city, verb) || unit_appeared_at_city(before, after, city, verb);
+            let treasury_fell = if order.kind == "purchase_faith" {
+                after.faith < before.faith
+            } else {
+                after.gold < before.gold
+            };
+            if present || treasury_fell {
+                Verdict::Verified
+            } else {
+                failed("not_bought".to_string())
+            }
+        }
+        "buy_plot" => {
+            let Some(pos) = order.pos else {
+                return failed("no_plot".to_string());
+            };
+            match tiles.plot(pos) {
+                Some(plot) if plot.o == after.seat.local_player => Verdict::Verified,
+                Some(_) => failed("plot_not_owned".to_string()),
+                None => failed("plot_unseen".to_string()),
+            }
+        }
+        "envoy" => {
+            let envoys = |state: &civvis::mirror::StateSnapshot| {
+                state
+                    .minors
+                    .iter()
+                    .find(|m| Some(m.player as i64) == order.subject)
+                    .map(|m| m.envoys)
+            };
+            let rose = matches!((envoys(before), envoys(after)), (Some(b), Some(a)) if a > b);
+            let spent =
+                matches!((before.envoys_free, after.envoys_free), (Some(b), Some(a)) if a < b);
+            if rose || spent {
+                Verdict::Verified
+            } else {
+                failed("envoys_unchanged".to_string())
+            }
+        }
+        "sell" | "buy" => {
+            if deal_answered(evidence, order.subject) {
+                Verdict::Verified
+            } else {
+                failed("no_deal_response".to_string())
+            }
+        }
+        "peace" => {
+            let war_now = order.subject.and_then(|p| at_war_with(after, p));
+            let war_before = order.subject.and_then(|p| at_war_with(before, p));
+            match peace_response(evidence, order.subject) {
+                Some(true) if war_now == Some(true) => failed("still_at_war".to_string()),
+                Some(_) => Verdict::Verified,
+                None if war_before == Some(true) && war_now == Some(false) => Verdict::Verified,
+                None => failed("no_peace_response".to_string()),
+            }
+        }
+        "war" => match order.subject.and_then(|p| at_war_with(after, p)) {
+            Some(true) => Verdict::Verified,
+            Some(false) => failed("not_at_war".to_string()),
+            None => failed("player_unseen".to_string()),
+        },
+        "governor_appoint" | "governor_assign" => {
+            let governors =
+                |state: &civvis::mirror::StateSnapshot| state.governors.clone().unwrap_or_default();
+            let seated = governors(after)
+                .iter()
+                .any(|g| g.kind == verb && Some(g.city) == order.subject);
+            let appointed = order.kind == "governor_appoint"
+                && governors(after).iter().any(|g| g.kind == verb)
+                && !governors(before).iter().any(|g| g.kind == verb);
+            if seated || appointed {
+                Verdict::Verified
+            } else if order.kind == "governor_appoint" {
+                failed("not_appointed".to_string())
+            } else {
+                failed("not_assigned".to_string())
+            }
+        }
+        "governor_promote" => {
+            let (governor, promotion) = verb.split_once(',').unwrap_or((verb, ""));
+            let promoted = after.governors.as_ref().is_some_and(|gs| {
+                gs.iter()
+                    .any(|g| g.kind == governor && g.promotions.iter().any(|p| p == promotion))
+            });
+            if promoted {
+                Verdict::Verified
+            } else {
+                failed("not_promoted".to_string())
+            }
+        }
+        "research" => {
+            if after.research.as_deref() == Some(verb) || after.techs.iter().any(|t| t == verb) {
+                Verdict::Verified
+            } else {
+                failed(format!(
+                    "research={}",
+                    after.research.as_deref().unwrap_or("nothing")
+                ))
+            }
+        }
+        "civic" => {
+            if after.civic.as_deref() == Some(verb) || after.civics.iter().any(|c| c == verb) {
+                Verdict::Verified
+            } else {
+                failed(format!(
+                    "civic={}",
+                    after.civic.as_deref().unwrap_or("nothing")
+                ))
+            }
+        }
+        "policy_deck" => {
+            let missing: Vec<&str> = verb
+                .split(',')
+                .filter(|p| !p.is_empty() && !after.policies.iter().any(|have| have == p))
+                .collect();
+            if missing.is_empty() {
+                Verdict::Verified
+            } else {
+                failed(format!("missing={}", missing.join("+")))
+            }
+        }
+        "government" => {
+            if after.government.as_deref() == Some(verb) {
+                Verdict::Verified
+            } else {
+                failed(format!(
+                    "government={}",
+                    after.government.as_deref().unwrap_or("nothing")
+                ))
+            }
+        }
+        "pantheon" => {
+            if after.pantheon.as_deref() == Some(verb) {
+                Verdict::Verified
+            } else {
+                failed("no_pantheon".to_string())
+            }
+        }
+        "religion" => {
+            let beliefs_held = verb
+                .split(',')
+                .filter(|b| !b.is_empty())
+                .all(|b| after.religion_beliefs.iter().any(|have| have == b));
+            let founded = after.founded_religion.is_some() && before.founded_religion.is_none();
+            if founded || beliefs_held {
+                Verdict::Verified
+            } else {
+                failed("not_founded".to_string())
+            }
+        }
+        "gp_recruit" | "gp_patronize" | "gp_patronize_faith" => {
+            let arrived = after.units.iter().any(|u| {
+                u.great_person.as_ref().and_then(|gp| gp.class.as_deref()) == Some(verb)
+                    && own_unit(before, u.id).is_none()
+            });
+            if arrived {
+                Verdict::Verified
+            } else {
+                failed("no_great_person".to_string())
+            }
+        }
+        "city_strike" | "encampment_strike" => {
+            let harmed = order.pos.is_some_and(|p| target_harmed(before, after, p));
+            if harmed
+                || order
+                    .subject
+                    .is_some_and(|id| combat_evidence(evidence, turn, id))
+            {
+                Verdict::Verified
+            } else {
+                failed("target_unharmed".to_string())
+            }
+        }
+        _ => Verdict::Unverifiable,
+    }
+}
+
+/// Every order in `pending` against the frame that followed it.
+fn verify_orders(
+    pending: &PendingOrders,
+    after: &civvis::mirror::StateSnapshot,
+    tiles: &civvis::mirror::Snapshot,
+    evidence: &[serde_json::Value],
+) -> Vec<OrderCheck> {
+    pending
+        .orders
+        .iter()
+        .map(|order| OrderCheck {
+            verdict: verify_order(order, pending.turn, &pending.before, after, tiles, evidence),
+            order: order.clone(),
+        })
+        .collect()
+}
+
+/// The rows that carry one turn's verdicts to the mod: one per checked order
+/// and one `turn_verified` tally. `x` carries the verified turn because the
+/// order row has no spare column; the mod reads it back as `turn`.
+fn verdict_rows(turn: u32, checks: &[OrderCheck]) -> Vec<Order> {
+    let mut rows = Vec::with_capacity(checks.len() + 1);
+    let (mut verified, mut failed, mut unverifiable) = (0usize, 0usize, 0usize);
+    for check in checks {
+        match &check.verdict {
+            Verdict::Verified => {
+                verified += 1;
+                rows.push(Order {
+                    kind: "order_verified",
+                    subject: check.order.subject,
+                    verb: Some(check.order.label()),
+                    pos: Some((turn as i32, -1)),
+                });
+            }
+            Verdict::Failed(why) => {
+                failed += 1;
+                rows.push(Order {
+                    kind: "order_failed",
+                    subject: check.order.subject,
+                    verb: Some(format!("{} {}", check.order.label(), why)),
+                    pos: Some((turn as i32, -1)),
+                });
+            }
+            Verdict::Unverifiable => unverifiable += 1,
+        }
+    }
+    rows.push(Order {
+        kind: "turn_verified",
+        subject: Some(i64::from(turn)),
+        verb: Some(format!(
+            "issued={} verified={} failed={} unverifiable={}",
+            checks.len(),
+            verified,
+            failed,
+            unverifiable
+        )),
+        pos: None,
+    });
+    rows
+}
+
+/// Append rows to a reply's `orders` array without disturbing the rest.
+fn append_rows_to_reply(reply: &str, rows: &[Order]) -> String {
+    if rows.is_empty() {
+        return reply.to_string();
+    }
+    let Ok(mut value) = serde_json::from_str::<serde_json::Value>(reply) else {
+        return reply.to_string();
+    };
+    let Some(orders) = value.get_mut("orders").and_then(|o| o.as_array_mut()) else {
+        return reply.to_string();
+    };
+    for row in rows {
+        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&row.to_json()) {
+            orders.push(parsed);
+        }
+    }
+    value.to_string()
+}
+
+/// The verdict rows for every pending frame the new frame answers, and the
+/// pending list trimmed to what is still waiting.
+fn settle_pending_orders(
+    pending: &mut Vec<PendingOrders>,
+    events: &Path,
+    after: &civvis::mirror::StateSnapshot,
+    tiles: &civvis::mirror::Snapshot,
+) -> Vec<Order> {
+    let answered: Vec<PendingOrders> = {
+        let (done, waiting): (Vec<_>, Vec<_>) = std::mem::take(pending)
+            .into_iter()
+            .partition(|p| p.turn < after.turn);
+        *pending = waiting;
+        done
+    };
+    if answered.is_empty() {
+        return Vec::new();
+    }
+    let turns: Vec<u32> = answered.iter().flat_map(|p| [p.turn, p.turn + 1]).collect();
+    let evidence = ledger_evidence(events, &turns);
+    let mut rows = Vec::new();
+    let mut by_turn: std::collections::BTreeMap<u32, Vec<OrderCheck>> = Default::default();
+    for frame in &answered {
+        by_turn
+            .entry(frame.turn)
+            .or_default()
+            .extend(verify_orders(frame, after, tiles, &evidence));
+    }
+    for (turn, checks) in by_turn {
+        rows.extend(verdict_rows(turn, &checks));
+    }
+    rows
+}
+
+/// Replay a recorded run's orders against its own frames.
 ///
-/// ★★★★ **`--strategy` IS OPT-IN, AND THAT IS DELIBERATE.** The league's leader is not
-/// automatically the right controller for a real Civilization VI game: the champion
-/// measured **+48 in the compact evaluation and −53 deployed**, and the shipped
-/// default genome is already the deployment-capable one. So this makes the rated
-/// genome *reachable and reportable* without silently changing how every run plays;
-/// deciding which is better is a matched pair, not an assumption.
-///
-/// `--strategy auto` ranks on `league::strategy_strength`, which is the outright-win
-/// lower bound rather than the placement rating — see `league::strongest_strategy`.
-/// `--civ` narrows to the per-civilization table when that pair has history; the civ
-/// comes from the `seat` event because Civilization VI deals it and nothing can
-/// choose it. A named `--strategy` accepts its immutable internal name first and a
-/// unique league display username second; the genome record always names the former.
-fn resolve_strategy(args: &[String]) -> Option<ChosenStrategy> {
-    let want = arg_text(args, "--strategy")?;
-    let civ = arg_text(args, "--civ");
-    // ⚠ Through CIVVIS's own roster, not by string surgery. `CIVILIZATION_ROME`
-    // is `Rome` here; a civilization CIVVIS does not model answers None and the
-    // ranking falls back to the global bound rather than inventing a key that
-    // matches nothing.
-    let civ_key = civ
-        .as_deref()
-        .and_then(civvis::mirror::civvis_civ_name)
-        .map(str::to_string);
-    let mut tried = Vec::new();
-    for dir in league_dirs(args) {
-        tried.push(dir.display().to_string());
-        let Some(league) = civvis::league::load_league(&dir.display().to_string()) else {
+/// `orders_path` holds the rows the brain wrote to `orders.sqlite`, one JSON
+/// object per line (`turn`, `kind`, `subject`, `verb`, `x`, `y`); the frames
+/// and the evidence come from the run's `events.jsonl`. Prints one JSON line:
+/// what the checks verified, what failed and why, and the mod's own
+/// `orders_reported` for the same turns, so the gap can be measured on a run
+/// that was played before the checks existed. The board is not replayed, so
+/// the plot-bound checks (`buy_plot`, `PILLAGE`, `REPAIR`) are counted apart
+/// as `plot_bound` rather than as failures.
+fn audit_orders(events: &Path, orders_path: &Path) {
+    let mut by_turn: std::collections::BTreeMap<u32, Vec<IssuedOrder>> = Default::default();
+    for line in std::fs::read_to_string(orders_path)
+        .unwrap_or_default()
+        .lines()
+    {
+        let Ok(row) = serde_json::from_str::<serde_json::Value>(line) else {
             continue;
         };
-        let picked = if want == "auto" {
-            Ok(civvis::league::strongest_strategy(
-                &league,
-                civ_key.as_deref(),
-            ))
-        } else {
-            named_strategy(&league, &want)
+        let Some(turn) = row.get("turn").and_then(|t| t.as_u64()) else {
+            continue;
         };
-        let picked = match picked {
-            Ok(strategy) => strategy,
-            Err(why) => {
-                eprintln!("[genome] {why} in {}", dir.display());
-                return None;
-            }
-        };
-        let Some(strategy) = picked else {
-            eprintln!("[genome] no strategy '{want}' in {}", dir.display());
-            return None;
-        };
-        let Some((weights, lane)) = civvis::league::strategy_genome(strategy) else {
-            eprintln!("[genome] '{}' carries no Weights genome", strategy.name);
-            return None;
-        };
-        let per_civ = civ_key.as_deref().is_some_and(|c| {
-            strategy
-                .leader_elo
-                .values()
-                .any(|civs| civs.get(c).is_some_and(|r| r.games > 0))
-        });
-        return Some(ChosenStrategy {
-            name: strategy.name.clone(),
-            source: dir.display().to_string(),
-            civ: civ_key.clone(),
-            strength: civvis::league::strategy_strength(strategy, civ_key.as_deref()),
-            per_civ,
-            lane,
-            weights,
+        let kind = row
+            .get("kind")
+            .and_then(|k| k.as_str())
+            .unwrap_or("")
+            .to_string();
+        if kind.is_empty() || VERDICT_ROW_KINDS.contains(&kind.as_str()) {
+            continue;
+        }
+        let x = row.get("x").and_then(|v| v.as_i64());
+        let y = row.get("y").and_then(|v| v.as_i64());
+        by_turn.entry(turn as u32).or_default().push(IssuedOrder {
+            kind,
+            subject: row.get("subject").and_then(|v| v.as_i64()),
+            verb: row.get("verb").and_then(|v| v.as_str()).map(str::to_string),
+            pos: match (x, y) {
+                (Some(x), Some(y)) => Some((x as i32, y as i32)),
+                _ => None,
+            },
         });
     }
-    // ⚠ Loud. A league that did not load must not read as "played with the default
-    // on purpose".
-    eprintln!("[genome] --strategy {want} requested but NO league loaded; tried: {tried:?}");
-    None
+    let raw = std::fs::read_to_string(events).unwrap_or_default();
+    let mut frames: std::collections::BTreeMap<u32, civvis::mirror::StateSnapshot> =
+        Default::default();
+    let mut reported: std::collections::BTreeMap<u32, (i64, i64)> = Default::default();
+    let mut evidence: Vec<serde_json::Value> = Vec::new();
+    for line in raw.lines() {
+        let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        let kind = event.get("kind").and_then(|k| k.as_str()).unwrap_or("");
+        if kind == "state" {
+            // The opening board of each turn: the one the orders were decided on.
+            match serde_json::from_value::<civvis::mirror::StateSnapshot>(event) {
+                Ok(state) => {
+                    frames.entry(state.turn).or_insert(state);
+                }
+                Err(why) => eprintln!("audit: state frame skipped: {why}"),
+            }
+        } else if kind == "turn" && event.get("ctx").and_then(|c| c.as_str()) == Some("agent") {
+            if let (Some(turn), Some(seen)) = (
+                event.get("turn").and_then(|t| t.as_u64()),
+                event.get("orders_seen").and_then(|n| n.as_i64()),
+            ) {
+                let ok = event
+                    .get("orders_reported")
+                    .or_else(|| event.get("orders_applied"))
+                    .and_then(|n| n.as_i64())
+                    .unwrap_or(0);
+                let entry = reported.entry(turn as u32).or_insert((0, 0));
+                entry.0 += seen;
+                entry.1 += ok;
+            }
+        } else if EVIDENCE_KINDS.contains(&kind) {
+            evidence.push(event);
+        }
+    }
+    let tiles = civvis::mirror::Snapshot::from_chunks(&[]);
+    let (mut verified, mut failed, mut unverifiable, mut plot_bound, mut unframed) =
+        (0, 0, 0, 0, 0);
+    let (mut seen, mut ok) = (0i64, 0i64);
+    let mut reasons: std::collections::BTreeMap<String, usize> = Default::default();
+    let mut by_kind: std::collections::BTreeMap<String, [usize; 3]> = Default::default();
+    for (turn, orders) in by_turn {
+        let (Some(before), Some(after)) = (frames.get(&turn), frames.get(&(turn + 1))) else {
+            unframed += orders.len();
+            continue;
+        };
+        if let Some((s, a)) = reported.get(&turn) {
+            seen += s;
+            ok += a;
+        }
+        let window: Vec<serde_json::Value> = evidence
+            .iter()
+            .filter(|e| {
+                e.get("turn")
+                    .and_then(|t| t.as_u64())
+                    .is_some_and(|t| t == u64::from(turn) || t == u64::from(turn) + 1)
+            })
+            .cloned()
+            .collect();
+        let pending = PendingOrders {
+            turn,
+            orders,
+            before: before.clone(),
+        };
+        for check in verify_orders(&pending, after, &tiles, &window) {
+            let label = match check.order.kind.as_str() {
+                "unit" => check
+                    .order
+                    .label()
+                    .split(':')
+                    .take(2)
+                    .collect::<Vec<_>>()
+                    .join(":"),
+                kind => kind.to_string(),
+            };
+            let slot = by_kind.entry(label).or_insert([0, 0, 0]);
+            match check.verdict {
+                Verdict::Verified => {
+                    verified += 1;
+                    slot[0] += 1;
+                }
+                Verdict::Failed(why)
+                    if why == "plot_unseen" || why == "not_pillaged" || why == "not_repaired" =>
+                {
+                    plot_bound += 1;
+                }
+                Verdict::Failed(why) => {
+                    failed += 1;
+                    slot[1] += 1;
+                    let key = why.split('=').next().unwrap_or(&why).to_string();
+                    *reasons.entry(key).or_default() += 1;
+                }
+                Verdict::Unverifiable => {
+                    unverifiable += 1;
+                    slot[2] += 1;
+                }
+            }
+        }
+    }
+    println!(
+        "{}",
+        serde_json::json!({
+            "issued": verified + failed + unverifiable + plot_bound + unframed,
+            "verified": verified,
+            "failed": failed,
+            "unverifiable": unverifiable,
+            "plot_bound": plot_bound,
+            "unframed": unframed,
+            "reported_seen": seen,
+            "reported_ok": ok,
+            "reasons": reasons,
+            "by_kind": by_kind,
+        })
+    );
+}
+/// `--strategy` named a league genome for this seat to play. The league is
+/// retired (#2357): the live seat plays the deployment genome — `AdvancedAi`
+/// with the gene ledger applied — and the gene screen prices everything else.
+/// A launcher that still passes the flag is told so rather than silently
+/// played stock, which is what the old resolver did when its roster was
+/// missing.
+fn refuse_retired_strategy_flag(args: &[String]) {
+    if let Some(want) = arg_text(args, "--strategy") {
+        eprintln!(
+            "civvis-orders: --strategy {want} names a league genome, and the league is \
+             retired (#2357); the live seat plays the deployment genome. Drop the flag."
+        );
+        std::process::exit(2);
+    }
 }
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let Some(dir) = arg_text(&args, "--mirror") else {
-        eprintln!("usage: civvis-orders --mirror <run-dir> [--turn N] [--serve]");
+        eprintln!("usage: civvis-orders --mirror <run-dir> [--turn N] [--serve] [--audit-orders <orders.jsonl>]");
         std::process::exit(2);
     };
     let players: usize = arg_text(&args, "--players")
@@ -4474,7 +5435,7 @@ fn main() {
         .and_then(|v| v.parse().ok())
         .unwrap_or(6);
     let victory = arg_text(&args, "--victory").unwrap_or_else(|| DEFAULT_VICTORY.to_string());
-    let rated = resolve_strategy(&args);
+    refuse_retired_strategy_flag(&args);
     let mut ai = match victory_lane(&victory) {
         Some(lane) => lane,
         None => {
@@ -4482,11 +5443,6 @@ fn main() {
             std::process::exit(2);
         }
     };
-    // ⚠ Applied AFTER the victory lane so `--victory` keeps meaning what it meant;
-    // `reweight` swaps the genome and leaves the target alone.
-    if let Some(chosen) = &rated {
-        ai.reweight(chosen.weights.clone());
-    }
     // Repeatable: `--with stacked-escort --with settler-stack-discipline`.
     // A `--with` arm restores only a ledger-held live treatment; it never
     // changes the deployment genome when the flag is absent.
@@ -4558,12 +5514,15 @@ fn main() {
         "{}",
         serde_json::json!({
             "kind": "genome",
-            "strategy": rated.as_ref().map(|c| c.name.clone()).unwrap_or_else(|| "stock".into()),
-            "source": rated.as_ref().map(|c| c.source.clone()).unwrap_or_else(|| "AdvancedAi::new".into()),
-            "civ": rated.as_ref().and_then(|c| c.civ.clone()),
-            "strength_bound": rated.as_ref().map(|c| c.strength),
-            "per_civ": rated.as_ref().map(|c| c.per_civ),
-            "lane": rated.as_ref().and_then(|c| c.lane.clone()),
+            // The deployment genome, always: the league's named genomes are
+            // retired (#2357). The keys stay so the ladder ledger's reader
+            // (`civ6_ladder.decider_genome`) keeps its shape.
+            "strategy": "stock",
+            "source": "AdvancedAi::new",
+            "civ": serde_json::Value::Null,
+            "strength_bound": serde_json::Value::Null,
+            "per_civ": serde_json::Value::Null,
+            "lane": serde_json::Value::Null,
             "victory": victory.clone(),
             "parallel_settlers": ai.parallel_settlers,
             // ⚠⚠ SAY WHAT THIS BINARY ACTUALLY CARRIES, EVERY RUN.
@@ -4575,39 +5534,31 @@ fn main() {
             // a later commit had corrected — an accident that will not repeat for
             // the next stale build.
             //
-            // `LIVE_BRIDGE_TREATMENTS` is the canonical list of what
-            // `enable_live_bridge` turns on, and a test already forces the two to
-            // agree. So a binary that predates a repair emits a SHORTER list, and
-            // the difference names exactly which repairs were missing. That also
-            // gives any A/B the one thing it needs and has never had: which
-            // treatments were actually live in the arm it measured.
+            // The registry's `live()` genes are what `enable_live_bridge`
+            // turns on. So a binary that predates a repair emits a SHORTER list,
+            // and the difference names exactly which repairs were missing. That
+            // also gives any A/B the one thing it needs and has never had: which
+            // genes were actually live in the arm it measured.
             //
             // `revision` beside it is the supervisor's label when there is one —
             // `CIVVIS_COMMIT`, or a promoted `civvis-<sha>` executable name. It is
             // `null` for an ordinary development build, which is honest: the
             // treatment list is the identity that always reports.
             "revision": civvis::server::runtime_commit_or_none(),
-            // ⚠ THE CONSTANT IS A SLICE, AND THAT IS LOAD-BEARING HERE. serde
-            // implements `Serialize` for `[T; N]` only up to N = 32, so while this
-            // was a fixed-size array the registry had a silent ceiling at 32
-            // treatments: the 33rd stopped compiling in this binary, which has
-            // nothing to do with adding one. It carried `.as_slice()` for that
-            // reason; `LIVE_BRIDGE_TREATMENTS` is `&[&str]` now, so the bound is
-            // gone at the declaration and `.as_slice()` on it would resolve to the
-            // unstable `str::as_slice` instead.
             // ★★★★ THE LIST IS WHAT THE LEDGER LEFT ON, NOT THE UNIVERSE. Since
             // the gene ledger (`docs/gene_ledger.json`) decides the deployment
-            // genome, `LIVE_BRIDGE_TREATMENTS` names what COULD be on; this
+            // genome, the registry's live genes name what COULD be on; this
             // names what IS — the helpers the screens proved, the opt-ins they
             // proved, and the host-only flags no screen can price.
             "treatments": civvis::ai::gene_ledger::deployment_treatments_with_forced_live(&forced_on),
-            "ledger_withheld": civvis::elo::LIVE_BRIDGE_TREATMENTS
+            "ledger_withheld": civvis::ai::GENES
                 .iter()
+                .filter(|gene| gene.live())
+                .map(|gene| gene.tag)
                 .filter(|tag| {
                     civvis::ai::ledger_default_on(tag) == Some(false)
                         && !forced_on.contains(tag)
                 })
-                .copied()
                 .collect::<Vec<_>>(),
             "forced": &forced_on,
         })
@@ -4638,6 +5589,11 @@ fn main() {
     ai.live_governor_assignment_adapter = true;
 
     let events = Path::new(&dir).join("events.jsonl");
+    // Offline: replay a recorded run's orders through the postcondition checks.
+    if let Some(orders_path) = arg_text(&args, "--audit-orders") {
+        audit_orders(&events, Path::new(&orders_path));
+        return;
+    }
     let serve = args.iter().any(|a| a == "--serve");
     // ★ CIVVIS's own account of WHY. `--explain` attaches a recording journal — the
     // same one the spectator HUD reads — and dumps it to stderr. When the agent
@@ -4741,23 +5697,13 @@ fn main() {
         //
         // The first version of this diagnostic used stock `AdvancedAi::new()`
         // weights and reported `mil_per_city` 1.0, while the live journal for the
-        // same run printed **1.4**. A probe answering with a different genome than
-        // the deployment cannot be used to say the live decider is wrong — it is a
-        // different agent. `--strategy auto` resolves the league genome exactly as
-        // the live decider does, and the header line below names which one played
-        // so a stock fallback can never be mistaken for the deployment.
-        let mut advanced = civvis::ai::AdvancedAi::new();
-        let chosen = resolve_strategy(&args);
-        if let Some(chosen) = &chosen {
-            advanced.reweight(chosen.weights.clone());
-        }
-        println!(
-            "genome: {}",
-            chosen
-                .as_ref()
-                .map(|c| format!("{} (from {})", c.name, c.source))
-                .unwrap_or_else(|| "stock AdvancedAi::new — NOT the deployment".to_string())
-        );
+        // same run printed **1.4** — a league genome the live seat had been handed.
+        // The league is retired (#2357) and the live seat plays `AdvancedAi::new`
+        // itself, so the probe and the deployment are the same agent again; the
+        // header line still names it so nobody has to take that on trust.
+        let advanced = civvis::ai::AdvancedAi::new();
+        refuse_retired_strategy_flag(&args);
+        println!("genome: stock AdvancedAi::new — the deployment genome");
         let w = advanced.weights().clone();
         let mut ai = civvis::ai::BasicAi::with_weights(w.clone());
         // The live decider plays with the second pipeline slot open, the
@@ -5264,6 +6210,9 @@ fn main() {
     // treasury handoffs above.
     let mut host_city_attack_cooldowns = HostCityAttackCooldowns::default();
     let mut explain_cursor: u64 = 0;
+    // What left for the host on each frame, until the next turn's frame answers
+    // for it. See "order postconditions" above.
+    let mut pending_orders: Vec<PendingOrders> = Vec::new();
     for line in stdin.lock().lines() {
         let Ok(line) = line else { break };
         let want: Option<u32> = line.trim().parse().ok();
@@ -5276,6 +6225,11 @@ fn main() {
                 let (mirror_players, mirror_turns) = mirror_setup(&state, players, max_turns);
                 host_city_attack_cooldowns.observe(&state);
                 host_move_refusals.observe(&state);
+                // The verdicts on the previous turn's orders ride at the end of
+                // this turn's reply; the checks read the frame the decision is
+                // about to read, before anything is decided on it.
+                let verdicts =
+                    settle_pending_orders(&mut pending_orders, &events, &state, &snapshot);
                 // ★★★★★ FRESH BOARD, PERSISTENT AGENT — the one combination that works.
                 //
                 // Three of the four quadrants were measured: fresh board + fresh agent
@@ -5297,7 +6251,7 @@ fn main() {
                 // because ids are reassigned when the board is rebuilt. Bounded: it
                 // misdirects one settler, and CIVVIS re-targets next turn. Worth
                 // watching if settlers start wandering.
-                if fresh_board {
+                let reply = if fresh_board {
                     // ★★★★ A DECIDER THAT FIRST SEES THE GAME PAST TURN ONE HAS
                     // NO OPENING TO PLAY. The bridge restarts this process whenever
                     // `origin/main` advances, and a fresh agent's opening book
@@ -5448,7 +6402,13 @@ fn main() {
                             }
                         }
                     }
-                }
+                };
+                pending_orders.push(PendingOrders {
+                    turn: state.turn,
+                    orders: IssuedOrder::from_reply(&reply),
+                    before: state.clone(),
+                });
+                append_rows_to_reply(&reply, &verdicts)
             }
         };
         if let Some(j) = &journal {
@@ -5553,26 +6513,6 @@ mod tests {
         );
     }
 
-    /// The operator-facing live launcher historically sent the roster display
-    /// name `WildCard9`; its durable entry is `g56-48`. This is a real
-    /// compatibility contract, not a synthetic alias: if the roster changes
-    /// either side of it, the live selector must fail here before it silently
-    /// falls back to stock again.
-    #[test]
-    fn an_explicit_display_name_resolves_to_its_internal_genome() {
-        let league = civvis::league::shipped_league().expect("the shipped roster parses");
-        let internal = super::named_strategy(&league, "g56-48")
-            .expect("an internal strategy name is never ambiguous")
-            .expect("the pinned live candidate is present");
-        let display = super::named_strategy(&league, "WildCard9")
-            .expect("the displayed live candidate is never ambiguous")
-            .expect("the displayed live candidate is present");
-
-        assert_eq!(internal.name, "g56-48");
-        assert_eq!(display.name, internal.name);
-        assert_eq!(display.username, "WildCard9");
-    }
-
     /// ⚠⚠ THREE OF THESE SIX RESOLVED TO NOTHING UNTIL 2026-08-17. The live seat
     /// matched four names by hand while `VictoryTarget` had six, so Culture,
     /// Religion and Diplomacy exited with code 2 — and because `advanced.rs`
@@ -5667,11 +6607,6 @@ mod tests {
             "the named amenity-path control must hold it off"
         );
 
-        assert!(ai.governor_every_lane);
-        withhold_live_treatment(&mut ai, "governor-every-lane")
-            .expect("the every-lane governor's control arm is registered");
-        assert!(!ai.governor_every_lane, "the named every-lane control must hold it off");
-
         assert!(ai.expansion_before_prophet);
         withhold_live_treatment(&mut ai, "expansion-before-prophet")
             .expect("the Prophet deferral's control arm is registered");
@@ -5723,14 +6658,6 @@ mod tests {
             !ai.culture_building_debt,
             "the named culture-building-debt control must hold it off"
         );
-        assert!(ai.culture_coverage);
-        withhold_live_treatment(&mut ai, "culture-coverage")
-            .expect("the culture-coverage control arm is registered");
-        assert!(
-            !ai.culture_coverage,
-            "the named culture-coverage control must hold it off"
-        );
-
         assert!(ai.frontier_loyalty);
         withhold_live_treatment(&mut ai, "frontier-loyalty")
             .expect("the frontier-loyalty control arm is registered");
@@ -5785,8 +6712,8 @@ mod tests {
     /// ⚠⚠ ELEVEN SHIPPED TREATMENTS HAD NO CONTROL ARM ON THE ONLY HARNESS
     /// WHERE THEY FIRE, and nothing said so: this binary matched 57
     /// hand-written names against a 68-row table, and its usage string was a
-    /// third, shorter copy again. `deny_while_targeted`, `endgame_war_runway`,
-    /// `joint_tactics`, `live_religious_purchase`, `live_trader_route`,
+    /// third, shorter copy again. `deny_while_targeted`,
+    /// `live_religious_purchase`, `live_trader_route`,
     /// `loyalty_policy_defence`, `peacetime_deterrence`, `ranged_line_of_sight`,
     /// `recorded_tactical_step`, `slot_kind_tiebreak` and `strike_opening` were
     /// unwithholdable — including the religious-purchase repair, on the lane
@@ -5795,11 +6722,14 @@ mod tests {
     /// The list cannot be short again: it is the table.
     #[test]
     fn every_registered_live_treatment_can_be_withheld() {
-        for (field, name, _) in civvis::ai::LIVE_TREATMENTS {
+        for gene in civvis::ai::GENES.iter().filter(|gene| gene.live()) {
             let mut ai = civvis::ai::AdvancedAi::new();
             ai.enable_live_bridge();
-            withhold_live_treatment(&mut ai, name).unwrap_or_else(|error| {
-                panic!("{field} is in LIVE_TREATMENTS but not withholdable: {error}")
+            withhold_live_treatment(&mut ai, gene.tag).unwrap_or_else(|error| {
+                panic!(
+                    "{} is a live gene but not withholdable: {error}",
+                    gene.field
+                )
             });
         }
     }
@@ -5812,9 +6742,10 @@ mod tests {
             .split(", ")
             .map(str::to_string)
             .collect();
-        let registered: Vec<String> = civvis::ai::LIVE_TREATMENTS
+        let registered: Vec<String> = civvis::ai::GENES
             .iter()
-            .map(|(_, name, _)| (*name).to_string())
+            .filter(|gene| gene.live())
+            .map(|gene| gene.tag.to_string())
             .collect();
         assert_eq!(listed, registered);
     }
@@ -5824,13 +6755,13 @@ mod tests {
     #[test]
     fn a_live_arm_can_force_only_a_ledger_held_live_treatment() {
         let forced = super::forced_live_treatments(&[
-            "governor-every-lane".to_string(),
-            "governor-every-lane".to_string(),
+            "settler-guard-holds".to_string(),
+            "settler-guard-holds".to_string(),
         ])
         .expect("a named ledger-held gene is a valid live arm");
         assert_eq!(
             forced,
-            vec!["governor-every-lane"],
+            vec!["settler-guard-holds"],
             "the arm is deduplicated"
         );
 
@@ -5839,11 +6770,11 @@ mod tests {
             .expect("the validated arm configures the live controller");
         assert!(
             civvis::ai::gene_ledger::deployment_treatments_with_forced_live(&forced)
-                .contains(&"governor-every-lane"),
+                .contains(&"settler-guard-holds"),
             "the requested gene is restored in the arm's genome"
         );
         assert!(
-            !ai.war_patience,
+            !ai.blind_objective_strength,
             "another held gene stays off until the experiment names it"
         );
 
@@ -5852,7 +6783,7 @@ mod tests {
         assert!(host_only.contains("already ships"), "{host_only}");
         let unknown = super::forced_live_treatments(&["no-such-treatment".to_string()])
             .expect_err("a typo cannot silently become the deployment arm");
-        assert!(unknown.contains("governor-every-lane"), "{unknown}");
+        assert!(unknown.contains("settler-guard-holds"), "{unknown}");
     }
 
     use super::*;
@@ -7648,6 +8579,220 @@ mod tests {
         );
     }
 
+    /// ★★★ Corps and Army: decided 10,015 times across the live archive and
+    /// sent zero times, because `CombineUnits` had no arm and fell through
+    /// `translate`'s `_ => None`. It is two Firaxis commands rather than one —
+    /// `UNITCOMMAND_FORM_CORPS` and `UNITCOMMAND_FORM_ARMY`,
+    /// `Gameplay/Data/UnitCommands.xml:20-21` and `:44-45` — and the tier is
+    /// the caller's to choose, so the verb has to carry which merge was decided
+    /// rather than leaving the mod to guess it from a board it cannot see.
+    #[test]
+    fn combining_units_reaches_the_form_corps_and_form_army_commands() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 118,
+            width: 12,
+            height: 12,
+            chunk: 1,
+            plots: vec![grass(4, 4), grass(5, 4)],
+        }]);
+        let state = StateSnapshot {
+            turn: 118,
+            units: vec![
+                StateUnit {
+                    id: 41,
+                    kind: "UNIT_SWORDSMAN".to_string(),
+                    x: 4,
+                    y: 4,
+                    ..StateUnit::default()
+                },
+                StateUnit {
+                    id: 42,
+                    kind: "UNIT_SWORDSMAN".to_string(),
+                    x: 5,
+                    y: 4,
+                    ..StateUnit::default()
+                },
+            ],
+            ..StateSnapshot::default()
+        };
+        let mut mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        let first = *mirror.uid_of.get(&41).expect("the first swordsman mirrors");
+        let second = *mirror
+            .uid_of
+            .get(&42)
+            .expect("the second swordsman mirrors");
+
+        let corps = translate(
+            &Action::CombineUnits {
+                unit: first,
+                with: second,
+            },
+            &mirror,
+            &state,
+        )
+        .expect("two standard units form a Corps on the live seat");
+        assert_eq!(corps.kind, "unit");
+        assert_eq!(corps.subject, Some(41));
+        assert_eq!(corps.verb.as_deref(), Some("FORM_CORPS"));
+        assert_eq!(
+            corps.pos,
+            Some((state.seat.local_player, 42)),
+            "x/y are the partner's OWNER and UNIT ID, the pair Firaxis's own \
+             WorldInput.lua:2879-2880 puts in PARAM_UNIT_PLAYER/PARAM_UNIT_ID — \
+             never a map position"
+        );
+
+        // A standard unit joining a Corps is an Army, which is a DIFFERENT
+        // command with a different prerequisite civic (Mobilization, not
+        // Nationalism). Sending FORM_CORPS here would be refused by the host
+        // for a unit that is already one.
+        mirror
+            .game
+            .units
+            .get_mut(&first)
+            .expect("the mirrored unit is addressable")
+            .formation = 1;
+        let army = translate(
+            &Action::CombineUnits {
+                unit: first,
+                with: second,
+            },
+            &mirror,
+            &state,
+        )
+        .expect("a Corps absorbing a standard unit forms an Army");
+        assert_eq!(army.verb.as_deref(), Some("FORM_ARMY"));
+        assert_eq!(army.subject, Some(41));
+
+        // The partner is half the order. Without a Civilization VI id for it
+        // there is nothing to put in PARAM_UNIT_ID, so this must be counted as
+        // untranslatable rather than sent as a merge with no one to merge with.
+        assert!(
+            translate(
+                &Action::CombineUnits {
+                    unit: first,
+                    with: 9_999,
+                },
+                &mirror,
+                &state,
+            )
+            .is_none(),
+            "an unmapped partner cannot be silently dropped from the command"
+        );
+    }
+
+    /// ★★★★★ THE HOST'S OWN CORPS REACHES `FORM_ARMY`, END TO END.
+    ///
+    /// The test above proves the tier decides the command; it sets the tier by
+    /// hand. That is exactly the half that was missing in #2373: the live seat
+    /// runs `--fresh-board`, the mirror is rebuilt from the host export every
+    /// turn, and the export said nothing about Corps or Army — so every unit was
+    /// reconstructed at tier 0 and this arm could only ever emit FORM_CORPS. The
+    /// Army half of the unit-consolidation layer was unreachable live for that
+    /// one reason.
+    ///
+    /// This drives the whole chain instead: a `StateUnit` carrying the tier the
+    /// mod now exports from `Unit:GetMilitaryFormation()`, through
+    /// `LiveMirror::new`, into the command actually sent. Nothing is set by hand.
+    #[test]
+    fn a_corps_the_host_exported_reaches_form_army_from_a_fresh_board() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 152,
+            width: 12,
+            height: 12,
+            chunk: 1,
+            plots: vec![grass(4, 4), grass(5, 4)],
+        }]);
+        // Exactly what the host export now says: 1 = Corps, and the escort stack
+        // size stays 1 because a Corps is ONE unit. The two fields share a word
+        // and nothing else.
+        let state = StateSnapshot {
+            turn: 152,
+            units: vec![
+                StateUnit {
+                    id: 71,
+                    kind: "UNIT_SWORDSMAN".to_string(),
+                    x: 4,
+                    y: 4,
+                    formation: Some(1),
+                    formation_count: 1,
+                    ..StateUnit::default()
+                },
+                StateUnit {
+                    id: 72,
+                    kind: "UNIT_SWORDSMAN".to_string(),
+                    x: 5,
+                    y: 4,
+                    formation: Some(0),
+                    formation_count: 1,
+                    ..StateUnit::default()
+                },
+            ],
+            ..StateSnapshot::default()
+        };
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        let corps = *mirror.uid_of.get(&71).expect("the Corps mirrors");
+        let standard = *mirror.uid_of.get(&72).expect("the swordsman mirrors");
+        assert_eq!(
+            mirror.game.units[&corps].formation, 1,
+            "the host said Corps, so the mirror must hold a Corps"
+        );
+        assert_eq!(mirror.game.units[&standard].formation, 0);
+
+        let order = translate(
+            &Action::CombineUnits {
+                unit: corps,
+                with: standard,
+            },
+            &mirror,
+            &state,
+        )
+        .expect("a host Corps absorbing a standard unit is an Army");
+        assert_eq!(
+            order.verb.as_deref(),
+            Some("FORM_ARMY"),
+            "a Corps the host itself reported must not be sent FORM_CORPS again — \
+             they are different commands behind different civics (Mobilization, \
+             not Nationalism), so the host refuses the wrong one"
+        );
+        assert_eq!(order.subject, Some(71));
+        assert_eq!(order.pos, Some((state.seat.local_player, 72)));
+
+        // ⚠ And the same pair with the tier UNREAD stays a Corps request. The
+        // mod's −1 means "asked, could not answer"; the mirror keeps the board's
+        // own value rather than claiming standard, and a board that knows nothing
+        // still asks for the merge it can justify.
+        let unknown = StateSnapshot {
+            turn: 152,
+            units: state
+                .units
+                .iter()
+                .map(|unit| StateUnit {
+                    formation: Some(-1),
+                    ..unit.clone()
+                })
+                .collect(),
+            ..StateSnapshot::default()
+        };
+        let blind = civvis::mirror::LiveMirror::new(&snapshot, &unknown, 4, 1, 250, 0);
+        let first = *blind.uid_of.get(&71).expect("the first swordsman mirrors");
+        let second = *blind.uid_of.get(&72).expect("the second swordsman mirrors");
+        assert_eq!(
+            translate(
+                &Action::CombineUnits {
+                    unit: first,
+                    with: second,
+                },
+                &blind,
+                &unknown,
+            )
+            .expect("an unread tier still translates")
+            .verb
+            .as_deref(),
+            Some("FORM_CORPS")
+        );
+    }
+
     /// ★★★ Espionage had no route to a live game: all three actions fell
     /// through `translate`'s `_ => None`, on top of a `Game::spies` the mirror
     /// left empty so nothing was ever chosen to drop.
@@ -8223,79 +9368,6 @@ mod tests {
         assert_eq!(orders[2].kind, "research");
     }
 
-    /// `step_and_reassess` on the bridge: a pure walk into the unknown is cut
-    /// at its first unrevealed hex; a walk on known ground, and a walk with a
-    /// follow-up behind it, keep their furthest hex.
-    #[test]
-    fn a_walk_into_the_unknown_is_cut_at_its_first_unrevealed_hex() {
-        let mut orders = vec![
-            // scout 7: walk folded to (12, 11), first unknown hop (11, 10)
-            unit_order(7, "MOVE_TO", Some((12, 11))),
-            // warrior 8: walk entirely on known ground — no unknown hop
-            unit_order(8, "MOVE_TO", Some((3, 3))),
-            // archer 9: walk then strike — the strike expects the far tile
-            unit_order(9, "MOVE_TO", Some((20, 20))),
-            unit_order(9, "RANGE_ATTACK", Some((21, 20))),
-            // settler 10: already exactly at its first unknown hop
-            unit_order(10, "MOVE_TO", Some((5, 5))),
-        ];
-        let mut edges = std::collections::BTreeMap::new();
-        edges.insert(7, (11, 10));
-        edges.insert(9, (19, 20));
-        edges.insert(10, (5, 5));
-
-        assert_eq!(cut_walks_at_first_unknown(&mut orders, &edges), 1);
-        assert_eq!(
-            orders[0].pos,
-            Some((11, 10)),
-            "the scout stops where the known ends"
-        );
-        assert_eq!(orders[1].pos, Some((3, 3)), "known ground: untouched");
-        assert_eq!(
-            orders[2].pos,
-            Some((20, 20)),
-            "a walk with a follow-up: untouched"
-        );
-        assert_eq!(
-            orders[4].pos,
-            Some((5, 5)),
-            "already at the edge: not counted"
-        );
-    }
-
-    /// The cut is made only while the mod can still open a frame to spend
-    /// what the cut unit then sees: never on the last frame of the turn, and
-    /// never against a seat without frames. A seat that advertises frames
-    /// without the count keeps cutting on every frame.
-    #[test]
-    fn the_frontier_cut_is_withheld_on_the_last_frame_the_mod_will_open() {
-        let mut state = civvis::mirror::StateSnapshot::default();
-        assert!(!another_frame_can_open(&state), "no frames: no cut");
-        state.seat.replan_frames = true;
-        assert!(
-            another_frame_can_open(&state),
-            "frames without a count: cut"
-        );
-        state.frame = 7;
-        assert!(another_frame_can_open(&state), "…on every frame");
-        state.seat.replan_frames_max = Some(2);
-        state.frame = 0;
-        assert!(
-            another_frame_can_open(&state),
-            "opening board: frame 1 follows"
-        );
-        state.frame = 1;
-        assert!(another_frame_can_open(&state), "frame 1: frame 2 follows");
-        state.frame = 2;
-        assert!(
-            !another_frame_can_open(&state),
-            "frame 2 of 2: nobody re-plans what the cut would uncover"
-        );
-        state.seat.replan_frames_max = Some(0);
-        state.frame = 0;
-        assert!(!another_frame_can_open(&state), "a cap of zero never cuts");
-    }
-
     /// The found carries the hex the planned walk leaves the settler on —
     /// the last step of its contiguous walk — or, founding without moving,
     /// where the host says it stands. A found that already has a site and a
@@ -8342,27 +9414,21 @@ mod tests {
     }
 
     /// `--assume-seat` names the capabilities a replay should pretend the
-    /// mod advertised, with the frame cap as a count; a typo is an error.
+    /// mod advertised; a typo or non-boolean value is an error.
     #[test]
     fn assumed_seat_capabilities_are_named_and_checked() {
         let mut seat = civvis::mirror::Seat::default();
-        let names: Vec<String> = ["order_queue", "replan_frames=2", " tile_delta "]
+        let names: Vec<String> = ["order_queue", "replan_frames", " tile_delta "]
             .iter()
             .map(|name| name.to_string())
             .collect();
         assume_seat_capabilities(&mut seat, &names).unwrap();
         assert!(seat.order_queue);
         assert!(seat.replan_frames);
-        assert_eq!(seat.replan_frames_max, Some(2));
         assert!(seat.tile_delta);
         assert!(!seat.moves_at_turn_start, "not named: not assumed");
-        let bare = vec!["replan_frames".to_string()];
-        let mut seat = civvis::mirror::Seat::default();
-        assume_seat_capabilities(&mut seat, &bare).unwrap();
-        assert!(seat.replan_frames);
-        assert_eq!(seat.replan_frames_max, None);
         assert!(assume_seat_capabilities(&mut seat, &["order_que".to_string()]).is_err());
-        assert!(assume_seat_capabilities(&mut seat, &["replan_frames=x".to_string()]).is_err());
+        assert!(assume_seat_capabilities(&mut seat, &["replan_frames=2".to_string()]).is_err());
     }
 
     /// A settler with two movement points logs two hex steps; the host must be
@@ -8812,6 +9878,7 @@ mod tests {
             gold_per_turn: 1.1,
             ..DealItems::default()
         };
+        let (offer_copy, request_copy) = (offer.clone(), request.clone());
         let sale = translate(
             &Action::Trade {
                 player: 1,
@@ -8825,8 +9892,22 @@ mod tests {
         assert_eq!(sale.kind, "sell");
         assert_eq!(sale.subject, Some(4));
         assert_eq!(sale.verb.as_deref(), Some("RESOURCE_DYES=1"));
-        // Half of 84 + 25 × 1.1 = 55.75, rounded up.
-        assert_eq!(sale.pos, Some((56, 0)));
+        // The floor is our own walk-away by the mirrored board's book: the
+        // ask (84 + 25 × 1.1) less our net gain on the quote — not half the
+        // ask, which is what it was until 2026-08-24.
+        let (my_value, _) = mirror
+            .game
+            .trade_utilities(0, 1, &offer_copy, &request_copy);
+        let asked = 84.0 + 25.0 * 1.1;
+        // A mirrored board that cannot price the copy answers non-finite,
+        // and the floor is then the whole ask.
+        let net = if my_value.is_finite() { my_value } else { 0.0 };
+        let walk_away = ((asked - net).ceil() as i32).max(SALE_FLOOR_MIN);
+        assert_eq!(sale.pos, Some((walk_away, 0)));
+        assert!(
+            walk_away > 56,
+            "the old half-ask floor of 56 undercut our own book: {walk_away}"
+        );
 
         // A favor block and a strategic block ride the same verb, favor last,
         // and a tiny ask still carries the minimum floor.
@@ -8851,7 +9932,9 @@ mod tests {
             sale.verb.as_deref(),
             Some("RESOURCE_DYES=1,RESOURCE_IRON=10,FAVOR=10")
         );
-        assert_eq!(sale.pos, Some((SALE_FLOOR_MIN, 0)));
+        // A tiny ask carries our walk-away, never less than the minimum.
+        let floor = sale.pos.unwrap().0;
+        assert!((SALE_FLOOR_MIN..=18).contains(&floor), "floor {floor}");
 
         // An unmapped seat still crosses for the ledger, subject-less, like
         // the delegation arm: the Lua side names it `sell_target_unmapped`.
@@ -8918,8 +10001,16 @@ mod tests {
         assert_eq!(buy.kind, "buy");
         assert_eq!(buy.subject, Some(4));
         assert_eq!(buy.verb.as_deref(), Some("OPEN_BORDERS"));
-        // 60 offered, headroom of half again: the rival prices by its own book.
-        assert_eq!(buy.pos, Some((90, 0)));
+        // The ceiling is what the passage is worth to us by the mirrored
+        // board's book: the offer plus our net gain on the quote — not the
+        // offer and half again, which is what it was until 2026-08-24.
+        let worth =
+            (mirror.game.passage_gold_value(0).ceil() as i32).clamp(1, BORDER_BUY_CEILING_MAX);
+        assert_eq!(buy.pos, Some((worth, 0)));
+        assert!(
+            (28..90).contains(&worth),
+            "the book, not the offer and half again: {worth}"
+        );
 
         // Per-turn gold rides the same 25× book, and the ceiling never
         // crosses the cap however rich the offer.
@@ -8940,7 +10031,10 @@ mod tests {
             &state,
         )
         .expect("a rich passage purchase still translates");
-        assert_eq!(rich.pos, Some((BORDER_BUY_CEILING_MAX, 0)));
+        // A rich offer does not raise the ceiling: passage is worth what the
+        // book says, and never more than the cap.
+        assert_eq!(rich.pos, buy.pos);
+        assert!(rich.pos.unwrap().0 <= BORDER_BUY_CEILING_MAX);
 
         // A mutual swap is a different agreement and stays skipped, named.
         assert!(translate(
@@ -9085,6 +10179,35 @@ mod tests {
     }
 
     #[test]
+    fn a_peace_tribute_rides_only_a_routed_offer_and_is_capped() {
+        let mut state = StateSnapshot {
+            turn: 120,
+            gold: 1_000,
+            ..StateSnapshot::default()
+        };
+        assert_eq!(
+            peace_tribute_cap(&state, false),
+            0,
+            "a second front, fatigue, a religious lane or an envoy reclaim is white peace"
+        );
+        assert_eq!(
+            peace_tribute_cap(&state, true),
+            250,
+            "a quarter of the treasury"
+        );
+        state.gold = 5_000;
+        assert_eq!(
+            peace_tribute_cap(&state, true),
+            PEACE_TRIBUTE_MAX as i32,
+            "and never more than the maximum"
+        );
+        state.gold = 50;
+        assert_eq!(peace_tribute_cap(&state, true), 12);
+        state.gold = 0;
+        assert_eq!(peace_tribute_cap(&state, true), 0);
+    }
+
+    #[test]
     fn idle_favor_sells_on_every_plan_that_reports_one() {
         // The bank the live seat actually holds: 300 favor at t141 with three
         // met rivals — one rich, one richer but two points short of the
@@ -9118,7 +10241,10 @@ mod tests {
         let science = Some(("science", None));
 
         let mut orders = Vec::new();
-        assert_eq!(append_favor_sale_order(science, &state, &mut orders), None);
+        assert_eq!(
+            append_favor_sale_order(science, &state, &mut orders, 2.0),
+            None
+        );
         assert_eq!(orders.len(), 1);
         assert_eq!(orders[0].kind, "sell");
         // Not the richest (Persia at 17 DVP would spend it on the win), not
@@ -9127,7 +10253,8 @@ mod tests {
         // 300 − 120 reserve = 180 surplus, capped at one block of 150, at a
         // floor of a gold a point.
         assert_eq!(orders[0].verb.as_deref(), Some("FAVOR=150"));
-        assert_eq!(orders[0].pos, Some((150, 0)));
+        // ... at the engine's own book per point (2.0 here), not a flat Gold.
+        assert_eq!(orders[0].pos, Some((300, 0)));
 
         // A Diplomacy plan sells its surplus too: the favor it was holding
         // buys only EXTRA votes, and those never register. Run
@@ -9139,7 +10266,7 @@ mod tests {
         ] {
             let mut sold = Vec::new();
             assert_eq!(
-                append_favor_sale_order(diplomatic, &state, &mut sold),
+                append_favor_sale_order(diplomatic, &state, &mut sold, 2.0),
                 None,
                 "the diplomatic lane no longer banks what it cannot cast"
             );
@@ -9150,7 +10277,7 @@ mod tests {
         // No plan report still holds: an unknown intent is not licence to sell.
         let mut held = Vec::new();
         assert_eq!(
-            append_favor_sale_order(None, &state, &mut held),
+            append_favor_sale_order(None, &state, &mut held, 2.0),
             Some("favor_hold:no_plan")
         );
         assert!(held.is_empty());
@@ -9159,19 +10286,22 @@ mod tests {
         let mut off_cadence = state.clone();
         off_cadence.turn = 142;
         assert_eq!(
-            append_favor_sale_order(science, &off_cadence, &mut held),
+            append_favor_sale_order(science, &off_cadence, &mut held, 2.0),
             Some("favor_hold:cadence")
         );
         let mut small = state.clone();
         small.favor = Some(139.0);
         assert_eq!(
-            append_favor_sale_order(science, &small, &mut held),
+            append_favor_sale_order(science, &small, &mut held, 2.0),
             Some("favor_hold:reserve")
         );
         // The last twenty above the reserve still sell, in a smaller block.
         let mut tail = state.clone();
         tail.favor = Some(140.0);
-        assert_eq!(append_favor_sale_order(science, &tail, &mut held), None);
+        assert_eq!(
+            append_favor_sale_order(science, &tail, &mut held, 2.0),
+            None
+        );
         assert_eq!(
             held.pop().and_then(|order| order.verb),
             Some("FAVOR=20".to_string())
@@ -9185,7 +10315,7 @@ mod tests {
             pos: Some((10, 0)),
         }];
         assert_eq!(
-            append_favor_sale_order(science, &state, &mut planned),
+            append_favor_sale_order(science, &state, &mut planned, 2.0),
             Some("favor_hold:planner_sale")
         );
         assert_eq!(planned.len(), 1);
@@ -9225,7 +10355,7 @@ mod tests {
         let mut nobody = state.clone();
         nobody.rivals.remove(0);
         assert_eq!(
-            append_favor_sale_order(science, &nobody, &mut held),
+            append_favor_sale_order(science, &nobody, &mut held, 2.0),
             Some("favor_hold:no_buyer")
         );
         assert!(held.is_empty());
@@ -9592,7 +10722,7 @@ mod tests {
 
         let mut orders = Vec::new();
         assert_eq!(
-            append_border_buy_order(&sealed_by, &state, &mut orders),
+            append_border_buy_order(&sealed_by, &state, &mut orders, &|_| 40.0),
             None
         );
         assert_eq!(orders.len(), 1);
@@ -9601,8 +10731,9 @@ mod tests {
         // itself. Seat 2 (host player 4) is the worst peaceful seal.
         assert_eq!(orders[0].subject, Some(4));
         assert_eq!(orders[0].verb.as_deref(), Some("OPEN_BORDERS"));
-        // 200 gold − 60 reserve = 140, inside the cap.
-        assert_eq!(orders[0].pos, Some((140, 0)));
+        // The engine's book for this passage (40 here) under the treasury's
+        // 200 − 60 = 140 and the cap: the price is what passage is worth.
+        assert_eq!(orders[0].pos, Some((40, 0)));
 
         // A grant already in hand retires the trigger; the next-worst seal
         // takes over.
@@ -9610,7 +10741,7 @@ mod tests {
         granted.rivals[1].open_borders = Some(true);
         let mut next = Vec::new();
         assert_eq!(
-            append_border_buy_order(&sealed_by, &granted, &mut next),
+            append_border_buy_order(&sealed_by, &granted, &mut next, &|_| 40.0),
             None
         );
         assert_eq!(next[0].subject, Some(2));
@@ -9620,11 +10751,11 @@ mod tests {
             [(1, BORDER_BUY_MIN_SEALED - 1)].into_iter().collect();
         let mut held = Vec::new();
         assert_eq!(
-            append_border_buy_order(&trivial, &state, &mut held),
+            append_border_buy_order(&trivial, &state, &mut held, &|_| 40.0),
             Some("border_buy_hold:no_seal")
         );
         assert_eq!(
-            append_border_buy_order(&Default::default(), &state, &mut held),
+            append_border_buy_order(&Default::default(), &state, &mut held, &|_| 40.0),
             Some("border_buy_hold:no_seal")
         );
 
@@ -9633,19 +10764,19 @@ mod tests {
         let mut off_cadence = state.clone();
         off_cadence.turn = 92;
         assert_eq!(
-            append_border_buy_order(&sealed_by, &off_cadence, &mut held),
+            append_border_buy_order(&sealed_by, &off_cadence, &mut held, &|_| 40.0),
             Some("border_buy_hold:cadence")
         );
         let mut no_civic = state.clone();
         no_civic.civics = vec!["CIVIC_CODE_OF_LAWS".to_string()];
         assert_eq!(
-            append_border_buy_order(&sealed_by, &no_civic, &mut held),
+            append_border_buy_order(&sealed_by, &no_civic, &mut held, &|_| 40.0),
             Some("border_buy_hold:no_civic")
         );
         let mut poor = state.clone();
         poor.gold = 89; // 89 − 60 reserve = 29, one short of the minimum
         assert_eq!(
-            append_border_buy_order(&sealed_by, &poor, &mut held),
+            append_border_buy_order(&sealed_by, &poor, &mut held, &|_| 40.0),
             Some("border_buy_hold:treasury")
         );
         assert!(held.is_empty());
@@ -9659,7 +10790,7 @@ mod tests {
             pos: Some((10, 0)),
         }];
         assert_eq!(
-            append_border_buy_order(&sealed_by, &state, &mut in_flight),
+            append_border_buy_order(&sealed_by, &state, &mut in_flight, &|_| 40.0),
             Some("border_buy_hold:deal_in_flight")
         );
         assert_eq!(in_flight.len(), 1);
@@ -10625,6 +11756,700 @@ mod tests {
     }
 }
 
+/// The receiving side of the bridge: every check reads two consecutive frames,
+/// never a return code.
+#[cfg(test)]
+mod order_postcondition_tests {
+    use super::*;
+    use civvis::mirror::{
+        Snapshot, StateCity, StateGovernor, StateGreatPerson, StateMinor, StateRival,
+        StateSnapshot, StateTradeRoute, StateUnit, TilesChunk,
+    };
+
+    fn order(
+        kind: &str,
+        subject: Option<i64>,
+        verb: Option<&str>,
+        pos: Option<(i32, i32)>,
+    ) -> IssuedOrder {
+        IssuedOrder {
+            kind: kind.to_string(),
+            subject,
+            verb: verb.map(str::to_string),
+            pos,
+        }
+    }
+
+    fn unit(id: i64, kind: &str, x: i32, y: i32) -> StateUnit {
+        StateUnit {
+            id,
+            kind: kind.to_string(),
+            x,
+            y,
+            hp: 100.0,
+            ..StateUnit::default()
+        }
+    }
+
+    fn city(id: i64, x: i32, y: i32, producing: Option<&str>) -> StateCity {
+        StateCity {
+            id,
+            name: format!("city-{id}"),
+            x,
+            y,
+            producing: producing.map(str::to_string),
+            ..StateCity::default()
+        }
+    }
+
+    fn frame(turn: u32) -> StateSnapshot {
+        StateSnapshot {
+            turn,
+            ..StateSnapshot::default()
+        }
+    }
+
+    fn no_tiles() -> Snapshot {
+        Snapshot::from_chunks(&[])
+    }
+
+    fn check(
+        order: &IssuedOrder,
+        before: &StateSnapshot,
+        after: &StateSnapshot,
+        evidence: &[serde_json::Value],
+    ) -> Verdict {
+        verify_order(order, before.turn, before, after, &no_tiles(), evidence)
+    }
+
+    fn failed(why: &str) -> Verdict {
+        Verdict::Failed(why.to_string())
+    }
+
+    fn event(json: &str) -> serde_json::Value {
+        serde_json::from_str(json).expect("test event is JSON")
+    }
+
+    #[test]
+    fn a_move_is_verified_by_the_unit_standing_closer_not_by_the_return_code() {
+        let mut before = frame(42);
+        before.units = vec![unit(7, "UNIT_SETTLER", 13, 11)];
+        let walk = order("unit", Some(7), Some("MOVE_TO"), Some((17, 11)));
+
+        let mut closer = frame(43);
+        closer.units = vec![unit(7, "UNIT_SETTLER", 15, 11)];
+        assert_eq!(check(&walk, &before, &closer, &[]), Verdict::Verified);
+
+        let mut arrived = frame(43);
+        arrived.units = vec![unit(7, "UNIT_SETTLER", 17, 11)];
+        assert_eq!(check(&walk, &before, &arrived, &[]), Verdict::Verified);
+
+        // The measured case: `applied = true`, no refusal, and the settler at
+        // (12,9) — farther from (14,11) than it started.
+        let mut away = frame(43);
+        away.units = vec![unit(7, "UNIT_SETTLER", 9, 11)];
+        assert_eq!(check(&walk, &before, &away, &[]), failed("moved_away"));
+
+        let mut stood = frame(43);
+        stood.units = vec![unit(7, "UNIT_SETTLER", 13, 11)];
+        assert_eq!(check(&walk, &before, &stood, &[]), failed("did_not_move"));
+    }
+
+    #[test]
+    fn a_settler_consumed_by_its_own_founding_verifies_both_orders() {
+        let mut before = frame(30);
+        before.units = vec![unit(7, "UNIT_SETTLER", 12, 19)];
+        let mut after = frame(31);
+        after.cities = vec![city(65_536, 12, 19, Some("UNIT_WARRIOR"))];
+
+        let walk = order("unit", Some(7), Some("MOVE_TO"), Some((12, 19)));
+        let found = order("unit", Some(7), Some("FOUND_CITY"), None);
+        assert_eq!(check(&walk, &before, &after, &[]), Verdict::Verified);
+        assert_eq!(check(&found, &before, &after, &[]), Verdict::Verified);
+
+        let mut still_no_city = frame(31);
+        still_no_city.units = vec![unit(7, "UNIT_SETTLER", 12, 19)];
+        assert_eq!(
+            check(&found, &before, &still_no_city, &[]),
+            failed("no_city")
+        );
+    }
+
+    #[test]
+    fn an_attack_is_verified_by_the_target_or_the_combat_record() {
+        let mut before = frame(50);
+        before.units = vec![unit(7, "UNIT_ARCHER", 10, 10)];
+        let mut enemy = unit(900, "UNIT_WARRIOR", 11, 10);
+        enemy.player = 3;
+        before.hostiles = vec![enemy.clone()];
+        let strike = order("unit", Some(7), Some("RANGE_ATTACK"), Some((11, 10)));
+
+        let mut wounded = frame(51);
+        wounded.units = before.units.clone();
+        let mut hurt = enemy.clone();
+        hurt.hp = 70.0;
+        wounded.hostiles = vec![hurt];
+        assert_eq!(check(&strike, &before, &wounded, &[]), Verdict::Verified);
+
+        let mut killed = frame(51);
+        killed.units = before.units.clone();
+        assert_eq!(check(&strike, &before, &killed, &[]), Verdict::Verified);
+
+        let mut untouched = frame(51);
+        untouched.units = before.units.clone();
+        untouched.hostiles = vec![enemy.clone()];
+        assert_eq!(
+            check(&strike, &before, &untouched, &[]),
+            failed("target_unharmed")
+        );
+        let combat = event(r#"{"kind":"combat","turn":50,"attacker":{"id":7,"player":0}}"#);
+        assert_eq!(
+            check(&strike, &before, &untouched, &[combat]),
+            Verdict::Verified
+        );
+    }
+
+    #[test]
+    fn production_and_purchases_are_read_off_the_city() {
+        let mut before = frame(10);
+        before.cities = vec![city(65_536, 20, 20, Some("UNIT_WARRIOR"))];
+        before.gold = 200;
+        let produce = order("produce", Some(65_536), Some("BUILDING_MONUMENT"), None);
+        let purchase = order(
+            "purchase",
+            Some(65_536),
+            Some("UNIT_BUILDER"),
+            Some((0, -1)),
+        );
+
+        let mut queued = frame(11);
+        queued.cities = vec![city(65_536, 20, 20, Some("BUILDING_MONUMENT"))];
+        queued.gold = 210;
+        assert_eq!(check(&produce, &before, &queued, &[]), Verdict::Verified);
+        assert_eq!(
+            check(&purchase, &before, &queued, &[]),
+            failed("not_bought")
+        );
+
+        let mut ignored = frame(11);
+        ignored.cities = vec![city(65_536, 20, 20, Some("UNIT_WARRIOR"))];
+        ignored.gold = 210;
+        assert_eq!(
+            check(&produce, &before, &ignored, &[]),
+            failed("producing=UNIT_WARRIOR")
+        );
+
+        let mut bought = frame(11);
+        bought.cities = vec![city(65_536, 20, 20, Some("UNIT_WARRIOR"))];
+        bought.units = vec![unit(8, "UNIT_BUILDER", 20, 20)];
+        bought.gold = 210;
+        assert_eq!(check(&purchase, &before, &bought, &[]), Verdict::Verified);
+
+        // A completed item counts as much as a queued one.
+        let mut finished = frame(11);
+        let mut done = city(65_536, 20, 20, Some("UNIT_WARRIOR"));
+        done.buildings = vec!["BUILDING_MONUMENT".to_string()];
+        finished.cities = vec![done];
+        assert_eq!(check(&produce, &before, &finished, &[]), Verdict::Verified);
+    }
+
+    #[test]
+    fn a_bought_plot_is_verified_by_its_owner_on_the_board() {
+        let mut before = frame(20);
+        before.seat.local_player = 4;
+        let mut after = frame(21);
+        after.seat.local_player = 4;
+        let buy = order("buy_plot", Some(65_536), None, Some((5, 6)));
+        let tiles = |owner: i32| {
+            let chunk: TilesChunk = serde_json::from_str(&format!(
+                r#"{{"turn":21,"width":10,"height":10,"plots":[{{"x":5,"y":6,"o":{owner}}}]}}"#
+            ))
+            .expect("a tiles chunk parses");
+            Snapshot::from_chunks(&[chunk])
+        };
+        assert_eq!(
+            verify_order(&buy, 20, &before, &after, &tiles(4), &[]),
+            Verdict::Verified
+        );
+        assert_eq!(
+            verify_order(&buy, 20, &before, &after, &tiles(-1), &[]),
+            failed("plot_not_owned")
+        );
+        assert_eq!(
+            verify_order(&buy, 20, &before, &after, &no_tiles(), &[]),
+            failed("plot_unseen")
+        );
+    }
+
+    #[test]
+    fn an_envoy_is_verified_by_the_city_state_count() {
+        let minor = |envoys: i64| StateMinor {
+            player: 9,
+            envoys,
+            ..StateMinor::default()
+        };
+        let mut before = frame(60);
+        before.minors = vec![minor(1)];
+        let envoy = order("envoy", Some(9), Some("GIVE_INFLUENCE_TOKEN"), None);
+        let mut placed = frame(61);
+        placed.minors = vec![minor(2)];
+        assert_eq!(check(&envoy, &before, &placed, &[]), Verdict::Verified);
+        let mut held = frame(61);
+        held.minors = vec![minor(1)];
+        assert_eq!(
+            check(&envoy, &before, &held, &[]),
+            failed("envoys_unchanged")
+        );
+    }
+
+    #[test]
+    fn diplomacy_is_verified_by_the_answer_and_the_war_flag() {
+        let rival = |at_war: bool| StateRival {
+            player: 2,
+            at_war,
+            ..StateRival::default()
+        };
+        let mut before = frame(80);
+        before.rivals = vec![rival(true)];
+        let sale = order("sell", Some(2), Some("FAVOR=10"), Some((60, 0)));
+        let peace = order("peace", Some(2), Some("MAKE_PEACE"), None);
+        let war = order("war", Some(2), Some("DECLARE"), None);
+
+        let mut after = frame(81);
+        after.rivals = vec![rival(true)];
+        assert_eq!(
+            check(&sale, &before, &after, &[]),
+            failed("no_deal_response")
+        );
+        let closed = event(r#"{"kind":"deal_closed","turn":80,"from":2,"gold":60}"#);
+        assert_eq!(check(&sale, &before, &after, &[closed]), Verdict::Verified);
+        let declined = event(r#"{"kind":"deal_declined","turn":80,"from":2}"#);
+        assert_eq!(
+            check(&sale, &before, &after, &[declined]),
+            Verdict::Verified
+        );
+        let other_party = event(r#"{"kind":"deal_closed","turn":80,"from":5}"#);
+        assert_eq!(
+            check(&sale, &before, &after, &[other_party]),
+            failed("no_deal_response")
+        );
+
+        assert_eq!(
+            check(&peace, &before, &after, &[]),
+            failed("no_peace_response")
+        );
+        let accepted = event(r#"{"kind":"peace_response","turn":80,"target":2,"accepted":true}"#);
+        assert_eq!(
+            check(&peace, &before, &after, std::slice::from_ref(&accepted)),
+            failed("still_at_war")
+        );
+        let mut at_peace = frame(81);
+        at_peace.rivals = vec![rival(false)];
+        assert_eq!(
+            check(&peace, &before, &at_peace, &[accepted]),
+            Verdict::Verified
+        );
+        assert_eq!(check(&peace, &before, &at_peace, &[]), Verdict::Verified);
+        let refused = event(r#"{"kind":"peace_response","turn":80,"target":2,"accepted":false}"#);
+        assert_eq!(
+            check(&peace, &before, &after, &[refused]),
+            Verdict::Verified
+        );
+
+        let mut calm = frame(80);
+        calm.rivals = vec![rival(false)];
+        assert_eq!(check(&war, &calm, &after, &[]), Verdict::Verified);
+        assert_eq!(check(&war, &calm, &at_peace, &[]), failed("not_at_war"));
+    }
+
+    #[test]
+    fn governors_are_verified_by_the_seat_they_hold() {
+        let governor = |city: i64| StateGovernor {
+            kind: "GOVERNOR_THE_DEFENDER".to_string(),
+            city,
+            ..StateGovernor::default()
+        };
+        let mut before = frame(25);
+        before.governors = Some(vec![]);
+        let appoint = order(
+            "governor_appoint",
+            Some(65_536),
+            Some("GOVERNOR_THE_DEFENDER"),
+            Some((0, -1)),
+        );
+        let assign = order(
+            "governor_assign",
+            Some(65_536),
+            Some("GOVERNOR_THE_DEFENDER"),
+            Some((0, -1)),
+        );
+
+        let mut seated = frame(26);
+        seated.governors = Some(vec![governor(65_536)]);
+        assert_eq!(check(&appoint, &before, &seated, &[]), Verdict::Verified);
+        assert_eq!(check(&assign, &before, &seated, &[]), Verdict::Verified);
+
+        // The asynchronous appointment that never persisted its assignment.
+        let mut unseated = frame(26);
+        unseated.governors = Some(vec![governor(-1)]);
+        assert_eq!(check(&appoint, &before, &unseated, &[]), Verdict::Verified);
+        assert_eq!(
+            check(&assign, &before, &unseated, &[]),
+            failed("not_assigned")
+        );
+
+        let mut none = frame(26);
+        none.governors = Some(vec![]);
+        assert_eq!(
+            check(&appoint, &before, &none, &[]),
+            failed("not_appointed")
+        );
+    }
+
+    #[test]
+    fn empire_choices_are_read_back_from_the_frame() {
+        let before = frame(5);
+        let mut after = frame(6);
+        after.research = Some("TECH_WRITING".to_string());
+        after.civics = vec!["CIVIC_CODE_OF_LAWS".to_string()];
+        after.government = Some("GOVERNMENT_CHIEFDOM".to_string());
+        after.pantheon = Some("BELIEF_GOD_OF_THE_SEA".to_string());
+        after.policies = vec!["POLICY_DISCIPLINE".to_string(), "POLICY_SURVEY".to_string()];
+        after.units = vec![StateUnit {
+            id: 55,
+            great_person: Some(StateGreatPerson {
+                class: Some("GREAT_PERSON_CLASS_SCIENTIST".to_string()),
+                ..StateGreatPerson::default()
+            }),
+            ..unit(55, "UNIT_GREAT_SCIENTIST", 1, 1)
+        }];
+
+        let cases = [
+            (
+                order("research", None, Some("TECH_WRITING"), None),
+                Verdict::Verified,
+            ),
+            (
+                order("research", None, Some("TECH_MINING"), None),
+                failed("research=TECH_WRITING"),
+            ),
+            (
+                order("civic", None, Some("CIVIC_CODE_OF_LAWS"), None),
+                Verdict::Verified,
+            ),
+            (
+                order("government", None, Some("GOVERNMENT_CHIEFDOM"), None),
+                Verdict::Verified,
+            ),
+            (
+                order("pantheon", None, Some("BELIEF_GOD_OF_THE_SEA"), None),
+                Verdict::Verified,
+            ),
+            (
+                order(
+                    "policy_deck",
+                    None,
+                    Some("POLICY_DISCIPLINE,POLICY_SURVEY"),
+                    None,
+                ),
+                Verdict::Verified,
+            ),
+            (
+                order(
+                    "policy_deck",
+                    None,
+                    Some("POLICY_DISCIPLINE,POLICY_URBAN_PLANNING"),
+                    None,
+                ),
+                failed("missing=POLICY_URBAN_PLANNING"),
+            ),
+            (
+                order(
+                    "gp_recruit",
+                    None,
+                    Some("GREAT_PERSON_CLASS_SCIENTIST"),
+                    None,
+                ),
+                Verdict::Verified,
+            ),
+            (
+                order(
+                    "gp_recruit",
+                    None,
+                    Some("GREAT_PERSON_CLASS_MERCHANT"),
+                    None,
+                ),
+                failed("no_great_person"),
+            ),
+            (
+                order(
+                    "gp_patronize_faith",
+                    None,
+                    Some("GREAT_PERSON_CLASS_SCIENTIST"),
+                    None,
+                ),
+                Verdict::Verified,
+            ),
+        ];
+        for (order, want) in cases {
+            assert_eq!(
+                check(&order, &before, &after, &[]),
+                want,
+                "{}",
+                order.label()
+            );
+        }
+    }
+
+    #[test]
+    fn unit_states_are_read_back_from_the_unit() {
+        let mut before = frame(70);
+        let mut builder = unit(3, "UNIT_BUILDER", 4, 4);
+        builder.build_charges = Some(3);
+        let mut trader = unit(5, "UNIT_TRADER", 6, 6);
+        trader.moves = 2.0;
+        before.units = vec![
+            unit(1, "UNIT_WARRIOR", 2, 2),
+            unit(2, "UNIT_WARRIOR", 3, 3),
+            builder.clone(),
+            trader,
+        ];
+
+        let mut after = frame(71);
+        let mut fortified = unit(1, "UNIT_WARRIOR", 2, 2);
+        fortified.fortify_turns = 1;
+        let mut spent = builder.clone();
+        spent.build_charges = Some(2);
+        after.units = vec![
+            fortified,
+            unit(2, "UNIT_SWORDSMAN", 3, 3),
+            spent,
+            unit(5, "UNIT_TRADER", 6, 6),
+        ];
+        after.trade_routes = vec![StateTradeRoute {
+            trader: 5,
+            ..StateTradeRoute::default()
+        }];
+
+        let cases = [
+            (
+                order("unit", Some(1), Some("FORTIFY"), None),
+                Verdict::Verified,
+            ),
+            (
+                order("unit", Some(2), Some("FORTIFY"), None),
+                failed("not_fortified"),
+            ),
+            (
+                order("unit", Some(2), Some("UPGRADE"), None),
+                Verdict::Verified,
+            ),
+            (
+                order("unit", Some(1), Some("UPGRADE"), None),
+                failed("same_unit_type"),
+            ),
+            (
+                order("unit", Some(3), Some("IMPROVE:IMPROVEMENT_FARM"), None),
+                Verdict::Verified,
+            ),
+            (
+                order("unit", Some(5), Some("TRADE_ROUTE"), Some((9, 9))),
+                Verdict::Verified,
+            ),
+            (
+                order("unit", Some(1), Some("DELETE"), None),
+                failed("still_exists"),
+            ),
+            (
+                order("unit", Some(99), Some("DELETE"), None),
+                Verdict::Verified,
+            ),
+            (
+                order("unit", Some(2), Some("PROMOTE:PROMOTION_BATTLECRY"), None),
+                failed("not_promoted"),
+            ),
+            (
+                order("unit", Some(1), Some("SKIP_TURN"), None),
+                Verdict::Unverifiable,
+            ),
+            (
+                order("unit", Some(1), Some("SPY_TRAVEL_NEW_CITY"), Some((1, 1))),
+                Verdict::Unverifiable,
+            ),
+        ];
+        for (order, want) in cases {
+            assert_eq!(
+                check(&order, &before, &after, &[]),
+                want,
+                "{}",
+                order.label()
+            );
+        }
+    }
+
+    #[test]
+    fn every_issued_order_kind_is_checked_or_declared_unverifiable() {
+        // Discover, never list: every `kind: "..."` literal this file can emit.
+        let source = include_str!("civvis_orders.rs");
+        let mut kinds: std::collections::BTreeSet<&str> = Default::default();
+        // An `Order` literal is `kind: <expr>, subject: ...`; the expression is
+        // a string literal or an `if` choosing between literals (`purchase` /
+        // `purchase_faith`). Every quoted identifier in it that is not a
+        // comparison operand (`== "faith"`) names a kind.
+        for (index, _) in source.match_indices("kind: ") {
+            let rest = &source[index + 6..];
+            let Some(end) = rest.find("subject:") else {
+                continue;
+            };
+            let expr = &rest[..end];
+            if !(expr.starts_with('"') || expr.starts_with("if "))
+                || expr.len() > 200
+                || expr.contains(';')
+            {
+                continue;
+            }
+            for (at, _) in expr.match_indices('"') {
+                let literal = &expr[at + 1..];
+                let Some(close) = literal.find('"') else {
+                    continue;
+                };
+                let kind = &literal[..close];
+                let operand = expr[..at].trim_end().ends_with("==");
+                if !kind.is_empty()
+                    && kind.bytes().all(|b| b.is_ascii_lowercase() || b == b'_')
+                    && !operand
+                    && !expr[..at].trim_end().ends_with(kind)
+                {
+                    kinds.insert(kind);
+                }
+            }
+        }
+        assert!(kinds.len() > 20, "the scan found only {kinds:?}");
+        let mut before = frame(1);
+        before.units = vec![unit(1, "UNIT_WARRIOR", 1, 1)];
+        let mut after = frame(2);
+        after.units = before.units.clone();
+        for kind in kinds {
+            if VERDICT_ROW_KINDS.contains(&kind) {
+                continue;
+            }
+            let probe = if kind == "unit" {
+                order("unit", Some(1), Some("MOVE_TO"), Some((1, 1)))
+            } else {
+                order(kind, Some(1), Some(""), Some((1, 1)))
+            };
+            let verdict = check(&probe, &before, &after, &[]);
+            assert!(
+                (verdict != Verdict::Unverifiable) != unverifiable_kind(kind),
+                "order kind {kind:?} is neither checked by `verify_order` nor listed in \
+                 UNVERIFIABLE_ORDER_KINDS with a reason (got {verdict:?})"
+            );
+        }
+        for (kind, why) in UNVERIFIABLE_ORDER_KINDS {
+            assert!(!why.is_empty(), "{kind} needs a reason");
+        }
+        for (verb, why) in UNVERIFIABLE_UNIT_VERBS {
+            assert!(!why.is_empty(), "{verb} needs a reason");
+        }
+    }
+
+    #[test]
+    fn the_verdict_rows_carry_the_turn_and_a_tally_the_mod_can_re_emit() {
+        let checks = vec![
+            OrderCheck {
+                order: order("unit", Some(7), Some("MOVE_TO"), Some((3, 3))),
+                verdict: Verdict::Verified,
+            },
+            OrderCheck {
+                order: order("produce", Some(65_536), Some("BUILDING_MONUMENT"), None),
+                verdict: failed("producing=UNIT_WARRIOR"),
+            },
+            OrderCheck {
+                order: order("delegation", Some(2), Some("DIPLOMATIC_DELEGATION"), None),
+                verdict: Verdict::Unverifiable,
+            },
+        ];
+        let rows: Vec<String> = verdict_rows(42, &checks)
+            .iter()
+            .map(Order::to_json)
+            .collect();
+        assert_eq!(
+            rows,
+            vec![
+                r#"{"kind":"order_verified","subject":7,"verb":"unit:MOVE_TO","x":42,"y":-1}"#,
+                r#"{"kind":"order_failed","subject":65536,"verb":"produce:BUILDING_MONUMENT producing=UNIT_WARRIOR","x":42,"y":-1}"#,
+                r#"{"kind":"turn_verified","subject":42,"verb":"issued=3 verified=1 failed=1 unverifiable=1","x":null,"y":null}"#,
+            ]
+        );
+    }
+
+    #[test]
+    fn the_reply_keeps_its_orders_and_note_when_verdicts_are_appended() {
+        let reply = r#"{"turn":43,"orders":[{"kind":"research","subject":null,"verb":"TECH_WRITING","x":null,"y":null}],"note":"roster=1"}"#;
+        let rows = verdict_rows(42, &[]);
+        let joined = append_rows_to_reply(reply, &rows);
+        let value: serde_json::Value = serde_json::from_str(&joined).unwrap();
+        assert_eq!(value["note"], "roster=1");
+        assert_eq!(value["turn"], 43);
+        assert_eq!(value["orders"].as_array().unwrap().len(), 2);
+        assert_eq!(value["orders"][1]["kind"], "turn_verified");
+        // The verdict rows are not orders: the next turn's pending set excludes them.
+        let issued = IssuedOrder::from_reply(&joined);
+        assert_eq!(
+            issued,
+            vec![order("research", None, Some("TECH_WRITING"), None)]
+        );
+        assert_eq!(append_rows_to_reply(reply, &[]), reply);
+    }
+
+    #[test]
+    fn pending_orders_are_settled_by_the_next_turn_and_not_by_a_frame_of_the_same_turn() {
+        let dir = std::env::temp_dir().join(format!("civvis-postcond-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let events = dir.join("events.jsonl");
+        // The relay's own encoding, `": "` spacing included.
+        std::fs::write(
+            &events,
+            "{\"kind\": \"turn\", \"turn\": 42, \"ctx\": \"agent\"}\n\
+             {\"kind\": \"deal_closed\", \"turn\": 42, \"from\": 2, \"ctx\": \"agent\"}\n",
+        )
+        .unwrap();
+
+        let mut before = frame(42);
+        before.units = vec![unit(7, "UNIT_WARRIOR", 1, 1)];
+        let mut pending = vec![PendingOrders {
+            turn: 42,
+            orders: vec![
+                order("unit", Some(7), Some("MOVE_TO"), Some((3, 1))),
+                order("sell", Some(2), Some("FAVOR=10"), Some((60, 0))),
+            ],
+            before,
+        }];
+
+        // A combat frame of the same turn answers nothing.
+        let mut same_turn = frame(42);
+        same_turn.frame = 1;
+        assert!(settle_pending_orders(&mut pending, &events, &same_turn, &no_tiles()).is_empty());
+        assert_eq!(pending.len(), 1);
+
+        let mut next = frame(43);
+        next.units = vec![unit(7, "UNIT_WARRIOR", 2, 1)];
+        let rows: Vec<String> = settle_pending_orders(&mut pending, &events, &next, &no_tiles())
+            .iter()
+            .map(Order::to_json)
+            .collect();
+        assert!(pending.is_empty());
+        assert_eq!(
+            rows,
+            vec![
+                r#"{"kind":"order_verified","subject":7,"verb":"unit:MOVE_TO","x":42,"y":-1}"#,
+                r#"{"kind":"order_verified","subject":2,"verb":"sell:FAVOR=10","x":42,"y":-1}"#,
+                r#"{"kind":"turn_verified","subject":42,"verb":"issued=2 verified=2 failed=0 unverifiable=0","x":null,"y":null}"#,
+            ]
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
 /// Every Civilization VI type name this binary can emit must be one the game
 /// actually ships.
 ///

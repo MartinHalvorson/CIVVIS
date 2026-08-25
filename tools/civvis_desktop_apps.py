@@ -214,10 +214,15 @@ STOCK_WORLD_FIELDS = {
     "game_speed": "speed",
 }
 # Rust spellings of the values, as the id strings every other surface uses.
+# A spelling the stock world stops naming is kept rather than pruned: this is a
+# translation table, not a second statement of which world is stock, and the
+# reader above already refuses a spelling it does not know.
 STOCK_WORLD_IDS = {
+    "MapScript::Lakes": "lakes",
     "MapScript::TeninsBall": "tenins_ball",
     "MapTopology::Planet": "planet",
     "MapPoles::Poles": "poles",
+    "MapPoles::Randomized": "randomized",
     "GameSpeed::Online": "online",
 }
 
@@ -602,12 +607,6 @@ def stage_apps(repo: pathlib.Path, artifacts: BuildArtifacts, template_path: pat
             shutil.copytree(artifacts.wasm_site, resources / "site")
             shutil.copy2(artifacts.serve_script, resources / "serve.py")
             (resources / "serve.py").chmod(0o755)
-            # The browser engine has no filesystem. Its local host delegates
-            # terminal evidence to this same-revision native helper so Wasm
-            # games use the exact locked Glicko writer as native games.
-            rating_helper = resources / ("civvis-rating-" + artifacts.revision.commit)
-            shutil.copy2(artifacts.native_binary, rating_helper)
-            rating_helper.chmod(0o755)
 
         run(("/usr/bin/xattr", "-cr", str(app)))
         run(("/usr/bin/codesign", "--force", "--deep", "--sign", "-", str(app)))
@@ -1068,24 +1067,6 @@ def verify_installed(
             raise DesktopAppError("{} build is {} minutes old".format(mode, age))
 
     wasm_app = desktop / "CIVVIS Wasm.app"
-    rating_helper = (
-        wasm_app
-        / "Contents/Resources"
-        / ("civvis-rating-" + rust["commit"])
-    )
-    if not rating_helper.is_file() or not os.access(rating_helper, os.X_OK):
-        raise DesktopAppError("installed WASM app is missing its native rating helper")
-    native_binary = (
-        desktop
-        / "CIVVIS Rust.app/Contents/Resources"
-        / ("civvis-" + rust["commit"])
-    )
-    if (
-        not native_binary.is_file()
-        or hashlib.sha256(rating_helper.read_bytes()).digest()
-        != hashlib.sha256(native_binary.read_bytes()).digest()
-    ):
-        raise DesktopAppError("WASM rating helper differs from the paired native engine")
     manifest = json.loads(
         (wasm_app / "Contents/Resources/site" / VIEWER_LANE / "build.json").read_text(
             encoding="utf-8"

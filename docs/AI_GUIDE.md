@@ -22,8 +22,8 @@ Keep deployment, builtins, and evaluator arms separate when describing the AI:
 | `strategic` | champion-weight `StrategicAi` using score-share rollouts; offline `league_only` anchor, not an exhibition seat |
 
 The shipped tree contains and embeds `data/evolved/best.json`; it contains no
-`valuenet.json`. `builtin_provenance` and `ai_eval` report the effective
-controller after those fallbacks. The exhibition supervisor uses `--league
+`valuenet.json`. `builtin_provenance` reports the effective controller after
+those fallbacks. The exhibition supervisor uses `--league
 auto`, seeds a mutable runtime roster from `data/league`, and excludes
 `league_only` entries from live seating. Without a league, the server uses
 stock `AdvancedAi` for every non-human major.
@@ -36,8 +36,9 @@ There are seven concrete `Ai` implementations: `RandomAi`, `BasicAi`,
 entrant.
 
 The real Civilization VI tooling does not transplant this controller whole.
-`tools/civ6_strategy.py` exports the economic subset of a parameterized league
-strategy while Firaxis' AI handles the rest. `tools/civ6_control` is a separate
+(`tools/civ6_strategy.py`, which exported the economic subset of a
+parameterized league strategy while Firaxis' AI handled the rest, left with
+the league — #2357.) `tools/civ6_control` is a separate
 Lua heuristic seat controller. Its generated ladder currently contains no
 completed attempt; neither bridge is external strength evidence for
 `AdvancedAi`.
@@ -75,8 +76,9 @@ the deterministic lightweight agent used by city-states and barbarians. Stock
 `AdvancedAi::fog_honest()` is the explicit fair-play arm: it plans the whole
 turn against one fog-redacted, turn-start view, carries stale City Center
 combat memory, and replays only the resulting actions against the
-authoritative game. It is opt-in and has a first-class `ai_eval` arm named
-`fog_honest`. The pre-registered deployment-shaped screen (20 paired maps,
+authoritative game. It is opt-in (`AdvancedAi::fog_honest()`); the paired
+evaluator it was measured with has since been retired, and the record stands
+in `docs/EVAL.md`. The pre-registered deployment-shaped screen (20 paired maps,
 seed prefix `920000..920019`) retained `advanced`: fog-honest scored 15.0%
 (95% Wilson CI 5.2%..36.0%). It is therefore not promoted into the incumbent.
 
@@ -326,7 +328,7 @@ objective pressure, local-superiority caution, and withdraw/rejoin thresholds.
 ```bash
 cargo run --release -- evolve --generations 100 --pop 24 --games 12 \
   --players 4 --threads 8 --dir evolved
-civvis tournament --ais evolved,advanced,advanced_v1,basic --games 80
+civvis tournament --ais evolved,advanced,advanced_v1,basic --games 80  # retired (#2357)
 ```
 
 Every genome plays the real `AdvancedAi` against the reigning champion on
@@ -368,6 +370,13 @@ The standalone `evolve` fitness above still uses its cheaper score/combat proxy;
 its separate promotion gate remains the point where wins decide shipment.
 
 ## Elo tournaments
+
+> ⚠ **Retired 2026-08-23 (#2357).** The commands in this section — `civvis
+> tournament`, `civvis league`, `civvis arena`, `civvis rating` — do not run
+> against this tree: the league and the Elo ledgers were removed at the
+> operator's direction. The section is kept as the record of how those
+> results were measured; `docs/closed/LEAGUE.md` and `docs/closed/RATING.md`
+> carry the retired instruments.
 
 ```bash
 civvis tournament \
@@ -497,11 +506,13 @@ sampling. Across one complete cycle, every fixed civilization seat sees every
 configured entrant exactly once. Score ties are Elo draws; an actual victory
 outranks score even when the winner has fewer score points.
 
-For lower-variance two-player measurement, the paired evaluator runs every map
-twice with seats swapped and reports outcome plus economy/army diagnostics:
+To price a behaviour flag, use the gene screen — every seat of every game
+draws its own random genome and each gene is read as seats-on against
+seats-off (`docs/GENE_SCREEN.md`, `HEURISTIC_GENE_RANKING.md`):
 
 ```bash
-cargo run --release --bin ai_eval -- advanced basic --pairs 100 --seed 4000
+cargo run --release --bin gene_screen -- --games 600 --jobs 8 --out screen.jsonl
+cargo run --release --bin gene_screen -- --analyze screen.jsonl --json screen.json
 ```
 
 ```rust
@@ -638,27 +649,25 @@ roster keeps `strategic` as an offline-only anchor.
 ## Evaluation tips
 
 - Fix multiple seed sets; report paired win rate vs `basic` plus multiplayer Elo.
-- Use the promotion matrix for any claim that a challenger should replace
-  `advanced`:
-
-  ```sh
-  cargo run --release --bin ai_eval -- challenger advanced \
-    --matrix --pairs 120 --jobs 12 --seed 12000000
-  ```
-
-  It runs the compact Standard safety profile and the six-player Online
-  deployment concurrently. Deployment must PASS; compact must have enough
-  evidence and must not RETAIN `advanced`. Matrix mode rejects profile-shaping
-  flags, so the command cannot silently test a different game under the same
-  label.
-- Keep mechanism controls separate. `advanced_policy_live_control`,
-  `advanced_envoy_policy`, `advanced_envoy_infrastructure`, and
-  `advanced_envoy_economy` decompose policy-deck, influence-card, and production
-  effects. The former soft-replan treatment was removed after its deployment
-  result was negative. None of these decomposition arms is production
-  behavior unless a later matrix gate promotes it.
-- Use `ai_eval` to catch regressions hidden by wins (stalled settlers, obsolete
-  armies, unfinished queues, or weak science/culture output).
+- A behaviour is priced by the gene screen, not by an arm. The paired
+  evaluator (`ai_eval`, its promotion matrix and its 228 named arms —
+  `advanced_<x>`, `advanced_without_<x>`, `live_without_<x>`,
+  `live_target_<lane>`) was retired on 2026-08-23: one flag per arm priced
+  against a fixed background was the instrument the screen replaced, and the
+  rounds it produced stay in `docs/EVAL.md` and `docs/eval/` as evidence. A
+  flag that the screen flags is confirmed by a single-gene run
+  (`gene_screen --genes <tag>`) on disjoint seeds before it moves a default;
+  a behaviour the live seat ships is withheld on the ladder with
+  `civvis_orders --without <tag>`.
+- ⚠ A contested board — chairs seated with agents pursuing the lanes the live
+  seat actually loses to (diplomatic, culture) — is not something the screen
+  plays yet; until it does, a gene that only pays against such a field is
+  invisible to the ranking. Read
+  `docs/eval/2026-08-23-the-arms-that-were-pre-registered-and-never-run.md`
+  for the one measured example.
+- The screen rows carry end-of-game diagnostics (cities, techs, faith,
+  military, captures) beside the outcome; read them to catch a regression a
+  win rate hides.
 - Keep `random` in the pool as a sanity floor.
 - `soak` flags anomalies (no tech progress, minor winners) across seeds.
 

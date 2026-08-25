@@ -1,0 +1,26 @@
+{
+  "_doc": [
+    "Genes that have not been shown to fire in any committed screen, and why.",
+    "",
+    "The shape is `tools/inert_waivers.json`'s: a flat {tag: reason} map. Unlike",
+    "that file the reason is ENFORCED -- `tools/gene_fires.py` fails a waiver",
+    "shorter than 40 characters -- and a waiver goes STALE, failing the same",
+    "`--max 0` ratchet, the moment its gene is proven by a committed screen row",
+    "or leaves the gene tables. The list can only shrink.",
+    "",
+    "Almost every entry here is grandfathered: it was in the tables before a new",
+    "gene had to show it fires. A gene added AFTER 2026-08-23 should not appear",
+    "here at all -- #2330 wrote rows for eighteen behaviours, the gate refused",
+    "four of them on their own probes, and those four were removed from the",
+    "tables rather than waived. See `docs/genome_reach_debt.json`.",
+    "",
+    "To clear an entry: run a single-gene probe, which holds every other gene at",
+    "the baseline so any divergence is this gene alone, and commit the analysis --",
+    "  target/ci/gene_screen --games 24 --jobs 4 --genes <tag> \\",
+    "    --start-seed <seed> --out target/<tag>.jsonl",
+    "  target/ci/gene_screen --analyze target/<tag>.jsonl \\",
+    "    --json docs/gene_screens/fires/<tag>.json",
+    "-- then DELETE the entry here, or the stale-waiver check fails."
+  ],
+  "waivers": {}
+}

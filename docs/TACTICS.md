@@ -1,4 +1,8 @@
-# Unit battling: the state of the art, what CIVVIS does, and what changed
+# Historical joint-tactics design record
+
+> Historical record. `joint-tactics` and its `joint-reach-lines` companion
+> were removed on 2026-08-25 after the 35,148-seat screen's −0.104 pp win
+> difference; the implementation and its live and arena arms no longer exist.
 
 2026-07-31. Historical record of the tactical-search experiment; companion to
 `src/skirmish.rs` and `src/bin/battle_bench.rs`. §§1–8 are the original
@@ -971,7 +975,7 @@ Two things kept honest by the profile:
   the new one.
 - `tools/tactics_bench.py` now pins the economy its baseline was recorded
   under (`ECONOMY`: 30/30, five turns a tech, 100-turn clock) instead of
-  inheriting the stock arena, so `docs/TACTICS_BASELINE.md` still means what
+  inheriting the stock arena, so `docs/closed/TACTICS_BASELINE.md` still means what
   it says. Re-baselining on the new stock arena is a deliberate change to that
   pin, made in the same pull request as the new figures.
 

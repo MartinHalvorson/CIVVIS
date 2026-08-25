@@ -6,9 +6,8 @@ but **how each side fought**.
 
 Companion to `src/doctrine.rs` (the positions and the ledger) and
 `src/bin/doctrine_arena.rs` (the driver). Related instruments:
-`docs/TACTICS.md` for the tactical search itself, `src/skirmish.rs` for the
-matched mirror benchmark, `tools/tactics_bench.py` for the Tactics game mode's
-win-rate battery.
+`src/skirmish.rs` for the matched mirror benchmark and
+`tools/tactics_bench.py` for the Tactics game mode's win-rate battery.
 
 ## Why another instrument
 
@@ -207,14 +206,14 @@ about reserves, measured — the reserve is being fed in rather than committed.
 
 Worth stating what this does **not** yet establish: the arena shows the
 correlation between arriving outnumbered and losing the position, not that
-forcing concentration would fix it. The next step is a treatment that prices
-local force ratio in the joint plan, run through this harness and then through
-`battle_bench` and `tools/tactics_bench.py`, because a gain here is a necessary
-condition for the whole-game gate and never a substitute for it.
+forcing concentration would fix it. Any follow-up needs a narrowly scoped
+treatment that prices local force ratio, run through this harness and then
+through `battle_bench` and `tools/tactics_bench.py`, because a gain here is a
+necessary condition for the whole-game gate and never a substitute for it.
 
 ### The arena separates two controllers a win rate calls a coin flip
 
-`docs/TACTICS_BASELINE.md` warns that `advanced_v1` — a frozen copy of the live
+`docs/closed/TACTICS_BASELINE.md` warns that `advanced_v1` — a frozen copy of the live
 controller — sits near 50% against `advanced` in the Tactics-mode win-rate
 battery, because nearly everything separating them is empire machinery an arena
 never exercises, and that **a near-50% result there is the expected null rather
@@ -277,10 +276,8 @@ simply the position built to charge for the second thing, which is why it is the
 one it loses.
 
 That is a sharper target than "improve tactics": the lever is in how the army
-*closes*, not in how it fights once it has. The joint planner in
-`src/ai/tactics.rs` only plans units that are already engaged, which is
-consistent with what this measures — but consistency is not proof, and the
-treatment still has to be built and run through the gates in order.
+*closes*, not in how it fights once it has. A candidate that addresses it still
+has to be built and run through the gates in order.
 
 ### Does arriving together actually cause winning? Mostly not.
 
@@ -342,7 +339,7 @@ the way `vanguard` is, so it needs the same treatment this section gave arrival
 before anyone builds against it.
 
 This check cost one afternoon and was run **before** any treatment was written.
-That ordering is the point. `docs/TACTICS.md` records what the alternative
+That ordering is the point. Historic experiments show what the alternative
 costs: an adjacent-friendly-support term built on exactly this kind of reasoning
 was swept and could not be distinguished from zero at any weight, and #1399
 records a local-superiority brake that had to be removed because both armies

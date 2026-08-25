@@ -42,15 +42,6 @@
 //!   `offensive && apostles > 0`. A founder purely on defence — the 46% —
 //!   cannot buy one, so its damaged corps has no heal at all beyond standing
 //!   in the ring.
-//! - **A military unit may condemn a heretic at peace when the World Congress
-//!   says so.** `do_condemn_heretic` accepts the blow when
-//!   `is_at_war(pid, target.owner) || congress_effect_active("world_religion",
-//!   "B", religion)`; `condemn_step` asks only the first half, so the
-//!   Congress licence has never once been used. Interdiction is the cheap
-//!   half of the counter — measured 08-17 over 39 live games, we field 590
-//!   religious units against rivals' 12,708, and 41% of rival sightings
-//!   already have one of our military units within two tiles.
-//!
 //! ## What is deliberately NOT here
 //!
 //! No gene raises `d_holy` or otherwise re-ranks the Holy Site district.
@@ -58,14 +49,14 @@
 //! at the deployment shape, where it trades science victories for religious
 //! ones about 1:1. The district ranking is a valuation, and it is closed.
 //!
-//! All four are off everywhere by default, as an unmeasured screenable gene
-//! is: `gene_ledger::ledger_default_on` returns `false` for a tag no screen
-//! has priced. `docs/GENE_SCREEN.md` documents the instrument that prices
-//! them.
+//! The bare controller starts these flags off. Deployment applies the ledger
+//! after construction: `religious-units-heal-first` is currently a measured
+//! on default, while `gene_ledger::ledger_default_on` still returns `false`
+//! for a tag no screen has priced. `docs/GENE_SCREEN.md` documents the
+//! instrument that prices them.
 
 use super::AdvancedAi;
 use crate::game::{Action, Game, Item};
-use crate::Pos;
 
 /// Below this share of full health a spreader is spending a whole charge for
 /// a fraction of a charge's pressure, because `do_spread` scales the pressure
@@ -120,7 +111,8 @@ impl AdvancedAi {
         pid: usize,
         home_under_pressure: bool,
     ) -> bool {
-        if !self.guru_heals_the_corps || !home_under_pressure {
+        // See `guru_heals_the_corps_2`: a damaged corps anywhere is enough.
+        if !(self.guru_heals_the_corps && home_under_pressure) && !self.guru_heals_the_corps_2 {
             return false;
         }
         g.units.values().any(|unit| {
@@ -236,7 +228,7 @@ impl AdvancedAi {
     /// no ranking: it is a conditional claim in a city that is losing its
     /// majority right now, which is the case that ranking never priced.
     pub(super) fn holy_site_where_the_threat_is(&self, g: &mut Game, pid: usize) {
-        if !self.holy_site_where_the_threat_is {
+        if !self.holy_site_where_the_threat_is && !self.holy_site_where_the_threat_is_2 {
             return;
         }
         let Some(religion) = g.players[pid].religion.clone() else {
@@ -349,28 +341,4 @@ impl AdvancedAi {
         (defending || campaigning).then_some(score)
     }
 
-    /// `condemn_under_congress`: the enemy religious unit on this tile a
-    /// military unit may remove, whether by war or by the World Congress.
-    ///
-    /// `do_condemn_heretic` licenses the blow when either
-    /// `is_at_war(pid, target.owner)` **or** the Congress has condemned the
-    /// target's religion (`world_religion`, option B). `condemn_step` has only
-    /// ever asked the first, so a resolution this seat may itself have voted
-    /// for has never removed a single missionary. With the gene off this is
-    /// the war test alone, unchanged.
-    pub(super) fn condemnable_heretic(&self, g: &Game, pid: usize, at: Pos) -> Option<u32> {
-        g.units_at(at).into_iter().find(|target| {
-            let target = &g.units[target];
-            if target.owner == pid || g.rules.units[target.kind].class != "religious" {
-                return false;
-            }
-            if g.is_at_war(pid, target.owner) {
-                return true;
-            }
-            self.condemn_under_congress
-                && target.religion.as_deref().is_some_and(|religion| {
-                    g.congress_effect_active("world_religion", "B", religion)
-                })
-        })
-    }
 }

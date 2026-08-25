@@ -22,10 +22,18 @@ import sys
 from pathlib import Path
 from typing import Any
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import genes  # noqa: E402
 
-REGISTRY_NAMES = (
-    "BUILTIN_AIS",
-    "EVAL_ONLY_AIS",
+
+
+# The one list still read out of `src/elo.rs`: the built-in agents. Every gene
+# list — live, host-only, repair (and its war/economy halves) — is a view of
+# the gene registry (`src/ai/advanced/genes.rs`) read through
+# `genes.py`, and is published under the names the old `elo.rs` lists
+# had so the manifest's shape and the page's rows stay readable.
+REGISTRY_NAMES = ("BUILTIN_AIS",)
+GENE_LISTS = (
     "LIVE_BRIDGE_TREATMENTS",
     "FIRAXIS_ONLY_TREATMENTS",
     "ENGINE_REPAIR_WAR_TREATMENTS",
@@ -65,66 +73,6 @@ def _rust_string(value: str) -> str:
 LADDER_TERMINAL_TURNS = 248
 
 
-def withholding_arms(
-    repo: Path, registered: list[str], withholdable: set[str] | None = None
-) -> dict[str, str]:
-    """Published tag -> the evaluator arm that withholds it, looked up not guessed.
-
-    ⚠⚠ THERE IS NO RULE, AND BOTH OBVIOUS ONES ARE WRONG SOMEWHERE. This was
-    `live_without_{tag.replace('-', '_')}`, which names an arm that does not
-    exist for `live-trader-route` — its arm is
-    `live_without_live_trader_route_adapter`, after the flag. (The original
-    example was `ranged-line-of-sight`, which left the code on 2026-08-21 with
-    the ranking's bottom ten.) Deriving from the flag instead is wrong the other
-    way: `army-target-weighs-enemy` sets
-    `army_target_weighs_the_enemy` and its arm is
-    `live_without_army_target_weighs_enemy`, after the tag.
-
-    So each tag's arm is whichever candidate `EVAL_ONLY_AIS` actually contains,
-    and a tag with neither is an error rather than a guess. That matters twice
-    over: `docs/EVAL_STATUS.md` publishes this list as the debt roadmap
-    objective 3 asks the fleet to work through, and the evidence search below
-    looks for the arm name as one of its spellings — so a wrong guess both
-    prints a name nobody can run and over-counts the debt by missing a round
-    that used the real one.
-    """
-    source = (repo / "src" / "ai" / "advanced" / "treatments.rs").read_text(encoding="utf-8")
-    rows = re.findall(
-        r'\(\s*"([a-z0-9_]+)"\s*,\s*"([a-z0-9-]+)"\s*,\s*AdvancedAi::disable_([a-z0-9_]+)\s*\)',
-        source,
-    )
-    if not rows:
-        raise ValueError(
-            "src/ai/advanced/treatments.rs yielded no LIVE_TREATMENTS rows; the scrape "
-            "broke rather than finding an empty table"
-        )
-    known = set(registered)
-    arms: dict[str, str] = {}
-    unrunnable = []
-    for _name, tag, disabler in rows:
-        # ⚠ Only the withholdable tags. `LIVE_TREATMENTS` also carries rows
-        # that are not in `LIVE_BRIDGE_TREATMENTS` — `strategic-wonders` is
-        # one — and those correctly have no `live_without_*` arm. Checking
-        # every row instead raised on them, and "fixing" that by registering
-        # an arm broke three tests that know better:
-        # `each_live_without_arm_holds_exactly_one_treatment_off` refuses an
-        # arm whose treatment is not a live-bridge treatment.
-        if withholdable is not None and tag not in withholdable:
-            continue
-        candidates = [f"live_without_{tag.replace('-', '_')}", f"live_without_{disabler}"]
-        arm = next((candidate for candidate in candidates if candidate in known), None)
-        if arm is None:
-            unrunnable.append(f"{tag} (tried {', '.join(candidates)})")
-        else:
-            arms[tag] = arm
-    if unrunnable:
-        raise ValueError(
-            "these withholdable treatments have no evaluator arm, so the debt list would "
-            "name something nobody can run: " + "; ".join(unrunnable)
-        )
-    return arms
-
-
 def read_registry(repo: Path) -> dict[str, dict[str, Any]]:
     source = (repo / "src" / "elo.rs").read_text(encoding="utf-8")
     found: dict[str, dict[str, Any]] = {}
@@ -149,6 +97,18 @@ def read_registry(repo: Path) -> dict[str, dict[str, Any]]:
     missing = [name for name in REGISTRY_NAMES if name not in found]
     if missing:
         raise ValueError(f"src/elo.rs is missing registry constants: {', '.join(missing)}")
+    rows = genes.genes_from_text(
+        (repo / genes.REGISTRY).read_text(encoding="utf-8"))
+    views = {
+        "LIVE_BRIDGE_TREATMENTS": [g.tag for g in rows if g.live],
+        "FIRAXIS_ONLY_TREATMENTS": [g.tag for g in rows if g.host_only],
+        "ENGINE_REPAIR_WAR_TREATMENTS": [g.tag for g in rows if g.axis == "War"],
+        "ENGINE_REPAIR_ECONOMY_TREATMENTS": [g.tag for g in rows if g.axis == "Economy"],
+        "ENGINE_REPAIR_TREATMENTS": [g.tag for g in rows if g.repair],
+    }
+    for name in GENE_LISTS:
+        items = views[name]
+        found[name] = {"declared_count": len(items), "items": items}
     return found
 
 
@@ -305,12 +265,7 @@ def read_evidence(repo: Path) -> str:
     return "\n".join(parts)
 
 
-def bundle_coverage(
-    live: list[str],
-    firaxis: set[str],
-    evidence: str,
-    arms: dict[str, str] | None = None,
-) -> dict[str, Any]:
+def bundle_coverage(live: list[str], firaxis: set[str], evidence: str) -> dict[str, Any]:
     """How much of the shipped live-bridge bundle the ledger has ever discussed.
 
     ⚠⚠ THE COUNT THIS PUBLISHES IS "NEVER NAMED", AND THAT IS DELIBERATELY THE
@@ -323,31 +278,17 @@ def bundle_coverage(
     `never_named` is an under-count of the debt — the number to act on is the
     one that cannot be flattered.
 
-    Why it is worth publishing at all: on 2026-08-18 fifty of the seventy-four
-    live-bridge treatments had never been named in any round, and nobody could
-    see it. `docs/ROADMAP.md` objective 3 asks for exactly this bundle to be
-    priced by withholding, and the inventory above counted the arms that
-    *exist* rather than the ones that have been *used*. The repository has
-    already paid for that blind spot once, in `city_target_floor`: retained on
-    a composite result, and removed from production once it was priced alone.
-
-    ⚠ ALL THREE SPELLINGS, and the third was found by checking the instrument
-    against a treatment already known to be priced. The registry tag is
-    hyphenated (`bounded-recovery`), the evaluator arm derived from it is
-    `live_without_bounded_recovery`, and rounds routinely write the flag itself
-    in Rust spelling — `bounded_recovery` — which is how the confirmed-null
-    result that got it deleted from production is recorded. Searching only the
-    first two called it never-named and would have overstated the debt by a
-    fifth on the first run.
+    Three spellings: the registry tag (`bounded-recovery`), the flag in Rust
+    spelling (`bounded_recovery`) that rounds routinely write, and the
+    `live_without_*` arm name the retired paired evaluator used until
+    2026-08-23 — rounds recorded before then name treatments that way, and the
+    history still counts as having named them.
     """
     withholdable = [item for item in live if item not in firaxis]
     named, never = [], []
     for tag in withholdable:
         flag = tag.replace("-", "_")
-        arm = (arms or {}).get(tag, f"live_without_{flag}")
-        # The arm is the fourth spelling and the only one that is authoritative
-        # for a tag published shorter than its flag.
-        spellings = (tag, flag, f"live_without_{flag}", arm)
+        spellings = (tag, flag, f"live_without_{flag}")
         found = any(spelling in evidence for spelling in spellings)
         (named if found else never).append(tag)
     return {
@@ -355,10 +296,6 @@ def bundle_coverage(
         "named": len(named),
         "never_named": len(never),
         "never_named_treatments": sorted(never),
-        "never_named_arms": {
-            tag: (arms or {}).get(tag, f"live_without_{tag.replace('-', '_')}")
-            for tag in sorted(never)
-        },
     }
 
 
@@ -378,8 +315,8 @@ def genome_coverage(repo: Path) -> dict[str, Any]:
 
     Why it is worth publishing: `precise_evacuation` reached `main` in #2059
     ON for every major, city-state and barbarian, holding roughly half of the
-    simulator's main thread — and with no gene row, no evaluator arm and no
-    mention in any recorded round. Neither gate could address it, and nothing
+    simulator's main thread — and with no gene row and no mention in any
+    recorded round. No gate could address it, and nothing
     said so. `docs/GENE_SCREEN.md` names the growth direction as "hundreds of
     genes"; this is the denominator that direction is measured against.
 
@@ -387,10 +324,9 @@ def genome_coverage(repo: Path) -> dict[str, Any]:
 
     * `treatment_flags.rs` — every `enable_*`/`disable_*` capability toggle.
       The file's own guard keeps them all there and nothing else there.
-    * the three gene tables — `PRODUCTION_TREATMENTS` and `PRODUCTION_OPT_INS`
-      carry the field name in the row; `ENGINE_REPAIR_TREATMENTS` carries only
-      a tag, resolved to its field through `LIVE_TREATMENTS`. This is exactly
-      what `gene_screen::gene_table` walks, so "reachable" here means reachable
+    * the gene registry (`src/ai/advanced/genes.rs`) — every screenable row
+      carries its field and its toggle. This is exactly what
+      `gene_screen::gene_table` walks, so "reachable" here means reachable
       by the binary rather than by a list somebody kept in step.
     * `docs/gene_ledger.json` — which of those genes a screen has measured.
     """
@@ -404,50 +340,20 @@ def genome_coverage(repo: Path) -> dict[str, Any]:
             "src/ai/advanced/treatment_flags.rs yielded no capability toggles; "
             "the scrape broke rather than finding an empty file")
 
-    treatments_source = _strip_comments(
-        (repo / "src" / "ai" / "advanced" / "treatments.rs").read_text(encoding="utf-8"))
-    # ⚠⚠ A ROW'S FIELD STRING AND ITS TOGGLE'S NAME ARE NOT THE SAME WORD, and
-    # joining on the wrong one invents debt. `army-target-weighs-enemy` is a
-    # row reading ("army_target_weighs_enemy", …, disable_army_target_weighs_the_enemy)
-    # — note "the" — so matching the toggle set against the field string alone
-    # reported a measured gene as unreachable on this function's first run.
-    # `withholding_arms` above records the same trap from the other side.
-    # A toggle counts as reachable under EITHER spelling.
-    ROW = (r'\(\s*"([a-z0-9_]+)"\s*,\s*"([a-z0-9-]+)"\s*,\s*'
-           r'AdvancedAi::(?:enable|disable)_([a-z0-9_]+)\s*\)')
-
-    def rows_of(name: str, source: str) -> list[tuple[str, str, str]]:
-        parts = source.split(f"pub const {name}", 1)
-        if len(parts) < 2:
-            raise ValueError(f"{name} not found; the scrape broke")
-        found = re.findall(ROW, parts[1].split("];", 1)[0])
-        if not found:
-            raise ValueError(f"{name} yielded no rows; the scrape broke")
-        return found
-
-    live_rows = rows_of("LIVE_TREATMENTS", treatments_source)
-    spellings_of_tag = {tag: {field, fn} for field, tag, fn in live_rows}
-
-    screenable_tags: set[str] = set()
+    # ⚠⚠ A ROW'S FIELD AND ITS TOGGLE'S NAME ARE NOT ALWAYS THE SAME WORD, and
+    # joining on the wrong one invents debt: `army-target-weighs-enemy` is the
+    # field `army_target_weighs_enemy` toggled through
+    # `disable_army_target_weighs_the_enemy` — note "the" — so matching the
+    # toggle set against the field alone reported a measured gene as
+    # unreachable on this function's first run. A toggle counts as reachable
+    # under EITHER spelling.
+    rows = genes.genes_from_text(
+        (repo / genes.REGISTRY).read_text(encoding="utf-8"))
+    screenable_tags = {g.tag for g in rows if g.screenable}
     screenable_spellings: set[str] = set()
-    for name in ("PRODUCTION_TREATMENTS", "PRODUCTION_OPT_INS"):
-        for field, tag, fn in rows_of(name, treatments_source):
-            screenable_tags.add(tag)
-            screenable_spellings |= {field, fn}
-
-    repairs = re.findall(
-        r'"([a-z0-9-]+)"',
-        _strip_comments((repo / "src" / "elo.rs").read_text(encoding="utf-8"))
-        .split("pub const ENGINE_REPAIR_TREATMENTS", 1)[1].split("];", 1)[0])
-    unresolvable = sorted(tag for tag in repairs if tag not in spellings_of_tag)
-    if unresolvable:
-        raise ValueError(
-            "these engine repairs have no LIVE_TREATMENTS row, so their toggle "
-            "cannot be resolved and the coverage count would be wrong: "
-            + ", ".join(unresolvable))
-    for tag in repairs:
-        screenable_tags.add(tag)
-        screenable_spellings |= spellings_of_tag[tag]
+    for g in rows:
+        if g.screenable:
+            screenable_spellings |= {g.field, g.toggle}
 
     ledger = json.loads(
         (repo / "docs" / "gene_ledger.json").read_text(encoding="utf-8"))
@@ -474,12 +380,12 @@ def build_manifest(repo: Path) -> dict[str, Any]:
         "schema_version": 1,
         "genome_coverage": genome_coverage(repo),
         "source": {
-            "registry": "src/elo.rs",
+            "registry": "src/ai/advanced/genes.rs",
+            "agents": "src/elo.rs",
             "ladder": "docs/civ6_ladder.json",
         },
         "registry": registry,
         "derived": {
-            "eval_only_count": len(registry["EVAL_ONLY_AIS"]["items"]),
             "live_bridge_count": len(live),
             "firaxis_only_count": len(firaxis),
             "native_engine_repair_count": len(
@@ -489,16 +395,7 @@ def build_manifest(repo: Path) -> dict[str, Any]:
                 [item for item in live if item not in firaxis]
             ),
         },
-        "coverage": bundle_coverage(
-            live,
-            firaxis,
-            read_evidence(repo),
-            withholding_arms(
-                repo,
-                registry["EVAL_ONLY_AIS"]["items"],
-                {tag for tag in live if tag not in firaxis},
-            ),
-        ),
+        "coverage": bundle_coverage(live, firaxis, read_evidence(repo)),
         "ladder": read_ladder(repo),
     }
 
@@ -555,7 +452,6 @@ def render_status(manifest: dict[str, Any]) -> str:
     registry = manifest["registry"]
     rows = [
         ("Built-in agents", len(registry["BUILTIN_AIS"]["items"])),
-        ("Evaluator-only agents", derived["eval_only_count"]),
         ("Live-bridge treatments", derived["live_bridge_count"]),
         ("Firaxis-only treatments", derived["firaxis_only_count"]),
         ("Native engine-repair treatments", derived["native_engine_repair_count"]),
@@ -566,7 +462,8 @@ def render_status(manifest: dict[str, Any]) -> str:
         "",
         "<!-- GENERATED FILE: python3 tools/eval_manifest.py --write -->",
         "",
-        "This page is generated from `src/elo.rs` and `docs/civ6_ladder.json`.",
+        "This page is generated from the gene registry (`src/ai/advanced/genes.rs`),",
+        "`src/elo.rs` (the built-in agents) and `docs/civ6_ladder.json`.",
         "The append-only experiment evidence remains in `docs/EVAL.md`; this",
         "page is the current inventory and live-bridge snapshot.",
         "",
@@ -594,20 +491,16 @@ def render_status(manifest: dict[str, Any]) -> str:
         "mechanical. So the middle number over-counts coverage and the last one",
         "under-counts the debt — act on the last one, which cannot be flattered.",
         "",
-        "`docs/ROADMAP.md` objective 3 asks for this bundle to be priced by",
-        "withholding, *before the next effect hides inside a composite the way",
-        "`city_target_floor` did*. The inventory above counts the arms that",
-        "exist; this counts the ones that have been used, and the gap between",
-        "them is what stayed invisible.",
+        "The native half of this bundle is priced by the gene screen",
+        "(`docs/GENE_SCREEN.md`, `HEURISTIC_GENE_RANKING.md`); the host-only",
+        "half can only be priced on the live seat, by `civvis_orders --without`",
+        "over ladder games. This list is the debt neither has touched.",
         "",
         "Never named:",
         "",
     ]
     if coverage["never_named_treatments"]:
-        lines.append("".join(
-            f"`{tag}` (`{coverage['never_named_arms'][tag]}`), "
-            for tag in coverage["never_named_treatments"]
-        ).rstrip(", "))
+        lines.append(", ".join(f"`{tag}`" for tag in coverage["never_named_treatments"]))
     else:
         lines.append("_None — every withholdable treatment has been named._")
     genome = manifest["genome_coverage"]
@@ -635,7 +528,7 @@ def render_status(manifest: dict[str, Any]) -> str:
         "",
         "Why it is published: `precise_evacuation` shipped in #2059 ON for",
         "every major, city-state and barbarian, holding roughly half of the",
-        "simulator's main thread, with no gene row, no evaluator arm and no",
+        "simulator's main thread, with no gene row and no",
         "mention in any recorded round. Neither gate could address it and",
         "nothing said so.",
         "",
@@ -709,7 +602,7 @@ def check_outputs(repo: Path, manifest: dict[str, Any]) -> int:
         print("run: python3 tools/eval_manifest.py --write", file=sys.stderr)
         return 1
     print(
-        f"evaluation manifest current: {manifest['derived']['eval_only_count']} evaluator arms, "
+        f"evaluation manifest current: {manifest['derived']['live_bridge_count']} live-bridge treatments, "
         f"{manifest['ladder']['attempts']} ladder attempts"
     )
     return 0
@@ -728,7 +621,7 @@ def main(argv: list[str] | None = None) -> int:
             write_outputs(args.repo, manifest)
             print(
                 f"wrote docs/eval_manifest.json and docs/EVAL_STATUS.md "
-                f"({manifest['derived']['eval_only_count']} evaluator arms)"
+                f"({manifest['derived']['live_bridge_count']} live-bridge treatments)"
             )
             return 0
         return check_outputs(args.repo, manifest)

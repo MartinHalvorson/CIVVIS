@@ -88,14 +88,13 @@ def install(turns: int, observe: int, return_as: int, dump: bool, tag: str,
         tag=tag,
         strategy_player=strategy_player,
     )
-    # The genome is prepended too, for the same reason the config is: there is
-    # no include path a mod file can be reached on.
+    # The league genome export is retired with the league itself (#2357);
+    # the mod plays without a CIVVIS_STRATEGY table.
     if strategy:
-        sys.path.insert(0, str(Path(__file__).resolve().parent))
-        import civ6_strategy  # noqa: PLC0415
-
-        entry = civ6_strategy.find(civ6_strategy.load_league(), strategy)
-        prelude += civ6_strategy.as_lua(entry) + "\n"
+        raise SystemExit(
+            "--strategy exported a league genome, and the league is retired "
+            "(#2357); run without the flag."
+        )
     (target / SCRIPT_FILE).write_text(prelude + (MOD_SOURCE / SCRIPT_FILE).read_text())
     # Kept so the .modinfo's <Files> list resolves, and so the settings are
     # readable in the install without reading the whole script.
@@ -144,7 +143,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--return-as", type=int, default=0, help="player to return control to")
     ap.add_argument("--no-dump", action="store_true", help="skip the per-turn state record")
     ap.add_argument("--tag", default="run", help="tag stamped into every logged line")
-    ap.add_argument("--strategy", help="league strategy whose genome plays (e.g. Maverick2)")
+    ap.add_argument("--strategy", help="retired (#2357): the league genome export is gone")
     ap.add_argument("--strategy-player", type=int, default=-1,
                     help="player the genome drives (-1 = none)")
     ap.add_argument("--launch", action="store_true", help="restart the game afterwards")

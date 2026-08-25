@@ -26,7 +26,7 @@
 //! every turn until it is accepted. The existing peace triggers (outmatched,
 //! Recovery, stalled) stay live on top.
 //!
-//! Off by default: `PRODUCTION_OPT_INS` row `opportunistic-war`. It ships
+//! Off by default: registry row `opportunistic-war`. It ships
 //! into the genome unmeasured and stays off until a screen says it helps
 //! (`gene_ledger`); `gene_screen --genes opportunistic-war` prices it. The
 //! pillage half is its own opt-in, `raid-pillage-prizes`: with it off a raid
@@ -342,12 +342,6 @@ impl AdvancedAi {
             || g.player_city_ids(pid).len() < 2
         {
             return None;
-        }
-        if self.endgame_war_runway {
-            let reserve = g.standard_duration(super::TIMED_WAR_ENDGAME_RESERVE);
-            if g.turn.saturating_add(reserve) >= g.max_turns {
-                return None;
-            }
         }
         // One war at a time: a raid is an opening, not a second front.
         if g.players.iter().any(|other| {

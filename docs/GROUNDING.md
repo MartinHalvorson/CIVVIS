@@ -192,7 +192,11 @@ measurement.
 
 ## Playing league genomes in the real game
 
-`tools/civ6_strategy.py` exports a league strategy's economic policy — the
+> ⚠ **Retired 2026-08-23 (#2357).** `tools/civ6_strategy.py` and the league it
+> exported from were removed with the Elo work; `civ6_run.py --strategy` now
+> refuses. This section is the record of what was measured while they ran.
+
+`tools/civ6_strategy.py` exported a league strategy's economic policy — the
 scripted opening (`open0..open3`), `city_target`, `settler_stop_turn`,
 `builder_per_city`, `mil_per_city`, and the district priorities — and the mod
 plays it for one player while the shipped AI handles everything else. That

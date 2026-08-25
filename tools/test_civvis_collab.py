@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
@@ -27,6 +28,24 @@ def pr(branch, body, *, number=9, draft=True):
     }
 
 
+def validation_block(checked=True):
+    """The template's own validation list, ticked or not.
+
+    Taken from `format_claim_body` rather than written out, so a fixture cannot
+    quietly carry fewer items than the gate requires. That is the defect
+    `validation_errors` exists for, and a fixture is exactly the place it would
+    reappear: every one of these bodies used to carry a single checkbox, which
+    is a body the required check would now refuse.
+    """
+    template = collab.format_claim_body(
+        machine="m", agent="a", task="t", paths=["p"], coordinated=()
+    )
+    section = template.split("## Validation", 1)[1].split("\n## ", 1)[0]
+    if checked:
+        section = section.replace("- [ ]", "- [x]")
+    return "## Validation" + section.rstrip() + "\n"
+
+
 def body(
     machine="render-win-02",
     agent="codex-47",
@@ -34,7 +53,6 @@ def body(
     coordinated="none",
     checked=True,
 ):
-    mark = "x" if checked else " "
     return f"""## Ownership claim
 
 - Machine ID: `{machine}`
@@ -43,10 +61,7 @@ def body(
 - Claimed paths: {paths}
 - Coordinated with: {coordinated}
 
-## Validation
-
-- [{mark}] Branch started from current `origin/main`
-"""
+{validation_block(checked)}"""
 
 
 class BranchTests(unittest.TestCase):
@@ -450,6 +465,82 @@ class FreshnessTests(unittest.TestCase):
             self.assertEqual(path.stat().st_mtime_ns, modified)
 
 
+class FreshnessLockLivenessTests(unittest.TestCase):
+    """A lock whose holder died must not outlive it by half an hour.
+
+    Measured on 2026-08-23: a `refresh --scheduled` worker hung holding the
+    lock, and every `civvis_collab.py start` on that machine failed with
+    "another refresh is already running" until `FRESHNESS_LOCK_STALE_SECONDS`
+    expired. The lock recorded the holder's PID the whole time.
+    """
+
+    def repo(self, base):
+        """`freshness_dir` resolves through the repository's common git dir."""
+        root = base / "clone"
+        subprocess.run(
+            ("git", "init", "--initial-branch=main", str(root)),
+            check=True,
+            capture_output=True,
+        )
+        return root
+
+    def lock_written_by(self, root, pid):
+        path = collab.freshness_dir(root) / "refresh.lock"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"pid": pid}), encoding="utf-8")
+        return path
+
+    def dead_pid(self):
+        """A PID that is reliably not running: our own child, waited on.
+
+        Spawning and reaping is the only portable way to name a PID that
+        certainly existed and certainly does not now — an arbitrary large
+        integer could belong to a live process on a busy machine.
+        """
+        child = subprocess.Popen(("true",))
+        child.wait()
+        return child.pid
+
+    def test_a_lock_naming_a_dead_process_is_released(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.repo(Path(temporary))
+            path = self.lock_written_by(root, self.dead_pid())
+            self.assertTrue(collab.lock_holder_is_gone(path))
+            with collab.FreshnessLock(root) as acquired:
+                self.assertTrue(acquired)
+
+    def test_a_lock_naming_a_live_process_is_respected(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.repo(Path(temporary))
+            path = self.lock_written_by(root, os.getpid())
+            self.assertFalse(collab.lock_holder_is_gone(path))
+            with collab.FreshnessLock(root) as acquired:
+                self.assertFalse(acquired)
+
+    def test_an_unreadable_lock_is_assumed_live(self):
+        """The file is created O_EXCL and written after, so an empty or
+        malformed one is a holder mid-write, not an orphan. Releasing it would
+        hand two workers the same lock; the age check is the backstop."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.repo(Path(temporary))
+            for content in ("", "{", '{"pid": "not a number"}', "{}", '{"pid": 0}'):
+                path = collab.freshness_dir(root) / "refresh.lock"
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(content, encoding="utf-8")
+                self.assertFalse(collab.lock_holder_is_gone(path), content)
+            path.unlink()
+            self.assertFalse(collab.lock_holder_is_gone(path))
+
+    def test_the_age_backstop_still_releases_a_lock_it_cannot_judge(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.repo(Path(temporary))
+            path = self.lock_written_by(root, os.getpid())
+            stale = time.time() - collab.FRESHNESS_LOCK_STALE_SECONDS - 1
+            os.utime(path, (stale, stale))
+            with collab.FreshnessLock(root) as acquired:
+                self.assertTrue(acquired)
+
+
 class ClaimTests(unittest.TestCase):
     def test_claims_are_parsed_from_the_pr_contract(self):
         parsed = collab.parse_claims(body())
@@ -725,6 +816,51 @@ class PolicyTests(unittest.TestCase):
             },
         )
         self.assertTrue(any("collide with PR #5" in error for error in errors), errors)
+
+    def test_a_live_game_pr_without_a_citation_gets_a_notice_not_an_error(self):
+        advisories = []
+        errors = collab.validate_pr(
+            pr(self.branch, body(paths="`tools/civ6_control/mod/**`"), draft=False),
+            files=["tools/civ6_control/mod/CivvisControl.lua"],
+            commit_subjects=[],
+            advisories=advisories,
+        )
+        self.assertEqual(errors, [])
+        self.assertTrue(any("quotes no shipped source" in note for note in advisories), advisories)
+
+    def test_a_citation_in_the_body_satisfies_the_live_game_rule(self):
+        for citation in (
+            "modelled on `Base/Assets/UI/DiplomacyActionView.lua:2545`",
+            "bands from `GameplayDB.BarbarianAttackForces`",
+            "read from Civ6.app/Contents/Assets",
+        ):
+            with self.subTest(citation=citation):
+                advisories = []
+                collab.validate_pr(
+                    pr(self.branch, body(paths="`tools/civ6_control/mod/**`") + "\n" + citation),
+                    files=["tools/civ6_control/mod/CivvisControl.lua"],
+                    commit_subjects=[],
+                    advisories=advisories,
+                )
+                self.assertFalse(any("quotes no shipped source" in note for note in advisories))
+
+    def test_game_rs_counts_only_when_the_added_lines_touch_the_live_game_code(self):
+        for line, expected in (
+            ("    fn barbarian_raid_force_size(&self) -> usize {", True),
+            ("    let offer = self.quick_deal_value(pid, other);", True),
+            ("    let yields = self.city_yields(city);", False),
+        ):
+            with self.subTest(line=line):
+                advisories = []
+                collab.validate_pr(
+                    pr(self.branch, body()),
+                    files=["src/game.rs"],
+                    commit_subjects=[],
+                    advisories=advisories,
+                    added_lines={"src/game.rs": [line]},
+                )
+                self.assertEqual(
+                    any("quotes no shipped source" in note for note in advisories), expected)
 
     def test_a_draft_reports_collisions_without_failing(self):
         advisories = []
@@ -1120,14 +1256,8 @@ class ShipTests(unittest.TestCase):
         draft = {
             "state": "OPEN",
             "headRefName": "agent/m/a/task-20260723T210500Z-a31f",
-            "body": """## What changed
-
-Draft claim; implementation is in progress.
-
-## Validation
-
-- [ ] Tests
-""",
+            "body": "## What changed\n\nDraft claim; implementation is in "
+                    "progress.\n\n" + validation_block(checked=False),
         }
         errors = collab.ship_pr_errors(draft, draft["headRefName"])
         self.assertTrue(any("checkbox" in error for error in errors))
@@ -1137,14 +1267,8 @@ Draft claim; implementation is in progress.
         finished = {
             "state": "OPEN",
             "headRefName": "agent/m/a/task-20260723T210500Z-a31f",
-            "body": """## What changed
-
-Added the fast shipping path.
-
-## Validation
-
-- [x] Tests
-""",
+            "body": "## What changed\n\nAdded the fast shipping path.\n\n"
+                    + validation_block(checked=True),
         }
         self.assertEqual(
             collab.ship_pr_errors(finished, finished["headRefName"]), []
@@ -1619,10 +1743,6 @@ class MachineRegistryTests(unittest.TestCase):
         # None means "stay silent"; an empty set would notice every PR.
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class EveryManagedServiceIsRepairedOnEveryTask(unittest.TestCase):
     """A service `bootstrap` installs and `start` does not repair reaches only
     the machines bootstrapped after it was written.
@@ -1995,3 +2115,344 @@ class GeneratedDocumentMergeTests(unittest.TestCase):
                     collab.settle_merge_conflict(root, "CONFLICT in src/game.rs")
             self.assertIn("resolve this task worktree", str(raised.exception))
             self.assertIn("src/game.rs", str(raised.exception))
+
+
+# --- Writing about the ownership gate must not switch it off ----------------
+#
+# Every fixture in the four classes below carries the exact text it is about,
+# because that is what the old code matched: a body that *discussed* the
+# protocol replaced the claim the required `collaboration-policy` check then
+# validated. `assert_quotes` asserts the quoted line really is present before
+# asserting that it changed nothing, so a fixture that quietly stopped carrying
+# it would fail rather than pass while proving nothing — the same guard
+# `test_overwrite_guard.assert_mentions_but_does_not_waive` uses.
+
+BRANCH = "agent/render-win-02/codex-47/government-cleanup-20260723T210500Z-a31f"
+
+
+class QuotationFixture(unittest.TestCase):
+    def assert_quotes(self, text, quoted):
+        self.assertIn(quoted, text,
+                      "fixture no longer contains the text it exists to quote")
+
+
+class ClaimHijackTests(QuotationFixture):
+    """The claim is the ownership block, not the last matching line anywhere.
+
+    `parse_claims` matched `^\\s*-\\s*([^:]+):` over the whole body, at any
+    indentation, and assigned on every match — last occurrence wins. Both
+    directions were live and neither made a sound.
+    """
+
+    def test_a_fenced_example_block_does_not_replace_the_claim(self):
+        quoted = "- Claimed paths: `src/**`, `web/**`"
+        text = body() + f"\nThe template looks like:\n\n```\n{quoted}\n```\n"
+        self.assert_quotes(text, quoted)
+        self.assertEqual(
+            collab.split_paths(collab.parse_claims(text)["paths"]),
+            ["src/game.rs", "data/**"])
+
+    def test_a_fenced_example_block_does_not_replace_the_machine_id(self):
+        quoted = "- Machine ID: `render-win-99`"
+        text = body() + f"\nAnother machine writes:\n\n```\n{quoted}\n```\n"
+        self.assert_quotes(text, quoted)
+        self.assertEqual(collab.parse_claims(text)["machine"], "render-win-02")
+
+    def test_an_indented_example_block_is_not_a_claim(self):
+        quoted = "    - Claimed paths: `src/**`"
+        text = body() + f"\nFor example:\n\n{quoted}\n"
+        self.assert_quotes(text, quoted)
+        self.assertEqual(
+            collab.split_paths(collab.parse_claims(text)["paths"]),
+            ["src/game.rs", "data/**"])
+
+    def test_a_later_unfenced_line_does_not_win_and_is_reported(self):
+        quoted = "- Coordinated with: #4242"
+        text = body().replace(
+            "- Coordinated with: none",
+            f"- Coordinated with: none\n{quoted}",
+        )
+        self.assert_quotes(text, quoted)
+        self.assertEqual(collab.parse_claims(text)["coordinated"], "none")
+        advisories = []
+        collab.validate_pr(pr(BRANCH, text), files=["src/game.rs"],
+                           commit_subjects=[], advisories=advisories)
+        self.assertTrue(any("was ignored" in note for note in advisories),
+                        advisories)
+
+    def test_a_claim_line_outside_the_ownership_section_is_ignored(self):
+        quoted = "- Claimed paths: `src/**`"
+        text = body() + f"\n## Notes for integration\n\n{quoted}\n"
+        self.assert_quotes(text, quoted)
+        self.assertEqual(
+            collab.split_paths(collab.parse_claims(text)["paths"]),
+            ["src/game.rs", "data/**"])
+
+    def test_quoting_a_broad_claim_no_longer_widens_the_real_one(self):
+        """The end-to-end version: this silenced the path gate completely."""
+        quoted = "- Claimed paths: `src/**`, `web/**`, `docs/**`"
+        text = body(paths="`tools/only_this.py`") + (
+            f"\nA claim is written like this:\n\n```\n{quoted}\n```\n")
+        self.assert_quotes(text, quoted)
+        errors = collab.validate_pr(pr(BRANCH, text), files=["src/game.rs"],
+                                    commit_subjects=[])
+        self.assertTrue(any("changed path is not claimed" in e for e in errors),
+                        errors)
+
+    def test_quoting_a_foreign_machine_no_longer_refuses_an_honest_pr(self):
+        """The same looseness in the other direction: a false refusal."""
+        quoted = "- Machine ID: `render-win-99`"
+        text = body() + f"\nOther agents write:\n\n```\n{quoted}\n```\n"
+        self.assert_quotes(text, quoted)
+        errors = collab.validate_pr(pr(BRANCH, text), files=["src/game.rs"],
+                                    commit_subjects=[])
+        self.assertEqual(errors, [])
+
+    def test_a_body_without_the_heading_still_parses_and_says_so(self):
+        text = body().replace("## Ownership claim\n", "")
+        self.assertEqual(collab.parse_claims(text)["machine"], "render-win-02")
+        advisories = []
+        collab.validate_pr(pr(BRANCH, text), files=["src/game.rs"],
+                           commit_subjects=[], advisories=advisories)
+        self.assertTrue(
+            any("no '## Ownership claim' heading" in note for note in advisories),
+            advisories)
+
+    def test_the_launcher_body_round_trips_through_its_own_checker(self):
+        """A legitimate, launcher-written claim must still work.
+
+        `start` writes this body; `check-pr` reads it. If tightening the parser
+        broke the round trip, every new task would open refusing itself.
+        """
+        machine, agent = "render-win-02", "codex-47"
+        text = collab.format_claim_body(
+            machine=machine, agent=agent, task="government-cleanup",
+            paths=["src/game.rs", "data/**"], coordinated=[2337],
+        )
+        claims = collab.parse_claims(text)
+        self.assertEqual(claims["machine"], machine)
+        self.assertEqual(claims["agent"], agent)
+        self.assertEqual(collab.split_paths(claims["paths"]),
+                         ["src/game.rs", "data/**"])
+        self.assertEqual(collab.split_coordination(claims["coordinated"]), {2337})
+        # A draft, as `start` creates it: no errors, unticked boxes and all.
+        self.assertEqual(
+            collab.validate_pr(pr(BRANCH, text), files=["src/game.rs"],
+                               commit_subjects=[]),
+            [],
+        )
+        # And ready once the boxes are ticked, which is the only edit `ship`
+        # asks the author for.
+        ready = text.replace("- [ ]", "- [x]").replace(
+            "Draft claim; implementation is in progress.", "Did the thing.")
+        self.assertEqual(
+            collab.validate_pr(pr(BRANCH, ready, draft=False),
+                               files=["src/game.rs"], commit_subjects=[]),
+            [],
+        )
+        self.assertEqual(collab.ship_pr_errors(
+            {"state": "OPEN", "headRefName": BRANCH, "body": ready}, BRANCH), [])
+
+
+class CoordinationEscapeTests(QuotationFixture):
+    """`Coordinated with: #N` is the escape that makes the overlap error optional."""
+
+    OTHERS = {5: {"src/game.rs": [(100, 140)]}}
+    MINE = {"src/game.rs": [(110, 130)]}
+
+    def verdict(self, text, *, other_coordination=None, advisories=None):
+        return collab.validate_pr(
+            pr(BRANCH, text, number=9, draft=False),
+            files=["src/game.rs"], commit_subjects=[], ranges=dict(self.MINE),
+            other_ranges={k: dict(v) for k, v in self.OTHERS.items()},
+            other_coordination=other_coordination,
+            advisories=advisories,
+        )
+
+    def test_a_fenced_coordination_line_does_not_silence_the_overlap(self):
+        quoted = "- Coordinated with: #5"
+        text = body() + f"\nCoordination is recorded like this:\n\n```\n{quoted}\n```\n"
+        self.assert_quotes(text, quoted)
+        errors = self.verdict(text)
+        self.assertTrue(any("edits collide with PR #5" in e for e in errors), errors)
+
+    def test_a_real_coordination_still_passes_but_is_recorded(self):
+        advisories = []
+        errors = self.verdict(body(coordinated="#5"), advisories=advisories)
+        self.assertEqual(errors, [])
+        self.assertTrue(
+            any("does not name PR #9 back" in note for note in advisories),
+            advisories)
+
+    def test_a_reciprocated_coordination_is_not_flagged(self):
+        advisories = []
+        errors = self.verdict(body(coordinated="#5"),
+                              other_coordination={5: {9}}, advisories=advisories)
+        self.assertEqual(errors, [])
+        self.assertFalse(any("does not name PR #9 back" in n for n in advisories),
+                         advisories)
+
+
+class ValidationSectionTests(QuotationFixture):
+    """A gate that only checks unticked boxes rewards deleting the boxes."""
+
+    def ready(self, text):
+        return collab.validate_pr(pr(BRANCH, text, draft=False),
+                                  files=["src/game.rs"], commit_subjects=[])
+
+    def test_a_ready_pr_with_no_validation_section_is_refused(self):
+        text = body().split("## Validation")[0]
+        self.assertNotIn("- [", text)
+        self.assertTrue(any("must carry a '## Validation' section" in e
+                            for e in self.ready(text)))
+
+    def test_ship_refuses_a_body_with_no_validation_section(self):
+        text = body().split("## Validation")[0] + "## What changed\n\nDid it.\n"
+        errors = collab.ship_pr_errors(
+            {"state": "OPEN", "headRefName": BRANCH, "body": text}, BRANCH)
+        self.assertTrue(any("must carry a '## Validation' section" in e
+                            for e in errors), errors)
+
+    def test_a_shortened_checklist_is_refused(self):
+        text = body().replace(
+            "- [x] Soak run for engine changes, or reason it is not applicable\n", "")
+        self.assertTrue(any("the template asks for" in e for e in self.ready(text)),
+                        self.ready(text))
+
+    def test_a_fenced_unticked_box_no_longer_refuses_a_ready_pr(self):
+        quoted = "- [ ] Relevant focused tests"
+        text = body() + f"\nThe template ships:\n\n```\n{quoted}\n```\n"
+        self.assert_quotes(text, quoted)
+        self.assertEqual(self.ready(text), [])
+
+    def test_an_unticked_box_still_refuses_a_ready_pr(self):
+        self.assertTrue(any("must complete every validation checkbox" in e
+                            for e in self.ready(body(checked=False))))
+
+    def test_the_required_count_follows_the_template(self):
+        template = collab.format_claim_body(
+            machine="m", agent="a", task="t", paths=["p"], coordinated=())
+        self.assertEqual(collab.required_validation_items(),
+                         template.count("- [ ] "))
+        self.assertGreater(collab.required_validation_items(), 1)
+
+
+class EvidenceGateTests(unittest.TestCase):
+    """`docs/EVAL_INTEGRITY.md` §4: a promoted number is not quotable alone."""
+
+    def report(self, *lines):
+        return collab.unevidenced_effect_sizes({"docs/EVAL.md": list(lines)})
+
+    def test_continuous_integration_is_not_a_confidence_interval(self):
+        self.assertTrue(self.report(
+            "The adaptive seat is worth +61 Elo-equivalent.",
+            "CI runs the gate on every pull request, so nothing regresses."))
+
+    def test_a_real_interval_still_carries_the_number(self):
+        self.assertFalse(self.report(
+            "The adaptive seat is worth +61 Elo-equivalent, 95% CI [+51, +147]."))
+
+    def test_ci_naming_its_interval_still_carries_the_number(self):
+        self.assertFalse(self.report(
+            "holy-lane-parity returned +99 Elo, CI [+51, +147] on disjoint seeds."))
+
+    def test_a_distant_unrelated_issue_number_does_not_launder_a_bare_claim(self):
+        self.assertTrue(self.report(
+            "The adaptive seat is worth +61 Elo-equivalent.",
+            "x" * (collab.CITATION_WINDOW_CHARS + 40),
+            "This follows the worktree cleanup in #2290."))
+
+    def test_a_citation_attached_to_the_figure_still_carries_it(self):
+        self.assertFalse(self.report(
+            "`city_target_floor = 6` measured **-41 Elo** and was removed (#1504)."))
+
+
+class PushGuardMarkerTests(unittest.TestCase):
+    """Naming this repository's guard is not being it."""
+
+    def install_over(self, existing):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        root = Path(temporary.name)
+        (root / "tools").mkdir()
+        (root / "tools" / "civvis_push_guard.py").write_text(
+            f'#!/usr/bin/env python3\nPUSH_GUARD_MARKER = "{collab.PUSH_GUARD_MARKER}"\n',
+            encoding="utf-8")
+        hooks = root / ".git" / "hooks"
+        hooks.mkdir(parents=True)
+        (hooks / "pre-push").write_text(existing, encoding="utf-8")
+        with patch.object(collab, "common_git_dir", return_value=root / ".git"):
+            collab.install_push_guard(root)
+        return (hooks / "pre-push").read_text(encoding="utf-8")
+
+    def test_a_hook_that_only_mentions_the_guard_is_not_overwritten(self):
+        mine = ("#!/bin/sh\n"
+                f"# runs before the {collab.PUSH_GUARD_MARKER} does\n"
+                "exit 0\n")
+        self.assertIn(collab.PUSH_GUARD_MARKER, mine)
+        with self.assertRaises(collab.CommandError) as raised:
+            self.install_over(mine)
+        self.assertIn("unmanaged pre-push hook", str(raised.exception))
+
+    def test_a_hook_carrying_the_marker_as_its_own_line_is_replaced(self):
+        replaced = self.install_over(
+            f"#!/usr/bin/env python3\n# {collab.PUSH_GUARD_MARKER}\nold body\n")
+        self.assertIn("PUSH_GUARD_MARKER", replaced)
+        self.assertNotIn("old body", replaced)
+
+    def test_a_hook_carrying_the_constant_assignment_is_replaced(self):
+        replaced = self.install_over(
+            "#!/usr/bin/env python3\n"
+            f'PUSH_GUARD_MARKER = "{collab.PUSH_GUARD_MARKER}"\nold body\n')
+        self.assertNotIn("old body", replaced)
+
+    def test_the_marker_matches_the_versioned_guards_own(self):
+        self.assertEqual(collab.PUSH_GUARD_MARKER, push_guard.PUSH_GUARD_MARKER)
+        source = (Path(__file__).resolve().parent / "civvis_push_guard.py").read_text(
+            encoding="utf-8")
+        self.assertTrue(collab.is_managed_push_guard(source.encode("utf-8")),
+                        "the shipped guard must recognise itself")
+
+
+class OneIdiomTests(unittest.TestCase):
+    """The fleet gets one anchoring idiom, and that is a check, not a claim.
+
+    `overwrite_guard.WAIVER`, `speed_ab.ACKNOWLEDGEMENT` and `CLAIM_LINE` all
+    exist because a marker matched as a bare substring let a body switch a
+    required gate off by writing about it. Three hand-maintained copies of that
+    shape drift, and the way they drift is one of them getting looser.
+    """
+
+    def setUp(self):
+        import overwrite_guard
+        import speed_ab
+        self.guard = overwrite_guard
+        self.speed = speed_ab
+
+    def test_all_three_gates_blank_fenced_blocks_identically(self):
+        text = "intro\n- Machine ID: `real`\n```\n- Machine ID: `fake`\n```\ntail\n"
+        self.assertEqual(collab.prose(text), self.guard.prose(text))
+        self.assertEqual(collab.prose(text), self.speed.prose(text))
+
+    def test_all_three_gates_agree_on_what_a_fence_is(self):
+        self.assertEqual(collab.FENCE.pattern, self.guard.FENCE.pattern)
+        self.assertEqual(collab.FENCE.pattern, self.speed.FENCE.pattern)
+
+    def test_the_claim_line_anchors_the_way_the_waiver_does(self):
+        bullet = r"^(?:[-*+][ \t]+)"
+        self.assertTrue(self.guard.WAIVER.pattern.startswith(bullet))
+        self.assertTrue(self.speed.ACKNOWLEDGEMENT.pattern.startswith(bullet))
+        self.assertTrue(collab.CLAIM_LINE.pattern.startswith(bullet))
+
+    def test_the_claim_line_matches_under_the_same_flags(self):
+        self.assertEqual(collab.CLAIM_LINE.flags, self.guard.WAIVER.flags)
+
+    def test_every_anchored_marker_refuses_four_space_indentation(self):
+        """Four leading spaces is a Markdown code block in all three."""
+        self.assertIsNone(self.guard.waiver_reason("    overwrite-guard: allow why"))
+        self.assertIsNone(self.speed.acknowledged("    paired-cost: allow why"))
+        self.assertEqual(collab.parse_claims("    - Machine ID: `sneaky`"), {})
+
+
+if __name__ == "__main__":
+    unittest.main()

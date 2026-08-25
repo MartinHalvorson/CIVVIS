@@ -120,7 +120,7 @@ the action from the UI without a debugger.
 | Ages | `choose_dedication`, `choose_secret_society` | yes — Government panel |
 | Conquest | `keep_city`, `raze_city`, `liberate_city` | yes — modal |
 | Setup | shared world setup, difficulty, leader choice, save and load | yes — Game setup ▸ Single player, with the same world settings as an AI simulation plus a leader, a difficulty and the server's saves |
-| Auto-play | `POST /autoplay` | yes — a league strategy and a turn count under the End Turn button |
+| Auto-play | `POST /autoplay` | yes — a built-in agent and a turn count under the End Turn button |
 
 Rows marked "no" or "partial" are the remaining work, in roughly that order of
 value to a player. What is left is a production *queue*, which is an engine
@@ -147,15 +147,17 @@ comes from:
 | `LaunchBar.xml` | horizontal, upper left: tech tree, civics tree, Government, Religion, Great People, Great Works | `#launchbar` |
 | `WorldTracker.xml` | under the launch bar: research, then civics | `#worldtracker` |
 | `MinimapPanel.xml` | `Anchor="L,B"` | `.minimap-frame` |
-| `UnitPanel.xml` | `Anchor="R,B" Offset="172,0"` | `#ubar` |
-| `ActionPanel.xml` | `Anchor="R,B"` | `#actionpanel` |
+| `UnitPanel.xml` | `Anchor="R,B"` | `#ubar` |
 | `NotificationPanel.xml` | `Anchor="R,B"`, stack growth up | `#notify` |
 
-The switch is one class, `body.playing-solo`, set from the engine's own
+The switch is one class, `body.civ6-frame`, set from the engine's own
 `spectate` flag so it cannot drift from what the server thinks; everything
 else is stylesheet. Nothing in the layer decides anything — every control
 posts exactly the action it posted before, so the rule that no screen
 constructs an action of its own still holds.
+
+One seat reaches it: `body.playing-solo`, a person holding seat 0. A watched
+simulation keeps the laboratory — the section below this one is why.
 
 Four choices in it are worth their reasons.
 
@@ -174,14 +176,21 @@ had no hook for at all: research was a `<select>` in a settings drawer. The
 ring is the fraction of the current study that is done, so a glance at the bar
 answers "how far into this tech am I" without opening anything.
 
-**The rankings are a report, not scenery.** Civilization VI has no permanent
-table of rivals over the map, and neither does a played game here: the
-standings masthead and the arena rail answer the launch bar's ☗ instead. That
-is a class of its own rather than the shared overlay preferences, so a person
-sitting down to play never writes over what a spectator chose to keep on
-screen. The same judgement puts the command deck away on the first played
-world — one menu button brings it back, and once somebody has asked for it
-either way, that answer is kept.
+**What the played seat does *not* take from Civilization VI is the deck.**
+#2275 took Civ 6's judgement whole: the standings masthead and the arena rail
+went behind the launch bar's ☗, the command deck folded away, and End Turn
+moved out to `ActionPanel.xml`'s bottom-right corner. That is right for the
+game Civ 6 is and wrong for what this one is — the standings and the arena's
+figures are this client's own instrument, and a game here is played next to
+them. So a played world opens with the masthead across the sky, the rail down
+the right, the deck open on the left, and End Turn, the auto-play controls and
+the transport all still inside it. `#actionpanel` is gone; the lower-right
+corner is `UnitPanel.xml`'s alone.
+
+☗ still folds the report away for a look at the map, and ☰ still folds the
+deck. Both answers are kept, under keys of their own — `civvis-solo-rankings-v1`
+and `civvis-solo-deck-v1` — and neither may touch `civvis-map-overlays-v1`,
+which is the whole reason the report is a class rather than an overlay flag.
 
 **End Turn says what is blocking it, in Civ 6's words.** The blocker priority
 table above has always been right; what the button said about it was this
@@ -222,11 +231,39 @@ and the two tree hooks go with them. It is the same test the standings columns
 already use, `worldStandingsInPlay()`.
 
 Auto-play folds away under the button. It is this project's own addition to
-that corner and a real one — handing your seat to a *named* league strategy is
+that corner and a real one — handing your seat to a *named* agent is
 most of why a laboratory has a play mode at all — but it is not a thing a
 player reaches for every turn, and Civ 6's corner holds one control. It opens
 by itself while an agent is playing, because the controls that take the seat
 back cannot be the ones folded away.
+
+## The watched world keeps the laboratory
+
+The arrangement above is a *seat's*. A simulation being watched does not get
+it, and #2382 — which gave the watcher the same frame and put the standings
+masthead and the arena rail behind ☗ with it — is reverted.
+
+The reason is what the two seats are for. A person holding seat 0 is playing a
+game, and Civilization VI's answer to where the controls go is the right one
+for them. Somebody watching a simulation is reading an experiment: the
+standings table, the victory tracker and the arena's records *are* what they
+opened the page for. Putting them behind a button did not tidy the screen; it
+hid the instrument, and the map it made room for is the one thing on that page
+that was never in short supply.
+
+So a watched world wears what it wore before: the standings masthead across
+the top, the arena stats and victory tracker down the right, the command deck
+open on the left with the transport in it, and the map in what those three
+leave. `civ6Frame()` is `playingSolo()`, and everything that was the watcher's
+alone has gone with the class it hung off — `#diploribbon` and its leader
+discs, `arrangeWatchHud`, and the two remembered answers under
+`civvis-watch-*`. `a_watched_simulation_keeps_the_laboratory` is the test, and
+what it asserts is absence: a spectator-only element that nothing paints is
+worse than no element, because it reads as a feature to whoever finds it next.
+
+One thing the ribbon did that the masthead had better keep doing: it was how a
+watcher took a seat. It still is — the standings table's own **Watch as**
+button on each row, which is the action the discs were posting.
 
 ## The Empire panel
 
@@ -323,17 +360,15 @@ Unciv has an AutoPlay button and it earns its keep in two places: skipping a
 stretch of a game that has already been decided, and watching how an agent
 would play the position you are in. CIVVIS has a third, because CIVVIS is a
 strategy laboratory before it is a game — you can hand your seat to a *named*
-strategy off the league leaderboard and watch that one play it.
+built-in agent and watch that one play it.
 
 So auto-play is two choices rather than a modifier key, and both sit under the
 button:
 
-- **Agent** — every entrant still competing in the league roster, strongest
-  first, by the handle the leaderboards give it and the rating it is
-  defending. An entrant that has not finished a rated game is marked unrated
-  rather than shown as an authoritative 1500. The seat's current agent is
-  preselected, so pressing the button without touching this changes nothing
-  about who plays; a choice is remembered for the next game.
+- **Agent** — the built-in agents, each by its handle. Nothing rates them
+  (the league left in #2357). The seat's current agent is preselected, so
+  pressing the button without touching this changes nothing about who plays;
+  a choice is remembered for the next game.
 - **Turns** — 1, 2, 3, 4, 5, 10, 20, 30, 40, 50, 100, 150, 200, 250, or All.
   "All" is the turns this game has left, not an unbounded loop.
 
@@ -363,11 +398,9 @@ Two things the client does deliberately:
   and reads "An agent is playing", and both selects lock. A lit control that
   quietly does nothing is worse than a disabled one that explains itself.
 
-The roster is the committed league snapshot under `data/league`, compiled into
-the binary so it is found wherever the program was started from, unless this
-game is already being rated against another one, in which case it is that one
-and the ratings shown are the ratings in play. Reading it is a labelling
-concern only: nothing about auto-play seats a rival differently.
+The roster is the built-in agent list compiled into the binary, so it is the
+same wherever the program was started from. Reading it is a labelling concern
+only: nothing about auto-play seats a rival differently.
 
 The agents the picker offers are agents. A person registered in the same
 roster (below) is a player in it but never an entrant, so a seat can never be

@@ -513,7 +513,7 @@
     <p class="intro">
       CIVVIS is an open source re-implementation of the 4X turn-based strategy
       game <cite>Sid Meier&#8217;s Civilization VI</cite> &#8212; built with a
-      simulator UI wrapping the headless backend game logic.
+      simulator UI wrapping the headless mode game logic.
       Everything below is a preset starting configuration of settings for the
       simulator, but you can further customize the settings how you like or
       <a href="https://github.com/MartinHalvorson/CIVVIS" target="_blank" rel="noreferrer">clone the code</a>
@@ -556,18 +556,95 @@
          cards adds one link here. -->
     <div class="home-layout">
     <nav class="row-nav" aria-label="Menu rows">
-      <a href="#row-tactics">Tactics</a>
       <a href="#row-civ">CIVVIS</a>
+      <a href="#row-tactics">Tactics</a>
     </nav>
     <section class="quadrants" aria-label="Game menu">
       <div class="grid-corner" aria-hidden="true"></div>
       <h2 class="col-head">Design &amp; Watch <span>AI simulations</span></h2>
       <h2 class="col-head">Play <span>Single player</span></h2>
 
+      <div class="row-label" aria-hidden="true">CIVVIS</div>
+      <div class="mode-card" id="row-civ">
+        <a class="card-thumb-link" href="../">
+          <img class="card-thumb" src="assets/watch-civ.jpg" alt="Watch CIVVIS: a CIVVIS globe at mid-game, AI empires sharing two continents, borders and cities drawn across the planet." fetchpriority="high">
+        </a>
+        <div class="card-body">
+          <div class="card-title-row">
+            <h3 class="card-title" id="watch-civ-title"><a href="../">Watch CIVVIS</a></h3>
+            <span class="card-mode">AI simulation</span>
+          </div>
+          <p class="card-desc">AI civilizations play a full game end to end.</p>
+          <div class="card-actions">
+            <a class="card-btn verb-watch" href="../" aria-labelledby="watch-civ-title">Watch</a>
+            <a class="card-btn plain customize" href="../?setup=1" data-pick="watch-civ" aria-label="Customize a watched game">Customize</a>
+          </div>
+          <ul class="card-tags" aria-label="Watch CIVVIS features">
+            <li><a href="../?setup=1" data-pick="watch-civ" data-lens="seats">AI Empires</a></li>
+            <li><a href="../?setup=1" data-pick="watch-civ" data-lens="worlds">Fresh World Every Visit</a></li>
+            <li><a href="../?setup=1" data-pick="watch-civ" data-lens="victory">Every Victory Lane</a></li>
+            <li><a href="../?setup=1" data-pick="watch-civ" data-lens="sizes">World Sizes</a></li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="mode-card">
+        <a class="card-thumb-link" href="../?mode=play">
+          <img class="card-thumb" src="assets/play-civ.jpg" alt="Play CIVVIS: the opening of a single-player CIVVIS game, a settler with its orders bar open on a young world.">
+        </a>
+        <div class="card-body">
+          <div class="card-title-row">
+            <h3 class="card-title" id="play-civ-title"><a href="../?mode=play">Play CIVVIS</a></h3>
+            <span class="card-mode">Single player</span>
+          </div>
+          <p class="card-desc">A full game as one civilization vs AI rivals.</p>
+          <div class="card-actions">
+            <a class="card-btn verb-play" href="../?mode=play" aria-labelledby="play-civ-title">Play</a>
+            <a class="card-btn plain customize" href="../?mode=play&amp;setup=1" data-pick="play-civ" aria-label="Customize a played game">Customize</a>
+          </div>
+          <ul class="card-tags" aria-label="Play CIVVIS features">
+            <li><a href="../?mode=play&amp;setup=1" data-pick="play-civ" data-lens="seats">Your Seat</a></li>
+            <li><a href="../?mode=play&amp;setup=1" data-pick="play-civ" data-lens="seats">AI Rivals</a></li>
+            <li><a href="../?mode=play&amp;setup=1" data-pick="play-civ" data-lens="worlds">Custom Worlds</a></li>
+            <li><a href="../?mode=play&amp;setup=1" data-pick="play-civ" data-lens="sizes">World Sizes</a></li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- The world picker: the full game's customization panel, opened in
+           place below the CIVVIS row by either full-game card. Its four
+           lenses are link catalogs into the simulator — the world types the
+           engine ships, the six world sizes, the six victory lanes, and who
+           sits at the table — and everything beyond a link's reach is one
+           click further in the simulator's own Game setup drawer. -->
+      <section class="picker-panel" id="game-picker" hidden aria-labelledby="game-picker-title" tabindex="-1">
+        <div class="picker-heading">
+          <div>
+            <h3 id="game-picker-title">Set up the world</h3>
+            <p id="game-picker-copy"></p>
+          </div>
+          <div class="picker-controls">
+            <button class="picker-back" type="button" id="game-picker-back">← Back</button>
+            <span class="picker-mode-badge watch" id="game-picker-mode">Watch CIVVIS · AI simulation</span>
+          </div>
+        </div>
+        <div class="picker-modes" id="game-modes" role="group" aria-label="Who is at the keyboard">
+          <button class="picker-lens" type="button" data-mode="watch-civ" aria-pressed="true">AI simulation</button>
+          <button class="picker-lens" type="button" data-mode="play-civ" aria-pressed="false">Single player</button>
+        </div>
+        <div class="picker-lenses" id="game-lenses" role="tablist" aria-label="Game setup view">
+          <button class="picker-lens" type="button" role="tab" data-lens="worlds" aria-selected="true">Worlds</button>
+          <button class="picker-lens" type="button" role="tab" data-lens="sizes" aria-selected="false">World sizes</button>
+          <button class="picker-lens" type="button" role="tab" data-lens="victory" aria-selected="false">Victory lanes</button>
+          <button class="picker-lens" type="button" role="tab" data-lens="seats" aria-selected="false">Seats &amp; rivals</button>
+        </div>
+        <div class="picker-groups" id="game-groups"></div>
+      </section>
+
       <div class="row-label" aria-hidden="true">Tactics</div>
       <div class="mode-card" id="row-tactics">
         <a class="card-thumb-link" href="../?map=battlefield&amp;players=2&amp;era=random&amp;arena=20x20">
-          <img class="card-thumb" src="assets/watch-tactics.jpg" alt="Watch CIVVIS Tactics: two AI armies meeting in the middle of a CIVVIS Gettysburg battlefield." fetchpriority="high">
+          <img class="card-thumb" src="assets/watch-tactics.jpg" alt="Watch CIVVIS Tactics: two AI armies meeting in the middle of a CIVVIS Gettysburg battlefield.">
         </a>
         <div class="card-body">
           <div class="card-title-row">
@@ -643,83 +720,6 @@
           <button class="picker-lens" type="button" role="tab" data-lens="eras" aria-selected="false">Any era</button>
         </div>
         <div class="picker-groups" id="battle-groups"></div>
-      </section>
-
-      <div class="row-label" aria-hidden="true">CIVVIS</div>
-      <div class="mode-card" id="row-civ">
-        <a class="card-thumb-link" href="../">
-          <img class="card-thumb" src="assets/watch-civ.jpg" alt="Watch CIVVIS: a CIVVIS globe at mid-game, AI empires sharing two continents, borders and cities drawn across the planet.">
-        </a>
-        <div class="card-body">
-          <div class="card-title-row">
-            <h3 class="card-title" id="watch-civ-title"><a href="../">Watch CIVVIS</a></h3>
-            <span class="card-mode">AI simulation</span>
-          </div>
-          <p class="card-desc">AI civilizations play a full game end to end.</p>
-          <div class="card-actions">
-            <a class="card-btn verb-watch" href="../" aria-labelledby="watch-civ-title">Watch</a>
-            <a class="card-btn plain customize" href="../?setup=1" data-pick="watch-civ" aria-label="Customize a watched game">Customize</a>
-          </div>
-          <ul class="card-tags" aria-label="Watch CIVVIS features">
-            <li><a href="../?setup=1" data-pick="watch-civ" data-lens="seats">AI Empires</a></li>
-            <li><a href="../?setup=1" data-pick="watch-civ" data-lens="worlds">Fresh World Every Visit</a></li>
-            <li><a href="../?setup=1" data-pick="watch-civ" data-lens="victory">Every Victory Lane</a></li>
-            <li><a href="../?setup=1" data-pick="watch-civ" data-lens="sizes">World Sizes</a></li>
-          </ul>
-        </div>
-      </div>
-
-      <div class="mode-card">
-        <a class="card-thumb-link" href="../?mode=play">
-          <img class="card-thumb" src="assets/play-civ.jpg" alt="Play CIVVIS: the opening of a single-player CIVVIS game, a settler with its orders bar open on a young world.">
-        </a>
-        <div class="card-body">
-          <div class="card-title-row">
-            <h3 class="card-title" id="play-civ-title"><a href="../?mode=play">Play CIVVIS</a></h3>
-            <span class="card-mode">Single player</span>
-          </div>
-          <p class="card-desc">A full game as one civilization vs AI rivals.</p>
-          <div class="card-actions">
-            <a class="card-btn verb-play" href="../?mode=play" aria-labelledby="play-civ-title">Play</a>
-            <a class="card-btn plain customize" href="../?mode=play&amp;setup=1" data-pick="play-civ" aria-label="Customize a played game">Customize</a>
-          </div>
-          <ul class="card-tags" aria-label="Play CIVVIS features">
-            <li><a href="../?mode=play&amp;setup=1" data-pick="play-civ" data-lens="seats">Your Seat</a></li>
-            <li><a href="../?mode=play&amp;setup=1" data-pick="play-civ" data-lens="seats">AI Rivals</a></li>
-            <li><a href="../?mode=play&amp;setup=1" data-pick="play-civ" data-lens="worlds">Custom Worlds</a></li>
-            <li><a href="../?mode=play&amp;setup=1" data-pick="play-civ" data-lens="sizes">World Sizes</a></li>
-          </ul>
-        </div>
-      </div>
-
-      <!-- The world picker: the full game's customization panel, opened in
-           place below the CIVVIS row by either full-game card. Its four
-           lenses are link catalogs into the simulator — the world types the
-           engine ships, the six world sizes, the six victory lanes, and who
-           sits at the table — and everything beyond a link's reach is one
-           click further in the simulator's own Game setup drawer. -->
-      <section class="picker-panel" id="game-picker" hidden aria-labelledby="game-picker-title" tabindex="-1">
-        <div class="picker-heading">
-          <div>
-            <h3 id="game-picker-title">Set up the world</h3>
-            <p id="game-picker-copy"></p>
-          </div>
-          <div class="picker-controls">
-            <button class="picker-back" type="button" id="game-picker-back">← Back</button>
-            <span class="picker-mode-badge watch" id="game-picker-mode">Watch CIVVIS · AI simulation</span>
-          </div>
-        </div>
-        <div class="picker-modes" id="game-modes" role="group" aria-label="Who is at the keyboard">
-          <button class="picker-lens" type="button" data-mode="watch-civ" aria-pressed="true">AI simulation</button>
-          <button class="picker-lens" type="button" data-mode="play-civ" aria-pressed="false">Single player</button>
-        </div>
-        <div class="picker-lenses" id="game-lenses" role="tablist" aria-label="Game setup view">
-          <button class="picker-lens" type="button" role="tab" data-lens="worlds" aria-selected="true">Worlds</button>
-          <button class="picker-lens" type="button" role="tab" data-lens="sizes" aria-selected="false">World sizes</button>
-          <button class="picker-lens" type="button" role="tab" data-lens="victory" aria-selected="false">Victory lanes</button>
-          <button class="picker-lens" type="button" role="tab" data-lens="seats" aria-selected="false">Seats &amp; rivals</button>
-        </div>
-        <div class="picker-groups" id="game-groups"></div>
       </section>
     </section>
     </div>
@@ -1241,6 +1241,51 @@
     };
     window.addEventListener("hashchange", fromHash);
     fromHash();
+
+    // The row index parks the row it names slightly above the middle of the
+    // screen instead of jamming its top edge under the header: the row reads
+    // as the thing that was asked for, with the page still visible around it.
+    // The centre lands at ROW_CENTRE of the viewport measured DOWN from the
+    // top — 0.45 is 55% of the screen's height measured up from the bottom,
+    // which is where the eye reads a block as centred.
+    const ROW_CENTRE = 0.45;
+    // A row taller than the screen cannot be centred without pushing its own
+    // top off it, so a stacked single-column row aligns its top instead. The
+    // inset matches `.mode-card`'s own `scroll-margin-top`.
+    const ROW_EDGE = 14;
+    // `scrollTo` is deliberately left on `auto`: `html { scroll-behavior }` at
+    // the top of this file is already gated on `prefers-reduced-motion`, so
+    // deferring to it means a reader who asked for less motion gets the jump
+    // rather than the glide, without this handler asking a second time.
+    const parkRow = anchor => {
+      const cards = [anchor];
+      for (let el = anchor.nextElementSibling; el && el.classList.contains("mode-card"); el = el.nextElementSibling)
+        cards.push(el);
+      const box = cards.map(card => card.getBoundingClientRect());
+      const top = Math.min(...box.map(r => r.top));
+      const bottom = Math.max(...box.map(r => r.bottom));
+      const wanted = bottom - top > innerHeight - 2 * ROW_EDGE
+        ? top - ROW_EDGE
+        : (top + bottom) / 2 - innerHeight * ROW_CENTRE;
+      const floor = document.documentElement.scrollHeight - innerHeight;
+      scrollTo({ top: Math.max(0, Math.min(scrollY + wanted, floor)) });
+    };
+    for (const link of document.querySelectorAll(".row-nav a"))
+      link.addEventListener("click", event => {
+        if (event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+        const anchor = document.getElementById(link.hash.slice(1));
+        if (!anchor) return;
+        event.preventDefault();
+        // The hash still changes, so the link deep-links and copies as before
+        // — but through `replaceState`, which does not fire the browser's own
+        // jump to the element. `fromHash` then runs by hand to keep what the
+        // native navigation did: a row hash names no panel, so an open picker
+        // closes, and it must close BEFORE the row is measured or the panel's
+        // height is still in the page and the row parks too low.
+        history.replaceState(null, "", link.hash);
+        fromHash();
+        parkRow(anchor);
+      });
   })();
   </script>
 </body>

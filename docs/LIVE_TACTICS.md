@@ -1,18 +1,17 @@
 # Unit movement and combat on the live seat: the pipeline, its leaks, the program
 
-2026-08-19. Companion to `docs/TACTICS.md` (the engine's tactical search and
-its bench) and `docs/CIV6_COMPUTER_CONTROL.md` (the order channel). This
-document is about the *other* half of fighting a real Civilization VI game:
-what happens to a tactical decision between `AdvancedAi` and the host board,
-where the value leaks, and the ranked program that closes the leaks. Each step
-of the program lands as its own PR and appends its measured result here; a
-step that is not yet measured says so.
+2026-08-19. Companion to `src/ai/advanced.rs` (the engine's native tactical
+path) and `docs/CIV6_COMPUTER_CONTROL.md` (the order channel). This document
+is about the *other* half of fighting a real Civilization VI game: what happens
+to a tactical decision between `AdvancedAi` and the host board, where the value
+leaks, and the ranked program that closes the leaks. Each step of the program
+lands as its own PR and appends its measured result here; a step that is not
+yet measured says so.
 
 ## 1. What the record says
 
-The engine's tactical brain is strong: on the Tactics arena the joint search
-beats the frozen `advanced_v1` controller **99.6 %** of the time in pure
-combat (`docs/TACTICS_BASELINE.md`). The live seat does not get that strength.
+The engine's native tactical path makes one unit's decision at a time. The live
+seat does not get a separate combat controller.
 The host's own Hall of Fame for the twelve finished live games of 2026-08-01/02
 has our seat losing **343 units and killing 61** (0.18 kills per loss) while
 the sixty Firaxis-AI seats in the same games ran **1.71** the other way, at
@@ -33,19 +32,18 @@ Trace one wartime turn from the brain to the board:
 2. **Mirror rebuild** hands every unit its *full* movement (`mirror_unit_moves`)
    whatever the host already spent on a queued path; Civ 6 city-centre stacking
    drops units the engine's stacking law cannot seat (`tile_taken`).
-3. **One CIVVIS turn on a clone of the mirror.** The joint search plans units
-   within ≤3 tiles of contact, one turn deep, with clairvoyant rolls; the
-   per-unit picker attacks only from the tile the unit stands on; `route_step`
-   prices every edge at 1 and, beyond the first step, ignores units, ZOC and
-   cliffs. No friendly pass-through, no swap — a friendly in the way is a hold.
+3. **One CIVVIS turn on a clone of the mirror.** The per-unit picker attacks
+   only from the tile the unit stands on; `route_step` prices every edge at 1
+   and, beyond the first step, ignores units, ZOC and cliffs. No friendly
+   pass-through, no swap — a friendly in the way is a hold.
 4. **Translate and coalesce.** `coalesce_unit_paths` collapsed a unit's walk to
    its furthest hex and **deferred the first non-move and everything after it
    to the next turn** — every ATTACK, RANGE_ATTACK, FORTIFY or PILLAGE that
-   followed a step. The joint search's lines are `[Move, Attack]`
-   (`tactics.rs`), so on the bridge they executed as a step: the unit walked
-   into contact and stood there, unstruck, through the enemy's turn. Only the
-   finishing volley (`live_finishing_candidates`) sent approach+blow as one
-   `MOVE_TO` onto the defender, and only for proved kills on wounded units.
+   followed a step. A move followed by an action therefore executed as a step:
+   the unit walked into contact and stood there, unstruck, through the enemy's
+   turn. Only the finishing volley (`live_finishing_candidates`) sent
+   approach+blow as one `MOVE_TO` onto the defender, and only for proved kills
+   on wounded units.
    `Action::Pillage`, Heal, Alert, swap and formation combine were not
    translated at all.
 5. **Lua applies the list, sequentially, open-loop.** Every order is gated on
@@ -62,15 +60,14 @@ Trace one wartime turn from the brain to the board:
 |---|---|---|---|
 | 1 | **Sequenced, closed-loop actuation** — per-unit order queues in the mod with tick-level readback, proved approach+blow as one host order, no explore hand-off inside an engagement, Pillage translated; later a mid-turn combat frame | one order per unit per turn; step-then-strike losing the strike; the host scattering held units | share of planned strikes landing the same turn; hover share; Hall-of-Fame exchange ratio |
 | 2 | **Host-grounded planning board** — seat-turn-start movement, embarked and ZOC state, front-line terrain and roads every turn, the host's own reachable set, engine parity for pass-through/swap/stacking, refusals consumed as facts | invented MP; stale front; the 12.5 % of MOVE_TOs that never moved; "next tile refuses the unit" holds | arrival ledger (planned vs actual), no-op share |
-| 3 | **Engagement-window planner** — `tactics.rs` grown to own every unit within R of contact, lines from `reachable()`, two of our turns deep, expected-value combat, city-assault terms | one-turn horizon; approach from four tiles out; the 60 % one-city arena regime | `battle_bench` + a city-assault cell in `tactics_bench`; live captures |
 | 4 | **Operational choreography** — army plan with per-unit ETAs, go/no-go on the muster ring, siege as ring → walls → capture, wounded rotation | piecemeal arrival; sieges walked away | first live capture; arrival spread |
 | 5 | **Live tactical ledger + replay bench** — kill/loss/combat/capture events, hostile ids, predicted-vs-actual per order, Hall-of-Fame per run, offline replay of recorded frames | the reconstruction this document had to do by hand | the next report cites the ledger |
 
 Everything is bridge-scoped: the native controller keeps its rating anchor,
-and the whole-game evidence that tactical quality does not move native Elo
-(`docs/TACTICS.md` §6–7) is left undisturbed. Do not re-attempt the recorded
+and historical whole-game evidence did not justify carrying a more expensive
+tactical controller in the native evaluator. Do not re-attempt the recorded
 nulls: the adjacent-support term, `tile_defense_bonus` in the closed-form
-reply, budget above the knee in the current line space, promoting bridge war
+reply, budget above the knee in the former line space, promoting bridge war
 repairs natively, alpha-beta/MCTS over raw actions.
 
 ## 4. Step 1 — sequenced unit orders (this change)
@@ -203,19 +200,11 @@ runs should be read for `move_capped` / `move_no_reach` on `orders`,
 `queued_paths`, `moves_short` in the decide notes, and the arrival ledger's
 did-not-move share (12.5 % before).
 
-## 7. Step 3, first cut — the joint search reaches as far as the unit does
+## 7. Retired engagement-window planner
 
-The engagement-window planner grows in steps; this is the first: approach
-lines from the engine's exact reach flood instead of two hand-built steps
-(`docs/TACTICS.md` §17). Measured on `battle_bench` at 300 paired seeds a cell
-on two disjoint blocks: the four foot compositions hold within one standard
-error; the two mounted compositions gain (cavalry +398 → +476 and +352 → +410;
-mounted medieval +496 → +590 and +601 → +622), because a four-move unit's
-third and fourth hexes now exist for our own lines as they already did for
-the enemy's reply. Still ahead in this step: the window (units four-plus tiles
-out with no strike this turn), a second ply for set-up lines, expected-value
-combat for the host's rolls, and the city-assault terms the one-city arena
-regime measures.
+The `joint-tactics` search and its reach-line companion were removed on
+2026-08-25 after the 35,148-seat screen read a −0.104 pp win difference. The
+native and live paths both retain their ordinary per-unit tactical behavior.
 
 ## 8. Step 1, second cut — the mid-turn combat frame (flag-gated, default off)
 
@@ -264,12 +253,10 @@ brain-side withholds in `withheld`. Read a comparison with
 | 1 · per-unit order queue | `OrderQueue` (on) | `civ6_play.py --no-order-queue` — the mod applies one order per unit per turn and the seat stops advertising `order_queue`, so the brain defers follow-ups exactly as before | `mod_arms.OrderQueue` |
 | 1 · explore guard | `ExploreGuard` (on), `ExploreGuardRadius` 4 | `--no-explore-guard` | `mod_arms.ExploreGuard` |
 | 1b · combat frame | `CombatFrames` (**0 = off**), `CombatFramePolls` 20 | `--combat-frames 1` turns it ON for a run | `mod_arms.CombatFrames` |
-| 6 · replan frames | `ReplanFrames` (**2**), same `CombatFramePolls` | `--replan-frames 0` — no mid-turn frame opens for revealed ground (nor for strikes unless `CombatFrames` says so), and the seat stops advertising `replan_frames`, so the brain stops cutting walks at the fog | `mod_arms.ReplanFrames` |
+| 6 · replan frames | `ReplanFrames` (**2**), same `CombatFramePolls` | `--replan-frames 0` — no mid-turn frame opens for revealed ground (nor for strikes unless `CombatFrames` says so), and the seat stops advertising `replan_frames` | `mod_arms.ReplanFrames` |
 | 6 · tiles delta | `TileDelta` (on) | `--no-tile-delta` — revealed ground crosses only with the `TileExportEvery` sweep, as before | `mod_arms.TileDelta` |
-| 6 · step-and-reassess (brain) | `step_and_reassess` (on in the live bundle) | live: `--without step-and-reassess` (`live_without_step_and_reassess`); natively the gene `step-and-reassess` in `gene_screen` | `withheld` (live) / the gene |
 | 2 · moves capped to this turn's leg, trusted movement | `CapMovesToReach` (on) | `--no-cap-moves-to-reach` — also stops the seat advertising `moves_at_turn_start`, so the mirror returns to the full allowance | `mod_arms.CapMovesToReach` |
 | 2 · queued paths cancelled at turn start | `CancelQueuedPaths` (on) | `--no-cancel-queued-paths` | `mod_arms.CancelQueuedPaths` |
-| 3 · joint search reach lines | `joint_reach_lines` (on wherever the joint search runs) | live: `--without joint-reach-lines` (`live_without_joint_reach_lines` arm); bench/arena: `advanced_joint_tactics_geometric` seats the pre-§17 portfolio — measured to reproduce the old figure exactly (cavalry +398.0 on block 7,200,000) | `withheld` (live) / the arm name |
 | 5 · strike preview | `StrikePreview` (on) | `--no-strike-preview` — `strike` events carry no prediction | `mod_arms.StrikePreview` |
 
 Pillage translation, the tactical ledger's events and the export of ids,
@@ -280,11 +267,7 @@ decisions, and stay on.
 ledger (step 1); `move_capped`, `move_no_reach`, `queued_paths`, `moves_short`
 and the did-not-move share (step 2); the ledger's kills per loss, damage
 dealt/taken and the hover share (all); `combat_frame` /
-`combat_frame_timeout` and the ladder's `applied_pct` (1b). The bench pair for
-step 3 is `battle_bench --a advanced_joint_tactics --b
-advanced_joint_tactics_geometric` (cavalry cell, 300 seeds, block 7,200,000:
-**+59.0 ± 17.1**, sign p = 0.0023), and `tactics_bench` seats both arms on the
-arena regimes.
+`combat_frame_timeout` and the ladder's `applied_pct` (1b).
 
 ## 10. Step 4, first cut — arrive together (`arrival-waves`, opt-in, off)
 
@@ -301,11 +284,10 @@ names this document had not connected to it. The pre-war ETA and go/no-go
 are `WarPlan` (`war_package_status`: `staged_bodies`, `fourth_one_turn_away`
 from `war_staging_route_for_unit`) and `campaign_staged_for_war` (three
 bodies on the 3..=5 ring, a melee capturer, local strength ≥ 1.05); the
-ring and the walls are the joint evaluator's own terms (a melee blow on a
-city is worth +520 only at ≤ 40 hp with the wall down, `tactics.rs`
-`strike_prior`; wall damage is priced at 1.35×); the ring is `rush_siege_step`
-for a rush and `siege_role` / `siege_tracks_wall` / `siege_commitment` /
-`siege_is_progress` for a campaign; wounded rotation is the per-unit
+ring and walls have explicit campaign and siege terms; the ring is
+`rush_siege_step` for a rush and `siege_role` / `siege_tracks_wall` /
+`siege_commitment` / `siege_is_progress` for a campaign; wounded rotation is
+the per-unit
 `withdraw_hp` recovery step and the group `Recover` posture. All of those
 are live-bridge treatments already and all of them are in the screen below.
 
@@ -416,94 +398,43 @@ eight hexes on a clone that reveals nothing and replays them blind.
   landed inside the first poll (median and max `polls` = 1 of 40), so 20 is
   twenty times the observed need. The seat advertises `replan_frames` and
   `tile_delta`.
-- **The brain's half** (`step_and_reassess`, `civvis_orders`): when the seat
-  advertises `replan_frames`, a unit's PURE walk (one `MOVE_TO`, no later
-  order for the unit this frame) is cut at its first unrevealed hex — the
-  hop `first_unknown_coalesced_steps` recorded before the walk was folded —
-  so the host walks the unit to the edge of the known, the mod exports what
-  it uncovered, and the frame's re-plan spends the remaining movement
-  (`moves_at_turn_start`, step 2) on the new ground. A walk on known ground
-  and a walk with a follow-up keep their furthest hex. `frontier_cuts=N` in
-  the decide note. Without the capability the cut would strand the rest of
-  the movement, so it is never made — and neither is it made on the LAST
-  frame the mod will open this turn (`seat.replan_frames_max`, the
-  `ReplanFrames` count; `frontier_cuts_withheld_last_frame=N frame=F` in the
-  note), because nobody re-plans what that cut would uncover. See §12.
-- **The gene is host-only** (`step_and_reassess`, on in the live bundle,
-  `FIRAXIS_ONLY_TREATMENTS`): the cut exists because the host executes one
-  coalesced walk per unit, a fact of the bridge with no native meaning — the
-  engine already re-decides every step sighted. Two native stand-ins were
-  tried and retired, and both are worth remembering. The first carried only
-  the parallel-planner cut (`apply_unit_intents`, `step_reassessed`; still
-  in place for `civvis --jobs`) and screened **+0.0 [+0.0, +0.0]** over 204
-  pairs — byte-identical outcomes, the signature of a gene that never fires
-  in the regime measured; no evaluator installs a pool. The second made a
-  sighted step that brought a hostile into view re-form the force groups; it
-  fired ~350 times a game, screened null natively (+0.2 [−1.2, +1.6]) and at
-  war (+0.1 [−2.3, +2.5]), and then **share −0.15 pp (z −2.3)** on the 6p
-  re-rank against the best genome (15,000 seat-pairs, 2026-08-21) — so it is
-  gone, and `ledger_default_on` now refuses to let a native row govern a
-  host-only flag. The ladder prices the bridge half; §9 lists the arm.
+- **The brain leaves an opening walk intact.** A replan frame operates on the
+  state the host exports after its opening orders settle; it does not shorten a
+  planned walk at the fog edge. If an action leaves movement or an attack for a
+  unit, the next frame can spend that live state.
 
 **What to read on the first ladder runs** (the climb now forwards
 `--replan-frames` and `--combat-frames`; the latter was never forwarded, so
 no ladder run has played the combat frame either): per turn, `replan_frame` /
 `combat_frame` against `combat_frame_timeout` (a timeout rate above a few
 percent says the poll budget or the brain's frame latency needs attention);
-`tiles_delta.plots` per turn against the old sweep gap; `frontier_cuts` in
-the decide notes and, on the frame, whether the cut units were re-ordered
-(`orders.frame ≥ 1` rows for the same subjects); turn wall time against a
+`tiles_delta.plots` per turn against the old sweep gap; turn wall time against a
 `--replan-frames 0` arm — the frame is a second export and a second decide.
 The decide is cheap: `civvis_orders --mirror <run> --turn 120` on the 20 MB,
 241-turn journal of `live-head-rome-religious-actions-20260802T173404Z`
 answers in 0.26 s wall (0.81 s at turn 60, cold), whole-journal re-reads
 included; what a frame costs is the host's `exportState` and the relay, so
 that is where to look if frames cost more than they return. The arm that withholds everything at
-once is `--replan-frames 0 --no-tile-delta --civvis-without step-and-reassess`.
+once is `--replan-frames 0 --no-tile-delta`.
 
 Tests: `replan_frame_test.lua` (the delta sweep, its withhold and re-prime;
-the revealed/movers/strike triggers; the cap; the queue re-arm; default-off
+the revealed/movers/strike triggers; the queue re-arm; default-off
 inertness), `a_tiles_delta_merges_new_ground_without_standing_for_a_sweep`,
-`a_walk_into_the_unknown_is_cut_at_its_first_unrevealed_hex`,
-`a_step_that_sights_a_hostile_dirties_the_force_groups`,
-`a_blind_plan_stops_at_the_step_that_revealed_new_ground`,
-`step_and_reassess_is_a_live_treatment_and_a_native_repair`,
+`a_step_that_sights_a_hostile_dirties_the_force_groups`, and
 `test_the_mid_turn_frames_reach_the_play_command`.
 
 ## 12. Step 7 — a unit spends every action it has in the turn
 
-**The ask (2026-08-21).** Step-and-reassess "often seems to skip its second
-(or later) movement": a unit should be able to step and settle in the same
-turn, step and step again, step and shoot. Use every action to the full.
+**The ask (2026-08-21).** A unit should be able to step and settle in the
+same turn, step and step again, step and shoot. Use every action to the full.
 
-**What the record could say.** No live run on this machine has played the
-frames (the ladder rows here predate #2198), so the chain was read end to
-end and then driven offline: the brain half by replaying the 241-turn
-journal of `live-head-rome-religious-actions-20260802T173404Z` through
-today's `civvis_orders` with the capabilities today's mod advertises
-(`--assume-seat order_queue,replan_frames=2,tile_delta`, new, replay-only),
-the host half by driving the shipped mod's `beginTurn`/`settleTurn`/
-`applyOrders` against a fake host that walks, spends and reveals
-(`step_turn_actions_test.lua`).
+**What the record could say.** Replays use `--assume-seat
+order_queue,replan_frames,tile_delta` to present the capabilities today's
+mod advertises, while `step_turn_actions_test.lua` drives the shipped
+mod's `beginTurn`/`settleTurn`/`applyOrders` against a fake host
+that walks, spends and reveals.
 
-- Replay, 239 turns, 2,048 unit-turns of orders: 1,690 pure walks,
-  95 `MOVE_TO > IMPROVE`, 42 `MOVE_TO > FORTIFY`, 12 `MOVE_TO > ATTACK`,
-  11 `MOVE_TO > RANGE_ATTACK`, 4 `FOUND_CITY` (the settler already on its
-  site — the engine's serial unit loop stops at zero movement, so a found
-  is planned only with movement to spare, which is Civilization VI's rule
-  too). **30 frontier cuts, every one a naval explorer** (galley,
-  quadrireme, caravel: 3–4 movement, sight 2) whose walk was cut at the
-  first unrevealed hex 1–2 hexes short of where the engine sent it. That is
-  the movement the frame has to give back.
-- Synthetic frame 1 for seven of those turns (cut unit standing on its cut
-  hex with the movement it kept, every other unit spent, the plots the NEXT
-  turn's sweep proves it revealed merged as a frame-1 delta): the brain
-  re-ordered the cut unit with its remaining movement on every board where
-  it had any (t105 galley at (26,41) with 1 left → `MOVE_TO (27,42)`; t143,
-  t205, t208, t213, t232 likewise; t144 caravel with 2 left stepped once
-  more and was cut again, correctly, for frame 2). The Rust half works.
-
-**What was wrong — four things, in the mod and on the bridge.**
+**What was wrong — three things, in the mod and on the bridge.**
 
 1. **The turn was released on the tick the opening orders went out.**
    `settleTurn`'s apply tick returned true, and the tick handler requests
@@ -536,12 +467,7 @@ the host half by driving the shipped mod's `beginTurn`/`settleTurn`/
    where the unit stands; `found_sites=N` in the note) and the mod founds
    only with the settler on it, naming a miss `found_off_site` — not
    `found_refused`, which feeds the brain's permanent `blocked_city_sites`.
-3. **The cut stranded movement on the last frame.** The cut was made on
-   every board of a turn, including the one no further frame follows (the
-   cap is `ReplanFrames`, default 2). The seat now advertises
-   `replan_frames_max`; `another_frame_can_open` withholds the cut when
-   `frame >= cap`, and the walk keeps its furthest hex.
-4. No way to replay an old journal as today's mod would present it —
+3. No way to replay an old journal as today's mod would present it —
    hence `--assume-seat` (replay only; the live brain reads the seat the
    mod advertised).
 
@@ -552,16 +478,14 @@ the host half by driving the shipped mod's `beginTurn`/`settleTurn`/
 the preceding `FOUND_CITY` row's x/y in `orders.sqlite` (they must match
 now; before, a run where they differ by one hex is defect 2 caught in the
 act), and `found_off_site` in `orders`/`orders_queue` refusals (expected
-once per step-then-settle turn: the found that ran first). In the decide
-notes, `frontier_cuts` against `frontier_cuts_withheld_last_frame`.
+once per step-then-settle turn: the found that ran first).
 
-Tests: `step_turn_actions_test.lua` (the seat cap; step → frame → second
+Tests: `step_turn_actions_test.lua` (step → frame → second
 step through `settleTurn`, with a synchronous and an asynchronous host —
 the latter proves the turn is held until the walk lands; step → shot from
 the queue before release;
 step → settle on the site, the first-run found refused by name without a
 `found_refused`; a capped walk does not settle short; a row without a site
 keeps the old behaviour),
-`the_frontier_cut_is_withheld_on_the_last_frame_the_mod_will_open`,
 `a_found_city_row_carries_the_site_the_walk_ends_on`,
 `assumed_seat_capabilities_are_named_and_checked`.

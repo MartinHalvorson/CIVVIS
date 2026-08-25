@@ -50,9 +50,6 @@ HEADER_LINES = 40
 # does not get; if one becomes runnable — a fixture lands, a cache is committed —
 # it belongs in a workflow and out of this list.
 CANNOT_RUN_IN_CI = {
-    "civ6_fidelity.py":
-        "Reads the shipped Civilization VI gameplay database. A runner has no "
-        "install and no compiled cache.",
     "civ6_differential.py":
         "Compares two replay traces produced by a real bridged game and a "
         "headless run; neither artifact exists on a runner.",
@@ -63,9 +60,6 @@ CANNOT_RUN_IN_CI = {
         "Reads Civ VI's player-colour tables from the install.",
     "civ6_yield_drift.py":
         "Reads a live mirror's per-turn economy drift from a bridged game.",
-    "civ6_strategy.py":
-        "Exports a rated league strategy to the grounding mod; the artifact it "
-        "reads is produced by a league run, not by the repository.",
     "civvis_push_guard.py":
         "A pre-push hook for development clones. CI has already received the "
         "push it exists to gate.",

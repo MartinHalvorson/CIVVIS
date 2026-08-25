@@ -300,7 +300,7 @@ including the generator itself — `ship` stops exactly as before and the whole
 merge is yours, because regenerating on top of a conflicted source would
 publish one side's arms and call it a merge.
 
-⚠ `docs/TACTICS_BASELINE.md` looks like it belongs here and does not.
+⚠ `docs/closed/TACTICS_BASELINE.md` looks like it belongs here and does not.
 `tools/tactics_bench.py --write-baseline` runs a benchmark, so its content
 depends on the machine that measured it; it must never be regenerated to settle
 somebody else's merge. The rule for adding a path to `REGENERATED_ON_MERGE` is

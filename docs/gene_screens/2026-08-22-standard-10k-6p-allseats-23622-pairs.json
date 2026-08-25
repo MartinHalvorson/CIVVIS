@@ -1,0 +1,4697 @@
+{
+  "complete_pairs": 23622,
+  "cost_method": {
+    "compute": "paired log ratio of wall seconds per completed turn",
+    "fit": "OLS adjusted for every screened gene and arm-order intercept; one observation per paired game with HC1 robust errors",
+    "time": "paired log ratio of whole-game wall seconds",
+    "unit": "percent change per enabled major seat; positive is slower"
+  },
+  "family_wise_z": 3.478112101426527,
+  "genes": [
+    {
+      "adjusted_pp": 0.5816180101197164,
+      "adjusted_se_pp": 0.3085015728003988,
+      "compute_cost_pct": 0.16996507275939765,
+      "compute_cost_se_pct": 0.1576295059565756,
+      "cost_pairs": 2683,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "helps * · share helps *",
+      "share_delta_pp": 0.1540492334526471,
+      "share_se_pp": 0.05844452354085855,
+      "share_z": 2.6358198188569597,
+      "tag": "war-reinforcement",
+      "time_cost_pct": 0.2100197176606853,
+      "time_cost_se_pct": 0.29303892382922714,
+      "win_delta_pp": 0.6773346880027087,
+      "win_off": 0.16327999322665313,
+      "win_on": 0.17005334010668022,
+      "win_se_pp": 0.3123185054914993,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": 1.1597680463907216,
+          "win_se_pp": 0.4883037053071285,
+          "win_z": 2.3750957319917574
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": -0.05998800239952011,
+          "win_se_pp": 0.4660915211333899,
+          "win_z": -0.12870434170020495
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": 1.381978993919292,
+          "win_se_pp": 0.8205351118450869,
+          "win_z": 1.6842411421148336
+        }
+      ],
+      "win_z": 2.1687305622085344
+    },
+    {
+      "adjusted_pp": 0.09959038775481134,
+      "adjusted_se_pp": 0.3125515143546608,
+      "compute_cost_pct": -0.5677041982222653,
+      "compute_cost_se_pct": 0.1554749888456617,
+      "cost_pairs": 2704,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "~",
+      "share_delta_pp": 0.01458058094923501,
+      "share_se_pp": 0.05863560600865744,
+      "share_z": 0.2486642833892126,
+      "tag": "come-ashore",
+      "time_cost_pct": -0.44411495843681437,
+      "time_cost_se_pct": 0.2906247060717856,
+      "win_delta_pp": 0.09313351960037256,
+      "win_off": 0.1662009990686648,
+      "win_on": 0.16713233426466853,
+      "win_se_pp": 0.3176221625734025,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": -0.27994401119776047,
+          "win_se_pp": 0.48083180816955606,
+          "win_z": -0.582207762551024
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": 0.07998400319936007,
+          "win_se_pp": 0.4883071457772113,
+          "win_z": 0.16379855156953313
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": 1.1608623548922055,
+          "win_se_pp": 0.8431738864075934,
+          "win_z": 1.3767769301278387
+        }
+      ],
+      "win_z": 0.2932210990750666
+    },
+    {
+      "adjusted_pp": 0.3780400963244316,
+      "adjusted_se_pp": 0.30548645089103155,
+      "compute_cost_pct": -0.2010849032625325,
+      "compute_cost_se_pct": 0.16071839406528438,
+      "cost_pairs": 2745,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "~",
+      "share_delta_pp": 0.044342456200059145,
+      "share_se_pp": 0.05771003580087536,
+      "share_z": 0.7683664649431139,
+      "tag": "recorded-tactical-step",
+      "time_cost_pct": -0.2708937182153521,
+      "time_cost_se_pct": 0.29956987993597933,
+      "win_delta_pp": 0.3556007112014226,
+      "win_off": 0.16488866311065956,
+      "win_on": 0.1684446702226738,
+      "win_se_pp": 0.31084311348298777,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": 0.4999000199960006,
+          "win_se_pp": 0.48362881228412946,
+          "win_z": 1.0336439998994764
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": 0.09998000399920016,
+          "win_se_pp": 0.47290458534488794,
+          "win_z": 0.2114168631422447
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": 0.6633499170812603,
+          "win_se_pp": 0.7897371752904917,
+          "win_z": 0.8399628861807829
+        }
+      ],
+      "win_z": 1.1439877410084054
+    },
+    {
+      "adjusted_pp": 0.11490465463810916,
+      "adjusted_se_pp": 0.3117606170418761,
+      "compute_cost_pct": -0.21399591114965905,
+      "compute_cost_se_pct": 0.1591564970080866,
+      "cost_pairs": 2714,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "~",
+      "share_delta_pp": -0.10131702781479565,
+      "share_se_pp": 0.05896591695638438,
+      "share_z": -1.7182303446537994,
+      "tag": "whole-turn-backtrack-guard",
+      "time_cost_pct": -0.4789624120566176,
+      "time_cost_se_pct": 0.30003986051410697,
+      "win_delta_pp": 0.12700025400050802,
+      "win_off": 0.1660316653966641,
+      "win_on": 0.1673016679366692,
+      "win_se_pp": 0.31694120335867987,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": 0.2199560087982404,
+          "win_se_pp": 0.48787148775681294,
+          "win_z": 0.45084825475163015
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": -0.03999200159968004,
+          "win_se_pp": 0.48254080443544245,
+          "win_z": -0.08287796852013256
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": 0.33167495854063017,
+          "win_se_pp": 0.8279192298936808,
+          "win_z": 0.4006127005688984
+        }
+      ],
+      "win_z": 0.4007060383902904
+    },
+    {
+      "adjusted_pp": -0.08258155148345574,
+      "adjusted_se_pp": 0.30489669611159537,
+      "compute_cost_pct": 0.14414100675104144,
+      "compute_cost_se_pct": 0.1528909405487894,
+      "cost_pairs": 2702,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "~",
+      "share_delta_pp": 0.003154055154011574,
+      "share_se_pp": 0.05821850767134464,
+      "share_z": 0.05417615944085787,
+      "tag": "blind-objective-strength",
+      "time_cost_pct": 0.2320244129116509,
+      "time_cost_se_pct": 0.28103367561554443,
+      "win_delta_pp": -0.008466683600033886,
+      "win_off": 0.16670900008466683,
+      "win_on": 0.1666243332486665,
+      "win_se_pp": 0.3089281468911279,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": 0.019996000799839986,
+          "win_se_pp": 0.47963088683817157,
+          "win_z": 0.041690394318968614
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": -0.17996400719856023,
+          "win_se_pp": 0.47373565090105385,
+          "win_z": -0.37988276131691884
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": 0.3869541182974017,
+          "win_se_pp": 0.7724113394372688,
+          "win_z": 0.5009689766845119
+        }
+      ],
+      "win_z": -0.027406643535843645
+    },
+    {
+      "adjusted_pp": -0.016619058042596585,
+      "adjusted_se_pp": 0.29939254077992083,
+      "compute_cost_pct": 0.019203696533500778,
+      "compute_cost_se_pct": 0.15580233274796215,
+      "cost_pairs": 2678,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "~",
+      "share_delta_pp": -0.057081129909494974,
+      "share_se_pp": 0.05796533467045755,
+      "share_z": -0.9847459733306221,
+      "tag": "blind-objective-units",
+      "time_cost_pct": 0.018158580938092,
+      "time_cost_se_pct": 0.28958003945363514,
+      "win_delta_pp": -0.008466683600033846,
+      "win_off": 0.16670900008466683,
+      "win_on": 0.1666243332486665,
+      "win_se_pp": 0.3040149277640207,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": 0.0399920015996801,
+          "win_se_pp": 0.46993959878342273,
+          "win_z": 0.08510030162006181
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": -0.47990401919616066,
+          "win_se_pp": 0.46894113318433933,
+          "win_z": -1.0233779577777236
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": 1.1608623548922055,
+          "win_se_pp": 0.7550778575766544,
+          "win_z": 1.5374074914842226
+        }
+      ],
+      "win_z": -0.027849565356230687
+    },
+    {
+      "adjusted_pp": 0.1334011120274539,
+      "adjusted_se_pp": 0.3075824292608169,
+      "compute_cost_pct": -0.24312660261712996,
+      "compute_cost_se_pct": 0.1506261103226305,
+      "cost_pairs": 2698,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "~",
+      "share_delta_pp": 0.02807510051431285,
+      "share_se_pp": 0.05779828450410883,
+      "share_z": 0.4857427993787085,
+      "tag": "relief-targets-the-siege",
+      "time_cost_pct": -0.2887528467945277,
+      "time_cost_se_pct": 0.2795711397752996,
+      "win_delta_pp": 0.11853357040047414,
+      "win_off": 0.1660739988146643,
+      "win_on": 0.16725933451866903,
+      "win_se_pp": 0.3118102340877521,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": 0.5798840231953608,
+          "win_se_pp": 0.4819176982359941,
+          "win_z": 1.203284347758884
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": 0.17996400719856032,
+          "win_se_pp": 0.47289037507504084,
+          "win_z": 0.38056178912502214
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": -1.3266998341625202,
+          "win_se_pp": 0.8113089970549479,
+          "win_z": -1.635258377484339
+        }
+      ],
+      "win_z": 0.38014650400190353
+    },
+    {
+      "adjusted_pp": 0.34037420011353936,
+      "adjusted_se_pp": 0.3100321097339241,
+      "compute_cost_pct": 0.41699606169311393,
+      "compute_cost_se_pct": 0.15763107406921922,
+      "cost_pairs": 2694,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "~",
+      "share_delta_pp": 0.01013334584683082,
+      "share_se_pp": 0.05764329513974839,
+      "share_z": 0.175794007304126,
+      "tag": "army-target-weighs-enemy",
+      "time_cost_pct": 0.6922834834363589,
+      "time_cost_se_pct": 0.29484739586646186,
+      "win_delta_pp": 0.36406739480145645,
+      "win_off": 0.1648463296926594,
+      "win_on": 0.16848700364067395,
+      "win_se_pp": 0.3159881731958724,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": -0.019996000799840076,
+          "win_se_pp": 0.4984470581896398,
+          "win_z": -0.040116599087705665
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": 0.47990401919616066,
+          "win_se_pp": 0.47487567537665715,
+          "win_z": 1.01058875844823
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": 1.1055831951354336,
+          "win_se_pp": 0.7966359156005832,
+          "win_z": 1.387814901995644
+        }
+      ],
+      "win_z": 1.1521551301091926
+    },
+    {
+      "adjusted_pp": 0.3906441192229155,
+      "adjusted_se_pp": 0.3080109827892179,
+      "compute_cost_pct": 0.017817248902754153,
+      "compute_cost_se_pct": 0.15747918869396113,
+      "cost_pairs": 2676,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "~",
+      "share_delta_pp": 0.008747105840460123,
+      "share_se_pp": 0.05864984905014415,
+      "share_z": 0.1491411483937762,
+      "tag": "peacetime-deterrence",
+      "time_cost_pct": -0.04022841693519774,
+      "time_cost_se_pct": 0.2931817553315993,
+      "win_delta_pp": 0.4148674964016597,
+      "win_off": 0.16459232918465838,
+      "win_on": 0.16874100414867496,
+      "win_se_pp": 0.31369477741568,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": 1.1397720455908817,
+          "win_se_pp": 0.480485783044287,
+          "win_z": 2.3721243912139385
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": 0.07998400319936007,
+          "win_se_pp": 0.4841932136419577,
+          "win_z": 0.1651902607179149
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": -0.6633499170812603,
+          "win_se_pp": 0.7974510971038148,
+          "win_z": -0.8318377383772076
+        }
+      ],
+      "win_z": 1.3225196154665806
+    },
+    {
+      "adjusted_pp": 2.273702544824589,
+      "adjusted_se_pp": 0.31066217682569724,
+      "compute_cost_pct": 1.037233955171549,
+      "compute_cost_se_pct": 0.15795538712706125,
+      "cost_pairs": 2681,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "HELPS ** · share HELPS **",
+      "share_delta_pp": 1.4255712979217414,
+      "share_se_pp": 0.05799291416832156,
+      "share_z": 24.581818630188014,
+      "tag": "war-economy",
+      "time_cost_pct": 1.206403420743781,
+      "time_cost_se_pct": 0.29481531745329265,
+      "win_delta_pp": 2.353738040809409,
+      "win_off": 0.1548979764626196,
+      "win_on": 0.17843535687071374,
+      "win_se_pp": 0.31392094905991813,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": 2.579484103179366,
+          "win_se_pp": 0.4813037583502832,
+          "win_z": 5.359368295857081
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": 2.419516096780644,
+          "win_se_pp": 0.47846908727270715,
+          "win_z": 5.056786657988675
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": 1.5478164731896071,
+          "win_se_pp": 0.8256230142134604,
+          "win_z": 1.8747254455644662
+        }
+      ],
+      "win_z": 7.497868644504354
+    },
+    {
+      "adjusted_pp": 0.6476805714029288,
+      "adjusted_se_pp": 0.3070323320484636,
+      "compute_cost_pct": 0.1190228353022214,
+      "compute_cost_se_pct": 0.15644373191637867,
+      "cost_pairs": 2705,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "share helps *",
+      "share_delta_pp": 0.18674402338846244,
+      "share_se_pp": 0.059126549331366116,
+      "share_z": 3.158378520313824,
+      "tag": "bounded-recovery",
+      "time_cost_pct": 0.13014743233878145,
+      "time_cost_se_pct": 0.288570001552581,
+      "win_delta_pp": 0.5757344848023026,
+      "win_off": 0.16378799424265514,
+      "win_on": 0.16954533909067818,
+      "win_se_pp": 0.31259974457670436,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": 0.3799240151969605,
+          "win_se_pp": 0.48616938238340734,
+          "win_z": 0.7814642981719926
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": 0.6798640271945613,
+          "win_se_pp": 0.47641161534937415,
+          "win_z": 1.4270517453609652
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": 0.8291873963515753,
+          "win_se_pp": 0.7914129813737862,
+          "win_z": 1.047730345428777
+        }
+      ],
+      "win_z": 1.8417624927426368
+    },
+    {
+      "adjusted_pp": 0.190988686024747,
+      "adjusted_se_pp": 0.3058375950543855,
+      "compute_cost_pct": 0.1280983505567075,
+      "compute_cost_se_pct": 0.1566543989629885,
+      "cost_pairs": 2662,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "~",
+      "share_delta_pp": -0.020646621499353087,
+      "share_se_pp": 0.05828197935805932,
+      "share_z": -0.354253951680487,
+      "tag": "siege-tracks-wall",
+      "time_cost_pct": 0.1343748576424057,
+      "time_cost_se_pct": 0.2898393616884593,
+      "win_delta_pp": 0.15240030480060957,
+      "win_off": 0.1659046651426636,
+      "win_on": 0.1674286681906697,
+      "win_se_pp": 0.3094983554007172,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": -0.23995200959808036,
+          "win_se_pp": 0.47329722890041886,
+          "win_z": -0.5069795362114109
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": 0.4599080183963206,
+          "win_se_pp": 0.473622156282564,
+          "win_z": 0.9710441378125446
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": 0.3869541182974018,
+          "win_se_pp": 0.8110712104819405,
+          "win_z": 0.4770901904747336
+        }
+      ],
+      "win_z": 0.4924107095925991
+    },
+    {
+      "adjusted_pp": 0.04946138896901794,
+      "adjusted_se_pp": 0.3077435364578378,
+      "compute_cost_pct": -0.06873985945211492,
+      "compute_cost_se_pct": 0.16129019577491957,
+      "cost_pairs": 2693,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "~",
+      "share_delta_pp": -0.004645150725578808,
+      "share_se_pp": 0.057617056802414225,
+      "share_z": -0.0806211039468467,
+      "tag": "siege-commitment",
+      "time_cost_pct": -0.11284975525995362,
+      "time_cost_se_pct": 0.30088484088374284,
+      "win_delta_pp": 0.11853357040047414,
+      "win_off": 0.1660739988146643,
+      "win_on": 0.16725933451866903,
+      "win_se_pp": 0.3124993435904497,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": 0.19996000799840033,
+          "win_se_pp": 0.47667752964683796,
+          "win_z": 0.4194869603913304
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": -0.2599480103979204,
+          "win_se_pp": 0.48539323056317646,
+          "win_z": -0.5355410706826634
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": 0.9397457158651188,
+          "win_se_pp": 0.7912077094702199,
+          "win_z": 1.1877357925320995
+        }
+      ],
+      "win_z": 0.3793082220224436
+    },
+    {
+      "adjusted_pp": -0.5796629425941785,
+      "adjusted_se_pp": 0.3070658392658028,
+      "compute_cost_pct": -0.16511466988374263,
+      "compute_cost_se_pct": 0.15947511484701293,
+      "cost_pairs": 2720,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "share hurts *",
+      "share_delta_pp": -0.20522474407981545,
+      "share_se_pp": 0.059391011345939715,
+      "share_z": -3.4554849198378856,
+      "tag": "war-patience",
+      "time_cost_pct": -0.27824709281955945,
+      "time_cost_se_pct": 0.29909979733629255,
+      "win_delta_pp": -0.5503344340022011,
+      "win_off": 0.16941833883667767,
+      "win_on": 0.16391499449665567,
+      "win_se_pp": 0.3111169054576254,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": -0.4199160167966406,
+          "win_se_pp": 0.4803543980151891,
+          "win_z": -0.874179602667784
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": -0.6398720255948811,
+          "win_se_pp": 0.4722276005947171,
+          "win_z": -1.355007680171669
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": -0.6633499170812603,
+          "win_se_pp": 0.8126593042257149,
+          "win_z": -0.816270623657335
+        }
+      ],
+      "win_z": -1.7688991641026641
+    },
+    {
+      "adjusted_pp": -0.17233099810650743,
+      "adjusted_se_pp": 0.30735586798187875,
+      "compute_cost_pct": 0.35428867291329713,
+      "compute_cost_se_pct": 0.15721019208895803,
+      "cost_pairs": 2702,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "share helps *",
+      "share_delta_pp": 0.19056129617484788,
+      "share_se_pp": 0.05840481785738395,
+      "share_z": 3.26276672311813,
+      "tag": "siege-is-progress",
+      "time_cost_pct": 0.46283991959787557,
+      "time_cost_se_pct": 0.2932080120562366,
+      "win_delta_pp": -0.11853357040047414,
+      "win_off": 0.16725933451866903,
+      "win_on": 0.1660739988146643,
+      "win_se_pp": 0.3122698093907375,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": -0.09998000399920016,
+          "win_se_pp": 0.48212084366533287,
+          "win_z": -0.20737540248021696
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": 0.19996000799840036,
+          "win_se_pp": 0.4808557660571121,
+          "win_z": 0.41584196782752264
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": -1.050304035378662,
+          "win_se_pp": 0.7831990278861389,
+          "win_z": -1.3410435891543964
+        }
+      ],
+      "win_z": -0.37958703286668116
+    },
+    {
+      "adjusted_pp": -0.35407018228770815,
+      "adjusted_se_pp": 0.30697221135197045,
+      "compute_cost_pct": 0.15210380716345462,
+      "compute_cost_se_pct": 0.15904207078748708,
+      "cost_pairs": 2729,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "~",
+      "share_delta_pp": -0.05669452846015316,
+      "share_se_pp": 0.05792235367977616,
+      "share_z": -0.9788022215669785,
+      "tag": "endgame-war-runway",
+      "time_cost_pct": 0.3061607703979025,
+      "time_cost_se_pct": 0.2964155264140645,
+      "win_delta_pp": -0.33020066040132096,
+      "win_off": 0.16831766996867328,
+      "win_on": 0.16501566336466006,
+      "win_se_pp": 0.3118865071650994,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": -0.6598680263947211,
+          "win_se_pp": 0.4768481805456888,
+          "win_z": -1.3838115637551363
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": -0.31993601279744044,
+          "win_se_pp": 0.4791497757004767,
+          "win_z": -0.6677160859143071
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": 0.5527915975677169,
+          "win_se_pp": 0.809022106048556,
+          "win_z": 0.6832836747411936
+        }
+      ],
+      "win_z": -1.0587205692310595
+    },
+    {
+      "adjusted_pp": -0.2549086251225061,
+      "adjusted_se_pp": 0.311074609994782,
+      "compute_cost_pct": -0.32738515764525095,
+      "compute_cost_se_pct": 0.15482335886026222,
+      "cost_pairs": 2738,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "~",
+      "share_delta_pp": 0.05472971277871643,
+      "share_se_pp": 0.05905173678326408,
+      "share_z": 0.9268095361799323,
+      "tag": "home-defense",
+      "time_cost_pct": -0.20934334938341403,
+      "time_cost_se_pct": 0.2900689555602061,
+      "win_delta_pp": -0.36406739480145645,
+      "win_off": 0.16848700364067395,
+      "win_on": 0.1648463296926594,
+      "win_se_pp": 0.31485154622773,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": -0.19996000799840033,
+          "win_se_pp": 0.4841723950562444,
+          "win_z": -0.41299340904218995
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": -0.03999200159968001,
+          "win_se_pp": 0.48584593065017256,
+          "win_z": -0.08231416396996802
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": -1.7136539524599228,
+          "win_se_pp": 0.7929188188232693,
+          "win_z": -2.1611972269785067
+        }
+      ],
+      "win_z": -1.1563144572843513
+    },
+    {
+      "adjusted_pp": -0.508592067580913,
+      "adjusted_se_pp": 0.30357097530974075,
+      "compute_cost_pct": 0.2857760293991659,
+      "compute_cost_se_pct": 0.1547688323683983,
+      "cost_pairs": 2714,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "~",
+      "share_delta_pp": -0.04598259974256538,
+      "share_se_pp": 0.05812970516605023,
+      "share_z": -0.791034456672607,
+      "tag": "garrison-under-fire",
+      "time_cost_pct": 0.5296746770919791,
+      "time_cost_se_pct": 0.28981003667200694,
+      "win_delta_pp": -0.5418677504021673,
+      "win_off": 0.1693760054186775,
+      "win_on": 0.16395732791465584,
+      "win_se_pp": 0.30961902398900154,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": -0.6598680263947211,
+          "win_se_pp": 0.4835136689463806,
+          "win_z": -1.3647349987698019
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": -0.13997200559888015,
+          "win_se_pp": 0.46263491619975283,
+          "win_z": -0.30255391605255355
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": -1.3266998341625202,
+          "win_se_pp": 0.8150730101165425,
+          "win_z": -1.6277067424583513
+        }
+      ],
+      "win_z": -1.750111292972152
+    },
+    {
+      "adjusted_pp": 0.09636949949995238,
+      "adjusted_se_pp": 0.3042277726681603,
+      "compute_cost_pct": 0.0842833041135501,
+      "compute_cost_se_pct": 0.1561176652945839,
+      "cost_pairs": 2725,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "~",
+      "share_delta_pp": 0.06570159906207163,
+      "share_se_pp": 0.058401280802356716,
+      "share_z": 1.1250027081498581,
+      "tag": "strike-opening",
+      "time_cost_pct": 0.14863381961711689,
+      "time_cost_se_pct": 0.2882251401445124,
+      "win_delta_pp": 0.08466683600033864,
+      "win_off": 0.16624333248666498,
+      "win_on": 0.16709000084666836,
+      "win_se_pp": 0.31019917678356773,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": 0.4199160167966406,
+          "win_se_pp": 0.4694020307200626,
+          "win_z": 0.8945764809591674
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": -0.03999200159968001,
+          "win_se_pp": 0.4833692046885447,
+          "win_z": -0.08273593189588599
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": -0.4975124378109451,
+          "win_se_pp": 0.7957305965081299,
+          "win_z": -0.6252272314199773
+        }
+      ],
+      "win_z": 0.272943458065372
+    },
+    {
+      "adjusted_pp": 0.5394086902767858,
+      "adjusted_se_pp": 0.3093677224617373,
+      "compute_cost_pct": 0.27039850002351623,
+      "compute_cost_se_pct": 0.16125840837841196,
+      "cost_pairs": 2670,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "share helps *",
+      "share_delta_pp": 0.18096591884969787,
+      "share_se_pp": 0.058177580640708,
+      "share_z": 3.1105782821617103,
+      "tag": "recon-replacement",
+      "time_cost_pct": 0.16842746409548973,
+      "time_cost_se_pct": 0.29848901314964366,
+      "win_delta_pp": 0.5926678520023703,
+      "win_off": 0.1637033274066548,
+      "win_on": 0.1696300059266785,
+      "win_se_pp": 0.3125917043624184,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": 0.5198960207958407,
+          "win_se_pp": 0.48237366006638877,
+          "win_z": 1.0777869188054086
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": 0.5598880223955208,
+          "win_se_pp": 0.4790175232062031,
+          "win_z": 1.1688257637174273
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": 0.8844665561083469,
+          "win_se_pp": 0.7970945577777336,
+          "win_z": 1.1096130910417992
+        }
+      ],
+      "win_z": 1.8959807433508598
+    },
+    {
+      "adjusted_pp": 0.16414372225455184,
+      "adjusted_se_pp": 0.30808375935628357,
+      "compute_cost_pct": -0.14157995978371046,
+      "compute_cost_se_pct": 0.1547513265790046,
+      "cost_pairs": 2698,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "~",
+      "share_delta_pp": 0.02246200098152554,
+      "share_se_pp": 0.057785760462562084,
+      "share_z": 0.3887116964754336,
+      "tag": "barbarian-scouts-are-scouts",
+      "time_cost_pct": -0.24092433226039406,
+      "time_cost_se_pct": 0.2884166866133049,
+      "win_delta_pp": 0.24553382440098212,
+      "win_off": 0.16543899754466176,
+      "win_on": 0.16789433578867158,
+      "win_se_pp": 0.3116763899003673,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": 0.2599480103979204,
+          "win_se_pp": 0.47624030406949364,
+          "win_z": 0.5458337065902521
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": 0.19996000799840036,
+          "win_se_pp": 0.4858222188481744,
+          "win_z": 0.4115909076214779
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": 0.33167495854063017,
+          "win_se_pp": 0.7783751349394299,
+          "win_z": 0.4261119653654401
+        }
+      ],
+      "win_z": 0.7877844853101361
+    },
+    {
+      "adjusted_pp": 0.2324027661323039,
+      "adjusted_se_pp": 0.3128268408818947,
+      "compute_cost_pct": -0.443087310550918,
+      "compute_cost_se_pct": 0.1562888535093389,
+      "cost_pairs": 2688,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "share hurts *",
+      "share_delta_pp": -0.13354372520981697,
+      "share_se_pp": 0.05840708531427918,
+      "share_z": -2.2864302248817854,
+      "tag": "barbarian-hunt",
+      "time_cost_pct": -0.3836436137861454,
+      "time_cost_se_pct": 0.286725485905469,
+      "win_delta_pp": 0.20320040640081274,
+      "win_off": 0.1656506646346626,
+      "win_on": 0.16768266869867074,
+      "win_se_pp": 0.31500219638182697,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": 4.662004302565145e-17,
+          "win_se_pp": 0.49076286422837606,
+          "win_z": 9.499505040780112e-17
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": 0.17996400719856034,
+          "win_se_pp": 0.4787759679754584,
+          "win_z": 0.3758835431100525
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": 0.8291873963515753,
+          "win_se_pp": 0.7991107265724929,
+          "win_z": 1.0376376749541154
+        }
+      ],
+      "win_z": 0.6450761573563927
+    },
+    {
+      "adjusted_pp": 0.1961934479175019,
+      "adjusted_se_pp": 0.3078036499172361,
+      "compute_cost_pct": -0.18156424583187047,
+      "compute_cost_se_pct": 0.1563170058416254,
+      "cost_pairs": 2710,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "~",
+      "share_delta_pp": 0.026279608837646542,
+      "share_se_pp": 0.05834067294146635,
+      "share_z": 0.4504509035062567,
+      "tag": "barbarian-bargain",
+      "time_cost_pct": -0.2594391886627896,
+      "time_cost_se_pct": 0.2876955759262439,
+      "win_delta_pp": 0.20320040640081274,
+      "win_off": 0.1656506646346626,
+      "win_on": 0.16768266869867074,
+      "win_se_pp": 0.312717643969813,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": 0.11997600479904016,
+          "win_se_pp": 0.482532846492632,
+          "win_z": 0.2486380060364909
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": 0.6998600279944013,
+          "win_se_pp": 0.47765228711046304,
+          "win_z": 1.4652081584873684
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": -0.9397457158651186,
+          "win_se_pp": 0.8027295988560039,
+          "win_z": -1.1706877598688035
+        }
+      ],
+      "win_z": 0.649788748153999
+    },
+    {
+      "adjusted_pp": 0.4179836563008098,
+      "adjusted_se_pp": 0.309388540063265,
+      "compute_cost_pct": 0.045531417013204394,
+      "compute_cost_se_pct": 0.1586623199709394,
+      "cost_pairs": 2706,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "~",
+      "share_delta_pp": -0.011491314049193598,
+      "share_se_pp": 0.05656256156451436,
+      "share_z": -0.2031611322285464,
+      "tag": "barbarian-ranged-answer",
+      "time_cost_pct": 0.15662058637667647,
+      "time_cost_se_pct": 0.2960405171951881,
+      "win_delta_pp": 0.33020066040132096,
+      "win_off": 0.16501566336466006,
+      "win_on": 0.16831766996867328,
+      "win_se_pp": 0.31372032202571976,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": 0.27994401119776047,
+          "win_se_pp": 0.46647240659556777,
+          "win_z": 0.600129840992872
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": 0.15996800639872027,
+          "win_se_pp": 0.4948066585889375,
+          "win_z": 0.32329396466674126
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": 0.9397457158651186,
+          "win_se_pp": 0.8140884339148484,
+          "win_z": 1.1543533561163621
+        }
+      ],
+      "win_z": 1.0525319439594676
+    },
+    {
+      "adjusted_pp": 0.05757777275264025,
+      "adjusted_se_pp": 0.312332440523065,
+      "compute_cost_pct": -0.19792805881257872,
+      "compute_cost_se_pct": 0.15262717903914177,
+      "cost_pairs": 2659,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "~",
+      "share_delta_pp": 0.09553003488784098,
+      "share_se_pp": 0.058018839440116585,
+      "share_z": 1.6465347430198272,
+      "tag": "civilian-rescue",
+      "time_cost_pct": -0.39647155059661776,
+      "time_cost_se_pct": 0.28408084869473416,
+      "win_delta_pp": -0.025400050800101586,
+      "win_off": 0.1667936669206672,
+      "win_on": 0.16653966641266615,
+      "win_se_pp": 0.31604119471120556,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": 0.07998400319936014,
+          "win_se_pp": 0.4858429667382158,
+          "win_z": 0.16462933226417886
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": 0.03999200159968008,
+          "win_se_pp": 0.4800470265058499,
+          "win_z": 0.08330850810757545
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": -0.4975124378109451,
+          "win_se_pp": 0.8333093143608503,
+          "win_z": -0.5970321334911971
+        }
+      ],
+      "win_z": -0.0803694303943884
+    },
+    {
+      "adjusted_pp": -0.47848245502050735,
+      "adjusted_se_pp": 0.3059444762235297,
+      "compute_cost_pct": 0.7242203928206901,
+      "compute_cost_se_pct": 0.16433223385617196,
+      "cost_pairs": 2684,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "~",
+      "share_delta_pp": 0.02919240129872924,
+      "share_se_pp": 0.05774509126812483,
+      "share_z": 0.5055390970495076,
+      "tag": "naval-recon",
+      "time_cost_pct": 0.6968648262595468,
+      "time_cost_se_pct": 0.30276293627938855,
+      "win_delta_pp": -0.40640081280162593,
+      "win_off": 0.1686986707306748,
+      "win_on": 0.16463466260265855,
+      "win_se_pp": 0.31082729353188615,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": -0.0999800039992001,
+          "win_se_pp": 0.4854288292640854,
+          "win_z": -0.20596222962441416
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": -0.19996000799840027,
+          "win_se_pp": 0.46735394104881567,
+          "win_z": -0.4278556152744933
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": -1.8242122719734664,
+          "win_se_pp": 0.8040122433612882,
+          "win_z": -2.268886185547481
+        }
+      ],
+      "win_z": -1.3074811036822138
+    },
+    {
+      "adjusted_pp": -0.31765816759944443,
+      "adjusted_se_pp": 0.31362802456860256,
+      "compute_cost_pct": -0.007967885421429326,
+      "compute_cost_se_pct": 0.16452252196557693,
+      "cost_pairs": 2724,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "~",
+      "share_delta_pp": -0.012061845064927045,
+      "share_se_pp": 0.057892822204487125,
+      "share_z": -0.2083478504869324,
+      "tag": "camp-party",
+      "time_cost_pct": -0.12615032876904927,
+      "time_cost_se_pct": 0.29844614027933575,
+      "win_delta_pp": -0.3048006096012193,
+      "win_off": 0.16819066971467275,
+      "win_on": 0.16514266361866056,
+      "win_se_pp": 0.31770133980706505,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": 0.03999200159968008,
+          "win_se_pp": 0.4841961876525549,
+          "win_z": 0.08259462304642758
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": -0.21995600879824032,
+          "win_se_pp": 0.4870507452720041,
+          "win_z": -0.45160799143300995
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": -1.4925373134328355,
+          "win_se_pp": 0.8350070972484013,
+          "win_z": -1.7874546436206271
+        }
+      ],
+      "win_z": -0.9593935291123412
+    },
+    {
+      "adjusted_pp": -0.40947642906915854,
+      "adjusted_se_pp": 0.30631836161281567,
+      "compute_cost_pct": 0.09802462258439865,
+      "compute_cost_se_pct": 0.1665859834534299,
+      "cost_pairs": 2698,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "~",
+      "share_delta_pp": 0.03361045006384664,
+      "share_se_pp": 0.05803576601151068,
+      "share_z": 0.5791333926251688,
+      "tag": "religion-sues-peace",
+      "time_cost_pct": 0.09336707003346745,
+      "time_cost_se_pct": 0.3038534066112109,
+      "win_delta_pp": -0.3556007112014226,
+      "win_off": 0.1684446702226738,
+      "win_on": 0.16488866311065956,
+      "win_se_pp": 0.31107370041090276,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": -1.1997600479904016,
+          "win_se_pp": 0.48578121445953276,
+          "win_z": -2.4697538980078155
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": 0.4999000199960006,
+          "win_se_pp": 0.4693549897879145,
+          "win_z": 1.065078737571083
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": -0.3869541182974018,
+          "win_se_pp": 0.7958326557763857,
+          "win_z": -0.48622548407479366
+        }
+      ],
+      "win_z": -1.1431397470493434
+    },
+    {
+      "adjusted_pp": 0.7416533744135766,
+      "adjusted_se_pp": 0.30865533239290527,
+      "compute_cost_pct": 0.3977275993626234,
+      "compute_cost_se_pct": 0.15732611611839417,
+      "cost_pairs": 2672,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "helps * · share helps *",
+      "share_delta_pp": 0.16594566626824034,
+      "share_se_pp": 0.05816272510728618,
+      "share_z": 2.853127427611743,
+      "tag": "escort-unstick",
+      "time_cost_pct": 0.4465820489630597,
+      "time_cost_se_pct": 0.29387741907192,
+      "win_delta_pp": 0.7196681060028779,
+      "win_off": 0.1630683261366523,
+      "win_on": 0.17026500719668106,
+      "win_se_pp": 0.3146960204858775,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": 0.6598680263947211,
+          "win_se_pp": 0.49334307455398035,
+          "win_z": 1.3375439130087963
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": 0.8398320335932817,
+          "win_se_pp": 0.478771957731844,
+          "win_z": 1.7541378938982561
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": 0.5527915975677169,
+          "win_se_pp": 0.7820899604574183,
+          "win_z": 0.706813314985411
+        }
+      ],
+      "win_z": 2.2868675139003676
+    },
+    {
+      "adjusted_pp": 1.116217380603891,
+      "adjusted_se_pp": 0.30682611480979205,
+      "compute_cost_pct": 0.16937850241530072,
+      "compute_cost_se_pct": 0.16038397014903782,
+      "cost_pairs": 2681,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "HELPS ** · share HELPS **",
+      "share_delta_pp": 0.28178698891861464,
+      "share_se_pp": 0.05767012710290843,
+      "share_z": 4.886186368477823,
+      "tag": "buildings-before-projects",
+      "time_cost_pct": 0.1916540070173567,
+      "time_cost_se_pct": 0.29768189055035343,
+      "win_delta_pp": 1.2276691220049125,
+      "win_off": 0.1605283210566421,
+      "win_on": 0.17280501227669123,
+      "win_se_pp": 0.31085553450994247,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": 1.4597080583883213,
+          "win_se_pp": 0.4832887625756505,
+          "win_z": 3.020364162015518
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": 0.7998400319936017,
+          "win_se_pp": 0.4712329643083339,
+          "win_z": 1.697334636102104
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": 1.7689331122166947,
+          "win_se_pp": 0.7984879751224374,
+          "win_z": 2.2153534772335832
+        }
+      ],
+      "win_z": 3.949323675193071
+    },
+    {
+      "adjusted_pp": 0.40054659820757954,
+      "adjusted_se_pp": 0.3113052803550398,
+      "compute_cost_pct": -0.03721597187289215,
+      "compute_cost_se_pct": 0.1579553517189105,
+      "cost_pairs": 2727,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "~",
+      "share_delta_pp": -0.03024283787040696,
+      "share_se_pp": 0.05779290464565882,
+      "share_z": -0.5232967274414142,
+      "tag": "wonder-ring-settle-value",
+      "time_cost_pct": -0.015335793914804741,
+      "time_cost_se_pct": 0.29346213819115874,
+      "win_delta_pp": 0.43180086360172737,
+      "win_off": 0.16450766234865802,
+      "win_on": 0.1688256709846753,
+      "win_se_pp": 0.31619335164409507,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": 1.1597680463907216,
+          "win_se_pp": 0.49723462235952803,
+          "win_z": 2.332436226760062
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": 0.05998800239952014,
+          "win_se_pp": 0.4771198877859249,
+          "win_z": 0.12572941085707934
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": -0.5527915975677169,
+          "win_se_pp": 0.7937442129569797,
+          "win_z": -0.696435436686047
+        }
+      ],
+      "win_z": 1.365622842341604
+    },
+    {
+      "adjusted_pp": -0.3549511439165878,
+      "adjusted_se_pp": 0.3071127853754216,
+      "compute_cost_pct": -0.013849744968276928,
+      "compute_cost_se_pct": 0.15150249040977895,
+      "cost_pairs": 2743,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "~",
+      "share_delta_pp": -0.025898253442714583,
+      "share_se_pp": 0.0570149959018557,
+      "share_z": -0.4542358204724813,
+      "tag": "settler-site-agreement",
+      "time_cost_pct": -0.01172610186108919,
+      "time_cost_se_pct": 0.28307724828198044,
+      "win_delta_pp": -0.45720091440182886,
+      "win_off": 0.1689526712386758,
+      "win_on": 0.16438066209465751,
+      "win_se_pp": 0.31057858009741757,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": -0.3199360127974405,
+          "win_se_pp": 0.48824816293578394,
+          "win_z": -0.6552733570438842
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": -0.619876024795041,
+          "win_se_pp": 0.46756084763063765,
+          "win_z": -1.3257654654709858
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": -0.3869541182974017,
+          "win_se_pp": 0.7881028928787284,
+          "win_z": -0.49099441430034874
+        }
+      ],
+      "win_z": -1.472094161350152
+    },
+    {
+      "adjusted_pp": -0.1882926977725701,
+      "adjusted_se_pp": 0.30791546001720665,
+      "compute_cost_pct": -0.06415059884257777,
+      "compute_cost_se_pct": 0.1528669895325111,
+      "cost_pairs": 2724,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "~",
+      "share_delta_pp": -0.0457973901522436,
+      "share_se_pp": 0.05855967669498412,
+      "share_z": -0.7820635757739137,
+      "tag": "settler-guard-holds",
+      "time_cost_pct": -0.07880762865116756,
+      "time_cost_se_pct": 0.2807802055984792,
+      "win_delta_pp": -0.16086698840064342,
+      "win_off": 0.16747100160866987,
+      "win_on": 0.16586233172466344,
+      "win_se_pp": 0.3126092410851795,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": 0.07998400319936011,
+          "win_se_pp": 0.4775372104545059,
+          "win_z": 0.16749271354840325
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": -0.27994401119776047,
+          "win_se_pp": 0.4758132692258727,
+          "win_z": -0.5883484747140766
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": -0.4975124378109453,
+          "win_se_pp": 0.8333093143608494,
+          "win_z": -0.5970321334911979
+        }
+      ],
+      "win_z": -0.514594475333538
+    },
+    {
+      "adjusted_pp": -0.17480869346251438,
+      "adjusted_se_pp": 0.30938491918853495,
+      "compute_cost_pct": 0.005847038752919598,
+      "compute_cost_se_pct": 0.1573148344869992,
+      "cost_pairs": 2697,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "~",
+      "share_delta_pp": -0.03159915938798492,
+      "share_se_pp": 0.057674680329436054,
+      "share_z": -0.54788616438776,
+      "tag": "stranded-settler-discount",
+      "time_cost_pct": 0.011668448739476932,
+      "time_cost_se_pct": 0.2931235512707333,
+      "win_delta_pp": -0.16933367200067728,
+      "win_off": 0.16751333502667004,
+      "win_on": 0.16581999830666327,
+      "win_se_pp": 0.3136385719502167,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": -0.13997200559888023,
+          "win_se_pp": 0.4887085314010232,
+          "win_z": -0.28641203622455763
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": -0.3599280143971205,
+          "win_se_pp": 0.47829700757565946,
+          "win_z": -0.7525198959982731
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": 0.27639579878385845,
+          "win_se_pp": 0.7881801793368781,
+          "win_z": 0.35067590638526247
+        }
+      ],
+      "win_z": -0.5399006600105146
+    },
+    {
+      "adjusted_pp": 1.8693255674545155,
+      "adjusted_se_pp": 0.30687086819653026,
+      "compute_cost_pct": 0.4857617777406262,
+      "compute_cost_se_pct": 0.15715857648245352,
+      "cost_pairs": 2693,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "HELPS ** · share HELPS **",
+      "share_delta_pp": 0.44332155541608464,
+      "share_se_pp": 0.058261464631073664,
+      "share_z": 7.609172859338654,
+      "tag": "wide-map-capacity",
+      "time_cost_pct": 0.24198599707672078,
+      "time_cost_se_pct": 0.2897604205564708,
+      "win_delta_pp": 1.811870290407249,
+      "win_off": 0.15760731521463042,
+      "win_on": 0.1757260181187029,
+      "win_se_pp": 0.31047564839289066,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": 1.9796040791841607,
+          "win_se_pp": 0.47041737484774004,
+          "win_z": 4.208186570117439
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": 1.7196560687862406,
+          "win_se_pp": 0.4815305886735745,
+          "win_z": 3.5712291373289697
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": 1.6030956329463792,
+          "win_se_pp": 0.8047947249310952,
+          "win_z": 1.9919310891154671
+        }
+      ],
+      "win_z": 5.83578873185707
+    },
+    {
+      "adjusted_pp": -0.7325968691812446,
+      "adjusted_se_pp": 0.3093809060815621,
+      "compute_cost_pct": -0.04527971360940145,
+      "compute_cost_se_pct": 0.16052186217573147,
+      "cost_pairs": 2711,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "hurts * · share hurts *",
+      "share_delta_pp": -0.14507033060001664,
+      "share_se_pp": 0.05875773692915576,
+      "share_z": -2.4689570800680776,
+      "tag": "housing-districts",
+      "time_cost_pct": -0.19280100106486406,
+      "time_cost_se_pct": 0.2984218891038939,
+      "win_delta_pp": -0.7366014732029456,
+      "win_off": 0.1703496740326814,
+      "win_on": 0.16298365930065192,
+      "win_se_pp": 0.31400175559716187,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": -0.599880023995201,
+          "win_se_pp": 0.4789884628415033,
+          "win_z": -1.2523892964697576
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": -0.9398120375924822,
+          "win_se_pp": 0.482406994072122,
+          "win_z": -1.9481724957162958
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": -0.552791597567717,
+          "win_se_pp": 0.8202938116490031,
+          "win_z": -0.6738946335051128
+        }
+      ],
+      "win_z": -2.345851448512103
+    },
+    {
+      "adjusted_pp": -0.5913924027381533,
+      "adjusted_se_pp": 0.308514510919681,
+      "compute_cost_pct": 0.16177956604325783,
+      "compute_cost_se_pct": 0.15620448767378564,
+      "cost_pairs": 2705,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "hurts * · share hurts *",
+      "share_delta_pp": -0.11493265057755116,
+      "share_se_pp": 0.05738640876847978,
+      "share_z": -2.002785207229754,
+      "tag": "amenity-project-preemption",
+      "time_cost_pct": 0.1283702722364599,
+      "time_cost_se_pct": 0.29196251533559686,
+      "win_delta_pp": -0.6773346880027087,
+      "win_off": 0.17005334010668022,
+      "win_on": 0.16327999322665313,
+      "win_se_pp": 0.3127773339734075,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": -1.1397720455908817,
+          "win_se_pp": 0.48874143334487474,
+          "win_z": -2.3320552910573777
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": -0.3799240151969605,
+          "win_se_pp": 0.4770313483521934,
+          "win_z": -0.7964340635250279
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": -0.22111663902708686,
+          "win_se_pp": 0.7784403456945468,
+          "win_z": -0.2840508463494402
+        }
+      ],
+      "win_z": -2.1655491444923434
+    },
+    {
+      "adjusted_pp": 0.2592021867564019,
+      "adjusted_se_pp": 0.31253582788419004,
+      "compute_cost_pct": 0.1383212374829342,
+      "compute_cost_se_pct": 0.16098533182200186,
+      "cost_pairs": 2629,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "~",
+      "share_delta_pp": 0.05936189289285741,
+      "share_se_pp": 0.05783274637625226,
+      "share_z": 1.026440842125268,
+      "tag": "amenity-district-path",
+      "time_cost_pct": 0.21827244480586813,
+      "time_cost_se_pct": 0.2985688265069525,
+      "win_delta_pp": 0.33866734400135484,
+      "win_off": 0.1649733299466599,
+      "win_on": 0.16836000338667345,
+      "win_se_pp": 0.31565479831901305,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": 6.660006146521634e-18,
+          "win_se_pp": 0.48749107532498615,
+          "win_z": 1.3661801176732801e-17
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": 0.5598880223955208,
+          "win_se_pp": 0.4815166329699332,
+          "win_z": 1.1627594646984527
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": 0.6633499170812603,
+          "win_se_pp": 0.8126593042257151,
+          "win_z": 0.8162706236573349
+        }
+      ],
+      "win_z": 1.07290415290657
+    },
+    {
+      "adjusted_pp": -4.6277832444915905,
+      "adjusted_se_pp": 0.30727388106677844,
+      "compute_cost_pct": -0.18657410274865266,
+      "compute_cost_se_pct": 0.1564742548020481,
+      "cost_pairs": 2709,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "HURTS ** · share HURTS **",
+      "share_delta_pp": -1.9980655571568509,
+      "share_se_pp": 0.056352634393594836,
+      "share_z": -35.456471177573825,
+      "tag": "governor-every-lane",
+      "time_cost_pct": 0.1964591210741271,
+      "time_cost_se_pct": 0.29277170426898264,
+      "win_delta_pp": -4.68207603081875,
+      "win_off": 0.19007704682076032,
+      "win_on": 0.14325628651257302,
+      "win_se_pp": 0.3096612557081208,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": -4.539092181563688,
+          "win_se_pp": 0.4699784106840361,
+          "win_z": -9.658086580949979
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": -4.6390721855628865,
+          "win_se_pp": 0.4807609257618909,
+          "win_z": -9.649436834349773
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": -5.196241017136533,
+          "win_se_pp": 0.7966550309630288,
+          "win_z": -6.522573529542776
+        }
+      ],
+      "win_z": -15.11999303920656
+    },
+    {
+      "adjusted_pp": -0.36285230133203633,
+      "adjusted_se_pp": 0.3108449351457246,
+      "compute_cost_pct": -0.13058986380540363,
+      "compute_cost_se_pct": 0.15534501666815653,
+      "cost_pairs": 2656,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "~",
+      "share_delta_pp": -0.09515477496655914,
+      "share_se_pp": 0.05844088252187753,
+      "share_z": -1.6282227588013862,
+      "tag": "housing-research",
+      "time_cost_pct": -0.08070900524321044,
+      "time_cost_se_pct": 0.2888782066363767,
+      "win_delta_pp": -0.3471340276013887,
+      "win_off": 0.16840233680467362,
+      "win_on": 0.16493099652865972,
+      "win_se_pp": 0.3146285905454114,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": -0.7598480303939216,
+          "win_se_pp": 0.47549841969818263,
+          "win_z": -1.5980032717589823
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": -0.05998800239952007,
+          "win_se_pp": 0.48953629973816465,
+          "win_z": -0.12254045804489982
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": 5.5234976349510277e-17,
+          "win_se_pp": 0.8131089083011754,
+          "win_z": 6.79306004221654e-17
+        }
+      ],
+      "win_z": -1.1033136785173554
+    },
+    {
+      "adjusted_pp": -0.4593797233673788,
+      "adjusted_se_pp": 0.30154058784380566,
+      "compute_cost_pct": 0.2788064969319649,
+      "compute_cost_se_pct": 0.15563721366826197,
+      "cost_pairs": 2696,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "~",
+      "share_delta_pp": -0.02067205413546529,
+      "share_se_pp": 0.05781932763671739,
+      "share_z": -0.3575284421387457,
+      "tag": "district-coverage",
+      "time_cost_pct": 0.3841725141462635,
+      "time_cost_se_pct": 0.28875056753653033,
+      "win_delta_pp": -0.44026754720176126,
+      "win_off": 0.16886800440267546,
+      "win_on": 0.16446532893065785,
+      "win_se_pp": 0.3056982038628111,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": -0.6598680263947211,
+          "win_se_pp": 0.4743244743860872,
+          "win_z": -1.3911743163765287
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": -0.4199160167966406,
+          "win_se_pp": 0.46683807273617106,
+          "win_z": -0.899489654593686
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": 0.11055831951354336,
+          "win_se_pp": 0.7745376436008464,
+          "win_z": 0.14274105387512834
+        }
+      ],
+      "win_z": -1.440203251568142
+    },
+    {
+      "adjusted_pp": 0.10837155341495461,
+      "adjusted_se_pp": 0.3086138815402136,
+      "compute_cost_pct": -0.07741072034526061,
+      "compute_cost_se_pct": 0.16292437990778857,
+      "cost_pairs": 2683,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "~",
+      "share_delta_pp": -0.008495208601489439,
+      "share_se_pp": 0.057757481256192116,
+      "share_z": -0.1470841251509505,
+      "tag": "slot-kind-tiebreak",
+      "time_cost_pct": -0.17474801713520557,
+      "time_cost_se_pct": 0.3044647121323819,
+      "win_delta_pp": -0.016933367200067724,
+      "win_off": 0.166751333502667,
+      "win_on": 0.16658199983066632,
+      "win_se_pp": 0.3125049384579816,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": -0.09998000399920018,
+          "win_se_pp": 0.49034896640748893,
+          "win_z": -0.20389561485506422
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": -0.05998800239952007,
+          "win_se_pp": 0.46951245612503795,
+          "win_z": -0.12776658343552955
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": 0.33167495854063017,
+          "win_se_pp": 0.801622223619575,
+          "win_z": 0.41375469487736255
+        }
+      ],
+      "win_z": -0.054185918736591523
+    },
+    {
+      "adjusted_pp": 0.6568686496154759,
+      "adjusted_se_pp": 0.3086860120526075,
+      "compute_cost_pct": 0.07558140753202126,
+      "compute_cost_se_pct": 0.16031936736115163,
+      "cost_pairs": 2688,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "helps * · share HELPS **",
+      "share_delta_pp": 0.2880951770085935,
+      "share_se_pp": 0.05733064511361383,
+      "share_z": 5.025151495115165,
+      "tag": "loyalty-rate-alarm",
+      "time_cost_pct": 0.21374924189511016,
+      "time_cost_se_pct": 0.2961902105925578,
+      "win_delta_pp": 0.762001524003047,
+      "win_off": 0.16285665904665142,
+      "win_on": 0.1704766742866819,
+      "win_se_pp": 0.3145567458420745,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": 0.599880023995201,
+          "win_se_pp": 0.4872694824176719,
+          "win_z": 1.2311052623669196
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": 0.7798440311937616,
+          "win_se_pp": 0.4858829780241768,
+          "win_z": 1.6050038105161974
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": 1.1608623548922052,
+          "win_se_pp": 0.7750814064298223,
+          "win_z": 1.4977295871918357
+        }
+      ],
+      "win_z": 2.4224612381564232
+    },
+    {
+      "adjusted_pp": 0.2792291009698015,
+      "adjusted_se_pp": 0.3095793570981602,
+      "compute_cost_pct": 0.18615388633182525,
+      "compute_cost_se_pct": 0.15389321598450859,
+      "cost_pairs": 2727,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "share helps *",
+      "share_delta_pp": 0.13171601756691148,
+      "share_se_pp": 0.0577822168412893,
+      "share_z": 2.279525168248503,
+      "tag": "score-horizon",
+      "time_cost_pct": 0.3557908432436334,
+      "time_cost_se_pct": 0.28698980264296586,
+      "win_delta_pp": 0.3556007112014226,
+      "win_off": 0.16488866311065956,
+      "win_on": 0.1684446702226738,
+      "win_se_pp": 0.3119943439190358,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": 0.3199360127974405,
+          "win_se_pp": 0.48495940884371036,
+          "win_z": 0.6597170958292459
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": 0.39992001599680055,
+          "win_se_pp": 0.4732323180821914,
+          "win_z": 0.8450817932670062
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": 0.33167495854063,
+          "win_se_pp": 0.8016222236195741,
+          "win_z": 0.4137546948773628
+        }
+      ],
+      "win_z": 1.1397665314525793
+    },
+    {
+      "adjusted_pp": -0.207939802862177,
+      "adjusted_se_pp": 0.30924567443282086,
+      "compute_cost_pct": 0.03773689118052628,
+      "compute_cost_se_pct": 0.15202508476986548,
+      "cost_pairs": 2743,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "~",
+      "share_delta_pp": 0.012954857707989762,
+      "share_se_pp": 0.05805403649667238,
+      "share_z": 0.22315171329615172,
+      "tag": "one-launch-pad",
+      "time_cost_pct": 0.07990925015096047,
+      "time_cost_se_pct": 0.2843523282154403,
+      "win_delta_pp": -0.2116670900008466,
+      "win_off": 0.1677250021166709,
+      "win_on": 0.16560833121666244,
+      "win_se_pp": 0.31260155068335627,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": -0.5198960207958407,
+          "win_se_pp": 0.480712000821469,
+          "win_z": -1.0815124646512086
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": 0.05998800239952011,
+          "win_se_pp": 0.47459762645082665,
+          "win_z": 0.12639760305614486
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": -0.11055831951354352,
+          "win_se_pp": 0.8243124176491116,
+          "win_z": -0.1341218658683428
+        }
+      ],
+      "win_z": -0.6771146513449343
+    },
+    {
+      "adjusted_pp": -0.3288671536720951,
+      "adjusted_se_pp": 0.31002951200698803,
+      "compute_cost_pct": 0.005591844328304546,
+      "compute_cost_se_pct": 0.15411819342823388,
+      "cost_pairs": 2683,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "~",
+      "share_delta_pp": -0.06950622926655609,
+      "share_se_pp": 0.05764006199617533,
+      "share_z": -1.2058666639041458,
+      "tag": "settler-target-hysteresis",
+      "time_cost_pct": 0.13392765725880512,
+      "time_cost_se_pct": 0.28730335427069464,
+      "win_delta_pp": -0.36406739480145645,
+      "win_off": 0.16848700364067395,
+      "win_on": 0.1648463296926594,
+      "win_se_pp": 0.31485154622773015,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": -0.39992001599680055,
+          "win_se_pp": 0.4816123211025281,
+          "win_z": -0.8303774601972103
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": -0.37992401519696056,
+          "win_se_pp": 0.48452074070673157,
+          "win_z": -0.7841233269865721
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": -0.22111663902708686,
+          "win_se_pp": 0.8130589645703878,
+          "win_z": -0.2719564615389521
+        }
+      ],
+      "win_z": -1.156314457284351
+    },
+    {
+      "adjusted_pp": 0.5151189532164333,
+      "adjusted_se_pp": 0.31280009945565085,
+      "compute_cost_pct": 0.22028424700115046,
+      "compute_cost_se_pct": 0.16359186766258896,
+      "cost_pairs": 2695,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "~",
+      "share_delta_pp": 0.049503125248528956,
+      "share_se_pp": 0.059418947977212984,
+      "share_z": 0.8331201903391705,
+      "tag": "culture-building-debt",
+      "time_cost_pct": 0.4067608994228866,
+      "time_cost_se_pct": 0.30959294801476084,
+      "win_delta_pp": 0.4826009652019304,
+      "win_off": 0.164253661840657,
+      "win_on": 0.16907967149267633,
+      "win_se_pp": 0.3168543064753984,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": 1.1197760447910419,
+          "win_se_pp": 0.4964844706368615,
+          "win_z": 2.2554100098129113
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": 0.17996400719856023,
+          "win_se_pp": 0.48044432320811226,
+          "win_z": 0.37457827786760195
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": -0.44223327805417356,
+          "win_se_pp": 0.7938593160039297,
+          "win_z": -0.5570675674378361
+        }
+      ],
+      "win_z": 1.5231005397094108
+    },
+    {
+      "adjusted_pp": -0.35071172878226964,
+      "adjusted_se_pp": 0.3033669103067695,
+      "compute_cost_pct": 0.07043651368987802,
+      "compute_cost_se_pct": 0.16151673084595689,
+      "cost_pairs": 2714,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "~",
+      "share_delta_pp": 0.08288212079320151,
+      "share_se_pp": 0.05773990131244718,
+      "share_z": 1.4354392527396707,
+      "tag": "culture-coverage",
+      "time_cost_pct": 0.13557472912384197,
+      "time_cost_se_pct": 0.2963612763526027,
+      "win_delta_pp": -0.2794005588011177,
+      "win_off": 0.16806366946067225,
+      "win_on": 0.16526966387266107,
+      "win_se_pp": 0.30819890815419965,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": -0.9798040391921621,
+          "win_se_pp": 0.465475268949423,
+          "win_z": -2.1049540213029543
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": 0.19996000799840033,
+          "win_se_pp": 0.47751610168270137,
+          "win_z": 0.4187502940608047
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": 0.33167495854063017,
+          "win_se_pp": 0.8054315070314351,
+          "win_z": 0.41179784456542906
+        }
+      ],
+      "win_z": -0.9065592103309028
+    },
+    {
+      "adjusted_pp": 0.07998666551530563,
+      "adjusted_se_pp": 0.3101389370593214,
+      "compute_cost_pct": -0.2431904930160289,
+      "compute_cost_se_pct": 0.15197181668333823,
+      "cost_pairs": 2724,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "share hurts *",
+      "share_delta_pp": -0.18299284132851165,
+      "share_se_pp": 0.05802303845055644,
+      "share_z": -3.153796254300722,
+      "tag": "district-building-chain",
+      "time_cost_pct": -0.3001051944927035,
+      "time_cost_se_pct": 0.28066436536055595,
+      "win_delta_pp": -0.016933367200067724,
+      "win_off": 0.166751333502667,
+      "win_on": 0.16658199983066632,
+      "win_se_pp": 0.31410695276190265,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": 0.03999200159968008,
+          "win_se_pp": 0.4682338158576973,
+          "win_z": 0.08541032331555097
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": 0.1599680063987202,
+          "win_se_pp": 0.48993128988436446,
+          "win_z": 0.3265111041111019
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": -0.6633499170812603,
+          "win_se_pp": 0.8349523839438041,
+          "win_z": -0.7944763436065675
+        }
+      ],
+      "win_z": -0.05390955867475958
+    },
+    {
+      "adjusted_pp": 0.2793185211957333,
+      "adjusted_se_pp": 0.3081330789161429,
+      "compute_cost_pct": 0.043929013807673924,
+      "compute_cost_se_pct": 0.15802879895840466,
+      "cost_pairs": 2664,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "~",
+      "share_delta_pp": 0.06596655345488375,
+      "share_se_pp": 0.057896040910930674,
+      "share_z": 1.1393966222382812,
+      "tag": "strategic-wonders",
+      "time_cost_pct": -0.07289888729969017,
+      "time_cost_se_pct": 0.2934878404437412,
+      "win_delta_pp": 0.22860045720091435,
+      "win_off": 0.1655236643806621,
+      "win_on": 0.16780966895267124,
+      "win_se_pp": 0.3130569391595664,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": 0.3599280143971205,
+          "win_se_pp": 0.47829700757565946,
+          "win_z": 0.7525198959982731
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": 0.39992001599680044,
+          "win_se_pp": 0.48327088473218455,
+          "win_z": 0.8275276426355069
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": -0.6080707573244886,
+          "win_se_pp": 0.8032605967114967,
+          "win_z": -0.7570030944053471
+        }
+      ],
+      "win_z": 0.7302200609723453
+    },
+    {
+      "adjusted_pp": -0.15274543086692652,
+      "adjusted_se_pp": 0.3085615430905227,
+      "compute_cost_pct": -0.1099246865076856,
+      "compute_cost_se_pct": 0.155411014989208,
+      "cost_pairs": 2661,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "~",
+      "share_delta_pp": 0.004397136635408005,
+      "share_se_pp": 0.05879898130623809,
+      "share_z": 0.07478253088275026,
+      "tag": "builder-barbarian-safety",
+      "time_cost_pct": -0.20727800906792226,
+      "time_cost_se_pct": 0.2902050219874699,
+      "win_delta_pp": -0.19473372280077889,
+      "win_off": 0.16764033528067057,
+      "win_on": 0.16569299805266277,
+      "win_se_pp": 0.3121452644565473,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": -0.7798440311937616,
+          "win_se_pp": 0.4800845213724536,
+          "win_z": -1.624389032506949
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": 0.3799240151969605,
+          "win_se_pp": 0.47786929950222135,
+          "win_z": 0.7950375041726121
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": -0.16583747927031509,
+          "win_se_pp": 0.8036144003578504,
+          "win_z": -0.2063644942107402
+        }
+      ],
+      "win_z": -0.6238560855306108
+    },
+    {
+      "adjusted_pp": -0.08584036518783655,
+      "adjusted_se_pp": 0.3101301676861949,
+      "compute_cost_pct": 0.239815708091334,
+      "compute_cost_se_pct": 0.15806231990028327,
+      "cost_pairs": 2718,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "~",
+      "share_delta_pp": -0.04355408015721727,
+      "share_se_pp": 0.058272489169970146,
+      "share_z": -0.7474209661814517,
+      "tag": "builder-worked-tile-priority",
+      "time_cost_pct": 0.2636537008810756,
+      "time_cost_se_pct": 0.2925687198264606,
+      "win_delta_pp": -0.16933367200067728,
+      "win_off": 0.16751333502667004,
+      "win_on": 0.16581999830666327,
+      "win_se_pp": 0.31386710516157273,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": -0.13997200559888023,
+          "win_se_pp": 0.4895264944414928,
+          "win_z": -0.28593346261794494
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": -0.39992001599680055,
+          "win_se_pp": 0.4749201480980865,
+          "win_z": -0.8420784369716907
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": 0.3869541182974017,
+          "win_se_pp": 0.8034880597970124,
+          "win_z": 0.48159286697447506
+        }
+      ],
+      "win_z": -0.5395075470349389
+    },
+    {
+      "adjusted_pp": 0.3343757586963134,
+      "adjusted_se_pp": 0.3127686863545249,
+      "compute_cost_pct": 0.018750417857927842,
+      "compute_cost_se_pct": 0.15731607261810573,
+      "cost_pairs": 2685,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "~",
+      "share_delta_pp": -0.05005623694300489,
+      "share_se_pp": 0.05789192802150648,
+      "share_z": -0.8646496783525558,
+      "tag": "apostle-promotion-by-role",
+      "time_cost_pct": -0.016886757383204446,
+      "time_cost_se_pct": 0.2979485607415087,
+      "win_delta_pp": 0.321733976801287,
+      "win_off": 0.16505799678266023,
+      "win_on": 0.1682753365506731,
+      "win_se_pp": 0.3163400235941473,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": -0.6598680263947211,
+          "win_se_pp": 0.4843404052461679,
+          "win_z": -1.3624054884690875
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": 1.0997800439912018,
+          "win_se_pp": 0.48303294711876743,
+          "win_z": 2.27682200676218
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": 0.8844665561083469,
+          "win_se_pp": 0.8272445339704406,
+          "win_z": 1.0691718346729517
+        }
+      ],
+      "win_z": 1.0170511247544824
+    },
+    {
+      "adjusted_pp": 0.11675758327115639,
+      "adjusted_se_pp": 0.3119683520678124,
+      "compute_cost_pct": 0.2336604383850931,
+      "compute_cost_se_pct": 0.15811293956092193,
+      "cost_pairs": 2705,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "~",
+      "share_delta_pp": -0.04094130884517991,
+      "share_se_pp": 0.05872180582154105,
+      "share_z": -0.6972079327669674,
+      "tag": "inquisition-on-threat",
+      "time_cost_pct": 0.5937403558821245,
+      "time_cost_se_pct": 0.29082762380615196,
+      "win_delta_pp": 0.05080010160020319,
+      "win_off": 0.16641266615866565,
+      "win_on": 0.1669206671746677,
+      "win_se_pp": 0.31615383590663176,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": -0.0999800039992001,
+          "win_se_pp": 0.48460394982363514,
+          "win_z": -0.20631281283527803
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": 0.5798840231953608,
+          "win_se_pp": 0.49583000061071536,
+          "win_z": 1.169521857251711
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": -0.9950248756218902,
+          "win_se_pp": 0.7655330021033411,
+          "win_z": -1.2997805096423125
+        }
+      ],
+      "win_z": 0.16068159177801578
+    },
+    {
+      "adjusted_pp": 0.16456451512448983,
+      "adjusted_se_pp": 0.31053756839048874,
+      "compute_cost_pct": -0.13923542769954972,
+      "compute_cost_se_pct": 0.15999399899701056,
+      "cost_pairs": 2741,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "~",
+      "share_delta_pp": -0.0922548093789905,
+      "share_se_pp": 0.05891357254955405,
+      "share_z": -1.5659347309381397,
+      "tag": "founder-temple",
+      "time_cost_pct": -0.25051076329969835,
+      "time_cost_se_pct": 0.30265198650730707,
+      "win_delta_pp": 0.1439336212005757,
+      "win_off": 0.16594699856066378,
+      "win_on": 0.16738633477266954,
+      "win_se_pp": 0.31625992967566513,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": -0.09998000399920016,
+          "win_se_pp": 0.49602744836260504,
+          "win_z": -0.2015614344110106
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": 0.15996800639872027,
+          "win_se_pp": 0.4800320277391641,
+          "win_z": 0.33324444444286616
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": 0.7739082365948036,
+          "win_se_pp": 0.7895700419480394,
+          "win_z": 0.9801641342488189
+        }
+      ],
+      "win_z": 0.4551117852589936
+    },
+    {
+      "adjusted_pp": 0.3984721134192637,
+      "adjusted_se_pp": 0.30939385482467296,
+      "compute_cost_pct": -0.05177992960540718,
+      "compute_cost_se_pct": 0.16039286001387978,
+      "cost_pairs": 2710,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "~",
+      "share_delta_pp": -0.0018684023960715045,
+      "share_se_pp": 0.05755795875101238,
+      "share_z": -0.03246123449502353,
+      "tag": "theology-for-founders",
+      "time_cost_pct": -0.1182071177076657,
+      "time_cost_se_pct": 0.3011134632363367,
+      "win_delta_pp": 0.4487342308017951,
+      "win_off": 0.16442299551265768,
+      "win_on": 0.16891033782067563,
+      "win_se_pp": 0.312767260264573,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": 0.8198360327934417,
+          "win_se_pp": 0.4825383175924139,
+          "win_z": 1.6990071107387859
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": -0.09998000399920016,
+          "win_se_pp": 0.4771158636226429,
+          "win_z": -0.20955078550537493
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": 0.9397457158651186,
+          "win_se_pp": 0.8065336521172917,
+          "win_z": 1.1651661569211922
+        }
+      ],
+      "win_z": 1.4347225167436202
+    },
+    {
+      "adjusted_pp": 0.34027056504498226,
+      "adjusted_se_pp": 0.3128129758792932,
+      "compute_cost_pct": -0.13604573607015977,
+      "compute_cost_se_pct": 0.1577541991756051,
+      "cost_pairs": 2721,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "~",
+      "share_delta_pp": -0.012438866160359753,
+      "share_se_pp": 0.0582545043832618,
+      "share_z": -0.21352625504327175,
+      "tag": "holy-lane-parity",
+      "time_cost_pct": -0.13011468931586256,
+      "time_cost_se_pct": 0.2976230207077938,
+      "win_delta_pp": 0.3894674456015581,
+      "win_off": 0.16471932943865888,
+      "win_on": 0.16861400389467446,
+      "win_se_pp": 0.31722609479854624,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": 0.1599680063987202,
+          "win_se_pp": 0.49480665858893724,
+          "win_z": 0.32329396466674126
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": 1.039792041591682,
+          "win_se_pp": 0.4810379067925917,
+          "win_z": 2.16155946737064
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": -0.7739082365948036,
+          "win_se_pp": 0.8049271666519734,
+          "win_z": -0.9614636810108045
+        }
+      ],
+      "win_z": 1.22772827326481
+    },
+    {
+      "adjusted_pp": 0.8230281130553038,
+      "adjusted_se_pp": 0.30552745903437994,
+      "compute_cost_pct": -0.16064268568701706,
+      "compute_cost_se_pct": 0.15476942493071602,
+      "cost_pairs": 2719,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "helps * · share HELPS **",
+      "share_delta_pp": 0.22072448687777005,
+      "share_se_pp": 0.057652876605712375,
+      "share_z": 3.8285077843956214,
+      "tag": "idle-faith-patronage",
+      "time_cost_pct": -0.12501403277923798,
+      "time_cost_se_pct": 0.2877285224482276,
+      "win_delta_pp": 0.7704682076030809,
+      "win_off": 0.16281432562865125,
+      "win_on": 0.17051900770468206,
+      "win_se_pp": 0.308683980382679,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": 1.539692061587681,
+          "win_se_pp": 0.46970359427845426,
+          "win_z": 3.2780078337550593
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": 0.3199360127974405,
+          "win_se_pp": 0.48164819925118896,
+          "win_z": 0.6642524840637629
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": -0.11055831951354342,
+          "win_se_pp": 0.7745376436008452,
+          "win_z": -0.14274105387512862
+        }
+      ],
+      "win_z": 2.4959772990095654
+    },
+    {
+      "adjusted_pp": -0.274721676475929,
+      "adjusted_se_pp": 0.3103902657917243,
+      "compute_cost_pct": 0.12068774985924627,
+      "compute_cost_se_pct": 0.1580442382802547,
+      "cost_pairs": 2701,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "~",
+      "share_delta_pp": -0.05943736660004584,
+      "share_se_pp": 0.05971769870706551,
+      "share_z": -0.9953057114877318,
+      "tag": "religious-defence-scales",
+      "time_cost_pct": 0.20304928435912994,
+      "time_cost_se_pct": 0.29866874673069865,
+      "win_delta_pp": -0.16933367200067728,
+      "win_off": 0.16751333502667004,
+      "win_on": 0.16581999830666327,
+      "win_se_pp": 0.3152348252140175,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": 0.5598880223955208,
+          "win_se_pp": 0.48400283895324164,
+          "win_z": 1.1567866494469266
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": -0.5198960207958407,
+          "win_se_pp": 0.47987901354169277,
+          "win_z": -1.0833897839349276
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": -1.216141514648977,
+          "win_se_pp": 0.8265447225014375,
+          "win_z": -1.4713559732962442
+        }
+      ],
+      "win_z": -0.5371667673002631
+    },
+    {
+      "adjusted_pp": -0.5487537383765817,
+      "adjusted_se_pp": 0.31635536535863235,
+      "compute_cost_pct": 0.1563677706756765,
+      "compute_cost_se_pct": 0.158336419517806,
+      "cost_pairs": 2688,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "~",
+      "share_delta_pp": -0.026444121858230463,
+      "share_se_pp": 0.05815425969607046,
+      "share_z": -0.45472372955024165,
+      "tag": "guru-heals-the-corps",
+      "time_cost_pct": 0.213784774216949,
+      "time_cost_se_pct": 0.2954632775035773,
+      "win_delta_pp": -0.5842011684023364,
+      "win_off": 0.16958767250867834,
+      "win_on": 0.16374566082465497,
+      "win_se_pp": 0.3195152339954933,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": 0.11997600479904022,
+          "win_se_pp": 0.4866608145561358,
+          "win_z": 0.24652900174111125
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": -0.9998000399920021,
+          "win_se_pp": 0.49340533967292066,
+          "win_z": -2.026325942590673
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": -1.381978993919292,
+          "win_se_pp": 0.8242569944433382,
+          "win_z": -1.6766360531191016
+        }
+      ],
+      "win_z": -1.8283984807139946
+    },
+    {
+      "adjusted_pp": 0.18768540956268906,
+      "adjusted_se_pp": 0.3052939229517453,
+      "compute_cost_pct": 0.26542932733127694,
+      "compute_cost_se_pct": 0.15654714961859148,
+      "cost_pairs": 2755,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "~",
+      "share_delta_pp": 0.10150812274417971,
+      "share_se_pp": 0.058519875431472766,
+      "share_z": 1.7345922559771427,
+      "tag": "religious-units-heal-first",
+      "time_cost_pct": 0.5288935874486409,
+      "time_cost_se_pct": 0.29463234868249977,
+      "win_delta_pp": 0.23706714080094826,
+      "win_off": 0.16548133096266193,
+      "win_on": 0.1678520023706714,
+      "win_se_pp": 0.3076257581978063,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": 0.3199360127974405,
+          "win_se_pp": 0.4741134326061912,
+          "win_z": 0.674809003066543
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": 0.8198360327934417,
+          "win_se_pp": 0.4733301880173767,
+          "win_z": 1.7320594661994055
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": -1.6030956329463792,
+          "win_se_pp": 0.7737704855652142,
+          "win_z": -2.071797338942658
+        }
+      ],
+      "win_z": 0.7706348850297244
+    },
+    {
+      "adjusted_pp": -0.1745262849521217,
+      "adjusted_se_pp": 0.30675570041366984,
+      "compute_cost_pct": 0.10743655518269428,
+      "compute_cost_se_pct": 0.15575211972878947,
+      "cost_pairs": 2697,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "~",
+      "share_delta_pp": 0.037008969591932776,
+      "share_se_pp": 0.05791576450019215,
+      "share_z": 0.6390137454165866,
+      "tag": "condemn-under-congress",
+      "time_cost_pct": 0.21639469650618284,
+      "time_cost_se_pct": 0.29156762885955495,
+      "win_delta_pp": -0.15240030480060957,
+      "win_off": 0.1674286681906697,
+      "win_on": 0.1659046651426636,
+      "win_se_pp": 0.31065456931038554,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": -0.8798240351929619,
+          "win_se_pp": 0.4812294544118415,
+          "win_z": -1.8282838407476172
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": 0.6398720255948811,
+          "win_se_pp": 0.47728384357700177,
+          "win_z": 1.3406530185462866
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": -0.33167495854063017,
+          "win_se_pp": 0.7744327779567686,
+          "win_z": -0.4282811471587084
+        }
+      ],
+      "win_z": -0.4905780241343923
+    },
+    {
+      "adjusted_pp": -0.34104644882125956,
+      "adjusted_se_pp": 0.3100654555601447,
+      "compute_cost_pct": 0.07600497995098066,
+      "compute_cost_se_pct": 0.15856971594248334,
+      "cost_pairs": 2738,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "~",
+      "share_delta_pp": -0.04355542144249233,
+      "share_se_pp": 0.058205513423639714,
+      "share_z": -0.7483040502620606,
+      "tag": "spread-campaign-persists",
+      "time_cost_pct": 0.041337801216194785,
+      "time_cost_se_pct": 0.29519587384001655,
+      "win_delta_pp": -0.3132672932012532,
+      "win_off": 0.16823300313267292,
+      "win_on": 0.1651003302006604,
+      "win_se_pp": 0.31486542871896983,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": -0.5198960207958407,
+          "win_se_pp": 0.4897813683574859,
+          "win_z": -1.0614859085786508
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": -0.07998400319936017,
+          "win_se_pp": 0.4808767282295939,
+          "win_z": -0.16632953624899047
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": -0.3869541182974018,
+          "win_se_pp": 0.7919772047742021,
+          "win_z": -0.4885924947899542
+        }
+      ],
+      "win_z": -0.9949243855566531
+    },
+    {
+      "adjusted_pp": -0.20531878024711078,
+      "adjusted_se_pp": 0.3027183028717639,
+      "compute_cost_pct": 0.11334320028311565,
+      "compute_cost_se_pct": 0.15411985294119815,
+      "cost_pairs": 2685,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "share HURTS **",
+      "share_delta_pp": -0.28629850530744877,
+      "share_se_pp": 0.05767929749100213,
+      "share_z": -4.963626773576964,
+      "tag": "holy-site-where-the-threat-is",
+      "time_cost_pct": 0.4395259829599303,
+      "time_cost_se_pct": 0.2871945699213469,
+      "win_delta_pp": -0.37253407840149033,
+      "win_off": 0.16852933705867412,
+      "win_on": 0.16480399627465922,
+      "win_se_pp": 0.30852268921422166,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": 0.2999400119976004,
+          "win_se_pp": 0.4711586003060972,
+          "win_z": 0.6366009488158312
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": -0.9798040391921621,
+          "win_se_pp": 0.4773567506048131,
+          "win_z": -2.052561397635513
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": -0.5527915975677169,
+          "win_se_pp": 0.7859939117871223,
+          "win_z": -0.7033026455775325
+        }
+      ],
+      "win_z": -1.2074770881528993
+    },
+    {
+      "adjusted_pp": 0.07237842048814645,
+      "adjusted_se_pp": 0.3124311094980893,
+      "compute_cost_pct": -0.4308595880121662,
+      "compute_cost_se_pct": 0.15625938189134708,
+      "cost_pairs": 2682,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "~",
+      "share_delta_pp": -0.029981041542730243,
+      "share_se_pp": 0.058575562305039866,
+      "share_z": -0.5118353177149212,
+      "tag": "enhancer-for-the-corps",
+      "time_cost_pct": -0.8066194295254504,
+      "time_cost_se_pct": 0.2894929312091228,
+      "win_delta_pp": 0.15240030480060957,
+      "win_off": 0.1659046651426636,
+      "win_on": 0.1674286681906697,
+      "win_se_pp": 0.3163722627250723,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": 0.15996800639872027,
+          "win_se_pp": 0.47919785846698176,
+          "win_z": 0.3338245436039288
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": 0.47990401919616066,
+          "win_se_pp": 0.48734926747140617,
+          "win_z": 0.9847229722661226
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": -0.7739082365948036,
+          "win_se_pp": 0.8347943031426747,
+          "win_z": -0.9270645878647485
+        }
+      ],
+      "win_z": 0.48171196642812375
+    },
+    {
+      "adjusted_pp": 0.025373984724253472,
+      "adjusted_se_pp": 0.3067743288126948,
+      "compute_cost_pct": -0.09227723899175883,
+      "compute_cost_se_pct": 0.15558731212886537,
+      "cost_pairs": 2649,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "~",
+      "share_delta_pp": 0.022382506164553253,
+      "share_se_pp": 0.05862329144243923,
+      "share_z": 0.3818022771125037,
+      "tag": "early-contact-window",
+      "time_cost_pct": -0.2963580541219488,
+      "time_cost_se_pct": 0.2891055433800457,
+      "win_delta_pp": 0.03386673440013544,
+      "win_off": 0.166497332994666,
+      "win_on": 0.16683600033866736,
+      "win_se_pp": 0.311355244972589,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": 0.11997600479904012,
+          "win_se_pp": 0.48087173731902555,
+          "win_z": 0.24949689384519647
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": -0.35992801439712047,
+          "win_se_pp": 0.4740962212206191,
+          "win_z": -0.7591876886730745
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": 0.8844665561083469,
+          "win_se_pp": 0.8047379575210518,
+          "win_z": 1.0990739878020597
+        }
+      ],
+      "win_z": 0.10877200544065668
+    },
+    {
+      "adjusted_pp": 1.8671205113336327,
+      "adjusted_se_pp": 0.3118887878167485,
+      "compute_cost_pct": 0.09793100522752098,
+      "compute_cost_se_pct": 0.1556779728225166,
+      "cost_pairs": 2748,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "HELPS ** · share HELPS **",
+      "share_delta_pp": 0.6310074444932563,
+      "share_se_pp": 0.058280750527936305,
+      "share_z": 10.827030173380988,
+      "tag": "great-person-housing",
+      "time_cost_pct": 0.1595568764479221,
+      "time_cost_se_pct": 0.2888096286393749,
+      "win_delta_pp": 1.8711370756074854,
+      "win_off": 0.15731098128862925,
+      "win_on": 0.1760223520447041,
+      "win_se_pp": 0.31554128635695494,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": 1.7196560687862406,
+          "win_se_pp": 0.4840167229718565,
+          "win_z": 3.5528856487180325
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": 1.8996200759848,
+          "win_se_pp": 0.484026144043383,
+          "win_z": 3.9246228728804744
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": 2.211166390270869,
+          "win_se_pp": 0.8156395367742937,
+          "win_z": 2.7109602840191274
+        }
+      ],
+      "win_z": 5.929927893780493
+    },
+    {
+      "adjusted_pp": 0.8978191913756345,
+      "adjusted_se_pp": 0.3097392939141418,
+      "compute_cost_pct": 0.22725151588741938,
+      "compute_cost_se_pct": 0.15959173600028045,
+      "cost_pairs": 2672,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "helps * · share HELPS **",
+      "share_delta_pp": 0.3860998382227537,
+      "share_se_pp": 0.058096201087700236,
+      "share_z": 6.645870659252044,
+      "tag": "opportunistic-war",
+      "time_cost_pct": 0.41934184306158184,
+      "time_cost_se_pct": 0.30235977268913755,
+      "win_delta_pp": 0.9821352976039285,
+      "win_off": 0.16175599017864703,
+      "win_on": 0.1715773431546863,
+      "win_se_pp": 0.31325927012047655,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": 1.1997600479904016,
+          "win_se_pp": 0.47663573855243624,
+          "win_z": 2.5171424443205326
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": 0.6998600279944013,
+          "win_se_pp": 0.48430670876017445,
+          "win_z": 1.4450760547712491
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": 1.1608623548922052,
+          "win_se_pp": 0.8098436235820211,
+          "win_z": 1.433440137192897
+        }
+      ],
+      "win_z": 3.135215431058779
+    },
+    {
+      "adjusted_pp": 0.9828311825752479,
+      "adjusted_se_pp": 0.3045710691963324,
+      "compute_cost_pct": 0.0744830102992622,
+      "compute_cost_se_pct": 0.14624596782660587,
+      "cost_pairs": 2716,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "helps * · share HELPS **",
+      "share_delta_pp": 0.35551738513696435,
+      "share_se_pp": 0.05818731141179903,
+      "share_z": 6.109878193562208,
+      "tag": "raid-pillage-prizes",
+      "time_cost_pct": 0.3005648500653684,
+      "time_cost_se_pct": 0.2726143395672602,
+      "win_delta_pp": 1.058335450004234,
+      "win_off": 0.1613749894166455,
+      "win_on": 0.17195834391668782,
+      "win_se_pp": 0.3096273178591065,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": 0.2799440111977604,
+          "win_se_pp": 0.4656139452583317,
+          "win_z": 0.6012363118601226
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": 1.5796840631873608,
+          "win_se_pp": 0.4814029786089456,
+          "win_z": 3.2814173018870614
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": 1.7689331122166947,
+          "win_se_pp": 0.8099063006110889,
+          "win_z": 2.184120695050776
+        }
+      ],
+      "win_z": 3.418094557424746
+    },
+    {
+      "adjusted_pp": 0.4114556742064886,
+      "adjusted_se_pp": 0.3090747174251968,
+      "compute_cost_pct": 0.37772732276627763,
+      "compute_cost_se_pct": 0.15332310660563386,
+      "cost_pairs": 2698,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "~",
+      "share_delta_pp": 0.09947644268625416,
+      "share_se_pp": 0.057173166639225705,
+      "share_z": 1.7399148680004157,
+      "tag": "settler-threat-detour",
+      "time_cost_pct": 0.2744097378716094,
+      "time_cost_se_pct": 0.282514846409676,
+      "win_delta_pp": 0.36406739480145645,
+      "win_off": 0.1648463296926594,
+      "win_on": 0.16848700364067395,
+      "win_se_pp": 0.3141675961957076,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": -0.0799840031993601,
+          "win_se_pp": 0.47248367886359693,
+          "win_z": -0.1692841610777649
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": 0.4599080183963206,
+          "win_se_pp": 0.49185513012923743,
+          "win_z": 0.9350477208105514
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": 1.3266998341625202,
+          "win_se_pp": 0.8075274395239883,
+          "win_z": 1.6429161031909547
+        }
+      ],
+      "win_z": 1.1588317802663017
+    },
+    {
+      "adjusted_pp": 0.6385029060750209,
+      "adjusted_se_pp": 0.30761168261996336,
+      "compute_cost_pct": -0.009529057804040812,
+      "compute_cost_se_pct": 0.15236568016960875,
+      "cost_pairs": 2672,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "share helps *",
+      "share_delta_pp": 0.13618992135082686,
+      "share_se_pp": 0.057934867053398384,
+      "share_z": 2.350741932751844,
+      "tag": "settle-sooner",
+      "time_cost_pct": 0.018454826663607826,
+      "time_cost_se_pct": 0.28456108493074017,
+      "win_delta_pp": 0.5588011176022349,
+      "win_off": 0.1638726610786555,
+      "win_on": 0.16946067225467784,
+      "win_se_pp": 0.3121484734976345,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": 0.3399320135972805,
+          "win_se_pp": 0.4745268243468249,
+          "win_z": 0.7163599530230751
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": 0.6598680263947211,
+          "win_se_pp": 0.48351366894638004,
+          "win_z": 1.3647349987698034
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": 0.8844665561083469,
+          "win_se_pp": 0.8047379575210517,
+          "win_z": 1.09907398780206
+        }
+      ],
+      "win_z": 1.7901773195968216
+    },
+    {
+      "adjusted_pp": -1.0453194714669016,
+      "adjusted_se_pp": 0.3044189071853172,
+      "compute_cost_pct": -0.13466540892121173,
+      "compute_cost_se_pct": 0.15276851267618058,
+      "cost_pairs": 2718,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "HURTS ** · share HURTS **",
+      "share_delta_pp": -0.35789097166019085,
+      "share_se_pp": 0.05821012710689904,
+      "share_z": -6.148259580381053,
+      "tag": "contact-posture",
+      "time_cost_pct": -0.021125262921008515,
+      "time_cost_se_pct": 0.2845579533973291,
+      "win_delta_pp": -1.0922021844043694,
+      "win_off": 0.17212767758868852,
+      "win_on": 0.16120565574464482,
+      "win_se_pp": 0.3079719642538881,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": -0.9398120375924822,
+          "win_se_pp": 0.47991252082187225,
+          "win_z": -1.958298641558697
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": -1.1597680463907216,
+          "win_se_pp": 0.4741706306638222,
+          "win_z": -2.4458875590145417
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": -1.3266998341625202,
+          "win_se_pp": 0.7525931450194447,
+          "win_z": -1.7628380525951275
+        }
+      ],
+      "win_z": -3.5464338029937426
+    },
+    {
+      "adjusted_pp": -0.845133032358982,
+      "adjusted_se_pp": 0.3055163056627538,
+      "compute_cost_pct": 0.41931178538013897,
+      "compute_cost_se_pct": 0.15898510117559658,
+      "cost_pairs": 2671,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "hurts *",
+      "share_delta_pp": -0.11702141078392356,
+      "share_se_pp": 0.05877342062420672,
+      "share_z": -1.991060066626895,
+      "tag": "district-lookahead-settle",
+      "time_cost_pct": 0.48570705647800255,
+      "time_cost_se_pct": 0.2941589638170163,
+      "win_delta_pp": -0.8212683092032838,
+      "win_off": 0.1707730082126831,
+      "win_on": 0.16256032512065025,
+      "win_se_pp": 0.3100414347715393,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": -0.21995600879824032,
+          "win_se_pp": 0.47541159759261875,
+          "win_z": -0.4626643731706375
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": -1.2997400519896014,
+          "win_se_pp": 0.47940816386826,
+          "win_z": -2.711134582069333
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": -1.1608623548922055,
+          "win_se_pp": 0.7829397376743011,
+          "win_z": -1.4826969420922635
+        }
+      ],
+      "win_z": -2.648898557086259
+    },
+    {
+      "adjusted_pp": -0.27509748719655674,
+      "adjusted_se_pp": 0.3049717621643081,
+      "compute_cost_pct": -0.8572471737903103,
+      "compute_cost_se_pct": 0.15254008509901537,
+      "cost_pairs": 2727,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "~",
+      "share_delta_pp": 0.01933766789813378,
+      "share_se_pp": 0.05744249391878315,
+      "share_z": 0.336643947344538,
+      "tag": "priced-tile-purchase",
+      "time_cost_pct": -0.7142898163781949,
+      "time_cost_se_pct": 0.27928749324822577,
+      "win_delta_pp": -0.22860045720091435,
+      "win_off": 0.16780966895267124,
+      "win_on": 0.1655236643806621,
+      "win_se_pp": 0.3091387181636607,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": -0.13997200559888015,
+          "win_se_pp": 0.4787839883619345,
+          "win_z": -0.2923489694752887
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": -0.4599080183963205,
+          "win_se_pp": 0.48033241374073565,
+          "win_z": -0.9574786236361733
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": 0.16583747927031506,
+          "win_se_pp": 0.7483929320942289,
+          "win_z": 0.22159145571598576
+        }
+      ],
+      "win_z": -0.7394753350820693
+    },
+    {
+      "adjusted_pp": -0.11344609111333037,
+      "adjusted_se_pp": 0.3058887696462973,
+      "compute_cost_pct": -0.32912172834522574,
+      "compute_cost_se_pct": 0.1628117890658142,
+      "cost_pairs": 2761,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "share hurts *",
+      "share_delta_pp": -0.16134954414166452,
+      "share_se_pp": 0.05782464844353131,
+      "share_z": -2.7903246882552257,
+      "tag": "science-payback-horizon",
+      "time_cost_pct": -0.377237050241718,
+      "time_cost_se_pct": 0.306131773913764,
+      "win_delta_pp": -0.2116670900008466,
+      "win_off": 0.1677250021166709,
+      "win_on": 0.16560833121666244,
+      "win_se_pp": 0.310068161420614,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": -0.599880023995201,
+          "win_se_pp": 0.4806560805059374,
+          "win_z": -1.2480441802874287
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": 0.23995200959808036,
+          "win_se_pp": 0.4741417794086993,
+          "win_z": 0.5060764944555693
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": -0.3869541182974018,
+          "win_se_pp": 0.7842094405486878,
+          "win_z": -0.4934321091909601
+        }
+      ],
+      "win_z": -0.682646967141253
+    },
+    {
+      "adjusted_pp": -0.14002454006720091,
+      "adjusted_se_pp": 0.30572440042286686,
+      "compute_cost_pct": -0.10053563937928278,
+      "compute_cost_se_pct": 0.1535966306930346,
+      "cost_pairs": 2673,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "~",
+      "share_delta_pp": -0.007575134364191039,
+      "share_se_pp": 0.057806311842787186,
+      "share_z": -0.13104337783722886,
+      "tag": "science-multiplier-payoff",
+      "time_cost_pct": -0.2651934045816789,
+      "time_cost_se_pct": 0.2842455804884354,
+      "win_delta_pp": -0.15240030480060957,
+      "win_off": 0.1674286681906697,
+      "win_on": 0.1659046651426636,
+      "win_se_pp": 0.30903465860754176,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": -0.8398320335932817,
+          "win_se_pp": 0.46863703050228367,
+          "win_z": -1.7920735642532397
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": 0.37992401519696056,
+          "win_se_pp": 0.4795408091068034,
+          "win_z": 0.7922662847080941
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": 0.2763957987838584,
+          "win_se_pp": 0.7959091916392136,
+          "win_z": 0.34727051991271496
+        }
+      ],
+      "win_z": -0.4931495563872988
+    },
+    {
+      "adjusted_pp": -0.08326418310883194,
+      "adjusted_se_pp": 0.3090703703675918,
+      "compute_cost_pct": 0.07410719550277471,
+      "compute_cost_se_pct": 0.15309716103296156,
+      "cost_pairs": 2753,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "~",
+      "share_delta_pp": -0.10398312115919765,
+      "share_se_pp": 0.05776590467653177,
+      "share_z": -1.8000777749689134,
+      "tag": "research-tier-premium",
+      "time_cost_pct": 0.10463062577335301,
+      "time_cost_se_pct": 0.2851183100938672,
+      "win_delta_pp": -0.11853357040047414,
+      "win_off": 0.16725933451866903,
+      "win_on": 0.1660739988146643,
+      "win_se_pp": 0.31249934359044995,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": 0.17996400719856023,
+          "win_se_pp": 0.4854149856350687,
+          "win_z": 0.37074258629060086
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": -0.2999400119976005,
+          "win_se_pp": 0.47622619333526056,
+          "win_z": -0.629826784404621
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": -0.44223327805417373,
+          "win_se_pp": 0.7938593160039293,
+          "win_z": -0.5570675674378366
+        }
+      ],
+      "win_z": -0.3793082220224432
+    },
+    {
+      "adjusted_pp": 0.09459772989800946,
+      "adjusted_se_pp": 0.30715489456760836,
+      "compute_cost_pct": -0.07768536949001685,
+      "compute_cost_se_pct": 0.15483148734972196,
+      "cost_pairs": 2719,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "~",
+      "share_delta_pp": 0.0961372017095971,
+      "share_se_pp": 0.058528676629564916,
+      "share_z": 1.6425657856243887,
+      "tag": "campus-finishes-first",
+      "time_cost_pct": -0.19304939804392823,
+      "time_cost_se_pct": 0.2829840350580369,
+      "win_delta_pp": 0.07620015240030481,
+      "win_off": 0.16628566590466515,
+      "win_on": 0.1670476674286682,
+      "win_se_pp": 0.31100771039103253,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": 0.19996000799840027,
+          "win_se_pp": 0.4825169302132684,
+          "win_z": 0.41441034599556875
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": 0.19996000799840027,
+          "win_se_pp": 0.47499594427547276,
+          "win_z": 0.4209720323052568
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": -0.6080707573244886,
+          "win_se_pp": 0.7878709880156546,
+          "win_z": -0.7717897556502061
+        }
+      ],
+      "win_z": 0.2450104928411509
+    },
+    {
+      "adjusted_pp": -0.40006576092619084,
+      "adjusted_se_pp": 0.3096620439656245,
+      "compute_cost_pct": 0.07075815466363229,
+      "compute_cost_se_pct": 0.1607248118532273,
+      "cost_pairs": 2680,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "share HURTS **",
+      "share_delta_pp": -0.2575445993765025,
+      "share_se_pp": 0.058332086135210015,
+      "share_z": -4.415144673199767,
+      "tag": "research-floor-holds",
+      "time_cost_pct": 0.18038108271533243,
+      "time_cost_se_pct": 0.30303856114382516,
+      "win_delta_pp": -0.37253407840149033,
+      "win_off": 0.16852933705867412,
+      "win_on": 0.16480399627465922,
+      "win_se_pp": 0.31382253770764673,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": -0.7998400319936017,
+          "win_se_pp": 0.49443400908484886,
+          "win_z": -1.61768813895717
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": 0.23995200959808044,
+          "win_se_pp": 0.47075448653912955,
+          "win_z": 0.5097179452545386
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": -0.8844665561083469,
+          "win_se_pp": 0.797094557777734,
+          "win_z": -1.1096130910417985
+        }
+      ],
+      "win_z": -1.1870851632349573
+    },
+    {
+      "adjusted_pp": -4.697859619974467,
+      "adjusted_se_pp": 0.30464474937851804,
+      "compute_cost_pct": -0.18702511517086984,
+      "compute_cost_se_pct": 0.15428311879182216,
+      "cost_pairs": 2740,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "HURTS ** · share HURTS **",
+      "share_delta_pp": -1.6540039638899304,
+      "share_se_pp": 0.0573492416825572,
+      "share_z": -28.840903826510345,
+      "tag": "governor-victory-lanes",
+      "time_cost_pct": 0.009913185971698995,
+      "time_cost_se_pct": 0.2901338039209646,
+      "win_delta_pp": -4.732876132418955,
+      "win_off": 0.19033104732876133,
+      "win_on": 0.14300228600457202,
+      "win_se_pp": 0.3078388177481776,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": -5.078984203159361,
+          "win_se_pp": 0.46878910650217004,
+          "win_z": -10.834262427844726
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": -4.279144171165771,
+          "win_se_pp": 0.47692417353121547,
+          "win_z": -8.972378438027937
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": -5.030403537866217,
+          "win_se_pp": 0.7887788926252174,
+          "win_z": -6.37745708575442
+        }
+      ],
+      "win_z": -15.374526731357852
+    },
+    {
+      "adjusted_pp": -0.5398691540961735,
+      "adjusted_se_pp": 0.30794379965430657,
+      "compute_cost_pct": -0.014429282988051852,
+      "compute_cost_se_pct": 0.1567767403777794,
+      "cost_pairs": 2683,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "share HURTS **",
+      "share_delta_pp": -0.23270625981221793,
+      "share_se_pp": 0.05779660740325356,
+      "share_z": -4.026296183590841,
+      "tag": "governor-expansion-lane",
+      "time_cost_pct": -0.15706238794480934,
+      "time_cost_se_pct": 0.29079378005794826,
+      "win_delta_pp": -0.5503344340022011,
+      "win_off": 0.16941833883667767,
+      "win_on": 0.16391499449665567,
+      "win_se_pp": 0.3131842618161707,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": -0.7598480303939216,
+          "win_se_pp": 0.4754984196981831,
+          "win_z": -1.598003271758981
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": -0.11997600479904018,
+          "win_se_pp": 0.477532184641088,
+          "win_z": -0.2512417145018484
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": -1.1608623548922055,
+          "win_se_pp": 0.8431738864075935,
+          "win_z": -1.3767769301278385
+        }
+      ],
+      "win_z": -1.7572225079599628
+    },
+    {
+      "adjusted_pp": -0.17961035650691812,
+      "adjusted_se_pp": 0.30476045373542876,
+      "compute_cost_pct": 0.22826580312441053,
+      "compute_cost_se_pct": 0.15796372102288858,
+      "cost_pairs": 2648,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "~",
+      "share_delta_pp": 0.01670926155178284,
+      "share_se_pp": 0.05803377335002606,
+      "share_z": 0.28792305906083804,
+      "tag": "one-shot-recovery",
+      "time_cost_pct": 0.22597158883065147,
+      "time_cost_se_pct": 0.29185285840617514,
+      "win_delta_pp": -0.16933367200067728,
+      "win_off": 0.16751333502667004,
+      "win_on": 0.16581999830666327,
+      "win_se_pp": 0.31042144157498036,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": -0.31993601279744044,
+          "win_se_pp": 0.474956531772811,
+          "win_z": -0.673611144167773
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": -0.27994401119776047,
+          "win_se_pp": 0.48166314769103613,
+          "win_z": -0.5812028853353987
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": 0.552791597567717,
+          "win_se_pp": 0.7820899604574183,
+          "win_z": 0.7068133149854111
+        }
+      ],
+      "win_z": -0.5454960557541764
+    },
+    {
+      "adjusted_pp": 0.16142351087576096,
+      "adjusted_se_pp": 0.30875672915326713,
+      "compute_cost_pct": -0.08351020094653037,
+      "compute_cost_se_pct": 0.16193649193384455,
+      "cost_pairs": 2700,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "~",
+      "share_delta_pp": -0.012377143703430054,
+      "share_se_pp": 0.05774672636776072,
+      "share_z": -0.21433498454277852,
+      "tag": "lane-congress-ballot",
+      "time_cost_pct": -0.18872730688691366,
+      "time_cost_se_pct": 0.29861334540471657,
+      "win_delta_pp": 0.16086698840064342,
+      "win_off": 0.16586233172466344,
+      "win_on": 0.16747100160866987,
+      "win_se_pp": 0.3132965931421141,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": 0.05998800239952011,
+          "win_se_pp": 0.4927945100601898,
+          "win_z": 0.12173025708462781
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": 0.4599080183963206,
+          "win_se_pp": 0.4693795334711404,
+          "win_z": 0.9798212013958589
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": -0.3869541182974017,
+          "win_se_pp": 0.8034880597970124,
+          "win_z": -0.48159286697447506
+        }
+      ],
+      "win_z": 0.5134654890028528
+    },
+    {
+      "adjusted_pp": -0.28035078059401897,
+      "adjusted_se_pp": 0.30631811507010015,
+      "compute_cost_pct": -0.0672863705045357,
+      "compute_cost_se_pct": 0.15819579433228984,
+      "cost_pairs": 2684,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "~",
+      "share_delta_pp": -0.09264738963816382,
+      "share_se_pp": 0.057665773393163006,
+      "share_z": -1.6066270195753296,
+      "tag": "lane-congress-favor",
+      "time_cost_pct": -0.1522683899434315,
+      "time_cost_se_pct": 0.2962246697149235,
+      "win_delta_pp": -0.2794005588011177,
+      "win_off": 0.16806366946067225,
+      "win_on": 0.16526966387266107,
+      "win_se_pp": 0.31097819479483535,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": -0.2999400119976004,
+          "win_se_pp": 0.48040835515085817,
+          "win_z": -0.624343870754315
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": -0.31993601279744044,
+          "win_se_pp": 0.47242272043749234,
+          "win_z": -0.6772240177211633
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": -0.11055831951354342,
+          "win_se_pp": 0.80932321690285,
+          "win_z": -0.13660589144672303
+        }
+      ],
+      "win_z": -0.8984570734467389
+    },
+    {
+      "adjusted_pp": -0.030058430821640385,
+      "adjusted_se_pp": 0.305800593697425,
+      "compute_cost_pct": 0.030147502628247672,
+      "compute_cost_se_pct": 0.1550234591146563,
+      "cost_pairs": 2660,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "~",
+      "share_delta_pp": -0.039068012470868385,
+      "share_se_pp": 0.05908458100213493,
+      "share_z": -0.6612217910025752,
+      "tag": "lane-great-people",
+      "time_cost_pct": -0.030548687015213648,
+      "time_cost_se_pct": 0.29133543463485095,
+      "win_delta_pp": -0.05926678520023704,
+      "win_off": 0.16696300059266786,
+      "win_on": 0.16637033274066548,
+      "win_se_pp": 0.3107780121530882,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": -0.619876024795041,
+          "win_se_pp": 0.4751995234650058,
+          "win_z": -1.3044542222498448
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": 0.5198960207958407,
+          "win_se_pp": 0.4807120008214689,
+          "win_z": 1.0815124646512086
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": -0.11055831951354332,
+          "win_se_pp": 0.7901869739671087,
+          "win_z": -0.13991412558788305
+        }
+      ],
+      "win_z": -0.19070456365182753
+    },
+    {
+      "adjusted_pp": -0.05523108522797025,
+      "adjusted_se_pp": 0.30866036737310065,
+      "compute_cost_pct": -0.1304304348008222,
+      "compute_cost_se_pct": 0.1549440228222828,
+      "cost_pairs": 2719,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "~",
+      "share_delta_pp": -0.0429277909382357,
+      "share_se_pp": 0.057627762423544095,
+      "share_z": -0.7449151091921858,
+      "tag": "lane-policy-deck",
+      "time_cost_pct": -0.14556891387389848,
+      "time_cost_se_pct": 0.2895011774702247,
+      "win_delta_pp": 8.459916367476427e-18,
+      "win_off": 0.16666666666666666,
+      "win_on": 0.16666666666666666,
+      "win_se_pp": 0.3127344165557995,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": 0.2599480103979204,
+          "win_se_pp": 0.4812543898983119,
+          "win_z": 0.540146782770848
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": -0.6998600279944013,
+          "win_se_pp": 0.48182207075020594,
+          "win_z": -1.4525279568549159
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": 1.216141514648977,
+          "win_se_pp": 0.788643739031519,
+          "win_z": 1.542067037953588
+        }
+      ],
+      "win_z": 2.7051440198514163e-17
+    },
+    {
+      "adjusted_pp": 0.23205427491557953,
+      "adjusted_se_pp": 0.3094171877460881,
+      "compute_cost_pct": 0.005334980206687765,
+      "compute_cost_se_pct": 0.15588118252072083,
+      "cost_pairs": 2697,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "~",
+      "share_delta_pp": -0.07322114593938411,
+      "share_se_pp": 0.058194763302391775,
+      "share_z": -1.258208501663839,
+      "tag": "lane-culture-spending",
+      "time_cost_pct": 0.10070132426833046,
+      "time_cost_se_pct": 0.2857465685198049,
+      "win_delta_pp": 0.16086698840064342,
+      "win_off": 0.16586233172466344,
+      "win_on": 0.16747100160866987,
+      "win_se_pp": 0.31398244049159607,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": 4.662004302565145e-17,
+          "win_se_pp": 0.4767027032366135,
+          "win_z": 9.779689250579177e-17
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": 0.05998800239952007,
+          "win_se_pp": 0.48953629973816465,
+          "win_z": 0.12254045804489982
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": 0.8844665561083469,
+          "win_se_pp": 0.7970945577777343,
+          "win_z": 1.109613091041798
+        }
+      ],
+      "win_z": 0.5123439009798675
+    },
+    {
+      "adjusted_pp": 0.22602885515916482,
+      "adjusted_se_pp": 0.3126181968057646,
+      "compute_cost_pct": 0.14579498589031217,
+      "compute_cost_se_pct": 0.15504170913974671,
+      "cost_pairs": 2749,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "~",
+      "share_delta_pp": -0.013258992729018888,
+      "share_se_pp": 0.05880960273192537,
+      "share_z": -0.22545625396345542,
+      "tag": "lane-space-race",
+      "time_cost_pct": 0.15774735207412652,
+      "time_cost_se_pct": 0.2898949354509064,
+      "win_delta_pp": 0.2116670900008466,
+      "win_off": 0.16560833121666244,
+      "win_on": 0.1677250021166709,
+      "win_se_pp": 0.3164769021235583,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": 0.019996000799840024,
+          "win_se_pp": 0.4887203174265649,
+          "win_z": 0.04091501844067414
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": 0.31993601279744044,
+          "win_se_pp": 0.48247813208263074,
+          "win_z": 0.6631098728069341
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": 0.4422332780541734,
+          "win_se_pp": 0.8166657531175437,
+          "win_z": 0.541510742143882
+        }
+      ],
+      "win_z": 0.6688231860858141
+    },
+    {
+      "adjusted_pp": 0.10635698813355829,
+      "adjusted_se_pp": 0.31224601232951543,
+      "compute_cost_pct": 0.1331640579811078,
+      "compute_cost_se_pct": 0.1628602912978315,
+      "cost_pairs": 2724,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "~",
+      "share_delta_pp": -0.06905484960074221,
+      "share_se_pp": 0.05907207549093606,
+      "share_z": -1.168993116067809,
+      "tag": "competition-victory-points",
+      "time_cost_pct": 0.25026806546667535,
+      "time_cost_se_pct": 0.30199460654509247,
+      "win_delta_pp": -0.008466683600033874,
+      "win_off": 0.16670900008466683,
+      "win_on": 0.1666243332486665,
+      "win_se_pp": 0.3169476392170989,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": 0.15996800639872027,
+          "win_se_pp": 0.48418131741686765,
+          "win_z": 0.3303886388102661
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": -0.27994401119776047,
+          "win_se_pp": 0.4915295606532952,
+          "win_z": -0.5695364706563832
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": 0.27639579878385845,
+          "win_se_pp": 0.8035638665171917,
+          "win_z": 0.34396245314241636
+        }
+      ],
+      "win_z": -0.026713193450336667
+    },
+    {
+      "adjusted_pp": -0.11938676794888753,
+      "adjusted_se_pp": 0.30445394660469316,
+      "compute_cost_pct": -0.1741438528621045,
+      "compute_cost_se_pct": 0.15688070240549506,
+      "cost_pairs": 2696,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "~",
+      "share_delta_pp": -0.04320246798246918,
+      "share_se_pp": 0.05904127997732527,
+      "share_z": -0.7317332550896767,
+      "tag": "congress-banks-decided",
+      "time_cost_pct": -0.34322982703363053,
+      "time_cost_se_pct": 0.29111219577990416,
+      "win_delta_pp": -0.16933367200067725,
+      "win_off": 0.16751333502667004,
+      "win_on": 0.16581999830666327,
+      "win_se_pp": 0.30995912571566725,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": -0.19996000799840033,
+          "win_se_pp": 0.48992247224099,
+          "win_z": -0.4081462258380366
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": -0.11997600479904018,
+          "win_se_pp": 0.4665135647756386,
+          "win_z": -0.25717581193322964
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": -0.22111663902708673,
+          "win_se_pp": 0.7744983206482174,
+          "win_z": -0.28549660229349866
+        }
+      ],
+      "win_z": -0.5463096839291353
+    },
+    {
+      "adjusted_pp": -0.31356356302602717,
+      "adjusted_se_pp": 0.30225644803604235,
+      "compute_cost_pct": -0.14794411255679335,
+      "compute_cost_se_pct": 0.15605439133212576,
+      "cost_pairs": 2720,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "~",
+      "share_delta_pp": 0.06383193909047016,
+      "share_se_pp": 0.057348007269474185,
+      "share_z": 1.113062896684944,
+      "tag": "congress-counter-votes",
+      "time_cost_pct": -0.14538696363072331,
+      "time_cost_se_pct": 0.28800905513588076,
+      "win_delta_pp": -0.25400050800101603,
+      "win_off": 0.16793666920667175,
+      "win_on": 0.1653966641266616,
+      "win_se_pp": 0.3076223243638354,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": 0.11997600479904012,
+          "win_se_pp": 0.4630704759920957,
+          "win_z": 0.25908800284017247
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": -0.4999000199960006,
+          "win_se_pp": 0.47696493299099185,
+          "win_z": -1.0480854784463618
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": -0.6080707573244886,
+          "win_se_pp": 0.8108458746676721,
+          "win_z": -0.7499215033605596
+        }
+      ],
+      "win_z": -0.8256894506154272
+    },
+    {
+      "adjusted_pp": -0.07415787640151453,
+      "adjusted_se_pp": 0.3082707099885844,
+      "compute_cost_pct": -0.17781353630004132,
+      "compute_cost_se_pct": 0.15955153613497142,
+      "cost_pairs": 2708,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "~",
+      "share_delta_pp": 0.0029774020519073743,
+      "share_se_pp": 0.05879599468208572,
+      "share_z": 0.05063953876461155,
+      "tag": "envoy-infrastructure",
+      "time_cost_pct": -0.48013252426922454,
+      "time_cost_se_pct": 0.29302278718082203,
+      "win_delta_pp": -0.11853357040047414,
+      "win_off": 0.16725933451866903,
+      "win_on": 0.1660739988146643,
+      "win_se_pp": 0.31410138642992796,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": -0.3599280143971205,
+          "win_se_pp": 0.48328975576978894,
+          "win_z": -0.7447457971125901
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": -0.13997200559888023,
+          "win_se_pp": 0.47794764087264724,
+          "win_z": -0.2928605429316824
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": 0.6080707573244887,
+          "win_se_pp": 0.8220925749695049,
+          "win_z": 0.7396621449196822
+        }
+      ],
+      "win_z": -0.3773735982121094
+    },
+    {
+      "adjusted_pp": 2.144521823805531,
+      "adjusted_se_pp": 0.3029952435355398,
+      "compute_cost_pct": 0.8601050509990105,
+      "compute_cost_se_pct": 0.16284446786119397,
+      "cost_pairs": 2703,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "HELPS ** · share HELPS **",
+      "share_delta_pp": 0.4503627060506099,
+      "share_se_pp": 0.05821140322963599,
+      "share_z": 7.7366749651093425,
+      "tag": "air-surge",
+      "time_cost_pct": 0.5736766197526977,
+      "time_cost_se_pct": 0.30675886577767686,
+      "win_delta_pp": 2.150537634408599,
+      "win_off": 0.15591397849462366,
+      "win_on": 0.1774193548387097,
+      "win_se_pp": 0.3076038520475725,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": 2.2195560887822428,
+          "win_se_pp": 0.4740131928187433,
+          "win_z": 4.682477455075755
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": 2.1995600879824027,
+          "win_se_pp": 0.473646985554185,
+          "win_z": 4.643880685546502
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": 1.8242122719734664,
+          "win_se_pp": 0.7769064458787149,
+          "win_z": 2.3480462565994067
+        }
+      ],
+      "win_z": 6.991257164347887
+    },
+    {
+      "adjusted_pp": -0.12360772238356696,
+      "adjusted_se_pp": 0.30264757664897385,
+      "compute_cost_pct": -0.21996583404306053,
+      "compute_cost_se_pct": 0.1557521519361198,
+      "cost_pairs": 2660,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "~",
+      "share_delta_pp": -0.044489240988119315,
+      "share_se_pp": 0.05817279834505755,
+      "share_z": -0.7647773917325946,
+      "tag": "power-the-laboratory",
+      "time_cost_pct": -0.43348068393228084,
+      "time_cost_se_pct": 0.28947957446009,
+      "win_delta_pp": -0.16933367200067728,
+      "win_off": 0.16751333502667004,
+      "win_on": 0.16581999830666327,
+      "win_se_pp": 0.3076371250988338,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": -0.2799440111977604,
+          "win_se_pp": 0.4698905686425185,
+          "win_z": -0.5957642691286599
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": -0.17996400719856023,
+          "win_se_pp": 0.46864112747224035,
+          "win_z": -0.3840124066132465
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": 0.16583747927031506,
+          "win_se_pp": 0.8187081268285136,
+          "win_z": 0.20255995248603575
+        }
+      ],
+      "win_z": -0.5504331505707444
+    },
+    {
+      "adjusted_pp": -0.28787085431095816,
+      "adjusted_se_pp": 0.30429665004225753,
+      "compute_cost_pct": 0.006508507391626239,
+      "compute_cost_se_pct": 0.15580737610651568,
+      "cost_pairs": 2707,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "~",
+      "share_delta_pp": -0.05900516812551638,
+      "share_se_pp": 0.0579491432370101,
+      "share_z": -1.018223304599814,
+      "tag": "campus-adjacency-threshold",
+      "time_cost_pct": -0.08784402747632811,
+      "time_cost_se_pct": 0.29147378922602607,
+      "win_delta_pp": -0.3556007112014226,
+      "win_off": 0.1684446702226738,
+      "win_on": 0.16488866311065956,
+      "win_se_pp": 0.3099190501561009,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": -0.6798640271945613,
+          "win_se_pp": 0.4830831274305247,
+          "win_z": -1.4073437646450133
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": -0.13997200559888015,
+          "win_se_pp": 0.4728984952815315,
+          "win_z": -0.2959874201239536
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": -0.05527915975677183,
+          "win_se_pp": 0.7765208632617542,
+          "win_z": -0.07118824795585435
+        }
+      ],
+      "win_z": -1.147398686922642
+    },
+    {
+      "adjusted_pp": -0.2027890951158684,
+      "adjusted_se_pp": 0.3076803237230113,
+      "compute_cost_pct": -0.25663741762463854,
+      "compute_cost_se_pct": 0.15995343160838096,
+      "cost_pairs": 2721,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "~",
+      "share_delta_pp": -0.06704371785610377,
+      "share_se_pp": 0.05902662040710424,
+      "share_z": -1.1358217257519732,
+      "tag": "fifteenth-citizen",
+      "time_cost_pct": -0.5149557754253252,
+      "time_cost_se_pct": 0.2964471741111784,
+      "win_delta_pp": -0.23706714080094826,
+      "win_off": 0.1678520023706714,
+      "win_on": 0.16548133096266193,
+      "win_se_pp": 0.3122526618901186,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": -0.2999400119976004,
+          "win_se_pp": 0.480408355150858,
+          "win_z": -0.6243438707543152
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": -0.09998000399920011,
+          "win_se_pp": 0.47879000356361295,
+          "win_z": -0.20881806899695762
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": -0.4422332780541734,
+          "win_se_pp": 0.801533567508248,
+          "win_z": -0.5517339460017346
+        }
+      ],
+      "win_z": -0.7592157561313984
+    },
+    {
+      "adjusted_pp": -0.48126964602741373,
+      "adjusted_se_pp": 0.31015881620688496,
+      "compute_cost_pct": 0.3974056378070358,
+      "compute_cost_se_pct": 0.15577817895442592,
+      "cost_pairs": 2724,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "~",
+      "share_delta_pp": -0.034258069062324537,
+      "share_se_pp": 0.05842717132221812,
+      "share_z": -0.5863379706232195,
+      "tag": "chain-tech-lookahead",
+      "time_cost_pct": 0.8990322073322093,
+      "time_cost_se_pct": 0.29106866281771354,
+      "win_delta_pp": -0.49106764880196424,
+      "win_off": 0.1691220049106765,
+      "win_on": 0.16421132842265684,
+      "win_se_pp": 0.31583101587862383,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": -0.19996000799840027,
+          "win_se_pp": 0.48664503328668196,
+          "win_z": -0.4108949939300091
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": -0.7198560287942414,
+          "win_se_pp": 0.4904458674189325,
+          "win_z": -1.467758373788783
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": -0.6633499170812603,
+          "win_se_pp": 0.7780229024144439,
+          "win_z": -0.8526097561173095
+        }
+      ],
+      "win_z": -1.5548430145020495
+    },
+    {
+      "adjusted_pp": -0.3771829508743961,
+      "adjusted_se_pp": 0.30530340390048766,
+      "compute_cost_pct": 0.05060808486265984,
+      "compute_cost_se_pct": 0.15629944436250856,
+      "cost_pairs": 2691,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "~",
+      "share_delta_pp": -0.03540584852095213,
+      "share_se_pp": 0.05845856832203267,
+      "share_z": -0.6056571267005848,
+      "tag": "research-grants-first",
+      "time_cost_pct": 0.17210627688834218,
+      "time_cost_se_pct": 0.29216494445753627,
+      "win_delta_pp": -0.40640081280162593,
+      "win_off": 0.1686986707306748,
+      "win_on": 0.16463466260265855,
+      "win_se_pp": 0.30827932405770914,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": -0.8998200359928019,
+          "win_se_pp": 0.47577241110299195,
+          "win_z": -1.8912825018725499
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": 0.37992401519696056,
+          "win_se_pp": 0.4719724003948956,
+          "win_z": 0.8049708306652701
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": -1.216141514648977,
+          "win_se_pp": 0.7847529700456559,
+          "win_z": -1.5497125351156342
+        }
+      ],
+      "win_z": -1.318287608304048
+    },
+    {
+      "adjusted_pp": 0.14111776779083188,
+      "adjusted_se_pp": 0.3114722528308451,
+      "compute_cost_pct": -0.03503537391061169,
+      "compute_cost_se_pct": 0.1569161245204412,
+      "cost_pairs": 2675,
+      "n_off": 23622,
+      "n_on": 23622,
+      "pairs": 23622,
+      "read": "share hurts *",
+      "share_delta_pp": -0.12408753293816328,
+      "share_se_pp": 0.05910619592149584,
+      "share_z": -2.09939974995134,
+      "tag": "barbarian-capture-priority",
+      "time_cost_pct": 0.02520022935814729,
+      "time_cost_se_pct": 0.28891263980767223,
+      "win_delta_pp": 0.025400050800101607,
+      "win_off": 0.16653966641266615,
+      "win_on": 0.1667936669206672,
+      "win_se_pp": 0.3153598247904809,
+      "win_tranches": [
+        {
+          "pairs": 10002,
+          "position": "latest",
+          "win_delta_pp": -0.5798840231953608,
+          "win_se_pp": 0.49177900425441334,
+          "win_z": -1.1791557146172267
+        },
+        {
+          "pairs": 10002,
+          "position": "previous",
+          "win_delta_pp": 1.2197560487902417,
+          "win_se_pp": 0.4795343028377235,
+          "win_z": 2.543626267343407
+        },
+        {
+          "pairs": 3618,
+          "position": "earlier",
+          "win_delta_pp": -1.6030956329463792,
+          "win_se_pp": 0.7894350238014346,
+          "win_z": -2.0306872441849038
+        }
+      ],
+      "win_z": 0.08054307747341286
+    }
+  ],
+  "kind": "gene_screen_analysis",
+  "overall_share": 0.1666666666666669,
+  "overall_win": 0.16666666666666666,
+  "profile": {
+    "all_seats": true,
+    "baseline": "best",
+    "city_states": 9,
+    "design": "foldover",
+    "field": "advanced",
+    "genes": [
+      "war-reinforcement",
+      "come-ashore",
+      "recorded-tactical-step",
+      "whole-turn-backtrack-guard",
+      "blind-objective-strength",
+      "blind-objective-units",
+      "relief-targets-the-siege",
+      "army-target-weighs-enemy",
+      "peacetime-deterrence",
+      "war-economy",
+      "bounded-recovery",
+      "siege-tracks-wall",
+      "siege-commitment",
+      "war-patience",
+      "siege-is-progress",
+      "endgame-war-runway",
+      "home-defense",
+      "garrison-under-fire",
+      "strike-opening",
+      "recon-replacement",
+      "barbarian-scouts-are-scouts",
+      "barbarian-hunt",
+      "barbarian-bargain",
+      "barbarian-ranged-answer",
+      "civilian-rescue",
+      "naval-recon",
+      "camp-party",
+      "religion-sues-peace",
+      "escort-unstick",
+      "buildings-before-projects",
+      "wonder-ring-settle-value",
+      "settler-site-agreement",
+      "settler-guard-holds",
+      "stranded-settler-discount",
+      "wide-map-capacity",
+      "housing-districts",
+      "amenity-project-preemption",
+      "amenity-district-path",
+      "governor-every-lane",
+      "housing-research",
+      "district-coverage",
+      "slot-kind-tiebreak",
+      "loyalty-rate-alarm",
+      "score-horizon",
+      "one-launch-pad",
+      "settler-target-hysteresis",
+      "culture-building-debt",
+      "culture-coverage",
+      "district-building-chain",
+      "strategic-wonders",
+      "builder-barbarian-safety",
+      "builder-worked-tile-priority",
+      "apostle-promotion-by-role",
+      "joint-tactics",
+      "inquisition-on-threat",
+      "founder-temple",
+      "theology-for-founders",
+      "holy-lane-parity",
+      "idle-faith-patronage",
+      "religious-defence-scales",
+      "guru-heals-the-corps",
+      "religious-units-heal-first",
+      "condemn-under-congress",
+      "spread-campaign-persists",
+      "holy-site-where-the-threat-is",
+      "enhancer-for-the-corps",
+      "early-contact-window",
+      "great-person-housing",
+      "opportunistic-war",
+      "raid-pillage-prizes",
+      "settler-threat-detour",
+      "settle-sooner",
+      "contact-posture",
+      "district-lookahead-settle",
+      "priced-tile-purchase",
+      "science-payback-horizon",
+      "science-multiplier-payoff",
+      "research-tier-premium",
+      "campus-finishes-first",
+      "research-floor-holds",
+      "governor-victory-lanes",
+      "governor-expansion-lane",
+      "one-shot-recovery",
+      "lane-congress-ballot",
+      "lane-congress-favor",
+      "lane-great-people",
+      "lane-policy-deck",
+      "lane-culture-spending",
+      "lane-space-race",
+      "competition-victory-points",
+      "congress-banks-decided",
+      "congress-counter-votes",
+      "envoy-infrastructure",
+      "air-surge",
+      "power-the-laboratory",
+      "campus-adjacency-threshold",
+      "fifteenth-citizen",
+      "chain-tech-lookahead",
+      "research-grants-first",
+      "barbarian-capture-priority"
+    ],
+    "height": 46,
+    "kind": "header",
+    "map": "continents",
+    "players": 6,
+    "prior": [],
+    "randomize_civs": true,
+    "screened": [
+      "war-reinforcement",
+      "come-ashore",
+      "recorded-tactical-step",
+      "whole-turn-backtrack-guard",
+      "blind-objective-strength",
+      "blind-objective-units",
+      "relief-targets-the-siege",
+      "army-target-weighs-enemy",
+      "peacetime-deterrence",
+      "war-economy",
+      "bounded-recovery",
+      "siege-tracks-wall",
+      "siege-commitment",
+      "war-patience",
+      "siege-is-progress",
+      "endgame-war-runway",
+      "home-defense",
+      "garrison-under-fire",
+      "strike-opening",
+      "recon-replacement",
+      "barbarian-scouts-are-scouts",
+      "barbarian-hunt",
+      "barbarian-bargain",
+      "barbarian-ranged-answer",
+      "civilian-rescue",
+      "naval-recon",
+      "camp-party",
+      "religion-sues-peace",
+      "escort-unstick",
+      "buildings-before-projects",
+      "wonder-ring-settle-value",
+      "settler-site-agreement",
+      "settler-guard-holds",
+      "stranded-settler-discount",
+      "wide-map-capacity",
+      "housing-districts",
+      "amenity-project-preemption",
+      "amenity-district-path",
+      "governor-every-lane",
+      "housing-research",
+      "district-coverage",
+      "slot-kind-tiebreak",
+      "loyalty-rate-alarm",
+      "score-horizon",
+      "one-launch-pad",
+      "settler-target-hysteresis",
+      "culture-building-debt",
+      "culture-coverage",
+      "district-building-chain",
+      "strategic-wonders",
+      "builder-barbarian-safety",
+      "builder-worked-tile-priority",
+      "apostle-promotion-by-role",
+      "inquisition-on-threat",
+      "founder-temple",
+      "theology-for-founders",
+      "holy-lane-parity",
+      "idle-faith-patronage",
+      "religious-defence-scales",
+      "guru-heals-the-corps",
+      "religious-units-heal-first",
+      "condemn-under-congress",
+      "spread-campaign-persists",
+      "holy-site-where-the-threat-is",
+      "enhancer-for-the-corps",
+      "early-contact-window",
+      "great-person-housing",
+      "opportunistic-war",
+      "raid-pillage-prizes",
+      "settler-threat-detour",
+      "settle-sooner",
+      "contact-posture",
+      "district-lookahead-settle",
+      "priced-tile-purchase",
+      "science-payback-horizon",
+      "science-multiplier-payoff",
+      "research-tier-premium",
+      "campus-finishes-first",
+      "research-floor-holds",
+      "governor-victory-lanes",
+      "governor-expansion-lane",
+      "one-shot-recovery",
+      "lane-congress-ballot",
+      "lane-congress-favor",
+      "lane-great-people",
+      "lane-policy-deck",
+      "lane-culture-spending",
+      "lane-space-race",
+      "competition-victory-points",
+      "congress-banks-decided",
+      "congress-counter-votes",
+      "envoy-infrastructure",
+      "air-surge",
+      "power-the-laboratory",
+      "campus-adjacency-threshold",
+      "fifteenth-citizen",
+      "chain-tech-lookahead",
+      "research-grants-first",
+      "barbarian-capture-priority"
+    ],
+    "speed": "online",
+    "start_seed": 141000000,
+    "turns": 250,
+    "victories": "science,culture,religious,diplomatic,domination,score",
+    "width": 74
+  },
+  "reproducibility": {
+    "target_pairs_per_window": 10000,
+    "unit": "complete paired comparisons",
+    "windows": "newest first; whole game-pair clusters only"
+  },
+  "shape": "standard"
+}

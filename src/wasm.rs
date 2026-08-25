@@ -26,13 +26,6 @@ use std::cell::{Cell, RefCell};
 thread_local! {
     /// The one game this page is playing.
     static SESSION: RefCell<Option<Session>> = const { RefCell::new(None) };
-    /// Latest persistent roster supplied by the local desktop host.
-    ///
-    /// The public static build has no such host and falls back to the shipped
-    /// snapshot. The desktop channel refreshes this before the first world and
-    /// after every rated result, so the next game both displays and seats from
-    /// the ratings the previous game just changed.
-    static HOST_LEAGUE: RefCell<Option<crate::league::League>> = const { RefCell::new(None) };
     /// Why the module last died.
     ///
     /// A panic on `wasm32-unknown-unknown` unwinds nowhere: it aborts, and the
@@ -81,10 +74,7 @@ fn opening_params() -> Params {
 }
 
 fn browser_session(params: Params) -> Session {
-    let league = HOST_LEAGUE
-        .with(|held| held.borrow().clone())
-        .or_else(crate::league::shipped_league);
-    Session::new_with_league(params, league, true)
+    Session::new(params)
 }
 
 fn start_automatic_browser_next_game(session: &mut Session, queued: Option<Params>) {
@@ -166,20 +156,20 @@ fn advance_one_frame(session: &mut Session, held: SpectatorFrame) -> u64 {
         // The socket stepper's own accounting: a seat owes its share of the
         // whole-turn budget, only the living divide it, and a simultaneous
         // step is the whole round so it spends the whole budget at once.
-        budget = budget.saturating_add(if session.game.turn_structure
-            == TurnStructure::Simultaneous
-        {
-            pace
-        } else {
-            let living: Vec<_> = session.game.players.iter().filter(|p| p.alive).collect();
-            let minors = living
-                .iter()
-                .filter(|p| p.is_minor || p.is_barbarian)
-                .count();
-            let majors = living.len() - minors;
-            let p = &session.game.players[pid];
-            seat_delay_ms(pace, majors, minors, p.is_minor || p.is_barbarian)
-        });
+        budget = budget.saturating_add(
+            if session.game.turn_structure == TurnStructure::Simultaneous {
+                pace
+            } else {
+                let living: Vec<_> = session.game.players.iter().filter(|p| p.alive).collect();
+                let minors = living
+                    .iter()
+                    .filter(|p| p.is_minor || p.is_barbarian)
+                    .count();
+                let majors = living.len() - minors;
+                let p = &session.game.players[pid];
+                seat_delay_ms(pace, majors, minors, p.is_minor || p.is_barbarian)
+            },
+        );
         if spectator_step_completes_frame(pace, turn_before, finished_before, &session.game) {
             FRAME_SEQUENCE.with(|sequence| sequence.set(sequence.get().wrapping_add(1)));
         }
@@ -236,11 +226,7 @@ fn browser_civ6_status() -> Value {
 /// changed worlds, or a stale `have=` token must receive a complete map rather
 /// than a patch it would apply to the wrong terrain. The viewer's
 /// `adoptTiles()` already applies this wire shape.
-fn deliver_browser_tiles(
-    frame: SpectatorFrame,
-    have: Option<SpectatorFrame>,
-    state: &mut Value,
-) {
+fn deliver_browser_tiles(frame: SpectatorFrame, have: Option<SpectatorFrame>, state: &mut Value) {
     // Lift the array out only while considering a patch. A full response keeps
     // the original values in place; the cache itself is just one u64 per tile.
     let Some(Value::Object(map)) = state.get_mut("map") else {
@@ -293,22 +279,6 @@ fn route_unversioned(method: &str, target: &str, body: &str) -> Value {
     let path = request_path(target);
 
     match (method, path) {
-        // A local static-file host is the browser module's filesystem. Accept
-        // its current authoritative roster before a session is created; the
-        // public /beta build never calls this route and stays read-only.
-        ("POST", "/host-league") => {
-            match serde_json::from_value::<crate::league::League>(parsed) {
-                Ok(league) if !league.strategies.is_empty() => {
-                    let round = league.round;
-                    let strategies = league.strategies.len();
-                    HOST_LEAGUE.with(|held| *held.borrow_mut() = Some(league));
-                    json!({"ok": true, "round": round, "strategies": strategies})
-                }
-                Ok(_) => json!({"error": "the host league has no strategies"}),
-                Err(error) => json!({"error": format!("invalid host league: {error}")}),
-            }
-        }
-
         ("GET", "/runtime") => json!({
             "server_instance": process_identity(),
             "seed": with_session(|s| s.game.seed),
@@ -470,9 +440,7 @@ fn route_unversioned(method: &str, target: &str, body: &str) -> Value {
             out
         }),
 
-        ("POST", "/route") => {
-            with_session(|session| crate::routes::route_step(session, &parsed))
-        }
+        ("POST", "/route") => with_session(|session| crate::routes::route_step(session, &parsed)),
 
         // The same one-unit question the native server answers, and it has to
         // be answered here too: this router is the whole server on the
@@ -637,8 +605,8 @@ pub unsafe extern "C" fn civvis_request(ptr: *mut u8, len: usize) -> *mut u8 {
     sized(answer.into_bytes())
 }
 
-// The opening world's own contract — that it is the Tiny Tennis Ball globe,
-// sized by the shipped table — is tested natively on `stock_opening_params`
+// The opening world's own contract — that it is the Tiny Lakes globe, sized
+// by the shipped table — is tested natively on `stock_opening_params`
 // in the parent module, where the suite actually runs; a `#[cfg(test)]`
 // module here would only ever be compiled for a target whose tests nobody
 // executes.

@@ -90,27 +90,43 @@ a quarter — in the lane that decides two games in five.
   "maybe a smaller number would have worked". It is not null, so the axis is
   open and the number is now the obvious thing to tune. This run says the
   direction pays; it does not say 850 is where to stop.
-- **The war regime disagrees on the share axis.** In
+- **The historical war regime disagrees on the share axis.** In
   `2026-08-21-s8-war-rerank-vs-best-4p-allseats` (4p, `domination,score`, 5,844
-  pairs) the gene reads +5 on wins but **share hurts, z −2.26**. The ledger
-  carries the row with `conflict: true`. A screen restricted to war is a
-  different game — religion cannot win it — so this is a regime difference, not
-  a contradiction, but it is the reason to price a Religion gene natively.
+  pairs) the gene reads +5 on wins but **share hurts, z −2.26**. The one-screen
+  ledger intentionally excludes that four-player regime, so it does not set a
+  current `conflict` field or a deployment column. Religion cannot win in that
+  regime; keep it as context rather than pooling it with the six-player history.
 
 ## What was decided
 
-The gene is back in the code and screenable again. **No default changed**: the
-ledger row is `helps`, family-wise, `default_on: false`, and the deployment
-genome is byte-identical — exactly one row added, no surviving row altered,
-`default_on` still 33.
+The gene is back in the code, and **it defaults on.** The operator took the
+call this page was written to leave open (2026-08-22): *"sure we can have this
+default on."*
 
-This direct screen is recorded here and in `docs/gene_ranking_notes.md` rather
-than entered as a ledger source, following the P9 precedent
-(`2026-08-21-current-genome-settler-guard-direct-confirmation.md`), which kept a
-direct confirmation as a note.
+Recording this direct 60×38 Pangaea result as a **legacy** ledger source gives
+the gene columns `[+63 prior, +99 last]` — both positive — and the 2026-08-22
+rule defaults it **on**. The ledger diff is exactly one row changed and exactly
+one default moved: `holy-lane-parity` `false` → `true`, `default_on` **33 →
+34**. No other gene's verdict, columns or default moved.
 
-⚠ **That is a live decision, not a formality.** Entering this screen as a native
-source would give the gene columns `[+63 prior, +99 last]` — both positive — and
-the 2026-08-22 rule would default it **on**, taking the genome to 34. The
-evidence for that is on this page; the change belongs to whoever owns the
-deployment genome, not to the PR that restored the code.
+⚠ **This moves the incumbent.** Every recorded Elo result is filed against the
+deployment genome, and the genome now plays a gene it did not play before, so
+`ai_eval live advanced --deployment-comparison` diverges from `main` by
+design — the previous PR's byte-identical run was the evidence that *restoring*
+the code changed nothing, and that property is deliberately given up here.
+
+Its `helps` verdict is family-wise on the direct win axis. The historical war
+screen's `share hurts` reading is not part of the one-screen ledger; the rule
+reads the two positive six-player win columns.
+
+## What is still open
+
+- **850 is an upper bound, not a tuned value.** It is
+  `(Culture, theater_square)`'s own figure, taken so a null would retire the
+  axis rather than leave "maybe a smaller number would have worked". It is not
+  null, so the number is now the obvious thing to screen — `advanced_holy_lane_v0`
+  (the pre-shipment `d_holy`) is the second cell of that 2×2 and is registered.
+- **The historical war regime.** A screen restricted to `domination,score` is a
+  game religion cannot win, so it cannot replace the standard screen. If it
+  re-runs against the current genome, its share reading is diagnostic history,
+  not a deployment input.

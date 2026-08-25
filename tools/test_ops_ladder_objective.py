@@ -114,6 +114,8 @@ class NoOperationalScriptHoldsALaneOfItsOwn(unittest.TestCase):
         source = (OPS / "civvis-game-supervisor.sh").read_text()
         self.assertIn("VICTORY=${CIVVIS_VICTORY:-}", source)
         self.assertIn('${VICTORY:+--victory} ${VICTORY:+"$VICTORY"}', source)
+        self.assertIn("RESTART_BELOW_LEADER_RATIO=${CIVVIS_RESTART_BELOW_LEADER_RATIO:-}",
+                      source)
 
     def test_the_supervisors_optional_flags_reach_the_climb_as_words(self):
         """⚠ zsh does not word-split an unquoted `${VAR:+--flag "$VAR"}`: set,
@@ -130,13 +132,13 @@ class NoOperationalScriptHoldsALaneOfItsOwn(unittest.TestCase):
             self.skipTest("zsh is not installed here")
         source = (OPS / "civvis-game-supervisor.sh").read_text()
         knob_lines = [line for line in source.splitlines()
-                      if re.match(r"^(VICTORY|ABANDON_BELOW)=\$\{CIVVIS_", line)]
-        self.assertEqual(len(knob_lines), 2, knob_lines)
+                      if re.match(r"^(VICTORY|ABANDON_BELOW|RESTART_BELOW_LEADER_RATIO)=\$\{CIVVIS_", line)]
+        self.assertEqual(len(knob_lines), 3, knob_lines)
         invocation = EveryLadderLoopCanAskForTheRungAndTheLane._invocation(source)
         flag_lines = [line.strip().rstrip("\\").strip()
                       for line in invocation.splitlines()
                       if ":+--" in line]
-        self.assertEqual(len(flag_lines), 2, invocation)
+        self.assertEqual(len(flag_lines), 3, invocation)
         script = "\n".join(knob_lines) + (
             "\nfor w in " + " ".join(flag_lines) + "; do print -r -- \"$w\"; done\n")
         for knobs, expected in (
@@ -144,8 +146,12 @@ class NoOperationalScriptHoldsALaneOfItsOwn(unittest.TestCase):
             ({"CIVVIS_VICTORY": "science"}, ["--victory", "science"]),
             ({"CIVVIS_ABANDON_BELOW_WIN_RATE": "0.05"},
              ["--abandon-below-win-rate", "0.05"]),
-            ({"CIVVIS_VICTORY": "culture", "CIVVIS_ABANDON_BELOW_WIN_RATE": "0.1"},
-             ["--victory", "culture", "--abandon-below-win-rate", "0.1"]),
+            ({"CIVVIS_RESTART_BELOW_LEADER_RATIO": "0.70"},
+             ["--restart-below-leader-ratio", "0.70"]),
+            ({"CIVVIS_VICTORY": "culture", "CIVVIS_ABANDON_BELOW_WIN_RATE": "0.1",
+              "CIVVIS_RESTART_BELOW_LEADER_RATIO": "0.70"},
+             ["--victory", "culture", "--abandon-below-win-rate", "0.1",
+              "--restart-below-leader-ratio", "0.70"]),
         ):
             with self.subTest(knobs=knobs):
                 env = {k: v for k, v in os.environ.items()
@@ -327,10 +333,6 @@ class NoOperationalScriptHoldsALaneOfItsOwn(unittest.TestCase):
                         sync.index('"$HEAD_SHA" != "$ORIGIN_MAIN_SHA"'))
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class EveryLadderLoopCanAskForTheRungAndTheLane(unittest.TestCase):
     """`docs/CIV6_LADDER.md` records wins per (victory type, difficulty), so a
     loop that cannot vary those two cannot move the ladder at all.
@@ -412,3 +414,7 @@ class EveryLadderLoopCanAskForTheRungAndTheLane(unittest.TestCase):
         self.assertEqual(offenders, [], "\n".join(
             ["an ops script pins the rung by hand; take it from the ladder "
              "policy or from CIVVIS_DIFFICULTY:"] + offenders))
+
+
+if __name__ == "__main__":
+    unittest.main()

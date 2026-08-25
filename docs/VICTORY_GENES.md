@@ -189,8 +189,9 @@ So the scope now follows the kind of decider, and each kind is stated:
 Thirteen of the twenty points a diplomatic victory needs come from the World
 Congress and its scored competitions. `Game::NATIVE_COMPETITIONS` pays first
 place **2** points for the Climate Accords, Send Aid and Send Military Aid,
-and **1** for the World Games, the World's Fair and the International Space
-Station. `host_competition_score_value` prices the competition's own *score*,
+and **1** for the World Games, the World's Fair, the International Space
+Station and the Nobel Peace Prize — all seven Gathering Storm pays a point for,
+since #2379. `host_competition_score_value` prices the competition's own *score*,
 its deadline and the lead swing — and prices the victory points **at zero**,
 at the same rate for a Conquest seat as for a Diplomacy one.
 
@@ -558,6 +559,50 @@ loud one. If that arm confirms it, the gene should leave the code by the same
 rule that culled the bottom of the ranking — and it will have cost nothing,
 because it never shipped on.
 
+### ⚠ The sign flipped on the fourth try, and the arm above is now the wrong ask
+
+**2026-08-23 (#2330).** A cull of `lane-congress-ballot` was proposed on this
+section and refused twice over.
+
+*The rule did not license it.* "The same rule that culled the bottom of the
+ranking" is a rule about the bottom of the **ranking**, and this gene has no
+rank: it sits in `HEURISTIC_GENE_RANKING.md`'s *Awaiting measurement* list, not
+in the table, precisely because no screen had priced it. A gene with no reading
+cannot be at the bottom of a ranking of readings. Nothing here was ever a
+licence to remove code, and the paragraph above should have said what reading
+would be — which is what this one is for.
+
+*And the reading arrived, and it is a null.* The first standard-shape screen
+([`docs/eval/2026-08-22-standard-gene-screen-23622-paired-seats.md`](eval/2026-08-22-standard-gene-screen-23622-paired-seats.md),
+source `b3ad9f00`, 3,937 complete map pairs, **23,622 matched seat comparisons
+per gene**, 74×46 Continents with nine city-states) reads
+`lane-congress-ballot` at **+0.16 pp, win z +0.51**. Positive, and nowhere near
+the screen's family-wise bar of |z| ≥ 3.478. That is one instrument with more
+seat comparisons than every window in §8 put together, and the sign it gives is
+the opposite of the one "has never flipped" was written about. §8's own
+withdrawn headlines are the precedent: a reading at a few hundred pairs is a
+draw from noise, and *the pattern is the finding*. The consistency of this
+gene's sign across five small windows was the same kind of artefact — five
+draws from one under-powered instrument, four of them on the
+`--victories diplomatic,score` regime that no longer exists.
+
+**What would decide it now.** Not an `ai_eval` arm. The bar is a
+`lane-congress-ballot` row from a **`standard`-shape screen** entering
+`docs/gene_ledger.json` and landing below that screen's own column band — the
+band derived from the screen's errors, not a number quoted from elsewhere. If a
+standard row reproduces §8's negative direction at that size, the gene leaves
+the code with the standard number recorded in *Removed from the code*. If it
+lands where the 23,622-seat screen has already put it, this section's "one
+reading did not regress" was the fifth claim in this file overturned by more of
+its own data, and the honest summary of the ballot gene is what §8 says of every
+other row here: **unresolved**. Either way the gene stays `off`, which is what it
+has always been, and the cost of waiting is one row in a foldover screen and no
+games.
+
+The companion refusal is recorded in `docs/gene_ranking_notes.md`: the same
+screen prices `barbarian-hunt` at +0.20 pp / z +0.65 against the legacy P10's
+−1.73 pp, so the bottom-of-the-ranking cull did not fire on that gene either.
+
 ⚠ The four rows files are megabytes and live outside the repository at
 `~/civvis-gene-screens/` with a `README.md` naming each command; every one was
 stopped short of its `--pairs` target because the box is shared. Continue any
@@ -605,3 +650,222 @@ was the thinnest and because the first of them has a measured number sitting
 unused in its own doc comment. The remaining thirty are a standing backlog,
 not a claim that any of them helps: **making a behaviour screenable is cheap
 (a toggle pair and a row) and says nothing about whether it should ship.**
+
+**2026-08-23: fourteen of that backlog got their rows, and the count is
+generated now.** The heuristic above has been replaced by
+`docs/EVAL_STATUS.md`'s *Genome coverage* section, which derives the same
+question from `treatment_flags.rs` and the three gene tables rather than from a
+regex over field spellings, and by `docs/genome_reach_debt.json`, which carries
+one line per remaining toggle saying why it is not a gene —
+`tools/test_genome_reach_debt.py` requires that file to cover exactly the
+computed list, so neither a stale reason nor a new silent debt survives a run.
+#2330 moved the published count from **165 toggles / 100 reachable / 65
+unreachable** to **166 / 114 / 52**, taking `coordinated_finish` — named first
+in the paragraph above, and until then invisible even to the count, because a
+field only ever set directly by an `elo.rs` arm has no toggle pair to be
+counted by — along with `coupled_expansion`, `tactical_strategy`,
+`unit_objective_memory` and ten more. It wrote eighteen rows; the fires gate
+the same change adds refused four of them on their own probes, which is the
+second half of the point — **a row is cheap to write and the gate is what
+makes it mean something.**
+
+⚠ And the residual is not thirty cheap rows. Of the 52 left, **22 are
+behaviours production ships ON**, and for those "a toggle pair and a row" is
+not cheap and not neutral: `apply_gene_ledger` reads *unmeasured ⇒ off*, so a
+gene row switches the behaviour off at deployment while its first screen runs.
+That is the right rule for a behaviour that was already off and the wrong one
+for one carrying +61 Elo-equivalent (200 pairs, seed 8700000, CI +21..+109, PASS on the corrected-gate matrix; see `AdvancedAi::promoted_policy_envoy`). `docs/GENE_SCREEN.md` §"The toggles no screen
+can reach" has the group-by-group account.
+
+## 10. `lane-commit`: from the midpoint, the empire plays for the victory it leads
+
+Operator, 2026-08-24: *"add some logic or some heuristic for steering us
+towards our best victory condition harder. From the midpoint of the game, we
+should have the victory in mind and be optimizing towards winning that."*
+
+§2 measured the defect this answers: an adaptive seat — production, and every
+measured seat in a `gene_screen` game — is on a victory lane for **52% of its
+seat-turns**, and the lane it is racing never reaches the deciders keyed on
+`victory_target`, because those read the operator's assignment and an
+adaptive seat has none. `assess` puts an adaptive seat on a lane only at
+`victory_focus` ≥ 65%, or when nothing else claims the plan; and
+`victory_focus` re-decides every turn from raw progress.
+
+**The gene** (`AdvancedAi::lane_commit`, `advanced/lane_commit.rs`,
+`Kind::OptIn`, off in both controllers, byte-identical when off):
+
+- **At the midpoint** — half the turn cap, turn 125 on the 250-turn Online
+  standard; `LANE_COMMIT_MIDPOINT_STANDARD` standard turns with no cap — the
+  seat commits to one lane.
+- **The lane we lead.** Winning is relative — every rival runs this planner —
+  so each lane is read for the seat *and for every living major* on one
+  table (`lane_progress_table`: the four readings `victory_focus` ranks,
+  minus the civilization preferences). Among the lanes the seat leads, the
+  one furthest along; leading none, the furthest along of all — what
+  `victory_focus` would have said, made sticky. Domination is never chosen
+  (0% at every map and clock).
+- **It is the plan's lane pick, not an assigned lane.** `assess` follows the
+  commitment in place of `victory_focus`'s per-turn fallback pick, *below*
+  every posture that comes first today (a threatened city, an emergency, a
+  rival at the wire, a war in progress, a neighbour weak enough to take, a
+  Prophet on the table) **and below the adaptive expansion arm** — a seat
+  short of cities with land still open keeps settling until the stock window
+  shuts (about t200 at Online); the lane comes before more cities only once
+  it is 65% along, stock's own bar. City dispositions follow it. The two
+  science keys an assigned Science seat has — the rocketry-path tech value
+  and the space-race projects and Spaceports — read the commitment through
+  `raced_target`. **Nothing else an assigned lane carries does**: not the
+  objective resolutions (beeline, society, government, policy deck, Culture
+  routing, wonder value), not the vetoes (Congress abstention, missionary and
+  Great Work vetoes, space-race block, assigned expansion cutoff), and
+  `active_victory_target` stays the operator's (victory denial adaptive,
+  `pursue_religion` and the expansion dispatcher unchanged, the census still
+  telling an adaptive seat from a targeted one).
+- **It holds.** Reviewed every `LANE_COMMIT_REVIEW` (10) standard turns; a
+  challenger takes over only when the committed lane's lead is gone and the
+  challenger leads, or when it is `LANE_COMMIT_SWITCH_MARGIN` (20) points
+  further along at the same standing.
+
+**Four probes on the same maps decided what it does not touch.** Every draft
+was probed on the same 24 maps (`gene_screen --games 24 --genes lane-commit
+--start-seed 26083100`, 72 on / 72 off seats), so the drafts read against
+each other even though none resolves anything alone (±5–6 pp on wins, ±1.2–1.4
+on share):
+
+| draft | wins Δ | share Δ | the seat comparison |
+|---|---:|---:|---|
+| 1 — project each lane's landing turn from its rate, Score fallback, every `victory_target` read routed | **−8.3 ± 5.4** | −1.0 ± 1.2 | science landed in **7 of 24** games (t220–250), six by *off* seats — a linear projection of the science reading (25 + 30 × techs/77, then discrete project steps) says it cannot land; committed seats: five fewer techs (51.9 v 56.8), **a third of the DVP** (3.7 v 9.6 — the Congress abstention), fewer cities, a smaller army (sat above the elective war `opportunistic-war` is priced `helps` for) |
+| 2 — the lane we lead; vetoes back on `victory_target`; below the war and Prophet arms | **−5.6 ± 5.8** | −1.8 ± 1.3 | cities **5.4 v 6.8**, deaths 11% v 3%: sat above the adaptive expansion arm, whose stock window (`stock_expansion_deadline`) runs to ~t200 at Online |
+| 3 — below the expansion arm; the lane preempts cities only at 65% | **−2.8 ± 5.4** | −1.2 ± 1.4 | army 1020 v 1298, deaths 10% v 6%: the beeline, government and policies served the lane under Conquest and Recovery too |
+| 4 — war postures keep their own objective | +5.6 ± 6.1 | **−2.2 ± 1.2** | cities back at **5.4 v 6.8** with the branch order unchanged: routing the objectives to the lane under an *Expansion* plan is what costs the cities — the deck stops serving the settling |
+| 5 — no objective routing at all (this version) | see `docs/gene_screens/fires/lane-commit.json` | | |
+
+The pattern is the one #2403 recorded for its first drafts: a delta that
+makes the seat *spend more* on its lane loses share on the probe. What
+survives is the part that costs nothing — the lane pick made field-relative
+and sticky, and the science keys — and on the live bridge, which always
+passes `--victory <lane>`, the gene is inert by construction.
+
+**Prediction to read on the next standard screen.** The commitment makes the
+post-window lane plan sticky and field-relative; the change is at seats that
+lead the religion or diplomacy field at the midpoint, and at Science seats
+through the two keys. Expect a small effect on the religious/diplomatic
+ending share and on score share, not a large win-rate move. The levers for a
+version 2 are the review cadence, the switch margin and the ranking key —
+not more reach, which four probes priced.
+
+## 11. `science-victory-drive`: an empire that dominates science drives the space race
+
+Operator, 2026-08-24: *"we have regularly led science and not even attempted a
+science victory. a top heuristic would be noting that we are dominating
+science towards the end game and scaling science harder, beelining science
+victory techs, accelerating the bottleneck, and completing the projects
+before others! maybe 2 spaceports."* Shipped **pinned on** at the operator's
+instruction (*"default this gene to true initially once you write and merge
+it. i'll test it more later"*) — the first gene in the pinned genome before
+its first screen.
+
+**The defect, from the live runs** (`~/civvis-civ6-runs/control`, the last
+complete `--victory science` games before the 08-19 halt; Settler, 6 players,
+250 turns Online):
+
+| run | science/turn at t250 | techs (best rival) | pads | own projects | rivals' projects |
+|---|---:|---:|---:|---:|---|
+| `081800Z` | **334** | 71 (72) | 1, at ~t210 | 0 | 2, 2, 2 |
+| `102855Z` | 234 | 67 (66) | 0 | 0 | 2, 1 |
+| `090732Z` | 203 | 64 (76) | 1 | 1, at t242 | 3, 2 |
+
+The seat led the field in science and never ran a launch project. Its
+journal says why: from turn ~150 `space_race_can_finish` refused the race
+every turn — *"101 turns left; the launch pad, the remaining projects, their
+techs and fifty light-years do not fit"*. That estimate prices the chain at
+the best city's **current** production (31–46 a turn in those games) and
+ignores the engine's own +100% on every Spaceport project
+(`Game::item_prod_mult`), so it reads 96 turns of production where the engine
+would take 59; and it is self-fulfilling, because the pass it skips is the
+one that sites the pad, and nothing else builds production for the race. The
+late game went to Builders (20–30 a game after t180), anti-tank crews and
+Campus Research Grants.
+
+**The gene** (`AdvancedAi::science_victory_drive`,
+`advanced/science_victory_drive.rs`, `Kind::OptIn`, off in both controllers,
+byte-identical when off; the module doc has every constant):
+
+1. **Reads the field** every 5 standard turns from 35% of the clock: own
+   science a turn and techs against every living major's (public
+   information). A seat that leads the field in either **drives**, and keeps
+   driving while it holds 75% of the leader's science or is within 3 techs.
+   A seat assigned Science (`--victory science`, the live seat) or committed
+   to it by `lane-commit` drives from turn one; one assigned another lane
+   never does.
+2. **The science keys.** `raced_target()` answers Science while driving: the
+   rocketry-path tech value is 900, the pad count grows past one, a launch
+   project may claim any pad city, the space-race pass runs under every plan
+   short of Recovery, and the research beeline follows the chain.
+3. **The milestone is the next unknown tech**, not the next unbuilt project
+   — stock's beeline goes dark while the Earth Satellite is being built,
+   because Rocketry is known and nothing leads to it. Before Rocketry the
+   launch city's production techs (`industrialization`, `electricity`) carry
+   +400 each.
+4. **A launch city and its production**: the pad city, else the best
+   producer. From the Industrial era its Industrial Zone (+1,200), Workshop
+   (+500), Factory (+700) and first Power Plant (+700) are priced as the
+   race's bottleneck; the Spaceport +2,000 on top of the 3,000 first-pad rung
+   once Rocketry is known; a Military Academy (+350) once the `space_race`
+   civic makes Integrated Space Cell slottable (the engine enforces the
+   Academy for its +15%); the Royal Society (+400). Pingala prefers the
+   launch city once a pad stands there (Space Initiative +30%); the Gold
+   reserve falls to 100 + 25/city once Rocketry is known.
+5. **A horizon priced as the engine runs the race** replaces
+   `space_race_can_finish` while driving: the launch city's production with
+   the zone chain it is about to build (+15% a missing Factory, +15% a
+   missing Power Plant), the project multiplier, research overlapping
+   production, a flight simulated with every pad building laser stations
+   (floored at stock's own three-light-years-a-turn assumption) — accepted
+   inside 1.3× the turns left, 1.6× once a pad stands or a project is done,
+   always once the expedition is away.
+6. **Two pads by the Earth Satellite, three by Mars** (stock: two by the Moon
+   Landing), so the second pad stands when the expedition launches and both
+   build laser stations.
+
+Nothing here touches `assess`, the expansion arm, the policy deck, the
+Congress or any objective routing — §10's four probes priced every form of
+that reach at −1 to −2 pp of share.
+
+**Fires probe:** `docs/gene_screens/fires/science-victory-drive.json`
+(`gene_screen --games 24 --genes science-victory-drive --start-seed 26082500`)
+read **+13.8 pp on wins (z +2.69)**.
+
+### ⭐⭐⭐ The screen that priced it, and what the probe got wrong (2026-08-25)
+
+600 games / 3,600 seats at the documented Emperor rung —
+`docs/gene_screens/2026-08-25-emperor-600-games-3600-seats.json`, 25 times the
+probe, resolving ±4.0 pp at 80% power:
+
+| axis | on (2,733) | off (867) | Δ | z | read |
+|---|---:|---:|---:|---:|---|
+| wins | 17.5% | 14.0% | **+3.6 pp** [+1.0, +6.2] | +2.69 | `helps *` |
+| score share | | | **−0.60 pp** | −2.48 | `share hurts *` |
+| compute | | | +2.44 ± 1.12% per enabled seat | | |
+
+**The probe's +13.8 pp was noise** — a 24-game batch with 111 on and 33 off
+seats resolves nothing, and the honest effect is about a quarter of it. This
+is the decay `docs/GENE_SCREEN.md` warns about, and the worked example for it.
+Neither flag clears the family-wise bar (|z| ≥ 3.57 at 139 genes).
+
+The two flags point opposite ways and that is the gene's actual shape: it
+converts seats into science victories (wins up) and the seats whose race does
+not land finish a little lower on the tally (share down). It spends on the
+race, and the race now pays — at this rung **88% of games end on a science
+victory** and none reaches the clock.
+
+⚠ The gene remains **on** because the deployment genome is operator-pinned,
+not because a rule promoted it; this batch is evidence for the operator's next
+selection, not a promotion. Its cost column is quotable only loosely — the
+batch shared the box with four `victory_eval` arms for its first minutes.
+
+**Still to read on the live seat:** the journal's *"Driving for a science
+victory"* line and the turn of the first `PROJECT_LAUNCH_*` build in
+`events.jsonl` — `tools/civ6_run_report.py` prints both in its `science race`
+section, against a corpus baseline of **13 of 237 endgame runs that ever
+launched anything and none that completed the chain**.

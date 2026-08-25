@@ -1,18 +1,22 @@
 #!/usr/bin/env python3
 """Choose the next real-Civ VI ladder rung from measured live evidence.
 
-The game supervisor used to run one Settler attempt per source revision and
-never consulted the ladder.  That made a rung look active without ever defining
-when it was repeatable, and it gave the supervisor no path to Chieftain.  This
-module is deliberately read-only: it derives the next target from the live
-ledger, and the supervisor passes that target into the harness explicitly.
+The rule (operator, 2026-08-23): **play the highest rung the controller has
+claimed until it has three wins there, then move up.** A rung is claimed by
+its first win; three wins is what makes a rung earned rather than lucky. Two
+wins in a trailing window of eight used to advance the seat, which is how
+Chieftain was claimed on one win in eight and Warlord was played with none —
+a window reads the recent record, and the recent record of a two-seat fleet
+is whichever seat published last.
 
-The policy is conservative by design.  A rung is not advanced merely because
-it has one historical win.  The trailing comparable window must contain the
-configured rung, at least ``min_attempts`` valid outcomes, and
-``repeat_wins`` wins.  A game the harness could not confirm was the game it
-asked for -- ``configured`` read back from inside the running session -- is not
-evidence for repeatability.
+So the gate counts **wins**, over the whole record, and nothing else: a loss
+is not evidence against a rung, it is a game that did not win. Only a game
+the harness could confirm was the game it asked for — ``configured`` read back
+from inside the running session — is evidence at all. And it reads the whole
+fleet's record (``load_live``), not one seat's copy of it.
+
+This module is deliberately read-only: it derives the next target from the
+ledger, and the supervisor passes that target into the harness explicitly.
 
 Usage::
 
@@ -32,9 +36,7 @@ import civ6_ladder
 
 
 RUNS_DEFAULT = Path.home() / "civvis-civ6-runs" / "control"
-DEFAULT_WINDOW = 8
-DEFAULT_REPEAT_WINS = 2
-DEFAULT_MIN_ATTEMPTS = 3
+DEFAULT_WINS_REQUIRED = 3
 
 
 def _positive_env(name: str, default: int) -> int:
@@ -48,17 +50,14 @@ def _positive_env(name: str, default: int) -> int:
     return value if value > 0 else default
 
 
-def policy_defaults() -> tuple[int, int, int]:
-    """Return window, required wins, and minimum outcomes from the environment."""
-    return (
-        _positive_env("CIVVIS_LADDER_WINDOW", DEFAULT_WINDOW),
-        _positive_env("CIVVIS_LADDER_REPEAT_WINS", DEFAULT_REPEAT_WINS),
-        _positive_env("CIVVIS_LADDER_MIN_ATTEMPTS", DEFAULT_MIN_ATTEMPTS),
-    )
+def wins_required_default() -> int:
+    """The wins a rung needs before the seat moves above it, from the
+    environment (``CIVVIS_LADDER_WINS_REQUIRED``) or the default of three."""
+    return _positive_env("CIVVIS_LADDER_WINS_REQUIRED", DEFAULT_WINS_REQUIRED)
 
 
 def comparable_attempt(attempt: dict[str, Any], difficulty: str) -> bool:
-    """Whether one ledger row is safe to compare with this rung's batch.
+    """Whether one ledger row is evidence for this rung.
 
     ⚠⚠ EVERY KEY READ HERE MUST BE A KEY `civ6_ladder.entry_from` WRITES.
     This predicate used to add `and not attempt.get("settings_mismatch")` and
@@ -80,7 +79,7 @@ def comparable_attempt(attempt: dict[str, Any], difficulty: str) -> bool:
       already requires — strictly stronger evidence than comparing a request
       with the harness's memory of it.
 
-    `tools/test_civ6_ladder_policy.py` now fails if a key appears here that no
+    `tools/test_civ6_ladder_policy.py` fails if a key appears here that no
     ledger row carries, so the deletion cannot quietly come back.
     """
     return (
@@ -94,89 +93,94 @@ def rung_status(
     state: dict[str, Any],
     difficulty: str,
     *,
-    window: int = DEFAULT_WINDOW,
-    repeat_wins: int = DEFAULT_REPEAT_WINS,
-    min_attempts: int = DEFAULT_MIN_ATTEMPTS,
+    wins_required: int = DEFAULT_WINS_REQUIRED,
 ) -> dict[str, Any]:
-    """Summarize the evidence needed before moving past ``difficulty``."""
+    """What the record says about one rung: its comparable attempts, its wins,
+    whether it is claimed, and whether it is earned (``wins_required`` wins)."""
     attempts = [
         attempt
         for attempt in state.get("attempts", [])
         if isinstance(attempt, dict) and comparable_attempt(attempt, difficulty)
     ]
-    wins = [attempt for attempt in attempts if attempt.get("won") is True]
-    tail = attempts[-window:]
-    tail_wins = sum(attempt.get("won") is True for attempt in tail)
-    claimed = difficulty in (state.get("wins") or {}) or bool(wins)
-    repeatable = claimed and len(tail) >= min_attempts and tail_wins >= repeat_wins
+    wins = sum(attempt.get("won") is True for attempt in attempts)
+    claimed = difficulty in (state.get("wins") or {}) or wins > 0
     return {
         "difficulty": difficulty,
         "claimed": claimed,
         "comparable_attempts": len(attempts),
-        "wins": len(wins),
-        "window": window,
-        "window_attempts": len(tail),
-        "window_wins": tail_wins,
-        "repeat_wins_required": repeat_wins,
-        "min_attempts_required": min_attempts,
-        "repeatable": repeatable,
+        "wins": wins,
+        "wins_required": wins_required,
+        "earned": claimed and wins >= wins_required,
     }
 
 
 def next_target(
     state: dict[str, Any],
     *,
-    window: int = DEFAULT_WINDOW,
-    repeat_wins: int = DEFAULT_REPEAT_WINS,
-    min_attempts: int = DEFAULT_MIN_ATTEMPTS,
+    wins_required: int = DEFAULT_WINS_REQUIRED,
 ) -> tuple[str, list[dict[str, Any]]]:
-    """Return the lowest rung that still needs evidence or a first win."""
-    statuses: list[dict[str, Any]] = []
-    for difficulty, _label in civ6_ladder.LADDER:
-        status = rung_status(
-            state,
-            difficulty,
-            window=window,
-            repeat_wins=repeat_wins,
-            min_attempts=min_attempts,
-        )
-        statuses.append(status)
-        if not status["repeatable"]:
-            return difficulty, statuses
-    # The ladder is finite. Keep the supervisor on the highest rung once every
-    # rung has been claimed and made repeatable instead of emitting an invalid
-    # difficulty or silently stopping its measurement loop.
-    return civ6_ladder.LADDER[-1][0], statuses
+    """The rung to play: the highest claimed rung until it is earned, then the
+    one above it. Nothing claimed means Settler; every rung earned means the
+    ladder is finite and the seat stays on the top rung.
+
+    A claimed rung below the highest one is not revisited however many wins it
+    holds: the seat that claimed the rung above has answered the question the
+    lower rung asks. The ``explain`` output still prints every rung's count.
+    """
+    statuses = [
+        rung_status(state, difficulty, wins_required=wins_required)
+        for difficulty, _label in civ6_ladder.LADDER
+    ]
+    claimed = [index for index, status in enumerate(statuses) if status["claimed"]]
+    if not claimed:
+        return civ6_ladder.LADDER[0][0], statuses
+    highest = claimed[-1]
+    if not statuses[highest]["earned"]:
+        return civ6_ladder.LADDER[highest][0], statuses
+    above = min(highest + 1, len(civ6_ladder.LADDER) - 1)
+    return civ6_ladder.LADDER[above][0], statuses
 
 
 def load_live(runs: Path) -> dict[str, Any]:
-    return civ6_ladder.load(civ6_ladder.live_ledger_for(runs))
+    """The FLEET's record: this seat's live ledger folded onto the committed one.
+
+    ⚠⚠⚠ A RUNG IS A CLAIM ABOUT THE CONTROLLER, AND THIS READ ONE MACHINE'S
+    COPY OF THE RECORD. `civ6_ladder.load` seeds a machine with no live ledger
+    from the committed snapshot and then never looks at it again, so a second
+    Civilization VI seat gates on a record that stopped at the moment it was
+    seeded. Measured on 2026-08-23, that was not academic: the two seats
+    answered `DIFFICULTY_CHIEFTAIN` and `DIFFICULTY_SETTLER` for the same
+    controller on the same day, because 76 of one seat's games were in no
+    published record.
+
+    Reading the union is strictly more evidence: it adds the other seat's wins,
+    and it is the only source that matches what `docs/CIV6_LADDER.md` claims to
+    be — what the controller has beaten, not what one laptop remembers beating.
+    A win recorded on the other seat and not yet published still counts only
+    once it is published; that is what `civ6_ladder.py publish` is for.
+    """
+    live = civ6_ladder.load(civ6_ladder.live_ledger_for(runs))
+    merged, _ = civ6_ladder.merge_state(civ6_ladder.load_snapshot(), live)
+    return merged
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--runs", type=Path, default=RUNS_DEFAULT)
-    parser.add_argument("--window", type=int, default=None)
-    parser.add_argument("--repeat-wins", type=int, default=None)
-    parser.add_argument("--min-attempts", type=int, default=None)
+    parser.add_argument("--wins-required", type=int, default=None,
+                        help="wins a rung needs before the seat moves above it "
+                             f"(default {DEFAULT_WINS_REQUIRED}, or "
+                             "CIVVIS_LADDER_WINS_REQUIRED)")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("target")
     sub.add_parser("explain")
     args = parser.parse_args(argv)
 
-    defaults = policy_defaults()
-    window = args.window or defaults[0]
-    repeat_wins = args.repeat_wins or defaults[1]
-    min_attempts = args.min_attempts or defaults[2]
-    if min(window, repeat_wins, min_attempts) <= 0:
-        parser.error("window, repeat-wins, and min-attempts must be positive")
+    wins_required = args.wins_required or wins_required_default()
+    if wins_required <= 0:
+        parser.error("wins-required must be positive")
     state = load_live(args.runs)
-    target, statuses = next_target(
-        state,
-        window=window,
-        repeat_wins=repeat_wins,
-        min_attempts=min_attempts,
-    )
+    target, statuses = next_target(state, wins_required=wins_required)
     if args.command == "target":
         print(target)
     else:

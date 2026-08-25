@@ -41,6 +41,7 @@ Usage::
     python tools/civ6_ladder.py render          # redraw the docs markdown only
     python tools/civ6_ladder.py check --stale-hours 12
     python tools/civ6_ladder.py show
+    python tools/civ6_ladder.py publish-run <tag>   # append the run to the `ledger` branch
 
 ``publish`` and ``render`` are not interchangeable. ``publish`` lands run data
 from this machine's live ledger; ``render`` only redraws the committed snapshot
@@ -229,8 +230,25 @@ def is_defeat(summary: dict) -> bool:
     return bool(outcome.get("kind") == "defeat" and outcome.get("ours"))
 
 
-def orders_totals(events_path: Path) -> tuple[int, int] | None:
-    """Sum (seen, applied) over the run's agent turn events.
+def orders_ledger(events_path: Path) -> dict | None:
+    """Sum a run's order accounting from its own events.
+
+    Three numbers, because the bridge has two sides and they disagree:
+
+    - `orders_seen`: rows the mod received, summed over its `turn` events.
+    - `orders_reported`: rows whose arm returned ok — the mod's own count,
+      `turn.orders_reported` (older runs: `turn.orders_applied`). This was the
+      whole of "applied" until 2026-08-25, and `pcall` success is not
+      acceptance: it ran 95–98% while a Settler was requested on 83
+      consecutive turns with nothing built.
+    - `orders_applied`: rows the NEXT frame verified — the decider's
+      postcondition check, re-emitted by the mod as one `turn_verified` event
+      per turn (`civvis_orders`, "order postconditions"). A turn that got no
+      verdict (the last turn of a game, the turn before a decider restart, or
+      any run older than the check) keeps its reported count, so a legacy run
+      reads exactly as it did and a verified one is never worse-informed than
+      the return codes; `orders_unverified_turns` says how many turns fell
+      back.
 
     The bridge's health is how much of what CIVVIS said the engine actually
     did. It was 79.9% once and nobody noticed for days, because the number
@@ -240,7 +258,9 @@ def orders_totals(events_path: Path) -> tuple[int, int] | None:
     """
     if not events_path.is_file():
         return None
-    seen = applied = 0
+    seen = reported = 0
+    reported_by_turn: dict[int, int] = {}
+    verified_by_turn: dict[int, int] = {}
     counted = False
     with events_path.open() as handle:
         for line in handle:
@@ -248,14 +268,193 @@ def orders_totals(events_path: Path) -> tuple[int, int] | None:
                 event = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            if event.get("kind") != "turn" or event.get("ctx") != "agent":
+            if event.get("ctx") != "agent":
                 continue
-            if event.get("orders_seen") is None:
+            kind = event.get("kind")
+            turn = int(event.get("turn") or 0)
+            if kind == "turn":
+                if event.get("orders_seen") is None:
+                    continue
+                counted = True
+                seen += int(event.get("orders_seen") or 0)
+                ok = event.get("orders_reported")
+                if ok is None:
+                    ok = event.get("orders_applied")
+                reported += int(ok or 0)
+                reported_by_turn[turn] = reported_by_turn.get(turn, 0) + int(ok or 0)
+            elif kind == "turn_verified":
+                counted = True
+                verified = int(event.get("orders_applied") or 0)
+                verified_by_turn[turn] = verified_by_turn.get(turn, 0) + verified
+    if not counted:
+        return None
+    applied = sum(verified_by_turn.get(turn, ok)
+                  for turn, ok in reported_by_turn.items())
+    applied += sum(verified for turn, verified in verified_by_turn.items()
+                   if turn not in reported_by_turn)
+    return {
+        "orders_seen": seen,
+        "orders_reported": reported,
+        "orders_applied": applied,
+        "orders_verified_turns": len(verified_by_turn),
+        "orders_unverified_turns": sum(1 for turn in reported_by_turn
+                                       if turn not in verified_by_turn),
+    }
+
+
+def orders_totals(events_path: Path) -> tuple[int, int] | None:
+    """Sum (seen, applied) over the run's agent turn events.
+
+    `applied` counts VERIFIED orders where the run carries verdicts; see
+    `orders_ledger` for the three-way accounting and the fallback rule.
+    """
+    ledger = orders_ledger(events_path)
+    if ledger is None:
+        return None
+    return ledger["orders_seen"], ledger["orders_applied"]
+
+
+def open_events(events_path: Path):
+    """Text handle over `events.jsonl`, or its gzipped copy off the ledger branch."""
+    if events_path.suffix == ".gz":
+        import gzip
+        return gzip.open(events_path, "rt")
+    return events_path.open()
+
+
+#: Where refusals land when the run's mod predates `refused_by` on the
+#: `orders` event: the count is on the ledger, the kind is not.
+UNATTRIBUTED = "unattributed"
+
+
+def orders_by_kind(events_path: Path) -> dict | None:
+    """Actuation per order kind, summed from the run's own `orders` events:
+    ``{kind: {"seen": n, "applied": n, "refused": {reason: n}}}``, with a
+    ``"*"`` row for the whole run.
+
+    `orders_totals` answers "how much of what CIVVIS said did the engine do";
+    this answers WHICH kind is being refused and WHY, so that a refusal
+    reason above a few percent of its kind is a row a tool can floor
+    (`tools/live_actuation.py check`) instead of an excavation. The mod emits
+    `by` (applied per kind) and `refusals` (count per reason) and, since
+    this landed, `seen_by` and `refused_by` (reason per kind). Events from an
+    older mod carry no per-kind seen count: their kinds read `seen == applied`
+    and every refusal sits under `UNATTRIBUTED`, so a rate computed from them
+    is a floor for the named kinds, not a measurement.
+
+    `produce_next` is a lease the control channel accepts before the host
+    acts; the mod keeps it out of `applied`/`seen` but counts it in `by`, so
+    its row here is accepted leases + refusals. Tolerant of a truncated tail.
+    `None` when the run wrote no `orders` event.
+    """
+    if not events_path.is_file():
+        return None
+    kinds: dict[str, dict] = {}
+
+    def row(kind: str) -> dict:
+        return kinds.setdefault(kind, {"seen": 0, "applied": 0, "refused": {}})
+
+    counted = False
+    with open_events(events_path) as handle:
+        for line in handle:
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if event.get("kind") != "orders" or event.get("ctx") != "agent":
                 continue
             counted = True
-            seen += int(event.get("orders_seen") or 0)
-            applied += int(event.get("orders_applied") or 0)
-    return (seen, applied) if counted else None
+            total = row("*")
+            total["seen"] += int(event.get("seen") or 0)
+            total["applied"] += int(event.get("applied") or 0)
+            by = event.get("by") if isinstance(event.get("by"), dict) else {}
+            seen_by = event.get("seen_by")
+            refused_by = event.get("refused_by")
+            for kind, n in by.items():
+                row(str(kind))["applied"] += int(n or 0)
+            if isinstance(seen_by, dict):
+                for kind, n in seen_by.items():
+                    row(str(kind))["seen"] += int(n or 0)
+            else:
+                for kind, n in by.items():
+                    row(str(kind))["seen"] += int(n or 0)
+            refusals = event.get("refusals")
+            if isinstance(refusals, dict):
+                for reason, n in refusals.items():
+                    reasons = total["refused"]
+                    reasons[str(reason)] = reasons.get(str(reason), 0) + int(n or 0)
+            if isinstance(refused_by, dict):
+                for kind, per_kind in refused_by.items():
+                    if not isinstance(per_kind, dict):
+                        continue
+                    reasons = row(str(kind))["refused"]
+                    for reason, n in per_kind.items():
+                        reasons[str(reason)] = reasons.get(str(reason), 0) + int(n or 0)
+            elif isinstance(refusals, dict):
+                orphan = row(UNATTRIBUTED)
+                for reason, n in refusals.items():
+                    orphan["seen"] += int(n or 0)
+                    orphan["refused"][str(reason)] = (
+                        orphan["refused"].get(str(reason), 0) + int(n or 0))
+    return kinds if counted else None
+
+
+DEAL_KINDS = ("deal_session", "deal_closed", "deal_declined", "deal_expired",
+              "peace_response", "deal_sessions_stood_down")
+
+
+def deal_totals(events_path: Path) -> dict | None:
+    """What the deal lane did this run, summed from its own ledger events.
+
+    Over 42 runs the lane sent 636 asks and 253 peace proposals and no
+    answer ever came back — and nothing in the summary said so; the zero
+    lived in `events.jsonl` until somebody wrote a throwaway script over it
+    (#2415, #2421). Since #2421 every deal is asked inside a `MAKE_DEAL`
+    session and every step writes a `deal_session` event; this puts the
+    count on the ledger, so "does Civilization VI answer inside the
+    session" is a column on the very next run rather than an excavation.
+    `None` when the run wrote no deal event at all; tolerant of a truncated
+    tail line.
+    """
+    if not events_path.is_file():
+        return None
+    totals = {"sessions_opened": 0, "sessions_answered": 0,
+              "sessions_unanswered": 0, "stood_down": False,
+              "closed": 0, "declined": 0, "expired": 0,
+              "peace_accepted": 0, "peace_refused": 0}
+    seen = False
+    with events_path.open() as handle:
+        for line in handle:
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            kind = event.get("kind")
+            if kind not in DEAL_KINDS:
+                continue
+            seen = True
+            if kind == "deal_session":
+                phase = event.get("phase")
+                if phase == "opening":
+                    totals["sessions_opened"] += 1
+                elif phase == "answered":
+                    totals["sessions_answered"] += 1
+                elif phase == "unanswered":
+                    totals["sessions_unanswered"] += 1
+            elif kind == "deal_closed":
+                totals["closed"] += 1
+            elif kind == "deal_declined":
+                totals["declined"] += 1
+            elif kind == "deal_expired":
+                totals["expired"] += 1
+            elif kind == "peace_response":
+                if event.get("accepted") is True:
+                    totals["peace_accepted"] += 1
+                else:
+                    totals["peace_refused"] += 1
+            elif kind == "deal_sessions_stood_down":
+                totals["stood_down"] = True
+    return totals if seen else None
 
 
 def final_standing(events_path: Path) -> tuple[int, int] | None:
@@ -394,12 +593,26 @@ RUNTIME_HEARTBEAT_DEFAULT = (Path.home() / ".cache" / "civvis"
 
 
 def applied_pct(summary: dict) -> float | None:
-    """Bridge health as one number: applied orders over issued, in percent."""
+    """Bridge health as one number: applied orders over issued, in percent.
+
+    `orders_applied` is the verified count on a run that carries verdicts
+    (`orders_ledger`), so this is the RECEIVING side's rate; `reported_pct`
+    is the return codes' rate, and the distance between them is the gap.
+    """
     seen = summary.get("orders_seen")
     applied = summary.get("orders_applied")
     if not seen:
         return None
     return round(100.0 * (applied or 0) / seen, 1)
+
+
+def reported_pct(summary: dict) -> float | None:
+    """The mod's own rate: arms that returned ok over orders issued."""
+    seen = summary.get("orders_seen")
+    reported = summary.get("orders_reported")
+    if not seen or reported is None:
+        return None
+    return round(100.0 * reported / seen, 1)
 
 
 def with_bridge_health(summary: dict, summary_path: Path) -> dict:
@@ -421,15 +634,21 @@ def with_bridge_health(summary: dict, summary_path: Path) -> dict:
     the derivation stays in one place rather than two that can disagree.
 
     Non-destructive: a summary that already carries totals is returned
-    unchanged, and an unreadable or absent events file leaves it as it was.
+    unchanged except for `orders_reported`, which is filled from the events
+    when the summary predates it, and an unreadable or absent events file
+    leaves it as it was.
     """
-    if summary.get("orders_seen"):
+    if summary.get("orders_seen") and summary.get("orders_reported") is not None:
         return summary
-    totals = orders_totals(Path(summary_path).parent / "events.jsonl")
-    if not totals:
+    ledger = orders_ledger(Path(summary_path).parent / "events.jsonl")
+    if not ledger:
         return summary
     enriched = dict(summary)
-    enriched["orders_seen"], enriched["orders_applied"] = totals
+    if not summary.get("orders_seen"):
+        enriched["orders_seen"] = ledger["orders_seen"]
+        enriched["orders_applied"] = ledger["orders_applied"]
+    enriched["orders_reported"] = ledger["orders_reported"]
+    enriched["orders_unverified_turns"] = ledger["orders_unverified_turns"]
     return enriched
 
 
@@ -527,13 +746,15 @@ def entry_from(summary: dict) -> dict:
         "map_size": summary.get("map_size"),
         "speed": summary.get("speed"),
         "reason": summary.get("reason"),
-        # The harness's own verdict when it abandoned the game
-        # (`civ6_play.ABANDON_CELLS`): turn, standing, estimate and floor. A
-        # row with `reason: "abandoned"` is a loss the ladder chose not to play
-        # out, and the verdict is kept so the choice can be audited against
-        # what the rule would have cost.
+        # The harness's own early-stop verdict: either the measured expected
+        # win-rate floor (`civ6_play.ABANDON_CELLS`) or the explicit
+        # score/science/culture restart policy. A row with `reason:
+        # "abandoned"` is a loss the ladder chose not to play out, and the
+        # record preserves the exact rule and standing that made that choice.
         "abandoned": summary.get("abandoned"),
         "applied_pct": applied_pct(summary),
+        # The return codes' rate beside the verified one; see `orders_ledger`.
+        "reported_pct": reported_pct(summary),
         "revisions": summary.get("decider_revisions"),
         # Which genome the decider actually played (see `decider_genome`) and
         # the name the launcher asked for. `genome.strategy == "stock"` beside a
@@ -560,6 +781,83 @@ def entry_from(summary: dict) -> dict:
                  if summary.get("last_score") is not None
                  and summary.get("rival_best") is not None else None),
     }
+
+
+def claim_rung(state: dict, entry: dict) -> None:
+    """Fold one attempt's rung claim into ``wins``: earliest configured win.
+
+    Extracted so the two paths that can put an attempt into a record --
+    ``apply`` (one summary at a time) and ``merge_state`` (a whole ledger at
+    once) -- cannot drift on what claims a rung. The rule and its reasoning
+    live at the call site in ``apply``; this is only where it is spelled.
+    """
+    difficulty = entry.get("difficulty")
+    if not (entry.get("won") and entry.get("configured")
+            and difficulty in NAMES):
+        return
+    wins = state.setdefault("wins", {})
+    recorded = wins.get(difficulty)
+    if recorded is None or (entry.get("utc") or "￿") < (
+            recorded.get("utc") or "￿"):
+        wins[difficulty] = entry
+
+
+def merge_state(base: dict, incoming: dict) -> tuple[dict, list[dict]]:
+    """Union two ladder records by attempt tag. ``base`` is never diminished.
+
+    ⚠⚠⚠ THE RECORD FORKED BECAUSE `publish` WAS A WHOLESALE COPY OF ONE
+    MACHINE'S PRIVATE LEDGER, IN A FLEET THAT HAS MORE THAN ONE LIVE SEAT.
+    ``load`` seeds a machine with no live ledger from the committed snapshot,
+    so a second Civilization VI seat starts as a copy of the record and then
+    diverges from it -- and every ``publish`` after that replaced the shared
+    document with one seat's copy. Measured on 2026-08-23: the published
+    snapshot held 349 attempts and `mbp-m5-max-128`'s live ledger held 331,
+    with **255 in common, 94 only in the snapshot and 76 only on this
+    machine** -- 76 real games, nine of them Settler victories, that could
+    never reach the repository, and that the other seat's next publish would
+    not have imported either. The two sets diverge from exactly the 255
+    attempts published by #1767, which is the snapshot the second seat was
+    seeded from.
+
+    Merging makes publishing monotone: whichever seat lands next, the shared
+    record only ever grows, and neither seat's rows can erase the other's.
+    Order is the base's, then the incoming rows the base lacked, because a row
+    is never rewritten and reordering the committed record would rewrite every
+    one of them. Returns the merged state and the rows that were added.
+    """
+    merged: dict = {
+        "attempts": list(base.get("attempts") or []),
+        "wins": dict(base.get("wins") or {}),
+    }
+    table = base.get("victory_types") or incoming.get("victory_types")
+    if table:
+        merged["victory_types"] = table
+    seen = {a.get("tag") for a in merged["attempts"]
+            if isinstance(a, dict) and a.get("tag")}
+    added: list[dict] = []
+    for entry in incoming.get("attempts") or []:
+        if not isinstance(entry, dict):
+            continue
+        tag = entry.get("tag")
+        if tag and tag in seen:
+            continue
+        if tag:
+            seen.add(tag)
+        merged["attempts"].append(entry)
+        added.append(entry)
+        claim_rung(merged, entry)
+    return merged, added
+
+
+def load_snapshot(snapshot: Path | None = None) -> dict:
+    """The committed record, or an empty one when this clone has none."""
+    snapshot = DATA if snapshot is None else snapshot
+    if snapshot.is_file():
+        try:
+            return json.loads(snapshot.read_text())
+        except json.JSONDecodeError:
+            return {"attempts": [], "wins": {}}
+    return {"attempts": [], "wins": {}}
 
 
 def apply(state: dict, summary: dict) -> bool:
@@ -593,10 +891,7 @@ def apply(state: dict, summary: dict) -> bool:
         #
         # `utc` is an ISO-8601 Z stamp, so a string compare is a time compare.
         # A missing stamp sorts last rather than winning by accident.
-        recorded = state["wins"].get(difficulty)
-        if recorded is None or (entry.get("utc") or "￿") < (
-                recorded.get("utc") or "￿"):
-            state["wins"][difficulty] = entry
+        claim_rung(state, entry)
         # ⚠⚠ AND SEPARATELY BY VICTORY TYPE, BECAUSE `wins` HAS ONE SLOT PER
         # DIFFICULTY AND THAT SLOT IS ALREADY FULL.
         #
@@ -648,6 +943,137 @@ def record_summary(summary_path: Path, ledger: Path | None = None) -> bool:
     return changed
 
 
+# ---------------------------------------------------------------------------
+# The ledger branch: every run's summary and events, on an append-only orphan
+# branch of the repository, so a machine that never sat beside the runs
+# directory can read the live record. `tools/live_ledger.py pull` is the
+# reader. Built with plumbing only — a temporary index, `write-tree`,
+# `commit-tree`, a plain push — so a finishing game never touches the index
+# or working tree of the management worktree it plays from, and never
+# force-pushes anything.
+LEDGER_BRANCH = "ledger"
+LEDGER_IDENTITY = {
+    "GIT_AUTHOR_NAME": "civvis ladder",
+    "GIT_AUTHOR_EMAIL": "ladder@civvis.invalid",
+    "GIT_COMMITTER_NAME": "civvis ladder",
+    "GIT_COMMITTER_EMAIL": "ladder@civvis.invalid",
+}
+
+
+def _git(repo: Path, *args: str, env: dict | None = None,
+         check: bool = True, stdin: bytes | None = None) -> str:
+    import subprocess
+    result = subprocess.run(["git", "-C", str(repo), *args],
+                            capture_output=True, check=False, input=stdin,
+                            env={**os.environ, **(env or {})})
+    if check and result.returncode != 0:
+        raise RuntimeError(
+            f"git {' '.join(args)} failed ({result.returncode}): "
+            f"{result.stderr.decode(errors='replace').strip()}")
+    return result.stdout.decode(errors="replace").strip()
+
+
+def ledger_run_paths(tag: str) -> tuple[str, str]:
+    """Where one run sits on the ledger branch."""
+    return f"runs/{tag}/summary.json", f"runs/{tag}/events.jsonl.gz"
+
+
+def ledger_tip(repo: Path, remote: str = "origin",
+               branch: str = LEDGER_BRANCH, env: dict | None = None) -> str | None:
+    """Fetch the ledger branch into its remote-tracking ref; its tip, or
+    `None` when the remote has no such branch yet."""
+    tracking = f"refs/remotes/{remote}/{branch}"
+    listed = _git(repo, "ls-remote", "--heads", remote, branch, env=env)
+    if not listed:
+        return None
+    _git(repo, "fetch", "-q", remote, f"+refs/heads/{branch}:{tracking}", env=env)
+    return _git(repo, "rev-parse", tracking, env=env)
+
+
+def ledger_has_run(repo: Path, tip: str | None, tag: str,
+                   env: dict | None = None) -> bool:
+    if tip is None:
+        return False
+    summary_path, _ = ledger_run_paths(tag)
+    return _git(repo, "rev-parse", "-q", "--verify", f"{tip}:{summary_path}",
+                env=env, check=False) != ""
+
+
+def gzip_bytes(data: bytes) -> bytes:
+    """Deterministic gzip (no name, mtime 0), so the same run hashes the same."""
+    import gzip
+    import io
+    buffer = io.BytesIO()
+    with gzip.GzipFile(fileobj=buffer, mode="wb", mtime=0) as handle:
+        handle.write(data)
+    return buffer.getvalue()
+
+
+def publish_run(tag: str, runs_dir: Path | None = None, *,
+                remote: str = "origin", branch: str = LEDGER_BRANCH,
+                repo: Path | None = None, env: dict | None = None,
+                attempts: int = 3) -> str:
+    """Append `<runs>/<tag>/summary.json` (+ gzipped `events.jsonl`) to the
+    ledger branch. Returns "published", or "already" when the branch has it.
+
+    Append-only by construction: the new commit's parent is the fetched tip
+    and the push is a plain fast-forward; a tip that moved between fetch and
+    push (another seat publishing) is re-read and the commit rebuilt, never
+    forced over.
+    """
+    runs_dir = Path(runs_dir or RUNS_DEFAULT)
+    repo = Path(repo or REPO)
+    run_dir = runs_dir / tag
+    summary_path = run_dir / "summary.json"
+    if not summary_path.is_file():
+        raise FileNotFoundError(summary_path)
+    events_path = run_dir / "events.jsonl"
+    env = dict(env or {})
+    # A seat with no git identity (a fresh runner) must still be able to
+    # publish; a configured identity is left alone.
+    if "GIT_COMMITTER_EMAIL" not in {**os.environ, **env} and not _git(
+            repo, "config", "user.email", env=env, check=False):
+        env = {**LEDGER_IDENTITY, **env}
+    ledger_summary, ledger_events = ledger_run_paths(tag)
+    last_error: Exception | None = None
+    for _ in range(max(1, attempts)):
+        tip = ledger_tip(repo, remote, branch, env=env)
+        if ledger_has_run(repo, tip, tag, env=env):
+            return "already"
+        index = run_dir / f".ledger-index-{os.getpid()}"
+        index_env = {**env, "GIT_INDEX_FILE": str(index)}
+        try:
+            if tip:
+                _git(repo, "read-tree", tip, env=index_env)
+            else:
+                _git(repo, "read-tree", "--empty", env=index_env)
+            entries = [(ledger_summary, summary_path.read_bytes())]
+            if events_path.is_file():
+                entries.append((ledger_events, gzip_bytes(events_path.read_bytes())))
+            for path, blob in entries:
+                sha = _git(repo, "hash-object", "-w", "--stdin", env=env, stdin=blob)
+                _git(repo, "update-index", "--add", "--cacheinfo",
+                     f"100644,{sha},{path}", env=index_env)
+            tree = _git(repo, "write-tree", env=index_env)
+        finally:
+            try:
+                index.unlink()
+            except FileNotFoundError:
+                pass
+        parents = ["-p", tip] if tip else []
+        commit = _git(repo, "commit-tree", tree, *parents, "-m",
+                      f"ledger: {tag}", env=env)
+        try:
+            _git(repo, "push", "-q", remote, f"{commit}:refs/heads/{branch}", env=env)
+        except RuntimeError as exc:  # the tip moved under us: re-read, rebuild
+            last_error = exc
+            continue
+        _git(repo, "update-ref", f"refs/remotes/{remote}/{branch}", commit, env=env)
+        return "published"
+    raise RuntimeError(f"ledger push did not land after {attempts} attempts: "
+                       f"{last_error}")
+
+
 def summaries_under(runs_dir: Path) -> list[Path]:
     """Every run summary, oldest first, so a backfill replays history in order."""
     def stamp(path: Path) -> str:
@@ -663,7 +1089,25 @@ def summaries_under(runs_dir: Path) -> list[Path]:
     return sorted(found, key=stamp)
 
 
-def sync(runs_dir: Path, ledger: Path, *, quiet: bool = False) -> int:
+def unpublished_tags(state: dict, snapshot: Path | None = None
+                     ) -> list[str] | None:
+    """Tags this record holds that the committed snapshot has never carried.
+
+    ``None`` when there is no committed snapshot to compare against: a clone
+    without one cannot tell an unpublished backlog from a fresh checkout, and
+    guessing would make the alarm below fire on every machine forever.
+    """
+    snapshot = DATA if snapshot is None else snapshot
+    if not snapshot.is_file():
+        return None
+    published = {a.get("tag") for a in load_snapshot(snapshot).get("attempts")
+                 or [] if isinstance(a, dict)}
+    return [a.get("tag") for a in state.get("attempts") or []
+            if isinstance(a, dict) and a.get("tag") not in published]
+
+
+def sync(runs_dir: Path, ledger: Path, *, quiet: bool = False,
+         snapshot: Path | None = None) -> int:
     """Record every summary on disk the live ledger is missing.
 
     This is the self-healing half of the record. Recording is best-effort by
@@ -671,6 +1115,19 @@ def sync(runs_dir: Path, ledger: Path, *, quiet: bool = False) -> int:
     is never lost to a bookkeeping error -- which only works if something
     routinely comes back for what was missed. The climb loop calls this before
     every attempt for exactly that reason.
+
+    ★★★★★ AND IT IS THEREFORE THE ONLY PLACE AN UNPUBLISHED BACKLOG CAN BE
+    SAID OUT LOUD. Recording a summary into the live ledger was never the last
+    step: the ledger sits outside the repository, and a row reaches the record
+    only when somebody lands a ``publish``. `check` reports that -- to nobody,
+    because nothing runs `check`; it is a command a person types. So 76
+    attempts played between 2026-08-16 and 2026-08-19 on `mbp-m5-max-128`,
+    every one of them correctly recorded here, were in no published snapshot
+    and nothing ever said so. `heal_the_ladder` calls this function before
+    every attempt, on the machine that owns the ledger -- the one hook in the
+    fleet guaranteed to run between games -- so the backlog is named there,
+    every 45 minutes, in the log the supervisor already writes. It stays a
+    report: publishing lands a repository change and belongs in a pull request.
     """
     paths = summaries_under(runs_dir)
     recorded = skipped = broken = 0
@@ -700,18 +1157,35 @@ def sync(runs_dir: Path, ledger: Path, *, quiet: bool = False) -> int:
         print(f"recorded {recorded} attempt(s), {skipped} already in the ledger"
               + (f", {broken} unreadable" if broken else "")
               + f"; ledger holds {held}")
+    backlog = unpublished_tags(state, snapshot)
+    if backlog:
+        print(f"LADDER: {len(backlog)} recorded attempt(s) are in no published "
+              f"snapshot, oldest {backlog[0]} — run `civ6_ladder.py publish` "
+              f"and land it, or they are on this machine only")
     return 0
 
 
 def publish(ledger: Path, snapshot: Path | None = None,
             markdown: Path | None = None) -> int:
-    """Refresh the repository's snapshot of the live ledger."""
+    """Fold this machine's live ledger INTO the repository's snapshot.
+
+    ⚠⚠⚠ THIS USED TO BE A WHOLESALE OVERWRITE AND THAT IS HOW 76 GAMES WENT
+    UNRECORDED. See ``merge_state``: with two live seats in the fleet, the
+    shared document is not any one machine's ledger, and writing one over it
+    is how the other seat's rows leave the record. Merging cannot drop a
+    committed row, so publishing is safe from whichever seat happens to run
+    it, and a seat that has never published can still land its history later.
+    """
     snapshot = DATA if snapshot is None else snapshot
     markdown = LEDGER if markdown is None else markdown
-    state = load(ledger)
+    live = load(ledger)
+    committed = load_snapshot(snapshot)
+    state, added = merge_state(committed, live)
     snapshot.write_text(json.dumps(state, indent=2, sort_keys=True) + "\n")
     markdown.write_text(markdown_for(state))
-    print(f"published {len(state['attempts'])} attempt(s) to {snapshot} and {markdown}")
+    print(f"published {len(state['attempts'])} attempt(s) to {snapshot} and "
+          f"{markdown} ({len(added)} new from {ledger}, "
+          f"{len(committed.get('attempts') or [])} already committed)")
     return 0
 
 
@@ -834,13 +1308,37 @@ def check(runs_dir: Path, ledger: Path, stale_hours: float | None,
         problems.append(f"{len(unrecorded)} summary(ies) on disk are not in the "
                         f"live ledger (run `civ6_ladder.py sync`)")
 
+    # ⚠⚠⚠ BY TAG, NEVER BY COUNT. `behind = len(live) - len(published)` was
+    # the whole snapshot comparison, and on a fleet with two live seats it is
+    # not a comparison at all: on 2026-08-23 this machine held 331 attempts
+    # and the snapshot 349, so `behind` was -18 and `check` printed "snapshot
+    # in step" -- while 76 of this machine's games were in no published record
+    # and 94 published rows were in no ledger here. The alarm that exists to
+    # say the record is behind the truth on disk could not see either.
+    fork = None
     if snapshot.is_file():
         published = json.loads(snapshot.read_text())
-        behind = len(state["attempts"]) - len(published.get("attempts", []))
-        if behind > 0:
-            problems.append(f"published snapshot trails the live ledger by "
-                            f"{behind} attempt(s) (run `civ6_ladder.py publish` "
-                            f"and land it)")
+        published_tags = {a.get("tag") for a in published.get("attempts") or []
+                          if isinstance(a, dict)}
+        unpublished = unpublished_tags(state, snapshot) or []
+        if unpublished:
+            problems.append(
+                f"{len(unpublished)} attempt(s) recorded here are in no "
+                f"published snapshot, oldest {unpublished[0]} (run "
+                f"`civ6_ladder.py publish` and land it)")
+        # The other direction is NOT a failure: another seat playing games
+        # this machine has never seen is the normal state of a multi-seat
+        # fleet, and `publish` merges rather than replaces, so it is also not
+        # a hazard. It is still worth saying out loud, because it is the
+        # difference between "this ledger is the record" and "this ledger is
+        # one seat's share of it" -- and the rung gate reads the union.
+        local = {a.get("tag") for a in state["attempts"]}
+        elsewhere = [tag for tag in published_tags if tag not in local]
+        if elsewhere:
+            fork = (f"{len(elsewhere)} published attempt(s) were recorded by "
+                    f"another seat and are not in this machine's live ledger; "
+                    f"`publish` merges, so this is a fleet with more than one "
+                    f"Civilization VI seat, not a lost record")
 
     if stale_hours is not None:
         now = now or datetime.now(timezone.utc)
@@ -893,6 +1391,8 @@ def check(runs_dir: Path, ledger: Path, stale_hours: float | None,
 
     for problem in problems:
         print(f"LADDER: {problem}")
+    if fork:
+        print(f"ladder note: {fork}")
     if not problems:
         print(f"ladder current: {len(state['attempts'])} attempt(s) recorded, "
               f"snapshot in step")
@@ -1167,10 +1667,11 @@ def markdown_for(state: dict) -> str:
             "`outcome` is what the game did, not what the harness saw last.",
             "`defeat` means this controller was eliminated and the game said so;",
             "`stopped`, `stalled` and `timeout` mean nobody won and nobody lost;",
-            "`abandoned` means the harness stopped a game whose measured expected",
-            "win rate had sat under the operator's floor for five turns",
-            "(`civ6_play.py --abandon-below-win-rate`), a loss it chose not to",
-            "play out.",
+            "`abandoned` means the harness stopped under a recorded early-stop",
+            "policy: either five turns below a measured expected-win floor, or",
+            "five post-turn-100 turns below the configured leader score ratio",
+            "while trailing visible science and culture leaders — a loss it chose",
+            "not to play out.",
             "A ledger that cannot tell defeat from a wedge cannot be used to",
             "compare anything, and until `defeat` existed here the two were the",
             "same row.",
@@ -1178,7 +1679,12 @@ def markdown_for(state: dict) -> str:
             "| run | difficulty | playing for | configured | outcome | turns | score | ended |",
             "|---|---|---|---|---|---|---|---|",
         ]
-        for a in attempts[-40:]:
+        # ⚠ THE NEWEST FORTY BY THE CLOCK, NOT THE LAST FORTY APPENDED. The
+        # published record interleaves two live seats and is topped up by
+        # `sync` backfills, so append order is ARRIVAL order and stopped being
+        # chronology the first time an attempt was recorded late. Sorted
+        # stably, so rows sharing a stamp keep the order they were recorded in.
+        for a in sorted(attempts, key=lambda row: row.get("utc") or "")[-40:]:
             outcome = ("win" if a["won"]
                        else "defeat" if a.get("defeat")
                        else cell(a.get("reason")))
@@ -1250,6 +1756,13 @@ def main(argv: list[str] | None = None) -> int:
                           "error (skipped on machines with no runtime cache)")
     sub.add_parser("show")
     sub.add_parser("next")
+    pub = sub.add_parser(
+        "publish-run",
+        help="append one run's summary.json and events.jsonl.gz to the "
+             "append-only `ledger` branch; a no-op when it is already there")
+    pub.add_argument("tag")
+    pub.add_argument("--remote", default="origin")
+    pub.add_argument("--branch", default=LEDGER_BRANCH)
     args = ap.parse_args(argv)
     ledger = args.ledger or live_ledger_for(args.runs)
 
@@ -1279,6 +1792,10 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "next":
         return next_rung(ledger)
+    if args.command == "publish-run":
+        print(publish_run(args.tag, args.runs, remote=args.remote,
+                          branch=args.branch))
+        return 0
     return show(ledger)
 
 

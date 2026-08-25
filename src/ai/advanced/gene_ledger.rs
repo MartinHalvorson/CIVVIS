@@ -1,41 +1,67 @@
-//! The gene ledger: what the screens have measured about every gene, and the
-//! deployment genome that follows from it.
+//! The gene ledger: what the screen has measured about every gene, beside the
+//! explicit deployment genome the operator selected.
 //!
-//! ★★★★ THE DEFAULTS ARE THE BEST GENOME, AND THE BEST GENOME IS DATA.
-//! Operator directive 2026-08-20: the defaults for the genes reflect our best
-//! genome — so every verification game (the live seat, the `live` and
-//! `advanced_synergy` arms, the ladder) plays the genome the measurements
-//! support, while the screens keep testing and trying to improve the rest.
-//! Until this module, "on by default" meant "somebody wrote `self.enable_x()`
-//! into the bundle", and the phase-1 anchors measured the all-on bundle at
-//! 7.5% wins against 27% for all-off.
+//! ⭐ ONE SCREEN. Operator directive 2026-08-22: every row here comes from the
+//! same shape — six majors on 74x46 continents with nine city-states, Online
+//! speed to its own 250-turn clock, all six victory lanes, every seat carrying
+//! its own drawn genome against the best-genome baseline. There is no second
+//! regime to reconcile, and `tools/genes.py` refuses a source played at
+//! any other profile. The columns carried over from the pre-2026-08-22 Pangaea
+//! screens are marked `legacy` in `docs/gene_ledger.json`: history retained
+//! as evidence beside the pinned deployment selection.
 //!
-//! ★★★★ THE DEFAULT IS READ OFF THE RANKING'S TWO WIN COLUMNS.
-//! Operator directive 2026-08-22: a gene may default on when **both** its
-//! last and prior native win columns are positive, or when their average
-//! clears +15 with neither column below −10. With exactly one populated
-//! column, it may provisionally default on when that reading is above +20;
-//! every other gene defaults off.
-//! A win column is wins added per 10,000 games at the gene's measured on-rate
-//! in one native screen — `(win_on − 1/players) × 10,000`, against the 1-in-
-//! `players` a seat wins by chance — and it is the same number
-//! `HEURISTIC_GENE_RANKING.md` prints. The war regime does not enter the
-//! default.
+//! ★★★★ THE DEFAULT IS AN EXPLICIT OPERATOR-PINNED GENOME.
+//! Operator directive 2026-08-24: preserve the 36 selections then deployed
+//! and explicitly promote `unit-cost-efficiency`, `unit-objective-memory`,
+//! `camp-party`, `slot-kind-tiebreak`, `promote-when-wounded`,
+//! `religion-sues-peace`, `lane-great-people`, `one-launch-pad`, and
+//! `civilian-rescue`; then `missionary-evades-raiders`, `district-planning`,
+//! `missionary-last-charge-explores`, `settlement-gap-target`,
+//! `religious-defence-scales`, `lane-policy-deck`, and
+//! `science-multiplier-payoff`, for 52 enabled genes; then (2026-08-24,
+//! "default this gene to true initially once you write and merge it")
+//! `science-victory-drive`, pinned on before its first screen, for 53. The
+//! 2026-08-25 displayed pooled-Diff cutoff of +0.85 pp then explicitly
+//! promotes `solvency-first-trade-slot` (+8.07 pp),
+//! `settler-factory-coordination` (+1.84 pp), `one-war-at-a-time` (+1.00 pp),
+//! and `religious-veto-defence` (+0.93 pp), for 57.
+//! `DEPLOYMENT_GENOME` is that exact list. A screen refresh updates evidence,
+//! not the runtime default; changing a default requires an explicit operator
+//! update to the pinned list and regeneration.
 //!
-//! What that replaced: the default used to be `verdict == helps`, one
-//! screen's significance test on the deciding regime. The verdicts are still
-//! recorded and still say what the screens proved; they no longer decide what
-//! ships. A gene can now be `helps` and off (its prior reading was against
-//! it) or `hurts` and on (two positive win columns since).
+//! ⭐ ONE EXCEPTION, WITHIN A FAMILY (operator, 2026-08-23, restated
+//! 2026-08-25): a pinned gene that has VERSIONS (`<base>-<n>`) ships its
+//! family HEAD — the priced version with the highest tracked wins, the
+//! ledger's pooled on−off *Diff*, ties to the higher version — whatever
+//! version the operator's list names. Naming any version pins the family on;
+//! `tools/genes.py::resolve_family_heads` writes the head into
+//! `DEPLOYMENT_GENOME` and records pin, head and every version's tracked
+//! wins in `docs/gene_ledger.json` (`rules.family_heads`). A family holds at
+//! most three versions; the third-best leaves before a fourth is added
+//! (`python3 tools/genes.py versions`).
 //!
-//! The table in `gene_ledger_table.rs` is **generated** by
-//! `tools/gene_ledger.py` from `gene_screen --analyze --json` outputs and
+//! ★★★★ AND IT IS PUBLISHED BESIDE A PRECISION-WEIGHTED POSTERIOR.
+//! A threshold in column units is not a threshold in evidence: the screens
+//! those columns come from resolve between ±29 and ±101 at 80% power, so the
+//! same reading decides differently depending only on which screen priced the
+//! gene. `posterior_pp` / `posterior_se_pp` are a random-effects
+//! (DerSimonian–Laird) inverse-variance pool of every screen's on−off
+//! difference on the win column's scale, with the between-screen
+//! disagreement carried in the interval. They are observational evidence,
+//! not a deployment rule; `HEURISTIC_GENE_RANKING.md` prints the evidence for
+//! future explicit selections.
+//!
+//! Verdicts still say what screens proved, but neither verdicts, win columns,
+//! pooled *Diff*, nor posterior values mechanically decide what ships.
+//!
+//! The verdict block at the end of `genes.rs` is **generated** by
+//! `tools/genes.py` from `gene_screen --analyze --json` outputs and
 //! mirrored in `docs/gene_ledger.json`; a test holds the generated file and
-//! the JSON together, and another re-derives every `default_on` from the two
-//! columns beside it. The verdict rules live in the tool and are repeated
+//! the JSON together, and another validates every `default_on` against the
+//! generated pinned list. The verdict rules live in the tool and are repeated
 //! here so the reader of either side finds them:
 //!
-//! - `helps`: in a regime of record, win z ≥ 2 with share z > −2, or share
+//! - `helps`: win z ≥ 2 with share z > −2, or share
 //!   z ≥ 2 with win z > −2 (the screen's own `*` flag; `**` past the
 //!   family-wise bar is recorded as strength, not required — with sixty-odd
 //!   genes the family-wise bar would leave three on).
@@ -43,19 +69,17 @@
 //! - `unresolved`: everything else, including a gene whose two axes
 //!   disagree past |z| ≥ 2 and a gene the screens have not measured.
 //!
-//! The **native** (all six lanes) regime governs the verdict; the **war**
-//! regime (`domination,score`) is recorded beside it, and a gene unresolved
-//! natively takes the war regime's verdict when that resolves. Neither the
-//! war regime nor the verdict reaches the default, which is native-only by
-//! construction: the verification games are the all-six regime.
+//! The verdict is read off the newest screen that priced the gene; it is
+//! evidence only and does not reach the default.
 //!
 //! `apply_gene_ledger` is what `enable_live_bridge` and
 //! `enable_engine_repairs` end with: every live treatment and production
 //! treatment the ledger does not default on is withheld, every opt-in it
-//! defaults on is enabled, and a gene with no ledger row (the
-//! Firaxis-only flags, which no native screen can price) is left exactly as
-//! the bundle set it. The `_universe` twins of those two helpers set every
-//! flag and skip the ledger: they are the genome's universe, for
+//! defaults on is enabled. A screenable gene without a measurement row still
+//! follows the pinned list; a Firaxis-only flag, which the screen cannot
+//! price, is left exactly as the bundle set it. The `_universe` twins of those
+//! two helpers set every flag and skip the ledger: they are the genome's
+//! universe, for
 //! `gene_screen` (which sets each gene to its drawn state explicitly) and for
 //! the membership tests.
 
@@ -78,7 +102,7 @@ impl Verdict {
     }
 }
 
-/// One regime's measurement of one gene, as the screen printed it.
+/// The screen's measurement of one gene, as it printed it.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Measure {
     /// Complete pairs (seat pairs in an all-seats file) the estimate rests on.
@@ -95,52 +119,59 @@ pub struct Measure {
 pub struct GeneVerdict {
     pub tag: &'static str,
     pub verdict: Verdict,
-    /// Whether the gene is on in the deployment genome — the win-column rule
-    /// in the module header, decided by `tools/gene_ledger.py` and checked
-    /// here against the two columns below by `the_default_follows_the_win_columns`.
+    /// Whether the gene is on in the explicit operator-pinned deployment
+    /// genome, checked here against `DEPLOYMENT_GENOME`.
     pub default_on: bool,
-    /// ± wins per 10,000 games at the gene's measured on-rate in the latest
-    /// native screen that priced it: `HEURISTIC_GENE_RANKING.md`'s
-    /// *± Wins Last 10k*. `None` when no native screen has priced it.
+    /// ± wins per 10,000 on-arm seats at the gene's measured on-rate in the latest
+    /// screen that priced it: `HEURISTIC_GENE_RANKING.md`'s
+    /// *± Wins / 10k seats*. `None` when no screen has priced it.
     pub wins_last_10k: Option<i32>,
-    /// The same figure from the native screen before that — *± Wins 10k
-    /// Prior*. `None` when the gene has only one native reading.
+    /// The same figure from the screen before that — *± Wins / 10k seats prior*.
+    /// `None` when the gene has only one reading.
+    ///
+    /// The JSON and `HEURISTIC_GENE_RANKING.md` also carry `wins_third_10k`,
+    /// the screen before this one, so a reader can assess trends. All windows
+    /// are evidence only; none selects a deployment default automatically.
     pub wins_prior_10k: Option<i32>,
-    /// Past the family-wise bar in the regime that decided the verdict.
+    /// `HEURISTIC_GENE_RANKING.md`'s *Diff*: the pooled on win rate minus the
+    /// pooled off win rate in percentage points, over **every** screen that
+    /// priced the gene, each weighted by its on-arm seats. It is evidence only.
+    /// `None` when no screen has priced it.
+    pub win_diff_pp: Option<f64>,
+    /// The precision-weighted pooled effect, in wins per 10,000 on-arm seats:
+    /// a random-effects (DerSimonian–Laird) inverse-variance pool of every
+    /// screen's on−off difference on the win column's scale, with the
+    /// between-screen disagreement carried in the error rather than assumed
+    /// away. `None` when no screen has priced the gene.
+    pub posterior_pp: Option<f64>,
+    /// That pooled effect's standard error, same units. A 95% interval is
+    /// `posterior_pp ± 1.96 × posterior_se_pp`.
+    pub posterior_se_pp: Option<f64>,
+    /// Past the family-wise bar of the screen that supplied the verdict.
     pub family_wise: bool,
-    pub native: Option<Measure>,
-    pub war: Option<Measure>,
+    /// The newest screen's paired contrast for this gene.
+    pub screen: Option<Measure>,
 }
 
-/// A gene's win columns clear the deployment rule: one populated column above
-/// `SINGLE_COLUMN_BAR`, both positive, or an average above `AVERAGE_BAR` with
-/// neither column below `COLUMN_FLOOR`. No populated columns means off — the
-/// mirror of `tools/gene_ledger.py`'s `default_from_win_columns`, so a
-/// hand-edited table cannot quietly ship a gene the rule does not.
-pub fn win_columns_default_on(last: Option<i32>, prior: Option<i32>) -> bool {
-    /// A sole provisional reading must strictly clear this bar.
-    const SINGLE_COLUMN_BAR: i32 = 20;
-    /// Wins per ten thousand games the two-column average must clear.
-    const AVERAGE_BAR: f64 = 15.0;
-    /// No column may sit below this, however good the other one is.
-    const COLUMN_FLOOR: i32 = -10;
-    let (last, prior) = match (last, prior) {
-        (Some(value), None) | (None, Some(value)) => return value > SINGLE_COLUMN_BAR,
-        (Some(last), Some(prior)) => (last, prior),
-        (None, None) => return false,
-    };
-    if last > 0 && prior > 0 {
-        return true;
-    }
-    f64::from(last + prior) / 2.0 > AVERAGE_BAR && last >= COLUMN_FLOOR && prior >= COLUMN_FLOOR
+/// The generated policy, pinned list, and measurement rows at the end of
+/// `genes.rs`, written by `python3 tools/genes.py write`.
+mod table {
+    pub(super) use super::super::genes::{DEPLOYMENT_GENOME, DEPLOYMENT_POLICY, VERDICTS as ROWS};
 }
-
-#[path = "gene_ledger_table.rs"]
-mod table;
 
 /// Every gene the ledger has a verdict for, in the generated order.
 pub fn gene_ledger() -> &'static [GeneVerdict] {
     table::ROWS
+}
+
+/// The explicit deployment policy recorded with this generated set.
+pub fn deployment_policy() -> &'static str {
+    table::DEPLOYMENT_POLICY
+}
+
+/// Whether a tag is in the explicit operator-pinned deployment genome.
+pub fn operator_default_on(tag: &str) -> bool {
+    table::DEPLOYMENT_GENOME.contains(&tag)
 }
 
 /// The ledger's row for a published tag, if the screens have measured it.
@@ -148,31 +179,24 @@ pub fn ledger_verdict(tag: &str) -> Option<&'static GeneVerdict> {
     table::ROWS.iter().find(|row| row.tag == tag)
 }
 
-/// Whether a native screen can price a tag at all: the engine repairs, the
-/// production treatments and the opt-ins — `gene_screen`'s own universe. A
-/// Firaxis-only flag is not here, and the ledger has nothing to say about it.
+/// Whether the screen can price a tag at all: the engine repairs, the
+/// production genes and the opt-ins — `gene_screen`'s own universe. A
+/// host-only flag is not here, and the ledger has nothing to say about it.
 pub fn screenable(tag: &str) -> bool {
-    crate::elo::ENGINE_REPAIR_TREATMENTS.contains(&tag)
-        || super::PRODUCTION_TREATMENTS
-            .iter()
-            .chain(super::PRODUCTION_OPT_INS)
-            .any(|(_, row_tag, _)| *row_tag == tag)
+    super::gene(tag).is_some_and(|gene| gene.screenable())
 }
 
-/// Whether a gene is on in the deployment genome: the ledger's own
-/// `default_on`, which is the win-column rule in the module header — so a
-/// screenable gene no screen has measured is off; one measured once follows
-/// the provisional single-column bar.
-/// `None` for a gene no native screen can price (the Firaxis-only flags),
+/// Whether a gene is on in the explicit deployment genome. A screenable tag
+/// outside the pinned list is off, whether or not a screen has measured it.
+/// `None` for a gene the screen cannot price (the Firaxis-only flags),
 /// which the bundle leaves as it set it.
 pub fn ledger_default_on(tag: &str) -> Option<bool> {
-    // A host-only flag is never governed by a native row — even when one
-    // exists: such a row measured a native stand-in that no longer runs
-    // (`step-and-reassess`, 2026-08-21) and must not govern the bridge.
+    // A host-only flag is never governed by a screen row; the bundle retains
+    // control of its live defaults.
     if !screenable(tag) {
         return None;
     }
-    Some(ledger_verdict(tag).is_some_and(|row| row.default_on))
+    Some(operator_default_on(tag))
 }
 
 /// Whether a live treatment is normally present in the universe but held out
@@ -180,10 +204,7 @@ pub fn ledger_default_on(tag: &str) -> Option<bool> {
 /// verification arm may force on: host-only rows already ship as the universe
 /// set them, while production opt-ins are not part of that universe at all.
 pub fn ledger_held_live_treatment(tag: &str) -> bool {
-    ledger_default_on(tag) == Some(false)
-        && super::LIVE_TREATMENTS
-            .iter()
-            .any(|(_, live_tag, _)| *live_tag == tag)
+    ledger_default_on(tag) == Some(false) && super::gene(tag).is_some_and(|gene| gene.live())
 }
 
 /// Every live treatment an explicit ledger-override arm may restore, in
@@ -191,9 +212,10 @@ pub fn ledger_held_live_treatment(tag: &str) -> bool {
 /// the caller begins from the live universe, so only its withheld rows can be
 /// restored without silently enabling a different bundle.
 pub fn ledger_held_live_treatments() -> Vec<&'static str> {
-    super::LIVE_TREATMENTS
+    super::GENES
         .iter()
-        .map(|(_, tag, _)| *tag)
+        .filter(|gene| gene.live())
+        .map(|gene| gene.tag)
         .filter(|tag| ledger_held_live_treatment(tag))
         .collect()
 }
@@ -204,20 +226,20 @@ pub fn ledger_held_live_treatments() -> Vec<&'static str> {
 /// event reports — the list that used to be `LIVE_BRIDGE_TREATMENTS` whole,
 /// which the ledger makes untrue.
 pub fn deployment_treatments_with_forced_live(forced_on: &[&str]) -> Vec<&'static str> {
-    let mut tags: Vec<&'static str> = super::LIVE_TREATMENTS
+    let mut tags: Vec<&'static str> = super::GENES
         .iter()
-        .map(|(_, tag, _)| *tag)
+        .filter(|gene| gene.live())
+        .map(|gene| gene.tag)
         .filter(|tag| {
             ledger_default_on(tag) != Some(false)
                 || (ledger_held_live_treatment(tag) && forced_on.contains(tag))
         })
         .collect();
-    tags.extend(
-        super::PRODUCTION_OPT_INS
-            .iter()
-            .map(|(_, tag, _)| *tag)
-            .filter(|tag| ledger_default_on(tag) == Some(true)),
-    );
+    for gene in super::GENES.iter().filter(|gene| gene.opt_in()) {
+        if ledger_default_on(gene.tag) == Some(true) && !tags.contains(&gene.tag) {
+            tags.push(gene.tag);
+        }
+    }
     tags
 }
 
@@ -251,21 +273,25 @@ impl AdvancedAi {
     /// than becoming a back door around the ledger.
     pub fn apply_gene_ledger_with_forced_live(&mut self, forced_on: &[&str]) -> GeneLedgerApplied {
         let mut applied = GeneLedgerApplied::default();
-        for &(_, tag, disable) in super::LIVE_TREATMENTS
+        // What the bundle had on — every live gene and the production genes —
+        // the ledger may hold off; what it had off — the opt-ins — the ledger
+        // may turn on.
+        for gene in super::GENES
             .iter()
-            .chain(super::PRODUCTION_TREATMENTS)
+            .filter(|gene| gene.live() || gene.production())
         {
+            let tag = gene.tag;
             if ledger_held_live_treatment(tag) && forced_on.contains(&tag) {
                 applied.forced.push(tag);
             } else if ledger_default_on(tag) == Some(false) {
-                disable(self);
+                (gene.disable)(self);
                 applied.withheld.push(tag);
             }
         }
-        for &(_, tag, enable) in super::PRODUCTION_OPT_INS {
-            if ledger_default_on(tag) == Some(true) {
-                enable(self);
-                applied.enabled.push(tag);
+        for gene in super::GENES.iter().filter(|gene| gene.opt_in()) {
+            if ledger_default_on(gene.tag) == Some(true) {
+                (gene.enable)(self);
+                applied.enabled.push(gene.tag);
             }
         }
         applied
@@ -277,18 +303,30 @@ mod tests {
     use super::*;
 
     /// The generated table and `docs/gene_ledger.json` are two writings of
-    /// one measurement; `tools/gene_ledger.py --write` produces both.
+    /// one measurement; `tools/genes.py write` produces both.
     #[test]
     fn the_generated_table_matches_the_json_ledger() {
         let json: serde_json::Value =
             serde_json::from_str(include_str!("../../../docs/gene_ledger.json"))
                 .expect("docs/gene_ledger.json parses");
+        assert_eq!(
+            json["rules"]["deployment_policy"].as_str(),
+            Some(table::DEPLOYMENT_POLICY),
+            "the JSON ledger and the generated table were written under different policies"
+        );
+        let pinned = json["rules"]["deployment_genome"]
+            .as_array()
+            .expect("deployment_genome array");
+        assert_eq!(pinned.len(), table::DEPLOYMENT_GENOME.len());
+        for (json_tag, rust_tag) in pinned.iter().zip(table::DEPLOYMENT_GENOME) {
+            assert_eq!(json_tag.as_str(), Some(*rust_tag));
+        }
         let genes = json["genes"].as_array().expect("genes array");
         assert_eq!(
             genes.len(),
             gene_ledger().len(),
             "the Rust table and the JSON ledger hold different gene counts; run \
-             `python3 tools/gene_ledger.py --write`"
+             `python3 tools/genes.py write`"
         );
         for entry in genes {
             let tag = entry["tag"].as_str().expect("tag");
@@ -314,86 +352,107 @@ mod tests {
                     "{tag}: {column} differs between the table and the JSON"
                 );
             }
+            for (column, recorded) in [
+                ("win_diff_pp", row.win_diff_pp),
+                ("posterior_pp", row.posterior_pp),
+                ("posterior_se_pp", row.posterior_se_pp),
+            ] {
+                assert_eq!(
+                    recorded,
+                    entry[column].as_f64(),
+                    "{tag}: {column} differs between the table and the JSON"
+                );
+            }
         }
     }
 
-    /// The rule itself: every default in the generated table is the one the
-    /// two win columns beside it produce. The tool decides; this re-derives.
+    /// Every generated row agrees with the explicit list, so observations
+    /// cannot quietly re-decide a runtime default.
     #[test]
-    fn the_default_follows_the_win_columns() {
-        let mut on = 0;
+    fn the_default_matches_the_operator_pinned_genome() {
+        assert_eq!(deployment_policy(), "operator-pinned");
+        let mut measured_on = 0;
         for row in gene_ledger() {
             assert_eq!(
                 row.default_on,
-                win_columns_default_on(row.wins_last_10k, row.wins_prior_10k),
-                "{}: default {} does not follow its win columns {:?}/{:?}",
-                row.tag,
-                row.default_on,
-                row.wins_last_10k,
-                row.wins_prior_10k
+                operator_default_on(row.tag),
+                "{} differs from the generated operator-pinned list",
+                row.tag
             );
-            on += usize::from(row.default_on);
+            assert_eq!(
+                ledger_default_on(row.tag),
+                screenable(row.tag).then_some(row.default_on),
+                "host-only rows stay outside the runtime deployment policy"
+            );
+            measured_on += usize::from(row.default_on);
         }
-        assert!(on > 0, "a genome with no gene on is a broken regeneration");
+        assert_eq!(
+            table::DEPLOYMENT_GENOME.len(),
+            73,
+            "an operator selection changed; update it deliberately"
+        );
+        assert!(
+            measured_on <= table::DEPLOYMENT_GENOME.len(),
+            "the measured subset cannot contain more defaults than the pinned genome"
+        );
+        for tag in table::DEPLOYMENT_GENOME {
+            assert_eq!(
+                ledger_default_on(tag),
+                Some(true),
+                "{tag} is pinned but not enabled by the runtime ledger"
+            );
+        }
     }
 
-    /// The rule's three clauses, at their boundaries.
     #[test]
-    fn the_win_column_rule_reads_both_columns() {
-        assert!(win_columns_default_on(Some(1), Some(1)), "both positive");
-        assert!(
-            !win_columns_default_on(Some(1), Some(0)),
-            "zero is not positive"
-        );
-        assert!(
-            !win_columns_default_on(Some(39), Some(-26)),
-            "one strong reading does not carry an average of 6.5"
-        );
-        assert!(
-            win_columns_default_on(Some(48), Some(-10)),
-            "an average of 19 with the floor exactly met"
-        );
-        assert!(
-            !win_columns_default_on(Some(50), Some(-11)),
-            "a column below the floor is off however good the average"
-        );
-        assert!(
-            !win_columns_default_on(Some(30), Some(0)),
-            "an average of exactly 15 does not clear +15, and 0 is not positive"
-        );
-        assert!(
-            win_columns_default_on(Some(21), None),
-            "one reading above +20"
-        );
-        assert!(
-            win_columns_default_on(None, Some(21)),
-            "either column may be populated"
-        );
-        assert!(
-            !win_columns_default_on(Some(20), None),
-            "one reading at +20 does not clear the strict bar"
-        );
-        assert!(!win_columns_default_on(None, None), "unmeasured is off");
+    fn the_sixteen_explicit_promotions_are_pinned_on() {
+        for tag in [
+            "unit-cost-efficiency",
+            "unit-objective-memory",
+            "camp-party",
+            "slot-kind-tiebreak",
+            "promote-when-wounded",
+            "religion-sues-peace",
+            "lane-great-people",
+            "one-launch-pad",
+            "civilian-rescue",
+            "missionary-evades-raiders",
+            "district-planning",
+            "missionary-last-charge-explores",
+            "settlement-gap-target",
+            "religious-defence-scales",
+            "lane-policy-deck",
+            "science-multiplier-payoff",
+        ] {
+            assert!(operator_default_on(tag), "{tag} was not pinned on");
+        }
     }
 
-    /// A screenable gene the screens have not measured is not proven, so it
-    /// is off; a Firaxis-only flag has no native instrument and is left alone.
     #[test]
-    fn unmeasured_genes_are_off_only_when_a_screen_could_have_priced_them() {
+    fn the_20260825_explicit_promotions_are_pinned_on() {
+        for tag in [
+            "science-victory-drive",
+            "solvency-first-trade-slot",
+            "settler-factory-coordination",
+            "one-war-at-a-time",
+            "religious-veto-defence",
+        ] {
+            assert!(operator_default_on(tag), "{tag} was not pinned on");
+        }
+    }
+
+    /// Every screenable gene has an explicit pinned state, including a gene
+    /// whose first measurement has not landed; a Firaxis-only flag has no
+    /// instrument and is left alone.
+    #[test]
+    fn screenable_genes_have_an_explicit_default_and_host_only_flags_are_untouched() {
         assert_eq!(
             ledger_default_on("live-trader-route"),
             None,
             "Firaxis-only: untouched"
         );
         assert!(!screenable("live-trader-route"));
-        // A host-only flag with a row from its retired native stand-in.
-        assert!(ledger_verdict("step-and-reassess").is_some());
-        assert_eq!(
-            ledger_default_on("step-and-reassess"),
-            None,
-            "a host-only flag is never governed by a native row"
-        );
-        for repair in crate::elo::ENGINE_REPAIR_TREATMENTS {
+        for repair in super::super::genes::repair_tags() {
             assert!(screenable(repair));
             assert!(
                 ledger_default_on(repair).is_some(),
@@ -407,43 +466,41 @@ mod tests {
     /// treatment cannot leave a stale verdict governing nothing.
     #[test]
     fn every_ledger_tag_names_a_known_gene() {
-        let known: Vec<&str> = super::super::LIVE_TREATMENTS
-            .iter()
-            .chain(super::super::PRODUCTION_TREATMENTS)
-            .chain(super::super::PRODUCTION_OPT_INS)
-            .map(|(_, tag, _)| *tag)
-            .collect();
         for row in gene_ledger() {
             assert!(
-                known.contains(&row.tag),
-                "ledger row {} names no live treatment, production treatment or opt-in",
+                super::super::gene(row.tag).is_some(),
+                "ledger row {} names no gene in the registry",
                 row.tag
             );
         }
     }
 
     /// The deployment genome is the universe minus the genes the ledger
-    /// holds off, plus the opt-ins it turns on — and a gene the ledger has
-    /// never measured is left as the bundle set it.
+    /// holds off, plus the opt-ins it turns on from the explicit pinned list.
     #[test]
-    fn apply_gene_ledger_withholds_what_is_not_proven_and_enables_proven_opt_ins() {
+    fn apply_gene_ledger_applies_the_pinned_selection_to_live_and_opt_in_genes() {
         let mut ai = AdvancedAi::new();
         ai.enable_live_bridge_universe();
         let applied = ai.apply_gene_ledger();
-        for &(_, tag, _) in super::super::LIVE_TREATMENTS
+        for tag in super::super::GENES
             .iter()
-            .chain(super::super::PRODUCTION_TREATMENTS)
+            .filter(|gene| gene.live() || gene.production())
+            .map(|gene| gene.tag)
         {
             match ledger_default_on(tag) {
                 Some(false) => assert!(applied.withheld.contains(&tag), "{tag} should be withheld"),
                 _ => assert!(!applied.withheld.contains(&tag), "{tag} should stand"),
             }
         }
-        for &(_, tag, _) in super::super::PRODUCTION_OPT_INS {
+        for tag in super::super::GENES
+            .iter()
+            .filter(|gene| gene.opt_in())
+            .map(|gene| gene.tag)
+        {
             assert_eq!(
                 applied.enabled.contains(&tag),
                 ledger_default_on(tag) == Some(true),
-                "{tag}: an opt-in is enabled exactly when the ledger says it helps"
+                "{tag}: an opt-in is enabled exactly when the pinned ledger says on"
             );
         }
         // The published deployment list is the universe minus the withheld
@@ -461,9 +518,9 @@ mod tests {
                 "{tag} is enabled yet not listed as deployed"
             );
         }
-        for tag in crate::elo::LIVE_BRIDGE_TREATMENTS {
+        for tag in super::super::genes::live_tags() {
             assert_eq!(
-                deployed.contains(tag),
+                deployed.contains(&tag),
                 ledger_default_on(tag) != Some(false),
                 "{tag}: deployed exactly unless the ledger holds it off"
             );
@@ -472,8 +529,8 @@ mod tests {
 
     #[test]
     fn a_live_arm_can_restore_only_a_named_ledger_held_gene() {
-        let forced = ["governor-every-lane"];
-        assert!(ledger_held_live_treatment("governor-every-lane"));
+        let forced = ["settler-guard-holds"];
+        assert!(ledger_held_live_treatment("settler-guard-holds"));
         assert!(
             !ledger_held_live_treatment("parallel-settlers"),
             "host-only treatments already follow their live-universe default"
@@ -482,16 +539,16 @@ mod tests {
             !ledger_held_live_treatment("founder-temple"),
             "a withheld production opt-in is not a live-universe override"
         );
-        assert!(ledger_held_live_treatments().contains(&"governor-every-lane"));
+        assert!(ledger_held_live_treatments().contains(&"settler-guard-holds"));
 
         let deployed = deployment_treatments();
         let forced_deployment = deployment_treatments_with_forced_live(&forced);
         assert!(
-            !deployed.contains(&"governor-every-lane"),
+            !deployed.contains(&"settler-guard-holds"),
             "the verification override must not change deployment"
         );
         assert!(
-            forced_deployment.contains(&"governor-every-lane"),
+            forced_deployment.contains(&"settler-guard-holds"),
             "the genome event must name the treatment the arm actually restored"
         );
         assert_eq!(
@@ -503,14 +560,14 @@ mod tests {
         let mut ai = AdvancedAi::new();
         ai.enable_live_bridge_universe();
         let applied = ai.apply_gene_ledger_with_forced_live(&forced);
-        assert!(ai.governor_victory_lanes, "the named live treatment stands");
+        assert!(ai.settler_guard_holds, "the named live treatment stands");
         assert!(
-            !ai.war_patience,
+            !ai.blind_objective_strength,
             "another ledger-held treatment stays off unless named too"
         );
-        assert_eq!(applied.forced, vec!["governor-every-lane"]);
+        assert_eq!(applied.forced, vec!["settler-guard-holds"]);
         assert!(
-            !applied.withheld.contains(&"governor-every-lane"),
+            !applied.withheld.contains(&"settler-guard-holds"),
             "an explicit arm cannot report its restored gene as withheld"
         );
     }

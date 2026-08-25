@@ -78,25 +78,6 @@ fn research_economy_ab_at_deployment_scale() {
             "TOTALS n={n} science {ts:.1} vs {cs:.1} | techs {tt} vs {tc} | campuses {tcp} vs {ccp} | score {tsc} vs {csc}"
         );
 }
-/// Off by default and set only by the live bridge, so the control arm can
-/// hold exactly this one mechanism off — which is what makes
-/// `live_without_housing_districts` a controlled comparison rather than a
-/// second implementation.
-#[test]
-fn only_the_live_bridge_raises_the_housing_ceiling() {
-    assert!(
-        !AdvancedAi::new().base.housing_districts,
-        "the frozen tournament controller must keep its recorded ladders"
-    );
-    let mut live = AdvancedAi::new();
-    live.enable_live_bridge_universe();
-    assert!(live.base.housing_districts, "the deployment turns it on");
-    live.disable_housing_districts();
-    assert!(
-        !live.base.housing_districts,
-        "and the control arm holds it off"
-    );
-}
 /// Off by default, set only by the live bridge, and holdable off on its own
 /// so the arm is a controlled comparison — which is what makes the repair
 /// measurable rather than merely deployed.
@@ -170,46 +151,6 @@ fn the_campus_horizon_measures_payback_not_the_fraction_of_the_game_left() {
         "and it never goes negative past the budget"
     );
 }
-
-/// The `balanced_core` cliff is exempted for the two research/civic trees
-/// ONLY, and each exemption must be gated on its own named treatment. The
-/// Commercial Hub, Harbor and Industrial Zone keep the half-empire cap they
-/// were written with: their effects are empire-wide, so half the empire
-/// really is enough. The Campus and the Theater Square each carry their own
-/// building chain and a tree that cascades out of them, and the empire
-/// stopping at half is what measured 50 of 100 cities for the Campus and 27%
-/// for the Theater Square. See `campus_every_city` and `culture_coverage`.
-#[test]
-fn only_the_two_trees_are_exempt_from_the_half_empire_cliff() {
-    let src = include_str!("../advanced.rs");
-    let block = src
-        .split("let core_capped = district_count * 2 >= city_count;")
-        .nth(1)
-        .expect("the cliff is computed once")
-        .split("};")
-        .next()
-        .expect("the balanced_core block ends");
-    // The Campus gene was REMOVED 2026-08-21 (ranking row −90/10k) with the
-    // bottom of the table; the campus rejoined the half-empire cliff and only
-    // the Theater Square exemption remains.
-    assert!(
-        block.contains("let campus_keeps_asking = false;"),
-        "the campus exemption stays removed"
-    );
-    assert!(
-        block.contains("self.culture_coverage && family == \"theater_square\""),
-        "the theater_square exemption must be gated on self.culture_coverage"
-    );
-    for family in ["commercial_hub", "harbor", "industrial_zone"] {
-        assert!(
-            !block.contains(&format!("family == \"{family}\"")),
-            "{family} must keep the half-empire cap"
-        );
-    }
-    let stock = AdvancedAi::new();
-    assert!(!stock.culture_coverage);
-}
-
 
 /// Off by default, set only by the live bridge, holdable off on its own.
 #[test]
@@ -318,20 +259,6 @@ fn only_the_live_bridge_replaces_the_recon_arm() {
     assert!(live.base.recon_replacement);
     live.disable_recon_replacement();
     assert!(!live.base.recon_replacement);
-}
-
-/// Off by default, set only by the live bridge, holdable off on its own —
-/// the wonder-ring settle credit follows the same contract as every other
-/// bridge repair, so the frozen `advanced_v1` anchor keeps its ladder.
-#[test]
-fn only_the_live_bridge_prices_the_wonder_ring_into_settling() {
-    assert!(!AdvancedAi::new().base.wonder_ring_settle_value);
-    assert!(!AdvancedAi::legacy().base.wonder_ring_settle_value);
-    let mut live = AdvancedAi::new();
-    live.enable_live_bridge_universe();
-    assert!(live.base.wonder_ring_settle_value);
-    live.disable_wonder_ring_settle_value();
-    assert!(!live.base.wonder_ring_settle_value);
 }
 
 /// A settler standing on the site it chose, which the host or the mirror
@@ -841,6 +768,120 @@ fn live_stalled_settler_refuses_an_unsupported_hostile_frontier() {
     assert_eq!(control_board.player_city_ids(0).len(), cities_before + 1);
 }
 
+/// Cumae showed that the stalled-settler fallback could bypass the ordinary
+/// Loyalty forecast: t63 rejected this fogged tile as beyond Rome's support,
+/// yet t72 founded there after the walk stalled; it revolted at t82. A city
+/// that cannot hold is not the wide expansion the fallback is meant to save.
+#[test]
+fn live_stalled_settler_refuses_a_loyalty_doomed_fallback() {
+    let mut game = Game::new_full(2, 40, 24, 91_779, 250, 0, false);
+    game.current = 0;
+    for unit in game.units.keys().copied().collect::<Vec<_>>() {
+        game.remove_unit(unit);
+    }
+    let positions: Vec<Pos> = game.map.tiles.keys().copied().collect();
+    let (here, friendly, fogged) = positions
+        .iter()
+        .copied()
+        .find_map(|here| {
+            game.wring(here, 8)
+                .into_iter()
+                .filter(|friendly| game.map.tiles.contains_key(friendly))
+                .find_map(|friendly| {
+                    game.wdisk(here, 9)
+                        .into_iter()
+                        .find(|fogged| *fogged != here && game.map.tiles.contains_key(fogged))
+                        .map(|fogged| (here, friendly, fogged))
+                })
+        })
+        .expect("fixture needs a frontier eight tiles from its friendly city");
+    for position in positions.iter() {
+        let tile = game.map.tiles.get_mut(position).unwrap();
+        tile.terrain = crate::name!("grassland");
+        tile.feature = None;
+        tile.hills = false;
+        tile.resource = None;
+        tile.improvement = None;
+        tile.district = None;
+        tile.wonder = None;
+    }
+    game.found_city_for(0, friendly, None);
+    assert_eq!(game.wdist(here, friendly), 8);
+    let settler = game.spawn_test_unit("settler", 0, here);
+    // Founding refreshes ordinary city vision, so set the single fogged
+    // pressure tile after every fixture unit has refreshed its vision rather
+    // than accidentally testing a revealed frontier.
+    game.players[0].explored.clear();
+    game.players[0]
+        .explored
+        .extend(positions.into_iter().filter(|position| *position != fogged));
+    assert!(
+        game.can_found_city(settler),
+        "the fallback tile remains legal"
+    );
+    let own_city_distances: Vec<i32> = game
+        .cities
+        .values()
+        .filter(|city| city.owner == 0)
+        .map(|city| game.wdist(city.pos, here))
+        .collect();
+    let nearby_fog = game
+        .wdisk(here, 9)
+        .into_iter()
+        .filter(|position| {
+            game.map.tiles.contains_key(position) && !game.players[0].explored.contains(position)
+        })
+        .count();
+    assert!(
+        AdvancedAi::beyond_loyalty_reach(&game, 0, here),
+        "the fixture needs no friendly city inside the seven-tile reach and nearby fog; \
+         distances={own_city_distances:?}, fogged={fogged:?}, nearby_fog={nearby_fog}"
+    );
+    let mut control_board = game.clone();
+
+    // ⚠ THE UNIVERSE, NOT THE DEPLOYMENT GENOME. What this pins is the live
+    // guard on the stalled-settler fallback, so the fallback has to exist: it
+    // is switched on as a side effect of `enable_stranded_settler_discount`,
+    // and on 2026-08-23 the standard screen took that gene out of the shipped
+    // genome, which turned `settler_founds_when_stalled` off and made
+    // `founds_where_it_stands` return `false` at its first line — the assertion
+    // below still passed, for entirely the wrong reason, and the site was never
+    // retired. A behaviour test must not be able to pass because a gene stopped
+    // shipping. Its sibling above already reads the universe; this one was
+    // missed, and only worked while the gene happened to be on.
+    let mut live = AdvancedAi::new();
+    live.enable_live_bridge_universe();
+    assert!(live.base.loyalty_rate_alarm);
+    assert!(live.frontier_loyalty);
+    assert!(
+        live.settler_founds_when_stalled,
+        "the fallback under test must be reachable, whatever the ledger ships"
+    );
+    assert!(
+        live.settle_site_loyalty_verdict(&game, 0, here).is_some(),
+        "the live forecast must identify the unsupported fogged frontier"
+    );
+    let cities_before = game.player_city_ids(0).len();
+    assert!(
+        !live.founds_where_it_stands(&mut game, 0, settler, here),
+        "the live fallback must not found a city that the same forecast rejects"
+    );
+    assert_eq!(game.player_city_ids(0).len(), cities_before);
+    assert!(
+        live.settler_site_is_dead(settler, here),
+        "the doomed fallback is retired so the Settler can make a genuinely safe plan"
+    );
+
+    let mut control = AdvancedAi::new();
+    control.enable_settler_founds_when_stalled();
+    assert!(!control.base.loyalty_rate_alarm);
+    assert!(
+        control.founds_where_it_stands(&mut control_board, 0, settler, here),
+        "the evaluator-only fallback retains its historical behavior"
+    );
+    assert_eq!(control_board.player_city_ids(0).len(), cities_before + 1);
+}
+
 /// Off by default, set only by the live bridge, holdable off on its own —
 /// the wonder race follows the same contract as every other bridge
 /// repair, so the frozen `advanced_v1` anchor keeps its ladder.
@@ -1181,37 +1222,21 @@ fn live_seat_races_for_one_wonder_at_a_time_and_stock_still_refuses() {
 }
 
 /// Off by default, set only by the live bridge, each holdable off on its
-/// own — the war-conversion quartet follows the same contract as every other
+/// own — the war-conversion pair follows the same contract as every other
 /// bridge repair.
 #[test]
-fn only_the_live_bridge_fights_the_war_conversion_quartet() {
+fn only_the_live_bridge_fights_the_war_conversion_pair() {
     let fresh = AdvancedAi::new();
     assert!(!fresh.war_economy);
     assert!(!fresh.war_reinforcement);
-    assert!(!fresh.war_patience);
-    assert!(!fresh.endgame_war_runway);
     let legacy = AdvancedAi::legacy();
-    assert!(
-        !legacy.war_economy
-            && !legacy.war_reinforcement
-            && !legacy.war_patience
-            && !legacy.endgame_war_runway
-    );
+    assert!(!legacy.war_economy && !legacy.war_reinforcement);
     let mut live = AdvancedAi::new();
     live.enable_live_bridge_universe();
-    assert!(
-        live.war_economy && live.war_reinforcement && live.war_patience && live.endgame_war_runway
-    );
+    assert!(live.war_economy && live.war_reinforcement);
     live.disable_war_economy();
     live.disable_war_reinforcement();
-    live.disable_war_patience();
-    live.disable_endgame_war_runway();
-    assert!(
-        !live.war_economy
-            && !live.war_reinforcement
-            && !live.war_patience
-            && !live.endgame_war_runway
-    );
+    assert!(!live.war_economy && !live.war_reinforcement);
 }
 
 /// The removal note stands where the routing stood: `take_turn`'s dispatch
@@ -1236,219 +1261,9 @@ fn the_war_economy_conquest_routing_is_gone_from_the_dispatch() {
     );
 }
 
-/// The strategic governor runs under the Science lane on the treated seat:
-/// civvis-20260816T054344Z ran Rome on the baseline picker for the whole
-/// of a Science stretch and started no wonder in 57 turns. See
-/// `governor_every_lane`.
-/// The strategic governor runs under the Science lane on the treated seat:
-/// civvis-20260816T054344Z ran Rome on the baseline picker for the whole
-/// of a Science stretch and started no wonder in 57 turns. See
-/// `governor_every_lane`. Same source-pinned shape as
-/// `the_war_economy_routes_an_adaptive_conquest_plan_to_war_production`:
-/// the routing block is the only place the choice is made.
-#[test]
-fn the_strategic_governor_runs_under_every_lane_on_the_treated_seat() {
-    let src = include_str!("../advanced.rs");
-    let block = src
-        .split("|| adaptive_expansion_dispatch")
-        .nth(1)
-        .expect("the production routing condition exists")
-        .split("self.advanced_production(g, pid, &plan, adaptive_expansion_dispatch);")
-        .next()
-        .expect("the routing block ends at the production call");
-    assert!(
-        block.contains("|| every_lane"),
-        "the every-lane arm reaches the same production call"
-    );
-    // The arm is two flags since the bisect: the composite still covers the
-    // same five lanes, but each half can be measured on its own.
-    let arm = src
-        .split("let every_lane = (self.governor_victory_lanes")
-        .nth(1)
-        .expect("the arm is gated by the flags")
-        .split(';')
-        .next()
-        .expect("the arm ends");
-    for lane in ["Science", "Culture", "Religion", "Diplomacy", "Expansion"] {
-        assert!(
-            arm.contains(&format!("GrandStrategy::{lane}")),
-            "the {lane} lane is covered"
-        );
-    }
-    assert!(
-        arm.contains("self.governor_expansion_lane"),
-        "the Expansion lane hangs off its own half"
-    );
-    assert!(
-        !arm.contains("GrandStrategy::Conquest") && !arm.contains("GrandStrategy::Recovery"),
-        "war lanes keep their own routing"
-    );
-    // Off by default, set only by the live bridge and the native repair
-    // bundle, holdable off on its own.
-    assert!(!AdvancedAi::new().governor_every_lane);
-    assert!(!AdvancedAi::legacy().governor_every_lane);
-    let mut live = AdvancedAi::new();
-    live.enable_live_bridge_universe();
-    assert!(live.governor_every_lane);
-    live.disable_governor_every_lane();
-    assert!(!live.governor_every_lane);
-    let mut repaired = AdvancedAi::new();
-    repaired.enable_engine_repairs_economy();
-    assert!(repaired.governor_every_lane);
-}
-
-/// War patience measures a campaign, not ordinary expansion.
-///
-/// On live run `civvis-20260816T003229Z`, Rome was at war with Indonesia
-/// without taking a city, then founded population-1 Arretium on turn 201.
-/// The former city-count clock read that settlement as campaign progress
-/// and gave the stalled war another full patience window.
-#[test]
-fn only_a_foreign_city_acquisition_refreshes_live_war_patience() {
-    let mut game = Game::new_full(2, 24, 16, 7_924, 300, 0, false);
-    for pid in 0..2 {
-        let settler = game
-            .player_unit_ids(pid)
-            .into_iter()
-            .find(|unit| game.units[unit].kind == "settler")
-            .unwrap();
-        game.found_city_for(pid, game.units[&settler].pos, None);
-        game.remove_unit(settler);
-    }
-    let enemy_city = game.player_city_ids(1)[0];
-    game.current = 0;
-    game.turn = 60;
-    game.record_contact(0, 1);
-    game.apply(0, &Action::DeclareWar { player: 1 }).unwrap();
-
-    let mut ai = AdvancedAi::new();
-    ai.enable_war_patience();
-    ai.observe_campaign(&game, 0);
-    assert_eq!(ai.last_campaign_progress, 60);
-    let mut frozen = AdvancedAi::legacy();
-    frozen.observe_campaign(&game, 0);
-    assert_eq!(frozen.last_campaign_progress, 60);
-
-    game.turn = 100;
-    let founded_site = game
-        .map
-        .tiles
-        .values()
-        .find(|tile| {
-            game.rules.is_passable(tile)
-                && !game.rules.is_water(tile)
-                && tile.owner_city.is_none()
-                && game.city_at(tile.pos).is_none()
-                && game.units_at(tile.pos).is_empty()
-                && game
-                    .cities
-                    .values()
-                    .all(|city| game.wdist(city.pos, tile.pos) >= 4)
-        })
-        .map(|tile| tile.pos)
-        .expect("open site for a fresh Roman settlement");
-    let founded = game.found_city_for(0, founded_site, None);
-    assert_eq!(game.cities[&founded].owner, 0);
-    ai.observe_campaign(&game, 0);
-    assert_eq!(
-        ai.last_campaign_progress, 60,
-        "founding a new city cannot make an unproductive war patient again"
-    );
-    assert!(ai.war_patience_exhausted(&game));
-    frozen.observe_campaign(&game, 0);
-    assert_eq!(
-        frozen.last_campaign_progress, 100,
-        "the frozen controller retains its historical city-count clock"
-    );
-
-    game.turn = 101;
-    game.cities.get_mut(&enemy_city).unwrap().owner = 0;
-    ai.observe_campaign(&game, 0);
-    assert_eq!(
-        ai.last_campaign_progress, 101,
-        "a known foreign city changing hands is real campaign progress"
-    );
-    assert!(!ai.war_patience_exhausted(&game));
-}
-
-/// A stalled war against an overwhelmed campaign target is neither offered
-/// away nor accepted away while `war_patience` is on; a stalled war
-/// against anyone else keeps the shipped fatigue shape.
-/// Once a war's patience has lapsed and no city of ours is in danger, the
-/// plan stops reading Conquest merely because the enemy will not make
-/// peace; a foreign city acquired (recent campaign progress) keeps the war
-/// posture.
-#[test]
-fn a_stalemated_war_no_longer_sets_the_grand_strategy() {
-    let mut game = Game::new_full(2, 24, 16, 7_923, 300, 0, false);
-    for pid in 0..2 {
-        let settler = game
-            .player_unit_ids(pid)
-            .into_iter()
-            .find(|unit| game.units[unit].kind == "settler")
-            .unwrap();
-        game.found_city_for(pid, game.units[&settler].pos, None);
-        game.remove_unit(settler);
-    }
-    let staging = game.cities[&game.player_city_ids(0)[0]].pos;
-    for _ in 0..3 {
-        game.spawn_test_unit("modern_armor", 0, staging);
-    }
-    game.current = 0;
-    game.turn = 60;
-    game.record_contact(0, 1);
-    game.apply(0, &Action::DeclareWar { player: 1 }).unwrap();
-    game.turn = 100;
-    assert!(game.military_power(0) >= game.military_power(1) * OVERWHELMING_WAR_RATIO);
-
-    // Patience lapsed: no foreign city acquired in forty turns.
-    let mut stale = AdvancedAi::new();
-    stale.enable_war_patience();
-    stale.major_war_since = Some(60);
-    stale.last_campaign_progress = 60;
-    assert!(stale.war_patience_exhausted(&game));
-    let journal = crate::reasoning::Journal::recording();
-    stale.attach_journal(journal.handle());
-    let plan = stale.assess(&game, 0);
-    assert_ne!(
-        plan.strategy,
-        GrandStrategy::Conquest,
-        "a stalemate the empire cannot end no longer pins the plan on Conquest"
-    );
-    assert!(
-        journal
-            .since(0)
-            .thoughts
-            .iter()
-            .any(|thought| thought.headline.starts_with("The war is a stalemate")),
-        "the posture is journaled"
-    );
-
-    // Recent progress: the same war keeps its Conquest posture.
-    let mut pressing = AdvancedAi::new();
-    pressing.enable_war_patience();
-    pressing.major_war_since = Some(60);
-    pressing.last_campaign_progress = 95;
-    assert!(!pressing.war_patience_exhausted(&game));
-    assert_eq!(pressing.assess(&game, 0).strategy, GrandStrategy::Conquest);
-
-    // Without the flag (default and frozen controllers) the shipped
-    // "already at war" arm is unchanged.
-    let mut plain = AdvancedAi::new();
-    plain.major_war_since = Some(60);
-    plain.last_campaign_progress = 60;
-    assert!(!plain.war_patience);
-    assert_eq!(plain.assess(&game, 0).strategy, GrandStrategy::Conquest);
-    let mut frozen = AdvancedAi::legacy();
-    frozen.major_war_since = Some(60);
-    frozen.last_campaign_progress = 60;
-    assert_eq!(frozen.assess(&game, 0).strategy, GrandStrategy::Conquest);
-}
-
 /// The live mirror can know a leader's public victory clock before it has
-/// any city coordinate for that leader. That warning must not turn a
-/// stalled war with somebody else back into Conquest. See
-/// `conquest_denial_actionable`.
+/// any city coordinate for that leader. That warning must not replace a
+/// campaign against somebody else. See `conquest_denial_actionable`.
 #[test]
 fn a_live_conquest_denial_needs_a_known_city_target() {
     let mut game = Game::new_full(3, 24, 16, 7_932, 300, 0, false);
@@ -1483,10 +1298,6 @@ fn a_live_conquest_denial_needs_a_known_city_target() {
     assert!(game.player_city_ids(2).is_empty());
 
     let mut live = AdvancedAi::new();
-    live.enable_war_patience();
-    live.major_war_since = Some(60);
-    live.last_campaign_progress = 60;
-    assert!(live.war_patience_exhausted(&game));
     assert_eq!(
         live.victory_denial(&game, 0),
         Some((2, GrandStrategy::Conquest)),
@@ -1498,12 +1309,11 @@ fn a_live_conquest_denial_needs_a_known_city_target() {
         "a live Conquest response needs a known city to campaign against"
     );
     let plan = live.assess(&game, 0);
-    assert_ne!(
-        plan.strategy,
-        GrandStrategy::Conquest,
-        "the cityless leader cannot re-arm a war whose patience expired"
+    assert_eq!(
+        plan.target_player,
+        Some(1),
+        "the cityless leader cannot replace the active campaign"
     );
-    assert_eq!(plan.target_player, Some(1));
     live.plan = Some(plan);
     assert!(
         !live.plan_stale(&game, 0),
@@ -1517,7 +1327,13 @@ fn a_live_conquest_denial_needs_a_known_city_target() {
         live.denial_target(&game, 0),
         Some((2, GrandStrategy::Conquest))
     );
-    assert_eq!(live.assess(&game, 0).strategy, GrandStrategy::Conquest);
+    let actionable = live.assess(&game, 0);
+    assert_eq!(actionable.strategy, GrandStrategy::Conquest);
+    assert_eq!(
+        actionable.target_player,
+        Some(1),
+        "the active campaign still finishes before the denial can redirect it"
+    );
     assert!(
         live.plan_stale(&game, 0),
         "an actionable leader still interrupts the cached economic plan"
@@ -1622,9 +1438,7 @@ fn the_live_seat_does_not_open_an_elective_war() {
     game.apply(1, &Action::DeclareWar { player: 0 }).unwrap();
     game.current = 0;
     assert!(game.is_at_war(0, 1));
-    // A fresh war: patience has not lapsed (see `war_patience`).
-    live.major_war_since = Some(60);
-    live.last_campaign_progress = 60;
+    // A war the neighbour opens is still answered by ordinary war planning.
     assert_eq!(live.assess(&game, 0).strategy, GrandStrategy::Conquest);
 }
 
@@ -1819,206 +1633,6 @@ fn the_third_city_comes_before_the_prophet_on_the_live_seat() {
     found_next(&mut game);
     assert_eq!(game.player_city_ids(0).len(), 3);
     assert_eq!(live.assess(&game, 0).strategy, GrandStrategy::Religion);
-}
-
-/// A war declared today is not a stalemate: patience counts from the
-/// later of the war's start and its last capture. See
-/// `war_patience_exhausted` (civvis-20260816T030249Z: declared t71,
-/// "stalemate" t72).
-#[test]
-fn a_fresh_war_starts_its_own_patience_window() {
-    let mut game = Game::new_full(2, 24, 16, 7_933, 300, 0, false);
-    game.turn = 100;
-    let limit = game.standard_duration(WAR_PATIENCE_LIMIT_TURNS).max(1);
-    let mut ai = AdvancedAi::new();
-    ai.enable_war_patience();
-    // The last capture (or first observation) is long past…
-    ai.last_campaign_progress = 20;
-    ai.major_war_since = None;
-    assert!(
-        ai.war_patience_exhausted(&game),
-        "a war with no start on record and no capture for eighty turns has lapsed"
-    );
-    // …but a war that opened this turn has a full window ahead of it.
-    ai.major_war_since = Some(100);
-    assert!(
-        !ai.war_patience_exhausted(&game),
-        "a war one turn old is not a stalemate"
-    );
-    ai.major_war_since = Some(100 - limit + 1);
-    assert!(
-        !ai.war_patience_exhausted(&game),
-        "one turn inside the window"
-    );
-    ai.major_war_since = Some(100 - limit);
-    assert!(
-        ai.war_patience_exhausted(&game),
-        "the window lapses at the limit"
-    );
-    // A capture inside an old war extends it the same way.
-    ai.major_war_since = Some(20);
-    ai.last_campaign_progress = 95;
-    assert!(
-        !ai.war_patience_exhausted(&game),
-        "a recent capture keeps an old war alive"
-    );
-}
-
-#[test]
-fn war_patience_holds_the_stall_clause_only_over_an_overwhelmed_target() {
-    let mut game = Game::new_full(2, 24, 16, 7_922, 300, 0, false);
-    for pid in 0..2 {
-        let settler = game
-            .player_unit_ids(pid)
-            .into_iter()
-            .find(|unit| game.units[unit].kind == "settler")
-            .unwrap();
-        game.found_city_for(pid, game.units[&settler].pos, None);
-        game.remove_unit(settler);
-    }
-    let staging = game.cities[&game.player_city_ids(0)[0]].pos;
-    for _ in 0..3 {
-        game.spawn_test_unit("modern_armor", 0, staging);
-    }
-    // The stall offer only goes to a target still holding more than one
-    // city (a one-city empire is finished, not sued); give the defender
-    // its second city before the fatigue arms below.
-    let their_capital = game.cities[&game.player_city_ids(1)[0]].pos;
-    let second_site = game
-        .wdisk(their_capital, 4)
-        .into_iter()
-        .find(|pos| {
-            game.wdist(*pos, their_capital) >= 3
-                && game.units_at(*pos).is_empty()
-                && game.city_at(*pos).is_none()
-                && game
-                    .map
-                    .get(*pos)
-                    .is_some_and(|tile| !game.rules.is_water(tile))
-        })
-        .expect("open land for the defender's second city");
-    game.found_city_for(1, second_site, None);
-    game.current = 0;
-    game.turn = 60;
-    game.record_contact(0, 1);
-    game.apply(0, &Action::DeclareWar { player: 1 }).unwrap();
-    // War age 40 with no campaign progress in that time: the stall
-    // clause's own conditions hold for every arm below.
-    game.turn = 100;
-    assert!(
-        game.military_power(0) >= game.military_power(1) * OVERWHELMING_WAR_RATIO,
-        "precondition: the attacker overwhelms the defender"
-    );
-    let campaign = StrategicPlan {
-        strategy: GrandStrategy::Conquest,
-        target_player: Some(1),
-        target_city: game.player_city_ids(1).into_iter().next(),
-        threatened_city: None,
-        desired_cities: 2,
-        assessed_turn: game.turn,
-        rush: false,
-    };
-    let white_peace = DiplomaticDeal {
-        id: 7,
-        from: 1,
-        to: 0,
-        give_gold: 0.0,
-        request_gold: 0.0,
-        open_borders: false,
-        friendship: false,
-        peace: true,
-        alliance: None,
-        defensive_pact: false,
-        joint_war_target: None,
-        promise: None,
-        demand: false,
-        expires: game.turn + 10,
-    };
-
-    // Shipped shape: fatigue accepts the white peace and offers its own.
-    let mut fatigued = AdvancedAi::new();
-    fatigued.major_war_since = Some(60);
-    assert!(
-        fatigued.incoming_deal_value(&game, 0, &white_peace, &campaign) > 0.0,
-        "without the flag, a stalled war accepts white peace"
-    );
-    let mut offering = game.clone();
-    fatigued.advanced_diplomacy(&mut offering, 0, &campaign);
-    assert!(
-        fatigued.peace_offers.contains(&1),
-        "without the flag, a stalled war offers peace to its own target"
-    );
-
-    // With the flag: the stall clause stands down against the overwhelmed
-    // campaign target, and the denied-partner guard refuses the deal —
-    // while the campaign is still gaining ground (a foreign city acquired
-    // fifteen turns ago is inside the patience window).
-    let mut patient = AdvancedAi::new();
-    patient.enable_war_patience();
-    patient.major_war_since = Some(60);
-    patient.last_campaign_progress = 85;
-    assert!(!patient.war_patience_exhausted(&game));
-    assert!(
-        patient.incoming_deal_value(&game, 0, &white_peace, &campaign) < 0.0,
-        "with the flag, an overwhelming attacker keeps prosecuting"
-    );
-    let mut pressed = game.clone();
-    patient.advanced_diplomacy(&mut pressed, 0, &campaign);
-    assert!(
-        !patient.peace_offers.contains(&1),
-        "with the flag, no stall offer goes to the overwhelmed target"
-    );
-
-    // ★ Patience is bounded: forty standard turns without a foreign city
-    // acquired and the same overwhelming attacker sues, accepts, and
-    // journals why.
-    let mut worn_out = AdvancedAi::new();
-    worn_out.enable_war_patience();
-    worn_out.major_war_since = Some(60);
-    worn_out.last_campaign_progress = 60;
-    assert!(worn_out.war_patience_exhausted(&game));
-    assert!(
-        worn_out.incoming_deal_value(&game, 0, &white_peace, &campaign) > 0.0,
-        "patience lapsed: the white peace is accepted"
-    );
-    let journal = crate::reasoning::Journal::recording();
-    worn_out.attach_journal(journal.handle());
-    let mut suing = game.clone();
-    worn_out.advanced_diplomacy(&mut suing, 0, &campaign);
-    assert!(
-        worn_out.peace_offers.contains(&1),
-        "patience lapsed: the stall offer goes to the target"
-    );
-    assert!(
-        journal
-            .since(0)
-            .thoughts
-            .iter()
-            .any(|thought| thought.headline.starts_with("Patience with the war on")),
-        "the lapse is journaled by name"
-    );
-    // A gained city resets the clock: progress five turns ago and the
-    // same attacker is patient again.
-    worn_out.last_campaign_progress = 95;
-    assert!(!worn_out.war_patience_exhausted(&game));
-    assert!(worn_out.incoming_deal_value(&game, 0, &white_peace, &campaign) < 0.0);
-
-    // Scope: patience covers exactly the campaign target. The same
-    // stalled war read against a plan that is not fighting player 1
-    // keeps the shipped fatigue acceptance.
-    let unrelated = StrategicPlan {
-        strategy: GrandStrategy::Expansion,
-        target_player: None,
-        target_city: None,
-        threatened_city: None,
-        desired_cities: 4,
-        assessed_turn: game.turn,
-        rush: false,
-    };
-    assert!(
-        patient.incoming_deal_value(&game, 0, &white_peace, &unrelated) > 0.0,
-        "patience must not outlive the campaign that justified it"
-    );
 }
 
 /// The standing rear marches: a unit whose clique cannot advance walks to
