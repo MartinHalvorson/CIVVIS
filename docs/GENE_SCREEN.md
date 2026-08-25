@@ -150,8 +150,8 @@ standard clock — so at 250 turns they are 1–2% of endings. A science or cong
 gene therefore **cannot pay through the win axis**: the seat it would have
 carried to a science victory shows up as a score win or a score loss instead.
 Those genes pay through **score share**. Read a lane gene's share column and
-its `share helps` verdict before calling it inert; this evidence informs an
-explicit operator selection rather than an automatic default rule.
+its `share helps` verdict before calling it inert; the batch rule reads the
+win axis only, so this evidence stands beside its answer, not inside it.
 
 ⚠⚠⚠ **THAT IS NO LONGER TRUE, AND THE CORRECTION IS LARGE (2026-08-25).** The
 paragraph above was measured on `d713b019` in August. On the current binary the
@@ -477,23 +477,22 @@ it belongs to a family.
    "against the version before it" contrast is positive on the win axis and
    it also beats `off`.** Every version also has its own row in the main
    table and its own row in the ledger, read by the same rule as any gene.
-5. **A pinned family ships its head.** The pinned deployment genome
-   (`OPERATOR_DEFAULT_ON`) may name **at most one version of a family**, and
-   naming any version pins the *family* on — whether the gene defaults on is
-   the operator's call. *Which* version plays is not: it is the family head,
-   the priced version with the highest tracked wins (the ledger's pooled
-   *Diff* over every screen that priced it; ties to the higher version), and
-   `genes.py write` records the head — not the name the operator wrote — in
-   `deployment_genome`, the generated `DEPLOYMENT_GENOME` and the *Default*
-   column, saying on stderr when the two differ (operator, 2026-08-23: *"always
-   use the best version for our real games, whatever the best version is"*;
-   2026-08-25: *"our highest performing version should be shown in the table
-   and should be the gene default, if the gene does default on"*). A family
-   none of whose versions a ledger source has priced ships the version named.
-   `docs/gene_ledger.json` keeps every family's pin, head and each version's
-   tracked wins under `rules.family_heads`; `genes.py check` reads the pinned
-   list *as families*, so a head that moved is not drift. Every version keeps
-   being priced on its own row. `GENE_HEURISTIC_RANKING.md` names the head in
+5. **A family the batch rule turns on ships its head.** Every version is
+   judged by the batch rule (*The gene ledger* below) on its own row. A
+   family with at least one version on ships **exactly one** version: the
+   family head — the priced version with the highest tracked wins (the
+   ledger's pooled *Diff* over every screen that priced it; ties to the higher
+   version) — when the rule turns the head on, else the best version by
+   tracked wins among those the rule turns on. `genes.py write` records that
+   version in `deployment_genome`, the generated `DEPLOYMENT_GENOME` and the
+   *Default* column, saying on stderr when the head is not what ships
+   (operator, 2026-08-23: *"always use the best version for our real games,
+   whatever the best version is"*; 2026-08-25: *"our highest performing
+   version should be shown in the table and should be the gene default, if
+   the gene does default on"*). `docs/gene_ledger.json` keeps every family's
+   rule-on versions, head, shipped version and each version's tracked wins
+   under `rules.family_heads`. Every version keeps being priced on its own
+   row. `GENE_HEURISTIC_RANKING.md` names the head in
    its *Best version* column (`1` is the original, so a gene with no
    versions reads `1`) on every row of the family, and a versioned row's *Total (on)* / *Total (off)* cells show the
    best two versions' rates side by side — each version's *on* is the seats
@@ -620,48 +619,53 @@ advantage was variance — it bought precision per game — and the operator cho
 randomness over it so that no gene is ever measured against a structured
 background.
 
-## The gene ledger: the deployment genome is explicitly pinned
+## The gene ledger: the deployment genome follows the batch rule
 
-As of 2026-08-24, deployment is an explicit operator selection rather than a
-rule inferred from screen statistics. The 2026-08-24 set retained the prior 36
-on/off selections and explicitly turned on `unit-cost-efficiency`,
-`unit-objective-memory`, `camp-party`, `slot-kind-tiebreak`,
-`promote-when-wounded`, `religion-sues-peace`, `lane-great-people`,
-`one-launch-pad`, and `civilian-rescue`.
+⭐ **Since 2026-08-25 every default is decided by the batch rule** (operator,
+verbatim: *"if the last 3 batches all report a positive ± wins/10k, we should
+default on. if exactly 2 are positive and the average of all 3 is > 7, we
+should default on. if 2 or 3 report negative, we should default off. if
+exactly one reports positive and the number of batches is only 1 or 2, we
+should default true if the average value of the batches is > 7. if all 3 are
+<-10, we should remove the gene from the gene pool. otherwise default off."*).
+The batches are the ranking's three fixed reporting batches — the *Last
+Batch*, *Prior Batch* and *Third Batch* columns of `GENE_HEURISTIC_RANKING.md`,
+each cell the gene's ± wins per 10,000 **total** seats in that batch — read
+newest first over the batches that priced the gene:
 
-**2026-08-25 leaves it at 73.** Two operator directives that day: first
-`science-victory-drive` plus the four displayed-*Diff* promotions at or above
-+0.85 pp (`solvency-first-trade-slot`, `settler-factory-coordination`,
-`one-war-at-a-time`, `religious-veto-defence`), then a flat instruction to flip
-sixteen more on — `flip-nearby-city-states`, `diplomatic-lane-forecast`,
-`barbarian-ranged-answer`, `army-target-weighs-enemy`, `research-tier-premium`,
-`naval-threat-triage`, `deals-for-our-gain`, `settler-screen`,
-`lane-space-race`, `enhancer-for-the-corps`, `settler-target-hysteresis`,
-`amenity-project-preemption`, `guru-heals-the-corps`, `no-free-passage`,
-`naval-recon`, `home-defense`. ⚠ Six of that sixteen no screen has priced yet
-(`flip-nearby-city-states`, `diplomatic-lane-forecast`, `naval-threat-triage`,
-`deals-for-our-gain`, `settler-screen`, `no-free-passage`), so they ship with
-no ledger row at all, and four of the ten that were priced read a negative
-pooled *Diff* (`amenity-project-preemption`, `guru-heals-the-corps`,
-`naval-recon`, `home-defense`). Under `operator-pinned` neither fact is a bar:
-the evidence stays published beside the selection, and the selection is the
-list.
+1. three batches all below −10 → the gene is **removed from the gene pool**
+   (*Removing a gene*, below);
+2. two or three batches negative → **off**;
+3. three batches all positive → **on**;
+4. three batches, exactly two positive, and their mean > 7 → **on**;
+5. one or two batches, exactly one positive, and their mean > 7 → **on**;
+6. two batches, both positive → **on** (all of its batches are positive);
+7. otherwise **off** — a gene no batch has priced is off, and a reading of
+   exactly zero is neither positive nor negative.
 
-The former column thresholds, pooled-*Diff* veto, and posterior alternatives
-are retired as deployment rules. Win columns, *Diff*, posterior intervals,
-verdicts, and score share remain the evidence an operator uses for a later
-selection change; a completed screen never promotes or demotes a gene by
-itself. The dated notes below preserve how earlier selections were made, not a
-current rule.
+`tools/genes.py::batch_rule` is the rule; `src/ai/advanced/gene_ledger.rs::batch_rule`
+is its twin, and `the_default_follows_the_batch_rule` re-derives every
+generated default from the generated `BATCH_COLUMNS`, so the two languages
+cannot disagree about what ships. Entering a batch (`python3 tools/genes.py
+write --reporting-batch <analysis>.json`) re-decides every default; there is
+no hand-kept list, and a default changes by playing more games. The 2026-08-24
+to 2026-08-25 operator-pinned list (`OPERATOR_DEFAULT_ON`, 36 → 52 → 57 → 73
+→ 64 genes across five directives) and the column thresholds, pooled-*Diff*
+veto and posterior alternatives before it are history: the dated notes below
+preserve how earlier selections were made, not a current rule. Win columns,
+*Diff*, posterior intervals, verdicts and score share remain evidence beside
+the rule's answer.
 
 - **`docs/gene_ledger.json`** records the screen profile and measurements for
-  every gene, plus the explicit `deployment_policy` and
-  `deployment_genome`. `tools/genes.py::OPERATOR_DEFAULT_ON` is the source of
-  truth; the generated `src/ai/advanced/genes.rs::DEPLOYMENT_GENOME` and
-  `src/ai/advanced/gene_ledger.rs` validate and apply the same list. `python3
-  tools/genes.py write` regenerates the JSON, Rust block, and ranking, while
-  `tools/test_genes.py` fails on drift. Sources continue to update the measured
-  evidence per gene, but cannot rewrite `default_on`.
+  every gene, the `deployment_policy` (`batch-rule`), the `batch_columns` the
+  rule read and its `batch_decisions` per gene, the resulting
+  `deployment_genome`, and `removals_due`. The generated
+  `src/ai/advanced/genes.rs::DEPLOYMENT_GENOME` / `BATCH_COLUMNS` and
+  `src/ai/advanced/gene_ledger.rs` re-derive and apply the same answer.
+  `python3 tools/genes.py write` regenerates the JSON, Rust block, and
+  ranking, while `tools/test_genes.py` and `genes.py check` fail on drift.
+  Sources update the measured evidence per gene; the reporting batches decide
+  `default_on`.
 - **Verdict rules** (`tools/genes.py`, repeated in
   `src/ai/advanced/gene_ledger.rs`): `helps` = win z ≥ 2 with share z > −2, or
   share z ≥ 2 with win z > −2 — the screen's own `*` flag; `hurts` the mirror;
@@ -669,11 +673,11 @@ current rule.
   (`conflict`) and a gene no screen has measured. Past the family-wise bar is
   recorded as `family_wise`, not required: with sixty-odd genes that bar would
   leave three on. The newest screen that priced the gene supplies the verdict.
-- **The deployment policy.** There is no score-derived threshold, veto, or
-  posterior fallback. A screenable tag is on exactly when it appears in the
-  pinned `deployment_genome`; all other screenable tags are off. The list
-  rejects duplicates, unknown tags, and selecting two versions of one family.
-  Every change is an intentional operator edit recorded in review.
+- **The deployment policy.** The batch rule above, and nothing else: no
+  source-column threshold, pooled-*Diff* veto, posterior fallback, or
+  operator list. A screenable tag is on exactly when it appears in
+  `deployment_genome`, which is the rule's answer with each family collapsed
+  to the one version that ships; all other screenable tags are off.
 - **Applying the deployment genome.** `AdvancedAi::enable_live_bridge` and
   `enable_engine_repairs` end with `apply_gene_ledger`: every selected live or
   production treatment is enabled and every unselected screenable treatment is
@@ -880,6 +884,24 @@ instrument now. And a treatment PR no longer ships its flag on: it ships it
 into the universe, screens it (a few hundred pairs resolve ±3 pp), and the
 ledger turns it on when its native win columns clear the rule, provisionally
 including a first reading above +20.
+
+## Removing a gene
+
+The batch rule's one action the tool cannot take itself: a gene that reads
+below −10 in all three batch columns leaves the gene pool. `python3
+tools/genes.py write` records it under `rules.removals_due` (its default is
+off meanwhile), and both `genes.py check` (CI) and
+`gene_ledger::tests::no_gene_is_due_for_removal` (`cargo test`) fail naming
+it until the code is cut — so the PR that enters the batch also cuts the gene,
+or a coordinated cull PR lands first. Cut the gene to its **off** behaviour:
+the registry row in `src/ai/advanced/genes.rs`, the enable/disable toggles in
+`treatment_flags.rs`, the field and its constructor init, every branch it
+gates, the module if it is the gene's alone, its tests, and
+`docs/gene_screens/fires/<tag>.json`; then `python3 tools/genes.py write` and
+`python3 tools/eval_manifest.py --write`. Its rows in past screens stay as
+played, and `docs/GENE_RANKING_EVIDENCE.md` lists it under *Removed from the
+code*. The same recipe retires the third-best version of a full family
+(*Versioning a gene*, step 6).
 
 ## A Δ of exactly zero is a gene that never fired, not a null
 
@@ -1140,7 +1162,7 @@ measurement-only change.** Under the pinned policy, its initial on/off state
 must be chosen explicitly rather than inferred from an absent measurement.
 That remains a genome decision for the operator, not a side effect of a row.
 
-## The precision-weighted posterior, published beside the pinned genome
+## The precision-weighted posterior, published beside the batch rule's answer
 
 A threshold in column units is not a threshold in evidence. The retired
 deployment rule exposed three things about the repository's own numbers:
@@ -1196,11 +1218,12 @@ by side so the choice is made on the numbers.
 
 This section records the earlier threshold and posterior discussion so past
 tables remain interpretable. `AUTHORITY`, the column threshold, and the
-pooled-*Diff* veto are no longer configuration or deployment behavior. The
-current policy is the explicit `OPERATOR_DEFAULT_ON` list documented above;
-no statistical setting can throw a switch or move a default. Read the remaining
-analysis as evidence about the old selection process, not a current decision
-procedure.
+pooled-*Diff* veto are no longer configuration or deployment behavior, and
+neither is the 2026-08-24 operator-pinned list that replaced them. The
+current policy is the batch rule documented above (*The gene ledger*); no
+other statistical setting can throw a switch or move a default. Read the
+remaining analysis as evidence about the old selection processes, not a
+current decision procedure.
 
 ⭐ **First, the thing the switch is not.** The columns rule reads the *newest*
 screen that priced each gene, so the moment the standard sources landed the
@@ -1301,12 +1324,11 @@ more games".
 
 ### Using this evidence now
 
-The selection changes only when an operator explicitly edits the pinned list.
-For a proposed change, read the relevant win, *Diff*, posterior, shape, and
-lane evidence together, record the rationale in the review, then regenerate
-the ledger. A straddling interval is a reason to gather more evidence or defer
-the operator choice; it is never an automatic fallback to the former column
-rule.
+The selection changes only when the batch rule re-reads a new batch. Read
+the win, *Diff*, posterior, shape and lane evidence together to understand a
+flip and to decide where to spend games: a straddling interval is a reason to
+run more games, never a reason to edit a default by hand, and never an
+automatic fallback to the former column rule.
 
 ## Two stages, and why not a partial foldover
 
@@ -1444,7 +1466,7 @@ unresolved alone, and containing both the pooled figure and the discovery
 estimate. Share pools to **+0.209 ± 0.046 pp, z +4.54** over the three
 standard screens.
 
-### The pinned default is on; the historical rules also agreed
+### The default at the time was on; the historical rules also agreed
 
 Rebuilt from the ledger's own recorded sources, with no file edited:
 
@@ -1455,8 +1477,10 @@ Rebuilt from the ledger's own recorded sources, with no file edited:
 | + both #2374 batches entered | +10 | +24 | +0.552% | **on** |
 
 The pooled *Diff* is positive in all three, and the posterior over all six
-screens excludes zero above. Those former-rule readings agree with the current
-explicit selection, but neither can change it without an operator edit.
+screens excludes zero above. Those former-rule readings agreed with the
+selection of the day; today the gene's three batch columns decide it (+8 /
++5 / −12 at the time of writing reads **off**: two positive of three, mean
++0.3).
 
 ### Sizing: nothing affordable resolves it on its own
 
