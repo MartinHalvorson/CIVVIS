@@ -144,7 +144,12 @@ impl AdvancedAi {
     /// resolutions included, keeps reading `victory_target` (the module doc
     /// has the probes that decided it).
     pub(super) fn raced_target(&self) -> Option<VictoryTarget> {
-        self.victory_target.or(self.committed_lane())
+        self.victory_target
+            .or(self.committed_lane())
+            // `science_victory_drive`: a seat driving the space race races
+            // Science for the same keys (it never drives against another
+            // assigned lane).
+            .or_else(|| self.science_drive_active().then_some(VictoryTarget::Science))
     }
 
     /// The lane `lane_commit` has committed this seat to, if any.

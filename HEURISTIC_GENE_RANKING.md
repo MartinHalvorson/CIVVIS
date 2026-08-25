@@ -1,6 +1,6 @@
 # The heuristic gene ranking
 
-**Deployment default:** operator-pinned (52 genes): retains the prior 36 selections and explicitly promotes `unit-cost-efficiency`, `unit-objective-memory`, `camp-party`, `slot-kind-tiebreak`, `promote-when-wounded`, `religion-sues-peace`, `lane-great-people`, `one-launch-pad`, `civilian-rescue`, `missionary-evades-raiders`, `district-planning`, `missionary-last-charge-explores`, `settlement-gap-target`, `religious-defence-scales`, `lane-policy-deck`, `science-multiplier-payoff`. Screen columns, *Diff*, and posterior values are evidence only; new batches do not automatically change defaults.
+**Deployment default:** operator-pinned (53 genes): retains the prior 36 selections and explicitly promotes `unit-cost-efficiency`, `unit-objective-memory`, `camp-party`, `slot-kind-tiebreak`, `promote-when-wounded`, `religion-sues-peace`, `lane-great-people`, `one-launch-pad`, `civilian-rescue`, `missionary-evades-raiders`, `district-planning`, `missionary-last-charge-explores`, `settlement-gap-target`, `religious-defence-scales`, `lane-policy-deck`, `science-multiplier-payoff`. Screen columns, *Diff*, and posterior values are evidence only; new batches do not automatically change defaults.
 
 | Rank | Gene | Description | Best version | Default | Wins ± /10k total seats — Last Batch (n=5,988 total seats) | Wins ± /10k total seats — Prior Batch (n=4,266 total seats) | Wins ± /10k total seats — Third Batch (n=21,030 total seats) | Total (on) Win rate | Total (off) Win rate | Diff | Posterior (95% CI) | P(>0) | Share Δpp (z) | cost (compute) | cost (time) |
 |---:|---|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|
@@ -371,6 +371,7 @@ These screenable genes have no on/off result, so they receive no rank or promoti
 | `city-campaign` | off (unmeasured) | Appraise weaker neighbours, plan to take one to three holdable cities the army can afford, and launch when staged. | — |
 | `naval-threat-triage` | off (unmeasured) | Ignore nearby barbarian ships that cannot land a meaningful blow, while still allowing ranged shots at them. | — |
 | `pass-picket` | off (unmeasured) | Station an idle recon unit on the chokepoint tile of the land route toward a neighbour, or watch their border. | — |
+| `science-victory-drive` | **on** (unmeasured) | When the empire leads the field in science, beeline the space-race chain, build launch-city production and race two pads early. | — |
 | `settler-factory-coordination` | off (unmeasured) | Give early Settler pipeline slots to cities that finish fastest and hold distinct reachable claim sites. | — |
 | `settler-screen` | off (unmeasured) | Block a seen rival Settler with up to four nearby units standing on its likeliest paths to slow its founding. | — |
 | `solvency-first-trade-slot` | off (unmeasured) | Reserve the first empty trade route slot ahead of ordinary production in any city that can start a safe route. | — |

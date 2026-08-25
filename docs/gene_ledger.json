@@ -64,6 +64,7 @@
       "religious-defence-scales",
       "religious-units-heal-first",
       "science-multiplier-payoff",
+      "science-victory-drive",
       "score-horizon",
       "settle-sooner",
       "settlement-gap-target",
@@ -450,7 +451,7 @@
     "helps": 17,
     "hurts": 6,
     "unresolved": 88,
-    "default_on": 52
+    "default_on": 53
   },
   "genes": [
     {
