@@ -389,7 +389,7 @@ mod tests {
         }
         assert_eq!(
             table::DEPLOYMENT_GENOME.len(),
-            57,
+            73,
             "an operator selection changed; update it deliberately"
         );
         assert!(
