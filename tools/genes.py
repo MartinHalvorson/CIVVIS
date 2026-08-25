@@ -2070,7 +2070,10 @@ def sources_from_ledger(ledger: dict) -> list[Path]:
 #: The ranking's short name for the win column.
 wins_per = wins_per_10k
 
-RANKING_MD = ROOT / "HEURISTIC_GENE_RANKING.md"
+# ⚠ Renamed upstream on 2026-08-25 (9ad09f7d) without updating this constant,
+# which left `genes.py write` creating the OLD file and every ranking test
+# reading a path that no longer exists — 28 errors on a clean `origin/main`.
+RANKING_MD = ROOT / "GENE_HEURISTIC_RANKING.md"
 NOTES_MD = ROOT / "docs" / "gene_ranking_notes.md"
 
 #: How much of a gene's sentence the Description column carries. Widened
