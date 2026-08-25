@@ -149,7 +149,10 @@ impl AdvancedAi {
             // `science_victory_drive`: a seat driving the space race races
             // Science for the same keys (it never drives against another
             // assigned lane).
-            .or_else(|| self.science_drive_active().then_some(VictoryTarget::Science))
+            .or_else(|| {
+                self.science_drive_active()
+                    .then_some(VictoryTarget::Science)
+            })
     }
 
     /// The lane `lane_commit` has committed this seat to, if any.
