@@ -2457,6 +2457,21 @@ impl AdvancedAi {
         self.surprise_war_mobilization = false;
     }
 
+    /// When the empire leads the field in science, beeline the space-race chain,
+    /// build launch-city production and race two pads early.
+    /// Opt-in gene `science-victory-drive`; see `advanced/science_victory_drive.rs`
+    /// for the live runs that led science and never launched, and what each
+    /// lever does. Filed above the markers: the append-point check reads a
+    /// method line's first identifier.
+    pub fn enable_science_victory_drive(&mut self) {
+        self.science_victory_drive = true;
+    }
+
+    /// The twin of `enable_science_victory_drive`.
+    pub fn disable_science_victory_drive(&mut self) {
+        self.science_victory_drive = false;
+    }
+
     // Append points, one per name range: a new treatment goes under the range
     // its own name falls in, so that two of them do not append to one line.
     // The rule, the measurement behind it and the check that enforces it are

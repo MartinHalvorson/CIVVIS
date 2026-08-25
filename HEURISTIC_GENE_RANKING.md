@@ -1,6 +1,6 @@
 # The heuristic gene ranking
 
-**Deployment default:** operator-pinned (52 genes): retains the prior 36 selections and explicitly promotes `unit-cost-efficiency`, `unit-objective-memory`, `camp-party`, `slot-kind-tiebreak`, `promote-when-wounded`, `religion-sues-peace`, `lane-great-people`, `one-launch-pad`, `civilian-rescue`, `missionary-evades-raiders`, `district-planning`, `missionary-last-charge-explores`, `settlement-gap-target`, `religious-defence-scales`, `lane-policy-deck`, `science-multiplier-payoff`. Screen columns, *Diff*, and posterior values are evidence only; new batches do not automatically change defaults.
+**Deployment default:** operator-pinned (53 genes): retains the prior 36 selections and explicitly promotes `unit-cost-efficiency`, `unit-objective-memory`, `camp-party`, `slot-kind-tiebreak`, `promote-when-wounded`, `religion-sues-peace`, `lane-great-people`, `one-launch-pad`, `civilian-rescue`, `missionary-evades-raiders`, `district-planning`, `missionary-last-charge-explores`, `settlement-gap-target`, `religious-defence-scales`, `lane-policy-deck`, `science-multiplier-payoff`. Screen columns, *Diff*, and posterior values are evidence only; new batches do not automatically change defaults.
 
 | Rank | Gene | Description | Best version | Default | Wins ± /10k total seats — Last Batch (n=4,476 total seats) | Wins ± /10k total seats — Prior Batch (n=5,988 total seats) | Wins ± /10k total seats — Third Batch (n=4,266 total seats) | Total (on) Win rate | Total (off) Win rate | Diff | Posterior (95% CI) | P(>0) | Share Δpp (z) | cost (compute) | cost (time) |
 |---:|---|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|
@@ -374,6 +374,7 @@ These screenable genes have no on/off result, so they receive no rank or promoti
 | Gene | Default | Description | Best version |
 |---|---|---|---:|
 | `naval-threat-triage` | off (unmeasured) | Ignore nearby barbarian ships that cannot land a meaningful blow, while still allowing ranged shots at them. | — |
+| `science-victory-drive` | **on** (unmeasured) | When the empire leads the field in science, beeline the space-race chain, build launch-city production and race two pads early. | — |
 | `surprise-war-mobilization` | off (unmeasured) | Convert the first six Standard-speed turns after a surprise war is declared against us into a bounded defensive mobilization. | — |
 
 ## Removed from the code
