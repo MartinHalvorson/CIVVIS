@@ -3938,6 +3938,49 @@ pub struct AdvancedAi {
     /// `AdvancedAi::diplomatic_opening_score`.
     pub diplomatic_opening: bool,
 
+    /// Whether the Recovery power gap is measured against the war we are
+    /// actually fighting, or against the strongest empire on the board.
+    ///
+    /// ⚠ THE FILE ALREADY NAMES THIS DEFECT AND EXEMPTS ONE CASE FROM IT. The
+    /// comment above `raid_only_war` says a raid "neither pins the plan on
+    /// Conquest nor drops it into **the power-gap Recovery a strong third
+    /// party would trigger**". A strong third party triggering it is a known
+    /// behaviour, and only the raid is excused: for every other war,
+    ///
+    /// ```text
+    /// at_war && my_power * 1.25 < strongest_rival
+    /// ```
+    ///
+    /// reads `strongest_rival` as the maximum `military_power` over **every
+    /// met major**, at peace or not, next door or on another continent. So an
+    /// empire at war with a weak neighbour, while a distant superpower it has
+    /// never fought exists, is told it is "at war and losing ground at home"
+    /// and takes the defensive posture — against nobody it is fighting.
+    ///
+    /// What that costs is on the record. This arm's own note reports
+    /// `civvis-20260802T205959Z` naming it **160 times, matching all 160
+    /// Recovery turns**, the empire holding the posture from t65 to t229 —
+    /// **72% of the game** — and finishing with one warrior, military 34
+    /// against 1354, score **205 against 1324**. [`Self::bounded_recovery`]
+    /// bounds how long it may last; nothing checks whether it was the right
+    /// reading in the first place.
+    ///
+    /// And Recovery is larger than this repository thought. Re-measured on
+    /// 2026-08-25 with `audit --genome deployment` — the flag added the same
+    /// day, because the binary had been auditing the stock controller —
+    /// Recovery takes **19%** of the board's planner-turns, not the 6% the
+    /// stock reading showed. Conquest and Recovery together are 54%.
+    ///
+    /// The fix is one substitution, using a variable computed twenty lines
+    /// above and never used for this: `wartime_majors`. If we are at war,
+    /// "losing ground" is a question about the empires we are at war with.
+    /// A threatened city still triggers Recovery on its own, untouched, so a
+    /// real siege is answered whatever the power table says — and with no
+    /// major war at all the arm cannot fire, because `at_war` gates it.
+    ///
+    /// **Off by default.** Screenable.
+    pub recovery_reads_the_war: bool,
+
     /// Whether the elective-war branch measures itself against a neighbour it
     /// can reach, or against the weakest empire on the planet.
     ///
@@ -4438,6 +4481,10 @@ pub struct AdvancedAi {
     // ---- append: a-b ------------------------------------------------
 
     // ---- append: c-d ------------------------------------------------
+    /// A Builder chops woods, rainforest or marsh into a Settler, a district
+    /// or a wonder at the front of the owning city's queue. Opt-in gene
+    /// `chop-into-the-queue`; see `advanced/deity_habits.rs`.
+    chop_into_the_queue: bool,
 
     /// The city plans its districts, sites and tile buys together: wished
     /// districts are jointly assigned reserved plots over rings 1-3 at the
@@ -4465,6 +4512,14 @@ pub struct AdvancedAi {
     /// or its war closes, so the Conquest posture cannot be redrawn every
     /// turn. See `advanced/city_campaign.rs`.
     campaign_retry_after: u32,
+    /// Settlers and builders stay out of a barbarian's one-turn reach:
+    /// they flee a reach tile before anything else, refuse a route step
+    /// into one unless a guard walks in with them or the city is founded
+    /// this turn, and a threatened settler summons the nearest healthy
+    /// land unit onto its tile and pulls it along. Off everywhere by
+    /// default; opt-in gene `civilian-out-of-reach`. See
+    /// `advanced/civilian_safety.rs`.
+    civilian_out_of_reach: bool,
 
     // ---- append: e-f ------------------------------------------------
     /// While the opening is behind the pace every recorded win came from,
@@ -4475,6 +4530,16 @@ pub struct AdvancedAi {
     /// cities, and the sitting suzerain the envoys would unseat. Opt-in gene
     /// `flip-nearby-city-states`; see `advanced/field_craft.rs`.
     flip_nearby_city_states: bool,
+    /// An improvement that completes an unresearched technology's or civic's
+    /// boost is worth the research the boost grants. Opt-in gene
+    /// `eureka-chasing-builder`; see `advanced/deity_habits.rs`.
+    eureka_chasing_builder: bool,
+    /// A unit, building or district that completes a boost is worth the
+    /// research it grants. Opt-in gene `eureka-chasing-production`; see
+    /// `advanced/deity_habits.rs`.
+    eureka_chasing_production: bool,
+    /// The per-turn memo both eureka genes read.
+    eureka_chase_cache: deity_habits::EurekaChaseCache,
     // ---- append: g-k ------------------------------------------------
     /// While the opening is behind the pace and no city can build a Settler,
     /// the citizens work food. Opt-in gene `growth-to-settle`; see
@@ -4794,6 +4859,15 @@ mod surprise_defense;
 /// `advanced/air_surge.rs`.
 mod air_surge;
 use air_surge::{AirSurge, AirSurgeCensus, AirSurgeStatus};
+
+/// Settlers and builders out of a barbarian's reach: flee it, never step
+/// into it, stack with a summoned guard when they must. Opt-in gene
+/// `civilian-out-of-reach`. See `advanced/civilian_safety.rs`.
+mod civilian_safety;
+/// Three Deity habits: chop into the queue, chase eurekas with Builders and
+/// with the production queue. Three opt-in genes; see
+/// `advanced/deity_habits.rs`.
+mod deity_habits;
 
 mod site_lookahead;
 
@@ -5496,6 +5570,7 @@ impl AdvancedAi {
             air_surge_census: AirSurgeCensus::default(),
             air_surge_cooldown_until: 0,
             diplomatic_opening: false,
+            recovery_reads_the_war: false,
             elective_war_in_reach: false,
             domination_city_count: false,
             unchosen_war_keeps_the_lane: false,
@@ -5521,8 +5596,10 @@ impl AdvancedAi {
             // ---- append: a-b ----------------------------------------
 
             // ---- append: c-d ----------------------------------------
+            chop_into_the_queue: false,
 
             district_planning: false,
+            civilian_out_of_reach: false,
 
             city_campaign: false,
             campaign: None,
@@ -5532,6 +5609,9 @@ impl AdvancedAi {
             // ---- append: e-f ----------------------------------------
             expansion_schedule: false,
             flip_nearby_city_states: false,
+            eureka_chasing_builder: false,
+            eureka_chasing_production: false,
+            eureka_chase_cache: deity_habits::EurekaChaseCache::default(),
 
             // ---- append: g-k ----------------------------------------
             growth_to_settle: false,
@@ -8754,6 +8834,18 @@ impl AdvancedAi {
             .iter()
             .map(|o| g.military_power(*o))
             .fold(0.0_f64, f64::max);
+        // ⚠ `recovery_reads_the_war`: the strongest empire we are ACTUALLY
+        // FIGHTING, for the power-gap Recovery arm alone. Off, this is the
+        // same board-wide maximum as above, which is what that arm has always
+        // compared itself against. See the flag.
+        let strongest_wartime_rival = if self.recovery_reads_the_war {
+            wartime_majors
+                .iter()
+                .map(|o| g.military_power(*o))
+                .fold(0.0_f64, f64::max)
+        } else {
+            strongest_rival
+        };
         // ⚠ `elective_war_in_reach`: the weakest rival WE CAN REACH, by the
         // reach the campaign planner already requires. Off, this is the
         // weakest empire anywhere on the board, which is what the branch
@@ -8957,7 +9049,9 @@ impl AdvancedAi {
             });
         let (strategy, because) = if at_war
             && (threatened_city.is_some()
-                || (my_power * 1.25 < strongest_rival && !recovery_is_stale && !raid_only_war))
+                || (my_power * 1.25 < strongest_wartime_rival
+                    && !recovery_is_stale
+                    && !raid_only_war))
         {
             (
                 GrandStrategy::Recovery,
@@ -21453,6 +21547,13 @@ impl AdvancedAi {
         if raw <= -9_999.0 {
             return raw;
         }
+        // `eureka_chasing_production`: the boost this item completes, on the
+        // raw scale. See `advanced/deity_habits.rs`.
+        let raw = if raw > 0.0 {
+            raw + self.eureka_production_premium(g, pid, item)
+        } else {
+            raw
+        };
         // The one line that puts the build order inside the search surface.
         // Applied AFTER the refusal sentinel above, so a gene can tilt what
         // the city wants and never argue with what it may not build; and only
@@ -23762,6 +23863,13 @@ impl AdvancedAi {
         // is left alone; otherwise, when the tile itself is over the step
         // limit, take the neighbour that lowers the risk most and let the
         // target wait for the next turn's march.
+        // See `civilian_out_of_reach`: the same retreat, native, against the
+        // exact tiles a raider could stand on next turn.
+        if self.civilian_out_of_reach {
+            if let Some(acted) = self.civilian_flee_step(g, pid, uid) {
+                return acted;
+            }
+        }
         if self.formationless_settler_escort() && self.settlement_safety {
             // Protected where it stands: inside a city, or sharing the tile
             // with any of our own military units (the assigned guard or not).
@@ -24252,7 +24360,13 @@ impl AdvancedAi {
         think!(self.journal(), Expansion, Detail, "Settler marching to {target:?}";
                "{} tiles away, the site is worth {:.1}",
                g.wdist(current, target), self.settle_value(g, pid, target); target);
-        let moved = self.settler_step_toward_safe(g, pid, uid, target);
+        // See `civilian_out_of_reach`: the step is refused inside a raider's
+        // reach unless the guard walks in too or the city is founded now.
+        let moved = if self.civilian_out_of_reach {
+            self.settler_step_out_of_reach(g, pid, uid, target)
+        } else {
+            self.settler_step_toward_safe(g, pid, uid, target)
+        };
         // ★★★★ "marching" is printed ABOVE, before the step is attempted, so the
         // journal has never been able to tell a march from a hold. Measured on the
         // live ladder: settlers cross **0.78 tiles/turn on 2 movement points**,
@@ -24548,7 +24662,9 @@ impl AdvancedAi {
                 _ => 4.0,
             };
         }
-        value
+        // `eureka_chasing_builder`: the boost this improvement on this tile
+        // earns. See `advanced/deity_habits.rs`.
+        value + self.eureka_builder_premium(g, pos, improvement)
     }
 
     /// The few military unique improvements are not Builder choices, so their
@@ -25001,6 +25117,13 @@ impl AdvancedAi {
         if let Some(retreated) = self.builder_retreat_from_barbarian_capture(g, pid, uid) {
             return retreated;
         }
+        // See `civilian_out_of_reach`: a builder inside a raider's reach
+        // leaves it before it takes a job.
+        if self.civilian_out_of_reach {
+            if let Some(acted) = self.civilian_flee_step(g, pid, uid) {
+                return acted;
+            }
+        }
         let project = g
             .player_city_ids(pid)
             .into_iter()
@@ -25016,7 +25139,12 @@ impl AdvancedAi {
                     .apply(pid, &Action::ContributeProject { unit: uid, city })
                     .is_ok();
             }
-            if self.builder_step_toward_barbarian_safe(g, pid, uid, position) {
+            let stepped = if self.civilian_out_of_reach {
+                self.builder_step_out_of_reach(g, pid, uid, position)
+            } else {
+                self.builder_step_toward_barbarian_safe(g, pid, uid, position)
+            };
+            if stepped {
                 return true;
             }
         }
@@ -25035,6 +25163,39 @@ impl AdvancedAi {
                 .is_ok();
         }
         let here = self.worthwhile_improvements(g, pid, current, strategy);
+        // `chop_into_the_queue`: a chop on this tile outbids the best
+        // improvement it could host when the owning city's queue front wants
+        // the lump. See `advanced/deity_habits.rs`.
+        if self.chop_into_the_queue {
+            let worked = g
+                .map
+                .get(current)
+                .and_then(|tile| tile.owner_city)
+                .is_some_and(|cid| g.city_citizen_plan(cid).worked_tiles.contains(&current));
+            if let Some((operation, value)) =
+                self.chop_into_the_queue_value(g, pid, current, strategy, worked)
+            {
+                let best_here = here.first().map_or(f64::MIN, |improvement| {
+                    self.improvement_value(g, current, improvement, strategy)
+                });
+                if value > best_here {
+                    self.builder_targets.remove(&uid);
+                    think!(self.journal(), Expansion, Detail,
+                           "Chopping {} at {current:?} into the queue", plain(&operation);
+                           "worth {value:.1} to the {} plan, above the best improvement here",
+                           strategy.as_str(); current);
+                    return g
+                        .apply(
+                            pid,
+                            &Action::Improve {
+                                unit: uid,
+                                improvement: operation,
+                            },
+                        )
+                        .is_ok();
+                }
+            }
+        }
         if !here.is_empty() {
             self.builder_targets.remove(&uid);
             // `order_retry`: `worthwhile_improvements` is already ranked and
@@ -25074,27 +25235,72 @@ impl AdvancedAi {
         if self.base.builder_tries_the_next_tile {
             return self.builder_step_to_the_first_reachable_job(g, pid, uid, strategy, &reserved);
         }
+
+        // ⚠ `civilian_out_of_reach` DOES NOT GUARD THE BRANCH ABOVE. When
+        // `builder_tries_the_next_tile` is on it returns before this, and that
+        // path carries only `builder_barbarian_safety`'s weaker check, not the
+        // reach test below. A screen that enables both genes is measuring this
+        // one on the turns the other one does not take.
+        // See `civilian_out_of_reach`: a job tile a raider could stand on
+        // next turn is not a job today.
+        let reach = self
+            .civilian_out_of_reach
+            .then(|| self.barbarian_reach(g, pid, current, civilian_safety::REACH_SCAN_RADIUS));
+        let job_out_of_reach = |pos: Pos| {
+            reach
+                .as_ref()
+                .is_none_or(|reach| self.builder_job_out_of_reach(g, pid, uid, pos, reach))
+        };
         let best = {
             let _memo = g.query_memo();
             let current_target = self.builder_targets.get(&uid).copied().filter(|pos| {
                 !reserved.contains(pos)
-                    && !self
+                    && job_out_of_reach(*pos)
+                    && (!self
                         .worthwhile_improvements(g, pid, *pos, strategy)
                         .is_empty()
+                        || self
+                            .chop_into_the_queue_value(g, pid, *pos, strategy, false)
+                            .is_some())
             });
             match current_target {
                 Some(pos) => Ok(pos),
                 None => {
                     let mut best: Option<(f64, Pos)> = None;
                     for cid in g.player_city_ids(pid) {
+                        // Computing the citizen plan can inspect every tile in a
+                        // city. Read it once per city, rather than once for every
+                        // candidate improvement in the target sweep.
+                        let worked_tiles: HashSet<Pos> = if self.chop_into_the_queue {
+                            g.city_citizen_plan(cid).worked_tiles.into_iter().collect()
+                        } else {
+                            HashSet::new()
+                        };
                         for pos in &g.cities[&cid].owned_tiles {
-                            if reserved.contains(pos) {
+                            if reserved.contains(pos) || !job_out_of_reach(*pos) {
                                 continue;
                             }
                             for improvement in self.worthwhile_improvements(g, pid, *pos, strategy)
                             {
                                 let score = self.improvement_value(g, *pos, &improvement, strategy)
                                     - g.wdist(current, *pos) as f64 * 0.7;
+                                if best
+                                    .map(|(old, bp)| score > old || (score == old && *pos < bp))
+                                    .unwrap_or(true)
+                                {
+                                    best = Some((score, *pos));
+                                }
+                            }
+                            // `chop_into_the_queue`: the chop is one more job
+                            // on the same list, priced the same way.
+                            if let Some((_, value)) = self.chop_into_the_queue_value(
+                                g,
+                                pid,
+                                *pos,
+                                strategy,
+                                worked_tiles.contains(pos),
+                            ) {
+                                let score = value - g.wdist(current, *pos) as f64 * 0.7;
                                 if best
                                     .map(|(old, bp)| score > old || (score == old && *pos < bp))
                                     .unwrap_or(true)
@@ -25114,7 +25320,13 @@ impl AdvancedAi {
                 self.builder_targets.insert(uid, *pos);
             }),
         };
-        target.is_some_and(|pos| self.builder_step_toward_barbarian_safe(g, pid, uid, pos))
+        target.is_some_and(|pos| {
+            if self.civilian_out_of_reach {
+                self.builder_step_out_of_reach(g, pid, uid, pos)
+            } else {
+                self.builder_step_toward_barbarian_safe(g, pid, uid, pos)
+            }
+        })
     }
 
     /// Every job this Builder could take, best first, under the same score the
@@ -28536,6 +28748,16 @@ impl AdvancedAi {
                 .get(&cid)
                 .is_some_and(|city| g.wdist(unit.pos, city.pos) <= 3)
         });
+        // See `civilian_out_of_reach`: a guard the settler summoned keeps
+        // its tile, or closes on it, before any other military business.
+        if self.civilian_out_of_reach
+            && spec.class == "military"
+            && self.settler_guards.values().any(|guard| *guard == uid)
+        {
+            if let Some(acted) = self.stacked_guard_step(g, pid, uid) {
+                return acted;
+            }
+        }
         // See `settler_guard_holds`: a bound guard sharing its settler's tile
         // holds there before it heals or retreats — leaving is what exposes
         // the civilian, and the settler's own step decides for the pair.

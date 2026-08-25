@@ -623,11 +623,29 @@ background.
 ## The gene ledger: the deployment genome is explicitly pinned
 
 As of 2026-08-24, deployment is an explicit operator selection rather than a
-rule inferred from screen statistics. The 45-gene set retains the prior 36
-on/off selections and explicitly turns on `unit-cost-efficiency`,
+rule inferred from screen statistics. The 2026-08-24 set retained the prior 36
+on/off selections and explicitly turned on `unit-cost-efficiency`,
 `unit-objective-memory`, `camp-party`, `slot-kind-tiebreak`,
 `promote-when-wounded`, `religion-sues-peace`, `lane-great-people`,
 `one-launch-pad`, and `civilian-rescue`.
+
+**2026-08-25 leaves it at 73.** Two operator directives that day: first
+`science-victory-drive` plus the four displayed-*Diff* promotions at or above
++0.85 pp (`solvency-first-trade-slot`, `settler-factory-coordination`,
+`one-war-at-a-time`, `religious-veto-defence`), then a flat instruction to flip
+sixteen more on — `flip-nearby-city-states`, `diplomatic-lane-forecast`,
+`barbarian-ranged-answer`, `army-target-weighs-enemy`, `research-tier-premium`,
+`naval-threat-triage`, `deals-for-our-gain`, `settler-screen`,
+`lane-space-race`, `enhancer-for-the-corps`, `settler-target-hysteresis`,
+`amenity-project-preemption`, `guru-heals-the-corps`, `no-free-passage`,
+`naval-recon`, `home-defense`. ⚠ Six of that sixteen no screen has priced yet
+(`flip-nearby-city-states`, `diplomatic-lane-forecast`, `naval-threat-triage`,
+`deals-for-our-gain`, `settler-screen`, `no-free-passage`), so they ship with
+no ledger row at all, and four of the ten that were priced read a negative
+pooled *Diff* (`amenity-project-preemption`, `guru-heals-the-corps`,
+`naval-recon`, `home-defense`). Under `operator-pinned` neither fact is a bar:
+the evidence stays published beside the selection, and the selection is the
+list.
 
 The former column thresholds, pooled-*Diff* veto, and posterior alternatives
 are retired as deployment rules. Win columns, *Diff*, posterior intervals,

@@ -37,28 +37,39 @@ PLAYERS = gene_ledger.SCREEN["players"]
 #: `science-multiplier-payoff`; then `science-victory-drive` and the four
 #: displayed-Diff promotions at or above +0.85%: `solvency-first-trade-slot`,
 #: `settler-factory-coordination`, `one-war-at-a-time`, and
-#: `religious-veto-defence`. Screen results remain evidence; they cannot move
-#: this tuple automatically.
+#: `religious-veto-defence`; then a second 2026-08-25 directive flipping
+#: sixteen more on: `flip-nearby-city-states`, `diplomatic-lane-forecast`,
+#: `barbarian-ranged-answer`, `army-target-weighs-enemy`,
+#: `research-tier-premium`, `naval-threat-triage`, `deals-for-our-gain`,
+#: `settler-screen`, `lane-space-race`, `enhancer-for-the-corps`,
+#: `settler-target-hysteresis`, `amenity-project-preemption`,
+#: `guru-heals-the-corps`, `no-free-passage`, `naval-recon`, and
+#: `home-defense` — six of them never screened, four of the ten that were
+#: reading a negative pooled *Diff*. Screen results remain evidence; they
+#: cannot move this tuple automatically.
 #: Changing it requires an intentional edit and PR note.
 DEPLOYED_GENOME_20260825 = (
-    "air-surge", "amenity-district-path", "apostle-promotion-by-role",
-    "barbarian-bargain", "barbarian-scouts-are-scouts", "bounded-recovery",
+    "air-surge", "amenity-district-path", "amenity-project-preemption",
+    "apostle-promotion-by-role", "army-target-weighs-enemy", "barbarian-bargain",
+    "barbarian-ranged-answer", "barbarian-scouts-are-scouts", "bounded-recovery",
     "buildings-before-projects", "camp-party", "civilian-rescue", "competition-victory-points",
-    "culture-building-debt", "district-planning", "early-contact-window", "engine-faith-price",
-    "escort-unstick", "founder-temple", "great-person-housing",
-    "holy-lane-parity", "idle-faith-patronage", "inquisition-on-threat",
-    "lane-culture-spending", "lane-great-people", "lane-policy-deck", "loyalty-rate-alarm", "maintenance-aware-deck",
-    "missionary-evades-raiders", "missionary-last-charge-explores",
-    "one-launch-pad", "one-war-at-a-time",
-    "opportunistic-war", "peacetime-deterrence", "price-the-suzerainty",
-    "promote-when-wounded", "raid-pillage-prizes", "recon-replacement",
-    "recorded-tactical-step", "relief-targets-the-siege", "religion-sues-peace",
-    "religious-defence-scales", "religious-units-heal-first", "religious-veto-defence",
+    "culture-building-debt", "deals-for-our-gain", "diplomatic-lane-forecast",
+    "district-planning", "early-contact-window", "engine-faith-price", "enhancer-for-the-corps",
+    "escort-unstick", "flip-nearby-city-states", "founder-temple", "great-person-housing",
+    "guru-heals-the-corps", "holy-lane-parity", "home-defense", "idle-faith-patronage",
+    "inquisition-on-threat", "lane-culture-spending", "lane-great-people", "lane-policy-deck",
+    "lane-space-race", "loyalty-rate-alarm", "maintenance-aware-deck",
+    "missionary-evades-raiders", "missionary-last-charge-explores", "naval-recon",
+    "naval-threat-triage", "no-free-passage", "one-launch-pad", "one-war-at-a-time",
+    "opportunistic-war", "peacetime-deterrence", "price-the-suzerainty", "promote-when-wounded",
+    "raid-pillage-prizes", "recon-replacement", "recorded-tactical-step",
+    "relief-targets-the-siege", "religion-sues-peace", "religious-defence-scales",
+    "religious-units-heal-first", "religious-veto-defence", "research-tier-premium",
     "science-multiplier-payoff", "science-victory-drive", "score-horizon", "settle-sooner",
-    "settlement-gap-target", "settler-factory-coordination", "settler-threat-detour",
-    "slot-kind-tiebreak", "solvency-first-trade-slot", "strike-opening",
-    "theology-for-founders", "unit-cost-efficiency", "unit-objective-memory",
-    "war-economy", "war-reinforcement",
+    "settlement-gap-target", "settler-factory-coordination", "settler-screen",
+    "settler-target-hysteresis", "settler-threat-detour", "slot-kind-tiebreak",
+    "solvency-first-trade-slot", "strike-opening", "theology-for-founders",
+    "unit-cost-efficiency", "unit-objective-memory", "war-economy", "war-reinforcement",
     "wide-map-capacity",
 )
 
@@ -599,10 +610,11 @@ class TheOperatorPinnedDeploymentGenome(unittest.TestCase):
             {g["tag"] for g in ledger["genes"] if g["default_on"]},
             selected & measured,
         )
-        self.assertEqual(ledger["counts"]["default_on"], 57)
+        self.assertEqual(ledger["counts"]["default_on"], 73)
         self.assertEqual(tuple(ledger["rules"]["operator_promotions"]),
                          gene_ledger.OPERATOR_PROMOTIONS_20260824
-                         + gene_ledger.OPERATOR_PROMOTIONS_20260825)
+                         + gene_ledger.OPERATOR_PROMOTIONS_20260825
+                         + gene_ledger.OPERATOR_PROMOTIONS_20260825_SECOND)
 
     def test_the_ledger_records_evidence_without_redeciding_the_list(self):
         ledger = json.loads(gene_ledger.LEDGER_JSON.read_text())
