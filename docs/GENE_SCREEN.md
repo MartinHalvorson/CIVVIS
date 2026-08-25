@@ -897,6 +897,84 @@ and a share Δ of +0.29 pp — a gene that fired and did not change who won, whi
 is firing. Those probes are **not ledger sources**: they set no profile of their
 own, they are six games, and `tools/genes.py` takes its sources by name.
 
+### ⚠⚠ A probe's win Δ is not a measurement of the gene
+
+The question a probe answers is *did it fire*. Its win column answers nothing —
+and until 2026-08-25 it could answer something false with great confidence.
+
+With `--genes <tag>` only that gene varies, so a gene that does not fire plays
+both arms as **the same game**. Each game still has exactly one winner, and
+whether that winner drew the gene is a coin flip per game. When none of them
+did, the treated arm has no events at all, and the clustered estimator answers
+with a two-point interval instead of refusing.
+
+A gene whose predicate was edited to `return false` unconditionally — it cannot
+fire, by construction — reported:
+
+```text
+gene_screen --games 12 --jobs 6 --genes <tag> --start-seed 99000000
+  16/56   0.0%  21.4%  -21.4pp z-18.21  [-23.7, -19.1]  -21.4±1.2  HURTS **
+```
+
+A family-wise `HURTS **` verdict at |z| eighteen on an interval two points wide,
+for a no-op. What exposed it: the same block had already produced that identical
+number for two real implementations with **opposite** semantics, and two other
+seed blocks of the same gene read `+0.0` and `-7.4 (z -0.66)`.
+
+`Seats::empty_arm_floor` now puts a floor under the error whenever one arm of a
+binary outcome has no events: the ordinary difference-of-proportions error times
+the design effect of the seats sharing a game. It **widens** rather than
+refuses, so the difference is still reported, and it can only ever make a row
+less significant. The block above now reads `z -1.60`, `[-47.8, +4.9]`, `~`;
+blocks with events in both arms are untouched to the digit. A gene that wins
+every game it is drawn into also empties an arm, and that one is real — it keeps
+its error, which `an_empty_arm_loses_its_precision_unless_the_effect_is_overwhelming`
+holds along with the artifact.
+
+Score share is continuous and never had this problem; it remains the half of a
+probe worth reading. **Two disjoint blocks that agree beat one that does not**,
+and a standard screen beats both. If two implementations with different
+semantics give the same number, the number belongs to the block, not the gene.
+
+### ⚠⚠ Do not read a probe's win Δ as a measurement of the gene
+
+The question a probe answers is *did it fire*. Its win column answers nothing,
+and until 2026-08-25 it could answer something false with great confidence.
+
+With `--genes <tag>` only that gene varies, so a gene that does not fire plays
+both arms as **the same game**. Each game still has exactly one winner, and
+whether that winner happens to have drawn the gene is a coin flip per game. When
+none of them did, the treated arm has no events at all: every game's cluster
+score comes out the same, the sandwich estimator has no between-cluster
+variation left to work with, and the standard error collapses *toward zero*
+instead of blowing up.
+
+This is what that looked like. A gene whose predicate was edited to
+`return false` unconditionally — it cannot fire, by construction — reported:
+
+```text
+gene_screen --games 12 --jobs 6 --genes <tag> --start-seed 99000000
+  16/56   0.0%  21.4%  -21.4pp z-18.21  [-23.7, -19.1]  -21.4±1.2  HURTS **
+```
+
+A family-wise `HURTS **` verdict, at |z| eighteen, on an interval two points
+wide, for a no-op. The same block had already produced that identical number for
+two real implementations with **opposite** semantics, which is what exposed it;
+two other seed blocks of the same gene read `+0.0`.
+
+Both places this could be reported now withhold precision when an arm has no
+events — the per-gene contrast reports the raw difference with an infinite error,
+and the OLS-adjusted column reports nothing — so the row reads `~`, which is
+what it is. `an_arm_with_no_wins_reports_no_precision_and_not_a_verdict` holds
+it. The guard is specific to a binary outcome with an empty arm, so score share,
+which is continuous, is untouched and remains the half of a probe worth reading.
+
+**Two probe blocks that agree still beat one that does not**, and a real screen
+beats both. A six-game block that reads `HURTS` should be re-run on a disjoint
+seed range before anybody believes it — and if two implementations with
+different semantics produce the same number, the number is the block's, not the
+gene's.
+
 A gene that cannot be made to fire takes a waiver in
 `tools/gene_fire_waivers.json` with the reason, in the shape
 `tools/inert_waivers.json` uses — except that the reason is enforced, and a

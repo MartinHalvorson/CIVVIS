@@ -2116,7 +2116,10 @@ impl<'a> Seats<'a> {
             .map(|row| vec![1.0, row[column]])
             .collect();
         match ols_clustered(&design, outcome, &self.clusters) {
-            Some(fit) => (2.0 * fit[1].0, 2.0 * fit[1].1),
+            Some(fit) => {
+                let (delta, se) = (2.0 * fit[1].0, 2.0 * fit[1].1);
+                (delta, se.max(self.empty_arm_floor(column, outcome)))
+            }
             None => {
                 // Too few seats for an error: report the raw difference and no
                 // precision, so the row reads as unresolved rather than exact.
@@ -2136,6 +2139,77 @@ impl<'a> Seats<'a> {
         }
     }
 
+    /// A floor under the clustered error for a binary outcome one of whose
+    /// arms has NO EVENTS AT ALL.
+    ///
+    /// ⚠⚠ A GENE THAT CANNOT FIRE ONCE PRINTED `HURTS **` AT z -18.21. With
+    /// `--genes <tag>` only that gene varies, so a gene that does not fire
+    /// plays both arms as the same game; each game still has exactly one
+    /// winner, and whether that winner drew the gene is chance. When none of
+    /// them did, the sandwich estimator answers a two-point interval instead
+    /// of refusing. Reproduced on 2026-08-25 by editing a gene's predicate to
+    /// `return false` unconditionally:
+    ///
+    /// ```text
+    /// gene_screen --games 12 --jobs 6 --genes <tag> --start-seed 99000000
+    ///   16/56  0.0%  21.4%  -21.4pp z-18.21  [-23.7, -19.1]  HURTS **
+    /// ```
+    ///
+    /// The same block had already reported that identical number for two real
+    /// implementations with OPPOSITE semantics, which is what exposed it.
+    ///
+    /// The difference is still real and is still reported; what is not to be
+    /// believed is its precision. So this widens rather than refuses, and
+    /// widens to a figure that is defensible on its own: the ordinary
+    /// difference-of-proportions error, multiplied by the design effect of the
+    /// seats sharing a game (mean cluster size), which is exactly the
+    /// correction clustering exists to apply. It can only ever make a row less
+    /// significant, never more.
+    ///
+    /// Deliberately not a refusal, and deliberately not gated on the event
+    /// count: a gene that wins every game it is drawn into ALSO empties an
+    /// arm, and that one is real. On the planted fixture in this file it keeps
+    /// |z| above ten; on the block above it takes |z| below two.
+    fn empty_arm_floor(&self, column: usize, outcome: &[f64]) -> f64 {
+        if !outcome.iter().all(|value| *value == 0.0 || *value == 1.0) {
+            return 0.0;
+        }
+        let arm = |on: bool| {
+            let mut events = 0.0;
+            let mut seats = 0.0;
+            for (row, value) in self.signs.iter().zip(outcome) {
+                if (row[column] > 0.0) == on {
+                    seats += 1.0;
+                    events += *value;
+                }
+            }
+            (events, seats)
+        };
+        let (on_events, on_seats) = arm(true);
+        let (off_events, off_seats) = arm(false);
+        if on_seats <= 0.0 || off_seats <= 0.0 {
+            return 0.0;
+        }
+        if on_events > 0.0 && off_events > 0.0 {
+            return 0.0;
+        }
+        let variance = |events: f64, seats: f64| {
+            let rate = events / seats;
+            rate * (1.0 - rate) / seats
+        };
+        let clusters = self
+            .clusters
+            .iter()
+            .collect::<std::collections::BTreeSet<_>>()
+            .len()
+            .max(1) as f64;
+        let design_effect = (on_seats + off_seats) / clusters;
+        (variance(on_events, on_seats) + variance(off_events, off_seats))
+            .max(0.0)
+            .sqrt()
+            * design_effect.max(1.0).sqrt()
+    }
+
     /// Every gene's win Δ at once: the regression of the win on an intercept
     /// and every screened sign, so a gene is not credited with the chance
     /// imbalance of its neighbours. `None` until the seats can support it.
@@ -2149,7 +2223,16 @@ impl<'a> Seats<'a> {
         Some(
             fit.into_iter()
                 .skip(1)
-                .map(|(b, se)| (2.0 * b, 2.0 * se))
+                .enumerate()
+                .map(|(column, (b, se))| {
+                    // The adjusted column is the same estimate from a wider
+                    // design and inherits the same defect, so it takes the
+                    // same floor. See `empty_arm_floor`.
+                    (
+                        2.0 * b,
+                        (2.0 * se).max(self.empty_arm_floor(column, outcome)),
+                    )
+                })
                 .collect(),
         )
     }
@@ -7484,6 +7567,62 @@ mod tests {
 
     /// The seed window the finished games actually cover, which is the half of
     /// "actual against intended" the rows know.
+    /// ⚠⚠ THE BLOCK THAT PRINTED `HURTS **` FOR A GENE THAT COULD NOT FIRE.
+    ///
+    /// See [`Seats::empty_arm_floor`]. Both shapes are held here, because the
+    /// fix is only correct if it separates them: an empty arm with a handful
+    /// of events must lose its precision, and an empty arm under an
+    /// overwhelming effect must keep it.
+    #[test]
+    fn an_empty_arm_loses_its_precision_unless_the_effect_is_overwhelming() {
+        let header = test_header(&["alpha"]);
+
+        // The artifact: twelve games, six seats, one winner each, and no
+        // winner ever drew the gene. The difference is real; the confidence
+        // is not.
+        let mut rows = Vec::new();
+        for game in 0..12 {
+            for seat in 0..6 {
+                rows.push(test_row(
+                    game,
+                    seat,
+                    if seat < 2 { "1" } else { "0" },
+                    seat == 5,
+                ));
+            }
+        }
+        let seats = Seats::of(&header, &rows);
+        let (delta, se) = seats.contrast(0, &seats.wins);
+        assert!(delta < -0.1, "the difference is reported ({delta})");
+        assert!(
+            (delta / se).abs() < 2.0,
+            "but it must not read significant (z {})",
+            delta / se
+        );
+
+        // The real thing: the same empty arm, but the gene wins every game it
+        // is drawn into. That effect is overwhelming and keeps its error.
+        let mut planted = Vec::new();
+        for game in 0..12 {
+            for seat in 0..6 {
+                planted.push(test_row(
+                    game,
+                    seat,
+                    if seat < 2 { "1" } else { "0" },
+                    seat == 0,
+                ));
+            }
+        }
+        let seats = Seats::of(&header, &planted);
+        let (delta, se) = seats.contrast(0, &seats.wins);
+        assert!(delta > 0.1, "the planted effect is reported ({delta})");
+        assert!(
+            (delta / se).abs() > 2.0,
+            "and it must still read significant (z {})",
+            delta / se
+        );
+    }
+
     #[test]
     fn the_played_seed_window_is_read_from_the_game_rows() {
         let mut rows = vec![
