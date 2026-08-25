@@ -2040,12 +2040,6 @@ pub struct BasicAi {
     /// `advanced_v1` controller disables this so its recorded decision stream
     /// remains an honest control; Basic and live Advanced use it.
     pub(crate) barbarian_tactics: bool,
-    /// Fortify any unit whose planner gave it nothing to do, not only one
-    /// inside a stand-down window.
-    ///
-    /// Off by default; evaluator arm `advanced_fortify_idle_units`. See
-    /// `hold_stood_down_unit` for the measurement that motivates it.
-    pub fortify_idle_units: bool,
     /// Build hulls only where they have open water to sail into. **On in
     /// production since 2026-08-18**; see `city_has_open_water`, and
     /// `advanced_without_open_water_navy` for the withhold.
@@ -2353,17 +2347,6 @@ pub struct BasicAi {
     /// the two times a unit stood adjacent, `decline_settlers` ordered it to
     /// fortify instead, and the settler was lost to a camp.
     pub(crate) civilian_rescue: bool,
-    /// Take a visible Barbarian Settler or Scout whenever this military unit
-    /// can reach it and complete the capture this turn.  A recovered Settler
-    /// is moved onto; a Scout is attacked after the engine's exact movement
-    /// flood reaches an adjacent tile.  This deliberately outranks healing,
-    /// retreat, and every normal tactical score: an available capture is not
-    /// an exchange to price.
-    ///
-    /// Off by default and registered as the native opt-in
-    /// `barbarian-capture-priority`, so its whole-game value is screened
-    /// before the deployment genome can turn it on.
-    pub(crate) barbarian_capture_priority: bool,
     /// Let threats standing in our own territory claim units before the
     /// offensive does. Off for the frozen native controllers, whose recorded
     /// ladders would otherwise shift underneath them, and enabled explicitly by
@@ -4601,7 +4584,6 @@ impl BasicAi {
             camp_party: false,
             come_ashore: false,
             civilian_rescue: false,
-            barbarian_capture_priority: false,
             home_defense: false,
             loyalty_rate_alarm: false,
             recorded_tactical_step: false,
@@ -4620,7 +4602,6 @@ impl BasicAi {
             patrol_posts: HashMap::new(),
             patrol_posts_by_class: HashMap::new(),
             settler_targets: HashMap::new(),
-            fortify_idle_units: false,
             open_water_navy: false,
             unit_memories: RefCell::new(BTreeMap::new()),
             attack_envelope_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
@@ -4939,7 +4920,6 @@ impl BasicAi {
             camp_party: false,
             come_ashore: false,
             civilian_rescue: false,
-            barbarian_capture_priority: false,
             home_defense: false,
             loyalty_rate_alarm: false,
             recorded_tactical_step: false,
@@ -4958,7 +4938,6 @@ impl BasicAi {
             patrol_posts: HashMap::new(),
             patrol_posts_by_class: HashMap::new(),
             settler_targets: HashMap::new(),
-            fortify_idle_units: false,
             open_water_navy: false,
             unit_memories: RefCell::new(BTreeMap::new()),
             attack_envelope_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
@@ -6578,7 +6557,7 @@ impl BasicAi {
             .unit_motion
             .get(&uid)
             .is_some_and(|motion| g.turn < motion.resume_turn);
-        if (standing_down || self.fortify_idle_units) && g.units.contains_key(&uid) {
+        if standing_down && g.units.contains_key(&uid) {
             self.fortify_or_stop(g, pid, uid);
         }
     }
@@ -14811,9 +14790,6 @@ impl BasicAi {
                 return self.fortify_or_stop(g, pid, uid);
             }
         }
-        if self.capture_reachable_barbarian_target(g, pid, uid) {
-            return true;
-        }
         if let Some(acted) = self.healing_step(g, pid, uid) {
             return acted;
         }
@@ -15103,128 +15079,6 @@ impl BasicAi {
             }
         }
         self.peacetime_step(g, pid, uid, false)
-    }
-
-    /// A one-turn Barbarian capture outranks every ordinary military job.
-    ///
-    /// The free captured Settler is entered by movement; a Barbarian Scout is
-    /// a military unit, so it needs an attack instead.  `approach_reach` is
-    /// the engine's own current-turn movement flood: it includes roads,
-    /// terrain costs, rivers, zone of control, and the movement point the
-    /// final melee blow spends.  A geometric disk would claim captures the
-    /// engine refuses and leave the unit doing nothing.
-    fn capture_reachable_barbarian_target(&self, g: &mut Game, pid: usize, uid: u32) -> bool {
-        if !self.barbarian_capture_priority || self.minor || self.barb {
-            return false;
-        }
-        let Some(barb) = g.barb_pid else {
-            return false;
-        };
-        let Some(unit) = g.units.get(&uid) else {
-            return false;
-        };
-        if unit.owner != pid
-            || unit.moves_left <= 0.0
-            || g.rules.units[unit.kind].class != "military"
-            || !g.is_at_war(pid, barb)
-        {
-            return false;
-        }
-        let (can_melee, can_ranged) = {
-            let spec = &g.rules.units[unit.kind];
-            (spec.is_melee_capable(), spec.has_ranged_attack())
-        };
-
-        // Higher value first: reclaiming a Settler restores a whole unit of
-        // production, while a Scout is still a must-take local threat.  The
-        // position tie-break keeps the move stream deterministic.
-        let mut targets: Vec<(u8, Pos)> = g
-            .units
-            .values()
-            .filter(|other| {
-                other.owner == barb
-                    && g.player_can_see(pid, other.pos)
-                    && g.is_at_war(pid, other.owner)
-            })
-            .filter_map(|other| match other.kind.as_str() {
-                "settler" => Some((2, other.pos)),
-                "scout" => Some((1, other.pos)),
-                _ => None,
-            })
-            .collect();
-        targets.sort_by_key(|(value, position)| (std::cmp::Reverse(*value), *position));
-        if targets.is_empty() {
-            return false;
-        }
-
-        let reach = g.approach_reach(uid);
-        let mut vision_frames = None;
-        for (value, target) in targets {
-            if value == 2 {
-                // A civilian's tile is legally enterable by a hostile
-                // military unit.  The first path step is replayed through the
-                // normal unit loop, which recalculates this priority before
-                // anything else can distract the pursuer.
-                if let Some((_, path)) = reach.get(&target) {
-                    if let Some(next) = path.first().copied() {
-                        if self.path_move(g, pid, uid, next) {
-                            return true;
-                        }
-                    }
-                }
-                continue;
-            }
-
-            // Scouts occupy the military layer, so an adjacent melee blow or
-            // an in-range shot is the capture action.  Ask the engine's own
-            // legality predicates rather than assuming a visible target is
-            // shootable through terrain or enterable across a river.
-            if can_melee
-                && g.melee_order_is_legal(pid, uid, target)
-                && g.apply(pid, &Action::Attack { unit: uid, target }).is_ok()
-            {
-                return true;
-            }
-            if can_ranged {
-                let frames = vision_frames
-                    .get_or_insert_with(|| (g.player_vision_now(pid), g.visibility_viewers(pid)));
-                if g.ranged_order_is_legal(pid, uid, target, &frames.0, &frames.1)
-                    && g.apply(pid, &Action::Ranged { unit: uid, target }).is_ok()
-                {
-                    return true;
-                }
-            }
-
-            // A melee unit can spend its remaining movement to reach a tile
-            // beside the Scout and still pay the defender's entry cost.  Move
-            // only the first path step; after it lands, the normal unit loop
-            // re-enters this priority and executes the now-adjacent attack.
-            if can_melee {
-                let mut approach: Option<(usize, Pos, Pos)> = None;
-                for (standing, (kept, path)) in &reach {
-                    if path.is_empty()
-                        || g.wdist(*standing, target) != 1
-                        || *kept + 1e-9 < g.step_cost_for(uid, *standing, target)
-                    {
-                        continue;
-                    }
-                    let candidate = (path.len(), *standing, path[0]);
-                    if approach
-                        .as_ref()
-                        .map(|best| candidate < *best)
-                        .unwrap_or(true)
-                    {
-                        approach = Some(candidate);
-                    }
-                }
-                if let Some((_, _, next)) = approach {
-                    if self.path_move(g, pid, uid, next) {
-                        return true;
-                    }
-                }
-            }
-        }
-        false
     }
 
     /// Civilian capture is movement, not combat. Feeding an undefended
@@ -22655,143 +22509,6 @@ mod tests {
             game.units[&captured].owner, 0,
             "two tiles and two movement points are a capture, not a vigil"
         );
-    }
-
-    /// The new gene has to outrank the recovery and duplicate-settler gates
-    /// that the older civilian rescue intentionally leaves in front of an
-    /// ordinary capture.  A one-hit-point Warrior with a duplicate Settler
-    /// would otherwise hold; with the gene on, it uses both movement points
-    /// to recover the visible barbarian-held Settler.
-    #[test]
-    fn barbarian_capture_priority_reclaims_a_settler_in_exact_movement_reach() {
-        let (mut game, mid) = capture_test_board(91_775);
-        let origin = game.cities[&game.player_city_ids(0)[0]].pos;
-        let barb = game.barb_pid.unwrap();
-        let target = game
-            .nbrs(mid)
-            .into_iter()
-            .find(|position| {
-                game.wdist(origin, *position) == 2
-                    && game.city_at(*position).is_none()
-                    && game.map.get(*position).is_some_and(|tile| {
-                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
-                    })
-            })
-            .expect("the normalized board has an open two-step capture route");
-        let warrior = game.spawn_test_unit("warrior", 0, origin);
-        game.units.get_mut(&warrior).unwrap().hp = 1;
-        // This duplicate makes the ordinary capture path decline the prize;
-        // the priority gene must not inherit that refusal.
-        let far = game.cities[&game.player_city_ids(1)[0]].pos;
-        game.spawn_test_unit("settler", 0, far);
-        let captured = game.spawn_test_unit("settler", barb, target);
-        assert!(game.player_can_see(0, target));
-
-        let mut ai = BasicAi::new();
-        ai.barbarian_tactics = false;
-        ai.barbarian_capture_priority = true;
-        for _ in 0..8 {
-            if game.units[&warrior].moves_left <= 0.0 || !ai.military_step(&mut game, 0, warrior) {
-                break;
-            }
-        }
-
-        assert_eq!(game.units[&captured].owner, 0);
-        assert_eq!(game.units[&warrior].pos, target);
-    }
-
-    /// A Barbarian Scout occupies the military layer, so the capture is an
-    /// attack rather than a move.  The priority is deliberately before
-    /// `healing_step`: this one-hit-point Archer must take the visible Scout
-    /// in range instead of fortifying on its own city tile.
-    #[test]
-    fn barbarian_capture_priority_attacks_a_visible_scout_before_healing() {
-        let (mut game, mid) = capture_test_board(91_776);
-        let origin = game.cities[&game.player_city_ids(0)[0]].pos;
-        let barb = game.barb_pid.unwrap();
-        let target = game
-            .nbrs(mid)
-            .into_iter()
-            .find(|position| {
-                game.wdist(origin, *position) == 2
-                    && game.city_at(*position).is_none()
-                    && game.map.get(*position).is_some_and(|tile| {
-                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
-                    })
-            })
-            .expect("the normalized board has an open two-tile firing lane");
-        let archer = game.spawn_test_unit("archer", 0, origin);
-        game.units.get_mut(&archer).unwrap().hp = 1;
-        let scout = game.spawn_test_unit("scout", barb, target);
-        game.units.get_mut(&scout).unwrap().hp = 1;
-        assert!(game.player_can_see(0, target));
-
-        let mut ai = BasicAi::new();
-        ai.barbarian_tactics = false;
-        ai.barbarian_capture_priority = true;
-
-        assert!(ai.military_step(&mut game, 0, archer));
-        assert!(
-            !game.units.contains_key(&scout),
-            "the one-hit-point Scout must be removed by the forced capture"
-        );
-        assert!(matches!(
-            game.log.last(),
-            Some((0, Action::Ranged { unit, target: action_target }))
-                if *unit == archer && *action_target == target
-        ));
-    }
-
-    /// The Scout half also uses movement reach, not only a ranged shot that
-    /// happens to be available from the starting tile.  A Warrior two tiles
-    /// out must walk to the engine-approved adjacent tile and spend its last
-    /// point on the attack in the same turn.
-    #[test]
-    fn barbarian_capture_priority_walks_to_and_attacks_a_scout_in_movement_reach() {
-        let (mut game, mid) = capture_test_board(91_777);
-        let origin = game.cities[&game.player_city_ids(0)[0]].pos;
-        let barb = game.barb_pid.unwrap();
-        let target = game
-            .nbrs(mid)
-            .into_iter()
-            .find(|position| {
-                game.wdist(origin, *position) == 2
-                    && game.city_at(*position).is_none()
-                    && game.map.get(*position).is_some_and(|tile| {
-                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
-                    })
-            })
-            .expect("the normalized board has an open two-step melee route");
-        let warrior = game.spawn_test_unit("warrior", 0, origin);
-        let scout = game.spawn_test_unit("scout", barb, target);
-        game.units.get_mut(&scout).unwrap().hp = 1;
-        assert!(game.player_can_see(0, target));
-
-        let mut ai = BasicAi::new();
-        ai.barbarian_tactics = false;
-        ai.barbarian_capture_priority = true;
-        for _ in 0..8 {
-            if game.units[&warrior].moves_left <= 0.0 || !ai.military_step(&mut game, 0, warrior) {
-                break;
-            }
-        }
-
-        assert!(
-            !game.units.contains_key(&scout),
-            "the Scout is inside this Warrior's one-turn exact attack reach"
-        );
-        assert_eq!(game.units[&warrior].pos, target);
-    }
-
-    #[test]
-    fn barbarian_capture_priority_is_a_registered_native_opt_in() {
-        assert!(!BasicAi::new().barbarian_capture_priority);
-        let gene = GENES
-            .iter()
-            .find(|gene| gene.field == "barbarian_capture_priority")
-            .expect("the capture priority is registered for gene_screen");
-        assert_eq!(gene.tag, "barbarian-capture-priority");
-        assert!(gene.opt_in());
     }
 
     #[test]

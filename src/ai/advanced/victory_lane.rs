@@ -186,9 +186,7 @@ impl AdvancedAi {
     /// ⚠ **The Favor stake is a separate gene, and the screen is why.** These
     /// were one gene, and in the lane's own regime
     /// (`--victories diplomatic,score`, 120 pairs) the composite read −0.61 pp
-    /// of score share at z −2.33 — a screen flag *against* it, while its
-    /// neighbour `congress-banks-decided` read +6.7 pp of wins on the same
-    /// games.
+    /// of score share at z −2.33 — a screen flag *against* the combined arm.
     ///
     /// ★★★ **THE SPLIT WAS RIGHT AND THE REASON GIVEN FOR IT WAS WRONG.** The
     /// argument for splitting was that the harm had to be on the staking

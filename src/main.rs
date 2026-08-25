@@ -2317,7 +2317,6 @@ mod tests {
                     "settler_founds_when_stalled",
                     ai.settler_founds_when_stalled,
                 ),
-                ("fortify_idle_units", ai.fortify_idle_units()),
                 ("amenity_project_preemption", ai.amenity_project_preemption),
             ] {
                 assert!(
