@@ -18431,6 +18431,168 @@ fn solvency_first_trade_slot_reserves_a_locally_safe_origin() {
     assert!(gene.screenable());
 }
 
+/// An isolated coastal hex two tiles from an inland city: a land Archer can
+/// fire into it, but a melee ship cannot cross the intervening land to hit the
+/// city or the shooter. That is the exact "farm it, do not mobilise for it"
+/// shape the treatment owns.
+fn harmless_naval_raider_board() -> (Game, u32, Pos, u32) {
+    let mut game = Game::new_full(2, 30, 18, 79_006, 200, 0, true);
+    game.current = 0;
+    let settler = game
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .expect("a starting Settler");
+    game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+    let city = game.player_city_ids(0)[0];
+    let center = game.cities[&city].pos;
+    for unit in game.player_unit_ids(0) {
+        game.remove_unit(unit);
+    }
+    let barb = game.barb_pid.expect("a barbarian seat");
+    for unit in game.player_unit_ids(barb) {
+        game.remove_unit(unit);
+    }
+    game.barb_camps.clear();
+
+    for position in game.wdisk(center, 3) {
+        let tile = game.map.tiles.get_mut(&position).unwrap();
+        tile.terrain = crate::name!("plains");
+        tile.feature = None;
+        tile.hills = false;
+    }
+    let sea = game
+        .wdisk(center, 2)
+        .into_iter()
+        .find(|position| game.wdist(center, *position) == 2)
+        .expect("a second-ring firing target");
+    game.map.tiles.get_mut(&sea).unwrap().terrain = crate::name!("coast");
+    let raider = game.spawn_test_unit("galley", barb, sea);
+    (game, city, sea, raider)
+}
+
+#[test]
+fn naval_threat_triage_ignores_an_incapable_ship_but_keeps_the_xp_shot() {
+    let (mut game, city, sea, raider) = harmless_naval_raider_board();
+    let control = AdvancedAi::new();
+    assert_eq!(BasicAi::barbarian_threat_pressure(&game, 0, city), 1);
+    assert!(BasicAi::barbarian_local_alarm(&game, 0, city));
+    assert_eq!(control.base.barbarian_defense_gap(&game, 0, city), 1);
+
+    let mut treated = AdvancedAi::new();
+    treated.enable_naval_threat_triage();
+    assert_eq!(
+        treated
+            .base
+            .barbarian_threat_pressure_for_controller(&game, 0, city),
+        0,
+        "a ship with no damaging next-turn target does not preempt production"
+    );
+    assert!(!treated
+        .base
+        .barbarian_local_alarm_for_controller(&game, 0, city));
+    assert_eq!(treated.base.barbarian_defense_gap(&game, 0, city), 0);
+    assert!(!treated.base.barbarian_presence_at_home_for_controller(
+        &game,
+        0,
+        crate::ai::HOME_CAMP_RADIUS,
+    ));
+    let center = game.cities[&city].pos;
+    let barracks = game
+        .wdisk(center, 3)
+        .into_iter()
+        .find(|position| game.wdist(center, *position) == 3)
+        .expect("a land barracks outside the city");
+    let foot = game.spawn_test_unit("warrior", 0, barracks);
+    let barb = game.barb_pid.unwrap();
+    assert!(
+        control
+            .base
+            .garrison_assignments_inner(&game, 0, &[barb], true)
+            .iter()
+            .any(|(unit, _)| *unit == foot),
+        "the untreated alarm recruits a land unit to garrison against the offshore hull"
+    );
+    assert!(
+        treated
+            .base
+            .garrison_assignments_inner(&game, 0, &[barb], true)
+            .is_empty(),
+        "triage creates no land recall for a ship that cannot hurt the city"
+    );
+    game.remove_unit(foot);
+
+    let archer = game.spawn_test_unit("archer", 0, game.cities[&city].pos);
+    assert!(treated.base.has_harmless_naval_xp_shot(&game, 0, archer));
+    assert_eq!(
+        treated
+            .base
+            .harmless_naval_xp_bonus(&game, 0, archer, sea, true),
+        10.0
+    );
+    let before_hp = game.units[&raider].hp;
+    let before_xp = game.units[&archer].xp;
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Science,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 1,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    assert!(treated.advanced_military_step(&mut game, 0, archer, &plan));
+    assert!(
+        game.units
+            .get(&raider)
+            .is_none_or(|unit| unit.hp < before_hp),
+        "the harmless hull remains a real combat target"
+    );
+    assert!(
+        game.units[&archer].xp > before_xp,
+        "the ranged unit earns experience from the safe shot"
+    );
+
+    assert!(!AdvancedAi::new().base.naval_threat_triage);
+    assert!(!AdvancedAi::legacy().base.naval_threat_triage);
+    let gene = crate::ai::gene("naval-threat-triage").expect("registered gene");
+    assert!(gene.opt_in() && gene.screenable() && !gene.live());
+}
+
+#[test]
+fn naval_threat_triage_keeps_a_ship_that_can_hit_the_city_as_an_emergency() {
+    let (mut game, city, old_sea, old_raider) = harmless_naval_raider_board();
+    game.remove_unit(old_raider);
+    game.map.tiles.get_mut(&old_sea).unwrap().terrain = crate::name!("plains");
+    let center = game.cities[&city].pos;
+    let coast = game.nbrs(center)[0];
+    game.map.tiles.get_mut(&coast).unwrap().terrain = crate::name!("coast");
+    let barb = game.barb_pid.unwrap();
+    game.spawn_test_unit("galley", barb, coast);
+
+    let mut treated = AdvancedAi::new();
+    treated.enable_naval_threat_triage();
+    assert!(treated
+        .base
+        .barbarian_local_alarm_for_controller(&game, 0, city));
+    assert_eq!(
+        treated
+            .base
+            .barbarian_threat_pressure_for_controller(&game, 0, city),
+        1
+    );
+    assert_eq!(
+        treated.base.barbarian_defense_gap(&game, 0, city),
+        1,
+        "a ship able to land a serious city blow still buys a defender"
+    );
+    assert!(treated.base.barbarian_presence_at_home_for_controller(
+        &game,
+        0,
+        crate::ai::HOME_CAMP_RADIUS,
+    ));
+}
+
 #[test]
 fn strategic_governments_use_late_tiers_and_match_the_culture_holdout() {
     let mut culture = Game::new_full(3, 18, 10, 79_002, 200, 0, false);
