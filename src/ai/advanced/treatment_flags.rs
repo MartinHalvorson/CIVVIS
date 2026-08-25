@@ -2372,10 +2372,10 @@ impl AdvancedAi {
         self.coalition_before_war = false;
     }
 
-    /// A boost already in hand is credited the turns of research it saves —
-    /// `frac * cost` over the empire's own science or culture per turn —
-    /// instead of the flat 28 that could not tell the boost saving eight turns
-    /// from the one saving two. Never pays less than that 28. See
+    /// Credit a boost already in hand with the turns of research it saves,
+    /// instead of one flat bonus for every boost in the tree. The saving is
+    /// `frac * cost` over the empire's own science or culture per turn, and it
+    /// never pays less than the flat 28 it replaces. See
     /// [`AdvancedAi::boost_research_value`]. Opt-in gene
     /// `boost-first-research`. Filed above the markers: the append-point check
     /// reads a method line's first identifier.
@@ -2388,10 +2388,10 @@ impl AdvancedAi {
         self.boost_first_research = false;
     }
 
-    /// A node the empire would finish inside a few turns, whose boost is still
-    /// earnable, is taken after the eureka rather than before it: the engine
-    /// credits a boost mid-research but never onto a node already finished.
-    /// See [`AdvancedAi::boost_research_value`]. Opt-in gene
+    /// Take a node the empire would finish before its own eureka lands after
+    /// that eureka, not before it. The engine credits a boost mid-research
+    /// onto a node still being worked, and never onto one already finished, so
+    /// only a short node loses its discount outright. See [`AdvancedAi::boost_research_value`]. Opt-in gene
     /// `boost-wait-research`. Filed above the markers: the append-point check
     /// reads a method line's first identifier.
     pub fn enable_boost_wait_research(&mut self) {
@@ -2403,9 +2403,10 @@ impl AdvancedAi {
         self.boost_wait_research = false;
     }
 
-    /// A node is credited the boosts it makes chaseable at all: the quarry
-    /// Masonry's eureka wants needs Mining, Machinery's three Archers need
-    /// Archery. See [`AdvancedAi::boost_research_value`]. Opt-in gene
+    /// Credit a technology or civic with the boosts it makes chaseable by
+    /// unlocking what their triggers need. The quarry Masonry's eureka wants
+    /// needs Mining first, Machinery's three Archers need Archery, and nothing
+    /// ever bought the permission. See [`AdvancedAi::boost_research_value`]. Opt-in gene
     /// `boost-unlock-research`. Filed above the markers: the append-point check
     /// reads a method line's first identifier.
     pub fn enable_boost_unlock_research(&mut self) {

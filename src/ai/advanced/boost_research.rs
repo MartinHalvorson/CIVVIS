@@ -189,12 +189,20 @@ impl AdvancedAi {
         if !self.boost_unlock_research {
             return 0.0;
         }
+        // Both rates once: this runs for every candidate node in the argmax,
+        // and every chase inside each of those.
+        let science = Self::research_rate(g, pid, true);
+        let culture = Self::research_rate(g, pid, false);
         let mut opened: Vec<f64> = Vec::new();
         for chase in self.eureka_chases(g, pid) {
             if !self.opens_the_trigger(g, pid, node, techs, &chase.trigger) {
                 continue;
             }
-            let rate = Self::research_rate(g, pid, Self::chase_is_tech(g, &chase));
+            let rate = if Self::chase_is_tech(g, &chase) {
+                science
+            } else {
+                culture
+            };
             opened.push((chase.research / rate).min(BOOST_TURNS_CAP));
         }
         opened.sort_by(|left, right| right.total_cmp(left));
