@@ -503,8 +503,7 @@ mod tests {
         let camp = open_ground_where(&game, home, 5, |pos| game.wdist(pos, border) == 3);
         assert!(game.wdist(camp, home) <= crate::ai::HOME_THREAT_RADIUS);
         game.barb_camps.insert(camp, game.turn + 1_000);
-        game.map.tiles.get_mut(&camp).unwrap().improvement =
-            Some(crate::name!("barbarian_camp"));
+        game.map.tiles.get_mut(&camp).unwrap().improvement = Some(crate::name!("barbarian_camp"));
         let beside = game
             .nbrs(camp)
             .into_iter()
@@ -524,34 +523,52 @@ mod tests {
         let mut off = game.clone();
         let stock = AdvancedAi::new();
         assert!(
-            stock.base.clear_adjacent_empty_barbarian_camp(&mut off, 0, warrior),
+            stock
+                .base
+                .clear_adjacent_empty_barbarian_camp(&mut off, 0, warrior),
             "the stock adjacent clear walks into the camp"
         );
         assert!(!off.barb_camps.contains_key(&camp));
 
         let ai = eoe_ai();
-        assert!(!ai.base.clear_adjacent_empty_barbarian_camp(&mut game, 0, warrior));
-        assert!(game.barb_camps.contains_key(&camp), "the rival's camp stands");
+        assert!(!ai
+            .base
+            .clear_adjacent_empty_barbarian_camp(&mut game, 0, warrior));
+        assert!(
+            game.barb_camps.contains_key(&camp),
+            "the rival's camp stands"
+        );
         assert_eq!(game.players[0].counters.get("eoe:camps_left"), Some(&1));
         assert!(
-            !ai.base
-                .barbarian_presence_at_home_for_controller(&game, 0, crate::ai::HOME_CAMP_RADIUS),
+            !ai.base.barbarian_presence_at_home_for_controller(
+                &game,
+                0,
+                crate::ai::HOME_CAMP_RADIUS
+            ),
             "a camp that is the rival's problem raises no alarm at home"
         );
         assert!(
-            stock
-                .base
-                .barbarian_presence_at_home_for_controller(&game, 0, crate::ai::HOME_CAMP_RADIUS),
+            stock.base.barbarian_presence_at_home_for_controller(
+                &game,
+                0,
+                crate::ai::HOME_CAMP_RADIUS
+            ),
             "the stock alarm reads the same camp as home ground"
         );
         assert_eq!(ai.base.nearest_enemy(&game, 0, warrior, &[barb]), None);
-        assert_eq!(stock.base.nearest_enemy(&game, 0, warrior, &[barb]), Some(camp));
         assert_eq!(
-            ai.base.barbarian_home_defense_objective(&game, 0, warrior, &[barb]),
+            stock.base.nearest_enemy(&game, 0, warrior, &[barb]),
+            Some(camp)
+        );
+        assert_eq!(
+            ai.base
+                .barbarian_home_defense_objective(&game, 0, warrior, &[barb]),
             None
         );
         assert_eq!(
-            stock.base.barbarian_home_defense_objective(&game, 0, warrior, &[barb]),
+            stock
+                .base
+                .barbarian_home_defense_objective(&game, 0, warrior, &[barb]),
             Some(camp)
         );
     }
@@ -568,7 +585,10 @@ mod tests {
         game.found_city_for(minors[1], near_us, None);
         let ai = eoe_ai();
         let stock = AdvancedAi::new();
-        assert_eq!(stock.enemy_of_my_enemy_city_state_bonus(&game, 0, minors[0], 1), 0);
+        assert_eq!(
+            stock.enemy_of_my_enemy_city_state_bonus(&game, 0, minors[0], 1),
+            0
+        );
         let open = ai.enemy_of_my_enemy_city_state_bonus(&game, 0, minors[0], 1);
         assert_eq!(
             open,
@@ -577,7 +597,10 @@ mod tests {
                     * ENEMY_OF_MY_ENEMY_CITY_STATE_PER_TILE
                 + ENEMY_OF_MY_ENEMY_OPEN_CITY_STATE
         );
-        assert_eq!(ai.enemy_of_my_enemy_city_state_bonus(&game, 0, minors[1], 1), 0);
+        assert_eq!(
+            ai.enemy_of_my_enemy_city_state_bonus(&game, 0, minors[1], 1),
+            0
+        );
         assert_eq!(
             ai.enemy_of_my_enemy_city_state_bonus(&game, 0, minors[0], 3),
             open / 3,
@@ -593,7 +616,10 @@ mod tests {
         game.current = 0;
         assert_eq!(game.suzerain_of(minors[0]), Some(1));
         let held = ai.enemy_of_my_enemy_city_state_bonus(&game, 0, minors[0], 1);
-        assert_eq!(held - open, ENEMY_OF_MY_ENEMY_RIVAL_CLIENT - ENEMY_OF_MY_ENEMY_OPEN_CITY_STATE);
+        assert_eq!(
+            held - open,
+            ENEMY_OF_MY_ENEMY_RIVAL_CLIENT - ENEMY_OF_MY_ENEMY_OPEN_CITY_STATE
+        );
         // An enemy at war weighs double.
         game.at_war.insert((0, 1));
         assert!(game.is_at_war(0, 1));
@@ -605,10 +631,17 @@ mod tests {
         let mut friends = game.clone();
         friends.at_war.remove(&(0, 1));
         assert!(!friends.is_at_war(0, 1));
-        friends.players[0].friends_until.insert(1, friends.turn + 30);
-        friends.players[1].friends_until.insert(0, friends.turn + 30);
+        friends.players[0]
+            .friends_until
+            .insert(1, friends.turn + 30);
+        friends.players[1]
+            .friends_until
+            .insert(0, friends.turn + 30);
         assert!(friends.are_friends(0, 1));
-        assert_eq!(ai.enemy_of_my_enemy_city_state_bonus(&friends, 0, minors[0], 1), 0);
+        assert_eq!(
+            ai.enemy_of_my_enemy_city_state_bonus(&friends, 0, minors[0], 1),
+            0
+        );
     }
 
     /// A third major seated beyond the rival is the partner this term
@@ -653,7 +686,10 @@ mod tests {
         game.current = 0;
         let ai = eoe_ai();
         let stock = AdvancedAi::new();
-        assert_eq!(stock.enemy_of_my_enemy_partner_bonus(&game, 0, 2, None), 0.0);
+        assert_eq!(
+            stock.enemy_of_my_enemy_partner_bonus(&game, 0, 2, None),
+            0.0
+        );
         assert_eq!(
             ai.enemy_of_my_enemy_partner_bonus(&game, 0, 2, None),
             ENEMY_OF_MY_ENEMY_PARTNER * ENEMY_OF_MY_ENEMY_NEIGHBOUR_WEIGHT as f64
@@ -695,7 +731,10 @@ mod tests {
             ai.enemy_of_my_enemy_joint_war_penalty(&game, 0, &invitation, None),
             ENEMY_OF_MY_ENEMY_JOINT_WAR_REFUSAL
         );
-        assert_eq!(stock.enemy_of_my_enemy_joint_war_penalty(&game, 0, &invitation, None), 0.0);
+        assert_eq!(
+            stock.enemy_of_my_enemy_joint_war_penalty(&game, 0, &invitation, None),
+            0.0
+        );
         assert_eq!(
             ai.enemy_of_my_enemy_joint_war_penalty(&game, 0, &invitation, Some(2)),
             0.0,

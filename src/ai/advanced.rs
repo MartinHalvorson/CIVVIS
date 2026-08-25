@@ -15252,8 +15252,7 @@ impl AdvancedAi {
                     let coalition = self.coalition_city_state_bonus(g, pid, minor.id, needed);
                     // `enemy_of_my_enemy`: the city-state's place ACROSS a
                     // rival. See `advanced/enemy_of_my_enemy.rs`.
-                    let across =
-                        self.enemy_of_my_enemy_city_state_bonus(g, pid, minor.id, needed);
+                    let across = self.enemy_of_my_enemy_city_state_bonus(g, pid, minor.id, needed);
                     let score = (alignment + unique_alignment) * 10
                         + type_bonus_value
                         + denial
