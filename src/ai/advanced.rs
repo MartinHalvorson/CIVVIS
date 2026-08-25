@@ -4566,7 +4566,7 @@ pub struct AdvancedAi {
     /// so an empire that has improved everything it owns keeps the shipped
     /// quota and does not pay for Builders that would stand still. Opt-in gene
     /// `builder-supply-floor`.
-    pub builder_supply_floor: bool,
+    builder_supply_floor: bool,
 
     // ---- append: c-d ------------------------------------------------
     /// A Builder chops woods, rainforest or marsh into a Settler, a district
@@ -4612,7 +4612,7 @@ pub struct AdvancedAi {
     /// So version two takes the repaired horizon for the cheap rung and leaves
     /// the expensive one exactly as it ships. Opt-in gene
     /// `chain-payback-window-2`.
-    pub chain_payback_window_2: bool,
+    chain_payback_window_2: bool,
 
     /// Price the science and culture chains by whether the building can still
     /// repay, not by how much of the clock is left.
@@ -4645,7 +4645,7 @@ pub struct AdvancedAi {
     /// reason the original horizon existed — a Campus begun at turn 245 must
     /// not outbid a defender — is preserved. Opt-in gene
     /// `chain-payback-window`.
-    pub chain_payback_window: bool,
+    chain_payback_window: bool,
 
     /// The city plans its districts, sites and tile buys together: wished
     /// districts are jointly assigned reserved plots over rings 1-3 at the
@@ -4704,7 +4704,7 @@ pub struct AdvancedAi {
     /// gene's version two. This buys one, once, and only while
     /// `has_builder_work` says there is still land to improve.
     /// Opt-in gene `first-builder-reserve`.
-    pub first_builder_reserve: bool,
+    first_builder_reserve: bool,
 
     /// Reserve the first Campus building a city owes ahead of ordinary
     /// production, on the same measured pattern as `first_builder_reserve`.
@@ -4723,7 +4723,7 @@ pub struct AdvancedAi {
     /// holds the Campus, so it is one purchase in a city that has already paid
     /// for the district, not a research programme. Opt-in gene
     /// `first-research-building-reserve`.
-    pub first_research_building_reserve: bool,
+    first_research_building_reserve: bool,
     /// While the opening is behind the pace every recorded win came from,
     /// open the settler pipeline by the shortfall. Opt-in gene
     /// `expansion-schedule`; see `advanced/expansion_schedule.rs`.
@@ -4772,7 +4772,7 @@ pub struct AdvancedAi {
     /// 2.2 production, so a Farm loses to a Mine on a bare hill and its half
     /// point of Housing is invisible. This adds that term and nothing else.
     /// Opt-in gene `improvement-housing-value`.
-    pub improvement_housing_value: bool,
+    improvement_housing_value: bool,
     /// While the opening is behind the pace and no city can build a Settler,
     /// the citizens work food. Opt-in gene `growth-to-settle`; see
     /// `advanced/growth_to_settle.rs`.
@@ -4826,7 +4826,7 @@ pub struct AdvancedAi {
     /// `goal_pick` already walks the prerequisite chain to the cheapest
     /// available ancestor, one civic per turn, and `strategic_government`
     /// already does the adopting. Opt-in gene `government-ladder`.
-    pub government_ladder: bool,
+    government_ladder: bool,
 
     // ---- append: l-o ------------------------------------------------
     /// Version 2 of `never-an-empty-queue`: fill an idle turn with something
@@ -4848,7 +4848,7 @@ pub struct AdvancedAi {
     /// answer an idle turn, and a soldier the scorer has already refused may
     /// not. Where nothing civilian qualifies the city stays idle, which is what
     /// ships. Opt-in gene `never-an-empty-queue-2`.
-    pub never_an_empty_queue_2: bool,
+    never_an_empty_queue_2: bool,
 
     /// A city with nothing above the ordinary bar builds the best real
     /// candidate instead of standing idle for the turn.
@@ -4872,7 +4872,7 @@ pub struct AdvancedAi {
     /// candidate above `PRODUCTION_VETO_FLOOR`, so a hard veto is still a veto
     /// and the ordinary choice is untouched whenever one exists. Opt-in gene
     /// `never-an-empty-queue`.
-    pub never_an_empty_queue: bool,
+    never_an_empty_queue: bool,
     /// A refused order falls through to the next-best candidate the planner
     /// already ranked, instead of losing the turn. Opt-in gene `order-retry`;
     /// see `advanced/order_retry.rs`.
@@ -4977,7 +4977,7 @@ pub struct AdvancedAi {
     /// also carries that repair into `advanced_trader_step`, where a built
     /// Trader is still sent walking home by the pre-gene empire-wide veto.
     /// Opt-in gene `solvency-first-trade-slot-2`.
-    pub solvency_first_trade_slot_2: bool,
+    solvency_first_trade_slot_2: bool,
     /// A ranged unit inside a hostile melee body's reach steps to a firing
     /// tile inside fewer hostile envelopes and fires at that body. Opt-in
     /// gene `shoot-and-scoot`; see `advanced/field_craft.rs`.
@@ -5052,7 +5052,7 @@ pub struct AdvancedAi {
     /// six-turn window after a `surprise_war` casus belli, which almost never
     /// happens. This gene asks the plainer question: are we at war with a
     /// major right now. Opt-in gene `upgrade-the-garrison`.
-    pub upgrade_the_garrison: bool,
+    upgrade_the_garrison: bool,
     /// A melee unit with nothing to hit stands where its zone of control
     /// takes the most enemy reaches off our shooters and wounded. Opt-in gene
     /// `zoc-screen`; see `advanced/field_craft.rs`.

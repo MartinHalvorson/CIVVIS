@@ -2476,8 +2476,6 @@ impl AdvancedAi {
     // The rule, the measurement behind it and the check that enforces it are
     // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
 
-    // ---- append: a-b ------------------------------------------------
-
     /// Keep one Builder per city while there is still land to improve, priced
     /// where it can win the queue. See `AdvancedAi::builder_supply_floor`;
     /// opt-in gene `builder-supply-floor`. Filed here rather than under a
@@ -2490,9 +2488,6 @@ impl AdvancedAi {
     pub fn disable_builder_supply_floor(&mut self) {
         self.builder_supply_floor = false;
     }
-
-    // ---- append: c-d ------------------------------------------------
-
     /// Price the cheap rung of a district chain by payback and leave the whole
     /// district on the clock. See `AdvancedAi::chain_payback_window_2`; opt-in
     /// gene `chain-payback-window-2`, version two of `chain-payback-window`.
@@ -2506,7 +2501,6 @@ impl AdvancedAi {
     pub fn disable_chain_payback_window_2(&mut self) {
         self.chain_payback_window_2 = false;
     }
-
     /// Price the science and culture chain debts by whether the building can
     /// still repay, not by how much of the clock is left. See
     /// `AdvancedAi::chain_payback_window`; opt-in gene `chain-payback-window`.
@@ -2520,9 +2514,6 @@ impl AdvancedAi {
     pub fn disable_chain_payback_window(&mut self) {
         self.chain_payback_window = false;
     }
-
-    // ---- append: e-f ------------------------------------------------
-
     /// Reserve the first Builder ahead of ordinary production, the way
     /// `solvency-first-trade-slot` reserves the first trade slot. See
     /// `AdvancedAi::first_builder_reserve`; opt-in gene `first-builder-reserve`.
@@ -2536,7 +2527,6 @@ impl AdvancedAi {
     pub fn disable_first_builder_reserve(&mut self) {
         self.first_builder_reserve = false;
     }
-
     /// Reserve the cheapest Campus building a city owes ahead of ordinary
     /// production. See `AdvancedAi::first_research_building_reserve`; opt-in
     /// gene `first-research-building-reserve`. Filed here rather than under a
@@ -2549,9 +2539,6 @@ impl AdvancedAi {
     pub fn disable_first_research_building_reserve(&mut self) {
         self.first_research_building_reserve = false;
     }
-
-    // ---- append: g-k ------------------------------------------------
-
     /// Let the Builder see the Housing an improvement carries, the way the
     /// baseline chooser already does. See
     /// `AdvancedAi::improvement_housing_value`; opt-in gene
@@ -2565,7 +2552,6 @@ impl AdvancedAi {
     pub fn disable_improvement_housing_value(&mut self) {
         self.improvement_housing_value = false;
     }
-
     /// Climb to a tier-2 government once Political Philosophy lands, instead of
     /// playing the whole game on four policy slots. See
     /// `AdvancedAi::government_ladder`; opt-in gene `government-ladder`. Filed
@@ -2579,9 +2565,6 @@ impl AdvancedAi {
     pub fn disable_government_ladder(&mut self) {
         self.government_ladder = false;
     }
-
-    // ---- append: l-o ------------------------------------------------
-
     /// Fill an idle turn with something that is not a soldier, or leave it
     /// idle. See `AdvancedAi::never_an_empty_queue_2`; opt-in gene
     /// `never-an-empty-queue-2`, version two of `never-an-empty-queue`. Filed
@@ -2595,7 +2578,6 @@ impl AdvancedAi {
     pub fn disable_never_an_empty_queue_2(&mut self) {
         self.never_an_empty_queue_2 = false;
     }
-
     /// Build the best real candidate instead of standing idle when nothing
     /// clears the ordinary production bar. See
     /// `AdvancedAi::never_an_empty_queue`; opt-in gene `never-an-empty-queue`.
@@ -2609,11 +2591,6 @@ impl AdvancedAi {
     pub fn disable_never_an_empty_queue(&mut self) {
         self.never_an_empty_queue = false;
     }
-
-    // ---- append: p-r ------------------------------------------------
-
-    // ---- append: s-s ------------------------------------------------
-
     /// Reserve every empty trade route slot the empire can use, not only the
     /// first. See `AdvancedAi::solvency_first_trade_slot_2`; opt-in gene
     /// `solvency-first-trade-slot-2`, version two of
@@ -2627,9 +2604,6 @@ impl AdvancedAi {
     pub fn disable_solvency_first_trade_slot_2(&mut self) {
         self.solvency_first_trade_slot_2 = false;
     }
-
-    // ---- append: t-z ------------------------------------------------
-
     /// Modernize the standing army before the discretionary purchase pass
     /// spends the treasury, while a major war is being fought. See
     /// `AdvancedAi::upgrade_the_garrison`; opt-in gene `upgrade-the-garrison`.
@@ -2643,6 +2617,23 @@ impl AdvancedAi {
     pub fn disable_upgrade_the_garrison(&mut self) {
         self.upgrade_the_garrison = false;
     }
+
+    // ---- append: a-b ------------------------------------------------
+
+    // ---- append: c-d ------------------------------------------------
+
+    // ---- append: e-f ------------------------------------------------
+
+    // ---- append: g-k ------------------------------------------------
+
+    // ---- append: l-o ------------------------------------------------
+
+    // ---- append: p-r ------------------------------------------------
+
+    // ---- append: s-s ------------------------------------------------
+
+    // ---- append: t-z ------------------------------------------------
+
 }
 
 #[cfg(test)]
