@@ -1307,7 +1307,7 @@ def play_command(args, tag: str, orders_db: Path, orders_bin: Path,
 
 
 def resume_from_autosave(record: dict, why: str | None, resumes_so_far: int, args,
-                         started_at: float, latest=None) -> Path | None:
+                         started_at: float, latest=None, recent=None) -> Path | None:
     """The autosave a frozen attempt should be reloaded from, or None.
 
     ★★★★★ A FROZEN GAME WAS SCORED AS A LOSS WITH ITS SAVE ON DISK. Three
@@ -1337,13 +1337,22 @@ def resume_from_autosave(record: dict, why: str | None, resumes_so_far: int, arg
         return None
     if record.get("end_screen_turn") is not None:
         return None
-    finder = latest if latest is not None else _latest_autosave
-    return finder(newer_than=started_at)
+    # A direct ``latest`` injection keeps the small policy unit tests and any
+    # external caller compatible.  The live path needs the ordered rotation:
+    # reloading the exact same t181 save twice reproduced the same engine-side
+    # PLEASE WAIT spin twice on 2026-08-24.  Each successive recovery therefore
+    # walks one autosave farther back, preserving the match while giving the
+    # engine a different turn boundary to simulate.
+    if latest is not None:
+        return latest(newer_than=started_at)
+    finder = recent if recent is not None else _recent_autosaves
+    saves = finder(newer_than=started_at)
+    return saves[resumes_so_far] if resumes_so_far < len(saves) else None
 
 
-def _latest_autosave(newer_than: float | None = None) -> Path | None:
+def _recent_autosaves(newer_than: float | None = None) -> list[Path]:
     import civ6_play  # noqa: PLC0415 — the play harness owns the save folder
-    return civ6_play.latest_autosave(newer_than=newer_than)
+    return civ6_play.recent_autosaves(newer_than=newer_than)
 
 
 def main() -> int:

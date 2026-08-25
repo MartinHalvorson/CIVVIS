@@ -1431,6 +1431,28 @@ class ResumeFromAutosaveTests(_Harness, unittest.TestCase):
         self.assertIsNone(climb.resume_from_autosave(frozen, "frozen", 0, args, 0.0,
                                                      latest=lambda newer_than=None: None))
 
+    def test_successive_resumes_step_back_instead_of_reloading_the_same_hang(self):
+        args = self._Args()
+        saves = [
+            Path("/saves/AutoSave_0181.Civ6Save"),
+            Path("/saves/AutoSave_0180.Civ6Save"),
+        ]
+        finder = lambda newer_than=None: saves
+        frozen = {"last_turn": 181}
+
+        self.assertEqual(
+            climb.resume_from_autosave(
+                frozen, "frozen", 0, args, 1234.5, recent=finder,
+            ),
+            saves[0],
+        )
+        self.assertEqual(
+            climb.resume_from_autosave(
+                frozen, "frozen", 1, args, 1234.5, recent=finder,
+            ),
+            saves[1],
+        )
+
     def test_a_frozen_attempt_is_reloaded_under_a_cont_tag_and_scored_from_it(self):
         spawned = []
 
@@ -1441,9 +1463,11 @@ class ResumeFromAutosaveTests(_Harness, unittest.TestCase):
 
         verdicts = ["frozen", "exited"]
         saved_wait = climb.wait_watching_the_turn
-        saved_latest = climb._latest_autosave
+        saved_recent = climb._recent_autosaves
         climb.wait_watching_the_turn = lambda *a, **k: verdicts.pop(0)
-        climb._latest_autosave = lambda newer_than=None: Path("/saves/AutoSave_0102.Civ6Save")
+        climb._recent_autosaves = lambda newer_than=None: [
+            Path("/saves/AutoSave_0102.Civ6Save")
+        ]
         climb.subprocess.Popen = Recording
         try:
             code, rows = self.climb_with(
@@ -1452,7 +1476,7 @@ class ResumeFromAutosaveTests(_Harness, unittest.TestCase):
                 attempts=1)
         finally:
             climb.wait_watching_the_turn = saved_wait
-            climb._latest_autosave = saved_latest
+            climb._recent_autosaves = saved_recent
             climb.subprocess.Popen = FakeProc
 
         self.assertEqual(code, 1, "played out, no win")
@@ -1495,37 +1519,44 @@ class ResumeFromAutosaveTests(_Harness, unittest.TestCase):
     def test_the_resume_budget_is_bounded_and_the_last_freeze_is_the_row(self):
         verdicts = ["frozen", "frozen", "frozen"]
         saved_wait = climb.wait_watching_the_turn
-        saved_latest = climb._latest_autosave
+        saved_recent = climb._recent_autosaves
         climb.wait_watching_the_turn = lambda *a, **k: verdicts.pop(0)
-        climb._latest_autosave = lambda newer_than=None: Path("/saves/AutoSave_0150.Civ6Save")
+        climb._recent_autosaves = lambda newer_than=None: [
+            Path("/saves/AutoSave_0150.Civ6Save"),
+            Path("/saves/AutoSave_0149.Civ6Save"),
+        ]
         try:
             code, rows = self.climb_with(
                 [{"last_turn": 102}, {"last_turn": 140}, {"last_turn": 151}],
                 attempts=1)
         finally:
             climb.wait_watching_the_turn = saved_wait
-            climb._latest_autosave = saved_latest
+            climb._recent_autosaves = saved_recent
 
         self.assertEqual(len(rows), 1)
         row = rows[0]
         self.assertEqual(row["last_turn"], 151)
         self.assertEqual(row["reason"], "attempt frozen", "still frozen after the budget: say so")
         self.assertEqual([r["from_turn"] for r in row["resumes"]], [102, 140])
+        self.assertEqual([r["save"] for r in row["resumes"]],
+                         ["AutoSave_0150.Civ6Save", "AutoSave_0149.Civ6Save"])
         self.assertTrue(row["resumes"][-1]["tag"].endswith("-cont2"))
 
     def test_a_resume_that_never_reaches_a_turn_keeps_the_frozen_row(self):
         verdicts = ["frozen", "exited"]
         saved_wait = climb.wait_watching_the_turn
-        saved_latest = climb._latest_autosave
+        saved_recent = climb._recent_autosaves
         climb.wait_watching_the_turn = lambda *a, **k: verdicts.pop(0)
-        climb._latest_autosave = lambda newer_than=None: Path("/saves/AutoSave_0102.Civ6Save")
+        climb._recent_autosaves = lambda newer_than=None: [
+            Path("/saves/AutoSave_0102.Civ6Save")
+        ]
         try:
             code, rows = self.climb_with(
                 [{"last_turn": 102, "last_score": 340}, {"last_turn": None}],
                 attempts=1)
         finally:
             climb.wait_watching_the_turn = saved_wait
-            climb._latest_autosave = saved_latest
+            climb._recent_autosaves = saved_recent
         self.assertEqual(len(rows), 1, "the frozen game is the row, not a hole")
         row = rows[0]
         self.assertEqual(row["attempt"], 1, "and it spends its rung like any played game")
@@ -1538,15 +1569,17 @@ class ResumeFromAutosaveTests(_Harness, unittest.TestCase):
     def test_resumes_can_be_switched_off(self):
         verdicts = ["frozen"]
         saved_wait = climb.wait_watching_the_turn
-        saved_latest = climb._latest_autosave
+        saved_recent = climb._recent_autosaves
         climb.wait_watching_the_turn = lambda *a, **k: verdicts.pop(0)
-        climb._latest_autosave = lambda newer_than=None: Path("/saves/AutoSave_0102.Civ6Save")
+        climb._recent_autosaves = lambda newer_than=None: [
+            Path("/saves/AutoSave_0102.Civ6Save")
+        ]
         try:
             code, rows = self.climb_with([{"last_turn": 102}], attempts=1,
                                          argv_extra=("--max-resumes", "0"))
         finally:
             climb.wait_watching_the_turn = saved_wait
-            climb._latest_autosave = saved_latest
+            climb._recent_autosaves = saved_recent
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["reason"], "attempt frozen")
         self.assertNotIn("resumes", rows[0])

@@ -34862,6 +34862,121 @@ fn surprise_mobilization_slots_the_available_land_production_card() {
     );
 }
 
+// ═══ Massing on our frontier at peace (`frontier_massing_alarm`) ═══
+
+#[test]
+fn frontier_massing_alarm_is_a_registered_reversible_opt_in() {
+    assert!(
+        GENES.iter().any(|gene| gene.opt_in()
+            && gene.field == "frontier_massing_alarm"
+            && gene.tag == "frontier-massing-alarm"),
+        "frontier-massing-alarm must be a registered native opt-in"
+    );
+    assert!(
+        crate::ai::advanced::gene_ledger::screenable("frontier-massing-alarm"),
+        "the ledger must be able to price it"
+    );
+    assert_eq!(
+        crate::ai::advanced::gene_ledger::ledger_default_on("frontier-massing-alarm"),
+        Some(false),
+        "it ships off until a screen prices it"
+    );
+    let mut ai = AdvancedAi::new();
+    assert!(!ai.frontier_massing_alarm, "off in the stock agent");
+    assert!(
+        !AdvancedAi::legacy().frontier_massing_alarm,
+        "off in the legacy agent"
+    );
+    ai.enable_frontier_massing_alarm();
+    assert!(ai.frontier_massing_alarm);
+    ai.disable_frontier_massing_alarm();
+    assert!(!ai.frontier_massing_alarm, "reversible");
+}
+
+/// The blind spot itself: an army parked next to our capital at peace moves
+/// the shipped danger number by exactly nothing.
+#[test]
+fn a_peacetime_army_on_our_doorstep_reads_as_no_danger_at_all() {
+    let mut game = Game::new(3, 30, 20, 7_801, 250, 3);
+    game.current = 0;
+    game.found_city_for(0, (14, 10), None);
+    let city = *game
+        .player_city_ids(0)
+        .first()
+        .expect("the fixture founds a capital");
+    let at = game.cities[&city].pos;
+
+    let shipped = AdvancedAi::new();
+    let mut ai = AdvancedAi::new();
+    ai.enable_frontier_massing_alarm();
+
+    let visible = game.player_vision_now(0);
+    let quiet = shipped.city_pressure_with_belief(&game, 0, city, &visible);
+
+    // Walk a rival's army onto the tile beside our capital. No declaration.
+    for step in 0..4 {
+        game.spawn_unit("warrior", 1, (at.0 + 1, at.1 + step));
+    }
+    assert!(!game.is_at_war(0, 1), "fixture: still at peace");
+
+    let visible = game.player_vision_now(0);
+    assert_eq!(
+        shipped.city_pressure_with_belief(&game, 0, city, &visible),
+        quiet,
+        "the shipped threat model does not see an undeclared army at all"
+    );
+    assert!(
+        ai.city_pressure_with_belief(&game, 0, city, &visible) > quiet,
+        "the gene does"
+    );
+}
+
+/// The two conditions that keep it a build-up signal rather than a census of
+/// every neighbour's garrison, and the half-weight.
+#[test]
+fn frontier_massing_counts_a_staging_area_and_not_a_garrison() {
+    let mut ai = AdvancedAi::new();
+    ai.enable_frontier_massing_alarm();
+
+    let mut game = Game::new(3, 30, 20, 7_802, 250, 3);
+    game.current = 0;
+    game.found_city_for(0, (14, 10), None);
+    let ours = *game.player_city_ids(0).first().expect("our capital");
+    let at = game.cities[&ours].pos;
+    let beside = (at.0 + 1, at.1);
+    game.spawn_unit("warrior", 1, beside);
+
+    let visible = game.player_vision_now(0);
+    let staged = ai.frontier_massing_pressure(&game, 0, ours, &visible);
+    assert!(
+        staged > 0.0,
+        "a rival unit on our own ground is a staging area"
+    );
+
+    // A peace treaty is a hard block on declaring, so the same stack stops
+    // counting while one is in force.
+    let mut treaty = game.clone();
+    treaty.peace_treaties.insert((0, 1), treaty.turn + 30);
+    let visible = treaty.player_vision_now(0);
+    assert_eq!(
+        ai.frontier_massing_pressure(&treaty, 0, ours, &visible),
+        0.0,
+        "a rival held by a treaty is not massing for anything this turn"
+    );
+
+    // Half weight: the identical stack, once at war, counts double what it
+    // counted while undeclared.
+    let mut war = game.clone();
+    war.at_war.insert((0, 1));
+    war.at_war.insert((1, 0));
+    let visible = war.player_vision_now(0);
+    let declared = AdvancedAi::city_pressure_with_visibility(&war, 0, ours, &visible);
+    assert!(
+        (declared - 2.0 * staged).abs() < 1e-9,
+        "an undeclared stack is worth half a declared one ({staged} vs {declared})"
+    );
+}
+
 // ═══ The conversion staircase (`conversion_majority_alarm`) ═══
 
 #[test]

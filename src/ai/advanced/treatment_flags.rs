@@ -911,6 +911,16 @@ impl AdvancedAi {
         self.diplomatic_lane_forecast = false;
     }
 
+    /// Count a peacetime major's army massed near one of our cities toward
+    /// that city's danger. See [`Self::frontier_massing_alarm`].
+    pub fn enable_frontier_massing_alarm(&mut self) {
+        self.frontier_massing_alarm = true;
+    }
+
+    pub fn disable_frontier_massing_alarm(&mut self) {
+        self.frontier_massing_alarm = false;
+    }
+
     /// Read a rival's religious clock from the cities it has converted rather
     /// than from whole civilizations already lost. See
     /// [`Self::conversion_majority_alarm`].
