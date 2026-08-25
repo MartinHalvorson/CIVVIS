@@ -223,6 +223,7 @@ These screenable genes have no on/off result, so they receive no rank or promoti
 | `never-an-empty-queue-2` | off (unmeasured) | Fill an idle turn with something that is not a soldier, or leave it idle. | — |
 | `opening-warrior-recon` | off (unmeasured) | Before the first city, move a nearby Warrior before the Settler and choose the city site from the terrain the Warrior has now revealed. | 1 |
 | `power-the-laboratory-2` | off (unmeasured) | A building whose powered half would be switched on the day it stands — the city is powered and stays powered with the building's own demand — is priced with that half, so the Lab, Stock Exchange and Factory in already-powered cities stop being bought without it. | 1 |
+| `rapid-city-expansion` | off (unmeasured) | Run the screenable native expansion curve: rapid safe settlement first, then a conquest posture only after the practical frontier is exhausted. | 1 |
 | `recovery-reads-the-war` | off (unmeasured) | Measure the Recovery power gap against the war we are actually fighting. | 1 |
 | `settler-guard-holds-2` | off (unmeasured) | A settler's bound guard is no protection when two visible hostiles that can reach the tile each match its strength, not only when one is 1.5× it. | 1 |
 | `settler-second-look` | off (unmeasured) | After a Settler's first move, discard only its disposable cached site while movement remains, so the next leg can use its new sight. | 1 |

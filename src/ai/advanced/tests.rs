@@ -1532,6 +1532,262 @@ fn the_land_grab_settles_past_the_assigned_lanes_cutoff() {
     assert!(!targeted.settler_expansion_window_open(&game, 0, capital));
 }
 
+/// The rapid gene is deliberately stronger than the live-only land grab at
+/// the opening: it has room for the three walkers that make three cities by
+/// t25 physically possible, then widens every two founded cities toward the
+/// twelve-to-fifteen-city midgame horizon. The safe-site and hard-target caps
+/// still bound every one of those walkers.
+#[test]
+fn rapid_city_expansion_opens_the_milestone_pipeline() {
+    let mut game = Game::new_full(2, 74, 46, 11_191, 250, 0, false);
+    game.game_speed = crate::setup::GameSpeed::Online;
+    for pid in 0..2 {
+        let settler = game
+            .player_unit_ids(pid)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .expect("each major starts with a settler");
+        let position = game.units[&settler].pos;
+        game.found_city_for(pid, position, None);
+        game.remove_unit(settler);
+    }
+    game.current = 0;
+
+    let mut ai = AdvancedAi::new();
+    assert!(!ai.rapid_city_expansion);
+    assert!(!ai.base.rapid_city_expansion);
+    ai.enable_rapid_city_expansion();
+    assert!(ai.rapid_city_expansion);
+    assert!(ai.base.rapid_city_expansion);
+
+    for (turn, milestone) in [(25, 3), (50, 7), (80, 12)] {
+        game.turn = turn;
+        let target = ai.assess(&game, 0).desired_cities;
+        assert!(
+            target >= milestone,
+            "t{turn}: the rapid target {target} cannot support the {milestone}-city milestone"
+        );
+        assert!(
+            target <= RAPID_EXPANSION_CITY_CEILING,
+            "t{turn}: the gene must retain its bounded fifteen-city horizon"
+        );
+    }
+    assert_eq!(
+        ai.settler_in_flight_allowed(&game, 15, 1, 0),
+        3,
+        "the opening has room for the two cities needed by t25 plus the next wave"
+    );
+    assert_eq!(
+        ai.settler_in_flight_allowed(&game, 15, 2, 0),
+        4,
+        "the t50 expansion wave starts before the third city is fully developed"
+    );
+    assert_eq!(
+        ai.settler_in_flight_allowed(&game, 15, 6, 0),
+        6,
+        "the t80 expansion wave widens with the empire"
+    );
+    assert_eq!(
+        ai.settler_in_flight_allowed(&game, 15, 14, 0),
+        1,
+        "the hard city target still caps the final Settler"
+    );
+}
+
+/// In the settlement phase, the rapid gene takes a reachable nearby site
+/// before a richer distant one.  That short route is what lets every new city
+/// join the next Settler wave instead of making the empire wait on walkers.
+#[test]
+fn rapid_city_expansion_fills_nearby_easy_sites_first() {
+    let (mut game, capital, home) = empire_with_a_capital(11_193);
+    let settler = game.spawn_test_unit("settler", 0, game.cities[&capital].pos);
+    let mut ai = BasicAi::new();
+    ai.enable_rapid_city_expansion();
+
+    let nearest = game
+        .wdisk(home, 6)
+        .into_iter()
+        .filter(|position| ai.valid_settle_site(&game, 0, *position))
+        .filter(|position| game.route_step(settler, *position, 0).is_some())
+        .map(|position| game.wdist(home, position))
+        .min()
+        .expect("fixture needs a reachable local settlement site");
+    let chosen = ai
+        .best_reachable_settle_site(&game, 0, settler, 6)
+        .expect("the rapid settler finds that local site")
+        .0;
+
+    assert_eq!(
+        game.wdist(home, chosen),
+        nearest,
+        "rapid expansion prioritizes the nearest reachable easy city"
+    );
+
+    // AdvancedAi owns normal Settler movement, so pin its strategic selector
+    // as well as the baseline fallback it composes over.
+    let mut strategic = AdvancedAi::new();
+    strategic.enable_rapid_city_expansion();
+    let strategic_chosen = strategic
+        .best_settler_target(&game, 0, settler, 8, None)
+        .expect("the strategic settler finds that local site")
+        .0;
+    assert_eq!(
+        game.wdist(home, strategic_chosen),
+        nearest,
+        "the advanced Settler path also keeps the rapid wave local"
+    );
+}
+
+/// The rapid wave sits after the ordinary governor so an already queued
+/// peacetime utility build cannot consume a legal open Settler seat.
+#[test]
+fn rapid_city_expansion_reclaims_a_peacetime_queue_for_its_settler_wave() {
+    let (mut game, capital, _) = empire_with_a_capital(11_194);
+    game.at_war.clear();
+    game.cities.get_mut(&capital).unwrap().pop = 2;
+    game.cities.get_mut(&capital).unwrap().queue = vec![Item::Unit {
+        unit: crate::name!("builder"),
+    }];
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Expansion,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: RAPID_EXPANSION_CITY_CEILING,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let mut ai = AdvancedAi::new();
+    ai.enable_rapid_city_expansion();
+    assert!(ai.base.has_practical_settle_site(&game, 0));
+
+    ai.rapid_expansion_settler_wave(&mut game, 0, &plan);
+
+    assert!(
+        matches!(
+            game.cities[&capital].queue.first(),
+            Some(Item::Unit { unit }) if unit == "settler"
+        ),
+        "an open rapid-settlement pipeline owns this peaceful utility queue"
+    );
+}
+
+/// Once the practical safe-site search is exhausted, rapid expansion stops
+/// manufacturing stranded Settlers and changes the plan to take the next
+/// cities from a reachable rival. It must not trigger while a Settler is still
+/// walking or before the three-city home ring exists.
+#[test]
+fn rapid_city_expansion_switches_to_conquest_after_easy_sites_are_full() {
+    let (mut game, _capital, _) = empire_with_a_capital(11_192);
+    game.at_war.clear();
+    let rival_settler = game
+        .player_unit_ids(1)
+        .into_iter()
+        .find(|unit| game.units[unit].kind == "settler")
+        .expect("the rival starts with a settler");
+    let rival_position = game.units[&rival_settler].pos;
+    game.found_city_for(1, rival_position, None);
+    game.remove_unit(rival_settler);
+    game.record_contact(0, 1);
+    found_test_city(&mut game, 0);
+    found_test_city(&mut game, 0);
+    let occupied: BTreeSet<Pos> = game.cities.values().map(|city| city.pos).collect();
+    for position in game.map.tiles.keys().copied() {
+        if !occupied.contains(&position) {
+            game.blocked_city_sites.insert(position);
+        }
+    }
+
+    let mut ai = AdvancedAi::new();
+    ai.enable_rapid_city_expansion();
+    let plan = ai.assess(&game, 0);
+    assert_eq!(plan.strategy, GrandStrategy::Conquest);
+    assert_eq!(plan.target_player, Some(1));
+    assert!(plan.target_city.is_some());
+
+    let last_site = game.player_city_ids(0)[0];
+    let settler = game.spawn_test_unit("settler", 0, game.cities[&last_site].pos);
+    let with_walker = ai.assess(&game, 0);
+    assert_ne!(
+        with_walker.strategy,
+        GrandStrategy::Conquest,
+        "a Settler already carrying the last viable city must finish its job first"
+    );
+    game.remove_unit(settler);
+}
+
+/// End-to-end tempo regression for the rapid-city-expansion gene. Geography,
+/// rival contact, and early war legitimately vary individual seats, so this
+/// fixed four-map check asserts the requested aggregate bands: at least three
+/// cities at t25, 7--9 at t50, and 12--15 at t80.
+///
+/// Run with `cargo test --release --lib rapid_city_expansion_tempo_census -- --ignored --nocapture`.
+#[test]
+#[ignore = "whole-game tempo census; run explicitly with --nocapture"]
+fn rapid_city_expansion_tempo_census() {
+    const CHECKPOINTS: [u32; 3] = [25, 50, 80];
+    const MAPS: u64 = 4;
+    const MINIMUMS: [usize; 3] = [3, 7, 12];
+    const MAXIMUMS: [usize; 3] = [usize::MAX, 9, 15];
+    let mut totals = [0usize; CHECKPOINTS.len()];
+    let mut observed = [0usize; CHECKPOINTS.len()];
+
+    for seed in 11_300..11_300 + MAPS {
+        let mut game = Game::new_full(4, 74, 46, seed, 250, 0, false);
+        game.game_speed = crate::setup::GameSpeed::Online;
+        game.set_fog_memory(false);
+        let mut ais: Vec<AdvancedAi> = (0..game.players.len())
+            .map(|pid| {
+                let mut ai = AdvancedAi::new();
+                if pid == 0 {
+                    ai.enable_rapid_city_expansion();
+                }
+                ai
+            })
+            .collect();
+        let mut seen = [false; CHECKPOINTS.len()];
+        while game.winner.is_none() && game.turn <= *CHECKPOINTS.last().unwrap() {
+            let pid = game.current;
+            ais[pid].take_turn(&mut game, pid);
+            if game.winner.is_none() && game.current == pid {
+                let _ = game.apply(pid, &Action::EndTurn);
+            }
+            for (slot, checkpoint) in CHECKPOINTS.iter().enumerate() {
+                if game.turn >= *checkpoint && !seen[slot] {
+                    let cities = game.player_city_ids(0).len();
+                    totals[slot] += cities;
+                    observed[slot] += 1;
+                    seen[slot] = true;
+                    println!("  seed {seed} t{checkpoint}: {cities} cities");
+                }
+            }
+        }
+    }
+
+    for (slot, checkpoint) in CHECKPOINTS.iter().enumerate() {
+        assert_eq!(
+            observed[slot], MAPS as usize,
+            "every fixed map must reach the t{checkpoint} checkpoint"
+        );
+        let count = observed[slot];
+        let minimum_total = MINIMUMS[slot] * count;
+        let maximum_total = MAXIMUMS[slot].saturating_mul(count);
+        assert!(
+            totals[slot] >= minimum_total && totals[slot] <= maximum_total,
+            "t{checkpoint}: {:.2} cities over {count} maps must stay in the requested {}..={} aggregate band",
+            totals[slot] as f64 / count as f64,
+            MINIMUMS[slot],
+            MAXIMUMS[slot]
+        );
+        println!(
+            "  rapid-city-expansion t{checkpoint}: {:.2} cities over {}/{} maps",
+            totals[slot] as f64 / count as f64,
+            observed[slot],
+            MAPS
+        );
+    }
+}
+
 #[test]
 fn wide_live_opening_does_not_mistake_fog_for_a_three_city_map() {
     let (mut game, capital, _) = empire_with_a_capital(71_116);

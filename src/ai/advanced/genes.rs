@@ -1361,6 +1361,15 @@ pub const GENES: &[Gene] = &[
     // scale (#2464), so the batch prices the credit apart from the repair.
     Gene { tag: "wonder-adjacent-sites-2", field: "wonder_adjacent_sites_2", kind: Kind::OptIn, enable: AdvancedAi::enable_wonder_adjacent_sites_2, disable: AdvancedAi::disable_wonder_adjacent_sites_2 },
     Gene { tag: "wonder-ring-recon", field: "wonder_ring_recon", kind: Kind::OptIn, enable: AdvancedAi::enable_wonder_ring_recon, disable: AdvancedAi::disable_wonder_ring_recon },
+    // ⭐ RAPID CITY EXPANSION (recovered 2026-08-25 from the branch stranded by
+    // #2306; the implementation landed 21 minutes after that PR was closed as
+    // "empty" and was never reviewed). Settler-first at the legal population
+    // floor, a shared multi-Settler pipeline, safe nearby sites before any war,
+    // and Conquest only once that practical frontier is full. Registered here
+    // because `advanced/treatments.rs`, which the branch wrote its row into,
+    // was deleted by the 2026-08-23 registry cleanup. Appended at the END so a
+    // running screen keeps its positional genome.
+    Gene { tag: "rapid-city-expansion", field: "rapid_city_expansion", kind: Kind::OptIn, enable: AdvancedAi::enable_rapid_city_expansion, disable: AdvancedAi::disable_rapid_city_expansion },
     // Three site terms run from every neighbour (six a tile under six from
     // a foreign city, four a tile for rival ground within three, isolation
     // on top) and nothing pays for the one thing the ground between two
