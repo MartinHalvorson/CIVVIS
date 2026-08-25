@@ -33822,6 +33822,60 @@ fn a_builder_whose_best_job_is_walled_off_walks_to_the_next_one() {
     assert_ne!(treated.builder_targets.get(&builder), Some(&walled));
 }
 
+/// The half of the treatment that is *not* the fix: a Builder that refused
+/// because it had nothing left to spend is mid-journey, not stuck, and must
+/// keep the job it is walking to. Dropping the pin there would re-rank the
+/// whole empire every time a Builder ran its movement out.
+#[test]
+fn a_builder_out_of_movement_keeps_the_job_it_is_walking_to() {
+    let (mut game, city, home) = empire_with_a_capital(71_153);
+    for uid in game.units.keys().copied().collect::<Vec<_>>() {
+        if game.units[&uid].owner != 0 {
+            game.remove_unit(uid);
+        }
+    }
+    game.barb_camps.clear();
+    game.barb_naval_camps.clear();
+    for tile in game.map.tiles.values_mut() {
+        tile.terrain = crate::name!("grassland");
+        tile.feature = None;
+        tile.hills = false;
+        tile.resource = None;
+        tile.improvement = Some(crate::name!("farm"));
+        tile.pillaged = false;
+    }
+    game.players[0].techs.extend([
+        crate::name!("mining"),
+        crate::name!("bronze_working"),
+        crate::name!("irrigation"),
+    ]);
+    game.players[0]
+        .explored
+        .extend(game.map.tiles.keys().copied());
+    let job = (home.0 - 4, home.1);
+    let tile = game.map.tiles.get_mut(&job).unwrap();
+    tile.improvement = None;
+    tile.owner_city = Some(city);
+    game.cities.get_mut(&city).unwrap().owned_tiles.push(job);
+
+    let builder = game.spawn_test_unit("builder", 0, home);
+    let mut ai = AdvancedAi::new();
+    ai.enable_builder_tries_the_next_tile();
+    assert!(ai.advanced_builder_step(&mut game, 0, builder, GrandStrategy::Expansion));
+    assert_eq!(ai.builder_targets.get(&builder), Some(&job));
+
+    // Spent: every tile refuses now, including the one it is walking to.
+    game.units.get_mut(&builder).unwrap().moves_left = 0.0;
+    let waypoint = game.units[&builder].pos;
+    assert!(!ai.advanced_builder_step(&mut game, 0, builder, GrandStrategy::Expansion));
+    assert_eq!(game.units[&builder].pos, waypoint);
+    assert_eq!(
+        ai.builder_targets.get(&builder),
+        Some(&job),
+        "an empty movement bar is not a reason to forget the job"
+    );
+}
+
 /// The gene is off everywhere it has not been switched on.
 #[test]
 fn builder_tries_the_next_tile_is_off_by_default() {

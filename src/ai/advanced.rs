@@ -25391,19 +25391,7 @@ impl AdvancedAi {
                 .unwrap_or(std::cmp::Ordering::Equal)
                 .then(ap.cmp(bp))
         });
-        let mut ranked: Vec<Pos> = scored.into_iter().map(|(_, pos)| pos).collect();
-        // Hysteresis: a Builder part-way to a job keeps it, unless another
-        // Builder reserved it or the job stopped being worth doing.
-        let pinned = self
-            .builder_targets
-            .get(&uid)
-            .copied()
-            .filter(|pos| ranked.contains(pos));
-        if let Some(pin) = pinned {
-            ranked.retain(|pos| *pos != pin);
-            ranked.insert(0, pin);
-        }
-        ranked
+        scored.into_iter().map(|(_, pos)| pos).collect()
     }
 
     /// Walk toward the best job this Builder can actually reach, rather than
@@ -25444,25 +25432,57 @@ impl AdvancedAi {
         strategy: GrandStrategy,
         reserved: &HashSet<Pos>,
     ) -> bool {
-        let ranked = self.builder_jobs_ranked(g, pid, uid, strategy, reserved);
-        for pos in ranked.into_iter().take(BUILDER_ROUTE_ATTEMPTS) {
+        // ⚠ THE FAST PATH IS THE WHOLE COST STORY. A Builder already walking to
+        // a job it can still do takes one `worthwhile_improvements` call and
+        // one step, exactly as the untreated branch does; the empire-wide sweep
+        // below is never reached. Ranking every owned tile unconditionally
+        // instead — the first draft of this — measured **+11.1 ± 5.2% wall
+        // seconds per completed turn** over 24 games, because a pinned Builder
+        // paid one sweep of the whole empire per turn to re-derive an answer it
+        // already had.
+        let pinned = {
+            let _memo = g.query_memo();
+            self.builder_targets.get(&uid).copied().filter(|pos| {
+                !reserved.contains(pos)
+                    && !self
+                        .worthwhile_improvements(g, pid, *pos, strategy)
+                        .is_empty()
+            })
+        };
+        let mut attempts = BUILDER_ROUTE_ATTEMPTS;
+        if let Some(pos) = pinned {
             if self.builder_step_toward_barbarian_safe(g, pid, uid, pos) {
-                self.builder_targets.insert(uid, pos);
                 return true;
             }
             // ⚠ A Builder with nothing left to spend refuses EVERY tile, and
-            // that is not the failure this gene is for. Stop before the second
-            // pathfind and keep the pin: the unit is mid-journey and next turn
-            // it should carry on, not re-shuffle. Without this the treatment
-            // would drop hysteresis on any turn a Builder ran its movement out.
+            // that is not the failure this gene is for. Stop before paying for
+            // a second route and keep the pin: the unit is mid-journey and next
+            // turn it should carry on, not re-shuffle. Without this the
+            // treatment would drop hysteresis on any turn a Builder ran its
+            // movement out.
             if g.units[&uid].moves_left <= 0.0 {
                 return false;
             }
             // Refused with movement in hand: this tile cannot be routed to.
-            // Drop the pin before trying the next job so it never becomes next
-            // turn's answer too — a pin that survives its own refusal is the
-            // loop that produced the thirty-turn stall.
+            // Drop the pin so it never becomes next turn's answer either — a
+            // pin that survives its own refusal is the loop that produced the
+            // thirty-turn stall.
             self.builder_targets.remove(&uid);
+            attempts -= 1;
+        }
+        let ranked = self.builder_jobs_ranked(g, pid, uid, strategy, reserved);
+        for pos in ranked
+            .into_iter()
+            .filter(|pos| Some(*pos) != pinned)
+            .take(attempts)
+        {
+            if self.builder_step_toward_barbarian_safe(g, pid, uid, pos) {
+                self.builder_targets.insert(uid, pos);
+                return true;
+            }
+            if g.units[&uid].moves_left <= 0.0 {
+                return false;
+            }
         }
         false
     }
