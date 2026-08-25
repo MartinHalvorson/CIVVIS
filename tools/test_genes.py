@@ -582,9 +582,6 @@ class ThePrecisionWeightedPosterior(unittest.TestCase):
         self.assertIn("g1-governor-victory-lanes-direct", name)
         # g1: 3,600 seat pairs at a 39.09 per-column standard error.
         self.assertAlmostEqual(constant / math.sqrt(3600), 39.09, places=2)
-        # The four-player single-gene probe is not eligible: a 1-in-4 chance
-        # base is not the screen's instrument.
-        self.assertNotIn("s2-step-and-reassess", name)
 
 
 class TheOperatorPinnedDeploymentGenome(unittest.TestCase):
@@ -1109,8 +1106,118 @@ class GeneratedFiles(unittest.TestCase):
 class VersionedGenes(unittest.TestCase):
     """⭐ An improvement to a gene is a new gene, `<base>-<n>`, screened beside
     the original; the deployment genome carries at most one version of a
-    family. The pinned selection, rather than a statistic, chooses that
-    version."""
+    family. Pinning any version pins the FAMILY; the version that ships is the
+    family head — the highest tracked wins (operator, 2026-08-25: *"our
+    highest performing version should be shown in the table and should be
+    the gene default"*) — and a family holds at most three versions."""
+
+    def test_a_pinned_family_ships_its_head_by_tracked_wins(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "s.json"
+            path.write_text(json.dumps(analysis([
+                {"tag": "g", "wins": 40},
+                {"tag": "g-2", "wins": 70},
+                {"tag": "g-3", "wins": -5},
+                {"tag": "other", "wins": 10},
+            ])))
+            err = io.StringIO()
+            with contextlib.redirect_stderr(err):
+                ledger = gene_ledger.build_ledger(
+                    [path], filter_known=False, deployment_genome=("g", "other"))
+                # A ledger is rebuilt from the list it recorded — the head —
+                # and the head still ships (`rebuild_from_ledger` does this on
+                # the real registry; synthetic tags take the direct route).
+                rebuilt = gene_ledger.build_ledger(
+                    [path], filter_known=False,
+                    deployment_genome=gene_ledger.deployment_genome_of(ledger))
+        by = {g["tag"]: g for g in ledger["genes"]}
+        self.assertFalse(by["g"]["default_on"], "the pinned name is not what ships")
+        self.assertTrue(by["g-2"]["default_on"], "the head by tracked wins ships")
+        self.assertFalse(by["g-3"]["default_on"])
+        self.assertTrue(by["other"]["default_on"])
+        self.assertEqual(ledger["rules"]["deployment_genome"], ["g-2", "other"])
+        self.assertEqual(ledger["counts"]["default_on"], 2)
+        heads = ledger["rules"]["family_heads"]
+        self.assertEqual(heads["g"]["pinned"], "g")
+        self.assertEqual(heads["g"]["head"], "g-2")
+        self.assertEqual(heads["g"]["ships"], "g-2")
+        self.assertEqual(sorted(heads["g"]["versions"]), ["g", "g-2", "g-3"])
+        self.assertGreater(heads["g"]["versions"]["g-2"], heads["g"]["versions"]["g"])
+        self.assertIn("pinned as g but its head by tracked wins is g-2", err.getvalue())
+        self.assertIn('"g-2",', gene_ledger.render_rust(ledger))
+        # The recorded list rebuilds to itself, and the check reads the
+        # operator's list as families: `g` and `g-2` pin the same family.
+        self.assertEqual(rebuilt["rules"]["deployment_genome"], ["g-2", "other"])
+        self.assertEqual(rebuilt["rules"]["family_heads"]["g"]["pinned"], "g-2")
+        tags = ["g", "g-2", "g-3", "other"]
+        self.assertEqual(gene_ledger.pinned_families(("g-2", "other"), tags),
+                         gene_ledger.pinned_families(("g", "other"), tags))
+        self.assertNotEqual(gene_ledger.pinned_families(("g-2",), tags),
+                            gene_ledger.pinned_families(("g", "other"), tags))
+
+    def test_an_unpinned_family_ships_nothing_and_an_unpriced_pin_ships_as_named(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "s.json"
+            path.write_text(json.dumps(analysis([{"tag": "g", "wins": 40}, {"tag": "g-2", "wins": 70}])))
+            ledger = gene_ledger.build_ledger([path], filter_known=False, deployment_genome=())
+        self.assertEqual(ledger["rules"]["deployment_genome"], [])
+        self.assertEqual(ledger["rules"]["family_heads"]["g"],
+                         {"pinned": None, "head": "g-2", "ships": None,
+                          "versions": {"g": 0.4, "g-2": 0.7}})
+        # No version priced: the family head is unknown and the pin ships as
+        # written; the family record says so.
+        self.assertEqual(gene_ledger.family_head(["g", "g-2"], {}), None)
+        self.assertEqual(gene_ledger.resolve_family_heads(("g",), ["g", "g-2"], {}),
+                         (("g",), {"g": {"pinned": "g", "head": None, "ships": "g",
+                                         "versions": {"g": None, "g-2": None}}}))
+        # Ties go to the higher version; an unpriced sibling never leads.
+        self.assertEqual(gene_ledger.family_head(["g", "g-2", "g-3"], {"g": 0.5, "g-2": 0.5}), "g-2")
+        self.assertEqual(gene_ledger.family_head(["g", "g-2", "g-3"], {"g": 0.9, "g-2": 0.5}), "g")
+
+    def test_a_family_holds_at_most_three_versions(self):
+        self.assertEqual(gene_ledger.MAX_VERSIONS, 3)
+        gene_ledger.check_family_sizes(["g", "g-2", "g-3", "h"])
+        with self.assertRaises(SystemExit) as refused:
+            gene_ledger.check_family_sizes(["g", "g-2", "g-3", "g-4"])
+        self.assertIn("at most 3", str(refused.exception))
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "s.json"
+            path.write_text(json.dumps(analysis(
+                [{"tag": t} for t in ("g", "g-2", "g-3", "g-4")])))
+            with self.assertRaises(SystemExit):
+                gene_ledger.build_ledger([path], filter_known=False, deployment_genome=())
+        # The real registry honours the cap.
+        gene_ledger.check_family_sizes(gene_ledger.screenable_tags())
+
+    def test_versions_names_the_third_best_to_drop_before_a_fourth(self):
+        ledger = {
+            "rules": {"family_heads": {"g": {"pinned": "g", "head": "g-2", "ships": "g-2"}}},
+            "genes": [
+                {"tag": "g", "win_diff_pp": 0.4},
+                {"tag": "g-2", "win_diff_pp": 0.7},
+                {"tag": "g-3", "win_diff_pp": -0.05},
+            ],
+        }
+        out = io.StringIO()
+        with unittest.mock.patch.object(gene_ledger, "screenable_tags",
+                                        return_value=["g", "g-2", "g-3", "h"]), \
+             unittest.mock.patch.object(gene_ledger, "load_display_sources",
+                                        return_value=({}, {})), \
+             contextlib.redirect_stdout(out):
+            status = gene_ledger.print_versions(ledger, add="g")
+        self.assertEqual(status, 1, "a full family refuses the add until one leaves")
+        text = out.getvalue()
+        self.assertIn("g: 3 of 3 versions · pinned g · ships g-2 · head g-2", text)
+        self.assertIn("1. v2 g-2", text)
+        self.assertIn("drop v3 g-3 (third-best by tracked wins)", text)
+        out = io.StringIO()
+        with unittest.mock.patch.object(gene_ledger, "screenable_tags",
+                                        return_value=["g", "g-2", "g-3", "h"]), \
+             unittest.mock.patch.object(gene_ledger, "load_display_sources",
+                                        return_value=({}, {})), \
+             contextlib.redirect_stdout(out):
+            self.assertEqual(gene_ledger.print_versions(ledger, add="h"), 0)
+        self.assertIn("h has one version", out.getvalue())
 
     def test_families_are_read_off_the_tags(self):
         self.assertEqual(
@@ -1166,7 +1273,12 @@ class VersionedGenes(unittest.TestCase):
         self.assertEqual(gene_ledger.family_of("g-3", tags), ["g", "g-2", "g-3"])
         self.assertEqual(gene_ledger.family_of("plain", tags), [])
         self.assertEqual(gene_ledger.best_versions(["g", "g-2", "g-3"], verdict, measured),
-                         ["g-2", "g-3", "g"], "the shipping version leads, then tracked wins")
+                         ["g-2", "g-3", "g"], "tracked wins lead")
+        # A pinned name that is not the head is not "best": the head is.
+        lagging = {**verdict, "g": {"default_on": True, "win_diff_pp": 2.0},
+                   "g-2": {"default_on": False, "win_diff_pp": 5.0}}
+        self.assertEqual(gene_ledger.best_versions(["g", "g-2", "g-3"], lagging, measured),
+                         ["g-2", "g-3", "g"], "the table shows the best version, not the pin")
         for tag in ("g", "g-2", "g-3"):
             self.assertEqual(gene_ledger.best_version_cell(tag, tags, verdict, measured), "2", tag)
         self.assertEqual(gene_ledger.best_version_cell("plain", tags, verdict, measured), "—")
@@ -1228,10 +1340,9 @@ def expected_columns() -> str:
         for label, batch in zip(ranking.REPORTING_BATCH_LABELS, slots)
     )
     return (
-        "| Rank | Gene | Description | Best version | Default | "
+        "| Rank | Gene | Description | Best version | Default | P(>0) | "
         + reporting
         + " | Total (on) Win rate | Total (off) Win rate | Diff | "
-        "Posterior (95% CI) | P(>0) | Share Δpp (z) | "
         "cost (compute) | cost (time) |"
     )
 
@@ -1286,7 +1397,6 @@ class TheTableIsDerived(unittest.TestCase):
                 # unmeasured gene is off.
                 default = "**on**" if tag in ranking.OPERATOR_DEFAULT_ON else "off"
                 self.assertIn(f"| `{tag}` | {default} (unmeasured) |", text, tag)
-        self.assertNotIn("`step-and-reassess` | ", text, "a host-only flag is not ranked")
 
     def test_descriptions_come_from_the_toggle_docs(self):
         desc = ranking.descriptions()
@@ -1613,16 +1723,19 @@ class ThePosteriorIsPublishedAsEvidence(unittest.TestCase):
             rows.append([c.strip() for c in line.strip().strip("|").split(" | ")])
         return rows
 
-    def test_the_printed_posterior_uses_the_displayed_observations(self):
-        """The table's posterior moves with its report-only display batch."""
+    def test_the_printed_probability_uses_the_displayed_observations(self):
+        """The table's `P(>0)` moves with its report-only display batch. It
+        is the one pooled column the ranking keeps (operator, 2026-08-25):
+        the posterior's point and interval and the newest screen's share
+        contrast moved to the evidence and lane sections."""
         seen = 0
         for cells in self._rows():
             tag = cell(cells, "Gene").strip("`")
             posterior = ranking.posterior_of(self.measured[tag])
-            self.assertEqual(cell(cells, "Posterior (95% CI)"),
-                             ranking.posterior_cell(posterior), tag)
             self.assertEqual(cell(cells, "P(>0)"),
                              ranking.probability_cell(posterior), tag)
+            self.assertNotIn("Posterior (95% CI)", COLUMN)
+            self.assertNotIn("Share Δpp (z)", COLUMN)
             seen += 1
         self.assertGreater(seen, 50)
 
@@ -1691,9 +1804,6 @@ class ThePosteriorIsPublishedAsEvidence(unittest.TestCase):
         for row in rows:
             if row["call"] != "unresolved":
                 self.assertIn(f"| `{row['tag']}` |", self.text, row["tag"])
-        # A host-only flag carries a ledger row from a retired native
-        # stand-in and the ledger never governs it, so it is in no table here.
-        self.assertNotIn("step-and-reassess", {r["tag"] for r in rows})
 
     def test_the_shapes_are_published_apart(self):
         self.assertIn("## The two shapes, apart", self.text)

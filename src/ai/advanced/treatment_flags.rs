@@ -387,20 +387,6 @@ impl AdvancedAi {
         self.base.whole_turn_backtrack_guard = false;
     }
 
-    /// Stop a blind-planned unit at the first step that reveals new ground and
-    /// finish its movement sighted. A blind-planned unit stops at the first
-    /// step that revealed new ground and finishes its movement sighted; on the
-    /// bridge its walk is cut at the first unrevealed hex so the replan frame
-    /// sees what it uncovered. See [`AdvancedAi::step_and_reassess`].
-    pub fn enable_step_and_reassess(&mut self) {
-        self.step_and_reassess = true;
-    }
-
-    /// Withholding twin for `enable_step_and_reassess`. See `LIVE_TREATMENTS`.
-    pub fn disable_step_and_reassess(&mut self) {
-        self.step_and_reassess = false;
-    }
-
     /// Withholding twin for `enable_recorded_tactical_step`, so the live bundle can be
     /// priced by taking this one treatment out of it. See `LIVE_TREATMENTS`.
     pub fn disable_recorded_tactical_step(&mut self) {

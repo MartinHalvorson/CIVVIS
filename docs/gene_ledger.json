@@ -82,6 +82,18 @@
       "war-reinforcement",
       "wide-map-capacity"
     ],
+    "versions": "a pinned version pins its family; the family head - the priced version with the highest tracked wins (win_diff), ties to the higher version - is what ships and what deployment_genome records; a family holds at most 3 versions, the third-best leaves before a fourth is added",
+    "family_heads": {
+      "fog-honest": {
+        "pinned": null,
+        "head": null,
+        "ships": null,
+        "versions": {
+          "fog-honest": null,
+          "fog-honest-2": null
+        }
+      }
+    },
     "operator_promotions": [
       "unit-cost-efficiency",
       "unit-objective-memory",
@@ -459,7 +471,7 @@
   ],
   "counts": {
     "helps": 17,
-    "hurts": 1,
+    "hurts": 0,
     "unresolved": 64,
     "default_on": 57
   },
@@ -3657,33 +3669,6 @@
             "win_se_pp": 0.55
           }
         ]
-      }
-    },
-    {
-      "tag": "step-and-reassess",
-      "verdict": "hurts",
-      "default_on": false,
-      "wins_last_10k": -27,
-      "wins_prior_10k": -860,
-      "wins_third_10k": null,
-      "win_diff_pp": -0.4875,
-      "posterior_pp": -18.224413,
-      "posterior_se_pp": 17.30875,
-      "posterior_screens": 2,
-      "posterior_tau_pp": 0.0,
-      "family_wise": false,
-      "conflict": false,
-      "screen": {
-        "seats": 30000,
-        "pairs": 15000,
-        "n_on": 15000,
-        "n_off": 15000,
-        "win_delta_pp": -0.533,
-        "win_z": -1.352,
-        "share_delta_pp": -0.15,
-        "share_z": -2.315,
-        "read": "share hurts *",
-        "source": "2026-08-21-p7-native-6p-allseats-15000-pairs.json"
       }
     },
     {
