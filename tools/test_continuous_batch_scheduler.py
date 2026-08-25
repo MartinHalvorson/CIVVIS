@@ -246,6 +246,21 @@ class PublicationMetadata(unittest.TestCase):
         self.assertIn("Computer: `Test Mac`", body)
         self.assertIn("Coordinated with: #1234", body)
 
+    def test_publication_uses_the_renamed_generated_ranking_everywhere(self):
+        """A rename must move the generator, task claim, and `git add` target.
+
+        The old path made a finished continuous batch open a claim for a file
+        `genes.py write` no longer touched, then attempt to stage that missing
+        file.  Keeping the filename in one constant lets this small contract
+        catch the next path move before a five-thousand-game rotation finishes.
+        """
+        self.assertEqual(scheduler.GENE_RANKING, "GENE_HEURISTIC_RANKING.md")
+        source = (TOOLS / "continuous_batch_scheduler.py").read_text(encoding="utf-8")
+        self.assertNotIn('"HEURISTIC_GENE_RANKING.md"', source)
+        self.assertIn('"--path", GENE_RANKING', source)
+        self.assertIn('["docs/gene_ledger.json", GENE_RANKING]', source)
+        self.assertIn('"docs/gene_ledger.json", GENE_RANKING]', source)
+
 
 class PublicationTiming(unittest.TestCase):
     def test_freeze_persists_the_completion_timestamp_before_analyzer_work(self):

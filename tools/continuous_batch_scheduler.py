@@ -47,6 +47,10 @@ STANDARD_PLAYERS = 6
 DEFAULT_GOAL_GAMES = 5_000
 DEFAULT_POLL_SECONDS = 300.0
 INITIAL_CHECK_TIMEOUT_SECONDS = 20 * 60.0
+# The generated ranking was renamed in 9ad09f7d.  Keep every publication
+# producer on this one spelling so its task claim and staged artifacts agree
+# with `tools/genes.py` rather than recreating the deleted filename.
+GENE_RANKING = "GENE_HEURISTIC_RANKING.md"
 
 
 class SchedulerError(RuntimeError):
@@ -582,7 +586,7 @@ def publication_body(batch: dict[str, Any], report: str, *, machine: str, agent:
         f"- Agent/session ID: `{agent}`",
         f"- Task: publish validated 5,000-completed-game continuous batch `{batch['id']}`",
         "- Claimed paths: `" + report + "`, `docs/gene_ledger.json`, "
-        "`HEURISTIC_GENE_RANKING.md`, `tools/test_genes.py`",
+        f"`{GENE_RANKING}`, `tools/test_genes.py`",
         f"- Coordinated with: {coordinated or 'none'}",
         "- Related issue/request: operator-directed automatic 5,000-game rotation",
         "",
@@ -689,7 +693,7 @@ def publish_batch(state_root: Path, state_pathname: Path, state: dict[str, Any],
             sys.executable, str(repo / "tools" / "civvis_collab.py"), "start",
             "publish-continuous-batch", "--machine", machine, "--agent", agent,
             "--path", report, "--path", "docs/gene_ledger.json",
-            "--path", "HEURISTIC_GENE_RANKING.md", "--path", "tools/test_genes.py",
+            "--path", GENE_RANKING, "--path", "tools/test_genes.py",
             "--title", title,
         ]
         result = run_checked(command, cwd=repo, description="create batch publication task")
@@ -727,7 +731,7 @@ def publish_batch(state_root: Path, state_pathname: Path, state: dict[str, Any],
         target = worktree / report
         target.parent.mkdir(parents=True, exist_ok=True)
         write_reporting_artifact(analysis_path(state_root, batch), target, batch)
-        generated = ["docs/gene_ledger.json", "HEURISTIC_GENE_RANKING.md"]
+        generated = ["docs/gene_ledger.json", GENE_RANKING]
         write = [sys.executable, "tools/genes.py", "write", "--reporting-batch", report]
         first = subprocess.run(write, cwd=worktree, text=True, capture_output=True, check=False)
         if first.returncode != 0:
@@ -765,7 +769,7 @@ def publish_batch(state_root: Path, state_pathname: Path, state: dict[str, Any],
     if stage == "prepared":
         computer = computer_name()
         run_checked(
-            ["git", "add", "--", report, "docs/gene_ledger.json", "HEURISTIC_GENE_RANKING.md"],
+            ["git", "add", "--", report, "docs/gene_ledger.json", GENE_RANKING],
             cwd=worktree,
             description="stage publication",
         )
