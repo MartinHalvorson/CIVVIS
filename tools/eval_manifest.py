@@ -492,7 +492,7 @@ def render_status(manifest: dict[str, Any]) -> str:
         "under-counts the debt — act on the last one, which cannot be flattered.",
         "",
         "The native half of this bundle is priced by the gene screen",
-        "(`docs/GENE_SCREEN.md`, `HEURISTIC_GENE_RANKING.md`); the host-only",
+        "(`docs/GENE_SCREEN.md`, `GENE_HEURISTIC_RANKING.md`); the host-only",
         "half can only be priced on the live seat, by `civvis_orders --without`",
         "over ladder games. This list is the debt neither has touched.",
         "",

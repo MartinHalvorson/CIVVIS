@@ -26,7 +26,7 @@
 //! | `fleet()` — what this binary used | **2** | false |
 //! | `enable_engine_repairs()` — deployment | **37** | true |
 //!
-//! `solvency-first-trade-slot` is **rank 1 of `HEURISTIC_GENE_RANKING.md`** at
+//! `solvency-first-trade-slot` is **rank 1 of `GENE_HEURISTIC_RANKING.md`** at
 //! +8.07% (22.85% against 14.78%, P(>0) 100.0%) and has been `on` in the
 //! deployment default throughout. A census of "the empire uses 3% of its trade
 //! capacity" was therefore a census of an agent nobody runs.

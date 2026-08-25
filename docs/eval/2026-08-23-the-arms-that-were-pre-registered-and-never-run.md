@@ -389,7 +389,7 @@ This is the `holy-lane-parity` failure mode again (#2299,
 `docs/gene_ranking_notes.md`): **a screen already in flight re-prices a gene
 after its code is gone.** The cull ordered `wonder-prereq-reach` out at
 **−26** wins/10k. The p10 screen, whose binary predates the cull, priced it
-afterwards at **+29** — and `HEURISTIC_GENE_RANKING.md`'s *Removed from the
+afterwards at **+29** — and `GENE_HEURISTIC_RANKING.md`'s *Removed from the
 code* table now publishes that +29 as the gene's last tracked measurement.
 `suzerain-cards` from the same cull moved further, to **+42**.
 
@@ -577,7 +577,7 @@ one job, so a second arm cost nothing on the wall clock.
 counterpart to `settler-site-agreement`'s expansion side — between them the two
 arms sample both halves of the bundle rather than two draws from one — and it
 is the highest-ranked of the five real withholds among §3's original ten
-(6th-decile of `HEURISTIC_GENE_RANKING.md` at +30 wins/10k seats). It also
+(6th-decile of `GENE_HEURISTIC_RANKING.md` at +30 wins/10k seats). It also
 carries the sharpest disagreement to test: the ranking's +30 against the
 standard screen's −0.01 pp at z −0.03.
 
@@ -643,7 +643,7 @@ the two: withholding the treatment is if anything very slightly *better*
 (+7 Elo), with wins and terminal score agreeing at p=0.82 and p=0.92.
 
 ⚠ The disagreement this arm was picked to test resolves against the ranking.
-`HEURISTIC_GENE_RANKING.md` still carries `blind-objective-strength` at **+30**
+`GENE_HEURISTIC_RANKING.md` still carries `blind-objective-strength` at **+30**
 wins/10k from the legacy 60×38 pangaea p10 screen. Two independent standard-
 shape instruments now say otherwise: the 23,622-seat screen at −0.01 pp
 (z −0.03), and this withholding arm at +7 Elo (CI −32..+54, 100 pairs, seed

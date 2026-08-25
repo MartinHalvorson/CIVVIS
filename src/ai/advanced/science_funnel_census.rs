@@ -24,7 +24,7 @@
 //!
 //! ⚠ A census, not an assertion. It plays whole games and is `#[ignore]`d.
 //!
-//! ⚠ Adding a gene makes `HEURISTIC_GENE_RANKING.md` stale — it is generated
+//! ⚠ Adding a gene makes `GENE_HEURISTIC_RANKING.md` stale — it is generated
 //! and lists every screenable gene, so `tools/test_genes.py`
 //! fails by name until `tools/genes.py write` has run. The
 //! regenerated file then has to be added to the PR's `Claimed paths:` line, or
