@@ -12634,9 +12634,9 @@ fn frontier_loyalty_retires_a_live_target_when_rate_alarm_is_withheld() {
         .nbrs(target)
         .into_iter()
         .find(|position| {
-            game.map.get(*position).is_some_and(|tile| {
-                !game.rules.is_water(tile) && game.rules.is_passable(tile)
-            })
+            game.map
+                .get(*position)
+                .is_some_and(|tile| !game.rules.is_water(tile) && game.rules.is_passable(tile))
         })
         .expect("fixture needs a traversable tile beside the colony");
     let every_other_plot: Vec<Pos> = game
@@ -12657,7 +12657,10 @@ fn frontier_loyalty_retires_a_live_target_when_rate_alarm_is_withheld() {
     let cities_before = game.player_city_ids(0).len();
     let mut live = AdvancedAi::new();
     live.enable_live_bridge();
-    assert!(live.frontier_loyalty, "the live deployment ships the frontier guard");
+    assert!(
+        live.frontier_loyalty,
+        "the live deployment ships the frontier guard"
+    );
     assert!(
         !live.base.loyalty_rate_alarm,
         "the default genome keeps the separate rate forecast withheld"
