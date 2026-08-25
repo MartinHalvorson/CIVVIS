@@ -794,6 +794,15 @@ pub const GENES: &[Gene] = &[
     // already settled, ~1.4 free Diplomatic Victory Points a seat a game).
     Gene { tag: "congress-banks-decided", field: "congress_banks_a_decided_vote", kind: Kind::OptIn, enable: AdvancedAi::enable_congress_banks_a_decided_vote, disable: AdvancedAi::disable_congress_banks_a_decided_vote },
     Gene { tag: "congress-counter-votes", field: "congress_counter_votes", kind: Kind::OptIn, enable: AdvancedAi::enable_congress_counter_votes, disable: AdvancedAi::disable_congress_counter_votes },
+    // ⚠ The other half of a deliberately-split pair, and the half nothing can
+    // reach. `congress-counter-votes` above decides how hard to vote; this
+    // decides WHO the three targeted penalties are pointed at -- the empire
+    // `victory_denial` names, instead of the diplomatic leader. The Congress
+    // is the only counter in this game not paid for in development
+    // (`resolve_congress` refunds a losing vote in full), which is exactly
+    // what the war-shaped counters in `docs/COUNTERING_LEADERS.md` could not
+    // say. See `congress_counter_leader`.
+    Gene { tag: "congress-counter-leader", field: "congress_counter_leader", kind: Kind::OptIn, enable: AdvancedAi::enable_congress_counter_leader, disable: AdvancedAi::disable_congress_counter_leader },
     // ⚠ Eighteen of 32 screened games today ended on a Science Victory, and
     // the threat model reads that race as a five-step ladder off launches
     // already made: a rival one tech from Rocketry with a Spaceport standing

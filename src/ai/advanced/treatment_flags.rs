@@ -953,6 +953,16 @@ impl AdvancedAi {
         self.science_chain_alarm = false;
     }
 
+    /// Point the three targeted World Congress penalties at the empire the
+    /// denial layer names. See [`Self::congress_counter_leader`].
+    pub fn enable_congress_counter_leader(&mut self) {
+        self.congress_counter_leader = true;
+    }
+
+    pub fn disable_congress_counter_leader(&mut self) {
+        self.congress_counter_leader = false;
+    }
+
     /// Raise the Culture and Diplomacy denial alarms early, since countering an
     /// accumulated stock takes many turns. See
     /// [`Self::stock_denial_lead_time`].

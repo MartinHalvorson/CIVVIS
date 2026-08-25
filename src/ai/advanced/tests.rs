@@ -35351,3 +35351,156 @@ fn the_chain_ramp_starts_at_zero_and_yields_to_the_launch_ladder() {
     );
     assert!(with >= 45, "two launches still read the ladder ({with})");
 }
+
+// ═══ The score race read as a margin (`early_score_alarm`) ═══
+
+#[test]
+fn congress_counter_leader_is_a_registered_reversible_opt_in() {
+    assert!(
+        GENES.iter().any(|gene| gene.opt_in()
+            && gene.field == "congress_counter_leader"
+            && gene.tag == "congress-counter-leader"),
+        "congress-counter-leader must be a registered native opt-in"
+    );
+    assert!(
+        crate::ai::advanced::gene_ledger::screenable("congress-counter-leader"),
+        "the ledger must be able to price it"
+    );
+    assert_eq!(
+        crate::ai::advanced::gene_ledger::ledger_default_on("congress-counter-leader"),
+        Some(false),
+        "it ships off until a screen prices it"
+    );
+    let mut ai = AdvancedAi::new();
+    assert!(!ai.congress_counter_leader, "off in the stock agent");
+    assert!(
+        !AdvancedAi::legacy().congress_counter_leader,
+        "off in the legacy agent"
+    );
+    ai.enable_congress_counter_leader();
+    assert!(ai.congress_counter_leader);
+    ai.disable_congress_counter_leader();
+    assert!(!ai.congress_counter_leader, "reversible");
+}
+
+/// The split pair: the votes half has always been screenable, and until this
+/// row the targeting half was not, so only one of the two could be priced.
+#[test]
+fn both_halves_of_the_congress_counter_are_now_screenable() {
+    for tag in ["congress-counter-votes", "congress-counter-leader"] {
+        assert!(
+            crate::ai::advanced::gene_ledger::screenable(tag),
+            "{tag} must be screenable"
+        );
+    }
+}
+
+/// The record of a flag that was registered, probed, and taken back out again,
+/// so nobody re-derives it. See `early_score_alarm`.
+#[test]
+fn early_score_alarm_is_deliberately_still_unregistered() {
+    assert!(
+        !GENES.iter().any(|gene| gene.field == "early_score_alarm"),
+        "early_score_alarm stays out of the table: two disjoint twelve-game \
+         blocks read -12.6 pp (z -1.54) and -7.4 pp (z -0.76) on wins"
+    );
+    assert!(
+        !AdvancedAi::new().early_score_alarm,
+        "and it stays off, so the shipped clock is what runs"
+    );
+}
+
+/// The blind spot: an empire half again the size of the field, at the middle
+/// of the game, presents no score threat at all on the shipped clock.
+#[test]
+fn a_runaway_leader_reads_no_score_threat_until_the_last_quarter() {
+    let mut game = Game::new(3, 40, 26, 9_501, 250, 0);
+    game.turn = 120; // well short of the last quarter, which starts at 187
+    for pid in 0..3 {
+        game.found_city_for(pid, (10 + 8 * pid as i32, 12), None);
+    }
+    // Player 1 is fifty percent ahead of the field on the score tally.
+    game.players[1].civics.extend(
+        game.rules
+            .civics
+            .keys()
+            .take(30)
+            .map(|civic| Name::new(civic.as_str())),
+    );
+    let leader = game.score(1);
+    let field = (0..3)
+        .filter(|pid| *pid != 1)
+        .map(|pid| game.score(pid))
+        .max()
+        .unwrap_or(0);
+    assert!(
+        leader as f64 >= 1.5 * field.max(1) as f64,
+        "fixture: {leader} against {field}"
+    );
+
+    let shipped = AdvancedAi::new();
+    let mut ai = AdvancedAi::new();
+    ai.early_score_alarm = true; // unregistered: set the field directly
+
+    assert_eq!(
+        shipped.rival_pressure(&game, 1).1,
+        0,
+        "the shipped clock has not struck, so a runaway reads nothing"
+    );
+    let (lane, progress) = ai.rival_pressure(&game, 1);
+    assert_eq!(lane, GrandStrategy::Expansion, "the gene names the race");
+    assert!(
+        progress >= 78,
+        "and reads a fifty-percent lead at the top of the scale ({progress})"
+    );
+}
+
+/// The margin is a margin: level scores read nothing, and the alarm is silent
+/// before the game has enough history to mean anything.
+#[test]
+fn the_score_margin_reads_the_lead_and_not_the_turn() {
+    let mut ai = AdvancedAi::new();
+    ai.early_score_alarm = true; // unregistered: set the field directly
+
+    let mut game = Game::new(3, 40, 26, 9_502, 250, 0);
+    for pid in 0..3 {
+        game.found_city_for(pid, (10 + 8 * pid as i32, 12), None);
+    }
+
+    // Too early to mean anything: `standard_duration(60)` has not passed.
+    game.turn = 10;
+    game.players[1].civics.extend(
+        game.rules
+            .civics
+            .keys()
+            .take(30)
+            .map(|civic| Name::new(civic.as_str())),
+    );
+    assert_eq!(
+        ai.rival_pressure(&game, 1).1,
+        0,
+        "before the window the alarm is silent"
+    );
+
+    // Past the window it reads the LEAD: closing the gap lowers the number,
+    // on the same turn, which a clock could not do.
+    game.turn = 120;
+    let ahead = ai.rival_pressure(&game, 1).1;
+    let mut closed = game.clone();
+    for pid in [0_usize, 2] {
+        closed.players[pid].civics = closed.players[1].civics.clone();
+    }
+    let level = ai.rival_pressure(&closed, 1).1;
+    assert!(
+        level < ahead,
+        "the same turn with the field caught up must read lower ({level} vs {ahead})"
+    );
+
+    // And the shipped clock cannot tell those two boards apart at all.
+    let shipped = AdvancedAi::new();
+    assert_eq!(
+        shipped.rival_pressure(&game, 1).1,
+        shipped.rival_pressure(&closed, 1).1,
+        "the clock reads the same number for both"
+    );
+}
