@@ -4568,7 +4568,10 @@ const UNVERIFIABLE_ORDER_KINDS: &[(&str, &str)] = &[
     // A deferred lease the mod holds until the host queue finishes; the later
     // `build` event is its actuation proof, and the mod already keeps it out of
     // the applied count as `orders_deferred`.
-    ("produce_next", "deferred lease; the `build` event is its proof"),
+    (
+        "produce_next",
+        "deferred lease; the `build` event is its proof",
+    ),
     // The frame exports no diplomatic-mission table (delegations, embassies),
     // and the 25-gold fee is indistinguishable from ordinary spending.
     ("delegation", "no mission table in the frame"),
@@ -4584,12 +4587,21 @@ const UNVERIFIABLE_ORDER_KINDS: &[(&str, &str)] = &[
 /// covers every espionage mission: they run for many turns and the frame
 /// carries no mission state.
 const UNVERIFIABLE_UNIT_VERBS: &[(&str, &str)] = &[
-    ("SKIP_TURN", "a skipped turn changes nothing the frame exports"),
+    (
+        "SKIP_TURN",
+        "a skipped turn changes nothing the frame exports",
+    ),
     ("SLEEP", "sleep is not exported"),
     ("ALERT", "alert is not exported"),
     ("HEAL", "healing is indistinguishable from resting"),
-    ("AUTOMATE_EXPLORE", "the host owns the unit's route from here on"),
-    ("SPY_*", "espionage missions run for many turns and the frame carries none"),
+    (
+        "AUTOMATE_EXPLORE",
+        "the host owns the unit's route from here on",
+    ),
+    (
+        "SPY_*",
+        "espionage missions run for many turns and the frame carries none",
+    ),
 ];
 
 fn unverifiable_kind(kind: &str) -> bool {
@@ -4624,7 +4636,11 @@ fn ledger_evidence(path: &Path, turns: &[u32]) -> Vec<serde_json::Value> {
         return Vec::new();
     };
     raw.lines()
-        .filter(|line| EVIDENCE_KINDS.iter().any(|k| line.contains(&format!("\"{k}\""))))
+        .filter(|line| {
+            EVIDENCE_KINDS
+                .iter()
+                .any(|k| line.contains(&format!("\"{k}\"")))
+        })
         .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
         .filter(|event| {
             let kind = event.get("kind").and_then(|k| k.as_str()).unwrap_or("");
@@ -4703,8 +4719,9 @@ fn target_harmed(
     after: &civvis::mirror::StateSnapshot,
     pos: (i32, i32),
 ) -> bool {
-    let stood: Vec<&civvis::mirror::StateUnit> =
-        foreign_units(before).filter(|u| (u.x, u.y) == pos).collect();
+    let stood: Vec<&civvis::mirror::StateUnit> = foreign_units(before)
+        .filter(|u| (u.x, u.y) == pos)
+        .collect();
     let unit_harmed = stood.iter().any(|was| {
         match foreign_units(after).find(|now| now.id == was.id && now.player == was.player) {
             None => true,
@@ -4761,7 +4778,12 @@ fn peace_response(evidence: &[serde_json::Value], subject: Option<i64>) -> Optio
         if subject.is_some() && party.is_some() && party != subject {
             return None;
         }
-        Some(event.get("accepted").and_then(|a| a.as_bool()).unwrap_or(false))
+        Some(
+            event
+                .get("accepted")
+                .and_then(|a| a.as_bool())
+                .unwrap_or(false),
+        )
     })
 }
 
@@ -4839,8 +4861,9 @@ fn verify_unit_order(
         }
         "FOUND_CITY" => {
             let site = order.pos.or_else(|| was.map(|u| (u.x, u.y)));
-            let founded_here = site
-                .is_some_and(|s| own_city_at(after, s).is_some() && own_city_at(before, s).is_none());
+            let founded_here = site.is_some_and(|s| {
+                own_city_at(after, s).is_some() && own_city_at(before, s).is_none()
+            });
             if founded_here || (now.is_none() && after.cities.len() > before.cities.len()) {
                 Verdict::Verified
             } else {
@@ -4888,7 +4911,10 @@ fn verify_unit_order(
             }
         }
         "IMPROVE" | "REPAIR" => {
-            let charges_spent = match (was.and_then(|u| u.build_charges), now.and_then(|u| u.build_charges)) {
+            let charges_spent = match (
+                was.and_then(|u| u.build_charges),
+                now.and_then(|u| u.build_charges),
+            ) {
                 (Some(before), Some(after)) => after < before,
                 _ => false,
             };
@@ -4966,7 +4992,11 @@ fn verify_unit_order(
         }
         "PROMOTE" => match now {
             None => gone(),
-            Some(u) if u.promotions.as_ref().is_some_and(|p| p.iter().any(|have| have == arg)) => {
+            Some(u)
+                if u.promotions
+                    .as_ref()
+                    .is_some_and(|p| p.iter().any(|have| have == arg)) =>
+            {
                 Verdict::Verified
             }
             Some(_) => Verdict::Failed("not_promoted".to_string()),
@@ -5001,14 +5031,18 @@ fn verify_order(
             {
                 Verdict::Verified
             } else {
-                failed(format!("producing={}", city.producing.as_deref().unwrap_or("nothing")))
+                failed(format!(
+                    "producing={}",
+                    city.producing.as_deref().unwrap_or("nothing")
+                ))
             }
         }
         "purchase" | "purchase_faith" => {
             let Some(city) = order.subject.and_then(|id| own_city(after, id)) else {
                 return failed("city_gone".to_string());
             };
-            let present = city_holds(city, verb) || unit_appeared_at_city(before, after, city, verb);
+            let present =
+                city_holds(city, verb) || unit_appeared_at_city(before, after, city, verb);
             let treasury_fell = if order.kind == "purchase_faith" {
                 after.faith < before.faith
             } else {
@@ -5039,7 +5073,8 @@ fn verify_order(
                     .map(|m| m.envoys)
             };
             let rose = matches!((envoys(before), envoys(after)), (Some(b), Some(a)) if a > b);
-            let spent = matches!((before.envoys_free, after.envoys_free), (Some(b), Some(a)) if a < b);
+            let spent =
+                matches!((before.envoys_free, after.envoys_free), (Some(b), Some(a)) if a < b);
             if rose || spent {
                 Verdict::Verified
             } else {
@@ -5069,9 +5104,8 @@ fn verify_order(
             None => failed("player_unseen".to_string()),
         },
         "governor_appoint" | "governor_assign" => {
-            let governors = |state: &civvis::mirror::StateSnapshot| {
-                state.governors.clone().unwrap_or_default()
-            };
+            let governors =
+                |state: &civvis::mirror::StateSnapshot| state.governors.clone().unwrap_or_default();
             let seated = governors(after)
                 .iter()
                 .any(|g| g.kind == verb && Some(g.city) == order.subject);
@@ -5102,14 +5136,20 @@ fn verify_order(
             if after.research.as_deref() == Some(verb) || after.techs.iter().any(|t| t == verb) {
                 Verdict::Verified
             } else {
-                failed(format!("research={}", after.research.as_deref().unwrap_or("nothing")))
+                failed(format!(
+                    "research={}",
+                    after.research.as_deref().unwrap_or("nothing")
+                ))
             }
         }
         "civic" => {
             if after.civic.as_deref() == Some(verb) || after.civics.iter().any(|c| c == verb) {
                 Verdict::Verified
             } else {
-                failed(format!("civic={}", after.civic.as_deref().unwrap_or("nothing")))
+                failed(format!(
+                    "civic={}",
+                    after.civic.as_deref().unwrap_or("nothing")
+                ))
             }
         }
         "policy_deck" => {
@@ -5127,7 +5167,10 @@ fn verify_order(
             if after.government.as_deref() == Some(verb) {
                 Verdict::Verified
             } else {
-                failed(format!("government={}", after.government.as_deref().unwrap_or("nothing")))
+                failed(format!(
+                    "government={}",
+                    after.government.as_deref().unwrap_or("nothing")
+                ))
             }
         }
         "pantheon" => {
@@ -5162,7 +5205,11 @@ fn verify_order(
         }
         "city_strike" | "encampment_strike" => {
             let harmed = order.pos.is_some_and(|p| target_harmed(before, after, p));
-            if harmed || order.subject.is_some_and(|id| combat_evidence(evidence, turn, id)) {
+            if harmed
+                || order
+                    .subject
+                    .is_some_and(|id| combat_evidence(evidence, turn, id))
+            {
                 Verdict::Verified
             } else {
                 failed("target_unharmed".to_string())
@@ -5261,18 +5308,16 @@ fn settle_pending_orders(
     tiles: &civvis::mirror::Snapshot,
 ) -> Vec<Order> {
     let answered: Vec<PendingOrders> = {
-        let (done, waiting): (Vec<_>, Vec<_>) =
-            std::mem::take(pending).into_iter().partition(|p| p.turn < after.turn);
+        let (done, waiting): (Vec<_>, Vec<_>) = std::mem::take(pending)
+            .into_iter()
+            .partition(|p| p.turn < after.turn);
         *pending = waiting;
         done
     };
     if answered.is_empty() {
         return Vec::new();
     }
-    let turns: Vec<u32> = answered
-        .iter()
-        .flat_map(|p| [p.turn, p.turn + 1])
-        .collect();
+    let turns: Vec<u32> = answered.iter().flat_map(|p| [p.turn, p.turn + 1]).collect();
     let evidence = ledger_evidence(events, &turns);
     let mut rows = Vec::new();
     let mut by_turn: std::collections::BTreeMap<u32, Vec<OrderCheck>> = Default::default();
@@ -5300,10 +5345,21 @@ fn settle_pending_orders(
 /// as `plot_bound` rather than as failures.
 fn audit_orders(events: &Path, orders_path: &Path) {
     let mut by_turn: std::collections::BTreeMap<u32, Vec<IssuedOrder>> = Default::default();
-    for line in std::fs::read_to_string(orders_path).unwrap_or_default().lines() {
-        let Ok(row) = serde_json::from_str::<serde_json::Value>(line) else { continue };
-        let Some(turn) = row.get("turn").and_then(|t| t.as_u64()) else { continue };
-        let kind = row.get("kind").and_then(|k| k.as_str()).unwrap_or("").to_string();
+    for line in std::fs::read_to_string(orders_path)
+        .unwrap_or_default()
+        .lines()
+    {
+        let Ok(row) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        let Some(turn) = row.get("turn").and_then(|t| t.as_u64()) else {
+            continue;
+        };
+        let kind = row
+            .get("kind")
+            .and_then(|k| k.as_str())
+            .unwrap_or("")
+            .to_string();
         if kind.is_empty() || VERDICT_ROW_KINDS.contains(&kind.as_str()) {
             continue;
         }
@@ -5325,7 +5381,9 @@ fn audit_orders(events: &Path, orders_path: &Path) {
     let mut reported: std::collections::BTreeMap<u32, (i64, i64)> = Default::default();
     let mut evidence: Vec<serde_json::Value> = Vec::new();
     for line in raw.lines() {
-        let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else { continue };
+        let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
         let kind = event.get("kind").and_then(|k| k.as_str()).unwrap_or("");
         if kind == "state" {
             // The opening board of each turn: the one the orders were decided on.
@@ -5377,10 +5435,20 @@ fn audit_orders(events: &Path, orders_path: &Path) {
             })
             .cloned()
             .collect();
-        let pending = PendingOrders { turn, orders, before: before.clone() };
+        let pending = PendingOrders {
+            turn,
+            orders,
+            before: before.clone(),
+        };
         for check in verify_orders(&pending, after, &tiles, &window) {
             let label = match check.order.kind.as_str() {
-                "unit" => check.order.label().split(':').take(2).collect::<Vec<_>>().join(":"),
+                "unit" => check
+                    .order
+                    .label()
+                    .split(':')
+                    .take(2)
+                    .collect::<Vec<_>>()
+                    .join(":"),
                 kind => kind.to_string(),
             };
             let slot = by_kind.entry(label).or_insert([0, 0, 0]);
@@ -5423,7 +5491,6 @@ fn audit_orders(events: &Path, orders_path: &Path) {
         })
     );
 }
-
 /// `--strategy` named a league genome for this seat to play. The league is
 /// retired (#2357): the live seat plays the deployment genome — `AdvancedAi`
 /// with the gene ledger applied — and the gene screen prices everything else.
@@ -11874,7 +11941,12 @@ mod order_postcondition_tests {
         StateSnapshot, StateTradeRoute, StateUnit, TilesChunk,
     };
 
-    fn order(kind: &str, subject: Option<i64>, verb: Option<&str>, pos: Option<(i32, i32)>) -> IssuedOrder {
+    fn order(
+        kind: &str,
+        subject: Option<i64>,
+        verb: Option<&str>,
+        pos: Option<(i32, i32)>,
+    ) -> IssuedOrder {
         IssuedOrder {
             kind: kind.to_string(),
             subject,
@@ -11972,7 +12044,10 @@ mod order_postcondition_tests {
 
         let mut still_no_city = frame(31);
         still_no_city.units = vec![unit(7, "UNIT_SETTLER", 12, 19)];
-        assert_eq!(check(&found, &before, &still_no_city, &[]), failed("no_city"));
+        assert_eq!(
+            check(&found, &before, &still_no_city, &[]),
+            failed("no_city")
+        );
     }
 
     #[test]
@@ -11998,9 +12073,15 @@ mod order_postcondition_tests {
         let mut untouched = frame(51);
         untouched.units = before.units.clone();
         untouched.hostiles = vec![enemy.clone()];
-        assert_eq!(check(&strike, &before, &untouched, &[]), failed("target_unharmed"));
+        assert_eq!(
+            check(&strike, &before, &untouched, &[]),
+            failed("target_unharmed")
+        );
         let combat = event(r#"{"kind":"combat","turn":50,"attacker":{"id":7,"player":0}}"#);
-        assert_eq!(check(&strike, &before, &untouched, &[combat]), Verdict::Verified);
+        assert_eq!(
+            check(&strike, &before, &untouched, &[combat]),
+            Verdict::Verified
+        );
     }
 
     #[test]
@@ -12009,18 +12090,29 @@ mod order_postcondition_tests {
         before.cities = vec![city(65_536, 20, 20, Some("UNIT_WARRIOR"))];
         before.gold = 200;
         let produce = order("produce", Some(65_536), Some("BUILDING_MONUMENT"), None);
-        let purchase = order("purchase", Some(65_536), Some("UNIT_BUILDER"), Some((0, -1)));
+        let purchase = order(
+            "purchase",
+            Some(65_536),
+            Some("UNIT_BUILDER"),
+            Some((0, -1)),
+        );
 
         let mut queued = frame(11);
         queued.cities = vec![city(65_536, 20, 20, Some("BUILDING_MONUMENT"))];
         queued.gold = 210;
         assert_eq!(check(&produce, &before, &queued, &[]), Verdict::Verified);
-        assert_eq!(check(&purchase, &before, &queued, &[]), failed("not_bought"));
+        assert_eq!(
+            check(&purchase, &before, &queued, &[]),
+            failed("not_bought")
+        );
 
         let mut ignored = frame(11);
         ignored.cities = vec![city(65_536, 20, 20, Some("UNIT_WARRIOR"))];
         ignored.gold = 210;
-        assert_eq!(check(&produce, &before, &ignored, &[]), failed("producing=UNIT_WARRIOR"));
+        assert_eq!(
+            check(&produce, &before, &ignored, &[]),
+            failed("producing=UNIT_WARRIOR")
+        );
 
         let mut bought = frame(11);
         bought.cities = vec![city(65_536, 20, 20, Some("UNIT_WARRIOR"))];
@@ -12079,7 +12171,10 @@ mod order_postcondition_tests {
         assert_eq!(check(&envoy, &before, &placed, &[]), Verdict::Verified);
         let mut held = frame(61);
         held.minors = vec![minor(1)];
-        assert_eq!(check(&envoy, &before, &held, &[]), failed("envoys_unchanged"));
+        assert_eq!(
+            check(&envoy, &before, &held, &[]),
+            failed("envoys_unchanged")
+        );
     }
 
     #[test]
@@ -12097,23 +12192,44 @@ mod order_postcondition_tests {
 
         let mut after = frame(81);
         after.rivals = vec![rival(true)];
-        assert_eq!(check(&sale, &before, &after, &[]), failed("no_deal_response"));
+        assert_eq!(
+            check(&sale, &before, &after, &[]),
+            failed("no_deal_response")
+        );
         let closed = event(r#"{"kind":"deal_closed","turn":80,"from":2,"gold":60}"#);
         assert_eq!(check(&sale, &before, &after, &[closed]), Verdict::Verified);
         let declined = event(r#"{"kind":"deal_declined","turn":80,"from":2}"#);
-        assert_eq!(check(&sale, &before, &after, &[declined]), Verdict::Verified);
+        assert_eq!(
+            check(&sale, &before, &after, &[declined]),
+            Verdict::Verified
+        );
         let other_party = event(r#"{"kind":"deal_closed","turn":80,"from":5}"#);
-        assert_eq!(check(&sale, &before, &after, &[other_party]), failed("no_deal_response"));
+        assert_eq!(
+            check(&sale, &before, &after, &[other_party]),
+            failed("no_deal_response")
+        );
 
-        assert_eq!(check(&peace, &before, &after, &[]), failed("no_peace_response"));
+        assert_eq!(
+            check(&peace, &before, &after, &[]),
+            failed("no_peace_response")
+        );
         let accepted = event(r#"{"kind":"peace_response","turn":80,"target":2,"accepted":true}"#);
-        assert_eq!(check(&peace, &before, &after, &[accepted.clone()]), failed("still_at_war"));
+        assert_eq!(
+            check(&peace, &before, &after, std::slice::from_ref(&accepted)),
+            failed("still_at_war")
+        );
         let mut at_peace = frame(81);
         at_peace.rivals = vec![rival(false)];
-        assert_eq!(check(&peace, &before, &at_peace, &[accepted]), Verdict::Verified);
+        assert_eq!(
+            check(&peace, &before, &at_peace, &[accepted]),
+            Verdict::Verified
+        );
         assert_eq!(check(&peace, &before, &at_peace, &[]), Verdict::Verified);
         let refused = event(r#"{"kind":"peace_response","turn":80,"target":2,"accepted":false}"#);
-        assert_eq!(check(&peace, &before, &after, &[refused]), Verdict::Verified);
+        assert_eq!(
+            check(&peace, &before, &after, &[refused]),
+            Verdict::Verified
+        );
 
         let mut calm = frame(80);
         calm.rivals = vec![rival(false)];
@@ -12130,8 +12246,18 @@ mod order_postcondition_tests {
         };
         let mut before = frame(25);
         before.governors = Some(vec![]);
-        let appoint = order("governor_appoint", Some(65_536), Some("GOVERNOR_THE_DEFENDER"), Some((0, -1)));
-        let assign = order("governor_assign", Some(65_536), Some("GOVERNOR_THE_DEFENDER"), Some((0, -1)));
+        let appoint = order(
+            "governor_appoint",
+            Some(65_536),
+            Some("GOVERNOR_THE_DEFENDER"),
+            Some((0, -1)),
+        );
+        let assign = order(
+            "governor_assign",
+            Some(65_536),
+            Some("GOVERNOR_THE_DEFENDER"),
+            Some((0, -1)),
+        );
 
         let mut seated = frame(26);
         seated.governors = Some(vec![governor(65_536)]);
@@ -12142,11 +12268,17 @@ mod order_postcondition_tests {
         let mut unseated = frame(26);
         unseated.governors = Some(vec![governor(-1)]);
         assert_eq!(check(&appoint, &before, &unseated, &[]), Verdict::Verified);
-        assert_eq!(check(&assign, &before, &unseated, &[]), failed("not_assigned"));
+        assert_eq!(
+            check(&assign, &before, &unseated, &[]),
+            failed("not_assigned")
+        );
 
         let mut none = frame(26);
         none.governors = Some(vec![]);
-        assert_eq!(check(&appoint, &before, &none, &[]), failed("not_appointed"));
+        assert_eq!(
+            check(&appoint, &before, &none, &[]),
+            failed("not_appointed")
+        );
     }
 
     #[test]
@@ -12168,19 +12300,79 @@ mod order_postcondition_tests {
         }];
 
         let cases = [
-            (order("research", None, Some("TECH_WRITING"), None), Verdict::Verified),
-            (order("research", None, Some("TECH_MINING"), None), failed("research=TECH_WRITING")),
-            (order("civic", None, Some("CIVIC_CODE_OF_LAWS"), None), Verdict::Verified),
-            (order("government", None, Some("GOVERNMENT_CHIEFDOM"), None), Verdict::Verified),
-            (order("pantheon", None, Some("BELIEF_GOD_OF_THE_SEA"), None), Verdict::Verified),
-            (order("policy_deck", None, Some("POLICY_DISCIPLINE,POLICY_SURVEY"), None), Verdict::Verified),
-            (order("policy_deck", None, Some("POLICY_DISCIPLINE,POLICY_URBAN_PLANNING"), None), failed("missing=POLICY_URBAN_PLANNING")),
-            (order("gp_recruit", None, Some("GREAT_PERSON_CLASS_SCIENTIST"), None), Verdict::Verified),
-            (order("gp_recruit", None, Some("GREAT_PERSON_CLASS_MERCHANT"), None), failed("no_great_person")),
-            (order("gp_patronize_faith", None, Some("GREAT_PERSON_CLASS_SCIENTIST"), None), Verdict::Verified),
+            (
+                order("research", None, Some("TECH_WRITING"), None),
+                Verdict::Verified,
+            ),
+            (
+                order("research", None, Some("TECH_MINING"), None),
+                failed("research=TECH_WRITING"),
+            ),
+            (
+                order("civic", None, Some("CIVIC_CODE_OF_LAWS"), None),
+                Verdict::Verified,
+            ),
+            (
+                order("government", None, Some("GOVERNMENT_CHIEFDOM"), None),
+                Verdict::Verified,
+            ),
+            (
+                order("pantheon", None, Some("BELIEF_GOD_OF_THE_SEA"), None),
+                Verdict::Verified,
+            ),
+            (
+                order(
+                    "policy_deck",
+                    None,
+                    Some("POLICY_DISCIPLINE,POLICY_SURVEY"),
+                    None,
+                ),
+                Verdict::Verified,
+            ),
+            (
+                order(
+                    "policy_deck",
+                    None,
+                    Some("POLICY_DISCIPLINE,POLICY_URBAN_PLANNING"),
+                    None,
+                ),
+                failed("missing=POLICY_URBAN_PLANNING"),
+            ),
+            (
+                order(
+                    "gp_recruit",
+                    None,
+                    Some("GREAT_PERSON_CLASS_SCIENTIST"),
+                    None,
+                ),
+                Verdict::Verified,
+            ),
+            (
+                order(
+                    "gp_recruit",
+                    None,
+                    Some("GREAT_PERSON_CLASS_MERCHANT"),
+                    None,
+                ),
+                failed("no_great_person"),
+            ),
+            (
+                order(
+                    "gp_patronize_faith",
+                    None,
+                    Some("GREAT_PERSON_CLASS_SCIENTIST"),
+                    None,
+                ),
+                Verdict::Verified,
+            ),
         ];
         for (order, want) in cases {
-            assert_eq!(check(&order, &before, &after, &[]), want, "{}", order.label());
+            assert_eq!(
+                check(&order, &before, &after, &[]),
+                want,
+                "{}",
+                order.label()
+            );
         }
     }
 
@@ -12191,34 +12383,82 @@ mod order_postcondition_tests {
         builder.build_charges = Some(3);
         let mut trader = unit(5, "UNIT_TRADER", 6, 6);
         trader.moves = 2.0;
-        before.units = vec![unit(1, "UNIT_WARRIOR", 2, 2), unit(2, "UNIT_WARRIOR", 3, 3), builder.clone(), trader];
+        before.units = vec![
+            unit(1, "UNIT_WARRIOR", 2, 2),
+            unit(2, "UNIT_WARRIOR", 3, 3),
+            builder.clone(),
+            trader,
+        ];
 
         let mut after = frame(71);
         let mut fortified = unit(1, "UNIT_WARRIOR", 2, 2);
         fortified.fortify_turns = 1;
         let mut spent = builder.clone();
         spent.build_charges = Some(2);
-        after.units = vec![fortified, unit(2, "UNIT_SWORDSMAN", 3, 3), spent, unit(5, "UNIT_TRADER", 6, 6)];
+        after.units = vec![
+            fortified,
+            unit(2, "UNIT_SWORDSMAN", 3, 3),
+            spent,
+            unit(5, "UNIT_TRADER", 6, 6),
+        ];
         after.trade_routes = vec![StateTradeRoute {
             trader: 5,
             ..StateTradeRoute::default()
         }];
 
         let cases = [
-            (order("unit", Some(1), Some("FORTIFY"), None), Verdict::Verified),
-            (order("unit", Some(2), Some("FORTIFY"), None), failed("not_fortified")),
-            (order("unit", Some(2), Some("UPGRADE"), None), Verdict::Verified),
-            (order("unit", Some(1), Some("UPGRADE"), None), failed("same_unit_type")),
-            (order("unit", Some(3), Some("IMPROVE:IMPROVEMENT_FARM"), None), Verdict::Verified),
-            (order("unit", Some(5), Some("TRADE_ROUTE"), Some((9, 9))), Verdict::Verified),
-            (order("unit", Some(1), Some("DELETE"), None), failed("still_exists")),
-            (order("unit", Some(99), Some("DELETE"), None), Verdict::Verified),
-            (order("unit", Some(2), Some("PROMOTE:PROMOTION_BATTLECRY"), None), failed("not_promoted")),
-            (order("unit", Some(1), Some("SKIP_TURN"), None), Verdict::Unverifiable),
-            (order("unit", Some(1), Some("SPY_TRAVEL_NEW_CITY"), Some((1, 1))), Verdict::Unverifiable),
+            (
+                order("unit", Some(1), Some("FORTIFY"), None),
+                Verdict::Verified,
+            ),
+            (
+                order("unit", Some(2), Some("FORTIFY"), None),
+                failed("not_fortified"),
+            ),
+            (
+                order("unit", Some(2), Some("UPGRADE"), None),
+                Verdict::Verified,
+            ),
+            (
+                order("unit", Some(1), Some("UPGRADE"), None),
+                failed("same_unit_type"),
+            ),
+            (
+                order("unit", Some(3), Some("IMPROVE:IMPROVEMENT_FARM"), None),
+                Verdict::Verified,
+            ),
+            (
+                order("unit", Some(5), Some("TRADE_ROUTE"), Some((9, 9))),
+                Verdict::Verified,
+            ),
+            (
+                order("unit", Some(1), Some("DELETE"), None),
+                failed("still_exists"),
+            ),
+            (
+                order("unit", Some(99), Some("DELETE"), None),
+                Verdict::Verified,
+            ),
+            (
+                order("unit", Some(2), Some("PROMOTE:PROMOTION_BATTLECRY"), None),
+                failed("not_promoted"),
+            ),
+            (
+                order("unit", Some(1), Some("SKIP_TURN"), None),
+                Verdict::Unverifiable,
+            ),
+            (
+                order("unit", Some(1), Some("SPY_TRAVEL_NEW_CITY"), Some((1, 1))),
+                Verdict::Unverifiable,
+            ),
         ];
         for (order, want) in cases {
-            assert_eq!(check(&order, &before, &after, &[]), want, "{}", order.label());
+            assert_eq!(
+                check(&order, &before, &after, &[]),
+                want,
+                "{}",
+                order.label()
+            );
         }
     }
 
@@ -12233,14 +12473,21 @@ mod order_postcondition_tests {
         // comparison operand (`== "faith"`) names a kind.
         for (index, _) in source.match_indices("kind: ") {
             let rest = &source[index + 6..];
-            let Some(end) = rest.find("subject:") else { continue };
+            let Some(end) = rest.find("subject:") else {
+                continue;
+            };
             let expr = &rest[..end];
-            if !(expr.starts_with('"') || expr.starts_with("if ")) || expr.len() > 200 || expr.contains(';') {
+            if !(expr.starts_with('"') || expr.starts_with("if "))
+                || expr.len() > 200
+                || expr.contains(';')
+            {
                 continue;
             }
             for (at, _) in expr.match_indices('"') {
                 let literal = &expr[at + 1..];
-                let Some(close) = literal.find('"') else { continue };
+                let Some(close) = literal.find('"') else {
+                    continue;
+                };
                 let kind = &literal[..close];
                 let operand = expr[..at].trim_end().ends_with("==");
                 if !kind.is_empty()
@@ -12297,7 +12544,10 @@ mod order_postcondition_tests {
                 verdict: Verdict::Unverifiable,
             },
         ];
-        let rows: Vec<String> = verdict_rows(42, &checks).iter().map(Order::to_json).collect();
+        let rows: Vec<String> = verdict_rows(42, &checks)
+            .iter()
+            .map(Order::to_json)
+            .collect();
         assert_eq!(
             rows,
             vec![
@@ -12320,7 +12570,10 @@ mod order_postcondition_tests {
         assert_eq!(value["orders"][1]["kind"], "turn_verified");
         // The verdict rows are not orders: the next turn's pending set excludes them.
         let issued = IssuedOrder::from_reply(&joined);
-        assert_eq!(issued, vec![order("research", None, Some("TECH_WRITING"), None)]);
+        assert_eq!(
+            issued,
+            vec![order("research", None, Some("TECH_WRITING"), None)]
+        );
         assert_eq!(append_rows_to_reply(reply, &[]), reply);
     }
 
@@ -12372,7 +12625,6 @@ mod order_postcondition_tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
-
 /// Every Civilization VI type name this binary can emit must be one the game
 /// actually ships.
 ///
