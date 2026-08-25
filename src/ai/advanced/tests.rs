@@ -2901,8 +2901,8 @@ fn production_advanced_omits_measured_null_arms() {
     let mut live_bridge = AdvancedAi::new();
     live_bridge.enable_live_bridge();
     assert!(
-        live_bridge.bounded_recovery,
-        "the live bridge must keep its explicit repair capability"
+        !live_bridge.bounded_recovery,
+        "the live bridge applies the ledger, which demoted the gene on 2026-08-25"
     );
 }
 
@@ -18926,8 +18926,8 @@ fn settler_threat_detour_is_a_native_opt_in_deployed_by_the_ledger() {
     let mut deployed = AdvancedAi::new();
     deployed.enable_engine_repairs();
     assert!(
-        deployed.settler_threat_detour,
-        "its sole +50 win column clears the provisional deployment bar"
+        !deployed.settler_threat_detour,
+        "demoted by the 2026-08-25 operator directive; the ledger leaves it off"
     );
     let enable = GENES
         .iter()
@@ -31542,8 +31542,8 @@ fn frontier_massing_alarm_is_a_registered_reversible_opt_in() {
     );
     assert_eq!(
         crate::ai::advanced::gene_ledger::ledger_default_on("frontier-massing-alarm"),
-        Some(false),
-        "it ships off until a screen prices it"
+        Some(true),
+        "pinned on by the 2026-08-25 operator directive, ahead of any screen"
     );
     let mut ai = AdvancedAi::new();
     assert!(!ai.frontier_massing_alarm, "off in the stock agent");
@@ -32153,8 +32153,8 @@ fn congress_counter_leader_is_a_registered_reversible_opt_in() {
     );
     assert_eq!(
         crate::ai::advanced::gene_ledger::ledger_default_on("congress-counter-leader"),
-        Some(false),
-        "it ships off until a screen prices it"
+        Some(true),
+        "pinned on by the 2026-08-25 operator directive, ahead of any screen"
     );
     let mut ai = AdvancedAi::new();
     assert!(!ai.congress_counter_leader, "off in the stock agent");
@@ -32294,8 +32294,8 @@ fn domination_city_count_is_a_registered_reversible_opt_in() {
     );
     assert_eq!(
         crate::ai::advanced::gene_ledger::ledger_default_on("domination-city-count"),
-        Some(false),
-        "it ships off until a screen prices it"
+        Some(true),
+        "pinned on by the 2026-08-25 operator directive, ahead of any screen"
     );
     let mut ai = AdvancedAi::new();
     assert!(!ai.domination_city_count, "off in the stock agent");
@@ -32517,8 +32517,8 @@ fn elective_war_in_reach_is_a_registered_reversible_opt_in() {
     );
     assert_eq!(
         crate::ai::advanced::gene_ledger::ledger_default_on("elective-war-in-reach"),
-        Some(false),
-        "it ships off until a screen prices it"
+        Some(true),
+        "pinned on by the 2026-08-25 operator directive, ahead of any screen"
     );
     let mut ai = AdvancedAi::new();
     assert!(!ai.elective_war_in_reach, "off in the stock agent");
@@ -33088,14 +33088,18 @@ fn a_builder_out_of_movement_keeps_the_job_it_is_walking_to() {
     );
 }
 
-/// The gene is off everywhere it has not been switched on.
+/// The gene is off in the stock and legacy agents and reaches a seat only
+/// through the ledger: the 2026-08-25 operator directive pinned it on.
 #[test]
-fn builder_tries_the_next_tile_is_off_by_default() {
+fn builder_tries_the_next_tile_is_on_only_through_the_ledger() {
     assert!(!AdvancedAi::new().base.builder_tries_the_next_tile);
     assert!(!AdvancedAi::legacy().base.builder_tries_the_next_tile);
     let mut deployment = AdvancedAi::new();
     deployment.enable_engine_repairs();
-    assert!(!deployment.base.builder_tries_the_next_tile);
+    assert!(
+        deployment.base.builder_tries_the_next_tile,
+        "pinned on by the 2026-08-25 operator directive"
+    );
 }
 
 /// The same defect one layer down, where the city-states and the basic ladder

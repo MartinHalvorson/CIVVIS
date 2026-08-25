@@ -569,6 +569,30 @@ OPERATOR_DEMOTIONS_20260825 = (
     "one-launch-pad",
 )
 
+#: A fourth 2026-08-25 operator directive, verbatim: "default on the
+#: following: frontier-massing-alarm, elective-war-in-reach,
+#: congress-counter-leader, builder-tries-the-next-tile, domination-city-count.
+#: Separately, war-economy, holy-lane-parity, bounded-recovery,
+#: recon-replacement, settler-threat-detour should default off." None of the
+#: five promoted has a screen behind it yet; the five demoted were all priced
+#: and pinned on. Neither is a bar under `operator-pinned`. The selection
+#: below stays at 64 (five in, five out).
+OPERATOR_PROMOTIONS_20260825_THIRD = (
+    "frontier-massing-alarm",
+    "elective-war-in-reach",
+    "congress-counter-leader",
+    "builder-tries-the-next-tile",
+    "domination-city-count",
+)
+
+OPERATOR_DEMOTIONS_20260825_SECOND = (
+    "war-economy",
+    "holy-lane-parity",
+    "bounded-recovery",
+    "recon-replacement",
+    "settler-threat-detour",
+)
+
 #: The complete pinned deployment genome, in stable tag order. Every other
 #: screenable gene defaults off unless an explicit operator update changes this
 #: selection. Keep the historical promotion groups above named separately so
@@ -581,22 +605,25 @@ OPERATOR_DEFAULT_ON = (
     "barbarian-bargain",
     "barbarian-ranged-answer",
     "barbarian-scouts-are-scouts",
-    "bounded-recovery",
+    "builder-tries-the-next-tile",
     "buildings-before-projects",
     "camp-party",
     "competition-victory-points",
+    "congress-counter-leader",
     "culture-building-debt",
     "deals-for-our-gain",
     "diplomatic-lane-forecast",
+    "domination-city-count",
     "early-contact-window",
+    "elective-war-in-reach",
     "engine-faith-price",
     "enhancer-for-the-corps",
     "escort-unstick",
     "flip-nearby-city-states",
     "founder-temple",
+    "frontier-massing-alarm",
     "great-person-housing",
     "guru-heals-the-corps",
-    "holy-lane-parity",
     "home-defense",
     "idle-faith-patronage",
     "lane-culture-spending",
@@ -615,7 +642,6 @@ OPERATOR_DEFAULT_ON = (
     "peacetime-deterrence",
     "price-the-suzerainty",
     "raid-pillage-prizes",
-    "recon-replacement",
     "recorded-tactical-step",
     "religion-sues-peace",
     "religious-defence-scales",
@@ -629,13 +655,11 @@ OPERATOR_DEFAULT_ON = (
     "settler-factory-coordination",
     "settler-screen",
     "settler-target-hysteresis",
-    "settler-threat-detour",
     "slot-kind-tiebreak",
     "solvency-first-trade-slot",
     "strike-opening",
     "unit-cost-efficiency",
     "unit-objective-memory",
-    "war-economy",
     "war-reinforcement",
     "wide-map-capacity",
 )
@@ -1794,6 +1818,7 @@ def build_ledger(sources: list[Path], filter_known: bool = True,
                 OPERATOR_PROMOTIONS_20260824
                 + OPERATOR_PROMOTIONS_20260825
                 + OPERATOR_PROMOTIONS_20260825_SECOND
+                + OPERATOR_PROMOTIONS_20260825_THIRD
             ),
             "posterior_shapes": list(POSTERIOR_SHAPES),
             "deployment_policy_meaning": "the operator-pinned list decides default_on. "

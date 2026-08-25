@@ -440,6 +440,32 @@ mod tests {
         }
     }
 
+    /// The fourth 2026-08-25 directive: five genes pinned on before any
+    /// screen priced them, and five priced genes demoted in the same breath
+    /// (`war-economy`, `holy-lane-parity`, `bounded-recovery`,
+    /// `recon-replacement`, `settler-threat-detour`), 64 -> 64.
+    #[test]
+    fn the_20260825_third_promotions_are_pinned_on_and_the_demotions_are_off() {
+        for tag in [
+            "frontier-massing-alarm",
+            "elective-war-in-reach",
+            "congress-counter-leader",
+            "builder-tries-the-next-tile",
+            "domination-city-count",
+        ] {
+            assert!(operator_default_on(tag), "{tag} was not pinned on");
+        }
+        for tag in [
+            "war-economy",
+            "holy-lane-parity",
+            "bounded-recovery",
+            "recon-replacement",
+            "settler-threat-detour",
+        ] {
+            assert!(!operator_default_on(tag), "{tag} was not demoted");
+        }
+    }
+
     /// Every screenable gene has an explicit pinned state, including a gene
     /// whose first measurement has not landed; a Firaxis-only flag has no
     /// instrument and is left alone.
