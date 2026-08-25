@@ -4399,6 +4399,51 @@ pub struct AdvancedAi {
     /// `AdvancedAi::diplomatic_opening_score`.
     pub diplomatic_opening: bool,
 
+    /// Whether the Culture lane is scored by WHERE THE TWO CURVES ARE WHEN
+    /// THE CLOCK STOPS rather than by the ratio they stand at today.
+    ///
+    /// ⚠ THE SAME LOCK `diplomatic_lane_forecast` OPENED, ON THE SECOND-BEST
+    /// LANE THIS ENGINE HAS. `src/bin/victory_eval.rs` finishes **culture
+    /// 12/16** at the ladder's profile, behind only diplomatic's 14/16 and far
+    /// ahead of domination's 2/16 and science's 0/16. `src/bin/audit.rs` over
+    /// twelve games at the same profile finds the planner spends **2%** of
+    /// 14,376 planner-turns on it, below a twentieth of the board's planning
+    /// in eleven of the twelve.
+    ///
+    /// The reason is the same arithmetic. [`Self::lane_progress_table`] reads
+    /// this lane as `100 * foreign_tourists(pid) / max rival domestic
+    /// tourists` — a ratio of the finished race. Foreign tourists are near
+    /// zero until an empire has Great Works, wonders and open borders, which
+    /// is the Renaissance at the earliest, so the lane reads nothing for the
+    /// first two thirds of the game while Religion holds a standing 46 and
+    /// Science a readiness ramp from 25. It cannot be chosen until it has
+    /// already been won.
+    ///
+    /// What makes this lane different from Diplomacy is that **both sides
+    /// move**. The bar is the largest rival's domestic tourists, which is that
+    /// empire's lifetime culture divided by a hundred, and it climbs every
+    /// turn whether we act or not. A forecast that projects only our own side
+    /// forward would say every empire wins the culture race eventually. So
+    /// this one projects **both** curves to the turn limit at the rates the
+    /// engine is publishing right now — ours from `tourism_per_turn`, the
+    /// bar's from the rival's own city culture yields — and asks what fraction
+    /// of the bar we will have reached when the clock stops.
+    ///
+    /// Nothing in it is modelled. Every term is read from engine state:
+    /// `tourism_per_turn`, `city_yields().culture`, `foreign_tourists`,
+    /// `domestic_tourists`, `TOURISM_PER_VISITOR` and the turn limit. It is
+    /// consequently self-limiting in the way a flat opening floor is not: an
+    /// empire with no tourism reads zero forever, and an empire whose rival is
+    /// out-culturing it is told the race does not close for it.
+    ///
+    /// ⚠ It walks every major's cities, so it is the one gene here with a real
+    /// per-call cost. Off by default, so a seat that does not draw it pays
+    /// nothing, and the screen's `cost (compute)` column prices it for the
+    /// seats that do.
+    ///
+    /// **Off by default.** Screenable.
+    pub culture_lane_forecast: bool,
+
     /// Whether the Diplomacy lane is scored by WHEN twenty Diplomatic Victory
     /// Points arrive rather than by how many are already banked.
     ///
@@ -5844,6 +5889,7 @@ impl AdvancedAi {
             air_surge_census: AirSurgeCensus::default(),
             air_surge_cooldown_until: 0,
             diplomatic_opening: false,
+            culture_lane_forecast: false,
             diplomatic_lane_forecast: false,
             frontier_massing_alarm: false,
             envoy_priority: false,
@@ -8181,6 +8227,86 @@ impl AdvancedAi {
         ((100.0 * forecast / f64::from(needed as i32)).round() as i64).clamp(0, 100) as i32
     }
 
+    /// How much of the Culture bar this empire will have cleared when the
+    /// clock stops, at the rates the engine is publishing now, as a percentage.
+    ///
+    /// See [`Self::culture_lane_forecast`]. A Culture Victory asks for more
+    /// foreign tourists than any other civilization has domestic tourists, so
+    /// there are exactly two curves and this projects both:
+    ///
+    /// - **Ours.** `foreign_tourists` is the sum over rivals of that rival's
+    ///   accumulated tourism pressure divided by
+    ///   `starting_majors * TOURISM_PER_VISITOR`, so one more visitor from
+    ///   every rival costs that much pressure each. `tourism_per_turn` is the
+    ///   pressure we add to every rival each turn, which makes our gain
+    ///   `rivals * tourism_per_turn / (majors * TOURISM_PER_VISITOR)` visitors
+    ///   a turn.
+    /// - **Theirs.** A rival's domestic tourists are its lifetime culture over
+    ///   a hundred, less its own citizens already travelling. Its city culture
+    ///   yields are what that lifetime grows by, so the bar at the clock is
+    ///   today's bar plus `culture per turn * turns left / 100`.
+    ///
+    /// Reported as `100 * ours at the clock / the largest bar at the clock`,
+    /// clamped. A seat that already leads reads 100 without the projection.
+    fn culture_lane_forecast_score(&self, g: &Game, pid: usize) -> i32 {
+        if !self.culture_lane_forecast || !g.victory_conditions.culture {
+            return 0;
+        }
+        let majors: Vec<usize> = g
+            .players
+            .iter()
+            .filter(|player| player.alive && !player.is_minor && !player.is_barbarian)
+            .map(|player| player.id)
+            .collect();
+        let rivals = majors.iter().filter(|other| **other != pid).count();
+        if rivals == 0 {
+            return 0;
+        }
+        // No clock is no forecast: both curves run forever and the question
+        // has no answer. See `diplomatic_lane_forecast_score` for the same
+        // guard and the same reason.
+        if g.max_turns == 0 {
+            return 0;
+        }
+        let left = f64::from(g.max_turns.saturating_sub(g.turn));
+
+        let culture_per_turn = |seat: usize| {
+            g.player_city_ids(seat)
+                .into_iter()
+                .map(|city| g.city_yields(city).culture)
+                .sum::<f64>()
+        };
+        // The bar every rival sets, carried to the clock at its own culture.
+        let bar = majors
+            .iter()
+            .filter(|other| **other != pid)
+            .map(|other| {
+                g.domestic_tourists(*other) as f64 + culture_per_turn(*other) * left / 100.0
+            })
+            .fold(0.0_f64, f64::max);
+        if bar <= 0.0 {
+            return 0;
+        }
+
+        // `starting_major_count` is private to the engine, so count the same
+        // set here: `foreign_tourists` divides by the STARTING majors, not the
+        // living ones, and an eliminated civilization must not shrink the
+        // price of a visitor.
+        let starting = g
+            .players
+            .iter()
+            .filter(|player| !player.is_minor && !player.is_barbarian)
+            .count();
+        let per_visitor = starting as f64 * crate::game::TOURISM_PER_VISITOR;
+        let ours = if per_visitor > 0.0 {
+            g.foreign_tourists(pid) as f64
+                + rivals as f64 * g.tourism_per_turn(pid) * left / per_visitor
+        } else {
+            g.foreign_tourists(pid) as f64
+        };
+        ((100.0 * ours / bar).round() as i64).clamp(0, 100) as i32
+    }
+
     fn religious_opening_viable(&self, g: &Game, pid: usize) -> bool {
         let player = &g.players[pid];
         if player.religion.is_some() {
@@ -8319,7 +8445,11 @@ impl AdvancedAi {
             .max()
             .unwrap_or(1)
             .max(1);
-        let culture = ((100 * g.foreign_tourists(pid) / culture_target).clamp(0, 100)) as i32;
+        // `culture_lane_forecast` reads the same race projected to the turn
+        // limit instead of at today's ratio, and folds in with `max` so it can
+        // only ever raise the reading.
+        let culture = ((100 * g.foreign_tourists(pid) / culture_target).clamp(0, 100) as i32)
+            .max(self.culture_lane_forecast_score(g, pid));
 
         let (converted, living_religious_rivals) = self.religious_conversion_tally(g, pid);
         let religion = if player.religion.is_some() {
