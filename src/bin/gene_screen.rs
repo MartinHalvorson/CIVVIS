@@ -64,7 +64,8 @@
 //!               [--native-competitions] [--no-native-competitions]
 //!               [--players N] [--turns N] [--width N] [--height N]
 //!               [--city-states N] [--speed ID] [--map ID] [--victories a,b]
-//!               [--victory-mask rotate:N]
+//!               [--victory-mask rotate:N] [--difficulty RUNG]
+//!               [--difficulty-rotate king:1,emperor:2,immortal:1]
 //!               [--stock-civs]
 //!   gene_screen --analyze PATH [PATH ...] [--json OUT] [--interactions]
 //!               [--denial] [--top N] [--by-civ TAG]
@@ -273,6 +274,100 @@ fn combinations(items: &[&'static str], k: usize) -> Vec<Vec<&'static str>> {
         }
     }
     out
+}
+
+/// ⭐ THE MAJORS' RUNG ROTATION (`--difficulty-rotate king:1,emperor:2,immortal:1`,
+/// 2026-08-25).
+///
+/// The difficulty is the AI handicap every major seat plays with — the yield,
+/// combat, experience and era-boost bonuses of `data/difficulties.json` —
+/// and the live Civilization VI verification ladder plays Emperor and above,
+/// while every screen so far played at the Prince default. A weighted list of
+/// rungs is drawn per game from the seed: the weights are laid end to end
+/// and the game on `seed` takes the rung at `seed % total`, so a consecutive
+/// seed window plays each rung in exactly its share. The barbarian seat keeps
+/// its own rung (`default_barbarian_difficulty`, Immortal) whatever the
+/// majors draw. Rows carry the rung their game played, so `--analyze` can
+/// read a gene per rung.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct DifficultyRotation {
+    /// Rung and weight, in the order given.
+    rungs: Vec<(String, usize)>,
+}
+
+impl DifficultyRotation {
+    /// `king:1,emperor:2,immortal:1`; a rung without a weight counts once.
+    fn parse(text: &str, known: &[&str]) -> Result<DifficultyRotation, String> {
+        let mut rungs = Vec::new();
+        for entry in text.split(',').map(str::trim).filter(|e| !e.is_empty()) {
+            let (rung, weight) = match entry.split_once(':') {
+                Some((rung, weight)) => (
+                    rung.trim(),
+                    weight
+                        .trim()
+                        .parse::<usize>()
+                        .map_err(|_| format!("{entry}: the weight must be a whole number"))?,
+                ),
+                None => (entry, 1),
+            };
+            if !known.contains(&rung) {
+                return Err(format!(
+                    "unknown difficulty {rung:?}; choose from {known:?}"
+                ));
+            }
+            if weight == 0 {
+                return Err(format!(
+                    "{entry}: a rung with weight 0 is never played; leave it out"
+                ));
+            }
+            if rungs.iter().any(|(seen, _): &(String, usize)| seen == rung) {
+                return Err(format!("{rung} is named twice"));
+            }
+            rungs.push((rung.to_string(), weight));
+        }
+        if rungs.len() < 2 {
+            return Err(
+                "a rotation names at least two rungs (a single rung is --difficulty)".to_string(),
+            );
+        }
+        Ok(DifficultyRotation { rungs })
+    }
+
+    fn id(&self) -> String {
+        self.rungs
+            .iter()
+            .map(|(rung, weight)| format!("{rung}:{weight}"))
+            .collect::<Vec<_>>()
+            .join(",")
+    }
+
+    fn total(&self) -> usize {
+        self.rungs.iter().map(|(_, weight)| weight).sum()
+    }
+
+    /// The rung the game on `seed` plays.
+    fn rung(&self, seed: u64) -> &str {
+        let mut slot = (seed % self.total() as u64) as usize;
+        for (rung, weight) in &self.rungs {
+            if slot < *weight {
+                return rung;
+            }
+            slot -= weight;
+        }
+        &self.rungs[0].0
+    }
+
+    /// Games per rung over `games` consecutive seeds from `start_seed` — what
+    /// the header pre-registers.
+    fn games_by_rung(&self, start_seed: u64, games: usize) -> BTreeMap<String, usize> {
+        let mut counts = BTreeMap::new();
+        for game in 0..games {
+            *counts
+                .entry(self.rung(start_seed + game as u64).to_string())
+                .or_default() += 1;
+        }
+        counts
+    }
 }
 
 /// One mask's name: its closed lanes joined with `+`, or `none`.
@@ -588,6 +683,12 @@ struct Row {
     /// standard row is byte for byte what it was.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     victories_off: Vec<String>,
+    /// ⭐ The difficulty rung the majors played in this seat's game
+    /// (`--difficulty`, or the draw of `--difficulty-rotate`). Every seat of
+    /// one game carries the same rung. Empty in every file written before
+    /// 2026-08-25, which means the Prince default those batches played.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    difficulty: String,
 }
 
 /// The game a row belongs to. Seats of one game share a winner and a timing,
@@ -1046,6 +1147,20 @@ struct Header {
     /// there is no mask.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     victory_mask_games: BTreeMap<String, usize>,
+    /// ⭐ The majors' difficulty rung when every game played one
+    /// (`--difficulty`), or empty under a rotation. Absent in every file
+    /// written before 2026-08-25, which means the Prince default. Provenance,
+    /// not a shape leg: `tools/genes.py` records it on the source.
+    #[serde(default)]
+    difficulty: String,
+    /// ⭐ THE RUNG ROTATION, `king:1,emperor:2,immortal:1`
+    /// ([`DifficultyRotation`]), or empty when every game played `difficulty`.
+    #[serde(default)]
+    difficulty_rotate: String,
+    /// The games this segment pre-registered per rung, from its seed window,
+    /// before the first game. Empty without a rotation.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    difficulty_games: BTreeMap<String, usize>,
     /// ⭐ The binary that played these games. Absent in files written before
     /// 2026-08-23, which `tools/genes.py` grandfathers as history and
     /// marks `pre-fingerprint` rather than accepting silently.
@@ -1382,6 +1497,10 @@ struct Profile {
     field_genes: Vec<String>,
     /// ⭐ The rotating victory mask, `None` for the plain batch-level set.
     victory_mask: Option<VictoryMask>,
+    /// The majors' rung when every game plays one.
+    difficulty: String,
+    /// ⭐ The majors' rung rotation, `None` when every game plays `difficulty`.
+    difficulty_rotate: Option<DifficultyRotation>,
 }
 
 /// ⭐ WHICH MAJOR SEATS THE FIELD PINS, AND TO WHAT — one entry per major
@@ -1471,11 +1590,19 @@ fn play_game(
     let victories = profile.victory_mask.map_or(profile.victories, |mask| {
         mask.apply(seed, profile.victories)
     });
+    // ⭐ THE MAJORS' RUNG, per game from the seed under a rotation. The
+    // barbarian seat keeps its own rung: `GameOptions::new` sets it.
+    let difficulty = profile
+        .difficulty_rotate
+        .as_ref()
+        .map_or(profile.difficulty.as_str(), |rotation| rotation.rung(seed))
+        .to_string();
     let mut world = Game::new_with(GameOptions {
         speed: profile.speed.id().to_string(),
         map_script: profile.map,
         randomize_civs: profile.randomize_civs,
         victory_conditions: victories,
+        difficulty: difficulty.clone(),
         ..GameOptions::new(
             profile.players,
             profile.width,
@@ -1523,6 +1650,7 @@ fn play_game(
                 secs,
             );
             row.victories_off = closed.clone();
+            row.difficulty = difficulty.clone();
             row
         })
         .collect()
@@ -1623,8 +1751,9 @@ fn row_for_seat(
         tourists: game.foreign_tourists(seat),
         rival_tourists: rival(&|pid| game.foreign_tourists(pid)),
         domestic: game.domestic_tourists(seat),
-        // Filled in by `play_game`, which knows the game's mask.
+        // Filled in by `play_game`, which knows the game's mask and rung.
         victories_off: Vec::new(),
+        difficulty: String::new(),
     }
 }
 
@@ -2653,6 +2782,7 @@ fn print_table(header: &Header, rows: &[Row]) {
     println!("{}", build_line(header));
     println!("{}", field_line(header));
     println!("{}", mask_line(header));
+    println!("{}", difficulty_line(header));
     println!("{}", completeness_line(header, estimates.seats));
     println!(
         "a seat overall: win {:.1}% (chance {:.1}%) · score share {:.1}% (equal share {:.1}%)",
@@ -2966,6 +3096,7 @@ fn print_table(header: &Header, rows: &[Row]) {
     );
     print_families(header, rows);
     print_victory_masks(header, rows);
+    print_difficulty_rungs(header, rows);
 }
 
 /// The family tables: for every versioned gene, what each level did and
@@ -3217,6 +3348,7 @@ fn write_json_summary(path: &str, header: &Header, rows: &[Row]) {
         "games": estimates.games,
         "endings": ending_census(rows),
         "victory_masks": mask_report(header, rows).map(|report| report.json()),
+        "difficulty": rung_report(header, rows).map(|report| report.json()),
         "overall_win": estimates.overall_win,
         "overall_share": estimates.overall_share,
         "family_wise_z": family_z,
@@ -3317,6 +3449,8 @@ fn read_rows(paths: &[String]) -> (Header, Vec<Row>) {
                                 || first.randomize_civs != found.randomize_civs
                                 || first.victories != found.victories
                                 || first.victory_mask != found.victory_mask
+                                || first.difficulty != found.difficulty
+                                || first.difficulty_rotate != found.difficulty_rotate
                                 || first.all_seats != found.all_seats
                                 || first.design != found.design
                                 || first.prior != found.prior
@@ -3948,6 +4082,207 @@ fn print_victory_masks(header: &Header, rows: &[Row]) {
     );
 }
 
+/// One line saying what rung the majors played, or how they rotated.
+fn difficulty_line(header: &Header) -> String {
+    if !header.difficulty_rotate.is_empty() {
+        return format!(
+            "difficulty: ⭐ majors rotate {} per game from the seed ({}) · barbarians at their own rung ({})",
+            header.difficulty_rotate,
+            header
+                .difficulty_games
+                .iter()
+                .map(|(rung, games)| format!("{rung}×{games}"))
+                .collect::<Vec<_>>()
+                .join(" "),
+            civvis::game::default_barbarian_difficulty()
+        );
+    }
+    format!(
+        "difficulty: majors at {} in every game · barbarians at their own rung ({})",
+        if header.difficulty.is_empty() {
+            format!(
+                "{} (the default, unrecorded)",
+                civvis::game::default_difficulty()
+            )
+        } else {
+            header.difficulty.clone()
+        },
+        civvis::game::default_barbarian_difficulty()
+    )
+}
+
+/// The rung a row's game played, with the pre-2026-08-25 default filled in.
+fn row_rung(row: &Row) -> String {
+    if row.difficulty.is_empty() {
+        civvis::game::default_difficulty()
+    } else {
+        row.difficulty.clone()
+    }
+}
+
+/// The ruleset's rungs in ladder order, Settler first and Deity last.
+fn difficulty_ladder(rules: &civvis::rules::Rules) -> Vec<&str> {
+    let mut names: Vec<&str> = rules.difficulties.keys().map(|k| k.as_str()).collect();
+    names.sort_by_key(|name| rules.difficulties[*name].order);
+    names
+}
+
+/// ⭐ THE RUNG ROTATION READ BACK: games per rung, and the top genes by |win Δ|
+/// read on every rung separately.
+struct RungReport {
+    rotation: String,
+    /// Rung, games — in ladder order.
+    games: Vec<(String, usize)>,
+    /// Per gene: tag, whole-batch win Δ, and (Δ, se, seats) per rung in
+    /// `games` order.
+    genes: Vec<(String, f64, Vec<(f64, f64, usize)>)>,
+}
+
+impl RungReport {
+    fn json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "rotation": self.rotation,
+            "games": self.games.iter().map(|(rung, games)| {
+                serde_json::json!({"rung": rung, "games": games})
+            }).collect::<Vec<_>>(),
+            "top_genes": self.genes.iter().map(|(tag, delta, per_rung)| {
+                serde_json::json!({
+                    "tag": tag,
+                    "win_delta_pp": 100.0 * delta,
+                    "by_rung": self.games.iter().zip(per_rung).map(|((rung, _), (d, se, n))| {
+                        serde_json::json!({
+                            "rung": rung,
+                            "seats": n,
+                            "win_delta_pp": 100.0 * d,
+                            "win_se_pp": 100.0 * se,
+                        })
+                    }).collect::<Vec<_>>(),
+                })
+            }).collect::<Vec<_>>(),
+        })
+    }
+}
+
+/// How many genes the rung table shows: the top by |win Δ| over the batch.
+const RUNG_TABLE_GENES: usize = 10;
+
+/// The report, or `None` when every game played one rung and no rotation was
+/// declared.
+fn rung_report(header: &Header, rows: &[Row]) -> Option<RungReport> {
+    let played: Vec<&Row> = rows.iter().filter(|row| row.kind == "game").collect();
+    let mut first_of_game: BTreeMap<GameKey, &Row> = BTreeMap::new();
+    for row in &played {
+        first_of_game.entry(row.game_key()).or_insert(row);
+    }
+    let mut by_rung: BTreeMap<String, usize> = BTreeMap::new();
+    for row in first_of_game.values() {
+        *by_rung.entry(row_rung(row)).or_default() += 1;
+    }
+    if header.difficulty_rotate.is_empty() && by_rung.len() < 2 {
+        return None;
+    }
+    // Ladder order, not alphabetical: settler first, deity last.
+    let rules = civvis::rules::Rules::embedded();
+    let ladder = difficulty_ladder(&rules);
+    let mut games: Vec<(String, usize)> = ladder
+        .iter()
+        .filter_map(|rung| by_rung.get(*rung).map(|&n| ((*rung).to_string(), n)))
+        .collect();
+    for (rung, n) in &by_rung {
+        if !ladder.contains(&rung.as_str()) {
+            games.push((rung.clone(), *n));
+        }
+    }
+    let estimates = estimate(header, rows);
+    let mut top: Vec<&GeneEstimate> = estimates.genes.iter().collect();
+    top.sort_by(|a, b| {
+        b.win_delta
+            .abs()
+            .partial_cmp(&a.win_delta.abs())
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    let genes = top
+        .iter()
+        .take(RUNG_TABLE_GENES)
+        .filter_map(|estimate| {
+            let index = header.genes.iter().position(|tag| *tag == estimate.tag)?;
+            let per_rung = games
+                .iter()
+                .map(|(rung, _)| {
+                    subset_win_contrast(header, rows, index, |row| row_rung(row) == *rung)
+                        .unwrap_or((0.0, f64::INFINITY, 0))
+                })
+                .collect();
+            Some((estimate.tag.clone(), estimate.win_delta, per_rung))
+        })
+        .collect();
+    Some(RungReport {
+        rotation: header.difficulty_rotate.clone(),
+        games,
+        genes,
+    })
+}
+
+/// The "Difficulty rungs" section of `--analyze`: games per rung and the top
+/// genes by |win Δ| read on every rung.
+fn print_difficulty_rungs(header: &Header, rows: &[Row]) {
+    let Some(report) = rung_report(header, rows) else {
+        return;
+    };
+    println!(
+        "\nDifficulty rungs · {} · {}",
+        if report.rotation.is_empty() {
+            "(rows carry more than one rung, header names no rotation)".to_string()
+        } else {
+            report.rotation.clone()
+        },
+        report
+            .games
+            .iter()
+            .map(|(rung, games)| format!("{rung}×{games} games"))
+            .collect::<Vec<_>>()
+            .join(" · ")
+    );
+    if report.genes.is_empty() {
+        return;
+    }
+    let cell = |(delta, se, seats): (f64, f64, usize)| {
+        if se.is_finite() {
+            format!("{:+.1}±{:.1} ({seats})", 100.0 * delta, 100.0 * se)
+        } else {
+            format!("{:+.1} ({seats})", 100.0 * delta)
+        }
+    };
+    let head: Vec<String> = report
+        .games
+        .iter()
+        .map(|(rung, _)| format!("{rung:>20}"))
+        .collect();
+    println!(
+        "  {:<28} {:>9} {}",
+        format!("top {} by |winΔ|", report.genes.len()),
+        "all pp",
+        head.join(" ")
+    );
+    for (tag, delta, per_rung) in &report.genes {
+        println!(
+            "  {:<28} {:>+9.1} {}",
+            tag,
+            100.0 * delta,
+            per_rung
+                .iter()
+                .map(|&cell_value| format!("{:>20}", cell(cell_value)))
+                .collect::<Vec<_>>()
+                .join(" ")
+        );
+    }
+    println!(
+        "  win Δpp ± one clustered standard error (seats) per rung; a gene whose sign holds on every \
+         rung pays at every handicap, one that flips is a gene for one rung. The barbarian seat \
+         plays its own rung throughout."
+    );
+}
+
 /// One line naming the binary a batch was played by, printed before the first
 /// game and again by `--analyze`.
 ///
@@ -4031,11 +4366,15 @@ fn usage() -> ! {
          [--height N] [--city-states N] [--speed ID] [--map ID] [--victories a,b,...] [--stock-civs]\n       \
          still the screen (all lanes live across the batch): [--victory-mask rotate:N] closes N of the \
          five real conditions per game from its seed, score always on, C(5,N) masks at equal shares\n       \
+         the majors' rung: [--difficulty RUNG] (default {}) or [--difficulty-rotate king:1,emperor:2,immortal:1] \
+         drawn per game from the seed in those shares; barbarians stay at {}\n       \
          (--contested pins one rival seat per lane to actually pursue it — {} by default — and turns \
          on native scored competitions, the only recurring native route to the {DIPLOMATIC_VICTORY_POINTS} \
          Diplomatic Victory Points that lane needs)\n       \
          gene_screen --analyze PATH [PATH ...] [--json OUT] [--interactions] [--denial] [--top N] [--by-civ TAG]\n       \
          gene_screen --list",
+        civvis::game::default_difficulty(),
+        civvis::game::default_barbarian_difficulty(),
         CONTESTED_FIELD.join("+")
     );
     std::process::exit(2)
@@ -4225,6 +4564,26 @@ fn main() {
         }
         mask
     });
+    // ⭐ THE MAJORS' RUNG. One rung for every game, or a weighted rotation
+    // drawn per game from the seed. Provenance in the header, not a shape
+    // leg; the barbarian seat keeps its own rung either way.
+    let rules = civvis::rules::Rules::embedded();
+    let known_rungs = difficulty_ladder(&rules);
+    let difficulty = text(&args, "--difficulty").unwrap_or_else(civvis::game::default_difficulty);
+    if !known_rungs.contains(&difficulty.as_str()) {
+        eprintln!("unknown --difficulty {difficulty:?}; choose one of {known_rungs:?}");
+        std::process::exit(2);
+    }
+    let difficulty_rotate = text(&args, "--difficulty-rotate").map(|spec| {
+        DifficultyRotation::parse(&spec, &known_rungs).unwrap_or_else(|why| {
+            eprintln!("--difficulty-rotate: {why}");
+            std::process::exit(2);
+        })
+    });
+    if difficulty_rotate.is_some() && present(&args, "--difficulty") {
+        eprintln!("--difficulty and --difficulty-rotate name the majors' rung two ways; pass one");
+        std::process::exit(2);
+    }
     let speed = match text(&args, "--speed") {
         None => GameSpeed::Online,
         Some(id) => GameSpeed::from_id(&id).unwrap_or_else(|| {
@@ -4483,6 +4842,19 @@ fn main() {
         victory_mask_games: victory_mask
             .map(|mask| mask.games_by_mask(start_seed, games_to_play, victories))
             .unwrap_or_default(),
+        difficulty: if difficulty_rotate.is_some() {
+            String::new()
+        } else {
+            difficulty.clone()
+        },
+        difficulty_rotate: difficulty_rotate
+            .as_ref()
+            .map(DifficultyRotation::id)
+            .unwrap_or_default(),
+        difficulty_games: difficulty_rotate
+            .as_ref()
+            .map(|rotation| rotation.games_by_rung(start_seed, games_to_play))
+            .unwrap_or_default(),
         design: "independent".to_string(),
         prior: probabilities.clone(),
         families: families
@@ -4510,6 +4882,7 @@ fn main() {
     println!("{}", build_line(&header));
     println!("{}", field_line(&header));
     println!("{}", mask_line(&header));
+    println!("{}", difficulty_line(&header));
     writeln!(
         out,
         "{}",
@@ -4531,6 +4904,8 @@ fn main() {
         native_competitions,
         field_genes: field_genes.clone(),
         victory_mask,
+        difficulty,
+        difficulty_rotate,
     };
     println!(
         "gene screen: {games_to_play} games ({} measured seats of {} chairs, every drawn seat its own genome, on at p={p_on} / {p_default_on} default-on) · {} of {} genes screened · {players}p {width}x{height} {} · {} · {turns} turns · {city_states} city-states · {} civs · seeds {start_seed}..{} · {jobs} jobs · rows → {out_path}",
@@ -4626,6 +5001,9 @@ mod tests {
             contested_field_genes: String::new(),
             victory_mask: String::new(),
             victory_mask_games: BTreeMap::new(),
+            difficulty: String::new(),
+            difficulty_rotate: String::new(),
+            difficulty_games: BTreeMap::new(),
             design: "independent".into(),
             prior: vec![0.5; genes.len()],
             p_on: 0.5,
@@ -4679,6 +5057,7 @@ mod tests {
             rival_tourists: 0,
             domestic: 0,
             victories_off: Vec::new(),
+            difficulty: String::new(),
         }
     }
 
@@ -5424,6 +5803,136 @@ mod tests {
         let plain_rows = vec![test_row(0, 0, "1", true), test_row(0, 1, "0", false)];
         assert!(mask_report(&plain, &plain_rows).is_none());
         print_victory_masks(&header, &rows);
+    }
+
+    /// ⭐ `king:1,emperor:2,immortal:1` over a thousand consecutive seeds is
+    /// 250 / 500 / 250 exactly, the same seed always the same rung, and the
+    /// header pre-registers what the seeds play.
+    #[test]
+    fn the_rung_rotation_is_deterministic_and_takes_its_shares() {
+        let known = ["prince", "king", "emperor", "immortal", "deity"];
+        let rotation =
+            DifficultyRotation::parse("king:1,emperor:2,immortal:1", &known).expect("parses");
+        assert_eq!(rotation.id(), "king:1,emperor:2,immortal:1");
+        assert_eq!(rotation.total(), 4);
+        let mut counts: BTreeMap<String, usize> = BTreeMap::new();
+        for seed in 26_081_900u64..26_082_900 {
+            let rung = rotation.rung(seed);
+            assert_eq!(rung, rotation.rung(seed));
+            *counts.entry(rung.to_string()).or_default() += 1;
+        }
+        assert_eq!(
+            counts,
+            BTreeMap::from([
+                ("king".to_string(), 250),
+                ("emperor".to_string(), 500),
+                ("immortal".to_string(), 250)
+            ])
+        );
+        assert_eq!(rotation.games_by_rung(26_081_900, 1000), counts);
+        // A bare rung counts once; the refusals.
+        let bare = DifficultyRotation::parse("king,emperor", &known).expect("parses");
+        assert_eq!(bare.id(), "king:1,emperor:1");
+        assert!(
+            DifficultyRotation::parse("king:1", &known).is_err(),
+            "one rung is --difficulty"
+        );
+        assert!(DifficultyRotation::parse("king:0,emperor:1", &known).is_err());
+        assert!(DifficultyRotation::parse("king:1,king:1", &known).is_err());
+        assert!(DifficultyRotation::parse("king:1,godlike:1", &known).is_err());
+        assert!(DifficultyRotation::parse("king:x,emperor:1", &known).is_err());
+    }
+
+    /// A row carries its game's rung; an old row reads as the Prince default.
+    #[test]
+    fn rows_carry_the_rung_their_game_played() {
+        let mut row = test_row(1, 0, "1", true);
+        let text = serde_json::to_string(&row).expect("serializes");
+        assert!(!text.contains("difficulty"), "{text}");
+        assert_eq!(
+            row_rung(&serde_json::from_str::<Row>(&text).expect("parses")),
+            "prince"
+        );
+        row.difficulty = "emperor".into();
+        let back: Row = serde_json::from_str(&serde_json::to_string(&row).expect("serializes"))
+            .expect("parses");
+        assert_eq!(back.difficulty, "emperor");
+        assert_eq!(row_rung(&back), "emperor");
+    }
+
+    /// A rotating batch at the screen's shape is the standard screen: the
+    /// rung is provenance, not a leg.
+    #[test]
+    fn a_rung_rotation_batch_is_the_standard_screen() {
+        let mut header = screen_header(&["a"]);
+        header.difficulty = "emperor".into();
+        assert_eq!(shape_of(&header), "standard");
+        header.difficulty = String::new();
+        header.difficulty_rotate = "king:1,emperor:2,immortal:1".into();
+        assert_eq!(shape_of(&header), "standard");
+    }
+
+    /// The per-rung table on a synthetic rotating batch: games per rung in
+    /// ladder order, the top genes by |win Δ|, and a gene that pays on one
+    /// rung only reads that way.
+    #[test]
+    fn the_rung_table_reads_a_gene_per_rung() {
+        let known = ["king", "emperor", "immortal"];
+        let rotation =
+            DifficultyRotation::parse("king:1,emperor:2,immortal:1", &known).expect("parses");
+        let mut header = screen_header(&["only-on-immortal", "everywhere", "inert"]);
+        header.difficulty_rotate = rotation.id();
+        let probabilities = vec![0.5; 3];
+        let mut rows = Vec::new();
+        let games = 400;
+        for game in 0..games {
+            let seed = 700_000 + game as u64;
+            let rung = rotation.rung(seed).to_string();
+            let genomes: Vec<Vec<bool>> = (0..6)
+                .map(|seat| draw_genome(9, game, 6, seat, &probabilities, &[]))
+                .collect();
+            // `everywhere` wins on every rung; `only-on-immortal` decides
+            // only immortal games, where it outranks everything.
+            let winner = if rung == "immortal" {
+                genomes.iter().position(|bits| bits[0]).unwrap_or(game % 6)
+            } else {
+                genomes.iter().position(|bits| bits[1]).unwrap_or(game % 6)
+            };
+            for (seat, bits) in genomes.iter().enumerate() {
+                let mut row = test_row(game, seat, &genome_string(bits), seat == winner);
+                row.seed = seed;
+                row.difficulty = rung.clone();
+                rows.push(row);
+            }
+        }
+        let report = rung_report(&header, &rows).expect("a rotating batch reports");
+        assert_eq!(
+            report.games,
+            vec![
+                ("king".to_string(), 100),
+                ("emperor".to_string(), 200),
+                ("immortal".to_string(), 100)
+            ],
+            "ladder order, exact shares"
+        );
+        assert_eq!(report.genes.len(), 3);
+        let immortal_only = report
+            .genes
+            .iter()
+            .find(|(tag, _, _)| tag == "only-on-immortal")
+            .expect("in the table");
+        let per_rung = &immortal_only.2;
+        assert!(per_rung[2].0 > 0.3, "immortal Δ {:+.3}", per_rung[2].0);
+        assert!(per_rung[0].0.abs() < 0.15, "king Δ {:+.3}", per_rung[0].0);
+        assert_eq!(per_rung[0].2 + per_rung[1].2 + per_rung[2].2, 2400);
+        let json = report.json();
+        assert_eq!(json["rotation"], rotation.id());
+        assert_eq!(json["top_genes"].as_array().expect("array").len(), 3);
+        // One rung throughout, no rotation declared: nothing to split.
+        let plain = screen_header(&["a"]);
+        let plain_rows = vec![test_row(0, 0, "1", true), test_row(0, 1, "0", false)];
+        assert!(rung_report(&plain, &plain_rows).is_none());
+        print_difficulty_rungs(&header, &rows);
     }
 
     /// A lane gene's lane is read off the registry's own words; a version is

@@ -306,6 +306,20 @@ class OneShape(unittest.TestCase):
         probe = analysis([{"tag": "a"}], victories="domination,score", victory_mask="rotate:1")
         self.assertEqual(gene_ledger.shape_of(gene_ledger.profile_of(probe)), "legacy")
 
+    def test_the_majors_rung_is_recorded_and_stays_the_standard_shape(self):
+        """`--difficulty emperor` and `--difficulty-rotate` are provenance on
+        the source, not a leg: the ladder plays Emperor and above and the
+        screen may follow it without the ledger holding two worlds."""
+        fixed = gene_ledger.profile_of(analysis([{"tag": "a"}], difficulty="emperor"))
+        self.assertEqual(fixed["difficulty"], "emperor")
+        self.assertEqual(gene_ledger.shape_of(fixed), "standard")
+        rotated = gene_ledger.profile_of(
+            analysis([{"tag": "a"}], difficulty="", difficulty_rotate="king:1,emperor:2,immortal:1"))
+        self.assertNotIn("difficulty", rotated, "an empty rung is not recorded")
+        self.assertEqual(rotated["difficulty_rotate"], "king:1,emperor:2,immortal:1")
+        self.assertEqual(gene_ledger.shape_of(rotated), "standard")
+        self.assertNotIn("difficulty", gene_ledger.profile_of(analysis([{"tag": "a"}])))
+
     def test_the_tool_and_the_binary_name_the_same_screen(self):
         """`gene_screen`'s bare defaults ARE this shape; if one side moves, the
         ledger would silently accept a batch the binary no longer plays."""

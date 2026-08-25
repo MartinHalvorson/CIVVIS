@@ -1809,6 +1809,38 @@ religious+science×1` — every lane open 6 / closed 4, and the analysis read
 `standard`. Ten games price nothing; the split is a reading for a batch of
 thousands.
 
+## ⭐ The majors' rung: `--difficulty` and `--difficulty-rotate` (2026-08-25)
+
+The difficulty is the AI handicap every major seat plays with — the yield,
+combat, experience and era-boost bonuses of `data/difficulties.json` — and
+every screen so far played the engine's Prince default while the live
+Civilization VI verification ladder plays Emperor and above. Two flags now
+name the majors' rung, and the barbarian seat keeps its own rung
+(`default_barbarian_difficulty`, Immortal) whatever the majors play:
+
+- `--difficulty emperor` — one rung for every game; the header records
+  `difficulty: "emperor"` and every row carries `difficulty`.
+- `--difficulty-rotate king:1,emperor:2,immortal:1` — a weighted list drawn
+  **per game from the seed**: the weights are laid end to end and the game on
+  `seed` takes the rung at `seed % total`, so a consecutive seed window plays
+  each rung in exactly its share (250 / 500 / 250 of a thousand games for that
+  list). The header records `difficulty_rotate` and `difficulty_games` (the
+  games this segment pre-registered per rung, from its seed window, before the
+  first game); each row carries the rung its game played.
+
+Both are **provenance, not a shape leg**: `shape_of` in `gene_screen.rs` and
+`tools/genes.py` do not read them, and `tools/genes.py` records `difficulty`
+and `difficulty_rotate` on the source (`RECORDED_WHEN_SET`, written only when
+present, so every record made before them stays byte-stable). A row without
+the field was played at the Prince default and `--analyze` reads it so.
+
+**Reading it.** When a batch rotated (or its rows carry more than one rung),
+`--analyze` prints a *Difficulty rungs* section and writes `difficulty` into
+the `--json` summary: games per rung in ladder order, and **the top ten genes
+by |win Δ| read on every rung separately** — the same subset estimate as the
+main table, clustered by game. A gene whose sign holds on every rung pays at
+every handicap; one that flips is a gene for one rung.
+
 ## What it is not
 
 - Not `gene_census`, which asks whether a continuous `Weights` gene moves an
