@@ -2849,12 +2849,16 @@ impl Default for BasicAi {
 /// How many improvable tiles a Builder may try to route to in one turn before
 /// giving the turn up.
 ///
-/// `step_toward` is the expensive half of `builder_step`, so trying every
-/// candidate a sweep finds would turn one refusal into a hundred pathfinds.
-/// Four is enough to clear the failure this bounds -- a single unreachable
-/// nearest tile -- without changing the cost of an ordinary turn, where the
-/// first candidate succeeds.
-pub(crate) const BUILDER_ROUTE_ATTEMPTS: usize = 4;
+/// ⚠ A REFUSED `step_toward` IS THE MOST EXPENSIVE SHAPE OF TURN IN THE GAME,
+/// not the cheapest. `route_step` returns `None` only after A* has exhausted
+/// everything the unit can reach, so each failed attempt pays a whole-region
+/// search -- and a Builder in a pocket with no reachable job pays it every
+/// turn for the rest of the game. At four attempts a 24-game probe measured
+/// **+11.8 ± 6.3% wall seconds per completed turn**, the most expensive of the
+/// 24 committed fires probes against a median of 1.9%. Two covers the failure
+/// this bounds -- a single unreachable best tile -- and halves that worst case.
+/// An ordinary turn succeeds on the first and pays nothing either way.
+pub(crate) const BUILDER_ROUTE_ATTEMPTS: usize = 2;
 
 impl BasicAi {
     pub(crate) fn unit_doctrine(g: &Game, uid: u32) -> UnitDoctrine {

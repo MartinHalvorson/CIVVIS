@@ -25,12 +25,12 @@
   "difficulty": null,
   "drift": {
     "batch": {
-      "culture": 0.0,
+      "culture": 0.125,
       "diplomatic": 0.0,
       "domination": 0.0,
-      "religious": 0.125,
-      "science": 0.75,
-      "score": 0.125,
+      "religious": 0.08333333333333333,
+      "science": 0.7083333333333334,
+      "score": 0.08333333333333333,
       "unfinished": 0.0
     },
     "games": 24,
@@ -59,43 +59,50 @@
   },
   "endings": {
     "by_kind": {
-      "religious": {
+      "culture": {
         "games": 3,
-        "median_turn": 178,
+        "median_turn": 197,
         "seats": 18,
         "share": 0.125,
+        "won_by_field": 0
+      },
+      "religious": {
+        "games": 2,
+        "median_turn": 250,
+        "seats": 12,
+        "share": 0.08333333333333333,
         "won_by_field": 0
       },
       "science": {
-        "games": 18,
-        "median_turn": 234,
-        "seats": 108,
-        "share": 0.75,
+        "games": 17,
+        "median_turn": 229,
+        "seats": 102,
+        "share": 0.7083333333333334,
         "won_by_field": 0
       },
       "score": {
-        "games": 3,
+        "games": 2,
         "median_turn": 250,
-        "seats": 18,
-        "share": 0.125,
+        "seats": 12,
+        "share": 0.08333333333333333,
         "won_by_field": 0
       }
     },
     "games": 24,
     "lanes": {
-      "domestic_mean": 123.4375,
-      "dvp_mean": 9.5,
+      "domestic_mean": 121.88194444444444,
+      "dvp_mean": 9.916666666666666,
       "dvp_required": 20,
-      "rival_dvp_mean": 12.118055555555555,
-      "rival_tourists_mean": 79.06944444444444,
+      "rival_dvp_mean": 12.416666666666666,
+      "rival_tourists_mean": 78.77083333333333,
       "seats_where_somebody_reached_the_threshold": 0.0,
-      "tourists_mean": 33.826388888888886
+      "tourists_mean": 33.50694444444444
     },
     "lost_to": {
-      "culture": 0.0,
+      "culture": 0.10416666666666667,
       "diplomatic": 0.0,
-      "religious": 0.10416666666666667,
-      "science": 0.625
+      "religious": 0.06944444444444445,
+      "science": 0.5902777777777778
     },
     "unit": "games, and the seats of those games",
     "won_by_field": 120
@@ -107,7 +114,7 @@
         {
           "label": "off",
           "seats": 144,
-          "share": 0.1666666666666666,
+          "share": 0.16666666666666666,
           "win": 0.16666666666666666
         },
         {
@@ -165,42 +172,42 @@
   "games": 24,
   "genes": [
     {
-      "adjusted_pp": 4.210526315789476,
-      "adjusted_se_pp": 8.912184902885764,
-      "compute_cost_pct": 11.12127307172771,
-      "compute_cost_se_pct": 5.242972277851071,
+      "adjusted_pp": -4.21052631578947,
+      "adjusted_se_pp": 7.317759477532923,
+      "compute_cost_pct": 4.414084423139123,
+      "compute_cost_se_pct": 6.104987974123551,
       "cost_games": 24,
       "n_off": 114,
       "n_on": 30,
       "read": "~",
       "seats": 144,
-      "share_delta_pp": 3.087390910861404,
-      "share_resolves_pp": 5.5823109274883915,
-      "share_se_pp": 1.9936824741029968,
-      "share_z": 1.5485870749054418,
+      "share_delta_pp": 1.7413561427187918,
+      "share_resolves_pp": 5.283007237949329,
+      "share_se_pp": 1.8867882992676177,
+      "share_z": 0.922920787347856,
       "tag": "builder-tries-the-next-tile",
-      "time_cost_pct": 12.400422496054393,
-      "time_cost_se_pct": 8.562466479331041,
-      "win_delta_pp": 4.210526315789476,
-      "win_off": 0.15789473684210525,
-      "win_on": 0.2,
-      "win_resolves_pp": 24.95411772808014,
-      "win_se_pp": 8.912184902885764,
+      "time_cost_pct": 5.961817072006377,
+      "time_cost_se_pct": 9.97372781916303,
+      "win_delta_pp": -4.21052631578947,
+      "win_off": 0.17543859649122806,
+      "win_on": 0.13333333333333333,
+      "win_resolves_pp": 20.489726537092185,
+      "win_se_pp": 7.317759477532923,
       "win_tranches": [
         {
           "games": 24,
           "position": "latest",
           "seats": 144,
-          "win_delta_pp": 4.210526315789476,
-          "win_se_pp": 8.912184902885764,
-          "win_z": 0.47244602324466
+          "win_delta_pp": -4.21052631578947,
+          "win_se_pp": 7.317759477532923,
+          "win_z": -0.5753846281388013
         }
       ],
-      "win_z": 0.47244602324466
+      "win_z": -0.5753846281388013
     }
   ],
   "kind": "gene_screen_analysis",
-  "overall_share": 0.1666666666666666,
+  "overall_share": 0.16666666666666666,
   "overall_win": 0.16666666666666666,
   "profile": {
     "all_seats": true,
@@ -212,8 +219,8 @@
       "target_seats": 144
     },
     "build": {
-      "binary_sha256": "6c5eabd115428686d31d8dd3902fc5a3a8df05ca67798cc7346cf1e611c86389",
-      "commit": "689edf5956b7f7c82eb65fa572921fb8edbc0a3f",
+      "binary_sha256": "937fc81bbc115191c54cbfe9a521d982a1db0de9b26249ec3fd599e9e032958d",
+      "commit": "4b61bcbc3a81ad8428fa5bbd85429ac05af97323",
       "commit_source": "build-tree",
       "dirty": true,
       "genes_sha256": "013f4ffd0c27bb637a07448cfe2589f0669f0aa2560182533d581a46e751d5f8"
@@ -508,8 +515,8 @@
     "genes": 1,
     "power": 0.8,
     "read": "the smallest Δ this run could resolve at 80% power; a Δ below it is inside the run's own noise",
-    "share_pp": 5.5823109274883915,
-    "win_pp": 24.95411772808014
+    "share_pp": 5.283007237949329,
+    "win_pp": 20.489726537092185
   },
   "rival_mix": null,
   "seats": 144,
