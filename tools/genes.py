@@ -2070,7 +2070,10 @@ def sources_from_ledger(ledger: dict) -> list[Path]:
 #: The ranking's short name for the win column.
 wins_per = wins_per_10k
 
-RANKING_MD = ROOT / "HEURISTIC_GENE_RANKING.md"
+# The ranking moved in 9ad09f7d.  Keep its generator on the same path: a
+# stale constant here recreates the deleted filename and makes every reader of
+# the checked-in ranking fail before it can check the generated content.
+RANKING_MD = ROOT / "GENE_HEURISTIC_RANKING.md"
 NOTES_MD = ROOT / "docs" / "gene_ranking_notes.md"
 
 #: How much of a gene's sentence the Description column carries. Widened
