@@ -2340,6 +2340,7 @@ impl AdvancedAi {
     /// The twin of `enable_eureka_chasing_production`.
     pub fn disable_eureka_chasing_production(&mut self) {
         self.eureka_chasing_production = false;
+    }
 
     /// Recruit the target's neighbours before an elective war: alliances,
     /// envoys to its city-states and joint-war invitations at the strike. From
