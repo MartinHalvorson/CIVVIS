@@ -445,7 +445,9 @@ impl AdvancedAi {
                 if POWER_PLANTS.contains(&base) && held_power_plant {
                     return 0.0;
                 }
-                if base == "military_academy" && !player.civics.contains(&crate::name!("space_race")) {
+                if base == "military_academy"
+                    && !player.civics.contains(&crate::name!("space_race"))
+                {
                     return 0.0;
                 }
                 SCIENCE_DRIVE_BUILDING_BONUS
@@ -467,12 +469,7 @@ impl AdvancedAi {
     }
 
     /// Pingala's preference for the launch city once a pad stands there.
-    pub(super) fn science_drive_governor_bonus(
-        &self,
-        g: &Game,
-        governor: &str,
-        cid: u32,
-    ) -> f64 {
+    pub(super) fn science_drive_governor_bonus(&self, g: &Game, governor: &str, cid: u32) -> f64 {
         let Some(drive) = self.science_drive else {
             return 0.0;
         };
@@ -538,9 +535,10 @@ impl AdvancedAi {
                 .any(|b| Self::base_building(g, b) == name)
         };
         let uplift = if g.world_era >= SCIENCE_DRIVE_PRODUCTION_ERA {
-            SCIENCE_DRIVE_CHAIN_UPLIFT * (usize::from(!held("factory"))
-                + usize::from(!POWER_PLANTS.iter().any(|plant| held(plant))))
-                as f64
+            SCIENCE_DRIVE_CHAIN_UPLIFT
+                * (usize::from(!held("factory"))
+                    + usize::from(!POWER_PLANTS.iter().any(|plant| held(plant))))
+                    as f64
         } else {
             0.0
         };
@@ -718,7 +716,13 @@ mod tests {
     }
 
     fn give_techs(g: &mut Game, pid: usize, count: usize) {
-        let techs: Vec<Name> = g.rules.techs.keys().take(count).map(|t| Name::new(t)).collect();
+        let techs: Vec<Name> = g
+            .rules
+            .techs
+            .keys()
+            .take(count)
+            .map(|t| Name::new(t))
+            .collect();
         g.players[pid].techs.extend(techs);
     }
 
@@ -758,7 +762,10 @@ mod tests {
             best_rival_techs: 44,
         };
         assert!(!slipping.leads());
-        assert!(slipping.holds(), "within the hold on science and within the tech slack");
+        assert!(
+            slipping.holds(),
+            "within the hold on science and within the tech slack"
+        );
         let gone = ScienceStanding {
             own_science: 50.0,
             best_rival_science: 80.0,
@@ -779,10 +786,15 @@ mod tests {
         ai.enable_science_victory_drive();
         g.turn = AdvancedAi::science_drive_start(&g) - 1;
         ai.maintain_science_drive(&g, 0);
-        assert!(ai.science_drive().is_none(), "before the start the field is not read");
+        assert!(
+            ai.science_drive().is_none(),
+            "before the start the field is not read"
+        );
         g.turn = AdvancedAi::science_drive_start(&g);
         ai.maintain_science_drive(&g, 0);
-        let drive = ai.science_drive().expect("leading the field in techs drives");
+        let drive = ai
+            .science_drive()
+            .expect("leading the field in techs drives");
         assert_eq!(drive.launch_city, Some(ours));
         assert!(!drive.assigned);
         assert_eq!(ai.raced_target(), Some(VictoryTarget::Science));
@@ -790,7 +802,10 @@ mod tests {
         assert!(!ai.science_drive_opens(GrandStrategy::Recovery));
         ai.disable_science_victory_drive();
         ai.maintain_science_drive(&g, 0);
-        assert!(ai.science_drive().is_none(), "switching the gene off clears the state");
+        assert!(
+            ai.science_drive().is_none(),
+            "switching the gene off clears the state"
+        );
     }
 
     #[test]
@@ -802,21 +817,30 @@ mod tests {
         let mut ai = AdvancedAi::new();
         ai.enable_science_victory_drive();
         ai.maintain_science_drive(&g, 0);
-        assert!(ai.science_drive().is_none(), "behind on techs and level on science");
+        assert!(
+            ai.science_drive().is_none(),
+            "behind on techs and level on science"
+        );
         assert_eq!(ai.raced_target(), None);
 
         let mut assigned = AdvancedAi::targeting(VictoryTarget::Science);
         assigned.enable_science_victory_drive();
         g.turn = 1;
         assigned.maintain_science_drive(&g, 0);
-        assert!(assigned.science_drive().is_some_and(|d| d.assigned), "the assigned lane drives from turn one");
+        assert!(
+            assigned.science_drive().is_some_and(|d| d.assigned),
+            "the assigned lane drives from turn one"
+        );
 
         let mut other = AdvancedAi::targeting(VictoryTarget::Culture);
         other.enable_science_victory_drive();
         give_techs(&mut g, 0, 40);
         g.turn = AdvancedAi::science_drive_start(&g);
         other.maintain_science_drive(&g, 0);
-        assert!(other.science_drive().is_none(), "a seat assigned another lane never drives");
+        assert!(
+            other.science_drive().is_none(),
+            "a seat assigned another lane never drives"
+        );
     }
 
     #[test]
@@ -840,18 +864,43 @@ mod tests {
             district: crate::name!("spaceport"),
             pos: site,
         };
-        assert_eq!(ai.science_drive_production_bonus(&g, 0, ours, &zone), SCIENCE_DRIVE_ZONE_BONUS);
-        assert_eq!(ai.science_drive_production_bonus(&g, 0, ours, &factory), 700.0);
-        assert_eq!(ai.science_drive_production_bonus(&g, 0, ours, &pad), 0.0, "no pad before Rocketry");
-        assert_eq!(ai.science_drive_production_bonus(&g, 0, theirs, &zone), 0.0, "not the launch city");
+        assert_eq!(
+            ai.science_drive_production_bonus(&g, 0, ours, &zone),
+            SCIENCE_DRIVE_ZONE_BONUS
+        );
+        assert_eq!(
+            ai.science_drive_production_bonus(&g, 0, ours, &factory),
+            700.0
+        );
+        assert_eq!(
+            ai.science_drive_production_bonus(&g, 0, ours, &pad),
+            0.0,
+            "no pad before Rocketry"
+        );
+        assert_eq!(
+            ai.science_drive_production_bonus(&g, 0, theirs, &zone),
+            0.0,
+            "not the launch city"
+        );
         g.players[0].techs.insert(crate::name!("rocketry"));
-        assert_eq!(ai.science_drive_production_bonus(&g, 0, ours, &pad), SCIENCE_DRIVE_PAD_BONUS);
+        assert_eq!(
+            ai.science_drive_production_bonus(&g, 0, ours, &pad),
+            SCIENCE_DRIVE_PAD_BONUS
+        );
         assert!(ai.science_drive_spends(&g, 0));
-        g.cities.get_mut(&ours).unwrap().buildings.push(crate::name!("coal_power_plant"));
+        g.cities
+            .get_mut(&ours)
+            .unwrap()
+            .buildings
+            .push(crate::name!("coal_power_plant"));
         let oil = Item::Building {
             building: crate::name!("oil_power_plant"),
         };
-        assert_eq!(ai.science_drive_production_bonus(&g, 0, ours, &oil), 0.0, "one power plant is enough");
+        assert_eq!(
+            ai.science_drive_production_bonus(&g, 0, ours, &oil),
+            0.0,
+            "one power plant is enough"
+        );
         let off = AdvancedAi::new();
         assert_eq!(off.science_drive_production_bonus(&g, 0, ours, &zone), 0.0);
     }
@@ -869,11 +918,15 @@ mod tests {
         let mut ai = AdvancedAi::new();
         ai.enable_science_victory_drive();
         ai.maintain_science_drive(&g, 0);
-        assert_eq!(AdvancedAi::science_drive_milestone(&g, 0), Some("satellites"));
+        assert_eq!(
+            AdvancedAi::science_drive_milestone(&g, 0),
+            Some("satellites")
+        );
         // While the Earth Satellite is unbuilt stock keys the beeline on
         // Rocketry, which is known: nothing leads to it any more.
         let stock = AdvancedAi::new();
-        let value = |ai: &AdvancedAi, tech: &str| ai.tech_value(&g, 0, tech, GrandStrategy::Science);
+        let value =
+            |ai: &AdvancedAi, tech: &str| ai.tech_value(&g, 0, tech, GrandStrategy::Science);
         let stock_gap = value(&stock, "advanced_flight") - value(&stock, "computers");
         let drive_gap = value(&ai, "advanced_flight") - value(&ai, "computers");
         // `tech_value` scales by the research horizon, so read the sign.
@@ -881,14 +934,20 @@ mod tests {
             drive_gap > stock_gap + 1.0,
             "advanced_flight leads to satellites: drive {drive_gap} v stock {stock_gap}"
         );
-        assert_eq!(ai.science_drive_tech_bonus(&g, 0, "electricity"), 0.0, "Rocketry known: no production-tech bonus");
+        assert_eq!(
+            ai.science_drive_tech_bonus(&g, 0, "electricity"),
+            0.0,
+            "Rocketry known: no production-tech bonus"
+        );
     }
 
     #[test]
     fn before_rocketry_the_production_techs_carry_their_own_value() {
         let (mut g, _, _) = board();
         give_techs(&mut g, 0, 30);
-        g.players[0].techs.remove(&crate::name!("industrialization"));
+        g.players[0]
+            .techs
+            .remove(&crate::name!("industrialization"));
         g.players[0].techs.remove(&crate::name!("electricity"));
         g.world_era = SCIENCE_DRIVE_PRODUCTION_ERA;
         g.turn = AdvancedAi::science_drive_start(&g);
@@ -897,9 +956,18 @@ mod tests {
         ai.maintain_science_drive(&g, 0);
         assert!(ai.science_drive().is_some());
         // Industrialization is on the way to Electricity too, so it carries both.
-        assert!(ai.science_drive_tech_bonus(&g, 0, "industrialization") >= SCIENCE_DRIVE_PRODUCTION_TECH);
-        assert_eq!(ai.science_drive_tech_bonus(&g, 0, "electricity"), SCIENCE_DRIVE_PRODUCTION_TECH);
-        assert!(ai.science_drive_tech_bonus(&g, 0, "steam_power") >= SCIENCE_DRIVE_PRODUCTION_TECH, "on the way to electricity");
+        assert!(
+            ai.science_drive_tech_bonus(&g, 0, "industrialization")
+                >= SCIENCE_DRIVE_PRODUCTION_TECH
+        );
+        assert_eq!(
+            ai.science_drive_tech_bonus(&g, 0, "electricity"),
+            SCIENCE_DRIVE_PRODUCTION_TECH
+        );
+        assert!(
+            ai.science_drive_tech_bonus(&g, 0, "steam_power") >= SCIENCE_DRIVE_PRODUCTION_TECH,
+            "on the way to electricity"
+        );
         let unrelated = *g
             .rules
             .techs
@@ -910,8 +978,15 @@ mod tests {
                 })
             })
             .expect("a tech off both paths");
-        assert_eq!(ai.science_drive_tech_bonus(&g, 0, &unrelated), 0.0, "{unrelated}");
-        assert_eq!(AdvancedAi::new().science_drive_tech_bonus(&g, 0, "industrialization"), 0.0);
+        assert_eq!(
+            ai.science_drive_tech_bonus(&g, 0, &unrelated),
+            0.0,
+            "{unrelated}"
+        );
+        assert_eq!(
+            AdvancedAi::new().science_drive_tech_bonus(&g, 0, "industrialization"),
+            0.0
+        );
     }
 
     #[test]
@@ -962,13 +1037,27 @@ mod tests {
                 stock_only.push(turn);
             }
         }
-        assert!(!drive_only.is_empty(), "some turn where the drive races and stock refuses");
-        assert!(stock_only.is_empty(), "stock never races where the drive refuses: {stock_only:?}");
+        assert!(
+            !drive_only.is_empty(),
+            "some turn where the drive races and stock refuses"
+        );
+        assert!(
+            stock_only.is_empty(),
+            "stock never races where the drive refuses: {stock_only:?}"
+        );
         g.turn = 199;
         ai.maintain_science_drive(&g, 0);
-        assert!(!ai.space_race_can_finish(&g, 0), "one turn left: nothing fits");
-        g.players[0].science_projects.insert("exoplanet_expedition".to_string());
-        assert!(ai.space_race_can_finish(&g, 0), "the expedition is away: always finish the flight");
+        assert!(
+            !ai.space_race_can_finish(&g, 0),
+            "one turn left: nothing fits"
+        );
+        g.players[0]
+            .science_projects
+            .insert("exoplanet_expedition".to_string());
+        assert!(
+            ai.space_race_can_finish(&g, 0),
+            "the expedition is away: always finish the flight"
+        );
     }
 
     #[test]
@@ -991,9 +1080,16 @@ mod tests {
         let mut ai = AdvancedAi::new();
         ai.enable_science_victory_drive();
         ai.maintain_science_drive(&g, 0);
-        assert_eq!(ai.science_drive_governor_bonus(&g, "pingala", ours), 0.0, "no pad yet");
+        assert_eq!(
+            ai.science_drive_governor_bonus(&g, "pingala", ours),
+            0.0,
+            "no pad yet"
+        );
         install_pad(&mut g, ours);
-        assert_eq!(ai.science_drive_governor_bonus(&g, "pingala", ours), SCIENCE_DRIVE_PINGALA_BONUS);
+        assert_eq!(
+            ai.science_drive_governor_bonus(&g, "pingala", ours),
+            SCIENCE_DRIVE_PINGALA_BONUS
+        );
         assert_eq!(ai.science_drive_governor_bonus(&g, "magnus", ours), 0.0);
         assert_eq!(ai.science_drive_governor_bonus(&g, "pingala", theirs), 0.0);
     }
