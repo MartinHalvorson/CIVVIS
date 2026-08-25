@@ -320,6 +320,12 @@ class OneShape(unittest.TestCase):
         self.assertEqual(gene_ledger.shape_of(rotated), "standard")
         self.assertNotIn("difficulty", gene_ledger.profile_of(analysis([{"tag": "a"}])))
 
+    def test_the_rival_mix_is_recorded_and_stays_the_standard_shape(self):
+        mixed = gene_ledger.profile_of(analysis([{"tag": "a"}], rivals="firaxis-mix"))
+        self.assertEqual(mixed["rivals"], "firaxis-mix")
+        self.assertEqual(gene_ledger.shape_of(mixed), "standard")
+        self.assertNotIn("rivals", gene_ledger.profile_of(analysis([{"tag": "a"}])))
+
     def test_the_tool_and_the_binary_name_the_same_screen(self):
         """`gene_screen`'s bare defaults ARE this shape; if one side moves, the
         ledger would silently accept a batch the binary no longer plays."""
