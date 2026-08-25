@@ -338,6 +338,42 @@
   ],
   "reporting_batches": [
     {
+      "path": "docs/gene_screens/2026-08-24-standard-continuous-5988-total-seats.json",
+      "shape": "standard",
+      "seats": 5988,
+      "complete_pairs": 2994,
+      "family_wise_z": 3.552,
+      "profile": {
+        "players": 6,
+        "map": "continents",
+        "width": 74,
+        "height": 46,
+        "city_states": 9,
+        "speed": "online",
+        "turns": 250,
+        "victories": "science,culture,religious,diplomatic,domination,score",
+        "all_seats": true,
+        "randomize_civs": true,
+        "baseline": "best",
+        "design": "independent",
+        "start_seed": 171006668
+      },
+      "games": 998,
+      "build": {
+        "commit": "754c5373cfaed0606e564efd079b2123021afba3",
+        "commit_source": "build-tree",
+        "dirty": false,
+        "genes_sha256": "ba9a8a8804f6a824d2f7cfdd929ebda084bb6a97a7a32c3ef23691563eee1cf2",
+        "binary_sha256": "a88b4156d0ef6e3fd527473be4e1e5bfafd430321c324bb1212ac1eda6d1d732"
+      },
+      "batch": {
+        "target_seats": 20004,
+        "complete_seats": 5988,
+        "partial": true
+      },
+      "unverified": "Governor-lane and research-planning genes were deliberately removed under the 2026-08-24 Diff < -0.05 pp / >=30,000-seat cull criterion; this immutable historical display batch was compiled before those removals."
+    },
+    {
       "path": "docs/gene_screens/2026-08-24-standard-continuous-4266-total-seats.json",
       "shape": "standard",
       "seats": 4266,
@@ -405,42 +441,6 @@
       "batch": {
         "target_seats": 30006,
         "complete_seats": 21030,
-        "partial": true
-      },
-      "unverified": "Governor-lane and research-planning genes were deliberately removed under the 2026-08-24 Diff < -0.05 pp / >=30,000-seat cull criterion; these immutable historical display batches were compiled before those removals."
-    },
-    {
-      "path": "docs/gene_screens/2026-08-24-standard-continuous-38160-total-seats.json",
-      "shape": "standard",
-      "seats": 38160,
-      "complete_pairs": 19080,
-      "family_wise_z": 3.52,
-      "profile": {
-        "players": 6,
-        "map": "continents",
-        "width": 74,
-        "height": 46,
-        "city_states": 9,
-        "speed": "online",
-        "turns": 250,
-        "victories": "science,culture,religious,diplomatic,domination,score",
-        "all_seats": true,
-        "randomize_civs": true,
-        "baseline": "best",
-        "design": "independent",
-        "start_seed": 170000000
-      },
-      "games": 6360,
-      "build": {
-        "commit": "e385d263853e0f9e94b738036e44136978fc10f1",
-        "commit_source": "build-tree",
-        "dirty": false,
-        "genes_sha256": "61465a49fba2058b5129792940552509621f6f73cfa60f09e6732141e3708dc3",
-        "binary_sha256": "66d865e28b3ad2d88d0a95ad173755ab7de29b47adc9254ca50e2275152325c0"
-      },
-      "batch": {
-        "target_seats": 40008,
-        "complete_seats": 38160,
         "partial": true
       },
       "unverified": "Governor-lane and research-planning genes were deliberately removed under the 2026-08-24 Diff < -0.05 pp / >=30,000-seat cull criterion; these immutable historical display batches were compiled before those removals."
