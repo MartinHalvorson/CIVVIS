@@ -34016,7 +34016,7 @@ fn campus_adjacency_threshold_2_credits_only_sites_with_a_threshold_plot() {
     for (pos, value) in &after {
         let was = before_values[pos];
         let near = AdvancedAi::campus_threshold_plot_near(&game, *pos);
-        if near && before.iter().position(|(p, _)| p == pos).unwrap() < SETTLE_PLAN_AHEAD_CANDIDATES
+        if near && before.iter().position(|(p, _)| p == pos).unwrap() < CAMPUS_THRESHOLD_SETTLE_CANDIDATES
         {
             assert!(
                 (value - was * (1.0 + CAMPUS_THRESHOLD_SETTLE_SHARE)).abs() < 1e-6,
