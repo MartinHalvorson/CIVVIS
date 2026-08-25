@@ -4182,6 +4182,55 @@ pub struct AdvancedAi {
     /// `AdvancedAi::diplomatic_opening_score`.
     pub diplomatic_opening: bool,
 
+    /// Whether the elective-war branch measures itself against a neighbour it
+    /// can reach, or against the weakest empire on the planet.
+    ///
+    /// ⚠ "STRONG ENOUGH TO TAKE WHAT A NEIGHBOUR HAS" NEVER ASKS WHICH
+    /// NEIGHBOUR. The branch fires on
+    ///
+    /// ```text
+    /// g.turn >= 55 && cities >= 2 && my_power > weakest_rival * 1.80 + 20.0
+    /// ```
+    ///
+    /// and `weakest_rival` is the minimum `military_power` over **every living
+    /// met major**, with no proximity test of any kind. So the question it
+    /// actually asks is *"am I 1.8 times stronger than the feeblest empire in
+    /// the world?"* — which, for any empire that is doing at all well, is true
+    /// from turn 55 to the end of the game, whether that empire is next door
+    /// or on another continent. It then commits the whole grand strategy to
+    /// Conquest, above every victory lane.
+    ///
+    /// The symptom is already written down. [`Self::no_elective_war`] records
+    /// that this branch fired in **every one of the last eight live Settler
+    /// runs**, that **no city was ever captured in any of them**, and that
+    /// sixteen cities were lost across six of the eight — and describes what
+    /// the posture buys instead: "the army marches to a neighbour's border and
+    /// stands there ('Holding off war … the army has not finished staging', 45
+    /// turns on T021044Z)". An army with nowhere to go is what a war declared
+    /// on a distance looks like. That flag answers it by switching the branch
+    /// off entirely, and it is Firaxis-only — "off for ordinary and frozen
+    /// controllers" — so on the native board, which is the board the ledger
+    /// prices on, the branch runs untouched.
+    ///
+    /// ⚠ The reach test is not invented here; it is the one the file already
+    /// uses. `city_campaign`'s `NeighbourAppraisal::weak_enough` requires
+    /// `distance <= CAMPAIGN_REACH`, and that constant's own comment calls it
+    /// "the same reach the declaration's `close_enough` already asks for".
+    /// Branch nine appraises a neighbour with it; branch ten, sitting directly
+    /// below and reaching the same conclusion without a target, does not. This
+    /// gene applies the existing constant to the existing comparison —
+    /// `weakest_rival` becomes the weakest rival with a city within eighteen
+    /// tiles of one of ours — and changes nothing else. With no rival in
+    /// reach, the branch cannot fire, which is the correct reading of "there
+    /// is nobody nearby to take anything from".
+    ///
+    /// Only the power-ratio arm is gated. The `military_civ` arm asks whether
+    /// we out-weigh the STRONGEST rival, which is a claim about the board
+    /// rather than about a neighbour, and it is left exactly as it is.
+    ///
+    /// **Off by default.** Screenable.
+    pub elective_war_in_reach: bool,
+
     /// Whether a rival's conquests are read from the cities it has taken, or
     /// only from the capitals.
     ///
@@ -5858,6 +5907,7 @@ impl AdvancedAi {
             air_surge_census: AirSurgeCensus::default(),
             air_surge_cooldown_until: 0,
             diplomatic_opening: false,
+            elective_war_in_reach: false,
             domination_city_count: false,
             unchosen_war_keeps_the_lane: false,
             rival_suzerainty_alarm: false,
@@ -8321,6 +8371,34 @@ impl AdvancedAi {
             && self.victory_focus(g, pid).progress >= LIVE_LANE_FLOOR
     }
 
+    /// Whether `rival` has a city within the campaign planner's own reach of
+    /// one of ours.
+    ///
+    /// See [`Self::elective_war_in_reach`]. `CAMPAIGN_REACH` is
+    /// `city_campaign`'s constant and its comment calls it "the same reach the
+    /// declaration's `close_enough` already asks for"; this asks the same
+    /// question of the same distance, so the branch that declares and the
+    /// planner that has to prosecute cannot disagree about who is a
+    /// neighbour.
+    fn rival_is_in_campaign_reach(&self, g: &Game, pid: usize, rival: usize) -> bool {
+        let ours = g.player_city_ids(pid);
+        if ours.is_empty() {
+            return false;
+        }
+        let theirs = g.player_city_ids(rival);
+        theirs.iter().any(|their| {
+            let Some(their) = g.cities.get(their) else {
+                return false;
+            };
+            ours.iter().any(|our| {
+                g.cities.get(our).is_some_and(|our| {
+                    g.wdist(our.pos, their.pos)
+                        <= crate::ai::advanced::city_campaign::CAMPAIGN_REACH
+                })
+            })
+        })
+    }
+
     fn religious_opening_viable(&self, g: &Game, pid: usize) -> bool {
         let player = &g.players[pid];
         if player.religion.is_some() {
@@ -9160,8 +9238,17 @@ impl AdvancedAi {
             .iter()
             .map(|o| g.military_power(*o))
             .fold(0.0_f64, f64::max);
+        // ⚠ `elective_war_in_reach`: the weakest rival WE CAN REACH, by the
+        // reach the campaign planner already requires. Off, this is the
+        // weakest empire anywhere on the board, which is what the branch
+        // below has always compared itself against. Infinity when nobody is
+        // in reach, so the branch cannot fire — the correct reading of "there
+        // is nobody nearby to take anything from".
         let weakest_rival = major_rivals
             .iter()
+            .filter(|other| {
+                !self.elective_war_in_reach || self.rival_is_in_campaign_reach(g, pid, **other)
+            })
             .map(|o| g.military_power(*o))
             .fold(f64::INFINITY, f64::min);
 

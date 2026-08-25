@@ -949,6 +949,16 @@ impl AdvancedAi {
         self.unchosen_war_keeps_the_lane = false;
     }
 
+    /// Measure the elective war against the weakest rival we can reach rather
+    /// than the weakest on the board. See [`Self::elective_war_in_reach`].
+    pub fn enable_elective_war_in_reach(&mut self) {
+        self.elective_war_in_reach = true;
+    }
+
+    pub fn disable_elective_war_in_reach(&mut self) {
+        self.elective_war_in_reach = false;
+    }
+
     /// Raise the Culture and Diplomacy denial alarms early, since countering an
     /// accumulated stock takes many turns. See
     /// [`Self::stock_denial_lead_time`].
