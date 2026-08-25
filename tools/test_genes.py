@@ -933,6 +933,51 @@ class TheBuildGuard(unittest.TestCase):
         )
 
 
+class ContinuousBatchTiming(unittest.TestCase):
+    """Reporting headers use scheduler time, never inferred row timing."""
+
+    @staticmethod
+    def report() -> dict:
+        data = analysis([{"tag": "a"}])
+        data.update({"games": 3_000, "seats": 18_000})
+        data["continuous_batch_timing"] = {
+            "schema": "continuous_batch_timing/v1",
+            "started_at": "2026-08-25T10:00:00Z",
+            "completed_at": "2026-08-25T10:25:00Z",
+            "elapsed_seconds": 1_500,
+            "completed_games": 3_000,
+        }
+        return data
+
+    def test_reporting_record_preserves_verified_whole_batch_timing(self):
+        record = gene_ledger.source_record(Path("timed.json"), self.report())
+        self.assertEqual(record["continuous_batch_timing"], {
+            "schema": "continuous_batch_timing/v1",
+            "started_at": "2026-08-25T10:00:00Z",
+            "completed_at": "2026-08-25T10:25:00Z",
+            "elapsed_seconds": 1_500,
+            "completed_games": 3_000,
+        })
+        header = ranking.reporting_batch_header("Last Batch", {"meta": record, "rows": {}})
+        self.assertEqual(
+            header,
+            "Wins ± /10k total seats — Last Batch (n=18,000 total seats; 120.0 games/min)")
+
+    def test_timing_refuses_a_duration_that_disagrees_with_its_timestamps(self):
+        data = self.report()
+        data["continuous_batch_timing"]["elapsed_seconds"] = 1_499
+        with self.assertRaisesRegex(SystemExit, "does not match"):
+            gene_ledger.continuous_batch_timing_of(data)
+
+    def test_historical_batch_says_rate_not_recorded_instead_of_estimated(self):
+        header = ranking.reporting_batch_header(
+            "Prior Batch", {"meta": {"seats": 30_000}, "rows": {}})
+        self.assertEqual(
+            header,
+            "Wins ± /10k total seats — Prior Batch "
+            "(n=30,000 total seats; games/min=not recorded)")
+
+
 class PreFingerprintSources(unittest.TestCase):
     """The twenty sources recorded before 2026-08-23 carry no build block. They
     are grandfathered — the games are played, the artefacts are history — but
