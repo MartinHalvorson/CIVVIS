@@ -900,6 +900,17 @@ impl AdvancedAi {
         self.projected_stock_denial = false;
     }
 
+    /// Score the Diplomacy lane by when twenty Diplomatic Victory Points
+    /// arrive along the Congress calendar, not by how many are banked. See
+    /// [`Self::diplomatic_lane_forecast`].
+    pub fn enable_diplomatic_lane_forecast(&mut self) {
+        self.diplomatic_lane_forecast = true;
+    }
+
+    pub fn disable_diplomatic_lane_forecast(&mut self) {
+        self.diplomatic_lane_forecast = false;
+    }
+
     /// Count a peacetime major's army massed near one of our cities toward
     /// that city's danger. See [`Self::frontier_massing_alarm`].
     pub fn enable_frontier_massing_alarm(&mut self) {
