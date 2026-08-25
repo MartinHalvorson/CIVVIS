@@ -1431,3 +1431,149 @@ class TheBackfillRecoversBridgeHealth(LedgerCase):
         civ6_ladder.record_summary(path)
         self.assertIsNone(self.state()["attempts"][0]["applied_pct"])
         self.assertEqual(len(self.state()["attempts"]), 1)
+
+
+# ---------------------------------------------------------------------------
+# The ledger branch: append-only, idempotent, and never touching the
+# management worktree's index or working tree.
+
+import subprocess  # noqa: E402
+
+#: A CI runner has no git identity; supplied through the environment so the
+#: suite never writes to any repository's config.
+PROBE = {
+    "GIT_AUTHOR_NAME": "ledger probe",
+    "GIT_AUTHOR_EMAIL": "probe@civvis.invalid",
+    "GIT_COMMITTER_NAME": "ledger probe",
+    "GIT_COMMITTER_EMAIL": "probe@civvis.invalid",
+}
+
+
+def _git(repo: Path, *args: str) -> str:
+    return subprocess.run(["git", "-C", str(repo), *args], capture_output=True,
+                          text=True, check=True,
+                          env={**os.environ, **PROBE}).stdout.strip()
+
+
+class PublishRunTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = TemporaryDirectory()
+        root = Path(self.tmp.name)
+        self.origin = root / "origin.git"
+        subprocess.run(["git", "init", "-q", "--bare", str(self.origin)], check=True)
+        self.work = root / "work"
+        subprocess.run(["git", "init", "-q", str(self.work)], check=True)
+        _git(self.work, "remote", "add", "origin", str(self.origin))
+        # A management worktree has a checked-out tree and a clean index; both
+        # must be exactly as they were after a publish.
+        (self.work / "tracked.txt").write_text("tracked\n")
+        _git(self.work, "add", "--", "tracked.txt")
+        _git(self.work, "commit", "-q", "-m", "seed")
+        self.runs = root / "runs"
+        for tag, finished in (("civvis-1", "2026-08-20T10:00:00Z"),
+                              ("civvis-2", "2026-08-21T10:00:00Z")):
+            run = self.runs / tag
+            run.mkdir(parents=True)
+            (run / "summary.json").write_text(json.dumps(
+                summary(tag, finished=finished)))
+            (run / "events.jsonl").write_text(
+                json.dumps({"kind": "turn", "turn": 1}) + "\n")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def publish(self, tag: str) -> str:
+        return civ6_ladder.publish_run(tag, self.runs, repo=self.work, env=PROBE)
+
+    def ledger_files(self) -> list[str]:
+        return _git(self.origin, "ls-tree", "-r", "--name-only",
+                    "refs/heads/ledger").splitlines()
+
+    def test_append_only_and_idempotent(self):
+        self.assertEqual(self.publish("civvis-1"), "published")
+        first = _git(self.origin, "rev-parse", "refs/heads/ledger")
+        self.assertEqual(self.ledger_files(),
+                         ["runs/civvis-1/events.jsonl.gz", "runs/civvis-1/summary.json"])
+        # Orphan: the ledger's root shares nothing with the code history.
+        self.assertEqual(_git(self.origin, "rev-list", "--count", first), "1")
+
+        self.assertEqual(self.publish("civvis-1"), "already")
+        self.assertEqual(_git(self.origin, "rev-parse", "refs/heads/ledger"), first)
+
+        self.assertEqual(self.publish("civvis-2"), "published")
+        second = _git(self.origin, "rev-parse", "refs/heads/ledger")
+        self.assertEqual(_git(self.origin, "rev-parse", f"{second}^"), first)
+        self.assertEqual(_git(self.origin, "rev-list", "--count", second), "2")
+        self.assertEqual(len(self.ledger_files()), 4)
+        # The payload is what the run wrote, gzipped.
+        import gzip
+        raw = subprocess.run(
+            ["git", "-C", str(self.origin), "show",
+             f"{second}:runs/civvis-2/events.jsonl.gz"],
+            capture_output=True, check=True).stdout
+        self.assertEqual(json.loads(gzip.decompress(raw))["turn"], 1)
+
+    def test_management_worktree_is_untouched(self):
+        before = _git(self.work, "status", "--porcelain")
+        head = _git(self.work, "rev-parse", "HEAD")
+        self.publish("civvis-1")
+        self.assertEqual(_git(self.work, "status", "--porcelain"), before)
+        self.assertEqual(_git(self.work, "rev-parse", "HEAD"), head)
+        self.assertFalse((self.work / "runs").exists())
+        self.assertEqual(_git(self.work, "ls-files"), "tracked.txt")
+        self.assertFalse(list(self.runs.glob("*/.ledger-index-*")))
+
+    def test_a_tip_that_moved_is_appended_to_not_forced(self):
+        # Another seat publishes between this seat's fetch and push; the push
+        # is refused as a non-fast-forward and the commit is rebuilt on the
+        # new tip, so nothing that was on the branch is ever lost.
+        self.publish("civvis-1")
+        other = Path(self.tmp.name) / "other"
+        subprocess.run(["git", "init", "-q", str(other)], check=True)
+        _git(other, "remote", "add", "origin", str(self.origin))
+        stale_tip = civ6_ladder.ledger_tip(self.work, env=PROBE)
+        self.assertEqual(civ6_ladder.publish_run(
+            "civvis-2", self.runs, repo=other, env=PROBE), "published")
+        # Pin the local tracking ref to the stale tip and publish a third run
+        # through a `ledger_tip` that answers stale first, fresh second.
+        calls = []
+        real = civ6_ladder.ledger_tip
+
+        def stale_once(repo, remote="origin", branch="ledger", env=None):
+            calls.append(1)
+            return stale_tip if len(calls) == 1 else real(repo, remote, branch, env=env)
+        run = self.runs / "civvis-3"
+        run.mkdir()
+        (run / "summary.json").write_text(json.dumps(summary("civvis-3")))
+        (run / "events.jsonl").write_text(json.dumps({"kind": "turn"}) + "\n")
+        civ6_ladder.ledger_tip = stale_once
+        try:
+            self.assertEqual(self.publish("civvis-3"), "published")
+        finally:
+            civ6_ladder.ledger_tip = real
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(_git(self.origin, "rev-list", "--count", "refs/heads/ledger"), "3")
+        self.assertEqual(len(self.ledger_files()), 6)
+
+    def test_a_run_without_events_publishes_its_summary(self):
+        (self.runs / "civvis-1" / "events.jsonl").unlink()
+        self.assertEqual(self.publish("civvis-1"), "published")
+        self.assertEqual(self.ledger_files(), ["runs/civvis-1/summary.json"])
+
+    def test_cli(self):
+        real_repo, real_env = civ6_ladder.REPO, dict(os.environ)
+        civ6_ladder.REPO = self.work
+        os.environ.update(PROBE)
+        buffer = io.StringIO()
+        try:
+            with redirect_stdout(buffer):
+                code = civ6_ladder.main(["--runs", str(self.runs),
+                                         "publish-run", "civvis-1"])
+                code2 = civ6_ladder.main(["--runs", str(self.runs),
+                                          "publish-run", "civvis-1"])
+        finally:
+            civ6_ladder.REPO = real_repo
+            os.environ.clear()
+            os.environ.update(real_env)
+        self.assertEqual((code, code2), (0, 0))
+        self.assertEqual(buffer.getvalue().split(), ["published", "already"])

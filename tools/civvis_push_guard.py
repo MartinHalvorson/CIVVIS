@@ -17,6 +17,12 @@ BRANCH_RE = re.compile(
     r"(?P<stamp>\d{8}T\d{6}Z)-(?P<nonce>[a-f0-9]{4,12})$"
 )
 MAIN_REF = "refs/heads/main"
+#: The one non-task branch a clone may push: the append-only run ledger that
+#: `civ6_ladder.py publish-run` writes from a finishing live game. It is
+#: allowed exactly as far as its contract — created once, then fast-forwarded,
+#: never deleted and never rewritten — so the guard that keeps a task branch
+#: honest keeps the ledger append-only too.
+LEDGER_REF = "refs/heads/ledger"
 HEAD_PREFIX = "refs/heads/"
 
 
@@ -36,6 +42,12 @@ def validate_push_update(
         return "direct pushes and deletions of main are forbidden; merge a green PR"
     if not remote_ref.startswith(HEAD_PREFIX):
         return None
+    if remote_ref == LEDGER_REF:
+        if is_zero_sha(local_sha):
+            return "the run ledger is append-only; deleting it is forbidden"
+        if is_zero_sha(remote_sha) or is_ancestor(remote_sha, local_sha):
+            return None
+        return "the run ledger is append-only; rewriting it is forbidden"
 
     # Permit cleanup of legacy task branches. Main deletion was rejected above.
     if is_zero_sha(local_sha):
