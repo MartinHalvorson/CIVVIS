@@ -6754,14 +6754,16 @@ mod tests {
     /// needs a precise way to restore one held row and record a real contrast.
     #[test]
     fn a_live_arm_can_force_only_a_ledger_held_live_treatment() {
+        // A live gene the batch rule holds off as of the 2026-08-25 batches;
+        // pick another from `ledger_held_live_treatments()` if a batch flips it.
         let forced = super::forced_live_treatments(&[
-            "settler-guard-holds".to_string(),
-            "settler-guard-holds".to_string(),
+            "whole-turn-backtrack-guard".to_string(),
+            "whole-turn-backtrack-guard".to_string(),
         ])
         .expect("a named ledger-held gene is a valid live arm");
         assert_eq!(
             forced,
-            vec!["settler-guard-holds"],
+            vec!["whole-turn-backtrack-guard"],
             "the arm is deduplicated"
         );
 
@@ -6770,7 +6772,7 @@ mod tests {
             .expect("the validated arm configures the live controller");
         assert!(
             civvis::ai::gene_ledger::deployment_treatments_with_forced_live(&forced)
-                .contains(&"settler-guard-holds"),
+                .contains(&"whole-turn-backtrack-guard"),
             "the requested gene is restored in the arm's genome"
         );
         assert!(
@@ -6783,7 +6785,7 @@ mod tests {
         assert!(host_only.contains("already ships"), "{host_only}");
         let unknown = super::forced_live_treatments(&["no-such-treatment".to_string()])
             .expect_err("a typo cannot silently become the deployment arm");
-        assert!(unknown.contains("settler-guard-holds"), "{unknown}");
+        assert!(unknown.contains("whole-turn-backtrack-guard"), "{unknown}");
     }
 
     use super::*;
