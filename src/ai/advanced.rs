@@ -4372,6 +4372,12 @@ pub struct AdvancedAi {
     builder_supply_floor: bool,
 
     // ---- append: c-d ------------------------------------------------
+    /// The plot a Barbarian Outpost stands on is bought for the city inside
+    /// whose three rings it sits, when being rid of the outpost is worth more
+    /// than the plot's quote. Opt-in gene `camp-tile-buyout`; see
+    /// `advanced/camp_buyout.rs`.
+    camp_tile_buyout: bool,
+
     /// A Builder chops woods, rainforest or marsh into a Settler, a district
     /// or a wonder at the front of the owning city's queue. Opt-in gene
     /// `chop-into-the-queue`; see `advanced/deity_habits.rs`.
@@ -4833,6 +4839,23 @@ pub struct AdvancedAi {
     /// happens. This gene asks the plainer question: are we at war with a
     /// major right now. Opt-in gene `upgrade-the-garrison`.
     upgrade_the_garrison: bool,
+    /// A settle site beside a natural wonder is priced the way the engine
+    /// pays it: the wonder's projected yields on every neighbouring work tile
+    /// (`Game::player_tile_yields`' rule, which every site score skipped) and
+    /// a capped footprint credit for the +1 Amenity, +2 Appeal, Holy Site
+    /// adjacency and era score no yield table shows. Off it, the impassable
+    /// wonder tiles are merely lost jobs and the site reads no better than
+    /// bare ground. Opt-in gene `wonder-adjacent-sites`; see
+    /// `advanced/wonder_sites.rs`.
+    wonder_adjacent_sites: bool,
+    /// Version 2 of `wonder_adjacent_sites`: the projection, plus a small
+    /// flat credit per natural-wonder tile in the footprint (capped at a
+    /// river's worth) for the +1 Amenity, appeal, Holy Site adjacency and
+    /// era score the yields never show. Kept apart from version 1 because
+    /// #1419's flat wonder credit lost −0.553 pp at scale (#2464); the batch
+    /// prices the two. Implies version 1; its enable turns version 1 off.
+    /// Opt-in gene `wonder-adjacent-sites-2`.
+    wonder_adjacent_sites_2: bool,
 }
 
 /// Science weight floor at the start of a game, and at its very end.
@@ -5188,6 +5211,12 @@ mod order_retry;
 /// `advanced/opening_settlement.rs`.
 mod opening_settlement;
 
+/// `wonder-adjacent-sites` prices a settle site beside a natural wonder the
+/// way the engine pays it; `wonder-ring-recon` sends an explorer to the
+/// unseen ring of a natural wonder near home before it picks a frontier. Two
+/// opt-in genes; see `advanced/wonder_sites.rs`.
+mod wonder_sites;
+
 mod science_victory_drive;
 pub use science_victory_drive::ScienceDrive;
 
@@ -5205,6 +5234,12 @@ pub use gene_ledger::{
     deployment_treatments, gene_ledger as gene_ledger_rows, ledger_default_on, ledger_verdict,
     GeneLedgerApplied, GeneVerdict, Measure, Verdict,
 };
+
+/// `camp-tile-buyout`: the plot a Barbarian Outpost stands on is bought for
+/// the city that has to live beside it when being rid of the outpost is worth
+/// more than the plot's quote. One opt-in gene; see
+/// `advanced/camp_buyout.rs`.
+mod camp_buyout;
 
 
 impl AdvancedAi {
@@ -5815,6 +5850,8 @@ impl AdvancedAi {
             builder_supply_floor: false,
 
             // ---- append: c-d ----------------------------------------
+            camp_tile_buyout: false,
+
             chop_into_the_queue: false,
             campaign_cities_reached: BTreeSet::new(),
             campus_adjacency_threshold_2: false,
@@ -5877,6 +5914,8 @@ impl AdvancedAi {
 
             // ---- append: t-z ----------------------------------------
             upgrade_the_garrison: false,
+            wonder_adjacent_sites: false,
+            wonder_adjacent_sites_2: false,
         }
     }
 
@@ -15768,13 +15807,24 @@ impl AdvancedAi {
         } else {
             reserve
         };
+        // `camp_tile_buyout`: an outpost inside a city's own rings costs
+        // that city something no yield in the ranking below can express, and
+        // every plot there is a surplus purchase that a unit or a building
+        // outbids by an order of magnitude. The operator's rule is a
+        // threshold, so it is answered before the shopping and out of the
+        // same reserve. It does NOT end the turn's spending the way an
+        // emergency defence does: a hex bought out of the surplus above the
+        // reserve should not also cost the city the Settler it was saving
+        // for. See `advanced/camp_buyout.rs`.
+        let bought_out_an_outpost =
+            self.camp_tile_buyout && self.camp_tile_buyout_purchase(g, pid, reserve);
         let purchase_limit = city_count.clamp(1, 4);
         let unit_purchase_limit = if g.players[pid].gold > reserve + 1_000.0 {
             2
         } else {
             1
         };
-        let mut purchased = false;
+        let mut purchased = bought_out_an_outpost;
         let mut purchased_units = 0;
         for _ in 0..purchase_limit {
             let bank = g.players[pid].gold;
@@ -22244,7 +22294,7 @@ impl AdvancedAi {
         pos: Pos,
         positions: &[Pos],
     ) -> SettlementGrowthForecast {
-        let mut center = g.rules.tile_yields(&g.map.tiles[&pos]);
+        let mut center = self.site_work_yields(g, pos, &g.map.tiles[&pos]);
         center.food = center.food.max(2.0);
         center.production = center.production.max(1.0);
 
@@ -22282,7 +22332,7 @@ impl AdvancedAi {
             candidates.push(SettlementWorkTile {
                 pos: work,
                 ring: g.wdist(pos, work),
-                yields: g.rules.tile_yields(tile),
+                yields: self.site_work_yields(g, work, tile),
                 resource_value,
             });
         }
@@ -22582,6 +22632,7 @@ impl AdvancedAi {
         let mut value =
             forecast.score + (housing - 2.0) * 4.0 + growth_readiness + dependable_jobs * 0.75;
         value += self.settlement_adjacency_value_from_positions(g, pid, pos, &positions);
+        value += self.wonder_footprint_value(g, &positions);
         let enemy_distance = g
             .cities
             .values()
@@ -23657,7 +23708,7 @@ impl AdvancedAi {
                     return None;
                 }
                 let prefilter_score = prefilter_limit
-                    .map(|_| Self::settlement_prefilter_score(g, pos))
+                    .map(|_| self.settlement_prefilter_score_for(g, pos))
                     .unwrap_or(0.0);
                 Some((pos, prefilter_score))
             })

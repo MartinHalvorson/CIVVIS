@@ -21,6 +21,8 @@ unsetopt BG_NICE
 SELF_DIR=${0:A:h}
 SUPERVISOR=${CIVVIS_SUPERVISOR:-${SELF_DIR}/civvis-game-supervisor.sh}
 POPUP_KEEPER=${CIVVIS_POPUP_KEEPER:-${SELF_DIR}/civvis-popup-keeper.sh}
+POPUP_KEEPER_LOCK=${CIVVIS_POPUP_KEEPER_LOCK:-$HOME/.civvis-popup-keeper.lock}
+POPUP_KEEPER_PID_FILE=$POPUP_KEEPER_LOCK/pid
 MIRROR_KEEPER=${CIVVIS_MIRROR_KEEPER:-${SELF_DIR}/civvis-mirror-keeper.sh}
 WEDGE_WATCHDOG=${CIVVIS_WEDGE_WATCHDOG:-${SELF_DIR}/civvis-agent-wedge-watchdog.sh}
 GAMELOCK=${CIVVIS_GAMELOCK:-${SELF_DIR:h}/civ6_control/gamelock.py}
@@ -148,7 +150,28 @@ start_supervisor() {
   say "started game supervisor pid $supervisor_pid"
 }
 
+live_popup_keeper_pid() {
+  local holder="" command=""
+  [[ -r "$POPUP_KEEPER_PID_FILE" ]] || return 1
+  holder=$(<"$POPUP_KEEPER_PID_FILE")
+  case "$holder" in
+    ''|*[!0-9]*) return 1 ;;
+  esac
+  pid_is_live "$holder" || return 1
+  command=$(ps -p "$holder" -o command= 2>/dev/null)
+  [[ "$command" == *"${POPUP_KEEPER:t}"* ]] || return 1
+  print -r -- "$holder"
+}
+
 start_popup_keeper() {
+  local existing=""
+  existing=$(live_popup_keeper_pid || true)
+  if [[ -n "$existing" ]]; then
+    popup_keeper_pid=$existing
+    popup_keeper_owned=0
+    say "adopted popup keeper pid $popup_keeper_pid"
+    return 0
+  fi
   if [[ ! -f "$POPUP_KEEPER" ]]; then
     say "cannot start popup keeper: missing $POPUP_KEEPER"
     popup_keeper_pid=""

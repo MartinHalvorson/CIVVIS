@@ -625,6 +625,82 @@ class InteractiveHostOwnership(unittest.TestCase):
                     external.terminate()
                     external.wait(timeout=5)
 
+    def test_an_existing_popup_keeper_is_adopted_not_respawned(self):
+        """A host restart must reuse the lock-owned clearer keeper.
+
+        The supervisor can legitimately restart while the interactive host and
+        its first popup keeper remain alive.  Starting another keeper then
+        makes that second copy immediately exit on the keeper lock, which used
+        to send the host into a five-second respawn loop.  The new host must
+        adopt the live, correctly identified lock holder and leave it alone on
+        host exit.
+        """
+        with TemporaryDirectory() as raw:
+            tmp = Path(raw)
+            log = tmp / "host.log"
+            starts = tmp / "popup.starts"
+            host_lock = tmp / "host.lock"
+            supervisor_lock = tmp / "supervisor.lock"
+            popup_lock = tmp / "popup.lock"
+            popup_lock.mkdir()
+            supervisor = tmp / "civvis-game-supervisor.sh"
+            supervisor.write_text("#!/bin/zsh\nwhile true; do sleep 1; done\n")
+            supervisor.chmod(0o755)
+            popup_keeper = tmp / "popup-keeper.sh"
+            popup_keeper.write_text(
+                "#!/bin/zsh\n"
+                "print -r -- started >> \"$POPUP_STARTS\"\n"
+                "while true; do sleep 1; done\n")
+            popup_keeper.chmod(0o755)
+            gamelock = tmp / "gamelock.py"
+            gamelock.write_text("raise SystemExit(1)\n")
+            external = subprocess.Popen(
+                ["/bin/zsh", str(popup_keeper)],
+                env={**os.environ, "POPUP_STARTS": str(starts)},
+            )
+            host = None
+            try:
+                (popup_lock / "pid").write_text(f"{external.pid}\n")
+                host = subprocess.Popen(
+                    ["/bin/zsh", str(self.HOST)],
+                    env={
+                        **os.environ,
+                        "CIVVIS_SUPERVISOR": str(supervisor),
+                        "CIVVIS_POPUP_KEEPER": str(popup_keeper),
+                        "CIVVIS_POPUP_KEEPER_LOCK": str(popup_lock),
+                        "CIVVIS_MIRROR_KEEPER": str(tmp / "absent-mirror-keeper.sh"),
+                        "CIVVIS_WEDGE_WATCHDOG": str(tmp / "absent-watchdog.sh"),
+                        "CIVVIS_GAMELOCK": str(gamelock),
+                        "CIVVIS_INTERACTIVE_HOST_LOG": str(log),
+                        "CIVVIS_INTERACTIVE_HOST_LOCK": str(host_lock),
+                        "CIVVIS_SUPERVISOR_LOCK": str(supervisor_lock),
+                        "CIVVIS_WEDGE_LOCK": str(tmp / "wedge.lock"),
+                        "CIVVIS_INTERACTIVE_HOST_POLL_S": "0.2",
+                        "POPUP_STARTS": str(starts),
+                    },
+                )
+                deadline = time.monotonic() + 5
+                expected = f"adopted popup keeper pid {external.pid}"
+                while time.monotonic() < deadline:
+                    if log.exists() and expected in log.read_text():
+                        break
+                    time.sleep(0.05)
+                self.assertTrue(log.exists(), "host did not write a health record")
+                self.assertIn(expected, log.read_text())
+                self.assertEqual(starts.read_text().splitlines(), ["started"],
+                                 "the host must not launch a duplicate keeper")
+                host.terminate()
+                host.wait(timeout=5)
+                self.assertIsNone(external.poll(),
+                                  "the host must not terminate an adopted popup keeper")
+            finally:
+                if host is not None and host.poll() is None:
+                    host.terminate()
+                    host.wait(timeout=5)
+                if external.poll() is None:
+                    external.terminate()
+                    external.wait(timeout=5)
+
 
 @unittest.skipUnless(Path("/bin/zsh").exists(),
                      "the supervisor ownership check is a zsh function")
