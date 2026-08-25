@@ -2392,6 +2392,67 @@ impl AdvancedAi {
     // ---- append: s-s ------------------------------------------------
 
     // ---- append: t-z ------------------------------------------------
+
+    /// Value a settle site by the mountain passes, isthmus necks and straits
+    /// its own borders would cover. Off in production; opted into by name.
+    /// See [`AdvancedAi::chokepoint_site_bonus`].
+    pub fn enable_chokepoint_siting(&mut self) {
+        self.chokepoint_siting = true;
+    }
+
+    /// The twin of `enable_chokepoint_siting`.
+    pub fn disable_chokepoint_siting(&mut self) {
+        self.chokepoint_siting = false;
+    }
+
+    /// Value a settle site on the strip of land between two seas by the naval
+    /// detour the city center saves, because a city center is a naval passage
+    /// its owner alone may use. Off in production; opted into by name. See
+    /// [`AdvancedAi::canal_city_bonus`].
+    pub fn enable_canal_city(&mut self) {
+        self.canal_city = true;
+    }
+
+    /// The twin of `enable_canal_city`.
+    pub fn disable_canal_city(&mut self) {
+        self.canal_city = false;
+    }
+
+    /// Buy the plot that closes a passage a rival could use, because a border
+    /// refuses entry to anyone without Open Borders. Off in production; opted
+    /// into by name. See [`AdvancedAi::chokepoint_plot_bonus`].
+    pub fn enable_chokepoint_claim(&mut self) {
+        self.chokepoint_claim = true;
+    }
+
+    /// The twin of `enable_chokepoint_claim`.
+    pub fn disable_chokepoint_claim(&mut self) {
+        self.chokepoint_claim = false;
+    }
+
+    /// Site the Encampment on the pass, which no foreign unit may ever enter.
+    /// Off in production; opted into by name. See
+    /// [`AdvancedAi::encampment_seal_bonus`].
+    pub fn enable_encampment_seals_the_pass(&mut self) {
+        self.encampment_seals_the_pass = true;
+    }
+
+    /// The twin of `enable_encampment_seals_the_pass`.
+    pub fn disable_encampment_seals_the_pass(&mut self) {
+        self.encampment_seals_the_pass = false;
+    }
+
+    /// Hold the gate on the approach to one of our cities with a surplus
+    /// soldier, or a strait with a hull. Off in production; opted into by
+    /// name. See [`AdvancedAi::chokepoint_garrison_step`].
+    pub fn enable_chokepoint_garrison(&mut self) {
+        self.chokepoint_garrison = true;
+    }
+
+    /// The twin of `enable_chokepoint_garrison`.
+    pub fn disable_chokepoint_garrison(&mut self) {
+        self.chokepoint_garrison = false;
+    }
 }
 
 #[cfg(test)]
