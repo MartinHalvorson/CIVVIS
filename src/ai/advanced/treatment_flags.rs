@@ -2271,6 +2271,19 @@ impl AdvancedAi {
 
     // ---- append: a-b ------------------------------------------------
 
+    /// Let a Builder whose nearest improvable tile cannot be routed to try the
+    /// next-nearest instead of standing still for the rest of the game. See
+    /// `BasicAi::builder_tries_the_next_tile`; opt-in gene
+    /// `builder-tries-the-next-tile`.
+    pub fn enable_builder_tries_the_next_tile(&mut self) {
+        self.base.builder_tries_the_next_tile = true;
+    }
+
+    /// The twin of `enable_builder_tries_the_next_tile`.
+    pub fn disable_builder_tries_the_next_tile(&mut self) {
+        self.base.builder_tries_the_next_tile = false;
+    }
+
     // ---- append: c-d ------------------------------------------------
 
     // ---- append: e-f ------------------------------------------------
