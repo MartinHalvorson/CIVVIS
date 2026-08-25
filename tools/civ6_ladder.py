@@ -230,8 +230,25 @@ def is_defeat(summary: dict) -> bool:
     return bool(outcome.get("kind") == "defeat" and outcome.get("ours"))
 
 
-def orders_totals(events_path: Path) -> tuple[int, int] | None:
-    """Sum (seen, applied) over the run's agent turn events.
+def orders_ledger(events_path: Path) -> dict | None:
+    """Sum a run's order accounting from its own events.
+
+    Three numbers, because the bridge has two sides and they disagree:
+
+    - `orders_seen`: rows the mod received, summed over its `turn` events.
+    - `orders_reported`: rows whose arm returned ok — the mod's own count,
+      `turn.orders_reported` (older runs: `turn.orders_applied`). This was the
+      whole of "applied" until 2026-08-25, and `pcall` success is not
+      acceptance: it ran 95–98% while a Settler was requested on 83
+      consecutive turns with nothing built.
+    - `orders_applied`: rows the NEXT frame verified — the decider's
+      postcondition check, re-emitted by the mod as one `turn_verified` event
+      per turn (`civvis_orders`, "order postconditions"). A turn that got no
+      verdict (the last turn of a game, the turn before a decider restart, or
+      any run older than the check) keeps its reported count, so a legacy run
+      reads exactly as it did and a verified one is never worse-informed than
+      the return codes; `orders_unverified_turns` says how many turns fell
+      back.
 
     The bridge's health is how much of what CIVVIS said the engine actually
     did. It was 79.9% once and nobody noticed for days, because the number
@@ -241,7 +258,9 @@ def orders_totals(events_path: Path) -> tuple[int, int] | None:
     """
     if not events_path.is_file():
         return None
-    seen = applied = 0
+    seen = reported = 0
+    reported_by_turn: dict[int, int] = {}
+    verified_by_turn: dict[int, int] = {}
     counted = False
     with events_path.open() as handle:
         for line in handle:
@@ -249,14 +268,50 @@ def orders_totals(events_path: Path) -> tuple[int, int] | None:
                 event = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            if event.get("kind") != "turn" or event.get("ctx") != "agent":
+            if event.get("ctx") != "agent":
                 continue
-            if event.get("orders_seen") is None:
-                continue
-            counted = True
-            seen += int(event.get("orders_seen") or 0)
-            applied += int(event.get("orders_applied") or 0)
-    return (seen, applied) if counted else None
+            kind = event.get("kind")
+            turn = int(event.get("turn") or 0)
+            if kind == "turn":
+                if event.get("orders_seen") is None:
+                    continue
+                counted = True
+                seen += int(event.get("orders_seen") or 0)
+                ok = event.get("orders_reported")
+                if ok is None:
+                    ok = event.get("orders_applied")
+                reported += int(ok or 0)
+                reported_by_turn[turn] = reported_by_turn.get(turn, 0) + int(ok or 0)
+            elif kind == "turn_verified":
+                counted = True
+                verified = int(event.get("orders_applied") or 0)
+                verified_by_turn[turn] = verified_by_turn.get(turn, 0) + verified
+    if not counted:
+        return None
+    applied = sum(verified_by_turn.get(turn, ok)
+                  for turn, ok in reported_by_turn.items())
+    applied += sum(verified for turn, verified in verified_by_turn.items()
+                   if turn not in reported_by_turn)
+    return {
+        "orders_seen": seen,
+        "orders_reported": reported,
+        "orders_applied": applied,
+        "orders_verified_turns": len(verified_by_turn),
+        "orders_unverified_turns": sum(1 for turn in reported_by_turn
+                                       if turn not in verified_by_turn),
+    }
+
+
+def orders_totals(events_path: Path) -> tuple[int, int] | None:
+    """Sum (seen, applied) over the run's agent turn events.
+
+    `applied` counts VERIFIED orders where the run carries verdicts; see
+    `orders_ledger` for the three-way accounting and the fallback rule.
+    """
+    ledger = orders_ledger(events_path)
+    if ledger is None:
+        return None
+    return ledger["orders_seen"], ledger["orders_applied"]
 
 
 DEAL_KINDS = ("deal_session", "deal_closed", "deal_declined", "deal_expired",
@@ -453,12 +508,26 @@ RUNTIME_HEARTBEAT_DEFAULT = (Path.home() / ".cache" / "civvis"
 
 
 def applied_pct(summary: dict) -> float | None:
-    """Bridge health as one number: applied orders over issued, in percent."""
+    """Bridge health as one number: applied orders over issued, in percent.
+
+    `orders_applied` is the verified count on a run that carries verdicts
+    (`orders_ledger`), so this is the RECEIVING side's rate; `reported_pct`
+    is the return codes' rate, and the distance between them is the gap.
+    """
     seen = summary.get("orders_seen")
     applied = summary.get("orders_applied")
     if not seen:
         return None
     return round(100.0 * (applied or 0) / seen, 1)
+
+
+def reported_pct(summary: dict) -> float | None:
+    """The mod's own rate: arms that returned ok over orders issued."""
+    seen = summary.get("orders_seen")
+    reported = summary.get("orders_reported")
+    if not seen or reported is None:
+        return None
+    return round(100.0 * reported / seen, 1)
 
 
 def with_bridge_health(summary: dict, summary_path: Path) -> dict:
@@ -480,15 +549,21 @@ def with_bridge_health(summary: dict, summary_path: Path) -> dict:
     the derivation stays in one place rather than two that can disagree.
 
     Non-destructive: a summary that already carries totals is returned
-    unchanged, and an unreadable or absent events file leaves it as it was.
+    unchanged except for `orders_reported`, which is filled from the events
+    when the summary predates it, and an unreadable or absent events file
+    leaves it as it was.
     """
-    if summary.get("orders_seen"):
+    if summary.get("orders_seen") and summary.get("orders_reported") is not None:
         return summary
-    totals = orders_totals(Path(summary_path).parent / "events.jsonl")
-    if not totals:
+    ledger = orders_ledger(Path(summary_path).parent / "events.jsonl")
+    if not ledger:
         return summary
     enriched = dict(summary)
-    enriched["orders_seen"], enriched["orders_applied"] = totals
+    if not summary.get("orders_seen"):
+        enriched["orders_seen"] = ledger["orders_seen"]
+        enriched["orders_applied"] = ledger["orders_applied"]
+    enriched["orders_reported"] = ledger["orders_reported"]
+    enriched["orders_unverified_turns"] = ledger["orders_unverified_turns"]
     return enriched
 
 
@@ -593,6 +668,8 @@ def entry_from(summary: dict) -> dict:
         # record preserves the exact rule and standing that made that choice.
         "abandoned": summary.get("abandoned"),
         "applied_pct": applied_pct(summary),
+        # The return codes' rate beside the verified one; see `orders_ledger`.
+        "reported_pct": reported_pct(summary),
         "revisions": summary.get("decider_revisions"),
         # Which genome the decider actually played (see `decider_genome`) and
         # the name the launcher asked for. `genome.strategy == "stock"` beside a

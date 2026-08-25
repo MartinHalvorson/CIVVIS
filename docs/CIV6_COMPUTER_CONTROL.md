@@ -603,6 +603,52 @@ own turn events, so bridge health rides the ledger instead of living only in
 a status tool somebody has to think to run; it sat at 79.9% once for days
 that way.
 
+### An order is applied when the next frame shows it (2026-08-25)
+
+`orders_applied` used to count arms whose request did not throw, and `pcall`
+success is not acceptance: a Settler was requested on 83 consecutive turns
+with `applied = true` and nothing built, a purchase bought nothing, and a
+`MOVE_TO (14,11)` from (13,11) ended at (12,9) with no refusal recorded.
+`civvis_orders` now keeps every order it issued on turn T and checks it
+against the `state` frame of turn T+1 — the unit stands at or closer to the
+ordered tile, the target is damaged or gone (or a `combat` record names the
+attacker), the city's `producing` is the item, the bought unit or building
+exists or the treasury fell, the plot is ours, the city-state's envoy count
+rose, a deal was answered (`deal_closed` / `deal_declined` / `deal_session`
+answered), a `peace_response` arrived and `at_war` agrees with it, `at_war`
+is set after a declaration, the governor holds the seat, the research, civic,
+government, pantheon and policy deck read back, and so on. Kinds the frame
+cannot answer are listed with a reason in `UNVERIFIABLE_ORDER_KINDS` and
+`UNVERIFIABLE_UNIT_VERBS` (`produce_next`, `delegation`, `aid_gift`, `levy`;
+`SKIP_TURN`, `SLEEP`, `ALERT`, `HEAL`, `AUTOMATE_EXPLORE`, `SPY_*`), and a
+test refuses any order kind that is neither checked nor listed.
+
+The verdicts ride back through the orders channel as rows of kind
+`order_verified` / `order_failed` / `turn_verified` — the mod is the ledger's
+only writer — and the mod re-emits them as events: `order_verified {turn,
+order_kind, verb, subject, checked_on}`, `order_failed {…, reason}`, and one
+`turn_verified {turn, orders_issued, orders_applied, orders_failed,
+orders_unverifiable, orders_seen, orders_reported}` per turn, where
+`orders_applied` is the verified count and `orders_seen` / `orders_reported`
+are the mod's own counts for that turn. The `turn` record keeps its
+return-code count under both `orders_applied` (its old name, for the readers
+that clock on it) and `orders_reported`. `civ6_ladder.orders_ledger` sums the
+three: the summary's `orders_applied` is the VERIFIED count wherever a turn
+carries a verdict (a turn without one — the last turn, the turn before a
+decider restart, any run older than the check — keeps its reported count, and
+`orders_unverified_turns` says how many did), `orders_reported` is the return
+codes' count, and the attempt row carries both `applied_pct` and
+`reported_pct`. `civvis_orders --mirror <run> --audit-orders <orders.jsonl>`
+replays a recorded run's orders (exported from its `orders.sqlite`) through
+the same checks.
+
+Measured offline on 256 local runs (654k checkable orders): the arms reported
+91.4% ok while the next frame verified 75.7%. The largest gaps by kind:
+`MOVE_TO` 82% (68k `did_not_move`), `ATTACK` 25%, `RANGE_ATTACK` 40%,
+`city_strike` 29%, `PROMOTE` 39%, `purchase_faith` 37%, `peace` 1% (no
+response), `UPGRADE` and `DELETE` 0% (both refused by the mod itself:
+prophets are retired, never deleted).
+
 See `docs/CIV6_LADDER.md` for the current standing.
 
 ### A lost game is stopped, not played out (2026-08-19)
