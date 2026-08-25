@@ -33790,3 +33790,331 @@ fn a_basic_builder_walled_off_from_the_nearest_job_takes_the_next_one() {
         "it starts toward the job it can reach"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Civilians out of a barbarian's reach. See `advanced/civilian_safety.rs`.
+// ---------------------------------------------------------------------------
+
+/// The gene is registered, discoverable by name, and reversible.
+#[test]
+fn civilian_out_of_reach_is_a_registered_reversible_opt_in() {
+    assert!(GENES.iter().any(|gene| gene.opt_in()
+        && gene.field == "civilian_out_of_reach"
+        && gene.tag == "civilian-out-of-reach"));
+    let mut ai = AdvancedAi::new();
+    assert!(!ai.civilian_out_of_reach, "production ships it off");
+    ai.enable_civilian_out_of_reach();
+    assert!(ai.civilian_out_of_reach);
+    ai.disable_civilian_out_of_reach();
+    assert!(!ai.civilian_out_of_reach);
+}
+
+/// A flat grassland board with one capital, every other seat's units gone,
+/// and the cleared opponent recast as the Barbarian seat, as the capture
+/// fixtures above do. Every tile is explored; visibility is the capital's
+/// and its units' own.
+fn barbarian_field(seed: u64) -> (Game, u32, Pos) {
+    let (mut game, city, home) = empire_with_a_capital(seed);
+    for uid in game.units.keys().copied().collect::<Vec<_>>() {
+        if game.units[&uid].owner != 0 {
+            game.remove_unit(uid);
+        }
+    }
+    game.barb_camps.clear();
+    game.barb_naval_camps.clear();
+    for tile in game.map.tiles.values_mut() {
+        tile.terrain = crate::name!("grassland");
+        tile.feature = None;
+        tile.hills = false;
+        tile.resource = None;
+        tile.improvement = Some(crate::name!("farm"));
+        tile.pillaged = false;
+        tile.river_edges = [false; 6];
+    }
+    game.players[0]
+        .explored
+        .extend(game.map.tiles.keys().copied());
+    let barb = 1;
+    game.players[barb].is_barbarian = true;
+    game.barb_pid = Some(barb);
+    (game, city, home)
+}
+
+fn open_land(game: &Game, pos: Pos) -> bool {
+    game.city_at(pos).is_none()
+        && game.units_at(pos).is_empty()
+        && game
+            .map
+            .get(pos)
+            .is_some_and(|tile| game.rules.is_passable(tile) && !game.rules.is_water(tile))
+}
+
+/// A settler two tiles from home with a Warrior two tiles away flees to a
+/// tile the Warrior cannot reach, before anything else in its step.
+#[test]
+fn a_settler_inside_a_raiders_reach_flees_out_of_it() {
+    let (mut game, _city, home) = barbarian_field(71_021);
+    let start = game
+        .wdisk(home, 2)
+        .into_iter()
+        .find(|pos| game.wdist(*pos, home) == 2 && open_land(&game, *pos))
+        .expect("open ground two tiles from home");
+    let raider_at = game
+        .wdisk(start, 2)
+        .into_iter()
+        .find(|pos| {
+            game.wdist(*pos, start) == 2 && game.wdist(*pos, home) == 2 && open_land(&game, *pos)
+        })
+        .expect("a raider post two tiles from the settler, in the capital's sight");
+    let settler = game.spawn_test_unit("settler", 0, start);
+    let _raider = game.spawn_test_unit("warrior", 1, raider_at);
+    let mut ai = AdvancedAi::new();
+    ai.enable_civilian_out_of_reach();
+    let reach = ai.barbarian_reach(&game, 0, start, 10);
+    assert!(
+        reach.covers(&game, start),
+        "the fixture must put the settler inside the Warrior's one-turn reach"
+    );
+    assert!(
+        !ai.civilian_safe_at(&game, 0, settler, start, &reach),
+        "unguarded ground inside the reach is not safe"
+    );
+    assert!(ai.advanced_settler_step(&mut game, 0, settler));
+    let after = game.units[&settler].pos;
+    assert_ne!(after, start, "the settler moved");
+    assert!(
+        !reach.covers(&game, after),
+        "it moved to ground the Warrior cannot reach next turn: {after:?}"
+    );
+}
+
+/// The route step into a raider's reach is refused: a settler one tile short
+/// of it either sidesteps to safe ground or holds, and never ends its turn
+/// where the Warrior could stand next turn.
+#[test]
+fn a_settler_never_steps_into_a_raiders_reach_alone() {
+    let (mut game, _city, home) = barbarian_field(71_022);
+    let start = game
+        .wdisk(home, 2)
+        .into_iter()
+        .find(|pos| game.wdist(*pos, home) == 2 && open_land(&game, *pos))
+        .expect("open ground two tiles from home");
+    // A target four tiles out and a raider two tiles beyond the first
+    // route step, so the step is in reach and the start is not.
+    let settler = game.spawn_test_unit("settler", 0, start);
+    let (target, next, raider_at) = game
+        .wdisk(start, 4)
+        .into_iter()
+        .filter(|pos| game.wdist(*pos, start) == 4 && open_land(&game, *pos))
+        .find_map(|target| {
+            let next = game.route_step(settler, target, 0)?;
+            let raider_at = game.wdisk(next, 2).into_iter().find(|pos| {
+                game.wdist(*pos, next) == 2
+                    && game.wdist(*pos, start) >= 3
+                    && game.wdist(*pos, home) <= 3
+                    && *pos != target
+                    && open_land(&game, *pos)
+            })?;
+            Some((target, next, raider_at))
+        })
+        .expect("a target whose first step a raider can reach while the start is safe");
+    let _raider = game.spawn_test_unit("warrior", 1, raider_at);
+    let mut ai = AdvancedAi::new();
+    ai.enable_civilian_out_of_reach();
+    ai.settlement_safety = false;
+    let reach = ai.barbarian_reach(&game, 0, start, 10);
+    assert!(reach.covers(&game, next) && !reach.covers(&game, start));
+    let _ = ai.settler_step_out_of_reach(&mut game, 0, settler, target);
+    let after = game.units[&settler].pos;
+    assert_ne!(after, next, "the step into the reach is refused");
+    assert!(
+        !reach.covers(&game, after),
+        "the settler ends its turn out of the Warrior's reach: {after:?}"
+    );
+}
+
+/// The doorstep exception: a settler adjacent to its site steps onto it
+/// inside the reach when it keeps movement, and founds the city before the
+/// raider moves.
+#[test]
+fn a_settler_founds_on_a_doorstep_inside_the_reach_when_it_can_found_this_turn() {
+    let (mut game, _city, home) = barbarian_field(71_023);
+    let site = game
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .find(|pos| game.wdist(*pos, home) == 5 && open_land(&game, *pos))
+        .expect("a site five tiles from home");
+    let start = game
+        .nbrs(site)
+        .into_iter()
+        .find(|pos| game.wdist(*pos, home) == 4 && open_land(&game, *pos))
+        .expect("a doorstep beside the site");
+    let raider_at = game
+        .wdisk(site, 2)
+        .into_iter()
+        .find(|pos| {
+            game.wdist(*pos, site) == 2 && game.wdist(*pos, start) >= 3 && open_land(&game, *pos)
+        })
+        .expect("a raider two tiles past the site");
+    let settler = game.spawn_test_unit("settler", 0, start);
+    // The settler's own eyes: a scout beside it sees the raider.
+    let watcher_at = game
+        .nbrs(start)
+        .into_iter()
+        .find(|pos| *pos != site && open_land(&game, *pos) && game.wdist(*pos, raider_at) <= 2)
+        .or_else(|| {
+            game.nbrs(start)
+                .into_iter()
+                .find(|pos| *pos != site && open_land(&game, *pos))
+        })
+        .expect("room for a watcher");
+    let _watcher = game.spawn_test_unit("scout", 0, watcher_at);
+    let _raider = game.spawn_test_unit("warrior", 1, raider_at);
+    let mut ai = AdvancedAi::new();
+    ai.enable_civilian_out_of_reach();
+    ai.settlement_safety = false;
+    ai.settler_targets.insert(settler, site);
+    let reach = ai.barbarian_reach(&game, 0, start, 10);
+    assert!(
+        reach.covers(&game, site),
+        "the site is inside the raider's reach"
+    );
+    assert!(game.can_found_city(settler) || game.units[&settler].pos != site);
+    assert!(ai.settler_step_out_of_reach(&mut game, 0, settler, site));
+    assert_eq!(game.units[&settler].pos, site, "the doorstep step is taken");
+    assert!(
+        game.units[&settler].moves_left > 0.0,
+        "with movement left the city is founded this same turn"
+    );
+    assert!(game.can_found_city(settler));
+    assert!(ai.advanced_settler_step(&mut game, 0, settler));
+    assert!(
+        game.city_at(site).is_some(),
+        "the city stands before the raider moves"
+    );
+}
+
+/// A threatened settler with a Warrior of ours one tile away summons it
+/// onto its own tile: the pair share the tile, the bond is recorded, and the
+/// guard's own step keeps it there.
+#[test]
+fn a_threatened_settler_summons_a_guard_onto_its_tile() {
+    let (mut game, _city, home) = barbarian_field(71_024);
+    let start = game
+        .wdisk(home, 2)
+        .into_iter()
+        .find(|pos| game.wdist(*pos, home) == 2 && open_land(&game, *pos))
+        .expect("open ground two tiles from home");
+    let raider_at = game
+        .wdisk(start, 2)
+        .into_iter()
+        .find(|pos| {
+            game.wdist(*pos, start) == 2 && game.wdist(*pos, home) == 2 && open_land(&game, *pos)
+        })
+        .expect("a raider post two tiles from the settler");
+    // On the far side of the settler: a guard beside the raider's approach
+    // would stop it with its zone of control, and `threat_reach` would
+    // rightly say the settler is not in reach at all.
+    let guard_at = game
+        .nbrs(start)
+        .into_iter()
+        .find(|pos| game.wdist(*pos, raider_at) >= 3 && open_land(&game, *pos))
+        .expect("a guard post beside the settler, away from the raider");
+    let settler = game.spawn_test_unit("settler", 0, start);
+    let guard = game.spawn_test_unit("warrior", 0, guard_at);
+    let _raider = game.spawn_test_unit("warrior", 1, raider_at);
+    let mut ai = AdvancedAi::new();
+    ai.enable_civilian_out_of_reach();
+    let _ = ai.advanced_settler_step(&mut game, 0, settler);
+    assert_eq!(
+        ai.settler_guards.get(&settler),
+        Some(&guard),
+        "the nearest healthy land unit is bound as the guard"
+    );
+    assert_eq!(
+        game.units[&guard].pos, game.units[&settler].pos,
+        "the guard shares the settler's tile — a stacked civilian cannot be taken"
+    );
+    let stacked_at = game.units[&settler].pos;
+    let acted = ai.stacked_guard_step(&mut game, 0, guard);
+    assert!(
+        acted.is_some(),
+        "the bound guard's own step is decided for it"
+    );
+    assert_eq!(
+        game.units[&guard].pos, stacked_at,
+        "the guard keeps the tile"
+    );
+}
+
+/// A builder's only job sits inside a raider's reach: with the gene it is
+/// not a job today and the builder stays in the city; without it the builder
+/// walks out and is taken in the barbarian phase.
+#[test]
+fn a_builder_refuses_a_job_inside_a_raiders_reach() {
+    let setup = || {
+        let (mut game, city, home) = barbarian_field(71_025);
+        let target = game
+            .nbrs(home)
+            .into_iter()
+            .find(|pos| game.cities[&city].owned_tiles.contains(pos) && open_land(&game, *pos))
+            .expect("the capital owns an open neighbouring tile");
+        game.map.tiles.get_mut(&target).unwrap().improvement = None;
+        game.players[0].techs.extend([
+            crate::name!("mining"),
+            crate::name!("bronze_working"),
+            crate::name!("irrigation"),
+        ]);
+        let raider_at = game
+            .wdisk(target, 1)
+            .into_iter()
+            .find(|pos| {
+                game.wdist(*pos, target) == 1
+                    && game.wdist(*pos, home) > 1
+                    && open_land(&game, *pos)
+            })
+            .expect("an open raider tile one step from the job");
+        let raider = game.spawn_test_unit("warrior", 1, raider_at);
+        (game, home, target, raider)
+    };
+
+    let (mut stock_game, home, target, raider) = setup();
+    let builder = stock_game.spawn_test_unit("builder", 0, home);
+    let mut stock = AdvancedAi::new();
+    assert!(stock.advanced_builder_step(&mut stock_game, 0, builder, GrandStrategy::Expansion));
+    assert_ne!(
+        stock_game.units[&builder].pos, home,
+        "the untreated builder walks out"
+    );
+    stock_game.current = 1;
+    if stock_game.can_move(raider, target) && stock_game.units[&builder].pos == target {
+        stock_game
+            .apply(
+                1,
+                &Action::Move {
+                    unit: raider,
+                    to: target,
+                },
+            )
+            .expect("the raider takes the exposed builder");
+        assert_eq!(stock_game.units[&builder].owner, 1);
+    }
+
+    let (mut safe_game, home, target, _raider) = setup();
+    let builder = safe_game.spawn_test_unit("builder", 0, home);
+    let mut safe = AdvancedAi::new();
+    safe.enable_civilian_out_of_reach();
+    let reach = safe.barbarian_reach(&safe_game, 0, home, 10);
+    assert!(
+        reach.covers(&safe_game, target),
+        "the only job is inside the reach"
+    );
+    let _ = safe.advanced_builder_step(&mut safe_game, 0, builder, GrandStrategy::Expansion);
+    assert_eq!(
+        safe_game.units[&builder].pos, home,
+        "the builder stays in the city rather than walking into the reach"
+    );
+    assert_ne!(safe.builder_targets.get(&builder), Some(&target));
+}
