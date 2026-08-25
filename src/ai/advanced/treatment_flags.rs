@@ -181,33 +181,6 @@ impl AdvancedAi {
         self.theology_for_founders = false;
     }
 
-    /// Score a settle site by the districts the lane would actually build
-    /// there, each on its own plot. See
-    /// [`AdvancedAi::district_lookahead_settle`]. Opt-in gene
-    /// `district-lookahead-settle`.
-    pub fn enable_district_lookahead_settle(&mut self) {
-        self.district_lookahead_settle = true;
-    }
-
-    /// The twin of `enable_district_lookahead_settle`.
-    pub fn disable_district_lookahead_settle(&mut self) {
-        self.district_lookahead_settle = false;
-    }
-
-    /// Buy a border plot only when its priced benefit clears its Gold cost by a
-    /// margin. See [`AdvancedAi::priced_tile_purchase`]. Opt-in gene
-    /// `priced-tile-purchase`.
-    pub fn enable_priced_tile_purchase(&mut self) {
-        self.priced_tile_purchase = true;
-        self.base.plot_purchase_delegated = true;
-    }
-
-    /// The twin of `enable_priced_tile_purchase`.
-    pub fn disable_priced_tile_purchase(&mut self) {
-        self.priced_tile_purchase = false;
-        self.base.plot_purchase_delegated = false;
-    }
-
     /// Credit a Campus building the science its city's multipliers will
     /// actually pay, not its raw spec yield. See
     /// [`AdvancedAi::science_multiplier_payoff`]. Opt-in gene
@@ -472,21 +445,6 @@ impl AdvancedAi {
         self.base.parallel_settlers = false;
     }
 
-    /// Price a Settler as an investment, subtracting production, population,
-    /// escort, route and safety costs from the site's payback. It also routes
-    /// the adaptive Expansion plan through `advanced_production`; otherwise the
-    /// ordinary Cities governor would never consult the coupled scorer.
-    pub fn enable_coupled_expansion(&mut self) {
-        self.coupled_expansion = true;
-        self.expansion_dispatch = true;
-    }
-
-    /// Withhold the coupled expansion treatment, preserving the stock
-    /// production score and the ordinary adaptive dispatcher setting.
-    pub fn disable_coupled_expansion(&mut self) {
-        self.coupled_expansion = false;
-    }
-
     /// Start a Settler at Civilization VI's own population floor of 2 instead
     /// of the genome's higher figure. Set by the Civilization VI bridge only;
     /// native constructors and the frozen anchor keep the genome's figure.
@@ -535,18 +493,6 @@ impl AdvancedAi {
     pub fn disable_escort_unstick(&mut self) {
         self.escort_unstick = false;
     }
-    /// Version 2 of escort-unstick: release a stalled settler's escort after
-    /// two turns unless a visible barbarian raider can reach it. One version of
-    /// a family plays, so this turns version 1 off. Opt-in gene
-    /// `escort-unstick-2`. See [`AdvancedAi::escort_unstick_2`].
-    pub fn enable_escort_unstick_2(&mut self) {
-        self.escort_unstick = false;
-        self.escort_unstick_2 = true;
-    }
-
-    pub fn disable_escort_unstick_2(&mut self) {
-        self.escort_unstick_2 = false;
-    }
     /// Escort live settlers by shadowing with ordinary moves instead of
     /// Civilization VI's formation channel, which stalls.
     ///
@@ -583,16 +529,6 @@ impl AdvancedAi {
 
     pub fn disable_religion_sues_peace(&mut self) {
         self.religion_sues_peace = false;
-    }
-
-    /// Assign explicit battlefield roles: counter cycle, ranged standoff, siege
-    /// against walls, escorts and cavalry jobs. Production Advanced enabled
-    /// this at construction until 2026-08-14, when the war-half withhold passed
-    /// the promotion matrix (+38, CI +10..+66, seed stream 18000000; see
-    /// `promoted_policy_envoy`); now only the `advanced_war_half` re-addition
-    /// arm and focused evaluator controls set it.
-    pub fn enable_tactical_strategy(&mut self) {
-        self.base.tactical_strategy = true;
     }
 
     /// Withhold the tribal-village pickup that production Advanced carries by
@@ -763,13 +699,6 @@ impl AdvancedAi {
         self.war_reinforcement = true;
     }
 
-    /// Keep fighting a war the empire overwhelmingly outweighs instead of
-    /// offering peace because it reads as stalled. Native tournament games
-    /// leave this disabled so their recorded ladders stay comparable.
-    pub fn enable_war_patience(&mut self) {
-        self.war_patience = true;
-    }
-
     /// Let a seat with an assigned victory target still counter a rival at
     /// match point. See [`Self::deny_while_targeted`].
     pub fn enable_deny_while_targeted(&mut self) {
@@ -788,16 +717,6 @@ impl AdvancedAi {
 
     pub fn disable_spy_mission_patience(&mut self) {
         self.spy_mission_patience = false;
-    }
-
-    /// Ask the walker's own loyalty verdict on the chosen site before building
-    /// a Settler for it. See [`Self::settler_site_agreement`].
-    pub fn enable_settler_site_agreement(&mut self) {
-        self.settler_site_agreement = true;
-    }
-
-    pub fn disable_settler_site_agreement(&mut self) {
-        self.settler_site_agreement = false;
     }
 
     /// Count a stacked guard as protection only when it can hold, and make it
@@ -955,6 +874,17 @@ impl AdvancedAi {
         self.elective_war_yields_to_a_lane = false;
     }
 
+    /// Weigh whether a settle site can be held — barbarian exposure and
+    /// distance from our own cities — not only what it yields. See
+    /// [`Self::defensible_sites`].
+    pub fn enable_defensible_sites(&mut self) {
+        self.defensible_sites = true;
+    }
+
+    pub fn disable_defensible_sites(&mut self) {
+        self.defensible_sites = false;
+    }
+
     /// Raise the Culture and Diplomacy denial alarms early, since countering an
     /// accumulated stock takes many turns. See
     /// [`Self::stock_denial_lead_time`].
@@ -964,13 +894,6 @@ impl AdvancedAi {
 
     pub fn disable_stock_denial_lead_time(&mut self) {
         self.stock_denial_lead_time = false;
-    }
-
-    /// Refuse a fresh direct war declaration once the endgame reserve leaves
-    /// too few turns to capture a city. Native tournament games leave this
-    /// disabled so their recorded ladders stay comparable.
-    pub fn enable_endgame_war_runway(&mut self) {
-        self.endgame_war_runway = true;
     }
 
     /// Keep the campaign aimed at a city it has already damaged instead of
@@ -1168,15 +1091,6 @@ impl AdvancedAi {
     pub fn disable_solvent_faith_army(&mut self) {
         self.solvent_faith_army = false;
     }
-    /// Hold one of the historical production flags off so an evaluator can
-    /// price it. The original `promoted_policy_envoy` bundle had thirteen
-    /// behaviours and several lacked a `disable_*`; the measured-null cleanup
-    /// removed the two confirmed nulls from production, but the explicit
-    /// evaluator controls remain available for reproducible decomposition.
-    pub fn disable_tactical_strategy(&mut self) {
-        self.base.tactical_strategy = false;
-    }
-
     pub fn disable_unit_objective_memory(&mut self) {
         self.base.unit_objective_memory = false;
     }
@@ -1286,17 +1200,6 @@ impl AdvancedAi {
 
     pub fn disable_barbarian_bargain(&mut self) {
         self.base.disable_barbarian_bargain();
-    }
-
-    /// Walk onto a visible, undefended barbarian camp one step away and clear
-    /// it for the gold bounty. See `BasicAi::barbarian_hunt`; withheld by the
-    /// `barbarian-hunt` treatment.
-    pub fn enable_barbarian_hunt(&mut self) {
-        self.base.enable_barbarian_hunt();
-    }
-
-    pub fn disable_barbarian_hunt(&mut self) {
-        self.base.disable_barbarian_hunt();
     }
 
     /// Deliberate camp clearing as a peacetime errand. See
@@ -1822,14 +1725,6 @@ impl AdvancedAi {
         self.war_reinforcement = false;
     }
 
-    pub fn disable_war_patience(&mut self) {
-        self.war_patience = false;
-    }
-
-    pub fn disable_endgame_war_runway(&mut self) {
-        self.endgame_war_runway = false;
-    }
-
     pub fn disable_siege_commitment(&mut self) {
         self.siege_commitment = false;
     }
@@ -1966,7 +1861,7 @@ impl AdvancedAi {
     }
 
     /// Let a force finish a defender together with a friendly volley, without
-    /// the rest of the tactical-strategy bundle. See
+    /// reopening the closed war-half bundle. See
     /// [`AdvancedAi::coordinated_finish`].
     ///
     /// ⭐ THIS PAIR EXISTS SO THE FLAG IS COUNTED AT ALL. `docs/EVAL_STATUS.md`
@@ -2362,6 +2257,20 @@ impl AdvancedAi {
     /// The twin of `enable_science_victory_drive`.
     pub fn disable_science_victory_drive(&mut self) {
         self.science_victory_drive = false;
+    }
+
+    /// Let a Builder whose nearest improvable tile cannot be routed to try the
+    /// next-nearest instead of standing still for the rest of the game. See
+    /// `BasicAi::builder_tries_the_next_tile`; opt-in gene
+    /// `builder-tries-the-next-tile`. Filed here rather than under a marker:
+    /// the append-point check reads a method line's first identifier.
+    pub fn enable_builder_tries_the_next_tile(&mut self) {
+        self.base.builder_tries_the_next_tile = true;
+    }
+
+    /// The twin of `enable_builder_tries_the_next_tile`.
+    pub fn disable_builder_tries_the_next_tile(&mut self) {
+        self.base.builder_tries_the_next_tile = false;
     }
 
     // Append points, one per name range: a new treatment goes under the range

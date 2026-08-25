@@ -348,6 +348,43 @@
   ],
   "reporting_batches": [
     {
+      "path": "docs/gene_screens/2026-08-25-standard-continuous-30000-total-seats-20260825T022230Z-d349.json",
+      "shape": "standard",
+      "seats": 30000,
+      "complete_pairs": 15000,
+      "family_wise_z": 3.558,
+      "profile": {
+        "players": 6,
+        "map": "continents",
+        "width": 74,
+        "height": 46,
+        "city_states": 9,
+        "speed": "online",
+        "turns": 250,
+        "victories": "science,culture,religious,diplomatic,domination,score",
+        "all_seats": true,
+        "randomize_civs": true,
+        "baseline": "best",
+        "design": "independent",
+        "start_seed": 171011669,
+        "difficulty": "prince"
+      },
+      "games": 5000,
+      "build": {
+        "commit": "98e301f1fe66de71ac079cb8a2143cc17e85faa4",
+        "commit_source": "build-tree",
+        "dirty": false,
+        "genes_sha256": "b2c3cd5e7de55084b07fdb86a4ecdf01f0a839fdddc7e27e95983401a6be7fbc",
+        "binary_sha256": "233f65eaa00ded8a6d2f3be5a2e27478d0f9dec2d126e0c4cbe3cff88301c21d"
+      },
+      "batch": {
+        "target_seats": 88452,
+        "complete_seats": 30000,
+        "partial": true
+      },
+      "unverified": "The immutable 20260825T022230Z-d349 continuous result was built from clean 98e301f1fe66de71ac079cb8a2143cc17e85faa4; it is a report-only historical display batch, not a source of runtime defaults."
+    },
+    {
       "path": "docs/gene_screens/2026-08-25-standard-continuous-4476-total-seats.json",
       "shape": "standard",
       "seats": 4476,
@@ -418,48 +455,12 @@
         "partial": true
       },
       "unverified": "Governor-lane, research-planning, and high-signal negative genes were deliberately removed under the 2026-08-24 Diff < -0.05 pp / >=30,000-seat cull criterion; this immutable historical display batch was compiled before those removals."
-    },
-    {
-      "path": "docs/gene_screens/2026-08-24-standard-continuous-4266-total-seats.json",
-      "shape": "standard",
-      "seats": 4266,
-      "complete_pairs": 2133,
-      "family_wise_z": 3.532,
-      "profile": {
-        "players": 6,
-        "map": "continents",
-        "width": 74,
-        "height": 46,
-        "city_states": 9,
-        "speed": "online",
-        "turns": 250,
-        "victories": "science,culture,religious,diplomatic,domination,score",
-        "all_seats": true,
-        "randomize_civs": true,
-        "baseline": "best",
-        "design": "independent",
-        "start_seed": 171005001
-      },
-      "games": 711,
-      "build": {
-        "commit": "a5a2352ba7e6acf64abaf47646c88e154d32102d",
-        "commit_source": "build-tree",
-        "dirty": false,
-        "genes_sha256": "f8918729fd3683507851ad9d8098d8e6197a13bfc7d2c35f91117547bb5af8f5",
-        "binary_sha256": "0bb0b44eaaff736879d0b7686fb51fb984838cfe88d1dc19ea5706a257ea11b6"
-      },
-      "batch": {
-        "target_seats": 10002,
-        "complete_seats": 4266,
-        "partial": true
-      },
-      "unverified": "Governor-lane, research-planning, and high-signal negative genes were deliberately removed under the 2026-08-24 Diff < -0.05 pp / >=30,000-seat cull criterion; this immutable historical display batch was compiled before those removals."
     }
   ],
   "counts": {
     "helps": 17,
     "hurts": 1,
-    "unresolved": 73,
+    "unresolved": 64,
     "default_on": 57
   },
   "genes": [
@@ -729,51 +730,6 @@
             "win_delta_pp": 0.987,
             "win_z": 1.561,
             "win_se_pp": 0.632
-          }
-        ]
-      }
-    },
-    {
-      "tag": "barbarian-hunt",
-      "verdict": "unresolved",
-      "default_on": false,
-      "wins_last_10k": -10,
-      "wins_prior_10k": 10,
-      "wins_third_10k": -86,
-      "win_diff_pp": -0.487204,
-      "posterior_pp": -28.274818,
-      "posterior_se_pp": 29.478128,
-      "posterior_screens": 3,
-      "posterior_tau_pp": 47.839183,
-      "family_wise": false,
-      "conflict": false,
-      "screen": {
-        "seats": 38160,
-        "pairs": 19080,
-        "n_on": 19151,
-        "n_off": 19009,
-        "win_delta_pp": -0.197,
-        "win_z": -0.518,
-        "share_delta_pp": -0.154,
-        "share_z": -1.958,
-        "read": "~",
-        "source": "2026-08-24-standard-continuous-38160-total-seats.json",
-        "win_tranches": [
-          {
-            "position": "latest",
-            "seats": 19998,
-            "pairs": 9999,
-            "win_delta_pp": -0.317,
-            "win_z": -0.602,
-            "win_se_pp": 0.526
-          },
-          {
-            "position": "previous",
-            "seats": 18162,
-            "pairs": 9081,
-            "win_delta_pp": -0.066,
-            "win_z": -0.119,
-            "win_se_pp": 0.553
           }
         ]
       }
@@ -1364,51 +1320,6 @@
       }
     },
     {
-      "tag": "coupled-expansion",
-      "verdict": "unresolved",
-      "default_on": false,
-      "wins_last_10k": -12,
-      "wins_prior_10k": null,
-      "wins_third_10k": null,
-      "win_diff_pp": -0.23586,
-      "posterior_pp": -11.792992,
-      "posterior_se_pp": 19.130991,
-      "posterior_screens": 1,
-      "posterior_tau_pp": 0.0,
-      "family_wise": false,
-      "conflict": false,
-      "screen": {
-        "seats": 38160,
-        "pairs": 19080,
-        "n_on": 19209,
-        "n_off": 18951,
-        "win_delta_pp": -0.236,
-        "win_z": -0.616,
-        "share_delta_pp": 0.038,
-        "share_z": 0.482,
-        "read": "~",
-        "source": "2026-08-24-standard-continuous-38160-total-seats.json",
-        "win_tranches": [
-          {
-            "position": "latest",
-            "seats": 19998,
-            "pairs": 9999,
-            "win_delta_pp": -0.36,
-            "win_z": -0.682,
-            "win_se_pp": 0.528
-          },
-          {
-            "position": "previous",
-            "seats": 18162,
-            "pairs": 9081,
-            "win_delta_pp": -0.099,
-            "win_z": -0.178,
-            "win_se_pp": 0.556
-          }
-        ]
-      }
-    },
-    {
       "tag": "culture-building-debt",
       "verdict": "unresolved",
       "default_on": true,
@@ -1499,51 +1410,6 @@
       }
     },
     {
-      "tag": "district-lookahead-settle",
-      "verdict": "unresolved",
-      "default_on": false,
-      "wins_last_10k": 11,
-      "wins_prior_10k": -41,
-      "wins_third_10k": -22,
-      "win_diff_pp": -0.381025,
-      "posterior_pp": -18.900942,
-      "posterior_se_pp": 15.00683,
-      "posterior_screens": 3,
-      "posterior_tau_pp": 19.237225,
-      "family_wise": false,
-      "conflict": false,
-      "screen": {
-        "seats": 38160,
-        "pairs": 19080,
-        "n_on": 19109,
-        "n_off": 19051,
-        "win_delta_pp": 0.211,
-        "win_z": 0.555,
-        "share_delta_pp": -0.016,
-        "share_z": -0.207,
-        "read": "~",
-        "source": "2026-08-24-standard-continuous-38160-total-seats.json",
-        "win_tranches": [
-          {
-            "position": "latest",
-            "seats": 19998,
-            "pairs": 9999,
-            "win_delta_pp": 0.03,
-            "win_z": 0.057,
-            "win_se_pp": 0.523
-          },
-          {
-            "position": "previous",
-            "seats": 18162,
-            "pairs": 9081,
-            "win_delta_pp": 0.411,
-            "win_z": 0.74,
-            "win_se_pp": 0.556
-          }
-        ]
-      }
-    },
-    {
       "tag": "district-planning",
       "verdict": "unresolved",
       "default_on": true,
@@ -1629,51 +1495,6 @@
             "win_delta_pp": 0.44,
             "win_z": 0.791,
             "win_se_pp": 0.557
-          }
-        ]
-      }
-    },
-    {
-      "tag": "endgame-war-runway",
-      "verdict": "unresolved",
-      "default_on": false,
-      "wins_last_10k": 11,
-      "wins_prior_10k": -17,
-      "wins_third_10k": -5,
-      "win_diff_pp": -0.087164,
-      "posterior_pp": -4.961399,
-      "posterior_se_pp": 8.289106,
-      "posterior_screens": 5,
-      "posterior_tau_pp": 0.0,
-      "family_wise": false,
-      "conflict": false,
-      "screen": {
-        "seats": 38160,
-        "pairs": 19080,
-        "n_on": 19114,
-        "n_off": 19046,
-        "win_delta_pp": 0.213,
-        "win_z": 0.562,
-        "share_delta_pp": -0.026,
-        "share_z": -0.334,
-        "read": "~",
-        "source": "2026-08-24-standard-continuous-38160-total-seats.json",
-        "win_tranches": [
-          {
-            "position": "latest",
-            "seats": 19998,
-            "pairs": 9999,
-            "win_delta_pp": 0.4,
-            "win_z": 0.763,
-            "win_se_pp": 0.524
-          },
-          {
-            "position": "previous",
-            "seats": 18162,
-            "pairs": 9081,
-            "win_delta_pp": 0.007,
-            "win_z": 0.013,
-            "win_se_pp": 0.55
           }
         ]
       }
@@ -1811,56 +1632,7 @@
             "win_se_pp": 0.549
           }
         ]
-      },
-      "family": "escort-unstick",
-      "version": 1
-    },
-    {
-      "tag": "escort-unstick-2",
-      "verdict": "unresolved",
-      "default_on": false,
-      "wins_last_10k": -33,
-      "wins_prior_10k": null,
-      "wins_third_10k": null,
-      "win_diff_pp": -0.435928,
-      "posterior_pp": -21.796406,
-      "posterior_se_pp": 21.741647,
-      "posterior_screens": 1,
-      "posterior_tau_pp": 0.0,
-      "family_wise": false,
-      "conflict": false,
-      "screen": {
-        "seats": 38160,
-        "pairs": 19080,
-        "n_on": 9529,
-        "n_off": 28631,
-        "win_delta_pp": -0.436,
-        "win_z": -1.003,
-        "share_delta_pp": -0.064,
-        "share_z": -0.699,
-        "read": "~",
-        "source": "2026-08-24-standard-continuous-38160-total-seats.json",
-        "win_tranches": [
-          {
-            "position": "latest",
-            "seats": 19998,
-            "pairs": 9999,
-            "win_delta_pp": -0.351,
-            "win_z": -0.583,
-            "win_se_pp": 0.602
-          },
-          {
-            "position": "previous",
-            "seats": 18162,
-            "pairs": 9081,
-            "win_delta_pp": -0.53,
-            "win_z": -0.843,
-            "win_se_pp": 0.629
-          }
-        ]
-      },
-      "family": "escort-unstick",
-      "version": 2
+      }
     },
     {
       "tag": "founder-temple",
@@ -2988,51 +2760,6 @@
       }
     },
     {
-      "tag": "priced-tile-purchase",
-      "verdict": "unresolved",
-      "default_on": false,
-      "wins_last_10k": 0,
-      "wins_prior_10k": -11,
-      "wins_third_10k": -31,
-      "win_diff_pp": -0.265999,
-      "posterior_pp": -14.188834,
-      "posterior_se_pp": 10.009426,
-      "posterior_screens": 3,
-      "posterior_tau_pp": 0.0,
-      "family_wise": false,
-      "conflict": false,
-      "screen": {
-        "seats": 38160,
-        "pairs": 19080,
-        "n_on": 19129,
-        "n_off": 19031,
-        "win_delta_pp": 0.009,
-        "win_z": 0.023,
-        "share_delta_pp": -0.005,
-        "share_z": -0.069,
-        "read": "~",
-        "source": "2026-08-24-standard-continuous-38160-total-seats.json",
-        "win_tranches": [
-          {
-            "position": "latest",
-            "seats": 19998,
-            "pairs": 9999,
-            "win_delta_pp": 0.037,
-            "win_z": 0.068,
-            "win_se_pp": 0.537
-          },
-          {
-            "position": "previous",
-            "seats": 18162,
-            "pairs": 9081,
-            "win_delta_pp": -0.022,
-            "win_z": -0.04,
-            "win_se_pp": 0.551
-          }
-        ]
-      }
-    },
-    {
       "tag": "promote-when-wounded",
       "verdict": "unresolved",
       "default_on": true,
@@ -3663,51 +3390,6 @@
       }
     },
     {
-      "tag": "settler-site-agreement",
-      "verdict": "unresolved",
-      "default_on": false,
-      "wins_last_10k": -14,
-      "wins_prior_10k": -23,
-      "wins_third_10k": 24,
-      "win_diff_pp": -0.069881,
-      "posterior_pp": -2.566636,
-      "posterior_se_pp": 10.683151,
-      "posterior_screens": 5,
-      "posterior_tau_pp": 14.942543,
-      "family_wise": false,
-      "conflict": false,
-      "screen": {
-        "seats": 38160,
-        "pairs": 19080,
-        "n_on": 19122,
-        "n_off": 19038,
-        "win_delta_pp": -0.273,
-        "win_z": -0.718,
-        "share_delta_pp": -0.087,
-        "share_z": -1.126,
-        "read": "~",
-        "source": "2026-08-24-standard-continuous-38160-total-seats.json",
-        "win_tranches": [
-          {
-            "position": "latest",
-            "seats": 19998,
-            "pairs": 9999,
-            "win_delta_pp": 0.023,
-            "win_z": 0.045,
-            "win_se_pp": 0.52
-          },
-          {
-            "position": "previous",
-            "seats": 18162,
-            "pairs": 9081,
-            "win_delta_pp": -0.598,
-            "win_z": -1.079,
-            "win_se_pp": 0.554
-          }
-        ]
-      }
-    },
-    {
       "tag": "settler-target-hysteresis",
       "verdict": "unresolved",
       "default_on": false,
@@ -4140,51 +3822,6 @@
       }
     },
     {
-      "tag": "tactical-strategy",
-      "verdict": "unresolved",
-      "default_on": false,
-      "wins_last_10k": -21,
-      "wins_prior_10k": null,
-      "wins_third_10k": null,
-      "win_diff_pp": -0.412304,
-      "posterior_pp": -20.615216,
-      "posterior_se_pp": 19.053832,
-      "posterior_screens": 1,
-      "posterior_tau_pp": 0.0,
-      "family_wise": false,
-      "conflict": false,
-      "screen": {
-        "seats": 38160,
-        "pairs": 19080,
-        "n_on": 19148,
-        "n_off": 19012,
-        "win_delta_pp": -0.412,
-        "win_z": -1.082,
-        "share_delta_pp": -0.009,
-        "share_z": -0.11,
-        "read": "~",
-        "source": "2026-08-24-standard-continuous-38160-total-seats.json",
-        "win_tranches": [
-          {
-            "position": "latest",
-            "seats": 19998,
-            "pairs": 9999,
-            "win_delta_pp": -0.443,
-            "win_z": -0.843,
-            "win_se_pp": 0.526
-          },
-          {
-            "position": "previous",
-            "seats": 18162,
-            "pairs": 9081,
-            "win_delta_pp": -0.378,
-            "win_z": -0.684,
-            "win_se_pp": 0.553
-          }
-        ]
-      }
-    },
-    {
       "tag": "theology-for-founders",
       "verdict": "unresolved",
       "default_on": true,
@@ -4360,51 +3997,6 @@
             "win_delta_pp": 1.653,
             "win_z": 2.643,
             "win_se_pp": 0.625
-          }
-        ]
-      }
-    },
-    {
-      "tag": "war-patience",
-      "verdict": "unresolved",
-      "default_on": false,
-      "wins_last_10k": -19,
-      "wins_prior_10k": -28,
-      "wins_third_10k": -19,
-      "win_diff_pp": -0.229556,
-      "posterior_pp": -11.646946,
-      "posterior_se_pp": 8.605712,
-      "posterior_screens": 5,
-      "posterior_tau_pp": 4.490129,
-      "family_wise": false,
-      "conflict": false,
-      "screen": {
-        "seats": 38160,
-        "pairs": 19080,
-        "n_on": 19133,
-        "n_off": 19027,
-        "win_delta_pp": -0.386,
-        "win_z": -1.015,
-        "share_delta_pp": -0.131,
-        "share_z": -1.641,
-        "read": "~",
-        "source": "2026-08-24-standard-continuous-38160-total-seats.json",
-        "win_tranches": [
-          {
-            "position": "latest",
-            "seats": 19998,
-            "pairs": 9999,
-            "win_delta_pp": -0.59,
-            "win_z": -1.118,
-            "win_se_pp": 0.528
-          },
-          {
-            "position": "previous",
-            "seats": 18162,
-            "pairs": 9081,
-            "win_delta_pp": -0.162,
-            "win_z": -0.294,
-            "win_se_pp": 0.549
           }
         ]
       }

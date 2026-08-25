@@ -783,8 +783,8 @@ class TheBuildGuard(unittest.TestCase):
     """⚠⚠ A SCREEN MUST NOT PRICE CODE IT DID NOT PLAY. This has happened three
     times: P10 published a `holy-lane-parity` column after #2266 deleted the
     gene (#2299, #2307 restored it at +99); #2307 had to state its build in
-    prose; and on 2026-08-23 a sibling change was minutes from deleting
-    `barbarian-hunt` while the first standard-shape screen re-priced it."""
+    prose; and on 2026-08-23 a sibling change was minutes from culling a
+    gene while the first standard-shape screen re-priced it."""
 
     TAGS = ["alpha", "beta", "gamma"]
 
@@ -829,9 +829,9 @@ class TheBuildGuard(unittest.TestCase):
         """The other direction, which is what an unmeasured gene quietly looks
         like: the code has a gene this screen never compiled in."""
         said = self.refusal(self.screen(),
-                            at={"c" * 40: self.TAGS + ["barbarian-hunt"]})
+                            at={"c" * 40: self.TAGS + ["unmeasured-gene"]})
         self.assertIn("never compiled in", said)
-        self.assertIn("barbarian-hunt", said)
+        self.assertIn("unmeasured-gene", said)
 
     def test_a_reordered_gene_set_is_still_a_different_gene_set(self):
         said = self.refusal(self.screen(), at={"c" * 40: list(reversed(self.TAGS))})
@@ -1880,16 +1880,15 @@ class TheStandardScreen(unittest.TestCase):
         "war-economy": (2.35, 7.50),
         "apostle-promotion-by-role": (0.32, 1.02),
         "theology-for-founders": (0.45, 1.43),
-        "settler-site-agreement": (-0.46, -1.47),
         "settler-target-hysteresis": (-0.36, -1.16),
         "housing-research": (-0.35, -1.10),
         "religion-sues-peace": (-0.36, -1.14),
     }
-    #: The eight historical pooled-*Diff* candidates: two were clear signals
-    #: and six were noise. They now demonstrate why evidence cannot decide a
+    #: The seven historical pooled-*Diff* candidates: two were clear signals
+    #: and five were noise. They now demonstrate why evidence cannot decide a
     #: deployment selection automatically.
     FORMER_VETO_CANDIDATES = ("governor-victory-lanes", "war-economy",
-                              "settler-site-agreement", "settler-target-hysteresis",
+                              "settler-target-hysteresis",
                               "housing-research", "religion-sues-peace",
                               "apostle-promotion-by-role", "theology-for-founders")
 
@@ -2050,15 +2049,15 @@ class TheStandardScreen(unittest.TestCase):
             self.assertNotIn(tag, live_tags)
             self.assertIn(f"| `{tag}` |", ranked)
 
-    def test_six_of_the_eight_former_candidates_are_at_z_about_one(self):
-        """Why the former automatic rule was retired: six of its candidates
+    def test_five_of_the_seven_former_candidates_are_at_z_about_one(self):
+        """Why the former automatic rule was retired: five of its candidates
         were |z| ≈ 1 on the next screen."""
         signal = [tag for tag in self.FORMER_VETO_CANDIDATES
                   if abs(self.STANDARD[tag][1]) >= 3.0]
         noise = [tag for tag in self.FORMER_VETO_CANDIDATES
                  if abs(self.STANDARD[tag][1]) < 2.0]
         self.assertEqual(sorted(signal), ["governor-victory-lanes", "war-economy"])
-        self.assertEqual(len(noise), 6)
+        self.assertEqual(len(noise), 5)
         for tag in noise:
             self.assertLess(abs(self.STANDARD[tag][1]), 1.5, tag)
 

@@ -4,8 +4,8 @@
 //! agent adds a shared strategic model so research, production, diplomacy,
 //! civilian work, and military movement pursue the same medium-term goal.
 use super::{
-    Ai, BasicAi, BasicUnitPlanState, ForceReport, PlanReport, PolicyDeck, UnitDoctrine,
-    UnitMemory, WarPlanReport, Weights,
+    Ai, BasicAi, BasicUnitPlanState, ForceReport, PlanReport, PolicyDeck, UnitDoctrine, UnitMemory,
+    WarPlanReport, Weights, BUILDER_ROUTE_ATTEMPTS,
 };
 use crate::belief::{BeliefState, CitySighting};
 use crate::game::{
@@ -119,45 +119,6 @@ const THREAT_RELIEF_RADIUS: i32 = 6;
 /// empires holding `masonry` by then; 60 leaves the lane a margin on the wrong
 /// side of that and keeps it honestly *ancient*.
 const RUSH_WINDOW_CLOSES: u32 = 60;
-/// Empire-wide power multiple over the campaign target above which
-/// `war_patience` stops the stall clause of the peace rules from ending the
-/// war. The fatigue rule (war age ≥ 24 with no campaign progress in 12) exists
-/// so a war that is going nowhere gets sued out — correct when the sides are
-/// close, and a self-inflicted defeat when the attacker outweighs the defender
-/// severalfold and the "stall" is a wall taking its time to fall. 2.5 sits
-/// far above the 1.32 elective-declaration ratio, so patience is only ever
-/// extended to a war the declaration logic already called a walkover, and the
-/// 0.62 outmatched trigger and Recovery trigger keep their shape: the moment
-/// the advantage is gone, so is the patience.
-const OVERWHELMING_WAR_RATIO: f64 = 2.5;
-/// Combined hostile-major power relative to ours at which Recovery stops
-/// protecting its current campaign target from peace proposals.
-///
-/// A single threatened city can transiently put a winning campaign into
-/// Recovery, so its target normally remains worth fighting. Two independent
-/// major fronts whose combined army is this far ahead are different: keeping
-/// one target excluded leaves a live coalition war open while the other peace
-/// proposals are considered. The t180 Rome replay had 646 power against
-/// Zulu's 1,436 plus Nubia's 420, then lost Rome and Mediolanum before either
-/// front was negotiated out.
-const MULTI_FRONT_RECOVERY_PEACE_RATIO: f64 = 1.5;
-/// Standard turns without a foreign-city acquisition after which `war_patience`
-/// lapses and the stall clause fires again even over an overwhelmed target.
-///
-/// ★★★★ AN OVERWHELMING WAR THAT NEVER TAKES A CITY IS NOT A WALKOVER, IT IS A
-/// TAX. Patience was written for a slow wall taking its time to fall; on the
-/// live Civilization VI seat the walls never fall at all. Run
-/// civvis-20260815T220819Z: at war with the Maori (their power 24–72 against
-/// our 400–800) from ~t100 to the end at t224, "Pressing the war … a war to
-/// finish, not to quit" on every assessment, the Grand strategy read Conquest
-/// on 72 of 88 assessments, no city was ever taken, and the economy bought
-/// 98 city-turns of AT Crews for it. Runs T182350Z and T190904Z carried
-/// 140- and 200-turn wars the same way, without a capture. Forty standard
-/// turns (twenty at Online) with no city captured is longer than any siege
-/// that is actually working; after that the empire sues, the plan leaves
-/// Conquest, and production goes back to development. A foreign city changing
-/// hands resets the clock, so a war that IS progressing keeps its patience.
-const WAR_PATIENCE_LIMIT_TURNS: u32 = 40;
 /// Distance from the campaign objective inside which a force group counts as
 /// the front rather than a rear reinforcement, used by
 /// [`AdvancedAi::wartime_reinforcement_step`]. The staging ring is 3..=5 and
@@ -481,28 +442,6 @@ const SPY_TRAVEL_ORDER_PATIENCE: u32 = 5;
 /// not ambitious: it is the point where the city has returned the production
 /// and the population the settler cost, not where it has become good.
 const SETTLE_PAYBACK: u32 = 15;
-
-/// The bounded horizon over which a paid expansion has to earn back its
-/// investment. This is deliberately longer than the minimum `SETTLE_PAYBACK`
-/// safety check: a city that merely survives fifteen turns is not necessarily
-/// worth the production and population it consumed.
-const COUPLED_EXPANSION_HORIZON: u32 = 90;
-/// Production points are the first, exact cost of a Settler. Keep the
-/// conversion in the same order of magnitude as the production scores below,
-/// while leaving the evaluator arm's policy decision auditable.
-const COUPLED_EXPANSION_PRODUCTION_VALUE: f64 = 4.0;
-/// A population point is both a lost citizen and a delayed growth threshold.
-/// The threshold is added to the measured yield loss in
-/// `coupled_expansion_value` rather than hidden in the site score.
-const COUPLED_EXPANSION_POPULATION_VALUE: f64 = 90.0;
-/// A military body is needed to escort a civilian through a contested map. A
-/// missing escort is a bounded reservation cost, not a hard veto: the army may
-/// be available by the time the Settler completes.
-const COUPLED_EXPANSION_ESCORT_VALUE: f64 = 90.0;
-/// Approximate Settler route length in turns from observed live paths. The
-/// route planner still owns the actual movement after production; this value
-/// only prices the opportunity cost before a unit exists.
-const COUPLED_EXPANSION_ROUTE_TURNS_PER_TILE: f64 = 1.2;
 
 /// A new city has to become more than a map pin. Forecast the first four
 /// citizens because they decide whether it reaches a useful population in time
@@ -1542,10 +1481,6 @@ pub struct AdvancedAi {
     builder_targets: BTreeMap<u32, Pos>,
     major_war_since: Option<u32>,
     last_campaign_progress: u32,
-    /// Owners from the preceding live observation. Firaxis keeps a captured
-    /// city's identity, so an ownership transition distinguishes a campaign
-    /// gain from a newly founded city without guessing from its name or size.
-    campaign_city_owners: BTreeMap<u32, usize>,
     /// City and wall health of every at-war rival city at the preceding
     /// observation, so `siege_is_progress` can tell a siege that is landing
     /// net damage from one the defender out-heals. See the flag.
@@ -1567,7 +1502,6 @@ pub struct AdvancedAi {
     /// defender out-heals can stall. Live-bridge repair, withholdable as
     /// `siege-is-progress`.
     pub siege_is_progress: bool,
-    campaign_observed: bool,
     last_city_count: usize,
     peace_until: u32,
     /// Rivals offered peace in the current diplomacy pass, for `plan_report`.
@@ -1695,21 +1629,6 @@ pub struct AdvancedAi {
     /// queues, and the response expires after six Standard-speed turns so it
     /// cannot become a permanent war economy. **Off by default.**
     pub surprise_war_mobilization: bool,
-    /// Do not let the stall clause of the peace rules end a war the empire is
-    /// overwhelmingly winning. Fatigue (war age ≥ 24, no campaign progress in
-    /// 12) both offers peace and accepts any white peace at +320; while this
-    /// flag is on and the empire holds `OVERWHELMING_WAR_RATIO` over its
-    /// campaign target, the stall clause stands down and the ordinary
-    /// outmatched (0.62) and Recovery triggers keep the war endable. **Off by
-    /// default, live-bridge only.** Bounded by `WAR_PATIENCE_LIMIT_TURNS`
-    /// standard turns without a foreign-city acquisition — see that constant
-    /// for the live wars that never landed a city.
-    pub war_patience: bool,
-    /// Do not open a fresh direct war once the shared endgame reserve leaves
-    /// no time to turn a declaration into a capture. Timed attacks already
-    /// use this reserve while they are appointed; the direct victory-denial
-    /// fallback must not bypass it. **Off by default, live-bridge only.**
-    pub endgame_war_runway: bool,
     /// Finish a city the army has already broken open before re-aiming the
     /// campaign at a fresh one.
     ///
@@ -1890,6 +1809,29 @@ pub struct AdvancedAi {
     /// is only 42-30, so treat the rank effect as weak. **Wins did not move:
     /// 35-37.** Shipped off with the measurement recorded, so the retention
     /// result can be re-derived rather than re-discovered.
+    ///
+    /// ⚠⚠ AND THEN NOTHING COULD SET IT FOR A MONTH. Whatever arm reached this
+    /// flag belonged to the evaluator, and the evaluator was deleted; `genes.rs`
+    /// records that "the `treatment` vocabulary went with them". No registry
+    /// row replaced it, so from that commit until 2026-08-25 `defensible_sites`
+    /// was `false` in every configuration this repository could produce, and
+    /// the retention result above could not be re-derived by anything — the
+    /// exact outcome the last sentence was written to prevent. It is one of the
+    /// fourteen unreachable controller flags catalogued in #2457.
+    ///
+    /// ⚠ Re-read the "wins did not move" line before treating it as a null.
+    /// **35-37 over 72 games** is a win count, and a run that size resolves
+    /// almost nothing: the same instrument that produced it produced +22.2 pp
+    /// readings for genes that measure +0.2 pp at 1,500 seats (#2465). The
+    /// intermediate effects are the resolved ones — cities held **+1.09** at
+    /// p = 0.0001 and cities lost to barbarians **-0.48** at p < 0.0001, both
+    /// **replicated on a fresh seed set** — and they point the same way as
+    /// `r = +0.89` between cities held and final score. A gene whose mechanism
+    /// replicates and whose win reading is underpowered is exactly what a
+    /// standard screen is for.
+    ///
+    /// `defensible-sites` is now a registered `Kind::OptIn` gene so one can
+    /// price it. It ships off, like every entrant.
     pub defensible_sites: bool,
     /// Use the live, visible-threat settlement safety model in the shipped scorer.
     ///
@@ -2276,15 +2218,6 @@ pub struct AdvancedAi {
     /// `expansion-pays-back` is now a registered `Kind::OptIn` gene so a screen
     /// can price it. It ships off, like every entrant.
     pub expansion_pays_back: bool,
-    /// Price a Settler as a coupled investment instead of a free city target.
-    ///
-    /// The treatment subtracts the real production points, the population
-    /// recovery cost, escort availability, route time, visible safety cost,
-    /// and the founding lag from the same site's bounded payback value. It is
-    /// **off by default** and reached by `advanced_coupled_expansion`; the
-    /// production controller therefore keeps the historical score until this
-    /// full-cost arm has a replicated outcome screen.
-    pub coupled_expansion: bool,
     /// Remove only the absolute `standard_duration(300)` cap from adaptive
     /// expansion's existing deadline. Default-off evaluator treatment; the
     /// endgame reserve remains unchanged.
@@ -2805,23 +2738,6 @@ pub struct AdvancedAi {
     /// worst a long Counterspy is re-asked once mid-run, which the host
     /// refuses once instead of every turn.
     pub spy_mission_patience: bool,
-    /// ★★★ THE ORDER AND THE MARCH MUST AGREE ON THE GROUND. The Settler
-    /// production arm prices `best_settle_site`'s answer; the walker then
-    /// asks `settle_site_loyalty_verdict` for the same ground and refuses it.
-    /// Run civvis-20260818T182702Z (the first hostile map after the
-    /// land-grab pipeline, #2027): 19 Settler starts became 8 foundings and
-    /// a six-city empire at score 552, with 153 loyalty refusals (112
-    /// beyond-reach + 41 forecast-drain) and 54 settler capture/loss lines —
-    /// roughly eleven Settlers of production paid for walkers with nowhere
-    /// to land, while the same binary's friendly-map runs landed 17 and 18
-    /// cities. With `settler_site_agreement` the production gate asks the
-    /// walker's own verdict for the chosen site before starting the build;
-    /// a doomed best site usually sits in a doomed frontier
-    /// (`settler_dead_sites`' own observation), so refusing the build is
-    /// the cheap half of the same answer. Natively the verdict is the drain
-    /// forecast alone (`frontier_loyalty` is a live arm), so the repair is
-    /// an engine repair with a wider live reading, not bridge semantics.
-    pub settler_site_agreement: bool,
     /// A stacked guard holds with its settler, and only a guard that can hold
     /// counts as protection.
     ///
@@ -3834,21 +3750,6 @@ pub struct AdvancedAi {
     /// the seats is exactly the kind of cost the Apostle cannot see.
     pub theology_for_founders: bool,
 
-    /// Score a settle site by the districts this city would actually build
-    /// — the lane's first families, each on its own plot, at the lane's
-    /// yield weights — instead of every family's best plot summed
-    /// (`adjacency_site_planning`, which this replaces while on). See
-    /// `advanced/site_lookahead.rs`. Off everywhere by default; opt-in gene
-    /// `district-lookahead-settle`.
-    pub district_lookahead_settle: bool,
-
-    /// Buy a border plot only when its priced benefit — the job it improves,
-    /// the resource it connects, the district plot it unlocks, over a payback
-    /// horizon cut short where culture would claim it anyway — clears the
-    /// Gold at the lane's price by a margin. See `advanced/site_lookahead.rs`.
-    /// Off everywhere by default; opt-in gene `priced-tile-purchase`.
-    pub priced_tile_purchase: bool,
-
     /// Price a Campus building at the science it will ACTUALLY earn, so the
     /// research economy scales up as the multipliers arrive instead of down.
     ///
@@ -3991,8 +3892,7 @@ pub struct AdvancedAi {
     /// half is unreachable here, not mispriced.
     ///
     /// ⭐ So the lever for that half is not district pricing at all — it is
-    /// CITY SITING, where `district-lookahead-settle` already scores a
-    /// settlement by the districts its plan would build. A Campus reaches
+    /// CITY SITING. A Campus reaches
     /// adjacency 4 by founding beside mountains, and that decision is made
     /// long before this term is consulted.
     ///
@@ -4174,7 +4074,7 @@ pub struct AdvancedAi {
     /// strategy while no city of ours is threatened and our own lane is live.
     ///
     /// ⚠ THE LARGEST SINGLE BRANCH IN THE GRAND-STRATEGY CASCADE, AND IT HAS
-    /// NO RELEASE. `at_war && !stalemate && !raid_only_war` pins the plan on
+    /// NO RELEASE. `at_war && !raid_only_war` pins the plan on
     /// Conquest for the whole duration of ANY war — including one a rival
     /// declared on us that the Recovery branches above have already found is
     /// not hurting us, since a threatened city and an adverse power ratio are
@@ -4187,10 +4087,8 @@ pub struct AdvancedAi {
     /// board, against expansion 24%, religion 19%, culture 5%, science 2% and
     /// diplomacy 0%. `victory_eval` finishes domination **2/16** even when
     /// every major is ordered to play it, and `docs/EVAL_STATUS.md` records
-    /// **1** of 107 rival victories as conquest. And the one release that
-    /// exists, `war_patience`, ships **off** — it sits at rank 110 of the
-    /// ranking with negative readings in all three windows — so in the
-    /// deployment genome this branch has no exit at all.
+    /// **1** of 107 rival victories as conquest. The deployment genome holds
+    /// this release off, so this branch has no exit at all.
     ///
     /// ⚠⚠ THIS GENE WAS WITHDRAWN ONCE ON A NUMBER THAT WAS NOT REAL. Its
     /// first probe read -22.2 pp wins (z -13.2) with 0 of 9 treated seats
@@ -4560,22 +4458,19 @@ pub struct AdvancedAi {
     /// `docs/LIVE_TACTICS.md` §11.
     pub step_and_reassess: bool,
 
-    /// Admit the friendly-volley extension without the rest of the closed
-    /// war-half bundle.  The volley shipped inside `tactical_strategy` (#1360)
-    /// and left production with that bundle's removal (#1589, +38 for the
-    /// composite) — but a composite gate never prices its parts, so this flag
-    /// reaches the one part this goal is about: a force finishing a defender
-    /// together.  Off by default and off for the frozen anchors; the
+    /// Admit the friendly-volley extension without reopening the closed
+    /// war-half bundle. It lets a force finish a defender together. Off by
+    /// default and off for the frozen anchors; the
     /// `advanced_coordinated_finish` evaluator arm is the treatment that
     /// prices it against stock `advanced`.
     pub coordinated_finish: bool,
 
     /// Extend the friendly volley to a pair of finishers when no lone
     /// teammate can complete the kill, so an enemy two sound blows from death
-    /// is still a group target for 2–3 units.  Inert wherever the volley
-    /// layer itself is off (`tactical_strategy` and [`Self::coordinated_finish`]
-    /// both unset — Basic, the frozen `advanced_v1` anchor, and today's stock
-    /// production controller); the `advanced_single_finisher_volley`
+    /// is still a group target for 2–3 units. Inert wherever
+    /// [`Self::coordinated_finish`] is unset — Basic, the frozen
+    /// `advanced_v1` anchor, and today's stock production controller; the
+    /// `advanced_single_finisher_volley`
     /// evaluator arm withholds only this chain from the treatment to price it
     /// separately.
     pub volley_chain: bool,
@@ -4717,16 +4612,6 @@ pub struct AdvancedAi {
     /// cities, and the sitting suzerain the envoys would unseat. Opt-in gene
     /// `flip-nearby-city-states`; see `advanced/field_craft.rs`.
     flip_nearby_city_states: bool,
-    /// Version 2 of `escort_unstick`: the same two-turn release, refused
-    /// while a visible barbarian raider can reach the settler's tile — at
-    /// the settler's unstick and at the escort's route abandonment. Watched
-    /// live 2026-08-23: the pair stalled beside a raider, the release
-    /// handed the warrior back to the army, and the raider took the settler
-    /// the next turn. A pinned pair is the one stall the escort exists for.
-    /// Implies version 1; its enable turns `escort_unstick` off so a seat
-    /// plays one version of the family. Opt-in gene `escort-unstick-2`.
-    escort_unstick_2: bool,
-
     // ---- append: g-k ------------------------------------------------
     /// While the opening is behind the pace and no city can build a Settler,
     /// the citizens work food. Opt-in gene `growth-to-settle`; see
@@ -5037,8 +4922,6 @@ mod surprise_defense;
 mod air_surge;
 use air_surge::{AirSurge, AirSurgeCensus, AirSurgeStatus};
 
-/// The district look-ahead at settlement and the priced tile purchase: two
-/// opt-in territory genes, one file. See `advanced/site_lookahead.rs`.
 mod site_lookahead;
 
 /// The standing city's district plan: which districts, on which reserved
@@ -5065,7 +4948,6 @@ mod religion;
 /// non-founder's answer and the spreaders' targets by how much of a rival's
 /// win is already done. One opt-in gene; see `advanced/religious_defence.rs`.
 mod religious_defence;
-use site_lookahead::{PlotOffer, PlotPurchaseCache};
 /// Field craft: shoot-and-scoot, the zone-of-control screen, pillage-to-heal
 /// and flipping nearby city-states. Four opt-in genes; see
 /// `advanced/field_craft.rs`.
@@ -5186,15 +5068,6 @@ impl AdvancedAi {
         ai
     }
 
-    /// Evaluator treatment for the full-cost expansion investment. The
-    /// production controller remains on the historical settler score until a
-    /// replicated screen establishes that this bounded model helps.
-    pub fn coupled_expansion() -> AdvancedAi {
-        let mut ai = Self::new();
-        ai.enable_coupled_expansion();
-        ai
-    }
-
     /// Exact pre-2026-08-01 Advanced configuration used only by evaluator
     /// controls. It intentionally retains the Legacy deck and leaves both
     /// envoy-production flags off; it is not the frozen `advanced_v1` anchor.
@@ -5268,11 +5141,11 @@ impl AdvancedAi {
         // 2026-08-01 composite. `plan_city_target` stays: the land-aware plan
         // is a different mechanism and is not what was measured here.
         ai.plan_city_target = true;
-        // ⚠ The four war flags — `siege_muster`, `home_defense`,
-        // `tactical_strategy`, `unit_objective_memory` — were REMOVED on
+        // ⚠ The remaining war flags — `siege_muster`, `home_defense`, and
+        // `unit_objective_memory` — were REMOVED on
         // 2026-08-14. "Make sure the larger empire can actually hold what it
         // founds" was the justification for turning them on here; withholding
-        // all four measured +32/+34 over two disjoint 400-map deployment runs
+        // all three measured +32/+34 over two disjoint 400-map deployment runs
         // with all six victories (seeds 10800000/11000000, sign p=0.0039 and
         // p=0.0019, e-process crossed at map 134), and the promotion matrix at
         // 600 pairs on the corrected gate returned **PASS**: deployment-online
@@ -5293,11 +5166,9 @@ impl AdvancedAi {
         // re-adds the survivors as a treatment so the axis stays measurable.
         // ⚠ `siege-muster` stood here too until #2235 removed it from the
         // code; `advanced_war_half` no longer carries it and neither does the
-        // bridge, so the war half is now three flags, not four.
+        // bridge, so the war half is now two flags, not three.
         //
-        // The tribal-village pickup shipped inside `tactical_strategy` (#1386)
-        // and left production with the war-half withhold — collateral, not
-        // measured: the village is an economy prize (techs, boosts, builders,
+        // The tribal-village pickup is an economy prize (techs, boosts, builders,
         // envoys, era score), not war machinery, and an unclaimed one is
         // consumed by whichever rival reaches it first. Carry it on its own
         // flag; `advanced_without_hut_collection` prices the withhold.
@@ -5582,10 +5453,8 @@ impl AdvancedAi {
             builder_targets: BTreeMap::new(),
             major_war_since: None,
             last_campaign_progress: 0,
-            campaign_city_owners: BTreeMap::new(),
             campaign_city_health: BTreeMap::new(),
             siege_is_progress: false,
-            campaign_observed: false,
             last_city_count: 0,
             peace_until: 0,
             peace_offers: BTreeSet::new(),
@@ -5614,8 +5483,6 @@ impl AdvancedAi {
             war_economy: false,
             war_reinforcement: false,
             surprise_war_mobilization: false,
-            war_patience: false,
-            endgame_war_runway: false,
             siege_commitment: false,
             relief_targets_the_siege: false,
             blind_objective_units: false,
@@ -5652,7 +5519,6 @@ impl AdvancedAi {
             settler_factory_coordination: false,
             garrison_loyalty_policy: false,
             expansion_pays_back: false,
-            coupled_expansion: false,
             late_expansion: false,
             expansion_dispatch: false,
             expansion_census: ExpansionCensus::default(),
@@ -5686,7 +5552,6 @@ impl AdvancedAi {
             civ_blind: false,
             deny_leaders: true,
             spy_mission_patience: false,
-            settler_site_agreement: false,
             settler_guard_holds: false,
             spy_orders_until: BTreeMap::new(),
             deny_while_targeted: false,
@@ -5725,8 +5590,6 @@ impl AdvancedAi {
             inquisition_on_threat: false,
             founder_temple: false,
             theology_for_founders: false,
-            district_lookahead_settle: false,
-            priced_tile_purchase: false,
             science_multiplier_payoff: false,
             research_tier_premium: false,
             power_the_laboratory: false,
@@ -5799,7 +5662,6 @@ impl AdvancedAi {
             // ---- append: e-f ----------------------------------------
             expansion_schedule: false,
             flip_nearby_city_states: false,
-            escort_unstick_2: false,
 
             // ---- append: g-k ----------------------------------------
             growth_to_settle: false,
@@ -5933,11 +5795,6 @@ impl AdvancedAi {
     /// `BasicAi::barbarian_heretic_hunt`.
     pub fn barbarian_heretic_hunt(&self) -> bool {
         self.base.barbarian_heretic_hunt
-    }
-
-    /// Whether the field-civilian reading is on. See `BasicAi::barbarian_hunt`.
-    pub fn barbarian_hunt(&self) -> bool {
-        self.base.barbarian_hunt
     }
 
     /// Whether a raider is priced below a major. See `BasicAi::barbarian_bargain`.
@@ -6152,57 +6009,11 @@ impl AdvancedAi {
         self.victory_planning
     }
 
-    /// Whether `war_patience` has lapsed: no foreign-city acquisition for
-    /// `WAR_PATIENCE_LIMIT_TURNS` standard turns, counted from the current
-    /// war's start or its last capture, whichever is later. See the constant.
-    ///
-    /// ★★★★ A WAR ONE TURN OLD IS NOT A STALEMATE. #1710 made
-    /// `last_campaign_progress` reset only on an observed foreign city changing
-    /// hands, so a fresh settlement cannot prolong a stale war — right, and it
-    /// left a war declared today with a reference of the last capture (never)
-    /// or the first observation. Run civvis-20260816T030249Z: "Declaring war
-    /// on Arabia" at t71, and at t72 "The war is a stalemate the plan stops
-    /// paying for | no foreign city captured in 47 turns" — the posture and
-    /// the peace offers of a lapsed war, one turn in. `major_war_since` is
-    /// the war's own start (`observe_campaign`, `None` at peace); the later of
-    /// the two is the reference every war deserves.
-    fn war_patience_exhausted(&self, g: &Game) -> bool {
-        let reference = self
-            .last_campaign_progress
-            .max(self.major_war_since.unwrap_or(0));
-        g.turn.saturating_sub(reference) >= g.standard_duration(WAR_PATIENCE_LIMIT_TURNS).max(1)
-    }
-
     fn observe_campaign(&mut self, g: &Game, pid: usize) {
         let cities = g.player_city_ids(pid).len();
-        if self.war_patience {
-            // Civilization VI preserves a city's id when it changes hands, and
-            // the live mirror preserves that identity too. A new Roman city has
-            // no prior foreign owner, so it must not buy another full patience
-            // window for a war that has still captured nothing. The first live
-            // observation establishes a fair window after a controller restart;
-            // later resets require an actual foreign-city acquisition.
-            let captured_city = self.campaign_observed
-                && g.cities.iter().any(|(city, observed)| {
-                    observed.owner == pid
-                        && self
-                            .campaign_city_owners
-                            .get(city)
-                            .is_some_and(|owner| *owner != pid)
-                });
-            if !self.campaign_observed || captured_city {
-                self.last_campaign_progress = g.turn;
-            }
-            self.campaign_city_owners = g
-                .cities
-                .iter()
-                .map(|(city, observed)| (*city, observed.owner))
-                .collect();
-            self.campaign_observed = true;
-        } else if cities > self.last_city_count {
-            // `last_campaign_progress` also powers the frozen controller's
-            // existing diplomacy fatigue. Keep that historical count-based
-            // behavior intact; the ownership-aware clock is live-only.
+        if cities > self.last_city_count {
+            // `last_campaign_progress` also powers the established diplomacy
+            // fatigue signal, which treats growth in the empire as progress.
             self.last_campaign_progress = g.turn;
         }
         self.last_city_count = cities;
@@ -9111,28 +8922,6 @@ impl AdvancedAi {
             .fold(f64::INFINITY, f64::min);
 
         let threatened_city = self.threatened_city(g, pid);
-        // ★★★★ A WAR WHOSE PATIENCE HAS RUN OUT NO LONGER SETS THE GRAND
-        // STRATEGY. "Already at war" used to pin the plan on Conquest for as
-        // long as the enemy declined peace, whatever the war was doing. Run
-        // civvis-20260815T233405Z declared on Babylon at t57 (221 power
-        // against 158), took no city in 190 turns, had its bounded patience
-        // lapse at t128 and its peace offers refused thirteen times, and read
-        // Conquest on 63 of 142 assessments (Recovery on 63 more): a whole
-        // game of war-driven production while science sat at 45–59 for fifty
-        // turns and the score finished 637 against 1237. Once patience has
-        // lapsed and no city of ours is critically threatened, the war is a
-        // stalemate the empire cannot end and should stop paying for: the plan
-        // falls through to the economic lanes, and the local-defence
-        // treatments — home defence, garrison under fire, garrison walls —
-        // answer raids whatever the grand strategy says. A foreign city
-        // acquired (`last_campaign_progress`) or a critical threat restores
-        // the war posture. Behind `war_patience`, which the frozen anchor
-        // never sets.
-        let stalemate = at_war
-            && self.war_patience
-            && threatened_city.is_none()
-            && self.war_patience_exhausted(g);
-
         let land = g
             .map
             .tiles
@@ -9366,7 +9155,7 @@ impl AdvancedAi {
             }
         } else if let Some((_, counter)) = actionable_denial {
             (counter, "countering a rival close to winning")
-        } else if at_war && !stalemate && !raid_only_war {
+        } else if at_war && !raid_only_war {
             // ⚠ `unchosen_war_keeps_the_lane`: a war a rival opened on us,
             // which the Recovery branches above have already found is not
             // hurting us, hands the plan to the lane the empire is racing
@@ -9381,8 +9170,7 @@ impl AdvancedAi {
             } else {
                 (GrandStrategy::Conquest, "already at war")
             }
-        } else if !stalemate
-            && !self.no_elective_war
+        } else if !self.no_elective_war
             // ⚠ `elective_war_yields_to_a_lane`: a war we CHOOSE does not take
             // the plan from a lane we are already racing. See that flag.
             && !self.elective_war_yields(g, pid)
@@ -9396,10 +9184,10 @@ impl AdvancedAi {
                 GrandStrategy::Conquest,
                 "a city campaign is planned against a weaker neighbour",
             )
-        } else if !stalemate
-            // ★★★★ Not on the live seat: see `no_elective_war` — eight games,
-            // no city ever taken, sixteen lost.
-            && !self.no_elective_war
+        } else if
+        // ★★★★ Not on the live seat: see `no_elective_war` — eight games,
+        // no city ever taken, sixteen lost.
+        !self.no_elective_war
             && !self.elective_war_yields(g, pid)
             && ((g.turn >= 55 && cities.len() >= 2 && my_power > weakest_rival * 1.80 + 20.0)
                 || (military_civ
@@ -9480,13 +9268,6 @@ impl AdvancedAi {
                 against the strongest rival's {strongest_rival:.0}; \
                 best lane {} at {}% progress",
                cities.len(), victory.strategy.as_str(), victory.progress);
-        if stalemate && strategy != GrandStrategy::Conquest {
-            think!(self.journal(), Strategy, Strategy,
-                   "The war is a stalemate the plan stops paying for";
-                   "still at war, but no foreign city captured in {} turns and none of ours in \
-                    danger — the economy runs as in peacetime while local defence answers raids",
-                   g.turn.saturating_sub(self.last_campaign_progress));
-        }
         if let Some(city) = threatened_city.and_then(|id| g.cities.get(&id)) {
             think!(self.journal(), Strategy, Strategy,
                    "{} is under threat", city.name;
@@ -9795,104 +9576,6 @@ impl AdvancedAi {
             },
         ) / production;
         remaining > build + g.standard_duration(SETTLE_LAG + SETTLE_PAYBACK) as f64
-    }
-
-    /// Price the population point that a completed Settler consumes. The
-    /// engine applies that cost at completion, so the estimate uses the actual
-    /// post-population city yields and the city's food surplus to model the
-    /// recovery interval rather than charging a second production surrogate.
-    fn coupled_expansion_population_cost(
-        &self,
-        g: &Game,
-        pid: usize,
-        cid: u32,
-        plan: &StrategicPlan,
-    ) -> f64 {
-        if !g.settler_consumes_population(pid, cid) {
-            return 0.0;
-        }
-        let population = g.cities[&cid].pop;
-        if population < 2 {
-            return COUPLED_EXPANSION_POPULATION_VALUE * 4.0;
-        }
-        let before = self.yield_value(g.city_yields(cid), plan.strategy);
-        let mut after = g.speculative_clone();
-        after.cities.get_mut(&cid).unwrap().pop -= 1;
-        let after_value = self.yield_value(after.city_yields(cid), plan.strategy);
-        let lost_per_turn = (before - after_value).max(0.0);
-        let yields = g.city_yields(cid);
-        let surplus = (yields.food - 2.0 * population as f64).max(0.5);
-        let recovery_turns = (g.growth_cost((population - 1).max(1)) / surplus)
-            .min(g.standard_duration(SETTLEMENT_FORECAST_HORIZON) as f64);
-        COUPLED_EXPANSION_POPULATION_VALUE + lost_per_turn * recovery_turns
-    }
-
-    /// Score one legal Settler as a paid, coupled build-settle-payback
-    /// investment. This is intentionally bounded and deterministic: it does
-    /// not clone a terminal game or grant a free city, but it does make every
-    /// material cost visible to the production decision.
-    #[allow(clippy::too_many_arguments)]
-    fn coupled_expansion_value(
-        &self,
-        g: &Game,
-        pid: usize,
-        cid: u32,
-        plan: &StrategicPlan,
-        counts: &EmpireCounts,
-        site: (Pos, f64),
-        build_turns: f64,
-    ) -> f64 {
-        let (site, site_value) = site;
-        let remaining = g.max_turns.saturating_sub(g.turn) as f64;
-        let distance = g.wdist(g.cities[&cid].pos, site) as f64;
-        let travel_turns = (distance * COUPLED_EXPANSION_ROUTE_TURNS_PER_TILE).ceil();
-        let settle_lag = g.standard_duration(SETTLE_LAG) as f64;
-        let delay = build_turns + travel_turns + settle_lag;
-        let payback_turns = remaining - delay;
-        if payback_turns <= g.standard_duration(SETTLE_PAYBACK) as f64 {
-            return -10_000.0;
-        }
-
-        let forecast =
-            self.settlement_growth_forecast_from_positions(g, pid, site, &g.wdisk(site, 2));
-        let horizon = g.standard_duration(COUPLED_EXPANSION_HORIZON).max(1) as f64;
-        let payoff_fraction = (payback_turns / horizon).clamp(0.0, 1.0);
-        // Keep the historical 920/site base as the benefit scale, but make
-        // the forecasted first four jobs contribute to that benefit instead
-        // of treating a legal plot as a free city oracle.
-        let site_quality = (920.0 + site_value * 4.0 + forecast.score.max(0.0) * 5.0).max(0.0);
-        let benefit = site_quality * payoff_fraction;
-
-        let settler_cost = g.item_remaining_cost_for_city(
-            pid,
-            cid,
-            &Item::Unit {
-                unit: "settler".into(),
-            },
-        );
-        let production_cost = settler_cost * COUPLED_EXPANSION_PRODUCTION_VALUE;
-        let population_cost = self.coupled_expansion_population_cost(g, pid, cid, plan);
-        let city_output = self.yield_value(g.city_yields(cid), plan.strategy).max(1.0);
-        let route_cost = travel_turns * city_output * 0.35;
-        let safety_cost = if self.settlement_safety {
-            let visible = self.battlefront_visibility(g, pid);
-            self.settlement_safety_penalty(g, pid, site, &visible) * 1.5
-        } else {
-            0.0
-        };
-        let city_count = g.player_city_ids(pid).len();
-        let escort_cost = if self.settlement_safety && counts.military <= city_count {
-            COUPLED_EXPANSION_ESCORT_VALUE
-        } else {
-            0.0
-        };
-        let net =
-            benefit - production_cost - population_cost - route_cost - safety_cost - escort_cost;
-        if net.is_finite() && net > 0.0 {
-            net
-        } else {
-            -10_000.0
-        }
     }
 
     /// The stock adaptive-expansion deadline: a payoff horizon, bounded by
@@ -12781,21 +12464,10 @@ impl AdvancedAi {
             .get(&partner)
             .copied()
             .unwrap_or(0.0);
-        // `war_patience`: the stall clause stands down while the empire
-        // overwhelmingly outweighs its own campaign target, so a slow wall
-        // does not sue a walkover out. The 0.85 outmatched clause below is
-        // deliberately untouched — if the advantage is ever lost, so is the
-        // patience.
-        let overwhelming = self.war_patience
-            && plan.strategy == GrandStrategy::Conquest
-            && plan.target_player == Some(partner)
-            && my_power >= partner_power * OVERWHELMING_WAR_RATIO
-            && !self.war_patience_exhausted(g);
-        let fatigued = !overwhelming
-            && self.major_war_since.is_some_and(|started| {
-                g.turn.saturating_sub(started) >= 24
-                    && g.turn.saturating_sub(self.last_campaign_progress) >= 12
-            });
+        let fatigued = self.major_war_since.is_some_and(|started| {
+            g.turn.saturating_sub(started) >= 24
+                && g.turn.saturating_sub(self.last_campaign_progress) >= 12
+        });
         // `one_war_at_a_time`: a Joint War while any war burns is a second
         // front by treaty; the fatigue acceptance stands down while the
         // front still has something to take; the peace the gene wants is a
@@ -14824,27 +14496,6 @@ impl AdvancedAi {
             }
         }
         let my_power = g.military_power(pid);
-        let (major_war_fronts, combined_major_war_power) = g
-            .players
-            .iter()
-            .filter(|player| {
-                player.id != pid
-                    && player.alive
-                    && !player.is_minor
-                    && !player.is_barbarian
-                    && g.is_at_war(pid, player.id)
-            })
-            .fold((0usize, 0.0), |(fronts, power), player| {
-                (fronts + 1, power + g.military_power(player.id))
-            });
-        // This is a Firaxis live-bridge repair. Native tournament controllers
-        // retain their recorded single-target recovery behavior until it is
-        // deliberately repriced; `war_patience` is the existing live-only
-        // war-conversion gate and is set by `enable_live_bridge`.
-        let overwhelmed_on_multiple_fronts = self.war_patience
-            && plan.strategy == GrandStrategy::Recovery
-            && major_war_fronts >= 2
-            && combined_major_war_power > my_power * MULTI_FRONT_RECOVERY_PEACE_RATIO;
         let rivals: Vec<usize> = g
             .players
             .iter()
@@ -14854,43 +14505,14 @@ impl AdvancedAi {
         self.peace_offers.clear();
         self.peace_routed.clear();
         for other in &rivals {
-            let appointed_objective = self.war_plan.as_ref().is_some_and(|war| {
-                war.phase == WarPhase::Exploit && war.target_player == *other
-            });
-            let stalled = self.major_war_since.is_some_and(|started| {
+            let appointed_objective = self
+                .war_plan
+                .as_ref()
+                .is_some_and(|war| war.phase == WarPhase::Exploit && war.target_player == *other);
+            let fatigued = self.major_war_since.is_some_and(|started| {
                 g.turn.saturating_sub(started) >= 24
                     && g.turn.saturating_sub(self.last_campaign_progress) >= 12
             });
-            // `war_patience`: a stalled war against the campaign target is
-            // not offered away while the empire holds an overwhelming power
-            // advantage over that target. The outmatched and Recovery offer
-            // triggers below keep their shape.
-            let overwhelms = self.war_patience
-                && plan.strategy == GrandStrategy::Conquest
-                && plan.target_player == Some(*other)
-                && my_power >= g.military_power(*other) * OVERWHELMING_WAR_RATIO;
-            let overwhelming = overwhelms && !self.war_patience_exhausted(g);
-            let fatigued = stalled && !overwhelming;
-            if stalled
-                && overwhelms
-                && g.is_at_war(pid, *other)
-                && self.journal().wants(crate::reasoning::Level::Decision)
-            {
-                let their_power = g.military_power(*other);
-                if overwhelming {
-                    think!(self.journal(), Diplomacy, Decision,
-                           "Pressing the war on {}", g.players[*other].civ;
-                           "the campaign has stalled, but {my_power:.0} power against \
-                            their {their_power:.0} is a war to finish, not to quit");
-                } else {
-                    think!(self.journal(), Diplomacy, Decision,
-                           "Patience with the war on {} has run out", g.players[*other].civ;
-                           "{my_power:.0} power against their {their_power:.0} and still no \
-                            foreign city captured in {} turns — a walkover that never lands is a tax on \
-                            the economy, so peace is offered and the plan may leave Conquest",
-                           g.turn.saturating_sub(self.last_campaign_progress));
-                }
-            }
             let peace_pending = g.pending_deals.iter().any(|deal| {
                 deal.peace
                     && ((deal.from == pid && deal.to == *other)
@@ -14910,8 +14532,7 @@ impl AdvancedAi {
                 && !peace_pending
                 && (my_power < g.military_power(*other) * 0.62
                     || (plan.strategy == GrandStrategy::Recovery
-                        && (plan.target_player != Some(*other)
-                            || overwhelmed_on_multiple_fronts))
+                        && plan.target_player != Some(*other))
                     || (self.religion_sues_peace
                         && plan.strategy == GrandStrategy::Religion
                         && !appointed_objective)
@@ -14950,8 +14571,6 @@ impl AdvancedAi {
                         )
                     } else if my_power < their_power * 0.62 {
                         "outmatched".to_string()
-                    } else if overwhelmed_on_multiple_fronts {
-                        "multiple major fronts overwhelm the recovery army".to_string()
                     } else if plan.strategy == GrandStrategy::Recovery {
                         "this is not the war the recovery plan is fighting".to_string()
                     } else if self.religion_sues_peace
@@ -15032,23 +14651,6 @@ impl AdvancedAi {
         // it deliberately holds for the wing.
         if self.air_surge_opening(g, pid, target) {
             return;
-        }
-        // Timed attacks already refuse an appointment that cannot finish
-        // before this same scaled reserve. The direct victory-denial fallback
-        // used to bypass it and could declare in the final turns with no
-        // plausible path to a capture. Keep that late-game guard live-only so
-        // the frozen tournament controller retains its recorded behaviour.
-        if self.endgame_war_runway {
-            let reserve = g.standard_duration(TIMED_WAR_ENDGAME_RESERVE);
-            if g.turn.saturating_add(reserve) >= g.max_turns {
-                if self.journal().wants(crate::reasoning::Level::Strategy) {
-                    let runway = g.max_turns.saturating_sub(g.turn);
-                    think!(self.journal(), Military, Strategy,
-                           "Holding off war with {}", g.players[target].civ;
-                           "{runway} turns remain, at or below the {reserve}-turn campaign reserve for a fresh declaration");
-                }
-                return;
-            }
         }
         let emergency_target = g
             .emergency_objective(pid)
@@ -15790,7 +15392,6 @@ impl AdvancedAi {
             let counts = self.counts(g, pid);
             let mut candidates = Vec::new();
             let mut plot_options = Vec::new();
-            let mut plot_cache = PlotPurchaseCache::default();
             let mut district_plan_cache = DistrictPlanCache::default();
             let mut purchase_options = Vec::new();
             // Every candidate asks its city for the same yields, twice — once
@@ -15824,28 +15425,6 @@ impl AdvancedAi {
                             ));
                             continue;
                         }
-                    }
-                    // See `priced_tile_purchase`: the plot is an investment
-                    // priced against its Gold, not a shortlist hint plus a
-                    // speculative clone. A `None` is a plot not worth its
-                    // price; it is not shortlisted.
-                    if self.priced_tile_purchase {
-                        let offer = PlotOffer {
-                            city: *city,
-                            pos: *pos,
-                            cost: *cost,
-                        };
-                        if let Some(score) =
-                            self.priced_plot_purchase_score(g, pid, plan, offer, &mut plot_cache)
-                        {
-                            plot_options.push((
-                                score,
-                                score,
-                                std::cmp::Reverse(format!("{action:?}")),
-                                action,
-                            ));
-                        }
-                        continue;
                     }
                     let tile = &g.map.tiles[pos];
                     let resource = tile
@@ -15995,18 +15574,8 @@ impl AdvancedAi {
                         .total_cmp(&left.0)
                         .then_with(|| left.2.cmp(&right.2))
                 });
-                // The priced path already holds a final score per plot and
-                // needs no clone, so it keeps every candidate; the shipped
-                // path clones the game per plot and keeps four.
-                let plot_scores = if self.priced_tile_purchase {
-                    plot_options
-                        .iter()
-                        .map(|(_, score, _, _)| Some(*score))
-                        .collect()
-                } else {
-                    plot_options.truncate(4);
-                    self.gold_plot_scores(score_context, &plot_options)
-                };
+                plot_options.truncate(4);
+                let plot_scores = self.gold_plot_scores(score_context, &plot_options);
                 for ((_, _, _, action), score) in plot_options.into_iter().zip(plot_scores) {
                     if let Some(score) = score {
                         candidates.push((
@@ -20405,7 +19974,6 @@ impl AdvancedAi {
                     if reserved
                         .iter()
                         .any(|other| g.wdist(*other, position) < SETTLER_FACTORY_SITE_SPACING)
-                        || !self.settler_site_is_landable(g, pid, position)
                     {
                         return None;
                     }
@@ -20724,25 +20292,7 @@ impl AdvancedAi {
                         })
                     };
                     if let Some(site) = site {
-                        // ★★★ THE ORDER AND THE MARCH MUST AGREE ON THE
-                        // GROUND. This gate priced the site; the walker then
-                        // asks `settle_site_loyalty_verdict` and refuses it —
-                        // and on run civvis-20260818T182702Z that
-                        // disagreement turned 19 Settler starts into 8
-                        // foundings and a six-city empire, with 153 loyalty
-                        // refusals in the why-log while the pipeline kept
-                        // paying for walkers with nowhere to land. Ask the
-                        // walker's own question before starting the Settler;
-                        // a doomed best site usually sits in a doomed
-                        // frontier, so refusing the build is the cheap half
-                        // of the same answer. See `settler_site_agreement`.
-                        if !self.settler_site_is_landable(g, pid, site.0) {
-                            -10_000.0
-                        } else if self.coupled_expansion {
-                            self.coupled_expansion_value(g, pid, cid, plan, counts, site, turns)
-                        } else {
-                            (920.0 + site.1 * 4.0) * self.settler_price
-                        }
+                        (920.0 + site.1 * 4.0) * self.settler_price
                     } else {
                         -10_000.0
                     }
@@ -22505,11 +22055,7 @@ impl AdvancedAi {
             .count() as f64;
         let mut value =
             forecast.score + (housing - 2.0) * 4.0 + growth_readiness + dependable_jobs * 0.75;
-        value += if self.district_lookahead_settle {
-            self.settlement_district_lookahead_value(g, pid, pos, &positions)
-        } else {
-            self.settlement_adjacency_value_from_positions(g, pid, pos, &positions)
-        };
+        value += self.settlement_adjacency_value_from_positions(g, pid, pos, &positions);
         let enemy_distance = g
             .cities
             .values()
@@ -24213,15 +23759,6 @@ impl AdvancedAi {
         Some(self.base.fortify_or_stop(g, pid, uid))
     }
 
-    /// Whether the production gate may pay for a Settler aimed at `site`:
-    /// under `settler_site_agreement` it asks the walker's own
-    /// [`Self::settle_site_loyalty_verdict`], so a build is never started for
-    /// ground the march will refuse. Off, every gate keeps its historical
-    /// answer.
-    fn settler_site_is_landable(&self, g: &Game, pid: usize, site: Pos) -> bool {
-        !self.settler_site_agreement || self.settle_site_loyalty_verdict(g, pid, site).is_none()
-    }
-
     /// Would a city founded at `site` right now bleed Loyalty fast enough to
     /// revolt before it becomes a useful city? This asks the engine's complete
     /// Loyalty calculation of a speculative city. The live mirror's
@@ -24828,21 +24365,7 @@ impl AdvancedAi {
                 }
                 entry.1
             };
-            if (self.escort_unstick || self.escort_unstick_2) && stalled_turns >= 2 {
-                // Version 2: the release is refused while a visible barbarian
-                // raider can reach this tile. A pair pinned beside a raider is
-                // the one stall the escort exists for — releasing it handed a
-                // warrior back to the army and the settler to the raider
-                // (watched live 2026-08-23). The link, and the stacked guard
-                // it keeps, hold until the raider is out of reach.
-                if self.escort_unstick_2 && self.settler_in_barbarian_reach(g, pid, current) {
-                    think!(self.journal(), Expansion, Detail,
-                           "Escort kept by a threatened settler";
-                           "{distance} tiles to {target:?} unchanged for {stalled_turns} turns, \
-                            but a barbarian raider can reach this tile — the escort stays stacked";
-                           target);
-                    return true;
-                }
+            if self.escort_unstick && stalled_turns >= 2 {
                 self.escort_march.remove(&uid);
                 if g.apply(pid, &Action::UnlinkUnits { unit: escort }).is_ok() {
                     think!(self.journal(), Expansion, Detail,
@@ -25435,15 +24958,6 @@ impl AdvancedAi {
             .collect()
     }
 
-    /// Whether a visible barbarian raider could end its next move on `pos` —
-    /// the Builder's capture envelope, asked for a Settler's tile. Version 2
-    /// of `escort_unstick` refuses to release an escort while this holds.
-    fn settler_in_barbarian_reach(&self, g: &Game, pid: usize, pos: Pos) -> bool {
-        let visible = self.battlefront_visibility(g, pid);
-        let threats = self.visible_barbarian_capture_threats(g, pid, &visible);
-        Self::barbarian_capture_reaches(g, pos, &threats)
-    }
-
     /// Does any threat in a just-snapshotted Barbarian envelope take a Builder
     /// standing at `pos`? Land uses the engine's exact fresh-turn movement
     /// flood; a sea raider can only capture a coastal land tile from a water
@@ -25701,6 +25215,9 @@ impl AdvancedAi {
         // empire-wide questions each tile asks are answered once for the whole
         // sweep rather than once per tile. The borrow checker rejects the
         // guard the moment anything in here starts mutating the game.
+        if self.base.builder_tries_the_next_tile {
+            return self.builder_step_to_the_first_reachable_job(g, pid, uid, strategy, &reserved);
+        }
         let best = {
             let _memo = g.query_memo();
             let current_target = self.builder_targets.get(&uid).copied().filter(|pos| {
@@ -25742,6 +25259,145 @@ impl AdvancedAi {
             }),
         };
         target.is_some_and(|pos| self.builder_step_toward_barbarian_safe(g, pid, uid, pos))
+    }
+
+    /// Every job this Builder could take, best first, under the same score the
+    /// untreated branch of [`Self::advanced_builder_step`] maximises.
+    ///
+    /// Reading every tile the empire owns: one memo scope so the empire-wide
+    /// questions each tile asks are answered once for the whole sweep rather
+    /// than once per tile. The borrow checker rejects the guard the moment
+    /// anything in here starts mutating the game.
+    fn builder_jobs_ranked(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        strategy: GrandStrategy,
+        reserved: &HashSet<Pos>,
+    ) -> Vec<Pos> {
+        let current = g.units[&uid].pos;
+        let _memo = g.query_memo();
+        let mut scored: Vec<(f64, Pos)> = Vec::new();
+        for cid in g.player_city_ids(pid) {
+            for pos in &g.cities[&cid].owned_tiles {
+                if reserved.contains(pos) {
+                    continue;
+                }
+                let mut here: Option<f64> = None;
+                for improvement in self.worthwhile_improvements(g, pid, *pos, strategy) {
+                    let score = self.improvement_value(g, *pos, &improvement, strategy)
+                        - g.wdist(current, *pos) as f64 * 0.7;
+                    if here.is_none_or(|old| score > old) {
+                        here = Some(score);
+                    }
+                }
+                if let Some(score) = here {
+                    scored.push((score, *pos));
+                }
+            }
+        }
+        // Descending by score, position as the tiebreak: exactly the order the
+        // untreated branch's running `best` would have settled on.
+        scored.sort_by(|(a, ap), (b, bp)| {
+            b.partial_cmp(a)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then(ap.cmp(bp))
+        });
+        scored.into_iter().map(|(_, pos)| pos).collect()
+    }
+
+    /// Walk toward the best job this Builder can actually reach, rather than
+    /// toward the best job and nowhere otherwise. Opt-in gene
+    /// `builder-tries-the-next-tile`.
+    ///
+    /// ⚠⚠ THE BEST-SCORING TILE IS NOT ALWAYS A REACHABLE ONE, AND THE
+    /// UNTREATED BRANCH ABOVE HAD NO SECOND CHOICE. It scores every owned tile,
+    /// pins the winner in `builder_targets`, hands that one position to
+    /// `builder_step_toward_barbarian_safe`, and returns whatever that says.
+    /// The distance term is `wdist` — a straight line across the map — so a
+    /// ridge, a zone of control, a peer standing in the doorway or a tile on
+    /// the far side of a bay all score exactly as if the Builder could walk
+    /// there. When the step is refused the turn ends; worse, the pin survives,
+    /// and the hysteresis at the head of the untreated branch re-selects the
+    /// same unreachable tile next turn, and every turn after that.
+    ///
+    /// Measured at the deployment genome (seed 21000000): 22 Builders stood
+    /// still for 25+ turns across eight games, Builders were 25.4% of all major
+    /// idle and 24.9% of their own turns, and at t180 there were 25 Builders
+    /// alive holding 73 charges with NOT ONE of them in an empire that had run
+    /// out of improvable tiles. One caught in the act — builder 312 of seat 5,
+    /// thirty turns at (10, 29), three charges, improvable work five tiles away
+    /// on its own landmass.
+    ///
+    /// So: rank every candidate, keep the pin at the head so a Builder already
+    /// walking somewhere does not re-shuffle for a tie, and take the first one
+    /// the unit can actually start toward. A refused tile is *unpinned* — that
+    /// is the half that ends the stall, because a pin that survives its own
+    /// refusal is the loop. Bounded to `BUILDER_ROUTE_ATTEMPTS` so a sweep that
+    /// finds a hundred jobs cannot become a hundred pathfinds; ordinary turns
+    /// succeed on the first and pay nothing.
+    fn builder_step_to_the_first_reachable_job(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+        strategy: GrandStrategy,
+        reserved: &HashSet<Pos>,
+    ) -> bool {
+        // ⚠ THE FAST PATH IS THE WHOLE COST STORY. A Builder already walking to
+        // a job it can still do takes one `worthwhile_improvements` call and
+        // one step, exactly as the untreated branch does; the empire-wide sweep
+        // below is never reached. Ranking every owned tile unconditionally
+        // instead — the first draft of this — measured **+11.1 ± 5.2% wall
+        // seconds per completed turn** over 24 games, because a pinned Builder
+        // paid one sweep of the whole empire per turn to re-derive an answer it
+        // already had.
+        let pinned = {
+            let _memo = g.query_memo();
+            self.builder_targets.get(&uid).copied().filter(|pos| {
+                !reserved.contains(pos)
+                    && !self
+                        .worthwhile_improvements(g, pid, *pos, strategy)
+                        .is_empty()
+            })
+        };
+        let mut attempts = BUILDER_ROUTE_ATTEMPTS;
+        if let Some(pos) = pinned {
+            if self.builder_step_toward_barbarian_safe(g, pid, uid, pos) {
+                return true;
+            }
+            // ⚠ A Builder with nothing left to spend refuses EVERY tile, and
+            // that is not the failure this gene is for. Stop before paying for
+            // a second route and keep the pin: the unit is mid-journey and next
+            // turn it should carry on, not re-shuffle. Without this the
+            // treatment would drop hysteresis on any turn a Builder ran its
+            // movement out.
+            if g.units[&uid].moves_left <= 0.0 {
+                return false;
+            }
+            // Refused with movement in hand: this tile cannot be routed to.
+            // Drop the pin so it never becomes next turn's answer either — a
+            // pin that survives its own refusal is the loop that produced the
+            // thirty-turn stall.
+            self.builder_targets.remove(&uid);
+            attempts -= 1;
+        }
+        let ranked = self.builder_jobs_ranked(g, pid, uid, strategy, reserved);
+        for pos in ranked
+            .into_iter()
+            .filter(|pos| Some(*pos) != pinned)
+            .take(attempts)
+        {
+            if self.builder_step_toward_barbarian_safe(g, pid, uid, pos) {
+                self.builder_targets.insert(uid, pos);
+                return true;
+            }
+            if g.units[&uid].moves_left <= 0.0 {
+                return false;
+            }
+        }
+        false
     }
 
     fn advanced_trader_step(
@@ -26998,24 +26654,9 @@ impl AdvancedAi {
             })
             .map(|other| g.wdist(g.units[other].pos, target))
             .min();
-        let projected_hostiles: Vec<u32> = if self.base.tactical_strategy {
-            g.units
-                .values()
-                .filter(|other| {
-                    enemies.contains(&other.owner)
-                        && visible.as_ref().is_none_or(|visible| {
-                            g.sees(visible, other.pos)
-                                && self.battlefront_unit_visible(g, pid, other.id)
-                        })
-                })
-                .map(|other| other.id)
-                .collect()
-        } else {
-            Vec::new()
-        };
         // The production memory path needs the same fog-safe hostile frame
-        // even when a focused evaluator leaves tactical roles off. It records
-        // only the danger this controller was allowed to see at turn start.
+        // and records only the danger this controller was allowed to see at
+        // turn start.
         let danger_hostiles: Vec<u32> = if self.base.unit_objective_memory {
             g.units
                 .values()
@@ -27090,50 +26731,33 @@ impl AdvancedAi {
                     value += self.base.w.mv_support;
                 }
             }
-            if self.base.tactical_strategy {
-                value -= self.base.w.mv_threat
-                    * threat_caution
-                    * self.base.projected_counter_damage(
-                        g,
-                        uid,
-                        tile,
-                        &projected_hostiles,
-                    );
-            } else {
-                for enemy in g
-                    .units
-                    .values()
-                    .filter(|other| {
-                        enemies.contains(&other.owner)
-                            && visible.as_ref().is_none_or(|visible| {
-                                g.sees(visible, other.pos)
-                                    && self.battlefront_unit_visible(g, pid, other.id)
-                            })
+            for enemy in g.units.values().filter(|other| {
+                enemies.contains(&other.owner)
+                    && visible.as_ref().is_none_or(|visible| {
+                        g.sees(visible, other.pos)
+                            && self.battlefront_unit_visible(g, pid, other.id)
                     })
+            }) {
+                let enemy_spec = &g.rules.units[enemy.kind];
+                if enemy_spec.class != "military"
+                    || (!enemy_spec.is_melee_capable() && !enemy_spec.has_ranged_attack())
                 {
-                    let enemy_spec = &g.rules.units[enemy.kind];
-                    if enemy_spec.class != "military"
-                        || (!enemy_spec.is_melee_capable() && !enemy_spec.has_ranged_attack())
-                    {
-                        continue;
-                    }
-                    let radius = if enemy_spec.has_ranged_attack() {
-                        g.unit_attack_range(enemy.id).max(1)
-                    } else {
-                        1
-                    };
-                    if g.wdist(tile, enemy.pos) <= radius {
-                        let attack = crate::game::effective_strength(
-                            g.unit_strength(enemy, false),
-                            enemy.hp,
-                        );
-                        let defense =
-                            crate::game::effective_strength(g.unit_strength(&unit, true), unit.hp);
-                        value -= self.base.w.mv_threat
-                            * threat_caution
-                            * 30.0
-                            * ((attack - defense) / 25.0).exp();
-                    }
+                    continue;
+                }
+                let radius = if enemy_spec.has_ranged_attack() {
+                    g.unit_attack_range(enemy.id).max(1)
+                } else {
+                    1
+                };
+                if g.wdist(tile, enemy.pos) <= radius {
+                    let attack =
+                        crate::game::effective_strength(g.unit_strength(enemy, false), enemy.hp);
+                    let defense =
+                        crate::game::effective_strength(g.unit_strength(&unit, true), unit.hp);
+                    value -= self.base.w.mv_threat
+                        * threat_caution
+                        * 30.0
+                        * ((attack - defense) / 25.0).exp();
                 }
             }
             // Walking into the sea costs most of the unit; the score has no
@@ -28031,7 +27655,7 @@ impl AdvancedAi {
         group: &ForceGroup,
         plan: &StrategicPlan,
     ) -> Option<(f64, f64)> {
-        if !(self.base.tactical_strategy || self.coordinated_finish)
+        if !self.coordinated_finish
             || group.posture != ForcePosture::Engage
             || group.units.len() < 2
         {
@@ -28071,9 +27695,8 @@ impl AdvancedAi {
             .take(TACTICAL_VOLLEY_FINISHER_LIMIT)
             .enumerate()
         {
-            let (finisher, ranged) = match &followup {
-                Action::Attack { unit, .. } => (*unit, false),
-                Action::Ranged { unit, .. } => (*unit, true),
+            let finisher = match &followup {
+                Action::Attack { unit, .. } | Action::Ranged { unit, .. } => *unit,
                 _ => unreachable!("friendly volley only retains direct ground attacks"),
             };
             let mut after_second = after_first.speculative_clone();
@@ -28087,10 +27710,7 @@ impl AdvancedAi {
                 finisher,
                 &followup,
                 plan,
-            ) - self.base.attack_threshold(&after_first, finisher, target)
-                + self
-                    .base
-                    .tactical_action_bonus(&after_first, finisher, target, ranged);
+            ) - self.base.attack_threshold(&after_first, finisher, target);
             if !finish_score.is_finite() || finish_score <= 0.0 {
                 continue;
             }
@@ -28177,9 +27797,8 @@ impl AdvancedAi {
         type ChainCandidate = (f64, (u32, usize, u32, usize), Game);
         let mut best_chain: Option<ChainCandidate> = None;
         for (order, followup) in followups.into_iter().enumerate() {
-            let (middle, ranged) = match &followup {
-                Action::Attack { unit, .. } => (*unit, false),
-                Action::Ranged { unit, .. } => (*unit, true),
+            let middle = match &followup {
+                Action::Attack { unit, .. } | Action::Ranged { unit, .. } => *unit,
                 _ => unreachable!("friendly volley only retains direct ground attacks"),
             };
             let mut after_second = after_first.speculative_clone();
@@ -28194,10 +27813,7 @@ impl AdvancedAi {
                 middle,
                 &followup,
                 plan,
-            ) - self.base.attack_threshold(&after_first, middle, target)
-                + self
-                    .base
-                    .tactical_action_bonus(&after_first, middle, target, ranged);
+            ) - self.base.attack_threshold(&after_first, middle, target);
             if !middle_score.is_finite() || middle_score <= 0.0 {
                 continue;
             }
@@ -28214,9 +27830,8 @@ impl AdvancedAi {
                 .take(TACTICAL_VOLLEY_SECOND_FINISHER_LIMIT)
                 .enumerate()
             {
-                let (finisher, ranged) = match &last {
-                    Action::Attack { unit, .. } => (*unit, false),
-                    Action::Ranged { unit, .. } => (*unit, true),
+                let finisher = match &last {
+                    Action::Attack { unit, .. } | Action::Ranged { unit, .. } => *unit,
                     _ => unreachable!("friendly volley only retains direct ground attacks"),
                 };
                 let mut after_third = after_second.speculative_clone();
@@ -28230,10 +27845,7 @@ impl AdvancedAi {
                     finisher,
                     &last,
                     plan,
-                ) - self.base.attack_threshold(&after_second, finisher, target)
-                    + self
-                        .base
-                        .tactical_action_bonus(&after_second, finisher, target, ranged);
+                ) - self.base.attack_threshold(&after_second, finisher, target);
                 if !finish_score.is_finite() || finish_score <= 0.0 {
                     continue;
                 }
@@ -28833,15 +28445,7 @@ impl AdvancedAi {
                     *stalls += 1;
                     *stalls
                 };
-                // Version 2 of `escort_unstick`: a stalled formation is not
-                // abandoned while a visible barbarian raider can reach the
-                // settler — unlinking here would leave the settler alone in
-                // the raider's reach, the loss the version repairs. The pair
-                // holds, stacked, until the raider is out of reach.
-                let held_by_threat = stalls >= SETTLER_STALL_LIMIT
-                    && self.escort_unstick_2
-                    && self.settler_in_barbarian_reach(g, pid, g.units[&settler].pos);
-                if stalls >= SETTLER_STALL_LIMIT && !held_by_threat {
+                if stalls >= SETTLER_STALL_LIMIT {
                     self.settler_avoid
                         .insert(settler, (target, g.turn + g.standard_duration(8)));
                     self.settler_targets.remove(&settler);
@@ -29134,11 +28738,6 @@ impl AdvancedAi {
         if let Some(acted) = self.raid_prize_step(g, pid, uid, plan, decline_settlers) {
             return acted;
         }
-        if self.base.tactical_strategy
-            && matches!(unit.kind.as_str(), "battering_ram" | "siege_tower")
-        {
-            return self.base.siege_support_step(g, pid, uid);
-        }
         if matches!(doctrine, UnitDoctrine::AirDefense | UnitDoctrine::AirStrike) {
             let Some(action) = self.advanced_air_action(g, pid, uid, plan) else {
                 return false;
@@ -29150,13 +28749,6 @@ impl AdvancedAi {
             let acted = g.apply(pid, &action).is_ok();
             self.force_groups_dirty |= acted && changes_force_picture;
             return acted;
-        }
-        // ⚠ BEFORE escort duty, not after. `settler_escort_step` answers
-        // `Some(..)` for every guard it owns, so a unit standing beside the
-        // raider that is about to take its Settler never reaches the attack
-        // scan below. See `BasicAi::barbarian_kill_beside_this_unit`.
-        if self.base.barbarian_kill_beside_this_unit(g, pid, uid) {
-            return true;
         }
         if let Some(acted) = self.settler_escort_step(g, pid, uid, plan) {
             return acted;
@@ -29209,31 +28801,16 @@ impl AdvancedAi {
         // on several rosters it reads `alive = false` while its raiders are
         // very much on the board. The presence check is the liveness test.
         //
-        // ★★★★★ AND THIS IS THE ADMISSION THE ADVANCED CONTROLLER ACTUALLY
-        // USES. `BasicAi::military_step` holds a second copy of the same rule,
-        // and `barbarian_hunt` was added to that one alone: INSTRUMENTED over
-        // four `ai_eval` pairs, the `BasicAi` block ran **zero** times for the
-        // `live` entrant, because the Advanced controller only falls through to
-        // it when `enemies` is already empty for other reasons. A gene wired
-        // into the copy nobody reaches is a no-op, and the eval said so —
-        // "nothing differed: all 24 maps were neutral on wins AND on terminal
-        // score". Both readings belong in both places.
         if let Some(barb) = g.barb_pid {
             let camp_reading = self.base.barbarian_presence_at_home_for_controller(
                 g,
                 pid,
                 crate::ai::HOME_CAMP_RADIUS,
             );
-            // A raider standing over a Settler ten tiles out is outside every
-            // ring the camp reading measures. See `BasicAi::barbarian_hunt`.
-            let field_reading = self.barbarian_hunt()
-                && self
-                    .base
-                    .barbarian_threatens_our_field_civilians_for_controller(g, pid);
             let xp_farm_reading = self.base.has_harmless_naval_xp_shot(g, pid, uid);
             if self.base.barbarian_tactics_enabled()
                 && !enemies.contains(&barb)
-                && (camp_reading || field_reading || xp_farm_reading)
+                && (camp_reading || xp_farm_reading)
             {
                 enemies.push(barb);
             }
@@ -29583,8 +29160,7 @@ impl AdvancedAi {
         {
             let threshold = self.base.attack_threshold(g, uid, pos);
             let ranged = matches!(&action, Action::Ranged { .. });
-            let mut score =
-                attack_value - threshold + self.base.tactical_action_bonus(g, uid, pos, ranged);
+            let mut score = attack_value - threshold;
             score += self.base.harmless_naval_xp_bonus(g, pid, uid, pos, ranged);
             if plan
                 .target_city
@@ -29626,7 +29202,7 @@ impl AdvancedAi {
         // teammate's finishing blow.  Revisit only a few strongest candidates
         // with the bounded friendly-volley extension, then replace that reply
         // price with the exact reply after both friendly actions.
-        if (self.base.tactical_strategy || self.coordinated_finish)
+        if self.coordinated_finish
             && group
                 .as_ref()
                 .is_some_and(|orders| orders.posture == ForcePosture::Engage)
@@ -29779,12 +29355,6 @@ impl AdvancedAi {
             return acted;
         }
 
-        if let Some(action) = self.base.heavy_cavalry_pillage_action(g, pid, uid) {
-            if g.apply(pid, &action).is_ok() {
-                return true;
-            }
-        }
-
         let linked_settler = (spec.domain.as_deref() == Some("sea"))
             .then_some(unit.linked_to)
             .flatten()
@@ -29855,10 +29425,7 @@ impl AdvancedAi {
             g,
             pid,
             crate::ai::HOME_CAMP_RADIUS,
-        ) || (self.barbarian_hunt()
-            && self
-                .base
-                .barbarian_threatens_our_field_civilians_for_controller(g, pid));
+        );
         if strategic_barbarian_response {
             if let Some(barb) = g.barb_pid.filter(|barb| enemies.contains(barb)) {
                 let barb_only = [barb];
@@ -30197,7 +29764,6 @@ impl AdvancedAi {
                     unit.owner == pid
                         && unit.linked_to.is_none()
                         && g.rules.units[unit.kind].class == "military"
-                        && self.base.support_escort_compatible(g, with, unit.id)
                 })
                 .max_by_key(|unit| {
                     let unit = &g.units[unit];

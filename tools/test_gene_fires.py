@@ -41,7 +41,7 @@ class Discovery(unittest.TestCase):
         self.assertGreater(len(genes), 90, "the scrape found almost nothing")
         # One known inhabitant of each screenable kind, so a scrape that
         # silently lost a kind fails here instead of under-reporting forever.
-        self.assertEqual(genes["barbarian-hunt"], "Kind::Repair(Axis::War)")
+        self.assertEqual(genes["camp-party"], "Kind::Repair(Axis::War)")
         self.assertEqual(genes["strategic-wonders"], "Kind::Production")
         self.assertEqual(genes["holy-lane-parity"], "Kind::OptIn")
         self.assertNotIn("land-grab", genes, "a plain host-only gene is never screened")
@@ -105,7 +105,6 @@ class WhatCountsAsFiring(unittest.TestCase):
 
     def test_the_committed_screens_prove_a_gene_the_ledger_measured(self):
         fired, _ = gene_fires.firing_evidence()
-        self.assertIn("barbarian-hunt", fired)
         self.assertIn("escort-unstick", fired)
 
 
@@ -161,10 +160,10 @@ class Waivers(unittest.TestCase):
 
     def test_a_waiver_goes_stale_when_its_gene_is_proven(self):
         with mock.patch.object(gene_fires, "waivers",
-                               lambda: {"barbarian-hunt": "x" * 60}):
+                               lambda: {"escort-unstick": "x" * 60}):
             found = gene_fires.survey()
         self.assertEqual([tag for tag, _ in found["stale_waivers"]],
-                         ["barbarian-hunt"])
+                         ["escort-unstick"])
 
     def test_a_waiver_for_a_departed_gene_goes_stale(self):
         with mock.patch.object(gene_fires, "waivers",
