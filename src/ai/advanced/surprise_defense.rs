@@ -251,7 +251,12 @@ impl AdvancedAi {
         let city_ids = g.player_city_ids(pid);
         let gap =
             Self::surprise_land_target(g, pid).saturating_sub(self.surprise_land_force(g, pid));
-        let limit = gap.min(((city_ids.len() + 1) / 2).clamp(1, SURPRISE_MOBILIZATION_CITY_CAP));
+        let limit = gap.min(
+            city_ids
+                .len()
+                .div_ceil(2)
+                .clamp(1, SURPRISE_MOBILIZATION_CITY_CAP),
+        );
         if limit == 0 {
             return 0;
         }
