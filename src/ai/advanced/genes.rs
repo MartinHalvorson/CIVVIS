@@ -68,10 +68,6 @@ pub enum Kind {
     /// board does not have: inert in a headless game, so never screened;
     /// withholdable live.
     HostOnly,
-    /// Host-only in the live bundle AND an explicit native opt-in — the one
-    /// such row is `joint-tactics`, whose search runs on a native board and is
-    /// screened as an opt-in.
-    HostOnlyOptIn,
     /// Production ships it on before the ledger says anything (the stock
     /// agent carries it).
     Production,
@@ -94,14 +90,11 @@ pub struct Gene {
 impl Gene {
     /// Shipped by the Civilization VI seat (`enable_live_bridge_universe`).
     pub const fn live(&self) -> bool {
-        matches!(
-            self.kind,
-            Kind::Repair(_) | Kind::HostOnly | Kind::HostOnlyOptIn
-        )
+        matches!(self.kind, Kind::Repair(_) | Kind::HostOnly)
     }
     /// Reads host state a native board does not have.
     pub const fn host_only(&self) -> bool {
-        matches!(self.kind, Kind::HostOnly | Kind::HostOnlyOptIn)
+        matches!(self.kind, Kind::HostOnly)
     }
     /// A native engine repair in the live bundle.
     pub const fn repair(&self) -> bool {
@@ -119,7 +112,7 @@ impl Gene {
     }
     /// Off until the ledger turns it on.
     pub const fn opt_in(&self) -> bool {
-        matches!(self.kind, Kind::OptIn | Kind::HostOnlyOptIn)
+        matches!(self.kind, Kind::OptIn)
     }
     /// On after `enable_engine_repairs_universe`: the genome's universe.
     pub const fn universe_on(&self) -> bool {
@@ -506,7 +499,6 @@ pub const GENES: &[Gene] = &[
     // deployment.
     Gene { tag: "culture-building-debt", field: "culture_building_debt", kind: Kind::Repair(Axis::Economy), enable: AdvancedAi::enable_culture_building_debt, disable: AdvancedAi::disable_culture_building_debt },
     // ── Host-only: shipped by the Civilization VI seat, inert headless ──
-    Gene { tag: "joint-reach-lines", field: "joint_reach_lines", kind: Kind::HostOnly, enable: AdvancedAi::enable_joint_reach_lines, disable: AdvancedAi::disable_joint_reach_lines },
     Gene { tag: "live-trader-route", field: "live_trader_route_adapter", kind: Kind::HostOnly, enable: AdvancedAi::enable_live_trader_route_adapter, disable: AdvancedAi::disable_live_trader_route_adapter },
     Gene { tag: "live-religious-purchase", field: "live_religious_purchase_guard", kind: Kind::HostOnly, enable: AdvancedAi::enable_live_religious_purchase_guard, disable: AdvancedAi::disable_live_religious_purchase_guard },
     // ⚠ `assess` drops the empire into Recovery whenever it is at war and
@@ -615,14 +607,6 @@ pub const GENES: &[Gene] = &[
     // `gene_screen` discovers this native opt-in directly from this row.
     Gene { tag: "builder-barbarian-safety", field: "builder_barbarian_safety", kind: Kind::OptIn, enable: AdvancedAi::enable_builder_barbarian_safety, disable: AdvancedAi::disable_builder_barbarian_safety },
     Gene { tag: "apostle-promotion-by-role", field: "apostle_promotion_by_role", kind: Kind::OptIn, enable: AdvancedAi::enable_apostle_promotion_by_role, disable: AdvancedAi::disable_apostle_promotion_by_role },
-    // The joint engagement search (`docs/TACTICS.md`): production ships it
-    // off, the bridge turns it on, and `advanced_joint_tactics` is
-    // `AdvancedAi::new()` plus this one flag — so it is a native opt-in like
-    // any other. Listed here so `gene_screen` can price it in whole native
-    // games beside the engine repairs and `victory_eval --with joint-tactics`
-    // can seat it by name. (`joint-reach-lines` rides with it — the enable
-    // turns both on; the lines alone are priced on `battle_bench`, §17.)
-    Gene { tag: "joint-tactics", field: "joint_tactics", kind: Kind::HostOnlyOptIn, enable: AdvancedAi::enable_joint_tactics, disable: AdvancedAi::disable_joint_tactics },
     // Item 4 of `docs/LIVE_TACTICS.md`: rear reinforcements arrive at an
     // engaged front as a wave rather than one at a time. Off everywhere
     // until the screen says otherwise; see `AdvancedAi::enable_arrival_waves`.
@@ -1220,7 +1204,6 @@ pub(super) const VERDICTS: &[GeneVerdict] = &[
     GeneVerdict { tag: "housing-research", verdict: Verdict::Unresolved, default_on: false, wins_last_10k: Some(-5), wins_prior_10k: Some(-17), win_diff_pp: Some(-0.009393), posterior_pp: Some(0.465459), posterior_se_pp: Some(11.264612), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: -0.107, win_z: -0.282, share_delta_pp: -0.004, share_z: -0.048, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
     GeneVerdict { tag: "idle-faith-patronage", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(-1), wins_prior_10k: Some(39), win_diff_pp: Some(0.505304), posterior_pp: Some(25.778142), posterior_se_pp: Some(7.31643), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: -0.056, win_z: -0.127, share_delta_pp: 0.148, share_z: 1.622, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
     GeneVerdict { tag: "inquisition-on-threat", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(4), wins_prior_10k: Some(3), win_diff_pp: Some(0.132531), posterior_pp: Some(9.194169), posterior_se_pp: Some(9.536619), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.168, win_z: 0.381, share_delta_pp: -0.001, share_z: -0.01, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
-    GeneVerdict { tag: "joint-tactics", verdict: Verdict::Helps, default_on: false, wins_last_10k: Some(3), wins_prior_10k: Some(-4), win_diff_pp: Some(-0.104302), posterior_pp: Some(-5.145492), posterior_se_pp: Some(11.41702), family_wise: true, screen: Some(Measure { pairs: 17574, win_delta_pp: 0.068, win_z: 0.186, share_delta_pp: 0.248, share_z: 3.838, source: "2026-08-22-p10-native-6p-allseats-17574-pairs-ended-early.json" }) },
     GeneVerdict { tag: "lane-culture-spending", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(9), wins_prior_10k: Some(8), win_diff_pp: Some(0.172513), posterior_pp: Some(8.564803), posterior_se_pp: Some(12.159394), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.187, win_z: 0.486, share_delta_pp: -0.01, share_z: -0.13, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
     GeneVerdict { tag: "lane-great-people", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(33), wins_prior_10k: Some(-3), win_diff_pp: Some(0.262286), posterior_pp: Some(13.24308), posterior_se_pp: Some(17.90329), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.66, win_z: 1.717, share_delta_pp: 0.1, share_z: 1.261, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },
     GeneVerdict { tag: "lane-policy-deck", verdict: Verdict::Unresolved, default_on: true, wins_last_10k: Some(29), wins_prior_10k: Some(0), win_diff_pp: Some(0.264627), posterior_pp: Some(12.799771), posterior_se_pp: Some(14.670107), family_wise: false, screen: Some(Measure { pairs: 19080, win_delta_pp: 0.592, win_z: 1.554, share_delta_pp: 0.083, share_z: 1.067, source: "2026-08-24-standard-continuous-38160-total-seats.json" }) },

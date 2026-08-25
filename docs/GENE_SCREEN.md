@@ -175,28 +175,6 @@ pp on share (z −2.48)** on that Emperor batch — a gene that helps where the
 retired premise says it cannot, and hurts on the axis the premise says to read.
 Read **both** columns, and read them at the rung the batch names.
 
-### One gene is held out of the default screened set
-
-`HELD_UNLESS_ASKED` in `gene_screen.rs` is `["joint-tactics"]`, and it is a
-**cost** list, not a verdict. That gene costs **+27.3% ± 0.5% compute per
-enabled major seat** (P10, 17,574 seat pairs; a direct 162-pair screen at seeds
-120M read +22.5% ± 2.0%) where every other gene in P10 is inside ±1.6% and all
-74 together sum to +6.0%. End to end, on the same 20 seed pairs: the full genome
-runs **95.8 s/game**, and dropping this one gene runs **38.0 s/game** — a 10,000
-game screen goes from **22.2 hours to 8.8**.
-
-⚠ That is a cost argument and not a claim that the gene does nothing. Its win
-columns are +3 / −4 — inside any band this instrument has printed — but P10
-reads it `share HELPS **` at **share z +3.84**, past that screen's family-wise
-bar of 3.403, the strongest share reading among the default-off genes. The
-former deployment rule read the **win** axis only. Its share reading is now
-evidence for a deliberate operator decision or an arm (`--genes joint-tactics`),
-not an automatic promotion. It is default-off today, so holding it out changes
-nothing the agent plays.
-⚠ Under `--design prior` a `helps` gene draws on for 90% of seats, and this one
-is `helps` on its share axis — check the `prior:` column in `--list` before
-running a prior-weighted screen that carries it.
-
 Today's genome is the boolean treatment flags below. The growth direction is
 "hundreds of genes": the remaining `enable_*`/`disable_*` toggle pairs in
 `treatment_flags.rs` (182 exist), and — for the continuous `Weights` — the
@@ -426,8 +404,6 @@ varies every `screenable()` row in registry order:
 - `Kind::OptIn` — off everywhere until the ledger turns it on
   (`apostle-promotion-by-role`, `war-economy-2`, …); the gene *on* means
   enabling it.
-- `Kind::HostOnlyOptIn` — `joint-tactics`: shipped by the bridge as a host
-  adapter *and* screenable as an opt-in, because its search runs headless.
 - `Kind::HostOnly` — shipped by the Civilization VI seat but reading host
   state a native board does not have (`land-grab`, `explore-commit`,
   `bank-envoys`, `fog-land-capacity`, …): inert headless, so **never
@@ -556,9 +532,7 @@ enabling the gene for **one major seat**:
   later.
 
 Positive is slower. Old rows with absent timings produce an unknown cost rather
-than a false zero. `joint-tactics` is held out of the default screened set on
-this column alone (+27.3% per enabled seat; 2.52× the batch) and priced by
-`--genes joint-tactics` when it is wanted.
+than a false zero.
 
 ## The rows file
 
@@ -1936,10 +1910,8 @@ the same seeds (91000000..91000011):
 
 ⚠ **The per-seat number is the one to budget from.** A contested game costs a
 fifth more and yields two thirds as many rows, so a contested seat costs
-**1.76× a fieldless one**. For scale, `joint-tactics` is held out of the
-default screened set at 2.5× and this document calls that a real budget
-decision; this is in the same territory. Arm B — `--native-competitions` with
-no field — keeps all six seats and is the cheap way to buy the diplomatic lane.
+**1.76× a fieldless one**. Arm B — `--native-competitions` with no field —
+keeps all six seats and is the cheap way to buy the diplomatic lane.
 
 ⚠ **Provenance for the numbers themselves.** Taken on `mbp-m5-max-128` with the
 one-minute load average moving between **19.9 and 38.0** across the two arms

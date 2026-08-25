@@ -6,17 +6,17 @@
     "withholdable": 39
   },
   "derived": {
-    "firaxis_only_count": 29,
-    "live_bridge_count": 68,
+    "firaxis_only_count": 27,
+    "live_bridge_count": 66,
     "native_engine_repair_count": 39,
     "withholdable_live_count": 39
   },
   "genome_coverage": {
-    "capability_toggles": 172,
-    "measured_by_a_screen": 81,
-    "reachable_as_a_gene": 121,
-    "resolved_by_a_screen": 17,
-    "unreachable_by_any_screen": 51,
+    "capability_toggles": 170,
+    "measured_by_a_screen": 80,
+    "reachable_as_a_gene": 120,
+    "resolved_by_a_screen": 16,
+    "unreachable_by_any_screen": 50,
     "unreachable_toggles": [
       "adjacent_camp_clear",
       "amenity_districts",
@@ -43,7 +43,6 @@
       "great_work_veto_by_district",
       "host_settler_pop",
       "hut_collection",
-      "joint_reach_lines",
       "land_grab",
       "legal_tactical_candidates",
       "live_bridge",
@@ -229,9 +228,8 @@
       ]
     },
     "FIRAXIS_ONLY_TREATMENTS": {
-      "declared_count": 29,
+      "declared_count": 27,
       "items": [
-        "joint-reach-lines",
         "live-trader-route",
         "live-religious-purchase",
         "live-motion-turn-accounting",
@@ -258,12 +256,11 @@
         "spy-mission-patience",
         "expansion-pantheon",
         "expansion-hall",
-        "opening-settler-waits",
-        "joint-tactics"
+        "opening-settler-waits"
       ]
     },
     "LIVE_BRIDGE_TREATMENTS": {
-      "declared_count": 68,
+      "declared_count": 66,
       "items": [
         "war-reinforcement",
         "come-ashore",
@@ -304,7 +301,6 @@
         "one-launch-pad",
         "settler-target-hysteresis",
         "culture-building-debt",
-        "joint-reach-lines",
         "live-trader-route",
         "live-religious-purchase",
         "live-motion-turn-accounting",
@@ -331,8 +327,7 @@
         "spy-mission-patience",
         "expansion-pantheon",
         "expansion-hall",
-        "opening-settler-waits",
-        "joint-tactics"
+        "opening-settler-waits"
       ]
     }
   },

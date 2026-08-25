@@ -78,9 +78,9 @@ const PROMOTE_HEAL_HP_CEILING: i32 = 75;
 /// the shipped caution is reduced, not removed.
 const STRIKE_OPENING_SCALE: f64 = 0.6;
 /// A normal tactical candidate already spends two cloned worlds on its exact
-/// exchange and its forcing reply.  The friendly-volley extension below is a
-/// deliberately smaller joint search: inspect only the three best immediate
-/// attacks for a setup that a teammate can finish right now.
+/// exchange and its forcing reply. The friendly-volley extension below is a
+/// deliberately smaller coordinated check: inspect only the three best
+/// immediate attacks for a setup that a teammate can finish right now.
 const TACTICAL_VOLLEY_CANDIDATE_LIMIT: usize = 3;
 /// A force can be large late in the game.  Once eight direct finishers have
 /// been checked in deterministic unit order, more choices buy little tactical
@@ -4341,46 +4341,6 @@ pub struct AdvancedAi {
     /// local threats, missing contact, or an exhausted horizon.
     pub envoy_priority: bool,
 
-    /// Plan the whole engagement at once instead of committing one unit at a
-    /// time in a fixed class order.
-    ///
-    /// The per-unit evaluator this sits in front of is strong: it scores every
-    /// attack on an exact cloned forward model and extends the line with a
-    /// quiescence reply search. What it cannot do is choose a *set* of attacks.
-    /// Units commit greedily and irreversibly in the order ranged, siege,
-    /// melee, so targets are assigned one at a time, the enemy's answer is
-    /// priced against a half-played turn, and no unit may take a worse attack
-    /// to set up a better one for the unit behind it.
-    ///
-    /// `src/ai/tactics.rs` replaces that commitment rule with a bounded
-    /// Portfolio Online Evolution over the joint assignment — the method
-    /// published for exactly this game shape (Churchill & Buro 2013; Justesen
-    /// et al. 2016; Wang et al. 2016). The greedy incumbent is always in the
-    /// population, so the search cannot score below today's behaviour under its
-    /// own evaluator.
-    ///
-    /// **Off by default on world games.** Battlefield games are the controller's
-    /// bounded combat surface, so promoted controllers activate this planner
-    /// there at the movement seam; the frozen `advanced_v1` anchor and explicit
-    /// evaluator withholds remain greedy. `docs/TACTICS.md` carries the design
-    /// and the measurements.
-    pub joint_tactics: bool,
-
-    /// An explicit evaluator/live-bridge withholding must survive the arena
-    /// auto-route. Keeping this separate from `joint_tactics` lets the arena
-    /// promote the normal controller while `live_without_joint_tactics` still
-    /// means what its paired measurement says.
-    joint_tactics_forced_off: bool,
-
-    /// The joint search offers approach lines from the engine's exact reach
-    /// flood (`Game::approach_reach`), not just the adjacent step. On by
-    /// default wherever the joint search runs; withholdable as the live
-    /// treatment `joint-reach-lines` (`live_without_joint_reach_lines`) and
-    /// as the bench arm `advanced_joint_tactics_geometric`, so its effect
-    /// can be priced on the arena, the bench and the live ladder alike.
-    /// `docs/TACTICS.md` §17 carries the measurement.
-    pub joint_reach_lines: bool,
-
     /// Admit the friendly-volley extension without reopening the closed
     /// war-half bundle. It lets a force finish a defender together. Off by
     /// default and off for the frozen anchors; the
@@ -4397,26 +4357,6 @@ pub struct AdvancedAi {
     /// evaluator arm withholds only this chain from the treatment to price it
     /// separately.
     pub volley_chain: bool,
-
-    /// Units this turn's joint plan already reached a decision for, including
-    /// the ones it decided should not attack. Their greedy attack selection is
-    /// suppressed so a declined trade is not immediately re-taken by the
-    /// per-unit path; movement is untouched.
-    tactics_resolved: BTreeSet<u32>,
-
-    /// Units the joint plan moved without landing a blow — withdrawals, and
-    /// approaches whose attack the engine refused. The plan was scored with
-    /// these standing exactly where it left them, so the per-unit mover is
-    /// kept off them entirely for the rest of the turn: it would otherwise
-    /// march a fresh retreat straight back into the contact the plan paid
-    /// the fortification forfeit to break.
-    tactics_withdrawn: BTreeSet<u32>,
-
-    /// Turns on which the joint search produced a plan, and unit decisions it
-    /// reached across them. Read by instruments through
-    /// [`AdvancedAi::joint_tactics_census`].
-    tactics_plans: usize,
-    tactics_decisions: usize,
 
     /// Price beakers as the empire's compounding interest rate rather than as
     /// one victory lane's currency.
@@ -5550,15 +5490,8 @@ impl AdvancedAi {
             diplomatic_lane_forecast: false,
             frontier_massing_alarm: false,
             envoy_priority: false,
-            joint_tactics: false,
-            joint_tactics_forced_off: false,
-            joint_reach_lines: true,
             coordinated_finish: false,
             volley_chain: true,
-            tactics_resolved: BTreeSet::new(),
-            tactics_withdrawn: BTreeSet::new(),
-            tactics_plans: 0,
-            tactics_decisions: 0,
             research_economy: false,
             housing_research: false,
             research_weight: 0.0,
@@ -5680,11 +5613,10 @@ impl AdvancedAi {
     }
 
     /// The guards currently bound to a living settler of `pid` under
-    /// `stacked_escort`. Under `settler_stack_discipline` these are kept out
-    /// of every attack plan that runs before the settler moves — the joint
-    /// engagement and the live bridge's finishing volley — so a guard is not
-    /// spent one tile away from the civilian it shields. Empty when the
-    /// discipline is off.
+    /// `stacked_escort`. Under `settler_stack_discipline` they stay out of
+    /// attack work that runs before the settler moves, including the live
+    /// bridge's finishing volley, so a guard is not spent one tile away from
+    /// the civilian it shields. Empty when the discipline is off.
     pub fn bound_settler_guards(&self, g: &Game, pid: usize) -> BTreeSet<u32> {
         if !self.live_formationless_settler_shadow {
             return BTreeSet::new();
@@ -5903,19 +5835,6 @@ impl AdvancedAi {
             GrandStrategy::Expansion => g.victory_conditions.score,
             GrandStrategy::Recovery => false,
         }
-    }
-
-    /// Last set of force orders produced for this agent. This is useful to
-    /// observers, evaluators, and tests; orders are rebuilt at every war turn.
-    /// How many turns this agent's joint tactical search actually planned, and
-    /// how many unit decisions it reached. For instruments only.
-    ///
-    /// A treatment that never fires produces a null for the wrong reason, and
-    /// on a whole-game evaluation "the layer barely runs" and "the layer runs
-    /// and does not matter" call for opposite next steps. `battle_bench --cost`
-    /// reports this so the two can be told apart.
-    pub fn joint_tactics_census(&self) -> (usize, usize) {
-        (self.tactics_plans, self.tactics_decisions)
     }
 
     pub fn force_groups(&self) -> &[ForceGroup] {
@@ -28555,13 +28474,6 @@ impl AdvancedAi {
         let unit = g.units[&uid].clone();
         let rules = std::sync::Arc::clone(&g.rules);
         let spec = &rules.units[unit.kind];
-        // The joint plan spent this unit's turn disengaging (or on an
-        // approach whose blow the engine refused) and scored the position it
-        // now stands in. Every mover below would re-decide that — the
-        // campaign march most of all — so the unit simply holds.
-        if spec.class == "military" && self.tactics_withdrawn.contains(&uid) {
-            return self.base.fortify_or_stop(g, pid, uid);
-        }
         let special_improver = unit.charges > 0 && !spec.builds.is_empty();
         let doctrine = BasicAi::unit_doctrine(g, uid);
         if self.base.unit_objective_memory && spec.class == "military" {
@@ -28925,13 +28837,8 @@ impl AdvancedAi {
         // and neither can move while this loop applies nothing. Built lazily,
         // because most units reach no enemy tile at all.
         let mut vision_frames = None;
-        // The joint search already decided this unit's fight, weighing it
-        // against what the rest of the army is doing. Re-running the greedy
-        // picker here would let a unit take a trade the plan declined on
-        // purpose, so it only keeps its movement.
-        let resolved_by_plan = self.tactics_resolved.contains(&uid);
         for pos in g.wdisk(unit.pos, radius) {
-            if spec.class != "military" || resolved_by_plan {
+            if spec.class != "military" {
                 break;
             }
             if pos == unit.pos || !self.base.is_enemy_tile(g, pos, &enemies) {
@@ -30189,50 +30096,6 @@ impl AdvancedAi {
         self.base.clear_prepared_patrol_posts();
     }
 
-    /// Search the turn's whole engagement jointly and play the winning plan.
-    ///
-    /// The plan is replayed onto the authoritative game in the order the
-    /// search played it, starting from the position the search started from,
-    /// so the seeded combat rolls land exactly as they were evaluated.
-    fn plan_engagement(&mut self, g: &mut Game, pid: usize) {
-        let search = super::tactics::JointTactics {
-            reach_lines: self.joint_reach_lines,
-            ..super::tactics::JointTactics::default()
-        };
-        // ★★★★ A BOUND GUARD IS NOT AN ATTACKER. See
-        // `settler_stack_discipline`: the joint plan spent the settler's guard
-        // on a strike one tile away, and whether the host executed it or not
-        // the settler was alone at the end of the turn. The guard's per-unit
-        // path (`stacked_guard_step`) runs before the attack scan and keeps
-        // it on the settler; the joint plan has to leave it there too.
-        let excluded = self.bound_settler_guards(g, pid);
-        let Some(plan) = search.plan_excluding(g, pid, &self.base, &excluded) else {
-            return;
-        };
-        let mut played = 0usize;
-        for action in &plan.actions {
-            if g.apply(pid, action).is_ok() {
-                played += 1;
-            }
-        }
-        if played == 0 {
-            return;
-        }
-        self.tactics_resolved.extend(plan.resolved.iter().copied());
-        self.tactics_withdrawn.extend(plan.withdrawn.iter().copied());
-        self.tactics_plans += 1;
-        self.tactics_decisions += plan.resolved.len();
-        self.force_groups_dirty = true;
-        if self.journal().wants(crate::reasoning::Level::Detail) {
-            let gain = plan.score - plan.greedy_score;
-            think!(self.journal(), Military, Detail,
-                   "the army fights as one";
-                   "{played} orders across {} units, worth {:.0} against {:.0} \
-                    for the same units attacking one at a time ({gain:+.0})",
-                   plan.resolved.len(), plan.score, plan.greedy_score);
-        }
-    }
-
     /// Whether this hull is on the sea-scout roster this turn. See
     /// `naval_explorer`.
     fn is_naval_explorer(&self, g: &Game, pid: usize, uid: u32) -> bool {
@@ -30287,7 +30150,6 @@ impl AdvancedAi {
 
     fn advanced_units(&mut self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
         self.base.begin_movement_turn(g, pid);
-        self.enable_arena_joint_tactics(g);
         // In a native game a Trader has walking movement and the ordinary unit
         // loop below handles it. Firaxis exports an idle Trader with zero
         // walking movement but still permits TradeRoute from the city it
@@ -30348,23 +30210,13 @@ impl AdvancedAi {
                 settled_first.push(uid);
             }
         }
-        // Decide the engagement as one problem before any unit commits. Units
-        // this resolves keep their own movement logic below; only the choice
-        // of what to attack is taken out of the greedy per-unit path.
-        self.tactics_resolved.clear();
-        self.tactics_withdrawn.clear();
         // A direct kill is a local opportunity, not a new campaign objective.
-        // Resolve those exact, positive exchanges before the joint search can
-        // reserve a unit for a withdrawal and before its reply-risk term can
-        // make a barbarian or wartime defender survive another turn.  Rebuild
-        // once if the board changed so the remaining engagement sees the
-        // actual force picture rather than a dead defender in its old group.
+        // Resolve those exact, positive exchanges before the remaining unit
+        // loop runs, then rebuild once if the board changed so the force
+        // picture does not retain a dead defender in its old group.
         if self.victory_planning && self.prioritize_immediate_kills(g, pid, plan) > 0 {
             self.rebuild_force_groups(g, pid, plan);
             self.force_groups_dirty = false;
-        }
-        if self.joint_tactics {
-            self.plan_engagement(g, pid);
         }
         // `settler-screen` / `pass-picket`: this turn's recon orders, drawn
         // once from the start-of-turn board so units planned in parallel
@@ -31066,10 +30918,6 @@ impl AdvancedAi {
 }
 
 impl Ai for AdvancedAi {
-    fn joint_tactics_census(&self) -> Option<(usize, usize)> {
-        self.joint_tactics.then(|| self.joint_tactics_census())
-    }
-
     fn expansion_census(&self) -> Option<ExpansionCensus> {
         Some(AdvancedAi::expansion_census(self))
     }

@@ -12474,8 +12474,7 @@ end
 -- where the unit STOOD, not from `a`. `civvis_orders::coalesce_unit_paths`
 -- answered that by sending a unit's walk and deferring every later order to the
 -- next frame — correct causally, and it deferred every strike that follows a
--- step. The joint tactical search's lines are literally `[Move, Attack]`
--- (`src/ai/tactics.rs`), so on this bridge they executed as a step: the unit
+-- step. A move followed by an action therefore executed as a step: the unit
 -- walked into contact and stood there, unstruck, for the enemy's whole turn.
 -- Measured on run civvis-20260803T005930Z: 7 melee ATTACK orders against 1546
 -- MOVE_TO in 188 turns of war; 622 of 1787 military unit-turns hovering 2-4

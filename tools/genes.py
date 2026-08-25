@@ -49,7 +49,6 @@ The kinds are the registry's own (`Kind` in `genes.rs`):
 |-----------------|------|-----------|--------|------------|--------|------------|
 | `Repair(axis)`  | yes  | no        | yes    | no         | no     | yes        |
 | `HostOnly`      | yes  | yes       | no     | no         | no     | no         |
-| `HostOnlyOptIn` | yes  | yes       | no     | no         | yes    | yes        |
 | `Production`    | no   | no        | no     | yes        | no     | yes        |
 | `OptIn`         | no   | no        | no     | no         | yes    | yes        |
 
@@ -285,11 +284,11 @@ class Gene:
 
     @property
     def live(self) -> bool:
-        return self.kind.startswith("Kind::Repair") or self.kind in ("Kind::HostOnly", "Kind::HostOnlyOptIn")
+        return self.kind.startswith("Kind::Repair") or self.kind == "Kind::HostOnly"
 
     @property
     def host_only(self) -> bool:
-        return self.kind in ("Kind::HostOnly", "Kind::HostOnlyOptIn")
+        return self.kind == "Kind::HostOnly"
 
     @property
     def repair(self) -> bool:
@@ -301,7 +300,7 @@ class Gene:
 
     @property
     def opt_in(self) -> bool:
-        return self.kind in ("Kind::OptIn", "Kind::HostOnlyOptIn")
+        return self.kind == "Kind::OptIn"
 
     @property
     def universe_on(self) -> bool:
