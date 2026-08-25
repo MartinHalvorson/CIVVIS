@@ -3196,10 +3196,9 @@ pub struct AdvancedAi {
     /// Theater Square owes its buildings the way a Campus does, at
     /// `CULTURE_BUILDING_DEBT`, and a repeatable district project waits behind
     /// them the way it waits behind the Library. Held one rung under the
-    /// research pair for the same reason as `CULTURE_THEATER_COVERAGE`.
-    /// Firaxis-only, alongside `tally_culture` and `culture_coverage`: it
-    /// prices the Settler seat's tally. Off for ordinary and frozen
-    /// controllers.
+    /// research pair for the same reason as the Campus chain.
+    /// Firaxis-only, alongside `tally_culture`: it prices the Settler seat's
+    /// tally. Off for ordinary and frozen controllers.
     pub culture_building_debt: bool,
     /// A specialty district owes its own buildings, whatever the lane.
     ///
@@ -3245,47 +3244,6 @@ pub struct AdvancedAi {
     /// on their own merits. Production retains the historical slot-keyed veto
     /// until the controlled deployment comparison has a result.
     pub great_work_veto_by_district: bool,
-    /// A city with no Theater Square is a culture hole, the way a city with no
-    /// Campus is a research hole.
-    ///
-    /// ★★★★ `tally_culture` FIXED THE PRICE OF A POINT OF CULTURE AND LEFT THE
-    /// COVERAGE ALONE, AND THE COVERAGE IS THE WHOLE GAP. Two terms in the
-    /// district table belong to the Campus and to nothing else:
-    /// `research_coverage` pays up to `RESEARCH_CAMPUS_COVERAGE` in every lane
-    /// for a city that holds none, and `campus_every_city` exempts it from
-    /// `balanced_core`'s half-the-empire cliff. The Theater Square has neither,
-    /// so it wins the odd bid and never the empire.
-    ///
-    /// Measured over the twenty-five live games that reached turn 180 — 204
-    /// cities — the two chains are the same shape three sizes apart:
-    ///
-    /// | rung | science | culture |
-    /// |---|---|---|
-    /// | district | Campus **82%** | Theater Square **27%** |
-    /// | first building | Library 72% | Amphitheater 21% |
-    /// | second | University 53% | Museum 7% |
-    /// | third | Research Lab 23% | Broadcast Center **1%** |
-    ///
-    /// End-of-game culture ran 95–175 a turn against rivals' 190–546, and
-    /// civics 42–48 against 47–55. Both halves of that cost the tally: a civic
-    /// is three points where a tech is two, and the score-tally losses of this
-    /// lane are 50–450 points wide. It also costs the game outright — a rival
-    /// culture victory must out-tour the best DOMESTIC tourism on the board,
-    /// which is our accumulated culture, so being the quietest civilization is
-    /// what makes the bar low enough to clear. Run civvis-20260817T022159Z led
-    /// **1,239 to 1,005** and lost at t197 to the Cree, whose tourism ran
-    /// 93 → 172 → 245 over the forty turns nobody answered.
-    ///
-    /// With this on the Theater Square gets the Campus's two terms — the same
-    /// empire-wide coverage payment on its `CULTURE_THEATER_COVERAGE` rung,
-    /// scaled by the same payback horizon, and the same exemption from the
-    /// cliff so the empire is never told half is enough. The coverage is held
-    /// back until the city already carries a specialty district, so the Campus
-    /// (or the Harbor, or the Commercial Hub) still goes in first and a
-    /// one-district town is not handed a Theater Square instead. Firaxis-only,
-    /// with `tally_culture`: it prices the Settler seat's tally; the native
-    /// lanes keep their bred weights. Off for ordinary and frozen controllers.
-    pub culture_coverage: bool,
     /// Bank an envoy the plan has no positive use for.
     ///
     /// ★★★★ `advanced_envoys` spends EVERY held envoy each turn (`while
@@ -3601,21 +3559,6 @@ pub struct AdvancedAi {
     /// reading before its first launch. The empire this ballot points at is
     /// chosen by a better instrument than the one the flag was built against.
     pub congress_counter_leader: bool,
-
-    /// Value the infrastructure that produces city-state influence.
-    ///
-    /// The allocation layer already spends every envoy it earns, while the
-    /// production governor assigns no value to the Consulate or Chancery's
-    /// only economic output. The treatment converts their per-turn influence
-    /// into the envoys it can produce before the turn limit, using the active
-    /// government's threshold and envoy payout. It also lets a first
-    /// Diplomatic Quarter see part of the Consulate stream it unlocks.
-    ///
-    /// Off until the paired gameplay gate clears. The evaluator exposes the
-    /// infrastructure-only and combined arms separately so a policy-card gain
-    /// cannot be misattributed to production.
-    pub envoy_infrastructure: bool,
-
 
     /// Price the Religion lane's own district on the same scale the Culture
     /// lane prices its own.
@@ -3963,56 +3906,6 @@ pub struct AdvancedAi {
     /// modded yield cannot run away with the queue. Off everywhere by default;
     /// opt-in gene `research-tier-premium`.
     pub research_tier_premium: bool,
-
-    /// Finish the research cities the empire has before it buys another.
-    ///
-    /// ★★★★★ MEASURED, AND THE OPPOSITE OF WHAT THE COVERAGE TERM ASSUMES.
-    /// A six-arm census over the screen's own profile, conditioned to reach
-    /// the clock (`advanced/science_funnel_census.rs`), counted the whole
-    /// chain at the end of three games an arm. The control held **17 Campuses
-    /// and 14 Research Labs**. The observed treatments held more Campuses but
-    /// fewer Labs. Three points, one gradient — every extra
-    /// Campus district bought late came out of a Research Lab that then never
-    /// got built, and terminal Science ran 567.9, 429.6, 523.0 while the
-    /// district count climbed.
-    ///
-    /// The mechanism is production, not pricing. A Campus is a district whose
-    /// cost escalates with the era; a Research Lab is **440** and carries
-    /// `powered_science` **5**, the largest yield on the Campus. A city that
-    /// starts another Campus at turn 190 spends the turns that would have
-    /// finished the ones already standing, and a Campus with no Lab is the
-    /// expensive half of a research city bought over again.
-    ///
-    /// The coverage term cannot see this. It asks only whether THIS city has a
-    /// Campus, never whether the Campuses already standing are finished — so
-    /// the harder the empire is told to want research late, which is what
-    /// every other gene here does, the more unfinished research cities it
-    /// buys. That is why this gene exists beside them rather than instead of
-    /// them, and why the census will price the combinations and not only the
-    /// singles.
-    ///
-    /// ⚠ MEASURED AND UNRESOLVED, WITH THE FLOOR THE LIKELY REASON. Over four
-    /// conditioned census games this gene was **byte-identical to control** on
-    /// every column — cities, the whole chain, techs, Science to a decimal,
-    /// score — and so was the four-gene bundle with and without it. It is not
-    /// structurally inert: a probe that zeroes `RESEARCH_CAMPUS_COVERAGE`
-    /// outright moves the same seed from 4 Campuses to 3 and 30 techs to 29,
-    /// so the term this scales is read and does decide things. And the brake
-    /// itself bites: over 160 turns of one game it was under 1.0 on **70
-    /// turns** and reached the floor. What it does not do at
-    /// `RESEARCH_COVERAGE_UNFINISHED_FLOOR` = 0.25 is flip a decision on those
-    /// four seeds. Either the floor is too high to matter or four seeds cannot
-    /// see it; both stay open, and the gene ships off until a screen says.
-    ///
-    /// With this on, `RESEARCH_CAMPUS_COVERAGE` is scaled by
-    /// `research_chain_completion` — the share of Campus buildings the
-    /// standing Campuses could produce now and do have. An empire with no
-    /// Campus, or with every Campus finished, is affected in no way at all;
-    /// one whose Campuses stand half-empty pays half, floored at
-    /// `RESEARCH_COVERAGE_UNFINISHED_FLOOR` so a genuine research hole can
-    /// still be filled. Off everywhere by default; opt-in gene
-    /// `campus-finishes-first`.
-    pub campus_finishes_first: bool,
 
     /// A power plant is worth the yields it switches on, and the largest of
     /// them is the Research Lab's.
@@ -4547,26 +4440,12 @@ pub struct AdvancedAi {
     /// to the shipped sum, so a disabled gene contributes 0.0 exactly.
     pub frontier_massing_alarm: bool,
 
-    /// Reserve one empty city's next build for reachable envoy infrastructure.
+    /// Reserve one empty city's next build for a reachable envoy chain.
     ///
-    /// `envoy_infrastructure` teaches `advanced_production` what the Diplomatic
-    /// Quarter, Consulate, and Chancery are worth, but the adaptive production
-    /// path normally delegates idle cities to `BasicAi::cities`. Consequently
-    /// that valuation can be correct without ever being asked. This separate
-    /// treatment crosses that routing boundary after the proven opening book:
-    /// it queues at most one legal empire-wide stage, preserves every existing
-    /// queue, and fails closed during wars, Recovery, rushes, or a local threat.
-    ///
-    /// Fog and horizon gates are shared with the valuation treatment: an unmet
-    /// city-state cannot trigger it, nor can an influence stream that will not
-    /// yield an Envoy before the game ends.
-    ///
-    /// **Measured, promising, and not promoted.** Over 120 mirrored maps it
-    /// raised deployment envoys 14.3 -> 19.3 and suzerainty 0.41 -> 0.70, with
-    /// 38 map directions for and 19 against (p=0.0163), but the unchanged
-    /// promotion gate remained INCONCLUSIVE (+30 Elo-equivalent, e-process
-    /// p<=0.0665). Compact was -12 and safely inconclusive. The preregistered
-    /// rule therefore leaves it off; reachable as `advanced_envoy_priority`.
+    /// The adaptive controller normally delegates idle cities to the baseline
+    /// governor, so this reservation claims at most one legal chain stage
+    /// before its queue fills. It fails closed during wars, Recovery, rushes,
+    /// local threats, missing contact, or an exhausted horizon.
     pub envoy_priority: bool,
 
     /// Plan the whole engagement at once instead of committing one unit at a
@@ -4728,11 +4607,6 @@ pub struct AdvancedAi {
     /// nothing and reproduces the pre-`research_economy` ordering exactly, so a
     /// direct unit-test call to `yield_value` is unaffected.
     research_weight: f64,
-    /// How complete the empire's standing Campuses are, refreshed once per
-    /// decision beside `research_weight`. 1.0 with no Campus and 1.0 with
-    /// every Campus finished, so `campus_finishes_first` is a strict no-op in
-    /// both. See that flag.
-    research_chain_completion: f64,
     /// Half the best `campus_building_science_pct` the RULESET offers, and the
     /// printed Science of the whole Campus chain. Both are ruleset constants,
     /// cached once per decision beside `research_weight` rather than rescanned
@@ -4958,13 +4832,6 @@ const RESEARCH_CITIZEN_TILT: f64 = 0.28;
 /// A city with no Campus, in any lane, once one is legal here.
 const RESEARCH_CAMPUS_COVERAGE: f64 = 300.0;
 
-/// What an empire-wide culture hole is worth on the tally seat, on the same
-/// payback horizon as `RESEARCH_CAMPUS_COVERAGE`. Held one rung under the
-/// Campus's: science compounds through a tree that unlocks the districts,
-/// buildings and units the rest of the table prices, where the civic tree's
-/// return is the tally itself. See `culture_coverage`.
-const CULTURE_THEATER_COVERAGE: f64 = 240.0;
-
 /// How long a Campus takes to repay itself, as a fraction of the turn budget.
 ///
 /// ⚠⚠ THE HORIZON WAS THE WRONG SHAPE, AND IT IS WHY THE LATE CITIES HAVE NO
@@ -4997,10 +4864,6 @@ const RESEARCH_BUILDING_DEBT: f64 = 240.0;
 /// per candidate per city per turn and `docs/` measures this loop work-bound;
 /// `research_tier_premium_is_priced_against_the_shipped_library` pins it to
 /// `Rules::embedded()` so a ruleset change cannot leave it stale.
-/// The least `campus_finishes_first` will scale the Campus coverage term to,
-/// however empty the standing Campuses are. A city with no Campus at all is a
-/// real research hole and the gene is a brake on spreading, not a ban on it.
-const RESEARCH_COVERAGE_UNFINISHED_FLOOR: f64 = 0.25;
 /// The Campus adjacency `city_yields` gates half of
 /// `campus_building_science_pct` on, matching Gathering Storm's
 /// REQUIREMENT_CITY_HAS_HIGH_ADJACENCY_DISTRICT Amount=4 and pinned to the
@@ -5011,9 +4874,7 @@ const RESEARCH_CHAIN_FIRST_RUNG_SCIENCE: f64 = 2.0;
 /// runaway yield cannot take over the queue. The shipped ceiling is the
 /// powered Research Lab at exactly 4.0. See `research_tier_premium`.
 const RESEARCH_TIER_PREMIUM_CAP: f64 = 4.0;
-/// A Theater Square standing without the building that pays for it, on the same
-/// shape and one rung under the research debt — the same reasoning as
-/// `CULTURE_THEATER_COVERAGE`. See `culture_building_debt`.
+/// A Theater Square standing without the building that pays for it.
 const CULTURE_BUILDING_DEBT: f64 = 190.0;
 /// What the land grab pays, raw, for a building that gives every newly
 /// founded city a free Builder (`free_builder_new_city`: the Ancestral Hall),
@@ -5070,9 +4931,8 @@ const CULTURE_BUILDINGS_BEFORE_PROJECTS: [&str; 4] = [
 /// only wins a slot that would otherwise have gone to the tail of the list.
 const RESEARCH_DECK_INSERT: usize = 4;
 
-/// The headroom below which a city is worth spending a policy slot on. This is
-/// `BasicAi::HOUSING_HEADROOM_TARGET` — the break-even of the engine's own
-/// growth band, where `housing_growth_mult` stops paying 1.0 and starts halving.
+/// The headroom below which a city is worth spending a policy slot on.
+/// The engine pays full growth at 2 and halves it below that break-even.
 const HOUSING_CARD_HEADROOM: f64 = 2.0;
 
 impl Default for AdvancedAi {
@@ -5095,14 +4955,8 @@ impl Default for AdvancedAi {
 /// 67 and only 52 could be withheld, so a third of what ships on the live
 /// seat could not be priced by the paired evaluator and nothing said so.
 ///
-/// The fifteen are named here — `buildings_before_projects`, `camp_party`,
-/// `camp_reach`, `culture_building_debt`, `culture_coverage`,
-/// `one_launch_pad`, `settler_stack_discipline`, `settler_target_hysteresis`,
-/// `tally_great_people`, `barbarian_scouts_are_scouts`, and the five that had
-/// no `disable_` twin at all — and `build_arm` now derives every arm from this
-/// table instead of matching a literal, so a treatment added to the bundle
-/// without a way to withhold it fails to build.
-///
+/// The table derives withholding arms from registered treatments, so every
+/// shipped treatment stays independently ablatable.
 /// ⚠ THREE NAMES ARE NOT THE FLAG'S NAME, AND THAT IS DELIBERATE. The tag is
 /// the identity `docs/EVAL.md` records results under; `live-trader-route`,
 /// `live-religious-purchase` and `ranged-line-of-sight` were published shorter
@@ -5348,11 +5202,6 @@ impl AdvancedAi {
             true,
             victory_target,
         );
-        // The 2026-08-17 measured-null cleanup deliberately leaves
-        // `envoy_infrastructure` and `bounded_recovery` at their configured
-        // defaults. The evaluator controls and live bridge still enable those
-        // mechanisms explicitly; production keeps only the reachable
-        // `envoy_priority` reservation from the old composite.
         ai.envoy_priority = true;
         ai.adjacency_site_planning = true;
         ai.settler_commit = true;
@@ -5822,7 +5671,6 @@ impl AdvancedAi {
             tally_culture: false,
             culture_building_debt: false,
             great_work_veto_by_district: false,
-            culture_coverage: false,
             bank_envoys: false,
             frontier_loyalty: false,
             settler_target_hysteresis: false,
@@ -5836,7 +5684,6 @@ impl AdvancedAi {
             price_the_suzerainty: false,
             early_score_alarm: false,
             congress_counter_leader: false,
-            envoy_infrastructure: false,
             holy_lane_parity: false,
             inquisition_on_threat: false,
             founder_temple: false,
@@ -5845,7 +5692,6 @@ impl AdvancedAi {
             priced_tile_purchase: false,
             science_multiplier_payoff: false,
             research_tier_premium: false,
-            campus_finishes_first: false,
             power_the_laboratory: false,
             campus_adjacency_threshold: false,
             lane_great_people: false,
@@ -5894,7 +5740,6 @@ impl AdvancedAi {
             research_economy: false,
             housing_research: false,
             research_weight: 0.0,
-            research_chain_completion: 1.0,
             campus_multiplier_half: 0.0,
             campus_chain_science: 0.0,
             // Append points, one per name range: a new treatment goes under the range
@@ -10756,19 +10601,7 @@ impl AdvancedAi {
         EARLY_CONTACT_UNMET_VALUE * unmet as f64 / (counts.scouts + 1) as f64
     }
 
-    /// Set this turn's science floor. Called once per decision, before any
-    /// pricing runs.
-    /// The share of Campus buildings the empire's standing Campuses could
-    /// produce now and do have. See `campus_finishes_first`.
-    ///
-    /// Computed once per decision rather than inside `production_value`,
-    /// which runs per candidate per city per turn on a loop `docs/` measures
-    /// work-bound. Deliberately NOT parameterised on the acting city: the
-    /// question is whether the EMPIRE has unfinished research cities, and the
-    /// city being priced is by construction one that has no Campus at all.
-    /// The two ruleset constants `campus_adjacency_threshold` prices with.
-    /// Cached because `production_value` runs per candidate per city per turn
-    /// and `docs/` measures that loop work-bound; neither depends on the board.
+    /// Cache ruleset constants for the adjacency threshold once per decision.
     fn refresh_campus_multiplier_constants(&mut self, g: &Game) {
         if !self.campus_adjacency_threshold {
             self.campus_multiplier_half = 0.0;
@@ -10817,38 +10650,6 @@ impl AdvancedAi {
             return 0.0;
         }
         self.campus_chain_science * self.campus_multiplier_half / 100.0
-    }
-
-    fn refresh_research_chain_completion(&mut self, g: &Game, pid: usize) {
-        self.research_chain_completion = 1.0;
-        if !self.campus_finishes_first || !self.research_economy {
-            return;
-        }
-        let campus = crate::name!("campus");
-        let (mut held, mut buildable) = (0usize, 0usize);
-        for cid in g.player_city_ids(pid) {
-            let city = &g.cities[&cid];
-            if !g.city_has_district_family(city, campus) {
-                continue;
-            }
-            for (name, spec) in g.rules.buildings.iter() {
-                if spec.wonder || spec.district.map(|d| g.district_family(d)) != Some(campus) {
-                    continue;
-                }
-                let building = Name::new(name);
-                if city.buildings.contains(&building) {
-                    held += 1;
-                    buildable += 1;
-                } else if g.can_produce(pid, cid, &Item::Building { building }) {
-                    buildable += 1;
-                }
-            }
-        }
-        if buildable == 0 {
-            return;
-        }
-        self.research_chain_completion =
-            (held as f64 / buildable as f64).clamp(RESEARCH_COVERAGE_UNFINISHED_FLOOR, 1.0);
     }
 
     fn refresh_research_weight(&mut self, g: &Game) {
@@ -11412,7 +11213,7 @@ impl AdvancedAi {
         // (at least two capped cities, and at least half of them), and tech
         // must be the binding constraint — a capped city that can already
         // produce a housing-raising building or district is the production
-        // lanes' job (`housing_buildings`, `housing_districts`), not a
+        // lane's job (`housing_buildings`), not a
         // research detour.
         let capped: Vec<u32> = g
             .cities
@@ -20167,34 +19968,6 @@ impl AdvancedAi {
     /// `starts_after` turns. A stream matters only after this empire has met a
     /// city-state it does not already control; this makes the treatment
     /// fog-honest and keeps zero-city-state games bit-identical.
-    fn envoy_income_value(
-        &self,
-        g: &Game,
-        pid: usize,
-        influence_per_turn: f64,
-        starts_after: f64,
-        remaining_turns: f64,
-    ) -> f64 {
-        if !self.envoy_infrastructure || influence_per_turn <= 0.0 {
-            return 0.0;
-        }
-        let contestable = self.contestable_city_states(g, pid);
-        if contestable == 0 {
-            return 0.0;
-        }
-        let expected_envoys = self.projected_stream_envoys(
-            g,
-            pid,
-            influence_per_turn,
-            starts_after,
-            remaining_turns,
-        );
-        // Three envoys establish first suzerainty. Extra income is still
-        // useful for defense, but projecting beyond three per currently open
-        // contest lets a very long score game crowd out every other system.
-        expected_envoys.min(contestable as f64 * 3.0) * ENVOY_PRODUCTION_VALUE
-    }
-
     /// Put the envoy valuation on the production path the adaptive controller
     /// actually uses. This is deliberately a reservation rather than another
     /// full production governor: one empty city advances one empire-unique
@@ -21311,17 +21084,6 @@ impl AdvancedAi {
                         .into_iter()
                         .map(|kind| spec.great_person_points.get(kind).copied().unwrap_or(0.0))
                         .sum::<f64>();
-                    let influence_income = if self.envoy_infrastructure {
-                        self.envoy_income_value(
-                            g,
-                            pid,
-                            spec.effects.get("influence_points").copied().unwrap_or(0.0),
-                            turns,
-                            remaining_turns,
-                        )
-                    } else {
-                        0.0
-                    };
                     // Nobel Peace is the one host competition that pays for
                     // this building's Favor stream directly: every point the
                     // completed building generates before its deadline is one
@@ -21507,7 +21269,6 @@ impl AdvancedAi {
                                 10.0
                             }
                         + spec.effects.get("tourism").copied().unwrap_or(0.0) * 80.0
-                        + influence_income
                         + nobel_peace_favor
                         + wartime_infrastructure_debt
                         + if building == "monument" && g.turn < 120 {
@@ -21581,13 +21342,7 @@ impl AdvancedAi {
                 // until they qualify. Below the cliff nothing changes.
                 let campus_keeps_asking = false;
 
-                // See `culture_coverage`: the same exemption, for the same
-                // reason — the civic tree cascades out of the Theater Square
-                // the way the tech tree cascades out of the Campus, and being
-                // told half the empire is enough is what stopped both.
-                let theater_keeps_asking = self.culture_coverage && family == "theater_square";
-                let balanced_core = if !core_capped || campus_keeps_asking || theater_keeps_asking
-                {
+                let balanced_core = if !core_capped || campus_keeps_asking {
                     match family.as_str() {
                         "campus" | "theater_square" | "commercial_hub" => 130.0,
                         "harbor" | "industrial_zone" => 90.0,
@@ -21784,25 +21539,6 @@ impl AdvancedAi {
                     "aerodrome" if district_count == 0 && counts.aircraft > 0 => 260.0,
                     _ => 0.0,
                 };
-                let envoy_unlock = if self.envoy_infrastructure
-                    && family == "diplomatic_quarter"
-                    && district_count == 0
-                {
-                    // The district's direct envoy is already in `effect_value`.
-                    // This is only the discounted Consulate stream that the
-                    // district makes producible. Estimate its onset from the
-                    // building's real cost and this city's current output.
-                    let consulate_turns = g
-                        .rules
-                        .buildings
-                        .get("consulate")
-                        .map(|building| building.cost / production)
-                        .unwrap_or(0.0);
-                    self.envoy_income_value(g, pid, 2.0, turns + consulate_turns, remaining_turns)
-                        * 0.65
-                } else {
-                    0.0
-                };
                 let development_penalty = if spec.specialty
                     && !city.districts.is_empty()
                     && city.buildings.len() <= city.districts.len()
@@ -21829,29 +21565,7 @@ impl AdvancedAi {
                     // `RESEARCH_CAMPUS_PAYBACK`: the old scaling priced this at
                     // 0.40 with a hundred turns of compounding left, while every
                     // rival term is a flat constant that never decays.
-                    // See `campus_finishes_first`: an unfinished research
-                    // city is a reason to build LESS of the expensive half.
-                    RESEARCH_CAMPUS_COVERAGE
-                        * self.research_chain_completion
-                        * Self::research_horizon(g)
-                } else {
-                    0.0
-                };
-                // The same sentence for the other tree. See `culture_coverage`:
-                // a city with no Theater Square is an empire-wide culture hole,
-                // and on this tally a civic is worth three points where a tech
-                // is worth two. Held back until a specialty district already
-                // stands, so the Campus still goes in first and a one-district
-                // town is not handed a Theater Square instead.
-                let culture_coverage = if self.culture_coverage
-                    && family == "theater_square"
-                    && g.city_specialty_district_count(city) >= 1
-                    && !city
-                        .districts
-                        .keys()
-                        .any(|built| g.district_family(*built) == family)
-                {
-                    CULTURE_THEATER_COVERAGE * Self::campus_payback_horizon(g)
+                    RESEARCH_CAMPUS_COVERAGE * Self::research_horizon(g)
                 } else {
                     0.0
                 };
@@ -21890,11 +21604,9 @@ impl AdvancedAi {
                     + balanced_core
                     + strategic_family
                     + first_copy
-                    + envoy_unlock
                     + effect_value
                     + development_penalty
                     + research_coverage
-                    + culture_coverage
                     + self.science_drive_production_bonus(g, pid, cid, item)
             }
             Item::Repair { repair, .. } => {
@@ -31979,9 +31691,6 @@ impl AdvancedAi {
         // reads this one number, so the horizon cannot drift between the
         // production ordering, the citizen governor, and the search evaluator.
         self.refresh_research_weight(g);
-        // And how finished the research cities already standing are, on the
-        // same once-per-decision footing. See `campus_finishes_first`.
-        self.refresh_research_chain_completion(g, pid);
         self.refresh_campus_multiplier_constants(g);
         self.base.minor = g.players[pid].is_minor;
         self.base.barb = g.players[pid].is_barbarian;
@@ -32181,11 +31890,8 @@ impl AdvancedAi {
                 self.redirect_repeatable_projects_for_force_gap(g, pid, &plan);
                 self.redirect_repeatable_projects_for_settlement_gap(g, pid, &plan);
             }
-            // The adaptive controller normally hands empty cities straight to
-            // `BasicAi::cities`, bypassing `production_value`. Reserve one
-            // legal stage before the strategic and baseline governors fill
-            // those queues so the envoy-infrastructure treatment can actually
-            // reach play. The helper is an exact no-op while its flag is off.
+            // Reserve one reachable diplomatic stage before baseline queues fill.
+
             self.prioritize_envoy_infrastructure(g, pid, &plan);
             // And the air surge's package, for the same reason: the adaptive
             // controller hands empty cities to `BasicAi::cities`, which never

@@ -1,20 +1,20 @@
 {
   "coverage": {
-    "named": 45,
+    "named": 43,
     "never_named": 0,
     "never_named_treatments": [],
-    "withholdable": 45
+    "withholdable": 43
   },
   "derived": {
     "firaxis_only_count": 30,
-    "live_bridge_count": 75,
-    "native_engine_repair_count": 45,
-    "withholdable_live_count": 45
+    "live_bridge_count": 73,
+    "native_engine_repair_count": 43,
+    "withholdable_live_count": 43
   },
   "genome_coverage": {
-    "capability_toggles": 184,
-    "measured_by_a_screen": 94,
-    "reachable_as_a_gene": 132,
+    "capability_toggles": 180,
+    "measured_by_a_screen": 90,
+    "reachable_as_a_gene": 128,
     "resolved_by_a_screen": 17,
     "unreachable_by_any_screen": 52,
     "unreachable_toggles": [
@@ -137,7 +137,7 @@
       ]
     },
     "ENGINE_REPAIR_ECONOMY_TREATMENTS": {
-      "declared_count": 18,
+      "declared_count": 16,
       "items": [
         "escort-unstick",
         "buildings-before-projects",
@@ -145,7 +145,6 @@
         "settler-guard-holds",
         "stranded-settler-discount",
         "wide-map-capacity",
-        "housing-districts",
         "amenity-project-preemption",
         "amenity-district-path",
         "housing-research",
@@ -155,12 +154,11 @@
         "score-horizon",
         "one-launch-pad",
         "settler-target-hysteresis",
-        "culture-building-debt",
-        "culture-coverage"
+        "culture-building-debt"
       ]
     },
     "ENGINE_REPAIR_TREATMENTS": {
-      "declared_count": 45,
+      "declared_count": 43,
       "items": [
         "war-reinforcement",
         "come-ashore",
@@ -195,7 +193,6 @@
         "settler-guard-holds",
         "stranded-settler-discount",
         "wide-map-capacity",
-        "housing-districts",
         "amenity-project-preemption",
         "amenity-district-path",
         "housing-research",
@@ -205,8 +202,7 @@
         "score-horizon",
         "one-launch-pad",
         "settler-target-hysteresis",
-        "culture-building-debt",
-        "culture-coverage"
+        "culture-building-debt"
       ]
     },
     "ENGINE_REPAIR_WAR_TREATMENTS": {
@@ -277,7 +273,7 @@
       ]
     },
     "LIVE_BRIDGE_TREATMENTS": {
-      "declared_count": 75,
+      "declared_count": 73,
       "items": [
         "war-reinforcement",
         "come-ashore",
@@ -312,7 +308,6 @@
         "settler-guard-holds",
         "stranded-settler-discount",
         "wide-map-capacity",
-        "housing-districts",
         "amenity-project-preemption",
         "amenity-district-path",
         "housing-research",
@@ -323,7 +318,6 @@
         "one-launch-pad",
         "settler-target-hysteresis",
         "culture-building-debt",
-        "culture-coverage",
         "joint-reach-lines",
         "live-trader-route",
         "live-religious-purchase",
