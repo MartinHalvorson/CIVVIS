@@ -308,6 +308,7 @@ These screenable genes have no on/off result, so they receive no rank or promoti
 | Gene | Default | Description | Best version |
 |---|---|---|---:|
 | `builder-tries-the-next-tile` | off (unmeasured) | Let a Builder whose nearest improvable tile cannot be routed to try the next-nearest instead of standing still for the rest of the game. | — |
+| `chop-into-the-queue` | off (unmeasured) | A Builder chops woods, rainforest or marsh into the Settler, district or wonder at the front of the owning city's queue, priced as a one-off lump against the per-turn jobs. | — |
 | `civilian-out-of-reach` | off (unmeasured) | Settlers and builders stay out of a barbarian's one-turn reach: flee it, never step into it alone, and summon a guard onto the settler's tile when they must cross it. | — |
 | `coalition-before-war` | off (unmeasured) | Recruit the target's neighbours before an elective war: alliances, envoys to its city-states and joint-war invitations at the strike. | — |
 | `congress-counter-leader` | off (unmeasured) | Point the three targeted World Congress penalties at the empire the denial layer names. | — |
@@ -316,6 +317,8 @@ These screenable genes have no on/off result, so they receive no rank or promoti
 | `defensible-sites` | off (unmeasured) | Weigh whether a settle site can be held — barbarian exposure and distance from our own cities — not only what it yields. | — |
 | `domination-city-count` | off (unmeasured) | Read a rival's conquests from the cities it has taken rather than only from the capitals. | — |
 | `elective-war-in-reach` | off (unmeasured) | Measure the elective war against the weakest rival we can reach rather than the weakest on the board. | — |
+| `eureka-chasing-builder` | off (unmeasured) | An improvement that completes an unresearched technology's or civic's boost is worth the research the boost grants, spread over the steps the trigger still needs. | — |
+| `eureka-chasing-production` | off (unmeasured) | A unit, building or district that completes an unresearched technology's or civic's boost is worth the research the boost grants, spread over the steps the trigger still needs. | — |
 | `expansion-pays-back` | off (unmeasured) | Shut the settler window on whether the city would pay the settler back before the game ends, rather than on a deadline. | — |
 | `expansion-schedule` | off (unmeasured) | Open the settler pipeline by the shortfall while the opening is behind the four-cities-by-turn-sixty pace every recorded win came from. | — |
 | `frontier-massing-alarm` | off (unmeasured) | Count a peacetime major's army massed near one of our cities toward that city's danger. | — |

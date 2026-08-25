@@ -1145,6 +1145,34 @@ pub const GENES: &[Gene] = &[
     // Appended at the END so a running screen keeps its positional genome.
     // See `AdvancedAi::civilian_out_of_reach` / `advanced/civilian_safety.rs`.
     Gene { tag: "civilian-out-of-reach", field: "civilian_out_of_reach", kind: Kind::OptIn, enable: AdvancedAi::enable_civilian_out_of_reach, disable: AdvancedAi::disable_civilian_out_of_reach },
+    // ⭐ THREE DEITY HABITS (operator, 2026-08-24: "study expert level deity
+    // civ 6 tips and tricks and implement the best as heuristics"). The engine
+    // has offered `chop_woods` / `chop_rainforest` / `clear_marsh` through
+    // `Game::builder_operations` since the feature-removal tables shipped,
+    // paying the shipped yield scaled by the world era and Magnus; no agent
+    // ever asked for one. A Deity player chops into the Settler, the district
+    // and the wonder. The chop joins the Builder's job list wherever the
+    // owning city's queue front is one of those, priced as a one-off lump.
+    // Appended at the END so a running screen keeps its positional genome.
+    // See `advanced/deity_habits.rs`.
+    Gene { tag: "chop-into-the-queue", field: "chop_into_the_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_chop_into_the_queue, disable: AdvancedAi::disable_chop_into_the_queue },
+    // Sixty-two technologies and fifty-three civics carry a boost worth 40%
+    // of their cost; `tech_value` pays +28 for a boost in hand and nothing
+    // ever earned one. A Deity player builds the quarry for Masonry, the
+    // pasture for Horseback Riding, the sixth farm for Feudalism. The
+    // improvement that completes a trigger is worth the research it grants,
+    // spread over the steps the trigger still needs. Appended at the END so
+    // a running screen keeps its positional genome. See
+    // `advanced/deity_habits.rs`.
+    Gene { tag: "eureka-chasing-builder", field: "eureka_chasing_builder", kind: Kind::OptIn, enable: AdvancedAi::enable_eureka_chasing_builder, disable: AdvancedAi::disable_eureka_chasing_builder },
+    // The same boost table read by the production queue: two Galleys for
+    // Shipbuilding, three Archers for Machinery, Walls for Engineering, an
+    // Aqueduct for Military Engineering, two Markets for Guilds. The unit,
+    // building or district that completes a trigger is worth the research it
+    // grants on `production_value`'s raw scale. Appended at the END so a
+    // running screen keeps its positional genome. See
+    // `advanced/deity_habits.rs`.
+    Gene { tag: "eureka-chasing-production", field: "eureka_chasing_production", kind: Kind::OptIn, enable: AdvancedAi::enable_eureka_chasing_production, disable: AdvancedAi::disable_eureka_chasing_production },
 
     // The war desk prepares an army and nothing else: an appointed war spends
     // its phases on a tech, a package and a march, an elective one waits for
