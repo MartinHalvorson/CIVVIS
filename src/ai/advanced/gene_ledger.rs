@@ -15,10 +15,30 @@
 //! and explicitly promote `unit-cost-efficiency`, `unit-objective-memory`,
 //! `camp-party`, `slot-kind-tiebreak`, `promote-when-wounded`,
 //! `religion-sues-peace`, `lane-great-people`, `one-launch-pad`, and
-//! `civilian-rescue`, for 45 enabled genes.
+//! `civilian-rescue`; then `missionary-evades-raiders`, `district-planning`,
+//! `missionary-last-charge-explores`, `settlement-gap-target`,
+//! `religious-defence-scales`, `lane-policy-deck`, and
+//! `science-multiplier-payoff`, for 52 enabled genes; then (2026-08-24,
+//! "default this gene to true initially once you write and merge it")
+//! `science-victory-drive`, pinned on before its first screen, for 53. The
+//! 2026-08-25 displayed pooled-Diff cutoff of +0.85 pp then explicitly
+//! promotes `solvency-first-trade-slot` (+8.07 pp),
+//! `settler-factory-coordination` (+1.84 pp), `one-war-at-a-time` (+1.00 pp),
+//! and `religious-veto-defence` (+0.93 pp), for 57.
 //! `DEPLOYMENT_GENOME` is that exact list. A screen refresh updates evidence,
 //! not the runtime default; changing a default requires an explicit operator
 //! update to the pinned list and regeneration.
+//!
+//! ⭐ ONE EXCEPTION, WITHIN A FAMILY (operator, 2026-08-23, restated
+//! 2026-08-25): a pinned gene that has VERSIONS (`<base>-<n>`) ships its
+//! family HEAD — the priced version with the highest tracked wins, the
+//! ledger's pooled on−off *Diff*, ties to the higher version — whatever
+//! version the operator's list names. Naming any version pins the family on;
+//! `tools/genes.py::resolve_family_heads` writes the head into
+//! `DEPLOYMENT_GENOME` and records pin, head and every version's tracked
+//! wins in `docs/gene_ledger.json` (`rules.family_heads`). A family holds at
+//! most three versions; the third-best leaves before a fourth is added
+//! (`python3 tools/genes.py versions`).
 //!
 //! ★★★★ AND IT IS PUBLISHED BESIDE A PRECISION-WEIGHTED POSTERIOR.
 //! A threshold in column units is not a threshold in evidence: the screens
@@ -55,10 +75,11 @@
 //! `apply_gene_ledger` is what `enable_live_bridge` and
 //! `enable_engine_repairs` end with: every live treatment and production
 //! treatment the ledger does not default on is withheld, every opt-in it
-//! defaults on is enabled, and a gene with no ledger row (the
-//! Firaxis-only flags, which the screen cannot price) is left exactly as
-//! the bundle set it. The `_universe` twins of those two helpers set every
-//! flag and skip the ledger: they are the genome's universe, for
+//! defaults on is enabled. A screenable gene without a measurement row still
+//! follows the pinned list; a Firaxis-only flag, which the screen cannot
+//! price, is left exactly as the bundle set it. The `_universe` twins of those
+//! two helpers set every flag and skip the ledger: they are the genome's
+//! universe, for
 //! `gene_screen` (which sets each gene to its drawn state explicitly) and for
 //! the membership tests.
 
@@ -170,9 +191,8 @@ pub fn screenable(tag: &str) -> bool {
 /// `None` for a gene the screen cannot price (the Firaxis-only flags),
 /// which the bundle leaves as it set it.
 pub fn ledger_default_on(tag: &str) -> Option<bool> {
-    // A host-only flag is never governed by a screen row — even when one
-    // exists: such a row measured a native stand-in that no longer runs
-    // (`step-and-reassess`, 2026-08-21) and must not govern the bridge.
+    // A host-only flag is never governed by a screen row; the bundle retains
+    // control of its live defaults.
     if !screenable(tag) {
         return None;
     }
@@ -352,7 +372,7 @@ mod tests {
     #[test]
     fn the_default_matches_the_operator_pinned_genome() {
         assert_eq!(deployment_policy(), "operator-pinned");
-        let mut on = 0;
+        let mut measured_on = 0;
         for row in gene_ledger() {
             assert_eq!(
                 row.default_on,
@@ -365,17 +385,28 @@ mod tests {
                 screenable(row.tag).then_some(row.default_on),
                 "host-only rows stay outside the runtime deployment policy"
             );
-            on += usize::from(row.default_on);
+            measured_on += usize::from(row.default_on);
         }
-        assert_eq!(on, table::DEPLOYMENT_GENOME.len());
         assert_eq!(
-            on, 45,
+            table::DEPLOYMENT_GENOME.len(),
+            57,
             "an operator selection changed; update it deliberately"
         );
+        assert!(
+            measured_on <= table::DEPLOYMENT_GENOME.len(),
+            "the measured subset cannot contain more defaults than the pinned genome"
+        );
+        for tag in table::DEPLOYMENT_GENOME {
+            assert_eq!(
+                ledger_default_on(tag),
+                Some(true),
+                "{tag} is pinned but not enabled by the runtime ledger"
+            );
+        }
     }
 
     #[test]
-    fn the_nine_explicit_promotions_are_pinned_on() {
+    fn the_sixteen_explicit_promotions_are_pinned_on() {
         for tag in [
             "unit-cost-efficiency",
             "unit-objective-memory",
@@ -386,28 +417,42 @@ mod tests {
             "lane-great-people",
             "one-launch-pad",
             "civilian-rescue",
+            "missionary-evades-raiders",
+            "district-planning",
+            "missionary-last-charge-explores",
+            "settlement-gap-target",
+            "religious-defence-scales",
+            "lane-policy-deck",
+            "science-multiplier-payoff",
         ] {
             assert!(operator_default_on(tag), "{tag} was not pinned on");
         }
     }
 
-    /// A screenable gene outside the pinned list is off; a Firaxis-only flag
-    /// has no instrument and is left alone.
     #[test]
-    fn unmeasured_genes_are_off_only_when_a_screen_could_have_priced_them() {
+    fn the_20260825_explicit_promotions_are_pinned_on() {
+        for tag in [
+            "science-victory-drive",
+            "solvency-first-trade-slot",
+            "settler-factory-coordination",
+            "one-war-at-a-time",
+            "religious-veto-defence",
+        ] {
+            assert!(operator_default_on(tag), "{tag} was not pinned on");
+        }
+    }
+
+    /// Every screenable gene has an explicit pinned state, including a gene
+    /// whose first measurement has not landed; a Firaxis-only flag has no
+    /// instrument and is left alone.
+    #[test]
+    fn screenable_genes_have_an_explicit_default_and_host_only_flags_are_untouched() {
         assert_eq!(
             ledger_default_on("live-trader-route"),
             None,
             "Firaxis-only: untouched"
         );
         assert!(!screenable("live-trader-route"));
-        // A host-only flag with a row from its retired native stand-in.
-        assert!(ledger_verdict("step-and-reassess").is_some());
-        assert_eq!(
-            ledger_default_on("step-and-reassess"),
-            None,
-            "a host-only flag is never governed by a screen row"
-        );
         for repair in super::super::genes::repair_tags() {
             assert!(screenable(repair));
             assert!(
@@ -485,8 +530,8 @@ mod tests {
 
     #[test]
     fn a_live_arm_can_restore_only_a_named_ledger_held_gene() {
-        let forced = ["governor-every-lane"];
-        assert!(ledger_held_live_treatment("governor-every-lane"));
+        let forced = ["settler-guard-holds"];
+        assert!(ledger_held_live_treatment("settler-guard-holds"));
         assert!(
             !ledger_held_live_treatment("parallel-settlers"),
             "host-only treatments already follow their live-universe default"
@@ -495,16 +540,16 @@ mod tests {
             !ledger_held_live_treatment("founder-temple"),
             "a withheld production opt-in is not a live-universe override"
         );
-        assert!(ledger_held_live_treatments().contains(&"governor-every-lane"));
+        assert!(ledger_held_live_treatments().contains(&"settler-guard-holds"));
 
         let deployed = deployment_treatments();
         let forced_deployment = deployment_treatments_with_forced_live(&forced);
         assert!(
-            !deployed.contains(&"governor-every-lane"),
+            !deployed.contains(&"settler-guard-holds"),
             "the verification override must not change deployment"
         );
         assert!(
-            forced_deployment.contains(&"governor-every-lane"),
+            forced_deployment.contains(&"settler-guard-holds"),
             "the genome event must name the treatment the arm actually restored"
         );
         assert_eq!(
@@ -516,14 +561,14 @@ mod tests {
         let mut ai = AdvancedAi::new();
         ai.enable_live_bridge_universe();
         let applied = ai.apply_gene_ledger_with_forced_live(&forced);
-        assert!(ai.governor_victory_lanes, "the named live treatment stands");
+        assert!(ai.settler_guard_holds, "the named live treatment stands");
         assert!(
-            !ai.war_patience,
+            !ai.blind_objective_strength,
             "another ledger-held treatment stays off unless named too"
         );
-        assert_eq!(applied.forced, vec!["governor-every-lane"]);
+        assert_eq!(applied.forced, vec!["settler-guard-holds"]);
         assert!(
-            !applied.withheld.contains(&"governor-every-lane"),
+            !applied.withheld.contains(&"settler-guard-holds"),
             "an explicit arm cannot report its restored gene as withheld"
         );
     }

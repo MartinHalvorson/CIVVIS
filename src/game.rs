@@ -4755,6 +4755,28 @@ pub fn default_difficulty() -> String {
     "prince".to_string()
 }
 
+/// ★★★ THE BARBARIANS PLAY AT THEIR OWN DIFFICULTY — IMMORTAL, NOT THE SEAT'S.
+///
+/// Operator directive 2026-08-24: *"We need to make the barbarians in civvis
+/// more aggressive. Should still roughly match the Civ 6 behavior. But weak
+/// barbarians in civvis leads us to weak training and favoring the slightly
+/// wrong genes … we are playing on level 5 and higher in Civ 6 verification
+/// games. Let's make the barbarians level 6 barbarians in civvis for now."*
+///
+/// Level 6 on the ladder is Immortal, and Immortal is exactly where the
+/// game's own `BarbarianAttackForces` switches band: `HighDifficultyStandardRaid`
+/// assembles three melee and two ranged units (against two and one) at a
+/// `SpawnRate` of 1 (against 2), i.e. twice as often — the rows
+/// `data/difficulties.json` already transcribes as `barb_force_scale 1.5` and
+/// `barb_spawn_scale 0.5`. Until now the barbarian seat read those from the
+/// *seat's* difficulty, and every native screen runs at the Prince default,
+/// so every gene ever priced was priced against the Standard band. This key
+/// is what the barbarian seat plays by, whatever the majors' rung is; the
+/// seat difficulty still governs the human's camp Gold and the AI handicaps.
+pub fn default_barbarian_difficulty() -> String {
+    "immortal".to_string()
+}
+
 pub fn default_speed() -> String {
     "standard".to_string()
 }
@@ -4791,6 +4813,10 @@ pub struct GameOptions {
     /// world is warm from edge to edge.
     pub map_poles: MapPoles,
     pub difficulty: String,
+    /// The difficulty the BARBARIAN seat plays by — its raid band and spawn
+    /// cadence — independent of `difficulty`. See
+    /// [`default_barbarian_difficulty`].
+    pub barbarian_difficulty: String,
     pub speed: String,
     pub human_seats: BTreeSet<usize>,
     /// Optional pre-game team assignment for each major seat. An empty vector
@@ -4875,6 +4901,7 @@ impl GameOptions {
             map_topology: MapTopology::default(),
             map_poles: MapPoles::default(),
             difficulty: default_difficulty(),
+            barbarian_difficulty: default_barbarian_difficulty(),
             speed: default_speed(),
             human_seats: BTreeSet::new(),
             teams: Vec::new(),
@@ -5315,6 +5342,11 @@ pub struct Game {
     pub seed: u64,
     /// Key into `rules.difficulties`. Prince is the unhandicapped reference.
     pub difficulty: String,
+    /// Key into `rules.difficulties` for the barbarian seat's raid band and
+    /// spawn cadence, independent of the seat's rung; a save without it
+    /// plays Immortal barbarians. See [`default_barbarian_difficulty`].
+    #[serde(default = "default_barbarian_difficulty")]
+    pub barbarian_difficulty: String,
     /// Key into `rules.speeds`. Scales everything bought with a yield.
     pub speed: String,
     /// Mods this game was created under. A save carries them so a mismatched
@@ -5992,6 +6024,8 @@ struct GameSer {
     visibility_memory_version: u8,
     #[serde(default = "default_difficulty")]
     difficulty: String,
+    #[serde(default = "default_barbarian_difficulty")]
+    barbarian_difficulty: String,
     #[serde(default = "default_speed")]
     speed: String,
     #[serde(default)]
@@ -6220,6 +6254,7 @@ impl From<GameSer> for Game {
             rng: s.rng,
             seed: s.seed,
             difficulty: s.difficulty,
+            barbarian_difficulty: s.barbarian_difficulty,
             speed,
             human_seats: s.human_seats,
             mods: s.mods,
@@ -6428,6 +6463,7 @@ impl From<Game> for GameSer {
             future_tree_layout: Some(g.rules.future_tree_layout()),
             visibility_memory_version: 1,
             difficulty: g.difficulty,
+            barbarian_difficulty: g.barbarian_difficulty,
             // `game_speed` is the live, typed setting used by every rules
             // calculation.  Keep the compatibility string in lockstep so a
             // save cannot preserve two conflicting speeds.
@@ -6695,6 +6731,7 @@ impl Game {
             map_topology,
             map_poles,
             difficulty,
+            barbarian_difficulty,
             speed,
             human_seats,
             teams,
@@ -6741,6 +6778,10 @@ impl Game {
         assert!(
             rules.difficulties.contains_key(&difficulty),
             "unknown difficulty {difficulty}"
+        );
+        assert!(
+            rules.difficulties.contains_key(&barbarian_difficulty),
+            "unknown barbarian difficulty {barbarian_difficulty}"
         );
         assert!(rules.speeds.contains_key(&speed), "unknown game speed {speed}");
         let mut known_civs = rules.civs.keys().cloned().collect::<BTreeSet<_>>();
@@ -6830,6 +6871,7 @@ impl Game {
             rng,
             seed,
             difficulty,
+            barbarian_difficulty,
             speed,
             human_seats,
             base_ruleset,
@@ -7609,6 +7651,25 @@ impl Game {
         &self.rules.difficulties[&self.difficulty]
     }
 
+    /// The rung the barbarian seat plays by: its raid band and spawn cadence.
+    /// See [`default_barbarian_difficulty`]. Falls back to the seat's rung if
+    /// a save names a rung this ruleset does not have.
+    pub fn barbarian_spec(&self) -> &DifficultySpec {
+        self.rules
+            .difficulties
+            .get(&self.barbarian_difficulty)
+            .unwrap_or_else(|| self.difficulty_spec())
+    }
+
+    /// Set the barbarian seat's rung; refused for a key the ruleset lacks.
+    pub fn set_barbarian_difficulty(&mut self, key: &str) -> Result<(), String> {
+        if !self.rules.difficulties.contains_key(key) {
+            return Err(format!("unknown barbarian difficulty {key}"));
+        }
+        self.barbarian_difficulty = key.to_string();
+        Ok(())
+    }
+
     pub fn speed_spec(&self) -> &SpeedSpec {
         &self.rules.speeds[&self.speed]
     }
@@ -8305,9 +8366,10 @@ impl Game {
     /// `BarbarianAttackForces` supplies one melee attacker below Warlord,
     /// two melee plus one ranged unit through Emperor, and three melee plus
     /// two ranged units at Immortal and Deity. The difficulty data carries
-    /// those three force bands as 0.5, 1.0, and 1.5 respectively.
+    /// those three force bands as 0.5, 1.0, and 1.5 respectively — read from
+    /// the barbarian seat's own rung (`barbarian_spec`), not the majors'.
     fn barbarian_raid_force_size(&self) -> usize {
-        match self.difficulty_spec().barb_force_scale {
+        match self.barbarian_spec().barb_force_scale {
             scale if scale <= 0.5 => 1,
             scale if scale <= 1.0 => 3,
             _ => 5,
@@ -8685,7 +8747,7 @@ impl Game {
         // units after the party was already complete.
         let force_size = self.barbarian_raid_force_size();
         let ranged_size = self.barbarian_raid_ranged_size();
-        let spawn_scale = self.difficulty_spec().barb_spawn_scale;
+        let spawn_scale = self.barbarian_spec().barb_spawn_scale;
         let land_pool = self.barbarian_unit_pool();
         let naval_pool = self.barbarian_naval_unit_pool();
         let camps: Vec<(Pos, u32)> = self.barb_camps.iter().map(|(p, n)| (*p, *n)).collect();
@@ -42471,6 +42533,25 @@ impl Game {
 
     fn favor_unit_value(&self, pid: usize) -> f64 {
         1.1 + 0.14 * self.world_era as f64 + 0.07 * self.players[pid].dvp.max(0) as f64
+    }
+
+    /// What one point of Diplomatic Favor is worth to `pid` in Gold by this
+    /// engine's own book: the live seat's floor for a favor sale, which used
+    /// to be a flat Gold a point.
+    pub fn favor_gold_value(&self, pid: usize) -> f64 {
+        self.favor_unit_value(pid)
+    }
+
+    /// What passage through another empire's territory is worth to
+    /// `receiver` in Gold by this engine's book, read as if it were not yet
+    /// open — a mirrored board can carry the very passage the live seat is
+    /// about to buy. The live seat's ceiling for a passage purchase, which
+    /// used to be whatever the treasury held.
+    pub fn passage_gold_value(&self, receiver: usize) -> f64 {
+        let tourism = (self.players[receiver].tourism_lifetime
+            / self.turn.saturating_sub(1).max(1) as f64)
+            .min(80.0);
+        28.0 + tourism * 0.35
     }
 
     fn open_borders_receive_value(&self, receiver: usize, grantor: usize) -> f64 {

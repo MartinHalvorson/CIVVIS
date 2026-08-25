@@ -535,10 +535,9 @@ impl JointTactics {
             // Attacks available from where the unit already stands.
             for (target, action) in Self::strikes_from(g, pid, uid, unit.pos, range) {
                 let ranged = matches!(action, Action::Ranged { .. });
-                let role_bonus = base.tactical_action_bonus(g, uid, target, ranged);
                 lines.push(Line {
-                    prior: Self::strike_prior(g, pid, uid, target, ranged, w) + role_bonus,
-                    toll: base.attack_threshold(g, uid, target) + wounded_margin - role_bonus,
+                    prior: Self::strike_prior(g, pid, uid, target, ranged, w),
+                    toll: base.attack_threshold(g, uid, target) + wounded_margin,
                     actions: vec![action],
                 });
             }
@@ -552,17 +551,12 @@ impl JointTactics {
                     };
                     for (target, action) in Self::strikes_from(g, pid, uid, to, range) {
                         let ranged = matches!(action, Action::Ranged { .. });
-                        let role_bonus = base.tactical_action_bonus_from(
-                            g, uid, to, target, ranged,
-                        );
                         let prior = Self::strike_prior(g, pid, uid, target, ranged, w)
-                            + role_bonus
                             - 4.0
                             - if handoff { HANDOFF_DISCOUNT } else { 0.0 };
                         lines.push(Line {
                             prior,
-                            toll: base.attack_threshold(g, uid, target) + wounded_margin
-                                - role_bonus,
+                            toll: base.attack_threshold(g, uid, target) + wounded_margin,
                             actions: vec![Action::Move { unit: uid, to }, action],
                         });
                     }
@@ -638,9 +632,7 @@ impl JointTactics {
                         if !seen.insert((to, target, ranged)) {
                             continue;
                         }
-                        let role_bonus =
-                            base.tactical_action_bonus_from(g, uid, to, target, ranged);
-                        let prior = Self::strike_prior(g, pid, uid, target, ranged, w) + role_bonus
+                        let prior = Self::strike_prior(g, pid, uid, target, ranged, w)
                             - APPROACH_STEP_TOLL * steps;
                         let mut actions: Vec<Action> = path
                             .iter()
@@ -652,8 +644,7 @@ impl JointTactics {
                         actions.push(action);
                         lines.push(Line {
                             prior,
-                            toll: base.attack_threshold(g, uid, target) + wounded_margin
-                                - role_bonus,
+                            toll: base.attack_threshold(g, uid, target) + wounded_margin,
                             actions,
                         });
                     }
@@ -712,16 +703,12 @@ impl JointTactics {
                             if !seen.insert((to2, target, ranged)) {
                                 continue;
                             }
-                            let role_bonus =
-                                base.tactical_action_bonus_from(g, uid, to2, target, ranged);
                             let prior = Self::strike_prior(g, pid, uid, target, ranged, w)
-                                + role_bonus
                                 - 8.0
                                 - if handoff { HANDOFF_DISCOUNT } else { 0.0 };
                             lines.push(Line {
                                 prior,
-                                toll: base.attack_threshold(g, uid, target) + wounded_margin
-                                    - role_bonus,
+                                toll: base.attack_threshold(g, uid, target) + wounded_margin,
                                 actions: vec![
                                     Action::Move { unit: uid, to: to1 },
                                     Action::Move { unit: uid, to: to2 },
@@ -1638,58 +1625,6 @@ mod tests {
                 plan.greedy_score
             );
         }
-    }
-
-    #[test]
-    fn portfolio_pruning_keeps_the_class_counter_assignment() {
-        let (mut g, _, _) = firing_line(100, 100);
-        for uid in g.units.keys().copied().collect::<Vec<_>>() {
-            g.remove_unit(uid);
-        }
-        let (origin, targets) = g
-            .map
-            .tiles
-            .iter()
-            .filter(|(position, tile)| {
-                g.city_at(**position).is_none()
-                    && g.rules.is_passable(tile)
-                    && !g.rules.is_water(tile)
-            })
-            .find_map(|(origin, _)| {
-                let targets: Vec<crate::Pos> = g
-                    .nbrs(*origin)
-                    .into_iter()
-                    .filter(|position| g.city_at(*position).is_none())
-                    .take(2)
-                    .collect();
-                (targets.len() == 2).then_some((*origin, targets))
-            })
-            .expect("test map has a two-target pocket");
-        let cavalry = g.spawn_unit("heavy_chariot", 0, origin);
-        let melee = g.spawn_unit("warrior", 1, targets[0]);
-        let other = g.spawn_unit("horseman", 1, targets[1]);
-        let warrior = g.rules.units["warrior"].clone();
-        let rules = std::sync::Arc::make_mut(&mut g.rules);
-        rules.units.get_mut("horseman").unwrap().strength = warrior.strength;
-        rules.units.get_mut("horseman").unwrap().cost = warrior.cost;
-        g.units.get_mut(&melee).unwrap().hp = 1;
-        g.units.get_mut(&other).unwrap().hp = 1;
-
-        let mut base = BasicAi::new();
-        base.tactical_strategy = true;
-        let search = JointTactics {
-            max_lines: 2,
-            ..JointTactics::default()
-        };
-        let portfolio = search
-            .portfolios(&g, 0, &base, &BTreeSet::new())
-            .into_iter()
-            .find(|portfolio| portfolio.unit == cavalry)
-            .unwrap();
-        assert!(matches!(
-            portfolio.lines[0].actions.last(),
-            Some(Action::Attack { target, .. }) if *target == targets[0]
-        ));
     }
 
     /// A unit the enemy can pool damage onto and kill must be able to leave.

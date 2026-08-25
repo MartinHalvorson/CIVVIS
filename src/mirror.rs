@@ -322,6 +322,19 @@ impl Snapshot {
         self.revealed.get(&pos)
     }
 
+    /// Record a finished improvement (an `improved` event) on an already revealed
+    /// plot. Returns false when the plot is not revealed; the event says nothing
+    /// about terrain, so it cannot reveal one.
+    pub fn set_improvement(&mut self, pos: (i32, i32), im: &str) -> bool {
+        match self.revealed.get_mut(&pos) {
+            Some(plot) => {
+                plot.im = Some(im.to_string());
+                true
+            }
+            None => false,
+        }
+    }
+
     /// Every plot this seat has revealed, in offset coordinates.
     ///
     /// ⚠ Offset, like everything the mod emits — the caller converts. Handing out
@@ -11918,22 +11931,9 @@ pub struct Seat {
     /// The mod opens mid-turn replan frames (`CivvisFrames`, `ReplanFrames`
     /// ≥ 1): once the opening orders settle on a board with newly revealed
     /// ground and movement left to spend on it, the board is exported again
-    /// and the same turn re-planned. Only then does `civvis_orders` cut a
-    /// unit's walk at its first unrevealed hex (`step_and_reassess`) — the
-    /// frame is what spends the rest of the movement on what the step
-    /// uncovered; against an older mod the cut would strand it. Absent
-    /// (older mod) reads `false`.
+    /// and the same turn re-planned. Absent (older mod) reads `false`.
     #[serde(default)]
     pub replan_frames: bool,
-    /// How many replan frames the mod will open per turn (`ReplanFrames`),
-    /// so the brain can tell the LAST frame it will be asked on from the
-    /// others: a walk cut at the edge of the known on a frame no further
-    /// frame follows would strand the rest of the unit's movement, so on
-    /// that frame the walk keeps its furthest hex. Absent (a mod that
-    /// advertises `replan_frames` without the count) reads `None`, and the
-    /// cut is made on every frame exactly as before.
-    #[serde(default)]
-    pub replan_frames_max: Option<u32>,
     /// Newly revealed plots cross every turn and frame as `tiles` deltas
     /// (`CivvisTiles`), not only with the periodic sweep. Informational: the
     /// snapshot merges chunks cumulatively either way.
@@ -12555,7 +12555,7 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
     gaps.into_iter().collect()
 }
 
-fn state_from_json(line: &str) -> serde_json::Result<StateSnapshot> {
+pub fn state_from_json(line: &str) -> serde_json::Result<StateSnapshot> {
     let value: serde_json::Value = serde_json::from_str(line)?;
     let mut state: StateSnapshot = serde_json::from_value(value.clone())?;
     state.schema_gaps = state_schema_gaps(&value);

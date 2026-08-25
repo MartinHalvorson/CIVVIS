@@ -753,3 +753,119 @@ through the two keys. Expect a small effect on the religious/diplomatic
 ending share and on score share, not a large win-rate move. The levers for a
 version 2 are the review cadence, the switch margin and the ranking key —
 not more reach, which four probes priced.
+
+## 11. `science-victory-drive`: an empire that dominates science drives the space race
+
+Operator, 2026-08-24: *"we have regularly led science and not even attempted a
+science victory. a top heuristic would be noting that we are dominating
+science towards the end game and scaling science harder, beelining science
+victory techs, accelerating the bottleneck, and completing the projects
+before others! maybe 2 spaceports."* Shipped **pinned on** at the operator's
+instruction (*"default this gene to true initially once you write and merge
+it. i'll test it more later"*) — the first gene in the pinned genome before
+its first screen.
+
+**The defect, from the live runs** (`~/civvis-civ6-runs/control`, the last
+complete `--victory science` games before the 08-19 halt; Settler, 6 players,
+250 turns Online):
+
+| run | science/turn at t250 | techs (best rival) | pads | own projects | rivals' projects |
+|---|---:|---:|---:|---:|---|
+| `081800Z` | **334** | 71 (72) | 1, at ~t210 | 0 | 2, 2, 2 |
+| `102855Z` | 234 | 67 (66) | 0 | 0 | 2, 1 |
+| `090732Z` | 203 | 64 (76) | 1 | 1, at t242 | 3, 2 |
+
+The seat led the field in science and never ran a launch project. Its
+journal says why: from turn ~150 `space_race_can_finish` refused the race
+every turn — *"101 turns left; the launch pad, the remaining projects, their
+techs and fifty light-years do not fit"*. That estimate prices the chain at
+the best city's **current** production (31–46 a turn in those games) and
+ignores the engine's own +100% on every Spaceport project
+(`Game::item_prod_mult`), so it reads 96 turns of production where the engine
+would take 59; and it is self-fulfilling, because the pass it skips is the
+one that sites the pad, and nothing else builds production for the race. The
+late game went to Builders (20–30 a game after t180), anti-tank crews and
+Campus Research Grants.
+
+**The gene** (`AdvancedAi::science_victory_drive`,
+`advanced/science_victory_drive.rs`, `Kind::OptIn`, off in both controllers,
+byte-identical when off; the module doc has every constant):
+
+1. **Reads the field** every 5 standard turns from 35% of the clock: own
+   science a turn and techs against every living major's (public
+   information). A seat that leads the field in either **drives**, and keeps
+   driving while it holds 75% of the leader's science or is within 3 techs.
+   A seat assigned Science (`--victory science`, the live seat) or committed
+   to it by `lane-commit` drives from turn one; one assigned another lane
+   never does.
+2. **The science keys.** `raced_target()` answers Science while driving: the
+   rocketry-path tech value is 900, the pad count grows past one, a launch
+   project may claim any pad city, the space-race pass runs under every plan
+   short of Recovery, and the research beeline follows the chain.
+3. **The milestone is the next unknown tech**, not the next unbuilt project
+   — stock's beeline goes dark while the Earth Satellite is being built,
+   because Rocketry is known and nothing leads to it. Before Rocketry the
+   launch city's production techs (`industrialization`, `electricity`) carry
+   +400 each.
+4. **A launch city and its production**: the pad city, else the best
+   producer. From the Industrial era its Industrial Zone (+1,200), Workshop
+   (+500), Factory (+700) and first Power Plant (+700) are priced as the
+   race's bottleneck; the Spaceport +2,000 on top of the 3,000 first-pad rung
+   once Rocketry is known; a Military Academy (+350) once the `space_race`
+   civic makes Integrated Space Cell slottable (the engine enforces the
+   Academy for its +15%); the Royal Society (+400). Pingala prefers the
+   launch city once a pad stands there (Space Initiative +30%); the Gold
+   reserve falls to 100 + 25/city once Rocketry is known.
+5. **A horizon priced as the engine runs the race** replaces
+   `space_race_can_finish` while driving: the launch city's production with
+   the zone chain it is about to build (+15% a missing Factory, +15% a
+   missing Power Plant), the project multiplier, research overlapping
+   production, a flight simulated with every pad building laser stations
+   (floored at stock's own three-light-years-a-turn assumption) — accepted
+   inside 1.3× the turns left, 1.6× once a pad stands or a project is done,
+   always once the expedition is away.
+6. **Two pads by the Earth Satellite, three by Mars** (stock: two by the Moon
+   Landing), so the second pad stands when the expedition launches and both
+   build laser stations.
+
+Nothing here touches `assess`, the expansion arm, the policy deck, the
+Congress or any objective routing — §10's four probes priced every form of
+that reach at −1 to −2 pp of share.
+
+**Fires probe:** `docs/gene_screens/fires/science-victory-drive.json`
+(`gene_screen --games 24 --genes science-victory-drive --start-seed 26082500`)
+read **+13.8 pp on wins (z +2.69)**.
+
+### ⭐⭐⭐ The screen that priced it, and what the probe got wrong (2026-08-25)
+
+600 games / 3,600 seats at the documented Emperor rung —
+`docs/gene_screens/2026-08-25-emperor-600-games-3600-seats.json`, 25 times the
+probe, resolving ±4.0 pp at 80% power:
+
+| axis | on (2,733) | off (867) | Δ | z | read |
+|---|---:|---:|---:|---:|---|
+| wins | 17.5% | 14.0% | **+3.6 pp** [+1.0, +6.2] | +2.69 | `helps *` |
+| score share | | | **−0.60 pp** | −2.48 | `share hurts *` |
+| compute | | | +2.44 ± 1.12% per enabled seat | | |
+
+**The probe's +13.8 pp was noise** — a 24-game batch with 111 on and 33 off
+seats resolves nothing, and the honest effect is about a quarter of it. This
+is the decay `docs/GENE_SCREEN.md` warns about, and the worked example for it.
+Neither flag clears the family-wise bar (|z| ≥ 3.57 at 139 genes).
+
+The two flags point opposite ways and that is the gene's actual shape: it
+converts seats into science victories (wins up) and the seats whose race does
+not land finish a little lower on the tally (share down). It spends on the
+race, and the race now pays — at this rung **88% of games end on a science
+victory** and none reaches the clock.
+
+⚠ The gene remains **on** because the deployment genome is operator-pinned,
+not because a rule promoted it; this batch is evidence for the operator's next
+selection, not a promotion. Its cost column is quotable only loosely — the
+batch shared the box with four `victory_eval` arms for its first minutes.
+
+**Still to read on the live seat:** the journal's *"Driving for a science
+victory"* line and the turn of the first `PROJECT_LAUNCH_*` build in
+`events.jsonl` — `tools/civ6_run_report.py` prints both in its `science race`
+section, against a corpus baseline of **13 of 237 endgame runs that ever
+launched anything and none that completed the chain**.

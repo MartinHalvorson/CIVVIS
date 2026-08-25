@@ -1634,12 +1634,15 @@ pub struct DifficultySpec {
     pub human_xp_pct: f64,
     /// Extra Gold a human receives for clearing a Barbarian camp.
     pub human_camp_gold: f64,
-    /// Scales the size of barbarian raiding parties.
+    /// Scales the size of barbarian raiding parties. Read from the barbarian
+    /// seat's own rung (`Game::barbarian_spec`, Immortal by default), not the
+    /// majors' — see `Game::default_barbarian_difficulty`.
     #[serde(default = "done")]
     pub barb_force_scale: f64,
     /// Scales how long a camp waits between spawns.
     /// `BarbarianAttackForces.SpawnRate` is 2 for every band up to Emperor and
     /// 1 from Immortal, so the top band assembles its forces twice as often.
+    /// Read from the barbarian seat's own rung, like `barb_force_scale`.
     #[serde(default = "done")]
     pub barb_spawn_scale: f64,
 }
@@ -3535,9 +3538,19 @@ mod tests {
         // Classical-era `land_unit_promotion_level` general, at the same era,
         // cost and effect. This is the audit's `only_ours` column reaching zero
         // on `GreatPeople`, not a balance change.
+        // Moved again by wiring `tools/civ6_fidelity.py --check --max 0` into
+        // CI, whose first run found ten divergences nothing had reported
+        // because nothing ran it: the Tagma cost 180 and upgraded to a Tank
+        // (shipped: 220, Cuirassier, 4 Gold upkeep), the Pike and Shot paid 3
+        // upkeep (4), the Prasat held two Relics at +4 Faith (one, +6), the
+        // Sukiennice paid +3 Gold (+2), the Tlachtli +1 Culture (+2), and
+        // Eyjafjallajökull's neighbours took +2 Food (+1). The new
+        // `Difficulties` projection added the human's camp Gold above Prince,
+        // which `BARBARIAN_CAMP_GOLD_SCALING` runs to -20 at Deity and the
+        // data had stopped transcribing at Warlord's +5.
         assert_eq!(
             Rules::shipped().source_fingerprint(),
-            "fnv1a64:7f27df2bc649975d"
+            "fnv1a64:dd2560d44eea3238"
         );
     }
 
@@ -4091,7 +4104,7 @@ mod tests {
             ("cavalry", "helicopter"),
             ("heavy_chariot", "knight"),
             ("knight", "cuirassier"),
-            ("tagma", "tank"),
+            ("tagma", "cuirassier"),
             ("cuirassier", "tank"),
             ("tank", "modern_armor"),
             ("catapult", "trebuchet"),

@@ -207,6 +207,109 @@ class SettlerHoldTest(unittest.TestCase):
             self.assertEqual(rr.report(run, 25)["settler"]["holds"], 0)
 
 
+class SpaceRaceTest(unittest.TestCase):
+    """Which of the four steps stopped the science lane, named."""
+
+    @staticmethod
+    def _rows(*, pad=None, pad_complete=True, projects=(), rival_projects=()):
+        """A 250-turn run whose pad appears at `pad` and whose launches land
+        at the turns given as {turn: [project, ...]}."""
+        rows = []
+        done: list[str] = []
+        for turn in range(50, 251, 25):
+            for name in projects.get(turn, ()) if isinstance(projects, dict) else ():
+                done.append(name)
+            districts = []
+            if pad is not None and turn >= pad:
+                districts = [{"type": "DISTRICT_SPACEPORT",
+                              "complete": pad_complete}]
+            rows.append({
+                "turn": turn, "score": 100 + turn,
+                "cities": [{"id": 0, "districts": districts}],
+                "techs": [f"TECH_{i}" for i in range(40)],
+                "science": 300.0,
+                "science_projects": list(done),
+                "rivals": [{"score": 90, "science": 250.0, "techs": 38,
+                            "science_projects": list(rival_projects)}],
+            })
+        return rows
+
+    def test_a_pad_that_never_completed_is_not_reported_as_a_pad(self) -> None:
+        """★ The live defect this section was written for: run
+        civvis-20260819T081800Z ordered a Spaceport at t206 and it only stood
+        at t238. A reader that counts the district as soon as it appears says
+        the empire had a launch site for thirty-two turns it did not have."""
+        with TemporaryDirectory() as tmp:
+            run = write_run(Path(tmp), self._rows(pad=200, pad_complete=False))
+            race = rr.report(run, 25)["space_race"]
+            self.assertEqual(race["pad_ordered_turn"], 200)
+            self.assertIsNone(race["pad_standing_turn"])
+            self.assertIn("NEVER COMPLETED", rr.render(rr.report(run, 25)))
+
+    def test_a_district_written_as_a_bare_string_still_reads(self) -> None:
+        """The export has carried districts both as objects and as bare type
+        strings; most of the recorded corpus is the older shape."""
+        with TemporaryDirectory() as tmp:
+            rows = self._rows()
+            for row in rows:
+                row["cities"] = [{"id": 0, "districts": ["DISTRICT_SPACEPORT"]}]
+            run = write_run(Path(tmp), rows)
+            race = rr.report(run, 25)["space_race"]
+            self.assertEqual(race["pad_standing_turn"], 50)
+
+    def test_each_launch_is_dated_and_counted_against_the_best_rival(self) -> None:
+        with TemporaryDirectory() as tmp:
+            run = write_run(Path(tmp), self._rows(
+                pad=100,
+                projects={150: ["PROJECT_LAUNCH_EARTH_SATELLITE"],
+                          200: ["PROJECT_LAUNCH_MOON_LANDING"]},
+                rival_projects=["PROJECT_LAUNCH_EARTH_SATELLITE",
+                                "PROJECT_LAUNCH_MOON_LANDING",
+                                "PROJECT_LAUNCH_MARS_BASE"]))
+            race = rr.report(run, 25)["space_race"]
+            self.assertEqual(race["projects_done"], 2)
+            self.assertEqual(race["best_rival_projects"], 3)
+            dated = {p["label"]: p["turn"] for p in race["projects"]}
+            self.assertEqual(dated["earth satellite"], 150)
+            self.assertEqual(dated["moon landing"], 200)
+            self.assertIsNone(dated["mars colony"])
+
+    def test_a_rivals_tech_count_is_an_integer_not_a_list(self) -> None:
+        """The seat exports its own techs as the list it knows and a rival's
+        as a count; reading them alike reports every rival on one tech."""
+        with TemporaryDirectory() as tmp:
+            run = write_run(Path(tmp), self._rows())
+            self.assertEqual(rr.report(run, 25)["space_race"]["best_rival_techs"], 38)
+
+    def test_the_refusing_horizon_is_named_and_counted(self) -> None:
+        """★ What the four recorded science runs all had in common: the race
+        refused from ~t120 on, by the stock horizon, ~100 turns a game."""
+        why = ("[why] t120 Cities/Detail The space race cannot finish before "
+               "the turn limit | 130 turns left\n"
+               "[why] t125 Cities/Detail The space race cannot finish before "
+               "the turn limit | 125 turns left\n")
+        with TemporaryDirectory() as tmp:
+            run = write_run(Path(tmp), self._rows(), why=why)
+            rendered = rr.render(rr.report(run, 25))
+            self.assertIn("refused on 2 turns by the stock horizon, from t120",
+                          rendered)
+            self.assertIn("never engaged", rendered)
+
+    def test_the_drive_reports_the_turn_it_engaged(self) -> None:
+        why = ("[why] t88 Strategy/Decision Driving for a science victory | "
+               "leading the field\n")
+        with TemporaryDirectory() as tmp:
+            run = write_run(Path(tmp), self._rows(), why=why)
+            self.assertIn("science-victory-drive: engaged t88",
+                          rr.render(rr.report(run, 25)))
+
+    def test_a_run_without_a_why_log_says_so_rather_than_claiming_silence(self) -> None:
+        with TemporaryDirectory() as tmp:
+            run = write_run(Path(tmp), self._rows())
+            self.assertIn("no why.log beside this run",
+                          rr.render(rr.report(run, 25)))
+
+
 class AggregateTest(unittest.TestCase):
     """The counterweight to reading three games and believing a story.
 

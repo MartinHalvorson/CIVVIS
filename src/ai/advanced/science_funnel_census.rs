@@ -134,34 +134,11 @@ fn report(label: &str, arms: &[(&str, Chain)]) {
 #[ignore = "census, not an assertion; run explicitly with --nocapture"]
 fn the_research_chain_treated_against_control() {
     let seeds: Vec<u64> = (0..12).map(|i| 91_000_000 + i).collect();
-    // ⚠ ROUND EIGHT: the SAME question with the gate repaired. Round seven
-    // measured `research-grants-first` at Research Labs 40 against 55 —
-    // because its "finished" test asked `can_produce`, which is false while
-    // Chemistry is still out, so cities took the premium and spent the turns
-    // before Chemistry on Grants. The gate now asks for the DEEPEST rung held.
-    // Fresh seeds so the repaired gate is priced on games the broken one never
-    // touched.
-    //
-    // ⚠ ROUND SEVEN: what a FINISHED research city does with its last hundred
-    // turns. Rounds three to six settled the building-half genes and returned
-    // five nulls and one harm, and the variance probe showed Science is
-    // downstream of expansion. What none of them asked is what the cities that
-    // DID finish their chain build afterwards — and the answer was
-    // `campus_research_grants` **zero times in 1,113 city-turns**, priced
-    // second by about a hundred points.
     let arms: Vec<Arm> = vec![
         ("control (universe)", |_ai| {}),
-        ("research-grants-first", |ai| {
-            ai.enable_research_grants_first()
-        }),
         ("premium + payoff", |ai| {
             ai.enable_research_tier_premium();
             ai.enable_science_multiplier_payoff();
-        }),
-        ("premium + payoff + grants", |ai| {
-            ai.enable_research_tier_premium();
-            ai.enable_science_multiplier_payoff();
-            ai.enable_research_grants_first();
         }),
     ];
     let mut totals: Vec<(String, Chain)> = Vec::new();
@@ -214,11 +191,10 @@ mod power_probe {
     use super::*;
     /// Does the decision a gene prices ever actually ARISE?
     ///
-    /// ★★★★★ THE CHECK THAT WOULD HAVE SAVED TWO GENES. `campus-finishes-first`
-    /// and `power-the-laboratory` both came back byte-identical to control —
-    /// the second over TWELVE seeds — and in both cases the code was correct,
-    /// wired, and reachable. What was missing was a board where the choice it
-    /// changes is ever offered.
+    /// ★★★★★ THE CHECK THAT WOULD HAVE SAVED TWO SCIENCE PROBES. Both
+    /// came back byte-identical to control even though the code was correct,
+    /// wired, and reachable. What was missing was a board where the choice
+    /// they changed was ever offered.
     ///
     /// For the power gene this probe answers it in one game: **10 cities, 4
     /// with an Industrial Zone, 4 drawing power, 3 ALREADY HOLDING A PLANT,
@@ -877,10 +853,9 @@ mod variance_probe {
     ///
     /// ⇒ **Late-game science in this engine is downstream of expansion and of
     /// the chain's EARLY timing.** It is not a late-game quantity at all. That
-    /// is why nine genes aimed at the late game produced two conditional wins
-    /// and five nulls, and why the one that tried to force the tech order was
-    /// the worst of them — it bought Chemistry with the expansion Science is
-    /// made of (`chain_tech_lookahead`: -17% Labs and SEVENTEEN fewer cities).
+    /// is why late-game pricing treatments must be judged against expansion:
+    /// forcing the tech order bought Chemistry with the expansion Science is
+    /// made of.
     ///
     /// The operator's premise is right — the same table shows Science and
     /// score moving together, 460/1384 at the top and 100/495 at the bottom.

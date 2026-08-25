@@ -119,12 +119,12 @@ class DiscoveryTest(unittest.TestCase):
     def test_the_binary_enumerates_its_own_treatments(self) -> None:
         stderr = (
             'civvis-orders: unknown --without treatment "__census_probe__"; '
-            "this binary can withhold: come-ashore, siege-role, war-patience"
+            "this binary can withhold: come-ashore, siege-role"
         )
         with mock.patch.object(census.subprocess, "run") as run:
             run.return_value = mock.Mock(stderr=stderr, stdout="", returncode=2)
             found = census.discover_treatments(Path("bin"), Path("mirror"))
-        self.assertEqual(found, ["come-ashore", "siege-role", "war-patience"])
+        self.assertEqual(found, ["come-ashore", "siege-role"])
 
     def test_a_binary_that_will_not_enumerate_is_an_error(self) -> None:
         """Better to refuse than to census a list this file invented."""
