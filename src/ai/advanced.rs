@@ -4562,6 +4562,10 @@ pub struct AdvancedAi {
     amenity_project_preemption_2: bool,
 
     // ---- append: c-d ------------------------------------------------
+    /// A Builder chops woods, rainforest or marsh into a Settler, a district
+    /// or a wonder at the front of the owning city's queue. Opt-in gene
+    /// `chop-into-the-queue`; see `advanced/deity_habits.rs`.
+    chop_into_the_queue: bool,
     /// The at-war cities an own unit has already reached this campaign;
     /// state for `siege_is_progress_2`, rebuilt from the at-war set each
     /// observation like `campaign_city_health`.
@@ -4621,6 +4625,16 @@ pub struct AdvancedAi {
     /// cities, and the sitting suzerain the envoys would unseat. Opt-in gene
     /// `flip-nearby-city-states`; see `advanced/field_craft.rs`.
     flip_nearby_city_states: bool,
+    /// An improvement that completes an unresearched technology's or civic's
+    /// boost is worth the research the boost grants. Opt-in gene
+    /// `eureka-chasing-builder`; see `advanced/deity_habits.rs`.
+    eureka_chasing_builder: bool,
+    /// A unit, building or district that completes a boost is worth the
+    /// research it grants. Opt-in gene `eureka-chasing-production`; see
+    /// `advanced/deity_habits.rs`.
+    eureka_chasing_production: bool,
+    /// The per-turn memo both eureka genes read.
+    eureka_chase_cache: deity_habits::EurekaChaseCache,
     // ---- append: g-k ------------------------------------------------
     /// While the opening is behind the pace and no city can build a Settler,
     /// the citizens work food. Opt-in gene `growth-to-settle`; see
@@ -4992,6 +5006,10 @@ use air_surge::{AirSurge, AirSurgeCensus, AirSurgeStatus};
 /// into it, stack with a summoned guard when they must. Opt-in gene
 /// `civilian-out-of-reach`. See `advanced/civilian_safety.rs`.
 mod civilian_safety;
+/// Three Deity habits: chop into the queue, chase eurekas with Builders and
+/// with the production queue. Three opt-in genes; see
+/// `advanced/deity_habits.rs`.
+mod deity_habits;
 
 mod site_lookahead;
 
@@ -5728,6 +5746,7 @@ impl AdvancedAi {
             amenity_project_preemption_2: false,
 
             // ---- append: c-d ----------------------------------------
+            chop_into_the_queue: false,
             campaign_cities_reached: BTreeSet::new(),
             campus_adjacency_threshold_2: false,
 
@@ -5742,6 +5761,9 @@ impl AdvancedAi {
             // ---- append: e-f ----------------------------------------
             expansion_schedule: false,
             flip_nearby_city_states: false,
+            eureka_chasing_builder: false,
+            eureka_chasing_production: false,
+            eureka_chase_cache: deity_habits::EurekaChaseCache::default(),
 
             // ---- append: g-k ----------------------------------------
             growth_to_settle: false,
@@ -21783,6 +21805,13 @@ impl AdvancedAi {
         if raw <= -9_999.0 {
             return raw;
         }
+        // `eureka_chasing_production`: the boost this item completes, on the
+        // raw scale. See `advanced/deity_habits.rs`.
+        let raw = if raw > 0.0 {
+            raw + self.eureka_production_premium(g, pid, item)
+        } else {
+            raw
+        };
         // The one line that puts the build order inside the search surface.
         // Applied AFTER the refusal sentinel above, so a gene can tilt what
         // the city wants and never argue with what it may not build; and only
@@ -25006,7 +25035,9 @@ impl AdvancedAi {
                 _ => 4.0,
             };
         }
-        value
+        // `eureka_chasing_builder`: the boost this improvement on this tile
+        // earns. See `advanced/deity_habits.rs`.
+        value + self.eureka_builder_premium(g, pos, improvement)
     }
 
     /// The few military unique improvements are not Builder choices, so their
@@ -25505,6 +25536,39 @@ impl AdvancedAi {
                 .is_ok();
         }
         let here = self.worthwhile_improvements(g, pid, current, strategy);
+        // `chop_into_the_queue`: a chop on this tile outbids the best
+        // improvement it could host when the owning city's queue front wants
+        // the lump. See `advanced/deity_habits.rs`.
+        if self.chop_into_the_queue {
+            let worked = g
+                .map
+                .get(current)
+                .and_then(|tile| tile.owner_city)
+                .is_some_and(|cid| g.city_citizen_plan(cid).worked_tiles.contains(&current));
+            if let Some((operation, value)) =
+                self.chop_into_the_queue_value(g, pid, current, strategy, worked)
+            {
+                let best_here = here.first().map_or(f64::MIN, |improvement| {
+                    self.improvement_value(g, current, improvement, strategy)
+                });
+                if value > best_here {
+                    self.builder_targets.remove(&uid);
+                    think!(self.journal(), Expansion, Detail,
+                           "Chopping {} at {current:?} into the queue", plain(&operation);
+                           "worth {value:.1} to the {} plan, above the best improvement here",
+                           strategy.as_str(); current);
+                    return g
+                        .apply(
+                            pid,
+                            &Action::Improve {
+                                unit: uid,
+                                improvement: operation,
+                            },
+                        )
+                        .is_ok();
+                }
+            }
+        }
         if !here.is_empty() {
             self.builder_targets.remove(&uid);
             // `order_retry`: `worthwhile_improvements` is already ranked and
@@ -25565,15 +25629,26 @@ impl AdvancedAi {
             let current_target = self.builder_targets.get(&uid).copied().filter(|pos| {
                 !reserved.contains(pos)
                     && job_out_of_reach(*pos)
-                    && !self
+                    && (!self
                         .worthwhile_improvements(g, pid, *pos, strategy)
                         .is_empty()
+                        || self
+                            .chop_into_the_queue_value(g, pid, *pos, strategy, false)
+                            .is_some())
             });
             match current_target {
                 Some(pos) => Ok(pos),
                 None => {
                     let mut best: Option<(f64, Pos)> = None;
                     for cid in g.player_city_ids(pid) {
+                        // Computing the citizen plan can inspect every tile in a
+                        // city. Read it once per city, rather than once for every
+                        // candidate improvement in the target sweep.
+                        let worked_tiles: HashSet<Pos> = if self.chop_into_the_queue {
+                            g.city_citizen_plan(cid).worked_tiles.into_iter().collect()
+                        } else {
+                            HashSet::new()
+                        };
                         for pos in &g.cities[&cid].owned_tiles {
                             if reserved.contains(pos) || !job_out_of_reach(*pos) {
                                 continue;
@@ -25582,6 +25657,23 @@ impl AdvancedAi {
                             {
                                 let score = self.improvement_value(g, *pos, &improvement, strategy)
                                     - g.wdist(current, *pos) as f64 * 0.7;
+                                if best
+                                    .map(|(old, bp)| score > old || (score == old && *pos < bp))
+                                    .unwrap_or(true)
+                                {
+                                    best = Some((score, *pos));
+                                }
+                            }
+                            // `chop_into_the_queue`: the chop is one more job
+                            // on the same list, priced the same way.
+                            if let Some((_, value)) = self.chop_into_the_queue_value(
+                                g,
+                                pid,
+                                *pos,
+                                strategy,
+                                worked_tiles.contains(pos),
+                            ) {
+                                let score = value - g.wdist(current, *pos) as f64 * 0.7;
                                 if best
                                     .map(|(old, bp)| score > old || (score == old && *pos < bp))
                                     .unwrap_or(true)
