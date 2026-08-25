@@ -415,6 +415,14 @@ FIELDLESS = {
     "contested_field": "",
     "native_competitions": False,
 }
+#: ⭐ PROVENANCE RECORDED WHEN SET, AND NOT A SHAPE LEG. `gene_screen
+#: --victory-mask rotate:N` closes N of the five real conditions per game from
+#: the game's seed, score always on; `victories` in its header is still the
+#: batch-level set (all six) and every lane is live across the batch, so the
+#: batch is the standard shape and pools with the ledger. The mask is written
+#: onto the source so a reader can see it, exactly as `FIELDLESS` is recorded
+#: only when set, and `shape_of` never reads it.
+RECORDED_WHEN_SET = ("victory_mask",)
 #: The profile keys recorded for every source, whether or not they match. The
 #: draw `design` is recorded and NOT checked: it is how each seat's genome was
 #: sampled (`independent` — every seat its own draw, the screen since
@@ -894,6 +902,9 @@ def profile_of(data: dict) -> dict:
         value = raw.get(key)
         if value is not None and value != fieldless:
             profile[key] = value
+    for key in RECORDED_WHEN_SET:
+        if raw.get(key):
+            profile[key] = raw[key]
     return profile
 
 
