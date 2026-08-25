@@ -29,6 +29,17 @@
 //! not the runtime default; changing a default requires an explicit operator
 //! update to the pinned list and regeneration.
 //!
+//! ⭐ ONE EXCEPTION, WITHIN A FAMILY (operator, 2026-08-23, restated
+//! 2026-08-25): a pinned gene that has VERSIONS (`<base>-<n>`) ships its
+//! family HEAD — the priced version with the highest tracked wins, the
+//! ledger's pooled on−off *Diff*, ties to the higher version — whatever
+//! version the operator's list names. Naming any version pins the family on;
+//! `tools/genes.py::resolve_family_heads` writes the head into
+//! `DEPLOYMENT_GENOME` and records pin, head and every version's tracked
+//! wins in `docs/gene_ledger.json` (`rules.family_heads`). A family holds at
+//! most three versions; the third-best leaves before a fourth is added
+//! (`python3 tools/genes.py versions`).
+//!
 //! ★★★★ AND IT IS PUBLISHED BESIDE A PRECISION-WEIGHTED POSTERIOR.
 //! A threshold in column units is not a threshold in evidence: the screens
 //! those columns come from resolve between ±29 and ±101 at 80% power, so the
