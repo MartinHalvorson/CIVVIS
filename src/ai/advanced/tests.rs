@@ -34239,3 +34239,412 @@ fn campus_adjacency_threshold_2_credits_only_sites_with_a_threshold_plot() {
         "sorted"
     );
 }
+
+/// The ladder supplies the goal the civic chooser is missing, and stops as
+/// soon as any tier-2 gate is owned. See `AdvancedAi::government_ladder`.
+#[test]
+fn the_government_ladder_aims_at_the_tier_two_civic_its_lane_would_adopt() {
+    let (mut game, _capital, _home) = empire_with_a_capital(71_401);
+    let mut ai = AdvancedAi::new();
+    ai.enable_government_ladder();
+
+    // Rung one is not owned yet, so the ladder has nothing to climb and the
+    // shipped `first_government` arm keeps the field to itself.
+    assert_eq!(
+        ai.government_ladder_goal(&game, 0, GrandStrategy::Expansion),
+        None,
+        "before Political Philosophy the ladder stands down"
+    );
+
+    game.players[0]
+        .civics
+        .insert(crate::name!("political_philosophy"));
+
+    // Every lane but Conquest and Religion takes the government
+    // `strategic_government` ranks first among the three: Merchant Republic.
+    assert_eq!(
+        ai.government_ladder_goal(&game, 0, GrandStrategy::Expansion),
+        Some("exploration"),
+        "the economic lanes climb toward Merchant Republic"
+    );
+    assert_eq!(
+        ai.government_ladder_goal(&game, 0, GrandStrategy::Science),
+        Some("exploration"),
+        "so does Science"
+    );
+    assert_eq!(
+        ai.government_ladder_goal(&game, 0, GrandStrategy::Conquest),
+        Some("divine_right"),
+        "Conquest climbs toward Monarchy, which its own priority list prefers"
+    );
+    assert_eq!(
+        ai.government_ladder_goal(&game, 0, GrandStrategy::Religion),
+        Some("reformed_church"),
+        "Religion climbs toward Theocracy"
+    );
+
+    // A lateral move between two six-slot governments is not worth a second
+    // 340-to-440-cost detour, so one tier-2 gate closes the ladder.
+    game.players[0].civics.insert(crate::name!("divine_right"));
+    assert_eq!(
+        ai.government_ladder_goal(&game, 0, GrandStrategy::Science),
+        None,
+        "a tier-2 gate already owned ends the climb"
+    );
+
+    // And the climb does not start in the back half of the game, where a
+    // policy slot has almost nothing left to pay back.
+    game.players[0].civics.remove(&crate::name!("divine_right"));
+    game.turn = game.max_turns / 2 + 1;
+    assert_eq!(
+        ai.government_ladder_goal(&game, 0, GrandStrategy::Science),
+        None,
+        "past the halfway turn the detour is the cost the shipped ratio avoids"
+    );
+
+    // Off, it is an exact no-op.
+    game.turn = 1;
+    ai.disable_government_ladder();
+    assert_eq!(
+        ai.government_ladder_goal(&game, 0, GrandStrategy::Science),
+        None,
+        "the gene is the whole behaviour"
+    );
+}
+
+/// The chain debts are priced through a payback window rather than a game
+/// fraction, and the difference is largest exactly where the science race is
+/// decided. See `AdvancedAi::chain_payback_window`.
+#[test]
+fn the_chain_payback_window_stops_the_science_debt_decaying_to_nothing() {
+    let (mut game, capital, _home) = empire_with_a_capital(71_402);
+    game.players[0].techs.insert(crate::name!("writing"));
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Science,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let counts = EmpireCounts::default();
+    let library = Item::Building {
+        building: crate::name!("library"),
+    };
+    install_ai_test_district(&mut game, capital, "campus");
+
+    let mut priced = AdvancedAi::new();
+    priced.enable_live_bridge_universe();
+    priced.enable_chain_payback_window();
+    priced.refresh_research_weight(&game);
+    let mut shipped = AdvancedAi::new();
+    shipped.enable_live_bridge_universe();
+    shipped.disable_chain_payback_window();
+    shipped.refresh_research_weight(&game);
+
+    // The two horizons are the whole gene, so pin them where the difference
+    // decides the race. Turn 193 of 250 is the median turn a standard Emperor
+    // game ends on a science victory: the game fraction has fallen to 0.23,
+    // while the payback window still has more than its 40-turn span to run and
+    // therefore pays in full.
+    game.max_turns = 250;
+    game.turn = 193;
+    let fraction = AdvancedAi::research_horizon(&game);
+    assert!(
+        (fraction - 0.228).abs() < 0.005,
+        "the shipped horizon is a game fraction and is nearly spent: {fraction}"
+    );
+    assert_eq!(
+        AdvancedAi::campus_payback_horizon(&game),
+        1.0,
+        "a Library begun with 57 turns left repays many times over"
+    );
+
+    // And the debt that reaches the build order follows it. Priced at a turn
+    // where the capital can still finish a Library inside the clock, so the
+    // comparison is the horizon rather than `production_value`'s
+    // cannot-finish-in-time sentinel.
+    game.turn = 120;
+    let with_window = priced.production_value(&game, 0, capital, &library, &plan, &counts);
+    let with_fraction = shipped.production_value(&game, 0, capital, &library, &plan, &counts);
+    assert!(
+        with_window > with_fraction,
+        "the Campus owes its Library at full price, not at the clock's: \
+         {with_window} vs {with_fraction}"
+    );
+
+    // The reason the original horizon existed is preserved: at the very end
+    // the debt is gone either way, so a Campus building begun at turn 249
+    // still does not outbid a defender.
+    game.turn = game.max_turns;
+    assert_eq!(
+        AdvancedAi::campus_payback_horizon(&game),
+        0.0,
+        "the payback window still closes at the turn limit"
+    );
+}
+
+/// A Builder that can see the Housing it lays outranks one that cannot, and
+/// only where the improvement actually carries Housing. See
+/// `AdvancedAi::improvement_housing_value`.
+#[test]
+fn the_builder_sees_the_housing_an_improvement_carries() {
+    let (game, _capital, _home) = empire_with_a_capital(71_403);
+    let farm = "farm";
+    let mine = "mine";
+    assert!(
+        game.rules.improvements[farm].housing > 0.0,
+        "the Farm is one of the seventeen improvements that carry Housing"
+    );
+    assert_eq!(
+        game.rules.improvements[mine].housing, 0.0,
+        "the Mine carries none, which is what makes it the control"
+    );
+
+    let pos = game.map.tiles.keys().copied().next().expect("a tile");
+    let mut seeing = AdvancedAi::new();
+    seeing.enable_improvement_housing_value();
+    let blind = AdvancedAi::new();
+
+    let seen = seeing.improvement_value(&game, pos, farm, GrandStrategy::Expansion);
+    let unseen = blind.improvement_value(&game, pos, farm, GrandStrategy::Expansion);
+    assert!(
+        seen > unseen,
+        "the Farm's Housing is a yield the shipped chooser cannot see: {seen} vs {unseen}"
+    );
+    assert_eq!(
+        seeing.improvement_value(&game, pos, mine, GrandStrategy::Expansion),
+        blind.improvement_value(&game, pos, mine, GrandStrategy::Expansion),
+        "an improvement with no Housing is priced identically by both"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Camp tile buyout. See `advanced/camp_buyout.rs`.
+// ---------------------------------------------------------------------------
+
+use super::camp_buyout::{CAMP_RING_SHARE, CAMP_STANDING_COST};
+
+/// The gene is registered, discoverable by name, and reversible.
+#[test]
+fn camp_tile_buyout_is_a_registered_reversible_opt_in() {
+    assert!(GENES.iter().any(|gene| gene.opt_in()
+        && gene.field == "camp_tile_buyout"
+        && gene.tag == "camp-tile-buyout"));
+    let mut ai = AdvancedAi::new();
+    assert!(!ai.camp_tile_buyout, "production ships it off");
+    ai.enable_camp_tile_buyout();
+    assert!(ai.camp_tile_buyout);
+    ai.disable_camp_tile_buyout();
+    assert!(!ai.camp_tile_buyout);
+}
+
+/// A capital with a Barbarian Outpost standing on bare ground inside its own
+/// second ring, and the Gold to buy the hex. The plot is deliberately
+/// worthless as ground — the only reason to want it is what stands on it.
+fn capital_beside_an_outpost() -> (Game, u32, Pos, f64) {
+    let (mut game, city, center) = planning_capital();
+    let target = game
+        .wdisk(center, 2)
+        .into_iter()
+        .find(|pos| {
+            game.wdist(*pos, center) == 2
+                && game.map.tiles[pos].owner_city.is_none()
+                && game
+                    .nbrs(*pos)
+                    .into_iter()
+                    .any(|n| game.map.tiles[&n].owner_city == Some(city))
+        })
+        .expect("a ring-two plot touching the capital's own ground");
+    {
+        let tile = game.map.tiles.get_mut(&target).unwrap();
+        tile.terrain = Name::new("snow");
+        tile.feature = None;
+        tile.hills = false;
+        tile.resource = None;
+        tile.improvement = Some(crate::name!("barbarian_camp"));
+    }
+    game.barb_camps.insert(target, game.turn + 1_000);
+    game.players[0].explored.insert(target);
+    game.players[0].gold = 1_500.0;
+    let cost = game
+        .plot_purchase_cost(0, city, target)
+        .expect("the engine quotes the outpost's hex like any other neutral plot");
+    (game, city, target, cost)
+}
+
+/// The empire's starting escort, removed: the fixtures below decide for
+/// themselves which soldiers exist.
+fn disband_the_field_army(game: &mut Game, pid: usize) {
+    for unit in game.player_unit_ids(pid) {
+        if game.rules.units[game.units[&unit].kind].class == "military" {
+            game.remove_unit(unit);
+        }
+    }
+}
+
+/// What the gene prices is the outpost, not the hex: the same ground with
+/// the camp dispersed is worth nothing of its own to this pass.
+#[test]
+fn the_outposts_hex_is_priced_by_the_outpost() {
+    let (mut game, city, target, _) = capital_beside_an_outpost();
+    assert!(
+        game.player_can_see(0, target),
+        "the fixture's outpost is a real sighting, not a memory"
+    );
+    let ai = AdvancedAi::new();
+    let clearance = ai
+        .camp_buyout_clearance(&game, 0, city, target)
+        .expect("a ring-two outpost on reachable ground is priced");
+    assert_eq!(
+        clearance,
+        CAMP_STANDING_COST * CAMP_RING_SHARE[1],
+        "a quiet ring-two outpost is worth its standing cost and no party"
+    );
+
+    // Disperse it and the same hex is bare snow again.
+    game.barb_camps.remove(&target);
+    game.map.tiles.get_mut(&target).unwrap().improvement = None;
+    assert_eq!(
+        ai.camp_buyout_clearance(&game, 0, city, target),
+        None,
+        "with the outpost gone the gene has no reason of its own to buy"
+    );
+}
+
+/// Ground under an outpost no soldier of ours can walk into is a hole in the
+/// border with a deed attached. Civilization VI disperses an outpost on entry
+/// (`Improvements.xml`: `RemoveOnEntry="true"`), so reach is the whole
+/// question.
+#[test]
+fn an_outpost_no_soldier_can_reach_is_not_bought() {
+    let (mut game, city, target, _) = capital_beside_an_outpost();
+    disband_the_field_army(&mut game, 0);
+    let center = game.cities[&city].pos;
+    let ai = AdvancedAi::new();
+    assert_eq!(
+        ai.camp_buyout_clearance(&game, 0, city, target),
+        None,
+        "an empire with no soldier at all buys no outposts"
+    );
+    // A Scout is not an answer to a camp: the errand excludes recon for the
+    // same reason.
+    game.spawn_test_unit("scout", 0, center);
+    assert_eq!(
+        ai.camp_buyout_clearance(&game, 0, city, target),
+        None,
+        "recon does not count as the soldier that walks in"
+    );
+    game.spawn_test_unit("warrior", 0, center);
+    assert!(
+        ai.camp_buyout_clearance(&game, 0, city, target).is_some(),
+        "a Warrior at home does"
+    );
+}
+
+/// A raid party forming on the outpost is worth more than a quiet one, and
+/// only the barbarians we can actually see count.
+#[test]
+fn a_party_forming_on_the_outpost_raises_its_price() {
+    let (mut game, city, target, _) = capital_beside_an_outpost();
+    let ai = AdvancedAi::new();
+    let quiet = ai.camp_buyout_clearance(&game, 0, city, target).unwrap();
+    // The fixture's world is seated without barbarians, so the second seat
+    // stands in for them, as the belief and espionage suites do.
+    game.barb_pid = Some(1);
+    game.spawn_test_unit("warrior", 1, target);
+    let raided = ai
+        .camp_buyout_clearance(&game, 0, city, target)
+        .expect("the outpost is still priced");
+    assert!(
+        raided > quiet,
+        "a raider on the outpost raises the price: {raided} over {quiet}"
+    );
+}
+
+/// The operator's rule is a comparison, and a late quote wins it:
+/// `tile_purchase_cost` charges up to five times the base price as the game
+/// runs on, and an outpost is not worth any price.
+#[test]
+fn a_quote_that_outgrows_the_outpost_is_refused() {
+    let (mut game, city, target, early) = capital_beside_an_outpost();
+    let ai = AdvancedAi::new();
+    assert!(
+        ai.camp_buyout_clearance(&game, 0, city, target)
+            .is_some_and(|clearance| clearance >= early),
+        "the opening quote is one the outpost is worth"
+    );
+    let techs: Vec<Name> = game.rules.techs.keys().copied().collect();
+    for tech in techs.iter().take(techs.len() * 3 / 4) {
+        game.players[0].techs.insert(*tech);
+    }
+    let late = game
+        .plot_purchase_cost(0, city, target)
+        .expect("the engine still sells the hex");
+    assert!(
+        late > CAMP_STANDING_COST * CAMP_RING_SHARE[1],
+        "the fixture reaches a quote above what this outpost is worth: {late}"
+    );
+    let mut on = AdvancedAi::new();
+    on.enable_camp_tile_buyout();
+    assert!(
+        !on.camp_tile_buyout_purchase(&mut game, 0, 0.0),
+        "we care about clearing it, not at any price"
+    );
+    assert_eq!(game.map.tiles[&target].owner_city, None);
+}
+
+/// The reserve the ordinary spender protects is protected here too.
+#[test]
+fn a_buyout_never_reaches_into_the_reserve() {
+    let (mut game, city, target, cost) = capital_beside_an_outpost();
+    let mut on = AdvancedAi::new();
+    on.enable_camp_tile_buyout();
+    game.players[0].gold = cost;
+    assert!(
+        !on.camp_tile_buyout_purchase(&mut game, 0, 300.0),
+        "affording the quote is not enough; the reserve comes first"
+    );
+    game.players[0].gold = 300.0 + 200.0 + cost;
+    assert!(
+        on.camp_tile_buyout_purchase(&mut game, 0, 300.0),
+        "with the reserve and the spender's headroom clear, the hex is bought"
+    );
+    assert_eq!(game.map.tiles[&target].owner_city, Some(city));
+}
+
+/// End to end through the spender: the gene turns a hex the shipped
+/// appraisal will not pay for into one it buys, and off, the same board
+/// leaves the outpost's ground neutral.
+#[test]
+fn the_spender_buys_the_outposts_ground_only_with_the_gene_on() {
+    let plan = district_planning_lane(1);
+
+    let (mut off_game, city, target, _) = capital_beside_an_outpost();
+    let mut on_game = off_game.clone();
+
+    let off = AdvancedAi::new();
+    off.advanced_gold_spending(&mut off_game, 0, &plan);
+    assert_eq!(
+        off_game.map.tiles[&target].owner_city, None,
+        "bare snow under an outpost is not ground the shipped appraisal buys"
+    );
+
+    let mut on = AdvancedAi::new();
+    on.enable_camp_tile_buyout();
+    assert!(
+        on.advanced_gold_spending(&mut on_game, 0, &plan),
+        "the gene finds something to spend Gold on"
+    );
+    assert_eq!(
+        on_game.map.tiles[&target].owner_city,
+        Some(city),
+        "the outpost's hex is annexed"
+    );
+    assert!(
+        on_game.barb_camps.contains_key(&target),
+        "and the outpost is still standing on it: Civilization VI disperses \
+         a camp on entry, never because the deed changed hands"
+    );
+}

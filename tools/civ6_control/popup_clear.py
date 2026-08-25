@@ -45,7 +45,7 @@ from collections import deque
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from civ6_control import macos_input  # noqa: E402
+from civ6_control import macos_capture, macos_input  # noqa: E402
 
 PILLOW_MISSING = "popup_clear needs Pillow: python3 -m pip install pillow"
 
@@ -81,6 +81,15 @@ GAME_PROCESS = "Civ6_Exe_Child"
 DARK_LEVEL = 24          # luminance below this counts as "black"
 LEADER_DARK_FRACTION = 0.35   # measured 0.55 leader vs 0.11 map
 SHOT = "/tmp/civ6-popup-clear.png"
+NATIVE_CAPTURE_DISABLED = False
+
+# A covered game window is already a confirmed blocker. Keep the fallback
+# cadence below one second, and leave enough room for the click plus one fresh
+# frame inside the two-second user-facing budget.
+DIALOGUE_POLL_SECONDS = 0.25
+MIN_POLL_SECONDS = 0.05
+POINTER_SETTLE_SECONDS = 0.05
+POST_CLICK_SETTLE_SECONDS = 0.20
 
 
 def osa(script):
@@ -146,8 +155,17 @@ def capture(box_points):
     """
     Image = _image_library()
     x, y, w, h = box_points
-    subprocess.run(["screencapture", "-x", "-t", "png", f"-R{x},{y},{w},{h}", SHOT],
-                   check=True, timeout=30)
+    global NATIVE_CAPTURE_DISABLED
+    if not NATIVE_CAPTURE_DISABLED:
+        try:
+            macos_capture.capture_region(box_points, SHOT)
+        except (macos_capture.CaptureUnavailable, OSError, subprocess.SubprocessError):
+            # Keep older hosts usable. Once the native path is known to be
+            # unavailable, do not pay its initialization cost on every poll.
+            NATIVE_CAPTURE_DISABLED = True
+    if NATIVE_CAPTURE_DISABLED:
+        subprocess.run(["screencapture", "-x", "-t", "png", f"-R{x},{y},{w},{h}", SHOT],
+                       check=True, timeout=30)
     image = Image.open(SHOT).convert("RGB")
     return image, image.size[0] / float(w)
 
@@ -551,14 +569,19 @@ def held_click(point_px, box_points, scale):
     px = int(box_points[0] + point_px[0] / scale)
     py = int(box_points[1] + point_px[1] / scale)
     macos_input.move(px, py, check=True)
-    time.sleep(0.2)
+    time.sleep(POINTER_SETTLE_SECONDS)
     macos_input.click(px, py, hold_s=0.15, check=True)
     return px, py
 
 
+def covered_poll_delay(interval):
+    """Return the maximum retry delay while a dialogue covers the map."""
+    return min(DIALOGUE_POLL_SECONDS, max(MIN_POLL_SECONDS, float(interval)))
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--interval", type=float, default=6.0)
+    ap.add_argument("--interval", type=float, default=0.5)
     ap.add_argument("--once", action="store_true")
     ap.add_argument("--dry-run", action="store_true", help="report only, never click")
     ap.add_argument("--runs", default="/Users/martin/civvis-civ6-runs/control",
@@ -568,6 +591,10 @@ def main():
                          "and a false positive here clicks the live map)")
     ap.add_argument("--log", default="/Users/martin/civvis-civ6-mirror/popup-clear.log")
     args = ap.parse_args()
+
+    # Compile the cached helper before the first frame. On a fresh host this is
+    # startup work while the game is loading, not latency charged to a dialogue.
+    macos_capture.prepare()
 
     def log(message):
         line = f"[popup] {time.strftime('%FT%TZ', time.gmtime())} {message}"
@@ -621,14 +648,13 @@ def main():
                 # apart, so the per-branch once-per-map-return latch spent its
                 # single ESC on scene one and left the rest to the watchdog.
                 # A leader covering a live map is the one condition all
-                # variants share, so count THAT: ESC at ~10 s, again at ~35 s,
-                # once more at ~75 s of continuous leader cover (the covered
-                # chase polls at 0.75 s), and never more than three per
+                # variants share, so escalate early: ESC at about 0.75s, 1.5s
+                # and 3s of continuous cover, never more than three per
                 # episode. Question scenes ignore ESC by design; the click
                 # paths keep running between escalations regardless.
                 if kind == "leader" and playing and front.startswith("Civ6"):
                     leader_passes += 1
-                    if (leader_passes in (13, 47, 100)
+                    if (leader_passes in (3, 6, 12)
                             and esc_budget_used < 3
                             and not args.dry_run):
                         macos_input.press_key("escape", check=True)
@@ -671,7 +697,8 @@ def main():
                     log(f"{kind} on screen but {front!r} is frontmost; not clicking")
                 elif args.dry_run:
                     log(f"DRY RUN: would click {kind} at {choice} (dark={dark:.2f})")
-                elif same_scene(kind, choice, last_target) and misses >= 2:
+                elif (kind != "leader"
+                      and same_scene(kind, choice, last_target) and misses >= 2):
                     # ⚠ Never keep clicking something that demonstrably does
                     # nothing. A repeated no-op is either a target we have
                     # misread or a screen we cannot drive, and both are safer
@@ -685,7 +712,7 @@ def main():
                     # repeatedly walks the conversation to its end.
                     target = (kind, tuple(int(v) for v in choice))
                     where = held_click(choice, box, scale)
-                    time.sleep(1.5)
+                    time.sleep(POST_CLICK_SETTLE_SECONDS)
                     after, _ = capture(box)
                     kind_after, targets_after, _ = classify(after)
                     # ⚠ SAY WHAT HAPPENED, NOT WHAT WAS INTENDED. This used to
@@ -719,24 +746,24 @@ def main():
         # civvis-20260802T014139Z: a single Barbarossa scene logged `clicked leader;
         # a leader is up now` then `a card is up now` before the map came back, and
         # twice it read `leader on screen but no target found` while the dialogue
-        # buttons were still fading in. Each of those retries waited a full interval,
-        # so one scene sat over the map for 18 seconds at a 2.5s setting — and the
-        # operator sees the portrait, not the cadence.
+        # buttons were still fading in. The covered path now retries every 250ms,
+        # so a target that appears during the animation is picked up on the next
+        # frame rather than waiting for the between-game interval.
         #
         # Once `classify` says the map is covered there is no cheapness argument
         # left: we already know the screen needs clearing, and the only question is
-        # how soon we look again. A pass costs ~0.5s in-loop, so chasing at 0.75s
-        # while covered is a fifth of one turn's budget and only while it matters.
+        # how soon we look again. A pass costs ~0.5s in-loop, so chasing at 250ms
+        # while covered is only charged while it matters.
         #
         # ⚠ The chase does NOT weaken any guard. Frontmost, map-positively-covered,
         # turn-recorded and the two-strike no-op rule are all still checked on every
         # pass; this changes when we look, never what we are willing to click.
         if idle:
-            delay = args.interval * 5      # no game window at all — between games
+            delay = max(MIN_POLL_SECONDS, args.interval * 5)  # between games
         elif covered:
-            delay = min(0.75, args.interval)
+            delay = covered_poll_delay(args.interval)
         else:
-            delay = args.interval
+            delay = max(MIN_POLL_SECONDS, args.interval)
         time.sleep(delay)
 
 

@@ -39,6 +39,18 @@ class PixelSamplingCompatibilityTest(unittest.TestCase):
         self.assertEqual(list(popup_clear.pixel_values(LegacyImage())), [4, 5, 6])
 
 
+class PopupTimingTest(unittest.TestCase):
+    def test_covered_dialogue_poll_is_bounded_to_a_quarter_second(self) -> None:
+        self.assertEqual(popup_clear.covered_poll_delay(10.0), 0.25)
+        self.assertEqual(popup_clear.covered_poll_delay(0.1), 0.1)
+        self.assertEqual(popup_clear.covered_poll_delay(0.0), 0.05)
+
+    def test_click_settle_constants_leave_the_backstop_subsecond(self) -> None:
+        self.assertLessEqual(popup_clear.DIALOGUE_POLL_SECONDS, 0.25)
+        self.assertLessEqual(popup_clear.POINTER_SETTLE_SECONDS, 0.1)
+        self.assertLessEqual(popup_clear.POST_CLICK_SETTLE_SECONDS, 0.25)
+
+
 # Unlike the module under test, these checks really do need Pillow: every one
 # of them paints a synthetic Civilization VI screen and asserts on what the
 # classifier makes of the pixels. A host without it skips them by name rather

@@ -1240,6 +1240,42 @@ class EndGameScreenHoldTests(unittest.TestCase):
                         lua.index("if END_SCREENS[NAME] then"))
 
 
+class DialogueCloseConfigTests(unittest.TestCase):
+    @staticmethod
+    def _config(dialogue_seconds):
+        class Defaults(SimpleNamespace):
+            def __getattr__(self, name):
+                return None
+
+        return civ6_play.build_config(
+            Defaults(tag="t", game_mode=[], dialogue_seconds=dialogue_seconds,
+                     difficulty="DIFFICULTY_SETTLER", map_size="MAPSIZE_SMALL",
+                     speed="GAMESPEED_ONLINE", map="Continents.lua",
+                     leader="LEADER_TRAJAN"))
+
+    def test_dialogue_timer_reaches_the_baked_config(self):
+        self.assertEqual(self._config(0.25)["DialogueSeconds"], 0.25)
+
+    def test_dialogue_timer_cannot_be_configured_past_two_seconds(self):
+        self.assertEqual(self._config(9.0)["DialogueSeconds"], 2.0)
+        self.assertEqual(self._config(-1.0)["DialogueSeconds"], 0.0)
+
+    def test_the_shim_waits_for_fade_in_without_spending_close_attempts(self):
+        lua = (Path(__file__).resolve().parent / "civ6_control" / "mod"
+               / "CivvisControlAutoClose.lua").read_text()
+        launcher = (Path(__file__).resolve().parent / "civ6_play.py").read_text()
+        self.assertIn('"--dialogue-seconds", type=float, default=0.25', launcher)
+        self.assertIn("local MAX_DIALOGUE_SECONDS = 2.0;", lua)
+        self.assertIn("local DIALOGUE_READY_RETRY_SECONDS = 0.05;", lua)
+        self.assertIn("Controls.BlackFadeAnim:IsStopped()", lua)
+        self.assertIn("Controls.TradePanelFade:IsStopped()", lua)
+        self.assertIn("and not dialogueReady()", lua)
+        self.assertIn(
+            "math.min(SECONDS, math.max(0, DIALOGUE_SECONDS), MAX_DIALOGUE_SECONDS)",
+            lua,
+        )
+
+
 class CounterResolutionConfigTests(unittest.TestCase):
     """⚠ A flag the mod never receives is a flag that does nothing."""
 
@@ -1823,6 +1859,114 @@ class VictoryLaneListTests(unittest.TestCase):
                     f"{launcher} declared its own default objective",
                 )
 
+
+
+class OpeningRestartPoliciesAreEnforcedBeforeTheGameCanDrift(unittest.TestCase):
+    """The operator's opening rules use ledger evidence, never a screen guess."""
+
+    @staticmethod
+    def _turn(turn, cities, ctx="agent"):
+        return {"kind": "turn", "ctx": ctx, "turn": turn, "cities": cities}
+
+    @staticmethod
+    def _state(turn, settlers, ctx="agent"):
+        return {
+            "kind": "state", "ctx": ctx, "turn": turn,
+            "units": [{"id": unit_id, "kind": "UNIT_SETTLER"}
+                      for unit_id in settlers],
+        }
+
+    @staticmethod
+    def _found(turn, unit, ctx="agent"):
+        return {"kind": "found", "ctx": ctx, "turn": turn, "unit": unit}
+
+    @staticmethod
+    def _lost(turn, unit, kind="UNIT_SETTLER", ctx="agent"):
+        return {
+            "kind": "unit_lost", "ctx": ctx, "turn": turn,
+            "unit": unit, "unit_kind": kind,
+        }
+
+    def test_three_cities_are_required_on_the_first_readable_turn_at_deadline(self):
+        state = {}
+        self.assertIsNone(civ6_play.opening_city_target_reading(
+            state, self._turn(31, 1)))
+        self.assertNotIn("opening_city_target_checked", state)
+        verdict = civ6_play.opening_city_target_reading(state, self._turn(32, 2))
+        self.assertEqual(verdict, {
+            "rule": "three_cities_by_turn_32", "turn": 32, "cities": 2,
+            "required_cities": 3, "deadline_turn": 32,
+        })
+        # It is a one-shot decision, not a duplicate restart print every poll.
+        self.assertIsNone(civ6_play.opening_city_target_reading(
+            state, self._turn(33, 1)))
+
+    def test_city_target_does_not_treat_missing_or_invalid_count_as_a_failure(self):
+        state = {}
+        self.assertIsNone(civ6_play.opening_city_target_reading(
+            state, self._turn(32, None)))
+        self.assertNotIn("opening_city_target_checked", state)
+        self.assertIsNone(civ6_play.opening_city_target_reading(
+            state, self._turn(33, True)))
+        self.assertNotIn("opening_city_target_checked", state)
+        verdict = civ6_play.opening_city_target_reading(state, self._turn(34, 1))
+        self.assertEqual((verdict["turn"], verdict["cities"]), (34, 1))
+
+    def test_city_target_accepts_three_or_more_cities_and_ignores_other_contexts(self):
+        state = {}
+        self.assertIsNone(civ6_play.opening_city_target_reading(
+            state, self._turn(32, 2, ctx="spectator")))
+        self.assertNotIn("opening_city_target_checked", state)
+        self.assertIsNone(civ6_play.opening_city_target_reading(
+            state, self._turn(32, 3)))
+        self.assertTrue(state["opening_city_target_checked"])
+
+    def test_only_the_settler_after_the_capital_settler_is_tracked(self):
+        state = {}
+        civ6_play.record_opening_settlers(state, self._state(1, [10]))
+        self.assertEqual(state["initial_settler_id"], 10)
+        civ6_play.record_opening_settlers(state, self._found(1, 10))
+        # Founding consumes the starting settler through `unit_lost`; it must
+        # remain a successful opening, not look like a capture.
+        self.assertIsNone(civ6_play.second_settler_loss_reading(
+            state, self._lost(1, 10)))
+        civ6_play.record_opening_settlers(state, self._state(18, [11]))
+        self.assertEqual(state["second_settler_id"], 11)
+        verdict = civ6_play.second_settler_loss_reading(state, self._lost(20, 11))
+        self.assertEqual(verdict, {
+            "rule": "second_settler_captured", "turn": 20, "unit": 11,
+            "unit_kind": "UNIT_SETTLER",
+        })
+
+    def test_a_second_settler_that_founds_is_not_restarted(self):
+        state = {}
+        civ6_play.record_opening_settlers(state, self._state(1, [10]))
+        civ6_play.record_opening_settlers(state, self._found(1, 10))
+        civ6_play.record_opening_settlers(state, self._state(18, [11]))
+        civ6_play.record_opening_settlers(state, self._found(20, 11))
+        self.assertIsNone(civ6_play.second_settler_loss_reading(
+            state, self._lost(20, 11)))
+
+    def test_settler_rule_requires_the_tracked_agent_settler(self):
+        state = {}
+        civ6_play.record_opening_settlers(state, self._state(1, [10]))
+        civ6_play.record_opening_settlers(state, self._found(1, 10))
+        civ6_play.record_opening_settlers(state, self._state(18, [11]))
+        self.assertIsNone(civ6_play.second_settler_loss_reading(
+            state, self._lost(20, 12)))
+        self.assertIsNone(civ6_play.second_settler_loss_reading(
+            state, self._lost(20, 11, kind="UNIT_WARRIOR")))
+        self.assertIsNone(civ6_play.second_settler_loss_reading(
+            state, self._lost(20, 11, ctx="spectator")))
+
+    def test_the_live_loop_records_and_enforces_both_opening_policies(self):
+        source = (Path(__file__).resolve().parent / "civ6_play.py").read_text(
+            encoding="utf-8")
+        self.assertIn("record_opening_settlers(state, event)", source)
+        self.assertIn("opening_city_target_reading(state, event)", source)
+        self.assertIn("second_settler_loss_reading(state, event)", source)
+        self.assertIn('"rule": "three_cities_by_turn_32"', source)
+        self.assertIn('"rule": "second_settler_captured"', source)
 
 
 class AnAbandonedGameIsOneTheLadderChoseNotToPlayOut(unittest.TestCase):

@@ -2471,10 +2471,184 @@ impl AdvancedAi {
         self.coalition_before_war = false;
     }
 
+    /// Leaves barbarian camps that raid a rival rather than us, and courts the city-states and majors beyond that rival.
+    /// A camp is the rival's when a major we are not allied with has a
+    /// city strictly nearer it than any of ours and it sits outside our
+    /// worked ring; the envoy scorer, the alliance partner score and the
+    /// joint-war answer read the far side of every rival. Opt-in gene
+    /// `enemy-of-my-enemy`; see `advanced/enemy_of_my_enemy.rs`. Operator
+    /// request, 2026-08-25.
+    pub fn enable_enemy_of_my_enemy(&mut self) {
+        self.base.enemy_of_my_enemy = true;
+    }
+    /// The twin of `enable_enemy_of_my_enemy`.
+    pub fn disable_enemy_of_my_enemy(&mut self) {
+        self.base.enemy_of_my_enemy = false;
+    }
+
+    /// Buy the plot a Barbarian Outpost stands on for the city inside whose
+    /// three rings it sits, when being rid of the outpost is worth more than
+    /// the plot's quote. The outpost must be one we can see and one a soldier
+    /// of ours can reach and disperse — Civilization VI removes an outpost on
+    /// entry, never because the ground changed hands. See
+    /// [`AdvancedAi::camp_buyout_plot_score`]. Opt-in gene `camp-tile-buyout`.
+    /// Filed above the markers: the append-point check reads a method line's
+    /// first identifier.
+    pub fn enable_camp_tile_buyout(&mut self) {
+        self.camp_tile_buyout = true;
+    }
+
+    /// The twin of `enable_camp_tile_buyout`.
+    pub fn disable_camp_tile_buyout(&mut self) {
+        self.camp_tile_buyout = false;
+    }
+
     // Append points, one per name range: a new treatment goes under the range
     // its own name falls in, so that two of them do not append to one line.
     // The rule, the measurement behind it and the check that enforces it are
     // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
+
+    /// Keep one Builder per city while there is still land to improve, priced
+    /// where it can win the queue. See `AdvancedAi::builder_supply_floor`;
+    /// opt-in gene `builder-supply-floor`. Filed here rather than under a
+    /// marker: the append-point check reads a method line's first identifier.
+    pub fn enable_builder_supply_floor(&mut self) {
+        self.builder_supply_floor = true;
+    }
+
+    /// The twin of `enable_builder_supply_floor`.
+    pub fn disable_builder_supply_floor(&mut self) {
+        self.builder_supply_floor = false;
+    }
+    /// Price the cheap rung of a district chain by payback and leave the whole
+    /// district on the clock. See `AdvancedAi::chain_payback_window_2`; opt-in
+    /// gene `chain-payback-window-2`, version two of `chain-payback-window`.
+    /// Filed here rather than under a marker: the append-point check reads a
+    /// method line's first identifier.
+    pub fn enable_chain_payback_window_2(&mut self) {
+        self.chain_payback_window_2 = true;
+    }
+
+    /// The twin of `enable_chain_payback_window_2`.
+    pub fn disable_chain_payback_window_2(&mut self) {
+        self.chain_payback_window_2 = false;
+    }
+    /// Price the science and culture chain debts by whether the building can
+    /// still repay, not by how much of the clock is left. See
+    /// `AdvancedAi::chain_payback_window`; opt-in gene `chain-payback-window`.
+    /// Filed here rather than under a marker: the append-point check reads a
+    /// method line's first identifier.
+    pub fn enable_chain_payback_window(&mut self) {
+        self.chain_payback_window = true;
+    }
+
+    /// The twin of `enable_chain_payback_window`.
+    pub fn disable_chain_payback_window(&mut self) {
+        self.chain_payback_window = false;
+    }
+    /// Reserve the first Builder ahead of ordinary production, the way
+    /// `solvency-first-trade-slot` reserves the first trade slot. See
+    /// `AdvancedAi::first_builder_reserve`; opt-in gene `first-builder-reserve`.
+    /// Filed here rather than under a marker: the append-point check reads a
+    /// method line's first identifier.
+    pub fn enable_first_builder_reserve(&mut self) {
+        self.first_builder_reserve = true;
+    }
+
+    /// The twin of `enable_first_builder_reserve`.
+    pub fn disable_first_builder_reserve(&mut self) {
+        self.first_builder_reserve = false;
+    }
+    /// Reserve the cheapest Campus building a city owes ahead of ordinary
+    /// production. See `AdvancedAi::first_research_building_reserve`; opt-in
+    /// gene `first-research-building-reserve`. Filed here rather than under a
+    /// marker: the append-point check reads a method line's first identifier.
+    pub fn enable_first_research_building_reserve(&mut self) {
+        self.first_research_building_reserve = true;
+    }
+
+    /// The twin of `enable_first_research_building_reserve`.
+    pub fn disable_first_research_building_reserve(&mut self) {
+        self.first_research_building_reserve = false;
+    }
+    /// Let the Builder see the Housing an improvement carries, the way the
+    /// baseline chooser already does. See
+    /// `AdvancedAi::improvement_housing_value`; opt-in gene
+    /// `improvement-housing-value`. Filed here rather than under a marker: the
+    /// append-point check reads a method line's first identifier.
+    pub fn enable_improvement_housing_value(&mut self) {
+        self.improvement_housing_value = true;
+    }
+
+    /// The twin of `enable_improvement_housing_value`.
+    pub fn disable_improvement_housing_value(&mut self) {
+        self.improvement_housing_value = false;
+    }
+    /// Climb to a tier-2 government once Political Philosophy lands, instead of
+    /// playing the whole game on four policy slots. See
+    /// `AdvancedAi::government_ladder`; opt-in gene `government-ladder`. Filed
+    /// here rather than under a marker: the append-point check reads a method
+    /// line's first identifier.
+    pub fn enable_government_ladder(&mut self) {
+        self.government_ladder = true;
+    }
+
+    /// The twin of `enable_government_ladder`.
+    pub fn disable_government_ladder(&mut self) {
+        self.government_ladder = false;
+    }
+    /// Fill an idle turn with something that is not a soldier, or leave it
+    /// idle. See `AdvancedAi::never_an_empty_queue_2`; opt-in gene
+    /// `never-an-empty-queue-2`, version two of `never-an-empty-queue`. Filed
+    /// here rather than under a marker: the append-point check reads a method
+    /// line's first identifier.
+    pub fn enable_never_an_empty_queue_2(&mut self) {
+        self.never_an_empty_queue_2 = true;
+    }
+
+    /// The twin of `enable_never_an_empty_queue_2`.
+    pub fn disable_never_an_empty_queue_2(&mut self) {
+        self.never_an_empty_queue_2 = false;
+    }
+    /// Build the best real candidate instead of standing idle when nothing
+    /// clears the ordinary production bar. See
+    /// `AdvancedAi::never_an_empty_queue`; opt-in gene `never-an-empty-queue`.
+    /// Filed here rather than under a marker: the append-point check reads a
+    /// method line's first identifier.
+    pub fn enable_never_an_empty_queue(&mut self) {
+        self.never_an_empty_queue = true;
+    }
+
+    /// The twin of `enable_never_an_empty_queue`.
+    pub fn disable_never_an_empty_queue(&mut self) {
+        self.never_an_empty_queue = false;
+    }
+    /// Reserve every empty trade route slot the empire can use, not only the
+    /// first. See `AdvancedAi::solvency_first_trade_slot_2`; opt-in gene
+    /// `solvency-first-trade-slot-2`, version two of
+    /// `solvency-first-trade-slot`. Filed here rather than under a marker: the
+    /// append-point check reads a method line's first identifier.
+    pub fn enable_solvency_first_trade_slot_2(&mut self) {
+        self.solvency_first_trade_slot_2 = true;
+    }
+
+    /// The twin of `enable_solvency_first_trade_slot_2`.
+    pub fn disable_solvency_first_trade_slot_2(&mut self) {
+        self.solvency_first_trade_slot_2 = false;
+    }
+    /// Modernize the standing army before the discretionary purchase pass
+    /// spends the treasury, while a major war is being fought. See
+    /// `AdvancedAi::upgrade_the_garrison`; opt-in gene `upgrade-the-garrison`.
+    /// Filed here rather than under a marker: the append-point check reads a
+    /// method line's first identifier.
+    pub fn enable_upgrade_the_garrison(&mut self) {
+        self.upgrade_the_garrison = true;
+    }
+
+    /// The twin of `enable_upgrade_the_garrison`.
+    pub fn disable_upgrade_the_garrison(&mut self) {
+        self.upgrade_the_garrison = false;
+    }
 
     // ---- append: a-b ------------------------------------------------
 

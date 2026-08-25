@@ -234,7 +234,7 @@ jobs:
       - name: Rules data matches the shipped Civilization VI database
         run: python3 tools/civ6_fidelity.py --check --max 0
       # The ledger (`docs/gene_ledger.json`), the verdict block at the end of
-      # `src/ai/advanced/genes.rs` and `HEURISTIC_GENE_RANKING.md` are all
+      # `src/ai/advanced/genes.rs` and `GENE_HEURISTIC_RANKING.md` are all
       # derived from the same screen sources by one tool; a change that edits
       # one by hand, or re-enters a source without regenerating, fails here.
       - name: The gene ledger, the verdict block and the ranking are current
