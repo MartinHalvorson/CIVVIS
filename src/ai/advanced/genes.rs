@@ -1153,6 +1153,111 @@ pub const GENES: &[Gene] = &[
     // family draw is biased toward the best version and the ledger ships the
     // best by pooled Diff. See `AdvancedAi::enable_siege_is_progress_2`.
     Gene { tag: "siege-is-progress-2", field: "siege_is_progress_2", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_is_progress_2, disable: AdvancedAi::disable_siege_is_progress_2 },
+    // Every tier-2 government is gated on one civic and `strategic_government`
+    // already ranks all three above `classical_republic` in every lane. The
+    // civic never arrives: past `political_philosophy` the `forced_goal` match
+    // falls through to `civic_value`, whose `(value + 32) / sqrt(cost)` pays a
+    // tier-2 gate 153 over sqrt(440) against Political Philosophy's three
+    // governments plus a flat +70 over sqrt(110). Live King seat, 2026-08-25:
+    // the three gate civics were reached in 0 of 59 games and all 24 readable
+    // late snapshots were still Classical Republic -- four policy slots for the
+    // whole game instead of six, and the one tier-1 government with no military
+    // slot at all.
+    Gene { tag: "government-ladder", field: "government_ladder", kind: Kind::OptIn, enable: AdvancedAi::enable_government_ladder, disable: AdvancedAi::disable_government_ladder },
+    // The repair was written, documented, and half-applied. `research_debt`,
+    // `culture_debt` and `research_coverage` are all multiplied by
+    // `research_horizon`, a straight line to zero at the turn limit, while
+    // `RESEARCH_CAMPUS_PAYBACK` and `campus_payback_horizon` sitting beside them
+    // say what the code means to ask -- "whether it can REPAY, not what
+    // fraction of the game is left" -- and the comment over `research_coverage`
+    // claims outright to BE a payback horizon. Only `adjacency_threshold` was
+    // ever migrated. 88% of standard Emperor games end on a science victory at
+    // a median turn 193, where the game fraction is already down to 0.23: the
+    // Library that decides the race is priced at under a quarter of its debt
+    // exactly when the race is decided, against rival terms that never decay.
+    Gene { tag: "chain-payback-window", field: "chain_payback_window", kind: Kind::OptIn, enable: AdvancedAi::enable_chain_payback_window, disable: AdvancedAi::disable_chain_payback_window },
+    // The order is the bug, not the floor. `upgrade_units` ranks by strength
+    // gained per gold and stops at a treasury floor, and `take_turn_inner` calls
+    // it LAST -- after `advanced_gold_spending` has bought until the bank hits
+    // its reserve, so what survives is by construction about equal to that
+    // reserve and only the cheapest upgrades clear the floor. An upgrade costs
+    // base plus twice the production difference; buying the same unit fresh
+    // costs four times its production, so the inversion spends several times
+    // the gold for the same strength. Live King seat, 2026-08-25: about three
+    // UPGRADE orders per whole game, Heavy Chariots still the commonest unit at
+    // turn 150, and 28 of 40 lost cities lost to conquest.
+    Gene { tag: "upgrade-the-garrison", field: "upgrade_the_garrison", kind: Kind::OptIn, enable: AdvancedAi::enable_upgrade_the_garrison, disable: AdvancedAi::disable_upgrade_the_garrison },
+    // Version two of the pool's best-measured gene. Version one's reservation
+    // arm is guarded by `counts.traders == 0`, so it fires at most once per
+    // empire and never again while one Trader lives; the ordinary menu cannot
+    // make up the difference, because the Trader arm's 280 loses the argmax to
+    // almost every district. Live King seat, 2026-08-25: 49% of trade capacity
+    // unused across 59 games and 0.02 science per city from routes, a route
+    // paying Science only when it is international and lands on a Campus.
+    Gene { tag: "solvency-first-trade-slot-2", field: "solvency_first_trade_slot_2", kind: Kind::OptIn, enable: AdvancedAi::enable_solvency_first_trade_slot_2, disable: AdvancedAi::disable_solvency_first_trade_slot_2 },
+    // `advanced_production` ranks the menu, walks it while the score clears
+    // -1,000, and then `if let Some(..)` -- with no `else`. A city whose whole
+    // menu is priced at a refusal sentinel produces NOTHING, silently, with no
+    // journal line. `BasicAi::pick_item` returns `None` the same way out of its
+    // economic-recovery arm and its tail, and its caller has no `else` either.
+    // Live King seat, 2026-08-25: 3,094 of 36,975 city-turns before turn 104
+    // carried no production item at all, 8.4% of the early empire's output.
+    Gene { tag: "never-an-empty-queue", field: "never_an_empty_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_never_an_empty_queue, disable: AdvancedAi::disable_never_an_empty_queue },
+    // `BasicAi::best_improvement` pays `spec.housing * 2.0`; the advanced
+    // chooser the deployed agent uses never reads `spec.housing` at all, so it
+    // is strictly blinder than the baseline about the thing that caps a city's
+    // growth. Seventeen improvements carry Housing, counted within three tiles
+    // of the centre whether or not the tile is worked. Population is the
+    // largest single source of a city's science -- 3.5 of 9.3 beakers on the
+    // live seat, against the Campus's own 2.1 -- and 88% of standard Emperor
+    // games end on science. Live King seat: 58% of cities at their housing
+    // ceiling at turn 100, 13% of owned land improved.
+    Gene { tag: "improvement-housing-value", field: "improvement_housing_value", kind: Kind::OptIn, enable: AdvancedAi::enable_improvement_housing_value, disable: AdvancedAi::disable_improvement_housing_value },
+    // Two Builder quotas exist and the measured one is not the one that binds.
+    // `production_builder_floor` raises 0.5 to 0.75 inside `delegated_cities`,
+    // the baseline governor the strategic path reaches only for a city it has
+    // already left empty; the quota that decides almost every Builder is
+    // hardcoded in `production_value`'s own arm as `city_count.div_ceil(2)` and
+    // has never been screened. Its 260 also loses to a monument's flat 240 plus
+    // yields and to a district's `balanced_core` 130 plus yields x 60. Live
+    // King seat, 2026-08-25: Builders 3% of early city production against
+    // Settlers' 22%, 13% of owned land improved by turn 100.
+    Gene { tag: "builder-supply-floor", field: "builder_supply_floor", kind: Kind::OptIn, enable: AdvancedAi::enable_builder_supply_floor, disable: AdvancedAi::disable_builder_supply_floor },
+    // Version two of `chain-payback-window`, which moved all three chain terms
+    // to the payback horizon and whose 24-game probe came back negative on both
+    // axes. The three are not the same purchase: `research_debt` and
+    // `culture_debt` are a Library and an Amphitheater owed to a district
+    // already paid for -- the case `RESEARCH_CAMPUS_PAYBACK` was written for --
+    // while `research_coverage` is 300 points for a whole Campus in a city with
+    // none, and holding THAT at full value to within forty turns of the end
+    // lets it outbid the Spaceport that actually ends the game. Version two
+    // takes the repaired horizon for the cheap rung only.
+    Gene { tag: "chain-payback-window-2", field: "chain_payback_window_2", kind: Kind::OptIn, enable: AdvancedAi::enable_chain_payback_window_2, disable: AdvancedAi::disable_chain_payback_window_2 },
+    // Version two of `never-an-empty-queue`, whose 24-game probe read negative
+    // on both axes. The preference version one carries cannot bind: the scorer
+    // issues -10,000 for a hard veto and -2,000 for a soft one, and every soft
+    // refusal it actually issues is a UNIT -- a saturated domain, a second
+    // Scout, a body weaker than the best in its role. So an idle city has its
+    // infrastructure at -10,000 and soldiers at -2,000, and "prefer
+    // infrastructure" never fires: version one answers an idle turn with a
+    // surplus soldier the empire owes upkeep on. Version two lets a Builder,
+    // Trader, Settler, building, district or project answer the turn and lets a
+    // refused soldier not.
+    Gene { tag: "never-an-empty-queue-2", field: "never_an_empty_queue_2", kind: Kind::OptIn, enable: AdvancedAi::enable_never_an_empty_queue_2, disable: AdvancedAi::disable_never_an_empty_queue_2 },
+    // The measured pattern, applied where it should also hold. The 2026-08-25
+    // King-rung screen priced `solvency-first-trade-slot` at +4.04 pp wins
+    // (z +3.02) and +1.09 pp share (z +4.65) -- helps on both axes -- while its
+    // own version two, which fills EVERY empty slot instead of the first,
+    // measured -1.93 pp on the same games. The win is buying ONE compounding
+    // asset ahead of an argmax that will never choose it, not buying more of
+    // it. A Builder is priced 260 and a Library about 960 against a Settler's
+    // 1,560 by that same argmax; live King seat, Builders were 3% of early city
+    // production and only 40% of Campus cities held a Library at turn 100.
+    Gene { tag: "first-builder-reserve", field: "first_builder_reserve", kind: Kind::OptIn, enable: AdvancedAi::enable_first_builder_reserve, disable: AdvancedAi::disable_first_builder_reserve },
+    // The same sentence for the cheap rung of the research chain, in a city
+    // that has already paid for the Campus. 91% of standard Emperor games end
+    // on a science victory, so this is the win condition itself.
+    Gene { tag: "first-research-building-reserve", field: "first_research_building_reserve", kind: Kind::OptIn, enable: AdvancedAi::enable_first_research_building_reserve, disable: AdvancedAi::disable_first_research_building_reserve },
 ];
 
 // ═══ GENERATED BY tools/genes.py — THE VERDICTS. Do not edit below: `python3 tools/genes.py write` ═══
