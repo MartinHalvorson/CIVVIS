@@ -34646,6 +34646,9 @@ fn the_spender_buys_the_outposts_ground_only_with_the_gene_on() {
         on_game.barb_camps.contains_key(&target),
         "and the outpost is still standing on it: Civilization VI disperses \
          a camp on entry, never because the deed changed hands"
+    );
+}
+
 // ---- gold_and_cards: which currency pays for an item ---------------------
 
 /// `buy-what-cards-cannot-boost`: the same Library in the same city scores
