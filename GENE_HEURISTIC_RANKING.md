@@ -1,4 +1,4 @@
-# The heuristic gene ranking
+# A Ranking of all Gene Heuristics by On/Off Win Rate Difference in Tournaments
 
 | Rank | Gene | Description | Best version | Default | P(>0) | Wins ± /10k total seats — Last Batch (n=30,000 total seats; games/min=not recorded) | Wins ± /10k total seats — Prior Batch (n=4,476 total seats; games/min=not recorded) | Wins ± /10k total seats — Third Batch (n=5,988 total seats; games/min=not recorded) | Total (on) Win rate | Total (off) Win rate | Diff | cost (compute) | cost (time) |
 |---:|---|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
