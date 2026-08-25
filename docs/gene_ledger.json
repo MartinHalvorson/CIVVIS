@@ -225,6 +225,15 @@
           "solvency-first-trade-slot": null,
           "solvency-first-trade-slot-2": null
         }
+      },
+      "wonder-adjacent-sites": {
+        "pinned": null,
+        "head": null,
+        "ships": null,
+        "versions": {
+          "wonder-adjacent-sites": null,
+          "wonder-adjacent-sites-2": null
+        }
       }
     },
     "operator_promotions": [

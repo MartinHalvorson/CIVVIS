@@ -2520,6 +2520,16 @@ pub struct BasicAi {
     /// Per unit: the committed exploration goal and the turn it was chosen.
     /// See `explore_commit`.
     explore_goal: RefCell<HashMap<u32, (Pos, u32)>>,
+    /// An explorer walks the unseen ring of a natural wonder within settling
+    /// range of an own city before it picks a frontier, so a site beside the
+    /// wonder exists to be priced: on run civvis-20260825T162542Z Mount
+    /// Roraima stood three tiles from Rome and the four tiles a city could
+    /// stand on beside it were still fog at turn 41, because the wonder blocks
+    /// sight through itself and `explore_commit` prefers the deepest fog
+    /// farthest from home. Opt-in gene `wonder-ring-recon`
+    /// (`AdvancedAi::enable_wonder_ring_recon`); the goal search is
+    /// `wonder_ring_goal` in `advanced/wonder_sites.rs`.
+    pub(crate) wonder_ring_recon: bool,
     /// Walk an exploring unit onto a tribal village it can see and reach this
     /// turn before it marches past toward fog. A village is an economy prize
     /// (techs, boosts, builders, envoys, era score) that rivals consume first
@@ -4365,6 +4375,7 @@ impl BasicAi {
             explore_last: RefCell::new(HashMap::new()),
             explore_dead: RefCell::new(HashMap::new()),
             explore_commit: false,
+            wonder_ring_recon: false,
             hut_collection: false,
             village_seeking: false,
             sea_answers: false,
@@ -4754,6 +4765,7 @@ impl BasicAi {
             explore_last: RefCell::new(HashMap::new()),
             explore_dead: RefCell::new(HashMap::new()),
             explore_commit: false,
+            wonder_ring_recon: false,
             hut_collection: false,
             village_seeking: false,
             sea_answers: false,
@@ -13423,6 +13435,24 @@ impl BasicAi {
             .count()
     }
 
+    /// Ground another own explorer is already committed to; empty unless
+    /// `explore_commit` holds goals. See `explore_commit`.
+    fn reserved_explore_goals(&self, g: &Game, pid: usize, uid: u32) -> Vec<Pos> {
+        if !self.explore_commit {
+            return Vec::new();
+        }
+        self.explore_goal
+            .borrow()
+            .iter()
+            .filter(|(other, (_, since))| {
+                **other != uid
+                    && g.turn.saturating_sub(*since) <= EXPLORE_COMMIT_TURNS
+                    && g.units.get(other).is_some_and(|unit| unit.owner == pid)
+            })
+            .map(|(_, (goal, _))| *goal)
+            .collect()
+    }
+
     /// Choose an unexplored target for a reconnaissance unit.
     ///
     /// The frozen controllers keep the historical nearest-fog rule.  The
@@ -13466,8 +13496,25 @@ impl BasicAi {
         } else {
             Vec::new()
         };
-        let threatened =
-            |pos: Pos| threats.iter().any(|t| g.wdist(*t, pos) <= EXPLORE_COMMIT_THREAT_RADIUS);
+        let threatened = |pos: Pos| {
+            threats
+                .iter()
+                .any(|t| g.wdist(*t, pos) <= EXPLORE_COMMIT_THREAT_RADIUS)
+        };
+        // See `wonder_ring_recon`: the unseen ring of a natural wonder beside
+        // home is walked before any frontier, held goal or not — the pocket is
+        // small, close, and the only place a site beside the wonder can be.
+        if self.wonder_ring_recon {
+            let reserved = self.reserved_explore_goals(g, pid, uid);
+            if let Some(goal) =
+                self.wonder_ring_goal(g, pid, uid, dry_only, &dead, &threats, &reserved)
+            {
+                if self.explore_commit {
+                    self.explore_goal.borrow_mut().insert(uid, (goal, g.turn));
+                }
+                return Some(goal);
+            }
+        }
         // A held goal is kept while it is still worth walking to; see
         // `explore_commit`. Reached, revealed, written off, threatened, or
         // aged out, it is dropped here and a fresh one chosen below.
@@ -13488,22 +13535,7 @@ impl BasicAi {
                 self.explore_goal.borrow_mut().remove(&uid);
             }
         }
-        // Ground another own explorer is already committed to. See
-        // `explore_commit`.
-        let reserved: Vec<Pos> = if self.explore_commit {
-            self.explore_goal
-                .borrow()
-                .iter()
-                .filter(|(other, (_, since))| {
-                    **other != uid
-                        && g.turn.saturating_sub(*since) <= EXPLORE_COMMIT_TURNS
-                        && g.units.get(other).is_some_and(|unit| unit.owner == pid)
-                })
-                .map(|(_, (goal, _))| *goal)
-                .collect()
-        } else {
-            Vec::new()
-        };
+        let reserved = self.reserved_explore_goals(g, pid, uid);
         let lookahead = if self.explore_commit {
             EXPLORE_COMMIT_LOOKAHEAD
         } else {
