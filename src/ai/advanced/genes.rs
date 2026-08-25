@@ -803,6 +803,14 @@ pub const GENES: &[Gene] = &[
     // banked and so cannot be chosen until it has already been played. See
     // `diplomatic_lane_forecast`.
     Gene { tag: "diplomatic-lane-forecast", field: "diplomatic_lane_forecast", kind: Kind::OptIn, enable: AdvancedAi::enable_diplomatic_lane_forecast, disable: AdvancedAi::disable_diplomatic_lane_forecast },
+    // ⚠ `city_pressure_with_visibility` counts hostile strength only from
+    // civilizations we are ALREADY AT WAR WITH, so a rival massing on our
+    // border at peace reads exactly zero and no city is ever "threatened"
+    // before the declaration. The withdrawn `unchosen-war-keeps-the-lane`
+    // probe priced being caught in the wrong posture at -22.2 pp wins
+    // (z -13.2, 0 of 9 seats): the turns before a war are the valuable ones.
+    // See `frontier_massing_alarm`.
+    Gene { tag: "frontier-massing-alarm", field: "frontier_massing_alarm", kind: Kind::OptIn, enable: AdvancedAi::enable_frontier_massing_alarm, disable: AdvancedAi::disable_frontier_massing_alarm },
     Gene { tag: "envoy-infrastructure", field: "envoy_infrastructure", kind: Kind::OptIn, enable: AdvancedAi::enable_envoy_infrastructure, disable: AdvancedAi::disable_envoy_infrastructure },
     // Nothing in this controller reaches the air layer: the melee package
     // skips `domain == "air"` and ranks its unlocks by cheapest remaining
