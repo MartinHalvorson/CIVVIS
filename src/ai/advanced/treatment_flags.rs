@@ -906,6 +906,17 @@ impl AdvancedAi {
         self.frontier_massing_alarm = false;
     }
 
+    /// Read a rival's religious clock from the cities it has converted rather
+    /// than from whole civilizations already lost. See
+    /// [`Self::conversion_majority_alarm`].
+    pub fn enable_conversion_majority_alarm(&mut self) {
+        self.conversion_majority_alarm = true;
+    }
+
+    pub fn disable_conversion_majority_alarm(&mut self) {
+        self.conversion_majority_alarm = false;
+    }
+
     /// Raise the Culture and Diplomacy denial alarms early, since countering an
     /// accumulated stock takes many turns. See
     /// [`Self::stock_denial_lead_time`].

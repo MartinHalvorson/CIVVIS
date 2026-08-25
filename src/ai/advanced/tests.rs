@@ -34367,3 +34367,128 @@ fn frontier_massing_counts_a_staging_area_and_not_a_garrison() {
         "an undeclared stack is worth half a declared one ({staged} vs {declared})"
     );
 }
+
+// ═══ The conversion staircase (`conversion_majority_alarm`) ═══
+
+#[test]
+fn conversion_majority_alarm_is_a_registered_reversible_opt_in() {
+    assert!(
+        GENES.iter().any(|gene| gene.opt_in()
+            && gene.field == "conversion_majority_alarm"
+            && gene.tag == "conversion-majority-alarm"),
+        "conversion-majority-alarm must be a registered native opt-in"
+    );
+    assert!(
+        crate::ai::advanced::gene_ledger::screenable("conversion-majority-alarm"),
+        "the ledger must be able to price it"
+    );
+    assert_eq!(
+        crate::ai::advanced::gene_ledger::ledger_default_on("conversion-majority-alarm"),
+        Some(false),
+        "it ships off until a screen prices it"
+    );
+    let mut ai = AdvancedAi::new();
+    assert!(!ai.conversion_majority_alarm, "off in the stock agent");
+    assert!(
+        !AdvancedAi::legacy().conversion_majority_alarm,
+        "off in the legacy agent"
+    );
+    ai.enable_conversion_majority_alarm();
+    assert!(ai.conversion_majority_alarm);
+    ai.disable_conversion_majority_alarm();
+    assert!(!ai.conversion_majority_alarm, "reversible");
+}
+
+/// A four-city board where each rival is one city short of a majority: the
+/// staircase reads zero and the count reads two thirds.
+#[test]
+fn a_rival_one_city_short_everywhere_reads_zero_on_the_staircase() {
+    let mut game = Game::new(4, 40, 26, 8_401, 250, 0);
+    let faith = "Test Faith".to_string();
+    game.players[0].religion = Some(faith.clone());
+    // Three rivals with three cities each. A majority is two.
+    let mut spot = (10, 10);
+    for rival in 1..4 {
+        for _ in 0..3 {
+            game.found_city_for(rival, spot, None);
+            spot = (spot.0 + 3, spot.1);
+        }
+        spot = (10, spot.1 + 4);
+    }
+    // One of each rival's three follows our faith: short of every majority.
+    for rival in 1..4 {
+        let city = game.player_city_ids(rival)[0];
+        game.cities
+            .get_mut(&city)
+            .unwrap()
+            .pressure
+            .insert(faith.clone(), 500.0);
+    }
+
+    let mut ai = AdvancedAi::new();
+    ai.enable_conversion_majority_alarm();
+    let shipped = AdvancedAi::new();
+
+    let (converted, _) = shipped.religious_conversion_tally(&game, 0);
+    assert_eq!(converted, 0, "no rival has lost a majority yet");
+    assert_eq!(
+        shipped.conversion_majority_pressure(&game, 0),
+        0,
+        "the gene is off, so it contributes nothing"
+    );
+    // Three rivals, majority two each: six cities required, three held.
+    assert_eq!(
+        ai.conversion_majority_pressure(&game, 0),
+        50,
+        "half the cities the victory asks for are already converted"
+    );
+    assert!(
+        ai.rival_victory_pressure(&game, 0).progress
+            > shipped.rival_victory_pressure(&game, 0).progress,
+        "and the alarm reads it while the staircase still reads nothing"
+    );
+}
+
+/// It can only raise: a founder whose staircase already reads higher keeps its
+/// number, and a seat with no religion still reads nothing.
+#[test]
+fn the_conversion_count_never_lowers_the_staircase() {
+    let mut ai = AdvancedAi::new();
+    ai.enable_conversion_majority_alarm();
+    let shipped = AdvancedAi::new();
+
+    let mut game = Game::new(4, 40, 26, 8_402, 250, 0);
+    assert_eq!(
+        ai.conversion_majority_pressure(&game, 0),
+        0,
+        "a seat with no religion has no religious clock"
+    );
+
+    let faith = "Test Faith".to_string();
+    game.players[0].religion = Some(faith.clone());
+    let mut spot = (10, 10);
+    for rival in 1..4 {
+        for _ in 0..2 {
+            game.found_city_for(rival, spot, None);
+            spot = (spot.0 + 3, spot.1);
+        }
+        spot = (10, spot.1 + 4);
+    }
+    // Convert every city of two rivals and none of the third.
+    for rival in 1..3 {
+        for city in game.player_city_ids(rival) {
+            game.cities
+                .get_mut(&city)
+                .unwrap()
+                .pressure
+                .insert(faith.clone(), 500.0);
+        }
+    }
+    let with = ai.rival_victory_pressure(&game, 0).progress;
+    let without = shipped.rival_victory_pressure(&game, 0).progress;
+    assert!(
+        with >= without,
+        "the count lowered the reading ({with} < {without})"
+    );
+    assert!((0..=100).contains(&with), "{with} out of range");
+}
