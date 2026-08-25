@@ -507,16 +507,8 @@ local function survey()
 		-- Mid-turn replan frames: after the opening orders settle, a board
 		-- with newly revealed ground and movement left to spend on it (or a
 		-- strike) is exported again and the same turn re-planned, up to
-		-- `ReplanFrames` times. The brain cuts a walk at its first unrevealed
-		-- hex (`step_and_reassess`) only when this is true: against a mod
-		-- without frames that cut would strand the rest of the movement.
+		-- `ReplanFrames` times.
 		replan_frames = (tonumber(cfg.ReplanFrames) or 0) > 0,
-		-- ...and how many such frames a turn may open, so the brain can tell
-		-- the last frame it will be asked on: a walk cut at the edge of the
-		-- known on that frame would strand the rest of the unit's movement,
-		-- because nobody re-plans what the cut uncovered. On the last frame
-		-- the brain sends the whole walk instead.
-		replan_frames_max = tonumber(cfg.ReplanFrames) or 0,
 		-- Newly revealed plots cross every turn and every frame as `tiles`
 		-- deltas, not only with the periodic sweep. See CivvisTiles.
 		tile_delta = cfg.TileDelta ~= false,
@@ -12482,8 +12474,7 @@ end
 -- where the unit STOOD, not from `a`. `civvis_orders::coalesce_unit_paths`
 -- answered that by sending a unit's walk and deferring every later order to the
 -- next frame — correct causally, and it deferred every strike that follows a
--- step. The joint tactical search's lines are literally `[Move, Attack]`
--- (`src/ai/tactics.rs`), so on this bridge they executed as a step: the unit
+-- step. A move followed by an action therefore executed as a step: the unit
 -- walked into contact and stood there, unstruck, for the enemy's whole turn.
 -- Measured on run civvis-20260803T005930Z: 7 melee ATTACK orders against 1546
 -- MOVE_TO in 188 turns of war; 622 of 1787 military unit-turns hovering 2-4
@@ -12578,9 +12569,8 @@ CivvisQueue.pendingCount = function() return CivvisQueue.count + CivvisQueue.wat
 -- first time the queue is empty — and a unit whose whole order was one
 -- MOVE_TO never entered the queue, so that decision was taken while the
 -- unit was still walking: nothing revealed yet, no frame, the turn latched
--- settled, and the movement the brain had deliberately left for the frame
--- (`step_and_reassess` cuts the walk at the edge of the known) was never
--- spent. A watch is a rows-less entry: it settles like any queued order
+-- settled, and the host could open no replan frame from the landed board.
+-- A watch is a rows-less entry: it settles like any queued order
 -- (arrival, no movement left, the host's own event, or the grace period)
 -- and is dropped; it never issues anything and names no refusal.
 CivvisQueue.watch = function(subject, expect)
@@ -12983,10 +12973,7 @@ end;
 -- something new to say and somebody left to say it to: plots were revealed
 -- since the board went out (`CivvisTiles.sweep`, which also sends them as a
 -- `tiles` delta so the re-plan SEES them) and at least one unit still has
--- movement, or a strike went out. The brain's half is `step_and_reassess`:
--- it cuts a walk at its first unrevealed hex when the seat advertises
--- `replan_frames`, so the unit steps to the edge of the known, the frame
--- shows what it found, and the remaining movement is spent on that.
+-- movement, or a strike went out.
 --
 -- ⚠ `CombatFrames` keeps its old meaning (strike-opened frames only, default
 -- 0). `ReplanFrames` opens on strikes OR revealed ground. Each frame waits

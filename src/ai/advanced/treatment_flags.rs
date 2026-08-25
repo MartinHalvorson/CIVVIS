@@ -37,7 +37,6 @@
 //! hotspot; it does not claim to have removed the others.
 
 use super::AdvancedAi;
-use crate::game::Game;
 
 impl AdvancedAi {
     /// Size the defensive Missionary corps by cities actually under conversion
@@ -387,20 +386,6 @@ impl AdvancedAi {
         self.base.whole_turn_backtrack_guard = false;
     }
 
-    /// Stop a blind-planned unit at the first step that reveals new ground and
-    /// finish its movement sighted. A blind-planned unit stops at the first
-    /// step that revealed new ground and finishes its movement sighted; on the
-    /// bridge its walk is cut at the first unrevealed hex so the replan frame
-    /// sees what it uncovered. See [`AdvancedAi::step_and_reassess`].
-    pub fn enable_step_and_reassess(&mut self) {
-        self.step_and_reassess = true;
-    }
-
-    /// Withholding twin for `enable_step_and_reassess`. See `LIVE_TREATMENTS`.
-    pub fn disable_step_and_reassess(&mut self) {
-        self.step_and_reassess = false;
-    }
-
     /// Withholding twin for `enable_recorded_tactical_step`, so the live bundle can be
     /// priced by taking this one treatment out of it. See `LIVE_TREATMENTS`.
     pub fn disable_recorded_tactical_step(&mut self) {
@@ -492,6 +477,156 @@ impl AdvancedAi {
 
     pub fn disable_escort_unstick(&mut self) {
         self.escort_unstick = false;
+    }
+
+    /// An amenity crisis repair is bought with Gold when the treasury covers
+    /// it, so the Science plan's repeatable project keeps its queue; only a
+    /// district or an unaffordable building still pauses the project.
+    ///
+    /// Version 2 of `amenity_project_preemption`; one version of a family plays, so this
+    /// turns version 1 off. Opt-in gene `amenity-project-preemption-2`. See `AdvancedAi::amenity_project_preemption_2`.
+    pub fn enable_amenity_project_preemption_2(&mut self) {
+        self.amenity_project_preemption = false;
+        self.amenity_project_preemption_2 = true;
+    }
+
+    pub fn disable_amenity_project_preemption_2(&mut self) {
+        self.amenity_project_preemption_2 = false;
+    }
+
+    /// A settle site with a plot in its first three rings that could host a
+    /// Campus at raw Science adjacency 4 is worth 15% more, so the
+    /// multiplier's threshold is bought where it is decided — at city siting
+    /// — and not only priced at the district.
+    ///
+    /// Version 2 of `campus_adjacency_threshold`; one version of a family plays, so this
+    /// turns version 1 off. Opt-in gene `campus-adjacency-threshold-2`. See `AdvancedAi::campus_adjacency_threshold_2`.
+    pub fn enable_campus_adjacency_threshold_2(&mut self) {
+        self.campus_adjacency_threshold = false;
+        self.campus_adjacency_threshold_2 = true;
+    }
+
+    pub fn disable_campus_adjacency_threshold_2(&mut self) {
+        self.campus_adjacency_threshold_2 = false;
+    }
+
+    /// The district coverage term falls to a quarter of the bred weight for a
+    /// family every city already holds, not half, pushing the lever further
+    /// in the direction that paid score share.
+    ///
+    /// Version 2 of `district_coverage`; one version of a family plays, so this
+    /// turns version 1 off. Opt-in gene `district-coverage-2`. See `BasicAi::district_coverage_2`.
+    pub fn enable_district_coverage_2(&mut self) {
+        self.base.district_coverage = false;
+        self.base.district_coverage_2 = true;
+    }
+
+    pub fn disable_district_coverage_2(&mut self) {
+        self.base.district_coverage_2 = false;
+    }
+
+    /// A founder may hold one Guru whenever any of its religious units is
+    /// damaged, not only while the home is under conversion pressure, so the
+    /// corps out spreading gets the heal too.
+    ///
+    /// Version 2 of `guru_heals_the_corps`; one version of a family plays, so this
+    /// turns version 1 off. Opt-in gene `guru-heals-the-corps-2`. See `AdvancedAi::guru_heals_the_corps_2`.
+    pub fn enable_guru_heals_the_corps_2(&mut self) {
+        self.guru_heals_the_corps = false;
+        self.guru_heals_the_corps_2 = true;
+    }
+
+    pub fn disable_guru_heals_the_corps_2(&mut self) {
+        self.guru_heals_the_corps_2 = false;
+    }
+
+    /// A slipping city with no Holy Site claims one only when Gold can buy
+    /// it; the district is never put at the front of the city's own queue.
+    ///
+    /// Version 2 of `holy_site_where_the_threat_is`; one version of a family plays, so this
+    /// turns version 1 off. Opt-in gene `holy-site-where-the-threat-is-2`. See `AdvancedAi::holy_site_where_the_threat_is_2`.
+    pub fn enable_holy_site_where_the_threat_is_2(&mut self) {
+        self.holy_site_where_the_threat_is = false;
+        self.holy_site_where_the_threat_is_2 = true;
+    }
+
+    pub fn disable_holy_site_where_the_threat_is_2(&mut self) {
+        self.holy_site_where_the_threat_is_2 = false;
+    }
+
+    /// Two peacetime naval eyes instead of one while unseen water remains, so
+    /// the second coast is charted while the first Galley is still out.
+    ///
+    /// Version 2 of `naval_recon`; one version of a family plays, so this
+    /// turns version 1 off. Opt-in gene `naval-recon-2`. See `BasicAi::naval_recon_2`.
+    pub fn enable_naval_recon_2(&mut self) {
+        self.base.naval_recon = false;
+        self.base.naval_recon_2 = true;
+    }
+
+    pub fn disable_naval_recon_2(&mut self) {
+        self.base.naval_recon_2 = false;
+    }
+
+    /// A building whose powered half would be switched on the day it stands —
+    /// the city is powered and stays powered with the building's own demand —
+    /// is priced with that half, so the Lab, Stock Exchange and Factory in
+    /// already-powered cities stop being bought without it.
+    ///
+    /// Version 2 of `power_the_laboratory`; one version of a family plays, so this
+    /// turns version 1 off. Opt-in gene `power-the-laboratory-2`. See `AdvancedAi::power_the_laboratory_2`.
+    pub fn enable_power_the_laboratory_2(&mut self) {
+        self.power_the_laboratory = false;
+        self.power_the_laboratory_2 = true;
+    }
+
+    pub fn disable_power_the_laboratory_2(&mut self) {
+        self.power_the_laboratory_2 = false;
+    }
+
+    /// A settler's bound guard is no protection when two visible hostiles
+    /// that can reach the tile each match its strength, not only when one is
+    /// 1.5× it.
+    ///
+    /// Version 2 of `settler_guard_holds`; one version of a family plays, so this
+    /// turns version 1 off. Opt-in gene `settler-guard-holds-2`. See `AdvancedAi::settler_guard_holds_2`.
+    pub fn enable_settler_guard_holds_2(&mut self) {
+        self.settler_guard_holds = false;
+        self.settler_guard_holds_2 = true;
+    }
+
+    pub fn disable_settler_guard_holds_2(&mut self) {
+        self.settler_guard_holds_2 = false;
+    }
+
+    /// A settle site one settler drops for danger is set aside for every own
+    /// settler for the same window, so a second settler does not march to the
+    /// tile the first just fled.
+    ///
+    /// Version 2 of `settler_target_hysteresis`; one version of a family plays, so this
+    /// turns version 1 off. Opt-in gene `settler-target-hysteresis-2`. See `AdvancedAi::settler_target_hysteresis_2`.
+    pub fn enable_settler_target_hysteresis_2(&mut self) {
+        self.settler_target_hysteresis = false;
+        self.settler_target_hysteresis_2 = true;
+    }
+
+    pub fn disable_settler_target_hysteresis_2(&mut self) {
+        self.settler_target_hysteresis_2 = false;
+    }
+
+    /// The first turn an own land unit stands within two tiles of an at-war
+    /// city resets the war-fatigue clock once for that city, so a campaign
+    /// still walking to its target is not offered away as stalled.
+    ///
+    /// Version 2 of `siege_is_progress`; one version of a family plays, so this
+    /// turns version 1 off. Opt-in gene `siege-is-progress-2`. See `AdvancedAi::siege_is_progress_2`.
+    pub fn enable_siege_is_progress_2(&mut self) {
+        self.siege_is_progress = false;
+        self.siege_is_progress_2 = true;
+    }
+
+    pub fn disable_siege_is_progress_2(&mut self) {
+        self.siege_is_progress_2 = false;
     }
     /// Escort live settlers by shadowing with ordinary moves instead of
     /// Civilization VI's formation channel, which stalls.
@@ -864,6 +999,16 @@ impl AdvancedAi {
         self.expansion_pays_back = false;
     }
 
+    /// Stop a war we choose from taking the grand strategy while our own
+    /// victory lane is live. See [`Self::elective_war_yields_to_a_lane`].
+    pub fn enable_elective_war_yields_to_a_lane(&mut self) {
+        self.elective_war_yields_to_a_lane = true;
+    }
+
+    pub fn disable_elective_war_yields_to_a_lane(&mut self) {
+        self.elective_war_yields_to_a_lane = false;
+    }
+
     /// Weigh whether a settle site can be held — barbarian exposure and
     /// distance from our own cities — not only what it yields. See
     /// [`Self::defensible_sites`].
@@ -873,6 +1018,16 @@ impl AdvancedAi {
 
     pub fn disable_defensible_sites(&mut self) {
         self.defensible_sites = false;
+    }
+
+    /// Measure the Recovery power gap against the war we are actually
+    /// fighting. See [`Self::recovery_reads_the_war`].
+    pub fn enable_recovery_reads_the_war(&mut self) {
+        self.recovery_reads_the_war = true;
+    }
+
+    pub fn disable_recovery_reads_the_war(&mut self) {
+        self.recovery_reads_the_war = false;
     }
 
     /// Raise the Culture and Diplomacy denial alarms early, since countering an
@@ -992,7 +1147,6 @@ impl AdvancedAi {
     /// | `live_trader_route_adapter` | adapts a live Trader's zero walking movement to a distinct route-start action; no native game has that action |
     /// | `live_religious_purchase_guard` | enforces Firaxis' city-majority purchase rule, which is not a CIVVIS rule |
     /// | `solvent_faith_army` | prices a faith-bought soldier's GOLD upkeep under Firaxis' economy |
-    /// | `joint_tactics` | not a semantics adapter but an evidence exclusion: the whole-game gate is inconclusive, and the deployment-profile run split **every** map at +0 Elo (95% −148..+148) while evaluating 28 branches against the sequential policy's 11 (`docs/AI_GAPS.md` §7) |
     ///
     /// `enable_live_bridge` is therefore this function plus the host-only
     /// genes (`Kind::HostOnly` in `genes.rs`). Both bundles are loops over the
@@ -1036,46 +1190,11 @@ impl AdvancedAi {
         }
     }
 
-    /// Plan an engagement's attacks jointly across all units by search instead
-    /// of one unit at a time in class order. Measured on `battle_bench` (1000
-    /// paired fresh seeds a cell, seats swapped): combined arms +275,
-    /// ranged-heavy +363, siege +206, melee-only within noise, all against the
-    /// production controller the bridge extends. The whole-game gate stays
-    /// inconclusive (`docs/TACTICS.md` §6), so the tournament `advanced`
-    /// entrant keeps the greedy commitment rule and the deployed bridge — where
-    /// the operator asked for the strongest battlefield play, not a rating —
-    /// takes the search.
-    pub fn enable_joint_tactics(&mut self) {
-        self.joint_tactics = true;
-        self.joint_tactics_forced_off = false;
-        self.joint_reach_lines = true;
-    }
-
     /// Hold ONE live-bridge flag off so an arm can price it. These exist for
     /// `live_without_*` in `builtin_ai` and nothing else — the deployment never
     /// turns a repair back off.
     pub fn disable_home_defense(&mut self) {
         self.base.home_defense = false;
-    }
-
-    pub fn disable_joint_tactics(&mut self) {
-        self.joint_tactics = false;
-        self.joint_tactics_forced_off = true;
-    }
-
-    /// Give the joint tactics search approach lines from the engine's exact
-    /// reach flood, not only adjacent steps. On by default wherever the joint
-    /// search runs; this pair exists so the live bridge can price the lines by
-    /// taking them out (`live_without_joint_reach_lines`) and the bench can
-    /// seat the geometric portfolio by name
-    /// (`advanced_joint_tactics_geometric`).
-    pub fn enable_joint_reach_lines(&mut self) {
-        self.joint_reach_lines = true;
-    }
-
-    /// See [`AdvancedAi::enable_joint_reach_lines`].
-    pub fn disable_joint_reach_lines(&mut self) {
-        self.joint_reach_lines = false;
     }
 
     pub fn disable_solvent_faith_army(&mut self) {
@@ -1737,20 +1856,6 @@ impl AdvancedAi {
         self.solvent_faith_army = true;
     }
 
-    // `pub(super)` rather than private, the one line of this file that is not
-    // code motion: this is the only toggle `advanced.rs` itself calls, and a
-    // child module's private item is not visible to its parent. Widened by
-    // exactly one module, not to the crate.
-    /// The Battlefield map is a bounded combat controller, not a Civ-world
-    /// deployment profile. Route the already-measured portfolio search there
-    /// for promoted controllers, while preserving the frozen anchor and any
-    /// explicit evaluator withholding. The flag is set on the controller so
-    /// telemetry and `Ai::joint_tactics_census` describe what actually ran.
-    pub(super) fn enable_arena_joint_tactics(&mut self, g: &Game) {
-        if self.victory_planning && g.is_arena() && !self.joint_tactics_forced_off {
-            self.joint_tactics = true;
-        }
-    }
     /// Choose the pantheon by what it would pay on the tiles the empire owns,
     /// not from a fixed order. Reachable as `advanced_pantheon_board`; see
     /// `BasicAi::pantheon_reads_the_board`.
@@ -2234,6 +2339,34 @@ impl AdvancedAi {
         self.order_retry = false;
     }
 
+    /// Before the first city, move a nearby Warrior before the Settler and
+    /// choose the city site from the terrain the Warrior has now revealed.
+    /// Opt-in gene `opening-warrior-recon`; see
+    /// `advanced/opening_settlement.rs`. Filed above the markers: the
+    /// append-point check reads a method line's first identifier.
+    pub fn enable_opening_warrior_recon(&mut self) {
+        self.opening_warrior_recon = true;
+    }
+
+    /// The twin of `enable_opening_warrior_recon`.
+    pub fn disable_opening_warrior_recon(&mut self) {
+        self.opening_warrior_recon = false;
+    }
+
+    /// After a Settler's first move, discard only its disposable cached site
+    /// while movement remains, so the next leg can use its new sight. Opt-in
+    /// gene `settler-second-look`; see `advanced/opening_settlement.rs`.
+    /// Filed above the markers: the append-point check reads a method line's
+    /// first identifier.
+    pub fn enable_settler_second_look(&mut self) {
+        self.settler_second_look = true;
+    }
+
+    /// The twin of `enable_settler_second_look`.
+    pub fn disable_settler_second_look(&mut self) {
+        self.settler_second_look = false;
+    }
+
     /// When the empire leads the field in science, beeline the space-race chain,
     /// build launch-city production and race two pads early.
     /// Opt-in gene `science-victory-drive`; see `advanced/science_victory_drive.rs`
@@ -2261,6 +2394,81 @@ impl AdvancedAi {
     /// The twin of `enable_builder_tries_the_next_tile`.
     pub fn disable_builder_tries_the_next_tile(&mut self) {
         self.base.builder_tries_the_next_tile = false;
+    }
+
+    /// Settlers and builders stay out of a barbarian's one-turn reach: flee
+    /// it, never step into it alone, and summon a guard onto the settler's
+    /// tile when they must cross it. See
+    /// [`AdvancedAi::civilian_out_of_reach`]. Opt-in gene
+    /// `civilian-out-of-reach`.
+    pub fn enable_civilian_out_of_reach(&mut self) {
+        self.civilian_out_of_reach = true;
+    }
+
+    /// The twin of `enable_civilian_out_of_reach`.
+    pub fn disable_civilian_out_of_reach(&mut self) {
+        self.civilian_out_of_reach = false;
+    }
+
+    /// A Builder chops woods, rainforest or marsh into the Settler, district
+    /// or wonder at the front of the owning city's queue, priced as a one-off
+    /// lump against the per-turn jobs. See
+    /// [`AdvancedAi::chop_into_the_queue_value`]. Opt-in gene
+    /// `chop-into-the-queue`.
+    pub fn enable_chop_into_the_queue(&mut self) {
+        self.chop_into_the_queue = true;
+    }
+
+    /// The twin of `enable_chop_into_the_queue`.
+    pub fn disable_chop_into_the_queue(&mut self) {
+        self.chop_into_the_queue = false;
+    }
+
+    /// An improvement that completes an unresearched technology's or civic's
+    /// boost is worth the research the boost grants, spread over the steps
+    /// the trigger still needs. See [`AdvancedAi::eureka_builder_premium`].
+    /// Opt-in gene `eureka-chasing-builder`.
+    pub fn enable_eureka_chasing_builder(&mut self) {
+        self.eureka_chasing_builder = true;
+    }
+
+    /// The twin of `enable_eureka_chasing_builder`.
+    pub fn disable_eureka_chasing_builder(&mut self) {
+        self.eureka_chasing_builder = false;
+    }
+
+    /// A unit, building or district that completes an unresearched
+    /// technology's or civic's boost is worth the research the boost grants,
+    /// spread over the steps the trigger still needs. See
+    /// [`AdvancedAi::eureka_production_premium`]. Opt-in gene
+    /// `eureka-chasing-production`.
+    pub fn enable_eureka_chasing_production(&mut self) {
+        self.eureka_chasing_production = true;
+    }
+
+    /// The twin of `enable_eureka_chasing_production`.
+    pub fn disable_eureka_chasing_production(&mut self) {
+        self.eureka_chasing_production = false;
+    }
+
+    /// Recruit the target's neighbours before an elective war: alliances,
+    /// envoys to its city-states and joint-war invitations at the strike. From
+    /// the turn the war desk holds a target we are at peace with, one alliance
+    /// a turn is proposed to the target's best neighbour (`military` when free
+    /// on both sides), the envoy scorer gains a term for a city-state near the
+    /// target — most for one the target holds — and the turn the desk would
+    /// declare, every eligible neighbour is sent `ProposeJointWar` and the
+    /// declaration is held while an answer is due. See
+    /// [`AdvancedAi::coalition_observe`]. Opt-in gene `coalition-before-war`.
+    /// Filed above the markers: the append-point check reads a method line's
+    /// first identifier.
+    pub fn enable_coalition_before_war(&mut self) {
+        self.coalition_before_war = true;
+    }
+
+    /// The twin of `enable_coalition_before_war`.
+    pub fn disable_coalition_before_war(&mut self) {
+        self.coalition_before_war = false;
     }
 
     // Append points, one per name range: a new treatment goes under the range

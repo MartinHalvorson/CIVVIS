@@ -49,7 +49,6 @@ The kinds are the registry's own (`Kind` in `genes.rs`):
 |-----------------|------|-----------|--------|------------|--------|------------|
 | `Repair(axis)`  | yes  | no        | yes    | no         | no     | yes        |
 | `HostOnly`      | yes  | yes       | no     | no         | no     | no         |
-| `HostOnlyOptIn` | yes  | yes       | no     | no         | yes    | yes        |
 | `Production`    | no   | no        | no     | yes        | no     | yes        |
 | `OptIn`         | no   | no        | no     | no         | yes    | yes        |
 
@@ -94,7 +93,21 @@ Deployment policy (mirrored in `src/ai/advanced/gene_ledger.rs`):
 
 - A tag is on exactly when it appears in `deployment_genome`.
 - The list must contain no duplicate, unknown, or unscreenable tag, and may
-  select at most one version from a versioned family.
+  name at most one version from a versioned family.
+- ⭐ A pinned family SHIPS ITS BEST VERSION (operator, 2026-08-23, restated
+  2026-08-25: *"our highest performing version should be shown in the table
+  and should be the gene default, if the gene does default on"*). Naming any
+  one version pins the FAMILY on; which version plays is the family head —
+  the priced version with the highest tracked wins (pooled *Diff*), ties to
+  the higher version — and `deployment_genome` records the head, not the
+  name the operator wrote. A family none of whose versions is priced ships
+  the version named. `rules.family_heads` records every family's pin, head
+  and each version's tracked wins, and `write` says so when the head and the
+  pin differ.
+- ⭐ A family holds at most `MAX_VERSIONS` (3) versions. Before a fourth is
+  added, the third-best version by tracked wins leaves the code — a cull PR,
+  rows stay in the screens "as played". `python3 tools/genes.py versions`
+  prints every family ranked and names the version to drop.
 - Win columns, *Diff*, posterior, and verdict data are published evidence for
   a later explicit operator selection; they are not fallback rules.
 
@@ -227,6 +240,7 @@ keeps the current selection stable.
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import hashlib
 import json
 import math
@@ -271,11 +285,11 @@ class Gene:
 
     @property
     def live(self) -> bool:
-        return self.kind.startswith("Kind::Repair") or self.kind in ("Kind::HostOnly", "Kind::HostOnlyOptIn")
+        return self.kind.startswith("Kind::Repair") or self.kind == "Kind::HostOnly"
 
     @property
     def host_only(self) -> bool:
-        return self.kind in ("Kind::HostOnly", "Kind::HostOnlyOptIn")
+        return self.kind == "Kind::HostOnly"
 
     @property
     def repair(self) -> bool:
@@ -287,7 +301,7 @@ class Gene:
 
     @property
     def opt_in(self) -> bool:
-        return self.kind in ("Kind::OptIn", "Kind::HostOnlyOptIn")
+        return self.kind == "Kind::OptIn"
 
     @property
     def universe_on(self) -> bool:
@@ -502,6 +516,37 @@ OPERATOR_PROMOTIONS_20260825 = (
     "religious-veto-defence",
 )
 
+#: A second 2026-08-25 operator directive, verbatim: "flip
+#: flip-nearby-city-states, diplomatic-lane-forecast, barbarian-ranged-answer,
+#: army-target-weighs-enemy, research-tier-premium, naval-threat-triage,
+#: deals-for-our-gain, settler-screen, lane-space-race, enhancer-for-the-corps,
+#: settler-target-hysteresis, amenity-project-preemption, guru-heals-the-corps,
+#: no-free-passage, naval-recon, home-defense to all default on." Six of the
+#: sixteen (`flip-nearby-city-states`, `diplomatic-lane-forecast`,
+#: `deals-for-our-gain`, `no-free-passage`, `settler-screen`,
+#: `naval-threat-triage`) no screen has priced yet; four of the ten that were
+#: priced read a negative pooled *Diff*. Neither is a bar under
+#: `operator-pinned`: the evidence stays published beside the selection, and
+#: the selection is this list.
+OPERATOR_PROMOTIONS_20260825_SECOND = (
+    "flip-nearby-city-states",
+    "diplomatic-lane-forecast",
+    "barbarian-ranged-answer",
+    "army-target-weighs-enemy",
+    "research-tier-premium",
+    "naval-threat-triage",
+    "deals-for-our-gain",
+    "settler-screen",
+    "lane-space-race",
+    "enhancer-for-the-corps",
+    "settler-target-hysteresis",
+    "amenity-project-preemption",
+    "guru-heals-the-corps",
+    "no-free-passage",
+    "naval-recon",
+    "home-defense",
+)
+
 #: The complete pinned deployment genome, in stable tag order. Every other
 #: screenable gene defaults off unless an explicit operator update changes this
 #: selection. Keep the historical promotion groups above named separately so
@@ -509,8 +554,11 @@ OPERATOR_PROMOTIONS_20260825 = (
 OPERATOR_DEFAULT_ON = (
     "air-surge",
     "amenity-district-path",
+    "amenity-project-preemption",
     "apostle-promotion-by-role",
+    "army-target-weighs-enemy",
     "barbarian-bargain",
+    "barbarian-ranged-answer",
     "barbarian-scouts-are-scouts",
     "bounded-recovery",
     "buildings-before-projects",
@@ -518,22 +566,32 @@ OPERATOR_DEFAULT_ON = (
     "civilian-rescue",
     "competition-victory-points",
     "culture-building-debt",
+    "deals-for-our-gain",
+    "diplomatic-lane-forecast",
     "district-planning",
     "early-contact-window",
     "engine-faith-price",
+    "enhancer-for-the-corps",
     "escort-unstick",
+    "flip-nearby-city-states",
     "founder-temple",
     "great-person-housing",
+    "guru-heals-the-corps",
     "holy-lane-parity",
+    "home-defense",
     "idle-faith-patronage",
     "inquisition-on-threat",
     "lane-culture-spending",
     "lane-great-people",
     "lane-policy-deck",
+    "lane-space-race",
     "loyalty-rate-alarm",
     "maintenance-aware-deck",
     "missionary-evades-raiders",
     "missionary-last-charge-explores",
+    "naval-recon",
+    "naval-threat-triage",
+    "no-free-passage",
     "one-launch-pad",
     "one-war-at-a-time",
     "opportunistic-war",
@@ -548,12 +606,15 @@ OPERATOR_DEFAULT_ON = (
     "religious-defence-scales",
     "religious-units-heal-first",
     "religious-veto-defence",
+    "research-tier-premium",
     "science-multiplier-payoff",
     "science-victory-drive",
     "score-horizon",
     "settle-sooner",
     "settlement-gap-target",
     "settler-factory-coordination",
+    "settler-screen",
+    "settler-target-hysteresis",
     "settler-threat-detour",
     "slot-kind-tiebreak",
     "solvency-first-trade-slot",
@@ -778,10 +839,10 @@ def normalize_deployment_genome(deployment_genome: tuple[str, ...] | list[str],
                                 allowed_tags: set[str] | None = None) -> tuple[str, ...]:
     """Validate and canonically order an explicit deployment selection.
 
-    The list is intentionally independent of screen observations. It may only
-    name screenable registry tags, and it may name at most one member of a
-    versioned family; the latter is a safety invariant, not a score-based
-    chooser.
+    The list is what the operator wrote. It may only name screenable registry
+    tags, and it may name at most one member of a versioned family — naming
+    one pins the family; `resolve_family_heads` then decides which version
+    ships (the head by tracked wins).
     """
     selected = tuple(deployment_genome)
     if len(set(selected)) != len(selected):
@@ -1133,6 +1194,66 @@ def load_source(path: Path) -> dict:
 
 
 REPORTING_BATCH_LABELS = ("Last Batch", "Prior Batch", "Third Batch")
+CONTINUOUS_BATCH_TIMING_SCHEMA = "continuous_batch_timing/v1"
+
+
+def continuous_batch_timing_of(data: dict) -> dict | None:
+    """Validate scheduler-owned whole-batch timing on a report artifact.
+
+    Analyzer artifacts are intentionally silent about wall-clock duration: a
+    continuous batch can contain resumed, non-overlapping segments.  The
+    scheduler stamps the *published copy* with the one interval the table
+    needs.  Historical reports predate that stamp and remain honest rather
+    than receiving a reconstructed rate from rows or file timestamps.
+    """
+    raw = data.get("continuous_batch_timing")
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise SystemExit("continuous_batch_timing must be an object")
+    if raw.get("schema") != CONTINUOUS_BATCH_TIMING_SCHEMA:
+        raise SystemExit(
+            "continuous_batch_timing has unknown schema "
+            f"{raw.get('schema')!r}; expected {CONTINUOUS_BATCH_TIMING_SCHEMA}")
+
+    def timestamp(key: str) -> dt.datetime:
+        value = raw.get(key)
+        if not isinstance(value, str) or not value:
+            raise SystemExit(f"continuous_batch_timing.{key} must be a UTC timestamp")
+        try:
+            parsed = dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError as error:
+            raise SystemExit(
+                f"continuous_batch_timing.{key} is not ISO-8601: {value!r}") from error
+        if parsed.tzinfo is None:
+            raise SystemExit(
+                f"continuous_batch_timing.{key} must name its timezone: {value!r}")
+        return parsed.astimezone(dt.timezone.utc)
+
+    completed_games = raw.get("completed_games")
+    elapsed_seconds = raw.get("elapsed_seconds")
+    if (isinstance(completed_games, bool) or not isinstance(completed_games, int)
+            or completed_games < 1):
+        raise SystemExit("continuous_batch_timing.completed_games must be a positive integer")
+    if (isinstance(elapsed_seconds, bool) or not isinstance(elapsed_seconds, int)
+            or elapsed_seconds < 1):
+        raise SystemExit("continuous_batch_timing.elapsed_seconds must be a positive integer")
+    games = data.get("games")
+    if isinstance(games, bool) or not isinstance(games, int) or games != completed_games:
+        raise SystemExit(
+            "continuous_batch_timing.completed_games must exactly match analysis games")
+    started = timestamp("started_at")
+    completed = timestamp("completed_at")
+    if int((completed - started).total_seconds()) != elapsed_seconds:
+        raise SystemExit(
+            "continuous_batch_timing.elapsed_seconds does not match its start/end interval")
+    return {
+        "schema": CONTINUOUS_BATCH_TIMING_SCHEMA,
+        "started_at": raw["started_at"],
+        "completed_at": raw["completed_at"],
+        "elapsed_seconds": elapsed_seconds,
+        "completed_games": completed_games,
+    }
 
 
 def source_record(path: Path, data: dict) -> dict:
@@ -1154,6 +1275,9 @@ def source_record(path: Path, data: dict) -> dict:
     }
     if data.get("games") is not None:
         entry["games"] = int(data["games"])
+    timing = continuous_batch_timing_of(data)
+    if timing is not None:
+        entry["continuous_batch_timing"] = timing
     build = build_of(data)
     if build:
         entry["build"] = build
@@ -1302,6 +1426,72 @@ def families_of(tags: list[str]) -> list[list[str]]:
             for base, versions in sorted(found.items())]
 
 
+#: ⭐ THE CAP (operator, 2026-08-25): a family holds at most three versions at
+#: a time. When a fourth is to be added, the third-best version by tracked
+#: wins is dropped first, so the family is always the original-or-improvement
+#: that leads plus at most two challengers still being priced.
+MAX_VERSIONS = 3
+
+
+def check_family_sizes(tags: list[str]) -> None:
+    """Refuse a registry whose family exceeds `MAX_VERSIONS` — the fourth
+    version is added only after the third-best has left (`versions --add`)."""
+    for family in families_of(tags):
+        if len(family) > MAX_VERSIONS:
+            raise SystemExit(
+                f"family {family[0]} has {len(family)} versions ({', '.join(family)}); "
+                f"at most {MAX_VERSIONS} at a time — drop the third-best by tracked wins "
+                "before adding another (`python3 tools/genes.py versions`)")
+
+
+def family_head(family: list[str], wins_by_tag: dict[str, float]) -> str | None:
+    """⭐ THE HEAD OF A FAMILY: the priced version with the highest tracked
+    wins (the pooled on−off win difference, the ranking's *Diff*), ties to the
+    higher version; `None` when no version is priced. It is what a pinned
+    family ships, what the ranking's *Best version* column names, and what
+    the tournament draw plays 60% of the time the family is on."""
+    priced = [tag for tag in family if tag in wins_by_tag]
+    if not priced:
+        return None
+    return max(priced, key=lambda tag: (wins_by_tag[tag], family.index(tag)))
+
+
+def resolve_family_heads(selected: tuple[str, ...], tags: list[str],
+                         wins_by_tag: dict[str, float]) -> tuple[tuple[str, ...], dict[str, dict]]:
+    """A pinned version pins its FAMILY; the version that ships is the family
+    head. Returns the resolved deployment genome and a record per family —
+    `{base: {"pinned": tag | None, "ships": tag | None, "head": tag | None,
+    "versions": {tag: tracked wins | None}}}` — so the ledger says which name
+    the operator wrote and which version plays."""
+    chosen = set(selected)
+    record: dict[str, dict] = {}
+    for family in families_of(tags):
+        pinned = next((tag for tag in family if tag in chosen), None)
+        head = family_head(family, wins_by_tag)
+        ships = (head or pinned) if pinned else None
+        record[family[0]] = {
+            "pinned": pinned,
+            "head": head,
+            "ships": ships,
+            "versions": {tag: wins_by_tag.get(tag) for tag in family},
+        }
+        if pinned and ships != pinned:
+            chosen.discard(pinned)
+            chosen.add(ships)
+            print(f"gene ledger: family {family[0]} is pinned as {pinned} but its head by "
+                  f"tracked wins is {ships} ({wins_by_tag[ships]:+.2f} pp against "
+                  f"{wins_by_tag.get(pinned, float('nan')):+.2f} pp); {ships} ships",
+                  file=sys.stderr)
+    return tuple(sorted(chosen)), record
+
+
+def pinned_families(selected: tuple[str, ...] | list[str], tags: list[str]) -> tuple[str, ...]:
+    """The pinned selection with every version read as its family: what the
+    operator's list means, independent of which version currently ships."""
+    base_of = {tag: family[0] for family in families_of(tags) for tag in family}
+    return tuple(sorted({base_of.get(tag, tag) for tag in selected}))
+
+
 def tracked_wins(gene: dict) -> float:
     """A version's tracked wins: the ledger's pooled on−off win difference over
     every screen that priced it (`win_diff_pp`, the ranking's *Diff*) — the
@@ -1323,12 +1513,14 @@ def family_of(tag: str, tags: list[str]) -> list[str]:
 
 def best_versions(family: list[str], verdict: dict[str, dict],
                   measured: dict[str, list[dict]]) -> list[str]:
-    """⭐ A FAMILY'S VERSIONS, BEST FIRST. The version the pinned genome ships
-    leads; the rest follow by tracked wins — the ledger's pooled
-    on−off win difference, or the display record's for a version the ledger
-    has not recorded — ties to the higher version. Only priced versions are
-    listed; an unpriced version that ships still leads (it is what plays)."""
-    def key(tag: str) -> tuple[bool, float, int]:
+    """⭐ A FAMILY'S VERSIONS, BEST FIRST — by tracked wins: the ledger's
+    pooled on−off win difference, or the display record's for a version the
+    ledger has not recorded — ties to the higher version. The best version is
+    the family head, which is also what a pinned family ships
+    (`family_head`); a version that ships leads only among unpriced versions
+    (it is what plays until a screen prices the family). Only priced versions
+    and the shipping version are listed."""
+    def key(tag: str) -> tuple[float, bool, int]:
         row = verdict.get(tag, {})
         ships = bool(row.get("default_on"))
         if row.get("win_diff_pp") is not None:
@@ -1337,7 +1529,7 @@ def best_versions(family: list[str], verdict: dict[str, dict],
             wins = pooled_win_diff_pp(measured[tag])
         else:
             wins = float("-inf")
-        return (ships, wins, family.index(tag))
+        return (wins, ships, family.index(tag))
     listed = [tag for tag in family
               if measured.get(tag) or verdict.get(tag, {}).get("default_on")]
     return sorted(listed, key=key, reverse=True)
@@ -1347,10 +1539,12 @@ def best_version_cell(tag: str, tags: list[str], verdict: dict[str, dict],
                       measured: dict[str, list[dict]]) -> str:
     """The ranking's *Best version* column: the number of the family's best
     version (`1` = the original, `n` = `<base>-<n>`), the same on every row
-    of the family; `—` for a gene that is not versioned."""
+    of the family. A gene with no versions IS its original, so it reads `1`
+    (operator, 2026-08-25: *"the first version of a gene should be 1, not
+    —"*); `—` only for a family none of whose versions is priced yet."""
     family = family_of(tag, tags)
     if not family:
-        return "—"
+        return "1"
     best = best_versions(family, verdict, measured)
     return str(family.index(best[0]) + 1) if best else "—"
 
@@ -1380,11 +1574,10 @@ def family_rate_cells(tag: str, tags: list[str], verdict: dict[str, dict],
 
 
 def annotate_families(genes: list[dict]) -> None:
-    """Attach version metadata without selecting a deployment winner.
+    """Attach version metadata (`family` = the base tag, `version` = 1-based).
 
-    The pinned genome is validated before this point to contain at most one
-    member of a family, so an observation can never turn an explicit selection
-    off or choose a sibling instead.
+    Which version ships was settled before this point by `resolve_family_heads`:
+    a pinned family plays its head by tracked wins, and never two versions.
     """
     by_tag = {gene["tag"]: gene for gene in genes}
     for family in families_of([gene["tag"] for gene in genes]):
@@ -1481,6 +1674,13 @@ def build_ledger(sources: list[Path], filter_known: bool = True,
         # generation remains restricted to the screenable registry.
         allowed |= set(measures)
     selected = normalize_deployment_genome(deployment_genome, allowed)
+    # ⭐ A pinned family ships its head — the version with the highest tracked
+    # wins over every screen that priced it — whatever name the operator
+    # wrote; and no family may hold more than MAX_VERSIONS.
+    family_tags = sorted(allowed | set(measures))
+    check_family_sizes(family_tags)
+    wins_by_tag = {tag: pooled_win_diff_pp(record) for tag, record in arms.items() if record}
+    selected, family_heads = resolve_family_heads(selected, family_tags, wins_by_tag)
 
     genes = []
     for tag in sorted(measures):
@@ -1562,8 +1762,16 @@ def build_ledger(sources: list[Path], filter_known: bool = True,
                          "its standard error, both in wins per 10,000 on-arm seats",
             "deployment_policy": DEPLOYMENT_POLICY,
             "deployment_genome": list(selected),
+            "versions": "a pinned version pins its family; the family head - the priced "
+                        "version with the highest tracked wins (win_diff), ties to the higher "
+                        "version - is what ships and what deployment_genome records; a family "
+                        f"holds at most {MAX_VERSIONS} versions, the third-best leaves before "
+                        "a fourth is added",
+            "family_heads": family_heads,
             "operator_promotions": list(
-                OPERATOR_PROMOTIONS_20260824 + OPERATOR_PROMOTIONS_20260825
+                OPERATOR_PROMOTIONS_20260824
+                + OPERATOR_PROMOTIONS_20260825
+                + OPERATOR_PROMOTIONS_20260825_SECOND
             ),
             "posterior_shapes": list(POSTERIOR_SHAPES),
             "deployment_policy_meaning": "the operator-pinned list decides default_on. "
@@ -1662,6 +1870,74 @@ def render_rust(ledger: dict) -> str:
 
 def render_json(ledger: dict) -> str:
     return json.dumps(ledger, indent=2, sort_keys=False) + "\n"
+
+
+def print_versions(ledger: dict, add: str | None = None) -> int:
+    """⭐ THE FAMILIES, one block each: every version ranked by tracked wins
+    with the ledger's pooled record and the display record beside it, which
+    version the operator pinned, which ships (the head), and — when the
+    family is full — which version leaves before a fourth is added: the
+    THIRD-best by tracked wins (operator, 2026-08-25). The rank reads the
+    ledger's authoritative record first (what decides the head) and the
+    display record for a version the ledger has not priced; an unpriced
+    family ranks by version. `--add BASE` answers for one family and exits 1
+    while it is full, so the drop happens before the add."""
+    tags = screenable_tags()
+    rows = {g["tag"]: g for g in ledger.get("genes", [])}
+    display, _ = load_display_sources(ledger)
+    heads = ledger.get("rules", {}).get("family_heads", {})
+    families = families_of(tags)
+    if add is not None:
+        families = [family for family in families if family[0] == add]
+        if not families and add in tags:
+            print(f"{add} has one version; a second may be added")
+            return 0
+        if not families:
+            raise SystemExit(f"{add} is not a screenable gene")
+    if not families:
+        print("no versioned families in the registry")
+        return 0
+
+    def wins(tag: str) -> tuple[float | None, float | None]:
+        ledger_wins = rows.get(tag, {}).get("win_diff_pp")
+        shown = pooled_win_diff_pp(display[tag]) if display.get(tag) else None
+        return ledger_wins, shown
+
+    status = 0
+    for family in families:
+        base = family[0]
+        head = heads.get(base, {})
+        order = {}
+        for tag in family:
+            ledger_wins, shown = wins(tag)
+            key = ledger_wins if ledger_wins is not None else shown
+            order[tag] = (key is not None, key if key is not None else 0.0, family.index(tag))
+        ranked = sorted(family, key=lambda tag: order[tag], reverse=True)
+        print(f"{base}: {len(family)} of {MAX_VERSIONS} versions · pinned "
+              f"{head.get('pinned') or '—'} · ships {head.get('ships') or '—'} · head "
+              f"{head.get('head') or '— (no version priced by a ledger source)'}")
+        for place, tag in enumerate(ranked, 1):
+            row = rows.get(tag, {})
+            ledger_wins, shown = wins(tag)
+            cells = [
+                f"tracked wins {ledger_wins:+.2f} pp" if ledger_wins is not None
+                else "tracked wins unpriced",
+            ]
+            if row.get("posterior_pp") is not None:
+                cells.append(f"posterior {row['posterior_pp']:+.0f} ± {row['posterior_se_pp']:.0f} "
+                             f"/10k over {row.get('posterior_screens')} screen(s)")
+            if shown is not None:
+                cells.append(f"display Diff {shown:+.2f} pp")
+            print(f"  {place}. v{family.index(tag) + 1} {tag:<32} " + " · ".join(cells))
+        if len(family) >= MAX_VERSIONS:
+            drop = ranked[MAX_VERSIONS - 1]
+            print(f"  ⚠ full: drop v{family.index(drop) + 1} {drop} (third-best by tracked "
+                  f"wins) before adding a version")
+            if add is not None:
+                status = 1
+        elif add is not None:
+            print(f"  room for {MAX_VERSIONS - len(family)} more version(s)")
+    return status
 
 
 def print_table(ledger: dict) -> None:
@@ -2039,9 +2315,16 @@ def reporting_batch_cell(batch: dict | None, tag: str) -> str:
 
 def reporting_batch_header(label: str, batch: dict | None) -> str:
     if batch is None:
-        return f"Wins ± /10k total seats — {label} (n=not recorded)"
+        return (f"Wins ± /10k total seats — {label} "
+                "(n=not recorded; games/min=not recorded)")
+    timing = batch["meta"].get("continuous_batch_timing")
+    if not isinstance(timing, dict):
+        rate = "games/min=not recorded"
+    else:
+        rate = (f"{timing['completed_games'] * 60 / timing['elapsed_seconds']:.1f} "
+                "games/min")
     return (f"Wins ± /10k total seats — {label} "
-            f"(n={fmt_int(batch['meta']['seats'])} total seats)")
+            f"(n={fmt_int(batch['meta']['seats'])} total seats; {rate})")
 
 
 def diff_cell(history: list[dict]) -> str:
@@ -2152,10 +2435,9 @@ def posterior_of(history: list[dict]) -> dict | None:
 
 def evidence_table(ledger: dict, measured: dict[str, list[dict]]) -> list[dict]:
     """Every measured, screenable gene's pinned state and posterior evidence."""
-    # The screen's own universe only. A host-only flag can carry a ledger row
-    # from a retired native stand-in (`step-and-reassess`) and the ledger never
-    # governs it, so it is not ranked and must not appear in this evidence table
-    # either.
+    # The screen's own universe only. Host-only flags are governed by their
+    # bundles rather than the ledger, so they are not ranked and must not
+    # appear in this evidence table.
     screenable = set(screenable_tags())
     rows = []
     for gene in ledger["genes"]:
@@ -2500,8 +2782,9 @@ def render(ledger: dict) -> str:
     reference = [
         "Every screenable heuristic gene on the Advanced controller, ranked by the displayed "
         "pooled *Diff* from highest to lowest (alphabetically by tag on a tie). Each batch "
-        "header carries its actual player-seat "
-        "count once; cells show the enabled arm's excess projected to 10,000 **total** player "
+        "header carries its actual player-seat count and whole-batch average games/minute "
+        "once; a historical artifact without scheduler timing says `not recorded` rather "
+        "than guessing from its rows. Cells show the enabled arm's excess projected to 10,000 **total** player "
         "seats, where a six-player chance expectation is 1,667 wins. A dash means that batch "
         "did not screen the gene. The *Total* win-rate columns pool the displayed observations "
         "and retain their real per-gene on/off seat counts in every row. *Diff* is that display "
@@ -2513,11 +2796,15 @@ def render(ledger: dict) -> str:
         "**Versioned genes.** An improvement to a gene is a new gene `<base>-<n>` "
         "(`docs/GENE_SCREEN.md`, *Versioning a gene*), priced on its own row: a version's "
         "*on* is the seats that played that version, and every other seat — off, or a "
-        "sibling version on — is its *off*. *Best version* names the family's best version "
-        "(`1` is the original) on every row of the family: the pinned version, else the "
-        "priced version with the highest tracked wins. A versioned row's *Total (on)* and "
-        "*Total (off)* cells show the best two versions' rates side by side, best first, "
-        "each with its own `n`; `—` marks a gene with no versions.",
+        "sibling version on — is its *off*. *Best version* names the family's head "
+        "(`1` is the original) on every row of the family: the priced version with the "
+        "highest tracked wins (pooled *Diff*), ties to the higher version — and a pinned "
+        "family ships its head, so *Default* is **on** on the head's row. A versioned row's "
+        "*Total (on)* and *Total (off)* cells show the best two versions' rates side by "
+        "side, best first, each with its own `n`. A gene with no versions is its own "
+        "original and reads `1`; `—` marks a family none of whose versions is priced "
+        "yet. A family holds at most three versions; before a fourth is added the third-best by "
+        "tracked wins leaves the code (`python3 tools/genes.py versions`).",
         "",
         "**Reading the table.** A six-player seat wins 1-in-6 by chance, so the expected "
         "count is 1,667 wins per 10,000 total seats. The batch cells are the enabled arm's "
@@ -2556,19 +2843,20 @@ def render(ledger: dict) -> str:
             for r in resolutions(ledger)
         ),
         "",
-        "**Posterior (95% CI), P(>0), Share Δpp (z).** *Posterior* is a random-effects "
-        "(DerSimonian\u2013Laird) inverse-variance pool of **every** screen that priced the "
-        "gene, on this column's own scale: each screen's on\u2212off difference weighted by "
-        "its own standard error, with the between-screen disagreement (\u03c4) carried in the "
-        "interval instead of assumed away. It is the answer to two things the columns "
-        "cannot express \u2014 that the same +24 means different things from a \u00b129 screen "
-        "and a \u00b164 one, and that two positive columns from screens differing in "
-        "baseline, build and shape are not two confirmations (#2283/#2284 measured that: "
-        "five of seven lane genes changed sign on disjoint seeds). *P(>0)* is where the "
-        "shrinkage lands. *Share Δpp (z)* is the newest screen's score-share contrast and "
-        "its verdict, published beside the win columns because a lane gene can fail to pay "
-        "on the win axis at 250 turns. **None of these three automatically decides a "
-        "default**; they are evidence for a later explicit operator selection.",
+        "**P(>0).** The probability that the gene's pooled effect on the win column is "
+        "positive. The pool is a random-effects (DerSimonian\u2013Laird) inverse-variance "
+        "pool of **every** screen that priced the gene: each screen's on\u2212off difference "
+        "weighted by its own standard error, with the between-screen disagreement (\u03c4) "
+        "carried in the pool instead of assumed away, read as \u03a6(effect / se). It is the "
+        "answer to two things the win columns cannot express \u2014 that the same +24 means "
+        "different things from a \u00b129 screen and a \u00b164 one, and that two positive "
+        "columns from screens differing in baseline, build and shape are not two "
+        "confirmations (#2283/#2284 measured that: five of seven lane genes changed sign on "
+        "disjoint seeds). The pooled point and its 95% interval are printed per gene in the "
+        "evidence sections below; the newest screen's score-share contrast (*Share \u0394pp "
+        "(z)*) is printed in the lane table, where a lane gene that cannot pay on the win "
+        "axis at 250 turns shows its evidence. **P(>0) does not automatically decide a "
+        "default**; it is evidence for a later explicit operator selection.",
         "",
         "**Cost.** Positive is slower; negative is faster. *cost (compute)* is the "
         "on/off percent change in wall seconds per completed turn, while *cost (time)* "
@@ -2591,14 +2879,14 @@ def render(ledger: dict) -> str:
         "",
         default_on_summary(ledger),
         "",
-        "| Rank | Gene | Description | Best version | Default | "
+        "| Rank | Gene | Description | Best version | Default | P(>0) | "
         + " | ".join(
             reporting_batch_header(label, batch)
             for label, batch in zip(REPORTING_BATCH_LABELS, reporting_slots)
         )
-        + " | Total (on) Win rate | Total (off) Win rate | Diff | Posterior (95% CI) | "
-        "P(>0) | Share Δpp (z) | cost (compute) | cost (time) |",
-        "|---:|---|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|",
+        + " | Total (on) Win rate | Total (off) Win rate | Diff | "
+        "cost (compute) | cost (time) |",
+        "|---:|---|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for rank, (_diff, tag, history) in enumerate(rows, 1):
         v = verdict.get(tag, {})
@@ -2620,13 +2908,11 @@ def render(ledger: dict) -> str:
         posterior = posterior_of(history)
         lines.append(
             f"| {rank} | `{tag}` | {desc.get(tag, '')} | "
-            f"{best_version_cell(tag, tags, verdict, measured)} | {default} | {last} | {prior} | "
-            f"{third} | "
+            f"{best_version_cell(tag, tags, verdict, measured)} | {default} | "
+            f"{probability_cell(posterior)} | {last} | {prior} | {third} | "
             f"{on_cell} | "
             f"{off_cell} | "
             f"{diff_cell(history)} | "
-            f"{posterior_cell(posterior)} | {probability_cell(posterior)} | "
-            f"{share_cell(history)} | "
             f"{cost_cell(history, 'compute_cost_pct', 'compute_cost_se_pct')} | "
             f"{cost_cell(history, 'time_cost_pct', 'time_cost_se_pct')} |"
         )
@@ -2792,7 +3078,16 @@ def main(argv=None) -> int:
     boundary.add_argument("--arm-pairs", type=int, default=ARM_PAIRS)
     boundary.add_argument("--max-arm-pairs", type=int, default=FEASIBLE_ARM_PAIRS)
     sub.add_parser("table", help="print the ledger as a table")
+    versions = sub.add_parser(
+        "versions", help="every versioned family ranked by tracked wins; the head, the pin, "
+                         "and which version leaves before a fourth is added")
+    versions.add_argument("--add", metavar="BASE",
+                          help="the family a new version is about to join: names the version "
+                               "to drop first when the family is full (exit 1 if it is)")
     args = ap.parse_args(argv)
+
+    if args.command == "versions":
+        return print_versions(json.loads(LEDGER_JSON.read_text()), args.add)
 
     if args.command == "list":
         ledger = json.loads(LEDGER_JSON.read_text()) if LEDGER_JSON.exists() else {}
@@ -2816,7 +3111,9 @@ def main(argv=None) -> int:
         recorded = json.loads(LEDGER_JSON.read_text())
         ledger = rebuild_from_ledger(recorded)
         drift = []
-        if deployment_genome_of(recorded) != normalize_deployment_genome(OPERATOR_DEFAULT_ON):
+        tags = screenable_tags()
+        if pinned_families(deployment_genome_of(recorded), tags) != pinned_families(
+                normalize_deployment_genome(OPERATOR_DEFAULT_ON), tags):
             drift.append("operator deployment genome")
         if render_json(ledger) != LEDGER_JSON.read_text():
             drift.append(str(LEDGER_JSON.relative_to(ROOT)))

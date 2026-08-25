@@ -17,7 +17,7 @@ be represented by a silently advancing tournament.
 
 The game command has no profile or game-rule flags.  It only sets the standard
 screen's game count, target count, fresh seed, output path, and worker cap
-(floor 90% of logical cores).  Each batch pins a detached clean ``origin/main``
+(floor 85% of logical cores).  Each batch pins a detached clean ``origin/main``
 source worktree and its release binary; the next batch refreshes that source
 only after the previous table publication has merged.
 """
@@ -31,7 +31,6 @@ import json
 import os
 import re
 import secrets
-import shutil
 import subprocess
 import sys
 import time
@@ -43,6 +42,7 @@ from continuous_screen_status import LedgerError, summarize, validate_analysis
 
 ROOT = Path(__file__).resolve().parent.parent
 SCHEMA = "continuous_batch_scheduler/v1"
+CONTINUOUS_BATCH_TIMING_SCHEMA = "continuous_batch_timing/v1"
 STANDARD_PLAYERS = 6
 DEFAULT_GOAL_GAMES = 5_000
 DEFAULT_POLL_SECONDS = 300.0
@@ -114,8 +114,8 @@ def logical_cores() -> int:
 
 
 def workers_for_cores(cores: int) -> int:
-    """Use at most the operator-approved 90% cap, never zero workers."""
-    return max(1, positive_int(cores, name="logical core count") * 9 // 10)
+    """Use at most the operator-approved 85% cap, never zero workers."""
+    return max(1, positive_int(cores, name="logical core count") * 85 // 100)
 
 
 def sha256(path: Path) -> str:
@@ -424,7 +424,73 @@ def run_segment(state_root: Path, batch: dict[str, Any], reservation: dict[str, 
     return returncode
 
 
-def freeze_analysis(state_root: Path, state: dict[str, Any]) -> None:
+def parse_utc_timestamp(value: Any, *, name: str) -> dt.datetime:
+    """Read one scheduler timestamp without accepting a local-time guess."""
+    if not isinstance(value, str) or not value:
+        raise SchedulerError(f"{name} must be a non-empty UTC timestamp")
+    try:
+        parsed = dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as error:
+        raise SchedulerError(f"{name} is not an ISO-8601 timestamp: {value!r}") from error
+    if parsed.tzinfo is None:
+        raise SchedulerError(f"{name} must name its timezone: {value!r}")
+    return parsed.astimezone(dt.timezone.utc)
+
+
+def continuous_batch_timing(batch: dict[str, Any]) -> dict[str, Any] | None:
+    """Return the immutable whole-batch wall-clock measure when it is known.
+
+    A pre-timing scheduler state may already be frozen when this code lands.
+    Keep that historical publication viable, but never invent a rate: reports
+    without both ends of the interval simply retain ``games/min=not recorded``.
+    New batches always receive ``completed_at`` before their analyzer runs.
+    """
+    started_at = batch.get("created_at")
+    completed_at = batch.get("completed_at") or batch.get("frozen_at")
+    if started_at is None or completed_at is None:
+        return None
+    started = parse_utc_timestamp(started_at, name="batch created_at")
+    completed = parse_utc_timestamp(completed_at, name="batch completed_at")
+    elapsed_seconds = int((completed - started).total_seconds())
+    if elapsed_seconds < 1:
+        raise SchedulerError("batch timing must span at least one wall-clock second")
+    return {
+        "schema": CONTINUOUS_BATCH_TIMING_SCHEMA,
+        "started_at": str(started_at),
+        "completed_at": str(completed_at),
+        "elapsed_seconds": elapsed_seconds,
+        "completed_games": positive_int(batch.get("complete_games"), name="completed games"),
+    }
+
+
+def write_reporting_artifact(source: Path, target: Path, batch: dict[str, Any]) -> None:
+    """Copy a frozen analysis and add scheduler-owned batch timing provenance.
+
+    The analyzer output remains immutable under the run state.  The report copy
+    is where the publication pipeline records the scheduler interval that the
+    analyzer cannot know: one batch can contain several non-overlapping
+    resumed segments, while its rate is deliberately the whole batch's games
+    divided by its whole wall-clock duration.
+    """
+    try:
+        analysis = json.loads(source.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise SchedulerError(f"cannot read frozen analysis {source}: {error}") from error
+    if analysis.get("kind") != "gene_screen_analysis":
+        raise SchedulerError(f"frozen analysis {source} is not a gene-screen analysis")
+    games = positive_int(analysis.get("games"), name="frozen analysis games")
+    expected_games = positive_int(batch.get("complete_games"), name="completed games")
+    if games != expected_games:
+        raise SchedulerError(
+            f"frozen analysis says {games:,} games but batch says {expected_games:,}")
+    timing = continuous_batch_timing(batch)
+    if timing is not None:
+        analysis["continuous_batch_timing"] = timing
+    atomic_json(target, analysis)
+
+
+def freeze_analysis(state_root: Path, state: dict[str, Any], *,
+                    state_pathname: Path | None = None) -> None:
     """Freeze only the exact validated completed-game boundary into an artifact."""
     batch = state["current"]
     status = refresh_status(state_root, state)
@@ -433,6 +499,14 @@ def freeze_analysis(state_root: Path, state: dict[str, Any]) -> None:
     source = batch.get("source")
     if not isinstance(source, dict):
         raise SchedulerError("cannot analyze without a pinned batch source")
+    # Capture the boundary before analysis starts.  A failed analyzer retry
+    # must not make a completed tournament look slower just because its
+    # reporting work took longer. Persist it immediately when a durable state
+    # path is available so an interruption cannot lose the real endpoint.
+    if batch.get("completed_at") is None:
+        batch["completed_at"] = utc_now()
+        if state_pathname is not None:
+            atomic_json(state_pathname, state)
     binary = Path(str(source.get("binary", "")))
     rows = rows_path(state_root, batch)
     analysis = analysis_path(state_root, batch)
@@ -541,6 +615,43 @@ def publication_body(batch: dict[str, Any], report: str, *, machine: str, agent:
     ))
 
 
+def merged_publication_details(worktree: Path, number: int) -> dict[str, str] | None:
+    """Return durable merge metadata only when GitHub confirms this PR merged.
+
+    A human or a separate integration worker can merge a publication between
+    the scheduler's ``push`` and ``ship`` transitions.  Looking up that state
+    makes the final transition idempotent instead of treating an already
+    successful publication as an error that stalls the next batch.
+    """
+    result = run_checked(
+        ["gh", "pr", "view", str(number), "--json", "state,mergedAt,mergeCommit"],
+        cwd=worktree,
+        description=f"read publication PR #{number} merge state",
+    )
+    try:
+        payload = json.loads(result.stdout)
+    except json.JSONDecodeError as error:
+        raise SchedulerError(f"could not decode publication PR #{number} merge state: {error}") from error
+    if payload.get("state") != "MERGED":
+        return None
+    details = {"merged_at": str(payload.get("mergedAt") or utc_now())}
+    merge_commit = payload.get("mergeCommit")
+    if isinstance(merge_commit, dict) and isinstance(merge_commit.get("oid"), str):
+        details["merge_commit"] = merge_commit["oid"]
+    return details
+
+
+def mark_published_if_already_merged(batch: dict[str, Any], publication: dict[str, Any], *, worktree: Path,
+                                     number: int) -> bool:
+    """Persist an externally completed merge and return whether one was found."""
+    details = merged_publication_details(worktree, number)
+    if details is None:
+        return False
+    publication.update({"stage": "merged", **details})
+    batch["phase"] = "published"
+    return True
+
+
 def publish_batch(state_root: Path, state_pathname: Path, state: dict[str, Any], *, repo: Path,
                   machine: str, agent: str) -> None:
     """Publish a frozen batch via a fresh isolated PR before rotating again.
@@ -615,7 +726,7 @@ def publish_batch(state_root: Path, state_pathname: Path, state: dict[str, Any],
     if stage == "claimed":
         target = worktree / report
         target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(analysis_path(state_root, batch), target)
+        write_reporting_artifact(analysis_path(state_root, batch), target, batch)
         generated = ["docs/gene_ledger.json", "HEURISTIC_GENE_RANKING.md"]
         write = [sys.executable, "tools/genes.py", "write", "--reporting-batch", report]
         first = subprocess.run(write, cwd=worktree, text=True, capture_output=True, check=False)
@@ -689,8 +800,21 @@ def publish_batch(state_root: Path, state_pathname: Path, state: dict[str, Any],
         stage = "pushed"
 
     if stage == "pushed":
-        run_checked([sys.executable, "tools/civvis_collab.py", "ship"], cwd=worktree,
-                    description="ship publication PR")
+        if mark_published_if_already_merged(
+                batch, publication, worktree=worktree, number=number):
+            atomic_json(state_pathname, state)
+            return
+        try:
+            run_checked([sys.executable, "tools/civvis_collab.py", "ship"], cwd=worktree,
+                        description="ship publication PR")
+        except SchedulerError:
+            # The PR may have merged in the narrow interval after the lookup.
+            # Only absorb this error if GitHub now proves that exact outcome.
+            if mark_published_if_already_merged(
+                    batch, publication, worktree=worktree, number=number):
+                atomic_json(state_pathname, state)
+                return
+            raise
         publication["stage"] = "merged"
         publication["merged_at"] = utc_now()
         batch["phase"] = "published"
@@ -724,7 +848,7 @@ def tick(state_root: Path, state_pathname: Path, state: dict[str, Any], *, repo:
     phase = batch["phase"]
     if phase == "running":
         if status["complete_games"] == batch["goal_completed_games"]:
-            freeze_analysis(state_root, state)
+            freeze_analysis(state_root, state, state_pathname=state_pathname)
             atomic_json(state_pathname, state)
             return "frozen"
         source = ensure_source(state_root, state, repo)
@@ -737,7 +861,7 @@ def tick(state_root: Path, state_pathname: Path, state: dict[str, Any], *, repo:
         latest = refresh_status(state_root, state)
         atomic_json(state_pathname, state)
         if latest["complete_games"] == batch["goal_completed_games"]:
-            freeze_analysis(state_root, state)
+            freeze_analysis(state_root, state, state_pathname=state_pathname)
             atomic_json(state_pathname, state)
             return "frozen"
         if returncode == 0:
@@ -789,7 +913,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--goal-games", type=int, default=DEFAULT_GOAL_GAMES,
                         help="validated completed-game rotation boundary (default: 5000)")
     parser.add_argument("--jobs", type=int,
-                        help="game workers; default is floor(90%% of logical cores)")
+                        help="game workers; default is floor(85%% of logical cores)")
     parser.add_argument("--publisher-agent", default="continuous-batch",
                         help="agent id for isolated table-publication tasks")
     parser.add_argument("--machine", help="fleet machine id; defaults to Git config")

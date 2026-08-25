@@ -113,10 +113,6 @@
       "group": "production-on",
       "reason": "Production ships it ON, so its door is `PRODUCTION_TREATMENTS` \u2014 and that row is not neutral: `apply_gene_ledger` disables every production treatment whose `ledger_default_on` is `Some(false)`, which is exactly what a screenable tag with no ledger row is. The row would switch a shipped behaviour off at deployment. What it does: walk an explorer onto a reachable tribal village instead of marching past."
     },
-    "joint_reach_lines": {
-      "group": "host-only",
-      "reason": "Host-only, and the reason is already recorded beside its tag in `FIRAXIS_ONLY_TREATMENTS`. Rides with `joint-tactics` \u2014 `enable_joint_tactics` turns both on \u2014 so it already varies through that gene, and it is inert wherever the joint search is off. Its own row would be a duplicate."
-    },
     "land_grab": {
       "group": "live-bridge-row",
       "reason": "Screenable would mean WITHHELD. It has a `LIVE_TREATMENTS` row, so a `PRODUCTION_OPT_INS` row flips `ledger_default_on` from `None` to `Some(false)` and `apply_gene_ledger` would then take it out of the live bridge. That is a deployment change wearing an instrument's clothes. The move it wants is the door `culture-coverage` went through: out of `FIRAXIS_ONLY_TREATMENTS` and into an `ENGINE_REPAIR_*` half, taken deliberately with the bridge change owned and priced. What it does: expand to the land the empire can hold at pipeline pace, not on an era clock. Its host-only classification is an argument about which rivals the weights were bred against, not a claim the code cannot fire natively."
@@ -200,10 +196,6 @@
     "spy_mission_patience": {
       "group": "host-only",
       "reason": "Host-only, and the reason is already recorded beside its tag in `FIRAXIS_ONLY_TREATMENTS`. Reacts to the host export's blindness to a running Spy operation; native `do_spy_mission` sets `spy.mission` and legality already debounces, so the repair cannot fire."
-    },
-    "step_and_reassess": {
-      "group": "host-only",
-      "reason": "Host-only, and the reason is already recorded beside its tag in `FIRAXIS_ONLY_TREATMENTS`. A walk cut at its first unrevealed hex because the host executes one coalesced walk per unit. THIS GATE'S FOUNDING EXAMPLE: its native stand-in screened +0.0 [+0.0, +0.0] over 204 pairs because the code path was never entered, and when repaired it measured harmful and was removed."
     },
     "stock_denial_lead_time": {
       "group": "live-bridge-row",

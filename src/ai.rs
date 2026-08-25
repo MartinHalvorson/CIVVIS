@@ -269,7 +269,6 @@ const RAILROAD_RESOURCE_RESERVE: f64 = 4.0;
 type PlotPurchaseCandidate = (f64, std::cmp::Reverse<(u32, Pos)>, Action);
 
 mod advanced;
-mod tactics;
 pub use advanced::{
     deployment_treatments, gene, gene_ledger, gene_ledger_rows, host_only_tags, ledger_default_on,
     ledger_verdict, live_tags, repair_tags, repair_tags_on, screenable_genes, AdvancedAi, Axis,
@@ -452,17 +451,6 @@ pub trait Ai {
         None
     }
 
-    /// How often this agent's joint tactical planner produced a plan, and how
-    /// many unit decisions it reached. Agents without one return `None`.
-    ///
-    /// This exists for the same reason [`Ai::review_census`] does: an agent
-    /// that searches must be able to say when it did not. A whole-game null
-    /// from a layer that barely ran and one from a layer that ran constantly
-    /// call for opposite next steps, and a win rate cannot tell them apart.
-    fn joint_tactics_census(&self) -> Option<(usize, usize)> {
-        None
-    }
-
     /// Write this agent's reasoning into an observer's log.
     ///
     /// Every seat at a watched table is handed a handle on the *same*
@@ -492,10 +480,6 @@ impl<T: Ai + ?Sized> Ai for Box<T> {
 
     fn expansion_census(&self) -> Option<ExpansionCensus> {
         (**self).expansion_census()
-    }
-
-    fn joint_tactics_census(&self) -> Option<(usize, usize)> {
-        (**self).joint_tactics_census()
     }
 
     fn attach_journal(&mut self, journal: Journal) {
@@ -2076,6 +2060,14 @@ pub struct BasicAi {
     pub(crate) garrison_under_fire: bool,
     /// Scale each district family by how much of the empire still lacks it.
     pub(crate) district_coverage: bool,
+    /// Version 2 of `district_coverage`: the same coverage term with a
+    /// deeper floor — a family every city holds falls to a quarter of its
+    /// bred weight, not half. Version 1's record is a score-share gain (z
+    /// +2.2 on the 08-24 screen) with no win column, so the lever is pushed
+    /// further in the direction that paid; a probe of the opposite direction
+    /// (queued districts counted as held) lost share. Implies version 1; its
+    /// enable turns version 1 off. Opt-in gene `district-coverage-2`.
+    pub(crate) district_coverage_2: bool,
     /// Break a production COST TIE by which great-work slots can actually be filled.
     pub(crate) slot_kind_tiebreak: bool,
     pursue_religion: bool,
@@ -2216,6 +2208,12 @@ pub struct BasicAi {
     /// controllers; on for the live bridge and the native repair bundle. See
     /// `naval_recon_is_the_missing_arm` and `AdvancedAi::naval_explorer`.
     pub(crate) naval_recon: bool,
+    /// Version 2 of `naval_recon`: two peacetime eyes instead of one while
+    /// unseen water remains. One Galley charted one coast and died; the
+    /// second hull is the other direction, and the arm is rebuilt on loss
+    /// exactly as before. Implies version 1; its enable turns version 1 off.
+    /// Opt-in gene `naval-recon-2`.
+    pub(crate) naval_recon_2: bool,
     /// In peacetime the whole field army answers home threats, and a camp
     /// inside the camp reach ranks above raiders in the countryside.
     ///
@@ -4317,6 +4315,7 @@ impl BasicAi {
             amenity_districts: false,
             garrison_under_fire: false,
             district_coverage: false,
+            district_coverage_2: false,
             slot_kind_tiebreak: false,
             pursue_religion: true,
             pantheon_reads_the_board: false,
@@ -4325,6 +4324,7 @@ impl BasicAi {
             live_religious_purchase_guard: false,
             recon_replacement: false,
             naval_recon: false,
+            naval_recon_2: false,
             camp_party: false,
             come_ashore: false,
             civilian_rescue: false,
@@ -4640,6 +4640,7 @@ impl BasicAi {
             amenity_districts: false,
             garrison_under_fire: false,
             district_coverage: false,
+            district_coverage_2: false,
             slot_kind_tiebreak: false,
             pursue_religion: true,
             pantheon_reads_the_board: false,
@@ -4648,6 +4649,7 @@ impl BasicAi {
             live_religious_purchase_guard: false,
             recon_replacement: false,
             naval_recon: false,
+            naval_recon_2: false,
             camp_party: false,
             come_ashore: false,
             civilian_rescue: false,
@@ -6144,18 +6146,6 @@ impl BasicAi {
         // Posts are immutable for the turn. A branch may have paid to build a
         // domain's list, so retain that work for later serial fallbacks.
         self.patrol_posts.extend(state.patrol_posts);
-    }
-
-    /// Remember the hops a unit actually took this turn, so a continuation
-    /// from live state (`step_and_reassess`) keeps the reversal guard's
-    /// memory of them. Replaces this turn's record; an older turn's is gone.
-    pub(crate) fn record_walked_steps(&mut self, uid: u32, turn: u32, from_tiles: Vec<Pos>) {
-        let mut trails = self.last_path_step_from.borrow_mut();
-        let entry = trails.entry(uid).or_insert((turn, Vec::new()));
-        if entry.0 != turn {
-            *entry = (turn, Vec::new());
-        }
-        entry.1.extend(from_tiles);
     }
 
     pub(crate) fn clear_prepared_patrol_posts(&mut self) {
@@ -8856,8 +8846,13 @@ impl BasicAi {
     /// major naval war, retain a second eye so the fighting ship cannot make
     /// the unexplored world disappear from production's priorities.
     /// See `naval_recon`.
+    /// Either version of the naval eye. See `naval_recon_2`.
+    pub(crate) fn naval_recon_on(&self) -> bool {
+        self.naval_recon || self.naval_recon_2
+    }
+
     pub(crate) fn naval_recon_is_the_missing_arm(&self, g: &Game, pid: usize) -> bool {
-        if !self.naval_recon || self.minor || self.barb {
+        if !self.naval_recon_on() || self.minor || self.barb {
             return false;
         }
         if !Self::unseen_water_remains(g, pid) {
@@ -8913,6 +8908,9 @@ impl BasicAi {
         });
         let arm_target = if major_naval_war {
             NAVAL_RECON_WARTIME_ARM_MAX
+        } else if self.naval_recon_2 {
+            // See `naval_recon_2`: a second peacetime eye.
+            2
         } else {
             1
         };
@@ -10610,7 +10608,7 @@ impl BasicAi {
         // re-tuning: the genome's ordering still decides between two families the
         // empire is equally short of, so a bred preference is preserved wherever it
         // is actually expressing a preference.
-        if !self.minor && self.district_coverage {
+        if !self.minor && (self.district_coverage || self.district_coverage_2) {
             let mine: Vec<&crate::game::City> =
                 g.cities.values().filter(|city| city.owner == pid).collect();
             let total = mine.len().max(1) as f64;
@@ -10619,8 +10617,10 @@ impl BasicAi {
                     .iter()
                     .filter(|city| g.city_has_district_family(city, Name::new(*family)))
                     .count() as f64;
-                // 1.0 when no city has it, falling toward 0.5 when every city does.
-                *weight *= 1.0 - 0.5 * (have / total);
+                // 1.0 when no city has it, falling toward 0.5 when every city
+                // does — a quarter under `district_coverage_2`.
+                let depth = if self.district_coverage_2 { 0.75 } else { 0.5 };
+                *weight *= 1.0 - depth * (have / total);
             }
         }
         dpri.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());

@@ -403,19 +403,6 @@ const POWER_FACTOR: f64 = 280.0;
 const P_ON: f64 = 0.25;
 const P_DEFAULT_ON: f64 = 0.75;
 
-/// Genes the screen holds at their default unless `--genes` asks for them by
-/// name. This is a COST list, not a verdict: `joint-tactics` costs +27.3%
-/// compute per enabled major seat (P10, 17,574 seat pairs) against ±1.6% for
-/// every other gene, and screening it multiplies the whole batch by 2.52x —
-/// a 10,000-game screen goes from 8.8 hours to 22.2.
-///
-/// ⚠ Do not read this as "it does nothing". Its win columns are +3/-4, inside
-/// any band this instrument has printed, but P10 reads `share HELPS **` at
-/// share z +3.84 — past that screen's family-wise bar. What it is owed is a
-/// deliberate run (`--genes joint-tactics`), not a seat on every batch at
-/// 2.5x the bill.
-const HELD_UNLESS_ASKED: &[&str] = &["joint-tactics"];
-
 /// ⭐ THE CONTESTED FIELD, and why it exists (2026-08-24).
 ///
 /// The standard screen draws every seat's genome from one controller and reads
@@ -1386,11 +1373,13 @@ fn present(args: &[String], flag: &str) -> bool {
 }
 
 /// ⭐ THE VERSION PICK (operator, 2026-08-24). A gene that is on plays its
-/// TOP version 60% of the time and one of its other versions — drawn
-/// uniformly among the rest — the other 40%; a gene with one version plays
-/// that version. So the batch mostly plays what would ship, while every
-/// challenger is still priced against off and against the best on every
-/// screen it sits in. At two versions the head-to-head loses ~4% of its
+/// TOP version — the head by tracked wins, `best_version` — 60% of the time
+/// and one of its other versions — drawn uniformly among the rest — the
+/// other 40%; a gene with one version plays that version. So the batch
+/// mostly plays what ships, while every challenger is still priced against
+/// off and against the best on every screen it sits in, and a challenger
+/// that overtakes the head on the pooled record takes the 60% (and ships)
+/// from the next `genes.py write` on. At two versions the head-to-head loses ~4% of its
 /// precision against an equal split (error² ∝ 1/p_a + 1/p_b: 4.17/p against
 /// 4/p). A family with no measured top version (see `best_version`) shares
 /// equally instead.
@@ -1417,17 +1406,14 @@ fn version_shares(candidates: &[usize], best: Option<usize>) -> Vec<f64> {
 }
 
 /// ⭐ THE BEST VERSION of a family, among the given drawable members: the
-/// version the pinned ledger ships if any, else the priced
-/// version with the highest tracked wins (the ledger's pooled on−off win
-/// difference), ties to the higher version; `None` when nothing is priced,
-/// so an unmeasured family shares its probability equally. The same reading
-/// ranks a screen's display when no version is pinned. `tools/genes.py`
-/// validates the explicit deployment selection separately: it permits at most
-/// one selected family member and never changes that selection from scores.
+/// priced version with the highest tracked wins (the ledger's pooled on−off
+/// win difference), ties to the higher version — the family HEAD, which is
+/// also what a pinned family ships (`tools/genes.py::family_head`; operator,
+/// 2026-08-25: *"our highest performing version should be shown in the table
+/// and should be the gene default"*). When no member is priced, the version
+/// the ledger ships if any, else `None`, so an unmeasured family shares its
+/// probability equally. The same reading ranks a screen's display.
 fn best_version(genes: &[Gene], candidates: &[usize]) -> Option<usize> {
-    if let Some(&shipping) = candidates.iter().find(|&&i| genes[i].default_on) {
-        return Some(shipping);
-    }
     candidates
         .iter()
         .copied()
@@ -1439,7 +1425,14 @@ fn best_version(genes: &[Gene], candidates: &[usize]) -> Option<usize> {
                 .unwrap_or(std::cmp::Ordering::Equal)
                 .then(a.cmp(&b))
         })
+        .or_else(|| candidates.iter().copied().find(|&i| genes[i].default_on))
 }
+
+/// ⭐ THE CAP (operator, 2026-08-25): a family holds at most three versions
+/// at a time. Before a fourth is added, the third-best by tracked wins leaves
+/// the code (`python3 tools/genes.py versions --add <base>` names it). The
+/// ledger tool refuses a larger family; the registry test below does too.
+const MAX_VERSIONS: usize = 3;
 
 /// The on-probability of every gene in header order: `p_default_on` for a
 /// screened gene the deployment genome ships on, `p_on` for any other screened
@@ -1452,7 +1445,8 @@ fn best_version(genes: &[Gene], candidates: &[usize]) -> Option<usize> {
 /// taking `BEST_VERSION_SHARE` of it and the rest splitting the remainder
 /// evenly (`version_shares`; operator, 2026-08-24: *"a 60% chance of using the
 /// top version of the gene and a 40% chance of using a different gene
-/// version (randomly pick among the rest)"* — see `best_version`). A version
+/// version (randomly pick among the rest)"* — the top version is the head by
+/// tracked wins, see `best_version`). A version
 /// held ON at its default forces its siblings off; a version held off simply
 /// takes no share. The draw reads the family back off these marginals.
 fn on_probabilities(
@@ -5114,8 +5108,7 @@ fn main() {
     if present(&args, "--list") {
         println!(
             "{} genes (bit order) · default = the deployment genome (docs/gene_ledger.json) · \
-             p = on-probability in the screen ({P_ON} / {P_DEFAULT_ON} for a default-on gene) · \
-             HELD = out of the default screened set on cost, ask for it by name",
+             p = on-probability in the screen ({P_ON} / {P_DEFAULT_ON} for a default-on gene)",
             genes.len()
         );
         let tags: Vec<String> = genes.iter().map(|gene| gene.tag.to_string()).collect();
@@ -5135,7 +5128,7 @@ fn main() {
                 .map(|row| row.verdict.as_str())
                 .unwrap_or("unmeasured");
             println!(
-                "{i:>3}  {:<28} {:<32} universe:{} stock:{} default:{} ledger:{:<10} p:{:.2}{}",
+                "{i:>3}  {:<28} {:<32} universe:{} stock:{} default:{} ledger:{:<10} p:{:.2}",
                 gene.tag,
                 gene.field,
                 if gene.after_setup_on { "on " } else { "off" },
@@ -5143,11 +5136,6 @@ fn main() {
                 if gene.default_on { "on " } else { "off" },
                 verdict,
                 if gene.default_on { P_DEFAULT_ON } else { P_ON },
-                if HELD_UNLESS_ASKED.contains(&gene.tag) {
-                    "  HELD"
-                } else {
-                    ""
-                }
             );
         }
         return;
@@ -5458,11 +5446,7 @@ fn main() {
         }
     }
     let screened: Vec<bool> = match text(&args, "--genes") {
-        // Everything but the cost list, which `--genes` can still ask for.
-        None => genes
-            .iter()
-            .map(|gene| !HELD_UNLESS_ASKED.contains(&gene.tag))
-            .collect(),
+        None => vec![true; genes.len()],
         Some(list) => {
             let wanted: Vec<&str> = list
                 .split(',')
@@ -5495,6 +5479,20 @@ fn main() {
     }
     let tags: Vec<String> = genes.iter().map(|gene| gene.tag.to_string()).collect();
     let families = families_of(&tags);
+    // ⭐ At most three versions of a gene at a time: the fourth waits for the
+    // third-best to leave (`tools/genes.py versions --add <base>`).
+    for family in &families {
+        if family.len() > MAX_VERSIONS {
+            eprintln!(
+                "{} has {} versions; at most {MAX_VERSIONS} at a time — drop the third-best by \
+                 tracked wins before adding another (`python3 tools/genes.py versions --add {}`)",
+                genes[family[0]].tag,
+                family.len(),
+                genes[family[0]].tag
+            );
+            std::process::exit(2);
+        }
+    }
     // ⚠ A version screened without its family measures nothing: a sibling
     // held ON at its default forces every screened version off (the family
     // is one level per seat), so the row comes back +0.0 and reads as inert.
@@ -5871,14 +5869,12 @@ mod tests {
         tags.sort_unstable();
         tags.dedup();
         assert_eq!(tags.len(), genes.len(), "a gene tag is repeated");
-        // Host-only flags are excluded by construction, not by luck — unless
-        // the registry says the flag also acts on a native board
-        // (`Kind::HostOnlyOptIn`: `joint-tactics`, whose search runs
-        // headless). A plain `HostOnly` row never reaches the genome.
+        // Host-only flags are excluded by construction, not by luck. A
+        // `HostOnly` row never reaches the genome.
         for gene in &genes {
             let row = civvis::ai::gene(gene.tag).expect("registered");
             assert!(
-                !row.host_only() || row.opt_in(),
+                !row.host_only(),
                 "{} is host-only and would screen as noise",
                 gene.tag
             );
@@ -7260,6 +7256,34 @@ mod tests {
         }
     }
 
+    /// ⭐ A family holds at most three versions (operator, 2026-08-25): the
+    /// registry is checked, and the fourth waits for the third-best to leave.
+    #[test]
+    fn no_family_exceeds_three_versions() {
+        assert_eq!(MAX_VERSIONS, 3);
+        let genes = gene_table();
+        let tags: Vec<String> = genes.iter().map(|gene| gene.tag.to_string()).collect();
+        for family in families_of(&tags) {
+            assert!(
+                family.len() <= MAX_VERSIONS,
+                "{} has {} versions; at most {MAX_VERSIONS} — drop the third-best by tracked \
+                 wins first (`python3 tools/genes.py versions --add {}`)",
+                tags[family[0]],
+                family.len(),
+                tags[family[0]]
+            );
+        }
+        let four: Vec<String> = ["g", "g-2", "g-3", "g-4"]
+            .iter()
+            .map(|t| t.to_string())
+            .collect();
+        assert_eq!(families_of(&four), vec![vec![0, 1, 2, 3]]);
+        assert!(
+            families_of(&four)[0].len() > MAX_VERSIONS,
+            "the cap is a rule, not a parser"
+        );
+    }
+
     /// The family's marginals: the family probability shared among the
     /// screened versions, 60% to the best version and the rest split evenly;
     /// a version held on forces its siblings off.
@@ -7289,15 +7313,24 @@ mod tests {
         let families = vec![vec![0, 1, 2]];
         let p = on_probabilities(&genes, &[true, true, true], 0.5, 0.75, &families);
         close(&p, &[0.5 / 3.0, 0.5 / 3.0, 0.5 / 3.0]);
-        // The shipping version is the best and takes 60%; the family is on
-        // at p_default_on because a version ships.
+        // The best version by tracked wins takes 60% even when the ledger
+        // still ships its sibling (a pin the next `genes.py write` moves to
+        // the head); the family is on at p_default_on because a version
+        // ships.
         let genes = vec![
             synthetic("g", true, Some(0.4)),
             synthetic("g-2", false, Some(0.9)),
         ];
         let families = vec![vec![0, 1]];
         let p = on_probabilities(&genes, &[true, true], 0.5, 0.75, &families);
+        close(&p, &[0.30, 0.45]);
+        // With no version priced, the shipping version is the best.
+        let genes = vec![synthetic("g", true, None), synthetic("g-2", false, None)];
+        let p = on_probabilities(&genes, &[true, true], 0.5, 0.75, &families);
         close(&p, &[0.45, 0.30]);
+        assert_eq!(best_version(&genes, &[0, 1]), Some(0));
+        let genes = vec![synthetic("g", false, None), synthetic("g-2", false, None)];
+        assert_eq!(best_version(&genes, &[0, 1]), None);
         // With nothing shipping, tracked wins decide, ties to the higher
         // version; the other two split the remaining 40% evenly.
         let genes = vec![
