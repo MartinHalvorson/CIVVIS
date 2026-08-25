@@ -426,7 +426,9 @@ FIELDLESS = {
 #: `--difficulty-rotate king:1,emperor:2,immortal:1`), recorded the same way:
 #: every screen before 2026-08-25 played the engine's Prince default and
 #: wrote nothing, and a batch that names its rung says so on the source.
-RECORDED_WHEN_SET = ("victory_mask", "difficulty", "difficulty_rotate")
+#: `rivals` is the rival mix (`--rivals firaxis-mix`): one chair per game
+#: plays a fixed, unmeasured opponent. Recorded the same way.
+RECORDED_WHEN_SET = ("victory_mask", "difficulty", "difficulty_rotate", "rivals")
 #: The profile keys recorded for every source, whether or not they match. The
 #: draw `design` is recorded and NOT checked: it is how each seat's genome was
 #: sampled (`independent` — every seat its own draw, the screen since

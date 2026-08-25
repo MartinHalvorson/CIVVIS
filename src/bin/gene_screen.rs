@@ -65,7 +65,7 @@
 //!               [--players N] [--turns N] [--width N] [--height N]
 //!               [--city-states N] [--speed ID] [--map ID] [--victories a,b]
 //!               [--victory-mask rotate:N] [--difficulty RUNG]
-//!               [--difficulty-rotate king:1,emperor:2,immortal:1]
+//!               [--difficulty-rotate king:1,emperor:2,immortal:1] [--rivals firaxis-mix]
 //!               [--stock-civs]
 //!   gene_screen --analyze PATH [PATH ...] [--json OUT] [--interactions]
 //!               [--denial] [--top N] [--by-civ TAG]
@@ -538,6 +538,99 @@ fn is_zero_u8(value: &u8) -> bool {
     *value == 0
 }
 
+/// ⭐ THE RIVAL MIX (`--rivals firaxis-mix`, 2026-08-25).
+///
+/// The standard screen's opposition is the other drawn genomes: every effect
+/// is averaged over random opposing genomes drawn from the same controller,
+/// which is the right instrument for "does this gene help against the
+/// ecosystem" and a blind one for "does it help against a rival that is not
+/// us". With the mix, ONE major seat per game — its chair rotating with the
+/// game index like a contested pin, so no position is always the rival —
+/// plays a fixed opponent instead of a drawn genome, and the kind of opponent
+/// rotates per game from the seed:
+///
+/// - `legacy` — [`AdvancedAi::legacy`], the frozen anchor;
+/// - `firaxis-mix` — the deployment genome, [`AdvancedAi::new`], retargeted
+///   at one victory lane drawn in the shares the live Civilization VI ladder
+///   actually loses to: diplomatic 32 : culture 27 : religious 8 : science 4 :
+///   domination 1 ([`FIRAXIS_MIX_LANES`], the Hall of Fame census in
+///   `docs/eval/2026-08-18-we-screen-against-a-religion-game-and-lose-a-diplomacy-game.md`);
+/// - `random` — a genome with every screened gene on at one half, drawn like
+///   any seat's.
+///
+/// The rival seat is NOT measured: its row is written with `kind: "rival"`
+/// so every estimator — which reads `kind == "game"` — skips it, and every
+/// measured row of the game says `rival_mix: "measured"`. `--analyze` then
+/// reads every gene past the family-wise bar on the three kinds apart and
+/// says whether its sign agrees.
+const RIVAL_KINDS: [&str; 3] = ["legacy", "firaxis-mix", "random"];
+
+/// The lanes a `firaxis-mix` rival pursues, weighted by the live ladder's
+/// losses (diplomatic 32 : culture 27 : religious 8 : science 4 : domination 1).
+const FIRAXIS_MIX_LANES: [(VictoryTarget, u64); 5] = [
+    (VictoryTarget::Diplomacy, 32),
+    (VictoryTarget::Culture, 27),
+    (VictoryTarget::Religion, 8),
+    (VictoryTarget::Science, 4),
+    (VictoryTarget::Domination, 1),
+];
+
+/// The kind of rival the game on `seed` seats: the three kinds in turn.
+fn rival_kind(seed: u64) -> &'static str {
+    RIVAL_KINDS[(seed % RIVAL_KINDS.len() as u64) as usize]
+}
+
+/// The major (by index among the majors) that plays the rival in `game`:
+/// rotates with the game index, for the reason [`pinned_seats`] gives.
+fn rival_index(players: usize, game: usize) -> usize {
+    if players == 0 {
+        0
+    } else {
+        game % players
+    }
+}
+
+/// The lane a `firaxis-mix` rival on `seed` pursues, drawn from
+/// [`FIRAXIS_MIX_LANES`] in their weights: the weights laid end to end and
+/// indexed by `seed / 3` (the kind took `seed % 3`), so 72 consecutive
+/// firaxis-mix games play each lane exactly its share.
+fn firaxis_mix_target(seed: u64) -> VictoryTarget {
+    let total: u64 = FIRAXIS_MIX_LANES.iter().map(|(_, weight)| weight).sum();
+    let mut slot = (seed / RIVAL_KINDS.len() as u64) % total;
+    for &(target, weight) in &FIRAXIS_MIX_LANES {
+        if slot < weight {
+            return target;
+        }
+        slot -= weight;
+    }
+    FIRAXIS_MIX_LANES[0].0
+}
+
+/// Games per rival kind over `games` consecutive seeds from `start_seed`.
+fn rival_games(start_seed: u64, games: usize) -> BTreeMap<String, usize> {
+    let mut counts = BTreeMap::new();
+    for game in 0..games {
+        *counts
+            .entry(rival_kind(start_seed + game as u64).to_string())
+            .or_default() += 1;
+    }
+    counts
+}
+
+/// The rival seat itself. `random_genome` is the drawn genome a `random`
+/// rival plays; the other kinds ignore it.
+fn rival_seat(kind: &str, seed: u64, genes: &[Gene], random_genome: &[bool]) -> AdvancedAi {
+    match kind {
+        "legacy" => AdvancedAi::legacy(),
+        "firaxis-mix" => {
+            let mut ai = AdvancedAi::new();
+            ai.retarget(firaxis_mix_target(seed));
+            ai
+        }
+        _ => seat_with_genome(genes, random_genome),
+    }
+}
+
 /// One seat of one screened game, written to the JSONL file and read back by
 /// `--analyze`. A game yields one row per major seat.
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -689,6 +782,15 @@ struct Row {
     /// 2026-08-25, which means the Prince default those batches played.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     difficulty: String,
+    /// ⭐ THE RIVAL MIX: `measured` on a measured seat's row; on the fixed
+    /// opponent's own row (`kind: "rival"`, skipped by every estimator) the
+    /// kind it played — `legacy`, `firaxis-mix` or `random`. Empty in a batch
+    /// without the mix and in every file written before 2026-08-25.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    rival_mix: String,
+    /// The lane a `firaxis-mix` rival pursued, on its own row only.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    rival_target: String,
 }
 
 /// The game a row belongs to. Seats of one game share a winner and a timing,
@@ -1161,6 +1263,16 @@ struct Header {
     /// before the first game. Empty without a rotation.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     difficulty_games: BTreeMap<String, usize>,
+    /// ⭐ THE RIVAL MIX: `firaxis-mix` when one major seat per game played a
+    /// fixed opponent ([`RIVAL_KINDS`], rotating per game from the seed),
+    /// empty when every major drew a genome. Provenance on the source, not a
+    /// shape leg. Absent in every file written before 2026-08-25.
+    #[serde(default)]
+    rivals: String,
+    /// The games this segment pre-registered per rival kind. Empty without
+    /// the mix.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    rival_games: BTreeMap<String, usize>,
     /// ⭐ The binary that played these games. Absent in files written before
     /// 2026-08-23, which `tools/genes.py` grandfathers as history and
     /// marks `pre-fingerprint` rather than accepting silently.
@@ -1501,6 +1613,8 @@ struct Profile {
     difficulty: String,
     /// ⭐ The majors' rung rotation, `None` when every game plays `difficulty`.
     difficulty_rotate: Option<DifficultyRotation>,
+    /// ⭐ Whether one major seat per game plays a fixed rival ([`RIVAL_KINDS`]).
+    rivals: bool,
 }
 
 /// ⭐ WHICH MAJOR SEATS THE FIELD PINS, AND TO WHAT — one entry per major
@@ -1619,6 +1733,11 @@ fn play_game(
     // instrument that could price it.
     world.native_competitions = profile.native_competitions;
     let pinned = pinned_seats(profile.players, game, &profile.field);
+    // ⭐ THE RIVAL MIX: one major plays a fixed opponent of a kind drawn from
+    // the seed, in a chair that rotates with the game index.
+    let rival = profile
+        .rivals
+        .then(|| (rival_index(profile.players, game), rival_kind(seed)));
     let mut majors = Vec::new();
     let mut ais: Vec<AdvancedAi> = (0..world.players.len())
         .map(|pid| {
@@ -1627,9 +1746,12 @@ fn play_game(
             } else {
                 let index = majors.len();
                 majors.push(pid);
-                match pinned.get(index).copied().flatten() {
-                    Some(target) => field_seat(target, &profile.field_genes),
-                    None => seat_with_genome(genes, &genomes[index]),
+                match (pinned.get(index).copied().flatten(), rival) {
+                    (Some(target), _) => field_seat(target, &profile.field_genes),
+                    (None, Some((rival_at, kind))) if rival_at == index => {
+                        rival_seat(kind, seed, genes, &genomes[index])
+                    }
+                    (None, _) => seat_with_genome(genes, &genomes[index]),
                 }
             }
         })
@@ -1641,16 +1763,34 @@ fn play_game(
         .enumerate()
         .filter(|(index, _)| pinned.get(*index).copied().flatten().is_none())
         .map(|(index, &seat)| {
+            let this_rival = rival.filter(|(rival_at, _)| *rival_at == index);
             let mut row = row_for_seat(
                 &world,
                 game,
                 seed,
                 seat,
-                genome_string(&genomes[index]),
+                match this_rival {
+                    // Only a random rival has a genome in header order.
+                    Some((_, "random")) | None => genome_string(&genomes[index]),
+                    Some(_) => String::new(),
+                },
                 secs,
             );
             row.victories_off = closed.clone();
             row.difficulty = difficulty.clone();
+            match this_rival {
+                Some((_, kind)) => {
+                    // ⭐ NOT a measured seat: `kind` is what every estimator
+                    // filters on, so the fixed opponent prices no gene.
+                    row.kind = "rival".to_string();
+                    row.rival_mix = kind.to_string();
+                    if kind == "firaxis-mix" {
+                        row.rival_target = firaxis_mix_target(seed).as_str().to_string();
+                    }
+                }
+                None if rival.is_some() => row.rival_mix = "measured".to_string(),
+                None => {}
+            }
             row
         })
         .collect()
@@ -1754,6 +1894,8 @@ fn row_for_seat(
         // Filled in by `play_game`, which knows the game's mask and rung.
         victories_off: Vec::new(),
         difficulty: String::new(),
+        rival_mix: String::new(),
+        rival_target: String::new(),
     }
 }
 
@@ -2783,6 +2925,7 @@ fn print_table(header: &Header, rows: &[Row]) {
     println!("{}", field_line(header));
     println!("{}", mask_line(header));
     println!("{}", difficulty_line(header));
+    println!("{}", rivals_line(header));
     println!("{}", completeness_line(header, estimates.seats));
     println!(
         "a seat overall: win {:.1}% (chance {:.1}%) · score share {:.1}% (equal share {:.1}%)",
@@ -3097,6 +3240,7 @@ fn print_table(header: &Header, rows: &[Row]) {
     print_families(header, rows);
     print_victory_masks(header, rows);
     print_difficulty_rungs(header, rows);
+    print_rival_mix(header, rows);
 }
 
 /// The family tables: for every versioned gene, what each level did and
@@ -3349,6 +3493,7 @@ fn write_json_summary(path: &str, header: &Header, rows: &[Row]) {
         "endings": ending_census(rows),
         "victory_masks": mask_report(header, rows).map(|report| report.json()),
         "difficulty": rung_report(header, rows).map(|report| report.json()),
+        "rival_mix": rival_report(header, rows).map(|report| report.json()),
         "overall_win": estimates.overall_win,
         "overall_share": estimates.overall_share,
         "family_wise_z": family_z,
@@ -3451,6 +3596,7 @@ fn read_rows(paths: &[String]) -> (Header, Vec<Row>) {
                                 || first.victory_mask != found.victory_mask
                                 || first.difficulty != found.difficulty
                                 || first.difficulty_rotate != found.difficulty_rotate
+                                || first.rivals != found.rivals
                                 || first.all_seats != found.all_seats
                                 || first.design != found.design
                                 || first.prior != found.prior
@@ -4287,6 +4433,185 @@ fn print_difficulty_rungs(header: &Header, rows: &[Row]) {
     );
 }
 
+/// One line saying whether a fixed rival sat in every game.
+fn rivals_line(header: &Header) -> String {
+    if header.rivals.is_empty() {
+        return "rivals: none — every major draws a genome and is measured".to_string();
+    }
+    format!(
+        "rivals: ⭐ {} — one chair per game plays a fixed opponent, rotating {} from the seed ({}); \
+         that seat is not measured",
+        header.rivals,
+        RIVAL_KINDS.join(" / "),
+        header
+            .rival_games
+            .iter()
+            .map(|(kind, games)| format!("{kind}×{games}"))
+            .collect::<Vec<_>>()
+            .join(" ")
+    )
+}
+
+/// ⭐ THE RIVAL MIX READ BACK: games and rival wins per kind, and every gene
+/// past the family-wise bar read against each kind of rival apart.
+struct RivalReport {
+    rivals: String,
+    /// Kind, games, games the rival itself won — in [`RIVAL_KINDS`] order.
+    kinds: Vec<(String, usize, usize)>,
+    /// Per gene past the bar: tag, whole-batch win Δ, (Δ, se, seats) per
+    /// kind in `kinds` order, and whether every kind's sign agrees with the
+    /// whole batch's.
+    genes: Vec<(String, f64, SubsetCells, bool)>,
+    family_z: f64,
+}
+
+impl RivalReport {
+    fn json(&self) -> serde_json::Value {
+        serde_json::json!({
+            "rivals": self.rivals,
+            "family_wise_z": self.family_z,
+            "kinds": self.kinds.iter().map(|(kind, games, won)| {
+                serde_json::json!({"kind": kind, "games": games, "rival_won": won})
+            }).collect::<Vec<_>>(),
+            "genes_past_the_bar": self.genes.iter().map(|(tag, delta, per_kind, agree)| {
+                serde_json::json!({
+                    "tag": tag,
+                    "win_delta_pp": 100.0 * delta,
+                    "signs_agree": agree,
+                    "by_kind": self.kinds.iter().zip(per_kind).map(|((kind, _, _), (d, se, n))| {
+                        serde_json::json!({
+                            "kind": kind,
+                            "seats": n,
+                            "win_delta_pp": 100.0 * d,
+                            "win_se_pp": 100.0 * se,
+                        })
+                    }).collect::<Vec<_>>(),
+                })
+            }).collect::<Vec<_>>(),
+        })
+    }
+}
+
+/// The report, or `None` for a batch with no rival rows and no mix declared.
+fn rival_report(header: &Header, rows: &[Row]) -> Option<RivalReport> {
+    let mut kind_of_game: BTreeMap<GameKey, (&str, bool)> = BTreeMap::new();
+    for row in rows.iter().filter(|row| row.kind == "rival") {
+        kind_of_game.insert(row.game_key(), (row.rival_mix.as_str(), row.win));
+    }
+    if header.rivals.is_empty() && kind_of_game.is_empty() {
+        return None;
+    }
+    let kinds: Vec<(String, usize, usize)> = RIVAL_KINDS
+        .iter()
+        .map(|&kind| {
+            let games = kind_of_game.values().filter(|(k, _)| *k == kind).count();
+            let won = kind_of_game
+                .values()
+                .filter(|(k, w)| *k == kind && *w)
+                .count();
+            (kind.to_string(), games, won)
+        })
+        .collect();
+    let estimates = estimate(header, rows);
+    let family_z = family_wise_z(estimates.genes.len());
+    let genes = estimates
+        .genes
+        .iter()
+        .filter(|estimate| estimate.win_z().abs() >= family_z)
+        .filter_map(|estimate| {
+            let index = header.genes.iter().position(|tag| *tag == estimate.tag)?;
+            let per_kind: SubsetCells = kinds
+                .iter()
+                .map(|(kind, _, _)| {
+                    subset_win_contrast(header, rows, index, |row| {
+                        kind_of_game
+                            .get(&row.game_key())
+                            .is_some_and(|(k, _)| *k == kind.as_str())
+                    })
+                    .unwrap_or((0.0, f64::INFINITY, 0))
+                })
+                .collect();
+            let agree = per_kind
+                .iter()
+                .filter(|(_, _, n)| *n > 0)
+                .all(|(delta, _, _)| delta.signum() == estimate.win_delta.signum());
+            Some((estimate.tag.clone(), estimate.win_delta, per_kind, agree))
+        })
+        .collect();
+    Some(RivalReport {
+        rivals: header.rivals.clone(),
+        kinds,
+        genes,
+        family_z,
+    })
+}
+
+/// The "Rival mix" section of `--analyze`: games and rival wins per kind, and
+/// every gene past the family-wise bar read per kind with its sign agreement.
+fn print_rival_mix(header: &Header, rows: &[Row]) {
+    let Some(report) = rival_report(header, rows) else {
+        return;
+    };
+    println!(
+        "\nRival mix · {} · {}",
+        if report.rivals.is_empty() {
+            "(rows carry rival seats, header names no mix)".to_string()
+        } else {
+            report.rivals.clone()
+        },
+        report
+            .kinds
+            .iter()
+            .map(|(kind, games, won)| format!("{kind}×{games} games (rival won {won})"))
+            .collect::<Vec<_>>()
+            .join(" · ")
+    );
+    if report.genes.is_empty() {
+        println!(
+            "  no gene past the family-wise bar |z|≥{:.2}, so no sign agreement to read",
+            report.family_z
+        );
+        return;
+    }
+    let cell = |(delta, se, seats): (f64, f64, usize)| {
+        if se.is_finite() {
+            format!("{:+.1}±{:.1} ({seats})", 100.0 * delta, 100.0 * se)
+        } else {
+            format!("{:+.1} ({seats})", 100.0 * delta)
+        }
+    };
+    println!(
+        "  {:<28} {:>9} {} {:>8}",
+        format!("past |z|≥{:.2}", report.family_z),
+        "all pp",
+        report
+            .kinds
+            .iter()
+            .map(|(kind, _, _)| format!("{kind:>20}"))
+            .collect::<Vec<_>>()
+            .join(" "),
+        "signs"
+    );
+    for (tag, delta, per_kind, agree) in &report.genes {
+        println!(
+            "  {:<28} {:>+9.1} {} {:>8}",
+            tag,
+            100.0 * delta,
+            per_kind
+                .iter()
+                .map(|&value| format!("{:>20}", cell(value)))
+                .collect::<Vec<_>>()
+                .join(" "),
+            if *agree { "agree" } else { "SPLIT" }
+        );
+    }
+    println!(
+        "  win Δpp ± one clustered standard error (measured seats) in the games whose fixed rival was \
+         of each kind; `agree` = every kind's sign is the whole batch's, `SPLIT` = a gene that pays \
+         against one rival and not another. The rival seat itself prices no gene."
+    );
+}
+
 /// One line naming the binary a batch was played by, printed before the first
 /// game and again by `--analyze`.
 ///
@@ -4372,6 +4697,8 @@ fn usage() -> ! {
          five real conditions per game from its seed, score always on, C(5,N) masks at equal shares\n       \
          the majors' rung: [--difficulty RUNG] (default {}) or [--difficulty-rotate king:1,emperor:2,immortal:1] \
          drawn per game from the seed in those shares; barbarians stay at {}\n       \
+         the rival mix: [--rivals firaxis-mix] seats one fixed opponent per game — legacy anchor / \
+         deployment genome retargeted at a live-census lane / random genome, in turn — that is not measured\n       \
          (--contested pins one rival seat per lane to actually pursue it — {} by default — and turns \
          on native scored competitions, the only recurring native route to the {DIPLOMATIC_VICTORY_POINTS} \
          Diplomatic Victory Points that lane needs)\n       \
@@ -4588,6 +4915,16 @@ fn main() {
         eprintln!("--difficulty and --difficulty-rotate name the majors' rung two ways; pass one");
         std::process::exit(2);
     }
+    // ⭐ THE RIVAL MIX. One chair per game plays a fixed opponent that is
+    // never measured; see `RIVAL_KINDS`.
+    let rivals = match text(&args, "--rivals").as_deref() {
+        None | Some("none") => false,
+        Some("firaxis-mix") => true,
+        Some(other) => {
+            eprintln!("unknown --rivals {other:?}; the mix is firaxis-mix (or none)");
+            std::process::exit(2);
+        }
+    };
     let speed = match text(&args, "--speed") {
         None => GameSpeed::Online,
         Some(id) => GameSpeed::from_id(&id).unwrap_or_else(|| {
@@ -4668,6 +5005,14 @@ fn main() {
         );
         std::process::exit(2);
     }
+    if rivals && !field.is_empty() {
+        eprintln!("--rivals cannot be combined with a contested field: the field already pins rival seats");
+        std::process::exit(2);
+    }
+    if rivals && players < 3 {
+        eprintln!("--rivals seats one fixed opponent per game and measures the rest; needs --players 3 or more");
+        std::process::exit(2);
+    }
     // The pursuers' own genome over the deployment one. `none` reproduces the
     // weaker deployment-genome-only field the constant's doc measured.
     let field_genes: Vec<String> = if field.is_empty() {
@@ -4710,7 +5055,7 @@ fn main() {
     } else {
         present(&args, "--native-competitions") || !field.is_empty()
     };
-    let drawn = players - field.len();
+    let drawn = players - field.len() - usize::from(rivals);
     let p_on = real(&args, "--p-on", P_ON);
     let p_default_on = real(&args, "--p-default-on", P_DEFAULT_ON);
     for (name, p) in [("--p-on", p_on), ("--p-default-on", p_default_on)] {
@@ -4859,6 +5204,16 @@ fn main() {
             .as_ref()
             .map(|rotation| rotation.games_by_rung(start_seed, games_to_play))
             .unwrap_or_default(),
+        rivals: if rivals {
+            "firaxis-mix".to_string()
+        } else {
+            String::new()
+        },
+        rival_games: if rivals {
+            rival_games(start_seed, games_to_play)
+        } else {
+            BTreeMap::new()
+        },
         design: "independent".to_string(),
         prior: probabilities.clone(),
         families: families
@@ -4887,6 +5242,7 @@ fn main() {
     println!("{}", field_line(&header));
     println!("{}", mask_line(&header));
     println!("{}", difficulty_line(&header));
+    println!("{}", rivals_line(&header));
     writeln!(
         out,
         "{}",
@@ -4910,6 +5266,7 @@ fn main() {
         victory_mask,
         difficulty,
         difficulty_rotate,
+        rivals,
     };
     println!(
         "gene screen: {games_to_play} games ({} measured seats of {} chairs, every drawn seat its own genome, on at p={p_on} / {p_default_on} default-on) · {} of {} genes screened · {players}p {width}x{height} {} · {} · {turns} turns · {city_states} city-states · {} civs · seeds {start_seed}..{} · {jobs} jobs · rows → {out_path}",
@@ -4926,13 +5283,27 @@ fn main() {
     let started = Instant::now();
     let done = std::sync::atomic::AtomicUsize::new(0);
     let out = std::sync::Mutex::new(out);
+    let uniform: Vec<f64> = probabilities
+        .iter()
+        .zip(&screened)
+        .map(|(&p, &s)| if s { 0.5 } else { p })
+        .collect();
     let played: Vec<Vec<Row>> = civvis::parallel::map_reporting(
         games_to_play,
         jobs,
         |game| {
             let seed = start_seed + game as u64;
             let genomes: Vec<Vec<bool>> = (0..players)
-                .map(|seat| draw_genome(start_seed, game, players, seat, &probabilities, &families))
+                .map(|seat| {
+                    // ⭐ A `random` rival plays every screened gene at one
+                    // half — the draw's own machinery, a flat prior.
+                    if rivals && seat == rival_index(players, game) && rival_kind(seed) == "random"
+                    {
+                        draw_genome(start_seed, game, players, seat, &uniform, &families)
+                    } else {
+                        draw_genome(start_seed, game, players, seat, &probabilities, &families)
+                    }
+                })
                 .collect();
             play_game(&profile, &genes, game, seed, &genomes)
         },
@@ -5008,6 +5379,8 @@ mod tests {
             difficulty: String::new(),
             difficulty_rotate: String::new(),
             difficulty_games: BTreeMap::new(),
+            rivals: String::new(),
+            rival_games: BTreeMap::new(),
             design: "independent".into(),
             prior: vec![0.5; genes.len()],
             p_on: 0.5,
@@ -5062,6 +5435,8 @@ mod tests {
             domestic: 0,
             victories_off: Vec::new(),
             difficulty: String::new(),
+            rival_mix: String::new(),
+            rival_target: String::new(),
         }
     }
 
@@ -5937,6 +6312,168 @@ mod tests {
         let plain_rows = vec![test_row(0, 0, "1", true), test_row(0, 1, "0", false)];
         assert!(rung_report(&plain, &plain_rows).is_none());
         print_difficulty_rungs(&header, &rows);
+    }
+
+    /// ⭐ The rival kind rotates through the three kinds exactly, the chair
+    /// rotates with the game, and a firaxis-mix rival's lane comes in the
+    /// live census's shares over a window of 72 firaxis-mix games.
+    #[test]
+    fn the_rival_mix_rotates_kind_chair_and_lane_deterministically() {
+        let mut kinds: BTreeMap<&str, usize> = BTreeMap::new();
+        for seed in 26_081_900u64..26_082_899 {
+            assert_eq!(rival_kind(seed), rival_kind(seed));
+            *kinds.entry(rival_kind(seed)).or_default() += 1;
+        }
+        assert_eq!(
+            kinds.values().copied().collect::<Vec<_>>(),
+            vec![333, 333, 333]
+        );
+        assert_eq!(
+            rival_games(26_081_900, 999)
+                .values()
+                .copied()
+                .collect::<Vec<_>>(),
+            vec![333, 333, 333]
+        );
+        assert_eq!(
+            (0..12).map(|game| rival_index(6, game)).collect::<Vec<_>>(),
+            [0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5]
+        );
+        // Every third seed is a firaxis-mix game; 72 of them play each lane
+        // in its weight exactly.
+        let mut lanes: BTreeMap<&str, usize> = BTreeMap::new();
+        let mut seen = 0;
+        let mut seed = 0u64;
+        while seen < 72 {
+            if rival_kind(seed) == "firaxis-mix" {
+                *lanes.entry(firaxis_mix_target(seed).as_str()).or_default() += 1;
+                seen += 1;
+            }
+            seed += 1;
+        }
+        assert_eq!(
+            lanes,
+            BTreeMap::from([
+                ("diplomatic", 32),
+                ("culture", 27),
+                ("religious", 8),
+                ("science", 4),
+                ("domination", 1)
+            ])
+        );
+        // The three seats build.
+        let genes = gene_table();
+        let genome = vec![false; genes.len()];
+        assert!(rival_seat("legacy", 1, &genes, &genome)
+            .victory_target()
+            .is_none());
+        assert_eq!(
+            rival_seat("firaxis-mix", 1, &genes, &genome).victory_target(),
+            Some(firaxis_mix_target(1))
+        );
+        assert!(rival_seat("random", 1, &genes, &genome)
+            .victory_target()
+            .is_none());
+    }
+
+    /// A rival's row is `kind: "rival"` and prices nothing; the measured rows
+    /// say `measured`; the split reads a gene per rival kind.
+    #[test]
+    fn the_rival_seat_prices_no_gene_and_the_split_reads_per_kind() {
+        let mut header = screen_header(&["pays-vs-legacy", "everywhere"]);
+        header.rivals = "firaxis-mix".into();
+        let probabilities = vec![0.5; 2];
+        let mut rows = Vec::new();
+        let games = 600;
+        for game in 0..games {
+            let seed = 900_000 + game as u64;
+            let kind = rival_kind(seed);
+            let at = rival_index(6, game);
+            let genomes: Vec<Vec<bool>> = (0..6)
+                .map(|seat| draw_genome(3, game, 6, seat, &probabilities, &[]))
+                .collect();
+            // `everywhere` wins whatever the rival; against the legacy anchor
+            // a seat with `pays-vs-legacy` as well takes precedence.
+            let measured = |wanted: &dyn Fn(&[bool]) -> bool| {
+                genomes
+                    .iter()
+                    .enumerate()
+                    .find(|(seat, bits)| *seat != at && wanted(bits))
+                    .map(|(seat, _)| seat)
+            };
+            let winner = (kind == "legacy")
+                .then(|| measured(&|bits| bits[0] && bits[1]))
+                .flatten()
+                .or_else(|| measured(&|bits| bits[1]))
+                .unwrap_or(at);
+            for (seat, bits) in genomes.iter().enumerate() {
+                let mut row = test_row(game, seat, &genome_string(bits), seat == winner);
+                row.seed = seed;
+                if seat == at {
+                    row.kind = "rival".into();
+                    row.rival_mix = kind.into();
+                    row.genome = String::new();
+                } else {
+                    row.rival_mix = "measured".into();
+                }
+                rows.push(row);
+            }
+        }
+        let estimates = estimate(&header, &rows);
+        assert_eq!(estimates.seats, games * 5, "the rival seat is not a seat");
+        let report = rival_report(&header, &rows).expect("a mixed batch reports");
+        assert_eq!(
+            report
+                .kinds
+                .iter()
+                .map(|(_, games, _)| *games)
+                .collect::<Vec<_>>(),
+            vec![200, 200, 200]
+        );
+        assert!(report
+            .genes
+            .iter()
+            .any(|(tag, _, _, _)| tag == "everywhere"));
+        let everywhere = report
+            .genes
+            .iter()
+            .find(|(tag, _, _, _)| tag == "everywhere")
+            .expect("past the bar");
+        assert!(everywhere.3, "pays against every kind: {:?}", everywhere.2);
+        assert_eq!(
+            everywhere.2.iter().map(|(_, _, n)| *n).sum::<usize>(),
+            games * 5
+        );
+        if let Some(legacy_only) = report
+            .genes
+            .iter()
+            .find(|(tag, _, _, _)| tag == "pays-vs-legacy")
+        {
+            assert!(
+                legacy_only.2[0].0 > legacy_only.2[1].0,
+                "{:?}",
+                legacy_only.2
+            );
+        }
+        let json = report.json();
+        assert_eq!(json["rivals"], "firaxis-mix");
+        assert_eq!(json["kinds"].as_array().expect("array").len(), 3);
+        // Round trip: the rival row keeps its kind and mix.
+        let rival = rows
+            .iter()
+            .find(|row| row.kind == "rival")
+            .expect("a rival row");
+        let back: Row = serde_json::from_str(&serde_json::to_string(rival).expect("serializes"))
+            .expect("parses");
+        assert_eq!(
+            (back.kind.as_str(), back.rival_mix.as_str()),
+            ("rival", rival.rival_mix.as_str())
+        );
+        // No mix, no report; and the mix is not a shape leg.
+        let plain = screen_header(&["a"]);
+        assert!(rival_report(&plain, &[test_row(0, 0, "1", true)]).is_none());
+        assert_eq!(shape_of(&header), "standard");
+        print_rival_mix(&header, &rows);
     }
 
     /// A lane gene's lane is read off the registry's own words; a version is

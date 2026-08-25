@@ -1862,6 +1862,39 @@ by |win Δ| read on every rung separately** — the same subset estimate as the
 main table, clustered by game. A gene whose sign holds on every rung pays at
 every handicap; one that flips is a gene for one rung.
 
+## ⭐ The rival mix: `--rivals firaxis-mix` (2026-08-25)
+
+The standard screen's opposition is the other drawn genomes, so every effect
+is averaged over random opposing genomes from the same controller — the right
+instrument for "does this gene help against the ecosystem", and a blind one
+for "does it help against a rival that is not us". With `--rivals firaxis-mix`
+**one major seat per game plays a fixed opponent instead of a drawn genome**.
+Its chair rotates with the game index (as a contested pin does, so no position
+is always the rival) and its kind rotates per game from the seed, one third
+each:
+
+| kind | the seat |
+|---|---|
+| `legacy` | `AdvancedAi::legacy()`, the frozen anchor |
+| `firaxis-mix` | the deployment genome (`AdvancedAi::new()`) retargeted at one lane drawn in the shares the live Civilization VI ladder actually loses to — **diplomatic 32 : culture 27 : religious 8 : science 4 : domination 1** (the Hall of Fame census, `docs/eval/2026-08-18-we-screen-against-a-religion-game-and-lose-a-diplomacy-game.md`); 72 consecutive firaxis-mix games play each lane exactly its share |
+| `random` | a genome with every screened gene on at one half, drawn by the screen's own draw |
+
+**The rival seat is not measured.** Its row is written with `kind: "rival"`
+(and `rival_mix` naming the kind, `rival_target` the lane a firaxis-mix rival
+pursued), so every estimator — all of which read `kind == "game"` — skips it;
+every measured row of the game says `rival_mix: "measured"`. The header
+records `rivals: "firaxis-mix"` and `rival_games` (games pre-registered per
+kind), and `target_seats` counts measured seats only (five a game). The mix is
+provenance on the source, not a shape leg (`RECORDED_WHEN_SET` in
+`tools/genes.py`); it cannot be combined with a contested field.
+
+**Reading it.** `--analyze` prints a *Rival mix* section (and `rival_mix` in
+the `--json` summary): games and rival wins per kind — the anchor's and the
+lane-pursuer's own win rates are a census of the opposition — and **every gene
+past the family-wise bar read on the three kinds apart**, with `agree` when
+every kind's sign is the whole batch's and `SPLIT` when a gene pays against
+one rival and not another.
+
 ## What it is not
 
 - Not `gene_census`, which asks whether a continuous `Weights` gene moves an
