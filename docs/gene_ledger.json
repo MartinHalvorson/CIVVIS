@@ -632,7 +632,7 @@
         "complete_seats": 4476,
         "partial": true
       },
-      "unverified": "The immutable 2026-08-25 cutoff was compiled from clean 0c715daa before current main deliberately removed the four research-planning genes it measured; it is a report-only historical batch, not a source of runtime defaults."
+      "unverified": "The immutable 2026-08-25 cutoff was compiled from clean 0c715daa before current main deliberately removed the four research-planning genes it measured; those high-signal negative genes were deliberately removed. It is a report-only historical batch, not a source of runtime defaults."
     }
   ],
   "counts": {
