@@ -86,6 +86,13 @@ pursue a diplomatic or culture victory so a denial gene has something to deny.
 It changes no leg of the table above, is refused as a ledger source on two
 header legs of its own, and is documented under *The contested field* below.
 
+⭐ Since 2026-08-25 the screen can also play **rotating victory masks**
+(`--victory-mask rotate:N`): each game closes N of the five real conditions,
+drawn from its seed, and score stays on. Every lane is live across the batch,
+so it is **still the standard shape** — the ledger accepts it — and each row
+carries the lanes its game closed, so a lane gene can be read with its lane
+open against closed. See *Rotating victory masks* below.
+
 **What this replaced.** Two regimes: `native` (all six lanes, six players) and
 `war` (`--victories domination,score`, four players), the second one added
 because the 31 war and siege genes were being asked what they contribute to a
@@ -312,6 +319,27 @@ such a source and records it.
 - `N` games give every gene about `N·players·p` seats on and `N·players·(1−p)`
   off. A seat's chance of winning is `1/players`; the table prints every
   gene's on and off rates against it.
+
+### Live continuous-batch accounting
+
+A continuous JSONL file is **not** one line per game: each segment starts with
+one `header` record, then every completed all-seats game writes one `game`
+record for each major seat — six records per standard game. Never report
+`wc -l`, a nonblank-line count, or a raw JSONL record count as games. Use the
+validated reader instead:
+
+```sh
+python3 tools/continuous_screen_status.py /path/to/rows-continuous.jsonl
+python3 tools/continuous_screen_status.py /path/to/rows-continuous.jsonl \
+  --analysis /path/to/cutoff-analysis.json
+```
+
+It groups records by `(seed, arm)`, requires exactly one record for every seat
+and exactly one winner, and keeps **records**, **games**, and **seats** as
+separate labeled quantities. A partial write, duplicate seat, inconsistent
+winner, undeclared seed, malformed target, or disagreement with the frozen
+`gene_screen --analyze --json` file is an error, not a lower-looking count.
+That reader is the required source for live status and cutoff reporting.
 
 Why not one arm per gene: the repository's older instrument priced one flag
 per batch (`live` against `live_without_<flag>`, forty to two hundred maps
@@ -1739,6 +1767,68 @@ is a 210-seat partial run of a 360-seat pre-registration and says so; nobody
 should record it as a source. The other four read `"shape": "legacy"`, and
 `tools/genes.py` refuses each of them at the write path — the contested three on
 `contested_field`, arm B on `native_competitions` alone.
+
+## ⭐ Rotating victory masks: `--victory-mask rotate:N` (2026-08-25)
+
+The standard screen leaves all six lanes live in every game. On this board
+science and diplomatic victories land past the clock (median t283 and t285)
+and religious conversion decides most of the games that end early, while the
+live Civilization VI ladder loses **diplomatic 32 : culture 27 : religious 8 :
+science 4 : domination 1**
+(`docs/eval/2026-08-18-we-screen-against-a-religion-game-and-lose-a-diplomacy-game.md`).
+So a gene for a lane nobody finishes is priced on a board where its lane never
+decides anything, and a gene for the lane that does decide is priced against a
+board where that lane is always open. Restricting `--victories` was tried for
+the war genes and became a second regime whose columns never pooled with the
+six-lane ones; it is a probe.
+
+The mask is the version of that idea the ledger can hold. **Per game,
+deterministically from the game seed, `rotate:N` closes N of the five real
+conditions (science, culture, religious, diplomatic, domination); score is on
+in every game — it is the clock.** The C(5,N) N-subsets are enumerated once in
+a fixed order and the game on `seed` plays subset `seed % C(5,N)`, so a
+consecutive seed window plays every mask an equal number of times and every
+lane is closed in exactly N/5 of the games. `rotate:2` — the intended use — is
+ten masks at a tenth each, every lane open in 60% of games.
+
+| leg | what a rotating batch records |
+|---|---|
+| header `victories` | the **batch-level** set, all six — unchanged |
+| header `victory_mask` | `rotate:2` |
+| header `victory_mask_games` | the games this segment pre-registered per mask, from its seed window, before the first game |
+| row `victories_off` | the lanes this seat's game closed, sorted (`["culture","science"]`); absent on an unmasked row |
+
+**It is the standard shape.** `shape_of` in `gene_screen.rs` and `tools/genes.py`
+read `victories` as the batch-level set, and across a rotating batch every lane
+is live and every game still ends on score at the clock, so the batch pools
+with the ledger like any other; `tools/genes.py` records `victory_mask` on the
+source as provenance, not as a leg. A `--victories` restriction is a different
+world and stays a probe. The mask cannot be combined with a contested field (a
+pinned pursuer would chase a closed lane in some games), and a rotation must
+leave at least one real lane open every game.
+
+**Reading it.** `--analyze` prints a *Victory masks* section (and writes
+`victory_masks` into the `--json` summary): games per mask, games per lane
+open/closed, and for every lane gene **its win Δ with its own lane OPEN against
+CLOSED**, each estimated on the subset exactly as the main table is (clustered
+by game; the two subsets share no game, so the difference's error is the root
+sum of squares). Which lane a gene is read on comes from the registry's own
+words: `lane-congress-ballot`, `lane-congress-favor` and
+`competition-victory-points` → diplomatic; `lane-culture-spending` → culture;
+`lane-space-race` → science; `holy-lane-parity` → religious; the remaining
+`lane-*` genes (`lane-great-people`, `lane-policy-deck`, `lane-commit`)
+substitute whichever lane the seat is racing at one decider, so they are read
+on all five. A Δ that is larger open than closed is the lane paying; one that
+is the same either way is the gene paying through score share or not at all.
+
+The 10-game fires run (`--games 10 --jobs 8 --victory-mask rotate:2`, seeds
+26081900..26081909) played each of the ten masks exactly once —
+`culture+diplomatic×1 · culture+domination×1 · culture+religious×1 ·
+culture+science×1 · diplomatic+domination×1 · diplomatic+religious×1 ·
+diplomatic+science×1 · domination+religious×1 · domination+science×1 ·
+religious+science×1` — every lane open 6 / closed 4, and the analysis read
+`standard`. Ten games price nothing; the split is a reading for a batch of
+thousands.
 
 ## What it is not
 
