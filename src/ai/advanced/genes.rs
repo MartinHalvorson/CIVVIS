@@ -800,6 +800,14 @@ pub const GENES: &[Gene] = &[
     // rival's cities reads zero. The victory rule is a count of cities and
     // counting them is smooth. See `conversion_majority_alarm`.
     Gene { tag: "conversion-majority-alarm", field: "conversion_majority_alarm", kind: Kind::OptIn, enable: AdvancedAi::enable_conversion_majority_alarm, disable: AdvancedAi::disable_conversion_majority_alarm },
+    // ⚠ The same lock `diplomatic-lane-forecast` opened, on the second-best
+    // lane this engine has: `victory_eval` finishes culture 12/16 and `audit`
+    // gives it 2% of 14,376 planner-turns, below a twentieth of the board's
+    // planning in eleven of twelve games. The lane reads a ratio of the
+    // finished race, and foreign tourists are near zero until the Renaissance.
+    // Unlike Diplomacy, both curves move, so this projects both. See
+    // `culture_lane_forecast`.
+    Gene { tag: "culture-lane-forecast", field: "culture_lane_forecast", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_lane_forecast, disable: AdvancedAi::disable_culture_lane_forecast },
     // ⚠ The lane this engine finishes most often is the lane the planner never
     // picks. `victory_eval` at the ladder's profile: diplomatic 14/16, culture
     // 12/16, religious 8/16, domination 2/16, science 0/16. `audit` over the
