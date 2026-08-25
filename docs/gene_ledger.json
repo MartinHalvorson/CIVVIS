@@ -460,7 +460,7 @@
   "counts": {
     "helps": 17,
     "hurts": 1,
-    "unresolved": 65,
+    "unresolved": 64,
     "default_on": 57
   },
   "genes": [
@@ -1314,51 +1314,6 @@
             "pairs": 9081,
             "win_delta_pp": 0.683,
             "win_z": 1.229,
-            "win_se_pp": 0.556
-          }
-        ]
-      }
-    },
-    {
-      "tag": "coupled-expansion",
-      "verdict": "unresolved",
-      "default_on": false,
-      "wins_last_10k": -12,
-      "wins_prior_10k": null,
-      "wins_third_10k": null,
-      "win_diff_pp": -0.23586,
-      "posterior_pp": -11.792992,
-      "posterior_se_pp": 19.130991,
-      "posterior_screens": 1,
-      "posterior_tau_pp": 0.0,
-      "family_wise": false,
-      "conflict": false,
-      "screen": {
-        "seats": 38160,
-        "pairs": 19080,
-        "n_on": 19209,
-        "n_off": 18951,
-        "win_delta_pp": -0.236,
-        "win_z": -0.616,
-        "share_delta_pp": 0.038,
-        "share_z": 0.482,
-        "read": "~",
-        "source": "2026-08-24-standard-continuous-38160-total-seats.json",
-        "win_tranches": [
-          {
-            "position": "latest",
-            "seats": 19998,
-            "pairs": 9999,
-            "win_delta_pp": -0.36,
-            "win_z": -0.682,
-            "win_se_pp": 0.528
-          },
-          {
-            "position": "previous",
-            "seats": 18162,
-            "pairs": 9081,
-            "win_delta_pp": -0.099,
-            "win_z": -0.178,
             "win_se_pp": 0.556
           }
         ]
