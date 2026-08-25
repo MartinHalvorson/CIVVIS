@@ -458,8 +458,8 @@
   ],
   "counts": {
     "helps": 17,
-    "hurts": 2,
-    "unresolved": 88,
+    "hurts": 1,
+    "unresolved": 85,
     "default_on": 57
   },
   "genes": [
@@ -1094,51 +1094,6 @@
       }
     },
     {
-      "tag": "builder-worked-tile-priority",
-      "verdict": "unresolved",
-      "default_on": false,
-      "wins_last_10k": -32,
-      "wins_prior_10k": -8,
-      "wins_third_10k": 24,
-      "win_diff_pp": -0.128299,
-      "posterior_pp": -5.079015,
-      "posterior_se_pp": 15.662012,
-      "posterior_screens": 3,
-      "posterior_tau_pp": 20.682799,
-      "family_wise": false,
-      "conflict": false,
-      "screen": {
-        "seats": 38160,
-        "pairs": 19080,
-        "n_on": 19216,
-        "n_off": 18944,
-        "win_delta_pp": -0.646,
-        "win_z": -1.691,
-        "share_delta_pp": -0.056,
-        "share_z": -0.709,
-        "read": "~",
-        "source": "2026-08-24-standard-continuous-38160-total-seats.json",
-        "win_tranches": [
-          {
-            "position": "latest",
-            "seats": 19998,
-            "pairs": 9999,
-            "win_delta_pp": -0.55,
-            "win_z": -1.038,
-            "win_se_pp": 0.53
-          },
-          {
-            "position": "previous",
-            "seats": 18162,
-            "pairs": 9081,
-            "win_delta_pp": -0.752,
-            "win_z": -1.363,
-            "win_se_pp": 0.552
-          }
-        ]
-      }
-    },
-    {
       "tag": "buildings-before-projects",
       "verdict": "unresolved",
       "default_on": true,
@@ -1764,51 +1719,6 @@
             "win_delta_pp": -0.25,
             "win_z": -0.454,
             "win_se_pp": 0.55
-          }
-        ]
-      }
-    },
-    {
-      "tag": "district-building-chain",
-      "verdict": "hurts",
-      "default_on": false,
-      "wins_last_10k": -29,
-      "wins_prior_10k": -1,
-      "wins_third_10k": null,
-      "win_diff_pp": -0.268531,
-      "posterior_pp": -12.890746,
-      "posterior_se_pp": 13.930265,
-      "posterior_screens": 2,
-      "posterior_tau_pp": 9.615307,
-      "family_wise": false,
-      "conflict": false,
-      "screen": {
-        "seats": 38160,
-        "pairs": 19080,
-        "n_on": 18926,
-        "n_off": 19234,
-        "win_delta_pp": -0.58,
-        "win_z": -1.526,
-        "share_delta_pp": -0.258,
-        "share_z": -3.289,
-        "read": "share hurts *",
-        "source": "2026-08-24-standard-continuous-38160-total-seats.json",
-        "win_tranches": [
-          {
-            "position": "latest",
-            "seats": 19998,
-            "pairs": 9999,
-            "win_delta_pp": -1.274,
-            "win_z": -2.418,
-            "win_se_pp": 0.527
-          },
-          {
-            "position": "previous",
-            "seats": 18162,
-            "pairs": 9081,
-            "win_delta_pp": 0.184,
-            "win_z": 0.334,
-            "win_se_pp": 0.549
           }
         ]
       }
@@ -4518,51 +4428,6 @@
       }
     },
     {
-      "tag": "siege-tracks-wall",
-      "verdict": "unresolved",
-      "default_on": false,
-      "wins_last_10k": -28,
-      "wins_prior_10k": 8,
-      "wins_third_10k": -3,
-      "win_diff_pp": 0.131121,
-      "posterior_pp": 8.537321,
-      "posterior_se_pp": 12.033866,
-      "posterior_screens": 5,
-      "posterior_tau_pp": 19.425231,
-      "family_wise": false,
-      "conflict": false,
-      "screen": {
-        "seats": 38160,
-        "pairs": 19080,
-        "n_on": 19187,
-        "n_off": 18973,
-        "win_delta_pp": -0.554,
-        "win_z": -1.456,
-        "share_delta_pp": -0.054,
-        "share_z": -0.685,
-        "read": "~",
-        "source": "2026-08-24-standard-continuous-38160-total-seats.json",
-        "win_tranches": [
-          {
-            "position": "latest",
-            "seats": 19998,
-            "pairs": 9999,
-            "win_delta_pp": -0.937,
-            "win_z": -1.779,
-            "win_se_pp": 0.527
-          },
-          {
-            "position": "previous",
-            "seats": 18162,
-            "pairs": 9081,
-            "win_delta_pp": -0.132,
-            "win_z": -0.24,
-            "win_se_pp": 0.55
-          }
-        ]
-      }
-    },
-    {
       "tag": "slot-kind-tiebreak",
       "verdict": "unresolved",
       "default_on": true,
@@ -5215,51 +5080,6 @@
             "win_delta_pp": 1.598,
             "win_z": 2.541,
             "win_se_pp": 0.629
-          }
-        ]
-      }
-    },
-    {
-      "tag": "wonder-ring-settle-value",
-      "verdict": "unresolved",
-      "default_on": false,
-      "wins_last_10k": -14,
-      "wins_prior_10k": 22,
-      "wins_third_10k": 7,
-      "win_diff_pp": 0.079075,
-      "posterior_pp": 4.917956,
-      "posterior_se_pp": 8.558396,
-      "posterior_screens": 5,
-      "posterior_tau_pp": 0.0,
-      "family_wise": false,
-      "conflict": false,
-      "screen": {
-        "seats": 38160,
-        "pairs": 19080,
-        "n_on": 28694,
-        "n_off": 9466,
-        "win_delta_pp": -0.553,
-        "win_z": -1.245,
-        "share_delta_pp": -0.099,
-        "share_z": -1.09,
-        "read": "~",
-        "source": "2026-08-24-standard-continuous-38160-total-seats.json",
-        "win_tranches": [
-          {
-            "position": "latest",
-            "seats": 19998,
-            "pairs": 9999,
-            "win_delta_pp": -0.81,
-            "win_z": -1.314,
-            "win_se_pp": 0.616
-          },
-          {
-            "position": "previous",
-            "seats": 18162,
-            "pairs": 9081,
-            "win_delta_pp": -0.27,
-            "win_z": -0.422,
-            "win_se_pp": 0.64
           }
         ]
       }

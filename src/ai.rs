@@ -2325,11 +2325,6 @@ pub struct BasicAi {
     /// declines the attack forever. Off for the frozen native controllers;
     /// on for the live bridge and the native repair bundle.
     camp_party: bool,
-    /// Price a revealed natural wonder's ring into the settle scorer, so a
-    /// founding site that would work the wonder's neighbours gets credit for
-    /// the wonder's modeled appeal and projected yields. Off for the frozen
-    /// native controllers. See `AdvancedAi::natural_wonder_ring_value`.
-    wonder_ring_settle_value: bool,
     /// Keep the land army out of the water: exclude water from a land unit's
     /// exploration goals, bring an already-embarked unit ashore whether or not
     /// it has an upgrade waiting, and let `peacetime_step` know when
@@ -4604,7 +4599,6 @@ impl BasicAi {
             recon_replacement: false,
             naval_recon: false,
             camp_party: false,
-            wonder_ring_settle_value: false,
             come_ashore: false,
             civilian_rescue: false,
             barbarian_capture_priority: false,
@@ -4943,7 +4937,6 @@ impl BasicAi {
             recon_replacement: false,
             naval_recon: false,
             camp_party: false,
-            wonder_ring_settle_value: false,
             come_ashore: false,
             civilian_rescue: false,
             barbarian_capture_priority: false,

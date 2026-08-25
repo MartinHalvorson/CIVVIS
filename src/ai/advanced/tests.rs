@@ -8955,101 +8955,6 @@ fn settlement_forecast_delays_second_ring_jobs_and_models_water_housing() {
     assert_eq!(AdvancedAi::settlement_base_housing(&fresh, center), 5.0);
 }
 
-/// The defect and the repair of issue #1378 in one shape: a plain
-/// breadbasket against the same site with the Matterhorn on its first
-/// ring. Live run `civvis-20260807T202450Z` t93 founded a 64.6-point
-/// breadbasket while `FEATURE_MATTERHORN` stood revealed inside the
-/// candidate radius, because the shipped scorer prices a wonder only
-/// through the worked tiles it can forecast. With the treatment the
-/// wonder's modeled sheet (appeal 2, +1 culture onto the ring) is credited
-/// and the wonder ring outbids the breadbasket; held off, the shipped
-/// score is reproduced exactly.
-#[test]
-fn a_wonder_ring_site_outbids_the_breadbasket_only_when_the_bridge_prices_it() {
-    let (mut breadbasket, center, first, second) = settlement_forecast_fixture(8_120);
-    for position in &first {
-        shape_forecast_tile(&mut breadbasket, *position, "grassland", false, None);
-    }
-    let mut wonder_ring = breadbasket.clone();
-    // The breadbasket adds a production hill on its second ring; the
-    // wonder site gives up a workable grassland for an impassable mountain
-    // carrying the Matterhorn — strictly worse ground until the wonder
-    // itself is priced.
-    shape_forecast_tile(&mut breadbasket, second[0], "grassland", true, None);
-    {
-        let tile = wonder_ring.map.tiles.get_mut(&first[0]).unwrap();
-        tile.terrain = Name::new("mountain");
-        tile.hills = false;
-        tile.feature = Some(Name::new("matterhorn"));
-        tile.resource = None;
-    }
-
-    let shipped = AdvancedAi::new();
-    let shipped_bread = shipped.settle_value(&breadbasket, 0, center);
-    let shipped_wonder = shipped.settle_value(&wonder_ring, 0, center);
-    assert!(
-        shipped_bread > shipped_wonder,
-        "the defect: without the treatment the breadbasket outbids the wonder \
-             ring (bread {shipped_bread:.1} vs wonder {shipped_wonder:.1})"
-    );
-
-    let mut bridged = AdvancedAi::new();
-    bridged.enable_wonder_ring_settle_value();
-    let priced_wonder = bridged.settle_value(&wonder_ring, 0, center);
-    let priced_bread = bridged.settle_value(&breadbasket, 0, center);
-    assert!(
-        priced_wonder > priced_bread,
-        "the repair: with the treatment the wonder ring outbids the \
-             breadbasket (wonder {priced_wonder:.1} vs bread {priced_bread:.1})"
-    );
-
-    // The credit is the Matterhorn's own modeled sheet — appeal 2 plus one
-    // hex ring of its +1 culture projection at the shared culture weight —
-    // not a flat constant.
-    let sheet = 2.0 * NATURAL_WONDER_APPEAL_WEIGHT + 1.2 * NATURAL_WONDER_RING_TILES;
-    assert!(
-        (priced_wonder - shipped_wonder - sheet).abs() < 1e-9,
-        "the wonder credit must equal the modeled sheet: got {:.3}, sheet {sheet:.3}",
-        priced_wonder - shipped_wonder
-    );
-    // A site with no wonder in its work radius gains nothing from the
-    // treatment, and holding it off reproduces the shipped score exactly.
-    assert_eq!(priced_bread, shipped_bread);
-    bridged.disable_wonder_ring_settle_value();
-    assert_eq!(
-        bridged.settle_value(&wonder_ring, 0, center),
-        shipped_wonder
-    );
-}
-
-/// Pricing the ring must not price the summit. A PASSABLE wonder — the
-/// Pantanal walks like ordinary grassland — is the sharp case: only
-/// `tile_is_natural_wonder`, not impassability, keeps the candidate out,
-/// however large the credit its own ring now carries.
-#[test]
-fn the_priced_wonder_ring_still_refuses_to_settle_on_the_wonder() {
-    let (mut game, center, first, _second) = settlement_forecast_fixture(8_121);
-    for position in &first {
-        shape_forecast_tile(&mut game, *position, "grassland", false, None);
-    }
-    {
-        let tile = game.map.tiles.get_mut(&first[0]).unwrap();
-        tile.terrain = Name::new("grassland");
-        tile.feature = Some(Name::new("pantanal"));
-    }
-    let mut bridged = AdvancedAi::new();
-    bridged.enable_wonder_ring_settle_value();
-    let sites = bridged.settle_sites(&game, 0, center, 4);
-    assert!(
-        sites.iter().all(|(pos, _)| *pos != first[0]),
-        "the wonder tile itself must never be offered as a founding site"
-    );
-    assert!(
-        sites.iter().any(|(pos, _)| *pos == center),
-        "while the site beside it stays on the menu"
-    );
-}
-
 #[test]
 fn a_retarget_does_not_resolve_a_settler_delay() {
     // ⚠ The existing release test sets `settler_blocked_turns` by hand, so it
@@ -11356,160 +11261,6 @@ fn a_spawned_builder_carries_the_charges_production_priced() {
     assert!(game.builder_charges(0) >= 1);
 }
 
-/// The native destination scorer prices an idle job from only its improvement
-/// yield. The opt-in instead pays an ordinary idle improvement for the value it
-/// adds when a citizen can leave the city's weakest current tile. A Mine that
-/// materially upgrades that worker can still win; one that merely ties the
-/// worker earns nothing. Luxury and strategic connections retain their full
-/// priority because their Amenity or stockpile pays without a worked citizen.
-#[test]
-fn builder_worked_tile_priority_prices_idle_tiles_by_marginal_worker_swap() {
-    let (mut game, city, home) = empire_with_a_capital(71_011);
-    for tile in game.map.tiles.values_mut() {
-        tile.terrain = crate::name!("grassland");
-        tile.feature = None;
-        tile.hills = false;
-        tile.resource = None;
-        tile.improvement = None;
-        tile.pillaged = false;
-    }
-    game.players[0].techs.extend([
-        crate::name!("mining"),
-        crate::name!("bronze_working"),
-        crate::name!("irrigation"),
-    ]);
-    let ring: Vec<Pos> = game
-        .nbrs(home)
-        .into_iter()
-        .filter(|pos| game.cities[&city].owned_tiles.contains(pos))
-        .collect();
-    assert!(ring.len() >= 3, "the capital needs three adjacent tiles");
-    let (worked, idle, resource_tile) = (ring[0], ring[1], ring[2]);
-    game.map.tiles.get_mut(&idle).unwrap().hills = true;
-    game.observed_city_worked_tiles.insert(city, vec![worked]);
-    let builder = game.spawn_unit("builder", 0, home);
-    let strategy = GrandStrategy::Expansion;
-
-    assert!(
-        game.valid_improvements(0, worked)
-            .iter()
-            .any(|name| name == "farm")
-            && game
-                .valid_improvements(0, idle)
-                .iter()
-                .any(|name| name == "mine"),
-        "the controlled tiles must expose the ordinary Farm and Mine jobs"
-    );
-    let plain = AdvancedAi::new();
-    assert!(
-        plain.improvement_value(&game, idle, "mine", strategy)
-            > plain.improvement_value(&game, worked, "farm", strategy),
-        "the fixture needs the old raw scorer to prefer the idle Mine"
-    );
-    let mut stock_game = game.clone();
-    let mut stock = AdvancedAi::new();
-    assert!(stock.advanced_builder_step(&mut stock_game, 0, builder, strategy));
-    assert_eq!(stock.builder_targets.get(&builder), Some(&idle));
-
-    let mut treated = AdvancedAi::new();
-    assert!(!treated.builder_worked_tile_priority);
-    treated.enable_builder_worked_tile_priority();
-    let weakest = treated.builder_worked_tile_value(&game, worked, strategy);
-    let worked_charge =
-        treated.builder_target_value(&game, worked, "farm", strategy, true, Some(weakest));
-    let idle_potential = treated.builder_improved_tile_value(&game, idle, "mine", strategy);
-    let idle_charge =
-        treated.builder_target_value(&game, idle, "mine", strategy, false, Some(weakest));
-    assert!(
-        (idle_charge - (idle_potential - weakest)).abs() < 1e-9,
-        "an idle job is its potential worked tile less the marginal worker"
-    );
-    assert!(
-        idle_charge > worked_charge,
-        "the Mine should win only because it can replace the weak worked Grassland"
-    );
-    let mut treated_game = game.clone();
-    assert!(treated.advanced_builder_step(&mut treated_game, 0, builder, strategy));
-    assert_eq!(treated.builder_targets.get(&builder), Some(&idle));
-
-    let mut no_swap_game = game.clone();
-    let high_worked = no_swap_game.map.tiles.get_mut(&worked).unwrap();
-    high_worked.hills = true;
-    high_worked.improvement = Some(Name::new("mine"));
-    let no_swap_floor = treated.builder_worked_tile_value(&no_swap_game, worked, strategy);
-    assert_eq!(
-        treated.builder_target_value(
-            &no_swap_game,
-            idle,
-            "mine",
-            strategy,
-            false,
-            Some(no_swap_floor),
-        ),
-        0.0,
-        "an idle tile that cannot replace any current worker has no immediate charge value"
-    );
-    assert_eq!(
-        treated.builder_target_value(&game, idle, "mine", strategy, false, None),
-        0.0,
-        "a city without a worked tile cannot receive an immediate worker-swap gain"
-    );
-
-    for (resource, improvement) in [("iron", "mine"), ("citrus", "plantation")] {
-        let mut connected_game = game.clone();
-        let tile = connected_game.map.tiles.get_mut(&resource_tile).unwrap();
-        tile.resource = Some(Name::new(resource));
-        tile.hills = improvement == "mine";
-        assert!(
-            matches!(
-                connected_game.rules.resources[resource].class.as_str(),
-                "luxury" | "strategic"
-            ) && connected_game
-                .valid_improvements(0, resource_tile)
-                .iter()
-                .any(|name| name == improvement),
-            "{resource} must be a legal {improvement} connection"
-        );
-        let mut connected = AdvancedAi::new();
-        connected.enable_builder_worked_tile_priority();
-        let connection_value = connected.builder_target_value(
-            &connected_game,
-            resource_tile,
-            improvement,
-            strategy,
-            false,
-            Some(weakest),
-        );
-        assert_eq!(
-            connection_value,
-            connected.improvement_value(&connected_game, resource_tile, improvement, strategy),
-            "a {resource} connection keeps its full empire-wide value"
-        );
-        assert!(
-            connection_value
-                > connected.builder_target_value(
-                    &connected_game,
-                    worked,
-                    "farm",
-                    strategy,
-                    true,
-                    Some(weakest),
-                )
-        );
-        assert!(connected.advanced_builder_step(&mut connected_game, 0, builder, strategy,));
-        assert_eq!(
-            connected.builder_targets.get(&builder),
-            Some(&resource_tile)
-        );
-    }
-
-    assert!(GENES.iter().any(|gene| gene.opt_in()
-        && gene.field == "builder_worked_tile_priority"
-        && gene.tag == "builder-worked-tile-priority"));
-    treated.disable_builder_worked_tile_priority();
-    assert!(!treated.builder_worked_tile_priority);
-}
-
 /// `civvis-20260821T204930Z` lost a Builder stacked with its Warrior on t18:
 /// the Barbarian killed the Warrior, then captured the Builder in the same
 /// hostile phase.  The next Builder stepped out on t22 and was captured before
@@ -12677,145 +12428,6 @@ fn a_theater_square_owes_its_buildings_the_way_a_campus_does() {
     assert!(!AdvancedAi::legacy().culture_building_debt);
 }
 
-/// ★★★★★ Eight Campuses and six Theater Squares stood empty to turn 205 of
-/// run civvis-20260819T000800Z: 174 produce orders, not one Library,
-/// University or Amphitheater. The Library was legal on 133 replayed
-/// city-turns at a median value of 23 while the queue winner stood 55
-/// higher; the Amphitheater never reached a price at all, because under an
-/// explicit non-Culture target the great-work veto returns before
-/// `culture_building_debt` is computed. See `district_building_chain`: a
-/// specialty district the city already stands owes its own buildings, the
-/// debt decays with each building of the family the city holds, the veto
-/// yields to a Theater Square the city has, and nothing changes for a city
-/// without the district, for a unit, for a wonder, or for the frozen and
-/// stock controllers.
-#[test]
-fn a_standing_district_owes_its_own_buildings_whatever_the_lane() {
-    let (mut game, capital, _home) = empire_with_a_capital(71_115);
-    game.players[0].civics.insert(crate::name!("drama_poetry"));
-    game.players[0].techs.insert(crate::name!("writing"));
-    game.players[0].techs.insert(crate::name!("currency"));
-    game.players[0].techs.insert(crate::name!("education"));
-    game.turn = 60;
-    let plan = StrategicPlan {
-        strategy: GrandStrategy::Diplomacy,
-        target_player: None,
-        target_city: None,
-        threatened_city: None,
-        desired_cities: 3,
-        assessed_turn: game.turn,
-        rush: false,
-    };
-    let counts = EmpireCounts::default();
-    let library = Item::Building {
-        building: crate::name!("library"),
-    };
-    let university = Item::Building {
-        building: crate::name!("university"),
-    };
-    let amphitheater = Item::Building {
-        building: crate::name!("amphitheater"),
-    };
-    let monument = Item::Building {
-        building: crate::name!("monument"),
-    };
-
-    // The seat that plays the ladder: an explicit Diplomacy target with the
-    // live bundle, and the same seat with only this treatment withheld.
-    // ⚠ `_universe()` — see the note in
-    // `a_theater_square_owes_its_buildings_the_way_a_campus_does`.
-    let mut live = AdvancedAi::targeting(VictoryTarget::Diplomacy);
-    live.enable_live_bridge_universe();
-    assert!(
-        live.district_building_chain,
-        "the universe carries the treatment"
-    );
-    live.refresh_research_weight(&game);
-    let mut withheld = AdvancedAi::targeting(VictoryTarget::Diplomacy);
-    withheld.enable_live_bridge_universe();
-    withheld.disable_district_building_chain();
-    withheld.refresh_research_weight(&game);
-
-    // No Campus, no Theater Square: nothing is owed and the two arms agree
-    // — including the veto, which still refuses the Amphitheater to a city
-    // with no Theater Square under a non-Culture target.
-    assert_eq!(
-        live.production_value(&game, 0, capital, &library, &plan, &counts),
-        withheld.production_value(&game, 0, capital, &library, &plan, &counts),
-        "a city with no Campus owes it no Library"
-    );
-    install_ai_test_district(&mut game, capital, "campus");
-    install_ai_test_district(&mut game, capital, "theater_square");
-    assert!(game.can_produce(0, capital, &library));
-    assert!(game.can_produce(0, capital, &amphitheater));
-
-    // The Campus owes its Library; the debt is the constant over the
-    // payback horizon (full this early), on top of the unchanged price.
-    let owed = live.production_value(&game, 0, capital, &library, &plan, &counts);
-    let unowed = withheld.production_value(&game, 0, capital, &library, &plan, &counts);
-    let cost = game.item_remaining_cost_for_city(0, capital, &library);
-    let production = game.city_yields(capital).production.max(1.0);
-    let denominator = 7.0 + (cost / production).max(1.0);
-    let expected = DISTRICT_BUILDING_CHAIN_DEBT
-        * AdvancedAi::campus_payback_horizon(&game)
-        * live.production_category_gene(&library)
-        / denominator;
-    assert!(
-        (owed - unowed - expected).abs() < 1e-6,
-        "the standing Campus owes its Library the chain debt: {owed} - {unowed} != {expected}"
-    );
-
-    // The Theater Square's building reaches a price on this seat: the veto
-    // that returned -10_000 before any debt was computed yields to a
-    // district the city already stands. Withheld, the veto stands.
-    let amph_live = live.production_value(&game, 0, capital, &amphitheater, &plan, &counts);
-    let amph_withheld = withheld.production_value(&game, 0, capital, &amphitheater, &plan, &counts);
-    assert!(
-        amph_live > 0.0,
-        "the standing Theater Square's Amphitheater is priced, not vetoed: {amph_live}"
-    );
-    assert_eq!(
-        amph_withheld, -10_000.0,
-        "withheld, the great-work veto is unchanged"
-    );
-
-    // A building outside every specialty district collects nothing.
-    assert_eq!(
-        live.production_value(&game, 0, capital, &monument, &plan, &counts),
-        withheld.production_value(&game, 0, capital, &monument, &plan, &counts),
-        "a Monument is owed by no district"
-    );
-
-    // With the Library built, the University is owed less: one tier decayed.
-    game.cities
-        .get_mut(&capital)
-        .unwrap()
-        .buildings
-        .push(crate::name!("library"));
-    assert!(game.can_produce(0, capital, &university));
-    let owed_university = live.production_value(&game, 0, capital, &university, &plan, &counts);
-    let unowed_university =
-        withheld.production_value(&game, 0, capital, &university, &plan, &counts);
-    let cost = game.item_remaining_cost_for_city(0, capital, &university);
-    let denominator = 7.0 + (cost / production).max(1.0);
-    let expected_tier_two = DISTRICT_BUILDING_CHAIN_DEBT
-        * DISTRICT_BUILDING_CHAIN_TIER_DECAY
-        * AdvancedAi::campus_payback_horizon(&game)
-        * live.production_category_gene(&university)
-        / denominator;
-    assert!(
-        (owed_university - unowed_university - expected_tier_two).abs() < 1e-6,
-        "the second building of the chain is owed one tier less: \
-         {owed_university} - {unowed_university} != {expected_tier_two}"
-    );
-
-    // Frozen and stock controllers never carry it, and the debt is a
-    // building-arm term: the Campus district's own price is untouched.
-    assert!(!AdvancedAi::new().district_building_chain);
-    assert!(!AdvancedAi::legacy().district_building_chain);
-    assert!(std::hint::black_box(DISTRICT_BUILDING_CHAIN_TIER_DECAY) < 1.0);
-}
-
 /// The old non-Culture veto used a Great Work slot as a proxy for the Culture
 /// district. That refuses National History Museum in the Government Plaza and
 /// lets slotless Marae through, neither of which is the actual policy boundary.
@@ -13082,10 +12694,10 @@ fn a_regional_amenity_building_counts_the_cities_it_reaches() {
     let counts = EmpireCounts::default();
     let ordinary = AdvancedAi::new();
     let stock = ordinary.production_value(&game, 0, capital, &zoo, &plan, &counts);
-    // ⚠ `_universe()`: `amenity_district_path` is a ledger-withheld gene and
-    // `district_building_chain` became one on 2026-08-21 (PR #2245), so the
-    // deployed bundle prices the Zoo exactly as stock does and the arms are
-    // equal. The reach term is the mechanism this test pins, so it seats it.
+    // ⚠ `_universe()`: `amenity_district_path` is a ledger-withheld gene, so
+    // the deployed bundle prices the Zoo exactly as stock does and the arms
+    // are equal. The reach term is the mechanism this test pins, so it seats
+    // it.
     let mut live = AdvancedAi::new();
     live.enable_live_bridge_universe();
     let priced = live.production_value(&game, 0, capital, &zoo, &plan, &counts);
@@ -14144,119 +13756,6 @@ fn anchor_at(game: &Game, home: Pos, distance: i32) -> Pos {
     *candidates
         .first()
         .unwrap_or_else(|| panic!("no tile sits exactly {distance} hexes from the capital"))
-}
-
-/// The defect this exists for: the siege appetite was one unit for any
-/// target city at all, so a capital behind 400 points of wall was
-/// provisioned exactly like an unwalled frontier town — and once that one
-/// unit existed the appetite went to zero.
-#[test]
-fn the_siege_train_is_sized_by_the_wall_it_has_to_breach() {
-    let (mut game, _capital, home) = empire_with_a_capital(71_104);
-    let mut sites: Vec<Pos> = game
-        .map
-        .tiles
-        .iter()
-        .filter(|(position, tile)| {
-            game.wdist(**position, home) >= 15
-                && game.rules.is_passable(tile)
-                && !game.rules.is_water(tile)
-        })
-        .map(|(position, _)| *position)
-        .collect();
-    sites.sort_unstable();
-    game.current = 1;
-    for site in sites {
-        let settler = game.spawn_test_unit("settler", 1, site);
-        if game.apply(1, &Action::FoundCity { unit: settler }).is_ok() {
-            break;
-        }
-        game.remove_unit(settler);
-    }
-    game.current = 0;
-    let target = *game.player_city_ids(1).first().expect("a target city");
-
-    let assessed_turn = game.turn;
-    let plan_for = move |city: Option<u32>| StrategicPlan {
-        strategy: GrandStrategy::Conquest,
-        target_player: Some(1),
-        target_city: city,
-        threatened_city: None,
-        desired_cities: 3,
-        assessed_turn,
-        rush: false,
-    };
-
-    // The city is out of sight, so every reading below comes from the
-    // belief layer. Look at it once, the way a scout would.
-    let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
-    ai.enable_siege_tracks_the_wall();
-    let watchtower = game
-        .nbrs(game.cities[&target].pos)
-        .into_iter()
-        .find(|position| game.map.get(*position).is_some())
-        .expect("a tile beside the city");
-    let scout = game.spawn_test_unit("scout", 0, watchtower);
-
-    let wanted = move |ai: &AdvancedAi, game: &Game, city: Option<u32>| {
-        ai.siege_units_wanted(game, 0, &plan_for(city))
-    };
-
-    // No target at all: no siege train, walls or not.
-    assert_eq!(wanted(&ai, &game, None), 0);
-
-    // An unwalled target does not need one either — melee takes the city
-    // and siege units can never land the capturing blow.
-    game.cities.get_mut(&target).unwrap().wall_hp = 0;
-    assert_eq!(wanted(&ai, &game, Some(target)), 0);
-
-    // One tier of wall, one train; four tiers, the cap.
-    game.cities.get_mut(&target).unwrap().wall_hp = 100;
-    assert_eq!(wanted(&ai, &game, Some(target)), 1);
-    game.cities.get_mut(&target).unwrap().wall_hp = 300;
-    assert_eq!(wanted(&ai, &game, Some(target)), 2);
-    game.cities.get_mut(&target).unwrap().wall_hp = 400;
-    assert_eq!(
-        wanted(&ai, &game, Some(target)),
-        SIEGE_UNITS_MAX,
-        "a fully walled capital is worth the whole train"
-    );
-
-    // The wall is read from memory once the scout leaves, so a fogged
-    // capital still provisions the campaign that has to breach it.
-    ai.belief.observe(&game, 0);
-    game.remove_unit(scout);
-    assert!(
-        !game.player_can_see(0, game.cities[&target].pos),
-        "the target must be fogged for the memory path to be exercised"
-    );
-    assert_eq!(
-        wanted(&ai, &game, Some(target)),
-        SIEGE_UNITS_MAX,
-        "the wall a city had when we last looked still sizes the train"
-    );
-
-    // The control still refuses to guess. The live fog repair instead
-    // requests the conservative one-tier floor for a city it has never
-    // seen, which is enough to put a siege unit in the production plan.
-    let mut unseen = AdvancedAi::targeting(VictoryTarget::Domination);
-    unseen.enable_siege_tracks_the_wall();
-    assert_eq!(wanted(&unseen, &game, Some(target)), 0);
-    unseen.enable_blind_objective_strength();
-    assert_eq!(wanted(&unseen, &game, Some(target)), 1);
-
-    // The shipped agent is unchanged: one unit for any target, zero
-    // otherwise, whatever the wall is doing.
-    let shipped = AdvancedAi::targeting(VictoryTarget::Domination);
-    assert!(!shipped.siege_tracks_the_wall);
-    assert_eq!(wanted(&shipped, &game, Some(target)), 1);
-    assert_eq!(wanted(&shipped, &game, None), 0);
-    game.cities.get_mut(&target).unwrap().wall_hp = 0;
-    assert_eq!(
-        wanted(&shipped, &game, Some(target)),
-        1,
-        "the shipped rule never looked at the wall"
-    );
 }
 
 /// The defect this exists for: the movement score charged for the threat a
@@ -15907,7 +15406,7 @@ fn idle_faith_buys_a_great_person_outright_only_for_a_seat_with_no_religion() {
 /// table asserts is `true` for every `ENGINE_REPAIR_TREATMENTS` tag. A repair
 /// the universe never turns on is off in BOTH arms, the arms play identical
 /// games, and the screen prints `Δ +0.0 [+0.0, +0.0] z +0.00` — which reads
-/// like a measured null and is not one. The culture economy's three tags
+/// like a measured null and is not one. The culture economy's two tags
 /// reached the tables before their enables did and burned 30 games saying
 /// nothing.
 ///
@@ -15916,9 +15415,9 @@ fn idle_faith_buys_a_great_person_outright_only_for_a_seat_with_no_religion() {
 /// so nothing ships on anything but a measurement.
 ///
 /// ⭐ AND THEY HAVE NOW BEEN MEASURED (2026-08-23). The 23,622-paired-seat
-/// standard screen priced all three. Their values are now evidence beside the
+/// standard screen priced both. Their values are now evidence beside the
 /// operator-pinned deployment selection: `culture-building-debt` is pinned
-/// on, while `culture-coverage` and `district-building-chain` are pinned off.
+/// on, while `culture-coverage` is pinned off.
 /// So the second half is no longer "unmeasured means off" — it is "the
 /// ledger's explicit call", and each tag is asserted against
 /// `ledger_default_on` rather than against a constant `false`. The half that
@@ -15929,9 +15428,7 @@ fn the_culture_economy_is_in_the_native_universe_and_the_ledger_decides_deployme
     let mut universe = AdvancedAi::new();
     universe.enable_engine_repairs_universe();
     assert!(
-        universe.culture_coverage
-            && universe.culture_building_debt
-            && universe.district_building_chain,
+        universe.culture_coverage && universe.culture_building_debt,
         "the native repair universe must carry every repair gene, \
          or the screen varies nothing"
     );
@@ -15941,7 +15438,6 @@ fn the_culture_economy_is_in_the_native_universe_and_the_ledger_decides_deployme
     for (tag, shipped) in [
         ("culture-coverage", deployed.culture_coverage),
         ("culture-building-debt", deployed.culture_building_debt),
-        ("district-building-chain", deployed.district_building_chain),
     ] {
         let row = crate::ai::gene(tag).expect("registered");
         assert!(row.repair(), "{tag} is a native repair");
@@ -15962,8 +15458,8 @@ fn the_culture_economy_is_in_the_native_universe_and_the_ledger_decides_deployme
         "culture-building-debt is in the explicit deployment selection"
     );
     assert!(
-        !deployed.culture_coverage && !deployed.district_building_chain,
-        "the other two read negative on that screen and stay withheld"
+        !deployed.culture_coverage,
+        "culture-coverage reads negative on that screen and stays withheld"
     );
 }
 

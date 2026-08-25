@@ -2307,7 +2307,6 @@ mod tests {
                 ("relief_targets_the_siege", ai.relief_targets_the_siege),
                 ("blind_objective_units", ai.blind_objective_units),
                 ("blind_objective_strength", ai.blind_objective_strength),
-                ("siege_tracks_the_wall", ai.siege_tracks_the_wall),
                 ("army_target_weighs_the_enemy", ai.army_target_weighs_the_enemy),
                 ("peacetime_deterrence", ai.peacetime_deterrence),
                 ("strike_opening", ai.strike_opening),

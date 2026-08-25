@@ -768,17 +768,6 @@ impl AdvancedAi {
         self.base.naval_recon = false;
     }
 
-    /// Credit a settle site for the modeled appeal and yields of a revealed
-    /// natural wonder's neighbouring tiles. Native tournament games leave this
-    /// disabled so their recorded ladders stay comparable.
-    pub fn enable_wonder_ring_settle_value(&mut self) {
-        self.base.wonder_ring_settle_value = true;
-    }
-
-    pub fn disable_wonder_ring_settle_value(&mut self) {
-        self.base.wonder_ring_settle_value = false;
-    }
-
     /// Keep land units out of the water: no water exploration goals, and
     /// disembark units already at sea. Native tournament games leave this
     /// disabled so their recorded ladders stay comparable.
@@ -788,12 +777,6 @@ impl AdvancedAi {
 
     pub fn disable_come_ashore(&mut self) {
         self.base.come_ashore = false;
-    }
-
-    /// Size the siege train by the wall at the target city instead of always
-    /// asking for one siege unit.
-    pub fn enable_siege_tracks_the_wall(&mut self) {
-        self.siege_tracks_the_wall = true;
     }
 
     /// Price a fogged objective city from its last sighting instead of treating
@@ -1233,18 +1216,6 @@ impl AdvancedAi {
         self.production_settler_deadline = false;
     }
 
-    /// Prefer Builder jobs on tiles citizens currently work, keeping luxury and
-    /// strategic resource connections at full priority. Native opt-in gene
-    /// `builder-worked-tile-priority`; off in production.
-    pub fn enable_builder_worked_tile_priority(&mut self) {
-        self.builder_worked_tile_priority = true;
-    }
-
-    /// The twin of `enable_builder_worked_tile_priority`.
-    pub fn disable_builder_worked_tile_priority(&mut self) {
-        self.builder_worked_tile_priority = false;
-    }
-
     /// Make a Builder retreat from, and never step into, a tile a visible
     /// barbarian can capture next turn. Native opt-in gene
     /// `builder-barbarian-safety`; off in production until its targeted
@@ -1671,16 +1642,6 @@ impl AdvancedAi {
         self.culture_building_debt = false;
     }
 
-    /// Make every specialty district owe the buildings inside it, whatever
-    /// victory lane the empire is playing. See `district_building_chain`.
-    pub fn enable_district_building_chain(&mut self) {
-        self.district_building_chain = true;
-    }
-
-    pub fn disable_district_building_chain(&mut self) {
-        self.district_building_chain = false;
-    }
-
     /// Treat a Theater Square, rather than any Great Work slot, as the
     /// non-Culture lane's veto boundary. Evaluator-only until the targeted
     /// deployment comparison prices this distinction.
@@ -1901,10 +1862,6 @@ impl AdvancedAi {
 
     pub fn disable_peacetime_deterrence(&mut self) {
         self.peacetime_deterrence = false;
-    }
-
-    pub fn disable_siege_tracks_the_wall(&mut self) {
-        self.siege_tracks_the_wall = false;
     }
 
     pub fn disable_blind_objective_strength(&mut self) {

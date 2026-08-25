@@ -320,20 +320,6 @@ fn only_the_live_bridge_replaces_the_recon_arm() {
     assert!(!live.base.recon_replacement);
 }
 
-/// Off by default, set only by the live bridge, holdable off on its own —
-/// the wonder-ring settle credit follows the same contract as every other
-/// bridge repair, so the frozen `advanced_v1` anchor keeps its ladder.
-#[test]
-fn only_the_live_bridge_prices_the_wonder_ring_into_settling() {
-    assert!(!AdvancedAi::new().base.wonder_ring_settle_value);
-    assert!(!AdvancedAi::legacy().base.wonder_ring_settle_value);
-    let mut live = AdvancedAi::new();
-    live.enable_live_bridge_universe();
-    assert!(live.base.wonder_ring_settle_value);
-    live.disable_wonder_ring_settle_value();
-    assert!(!live.base.wonder_ring_settle_value);
-}
-
 /// A settler standing on the site it chose, which the host or the mirror
 /// has since blocked, must retire that site and pick another — not stand
 /// there journaling "already standing on its target" until it dies, as
