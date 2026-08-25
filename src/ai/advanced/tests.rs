@@ -12594,6 +12594,107 @@ fn a_colony_beyond_the_empires_loyalty_reach_on_fogged_ground_is_not_founded() {
         .is_none());
 }
 
+/// `frontier-loyalty` is a host-only deployment guard, while the full
+/// speculative rate forecast rides on the separately ledger-held
+/// `loyalty-rate-alarm`. The two must not be joined at the decision caller:
+/// run `civvis-20260825T204120Z` founded Setia with the former on and the
+/// latter off, then the host reported -23 Loyalty a turn and the city flipped
+/// seven turns later. This exercises the real target-selection branch rather
+/// than calling the verdict helper alone.
+#[test]
+fn frontier_loyalty_retires_a_live_target_when_rate_alarm_is_withheld() {
+    let (mut game, _capital, home) = empire_with_a_capital(71_123);
+    for unit in game.player_unit_ids(1) {
+        game.remove_unit(unit);
+    }
+    let known = game.wdisk(home, 6);
+    game.players[0].explored.clear();
+    game.players[0].explored.extend(known);
+
+    // Pick a genuinely legal eighth-ring colony, then give its Settler one
+    // legal candidate so the result cannot be attributed to the ordinary site
+    // ranking or a missing route.
+    let eighth_ring: Vec<Pos> = game
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .filter(|position| game.wdist(*position, home) == 8)
+        .collect();
+    let target = eighth_ring
+        .into_iter()
+        .find(|position| {
+            let probe = game.spawn_test_unit("settler", 0, *position);
+            let legal = game.can_found_city(probe);
+            game.remove_unit(probe);
+            legal
+        })
+        .expect("fixture needs a legal eighth-ring colony");
+    let source = game
+        .nbrs(target)
+        .into_iter()
+        .find(|position| {
+            game.map.get(*position).is_some_and(|tile| {
+                !game.rules.is_water(tile) && game.rules.is_passable(tile)
+            })
+        })
+        .expect("fixture needs a traversable tile beside the colony");
+    let every_other_plot: Vec<Pos> = game
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .filter(|position| *position != target)
+        .collect();
+    game.blocked_city_sites.extend(every_other_plot);
+    let settler = game.spawn_test_unit("settler", 0, source);
+    game.units.get_mut(&settler).unwrap().moves_left = 2.0;
+    assert!(
+        AdvancedAi::beyond_loyalty_reach(&game, 0, target),
+        "the target must be the fogged frontier this guard protects"
+    );
+
+    let cities_before = game.player_city_ids(0).len();
+    let mut live = AdvancedAi::new();
+    live.enable_live_bridge();
+    assert!(live.frontier_loyalty, "the live deployment ships the frontier guard");
+    assert!(
+        !live.base.loyalty_rate_alarm,
+        "the default genome keeps the separate rate forecast withheld"
+    );
+    assert_eq!(
+        live.best_settler_target(&game, 0, settler, 8, None)
+            .map(|(position, _)| position),
+        Some(target),
+        "the test must offer the doomed colony to the real target loop"
+    );
+    assert!(
+        !live.advanced_settler_step(&mut game, 0, settler),
+        "the live frontier guard must retire the colony before the walk"
+    );
+    assert_eq!(game.player_city_ids(0).len(), cities_before);
+    assert!(live.settler_site_is_dead(settler, target));
+    assert!(
+        !live.settler_targets.contains_key(&settler),
+        "safe exhaustion must not leave the rejected target cached"
+    );
+
+    // The same guard must also fire after a target was cached on a previous
+    // turn, when the Settler arrives with founding movement left.
+    game.units.get_mut(&settler).unwrap().pos = target;
+    let mut arriving = AdvancedAi::new();
+    arriving.enable_live_bridge();
+    assert!(arriving.frontier_loyalty);
+    assert!(!arriving.base.loyalty_rate_alarm);
+    arriving.settler_targets.insert(settler, target);
+    assert!(
+        !arriving.advanced_settler_step(&mut game, 0, settler),
+        "the live arrival check must retire the frontier target rather than found"
+    );
+    assert_eq!(game.player_city_ids(0).len(), cities_before);
+    assert!(arriving.settler_site_is_dead(settler, target));
+}
+
 /// A city need not be in the mirror's immediate -8-per-turn emergency to be
 /// a bad settlement. A young city caught between equal-distance capitals can
 /// look merely "Wavering" on its founding turn yet still flip before it has

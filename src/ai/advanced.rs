@@ -24705,16 +24705,17 @@ impl AdvancedAi {
         Some(self.base.fortify_or_stop(g, pid, uid))
     }
 
-    /// Would a city founded at `site` right now bleed Loyalty fast enough to
-    /// revolt before it becomes a useful city? This asks the engine's complete
-    /// Loyalty calculation of a speculative city. The live mirror's
-    /// current-plot protection catches only its -8/turn emergency; target
-    /// selection also avoids a steady loss that would flip the city within its
-    /// forty-turn growth forecast.
-    /// Why a site would not hold, if it would not: the forecast revolt, or —
-    /// under `frontier_loyalty` — a colony beyond the empire's reach on fogged
-    /// ground. `None` when the site is judged sound.
-    fn settle_site_loyalty_verdict(&self, g: &Game, pid: usize, site: Pos) -> Option<String> {
+    /// The host-only frontier half of the settlement Loyalty guard. It is
+    /// deliberately separate from the rate forecast below: the deployment
+    /// genome can hold `loyalty-rate-alarm` off without dropping the fog and
+    /// unseen-border protection that `frontier-loyalty` ships for the live
+    /// Civilization VI mirror.
+    fn settle_site_frontier_loyalty_verdict(
+        &self,
+        g: &Game,
+        pid: usize,
+        site: Pos,
+    ) -> Option<String> {
         if self.frontier_loyalty && Self::beyond_loyalty_reach(g, pid, site) {
             return Some(
                 "it lies beyond the empire's Loyalty reach on ground the seat has not \
@@ -24733,6 +24734,22 @@ impl AdvancedAi {
                  — that city presses the site from the fog"
                     .to_string(),
             );
+        }
+        None
+    }
+
+    /// Would a city founded at `site` right now bleed Loyalty fast enough to
+    /// revolt before it becomes a useful city? This asks the engine's complete
+    /// Loyalty calculation of a speculative city. The live mirror's
+    /// current-plot protection catches only its -8/turn emergency; target
+    /// selection also avoids a steady loss that would flip the city within its
+    /// forty-turn growth forecast.
+    /// Why a site would not hold, if it would not: the forecast revolt, or —
+    /// under `frontier_loyalty` — a colony beyond the empire's reach on fogged
+    /// ground. `None` when the site is judged sound.
+    fn settle_site_loyalty_verdict(&self, g: &Game, pid: usize, site: Pos) -> Option<String> {
+        if let Some(why) = self.settle_site_frontier_loyalty_verdict(g, pid, site) {
+            return Some(why);
         }
         let mut forecast = g.speculative_clone();
         let city = forecast.found_city_for(pid, site, None);
@@ -25162,14 +25179,14 @@ impl AdvancedAi {
             .get(&uid)
             .copied()
             .filter(|_| cached_drop.is_none());
-        // The target forecast is a live-bridge repair, not a production or
-        // tournament policy. `settler_commit` is on in the normal promoted
-        // controller, whereas both default constructors leave
-        // `loyalty_rate_alarm` off; the live bridge enables it with the live
-        // Loyalty emergency treatment. Use the latter so the frozen anchor
-        // and the default advanced controller retain their established
-        // ladders.
-        let forecast_loyalty = self.base.loyalty_rate_alarm;
+        // The rate forecast is a live-bridge repair, not a production or
+        // tournament policy. The separate frontier guard is host-only and
+        // must still run when the deployment ledger holds the rate alarm off:
+        // without it, a fogged colony reaches its target and is founded into
+        // the exact immediate Loyalty collapse the guard exists to prevent.
+        // Either guard also owns safe exhaustion below, so `BasicAi` cannot
+        // immediately reselect a site this controller just retired.
+        let loyalty_guard_active = self.base.loyalty_rate_alarm || self.frontier_loyalty;
         // See `settler_target_hysteresis`: a cached site the validation just
         // dropped stays out of the next picks, so a threat flickering at the
         // edge of sight cannot flip the settler between two sites every frame.
@@ -25224,10 +25241,10 @@ impl AdvancedAi {
                 let Some((pos, _)) = self.best_settler_target(g, pid, uid, 8, avoid) else {
                     break None;
                 };
-                let verdict = if forecast_loyalty {
+                let verdict = if self.base.loyalty_rate_alarm {
                     self.settle_site_loyalty_verdict(g, pid, pos)
                 } else {
-                    None
+                    self.settle_site_frontier_loyalty_verdict(g, pid, pos)
                 };
                 let Some(why) = verdict else {
                     self.settler_targets.insert(uid, pos);
@@ -25252,7 +25269,7 @@ impl AdvancedAi {
             // live forecast just retired. A later board can reveal a safe site
             // or change the Loyalty calculation; until then, holding preserves
             // the Settler rather than knowingly founding a doomed city.
-            if forecast_loyalty {
+            if loyalty_guard_active {
                 return false;
             }
             return self.base.settler_step(g, pid, uid);
@@ -25268,10 +25285,10 @@ impl AdvancedAi {
             // retains a valid cache rather than paying for a speculative city
             // each turn. Recheck once at arrival, when founding would otherwise
             // make the loss irreversible.
-            let arrival_verdict = if forecast_loyalty {
+            let arrival_verdict = if self.base.loyalty_rate_alarm {
                 self.settle_site_loyalty_verdict(g, pid, current)
             } else {
-                None
+                self.settle_site_frontier_loyalty_verdict(g, pid, current)
             };
             if let Some(why) = arrival_verdict {
                 think!(self.journal(), Expansion, Detail,
@@ -25597,21 +25614,23 @@ impl AdvancedAi {
             return false;
         }
         // A stalled route may reach a tile that the ordinary target loop had
-        // already rejected. Keep the fallback behind that same live-only
-        // Loyalty forecast: finishing a Settler is useful only when the city
-        // will remain ours. The alarm is the boundary used by both target
-        // selection and arrival, preserving tournament/evaluator behavior.
-        if self.base.loyalty_rate_alarm {
-            if let Some(why) = self.settle_site_loyalty_verdict(g, pid, here) {
-                think!(self.journal(), Expansion, Detail,
-                       "Settler declines a loyalty-doomed fallback at {here:?}";
-                       "{why}; the fallback site is retired rather than founded"; here);
-                self.settler_dead_sites.entry(uid).or_default().insert(
-                    here,
-                    g.turn + g.standard_duration(SETTLER_DEAD_SITE_AVOID_TURNS),
-                );
-                return false;
-            }
+        // already rejected. Keep the fallback behind the same live-only
+        // Loyalty protections as target selection and arrival: the optional
+        // rate forecast, plus the always-shipped frontier guard.
+        let loyalty_verdict = if self.base.loyalty_rate_alarm {
+            self.settle_site_loyalty_verdict(g, pid, here)
+        } else {
+            self.settle_site_frontier_loyalty_verdict(g, pid, here)
+        };
+        if let Some(why) = loyalty_verdict {
+            think!(self.journal(), Expansion, Detail,
+                   "Settler declines a loyalty-doomed fallback at {here:?}";
+                   "{why}; the fallback site is retired rather than founded"; here);
+            self.settler_dead_sites.entry(uid).or_default().insert(
+                here,
+                g.turn + g.standard_duration(SETTLER_DEAD_SITE_AVOID_TURNS),
+            );
+            return false;
         }
         if let Some((enemy_distance, friendly_distance)) =
             self.live_stalled_settlement_is_unsupported_frontline(g, pid, here)
