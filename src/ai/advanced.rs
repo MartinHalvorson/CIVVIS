@@ -5120,6 +5120,12 @@ use district_planning::DistrictPlanCache;
 mod coalition;
 use coalition::Coalition;
 
+/// Opt-in gene `enemy-of-my-enemy`: the neighbours' barbarian camps stand,
+/// envoys and alliances go to the far side of every rival, a rival's joint
+/// war against its own far side is refused. The flag lives on `BasicAi`,
+/// which owns the camp clears.
+pub(crate) mod enemy_of_my_enemy;
+
 /// The Missionary in the field: a last-charge Missionary explores the fog,
 /// and a religious unit steps out of a raider's reach. Two opt-in genes; see
 /// `advanced/missionary_field.rs`.
@@ -12854,6 +12860,16 @@ impl AdvancedAi {
                 // plan off its own objective.
                 -300.0
             };
+            // `enemy_of_my_enemy`: a rival's war on its own far side is the
+            // war we least want to join. See `advanced/enemy_of_my_enemy.rs`.
+            value += self.enemy_of_my_enemy_joint_war_penalty(
+                g,
+                pid,
+                deal,
+                (plan.strategy == GrandStrategy::Conquest)
+                    .then_some(plan.target_player)
+                    .flatten(),
+            );
         }
         if let Some(promise) = deal.promise.as_deref() {
             let conflicts_with_plan = matches!(
@@ -13074,7 +13090,17 @@ impl AdvancedAi {
                         "religious" => g.players[other].religion.is_some() as usize as f64 * 45.0,
                         _ => 0.0,
                     };
-                    friendship + connected + complement
+                    // `enemy_of_my_enemy`: a partner with a city on a
+                    // rival's far side. See `advanced/enemy_of_my_enemy.rs`.
+                    let across = self.enemy_of_my_enemy_partner_bonus(
+                        g,
+                        pid,
+                        other,
+                        (plan.strategy == GrandStrategy::Conquest)
+                            .then_some(plan.target_player)
+                            .flatten(),
+                    );
+                    friendship + connected + complement + across
                         - g.players[pid]
                             .grievances
                             .get(&other)
@@ -13088,22 +13114,38 @@ impl AdvancedAi {
             })
             .map(|other| other.id);
         if let Some(partner) = partner {
-            let _ = g.apply(
+            let proposed = g
+                .apply(
+                    pid,
+                    &Action::ProposeDeal {
+                        player: partner,
+                        give_gold: 0.0,
+                        request_gold: 0.0,
+                        // `no_free_passage`: passage is sold, not bundled.
+                        open_borders: !self.base.no_free_passage
+                            && g.players[pid]
+                                .civics
+                                .contains(&crate::name!("early_empire")),
+                        friendship: true,
+                        peace: false,
+                        alliance: Some(kind.to_string()),
+                    },
+                )
+                .is_ok();
+            let across = self.enemy_of_my_enemy_partner_bonus(
+                g,
                 pid,
-                &Action::ProposeDeal {
-                    player: partner,
-                    give_gold: 0.0,
-                    request_gold: 0.0,
-                    // `no_free_passage`: passage is sold, not bundled.
-                    open_borders: !self.base.no_free_passage
-                        && g.players[pid]
-                            .civics
-                            .contains(&crate::name!("early_empire")),
-                    friendship: true,
-                    peace: false,
-                    alliance: Some(kind.to_string()),
-                },
+                partner,
+                (plan.strategy == GrandStrategy::Conquest)
+                    .then_some(plan.target_player)
+                    .flatten(),
             );
+            if proposed && across > 0.0 {
+                *g.players[pid]
+                    .counters
+                    .entry("eoe:partners".to_string())
+                    .or_insert(0) += 1;
+            }
         }
     }
 
@@ -15292,6 +15334,9 @@ impl AdvancedAi {
                     // `coalition_before_war`: the city-state's place next to
                     // the war desk's target. See `advanced/coalition.rs`.
                     let coalition = self.coalition_city_state_bonus(g, pid, minor.id, needed);
+                    // `enemy_of_my_enemy`: the city-state's place ACROSS a
+                    // rival. See `advanced/enemy_of_my_enemy.rs`.
+                    let across = self.enemy_of_my_enemy_city_state_bonus(g, pid, minor.id, needed);
                     let score = (alignment + unique_alignment) * 10
                         + type_bonus_value
                         + denial
@@ -15299,6 +15344,7 @@ impl AdvancedAi {
                         + nobel_peace_suzerain_prize
                         + place
                         + coalition
+                        + across
                         - needed * 7
                         - if overfunded_uncontested {
                             UNCONTESTED_POST_TIER_ENVOY_PENALTY
@@ -15359,6 +15405,12 @@ impl AdvancedAi {
                 *g.players[pid]
                     .counters
                     .entry("coalition:envoys".to_string())
+                    .or_insert(0) += 1;
+            }
+            if self.enemy_of_my_enemy_city_state_bonus(g, pid, target, 1) > 0 {
+                *g.players[pid]
+                    .counters
+                    .entry("eoe:envoys".to_string())
                     .or_insert(0) += 1;
             }
         }

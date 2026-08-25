@@ -207,6 +207,7 @@ These screenable genes have no on/off result, so they receive no rank or promoti
 | `domination-city-count` | off (unmeasured) | Read a rival's conquests from the cities it has taken rather than only from the capitals. | 1 |
 | `elective-war-in-reach` | off (unmeasured) | Measure the elective war against the weakest rival we can reach rather than the weakest on the board. | 1 |
 | `elective-war-yields-to-a-lane` | off (unmeasured) | Stop a war we choose from taking the grand strategy while our own victory lane is live. | 1 |
+| `enemy-of-my-enemy` | off (unmeasured) | Leaves barbarian camps that raid a rival rather than us, and courts the city-states and majors beyond that rival. | 1 |
 | `eureka-chasing-builder` | off (unmeasured) | An improvement that completes an unresearched technology's or civic's boost is worth the research the boost grants, spread over the steps the trigger still needs. | 1 |
 | `eureka-chasing-production` | off (unmeasured) | A unit, building or district that completes an unresearched technology's or civic's boost is worth the research the boost grants, spread over the steps the trigger still needs. | 1 |
 | `expansion-pays-back` | off (unmeasured) | Shut the settler window on whether the city would pay the settler back before the game ends, rather than on a deadline. | 1 |
